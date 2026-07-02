@@ -1,4 +1,4 @@
-=== Scrape Log 2026-06-26T12:01:52.729Z ===
+=== Scrape Log 2026-07-02T12:01:10.148Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -56,7 +56,7 @@
 [database] Scraping hSD17: /sell/hocg/s/search?search_word=&vers[]=hsd17
   → Found 11 cards with prices
 [database] Scraping hSD18: /sell/hocg/s/search?search_word=&vers[]=hsd18
-[ERROR]   → Error: Protocol error: Connection closed. Most likely the page has been closed.
+[ERROR]   → Error: Protocol error: Connection closed.
 [database] Scraping hSD19: /sell/hocg/s/search?search_word=&vers[]=hsd19
 [ERROR]   → Error: Protocol error: Connection closed.
 [database] Scraping hYS01: /sell/hocg/s/hys01
@@ -90,16 +90,20 @@
 [add-zh-names] ✅ 載入 339 筆翻譯對照
 [add-zh-names] 📝 處理 2105 張卡片...
 [add-zh-names] ✅ 完成！
-[add-zh-names]   匹配: 2103 張卡片
+[add-zh-names]   靜態匹配: 2103 張卡片
+[add-zh-names]   自動翻譯: 0 張卡片
 [add-zh-names]   未匹配: 2 張卡片
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
+
+── Step 5: Save price history ──
+  [price-history] Saved 1885 new records for 1885 cards
 
 ═══════════════════════════════════════
   ✅ Build complete!
   Total cards: 2105
   Cards with prices: 1072
   Images downloaded: 0
-  Duration: 269.5s
+  Duration: 275.4s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
@@ -108,5 +112,5 @@ Build result: {
   "yuyuCount": 1072,
   "officialCount": 2105,
   "imagesDownloaded": 0,
-  "duration": 269.5
+  "duration": 275.4
 }
