@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-031_hPR",
+  "cardNumber": "hBP05-031",
+  "name": "尾丸ポルカ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-031_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-031_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.724Z",
+  "nameZh": ""
+}

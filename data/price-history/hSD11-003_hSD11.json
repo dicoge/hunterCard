@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD11-003_hSD11",
+  "cardNumber": "hSD11-003",
+  "name": "虎金妃笑虎",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD11-003_hSD11"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD11-003_hSD11"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.620Z",
+  "nameZh": ""
+}

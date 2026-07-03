@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD04-002_hPR",
+  "cardNumber": "hSD04-002",
+  "name": "癒月ちょこ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD04-002_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD04-002_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.727Z",
+  "nameZh": ""
+}

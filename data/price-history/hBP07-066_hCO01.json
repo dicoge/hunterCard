@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP07-066_hCO01",
+  "cardNumber": "hBP07-066",
+  "name": "AZKi",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-066_hCO01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-066_hCO01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.744Z",
+  "nameZh": ""
+}

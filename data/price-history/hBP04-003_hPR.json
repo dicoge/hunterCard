@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP04-003_hPR",
+  "cardNumber": "hBP04-003",
+  "name": "一条莉々華",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-003_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-003_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.712Z",
+  "nameZh": ""
+}

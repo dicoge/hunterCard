@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD06-008_hPR",
+  "cardNumber": "hSD06-008",
+  "name": "博衣こより",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD06-008_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD06-008_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.717Z",
+  "nameZh": ""
+}

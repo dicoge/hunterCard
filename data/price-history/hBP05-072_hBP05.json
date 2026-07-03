@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-072_hBP05",
+  "cardNumber": "hBP05-072",
+  "name": "角巻わため",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-072_hBP05"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-072_hBP05"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.630Z",
+  "nameZh": ""
+}

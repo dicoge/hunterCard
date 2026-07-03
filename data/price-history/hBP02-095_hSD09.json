@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-095_hSD09",
+  "cardNumber": "hBP02-095",
+  "name": "ドクロくん",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-095_hSD09"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-095_hSD09"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.633Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD02-009_hBP02",
+  "cardNumber": "hSD02-009",
+  "name": "百鬼あやめ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-009_hBP02"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-009_hBP02"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.677Z",
+  "nameZh": ""
+}

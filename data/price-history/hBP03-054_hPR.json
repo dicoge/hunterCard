@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-054_hPR",
+  "cardNumber": "hBP03-054",
+  "name": "常闇トワ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-054_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-054_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.710Z",
+  "nameZh": ""
+}

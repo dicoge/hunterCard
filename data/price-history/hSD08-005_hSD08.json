@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD08-005_hSD08",
+  "cardNumber": "hSD08-005",
+  "name": "姫森ルーナ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-005_hSD08"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-005_hSD08"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.631Z",
+  "nameZh": ""
+}

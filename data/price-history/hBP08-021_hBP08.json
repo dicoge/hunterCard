@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP08-021_hBP08",
+  "cardNumber": "hBP08-021",
+  "name": "セシリア・イマーグリーン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-021_hBP08"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-021_hBP08"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.732Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP07-087_hPR",
+  "cardNumber": "hBP07-087",
+  "name": "虎金妃笑虎",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-087_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-087_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.726Z",
+  "nameZh": ""
+}

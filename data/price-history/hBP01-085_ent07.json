@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-085_ent07",
+  "cardNumber": "hBP01-085",
+  "name": "こぼ・かなえる",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-085_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-085_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.507Z",
+  "nameZh": ""
+}

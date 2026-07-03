@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD01-019_hSD01",
+  "cardNumber": "hSD01-019",
+  "name": "スゴイパソコン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-019_hSD01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-019_hSD01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.685Z",
+  "nameZh": ""
+}

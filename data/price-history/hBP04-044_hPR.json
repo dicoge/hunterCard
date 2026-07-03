@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP04-044_hPR",
+  "cardNumber": "hBP04-044",
+  "name": "雪花ラミィ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-044_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-044_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.713Z",
+  "nameZh": ""
+}

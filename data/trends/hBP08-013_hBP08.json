@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP08-013",
+  "name": "IRyS",
+  "nameZh": "",
+  "trend": "stable",
+  "score": 0.03,
+  "confidence": 0.3,
+  "components": {
+    "priceTrend": 0,
+    "ytTrend": 0,
+    "newsSentiment": 0.16
+  },
+  "lastUpdated": "2026-07-03T12:08:20.572Z",
+  "dataPoints": 2
+}

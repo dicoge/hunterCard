@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD16-009_hSD16",
+  "cardNumber": "hSD16-009",
+  "name": "さくらみこ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD16-009_hSD16"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD16-009_hSD16"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.566Z",
+  "nameZh": ""
+}

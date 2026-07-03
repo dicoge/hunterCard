@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD12-013_hSD12",
+  "cardNumber": "hSD12-013",
+  "name": "モココ・アビスガード",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 1280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-013_hSD12"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 1280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-013_hSD12"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.597Z",
+  "nameZh": ""
+}

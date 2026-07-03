@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD02-011_hSD02",
+  "cardNumber": "hSD02-011",
+  "name": "大神ミオ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-011_hSD02"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-011_hSD02"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.679Z",
+  "nameZh": ""
+}

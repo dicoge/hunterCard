@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-044_hCO01",
+  "cardNumber": "hBP03-044",
+  "name": "星街すいせい",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-044_hCO01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-044_hCO01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.743Z",
+  "nameZh": ""
+}

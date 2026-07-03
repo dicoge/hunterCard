@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP08-037_hBP08",
+  "cardNumber": "hBP08-037",
+  "name": "モココ・アビスガード",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-037_hBP08"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-037_hBP08"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.734Z",
+  "nameZh": ""
+}

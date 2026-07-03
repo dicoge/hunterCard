@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD01-018_hSD01",
+  "cardNumber": "hSD01-018",
+  "name": "サブパソコン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-018_hSD01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-018_hSD01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.685Z",
+  "nameZh": ""
+}

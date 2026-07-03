@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP04-009_hPR",
+  "cardNumber": "hBP04-009",
+  "name": "博衣こより",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-009_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-009_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.712Z",
+  "nameZh": ""
+}

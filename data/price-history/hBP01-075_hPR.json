@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-075_hPR",
+  "cardNumber": "hBP01-075",
+  "name": "ハコス・ベールズ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-075_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-075_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.720Z",
+  "nameZh": ""
+}

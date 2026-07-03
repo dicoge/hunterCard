@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP03-030",
+  "name": "さくらみこ",
+  "nameZh": "",
+  "trend": "stable",
+  "score": -0.1,
+  "confidence": 0.3,
+  "components": {
+    "priceTrend": -0.21,
+    "ytTrend": 0,
+    "newsSentiment": 0.16
+  },
+  "lastUpdated": "2026-07-03T12:08:20.569Z",
+  "dataPoints": 2
+}

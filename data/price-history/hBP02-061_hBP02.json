@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-061_hBP02",
+  "cardNumber": "hBP02-061",
+  "name": "一伊那尓栖",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-061_hBP02"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-061_hBP02"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.672Z",
+  "nameZh": ""
+}

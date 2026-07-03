@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP06-008_ent07",
+  "cardNumber": "hBP06-008",
+  "name": "夏色まつり",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-008_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-008_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.532Z",
+  "nameZh": ""
+}

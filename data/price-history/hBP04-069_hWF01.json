@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP04-069_hWF01",
+  "cardNumber": "hBP04-069",
+  "name": "大空スバル",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-069_hWF01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-069_hWF01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.747Z",
+  "nameZh": ""
+}

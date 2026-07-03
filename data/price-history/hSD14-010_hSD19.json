@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD14-010_hSD19",
+  "cardNumber": "hSD14-010",
+  "name": "holoAN",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD14-010_hSD19"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD14-010_hSD19"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.575Z",
+  "nameZh": ""
+}

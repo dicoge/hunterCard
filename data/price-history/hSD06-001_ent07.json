@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD06-001_ent07",
+  "cardNumber": "hSD06-001",
+  "name": "風真いろは",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD06-001_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD06-001_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.554Z",
+  "nameZh": ""
+}

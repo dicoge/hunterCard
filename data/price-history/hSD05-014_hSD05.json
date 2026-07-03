@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD05-014_hSD05",
+  "cardNumber": "hSD05-014",
+  "name": "ばんぺん",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD05-014_hSD05"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD05-014_hSD05"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.662Z",
+  "nameZh": ""
+}

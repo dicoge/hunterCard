@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-110_hBP06",
+  "cardNumber": "hBP03-110",
+  "name": "ろぼさー",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-110_hBP06"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-110_hBP06"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.612Z",
+  "nameZh": ""
+}

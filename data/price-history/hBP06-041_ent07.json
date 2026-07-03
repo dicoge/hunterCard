@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP06-041_ent07",
+  "cardNumber": "hBP06-041",
+  "name": "ハコス・ベールズ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-041_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-041_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.534Z",
+  "nameZh": ""
+}

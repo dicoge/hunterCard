@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD02-014_hPR",
+  "cardNumber": "hSD02-014",
+  "name": "ぽよ余",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-014_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-014_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.717Z",
+  "nameZh": ""
+}

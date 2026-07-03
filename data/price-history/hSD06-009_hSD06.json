@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD06-009_hSD06",
+  "cardNumber": "hSD06-009",
+  "name": "鷹嶺ルイ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD06-009_hSD06"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD06-009_hSD06"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.662Z",
+  "nameZh": ""
+}

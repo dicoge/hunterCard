@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-048_hSD06",
+  "cardNumber": "hBP01-048",
+  "name": "風真いろは",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hSD06"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-048_hSD06"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.663Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-044_hPR",
+  "cardNumber": "hBP05-044",
+  "name": "猫又おかゆ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-044_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-044_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.724Z",
+  "nameZh": ""
+}

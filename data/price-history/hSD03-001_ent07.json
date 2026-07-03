@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD03-001_ent07",
+  "cardNumber": "hSD03-001",
+  "name": "猫又おかゆ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-001_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-001_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.551Z",
+  "nameZh": ""
+}

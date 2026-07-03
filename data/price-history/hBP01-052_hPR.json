@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-052_hPR",
+  "cardNumber": "hBP01-052",
+  "name": "アイラニ・イオフィフティーン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-052_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-052_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.720Z",
+  "nameZh": ""
+}

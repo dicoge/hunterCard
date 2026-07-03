@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-080_hPR",
+  "cardNumber": "hBP03-080",
+  "name": "音乃瀬奏",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-080_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-080_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.711Z",
+  "nameZh": ""
+}

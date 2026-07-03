@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP08-089_hBP08",
+  "cardNumber": "hBP08-089",
+  "name": "ジジ・ムリン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-089_hBP08"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-089_hBP08"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.740Z",
+  "nameZh": ""
+}

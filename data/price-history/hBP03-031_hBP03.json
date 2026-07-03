@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-031_hBP03",
+  "cardNumber": "hBP03-031",
+  "name": "赤井はあと",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-031_hBP03"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-031_hBP03"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.658Z",
+  "nameZh": ""
+}

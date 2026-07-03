@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-112_hPR",
+  "cardNumber": "hBP03-112",
+  "name": "わためいと",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-112_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-112_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.712Z",
+  "nameZh": ""
+}

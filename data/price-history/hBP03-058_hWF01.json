@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-058_hWF01",
+  "cardNumber": "hBP03-058",
+  "name": "ロボ子さん",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-058_hWF01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-058_hWF01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.746Z",
+  "nameZh": ""
+}

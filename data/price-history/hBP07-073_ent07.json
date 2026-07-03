@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP07-073_ent07",
+  "cardNumber": "hBP07-073",
+  "name": "ラプラス・ダークネス",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-073_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-073_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.548Z",
+  "nameZh": ""
+}

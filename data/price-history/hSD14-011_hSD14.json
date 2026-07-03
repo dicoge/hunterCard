@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD14-011_hSD14",
+  "cardNumber": "hSD14-011",
+  "name": "ありよりのアリゲーター",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD14-011_hSD14"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD14-011_hSD14"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.562Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-084_hSD16",
+  "cardNumber": "hBP02-084",
+  "name": "みっころね24",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-084_hSD16"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-084_hSD16"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.565Z",
+  "nameZh": ""
+}

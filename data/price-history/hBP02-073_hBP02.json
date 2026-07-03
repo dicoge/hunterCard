@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-073_hBP02",
+  "cardNumber": "hBP02-073",
+  "name": "魔法少女マリン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-073_hBP02"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-073_hBP02"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.673Z",
+  "nameZh": ""
+}

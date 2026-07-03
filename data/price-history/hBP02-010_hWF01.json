@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-010_hWF01",
+  "cardNumber": "hBP02-010",
+  "name": "白上フブキ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-010_hWF01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-010_hWF01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.744Z",
+  "nameZh": ""
+}

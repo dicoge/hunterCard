@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-079_hPR",
+  "cardNumber": "hBP05-079",
+  "name": "み俺恥",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-079_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-079_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.714Z",
+  "nameZh": ""
+}

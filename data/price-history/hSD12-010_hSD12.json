@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD12-010_hSD12",
+  "cardNumber": "hSD12-010",
+  "name": "古石ビジュー",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-010_hSD12"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-010_hSD12"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.599Z",
+  "nameZh": ""
+}

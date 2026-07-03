@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD10-011_hSD11",
+  "cardNumber": "hSD10-011",
+  "name": "WHAT&#039;S UP!!!!! KEEEEEP GROWING!!!!!",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-011_hSD11"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-011_hSD11"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.619Z",
+  "nameZh": ""
+}

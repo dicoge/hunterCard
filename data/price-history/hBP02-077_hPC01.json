@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-077_hPC01",
+  "cardNumber": "hBP02-077",
+  "name": "レトロパソコン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-077_hPC01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-077_hPC01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.647Z",
+  "nameZh": ""
+}

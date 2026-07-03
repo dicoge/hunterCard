@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP07-104_hBP07",
+  "cardNumber": "hBP07-104",
+  "name": "Thorn",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-104_hBP07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-104_hBP07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.578Z",
+  "nameZh": ""
+}

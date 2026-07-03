@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD09-003_hSD09",
+  "cardNumber": "hSD09-003",
+  "name": "宝鐘マリン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-003_hSD09"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-003_hSD09"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.632Z",
+  "nameZh": ""
+}

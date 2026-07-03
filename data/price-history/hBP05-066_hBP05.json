@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-066_hBP05",
+  "cardNumber": "hBP05-066",
+  "name": "不知火フレア",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-066_hBP05"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-066_hBP05"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.630Z",
+  "nameZh": ""
+}

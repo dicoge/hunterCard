@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-074_hSD12",
+  "cardNumber": "hBP05-074",
+  "name": "フレンドリーパソコン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-074_hSD12"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-074_hSD12"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.598Z",
+  "nameZh": ""
+}

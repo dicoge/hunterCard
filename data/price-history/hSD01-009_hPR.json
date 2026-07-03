@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD01-009_hPR",
+  "cardNumber": "hSD01-009",
+  "name": "AZKi",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-009_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-009_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.726Z",
+  "nameZh": ""
+}

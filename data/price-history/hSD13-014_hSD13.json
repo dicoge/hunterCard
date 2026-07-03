@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD13-014_hSD13",
+  "cardNumber": "hSD13-014",
+  "name": "セシリア・イマーグリーン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-014_hSD13"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-014_hSD13"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.600Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-058_hWF01",
+  "cardNumber": "hBP01-058",
+  "name": "鷹嶺ルイ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-058_hWF01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-058_hWF01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.744Z",
+  "nameZh": ""
+}

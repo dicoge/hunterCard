@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD15-010_hSD15",
+  "cardNumber": "hSD15-010",
+  "name": "まつたけダンス",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD15-010_hSD15"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD15-010_hSD15"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.564Z",
+  "nameZh": ""
+}

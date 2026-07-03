@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-055_ent07",
+  "cardNumber": "hBP05-055",
+  "name": "癒月ちょこ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-055_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-055_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.530Z",
+  "nameZh": ""
+}

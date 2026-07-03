@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD07-005_hWF01",
+  "cardNumber": "hSD07-005",
+  "name": "不知火フレア",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD07-005_hWF01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD07-005_hWF01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.748Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-114_hBP05",
+  "cardNumber": "hBP01-114",
+  "name": "石の斧",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-114_hBP05"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-114_hBP05"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.624Z",
+  "nameZh": ""
+}

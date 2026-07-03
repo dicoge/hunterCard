@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD04-010_hSD04",
+  "cardNumber": "hSD04-010",
+  "name": "大空スバル",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD04-010_hSD04"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD04-010_hSD04"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.681Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD05-012_hSD05",
+  "cardNumber": "hSD05-012",
+  "name": "火威青",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD05-012_hSD05"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD05-012_hSD05"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.661Z",
+  "nameZh": ""
+}

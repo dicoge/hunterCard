@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD17-001_hSD17",
+  "cardNumber": "hSD17-001",
+  "name": "星街すいせい",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD17-001_hSD17"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD17-001_hSD17"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.567Z",
+  "nameZh": ""
+}

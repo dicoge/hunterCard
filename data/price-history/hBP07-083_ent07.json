@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP07-083_ent07",
+  "cardNumber": "hBP07-083",
+  "name": "桃鈴ねね",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-083_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-083_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.549Z",
+  "nameZh": ""
+}

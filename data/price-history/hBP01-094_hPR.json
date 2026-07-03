@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-094_hPR",
+  "cardNumber": "hBP01-094",
+  "name": "オーロ・クロニー",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-094_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-094_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.721Z",
+  "nameZh": ""
+}

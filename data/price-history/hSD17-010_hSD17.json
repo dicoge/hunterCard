@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD17-010_hSD17",
+  "cardNumber": "hSD17-010",
+  "name": "ステラ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD17-010_hSD17"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD17-010_hSD17"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.572Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD14-007_hSD14",
+  "cardNumber": "hSD14-007",
+  "name": "白上フブキ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD14-007_hSD14"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD14-007_hSD14"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.562Z",
+  "nameZh": ""
+}

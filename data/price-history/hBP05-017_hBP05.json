@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-017_hBP05",
+  "cardNumber": "hBP05-017",
+  "name": "姫森ルーナ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-017_hBP05"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-017_hBP05"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.621Z",
+  "nameZh": ""
+}

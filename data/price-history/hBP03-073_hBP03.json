@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-073_hBP03",
+  "cardNumber": "hBP03-073",
+  "name": "アユンダ・リス",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-073_hBP03"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-073_hBP03"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.653Z",
+  "nameZh": ""
+}

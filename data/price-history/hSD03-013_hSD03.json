@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD03-013_hSD03",
+  "cardNumber": "hSD03-013",
+  "name": "おかにゃん",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-013_hSD03"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-013_hSD03"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.680Z",
+  "nameZh": ""
+}

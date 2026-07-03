@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-013_hSD08",
+  "cardNumber": "hBP01-013",
+  "name": "天音かなた",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-013_hSD08"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-013_hSD08"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.631Z",
+  "nameZh": ""
+}

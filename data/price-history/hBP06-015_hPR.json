@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP06-015_hPR",
+  "cardNumber": "hBP06-015",
+  "name": "響咲リオナ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-015_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-015_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.715Z",
+  "nameZh": ""
+}

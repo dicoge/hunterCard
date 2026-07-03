@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD10-012_hSD10",
+  "cardNumber": "hSD10-012",
+  "name": "FLOW GLOW",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-012_hSD10"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-012_hSD10"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.618Z",
+  "nameZh": ""
+}

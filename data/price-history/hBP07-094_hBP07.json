@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP07-094_hBP07",
+  "cardNumber": "hBP07-094",
+  "name": "ギリわるロボ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-094_hBP07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-094_hBP07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.576Z",
+  "nameZh": ""
+}

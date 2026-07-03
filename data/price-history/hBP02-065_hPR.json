@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-065_hPR",
+  "cardNumber": "hBP02-065",
+  "name": "ネリッサ・レイヴンクロフト",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.721Z",
+  "nameZh": ""
+}

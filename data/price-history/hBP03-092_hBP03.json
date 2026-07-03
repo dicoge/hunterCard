@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-092_hBP03",
+  "cardNumber": "hBP03-092",
+  "name": "ホロライブ0期生",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-092_hBP03"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-092_hBP03"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.655Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP06-057_hPR",
+  "cardNumber": "hBP06-057",
+  "name": "森カリオペ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-057_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-057_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.715Z",
+  "nameZh": ""
+}

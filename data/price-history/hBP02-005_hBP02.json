@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-005_hBP02",
+  "cardNumber": "hBP02-005",
+  "name": "紫咲シオン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-005_hBP02"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-005_hBP02"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.667Z",
+  "nameZh": ""
+}

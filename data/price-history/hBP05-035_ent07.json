@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP05-035_ent07",
+  "cardNumber": "hBP05-035",
+  "name": "さくらみこ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-035_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-035_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.529Z",
+  "nameZh": ""
+}

@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD02-005_hWF01",
+  "cardNumber": "hSD02-005",
+  "name": "百鬼あやめ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-005_hWF01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-005_hWF01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.747Z",
+  "nameZh": ""
+}

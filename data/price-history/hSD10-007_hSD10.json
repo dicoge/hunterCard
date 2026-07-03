@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD10-007_hSD10",
+  "cardNumber": "hSD10-007",
+  "name": "綺々羅々ヴィヴィ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-007_hSD10"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-007_hSD10"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.616Z",
+  "nameZh": ""
+}

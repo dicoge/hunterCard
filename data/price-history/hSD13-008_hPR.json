@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD13-008_hPR",
+  "cardNumber": "hSD13-008",
+  "name": "ジジ・ムリン",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-008_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-008_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.728Z",
+  "nameZh": ""
+}

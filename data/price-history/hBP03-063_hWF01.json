@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP03-063_hWF01",
+  "cardNumber": "hBP03-063",
+  "name": "戌神ころね",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-063_hWF01"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-063_hWF01"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.746Z",
+  "nameZh": ""
+}

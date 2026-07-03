@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-035_hBP02",
+  "cardNumber": "hBP02-035",
+  "name": "沙花叉クロヱ",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-035_hBP02"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 680,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-035_hBP02"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.669Z",
+  "nameZh": ""
+}

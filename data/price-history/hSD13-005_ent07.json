@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD13-005_ent07",
+  "cardNumber": "hSD13-005",
+  "name": "エリザベス・ローズ・ブラッドフレイム",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-005_ent07"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-005_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.559Z",
+  "nameZh": ""
+}

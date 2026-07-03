@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP01-004_hPR",
+  "cardNumber": "hBP01-004",
+  "name": "兎田ぺこら",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-004_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-004_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.703Z",
+  "nameZh": ""
+}

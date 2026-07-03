@@ -1,0 +1,23 @@
+{
+  "cardId": "hSD11-007_hBP08",
+  "cardNumber": "hSD11-007",
+  "name": "水宮枢",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD11-007_hBP08"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD11-007_hBP08"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.743Z",
+  "nameZh": ""
+}

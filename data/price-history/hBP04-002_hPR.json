@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP04-002_hPR",
+  "cardNumber": "hBP04-002",
+  "name": "儒烏風亭らでん",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-002_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-002_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.712Z",
+  "nameZh": ""
+}

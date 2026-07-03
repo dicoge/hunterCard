@@ -1,0 +1,23 @@
+{
+  "cardId": "hBP02-079_hPR",
+  "cardNumber": "hBP02-079",
+  "name": "爆発の魔法",
+  "records": [
+    {
+      "date": "2026-07-02",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-079_hPR"
+    },
+    {
+      "date": "2026-07-03",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-079_hPR"
+    }
+  ],
+  "lastUpdated": "2026-07-03T12:06:29.709Z",
+  "nameZh": ""
+}
