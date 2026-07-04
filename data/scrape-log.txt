@@ -1,4 +1,4 @@
-=== Scrape Log 2026-07-02T12:01:10.148Z ===
+=== Scrape Log 2026-07-04T12:07:30.235Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -56,28 +56,28 @@
 [database] Scraping hSD17: /sell/hocg/s/search?search_word=&vers[]=hsd17
   → Found 11 cards with prices
 [database] Scraping hSD18: /sell/hocg/s/search?search_word=&vers[]=hsd18
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 10 cards with prices
 [database] Scraping hSD19: /sell/hocg/s/search?search_word=&vers[]=hsd19
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 11 cards with prices
 [database] Scraping hYS01: /sell/hocg/s/hys01
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 4 cards with prices
 [database] Scraping ent07: /sell/hocg/s/special/4
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 142 cards with prices
 [database] Scraping hCS01: /sell/hocg/s/special/5
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 147 cards with prices
 [database] Scraping hPC01: /sell/hocg/s/special/7
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 126 cards with prices
 [database] Scraping hPR: /sell/hocg/s/special/1
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 87 cards with prices
 [database] Scraping hSD2025summer: /sell/hocg/s/special/8
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 128 cards with prices
 
-  Total cards from yuyu-tei: 1143
+  Total cards from yuyu-tei: 1798
 
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 0, Skipped: 1072, Errors: 0
+  [images] Downloaded: 0, Skipped: 1175, Errors: 0
 
 ── Step 3: Merge official data ──
 
@@ -96,21 +96,21 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 1885 new records for 1885 cards
+  [price-history] Saved 131 new records for 2006 cards
 
 ═══════════════════════════════════════
   ✅ Build complete!
   Total cards: 2105
-  Cards with prices: 1072
+  Cards with prices: 1175
   Images downloaded: 0
-  Duration: 275.4s
+  Duration: 335.2s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
 Build result: {
   "totalCards": 2105,
-  "yuyuCount": 1072,
+  "yuyuCount": 1175,
   "officialCount": 2105,
   "imagesDownloaded": 0,
-  "duration": 275.4
+  "duration": 335.2
 }

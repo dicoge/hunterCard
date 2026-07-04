@@ -2,14 +2,17 @@ import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { COLORS } from '../constants';
 import { HoloCard } from '../types/hololive';
+import PriceTrendBadge from './PriceTrendBadge';
+import type { TrendPrediction } from '../store/trendStore';
 
 interface CardItemProps {
   card: HoloCard;
   onPress?: () => void;
   showPrices?: boolean;
+  trend?: TrendPrediction | null;
 }
 
-export default function CardItem({ card, onPress, showPrices = true }: CardItemProps) {
+export default function CardItem({ card, onPress, showPrices = true, trend }: CardItemProps) {
   const minPrice = card.prices && card.prices.length > 0 
     ? Math.min(...card.prices.map(p => p.price))
     : null;
@@ -100,6 +103,18 @@ export default function CardItem({ card, onPress, showPrices = true }: CardItemP
         {showPrices && (!card.prices || card.prices.length === 0) && (
           <View style={styles.priceSection}>
             <Text style={styles.noPriceLabel}>尚無交易</Text>
+          </View>
+        )}
+        
+        {/* 趨勢預測 */}
+        {showPrices && trend && (
+          <View style={styles.trendSection}>
+            <PriceTrendBadge
+              trend={trend.trend}
+              score={trend.score}
+              confidence={trend.confidence}
+              compact
+            />
           </View>
         )}
       </View>
@@ -247,5 +262,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     paddingVertical: 4,
+  },
+  trendSection: {
+    marginTop: 8,
   },
 });

@@ -864,6 +864,77 @@ async function buildDatabase() {
   // Add Chinese names to cards
   await addZhNames(OUTPUT_PATH);
 
+  // Step 5: Save daily price history
+  console.log('\n── Step 5: Save price history ──');
+  const today = new Date().toISOString().split('T')[0];
+  const historyDir = path.join(DATA_DIR, 'price-history');
+  fs.mkdirSync(historyDir, { recursive: true });
+
+  // Collect price records from all cards
+  const priceRecords = [];
+  for (const [cardId, card] of Object.entries(database.cards)) {
+    if (card.sellPrice != null && card.sellPrice > 0) {
+      priceRecords.push({
+        date: today,
+        price: card.sellPrice,
+        source: 'yuyu-tei',
+        currency: 'JPY',
+        cardId,
+      });
+    }
+  }
+
+  // Group by cardId and write history files
+  const groupedRecords = {};
+  for (const r of priceRecords) {
+    if (!groupedRecords[r.cardId]) groupedRecords[r.cardId] = [];
+    groupedRecords[r.cardId].push(r);
+  }
+
+  let totalSaved = 0;
+  for (const [cardId, newRecords] of Object.entries(groupedRecords)) {
+    const filePath = path.join(historyDir, `${cardId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+    let existing = { cardId, cardNumber: '', name: '', records: [], lastUpdated: '' };
+    try {
+      existing = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch {
+      // new file
+    }
+
+    const existingDates = new Set(existing.records.map(r => r.date));
+    for (const nr of newRecords) {
+      if (!existingDates.has(nr.date)) {
+        existing.records.push(nr);
+        totalSaved++;
+      }
+    }
+
+    existing.records.sort((a, b) => a.date.localeCompare(b.date));
+    existing.lastUpdated = new Date().toISOString();
+
+    // Fill in card details from database
+    const cardInfo = database.cards[cardId];
+    if (cardInfo) {
+      existing.cardNumber = cardInfo.cardNumber || '';
+      existing.name = cardInfo.name || '';
+      existing.nameZh = cardInfo.nameZh || '';
+    }
+
+    fs.writeFileSync(filePath, JSON.stringify(existing, null, 2));
+  }
+
+  // Build/update index
+  const indexCardIds = Object.keys(groupedRecords);
+  const index = {
+    lastUpdated: new Date().toISOString(),
+    totalCards: indexCardIds.length,
+    totalRecords: priceRecords.length,
+    cardIds: indexCardIds,
+  };
+  fs.writeFileSync(path.join(historyDir, 'index.json'), JSON.stringify(index, null, 2));
+
+  console.log(`  [price-history] Saved ${totalSaved} new records for ${indexCardIds.length} cards`);
+
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n═══════════════════════════════════════`);
   console.log(`  ✅ Build complete!`);

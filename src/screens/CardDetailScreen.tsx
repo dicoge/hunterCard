@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, convertPrice } from '../constants';
 import { openUrl } from '../utils/openUrl';
 import { useSettingsStore } from '../store/settingsStore';
+import PriceTrendBadge from '../components/PriceTrendBadge';
+import { useTrendStore, TrendPrediction } from '../store/trendStore';
 
 const { width } = Dimensions.get('window');
 
@@ -101,6 +103,23 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const priceVariants = card.prices || [];
   const hasMultipleVariants = priceVariants.length > 1;
 
+  // ── Trend prediction ──
+  const [trend, setTrend] = useState<TrendPrediction | null>(null);
+  const { fetchTrendForCard, getTrendForCard } = useTrendStore();
+
+  useEffect(() => {
+    const cardId = card.id || card.cardNumber || '';
+    if (cardId) {
+      // Check cache first
+      const cached = getTrendForCard(cardId);
+      if (cached) {
+        setTrend(cached);
+      } else {
+        fetchTrendForCard(cardId).then(t => setTrend(t));
+      }
+    }
+  }, [card.id, card.cardNumber]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingBottom: insets.bottom }}>
       <ScrollView style={styles.container}>
@@ -168,6 +187,68 @@ export default function CardDetailScreen({ route, navigation }: any) {
           <Text style={styles.checkPriceBtnText}>🔍 查看遊々亭即時價格 →</Text>
         </TouchableOpacity>
       </View>
+
+      {/* ====== TREND PREDICTION ====== */}
+      {trend && (
+        <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
+          <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
+          <PriceTrendBadge
+            trend={trend.trend}
+            score={trend.score}
+            confidence={trend.confidence}
+            compact={false}
+          />
+          {/* 各項因子貢獻 */}
+          <View style={styles.componentSection}>
+            <Text style={styles.componentTitle}>因子貢獻</Text>
+            <View style={styles.componentRow}>
+              <Text style={styles.componentLabel}>📊 價格趨勢 (60%)</Text>
+              <View style={styles.componentBarBg}>
+                <View style={[styles.componentBarFill, {
+                  width: `${Math.min(Math.abs(trend.components.priceTrend) * 100, 100)}%`,
+                  backgroundColor: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
+                }]} />
+              </View>
+              <Text style={[styles.componentValue, {
+                color: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
+              }]}>
+                {(trend.components.priceTrend * 100).toFixed(0)}%
+              </Text>
+            </View>
+            <View style={styles.componentRow}>
+              <Text style={styles.componentLabel}>📺 YT 訂閱 (20%)</Text>
+              <View style={styles.componentBarBg}>
+                <View style={[styles.componentBarFill, {
+                  width: `${Math.min(Math.abs(trend.components.ytTrend) * 200, 100)}%`,
+                  backgroundColor: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
+                }]} />
+              </View>
+              <Text style={[styles.componentValue, {
+                color: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
+              }]}>
+                {(trend.components.ytTrend * 100).toFixed(0)}%
+              </Text>
+            </View>
+            <View style={styles.componentRow}>
+              <Text style={styles.componentLabel}>📰 新聞情緒 (20%)</Text>
+              <View style={styles.componentBarBg}>
+                <View style={[styles.componentBarFill, {
+                  width: `${Math.min(Math.abs(trend.components.newsSentiment) * 100, 100)}%`,
+                  backgroundColor: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
+                }]} />
+              </View>
+              <Text style={[styles.componentValue, {
+                color: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
+              }]}>
+                {(trend.components.newsSentiment * 100).toFixed(0)}%
+              </Text>
+            </View>
+            <Text style={styles.dataPointsNote}>
+              基於 {trend.dataPoints} 天的價格資料
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* ====== CARD BASIC INFO ====== */}
       <View style={styles.section}>
@@ -325,4 +406,14 @@ const styles = StyleSheet.create({
   // Links
   linkButton: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border + '88', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10, marginBottom: 8 },
   linkText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+
+  // Trend prediction section
+  componentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '44' },
+  componentTitle: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 8 },
+  componentRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  componentLabel: { fontSize: 12, color: COLORS.textSecondary, width: 130 },
+  componentBarBg: { flex: 1, height: 6, backgroundColor: COLORS.border, borderRadius: 3, marginHorizontal: 8, overflow: 'hidden' },
+  componentBarFill: { height: '100%', borderRadius: 3 },
+  componentValue: { fontSize: 12, fontWeight: '700', width: 45, textAlign: 'right' },
+  dataPointsNote: { fontSize: 11, color: COLORS.textSecondary + '88', marginTop: 6, textAlign: 'center' },
 });
