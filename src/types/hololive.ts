@@ -15,6 +15,7 @@ export interface HoloCard {
   releaseDate?: string;
   category: 'hololive' | 'holostars' | 'inukomis' | 'other';
   prices?: PriceInfo[];
+  priceHistory?: Record<string, number>;
   isFavorite?: boolean;
 }
 

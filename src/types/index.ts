@@ -11,6 +11,7 @@ export interface Card {
   cardNumber: string;
   imageUrl?: string;
   price?: TCGPriceInfo;
+  priceHistory?: Record<string, number>;
   description?: string;
   artist?: string;
   category: CardCategory;

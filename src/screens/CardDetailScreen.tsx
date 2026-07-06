@@ -6,6 +6,7 @@ import { openUrl } from '../utils/openUrl';
 import { useSettingsStore } from '../store/settingsStore';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
+import { PriceTrend } from '../components/PriceTrend';
 
 const { width } = Dimensions.get('window');
 
@@ -183,6 +184,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
         ) : (
           <Text style={styles.noPriceText}>暫無資料</Text>
         )}
+        <PriceTrend priceHistory={card.priceHistory || {}} />
         <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
           <Text style={styles.checkPriceBtnText}>🔍 查看遊々亭即時價格 →</Text>
         </TouchableOpacity>

@@ -39,6 +39,7 @@ export interface CardInfo {
   imageUrl: string;
   prices?: CardPrice[];       // Detailed price variants from database
   variants?: CardVariant[];   // Same cardNumber in different series
+  priceHistory?: Record<string, number>;
 }
 
 export interface RecognitionResult {
@@ -62,6 +63,7 @@ interface DatabaseRecord {
   localImage?: string;
   officialImage?: string;
   prices?: any[];
+  priceHistory?: Record<string, number>;
   [key: string]: any;
 }
 
@@ -121,6 +123,7 @@ export async function loadAllCards(): Promise<CardInfo[]> {
         color: entry.color || '',
         imageUrl: entry.officialImage || entry.localImage || '',
         prices: (entry as any).prices || [],
+        priceHistory: (entry as any).priceHistory || {},
       }));
 
       cachedDb = result;

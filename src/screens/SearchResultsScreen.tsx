@@ -60,6 +60,7 @@ interface CardRecord {
   color: string; localImage?: string; officialImage?: string;
   sellPrice?: number | null; yuyuName?: string; yuyuImage?: string;
   prices?: { name: string; sellPrice: number | null; rarity: string }[];
+  priceHistory?: Record<string, number>;
   effects?: string[]; hp?: string; life?: string; arts?: string;
   nameZh?: string;
 }
@@ -71,6 +72,7 @@ interface CardResult {
   yuyuUrl: string; carousellUrl: string; officialUrl: string;
   yuyuPrice?: number | null;
   prices?: { name: string; sellPrice: number | null; rarity: string }[];
+  priceHistory?: Record<string, number>;
   searchKeywords?: string[];
   nameZh?: string;
 }
@@ -220,6 +222,7 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
       yuyuPrice: c.sellPrice || null,
       yuyuPriceName: c.yuyuName || '',
       prices: c.prices || [],
+      priceHistory: c.priceHistory || {},
       yuyuImage: c.yuyuImage || '',
       officialImage: c.officialImage || '',
       localImage: c.localImage || '',
