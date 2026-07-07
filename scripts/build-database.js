@@ -935,6 +935,29 @@ async function buildDatabase() {
 
   console.log(`  [price-history] Saved ${totalSaved} new records for ${indexCardIds.length} cards`);
 
+  // Step 6: Merge priceHistory back into database cards
+  console.log('\n── Step 6: Merge priceHistory into database ──');
+  let mergedCount = 0;
+  for (const [cardId, card] of Object.entries(database.cards)) {
+    const histFile = path.join(historyDir, `${cardId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+    try {
+      const hist = JSON.parse(fs.readFileSync(histFile, 'utf-8'));
+      if (hist.records && hist.records.length > 0) {
+        const ph = {};
+        for (const r of hist.records) {
+          ph[r.date] = r.price;
+        }
+        card.priceHistory = ph;
+        mergedCount++;
+      }
+    } catch {
+      // no history file for this card, skip
+    }
+  }
+  // Re-write database.json with priceHistory included
+  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(database, null, 2));
+  console.log(`  [priceHistory] Merged into ${mergedCount} cards`);
+
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n═══════════════════════════════════════`);
   console.log(`  ✅ Build complete!`);
