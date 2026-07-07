@@ -2759,5 +2759,126 @@
     "series": "hBP08",
     "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY06-010_SY.png",
     "hp": ""
+  },
+  {
+    "cardNumber": "hBP08-107",
+    "name": "Otomo",
+    "cardType": "SupportFan",
+    "color": "colorless",
+    "rarity": "S",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-107_S.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hBP08-108",
+    "name": "いたずらなRuffians",
+    "cardType": "SupportFan",
+    "color": "colorless",
+    "rarity": "S",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-108_S.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hBP08-109",
+    "name": "ルイ友",
+    "cardType": "SupportFan",
+    "color": "colorless",
+    "rarity": "S",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-109_S.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hBP08-110",
+    "name": "Takodachi",
+    "cardType": "SupportFan",
+    "color": "colorless",
+    "rarity": "S",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-110_S.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hSD11-007",
+    "name": "水宮枢",
+    "cardType": "Holomen",
+    "color": "blue",
+    "rarity": "HR",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hSD11-007_HR.png",
+    "hp": "120"
+  },
+  {
+    "cardNumber": "hY01-013",
+    "name": "白エール",
+    "cardType": "Yell",
+    "color": "colorless",
+    "rarity": "SY",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY01-013_SY.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hY02-011",
+    "name": "緑エール",
+    "cardType": "Yell",
+    "color": "colorless",
+    "rarity": "SY",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY02-011_SY.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hY03-015",
+    "name": "赤エール",
+    "cardType": "Yell",
+    "color": "colorless",
+    "rarity": "SY",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY03-015_SY.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hY04-012",
+    "name": "青エール",
+    "cardType": "Yell",
+    "color": "colorless",
+    "rarity": "SY",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY04-012_SY.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hY05-010",
+    "name": "紫エール",
+    "cardType": "Yell",
+    "color": "colorless",
+    "rarity": "SY",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY05-010_SY.png",
+    "hp": ""
+  },
+  {
+    "cardNumber": "hY06-010",
+    "name": "黄エール",
+    "cardType": "Yell",
+    "color": "colorless",
+    "rarity": "SY",
+    "expansion": "hBP08",
+    "series": "hBP08",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY06-010_SY.png",
+    "hp": ""
   }
 ]
