@@ -55,8 +55,14 @@ cd scripts
 node trend-analysis.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Trend analysis failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
+# 2e. Scrape store buy-back (回収/買取) prices and merge into history (non-blocking)
+echo "[$(date)] Scraping buy prices (fullahead + torecolo)..." >> "$LOG_FILE"
+cd scripts
+node scrape-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price scrape failed (non-fatal)" >> "$LOG_FILE"
+cd ..
+
 # 3. Check if data changed
-if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/news-sentiment/' 'data/trends/' | grep -q .; then
+if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/news-sentiment/' 'data/trends/' 'data/buy-price-history.json' | grep -q .; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
   EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json"
@@ -65,6 +71,7 @@ if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data
   done
   # shellcheck disable=SC2086
   git add $EXISTING_DATA
+  git add data/buy-price-history.json 2>/dev/null || true
   git -c user.name="hunterCard Scraper" -c user.email="bot@huntercard.app" \
     commit -m "chore: update database $(date +%Y-%m-%d)" >> "$LOG_FILE" 2>&1
   git push origin main >> "$LOG_FILE" 2>&1
