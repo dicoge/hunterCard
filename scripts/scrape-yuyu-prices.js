@@ -93,6 +93,27 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function launchBrowser() {
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
+
+  const page = await browser.newPage();
+
+  page.on('console', msg => {
+    const text = msg.text();
+    console.log(`[browser] ${text}`);
+  });
+  page.on('pageerror', err => {
+    console.error(`[browser-error] ${err.message}`);
+  });
+
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+  return { browser, page };
+}
+
 async function scrapeYuyuPrices() {
   console.log('[yuyu-scraper] Starting price scrape...');
   const startTime = Date.now();
@@ -102,24 +123,7 @@ async function scrapeYuyuPrices() {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
-
-  const page = await browser.newPage();
-
-  // Forward browser console.log to Node.js stdout (CI-friendly)
-  page.on('console', msg => {
-    const text = msg.text();
-    // Tag browser-side logs so we can distinguish them
-    console.log(`[browser] ${text}`);
-  });
-  page.on('pageerror', err => {
-    console.error(`[browser-error] ${err.message}`);
-  });
-
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+  let { browser, page } = await launchBrowser();
 
   const allPrices = {};
   let totalCards = 0;
@@ -131,8 +135,10 @@ async function scrapeYuyuPrices() {
       console.log(`[yuyu-scraper] Scraping ${seriesInfo.name}: ${seriesInfo.url}`);
 
       const url = BASE_URL + seriesInfo.url;
-      
-      try {
+      const MAX_RETRIES = 2;
+
+      for (let retries = 0; retries <= MAX_RETRIES; retries++) {
+        try {
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
         await sleep(1500);
 
@@ -227,9 +233,21 @@ async function scrapeYuyuPrices() {
         // Rate limiting
         await sleep(2000 + Math.random() * 1000);
 
+        break;
       } catch (err) {
-        console.error(`  → Error: ${err.message}`);
+        const crashPatterns = ['Protocol error', 'Target closed', 'Session closed', 'Connection closed'];
+        const isCrash = crashPatterns.some(p => err.message.includes(p));
+
+        if (isCrash && retries < MAX_RETRIES) {
+          console.log(`[yuyu-scraper] Browser crashed, restarting... (retry ${retries + 1}/${MAX_RETRIES} for ${seriesInfo.name})`);
+          try { await browser.close(); } catch {}
+          ({ browser, page } = await launchBrowser());
+        } else {
+          console.error(`  → Error: ${err.message}`);
+          break;
+        }
       }
+    }
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -251,7 +269,7 @@ async function scrapeYuyuPrices() {
   } catch (error) {
     console.error('[yuyu-scraper] Fatal error:', error);
   } finally {
-    await browser.close();
+    try { await browser.close(); } catch {}
   }
 
   return { totalCards, seriesWithPrices, outputFile: savePath };
