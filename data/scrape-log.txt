@@ -1,4 +1,4 @@
-=== Scrape Log 2026-07-07T12:01:31.751Z ===
+=== Scrape Log 2026-07-08T12:02:06.349Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -106,7 +106,7 @@
   Total cards: 2105
   Cards with prices: 1062
   Images downloaded: 0
-  Duration: 276.4s
+  Duration: 272.9s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
@@ -115,5 +115,5 @@ Build result: {
   "yuyuCount": 1062,
   "officialCount": 2105,
   "imagesDownloaded": 0,
-  "duration": 276.4
+  "duration": 272.9
 }
