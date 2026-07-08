@@ -61,8 +61,17 @@ cd scripts
 node scrape-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price scrape failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
+# 2f. Scrape buy prices (torecolo + fullahead) into data/buy-prices/ and merge
+#     into database.json (buyPrice + buyPriceHistory). Non-blocking (DIC-155).
+echo "[$(date)] Scraping buy prices into database.json (torecolo + fullahead + merge)..." >> "$LOG_FILE"
+cd scripts
+node scrape-torecolo-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Torecolo buy scrape failed (non-fatal)" >> "$LOG_FILE"
+node scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fullahead buy scrape failed (non-fatal)" >> "$LOG_FILE"
+node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"
+cd ..
+
 # 3. Check if data changed
-if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/news-sentiment/' 'data/trends/' 'data/buy-price-history.json' | grep -q .; then
+if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/news-sentiment/' 'data/trends/' 'data/buy-price-history.json' 'data/buy-prices/' | grep -q .; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
   EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json"
@@ -72,6 +81,7 @@ if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data
   # shellcheck disable=SC2086
   git add $EXISTING_DATA
   git add data/buy-price-history.json 2>/dev/null || true
+  git add data/buy-prices/*.json 2>/dev/null || true
   git -c user.name="hunterCard Scraper" -c user.email="bot@huntercard.app" \
     commit -m "chore: update database $(date +%Y-%m-%d)" >> "$LOG_FILE" 2>&1
   git push origin main >> "$LOG_FILE" 2>&1
