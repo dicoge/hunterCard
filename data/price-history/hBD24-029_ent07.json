@@ -1,0 +1,65 @@
+{
+  "cardId": "hBD24-029_ent07",
+  "cardNumber": "hBD24-029",
+  "name": "さくらみこ",
+  "records": [
+    {
+      "date": "2026-06-16",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-029_ent07"
+    },
+    {
+      "date": "2026-06-17",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-029_ent07"
+    },
+    {
+      "date": "2026-06-18",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-029_ent07"
+    },
+    {
+      "date": "2026-06-19",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-029_ent07"
+    },
+    {
+      "date": "2026-06-20",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-029_ent07"
+    },
+    {
+      "date": "2026-06-21",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-029_ent07"
+    },
+    {
+      "date": "2026-06-22",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-029_ent07"
+    },
+    {
+      "date": "2026-06-23",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-029_ent07"
+    }
+  ],
+  "lastUpdated": "2026-07-08T13:52:33.555Z",
+  "nameZh": ""
+}

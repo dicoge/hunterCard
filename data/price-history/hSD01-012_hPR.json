@@ -4,6 +4,111 @@
   "name": "アイラニ・イオフィフティーン",
   "records": [
     {
+      "date": "2026-06-16",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-17",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-18",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-19",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-20",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-21",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-22",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-23",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-25",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-26",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-27",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-28",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-29",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-06-30",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
+      "date": "2026-07-01",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-012_hPR"
+    },
+    {
       "date": "2026-07-02",
       "price": 180,
       "source": "yuyu-tei",
@@ -53,6 +158,6 @@
       "cardId": "hSD01-012_hPR"
     }
   ],
-  "lastUpdated": "2026-07-08T12:06:39.189Z",
+  "lastUpdated": "2026-07-08T13:52:33.689Z",
   "nameZh": ""
 }

@@ -4,6 +4,69 @@
   "name": "アキ・ローゼンタール",
   "records": [
     {
+      "date": "2026-06-22",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
+      "date": "2026-06-23",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
+      "date": "2026-06-25",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
+      "date": "2026-06-26",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
+      "date": "2026-06-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
+      "date": "2026-06-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
+      "date": "2026-06-29",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
+      "date": "2026-06-30",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
+      "date": "2026-07-01",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-028_hBP08"
+    },
+    {
       "date": "2026-07-02",
       "price": 50,
       "source": "yuyu-tei",
@@ -53,6 +116,6 @@
       "cardId": "hBP08-028_hBP08"
     }
   ],
-  "lastUpdated": "2026-07-08T12:06:39.196Z",
+  "lastUpdated": "2026-07-08T13:52:32.740Z",
   "nameZh": ""
 }

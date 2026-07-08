@@ -1,0 +1,107 @@
+{
+  "cardId": "hY02-005_hBP04",
+  "cardNumber": "hY02-005",
+  "name": "緑エール",
+  "records": [
+    {
+      "date": "2026-06-16",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-17",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-18",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-19",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-20",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-21",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-22",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-23",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-25",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-27",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-28",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-29",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-06-30",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    },
+    {
+      "date": "2026-07-01",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-005_hBP04"
+    }
+  ],
+  "lastUpdated": "2026-07-08T13:52:33.638Z",
+  "nameZh": "綠色應援"
+}

@@ -4,6 +4,111 @@
   "name": "白上フブキ",
   "records": [
     {
+      "date": "2026-06-16",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-17",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-18",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-19",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-20",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-21",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-22",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-23",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-25",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-26",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-29",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-06-30",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
+      "date": "2026-07-01",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-009_hBP02"
+    },
+    {
       "date": "2026-07-02",
       "price": 50,
       "source": "yuyu-tei",
@@ -53,6 +158,6 @@
       "cardId": "hBP02-009_hBP02"
     }
   ],
-  "lastUpdated": "2026-07-08T12:06:39.115Z",
+  "lastUpdated": "2026-07-08T13:52:33.651Z",
   "nameZh": ""
 }

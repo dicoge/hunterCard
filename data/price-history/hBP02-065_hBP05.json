@@ -4,6 +4,111 @@
   "name": "ネリッサ・レイヴンクロフト",
   "records": [
     {
+      "date": "2026-06-16",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-17",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-19",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-20",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-21",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-22",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-23",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-25",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-26",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-27",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-29",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-06-30",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
+      "date": "2026-07-01",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-065_hBP05"
+    },
+    {
       "date": "2026-07-02",
       "price": 80,
       "source": "yuyu-tei",
@@ -53,6 +158,6 @@
       "cardId": "hBP02-065_hBP05"
     }
   ],
-  "lastUpdated": "2026-07-08T12:06:39.066Z",
+  "lastUpdated": "2026-07-08T13:52:33.623Z",
   "nameZh": ""
 }
