@@ -1,19 +1,12 @@
 {
-  "lastUpdated": "2026-07-03T12:08:20.657Z",
-  "totalCards": 2006,
+  "lastUpdated": "2026-07-09T04:04:45.612Z",
+  "totalCards": 2015,
   "summary": {
-    "up": 1,
-    "down": 1,
-    "stable": 2004
+    "up": 0,
+    "down": 0,
+    "stable": 2015
   },
   "topGainers": [
-    {
-      "cardId": "hSD10-009",
-      "name": "綺々羅々ヴィヴィ",
-      "nameZh": "",
-      "score": 0.36,
-      "trend": "up"
-    },
     {
       "cardId": "hBD24-001",
       "name": "パヴォリア・レイネ",
@@ -85,9 +78,23 @@
       "trend": "stable"
     },
     {
+      "cardId": "hBD24-016",
+      "name": "沙花叉クロヱ",
+      "nameZh": "",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
       "cardId": "hBD24-018",
       "name": "アユンダ・リス",
       "nameZh": "",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-020",
+      "name": "フワワ・アビスガード",
+      "nameZh": "雙葉·深淵護衛",
       "score": 0.03,
       "trend": "stable"
     },
@@ -139,51 +146,9 @@
       "nameZh": "",
       "score": 0.03,
       "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-026",
-      "name": "猫又おかゆ",
-      "nameZh": "",
-      "score": 0.03,
-      "trend": "stable"
     }
   ],
   "topLosers": [
-    {
-      "cardId": "hBP08-059",
-      "name": "フワワ・アビスガード",
-      "nameZh": "",
-      "score": -0.16,
-      "trend": "down"
-    },
-    {
-      "cardId": "hBP03-030",
-      "name": "さくらみこ",
-      "nameZh": "",
-      "score": -0.1,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBP03-030",
-      "name": "さくらみこ",
-      "nameZh": "",
-      "score": -0.1,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBP03-030",
-      "name": "さくらみこ",
-      "nameZh": "",
-      "score": -0.1,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBP03-030",
-      "name": "さくらみこ",
-      "nameZh": "",
-      "score": -0.1,
-      "trend": "stable"
-    },
     {
       "cardId": "hBD24-001",
       "name": "パヴォリア・レイネ",
@@ -255,9 +220,23 @@
       "trend": "stable"
     },
     {
+      "cardId": "hBD24-016",
+      "name": "沙花叉クロヱ",
+      "nameZh": "",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
       "cardId": "hBD24-018",
       "name": "アユンダ・リス",
       "nameZh": "",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-020",
+      "name": "フワワ・アビスガード",
+      "nameZh": "雙葉·深淵護衛",
       "score": 0.03,
       "trend": "stable"
     },
@@ -285,6 +264,27 @@
     {
       "cardId": "hBD24-023",
       "name": "癒月ちょこ",
+      "nameZh": "",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-024",
+      "name": "ムーナ・ホシノヴァ",
+      "nameZh": "",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-025",
+      "name": "アキ・ローゼンタール",
+      "nameZh": "",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-026",
+      "name": "猫又おかゆ",
       "nameZh": "",
       "score": 0.03,
       "trend": "stable"

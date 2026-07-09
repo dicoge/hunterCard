@@ -2,14 +2,14 @@
   "cardId": "hBP08-059",
   "name": "フワワ・アビスガード",
   "nameZh": "",
-  "trend": "down",
-  "score": -0.16,
-  "confidence": 0.3,
+  "trend": "stable",
+  "score": 0.03,
+  "confidence": 0.6,
   "components": {
-    "priceTrend": -0.31,
+    "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.16
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-07-03T12:08:20.572Z",
-  "dataPoints": 2
+  "lastUpdated": "2026-07-09T04:04:45.473Z",
+  "dataPoints": 17
 }
