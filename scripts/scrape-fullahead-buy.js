@@ -32,8 +32,21 @@ const USER_AGENT =
 const CRASH_PATTERNS = ['Protocol error', 'Target closed', 'Session closed', 'Connection closed'];
 const MAX_RETRIES = 2;
 
+// 新一輪爬取至少要保留舊檔卡數的這個比例，否則視為可疑縮水，保留舊檔不覆蓋。
+const SHRINK_THRESHOLD = 0.5;
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 舊輸出檔的卡數，檔案不存在或讀不到時回傳 0。輸出是 { 卡號: {...} } 物件。
+function readPreviousCount(file) {
+  try {
+    const prev = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return prev && typeof prev === 'object' ? Object.keys(prev).length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function loadCardNumbers() {
@@ -141,13 +154,9 @@ async function main() {
   const cardNumbers = loadCardNumbers();
   console.log(`[fullahead-buy] database 卡號: ${cardNumbers.size}`);
 
-  let records = [];
-  try {
-    records = await scrapeWithRestart();
-  } catch (err) {
-    console.error(`[fullahead-buy] scrape 失敗（優雅處理，不中斷流程）: ${err.message}`);
-    records = [];
-  }
+  // scrape 失敗必須中斷整個 run，絕不寫出空檔或 partial 資料，
+  // 避免臨時錯誤（API/token/page 失敗）用 {} 空檔污染 merge。
+  const records = await scrapeWithRestart();
 
   const best = new Map(); // 正規化卡號 -> 最高買取價
   for (const rec of records) {
@@ -158,6 +167,24 @@ async function main() {
     const key = cardNumber.toUpperCase();
     if (!cardNumbers.has(key)) continue; // database 沒有這張卡就跳過
     if (!best.has(key) || price > best.get(key)) best.set(key, price);
+  }
+
+  // 只有 scrape 成功才會走到這（失敗會在上面 throw 中斷），所以 best 是一次完整爬取的結果。
+  if (best.size === 0) {
+    throw new Error(
+      '[fullahead-buy] Refusing to write: crawl produced 0 prices ' +
+        '(likely API/token/page failure or structure change); keeping previous data.'
+    );
+  }
+
+  // 防止用大幅縮水的結果悄悄覆蓋好資料：若舊檔卡數明顯較多，視為可疑縮水，保留舊檔不覆蓋。
+  const prevCount = readPreviousCount(OUTPUT_FILE);
+  if (prevCount > 0 && best.size < prevCount * SHRINK_THRESHOLD) {
+    throw new Error(
+      `[fullahead-buy] Refusing to write: new crawl has ${best.size} prices but ` +
+        `previous file had ${prevCount} (< ${Math.round(SHRINK_THRESHOLD * 100)}% ` +
+        'of prior); keeping previous data. Re-run to confirm if this drop is real.'
+    );
   }
 
   const timestamp = new Date().toISOString();
@@ -183,8 +210,9 @@ if (isMain) {
   main()
     .then(() => process.exit(0))
     .catch((err) => {
+      // 失敗必須以非 0 退出，讓 cron 明確報錯，而不是假裝成功。
       console.error('[fullahead-buy] fatal:', err);
-      process.exit(0);
+      process.exit(1);
     });
 }
 
