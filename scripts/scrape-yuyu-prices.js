@@ -93,6 +93,25 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Detect whether an error represents a browser/page crash (vs. a normal
+ * per-series scrape error). Crashes require a full browser restart, otherwise
+ * the next series keeps using a dead page and silently gets scraped as 0 cards.
+ */
+function isBrowserCrash(err) {
+  if (!err) return false;
+  const name = err.name || '';
+  const message = err.message || '';
+
+  // Puppeteer surfaces these on err.name for transport-level failures
+  if (name === 'TargetCloseError' || name === 'ConnectionClosedError') return true;
+
+  const crashPatterns = ['Protocol error', 'Target closed', 'Session closed', 'Connection closed'];
+  if (crashPatterns.some(p => message.includes(p))) return true;
+
+  return /Page crashed|frame was detached|browser.*closed|target.*closed/i.test(message);
+}
+
 async function launchBrowser() {
   const browser = await puppeteer.launch({
     headless: 'new',
@@ -107,6 +126,12 @@ async function launchBrowser() {
   });
   page.on('pageerror', err => {
     console.error(`[browser-error] ${err.message}`);
+  });
+  // 'error' fires on a page-level crash ("Page crashed!"); mark the page so the
+  // scrape loop restarts the browser even if the in-flight op doesn't reject.
+  page.on('error', err => {
+    console.error(`[browser-crash] Page crashed: ${err.message}`);
+    page.__crashed = true;
   });
 
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -235,13 +260,20 @@ async function scrapeYuyuPrices() {
 
         break;
       } catch (err) {
-        const crashPatterns = ['Protocol error', 'Target closed', 'Session closed', 'Connection closed'];
-        const isCrash = crashPatterns.some(p => err.message.includes(p));
+        const isCrash = isBrowserCrash(err) || page.__crashed === true;
 
         if (isCrash && retries < MAX_RETRIES) {
           console.log(`[yuyu-scraper] Browser crashed, restarting... (retry ${retries + 1}/${MAX_RETRIES} for ${seriesInfo.name})`);
           try { await browser.close(); } catch {}
           ({ browser, page } = await launchBrowser());
+        } else if (isCrash) {
+          // Retries exhausted on a crash: give up on this series, but still
+          // restart the browser so the next series gets a live page instead of
+          // silently scraping 0 cards from a dead one.
+          console.error(`  → Error (crash, retries exhausted): ${err.message} — restarting browser before next series`);
+          try { await browser.close(); } catch {}
+          ({ browser, page } = await launchBrowser());
+          break;
         } else {
           console.error(`  → Error: ${err.message}`);
           break;
