@@ -864,6 +864,19 @@ async function buildDatabase() {
   // Add Chinese names to cards
   await addZhNames(OUTPUT_PATH);
 
+  // addZhNames only writes nameZh to the file, not the in-memory `database`
+  // object. Sync it back so Step 5 (history) and Step 6 (re-write) preserve nameZh.
+  try {
+    const withZh = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
+    for (const [cardId, card] of Object.entries(database.cards)) {
+      if (withZh.cards?.[cardId]?.nameZh !== undefined) {
+        card.nameZh = withZh.cards[cardId].nameZh;
+      }
+    }
+  } catch (err) {
+    console.warn(`  [nameZh] Failed to sync nameZh from file: ${err.message}`);
+  }
+
   // Step 5: Save daily price history
   console.log('\n── Step 5: Save price history ──');
   const today = new Date().toISOString().split('T')[0];
@@ -923,17 +936,30 @@ async function buildDatabase() {
     fs.writeFileSync(filePath, JSON.stringify(existing, null, 2));
   }
 
-  // Build/update index
-  const indexCardIds = Object.keys(groupedRecords);
+  // Build/update index by scanning ALL history files, not just this run's cards,
+  // so totalCards/totalRecords reflect the full accumulated history. cardIds use
+  // the sanitized filename to match src/services/priceHistory.ts (rebuildIndex).
+  const indexCardIds = [];
+  let indexTotalRecords = 0;
+  for (const file of fs.readdirSync(historyDir)) {
+    if (!file.endsWith('.json') || file === 'index.json') continue;
+    indexCardIds.push(file.replace('.json', ''));
+    try {
+      const hist = JSON.parse(fs.readFileSync(path.join(historyDir, file), 'utf-8'));
+      indexTotalRecords += hist.records?.length || 0;
+    } catch {
+      // skip corrupted file
+    }
+  }
   const index = {
     lastUpdated: new Date().toISOString(),
     totalCards: indexCardIds.length,
-    totalRecords: priceRecords.length,
+    totalRecords: indexTotalRecords,
     cardIds: indexCardIds,
   };
   fs.writeFileSync(path.join(historyDir, 'index.json'), JSON.stringify(index, null, 2));
 
-  console.log(`  [price-history] Saved ${totalSaved} new records for ${indexCardIds.length} cards`);
+  console.log(`  [price-history] Saved ${totalSaved} new records; index totals: ${indexCardIds.length} cards / ${indexTotalRecords} records`);
 
   // Step 6: Merge priceHistory back into database cards
   console.log('\n── Step 6: Merge priceHistory into database ──');
