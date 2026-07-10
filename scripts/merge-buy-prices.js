@@ -22,6 +22,11 @@ const DB_PATH = path.join(__dirname, '../data/database.json');
 const BUY_DIR = path.join(__dirname, '../data/buy-prices');
 const SOURCE_FILES = ['torecolo-prices.json', 'fullahead-prices.json'];
 
+// 來源檔的 timestamp 超過這個時數就視為過期。daily cron 下新鮮檔案只有幾分鐘舊，
+// 昨天殘留的檔案約 24h 舊；若當次爬蟲沒產出、舊檔還留在磁碟上，這道檢查會擋下把
+// 昨天資料當今天寫進 buyPrice/buyPriceHistory（DIC-187）。
+const MAX_SOURCE_AGE_HOURS = 18;
+
 function localDateStr(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -30,16 +35,30 @@ function localDateStr(d = new Date()) {
 }
 
 // 讀一個來源檔，回傳 { 正規化卡號 -> buyPrice }。檔案不存在或壞掉就當空的。
-function loadSource(file) {
+// 每筆 entry 帶 timestamp（來源爬蟲寫入當次的 ISO 時間）；缺失或超過
+// MAX_SOURCE_AGE_HOURS 的 entry 一律跳過，避免 merge 到過期的殘留資料。
+function loadSource(file, now = Date.now()) {
   const p = path.join(BUY_DIR, file);
   try {
     const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
     const map = new Map();
+    let stale = 0;
     for (const [cardNumber, entry] of Object.entries(raw || {})) {
       const price = entry && Number(entry.buyPrice);
-      if (Number.isFinite(price) && price > 0) map.set(cardNumber.toUpperCase(), price);
+      if (!Number.isFinite(price) || price <= 0) continue;
+      const t = Date.parse(entry && entry.timestamp);
+      if (!Number.isFinite(t) || now - t > MAX_SOURCE_AGE_HOURS * 3600 * 1000) {
+        stale += 1;
+        continue;
+      }
+      map.set(cardNumber.toUpperCase(), price);
     }
-    console.log(`[merge-buy] ${file}: ${map.size} 張卡`);
+    if (stale > 0) {
+      console.warn(
+        `[merge-buy] ${file}: 略過 ${stale} 筆過期／無時間戳資料（timestamp 缺失或超過 ${MAX_SOURCE_AGE_HOURS}h）`
+      );
+    }
+    console.log(`[merge-buy] ${file}: ${map.size} 張卡（新鮮）`);
     return map;
   } catch (err) {
     if (err.code !== 'ENOENT') {
@@ -55,9 +74,10 @@ function main() {
   console.log('[merge-buy] Starting...');
 
   // 各來源合併：每個卡號取最高買取價
+  const now = Date.now();
   const bestByNumber = new Map();
   for (const file of SOURCE_FILES) {
-    const src = loadSource(file);
+    const src = loadSource(file, now);
     for (const [key, price] of src.entries()) {
       if (!bestByNumber.has(key) || price > bestByNumber.get(key)) {
         bestByNumber.set(key, price);

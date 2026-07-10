@@ -55,11 +55,11 @@ cd scripts
 node trend-analysis.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Trend analysis failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
-# 2e. Scrape store buy-back (回収/買取) prices and merge into history (non-blocking)
-echo "[$(date)] Scraping buy prices (fullahead + torecolo)..." >> "$LOG_FILE"
-cd scripts
-node scrape-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price scrape failed (non-fatal)" >> "$LOG_FILE"
-cd ..
+# 2e. (removed, DIC-187) scrape-buy-prices.js used to scrape fullahead + torecolo
+#     into data/buy-price-history.json. It scraped the SAME two sites as step 2f
+#     in the same cron pass — double traffic and a risk of inconsistent results
+#     if one pass succeeded and the other failed. Its output was consumed by
+#     nothing, so the duplicate scrape was dropped and 2f is the single source.
 
 # 2f. Scrape buy prices (torecolo + fullahead) into data/buy-prices/ and merge
 #     into database.json (buyPrice + buyPriceHistory). Non-blocking (DIC-155).
@@ -71,7 +71,7 @@ node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price
 cd ..
 
 # 3. Check if data changed
-if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/news-sentiment/' 'data/trends/' 'data/buy-price-history.json' 'data/buy-prices/' | grep -q .; then
+if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' | grep -q .; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
   EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json"
@@ -80,7 +80,6 @@ if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data
   done
   # shellcheck disable=SC2086
   git add $EXISTING_DATA
-  git add data/buy-price-history.json 2>/dev/null || true
   git add data/buy-prices/*.json 2>/dev/null || true
   git -c user.name="hunterCard Scraper" -c user.email="bot@huntercard.app" \
     commit -m "chore: update database $(date +%Y-%m-%d)" >> "$LOG_FILE" 2>&1
