@@ -701,6 +701,34 @@ async function buildDatabase() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
+  // Capture the previous build's buyPrice / buyPriceHistory before we overwrite
+  // database.json. Unlike priceHistory (persisted to per-card files in
+  // data/price-history/), buy prices live ONLY inside database.json. A fresh
+  // rebuild wipes them, and merge-buy-prices.js (run afterward) only re-adds
+  // TODAY's value — so without this preservation buyPriceHistory could never
+  // accumulate past one day, and any day merge-buy-prices fails to run would
+  // drop buyPrice from the committed database entirely (DIC-236).
+  const prevBuyByCardId = new Map();
+  try {
+    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
+    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
+      const saved = {};
+      if (Number.isFinite(card.buyPrice) && card.buyPrice > 0) saved.buyPrice = card.buyPrice;
+      if (card.buyPriceHistory && typeof card.buyPriceHistory === 'object' &&
+          Object.keys(card.buyPriceHistory).length > 0) {
+        saved.buyPriceHistory = card.buyPriceHistory;
+      }
+      if (Object.keys(saved).length > 0) prevBuyByCardId.set(cardId, saved);
+    }
+    if (prevBuyByCardId.size > 0) {
+      console.log(`  [buyPrice] Preserving buy prices for ${prevBuyByCardId.size} cards from previous build`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.warn(`  [buyPrice] Could not read previous database for buyPrice preservation: ${err.message}`);
+    }
+  }
+
   // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch)
   console.log('── Step 1: Scrape yuyu-tei ──');
   const yuyuResult = await scrapeYuyuPrices();
@@ -980,9 +1008,23 @@ async function buildDatabase() {
       // no history file for this card, skip
     }
   }
-  // Re-write database.json with priceHistory included
-  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(database, null, 2));
   console.log(`  [priceHistory] Merged into ${mergedCount} cards`);
+
+  // Step 6b: Restore preserved buyPrice / buyPriceHistory onto the rebuilt cards
+  // so they survive the from-scratch rebuild. merge-buy-prices.js runs after this
+  // in the pipeline and layers today's fresh buy prices on top (DIC-236).
+  let buyRestored = 0;
+  for (const [cardId, saved] of prevBuyByCardId.entries()) {
+    const card = database.cards[cardId];
+    if (!card) continue; // card no longer exists in the rebuilt database
+    if (saved.buyPrice != null) card.buyPrice = saved.buyPrice;
+    if (saved.buyPriceHistory != null) card.buyPriceHistory = saved.buyPriceHistory;
+    buyRestored++;
+  }
+  console.log(`  [buyPrice] Restored buy prices onto ${buyRestored} cards`);
+
+  // Re-write database.json with priceHistory + preserved buyPrice included
+  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(database, null, 2));
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n═══════════════════════════════════════`);
