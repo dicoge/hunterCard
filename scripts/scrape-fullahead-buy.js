@@ -16,6 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer';
+import { extractCardNumber } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +29,6 @@ const FULLAHEAD_URL = 'https://fullahead-buy.com/?shopbrand=hocg';
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const CARD_NUMBER_RE = /h[A-Za-z]{1,4}\d{2,3}-\d{2,3}/i;
 const CRASH_PATTERNS = ['Protocol error', 'Target closed', 'Session closed', 'Connection closed'];
 const MAX_RETRIES = 2;
 
@@ -153,9 +153,9 @@ async function main() {
   for (const rec of records) {
     const price = parseInt(String(rec.price || '').replace(/,/g, ''), 10);
     if (!Number.isFinite(price) || price <= 0) continue;
-    const numMatch = String(rec.productName || '').match(CARD_NUMBER_RE);
-    if (!numMatch) continue;
-    const key = numMatch[0].toUpperCase();
+    const cardNumber = extractCardNumber(rec.productName);
+    if (!cardNumber) continue;
+    const key = cardNumber.toUpperCase();
     if (!cardNumbers.has(key)) continue; // database 沒有這張卡就跳過
     if (!best.has(key) || price > best.get(key)) best.set(key, price);
   }
