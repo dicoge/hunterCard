@@ -11,7 +11,7 @@
  * a stricter copy that required digits before the dash silently dropped every
  * hPR-* promo card (DIC-199).
  */
-export const CARD_NUMBER_RE = /h[A-Za-z]{1,4}\d{0,3}-\d{2,3}/i;
+export const CARD_NUMBER_RE = /h[A-Za-z]{1,4}\d{0,3}-\d{2,3}(?!\d)/i;
 
 // First card number found in `str`, or null if none. Value is returned as-is
 // (original casing); callers uppercase when matching against database keys.
