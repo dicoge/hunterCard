@@ -21,6 +21,7 @@ import puppeteer from 'puppeteer';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { CARD_NUMBER_RE, extractCardNumber } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,8 +36,6 @@ const USER_AGENT =
 const FULLAHEAD_URL = 'https://fullahead-buy.com/?shopbrand=hocg';
 // torecolo hololive buy-price list (SEC 買取表). Extra URLs can be appended here.
 const TORECOLO_URLS = ['https://www.torecolo.jp/shop/e/eHLpSEC/'];
-
-const CARD_NUMBER_RE = /h[A-Za-z]{1,4}\d{2,3}-\d{2,3}/i;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,8 +60,7 @@ function normName(s) {
 // Extract card number + a cleaned display name from a fullahead PRODUCT_NAME
 // e.g. "【UR】hBP01-091 ムーナ・ホシノヴァ" -> { cardNumber: 'hBP01-091', name: 'ムーナ・ホシノヴァ' }
 function parseProductName(raw) {
-  const numMatch = (raw || '').match(CARD_NUMBER_RE);
-  const cardNumber = numMatch ? numMatch[0] : null;
+  const cardNumber = extractCardNumber(raw);
   let name = (raw || '')
     .replace(/【[^】]*】/g, ' ') // rarity / promo tags
     .replace(CARD_NUMBER_RE, ' ') // the card number itself
@@ -96,34 +94,27 @@ function buildIndexes() {
 }
 
 /**
- * Resolve a scraped record to a single database cardId.
- * 1) exact card-number match (case-insensitive); disambiguate multi-series
- *    numbers by preferring the cardId whose series matches the set prefix.
- * 2) fuzzy card-name match (normalised equality).
- * 3) otherwise null (caller logs + skips).
+ * Resolve a scraped record to database cardId(s).
+ * A single scraped card number can map to multiple catalog variants that share
+ * the same cardNumber (e.g. hBD24-008_ent07 and hBD24-008_hPR). Those variants
+ * are the same physical card printed in different products, so the buy price
+ * applies to all of them — we fan out and record it against EVERY match rather
+ * than silently keeping only the first candidate.
+ * 1) exact card-number match (case-insensitive) -> all candidates.
+ * 2) fuzzy card-name match (normalised equality), only when unambiguous.
+ * 3) otherwise [] (caller logs + skips).
  */
-function matchCardId({ cardNumber, name }, { byNumber, byName }) {
+function matchCardIds({ cardNumber, name }, { byNumber, byName }) {
   if (cardNumber) {
     const candidates = byNumber.get(cardNumber.toUpperCase());
-    if (candidates && candidates.length === 1) return candidates[0];
-    if (candidates && candidates.length > 1) {
-      const setPrefix = cardNumber.split('-')[0].toUpperCase();
-      const preferred = candidates.find(
-        (id) => id.split('_').pop().toUpperCase() === setPrefix
-      );
-      if (preferred) return preferred;
-      console.warn(
-        `  [ambiguous] ${cardNumber} -> ${candidates.join(', ')} (using ${candidates[0]})`
-      );
-      return candidates[0];
-    }
+    if (candidates && candidates.length) return candidates.slice();
   }
   const nk = normName(name);
   if (nk && byName.has(nk)) {
     const candidates = byName.get(nk);
-    if (candidates.length === 1) return candidates[0];
+    if (candidates.length === 1) return candidates.slice();
   }
-  return null;
+  return [];
 }
 
 /**
@@ -167,7 +158,14 @@ async function scrapeFullahead(browser) {
       for (let pageNo = 0; pageNo < 100; pageNo++) {
         const url = `${base}?app=38&query=${encodeURIComponent(query)}&apiToken=${token}&lastRecId=${lastRecId}&${fp}`;
         const resp = await fetch(url);
-        if (!resp.ok) break;
+        // A mid-pagination HTTP failure means we only have part of the list.
+        // Throw so the caller treats the whole source as failed instead of
+        // committing a truncated snapshot.
+        if (!resp.ok) {
+          throw new Error(
+            `fullahead API page ${pageNo} failed: HTTP ${resp.status}`
+          );
+        }
         const j = await resp.json();
         const recs = (j.json && j.json.records) || [];
         if (!recs.length) break;
@@ -218,8 +216,12 @@ async function scrapeTorecolo(browser) {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await sleep(1200);
       } catch (err) {
-        console.warn(`  [torecolo] load error: ${err.message}`);
-        break;
+        // A page-load failure mid-pagination leaves the buy-price list
+        // incomplete. Fail the whole source rather than committing partial
+        // data (the caller catches this and marks torecolo as failed).
+        throw new Error(
+          `torecolo page ${pageNo} load failed: ${err.message}`
+        );
       }
 
       const items = await page.evaluate(() => {
@@ -256,9 +258,7 @@ async function scrapeTorecolo(browser) {
         const price = parseInt(priceMatch[1].replace(/,/g, ''), 10);
         if (!Number.isFinite(price) || price <= 0) continue;
         // card number lives in the product URL (e.g. gHL-HBP08-003SEC-S)
-        let cardNumber = null;
-        const fromHref = it.href.match(CARD_NUMBER_RE);
-        if (fromHref) cardNumber = fromHref[0];
+        const cardNumber = extractCardNumber(it.href);
         results.push({
           source: 'torecolo',
           name: it.name,
@@ -291,8 +291,8 @@ function reconcile(records, indexes) {
 
   for (const rec of records) {
     stats.bySource[rec.source] = (stats.bySource[rec.source] || 0) + 1;
-    const cardId = matchCardId(rec, indexes);
-    if (!cardId) {
+    const cardIds = matchCardIds(rec, indexes);
+    if (!cardIds.length) {
       stats.unmatched++;
       console.warn(
         `  [no-match] ${rec.source}: ${rec.cardNumber || '(no number)'} "${rec.name}" @${rec.buyPrice}`
@@ -300,11 +300,13 @@ function reconcile(records, indexes) {
       continue;
     }
     stats.matched++;
-    if (!pricesByCard.has(cardId)) pricesByCard.set(cardId, {});
-    const entry = pricesByCard.get(cardId);
-    // Keep the strongest (highest) buy offer per source for this card.
-    if (entry[rec.source] == null || rec.buyPrice > entry[rec.source]) {
-      entry[rec.source] = rec.buyPrice;
+    for (const cardId of cardIds) {
+      if (!pricesByCard.has(cardId)) pricesByCard.set(cardId, {});
+      const entry = pricesByCard.get(cardId);
+      // Keep the strongest (highest) buy offer per source for this card.
+      if (entry[rec.source] == null || rec.buyPrice > entry[rec.source]) {
+        entry[rec.source] = rec.buyPrice;
+      }
     }
   }
   return { pricesByCard, stats };
@@ -366,9 +368,20 @@ async function main() {
   for (const [cardId, sources] of pricesByCard.entries()) {
     const vals = Object.values(sources).filter((v) => Number.isFinite(v));
     if (!vals.length) continue;
-    const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
     if (!history[cardId]) history[cardId] = {};
-    history[cardId][date] = { ...sources, avg };
+    // Merge into any data already recorded for this cardId+date so a second
+    // run in the same day (e.g. after one source failed) augments rather than
+    // clobbers the earlier successful sources. Newly scraped sources win.
+    const existing = history[cardId][date] || {};
+    const merged = { ...existing, ...sources };
+    const priceVals = Object.entries(merged)
+      .filter(([k]) => k !== 'avg')
+      .map(([, v]) => v)
+      .filter((v) => Number.isFinite(v));
+    merged.avg = Math.round(
+      priceVals.reduce((a, b) => a + b, 0) / priceVals.length
+    );
+    history[cardId][date] = merged;
     cardsWritten++;
   }
 

@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as cheerio from 'cheerio';
+import { extractCardNumber } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,10 +33,21 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-const CARD_NUMBER_RE = /h[A-Za-z]{1,4}\d{2,3}-\d{2,3}/i;
+// 新一輪爬取至少要保留舊檔卡數的這個比例，否則視為可疑縮水，保留舊檔不覆蓋。
+const SHRINK_THRESHOLD = 0.5;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 舊輸出檔的卡數，檔案不存在或讀不到時回傳 0。輸出是 { 卡號: {...} } 物件。
+function readPreviousCount(file) {
+  try {
+    const prev = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return prev && typeof prev === 'object' ? Object.keys(prev).length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 // 讀 database.json，回傳「正規化卡號 -> 原始卡號」的對照，用來過濾與統一大小寫。
@@ -76,9 +88,8 @@ function parsePage(html) {
       $el.find('a[href*="/shop/g/"]').first().attr('href') ||
       $el.find('a[href*="goods="]').first().attr('href') ||
       '';
-    const numMatch = href.match(CARD_NUMBER_RE);
-    if (!numMatch) return;
-    const cardNumber = numMatch[0];
+    const cardNumber = extractCardNumber(href);
+    if (!cardNumber) return;
     const buyPrice = parsePrice($el.find('.block-thumbnail-t--price').first().text());
     if (buyPrice == null) return;
     rows.push({ cardNumber, buyPrice });
@@ -123,13 +134,9 @@ async function scrape() {
       pageNo += 1;
       console.log(`[torecolo-buy] Page ${pageNo}: ${url}`);
 
-      let html;
-      try {
-        html = await fetchHtml(url);
-      } catch (err) {
-        console.error(`[torecolo-buy] fetch 失敗，跳過本頁: ${err.message}`);
-        break;
-      }
+      // fetch 失敗必須中斷整個 run：已收集的資料留在記憶體但絕不寫出，
+      // 避免臨時錯誤用 partial 資料覆蓋上一份好的 torecolo-prices.json。
+      const html = await fetchHtml(url);
 
       const rows = parsePage(html);
       let matched = 0;
@@ -149,6 +156,26 @@ async function scrape() {
         await sleep(2000); // 2s delay 避免被封
       }
     }
+  }
+
+  // 只有每頁都成功抓完才會走到這（fetch 失敗會在上面 throw 中斷），
+  // 所以 best 是一次完整爬取的結果。
+  if (best.size === 0) {
+    throw new Error(
+      '[torecolo-buy] Refusing to write: crawl produced 0 prices ' +
+        '(likely a page-structure change or block); keeping previous data.'
+    );
+  }
+
+  // 防止用大幅縮水的結果悄悄覆蓋好資料：若舊檔卡數明顯較多，視為可疑縮水，
+  // 保留舊檔不覆蓋。
+  const prevCount = readPreviousCount(OUTPUT_FILE);
+  if (prevCount > 0 && best.size < prevCount * SHRINK_THRESHOLD) {
+    throw new Error(
+      `[torecolo-buy] Refusing to write: new crawl has ${best.size} prices but ` +
+        `previous file had ${prevCount} (< ${Math.round(SHRINK_THRESHOLD * 100)}% ` +
+        'of prior); keeping previous data. Re-run to confirm if this drop is real.'
+    );
   }
 
   // 組成輸出物件（key 用 database 的原始卡號大小寫）
@@ -175,9 +202,9 @@ if (isMain) {
   scrape()
     .then(() => process.exit(0))
     .catch((err) => {
-      // 不讓整個流程中斷：記錄錯誤後仍以 0 退出
+      // 失敗必須以非 0 退出，讓 cron 明確報錯，而不是假裝成功。
       console.error('[torecolo-buy] fatal:', err);
-      process.exit(0);
+      process.exit(1);
     });
 }
 

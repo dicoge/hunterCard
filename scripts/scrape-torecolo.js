@@ -34,8 +34,22 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+// A new crawl must keep at least this fraction of the previous file's row count,
+// otherwise it's treated as a suspicious shrink and the old file is preserved.
+const SHRINK_THRESHOLD = 0.5;
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Row count of the existing output file, or 0 if it's missing/unreadable.
+function readPreviousCount(file) {
+  try {
+    const prev = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return Array.isArray(prev) ? prev.length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 async function fetchHtml(url) {
@@ -174,13 +188,10 @@ async function scrape() {
     pageNo += 1;
     console.log(`[torecolo] Page ${pageNo}: ${url}`);
 
-    let html;
-    try {
-      html = await fetchHtml(url);
-    } catch (err) {
-      console.error(`[torecolo] Fetch failed: ${err.message}`);
-      break;
-    }
+    // A fetch failure must abort the whole run: bail out with the pages we have
+    // already collected still in memory but NEVER written, so a transient error
+    // can't overwrite the last good raw-buy-torecolo.json with partial data.
+    const html = await fetchHtml(url);
 
     const items = parseGoodsFromHtml(html);
     console.log(`  → parsed ${items.length} listings`);
@@ -199,6 +210,27 @@ async function scrape() {
       url = next;
       await sleep(1500 + Math.random() * 1000);
     }
+  }
+
+  // Only reached when every page fetched successfully (a fetch failure throws
+  // above and aborts before we get here), so `all` is a complete crawl.
+  if (all.length === 0) {
+    throw new Error(
+      '[torecolo] Refusing to write: crawl produced 0 listings ' +
+        '(likely a page-structure change or block); keeping previous data.'
+    );
+  }
+
+  // Guard against silently replacing good data with a much smaller result: if a
+  // prior raw-buy-torecolo.json exists with meaningfully more rows, treat the
+  // shrink as suspicious and keep the old file instead of overwriting it.
+  const prevCount = readPreviousCount(OUTPUT_FILE);
+  if (prevCount > 0 && all.length < prevCount * SHRINK_THRESHOLD) {
+    throw new Error(
+      `[torecolo] Refusing to write: new crawl has ${all.length} listings but ` +
+        `previous file had ${prevCount} (< ${Math.round(SHRINK_THRESHOLD * 100)}% ` +
+        'of prior); keeping previous data. Re-run to confirm if this drop is real.'
+    );
   }
 
   fs.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
