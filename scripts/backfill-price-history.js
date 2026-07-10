@@ -35,23 +35,11 @@ const commits = logOutput
   })
   .filter(Boolean);
 
-// 2. Dates already present in price-history (do not rewrite them).
-const existingDates = new Set();
-fs.readdirSync(HIST_DIR)
-  .filter((f) => f.endsWith(".json") && f !== "index.json")
-  .forEach((f) => {
-    const data = JSON.parse(fs.readFileSync(path.join(HIST_DIR, f), "utf-8"));
-    (data.records || []).forEach((r) => existingDates.add(r.date));
-  });
-
-// 3. For each still-missing date, read that snapshot's database.json and append.
+// 2. For each dated snapshot, read that commit's database.json and append.
+//    Dedup is per-card (see `existing.records.some(...)` below), so a run that
+//    only partially filled a date can be safely re-run to backfill the rest.
 let totalAdded = 0;
 for (const { sha, date } of commits) {
-  if (existingDates.has(date)) {
-    console.log(`skip ${date} (already in price-history)`);
-    continue;
-  }
-
   const raw = execSync(`git show ${sha}:data/database.json`, {
     cwd: PROJECT_DIR,
     encoding: "utf-8",
