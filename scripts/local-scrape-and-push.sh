@@ -26,16 +26,10 @@ cd ..
 # 1. Pull latest from main
 git pull origin main >> "$LOG_FILE" 2>&1
 
-# 2. Run the scraper
+# 2. Run the scraper (non-fatal: buy crawlers must run even if build-database fails)
 cd scripts
-node build-database.js >> "$LOG_FILE" 2>&1
-SCRAPE_EXIT=$?
+node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
 cd ..
-
-if [ $SCRAPE_EXIT -ne 0 ]; then
-  echo "[$(date)] ❌ Scrape failed (exit $SCRAPE_EXIT)" >> "$LOG_FILE"
-  exit 1
-fi
 
 # 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)
 echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
