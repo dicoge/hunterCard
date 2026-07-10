@@ -23,6 +23,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as cheerio from 'cheerio';
+import { CARD_NUMBER_RE } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,29 +70,36 @@ async function fetchHtml(url) {
  * Decompose a goods code such as "HL-HBP08-003SEC-S" into its parts:
  *   cardNumber "hBP08-003"  (series + number, no rarity)
  *   rarity     "SEC"        (the version/rarity token before the trailing -S)
- * The same physical card number can appear in several rarities (a higher-tier
- * card may have up to three versions), so rarity is what distinguishes them.
+ * The card number is matched with the shared CARD_NUMBER_RE so this scraper
+ * stays in sync with the other scrapers instead of drifting: the shared shape
+ * handles optional series digits (promos like hPR-001) and a greedy index
+ * (4-digit numbers like hBP08-1000) that the old local regex silently dropped
+ * or truncated (DIC-160 CR). rarity is the run of letters immediately after the
+ * matched card number; the same physical card can appear in several rarities,
+ * so rarity is what distinguishes them.
  * Returns { cardNumber: "", rarity: "" } when no recognizable code is present.
  */
 function parseGoodsCode(goodsCode) {
   if (!goodsCode) return { cardNumber: '', rarity: '' };
 
-  // Match: <series letters><series digits>-<number><rarity letters?>, e.g.
-  //   HBP08-003SEC   → series HBP08, number 003, rarity SEC
-  //   HBP01-006      → series HBP01, number 006, rarity "" (base)
-  const m = goodsCode.match(/(h[A-Za-z]+\d{2,3})-(\d{2,3})([A-Za-z]+)?/i);
+  const code = String(goodsCode);
+  const m = code.match(CARD_NUMBER_RE);
   if (!m) return { cardNumber: '', rarity: '' };
 
-  const series = m[1];
-  const num = m[2];
-  const rarity = (m[3] || '').toUpperCase();
+  // Normalize to the "hBP08-003" convention: leading 'h' lowercase, remaining
+  // series letters uppercase, digits/index as-is.
+  const cardNumber = m[0].replace(
+    /^h([A-Za-z]*)/i,
+    (_, letters) => 'h' + letters.toUpperCase()
+  );
 
-  // Normalize series casing to the "hBP08" convention: leading 'h' lowercase,
-  // remaining series letters uppercase, digits as-is.
-  const sp = series.match(/^h([A-Za-z]+)(\d.*)$/i);
-  const cardNumber = sp ? 'h' + sp[1].toUpperCase() + sp[2] : series;
+  // rarity = the letters directly after the card number, before the trailing
+  // "-S" (e.g. "...003SEC-S" → "SEC"). Empty for base cards ("...006-S").
+  const after = code.slice(m.index + m[0].length);
+  const rarityMatch = after.match(/^([A-Za-z]+)/);
+  const rarity = rarityMatch ? rarityMatch[1].toUpperCase() : '';
 
-  return { cardNumber: `${cardNumber}-${num}`, rarity };
+  return { cardNumber, rarity };
 }
 
 function parsePrice(text) {
@@ -129,6 +137,16 @@ function parseGoodsFromHtml(html) {
     const buyPrice = parsePrice(priceText);
 
     if (!name || buyPrice == null) return;
+
+    // A row with no parseable card number violates the cardNumber/
+    // versionCardNumber output contract, so drop it loudly instead of emitting
+    // a blank-key row (DIC-160 CR).
+    if (!cardNumber) {
+      console.warn(
+        `  ⚠ skip (no card number): "${name}" [${goodsCode || 'no-code'}]`
+      );
+      return;
+    }
 
     // "版本在卡號前": the unique key puts the version (rarity) before the
     // card number so different versions of the same number stay distinct,
