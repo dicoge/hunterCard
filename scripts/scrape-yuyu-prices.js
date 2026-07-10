@@ -139,16 +139,24 @@ async function launchBrowser() {
   return { browser, page };
 }
 
-async function scrapeYuyuPrices() {
+async function scrapeYuyuPrices(options = {}) {
+  const {
+    launchBrowserFn = launchBrowser,
+    seriesPages = SERIES_PAGES,
+    sleepFn = sleep,
+    baseUrl = BASE_URL,
+    outputDir = OUTPUT_DIR,
+  } = options;
+
   console.log('[yuyu-scraper] Starting price scrape...');
   const startTime = Date.now();
 
   // Ensure output directory exists
-  if (!fs.existsSync(OUTPUT_DIR)) {
-    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  let { browser, page } = await launchBrowser();
+  let { browser, page } = await launchBrowserFn();
 
   const allPrices = {};
   let totalCards = 0;
@@ -156,16 +164,16 @@ async function scrapeYuyuPrices() {
   let savePath;
 
   try {
-    for (const seriesInfo of SERIES_PAGES) {
+    for (const seriesInfo of seriesPages) {
       console.log(`[yuyu-scraper] Scraping ${seriesInfo.name}: ${seriesInfo.url}`);
 
-      const url = BASE_URL + seriesInfo.url;
+      const url = baseUrl + seriesInfo.url;
       const MAX_RETRIES = 2;
 
       for (let retries = 0; retries <= MAX_RETRIES; retries++) {
         try {
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-        await sleep(1500);
+        await sleepFn(1500);
 
         // [Diagnostic] Check HTML structure — helps debug 0-card issues in CI
         const htmlDiag = await page.evaluate(() => {
@@ -256,7 +264,7 @@ async function scrapeYuyuPrices() {
         Object.assign(allPrices, seriesPrices);
 
         // Rate limiting
-        await sleep(2000 + Math.random() * 1000);
+        await sleepFn(2000 + Math.random() * 1000);
 
         break;
       } catch (err) {
@@ -265,14 +273,14 @@ async function scrapeYuyuPrices() {
         if (isCrash && retries < MAX_RETRIES) {
           console.log(`[yuyu-scraper] Browser crashed, restarting... (retry ${retries + 1}/${MAX_RETRIES} for ${seriesInfo.name})`);
           try { await browser.close(); } catch {}
-          ({ browser, page } = await launchBrowser());
+          ({ browser, page } = await launchBrowserFn());
         } else if (isCrash) {
           // Retries exhausted on a crash: give up on this series, but still
           // restart the browser so the next series gets a live page instead of
           // silently scraping 0 cards from a dead one.
           console.error(`  → Error (crash, retries exhausted): ${err.message} — restarting browser before next series`);
           try { await browser.close(); } catch {}
-          ({ browser, page } = await launchBrowser());
+          ({ browser, page } = await launchBrowserFn());
           break;
         } else {
           console.error(`  → Error: ${err.message}`);
@@ -285,7 +293,7 @@ async function scrapeYuyuPrices() {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     
     // Save results - outputFile already declared in outer scope
-    savePath = path.join(OUTPUT_DIR, 'yuyu-prices.json');
+    savePath = path.join(outputDir, 'yuyu-prices.json');
     const metadata = {
       lastUpdated: new Date().toISOString(),
       totalCards,
@@ -322,4 +330,4 @@ if (isMainModule) {
     });
 }
 
-export { scrapeYuyuPrices };
+export { scrapeYuyuPrices, isBrowserCrash };
