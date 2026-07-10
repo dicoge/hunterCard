@@ -163,8 +163,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-040_hBP04"
+    },
+    {
+      "date": "2026-07-10",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-040_hBP04"
     }
   ],
-  "lastUpdated": "2026-07-09T04:02:38.674Z",
-  "nameZh": ""
+  "lastUpdated": "2026-07-10T12:08:26.069Z",
+  "nameZh": "凱拉·科瓦爾斯基亞"
 }

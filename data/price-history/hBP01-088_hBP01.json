@@ -163,8 +163,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-088_hBP01"
+    },
+    {
+      "date": "2026-07-10",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-088_hBP01"
     }
   ],
-  "lastUpdated": "2026-07-09T04:02:38.731Z",
-  "nameZh": ""
+  "lastUpdated": "2026-07-10T12:08:26.133Z",
+  "nameZh": "姆娜·霍希諾瓦"
 }
