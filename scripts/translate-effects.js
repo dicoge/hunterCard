@@ -312,7 +312,10 @@ async function main() {
   if (untranslated.length) console.log(`WARN: ${untranslated.length} strings still untranslated`);
 
   console.log('Validating translations…');
-  validate(cache);
+  if (!validate(cache)) {
+    console.error('[translate] ❌ Validation failed — aborting output write');
+    process.exit(1);
+  }
 
   const zh = reconstruct(data, cache);
   fs.writeFileSync(OUT_FILE, JSON.stringify(zh, null, 2), 'utf8');
