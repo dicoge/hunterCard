@@ -170,8 +170,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD12-014_hSD12"
+    },
+    {
+      "date": "2026-07-11",
+      "price": 1280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-014_hSD12"
     }
   ],
-  "lastUpdated": "2026-07-10T12:08:26.014Z",
+  "lastUpdated": "2026-07-11T11:55:07.765Z",
   "nameZh": "雙葉·深淵護衛"
 }

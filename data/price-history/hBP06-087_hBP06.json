@@ -170,8 +170,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-087_hBP06"
+    },
+    {
+      "date": "2026-07-11",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-087_hBP06"
     }
   ],
-  "lastUpdated": "2026-07-10T12:08:26.030Z",
+  "lastUpdated": "2026-07-11T12:07:22.775Z",
   "nameZh": "舞菇之舞"
 }

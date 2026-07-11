@@ -170,8 +170,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-051_hBP03"
+    },
+    {
+      "date": "2026-07-11",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-051_hBP03"
     }
   ],
-  "lastUpdated": "2026-07-10T12:08:26.082Z",
+  "lastUpdated": "2026-07-11T12:07:22.801Z",
   "nameZh": "常暗永遠"
 }
