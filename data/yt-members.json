@@ -3,30 +3,30 @@
   "source": "manual",
   "notes": "Hololive Production talents — YouTube channel IDs for subscriber tracking",
   "members": [
-    { "name": "Tokino Sora", "nameJp": "ときのそら", "nameZh": "時乃空", "channelId": "UCp6993wxpyDPHUpEvwD4i-Q", "generation": "0期生", "group": "hololive", "active": true },
+    { "name": "Tokino Sora", "nameJp": "ときのそら", "nameZh": "時乃空", "channelId": "UCp6993wxpyDPHUpavwDFqgg", "generation": "0期生", "group": "hololive", "active": true, "handle": "@TokinoSora" },
     { "name": "Roboco", "nameJp": "ロボ子さん", "nameZh": "蘿蔔子", "channelId": "UCDqI2jOz0weumE8s7paEk6g", "generation": "0期生", "group": "hololive", "active": true },
     { "name": "Sakura Miko", "nameJp": "さくらみこ", "nameZh": "櫻巫女", "channelId": "UC-hM6YJuNYVAmUWxeIr9FeA", "generation": "0期生", "group": "hololive", "active": true },
     { "name": "Hoshimachi Suisei", "nameJp": "星街すいせい", "nameZh": "星街彗星", "channelId": "UC5CwaMl1eIgY8h02uZw7u8A", "generation": "0期生", "group": "hololive", "active": true },
-    { "name": "AZKi", "nameJp": "AZKi", "nameZh": "AZKi", "channelId": "UC0TXe_LYZ4sca2G1fKQbkDg", "generation": "0期生", "group": "hololive", "active": true },
+    { "name": "AZKi", "nameJp": "AZKi", "nameZh": "AZKi", "channelId": "UC0TXe_LYZ4scaW2XMyi5_kw", "generation": "0期生", "group": "hololive", "active": true, "handle": "@AZKi" },
 
-    { "name": "Shirakami Fubuki", "nameJp": "白上フブキ", "nameZh": "白上吹雪", "channelId": "UCdn5BQ06XqgXoAxI7qw5LgQ", "generation": "1期生", "group": "hololive", "active": true },
+    { "name": "Shirakami Fubuki", "nameJp": "白上フブキ", "nameZh": "白上吹雪", "channelId": "UCdn5BQ06XqgXoAxIhbqw5Rg", "generation": "1期生", "group": "hololive", "active": true, "handle": "@ShirakamiFubuki" },
     { "name": "Natsuiro Matsuri", "nameJp": "夏色まつり", "nameZh": "夏色祭", "channelId": "UCQ0UDLQCjY0rmuxCDE38FGg", "generation": "1期生", "group": "hololive", "active": true },
     { "name": "Aki Rosenthal", "nameJp": "アキ・ローゼンタール", "nameZh": "亞綺·羅森塔爾", "channelId": "UCFTLzh12_nrtzqBPsTCqenA", "generation": "1期生", "group": "hololive", "active": true },
-    { "name": "Akai Haato", "nameJp": "赤井はあと", "nameZh": "赤井心", "channelId": "UC1CfXB_kRs3C-zaC__nqcRg", "generation": "1期生", "group": "hololive", "active": true },
+    { "name": "Akai Haato", "nameJp": "赤井はあと", "nameZh": "赤井心", "channelId": "UC1CfXB_kRs3C-zaeTG3oGyg", "generation": "1期生", "group": "hololive", "active": true, "handle": "@AkaiHaato" },
 
     { "name": "Minato Aqua", "nameJp": "湊あくあ", "nameZh": "湊阿庫婭", "channelId": "UC1opHUrw8rvnsadT-iGp7Cg", "generation": "2期生", "group": "hololive", "active": true },
     { "name": "Murasaki Shion", "nameJp": "紫咲シオン", "nameZh": "紫咲詩音", "channelId": "UCXTpFs_3PqI41qX2d9tL2Rw", "generation": "2期生", "group": "hololive", "active": true },
-    { "name": "Nakiri Ayame", "nameJp": "百鬼あやめ", "nameZh": "百鬼綾目", "channelId": "UC7fk0CB07ly8oSl0aqIXkQ", "generation": "2期生", "group": "hololive", "active": true },
+    { "name": "Nakiri Ayame", "nameJp": "百鬼あやめ", "nameZh": "百鬼綾目", "channelId": "UC7fk0CB07ly8oSl0aqKkqFg", "generation": "2期生", "group": "hololive", "active": true, "handle": "@NakiriAyame" },
     { "name": "Yuzuki Choco", "nameJp": "癒月ちょこ", "nameZh": "癒月巧可", "channelId": "UC1suqwovbL1kzsoaZgFZLKg", "generation": "2期生", "group": "hololive", "active": true },
     { "name": "Oozora Subaru", "nameJp": "大空スバル", "nameZh": "大空昴", "channelId": "UCvzGlP9oQwU--Y0r9id_jnA", "generation": "2期生", "group": "hololive", "active": true },
 
     { "name": "Usada Pekora", "nameJp": "兎田ぺこら", "nameZh": "兔田佩可拉", "channelId": "UC1DCedRgGHBdm81E1llLhOQ", "generation": "3期生", "group": "hololive", "active": true },
-    { "name": "Shiranui Flare", "nameJp": "不知火フレア", "nameZh": "不知火芙蕾雅", "channelId": "UCvInZx9h3jIp7YVM7qdYJLg", "generation": "3期生", "group": "hololive", "active": true },
+    { "name": "Shiranui Flare", "nameJp": "不知火フレア", "nameZh": "不知火芙蕾雅", "channelId": "UCvInZx9h3jC2JzsIzoOebWg", "generation": "3期生", "group": "hololive", "active": true, "handle": "@ShiranuiFlare" },
     { "name": "Shirogane Noel", "nameJp": "白銀ノエル", "nameZh": "白銀諾艾爾", "channelId": "UCdyqAaZDKHXg4Ahi7VENThQ", "generation": "3期生", "group": "hololive", "active": true },
     { "name": "Houshou Marine", "nameJp": "宝鐘マリン", "nameZh": "寶鐘瑪琳", "channelId": "UCCzUftO8KOVkV4wQG1vkUvg", "generation": "3期生", "group": "hololive", "active": true },
     { "name": "Houshou Marine alternative", "nameJp": "宝鐘マリン", "nameZh": "寶鐘瑪琳（Alternative）", "channelId": "UCCzUftO8KOVkV4wQG1vkUvg", "generation": "3期生", "group": "hololive", "active": true },
 
-    { "name": "Kishido Temma", "nameJp": "岸堂天真", "nameZh": "岸堂天真", "channelId": "UCGNI4MENvoUYJhueE-eFofw", "generation": "1期生", "group": "holostars", "active": true },
+    { "name": "Kishido Temma", "nameJp": "岸堂天真", "nameZh": "岸堂天真", "channelId": "UCGNI4MENvnsymYjKiZwv9eg", "generation": "1期生", "group": "holostars", "active": true, "handle": "@KishidoTemma" },
     { "name": "Arurandeisu", "nameJp": "アルランディス", "nameZh": "阿蘭蒂斯", "channelId": "UCKeAhJvy8zgXWbh9duVjIaQ", "generation": "1期生", "group": "holostars", "active": true },
     { "name": "Rikka", "nameJp": "律可", "nameZh": "律可", "channelId": "UC9mf_ZVpouoILRY9NUIaK-w", "generation": "1期生", "group": "holostars", "active": true },
 
@@ -42,36 +42,36 @@
 
     { "name": "Mori Calliope", "nameJp": "森カリオペ", "nameZh": "森美聲", "channelId": "UCL_qhgtOy0dy1Agp8vkySQg", "generation": "EN Myth", "group": "hololive", "active": true },
     { "name": "Takanashi Kiara", "nameJp": "小鳥遊キアラ", "nameZh": "小鳥遊琪亞拉", "channelId": "UCHsx4Hqa-1ORjQTh9TYDhww", "generation": "EN Myth", "group": "hololive", "active": true },
-    { "name": "Ninomae Ina'nis", "nameJp": "一伊那尓栖", "nameZh": "一伊那爾栖", "channelId": "UCMwGHR0BTZuL4jN_wK0kA", "generation": "EN Myth", "group": "hololive", "active": true },
+    { "name": "Ninomae Ina'nis", "nameJp": "一伊那尓栖", "nameZh": "一伊那爾栖", "channelId": "UCMwGHR0BTZuLsmjY_NT5Pwg", "generation": "EN Myth", "group": "hololive", "active": true, "handle": "@NinomaeInanis" },
     { "name": "Gawr Gura", "nameJp": "がうる・ぐら", "nameZh": "噶嗚·古拉", "channelId": "UCoSrY_IQQVpmIRZ9Xf-y93g", "generation": "EN Myth", "group": "hololive", "active": true },
     { "name": "Watson Amelia", "nameJp": "ワトソン・アメリア", "nameZh": "華生·艾米莉亞", "channelId": "UCyl1z3cn3B4T63WJy8L4vrg", "generation": "EN Myth", "group": "hololive", "active": false },
 
     { "name": "IRyS", "nameJp": "IRyS", "nameZh": "IRyS", "channelId": "UC8rcEBzJSleTkf_-agPM20g", "generation": "EN Promise", "group": "hololive", "active": true },
     { "name": "Ceres Fauna", "nameJp": "セレス・ファウナ", "nameZh": "塞蕾絲·法娜", "channelId": "UCO_aKKYxn4tvrqPjcTzZ6EQ", "generation": "EN Promise", "group": "hololive", "active": true },
     { "name": "Ouro Kronii", "nameJp": "オーロ・クロニー", "nameZh": "奧羅·克洛尼", "channelId": "UCmbs8T6MWqUHP1tIQvSgKrg", "generation": "EN Promise", "group": "hololive", "active": true },
-    { "name": "Nanashi Mumei", "nameJp": "七詩ムメイ", "nameZh": "七詩無名", "channelId": "UC3n5uGu18IoCy2gg9GikA", "generation": "EN Promise", "group": "hololive", "active": true },
-    { "name": "Hakos Baelz", "nameJp": "ハコス・ベールズ", "nameZh": "哈珂斯·貝爾絲", "channelId": "UCgmPnx-EEeOrZSg5ojofw", "generation": "EN Promise", "group": "hololive", "active": true },
+    { "name": "Nanashi Mumei", "nameJp": "七詩ムメイ", "nameZh": "七詩無名", "channelId": "UC3n5uGu18FoCy23ggWWp8tA", "generation": "EN Promise", "group": "hololive", "active": true, "handle": "@NanashiMumei" },
+    { "name": "Hakos Baelz", "nameJp": "ハコス・ベールズ", "nameZh": "哈珂斯·貝爾絲", "channelId": "UCgmPnx-EEeOrZSg5Tiw7ZRQ", "generation": "EN Promise", "group": "hololive", "active": true, "handle": "@HakosBaelz" },
 
-    { "name": "Kureiji Ollie", "nameJp": "クレイジー・オリー", "nameZh": "克蕾依姬·歐莉", "channelId": "UC1cfDKn8jMGI6P1tL2hLg", "generation": "ID 2期生", "group": "hololive", "active": true },
-    { "name": "Anya Melfissa", "nameJp": "アーニャ・メルフィッサ", "nameZh": "阿妮亞·梅爾菲莎", "channelId": "UC727SQYUvx5pDDGQ5ICiY", "generation": "ID 2期生", "group": "hololive", "active": true },
-    { "name": "Pavolia Reine", "nameJp": "パヴォリア・レイネ", "nameZh": "帕沃莉亞·蕾伊涅", "channelId": "UCKjB5eY3S4W_3-x3JYWW", "generation": "ID 2期生", "group": "hololive", "active": true },
+    { "name": "Kureiji Ollie", "nameJp": "クレイジー・オリー", "nameZh": "克蕾依姬·歐莉", "channelId": "UCYz_5n-uDuChHtLo7My1HnQ", "generation": "ID 2期生", "group": "hololive", "active": true, "handle": "@KureijiOllie" },
+    { "name": "Anya Melfissa", "nameJp": "アーニャ・メルフィッサ", "nameZh": "阿妮亞·梅爾菲莎", "channelId": "UC727SQYUvx5pDDGQpTICNWg", "generation": "ID 2期生", "group": "hololive", "active": true, "handle": "@AnyaMelfissa" },
+    { "name": "Pavolia Reine", "nameJp": "パヴォリア・レイネ", "nameZh": "帕沃莉亞·蕾伊涅", "channelId": "UChgTyjG-pdNvxxhdsXfHQ5Q", "generation": "ID 2期生", "group": "hololive", "active": true, "handle": "@PavoliaReine" },
 
-    { "name": "La+ Darknesss", "nameJp": "ラプラス・ダークネス", "nameZh": "拉普拉斯·達克尼斯", "channelId": "UCENwRMx5L1i0BCGgS1r3A", "generation": "6期生", "group": "hololive", "active": true },
-    { "name": "Takane Lui", "nameJp": "鷹嶺ルイ", "nameZh": "鷹嶺琉依", "channelId": "UCs9_O1tRPM0TH_XKRyp4iQ", "generation": "6期生", "group": "hololive", "active": true },
-    { "name": "Hakui Koyori", "nameJp": "博衣こより", "nameZh": "博衣可佑理", "channelId": "UC6eWCld0KwmyHFbAqK3Vq", "generation": "6期生", "group": "hololive", "active": true },
-    { "name": "Sakamata Chloe", "nameJp": "沙花叉クロヱ", "nameZh": "沙花叉克蘿耶", "channelId": "UCIBY1ollUsauvVi4hW4pow", "generation": "6期生", "group": "hololive", "active": true },
-    { "name": "Kazama Iroha", "nameJp": "風真いろは", "nameZh": "風真伊呂波", "channelId": "UC_vMYWcDjmfdpH6r4TTnA", "generation": "6期生", "group": "hololive", "active": true },
+    { "name": "La+ Darknesss", "nameJp": "ラプラス・ダークネス", "nameZh": "拉普拉斯·達克尼斯", "channelId": "UCENwRMx5Yh42zWpzURebzTw", "generation": "6期生", "group": "hololive", "active": true, "handle": "@LaplusDarknesss" },
+    { "name": "Takane Lui", "nameJp": "鷹嶺ルイ", "nameZh": "鷹嶺琉依", "channelId": "UCs9_O1tRPMQTHQ-N_L6FU2g", "generation": "6期生", "group": "hololive", "active": true, "handle": "@TakaneLui" },
+    { "name": "Hakui Koyori", "nameJp": "博衣こより", "nameZh": "博衣可佑理", "channelId": "UC6eWCld0KwmyHFbAqK3V-Rw", "generation": "6期生", "group": "hololive", "active": true, "handle": "@HakuiKoyori" },
+    { "name": "Sakamata Chloe", "nameJp": "沙花叉クロヱ", "nameZh": "沙花叉克蘿耶", "channelId": "UCIBY1ollUsauvVi4hW4cumw", "generation": "6期生", "group": "hololive", "active": true, "handle": "@SakamataChloe" },
+    { "name": "Kazama Iroha", "nameJp": "風真いろは", "nameZh": "風真伊呂波", "channelId": "UC_vMYWcDjmfdpH6r4TTn1MQ", "generation": "6期生", "group": "hololive", "active": true, "handle": "@kazamairoha" },
 
-    { "name": "Shiori Novella", "nameJp": "シオリ・ノヴェラ", "nameZh": "紫織·諾薇菈", "channelId": "UCgnfPPb9JI3e9A4cKaHpPeQ", "generation": "EN Justice", "group": "hololive", "active": true },
-    { "name": "Koseki Bijou", "nameJp": "古石ビジュ", "nameZh": "古石碧珠", "channelId": "UC9p_r1ioY3GD6O0EKN0MRA", "generation": "EN Justice", "group": "hololive", "active": true },
-    { "name": "Nerissa Ravencroft", "nameJp": "ネリッサ・レイヴンクロフト", "nameZh": "涅莉莎·雷文克羅夫特", "channelId": "UC_sFNM0z0MWmJCMDZqNMzQ", "generation": "EN Justice", "group": "hololive", "active": true },
-    { "name": "FUWAMOCO", "nameJp": "フワワ・モココ", "nameZh": "芙哇哇·摩可可", "channelId": "UCt9H_RpQzhxzlyB0qWlz6g", "generation": "EN Justice", "group": "hololive", "active": true },
+    { "name": "Shiori Novella", "nameJp": "シオリ・ノヴェラ", "nameZh": "紫織·諾薇菈", "channelId": "UCgnfPPb9JI3e9A4cXHnWbyg", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@ShioriNovella" },
+    { "name": "Koseki Bijou", "nameJp": "古石ビジュ", "nameZh": "古石碧珠", "channelId": "UC9p_lqQ0FEDz327Vgf5JwqA", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@KosekiBijou" },
+    { "name": "Nerissa Ravencroft", "nameJp": "ネリッサ・レイヴンクロフト", "nameZh": "涅莉莎·雷文克羅夫特", "channelId": "UC_sFNM0z0MWm9A6WlKPuMMg", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@NerissaRavencroft" },
+    { "name": "FUWAMOCO", "nameJp": "フワワ・モココ", "nameZh": "芙哇哇·摩可可", "channelId": "UCt9H_RpQzhxzlyBxFqrdHqA", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@FUWAMOCOch" },
 
-    { "name": "Hiodoshi Ao", "nameJp": "火威青", "nameZh": "火威青", "channelId": "UC1zN3nJ0h5OC7I7icZstnXQ", "generation": "ReGLOSS", "group": "hololive", "active": true },
-    { "name": "Otonose Kanade", "nameJp": "音乃瀬奏", "nameZh": "音乃瀨奏", "channelId": "UC9jM0wBPnPK_hA3PKpYqoA", "generation": "ReGLOSS", "group": "hololive", "active": true },
-    { "name": "Ichikara Ririka", "nameJp": "一ノ瀬りりか", "nameZh": "一之瀨莉莉卡", "channelId": "UC9VkP5jMxMtLUamzMlTz3g", "generation": "ReGLOSS", "group": "hololive", "active": true },
-    { "name": "Shinonome Ririmu", "nameJp": "白波らむね", "nameZh": "白波拉姆涅", "channelId": "UCrB0k7krYs0zPLbO3IUizg", "generation": "ReGLOSS", "group": "hololive", "active": true },
+    { "name": "Hiodoshi Ao", "nameJp": "火威青", "nameZh": "火威青", "channelId": "UCMGfV7TVTmHhEErVJg1oHBQ", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@HiodoshiAo" },
+    { "name": "Otonose Kanade", "nameJp": "音乃瀬奏", "nameZh": "音乃瀨奏", "channelId": "UCWQtYtq9EOB4-I5P-3fh8lA", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@OtonoseKanade" },
+    { "name": "Ichikara Ririka", "nameJp": "一ノ瀬りりか", "nameZh": "一之瀨莉莉卡", "channelId": "UCtyWhCj3AqKh2dXctLkDtng", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@IchijouRirika" },
+    { "name": "Shinonome Ririmu", "nameJp": "白波らむね", "nameZh": "白波拉姆涅", "channelId": "UC61OwuYOVuKkpKnid-43Twg", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@shiranamiramune" },
 
-    { "name": "Hakka", "nameJp": "Hakka", "nameZh": "Hakka", "channelId": "UC4_PlG-Ns6dM3ngJMcCRg", "generation": "ReGLOSS", "group": "hololive", "active": true }
+    { "name": "Hakka", "nameJp": "Hakka", "nameZh": "Hakka", "channelId": "UC7gxU6NXjKF1LrgOddPzgTw", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@BanzoinHakka" }
   ]
 }
