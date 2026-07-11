@@ -102,7 +102,7 @@ async function scrapeOnce(page) {
       for (let pageNo = 0; pageNo < 100; pageNo += 1) {
         const url = `${base}?app=38&query=${encodeURIComponent(query)}&apiToken=${token}&lastRecId=${lastRecId}&${fp}`;
         const resp = await fetch(url, { credentials: 'include' });
-        if (!resp.ok) break;
+        if (!resp.ok) throw new Error(`Fullahead records API failed at page ${pageNo}: HTTP ${resp.status}`);
         const j = await resp.json();
         const recs = (j.json && j.json.records) || [];
         if (!recs.length) break;
