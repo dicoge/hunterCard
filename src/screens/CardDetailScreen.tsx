@@ -148,6 +148,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
         )}
       </View>
 
+      {/* ====== SKILLS / EFFECTS ====== */}
+      <SkillsPanel skills={card.skillsZh || card.skillsJp} />
+
       {/* ====== PRICE SECTION ====== */}
       <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]}>
         <View style={styles.priceHeader}>
@@ -324,6 +327,88 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
 // ─── Helper Components ────────────────────────────────
 
+// ─── Skills panel ─────────────────────────────────────
+type Skill = { name?: string; cost?: string; effect?: string };
+type Art = { name?: string; cost?: string; damage?: string; effect?: string };
+type Keyword = { label?: string; effect?: string };
+type Skills = {
+  oshiSkill?: Skill;
+  spOshiSkill?: Skill;
+  arts?: Art[];
+  keywords?: Keyword[];
+  abilityText?: string;
+};
+
+function SkillCard({ badge, badgeColor, meta, name, effect }: {
+  badge: string; badgeColor?: string; meta?: string; name?: string; effect?: string;
+}) {
+  return (
+    <View style={styles.skillCard}>
+      <View style={styles.skillHeader}>
+        <Text style={[styles.skillBadge, badgeColor ? { color: badgeColor, borderColor: badgeColor + '66' } : null]}>{badge}</Text>
+        {meta ? <Text style={styles.skillMeta}>{meta}</Text> : null}
+      </View>
+      {name ? <Text style={styles.skillName}>{name}</Text> : null}
+      {effect ? <Text style={styles.skillEffect}>{effect}</Text> : null}
+    </View>
+  );
+}
+
+function SkillsPanel({ skills }: { skills?: Skills }) {
+  const hasAny = skills && (
+    skills.oshiSkill || skills.spOshiSkill ||
+    (skills.arts && skills.arts.length) ||
+    (skills.keywords && skills.keywords.length) ||
+    skills.abilityText
+  );
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>🎯 技能說明</Text>
+      {!hasAny ? (
+        <Text style={styles.noSkillText}>此卡無技能資料</Text>
+      ) : (
+        <>
+          {skills!.oshiSkill && (
+            <SkillCard
+              badge="推しスキル"
+              badgeColor="#f59e0b"
+              meta={skills!.oshiSkill.cost ? `ホロパワー ${skills!.oshiSkill.cost}` : undefined}
+              name={skills!.oshiSkill.name}
+              effect={skills!.oshiSkill.effect}
+            />
+          )}
+          {skills!.spOshiSkill && (
+            <SkillCard
+              badge="SP推しスキル"
+              badgeColor="#ef4444"
+              meta={skills!.spOshiSkill.cost ? `ホロパワー ${skills!.spOshiSkill.cost}` : undefined}
+              name={skills!.spOshiSkill.name}
+              effect={skills!.spOshiSkill.effect}
+            />
+          )}
+          {skills!.arts?.map((art, i) => (
+            <SkillCard
+              key={`art${i}`}
+              badge="アーツ"
+              badgeColor="#3b82f6"
+              meta={[art.cost ? `${art.cost}` : '', art.damage ? `傷害 ${art.damage}` : ''].filter(Boolean).join('　')}
+              name={art.name}
+              effect={art.effect}
+            />
+          ))}
+          {skills!.abilityText ? (
+            <SkillCard badge="能力テキスト" badgeColor="#10b981" effect={skills!.abilityText} />
+          ) : null}
+          {skills!.keywords?.map((kw, i) => (
+            <SkillCard key={`kw${i}`} badge={kw.label || 'キーワード'} effect={kw.effect} />
+          ))}
+        </>
+      )}
+    </View>
+  );
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
@@ -399,6 +484,15 @@ const styles = StyleSheet.create({
   effectBlock: { backgroundColor: COLORS.surfaceLight + 'cc', padding: 14, borderRadius: 10, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: COLORS.primary },
   effectText: { fontSize: 14, lineHeight: 22, color: COLORS.text },
   noEffectText: { fontSize: 13, lineHeight: 20, color: COLORS.textSecondary + 'bb', fontStyle: 'italic' },
+
+  // Skills
+  skillCard: { backgroundColor: COLORS.surfaceLight + '55', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: 12, marginBottom: 10 },
+  skillHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 },
+  skillBadge: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, borderWidth: 1, borderColor: COLORS.border + '88', borderRadius: 5, paddingHorizontal: 8, paddingVertical: 2, marginRight: 8, overflow: 'hidden' },
+  skillMeta: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '600' },
+  skillName: { fontSize: 15, fontWeight: 'bold', color: COLORS.text, marginBottom: 4 },
+  skillEffect: { fontSize: 13, lineHeight: 21, color: COLORS.text + 'cc' },
+  noSkillText: { fontSize: 13, color: COLORS.textSecondary + 'aa', fontStyle: 'italic' },
 
   // Tags
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

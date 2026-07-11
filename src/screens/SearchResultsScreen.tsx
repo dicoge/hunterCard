@@ -75,6 +75,8 @@ interface CardResult {
   priceHistory?: Record<string, number>;
   searchKeywords?: string[];
   nameZh?: string;
+  skillsJp?: any;
+  skillsZh?: any;
 }
 
 interface DatabaseSchema {
@@ -230,6 +232,8 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
       hp: c.hp || '',
       life: c.life || '',
       arts: c.arts || '',
+      skillsJp: (c as any).skillsJp,
+      skillsZh: (c as any).skillsZh,
       searchKeywords: [c.name || '', '', ''],
       tags: [],
       nameZh: c.nameZh || '',

@@ -642,6 +642,30 @@ async function downloadAllImages(prices) {
  * 用 cardNumber_series 複合 key 避免復刻本被覆蓋
  * 每個官方入口都保留，有 yuyu 價格的合併，沒有的顯示「暫無資料」
  */
+// Merge scraped skill data (data/effects-jp.json + effects-zh.json) into the
+// card map, keyed by cardNumber. Adds `skillsJp` / `skillsZh` to each card that
+// has scraped skills. Safe to call when the effects files are absent.
+function mergeSkills(cards) {
+  const readJson = (p) => {
+    try { return JSON.parse(fs.readFileSync(p, 'utf-8')); }
+    catch (err) { if (err.code !== 'ENOENT') console.warn(`  [skills] ${path.basename(p)}: ${err.message}`); return {}; }
+  };
+  const effectsJp = readJson(path.join(DATA_DIR, 'effects-jp.json'));
+  const effectsZh = readJson(path.join(DATA_DIR, 'effects-zh.json'));
+  if (!Object.keys(effectsJp).length) { console.log('  [skills] No effects-jp.json found — skipping skill merge'); return; }
+
+  let merged = 0;
+  for (const card of Object.values(cards)) {
+    const cn = card.cardNumber;
+    if (cn && effectsJp[cn]) {
+      card.skillsJp = effectsJp[cn];
+      if (effectsZh[cn]) card.skillsZh = effectsZh[cn];
+      merged++;
+    }
+  }
+  console.log(`  [skills] Merged skills into ${merged} cards`);
+}
+
 function loadOfficialData() {
   console.log('\n[database] Loading official card data...');
   const officialCards = {};  // { cardNumber_series: cardData }
@@ -686,6 +710,138 @@ function loadOfficialData() {
 
   console.log(`  [official] Loaded ${Object.keys(officialCards).length} cards from ${files.length} files`);
   return officialCards;
+}
+
+// ─── VTuber YouTube stats merge (DIC-249) ───
+
+function daysBetween(earlierYmd, laterYmd) {
+  const [y1, m1, d1] = earlierYmd.split('-').map(Number);
+  const [y2, m2, d2] = laterYmd.split('-').map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
+}
+
+// A "1d/7d/15d/30d" delta is only meaningful if we actually have a snapshot near
+// N days ago. Cron can miss days, so pick the snapshot whose gap to `latestDate`
+// is closest to N — but reject it (return null) if that gap is outside N ± window.
+// Otherwise a growth_1d could silently be computed from a 10-day-old snapshot and
+// be badly misleading (DIC-250 review finding). Window scales with N (min 1 day).
+function growthWindow(n) {
+  return Math.max(1, Math.round(n * 0.25));
+}
+
+function snapshotValueNDaysAgo(sorted, latestDate, n, field) {
+  const window = growthWindow(n);
+  let best = null;
+  let bestDiff = Infinity;
+  for (const s of sorted) {
+    if (s.date === latestDate) continue; // never compare latest to itself
+    if (s[field] == null) continue;
+    const gap = daysBetween(s.date, latestDate);
+    if (gap <= 0) continue;
+    const diff = Math.abs(gap - n);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = s;
+    }
+  }
+  if (!best) return null;
+  const gap = daysBetween(best.date, latestDate);
+  if (Math.abs(gap - n) > window) return null; // nearest snapshot too far from N days ago
+  return best[field];
+}
+
+// Turn a channel's raw daily history into current stats + computed growth deltas.
+function computeYtGrowth(history) {
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
+  const latest = sorted[sorted.length - 1];
+  const latestDate = latest.date;
+
+  const subDelta = (n) => {
+    if (latest.subscriberCount == null) return null;
+    const past = snapshotValueNDaysAgo(sorted, latestDate, n, 'subscriberCount');
+    return past == null ? null : latest.subscriberCount - past;
+  };
+  const viewDelta = (n) => {
+    if (latest.totalViewCount == null) return null;
+    const past = snapshotValueNDaysAgo(sorted, latestDate, n, 'totalViewCount');
+    return past == null ? null : latest.totalViewCount - past;
+  };
+
+  return {
+    subscriberCount: latest.subscriberCount ?? null,
+    growth_1d: subDelta(1),
+    growth_7d: subDelta(7),
+    growth_15d: subDelta(15),
+    growth_30d: subDelta(30),
+    totalViewCount: latest.totalViewCount ?? null,
+    viewCount_daily: viewDelta(1),
+    viewCount_weekly: viewDelta(7),
+    viewCount_monthly: viewDelta(30),
+    date: latestDate,
+  };
+}
+
+/**
+ * Merge the latest VTuber YouTube stats (subscriber/view counts + growth) onto
+ * each card whose character matches a tracked hololive member. Matching is by
+ * Japanese name (card.name === member.nameJp) with Chinese name as fallback.
+ * yt-stats-history.json is keyed by channelId; yt-members.json maps channelId →
+ * member names. No-op (with a warning) if either file is missing/empty — the
+ * scraper (scrape-yt-stats.js) may not have run yet on a fresh checkout.
+ */
+function mergeYtStats(database) {
+  let members;
+  let statsHistory;
+  try {
+    members = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'yt-members.json'), 'utf-8')).members || [];
+  } catch (err) {
+    console.warn(`  [yt-stats] Skipping merge — cannot read yt-members.json (${err.message})`);
+    return;
+  }
+  try {
+    statsHistory = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'yt-stats-history.json'), 'utf-8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.warn('  [yt-stats] Skipping merge — yt-stats-history.json not found (run scrape-yt-stats.js first)');
+    } else {
+      console.warn(`  [yt-stats] Skipping merge — cannot read yt-stats-history.json (${err.message})`);
+    }
+    return;
+  }
+
+  // channelId → computed stats
+  const statsByChannel = {};
+  for (const [channelId, entry] of Object.entries(statsHistory)) {
+    const stats = computeYtGrowth(entry.history);
+    if (stats) statsByChannel[channelId] = stats;
+  }
+
+  // name (jp/zh) → stats, via the members channelId mapping
+  const statsByNameJp = {};
+  const statsByNameZh = {};
+  for (const m of members) {
+    const stats = m.channelId && statsByChannel[m.channelId];
+    if (!stats) continue;
+    if (m.nameJp && !statsByNameJp[m.nameJp]) statsByNameJp[m.nameJp] = stats;
+    if (m.nameZh && !statsByNameZh[m.nameZh]) statsByNameZh[m.nameZh] = stats;
+  }
+
+  let merged = 0;
+  for (const card of Object.values(database.cards)) {
+    const stats =
+      (card.name && statsByNameJp[card.name.trim()]) ||
+      (card.nameZh && statsByNameZh[card.nameZh.trim()]) ||
+      null;
+    if (stats) {
+      card.ytStats = stats;
+      merged++;
+    }
+  }
+  console.log(
+    `  [yt-stats] Merged stats onto ${merged} cards ` +
+      `(${Object.keys(statsByChannel).length} channels tracked)`
+  );
 }
 
 /**
@@ -883,6 +1039,9 @@ async function buildDatabase() {
     };
   }
 
+  // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber.
+  mergeSkills(database.cards);
+
   // Fix totalCards to reflect actual unique cards
   database.totalCards = Object.keys(database.cards).length;
 
@@ -1023,6 +1182,10 @@ async function buildDatabase() {
   }
   console.log(`  [buyPrice] Restored buy prices onto ${buyRestored} cards`);
 
+  // Step 7: Merge VTuber YouTube stats (subscriber/view counts + growth) (DIC-249)
+  console.log('\n── Step 7: Merge VTuber YouTube stats ──');
+  mergeYtStats(database);
+
   // Re-write database.json with priceHistory + preserved buyPrice included
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(database, null, 2));
 
@@ -1059,4 +1222,4 @@ if (process.argv[1]?.includes('build-database')) {
     });
 }
 
-export { buildDatabase };
+export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills };

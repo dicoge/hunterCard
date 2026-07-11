@@ -1,40 +1,48 @@
 #!/usr/bin/env node
 /**
  * scripts/scrape-effects.js
- * 
+ *
  * Scrapes card skill/effect text from the official hololive card game website.
- * Reads card IDs from data/official/*.json files and fetches each card's detail page.
- * Outputs data/effects-jp.json with extracted skills and metadata.
- * 
- * Uses only built-in Node.js modules (https, fs, path).
+ * Reads card entries from data/official/*.json, dedupes by cardNumber, and
+ * fetches each card's detail page. Outputs data/effects-jp.json with a clean,
+ * structured skill schema:
+ *
+ *   {
+ *     "hBP04-001": {
+ *       "cardNumber": "hBP04-001",
+ *       "name": "博衣こより",
+ *       "cardType": "推しホロメン",
+ *       "color": "白",
+ *       "oshiSkill":   { "name": "...", "cost": "-2", "effect": "..." },
+ *       "spOshiSkill": { "name": "...", "cost": "-2", "effect": "..." },
+ *       "arts":     [ { "name": "...", "cost": "◇", "damage": "30", "effect": "" } ],
+ *       "keywords": [ { "label": "エクストラ", "effect": "..." } ],
+ *       "abilityText": "..."   // support cards
+ *     }
+ *   }
+ *
+ * The run is resumable: cardNumbers already present in the output file are
+ * skipped, and progress is flushed to disk every FLUSH_EVERY cards. Uses only
+ * built-in Node.js modules (https, http, fs, path).
  */
 
-const https = require('https');
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import https from 'https';
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const BASE_URL = 'https://hololive-official-cardgame.com/cardlist/?id=';
 const OFFICIAL_DIR = path.join(__dirname, '..', 'data', 'official');
 const OUTPUT_FILE = path.join(__dirname, '..', 'data', 'effects-jp.json');
-const RATE_LIMIT_MS = 200;
+const RATE_LIMIT_MS = 150;
 const MAX_RETRIES = 3;
+const FLUSH_EVERY = 25;
 
-// Color name mapping
-const COLOR_MAP = {
-  'white': '白',
-  'red': '赤',
-  'blue': '青',
-  'green': '緑',
-  'purple': '紫',
-  'yellow': '黄',
-  'black': '黒',
-};
-
-/**
- * Fetch a URL and return the body text.
- * Uses built-in https module with retry logic.
- */
+// ─── HTTP ────────────────────────────────────────────────
 function fetchUrl(url, retries = MAX_RETRIES) {
   return new Promise((resolve, reject) => {
     const requester = url.startsWith('https') ? https : http;
@@ -51,7 +59,6 @@ function fetchUrl(url, retries = MAX_RETRIES) {
         if (res.statusCode === 200) {
           resolve(data);
         } else if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          // Follow redirect
           fetchUrl(res.headers.location, retries).then(resolve, reject);
         } else {
           reject(new Error(`HTTP ${res.statusCode} for ${url}`));
@@ -59,535 +66,296 @@ function fetchUrl(url, retries = MAX_RETRIES) {
       });
     });
     req.on('error', (err) => {
-      if (retries > 0) {
-        setTimeout(() => {
-          fetchUrl(url, retries - 1).then(resolve, reject);
-        }, 1000);
-      } else {
-        reject(err);
-      }
+      if (retries > 0) setTimeout(() => fetchUrl(url, retries - 1).then(resolve, reject), 1000);
+      else reject(err);
     });
     req.on('timeout', () => {
       req.destroy();
-      if (retries > 0) {
-        setTimeout(() => {
-          fetchUrl(url, retries - 1).then(resolve, reject);
-        }, 1000);
-      } else {
-        reject(new Error(`Timeout for ${url}`));
-      }
+      if (retries > 0) setTimeout(() => fetchUrl(url, retries - 1).then(resolve, reject), 1000);
+      else reject(new Error(`Timeout for ${url}`));
     });
   });
 }
 
-/**
- * Extract text content between tag open and close.
- * Handles simple cases - not a full HTML parser.
- */
-function extractTagContent(html, tagName, className) {
-  const classAttr = className ? ` class="${className}"` : '';
-  const openTag = `<${tagName}${classAttr}`;
-  
-  // Find the opening tag
-  let startIdx = html.indexOf(openTag);
-  if (startIdx === -1) return null;
-  
-  // Find the closing '>' of the opening tag
-  let tagEnd = html.indexOf('>', startIdx);
-  if (tagEnd === -1) return null;
-  
-  // Now find the matching closing tag
-  const closeTag = `</${tagName}>`;
-  let endIdx = html.indexOf(closeTag, tagEnd);
-  if (endIdx === -1) return null;
-  
-  return html.substring(tagEnd + 1, endIdx);
-}
-
-/**
- * Extract attribute value from HTML tag.
- */
-function extractAttrValue(html, attrName) {
-  const regex = new RegExp(`${attrName}="([^"]*)"`);
-  const match = html.match(regex);
-  return match ? match[1] : null;
-}
-
-/**
- * Strip HTML tags from text.
- */
+// ─── HTML helpers ────────────────────────────────────────
 function stripTags(text) {
   return text.replace(/<[^>]+>/g, '');
 }
-
-/**
- * Clean text by removing extra whitespace.
- */
 function cleanText(text) {
-  return text.replace(/\s+/g, ' ').trim();
+  return text.replace(/\s+/g, ' ').replace(/　+/g, '　').trim();
+}
+// Convert <br> to newline, strip remaining tags, collapse blank lines.
+function htmlToText(html) {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .split('\n').map((l) => l.replace(/[ \t　]+/g, (m) => (m.includes('　') ? '　' : ' ')).trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
-/**
- * Extract text content from a specific div by class name.
- * Returns the inner HTML of the first matching div.
- */
+// Return inner HTML of the first <div class="...className..."> and its end index.
 function extractDivByClass(html, className) {
-  const pattern = `<div class="${className}">`;
-  let startIdx = html.indexOf(pattern);
-  if (startIdx === -1) {
-    // Try partial match
-    const regex = new RegExp(`<div[^>]*class="[^"]*${className}[^"]*"[^>]*>`);
-    const match = html.match(regex);
-    if (!match) return null;
-    startIdx = match.index;
-  }
-  
+  const regex = new RegExp(`<div[^>]*class="[^"]*\\b${className}\\b[^"]*"[^>]*>`);
+  const match = html.match(regex);
+  if (!match) return null;
+  const startIdx = match.index;
   const contentStart = html.indexOf('>', startIdx) + 1;
-  
-  // Find matching closing div tag
   let depth = 1;
   let i = contentStart;
   while (i < html.length && depth > 0) {
     const nextOpen = html.indexOf('<div', i);
     const nextClose = html.indexOf('</div>', i);
-    
     if (nextClose === -1) break;
-    
-    if (nextOpen !== -1 && nextOpen < nextClose) {
-      depth++;
-      i = nextOpen + 4;
-    } else {
-      depth--;
-      i = nextClose + 6;
-    }
+    if (nextOpen !== -1 && nextOpen < nextClose) { depth++; i = nextOpen + 4; }
+    else { depth--; i = nextClose + 6; }
   }
-  
-  const endIdx = i;
-  return html.substring(contentStart, endIdx - 6);
+  return html.substring(contentStart, i - 6);
 }
 
-/**
- * Parse the info section of a card page to extract metadata.
- */
-function parseInfo(html) {
-  const info = {
-    cardType: '',
-    color: '',
-    life: '',
-    cardNumber: '',
-  };
-  
-  // Get the cardlist-Detail_Box section
-  const boxPattern = 'class="cardlist-Detail_Box"';
-  let boxStart = html.indexOf(boxPattern);
-  if (boxStart === -1) {
-    // Try alternative pattern
-    boxStart = html.indexOf('cardlist-Detail_Box');
+// Inner text of the first <span> in html, span-nesting aware.
+function firstSpanInner(html) {
+  const startIdx = html.indexOf('<span');
+  if (startIdx === -1) return null;
+  const contentStart = html.indexOf('>', startIdx) + 1;
+  let depth = 1;
+  let i = contentStart;
+  while (i < html.length && depth > 0) {
+    const nextOpen = html.indexOf('<span', i);
+    const nextClose = html.indexOf('</span>', i);
+    if (nextClose === -1) break;
+    if (nextOpen !== -1 && nextOpen < nextClose) { depth++; i = nextOpen + 5; }
+    else { depth--; i = nextClose + 7; }
   }
-  if (boxStart === -1) return info;
-  
-  const boxContent = html.substring(boxStart);
-  
-  // Extract info section
-  const infoDiv = extractDivByClass(boxContent, 'info');
-  if (!infoDiv) return info;
-  
-  // Extract card type
-  const typeMatch = infoDiv.match(/<dt>カードタイプ<\/dt>\s*<dd>([^<]+)<\/dd>/);
-  if (typeMatch) info.cardType = cleanText(typeMatch[1]);
-  
-  // Extract color - look for img with alt text
-  const colorMatch = infoDiv.match(/<dt>色<\/dt>\s*<dd>.*?<img[^>]*alt="([^"]+)"[^>]*>/);
-  if (colorMatch) info.color = cleanText(colorMatch[1]);
-  
-  // Extract LIFE
-  const lifeMatch = infoDiv.match(/<dt>LIFE<\/dt>\s*<dd>([^<]+)<\/dd>/);
-  if (lifeMatch) info.life = cleanText(lifeMatch[1]);
-  
-  // Extract HP (for member cards)
-  const hpMatch = infoDiv.match(/<dt>HP<\/dt>\s*<dd>([^<]+)<\/dd>/);
-  if (hpMatch) info.hp = cleanText(hpMatch[1]);
-  
-  // Extract card number from the page
-  const numMatch = boxContent.match(/カードナンバー[：:]\s*<span>([^<]+)<\/span>/);
-  if (numMatch) info.cardNumber = cleanText(numMatch[1]);
-  
-  return info;
+  return { inner: html.substring(contentStart, i - 7), end: i };
 }
 
-/**
- * Parse oshi skill section from HTML.
- * Structure: <div class="oshi skill"><p>推しスキル</p><p>[ホロパワー:-X]<span>skillName</span>effect text</p></div>
- */
-function parseOshiSkill(html) {
-  // Try to find the oshi skill div
-  const oshiDiv = extractDivByClass(html, 'oshi');
-  if (!oshiDiv) return null;
-  
-  // Find the paragraph with skill content (second <p>)
-  const pMatch = oshiDiv.match(/<p>(.*?)<\/p>/);
-  if (!pMatch) return null;
-  
-  // Get the full content between all <p> tags
-  const pContents = [];
-  const pRegex = /<p>(.*?)<\/p>/gs;
+function imgAlts(html) {
+  const alts = [];
+  const re = /<img[^>]*alt="([^"]*)"[^>]*>/g;
   let m;
-  while ((m = pRegex.exec(oshiDiv)) !== null) {
-    pContents.push(m[1]);
-  }
-  
-  if (pContents.length < 2) return null;
-  
-  // The second <p> contains: [ホロパワー:-X]<span>name</span>effect
-  const skillHtml = pContents[pContents.length - 1];
-  
-  // Parse cost: [ホロパワー:...]
-  const costMatch = skillHtml.match(/^(\[ホロパワー:[^\]]*\])/);
-  const cost = costMatch ? costMatch[1] : '';
-  
-  // Parse name from <span> tag
-  const spanContent = extractTagContent(skillHtml, 'span');
-  const name = spanContent ? cleanText(spanContent) : '';
-  
-  // Parse effect: everything after the </span>
-  const effect = skillHtml.replace(/^\[ホロパワー:[^\]]*\]/, '')
-    .replace(/<span>.*?<\/span>/, '')
-    .trim();
-  
-  return {
-    name: name,
-    cost: cost,
-    effect: cleanText(effect),
-  };
+  while ((m = re.exec(html)) !== null) if (m[1]) alts.push(m[1]);
+  return alts;
 }
 
-/**
- * Parse SP oshi skill section from HTML.
- * Structure: <div class="sp skill"><p>SP推しスキル</p><p>[ホロパワー:-X]<span>skillName</span>effect text</p></div>
- */
-function parseSpOshiSkill(html) {
-  // Try to find the sp skill div
-  const spDiv = extractDivByClass(html, 'sp');
-  if (!spDiv) return null;
-  
-  const pContents = [];
-  const pRegex = /<p>(.*?)<\/p>/gs;
+// ─── Section parsers ─────────────────────────────────────
+// oshi / sp oshi skill: <div class="oshi skill"><p>推しスキル</p><p>[ホロパワー:-2]<span>name</span>effect</p></div>
+function parseSkillDiv(html, className) {
+  const div = extractDivByClass(html, className);
+  if (!div) return null;
+  const ps = [];
+  const re = /<p>([\s\S]*?)<\/p>/g;
   let m;
-  while ((m = pRegex.exec(spDiv)) !== null) {
-    pContents.push(m[1]);
-  }
-  
-  if (pContents.length < 2) return null;
-  
-  const skillHtml = pContents[pContents.length - 1];
-  
-  const costMatch = skillHtml.match(/^(\[ホロパワー:[^\]]*\])/);
+  while ((m = re.exec(div)) !== null) ps.push(m[1]);
+  if (ps.length < 2) return null;
+  const body = ps[ps.length - 1];
+  const costMatch = body.match(/\[ホロパワー[:：]\s*(-?\d+)\]/);
   const cost = costMatch ? costMatch[1] : '';
-  
-  const spanContent = extractTagContent(skillHtml, 'span');
-  const name = spanContent ? cleanText(spanContent) : '';
-  
-  const effect = skillHtml.replace(/^\[ホロパワー:[^\]]*\]/, '')
-    .replace(/<span>.*?<\/span>/, '')
-    .trim();
-  
-  return {
-    name: name,
-    cost: cost,
-    effect: cleanText(effect),
-  };
+  const span = firstSpanInner(body);
+  const name = span ? cleanText(stripTags(span.inner)) : '';
+  const effect = cleanText(stripTags(
+    body.replace(/\[ホロパワー[:：][^\]]*\]/, '').replace(/<span>[\s\S]*?<\/span>/, '')
+  ));
+  if (!name && !effect) return null;
+  return { name, cost, effect };
 }
 
-/**
- * Parse generic skill text from non-oshi cards (member, support, etc.)
- * These don't have structured skill divs, so we extract the main text content.
- */
-function parseGenericSkills(html, cardType) {
-  const skills = {};
-  
-  // Extract the main text area content
-  const txtInner = extractDivByClass(html, 'txt-Inner');
-  if (!txtInner) return skills;
-  
-  // Get the full page text to extract ability descriptions
-  // For support cards: 能力テキスト section
-  // For member cards: アーツ sections
-  
-  // Try to extract all text between the info section and illustrator section
-  const idxStart = html.indexOf('txt-Inner');
-  if (idxStart === -1) return skills;
-  
-  const section = html.substring(idxStart);
-  
-  // Find the illustrator section end
-  const illIdx = section.indexOf('illustrator');
-  const textSection = illIdx > 0 ? section.substring(0, illIdx) : section;
-  
-  // Strip HTML tags to get plain text
-  const plainText = stripTags(textSection);
-  
-  // Split by lines and filter
-  const lines = plainText.split('\n').map(l => l.trim()).filter(l => l);
-  
-  // Look for skill-related content
-  let skillParts = [];
-  let currentKey = 'skill1';
-  let foundSkill = false;
-  
-  for (const line of lines) {
-    if (line.includes('アーツ') || line.includes('能力テキスト') || 
-        line.includes('エクストラ') || line.includes('ギフト') ||
-        line.includes('条件') || line.includes('特殊') ||
-        line.match(/^\d+$/) || line.startsWith('+') ||
-        line.includes('このホロメン') || line.includes('自分の') ||
-        line.includes('相手の') || line.includes('ターン') ||
-        line.includes('ダメージ') || line.includes('使える') ||
-        line.includes('選ぶ') || line.includes('デッキ') ||
-        line.includes('手札') || line.includes('ステージ') ||
-        line === '') {
-      if (line) {
-        // Check if this looks like a skill header (アーツ, エクストラ, etc.)
-        if (line.match(/^(アーツ|エクストラ|ギフト|条件)/)) {
-          if (skillParts.length > 0) {
-            skills[currentKey] = skillParts.join(' ').trim();
-            currentKey = 'skill' + (Object.keys(skills).length + 1);
-            skillParts = [];
-          }
-          skillParts.push(line);
-          foundSkill = true;
-        } else if (foundSkill) {
-          skillParts.push(line);
-        }
-      }
+// arts: <div class="... arts"><p>アーツ</p><p><span><img alt="◇"/>name　damage<span class="tokkou"></span></span>effect</p></div>
+function parseArts(html) {
+  const arts = [];
+  const re = /<div[^>]*class="[^"]*\barts\b[^"]*"[^>]*>([\s\S]*?)<\/div>/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const div = m[1];
+    // Body <p> is the one that is not the "アーツ" label.
+    const ps = [];
+    const pre = /<p>([\s\S]*?)<\/p>/g;
+    let pm;
+    while ((pm = pre.exec(div)) !== null) ps.push(pm[1]);
+    const body = ps.find((p) => !/^\s*アーツ\s*$/.test(stripTags(p))) || ps[ps.length - 1];
+    if (!body) continue;
+    const span = firstSpanInner(body);
+    const headHtml = span ? span.inner : body;
+    const cost = imgAlts(headHtml).join('');
+    // Remove imgs + nested tokkou span, keep "name　damage".
+    let headText = cleanText(stripTags(
+      headHtml.replace(/<span[^>]*class="tokkou"[^>]*>[\s\S]*?<\/span>/g, '')
+    ));
+    let name = headText;
+    let damage = '';
+    const dmgMatch = headText.match(/[　\s]+(\+?\d+\+?)\s*$/);
+    if (dmgMatch) {
+      damage = dmgMatch[1];
+      name = headText.slice(0, dmgMatch.index).trim();
     }
+    const effect = span ? cleanText(stripTags(body.slice(span.end))) : '';
+    if (name || damage || effect) arts.push({ name, cost, damage, effect });
   }
-  
-  if (skillParts.length > 0) {
-    skills[currentKey] = skillParts.join(' ').trim();
-  }
-  
-  // If no structured skills found, try to extract the raw text area
-  if (Object.keys(skills).length === 0) {
-    const allText = stripTags(textSection);
-    const cleaned = cleanText(allText);
-    if (cleaned && cleaned.length > 5) {
-      skills.skill1 = cleaned;
-    }
-  }
-  
-  return skills;
+  return arts;
 }
 
-/**
- * Parse a card page HTML and extract all relevant data.
- */
-function parseCardPage(html, id, cardData) {
+// keyword blocks: <div class="extra"><p>エクストラ</p><p>effect</p></div> and similar.
+function parseKeywords(html) {
+  const kws = [];
+  const re = /<div class="(extra|gift|buzz|collabo?|bloomEffect|baton|keyword)">([\s\S]*?)<\/div>/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const ps = [];
+    const pre = /<p>([\s\S]*?)<\/p>/g;
+    let pm;
+    while ((pm = pre.exec(m[2])) !== null) ps.push(pm[1]);
+    if (!ps.length) continue;
+    const label = cleanText(stripTags(ps[0]));
+    const effect = htmlToText(ps.slice(1).join('\n'));
+    if (label && (effect || ps.length === 1)) kws.push({ label, effect });
+  }
+  return kws;
+}
+
+// support ability text from info dl: <dt>能力テキスト</dt><dd>...</dd>
+function parseAbilityText(html) {
+  const box = extractDivByClass(html, 'info');
+  const src = box || html;
+  const m = src.match(/<dt>\s*能力テキスト\s*<\/dt>\s*<dd>([\s\S]*?)<\/dd>/);
+  return m ? htmlToText(m[1]) : '';
+}
+
+function parseColor(html) {
+  const box = extractDivByClass(html, 'info');
+  const src = box || html;
+  const m = src.match(/<dt>\s*色\s*<\/dt>\s*<dd>[\s\S]*?<img[^>]*alt="([^"]+)"/);
+  return m ? cleanText(m[1]) : '';
+}
+
+function parseCardType(html) {
+  const box = extractDivByClass(html, 'info');
+  const src = box || html;
+  const m = src.match(/<dt>\s*カードタイプ\s*<\/dt>\s*<dd>([^<]+)<\/dd>/);
+  return m ? cleanText(m[1]) : '';
+}
+
+function parseCardPage(html, card) {
   const result = {
-    cardNumber: cardData.cardNumber || '',
-    type: '',
-    color: '',
-    life: '',
-    skills: {},
+    cardNumber: card.cardNumber || '',
+    name: card.name || '',
+    cardType: parseCardType(html) || card.cardType || '',
+    color: parseColor(html),
   };
-  
-  // Parse info section
-  const info = parseInfo(html);
-  result.type = info.cardType || cardData.cardType || '';
-  result.color = info.color || '';
-  result.life = info.life || '';
-  result.cardNumber = info.cardNumber || cardData.cardNumber || '';
-  
-  // Color mapping: if color is in English format (e.g. "white"), map to Japanese
-  if (COLOR_MAP[result.color.toLowerCase()]) {
-    result.color = COLOR_MAP[result.color.toLowerCase()];
-  }
-  
-  // For oshi cards (推しホロメン), parse structured skills
-  if (result.type === '推しホロメン' || html.includes('oshi skill') || html.includes('sp skill')) {
-    const oshiSkill = parseOshiSkill(html);
-    if (oshiSkill) result.skills.oshiSkill = oshiSkill;
-    
-    const spOshiSkill = parseSpOshiSkill(html);
-    if (spOshiSkill) result.skills.spOshiSkill = spOshiSkill;
-    
-    // If no structured skills found, try generic parsing
-    if (Object.keys(result.skills).length === 0) {
-      const generic = parseGenericSkills(html, result.type);
-      Object.assign(result.skills, generic);
-    }
-  } else {
-    // For all other card types, use generic parsing
-    const generic = parseGenericSkills(html, result.type);
-    Object.assign(result.skills, generic);
-  }
-  
-  // Also try to extract any text that looks like skills from the raw content
-  // Look for text between info and illustrator
-  if (Object.keys(result.skills).length === 0) {
-    const infoEndIdx = html.indexOf('</div>', html.indexOf('class="info"'));
-    const illIdx = html.indexOf('illustrator');
-    
-    if (infoEndIdx > 0 && illIdx > infoEndIdx) {
-      const rawText = html.substring(infoEndIdx, illIdx);
-      const plainText = stripTags(rawText);
-      const cleaned = cleanText(plainText);
-      if (cleaned && cleaned.length > 3) {
-        result.skills.skill1 = cleaned;
-      }
-    }
-  }
-  
-  // If card number is still empty, try extracting from image src
-  if (!result.cardNumber) {
-    const imgMatch = html.match(/<img[^>]*src="[^"]*\/([^\/]+)\.(png|jpg)"/);
-    if (imgMatch) {
-      const imgName = imgMatch[1];
-      // Try to extract card number pattern like hBP04-001
-      const numPattern = imgName.match(/([A-Za-z]{2,5}\d{2,3}-\d{3,4})/);
-      if (numPattern) result.cardNumber = numPattern[1];
-    }
-  }
-  
+
+  const oshi = parseSkillDiv(html, 'oshi skill');
+  if (oshi) result.oshiSkill = oshi;
+  const sp = parseSkillDiv(html, 'sp skill');
+  if (sp) result.spOshiSkill = sp;
+
+  const arts = parseArts(html);
+  if (arts.length) result.arts = arts;
+
+  const keywords = parseKeywords(html);
+  if (keywords.length) result.keywords = keywords;
+
+  const ability = parseAbilityText(html);
+  if (ability) result.abilityText = ability;
+
   return result;
 }
 
-/**
- * Main function.
- */
+function hasContent(parsed) {
+  return !!(parsed.oshiSkill || parsed.spOshiSkill ||
+    (parsed.arts && parsed.arts.length) ||
+    (parsed.keywords && parsed.keywords.length) ||
+    parsed.abilityText);
+}
+
+// ─── Main ────────────────────────────────────────────────
+function loadExisting() {
+  try {
+    return JSON.parse(fs.readFileSync(OUTPUT_FILE, 'utf8'));
+  } catch (e) {
+    return {};
+  }
+}
+
+function writeOutput(results) {
+  const sorted = {};
+  for (const k of Object.keys(results).sort()) sorted[k] = results[k];
+  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(sorted, null, 2), 'utf8');
+}
+
 async function main() {
   console.log('=== hololive OCG Card Effects Scraper ===');
-  console.log(`Reading official data from: ${OFFICIAL_DIR}`);
-  console.log(`Output to: ${OUTPUT_FILE}`);
-  console.log('');
-  
-  // Read all official JSON files
+  console.log(`Output: ${OUTPUT_FILE}`);
+
   let allFiles;
   try {
     allFiles = fs.readdirSync(OFFICIAL_DIR);
   } catch (err) {
-    console.error(`Error reading directory ${OFFICIAL_DIR}: ${err.message}`);
+    console.error(`Error reading ${OFFICIAL_DIR}: ${err.message}`);
     process.exit(1);
   }
-  
-  // Filter for JSON files excluding meta and progress
-  const jsonFiles = allFiles.filter(f => 
-    f.endsWith('.json') && 
-    !f.startsWith('_') && 
-    f !== 'all-cards.json' && 
-    f !== 'all-new-cards.json'
-  );
-  
-  console.log(`Found ${jsonFiles.length} official data files.`);
-  
-  // Collect all cards with their IDs
-  const cards = [];
-  const seenIds = new Set();
-  
+
+  const jsonFiles = allFiles.filter((f) =>
+    f.endsWith('.json') && !f.startsWith('_') &&
+    f !== 'all-cards.json' && f !== 'all-new-cards.json');
+
+  // Collect one representative entry per cardNumber (prefer entries that carry a cardType).
+  const byCardNum = new Map();
   for (const file of jsonFiles) {
-    const filePath = path.join(OFFICIAL_DIR, file);
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      const data = JSON.parse(content);
-      
-      if (Array.isArray(data)) {
-        for (const card of data) {
-          if (card.id && !seenIds.has(card.id)) {
-            seenIds.add(card.id);
-            cards.push({
-              id: card.id,
-              cardNumber: card.cardNumber || '',
-              cardType: card.cardType || '',
-              name: card.name || '',
-              source: file,
-            });
-          }
-        }
+    let data;
+    try { data = JSON.parse(fs.readFileSync(path.join(OFFICIAL_DIR, file), 'utf8')); }
+    catch (err) { console.error(`  Warning: ${file}: ${err.message}`); continue; }
+    if (!Array.isArray(data)) continue;
+    for (const c of data) {
+      if (!c.id || !c.cardNumber) continue;
+      const prev = byCardNum.get(c.cardNumber);
+      if (!prev || (!prev.cardType && c.cardType)) {
+        byCardNum.set(c.cardNumber, { id: c.id, cardNumber: c.cardNumber, cardType: c.cardType || '', name: c.name || (prev && prev.name) || '' });
       }
-    } catch (err) {
-      console.error(`  Warning: Could not read ${file}: ${err.message}`);
     }
   }
-  
-  console.log(`Collected ${cards.length} unique cards to process.`);
-  console.log('');
-  
-  // Process cards
-  const results = {};
-  let processed = 0;
-  let errors = 0;
-  let skipped = 0;
-  const total = cards.length;
-  
-  for (const card of cards) {
+
+  const cards = Array.from(byCardNum.values());
+  console.log(`Unique cardNumbers to consider: ${cards.length}`);
+
+  const results = loadExisting();
+  const alreadyDone = new Set(Object.keys(results));
+  const todo = cards.filter((c) => !alreadyDone.has(c.cardNumber));
+  console.log(`Already have: ${alreadyDone.size} | Remaining: ${todo.length}\n`);
+
+  let processed = 0, ok = 0, errors = 0, empty = 0;
+  const total = todo.length;
+
+  for (const card of todo) {
     processed++;
     const url = BASE_URL + card.id;
-    
-    process.stdout.write(`  [${processed}/${total}] ID=${card.id} ${card.cardNumber || card.name} ... `);
-    
+    process.stdout.write(`  [${processed}/${total}] ${card.cardNumber} ${card.name} ... `);
     try {
       const html = await fetchUrl(url);
-      
-      if (!html || html.length < 500) {
-        process.stdout.write('SKIPPED (empty response)\n');
-        skipped++;
-        continue;
-      }
-      
-      const parsed = parseCardPage(html, card.id, card);
-      
-      // Only save if we have useful data
-      if (parsed.cardNumber || parsed.type || Object.keys(parsed.skills).length > 0) {
-        results[parsed.cardNumber || card.cardNumber || `id_${card.id}`] = parsed;
-        process.stdout.write('OK\n');
-      } else {
-        process.stdout.write('SKIPPED (no data extracted)\n');
-        skipped++;
+      if (!html || html.length < 500) { process.stdout.write('SKIP (empty)\n'); empty++; }
+      else {
+        const parsed = parseCardPage(html, card);
+        results[card.cardNumber] = parsed;
+        if (hasContent(parsed)) { process.stdout.write('OK\n'); ok++; }
+        else { process.stdout.write('OK (no skills)\n'); empty++; }
       }
     } catch (err) {
       process.stdout.write(`ERROR: ${err.message}\n`);
       errors++;
     }
-    
-    // Rate limiting
-    if (processed < total) {
-      await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_MS));
-    }
+    if (processed % FLUSH_EVERY === 0) writeOutput(results);
+    if (processed < total) await new Promise((r) => setTimeout(r, RATE_LIMIT_MS));
   }
-  
-  console.log('');
-  console.log('=== Results ===');
-  console.log(`  Total: ${total}`);
-  console.log(`  Processed: ${processed}`);
-  console.log(`  Successfully extracted: ${Object.keys(results).length}`);
-  console.log(`  Errors: ${errors}`);
-  console.log(`  Skipped: ${skipped}`);
-  
-  // Write output
-  const outputDir = path.dirname(OUTPUT_FILE);
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-  
-  // Sort results by card number for consistency
-  const sortedResults = {};
-  const keys = Object.keys(results).sort();
-  for (const key of keys) {
-    sortedResults[key] = results[key];
-  }
-  
-  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(sortedResults, null, 2), 'utf8');
-  console.log(`\nOutput written to: ${OUTPUT_FILE}`);
-  console.log(`File size: ${(fs.statSync(OUTPUT_FILE).size / 1024).toFixed(1)} KB`);
-  
-  // Show first entry
-  const firstKey = Object.keys(sortedResults)[0];
-  if (firstKey) {
-    console.log('\n=== First entry (sample) ===');
-    console.log(JSON.stringify(sortedResults[firstKey], null, 2));
-  }
+
+  writeOutput(results);
+  console.log('\n=== Results ===');
+  console.log(`  Processed this run: ${processed}`);
+  console.log(`  With skills: ${ok} | No skills: ${empty} | Errors: ${errors}`);
+  console.log(`  Total in file: ${Object.keys(results).length}`);
+  console.log(`  File size: ${(fs.statSync(OUTPUT_FILE).size / 1024).toFixed(1)} KB`);
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => { console.error('Fatal error:', err); process.exit(1); });
+}
+
+export { parseCardPage, parseArts, parseSkillDiv, parseKeywords, parseAbilityText };
