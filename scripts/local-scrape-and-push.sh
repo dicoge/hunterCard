@@ -26,6 +26,15 @@ cd ..
 # 1. Pull latest from main
 git pull origin main >> "$LOG_FILE" 2>&1
 
+# 1b. Snapshot YT channel stats (subscribers + total views) into
+#     data/yt-stats-history.json. MUST run before build-database.js so the
+#     latter can compute growth_1d/7d/15d/30d and view deltas from the fresh
+#     snapshot. Non-blocking (DIC-273).
+echo "[$(date)] Running YT stats snapshot..." >> "$LOG_FILE"
+cd scripts
+node scrape-yt-stats.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT stats snapshot failed (non-fatal)" >> "$LOG_FILE"
+cd ..
+
 # 2. Run the scraper (non-fatal: buy crawlers must run even if build-database fails)
 cd scripts
 node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
@@ -65,10 +74,11 @@ node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price
 cd ..
 
 # 3. Check if data changed
-if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' | grep -q .; then
+if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' | grep -q .; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
   EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json"
+  [ -f data/yt-stats-history.json ] && EXISTING_DATA="$EXISTING_DATA data/yt-stats-history.json"
   for dir in data/yt-subscribers data/news-sentiment data/trends; do
     [ -d "$dir" ] && EXISTING_DATA="$EXISTING_DATA $dir/*.json"
   done
