@@ -49,8 +49,8 @@ function readPreviousCount(file) {
   }
 }
 
-function loadCardNumbers() {
-  const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+function loadCardNumbers(file = DB_PATH) {
+  const db = JSON.parse(fs.readFileSync(file, 'utf-8'));
   const map = new Map();
   for (const card of Object.values(db.cards || {})) {
     if (card.cardNumber) map.set(card.cardNumber.toUpperCase(), card.cardNumber);
@@ -70,7 +70,7 @@ async function launchBrowser() {
 }
 
 // 一次載入頁面、攔 apiToken、分頁抓完所有 records。可能因瀏覽器 crash 丟錯。
-async function scrapeOnce(page) {
+async function scrapeOnce(page, { sleepFn = sleep } = {}) {
   let apiBase = null;
   let apiToken = null;
   page.on('request', (req) => {
@@ -84,7 +84,7 @@ async function scrapeOnce(page) {
 
   console.log(`[fullahead-buy] Loading ${FULLAHEAD_URL} ...`);
   await page.goto(FULLAHEAD_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-  await sleep(2500);
+  await sleepFn(2500);
 
   if (!apiBase || !apiToken) {
     throw new Error('could not capture Fullahead API token from page requests');
@@ -124,18 +124,18 @@ async function scrapeOnce(page) {
 }
 
 // 含 browser crash 重啟邏輯：crash 就重開瀏覽器重試（最多 MAX_RETRIES 次）
-async function scrapeWithRestart() {
-  let { browser, page } = await launchBrowser();
+async function scrapeWithRestart({ launchBrowserFn = launchBrowser, sleepFn = sleep, scrapeOnceFn = scrapeOnce } = {}) {
+  let { browser, page } = await launchBrowserFn();
   try {
     for (let retries = 0; retries <= MAX_RETRIES; retries += 1) {
       try {
-        return await scrapeOnce(page);
+        return await scrapeOnceFn(page, { sleepFn });
       } catch (err) {
         const isCrash = CRASH_PATTERNS.some((p) => err.message.includes(p));
         if (isCrash && retries < MAX_RETRIES) {
           console.log(`[fullahead-buy] Browser crashed, restarting... (retry ${retries + 1}/${MAX_RETRIES})`);
           try { await browser.close(); } catch { /* ignore */ }
-          ({ browser, page } = await launchBrowser());
+          ({ browser, page } = await launchBrowserFn());
           continue;
         }
         throw err;
@@ -147,16 +147,23 @@ async function scrapeWithRestart() {
   }
 }
 
-async function main() {
+async function main({
+  launchBrowserFn = launchBrowser,
+  sleepFn = sleep,
+  scrapeOnceFn = scrapeOnce,
+  dbPath = DB_PATH,
+  outputDir = OUTPUT_DIR,
+  outputFile = path.join(outputDir, 'fullahead-prices.json'),
+} = {}) {
   console.log('[fullahead-buy] Starting...');
   const startTime = Date.now();
 
-  const cardNumbers = loadCardNumbers();
+  const cardNumbers = loadCardNumbers(dbPath);
   console.log(`[fullahead-buy] database 卡號: ${cardNumbers.size}`);
 
   // scrape 失敗必須中斷整個 run，絕不寫出空檔或 partial 資料，
   // 避免臨時錯誤（API/token/page 失敗）用 {} 空檔污染 merge。
-  const records = await scrapeWithRestart();
+  const records = await scrapeWithRestart({ launchBrowserFn, sleepFn, scrapeOnceFn });
 
   const best = new Map(); // 正規化卡號 -> 最高買取價
   for (const rec of records) {
@@ -178,7 +185,7 @@ async function main() {
   }
 
   // 防止用大幅縮水的結果悄悄覆蓋好資料：若舊檔卡數明顯較多，視為可疑縮水，保留舊檔不覆蓋。
-  const prevCount = readPreviousCount(OUTPUT_FILE);
+  const prevCount = readPreviousCount(outputFile);
   if (prevCount > 0 && best.size < prevCount * SHRINK_THRESHOLD) {
     throw new Error(
       `[fullahead-buy] Refusing to write: new crawl has ${best.size} prices but ` +
@@ -194,14 +201,14 @@ async function main() {
     out[original] = { buyPrice, timestamp };
   }
 
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  fs.writeFileSync(OUTPUT_FILE, `${JSON.stringify(out, null, 2)}\n`, 'utf-8');
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(outputFile, `${JSON.stringify(out, null, 2)}\n`, 'utf-8');
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(
     `[fullahead-buy] ✅ Done in ${duration}s — 收到 ${records.length} 筆，寫入 ${Object.keys(out).length} 張卡`
   );
-  console.log(`[fullahead-buy] Output: ${OUTPUT_FILE}`);
+  console.log(`[fullahead-buy] Output: ${outputFile}`);
   return out;
 }
 
@@ -216,4 +223,4 @@ if (isMain) {
     });
 }
 
-export { main as scrapeFullaheadBuy };
+export { main as scrapeFullaheadBuy, scrapeOnce, scrapeWithRestart };
