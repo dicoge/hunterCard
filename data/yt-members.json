@@ -69,8 +69,7 @@
 
     { "name": "Hiodoshi Ao", "nameJp": "火威青", "nameZh": "火威青", "channelId": "UCMGfV7TVTmHhEErVJg1oHBQ", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@HiodoshiAo" },
     { "name": "Otonose Kanade", "nameJp": "音乃瀬奏", "nameZh": "音乃瀨奏", "channelId": "UCWQtYtq9EOB4-I5P-3fh8lA", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@OtonoseKanade" },
-    { "name": "Ichikara Ririka", "nameJp": "一ノ瀬りりか", "nameZh": "一之瀨莉莉卡", "channelId": "UCtyWhCj3AqKh2dXctLkDtng", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@IchijouRirika" },
-    { "name": "Shinonome Ririmu", "nameJp": "白波らむね", "nameZh": "白波拉姆涅", "channelId": "UC61OwuYOVuKkpKnid-43Twg", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@shiranamiramune" },
+    { "name": "Ichijou Ririka", "nameJp": "一条莉々華", "nameZh": "一條莉莉華", "channelId": "UCtyWhCj3AqKh2dXctLkDtng", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@IchijouRirika" },
 
     { "name": "Hakka", "nameJp": "Hakka", "nameZh": "Hakka", "channelId": "UC7gxU6NXjKF1LrgOddPzgTw", "generation": "ReGLOSS", "group": "hololive", "active": true, "handle": "@BanzoinHakka" }
   ]
