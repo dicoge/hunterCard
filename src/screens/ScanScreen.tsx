@@ -35,7 +35,7 @@ const SCAN_COOLDOWN_MS = 3000; // Don't re-scan same card within 3s
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 
-export default function ScanScreen() {
+export default function ScanScreen({ navigation }: any) {
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
   const [permission, requestPermission] = isWeb ? [null, null] as any : useCameraPermissions();
   const [webCameraStarted, setWebCameraStarted] = useState(false);
@@ -334,7 +334,10 @@ export default function ScanScreen() {
             id: card.cardNumber, name: card.name || '', cardNumber: card.cardNumber,
             type: '', rarity: card.rarity || '', series: card.series || '',
             sellPrice: card.sellPrice != null ? card.sellPrice : null,
+            buyPrice: card.buyPrice ?? null,
             yuyuName: '', color: '', imageUrl: card.imageUrl || '', prices: card.prices || [],
+            priceHistory: card.priceHistory || {},
+            ytStats: card.ytStats ?? null,
           };
           addCard(cardInfo);
           setLastScannedCard(cardInfo);
@@ -1027,6 +1030,7 @@ export default function ScanScreen() {
       {/* 掃描估值面板 */}
       <ScanSessionPanel
         preferredCurrency={preferredCurrency}
+        onViewCard={(card) => navigation?.navigate('CardDetail', { card })}
         onContinueScanning={() => {
           setLastScannedCard(null);
           setScanComplete(false);

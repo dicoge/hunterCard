@@ -96,10 +96,13 @@ function fmt(entry: any) {
     cardNumber: entry.cardNumber,
     name: entry.name,
     sellPrice: price,
+    buyPrice: entry.buyPrice ?? null,
     series: entry.series,
     rarity: entry.rarity,
     imageUrl: entry.officialImage || '',
     prices: entry.prices,
+    priceHistory: entry.priceHistory || {},
+    ytStats: entry.ytStats ?? null,
   };
 }
 

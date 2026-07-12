@@ -34,12 +34,14 @@ export interface CardInfo {
   rarity: string;
   series: string;
   sellPrice: number | null;  // null = 無交易記錄
+  buyPrice?: number | null;   // 店家收購價（賣出可得）
   yuyuName: string;
   color: string;
   imageUrl: string;
   prices?: CardPrice[];       // Detailed price variants from database
   variants?: CardVariant[];   // Same cardNumber in different series
   priceHistory?: Record<string, number>;
+  ytStats?: any;              // YouTube 成員數據（訂閱/成長/觀看）
 }
 
 export interface RecognitionResult {
@@ -119,11 +121,13 @@ export async function loadAllCards(): Promise<CardInfo[]> {
         rarity: entry.rarity || '',
         series: entry.series || '',
         sellPrice: entry.sellPrice != null && entry.sellPrice > 0 ? entry.sellPrice : null,
+        buyPrice: (entry as any).buyPrice ?? null,
         yuyuName: entry.yuyuName || '',
         color: entry.color || '',
         imageUrl: entry.officialImage || entry.localImage || '',
         prices: (entry as any).prices || [],
         priceHistory: (entry as any).priceHistory || {},
+        ytStats: (entry as any).ytStats ?? null,
       }));
 
       cachedDb = result;
@@ -363,10 +367,13 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
         rarity: apiCard.rarity || '',
         series: apiCard.series || '',
         sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
+        buyPrice: apiCard.buyPrice ?? null,
         yuyuName: '',
         color: '',
         imageUrl: apiCard.imageUrl || '',
         prices: apiCard.prices || [],
+        priceHistory: apiCard.priceHistory || {},
+        ytStats: apiCard.ytStats ?? null,
       };
       return { success: true, card: cardInfo };
     }
