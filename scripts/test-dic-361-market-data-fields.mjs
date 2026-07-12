@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+/**
+ * Regression checks for DIC-361 / DIC-359:
+ * ensure scan, API fallback, and search paths preserve MarketDataPanel fields.
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = process.cwd();
+const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+
+const apiRecognize = read('api/recognize-card.ts');
+const cardRecognition = read('src/services/cardRecognition.ts');
+const scanScreen = read('src/screens/ScanScreen.tsx');
+const searchResults = read('src/screens/SearchResultsScreen.tsx');
+const cardDetail = read('src/screens/CardDetailScreen.tsx');
+const database = JSON.parse(read('data/database.json'));
+
+function assertSourceIncludes(source, needles, label) {
+  for (const needle of needles) {
+    assert.ok(
+      source.includes(needle),
+      `${label} should include: ${needle}`,
+    );
+  }
+}
+
+// Test fixture: at least one real card must exercise every MarketDataPanel section.
+const marketFixture = Object.values(database.cards ?? {}).find((card) =>
+  Number(card.sellPrice) > 0 &&
+  Number(card.buyPrice) > 0 &&
+  card.priceHistory &&
+  Object.keys(card.priceHistory).length >= 2 &&
+  card.ytStats &&
+  Object.values(card.ytStats).some((value) => value != null)
+);
+
+assert.ok(marketFixture, 'database should contain a card with sellPrice, buyPrice, priceHistory, and ytStats');
+
+// API recognize-card response must expose all fields consumed by MarketDataPanel.
+assertSourceIncludes(apiRecognize, [
+  'buyPrice: entry.buyPrice ?? null',
+  'priceHistory: entry.priceHistory || {}',
+  'ytStats: entry.ytStats ?? null',
+], 'api/recognize-card fmt()');
+
+// Local recognition / Tesseract fallback path must preserve the same fields.
+assertSourceIncludes(cardRecognition, [
+  'buyPrice?: number | null',
+  'priceHistory?: Record<string, number>',
+  'ytStats?: any',
+  'buyPrice: (entry as any).buyPrice ?? null',
+  'priceHistory: (entry as any).priceHistory || {}',
+  'ytStats: (entry as any).ytStats ?? null',
+  'buyPrice: apiCard.buyPrice ?? null',
+  'priceHistory: apiCard.priceHistory || {}',
+  'ytStats: apiCard.ytStats ?? null',
+], 'src/services/cardRecognition');
+
+// Camera/API success path must place fields on the session card and navigate it to CardDetail.
+assertSourceIncludes(scanScreen, [
+  'buyPrice: card.buyPrice ?? null',
+  'priceHistory: card.priceHistory || {}',
+  'ytStats: card.ytStats ?? null',
+  "onViewCard={(card) => navigation?.navigate('CardDetail', { card })}",
+], 'src/screens/ScanScreen');
+
+// Search route regression: search cards still carry the same market fields.
+assertSourceIncludes(searchResults, [
+  'sellPrice: c.sellPrice ?? null',
+  'buyPrice: c.buyPrice ?? null',
+  'ytStats: c.ytStats ?? null',
+  'priceHistory: c.priceHistory || {}',
+], 'src/screens/SearchResultsScreen');
+
+// MarketDataPanel should render all requested sections when fields exist.
+assertSourceIncludes(cardDetail, [
+  'function MarketDataPanel',
+  'const buyPrice = card?.buyPrice ?? null',
+  'const ytStats = card?.ytStats ?? null',
+  'const priceHistory = card?.priceHistory ?? null',
+  '💱 買賣差價',
+  '📺 YouTube 成員數據',
+  'priceTrend',
+], 'src/screens/CardDetailScreen MarketDataPanel');
+
+console.log('DIC-361 market data field regression checks passed');
+console.log(JSON.stringify({
+  fixture: {
+    id: marketFixture.id,
+    cardNumber: marketFixture.cardNumber,
+    name: marketFixture.name,
+    sellPrice: marketFixture.sellPrice,
+    buyPrice: marketFixture.buyPrice,
+    priceHistoryDays: Object.keys(marketFixture.priceHistory ?? {}).length,
+    ytStatsKeys: Object.keys(marketFixture.ytStats ?? {}).filter((key) => marketFixture.ytStats[key] != null),
+  },
+}, null, 2));
