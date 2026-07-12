@@ -428,30 +428,47 @@ function MarketDataPanel({ card }: { card: any }) {
   const priceHistory = card?.priceHistory ?? null;
 
   const hasSpread = typeof sellPrice === 'number' && sellPrice > 0 && typeof buyPrice === 'number' && buyPrice > 0;
-  const hasYt = ytStats != null && typeof ytStats === 'object';
+  // YT 子面板需至少一個有效顯示欄位才渲染，避免 {} 或全 null 時顯示空標題
+  const YT_DISPLAY_FIELDS = ['subscriberCount', 'growth_1d', 'growth_7d', 'totalViewCount', 'viewCount_daily'];
+  const hasYt = ytStats != null && typeof ytStats === 'object' &&
+    YT_DISPLAY_FIELDS.some((k) => ytStats[k] != null);
 
-  // 漲跌判斷 from priceHistory {date: price}
+  // 漲跌判斷：近 7 日均價 vs 前 7 日均價，±3% 閾值 → up / down / flat
+  let priceTrend: 'up' | 'down' | 'flat' | null = null;
   let priceChangePct: number | null = null;
-  let earliestPrice: number | null = null;
-  let latestPrice: number | null = null;
+  let recentAvg: number | null = null;
+  let priorAvg: number | null = null;
   if (priceHistory != null && typeof priceHistory === 'object') {
     const entries = Object.entries(priceHistory)
       .map(([d, p]) => [d, Number(p)] as [string, number])
-      .filter(([, p]) => !isNaN(p) && p > 0)
+      .filter(([d, p]) => !isNaN(p) && p > 0 && !isNaN(Date.parse(d)))
       .sort((a, b) => a[0].localeCompare(b[0]));
     if (entries.length >= 2) {
-      earliestPrice = entries[0][1];
-      latestPrice = entries[entries.length - 1][1];
-      if (earliestPrice > 0) priceChangePct = ((latestPrice - earliestPrice) / earliestPrice) * 100;
+      const latestMs = Date.parse(entries[entries.length - 1][0]);
+      const DAY_MS = 86400000;
+      const recent: number[] = [];
+      const prior: number[] = [];
+      for (const [d, p] of entries) {
+        const offsetDays = Math.round((latestMs - Date.parse(d)) / DAY_MS);
+        if (offsetDays >= 0 && offsetDays <= 6) recent.push(p);
+        else if (offsetDays >= 7 && offsetDays <= 13) prior.push(p);
+      }
+      if (recent.length > 0 && prior.length > 0) {
+        recentAvg = recent.reduce((s, v) => s + v, 0) / recent.length;
+        priorAvg = prior.reduce((s, v) => s + v, 0) / prior.length;
+        if (priorAvg > 0) {
+          priceChangePct = ((recentAvg - priorAvg) / priorAvg) * 100;
+          priceTrend = priceChangePct >= 3 ? 'up' : priceChangePct <= -3 ? 'down' : 'flat';
+        }
+      }
     }
   }
-  const hasHistory = priceChangePct != null;
+  const hasHistory = priceTrend != null;
 
   if (!hasSpread && !hasYt && !hasHistory) return null;
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
-  const priceUp = (priceChangePct ?? 0) >= 0;
 
   return (
     <View style={styles.section}>
@@ -522,15 +539,21 @@ function MarketDataPanel({ card }: { card: any }) {
       {/* 漲跌判斷 */}
       {hasHistory ? (
         <View style={styles.marketBlock}>
-          <Text style={styles.marketBlockTitle}>{priceUp ? '📈' : '📉'} 漲跌判斷</Text>
+          <Text style={styles.marketBlockTitle}>
+            {priceTrend === 'up' ? '📈' : priceTrend === 'down' ? '📉' : '➖'} 漲跌判斷
+          </Text>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>歷史區間</Text>
-            <Text style={styles.marketValue}>¥{earliestPrice!.toLocaleString()} → ¥{latestPrice!.toLocaleString()}</Text>
+            <Text style={styles.marketLabel}>前 7 日均價</Text>
+            <Text style={styles.marketValue}>¥{Math.round(priorAvg!).toLocaleString()}</Text>
+          </View>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>近 7 日均價</Text>
+            <Text style={styles.marketValue}>¥{Math.round(recentAvg!).toLocaleString()}</Text>
           </View>
           <View style={styles.marketRow}>
             <Text style={styles.marketLabel}>變化</Text>
-            <Text style={[styles.marketValueStrong, { color: priceUp ? '#10b981' : '#ef4444' }]}>
-              {priceUp ? '▲' : '▼'} {priceUp ? '+' : ''}{priceChangePct!.toFixed(1)}%
+            <Text style={[styles.marketValueStrong, { color: priceTrend === 'up' ? '#10b981' : priceTrend === 'down' ? '#ef4444' : '#6b7280' }]}>
+              {priceTrend === 'up' ? '▲' : priceTrend === 'down' ? '▼' : '▬'} {priceChangePct! >= 0 ? '+' : ''}{priceChangePct!.toFixed(1)}%
             </Text>
           </View>
         </View>
