@@ -282,6 +282,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
       {/* ====== SKILLS / EFFECTS ====== */}
       <SkillsPanel skills={preferredLanguage === 'zh' ? (card.skillsZh || card.skillsJp) : (card.skillsJp || card.skillsZh)} />
 
+      {/* ====== MARKET DATA ====== */}
+      <MarketDataPanel card={card} />
+
       {/* ====== EFFECT TEXTS ====== */}
       {(effects.length > 0 || card.type === 'Oshi') && (
         <View style={styles.section}>
@@ -409,6 +412,133 @@ function SkillsPanel({ skills }: { skills?: Skills }) {
   );
 }
 
+// ─── Market data panel ────────────────────────────────
+function formatCount(n?: number | null): string {
+  if (n == null || typeof n !== 'number' || isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1e8) return (n / 1e8).toFixed(2) + '億';
+  if (abs >= 1e4) return (n / 1e4).toFixed(1) + '萬';
+  return n.toLocaleString();
+}
+
+function MarketDataPanel({ card }: { card: any }) {
+  const sellPrice = card?.sellPrice ?? null;   // 遊々亭賣出價（買入成本）
+  const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）
+  const ytStats = card?.ytStats ?? null;
+  const priceHistory = card?.priceHistory ?? null;
+
+  const hasSpread = typeof sellPrice === 'number' && sellPrice > 0 && typeof buyPrice === 'number' && buyPrice > 0;
+  const hasYt = ytStats != null && typeof ytStats === 'object';
+
+  // 漲跌判斷 from priceHistory {date: price}
+  let priceChangePct: number | null = null;
+  let earliestPrice: number | null = null;
+  let latestPrice: number | null = null;
+  if (priceHistory != null && typeof priceHistory === 'object') {
+    const entries = Object.entries(priceHistory)
+      .map(([d, p]) => [d, Number(p)] as [string, number])
+      .filter(([, p]) => !isNaN(p) && p > 0)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length >= 2) {
+      earliestPrice = entries[0][1];
+      latestPrice = entries[entries.length - 1][1];
+      if (earliestPrice > 0) priceChangePct = ((latestPrice - earliestPrice) / earliestPrice) * 100;
+    }
+  }
+  const hasHistory = priceChangePct != null;
+
+  if (!hasSpread && !hasYt && !hasHistory) return null;
+
+  const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
+  const spreadUp = spreadPct >= 0;
+  const priceUp = (priceChangePct ?? 0) >= 0;
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>📊 市場數據</Text>
+
+      {/* 買賣差價 */}
+      {hasSpread ? (
+        <View style={styles.marketBlock}>
+          <Text style={styles.marketBlockTitle}>💱 買賣差價</Text>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
+            <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
+          </View>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
+            <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
+          </View>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>差價</Text>
+            <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
+              {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
+      {/* YouTube 成員數據 */}
+      {hasYt ? (
+        <View style={styles.marketBlock}>
+          <Text style={styles.marketBlockTitle}>📺 YouTube 成員數據</Text>
+          {ytStats.subscriberCount != null ? (
+            <View style={styles.marketRow}>
+              <Text style={styles.marketLabel}>訂閱數</Text>
+              <Text style={styles.marketValue}>{formatCount(ytStats.subscriberCount)}</Text>
+            </View>
+          ) : null}
+          {ytStats.growth_1d != null ? (
+            <View style={styles.marketRow}>
+              <Text style={styles.marketLabel}>單日成長</Text>
+              <Text style={[styles.marketValue, { color: ytStats.growth_1d >= 0 ? '#10b981' : '#ef4444' }]}>
+                {ytStats.growth_1d >= 0 ? '+' : ''}{formatCount(ytStats.growth_1d)}
+              </Text>
+            </View>
+          ) : null}
+          {ytStats.growth_7d != null ? (
+            <View style={styles.marketRow}>
+              <Text style={styles.marketLabel}>7 日成長</Text>
+              <Text style={[styles.marketValue, { color: ytStats.growth_7d >= 0 ? '#10b981' : '#ef4444' }]}>
+                {ytStats.growth_7d >= 0 ? '+' : ''}{formatCount(ytStats.growth_7d)}
+              </Text>
+            </View>
+          ) : null}
+          {ytStats.totalViewCount != null ? (
+            <View style={styles.marketRow}>
+              <Text style={styles.marketLabel}>總觀看數</Text>
+              <Text style={styles.marketValue}>{formatCount(ytStats.totalViewCount)}</Text>
+            </View>
+          ) : null}
+          {ytStats.viewCount_daily != null ? (
+            <View style={styles.marketRow}>
+              <Text style={styles.marketLabel}>單日觀看</Text>
+              <Text style={styles.marketValue}>{formatCount(ytStats.viewCount_daily)}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* 漲跌判斷 */}
+      {hasHistory ? (
+        <View style={styles.marketBlock}>
+          <Text style={styles.marketBlockTitle}>{priceUp ? '📈' : '📉'} 漲跌判斷</Text>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>歷史區間</Text>
+            <Text style={styles.marketValue}>¥{earliestPrice!.toLocaleString()} → ¥{latestPrice!.toLocaleString()}</Text>
+          </View>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>變化</Text>
+            <Text style={[styles.marketValueStrong, { color: priceUp ? '#10b981' : '#ef4444' }]}>
+              {priceUp ? '▲' : '▼'} {priceUp ? '+' : ''}{priceChangePct!.toFixed(1)}%
+            </Text>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
@@ -502,6 +632,14 @@ const styles = StyleSheet.create({
   // Links
   linkButton: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border + '88', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10, marginBottom: 8 },
   linkText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+
+  // Market data section
+  marketBlock: { backgroundColor: COLORS.surfaceLight + '55', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: 12, marginBottom: 10 },
+  marketBlockTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginBottom: 8 },
+  marketRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  marketLabel: { fontSize: 13, color: COLORS.textSecondary, flex: 1, marginRight: 8 },
+  marketValue: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  marketValueStrong: { fontSize: 15, fontWeight: 'bold' },
 
   // Trend prediction section
   componentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '44' },
