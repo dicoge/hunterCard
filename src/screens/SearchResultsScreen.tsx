@@ -55,10 +55,21 @@ const gradeLabels: Record<string, string> = {
 
 // ── Types ──
 
+interface YtStats {
+  subscriberCount?: number | null;
+  growth_1d?: number | null;
+  growth_7d?: number | null;
+  totalViewCount?: number | null;
+  viewCount_daily?: number | null;
+  date?: string;
+  [key: string]: any;
+}
+
 interface CardRecord {
   id: string; name: string; series: string; type: string; rarity: string;
   color: string; localImage?: string; officialImage?: string;
-  sellPrice?: number | null; yuyuName?: string; yuyuImage?: string;
+  sellPrice?: number | null; buyPrice?: number | null; yuyuName?: string; yuyuImage?: string;
+  ytStats?: YtStats | null;
   prices?: { name: string; sellPrice: number | null; rarity: string }[];
   priceHistory?: Record<string, number>;
   effects?: string[]; hp?: string; life?: string; arts?: string;
@@ -71,6 +82,9 @@ interface CardResult {
   tags: string[]; cardNumber: string; imageUrl: string;
   yuyuUrl: string; carousellUrl: string; officialUrl: string;
   yuyuPrice?: number | null;
+  sellPrice?: number | null;
+  buyPrice?: number | null;
+  ytStats?: YtStats | null;
   prices?: { name: string; sellPrice: number | null; rarity: string }[];
   priceHistory?: Record<string, number>;
   searchKeywords?: string[];
@@ -222,6 +236,9 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
       seriesNames,
       imageUrl,
       yuyuPrice: c.sellPrice || null,
+      sellPrice: c.sellPrice ?? null,
+      buyPrice: c.buyPrice ?? null,
+      ytStats: c.ytStats ?? null,
       yuyuPriceName: c.yuyuName || '',
       prices: c.prices || [],
       priceHistory: c.priceHistory || {},
