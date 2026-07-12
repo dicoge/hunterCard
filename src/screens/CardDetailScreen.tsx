@@ -148,9 +148,6 @@ export default function CardDetailScreen({ route, navigation }: any) {
         )}
       </View>
 
-      {/* ====== SKILLS / EFFECTS ====== */}
-      <SkillsPanel skills={card.skillsZh || card.skillsJp} />
-
       {/* ====== PRICE SECTION ====== */}
       <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]}>
         <View style={styles.priceHeader}>
@@ -281,6 +278,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
           <InfoRow label="Tag" value={tags.join(' / ')} />
         )}
       </View>
+
+      {/* ====== SKILLS / EFFECTS ====== */}
+      <SkillsPanel skills={preferredLanguage === 'zh' ? (card.skillsZh || card.skillsJp) : (card.skillsJp || card.skillsZh)} />
 
       {/* ====== EFFECT TEXTS ====== */}
       {(effects.length > 0 || card.type === 'Oshi') && (
