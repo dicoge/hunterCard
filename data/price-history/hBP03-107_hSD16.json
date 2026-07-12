@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-107_hSD16"
+    },
+    {
+      "date": "2026-07-12",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-107_hSD16"
     }
   ],
-  "lastUpdated": "2026-07-11T12:07:22.758Z",
+  "lastUpdated": "2026-07-12T12:07:37.624Z",
   "nameZh": "35P"
 }

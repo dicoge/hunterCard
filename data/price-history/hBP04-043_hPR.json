@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-043_hPR"
+    },
+    {
+      "date": "2026-07-12",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-043_hPR"
     }
   ],
-  "lastUpdated": "2026-07-11T12:07:22.833Z",
+  "lastUpdated": "2026-07-12T12:07:37.784Z",
   "nameZh": "雪花菈米"
 }

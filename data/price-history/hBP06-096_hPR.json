@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-096_hPR"
+    },
+    {
+      "date": "2026-07-12",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-096_hPR"
     }
   ],
-  "lastUpdated": "2026-07-11T12:07:22.835Z",
+  "lastUpdated": "2026-07-12T12:07:37.788Z",
   "nameZh": "兩人一起就是蓮達！"
 }

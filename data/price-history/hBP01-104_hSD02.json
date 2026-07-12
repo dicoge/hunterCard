@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-104_hSD02"
+    },
+    {
+      "date": "2026-07-12",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hSD02"
     }
   ],
-  "lastUpdated": "2026-07-11T12:07:22.815Z",
+  "lastUpdated": "2026-07-12T12:07:37.752Z",
   "nameZh": "普通電腦"
 }

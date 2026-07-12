@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP07-104_hBP07"
+    },
+    {
+      "date": "2026-07-12",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-104_hBP07"
     }
   ],
-  "lastUpdated": "2026-07-11T12:07:22.760Z",
+  "lastUpdated": "2026-07-12T12:07:37.637Z",
   "nameZh": "Thorn"
 }

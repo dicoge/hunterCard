@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-090_hCO01"
+    },
+    {
+      "date": "2026-07-12",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-090_hCO01"
     }
   ],
-  "lastUpdated": "2026-07-11T12:07:22.848Z",
+  "lastUpdated": "2026-07-12T12:07:37.818Z",
   "nameZh": "花綻舞台"
 }
