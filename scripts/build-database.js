@@ -712,6 +712,60 @@ function loadOfficialData() {
   return officialCards;
 }
 
+// ─── Price History Sanitizer (DIC-412 / DIC-414) ───
+
+function medianOf(arr) {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+}
+
+function sanitizePriceHistory(existingRecords, candidatePrice) {
+  const SPIKE_FACTOR = 5;
+  const ABSOLUTE_CAP = 50000;
+
+  if (!Number.isFinite(candidatePrice) || candidatePrice <= 0) return null;
+
+  if (!existingRecords || existingRecords.length === 0) {
+    if (candidatePrice > ABSOLUTE_CAP) {
+      console.warn(`  [sanitize] Price ${candidatePrice} > absolute cap ${ABSOLUTE_CAP} — no history, capping`);
+      return ABSOLUTE_CAP;
+    }
+    return candidatePrice;
+  }
+
+  const oldPrices = existingRecords
+    .map(r => r.price)
+    .filter(p => Number.isFinite(p) && p > 0);
+
+  if (oldPrices.length === 0) return candidatePrice;
+
+  const sorted = [...oldPrices].sort((a, b) => a - b);
+
+  let referencePrices;
+  if (oldPrices.length < 3) {
+    referencePrices = sorted;
+  } else {
+    const halfLen = Math.ceil(sorted.length / 2);
+    referencePrices = sorted.slice(sorted.length - halfLen);
+  }
+
+  const baseline = medianOf(referencePrices);
+
+  if (candidatePrice > baseline * SPIKE_FACTOR || candidatePrice > ABSOLUTE_CAP) {
+    console.warn(
+      `  [sanitize] Spike rejection: candidate=${candidatePrice} ` +
+      `(baseline=${baseline}, records=${oldPrices.length}) — capping to baseline`
+    );
+    return baseline;
+  }
+
+  return candidatePrice;
+}
+
 // ─── VTuber YouTube stats merge (DIC-249) ───
 
 function daysBetween(earlierYmd, laterYmd) {
@@ -1104,8 +1158,12 @@ async function buildDatabase() {
     const existingDates = new Set(existing.records.map(r => r.date));
     for (const nr of newRecords) {
       if (!existingDates.has(nr.date)) {
-        existing.records.push(nr);
-        totalSaved++;
+        const sanitized = sanitizePriceHistory(existing.records, nr.price);
+        if (sanitized !== null && sanitized > 0) {
+          nr.price = sanitized;
+          existing.records.push(nr);
+          totalSaved++;
+        }
       }
     }
 
@@ -1151,14 +1209,25 @@ async function buildDatabase() {
   // Step 6: Merge priceHistory back into database cards
   console.log('\n── Step 6: Merge priceHistory into database ──');
   let mergedCount = 0;
+  let sanitizedCount = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     const histFile = path.join(historyDir, `${cardId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
     try {
       const hist = JSON.parse(fs.readFileSync(histFile, 'utf-8'));
       if (hist.records && hist.records.length > 0) {
         const ph = {};
-        for (const r of hist.records) {
-          ph[r.date] = r.price;
+        const cleanInOrder = [];
+        const sortedRecords = [...hist.records].sort((a, b) => a.date.localeCompare(b.date));
+        for (const r of sortedRecords) {
+          const sanitized = sanitizePriceHistory(cleanInOrder, r.price);
+          if (sanitized !== null) {
+            const entry = sanitized !== r.price ? { ...r, price: sanitized } : r;
+            cleanInOrder.push(entry);
+            ph[r.date] = sanitized;
+          }
+        }
+        if (cleanInOrder.length < hist.records.length) {
+          sanitizedCount += hist.records.length - cleanInOrder.length;
         }
         card.priceHistory = ph;
         mergedCount++;
@@ -1167,7 +1236,7 @@ async function buildDatabase() {
       // no history file for this card, skip
     }
   }
-  console.log(`  [priceHistory] Merged into ${mergedCount} cards`);
+  console.log(`  [priceHistory] Merged into ${mergedCount} cards (${sanitizedCount} spike records sanitized)`);
 
   // Step 6b: Restore preserved buyPrice / buyPriceHistory onto the rebuilt cards
   // so they survive the from-scratch rebuild. merge-buy-prices.js runs after this
