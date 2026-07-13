@@ -3,8 +3,10 @@
  *
  * 每日抓取 hololive 成員 YouTube 頻道的「訂閱數 + 累計觀看數」快照，
  * append 到 data/yt-stats-history.json（歷史累計，不覆蓋舊資料）。
- * 成長量（1d/7d/15d/30d、日/週/月觀看）不在此存 delta，改在
- * build-database.js 讀取歷史時即時計算。
+ * 每筆快照同時存入 1/7/15/30 天的訂閱/觀看成長量（delta），由 lib/yt-growth.js
+ * 從歷史反查計算；無 N 天前資料則存 null（不填 0，以免誤判）。新聞情緒欄位
+ * （newsCount/newsPositive/newsNegative）由 scrape-news-sentiment.js 另外寫入
+ * 同一天的快照，本 scraper 重跑時會保留既有值。
  *
  * 用法：
  *   node scrape-yt-stats.js
@@ -21,6 +23,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { computeGrowthDeltas } from './lib/yt-growth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -187,16 +190,33 @@ async function main() {
       } else {
         if (!history[channelId]) history[channelId] = { name, history: [] };
         history[channelId].name = name; // keep name fresh
+        const arr = history[channelId].history;
+        const existingIdx = arr.findIndex((s) => s.date === today);
+        // Preserve news stats already written into today's snapshot by
+        // scrape-news-sentiment.js — an idempotent re-run of this scraper must
+        // not wipe them (they live only in the snapshot).
+        const prev = existingIdx >= 0 ? arr[existingIdx] : null;
         const snapshot = {
           date: today,
           subscriberCount: stats.subscriberCount,
           totalViewCount: stats.totalViewCount,
+          subscriberGrowth_1d: null,
+          subscriberGrowth_7d: null,
+          subscriberGrowth_15d: null,
+          subscriberGrowth_30d: null,
+          viewCount_1d: null,
+          viewCount_7d: null,
+          viewCount_15d: null,
+          viewCount_30d: null,
+          newsCount: prev?.newsCount ?? null,
+          newsPositive: prev?.newsPositive ?? null,
+          newsNegative: prev?.newsNegative ?? null,
         };
-        const arr = history[channelId].history;
-        const existingIdx = arr.findIndex((s) => s.date === today);
         if (existingIdx >= 0) arr[existingIdx] = snapshot; // idempotent re-run
         else arr.push(snapshot);
         arr.sort((a, b) => a.date.localeCompare(b.date));
+        // Stamp growth deltas now that the full (sorted) history is in place.
+        Object.assign(snapshot, computeGrowthDeltas(arr));
         ok++;
         console.log(
           `  ✓ ${name}: ${stats.subscriberCount?.toLocaleString() ?? '?'} subs, ` +
