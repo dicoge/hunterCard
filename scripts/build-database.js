@@ -726,13 +726,21 @@ function computeYtGrowth(history) {
   if (!Array.isArray(history) || history.length === 0) return null;
   const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
 
-  // The newest snapshot may be a news-only "blank" snapshot (subscriberCount
-  // null) that scrape-news-sentiment.js writes on a day scrape-yt-stats didn't
-  // run. Read subscriber/view figures — and compute growth — from the latest
-  // snapshot that actually has YT stats, so a trailing blank snapshot can't wipe
-  // a card's counts and deltas (DIC-391).
-  const withStats = sorted.filter((s) => s.subscriberCount != null);
+  // The newest snapshot may be a news-only "blank" snapshot (both counts null)
+  // that scrape-news-sentiment.js writes on a day scrape-yt-stats didn't run, so
+  // read from snapshots that actually carry YT stats (DIC-391). A snapshot is a
+  // real YT snapshot if it has EITHER count: scrape-yt-stats.js stamps view-only
+  // snapshots (subscriberCount null, totalViewCount set) when YouTube hides the
+  // sub count, and those must not be filtered out or their views/view-growth are
+  // lost (DIC-398). Subscriber and view figures are resolved independently so a
+  // trailing snapshot carrying only one of them can't wipe the other's last
+  // known value.
+  const withStats = sorted.filter(
+    (s) => s.subscriberCount != null || s.totalViewCount != null,
+  );
   const latestStats = withStats.length ? withStats[withStats.length - 1] : null;
+  const latestSubs = [...withStats].reverse().find((s) => s.subscriberCount != null) ?? null;
+  const latestViews = [...withStats].reverse().find((s) => s.totalViewCount != null) ?? null;
   const d = computeGrowthDeltas(withStats);
 
   // News counts come from whichever snapshot the news scraper last stamped,
@@ -741,8 +749,8 @@ function computeYtGrowth(history) {
   const latestNews = withNews.length ? withNews[withNews.length - 1] : null;
 
   return {
-    subscriberCount: latestStats?.subscriberCount ?? null,
-    totalViewCount: latestStats?.totalViewCount ?? null,
+    subscriberCount: latestSubs?.subscriberCount ?? null,
+    totalViewCount: latestViews?.totalViewCount ?? null,
     date: (latestStats ?? sorted[sorted.length - 1]).date,
 
     subscriberGrowth_1d: d.subscriberGrowth_1d,
