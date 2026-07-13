@@ -1,10 +1,7 @@
-import { readJsonFile, writeJsonFile } from '../lib/github-storage';
+import { getWatchlistForToken, setWatchlistForToken, removeWatchlistToken } from '../lib/kv-storage';
 
 export const config = { runtime: 'nodejs' };
 
-type PushWatchlist = Record<string, string[]>;
-
-const WATCHLIST_PATH = 'data/push-watchlist.json';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -37,17 +34,15 @@ export default async function handler(req: Request) {
     if (!isCardNumber(cardNumber)) return json({ error: 'Invalid cardNumber' }, 400);
     if (action !== 'add' && action !== 'remove') return json({ error: 'Invalid action' }, 400);
 
-    const watchlist = await readJsonFile<PushWatchlist>(WATCHLIST_PATH, {});
-    const cards = new Set(watchlist[token] || []);
+    const cards = new Set(await getWatchlistForToken(token));
 
     if (action === 'add') cards.add(cardNumber);
     else cards.delete(cardNumber);
 
     const nextCards = [...cards].sort();
-    if (nextCards.length > 0) watchlist[token] = nextCards;
-    else delete watchlist[token];
+    if (nextCards.length > 0) await setWatchlistForToken(token, nextCards);
+    else await removeWatchlistToken(token);
 
-    await writeJsonFile(WATCHLIST_PATH, watchlist, `chore(push): update watchlist ${cardNumber}`);
     return json({ ok: true, cards: nextCards });
   } catch (err: any) {
     console.error('[push/watchlist]', err);

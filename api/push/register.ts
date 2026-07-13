@@ -1,16 +1,7 @@
-import { readJsonFile, writeJsonFile } from '../lib/github-storage';
+import { upsertToken } from '../lib/kv-storage';
 
 export const config = { runtime: 'nodejs' };
 
-type Platform = 'ios' | 'android';
-type PushToken = {
-  token: string;
-  platform: Platform;
-  createdAt: string;
-  updatedAt: string;
-};
-
-const TOKENS_PATH = 'data/push-tokens.json';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -37,18 +28,7 @@ export default async function handler(req: Request) {
     if (!isExpoToken(token)) return json({ error: 'Invalid Expo push token' }, 400);
     if (platform !== 'ios' && platform !== 'android') return json({ error: 'Invalid platform' }, 400);
 
-    const tokens = await readJsonFile<PushToken[]>(TOKENS_PATH, []);
-    const now = new Date().toISOString();
-    const existing = tokens.find((entry) => entry.token === token);
-
-    if (existing) {
-      existing.platform = platform;
-      existing.updatedAt = now;
-    } else {
-      tokens.push({ token, platform, createdAt: now, updatedAt: now });
-    }
-
-    await writeJsonFile(TOKENS_PATH, tokens, `chore(push): register ${platform} device`);
+    await upsertToken(token, platform);
     return json({ ok: true });
   } catch (err: any) {
     console.error('[push/register]', err);
