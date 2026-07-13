@@ -142,8 +142,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP08-094_hBP08"
+    },
+    {
+      "date": "2026-07-13",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-094_hBP08"
     }
   ],
-  "lastUpdated": "2026-07-12T12:07:37.815Z",
+  "lastUpdated": "2026-07-13T12:07:01.154Z",
   "nameZh": "爸爸辭職了"
 }

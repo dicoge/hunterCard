@@ -184,8 +184,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-071_hBP06"
+    },
+    {
+      "date": "2026-07-13",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-071_hBP06"
     }
   ],
-  "lastUpdated": "2026-07-12T12:07:37.679Z",
+  "lastUpdated": "2026-07-13T12:07:01.029Z",
   "nameZh": "拉普拉斯·達克尼斯"
 }

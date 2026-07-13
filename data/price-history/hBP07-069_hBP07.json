@@ -184,8 +184,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP07-069_hBP07"
+    },
+    {
+      "date": "2026-07-13",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-069_hBP07"
     }
   ],
-  "lastUpdated": "2026-07-12T12:07:37.654Z",
+  "lastUpdated": "2026-07-13T12:07:01.008Z",
   "nameZh": "AZKi"
 }

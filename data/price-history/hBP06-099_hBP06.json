@@ -184,8 +184,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-099_hBP06"
+    },
+    {
+      "date": "2026-07-13",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-099_hBP06"
     }
   ],
-  "lastUpdated": "2026-07-12T12:07:37.673Z",
+  "lastUpdated": "2026-07-13T12:07:01.025Z",
   "nameZh": "手指"
 }

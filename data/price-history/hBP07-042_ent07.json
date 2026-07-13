@@ -184,8 +184,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP07-042_ent07"
+    },
+    {
+      "date": "2026-07-13",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-042_ent07"
     }
   ],
-  "lastUpdated": "2026-07-12T12:07:37.605Z",
+  "lastUpdated": "2026-07-13T12:07:00.972Z",
   "nameZh": "赤井心"
 }
