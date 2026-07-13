@@ -47,10 +47,10 @@ export default function WatchlistScreen({ navigation }: any) {
           在卡牌詳情頁點「加入入手提醒」即可追蹤。
         </Text>
         <View style={styles.emptyActions}>
-          <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('MainDrawer', { screen: 'Search' })}>
+          <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('Search')}>
             <Text style={styles.emptyBtnText}>🔍 前往搜尋</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.emptyBtn, styles.emptyBtnAlt]} onPress={() => navigation.navigate('MainDrawer', { screen: 'Scan' })}>
+          <TouchableOpacity style={[styles.emptyBtn, styles.emptyBtnAlt]} onPress={() => navigation.navigate('Scan')}>
             <Text style={styles.emptyBtnText}>📷 掃描卡牌</Text>
           </TouchableOpacity>
         </View>

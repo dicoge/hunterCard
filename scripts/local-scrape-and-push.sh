@@ -58,13 +58,17 @@ cd scripts
 node trend-analysis.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Trend analysis failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
-# 2e. (removed, DIC-187) scrape-buy-prices.js used to scrape fullahead + torecolo
+# 2e. Send Expo push alerts for watched cards with strong upward signals.
+echo "[$(date)] 📣 Sending push alerts..." >> "$LOG_FILE"
+node scripts/send-push-alerts.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Push alerts failed (non-fatal)" >> "$LOG_FILE"
+
+# 2f. (removed, DIC-187) scrape-buy-prices.js used to scrape fullahead + torecolo
 #     into data/buy-price-history.json. It scraped the SAME two sites as step 2f
 #     in the same cron pass — double traffic and a risk of inconsistent results
 #     if one pass succeeded and the other failed. Its output was consumed by
 #     nothing, so the duplicate scrape was dropped and 2f is the single source.
 
-# 2f. Scrape buy prices (torecolo + fullahead) into data/buy-prices/ and merge
+# 2g. Scrape buy prices (torecolo + fullahead) into data/buy-prices/ and merge
 #     into database.json (buyPrice + buyPriceHistory). Non-blocking (DIC-155).
 echo "[$(date)] Scraping buy prices into database.json (torecolo + fullahead + merge)..." >> "$LOG_FILE"
 cd scripts

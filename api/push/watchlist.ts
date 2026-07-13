@@ -1,59 +1,56 @@
-/**
- * /api/push/watchlist
- *
- * GET  → { ok: true, tokens: { [token]: { cards, updatedAt } } } (未來推播用)
- * POST { token, cardNumber, action: 'add' | 'remove' }
- *      → { ok: true, entry: { cards, updatedAt } }
- */
-import { getWatchlist, updateWatchlist, WatchlistAction } from '../../lib/pushStore';
+import { readJsonFile, writeJsonFile } from '../lib/github-storage';
 
 export const config = { runtime: 'nodejs' };
-export const maxDuration = 10;
 
-const CORS = {
+type PushWatchlist = Record<string, string[]>;
+
+const WATCHLIST_PATH = 'data/push-watchlist.json';
+const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...CORS },
-  });
+function json(body: unknown, status = 200) {
+  return Response.json(body, { status, headers: CORS_HEADERS });
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS });
-  }
+function isExpoToken(token: unknown): token is string {
+  return typeof token === 'string' && /^ExponentPushToken\[[^\]]+\]$|^ExpoPushToken\[[^\]]+\]$/.test(token);
+}
 
-  if (req.method === 'GET') {
-    return json({ ok: true, ...getWatchlist() });
-  }
+function isCardNumber(cardNumber: unknown): cardNumber is string {
+  return typeof cardNumber === 'string' && cardNumber.trim().length > 0 && cardNumber.length <= 80;
+}
 
-  if (req.method === 'POST') {
-    try {
-      const { token, cardNumber, action } = (await req.json()) as {
-        token?: unknown;
-        cardNumber?: unknown;
-        action?: unknown;
-      };
-      if (typeof token !== 'string' || !token.trim()) {
-        return json({ ok: false, error: 'Missing token' }, 400);
-      }
-      if (typeof cardNumber !== 'string' || !cardNumber.trim()) {
-        return json({ ok: false, error: 'Missing cardNumber' }, 400);
-      }
-      if (action !== 'add' && action !== 'remove') {
-        return json({ ok: false, error: "action must be 'add' or 'remove'" }, 400);
-      }
-      const entry = updateWatchlist(token.trim(), cardNumber.trim(), action as WatchlistAction);
-      return json({ ok: true, entry });
-    } catch (e: any) {
-      return json({ ok: false, error: e?.message || 'Bad request' }, 400);
-    }
-  }
+export default async function handler(req: Request) {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
-  return json({ ok: false, error: 'Method not allowed' }, 405);
+  try {
+    const body = await req.json().catch(() => ({}));
+    const token = body.token;
+    const cardNumber = typeof body.cardNumber === 'string' ? body.cardNumber.trim() : body.cardNumber;
+    const action = body.action;
+
+    if (!isExpoToken(token)) return json({ error: 'Invalid Expo push token' }, 400);
+    if (!isCardNumber(cardNumber)) return json({ error: 'Invalid cardNumber' }, 400);
+    if (action !== 'add' && action !== 'remove') return json({ error: 'Invalid action' }, 400);
+
+    const watchlist = await readJsonFile<PushWatchlist>(WATCHLIST_PATH, {});
+    const cards = new Set(watchlist[token] || []);
+
+    if (action === 'add') cards.add(cardNumber);
+    else cards.delete(cardNumber);
+
+    const nextCards = [...cards].sort();
+    if (nextCards.length > 0) watchlist[token] = nextCards;
+    else delete watchlist[token];
+
+    await writeJsonFile(WATCHLIST_PATH, watchlist, `chore(push): update watchlist ${cardNumber}`);
+    return json({ ok: true, cards: nextCards });
+  } catch (err: any) {
+    console.error('[push/watchlist]', err);
+    return json({ error: err.message || 'Watchlist update failed' }, 500);
+  }
 }

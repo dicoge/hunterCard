@@ -64,7 +64,7 @@ export async function uploadDeviceToken(token: string): Promise<void> {
     const res = await fetch(`${getApiBase()}/api/push/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, platform: Platform.OS }),
     });
     if (!res.ok) {
       console.warn(`[push] uploadDeviceToken returned ${res.status}`);

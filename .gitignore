@@ -32,6 +32,8 @@ yarn-error.*
 
 # local env files
 .env*.local
+data/push-tokens.json
+data/push-watchlist.json
 
 # push notification data (device tokens — never commit)
 data/push-tokens.json

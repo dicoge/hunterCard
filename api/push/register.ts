@@ -1,42 +1,57 @@
-/**
- * POST /api/push/register
- * Body: { token: string }
- * Appends the Expo push token to the token store (deduped).
- */
-import { addToken } from '../../lib/pushStore';
+import { readJsonFile, writeJsonFile } from '../lib/github-storage';
 
 export const config = { runtime: 'nodejs' };
-export const maxDuration = 10;
 
-const CORS = {
+type Platform = 'ios' | 'android';
+type PushToken = {
+  token: string;
+  platform: Platform;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const TOKENS_PATH = 'data/push-tokens.json';
+const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...CORS },
-  });
+function json(body: unknown, status = 200) {
+  return Response.json(body, { status, headers: CORS_HEADERS });
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS });
-  }
-  if (req.method !== 'POST') {
-    return json({ ok: false, error: 'Method not allowed' }, 405);
-  }
+function isExpoToken(token: unknown): token is string {
+  return typeof token === 'string' && /^ExponentPushToken\[[^\]]+\]$|^ExpoPushToken\[[^\]]+\]$/.test(token);
+}
+
+export default async function handler(req: Request) {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   try {
-    const { token } = (await req.json()) as { token?: unknown };
-    if (typeof token !== 'string' || !token.trim()) {
-      return json({ ok: false, error: 'Missing token' }, 400);
+    const body = await req.json().catch(() => ({}));
+    const token = body.token;
+    const platform = body.platform;
+
+    if (!isExpoToken(token)) return json({ error: 'Invalid Expo push token' }, 400);
+    if (platform !== 'ios' && platform !== 'android') return json({ error: 'Invalid platform' }, 400);
+
+    const tokens = await readJsonFile<PushToken[]>(TOKENS_PATH, []);
+    const now = new Date().toISOString();
+    const existing = tokens.find((entry) => entry.token === token);
+
+    if (existing) {
+      existing.platform = platform;
+      existing.updatedAt = now;
+    } else {
+      tokens.push({ token, platform, createdAt: now, updatedAt: now });
     }
-    addToken(token.trim());
+
+    await writeJsonFile(TOKENS_PATH, tokens, `chore(push): register ${platform} device`);
     return json({ ok: true });
-  } catch (e: any) {
-    return json({ ok: false, error: e?.message || 'Bad request' }, 400);
+  } catch (err: any) {
+    console.error('[push/register]', err);
+    return json({ error: err.message || 'Registration failed' }, 500);
   }
 }
