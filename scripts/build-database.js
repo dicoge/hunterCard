@@ -753,14 +753,16 @@ function sanitizePriceHistory(existingRecords, candidatePrice) {
     referencePrices = sorted.slice(sorted.length - halfLen);
   }
 
+  // baseline is derived only from existingRecords, never candidatePrice, so a
+  // spike can't inflate its own reference and slip through.
   const baseline = medianOf(referencePrices);
 
   if (candidatePrice > baseline * SPIKE_FACTOR || candidatePrice > ABSOLUTE_CAP) {
     console.warn(
-      `  [sanitize] Spike rejection: candidate=${candidatePrice} ` +
-      `(baseline=${baseline}, records=${oldPrices.length}) — capping to baseline`
+      `  [sanitize] Spike rejected: candidate=${candidatePrice} ` +
+      `(baseline=${baseline}, records=${oldPrices.length}) — dropping record`
     );
-    return baseline;
+    return null;
   }
 
   return candidatePrice;
