@@ -725,13 +725,25 @@ function loadOfficialData() {
 function computeYtGrowth(history) {
   if (!Array.isArray(history) || history.length === 0) return null;
   const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
-  const latest = sorted[sorted.length - 1];
-  const d = computeGrowthDeltas(sorted);
+
+  // The newest snapshot may be a news-only "blank" snapshot (subscriberCount
+  // null) that scrape-news-sentiment.js writes on a day scrape-yt-stats didn't
+  // run. Read subscriber/view figures — and compute growth — from the latest
+  // snapshot that actually has YT stats, so a trailing blank snapshot can't wipe
+  // a card's counts and deltas (DIC-391).
+  const withStats = sorted.filter((s) => s.subscriberCount != null);
+  const latestStats = withStats.length ? withStats[withStats.length - 1] : null;
+  const d = computeGrowthDeltas(withStats);
+
+  // News counts come from whichever snapshot the news scraper last stamped,
+  // which may be the trailing blank one.
+  const withNews = sorted.filter((s) => s.newsCount != null);
+  const latestNews = withNews.length ? withNews[withNews.length - 1] : null;
 
   return {
-    subscriberCount: latest.subscriberCount ?? null,
-    totalViewCount: latest.totalViewCount ?? null,
-    date: latest.date,
+    subscriberCount: latestStats?.subscriberCount ?? null,
+    totalViewCount: latestStats?.totalViewCount ?? null,
+    date: (latestStats ?? sorted[sorted.length - 1]).date,
 
     subscriberGrowth_1d: d.subscriberGrowth_1d,
     subscriberGrowth_7d: d.subscriberGrowth_7d,
@@ -742,9 +754,9 @@ function computeYtGrowth(history) {
     viewCount_15d: d.viewCount_15d,
     viewCount_30d: d.viewCount_30d,
 
-    newsCount: latest.newsCount ?? null,
-    newsPositive: latest.newsPositive ?? null,
-    newsNegative: latest.newsNegative ?? null,
+    newsCount: latestNews?.newsCount ?? null,
+    newsPositive: latestNews?.newsPositive ?? null,
+    newsNegative: latestNews?.newsNegative ?? null,
 
     // Legacy aliases for the existing CardDetailScreen UI.
     growth_1d: d.subscriberGrowth_1d,
