@@ -69,15 +69,17 @@ export async function getWatchlist(): Promise<PushWatchlist> {
   return result;
 }
 
-export async function getLastAlertTimes(cardNumbers: string[]): Promise<Record<string, number>> {
-  if (cardNumbers.length === 0) return {};
-  const values = await kv.hmget<Record<string, number>>(LAST_ALERT_KEY, ...cardNumbers);
+// Cooldown is tracked per recipient+card (see notify.ts), so `keys` are opaque
+// composite `<token>|<cardNumber>` strings, not bare card numbers.
+export async function getLastAlertTimes(keys: string[]): Promise<Record<string, number>> {
+  if (keys.length === 0) return {};
+  const values = await kv.hmget<Record<string, number>>(LAST_ALERT_KEY, ...keys);
   return values ?? {};
 }
 
-export async function setLastAlertTimes(cardNumbers: string[], timestamp: number): Promise<void> {
-  if (cardNumbers.length === 0) return;
+export async function setLastAlertTimes(keys: string[], timestamp: number): Promise<void> {
+  if (keys.length === 0) return;
   const patch: Record<string, number> = {};
-  for (const cardNumber of cardNumbers) patch[cardNumber] = timestamp;
+  for (const key of keys) patch[key] = timestamp;
   await kv.hset(LAST_ALERT_KEY, patch);
 }

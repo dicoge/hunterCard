@@ -13,7 +13,10 @@ const NOTIFY_URL = process.env.PUSH_NOTIFY_URL || process.env.VERCEL_PUSH_NOTIFY
 const NOTIFY_SECRET = process.env.PUSH_NOTIFY_SECRET;
 const KV_REST_API_URL = process.env.KV_REST_API_URL;
 const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
-const WATCHLIST_KEY = 'push:watchlist';
+// Watchlist is stored as per-token Redis sets (`push:watchlist:<token>`) plus a
+// registry set of every token that has a watchlist (DIC-390 CR blocker 1).
+const WATCHLIST_TOKENS_KEY = 'push:watchlist-tokens';
+const WATCHLIST_PREFIX = 'push:watchlist:';
 const THRESHOLD = 0.6;
 const MIN_DATA_POINTS = 3;
 
@@ -25,29 +28,29 @@ function readJson(filePath, fallback) {
   }
 }
 
-// Read the push watchlist from Vercel KV (Upstash REST API). Tokens/watchlist
-// no longer live in git — they are stored in KV (DIC-390 #2), so the scraper
-// reads them over the REST API instead of a committed JSON file.
+async function kvSmembers(key) {
+  const res = await fetch(`${KV_REST_API_URL}/smembers/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
+  });
+  if (!res.ok) throw new Error(`KV smembers ${res.status}: ${await res.text()}`);
+  const { result } = await res.json();
+  return Array.isArray(result) ? result : [];
+}
+
+// Read the push watchlist from Vercel KV (Upstash REST API). The API stores each
+// token's cards in its own Redis set (`push:watchlist:<token>`) and tracks every
+// active token in a registry set, so enumerate the registry then read each set
+// (DIC-390 CR blocker 1 — the old `hgetall push:watchlist` always came back empty).
 async function fetchWatchlist() {
   if (!KV_REST_API_URL || !KV_REST_API_TOKEN) {
     throw new Error('KV_REST_API_URL / KV_REST_API_TOKEN not configured');
   }
-  const res = await fetch(`${KV_REST_API_URL}/hgetall/${encodeURIComponent(WATCHLIST_KEY)}`, {
-    headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
-  });
-  if (!res.ok) throw new Error(`KV hgetall ${res.status}: ${await res.text()}`);
-  const { result } = await res.json();
+  const tokens = await kvSmembers(WATCHLIST_TOKENS_KEY);
   const watchlist = {};
-  // Upstash returns a flat [field, value, field, value, ...] array; values were
-  // stored by @vercel/kv as JSON, so parse each one back into a card array.
-  for (let i = 0; i + 1 < (result?.length ?? 0); i += 2) {
-    const token = result[i];
-    try {
-      const cards = JSON.parse(result[i + 1]);
-      if (Array.isArray(cards)) watchlist[token] = cards;
-    } catch {
-      // skip malformed entries
-    }
+  for (const token of tokens) {
+    if (typeof token !== 'string' || !token) continue;
+    const cards = await kvSmembers(`${WATCHLIST_PREFIX}${token}`);
+    if (cards.length > 0) watchlist[token] = cards;
   }
   return watchlist;
 }

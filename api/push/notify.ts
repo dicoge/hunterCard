@@ -17,9 +17,18 @@ type ExpoMessage = {
 };
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-// Minimum gap between pushes for the same card, so a card trending above the
-// alert threshold for several days isn't pushed on every cron run (DIC-390 #4).
+// Minimum gap between pushes of the same card to the same recipient, so a card
+// trending above the alert threshold for several days isn't pushed on every cron
+// run (DIC-390 #4). Keyed per recipient (not per card) so one watcher's success
+// can't suppress the alert for another watcher who hasn't received it yet
+// (DIC-390 CR blocker 2).
 const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+// Composite hash-field key for the per-recipient/per-card cooldown record. An
+// Expo push token never contains '|', so the split point is unambiguous.
+function cooldownKey(token: string, cardNumber: string): string {
+  return `${token}|${cardNumber}`;
+}
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -71,41 +80,45 @@ export default async function handler(req: Request) {
 
     const watchlist = await getWatchlist();
     const now = Date.now();
-    const lastAlertTimes = await getLastAlertTimes(alerts.map((alert) => alert.cardNumber));
+
+    // Expand each alert into its concrete recipients first, then apply the
+    // cooldown per recipient. Skipping at the card level (before choosing
+    // recipients) would let one watcher's recent delivery suppress the alert for
+    // a different watcher who never received it (DIC-390 CR blocker 2).
+    const recipients = alerts.flatMap((alert) =>
+      Object.entries(watchlist)
+        .filter(([, cards]) => Array.isArray(cards) && cards.includes(alert.cardNumber))
+        .map(([token]) => ({ token, alert })),
+    );
+
+    const lastAlertTimes = await getLastAlertTimes(
+      [...new Set(recipients.map(({ token, alert }) => cooldownKey(token, alert.cardNumber)))],
+    );
 
     const messages: ExpoMessage[] = [];
     let skipped = 0;
 
-    for (const alert of alerts) {
-      const lastSent = Number(lastAlertTimes[alert.cardNumber] ?? 0);
+    for (const { token, alert } of recipients) {
+      const lastSent = Number(lastAlertTimes[cooldownKey(token, alert.cardNumber)] ?? 0);
       if (lastSent && now - lastSent < COOLDOWN_MS) {
         skipped += 1;
         continue;
       }
-
-      const subscribers = Object.entries(watchlist)
-        .filter(([, cards]) => Array.isArray(cards) && cards.includes(alert.cardNumber))
-        .map(([token]) => token);
-
-      if (subscribers.length === 0) continue;
-
-      for (const token of subscribers) {
-        messages.push({
-          to: token,
-          title: alert.title,
-          body: alert.body,
-          data: { cardNumber: alert.cardNumber },
-        });
-      }
+      messages.push({
+        to: token,
+        title: alert.title,
+        body: alert.body,
+        data: { cardNumber: alert.cardNumber },
+      });
     }
 
     let sent = 0;
     let errors = 0;
-    // Only cards with at least one Expo-confirmed 'ok' ticket enter the 24h
+    // Only recipient+card pairs with an Expo-confirmed 'ok' ticket enter the 24h
     // cooldown. A failed delivery must NOT record the cooldown, otherwise the
-    // next cron run would skip the card and the user never gets the alert
+    // next cron run would skip that recipient and they never get the alert
     // (DIC-390 CR blocker 2).
-    const succeededCards = new Set<string>();
+    const succeeded = new Set<string>();
 
     for (const batch of chunk(messages, 100)) {
       const res = await fetch(EXPO_PUSH_URL, {
@@ -132,11 +145,11 @@ export default async function handler(req: Request) {
       }
       // Tickets come back in the same order as the batch we sent.
       batch.forEach((message, i) => {
-        if (tickets[i]?.status === 'ok') succeededCards.add(message.data.cardNumber);
+        if (tickets[i]?.status === 'ok') succeeded.add(cooldownKey(message.to, message.data.cardNumber));
       });
     }
 
-    if (succeededCards.size > 0) await setLastAlertTimes([...succeededCards], now);
+    if (succeeded.size > 0) await setLastAlertTimes([...succeeded], now);
 
     return json({ ok: true, sent, errors, skipped });
   } catch (err: any) {
