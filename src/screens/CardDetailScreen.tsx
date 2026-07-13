@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, convertPrice } from '../constants';
 import { openUrl } from '../utils/openUrl';
 import { useSettingsStore } from '../store/settingsStore';
+import { useWatchlistStore } from '../stores/watchlistStore';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
@@ -120,6 +121,35 @@ export default function CardDetailScreen({ route, navigation }: any) {
       }
     }
   }, [card.id, card.cardNumber]);
+
+  // ── Watchlist (入手提醒) ──
+  const watchlistItems = useWatchlistStore((s) => s.items);
+  const addToWatchlist = useWatchlistStore((s) => s.addCard);
+  const removeFromWatchlist = useWatchlistStore((s) => s.removeCard);
+  const inWatchlist = !!id && watchlistItems.some((item) => item.cardNumber === id);
+
+  const toggleWatchlist = () => {
+    if (!id) return;
+    if (inWatchlist) {
+      Alert.alert(
+        '移除入手提醒',
+        `確定要從入手提醒移除「${displayName}」嗎？`,
+        [
+          { text: '取消', style: 'cancel' },
+          { text: '移除', style: 'destructive', onPress: () => removeFromWatchlist(id) },
+        ]
+      );
+    } else {
+      addToWatchlist({
+        cardNumber: id,
+        name: nameJP || displayName,
+        nameZh: nameZH || undefined,
+        rarity: rarityKey,
+        imageUrl,
+        addedAt: new Date().toISOString(),
+      });
+    }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingBottom: insets.bottom }}>
@@ -320,6 +350,19 @@ export default function CardDetailScreen({ route, navigation }: any) {
         <LinkButton icon="🏛️" text="官方卡表" url={officialUrl} />
         <LinkButton icon="🏪" text="遊々亭（價格查詢）" url={yuyuUrl} />
         <LinkButton icon="🔄" text="Carousell 二手價格" url={`https://www.carousell.com.tw/search/?q=${encodeURIComponent(id)}`} />
+      </View>
+
+      {/* ====== WATCHLIST BUTTON ====== */}
+      <View style={styles.section}>
+        <TouchableOpacity
+          style={[styles.watchlistBtn, inWatchlist ? styles.watchlistBtnActive : null]}
+          onPress={toggleWatchlist}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.watchlistBtnText, inWatchlist ? styles.watchlistBtnTextActive : null]}>
+            {inWatchlist ? '🔔 已加入入手提醒（點擊移除）' : '🔕 加入入手提醒'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <View style={{ height: 20 }} />
@@ -655,6 +698,12 @@ const styles = StyleSheet.create({
   // Links
   linkButton: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border + '88', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10, marginBottom: 8 },
   linkText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+
+  // Watchlist button
+  watchlistBtn: { backgroundColor: COLORS.primary, paddingVertical: 15, borderRadius: 12, alignItems: 'center' },
+  watchlistBtnActive: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.primary },
+  watchlistBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  watchlistBtnTextActive: { color: COLORS.primary },
 
   // Market data section
   marketBlock: { backgroundColor: COLORS.surfaceLight + '55', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: 12, marginBottom: 10 },

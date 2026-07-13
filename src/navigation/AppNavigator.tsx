@@ -10,6 +10,7 @@ import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ScanScreen from '../screens/ScanScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
+import WatchlistScreen from '../screens/WatchlistScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CardDetailScreen from '../screens/CardDetailScreen';
 import SearchResultsScreen from '../screens/SearchResultsScreen';
@@ -102,8 +103,18 @@ function MainDrawer() {
           ),
         }}
       />
-      <Drawer.Screen 
-        name="Tutorial" 
+      <Drawer.Screen
+        name="Watchlist"
+        component={WatchlistScreen}
+        options={{
+          title: '入手提醒',
+          drawerIcon: ({ focused }) => (
+            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
+          ),
+        }}
+      />
+      <Drawer.Screen
+        name="Tutorial"
         component={TutorialScreen}
         options={{ 
           title: '規則教學',

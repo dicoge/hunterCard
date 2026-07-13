@@ -58,6 +58,7 @@ export type MainDrawerParamList = {
   Scan: undefined;
   Search: undefined;
   Favorites: undefined;
+  Watchlist: undefined;
   Settings: undefined;
   Tutorial: undefined;
 };
