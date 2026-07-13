@@ -56,6 +56,23 @@ export async function removeWatchlistCard(token: string, cardNumber: string): Pr
   return getWatchlistForToken(token);
 }
 
+// Atomically re-checks each candidate token's set is still empty (SCARD == 0)
+// before dropping it from the registry. Because Redis runs the whole script
+// single-threaded, there is no window between the emptiness check and the SREM,
+// so a token that a concurrent addWatchlistCard() just populated can never be
+// clobbered out of the registry (DIC-420 TOCTOU fix). KEYS[1] is the registry,
+// KEYS[i+1] is the set key for ARGV[i]. Returns the count actually removed.
+const CLEANUP_STALE_TOKENS = `
+local removed = 0
+for i = 1, #ARGV do
+  if redis.call('SCARD', KEYS[i + 1]) == 0 then
+    redis.call('SREM', KEYS[1], ARGV[i])
+    removed = removed + 1
+  end
+end
+return removed
+`;
+
 export async function getWatchlist(): Promise<PushWatchlist> {
   const tokens = ((await kv.smembers(WATCHLIST_TOKENS_KEY)) as string[] | null) ?? [];
   const result: PushWatchlist = {};
@@ -65,7 +82,15 @@ export async function getWatchlist(): Promise<PushWatchlist> {
     if (cards.length > 0) result[token] = cards;
     else stale.push(token);
   }
-  if (stale.length > 0) await kv.srem(WATCHLIST_TOKENS_KEY, ...stale);
+  // The smembers reads above are a non-atomic snapshot; re-verify emptiness
+  // inside a Lua script so a card added between the read and the cleanup keeps
+  // its token in the registry (DIC-420). A token left here is picked up on the
+  // next notify enumeration — the only invariant that matters is never dropping
+  // a token that currently has cards.
+  if (stale.length > 0) {
+    const keys = [WATCHLIST_TOKENS_KEY, ...stale.map(watchlistKey)];
+    await kv.eval(CLEANUP_STALE_TOKENS, keys, stale);
+  }
   return result;
 }
 
