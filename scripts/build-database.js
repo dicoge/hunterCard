@@ -16,6 +16,7 @@ import path from 'path';
 import https from 'https';
 import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
+import { sanitizePriceHistory } from './lib/price-sanitizer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -710,62 +711,6 @@ function loadOfficialData() {
 
   console.log(`  [official] Loaded ${Object.keys(officialCards).length} cards from ${files.length} files`);
   return officialCards;
-}
-
-// ─── Price History Sanitizer (DIC-412 / DIC-414) ───
-
-function medianOf(arr) {
-  const sorted = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 0) {
-    return (sorted[mid - 1] + sorted[mid]) / 2;
-  }
-  return sorted[mid];
-}
-
-function sanitizePriceHistory(existingRecords, candidatePrice) {
-  const SPIKE_FACTOR = 5;
-  const ABSOLUTE_CAP = 50000;
-
-  if (!Number.isFinite(candidatePrice) || candidatePrice <= 0) return null;
-
-  if (!existingRecords || existingRecords.length === 0) {
-    if (candidatePrice > ABSOLUTE_CAP) {
-      console.warn(`  [sanitize] Price ${candidatePrice} > absolute cap ${ABSOLUTE_CAP} — no history, capping`);
-      return ABSOLUTE_CAP;
-    }
-    return candidatePrice;
-  }
-
-  const oldPrices = existingRecords
-    .map(r => r.price)
-    .filter(p => Number.isFinite(p) && p > 0);
-
-  if (oldPrices.length === 0) return candidatePrice;
-
-  const sorted = [...oldPrices].sort((a, b) => a - b);
-
-  let referencePrices;
-  if (oldPrices.length < 3) {
-    referencePrices = sorted;
-  } else {
-    const halfLen = Math.ceil(sorted.length / 2);
-    referencePrices = sorted.slice(sorted.length - halfLen);
-  }
-
-  // baseline is derived only from existingRecords, never candidatePrice, so a
-  // spike can't inflate its own reference and slip through.
-  const baseline = medianOf(referencePrices);
-
-  if (candidatePrice > baseline * SPIKE_FACTOR || candidatePrice > ABSOLUTE_CAP) {
-    console.warn(
-      `  [sanitize] Spike rejected: candidate=${candidatePrice} ` +
-      `(baseline=${baseline}, records=${oldPrices.length}) — dropping record`
-    );
-    return null;
-  }
-
-  return candidatePrice;
 }
 
 // ─── VTuber YouTube stats merge (DIC-249) ───
