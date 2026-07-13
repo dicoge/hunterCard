@@ -4,20 +4,6 @@
   "name": "春先のどか",
   "records": [
     {
-      "date": "2026-06-16",
-      "price": 980,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hSD01-016_hSD03"
-    },
-    {
-      "date": "2026-06-17",
-      "price": 980,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hSD01-016_hSD03"
-    },
-    {
       "date": "2026-06-18",
       "price": 180,
       "source": "yuyu-tei",

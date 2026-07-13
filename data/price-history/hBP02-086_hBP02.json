@@ -4,20 +4,6 @@
   "name": "ホロスパークリング",
   "records": [
     {
-      "date": "2026-06-16",
-      "price": 580,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP02-086_hBP02"
-    },
-    {
-      "date": "2026-06-17",
-      "price": 580,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP02-086_hBP02"
-    },
-    {
       "date": "2026-06-18",
       "price": 180,
       "source": "yuyu-tei",

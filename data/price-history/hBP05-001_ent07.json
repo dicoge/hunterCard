@@ -4,20 +4,6 @@
   "name": "白銀ノエル",
   "records": [
     {
-      "date": "2026-06-16",
-      "price": 9980,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP05-001_ent07"
-    },
-    {
-      "date": "2026-06-17",
-      "price": 9980,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP05-001_ent07"
-    },
-    {
       "date": "2026-06-18",
       "price": 280,
       "source": "yuyu-tei",

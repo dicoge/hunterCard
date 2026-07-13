@@ -4,20 +4,6 @@
   "name": "凸待ち",
   "records": [
     {
-      "date": "2026-06-16",
-      "price": 1480,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP03-088_hBP03"
-    },
-    {
-      "date": "2026-06-17",
-      "price": 1480,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP03-088_hBP03"
-    },
-    {
       "date": "2026-06-18",
       "price": 320,
       "source": "yuyu-tei",

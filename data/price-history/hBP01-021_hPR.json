@@ -4,20 +4,6 @@
   "name": "ときのそら",
   "records": [
     {
-      "date": "2026-06-16",
-      "price": 980,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP01-021_hPR"
-    },
-    {
-      "date": "2026-06-17",
-      "price": 980,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP01-021_hPR"
-    },
-    {
       "date": "2026-06-18",
       "price": 280,
       "source": "yuyu-tei",

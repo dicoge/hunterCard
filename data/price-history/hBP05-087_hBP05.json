@@ -4,20 +4,6 @@
   "name": "Jailbird",
   "records": [
     {
-      "date": "2026-06-16",
-      "price": 180,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP05-087_hBP05"
-    },
-    {
-      "date": "2026-06-17",
-      "price": 180,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hBP05-087_hBP05"
-    },
-    {
       "date": "2026-06-18",
       "price": 30,
       "source": "yuyu-tei",

@@ -4,20 +4,6 @@
   "name": "マネちゃん",
   "records": [
     {
-      "date": "2026-06-16",
-      "price": 1980,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hSD01-017_hSD02"
-    },
-    {
-      "date": "2026-06-17",
-      "price": 1980,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hSD01-017_hSD02"
-    },
-    {
       "date": "2026-06-18",
       "price": 80,
       "source": "yuyu-tei",
