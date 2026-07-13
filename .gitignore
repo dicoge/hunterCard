@@ -33,6 +33,10 @@ yarn-error.*
 # local env files
 .env*.local
 
+# push notification data (device tokens — never commit)
+data/push-tokens.json
+data/push-watchlist.json
+
 # typescript
 *.tsbuildinfo
 
