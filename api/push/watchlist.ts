@@ -1,4 +1,4 @@
-import { getWatchlistForToken, setWatchlistForToken, removeWatchlistToken } from '../lib/kv-storage';
+import { addWatchlistCard, removeWatchlistCard } from '../lib/kv-storage';
 
 export const config = { runtime: 'nodejs' };
 
@@ -34,14 +34,9 @@ export default async function handler(req: Request) {
     if (!isCardNumber(cardNumber)) return json({ error: 'Invalid cardNumber' }, 400);
     if (action !== 'add' && action !== 'remove') return json({ error: 'Invalid action' }, 400);
 
-    const cards = new Set(await getWatchlistForToken(token));
-
-    if (action === 'add') cards.add(cardNumber);
-    else cards.delete(cardNumber);
-
-    const nextCards = [...cards].sort();
-    if (nextCards.length > 0) await setWatchlistForToken(token, nextCards);
-    else await removeWatchlistToken(token);
+    const nextCards = action === 'add'
+      ? await addWatchlistCard(token, cardNumber)
+      : await removeWatchlistCard(token, cardNumber);
 
     return json({ ok: true, cards: nextCards });
   } catch (err: any) {

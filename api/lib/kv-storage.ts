@@ -12,8 +12,17 @@ export type PushToken = {
 export type PushWatchlist = Record<string, string[]>;
 
 const TOKENS_KEY = 'push:tokens';
-const WATCHLIST_KEY = 'push:watchlist';
+// Each token's watchlist is its own Redis set (`push:watchlist:<token>`) so
+// add/remove use atomic SADD/SREM instead of read-modify-write on a shared
+// hash field. `WATCHLIST_TOKENS_KEY` is a registry set of every token that has
+// a watchlist, so notify.ts can still enumerate all subscribers (DIC-390 CR).
+const WATCHLIST_PREFIX = 'push:watchlist:';
+const WATCHLIST_TOKENS_KEY = 'push:watchlist-tokens';
 const LAST_ALERT_KEY = 'push:last-alert';
+
+function watchlistKey(token: string): string {
+  return `${WATCHLIST_PREFIX}${token}`;
+}
 
 // Each token is stored as its own hash field, so concurrent registrations for
 // different devices never clobber one another (the old whole-file GitHub write
@@ -28,19 +37,36 @@ export async function upsertToken(token: string, platform: Platform): Promise<vo
 }
 
 export async function getWatchlistForToken(token: string): Promise<string[]> {
-  return (await kv.hget<string[]>(WATCHLIST_KEY, token)) ?? [];
+  const cards = (await kv.smembers(watchlistKey(token))) as string[] | null;
+  return (cards ?? []).sort();
 }
 
-export async function setWatchlistForToken(token: string, cards: string[]): Promise<void> {
-  await kv.hset(WATCHLIST_KEY, { [token]: cards });
+// Atomically add a card to the token's watchlist. Concurrent adds/removes for
+// different cards on the same token no longer clobber each other.
+export async function addWatchlistCard(token: string, cardNumber: string): Promise<string[]> {
+  await kv.sadd(watchlistKey(token), cardNumber);
+  await kv.sadd(WATCHLIST_TOKENS_KEY, token);
+  return getWatchlistForToken(token);
 }
 
-export async function removeWatchlistToken(token: string): Promise<void> {
-  await kv.hdel(WATCHLIST_KEY, token);
+// Atomically remove a card. Redis drops the set key once it is empty; the stale
+// registry entry is cleaned up lazily on the next getWatchlist() read.
+export async function removeWatchlistCard(token: string, cardNumber: string): Promise<string[]> {
+  await kv.srem(watchlistKey(token), cardNumber);
+  return getWatchlistForToken(token);
 }
 
 export async function getWatchlist(): Promise<PushWatchlist> {
-  return (await kv.hgetall<PushWatchlist>(WATCHLIST_KEY)) ?? {};
+  const tokens = ((await kv.smembers(WATCHLIST_TOKENS_KEY)) as string[] | null) ?? [];
+  const result: PushWatchlist = {};
+  const stale: string[] = [];
+  for (const token of tokens) {
+    const cards = ((await kv.smembers(watchlistKey(token))) as string[] | null) ?? [];
+    if (cards.length > 0) result[token] = cards;
+    else stale.push(token);
+  }
+  if (stale.length > 0) await kv.srem(WATCHLIST_TOKENS_KEY, ...stale);
+  return result;
 }
 
 export async function getLastAlertTimes(cardNumbers: string[]): Promise<Record<string, number>> {

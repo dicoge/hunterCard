@@ -74,7 +74,6 @@ export default async function handler(req: Request) {
     const lastAlertTimes = await getLastAlertTimes(alerts.map((alert) => alert.cardNumber));
 
     const messages: ExpoMessage[] = [];
-    const pushedCards = new Set<string>();
     let skipped = 0;
 
     for (const alert of alerts) {
@@ -89,7 +88,6 @@ export default async function handler(req: Request) {
         .map(([token]) => token);
 
       if (subscribers.length === 0) continue;
-      pushedCards.add(alert.cardNumber);
 
       for (const token of subscribers) {
         messages.push({
@@ -103,6 +101,11 @@ export default async function handler(req: Request) {
 
     let sent = 0;
     let errors = 0;
+    // Only cards with at least one Expo-confirmed 'ok' ticket enter the 24h
+    // cooldown. A failed delivery must NOT record the cooldown, otherwise the
+    // next cron run would skip the card and the user never gets the alert
+    // (DIC-390 CR blocker 2).
+    const succeededCards = new Set<string>();
 
     for (const batch of chunk(messages, 100)) {
       const res = await fetch(EXPO_PUSH_URL, {
@@ -121,10 +124,19 @@ export default async function handler(req: Request) {
       const tickets = Array.isArray(data?.data) ? data.data : [];
       sent += tickets.filter((ticket: any) => ticket?.status === 'ok').length;
       errors += tickets.filter((ticket: any) => ticket?.status === 'error').length;
-      if (tickets.length === 0) sent += batch.length;
+      if (tickets.length === 0) {
+        // No per-message ticket to confirm: count as delivered but skip the
+        // cooldown so the next run can retry.
+        sent += batch.length;
+        continue;
+      }
+      // Tickets come back in the same order as the batch we sent.
+      batch.forEach((message, i) => {
+        if (tickets[i]?.status === 'ok') succeededCards.add(message.data.cardNumber);
+      });
     }
 
-    if (pushedCards.size > 0) await setLastAlertTimes([...pushedCards], now);
+    if (succeededCards.size > 0) await setLastAlertTimes([...succeededCards], now);
 
     return json({ ok: true, sent, errors, skipped });
   } catch (err: any) {
