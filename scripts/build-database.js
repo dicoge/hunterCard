@@ -143,6 +143,33 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function sanitizePriceHistory(priceHistory) {
+  if (!priceHistory || typeof priceHistory !== 'object') return priceHistory;
+
+  const entries = Object.entries(priceHistory).sort(([a],[b]) => a.localeCompare(b));
+  if (entries.length < 3) return priceHistory;
+
+  const laterHalf = entries.slice(Math.floor(entries.length / 2));
+  const laterPrices = laterHalf.map(([,p]) => p).filter(Boolean).sort((a,b) => a-b);
+  const median = laterPrices[Math.floor(laterPrices.length/2)];
+  if (!median) return priceHistory;
+
+  const cleaned = {};
+  let removedCount = 0;
+  entries.forEach(([date, price]) => {
+    if (price > 0 && price <= median * 5) {
+      cleaned[date] = price;
+    } else {
+      console.warn(`[sanitize] 移除疑似髒資料：${date} ¥${price}（中位數 ¥${median}）`);
+      removedCount++;
+    }
+  });
+  if (removedCount > 0) {
+    console.warn(`[sanitize] 共移除 ${removedCount} 筆疑似髒資料，保留 ${Object.keys(cleaned).length} 筆`);
+  }
+  return cleaned;
+}
+
 /** 從 HTML 字串中解出卡片資料（使用純文字分析，與 page.evaluate 相同邏輯） */
 function parseCardHtml(html) {
   const results = [];
@@ -1102,8 +1129,17 @@ async function buildDatabase() {
     }
 
     const existingDates = new Set(existing.records.map(r => r.date));
+    const existingPrices = existing.records.map(r => r.price).filter(p => p && p > 0).sort((a, b) => a - b);
+    const existingMedian = existingPrices.length >= 3
+      ? existingPrices[Math.floor(existingPrices.length / 2)]
+      : null;
+
     for (const nr of newRecords) {
       if (!existingDates.has(nr.date)) {
+        if (existingMedian && nr.price > existingMedian * 5) {
+          console.warn(`[sanitize] 跳過異常價格記錄：${nr.cardId} ${nr.date} ¥${nr.price}（現有中位數 ¥${existingMedian}）`);
+          continue;
+        }
         existing.records.push(nr);
         totalSaved++;
       }
@@ -1160,7 +1196,7 @@ async function buildDatabase() {
         for (const r of hist.records) {
           ph[r.date] = r.price;
         }
-        card.priceHistory = ph;
+        card.priceHistory = sanitizePriceHistory(ph);
         mergedCount++;
       }
     } catch {
