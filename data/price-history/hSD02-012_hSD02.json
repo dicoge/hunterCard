@@ -184,8 +184,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD02-012_hSD02"
+    },
+    {
+      "date": "2026-07-14",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-012_hSD02"
     }
   ],
-  "lastUpdated": "2026-07-12T12:07:37.752Z",
+  "lastUpdated": "2026-07-14T12:43:18.324Z",
   "nameZh": "彩羽風雅綾文"
 }

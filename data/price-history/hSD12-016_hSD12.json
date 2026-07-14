@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD12-016_hSD12"
+    },
+    {
+      "date": "2026-07-14",
+      "price": 1280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-016_hSD12"
     }
   ],
-  "lastUpdated": "2026-07-11T11:55:07.765Z",
+  "lastUpdated": "2026-07-14T12:43:18.233Z",
   "nameZh": "GEOW"
 }

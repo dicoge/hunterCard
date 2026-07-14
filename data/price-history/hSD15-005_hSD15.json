@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD15-005_hSD15"
+    },
+    {
+      "date": "2026-07-14",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD15-005_hSD15"
     }
   ],
-  "lastUpdated": "2026-07-11T11:55:07.730Z",
+  "lastUpdated": "2026-07-14T12:43:18.204Z",
   "nameZh": "儒烏風亭螺鈿"
 }
