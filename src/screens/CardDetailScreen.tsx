@@ -512,6 +512,9 @@ function MarketDataPanel({ card }: { card: any }) {
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
+  // 收購價超過賣價 10 倍幾乎必是資料對齊錯誤（例：低稀有度卡誤標高稀有度收購價）。
+  // 資料層修好前，寧可標示不可靠也不要顯示假的暴利差價。
+  const isPriceReliable = !hasSpread || buyPrice <= sellPrice * 10;
 
   return (
     <View style={styles.section}>
@@ -531,9 +534,15 @@ function MarketDataPanel({ card }: { card: any }) {
           </View>
           <View style={styles.marketRow}>
             <Text style={styles.marketLabel}>差價</Text>
-            <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
-              {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
-            </Text>
+            {isPriceReliable ? (
+              <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
+                {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
+              </Text>
+            ) : (
+              <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
+                ⚠️ 價格待確認
+              </Text>
+            )}
           </View>
         </View>
       ) : null}

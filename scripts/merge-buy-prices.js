@@ -14,6 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { extractCardNumber } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,16 +35,17 @@ function localDateStr(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
-// 讀一個來源檔，回傳 { 正規化卡號 -> buyPrice }。檔案不存在或壞掉就當空的。
-// 每筆 entry 帶 timestamp（來源爬蟲寫入當次的 ISO 時間）；缺失或超過
-// MAX_SOURCE_AGE_HOURS 的 entry 一律跳過，避免 merge 到過期的殘留資料。
+// 讀一個來源檔，回傳 { 來源 key -> buyPrice }。key 可能是「卡號-稀有度」（新格式）
+// 或純卡號（舊格式），一律轉大寫。檔案不存在或壞掉就當空的。每筆 entry 帶 timestamp
+//（來源爬蟲寫入當次的 ISO 時間）；缺失或超過 MAX_SOURCE_AGE_HOURS 的 entry 一律跳過，
+// 避免 merge 到過期的殘留資料。
 function loadSource(file, now = Date.now()) {
   const p = path.join(BUY_DIR, file);
   try {
     const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
     const map = new Map();
     let stale = 0;
-    for (const [cardNumber, entry] of Object.entries(raw || {})) {
+    for (const [srcKey, entry] of Object.entries(raw || {})) {
       const price = entry && Number(entry.buyPrice);
       if (!Number.isFinite(price) || price <= 0) continue;
       const t = Date.parse(entry && entry.timestamp);
@@ -51,7 +53,7 @@ function loadSource(file, now = Date.now()) {
         stale += 1;
         continue;
       }
-      map.set(cardNumber.toUpperCase(), price);
+      map.set(srcKey.toUpperCase(), price);
     }
     if (stale > 0) {
       console.warn(
@@ -73,19 +75,29 @@ function loadSource(file, now = Date.now()) {
 function main() {
   console.log('[merge-buy] Starting...');
 
-  // 各來源合併：每個卡號取最高買取價
+  // 各來源合併，維護兩張表：
+  //   bestByKey    —「卡號-稀有度」精確 key -> 最高買取價（用來按稀有度對齊）
+  //   bestByNumber — 純卡號 -> 最高買取價（抓不到稀有度或舊格式時的 fallback）
   const now = Date.now();
+  const bestByKey = new Map();
   const bestByNumber = new Map();
   for (const file of SOURCE_FILES) {
     const src = loadSource(file, now);
     for (const [key, price] of src.entries()) {
-      if (!bestByNumber.has(key) || price > bestByNumber.get(key)) {
-        bestByNumber.set(key, price);
+      if (!bestByKey.has(key) || price > bestByKey.get(key)) {
+        bestByKey.set(key, price);
+      }
+      const num = extractCardNumber(key);
+      if (num) {
+        const numKey = num.toUpperCase();
+        if (!bestByNumber.has(numKey) || price > bestByNumber.get(numKey)) {
+          bestByNumber.set(numKey, price);
+        }
       }
     }
   }
 
-  if (bestByNumber.size === 0) {
+  if (bestByKey.size === 0) {
     console.log('[merge-buy] 沒有任何買取價可 merge，database.json 不變。');
     return;
   }
@@ -96,7 +108,10 @@ function main() {
 
   for (const card of Object.values(db.cards || {})) {
     if (!card.cardNumber) continue;
-    const price = bestByNumber.get(card.cardNumber.toUpperCase());
+    // 先用「卡號-稀有度」精確對齊，找不到再 fallback 到純卡號（取該卡號最高買取價）。
+    const numKey = card.cardNumber.toUpperCase();
+    const exactKey = card.rarity ? `${numKey}-${card.rarity.toUpperCase()}` : null;
+    const price = (exactKey != null ? bestByKey.get(exactKey) : undefined) ?? bestByNumber.get(numKey);
     if (price == null) continue;
 
     card.buyPrice = price;
@@ -109,7 +124,7 @@ function main() {
 
   fs.writeFileSync(DB_PATH, `${JSON.stringify(db, null, 2)}\n`, 'utf-8');
   console.log(
-    `[merge-buy] ✅ Done — 卡號來源 ${bestByNumber.size} 個，更新 database ${updated} 張卡（date ${date}）`
+    `[merge-buy] ✅ Done — 來源 key ${bestByKey.size} 個（卡號 ${bestByNumber.size} 個），更新 database ${updated} 張卡（date ${date}）`
   );
 }
 

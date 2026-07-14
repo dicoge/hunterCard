@@ -39,6 +39,16 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 商品名帶稀有度標記，例如「【OUR】hBP04-002 儒烏風亭らでん」。抽出標記並正規化成
+// database 用的 rarity 寫法（【PR】與【P】都對應 database 的 "P"）。抓不到回傳 null。
+const RARITY_ALIASES = { PR: 'P' };
+function extractRarity(productName) {
+  const m = productName && String(productName).match(/【\s*([A-Za-z0-9]+)\s*】/);
+  if (!m) return null;
+  const raw = m[1].toUpperCase();
+  return RARITY_ALIASES[raw] || raw;
+}
+
 // 舊輸出檔的卡數，檔案不存在或讀不到時回傳 0。輸出是 { 卡號: {...} } 物件。
 function readPreviousCount(file) {
   try {
@@ -158,15 +168,20 @@ async function main() {
   // 避免臨時錯誤（API/token/page 失敗）用 {} 空檔污染 merge。
   const records = await scrapeWithRestart();
 
-  const best = new Map(); // 正規化卡號 -> 最高買取價
+  // 以「正規化卡號-稀有度」為 key，同一版本取最高買取價。抓不到稀有度時退回純卡號 key，
+  // merge 端會用相同的 exact→fallback 邏輯對齊。
+  const best = new Map(); // key -> { buyPrice, cardNumber, rarity }
   for (const rec of records) {
     const price = parseInt(String(rec.price || '').replace(/,/g, ''), 10);
     if (!Number.isFinite(price) || price <= 0) continue;
     const cardNumber = extractCardNumber(rec.productName);
     if (!cardNumber) continue;
-    const key = cardNumber.toUpperCase();
-    if (!cardNumbers.has(key)) continue; // database 沒有這張卡就跳過
-    if (!best.has(key) || price > best.get(key)) best.set(key, price);
+    const numKey = cardNumber.toUpperCase();
+    if (!cardNumbers.has(numKey)) continue; // database 沒有這張卡就跳過
+    const rarity = extractRarity(rec.productName);
+    const key = rarity ? `${numKey}-${rarity}` : numKey;
+    const prev = best.get(key);
+    if (!prev || price > prev.buyPrice) best.set(key, { buyPrice: price, cardNumber: numKey, rarity });
   }
 
   // 只有 scrape 成功才會走到這（失敗會在上面 throw 中斷），所以 best 是一次完整爬取的結果。
@@ -189,9 +204,10 @@ async function main() {
 
   const timestamp = new Date().toISOString();
   const out = {};
-  for (const [key, buyPrice] of best.entries()) {
-    const original = cardNumbers.get(key) || key;
-    out[original] = { buyPrice, timestamp };
+  for (const [key, { buyPrice, cardNumber, rarity }] of best.entries()) {
+    const original = cardNumbers.get(cardNumber) || cardNumber;
+    const outKey = rarity ? `${original}-${rarity}` : original;
+    out[outKey] = { buyPrice, rarity: rarity || null, timestamp };
   }
 
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
