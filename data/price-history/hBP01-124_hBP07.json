@@ -191,8 +191,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-124_hBP07"
+    },
+    {
+      "date": "2026-07-14",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-124_hBP07"
     }
   ],
-  "lastUpdated": "2026-07-13T12:07:00.996Z",
+  "lastUpdated": "2026-07-14T12:06:58.215Z",
   "nameZh": "開拓者"
 }

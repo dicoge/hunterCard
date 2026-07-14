@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-017_hPR"
+    },
+    {
+      "date": "2026-07-14",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-017_hPR"
     }
   ],
-  "lastUpdated": "2026-07-13T12:07:01.132Z",
+  "lastUpdated": "2026-07-14T12:06:58.422Z",
   "nameZh": "小經"
 }

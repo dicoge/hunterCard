@@ -191,8 +191,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-125_hBP01"
+    },
+    {
+      "date": "2026-07-14",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-125_hBP01"
     }
   ],
-  "lastUpdated": "2026-07-13T12:07:01.112Z",
+  "lastUpdated": "2026-07-14T12:06:58.376Z",
   "nameZh": "KFP"
 }
