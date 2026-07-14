@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, TextInput, TouchableOpacity, Text, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
 import { COLORS } from '../constants';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 interface SearchScreenProps {
   navigation: any;
@@ -8,6 +9,7 @@ interface SearchScreenProps {
 
 export default function SearchScreen({ navigation }: SearchScreenProps) {
   const [query, setQuery] = useState('');
+  const { isDesktop } = useBreakpoint();
 
   const handleSearch = () => {
     if (!query.trim()) return;
@@ -17,7 +19,8 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={isDesktop ? styles.scrollContentDesktop : undefined}>
+      <View style={isDesktop ? styles.innerDesktop : styles.inner}>
       {/* 搜尋欄 */}
       <View style={styles.searchBar}>
         <TextInput
@@ -84,6 +87,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           </TouchableOpacity>
         </View>
       </View>
+      </View>
     </ScrollView>
     </SafeAreaView>
   );
@@ -95,6 +99,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     padding: 16,
   },
+  scrollContentDesktop: { alignItems: 'center' },
+  inner: { width: '100%' },
+  innerDesktop: { width: '100%', maxWidth: 720 },
   searchBar: {
     flexDirection: 'row',
     marginBottom: 16,

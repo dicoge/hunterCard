@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Text, View, StyleSheet, Image } from 'react-native';
 import { COLORS } from '../constants';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -40,15 +41,20 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 
 // Main Drawer Navigator
 function MainDrawer() {
+  const { isDesktop } = useBreakpoint();
   return (
     <Drawer.Navigator
       drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
+        // PC (>= 768px): permanent sidebar always visible. Mobile keeps the slide-out drawer.
+        drawerType: isDesktop ? 'permanent' : 'front',
         drawerActiveTintColor: COLORS.primary,
         drawerInactiveTintColor: COLORS.textSecondary,
         drawerStyle: {
           backgroundColor: COLORS.surface,
-          width: 280,
+          width: isDesktop ? 260 : 280,
+          borderRightWidth: isDesktop ? 1 : 0,
+          borderRightColor: COLORS.border,
         },
         drawerLabelStyle: {
           marginLeft: 15,
