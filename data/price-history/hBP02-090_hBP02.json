@@ -198,8 +198,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-090_hBP02"
+    },
+    {
+      "date": "2026-07-15",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-090_hBP02"
     }
   ],
-  "lastUpdated": "2026-07-14T12:43:18.319Z",
+  "lastUpdated": "2026-07-15T12:07:17.432Z",
   "nameZh": "發條狐狸"
 }

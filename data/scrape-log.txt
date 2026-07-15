@@ -1,4 +1,4 @@
-=== Scrape Log 2026-07-13T12:03:36.303Z ===
+=== Scrape Log 2026-07-15T12:04:03.146Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -23,7 +23,7 @@
 [database] Scraping hBP08: /sell/hocg/s/search?search_word=&vers[]=hbp08
   → Found 121 cards with prices
 [database] Scraping hSD01: /sell/hocg/s/search?search_word=&vers[]=hsd01
-  → Found 21 cards with prices
+[ERROR]   → Error: Protocol error: Connection closed. Most likely the page has been closed.
 [database] Scraping hSD02: /sell/hocg/s/search?search_word=&vers[]=hsd02
 [ERROR]   → Error: Protocol error: Connection closed.
 [database] Scraping hSD03: /sell/hocg/s/search?search_word=&vers[]=hsd03
@@ -73,12 +73,12 @@
 [database] Scraping hSD2025summer: /sell/hocg/s/special/8
 [ERROR]   → Error: Protocol error: Connection closed.
 
-  Total cards from yuyu-tei: 938
+  Total cards from yuyu-tei: 917
 
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 0, Skipped: 894, Errors: 0
+  [images] Downloaded: 0, Skipped: 874, Errors: 0
 
 ── Step 3: Merge official data ──
 
@@ -98,7 +98,7 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 1587 new records; index totals: 2021 cards / 51640 records
+  [price-history] Saved 1521 new records; index totals: 2021 cards / 54303 records
 
 ── Step 6: Merge priceHistory into database ──
   [priceHistory] Merged into 2021 cards
@@ -110,16 +110,16 @@
 ═══════════════════════════════════════
   ✅ Build complete!
   Total cards: 2105
-  Cards with prices: 894
+  Cards with prices: 874
   Images downloaded: 0
-  Duration: 204.9s
+  Duration: 194.5s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
 Build result: {
   "totalCards": 2105,
-  "yuyuCount": 894,
+  "yuyuCount": 874,
   "officialCount": 2105,
   "imagesDownloaded": 0,
-  "duration": 204.9
+  "duration": 194.5
 }

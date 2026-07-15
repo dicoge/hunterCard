@@ -184,8 +184,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-100_hBP02"
+    },
+    {
+      "date": "2026-07-15",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-100_hBP02"
     }
   ],
-  "lastUpdated": "2026-07-14T12:43:18.320Z",
+  "lastUpdated": "2026-07-15T12:07:17.433Z",
   "nameZh": "白銀聖騎士團"
 }

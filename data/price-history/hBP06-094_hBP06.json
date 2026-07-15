@@ -198,8 +198,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-094_hBP06"
+    },
+    {
+      "date": "2026-07-15",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-094_hBP06"
     }
   ],
-  "lastUpdated": "2026-07-14T12:43:18.251Z",
+  "lastUpdated": "2026-07-15T12:07:17.363Z",
   "nameZh": "健身"
 }
