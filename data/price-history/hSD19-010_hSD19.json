@@ -135,8 +135,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD19-010_hSD19"
+    },
+    {
+      "date": "2026-07-15",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD19-010_hSD19"
     }
   ],
-  "lastUpdated": "2026-07-14T12:43:18.214Z",
+  "lastUpdated": "2026-07-15T12:21:22.720Z",
   "nameZh": "開心咖哩"
 }

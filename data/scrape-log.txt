@@ -1,4 +1,4 @@
-=== Scrape Log 2026-07-15T12:04:03.146Z ===
+=== Scrape Log 2026-07-15T12:16:00.996Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -23,62 +23,62 @@
 [database] Scraping hBP08: /sell/hocg/s/search?search_word=&vers[]=hbp08
   → Found 121 cards with prices
 [database] Scraping hSD01: /sell/hocg/s/search?search_word=&vers[]=hsd01
-[ERROR]   → Error: Protocol error: Connection closed. Most likely the page has been closed.
+  → Found 21 cards with prices
 [database] Scraping hSD02: /sell/hocg/s/search?search_word=&vers[]=hsd02
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 14 cards with prices
 [database] Scraping hSD03: /sell/hocg/s/search?search_word=&vers[]=hsd03
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 14 cards with prices
 [database] Scraping hSD04: /sell/hocg/s/search?search_word=&vers[]=hsd04
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 14 cards with prices
 [database] Scraping hSD05: /sell/hocg/s/search?search_word=&vers[]=hsd05
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 14 cards with prices
 [database] Scraping hSD06: /sell/hocg/s/search?search_word=&vers[]=hsd06
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 14 cards with prices
 [database] Scraping hSD07: /sell/hocg/s/search?search_word=&vers[]=hsd07
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 15 cards with prices
 [database] Scraping hSD08: /sell/hocg/s/search?search_word=&vers[]=hsd08
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 9 cards with prices
 [database] Scraping hSD09: /sell/hocg/s/search?search_word=&vers[]=hsd09
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 8 cards with prices
 [database] Scraping hSD10: /sell/hocg/s/search?search_word=&vers[]=hsd10
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 13 cards with prices
 [database] Scraping hSD11: /sell/hocg/s/search?search_word=&vers[]=hsd11
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 9 cards with prices
 [database] Scraping hSD12: /sell/hocg/s/search?search_word=&vers[]=hsd12
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 19 cards with prices
 [database] Scraping hSD13: /sell/hocg/s/search?search_word=&vers[]=hsd13
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 18 cards with prices
 [database] Scraping hSD14: /sell/hocg/s/search?search_word=&vers[]=hsd14
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 12 cards with prices
 [database] Scraping hSD15: /sell/hocg/s/search?search_word=&vers[]=hsd15
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 11 cards with prices
 [database] Scraping hSD16: /sell/hocg/s/search?search_word=&vers[]=hsd16
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 10 cards with prices
 [database] Scraping hSD17: /sell/hocg/s/search?search_word=&vers[]=hsd17
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 11 cards with prices
 [database] Scraping hSD18: /sell/hocg/s/search?search_word=&vers[]=hsd18
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 10 cards with prices
 [database] Scraping hSD19: /sell/hocg/s/search?search_word=&vers[]=hsd19
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 11 cards with prices
 [database] Scraping hYS01: /sell/hocg/s/hys01
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 4 cards with prices
 [database] Scraping ent07: /sell/hocg/s/special/4
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 145 cards with prices
 [database] Scraping hCS01: /sell/hocg/s/special/5
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 147 cards with prices
 [database] Scraping hPC01: /sell/hocg/s/special/7
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 126 cards with prices
 [database] Scraping hPR: /sell/hocg/s/special/1
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 87 cards with prices
 [database] Scraping hSD2025summer: /sell/hocg/s/special/8
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 128 cards with prices
 
-  Total cards from yuyu-tei: 917
+  Total cards from yuyu-tei: 1801
 
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 0, Skipped: 874, Errors: 0
+  [images] Downloaded: 0, Skipped: 1180, Errors: 0
 
 ── Step 3: Merge official data ──
 
@@ -98,7 +98,7 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 1521 new records; index totals: 2021 cards / 54303 records
+  [price-history] Saved 490 new records; index totals: 2021 cards / 54793 records
 
 ── Step 6: Merge priceHistory into database ──
   [priceHistory] Merged into 2021 cards
@@ -110,16 +110,16 @@
 ═══════════════════════════════════════
   ✅ Build complete!
   Total cards: 2105
-  Cards with prices: 874
+  Cards with prices: 1180
   Images downloaded: 0
-  Duration: 194.5s
+  Duration: 322.1s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
 Build result: {
   "totalCards": 2105,
-  "yuyuCount": 874,
+  "yuyuCount": 1180,
   "officialCount": 2105,
   "imagesDownloaded": 0,
-  "duration": 194.5
+  "duration": 322.1
 }

@@ -1,8 +1,3628 @@
 {
-  "lastUpdated": "2026-05-26T21:46:14.666Z",
-  "totalCards": 0,
-  "seriesWithPrices": 0,
-  "durationSeconds": 197.2,
+  "lastUpdated": "2026-07-15T12:15:49.346Z",
+  "totalCards": 797,
+  "seriesWithPrices": 4,
+  "durationSeconds": 30.4,
   "source": "yuyu-tei.jp",
-  "prices": {}
+  "prices": {
+    "hBP01-006": {
+      "sellPrice": 280,
+      "name": "小鳥遊キアラ",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-007": {
+      "sellPrice": 1780,
+      "name": "星街すいせい",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-001": {
+      "sellPrice": 980,
+      "name": "天音かなた",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-002": {
+      "sellPrice": 320,
+      "name": "七詩ムメイ",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-003": {
+      "sellPrice": 220,
+      "name": "アキ・ローゼンタール",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-004": {
+      "sellPrice": 780,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-005": {
+      "sellPrice": 320,
+      "name": "鷹嶺ルイ",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-008": {
+      "sellPrice": 280,
+      "name": "こぼ・かなえる",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-014": {
+      "sellPrice": 220,
+      "name": "天音かなた",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-023": {
+      "sellPrice": 180,
+      "name": "ときのそら",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-027": {
+      "sellPrice": 220,
+      "name": "ベスティア・ゼータ",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-043": {
+      "sellPrice": 120,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-047": {
+      "sellPrice": 180,
+      "name": "AZKi",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-051": {
+      "sellPrice": 180,
+      "name": "風真いろは",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-067": {
+      "sellPrice": 180,
+      "name": "小鳥遊キアラ",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-071": {
+      "sellPrice": 180,
+      "name": "尾丸ポルカ",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-081": {
+      "sellPrice": 180,
+      "name": "星街すいせい(エラッタ後)",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-091": {
+      "sellPrice": 120,
+      "name": "ムーナ・ホシノヴァ",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-013": {
+      "sellPrice": 80,
+      "name": "天音かなた",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-020": {
+      "sellPrice": 120,
+      "name": "七詩ムメイ",
+      "timestamp": "2026-07-15T12:11:35.433Z"
+    },
+    "hBP01-031": {
+      "sellPrice": 180,
+      "name": "IRyS",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-037": {
+      "sellPrice": 120,
+      "name": "アキ・ローゼンタール",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-042": {
+      "sellPrice": 180,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-055": {
+      "sellPrice": 180,
+      "name": "アイラニ・イオフィフティーン",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-061": {
+      "sellPrice": 120,
+      "name": "鷹嶺ルイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-066": {
+      "sellPrice": 120,
+      "name": "小鳥遊キアラ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-075": {
+      "sellPrice": 120,
+      "name": "ハコス・ベールズ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-080": {
+      "sellPrice": 180,
+      "name": "星街すいせい",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-087": {
+      "sellPrice": 120,
+      "name": "こぼ・かなえる",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-095": {
+      "sellPrice": 220,
+      "name": "オーロ・クロニー",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-096": {
+      "sellPrice": 120,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-097": {
+      "sellPrice": 120,
+      "name": "不知火フレア",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-098": {
+      "sellPrice": 120,
+      "name": "白銀ノエル",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-099": {
+      "sellPrice": 80,
+      "name": "宝鐘マリン",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-010": {
+      "sellPrice": 80,
+      "name": "天音かなた",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-012": {
+      "sellPrice": 180,
+      "name": "天音かなた",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-016": {
+      "sellPrice": 120,
+      "name": "七詩ムメイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-019": {
+      "sellPrice": 180,
+      "name": "七詩ムメイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-022": {
+      "sellPrice": 120,
+      "name": "ときのそら",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-026": {
+      "sellPrice": 120,
+      "name": "ベスティア・ゼータ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-030": {
+      "sellPrice": 220,
+      "name": "IRyS",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-033": {
+      "sellPrice": 50,
+      "name": "アキ・ローゼンタール",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-036": {
+      "sellPrice": 80,
+      "name": "アキ・ローゼンタール",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-039": {
+      "sellPrice": 180,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-041": {
+      "sellPrice": 180,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-045": {
+      "sellPrice": 180,
+      "name": "AZKi",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-050": {
+      "sellPrice": 320,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hBP01-054": {
+      "sellPrice": 180,
+      "name": "アイラニ・イオフィフティーン",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-057": {
+      "sellPrice": 80,
+      "name": "鷹嶺ルイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-060": {
+      "sellPrice": 320,
+      "name": "鷹嶺ルイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-063": {
+      "sellPrice": 80,
+      "name": "小鳥遊キアラ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-065": {
+      "sellPrice": 120,
+      "name": "小鳥遊キアラ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-070": {
+      "sellPrice": 180,
+      "name": "尾丸ポルカ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-074": {
+      "sellPrice": 220,
+      "name": "ハコス・ベールズ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-077": {
+      "sellPrice": 120,
+      "name": "星街すいせい",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-079": {
+      "sellPrice": 180,
+      "name": "星街すいせい",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-083": {
+      "sellPrice": 120,
+      "name": "こぼ・かなえる",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-086": {
+      "sellPrice": 120,
+      "name": "こぼ・かなえる",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-090": {
+      "sellPrice": 180,
+      "name": "ムーナ・ホシノヴァ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-094": {
+      "sellPrice": 680,
+      "name": "オーロ・クロニー",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-102": {
+      "sellPrice": 120,
+      "name": "アイドルマイク",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-103": {
+      "sellPrice": 180,
+      "name": "ゲーミングパソコン",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-105": {
+      "sellPrice": 120,
+      "name": "ペンライト",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-106": {
+      "sellPrice": 80,
+      "name": "あとは任せた！",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-108": {
+      "sellPrice": 320,
+      "name": "じゃあ敵だね",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-109": {
+      "sellPrice": 80,
+      "name": "月と兎の物語",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-110": {
+      "sellPrice": 50,
+      "name": "鈍器でぶっ叩くわよ！",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-111": {
+      "sellPrice": 80,
+      "name": "ホロライブインドネシア3期生",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-112": {
+      "sellPrice": 50,
+      "name": "わくわくいたずらタイム",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-113": {
+      "sellPrice": 120,
+      "name": "Promise",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-115": {
+      "sellPrice": 120,
+      "name": "星街すいせいのマイク",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-009": {
+      "sellPrice": 80,
+      "name": "天音かなた",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-011": {
+      "sellPrice": 80,
+      "name": "天音かなた",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-015": {
+      "sellPrice": 80,
+      "name": "七詩ムメイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-017": {
+      "sellPrice": 80,
+      "name": "七詩ムメイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-018": {
+      "sellPrice": 80,
+      "name": "七詩ムメイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-021": {
+      "sellPrice": 280,
+      "name": "ときのそら",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-024": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP01-025": {
+      "sellPrice": 50,
+      "name": "ベスティア・ゼータ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-028": {
+      "sellPrice": 180,
+      "name": "IRyS",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-029": {
+      "sellPrice": 80,
+      "name": "IRyS",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-032": {
+      "sellPrice": 120,
+      "name": "アキ・ローゼンタール",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-034": {
+      "sellPrice": 120,
+      "name": "アキ・ローゼンタール",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-035": {
+      "sellPrice": 120,
+      "name": "アキ・ローゼンタール",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-038": {
+      "sellPrice": 180,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-040": {
+      "sellPrice": 50,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-044": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP01-046": {
+      "sellPrice": 180,
+      "name": "AZKi",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-048": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hBP01-049": {
+      "sellPrice": 80,
+      "name": "風真いろは",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-052": {
+      "sellPrice": 120,
+      "name": "アイラニ・イオフィフティーン",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-053": {
+      "sellPrice": 50,
+      "name": "アイラニ・イオフィフティーン",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-056": {
+      "sellPrice": 220,
+      "name": "鷹嶺ルイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-058": {
+      "sellPrice": 30,
+      "name": "鷹嶺ルイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-059": {
+      "sellPrice": 50,
+      "name": "鷹嶺ルイ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-062": {
+      "sellPrice": 180,
+      "name": "小鳥遊キアラ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-064": {
+      "sellPrice": 30,
+      "name": "小鳥遊キアラ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-068": {
+      "sellPrice": 80,
+      "name": "尾丸ポルカ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-069": {
+      "sellPrice": 80,
+      "name": "尾丸ポルカ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-072": {
+      "sellPrice": 80,
+      "name": "ハコス・ベールズ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-073": {
+      "sellPrice": 80,
+      "name": "ハコス・ベールズ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-076": {
+      "sellPrice": 180,
+      "name": "星街すいせい",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-078": {
+      "sellPrice": 120,
+      "name": "星街すいせい",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-082": {
+      "sellPrice": 120,
+      "name": "こぼ・かなえる",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-084": {
+      "sellPrice": 30,
+      "name": "こぼ・かなえる",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-085": {
+      "sellPrice": 30,
+      "name": "こぼ・かなえる",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-088": {
+      "sellPrice": 180,
+      "name": "ムーナ・ホシノヴァ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-089": {
+      "sellPrice": 30,
+      "name": "ムーナ・ホシノヴァ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-092": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP01-093": {
+      "sellPrice": 80,
+      "name": "オーロ・クロニー",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-100": {
+      "sellPrice": 30,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-101": {
+      "sellPrice": 80,
+      "name": "ワトソン・アメリア",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-104": {
+      "sellPrice": 580,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hBP01-107": {
+      "sellPrice": 180,
+      "name": "アンコール",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-114": {
+      "sellPrice": 180,
+      "name": "石の斧",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-116": {
+      "sellPrice": 80,
+      "name": "うぱお",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-117": {
+      "sellPrice": 30,
+      "name": "フレンド",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-118": {
+      "sellPrice": 120,
+      "name": "あん肝",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-119": {
+      "sellPrice": 30,
+      "name": "ジョブズ",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-120": {
+      "sellPrice": 80,
+      "name": "がんも",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-121": {
+      "sellPrice": 120,
+      "name": "Kotori",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-122": {
+      "sellPrice": 30,
+      "name": "ロゼ隊",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-123": {
+      "sellPrice": 80,
+      "name": "野うさぎ同盟",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-124": {
+      "sellPrice": 80,
+      "name": "開拓者",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-125": {
+      "sellPrice": 120,
+      "name": "KFP",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP01-126": {
+      "sellPrice": 80,
+      "name": "座員",
+      "timestamp": "2026-07-15T12:11:35.434Z"
+    },
+    "hBP02-001": {
+      "sellPrice": 1480,
+      "name": "白上フブキ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-003": {
+      "sellPrice": 420,
+      "name": "宝鐘マリン(エラッタ後)",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-004": {
+      "sellPrice": 280,
+      "name": "沙花叉クロヱ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-084": {
+      "sellPrice": 180,
+      "name": "みっころね24(hBP04)",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP02-002": {
+      "sellPrice": 320,
+      "name": "パヴォリア・レイネ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-005": {
+      "sellPrice": 320,
+      "name": "紫咲シオン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-006": {
+      "sellPrice": 320,
+      "name": "クレイジー・オリー",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-007": {
+      "sellPrice": 780,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-013": {
+      "sellPrice": 420,
+      "name": "白上フブキ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-017": {
+      "sellPrice": 120,
+      "name": "白銀ノエル",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-023": {
+      "sellPrice": 180,
+      "name": "パヴォリア・レイネ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-027": {
+      "sellPrice": 220,
+      "name": "大神ミオ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-033": {
+      "sellPrice": 580,
+      "name": "宝鐘マリン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-034": {
+      "sellPrice": 120,
+      "name": "百鬼あやめ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-040": {
+      "sellPrice": 320,
+      "name": "沙花叉クロヱ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-041": {
+      "sellPrice": 220,
+      "name": "猫又おかゆ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-047": {
+      "sellPrice": 220,
+      "name": "紫咲シオン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-053": {
+      "sellPrice": 120,
+      "name": "クレイジー・オリー",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-059": {
+      "sellPrice": 120,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-064": {
+      "sellPrice": 180,
+      "name": "一伊那尓栖",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-012": {
+      "sellPrice": 120,
+      "name": "白上フブキ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-022": {
+      "sellPrice": 80,
+      "name": "パヴォリア・レイネ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-032": {
+      "sellPrice": 120,
+      "name": "宝鐘マリン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-039": {
+      "sellPrice": 80,
+      "name": "沙花叉クロヱ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-046": {
+      "sellPrice": 80,
+      "name": "紫咲シオン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-052": {
+      "sellPrice": 80,
+      "name": "クレイジー・オリー",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-058": {
+      "sellPrice": 120,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-060": {
+      "sellPrice": 80,
+      "name": "癒月ちょこ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-068": {
+      "sellPrice": 120,
+      "name": "ネリッサ・レイヴンクロフト",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-069": {
+      "sellPrice": 50,
+      "name": "魔法少女みこ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-070": {
+      "sellPrice": 50,
+      "name": "魔法少女かなた",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-071": {
+      "sellPrice": 50,
+      "name": "魔法少女ルーナ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-072": {
+      "sellPrice": 50,
+      "name": "魔法少女シオン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-073": {
+      "sellPrice": 50,
+      "name": "魔法少女マリン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-074": {
+      "sellPrice": 50,
+      "name": "魔法少女クロヱ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hSD02-009": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD03-009": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD04-009": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hBP02-010": {
+      "sellPrice": 50,
+      "name": "白上フブキ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-011": {
+      "sellPrice": 120,
+      "name": "白上フブキ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-015": {
+      "sellPrice": 50,
+      "name": "白銀ノエル",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-016": {
+      "sellPrice": 80,
+      "name": "白銀ノエル",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-019": {
+      "sellPrice": 50,
+      "name": "パヴォリア・レイネ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-020": {
+      "sellPrice": 50,
+      "name": "パヴォリア・レイネ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-021": {
+      "sellPrice": 80,
+      "name": "パヴォリア・レイネ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-025": {
+      "sellPrice": 50,
+      "name": "大神ミオ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-026": {
+      "sellPrice": 180,
+      "name": "大神ミオ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-030": {
+      "sellPrice": 50,
+      "name": "宝鐘マリン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-031": {
+      "sellPrice": 120,
+      "name": "宝鐘マリン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-036": {
+      "sellPrice": 80,
+      "name": "沙花叉クロヱ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-037": {
+      "sellPrice": 80,
+      "name": "沙花叉クロヱ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-038": {
+      "sellPrice": 280,
+      "name": "沙花叉クロヱ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-044": {
+      "sellPrice": 50,
+      "name": "紫咲シオン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-045": {
+      "sellPrice": 50,
+      "name": "紫咲シオン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-049": {
+      "sellPrice": 30,
+      "name": "クレイジー・オリー",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-050": {
+      "sellPrice": 30,
+      "name": "クレイジー・オリー",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-051": {
+      "sellPrice": 30,
+      "name": "クレイジー・オリー",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-055": {
+      "sellPrice": 50,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-056": {
+      "sellPrice": 50,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-057": {
+      "sellPrice": 80,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-062": {
+      "sellPrice": 50,
+      "name": "一伊那尓栖",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-063": {
+      "sellPrice": 30,
+      "name": "一伊那尓栖",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-066": {
+      "sellPrice": 30,
+      "name": "ネリッサ・レイヴンクロフト",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-067": {
+      "sellPrice": 120,
+      "name": "ネリッサ・レイヴンクロフト",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-075": {
+      "sellPrice": 120,
+      "name": "アイドルサインペン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-076": {
+      "sellPrice": 120,
+      "name": "カスタムパソコン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-077": {
+      "sellPrice": 30,
+      "name": "レトロパソコン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-078": {
+      "sellPrice": 80,
+      "name": "かなた建設(エラッタ後)",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-079": {
+      "sellPrice": 180,
+      "name": "爆発の魔法",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-080": {
+      "sellPrice": 50,
+      "name": "秘密結社holoX",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-081": {
+      "sellPrice": 80,
+      "name": "ホロライブ インドネシア2期生",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-082": {
+      "sellPrice": 120,
+      "name": "ホロライブゲーマーズ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-083": {
+      "sellPrice": 30,
+      "name": "魔法のタンス",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-085": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:38.071Z"
+    },
+    "hBP02-086": {
+      "sellPrice": 180,
+      "name": "ホロスパークリング",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-087": {
+      "sellPrice": 30,
+      "name": "紫咲シオンの魔法のステッキ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-088": {
+      "sellPrice": 30,
+      "name": "森カリオペの鎌",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-089": {
+      "sellPrice": 50,
+      "name": "おるやんけ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-090": {
+      "sellPrice": 50,
+      "name": "ネジマキツネ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-091": {
+      "sellPrice": 50,
+      "name": "フブチュン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-092": {
+      "sellPrice": 50,
+      "name": "フブラ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-093": {
+      "sellPrice": 50,
+      "name": "ミテイル",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-094": {
+      "sellPrice": 180,
+      "name": "Tatang",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-095": {
+      "sellPrice": 30,
+      "name": "ドクロくん",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-096": {
+      "sellPrice": 30,
+      "name": "イヌ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-097": {
+      "sellPrice": 30,
+      "name": "UDIN",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-098": {
+      "sellPrice": 50,
+      "name": "Death-sensei",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-099": {
+      "sellPrice": 50,
+      "name": "すこん部",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-100": {
+      "sellPrice": 50,
+      "name": "白銀聖騎士団",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-101": {
+      "sellPrice": 30,
+      "name": "ミオファ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-102": {
+      "sellPrice": 30,
+      "name": "塩っ子(エラッタ後)",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-009": {
+      "sellPrice": 50,
+      "name": "白上フブキ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-029": {
+      "sellPrice": 80,
+      "name": "宝鐘マリン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-043": {
+      "sellPrice": 50,
+      "name": "紫咲シオン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-008": {
+      "sellPrice": 120,
+      "name": "白上フブキ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-014": {
+      "sellPrice": 80,
+      "name": "白銀ノエル",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-018": {
+      "sellPrice": 180,
+      "name": "パヴォリア・レイネ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-024": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP02-028": {
+      "sellPrice": 80,
+      "name": "宝鐘マリン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-035": {
+      "sellPrice": 680,
+      "name": "沙花叉クロヱ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-042": {
+      "sellPrice": 80,
+      "name": "紫咲シオン",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-048": {
+      "sellPrice": 50,
+      "name": "クレイジー・オリー",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-054": {
+      "sellPrice": 120,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-061": {
+      "sellPrice": 80,
+      "name": "一伊那尓栖",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP02-065": {
+      "sellPrice": 80,
+      "name": "ネリッサ・レイヴンクロフト",
+      "timestamp": "2026-07-15T12:11:42.241Z"
+    },
+    "hBP03-002": {
+      "sellPrice": 420,
+      "name": "獅白ぼたん",
+      "timestamp": "2026-07-15T12:11:48.260Z"
+    },
+    "hBP03-003": {
+      "sellPrice": 1280,
+      "name": "さくらみこ",
+      "timestamp": "2026-07-15T12:11:48.260Z"
+    },
+    "hBP03-005": {
+      "sellPrice": 580,
+      "name": "常闇トワ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-007": {
+      "sellPrice": 580,
+      "name": "角巻わため",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-001": {
+      "sellPrice": 420,
+      "name": "姫森ルーナ",
+      "timestamp": "2026-07-15T12:11:48.260Z"
+    },
+    "hBP03-004": {
+      "sellPrice": 780,
+      "name": "FUWAMOCO",
+      "timestamp": "2026-07-15T12:11:48.260Z"
+    },
+    "hBP03-006": {
+      "sellPrice": 1980,
+      "name": "戌神ころね",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-008": {
+      "sellPrice": 180,
+      "name": "アユンダ・リス",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-014": {
+      "sellPrice": 180,
+      "name": "姫森ルーナ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-015": {
+      "sellPrice": 180,
+      "name": "轟はじめ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-021": {
+      "sellPrice": 120,
+      "name": "獅白ぼたん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-024": {
+      "sellPrice": 180,
+      "name": "風真いろは",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-030": {
+      "sellPrice": 280,
+      "name": "さくらみこ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-034": {
+      "sellPrice": 320,
+      "name": "赤井はあと",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-043": {
+      "sellPrice": 320,
+      "name": "フワワ・アビスガード",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-056": {
+      "sellPrice": 180,
+      "name": "常闇トワ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-066": {
+      "sellPrice": 120,
+      "name": "戌神ころね",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-072": {
+      "sellPrice": 220,
+      "name": "角巻わため",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-078": {
+      "sellPrice": 120,
+      "name": "アユンダ・リス",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-079": {
+      "sellPrice": 180,
+      "name": "不知火フレア",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-013": {
+      "sellPrice": 50,
+      "name": "姫森ルーナ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-020": {
+      "sellPrice": 50,
+      "name": "獅白ぼたん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-022": {
+      "sellPrice": 50,
+      "name": "アキ・ローゼンタール",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-023": {
+      "sellPrice": 180,
+      "name": "兎田ぺこら",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-029": {
+      "sellPrice": 180,
+      "name": "さくらみこ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-035": {
+      "sellPrice": 50,
+      "name": "鷹嶺ルイ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-036": {
+      "sellPrice": 50,
+      "name": "小鳥遊キアラ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-039": {
+      "sellPrice": 80,
+      "name": "モココ・アビスガード",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-044": {
+      "sellPrice": 180,
+      "name": "星街すいせい",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-045": {
+      "sellPrice": 50,
+      "name": "こぼ・かなえる",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-049": {
+      "sellPrice": 50,
+      "name": "火威青",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-050": {
+      "sellPrice": 420,
+      "name": "FUWAMOCO",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-055": {
+      "sellPrice": 50,
+      "name": "常闇トワ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-060": {
+      "sellPrice": 80,
+      "name": "ロボ子さん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-065": {
+      "sellPrice": 180,
+      "name": "戌神ころね",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-071": {
+      "sellPrice": 50,
+      "name": "角巻わため",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-077": {
+      "sellPrice": 50,
+      "name": "アユンダ・リス",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-083": {
+      "sellPrice": 80,
+      "name": "音乃瀬奏",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hSD05-009": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD06-007": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD07-009": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hBP03-010": {
+      "sellPrice": 30,
+      "name": "姫森ルーナ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-011": {
+      "sellPrice": 30,
+      "name": "姫森ルーナ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-012": {
+      "sellPrice": 30,
+      "name": "姫森ルーナ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-017": {
+      "sellPrice": 30,
+      "name": "獅白ぼたん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-018": {
+      "sellPrice": 30,
+      "name": "獅白ぼたん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-019": {
+      "sellPrice": 30,
+      "name": "獅白ぼたん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-026": {
+      "sellPrice": 80,
+      "name": "さくらみこ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-027": {
+      "sellPrice": 30,
+      "name": "さくらみこ(エラッタ後)",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-028": {
+      "sellPrice": 30,
+      "name": "さくらみこ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-032": {
+      "sellPrice": 30,
+      "name": "赤井はあと",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-033": {
+      "sellPrice": 30,
+      "name": "赤井はあと",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-038": {
+      "sellPrice": 220,
+      "name": "モココ・アビスガード",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-041": {
+      "sellPrice": 30,
+      "name": "フワワ・アビスガード",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-042": {
+      "sellPrice": 220,
+      "name": "フワワ・アビスガード",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-047": {
+      "sellPrice": 30,
+      "name": "火威青",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-048": {
+      "sellPrice": 30,
+      "name": "火威青",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-052": {
+      "sellPrice": 30,
+      "name": "常闇トワ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-053": {
+      "sellPrice": 30,
+      "name": "常闇トワ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-054": {
+      "sellPrice": 30,
+      "name": "常闇トワ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-058": {
+      "sellPrice": 30,
+      "name": "ロボ子さん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-059": {
+      "sellPrice": 180,
+      "name": "ロボ子さん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-062": {
+      "sellPrice": 80,
+      "name": "戌神ころね",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-063": {
+      "sellPrice": 80,
+      "name": "戌神ころね",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-064": {
+      "sellPrice": 50,
+      "name": "戌神ころね",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-068": {
+      "sellPrice": 30,
+      "name": "角巻わため",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-069": {
+      "sellPrice": 30,
+      "name": "角巻わため",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-070": {
+      "sellPrice": 120,
+      "name": "角巻わため",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-074": {
+      "sellPrice": 30,
+      "name": "アユンダ・リス",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-075": {
+      "sellPrice": 30,
+      "name": "アユンダ・リス",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-076": {
+      "sellPrice": 50,
+      "name": "アユンダ・リス",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-081": {
+      "sellPrice": 30,
+      "name": "音乃瀬奏",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-082": {
+      "sellPrice": 30,
+      "name": "音乃瀬奏",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-084": {
+      "sellPrice": 30,
+      "name": "ゴージャスパソコン",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-085": {
+      "sellPrice": 80,
+      "name": "スーパーパソコン",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-086": {
+      "sellPrice": 80,
+      "name": "デュアルモニターパソコン",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-087": {
+      "sellPrice": 30,
+      "name": "コールアンドレスポンス",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-088": {
+      "sellPrice": 280,
+      "name": "凸待ち",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-089": {
+      "sellPrice": 30,
+      "name": "ファンミーティング",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-090": {
+      "sellPrice": 220,
+      "name": "ホロライブ言えるかな？",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-091": {
+      "sellPrice": 30,
+      "name": "ホロライブインドネシア1期生",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-092": {
+      "sellPrice": 80,
+      "name": "ホロライブ0期生",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-093": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hBP03-094": {
+      "sellPrice": 50,
+      "name": "FPS配信",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-095": {
+      "sellPrice": 30,
+      "name": "ホロキャップ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-096": {
+      "sellPrice": 120,
+      "name": "ライフル",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-097": {
+      "sellPrice": 30,
+      "name": "リコーダー",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-098": {
+      "sellPrice": 50,
+      "name": "金時",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-099": {
+      "sellPrice": 30,
+      "name": "マグチ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-100": {
+      "sellPrice": 30,
+      "name": "ペロ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-101": {
+      "sellPrice": 30,
+      "name": "ビビ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-102": {
+      "sellPrice": 120,
+      "name": "フトイヌ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-103": {
+      "sellPrice": 30,
+      "name": "ホソイヌ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-104": {
+      "sellPrice": 30,
+      "name": "Riscot",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-105": {
+      "sellPrice": 50,
+      "name": "ルーナイト",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-106": {
+      "sellPrice": 30,
+      "name": "SSRB",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-107": {
+      "sellPrice": 50,
+      "name": "35P",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-108": {
+      "sellPrice": 30,
+      "name": "はあとん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-109": {
+      "sellPrice": 30,
+      "name": "Ruffians",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-110": {
+      "sellPrice": 30,
+      "name": "ろぼさー",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-111": {
+      "sellPrice": 30,
+      "name": "ころねすきー",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-112": {
+      "sellPrice": 50,
+      "name": "わためいと",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-113": {
+      "sellPrice": 30,
+      "name": "Risuners",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-009": {
+      "sellPrice": 80,
+      "name": "姫森ルーナ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-016": {
+      "sellPrice": 120,
+      "name": "獅白ぼたん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-025": {
+      "sellPrice": 7980,
+      "timestamp": "2026-07-15T12:15:47.340Z"
+    },
+    "hBP03-031": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP03-037": {
+      "sellPrice": 120,
+      "name": "モココ・アビスガード",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-040": {
+      "sellPrice": 120,
+      "name": "フワワ・アビスガード",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-046": {
+      "sellPrice": 80,
+      "name": "火威青",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-051": {
+      "sellPrice": 120,
+      "name": "常闇トワ",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-057": {
+      "sellPrice": 80,
+      "name": "ロボ子さん",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-061": {
+      "sellPrice": 80,
+      "name": "戌神ころね",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-067": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP03-073": {
+      "sellPrice": 120,
+      "name": "アユンダ・リス",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP03-080": {
+      "sellPrice": 80,
+      "name": "音乃瀬奏",
+      "timestamp": "2026-07-15T12:11:48.261Z"
+    },
+    "hBP04-001": {
+      "sellPrice": 680,
+      "name": "博衣こより",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-004": {
+      "sellPrice": 780,
+      "name": "雪花ラミィ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-005": {
+      "sellPrice": 980,
+      "name": "ラプラス・ダークネス",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-006": {
+      "sellPrice": 980,
+      "name": "大空スバル",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-002": {
+      "sellPrice": 1280,
+      "name": "儒烏風亭らでん",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-003": {
+      "sellPrice": 320,
+      "name": "一条莉々華",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-007": {
+      "sellPrice": 280,
+      "name": "アーニャ・メルフィッサ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-013": {
+      "sellPrice": 120,
+      "name": "博衣こより",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-025": {
+      "sellPrice": 420,
+      "name": "儒烏風亭らでん",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-037": {
+      "sellPrice": 120,
+      "name": "一条莉々華",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-042": {
+      "sellPrice": 120,
+      "name": "カエラ・コヴァルスキア",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-048": {
+      "sellPrice": 220,
+      "name": "雪花ラミィ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-053": {
+      "sellPrice": 420,
+      "name": "シオリ・ノヴェラ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-059": {
+      "sellPrice": 320,
+      "name": "ラプラス・ダークネス",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-066": {
+      "sellPrice": 120,
+      "name": "古石ビジュー",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-072": {
+      "sellPrice": 420,
+      "name": "大空スバル",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-078": {
+      "sellPrice": 120,
+      "name": "アーニャ・メルフィッサ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-082": {
+      "sellPrice": 120,
+      "name": "夏色まつり",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-086": {
+      "sellPrice": 120,
+      "name": "桃鈴ねね",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-012": {
+      "sellPrice": 120,
+      "name": "博衣こより",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-014": {
+      "sellPrice": 120,
+      "name": "白上フブキ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-015": {
+      "sellPrice": 50,
+      "name": "IRyS",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-019": {
+      "sellPrice": 120,
+      "name": "ラオーラ・パンテーラ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-024": {
+      "sellPrice": 120,
+      "name": "儒烏風亭らでん",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-026": {
+      "sellPrice": 80,
+      "name": "大神ミオ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-027": {
+      "sellPrice": 80,
+      "name": "パヴォリア・レイネ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-031": {
+      "sellPrice": 50,
+      "name": "セシリア・イマーグリーン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-036": {
+      "sellPrice": 80,
+      "name": "一条莉々華",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-038": {
+      "sellPrice": 80,
+      "name": "宝鐘マリン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-047": {
+      "sellPrice": 50,
+      "name": "雪花ラミィ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-049": {
+      "sellPrice": 50,
+      "name": "ムーナ・ホシノヴァ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-058": {
+      "sellPrice": 50,
+      "name": "ラプラス・ダークネス",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-060": {
+      "sellPrice": 50,
+      "name": "紫咲シオン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-061": {
+      "sellPrice": 50,
+      "name": "クレイジー・オリー",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-062": {
+      "sellPrice": 80,
+      "name": "森カリオペ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-071": {
+      "sellPrice": 180,
+      "name": "大空スバル",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-077": {
+      "sellPrice": 50,
+      "name": "アーニャ・メルフィッサ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-009": {
+      "sellPrice": 50,
+      "name": "博衣こより",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-010": {
+      "sellPrice": 30,
+      "name": "博衣こより",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-011": {
+      "sellPrice": 50,
+      "name": "博衣こより",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-017": {
+      "sellPrice": 30,
+      "name": "ラオーラ・パンテーラ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-018": {
+      "sellPrice": 120,
+      "name": "ラオーラ・パンテーラ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-021": {
+      "sellPrice": 80,
+      "name": "儒烏風亭らでん",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-022": {
+      "sellPrice": 30,
+      "name": "儒烏風亭らでん",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-023": {
+      "sellPrice": 50,
+      "name": "儒烏風亭らでん",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-029": {
+      "sellPrice": 30,
+      "name": "セシリア・イマーグリーン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-030": {
+      "sellPrice": 50,
+      "name": "セシリア・イマーグリーン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-033": {
+      "sellPrice": 50,
+      "name": "一条莉々華",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-034": {
+      "sellPrice": 30,
+      "name": "一条莉々華",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-035": {
+      "sellPrice": 50,
+      "name": "一条莉々華",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-040": {
+      "sellPrice": 30,
+      "name": "カエラ・コヴァルスキア",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-041": {
+      "sellPrice": 50,
+      "name": "カエラ・コヴァルスキア",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-044": {
+      "sellPrice": 50,
+      "name": "雪花ラミィ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-045": {
+      "sellPrice": 30,
+      "name": "雪花ラミィ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-046": {
+      "sellPrice": 50,
+      "name": "雪花ラミィ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-051": {
+      "sellPrice": 30,
+      "name": "シオリ・ノヴェラ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-052": {
+      "sellPrice": 50,
+      "name": "シオリ・ノヴェラ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-054": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP04-055": {
+      "sellPrice": 80,
+      "name": "ラプラス・ダークネス",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-056": {
+      "sellPrice": 30,
+      "name": "ラプラス・ダークネス(エラッタ前)",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-057": {
+      "sellPrice": 120,
+      "name": "ラプラス・ダークネス",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-064": {
+      "sellPrice": 50,
+      "name": "古石ビジュー",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-065": {
+      "sellPrice": 80,
+      "name": "古石ビジュー",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-068": {
+      "sellPrice": 80,
+      "name": "大空スバル",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-069": {
+      "sellPrice": 30,
+      "name": "大空スバル",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-070": {
+      "sellPrice": 50,
+      "name": "大空スバル",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-074": {
+      "sellPrice": 50,
+      "name": "アーニャ・メルフィッサ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-075": {
+      "sellPrice": 30,
+      "name": "アーニャ・メルフィッサ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-076": {
+      "sellPrice": 50,
+      "name": "アーニャ・メルフィッサ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-080": {
+      "sellPrice": 30,
+      "name": "夏色まつり",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-081": {
+      "sellPrice": 80,
+      "name": "夏色まつり",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-084": {
+      "sellPrice": 30,
+      "name": "桃鈴ねね",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-085": {
+      "sellPrice": 120,
+      "name": "桃鈴ねね",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-087": {
+      "sellPrice": 30,
+      "name": "エリザベス・ローズ・ブラッドフレイム",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-088": {
+      "sellPrice": 80,
+      "name": "ジジ・ムリン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-089": {
+      "sellPrice": 80,
+      "name": "ツートンカラーパソコン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-090": {
+      "sellPrice": 120,
+      "name": "作業用パソコン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-091": {
+      "sellPrice": 50,
+      "name": "限界飯",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-092": {
+      "sellPrice": 50,
+      "name": "ねぽらぼ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-093": {
+      "sellPrice": 50,
+      "name": "ホロライブ2期生",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-094": {
+      "sellPrice": 50,
+      "name": "まいたけダンス",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-095": {
+      "sellPrice": 50,
+      "name": "マスコットキャッチャー",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-096": {
+      "sellPrice": 50,
+      "name": "Advent",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-097": {
+      "sellPrice": 50,
+      "name": "緑の試験管",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-098": {
+      "sellPrice": 50,
+      "name": "鍛冶ハンマー",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-099": {
+      "sellPrice": 50,
+      "name": "古代武器",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-100": {
+      "sellPrice": 30,
+      "name": "ココロ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-101": {
+      "sellPrice": 30,
+      "name": "だいふく",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-102": {
+      "sellPrice": 30,
+      "name": "やめなー",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-103": {
+      "sellPrice": 30,
+      "name": "カラス",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-104": {
+      "sellPrice": 30,
+      "name": "スバルドダック",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-105": {
+      "sellPrice": 50,
+      "name": "こよりの助手くん",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-106": {
+      "sellPrice": 50,
+      "name": "雪民",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hSD01-017": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hBP04-008": {
+      "sellPrice": 80,
+      "name": "博衣こより",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-016": {
+      "sellPrice": 30,
+      "name": "ラオーラ・パンテーラ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-020": {
+      "sellPrice": 120,
+      "name": "儒烏風亭らでん",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-028": {
+      "sellPrice": 30,
+      "name": "セシリア・イマーグリーン",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-032": {
+      "sellPrice": 80,
+      "name": "一条莉々華",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-039": {
+      "sellPrice": 30,
+      "name": "カエラ・コヴァルスキア",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-043": {
+      "sellPrice": 80,
+      "name": "雪花ラミィ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-050": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP04-063": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hBP04-067": {
+      "sellPrice": 120,
+      "name": "大空スバル",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-073": {
+      "sellPrice": 50,
+      "name": "アーニャ・メルフィッサ",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-079": {
+      "sellPrice": 50,
+      "name": "夏色まつり",
+      "timestamp": "2026-07-15T12:11:54.170Z"
+    },
+    "hBP04-083": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hSD01-001": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-002": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-006": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-011": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-004": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-009": {
+      "sellPrice": 320,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-013": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-005": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-010": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-014": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-015": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-007": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-008": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-012": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-016": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hSD01-018": {
+      "sellPrice": 420,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-019": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-020": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD01-021": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:13:50.806Z"
+    },
+    "hSD02-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-008": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-004": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-007": {
+      "sellPrice": 780,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-010": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-011": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-012": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-002": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-003": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-005": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-006": {
+      "sellPrice": 280,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-013": {
+      "sellPrice": 320,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD02-014": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:13:56.061Z"
+    },
+    "hSD03-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-008": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-004": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-007": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-010": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-011": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-012": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-002": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-003": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-005": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-006": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-013": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD03-014": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:01.263Z"
+    },
+    "hSD04-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-008": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-004": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-007": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-010": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-011": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-012": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-002": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-005": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-006": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-013": {
+      "sellPrice": 280,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD04-014": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:06.473Z"
+    },
+    "hSD05-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-008": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-004": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-007": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-010": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-011": {
+      "sellPrice": 280,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-012": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-013": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-002": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-005": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-006": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD05-014": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:11.542Z"
+    },
+    "hSD06-001": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-006": {
+      "sellPrice": 320,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-003": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-008": {
+      "sellPrice": 280,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-009": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-010": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-002": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-004": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-005": {
+      "sellPrice": 420,
+      "timestamp": "2026-07-15T12:14:22.648Z"
+    },
+    "hSD06-011": {
+      "sellPrice": 320,
+      "timestamp": "2026-07-15T12:14:22.649Z"
+    },
+    "hSD06-012": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:22.649Z"
+    },
+    "hSD07-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-008": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-004": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-007": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-010": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-011": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-012": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-013": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-014": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-002": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-003": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-005": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-006": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD07-015": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:27.870Z"
+    },
+    "hSD08-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hSD08-004": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hSD08-003": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hSD08-002": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hSD08-005": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hSD08-006": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hSD08-007": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:33.000Z"
+    },
+    "hSD09-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:38.070Z"
+    },
+    "hSD09-004": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:38.070Z"
+    },
+    "hSD09-003": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:38.071Z"
+    },
+    "hSD09-002": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:38.071Z"
+    },
+    "hSD09-005": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:38.071Z"
+    },
+    "hSD09-006": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:38.071Z"
+    },
+    "hSD09-007": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:38.071Z"
+    },
+    "hSD10-001": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-006": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-009": {
+      "sellPrice": 280,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-010": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-004": {
+      "sellPrice": 680,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-005": {
+      "sellPrice": 580,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-011": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-012": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-002": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hSD10-003": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-007": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-008": {
+      "sellPrice": 320,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD10-013": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:43.502Z"
+    },
+    "hSD11-001": {
+      "sellPrice": 280,
+      "timestamp": "2026-07-15T12:14:54.277Z"
+    },
+    "hSD11-006": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:54.278Z"
+    },
+    "hSD11-009": {
+      "sellPrice": 1280,
+      "timestamp": "2026-07-15T12:14:54.278Z"
+    },
+    "hSD11-004": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:14:54.278Z"
+    },
+    "hSD11-005": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:14:54.278Z"
+    },
+    "hSD11-002": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hSD11-003": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:54.278Z"
+    },
+    "hSD11-007": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:54.278Z"
+    },
+    "hSD11-008": {
+      "sellPrice": 580,
+      "timestamp": "2026-07-15T12:14:54.278Z"
+    },
+    "hSD12-001": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:14:59.428Z"
+    },
+    "hSD12-002": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-007": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-011": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-006": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-005": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-010": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-015": {
+      "sellPrice": 2480,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hBP05-074": {
+      "sellPrice": 500,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-003": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-004": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-008": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-009": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-012": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-013": {
+      "sellPrice": 1280,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-014": {
+      "sellPrice": 1280,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD12-016": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:14:59.429Z"
+    },
+    "hSD13-001": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-002": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-007": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-013": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-005": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-006": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-011": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-012": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-016": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-017": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-003": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-004": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-008": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-009": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-010": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-014": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-015": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD13-018": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:04.675Z"
+    },
+    "hSD14-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-009": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-008": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-005": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-007": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-002": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-004": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-006": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-010": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD14-011": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:09.901Z"
+    },
+    "hSD15-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-009": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-008": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-005": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-007": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-002": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-004": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-006": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD15-010": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:15.088Z"
+    },
+    "hSD16-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:26.211Z"
+    },
+    "hSD16-009": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:26.212Z"
+    },
+    "hSD16-008": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:26.212Z"
+    },
+    "hSD16-005": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:26.212Z"
+    },
+    "hSD16-007": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:26.212Z"
+    },
+    "hSD16-002": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:26.212Z"
+    },
+    "hSD16-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:26.212Z"
+    },
+    "hSD16-004": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:26.212Z"
+    },
+    "hSD16-006": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:26.212Z"
+    },
+    "hSD17-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-009": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-008": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-005": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-007": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-002": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-004": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-006": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD17-010": {
+      "sellPrice": 420,
+      "timestamp": "2026-07-15T12:15:31.417Z"
+    },
+    "hSD18-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD18-009": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD18-008": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD18-005": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD18-007": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD18-002": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD18-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD18-004": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD18-006": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:36.602Z"
+    },
+    "hSD19-001": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-009": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-008": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-005": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-007": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-002": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-003": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-004": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-006": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hSD19-010": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:41.764Z"
+    },
+    "hBP07-002": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-003": {
+      "sellPrice": 980,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-006": {
+      "sellPrice": 1280,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-007": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-001": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-004": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-005": {
+      "sellPrice": 420,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-014": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-021": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-029": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-035": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-042": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-049": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-056": {
+      "sellPrice": 280,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-062": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-069": {
+      "sellPrice": 220,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-074": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-083": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-090": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hY01-012": {
+      "sellPrice": 1780,
+      "timestamp": "2026-07-15T12:15:47.340Z"
+    },
+    "hY02-010": {
+      "sellPrice": 1980,
+      "timestamp": "2026-07-15T12:15:47.340Z"
+    },
+    "hY03-014": {
+      "sellPrice": 1980,
+      "timestamp": "2026-07-15T12:15:47.340Z"
+    },
+    "hY04-011": {
+      "sellPrice": 1280,
+      "timestamp": "2026-07-15T12:15:47.340Z"
+    },
+    "hY05-009": {
+      "sellPrice": 1780,
+      "timestamp": "2026-07-15T12:15:47.340Z"
+    },
+    "hY06-009": {
+      "sellPrice": 1780,
+      "timestamp": "2026-07-15T12:15:47.340Z"
+    },
+    "hBP07-012": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-019": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-022": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-027": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-030": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-031": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-034": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-040": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-043": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-044": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-045": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-048": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-054": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-057": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-058": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-061": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-067": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-070": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-073": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-075": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-076": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-081": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-084": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-085": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-086": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-089": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-009": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-010": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-011": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-013": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-016": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-017": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-018": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-020": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-024": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-025": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-026": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-028": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-033": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-037": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-038": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-039": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-041": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-047": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-051": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-052": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-053": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-055": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-060": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-064": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-065": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-066": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-068": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-071": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-072": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-078": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-079": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-080": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-082": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-088": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-091": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-092": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-093": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-095": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-096": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-098": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-099": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-101": {
+      "sellPrice": 120,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-102": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-103": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-104": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-105": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-106": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-107": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-108": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-109": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-110": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-094": {
+      "sellPrice": 280,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-097": {
+      "sellPrice": 180,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-100": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-008": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-015": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-023": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-032": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-036": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-046": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-050": {
+      "sellPrice": 50,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-059": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-063": {
+      "sellPrice": 80,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-077": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    },
+    "hBP07-087": {
+      "sellPrice": 30,
+      "timestamp": "2026-07-15T12:15:47.342Z"
+    }
+  }
 }

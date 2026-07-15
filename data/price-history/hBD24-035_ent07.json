@@ -128,8 +128,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-035_ent07"
+    },
+    {
+      "date": "2026-07-15",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-035_ent07"
     }
   ],
-  "lastUpdated": "2026-07-11T11:55:07.626Z",
+  "lastUpdated": "2026-07-15T12:21:22.605Z",
   "nameZh": "桃鈴音音"
 }
