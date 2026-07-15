@@ -3,12 +3,14 @@
  *
  * DIC-155: 輸出 data/buy-prices/fullahead-prices.json
  *   格式: { "hBP01-001": { "buyPrice": 500, "timestamp": "..." }, ... }
+ *   有標註 rarity 的卡以 "cardNumber-rarity" 為 key（例：hBP04-001-OUR）。
  *
  * Fullahead 頁面結構（已查證）：買取站是 https://fullahead-buy.com/，hololive OCG
  * 的價格不在靜態 HTML，而是由頁面 JS 打內部 API `fetchRecords.php?app=38` 取得。
  * 因此用 Puppeteer 載入 landing page，攔截該請求拿到 apiToken，再在頁面內用
  * fetch 直接分頁抓完所有 records。商品名例如「【UR】hBP01-091 ムーナ・ホシノヴァ」，
- * 卡號用 regex 從商品名抽出；同卡號多版本取最高買取價。
+ * 卡號用 regex 從商品名抽出；rarity 從商品名前綴【】解析。
+ * 同 cardNumber-rarity 取最低買取價（防止高價稀有版污染普通版）。
  *
  * 參考 scrape-yuyu-prices.js 的 browser crash 重啟邏輯（launchBrowser + 重試）。
  */
@@ -16,7 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer';
-import { extractCardNumber } from './lib/card-number.js';
+import { extractCardNumber, extractRarity } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +33,19 @@ const USER_AGENT =
   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const CRASH_PATTERNS = ['Protocol error', 'Target closed', 'Session closed', 'Connection closed'];
 const MAX_RETRIES = 2;
+
+const RARITY_CODES_SET = new Set(['SEC', 'OSR', 'OUR', 'UR', 'SR', 'P']);
+
+function parseRarityKey(key) {
+  const dashIdx = key.lastIndexOf('-');
+  if (dashIdx > 0) {
+    const suffix = key.substring(dashIdx + 1);
+    if (RARITY_CODES_SET.has(suffix)) {
+      return { cardNumber: key.substring(0, dashIdx), rarity: suffix };
+    }
+  }
+  return { cardNumber: key, rarity: null };
+}
 
 // 新一輪爬取至少要保留舊檔卡數的這個比例，否則視為可疑縮水，保留舊檔不覆蓋。
 const SHRINK_THRESHOLD = 0.5;
@@ -158,15 +173,17 @@ async function main() {
   // 避免臨時錯誤（API/token/page 失敗）用 {} 空檔污染 merge。
   const records = await scrapeWithRestart();
 
-  const best = new Map(); // 正規化卡號 -> 最高買取價
+  const best = new Map(); // cardNumber-rarity -> 最低買取價
   for (const rec of records) {
     const price = parseInt(String(rec.price || '').replace(/,/g, ''), 10);
     if (!Number.isFinite(price) || price <= 0) continue;
     const cardNumber = extractCardNumber(rec.productName);
     if (!cardNumber) continue;
-    const key = cardNumber.toUpperCase();
-    if (!cardNumbers.has(key)) continue; // database 沒有這張卡就跳過
-    if (!best.has(key) || price > best.get(key)) best.set(key, price);
+    const normCardNumber = cardNumber.toUpperCase();
+    if (!cardNumbers.has(normCardNumber)) continue; // database 沒有這張卡就跳過
+    const rarity = extractRarity(rec.productName);
+    const key = rarity ? `${normCardNumber}-${rarity}` : normCardNumber;
+    if (best.get(key) === undefined || price < best.get(key)) best.set(key, price);
   }
 
   // 只有 scrape 成功才會走到這（失敗會在上面 throw 中斷），所以 best 是一次完整爬取的結果。
@@ -190,8 +207,10 @@ async function main() {
   const timestamp = new Date().toISOString();
   const out = {};
   for (const [key, buyPrice] of best.entries()) {
-    const original = cardNumbers.get(key) || key;
-    out[original] = { buyPrice, timestamp };
+    const { cardNumber, rarity } = parseRarityKey(key);
+    const originalCN = cardNumbers.get(cardNumber) || cardNumber;
+    const displayKey = rarity ? `${originalCN}-${rarity}` : originalCN;
+    out[displayKey] = { buyPrice, timestamp };
   }
 
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });

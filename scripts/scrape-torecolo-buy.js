@@ -3,21 +3,15 @@
  *
  * DIC-155: 抓每張卡的買取價格（円），輸出 data/buy-prices/torecolo-prices.json
  *   格式: { "hBP01-001": { "buyPrice": 500, "timestamp": "..." }, ... }
+ *   有標註 rarity 的卡以 "cardNumber-rarity" 為 key（例：hBP04-001-OUR）。
  *
- * 卡號來源：data/database.json 的 cards（只保留 database 有的卡號，其餘跳過）。
- *
- * URL 策略：Torecolo 的每張卡商品碼是 `HL-HBP08-003SEC-S` 這種帶 `HL-` 前綴、
- * 版本與 `-S` 尾碼的組合，並不是乾淨的 `g[卡號]/`，逐卡直接猜 URL 會 404。
- * 官方 hololive 買取表 (/shop/e/eHLpSEC/) 一頁就把所有在收的卡列出來，用一般
- * fetch + cheerio 即可（伺服器回完整 HTML，不需 JS render），因此改用買取表列表頁
- * 一次抓完再依 database 卡號過濾，比逐卡請求更快也更不容易被封。
- * 同一卡號可能有多個版本（SEC/UR…），取「最高」買取價作代表值。
+ * 同一 cardNumber-rarity 取「最低」買取價（防止高價稀有版污染普通版）。
  */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as cheerio from 'cheerio';
-import { extractCardNumber } from './lib/card-number.js';
+import { extractCardNumber, extractRarity } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +29,19 @@ const USER_AGENT =
 
 // 新一輪爬取至少要保留舊檔卡數的這個比例，否則視為可疑縮水，保留舊檔不覆蓋。
 const SHRINK_THRESHOLD = 0.5;
+
+const RARITY_CODES_SET = new Set(['SEC', 'OSR', 'OUR', 'UR', 'SR', 'P']);
+
+function parseRarityKey(key) {
+  const dashIdx = key.lastIndexOf('-');
+  if (dashIdx > 0) {
+    const suffix = key.substring(dashIdx + 1);
+    if (RARITY_CODES_SET.has(suffix)) {
+      return { cardNumber: key.substring(0, dashIdx), rarity: suffix };
+    }
+  }
+  return { cardNumber: key, rarity: null };
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,7 +85,7 @@ async function fetchHtml(url) {
   return res.text();
 }
 
-// 從一頁 HTML 解析出 [{ cardNumber, buyPrice }]
+// 從一頁 HTML 解析出 [{ cardNumber, rarity, buyPrice }]
 function parsePage(html) {
   const $ = cheerio.load(html);
   const rows = [];
@@ -90,9 +97,10 @@ function parsePage(html) {
       '';
     const cardNumber = extractCardNumber(href);
     if (!cardNumber) return;
+    const rarity = extractRarity(href);
     const buyPrice = parsePrice($el.find('.block-thumbnail-t--price').first().text());
     if (buyPrice == null) return;
-    rows.push({ cardNumber, buyPrice });
+    rows.push({ cardNumber, rarity, buyPrice });
   });
   return rows;
 }
@@ -121,7 +129,7 @@ async function scrape() {
   const cardNumbers = loadCardNumbers();
   console.log(`[torecolo-buy] database 卡號: ${cardNumbers.size}`);
 
-  // 正規化卡號 -> 最高買取價
+  // 正規化 cardNumber-rarity -> 最低買取價
   const best = new Map();
 
   for (const startUrl of START_URLS) {
@@ -140,11 +148,13 @@ async function scrape() {
 
       const rows = parsePage(html);
       let matched = 0;
-      for (const { cardNumber, buyPrice } of rows) {
-        const key = cardNumber.toUpperCase();
-        if (!cardNumbers.has(key)) continue; // database 沒有這張卡就跳過
+      for (const { cardNumber, rarity, buyPrice } of rows) {
+        const normCardNumber = cardNumber.toUpperCase();
+        if (!cardNumbers.has(normCardNumber)) continue; // database 沒有這張卡就跳過
         matched += 1;
-        if (!best.has(key) || buyPrice > best.get(key)) best.set(key, buyPrice);
+        const key = rarity ? `${normCardNumber}-${rarity}` : normCardNumber;
+        const prev = best.get(key);
+        if (prev === undefined || buyPrice < prev) best.set(key, buyPrice);
       }
       console.log(`  → 解析 ${rows.length} 筆，match database ${matched} 筆`);
 
@@ -178,12 +188,14 @@ async function scrape() {
     );
   }
 
-  // 組成輸出物件（key 用 database 的原始卡號大小寫）
+  // 組成輸出物件（保留 database 原始卡號大小寫，rarity 附加於 key）
   const timestamp = new Date().toISOString();
   const out = {};
   for (const [key, buyPrice] of best.entries()) {
-    const original = cardNumbers.get(key) || key;
-    out[original] = { buyPrice, timestamp };
+    const { cardNumber, rarity } = parseRarityKey(key);
+    const originalCN = cardNumbers.get(cardNumber) || cardNumber;
+    const displayKey = rarity ? `${originalCN}-${rarity}` : originalCN;
+    out[displayKey] = { buyPrice, timestamp };
   }
 
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
