@@ -645,25 +645,36 @@ async function downloadAllImages(prices) {
 // Merge scraped skill data (data/effects-jp.json + effects-zh.json) into the
 // card map, keyed by cardNumber. Adds `skillsJp` / `skillsZh` to each card that
 // has scraped skills. Safe to call when the effects files are absent.
-function mergeSkills(cards) {
+function mergeSkills(cards, prevSkills = new Map()) {
   const readJson = (p) => {
     try { return JSON.parse(fs.readFileSync(p, 'utf-8')); }
     catch (err) { if (err.code !== 'ENOENT') console.warn(`  [skills] ${path.basename(p)}: ${err.message}`); return {}; }
   };
   const effectsJp = readJson(path.join(DATA_DIR, 'effects-jp.json'));
   const effectsZh = readJson(path.join(DATA_DIR, 'effects-zh.json'));
-  if (!Object.keys(effectsJp).length) { console.log('  [skills] No effects-jp.json found — skipping skill merge'); return; }
-
-  let merged = 0;
-  for (const card of Object.values(cards)) {
-    const cn = card.cardNumber;
-    if (cn && effectsJp[cn]) {
-      card.skillsJp = effectsJp[cn];
-      if (effectsZh[cn]) card.skillsZh = effectsZh[cn];
-      merged++;
-    }
+  if (!Object.keys(effectsJp).length) {
+    console.log('  [skills] No effects-jp.json found — preserving skills from previous build only');
   }
-  console.log(`  [skills] Merged skills into ${merged} cards`);
+
+  let merged = 0, preserved = 0;
+  for (const [cardId, card] of Object.entries(cards)) {
+    const cn = card.cardNumber;
+    const prev = prevSkills.get(cardId);
+
+    // Prefer freshly scraped effects, but fall back to the previous build for
+    // either language so a missing/partial effects file never wipes existing
+    // skills — the skillsZh regression in DIC-454.
+    const jp = (cn && effectsJp[cn]) || prev?.skillsJp;
+    const zh = (cn && effectsZh[cn]) || prev?.skillsZh;
+
+    if (jp) card.skillsJp = jp;
+    if (zh) card.skillsZh = zh;
+
+    if (cn && effectsJp[cn]) merged++;
+    else if (jp || zh) preserved++;
+  }
+  console.log(`  [skills] Merged skills into ${merged} cards` +
+    (preserved ? `, preserved ${preserved} from previous build` : ''));
 }
 
 function loadOfficialData() {
@@ -885,6 +896,31 @@ async function buildDatabase() {
     }
   }
 
+  // Capture the previous build's skillsJp / skillsZh so a rebuild can fall back
+  // to them when the scraped effects files lack an entry. A fresh rebuild
+  // re-derives skills only from data/effects-jp.json + effects-zh.json; if a
+  // build ever runs with effects-zh.json empty/partial while effects-jp.json is
+  // present, affected cards keep skillsJp but lose skillsZh and the app falls
+  // back to Japanese in zh mode (DIC-454). Preserving prior skills stops that
+  // regression from silently wiping translations.
+  const prevSkillsByCardId = new Map();
+  try {
+    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
+    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
+      const saved = {};
+      if (card.skillsJp && typeof card.skillsJp === 'object') saved.skillsJp = card.skillsJp;
+      if (card.skillsZh && typeof card.skillsZh === 'object') saved.skillsZh = card.skillsZh;
+      if (Object.keys(saved).length > 0) prevSkillsByCardId.set(cardId, saved);
+    }
+    if (prevSkillsByCardId.size > 0) {
+      console.log(`  [skills] Preserving skills for ${prevSkillsByCardId.size} cards from previous build`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.warn(`  [skills] Could not read previous database for skill preservation: ${err.message}`);
+    }
+  }
+
   // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch)
   console.log('── Step 1: Scrape yuyu-tei ──');
   const yuyuResult = await scrapeYuyuPrices();
@@ -1039,8 +1075,9 @@ async function buildDatabase() {
     };
   }
 
-  // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber.
-  mergeSkills(database.cards);
+  // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,
+  // preserving any skills from the previous build the effects files no longer supply.
+  mergeSkills(database.cards, prevSkillsByCardId);
 
   // Fix totalCards to reflect actual unique cards
   database.totalCards = Object.keys(database.cards).length;
