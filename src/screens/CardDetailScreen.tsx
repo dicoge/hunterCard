@@ -471,10 +471,6 @@ function MarketDataPanel({ card }: { card: any }) {
   const priceHistory = card?.priceHistory ?? null;
 
   const hasSpread = typeof sellPrice === 'number' && sellPrice > 0 && typeof buyPrice === 'number' && buyPrice > 0;
-  // YT 子面板需至少一個有效顯示欄位才渲染，避免 {} 或全 null 時顯示空標題
-  const YT_DISPLAY_FIELDS = ['subscriberCount', 'growth_1d', 'growth_7d', 'totalViewCount', 'viewCount_daily'];
-  const hasYt = ytStats != null && typeof ytStats === 'object' &&
-    YT_DISPLAY_FIELDS.some((k) => ytStats[k] != null);
 
   // 漲跌判斷：近 7 日均價 vs 前 7 日均價，±3% 閾值 → up / down / flat
   let priceTrend: 'up' | 'down' | 'flat' | null = null;
@@ -508,8 +504,6 @@ function MarketDataPanel({ card }: { card: any }) {
   }
   const hasHistory = priceTrend != null;
 
-  if (!hasSpread && !hasYt && !hasHistory) return null;
-
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
 
@@ -538,46 +532,40 @@ function MarketDataPanel({ card }: { card: any }) {
         </View>
       ) : null}
 
-      {/* YouTube 成員數據 */}
-      {hasYt ? (
-        <View style={styles.marketBlock}>
-          <Text style={styles.marketBlockTitle}>📺 YouTube 成員數據</Text>
-          {ytStats.subscriberCount != null ? (
-            <View style={styles.marketRow}>
-              <Text style={styles.marketLabel}>訂閱數</Text>
-              <Text style={styles.marketValue}>{formatCount(ytStats.subscriberCount)}</Text>
-            </View>
-          ) : null}
-          {ytStats.growth_1d != null ? (
-            <View style={styles.marketRow}>
-              <Text style={styles.marketLabel}>單日成長</Text>
-              <Text style={[styles.marketValue, { color: ytStats.growth_1d >= 0 ? '#10b981' : '#ef4444' }]}>
-                {ytStats.growth_1d >= 0 ? '+' : ''}{formatCount(ytStats.growth_1d)}
-              </Text>
-            </View>
-          ) : null}
-          {ytStats.growth_7d != null ? (
-            <View style={styles.marketRow}>
-              <Text style={styles.marketLabel}>7 日成長</Text>
-              <Text style={[styles.marketValue, { color: ytStats.growth_7d >= 0 ? '#10b981' : '#ef4444' }]}>
-                {ytStats.growth_7d >= 0 ? '+' : ''}{formatCount(ytStats.growth_7d)}
-              </Text>
-            </View>
-          ) : null}
-          {ytStats.totalViewCount != null ? (
-            <View style={styles.marketRow}>
-              <Text style={styles.marketLabel}>總觀看數</Text>
-              <Text style={styles.marketValue}>{formatCount(ytStats.totalViewCount)}</Text>
-            </View>
-          ) : null}
-          {ytStats.viewCount_daily != null ? (
-            <View style={styles.marketRow}>
-              <Text style={styles.marketLabel}>單日觀看</Text>
-              <Text style={styles.marketValue}>{formatCount(ytStats.viewCount_daily)}</Text>
-            </View>
-          ) : null}
+      {/* YouTube 成員數據 — 一律顯示，無資料時各欄位顯示 — */}
+      <View style={styles.marketBlock}>
+        <Text style={styles.marketBlockTitle}>📺 YouTube 成員數據</Text>
+        <View style={styles.marketRow}>
+          <Text style={styles.marketLabel}>訂閱數</Text>
+          <Text style={styles.marketValue}>{formatCount(ytStats?.subscriberCount)}</Text>
         </View>
-      ) : null}
+        <View style={styles.marketRow}>
+          <Text style={styles.marketLabel}>總觀看數</Text>
+          <Text style={styles.marketValue}>{formatCount(ytStats?.totalViewCount)}</Text>
+        </View>
+        {ytStats?.growth_1d != null ? (
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>單日成長</Text>
+            <Text style={[styles.marketValue, { color: ytStats.growth_1d >= 0 ? '#10b981' : '#ef4444' }]}>
+              {ytStats.growth_1d >= 0 ? '+' : ''}{formatCount(ytStats.growth_1d)}
+            </Text>
+          </View>
+        ) : null}
+        {ytStats?.growth_7d != null ? (
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>7 日成長</Text>
+            <Text style={[styles.marketValue, { color: ytStats.growth_7d >= 0 ? '#10b981' : '#ef4444' }]}>
+              {ytStats.growth_7d >= 0 ? '+' : ''}{formatCount(ytStats.growth_7d)}
+            </Text>
+          </View>
+        ) : null}
+        {ytStats?.viewCount_daily != null ? (
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>單日觀看</Text>
+            <Text style={styles.marketValue}>{formatCount(ytStats.viewCount_daily)}</Text>
+          </View>
+        ) : null}
+      </View>
 
       {/* 漲跌判斷 */}
       {hasHistory ? (
