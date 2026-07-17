@@ -74,7 +74,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const nameZH = card.nameZh || allKW[1] || '';
   const nameEN = allKW[2] || '';
   const displayName = preferredLanguage === 'zh' && nameZH ? nameZH : nameJP;
-  const displayNameSub = preferredLanguage === 'zh' && nameZH ? nameJP : (preferredLanguage === 'zh' ? '' : nameZH);
+  const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
   const typeLabel = typeLabels[card.type] || card.type || '-';
 
