@@ -585,6 +585,7 @@ async function scrapeYuyuPrices() {
   }
 
   // If puppeteer got too few cards, fall back to HTTP fetch
+  let usedFetchFallback = false;
   if (totalCards < 50) {
     // Reset and try with fetch
     console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
@@ -594,13 +595,38 @@ async function scrapeYuyuPrices() {
             allPrices[key].push(...entries);
           }
     totalCards += fetchResult.fetchedCards;
+    // scrapeAllWithFetch() always attempts every series in SERIES_PAGES from
+    // scratch, so once it has run every series is considered attempted —
+    // regardless of which ones the earlier Puppeteer pass had marked done
+    // (DIC-508).
+    usedFetchFallback = true;
   }
 
-  // Scrape finished (all series attempted, or fetch fallback ran) — clear the
-  // checkpoint so tomorrow's run starts fresh instead of "resuming" stale data.
-  clearScrapeCheckpoint();
+  // Only treat the scrape as complete — and only then clear the checkpoint —
+  // if every series was actually attempted. Previously this cleared
+  // unconditionally, so a series whose Puppeteer scrape kept throwing (e.g. a
+  // repeated per-series timeout) would never be retried and its absence from
+  // `allPrices` would silently ship as "complete" data (DIC-508 CR).
+  const incompleteSeries = usedFetchFallback
+    ? []
+    : SERIES_PAGES.filter(s => !completedSeries.has(s.name));
+  const complete = incompleteSeries.length === 0;
 
-  return { prices: allPrices, totalCards, seriesWithPrices };
+  if (complete) {
+    // Scrape finished (all series attempted, or fetch fallback ran) — clear
+    // the checkpoint so tomorrow's run starts fresh instead of "resuming"
+    // stale data.
+    clearScrapeCheckpoint();
+  } else {
+    console.warn(
+      `[database] ${incompleteSeries.length}/${SERIES_PAGES.length} series ` +
+        `did not complete this run (${incompleteSeries.map(s => s.name).join(', ')}). ` +
+        `Keeping checkpoint so the next scrape run resumes them instead of ` +
+        `publishing incomplete data.`
+    );
+  }
+
+  return { prices: allPrices, totalCards, seriesWithPrices, complete, incompleteSeries };
 }
 
 /**
@@ -957,12 +983,26 @@ async function scrapeStage() {
   console.log('── Step 1: Scrape yuyu-tei ──');
   const yuyuResult = await scrapeYuyuPrices();
 
-  const { prices, totalCards, seriesWithPrices } = yuyuResult;
+  const { prices, totalCards, seriesWithPrices, complete, incompleteSeries } = yuyuResult;
   console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
 
   // Safety check
   if (totalCards < 50) {
     throw new Error(` SAFETY CHECK FAILED: totalCards=${totalCards} < 50. Scraper likely failed.`);
+  }
+
+  // Refuse to publish a partial scrape. If any series didn't finish this run,
+  // its checkpoint was deliberately left in place (see scrapeYuyuPrices) so
+  // the next run resumes it — but that only works if we don't also overwrite
+  // SCRAPE_CACHE_PATH with today's incomplete data here. Throwing leaves
+  // yesterday's cache untouched for the merge stage to (safely) reject as
+  // stale rather than merge silently-incomplete data (DIC-508 CR).
+  if (!complete) {
+    throw new Error(
+      `SCRAPE INCOMPLETE: ${incompleteSeries.length}/${SERIES_PAGES.length} series ` +
+        `did not finish (${incompleteSeries.map(s => s.name).join(', ')}). ` +
+        `Not writing scrape cache; checkpoint kept for resume on next run.`
+    );
   }
 
   // Step 2: Download images
@@ -1012,6 +1052,21 @@ async function mergeStage(scraped) {
       cache = JSON.parse(fs.readFileSync(SCRAPE_CACHE_PATH, 'utf-8'));
     } catch (err) {
       throw new Error(`No scrape cache found at ${SCRAPE_CACHE_PATH} — run "node build-database.js --stage=scrape" first (${err.message})`);
+    }
+    // Guard against a stale cache: if `--stage=scrape` never ran today (e.g. it
+    // threw before writing SCRAPE_CACHE_PATH — including the "scrape
+    // incomplete" guard above — or the cron step was skipped), the file on
+    // disk is left over from a previous day. Silently merging it would
+    // publish old prices/images under today's build without any signal that
+    // the scrape actually failed (DIC-508 CR). `--allow-stale-cache` opts out
+    // for manual/local runs where re-scraping isn't practical.
+    const allowStale = process.argv.includes('--allow-stale-cache');
+    if (!allowStale && cache.date !== todayYmd()) {
+      throw new Error(
+        `STALE SCRAPE CACHE: ${SCRAPE_CACHE_PATH} is from ${cache.date || 'unknown date'}, ` +
+          `not today (${todayYmd()}). Run "node build-database.js --stage=scrape" first, ` +
+          `or pass --allow-stale-cache to merge it anyway.`
+      );
     }
     scraped = cache;
   }
