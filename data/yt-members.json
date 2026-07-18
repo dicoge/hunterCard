@@ -63,7 +63,7 @@
     { "name": "Kazama Iroha", "nameJp": "風真いろは", "nameZh": "風真伊呂波", "channelId": "UC_vMYWcDjmfdpH6r4TTn1MQ", "generation": "6期生", "group": "hololive", "active": true, "handle": "@kazamairoha" },
 
     { "name": "Shiori Novella", "nameJp": "シオリ・ノヴェラ", "nameZh": "紫織·諾薇菈", "channelId": "UCgnfPPb9JI3e9A4cXHnWbyg", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@ShioriNovella" },
-    { "name": "Koseki Bijou", "nameJp": "古石ビジュ", "nameZh": "古石碧珠", "channelId": "UC9p_lqQ0FEDz327Vgf5JwqA", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@KosekiBijou" },
+    { "name": "Koseki Bijou", "nameJp": "古石ビジュ", "nameZh": "古石碧珠", "altNamesJp": ["古石ビジュー"], "altNamesZh": ["古石比珠"], "channelId": "UC9p_lqQ0FEDz327Vgf5JwqA", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@KosekiBijou" },
     { "name": "Nerissa Ravencroft", "nameJp": "ネリッサ・レイヴンクロフト", "nameZh": "涅莉莎·雷文克羅夫特", "channelId": "UC_sFNM0z0MWm9A6WlKPuMMg", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@NerissaRavencroft" },
     { "name": "FUWAMOCO", "nameJp": "フワワ・モココ", "nameZh": "芙哇哇·摩可可", "channelId": "UCt9H_RpQzhxzlyBxFqrdHqA", "generation": "EN Justice", "group": "hololive", "active": true, "handle": "@FUWAMOCOch" },
 

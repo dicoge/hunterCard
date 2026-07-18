@@ -825,6 +825,15 @@ function mergeYtStats(database) {
     if (!stats) continue;
     if (m.nameJp && !statsByNameJp[m.nameJp]) statsByNameJp[m.nameJp] = stats;
     if (m.nameZh && !statsByNameZh[m.nameZh]) statsByNameZh[m.nameZh] = stats;
+    // Cards sometimes use a name variant that differs from the canonical
+    // nameJp/nameZh (e.g. 儒烏風亭らでん vs 火威青). altNames let a member
+    // claim those variants so ytStats still merge.
+    for (const alt of m.altNamesJp || []) {
+      if (alt && !statsByNameJp[alt]) statsByNameJp[alt] = stats;
+    }
+    for (const alt of m.altNamesZh || []) {
+      if (alt && !statsByNameZh[alt]) statsByNameZh[alt] = stats;
+    }
   }
 
   let merged = 0;
