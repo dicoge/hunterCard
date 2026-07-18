@@ -526,18 +526,18 @@ function MarketDataPanel({ card }: { card: any }) {
             <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
             <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
           </View>
-          <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>差價</Text>
-            {isPriceReliable ? (
+          {isPriceReliable ? (
+            <View style={styles.marketRow}>
+              <Text style={styles.marketLabel}>差價</Text>
               <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
                 {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
               </Text>
-            ) : (
-              <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
-                ⚠️ 價格待確認
-              </Text>
-            )}
-          </View>
+            </View>
+          ) : (
+            <Text style={styles.marketNotice}>
+              ⚠️ 資料異常，請參考個別價格
+            </Text>
+          )}
         </View>
       ) : null}
 
@@ -709,6 +709,7 @@ const styles = StyleSheet.create({
   marketLabel: { fontSize: 13, color: COLORS.textSecondary, flex: 1, marginRight: 8 },
   marketValue: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   marketValueStrong: { fontSize: 15, fontWeight: 'bold' },
+  marketNotice: { fontSize: 13, fontWeight: '600', color: '#f59e0b', marginTop: 6 },
 
   // Trend prediction section
   componentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '44' },
