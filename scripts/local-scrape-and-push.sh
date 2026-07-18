@@ -35,9 +35,28 @@ cd scripts
 node scrape-yt-stats.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT stats snapshot failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
-# 2. Run the scraper (non-fatal: buy crawlers must run even if build-database fails)
+# 2. Run the scraper, split into two steps so each fits a single cron
+#    timeout window (DIC-508): the "scrape" step alone (~35 yuyu-tei series
+#    pages, each throttled 3-5s, plus image downloads) can exceed 300s. If it
+#    gets interrupted mid-run, data/scrape-checkpoint.json lets the NEXT run
+#    resume from the first unfinished series instead of rescraping everything.
+#    The "merge" step only reads the finished scrape output
+#    (data/scrape-cache.json) and writes database.json, so it is fast and
+#    always safe to run right after. (non-fatal: buy crawlers must run even
+#    if build-database fails)
 cd scripts
-node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
+node build-database.js --stage=scrape >> "$LOG_FILE" 2>&1 || {
+  status=$?
+  echo "[$(date)] ⚠️ build-database scrape stage failed (exit $status)" >> "$LOG_FILE"
+  if [ -f ../data/scrape-checkpoint.json ]; then
+    echo "[$(date)]    → checkpoint saved, tomorrow's run will resume the remaining series" >> "$LOG_FILE"
+  fi
+}
+if [ -f ../data/scrape-cache.json ]; then
+  node build-database.js --stage=merge >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database merge stage failed (exit $status), continuing..." >> "$LOG_FILE"; }
+else
+  echo "[$(date)] ⚠️ No scrape cache produced, skipping merge stage (continuing)..." >> "$LOG_FILE"
+fi
 cd ..
 
 # 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)

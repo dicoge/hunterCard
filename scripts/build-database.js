@@ -56,6 +56,55 @@ const OFFICIAL_DIR = path.join(DATA_DIR, 'official');
 const OUTPUT_PATH = path.join(DATA_DIR, 'database.json');
 const YUYU_IMAGE_BASE = 'https://card.yuyu-tei.jp/hocg/100_140';
 
+// ─── Checkpointing (DIC-508) ───
+// yuyu-tei has ~35 series pages, each needing a 3-5s throttling delay plus
+// page-load time, so a from-scratch scrape alone can exceed a 300s cron
+// timeout. SCRAPE_CHECKPOINT_PATH records prices already scraped today so an
+// interrupted run resumes from the first unfinished series instead of
+// restarting from zero. SCRAPE_CACHE_PATH holds the finished scrape output
+// (prices + image download stats) so the slow scrape/download stage and the
+// fast merge/build stage can run as two separate, shorter processes
+// (`--stage=scrape` / `--stage=merge`) that each fit inside a single cron
+// timeout window.
+const SCRAPE_CHECKPOINT_PATH = path.join(DATA_DIR, 'scrape-checkpoint.json');
+const SCRAPE_CACHE_PATH = path.join(DATA_DIR, 'scrape-cache.json');
+
+function todayYmd() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function loadScrapeCheckpoint() {
+  try {
+    const cp = JSON.parse(fs.readFileSync(SCRAPE_CHECKPOINT_PATH, 'utf-8'));
+    if (cp.date === todayYmd()) return cp;
+  } catch {
+    // no checkpoint yet, or unreadable — start fresh
+  }
+  return null;
+}
+
+function saveScrapeCheckpoint(completedSeries, prices, totalCards, seriesWithPrices) {
+  try {
+    fs.writeFileSync(SCRAPE_CHECKPOINT_PATH, JSON.stringify({
+      date: todayYmd(),
+      completedSeries,
+      prices,
+      totalCards,
+      seriesWithPrices,
+    }));
+  } catch (err) {
+    console.warn(`  [checkpoint] Failed to save scrape checkpoint: ${err.message}`);
+  }
+}
+
+function clearScrapeCheckpoint() {
+  try {
+    fs.unlinkSync(SCRAPE_CHECKPOINT_PATH);
+  } catch {
+    // nothing to remove
+  }
+}
+
 // Extra HTTP headers to mimic a real browser
 const EXTRA_HEADERS = {
   'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
@@ -447,9 +496,16 @@ async function scrapeYuyuPrices() {
     usePuppeteer = false;
   }
 
-  const allPrices = {};
-  let totalCards = 0;
-  let seriesWithPrices = 0;
+  // Resume from today's checkpoint if a previous run was interrupted
+  // (e.g. by a cron timeout) partway through the series list (DIC-508).
+  const checkpoint = loadScrapeCheckpoint();
+  const allPrices = checkpoint?.prices ? { ...checkpoint.prices } : {};
+  let totalCards = checkpoint?.totalCards || 0;
+  let seriesWithPrices = checkpoint?.seriesWithPrices || 0;
+  const completedSeries = new Set(checkpoint?.completedSeries || []);
+  if (checkpoint) {
+    console.log(`[database] Resuming from checkpoint: ${completedSeries.size}/${SERIES_PAGES.length} series already scraped today`);
+  }
 
   if (usePuppeteer) {
     console.log('[database] Starting yuyu-tei scrape (Puppeteer)...');
@@ -472,6 +528,10 @@ async function scrapeYuyuPrices() {
     if (browser) {
       try {
         for (const seriesInfo of SERIES_PAGES) {
+          if (completedSeries.has(seriesInfo.name)) {
+            continue; // already scraped earlier today, checkpoint restored its prices
+          }
+
           console.log(`[database] Scraping ${seriesInfo.name}: ${seriesInfo.url}`);
 
           const url = BASE_URL + seriesInfo.url;
@@ -508,6 +568,12 @@ async function scrapeYuyuPrices() {
               allPrices[key].push(...entries);
             }
 
+            // Only mark this series done — and checkpoint it — on success, so
+            // a mid-run interruption leaves it eligible for retry on the next
+            // (resumed) run instead of silently skipping it (DIC-508).
+            completedSeries.add(seriesInfo.name);
+            saveScrapeCheckpoint([...completedSeries], allPrices, totalCards, seriesWithPrices);
+
           } catch (err) {
             console.error(`  → Error: ${err.message}`);
           }
@@ -529,6 +595,10 @@ async function scrapeYuyuPrices() {
           }
     totalCards += fetchResult.fetchedCards;
   }
+
+  // Scrape finished (all series attempted, or fetch fallback ran) — clear the
+  // checkpoint so tomorrow's run starts fresh instead of "resuming" stale data.
+  clearScrapeCheckpoint();
 
   return { prices: allPrices, totalCards, seriesWithPrices };
 }
@@ -867,15 +937,85 @@ function mergeYtStats(database) {
 /**
  * 主流程
  */
-async function buildDatabase() {
+/**
+ * Stage 1/2: scrape yuyu-tei prices + download new card images.
+ * This is the slow, network-bound half of the pipeline (~35 series pages,
+ * each throttled 3-5s, plus per-card image downloads) that alone can exceed
+ * a 300s cron timeout. Writes its output to SCRAPE_CACHE_PATH so the fast
+ * `merge` stage can run as a separate, later process (DIC-508).
+ */
+async function scrapeStage() {
   const startTime = Date.now();
   console.log('═══════════════════════════════════════');
-  console.log('  hunterCard Database Builder');
+  console.log('  hunterCard Scrape Stage');
   console.log('═══════════════════════════════════════\n');
 
-  // Ensure directories
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+
+  // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch)
+  console.log('── Step 1: Scrape yuyu-tei ──');
+  const yuyuResult = await scrapeYuyuPrices();
+
+  const { prices, totalCards, seriesWithPrices } = yuyuResult;
+  console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
+
+  // Safety check
+  if (totalCards < 50) {
+    throw new Error(` SAFETY CHECK FAILED: totalCards=${totalCards} < 50. Scraper likely failed.`);
+  }
+
+  // Step 2: Download images
+  console.log('\n── Step 2: Download images ──');
+  const dlResult = await downloadAllImages(prices);
+
+  fs.writeFileSync(SCRAPE_CACHE_PATH, JSON.stringify({
+    date: todayYmd(),
+    prices,
+    totalCards,
+    seriesWithPrices,
+    dlResult,
+  }));
+
+  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n═══════════════════════════════════════`);
+  console.log(`  ✅ Scrape stage complete!`);
+  console.log(`  Total cards: ${totalCards}`);
+  console.log(`  Images downloaded: ${dlResult.downloaded}`);
+  console.log(`  Duration: ${duration}s`);
+  console.log(`═══════════════════════════════════════`);
+
+  return { prices, totalCards, seriesWithPrices, dlResult, duration: parseFloat(duration) };
+}
+
+/**
+ * Stage 3-7: merge official data, scraped skills, price/YT-stats history and
+ * write the final database.json. Fast and CPU/disk-bound (no network
+ * throttling), so it comfortably fits in a single cron timeout window even
+ * right after a scrape stage that used most of its own budget (DIC-508).
+ * Reads scrape output either from the `scraped` argument (same-process
+ * pipeline via buildDatabase()) or from SCRAPE_CACHE_PATH (separate process
+ * via `--stage=merge`).
+ */
+async function mergeStage(scraped) {
+  const startTime = Date.now();
+  console.log('═══════════════════════════════════════');
+  console.log('  hunterCard Merge Stage');
+  console.log('═══════════════════════════════════════\n');
+
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+
+  if (!scraped) {
+    let cache;
+    try {
+      cache = JSON.parse(fs.readFileSync(SCRAPE_CACHE_PATH, 'utf-8'));
+    } catch (err) {
+      throw new Error(`No scrape cache found at ${SCRAPE_CACHE_PATH} — run "node build-database.js --stage=scrape" first (${err.message})`);
+    }
+    scraped = cache;
+  }
+  const { prices, totalCards, dlResult } = scraped;
 
   // Capture the previous build's buyPrice / buyPriceHistory before we overwrite
   // database.json. Unlike priceHistory (persisted to per-card files in
@@ -929,22 +1069,6 @@ async function buildDatabase() {
       console.warn(`  [skills] Could not read previous database for skill preservation: ${err.message}`);
     }
   }
-
-  // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch)
-  console.log('── Step 1: Scrape yuyu-tei ──');
-  const yuyuResult = await scrapeYuyuPrices();
-
-  const { prices, totalCards, seriesWithPrices } = yuyuResult;
-  console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
-
-  // Safety check
-  if (totalCards < 50) {
-    throw new Error(` SAFETY CHECK FAILED: totalCards=${totalCards} < 50. Scraper likely failed.`);
-  }
-
-  // Step 2: Download images
-  console.log('\n── Step 2: Download images ──');
-  const dlResult = await downloadAllImages(prices);
 
   // Step 3: Load official data
   console.log('\n── Step 3: Merge official data ──');
@@ -1235,6 +1359,14 @@ async function buildDatabase() {
   // Re-write database.json with priceHistory + preserved buyPrice included
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(database, null, 2));
 
+  // Merge succeeded and its output is durably on disk — safe to drop the
+  // scrape cache now so a stale cache can't be merged again by mistake.
+  try {
+    fs.unlinkSync(SCRAPE_CACHE_PATH);
+  } catch {
+    // nothing to remove
+  }
+
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n═══════════════════════════════════════`);
   console.log(`  ✅ Build complete!`);
@@ -1254,18 +1386,34 @@ async function buildDatabase() {
   };
 }
 
+/**
+ * Full pipeline (scrape + merge) in a single process, for manual/local runs.
+ * Cron uses the split `--stage=scrape` / `--stage=merge` entry points instead
+ * so each half fits inside its own timeout window (DIC-508).
+ */
+async function buildDatabase() {
+  const scraped = await scrapeStage();
+  return mergeStage(scraped);
+}
+
 // Run if called directly
 if (process.argv[1]?.includes('build-database')) {
-  buildDatabase()
+  const stageArg = process.argv.slice(2).find(a => a.startsWith('--stage='));
+  const stage = stageArg ? stageArg.split('=')[1] : 'all';
+  const run = stage === 'scrape' ? scrapeStage
+    : stage === 'merge' ? () => mergeStage()
+    : buildDatabase;
+
+  run()
     .then(result => {
-      console.log('\nBuild result:', JSON.stringify(result, null, 2));
+      console.log(`\n${stage === 'all' ? 'Build' : `Stage "${stage}"`} result:`, JSON.stringify(result, null, 2));
       process.exit(0);
     })
     .catch(err => {
-      console.error('\n❌ Build failed:', err.message);
+      console.error(`\n❌ ${stage === 'all' ? 'Build' : `Stage "${stage}"`} failed:`, err.message);
       console.error(err.stack);
       process.exit(1);
     });
 }
 
-export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills };
+export { buildDatabase, scrapeStage, mergeStage, mergeYtStats, computeYtGrowth, mergeSkills };
