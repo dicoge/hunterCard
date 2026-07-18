@@ -1,15 +1,18 @@
 {
   "cardId": "hBP06-045",
   "name": "ハコス・ベールズ",
-  "nameZh": "",
+  "nameZh": "霸子·貝爾茲",
   "trend": "stable",
-  "score": 0.03,
+  "score": 0,
   "confidence": 0.7,
+  "confidenceLevel": "high",
+  "lowConfidence": false,
+  "priceRange": 1.5,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0
   },
-  "lastUpdated": "2026-07-09T04:04:45.470Z",
-  "dataPoints": 23
+  "lastUpdated": "2026-07-18T14:58:37.160Z",
+  "dataPoints": 30
 }

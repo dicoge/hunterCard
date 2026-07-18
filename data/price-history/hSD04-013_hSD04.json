@@ -179,13 +179,6 @@
       "cardId": "hSD04-013_hSD04"
     },
     {
-      "date": "2026-07-14",
-      "price": 30,
-      "source": "yuyu-tei",
-      "currency": "JPY",
-      "cardId": "hSD04-013_hSD04"
-    },
-    {
       "date": "2026-07-15",
       "price": 280,
       "source": "yuyu-tei",
@@ -200,6 +193,6 @@
       "cardId": "hSD04-013_hSD04"
     }
   ],
-  "lastUpdated": "2026-07-18T12:17:33.636Z",
+  "lastUpdated": "2026-07-18T14:57:07.365Z",
   "nameZh": "巧可的蛋包飯"
 }

@@ -224,13 +224,25 @@ export default function CardDetailScreen({ route, navigation }: any) {
       {trend && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
-          <PriceTrendBadge
-            trend={trend.trend}
-            score={trend.score}
-            confidence={trend.confidence}
-            compact={false}
-          />
+          {trend.lowConfidence ? (
+            <View style={styles.lowConfidenceBox}>
+              <Text style={styles.lowConfidenceText}>
+                ⚠️ 資料不足，預測僅供參考
+              </Text>
+              <Text style={styles.lowConfidenceSub}>
+                歷史價格波動過大或資料筆數不足（{trend.dataPoints} 天），趨勢分數暫不顯示。
+              </Text>
+            </View>
+          ) : (
+            <PriceTrendBadge
+              trend={trend.trend}
+              score={trend.score}
+              confidence={trend.confidence}
+              compact={false}
+            />
+          )}
           {/* 各項因子貢獻 */}
+          {!trend.lowConfidence && (
           <View style={styles.componentSection}>
             <Text style={styles.componentTitle}>因子貢獻</Text>
             <View style={styles.componentRow}>
@@ -279,6 +291,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
               基於 {trend.dataPoints} 天的價格資料
             </Text>
           </View>
+          )}
         </View>
       )}
 
@@ -719,4 +732,7 @@ const styles = StyleSheet.create({
   componentBarFill: { height: '100%', borderRadius: 3 },
   componentValue: { fontSize: 12, fontWeight: '700', width: 45, textAlign: 'right' },
   dataPointsNote: { fontSize: 11, color: COLORS.textSecondary + '88', marginTop: 6, textAlign: 'center' },
+  lowConfidenceBox: { backgroundColor: '#f59e0b' + '22', borderWidth: 1, borderColor: '#f59e0b' + '66', borderRadius: 10, padding: 12 },
+  lowConfidenceText: { fontSize: 14, fontWeight: '700', color: '#f59e0b', textAlign: 'center' },
+  lowConfidenceSub: { fontSize: 12, color: COLORS.textSecondary, textAlign: 'center', marginTop: 6, lineHeight: 17 },
 });

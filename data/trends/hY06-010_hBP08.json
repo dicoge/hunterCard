@@ -1,0 +1,18 @@
+{
+  "cardId": "hY06-010",
+  "name": "黄エール",
+  "nameZh": "黃色應援",
+  "trend": "stable",
+  "score": 0,
+  "confidence": 0.4,
+  "confidenceLevel": "medium",
+  "lowConfidence": false,
+  "priceRange": 2.2,
+  "components": {
+    "priceTrend": 0,
+    "ytTrend": 0,
+    "newsSentiment": 0
+  },
+  "lastUpdated": "2026-07-18T14:58:37.171Z",
+  "dataPoints": 4
+}

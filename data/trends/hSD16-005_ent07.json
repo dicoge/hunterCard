@@ -1,15 +1,18 @@
 {
   "cardId": "hSD16-005",
   "name": "さくらみこ",
-  "nameZh": "",
+  "nameZh": "櫻巫女",
   "trend": "stable",
-  "score": 0.03,
+  "score": 0,
   "confidence": 0.9,
+  "confidenceLevel": "high",
+  "lowConfidence": false,
+  "priceRange": 1,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0
   },
-  "lastUpdated": "2026-07-09T04:04:45.478Z",
-  "dataPoints": 22
+  "lastUpdated": "2026-07-18T14:58:37.171Z",
+  "dataPoints": 27
 }

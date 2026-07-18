@@ -1,0 +1,18 @@
+{
+  "cardId": "hY01-007",
+  "name": "白エール",
+  "nameZh": "白色應援",
+  "trend": "stable",
+  "score": 0,
+  "confidence": 0.3,
+  "confidenceLevel": "medium",
+  "lowConfidence": false,
+  "priceRange": 1.4,
+  "components": {
+    "priceTrend": 0,
+    "ytTrend": 0,
+    "newsSentiment": 0
+  },
+  "lastUpdated": "2026-07-18T14:58:37.171Z",
+  "dataPoints": 3
+}

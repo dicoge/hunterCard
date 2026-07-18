@@ -1,15 +1,18 @@
 {
   "cardId": "hSD19-006",
   "name": "大空スバル",
-  "nameZh": "",
+  "nameZh": "大空昴",
   "trend": "stable",
-  "score": 0.03,
+  "score": 0,
   "confidence": 0.9,
+  "confidenceLevel": "high",
+  "lowConfidence": false,
+  "priceRange": 1,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0
   },
-  "lastUpdated": "2026-07-09T04:04:45.479Z",
-  "dataPoints": 17
+  "lastUpdated": "2026-07-18T14:58:37.171Z",
+  "dataPoints": 21
 }

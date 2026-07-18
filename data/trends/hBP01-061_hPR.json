@@ -1,15 +1,18 @@
 {
   "cardId": "hBP01-061",
   "name": "鷹嶺ルイ",
-  "nameZh": "",
+  "nameZh": "鷹嶺琉衣",
   "trend": "stable",
-  "score": 0.03,
+  "score": 0,
   "confidence": 0.6,
+  "confidenceLevel": "high",
+  "lowConfidence": false,
+  "priceRange": 2.3,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0
   },
-  "lastUpdated": "2026-07-09T04:04:45.454Z",
-  "dataPoints": 23
+  "lastUpdated": "2026-07-18T14:58:37.148Z",
+  "dataPoints": 28
 }

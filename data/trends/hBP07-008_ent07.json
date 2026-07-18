@@ -1,15 +1,18 @@
 {
   "cardId": "hBP07-008",
   "name": "角巻わため",
-  "nameZh": "",
+  "nameZh": "角卷綿芽",
   "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.9,
+  "score": 0,
+  "confidence": 1,
+  "confidenceLevel": "high",
+  "lowConfidence": false,
+  "priceRange": 1,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0
   },
-  "lastUpdated": "2026-07-09T04:04:45.471Z",
-  "dataPoints": 23
+  "lastUpdated": "2026-07-18T14:58:37.161Z",
+  "dataPoints": 30
 }
