@@ -205,8 +205,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-077_hBP05"
+    },
+    {
+      "date": "2026-07-18",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-077_hBP05"
     }
   ],
-  "lastUpdated": "2026-07-15T12:21:22.796Z",
+  "lastUpdated": "2026-07-18T12:17:33.558Z",
   "nameZh": "笨蛋馬戲團"
 }

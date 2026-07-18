@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD09-002_hPR"
+    },
+    {
+      "date": "2026-07-18",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-002_hPR"
     }
   ],
-  "lastUpdated": "2026-07-15T12:21:22.943Z",
+  "lastUpdated": "2026-07-18T12:17:33.685Z",
   "nameZh": "寶鍾瑪琳"
 }

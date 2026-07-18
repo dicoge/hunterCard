@@ -191,8 +191,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-098_hBP04"
+    },
+    {
+      "date": "2026-07-18",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-098_hBP04"
     }
   ],
-  "lastUpdated": "2026-07-15T12:21:22.821Z",
+  "lastUpdated": "2026-07-18T12:17:33.585Z",
   "nameZh": "鍛造槌"
 }
