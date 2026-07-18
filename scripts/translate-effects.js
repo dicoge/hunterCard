@@ -41,20 +41,47 @@ const BATCH_SIZE = 20;
 const CONCURRENCY = 6;
 const NL = '⏎'; // newline placeholder for line-based transport
 
-// Reserved terms that MUST stay in their original (Japanese/Latin) form.
-// Longest-first so compound terms are masked before their substrings
-// (e.g. SP推しスキル before 推しスキル).
+// Reserved terms that MUST stay in their original Latin form. The product
+// requirement (DIC-465) is that every zh field is fully Chinese with no
+// Japanese kana, so katakana game terms are NO LONGER reserved — they are
+// translated to canonical Chinese by GLOSSARY_ZH below. Only Latin-script
+// abbreviations that have no Chinese equivalent stay verbatim.
 const RESERVED_TERMS = [
-  'SP推しスキル', '推しスキル',
-  'ホロメン', 'ホロパワー', 'バトンタッチ', 'ブルーム', 'センター',
-  'アーツ', 'エール', 'コラボ', 'ギフト', 'ダウン',
   'LIMITED', 'Debut', 'Bloom', 'RUSH', 'Buzz',
 ].sort((a, b) => b.length - a.length);
 
+// Canonical Japanese-game-term -> Traditional-Chinese map, applied
+// deterministically to every finalized translation so the output stays
+// consistent regardless of how the LLM renders a given term. Longest-first so
+// compounds resolve before their atoms (推しホロメン before ホロメン).
+const GLOSSARY_ZH = [
+  ['サポート', '支援'], ['アイテム', '道具'],
+  ['推しホロメン', '主推成員'], ['推しスキル', '主推技能'],
+  ['センターホロメン', '中央成員'], ['コラボホロメン', '協力成員'],
+  ['バックホロメン', '後方成員'], ['ホロメンダウン', '成員倒下'],
+  ['ホロメンコラボ', '成員協力'], ['センターポジション', '中央位置'],
+  ['ホロサマー', 'Holo夏日'], ['バトンタッチ', '換手'],
+  ['ホロパワー', '能量'], ['アーカイブ', '檔案'], ['マスコット', '吉祥物'],
+  ['ゲーマーズ', '遊戲人'], ['ポジション', '位置'], ['イベント', '事件'],
+  ['スタッフ', '工作人員'], ['ブルーム', '綻放'], ['センター', '中央'],
+  ['ホロメン', '成員'], ['アーツ', '招式'], ['エール', '應援'],
+  ['コラボ', '協力'], ['ダウン', '倒下'], ['ギフト', '禮物'],
+  ['ファン', '粉絲'], ['バック', '後方'], ['サマー', '夏日'],
+  ['ラッシュ', '衝刺'], ['推し', '主推'], ['ツール', '工具'],
+];
+
+function canonicalizeTerms(s) {
+  if (typeof s !== 'string' || !s) return s;
+  let out = s.split('･').join('・');
+  for (const [jp, zh] of GLOSSARY_ZH) out = out.split(jp).join(zh);
+  return out.split('・').join('·');
+}
+
 const SYSTEM_PROMPT = `你是專業的桌遊翻譯，將 hololive OFFICIAL CARD GAME 的日文卡牌技能文字翻譯成繁體中文（台灣用語）。規則：
-1. 【最重要】以下專有名詞是遊戲術語，必須原封不動保留，絕對不可翻譯、不可音譯、不可改寫成英文或中文：
-   ホロメン、推しスキル、SP推しスキル、アーツ、ホロパワー、エール、コラボ、バトンタッチ、ブルーム、センター、Buzz、ギフト、LIMITED、ダウン、Debut、Bloom、RUSH。
-   （例如 ホロメン 不可翻成 Holomen／holomen；アーツ 不可翻成 Arts；エール 不可翻成 加油／應援；コラボ 不可翻成 合作／Collaboration。）
+1. 【最重要】遊戲術語一律翻成下列固定的繁體中文，不可保留日文假名、不可音譯、不可寫成英文：
+   ホロメン→成員、推しスキル→主推技能、SP推しスキル→SP主推技能、アーツ→招式、ホロパワー→能量、エール→應援、コラボ→協力、バトンタッチ→換手、ブルーム→綻放、センター→中央、バック→後方、ギフト→禮物、ダウン→倒下、サポート→支援、アイテム→道具、ツール→工具、マスコット→吉祥物、ファン→粉絲、イベント→事件、アーカイブ→檔案、ポジション→位置。
+   只有純拉丁字母的縮寫保留原文，不要翻譯：Buzz、LIMITED、Debut、Bloom、RUSH。
+   （整段譯文不可出現任何日文平假名或片假名。）
 2. 文字中若出現形如 ⟦0⟧ ⟦1⟧ 的佔位符，請原樣保留、不要翻譯、不要改動、不要增減，位置與原文一致。
 3. 一般遊戲詞彙照此翻譯：デッキ→牌組、手札→手牌、ステージ→場上、ライフ→生命、ダメージ→傷害、相手→對手、自分→自己、選ぶ→選擇、公開→展示、引く→抽。
 4. 保留所有數字、+、-、括號與符號結構，例如 [ターンに1回]→[每回合1次]、[ゲームに1回]→[每場遊戲1次]。
@@ -162,7 +189,7 @@ function stripPrefix(s) {
 // Restore reserved terms + normalize to Traditional. `map` is the protection map
 // for this specific string.
 function finalize(translated, map) {
-  return toTraditional(restoreString(translated, map));
+  return canonicalizeTerms(toTraditional(restoreString(translated, map)));
 }
 
 async function translateBatch(strings) {
@@ -227,24 +254,22 @@ function reconstruct(data, cache) {
   return out;
 }
 
-// Post-translation validation: flag any reserved term that leaked into a
-// translated (non-Japanese) form, surviving simplified characters, and any
-// unrestored protection tokens. Returns true when everything is clean.
-// `srcOf` maps a translated value back to its Japanese source so we can tell a
-// genuine reserved-term leak (source had the katakana term, translation lost it)
-// apart from legitimate flavor text (e.g. Japanese kanji 応援/頑張る → 加油).
+// Post-translation validation: flag any surviving Japanese kana, simplified
+// characters, unrestored protection tokens, or English term leaks. Returns true
+// when everything is clean.
 function validate(cache) {
   const entries = Object.entries(cache);
-  // Reserved katakana that must survive verbatim. A leak = the term appears
-  // fewer times in the translation than in its source.
-  const reserved = ['ホロメン', 'アーツ', 'エール', 'コラボ', 'ホロパワー', '推しスキル', 'バトンタッチ', 'センター', 'ブルーム', 'ダウン'];
-  const count = (s, t) => s.split(t).length - 1;
+  // No Japanese kana may survive in a translated field (DIC-465). Interpunct
+  // U+30FB and halfwidth U+FF65 are normalized to · in finalize(), so they are
+  // excluded here to avoid false positives on foreign names.
+  const KANA_RE = /[぀-ゟァ-ヺー-ヿ]/u;
   let clean = true;
-  let losses = 0;
-  for (const [src, zh] of entries) {
-    for (const t of reserved) if (count(src, t) > count(zh, t)) { losses++; break; }
+  const kanaLeaks = entries.filter(([, zh]) => KANA_RE.test(zh));
+  if (kanaLeaks.length) {
+    clean = false;
+    console.log(`  [validate] Japanese kana remain in ${kanaLeaks.length} string(s):`);
+    for (const [, zh] of kanaLeaks.slice(0, 10)) console.log(`    ${JSON.stringify(zh).slice(0, 120)}`);
   }
-  if (losses) { clean = false; console.log(`  [validate] reserved-term loss in ${losses} string(s)`); }
 
   const artifacts = entries.filter(([, zh]) => TOKEN_ARTIFACT_RE.test(zh)).length;
   if (artifacts) { clean = false; console.log(`  [validate] token artifacts in ${artifacts} string(s)`); }
@@ -256,7 +281,7 @@ function validate(cache) {
   for (const [, zh] of entries) for (const ch of zh) if (S2T_MAP[ch]) simp.add(ch);
   if (simp.size) { clean = false; console.log(`  [validate] simplified chars remain: ${[...simp].join('')}`); }
 
-  if (clean) console.log('  [validate] OK — reserved terms preserved, no artifacts, no simplified chars');
+  if (clean) console.log('  [validate] OK — no kana, no artifacts, no simplified chars');
   return clean;
 }
 
