@@ -477,6 +477,11 @@ async function scrapeYuyuPrices() {
   const allPrices = {};
   let totalCards = 0;
   let seriesWithPrices = 0;
+  // True if any series failed to scrape cleanly (crash retries exhausted,
+  // browser relaunch failure, or other error). Forces the HTTP fetch fallback
+  // even when totalCards > 50, so a single failed series (e.g. hSD) can't be
+  // silently dropped just because earlier series filled the count.
+  let scrapeIncomplete = false;
 
   if (usePuppeteer) {
     console.log('[database] Starting yuyu-tei scrape (Puppeteer)...');
@@ -503,6 +508,7 @@ async function scrapeYuyuPrices() {
 
           const url = BASE_URL + seriesInfo.url;
           const MAX_RETRIES = 3;
+          let seriesOk = false;
 
           for (let retries = 0; retries <= MAX_RETRIES; retries++) {
             try {
@@ -537,6 +543,7 @@ async function scrapeYuyuPrices() {
                 allPrices[key].push(...entries);
               }
 
+              seriesOk = true;
               break;
             } catch (err) {
               const isCrash = isBrowserCrash(err);
@@ -584,6 +591,8 @@ async function scrapeYuyuPrices() {
             }
           }
 
+          if (!seriesOk) scrapeIncomplete = true;
+
           if (!usePuppeteer) break;
         }
       } finally {
@@ -592,10 +601,13 @@ async function scrapeYuyuPrices() {
     }
   }
 
-  // If puppeteer got too few cards, fall back to HTTP fetch
-  if (totalCards < 50) {
+  // Fall back to HTTP fetch if puppeteer got too few cards OR any series
+  // failed to scrape cleanly (so a failed series like hSD is backfilled even
+  // when totalCards > 50).
+  if (totalCards < 50 || scrapeIncomplete) {
     // Reset and try with fetch
-    console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
+    const reason = totalCards < 50 ? `only got ${totalCards} cards (< 50)` : 'one or more series failed to scrape cleanly';
+    console.log(`\n[database] Puppeteer scrape ${reason}. Switching to HTTP fetch...`);
     const fetchResult = await scrapeAllWithFetch();
     for (const [key, entries] of Object.entries(fetchResult.prices)) {
             if (!allPrices[key]) allPrices[key] = [];
