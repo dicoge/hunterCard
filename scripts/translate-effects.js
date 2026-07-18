@@ -70,9 +70,18 @@ const GLOSSARY_ZH = [
   ['ラッシュ', '衝刺'], ['推し', '主推'], ['ツール', '工具'],
 ];
 
+// Encoding-damaged source strings (mojibake in the scrape) mapped to their
+// correct Chinese form. Applied verbatim before the term glossary.
+const REPAIRS = [
+  ['ホロ��ン', '成員'],
+  ['七詩ムメ���', '七詩無名'],
+  ['好味ー！', '好味～！'],
+];
+
 function canonicalizeTerms(s) {
   if (typeof s !== 'string' || !s) return s;
   let out = s.split('･').join('・');
+  for (const [jp, zh] of REPAIRS) out = out.split(jp).join(zh);
   for (const [jp, zh] of GLOSSARY_ZH) out = out.split(jp).join(zh);
   return out.split('・').join('·');
 }
@@ -239,10 +248,16 @@ function collectStrings(data) {
 
 function reconstruct(data, cache) {
   const tr = (s) => (s && cache[s]) ? cache[s] : s;
+  // Card name/cardType are not part of the LLM translation cache, so translate
+  // them here: name via the curated character-name map, cardType via the term
+  // glossary. Both are canonicalized so no Japanese kana survives (DIC-465).
+  let charNames = {};
+  try { charNames = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'character-names-zh.json'), 'utf8')); } catch (e) {}
+  const trName = (n) => canonicalizeTerms((n && charNames[n]) || n);
   const out = {};
   for (const k in data) {
     const c = data[k];
-    const z = { cardNumber: c.cardNumber, name: c.name, cardType: c.cardType, color: c.color };
+    const z = { cardNumber: c.cardNumber, name: trName(c.name), cardType: canonicalizeTerms(c.cardType), color: c.color };
     for (const sk of ['oshiSkill', 'spOshiSkill']) {
       if (c[sk]) z[sk] = { name: tr(c[sk].name), cost: c[sk].cost, effect: tr(c[sk].effect) };
     }
