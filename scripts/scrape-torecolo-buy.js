@@ -62,6 +62,19 @@ function loadCardNumbers() {
   return map;
 }
 
+// Torecolo 商品碼把稀有度接在卡號後面，例如 `HL-HBP08-003SEC-S` → 卡號 HBP08-003、
+// 稀有度 SEC（`-S` 是尾碼）。取卡號後緊接的字母當稀有度，正規化成 database 寫法。
+const RARITY_ALIASES = { PR: 'P' };
+function extractRarityFromHref(href, cardNumber) {
+  if (!href || !cardNumber) return null;
+  const idx = href.toUpperCase().indexOf(cardNumber.toUpperCase());
+  if (idx === -1) return null;
+  const m = href.slice(idx + cardNumber.length).match(/^([A-Za-z]+)/);
+  if (!m) return null;
+  const raw = m[1].toUpperCase();
+  return RARITY_ALIASES[raw] || raw;
+}
+
 function parsePrice(text) {
   if (!text) return null;
   const m = String(text).match(/([\d,]+)\s*円/);
@@ -92,7 +105,8 @@ function parsePage(html) {
     if (!cardNumber) return;
     const buyPrice = parsePrice($el.find('.block-thumbnail-t--price').first().text());
     if (buyPrice == null) return;
-    rows.push({ cardNumber, buyPrice });
+    const rarity = extractRarityFromHref(href, cardNumber);
+    rows.push({ cardNumber, rarity, buyPrice });
   });
   return rows;
 }
@@ -121,7 +135,7 @@ async function scrape() {
   const cardNumbers = loadCardNumbers();
   console.log(`[torecolo-buy] database 卡號: ${cardNumbers.size}`);
 
-  // 正規化卡號 -> 最高買取價
+  // 「正規化卡號-稀有度」-> { buyPrice, cardNumber, rarity }，同版本取最高買取價。
   const best = new Map();
 
   for (const startUrl of START_URLS) {
@@ -140,11 +154,13 @@ async function scrape() {
 
       const rows = parsePage(html);
       let matched = 0;
-      for (const { cardNumber, buyPrice } of rows) {
-        const key = cardNumber.toUpperCase();
-        if (!cardNumbers.has(key)) continue; // database 沒有這張卡就跳過
+      for (const { cardNumber, rarity, buyPrice } of rows) {
+        const numKey = cardNumber.toUpperCase();
+        if (!cardNumbers.has(numKey)) continue; // database 沒有這張卡就跳過
         matched += 1;
-        if (!best.has(key) || buyPrice > best.get(key)) best.set(key, buyPrice);
+        const key = rarity ? `${numKey}-${rarity}` : numKey;
+        const prev = best.get(key);
+        if (!prev || buyPrice > prev.buyPrice) best.set(key, { buyPrice, cardNumber: numKey, rarity });
       }
       console.log(`  → 解析 ${rows.length} 筆，match database ${matched} 筆`);
 
@@ -181,9 +197,10 @@ async function scrape() {
   // 組成輸出物件（key 用 database 的原始卡號大小寫）
   const timestamp = new Date().toISOString();
   const out = {};
-  for (const [key, buyPrice] of best.entries()) {
-    const original = cardNumbers.get(key) || key;
-    out[original] = { buyPrice, timestamp };
+  for (const [key, { buyPrice, cardNumber, rarity }] of best.entries()) {
+    const original = cardNumbers.get(cardNumber) || cardNumber;
+    const outKey = rarity ? `${original}-${rarity}` : original;
+    out[outKey] = { buyPrice, rarity: rarity || null, timestamp };
   }
 
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
