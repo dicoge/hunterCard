@@ -11,8 +11,8 @@
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-18T14:58:37.170Z",
-  "dataPoints": 27
+  "lastUpdated": "2026-07-19T12:12:42.382Z",
+  "dataPoints": 28
 }

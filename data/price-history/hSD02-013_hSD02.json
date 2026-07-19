@@ -205,8 +205,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD02-013_hSD02"
+    },
+    {
+      "date": "2026-07-19",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-013_hSD02"
     }
   ],
-  "lastUpdated": "2026-07-18T12:17:33.632Z",
+  "lastUpdated": "2026-07-19T12:09:22.416Z",
   "nameZh": "阿修羅＆羅剎"
 }

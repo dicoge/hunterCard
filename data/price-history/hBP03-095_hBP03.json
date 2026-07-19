@@ -212,8 +212,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-095_hBP03"
+    },
+    {
+      "date": "2026-07-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-095_hBP03"
     }
   ],
-  "lastUpdated": "2026-07-18T12:17:33.602Z",
+  "lastUpdated": "2026-07-19T12:09:22.371Z",
   "nameZh": "Hololive帽"
 }

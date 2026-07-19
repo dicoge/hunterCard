@@ -3,16 +3,13 @@
   "name": "水宮枢",
   "nameZh": "水宮樞",
   "trend": "stable",
-  "score": 0,
+  "score": 0.03,
   "confidence": 0.7,
-  "confidenceLevel": "high",
-  "lowConfidence": false,
-  "priceRange": 4.6,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-18T14:58:37.170Z",
-  "dataPoints": 26
+  "lastUpdated": "2026-07-19T12:12:42.381Z",
+  "dataPoints": 27
 }

@@ -77,10 +77,11 @@ function main() {
 
   // 各來源合併，維護兩張表：
   //   bestByKey    —「卡號-稀有度」精確 key -> 最高買取價（用來按稀有度對齊）
-  //   bestByNumber — 純卡號 -> 最高買取價（抓不到稀有度或舊格式時的 fallback）
+  //   minByNumber  — 純卡號 -> 該卡號所有稀有度中的「最低」買取價（抓不到稀有度或舊格式時的
+  //                  fallback）。DIC-546：改用最低價，避免昂貴稀有度（P/OUR）污染較便宜的卡。
   const now = Date.now();
   const bestByKey = new Map();
-  const bestByNumber = new Map();
+  const minByNumber = new Map();
   for (const file of SOURCE_FILES) {
     const src = loadSource(file, now);
     for (const [key, price] of src.entries()) {
@@ -90,8 +91,8 @@ function main() {
       const num = extractCardNumber(key);
       if (num) {
         const numKey = num.toUpperCase();
-        if (!bestByNumber.has(numKey) || price > bestByNumber.get(numKey)) {
-          bestByNumber.set(numKey, price);
+        if (!minByNumber.has(numKey) || price < minByNumber.get(numKey)) {
+          minByNumber.set(numKey, price);
         }
       }
     }
@@ -108,10 +109,10 @@ function main() {
 
   for (const card of Object.values(db.cards || {})) {
     if (!card.cardNumber) continue;
-    // 先用「卡號-稀有度」精確對齊，找不到再 fallback 到純卡號（取該卡號最高買取價）。
+    // 先用「卡號-稀有度」精確對齊，找不到再 fallback 到純卡號（取該卡號最低買取價）。
     const numKey = card.cardNumber.toUpperCase();
     const exactKey = card.rarity ? `${numKey}-${card.rarity.toUpperCase()}` : null;
-    const price = (exactKey != null ? bestByKey.get(exactKey) : undefined) ?? bestByNumber.get(numKey);
+    const price = (exactKey != null ? bestByKey.get(exactKey) : undefined) ?? minByNumber.get(numKey);
     if (price == null) continue;
 
     card.buyPrice = price;
@@ -124,7 +125,7 @@ function main() {
 
   fs.writeFileSync(DB_PATH, `${JSON.stringify(db, null, 2)}\n`, 'utf-8');
   console.log(
-    `[merge-buy] ✅ Done — 來源 key ${bestByKey.size} 個（卡號 ${bestByNumber.size} 個），更新 database ${updated} 張卡（date ${date}）`
+    `[merge-buy] ✅ Done — 來源 key ${bestByKey.size} 個（卡號 ${minByNumber.size} 個），更新 database ${updated} 張卡（date ${date}）`
   );
 }
 

@@ -198,8 +198,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-016_hPR"
+    },
+    {
+      "date": "2026-07-19",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-016_hPR"
     }
   ],
-  "lastUpdated": "2026-07-18T12:17:33.683Z",
+  "lastUpdated": "2026-07-19T12:09:22.497Z",
   "nameZh": "春先暖和"
 }
