@@ -1,15 +1,15 @@
 {
   "cardId": "hBP08-094",
   "name": "パパは仕事を辞める",
-  "nameZh": "",
+  "nameZh": "爸爸辭職了",
   "trend": "stable",
   "score": 0.03,
   "confidence": 0.9,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-09T04:04:45.474Z",
-  "dataPoints": 17
+  "lastUpdated": "2026-07-19T12:12:42.376Z",
+  "dataPoints": 25
 }

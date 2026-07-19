@@ -1,15 +1,15 @@
 {
   "cardId": "hSD17-001",
   "name": "星街すいせい",
-  "nameZh": "",
+  "nameZh": "星街彗星",
   "trend": "stable",
   "score": 0.03,
   "confidence": 0.9,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-09T04:04:45.479Z",
-  "dataPoints": 19
+  "lastUpdated": "2026-07-19T12:12:42.385Z",
+  "dataPoints": 25
 }
