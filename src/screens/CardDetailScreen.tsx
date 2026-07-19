@@ -31,6 +31,21 @@ function parseEffects(keywords: string[]): string[] {
   });
 }
 
+// Kana (hiragana/katakana) is the reliable "still Japanese" signal — 漢字 alone
+// also appears in legitimate Chinese, so we only test the effect/ability text.
+const KANA_RE = /[぀-ゟ゠-ヿ]/;
+function skillsLookJapanese(skills?: Skills): boolean {
+  if (!skills) return false;
+  const texts: (string | undefined)[] = [
+    skills.oshiSkill?.effect,
+    skills.spOshiSkill?.effect,
+    ...(skills.arts?.map((a) => a.effect) ?? []),
+    ...(skills.keywords?.map((k) => k.effect) ?? []),
+    skills.abilityText,
+  ];
+  return texts.some((t) => t && KANA_RE.test(t));
+}
+
 function buildImageUrl(cardNumber: string, seriesCode: string, versions: string[], cardType: string): string {
   let version = '_OSR.png';
 
@@ -310,7 +325,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
 
       {/* ====== SKILLS / EFFECTS ====== */}
-      <SkillsPanel skills={preferredLanguage === 'zh' ? (card.skillsZh || card.skillsJp) : (card.skillsJp || card.skillsZh)} />
+      {(() => {
+        // Display-layer fallback: some cards' skillsZh is still raw Japanese.
+        // When zh is preferred but the zh skills read as Japanese, show the JP
+        // source and flag that no Chinese translation exists yet (DIC-541).
+        const zhIsJapanese = skillsLookJapanese(card.skillsZh);
+        const skills = preferredLanguage === 'zh'
+          ? (zhIsJapanese ? (card.skillsJp || card.skillsZh) : (card.skillsZh || card.skillsJp))
+          : (card.skillsJp || card.skillsZh);
+        const showUntranslatedNote = preferredLanguage === 'zh' && zhIsJapanese;
+        return <SkillsPanel skills={skills} showUntranslatedNote={showUntranslatedNote} />;
+      })()}
 
       {/* ====== MARKET DATA ====== */}
       <MarketDataPanel card={card} />
@@ -400,7 +425,7 @@ function SkillCard({ badge, badgeColor, meta, name, effect }: {
   );
 }
 
-function SkillsPanel({ skills }: { skills?: Skills }) {
+function SkillsPanel({ skills, showUntranslatedNote }: { skills?: Skills; showUntranslatedNote?: boolean }) {
   const hasAny = skills && (
     skills.oshiSkill || skills.spOshiSkill ||
     (skills.arts && skills.arts.length) ||
@@ -415,6 +440,9 @@ function SkillsPanel({ skills }: { skills?: Skills }) {
         <Text style={styles.noSkillText}>此卡無技能資料</Text>
       ) : (
         <>
+          {showUntranslatedNote && (
+            <Text style={styles.untranslatedNote}>※ 暫無中文翻譯，以下為日文原文</Text>
+          )}
           {skills!.oshiSkill && (
             <SkillCard
               badge="推しスキル"
@@ -686,6 +714,7 @@ const styles = StyleSheet.create({
   skillName: { fontSize: 15, fontWeight: 'bold', color: COLORS.text, marginBottom: 4 },
   skillEffect: { fontSize: 13, lineHeight: 21, color: COLORS.text + 'cc' },
   noSkillText: { fontSize: 13, color: COLORS.textSecondary + 'aa', fontStyle: 'italic' },
+  untranslatedNote: { fontSize: 12, color: COLORS.textSecondary + 'aa', fontStyle: 'italic', marginBottom: 10 },
 
   // Tags
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
