@@ -198,8 +198,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-020_hBP03"
+    },
+    {
+      "date": "2026-07-19",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-020_hBP03"
     }
   ],
-  "lastUpdated": "2026-07-18T12:17:33.594Z",
+  "lastUpdated": "2026-07-19T12:09:22.360Z",
   "nameZh": "獅白牡丹"
 }

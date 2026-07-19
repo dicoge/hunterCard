@@ -212,8 +212,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-068_ent07"
+    },
+    {
+      "date": "2026-07-19",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-068_ent07"
     }
   ],
-  "lastUpdated": "2026-07-18T12:17:33.393Z",
+  "lastUpdated": "2026-07-19T12:09:22.097Z",
   "nameZh": "涅莉莎·雷文克羅夫特"
 }

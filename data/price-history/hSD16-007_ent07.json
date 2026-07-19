@@ -191,8 +191,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD16-007_ent07"
+    },
+    {
+      "date": "2026-07-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD16-007_ent07"
     }
   ],
-  "lastUpdated": "2026-07-18T12:17:33.467Z",
+  "lastUpdated": "2026-07-19T12:09:22.186Z",
   "nameZh": "櫻巫女"
 }

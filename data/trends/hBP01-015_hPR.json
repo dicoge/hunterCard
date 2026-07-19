@@ -1,15 +1,15 @@
 {
   "cardId": "hBP01-015",
   "name": "七詩ムメイ",
-  "nameZh": "",
+  "nameZh": "七詩無名",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.9,
+  "confidence": 1,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-09T04:04:45.453Z",
-  "dataPoints": 23
+  "lastUpdated": "2026-07-19T12:12:42.340Z",
+  "dataPoints": 31
 }
