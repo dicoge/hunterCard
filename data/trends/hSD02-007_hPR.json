@@ -3,8 +3,8 @@
   "name": "百鬼あやめ",
   "nameZh": "百鬼綾目",
   "trend": "stable",
-  "score": 0,
-  "confidence": 0.6,
+  "score": 0.03,
+  "confidence": 0.7,
   "confidenceLevel": "high",
   "lowConfidence": false,
   "priceRange": 7.1,
@@ -13,6 +13,6 @@
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-19T12:12:42.377Z",
+  "lastUpdated": "2026-07-19T23:34:27.059Z",
   "dataPoints": 30
 }
