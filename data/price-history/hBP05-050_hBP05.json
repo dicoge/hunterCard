@@ -205,8 +205,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-050_hBP05"
+    },
+    {
+      "date": "2026-07-20",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-050_hBP05"
     }
   ],
-  "lastUpdated": "2026-07-19T12:09:22.298Z",
+  "lastUpdated": "2026-07-20T12:08:54.794Z",
   "nameZh": "雙葉·深淵護衛"
 }

@@ -219,8 +219,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP07-100_hPR"
+    },
+    {
+      "date": "2026-07-20",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-100_hPR"
     }
   ],
-  "lastUpdated": "2026-07-19T12:09:22.496Z",
+  "lastUpdated": "2026-07-20T12:08:54.914Z",
   "nameZh": "開拓精神"
 }

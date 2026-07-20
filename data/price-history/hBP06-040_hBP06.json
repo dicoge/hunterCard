@@ -219,8 +219,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-040_hBP06"
+    },
+    {
+      "date": "2026-07-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-040_hBP06"
     }
   ],
-  "lastUpdated": "2026-07-19T12:09:22.280Z",
+  "lastUpdated": "2026-07-20T12:08:54.783Z",
   "nameZh": "霸子·貝爾茲"
 }

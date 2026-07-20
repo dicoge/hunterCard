@@ -219,8 +219,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-036_hPR"
+    },
+    {
+      "date": "2026-07-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-036_hPR"
     }
   ],
-  "lastUpdated": "2026-07-19T12:09:22.491Z",
+  "lastUpdated": "2026-07-20T12:08:54.911Z",
   "nameZh": "星街彗星"
 }

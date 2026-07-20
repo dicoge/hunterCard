@@ -219,8 +219,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-097_hBP04"
+    },
+    {
+      "date": "2026-07-20",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-097_hBP04"
     }
   ],
-  "lastUpdated": "2026-07-19T12:09:22.347Z",
+  "lastUpdated": "2026-07-20T12:08:54.819Z",
   "nameZh": "綠色試管"
 }

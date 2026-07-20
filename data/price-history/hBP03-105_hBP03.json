@@ -205,8 +205,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-105_hBP03"
+    },
+    {
+      "date": "2026-07-20",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-105_hBP03"
     }
   ],
-  "lastUpdated": "2026-07-19T12:09:22.378Z",
+  "lastUpdated": "2026-07-20T12:08:54.840Z",
   "nameZh": "月騎士"
 }

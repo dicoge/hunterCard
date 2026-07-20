@@ -177,8 +177,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP08-096_hBP08"
+    },
+    {
+      "date": "2026-07-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-096_hBP08"
     }
   ],
-  "lastUpdated": "2026-07-19T12:09:22.548Z",
+  "lastUpdated": "2026-07-20T12:08:54.943Z",
   "nameZh": "溫柔的怪物"
 }
