@@ -4,7 +4,7 @@
   "nameZh": "輪堂千速",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.7,
+  "confidence": 0.6,
   "confidenceLevel": "high",
   "lowConfidence": false,
   "priceRange": 3.8,
@@ -13,6 +13,6 @@
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-19T23:34:27.062Z",
+  "lastUpdated": "2026-07-20T11:06:01.282Z",
   "dataPoints": 29
 }

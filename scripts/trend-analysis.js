@@ -217,14 +217,17 @@ function calculatePriceRange(records) {
 }
 
 /**
- * 評估信心度等級 (DIC-511)
- * 規則：max/min > 5 且資料筆數 < 7 天 → 'low'，代表歷史可能混版或資料不足，
- * trendScore 不可信，前端應標示「資料不足，預測僅供參考」。
- * 其餘則沿用數值信心度：>= 0.5 → 'high'，>= 0.25 → 'medium'，其餘 'low'。
+ * 評估信心度等級 (DIC-511 / DIC-580)
+ * 規則：
+ *   - 資料筆數 < 7 天 → 'low'（資料不足，trendScore 不可信，無論價格區間如何）。
+ *   - max/min > 5 → 'low'（歷史可能混版/資料髒污）。
+ *   前端應於 low 時標示「資料不足，預測僅供參考」。
+ *   其餘則沿用數值信心度：>= 0.5 → 'high'，>= 0.25 → 'medium'，其餘 'low'。
  */
 function classifyConfidence(records, priceRange, confidenceScore) {
   const dataPoints = records?.length || 0;
-  if (priceRange > 5 && dataPoints < 7) return 'low';
+  if (dataPoints < 7) return 'low';
+  if (priceRange > 5) return 'low';
   if (confidenceScore >= 0.5) return 'high';
   if (confidenceScore >= 0.25) return 'medium';
   return 'low';
