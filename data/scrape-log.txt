@@ -1,4 +1,4 @@
-=== Scrape Log 2026-07-20T12:10:35.251Z ===
+=== Scrape Log 2026-07-21T12:03:39.859Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -30,5 +30,97 @@
 [database] Scraping hSD03: /sell/hocg/s/search?search_word=&vers[]=hsd03
   → Found 14 cards with prices
 [database] Scraping hSD04: /sell/hocg/s/search?search_word=&vers[]=hsd04
-[ERROR]   → Error: Protocol error: Connection closed.
+  → Found 14 cards with prices
 [database] Scraping hSD05: /sell/hocg/s/search?search_word=&vers[]=hsd05
+  → Found 14 cards with prices
+[database] Scraping hSD06: /sell/hocg/s/search?search_word=&vers[]=hsd06
+  → Found 14 cards with prices
+[database] Scraping hSD07: /sell/hocg/s/search?search_word=&vers[]=hsd07
+  → Found 15 cards with prices
+[database] Scraping hSD08: /sell/hocg/s/search?search_word=&vers[]=hsd08
+  → Found 9 cards with prices
+[database] Scraping hSD09: /sell/hocg/s/search?search_word=&vers[]=hsd09
+  → Found 8 cards with prices
+[database] Scraping hSD10: /sell/hocg/s/search?search_word=&vers[]=hsd10
+  → Found 13 cards with prices
+[database] Scraping hSD11: /sell/hocg/s/search?search_word=&vers[]=hsd11
+  → Found 9 cards with prices
+[database] Scraping hSD12: /sell/hocg/s/search?search_word=&vers[]=hsd12
+  → Found 19 cards with prices
+[database] Scraping hSD13: /sell/hocg/s/search?search_word=&vers[]=hsd13
+  → Found 18 cards with prices
+[database] Scraping hSD14: /sell/hocg/s/search?search_word=&vers[]=hsd14
+  → Found 12 cards with prices
+[database] Scraping hSD15: /sell/hocg/s/search?search_word=&vers[]=hsd15
+  → Found 11 cards with prices
+[database] Scraping hSD16: /sell/hocg/s/search?search_word=&vers[]=hsd16
+  → Found 10 cards with prices
+[database] Scraping hSD17: /sell/hocg/s/search?search_word=&vers[]=hsd17
+  → Found 11 cards with prices
+[database] Scraping hSD18: /sell/hocg/s/search?search_word=&vers[]=hsd18
+  → Found 10 cards with prices
+[database] Scraping hSD19: /sell/hocg/s/search?search_word=&vers[]=hsd19
+  → Found 11 cards with prices
+[database] Scraping hYS01: /sell/hocg/s/hys01
+  → Found 4 cards with prices
+[database] Scraping ent07: /sell/hocg/s/special/4
+  → Found 128 cards with prices
+[database] Scraping hCS01: /sell/hocg/s/special/5
+  → Found 194 cards with prices
+[database] Scraping hPC01: /sell/hocg/s/special/7
+  → Found 126 cards with prices
+[database] Scraping hPR: /sell/hocg/s/special/1
+  → Found 86 cards with prices
+[database] Scraping hSD2025summer: /sell/hocg/s/special/8
+  → Found 128 cards with prices
+
+  Total cards from yuyu-tei: 1830
+
+── Step 2: Download images ──
+
+[database] Downloading images...
+  [images] Downloaded: 1, Skipped: 1178, Errors: 0
+
+── Step 3: Merge official data ──
+
+[database] Loading official card data...
+  [official] Loaded 2105 cards from 43 files
+
+── Step 4: Build unified database ──
+  [skills] Merged skills into 1988 cards
+[add-zh-names] 開始為卡片添加中文名稱...
+[add-zh-names] ⚠️ 過濾了 2 個損壞的翻譯條目 (含 U+FFFD)
+[add-zh-names] ✅ 載入 339 筆翻譯對照
+[add-zh-names] 📝 處理 2105 張卡片...
+[add-zh-names] ✅ 完成！
+[add-zh-names]   靜態匹配: 2103 張卡片
+[add-zh-names]   自動翻譯: 0 張卡片
+[add-zh-names]   未匹配: 2 張卡片
+[add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
+
+── Step 5: Save price history ──
+  [price-history] Saved 2010 new records; index totals: 2022 cards / 62830 records
+
+── Step 6: Merge priceHistory into database ──
+  [priceHistory] Merged into 2022 cards
+  [buyPrice] Restored buy prices onto 1663 cards
+
+── Step 7: Merge VTuber YouTube stats ──
+  [yt-stats] Merged stats onto 1136 cards (54 channels tracked)
+
+═══════════════════════════════════════
+  ✅ Build complete!
+  Total cards: 2105
+  Cards with prices: 1179
+  Images downloaded: 1
+  Duration: 324.7s
+  Output: /Users/dicoge/hunterCard/data/database.json
+═══════════════════════════════════════
+
+Build result: {
+  "totalCards": 2105,
+  "yuyuCount": 1179,
+  "officialCount": 2105,
+  "imagesDownloaded": 1,
+  "duration": 324.7
+}

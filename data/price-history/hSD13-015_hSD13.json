@@ -212,8 +212,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD13-015_hSD13"
+    },
+    {
+      "date": "2026-07-21",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-015_hSD13"
     }
   ],
-  "lastUpdated": "2026-07-20T12:08:54.766Z",
+  "lastUpdated": "2026-07-21T12:09:04.298Z",
   "nameZh": "勞菈·潘德菈"
 }

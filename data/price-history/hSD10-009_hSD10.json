@@ -198,8 +198,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD10-009_hSD10"
+    },
+    {
+      "date": "2026-07-21",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-009_hSD10"
     }
   ],
-  "lastUpdated": "2026-07-20T12:08:54.788Z",
+  "lastUpdated": "2026-07-21T12:09:04.321Z",
   "nameZh": "綺綺羅羅薇薇"
 }

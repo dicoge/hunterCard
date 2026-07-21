@@ -184,8 +184,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP08-101_hBP08"
+    },
+    {
+      "date": "2026-07-21",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-101_hBP08"
     }
   ],
-  "lastUpdated": "2026-07-20T12:08:54.943Z",
+  "lastUpdated": "2026-07-21T12:09:04.476Z",
   "nameZh": "We are ReGLOSS"
 }

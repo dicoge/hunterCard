@@ -212,8 +212,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD10-012_hSD11"
+    },
+    {
+      "date": "2026-07-21",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-012_hSD11"
     }
   ],
-  "lastUpdated": "2026-07-20T12:08:54.790Z",
+  "lastUpdated": "2026-07-21T12:09:04.324Z",
   "nameZh": "FLOW GLOW"
 }
