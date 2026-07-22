@@ -219,8 +219,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD03-008_hSD03"
+    },
+    {
+      "date": "2026-07-22",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-008_hSD03"
     }
   ],
-  "lastUpdated": "2026-07-21T12:09:04.403Z",
+  "lastUpdated": "2026-07-22T12:17:22.358Z",
   "nameZh": "貓又小粥"
 }
