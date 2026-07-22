@@ -66,6 +66,14 @@ interface CardRecord {
   nameZh?: string;
 }
 
+interface RarityPriceVariant {
+  id: string;
+  name: string;
+  rarity: string;
+  sellPrice: number | null;
+  buyPrice: number | null;
+}
+
 interface CardResult {
   id: string; name: string; type: string; grade: string; rarity: string;
   colors: string[]; colorNames: string[]; series: string[]; seriesNames: string[];
@@ -74,6 +82,7 @@ interface CardResult {
   yuyuPrice?: number | null;
   sellPrice?: number | null; buyPrice?: number | null; ytStats?: any;
   prices?: { name: string; sellPrice: number | null; rarity: string }[];
+  priceVariants?: RarityPriceVariant[];
   priceHistory?: Record<string, number>;
   searchKeywords?: string[];
   nameZh?: string;
@@ -165,6 +174,35 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
   }
   const deduped = Array.from(dedupMap.values());
 
+  const variantsByCardNumber = new Map<string, RarityPriceVariant[]>();
+  for (const c of matched) {
+    const key = ((c as any).cardNumber || c.id || '').toLowerCase();
+    if (!key) continue;
+    const variants = variantsByCardNumber.get(key) || [];
+    variants.push({
+      id: c.id || '',
+      name: c.yuyuName || c.name || '',
+      rarity: (c.rarity || '').toUpperCase(),
+      sellPrice: c.sellPrice ?? null,
+      buyPrice: c.buyPrice ?? null,
+    });
+    variantsByCardNumber.set(key, variants);
+  }
+  for (const [key, variants] of variantsByCardNumber.entries()) {
+    const seen = new Set<string>();
+    variantsByCardNumber.set(
+      key,
+      variants
+        .filter((v) => {
+          const sig = `${v.id}|${v.rarity}|${v.sellPrice ?? ''}|${v.buyPrice ?? ''}`;
+          if (seen.has(sig)) return false;
+          seen.add(sig);
+          return true;
+        })
+        .sort((a, b) => (a.sellPrice ?? Number.MAX_SAFE_INTEGER) - (b.sellPrice ?? Number.MAX_SAFE_INTEGER))
+    );
+  }
+
   // Sort: cards whose cardNumber starts with the search query first (in numeric order),
   // then other cards (reprints/cross-series) sorted by cardNumber.
   const searchPrefix = searchQ.replace(/[^a-z0-9]/g, '');
@@ -194,6 +232,7 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
     const series = c.series ? [c.series] : [];
     const seriesNames = series.map((s: string) => nameMap[s] || s);
     const cardNumber = (c as any).cardNumber || id;
+    const variantKey = cardNumber.toLowerCase();
 
     // Grade/rarity mapping (same as original api/search.ts logic)
     const rarityCode = (c.rarity || '').toUpperCase();
@@ -229,6 +268,7 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
       ytStats: c.ytStats ?? null,
       yuyuPriceName: c.yuyuName || '',
       prices: c.prices || [],
+      priceVariants: variantsByCardNumber.get(variantKey) || [],
       priceHistory: c.priceHistory || {},
       yuyuImage: c.yuyuImage || '',
       officialImage: c.officialImage || '',

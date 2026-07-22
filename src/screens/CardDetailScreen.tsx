@@ -469,6 +469,8 @@ function MarketDataPanel({ card }: { card: any }) {
   const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）
   const ytStats = card?.ytStats ?? null;
   const priceHistory = card?.priceHistory ?? null;
+  const priceVariants = Array.isArray(card?.priceVariants) ? card.priceVariants : [];
+  const hasVariantSpreads = priceVariants.length > 1;
 
   const hasSpread = typeof sellPrice === 'number' && sellPrice > 0 && typeof buyPrice === 'number' && buyPrice > 0;
 
@@ -504,8 +506,9 @@ function MarketDataPanel({ card }: { card: any }) {
   }
   const hasHistory = priceTrend != null;
 
-  const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
-  const spreadUp = spreadPct >= 0;
+  const spreadAmount = hasSpread ? sellPrice - buyPrice : 0;
+  const spreadPct = hasSpread ? (spreadAmount / sellPrice) * 100 : 0;
+  const spreadUp = spreadAmount >= 0;
   // 收購價超過賣價 10 倍幾乎必是資料對齊錯誤（例：低稀有度卡誤標高稀有度收購價）。
   // 資料層修好前，寧可標示不可靠也不要顯示假的暴利差價。
   const isPriceReliable = !hasSpread || buyPrice <= sellPrice * 10;
@@ -515,7 +518,45 @@ function MarketDataPanel({ card }: { card: any }) {
       <Text style={styles.sectionTitle}>📊 市場數據</Text>
 
       {/* 買賣差價 */}
-      {hasSpread ? (
+      {hasVariantSpreads ? (
+        <View style={styles.marketBlock}>
+          <Text style={styles.marketBlockTitle}>💱 買賣差價（同稀有度）</Text>
+          {priceVariants.map((variant: any) => {
+            const variantSellPrice = variant.sellPrice ?? null;
+            const variantBuyPrice = variant.buyPrice ?? null;
+            const variantHasSpread = typeof variantSellPrice === 'number' && variantSellPrice > 0 && typeof variantBuyPrice === 'number' && variantBuyPrice > 0;
+            const variantSpreadAmount = variantHasSpread ? variantSellPrice - variantBuyPrice : 0;
+            const variantSpreadPct = variantHasSpread ? (variantSpreadAmount / variantSellPrice) * 100 : 0;
+            const variantSpreadUp = variantSpreadAmount >= 0;
+            const variantReliable = !variantHasSpread || variantBuyPrice <= variantSellPrice * 10;
+            return (
+              <View key={variant.id || variant.rarity || variant.name} style={styles.variantMarketRow}>
+                <Text style={styles.variantMarketTitle}>{variant.rarity ? `[${variant.rarity}] ` : ''}{variant.name || card?.name}</Text>
+                <View style={styles.marketRow}>
+                  <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
+                  <Text style={styles.marketValue}>{variantSellPrice != null ? `¥${variantSellPrice.toLocaleString()}` : '—'}</Text>
+                </View>
+                <View style={styles.marketRow}>
+                  <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
+                  <Text style={styles.marketValue}>{variantBuyPrice != null ? `¥${variantBuyPrice.toLocaleString()}` : '—'}</Text>
+                </View>
+                <View style={styles.marketRow}>
+                  <Text style={styles.marketLabel}>差價</Text>
+                  {variantHasSpread && variantReliable ? (
+                    <Text style={[styles.marketValueStrong, { color: variantSpreadUp ? '#10b981' : '#ef4444' }]}>
+                      {variantSpreadUp ? '+' : ''}{variantSpreadPct.toFixed(1)}%（¥{variantSpreadAmount.toLocaleString()}）
+                    </Text>
+                  ) : variantHasSpread ? (
+                    <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>⚠️ 價格待確認</Text>
+                  ) : (
+                    <Text style={styles.marketValue}>—</Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : hasSpread ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>💱 買賣差價</Text>
           <View style={styles.marketRow}>
@@ -530,7 +571,7 @@ function MarketDataPanel({ card }: { card: any }) {
             <Text style={styles.marketLabel}>差價</Text>
             {isPriceReliable ? (
               <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
-                {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
+                {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{spreadAmount.toLocaleString()}）
               </Text>
             ) : (
               <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
@@ -709,6 +750,8 @@ const styles = StyleSheet.create({
   marketLabel: { fontSize: 13, color: COLORS.textSecondary, flex: 1, marginRight: 8 },
   marketValue: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   marketValueStrong: { fontSize: 15, fontWeight: 'bold' },
+  variantMarketRow: { borderTopWidth: 1, borderTopColor: COLORS.border + '44', paddingTop: 8, marginTop: 8 },
+  variantMarketTitle: { fontSize: 13, fontWeight: '800', color: COLORS.text, marginBottom: 4 },
 
   // Trend prediction section
   componentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '44' },

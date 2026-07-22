@@ -1,6 +1,6 @@
 {
   "lastUpdated": "2026-07-11T15:23:36.699Z",
-  "totalCards": 2105,
+  "totalCards": 2107,
   "source": "hunterCard unified database",
   "cards": {
     "hBD24-007_ent07": {
@@ -96066,16 +96066,190 @@
         "date": "2026-07-11"
       }
     },
-    "hBP04-004_hBP04": {
-      "id": "hBP04-004_hBP04",
+    "hBP04-004-OSR_hBP04": {
+      "id": "hBP04-004-OSR_hBP04",
+      "cardNumber": "hBP04-004",
+      "name": "雪花ラミィ",
+      "type": "推しホロメン",
+      "color": "blue",
+      "rarity": "OSR",
+      "series": "hBP04",
+      "sellPrice": 780,
+      "yuyuName": "雪花ラミィ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg",
+      "prices": [
+        {
+          "name": "雪花ラミィ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": ""
+        },
+        {
+          "name": "雪花ラミィ(パラレル)",
+          "sellPrice": 14800,
+          "rarity": ""
+        },
+        {
+          "name": "雪花ラミィ",
+          "sellPrice": 780,
+          "rarity": ""
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_OSR.png",
+      "localImage": "/images/hBP04-004.jpg",
+      "hp": "",
+      "life": "5",
+      "arts": "",
+      "timestamp": "2026-07-11T12:04:43.547Z",
+      "skillsJp": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花ラミィ",
+        "cardType": "推しホロメン",
+        "color": "青",
+        "oshiSkill": {
+          "name": "愛してる",
+          "cost": "-1",
+          "effect": "[ターンに1回]相手のターンで、自分のホロメンがダウンした時に使える:そのホロメンに付いているファン1枚を手札に戻す。"
+        },
+        "spOshiSkill": {
+          "name": "ぶーん、バリバリバリバリ",
+          "cost": "-3",
+          "effect": "[ゲームに1回]自分の〈雪花ラミィ〉1人を選ぶ。このターンの間、選んだホロメンが、相手のホロメン1人に与える特殊ダメージ+100し、選んだホロメンが相手のホロメンをダウンさせた時、自分のデッキを2枚引く。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花菈米",
+        "cardType": "主推成員",
+        "color": "青",
+        "oshiSkill": {
+          "name": "我愛你",
+          "cost": "-1",
+          "effect": "[每回合1次]對手的回合中，自己的成員倒下時可以使用：將那張成員上附著的1張粉絲卡返回手牌。"
+        },
+        "spOshiSkill": {
+          "name": "嗡嗡、啪哩啪哩啪哩啪哩",
+          "cost": "-3",
+          "effect": "[每場遊戲1次]選擇自己的1張〈雪花拉米〉。這個回合中，選擇的成員給予對手的1張成員的特殊傷害+100，並且選擇的成員讓對手的成員倒下時，自己抽2張牌組。"
+        }
+      },
+      "nameZh": "雪花菈米",
+      "priceHistory": {
+        "2026-07-22": 780
+      },
+      "buyPrice": 50,
+      "buyPriceHistory": {
+        "2026-07-22": 50
+      },
+      "ytStats": {
+        "subscriberCount": 589000,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": null,
+        "growth_30d": null,
+        "totalViewCount": 56414256,
+        "viewCount_daily": null,
+        "viewCount_weekly": null,
+        "viewCount_monthly": null,
+        "date": "2026-07-11"
+      }
+    },
+    "hBP04-004-OUR_hBP04": {
+      "id": "hBP04-004-OUR_hBP04",
+      "cardNumber": "hBP04-004",
+      "name": "雪花ラミィ",
+      "type": "推しホロメン",
+      "color": "blue",
+      "rarity": "OUR",
+      "series": "hBP04",
+      "sellPrice": 14800,
+      "yuyuName": "雪花ラミィ(パラレル)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg",
+      "prices": [
+        {
+          "name": "雪花ラミィ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": ""
+        },
+        {
+          "name": "雪花ラミィ(パラレル)",
+          "sellPrice": 14800,
+          "rarity": ""
+        },
+        {
+          "name": "雪花ラミィ",
+          "sellPrice": 780,
+          "rarity": ""
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_OUR.png",
+      "localImage": "/images/hBP04-004.jpg",
+      "hp": "",
+      "life": "5",
+      "arts": "",
+      "timestamp": "2026-07-11T12:04:43.547Z",
+      "skillsJp": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花ラミィ",
+        "cardType": "推しホロメン",
+        "color": "青",
+        "oshiSkill": {
+          "name": "愛してる",
+          "cost": "-1",
+          "effect": "[ターンに1回]相手のターンで、自分のホロメンがダウンした時に使える:そのホロメンに付いているファン1枚を手札に戻す。"
+        },
+        "spOshiSkill": {
+          "name": "ぶーん、バリバリバリバリ",
+          "cost": "-3",
+          "effect": "[ゲームに1回]自分の〈雪花ラミィ〉1人を選ぶ。このターンの間、選んだホロメンが、相手のホロメン1人に与える特殊ダメージ+100し、選んだホロメンが相手のホロメンをダウンさせた時、自分のデッキを2枚引く。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花菈米",
+        "cardType": "主推成員",
+        "color": "青",
+        "oshiSkill": {
+          "name": "我愛你",
+          "cost": "-1",
+          "effect": "[每回合1次]對手的回合中，自己的成員倒下時可以使用：將那張成員上附著的1張粉絲卡返回手牌。"
+        },
+        "spOshiSkill": {
+          "name": "嗡嗡、啪哩啪哩啪哩啪哩",
+          "cost": "-3",
+          "effect": "[每場遊戲1次]選擇自己的1張〈雪花拉米〉。這個回合中，選擇的成員給予對手的1張成員的特殊傷害+100，並且選擇的成員讓對手的成員倒下時，自己抽2張牌組。"
+        }
+      },
+      "nameZh": "雪花菈米",
+      "priceHistory": {
+        "2026-07-22": 14800
+      },
+      "buyPrice": 6200,
+      "buyPriceHistory": {
+        "2026-07-22": 6200
+      },
+      "ytStats": {
+        "subscriberCount": 589000,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": null,
+        "growth_30d": null,
+        "totalViewCount": 56414256,
+        "viewCount_daily": null,
+        "viewCount_weekly": null,
+        "viewCount_monthly": null,
+        "date": "2026-07-11"
+      }
+    },
+    "hBP04-004-SEC_hBP04": {
+      "id": "hBP04-004-SEC_hBP04",
       "cardNumber": "hBP04-004",
       "name": "雪花ラミィ",
       "type": "推しホロメン",
       "color": "blue",
       "rarity": "SEC",
       "series": "hBP04",
-      "sellPrice": 780,
-      "yuyuName": "雪花ラミィ",
+      "sellPrice": 99800,
+      "yuyuName": "雪花ラミィ(パラレル/サイン)",
       "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg",
       "prices": [
         {
@@ -96134,35 +96308,36 @@
       },
       "nameZh": "雪花菈米",
       "priceHistory": {
-        "2026-06-16": 780,
-        "2026-06-17": 780,
-        "2026-06-18": 780,
-        "2026-06-19": 780,
-        "2026-06-20": 780,
-        "2026-06-21": 780,
-        "2026-06-22": 780,
-        "2026-06-23": 780,
-        "2026-06-25": 780,
-        "2026-06-26": 780,
-        "2026-06-27": 780,
-        "2026-06-28": 780,
-        "2026-06-29": 780,
-        "2026-06-30": 780,
-        "2026-07-01": 780,
-        "2026-07-02": 780,
-        "2026-07-03": 780,
-        "2026-07-04": 780,
-        "2026-07-05": 780,
-        "2026-07-06": 780,
-        "2026-07-07": 780,
-        "2026-07-08": 780,
-        "2026-07-09": 780,
-        "2026-07-10": 780,
-        "2026-07-11": 780
+        "2026-06-16": 99800,
+        "2026-06-17": 99800,
+        "2026-06-18": 99800,
+        "2026-06-19": 99800,
+        "2026-06-20": 99800,
+        "2026-06-21": 99800,
+        "2026-06-22": 99800,
+        "2026-06-23": 99800,
+        "2026-06-25": 99800,
+        "2026-06-26": 99800,
+        "2026-06-27": 99800,
+        "2026-06-28": 99800,
+        "2026-06-29": 99800,
+        "2026-06-30": 99800,
+        "2026-07-01": 99800,
+        "2026-07-02": 99800,
+        "2026-07-03": 99800,
+        "2026-07-04": 99800,
+        "2026-07-05": 99800,
+        "2026-07-06": 99800,
+        "2026-07-07": 99800,
+        "2026-07-08": 99800,
+        "2026-07-09": 99800,
+        "2026-07-10": 99800,
+        "2026-07-11": 99800
       },
-      "buyPrice": 54000,
+      "buyPrice": 55000,
       "buyPriceHistory": {
-        "2026-07-11": 54000
+        "2026-07-11": 54000,
+        "2026-07-19": 55000
       },
       "ytStats": {
         "subscriberCount": 589000,

@@ -639,7 +639,7 @@ async function downloadAllImages(prices) {
 
 /**
  * 讀取官方資料統合
- * 用 cardNumber_series 複合 key 避免復刻本被覆蓋
+ * 用 cardNumber-rarity_series 複合 key 避免復刻本與同卡號不同稀有度被覆蓋
  * 每個官方入口都保留，有 yuyu 價格的合併，沒有的顯示「暫無資料」
  */
 // Merge scraped skill data (data/effects-jp.json + effects-zh.json) into the
@@ -679,7 +679,7 @@ function mergeSkills(cards, prevSkills = new Map()) {
 
 function loadOfficialData() {
   console.log('\n[database] Loading official card data...');
-  const officialCards = {};  // { cardNumber_series: cardData }
+  const officialCards = {};  // { cardNumber-rarity_series: cardData }
 
   if (!fs.existsSync(OFFICIAL_DIR)) {
     console.log('  [official] No official data directory found');
@@ -698,13 +698,18 @@ function loadOfficialData() {
           const cardNum = card.cardNumber || card.id || '';
           if (!cardNum) continue;
           const series = card.expansion || card.series || '';
-          // Use compound key to preserve all series, even reprints
-          const key = series ? `${cardNum}_${series}` : cardNum;
+          const rarity = card.rarity || '';
+          // Use compound key to preserve all series and all rarity/version rows.
+          // Some official lists contain several entries with the same cardNumber
+          // in one series (e.g. OSR/OUR/SEC), so cardNumber_series alone would
+          // overwrite variants and mix prices from different rarities.
+          const versionedCardNum = rarity ? `${cardNum}-${rarity}` : cardNum;
+          let key = series ? `${versionedCardNum}_${series}` : versionedCardNum;
           officialCards[key] = {
             name: card.name || '',
             type: card.cardType || card.type || '',
             color: card.color || '',
-            rarity: card.rarity || '',
+            rarity: rarity,
             series: series,
             officialImage: card.imageUrl || '',
             hp: card.hp || '',
@@ -864,6 +869,10 @@ function mergeYtStats(database) {
   );
 }
 
+function normalizeRarityForKey(rarity) {
+  return String(rarity || '').trim().toUpperCase();
+}
+
 /**
  * 主流程
  */
@@ -894,7 +903,14 @@ async function buildDatabase() {
           Object.keys(card.buyPriceHistory).length > 0) {
         saved.buyPriceHistory = card.buyPriceHistory;
       }
-      if (Object.keys(saved).length > 0) prevBuyByCardId.set(cardId, saved);
+      if (Object.keys(saved).length > 0) {
+        prevBuyByCardId.set(cardId, saved);
+        const rarity = normalizeRarityForKey(card.rarity || '');
+        const series = card.series || '';
+        if (card.cardNumber && rarity && series) {
+          prevBuyByCardId.set(`${card.cardNumber}-${rarity}_${series}`, saved);
+        }
+      }
     }
     if (prevBuyByCardId.size > 0) {
       console.log(`  [buyPrice] Preserving buy prices for ${prevBuyByCardId.size} cards from previous build`);
@@ -919,7 +935,14 @@ async function buildDatabase() {
       const saved = {};
       if (card.skillsJp && typeof card.skillsJp === 'object') saved.skillsJp = card.skillsJp;
       if (card.skillsZh && typeof card.skillsZh === 'object') saved.skillsZh = card.skillsZh;
-      if (Object.keys(saved).length > 0) prevSkillsByCardId.set(cardId, saved);
+      if (Object.keys(saved).length > 0) {
+        prevSkillsByCardId.set(cardId, saved);
+        const rarity = normalizeRarityForKey(card.rarity || '');
+        const series = card.series || '';
+        if (card.cardNumber && rarity && series) {
+          prevSkillsByCardId.set(`${card.cardNumber}-${rarity}_${series}`, saved);
+        }
+      }
     }
     if (prevSkillsByCardId.size > 0) {
       console.log(`  [skills] Preserving skills for ${prevSkillsByCardId.size} cards from previous build`);
@@ -969,7 +992,7 @@ async function buildDatabase() {
     }
   }
 
-  // Deduplicate price entries: same (name, sellPrice) = same version, keep first occurrence only
+  // Deduplicate price entries: same (name, sellPrice, rarity) = same version, keep first occurrence only
   function deduplicatePrices(entries) {
     const seen = new Set();
     return entries.filter(e => {
@@ -980,17 +1003,45 @@ async function buildDatabase() {
     });
   }
 
-  // Helper: resolve yuyu price data for a card number
-  function getYuyuForCard(cardNum) {
+  function normalizeRarity(rarity) {
+    const r = String(rarity || '').trim().toUpperCase();
+    return r === 'PR' ? 'P' : r;
+  }
+
+  function entryMatchesRarity(entry, rarity) {
+    const target = normalizeRarity(rarity);
+    if (!target) return true;
+    const entryRarity = normalizeRarity(entry.rarity);
+    if (entryRarity) return entryRarity === target;
+
+    // Some yuyu rows omit the rarity field but expose the version in the product name.
+    // Avoid pairing a normal-price row with a parallel/signed buyPrice for the same card number.
+    const name = String(entry.name || '');
+    const isSigned = /サイン|箔押し|SEC/i.test(name);
+    const isParallel = /パラレル|Parallel/i.test(name);
+
+    if (target === 'SEC' && isSigned) return true;
+    if ((target === 'P' || target === 'PR') && /プロモ|PR|P(?![A-Z])/i.test(name)) return true;
+    if (target === 'OUR' && (/OUR/i.test(name) || (isParallel && !isSigned))) return true;
+    if (target === 'OSR' && (/OSR/i.test(name) || (!isParallel && !isSigned))) return true;
+    if (target === 'UR' && /UR/i.test(name)) return true;
+    if (target === 'SR' && /SR/i.test(name)) return true;
+    return false;
+  }
+
+  // Helper: resolve yuyu price data for a card number, preferring the same rarity/version.
+  function getYuyuForCard(cardNum, rarity = '') {
     const priceData = prices[cardNum];
     if (!priceData) return null;
     const rawEntries = Array.isArray(priceData) ? priceData : [priceData];
     const priceEntries = deduplicatePrices(rawEntries);
-    let lowestPrice = null;
-    let lowestName = '';
+    const matchedEntries = priceEntries.filter(e => entryMatchesRarity(e, rarity));
+    const candidateEntries = matchedEntries.length > 0 ? matchedEntries : priceEntries;
     let firstImage = '';
     let firstTimestamp = new Date().toISOString();
-    for (const entry of priceEntries) {
+    let lowestPrice = null;
+    let lowestName = '';
+    for (const entry of candidateEntries) {
       if (!firstImage && entry.yuyuImage) firstImage = entry.yuyuImage;
       if (entry.timestamp) firstTimestamp = entry.timestamp;
       if (entry.sellPrice && (lowestPrice === null || entry.sellPrice < lowestPrice)) {
@@ -1010,7 +1061,7 @@ async function buildDatabase() {
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
-    const yuyu = getYuyuForCard(baseCardNum);
+    const yuyu = getYuyuForCard(baseCardNum, official.rarity || '');
 
     database.cards[key] = {
       id: key,
