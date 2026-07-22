@@ -1,6 +1,6 @@
 {
   "lastUpdated": "2026-07-22T12:17:22.003Z",
-  "totalCards": 2105,
+  "totalCards": 2107,
   "source": "hunterCard unified database",
   "cards": {
     "hBD24-007_ent07": {
@@ -107203,8 +107203,182 @@
         "date": "2026-07-22"
       }
     },
-    "hBP04-004_hBP04": {
-      "id": "hBP04-004_hBP04",
+    "hBP04-004-OSR_hBP04": {
+      "id": "hBP04-004-OSR_hBP04",
+      "cardNumber": "hBP04-004",
+      "name": "雪花ラミィ",
+      "type": "推しホロメン",
+      "color": "blue",
+      "rarity": "OSR",
+      "series": "hBP04",
+      "sellPrice": 780,
+      "yuyuName": "雪花ラミィ",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg",
+      "prices": [
+        {
+          "name": "雪花ラミィ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": ""
+        },
+        {
+          "name": "雪花ラミィ(パラレル)",
+          "sellPrice": 14800,
+          "rarity": ""
+        },
+        {
+          "name": "雪花ラミィ",
+          "sellPrice": 780,
+          "rarity": ""
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_OSR.png",
+      "localImage": "/images/hBP04-004.jpg",
+      "hp": "",
+      "life": "5",
+      "arts": "",
+      "timestamp": "2026-07-22T12:12:47.994Z",
+      "skillsJp": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花ラミィ",
+        "cardType": "推しホロメン",
+        "color": "青",
+        "oshiSkill": {
+          "name": "愛してる",
+          "cost": "-1",
+          "effect": "[ターンに1回]相手のターンで、自分のホロメンがダウンした時に使える:そのホロメンに付いているファン1枚を手札に戻す。"
+        },
+        "spOshiSkill": {
+          "name": "ぶーん、バリバリバリバリ",
+          "cost": "-3",
+          "effect": "[ゲームに1回]自分の〈雪花ラミィ〉1人を選ぶ。このターンの間、選んだホロメンが、相手のホロメン1人に与える特殊ダメージ+100し、選んだホロメンが相手のホロメンをダウンさせた時、自分のデッキを2枚引く。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花菈米",
+        "cardType": "主推成員",
+        "color": "青",
+        "oshiSkill": {
+          "name": "我愛你",
+          "cost": "-1",
+          "effect": "[每回合1次]對手的回合中，自己的成員倒下時可以使用：將那張成員上附著的1張粉絲卡返回手牌。"
+        },
+        "spOshiSkill": {
+          "name": "嗡嗡、啪哩啪哩啪哩啪哩",
+          "cost": "-3",
+          "effect": "[每場遊戲1次]選擇自己的1張〈雪花拉米〉。這個回合中，選擇的成員給予對手的1張成員的特殊傷害+100，並且選擇的成員讓對手的成員倒下時，自己抽2張牌組。"
+        }
+      },
+      "nameZh": "雪花菈米",
+      "priceHistory": {
+        "2026-07-22": 780
+      },
+      "buyPrice": 50,
+      "buyPriceHistory": {
+        "2026-07-22": 50
+      },
+      "ytStats": {
+        "subscriberCount": 589000,
+        "growth_1d": 0,
+        "growth_7d": 0,
+        "growth_15d": 0,
+        "growth_30d": null,
+        "totalViewCount": 56573121,
+        "viewCount_daily": 14103,
+        "viewCount_weekly": 103934,
+        "viewCount_monthly": null,
+        "date": "2026-07-22"
+      }
+    },
+    "hBP04-004-OUR_hBP04": {
+      "id": "hBP04-004-OUR_hBP04",
+      "cardNumber": "hBP04-004",
+      "name": "雪花ラミィ",
+      "type": "推しホロメン",
+      "color": "blue",
+      "rarity": "OUR",
+      "series": "hBP04",
+      "sellPrice": 14800,
+      "yuyuName": "雪花ラミィ(パラレル)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg",
+      "prices": [
+        {
+          "name": "雪花ラミィ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": ""
+        },
+        {
+          "name": "雪花ラミィ(パラレル)",
+          "sellPrice": 14800,
+          "rarity": ""
+        },
+        {
+          "name": "雪花ラミィ",
+          "sellPrice": 780,
+          "rarity": ""
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_OUR.png",
+      "localImage": "/images/hBP04-004.jpg",
+      "hp": "",
+      "life": "5",
+      "arts": "",
+      "timestamp": "2026-07-22T12:12:47.994Z",
+      "skillsJp": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花ラミィ",
+        "cardType": "推しホロメン",
+        "color": "青",
+        "oshiSkill": {
+          "name": "愛してる",
+          "cost": "-1",
+          "effect": "[ターンに1回]相手のターンで、自分のホロメンがダウンした時に使える:そのホロメンに付いているファン1枚を手札に戻す。"
+        },
+        "spOshiSkill": {
+          "name": "ぶーん、バリバリバリバリ",
+          "cost": "-3",
+          "effect": "[ゲームに1回]自分の〈雪花ラミィ〉1人を選ぶ。このターンの間、選んだホロメンが、相手のホロメン1人に与える特殊ダメージ+100し、選んだホロメンが相手のホロメンをダウンさせた時、自分のデッキを2枚引く。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花菈米",
+        "cardType": "主推成員",
+        "color": "青",
+        "oshiSkill": {
+          "name": "我愛你",
+          "cost": "-1",
+          "effect": "[每回合1次]對手的回合中，自己的成員倒下時可以使用：將那張成員上附著的1張粉絲卡返回手牌。"
+        },
+        "spOshiSkill": {
+          "name": "嗡嗡、啪哩啪哩啪哩啪哩",
+          "cost": "-3",
+          "effect": "[每場遊戲1次]選擇自己的1張〈雪花拉米〉。這個回合中，選擇的成員給予對手的1張成員的特殊傷害+100，並且選擇的成員讓對手的成員倒下時，自己抽2張牌組。"
+        }
+      },
+      "nameZh": "雪花菈米",
+      "priceHistory": {
+        "2026-07-22": 14800
+      },
+      "buyPrice": 6200,
+      "buyPriceHistory": {
+        "2026-07-22": 6200
+      },
+      "ytStats": {
+        "subscriberCount": 589000,
+        "growth_1d": 0,
+        "growth_7d": 0,
+        "growth_15d": 0,
+        "growth_30d": null,
+        "totalViewCount": 56573121,
+        "viewCount_daily": 14103,
+        "viewCount_weekly": 103934,
+        "viewCount_monthly": null,
+        "date": "2026-07-22"
+      }
+    },
+    "hBP04-004-SEC_hBP04": {
+      "id": "hBP04-004-SEC_hBP04",
       "cardNumber": "hBP04-004",
       "name": "雪花ラミィ",
       "type": "推しホロメン",
