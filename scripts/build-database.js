@@ -969,7 +969,7 @@ async function buildDatabase() {
     }
   }
 
-  // Deduplicate price entries: same (name, sellPrice) = same version, keep first occurrence only
+  // Deduplicate price entries: same (name, sellPrice, rarity) = same version, keep first occurrence only
   function deduplicatePrices(entries) {
     const seen = new Set();
     return entries.filter(e => {
@@ -980,17 +980,41 @@ async function buildDatabase() {
     });
   }
 
-  // Helper: resolve yuyu price data for a card number
-  function getYuyuForCard(cardNum) {
+  function normalizeRarity(rarity) {
+    const r = String(rarity || '').trim().toUpperCase();
+    return r === 'PR' ? 'P' : r;
+  }
+
+  function entryMatchesRarity(entry, rarity) {
+    const target = normalizeRarity(rarity);
+    if (!target) return true;
+    const entryRarity = normalizeRarity(entry.rarity);
+    if (entryRarity) return entryRarity === target;
+
+    // Some yuyu rows omit the rarity field but expose the version in the product name.
+    // Avoid pairing a normal-price row with a parallel/signed buyPrice for the same card number.
+    const name = String(entry.name || '');
+    if (target === 'SEC' && /サイン|箔押し|SEC/i.test(name)) return true;
+    if ((target === 'P' || target === 'PR') && /プロモ|PR|P(?![A-Z])/i.test(name)) return true;
+    if (target === 'OUR' && /OUR/i.test(name)) return true;
+    if (target === 'UR' && /UR/i.test(name)) return true;
+    if (target === 'SR' && /SR/i.test(name)) return true;
+    return false;
+  }
+
+  // Helper: resolve yuyu price data for a card number, preferring the same rarity/version.
+  function getYuyuForCard(cardNum, rarity = '') {
     const priceData = prices[cardNum];
     if (!priceData) return null;
     const rawEntries = Array.isArray(priceData) ? priceData : [priceData];
     const priceEntries = deduplicatePrices(rawEntries);
+    const matchedEntries = priceEntries.filter(e => entryMatchesRarity(e, rarity));
+    const candidateEntries = matchedEntries.length > 0 ? matchedEntries : priceEntries;
     let lowestPrice = null;
     let lowestName = '';
     let firstImage = '';
     let firstTimestamp = new Date().toISOString();
-    for (const entry of priceEntries) {
+    for (const entry of candidateEntries) {
       if (!firstImage && entry.yuyuImage) firstImage = entry.yuyuImage;
       if (entry.timestamp) firstTimestamp = entry.timestamp;
       if (entry.sellPrice && (lowestPrice === null || entry.sellPrice < lowestPrice)) {
@@ -1010,7 +1034,7 @@ async function buildDatabase() {
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
-    const yuyu = getYuyuForCard(baseCardNum);
+    const yuyu = getYuyuForCard(baseCardNum, official.rarity || '');
 
     database.cards[key] = {
       id: key,
