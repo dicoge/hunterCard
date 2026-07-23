@@ -4,12 +4,15 @@
   "nameZh": "百鬼綾目",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.7,
+  "confidence": 0.6,
+  "confidenceLevel": "low",
+  "lowConfidence": true,
+  "priceRange": 7.1,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-19T12:12:42.377Z",
+  "lastUpdated": "2026-07-20T11:06:01.280Z",
   "dataPoints": 30
 }

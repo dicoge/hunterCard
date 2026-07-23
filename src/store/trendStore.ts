@@ -18,6 +18,9 @@ export interface TrendPrediction {
   trend: TrendDirection;
   score: number;          // -1.0 ~ 1.0
   confidence: number;     // 0.0 ~ 1.0
+  confidenceLevel?: 'low' | 'medium' | 'high';
+  lowConfidence?: boolean; // 資料混版/不足，trendScore 不可信
+  priceRange?: number;     // max/min 價格比，> 5 代表可能混版
   components: {
     priceTrend: number;
     ytTrend: number;

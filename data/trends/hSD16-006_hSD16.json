@@ -4,12 +4,15 @@
   "nameZh": "櫻巫女",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.9,
+  "confidence": 0.8,
+  "confidenceLevel": "high",
+  "lowConfidence": false,
+  "priceRange": 1,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-19T12:12:42.384Z",
+  "lastUpdated": "2026-07-20T11:06:01.284Z",
   "dataPoints": 28
 }

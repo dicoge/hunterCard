@@ -207,6 +207,33 @@ function calculateConfidence(priceRecords, volatility) {
 }
 
 /**
+ * 計算價格區間比 (max/min)，用於偵測版本混雜/資料髒污。
+ * 比值越大代表歷史裡混入了差距懸殊的價格。
+ */
+function calculatePriceRange(records) {
+  const prices = (records || []).map(r => r.price).filter(p => typeof p === 'number' && p > 0);
+  if (prices.length < 2) return 1;
+  return Math.max(...prices) / Math.min(...prices);
+}
+
+/**
+ * 評估信心度等級 (DIC-511 / DIC-580)
+ * 規則：
+ *   - 資料筆數 < 7 天 → 'low'（資料不足，trendScore 不可信，無論價格區間如何）。
+ *   - max/min > 5 → 'low'（歷史可能混版/資料髒污）。
+ *   前端應於 low 時標示「資料不足，預測僅供參考」。
+ *   其餘則沿用數值信心度：>= 0.5 → 'high'，>= 0.25 → 'medium'，其餘 'low'。
+ */
+function classifyConfidence(records, priceRange, confidenceScore) {
+  const dataPoints = records?.length || 0;
+  if (dataPoints < 7) return 'low';
+  if (priceRange > 5) return 'low';
+  if (confidenceScore >= 0.5) return 'high';
+  if (confidenceScore >= 0.25) return 'medium';
+  return 'low';
+}
+
+/**
  * 對單張卡片進行完整趨勢分析
  */
 function analyzeCardTrend(cardId, cardData, ytHistory, newsHistory) {
@@ -214,6 +241,7 @@ function analyzeCardTrend(cardId, cardData, ytHistory, newsHistory) {
   const priceRecords = cardData?.records || [];
   const priceTrend = calculatePriceTrend(priceRecords);
   const volatility = calculateVolatility(priceRecords);
+  const priceRange = calculatePriceRange(priceRecords);
 
   // 2. YT 訂閱趨勢 (20% 權重)
   // 從卡片名稱匹配 YT 成員
@@ -234,6 +262,8 @@ function analyzeCardTrend(cardId, cardData, ytHistory, newsHistory) {
 
   // 6. 信心度
   const confidence = calculateConfidence(priceRecords, volatility);
+  const confidenceLevel = classifyConfidence(priceRecords, priceRange, confidence);
+  const lowConfidence = confidenceLevel === 'low';
 
   return {
     cardId: cardData?.cardNumber || cardId,
@@ -242,6 +272,9 @@ function analyzeCardTrend(cardId, cardData, ytHistory, newsHistory) {
     trend,
     score: Math.round(compositeScore * 100) / 100,
     confidence: Math.round(confidence * 100) / 100,
+    confidenceLevel,
+    lowConfidence,
+    priceRange: Math.round(priceRange * 10) / 10,
     components: {
       priceTrend: Math.round(priceTrend * 100) / 100,
       ytTrend: Math.round(ytTrend * 100) / 100,

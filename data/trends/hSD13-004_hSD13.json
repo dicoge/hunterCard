@@ -4,12 +4,15 @@
   "nameZh": "伊莉莎白·蘿絲·布拉德弗雷姆",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.6,
+  "confidence": 0.5,
+  "confidenceLevel": "high",
+  "lowConfidence": false,
+  "priceRange": 2.8,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-07-19T12:12:42.382Z",
+  "lastUpdated": "2026-07-20T11:06:01.283Z",
   "dataPoints": 29
 }
