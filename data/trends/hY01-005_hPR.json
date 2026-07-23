@@ -1,15 +1,15 @@
 {
   "cardId": "hY01-005",
   "name": "白エール",
-  "nameZh": "",
+  "nameZh": "白色應援",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.6,
+  "confidence": 0.9,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.14
+    "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-07-19T12:12:42.385Z",
-  "dataPoints": 17
+  "lastUpdated": "2026-07-23T12:12:27.173Z",
+  "dataPoints": 19
 }

@@ -226,8 +226,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD09-005_hPR"
+    },
+    {
+      "date": "2026-07-23",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-005_hPR"
     }
   ],
-  "lastUpdated": "2026-07-22T12:17:22.416Z",
+  "lastUpdated": "2026-07-23T12:09:27.261Z",
   "nameZh": "白銀諾艾爾"
 }

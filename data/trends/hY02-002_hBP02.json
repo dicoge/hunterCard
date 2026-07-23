@@ -1,0 +1,15 @@
+{
+  "cardId": "hY02-002",
+  "name": "緑エール",
+  "nameZh": "綠色應援",
+  "trend": "up",
+  "score": 0.15,
+  "confidence": 0.6,
+  "components": {
+    "priceTrend": 0.2,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-07-23T12:12:27.173Z",
+  "dataPoints": 3
+}
