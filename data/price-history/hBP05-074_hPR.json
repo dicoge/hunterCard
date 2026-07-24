@@ -247,8 +247,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-074_hPR"
+    },
+    {
+      "date": "2026-07-24",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-074_hPR"
     }
   ],
-  "lastUpdated": "2026-07-23T12:09:27.245Z",
+  "lastUpdated": "2026-07-24T12:08:59.182Z",
   "nameZh": "友善電腦"
 }

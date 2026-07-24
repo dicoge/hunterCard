@@ -247,8 +247,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-083_hBP06"
+    },
+    {
+      "date": "2026-07-24",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-083_hBP06"
     }
   ],
-  "lastUpdated": "2026-07-23T12:09:27.089Z",
+  "lastUpdated": "2026-07-24T12:08:59.013Z",
   "nameZh": "蓮達"
 }

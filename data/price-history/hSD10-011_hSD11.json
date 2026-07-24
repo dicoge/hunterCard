@@ -233,8 +233,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD10-011_hSD11"
+    },
+    {
+      "date": "2026-07-24",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-011_hSD11"
     }
   ],
-  "lastUpdated": "2026-07-23T12:09:27.095Z",
+  "lastUpdated": "2026-07-24T12:08:59.019Z",
   "nameZh": "WHAT'S UP!!!!! KEEEEEP GROWING!!!!!"
 }

@@ -240,8 +240,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD14-010_hSD19"
+    },
+    {
+      "date": "2026-07-24",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD14-010_hSD19"
     }
   ],
-  "lastUpdated": "2026-07-23T12:09:27.026Z",
+  "lastUpdated": "2026-07-24T12:08:58.951Z",
   "nameZh": "holoAN"
 }

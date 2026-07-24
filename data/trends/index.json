@@ -1,10 +1,10 @@
 {
-  "lastUpdated": "2026-07-23T12:12:27.291Z",
-  "totalCards": 2022,
+  "lastUpdated": "2026-07-24T12:12:00.731Z",
+  "totalCards": 2023,
   "summary": {
     "up": 1,
     "down": 0,
-    "stable": 2021
+    "stable": 2022
   },
   "topGainers": [
     {
@@ -57,6 +57,13 @@
       "trend": "stable"
     },
     {
+      "cardId": "hBD24-010",
+      "name": "雪花ラミィ",
+      "nameZh": "雪花菈米",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
       "cardId": "hBD24-012",
       "name": "白銀ノエル",
       "nameZh": "白銀諾艾爾",
@@ -137,13 +144,6 @@
       "cardId": "hBD24-024",
       "name": "ムーナ・ホシノヴァ",
       "nameZh": "姆娜·霍希諾瓦",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-025",
-      "name": "アキ・ローゼンタール",
-      "nameZh": "亞綺·羅森塔爾",
       "score": 0.03,
       "trend": "stable"
     }
@@ -192,6 +192,13 @@
       "trend": "stable"
     },
     {
+      "cardId": "hBD24-010",
+      "name": "雪花ラミィ",
+      "nameZh": "雪花菈米",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
       "cardId": "hBD24-012",
       "name": "白銀ノエル",
       "nameZh": "白銀諾艾爾",
@@ -279,13 +286,6 @@
       "cardId": "hBD24-025",
       "name": "アキ・ローゼンタール",
       "nameZh": "亞綺·羅森塔爾",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-026",
-      "name": "猫又おかゆ",
-      "nameZh": "貓又小粥",
       "score": 0.03,
       "trend": "stable"
     }
