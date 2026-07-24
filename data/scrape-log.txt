@@ -1,4 +1,4 @@
-=== Scrape Log 2026-07-23T12:04:01.037Z ===
+=== Scrape Log 2026-07-24T12:03:39.021Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -64,22 +64,22 @@
 [database] Scraping hYS01: /sell/hocg/s/hys01
   → Found 4 cards with prices
 [database] Scraping ent07: /sell/hocg/s/special/4
-  → Found 131 cards with prices
+  → Found 135 cards with prices
 [database] Scraping hCS01: /sell/hocg/s/special/5
-  → Found 194 cards with prices
+  → Found 198 cards with prices
 [database] Scraping hPC01: /sell/hocg/s/special/7
   → Found 126 cards with prices
 [database] Scraping hPR: /sell/hocg/s/special/1
-  → Found 95 cards with prices
+  → Found 97 cards with prices
 [database] Scraping hSD2025summer: /sell/hocg/s/special/8
   → Found 128 cards with prices
 
-  Total cards from yuyu-tei: 1842
+  Total cards from yuyu-tei: 1852
 
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 0, Skipped: 1180, Errors: 0
+  [images] Downloaded: 1, Skipped: 1179, Errors: 0
 
 ── Step 3: Merge official data ──
 
@@ -101,10 +101,10 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 2011 new records; index totals: 2022 cards / 66852 records
+  [price-history] Saved 2012 new records; index totals: 2023 cards / 68864 records
 
 ── Step 6: Merge priceHistory into database ──
-  [priceHistory] Merged into 2022 cards
+  [priceHistory] Merged into 2023 cards
   [buyPrice] Restored buy prices onto 1663 cards
 
 ── Step 7: Merge VTuber YouTube stats ──
@@ -114,8 +114,8 @@
   ✅ Build complete!
   Total cards: 2105
   Cards with prices: 1180
-  Images downloaded: 0
-  Duration: 326.3s
+  Images downloaded: 1
+  Duration: 320.3s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
@@ -123,6 +123,6 @@ Build result: {
   "totalCards": 2105,
   "yuyuCount": 1180,
   "officialCount": 2105,
-  "imagesDownloaded": 0,
-  "duration": 326.3
+  "imagesDownloaded": 1,
+  "duration": 320.3
 }
