@@ -240,8 +240,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-072_hPR"
+    },
+    {
+      "date": "2026-07-25",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-072_hPR"
     }
   ],
-  "lastUpdated": "2026-07-24T12:08:59.181Z",
+  "lastUpdated": "2026-07-25T12:08:44.219Z",
   "nameZh": "大空昴"
 }
