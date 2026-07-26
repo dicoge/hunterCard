@@ -247,8 +247,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-079_hPR"
+    },
+    {
+      "date": "2026-07-26",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-079_hPR"
     }
   ],
-  "lastUpdated": "2026-07-25T12:08:44.211Z",
+  "lastUpdated": "2026-07-26T12:16:38.965Z",
   "nameZh": "爆炸魔法"
 }

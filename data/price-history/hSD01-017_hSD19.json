@@ -247,8 +247,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-017_hSD19"
+    },
+    {
+      "date": "2026-07-26",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-017_hSD19"
     }
   ],
-  "lastUpdated": "2026-07-25T12:08:43.970Z",
+  "lastUpdated": "2026-07-26T12:16:38.791Z",
   "nameZh": "小經"
 }

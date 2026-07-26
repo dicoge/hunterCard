@@ -261,8 +261,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-112_hBP01"
+    },
+    {
+      "date": "2026-07-26",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-112_hBP01"
     }
   ],
-  "lastUpdated": "2026-07-25T12:08:44.178Z",
+  "lastUpdated": "2026-07-26T12:16:38.939Z",
   "nameZh": "興奮惡作劇時間"
 }
