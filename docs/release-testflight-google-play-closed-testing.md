@@ -105,7 +105,7 @@
 
 > ⚠️ 送審前必讀。實際權限面比「只有相機」大，隱私問卷（App Privacy / Data safety）漏填會被退件或事後被商店標記不一致。以下依 `app.json` 與相依套件盤點目前的權限來源。
 >
-> **重要：`expo-image-picker` 目前有實際使用**（`src/screens/ScanScreen.tsx` 呼叫 `ImagePicker.launchImageLibraryAsync()`），且它會自動帶入 native 權限，是最容易被低估的來源。**送審前必須以 release build 的真實 merged manifest 為最終真相**——`npx expo prebuild` 產生的 `android/app/src/main/AndroidManifest.xml` 只是 app source manifest，並非最終打包進 APK/AAB 的版本。正確做法是跑 Gradle build 後查看 `android/app/build/intermediates/merged_manifests/release/AndroidManifest.xml`；也可用 `cd android && ./gradlew app:processReleaseManifest && cat app/build/outputs/logs/manifest-merger-release-report.txt` 取得 manifest-merger report。
+> **重要：`expo-image-picker` 目前有實際使用**（`src/screens/ScanScreen.tsx` 呼叫 `ImagePicker.launchImageLibraryAsync()`），且它會自動帶入 native 權限，是最容易被低估的來源。**送審前必須以 release build 的真實 merged manifest 為最終真相**——`npx expo prebuild` 產生的 `android/app/src/main/AndroidManifest.xml` 只是 app source manifest，並非最終打包進 APK/AAB 的版本。正確做法是跑 Gradle build 後查看 `android/app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml`；也可用 `cd android && ./gradlew app:processReleaseManifest && cat app/build/outputs/logs/manifest-merger-release-report.txt` 取得 manifest-merger report。
 
 | 權限 / 能力 | 來源 | iOS | Android | 送審需交代 |
 | --- | --- | --- | --- | --- |
@@ -147,10 +147,10 @@
     }
     ```
 
-    改完務必以 release build 產生的 merged manifest 實際確認：iOS 看 `npx expo prebuild --clean` 後的 `Info.plist`；Android 跑 `cd android && ./gradlew app:processReleaseManifest` 後查看 `app/build/intermediates/merged_manifests/release/AndroidManifest.xml`（或 manifest-merger report：`app/build/outputs/logs/manifest-merger-release-report.txt`）。確認 `RECORD_AUDIO` / `NSMicrophoneUsageDescription` 已消失，並注意 `expo-notifications` 會帶入 `POST_NOTIFICATIONS` 與 `RECEIVE_BOOT_COMPLETED`。保留麥克風權限但問卷不申報，是常見退件原因；要嘛用、要嘛從**所有**來源拔掉。
+    改完務必以 release build 產生的 merged manifest 實際確認：iOS 看 `npx expo prebuild --clean` 後的 `Info.plist`；Android 跑 `cd android && ./gradlew app:processReleaseManifest` 後查看 `app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml`（或 manifest-merger report：`app/build/outputs/logs/manifest-merger-release-report.txt`）。確認 `RECORD_AUDIO` / `NSMicrophoneUsageDescription` 已消失，並注意 `expo-notifications` 會帶入 `POST_NOTIFICATIONS` 與 `RECEIVE_BOOT_COMPLETED`。保留麥克風權限但問卷不申報，是常見退件原因；要嘛用、要嘛從**所有**來源拔掉。
 - [ ] **推播**：確認 `expo-notifications` 目前還在用（`App.tsx` 啟動時註冊 push token，用於監看清單價格提醒）。若保留，App Privacy / Data safety 的 Identifiers / Device IDs 要如實申報 push token 的收集、用途、第三方傳輸（Expo Push Service）與保留政策。若已無推播功能，建議從 `plugins` 移除以縮小權限面與問卷範圍。
 - [ ] **相簿**：`expo-image-picker` **目前已在 `ScanScreen.tsx` 實際使用**，屬保留權限。需在 iOS 提供 `NSPhotoLibraryUsageDescription`（用上方 plugin 的 `photosPermission`），並確認 Android storage 權限（`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`）在 merged manifest 的實際結果，於 Data safety 說明圖片僅在本機/伺服器辨識後如何處理。
-- [ ] **以 release build merged manifest / Info.plist 為最終真相**：iOS 用 `npx expo prebuild --clean` 的 `Info.plist`；Android 不可只靠 prebuild 的 app source manifest——須跑 `cd android && ./gradlew app:processReleaseManifest`，以 `app/build/intermediates/merged_manifests/release/AndroidManifest.xml` 或 manifest-merger report 為準。不要只看 `app.json` 或 prebuild app source manifest。
+- [ ] **以 release build merged manifest / Info.plist 為最終真相**：iOS 用 `npx expo prebuild --clean` 的 `Info.plist`；Android 不可只靠 prebuild 的 app source manifest——須跑 `cd android && ./gradlew app:processReleaseManifest`，以 `app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml` 或 manifest-merger report 為準。不要只看 `app.json` 或 prebuild app source manifest。
 - [ ] **每個保留的權限**都要能對應到 App 內實際功能，並在下方問卷段落如實填寫。
 
 ---
@@ -508,7 +508,7 @@ NSPhotoLibraryUsageDescription = 允許 HoloHunter 存取相簿以選取卡牌�
 - Usage Data：無帳號、無 analytics/crash SDK → No
   - ⚠️ Watchlist（監看清單）目前僅 Zustand 本機儲存（localStorage/AsyncStorage），App binary 未呼叫 `/api/push/watchlist`。外部 `data/push-watchlist.json` 非 App binary 觸發產生，不需在商店問卷申報。
 
-- Camera：App 使用相機掃描/辨識卡牌，僅本機 OCR 處理，不上傳影像 → 於功能說明勾選相機用途。資料收集：No（僅即時本機處理，不持久保存也不傳輸）。
+- Camera：App 使用相機掃描/辨識卡牌，僅本機 OCR 處理，不上傳影像 → 於功能說明勾選相機用途。資料收集：No。⚠️ `takePictureAsync` 未指定 `pictureRef` 時照片會寫入 app-local cache（`FileSystem.cacheDirectory`），不是僅記憶體暫存；App 不主動刪除這些快取檔案。但不傳輸 off-device，不構成 collection。
 
 - Microphone：若已關閉 → No；若仍保留權限 → 需按實際用途填寫。
 
@@ -530,7 +530,7 @@ Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transpar
 ```text
 先跑 release build 取得真實 merged manifest 權限清單再填問卷：
 cd android && ./gradlew app:processReleaseManifest
-# merged manifest: app/build/intermediates/merged_manifests/release/AndroidManifest.xml
+# merged manifest: app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
 # manifest-merger report: app/build/outputs/logs/manifest-merger-release-report.txt
 注意 expo-notifications 會帶入 POST_NOTIFICATIONS（Android 13+）與 RECEIVE_BOOT_COMPLETED。
 
