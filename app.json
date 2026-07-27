@@ -17,6 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.dicoge.holohunter",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -63,7 +64,8 @@
           "photosPermission": "允許 HoloHunter 從相簿選取卡牌圖片以進行辨識"
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-apple-authentication"
     ],
     "extra": {
       "eas": {

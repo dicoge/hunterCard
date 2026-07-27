@@ -1,14 +1,47 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Alert } from 'react-native';
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
 
+const PROVIDER_LABEL: Record<string, string> = { apple: 'Apple', google: 'Google' };
+
 export default function SettingsScreen() {
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const signOut = useAuthStore((s) => s.signOut);
+  const deleteAccount = useAuthStore((s) => s.deleteAccount);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  const confirmSignOut = () => {
+    Alert.alert('登出', '確定要登出嗎？', [
+      { text: '取消', style: 'cancel' },
+      { text: '登出', style: 'destructive', onPress: signOut },
+    ]);
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      '刪除帳號',
+      '這會永久刪除你的帳號與同步資料，且無法復原。確定要刪除嗎？',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '刪除帳號',
+          style: 'destructive',
+          onPress: async () => {
+            const revoked = await deleteAccount();
+            if (!revoked) {
+              Alert.alert(
+                '帳號已於本機登出',
+                '伺服器端撤銷授權可能尚未完成，若仍收到相關通知請稍後再試或聯絡我們。'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -76,25 +109,32 @@ export default function SettingsScreen() {
         </View>
 
         {/* ── 帳號 ── */}
-        {isAuthenticated && user && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🔐 帳號</Text>
-            <View style={styles.accountInfo}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {(user.displayName || user.primaryEmail || '?')[0].toUpperCase()}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>👤 帳號</Text>
+          {isAuthenticated && user ? (
+            <>
+              <Text style={styles.item}>
+                以 {PROVIDER_LABEL[user.linkedProviders?.[0]?.provider ?? ''] ?? ''} 登入
+              </Text>
+              {!!(user.displayName || user.primaryEmail) && (
+                <Text style={styles.item}>
+                  {user.displayName ?? user.primaryEmail}
                 </Text>
-              </View>
-              <View style={styles.accountDetails}>
-                <Text style={styles.accountName}>{user.displayName}</Text>
-                <Text style={styles.accountEmail}>{user.primaryEmail}</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={styles.logoutButton} onPress={logout}>
-              <Text style={styles.logoutText}>登出</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+              )}
+              <TouchableOpacity style={styles.accountBtn} onPress={confirmSignOut}>
+                <Text style={styles.accountBtnText}>登出</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.accountBtn, styles.dangerBtn]}
+                onPress={confirmDelete}
+              >
+                <Text style={[styles.accountBtnText, styles.dangerText]}>刪除帳號</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={styles.hint}>尚未登入。登入後可跨裝置同步收藏與入手提醒。</Text>
+          )}
+        </View>
 
         <Text style={styles.footer}>專為 hololive PCG 玩家打造</Text>
       </ScrollView>
@@ -170,6 +210,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 8,
     paddingLeft: 8,
+  },
+  accountBtn: {
+    backgroundColor: COLORS.surfaceLight,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  accountBtnText: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dangerBtn: {
+    borderColor: COLORS.error,
+    backgroundColor: COLORS.error + '18',
+  },
+  dangerText: {
+    color: COLORS.error,
   },
   footer: {
     color: COLORS.textSecondary,
