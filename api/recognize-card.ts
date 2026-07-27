@@ -1,6 +1,6 @@
 /**
  * @version 6
- * recognize-card.ts — Vision API + deterministic candidate ranking for Hololive TCG cards.
+ * recognize-card.ts — Gemini Vision API + deterministic candidate ranking for Hololive TCG cards.
  *
  * Accepts one or more image data URIs. The web scanner sends both a full-frame image
  * and a scan-area crop so the model can read tiny bottom-edge card numbers without
@@ -9,8 +9,6 @@
 
 export const config = { runtime: 'edge' };
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = 'google/gemini-3.1-flash-image';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
 const AUTO_ACCEPT_CONFIDENCE = 0.82;
@@ -156,53 +154,23 @@ TITLE: [title or NONE]`;
 async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
   const imageList = images.filter(Boolean).slice(0, 2).map(img => img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`);
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          role: 'user',
-          parts: [{ text: visionPrompt }, ...imageList.map(dataUriToGeminiPart)],
-        }],
-        generationConfig: { temperature: 0, maxOutputTokens: 180 },
-      }),
-      signal: AbortSignal.timeout(14000),
-    });
-    if (!res.ok) throw new Error(`Gemini API error (${res.status})`);
-    const data = await res.json();
-    const reply = (data?.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('\n').trim();
-    return { reply, provider: 'gemini', model: GEMINI_MODEL };
-  }
-
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-  if (!openRouterKey) throw new Error('API key not set');
-  const res = await fetch(OPENROUTER_URL, {
+  if (!geminiKey) throw new Error('GEMINI_API_KEY not set');
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${openRouterKey}`,
-      'HTTP-Referer': 'https://huntercard-alpha.vercel.app',
-      'X-Title': 'HunterCard',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      messages: [
-        { role: 'system', content: visionPrompt },
-        { role: 'user', content: [
-          { type: 'text', text: 'Identify this Hololive TCG card. Use the full image and crop together if both are present.' },
-          ...imageList.map(url => ({ type: 'image_url', image_url: { url } })),
-        ]},
-      ],
-      max_tokens: 180,
-      temperature: 0,
+      contents: [{
+        role: 'user',
+        parts: [{ text: visionPrompt }, ...imageList.map(dataUriToGeminiPart)],
+      }],
+      generationConfig: { temperature: 0, maxOutputTokens: 180 },
     }),
     signal: AbortSignal.timeout(14000),
   });
-  if (!res.ok) throw new Error(`OpenRouter API error (${res.status})`);
+  if (!res.ok) throw new Error(`Gemini API error (${res.status})`);
   const data = await res.json();
-  const reply = (data?.choices?.[0]?.message?.content || '').trim();
-  return { reply, provider: 'openrouter', model: OPENROUTER_MODEL };
+  const reply = (data?.candidates?.[0]?.content?.parts || []).map((part: any) => part.text || '').join('\n').trim();
+  return { reply, provider: 'gemini', model: GEMINI_MODEL };
 }
 
 function rankCandidates(cards: Record<string, any>, extracted: any) {
@@ -335,6 +303,6 @@ export default async function handler(req: Request): Promise<Response> {
       debug,
     });
   } catch (e: any) {
-    return json({ success: false, error: `Error: ${e.message}` }, /API key not set/.test(e.message) ? 500 : 502);
+    return json({ success: false, error: `Error: ${e.message}` }, /GEMINI_API_KEY not set/.test(e.message) ? 500 : 502);
   }
 }

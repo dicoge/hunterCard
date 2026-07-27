@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "description": "Versioned scan-recognition benchmark schema. Image fixtures are omitted until QA exports consented camera samples; current samples exercise deterministic ranking cases.",
+  "targets": {
+    "top1": 0.9,
+    "top3": 0.98
+  },
+  "samples": [
+    {
+      "id": "exact-number",
+      "expectedCardNumber": "hBP04-001",
+      "extracted": {
+        "cardNumberRaw": "hBP04-001",
+        "characterName": "博衣こより",
+        "hp": "NONE",
+        "rarity": "SEC",
+        "bloom": "NONE",
+        "cardTitle": ""
+      }
+    },
+    {
+      "id": "fuzzy-number-with-fields",
+      "expectedCardNumber": "hBP04-002",
+      "extracted": {
+        "cardNumberRaw": "hBPO4-002",
+        "characterName": "儒烏風亭らでん",
+        "hp": "NONE",
+        "rarity": "OUR",
+        "bloom": "NONE",
+        "cardTitle": ""
+      }
+    },
+    {
+      "id": "character-rarity-no-number",
+      "expectedCardNumber": "hBP04-003",
+      "extracted": {
+        "cardNumberRaw": "NONE",
+        "characterName": "一条莉々華",
+        "hp": "NONE",
+        "rarity": "OUR",
+        "bloom": "NONE",
+        "cardTitle": ""
+      }
+    }
+  ]
+}

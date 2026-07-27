@@ -333,7 +333,7 @@ async function resizeImage(imageUri: string, maxDim: number): Promise<string> {
 }
 
 /**
- * Try to recognize card via server-side API (Gemini Vision through OpenRouter)
+ * Try to recognize card via server-side API (direct Gemini Vision).
  * Falls back gracefully without throwing
  */
 async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
@@ -341,8 +341,11 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     // Preprocess with OpenCV: enhance contrast, sharpen, resize
     const processedImage = await preprocessCardImage(imageUri);
 
-    // Call the API — use absolute URL to avoid SPA routing issues
-    const apiUrl = window.location.origin + '/api/recognize-card';
+    // Call the API — web uses current origin; native uses the production API host.
+    const apiBase = typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://holocard-hunter.vercel.app';
+    const apiUrl = apiBase + '/api/recognize-card';
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -445,6 +448,9 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
   try {
     const apiResult = await recognizeViaApi(imageUri);
     if (apiResult.success && apiResult.card) {
+      return apiResult;
+    }
+    if (apiResult.lowConfidence || apiResult.suggestions?.length || apiResult.raw || apiResult.debug) {
       return apiResult;
     }
   } catch (e) {

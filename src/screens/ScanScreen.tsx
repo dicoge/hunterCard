@@ -26,6 +26,7 @@ import ScanOverlay from '../components/ScanOverlay';
 import ScanResultCard from '../components/ScanResultCard';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
+import { mapCoverRectToSource } from '../utils/scanGeometry';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
@@ -287,21 +288,20 @@ export default function ScanScreen({ navigation }: any) {
     };
 
     const fullImage = makeDataUrl(0, 0, video.videoWidth, video.videoHeight, 2048);
+    const videoRect = video.getBoundingClientRect();
     const overlay = {
       x: (SCREEN_WIDTH - SCAN_AREA_SIZE) / 2,
       y: SCREEN_HEIGHT * 0.15,
       width: SCAN_AREA_SIZE,
       height: SCAN_AREA_SIZE * 0.63,
     };
-    const scaleX = video.videoWidth / SCREEN_WIDTH;
-    const scaleY = video.videoHeight / SCREEN_HEIGHT;
-    const padX = overlay.width * 0.14 * scaleX;
-    const padY = overlay.height * 0.28 * scaleY;
-    const cropX = Math.max(0, overlay.x * scaleX - padX);
-    const cropY = Math.max(0, overlay.y * scaleY - padY);
-    const cropW = Math.min(video.videoWidth - cropX, overlay.width * scaleX + padX * 2);
-    const cropH = Math.min(video.videoHeight - cropY, overlay.height * scaleY + padY * 2);
-    const cropImage = makeDataUrl(cropX, cropY, cropW, cropH, 1536);
+    const crop = mapCoverRectToSource(
+      { width: videoRect.width || SCREEN_WIDTH, height: videoRect.height || SCREEN_HEIGHT },
+      { width: video.videoWidth, height: video.videoHeight },
+      overlay,
+      { padXRatio: 0.14, padYRatio: 0.28 },
+    );
+    const cropImage = makeDataUrl(crop.x, crop.y, crop.width, crop.height, 1536);
     return [fullImage, cropImage];
   };
 
@@ -419,9 +419,16 @@ export default function ScanScreen({ navigation }: any) {
           if (result.success && result.card) {
             addCard(result.card);
             setLastScannedCard(result.card);
-            setResultCard({ visible: true, card: result.card, confidence: 0.85 });
+            setResultCard({ visible: true, card: result.card, confidence: result.confidence ?? 0.85 });
             setSearchResults([]); setSearchError(null); setSuggestions([]);
             setCapturedPhotoUri(null); resetAutoScan();
+          } else if (result.lowConfidence || result.suggestions?.length) {
+            const candidateCards = result.suggestions || [];
+            setSearchResults(candidateCards);
+            setSuggestions(candidateCards);
+            setSearchError(result.error || '辨識信心不足，請從候選卡中選擇');
+            setCandidateReason(`信心 ${Math.round((result.confidence || 0) * 100)}%：${result.reason || '需要人工確認'}`);
+            if (result.raw) setRecognizedText(result.raw);
           } else {
             const recognizedText = await recognizeTextWeb(photo.uri);
             const trimmedText = recognizedText.text.trim();
@@ -450,9 +457,42 @@ export default function ScanScreen({ navigation }: any) {
           setIsScanning(false);
         }
       } else {
-        // Native: 用 expo-ocr-kit 做全圖 OCR
-        setScanningStatus('🔍 OCR 辨識中…');
+        // Native: first use the same direct Gemini/ranking pipeline as web, then OCR fallback.
+        setScanningStatus('🤖 AI 辨識中…');
         setScanProgress(3);
+        const nativeVisionResult = await recognizeCardFromImage(photo.uri);
+        if (nativeVisionResult.success && nativeVisionResult.card) {
+          setIsProcessingOCR(false);
+          setIsScanning(false);
+          setScanningStatus('✅ 辨識完成');
+          setScanProgress(4);
+          addCard(nativeVisionResult.card);
+          setLastScannedCard(nativeVisionResult.card);
+          setResultCard({
+            visible: true,
+            card: nativeVisionResult.card,
+            confidence: nativeVisionResult.confidence ?? 0.9,
+          });
+          setSearchResults([]);
+          setSearchError(null);
+          setSuggestions([]);
+          setCapturedPhotoUri(null);
+          resetAutoScan();
+          return;
+        }
+        if (nativeVisionResult.lowConfidence || nativeVisionResult.suggestions?.length) {
+          setIsProcessingOCR(false);
+          setIsScanning(false);
+          const candidateCards = nativeVisionResult.suggestions || [];
+          setSearchResults(candidateCards);
+          setSuggestions(candidateCards);
+          setSearchError(nativeVisionResult.error || '辨識信心不足，請從候選卡中選擇');
+          setCandidateReason(`信心 ${Math.round((nativeVisionResult.confidence || 0) * 100)}%：${nativeVisionResult.reason || '需要人工確認'}`);
+          if (nativeVisionResult.raw) setRecognizedText(nativeVisionResult.raw);
+          return;
+        }
+
+        setScanningStatus('🔍 OCR 辨識中…');
         const recognizedText = await performOcr(photo.uri);
         const trimmedText = recognizedText.trim();
         setRecognizedText(trimmedText);
@@ -527,6 +567,36 @@ export default function ScanScreen({ navigation }: any) {
         setScanError(null);
         setCapturedPhotoUri(result.assets[0].uri);
 
+        const galleryVisionResult = await recognizeCardFromImage(result.assets[0].uri);
+        if (galleryVisionResult.success && galleryVisionResult.card) {
+          setIsProcessingOCR(false);
+          setIsScanning(false);
+          addCard(galleryVisionResult.card);
+          setLastScannedCard(galleryVisionResult.card);
+          setResultCard({
+            visible: true,
+            card: galleryVisionResult.card,
+            confidence: galleryVisionResult.confidence ?? 0.9,
+          });
+          setSearchResults([]);
+          setSearchError(null);
+          setSuggestions([]);
+          setCapturedPhotoUri(null);
+          resetAutoScan();
+          return;
+        }
+        if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
+          setIsProcessingOCR(false);
+          setIsScanning(false);
+          const candidateCards = galleryVisionResult.suggestions || [];
+          setSearchResults(candidateCards);
+          setSuggestions(candidateCards);
+          setSearchError(galleryVisionResult.error || '辨識信心不足，請從候選卡中選擇');
+          setCandidateReason(`信心 ${Math.round((galleryVisionResult.confidence || 0) * 100)}%：${galleryVisionResult.reason || '需要人工確認'}`);
+          if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
+          return;
+        }
+
         if (isWeb) {
           // Web: 卡號優先 OCR
           const cardResult = await recognizeCardFromImage(result.assets[0].uri);
@@ -540,13 +610,20 @@ export default function ScanScreen({ navigation }: any) {
             setResultCard({
               visible: true,
               card: cardResult.card,
-              confidence: 0.85,
+              confidence: cardResult.confidence ?? 0.85,
             });
             setSearchResults([]);
             setSearchError(null);
             setSuggestions([]);
             setCapturedPhotoUri(null);
             resetAutoScan();
+          } else if (cardResult.lowConfidence || cardResult.suggestions?.length) {
+            const candidateCards = cardResult.suggestions || [];
+            setSearchResults(candidateCards);
+            setSuggestions(candidateCards);
+            setSearchError(cardResult.error || '辨識信心不足，請從候選卡中選擇');
+            setCandidateReason(`信心 ${Math.round((cardResult.confidence || 0) * 100)}%：${cardResult.reason || '需要人工確認'}`);
+            if (cardResult.raw) setRecognizedText(cardResult.raw);
           } else {
             // Fallback 到全圖 OCR
             const recognizedText = await recognizeTextWeb(result.assets[0].uri);
