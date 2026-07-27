@@ -1,6 +1,6 @@
 # HoloHunter 登入設計：Google + Apple 共通帳號（iOS / Android / Web）
 
-對應 issue DIC-649。本文件為設計與實作計畫，涵蓋 Google Cloud Console / Apple Developer 設定、iOS / Android 原生設定、Expo/EAS build 注意事項、**共通帳號（一個 internal user 綁定多個 provider）** 的資料模型與流程，以及依六大工作流拆分的實作計畫。
+對應 issue DIC-649。本文件為設計與實作計畫，涵蓋 Google Cloud Console / Apple Developer 設定、iOS / Android 原生設定、Expo/EAS build 注意事項、**共通帳號（一個 internal user 綁定多個 provider）** 的資料模型與流程，以及在登入之上疊加的 **產品 / 營利架構（guest/free/subscriber 角色、每月掃描 quota、訂閱、premium gate）**，並依工作流拆分實作計畫。
 
 ## 產品決策（來自 issue，作為硬性約束）
 
@@ -214,11 +214,73 @@ interface Identity {
 - `@react-native-google-signin` plugin 設定；Android 登錄三把 keystore SHA-1。
 - Android 首要只做 Google；Apple 於 Android（web-based）列為後續評估。
 
-### 5. QA / 測試（Stage 3）
-- 矩陣：各平台登入、綁定、解除綁定（擋 <1）、collision（reject / merge）、刪帳號級聯、跨平台同帳號歸戶、Apple private relay email（首次拿到、後續拿不到）。
+### 5. QA / 測試（Stage 6，含產品角色矩陣）
+- Auth：各平台登入、綁定、解除綁定（擋 <1）、collision（reject / merge）、刪帳號級聯、跨平台同帳號歸戶、Apple private relay email（首次拿到、後續拿不到）。
+- 產品角色：guest / free_user / subscriber 三角色 gating（掃描、premium）；quota 每月重置與防竄改；訂閱狀態變更即時生效；刪帳號連同 scan usage/quota/subscription mapping 清除或匿名化。
 
-### 6. 隱私權政策 / 資料刪除說明（Stage 3）
+### 6. 隱私權政策 / 商店文案 / 資料刪除（Stage 6）
 - 隱私權政策頁；app 內可完成刪帳號；App Store / Play 上架所需的資料刪除說明與登入方式揭露。
+- 文案需同步揭露：有帳號、有訂閱、有使用量 / quota 紀錄；刪帳號連帶處理交易必要紀錄（刪除或匿名化）。
+
+---
+
+## 產品 / 營利架構（roles / quota / subscription / premium gate）
+
+在登入之上疊「角色 → 權限」層。**現階段先設計可擴充架構，不一定立刻接金流**；訂閱驗證做成抽象介面，先給 stub，日後接 IAP。
+
+### 交付 I：權限模型（guest / free_user / subscriber）
+
+```ts
+type Role = 'guest' | 'free_user' | 'subscriber';
+
+interface Entitlements {
+  role: Role;
+  canScan: boolean;            // free_user / subscriber
+  scanMonthlyLimit: number | null;  // free_user=100, subscriber=null(無限), guest=0
+  canViewPremium: boolean;     // 僅 subscriber（價格預測 / 趨勢 / 進階市場數據）
+}
+```
+
+- 角色由**後端**依 `session`（有無登入）+ `subscription` 狀態推導，回給前端當唯一真相；前端只用來畫 UI，**不可信任前端自報角色**。
+- guest = 未登入：只能看規則（Tutorial）與查卡（Search / CardDetail）；不可掃描、不可看 premium。
+- free_user = 已登入未訂閱：可掃描（月上限 100）；不可看 premium。
+- subscriber = 已登入且有效訂閱：掃描無上限、可看 premium。
+
+### 交付 J：每月掃描 quota（server-authoritative，防本機竄改）
+
+- **計數在後端**：掃描辨識已走 `POST /api/recognize-card`（見 `api/recognize-card.ts`）。在該端點（或前置 `POST /api/scan/consume`）以 `session` 帶出 `userId`，對 `quota:{userId}:{YYYYMM}` 原子遞增（Vercel KV `INCR`）。
+- 超過 free 上限（100）→ 回 `402/429` 與 `remaining:0`；subscriber 略過檢查。
+- **每月重置**：key 內嵌 `YYYYMM`，自然換月歸零（可設 TTL 收斂舊 key）。
+- 前端本機只作顯示快取，**額度真相以後端回應為準**；本機數字被改也無法突破，因為每次掃描都要後端放行。
+- 刪帳號時一併刪 `quota:{userId}:*`。
+
+### 交付 K：訂閱狀態（IAP，先架構後金流）
+
+- 抽象介面 `SubscriptionProvider`：`getStatus(userId)` → `{ active, plan, expiresAt, store }`。先用 stub / 手動旗標，讓角色模型與 gate 可先開發測試。
+- 未來實作：
+  - **iOS**：App Store IAP（auto-renewable subscription）；用 App Store Server Notifications + receipt/JWS 驗證，寫入 `subscription:{userId}`。
+  - **Android**：Google Play Billing；Real-time Developer Notifications (RTDN) + Play Developer API 驗證。
+  - **Web**：Stripe 另評估，或先不做（若做，訂閱狀態同樣正規化進 `subscription:{userId}`，與 IAP 共用同一角色推導）。
+- **合規**：數位訂閱在 iOS/Android 必須走各自的 IAP，不可導外部金流（Guideline 3.1.1 / Play Payments）。Web 才可用 Stripe。
+- `subscription:{userId}` 為後端真相；角色推導只看它，不看前端。
+
+### 交付 L：Premium gate（僅 subscriber）
+
+- 受管內容：**價格預測 / 趨勢預測 / 進階市場數據**（現有 `src/store/trendStore.ts`、`PriceTrend` / `PriceTrendBadge`）。
+- gate 兩層：後端 premium 資料 API 檢查 `canViewPremium` 才回完整資料；前端對非 subscriber 顯示 lock / 模糊 + 升級 CTA，不下載完整資料。
+
+### 交付 M：入口 / Onboarding 與 UI 狀態
+
+- **首頁入口**：註冊/登入（Google / Apple）｜訪客進入。
+- 導覽 gating（`src/navigation/AppNavigator.tsx`）：guest 隱藏 / 鎖 Scan 分頁與 premium；點掃描時導向登入。
+- **UI 狀態**：掃描剩餘張數（`remaining/100`）、達上限提示 + 升級 CTA、premium lock 畫面、訂閱管理入口（設定頁）。
+- 沿用現有 Zustand + persist；角色 / entitlements 放 `authStore`（來源為後端），quota 顯示值可快取但以後端為準。
+
+### 產品實作工作流（sub-issues，接在 Auth 之後）
+
+- **Stage 4（依賴 Auth 架構 DIC-675）**：權限/entitlement 模型（I）、首頁/Onboarding flow（M 入口與 guest 限制）、每月掃描 quota 後端（J）。
+- **Stage 5**：訂閱架構抽象層（K，先 stub）、Premium gate（L）、Monetization UI（M 的剩餘數/上限/CTA/lock）。
+- **Stage 6**：QA 三角色矩陣（工作流 5 擴充）、隱私權政策/商店文案/刪除級聯（工作流 6 擴充）。
 
 ## 待使用者提供 / 需外部帳號（我無法自行產生）
 
@@ -227,3 +289,4 @@ interface Identity {
 - Apple Developer：App ID 開啟 Sign in with Apple；**Web Apple 另需 Services ID、redirect URI、domain verification、`.p8` + Key ID + Team ID**。
 - 代管商選擇（Firebase 或 Supabase）供 Web Apple。
 - Vercel env：session 簽章金鑰、（需要時）Web client secret、Apple `.p8`。
+- **營利相關（金流階段才需要）**：App Store Connect 訂閱產品 + App Store Server Notifications、Google Play Billing 產品 + RTDN、（Web 若做）Stripe 產品與 webhook。決策：Web 訂閱要不要做 Stripe，或先只做 iOS/Android IAP。
