@@ -875,11 +875,14 @@ export default function ScanScreen({ navigation }: any) {
   
   // 選擇建議的卡牌（使用者已確認 → 加入，帶重複防護）
   const handleSelectSuggestion = (card: CardInfo) => {
-    setRecognizedCard(card);
+    // Route through the single record choke point: selecting a search/OCR
+    // suggestion records a card into the scan session.
     setSuggestions([]);
     setSearchResults([]);
     if (commitCard(card)) {
+      setRecognizedCard(card);
       setResultCard({ visible: true, card, confidence: 1 });
+    }
     }
   };
   
