@@ -105,14 +105,14 @@
 
 > ⚠️ 送審前必讀。實際權限面比「只有相機」大，隱私問卷（App Privacy / Data safety）漏填會被退件或事後被商店標記不一致。以下依 `app.json` 與相依套件盤點目前的權限來源。
 >
-> **重要：`expo-image-picker` 目前有實際使用**（`src/screens/ScanScreen.tsx` 呼叫 `ImagePicker.launchImageLibraryAsync()`），且它會自動帶入 native 權限，是最容易被低估的來源。以「本機 `npx expo prebuild` 產生的 merged AndroidManifest.xml / Info.plist」為最終真相，下表為預期值。
+> **重要：`expo-image-picker` 目前有實際使用**（`src/screens/ScanScreen.tsx` 呼叫 `ImagePicker.launchImageLibraryAsync()`），且它會自動帶入 native 權限，是最容易被低估的來源。**送審前必須以 release build 的真實 merged manifest 為最終真相**——`npx expo prebuild` 產生的 `android/app/src/main/AndroidManifest.xml` 只是 app source manifest，並非最終打包進 APK/AAB 的版本。正確做法是跑 Gradle build 後查看 `android/app/build/intermediates/merged_manifests/release/AndroidManifest.xml`；也可用 `cd android && ./gradlew app:processReleaseManifest && cat app/build/outputs/logs/manifest-merger-release-report.txt` 取得 manifest-merger report。
 
 | 權限 / 能力 | 來源 | iOS | Android | 送審需交代 |
 | --- | --- | --- | --- | --- |
 | 相機 Camera | `expo-camera`、`expo-ocr-kit`、`expo-image-picker` | `NSCameraUsageDescription` | `android.permission.CAMERA` | 掃描 / OCR 卡牌用途 |
 | 麥克風 Microphone | **`expo-camera` 與 `expo-image-picker` 皆預設帶入**；`app.json` Android 已列 `android.permission.RECORD_AUDIO` | `NSMicrophoneUsageDescription` | `android.permission.RECORD_AUDIO` | **App 若不用錄音，兩個套件都要各自關閉，見下方** |
-| 相簿 / 照片 Photo library | `expo-image-picker`（實際使用中） | `NSPhotoLibraryUsageDescription`、`NSPhotoLibraryAddUsageDescription` | 套件 manifest 預設宣告 `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`（舊 API level），Android 13+ 走系統 photo picker | 從相簿選卡牌圖片辨識；storage 權限需以 merged manifest 確認 |
-| 推播 Push notification | `expo-notifications` plugin | Push Notifications capability（APNs） | `android.permission.POST_NOTIFICATIONS`（Android 13+） | App 是否真的送推播；若未使用建議移除 plugin |
+| 相簿 / 照片 Photo library | `expo-image-picker`（實際使用中） | `NSPhotoLibraryUsageDescription` | 套件 manifest 預設宣告 `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`（舊 API level），Android 13+ 走系統 photo picker | 從相簿選卡牌圖片辨識；storage 權限需以 merged manifest 確認 |
+| 推播 Push notification | `expo-notifications` plugin | Push Notifications capability（APNs） | `android.permission.POST_NOTIFICATIONS`（Android 13+）、`RECEIVE_BOOT_COMPLETED`（plugin 自動帶入） | App 是否真的送推播；若未使用建議移除 plugin。注意 `expo-notifications` 會額外帶入 `RECEIVE_BOOT_COMPLETED` |
 
 **送審前要做的決定（每一項都要有明確答案）：**
 
@@ -147,10 +147,10 @@
     }
     ```
 
-    改完務必以 `npx expo prebuild --clean` 產生的 `android/app/src/main/AndroidManifest.xml` 與 iOS `Info.plist` 實際確認 `RECORD_AUDIO` / `NSMicrophoneUsageDescription` 已消失。保留麥克風權限但問卷不申報，是常見退件原因；要嘛用、要嘛從**所有**來源拔掉。
+    改完務必以 release build 產生的 merged manifest 實際確認：iOS 看 `npx expo prebuild --clean` 後的 `Info.plist`；Android 跑 `cd android && ./gradlew app:processReleaseManifest` 後查看 `app/build/intermediates/merged_manifests/release/AndroidManifest.xml`（或 manifest-merger report：`app/build/outputs/logs/manifest-merger-release-report.txt`）。確認 `RECORD_AUDIO` / `NSMicrophoneUsageDescription` 已消失，並注意 `expo-notifications` 會帶入 `POST_NOTIFICATIONS` 與 `RECEIVE_BOOT_COMPLETED`。保留麥克風權限但問卷不申報，是常見退件原因；要嘛用、要嘛從**所有**來源拔掉。
 - [ ] **推播**：確認 `expo-notifications` 目前還在用（`App.tsx` 啟動時註冊 push token，用於監看清單價格提醒）。若保留，App Privacy / Data safety 的 Identifiers / Device IDs 要如實申報 push token 的收集、用途、第三方傳輸（Expo Push Service）與保留政策。若已無推播功能，建議從 `plugins` 移除以縮小權限面與問卷範圍。
 - [ ] **相簿**：`expo-image-picker` **目前已在 `ScanScreen.tsx` 實際使用**，屬保留權限。需在 iOS 提供 `NSPhotoLibraryUsageDescription`（用上方 plugin 的 `photosPermission`），並確認 Android storage 權限（`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`）在 merged manifest 的實際結果，於 Data safety 說明圖片僅在本機/伺服器辨識後如何處理。
-- [ ] **以 merged manifest / Info.plist 為最終真相**：改任何權限後跑 `npx expo prebuild --clean`，用產生的原生檔核對，不要只看 `app.json`。
+- [ ] **以 release build merged manifest / Info.plist 為最終真相**：iOS 用 `npx expo prebuild --clean` 的 `Info.plist`；Android 不可只靠 prebuild 的 app source manifest——須跑 `cd android && ./gradlew app:processReleaseManifest`，以 `app/build/intermediates/merged_manifests/release/AndroidManifest.xml` 或 manifest-merger report 為準。不要只看 `app.json` 或 prebuild app source manifest。
 - [ ] **每個保留的權限**都要能對應到 App 內實際功能，並在下方問卷段落如實填寫。
 
 ---
@@ -401,14 +401,15 @@ npx eas submit --platform android --profile production --latest
 - **⚠️ Web vs Native 資料流不同，商店問卷只填 native store binary 的行為。**HoloHunter 的 Web 版會 POST 影像到 `/api/recognize-card` 再轉送 OpenRouter Gemini Vision，但 iOS/Android native binary **不走這條路**——native 用本機 OCR（`expo-ocr-kit` / Tesseract），不傳送影像到任何伺服器。以下依 native binary 實際程式碼盤點：
   - **Expo push token**（`App.tsx` → `initPushNotifications()`，僅 native，Web 跳過）：`registerForPushNotifications()` 向 Expo Push Service 取得 token → `uploadDeviceToken()` POST `/api/push/register` → 寫入 `data/push-tokens.json`（GitHub repo `main` branch）。持久裝置識別碼（Device ID），用於監看清單價格提醒推播。
   - **Watchlist**：目前僅 Zustand 本機儲存（`src/stores/watchlistStore.ts`，persist to localStorage/AsyncStorage），App binary **沒有**呼叫 `/api/push/watchlist`。商店問卷不需申報 server-side `data/push-watchlist.json`（該檔案由外部腳本/管理機制維護，非 App binary 觸發）。
-  - **相機 / 相簿**：native 僅本機 OCR 處理，**不上傳影像**到任何伺服器。相機拍攝的照片也不會寫入系統相簿（僅在記憶體中暫存用於 OCR）。**商店的「collection / 收集」指資料離開裝置（off-device transmission）**——manifest 權限宣告不代表收集。Native binary 完全不傳送影像 off-device，Photos/Videos / User Content 在兩平台問卷的 collection 一律答 No。
+  - **相機 / 相簿**：native 僅本機 OCR 處理，**不上傳影像**到任何伺服器。**商店的「collection / 收集」指資料離開裝置（off-device transmission）**——manifest 權限宣告不代表收集。Native binary 完全不傳送影像 off-device，Photos/Videos / User Content 在兩平台問卷的 collection 一律答 No。
+  - **⚠️ 相機拍攝的照片**：`takePictureAsync()`（`ScanScreen.tsx:271`）未指定 `pictureRef` 時會寫入 app-local cache 目錄（`FileSystem.cacheDirectory`），並非僅在記憶體中。App 不會主動清除這些快取檔案，但系統可能在空間不足時回收；OCR 處理完成後 `capturedPhotoUri` 仍指向該 cache 路徑。不要在問卷或隱私文案中承諾 App 不執行的自動刪除。
   - **刪除現狀**：後端**沒有** unregister/delete endpoint。App 移除或關閉通知權限不會刪除 GitHub 中的 token。推播 token 持久保存於 GitHub repo，直至營運方人工刪除。Google deletion request 不可答 Yes（無實作機制），應填 No 或提供 contact email 讓使用者聯絡請求手動刪除。
 
 ### 相機 / 麥克風 / 推播 / 相簿權限用途
 
 - Blocker：商店審查認為權限用途不清楚，或申報與實際不符。
 - 處理：
-  - 相機：描述為「掃描卡牌文字 / 圖像以搜尋卡牌資訊」，不要寫成官方驗證或官方資料服務。**⚠️ Web 版會上傳影像到後端/AI，但 native binary（iOS/Android）僅本機 OCR，不上傳影像**——商店問卷只填 native 行為。
+  - 相機：描述為「掃描卡牌文字 / 圖像以搜尋卡牌資訊」，不要寫成官方驗證或官方資料服務。**⚠️ Web 版會上傳影像到後端/AI，但 native binary（iOS/Android）僅本機 OCR，不上傳影像**——商店問卷只填 native 行為。拍攝的照片寫入 app-local cache（`takePictureAsync` without `pictureRef`），App 不主動清除。
   - 麥克風：若不錄音就依 [0.2](#02-權限與隱私盤點) 關閉 `expo-camera` 的麥克風並移除 `RECORD_AUDIO`；否則需說明錄音用途。
   - 推播：`expo-notifications` 目前實際使用中（價格提醒/watchlist 功能）。App 啟動時（僅 native）取得 Expo push token，上傳後端保存於 `data/push-tokens.json`（無帳號機制）。發送推播時，token 與通知內容傳輸至 Expo Push API（`exp.host`）發送。Watchlist 目前僅 Zustand 本機儲存，App binary 未呼叫 `/api/push/watchlist`；外部 server-side `data/push-watchlist.json` 不是 App binary 產生的資料。商店問卷僅申報實際 App binary 的行為（Identifiers / Device ID）。**若無推播功能，建議移除 `expo-notifications` plugin 並從此處移除說明。**
   - 相簿：說明僅用於使用者主動挑選卡牌圖片做辨識。**Native binary 僅本機處理圖片，不上傳到任何伺服器。**
@@ -512,7 +513,8 @@ NSPhotoLibraryUsageDescription = 允許 HoloHunter 存取相簿以選取卡牌�
 - Microphone：若已關閉 → No；若仍保留權限 → 需按實際用途填寫。
 
 - User Content（Photos / Videos）→ No（Not Collected）
-  - expo-image-picker 可從相簿選圖進行本機 OCR 辨識，但 native binary 不上傳影像到任何伺服器。App Store 的 collection 指資料離開裝置（off-device transmission），本機處理不構成 collection。相機拍攝的照片也不寫入系統相簿（僅記憶體暫存用於 OCR）。
+  - expo-image-picker 可從相簿選圖進行本機 OCR 辨識，但 native binary 不上傳影像到任何伺服器。App Store 的 collection 指資料離開裝置（off-device transmission），本機處理不構成 collection。
+  - ⚠️ `takePictureAsync()` 未指定 `pictureRef` 時照片會寫入 app-local cache 目錄，不是僅記憶體暫存。App 不主動清除這些快取，也不承諾自動刪除。
 
 - Push notifications：已涵蓋於上方 Identifiers → Device ID。
 
@@ -526,7 +528,11 @@ Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transpar
 > Play Data safety 的「Data shared with third parties」需依 service-provider 合約例外判斷：若資料傳輸對象僅作為服務提供者（代表開發者處理資料），且合約禁止他用，可答 No。
 
 ```text
-先跑 `npx expo prebuild --clean`，以 merged AndroidManifest.xml 的實際權限清單為準再填問卷。
+先跑 release build 取得真實 merged manifest 權限清單再填問卷：
+cd android && ./gradlew app:processReleaseManifest
+# merged manifest: app/build/intermediates/merged_manifests/release/AndroidManifest.xml
+# manifest-merger report: app/build/outputs/logs/manifest-merger-release-report.txt
+注意 expo-notifications 會帶入 POST_NOTIFICATIONS（Android 13+）與 RECEIVE_BOOT_COMPLETED。
 
 Data collection / sharing：
 
@@ -560,6 +566,7 @@ Permissions（Play Console 會自動列出 merged manifest 權限，需能對應
 - READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE（可能來自 expo-image-picker）→ 以 merged manifest 為準；用於相簿選圖，Android 13+ 多改走系統 photo picker 免權限
 - RECORD_AUDIO → 若未使用，需同時關 expo-camera 與 expo-image-picker 的 microphonePermission 並加 android.blockedPermissions；改完用 merged manifest 確認已消失
 - POST_NOTIFICATIONS（Android 13+，來自 expo-notifications）→ 用於監看清單價格提醒推播。需保留此權限，並在 Data safety 對應申報 Device IDs。
+- RECEIVE_BOOT_COMPLETED（來自 expo-notifications plugin）→ 推播服務 boot 後重啟用，不需特殊處理但 merged manifest 會列出。
 ```
 
 ---
