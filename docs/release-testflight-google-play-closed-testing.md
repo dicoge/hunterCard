@@ -104,19 +104,22 @@
 ### 0.2 權限與隱私盤點
 
 > ⚠️ 送審前必讀。實際權限面比「只有相機」大，隱私問卷（App Privacy / Data safety）漏填會被退件或事後被商店標記不一致。以下依 `app.json` 與相依套件盤點目前的權限來源。
+>
+> **重要：`expo-image-picker` 目前有實際使用**（`src/screens/ScanScreen.tsx` 呼叫 `ImagePicker.launchImageLibraryAsync()`），且它會自動帶入 native 權限，是最容易被低估的來源。以「本機 `npx expo prebuild` 產生的 merged AndroidManifest.xml / Info.plist」為最終真相，下表為預期值。
 
 | 權限 / 能力 | 來源 | iOS | Android | 送審需交代 |
 | --- | --- | --- | --- | --- |
-| 相機 Camera | `expo-camera`、`expo-ocr-kit` plugin | `NSCameraUsageDescription`（plugin 已提供文案） | `android.permission.CAMERA` | 掃描 / OCR 卡牌用途 |
-| 麥克風 Microphone | `expo-camera` 預設帶入；`app.json` Android 已列 `android.permission.RECORD_AUDIO` | `NSMicrophoneUsageDescription` | `android.permission.RECORD_AUDIO` | **App 若不用錄音，建議明確關閉，見下方** |
-| 相簿 / 照片 Photo library | `expo-image-picker` | `NSPhotoLibraryUsageDescription`（挑圖）、可能 `NSPhotoLibraryAddUsageDescription` | 依 SDK 版本可能是 `READ_MEDIA_IMAGES` 或無 | 從相簿選卡牌圖片辨識 |
+| 相機 Camera | `expo-camera`、`expo-ocr-kit`、`expo-image-picker` | `NSCameraUsageDescription` | `android.permission.CAMERA` | 掃描 / OCR 卡牌用途 |
+| 麥克風 Microphone | **`expo-camera` 與 `expo-image-picker` 皆預設帶入**；`app.json` Android 已列 `android.permission.RECORD_AUDIO` | `NSMicrophoneUsageDescription` | `android.permission.RECORD_AUDIO` | **App 若不用錄音，兩個套件都要各自關閉，見下方** |
+| 相簿 / 照片 Photo library | `expo-image-picker`（實際使用中） | `NSPhotoLibraryUsageDescription`、`NSPhotoLibraryAddUsageDescription` | 套件 manifest 預設宣告 `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`（舊 API level），Android 13+ 走系統 photo picker | 從相簿選卡牌圖片辨識；storage 權限需以 merged manifest 確認 |
 | 推播 Push notification | `expo-notifications` plugin | Push Notifications capability（APNs） | `android.permission.POST_NOTIFICATIONS`（Android 13+） | App 是否真的送推播；若未使用建議移除 plugin |
 
 **送審前要做的決定（每一項都要有明確答案）：**
 
-- [ ] **麥克風**：HoloHunter 只掃圖/OCR，通常不需要錄音。若確定不用，`expo-camera` plugin 可設定不含麥克風，並移除 `app.json` android `RECORD_AUDIO`：
+- [ ] **麥克風**：HoloHunter 只掃圖/OCR，通常不需要錄音。麥克風權限**同時來自 `expo-camera` 與 `expo-image-picker`**，只關其中一個沒有用——兩個套件都要各自關閉，且建議在 Android 用 `blockedPermissions` 兜底，確保 merged manifest 不殘留 `RECORD_AUDIO`：
 
-    ```json
+    ```jsonc
+    // app.json → expo.plugins
     [
       "expo-camera",
       {
@@ -124,12 +127,30 @@
         "microphonePermission": false,
         "recordAudioAndroid": false
       }
+    ],
+    [
+      "expo-image-picker",
+      {
+        "photosPermission": "允許 HoloHunter 存取相簿以選取卡牌圖片進行辨識",
+        "cameraPermission": "允許 HoloHunter 存取相機以掃描卡牌",
+        "microphonePermission": false
+      }
     ]
     ```
 
-    保留麥克風權限但問卷不申報，是常見退件原因。要嘛用、要嘛拔掉。
+    ```jsonc
+    // app.json → expo.android，兜底阻擋（以 merged manifest 為準）
+    "android": {
+      "package": "com.dicoge.holohunter",
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"],
+      "permissions": ["android.permission.CAMERA"]
+    }
+    ```
+
+    改完務必以 `npx expo prebuild --clean` 產生的 `android/app/src/main/AndroidManifest.xml` 與 iOS `Info.plist` 實際確認 `RECORD_AUDIO` / `NSMicrophoneUsageDescription` 已消失。保留麥克風權限但問卷不申報，是常見退件原因；要嘛用、要嘛從**所有**來源拔掉。
 - [ ] **推播**：確認 `expo-notifications` 是否真的有用到。若目前沒有推播功能，建議從 `plugins` 移除以縮小權限面與問卷範圍；若保留，App Privacy / Data safety 要如實申報。
-- [ ] **相簿**：`expo-image-picker` 若有用到「從相簿選圖辨識」才保留，並在 iOS 補對應 usage description、在 Data safety 說明圖片只在本機/伺服器辨識後的處理方式。
+- [ ] **相簿**：`expo-image-picker` **目前已在 `ScanScreen.tsx` 實際使用**，屬保留權限。需在 iOS 提供 `NSPhotoLibraryUsageDescription`（用上方 plugin 的 `photosPermission`），並確認 Android storage 權限（`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`）在 merged manifest 的實際結果，於 Data safety 說明圖片僅在本機/伺服器辨識後如何處理。
+- [ ] **以 merged manifest / Info.plist 為最終真相**：改任何權限後跑 `npx expo prebuild --clean`，用產生的原生檔核對，不要只看 `app.json`。
 - [ ] **每個保留的權限**都要能對應到 App 內實際功能，並在下方問卷段落如實填寫。
 
 ---
@@ -457,7 +478,7 @@ NSMicrophoneUsageDescription = HoloHunter 使用相機模組，若不需錄音�
 NSPhotoLibraryUsageDescription = 允許 HoloHunter 存取相簿以選取卡牌圖片進行辨識
 ```
 
-> 正常走 Expo prebuild 時，這些字串由 `expo-camera` / `expo-image-picker` plugin 產生，不需手改；此區塊僅供 eject / 檢查用。
+> 正常走 Expo prebuild 時，這些字串由 `expo-camera` / `expo-image-picker` plugin 產生（`expo-image-picker` 預設也會加 `NSMicrophoneUsageDescription`），不需手改；此區塊僅供 eject / 檢查用。若已依 0.2 關閉麥克風，prebuild 後應確認 `NSMicrophoneUsageDescription` 不再出現於 Info.plist。
 
 ### App Store App Privacy 問卷（依目前權限面的建議答案）
 
@@ -468,8 +489,8 @@ NSPhotoLibraryUsageDescription = 允許 HoloHunter 存取相簿以選取卡牌�
 - Identifiers：若無廣告/追蹤 SDK → No；若有 analytics 需申報
 - Usage Data：若有任何 analytics/crash SDK → Yes 並選對用途
 - Camera：App 使用相機掃描/辨識卡牌 → 於功能說明勾選相機用途
-- Microphone：若已依 0.2 關閉麥克風 → 不申報；若保留 RECORD_AUDIO → 必須申報
-- User Content（Photos）：若使用相簿選圖辨識 → 申報，並說明圖片處理方式（本機/伺服器辨識後是否保存）
+- Microphone：需同時關 expo-camera 與 expo-image-picker 的麥克風；prebuild 後 Info.plist 無 NSMicrophoneUsageDescription 才不申報，否則必須申報
+- User Content（Photos）：expo-image-picker 已在使用（相簿選圖辨識）→ 需申報，並說明圖片處理方式（本機/伺服器辨識後是否保存）
 - Push notifications：expo-notifications 若實際使用 → 申報；未使用建議先移除 plugin
 
 Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transparency 選 No / 不追蹤（若確實無追蹤 SDK）。
@@ -478,16 +499,19 @@ Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transpar
 ### Google Play Data safety 問卷（依目前權限面的建議答案）
 
 ```text
+先跑 `npx expo prebuild --clean`，以 merged AndroidManifest.xml 的實際權限清單為準再填問卷。
+
 Data collection / sharing：
 - 若無帳號、無廣告 SDK、無 analytics → Data collected: 視實際 API 上傳而定，多數情況可宣告不收集個資
 - Location：No（App 不使用定位）
-- Photos/Videos：若使用相簿選圖辨識 → 說明是否上傳伺服器、是否保存
-- Audio：若已移除 RECORD_AUDIO → No；若保留 → 必須說明
+- Photos/Videos：expo-image-picker 已在使用（相簿選圖辨識）→ 需申報，說明圖片是否上傳伺服器辨識、是否保存
+- Audio：若已於 expo-camera 與 expo-image-picker 皆關閉並用 blockedPermissions 兜底、merged manifest 無 RECORD_AUDIO → No；若殘留 → 必須說明
 - Messages / Contacts / Files：No
 
-Permissions（Play Console 會自動列出 manifest 權限，需能對應功能）：
+Permissions（Play Console 會自動列出 merged manifest 權限，需能對應功能）：
 - CAMERA → 掃描/辨識卡牌
-- RECORD_AUDIO → 若未使用請於 app.json 移除，避免 Play 要求說明
+- READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE（可能來自 expo-image-picker）→ 以 merged manifest 為準；用於相簿選圖，Android 13+ 多改走系統 photo picker 免權限
+- RECORD_AUDIO → 若未使用，需同時關 expo-camera 與 expo-image-picker 的 microphonePermission 並加 android.blockedPermissions；改完用 merged manifest 確認已消失
 - POST_NOTIFICATIONS（Android 13+，來自 expo-notifications）→ 若無推播功能建議移除
 ```
 
