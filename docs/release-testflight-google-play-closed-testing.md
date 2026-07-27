@@ -148,7 +148,7 @@
     ```
 
     改完務必以 `npx expo prebuild --clean` 產生的 `android/app/src/main/AndroidManifest.xml` 與 iOS `Info.plist` 實際確認 `RECORD_AUDIO` / `NSMicrophoneUsageDescription` 已消失。保留麥克風權限但問卷不申報，是常見退件原因；要嘛用、要嘛從**所有**來源拔掉。
-- [ ] **推播**：確認 `expo-notifications` 是否真的有用到。若目前沒有推播功能，建議從 `plugins` 移除以縮小權限面與問卷範圍；若保留，App Privacy / Data safety 要如實申報。
+- [ ] **推播**：確認 `expo-notifications` 目前還在用（`App.tsx` 啟動時註冊 push token，用於監看清單價格提醒）。若保留，App Privacy / Data safety 的 Identifiers / Device IDs 要如實申報 push token 的收集、用途、第三方傳輸（Expo Push Service）與保留政策。若已無推播功能，建議從 `plugins` 移除以縮小權限面與問卷範圍。
 - [ ] **相簿**：`expo-image-picker` **目前已在 `ScanScreen.tsx` 實際使用**，屬保留權限。需在 iOS 提供 `NSPhotoLibraryUsageDescription`（用上方 plugin 的 `photosPermission`），並確認 Android storage 權限（`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`）在 merged manifest 的實際結果，於 Data safety 說明圖片僅在本機/伺服器辨識後如何處理。
 - [ ] **以 merged manifest / Info.plist 為最終真相**：改任何權限後跑 `npx expo prebuild --clean`，用產生的原生檔核對，不要只看 `app.json`。
 - [ ] **每個保留的權限**都要能對應到 App 內實際功能，並在下方問卷段落如實填寫。
@@ -396,16 +396,20 @@ npx eas submit --platform android --profile production --latest
 ### Privacy questionnaire / Data safety
 
 - Blocker：App Store Connect（App Privacy）或 Play Console（Data safety）問卷與實際權限不一致而被退件或事後標記。
-- 處理：先照 [0.2 權限與隱私盤點](#02-權限與隱私盤點) 盤點。HoloHunter 的權限面**不只相機**：`app.json` 目前含 Android `RECORD_AUDIO`（麥克風）、`expo-notifications`（推播）、`expo-image-picker`（相簿）。每一個保留的權限都必須在問卷如實申報；不用的（尤其麥克風、推播）建議先移除再送審。保留權限卻不申報，是最常見的退件與下架風險。
+- 處理：先照 [0.2 權限與隱私盤點](#02-權限與隱私盤點) 盤點。HoloHunter 的權限面**不只相機**：`app.json` 目前含 Android `RECORD_AUDIO`（麥克風）、`expo-notifications`（推播）、`expo-image-picker`（相簿）。每一個保留的權限都必須在問卷如實申報；不用的（尤其麥克風）建議先移除再送審。保留權限卻不申報，是最常見的退件與下架風險。
+- **⚠️ 權限盤點 ≠ 資料收集盤點。**商店問卷不僅問「你用什麼權限」，更問「你收集什麼資料、傳去哪裡、是否與第三方分享」。
+  - HoloHunter 實際會**上傳卡牌圖片到後端**（`ScanScreen.tsx` → `POST /api/recognize-card`），後端再**轉送影像到 OpenRouter Gemini Vision**（`api/recognize-card.ts` line 142-163，model `google/gemini-3.1-flash-image`）進行 AI 辨識。這必須在 App Privacy（Photos/Videos）與 Data safety（Photos and Videos → Data shared with third parties）明確揭露。
+  - HoloHunter 實際會取得 **Expo push token**（`App.tsx` → `initPushNotifications()`），上傳到後端儲存於 `data/push-tokens.json`，用於監看清單價格提醒。這必須在 Identifiers / Device IDs 申報。
+  - 目前無帳號機制 → 上述兩項資料皆不連結使用者身分（Not linked to user identity）。圖片僅於辨識請求暫存，不持久保存。push token 保存至 app 移除或使用者關閉通知權限為止。
 
 ### 相機 / 麥克風 / 推播 / 相簿權限用途
 
 - Blocker：商店審查認為權限用途不清楚，或申報與實際不符。
 - 處理：
-  - 相機：描述為「掃描卡牌文字 / 圖像以搜尋卡牌資訊」，不要寫成官方驗證或官方資料服務。
+  - 相機：描述為「掃描卡牌文字 / 圖像以搜尋卡牌資訊」，不要寫成官方驗證或官方資料服務。**注意：相機拍攝的圖片會透過網路傳送給後端與協力廠商 AI，需在隱私問卷中如實揭露（見上方 Privacy questionnaire）。**
   - 麥克風：若不錄音就依 [0.2](#02-權限與隱私盤點) 關閉 `expo-camera` 的麥克風並移除 `RECORD_AUDIO`；否則需說明錄音用途。
-  - 推播：若未實際使用，移除 `expo-notifications`；若使用，說明推播內容（如價格提醒）。
-  - 相簿：說明僅用於使用者主動挑選卡牌圖片做辨識。
+  - 推播：`expo-notifications` 目前實際使用中（價格提醒/watchlist 功能）。取得 Expo push token 後上傳後端保存。需在 App Privacy / Data safety 的 Identifiers（Device ID）申報，並說明 token 用途與保留政策。**若無推播功能，建議移除 `expo-notifications` plugin 並從此處移除說明。**
+  - 相簿：說明僅用於使用者主動挑選卡牌圖片做辨識。**注意：相簿選取的圖片同樣會上傳後端與第三方 AI，需如實揭露（見上方 Privacy questionnaire）。**
 
 ---
 
@@ -485,13 +489,28 @@ NSPhotoLibraryUsageDescription = 允許 HoloHunter 存取相簿以選取卡牌�
 ```text
 先確認以下每一項是否仍成立，再照實勾選：
 
+Data Collection：
 - Contact Info：若無帳號/註冊 → No
-- Identifiers：若無廣告/追蹤 SDK → No；若有 analytics 需申報
+- Identifiers：
+  - Expo push token（Device ID）→ Yes 需申報，用途為「App Functionality / push notification」
+  - 若無廣告/追蹤 SDK → 無其他 identifiers
 - Usage Data：若有任何 analytics/crash SDK → Yes 並選對用途
 - Camera：App 使用相機掃描/辨識卡牌 → 於功能說明勾選相機用途
 - Microphone：需同時關 expo-camera 與 expo-image-picker 的麥克風；prebuild 後 Info.plist 無 NSMicrophoneUsageDescription 才不申報，否則必須申報
-- User Content（Photos）：expo-image-picker 已在使用（相簿選圖辨識）→ 需申報，並說明圖片處理方式（本機/伺服器辨識後是否保存）
-- Push notifications：expo-notifications 若實際使用 → 申報；未使用建議先移除 plugin
+- User Content（Photos / Videos）：
+  - expo-image-picker 使用相簿選圖進行辨識，相機拍攝的卡牌圖片亦會寫入相簿。
+  - ⚠️ 此 App 會將拍攝或選取的卡牌圖片「上傳到後端伺服器」進行辨識，後端再將圖片轉送「第三方 AI 服務（OpenRouter / Gemini Vision）」進行影像分析。
+  - 需在問卷明確勾選「User Content → Photos or Videos」為收集項目，並於 App Privacy 詳細說明中交代：
+    * 收集用途：卡牌辨識（Card recognition）
+    * 是否連結使用者身分：目前無帳號機制 → Not linked to user identity
+    * 是否用於追蹤：No（僅用於辨識，不做跨 App/網站追蹤）
+    * 資料保留：圖片僅於辨識請求期間暫存，完成後不保存於伺服器。第三方 AI 服務的資料處理請見其各自隱私條款。
+- Push notifications：
+  - expo-notifications 實際使用中（App.tsx 啟動時向 Expo Push Service 取得 push token，並上傳到後端儲存於 GitHub repo 的 data/push-tokens.json）。
+  - 需申報「Identifiers → Device ID」。
+  - 用途：App 內監看清單（watchlist）價格異動 / 入手提醒。
+  - 儲存：push token 以「Expo push token 字串 + 平台 + 上傳時間」格式保存在後端。使用者未提供帳號，token 無法反向連結個人身分。
+  - 刪除：目前無帳號機制，token 無法由終端使用者手動撤銷。後續若有帳號系統，應於帳號刪除時同步刪除對應 token。
 
 Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transparency 選 No / 不追蹤（若確實無追蹤 SDK）。
 ```
@@ -502,17 +521,32 @@ Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transpar
 先跑 `npx expo prebuild --clean`，以 merged AndroidManifest.xml 的實際權限清單為準再填問卷。
 
 Data collection / sharing：
-- 若無帳號、無廣告 SDK、無 analytics → Data collected: 視實際 API 上傳而定，多數情況可宣告不收集個資
+- ⚠️ 此 App 明顯會收集並傳輸兩種資料，不可宣告「不收集個資」：
+  1. 卡牌圖片（從相機/相簿取得）→ 上傳後端伺服器 → 再轉送 OpenRouter Gemini Vision（第三方 AI）做影像辨識。
+  2. Expo push token → 取得後上傳後端並保存於 data/push-tokens.json（GitHub repo），用於監看清單價格提醒。
 - Location：No（App 不使用定位）
-- Photos/Videos：expo-image-picker 已在使用（相簿選圖辨識）→ 需申報，說明圖片是否上傳伺服器辨識、是否保存
-- Audio：若已於 expo-camera 與 expo-image-picker 皆關閉並用 blockedPermissions 兜底、merged manifest 無 RECORD_AUDIO → No；若殘留 → 必須說明
+- Personal info：目前無帳號/註冊機制，不收集姓名、email、電話等 → No。但 push token 在 Play Data safety 框架下屬「Device or other IDs」，需申報。
+- Financial info：No
+- Health and fitness：No
 - Messages / Contacts / Files：No
+- Photos/Videos：
+  - ⚠️ 相機拍攝或相簿選取之卡牌圖片會上傳後端，並轉送 OpenRouter Gemini Vision（協力廠商 AI）進行卡牌辨識。
+  - Data type：Photos and Videos → 需勾選 Collected
+  - Purpose：App functionality（card recognition）
+  - Data shared with third parties：必須勾 Yes → 內容為「影像資料傳送至 OpenRouter API（Google Gemini Vision）進行卡牌辨識」
+  - Ephemeral processing：圖片僅於辨識請求中傳輸處理，辨識完成後不持久保存於伺服器。
+- Audio：若已於 expo-camera 與 expo-image-picker 皆關閉並用 blockedPermissions 兜底、merged manifest 無 RECORD_AUDIO → No；若殘留 → 必須說明
+- Device or other IDs：
+  - Expo push token（ExpoPushToken[...]）→ 需勾選 Collected
+  - Purpose：App functionality（push notifications / 監看清單價格提醒）
+  - Data shared with third parties：推播走 Expo Push Service，token 上傳後端但不與第三方分享 token 本身（推播通知內容透過 Expo 送達）。
+  - Deletion：目前無帳號機制，token 無法由使用者手動撤銷。未來若有帳號系統，應提供帳號刪除時一併清除 token 的機制。現階段可在 Data safety 中說明「使用者可透過 app 內關閉通知權限停止推播」。
 
 Permissions（Play Console 會自動列出 merged manifest 權限，需能對應功能）：
 - CAMERA → 掃描/辨識卡牌
 - READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE（可能來自 expo-image-picker）→ 以 merged manifest 為準；用於相簿選圖，Android 13+ 多改走系統 photo picker 免權限
 - RECORD_AUDIO → 若未使用，需同時關 expo-camera 與 expo-image-picker 的 microphonePermission 並加 android.blockedPermissions；改完用 merged manifest 確認已消失
-- POST_NOTIFICATIONS（Android 13+，來自 expo-notifications）→ 若無推播功能建議移除
+- POST_NOTIFICATIONS（Android 13+，來自 expo-notifications）→ 用於監看清單價格提醒推播。需保留此權限，並在 Data safety 對應申報 Device IDs。
 ```
 
 ---
