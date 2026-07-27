@@ -7,6 +7,14 @@
       "destination": "/api/$1"
     },
     {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/support",
+      "destination": "/support.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
