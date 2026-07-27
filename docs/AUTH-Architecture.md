@@ -184,8 +184,8 @@ CREATE TABLE entitlements (
 | 資料 | 規則 |
 | --- | --- |
 | scan_usage | **每 period 取 capped sum**：對每個 `period`，target.scan_count = min(target.scan_count + source.scan_count, entitlement.monthly_limit)。source 的 `scan_usage` 全部寫入 audit_log 後設 `scan_count = 0`。capped 部分記 audit_log `merge_quota_capped` 含原始值。全部在 merge transaction 內以 `FOR UPDATE` 執行，防止並發掃描/merge 導致超額。 |
-| subscriptions | **原子轉移所有 active rows**：`UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`。轉移後若 target 有多個 active subscription → 保留 `expires_at` 最晚者，其餘 `cancelled_at = now()`、`status = 'cancelled'`。若出現兩個不同的 pro plan 同時 active → 轉 `requires_support`。全部在 merge transaction 內。 |
-| entitlements | **單一 authoritative entitlement**：先 `UPDATE entitlements SET user_id = target.id WHERE user_id = source.id`（若 target 已有則 ON CONFLICT (user_id) DO NOTHING）。若 source tier 更高（free→pro）且 target 無 pro → `INSERT ... ON CONFLICT DO UPDATE SET tier = 'pro', daily_limit = ..., monthly_limit = ...`。保留 target 既有 entitlement；若雙方同為 pro → 轉 `requires_support`。全部在 merge transaction 內。 |
+| subscriptions | **原子轉移所有 active rows**：`UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`。轉移後若 target 有多個 active subscription → 保留單一 survivor：依 `expires_at DESC NULLS FIRST`（永遠有效的 plan 優先）、`started_at DESC`（到期相同則保留最新訂購），其餘 `cancelled_at = now()`、`status = 'cancelled'`。若 survivor 為 pro 且另有 active pro → 轉 `requires_support`。全部在 merge transaction 內。 |
+| entitlements | **upsert-then-delete**（entitlements PK = user_id）：先 `INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit) SELECT <target.id>, tier, daily_limit, monthly_limit FROM entitlements WHERE user_id = <source.id> ON CONFLICT (user_id) DO UPDATE SET tier = CASE WHEN EXCLUDED.tier = 'pro' THEN 'pro' ELSE entitlements.tier END, daily_limit = CASE WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.daily_limit ELSE entitlements.daily_limit END, monthly_limit = CASE WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.monthly_limit ELSE entitlements.monthly_limit END, updated_at = now()`。接著 `DELETE FROM entitlements WHERE user_id = <source.id>`。若 source 與 target 同為 pro → 保留 target（ON CONFLICT 中 CASE 不走），轉 `requires_support` 供人工決策。 |
 
 #### 3.5.2 Purge 規則
 
@@ -258,12 +258,15 @@ merge 過程中所有資料移轉（identities / favorites / watchlist / setting
 
 **交易開鎖順序**（避免 deadlock）：
 1. `SELECT ... FROM account_merge_requests WHERE id = <merge_request_id> FOR UPDATE`
+   → 鎖後立即 recheck：若 status NOT IN ('pending','verified') → 409 MERGE_ALREADY_RESOLVED
 2. `SELECT ... FROM users WHERE id IN (<source>, <target>) ORDER BY id FOR UPDATE`
+   → recheck：source 與 target 的 status 仍為 'active'；任一非 active → 409
 3. `SELECT ... FROM auth_identities WHERE user_id IN (<source>, <target>) FOR UPDATE`
+   → 防止其他 writer 在 merge 過程中對這些 identity 做 unlink/relink
 
-具體步驟與審計規格：
+> **Mandatory user-lock protocol**：任何會改變 user data ownership 的操作（login/new-identity creation、unlink、delete、merge）都必須先鎖住對應 users row (`FOR UPDATE`)。merge transaction 已鎖 source + target + identities，故 merge 過程中不會有其他 writer 把資料留在 source 上。
 
-**步驟 A — 驗證雙方 identity**
+**步驟 A — 驗證 merge_request + 雙方 identity**
 1. 查詢 `merge_token` 指向的 source / target user id，確認 `merge_token` 未過期且未使用。
 2. 驗證請求中附帶的雙方 provider ID token（§4 步驟 2），確保呼叫者同時掌握兩個帳號；任一驗證失敗 → 回 `401`，終止。
 3. 確認任一 user 狀態非 `disabled` / `pending_deletion`；任一為此類 → 轉 `requires_support`，終止。
@@ -281,8 +284,8 @@ merge 過程中所有資料移轉（identities / favorites / watchlist / setting
 - user_settings → target 保留，source 捨棄
 - push_tokens → `UPDATE push_tokens SET user_id = target.id WHERE user_id = source.id`
 - scan_usage → 每 period 計算 capped sum（`min(source + target, entitlement.monthly_limit)`），記 audit_log `merge_quota_capped`
-- subscriptions → `UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`；轉移後去重
-- entitlements → `UPDATE entitlements SET user_id = target.id WHERE user_id = source.id`；ON CONFLICT resolution
+- subscriptions → `UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`；轉移後取 survivor（`expires_at DESC NULLS FIRST`, then `started_at DESC`），其餘 cancel
+- entitlements → `INSERT ... SELECT ... FROM entitlements WHERE user_id = source.id ON CONFLICT (user_id) DO UPDATE`（upsert），then `DELETE FROM entitlements WHERE user_id = source.id`
 
 **步驟 D — source user 標記**
 - `UPDATE users SET status = 'pending_deletion', deleted_at = now() WHERE id = <source.id>`。
@@ -306,7 +309,8 @@ merge 完成後寫入以下審計記錄：
 | `merge_entitlement_transfer` | `{merge_request_id, source_tier, target_tier_before, target_tier_after}` |
 | `merge_completed` | `{merge_request_id, source_user_id, target_user_id, status:'completed'}` |
 
-- `account_merge_requests.status` 更新為 `'completed'`，`resolved_at = now()`，`resolver = 'auto'`。
+- `UPDATE account_merge_requests SET status = 'completed', resolved_at = now(), resolver = 'auto' WHERE id = <merge_request_id> AND status = 'pending' RETURNING id`。
+  → 若 RETURNING 回 0 rows → merge request 已被另一 writer 完成/取消，rollback 不回寫 audit_log。
 - 日後追溯單一 user 的合併歷史，可對 audit_log 篩 `user_id = source_user_id OR metadata->>'target' = <target_user_id>` 得知完整合併鏈。
 
 ---
@@ -336,24 +340,34 @@ Client 取得 provider ID token
 ```
 已登入（access token）→ POST /api/auth/link { provider, id_token }
   ├─ 驗 token 取 subject
-  ├─ 在一個 DB transaction 內：
-  │     ├─ 驗證目前 user (access token 中的 sub) status = 'active'
-  │     │     → 若 current user 非 active → 403 ACCOUNT_DISABLED
-  │     ├─ 查 auth_identities WHERE provider=<provider> AND provider_subject=<sub> AND revoked_at IS NULL
-  │     │     ├─ 未命中 → INSERT auth_identities (user_id=<current>, provider, subject, ...)
-  │     │     │     → 成功：200 ok。若因 uq_user_provider_active 被同一 provider 另一
-  │     │     │        並發 request 插入 → unique violation，catch 後 re-read：
-  │     │     │           • active row 已屬 current user → 200 冪等（同 provider 已有 active identity）
-  │     │     │           • active row 不存在（共 user、不同 subject）→ retry INSERT
-  │     │     ├─ 已屬「目前 user」→ 200 幂等
-  │     │     └─ 屬「別的 user」→ 409 IDENTITY_ALREADY_LINKED + merge_token（見 §4）
+  ├─ 在一個 DB transaction 內（鎖定順序：users FOR UPDATE → auth_identities INSERT）：
+  │     ├─ SELECT id, status FROM users WHERE id = <current> FOR UPDATE
+  │     │     → 若 status != 'active' → 403 ACCOUNT_DISABLED
+  │     ├─ INSERT INTO auth_identities (user_id, provider, provider_subject, ...)
+  │     │     VALUES (<current>, <provider>, <sub>, ...)
+  │     │     ON CONFLICT (provider, provider_subject) WHERE revoked_at IS NULL DO NOTHING
+  │     │     ON CONFLICT (user_id, provider) WHERE revoked_at IS NULL DO NOTHING
+  │     │     →
+  │     │     • INSERT 成功（row inserted）→ 200 ok
+  │     │     • INSERT 返回 0 rows（兩項 ON CONFLICT 任一命中）→ re-SELECT：
+  │     │         查 auth_identities WHERE provider=<provider> AND provider_subject=<sub>
+  │     │           AND revoked_at IS NULL
+  │     │         ├─ 命中，user_id = <current> → 200 冪等（idempotent，同 identity 已存在）
+  │     │         ├─ 命中，user_id != <current> → 再查該 user_id 的 users.status：
+  │     │         │     • status = 'active' → 409 IDENTITY_ALREADY_LINKED + merge_token
+  │     │         │     • status != 'active' → 該 owner 已非 active，回自身查詢階段繼續
+  │     │         │       → revoke 該 stale row 後 retry INSERT（見 relink）
+  │     │         └─ 未命中（代表 uq_user_provider_active 命中但 uq_provider_subject_active 未命中：
+  │     │               current user 已有同 provider 但不同 subject）→ 200 冪等
+  │     │               （同一 user 同 provider 已有 active identity，即 current provider 已綁定）
   │     └─ COMMIT
-  └─ relink：unlink 後同一 (provider, subject) 重新綁定時，已 revoke 的旧 row 因
-       uq_provider_subject_active WHERE revoked_at IS NULL 不佔唯一鍵，新 INSERT 通暢。
-       在 transaction 內先 INSERT new → 若因 (user_id,provider) active conflict，則 UNIQUE violation 後
-       用 re-read 確認 new user 已存在相同 provider 即 idempotent success。
+  └─ relink：unlink 後 (provider, subject) 的 revoked row 不佔 uq_provider_subject_active，
+       新 INSERT 不會觸發 ON CONFLICT。若 current user 先前已 revoke 同 provider 但
+       uq_user_provider_active 已釋放（revoked_at IS NOT NULL），新 INSERT 也暢通。
 ```
-> 所有查詢以 `revoked_at IS NULL` 過濾。link 必須在同一 transaction 內完成 active user status check → identity lookup → INSERT/conflict-catch→re-read→COMMIT，避免 TOCTOU。relink 永遠建立新 active row，不復活舊 row。
+> - 所有 conflict resolution 使用 PostgreSQL `INSERT ... ON CONFLICT (...) WHERE ... DO NOTHING`，返回 row-count 後再 `re-SELECT` 區分三種結果：idempotent success / IDENTITY_ALREADY_LINKED / same-provider 已綁定。絕不 retry 一個不可能成功的 INSERT（如 (provider, sub) 已被 active other user 佔據）。
+> - link 前先 `SELECT ... FOR UPDATE` 鎖 current user，保證與 delete/merge 同樣的鎖定順序，防止 status 在 link 過程中改變。
+> - IDENTITY_ALREADY_LINKED 生成 merge_token 前，先確認 collision owner 的 `users.status = 'active'`；若 owner 已非 active → revoke 其 identity 後讓 current user 重新 claim，不觸發 merge。
 
 ### 5.3 解除綁定（unlink）
 ```
