@@ -315,9 +315,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
               ) : (
                 <TouchableOpacity style={styles.premiumUpgradeBtn} onPress={() => {
                   toggleSubscription();
-                  Alert.alert('解鎖成功', '已成功模擬升級至付費訂閱版會員，已解除所有 Premium 限制！');
+                  Alert.alert('已模擬解鎖（測試）', '此為測試/示範模式，未串接真實付款。已模擬切換至訂閱版以解除 Premium 限制。');
                 }}>
-                  <Text style={styles.premiumUpgradeBtnText}>⚡ 立即解鎖 Premium 預測功能</Text>
+                  <Text style={styles.premiumUpgradeBtnText}>⚡ 模擬解鎖 Premium 預測（測試）</Text>
                 </TouchableOpacity>
               )}
             </View>

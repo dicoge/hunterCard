@@ -86,7 +86,10 @@ sequenceDiagram
 * **交易資訊**：當您購買訂閱時，我們僅收集交易收據代碼 (Transaction ID) 用於啟用訂閱。您的信用卡號、帳單地址等敏感財務資訊均由 Apple Pay、Google Pay、Stripe 處理，本 App 絕不經手。
 
 ### B. 帳號刪除之清理政策 (Data Purge)
-當使用者點擊「刪除帳號」時，為了符合 GDPR 與商店資料安全規範，後端執行以下流程：
+
+> **實作狀態（重要）**：以下為**正式上架、串接後端與金流後**的規劃清理流程，尚未實作。**目前版本**僅在 App 內清除本機 Session 與快取；雲端資料、配額與訂閱關聯的刪除須由使用者以電子郵件申請、由人工處理（與 `public/privacy.html`、`public/support.html` 的說明一致）。
+
+規劃中（正式版目標）：當使用者點擊「刪除帳號」時，為了符合 GDPR 與商店資料安全規範，後端將執行以下流程：
 1. **關聯性抹除**：刪除 `users` 表，透過級聯刪除 (Cascade Delete) 刪除其 `linked_auth_providers` 紀錄。
 2. **使用量清除**：刪除 Redis / 關係資料庫中的 `user_quota:{userId}` 掃描次數紀錄。
 3. **金流交易匿名化**：將該使用者的交易紀錄（如 Transaction ID / Stripe Customer ID）與其 `internal_user_id` 的關聯切斷，並將訂閱對應狀態改為「已註銷」，防止交易紀錄反向追蹤至個人，同時保留財稅申報所需的去識別化交易數據。

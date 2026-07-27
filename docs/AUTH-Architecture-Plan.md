@@ -120,7 +120,10 @@ flowchart TD
   - **如果數量 > 1**：允許刪除該 Provider 連結。
 
 ### B. 帳號刪除 (Account Deletion)
-符合 Apple App Store 與 Google Play 的合規要求，當使用者在 App 內執行「刪除帳號」：
+
+> **實作狀態（重要）**：以下為**正式上架後**規劃的後端刪除流程，尚未實作。**目前版本**中，App 內的「刪除帳號」僅清除本機 Session 與快取並登出；雲端資料刪除須由使用者以電子郵件申請、由人工處理（與 `public/privacy.html`、`public/support.html` 的說明一致）。下方流程為串接真實後端後的目標行為。
+
+規劃中（正式版目標）：符合 Apple App Store 與 Google Play 的合規要求，當使用者在 App 內執行「刪除帳號」，後端將：
 1. 刪除該使用者的 `users` 記錄（由於外鍵設為 `ON DELETE CASCADE`，會自動刪除所有關聯的 `linked_auth_providers`）。
 2. 同步刪除該使用者在雲端資料庫中的所有 `favorites`、`watchlists`、`settings` 及推播 `push_tokens`。
 
