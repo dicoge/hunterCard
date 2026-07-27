@@ -149,27 +149,49 @@ export default function SettingsScreen() {
     );
   };
 
+  const SUPPORT_EMAIL = 'dicoge.chen@gmail.com';
+
+  const handleRequestCloudDeletion = () => {
+    const userId = session?.internalUserId ?? '';
+    const subject = encodeURIComponent('HoloHunter Account Deletion Request');
+    const body = encodeURIComponent(
+      `Please delete my HoloHunter account and cloud data.\nInternal User ID: ${userId}\n`
+    );
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`).catch(() => {
+      Alert.alert(
+        preferredLanguage === 'zh' ? '無法開啟郵件' : 'Could not open mail app',
+        preferredLanguage === 'zh'
+          ? `請手動寄信至 ${SUPPORT_EMAIL} 並附上您的 Internal User ID。`
+          : `Please email ${SUPPORT_EMAIL} manually with your Internal User ID.`
+      );
+    });
+  };
+
   const handleDeleteAccount = () => {
     Alert.alert(
-      preferredLanguage === 'zh' ? '⚠ 確定送出刪除申請？' : '⚠ Submit Deletion Request?',
-      preferredLanguage === 'zh' 
-        ? '此動作將送出刪除申請，系統將排程於 2-3 個工作天內永久刪除您的雲端資料、配額與訂閱關聯。確認後本機 Session 將立即清空並登出。' 
-        : 'This will submit a deletion request. The system will permanently delete your cloud data, scan quotas, and subscriptions in 2-3 business days. Your local session will be cleared immediately.',
+      preferredLanguage === 'zh' ? '刪除帳號與資料' : 'Delete Account & Data',
+      preferredLanguage === 'zh'
+        ? '「清除本機資料並登出」會立即清除此裝置上的登入 Session 與快取。\n\n若要刪除儲存於雲端的資料（收藏、掃描配額、訂閱關聯），目前需透過支援信箱提交刪除申請，我們會以人工方式處理。'
+        : '"Clear local data & sign out" immediately removes your login session and cache on this device.\n\nTo delete cloud-stored data (collections, scan quota, subscription links), you must currently submit a request via our support email, which we process manually.',
       [
         {
           text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
           style: 'cancel',
         },
         {
-          text: preferredLanguage === 'zh' ? '確認送出' : 'Confirm Submit',
+          text: preferredLanguage === 'zh' ? '寄信申請刪除雲端資料' : 'Email deletion request',
+          onPress: handleRequestCloudDeletion,
+        },
+        {
+          text: preferredLanguage === 'zh' ? '清除本機資料並登出' : 'Clear local data & sign out',
           style: 'destructive',
           onPress: () => {
             deleteAccount();
             Alert.alert(
-              preferredLanguage === 'zh' ? '已送出刪除申請' : 'Request Submitted',
-              preferredLanguage === 'zh' 
-                ? '我們已收到您的刪除申請，將於 2-3 個工作天內完成雲端資料清除。您的本機 Session 已成功登出並清空。' 
-                : 'We have received your deletion request and will purge your cloud data in 2-3 business days. Your local session has been logged out.'
+              preferredLanguage === 'zh' ? '已清除本機資料' : 'Local data cleared',
+              preferredLanguage === 'zh'
+                ? `您的本機 Session 與快取已清除並登出。若尚未申請刪除雲端資料，請寄信至 ${SUPPORT_EMAIL}。`
+                : `Your local session and cache have been cleared and you have been signed out. If you have not yet requested cloud data deletion, please email ${SUPPORT_EMAIL}.`
             );
           },
         },

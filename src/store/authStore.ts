@@ -214,7 +214,8 @@ export const useAuthStore = create<AuthState>()(
       },
 
       deleteAccount: () => {
-        // Clear watchlist on account deletion
+        // Local-only: clears this device's session and cached watchlist.
+        // Cloud data deletion is handled via a manual support-email request (see SettingsScreen).
         try {
           useWatchlistStore.setState({ items: [] });
         } catch (e) {
