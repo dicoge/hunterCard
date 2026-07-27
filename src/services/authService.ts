@@ -30,6 +30,16 @@ const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
 
 const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
+// Sign in with Apple is disabled in this web PoC. The client cannot verify the
+// Apple ID token (signature / issuer / audience / expiry / nonce) on its own, so
+// trusting the decoded payload as an identity source would be insecure. Re-enable
+// only once token verification runs server-side. Web Apple login is optional per
+// the product spec (Google is the required web provider).
+export const APPLE_LOGIN_ENABLED = false;
+
+const APPLE_DISABLED_MESSAGE =
+  'Apple 登入尚未開放（需後端驗證 Apple ID token）。請改用 Google 登入。';
+
 const googleScopes = ['openid', 'profile', 'email'];
 const appleScopes = ['name', 'email'];
 
@@ -55,6 +65,10 @@ async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUser> {
   };
 }
 
+// NOTE: this only base64-decodes the JWT payload — it does NOT verify the
+// signature, issuer, audience, expiry, or nonce. It must never be used as a
+// trusted identity source from the client. Kept for reference for the future
+// server-verified Apple flow; gated behind APPLE_LOGIN_ENABLED.
 function parseAppleIdToken(idToken: string): AppleUser {
   const payload = JSON.parse(atob(idToken.split('.')[1]));
   return {
@@ -150,6 +164,9 @@ function saveLocalUsers(users: HoloUser[]): void {
 }
 
 export async function signInWithProvider(provider: AuthProvider): Promise<SignInResult> {
+  if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
+    throw new Error(APPLE_DISABLED_MESSAGE);
+  }
   const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
   if (!clientId) {
     throw new Error(
@@ -206,6 +223,9 @@ export async function linkProvider(
   currentUser: HoloUser,
   provider: AuthProvider,
 ): Promise<HoloUser> {
+  if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
+    throw new Error(APPLE_DISABLED_MESSAGE);
+  }
   const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
   if (!clientId) {
     throw new Error(`Missing client ID for ${provider}`);

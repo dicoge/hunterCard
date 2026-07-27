@@ -3,31 +3,37 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import { UserRole } from '../types/auth';
 import { isQuotaExceeded } from '../services/permissionService';
+import { useAuthStore } from './authStore';
 
 interface ScanQuotaState {
-  role: UserRole;
   scanCount: number;
   currentMonth: string;
 
   incrementScan: () => boolean;
   getRemaining: () => number;
   resetQuota: () => void;
-  setRole: (role: UserRole) => void;
 }
 
 function getCurrentMonth(): string {
   return `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 }
 
+// Role is owned solely by the auth store (single source of truth). Reading it
+// here avoids the previous desync where a persisted `guest` quota role blocked
+// freshly-logged-in free users from scanning.
+function currentRole(): UserRole {
+  return useAuthStore.getState().role;
+}
+
 export const useScanQuotaStore = create<ScanQuotaState>()(
   persist(
     (set, get) => ({
-      role: 'guest',
       scanCount: 0,
       currentMonth: getCurrentMonth(),
 
       incrementScan: () => {
-        const { role, scanCount, currentMonth } = get();
+        const role = currentRole();
+        const { scanCount, currentMonth } = get();
         const now = getCurrentMonth();
         let newCount = currentMonth !== now ? 0 : scanCount;
 
@@ -41,7 +47,8 @@ export const useScanQuotaStore = create<ScanQuotaState>()(
       },
 
       getRemaining: () => {
-        const { role, scanCount, currentMonth } = get();
+        const role = currentRole();
+        const { scanCount, currentMonth } = get();
         const now = getCurrentMonth();
         const effectiveCount = currentMonth !== now ? 0 : scanCount;
         if (role === 'subscriber') return -1;
@@ -52,12 +59,14 @@ export const useScanQuotaStore = create<ScanQuotaState>()(
       resetQuota: () => {
         set({ scanCount: 0, currentMonth: getCurrentMonth() });
       },
-
-      setRole: (role: UserRole) => set({ role }),
     }),
     {
       name: 'holohunter-scan-quota',
       storage: createJSONStorage(() => platformStorage),
+      partialize: (state) => ({
+        scanCount: state.scanCount,
+        currentMonth: state.currentMonth,
+      }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           const now = getCurrentMonth();

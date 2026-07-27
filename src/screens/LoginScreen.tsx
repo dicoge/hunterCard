@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { COLORS, APP_NAME } from '../constants';
 import { useAuthStore } from '../store/authStore';
+import { APPLE_LOGIN_ENABLED } from '../services/authService';
 
 export default function LoginScreen() {
   const {
@@ -71,6 +72,7 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
+          {APPLE_LOGIN_ENABLED && (
           <TouchableOpacity
             style={[styles.appleButton, isLoading && styles.buttonDisabled]}
             onPress={handleAppleLogin}
@@ -80,6 +82,7 @@ export default function LoginScreen() {
             <Text style={styles.appleIcon}></Text>
             <Text style={styles.buttonText}>使用 Apple 帳號登入</Text>
           </TouchableOpacity>
+          )}
 
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
