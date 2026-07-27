@@ -1,0 +1,15 @@
+{
+  "description": "TCG Card Vision Benchmark Metadata",
+  "images": [
+    {
+      "filename": "sample-card-1.jpg",
+      "expected": {
+        "cardNumber": "hBP01-001",
+        "character": "ときのそら",
+        "rarity": "OUR",
+        "hp": "130",
+        "title": "ときのそら"
+      }
+    }
+  ]
+}

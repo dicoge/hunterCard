@@ -12,20 +12,13 @@
  * 4. Run: node scripts/benchmark-recognition.js
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import fetch from 'node-fetch';
+import { fileURLToPath } from 'url';
 
-// Dynamically require node-fetch since it is a dependency in package.json
-let fetch;
-try {
-  fetch = require('node-fetch');
-} catch (e) {
-  fetch = global.fetch;
-}
-if (!fetch) {
-  console.error('Error: node-fetch is not installed. Please run npm install first.');
-  process.exit(1);
-}
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Config paths
 const BENCHMARK_DIR = path.join(__dirname, '../data/benchmark');

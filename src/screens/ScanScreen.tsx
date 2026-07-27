@@ -189,10 +189,6 @@ export default function ScanScreen() {
     if (!isWeb) return;
     if (!isCameraReady || !autoScanEnabled) return;
     if (isScanning || isProcessingOCR) return;
-    if (resultCard.visible) return;
-    if (showSearch) return;
-    if (scanError) return;
-    if (searchError) return;
 
     let mounted = true;
     const scanArea = {
@@ -214,7 +210,16 @@ export default function ScanScreen() {
           wasCardScannedRef.current = false;
         }
 
-        if (result.isStable && result.confidence > 0.85 && !wasCardScannedRef.current) {
+        const shouldTriggerScan =
+          result.isStable &&
+          result.confidence > 0.85 &&
+          !wasCardScannedRef.current &&
+          !resultCard.visible &&
+          !showSearch &&
+          !scanError &&
+          !searchError;
+
+        if (shouldTriggerScan) {
           const now = Date.now();
           if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
             lastScanTimeRef.current = now;
@@ -372,7 +377,6 @@ export default function ScanScreen() {
           setSearchResults([]); setSearchError(null); setSuggestions([]);
           setCapturedPhotoUri(null); resetAutoScan();
           wasCardScannedRef.current = true;
-          setScanningStates(false);
           return;
         }
 
@@ -384,7 +388,6 @@ export default function ScanScreen() {
           setScanError(`⚠️ 辨識失敗: ${errMsg}`);
           if (apiResult.raw) setRecognizedText(apiResult.raw);
           // 留著 photo 讓使用者可以手動搜尋
-          setScanningStates(false);
           return;
         }
 
@@ -392,7 +395,6 @@ export default function ScanScreen() {
         if (apiNetworkError) {
           console.warn('[ScanScreen] API unreachable, falling back to Tesseract');
           const result = await recognizeCardFromImage(photo.uri);
-          setScanningStates(false);
 
           if (result.success && result.card) {
             addCard(result.card);
@@ -426,7 +428,6 @@ export default function ScanScreen() {
         } else {
           // 沒網路錯誤也沒 API 結果（不該發生，但兜底）
           setScanError('無法完成掃描，請重試或使用手動搜尋');
-          setScanningStates(false);
         }
       } else {
         // Native: 用 expo-ocr-kit 做全圖 OCR
@@ -435,8 +436,6 @@ export default function ScanScreen() {
         const recognizedText = await performOcr(photo.uri);
         const trimmedText = recognizedText.trim();
         setRecognizedText(trimmedText);
-
-        setScanningStates(false);
 
         if (trimmedText.length > 0) {
           // 使用 OCR 專用辨識（含行分割、卡號提取）
@@ -476,11 +475,12 @@ export default function ScanScreen() {
       }
     } catch (error) {
       console.error('OCR Error:', error);
-      setScanningStates(false);
       setScanningStatus('');
       setScanProgress(0);
 
       setScanError('無法完成掃描，請重試或使用手動輸入');
+    } finally {
+      setScanningStates(false);
     }
   };
 
@@ -502,8 +502,6 @@ export default function ScanScreen() {
         if (isWeb) {
           // Web: 卡號優先 OCR
           const cardResult = await recognizeCardFromImage(result.assets[0].uri);
-
-          setScanningStates(false);
 
           if (cardResult.success && cardResult.card) {
             addCard(cardResult.card);
@@ -555,8 +553,6 @@ export default function ScanScreen() {
           const trimmedText = recognizedText.trim();
           setRecognizedText(trimmedText);
 
-          setScanningStates(false);
-
           if (trimmedText.length > 0) {
             const cardResult = await recognizeCardFromOcr(trimmedText);
             if (cardResult.success && cardResult.card) {
@@ -586,8 +582,9 @@ export default function ScanScreen() {
       }
     } catch (error) {
       console.error('Gallery OCR Error:', error);
-      setScanningStates(false);
       setScanError('無法讀取或識別圖片，請重試或使用手動輸入');
+    } finally {
+      setScanningStates(false);
     }
   };
 
