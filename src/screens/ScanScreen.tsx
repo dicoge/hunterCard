@@ -26,6 +26,7 @@ import ScanOverlay from '../components/ScanOverlay';
 import ScanResultCard from '../components/ScanResultCard';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
+import { useAuthStore } from '../store/authStore';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
@@ -36,6 +37,10 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 
 export default function ScanScreen() {
+  const { isLoggedIn, session, loginWithGoogle, loginWithApple, incrementScanCount, toggleSubscription } = useAuthStore();
+  const isGuest = !isLoggedIn || !session || session.role === 'guest';
+  const isQuotaExceeded = session?.role === 'free_user' && session?.scanCount >= 100;
+
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
   const [permission, requestPermission] = isWeb ? [null, null] as any : useCameraPermissions();
   const [webCameraStarted, setWebCameraStarted] = useState(false);
@@ -243,6 +248,7 @@ export default function ScanScreen() {
 
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
+    if (isGuest || isQuotaExceeded) return;
     if (isWeb) {
       if (!webCameraRef.current) {
         Alert.alert('錯誤', '相機未準備好');
@@ -337,6 +343,7 @@ export default function ScanScreen() {
             yuyuName: '', color: '', imageUrl: card.imageUrl || '', prices: card.prices || [],
           };
           addCard(cardInfo);
+          incrementScanCount();
           setLastScannedCard(cardInfo);
           setResultCard({ visible: true, card: cardInfo, confidence: 0.9 });
           setSearchResults([]); setSearchError(null); setSuggestions([]);
@@ -367,6 +374,7 @@ export default function ScanScreen() {
 
           if (result.success && result.card) {
             addCard(result.card);
+            incrementScanCount();
             setLastScannedCard(result.card);
             setResultCard({ visible: true, card: result.card, confidence: 0.85 });
             setSearchResults([]); setSearchError(null); setSuggestions([]);
@@ -379,6 +387,7 @@ export default function ScanScreen() {
               const fallbackResult = await recognizeCardFromOcr(trimmedText);
               if (fallbackResult.success && fallbackResult.card) {
                 addCard(fallbackResult.card);
+                incrementScanCount();
                 setLastScannedCard(fallbackResult.card);
                 setResultCard({ visible: true, card: fallbackResult.card, confidence: 0.85 });
                 setSearchResults([]); setSearchError(null); setSuggestions([]);
@@ -417,6 +426,7 @@ export default function ScanScreen() {
             setScanningStatus('✅ 辨識完成');
             setScanProgress(4);
             addCard(result.card);
+            incrementScanCount();
             setLastScannedCard(result.card);
             // Show floating result card
             setResultCard({
@@ -457,6 +467,7 @@ export default function ScanScreen() {
 
   // 從相冊選擇圖片進行識別
   const pickFromGallery = async () => {
+    if (isGuest || isQuotaExceeded) return;
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -480,6 +491,7 @@ export default function ScanScreen() {
 
           if (cardResult.success && cardResult.card) {
             addCard(cardResult.card);
+            incrementScanCount();
             setLastScannedCard(cardResult.card);
             setResultCard({
               visible: true,
@@ -501,6 +513,7 @@ export default function ScanScreen() {
               const fallbackResult = await recognizeCardFromOcr(trimmedText);
               if (fallbackResult.success && fallbackResult.card) {
                 addCard(fallbackResult.card);
+                incrementScanCount();
                 setLastScannedCard(fallbackResult.card);
                 setResultCard({
                   visible: true,
@@ -533,6 +546,7 @@ export default function ScanScreen() {
             const cardResult = await recognizeCardFromOcr(trimmedText);
             if (cardResult.success && cardResult.card) {
               addCard(cardResult.card);
+              incrementScanCount();
               setLastScannedCard(cardResult.card);
               // Show floating result card
               setResultCard({
@@ -746,8 +760,70 @@ export default function ScanScreen() {
     }
   }
 
+  if (isGuest) {
+    return (
+      <SafeAreaView style={styles.gatedContainer}>
+        <View style={styles.gatedCard}>
+          <Text style={styles.gatedIcon}>🔒</Text>
+          <Text style={styles.gatedTitle}>{preferredLanguage === 'zh' ? '卡牌掃描功能' : 'Card Scanning'}</Text>
+          <Text style={styles.gatedDesc}>
+            {preferredLanguage === 'zh'
+              ? 'HoloHunter 不提供自家密碼，我們只支援安全的 Google 與 Apple 快速登入。請登入以開啟每月 100 次的免費掃描與雲端同步功能！'
+              : 'HoloHunter does not store passwords. We only support secure Google and Apple Sign-In. Log in to unlock 100 free monthly scans and cloud sync!'}
+          </Text>
+
+          <TouchableOpacity style={styles.loginBtnGoogle} onPress={loginWithGoogle}>
+            <Text style={styles.loginBtnTextGoogle}>Sign in with Google</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.loginBtnApple} onPress={loginWithApple}>
+            <Text style={styles.loginBtnTextApple}> Sign in with Apple</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (isQuotaExceeded) {
+    return (
+      <SafeAreaView style={styles.gatedContainer}>
+        <View style={styles.gatedCard}>
+          <Text style={styles.gatedIcon}>⚠️</Text>
+          <Text style={styles.gatedTitle}>{preferredLanguage === 'zh' ? '已達本月免費掃描上限' : 'Monthly Quota Exceeded'}</Text>
+          <Text style={styles.gatedDesc}>
+            {preferredLanguage === 'zh'
+              ? '您已使用完本月 100 次的免費掃描額度。\n升級至訂閱版會員即可解鎖無限掃描次數，並開啟 AI 價格預測與進階市場分析功能！'
+              : 'You have used your 100 free monthly scans.\nUpgrade to Premium to get unlimited scans, unlock AI price predictions, and advanced market trends!'}
+          </Text>
+
+          <TouchableOpacity style={styles.upgradeBtn} onPress={toggleSubscription}>
+            <Text style={styles.upgradeBtnText}>⚡ 模擬升級訂閱版會員</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.upgradeBtn, { backgroundColor: '#10b981', marginTop: 10 }]} onPress={() => Alert.alert('提示', '本功能串接 App Store / Google Play 訂閱支付。')}>
+            <Text style={styles.upgradeBtnText}>解鎖無限掃描 (USD $2.99/月)</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <View style={styles.container}>
+      {session && session.role === 'free_user' && (
+        <View style={styles.quotaBadge}>
+          <Text style={styles.quotaBadgeText}>
+            📊 {preferredLanguage === 'zh' ? '免費版額度' : 'Free Quota'}: {session.scanCount} / 100
+          </Text>
+        </View>
+      )}
+      {session && session.role === 'subscriber' && (
+        <View style={[styles.quotaBadge, { backgroundColor: '#f59e0b' }]}>
+          <Text style={styles.quotaBadgeText}>
+            ⭐ {preferredLanguage === 'zh' ? '訂閱版會員 (無限掃描)' : 'Premium (Unlimited Scans)'}
+          </Text>
+        </View>
+      )}
       {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
       {!isCameraReady && (
         <View style={styles.loadingOverlay}>
@@ -1251,6 +1327,103 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginTop: 8,
+  },
+  gatedContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  gatedCard: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    padding: 30,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  gatedIcon: {
+    fontSize: 48,
+  },
+  gatedTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  gatedDesc: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  loginBtnGoogle: {
+    backgroundColor: '#ffffff',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  loginBtnTextGoogle: {
+    color: '#1f1f1f',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  loginBtnApple: {
+    backgroundColor: '#000000',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#333333',
+    width: '100%',
+  },
+  loginBtnTextApple: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  upgradeBtn: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  upgradeBtnText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  quotaBadge: {
+    position: 'absolute',
+    top: 20,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    zIndex: 100,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  quotaBadgeText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 

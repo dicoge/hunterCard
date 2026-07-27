@@ -305,9 +305,32 @@
       <h2>💬 常見問題 (FAQ)</h2>
 
       <div class="faq-item">
+        <div class="faq-question">Q: 訪客模式 (Guest Mode) 有何功能限制？</div>
+        <div class="faq-answer">
+          訪客模式僅開放「規則導覽」與「手動搜尋卡牌」。為了防止頻寬與伺服器資源濫用，<strong>卡牌相機掃描 (OCR)</strong> 與 <strong>AI 價格趨勢預測</strong> 等功能，需要您以 Google 或 Apple 帳號登入後方能使用。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 免費版會員的每月掃描配額 (Quota) 是多少？</div>
+        <div class="faq-answer">
+          凡是登入但未付費訂閱的免費版會員，系統每個月會提供 <strong>100 次的卡牌相機掃描額度</strong>。當月額度使用完畢後，相機將自動鎖定，直到次月 1 號 (UTC) 自動重置，或者您也可以選擇訂閱升級以立即解除次數限制。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 升級「訂閱版會員 (Subscriber)」有哪些專屬功能？</div>
+        <div class="faq-answer">
+          訂閱會員可享受以下專屬高級功能：<br>
+          1. <strong>無限卡牌掃描</strong>：完全解除每月 100 張的掃描上限限制。<br>
+          2. <strong>AI 價格與趨勢預測</strong>：解鎖獨家的價格走向預測，結合 YT 社群訂閱趨勢、新聞情緒與市場歷史數據綜合演算分析，助您精準掌握卡牌交易的最佳時機。
+        </div>
+      </div>
+
+      <div class="faq-item">
         <div class="faq-question">Q: 可以同時綁定 Google 與 Apple 帳號嗎？</div>
         <div class="faq-answer">
-          可以。HoloHunter 支援「共通帳號」機制。您可以先用 Google 登入，然後在<strong>「設定 (Settings)」</strong>頁面中點擊<strong>「綁定 Apple」</strong>完成連結；或是使用 Apple 登入後綁定 Google。綁定後兩者將共享相同的 Internal User ID 與雲端卡牌收藏。
+          可以。HoloHunter 支援「共通帳號」機制。您可以先用 Google 登入，然後在<strong>「設定 (Settings)」</strong>頁面中點擊<strong>「綁定 Apple」</strong>完成連結；或是使用 Apple 登入後綁定 Google。綁定後兩者將共享相同的 Internal User ID、雲端收藏與訂閱狀態。
         </div>
       </div>
 
@@ -321,30 +344,16 @@
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: 可以解除綁定 Google 或 Apple 帳號嗎？</div>
+        <div class="faq-question">Q: 刪除帳號會連同我的掃描紀錄跟訂閱一併刪除嗎？</div>
         <div class="faq-answer">
-          可以。在<strong>「設定」</strong>中點擊對應帳號旁的「解除綁定」按鈕即可。但為了防止您的帳號遺失，<strong>系統規定必須保留至少一個登入方式</strong>，當只剩下一個綁定帳號時將無法解除綁定。
+          是的。當您點擊設定中的「刪除帳號與資料」後，系統會永久清除您的 Internal User ID、所有綁定的第三方登入關聯、每月掃描配額計數、以及雲端上所有的收藏清單。歷史付費訂閱交易紀錄也會進行徹底的去識別化與匿名化，切斷與您個人身分的任何關聯。此動作無法復原。
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: 為何不支援一般密碼註冊？</div>
+        <div class="faq-question">Q: 為什麼不支援一般 Email 密碼註冊？</div>
         <div class="faq-answer">
-          為了維護您的密碼安全，我們<strong>只支援 Google 與 Apple 第三方安全驗證</strong>。不收集也不儲存您的密碼，所有身分驗證直接在第三方安全端進行。
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 刪除帳號會刪除哪些資料？</div>
-        <div class="faq-answer">
-          點擊設定中的「刪除帳號與資料」後，系統會永久清除您的 Internal User ID、所有綁定的第三方登入關聯，以及您在雲端的所有卡牌收藏與入手提醒清單。此動作無法復原。
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 為什麼 App 要求相機權限？</div>
-        <div class="faq-answer">
-          相機權限僅用於<strong>卡牌掃描與即時本機 OCR 辨識</strong>，方便您快速查詢卡牌價格。<strong>我們絕對不會上傳、儲存或分享您的任何照片或相機影像。</strong>
+          為了維護您的密碼安全與保障隱私，我們<strong>只支援 Google 與 Apple 第三方安全驗證</strong>。不收集也不儲存您的個人密碼，所有身分驗證程序均直接在第三方安全端進行。
         </div>
       </div>
     </div>
@@ -376,46 +385,48 @@
       <h2>💬 Frequently Asked Questions (FAQ)</h2>
 
       <div class="faq-item">
-        <div class="faq-question">Q: Can I link both my Google and Apple accounts?</div>
+        <div class="faq-question">Q: What are the restrictions in Guest Mode?</div>
         <div class="faq-answer">
-          Yes! HoloHunter supports a "Common Account" mechanism. You can log in with Google first, then go to the <strong>Settings</strong> page and tap <strong>Link Apple</strong>, or vice versa. Once linked, both methods will share the same Internal User ID and cloud card collections.
+          Guest Mode only permits browsing game rules and manually searching cards. To prevent server resources abuse, <strong>card scanning (camera OCR)</strong> and <strong>AI price trend forecasts</strong> require you to log in with a Google or Apple account.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: What happens if I get an "Account Collision" warning during linking?</div>
+        <div class="faq-question">Q: What is the monthly scan quota for Free Users?</div>
         <div class="faq-answer">
-          If the Google/Apple account you are trying to link is already associated with another user, the App will detect the collision and offer two options:<br>
-          1. <strong>Merge Data</strong>: Merge the collections/settings of the collided account into your current account and transfer the identity link.<br>
+          Registered free tier users receive <strong>100 card scans per month</strong>. Once you exhaust this quota, the scanning capability locks until the 1st of the next month (UTC), when it resets. Alternatively, you can subscribe to upgrade for unlimited scans.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: What do I unlock as a Premium Subscriber?</div>
+        <div class="faq-answer">
+          Premium Subscribers get full access to: <br>
+          1. <strong>Unlimited Card Scanning</strong>: Scans are completely unlimited.<br>
+          2. <strong>AI Price Trend Forecasts</strong>: Unlock predictions using advanced modeling based on YT subscriber stats, sentiment tracking, and historical price variants.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: Can I link both my Google and Apple accounts?</div>
+        <div class="faq-answer">
+          Yes! HoloHunter supports a "Common Account" mechanism. You can log in with Google first, then go to the <strong>Settings</strong> page and tap <strong>Link Apple</strong>, or vice versa. Both methods will share the same Internal User ID and cloud card collections.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: What happens if I get an "Account Collision" warning?</div>
+        <div class="faq-answer">
+          If the Google/Apple account you are linking is already registered, the App will detect the collision and offer two options:<br>
+          1. <strong>Merge Data</strong>: Merge card collections/settings of the collided account into your current account and transfer the identity link.<br>
           2. <strong>Reject & Cancel</strong>: Cancel the linking process and keep everything as is.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: Can I unlink a login provider?</div>
+        <div class="faq-question">Q: Does account deletion wipe my scan logs and subscriptions?</div>
         <div class="faq-answer">
-          Yes. In the <strong>Settings</strong> page, tap the "Unlink" button next to the provider you want to remove. However, <strong>you must keep at least one linked login provider</strong> to prevent your account from becoming locked out.
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: Why is there no email/password registration?</div>
-        <div class="faq-answer">
-          To maximize credential security, we <strong>exclusively support Google Sign-In and Sign in with Apple</strong>. We do not collect or store passwords; all authentication is handled securely by Google and Apple.
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: What data is deleted when I delete my account?</div>
-        <div class="faq-answer">
-          Deleting your account permanently erases your Internal User ID, all linked Google/Apple provider links, and all synced watchlists and favorites on our cloud servers. This action is irreversible.
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: Why does the App request camera access?</div>
-        <div class="faq-answer">
-          Camera permissions are used solely for the <strong>Scan Card</strong> feature to perform on-device real-time OCR text recognition. <strong>We do not upload, store, or share any camera images or photos.</strong>
+          Yes. Deleting your account permanently deletes your Internal User ID, linked OAuth identities, monthly scan count histories, and synced card collections. Transaction logs from third-party payment providers will be completely anonymized and disconnected from your profile. This action is irreversible.
         </div>
       </div>
     </div>

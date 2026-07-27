@@ -11,12 +11,14 @@ export default function SettingsScreen() {
     session, 
     loginWithGoogle, 
     loginWithApple, 
+    loginAsGuest,
     linkGoogle, 
     linkApple, 
     unlinkProvider, 
     logout, 
     deleteAccount,
-    mergeMockIdentity 
+    mergeMockIdentity,
+    toggleSubscription
   } = useAuthStore();
 
   const handleOpenPrivacy = () => {
@@ -173,6 +175,7 @@ export default function SettingsScreen() {
     );
   };
 
+  const isGuest = session?.role === 'guest';
   const hasGoogle = session?.identities.some(id => id.provider === 'google');
   const hasApple = session?.identities.some(id => id.provider === 'apple');
 
@@ -190,8 +193,8 @@ export default function SettingsScreen() {
             <View style={styles.authContainer}>
               <Text style={styles.authDesc}>
                 {preferredLanguage === 'zh' 
-                  ? '登入以同步您的卡牌收藏、追蹤清單與個人設定。' 
-                  : 'Sign in to sync your favorites, watchlists, and settings.'}
+                  ? '登入以同步您的卡牌收藏、使用卡牌掃描與高級價格趨勢預測。' 
+                  : 'Sign in to sync your favorites, use card scanning, and unlock premium price trends.'}
               </Text>
               
               <TouchableOpacity style={styles.loginBtnGoogle} onPress={loginWithGoogle}>
@@ -202,11 +205,46 @@ export default function SettingsScreen() {
                 <Text style={styles.loginBtnTextApple}> Sign in with Apple</Text>
               </TouchableOpacity>
 
+              <TouchableOpacity style={styles.loginBtnGuest} onPress={loginAsGuest}>
+                <Text style={styles.loginBtnTextGuest}>
+                  {preferredLanguage === 'zh' ? '以訪客身份繼續' : 'Continue as Guest'}
+                </Text>
+              </TouchableOpacity>
+
               <Text style={styles.authPrivacyNote}>
                 {preferredLanguage === 'zh'
-                  ? '※ 本 App 不支援自家帳密，僅使用安全第三方 OAuth 登入。'
-                  : '* We do not store passwords. We use secure third-party OAuth sign-in.'}
+                  ? '※ 訪客模式僅能查詢與閱讀規則，無法使用相機掃描與價格預測功能。'
+                  : '* Guest mode only allows searching and reading rules. Camera scanning and price forecasts require login.'}
               </Text>
+            </View>
+          ) : isGuest ? (
+            <View style={styles.sessionContainer}>
+              <View style={styles.userInfoRow}>
+                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '目前權限' : 'Current Tier'}</Text>
+                <Text style={[styles.userValue, { color: COLORS.accent }]}>
+                  {preferredLanguage === 'zh' ? '👤 訪客模式' : 'Guest Mode'}
+                </Text>
+              </View>
+              <Text style={styles.authDesc}>
+                {preferredLanguage === 'zh'
+                  ? '您目前以訪客模式進入。登入即可開啟卡牌掃描、收藏同步與每月 100 次的免費掃描額度。'
+                  : 'You are in Guest Mode. Sign in to enable card scanning, sync favorites, and get 100 free monthly scans.'}
+              </Text>
+
+              <View style={styles.authActionRow}>
+                <TouchableOpacity style={styles.loginBtnGoogle} onPress={loginWithGoogle}>
+                  <Text style={styles.loginBtnTextGoogle}>Sign in with Google</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.loginBtnApple} onPress={loginWithApple}>
+                  <Text style={styles.loginBtnTextApple}> Sign in with Apple</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+                <Text style={styles.logoutBtnText}>
+                  {preferredLanguage === 'zh' ? '回到首頁 Onboarding' : 'Back to Onboarding'}
+                </Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.sessionContainer}>
@@ -216,6 +254,41 @@ export default function SettingsScreen() {
                   {session.internalUserId}
                 </Text>
               </View>
+
+              <View style={styles.userInfoRow}>
+                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '訂閱權限' : 'Subscription Tier'}</Text>
+                <View style={styles.tierContainer}>
+                  <Text style={[
+                    styles.userValue, 
+                    session.role === 'subscriber' ? styles.subscriberText : styles.freeText
+                  ]}>
+                    {session.role === 'subscriber' 
+                      ? (preferredLanguage === 'zh' ? '⭐ 訂閱版會員 (Subscriber)' : '⭐ Premium Subscriber')
+                      : (preferredLanguage === 'zh' ? '🟢 免費版會員 (Free)' : '🟢 Free Tier')
+                    }
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.userInfoRow}>
+                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '每月掃描次數' : 'Monthly Scans'}</Text>
+                <Text style={styles.userValue}>
+                  {session.role === 'subscriber' 
+                    ? (preferredLanguage === 'zh' ? '♾️ 無限 (Unlimited)' : '♾️ Unlimited')
+                    : `${session.scanCount} / 100`
+                  }
+                </Text>
+              </View>
+
+              {/* 模擬訂閱按鈕 */}
+              <TouchableOpacity style={styles.mockUpgradeBtn} onPress={toggleSubscription}>
+                <Text style={styles.mockUpgradeBtnText}>
+                  {session.role === 'subscriber'
+                    ? (preferredLanguage === 'zh' ? '🔄 模擬降級至免費版' : '🔄 Mock Downgrade to Free')
+                    : (preferredLanguage === 'zh' ? '⚡ 模擬升級訂閱版會員' : '⚡ Mock Upgrade to Premium')
+                  }
+                </Text>
+              </TouchableOpacity>
 
               <Text style={styles.identitiesTitle}>
                 {preferredLanguage === 'zh' ? '已綁定登入方式' : 'Linked Providers'}
@@ -422,6 +495,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 1.41,
     elevation: 2,
+    width: '100%',
   },
   loginBtnTextGoogle: {
     color: '#1f1f1f',
@@ -436,11 +510,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#333333',
+    width: '100%',
   },
   loginBtnTextApple: {
     color: '#ffffff',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  loginBtnGuest: {
+    backgroundColor: COLORS.surfaceLight,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    width: '100%',
+  },
+  loginBtnTextGuest: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '600',
   },
   authPrivacyNote: {
     color: COLORS.textSecondary + 'aa',
@@ -466,12 +556,43 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 14,
   },
+  userValue: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   userIdValue: {
     color: COLORS.text,
     fontSize: 14,
     fontWeight: '600',
     maxWidth: '60%',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  tierContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  subscriberText: {
+    color: '#f59e0b', // Gold color for premium
+    fontWeight: 'bold',
+  },
+  freeText: {
+    color: '#10b981', // Green for free
+  },
+  mockUpgradeBtn: {
+    backgroundColor: COLORS.primary + '15',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  mockUpgradeBtnText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   identitiesTitle: {
     color: COLORS.text,
@@ -551,15 +672,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 12,
+    width: '100%',
   },
   logoutBtn: {
-    flex: 1,
     backgroundColor: COLORS.surfaceLight,
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: COLORS.border,
+    marginTop: 8,
   },
   logoutBtnText: {
     color: COLORS.text,
@@ -567,7 +689,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   deleteBtn: {
-    flex: 1.5,
+    flex: 1,
     backgroundColor: '#ef4444' + '15',
     paddingVertical: 10,
     borderRadius: 8,

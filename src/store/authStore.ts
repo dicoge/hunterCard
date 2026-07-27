@@ -3,6 +3,8 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import { useWatchlistStore } from '../stores/watchlistStore';
 
+export type UserRole = 'guest' | 'free_user' | 'subscriber';
+
 export interface UserIdentity {
   email: string;
   displayName: string;
@@ -12,7 +14,9 @@ export interface UserIdentity {
 
 export interface UserSession {
   internalUserId: string;
+  role: UserRole;
   identities: UserIdentity[];
+  scanCount: number; // monthly scans count
 }
 
 interface AuthState {
@@ -20,9 +24,12 @@ interface AuthState {
   session: UserSession | null;
   loginWithGoogle: () => void;
   loginWithApple: () => void;
+  loginAsGuest: () => void;
   linkGoogle: (forceCollision?: boolean) => boolean; // returns true if linked successfully, false if collision
   linkApple: (forceCollision?: boolean) => boolean;  // returns true if linked successfully, false if collision
   unlinkProvider: (provider: 'google' | 'apple') => boolean;
+  incrementScanCount: () => boolean; // returns true if scan is allowed, false otherwise
+  toggleSubscription: () => void;    // toggles role between free_user and subscriber for testing
   logout: () => void;
   deleteAccount: () => void;
   // Merges a collided mock identity into the current user
@@ -40,6 +47,7 @@ export const useAuthStore = create<AuthState>()(
           isLoggedIn: true,
           session: {
             internalUserId: 'user_u78291a2bc90',
+            role: 'free_user',
             identities: [
               {
                 email: 'holofan@gmail.com',
@@ -48,6 +56,7 @@ export const useAuthStore = create<AuthState>()(
                 providerId: 'g_1092837465241',
               },
             ],
+            scanCount: 15, // starts with mock scan count
           },
         });
       },
@@ -57,6 +66,7 @@ export const useAuthStore = create<AuthState>()(
           isLoggedIn: true,
           session: {
             internalUserId: 'user_u78291a2bc90',
+            role: 'free_user',
             identities: [
               {
                 email: 'holofan@icloud.com',
@@ -65,6 +75,19 @@ export const useAuthStore = create<AuthState>()(
                 providerId: 'ap_88273619472',
               },
             ],
+            scanCount: 15,
+          },
+        });
+      },
+
+      loginAsGuest: () => {
+        set({
+          isLoggedIn: true,
+          session: {
+            internalUserId: 'guest_user',
+            role: 'guest',
+            identities: [],
+            scanCount: 0,
           },
         });
       },
@@ -147,6 +170,45 @@ export const useAuthStore = create<AuthState>()(
         return true;
       },
 
+      incrementScanCount: () => {
+        const { session } = get();
+        if (!session) return false;
+
+        if (session.role === 'guest') {
+          return false; // Guest cannot scan at all
+        }
+
+        if (session.role === 'subscriber') {
+          return true; // Subscriber has unlimited scans
+        }
+
+        // For free user, check limit
+        if (session.scanCount >= 100) {
+          return false; // Limit exceeded
+        }
+
+        set({
+          session: {
+            ...session,
+            scanCount: session.scanCount + 1,
+          },
+        });
+        return true;
+      },
+
+      toggleSubscription: () => {
+        const { session } = get();
+        if (!session || session.role === 'guest') return;
+
+        const nextRole = session.role === 'free_user' ? 'subscriber' : 'free_user';
+        set({
+          session: {
+            ...session,
+            role: nextRole,
+          },
+        });
+      },
+
       logout: () => {
         set({ isLoggedIn: false, session: null });
       },
@@ -173,7 +235,7 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'hunterCard-auth-v2',
+      name: 'hunterCard-auth-v3',
       storage: createJSONStorage(() => platformStorage),
     }
   )

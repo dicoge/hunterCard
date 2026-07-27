@@ -8,6 +8,7 @@ import { useWatchlistStore } from '../stores/watchlistStore';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
+import { useAuthStore } from '../store/authStore';
 
 const { width } = Dimensions.get('window');
 
@@ -59,6 +60,8 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const [imageError, setImageError] = useState(false);
   const insets = useSafeAreaInsets();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
+  const { isLoggedIn, session, loginWithGoogle, loginWithApple, toggleSubscription } = useAuthStore();
+  const isSubscriber = session?.role === 'subscriber';
 
   if (!card) {
     return (
@@ -224,61 +227,101 @@ export default function CardDetailScreen({ route, navigation }: any) {
       {trend && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
-          <PriceTrendBadge
-            trend={trend.trend}
-            score={trend.score}
-            confidence={trend.confidence}
-            compact={false}
-          />
-          {/* 各項因子貢獻 */}
-          <View style={styles.componentSection}>
-            <Text style={styles.componentTitle}>因子貢獻</Text>
-            <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>📊 價格趨勢 (60%)</Text>
-              <View style={styles.componentBarBg}>
-                <View style={[styles.componentBarFill, {
-                  width: `${Math.min(Math.abs(trend.components.priceTrend) * 100, 100)}%`,
-                  backgroundColor: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
-                }]} />
+          {isSubscriber ? (
+            <>
+              <PriceTrendBadge
+                trend={trend.trend}
+                score={trend.score}
+                confidence={trend.confidence}
+                compact={false}
+              />
+              {/* 各項因子貢獻 */}
+              <View style={styles.componentSection}>
+                <Text style={styles.componentTitle}>因子貢獻</Text>
+                <View style={styles.componentRow}>
+                  <Text style={styles.componentLabel}>📊 價格趨勢 (60%)</Text>
+                  <View style={styles.componentBarBg}>
+                    <View style={[styles.componentBarFill, {
+                      width: `${Math.min(Math.abs(trend.components.priceTrend) * 100, 100)}%`,
+                      backgroundColor: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
+                    }]} />
+                  </View>
+                  <Text style={[styles.componentValue, {
+                    color: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
+                  }]}>
+                    {(trend.components.priceTrend * 100).toFixed(0)}%
+                  </Text>
+                </View>
+                <View style={styles.componentRow}>
+                  <Text style={styles.componentLabel}>📺 YT 訂閱 (20%)</Text>
+                  <View style={styles.componentBarBg}>
+                    <View style={[styles.componentBarFill, {
+                      width: `${Math.min(Math.abs(trend.components.ytTrend) * 200, 100)}%`,
+                      backgroundColor: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
+                    }]} />
+                  </View>
+                  <Text style={[styles.componentValue, {
+                    color: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
+                  }]}>
+                    {(trend.components.ytTrend * 100).toFixed(0)}%
+                  </Text>
+                </View>
+                <View style={styles.componentRow}>
+                  <Text style={styles.componentLabel}>📰 新聞情緒 (20%)</Text>
+                  <View style={styles.componentBarBg}>
+                    <View style={[styles.componentBarFill, {
+                      width: `${Math.min(Math.abs(trend.components.newsSentiment) * 100, 100)}%`,
+                      backgroundColor: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
+                    }]} />
+                  </View>
+                  <Text style={[styles.componentValue, {
+                    color: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
+                  }]}>
+                    {(trend.components.newsSentiment * 100).toFixed(0)}%
+                  </Text>
+                </View>
+                <Text style={styles.dataPointsNote}>
+                  基於 {trend.dataPoints} 天的價格資料
+                </Text>
               </View>
-              <Text style={[styles.componentValue, {
-                color: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
-              }]}>
-                {(trend.components.priceTrend * 100).toFixed(0)}%
+            </>
+          ) : (
+            <View style={styles.premiumLockContainer}>
+              <Text style={styles.premiumLockIcon}>🔒</Text>
+              <Text style={styles.premiumLockTitle}>
+                {preferredLanguage === 'zh' ? '價格趨勢預測 (訂閱會員專屬)' : 'AI Price Forecast (Premium)'}
               </Text>
-            </View>
-            <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>📺 YT 訂閱 (20%)</Text>
-              <View style={styles.componentBarBg}>
-                <View style={[styles.componentBarFill, {
-                  width: `${Math.min(Math.abs(trend.components.ytTrend) * 200, 100)}%`,
-                  backgroundColor: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
-                }]} />
-              </View>
-              <Text style={[styles.componentValue, {
-                color: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
-              }]}>
-                {(trend.components.ytTrend * 100).toFixed(0)}%
+              <Text style={styles.premiumLockDesc}>
+                {preferredLanguage === 'zh'
+                  ? '本功能僅開放給付費訂閱會員。升級訂閱後即可解鎖 AI 價格波動預測、歷史趨勢因子分析，助您精準掌握交易時機！'
+                  : 'This section is exclusive for Premium Subscribers. Upgrade to unlock AI forecasts, YT metrics, and sentiment analysis!'}
               </Text>
+              
+              {!isLoggedIn || !session || session.role === 'guest' ? (
+                <View style={{ width: '100%', gap: 10, marginTop: 10 }}>
+                  <TouchableOpacity style={styles.premiumLoginBtn} onPress={() => {
+                    loginWithGoogle();
+                    Alert.alert('提示', '已模擬以 Google 登入免費版，請再次點擊解鎖或至設定頁升級訂閱版。');
+                  }}>
+                    <Text style={styles.premiumLoginBtnText}>以 Google 登入免費版</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.premiumLoginBtn, { backgroundColor: '#000' }]} onPress={() => {
+                    loginWithApple();
+                    Alert.alert('提示', '已模擬以 Apple 登入免費版，請再次點擊解鎖或至設定頁升級訂閱版。');
+                  }}>
+                    <Text style={styles.premiumLoginBtnText}>以 Apple 登入免費版</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.premiumUpgradeBtn} onPress={() => {
+                  toggleSubscription();
+                  Alert.alert('解鎖成功', '已成功模擬升級至付費訂閱版會員，已解除所有 Premium 限制！');
+                }}>
+                  <Text style={styles.premiumUpgradeBtnText}>⚡ 立即解鎖 Premium 預測功能</Text>
+                </TouchableOpacity>
+              )}
             </View>
-            <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>📰 新聞情緒 (20%)</Text>
-              <View style={styles.componentBarBg}>
-                <View style={[styles.componentBarFill, {
-                  width: `${Math.min(Math.abs(trend.components.newsSentiment) * 100, 100)}%`,
-                  backgroundColor: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
-                }]} />
-              </View>
-              <Text style={[styles.componentValue, {
-                color: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
-              }]}>
-                {(trend.components.newsSentiment * 100).toFixed(0)}%
-              </Text>
-            </View>
-            <Text style={styles.dataPointsNote}>
-              基於 {trend.dataPoints} 天的價格資料
-            </Text>
-          </View>
+          )}
         </View>
       )}
 
@@ -719,4 +762,57 @@ const styles = StyleSheet.create({
   componentBarFill: { height: '100%', borderRadius: 3 },
   componentValue: { fontSize: 12, fontWeight: '700', width: 45, textAlign: 'right' },
   dataPointsNote: { fontSize: 11, color: COLORS.textSecondary + '88', marginTop: 6, textAlign: 'center' },
+  premiumLockContainer: {
+    backgroundColor: COLORS.surfaceLight + 'cc',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 157, 0.2)',
+    marginTop: 8,
+  },
+  premiumLockIcon: {
+    fontSize: 32,
+    marginBottom: 10,
+  },
+  premiumLockTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  premiumLockDesc: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  premiumUpgradeBtn: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  premiumUpgradeBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  premiumLoginBtn: {
+    backgroundColor: '#ffffff',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  premiumLoginBtnText: {
+    color: '#1f1f1f',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
 });
