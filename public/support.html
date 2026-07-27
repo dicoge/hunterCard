@@ -284,7 +284,7 @@
       <p style="margin-bottom: 24px;">若您在使用 HoloHunter 時遇到問題，或有任何功能改進建議，歡迎透過以下方式與我們聯絡：</p>
 
       <div style="border: 1px solid #ef4444; background: rgba(239,68,68,0.08); border-radius: 12px; padding: 16px 18px; margin-bottom: 24px; line-height: 1.7;">
-        <strong>⚠️ 目前版本狀態（測試 / 示範階段）：</strong> 現階段 App 中的 Google / Apple 登入與付費訂閱皆為<strong>模擬（demo）流程</strong>，尚未串接真實的 Google / Apple OAuth 或 App Store / Google Play 金流。因此本階段<strong>不會實際取得您的個人資料，也不會處理任何真實付款或收取費用</strong>；「升級訂閱」與帳號資訊皆為測試示範用途。下方常見問題描述的是本 App 正式上架後的預期行為。
+        <strong>⚠️ 目前版本狀態（本機模擬 / 示範階段）：</strong> 現階段 App 中的 Google / Apple 登入、帳號綁定、Internal User ID、訂閱狀態與每月掃描配額<strong>全部都是「本機模擬（local mock）」</strong>：登入只會在您的裝置本機寫入一組固定的假帳號，尚未串接真實的 Google / Apple OAuth、後端資料庫、雲端同步或 App Store / Google Play / Stripe 金流。因此本階段<strong>不會實際取得您的個人資料，沒有任何雲端帳號、配額或訂閱紀錄，也不會處理任何真實付款或收取費用</strong>；「升級訂閱」與帳號資訊皆為本機模擬。凡下方標示為「未來正式版」的常見問題，描述的是本 App 正式上架、串接後端與金流之後的預期行為，目前尚未實作。
       </div>
       
       <div class="info-grid">
@@ -318,23 +318,23 @@
       <div class="faq-item">
         <div class="faq-question">Q: 免費版會員的每月掃描配額 (Quota) 是多少？</div>
         <div class="faq-answer">
-          凡是登入但未付費訂閱的免費版會員，系統每個月會提供 <strong>100 次的卡牌相機掃描額度</strong>。當月額度使用完畢後，相機將自動鎖定，直到次月 1 號 (UTC) 自動重置，或者您也可以選擇訂閱升級以立即解除次數限制。
+          <strong>（未來正式版行為）</strong>凡是登入但未付費訂閱的免費版會員，系統每個月會提供 <strong>100 次的卡牌相機掃描額度</strong>。當月額度使用完畢後，相機將自動鎖定，直到次月 1 號 (UTC) 自動重置，或者您也可以選擇訂閱升級以立即解除次數限制。<br><br><strong>目前版本（本機模擬）：</strong>掃描計數僅為本機模擬數值，並非伺服器端配額；清除快取或重裝 App 即會重置，尚未實作真正的每月伺服器端額度控管。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: 升級「訂閱版會員 (Subscriber)」有哪些專屬功能？</div>
         <div class="faq-answer">
-          訂閱會員可享受以下專屬高級功能：<br>
+          <strong>（未來正式版）</strong>訂閱會員可享受以下專屬高級功能：<br>
           1. <strong>無限卡牌掃描</strong>：完全解除每月 100 張的掃描上限限制。<br>
-          2. <strong>AI 價格與趨勢預測</strong>：解鎖獨家的價格走向預測，結合 YT 社群訂閱趨勢、新聞情緒與市場歷史數據綜合演算分析，助您精準掌握卡牌交易的最佳時機。
+          2. <strong>AI 價格與趨勢預測</strong>：解鎖獨家的價格走向預測，結合 YT 社群訂閱趨勢、新聞情緒與市場歷史數據綜合演算分析，助您精準掌握卡牌交易的最佳時機。<br><br><strong>目前版本（本機模擬）：</strong>「升級訂閱」只是在本機把角色切換為訂閱版以示範解鎖效果，不會真的驗證帳號或付款，也未串接 StoreKit / Google Play Billing / Stripe。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: 可以同時綁定 Google 與 Apple 帳號嗎？</div>
         <div class="faq-answer">
-          可以。HoloHunter 支援「共通帳號」機制。您可以先用 Google 登入，然後在<strong>「設定 (Settings)」</strong>頁面中點擊<strong>「綁定 Apple」</strong>完成連結；或是使用 Apple 登入後綁定 Google。綁定後兩者將共享相同的 Internal User ID、雲端收藏與訂閱狀態。
+          <strong>（未來正式版）</strong>HoloHunter 支援「共通帳號」機制。您可以先用 Google 登入，然後在<strong>「設定 (Settings)」</strong>頁面中點擊<strong>「綁定 Apple」</strong>完成連結；或是使用 Apple 登入後綁定 Google。綁定後兩者將共享相同的 Internal User ID、雲端收藏與訂閱狀態。<br><br><strong>目前版本（本機模擬）：</strong>登入與綁定皆為本機模擬，會寫入固定的假帳號並在本機切換狀態，尚未串接真實 OAuth、後端資料庫或雲端同步。
         </div>
       </div>
 
@@ -350,7 +350,8 @@
       <div class="faq-item">
         <div class="faq-question">Q: 刪除帳號會連同我的掃描紀錄跟訂閱一併刪除嗎？</div>
         <div class="faq-answer">
-          當您在 App 內點擊「刪除帳號與資料」後，您的本機登入狀態與快取會被立即清除並登出，但這不會自動刪除雲端資料。若要一併刪除雲端上的 Internal User ID、第三方登入關聯、每月配額計數與收藏清單，並將歷史訂閱交易紀錄去識別化，請透過支援信箱 <code>dicoge.chen@gmail.com</code>（App 內刪除按鈕也提供一鍵開啟郵件的捷徑）並附上您的 Internal User ID 提交申請，我們會以人工方式處理並回信通知。此動作無法復原。
+          <strong>目前版本（本機模擬）：</strong>目前並沒有任何雲端帳號或資料。您的所有資料（模擬帳號、掃描計數、收藏清單）都只存在您自己的裝置本機。當您在 App 內點擊「刪除帳號與資料（本機）」後，本機登入狀態與快取會被立即清除並登出——這已完整刪除本 App 目前所持有、關於您的全部資料。此動作無法復原。<br><br>
+          <strong>未來正式版（串接後端與金流後）：</strong>屆時 App 內刪除按鈕會清除本機 Session；若要一併刪除雲端上的 Internal User ID、第三方登入關聯、每月配額計數與收藏清單，並將歷史訂閱交易紀錄去識別化，可透過支援信箱 <code>dicoge.chen@gmail.com</code> 附上 Internal User ID 提交申請，由後端級聯刪除處理並回信通知。（此雲端刪除管道於目前模擬版本尚未實作，因目前並無雲端資料。）
         </div>
       </div>
 
@@ -377,7 +378,7 @@
       <p style="margin-bottom: 24px;">If you experience any issues with HoloHunter or have feedback/suggestions, feel free to contact us:</p>
 
       <div style="border: 1px solid #ef4444; background: rgba(239,68,68,0.08); border-radius: 12px; padding: 16px 18px; margin-bottom: 24px; line-height: 1.7;">
-        <strong>⚠️ Current Build Status (Test / Demo Stage):</strong> In the current build, Google / Apple sign-in and paid subscriptions are <strong>simulated (demo) flows</strong> not yet connected to real Google / Apple OAuth or App Store / Google Play billing. This stage does <strong>not actually collect your personal data and does not process any real payment or charge you</strong>; the "upgrade to subscription" and account details shown are for testing/demo only. The FAQs below describe the expected behavior once the App ships to production.
+        <strong>⚠️ Current Build Status (Local Mock / Demo Stage):</strong> In the current build, Google / Apple sign-in, account linking, Internal User ID, subscription status, and the monthly scan quota are <strong>all a "local mock"</strong>: signing in merely writes a fixed fake account onto your own device. Nothing is connected to real Google / Apple OAuth, a backend database, cloud sync, or App Store / Google Play / Stripe billing. This stage does <strong>not actually collect your personal data, holds no cloud account, quota, or subscription record, and does not process any real payment or charge you</strong>; the "upgrade to subscription" and account details shown are a local mock. Any FAQ below marked "Future production" describes the expected behavior once the App ships with a backend and billing — it is not implemented yet.
       </div>
       
       <div class="info-grid">
@@ -411,23 +412,23 @@
       <div class="faq-item">
         <div class="faq-question">Q: What is the monthly scan quota for Free Users?</div>
         <div class="faq-answer">
-          Registered free tier users receive <strong>100 card scans per month</strong>. Once you exhaust this quota, the scanning capability locks until the 1st of the next month (UTC), when it resets. Alternatively, you can subscribe to upgrade for unlimited scans.
+          <strong>(Future production behavior)</strong> Registered free tier users receive <strong>100 card scans per month</strong>. Once you exhaust this quota, the scanning capability locks until the 1st of the next month (UTC), when it resets. Alternatively, you can subscribe to upgrade for unlimited scans.<br><br><strong>Current build (local mock):</strong> the scan count is only a local mock value, not a server-side quota; clearing cache or reinstalling resets it. Real server-side monthly quota enforcement is not implemented yet.
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: What do I unlock as a Premium Subscriber?</div>
         <div class="faq-answer">
-          Premium Subscribers get full access to: <br>
+          <strong>(Future production)</strong> Premium Subscribers get full access to: <br>
           1. <strong>Unlimited Card Scanning</strong>: Scans are completely unlimited.<br>
-          2. <strong>AI Price Trend Forecasts</strong>: Unlock predictions using advanced modeling based on YT subscriber stats, sentiment tracking, and historical price variants.
+          2. <strong>AI Price Trend Forecasts</strong>: Unlock predictions using advanced modeling based on YT subscriber stats, sentiment tracking, and historical price variants.<br><br><strong>Current build (local mock):</strong> "Upgrade to subscription" simply flips your role to subscriber locally to demonstrate the unlock effect. It does not authenticate an account or take payment, and is not connected to StoreKit / Google Play Billing / Stripe.
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: Can I link both my Google and Apple accounts?</div>
         <div class="faq-answer">
-          Yes! HoloHunter supports a "Common Account" mechanism. You can log in with Google first, then go to the <strong>Settings</strong> page and tap <strong>Link Apple</strong>, or vice versa. Both methods will share the same Internal User ID and cloud card collections.
+          <strong>(Future production)</strong> HoloHunter supports a "Common Account" mechanism. You can log in with Google first, then go to the <strong>Settings</strong> page and tap <strong>Link Apple</strong>, or vice versa. Both methods will share the same Internal User ID and cloud card collections.<br><br><strong>Current build (local mock):</strong> sign-in and linking are a local mock that writes a fixed fake account and toggles state on-device; real OAuth, a backend database, and cloud sync are not connected yet.
         </div>
       </div>
 
@@ -443,7 +444,8 @@
       <div class="faq-item">
         <div class="faq-question">Q: Does account deletion wipe my scan logs and subscriptions?</div>
         <div class="faq-answer">
-          Tapping "Delete Account" inside the App clears your local session and caches immediately and signs you out, but it does not automatically delete cloud data. To also delete your cloud-stored Internal User ID, linked OAuth identities, scan quota histories, and synced card collections — and to de-identify historical payment records — please submit a request via our support email <code>dicoge.chen@gmail.com</code> (the in-app delete button offers a one-tap shortcut to open this email) with your Internal User ID. We process it manually and email you once done. This action is irreversible.
+          <strong>Current build (local mock):</strong> there is no cloud account or data at this stage — all of your data (mock account, scan count, collections) lives only on your own device. Tapping "Delete Account (Local)" clears your local session and caches immediately and signs you out, which fully deletes everything the App currently holds about you. This action is irreversible.<br><br>
+          <strong>Future production (after backend & billing):</strong> the in-app delete button will clear the local session; to also delete your cloud-stored Internal User ID, linked OAuth identities, scan quota histories, and synced card collections — and to de-identify historical payment records — you will be able to submit a request via our support email <code>dicoge.chen@gmail.com</code> with your Internal User ID, handled by backend cascade deletion. (This cloud deletion channel is not implemented in the current mock build, since no cloud data exists yet.)
         </div>
       </div>
 

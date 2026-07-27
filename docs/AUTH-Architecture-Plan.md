@@ -4,6 +4,17 @@
 
 ---
 
+## 0. 實作狀態邊界（務必先讀）
+
+> **目前實作（Current Implementation）= 本機模擬 (local mock)。** 現行程式碼**尚未串接任何真實 OAuth、後端資料庫或雲端服務**：
+> - `src/store/authStore.ts` 的 `loginWithGoogle` / `loginWithApple` 只寫入**硬編碼的假身份**（固定 email / display name / provider id）到本機 Zustand + 裝置儲存，並非真的向 Google / Apple 驗證。
+> - 綁定、解除綁定、衝突合併、`Internal User ID`、tier / quota 全部是**本機狀態切換**，沒有 `users` / `linked_auth_providers` 資料表，也沒有雲端同步。
+> - 「刪除帳號」只清除本機 session / 快取；沒有可供刪除的雲端帳號或交易。
+>
+> **未來目標架構（Future / Target Production）= 以下所有章節。** 本文件第 1 節之後描述的資料模型、DDL、OAuth 流程、衝突處理、後端刪除等，皆為**正式上架時要實作的目標設計，目前尚未實作**。閱讀時請一律視為「未來目標」而非現況。
+
+---
+
 ## 1. 資料模型 (Data Model Schema)
 
 為了避免使用 Email 作為唯一身分識別（因 Apple Private Relay 的匿名 Email，以及不同 Provider 註冊的 Email 不一致問題），我們採用 **Internal User ID** 與 **Auth Provider / Identities** 分離的關聯模型。

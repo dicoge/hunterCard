@@ -293,23 +293,27 @@ export default function CardDetailScreen({ route, navigation }: any) {
               </Text>
               <Text style={styles.premiumLockDesc}>
                 {preferredLanguage === 'zh'
-                  ? '本功能僅開放給付費訂閱會員。升級訂閱後即可解鎖 AI 價格波動預測、歷史趨勢因子分析，助您精準掌握交易時機！'
-                  : 'This section is exclusive for Premium Subscribers. Upgrade to unlock AI forecasts, YT metrics, and sentiment analysis!'}
+                  ? '（示範）此 Premium 鎖定與解鎖流程為本機模擬，登入與升級皆不會真的驗證帳號或付款。正式版才會以真實訂閱狀態開放 AI 價格波動預測與歷史趨勢因子分析。'
+                  : '(Demo) This premium gate is a local mock — sign-in and upgrade do not authenticate an account or take payment. Real AI forecasts, YT metrics, and sentiment analysis unlock via a real subscription in production.'}
               </Text>
-              
+
               {!isLoggedIn || !session || session.role === 'guest' ? (
                 <View style={{ width: '100%', gap: 10, marginTop: 10 }}>
                   <TouchableOpacity style={styles.premiumLoginBtn} onPress={() => {
                     loginWithGoogle();
                     Alert.alert('提示', '已模擬以 Google 登入免費版，請再次點擊解鎖或至設定頁升級訂閱版。');
                   }}>
-                    <Text style={styles.premiumLoginBtnText}>以 Google 登入免費版</Text>
+                    <Text style={styles.premiumLoginBtnText}>
+                      {preferredLanguage === 'zh' ? '以 Google 登入免費版（模擬）' : 'Sign in with Google — Free (Mock)'}
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.premiumLoginBtn, { backgroundColor: '#000' }]} onPress={() => {
                     loginWithApple();
                     Alert.alert('提示', '已模擬以 Apple 登入免費版，請再次點擊解鎖或至設定頁升級訂閱版。');
                   }}>
-                    <Text style={styles.premiumLoginBtnText}>以 Apple 登入免費版</Text>
+                    <Text style={styles.premiumLoginBtnText}>
+                      {preferredLanguage === 'zh' ? '以 Apple 登入免費版（模擬）' : 'Sign in with Apple — Free (Mock)'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               ) : (

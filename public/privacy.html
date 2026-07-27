@@ -272,7 +272,8 @@
       <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。我們非常重視您的個人隱私。本政策說明我們如何處理多方帳號登入、綁定、訂閱狀態與相關個人資料。當您使用本 App 時，即表示您同意本政策。</p>
 
       <div class="danger-card">
-        <p><strong>⚠️ 目前版本狀態（測試 / 示範階段）：</strong> 現階段的 App 中，Google / Apple 登入與付費訂閱皆為<strong>模擬（demo）流程</strong>，尚未串接真實的 Google / Apple OAuth 或 App Store / Google Play 金流。因此本階段<strong>不會實際向 Google / Apple 取得您的個人資料，也不會處理任何真實付款或收取費用</strong>；App 中顯示的帳號資訊與「升級訂閱」皆為測試用途的示範資料。以下條款描述的是本 App <strong>正式上架、串接真實登入與金流後</strong>的資料處理方式。</p>
+        <p><strong>⚠️ 目前版本狀態（本機模擬 / 示範階段）：</strong> 現階段的 App 中，Google / Apple 登入、帳號綁定、Internal User ID、訂閱狀態與每月掃描配額<strong>全部都是「本機模擬（local mock）」</strong>：登入只會在您的裝置本機寫入一組固定的假帳號資料，尚未串接真實的 Google / Apple OAuth、後端資料庫、雲端同步或 App Store / Google Play / Stripe 金流。因此本階段<strong>不會實際向 Google / Apple 取得您的個人資料，沒有任何雲端帳號、配額或訂閱紀錄，也不會處理任何真實付款或收取費用</strong>。相對地，這也表示<strong>目前並沒有任何儲存在雲端、需要被刪除的個人資料或交易</strong>——App 內的資料只存在您自己的裝置上。</p>
+        <p>以下第 1～3、6 節描述的資料模型、雲端同步、配額與訂閱處理，屬於本 App <strong>未來正式上架、串接真實登入與金流後</strong>的目標設計；在目前的模擬版本中尚未實作。凡標示為「未來正式版」的段落皆為規劃藍圖，並非現況。</p>
       </div>
 
       <h2>1. 我們只支援第三方登入 (OAuth) 與訪客模式</h2>
@@ -324,20 +325,23 @@
       </ul>
 
       <h2>5. 帳號與資料刪除方式</h2>
-      <p>符合 Apple App Store 與 Google Play 的合規規範，我們提供帳號與資料刪除機制。目前雲端資料的刪除採「來信申請、人工處理」方式辦理：</p>
+
+      <h3>目前版本（本機模擬）：</h3>
       <div class="danger-card">
-        <p><strong>⚠️ 注意：</strong> App 內的<strong>「刪除帳號與資料」</strong>按鈕目前僅會清除本機裝置上的登入 Session 與快取並將您登出；若要一併刪除儲存於雲端的資料，請透過下方電子郵件提交刪除申請。此為不可逆操作。</p>
+        <p><strong>⚠️ 目前並沒有任何雲端帳號或資料需要刪除。</strong> 由於現階段登入與訂閱皆為本機模擬，您的所有資料（模擬帳號、卡牌收藏、掃描計數）都只存在您自己的裝置本機。進入<strong>「設定」</strong>分頁點擊紅色的<strong>「刪除帳號與資料（本機）」</strong>按鈕並確認後，App 會立即清除本機的登入 Session 與卡牌收藏快取並將您登出——這已完整刪除本 App 目前所持有、關於您的全部資料。此為不可逆操作。</p>
       </div>
 
-      <h3>刪除管道：</h3>
+      <h3>未來正式版（串接後端與金流後）：</h3>
+      <p>當本 App 正式上架、串接真實的 OAuth 登入、雲端資料庫與金流之後，我們將補上以下刪除機制以符合 Apple App Store 與 Google Play 的合規規範：</p>
       <ol>
-        <li><strong>本機清除（App 內）</strong>：進入<strong>「設定」</strong>分頁，點擊紅色的<strong>「刪除帳號與資料 (Delete Account)」</strong>按鈕並確認後，App 會立即清除本機的登入 Session 與卡牌收藏快取，並將您登出。此動作不會自動刪除雲端資料。</li>
-        <li><strong>雲端資料刪除申請（電子郵件）</strong>：如需刪除儲存於雲端的資料（卡牌收藏、掃描配額紀錄、訂閱關聯等），請使用您登入所用的電子郵件，將刪除申請寄至 <code>dicoge.chen@gmail.com</code> 並附上您的 Internal User ID。我們收到後會以人工方式處理刪除與必要之交易紀錄去識別化，並回信通知您完成。App 內的刪除按鈕也提供一鍵開啟郵件申請的捷徑。</li>
+        <li><strong>本機清除（App 內）</strong>：App 內的刪除按鈕會清除本機 Session 與快取並登出。</li>
+        <li><strong>雲端資料刪除申請（電子郵件）</strong>：屆時如需刪除儲存於雲端的資料（卡牌收藏、掃描配額紀錄、訂閱關聯等），可使用您登入所用的電子郵件，將刪除申請寄至 <code>dicoge.chen@gmail.com</code> 並附上您的 Internal User ID。我們會以後端級聯刪除處理帳號、配額與必要之交易紀錄去識別化，並回信通知您完成。（此雲端刪除管道於目前模擬版本尚未實作，因目前並無雲端資料。）</li>
       </ol>
 
-      <h2>6. App Store / Google Play 行動商店規範合規</h2>
+      <h2>6. App Store / Google Play 行動商店規範合規（未來正式版）</h2>
+      <p>以下商店合規項目適用於本 App 未來串接真實金流與後端之後；目前模擬版本尚未實作真實訂閱與帳號刪除後端。</p>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>：本 App 在「設定」內提供帳號刪除入口（清除本機 Session 並登出），並提供以電子郵件申請刪除雲端資料的管道。訂閱由 Apple StoreKit 2 與 Google Play Billing 進行，可隨時在您的商店設定中取消訂閱。</li>
+        <li><strong>App Store Account Deletion & Subscriptions</strong>：正式版將在「設定」內提供帳號刪除入口，並提供以電子郵件申請刪除雲端資料的管道。訂閱屆時將由 Apple StoreKit 2 與 Google Play Billing 進行，可隨時在您的商店設定中取消訂閱。（目前為本機模擬，尚未串接。）</li>
         <li><strong>Google Play Data Safety (資料安全)</strong>：
           <ul>
             <li>傳輸安全性：本 App 收集的所有資料皆透過安全的加密協定（HTTPS）傳輸，確保傳輸過程不被竊聽。</li>
@@ -362,7 +366,8 @@
       <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). We highly value your personal privacy. This policy describes how we handle multi-provider sign-ins, account linking, subscriptions, and related personal data. By using the App, you agree to this policy.</p>
 
       <div class="danger-card">
-        <p><strong>⚠️ Current Build Status (Test / Demo Stage):</strong> In the current build, Google / Apple sign-in and paid subscriptions are <strong>simulated (demo) flows</strong> and are not yet connected to real Google / Apple OAuth or App Store / Google Play billing. As a result, this stage does <strong>not actually collect any personal data from Google / Apple, and does not process any real payment or charge you</strong>; the account details and "upgrade to subscription" shown in the App are demonstration data for testing only. The clauses below describe how the App will handle data <strong>once it ships with real authentication and billing integrated</strong>.</p>
+        <p><strong>⚠️ Current Build Status (Local Mock / Demo Stage):</strong> In the current build, Google / Apple sign-in, account linking, Internal User ID, subscription status, and the monthly scan quota are <strong>all a "local mock"</strong>: signing in merely writes a fixed fake account onto your own device. Nothing is connected to real Google / Apple OAuth, a backend database, cloud sync, or App Store / Google Play / Stripe billing. As a result, this stage does <strong>not actually collect any personal data from Google / Apple, holds no cloud account, quota, or subscription record, and does not process any real payment or charge you</strong>. Consequently there is <strong>currently no personal data or transaction stored in any cloud that would need to be deleted</strong> — the App's data lives only on your own device.</p>
+        <p>Sections 1–3 and 6 below (the data model, cloud sync, quota, and subscription handling) describe the <strong>future production design once the App ships with real authentication and billing</strong>; they are not implemented in the current mock build. Any paragraph marked "Future production" is a planned blueprint, not the current state.</p>
       </div>
 
       <h2>1. Third-Party Authentication Only (OAuth) & Guest Mode</h2>
@@ -414,20 +419,23 @@
       </ul>
 
       <h2>5. Account & Data Deletion</h2>
-      <p>In compliance with Apple App Store and Google Play requirements, we provide an account and data deletion process. Cloud data deletion is currently handled through an email request that we process manually:</p>
+
+      <h3>Current build (local mock):</h3>
       <div class="danger-card">
-        <p><strong>⚠️ Warning:</strong> The in-app <strong>Delete Account</strong> button currently only clears your login session and cache on this device and signs you out. To also delete data stored in the cloud, please submit a deletion request via the email address below. This action is irreversible.</p>
+        <p><strong>⚠️ There is currently no cloud account or data to delete.</strong> Because sign-in and subscriptions are a local mock at this stage, all of your data (the mock account, card collection, scan count) lives only on your own device. Go to the <strong>Settings</strong> tab, tap the red <strong>Delete Account (Local)</strong> button, and confirm — the App immediately clears your local session and card collection cache and signs you out. This fully deletes everything the App currently holds about you. The action is irreversible.</p>
       </div>
 
-      <h3>How to Delete Your Account:</h3>
+      <h3>Future production (after backend & billing are integrated):</h3>
+      <p>Once the App ships with real OAuth login, a cloud database, and billing, we will add the following deletion mechanisms to comply with Apple App Store and Google Play requirements:</p>
       <ol>
-        <li><strong>Local Clear (In-App)</strong>: Go to the <strong>Settings</strong> tab, tap the red <strong>Delete Account</strong> button, and confirm. Your local session and card collection cache are cleared immediately and you are signed out. This does not automatically delete cloud data.</li>
-        <li><strong>Cloud Data Deletion Request (Email)</strong>: To delete data stored in the cloud (card collections, scan quota logs, subscription links), send a request from your registered email to <code>dicoge.chen@gmail.com</code> with your Internal User ID. We process the deletion and any required transaction de-identification manually and email you once complete. The in-app delete button also offers a one-tap shortcut to open this email request.</li>
+        <li><strong>Local Clear (In-App)</strong>: The in-app delete button clears the local session and cache and signs you out.</li>
+        <li><strong>Cloud Data Deletion Request (Email)</strong>: At that point, to delete data stored in the cloud (card collections, scan quota logs, subscription links), send a request from your registered email to <code>dicoge.chen@gmail.com</code> with your Internal User ID. We will handle account cascade deletion, quota removal, and any required transaction de-identification, and email you once complete. (This cloud deletion channel is not implemented in the current mock build, since no cloud data exists yet.)</li>
       </ol>
 
-      <h2>6. App Store & Google Play Store Compliance</h2>
+      <h2>6. App Store & Google Play Store Compliance (Future production)</h2>
+      <p>The following store-compliance items apply after the App integrates real billing and a backend; the current mock build does not yet implement real subscriptions or a deletion backend.</p>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>: We provide an account deletion entry point in the App's Settings (which clears the local session and signs you out) together with an email channel to request deletion of cloud data. Subscriptions are verified via StoreKit 2 and Google Play Billing, and can be cancelled anytime in your store account settings.</li>
+        <li><strong>App Store Account Deletion & Subscriptions</strong>: The production version will provide an account deletion entry point in the App's Settings together with an email channel to request deletion of cloud data. Subscriptions will then be verified via StoreKit 2 and Google Play Billing, and can be cancelled anytime in your store account settings. (Currently a local mock, not yet integrated.)</li>
         <li><strong>Google Play Data Safety</strong>:
           <ul>
             <li>Transit Security: All data collected is transmitted using secure encryption protocols (HTTPS) to prevent interception.</li>

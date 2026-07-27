@@ -768,16 +768,18 @@ export default function ScanScreen() {
           <Text style={styles.gatedTitle}>{preferredLanguage === 'zh' ? '卡牌掃描功能' : 'Card Scanning'}</Text>
           <Text style={styles.gatedDesc}>
             {preferredLanguage === 'zh'
-              ? 'HoloHunter 不提供自家密碼，我們只支援安全的 Google 與 Apple 快速登入。請登入以開啟每月 100 次的免費掃描與雲端同步功能！'
-              : 'HoloHunter does not store passwords. We only support secure Google and Apple Sign-In. Log in to unlock 100 free monthly scans and cloud sync!'}
+              ? '（示範版本）此登入目前為本機模擬：點擊後會在本機建立一組固定的假帳號並開啟掃描，尚未串接真實 Google／Apple 登入、每月配額或雲端同步。正式版才會提供真正的登入與 100 次／月免費額度。'
+              : '(Demo build) Sign-in here is a local mock: it creates a fixed fake account on this device and unlocks scanning. Real Google/Apple login, a monthly quota, and cloud sync are NOT connected yet — they arrive in the production version.'}
           </Text>
 
           <TouchableOpacity style={styles.loginBtnGoogle} onPress={loginWithGoogle}>
-            <Text style={styles.loginBtnTextGoogle}>Sign in with Google</Text>
+            <Text style={styles.loginBtnTextGoogle}>
+              {preferredLanguage === 'zh' ? 'Sign in with Google（模擬）' : 'Sign in with Google (Mock)'}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.loginBtnApple} onPress={loginWithApple}>
-            <Text style={styles.loginBtnTextApple}> Sign in with Apple</Text>
+            <Text style={styles.loginBtnTextApple}> {preferredLanguage === 'zh' ? 'Sign in with Apple（模擬）' : 'Sign in with Apple (Mock)'}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -789,11 +791,11 @@ export default function ScanScreen() {
       <SafeAreaView style={styles.gatedContainer}>
         <View style={styles.gatedCard}>
           <Text style={styles.gatedIcon}>⚠️</Text>
-          <Text style={styles.gatedTitle}>{preferredLanguage === 'zh' ? '已達本月免費掃描上限' : 'Monthly Quota Exceeded'}</Text>
+          <Text style={styles.gatedTitle}>{preferredLanguage === 'zh' ? '已達本月免費掃描上限（本機模擬）' : 'Quota Exceeded (Local Mock)'}</Text>
           <Text style={styles.gatedDesc}>
             {preferredLanguage === 'zh'
-              ? '您已使用完本月 100 次的免費掃描額度。\n升級至訂閱版會員即可解鎖無限掃描次數，並開啟 AI 價格預測與進階市場分析功能！'
-              : 'You have used your 100 free monthly scans.\nUpgrade to Premium to get unlimited scans, unlock AI price predictions, and advanced market trends!'}
+              ? '（示範）此額度為本機模擬計數，並非伺服器端配額；清除快取或重裝 App 會重置。正式版才會有真正的每月 100 次伺服器端額度。\n升級至訂閱版會員即可（模擬）解鎖無限掃描次數，並開啟 AI 價格預測與進階市場分析功能！'
+              : '(Demo) This limit is a local mock counter, not a server-side quota — clearing cache or reinstalling resets it. A real 100-scan monthly quota arrives in production.\nUpgrade to Premium to (mock) unlock unlimited scans, AI price predictions, and advanced market trends!'}
           </Text>
 
           <TouchableOpacity style={styles.upgradeBtn} onPress={toggleSubscription}>
@@ -813,14 +815,14 @@ export default function ScanScreen() {
       {session && session.role === 'free_user' && (
         <View style={styles.quotaBadge}>
           <Text style={styles.quotaBadgeText}>
-            📊 {preferredLanguage === 'zh' ? '免費版額度' : 'Free Quota'}: {session.scanCount} / 100
+            📊 {preferredLanguage === 'zh' ? '免費版額度（本機模擬）' : 'Free Quota (Local Mock)'}: {session.scanCount} / 100
           </Text>
         </View>
       )}
       {session && session.role === 'subscriber' && (
         <View style={[styles.quotaBadge, { backgroundColor: '#f59e0b' }]}>
           <Text style={styles.quotaBadgeText}>
-            ⭐ {preferredLanguage === 'zh' ? '訂閱版會員 (無限掃描)' : 'Premium (Unlimited Scans)'}
+            ⭐ {preferredLanguage === 'zh' ? '訂閱版會員 (無限掃描 · 本機模擬)' : 'Premium (Unlimited · Local Mock)'}
           </Text>
         </View>
       )}

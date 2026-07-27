@@ -4,6 +4,20 @@
 
 ---
 
+## 0. 實作狀態邊界（務必先讀）Current Implementation vs. Future Target
+
+> **目前實作（Current Implementation）= 本機模擬 (local mock)。**
+> 現行 App 版本並未串接任何後端、金流或伺服器端配額服務。實際行為如下：
+> - **角色切換**：`guest` / `free_user` / `subscriber` 皆為 `src/store/authStore.ts` 內的本機 Zustand 狀態。「模擬升級訂閱」只是把 `role` 在本機由 `free_user` 翻成 `subscriber`，沒有 StoreKit、Google Play Billing 或 Stripe 交易，也沒有收據驗證。
+> - **掃描配額**：`scanCount` 為本機儲存的假數值，遞減與「100 次上限」判斷全在裝置端進行。沒有 Redis / KV、沒有 `/api/scan/validate`、沒有伺服器端 `INCR`，因此可被清除快取或重裝 App 重置——**目前並非防竄改**。
+> - **登入**：`loginWithGoogle` / `loginWithApple` 只寫入寫死的假帳號到本機，並非真正的 Google / Apple OAuth，也沒有 `users` / `linked_auth_providers` 資料表。
+> - **刪除帳號**：只清除本機 session 與快取；雲端沒有帳號、配額或交易紀錄可刪。
+>
+> **未來目標架構（Future / Target Production）= 以下第 1 節起的所有內容。**
+> 下方的權限矩陣、Onboarding 與 OAuth 註冊、伺服器端 Quota 防竄改 (Redis/KV)、StoreKit 2 / Google Play Billing / Stripe 訂閱同步、後端帳號刪除與資料清理流程，**皆為尚未實作的目標設計 (target architecture)**，需在正式串接後端與金流時才會落地。閱讀時請以「規劃藍圖」看待，勿誤認為現有功能。
+
+---
+
 ## 1. 權限與營利矩陣 (Permissions Matrix)
 
 我們設計了三種使用者角色：`guest` (訪客)、`free_user` (免費登入者)、`subscriber` (付費訂閱者)。

@@ -213,20 +213,30 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>👤 共通帳號設定</Text>
           
+          <View style={styles.demoBanner}>
+            <Text style={styles.demoBannerText}>
+              {preferredLanguage === 'zh'
+                ? '⚠️ 示範版本：以下所有帳號功能（Google／Apple 登入、綁定、Internal User ID、訂閱權限、掃描額度、刪除帳號）目前皆為「本機模擬」，資料只存在本機，未串接真實 OAuth、雲端同步或金流。'
+                : '⚠️ Demo build: every account feature below (Google/Apple sign-in, linking, Internal User ID, subscription tier, scan quota, delete account) is a LOCAL MOCK. Data stays on this device only — no real OAuth, cloud sync, or billing is connected yet.'}
+            </Text>
+          </View>
+
           {!isLoggedIn || !session ? (
             <View style={styles.authContainer}>
               <Text style={styles.authDesc}>
-                {preferredLanguage === 'zh' 
-                  ? '登入以同步您的卡牌收藏、使用卡牌掃描與高級價格趨勢預測。' 
-                  : 'Sign in to sync your favorites, use card scanning, and unlock premium price trends.'}
+                {preferredLanguage === 'zh'
+                  ? '（示範）此登入為本機模擬，會寫入一組固定的假帳號到本機，不會真的向 Google／Apple 驗證，也不會做雲端同步。'
+                  : '(Demo) Sign-in here is a local mock: it writes a fixed fake account to this device. It does not authenticate with Google/Apple and does not sync to any cloud.'}
               </Text>
               
               <TouchableOpacity style={styles.loginBtnGoogle} onPress={loginWithGoogle}>
-                <Text style={styles.loginBtnTextGoogle}>Sign in with Google</Text>
+                <Text style={styles.loginBtnTextGoogle}>
+                  {preferredLanguage === 'zh' ? 'Sign in with Google（模擬）' : 'Sign in with Google (Mock)'}
+                </Text>
               </TouchableOpacity>
               
               <TouchableOpacity style={styles.loginBtnApple} onPress={loginWithApple}>
-                <Text style={styles.loginBtnTextApple}> Sign in with Apple</Text>
+                <Text style={styles.loginBtnTextApple}> {preferredLanguage === 'zh' ? 'Sign in with Apple（模擬）' : 'Sign in with Apple (Mock)'}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.loginBtnGuest} onPress={loginAsGuest}>
@@ -257,10 +267,12 @@ export default function SettingsScreen() {
 
               <View style={styles.authActionRow}>
                 <TouchableOpacity style={styles.loginBtnGoogle} onPress={loginWithGoogle}>
-                  <Text style={styles.loginBtnTextGoogle}>Sign in with Google</Text>
+                  <Text style={styles.loginBtnTextGoogle}>
+                  {preferredLanguage === 'zh' ? 'Sign in with Google（模擬）' : 'Sign in with Google (Mock)'}
+                </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.loginBtnApple} onPress={loginWithApple}>
-                  <Text style={styles.loginBtnTextApple}> Sign in with Apple</Text>
+                  <Text style={styles.loginBtnTextApple}> {preferredLanguage === 'zh' ? 'Sign in with Apple（模擬）' : 'Sign in with Apple (Mock)'}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -273,14 +285,14 @@ export default function SettingsScreen() {
           ) : (
             <View style={styles.sessionContainer}>
               <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>Internal User ID</Text>
+                <Text style={styles.userLabel}>Internal User ID {preferredLanguage === 'zh' ? '（模擬）' : '(Mock)'}</Text>
                 <Text style={styles.userIdValue} numberOfLines={1} ellipsizeMode="middle">
                   {session.internalUserId}
                 </Text>
               </View>
 
               <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '訂閱權限' : 'Subscription Tier'}</Text>
+                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '訂閱權限（模擬）' : 'Subscription Tier (Mock)'}</Text>
                 <View style={styles.tierContainer}>
                   <Text style={[
                     styles.userValue, 
@@ -295,7 +307,7 @@ export default function SettingsScreen() {
               </View>
 
               <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '每月掃描次數' : 'Monthly Scans'}</Text>
+                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '每月掃描次數（本機模擬）' : 'Monthly Scans (Local Mock)'}</Text>
                 <Text style={styles.userValue}>
                   {session.role === 'subscriber' 
                     ? (preferredLanguage === 'zh' ? '♾️ 無限 (Unlimited)' : '♾️ Unlimited')
@@ -315,7 +327,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               <Text style={styles.identitiesTitle}>
-                {preferredLanguage === 'zh' ? '已綁定登入方式' : 'Linked Providers'}
+                {preferredLanguage === 'zh' ? '已綁定登入方式（模擬資料）' : 'Linked Providers (Mock Data)'}
               </Text>
 
               {session.identities.map((identity) => (
@@ -356,7 +368,7 @@ export default function SettingsScreen() {
                         style={styles.linkActionBtn} 
                         onPress={() => handleLinkProvider('google')}
                       >
-                        <Text style={styles.linkActionText}>🔗 綁定 Google</Text>
+                        <Text style={styles.linkActionText}>🔗 綁定 Google{preferredLanguage === 'zh' ? '（模擬）' : ' (Mock)'}</Text>
                       </TouchableOpacity>
                     )}
                     {!hasApple && (
@@ -364,7 +376,7 @@ export default function SettingsScreen() {
                         style={styles.linkActionBtn} 
                         onPress={() => handleLinkProvider('apple')}
                       >
-                        <Text style={styles.linkActionText}>🔗 綁定 Apple</Text>
+                        <Text style={styles.linkActionText}>🔗 綁定 Apple{preferredLanguage === 'zh' ? '（模擬）' : ' (Mock)'}</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -380,7 +392,7 @@ export default function SettingsScreen() {
 
                 <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteAccount}>
                   <Text style={styles.deleteBtnText}>
-                    {preferredLanguage === 'zh' ? '刪除帳號與資料' : 'Delete Account'}
+                    {preferredLanguage === 'zh' ? '刪除帳號與資料（本機）' : 'Delete Account (Local)'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -493,6 +505,20 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+  },
+  demoBanner: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderColor: '#ef4444',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+  },
+  demoBannerText: {
+    color: '#ef4444',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   authContainer: {
     backgroundColor: COLORS.surface,
