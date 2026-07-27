@@ -104,6 +104,7 @@ function coerceRecord(record) {
   const modelOutput = typeof record.model_output === 'object'
     ? record.model_output
     : parseJsonMaybe(record.model_output || record.modelOutput, record.model_output || record.modelOutput || '');
+  const rawDuplicateCount = record.duplicate_count ?? record.duplicateCount;
 
   return {
     ...record,
@@ -112,7 +113,7 @@ function coerceRecord(record) {
     expected_rarity: record.expected_rarity || record.expectedRarity,
     expected_series: record.expected_series || record.expectedSeries,
     matched_cardNumber: record.matched_cardNumber || record.matchedCardNumber,
-    duplicate_count: Number(record.duplicate_count ?? record.duplicateCount ?? 1),
+    duplicate_count: rawDuplicateCount === undefined || rawDuplicateCount === '' ? null : Number(rawDuplicateCount),
     confidence: numberOrNull(record.confidence),
     top_matches: topMatches,
     model_output: modelOutput,
@@ -170,7 +171,9 @@ function validate(records) {
     for (const f of ['image_id', 'expected_cardNumber', 'expected_rarity', 'expected_series']) {
       if (!r[f]) errors.push(`record ${idx + 1}: missing ${f}`);
     }
-    if (!Number.isFinite(r.duplicate_count) || r.duplicate_count < 0) {
+    if (r.duplicate_count == null) {
+      errors.push(`record ${idx + 1}: missing duplicate_count`);
+    } else if (!Number.isFinite(r.duplicate_count) || r.duplicate_count < 0) {
       errors.push(`record ${idx + 1}: duplicate_count must be a non-negative number`);
     }
   });
@@ -283,7 +286,8 @@ async function loadRecords(filePath) {
       raw = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => JSON.parse(line));
     }
   }
-  if (!Array.isArray(raw)) throw new Error('Input must be a JSON array, JSONL, or CSV table');
+  if (!Array.isArray(raw) && raw && typeof raw === 'object') raw = [raw];
+  if (!Array.isArray(raw)) throw new Error('Input must be a JSON array, JSON object, JSONL, or CSV table');
   return raw.map(coerceRecord);
 }
 
