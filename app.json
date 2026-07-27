@@ -33,6 +33,9 @@
       "versionCode": 1,
       "permissions": [
         "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "privacyPolicyUrl": "https://card-hunter-mu.vercel.app/privacy",
@@ -51,7 +54,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "允許 HoloHunter 存取相機以掃描卡牌"
+          "cameraPermission": "允許 HoloHunter 存取相機以掃描卡牌",
+          "recordAudioAndroid": false
         }
       ],
       [
@@ -68,6 +72,7 @@
       ],
       "expo-notifications",
       "expo-apple-authentication"
+      "expo-notifications"
     ],
     "extra": {
       "eas": {
