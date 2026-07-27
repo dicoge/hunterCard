@@ -41,15 +41,15 @@ To guarantee output consistency, we leverage the Gemini API's native **Structure
       "items": {
         "type": "OBJECT",
         "properties": {
-          "cardNumber": { 
-            "type": "STRING", 
-            "description": "Alternative candidate card number." 
+          "cardNumber": {
+            "type": "STRING",
+            "description": "Alternative candidate card number."
           },
-          "name": { 
+          "name": {
             "type": "STRING",
             "description": "Candidate card name."
           },
-          "reason": { 
+          "reason": {
             "type": "STRING",
             "description": "Reason why this candidate is a close match."
           }

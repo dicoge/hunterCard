@@ -93,6 +93,9 @@ export default function ScanScreen() {
   // Scan locking and state management
   const isScanningRef = useRef<boolean>(false);
   const wasCardScannedRef = useRef<boolean>(false);
+  const isGalleryPickingRef = useRef<boolean>(false);
+  const noCardFramesRef = useRef<number>(0);
+  const lastAnalysisTimeRef = useRef<number>(0);
 
   const setScanningStates = (scanning: boolean) => {
     isScanningRef.current = scanning;
@@ -188,7 +191,7 @@ export default function ScanScreen() {
     // Auto-scan only works on web; native keeps manual scan
     if (!isWeb) return;
     if (!isCameraReady || !autoScanEnabled) return;
-    if (isScanning || isProcessingOCR) return;
+    if (isScanning || isProcessingOCR || isGalleryPickingRef.current) return;
 
     let mounted = true;
     const scanArea = {
@@ -203,27 +206,38 @@ export default function ScanScreen() {
 
       const video = document.querySelector('video');
       if (video && video.readyState >= 2) {
-        const result = analyzeFrameWithStability(video, scanArea);
-        
-        // If no card is detected, reset the scan lock
-        if (!result.hasCard) {
-          wasCardScannedRef.current = false;
-        }
+        const isOverlayVisible = resultCard.visible || showSearch || scanError || searchError;
+        const now = Date.now();
 
-        const shouldTriggerScan =
-          result.isStable &&
-          result.confidence > 0.85 &&
-          !wasCardScannedRef.current &&
-          !resultCard.visible &&
-          !showSearch &&
-          !scanError &&
-          !searchError;
+        // Throttling: If overlay is visible, run at 500ms intervals to save CPU, otherwise every frame
+        const shouldAnalyze = !isOverlayVisible || (now - lastAnalysisTimeRef.current >= 500);
 
-        if (shouldTriggerScan) {
-          const now = Date.now();
-          if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
-            lastScanTimeRef.current = now;
-            captureAndRecognize();
+        if (shouldAnalyze) {
+          lastAnalysisTimeRef.current = now;
+          const result = analyzeFrameWithStability(video, scanArea);
+
+          if (!result.hasCard) {
+            noCardFramesRef.current += 1;
+            // Unlocked after stable no-card frames (10 frames at 60fps ~ 166ms, or 2 frames at 500ms throttle ~ 1s)
+            const requiredFrames = isOverlayVisible ? 2 : 10;
+            if (noCardFramesRef.current >= requiredFrames) {
+              wasCardScannedRef.current = false;
+            }
+          } else {
+            noCardFramesRef.current = 0;
+          }
+
+          const shouldTriggerScan =
+            !isOverlayVisible &&
+            result.isStable &&
+            result.confidence > 0.85 &&
+            !wasCardScannedRef.current;
+
+          if (shouldTriggerScan) {
+            if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
+              lastScanTimeRef.current = now;
+              captureAndRecognize();
+            }
           }
         }
       }
@@ -278,7 +292,7 @@ export default function ScanScreen() {
 
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
-    if (isScanningRef.current) return;
+    if (isScanningRef.current || isGalleryPickingRef.current) return;
     if (isWeb) {
       if (!webCameraRef.current) {
         Alert.alert('錯誤', '相機未準備好');
@@ -486,7 +500,11 @@ export default function ScanScreen() {
 
   // 從相冊選擇圖片進行識別
   const pickFromGallery = async () => {
+    if (isScanningRef.current || isGalleryPickingRef.current) return;
     try {
+      isGalleryPickingRef.current = true;
+      setScanningStates(true);
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -494,8 +512,6 @@ export default function ScanScreen() {
       });
 
       if (!result.canceled && result.assets[0]?.uri) {
-        setScanningStates(true);
-
         setScanError(null);
         setCapturedPhotoUri(result.assets[0].uri);
 
@@ -584,6 +600,7 @@ export default function ScanScreen() {
       console.error('Gallery OCR Error:', error);
       setScanError('無法讀取或識別圖片，請重試或使用手動輸入');
     } finally {
+      isGalleryPickingRef.current = false;
       setScanningStates(false);
     }
   };

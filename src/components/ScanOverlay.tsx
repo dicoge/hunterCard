@@ -155,8 +155,9 @@ export default function ScanOverlay({
 
             {/* Gallery button */}
             <TouchableOpacity
-              style={styles.controlBtn}
+              style={[styles.controlBtn, isScanning && styles.controlBtnDisabled]}
               onPress={onGallery}
+              disabled={isScanning}
               activeOpacity={0.7}
             >
               <Text style={styles.controlIcon}>🖼️</Text>
@@ -347,6 +348,9 @@ const styles = StyleSheet.create({
   },
   controlBtnActive: {
     opacity: 1,
+  },
+  controlBtnDisabled: {
+    opacity: 0.4,
   },
   controlIcon: {
     fontSize: 26,
