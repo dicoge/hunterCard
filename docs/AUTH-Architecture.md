@@ -168,24 +168,36 @@ CREATE TABLE subscriptions (
 );
 CREATE INDEX idx_subscriptions_user ON subscriptions(user_id) WHERE status = 'active';
 
--- entitlement（某 user 享有哪個 tier，合併多個來源 plan / promo / migration 的結果）
+-- entitlement（某 user 的權威 tier 與 quota；合併多個來源 plan / promo / migration 的結果）
+-- 對應 DIC-674 契約：free = free_user（每月 100 張）、pro = subscriber（不限量）。
+-- 單一權威 quota：tier 決定 quota；limit 欄位 NULL = 無上限（unlimited）。
 CREATE TABLE entitlements (
   user_id         UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   tier            TEXT NOT NULL DEFAULT 'free'
-                    CHECK (tier IN ('free','pro')),
-  daily_limit     INTEGER NOT NULL DEFAULT 50,
-  monthly_limit   INTEGER NOT NULL DEFAULT 500,
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+                    CHECK (tier IN ('free','pro')),   -- free=free_user, pro=subscriber
+  daily_limit     INTEGER,                            -- NULL = 無日上限
+  monthly_limit   INTEGER,                            -- NULL = 無月上限（unlimited）
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- tier 與 quota 綁死為單一真相，杜絕 50/500 之類的第二套數字：
+  CONSTRAINT quota_matches_tier CHECK (
+    (tier = 'free' AND daily_limit IS NULL AND monthly_limit = 100) OR   -- DIC-674：free 每月 100
+    (tier = 'pro'  AND daily_limit IS NULL AND monthly_limit IS NULL)    -- DIC-674：subscriber 不限量
+  )
 );
+-- Seed：新 user 一律 free → INSERT (user_id, 'free', NULL, 100)。
+-- 升級 subscriber → UPDATE SET tier='pro', daily_limit=NULL, monthly_limit=NULL。
+-- guest（DIC-674：無 internal user id / 匿名 session）不落 entitlements，不可掃描。
 ```
+
+> **Quota gating（單一真相）**：掃描前讀 `entitlements`。`monthly_limit IS NULL`（pro）→ 不限量放行；否則比對當期 `scan_usage.scan_count < monthly_limit`（free = 100）才放行，達標回 `403 QUOTA_EXCEEDED`。沒有 entitlements row 的請求（guest / 未建 entitlement）不可掃描。任何地方都以 `entitlements.tier` + limit 欄位為唯一 quota 依據，不得在別處硬編 100 以外的數字。
 
 #### 3.5.1 Merge 規則（scan_usage / subscriptions / entitlements）
 
 | 資料 | 規則 |
 | --- | --- |
-| scan_usage | **每 period 取 capped sum**：對每個 `period`，target.scan_count = min(target.scan_count + source.scan_count, entitlement.monthly_limit)。source 的 `scan_usage` 全部寫入 audit_log 後設 `scan_count = 0`。capped 部分記 audit_log `merge_quota_capped` 含原始值。全部在 merge transaction 內以 `FOR UPDATE` 執行，防止並發掃描/merge 導致超額。 |
+| scan_usage | **每 period 取 capped sum，封頂值取 merge 後 target 的權威 `entitlement.monthly_limit`**：`monthly_limit IS NULL`（merge 後為 pro / unlimited）→ target.scan_count = target + source（不封頂）；否則 target.scan_count = min(target + source, monthly_limit)（free = 100）。source 的 `scan_usage` 全部寫入 audit_log 後設 `scan_count = 0`。capped 部分記 audit_log `merge_quota_capped` 含原始值。全部在 merge transaction 內以 `FOR UPDATE` 執行，且在 §3.5.1 entitlements 合併「之後」計算，確保封頂用的是合併後的 tier；防止並發掃描/merge 導致超額。 |
 | subscriptions | **原子轉移所有 active rows**：`UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`。轉移後若 target 有多個 active subscription → 保留單一 survivor：依 `expires_at DESC NULLS FIRST`（永久 plan 優先）、`started_at DESC`（到期日一致則保留最新訂購）、`id DESC`（連 started_at 都一致則保留最新 insert 的 row）。其餘 `cancelled_at = now()`、`status = 'cancelled'`。若 survivor 為 pro 且另有 active pro → 轉 `requires_support`。全部在 merge transaction 內。 |
-| entitlements | **upsert-then-delete**（entitlements PK = user_id）：先 `INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit) SELECT <target.id>, tier, daily_limit, monthly_limit FROM entitlements WHERE user_id = <source.id> ON CONFLICT (user_id) DO UPDATE SET tier = CASE WHEN entitlements.tier = 'pro' OR EXCLUDED.tier = 'pro' THEN 'pro' ELSE 'free' END, daily_limit = CASE WHEN entitlements.tier = 'pro' THEN entitlements.daily_limit WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.daily_limit ELSE entitlements.daily_limit END, monthly_limit = CASE WHEN entitlements.tier = 'pro' THEN entitlements.monthly_limit WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.monthly_limit ELSE entitlements.monthly_limit END, updated_at = now()`。接著 `DELETE FROM entitlements WHERE user_id = <source.id>`。**limits 判定以 target 既有 tier 為準**：`entitlements.tier`（= target 現值）為 `'pro'` 時 CASE 一律保留 target 的 tier/daily_limit/monthly_limit，完全不採 `EXCLUDED`（source）值；只有在 **target 非 pro、source 為 pro** 時才採用 source 的 limits。故 source 與 target 同為 pro → target 權威保留、limits 不變。任一情況只要牽涉 pro entitlement 併入，記 audit_log 後轉 `requires_support` 供人工確認最終 tier。
+| entitlements | **upsert-then-delete**（entitlements PK = user_id）：先 `INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit) SELECT <target.id>, tier, daily_limit, monthly_limit FROM entitlements WHERE user_id = <source.id> ON CONFLICT (user_id) DO UPDATE SET tier = CASE WHEN entitlements.tier = 'pro' OR EXCLUDED.tier = 'pro' THEN 'pro' ELSE 'free' END, daily_limit = CASE WHEN entitlements.tier = 'pro' THEN entitlements.daily_limit WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.daily_limit ELSE entitlements.daily_limit END, monthly_limit = CASE WHEN entitlements.tier = 'pro' THEN entitlements.monthly_limit WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.monthly_limit ELSE entitlements.monthly_limit END, updated_at = now()`。接著 `DELETE FROM entitlements WHERE user_id = <source.id>`。**limits 判定以 target 既有 tier 為準**：`entitlements.tier`（= target 現值）為 `'pro'` 時 CASE 一律保留 target 的 tier/daily_limit/monthly_limit，完全不採 `EXCLUDED`（source）值；只有在 **target 非 pro、source 為 pro** 時才採用 source 的 limits。因 pro row 的 daily/monthly limit 皆為 `NULL`（unlimited）、free row 為 `(NULL, 100)`，故合併結果一律落在 `quota_matches_tier` CHECK 允許的兩組值上（pro→NULL/NULL、free→NULL/100），不會產生第三套數字。此 entitlements 合併必須排在 §3.5.1 scan_usage capped-sum 之前，讓 scan_usage 封頂讀到的是合併後的權威 tier。source 與 target 同為 pro → target 權威保留、limits 不變。任一情況只要牽涉 pro entitlement 併入，記 audit_log 後轉 `requires_support` 供人工確認最終 tier。
 
 #### 3.5.2 Purge 規則
 
@@ -279,13 +291,13 @@ merge 過程中所有資料移轉（identities / favorites / watchlist / setting
 2. 以上全部在同一個 DB transaction 內。
 
 **步驟 C — 使用者資料 ownership 轉移**
-在步驟 B 同一 transaction 內，依 §4.1 與 §3.5.1 規則執行資料轉移：
+在步驟 B 同一 transaction 內，依 §4.1 與 §3.5.1 規則執行資料轉移（**entitlements 先於 scan_usage**，讓 quota 封頂讀到合併後的 tier）：
 - favorites / watchlist → INSERT ... ON CONFLICT DO NOTHING（聯集去重）
 - user_settings → target 保留，source 捨棄
 - push_tokens → `UPDATE push_tokens SET user_id = target.id WHERE user_id = source.id`
-- scan_usage → 每 period 計算 capped sum（`min(source + target, entitlement.monthly_limit)`），記 audit_log `merge_quota_capped`
+- entitlements → `INSERT ... SELECT ... FROM entitlements WHERE user_id = source.id ON CONFLICT (user_id) DO UPDATE`（upsert，見 §3.5.1），then `DELETE FROM entitlements WHERE user_id = source.id`
+- scan_usage → 每 period capped sum：合併後 `monthly_limit IS NULL`（pro）→ `source + target` 不封頂；否則 `min(source + target, monthly_limit)`（free = 100），記 audit_log `merge_quota_capped`
 - subscriptions → `UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`；轉移後取 survivor（`expires_at DESC NULLS FIRST`, then `started_at DESC`），其餘 cancel
-- entitlements → `INSERT ... SELECT ... FROM entitlements WHERE user_id = source.id ON CONFLICT (user_id) DO UPDATE`（upsert），then `DELETE FROM entitlements WHERE user_id = source.id`
 
 **步驟 D — source user 標記**
 - `UPDATE users SET status = 'pending_deletion', deleted_at = now() WHERE id = <source.id>`。
