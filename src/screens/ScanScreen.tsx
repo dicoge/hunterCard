@@ -90,6 +90,16 @@ export default function ScanScreen() {
   // Currency preference (from global settings)
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
 
+  // Scan locking and state management
+  const isScanningRef = useRef<boolean>(false);
+  const wasCardScannedRef = useRef<boolean>(false);
+
+  const setScanningStates = (scanning: boolean) => {
+    isScanningRef.current = scanning;
+    setIsScanning(scanning);
+    setIsProcessingOCR(scanning);
+  };
+
   // Scan result card (floating overlay)
   const [resultCard, setResultCard] = useState<{
     visible: boolean;
@@ -179,6 +189,10 @@ export default function ScanScreen() {
     if (!isWeb) return;
     if (!isCameraReady || !autoScanEnabled) return;
     if (isScanning || isProcessingOCR) return;
+    if (resultCard.visible) return;
+    if (showSearch) return;
+    if (scanError) return;
+    if (searchError) return;
 
     let mounted = true;
     const scanArea = {
@@ -194,7 +208,13 @@ export default function ScanScreen() {
       const video = document.querySelector('video');
       if (video && video.readyState >= 2) {
         const result = analyzeFrameWithStability(video, scanArea);
-        if (result.isStable && result.confidence > 0.85) {
+        
+        // If no card is detected, reset the scan lock
+        if (!result.hasCard) {
+          wasCardScannedRef.current = false;
+        }
+
+        if (result.isStable && result.confidence > 0.85 && !wasCardScannedRef.current) {
           const now = Date.now();
           if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
             lastScanTimeRef.current = now;
@@ -213,7 +233,17 @@ export default function ScanScreen() {
         cancelAnimationFrame(autoScanRef.current);
       }
     };
-  }, [isCameraReady, autoScanEnabled, isScanning, isProcessingOCR, facing]);
+  }, [
+    isCameraReady,
+    autoScanEnabled,
+    isScanning,
+    isProcessingOCR,
+    facing,
+    resultCard.visible,
+    showSearch,
+    scanError,
+    searchError,
+  ]);
 
   const toggleCameraFacing = () => {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
@@ -243,6 +273,7 @@ export default function ScanScreen() {
 
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
+    if (isScanningRef.current) return;
     if (isWeb) {
       if (!webCameraRef.current) {
         Alert.alert('錯誤', '相機未準備好');
@@ -254,8 +285,7 @@ export default function ScanScreen() {
     }
 
     try {
-      setIsProcessingOCR(true);
-      setIsScanning(true);
+      setScanningStates(true);
       setScanningStatus('📷 拍攝中…');
       setScanProgress(1);
       setScanError(null);
@@ -341,7 +371,8 @@ export default function ScanScreen() {
           setResultCard({ visible: true, card: cardInfo, confidence: 0.9 });
           setSearchResults([]); setSearchError(null); setSuggestions([]);
           setCapturedPhotoUri(null); resetAutoScan();
-          setIsProcessingOCR(false); setIsScanning(false);
+          wasCardScannedRef.current = true;
+          setScanningStates(false);
           return;
         }
 
@@ -353,8 +384,7 @@ export default function ScanScreen() {
           setScanError(`⚠️ 辨識失敗: ${errMsg}`);
           if (apiResult.raw) setRecognizedText(apiResult.raw);
           // 留著 photo 讓使用者可以手動搜尋
-          setIsProcessingOCR(false);
-          setIsScanning(false);
+          setScanningStates(false);
           return;
         }
 
@@ -362,8 +392,7 @@ export default function ScanScreen() {
         if (apiNetworkError) {
           console.warn('[ScanScreen] API unreachable, falling back to Tesseract');
           const result = await recognizeCardFromImage(photo.uri);
-          setIsProcessingOCR(false);
-          setIsScanning(false);
+          setScanningStates(false);
 
           if (result.success && result.card) {
             addCard(result.card);
@@ -371,6 +400,7 @@ export default function ScanScreen() {
             setResultCard({ visible: true, card: result.card, confidence: 0.85 });
             setSearchResults([]); setSearchError(null); setSuggestions([]);
             setCapturedPhotoUri(null); resetAutoScan();
+            wasCardScannedRef.current = true;
           } else {
             const recognizedText = await recognizeTextWeb(photo.uri);
             const trimmedText = recognizedText.text.trim();
@@ -383,6 +413,7 @@ export default function ScanScreen() {
                 setResultCard({ visible: true, card: fallbackResult.card, confidence: 0.85 });
                 setSearchResults([]); setSearchError(null); setSuggestions([]);
                 setCapturedPhotoUri(null); resetAutoScan();
+                wasCardScannedRef.current = true;
                 return;
               }
               setSearchError(fallbackResult.error || '找不到匹配的卡牌');
@@ -395,8 +426,7 @@ export default function ScanScreen() {
         } else {
           // 沒網路錯誤也沒 API 結果（不該發生，但兜底）
           setScanError('無法完成掃描，請重試或使用手動搜尋');
-          setIsProcessingOCR(false);
-          setIsScanning(false);
+          setScanningStates(false);
         }
       } else {
         // Native: 用 expo-ocr-kit 做全圖 OCR
@@ -406,8 +436,7 @@ export default function ScanScreen() {
         const trimmedText = recognizedText.trim();
         setRecognizedText(trimmedText);
 
-        setIsProcessingOCR(false);
-        setIsScanning(false);
+        setScanningStates(false);
 
         if (trimmedText.length > 0) {
           // 使用 OCR 專用辨識（含行分割、卡號提取）
@@ -430,6 +459,7 @@ export default function ScanScreen() {
             setCapturedPhotoUri(null);
             // Reset auto-scan stability buffer after successful scan
             resetAutoScan();
+            wasCardScannedRef.current = true;
           } else {
             // 沒有精確匹配 — 用全部結果做模糊搜尋，讓用戶選擇
             setSearchError(result.error || '找不到匹配的卡牌');
@@ -446,8 +476,7 @@ export default function ScanScreen() {
       }
     } catch (error) {
       console.error('OCR Error:', error);
-      setIsProcessingOCR(false);
-      setIsScanning(false);
+      setScanningStates(false);
       setScanningStatus('');
       setScanProgress(0);
 
@@ -465,8 +494,7 @@ export default function ScanScreen() {
       });
 
       if (!result.canceled && result.assets[0]?.uri) {
-        setIsProcessingOCR(true);
-        setIsScanning(true);
+        setScanningStates(true);
 
         setScanError(null);
         setCapturedPhotoUri(result.assets[0].uri);
@@ -475,8 +503,7 @@ export default function ScanScreen() {
           // Web: 卡號優先 OCR
           const cardResult = await recognizeCardFromImage(result.assets[0].uri);
 
-          setIsProcessingOCR(false);
-          setIsScanning(false);
+          setScanningStates(false);
 
           if (cardResult.success && cardResult.card) {
             addCard(cardResult.card);
@@ -491,6 +518,7 @@ export default function ScanScreen() {
             setSuggestions([]);
             setCapturedPhotoUri(null);
             resetAutoScan();
+            wasCardScannedRef.current = true;
           } else {
             // Fallback 到全圖 OCR
             const recognizedText = await recognizeTextWeb(result.assets[0].uri);
@@ -512,6 +540,7 @@ export default function ScanScreen() {
                 setSuggestions([]);
                 setCapturedPhotoUri(null);
                 resetAutoScan();
+                wasCardScannedRef.current = true;
                 return;
               }
               setSearchError(fallbackResult.error || '找不到匹配的卡牌');
@@ -526,8 +555,7 @@ export default function ScanScreen() {
           const trimmedText = recognizedText.trim();
           setRecognizedText(trimmedText);
 
-          setIsProcessingOCR(false);
-          setIsScanning(false);
+          setScanningStates(false);
 
           if (trimmedText.length > 0) {
             const cardResult = await recognizeCardFromOcr(trimmedText);
@@ -545,6 +573,7 @@ export default function ScanScreen() {
               setSuggestions([]);
               setCapturedPhotoUri(null);
               resetAutoScan();
+              wasCardScannedRef.current = true;
             } else {
               setSearchError(cardResult.error || '找不到匹配的卡牌');
               const searchResult = await searchCards(trimmedText, 10);
@@ -557,14 +586,14 @@ export default function ScanScreen() {
       }
     } catch (error) {
       console.error('Gallery OCR Error:', error);
-      setIsProcessingOCR(false);
-      setIsScanning(false);
+      setScanningStates(false);
       setScanError('無法讀取或識別圖片，請重試或使用手動輸入');
     }
   };
 
   const handleScan = () => {
     if (isScanning || isProcessingOCR) return;
+    wasCardScannedRef.current = false;
     captureAndRecognize();
   };
 
@@ -592,6 +621,7 @@ export default function ScanScreen() {
 
   const handleRetry = () => {
     setCameraError(null);
+    wasCardScannedRef.current = false;
     if (isWeb && webCameraRef.current) {
       webCameraRef.current.retry();
     } else {
@@ -956,7 +986,10 @@ export default function ScanScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={resultStyles.retryButton}
-              onPress={() => captureAndRecognize()}
+              onPress={() => {
+                wasCardScannedRef.current = false;
+                captureAndRecognize();
+              }}
             >
               <Text style={resultStyles.retryText}>重試掃描</Text>
             </TouchableOpacity>
