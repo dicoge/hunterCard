@@ -46,6 +46,13 @@ export interface RecognitionResult {
   success: boolean;
   card?: CardInfo;
   suggestions?: CardInfo[];
+  confidence?: number;
+  reason?: string;
+  debug?: {
+    rawModelOutput?: string;
+    candidates?: Array<CardInfo & { confidence?: number; reason?: string }>;
+    [key: string]: any;
+  };
   error?: string;
 }
 
@@ -328,6 +335,24 @@ async function resizeImage(imageUri: string, maxDim: number): Promise<string> {
  * Falls back gracefully without throwing
  */
 async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
+  const mapApiCard = (apiCard: any): CardInfo => ({
+    id: apiCard.cardNumber,
+    name: apiCard.name || '',
+    cardNumber: apiCard.cardNumber,
+    type: '',
+    rarity: apiCard.rarity || '',
+    series: apiCard.series || '',
+    sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
+    yuyuName: '',
+    color: '',
+    imageUrl: apiCard.imageUrl || '',
+    prices: apiCard.prices || [],
+  });
+
+  const mapApiCandidates = (items: any[] = []): CardInfo[] => items
+    .filter(item => item?.cardNumber)
+    .map(mapApiCard);
+
   try {
     // Preprocess with OpenCV: enhance contrast, sharpen, resize
     const processedImage = await preprocessCardImage(imageUri);
@@ -348,27 +373,30 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const data = await apiResponse.json();
 
     if (!data.success) {
-      return { success: false, error: data.error || '' };
+      return {
+        success: false,
+        error: data.error || '',
+        suggestions: mapApiCandidates(data.candidates),
+        confidence: data.confidence,
+        reason: data.reason,
+        debug: data.debug || { rawModelOutput: data.raw, candidates: data.candidates },
+      };
     }
 
     // API returned full card info — use it directly
     if (data.card) {
-      const apiCard = data.card;
-      // Map API response to CardInfo format
-      const cardInfo: CardInfo = {
-        id: apiCard.cardNumber,
-        name: apiCard.name || '',
-        cardNumber: apiCard.cardNumber,
-        type: '',
-        rarity: apiCard.rarity || '',
-        series: apiCard.series || '',
-        sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
-        yuyuName: '',
-        color: '',
-        imageUrl: apiCard.imageUrl || '',
-        prices: apiCard.prices || [],
+      const cardInfo = mapApiCard(data.card);
+      const suggestions = mapApiCandidates(data.candidates)
+        .filter(c => c.cardNumber !== cardInfo.cardNumber)
+        .slice(0, 4);
+      return {
+        success: true,
+        card: cardInfo,
+        suggestions,
+        confidence: data.confidence,
+        reason: data.reason,
+        debug: data.debug || { rawModelOutput: data.raw, candidates: data.candidates },
       };
-      return { success: true, card: cardInfo };
     }
 
     // API only returned cardNumber — look up locally

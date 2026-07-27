@@ -38,9 +38,14 @@ export const useScanSessionStore = create<ScanSessionState>()(
 
       addCard: (card: CardInfo) => {
         const { cards } = get();
+        const now = Date.now();
+        const lastDuplicate = [...cards].reverse().find(c => c.cardNumber === card.cardNumber);
+        if (lastDuplicate && now - Date.parse(lastDuplicate.scannedAt) < 5000) {
+          return;
+        }
         const sessionCard: SessionCard = {
           ...card,
-          scannedAt: new Date().toISOString(),
+          scannedAt: new Date(now).toISOString(),
         };
         const newCards = [...cards, sessionCard];
         const total = newCards.reduce((sum, c) => sum + (c.sellPrice || 0), 0);

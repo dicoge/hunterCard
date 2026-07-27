@@ -241,6 +241,72 @@ export default function ScanScreen() {
     }
   };
 
+  const toCardInfo = (card: any): CardInfo => ({
+    id: card.cardNumber,
+    name: card.name || '',
+    cardNumber: card.cardNumber,
+    type: '',
+    rarity: card.rarity || '',
+    series: card.series || '',
+    sellPrice: card.sellPrice != null ? card.sellPrice : null,
+    yuyuName: '',
+    color: '',
+    imageUrl: card.imageUrl || '',
+    prices: card.prices || [],
+  });
+
+  const showCandidateChoices = (items: any[], error: string) => {
+    const candidateCards = items
+      .filter(item => item?.cardNumber)
+      .map(toCardInfo);
+    setScanError(null);
+    setSearchError(error || '低信心辨識，請選擇正確卡牌');
+    setSuggestions([]);
+    setSearchResults(candidateCards.slice(0, 5));
+  };
+
+  const acceptRecognizedCard = (card: CardInfo, confidence: number = 0.85) => {
+    addCard(card);
+    setLastScannedCard(card);
+    setResultCard({ visible: true, card, confidence });
+    setScanError(null);
+    setSearchResults([]);
+    setSearchError(null);
+    setSuggestions([]);
+    setCapturedPhotoUri(null);
+    resetAutoScan();
+  };
+
+  const captureWebRecognitionImages = (photoUri: string): string[] => {
+    const video = document.querySelector('video');
+    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) return [photoUri];
+
+    const makeImage = (sx: number, sy: number, sw: number, sh: number, maxDim: number) => {
+      let w = sw, h = sh;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round((h / w) * maxDim); w = maxDim; }
+        else { w = Math.round((w / h) * maxDim); h = maxDim; }
+      }
+      const c = document.createElement('canvas');
+      c.width = Math.round(w); c.height = Math.round(h);
+      const ctx = c.getContext('2d');
+      if (!ctx) return photoUri;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.92);
+    };
+
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const full = makeImage(0, 0, vw, vh, 2048);
+    const cropW = Math.round(vw * 0.86);
+    const cropH = Math.round(vh * 0.72);
+    const cropX = Math.round((vw - cropW) / 2);
+    const cropY = Math.round(vh * 0.14);
+    const crop = makeImage(cropX, cropY, cropW, Math.min(cropH, vh - cropY), 1536);
+    return crop === full ? [full] : [full, crop];
+  };
+
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
     if (isWeb) {
@@ -281,26 +347,10 @@ export default function ScanScreen() {
       setCapturedPhotoUri(photo.uri);
 
       if (isWeb) {
-        // ── Step 1: 從 video 直接 resize 到 1024px（跳過雙層 canvas）──
+        // ── Step 1: 送出全圖 + 掃描框裁切雙路徑，保留底部小卡號細節 ──
         setScanningStatus('📤 處理影像中…');
         setScanProgress(2);
-        let imgData: string;
-        const video = document.querySelector('video');
-        if (video && video.videoWidth > 0) {
-          let w = video.videoWidth, h = video.videoHeight;
-          const MAX = 1024;
-          if (w > MAX || h > MAX) {
-            if (w > h) { h = Math.round((h / w) * MAX); w = MAX; }
-            else { w = Math.round((w / h) * MAX); h = MAX; }
-          }
-          const c = document.createElement('canvas');
-          c.width = w; c.height = h;
-          c.getContext('2d')!.drawImage(video, 0, 0, w, h);
-          imgData = c.toDataURL('image/jpeg', 0.85);
-        } else {
-          // 保險：直接用 WebCamera 拍的照片（已是 data: URI）
-          imgData = photo.uri;
-        }
+        const recognitionImages = captureWebRecognitionImages(photo.uri);
 
         // ── Step 2: 叫 API 辨識（15 秒 timeout）──
         setScanningStatus('🤖 AI 辨識中…');
@@ -314,7 +364,7 @@ export default function ScanScreen() {
           const resp = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: imgData }),
+            body: JSON.stringify({ image: recognitionImages[0], images: recognitionImages }),
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
@@ -329,18 +379,8 @@ export default function ScanScreen() {
         if (apiResult?.success && apiResult?.card) {
           setScanningStatus('✅ 辨識完成');
           setScanProgress(4);
-          const card = apiResult.card;
-          const cardInfo: CardInfo = {
-            id: card.cardNumber, name: card.name || '', cardNumber: card.cardNumber,
-            type: '', rarity: card.rarity || '', series: card.series || '',
-            sellPrice: card.sellPrice != null ? card.sellPrice : null,
-            yuyuName: '', color: '', imageUrl: card.imageUrl || '', prices: card.prices || [],
-          };
-          addCard(cardInfo);
-          setLastScannedCard(cardInfo);
-          setResultCard({ visible: true, card: cardInfo, confidence: 0.9 });
-          setSearchResults([]); setSearchError(null); setSuggestions([]);
-          setCapturedPhotoUri(null); resetAutoScan();
+          const cardInfo = toCardInfo(apiResult.card);
+          acceptRecognizedCard(cardInfo, apiResult.confidence || 0.9);
           setIsProcessingOCR(false); setIsScanning(false);
           return;
         }
@@ -350,8 +390,13 @@ export default function ScanScreen() {
           const errMsg = apiResult.error || '無法辨識';
           setScanningStatus('');
           setScanProgress(0);
-          setScanError(`⚠️ 辨識失敗: ${errMsg}`);
+          setScanError(null);
           if (apiResult.raw) setRecognizedText(apiResult.raw);
+          if (Array.isArray(apiResult.candidates) && apiResult.candidates.length > 0) {
+            showCandidateChoices(apiResult.candidates, errMsg);
+          } else {
+            setScanError(`⚠️ 辨識失敗: ${errMsg}`);
+          }
           // 留著 photo 讓使用者可以手動搜尋
           setIsProcessingOCR(false);
           setIsScanning(false);
@@ -366,28 +411,28 @@ export default function ScanScreen() {
           setIsScanning(false);
 
           if (result.success && result.card) {
-            addCard(result.card);
-            setLastScannedCard(result.card);
-            setResultCard({ visible: true, card: result.card, confidence: 0.85 });
-            setSearchResults([]); setSearchError(null); setSuggestions([]);
-            setCapturedPhotoUri(null); resetAutoScan();
+            acceptRecognizedCard(result.card, result.confidence || 0.85);
           } else {
+            if (result.suggestions?.length) {
+              showCandidateChoices(result.suggestions, result.error || '低信心辨識，請選擇正確卡牌');
+              return;
+            }
             const recognizedText = await recognizeTextWeb(photo.uri);
             const trimmedText = recognizedText.text.trim();
             setRecognizedText(trimmedText);
             if (trimmedText.length > 0) {
               const fallbackResult = await recognizeCardFromOcr(trimmedText);
               if (fallbackResult.success && fallbackResult.card) {
-                addCard(fallbackResult.card);
-                setLastScannedCard(fallbackResult.card);
-                setResultCard({ visible: true, card: fallbackResult.card, confidence: 0.85 });
-                setSearchResults([]); setSearchError(null); setSuggestions([]);
-                setCapturedPhotoUri(null); resetAutoScan();
+                acceptRecognizedCard(fallbackResult.card, fallbackResult.confidence || 0.85);
                 return;
               }
-              setSearchError(fallbackResult.error || '找不到匹配的卡牌');
-              const searchResult = await searchCards(trimmedText, 10);
-              setSearchResults(searchResult);
+              if (fallbackResult.suggestions?.length) {
+                showCandidateChoices(fallbackResult.suggestions, fallbackResult.error || '低信心辨識，請選擇正確卡牌');
+              } else {
+                setSearchError(fallbackResult.error || '找不到匹配的卡牌');
+                const searchResult = await searchCards(trimmedText, 10);
+                setSearchResults(searchResult);
+              }
             } else {
               setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
             }
@@ -416,25 +461,16 @@ export default function ScanScreen() {
           if (result.success && result.card) {
             setScanningStatus('✅ 辨識完成');
             setScanProgress(4);
-            addCard(result.card);
-            setLastScannedCard(result.card);
-            // Show floating result card
-            setResultCard({
-              visible: true,
-              card: result.card,
-              confidence: 0.85,
-            });
-            setSearchResults([]);
-            setSearchError(null);
-            setSuggestions([]);
-            setCapturedPhotoUri(null);
-            // Reset auto-scan stability buffer after successful scan
-            resetAutoScan();
+            acceptRecognizedCard(result.card, result.confidence || 0.85);
           } else {
-            // 沒有精確匹配 — 用全部結果做模糊搜尋，讓用戶選擇
-            setSearchError(result.error || '找不到匹配的卡牌');
-            const searchResult = await searchCards(trimmedText, 10);
-            setSearchResults(searchResult);
+            // 沒有精確匹配 — 顯示候選，讓用戶選擇
+            if (result.suggestions?.length) {
+              showCandidateChoices(result.suggestions, result.error || '低信心辨識，請選擇正確卡牌');
+            } else {
+              setSearchError(result.error || '找不到匹配的卡牌');
+              const searchResult = await searchCards(trimmedText, 10);
+              setSearchResults(searchResult);
+            }
           }
         } else {
           // OCR 回傳空文字（常見於 web 版）
@@ -479,19 +515,12 @@ export default function ScanScreen() {
           setIsScanning(false);
 
           if (cardResult.success && cardResult.card) {
-            addCard(cardResult.card);
-            setLastScannedCard(cardResult.card);
-            setResultCard({
-              visible: true,
-              card: cardResult.card,
-              confidence: 0.85,
-            });
-            setSearchResults([]);
-            setSearchError(null);
-            setSuggestions([]);
-            setCapturedPhotoUri(null);
-            resetAutoScan();
+            acceptRecognizedCard(cardResult.card, cardResult.confidence || 0.85);
           } else {
+            if (cardResult.suggestions?.length) {
+              showCandidateChoices(cardResult.suggestions, cardResult.error || '低信心辨識，請選擇正確卡牌');
+              return;
+            }
             // Fallback 到全圖 OCR
             const recognizedText = await recognizeTextWeb(result.assets[0].uri);
             const trimmedText = recognizedText.text.trim();
@@ -500,23 +529,16 @@ export default function ScanScreen() {
             if (trimmedText.length > 0) {
               const fallbackResult = await recognizeCardFromOcr(trimmedText);
               if (fallbackResult.success && fallbackResult.card) {
-                addCard(fallbackResult.card);
-                setLastScannedCard(fallbackResult.card);
-                setResultCard({
-                  visible: true,
-                  card: fallbackResult.card,
-                  confidence: 0.85,
-                });
-                setSearchResults([]);
-                setSearchError(null);
-                setSuggestions([]);
-                setCapturedPhotoUri(null);
-                resetAutoScan();
+                acceptRecognizedCard(fallbackResult.card, fallbackResult.confidence || 0.85);
                 return;
               }
-              setSearchError(fallbackResult.error || '找不到匹配的卡牌');
-              const searchResult = await searchCards(trimmedText, 10);
-              setSearchResults(searchResult);
+              if (fallbackResult.suggestions?.length) {
+                showCandidateChoices(fallbackResult.suggestions, fallbackResult.error || '低信心辨識，請選擇正確卡牌');
+              } else {
+                setSearchError(fallbackResult.error || '找不到匹配的卡牌');
+                const searchResult = await searchCards(trimmedText, 10);
+                setSearchResults(searchResult);
+              }
             } else {
               setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
             }
@@ -532,23 +554,15 @@ export default function ScanScreen() {
           if (trimmedText.length > 0) {
             const cardResult = await recognizeCardFromOcr(trimmedText);
             if (cardResult.success && cardResult.card) {
-              addCard(cardResult.card);
-              setLastScannedCard(cardResult.card);
-              // Show floating result card
-              setResultCard({
-                visible: true,
-                card: cardResult.card,
-                confidence: 0.85,
-              });
-              setSearchResults([]);
-              setSearchError(null);
-              setSuggestions([]);
-              setCapturedPhotoUri(null);
-              resetAutoScan();
+              acceptRecognizedCard(cardResult.card, cardResult.confidence || 0.85);
             } else {
-              setSearchError(cardResult.error || '找不到匹配的卡牌');
-              const searchResult = await searchCards(trimmedText, 10);
-              setSearchResults(searchResult);
+              if (cardResult.suggestions?.length) {
+                showCandidateChoices(cardResult.suggestions, cardResult.error || '低信心辨識，請選擇正確卡牌');
+              } else {
+                setSearchError(cardResult.error || '找不到匹配的卡牌');
+                const searchResult = await searchCards(trimmedText, 10);
+                setSearchResults(searchResult);
+              }
             }
           } else {
             setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
@@ -642,8 +656,7 @@ export default function ScanScreen() {
   const handleSelectSuggestion = (card: CardInfo) => {
     setRecognizedCard(card);
     setSuggestions([]);
-    addCard(card);
-    setResultCard({ visible: true, card, confidence: 0.85 });
+    acceptRecognizedCard(card, 0.85);
   };
   
   // 清除結果
@@ -967,7 +980,7 @@ export default function ScanScreen() {
       {/* 搜尋建議列表 */}
       {searchResults.length > 0 && (
         <View style={resultStyles.suggestionsListContainer}>
-          <Text style={resultStyles.suggestionsTitle}>搜尋結果:</Text>
+          <Text style={resultStyles.suggestionsTitle}>{searchError?.includes('低信心') ? '候選卡（請選擇）:' : '搜尋結果:'}</Text>
           <ScrollView style={resultStyles.suggestionsList}>
             {searchResults.map((card, index) => (
               <TouchableOpacity 
@@ -976,6 +989,7 @@ export default function ScanScreen() {
                 onPress={() => handleSelectSuggestion(card)}
               >
                 <Text style={resultStyles.listItemName}>{card.name}</Text>
+                <Text style={resultStyles.listItemId}>{card.cardNumber} · {card.rarity} · {card.series}</Text>
                 <Text style={resultStyles.listItemPrice}>
                   ¥{card.sellPrice?.toLocaleString() || '尚無交易'}
                 </Text>
@@ -1463,9 +1477,6 @@ const resultStyles = StyleSheet.create({
     maxHeight: 200,
   },
   listItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
@@ -1473,7 +1484,12 @@ const resultStyles = StyleSheet.create({
   listItemName: {
     color: COLORS.text,
     fontSize: 14,
-    flex: 1,
+    fontWeight: '600',
+  },
+  listItemId: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
   },
   listItemPrice: {
     color: COLORS.primary,
