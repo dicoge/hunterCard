@@ -76,6 +76,8 @@ CREATE TABLE auth_identities (
 );
 -- 唯 active (unrevoked) identity 才佔唯一鍵；revoked 後同一 (provider, subject) 可重新 link / merge 移轉。
 CREATE UNIQUE INDEX uq_provider_subject_active ON auth_identities(provider, provider_subject) WHERE revoked_at IS NULL;
+-- 同一 user 同一 provider 只能有一個 active identity；防止併發 unlink 出現兩筆同 provider active row。
+CREATE UNIQUE INDEX uq_user_provider_active ON auth_identities(user_id, provider) WHERE revoked_at IS NULL;
 CREATE INDEX idx_identities_user ON auth_identities(user_id) WHERE revoked_at IS NULL;
 ```
 
@@ -139,13 +141,66 @@ CREATE TABLE push_tokens (
 CREATE INDEX idx_push_tokens_user ON push_tokens(user_id);
 ```
 
-### 3.5 collision merge 與審計
+### 3.5 掃描用量 / 額度 / 訂閱（future）
+
+> **目前 repo 尚無這些 server-side tables**。以下為引入功能前須先定義的 schema，所有表以 `users.id` 為 FK。
+
+```sql
+-- 月掃描次數追蹤（每月 reset）
+CREATE TABLE scan_usage (
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period          TEXT NOT NULL,              -- 'YYYY-MM'
+  scan_count      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, period)
+);
+
+-- 訂閱方案與到期
+CREATE TABLE subscriptions (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan            TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active','cancelled','expired','paused')),
+  started_at      TIMESTAMPTZ NOT NULL,
+  expires_at      TIMESTAMPTZ,
+  cancelled_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_subscriptions_user ON subscriptions(user_id) WHERE status = 'active';
+
+-- entitlement（某 user 享有哪個 tier，合併多個來源 plan / promo / migration 的結果）
+CREATE TABLE entitlements (
+  user_id         UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  tier            TEXT NOT NULL DEFAULT 'free'
+                    CHECK (tier IN ('free','pro')),
+  daily_limit     INTEGER NOT NULL DEFAULT 50,
+  monthly_limit   INTEGER NOT NULL DEFAULT 500,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### 3.5.1 Merge 規則（scan_usage / subscriptions / entitlements）
+
+| 資料 | 規則 |
+| --- | --- |
+| scan_usage | **不可相加**（防濫用）。merge 後只保留 target 的 usage；source 的 `scan_usage` 全部寫入 audit_log 後標記 `scan_count = 0` 避免重複計入。 |
+| subscriptions | **不可相加**。以「最近到期日」為存活 entitlement 的決策依據：source 與 target 各自最新 active subscription，取 `expires_at` 較晚者保留，另一者 `cancelled_at = now()`、`status = 'cancelled'`。若出現付費 plan 衝突（兩個不同的 pro 方案同時 active → 轉 `requires_support`）。 |
+| entitlements | **不可相加**。保留 target 既有 entitlement；若 source 的 tier 更高（free→pro），以 source tier 覆蓋 target，記 audit_log。若雙方同為 pro → 保留 target，轉 `requires_support` 供人工決策。 |
+
+#### 3.5.2 Purge 規則
+
+- `scan_usage`、`subscriptions`、`entitlements` 全設 `ON DELETE CASCADE`，user purge 時一併刪除。
+- 刪除前 `audit_log` 寫入 `delete_purged` 事件，metadata 含最後 known tier / 累計 scan 數 / 最後 active subscription plan。
+
+### 3.6 collision merge 與審計
 
 ```sql
 CREATE TABLE account_merge_requests (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_user_id UUID NOT NULL REFERENCES users(id),  -- 被併走（保留舊 provider 的那個 user）
-  target_user_id UUID NOT NULL REFERENCES users(id),  -- 存活方（當下登入中的 user）
+  source_user_id UUID REFERENCES users(id) ON DELETE SET NULL,  -- user purge 時 set null；原始 UUID 存 snapshot
+  target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  source_user_snapshot UUID NOT NULL,                   -- 不可逆快照，即使 source user 被 purge 仍可追溯
+  target_user_snapshot UUID NOT NULL,                   -- 不可逆快照，即使 target user 被 purge 仍可追溯
   status         TEXT NOT NULL DEFAULT 'pending'
                    CHECK (status IN ('pending','verified','completed','rejected','cancelled')),
   requires_support BOOLEAN NOT NULL DEFAULT false,
@@ -181,7 +236,7 @@ CREATE TABLE audit_log (
 2. 若使用者要合併 → 進入 **merge 流程**，要求 **雙方 provider 都在短時窗（如 10 分鐘）內重新驗證**（重跑 `login` 拿到雙方新鮮 ID token）。這證明使用者確實同時掌握兩個帳號，防止「綁到別人帳號」。
 3. **存活方 (target)** 預設為「當下登入中的 user」；被併方 (source) 的資料轉移過去，`source` 標記 `pending_deletion`，其 identities `revoke` 後改指向 target（或建立新 identity 於 target 並 revoke 舊的），全程寫 `audit_log`。
 4. **需人工/客服介入的門檻**（`requires_support = true`，暫停自動 merge）：
-   - 任一方有付費 / premium / 交易類資料（未來擴充時）。
+   - 任一方有 active pro subscription 或 pro entitlement（見 §3.5）。
    - 任一方資料量超過安全上限（防濫用批量併吞）。
    - 兩次 merge 嘗試在短期內失敗（風險訊號）。
 
@@ -243,29 +298,42 @@ merge 完成後寫入以下審計記錄：
 Client 取得 provider ID token
   └─ POST /api/auth/login { provider, id_token, [nonce] }
        ├─ 後端用 JWKS 驗 token（iss / aud / exp / nonce），取 subject = sub
-       ├─ 查 auth_identities(provider, subject)
-       │     ├─ 命中 → 該 identity.user_id 登入，更新 last_login_at
-       │     └─ 未命中 → 建 users + auth_identities（is_new_user=true）
+       ├─ 查 auth_identities WHERE provider = <provider> AND provider_subject = <sub> AND revoked_at IS NULL
+       │     ├─ 命中 → 取 identity.user_id，若 users.status != 'active' → 401 ACCOUNT_DISABLED
+       │     │          若 status = 'active' → 更新 last_login_at，登入
+       │     └─ 未命中 → 建 users（status='active'）+ auth_identities（is_new_user=true）
        └─ 簽發 access + refresh token（寫 sessions）
 ```
-> **絕不**用 email 去比對或合併既有 user；只認 `(provider, subject)`。
+> 查詢同時過濾 `revoked_at IS NULL` 與 `users.status = 'active'`，確保 (a) 已解綁的歷史 row 不會被誤選而重新登入，(b) 標記 pending_deletion 的帳號不得再登入。
 
 ### 5.2 綁定第二 provider（authenticated link）
 ```
 已登入（access token）→ POST /api/auth/link { provider, id_token }
   ├─ 驗 token 取 subject
-  ├─ (provider,subject) 未被使用 → 新增 identity 到目前 user（200）
-  ├─ (provider,subject) 已屬「目前 user」 → 冪等回 200
-  └─ (provider,subject) 屬「別的 user」 → 409 + merge_token（見 §4）
+  ├─ 查 auth_identities WHERE provider = <provider> AND provider_subject = <sub> AND revoked_at IS NULL
+  │     ├─ 未命中 → 新增 identity 到目前 user（200）。因 uq_user_provider_active 確保每 user 每 provider 至多一個 active，相同 provider 重複 link 在 DB 層即被拒絕
+  │     ├─ 已屬「目前 user」→ 冪等回 200（同 provider 已有 active identity）
+  │     └─ 屬「別的 user」→ 409 + merge_token（見 §4）
+  └─ relink（之前 unlink 後再 link）：因 uq_provider_subject_active 只在 revoked_at IS NULL 時作用，
+      舊的 revoked row 不佔唯一鍵，新 INSERT 暢通無阻。可選：在單一 transaction 內先 revoke 舊 row 再 INSERT new，
+      或直接 INSERT（兩筆 row 不同 id，不衝突）
 ```
+> 查詢均以 `revoked_at IS NULL` 過濾。unlink 後同一 `(provider, subject)` 的 relink 是**建立全新的 active row**，不是復活舊 row。
 
 ### 5.3 解除綁定（unlink）
 ```
 DELETE /api/auth/link/:provider
-  ├─ 計算解綁後 revoked_at IS NULL 的 identity 數
-  │     ├─ >= 1 → 允許：set revoked_at = now()，撤銷該 identity 產生的 sessions
-  │     └─ == 0 → 409 CANNOT_UNLINK_LAST_METHOD
+  ├─ 在一個 DB transaction 內：
+  │     ├─ SELECT * FROM auth_identities WHERE user_id = <user> FOR UPDATE
+  │     │      （row-level lock 鎖住該 user 所有 identity row，防止併發 unlink
+  │     │       造成兩個 goroutine 各自看到 ≥2 筆而都 revoke，違反至少保留一個登入方式）
+  │     ├─ 計算 revoked_at IS NULL 的 identity 數
+  │     │     ├─ AFTER 本次 revoke 仍 ≥ 1 → 允許：set revoked_at = now()，
+  │     │     │     撤銷該 identity 產生的 sessions
+  │     │     └─ AFTER 本次 revoke == 0 → 409 CANNOT_UNLINK_LAST_METHOD
+  │     └─ COMMIT
 ```
+> `FOR UPDATE` + transaction 保證「計數 → 檢查 → revoke」為原子操作；兩個 unlink 併發時，後者會在 lock 釋放後看見 revoke 後的真實數量。`uq_user_provider_active` 同時保證單一 user 同 provider 不會意外出現第二個 active identity。
 
 ### 5.4 刪除帳號（delete）
 ```
@@ -273,7 +341,9 @@ DELETE /api/account
   ├─ users.status = 'pending_deletion'、deleted_at = now()（軟刪 + 撤銷所有 session）
   ├─ （可選）grace period（如 14 天）可自行復原
   └─ purge job：實體刪除 users → CASCADE 清 auth_identities / sessions /
-       user_settings / favorites / watchlist / push_tokens；audit_log 保留（user_id 無 FK）
+       user_settings / favorites / watchlist / push_tokens / scan_usage / subscriptions / entitlements；
+       audit_log 保留（user_id 無 FK）；
+       account_merge_requests 因 FK 為 ON DELETE SET NULL，source/target UUID 存於 snapshot 欄位不遺失。
 ```
 
 ---
