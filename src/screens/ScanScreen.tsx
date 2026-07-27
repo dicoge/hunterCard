@@ -279,6 +279,7 @@ export default function ScanScreen({ navigation }: any) {
     if (!isWeb) return;
     if (!isCameraReady || !autoScanEnabled) return;
     if (isScanning || isProcessingOCR) return;
+    if (candidateSelector.visible || resultCard.visible) return;
 
     let mounted = true;
     const scanArea = {
@@ -313,7 +314,7 @@ export default function ScanScreen({ navigation }: any) {
         cancelAnimationFrame(autoScanRef.current);
       }
     };
-  }, [isCameraReady, autoScanEnabled, isScanning, isProcessingOCR, facing]);
+  }, [isCameraReady, autoScanEnabled, isScanning, isProcessingOCR, facing, candidateSelector.visible, resultCard.visible]);
 
   const toggleCameraFacing = () => {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
