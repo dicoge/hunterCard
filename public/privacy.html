@@ -269,21 +269,30 @@
     <div id="content-zh" class="content-section active">
       <p><em>最後更新日期：2026 年 7 月 27 日</em></p>
       
-      <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。我們非常重視您的個人隱私。本隱私權政策旨在說明我們如何處理您的個人資料。當您使用本 App 時，即表示您同意本政策所述之資料處理方式。</p>
+      <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。我們非常重視您的個人隱私。本政策說明我們如何處理多方帳號登入、綁定及相關個人資料。當您使用本 App 時，即表示您同意本政策。</p>
 
       <h2>1. 我們只支援第三方登入 (OAuth)</h2>
-      <p>為了保障使用者的帳號密碼安全，HoloHunter 採用現代化的驗證機制：</p>
+      <p>為了保障使用者的帳號密碼安全，HoloHunter 採用現代化的身分驗證機制：</p>
       <div class="highlight-card">
-        <p><strong>🔒 重要產品決策：</strong> 本 App <strong>不提供也不支援</strong> 自行註冊 Email 帳號與設定密碼。我們僅支援 <strong>Google 帳號登入</strong> 與 <strong>Apple ID 登入</strong>。Web 網頁版亦提供 Google 登入支援。</p>
+        <p><strong>🔒 重要產品決策：</strong> 本 App <strong>不提供也不支援</strong> 自行註冊 Email 帳號與設定密碼。我們僅支援安全第三方驗證，包含 <strong>Google 帳號登入</strong> 與 <strong>Apple ID 登入</strong>。Web 網頁版亦提供 Google 登入支援。</p>
       </div>
-      <p>這意味著我們絕對不會要求您輸入、也不會傳輸或儲存您的任何密碼。所有的身分驗證程序均直接在 Google 或 Apple 的安全防護端進行。</p>
+      <p>我們絕對不會要求您輸入、也不會儲存您的任何密碼。身分驗證程序均直接在 Google 或 Apple 的安全防護端進行。</p>
 
-      <h2>2. 我們取得的資料與用途</h2>
-      <p>當您透過 Google 帳號或 Apple ID 登入本 App 時，我們會取得以下有限的公開資料：</p>
+      <h2>2. 共通帳號與多方綁定機制</h2>
+      <p>為了讓您可以在不同裝置及平台上無縫管理您的卡牌資料，我們設計了共通帳號系統：</p>
       <ul>
-        <li><strong>電子郵件地址 (Email)</strong>：作為您的唯一帳號識別與通訊之用。</li>
+        <li><strong>多方綁定</strong>：您可以用 Google 登入後再綁定 Apple 帳號，或是用 Apple 登入後再綁定 Google 帳號。</li>
+        <li><strong>同一識別碼</strong>：綁定後，該 Google 與 Apple 帳號將共同對應到同一個內部使用者識別碼 (Internal User ID)，共享相同的卡牌收藏、入手提醒 (Watchlist) 與偏好設定。</li>
+        <li><strong>解除綁定安全限制</strong>：您隨時可以解除綁定其中一個帳號，但為了防止帳號遺失，系統規定必須保留至少一個登入方式。</li>
+        <li><strong>身分識別原則</strong>：我們<strong>不使用 Email 作為唯一身分依據</strong>（以防 Apple Private Relay 隱藏真實 Email，或不同平台的 Email 不一致）。身分綁定完全基於第三方 Provider 提供的非敏感帳號唯一識別碼。</li>
+      </ul>
+
+      <h2>3. 我們取得的資料與用途</h2>
+      <p>當您登入或綁定 Google 或 Apple 帳號時，我們會取得以下有限的公開資料：</p>
+      <ul>
+        <li><strong>電子郵件地址 (Email)</strong>：作為您的唯一帳號識別與通訊之用（可能為 Private Relay 匿名郵箱）。</li>
         <li><strong>顯示名稱 (Display Name)</strong>：用於在 App 介面上提供個人化的歡迎資訊。</li>
-        <li><strong>第三方帳號識別碼 (Provider User ID)</strong>：Google 或 Apple 提供的一串非敏感的唯一識別代碼，用於與我們資料庫中的設定檔進行關聯。</li>
+        <li><strong>第三方帳號識別碼 (Provider User ID)</strong>：Google 或 Apple 提供的一串非敏感的唯一識別代碼。</li>
       </ul>
       
       <h3>資料用途說明：</h3>
@@ -293,27 +302,27 @@
         <li><strong>推播通知 (Push Notifications)</strong>：若您啟用了卡牌價格提醒功能，我們會使用您的推播 Token（由 Expo Push Service 產生並管理）來發送降價或波動通知。此 Token 僅用於發送通知，不做他用。</li>
       </ol>
 
-      <h2>3. 使用者如何登出</h2>
+      <h2>4. 使用者如何登出</h2>
       <p>您可以隨時結束您在 App 中的登入狀態：</p>
       <ul>
         <li>點擊 App 首頁右下角的<strong>「設定 (Settings)」</strong>分頁。</li>
-        <li>在「帳號設定」區段中，點擊<strong>「登出 (Sign Out)」</strong>按鈕。</li>
+        <li>在「共通帳號設定」區段中，點擊<strong>「登出 (Sign Out)」</strong>按鈕。</li>
         <li>登出後，App 將立即清除您在本機裝置上的登入暫存快取。</li>
       </ul>
 
-      <h2>4. 帳號與所有資料之刪除方式</h2>
+      <h2>5. 帳號與所有資料之刪除方式</h2>
       <p>符合 Apple App Store 與 Google Play 的最新合規規範，我們提供完善的「被遺忘權」與資料刪除機制：</p>
       <div class="danger-card">
-        <p><strong>⚠️ 注意：</strong> 刪除帳號是不可逆的操作。刪除後，您儲存在雲端伺服器的所有卡牌追蹤清單、收藏以及設定將被永久抹除，無法還原。</p>
+        <p><strong>⚠️ 注意：</strong> 刪除帳號是不可逆的操作。刪除後，您的 Internal User ID、所有綁定的 Google/Apple 第三方帳號連結 (Linked Providers) 以及雲端的所有收藏清單、偏好與資料將被永久抹除，無法還原。</p>
       </div>
       
       <h3>申請刪除管道：</h3>
       <ol>
-        <li><strong>App 內自主刪除（推薦）</strong>：進入<strong>「設定」</strong>分頁，點擊<strong>「刪除帳號與資料 (Delete Account)」</strong>按鈕，並於彈出的對話框中確認。系統將立即刪除您在資料庫中的所有資料。</li>
+        <li><strong>App 內自主刪除（推薦）</strong>：進入<strong>「設定」</strong>分頁，點擊紅色的<strong>「刪除帳號與資料 (Delete Account)」</strong>按鈕，並於彈出的對話框中確認。系統將立即且永久刪除您在資料庫中的所有關聯資料。</li>
         <li><strong>電子郵件申請刪除</strong>：若您無法存取 App，或使用網頁版，請使用您登入的電子郵件發送申請至：<code>dicoge.chen@gmail.com</code>，並附上您的使用者 ID。我們將在 2-3 個工作天內為您完成手動刪除，並發信通知您。</li>
       </ol>
 
-      <h2>5. App Store / Google Play 行動商店規範合規</h2>
+      <h2>6. App Store / Google Play 行動商店規範合規</h2>
       <ul>
         <li><strong>App Store Account Deletion</strong>：本 App 嚴格遵循 Apple 之規定，在 App 內提供直接且明顯的帳號刪除入口，無需離開 App 即可完成帳號與資料的永久刪除。</li>
         <li><strong>Google Play Data Safety (資料安全)</strong>：
@@ -324,10 +333,10 @@
         </li>
       </ul>
 
-      <h2>6. 聲明與限制</h2>
+      <h2>7. 聲明與限制</h2>
       <p>HoloHunter 是一款專為 hololive OFFICIAL CARD GAME 玩家設計的<strong>非官方</strong>卡牌價格查詢工具。本 App 與 Cover 株式會社 (Cover Corp.) 無任何官方關聯、授權或代言關係。</p>
 
-      <h2>7. 聯絡我們</h2>
+      <h2>8. 聯絡我們</h2>
       <p>如果您對本隱私權政策或資料刪除有任何疑問，歡迎來信與我們聯絡：</p>
       <p>📬 技術支援信箱：<code>dicoge.chen@gmail.com</code> (開發者：dicoge)</p>
     </div>
@@ -336,21 +345,30 @@
     <div id="content-en" class="content-section">
       <p><em>Last Updated: July 27, 2026</em></p>
       
-      <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). We highly value your personal privacy. This Privacy Policy describes how we process your personal data. By using the App, you agree to the data practices described in this policy.</p>
+      <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). We highly value your personal privacy. This policy describes how we handle multi-provider sign-ins, account linking, and related personal data. By using the App, you agree to this policy.</p>
 
       <h2>1. Third-Party Authentication Only (OAuth)</h2>
       <p>To ensure account credential security, HoloHunter employs modern authentication mechanisms:</p>
       <div class="highlight-card">
-        <p><strong>🔒 Critical Product Decision:</strong> The App <strong>does not provide or support</strong> custom email/password registration. We exclusively support <strong>Google Sign-In</strong> and <strong>Sign in with Apple</strong>. Google Sign-In is also supported on the web version.</p>
+        <p><strong>🔒 Critical Product Decision:</strong> The App <strong>does not provide or support</strong> custom email/password registration. We exclusively support secure third-party login via <strong>Google Sign-In</strong> and <strong>Sign in with Apple</strong>. Google Sign-In is also supported on the web version.</p>
       </div>
-      <p>This means we will never ask for, transmit, or store your passwords. All authentication procedures are performed directly on Google's or Apple's secure servers.</p>
+      <p>We will never ask for, transmit, or store your passwords. All authentication procedures are performed directly on Google's or Apple's secure servers.</p>
 
-      <h2>2. Data We Collect and How We Use It</h2>
-      <p>When you sign in using your Google account or Apple ID, we receive limited public profile information:</p>
+      <h2>2. Common Account and Multi-Provider Linking</h2>
+      <p>To let you manage card data seamlessly across platforms, we use a unified account system:</p>
       <ul>
-        <li><strong>Email Address</strong>: Used as your unique account identifier and for communication purposes.</li>
-        <li><strong>Display Name</strong>: Used to provide personalized greetings on the App interface.</li>
-        <li><strong>Provider User ID</strong>: A non-sensitive unique ID string provided by Google or Apple to link your profile in our database.</li>
+        <li><strong>Account Linking</strong>: You can log in with Google and then link your Apple account, or log in with Apple and link your Google account.</li>
+        <li><strong>Single Identity ID</strong>: Once linked, both Google and Apple identities point to a single Internal User ID, sharing the same card collections, watchlists, and preferences.</li>
+        <li><strong>Unlinking Safety Guard</strong>: You can unlink a provider at any time, but the system requires you to retain at least one login method to prevent account lockout.</li>
+        <li><strong>Identification Principle</strong>: We **do NOT use Email as the primary unique key** (to prevent issues with Apple's Private Relay email hiding, or mismatching emails between providers). All linking is tied to the unique provider account ID.</li>
+      </ul>
+
+      <h2>3. Data We Collect and How We Use It</h2>
+      <p>When you sign in or link your Google or Apple accounts, we receive limited public profile information:</p>
+      <ul>
+        <li><strong>Email Address</strong>: Used as your account identifier and for communications (could be a Private Relay address).</li>
+        <li><strong>Display Name</strong>: Used to personalize greetings on the App interface.</li>
+        <li><strong>Provider User ID</strong>: A non-sensitive unique ID string provided by Google or Apple.</li>
       </ul>
       
       <h3>How Data is Used:</h3>
@@ -360,27 +378,27 @@
         <li><strong>Push Notifications</strong>: If you enable card price alerts, we use your device push token (generated and managed by Expo Push Service) to deliver notifications. This token is used solely for sending alerts.</li>
       </ol>
 
-      <h2>3. How Users Sign Out</h2>
+      <h2>4. How Users Sign Out</h2>
       <p>You can sign out of the App at any time:</p>
       <ul>
         <li>Tap the <strong>Settings</strong> tab at the bottom right of the App home screen.</li>
-        <li>In the "Account Settings" section, tap the <strong>Sign Out</strong> button.</li>
+        <li>In the "Common Account Settings" section, tap the <strong>Sign Out</strong> button.</li>
         <li>Upon signing out, cached user profile credentials on your local device will be cleared immediately.</li>
       </ul>
 
-      <h2>4. Account & Data Deletion</h2>
+      <h2>5. Account & Data Deletion</h2>
       <p>In compliance with Apple App Store and Google Play requirements, we provide a complete account and data deletion process:</p>
       <div class="danger-card">
-        <p><strong>⚠️ Warning:</strong> Deleting your account is irreversible. Once deleted, all your watchlists, favorites, and settings stored on our cloud servers will be permanently erased and cannot be recovered.</p>
+        <p><strong>⚠️ Warning:</strong> Deleting your account is irreversible. Once deleted, your Internal User ID, all linked Google/Apple provider associations, and all watchlists and favorites stored in our cloud database will be permanently erased and cannot be recovered.</p>
       </div>
       
       <h3>How to Delete Your Account:</h3>
       <ol>
-        <li><strong>In-App Self-Service (Recommended)</strong>: Go to the <strong>Settings</strong> tab, tap the <strong>Delete Account</strong> button, and confirm in the popup dialog. Your data in our database will be deleted immediately.</li>
+        <li><strong>In-App Self-Service (Recommended)</strong>: Go to the <strong>Settings</strong> tab, tap the red <strong>Delete Account</strong> button, and confirm in the popup dialog. All your account linkings and data in our database will be deleted immediately.</li>
         <li><strong>Email Request</strong>: If you cannot access the App, send an email request from your registered email address to: <code>dicoge.chen@gmail.com</code> with your User ID. We will process your request manually within 2-3 business days.</li>
       </ol>
 
-      <h2>5. App Store & Google Play Store Compliance</h2>
+      <h2>6. App Store & Google Play Store Compliance</h2>
       <ul>
         <li><strong>App Store Account Deletion</strong>: In strict compliance with Apple's developer guidelines, we provide an easily accessible and direct path inside the App for users to initiate and complete account deletion.</li>
         <li><strong>Google Play Data Safety</strong>:
@@ -391,11 +409,11 @@
         </li>
       </ul>
 
-      <h2>6. Disclaimer</h2>
+      <h2>7. Disclaimer</h2>
       <p>HoloHunter is an <strong>unofficial</strong> fan-made card price check tool for the hololive OFFICIAL CARD GAME. The App is not affiliated with, authorized, or endorsed by Cover Corp.</p>
 
-      <h2>7. Contact Us</h2>
-      <p>If you have any questions about this Privacy Policy or data deletion, please contact us at:</p>
+      <h2>8. Contact Us</h2>
+      <p>If you have any questions about this Privacy Policy or data deletion, please contact us at: </p>
       <p>📬 Support Email: <code>dicoge.chen@gmail.com</code> (Developer: dicoge)</p>
     </div>
 

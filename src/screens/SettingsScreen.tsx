@@ -2,11 +2,22 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Alert, Linking, Platform } from 'react-native';
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
-import { useAuthStore } from '../store/authStore';
+import { useAuthStore, UserIdentity } from '../store/authStore';
 
 export default function SettingsScreen() {
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
-  const { isLoggedIn, user, loginWithGoogle, loginWithApple, logout, deleteAccount } = useAuthStore();
+  const { 
+    isLoggedIn, 
+    session, 
+    loginWithGoogle, 
+    loginWithApple, 
+    linkGoogle, 
+    linkApple, 
+    unlinkProvider, 
+    logout, 
+    deleteAccount,
+    mergeMockIdentity 
+  } = useAuthStore();
 
   const handleOpenPrivacy = () => {
     Linking.openURL('https://card-hunter-mu.vercel.app/privacy');
@@ -16,12 +27,132 @@ export default function SettingsScreen() {
     Linking.openURL('https://card-hunter-mu.vercel.app/support');
   };
 
+  const handleLinkProvider = (provider: 'google' | 'apple') => {
+    const providerName = provider === 'google' ? 'Google' : 'Apple';
+    Alert.alert(
+      preferredLanguage === 'zh' ? `連結 ${providerName} 帳號` : `Link ${providerName} Account`,
+      preferredLanguage === 'zh'
+        ? '請選擇要模擬的綁定情境：'
+        : 'Please select a linking scenario to simulate:',
+      [
+        {
+          text: preferredLanguage === 'zh' ? '1. 正常綁定 (Normal)' : '1. Normal Link',
+          onPress: () => {
+            const success = provider === 'google' ? linkGoogle(false) : linkApple(false);
+            if (success) {
+              Alert.alert(
+                preferredLanguage === 'zh' ? '綁定成功' : 'Success',
+                preferredLanguage === 'zh'
+                  ? `已成功綁定您的 ${providerName} 帳號。`
+                  : `Successfully linked your ${providerName} account.`
+              );
+            }
+          }
+        },
+        {
+          text: preferredLanguage === 'zh' ? '2. 帳號衝突 (Collision)' : '2. Account Collision',
+          onPress: () => {
+            // Trigger Collision Resolving Flow
+            handleCollisionFlow(provider);
+          }
+        },
+        {
+          text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
+  const handleCollisionFlow = (provider: 'google' | 'apple') => {
+    const providerName = provider === 'google' ? 'Google' : 'Apple';
+    const collidedEmail = provider === 'google' ? 'collided.user@gmail.com' : 'collided.user@icloud.com';
+    const collidedId = provider === 'google' ? 'g_998877665544' : 'ap_998877665544';
+
+    Alert.alert(
+      preferredLanguage === 'zh' ? '⚠️ 帳號衝突 (Account Collision)' : '⚠️ Account Collision',
+      preferredLanguage === 'zh'
+        ? `此 ${providerName} 帳號 (${collidedEmail}) 已經被另一個 HoloHunter 使用者 (ID: user_collision_99) 綁定。\n\n請選擇處理策略：`
+        : `This ${providerName} account (${collidedEmail}) is already linked to another HoloHunter user (ID: user_collision_99).\n\nPlease choose a resolving strategy:`,
+      [
+        {
+          text: preferredLanguage === 'zh' ? '策略 A: 拒絕並取消' : 'Strategy A: Reject & Cancel',
+          style: 'cancel',
+          onPress: () => {
+            Alert.alert(
+              preferredLanguage === 'zh' ? '已取消綁定' : 'Cancelled',
+              preferredLanguage === 'zh'
+                ? '綁定已拒絕，資料未受影響。請先登出並清除衝突帳號再試。'
+                : 'Linking rejected. No changes made.'
+            );
+          }
+        },
+        {
+          text: preferredLanguage === 'zh' ? '策略 B: 合併資料 (Merge)' : 'Strategy B: Merge Data',
+          onPress: () => {
+            const mergedIdentity: UserIdentity = {
+              email: collidedEmail,
+              displayName: `Holo Fan (${providerName} Collided)`,
+              provider,
+              providerId: collidedId,
+            };
+            mergeMockIdentity(mergedIdentity);
+            Alert.alert(
+              preferredLanguage === 'zh' ? '合併成功' : 'Merge Success',
+              preferredLanguage === 'zh'
+                ? `已成功將衝突帳號的卡牌收藏與設定合併至此帳號，並完成 ${providerName} 帳號轉綁。`
+                : `Successfully merged all collections and settings from the collided account and linked your ${providerName} identity.`
+            );
+          }
+        }
+      ]
+    );
+  };
+
+  const handleUnlinkProvider = (provider: 'google' | 'apple') => {
+    const providerName = provider === 'google' ? 'Google' : 'Apple';
+    Alert.alert(
+      preferredLanguage === 'zh' ? `解除綁定 ${providerName}` : `Unlink ${providerName}`,
+      preferredLanguage === 'zh'
+        ? `您確定要解除綁定 ${providerName} 帳號嗎？解除後，您將無法再使用此方式登入。`
+        : `Are you sure you want to unlink ${providerName}? You will no longer be able to log in using this provider.`,
+      [
+        {
+          text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: preferredLanguage === 'zh' ? '確定解除' : 'Unlink',
+          style: 'destructive',
+          onPress: () => {
+            const success = unlinkProvider(provider);
+            if (!success) {
+              Alert.alert(
+                preferredLanguage === 'zh' ? '解除失敗' : 'Error',
+                preferredLanguage === 'zh'
+                  ? '為了避免帳號成為孤兒，您必須保留至少一種登入綁定方式！'
+                  : 'You must retain at least one linked login provider to prevent lockout!'
+              );
+            } else {
+              Alert.alert(
+                preferredLanguage === 'zh' ? '解除綁定成功' : 'Unlinked',
+                preferredLanguage === 'zh'
+                  ? `已成功解除綁定您的 ${providerName} 帳號。`
+                  : `Successfully unlinked your ${providerName} account.`
+              );
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleDeleteAccount = () => {
     Alert.alert(
-      preferredLanguage === 'zh' ? '⚠ 確定刪除帳號與資料？' : '⚠ Delete Account and Data?',
+      preferredLanguage === 'zh' ? '⚠ 確定永久刪除帳號？' : '⚠ Permanently Delete Account?',
       preferredLanguage === 'zh' 
-        ? '此動作將永久刪除您的帳號以及所有同步的收藏、追蹤清單與偏好設定。此動作無法復原！' 
-        : 'This will permanently delete your account, synced watchlists, favorites, and settings. This action is irreversible!',
+        ? '此動作將永久刪除您的 Internal User ID、所有綁定的 Google/Apple 第三方連結，以及雲端同步的所有卡牌收藏與設定。此動作無法復原！' 
+        : 'This will permanently delete your Internal User ID, all linked Google/Apple identities, and all cloud synced collections and watchlists. This action is irreversible!',
       [
         {
           text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
@@ -34,13 +165,16 @@ export default function SettingsScreen() {
             deleteAccount();
             Alert.alert(
               preferredLanguage === 'zh' ? '帳號已刪除' : 'Account Deleted',
-              preferredLanguage === 'zh' ? '您的帳號及所有相關資料已成功清除。' : 'Your account and data have been successfully removed.'
+              preferredLanguage === 'zh' ? '您的帳號、綁定關係及所有資料已成功被徹底抹除。' : 'Your account, identities, and all data have been completely deleted.'
             );
           },
         },
       ]
     );
   };
+
+  const hasGoogle = session?.identities.some(id => id.provider === 'google');
+  const hasApple = session?.identities.some(id => id.provider === 'apple');
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -50,9 +184,9 @@ export default function SettingsScreen() {
 
         {/* ── 帳號登入與管理 ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>👤 帳號設定</Text>
+          <Text style={styles.sectionTitle}>👤 共通帳號設定</Text>
           
-          {!isLoggedIn ? (
+          {!isLoggedIn || !session ? (
             <View style={styles.authContainer}>
               <Text style={styles.authDesc}>
                 {preferredLanguage === 'zh' 
@@ -70,35 +204,75 @@ export default function SettingsScreen() {
 
               <Text style={styles.authPrivacyNote}>
                 {preferredLanguage === 'zh'
-                  ? '※ 本 App 僅支援 Google/Apple 登入，不提供且不收集自家密碼，確保您的密碼安全性。'
-                  : '* We only support Google/Apple sign-in. We do not store or collect passwords to ensure security.'}
+                  ? '※ 本 App 不支援自家帳密，僅使用安全第三方 OAuth 登入。'
+                  : '* We do not store passwords. We use secure third-party OAuth sign-in.'}
               </Text>
             </View>
           ) : (
             <View style={styles.sessionContainer}>
               <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '目前登入' : 'Logged in via'}</Text>
-                <Text style={styles.userValue}>
-                  {user?.provider === 'google' ? '🟢 Google' : '⚫ Apple'}
+                <Text style={styles.userLabel}>Internal User ID</Text>
+                <Text style={styles.userIdValue} numberOfLines={1} ellipsizeMode="middle">
+                  {session.internalUserId}
                 </Text>
-              </View>
-              
-              <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '使用者名稱' : 'Name'}</Text>
-                <Text style={styles.userValue}>{user?.displayName}</Text>
-              </View>
-              
-              <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '電子郵件' : 'Email'}</Text>
-                <Text style={styles.userValue}>{user?.email}</Text>
               </View>
 
-              <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>User ID</Text>
-                <Text style={styles.userIdValue} numberOfLines={1} ellipsizeMode="middle">
-                  {user?.providerId}
-                </Text>
-              </View>
+              <Text style={styles.identitiesTitle}>
+                {preferredLanguage === 'zh' ? '已綁定登入方式' : 'Linked Providers'}
+              </Text>
+
+              {session.identities.map((identity) => (
+                <View key={identity.provider} style={styles.identityCard}>
+                  <View style={styles.identityHeader}>
+                    <Text style={styles.providerBadge}>
+                      {identity.provider === 'google' ? '🟢 Google' : '⚫ Apple'}
+                    </Text>
+                    
+                    {session.identities.length > 1 && (
+                      <TouchableOpacity 
+                        style={styles.unlinkBtn}
+                        onPress={() => handleUnlinkProvider(identity.provider)}
+                      >
+                        <Text style={styles.unlinkBtnText}>
+                          {preferredLanguage === 'zh' ? '解除綁定' : 'Unlink'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={styles.identityBody}>
+                    <Text style={styles.identityText}>📝 {identity.displayName}</Text>
+                    <Text style={styles.identityText}>📧 {identity.email}</Text>
+                    <Text style={styles.identityText}>🆔 {identity.providerId}</Text>
+                  </View>
+                </View>
+              ))}
+
+              {/* 未綁定選項 */}
+              {(!hasGoogle || !hasApple) && (
+                <View style={styles.unlinkedSection}>
+                  <Text style={styles.unlinkedTitle}>
+                    {preferredLanguage === 'zh' ? '可用帳號綁定' : 'Available to Link'}
+                  </Text>
+                  <View style={styles.unlinkBtnRow}>
+                    {!hasGoogle && (
+                      <TouchableOpacity 
+                        style={styles.linkActionBtn} 
+                        onPress={() => handleLinkProvider('google')}
+                      >
+                        <Text style={styles.linkActionText}>🔗 綁定 Google</Text>
+                      </TouchableOpacity>
+                    )}
+                    {!hasApple && (
+                      <TouchableOpacity 
+                        style={styles.linkActionBtn} 
+                        onPress={() => handleLinkProvider('apple')}
+                      >
+                        <Text style={styles.linkActionText}>🔗 綁定 Apple</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )}
 
               <View style={styles.authActionRow}>
                 <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
@@ -292,16 +466,86 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 14,
   },
-  userValue: {
+  userIdValue: {
     color: COLORS.text,
     fontSize: 14,
     fontWeight: '600',
-  },
-  userIdValue: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
     maxWidth: '60%',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  identitiesTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  identityCard: {
+    backgroundColor: COLORS.surfaceLight,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 8,
+  },
+  identityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  providerBadge: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  unlinkBtn: {
+    backgroundColor: '#ef4444' + '15',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  unlinkBtnText: {
+    color: '#ef4444',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  identityBody: {
+    gap: 2,
+  },
+  identityText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+  },
+  unlinkedSection: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  unlinkedTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  unlinkBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  linkActionBtn: {
+    flex: 1,
+    backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  linkActionText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   authActionRow: {
     flexDirection: 'row',

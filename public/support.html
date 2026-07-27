@@ -305,44 +305,46 @@
       <h2>💬 常見問題 (FAQ)</h2>
 
       <div class="faq-item">
+        <div class="faq-question">Q: 可以同時綁定 Google 與 Apple 帳號嗎？</div>
+        <div class="faq-answer">
+          可以。HoloHunter 支援「共通帳號」機制。您可以先用 Google 登入，然後在<strong>「設定 (Settings)」</strong>頁面中點擊<strong>「綁定 Apple」</strong>完成連結；或是使用 Apple 登入後綁定 Google。綁定後兩者將共享相同的 Internal User ID 與雲端卡牌收藏。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 綁定帳號時顯示「帳號衝突 (Collision)」該怎麼辦？</div>
+        <div class="faq-answer">
+          若您要綁定的 Google 或 Apple 帳號已經關聯到另一個獨立的使用者帳號，系統會偵測到衝突並詢問您：<br>
+          1. <strong>資料合併 (Merge)</strong>：將衝突帳號的卡牌收藏與本帳號合併，並將登入方式轉綁至本帳號。<br>
+          2. <strong>拒絕並取消</strong>：取消綁定，保持現狀。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 可以解除綁定 Google 或 Apple 帳號嗎？</div>
+        <div class="faq-answer">
+          可以。在<strong>「設定」</strong>中點擊對應帳號旁的「解除綁定」按鈕即可。但為了防止您的帳號遺失，<strong>系統規定必須保留至少一個登入方式</strong>，當只剩下一個綁定帳號時將無法解除綁定。
+        </div>
+      </div>
+
+      <div class="faq-item">
         <div class="faq-question">Q: 為何不支援一般密碼註冊？</div>
         <div class="faq-answer">
-          HoloHunter 旨在提供極簡與安全的體驗。為了避免使用者的帳號密碼外洩風險，我們<strong>只提供且支援 Google 與 Apple 第三方快速登入</strong>。不自行管理或儲存您的密碼，所有身分驗證直接在第三方安全端進行。
+          為了維護您的密碼安全，我們<strong>只支援 Google 與 Apple 第三方安全驗證</strong>。不收集也不儲存您的密碼，所有身分驗證直接在第三方安全端進行。
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: 登入的好處是什麼？</div>
+        <div class="faq-question">Q: 刪除帳號會刪除哪些資料？</div>
         <div class="faq-answer">
-          登入後，系統會將您的<strong>卡牌收藏</strong>與<strong>關注價格提醒清單</strong>同步至雲端。無論您更換手機，或是在 Web 網頁版上開啟 HoloHunter，您的追蹤清單都能保持一致。
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 如何登出帳號？</div>
-        <div class="faq-answer">
-          請前往 App 內右下角的<strong>「設定 (Settings)」</strong>分頁，在帳號區段中點擊<strong>「登出」</strong>按鈕。登出後將立即清除裝置上的身分驗證快取。
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 如何刪除我的帳號與所有儲存資料？</div>
-        <div class="faq-answer">
-          本 App 提供符合 App Store 規範的自主刪除服務。請前往<strong>「設定」</strong>分頁，點擊紅色的<strong>「刪除帳號與資料」</strong>按鈕並確認。此操作會立即且永久清除您在雲端的所有收藏清單、偏好與帳號。若無法登入 App，您亦可寄信至 <code>dicoge.chen@gmail.com</code>，我們將為您手動處理。
+          點擊設定中的「刪除帳號與資料」後，系統會永久清除您的 Internal User ID、所有綁定的第三方登入關聯，以及您在雲端的所有卡牌收藏與入手提醒清單。此動作無法復原。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: 為什麼 App 要求相機權限？</div>
         <div class="faq-answer">
-          當您使用<strong>「掃描卡牌」</strong>功能時，App 會請求相機權限，此權限僅用於擷取卡牌影像並進行裝置端的即時 OCR 文字辨識（如卡號、成員名）。<strong>我們絕對不會上傳、儲存或分享您的任何照片或相機影像。</strong>
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 價格資料是即時的嗎？</div>
-        <div class="faq-answer">
-          App 顯示的日圓售價來源為日本知名的卡牌二手交易市場「遊々亭 (yuyu-tei.jp)」。價格資料於<strong>每天早上 5:00 AM JST</strong> 透過自動化流程爬取並更新至我們的主資料庫中。
+          相機權限僅用於<strong>卡牌掃描與即時本機 OCR 辨識</strong>，方便您快速查詢卡牌價格。<strong>我們絕對不會上傳、儲存或分享您的任何照片或相機影像。</strong>
         </div>
       </div>
     </div>
@@ -374,44 +376,46 @@
       <h2>💬 Frequently Asked Questions (FAQ)</h2>
 
       <div class="faq-item">
-        <div class="faq-question">Q: Why is there no option to register with an email and password?</div>
+        <div class="faq-question">Q: Can I link both my Google and Apple accounts?</div>
         <div class="faq-answer">
-          HoloHunter is built for maximum simplicity and safety. To completely eliminate the risk of password leaks, we <strong>exclusively support Google Sign-In and Sign in with Apple</strong>. We do not store or manage user passwords; authentication is securely handled by Google and Apple.
+          Yes! HoloHunter supports a "Common Account" mechanism. You can log in with Google first, then go to the <strong>Settings</strong> page and tap <strong>Link Apple</strong>, or vice versa. Once linked, both methods will share the same Internal User ID and cloud card collections.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: What are the benefits of signing in?</div>
+        <div class="faq-question">Q: What happens if I get an "Account Collision" warning during linking?</div>
         <div class="faq-answer">
-          Signing in syncs your <strong>favorites list</strong> and <strong>price alerts</strong> to our secure cloud. This ensures your tracked cards stay updated across different devices and the web version of HoloHunter.
+          If the Google/Apple account you are trying to link is already associated with another user, the App will detect the collision and offer two options:<br>
+          1. <strong>Merge Data</strong>: Merge the collections/settings of the collided account into your current account and transfer the identity link.<br>
+          2. <strong>Reject & Cancel</strong>: Cancel the linking process and keep everything as is.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: How do I sign out?</div>
+        <div class="faq-question">Q: Can I unlink a login provider?</div>
         <div class="faq-answer">
-          Go to the <strong>Settings</strong> tab at the bottom right of the App, and tap the <strong>Sign Out</strong> button in the Account section. This will immediately clear your session cache.
+          Yes. In the <strong>Settings</strong> page, tap the "Unlink" button next to the provider you want to remove. However, <strong>you must keep at least one linked login provider</strong> to prevent your account from becoming locked out.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: How can I delete my account and all associated data?</div>
+        <div class="faq-question">Q: Why is there no email/password registration?</div>
         <div class="faq-answer">
-          We provide a self-service deletion option. Go to the <strong>Settings</strong> tab, tap the red <strong>Delete Account</strong> button, and confirm. All cloud watchlists, settings, and profile info will be permanently erased. Alternatively, you can email <code>dicoge.chen@gmail.com</code>, and we will manually delete your data.
+          To maximize credential security, we <strong>exclusively support Google Sign-In and Sign in with Apple</strong>. We do not collect or store passwords; all authentication is handled securely by Google and Apple.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: Why does the App request camera permissions?</div>
+        <div class="faq-question">Q: What data is deleted when I delete my account?</div>
         <div class="faq-answer">
-          Camera access is required for the <strong>Scan Card</strong> feature to capture card images and run real-time OCR text recognition on-device. <strong>We do not upload, store, or share any camera images or photos.</strong>
+          Deleting your account permanently erases your Internal User ID, all linked Google/Apple provider links, and all synced watchlists and favorites on our cloud servers. This action is irreversible.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: Are card prices real-time?</div>
+        <div class="faq-question">Q: Why does the App request camera access?</div>
         <div class="faq-answer">
-          JPY prices are sourced from the Japanese card market "Yuyu-tei" (yuyu-tei.jp). Pricing data is scraped and updated automatically <strong>every day at 5:00 AM JST</strong> in our database.
+          Camera permissions are used solely for the <strong>Scan Card</strong> feature to perform on-device real-time OCR text recognition. <strong>We do not upload, store, or share any camera images or photos.</strong>
         </div>
       </div>
     </div>
