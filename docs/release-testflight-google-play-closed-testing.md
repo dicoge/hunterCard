@@ -397,20 +397,21 @@ npx eas submit --platform android --profile production --latest
 
 - Blocker：App Store Connect（App Privacy）或 Play Console（Data safety）問卷與實際權限不一致而被退件或事後標記。
 - 處理：先照 [0.2 權限與隱私盤點](#02-權限與隱私盤點) 盤點。HoloHunter 的權限面**不只相機**：`app.json` 目前含 Android `RECORD_AUDIO`（麥克風）、`expo-notifications`（推播）、`expo-image-picker`（相簿）。每一個保留的權限都必須在問卷如實申報；不用的（尤其麥克風）建議先移除再送審。保留權限卻不申報，是最常見的退件與下架風險。
-- **⚠️ 權限盤點 ≠ 資料收集盤點。**商店問卷不僅問「你用什麼權限」，更問「你收集什麼資料、傳去哪裡、是否與第三方分享」。以下為依實際程式碼盤點的資料流：
-  - **卡牌圖片**（`ScanScreen.tsx` → `POST /api/recognize-card` → OpenRouter Gemini Vision，model `google/gemini-3.1-flash-image`）：上傳後端後轉送第三方 AI 進行卡牌辨識。本專案後端不保存圖片；OpenRouter / Gemini provider 的資料保留由該服務條款決定，**發佈前必須自行核對**（見下方第 5 節問卷）。圖片本身若無額外 metadata（如 EXIF、裝置 ID 水印）傳輸，可主張 Not linked to user identity。
-  - **Expo push token**（`App.tsx` → `initPushNotifications()` → GET Expo Push Service → POST `/api/push/register` → 寫入 `data/push-tokens.json`，GitHub repo `main` branch）：持久裝置識別碼（Device ID）。**⚠️ Apple 的 linked to user 判斷包含透過 device 連結；此 token 是持久的裝置收件識別碼，問卷必須填 Linked to user identity (via device)**。用於監看清單價格提醒推播。token 同時透過 `/api/push/notify` 傳給 Expo Push API (`exp.host`) 發送推播通知 → 屬第三方傳輸。
-  - **Watchlist 監看清單**（`/api/push/watchlist` → 寫入 `data/push-watchlist.json`，GitHub repo `main` branch）：結構為 `Expo push token → cardNumber[]`，記錄使用者追蹤的卡牌編號。屬 **Usage Data → Product Interaction**（App Store）/ **App activity → App interactions**（Play），以 Device ID 為 key，與裝置連結。
-  - **刪除現狀**：目前後端**沒有** unregister/delete endpoint，也沒有無效 token receipt 自動清理機制。**App 移除 / 關閉通知權限不會刪除 GitHub 中的 token 與 watchlist 記錄**。兩份資料皆持久保存，直至營運方人工從 GitHub 刪除。若商店問卷的 deletion request 要答 Yes，需先實作刪除 API 或提供可驗證的 request mechanism/URL。
+- **⚠️ 權限盤點 ≠ 資料收集盤點。**商店問卷不僅問「你用什麼權限」，更問「你收集什麼資料、傳去哪裡、是否與第三方分享」。
+- **⚠️ Web vs Native 資料流不同，商店問卷只填 native store binary 的行為。**HoloHunter 的 Web 版會 POST 影像到 `/api/recognize-card` 再轉送 OpenRouter Gemini Vision，但 iOS/Android native binary **不走這條路**——native 用本機 OCR（`expo-ocr-kit` / Tesseract），不傳送影像到任何伺服器。以下依 native binary 實際程式碼盤點：
+  - **Expo push token**（`App.tsx` → `initPushNotifications()`，僅 native，Web 跳過）：`registerForPushNotifications()` 向 Expo Push Service 取得 token → `uploadDeviceToken()` POST `/api/push/register` → 寫入 `data/push-tokens.json`（GitHub repo `main` branch）。持久裝置識別碼（Device ID），用於監看清單價格提醒推播。
+  - **Watchlist**：目前僅 Zustand 本機儲存（`src/stores/watchlistStore.ts`，persist to localStorage/AsyncStorage），App binary **沒有**呼叫 `/api/push/watchlist`。商店問卷不需申報 server-side `data/push-watchlist.json`（該檔案由外部腳本/管理機制維護，非 App binary 觸發）。
+  - **相機 / 相簿**：native 僅本機 OCR 處理，**不上傳影像**到任何伺服器。相機拍攝的照片也不會寫入系統相簿（僅在記憶體中暫存用於 OCR）。商店問卷中 Photos/Videos 若需勾選 Collected，僅因 image picker 讀取相簿選圖（本機使用），不是因為上傳。
+  - **刪除現狀**：後端**沒有** unregister/delete endpoint。App 移除或關閉通知權限不會刪除 GitHub 中的 token。推播 token 持久保存於 GitHub repo，直至營運方人工刪除。Google deletion request 不可答 Yes（無實作機制），應填 No 或提供 contact email 讓使用者聯絡請求手動刪除。
 
 ### 相機 / 麥克風 / 推播 / 相簿權限用途
 
 - Blocker：商店審查認為權限用途不清楚，或申報與實際不符。
 - 處理：
-  - 相機：描述為「掃描卡牌文字 / 圖像以搜尋卡牌資訊」，不要寫成官方驗證或官方資料服務。**注意：相機拍攝的圖片會透過網路傳送給後端與協力廠商 AI，需在隱私問卷中如實揭露（見上方 Privacy questionnaire）。**
+  - 相機：描述為「掃描卡牌文字 / 圖像以搜尋卡牌資訊」，不要寫成官方驗證或官方資料服務。**⚠️ Web 版會上傳影像到後端/AI，但 native binary（iOS/Android）僅本機 OCR，不上傳影像**——商店問卷只填 native 行為。
   - 麥克風：若不錄音就依 [0.2](#02-權限與隱私盤點) 關閉 `expo-camera` 的麥克風並移除 `RECORD_AUDIO`；否則需說明錄音用途。
-  - 推播：`expo-notifications` 目前實際使用中（價格提醒/watchlist 功能）。App 啟動時取得 Expo push token，上傳後端保存於 `data/push-tokens.json`；使用者加入 watchlist 後，`data/push-watchlist.json` 記錄 token → cardNumber[] 對應。發送推播時，token 與通知內容一併傳輸至 Expo Push API（`exp.host`）。需在 Identifiers（via device）與 Usage Data / App activity（Product Interaction / App interactions）申報，並正確揭露第三方傳輸與 deletion 現狀（無 unregister endpoint）。**若無推播功能，建議移除 `expo-notifications` plugin 並從此處移除說明。**
-  - 相簿：說明僅用於使用者主動挑選卡牌圖片做辨識。**注意：相簿選取的圖片同樣會上傳後端與第三方 AI，需如實揭露（見上方 Privacy questionnaire）。**
+  - 推播：`expo-notifications` 目前實際使用中（價格提醒/watchlist 功能）。App 啟動時（僅 native）取得 Expo push token，上傳後端保存於 `data/push-tokens.json`（無帳號機制）。發送推播時，token 與通知內容傳輸至 Expo Push API（`exp.host`）發送。Watchlist 目前僅 Zustand 本機儲存，App binary 未呼叫 `/api/push/watchlist`；外部 server-side `data/push-watchlist.json` 不是 App binary 產生的資料。商店問卷僅申報實際 App binary 的行為（Identifiers / Device ID）。**若無推播功能，建議移除 `expo-notifications` plugin 並從此處移除說明。**
+  - 相簿：說明僅用於使用者主動挑選卡牌圖片做辨識。**Native binary 僅本機處理圖片，不上傳到任何伺服器。**
 
 ---
 
@@ -485,93 +486,84 @@ NSPhotoLibraryUsageDescription = 允許 HoloHunter 存取相簿以選取卡牌�
 
 > 正常走 Expo prebuild 時，這些字串由 `expo-camera` / `expo-image-picker` plugin 產生（`expo-image-picker` 預設也會加 `NSMicrophoneUsageDescription`），不需手改；此區塊僅供 eject / 檢查用。若已依 0.2 關閉麥克風，prebuild 後應確認 `NSMicrophoneUsageDescription` 不再出現於 Info.plist。
 
-### App Store App Privacy 問卷（依目前權限面的建議答案）
+### App Store App Privacy 問卷（依 native binary 行為的建議答案）
+
+> ⚠️ 下方只填 iOS native binary 的實際資料流。Web 版會 POST 影像到 `/api/recognize-card` 再轉送 OpenRouter Gemini Vision，但 native binary 不走這條路——native 用本機 OCR（`expo-ocr-kit` / Tesseract），不上傳影像。
+>
+> Apple App Privacy 沒有獨立的「shared with third parties」勾選項，而是按 data type 填寫 collected / purpose / linked to user / tracking。
 
 ```text
 先確認以下每一項是否仍成立，再照實勾選：
 
-Data Collection：
-
-- Contact Info：若無帳號/註冊 → No
+- Contact Info：無帳號/註冊 → No
 
 - Identifiers → Device ID：
-  - Expo push token（ExpoPushToken[...]）→ 需勾選 Collected
-  - ⚠️ Linked to user：Apple 的 linked 定義包含透過 device 連結。此 token 是持久裝置識別碼，且 watchlist 以 token 為 key 記錄互動，應填 Linked to user identity (via device)。
+  - Expo push token（ExpoPushToken[...]）→ Collected = Yes
   - Purpose：App functionality（push notification / 監看清單價格提醒）
-  - 此 token 同時傳輸至 Expo Push Service（exp.host）發送推播通知，屬第三方傳輸；需在下方「Data shared with third parties」一併揭露。
+  - ⚠️ Linked to user：Apple 的 linked 定義包含透過 device 連結。此 token 是持久裝置識別碼，應填 Linked to user identity (via device)。
+  - 用於追蹤：No
+  - 推播 token 會經 Expo Push Service（exp.host）處理通知遞送；Apple App Privacy 在 device ID 這欄不需要獨立 third-party sharing toggle（透過 purpose/linked/tracking framework 表達）。
 
-- Usage Data → Product Interaction：
-  - Watchlist 監看清單（`data/push-watchlist.json`）：結構為 Expo push token → cardNumber[]，記錄使用者追蹤的卡牌編號，持久保存於 GitHub repo。
-  - 需勾選 Collected，Purpose = App functionality。
-  - Linked to user：以 Device ID 為 key → 與裝置連結。
-  - 若無其他 analytics/crash SDK → 無其他 usage data。
+- Usage Data：無帳號、無 analytics/crash SDK → No
+  - ⚠️ Watchlist（監看清單）目前僅 Zustand 本機儲存（localStorage/AsyncStorage），App binary 未呼叫 `/api/push/watchlist`。外部 `data/push-watchlist.json` 非 App binary 觸發產生，不需在商店問卷申報。
 
-- Camera：App 使用相機掃描/辨識卡牌 → 於功能說明勾選相機用途
+- Camera：App 使用相機掃描/辨識卡牌，僅本機 OCR 處理，不上傳影像 → 於功能說明勾選相機用途。資料收集：No（僅即時本機處理，不持久保存也不傳輸）。
 
-- Microphone：需同時關 expo-camera 與 expo-image-picker 的麥克風；prebuild 後 Info.plist 無 NSMicrophoneUsageDescription 才不申報，否則必須申報
+- Microphone：若已關閉 → No；若仍保留權限 → 需按實際用途填寫。
 
 - User Content（Photos / Videos）：
-  - expo-image-picker 使用相簿選圖進行辨識，相機拍攝的卡牌圖片亦會寫入相簿。
-  - ⚠️ 此 App 會將拍攝或選取的卡牌圖片上傳到後端伺服器，後端再轉送 OpenRouter Gemini Vision（第三方 AI）進行影像分析。
-  - 需在問卷明確勾選「User Content → Photos or Videos」為收集項目。
-  - Linked to user：若圖片本身不含裝置 metadata（EXIF/ID 水印），可填 Not linked to user identity。
-  - 用於追蹤：No（僅用於辨識，不做跨 App/網站追蹤）。
-  - 資料保留：本專案後端不保存圖片（辨識請求完成後即丟棄）。但 OpenRouter / Gemini provider 的資料保留由該服務條款決定 —— 發佈前應自行核對 OpenRouter zero-retention policy 與 Gemini API data governance，未確認前不可宣告整條第三方資料流為 ephemeral。
+  - expo-image-picker 可從相簿選圖進行辨識 → 若需勾選 Collected，用途為本機卡牌辨識。
+  - ⚠️ Native binary 不上傳影像到任何伺服器（OCR 在本機執行）。相機拍攝的照片也不寫入系統相簿（僅記憶體暫存用於 OCR）。
+  - Linked to user：若僅本機處理 → Not linked to user identity。
+  - 用於追蹤：No。
 
-- Push notifications：
-  - 見上方 Identifiers → Device ID 與 Usage Data → Product Interaction。推播與 watchlist 資料流已涵蓋於該兩項，不重複申報。
+- Push notifications：已涵蓋於上方 Identifiers → Device ID。
 
 Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transparency 選 No / 不追蹤（若確實無追蹤 SDK）。
-
-Data shared with third parties：
-- Expo Push Service（exp.host）：傳輸 Expo push token + 通知 title/body + cardNumber data，用於發送推播通知。
-- OpenRouter API / Google Gemini Vision：傳輸卡牌影像，用於 AI 卡牌辨識。
-上述兩項在 App Privacy 中需勾選對應 data types 的 shared with third parties。
 ```
 
-### Google Play Data safety 問卷（依目前權限面的建議答案）
+### Google Play Data safety 問卷（依 native binary 行為的建議答案）
+
+> ⚠️ 下方只填 Android native binary 的實際資料流。Web 版會 POST 影像到 `/api/recognize-card` 再轉送 OpenRouter Gemini Vision，但 native binary 不走這條路——native 用本機 OCR（`expo-ocr-kit` / Tesseract），不上傳影像。
+>
+> Play Data safety 的「Data shared with third parties」需依 service-provider 合約例外判斷：若資料傳輸對象僅作為服務提供者（代表開發者處理資料），且合約禁止他用，可答 No。
 
 ```text
 先跑 `npx expo prebuild --clean`，以 merged AndroidManifest.xml 的實際權限清單為準再填問卷。
 
 Data collection / sharing：
-- ⚠️ 此 App 明顯會收集並傳輸三種資料，不可宣告「不收集個資」：
-  1. 卡牌圖片（從相機/相簿取得）→ 上傳後端伺服器 → 再轉送 OpenRouter Gemini Vision（第三方 AI）做影像辨識。
-  2. Expo push token → 取得後上傳後端並持久保存於 data/push-tokens.json（GitHub repo `main` branch），同時傳輸至 Expo Push API 發送通知。
-  3. Watchlist 監看清單 → 結構為 Expo push token → cardNumber[]，持久保存於 data/push-watchlist.json（GitHub repo `main` branch），記錄使用者追蹤的卡牌編號。
 
-- Location：No（App 不使用定位）
-- Personal info：目前無帳號/註冊機制，不收集姓名、email、電話等 → No
+- ⚠️ Native binary 實際 off-device 資料流僅一種：
+  Expo push token → 取得後上傳後端並持久保存於 data/push-tokens.json（GitHub repo `main` branch），用於監看清單價格提醒推播。
+  無帳號、無 analytics、無影像上傳、watchlist 僅 Zustand 本機儲存（未呼叫 /api/push/watchlist）。
+
+- Location：No
+- Personal info：無帳號/註冊機制 → No
 - Financial info：No
 - Health and fitness：No
-- Messages / Contacts / Files：No
-
+- Messages：No
 - Photos/Videos：
-  - ⚠️ 相機拍攝或相簿選取之卡牌圖片會上傳後端，並轉送 OpenRouter Gemini Vision（協力廠商 AI）進行卡牌辨識。
-  - Data type：Photos and Videos → 需勾選 Collected
-  - Purpose：App functionality（card recognition）
-  - Data shared with third parties：必須勾 Yes → 內容為「影像資料傳送至 OpenRouter API（Google Gemini Vision）進行卡牌辨識」
-  - Ephemeral processing：本專案後端不保存圖片。但 OpenRouter / Gemini provider 的資料保留由該服務條款決定 —— **發佈前應自行核對 OpenRouter zero-retention 政策與 Gemini API data governance；未確認前不可勾選 ephemeral processing**。
-
-- Audio：若已於 expo-camera 與 expo-image-picker 皆關閉並用 blockedPermissions 兜底、merged manifest 無 RECORD_AUDIO → No；若殘留 → 必須說明
+  - expo-image-picker 可從相簿選圖進行本機辨識。
+  - ⚠️ Native binary 不上傳影像到任何伺服器（OCR 在本機執行）。相機拍攝的照片也不寫入系統相簿（僅記憶體暫存）。
+  - Data type：若 Expo prebuild 後的 merged manifest 有 READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE（來自 expo-image-picker），Play Console 會自動顯示 Photos/Videos，可勾選 Collected、Purpose = App functionality（local card recognition）、Data shared = No、Ephemeral processing = Yes（本機用完即棄）。
+- Audio：若已關閉且 merged manifest 無 RECORD_AUDIO → No；若殘留 → 必須說明
+- Files：No
 
 - Device or other IDs：
-  - Expo push token（ExpoPushToken[...]）→ 需勾選 Collected
+  - Expo push token（ExpoPushToken[...]）→ Collected = Yes
   - Purpose：App functionality（push notifications / 監看清單價格提醒）
-  - ⚠️ Data shared with third parties：必須勾 Yes → token 會作為 `to` 欄位傳輸至 Expo Push API (`exp.host`)，同時傳輸通知 title/body 與 cardNumber data payload。
-  - ⚠️ Deletion：目前後端無 unregister/delete endpoint，App 移除或關閉通知權限**不會**刪除 GitHub 中的 token。資料持久保存於 GitHub repo，直至營運方人工刪除。Google Data safety 的 deletion request 不可答 Yes（無實作機制），應如實填 No 或提供 contact email 讓使用者聯絡請求手動刪除。若要答 Yes，需先實作 `/api/push/unregister` 端點。
+  - ⚠️ Data shared with third parties：推播透過 Expo Push Service（exp.host）發送，token 與通知內容傳輸至 `exp.host`。若 Expo Push Service 符合 service-provider 合約例外（代表開發者處理資料、不用於自身目的），可答 No；若無法確認合約關係，應答 Yes 並註明傳輸至「Expo Push Service for notification delivery」。
+  - ⚠️ Deletion：後端無 unregister/delete endpoint。App 移除或關閉通知權限不會刪除 GitHub 中的 token。資料持久保存於 GitHub repo，直至營運方人工刪除。Deletion request 應如實填 No 或提供 contact email 讓使用者聯絡請求手動刪除。若要答 Yes，需先實作 `/api/push/unregister` 端點。
 
 - App activity → App interactions：
-  - Watchlist 監看清單（`data/push-watchlist.json`，結構為 Expo push token → cardNumber[]）→ 需勾選 Collected
-  - Purpose：App functionality（card tracking / price alert subscriptions）
-  - 以 Device ID 為 key，與裝置連結。
-  - Deletion：同上方 Device IDs — 無 unregister endpoint，使用者無法自主刪除。watchlist 記錄持久保存於 GitHub repo 直至人工刪除。
+  - ⚠️ Watchlist 目前僅 Zustand 本機儲存，App binary 未呼叫 `/api/push/watchlist`。外部 server-side `data/push-watchlist.json` 非 App binary 觸發，不需申報。
+  - 若無其他 analytics / crash SDK → No。
 
 Permissions（Play Console 會自動列出 merged manifest 權限，需能對應功能）：
-- CAMERA → 掃描/辨識卡牌
+- CAMERA → 掃描/辨識卡牌（本機處理）
 - READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE（可能來自 expo-image-picker）→ 以 merged manifest 為準；用於相簿選圖，Android 13+ 多改走系統 photo picker 免權限
 - RECORD_AUDIO → 若未使用，需同時關 expo-camera 與 expo-image-picker 的 microphonePermission 並加 android.blockedPermissions；改完用 merged manifest 確認已消失
-- POST_NOTIFICATIONS（Android 13+，來自 expo-notifications）→ 用於監看清單價格提醒推播。需保留此權限，並在 Data safety 對應申報 Device IDs 與 App interactions。
+- POST_NOTIFICATIONS（Android 13+，來自 expo-notifications）→ 用於監看清單價格提醒推播。需保留此權限，並在 Data safety 對應申報 Device IDs。
 ```
 
 ---
