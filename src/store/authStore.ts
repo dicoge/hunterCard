@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import { useWatchlistStore } from '../stores/watchlistStore';
+import { useScanSessionStore } from '../stores/scanSessionStore';
 
 export type UserRole = 'guest' | 'free_user' | 'subscriber';
 
@@ -214,12 +215,19 @@ export const useAuthStore = create<AuthState>()(
       },
 
       deleteAccount: () => {
-        // Local-only: clears this device's session and cached watchlist.
-        // Cloud data deletion is handled via a manual support-email request (see SettingsScreen).
+        // Local-only mock: there is no cloud account/data at this stage, so this
+        // clears every persisted local store that holds user content — the auth
+        // session, the watchlist, and the scan session (scanned cards). A cloud
+        // deletion channel (email/backend) is only planned for future production.
         try {
           useWatchlistStore.setState({ items: [] });
         } catch (e) {
           console.warn('Failed to clear watchlist:', e);
+        }
+        try {
+          useScanSessionStore.getState().clearSession();
+        } catch (e) {
+          console.warn('Failed to clear scan session:', e);
         }
         set({ isLoggedIn: false, session: null });
       },

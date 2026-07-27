@@ -153,8 +153,8 @@ export default function SettingsScreen() {
     Alert.alert(
       preferredLanguage === 'zh' ? '刪除帳號與資料（本機）' : 'Delete Account & Data (Local)',
       preferredLanguage === 'zh'
-        ? '（目前為本機模擬）此 App 目前沒有任何雲端帳號或資料——您的模擬帳號、收藏與掃描計數都只存在此裝置本機。\n\n點擊「清除本機資料並登出」會立即清除此裝置上的登入 Session、快取與收藏，這已完整刪除本 App 目前持有、關於您的全部資料。\n\n未來正式版串接真實登入與後端後，才會另外提供以電子郵件申請刪除雲端資料的管道；目前並無雲端資料需要刪除。'
-        : '(Currently a local mock) The App holds no cloud account or data right now — your mock account, collections, and scan count live only on this device.\n\nTapping "Clear local data & sign out" immediately removes your login session, cache, and collections on this device, which fully deletes everything the App currently holds about you.\n\nA cloud-data deletion channel (via email/backend) will only be added in the future production build; there is no cloud data to delete today.',
+        ? '（目前為本機模擬）此 App 目前沒有任何雲端帳號或資料——您的模擬帳號、收藏清單與掃描的卡牌都只存在此裝置本機。\n\n點擊「清除本機資料並登出」會立即清除此裝置上的登入 Session、收藏清單與掃描的卡牌暫存，這已完整刪除本 App 目前持有、關於您的全部資料。\n\n未來正式版串接真實登入與後端後，才會另外提供以電子郵件申請刪除雲端資料的管道；目前並無雲端資料需要刪除。'
+        : '(Currently a local mock) The App holds no cloud account or data right now — your mock account, watchlist, and scanned cards live only on this device.\n\nTapping "Clear local data & sign out" immediately removes your login session, watchlist, and scanned-card session on this device, which fully deletes everything the App currently holds about you.\n\nA cloud-data deletion channel (via email/backend) will only be added in the future production build; there is no cloud data to delete today.',
       [
         {
           text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
@@ -168,8 +168,8 @@ export default function SettingsScreen() {
             Alert.alert(
               preferredLanguage === 'zh' ? '已清除本機資料' : 'Local data cleared',
               preferredLanguage === 'zh'
-                ? '您的本機 Session、快取與收藏已清除並登出。目前並無雲端資料，本 App 持有關於您的全部資料皆已刪除。'
-                : 'Your local session, cache, and collections have been cleared and you have been signed out. There is no cloud data, so everything the App held about you has been deleted.'
+                ? '您的本機 Session、收藏清單與掃描的卡牌暫存已清除並登出。目前並無雲端資料，本 App 持有關於您的全部資料皆已刪除。'
+                : 'Your local session, watchlist, and scanned-card session have been cleared and you have been signed out. There is no cloud data, so everything the App held about you has been deleted.'
             );
           },
         },

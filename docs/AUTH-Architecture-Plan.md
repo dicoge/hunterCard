@@ -132,7 +132,7 @@ flowchart TD
 
 ### B. 帳號刪除 (Account Deletion)
 
-> **實作狀態（重要）**：以下為**正式上架後**規劃的後端刪除流程，尚未實作。**目前版本**中，App 內的「刪除帳號」僅清除本機 Session 與快取並登出；雲端資料刪除須由使用者以電子郵件申請、由人工處理（與 `public/privacy.html`、`public/support.html` 的說明一致）。下方流程為串接真實後端後的目標行為。
+> **實作狀態（重要）**：以下為**正式上架後**規劃的後端刪除流程，尚未實作。**目前版本（本機模擬）**中，App 並沒有任何雲端帳號或資料——所有資料只存在裝置本機。App 內的「刪除帳號（本機）」會清除本機 Session、收藏清單 (`watchlistStore`) 與掃描卡牌暫存 (`scanSessionStore`) 並登出，這已完整刪除本 App 目前持有的全部資料，**目前沒有任何雲端資料需要刪除**。**以電子郵件申請 / 後端人工處理的雲端資料刪除管道，屬於未來正式版（串接真實後端與金流後）才會提供的功能**（與 `public/privacy.html`、`public/support.html` 中標示為「未來正式版」的說明一致）。下方流程為串接真實後端後的目標行為。
 
 規劃中（正式版目標）：符合 Apple App Store 與 Google Play 的合規要求，當使用者在 App 內執行「刪除帳號」，後端將：
 1. 刪除該使用者的 `users` 記錄（由於外鍵設為 `ON DELETE CASCADE`，會自動刪除所有關聯的 `linked_auth_providers`）。
