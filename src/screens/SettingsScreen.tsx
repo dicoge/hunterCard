@@ -151,23 +151,25 @@ export default function SettingsScreen() {
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      preferredLanguage === 'zh' ? '⚠ 確定永久刪除帳號？' : '⚠ Permanently Delete Account?',
+      preferredLanguage === 'zh' ? '⚠ 確定送出刪除申請？' : '⚠ Submit Deletion Request?',
       preferredLanguage === 'zh' 
-        ? '此動作將永久刪除您的 Internal User ID、所有綁定的 Google/Apple 第三方連結，以及雲端同步的所有卡牌收藏與設定。此動作無法復原！' 
-        : 'This will permanently delete your Internal User ID, all linked Google/Apple identities, and all cloud synced collections and watchlists. This action is irreversible!',
+        ? '此動作將送出刪除申請，系統將排程於 2-3 個工作天內永久刪除您的雲端資料、配額與訂閱關聯。確認後本機 Session 將立即清空並登出。' 
+        : 'This will submit a deletion request. The system will permanently delete your cloud data, scan quotas, and subscriptions in 2-3 business days. Your local session will be cleared immediately.',
       [
         {
           text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
           style: 'cancel',
         },
         {
-          text: preferredLanguage === 'zh' ? '確認刪除' : 'Confirm Delete',
+          text: preferredLanguage === 'zh' ? '確認送出' : 'Confirm Submit',
           style: 'destructive',
           onPress: () => {
             deleteAccount();
             Alert.alert(
-              preferredLanguage === 'zh' ? '帳號已刪除' : 'Account Deleted',
-              preferredLanguage === 'zh' ? '您的帳號、綁定關係及所有資料已成功被徹底抹除。' : 'Your account, identities, and all data have been completely deleted.'
+              preferredLanguage === 'zh' ? '已送出刪除申請' : 'Request Submitted',
+              preferredLanguage === 'zh' 
+                ? '我們已收到您的刪除申請，將於 2-3 個工作天內完成雲端資料清除。您的本機 Session 已成功登出並清空。' 
+                : 'We have received your deletion request and will purge your cloud data in 2-3 business days. Your local session has been logged out.'
             );
           },
         },
