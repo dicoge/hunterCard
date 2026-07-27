@@ -254,8 +254,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD13-017_hSD13"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-017_hSD13"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.815Z",
+  "lastUpdated": "2026-07-27T12:16:33.626Z",
   "nameZh": "JUSTICE, JUST LIKE THAT!!!!"
 }
