@@ -185,7 +185,7 @@ CREATE TABLE entitlements (
 | --- | --- |
 | scan_usage | **每 period 取 capped sum**：對每個 `period`，target.scan_count = min(target.scan_count + source.scan_count, entitlement.monthly_limit)。source 的 `scan_usage` 全部寫入 audit_log 後設 `scan_count = 0`。capped 部分記 audit_log `merge_quota_capped` 含原始值。全部在 merge transaction 內以 `FOR UPDATE` 執行，防止並發掃描/merge 導致超額。 |
 | subscriptions | **原子轉移所有 active rows**：`UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`。轉移後若 target 有多個 active subscription → 保留單一 survivor：依 `expires_at DESC NULLS FIRST`（永久 plan 優先）、`started_at DESC`（到期日一致則保留最新訂購）、`id DESC`（連 started_at 都一致則保留最新 insert 的 row）。其餘 `cancelled_at = now()`、`status = 'cancelled'`。若 survivor 為 pro 且另有 active pro → 轉 `requires_support`。全部在 merge transaction 內。 |
-| entitlements | **upsert-then-delete**（entitlements PK = user_id）：先 `INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit) SELECT <target.id>, tier, daily_limit, monthly_limit FROM entitlements WHERE user_id = <source.id> ON CONFLICT (user_id) DO UPDATE SET tier = CASE WHEN EXCLUDED.tier = 'pro' THEN 'pro' ELSE entitlements.tier END, daily_limit = CASE WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.daily_limit ELSE entitlements.daily_limit END, monthly_limit = CASE WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.monthly_limit ELSE entitlements.monthly_limit END, updated_at = now()`。接著 `DELETE FROM entitlements WHERE user_id = <source.id>`。若 source 與 target 同為 pro → target 權威保留，target tier/daily_limit/monthly_limit 均不變（ON CONFLICT 中 CASE 認定 EXCLUDED.tier='pro' 但 target 也是 pro，CASE WHEN EXCLUDED.tier='pro' THEN 'pro' 仍寫入 pro，limits 也同值 — 實際無變化），記 audit_log 後轉 `requires_support` 供人工確認。
+| entitlements | **upsert-then-delete**（entitlements PK = user_id）：先 `INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit) SELECT <target.id>, tier, daily_limit, monthly_limit FROM entitlements WHERE user_id = <source.id> ON CONFLICT (user_id) DO UPDATE SET tier = CASE WHEN entitlements.tier = 'pro' OR EXCLUDED.tier = 'pro' THEN 'pro' ELSE 'free' END, daily_limit = CASE WHEN entitlements.tier = 'pro' THEN entitlements.daily_limit WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.daily_limit ELSE entitlements.daily_limit END, monthly_limit = CASE WHEN entitlements.tier = 'pro' THEN entitlements.monthly_limit WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.monthly_limit ELSE entitlements.monthly_limit END, updated_at = now()`。接著 `DELETE FROM entitlements WHERE user_id = <source.id>`。**limits 判定以 target 既有 tier 為準**：`entitlements.tier`（= target 現值）為 `'pro'` 時 CASE 一律保留 target 的 tier/daily_limit/monthly_limit，完全不採 `EXCLUDED`（source）值；只有在 **target 非 pro、source 為 pro** 時才採用 source 的 limits。故 source 與 target 同為 pro → target 權威保留、limits 不變。任一情況只要牽涉 pro entitlement 併入，記 audit_log 後轉 `requires_support` 供人工確認最終 tier。
 
 #### 3.5.2 Purge 規則
 
@@ -337,47 +337,57 @@ Client 取得 provider ID token
 > - INSERT users + INSERT identities 無需 lock：未命中表示全新 user，無競態對手。`uq_provider_subject_active` 在 DB 層保證唯一性，transaction 內失敗可 retry。
 
 ### 5.2 綁定第二 provider（authenticated link）
+
+collision owner 與 current user 都可能被改動 ownership，因此**兩個 user row 必須在單一 `SELECT ... WHERE id IN (...) ORDER BY id FOR UPDATE` 一次鎖定**（依 UUID 排序，避免兩個互綁請求各持一鎖形成 deadlock）。owner 必須「先探測、鎖定、再於鎖後重讀確認」。
+
 ```
 已登入（access token）→ POST /api/auth/link { provider, id_token }
-  ├─ 驗 token 取 subject
-  ├─ 在一個 DB transaction 內（鎖定順序：users FOR UPDATE → auth_identities INSERT）：
-  │     ├─ SELECT id, status FROM users WHERE id = <current> FOR UPDATE
-  │     │     → 若 status != 'active' → 403 ACCOUNT_DISABLED
-  │     ├─ INSERT INTO auth_identities (user_id, provider, provider_subject, ...)
-  │     │     VALUES (<current>, <provider>, <sub>, ...)
-  │     │     ON CONFLICT DO NOTHING
-  │     │     →
-  │     │     • INSERT 成功（row inserted）→ 200 ok
-  │     │     • INSERT 返回 0 rows（任意 partial unique index 衝突）→ re-SELECT 兩路：
-  │     │         Ⓐ 查 auth_identities WHERE provider=<provider> AND provider_subject=<sub>
-  │     │             AND revoked_at IS NULL
-  │     │           ├─ 命中，user_id = <current> → 200 幂等
-  │     │           └─ 命中，user_id != <current> → 409 IDENTITY_ALREADY_LINKED
-  │     │                （見 §5.2.1 collision owner handling）
-  │     │         Ⓑ 若 Ⓐ 未命中 → 必為 uq_user_provider_active 衝突（current user 同
-  │     │              provider 已有不同 subject 的 active identity）
-  │     │             → 409 SAME_PROVIDER_ALREADY_LINKED
-  │     │              （同一 account 同一 provider 已綁定另一 identity；若要切換
-  │     │               需先 unlink 舊的再 link 新的）
-  │     └─ COMMIT
+  1. 驗 token 取 subject。
+  2. Pre-probe（無鎖）：
+       owner0 := SELECT user_id FROM auth_identities
+                 WHERE provider=<p> AND provider_subject=<sub> AND revoked_at IS NULL
+  3. lock_ids := {current} ∪ ({owner0} 若 owner0 非 null 且 ≠ current)
+  4. BEGIN；一次鎖定全部（deterministic，無 deadlock）：
+       SELECT id, status FROM users WHERE id IN (lock_ids) ORDER BY id FOR UPDATE
+  5. 鎖後重讀權威 owner：
+       owner := SELECT user_id FROM auth_identities
+                WHERE provider=<p> AND provider_subject=<sub> AND revoked_at IS NULL
+       ├─ 若 owner 是「不在 lock_ids 內的第三 user」（pre-probe 後才出現）
+       │     → ROLLBACK，將 owner 併入 lock_ids，重開 transaction（bounded retry，≤3 次；
+       │       仍未收斂 → 503 LINK_CONTENTION，請重試）
+       └─ 否則 owner ∈ {null, current, 已鎖的 other}，繼續
+  6. 若 current.status != 'active' → 403 ACCOUNT_DISABLED。
+  7. 依 owner 分派（此時 current 與 owner 皆已鎖）：
+       Case owner == current            → 200 幂等（已綁定）
+       Case owner == other 且 status='active'
+                                        → 409 IDENTITY_ALREADY_LINKED + merge_token（§4）
+       Case owner == other 且 status!='active'（stale owner）
+                                        → UPDATE auth_identities SET revoked_at = now()
+                                             WHERE provider=<p> AND provider_subject=<sub>
+                                               AND user_id=<other> AND revoked_at IS NULL；
+                                           釋放 (provider,subject) 後 fall through 到 Case null
+       Case owner == null（含上一步 revoke 後）→ 進入步驟 8 的 INSERT
+  8. INSERT（唯一寫入點，結果一律以 RETURNING 判定，絕不假設「必不衝突」）：
+       INSERT INTO auth_identities (user_id, provider, provider_subject, ...)
+         VALUES (<current>, <p>, <sub>, ...)
+         ON CONFLICT DO NOTHING RETURNING id
+       ├─ RETURNING 有 row → 200 ok
+       └─ RETURNING 0 rows → 重跑步驟 5 的兩路判定（不可假設衝突來源）：
+            Ⓐ 重讀 (provider,subject) active owner
+               ├─ == current                → 200 幂等
+               ├─ == 已鎖的 other 且 active  → 409 IDENTITY_ALREADY_LINKED + merge_token
+               └─ == 不在 lock_ids 的第三 user（併發 login-create 搶插）
+                                             → ROLLBACK，併入 lock_ids 後重開（同步驟 5 bounded retry）
+            Ⓑ 若 Ⓐ 無 active owner → 必為 uq_user_provider_active 衝突
+               （current 同 provider 已有不同 subject 的 active identity）
+                                             → 409 SAME_PROVIDER_ALREADY_LINKED
+  9. COMMIT
 ```
-> - 僅使用一個 `ON CONFLICT DO NOTHING`（無 target），PostgreSQL 會對所有衝突的 partial unique index 都返回 0 rows。INSERT 後依序 re-read 兩條索引判斷衝突來源，不 retry 不可能成功的 INSERT。
-> - same-provider/different-subject 回 **409 SAME_PROVIDER_ALREADY_LINKED**（非 200 idempotent），因為想要綁定的 (provider, subject) 與既有 active identity 不同。
 
-#### 5.2.1 collision owner 處理（IDENTITY_ALREADY_LINKED 時）
-
-```
-  ├─ Ⓐ 命中，user_id = <other> → 鎖定該 collision owner：
-  │      SELECT id, status FROM users WHERE id = <other> FOR UPDATE
-  │      （按 UUID 排序，若 <other> < <current> 則順序交換避免 deadlock）
-  │     ├─ 若 status = 'active' → 409 IDENTITY_ALREADY_LINKED + merge_token（§4）
-  │     └─ 若 status != 'active' → collision owner 已非 active：
-  │          UPDATE auth_identities SET revoked_at = now()
-  │          WHERE provider = <provider> AND provider_subject = <sub>
-  │            AND user_id = <other> AND revoked_at IS NULL
-  │          → 釋放該 identity 後，retry INSERT（此時不衝突）
-```
-> collision owner 的 users row 也必須 `FOR UPDATE` lock，按 UUID 排序避免 deadlock，re-read status 後才決定 revoke 或發 merge_token。
+> - **兩 user 一次鎖定 + UUID 排序**：無論誰先發起、owner UUID 大小如何，鎖取得順序一致，杜絕 §DIC-759 指出的「先鎖 current、後鎖 owner」互等 deadlock。
+> - **owner 鎖後重讀 + bounded restart**：pre-probe 無鎖只用來決定要鎖誰；真正判定一律以「鎖後重讀」為準。第三方在窗口內搶下 ownership 時，rollback 併入 lock_ids 後重開，最終仍以已鎖狀態做決定。
+> - **INSERT 一律驗 RETURNING**：revoke stale owner 後的 retry 不假設「此時不衝突」——若 current 已有同 provider 不同 subject 的 active identity，retry 仍會撞 `uq_user_provider_active` 而回 0 rows，此時重跑 Ⓐ→Ⓑ 判定，正確回 409 SAME_PROVIDER_ALREADY_LINKED，不會誤判為成功。
+> - same-provider/different-subject 一律回 **409 SAME_PROVIDER_ALREADY_LINKED**（非 200 idempotent）；要換綁需先 unlink 舊 identity 再 link 新的。
 
 ### 5.3 解除綁定（unlink）
 ```
