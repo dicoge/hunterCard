@@ -268,6 +268,9 @@
     <!-- ── 繁體中文版本 ── -->
     <div id="content-zh" class="content-section active">
       <p><em>最後更新日期：2026 年 7 月 27 日</em></p>
+      <p style="color: var(--accent-color); background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px 16px; font-size: 0.9rem;">
+        ⚠️ <strong>[開發測試階段說明]</strong>：HoloHunter 目前處於前端原型與設計規劃階段。App 內的 Google/Apple 登入、訂閱切換與帳號刪除均為<strong>本地模擬 (Mock/Demo)</strong>，尚未連接真實 OAuth、IAP 金流或後端刪除 API。本隱私權政策描述的是<strong>未來正式上架後的資料處理方針</strong>。當前測試版本中，所有身分資料均為假資料 (Mock Data)，App 內「刪除帳號」僅清除本機 Session；雲端資料刪除請寄信至 dicoge.chen@gmail.com 由人工處理。
+      </p>
       
       <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。我們非常重視您的個人隱私。本政策說明我們如何處理多方帳號登入、綁定、訂閱狀態與相關個人資料。當您使用本 App 時，即表示您同意本政策。</p>
 
@@ -315,19 +318,18 @@
       <h2>5. 帳號與所有資料之刪除方式</h2>
       <p>符合 Apple App Store 與 Google Play 的最新合規規範，我們提供完善的「被遺忘權」與資料刪除機制：</p>
       <div class="danger-card">
-        <p><strong>⚠️ 注意：</strong> 刪除帳號是不可逆的操作。當您在 App 內申請刪除，本機登入 Session 將被清除，我們將在後端排程永久清除資料，此操作無法復原。</p>
+        <p><strong>⚠️ 注意：</strong> 刪除帳號是不可逆的操作。目前測試階段，App 內刪除按鈕僅<strong>清除本機 Session 與快取</strong>，不會自動刪除雲端資料。若需刪除雲端帳號與資料，請寄信申請人工處理。</p>
       </div>
       
       <h3>申請刪除管道：</h3>
       <ol>
-        <li><strong>App 內自主申請（推薦）</strong>：進入<strong>「設定」</strong>分頁，點擊紅色的<strong>「刪除帳號與資料 (Delete Account)」</strong>按鈕，並於彈出的對話框中確認。系統將排程於 2-3 個工作天內永久清除您在雲端資料庫的所有關聯資料（包含您的卡牌收藏、歷史配額紀錄與訂閱關聯），在此期間您會被立即登出，本機快取將被完全清空。</li>
-        <li><strong>交易匿名化</strong>：對於來自 Apple IAP 或 Google IAP 的歷史交易憑證與去識別化必要稅務紀錄，我們將於 2-3 個工作天內，完全中斷其與您的個人身分或 Internal User ID 之任何關聯，確保其徹底匿名化，無法追蹤。</li>
-        <li><strong>電子郵件申請刪除</strong>：若您無法存取 App，或使用網頁版，請使用您登入的電子郵件發送申請至：<code>dicoge.chen@gmail.com</code>，我們將在 2-3 個工作天內為您完成手動刪除，並發信通知您。</li>
+        <li><strong>App 內清除本機資料（目前可用）</strong>：進入<strong>「設定」</strong>分頁，點擊紅色的<strong>「刪除帳號與資料」</strong>按鈕。此操作將<strong>立即清除本機 Session 與快取並登出</strong>，但<strong>不會自動刪除雲端資料</strong>。這是因為目前尚無後端 delete-account API（開發測試階段）。</li>
+        <li><strong>電子郵件申請雲端刪除（必要）</strong>：若需永久刪除您在雲端資料庫中的 Internal User ID、第三方登入關聯、收藏清單與歷史配額紀錄，請使用您登入的電子郵件發送申請至：<code>dicoge.chen@gmail.com</code>。我們將在 2-3 個工作天內為您完成人工刪除與資料去識別化，並發信通知您。正式上架後將提供 App 內一鍵刪除的完整後端流程。</li>
       </ol>
 
       <h2>6. App Store / Google Play 行動商店規範合規</h2>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>：本 App 嚴格遵循 Apple 之規定，在 App 內提供直接且明顯的帳號刪除入口，引導用戶排程刪除。訂閱由 Apple StoreKit 2 與 Google Play Billing 進行，可隨時在您的商店設定中取消訂閱。</li>
+        <li><strong>App Store Account Deletion & Subscriptions</strong>：本 App 嚴格遵循 Apple 之規定，在 App 內提供直接且明顯的帳號刪除入口。目前為開發測試階段，App 內刪除清除本機資料，雲端刪除需 email 申請人工處理。訂閱功能計劃透過 Apple StoreKit 2 與 Google Play Billing 進行（尚未實作），可隨時在您的商店設定中取消訂閱。</li>
         <li><strong>Google Play Data Safety (資料安全)</strong>：
           <ul>
             <li>傳輸安全性：本 App 收集的所有資料皆透過安全的加密協定（HTTPS）傳輸，確保傳輸過程不被竊聽。</li>
@@ -347,6 +349,9 @@
     <!-- ── English Version ── -->
     <div id="content-en" class="content-section">
       <p><em>Last Updated: July 27, 2026</em></p>
+      <p style="color: var(--accent-color); background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px 16px; font-size: 0.9rem;">
+        ⚠️ <strong>[MOCK/DEVELOPMENT STAGE NOTICE]</strong>: HoloHunter is currently a frontend prototype and design-phase project. Google/Apple sign-in, subscription toggling, and account deletion are all <strong>local mock/demo behaviors</strong> — not yet connected to real OAuth, IAP billing, or backend delete APIs. This Privacy Policy describes <strong>intended data handling for the eventual production release</strong>. In the current test version, all identity data is mock data, and the in-app "Delete Account" button only clears the local session; for cloud data deletion, email dicoge.chen@gmail.com for manual processing.
+      </p>
       
       <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). We highly value your personal privacy. This policy describes how we handle multi-provider sign-ins, account linking, subscriptions, and related personal data. By using the App, you agree to this policy.</p>
 
@@ -394,19 +399,18 @@
       <h2>5. Account & Data Deletion</h2>
       <p>In compliance with Apple App Store and Google Play requirements, we provide a complete account and data deletion process:</p>
       <div class="danger-card">
-        <p><strong>⚠️ Warning:</strong> Deleting your account is irreversible. Once you submit a request inside the App, your local session is cleared and you are logged out, and we will schedule a permanent deletion of your data on the backend.</p>
+        <p><strong>⚠️ Warning:</strong> Account deletion is irreversible. In the current mock/testing stage, the in-app "Delete Account" button <strong>only clears the local session and cache</strong>; it does NOT automatically delete cloud data. For cloud data deletion requests, please email us for manual processing.</p>
       </div>
       
       <h3>How to Delete Your Account:</h3>
       <ol>
-        <li><strong>In-App Self-Service Request (Recommended)</strong>: Go to the <strong>Settings</strong> tab, tap the red <strong>Delete Account</strong> button, and confirm in the popup dialog. Your local session and caches will be cleared immediately and you will be signed out. The system will schedule a permanent deletion of all your synced favorites, card lists, monthly scan history logs, and subscription metadata in the backend database within 2-3 business days.</li>
-        <li><strong>Transaction Anonymization</strong>: For purchase transactions via Apple App Store IAP or Google Play IAP, we will permanently disconnect the relationship between the transaction metadata and your personal account (Internal User ID) within 2-3 business days, rendering it completely anonymized.</li>
-        <li><strong>Email Request</strong>: If you cannot access the App, send an email request from your registered email address to: <code>dicoge.chen@gmail.com</code> with your User ID. We will process your request manually within 2-3 business days.</li>
+        <li><strong>In-App Local Data Clearing (currently available)</strong>: Go to the <strong>Settings</strong> tab, tap the red <strong>Delete Account</strong> button. This will <strong>immediately clear your local session and cache and sign you out</strong>, but it does <strong>NOT automatically delete cloud data</strong>. This is because there is no backend delete-account API yet (development/testing stage).</li>
+        <li><strong>Email Request for Cloud Deletion (required)</strong>: To permanently delete your Internal User ID, OAuth provider links, card collections, and quota history from the cloud database, please send an email request from your registered email address to: <code>dicoge.chen@gmail.com</code>. We will process your request manually within 2-3 business days, including data anonymization, and notify you via email. Full in-app one-click deletion with backend orchestration will be available in the production release.</li>
       </ol>
 
       <h2>6. App Store & Google Play Store Compliance</h2>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>: In strict compliance with Apple's developer guidelines, we provide an easily accessible and direct path inside the App for users to initiate and schedule account deletion. Subscriptions are verified via StoreKit 2 and Google Play Billing, and can be cancelled anytime in your store account settings.</li>
+        <li><strong>App Store Account Deletion & Subscriptions</strong>: In strict compliance with Apple's developer guidelines, we provide an easily accessible account deletion entry inside the App. Currently in the development/testing stage, in-app deletion clears local data only; cloud deletion requires email for manual processing. Subscription features are planned to be verified via StoreKit 2 and Google Play Billing (not yet implemented), and can be cancelled anytime in your store account settings.</li>
         <li><strong>Google Play Data Safety</strong>:
           <ul>
             <li>Transit Security: All data collected is transmitted using secure encryption protocols (HTTPS) to prevent interception.</li>

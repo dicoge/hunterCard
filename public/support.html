@@ -281,6 +281,9 @@
     <!-- ── 繁體中文版本 ── -->
     <div id="content-zh" class="content-section active">
       <h2>🛠️ 聯絡技術支援</h2>
+      <p style="color: var(--accent-color); background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px 16px; font-size: 0.9rem; margin-bottom: 20px;">
+        ⚠️ <strong>[開發測試階段]</strong>：目前 App 處於前端原型階段，Google/Apple 登入與訂閱功能均為本地模擬 (Mock)，尚未連接真實 OAuth 或 IAP 金流。
+      </p>
       <p style="margin-bottom: 24px;">若您在使用 HoloHunter 時遇到問題，或有任何功能改進建議，歡迎透過以下方式與我們聯絡：</p>
       
       <div class="info-grid">
@@ -346,7 +349,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: 刪除帳號會連同我的掃描紀錄跟訂閱一併刪除嗎？</div>
         <div class="faq-answer">
-          當您在 App 內點擊「刪除帳號與資料」送出申請後，您的本機登入狀態與快取會被立即清除登出。系統將在 2-3 個工作天內，永久清除您的 Internal User ID、第三方登入關聯、每月配額計數、以及雲端上所有的收藏清單，並將歷史訂閱交易紀錄去識別化匿名。此動作無法復原。
+          目前測試階段，App 內的「刪除帳號」按鈕<strong>僅清除本機 Session 與快取並登出</strong>，不會自動刪除雲端資料。若需永久刪除雲端的 Internal User ID、第三方登入關聯、收藏清單與歷史配額紀錄，請使用登入 email 寄信至 dicoge.chen@gmail.com 申請人工處理（約 2-3 個工作天）。正式上架後將提供 App 內一鍵刪除的完整後端流程。
         </div>
       </div>
 
@@ -361,6 +364,9 @@
     <!-- ── English Version ── -->
     <div id="content-en" class="content-section">
       <h2>🛠️ Contact Support</h2>
+      <p style="color: var(--accent-color); background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px 16px; font-size: 0.9rem; margin-bottom: 20px;">
+        ⚠️ <strong>[MOCK/DEVELOPMENT STAGE]</strong>: The App is currently a frontend prototype. Google/Apple sign-in and subscriptions are local mock behaviors, not yet connected to real OAuth or IAP billing.
+      </p>
       <p style="margin-bottom: 24px;">If you experience any issues with HoloHunter or have feedback/suggestions, feel free to contact us:</p>
       
       <div class="info-grid">
@@ -426,7 +432,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: Does account deletion wipe my scan logs and subscriptions?</div>
         <div class="faq-answer">
-          Once you submit an account deletion request inside the App, your local session and caches are cleared immediately and you are signed out. Within 2-3 business days, the system will permanently delete your Internal User ID, linked OAuth identities, scan quota histories, synced card collections, and anonymize payment records. This action is irreversible.
+          In the current testing stage, the in-app "Delete Account" button <strong>only clears your local session and cache and signs you out</strong>; it does NOT automatically delete cloud data. To permanently delete your cloud-based Internal User ID, OAuth provider links, card collections, and quota history, please send an email to dicoge.chen@gmail.com from your registered email for manual processing (~2-3 business days). Full in-app one-click deletion with backend orchestration will be available in the production release.
         </div>
       </div>
     </div>

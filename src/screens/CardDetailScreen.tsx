@@ -301,23 +301,23 @@ export default function CardDetailScreen({ route, navigation }: any) {
                 <View style={{ width: '100%', gap: 10, marginTop: 10 }}>
                   <TouchableOpacity style={styles.premiumLoginBtn} onPress={() => {
                     loginWithGoogle();
-                    Alert.alert('提示', '已模擬以 Google 登入免費版，請再次點擊解鎖或至設定頁升級訂閱版。');
+                    Alert.alert('提示', '[MOCK] 已模擬以 Google 登入免費版。目前為開發測試階段，非真實 OAuth。');
                   }}>
-                    <Text style={styles.premiumLoginBtnText}>以 Google 登入免費版</Text>
+                    <Text style={styles.premiumLoginBtnText}>[MOCK] 以 Google 登入免費版</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.premiumLoginBtn, { backgroundColor: '#000' }]} onPress={() => {
                     loginWithApple();
-                    Alert.alert('提示', '已模擬以 Apple 登入免費版，請再次點擊解鎖或至設定頁升級訂閱版。');
+                    Alert.alert('提示', '[MOCK] 已模擬以 Apple 登入免費版。目前為開發測試階段，非真實 OAuth。');
                   }}>
-                    <Text style={styles.premiumLoginBtnText}>以 Apple 登入免費版</Text>
+                    <Text style={styles.premiumLoginBtnText}>[MOCK] 以 Apple 登入免費版</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity style={styles.premiumUpgradeBtn} onPress={() => {
                   toggleSubscription();
-                  Alert.alert('解鎖成功', '已成功模擬升級至付費訂閱版會員，已解除所有 Premium 限制！');
+                  Alert.alert('[MOCK] 解鎖成功', '已模擬切換至付費訂閱版會員。此為開發測試用一鍵切換，非真實 IAP 訂閱。');
                 }}>
-                  <Text style={styles.premiumUpgradeBtnText}>⚡ 立即解鎖 Premium 預測功能</Text>
+                  <Text style={styles.premiumUpgradeBtnText}>⚡ [MOCK/TEST] 解鎖 Premium 預測功能</Text>
                 </TouchableOpacity>
               )}
             </View>

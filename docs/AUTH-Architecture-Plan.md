@@ -1,5 +1,7 @@
 # HoloHunter 共通帳號與多方綁定驗證架構設計 (AUTH Architecture Plan)
 
+> ⚠️ **未來正式架構規劃 (Future-State Plan)** — 本文件描述的是 HoloHunter 正式上架後的後端架構設計。**目前實作階段**：前端使用 Zustand mock store 模擬登入/綁定/刪除流程，所有身分資料為假資料，尚無真實 OAuth 整合、後端 API 或資料庫。App 內「刪除帳號」僅清除本機 Session；雲端資料刪除需 email 人工申請 (`dicoge.chen@gmail.com`)。
+
 本文件針對 HoloHunter App 的共通帳號（不提供自家密碼，支援 Google + Apple 多方帳號綁定）進行架構與實作規劃。
 
 ---
@@ -119,8 +121,10 @@ flowchart TD
   - **如果數量 = 1**：**拒絕解除綁定**。使用者必須保留至少一個登入管道，以避免帳號成為無人能存取的「孤兒帳號」。
   - **如果數量 > 1**：允許刪除該 Provider 連結。
 
-### B. 帳號刪除 (Account Deletion)
-符合 Apple App Store 與 Google Play 的合規要求，當使用者在 App 內執行「刪除帳號」：
+### B. 帳號刪除 (Account Deletion) — 未來正式架構
+> 🚧 **目前 mock 階段**：前端 `deleteAccount()` 僅清除本機 Zustand state / localStorage，無後端呼叫。雲端資料刪除需使用者寄 email 至 `dicoge.chen@gmail.com` 人工處理。以下為正式上架時的規劃流程。
+
+符合 Apple App Store 與 Google Play 的合規要求，當使用者在 App 內執行「刪除帳號」（正式版）：
 1. 刪除該使用者的 `users` 記錄（由於外鍵設為 `ON DELETE CASCADE`，會自動刪除所有關聯的 `linked_auth_providers`）。
 2. 同步刪除該使用者在雲端資料庫中的所有 `favorites`、`watchlists`、`settings` 及推播 `push_tokens`。
 

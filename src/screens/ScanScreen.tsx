@@ -797,11 +797,16 @@ export default function ScanScreen() {
           </Text>
 
           <TouchableOpacity style={styles.upgradeBtn} onPress={toggleSubscription}>
-            <Text style={styles.upgradeBtnText}>⚡ 模擬升級訂閱版會員</Text>
+            <Text style={styles.upgradeBtnText}>⚡ [MOCK/TEST] 模擬升級訂閱版會員</Text>
           </TouchableOpacity>
+          <Text style={{ color: COLORS.textSecondary, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
+            {preferredLanguage === 'zh' 
+              ? '※ 以上為開發測試用的一鍵模擬，非真實 App Store / Google Play 訂閱。'
+              : '* MOCK/TEST: One-click toggle for development only. Not real IAP.'}
+          </Text>
 
-          <TouchableOpacity style={[styles.upgradeBtn, { backgroundColor: '#10b981', marginTop: 10 }]} onPress={() => Alert.alert('提示', '本功能串接 App Store / Google Play 訂閱支付。')}>
-            <Text style={styles.upgradeBtnText}>解鎖無限掃描 (USD $2.99/月)</Text>
+          <TouchableOpacity style={[styles.upgradeBtn, { backgroundColor: '#10b981', marginTop: 10 }]} onPress={() => Alert.alert('提示', '本功能串接 App Store / Google Play 訂閱支付（尚未實作）。')}>
+            <Text style={styles.upgradeBtnText}>解鎖無限掃描 (USD $2.99/月) [尚未開通]</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

@@ -151,25 +151,25 @@ export default function SettingsScreen() {
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      preferredLanguage === 'zh' ? '⚠ 確定送出刪除申請？' : '⚠ Submit Deletion Request?',
+      preferredLanguage === 'zh' ? '⚠ 清除本機資料並登出' : '⚠ Clear Local Data & Sign Out',
       preferredLanguage === 'zh' 
-        ? '此動作將送出刪除申請，系統將排程於 2-3 個工作天內永久刪除您的雲端資料、配額與訂閱關聯。確認後本機 Session 將立即清空並登出。' 
-        : 'This will submit a deletion request. The system will permanently delete your cloud data, scan quotas, and subscriptions in 2-3 business days. Your local session will be cleared immediately.',
+        ? '此動作將立即清除本機 Session 與快取並登出。\n\n※ 本機清除不會自動刪除雲端資料。若需刪除雲端帳號與收藏紀錄，請使用登入 email 寄信至 dicoge.chen@gmail.com 申請人工處理。' 
+        : 'This will immediately clear your local session and cache, and sign you out.\n\n* Note: This does NOT delete cloud data. To request cloud account & data deletion, please email dicoge.chen@gmail.com from your registered email.',
       [
         {
           text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
           style: 'cancel',
         },
         {
-          text: preferredLanguage === 'zh' ? '確認送出' : 'Confirm Submit',
+          text: preferredLanguage === 'zh' ? '清除本機並登出' : 'Clear & Sign Out',
           style: 'destructive',
           onPress: () => {
             deleteAccount();
             Alert.alert(
-              preferredLanguage === 'zh' ? '已送出刪除申請' : 'Request Submitted',
+              preferredLanguage === 'zh' ? '本機資料已清除' : 'Local Data Cleared',
               preferredLanguage === 'zh' 
-                ? '我們已收到您的刪除申請，將於 2-3 個工作天內完成雲端資料清除。您的本機 Session 已成功登出並清空。' 
-                : 'We have received your deletion request and will purge your cloud data in 2-3 business days. Your local session has been logged out.'
+                ? '本機 Session 已清除並登出。\n\n如需刪除雲端帳號資料，請寄信至 dicoge.chen@gmail.com。' 
+                : 'Local session cleared and signed out.\n\nTo delete cloud account data, email dicoge.chen@gmail.com.'
             );
           },
         },
@@ -282,15 +282,20 @@ export default function SettingsScreen() {
                 </Text>
               </View>
 
-              {/* 模擬訂閱按鈕 */}
+              {/* 🚧 [MOCK/TEST] 模擬訂閱按鈕 — 非真實 IAP，僅供開發測試 */}
               <TouchableOpacity style={styles.mockUpgradeBtn} onPress={toggleSubscription}>
                 <Text style={styles.mockUpgradeBtnText}>
                   {session.role === 'subscriber'
-                    ? (preferredLanguage === 'zh' ? '🔄 模擬降級至免費版' : '🔄 Mock Downgrade to Free')
-                    : (preferredLanguage === 'zh' ? '⚡ 模擬升級訂閱版會員' : '⚡ Mock Upgrade to Premium')
+                    ? (preferredLanguage === 'zh' ? '🔄 [MOCK] 模擬降級至免費版' : '🔄 [MOCK] Downgrade to Free')
+                    : (preferredLanguage === 'zh' ? '⚡ [MOCK] 模擬升級訂閱版會員' : '⚡ [MOCK] Upgrade to Premium')
                   }
                 </Text>
               </TouchableOpacity>
+              <Text style={styles.authPrivacyNote}>
+                {preferredLanguage === 'zh'
+                  ? '※ [測試模擬] 以上為開發測試用的一鍵角色切換，非真實 App Store / Google Play 訂閱流程。'
+                  : '* [MOCK/TEST] One-click role toggle for development only. Not a real IAP subscription flow.'}
+              </Text>
 
               <Text style={styles.identitiesTitle}>
                 {preferredLanguage === 'zh' ? '已綁定登入方式' : 'Linked Providers'}

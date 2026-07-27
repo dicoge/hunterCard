@@ -1,3 +1,15 @@
+// ══════════════════════════════════════════════════════════════
+// 🚧 [MOCK/DEMO STAGE] — 本 AuthStore 目前為前端模擬測試階段
+//
+// - loginWithGoogle / loginWithApple 寫入的是固定假資料
+//   (email、displayName、providerId 皆為 mock，非真實 OAuth)
+// - toggleSubscription 是一鍵模擬切換角色 (非真實 IAP)
+// - deleteAccount 僅清除本機 Zustand/localStorage 狀態
+//   (無真實後端 delete-account API，雲端資料刪除需 email 人工申請)
+// - linkGoogle / linkApple / mergeMockIdentity 為前端碰撞模擬
+//
+// 所有硬編碼的假身分資料與訂閱狀態僅供開發/測試使用。
+// ══════════════════════════════════════════════════════════════
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';

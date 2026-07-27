@@ -1,5 +1,7 @@
 # HoloHunter 營利模式、權限控管與 Onboarding 架構設計 (Monetization Architecture Plan)
 
+> ⚠️ **未來正式架構規劃 (Future-State Plan)** — 本文件描述的是 HoloHunter 正式上架後的營利與後端架構設計。**目前實作階段**：前端使用 Zustand mock store 模擬角色切換 (`toggleSubscription`) 與掃描配額 (`scanCount`)，無真實 IAP 金流 (StoreKit 2 / Google Play Billing / Stripe)、無後端 Redis quota 驗證、無 delete-account API。App 內「模擬升級」為一鍵測試切換，非真實訂閱；「刪除帳號」僅清除本機 Session，雲端資料刪除需 email 人工申請。
+
 本文件規劃 HoloHunter App 後續上架之付費訂閱、訪客限制、每月掃描配額 (Quota) 防竄改設計，以及刪除帳號時的資料庫清理策略。
 
 ---
@@ -63,7 +65,8 @@ sequenceDiagram
 
 ---
 
-## 4. 訂閱狀態同步 (Subscription Syncing - IAP & Stripe)
+## 4. 訂閱狀態同步 (Subscription Syncing - IAP & Stripe) — 未來正式架構
+> 🚧 **目前 mock 階段**：前端 `toggleSubscription()` 為一鍵 Zustand 狀態切換（`free_user` ↔ `subscriber`），無後端驗證、無 Receipt 驗證、無 Webhook。
 
 訂閱狀態的管理採用第三方 Billing Gateway 與後端 Webhook 同步：
 
@@ -85,8 +88,10 @@ sequenceDiagram
 * **使用量紀錄**：收集並記錄您的每月卡牌掃描次數，僅用於防範系統濫用與提供免費版額度限制。
 * **交易資訊**：當您購買訂閱時，我們僅收集交易收據代碼 (Transaction ID) 用於啟用訂閱。您的信用卡號、帳單地址等敏感財務資訊均由 Apple Pay、Google Pay、Stripe 處理，本 App 絕不經手。
 
-### B. 帳號刪除之清理政策 (Data Purge)
-當使用者點擊「刪除帳號」時，為了符合 GDPR 與商店資料安全規範，後端執行以下流程：
+### B. 帳號刪除之清理政策 (Data Purge) — 未來正式架構
+> 🚧 **目前 mock 階段**：前端 `deleteAccount()` 僅清除本機 Zustand state / localStorage 及 watchlist，無後端呼叫。雲端資料刪除需 email 人工申請。以下為正式上架時的規劃流程。
+
+當使用者點擊「刪除帳號」時（正式版），為了符合 GDPR 與商店資料安全規範，後端執行以下流程：
 1. **關聯性抹除**：刪除 `users` 表，透過級聯刪除 (Cascade Delete) 刪除其 `linked_auth_providers` 紀錄。
 2. **使用量清除**：刪除 Redis / 關係資料庫中的 `user_quota:{userId}` 掃描次數紀錄。
 3. **金流交易匿名化**：將該使用者的交易紀錄（如 Transaction ID / Stripe Customer ID）與其 `internal_user_id` 的關聯切斷，並將訂閱對應狀態改為「已註銷」，防止交易紀錄反向追蹤至個人，同時保留財稅申報所需的去識別化交易數據。
