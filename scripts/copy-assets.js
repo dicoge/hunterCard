@@ -52,6 +52,20 @@ if (fs.existsSync(zhDbSource)) {
   console.log(`  ⚠️  character-names-zh.json not found, skipping`);
 }
 
+// Copy static HTML pages (privacy / support) so /privacy and /support rewrites resolve
+const HTML_PAGES = ['privacy.html', 'support.html'];
+HTML_PAGES.forEach((file) => {
+  const src = path.join(PROJECT_DIR, 'public', file);
+  const dest = path.join(DIST_DIR, file);
+  if (fs.existsSync(src)) {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+    console.log(`  ✅ ${file} → dist/${file}`);
+  } else {
+    console.log(`  ⚠️  public/${file} not found, skipping`);
+  }
+});
+
 // Copy images
 const imagesSource = path.join(PROJECT_DIR, 'data', 'images');
 const imagesDest = path.join(DIST_DIR, 'images');
