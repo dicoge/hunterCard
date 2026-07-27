@@ -82,12 +82,12 @@ export default function SettingsScreen() {
             <View style={styles.accountInfo}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
-                  {(user.name || user.email || '?')[0].toUpperCase()}
+                  {(user.displayName || user.primaryEmail || '?')[0].toUpperCase()}
                 </Text>
               </View>
               <View style={styles.accountDetails}>
-                <Text style={styles.accountName}>{user.name}</Text>
-                <Text style={styles.accountEmail}>{user.email}</Text>
+                <Text style={styles.accountName}>{user.displayName}</Text>
+                <Text style={styles.accountEmail}>{user.primaryEmail}</Text>
               </View>
             </View>
             <TouchableOpacity style={styles.logoutButton} onPress={logout}>

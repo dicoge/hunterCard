@@ -29,6 +29,9 @@ import ScanCandidateSelector from '../components/ScanCandidateSelector';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
 import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
+import { useAuthStore } from '../store/authStore';
+import { useScanQuotaStore } from '../store/scanQuotaStore';
+import ScanQuotaBanner from '../components/ScanQuotaBanner';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
@@ -101,6 +104,9 @@ export default function ScanScreen({ navigation }: any) {
 
   // Currency preference (from global settings)
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
+  const role = useAuthStore((s) => s.role);
+  const incrementScan = useScanQuotaStore((s) => s.incrementScan);
+  const getRemaining = useScanQuotaStore((s) => s.getRemaining);
 
   // Scan result card (floating overlay)
   const [resultCard, setResultCard] = useState<{
@@ -127,6 +133,7 @@ export default function ScanScreen({ navigation }: any) {
     }
     addCard(card);
     setLastScannedCard(card);
+    incrementScan();
     return true;
   };
 
@@ -737,6 +744,20 @@ export default function ScanScreen({ navigation }: any) {
 
   const handleScan = () => {
     if (isScanning || isProcessingOCR) return;
+    if (role === 'guest') {
+      Alert.alert('需要登入', '請登入以使用卡片掃描功能', [
+        { text: '取消', style: 'cancel' },
+        { text: '登入', onPress: () => {} },
+      ]);
+      return;
+    }
+    if (role === 'free_user' && getRemaining() <= 0) {
+      Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)。升級訂閱即可無限掃描。', [
+        { text: '稍後', style: 'cancel' },
+        { text: '升級訂閱', onPress: () => {} },
+      ]);
+      return;
+    }
     captureAndRecognize();
   };
 
@@ -922,6 +943,7 @@ export default function ScanScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
+      <ScanQuotaBanner />
       {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
       {!isCameraReady && (
         <View style={styles.loadingOverlay}>

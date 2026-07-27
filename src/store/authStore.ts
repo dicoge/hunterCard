@@ -1,19 +1,38 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
-import { GoogleUser, AuthTokens } from '../types/auth';
-import { googleSignIn, googleSignOut } from '../services/authService';
+import {
+  HoloUser,
+  AuthTokens,
+  AuthProvider,
+  UserRole,
+} from '../types/auth';
+import {
+  signInWithProvider,
+  linkProvider,
+  unlinkProvider,
+  deleteAccount,
+  providerSignOut,
+} from '../services/authService';
 
 interface AuthStore {
-  user: GoogleUser | null;
+  user: HoloUser | null;
   tokens: AuthTokens | null;
   isAuthenticated: boolean;
+  isGuest: boolean;
   isLoading: boolean;
   error: string | null;
+  role: UserRole;
 
-  login: () => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  loginWithApple: () => Promise<void>;
+  continueAsGuest: () => void;
+  linkNewProvider: (provider: AuthProvider) => Promise<void>;
+  removeLinkedProvider: (provider: AuthProvider) => Promise<void>;
   logout: () => Promise<void>;
+  deleteUserAccount: () => Promise<void>;
   clearError: () => void;
+  setRole: (role: UserRole) => void;
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -22,33 +41,122 @@ export const useAuthStore = create<AuthStore>()(
       user: null,
       tokens: null,
       isAuthenticated: false,
+      isGuest: false,
       isLoading: false,
       error: null,
+      role: 'guest',
 
-      login: async () => {
+      loginWithGoogle: async () => {
         set({ isLoading: true, error: null });
         try {
-          const { user, tokens } = await googleSignIn();
-          set({ user, tokens, isAuthenticated: true, isLoading: false });
+          const { user, tokens } = await signInWithProvider('google');
+          set({
+            user,
+            tokens,
+            isAuthenticated: true,
+            isGuest: false,
+            isLoading: false,
+            role: 'free_user',
+          });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Login failed' });
           throw err;
         }
       },
 
-      logout: async () => {
-        const { tokens } = get();
-        await googleSignOut(tokens);
+      loginWithApple: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          const { user, tokens } = await signInWithProvider('apple');
+          set({
+            user,
+            tokens,
+            isAuthenticated: true,
+            isGuest: false,
+            isLoading: false,
+            role: 'free_user',
+          });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Login failed' });
+          throw err;
+        }
+      },
+
+      continueAsGuest: () => {
         set({
           user: null,
           tokens: null,
           isAuthenticated: false,
+          isGuest: true,
+          role: 'guest',
           isLoading: false,
           error: null,
         });
       },
 
+      linkNewProvider: async (provider) => {
+        const { user } = get();
+        if (!user) throw new Error('No authenticated user');
+        set({ isLoading: true, error: null });
+        try {
+          const updatedUser = await linkProvider(user, provider);
+          set({ user: updatedUser, isLoading: false });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Failed to link provider' });
+          throw err;
+        }
+      },
+
+      removeLinkedProvider: async (provider) => {
+        const { user } = get();
+        if (!user) throw new Error('No authenticated user');
+        set({ isLoading: true, error: null });
+        try {
+          const updatedUser = await unlinkProvider(user, provider);
+          set({ user: updatedUser, isLoading: false });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Failed to unlink provider' });
+          throw err;
+        }
+      },
+
+      logout: async () => {
+        const { tokens } = get();
+        await providerSignOut(tokens);
+        set({
+          user: null,
+          tokens: null,
+          isAuthenticated: false,
+          isGuest: false,
+          isLoading: false,
+          error: null,
+          role: 'guest',
+        });
+      },
+
+      deleteUserAccount: async () => {
+        const { user } = get();
+        if (!user) throw new Error('No authenticated user');
+        set({ isLoading: true, error: null });
+        try {
+          await deleteAccount(user);
+          set({
+            user: null,
+            tokens: null,
+            isAuthenticated: false,
+            isGuest: false,
+            isLoading: false,
+            error: null,
+            role: 'guest',
+          });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Failed to delete account' });
+          throw err;
+        }
+      },
+
       clearError: () => set({ error: null }),
+      setRole: (role) => set({ role }),
     }),
     {
       name: 'holohunter-auth',
@@ -57,6 +165,8 @@ export const useAuthStore = create<AuthStore>()(
         user: state.user,
         tokens: state.tokens,
         isAuthenticated: state.isAuthenticated,
+        isGuest: state.isGuest,
+        role: state.role,
       }),
     }
   )

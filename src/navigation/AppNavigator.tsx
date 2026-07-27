@@ -197,11 +197,12 @@ function StackNavigator() {
 // Root Navigator
 export default function AppNavigator() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isGuest = useAuthStore((s) => s.isGuest);
 
   return (
     <NavigationContainer>
       <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-        {isAuthenticated ? (
+        {isAuthenticated || isGuest ? (
           <AuthStack.Screen name="Main" component={StackNavigator} />
         ) : (
           <AuthStack.Screen name="Login" component={LoginScreen} />

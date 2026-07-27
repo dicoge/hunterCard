@@ -6,21 +6,31 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
-  Image,
 } from 'react-native';
 import { COLORS, APP_NAME } from '../constants';
 import { useAuthStore } from '../store/authStore';
 
 export default function LoginScreen() {
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const {
+    loginWithGoogle,
+    loginWithApple,
+    continueAsGuest,
+    isLoading,
+    error,
+    clearError,
+  } = useAuthStore();
 
-  const handleLogin = useCallback(async () => {
+  const handleGoogleLogin = useCallback(async () => {
     try {
-      await login();
-    } catch {
-      // Error stored in authStore.error
-    }
-  }, [login]);
+      await loginWithGoogle();
+    } catch {}
+  }, [loginWithGoogle]);
+
+  const handleAppleLogin = useCallback(async () => {
+    try {
+      await loginWithApple();
+    } catch {}
+  }, [loginWithApple]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -31,9 +41,9 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.welcome}>歡迎使用 HoloHunter Web</Text>
+          <Text style={styles.welcome}>歡迎使用 HoloHunter</Text>
           <Text style={styles.description}>
-            使用 Google 帳號快速登入，開始追蹤你的卡牌收藏與價格
+            登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢
           </Text>
 
           {error && (
@@ -46,8 +56,8 @@ export default function LoginScreen() {
           )}
 
           <TouchableOpacity
-            style={[styles.googleButton, isLoading && styles.googleButtonDisabled]}
-            onPress={handleLogin}
+            style={[styles.googleButton, isLoading && styles.buttonDisabled]}
+            onPress={handleGoogleLogin}
             disabled={isLoading}
             activeOpacity={0.8}
           >
@@ -56,10 +66,38 @@ export default function LoginScreen() {
             ) : (
               <>
                 <Text style={styles.googleIcon}>G</Text>
-                <Text style={styles.googleButtonText}>使用 Google 帳號登入</Text>
+                <Text style={styles.buttonText}>使用 Google 帳號登入</Text>
               </>
             )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.appleButton, isLoading && styles.buttonDisabled]}
+            onPress={handleAppleLogin}
+            disabled={isLoading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.appleIcon}></Text>
+            <Text style={styles.buttonText}>使用 Apple 帳號登入</Text>
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>或</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.guestButton}
+            onPress={continueAsGuest}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.guestButtonText}>以訪客身份進入</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.guestHint}>
+            訪客可瀏覽規則與查詢卡片，但無法使用掃描功能
+          </Text>
         </View>
 
         <Text style={styles.footer}>
@@ -83,7 +121,7 @@ const styles = StyleSheet.create({
   },
   brand: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 40,
   },
   appName: {
     fontSize: 48,
@@ -98,7 +136,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: 16,
-    padding: 32,
+    padding: 28,
     width: '100%',
     maxWidth: 400,
     borderWidth: 1,
@@ -109,14 +147,14 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: COLORS.text,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   description: {
     fontSize: 14,
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   errorBox: {
     backgroundColor: COLORS.error + '22',
@@ -124,7 +162,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.error,
     borderRadius: 8,
     padding: 12,
-    marginBottom: 20,
+    marginBottom: 16,
     width: '100%',
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -151,30 +189,84 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     width: '100%',
     gap: 12,
+    marginBottom: 12,
   },
-  googleButtonDisabled: {
+  appleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    width: '100%',
+    gap: 12,
+  },
+  buttonDisabled: {
     opacity: 0.7,
   },
   googleIcon: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#4285F4',
     backgroundColor: '#fff',
-    width: 32,
-    height: 32,
-    lineHeight: 32,
+    width: 30,
+    height: 30,
+    lineHeight: 30,
     textAlign: 'center',
-    borderRadius: 16,
+    borderRadius: 15,
     overflow: 'hidden',
   },
-  googleButtonText: {
+  appleIcon: {
+    fontSize: 22,
+    color: '#fff',
+    lineHeight: 30,
+  },
+  buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginHorizontal: 12,
+  },
+  guestButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+  },
+  guestButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  guestHint: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
+    opacity: 0.8,
+  },
   footer: {
     color: COLORS.textSecondary,
     fontSize: 12,
-    marginTop: 32,
+    marginTop: 24,
   },
 });
