@@ -118,10 +118,11 @@ CREATE TABLE public.scan_usage_monthly (
 );
 
 -- 訂閱狀態表（未來 IAP 對接，預留欄位）
+-- 注意：不使用 ON DELETE CASCADE；帳號刪除時匿名化而非清除（法規稽核保留）
 CREATE TABLE public.subscriptions (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id      uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  status       text NOT NULL DEFAULT 'none',                   -- server-owned
+  user_id      uuid REFERENCES public.users(id) ON DELETE SET NULL,   -- 匿名化：刪除 user 時 user_id → NULL
+  status       text NOT NULL DEFAULT 'none',                           -- server-owned
   platform     text,
   product_id   text,
   expires_at   timestamptz,
@@ -217,16 +218,16 @@ export function can(role: UserRole, cap: Capability): boolean { /* 能力矩陣 
 
 身份真源為 **Supabase `auth.identities`**（由 GoTrue 在每次 OAuth sign-in 時自動管理）。`public.linked_auth_providers` 為 mirror 快取供前端讀取。**不使用自建平行 table 取代 Supabase Auth 本身的 user/identity mapping**。
 
-**重要：關閉 Supabase 預設的 automatic email linking**。Supabase GoTrue 預設會將相同 verified email 的 OAuth 登入自動連結到同一個 `auth.users` row。這與本設計「絕不因 email 無聲合併」衝突。必須在 Supabase Dashboard → Authentication → Settings 關閉 `Automatic linking`，或透過 GoTrue config 設定 `GOTRUE_EXTERNAL_EMAIL_AUTO_CONFIRM_AND_LINK=false`。
+**重要**：Supabase 託管平台的 GoTrue 預設會按 verified email 自動連結 OAuth identity。此行為**無法在 managed plan 關閉**。本設計接受此平台行為，但不依賴它作為 multi-provider 合併策略。所有 user-initiated linking 一律使用 `linkIdentity()` API。若未來需嚴格阻止 email-based auto-linking，需評估 self-hosted GoTrue 並設定 `GOTRUE_EXTERNAL_EMAIL_AUTO_CONFIRM_AND_LINK=false`。
 
 | 操作 | 規則 |
 |------|------|
-| **首次登入** | `signInWithOAuth({ provider })` → Supabase Auth 在 `auth.users` 建立 row → `auth.identities` 自動記錄 `(provider, provider_id)` → trigger `on_auth_user_created` 在 `public.users` 建立 profile → RPC/service_role 同步寫入 `linked_auth_providers` |
-| **已登入 user 連結第二個 provider** | 使用 `supabase.auth.linkIdentity({ provider })`（**不是** `signInWithOAuth`），Supabase Auth 在 `auth.identities` 新增 identity → service_role 同步 mirror 至 `linked_auth_providers` |
-| **身份衝突（collision）** | 若新 provider 的 `(provider, provider_id)` 已存在於另一個 `auth.users` → Supabase Auth 的 `linkIdentity()` 會回傳 `provider already linked` 錯誤 → 預設拒絕，不自動合併 |
-| **解除連結（unlink）** | 使用 `supabase.auth.unlinkIdentity({ identity_id })`。至少保留一個登入方式；若只剩一個 identity，Supabase Auth 拒絕移除（但可嘗試用前端判斷攔截於呼叫前） |
-| **郵件屬性** | `provider_email` 僅為顯示/聯絡屬性，**絕不作為身份識別 key**（Apple private relay、Gmail 別名等不保證 email 固定）。關閉 automatic email linking 後，GoTrue 即使看到相同 email 也不會合併 |
-| **無聲郵件合併** | **已透過關閉 `Automatic linking` 封鎖** — 不因兩個 provider 回傳同一個 email 就自動合併帳號（DIC-652 規定） |
+| **首次登入** | `signInWithOAuth({ provider })` → GoTrue 在 `auth.users` 建立/對應 row → `auth.identities` 自動記錄 `(provider, provider_id)` → trigger `on_auth_user_created` 在 `public.users` 建立 profile → service_role 同步寫入 `linked_auth_providers` mirror |
+| **已登入 user 連結第二個 provider** | 使用 `supabase.auth.linkIdentity({ provider })`（**不是** `signInWithOAuth`）。Supabase Auth 在 `auth.identities` 新增 identity → service_role 同步 mirror 至 `linked_auth_providers` |
+| **身份衝突（collision）** | `linkIdentity()` 時若 provider 已連結到同一個 user → **回傳 error**（非 idempotent no-op）。若連結到不同 user → 回傳 `provider already linked` error → 預設拒絕，不自動合併 |
+| **解除連結（unlink）** | 使用 `supabase.auth.unlinkIdentity(identity)`，其中 `identity` 為 `getUserIdentities()` 回傳的完整 identity object（含 `id`, `provider`, `identity_data` 等欄位）。至少保留一個登入方式；若只剩一個 identity，`unlinkIdentity()` 回傳 error |
+| **郵件屬性** | `provider_email` 僅為顯示/聯絡屬性，**絕不作為身份識別 key**（Apple private relay、Gmail 別名等不保證 email 固定） |
+| **Verified-email auto-linking（平台行為）** | Managed Supabase GoTrue 若發現相同的 verified email 來自不同 OAuth → 會自動連結到同一個 `auth.users` row。此行為無法關閉，但可被 audit（`auth.identities` 會記錄）且不影響 user 身份管理。DIC-652 的「不因 email 無聲合併」在此範圍內受平台限制；對於嚴格不允許 auto-link 的情境，需評估 self-hosted |
 
 ---
 
@@ -309,8 +310,7 @@ export const supabase = createClient(
 - Service ID / Team ID / Key ID / Private Key 來自 Apple Developer
 - 不支援本機開發的 `localhost` redirect（Apple 僅允許 HTTPS）
 
-**必須關閉的設定**（避免與 DIC-652 衝突）：
-- Supabase Dashboard → Authentication → Settings → **Automatic linking** → 關閉（否則相同 email 的 OAuth 會自動合併帳號）
+**Supabase GoTrue verified-email automatic linking 背景**：Supabase 託管平台的 GoTrue 預設會將相同 verified email 的 OAuth 登入自動連結到同一個 `auth.users` row。此行為**無法在 managed Supabase 上關閉**（截至撰寫時）。本設計接受此平台行為無法避免，但不依賴它作為 multi-provider 合併機制。實質的身份邊界以 `auth.identities` 為真源；user-chosen linking 一律透過 `linkIdentity()`。若未來需嚴格阻止 email-based auto-linking，需評估 self-hosted GoTrue 並設定 `GOTRUE_EXTERNAL_EMAIL_AUTO_CONFIRM_AND_LINK=false`。
 
 ### 4.2 Login flow（以 Google 為例）
 
@@ -368,7 +368,17 @@ BEGIN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = 'P0002';
   END IF;
 
-  SELECT role INTO v_role FROM public.users WHERE id = v_uid;
+  -- 直接查 subscriptions 表，不依賴可能延遲的 users.role
+  IF EXISTS (
+    SELECT 1 FROM public.subscriptions
+    WHERE user_id = v_uid
+      AND status = 'active'
+      AND expires_at > now()
+  ) THEN
+    v_role := 'subscriber';
+  ELSE
+    SELECT role INTO v_role FROM public.users WHERE id = v_uid;
+  END IF;
 
   INSERT INTO public.scan_usage_monthly (user_id, period_key, limit_count)
   VALUES (v_uid, v_period, v_limit)
@@ -461,12 +471,14 @@ Postgres 的 `period_key` 為 `YYYY-MM` 格式，**每月自然分區**。無需
 - **收據驗證必須在後端**（Supabase Edge Function → 寫入 `public.subscriptions`），前端不可信任本機訂閱旗標。
 - 合規：iOS/Android 的訂閱購買必須走各平台 IAP，不可導流到外部網頁金流（App Store / Google Play 規範）。
 
-### 6.3 訂閱與 Quota 的邊界
+### 6.3 訂閱與 Quota / Premium 的邊界
 
 - `scan_usage_monthly.limit_count` 在 free 階段固定為 100。
-- subscriber 階段：RPC `consume_scan_quota` 在 `users.role = 'subscriber'` 時跳過上限檢查（但仍記錄使用量）。
-- 訂閱過期回落：`subscriptions.status = 'expired'` 時，將 `users.role` 還原為 `'free_user'`（由 Supabase Edge Function scheduler 觸發）→ 下次掃描時進入 free 邏輯。
-- Entitlement 以 `users.role` 為單一真源，不直接參考 `subscriptions.status`（解耦：金流層只負責更新 role），避免訂閱表變動導致 UI 行為不一致。
+- **Quota 消費時直接驗證 `subscriptions`**（status + expires_at），不依賴可能延遲的 `users.role`。RPC `consume_scan_quota` 在同一個交易內查 `subscriptions` 表判斷是否 subscriber（見 §5.2），確保 entitlement 決策是即時的。
+- **Premium entitlement 驗證同樣 fail-closed**：`require_premium()` RPC 直接查 `subscriptions` 表（status = 'active' AND expires_at > now()），role scheduler 未觸發時仍會正確拒絕。前端 role 僅供 UI 顯示。
+- **Role scheduler**（備援機制，非 primary gate）：Edge Function 每日定時將 `subscriptions.status = 'active' AND expires_at > now()` 的使用者 `users.role` 同步為 `'subscriber'`；過期不 active 的還原為 `'free_user'`。此 scheduler 僅作為效能優化（避免每次 RPC 都 join subscriptions），不作為安全邊界。
+- **訂閱過期 reconciliation webhook**：未來串接 IAP 時，App Store / Google Play 的 `SERVER_NOTIFICATION` webhook → Supabase Edge Function（service_role）更新 `subscriptions` status/expires_at。若 platform webhook 延遲或失敗，上述 primary gate（RPC 內直接查表）仍會 deny expired subscription。
+- Entitlement 真源為 `subscriptions.status = 'active' AND expires_at > now()`；`users.role` 僅為 cached display value。
 
 ---
 
@@ -495,7 +507,8 @@ Postgres 的 `period_key` 為 `YYYY-MM` 格式，**每月自然分區**。無需
 **後端**（必須）：所有 premium 資料的 API / RPC / Edge Function / 資料查詢端點必須**獨立檢查 entitlement**：
 
 ```sql
--- Premium entity check RPC（範例）
+-- Premium entitlement check RPC
+-- 直接驗證 subscriptions 狀態，fail-closed：role scheduler 未觸發時仍會檢查
 CREATE OR REPLACE FUNCTION public.require_premium()
 RETURNS void
 LANGUAGE plpgsql
@@ -503,13 +516,18 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_role text;
+  v_uid uuid := auth.uid();
 BEGIN
-  IF auth.uid() IS NULL THEN
+  IF v_uid IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = 'P0002';
   END IF;
-  SELECT role INTO v_role FROM public.users WHERE id = auth.uid();
-  IF v_role != 'subscriber' THEN
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.subscriptions
+    WHERE user_id = v_uid
+      AND status = 'active'
+      AND expires_at > now()
+  ) THEN
     RAISE EXCEPTION 'premium_required' USING ERRCODE = 'P0003';
   END IF;
 END;
@@ -527,7 +545,7 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 
 ### 8.1 身份真源
 
-**真源 = Supabase `auth.identities`**（GoTrue 管理，不可繞過）。`public.linked_auth_providers` 僅為 mirror 快取供前端讀取（SELECT-only RLS）。Link/unlink 一律透過 Supabase Auth API，[Automatic email linking 必須關閉](#41-supabase-auth-設定)。
+**真源 = Supabase `auth.identities`**（GoTrue 管理，不可繞過）。`public.linked_auth_providers` 僅為 mirror 快取供前端讀取（SELECT-only RLS）。Link/unlink 一律透過 Supabase Auth API `linkIdentity()` / `unlinkIdentity()`。Managed Supabase verified-email auto-linking 為平台預設行為（見 §2.4）。
 
 ### 8.2 Provider 連結流程（Link）
 
@@ -538,19 +556,20 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 2. 呼叫 supabase.auth.linkIdentity({ provider: 'google' })
    （注意：不是 signInWithOAuth，是 linkIdentity）
 3. 使用者完成 Google OAuth
-4. Supabase Auth 在 auth.identities 新增 identity
+4. GoTrue 在 auth.identities 新增 identity
 5. 後端（Supabase Auth Hook / Edge Function service_role）同步 mirror 至 linked_auth_providers
-6. 若 provider 已連結到其他 user → linkIdentity() 回傳 error "provider already linked"
-7. 前端更新 linkedProviders 清單
+6. 若 provider 已連結到當前 user → linkIdentity() 回傳 error（非 no-op）
+7. 若 provider 已連結到其他 user → linkIdentity() 回傳 error "already linked"
+8. 前端更新 linkedProviders 清單
 ```
 
 ### 8.3 身份衝突（Collision）處理
 
 | 情境 | 處理 |
 |------|------|
-| linkIdentity() → provider 已屬於同一個 user | 無動作（idempotent） |
-| linkIdentity() → provider 已屬於另一個 user | Supabase Auth 回傳 `provider already linked` → 預設拒絕，不自動合併。UI 訊息："此帳號已連結至其他使用者。如需合併帳號，請聯繫客服。" |
-| 兩個 provider 回傳相同 email 但不相同的 provider_id | Automatic email linking 已關閉 → 兩個獨立的 `auth.users` row，**不自動合併**（DIC-652 規定） |
+| linkIdentity() → provider 已屬於當前 user | linkIdentity() 回傳 error（非 idempotent）。前端應先檢查 `getUserIdentities()` 避免重複呼叫 |
+| linkIdentity() → provider 已屬於另一個 user | 回傳 `provider already linked` error → 預設拒絕，不自動合併。UI 訊息："此帳號已連結至其他使用者。如需合併帳號，請聯繫客服。" |
+| Verified-email auto-linking（managed Supabase 平台行為） | GoTrue 可能自動將相同 verified email 的 OAuth 連結到同一 row。本設計接受此行為，不依賴也無法阻止。若需要嚴格阻止，評估 self-hosted GoTrue（見 §2.4） |
 
 > 手動合併流程（兩個 internal user 合併為一）為高風險操作，不在本階段 scope。僅在本文件預留碰撞規則，避免日後設計矛盾。
 
@@ -560,15 +579,18 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 前提：使用者已登入，auth.identities COUNT >= 2
 
 1. 使用者在設定頁選擇要移除的 provider
-2. 前端確認："移除後將無法使用此帳號登入，確定要移除嗎？"
-3. 呼叫 supabase.auth.unlinkIdentity({ identity_id: '<from auth.identities>' })
-4. Supabase Auth 移除 auth.identities 該筆
-5. 若只剩一個 identity → unlinkIdentity() 回傳 error
-6. 後端 service_role 同步刪除 linked_auth_providers mirror
-7. 前端更新 linkedProviders 清單
+2. 呼叫 supabase.auth.getUserIdentities() 取得完整 identity 清單
+3. 前端確認："移除後將無法使用此帳號登入，確定要移除嗎？"
+4. 呼叫 supabase.auth.unlinkIdentity(identity)
+   — identity 參數為 getUserIdentities() 回傳的完整 identity object
+   — 此 object 含 id, provider, identity_data, created_at 等欄位
+5. GoTrue 移除 auth.identities 該筆
+6. 若只剩一個 identity → unlinkIdentity() 回傳 error
+7. 後端 service_role 同步刪除 linked_auth_providers mirror
+8. 前端更新 linkedProviders 清單
 ```
 
-### 8.5 帳號刪除（Cascade）
+### 8.5 帳號刪除（Cascade + 匿名化保留）
 
 需求（DIC-661）：帳號刪除須一併刪除 scan usage / quota / subscription mapping，或匿名化必要交易紀錄。
 
@@ -576,16 +598,28 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 前提：使用者已登入
 
 1. 使用者在設定頁點擊「刪除帳號」→ 二次確認
-2. Supabase Edge Function（service_role）執行 cascade delete：
-   a. supabase.auth.admin.deleteUser(uid) — 移除 auth.users → ON DELETE CASCADE 自動觸發
-   b. public.users（profile）
-   c. linked_auth_providers
-   d. scan_usage_monthly
-   e. subscriptions
-   f. watchlists / push_tokens / favorites（加入 schema 時建 FOREIGN KEY … ON DELETE CASCADE）
-3. 所有 cascade 由 Postgres ON DELETE CASCADE 保證交易性
-4. 若法規要求保留交易紀錄 → 不刪除、改**匿名化**（移除 user_id，保留金額 / 時間），在隱私權政策中說明
+2. Supabase Edge Function（service_role）執行：
+   a. supabase.auth.admin.deleteUser(uid)
+      → auth.users 刪除 → ON DELETE CASCADE 觸發 public.users 刪除
+   b. public.users → linked_auth_providers（CASCADE 刪除）
+   c. public.users → scan_usage_monthly（CASCADE 刪除）
+   d. public.users → watchlists / push_tokens / favorites（CASCADE 刪除）
+   e. public.subscriptions: user_id SET NULL（匿名化，保留稽核軌跡）
+      — 保留 status, platform, product_id, expires_at, created_at
+      — 移除可識別欄位：user_id → NULL
+3. 交易由 Supabase Edge Function 包裝在一個 DB transaction 中（service_role）
+4. subscription 匿名化保留為法規/稽核需要（App Store / Google Play 交易紀錄保留義務）
 ```
+
+**刪除 vs 匿名化邊界**：
+
+| 資料表 | 處理 | 原因 |
+|--------|------|------|
+| auth.users, public.users | CASCADE 刪除 | 核心識別資料 |
+| linked_auth_providers | CASCADE 刪除 | 關聯識別資料 |
+| scan_usage_monthly | CASCADE 刪除 | usage/quota 關聯（可選擇保留 aggregate 統計後刪除） |
+| watchlists, favorites, push_tokens | CASCADE 刪除 | 使用者自選功能 |
+| **subscriptions** | **匿名化（ON DELETE SET NULL）** | 平台 IAP 交易稽核保留義務 |
 
 ---
 
@@ -614,12 +648,14 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 | OAuth 識別 | `auth.users.id`, `auth.identities` 的 `provider` / `provider_id` | 身份辨識與登入 | 帳號存在期間 | `auth.admin.deleteUser()` cascade |
 | 個人檔案 | `public.users`: display_name, avatar_url | 個人化顯示 | 帳號存在期間 | ON DELETE CASCADE |
 | 聯絡資訊 | `linked_auth_providers.provider_email`（可能為 Apple private relay） | 聯絡 / 通知（選填） | 帳號存在期間 | ON DELETE CASCADE |
-| 掃描使用量 | `scan_usage_monthly`: used, limit_count, period_key | quota 控管與服務改善 | 最多保留 24 個月（含已過期月份的 aggregate 紀錄） | ON DELETE CASCADE 或匿名化（法規要求時） |
-| 訂閱狀態 | `subscriptions`: status, platform, product_id, expires_at | 訂閱服務交付 | 帳號存在期間 + 法定稽核保留期 | ON DELETE CASCADE 或匿名化 |
+| 掃描使用量 | `scan_usage_monthly`: used, limit_count, period_key | quota 控管與服務改善 | 最多保留 24 個月（可選擇帳號刪除時 aggregate 統計後刪除單筆） | ON DELETE CASCADE |
+| 訂閱狀態 | `subscriptions`: status, platform, product_id, expires_at | 訂閱服務交付 / 平台稽核 | **匿名化保留**：user_id → NULL；保留稽核軌跡（為 Apple/Google 金流合規） | ON DELETE SET NULL（匿名化，不刪除） |
 | 收藏 / 入手提醒 | `watchlists`, `favorites`（加入 schema 時） | 使用者自選功能 | 帳號存在期間 | ON DELETE CASCADE |
 | 推播 token | `push_tokens`: expo Push Token | 入手提醒推播通知 | 帳號存在期間或 token 失效 | ON DELETE CASCADE |
+| Expo 推播資料 | FCM/APNs token 經由 Expo Push API 傳送至 Apple/Google 伺服器 | 推播通知遞送 | 依 Apple/Google 政策 | 本 App server 端不保留 token（只存在 `push_tokens` table）；Expo 自有資料留存依其政策 |
 | 裝置資訊 | 作業系統版本 / App 版本（經由 Supabase Auth session metadata） | 安全性與問題排解 | 180 天 | 隨 session 過期清除 |
-| App 設定 | 語言、幣別偏好（Zustand localStorage/AsyncStorage，本機不傳送） | 個人化體驗 | 本機持久化，刪除 App 時清除 | 本機資料清除 |
+| App 設定 | 語言、幣別偏好（Zustand localStorage/AsyncStorage，本機儲存，不傳送 server） | 個人化體驗 | 本機持久化；刪除 App 時清除 | 本機資料清除 |
+| Supabase 處理者資料 | Supabase 平台本身的 logs / metrics（非本 App 可控） | 平台營運 | 依 Supabase 隱私權政策 | 不屬本 App 刪除範圍 |
 
 ### 10.2 隱私權政策需揭露
 
@@ -656,7 +692,7 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 | 15 | 連結第二個 provider | — | linkIdentity() ✅ | linkIdentity() ✅ |
 | 16 | 解除最後一個 provider | — | unlinkIdentity() 拒絕 | unlinkIdentity() 拒絕 |
 | 17 | Provider 身份衝突（collision） | — | linkIdentity() 拒絕 | linkIdentity() 拒絕 |
-| 18 | Automatic email linking 合併帳號 | — | 已關閉，不合併 | 已關閉，不合併 |
+| 18 | Verified-email auto-linking | — | 平台行為，GoTrue 自動合併（接受） | 平台行為，GoTrue 自動合併（接受） |
 
 ---
 
@@ -666,9 +702,10 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 - iOS/Android 訂閱必須符合 App Store / Google Play 規範（IAP、Sign in with Apple、隱私標籤）。
 - 額度授權一律以 Supabase RPC（SECURITY DEFINER，內部取 `auth.uid()`）為準，本機值僅供顯示。
 - 身份識別真源為 Supabase `auth.identities`；`linked_auth_providers` 僅為 mirror。
-- **Supabase Automatic email linking 必須關閉**（見 §4.1），避免與 DIC-652「不因 email 無聲合併」衝突。
+- Managed Supabase verified-email auto-linking 為 GoTrue 預設行為，無法在 managed plan 上關閉；本設計接受此限制並以 `auth.identities` / `linkIdentity()` 管理 user-chosen linking。嚴格禁 auto-link 的情境需評估 self-hosted GoTrue。
 - 底層基礎設施為 **Supabase Auth + Supabase Postgres/RLS**（DIC-646 決策）。
-- 所有 server-owned 欄位（role, quota, subscription, identity）只透過 controlled channel 變更，client 端 RLs SELECT-only。
+- 所有 server-owned 欄位（role, quota, subscription, identity）只透過 controlled channel 變更，client 端 RLS SELECT-only。
+- Premium/quota entitlement 以 transaction 內直接查 `subscriptions` 表（status + expires_at）為準，fail-closed；`users.role` 僅為 cached display。
 
 ---
 
