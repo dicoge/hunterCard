@@ -61,6 +61,7 @@ export const useScanSessionStore = create<ScanSessionState>()(
           return false;
         }
 
+
         const sessionCard: SessionCard = {
           ...card,
           scannedAt: new Date(now).toISOString(),

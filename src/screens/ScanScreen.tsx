@@ -64,6 +64,7 @@ export default function ScanScreen({ navigation }: any) {
   // 辨識結果狀態
   const [recognizedCard, setRecognizedCard] = useState<CardInfo | null>(null);
   const [suggestions, setSuggestions] = useState<CardInfo[]>([]);
+  const [candidateReason, setCandidateReason] = useState<string>('');
   const [searchError, setSearchError] = useState<string | null>(null);
   
   // 掃描錯誤狀態
@@ -241,6 +242,69 @@ export default function ScanScreen({ navigation }: any) {
     }
   };
 
+  const mapApiCardToInfo = (card: any): CardInfo => ({
+    id: card.cardNumber,
+    name: card.name || '',
+    cardNumber: card.cardNumber,
+    type: '',
+    rarity: card.rarity || '',
+    series: card.series || '',
+    sellPrice: card.sellPrice != null ? card.sellPrice : null,
+    yuyuName: '',
+    color: '',
+    imageUrl: card.imageUrl || '',
+    prices: card.prices || [],
+  });
+
+  const captureWebRecognitionImages = async (photoUri: string): Promise<string[]> => {
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) {
+      return [photoUri];
+    }
+
+    const makeDataUrl = (
+      sourceX: number,
+      sourceY: number,
+      sourceW: number,
+      sourceH: number,
+      maxDim: number,
+    ) => {
+      let w = sourceW;
+      let h = sourceH;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round((h / w) * maxDim); w = maxDim; }
+        else { w = Math.round((w / h) * maxDim); h = maxDim; }
+      }
+      const c = document.createElement('canvas');
+      c.width = Math.round(w);
+      c.height = Math.round(h);
+      const ctx = c.getContext('2d');
+      if (!ctx) return photoUri;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(video, sourceX, sourceY, sourceW, sourceH, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.92);
+    };
+
+    const fullImage = makeDataUrl(0, 0, video.videoWidth, video.videoHeight, 2048);
+    const overlay = {
+      x: (SCREEN_WIDTH - SCAN_AREA_SIZE) / 2,
+      y: SCREEN_HEIGHT * 0.15,
+      width: SCAN_AREA_SIZE,
+      height: SCAN_AREA_SIZE * 0.63,
+    };
+    const scaleX = video.videoWidth / SCREEN_WIDTH;
+    const scaleY = video.videoHeight / SCREEN_HEIGHT;
+    const padX = overlay.width * 0.14 * scaleX;
+    const padY = overlay.height * 0.28 * scaleY;
+    const cropX = Math.max(0, overlay.x * scaleX - padX);
+    const cropY = Math.max(0, overlay.y * scaleY - padY);
+    const cropW = Math.min(video.videoWidth - cropX, overlay.width * scaleX + padX * 2);
+    const cropH = Math.min(video.videoHeight - cropY, overlay.height * scaleY + padY * 2);
+    const cropImage = makeDataUrl(cropX, cropY, cropW, cropH, 1536);
+    return [fullImage, cropImage];
+  };
+
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
     if (isWeb) {
@@ -281,26 +345,9 @@ export default function ScanScreen({ navigation }: any) {
       setCapturedPhotoUri(photo.uri);
 
       if (isWeb) {
-        // ── Step 1: 從 video 直接 resize 到 1024px（跳過雙層 canvas）──
         setScanningStatus('📤 處理影像中…');
         setScanProgress(2);
-        let imgData: string;
-        const video = document.querySelector('video');
-        if (video && video.videoWidth > 0) {
-          let w = video.videoWidth, h = video.videoHeight;
-          const MAX = 1024;
-          if (w > MAX || h > MAX) {
-            if (w > h) { h = Math.round((h / w) * MAX); w = MAX; }
-            else { w = Math.round((w / h) * MAX); h = MAX; }
-          }
-          const c = document.createElement('canvas');
-          c.width = w; c.height = h;
-          c.getContext('2d')!.drawImage(video, 0, 0, w, h);
-          imgData = c.toDataURL('image/jpeg', 0.85);
-        } else {
-          // 保險：直接用 WebCamera 拍的照片（已是 data: URI）
-          imgData = photo.uri;
-        }
+        const recognitionImages = await captureWebRecognitionImages(photo.uri);
 
         // ── Step 2: 叫 API 辨識（15 秒 timeout）──
         setScanningStatus('🤖 AI 辨識中…');
@@ -314,7 +361,7 @@ export default function ScanScreen({ navigation }: any) {
           const resp = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: imgData }),
+            body: JSON.stringify({ image: recognitionImages[0], images: recognitionImages }),
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
@@ -329,20 +376,13 @@ export default function ScanScreen({ navigation }: any) {
         if (apiResult?.success && apiResult?.card) {
           setScanningStatus('✅ 辨識完成');
           setScanProgress(4);
-          const card = apiResult.card;
-          const cardInfo: CardInfo = {
-            id: card.cardNumber, name: card.name || '', cardNumber: card.cardNumber,
-            type: '', rarity: card.rarity || '', series: card.series || '',
-            sellPrice: card.sellPrice != null ? card.sellPrice : null,
-            buyPrice: card.buyPrice ?? null,
-            yuyuName: '', color: '', imageUrl: card.imageUrl || '', prices: card.prices || [],
-            priceHistory: card.priceHistory || {},
-            ytStats: card.ytStats ?? null,
-          };
+          const cardInfo = mapApiCardToInfo(apiResult.card);
+          const confidence = typeof apiResult.confidence === 'number' ? apiResult.confidence : 0.9;
           addCard(cardInfo);
           setLastScannedCard(cardInfo);
-          setResultCard({ visible: true, card: cardInfo, confidence: 0.9 });
+          setResultCard({ visible: true, card: cardInfo, confidence });
           setSearchResults([]); setSearchError(null); setSuggestions([]);
+          setCandidateReason(apiResult.reason || apiResult.matchMethod || '');
           setCapturedPhotoUri(null); resetAutoScan();
           setIsProcessingOCR(false); setIsScanning(false);
           return;
@@ -355,6 +395,14 @@ export default function ScanScreen({ navigation }: any) {
           setScanProgress(0);
           setScanError(`⚠️ 辨識失敗: ${errMsg}`);
           if (apiResult.raw) setRecognizedText(apiResult.raw);
+          if (Array.isArray(apiResult.candidates) && apiResult.candidates.length > 0) {
+            const candidateCards = apiResult.candidates.map(mapApiCardToInfo);
+            setSearchResults(candidateCards);
+            setSuggestions(candidateCards);
+            setCandidateReason(
+              `信心 ${Math.round((apiResult.confidence || 0) * 100)}%：${apiResult.reason || '需要人工確認'}`,
+            );
+          }
           // 留著 photo 讓使用者可以手動搜尋
           setIsProcessingOCR(false);
           setIsScanning(false);
@@ -650,10 +698,13 @@ export default function ScanScreen({ navigation }: any) {
   const handleSelectSuggestion = (card: CardInfo) => {
     setRecognizedCard(card);
     setSuggestions([]);
+    setSearchResults([]);
+    setSearchError(null);
+    setScanError(null);
     // Explicit user pick — always add, even if it repeats the last scan.
     addCard(card, { force: true });
     setLastScannedCard(card);
-    setResultCard({ visible: true, card, confidence: 0.85 });
+    setResultCard({ visible: true, card, confidence: 1 });
   };
   
   // 清除結果
@@ -986,7 +1037,7 @@ export default function ScanScreen({ navigation }: any) {
       {/* 搜尋建議列表 */}
       {searchResults.length > 0 && (
         <View style={resultStyles.suggestionsListContainer}>
-          <Text style={resultStyles.suggestionsTitle}>搜尋結果:</Text>
+          <Text style={resultStyles.suggestionsTitle}>{candidateReason || '搜尋結果:'}</Text>
           <ScrollView style={resultStyles.suggestionsList}>
             {searchResults.map((card, index) => (
               <TouchableOpacity 
@@ -995,6 +1046,7 @@ export default function ScanScreen({ navigation }: any) {
                 onPress={() => handleSelectSuggestion(card)}
               >
                 <Text style={resultStyles.listItemName}>{card.name}</Text>
+                <Text style={resultStyles.listItemMeta}>{card.cardNumber} · {card.rarity} · {card.series}</Text>
                 <Text style={resultStyles.listItemPrice}>
                   ¥{card.sellPrice?.toLocaleString() || '尚無交易'}
                 </Text>
@@ -1495,9 +1547,6 @@ const resultStyles = StyleSheet.create({
     maxHeight: 200,
   },
   listItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
@@ -1505,12 +1554,18 @@ const resultStyles = StyleSheet.create({
   listItemName: {
     color: COLORS.text,
     fontSize: 14,
-    flex: 1,
+    fontWeight: '600',
+  },
+  listItemMeta: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
   },
   listItemPrice: {
     color: COLORS.primary,
     fontSize: 14,
     fontWeight: '600',
+    marginTop: 2,
   },
 });
 

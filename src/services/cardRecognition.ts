@@ -49,6 +49,11 @@ export interface RecognitionResult {
   card?: CardInfo;
   suggestions?: CardInfo[];
   error?: string;
+  confidence?: number;
+  reason?: string;
+  raw?: string;
+  debug?: any;
+  lowConfidence?: boolean;
 }
 
 // ── 資料庫快取 ──
@@ -352,30 +357,29 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const data = await apiResponse.json();
 
     if (!data.success) {
-      return { success: false, error: data.error || '' };
+      return {
+        success: false,
+        error: data.error || '',
+        suggestions: Array.isArray(data.candidates) ? data.candidates.map(mapApiCard) : undefined,
+        confidence: data.confidence,
+        reason: data.reason,
+        raw: data.raw,
+        debug: data.debug,
+        lowConfidence: !!data.lowConfidence,
+      };
     }
 
     // API returned full card info — use it directly
     if (data.card) {
-      const apiCard = data.card;
-      // Map API response to CardInfo format
-      const cardInfo: CardInfo = {
-        id: apiCard.cardNumber,
-        name: apiCard.name || '',
-        cardNumber: apiCard.cardNumber,
-        type: '',
-        rarity: apiCard.rarity || '',
-        series: apiCard.series || '',
-        sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
-        buyPrice: apiCard.buyPrice ?? null,
-        yuyuName: '',
-        color: '',
-        imageUrl: apiCard.imageUrl || '',
-        prices: apiCard.prices || [],
-        priceHistory: apiCard.priceHistory || {},
-        ytStats: apiCard.ytStats ?? null,
+      return {
+        success: true,
+        card: mapApiCard(data.card),
+        suggestions: Array.isArray(data.candidates) ? data.candidates.slice(1).map(mapApiCard) : undefined,
+        confidence: data.confidence,
+        reason: data.reason || data.matchMethod,
+        raw: data.raw,
+        debug: data.debug,
       };
-      return { success: true, card: cardInfo };
     }
 
     // API only returned cardNumber — look up locally
@@ -414,6 +418,22 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     console.warn('[cardRecognition] API call failed:', e);
     return { success: false, error: '' };
   }
+}
+
+function mapApiCard(apiCard: any): CardInfo {
+  return {
+    id: apiCard.cardNumber,
+    name: apiCard.name || '',
+    cardNumber: apiCard.cardNumber,
+    type: '',
+    rarity: apiCard.rarity || '',
+    series: apiCard.series || '',
+    sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
+    yuyuName: '',
+    color: '',
+    imageUrl: apiCard.imageUrl || '',
+    prices: apiCard.prices || [],
+  };
 }
 
 /**
