@@ -73,8 +73,9 @@ CREATE TABLE auth_identities (
   linked_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_login_at     TIMESTAMPTZ,
   revoked_at        TIMESTAMPTZ,              -- 解綁 = soft revoke（保留審計），實體刪除交給 purge
-  CONSTRAINT uq_provider_subject UNIQUE (provider, provider_subject)
 );
+-- 唯 active (unrevoked) identity 才佔唯一鍵；revoked 後同一 (provider, subject) 可重新 link / merge 移轉。
+CREATE UNIQUE INDEX uq_provider_subject_active ON auth_identities(provider, provider_subject) WHERE revoked_at IS NULL;
 CREATE INDEX idx_identities_user ON auth_identities(user_id) WHERE revoked_at IS NULL;
 ```
 
@@ -192,9 +193,46 @@ CREATE TABLE audit_log (
 | watchlist | 依 `card_number` 聯集去重；`target_price` 取 target；target 無值才用 source；保留最早 `added_at` |
 | user_settings | 保留 **target**（存活方）的設定；source 捨棄 |
 | push_tokens | 全部改指向 target；依 `token` 去重 |
-| identities | source 的有效 identity 轉綁 target；`(provider,subject)` 唯一鍵不得衝突（同 provider 各一則以 target 既有者為準，source 該 identity revoke） |
+| identities | 逐條處理 source 的 active identity（`revoked_at IS NULL`）：(a) 若 target 尚無同 provider → UPDATE `user_id = target.id`；(b) 若 target 已有同 provider → source 該 identity SET `revoked_at = now()`（保留為審計紀錄），target 既有者保留。因 `uq_provider_subject_active` 為 partial unique index，revoke 後不佔唯一鍵，不阻擋現有 active identity，也不妨礙日後同一 `(provider, subject)` 重新綁定。 |
 
-所有 merge 動作記一筆 `audit_log(event_type='merge')`，保留 source/target 原始 id。
+所有 merge 動作記審計紀錄（見 §4.2）。
+
+### 4.2 Merge 之 identity 狀態轉移與審計
+
+merge 過程中 identities 的 `revoked_at` / `user_id` 轉移必須在一個 DB transaction 內完成，確保中途失敗可 rollback。具體步驟與審計規格：
+
+**步驟 A — 驗證雙方 identity**
+1. 查詢 `merge_token` 指向的 source / target user id，確認 `merge_token` 未過期且未使用。
+2. 驗證請求中附帶的雙方 provider ID token（§4 步驟 2），確保呼叫者同時掌握兩個帳號；任一驗證失敗 → 回 `401`，終止。
+3. 確認任一 user 狀態非 `disabled` / `pending_deletion`；任一為此類 → 轉 `requires_support`，終止。
+
+**步驟 B — identity 轉移（針對 source 每個 `revoked_at IS NULL` 的 identity）**
+1. 對每個 `(provider, subject)`：
+   - 查 target 是否有同 provider 的 **active** identity (`revoked_at IS NULL`)。
+   - **無衝突** → UPDATE `auth_identities SET user_id = target.id WHERE id = <source_identity.id>`（`uq_provider_subject_active` partial unique index 保證 target 新組合不衝突）。identity 保持 active，`linked_at` 不變，`revoked_at = NULL`。
+   - **有衝突** → 保留 target 既有 identity；source 該 identity SET `revoked_at = now()`，記 audit_log `event_type='merge_revoke'`，`metadata` 含 `{reason:'target_has_same_provider', target_identity_id, source_identity_id}`。因 partial unique index 只在 `revoked_at IS NULL` 時作用，revoked row 不阻塞日後同一 `(provider, subject)` 重新綁定。
+2. 以上全部在同一個 DB transaction 內。
+
+**步驟 C — source user 標記**
+- `UPDATE users SET status = 'pending_deletion', deleted_at = now() WHERE id = <source.id>`。
+
+**步驟 D — session 處理**
+- 撤銷 source user 全部 active session（`UPDATE sessions SET revoked_at = now() WHERE user_id = <source.id> AND revoked_at IS NULL`）。
+- 可選：若 target 的 session 也過期 / 數量過多，可保留最新 N 個，其餘撤銷。
+
+**步驟 E — 審計（audit_log）**
+merge 完成後寫入以下審計記錄：
+
+| event_type | metadata |
+| --- | --- |
+| `merge_created` | `{merge_request_id, source_user_id, target_user_id, source_provider, source_subject}` |
+| `merge_revoke`（每個衝突 identity 一筆） | `{merge_request_id, source_identity_id, target_identity_id, reason:'target_has_same_provider'}` |
+| `merge_transfer`（每個無衝突轉移 identity 一筆） | `{merge_request_id, source_identity_id, provider, subject, from_user_id→to_user_id}` |
+| `merge_favorites` / `merge_watchlist` / `merge_settings` / `merge_push_tokens` | `{merge_request_id, count_added, count_skipped}` |
+| `merge_completed` | `{merge_request_id, source_user_id, target_user_id, status:'completed'}` |
+
+- `account_merge_requests.status` 更新為 `'completed'`，`resolved_at = now()`，`resolver = 'auto'`。
+- 日後追溯單一 user 的合併歷史，可對 audit_log 篩 `user_id = source_user_id OR metadata->>'target' = <target_user_id>` 得知完整合併鏈。
 
 ---
 
