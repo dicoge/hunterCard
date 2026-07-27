@@ -149,38 +149,16 @@ export default function SettingsScreen() {
     );
   };
 
-  const SUPPORT_EMAIL = 'dicoge.chen@gmail.com';
-
-  const handleRequestCloudDeletion = () => {
-    const userId = session?.internalUserId ?? '';
-    const subject = encodeURIComponent('HoloHunter Account Deletion Request');
-    const body = encodeURIComponent(
-      `Please delete my HoloHunter account and cloud data.\nInternal User ID: ${userId}\n`
-    );
-    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`).catch(() => {
-      Alert.alert(
-        preferredLanguage === 'zh' ? '無法開啟郵件' : 'Could not open mail app',
-        preferredLanguage === 'zh'
-          ? `請手動寄信至 ${SUPPORT_EMAIL} 並附上您的 Internal User ID。`
-          : `Please email ${SUPPORT_EMAIL} manually with your Internal User ID.`
-      );
-    });
-  };
-
   const handleDeleteAccount = () => {
     Alert.alert(
-      preferredLanguage === 'zh' ? '刪除帳號與資料' : 'Delete Account & Data',
+      preferredLanguage === 'zh' ? '刪除帳號與資料（本機）' : 'Delete Account & Data (Local)',
       preferredLanguage === 'zh'
-        ? '「清除本機資料並登出」會立即清除此裝置上的登入 Session 與快取。\n\n若要刪除儲存於雲端的資料（收藏、掃描配額、訂閱關聯），目前需透過支援信箱提交刪除申請，我們會以人工方式處理。'
-        : '"Clear local data & sign out" immediately removes your login session and cache on this device.\n\nTo delete cloud-stored data (collections, scan quota, subscription links), you must currently submit a request via our support email, which we process manually.',
+        ? '（目前為本機模擬）此 App 目前沒有任何雲端帳號或資料——您的模擬帳號、收藏與掃描計數都只存在此裝置本機。\n\n點擊「清除本機資料並登出」會立即清除此裝置上的登入 Session、快取與收藏，這已完整刪除本 App 目前持有、關於您的全部資料。\n\n未來正式版串接真實登入與後端後，才會另外提供以電子郵件申請刪除雲端資料的管道；目前並無雲端資料需要刪除。'
+        : '(Currently a local mock) The App holds no cloud account or data right now — your mock account, collections, and scan count live only on this device.\n\nTapping "Clear local data & sign out" immediately removes your login session, cache, and collections on this device, which fully deletes everything the App currently holds about you.\n\nA cloud-data deletion channel (via email/backend) will only be added in the future production build; there is no cloud data to delete today.',
       [
         {
           text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
           style: 'cancel',
-        },
-        {
-          text: preferredLanguage === 'zh' ? '寄信申請刪除雲端資料' : 'Email deletion request',
-          onPress: handleRequestCloudDeletion,
         },
         {
           text: preferredLanguage === 'zh' ? '清除本機資料並登出' : 'Clear local data & sign out',
@@ -190,8 +168,8 @@ export default function SettingsScreen() {
             Alert.alert(
               preferredLanguage === 'zh' ? '已清除本機資料' : 'Local data cleared',
               preferredLanguage === 'zh'
-                ? `您的本機 Session 與快取已清除並登出。若尚未申請刪除雲端資料，請寄信至 ${SUPPORT_EMAIL}。`
-                : `Your local session and cache have been cleared and you have been signed out. If you have not yet requested cloud data deletion, please email ${SUPPORT_EMAIL}.`
+                ? '您的本機 Session、快取與收藏已清除並登出。目前並無雲端資料，本 App 持有關於您的全部資料皆已刪除。'
+                : 'Your local session, cache, and collections have been cleared and you have been signed out. There is no cloud data, so everything the App held about you has been deleted.'
             );
           },
         },
@@ -261,8 +239,8 @@ export default function SettingsScreen() {
               </View>
               <Text style={styles.authDesc}>
                 {preferredLanguage === 'zh'
-                  ? '您目前以訪客模式進入。登入即可開啟卡牌掃描、收藏同步與每月 100 次的免費掃描額度。'
-                  : 'You are in Guest Mode. Sign in to enable card scanning, sync favorites, and get 100 free monthly scans.'}
+                  ? '您目前以訪客模式進入。（示範）登入為本機模擬，會建立一組固定的假帳號並在本機開啟掃描；收藏同步與每月 100 次免費額度尚未串接，屬未來正式版功能。'
+                  : 'You are in Guest Mode. (Demo) Sign-in is a local mock that creates a fixed fake account and unlocks scanning on-device; favorites sync and the 100 free monthly scans are not wired up yet — they arrive in the future production version.'}
               </Text>
 
               <View style={styles.authActionRow}>

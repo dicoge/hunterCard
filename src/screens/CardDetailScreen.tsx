@@ -229,6 +229,13 @@ export default function CardDetailScreen({ route, navigation }: any) {
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
           {isSubscriber ? (
             <>
+              <View style={styles.mockNotice}>
+                <Text style={styles.mockNoticeText}>
+                  {preferredLanguage === 'zh'
+                    ? '⚠️ 示範版本：此訂閱權限為本機模擬，並未經過真實付款或帳號驗證。以下預測數據僅供介面展示，非正式訂閱服務。'
+                    : '⚠️ Demo build: this subscriber access is a local mock — no real payment or account verification occurred. The forecast below is for UI demonstration only, not a real subscription service.'}
+                </Text>
+              </View>
               <PriceTrendBadge
                 trend={trend.trend}
                 score={trend.score}
@@ -792,6 +799,20 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'center',
     marginBottom: 16,
+  },
+  mockNotice: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderColor: '#ef4444',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+  },
+  mockNoticeText: {
+    color: '#ef4444',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   premiumUpgradeBtn: {
     backgroundColor: COLORS.primary,
