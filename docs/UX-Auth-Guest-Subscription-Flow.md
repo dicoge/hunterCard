@@ -218,7 +218,7 @@ export function can(role: UserRole, cap: Capability): boolean { /* 能力矩陣 
 
 身份真源為 **Supabase `auth.identities`**（由 GoTrue 在每次 OAuth sign-in 時自動管理）。`public.linked_auth_providers` 為 mirror 快取供前端讀取。**不使用自建平行 table 取代 Supabase Auth 本身的 user/identity mapping**。
 
-**重要**：Supabase 託管平台的 GoTrue 預設會按 verified email 自動連結 OAuth identity。此行為**無法在 managed plan 關閉**。本設計接受此平台行為，但不依賴它作為 multi-provider 合併策略。所有 user-initiated linking 一律使用 `linkIdentity()` API。若未來需嚴格阻止 email-based auto-linking，需評估 self-hosted GoTrue 並設定 `GOTRUE_EXTERNAL_EMAIL_AUTO_CONFIRM_AND_LINK=false`。
+**重要**：Supabase 託管平台的 GoTrue 預設會按 verified email 自動連結 OAuth identity。此行為**無法在 managed plan 關閉**。本設計接受此平台行為，但不依賴它作為 multi-provider 合併策略。所有 user-initiated linking 一律使用 `linkIdentity()` API。若需嚴格禁止所有 email-based auto-linking 並鎖定為純 manual linking，唯一可執行的方案為 self-hosted GoTrue 並自訂 before-identity-link Auth Hook 拒絕 email-based link。Managed plan 無法滿足此需求。
 
 | 操作 | 規則 |
 |------|------|
@@ -310,7 +310,10 @@ export const supabase = createClient(
 - Service ID / Team ID / Key ID / Private Key 來自 Apple Developer
 - 不支援本機開發的 `localhost` redirect（Apple 僅允許 HTTPS）
 
-**Supabase GoTrue verified-email automatic linking 背景**：Supabase 託管平台的 GoTrue 預設會將相同 verified email 的 OAuth 登入自動連結到同一個 `auth.users` row。此行為**無法在 managed Supabase 上關閉**（截至撰寫時）。本設計接受此平台行為無法避免，但不依賴它作為 multi-provider 合併機制。實質的身份邊界以 `auth.identities` 為真源；user-chosen linking 一律透過 `linkIdentity()`。若未來需嚴格阻止 email-based auto-linking，需評估 self-hosted GoTrue 並設定 `GOTRUE_EXTERNAL_EMAIL_AUTO_CONFIRM_AND_LINK=false`。
+**Supabase GoTrue verified-email automatic linking 背景**：Supabase 託管平台的 GoTrue 預設會將相同 verified email 的 OAuth 登入自動連結到同一個 `auth.users` row。此行為**無法在 managed Supabase 上關閉**（截至撰寫時）。本設計接受此平台行為無法避免，但不依賴它作為 multi-provider 合併機制。實質的身份邊界以 `auth.identities` 為真源；user-chosen linking 一律透過 `linkIdentity()`。
+
+**必須啟用的設定**：
+- Supabase Dashboard → Authentication → Settings → **Allow manual linking** → 開啟（self-hosted 設 `GOTRUE_SECURITY_MANUAL_LINKING_ENABLED=true`）。這是 `linkIdentity()` / `unlinkIdentity()` 的前置條件；未開啟則這些 API 不可用。
 
 ### 4.2 Login flow（以 Google 為例）
 
@@ -368,7 +371,9 @@ BEGIN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = 'P0002';
   END IF;
 
-  -- 直接查 subscriptions 表，不依賴可能延遲的 users.role
+  -- fail-closed：沒有有效 active unexpired subscription → 一律走 free quota
+  -- 不使用 users.role 作為 fallback；entitlement 只以 subscriptions 表為準
+  v_role := 'free_user';
   IF EXISTS (
     SELECT 1 FROM public.subscriptions
     WHERE user_id = v_uid
@@ -376,8 +381,6 @@ BEGIN
       AND expires_at > now()
   ) THEN
     v_role := 'subscriber';
-  ELSE
-    SELECT role INTO v_role FROM public.users WHERE id = v_uid;
   END IF;
 
   INSERT INTO public.scan_usage_monthly (user_id, period_key, limit_count)
@@ -477,8 +480,38 @@ Postgres 的 `period_key` 為 `YYYY-MM` 格式，**每月自然分區**。無需
 - **Quota 消費時直接驗證 `subscriptions`**（status + expires_at），不依賴可能延遲的 `users.role`。RPC `consume_scan_quota` 在同一個交易內查 `subscriptions` 表判斷是否 subscriber（見 §5.2），確保 entitlement 決策是即時的。
 - **Premium entitlement 驗證同樣 fail-closed**：`require_premium()` RPC 直接查 `subscriptions` 表（status = 'active' AND expires_at > now()），role scheduler 未觸發時仍會正確拒絕。前端 role 僅供 UI 顯示。
 - **Role scheduler**（備援機制，非 primary gate）：Edge Function 每日定時將 `subscriptions.status = 'active' AND expires_at > now()` 的使用者 `users.role` 同步為 `'subscriber'`；過期不 active 的還原為 `'free_user'`。此 scheduler 僅作為效能優化（避免每次 RPC 都 join subscriptions），不作為安全邊界。
-- **訂閱過期 reconciliation webhook**：未來串接 IAP 時，App Store / Google Play 的 `SERVER_NOTIFICATION` webhook → Supabase Edge Function（service_role）更新 `subscriptions` status/expires_at。若 platform webhook 延遲或失敗，上述 primary gate（RPC 內直接查表）仍會 deny expired subscription。
 - Entitlement 真源為 `subscriptions.status = 'active' AND expires_at > now()`；`users.role` 僅為 cached display value。
+
+### 6.4 IAP Webhook Reconciliation（P3 實作設計）
+
+App Store / Google Play 的 server-to-server notification（`SERVER_NOTIFICATION` / `RTDN`）可能丟失、重複、亂序到達。本設計遵循 fail-closed 原則：
+
+**接收層（Supabase Edge Function service_role）**：
+
+| 項目 | 設計 |
+|------|------|
+| Endpoint | `POST /api/subscription/webhook`（Edge Function，service_role） |
+| 來源驗證 | App Store: 驗證 signed JWS（x-apple-certificate）；Google Play: 驗證 `developerNotification` signature + `purchaseToken` |
+| 入口 | 先 INSERT `webhook_events` log table（deduplication key = `(platform, notification_uuid / purchase_token)`），成功後才處理 |
+| 訂單去重 | `UNIQUE(notification_id)` + `ON CONFLICT DO NOTHING`（idempotent） |
+| 亂序容忍 | 依 `latest_receipt_info` / `purchase_token` 的實際 status + expires_date_ms 覆蓋 `subscriptions` row 而非用 event timestamp 排序 |
+
+**事件處理（idempotent per event type）**：
+
+| 事件 | 處理 |
+|------|------|
+| DID_CHANGE_RENEWAL_STATUS / SUBSCRIPTION_PURCHASED | 寫入/更新 `subscriptions` row：`status='active'`, `expires_at` = receipt expires_date_ms, `auto_renew` = auto_renew_status |
+| DID_FAIL_TO_RENEW / SUBSCRIPTION_EXPIRED | 寫入 `subscriptions.status='expired'`（若 receipt 已無 active period） |
+| REFUND / SUBSCRIPTION_REVOKED | 寫入 `subscriptions.status='expired'`, `expires_at` = now()（立即撤銷 entitlement）。新增 `refund_events` log table 保留稽核軌跡 |
+| DID_RECOVER（billing retry 成功） | 寫入 `subscriptions.status='active'` + 更新 `expires_at` |
+| GRACE_PERIOD | `subscriptions.status='in_grace'`；quota/premium 在 grace period 內**仍維持 subscriber 權限**（Apple 政策要求） |
+
+**定期 reconciliation（備援）**：
+- Edge Function cron（daily）：對 `subscriptions.status = 'active' AND expires_at < now()` 的 row → 向 Apple/Google server API **重新查詢 subscription status**（GET `verifyReceipt` / `purchases.subscriptions.get`）
+- 若 real-time webhook 遺漏 → reconciliation 在 24 小時內修正 `status` + `expires_at`
+- Reconciliation 結果寫入 `reconciliation_log` table（含 timestamp, platform, receipt, before/after status）
+
+**Fail-closed 行為**：每個 RPC（`consume_scan_quota` / `require_premium`）均直接查 `subscriptions` 表（status = 'active' AND expires_at > now()）。即使 webhook 完全失效 + reconciliation 未觸發，subscription 仍會在 `expires_at` 到期後自動拒絕（fail-closed）。
 
 ---
 
@@ -590,7 +623,7 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 8. 前端更新 linkedProviders 清單
 ```
 
-### 8.5 帳號刪除（Cascade + 匿名化保留）
+### 8.5 帳號刪除（Cascade + 匿名化保留 + 復原性）
 
 需求（DIC-661）：帳號刪除須一併刪除 scan usage / quota / subscription mapping，或匿名化必要交易紀錄。
 
@@ -598,17 +631,27 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 前提：使用者已登入
 
 1. 使用者在設定頁點擊「刪除帳號」→ 二次確認
-2. Supabase Edge Function（service_role）執行：
-   a. supabase.auth.admin.deleteUser(uid)
-      → auth.users 刪除 → ON DELETE CASCADE 觸發 public.users 刪除
-   b. public.users → linked_auth_providers（CASCADE 刪除）
-   c. public.users → scan_usage_monthly（CASCADE 刪除）
-   d. public.users → watchlists / push_tokens / favorites（CASCADE 刪除）
-   e. public.subscriptions: user_id SET NULL（匿名化，保留稽核軌跡）
-      — 保留 status, platform, product_id, expires_at, created_at
-      — 移除可識別欄位：user_id → NULL
-3. 交易由 Supabase Edge Function 包裝在一個 DB transaction 中（service_role）
-4. subscription 匿名化保留為法規/稽核需要（App Store / Google Play 交易紀錄保留義務）
+2. Supabase Edge Function（service_role）執行兩階段刪除：
+
+   階段 A：Postgres transaction（單一 DB connection，ACID）
+     a. 將 public.subscriptions 的 user_id SET NULL（匿名化保留，ON DELETE SET NULL）
+     b. DELETE FROM public.users WHERE id = v_uid
+        → CASCADE 自動觸發 linked_auth_providers / scan_usage_monthly / watchlists / push_tokens / favorites
+     c. COMMIT（以上操作在同一 Postgres transaction）
+
+   階段 B：Admin API（跨越服務邊界，非同一 transaction）
+     d. supabase.auth.admin.deleteUser(v_uid) — 移除 auth.users + auth.identities
+        → 若 Admin API 失敗（網路/權限）→ DB 層已無 public.users row，user 無法再登入
+        → 殘留的 auth.users row 為 orphan，不影響授權（RLS 綁定 auth.uid() 無對應 public.users → SELECT 回空）
+
+3. 復原性（partial-failure recovery）：
+   - 若階段 A 成功但階段 B 失敗 → schedule retry task（Edge Function DB queue 或 cron sweep），
+     對 public.users 中不存在但 auth.users 中仍存在的 orphan user ID 補執行 deleteUser()
+   - 若階段 A 失敗（任何原因）→ 完整 rollback，不觸發階段 B，user 不受影響
+
+4. Subscription 匿名化保留為法規/稽核需要（App Store / Google Play 交易紀錄保留義務）
+
+注意：auth.admin.deleteUser() 與 Postgres transaction **不共享 ACID 邊界**（Admin API 為 HTTP RPC 呼叫，非 SQL transaction）。文件不宣稱兩者為同一 atomic operation。
 ```
 
 **刪除 vs 匿名化邊界**：
@@ -651,19 +694,20 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 | 掃描使用量 | `scan_usage_monthly`: used, limit_count, period_key | quota 控管與服務改善 | 最多保留 24 個月（可選擇帳號刪除時 aggregate 統計後刪除單筆） | ON DELETE CASCADE |
 | 訂閱狀態 | `subscriptions`: status, platform, product_id, expires_at | 訂閱服務交付 / 平台稽核 | **匿名化保留**：user_id → NULL；保留稽核軌跡（為 Apple/Google 金流合規） | ON DELETE SET NULL（匿名化，不刪除） |
 | 收藏 / 入手提醒 | `watchlists`, `favorites`（加入 schema 時） | 使用者自選功能 | 帳號存在期間 | ON DELETE CASCADE |
-| 推播 token | `push_tokens`: expo Push Token | 入手提醒推播通知 | 帳號存在期間或 token 失效 | ON DELETE CASCADE |
-| Expo 推播資料 | FCM/APNs token 經由 Expo Push API 傳送至 Apple/Google 伺服器 | 推播通知遞送 | 依 Apple/Google 政策 | 本 App server 端不保留 token（只存在 `push_tokens` table）；Expo 自有資料留存依其政策 |
+| 推播 token | `push_tokens`: expo Push Token（由 Expo Push API 產生，經由 FCM/APNs 傳送） | 入手提醒推播通知 | 帳號存在期間或 token 手動失效 | ON DELETE CASCADE |
+| Expo 處理者資料 | Expo Push Notification Service 遞送推播時使用的 Expo Push Token + 推播內容 payload。傳送過程經由 FCM（Android）/ APNs（iOS） | 推播通知遞送 | Expo Push Token 儲存於本 App 資料庫；FCM/APNs 端依 Apple/Google 政策保留 | 刪除 `push_tokens` row 即不再傳送；Expo/FCM/APNs 的服務端資料留存依各平台隱私權政策（非本 App 可控） |
 | 裝置資訊 | 作業系統版本 / App 版本（經由 Supabase Auth session metadata） | 安全性與問題排解 | 180 天 | 隨 session 過期清除 |
-| App 設定 | 語言、幣別偏好（Zustand localStorage/AsyncStorage，本機儲存，不傳送 server） | 個人化體驗 | 本機持久化；刪除 App 時清除 | 本機資料清除 |
-| Supabase 處理者資料 | Supabase 平台本身的 logs / metrics（非本 App 可控） | 平台營運 | 依 Supabase 隱私權政策 | 不屬本 App 刪除範圍 |
+| Supabase 處理者資料 | Supabase 平台本身的 logs / metrics / auth events（非本 App 可控，儲存於 Supabase 基礎設施） | 平台營運 | 依 Supabase 隱私權政策與資料處理合約 | 不屬本 App 刪除範圍；平台端留存依 Supabase policy |
+| App 設定 | 語言、幣別偏好（Zustand localStorage/AsyncStorage，**僅本機儲存，不傳送 server**，不經 Supabase。沒有 server sync） | 個人化體驗 | 本機持久化；刪除 App 時清除 | 本機資料清除 |
 
 ### 10.2 隱私權政策需揭露
 
 - 透過 Supabase Auth（Google / Apple OAuth）蒐集的識別資料（auth user id, provider identity，可能為 Apple private relay email）。
 - 掃描使用量與 quota 紀錄之目的（quota 上限控管、服務品質改善）與保存期間。
 - 訂閱狀態與交易對應紀錄（不儲存信用卡號，金流由 Apple / Google 平台處理）。
-- 使用者行使刪除權的方式（見 §8.5）。刪除時一併清除所有可識別資料；依法規需保留的交易紀錄將匿名化處理。
-- 本 App 不追蹤使用者跨 App/網站行為、不分享個人資料予第三方（除金流平台 Apple / Google）。
+- 使用者行使刪除權的方式（見 §8.5）。刪除時一併清除所有可識別資料；依法規需保留的交易紀錄（subscriptions）將匿名化處理。
+- 本 App 使用以下第三方資料處理者：**Supabase**（認證、資料庫、session）、**Expo**（推播通知遞送，經由 FCM/APNs）、**Apple / Google**（OAuth 登入、應用內購金流）。各處理者的資料留存政策請見其隱私權政策。
+- 本 App 不追蹤使用者跨 App/網站行為、不分享個人資料予第三方（除上述處理者於服務必要範圍內）。
 
 ### 10.3 商店上架文案
 
@@ -702,7 +746,7 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 - iOS/Android 訂閱必須符合 App Store / Google Play 規範（IAP、Sign in with Apple、隱私標籤）。
 - 額度授權一律以 Supabase RPC（SECURITY DEFINER，內部取 `auth.uid()`）為準，本機值僅供顯示。
 - 身份識別真源為 Supabase `auth.identities`；`linked_auth_providers` 僅為 mirror。
-- Managed Supabase verified-email auto-linking 為 GoTrue 預設行為，無法在 managed plan 上關閉；本設計接受此限制並以 `auth.identities` / `linkIdentity()` 管理 user-chosen linking。嚴格禁 auto-link 的情境需評估 self-hosted GoTrue。
+- Managed Supabase verified-email auto-linking 為 GoTrue 預設行為，無法在 managed plan 上關閉；本設計接受此限制並以 `auth.identities` / `linkIdentity()` 管理 user-chosen linking。嚴格禁止 auto-link 且需可執行的方案為 self-hosted GoTrue + Auth Hook。
 - 底層基礎設施為 **Supabase Auth + Supabase Postgres/RLS**（DIC-646 決策）。
 - 所有 server-owned 欄位（role, quota, subscription, identity）只透過 controlled channel 變更，client 端 RLS SELECT-only。
 - Premium/quota entitlement 以 transaction 內直接查 `subscriptions` 表（status + expires_at）為準，fail-closed；`users.role` 僅為 cached display。
@@ -714,7 +758,7 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 | 階段 | 內容 | 產出 |
 |------|------|------|
 | **P1 架構（本階段設計對象）** | 型別、`permissions.ts` 能力矩陣、`authStore`、路由分流、AuthScreen（mock OAuth）、QuotaIndicator/PremiumLockOverlay/UpgradeCTA 佔位 | 可跑的 UI flow，角色可手動切換測試 |
-| **P2 後端授權** | Supabase Auth integration（OAuth + session + linkIdentity/unlinkIdentity）、關閉 auto email linking、Postgres schema + RLS（SELECT-only）+ RPC（consume_scan_quota / require_premium）、trigger `on_auth_user_created` | session-based 授權，掃描額度以伺服器為準、防竄改 |
+| **P2 後端授權** | Supabase Auth integration（OAuth + session + linkIdentity/unlinkIdentity）、啟用 Allow manual linking、Postgres schema + RLS（SELECT-only）+ RPC（consume_scan_quota / require_premium）+ trigger `on_auth_user_created` | session-based 授權，掃描額度以伺服器為準、防竄改 |
 | **P3 訂閱金流** | IAP（iOS/Android）+ 後端收據驗證（Supabase Edge Function service_role → 寫入 `subscriptions` + 更新 `users.role`）；Web Stripe 另評估 | 真正可訂閱、premium 解鎖 |
 | **P4 合規與刪除** | 隱私權政策、商店文案（含完整資料清單）、provider link/unlink/collision UI、`auth.admin.deleteUser()` cascade 清除 | 上架合規 |
 
