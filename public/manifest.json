@@ -1,7 +1,7 @@
 {
   "name": "HoloHunter",
   "short_name": "HoloHunter",
-  "description": "hololive TCG 卡牌查價 App",
+  "description": "hololive TCG 卡牌查價工具（非官方｜Unofficial）",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

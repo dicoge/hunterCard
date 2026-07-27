@@ -99,10 +99,10 @@ export default function TutorialScreen({ navigation }: any) {
         {/* Footer */}
         <View style={[styles.footer, isMobile && styles.footerMobile]}>
           <Text style={[styles.footerTitle, isMobile && styles.footerTitleMobile]}>
-            hololive OFFICIAL CARD GAME
+            hololive Card Game
           </Text>
           <Text style={[styles.footerSub, isMobile && styles.footerSubMobile]}>
-            hOCG 規則教學
+            非官方 hOCG 規則教學
           </Text>
         </View>
       </ScrollView>

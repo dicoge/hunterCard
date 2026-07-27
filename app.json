@@ -47,7 +47,7 @@
         "shortName": "HoloHunter",
         "themeColor": "#ffffff",
         "backgroundColor": "#ffffff",
-        "description": "hololive TCG 卡牌查價 App"
+        "description": "hololive TCG 卡牌查價工具（非官方｜Unofficial）"
       }
     },
     "plugins": [
@@ -55,6 +55,7 @@
         "expo-camera",
         {
           "cameraPermission": "允許 HoloHunter 存取相機以掃描卡牌",
+          "microphonePermission": false,
           "recordAudioAndroid": false
         }
       ],

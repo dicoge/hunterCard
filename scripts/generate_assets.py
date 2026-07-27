@@ -225,6 +225,17 @@ def generate_splash():
         fill=(100, 120, 160),
     )
 
+    disclaimer = "Unofficial · Unaffiliated · Not Endorsed"
+    font_disc = get_font(int(SIZE * 0.035))
+    disc_bbox = draw.textbbox((0, 0), disclaimer, font=font_disc)
+    tw_disc = disc_bbox[2] - disc_bbox[0]
+    draw.text(
+        (cx - tw_disc // 2 - disc_bbox[0], cy + int(SIZE * 0.44)),
+        disclaimer,
+        font=font_disc,
+        fill=(150, 150, 160),
+    )
+
     out = OUT_DIR / "splash-icon.png"
     img.save(out, "PNG")
     print(f"  ✓ {out} ({img.size[0]}×{img.size[1]}, RGBA with transparency)")
