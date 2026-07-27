@@ -16,14 +16,121 @@
 
 ## 0. 發佈前檢查
 
-- [ ] `app.json` 的 `expo.version` 已更新。
+- [ ] `app.json` 的 `expo.version`（使用者可見版本，例如 `1.0.0`）已更新。
+- [ ] **build number / versionCode 已處理**（見 [0.1 版本與 build number 管理](#01-版本與-build-number-管理)）。每次重送商店都必須遞增，否則會被 duplicate build 退件。
 - [ ] 若已送過商店，不再改 `ios.bundleIdentifier` / `android.package`。
-- [ ] App icon、splash、名稱、相機權限文案已確認。
+- [ ] App icon、splash、名稱與**所有權限用途文案**（相機、麥克風、相簿、推播）已確認（見 [0.2 權限與隱私盤點](#02-權限與隱私盤點)）。
 - [ ] 確認 App 內文字不宣稱官方授權。
 - [ ] 準備 Apple Developer Program 帳號。
 - [ ] 準備 Google Play Console developer account。
 - [ ] 本機可執行：`npx eas --version`，且符合 `eas.json` 要求 `>= 15.0.0`。
 - [ ] 已登入 Expo/EAS：`npx eas login`。
+
+### 0.1 版本與 build number 管理
+
+> ⚠️ 這是最常見的第二次送審 blocker。`expo.version` 只是「使用者可見版本字串」（marketing version），商店真正用來判斷「這是不是新 build」的是 **iOS `buildNumber`** 與 **Android `versionCode`**。目前 `app.json` **沒有**設定 `ios.buildNumber` 與 `android.versionCode`，`eas.json` 也**沒有** `appVersionSource` / `autoIncrement`。若不處理，第二次送同一版本會被：
+>
+> - App Store Connect：`The bundle version must be higher than the previously uploaded version`
+> - Play Console：`Version code N has already been used`
+>
+> 退件。以下二選一，建議用方案 A。
+
+**兩個版本欄位的差異：**
+
+| 欄位 | 位置 | 用途 | 是否每次遞增 |
+| --- | --- | --- | --- |
+| `expo.version` | `app.json` | 使用者可見版本（如 `1.0.1`），iOS 對應 CFBundleShortVersionString、Android 對應 versionName | 有意義的版本變更時 |
+| iOS `buildNumber` | `app.json` `ios.buildNumber` 或 EAS remote | 同一 version 下的 build 序號 | **每次送 App Store 都要更高** |
+| Android `versionCode` | `app.json` `android.versionCode` 或 EAS remote | Play 判斷新舊 build 的整數 | **每次送 Play 都要更大** |
+
+#### 方案 A（建議）：EAS 遠端版本 + autoIncrement
+
+讓 EAS 在雲端保存並自動遞增 build number / versionCode，本機不用手動改。
+
+1. 在 `eas.json` 的 `cli` 加上 `appVersionSource`：
+
+    ```json
+    {
+      "cli": {
+        "version": ">= 15.0.0",
+        "appVersionSource": "remote",
+        "promptToConfigurePushNotifications": false
+      }
+    }
+    ```
+
+2. 在 `build.production` 兩個平台開 `autoIncrement`：
+
+    ```json
+    {
+      "production": {
+        "distribution": "store",
+        "autoIncrement": true,
+        "ios": { "resourceClass": "m-medium" },
+        "android": { "buildType": "app-bundle" }
+      }
+    }
+    ```
+
+3. 首次可用 `npx eas build:version:set` 或直接 build，讓 EAS 建立初始版本；之後每次 `production` build，EAS 會自動把 buildNumber / versionCode +1。
+4. 查目前遠端版本：`npx eas build:version:get --platform ios` / `--platform android`。
+
+> 注意：改用 `appVersionSource: "remote"` 後，`app.json` 裡的 `ios.buildNumber` / `android.versionCode` 就不再是真實來源，以 EAS 遠端值為準。
+
+#### 方案 B：在 app.json 手動維護
+
+若不想用遠端版本，就在 `app.json` 明確寫死並每次手動遞增：
+
+```json
+{
+  "expo": {
+    "version": "1.0.0",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dicoge.holohunter",
+      "buildNumber": "1"
+    },
+    "android": {
+      "package": "com.dicoge.holohunter",
+      "versionCode": 1
+    }
+  }
+}
+```
+
+- 每次要送商店前：iOS `buildNumber` 字串 +1（`"1"` → `"2"`），Android `versionCode` 整數 +1（`1` → `2`）。
+- 用此方案時，`eas.json` 不要開 `autoIncrement`，且維持預設的 `appVersionSource: "local"`（不設等同 local）。
+
+### 0.2 權限與隱私盤點
+
+> ⚠️ 送審前必讀。實際權限面比「只有相機」大，隱私問卷（App Privacy / Data safety）漏填會被退件或事後被商店標記不一致。以下依 `app.json` 與相依套件盤點目前的權限來源。
+
+| 權限 / 能力 | 來源 | iOS | Android | 送審需交代 |
+| --- | --- | --- | --- | --- |
+| 相機 Camera | `expo-camera`、`expo-ocr-kit` plugin | `NSCameraUsageDescription`（plugin 已提供文案） | `android.permission.CAMERA` | 掃描 / OCR 卡牌用途 |
+| 麥克風 Microphone | `expo-camera` 預設帶入；`app.json` Android 已列 `android.permission.RECORD_AUDIO` | `NSMicrophoneUsageDescription` | `android.permission.RECORD_AUDIO` | **App 若不用錄音，建議明確關閉，見下方** |
+| 相簿 / 照片 Photo library | `expo-image-picker` | `NSPhotoLibraryUsageDescription`（挑圖）、可能 `NSPhotoLibraryAddUsageDescription` | 依 SDK 版本可能是 `READ_MEDIA_IMAGES` 或無 | 從相簿選卡牌圖片辨識 |
+| 推播 Push notification | `expo-notifications` plugin | Push Notifications capability（APNs） | `android.permission.POST_NOTIFICATIONS`（Android 13+） | App 是否真的送推播；若未使用建議移除 plugin |
+
+**送審前要做的決定（每一項都要有明確答案）：**
+
+- [ ] **麥克風**：HoloHunter 只掃圖/OCR，通常不需要錄音。若確定不用，`expo-camera` plugin 可設定不含麥克風，並移除 `app.json` android `RECORD_AUDIO`：
+
+    ```json
+    [
+      "expo-camera",
+      {
+        "cameraPermission": "允許 HoloHunter 存取相機以掃描卡牌",
+        "microphonePermission": false,
+        "recordAudioAndroid": false
+      }
+    ]
+    ```
+
+    保留麥克風權限但問卷不申報，是常見退件原因。要嘛用、要嘛拔掉。
+- [ ] **推播**：確認 `expo-notifications` 是否真的有用到。若目前沒有推播功能，建議從 `plugins` 移除以縮小權限面與問卷範圍；若保留，App Privacy / Data safety 要如實申報。
+- [ ] **相簿**：`expo-image-picker` 若有用到「從相簿選圖辨識」才保留，並在 iOS 補對應 usage description、在 Data safety 說明圖片只在本機/伺服器辨識後的處理方式。
+- [ ] **每個保留的權限**都要能對應到 App 內實際功能，並在下方問卷段落如實填寫。
 
 ---
 
@@ -260,15 +367,24 @@ npx eas submit --platform android --profile production --latest
 - Blocker：Bundle ID 與 App Store Connect record 不一致。
 - 處理：維持 `com.dicoge.holohunter`，並確認 App Store Connect 使用同一個 Bundle ID。
 
+### Build number / versionCode 重複
+
+- Blocker：第二次送同一版本被退件（iOS `The bundle version must be higher...`；Play `Version code N has already been used`）。
+- 處理：見 [0.1 版本與 build number 管理](#01-版本與-build-number-管理)。建議在 `eas.json` 開 `appVersionSource: "remote"` + `autoIncrement`，或每次手動遞增 `ios.buildNumber` / `android.versionCode`。`expo.version` 沒改不代表 build number 有遞增，兩者是不同欄位。
+
 ### Privacy questionnaire / Data safety
 
-- Blocker：App Store Connect 或 Play Console 不允許送審。
-- 處理：先盤點資料收集。HoloHunter 目前至少有相機權限；若沒有帳號系統、廣告 SDK、分析 SDK，資料收集聲明可較簡化，但仍需確認 API / push notification / 儲存行為。
+- Blocker：App Store Connect（App Privacy）或 Play Console（Data safety）問卷與實際權限不一致而被退件或事後標記。
+- 處理：先照 [0.2 權限與隱私盤點](#02-權限與隱私盤點) 盤點。HoloHunter 的權限面**不只相機**：`app.json` 目前含 Android `RECORD_AUDIO`（麥克風）、`expo-notifications`（推播）、`expo-image-picker`（相簿）。每一個保留的權限都必須在問卷如實申報；不用的（尤其麥克風、推播）建議先移除再送審。保留權限卻不申報，是最常見的退件與下架風險。
 
-### 相機權限
+### 相機 / 麥克風 / 推播 / 相簿權限用途
 
-- Blocker：商店審查認為權限用途不清楚。
-- 處理：描述為「掃描卡牌文字 / 圖像以搜尋卡牌資訊」，不要寫成官方驗證或官方資料服務。
+- Blocker：商店審查認為權限用途不清楚，或申報與實際不符。
+- 處理：
+  - 相機：描述為「掃描卡牌文字 / 圖像以搜尋卡牌資訊」，不要寫成官方驗證或官方資料服務。
+  - 麥克風：若不錄音就依 [0.2](#02-權限與隱私盤點) 關閉 `expo-camera` 的麥克風並移除 `RECORD_AUDIO`；否則需說明錄音用途。
+  - 推播：若未實際使用，移除 `expo-notifications`；若使用，說明推播內容（如價格提醒）。
+  - 相簿：說明僅用於使用者主動挑選卡牌圖片做辨識。
 
 ---
 
@@ -333,13 +449,57 @@ Initial closed testing release.
 Please verify card search, card detail pages, price display, camera permission behavior, and general app stability on real devices.
 ```
 
+### iOS 相機 / 麥克風 usage description（若走 bare / 手動維護 Info.plist 時可貼）
+
+```text
+NSCameraUsageDescription = 允許 HoloHunter 存取相機以掃描 / 辨識卡牌
+NSMicrophoneUsageDescription = HoloHunter 使用相機模組，若不需錄音請於設定關閉麥克風權限
+NSPhotoLibraryUsageDescription = 允許 HoloHunter 存取相簿以選取卡牌圖片進行辨識
+```
+
+> 正常走 Expo prebuild 時，這些字串由 `expo-camera` / `expo-image-picker` plugin 產生，不需手改；此區塊僅供 eject / 檢查用。
+
+### App Store App Privacy 問卷（依目前權限面的建議答案）
+
+```text
+先確認以下每一項是否仍成立，再照實勾選：
+
+- Contact Info：若無帳號/註冊 → No
+- Identifiers：若無廣告/追蹤 SDK → No；若有 analytics 需申報
+- Usage Data：若有任何 analytics/crash SDK → Yes 並選對用途
+- Camera：App 使用相機掃描/辨識卡牌 → 於功能說明勾選相機用途
+- Microphone：若已依 0.2 關閉麥克風 → 不申報；若保留 RECORD_AUDIO → 必須申報
+- User Content（Photos）：若使用相簿選圖辨識 → 申報，並說明圖片處理方式（本機/伺服器辨識後是否保存）
+- Push notifications：expo-notifications 若實際使用 → 申報；未使用建議先移除 plugin
+
+Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transparency 選 No / 不追蹤（若確實無追蹤 SDK）。
+```
+
+### Google Play Data safety 問卷（依目前權限面的建議答案）
+
+```text
+Data collection / sharing：
+- 若無帳號、無廣告 SDK、無 analytics → Data collected: 視實際 API 上傳而定，多數情況可宣告不收集個資
+- Location：No（App 不使用定位）
+- Photos/Videos：若使用相簿選圖辨識 → 說明是否上傳伺服器、是否保存
+- Audio：若已移除 RECORD_AUDIO → No；若保留 → 必須說明
+- Messages / Contacts / Files：No
+
+Permissions（Play Console 會自動列出 manifest 權限，需能對應功能）：
+- CAMERA → 掃描/辨識卡牌
+- RECORD_AUDIO → 若未使用請於 app.json 移除，避免 Play 要求說明
+- POST_NOTIFICATIONS（Android 13+，來自 expo-notifications）→ 若無推播功能建議移除
+```
+
 ---
 
 ## 6. 建議實際執行順序
 
 1. 先確認 Apple Team ID、Google Play package name、keystore 策略。
-2. 跑 Android production AAB build，因 Closed testing 通常比 iOS 外部 TestFlight 審查資料更繁瑣但 build 驗證直接。
-3. 跑 iOS production build。
-4. 先開 Internal / Closed testing，不直接正式上架。
-5. 真機驗證後再補商店素材與隱私問卷。
-6. 若要自動提交，再補齊 `eas.json` 的 iOS `appleId` / `ascAppId` 與 Android `google-service-account.json`。
+2. **決定版本策略與權限面**：依 [0.1](#01-版本與-build-number-管理) 選 remote autoIncrement 或手動 build number；依 [0.2](#02-權限與隱私盤點) 決定麥克風 / 推播 / 相簿是否保留，並更新 `app.json` / `eas.json`。
+3. 跑 Android production AAB build，因 Closed testing 通常比 iOS 外部 TestFlight 審查資料更繁瑣但 build 驗證直接。
+4. 跑 iOS production build。
+5. 先開 Internal / Closed testing，不直接正式上架。
+6. 真機驗證後再補商店素材與隱私問卷（用第 5 節的問卷建議答案對照實際權限）。
+7. 若要自動提交，再補齊 `eas.json` 的 iOS `appleId` / `ascAppId` 與 Android `google-service-account.json`。
+8. 第二次以後每次送商店，確認 build number / versionCode 已遞增（remote autoIncrement 會自動處理）。
