@@ -401,7 +401,7 @@ npx eas submit --platform android --profile production --latest
 - **⚠️ Web vs Native 資料流不同，商店問卷只填 native store binary 的行為。**HoloHunter 的 Web 版會 POST 影像到 `/api/recognize-card` 再轉送 OpenRouter Gemini Vision，但 iOS/Android native binary **不走這條路**——native 用本機 OCR（`expo-ocr-kit` / Tesseract），不傳送影像到任何伺服器。以下依 native binary 實際程式碼盤點：
   - **Expo push token**（`App.tsx` → `initPushNotifications()`，僅 native，Web 跳過）：`registerForPushNotifications()` 向 Expo Push Service 取得 token → `uploadDeviceToken()` POST `/api/push/register` → 寫入 `data/push-tokens.json`（GitHub repo `main` branch）。持久裝置識別碼（Device ID），用於監看清單價格提醒推播。
   - **Watchlist**：目前僅 Zustand 本機儲存（`src/stores/watchlistStore.ts`，persist to localStorage/AsyncStorage），App binary **沒有**呼叫 `/api/push/watchlist`。商店問卷不需申報 server-side `data/push-watchlist.json`（該檔案由外部腳本/管理機制維護，非 App binary 觸發）。
-  - **相機 / 相簿**：native 僅本機 OCR 處理，**不上傳影像**到任何伺服器。相機拍攝的照片也不會寫入系統相簿（僅在記憶體中暫存用於 OCR）。商店問卷中 Photos/Videos 若需勾選 Collected，僅因 image picker 讀取相簿選圖（本機使用），不是因為上傳。
+  - **相機 / 相簿**：native 僅本機 OCR 處理，**不上傳影像**到任何伺服器。相機拍攝的照片也不會寫入系統相簿（僅在記憶體中暫存用於 OCR）。**商店的「collection / 收集」指資料離開裝置（off-device transmission）**——manifest 權限宣告不代表收集。Native binary 完全不傳送影像 off-device，Photos/Videos / User Content 在兩平台問卷的 collection 一律答 No。
   - **刪除現狀**：後端**沒有** unregister/delete endpoint。App 移除或關閉通知權限不會刪除 GitHub 中的 token。推播 token 持久保存於 GitHub repo，直至營運方人工刪除。Google deletion request 不可答 Yes（無實作機制），應填 No 或提供 contact email 讓使用者聯絡請求手動刪除。
 
 ### 相機 / 麥克風 / 推播 / 相簿權限用途
@@ -511,11 +511,8 @@ NSPhotoLibraryUsageDescription = 允許 HoloHunter 存取相簿以選取卡牌�
 
 - Microphone：若已關閉 → No；若仍保留權限 → 需按實際用途填寫。
 
-- User Content（Photos / Videos）：
-  - expo-image-picker 可從相簿選圖進行辨識 → 若需勾選 Collected，用途為本機卡牌辨識。
-  - ⚠️ Native binary 不上傳影像到任何伺服器（OCR 在本機執行）。相機拍攝的照片也不寫入系統相簿（僅記憶體暫存用於 OCR）。
-  - Linked to user：若僅本機處理 → Not linked to user identity。
-  - 用於追蹤：No。
+- User Content（Photos / Videos）→ No（Not Collected）
+  - expo-image-picker 可從相簿選圖進行本機 OCR 辨識，但 native binary 不上傳影像到任何伺服器。App Store 的 collection 指資料離開裝置（off-device transmission），本機處理不構成 collection。相機拍攝的照片也不寫入系統相簿（僅記憶體暫存用於 OCR）。
 
 - Push notifications：已涵蓋於上方 Identifiers → Device ID。
 
@@ -542,10 +539,9 @@ Data collection / sharing：
 - Financial info：No
 - Health and fitness：No
 - Messages：No
-- Photos/Videos：
-  - expo-image-picker 可從相簿選圖進行本機辨識。
-  - ⚠️ Native binary 不上傳影像到任何伺服器（OCR 在本機執行）。相機拍攝的照片也不寫入系統相簿（僅記憶體暫存）。
-  - Data type：若 Expo prebuild 後的 merged manifest 有 READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE（來自 expo-image-picker），Play Console 會自動顯示 Photos/Videos，可勾選 Collected、Purpose = App functionality（local card recognition）、Data shared = No、Ephemeral processing = Yes（本機用完即棄）。
+- Photos/Videos → No（Not Collected）
+  - expo-image-picker 可從相簿選圖進行本機 OCR 辨識，但 native binary 不上傳影像到任何伺服器。
+  - ⚠️ Play Console 可能因 merged manifest 的 `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` 自動列出 Photos/Videos 資料類型，但 manifest 權限宣告 ≠ collection。Play 的 collection 指資料離開裝置（off-device transmission），本機處理不構成 collection。直接勾選 No、Data shared = No，不需勾選 Ephemeral processing（該選項僅在 Collected = Yes 時才需要填）。
 - Audio：若已關閉且 merged manifest 無 RECORD_AUDIO → No；若殘留 → 必須說明
 - Files：No
 
