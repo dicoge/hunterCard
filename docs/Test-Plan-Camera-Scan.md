@@ -101,7 +101,7 @@ docs/fixtures/scan-benchmark/
 | `confidence` | 建議 | top-1 confidence，0-1 |
 | `pass` | 選填 | 人工覆核 pass/fail；自動統計仍以 expected vs matched 計算 |
 | `failure_reason` | 失敗必填 | 例如 `number OCR miss`, `same name wrong rarity`, `low confidence accepted`, `duplicate record` |
-| `duplicate_count` | ✅ | 一次 physical scan 新增的 session record 數；正常為 1 |
+| `duplicate_count` | ✅ | 一次 physical scan 新增的 session record 數；正常為 1。**必填、不可省略**：`scripts/scan-benchmark.mjs` 不會替缺欄位補預設值，缺少此欄位會直接 validation fail，避免沒記錄 session insert 數的資料被誤判為「無重複」而遮蔽「掃一張記錄兩張」regression |
 
 範例：
 

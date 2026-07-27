@@ -12,7 +12,10 @@
  *   - CSV with headers
  *
  * Required fields per record:
- *   image_id, expected_cardNumber, expected_rarity, expected_series
+ *   image_id, expected_cardNumber, expected_rarity, expected_series,
+ *   duplicate_count (number of session records created for this one scan;
+ *     must be recorded explicitly — a missing value fails validation so the
+ *     "one scan recorded twice" regression is never silently treated as safe)
  *
  * Prediction fields (any one top-1 source):
  *   matched_cardNumber OR model_output.cardNumber OR top_matches[0].cardNumber
@@ -21,7 +24,6 @@
  *   top_matches: [{ cardNumber, rarity, series, confidence }]
  *   model_output: object|string
  *   confidence: number 0..1
- *   duplicate_count: number of session records created for this one scan
  *   failure_reason: free text
  */
 
