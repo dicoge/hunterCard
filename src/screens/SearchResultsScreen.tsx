@@ -68,7 +68,7 @@ interface CardRecord {
 }
 
 interface CardResult {
-  id: string; name: string; type: string; grade: string; rarity: string;
+  id: string; name: string; type: string; grade: string; rarity: string; sourceRarity: string;
   colors: string[]; colorNames: string[]; series: string[]; seriesNames: string[];
   tags: string[]; cardNumber: string; imageUrl: string;
   yuyuUrl: string; carousellUrl: string; officialUrl: string;
@@ -219,6 +219,7 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
       type: c.type || '',
       grade,
       rarity,
+      sourceRarity: c.rarity || '',
       colors,
       colorNames,
       series,

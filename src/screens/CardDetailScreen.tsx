@@ -506,6 +506,7 @@ function MarketDataPanel({ card }: { card: any }) {
   const sellPrice = aligned ? (selectedVersion?.sellPrice ?? null) : null; // 對齊版本後的遊々亭賣價（買入成本）
   const versionLabel = selectedVersion?.name ?? card?.series ?? '';
 
+  const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
   const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）— 資料僅卡號層級、未分版
   const ytStats = card?.ytStats ?? null;
   const priceHistory = card?.priceHistory ?? null;
@@ -572,7 +573,7 @@ function MarketDataPanel({ card }: { card: any }) {
         <View style={styles.versionWarnBox}>
           <Text style={styles.versionWarnTitle}>⚠️ 版本待確認</Text>
           <Text style={styles.versionWarnText}>
-            無法依此卡 rarity{card?.rarity ? `「${card.rarity}」` : ''}唯一對齊價格版本（{resolution.reason}）。
+            無法依此卡 rarity{displayRarity ? `「${displayRarity}」` : ''}唯一對齊價格版本（{resolution.reason}）。
             以下價格未分版，請先選擇實際版本再參考。
           </Text>
         </View>

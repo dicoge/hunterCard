@@ -17,6 +17,9 @@ export interface PriceVersion {
 /** 對齊邏輯只需要這些欄位；CardInfo 與資料庫原始 record 都符合此結構。 */
 export interface CardLike {
   rarity?: string;
+  // 原始資料庫 rarity（如 HR/SEC/OUR）。搜尋結果會把 rarity 重映射成顯示用色階（HR/SEC→C、OUR→SR），
+  // 對齊必須用未經重映射的原始值，否則高 rarity 卡會誤判成低 rarity 而對到最低價版本。
+  sourceRarity?: string;
   series?: string;
   sellPrice?: number | null;
   prices?: Array<{ name?: string; sellPrice: number | null } | null | undefined> | null;
@@ -91,7 +94,7 @@ export function resolveVersionForCard(card: CardLike, versions: PriceVersion[]):
   if (versions.length === 0) return { index: 0, confident: false, reason: '無價格版本' };
   if (versions.length === 1) return { index: 0, confident: true, reason: '單一版本' };
 
-  const rarity = coreRarity(card.rarity);
+  const rarity = coreRarity(card.sourceRarity ?? card.rarity);
   const idxOf = (v: PriceVersion) => versions.indexOf(v);
 
   // 無法唯一對齊時的預選 index：優先平行版、否則最高價 —— 絕不預設最低價（那正是要修的混版 bug）。

@@ -87,6 +87,49 @@ for (const key of ['hBP01-008_hBP01', 'hBP01-008_ent07']) {
   );
 }
 
+// === 搜尋畫面 rarity 重映射情境（QA 回報的真正 root cause）===
+// SearchResultsScreen 會把資料庫 rarity 重映射成顯示用色階（HR/SEC 落到預設 'C'、OUR→'SR'），
+// 詳情頁若直接拿這個重映射後的 rarity 對齊，高 rarity 卡會被當成低 rarity → 對到最低價版本。
+// 修正：搜尋結果同時帶 sourceRarity（原始 rarity），對齊改用 sourceRarity。
+console.log('\n=== 搜尋 rarity 重映射（sourceRarity）===');
+function remapRarityForDisplay(raw) {
+  const code = (raw || '').toUpperCase();
+  if (code.includes('OSR') || code.includes('OUR')) return 'SR';
+  if (code === 'UR') return 'R';
+  if (code === 'SR') return 'U';
+  if (code === 'RR' || code === 'R' || code === 'U' || code === 'C') return 'C';
+  if (code === 'N') return 'N';
+  return 'C'; // HR / SEC 等未列舉者落到預設 'C'
+}
+// 模擬搜尋結果送進詳情頁的 card 物件：rarity 已被重映射，並附上 sourceRarity。
+function asSearchResult(dbCard) {
+  return { ...dbCard, rarity: remapRarityForDisplay(dbCard.rarity), sourceRarity: dbCard.rarity };
+}
+for (const [key, expectFrag, expectPrice] of [
+  ['hBP01-024_ent07', '(パラレル/HR)', 3980],
+  ['hBP03-003_ent07', 'サイン', 128000],
+]) {
+  const db = cards[key];
+  if (!db) { check(`${key} 存在`, false, '找不到此 entry'); continue; }
+  const versions = buildPriceVersions(db);
+  const sr = asSearchResult(db);
+  const withSource = resolveVersionForCard(sr, versions);
+  const wSel = versions[withSource.index];
+  check(
+    `${key}（搜尋重映射 rarity=${sr.rarity}，sourceRarity=${sr.sourceRarity}）→ 對齊 ${expectFrag} ¥${expectPrice}`,
+    withSource.confident && wSel.name.includes(expectFrag) && wSel.sellPrice === expectPrice,
+    `got confident=${withSource.confident} name="${wSel.name}" ¥${wSel.sellPrice} (${withSource.reason})`
+  );
+  // 若沒有 sourceRarity（舊 bug），只剩重映射 rarity → 會誤判並選錯版本，作為 root-cause 佐證。
+  const noSource = resolveVersionForCard({ ...db, rarity: sr.rarity, sourceRarity: undefined }, versions);
+  const nSel = versions[noSource.index];
+  check(
+    `${key} 若無 sourceRarity 會誤對齊（證明 root cause）`,
+    !(noSource.confident && nSel.sellPrice === expectPrice),
+    `unexpectedly still correct: name="${nSel.name}" ¥${nSel.sellPrice}`
+  );
+}
+
 console.log('\n=== 全庫掃描（多版本卡）===');
 const multi = Object.entries(cards).filter(
   ([, c]) => buildPriceVersions(c).filter(v => (v.sellPrice ?? 0) > 0).length > 1
