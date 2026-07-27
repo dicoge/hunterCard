@@ -21,10 +21,11 @@ import ScanSessionPanel from '../components/ScanSessionPanel';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
-import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo } from '../services/cardRecognition';
+import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { recognizeTextWeb } from '../services/webOcr';
 import ScanOverlay from '../components/ScanOverlay';
 import ScanResultCard from '../components/ScanResultCard';
+import ScanCandidateSelector from '../components/ScanCandidateSelector';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
 import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
@@ -33,6 +34,13 @@ import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
 const isWeb = Platform.OS === 'web';
 const SCAN_COOLDOWN_MS = 3000; // Don't re-scan same card within 3s
+
+// Confidence tiers for the scan result (avoid auto-adding wrong cards):
+//  ≥ AUTO_ADD          → high: auto-add + show result card
+//  MIN_CANDIDATE..AUTO → mid: show candidate picker, add only after user confirms
+//  < MIN_CANDIDATE     → low: guidance + weak candidates, steer to re-shoot / manual
+const CONFIDENCE_AUTO_ADD = 0.85;
+const CONFIDENCE_MIN_CANDIDATE = 0.55;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
@@ -100,6 +108,94 @@ export default function ScanScreen({ navigation }: any) {
     card: CardInfo | null;
     confidence: number;
   }>({ visible: false, card: null, confidence: 0 });
+
+  // Candidate selector (mid/low confidence — user must confirm before adding)
+  const [candidateSelector, setCandidateSelector] = useState<{
+    visible: boolean;
+    tier: 'mid' | 'low';
+    candidates: RecognizedCandidate[];
+  }>({ visible: false, tier: 'mid', candidates: [] });
+
+  // Single point where a card is committed to the session. This is where a scan
+  // quota should be charged in future — only confirmed/high-confidence adds count,
+  // never error retries. Guards against recording the same card twice in one session.
+  const commitCard = (card: CardInfo): boolean => {
+    const existing = useScanSessionStore.getState().cards;
+    if (existing.some(c => c.id === card.id)) {
+      Alert.alert('已在清單中', `${card.name || card.cardNumber} 已在本次掃描清單，未重複加入。`);
+      return false;
+    }
+    addCard(card);
+    setLastScannedCard(card);
+    return true;
+  };
+
+  // Route a recognition result through the confidence tiers.
+  const handleRecognized = (
+    card: CardInfo,
+    confidence: number,
+    candidates?: RecognizedCandidate[],
+  ) => {
+    setSearchResults([]);
+    setSearchError(null);
+    setSuggestions([]);
+    setScanError(null);
+    setCapturedPhotoUri(null);
+    resetAutoScan();
+
+    // High confidence → auto-add and show the floating result card.
+    if (confidence >= CONFIDENCE_AUTO_ADD) {
+      if (commitCard(card)) {
+        setResultCard({ visible: true, card, confidence });
+      }
+      return;
+    }
+
+    // Mid/low → require explicit confirmation via the candidate picker.
+    const list = candidates && candidates.length > 0
+      ? candidates
+      : [{ card, confidence }];
+    setCandidateSelector({
+      visible: true,
+      tier: confidence >= CONFIDENCE_MIN_CANDIDATE ? 'mid' : 'low',
+      candidates: list.slice(0, 5),
+    });
+  };
+
+  // Map a raw API card payload to CardInfo (mirrors the API response shape).
+  const mapApiCard = (c: any): CardInfo => ({
+    id: c.cardNumber,
+    name: c.name || '',
+    cardNumber: c.cardNumber,
+    type: '',
+    rarity: c.rarity || '',
+    series: c.series || '',
+    sellPrice: c.sellPrice != null ? c.sellPrice : null,
+    yuyuName: '',
+    color: '',
+    imageUrl: c.imageUrl || '',
+    prices: c.prices || [],
+  });
+
+  const mapApiCandidates = (raw: any): RecognizedCandidate[] | undefined => {
+    if (!Array.isArray(raw) || raw.length === 0) return undefined;
+    return raw
+      .filter((c: any) => c && c.cardNumber)
+      .map((c: any) => ({
+        card: mapApiCard(c),
+        confidence: typeof c.confidence === 'number' ? c.confidence : 0,
+      }));
+  };
+
+  const closeCandidateSelector = () =>
+    setCandidateSelector({ visible: false, tier: 'mid', candidates: [] });
+
+  const handleConfirmCandidate = (card: CardInfo) => {
+    closeCandidateSelector();
+    if (commitCard(card)) {
+      setResultCard({ visible: true, card, confidence: 1 });
+    }
+  };
 
   // 显式请求相机权限 - 修复 Android/iOS 权限问题（web 版跳過，由 WebCamera 直接處理）
   useEffect(() => {
@@ -391,40 +487,32 @@ export default function ScanScreen({ navigation }: any) {
           console.warn('[ScanScreen] API network error:', e.message);
         }
 
-        // ── Step 3: API 成功 → 顯示結果 ──
+        // ── Step 3: API 成功 → 依信心度分層處理 ──
         if (apiResult?.success && apiResult?.card) {
           setScanningStatus('✅ 辨識完成');
           setScanProgress(4);
-          const cardInfo = mapApiCardToInfo(apiResult.card);
+          const cardInfo = mapApiCard(apiResult.card);
           const confidence = typeof apiResult.confidence === 'number' ? apiResult.confidence : 0.9;
-          addCard(cardInfo);
-          setLastScannedCard(cardInfo);
-          setResultCard({ visible: true, card: cardInfo, confidence });
-          setSearchResults([]); setSearchError(null); setSuggestions([]);
-          setCandidateReason(apiResult.reason || apiResult.matchMethod || '');
-          setCapturedPhotoUri(null); resetAutoScan();
+          handleRecognized(cardInfo, confidence, mapApiCandidates(apiResult.candidates));
           setIsProcessingOCR(false); setIsScanning(false);
           return;
         }
 
-        // ── Step 4: API 有回錯誤 → 顯示給使用者 ──
+        // ── Step 4: API 有回錯誤 → 無信心，引導重拍/手動，若有弱候選則顯示候選 ──
         if (apiResult && !apiResult.success) {
-          const errMsg = apiResult.error || '無法辨識';
           setScanningStatus('');
           setScanProgress(0);
-          setScanError(`⚠️ 辨識失敗: ${errMsg}`);
-          if (apiResult.raw) setRecognizedText(apiResult.raw);
-          if (Array.isArray(apiResult.candidates) && apiResult.candidates.length > 0) {
-            const candidateCards = apiResult.candidates.map(mapApiCardToInfo);
-            setSearchResults(candidateCards);
-            setSuggestions(candidateCards);
-            setCandidateReason(
-              `信心 ${Math.round((apiResult.confidence || 0) * 100)}%：${apiResult.reason || '需要人工確認'}`,
-            );
-          }
-          // 留著 photo 讓使用者可以手動搜尋
           setIsProcessingOCR(false);
           setIsScanning(false);
+          if (apiResult.raw) setRecognizedText(apiResult.raw);
+          const weakCandidates = mapApiCandidates(apiResult.candidates);
+          if (weakCandidates && weakCandidates.length > 0) {
+            resetAutoScan();
+            setCandidateSelector({ visible: true, tier: 'low', candidates: weakCandidates.slice(0, 5) });
+          } else {
+            const errMsg = apiResult.error || '無法辨識';
+            setScanError(`⚠️ 辨識失敗: ${errMsg}。請靠近卡號、避免反光、保持卡片平整後重試，或改用手動搜尋。`);
+          }
           return;
         }
 
@@ -436,18 +524,7 @@ export default function ScanScreen({ navigation }: any) {
           setIsScanning(false);
 
           if (result.success && result.card) {
-            addCard(result.card);
-            setLastScannedCard(result.card);
-            setResultCard({ visible: true, card: result.card, confidence: result.confidence ?? 0.85 });
-            setSearchResults([]); setSearchError(null); setSuggestions([]);
-            setCapturedPhotoUri(null); resetAutoScan();
-          } else if (result.lowConfidence || result.suggestions?.length) {
-            const candidateCards = result.suggestions || [];
-            setSearchResults(candidateCards);
-            setSuggestions(candidateCards);
-            setSearchError(result.error || '辨識信心不足，請從候選卡中選擇');
-            setCandidateReason(`信心 ${Math.round((result.confidence || 0) * 100)}%：${result.reason || '需要人工確認'}`);
-            if (result.raw) setRecognizedText(result.raw);
+            handleRecognized(result.card, result.confidence ?? 0.85, result.candidates);
           } else {
             const recognizedText = await recognizeTextWeb(photo.uri);
             const trimmedText = recognizedText.text.trim();
@@ -455,11 +532,7 @@ export default function ScanScreen({ navigation }: any) {
             if (trimmedText.length > 0) {
               const fallbackResult = await recognizeCardFromOcr(trimmedText);
               if (fallbackResult.success && fallbackResult.card) {
-                addCard(fallbackResult.card);
-                setLastScannedCard(fallbackResult.card);
-                setResultCard({ visible: true, card: fallbackResult.card, confidence: 0.85 });
-                setSearchResults([]); setSearchError(null); setSuggestions([]);
-                setCapturedPhotoUri(null); resetAutoScan();
+                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
                 return;
               }
               setSearchError(fallbackResult.error || '找不到匹配的卡牌');
@@ -526,20 +599,7 @@ export default function ScanScreen({ navigation }: any) {
           if (result.success && result.card) {
             setScanningStatus('✅ 辨識完成');
             setScanProgress(4);
-            addCard(result.card);
-            setLastScannedCard(result.card);
-            // Show floating result card
-            setResultCard({
-              visible: true,
-              card: result.card,
-              confidence: 0.85,
-            });
-            setSearchResults([]);
-            setSearchError(null);
-            setSuggestions([]);
-            setCapturedPhotoUri(null);
-            // Reset auto-scan stability buffer after successful scan
-            resetAutoScan();
+            handleRecognized(result.card, result.confidence ?? 0.85, result.candidates);
           } else {
             // 沒有精確匹配 — 用全部結果做模糊搜尋，讓用戶選擇
             setSearchError(result.error || '找不到匹配的卡牌');
@@ -624,25 +684,7 @@ export default function ScanScreen({ navigation }: any) {
           setIsScanning(false);
 
           if (cardResult.success && cardResult.card) {
-            addCard(cardResult.card);
-            setLastScannedCard(cardResult.card);
-            setResultCard({
-              visible: true,
-              card: cardResult.card,
-              confidence: cardResult.confidence ?? 0.85,
-            });
-            setSearchResults([]);
-            setSearchError(null);
-            setSuggestions([]);
-            setCapturedPhotoUri(null);
-            resetAutoScan();
-          } else if (cardResult.lowConfidence || cardResult.suggestions?.length) {
-            const candidateCards = cardResult.suggestions || [];
-            setSearchResults(candidateCards);
-            setSuggestions(candidateCards);
-            setSearchError(cardResult.error || '辨識信心不足，請從候選卡中選擇');
-            setCandidateReason(`信心 ${Math.round((cardResult.confidence || 0) * 100)}%：${cardResult.reason || '需要人工確認'}`);
-            if (cardResult.raw) setRecognizedText(cardResult.raw);
+            handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
           } else {
             // Fallback 到全圖 OCR
             const recognizedText = await recognizeTextWeb(result.assets[0].uri);
@@ -652,18 +694,7 @@ export default function ScanScreen({ navigation }: any) {
             if (trimmedText.length > 0) {
               const fallbackResult = await recognizeCardFromOcr(trimmedText);
               if (fallbackResult.success && fallbackResult.card) {
-                addCard(fallbackResult.card);
-                setLastScannedCard(fallbackResult.card);
-                setResultCard({
-                  visible: true,
-                  card: fallbackResult.card,
-                  confidence: 0.85,
-                });
-                setSearchResults([]);
-                setSearchError(null);
-                setSuggestions([]);
-                setCapturedPhotoUri(null);
-                resetAutoScan();
+                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
                 return;
               }
               setSearchError(fallbackResult.error || '找不到匹配的卡牌');
@@ -684,19 +715,7 @@ export default function ScanScreen({ navigation }: any) {
           if (trimmedText.length > 0) {
             const cardResult = await recognizeCardFromOcr(trimmedText);
             if (cardResult.success && cardResult.card) {
-              addCard(cardResult.card);
-              setLastScannedCard(cardResult.card);
-              // Show floating result card
-              setResultCard({
-                visible: true,
-                card: cardResult.card,
-                confidence: 0.85,
-              });
-              setSearchResults([]);
-              setSearchError(null);
-              setSuggestions([]);
-              setCapturedPhotoUri(null);
-              resetAutoScan();
+              handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
             } else {
               setSearchError(cardResult.error || '找不到匹配的卡牌');
               const searchResult = await searchCards(trimmedText, 10);
@@ -790,17 +809,14 @@ export default function ScanScreen({ navigation }: any) {
     }
   };
   
-  // 選擇建議的卡牌
+  // 選擇建議的卡牌（使用者已確認 → 加入，帶重複防護）
   const handleSelectSuggestion = (card: CardInfo) => {
     setRecognizedCard(card);
     setSuggestions([]);
     setSearchResults([]);
-    setSearchError(null);
-    setScanError(null);
-    // Explicit user pick — always add, even if it repeats the last scan.
-    addCard(card, { force: true });
-    setLastScannedCard(card);
-    setResultCard({ visible: true, card, confidence: 1 });
+    if (commitCard(card)) {
+      setResultCard({ visible: true, card, confidence: 1 });
+    }
   };
   
   // 清除結果
@@ -1006,7 +1022,20 @@ export default function ScanScreen({ navigation }: any) {
         preferredLanguage={preferredLanguage}
         onDismiss={() => { setResultCard({ visible: false, card: null, confidence: 0 }); }}
       />
-      
+
+      {/* 中/低信心候選確認選擇器 */}
+      <ScanCandidateSelector
+        visible={candidateSelector.visible}
+        tier={candidateSelector.tier}
+        candidates={candidateSelector.candidates}
+        preferredCurrency={preferredCurrency}
+        preferredLanguage={preferredLanguage}
+        onSelect={handleConfirmCandidate}
+        onRescan={() => { closeCandidateSelector(); captureAndRecognize(); }}
+        onManualSearch={() => { closeCandidateSelector(); setShowSearch(true); }}
+        onDismiss={closeCandidateSelector}
+      />
+
       {/* 最後掃描的卡牌確認提示 */}
       {lastScannedCard && (
         <View style={resultStyles.toastContainer}>
