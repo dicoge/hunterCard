@@ -11,11 +11,15 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from './storage';
 import { CardInfo } from '../services/cardRecognition';
 import { dedupKey, isDuplicateScan, SCAN_DEDUP_WINDOW_MS } from '../utils/scanDedup';
+import {
+  PriceVersion,
+  buildPriceVersions,
+  resolveVersionForCard,
+} from '../utils/versionAlignment';
 
-export interface PriceVersion {
-  name: string;
-  sellPrice: number | null;
-}
+// Re-export shared version-alignment helpers so existing import sites keep working.
+export { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
+export type { PriceVersion, VersionResolution } from '../utils/versionAlignment';
 
 export interface SessionCard extends CardInfo {
   instanceId: string;
@@ -24,31 +28,14 @@ export interface SessionCard extends CardInfo {
   selectedVersion: number;
 }
 
-export function buildPriceVersions(card: CardInfo): PriceVersion[] {
-  const raw = (card.prices || []).filter(p => p && p.sellPrice != null && p.sellPrice > 0);
-  const seen = new Set<string>();
-  const versions: PriceVersion[] = [];
-  for (const p of raw) {
-    const key = `${p.name || ''}|${p.sellPrice}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    versions.push({ name: p.name || card.series || '版本', sellPrice: p.sellPrice });
-  }
-  if (versions.length === 0) {
-    versions.push({ name: card.series || '估值', sellPrice: card.sellPrice });
-  }
-  return versions;
-}
-
+/**
+ * 預估清單用的預設版本 index。
+ * 能唯一對齊 rarity → 用對齊結果；無法唯一對齊時，預估流程採保守預設（等於 sellPrice 的那筆，
+ * 避免高估連續掃描總價），使用者仍可在面板逐張改選正確版本。
+ */
 export function pickDefaultVersion(card: CardInfo, versions: PriceVersion[]): number {
-  const rarity = (card.rarity || '').toUpperCase().trim();
-  if (rarity) {
-    const idx = versions.findIndex(v => {
-      const n = (v.name || '').toUpperCase();
-      return n.includes(`/${rarity}`) || n.includes(`(${rarity})`) || n.includes(`(${rarity}/`) || n.includes(` ${rarity})`);
-    });
-    if (idx >= 0) return idx;
-  }
+  const resolution = resolveVersionForCard(card, versions);
+  if (resolution.confident) return resolution.index;
   const spIdx = versions.findIndex(v => v.sellPrice === card.sellPrice);
   if (spIdx >= 0) return spIdx;
   return 0;

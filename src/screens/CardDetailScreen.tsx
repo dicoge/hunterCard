@@ -9,7 +9,7 @@ import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { buildPriceVersions, pickDefaultVersion } from '../stores/scanSessionStore';
+import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
 
 const { width } = Dimensions.get('window');
 
@@ -495,10 +495,15 @@ function MarketDataPanel({ card }: { card: any }) {
   // sellPrice 是「所有版本最低價」，直接顯示會混版。改成依詳情頁這張卡對齊版本。
   const versions = buildPriceVersions(card);
   const multiVersion = versions.length > 1;
-  const [selected, setSelected] = useState<number>(() => pickDefaultVersion(card, versions));
-  const selectedIdx = Math.min(Math.max(selected, 0), versions.length - 1);
+  const resolution = resolveVersionForCard(card, versions);
+  // null = 尚未手動選擇；此時沿用自動對齊結果。使用者一旦點選版本即視為已確認。
+  const [override, setOverride] = useState<number | null>(null);
+  const selectedIdx = Math.min(Math.max(override ?? resolution.index, 0), versions.length - 1);
   const selectedVersion = versions[selectedIdx] ?? null;
-  const sellPrice = selectedVersion?.sellPrice ?? card?.sellPrice ?? null; // 對齊版本後的遊々亭賣價（買入成本）
+  // 只有「自動唯一對齊」或「使用者手動選過」才算已對齊；否則版本待確認，不把價格當成本卡版本價。
+  const aligned = resolution.confident || override != null;
+  const manualPick = override != null && !resolution.confident;
+  const sellPrice = aligned ? (selectedVersion?.sellPrice ?? null) : null; // 對齊版本後的遊々亭賣價（買入成本）
   const versionLabel = selectedVersion?.name ?? card?.series ?? '';
 
   const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）— 資料僅卡號層級、未分版
@@ -558,18 +563,29 @@ function MarketDataPanel({ card }: { card: any }) {
       <Text style={styles.sectionTitle}>📊 市場數據</Text>
 
       {/* 版本選擇 — 對齊 rarity/パラレル/サイン 版，避免混版價格 */}
-      {versionLabel ? (
-        <Text style={styles.versionLabel}>價格對應版本：{versionLabel}</Text>
+      {aligned && versionLabel ? (
+        <Text style={styles.versionLabel}>
+          價格對應版本：{versionLabel}{manualPick ? '（已手動選擇）' : ''}
+        </Text>
+      ) : null}
+      {!aligned ? (
+        <View style={styles.versionWarnBox}>
+          <Text style={styles.versionWarnTitle}>⚠️ 版本待確認</Text>
+          <Text style={styles.versionWarnText}>
+            無法依此卡 rarity{card?.rarity ? `「${card.rarity}」` : ''}唯一對齊價格版本（{resolution.reason}）。
+            以下價格未分版，請先選擇實際版本再參考。
+          </Text>
+        </View>
       ) : null}
       {multiVersion ? (
         <View style={styles.versionRow}>
           {versions.map((v, i) => {
-            const active = i === selectedIdx;
+            const active = aligned && i === selectedIdx;
             return (
               <TouchableOpacity
                 key={`${v.name}-${i}`}
                 style={[styles.versionChip, active ? styles.versionChipActive : null]}
-                onPress={() => setSelected(i)}
+                onPress={() => setOverride(i)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.versionChipText, active ? styles.versionChipTextActive : null]} numberOfLines={1}>
@@ -664,7 +680,7 @@ function MarketDataPanel({ card }: { card: any }) {
             </Text>
           </View>
         </View>
-      ) : priceTrend != null ? (
+      ) : aligned && priceTrend != null ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>➖ 漲跌判斷</Text>
           <Text style={styles.marketNote}>
@@ -794,6 +810,9 @@ const styles = StyleSheet.create({
   marketNote: { fontSize: 11, color: COLORS.textSecondary + '99', marginTop: 6, lineHeight: 16 },
 
   // Version selector (market data)
+  versionLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 8, fontWeight: '600' },
+  versionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  versionChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border + '88' },
 
   // Trend prediction section
   componentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '44' },
