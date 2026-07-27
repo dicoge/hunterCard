@@ -1,6 +1,6 @@
 # HoloHunter 權限角色與 Onboarding 擴充架構
 
-> DIC-674 · 產品設計提案 v1
+> DIC-674 · 產品設計提案 v2（納入 CR DIC-761 修正：掃描全路徑 quota 預留、原子 UPSERT 併發、單一額度權威、premium 資料移出公開路徑）
 > 目標：在 [AUTH 共通帳號架構（DIC-662）](./AUTH-Architecture.md) 之上，設計 **guest / free_user / subscriber** 三級權限、Onboarding / auth-to-entitlement flow、掃描額度與 premium 內容的 gating，以及交棒給 Web / iOS / Android / QA / 隱私權政策任務的接口契約。**現階段只設計登入後的擴充架構，不立即實作金流。**
 
 ---
@@ -16,7 +16,7 @@ AUTH 文件（DIC-662 / PR #50）已定義：`users`、`auth_identities`、`sess
 - 金流 / 訂閱來源的**擴充點**，先保留不實作（§7）。
 - 下游平台任務**接口契約**（§8）。
 
-> ⚠️ **需與 AUTH 對齊的一個數字**：AUTH `entitlements` 目前 `free` 預設 `monthly_limit = 500`；本產品需求要求 **free_user 每月 100 張**。以本文件 §5.2 的數字為準，AUTH migration 的 seed 值需改為 `monthly_limit = 100`（daily_limit 由產品決定，見 §5.2）。這是唯一需回頭修改 AUTH 的點。
+> ⚠️ **entitlement 數值的單一權威（single source of truth）**：所有 tier 的額度數值（free = 100/月、subscriber = 不限量）**只由本文件 §5.2 定義**，並由本文件 §9 提供唯一的 `entitlements` seed SQL 契約。AUTH-Architecture.md（PR #50，草案未合併）§3.5 中出現的 `monthly_limit = 500` / `daily_limit = 50` 是**非規範的示意預設值，已被本文件取代**；AUTH migration（`migrations/0001_auth.sql`，尚未撰寫）落地時必須採用 §9 的值，且 AUTH 文件的示意數字須改為指向本文件而非另立一份。**規範數字只存在一處（本文件），不存在 100/500 雙重來源。** 同步修正 DIC-662 / PR #50 的追蹤見結案留言。
 
 ---
 
@@ -64,12 +64,25 @@ resolveRole(req):
 | 看規則 / 教學 | `TutorialScreen`、`TutorialDetailScreen`、`TutorialSimulationScreen` | ✅ | ✅ | ✅ | 無 |
 | 查卡片（搜尋 / 卡片詳情） | `SearchScreen`、`SearchResultsScreen`、`CardDetailScreen` | ✅ | ✅ | ✅ | 無 |
 | 基本價格（現價 / 歷史漲跌） | `PriceTrend.tsx`（依 priceHistory 計算） | ✅ | ✅ | ✅ | 無 |
-| **卡片掃描** | `ScanScreen`、`autoScanService`、`scanSessionStore` | ❌ 需登入 | ✅ 每月 100 張 | ✅ 不限量 | server 掃描 API（§6.1） |
+| **卡片掃描** | `ScanScreen`、`autoScanService`、`scanSessionStore`、`cardRecognition`、`webOcr` | ❌ 需登入 | ✅ 每月 100 張 | ✅ 不限量 | **quota 預留 gate（§6.1），涵蓋全部掃描路徑** |
 | 收藏 / watchlist 跨裝置同步 | `holoStore`、`watchlistStore`（現為本機） | ⚠️ 僅本機 | ✅ 雲端 | ✅ 雲端 | AUTH §8.3 sync |
-| **premium：AI 趨勢預測** | `trendStore`（`TrendPrediction` score/confidence）、`PriceTrendBadge` | ❌ | ❌ | ✅ | server trend API（§6.2） |
+| **premium：AI 趨勢預測** | `trendStore`（`TrendPrediction` score/confidence）、`PriceTrendBadge` | ❌ | ❌ | ✅ | **已驗證的 entitlement 端點（§6.2），移除公開 JSON** |
 | 推播入手提醒 | `api/push/*`（AUTH §6 受保護 API） | ⚠️ 裝置級 | ✅ user 級 | ✅ user 級 | AUTH claim token |
 
 **產品決策點（需確認）**：需求明訂「guest 不可看 premium 價格/趨勢預測」「subscriber 可看 premium」。本文件把 **AI 趨勢預測（`trendStore` 的 `TrendPrediction`）設為 subscriber-only**，free_user 看基本價格但看不到 AI 預測。`PriceTrend.tsx`（純歷史漲跌計算）屬「基本價格」，所有人可見。若產品希望 free_user 也能看 AI 預測，只需把該列改為 free_user ✅——gating 表是唯一改動點。
+
+### 3.1 掃描的實際路徑（gate 必須涵蓋全部，否則可繞過）
+
+repo 現況（`src/screens/ScanScreen.tsx`、`src/services/cardRecognition.ts`、`src/services/webOcr.ts`、`src/services/autoScanService.ts`）中，「一次掃描」可經由**多條不同的辨識傳輸**完成，其中數條**完全不打 server**：
+
+| 掃描路徑 | 現況傳輸 | 是否打 server |
+| --- | --- | --- |
+| 相機即時自動掃描 | `autoScanService.analyzeFrameWithStability`（本機 frame 分析）→ 命中後 `recognizeCardFromImage` → `/api/recognize-card` | 部分（辨識才打） |
+| 相簿匯入圖片 | `expo-image-picker` → `recognizeCardFromImage` → `/api/recognize-card` | 是 |
+| **Web / 本機 OCR fallback** | `webOcr.recognizeTextWeb`（Tesseract.js 本機）→ `recognizeCardFromOcr(rawText)` → **本機比對 `/data/database.json`** | **否，純本機** |
+| **文字直接比對** | `recognizeCard(searchText)` → 本機 DB | **否，純本機** |
+
+> **結論**：只在 `/api/recognize-card` 掛 quota gate **會被本機 OCR / 本機比對路徑整段繞過**。因此 quota 必須由一個**與辨識傳輸解耦的「預留（reservation）gate」**掌管：所有掃描路徑（含純本機辨識）在跑任何 OCR / 比對**之前**都必須先向 server 成功預留一次額度（§6.1），拿不到 ticket 就不得掃描。此為 client 端契約，QA 需針對每條路徑各驗一次（§8）。
 
 ---
 
@@ -134,16 +147,19 @@ effectiveEntitlement(user):
   }
 ```
 
-### 5.2 數字（產品定案，供 AUTH migration seed）
+### 5.2 額度數值（唯一規範來源；AUTH seed 一律取自此表）
+
+**本表是全系統 entitlement 數值的唯一權威**。任何 migration / seed / 文件都必須引用此表，不得另立數字（見 §0、§9 的 seed SQL）。
 
 | tier | daily_limit | monthly_limit | premium |
 | --- | --- | --- | --- |
-| free（free_user） | 10（建議，可調） | **100** | ❌ |
+| free（free_user） | 10 | **100** | ❌ |
 | pro（subscriber） | 不限（`NULL`） | 不限（`NULL`） | ✅ |
 
 - **不限量以 `NULL` 表示**（而非 sentinel 數字），gate 時 `limit IS NULL → 永遠放行`。
 - guest 不進 `entitlements`，能力為常數 `scan_limit = 0`（§5.1 提早 return）。
 - `daily_limit` 為防濫用副軌，月額度才是產品承諾；MVP 可只實作 monthly，daily 先寬鬆。
+- AUTH-Architecture.md 草案中的 `500` / `50` 為非規範示意值，**已被本表取代**；不存在第二份數字來源。
 
 ### 5.3 tier reconcile（訂閱事件驅動）
 
@@ -166,34 +182,74 @@ on subscription change(user_id):
 
 ## 6. API 契約（gating 面，擴充 AUTH §6）
 
-### 6.1 掃描（受 quota gate）
+### 6.1 掃描 quota：預留 / 提交 / 補償（reserve-commit-compensate）
+
+**設計核心**：quota 消耗與辨識傳輸解耦成三步，讓「額度扣減」在一個**極短的原子寫入**內完成，而**慢速/外部的 OCR 辨識在 DB transaction 之外**進行，失敗時明確補償。三個端點：
 
 | Method & Path | 角色需求 | 行為 |
 | --- | --- | --- |
-| `POST /api/scan`（或現有掃描辨識端點加上 gate） | 需登入 | guest → `401 SCAN_REQUIRES_LOGIN`；free_user 超額 → `403 SCAN_QUOTA_EXCEEDED`（帶 `scan_used/scan_limit/reset_at`）；否則放行 |
+| `POST /api/scan/reserve` | 需登入 | 原子預留一次額度，回 `{ scan_ticket, scan_remaining, expires_at }`。guest → `401 SCAN_REQUIRES_LOGIN`；超額 → `403 SCAN_QUOTA_EXCEEDED`（帶 `scan_used/scan_limit/reset_at`） |
+| `POST /api/scan/commit` | 需登入 | 帶 `scan_ticket`：辨識完成後確認消耗（把 ticket 標 `consumed`）。冪等 |
+| `POST /api/scan/release` | 需登入 | 帶 `scan_ticket`：辨識失敗 / 取消 → 補償退還額度（把 ticket 標 `released` 並回補計數）。冪等 |
 
-quota 消耗必須**原子**，避免併發掃描超額：
-
+**所有掃描路徑（§3.1 四條，含純本機 OCR）的 client 契約**：
 ```
-POST /api/scan:
-  user = requireAuth()            # 缺 → 401 SCAN_REQUIRES_LOGIN
-  BEGIN;
-    SELECT scan_count FROM scan_usage
-      WHERE user_id=user AND period=cur FOR UPDATE;   # 無 row 視為 0
-    limit = effectiveEntitlement(user).scan_limit
-    if limit IS NOT NULL AND scan_count >= limit:
-        ROLLBACK; return 403 SCAN_QUOTA_EXCEEDED
-    INSERT ... ON CONFLICT (user_id,period) DO UPDATE SET scan_count = scan_count+1;
-  COMMIT;
-  → 執行辨識，回結果 + 更新後的 remaining
+掃描動作觸發
+  1. r = await POST /api/scan/reserve
+       ├─ 401 → 導向登入牆（§4.2）
+       ├─ 403 SCAN_QUOTA_EXCEEDED → 導向 Paywall（§4.3），不得掃描
+       ├─ 網路失敗 / 逾時 → **fail closed**：阻擋掃描，提示「需連線以掃描」，不得離線用本機 OCR 偷跑
+       └─ 200 → 取得 r.scan_ticket
+  2. 執行辨識（任一傳輸）：
+       ├─ server 傳輸 /api/recognize-card：request 帶 scan_ticket，端點驗 ticket 屬本人且 status='reserved' 才處理（無效 ticket → 402/409，直接擋下）
+       └─ 本機傳輸（webOcr Tesseract / 本機 DB 比對）：client 先確保步驟 1 已成功
+  3. 收尾：辨識成功 → POST /api/scan/commit(ticket)；失敗/取消 → POST /api/scan/release(ticket)
 ```
-> subscriber（`limit IS NULL`）跳過 `>=` 檢查但仍可**選擇性**累加計數供分析；產品若不需要 subscriber 用量統計可略過。計數與辨識同一 transaction 邊界，辨識失敗需決定是否退還（建議：辨識服務錯誤 → 不計數/退還一次）。
+> **為什麼 fail-closed**：純本機辨識路徑無法在事後被 server 稽核，若允許離線掃描即等於無限額度。因此「連不上 reserve」＝「不能掃描」。這是安全/產品取捨，需在 §8 QA 與 UX 明列。
 
-### 6.2 premium 內容（趨勢預測）
+**`POST /api/scan/reserve` 的原子預留（免長交易，處理 first-use 併發）**：
+不使用「`SELECT ... FOR UPDATE` 一個可能不存在的 row」——缺 row 時 `FOR UPDATE` 鎖不到任何東西，兩個併發首扫會各自 INSERT 造成超扣。改用**條件式 UPSERT，單一語句原子完成 create-or-increment**：
+
+```sql
+-- free_user（有限額）：limit 由 effectiveEntitlement 求得（§5.1）
+INSERT INTO scan_usage (user_id, period, scan_count)
+VALUES ($user, $period, 1)
+ON CONFLICT (user_id, period)
+DO UPDATE SET scan_count = scan_usage.scan_count + 1
+  WHERE scan_usage.scan_count < $limit          -- 條件寫入：達上限則 DO UPDATE 不觸發
+RETURNING scan_count;
+```
+- **RETURNING 有 row** → 預留成功，`scan_remaining = $limit - scan_count`（subscriber 為 `NULL`）。
+- **RETURNING 0 row** 且該 (user,period) 已存在 → 代表 `scan_count >= $limit`（WHERE 擋下）→ `403 SCAN_QUOTA_EXCEEDED`。
+  （初次 INSERT 不會回 0 row；0 row 只可能發生在 conflict + WHERE 不成立，語意明確。）
+- subscriber（`$limit IS NULL`，不限量）：省去 WHERE，用單純 upsert `... DO UPDATE SET scan_count = scan_usage.scan_count + 1 RETURNING scan_count`（或產品不需 subscriber 統計時直接發 ticket 不計數）。
+- 這條 UPSERT 本身即原子，**無需外層 BEGIN/COMMIT 包住辨識**；DB 只在這一句停留微秒級。
+
+**ticket 與補償（辨識失敗在交易外處理）**：
+- 預留成功時另寫一筆 `scan_reservations(ticket UUID, user_id, period, status IN ('reserved','consumed','released'), expires_at)`，與上面的 UPSERT 同一個短交易。
+- `commit`：`UPDATE scan_reservations SET status='consumed' WHERE ticket=$t AND user_id=$u AND status='reserved'`（冪等，重複 commit 無副作用）。
+- `release`（辨識錯誤 / 使用者取消）：同一短交易內 `UPDATE scan_reservations SET status='released' WHERE ticket=$t AND status='reserved' RETURNING 1`，若回 1 row 才 `UPDATE scan_usage SET scan_count = scan_count - 1 WHERE user_id=$u AND period=$period AND scan_count > 0`。冪等：已 released/consumed 不再退。
+- **逾時回收 sweeper**（排程）：把 `status='reserved' AND expires_at < now()` 的 ticket 視同 `release` 回補額度，避免 client crash / 斷線導致額度卡住。回收與 release 走同一條件式退還，確保只退一次。
+- 辨識傳輸（外部 OCR）全程**不持有 DB 鎖**；成功走 commit、失敗走 release，皆為獨立短交易，滿足「external-recognition failure compensation outside a long DB transaction」。
+
+### 6.2 premium 內容（趨勢預測）— 必須移出公開路徑
+
+**現況漏洞**：`src/store/trendStore.ts` 直接 `fetch('/data/trends/index.json')` 與 `fetch('/data/trends/${id}.json')`，這些是 **Vercel 靜態公開檔**（`data/trends/*.json`），任何人可直接 `curl` 取得，subscriber gating 形同虛設。
+
+**修正（二選一，本文件採 A）**：
+- **A（採用）**：把 premium 預測 payload **移出公開 web root**，改由**已驗證且檢查 entitlement 的端點**供應：
 
 | Method & Path | 角色需求 | 行為 |
 | --- | --- | --- |
-| `GET /api/trends...`（`trendStore` 資料來源） | subscriber | 非 subscriber → `403 PREMIUM_REQUIRES_SUBSCRIPTION`；client 顯示模糊/鎖 + upgrade 引導 |
+| `GET /api/trends/index` | subscriber | 非 subscriber → `403 PREMIUM_REQUIRES_SUBSCRIPTION` |
+| `GET /api/trends/:cardId` | subscriber | 同上；命中才回 `TrendPrediction` |
+
+  - 資料檔從 `data/trends/`（公開）遷至**非公開來源**（server 私有目錄 / 物件儲存 / KV），只由上述端點在驗證 subscriber 後讀出回傳。
+  - 部署層同步封鎖公開存取：`vercel.json` route / `.vercelignore` 排除 `data/trends/**` 不被當靜態資源送出（避免舊 URL 仍可直取）。
+  - client：`trendStore.fetchTrendIndex/fetchTrendForCard` 改打上述 API 並帶 `Authorization`；403 → 顯示鎖 + upgrade 引導（§4.3）。
+- **B（備案）**：完全不輸出 AI 預測 payload 給前端，改為 server 端渲染成不可還原的展示資料。若產品未來要 free_user 也看，用 A 較有彈性。
+
+> **不受影響**：`PriceTrend.tsx` 由公開價格歷史計算的「基本漲跌」屬非 premium，維持公開；只有 `TrendPrediction`（score/confidence/AI 預測）需移到驗證端點。
 
 ### 6.3 entitlement 查詢（client 啟動 / 登入後拉一次）
 
@@ -203,7 +259,7 @@ POST /api/scan:
 
 - 也可併入 AUTH `GET /api/auth/me`，多回一個 `entitlement` 物件，省一次 round-trip。二擇一，建議獨立 `GET /api/entitlements` 讓 guest 也能查（`me` 需登入）。
 
-**新增錯誤碼**（延續 AUTH §6 命名）：`SCAN_REQUIRES_LOGIN`(401)、`SCAN_QUOTA_EXCEEDED`(403)、`PREMIUM_REQUIRES_SUBSCRIPTION`(403)。
+**新增錯誤碼**（延續 AUTH §6 命名）：`SCAN_REQUIRES_LOGIN`(401)、`SCAN_QUOTA_EXCEEDED`(403)、`SCAN_TICKET_INVALID`(409，recognize 端點收到無效/已用/非本人 ticket)、`PREMIUM_REQUIRES_SUBSCRIPTION`(403)。
 
 ---
 
@@ -229,14 +285,39 @@ POST /api/scan:
 | **Web** | §4 Onboarding、§6.3 `GET /api/entitlements`、§6.1 掃描 gate | Home 提供 訪客/Google(/Apple) 進場；依 entitlement 隱藏/引導掃描與 premium；Paywall 靜態方案頁 |
 | **iOS** | §4、§6、§7(IAP 佔位) | Apple+Google 登入按鈕；掃描前查 remaining；premium 鎖；IAP 佔位不接金流 |
 | **Android** | §4、§6、§7(Play 佔位) | Google 登入優先；同上 gating |
-| **QA** | §3 matrix、§6 錯誤碼、§4 flow | 三角色 × 各能力的可否矩陣；quota 邊界（99/100/101）；guest 登入牆 deferred action；跨裝置訂閱共享；併發掃描不超額 |
+| **QA** | §3 matrix、§3.1 路徑、§6 錯誤碼、§4 flow | 三角色 × 各能力矩陣；quota 邊界（99/100/101、月初 reset）；**每條掃描路徑各驗一次（含 web/本機 OCR fallback、相簿匯入）確認都需 reserve**；**離線時掃描 fail-closed**；併發首扫不超額（多 tab/多裝置同時 reserve）；辨識失敗走 release 退還、逾時 sweeper 回收；**直接 `curl /data/trends/*.json` 應 404/403**、非 subscriber 打 `/api/trends/*` 得 403；guest 登入牆 deferred action；跨裝置訂閱共享 |
 | **隱私權政策** | §2、§5 | 揭露：依 `users.id` 記錄掃描用量與訂閱狀態；email 不決定權限；訪客不建立帳號；刪除帳號連帶清除 scan_usage/subscriptions/entitlements（AUTH §3.5.2 purge） |
 
 ---
 
 ## 9. DB Migration 方向
 
-1. **沿用 AUTH `migrations/0001_auth.sql`** 的 `scan_usage` / `subscriptions` / `entitlements`；本文件不新增表。
-2. **調整 seed / 預設值**：`entitlements` free 預設 `monthly_limit = 100`（配合 §5.2），`daily_limit` 依產品定；不限量欄位允許 `NULL`（若 AUTH 目前為 `NOT NULL DEFAULT`，pro tier 需放寬為 nullable 或以 reconcile 時寫入大值——建議改 nullable 語意最乾淨）。
-3. **新增 gate middleware**：掃描端點與 trend 端點套用 §6 的 role / quota 檢查；`GET /api/entitlements` 新端點。
-4. **相容期**：未登入（guest）維持純本機查卡片；登入解鎖掃描與同步；訂閱先無來源，`subscriptions` 恆空 → 全體 free_user，架構已就緒待金流接入。
+1. **沿用 AUTH `migrations/0001_auth.sql`** 的 `scan_usage` / `subscriptions` / `entitlements`；本文件不新增這三張表，但**規範其額度數值**。
+2. **entitlements 欄位與 seed（唯一規範，取自 §5.2）**：`monthly_limit` / `daily_limit` 須為 **nullable**（`NULL` = 不限量，供 pro tier）。AUTH schema 若原為 `NOT NULL DEFAULT 500/50`，須改為 nullable 並移除該預設，改由 reconcile（§5.3）寫入。free 的規範 seed：
+
+   ```sql
+   -- entitlement 數值唯一來源：本文件 §5.2。AUTH 草案的 500/50 為非規範示意值，一律以此為準。
+   -- free_user 建立時（AUTH login-or-create 首建 user 後）：
+   INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit)
+   VALUES ($user, 'free', 10, 100)
+   ON CONFLICT (user_id) DO NOTHING;
+   -- subscriber（reconcile 時，§5.3）：tier='pro', daily_limit=NULL, monthly_limit=NULL。
+   ```
+3. **新增 `scan_reservations` 表**（§6.1 ticket 生命週期）：
+
+   ```sql
+   CREATE TABLE scan_reservations (
+     ticket      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     period      TEXT NOT NULL,                                   -- 'YYYY-MM'，與 scan_usage 對齊
+     status      TEXT NOT NULL DEFAULT 'reserved'
+                   CHECK (status IN ('reserved','consumed','released')),
+     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+     expires_at  TIMESTAMPTZ NOT NULL                            -- sweeper 依此回收未 commit 的 ticket
+   );
+   CREATE INDEX idx_scan_reservations_sweep ON scan_reservations(expires_at) WHERE status = 'reserved';
+   ```
+   purge 隨 `users` CASCADE 清除（比照 AUTH §3.5.2）。
+4. **新增 gate 端點 / middleware**：`POST /api/scan/reserve|commit|release`（§6.1）；`GET /api/entitlements`（§6.3）；trend 改為驗證端點 `GET /api/trends/index`、`GET /api/trends/:cardId`（§6.2）。`/api/recognize-card` 增加 `scan_ticket` 驗證，無效即 `409 SCAN_TICKET_INVALID`。
+5. **關閉 premium 公開檔漏洞**：`data/trends/*.json` 遷出公開 web root（server 私有目錄 / 物件儲存 / KV）；`vercel.json` route 與 `.vercelignore` 排除 `data/trends/**` 不再作為靜態資源送出；`src/store/trendStore.ts` 由 `fetch('/data/trends/...')` 改打驗證端點並帶 `Authorization`。
+6. **相容期**：未登入（guest）維持純本機查卡片；登入解鎖掃描與同步；訂閱先無來源，`subscriptions` 恆空 → 全體 free_user，架構已就緒待金流接入。
