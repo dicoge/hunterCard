@@ -21,7 +21,10 @@
 | 登入畫面 + Apple 原生按鈕 | `src/screens/AuthScreen.tsx` |
 | 登入 gate（iOS 強制登入） | `src/navigation/AppNavigator.tsx` |
 | 登出 / 刪除帳號 UI | `src/screens/SettingsScreen.tsx` |
-| 帳號刪除 + Apple token 撤銷後端 | `api/auth/delete-account.ts` |
+| Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/lib/apple-auth.ts` |
+| refresh_token 儲存介面樁（seam，尚未接持久化） | `api/lib/apple-token-store.ts` |
+| 登入時換取並保存 refresh_token | `api/auth/apple/register.ts` |
+| 帳號刪除 + Apple token 撤銷後端（用保存的 refresh_token, fail-closed） | `api/auth/delete-account.ts` |
 | App 設定 capability / plugin | `app.json` |
 
 App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android 因 Google 尚未接線，暫以訪客模式進入（旗標 `REQUIRE_AUTH` 於 `AppNavigator.tsx`）。
@@ -54,16 +57,29 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 | `APPLE_KEY_ID` | 上述 .p8 私鑰的 Key ID |
 | `APPLE_PRIVATE_KEY` | .p8 內容（含 BEGIN/END，換行以 `\n` 表示） |
 
-未設定完整變數時 `api/auth/delete-account` 會回傳 501，App 端仍會清除本機 session 並提示使用者。
+未設定完整變數或撤銷未確認成功時 `api/auth/delete-account` 會回非 2xx（含 501），App 端**fail-closed**：不清除本機 session、顯示「刪除尚未完成」並維持登入狀態。
 
-## 帳號刪除的完整流程（後續強化）
+## 帳號刪除 / Apple 撤銷策略（已採用）
 
-目前 `api/auth/delete-account.ts` 會以當前 `authorizationCode` 換取 refresh token 再撤銷。更穩健的作法（建議後續 PR）：
+### 正確流程（login-time register → stored refresh_token → revoke）
 
-1. **登入時**把 `authorizationCode` 傳到後端 → `/auth/token` 換 `refresh_token` → 以 `userId` 為 key 保存於後端儲存。
-2. **刪除時**用保存的 `refresh_token` 呼叫 `/auth/revoke`，並刪除該使用者的所有資料。
+1. **登入當下**：client 拿到 fresh `authorizationCode`，立即 POST `/api/auth/apple/register`（`src/services/auth/index.ts` 的 `registerAppleSession`，best-effort）。後端用它向 `/auth/token` 換 `refresh_token`，以 `userId` 為 key 保存於**伺服器端持久化儲存**（見 `api/lib/apple-token-store.ts`）。
+2. **刪除時**：POST `/api/auth/delete-account`，**只帶 `{ provider, userId }`**（不帶 authorizationCode）。後端取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後刪除該 user 的資料與 refresh_token。
 
-原因：`authorizationCode` 為單次使用且短效，刪除當下不一定還有效。
+原因：`authorizationCode` 為**單次使用且短效**，刪除當下通常已失效，因此不可保存它當作日後刪除憑證——必須在登入當下換成長效 `refresh_token`。client 端也**絕不持久化** `authorizationCode`（`authStore` partialize 會剝除）。
+
+### fail-closed 行為
+
+- 後端無法確認撤銷成功（未設定 / 未實作 / 撤銷失敗 / 網路錯誤）→ 回非 2xx。
+- client 只有在後端回 `{ ok: true }` 時才清除本機 session（`deleteAccount()` 回 `'deleted'`）；否則回 `'failed'`，維持登入並提示「尚未完成」。避免讓使用者誤以為已刪除但 Apple 授權 / 伺服器資料仍存在。
+
+### ⚠️ 目前限制（non-shipping foundation）
+
+`api/lib/apple-token-store.ts` 目前為**介面樁（seam）**，尚未接後端持久化儲存（refresh_token 是機密，**不可**存入 repo / git-backed storage，需接 Vercel KV / DB 並加密）。因此：
+
+- `/api/auth/apple/register` 在 token store 未實作時回 501 `token_store_not_implemented`（登入不受影響）。
+- `/api/auth/delete-account` 取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
+- 上架前必須完成：實作 `apple-token-store`（真正持久化 + 加密）、於刪除時級聯刪除 / 匿名化使用者資料。Settings 頁已標示此限制。
 
 ## Google 登入後續（尚未接線）
 
@@ -81,7 +97,8 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 - [ ] 取消 Apple 彈窗不會顯示錯誤、停留在登入頁。
 - [ ] 設定頁顯示「以 Apple 登入」與帳號資訊。
 - [ ] **登出**後回到登入頁，重開 App 仍為登入頁。
-- [ ] **刪除帳號**：確認對話框 → 本機 session 清除 → 回到登入頁；若後端已設定環境變數，於 Apple ID 設定中該 App 授權消失。
+- [ ] **刪除帳號（成功路徑，後端撤銷已上線）**：確認對話框 → 後端撤銷成功 → 顯示「帳號已刪除」→ 本機 session 清除 → 回到登入頁；於 Apple ID 設定中該 App 授權消失。
+- [ ] **刪除帳號（fail-closed，後端未設定 / 未實作）**：顯示「刪除尚未完成」→ **仍為登入狀態**、session 未清除，不誤示為已刪除。
 - [ ] 「隱私權政策與資料刪除說明」連結可開啟。
 - [ ] 在 App Store Connect 填寫隱私權政策 URL 與資料刪除說明。
 - [ ] 送審前確認：有 Google 登入的畫面同時提供 Sign in with Apple（規範 4.8）。

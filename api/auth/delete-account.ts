@@ -4,29 +4,33 @@
  * App Store 審查規範 5.1.1(v)：提供社群登入的 App 必須讓使用者在 App 內刪除帳號，
  * 並在使用 Sign in with Apple 時撤銷 Apple 授權（revoke token）。
  *
- * 本端點依賴以下環境變數（於 Vercel 專案設定，切勿提交進 repo）：
- *   APPLE_TEAM_ID      Apple Developer Team ID
- *   APPLE_CLIENT_ID    Services ID（web）或 app bundle id（native）
- *   APPLE_KEY_ID       Sign in with Apple 私鑰的 Key ID
- *   APPLE_PRIVATE_KEY  .p8 私鑰內容（含 BEGIN/END，換行以 \n 表示）
+ * 撤銷策略（重要）：
+ *   撤銷所需的 refresh_token 必須在「登入當下」用 fresh authorizationCode 換取並保存
+ *   （見 api/auth/apple/register.ts）。authorizationCode 單次使用且短效，刪除當下
+ *   通常已失效，因此本端點**不**接受 client 傳來的 authorizationCode。
  *
- * 未設定完整環境變數時回傳 501，讓 client 端仍清除本機 session 並提示使用者。
+ * fail-closed：無法確認撤銷成功時一律回非 2xx，client 端不得將帳號視為已刪除、
+ * 不得清除本機 session（見 src/stores/authStore.ts deleteAccount）。
  *
- * 註：完整撤銷需要在「登入時」用 authorizationCode 向 /auth/token 換取 refresh_token
- * 並保存；此處示範以當前 authorizationCode 直接換取後撤銷（見 docs/AUTH_SETUP.md）。
+ * ⚠️ non-shipping foundation：refresh_token 儲存尚未接後端持久化
+ * （api/lib/apple-token-store.ts 為介面樁）。因此目前對已設定 Apple 環境變數的情況
+ * 仍會回 501 `apple_deletion_not_implemented`——這是刻意的 fail-closed，不是成功。
+ *
+ * 依賴環境變數（於 Vercel 設定，切勿提交進 repo）：
+ *   APPLE_TEAM_ID / APPLE_CLIENT_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY(.p8)
  */
-import crypto from 'crypto';
+import { getAppleConfig, revokeRefreshToken } from '../lib/apple-auth';
+import {
+  getStoredAppleRefreshToken,
+  deleteStoredAppleRefreshToken,
+} from '../lib/apple-token-store';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;
 
-const APPLE_TOKEN_URL = 'https://appleid.apple.com/auth/token';
-const APPLE_REVOKE_URL = 'https://appleid.apple.com/auth/revoke';
-
 interface DeleteRequestBody {
   provider?: string;
   userId?: string;
-  authorizationCode?: string | null;
 }
 
 function json(body: unknown, status: number): Response {
@@ -34,36 +38,6 @@ function json(body: unknown, status: number): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-function base64url(input: string | Buffer): string {
-  return Buffer.from(input).toString('base64url');
-}
-
-/** 產生 Apple client secret（ES256 JWT），有效 5 分鐘。 */
-function buildAppleClientSecret(cfg: {
-  teamId: string;
-  clientId: string;
-  keyId: string;
-  privateKey: string;
-}): string {
-  const header = { alg: 'ES256', kid: cfg.keyId, typ: 'JWT' };
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iss: cfg.teamId,
-    iat: now,
-    exp: now + 300,
-    aud: 'https://appleid.apple.com',
-    sub: cfg.clientId,
-  };
-  const signingInput = `${base64url(JSON.stringify(header))}.${base64url(
-    JSON.stringify(payload)
-  )}`;
-  const signer = crypto.createSign('SHA256');
-  signer.update(signingInput);
-  signer.end();
-  const signature = signer.sign({ key: cfg.privateKey, dsaEncoding: 'ieee-p1363' });
-  return `${signingInput}.${base64url(signature)}`;
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -79,64 +53,33 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   if (body.provider !== 'apple') {
-    // Google 撤銷尚未接線；client 端仍會清除本機 session。
+    // Google 撤銷尚未接線；fail-closed，client 不得視為已刪除。
     return json({ revoked: false, reason: 'provider_not_supported' }, 501);
   }
+  if (!body.userId) {
+    return json({ revoked: false, reason: 'missing_user_id' }, 400);
+  }
 
-  const teamId = process.env.APPLE_TEAM_ID;
-  const clientId = process.env.APPLE_CLIENT_ID;
-  const keyId = process.env.APPLE_KEY_ID;
-  const privateKey = process.env.APPLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-
-  if (!teamId || !clientId || !keyId || !privateKey) {
+  const cfg = getAppleConfig();
+  if (!cfg) {
     return json({ revoked: false, reason: 'apple_revocation_not_configured' }, 501);
   }
 
-  if (!body.authorizationCode) {
-    return json({ revoked: false, reason: 'missing_authorization_code' }, 400);
+  // 取出登入時保存的 refresh_token。foundation 階段 token store 未實作 → null。
+  const refreshToken = await getStoredAppleRefreshToken(body.userId);
+  if (!refreshToken) {
+    // 沒有可撤銷的憑證：fail-closed，明確標示尚未實作，切勿回成功。
+    return json({ revoked: false, reason: 'apple_deletion_not_implemented' }, 501);
   }
 
   try {
-    const clientSecret = buildAppleClientSecret({ teamId, clientId, keyId, privateKey });
-
-    // 1. authorizationCode → refresh_token
-    const tokenRes = await fetch(APPLE_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code: body.authorizationCode,
-        grant_type: 'authorization_code',
-      }),
-    });
-
-    if (!tokenRes.ok) {
-      return json({ revoked: false, reason: 'token_exchange_failed' }, 502);
-    }
-    const tokenData = (await tokenRes.json()) as { refresh_token?: string };
-    const refreshToken = tokenData.refresh_token;
-    if (!refreshToken) {
-      return json({ revoked: false, reason: 'no_refresh_token' }, 502);
-    }
-
-    // 2. 撤銷 refresh_token
-    const revokeRes = await fetch(APPLE_REVOKE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        token: refreshToken,
-        token_type_hint: 'refresh_token',
-      }),
-    });
-
-    if (!revokeRes.ok) {
+    const revoked = await revokeRefreshToken(cfg, refreshToken);
+    if (!revoked) {
       return json({ revoked: false, reason: 'revoke_failed' }, 502);
     }
 
-    // TODO(後續): 於此刪除後端與此 userId 關聯的使用者資料。
+    await deleteStoredAppleRefreshToken(body.userId);
+    // TODO(後續): 於此級聯刪除 / 匿名化與此 userId 關聯的後端使用者資料。
     return json({ revoked: true }, 200);
   } catch {
     return json({ revoked: false, reason: 'internal_error' }, 500);

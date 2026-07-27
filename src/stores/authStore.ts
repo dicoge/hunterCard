@@ -16,8 +16,12 @@ import type { AuthProvider, AuthSession } from '../types/auth';
 import {
   signInWithApple,
   signInWithGoogle,
+  registerAppleSession,
   requestAccountDeletion,
 } from '../services/auth';
+
+/** 帳號刪除結果：只有後端確認撤銷成功才 'deleted'（fail-closed）。 */
+export type DeleteAccountResult = 'deleted' | 'failed';
 
 interface AuthStore {
   session: AuthSession | null;
@@ -27,8 +31,12 @@ interface AuthStore {
   isAuthenticated: () => boolean;
   signIn: (provider: AuthProvider) => Promise<void>;
   signOut: () => void;
-  /** 通知後端撤銷 token 後清除本機 session。回傳後端是否成功撤銷。 */
-  deleteAccount: () => Promise<boolean>;
+  /**
+   * 通知後端撤銷 token / 刪除資料。**fail-closed**：只有後端確認成功才清除本機
+   * session 並回 'deleted'；失敗回 'failed' 且**維持登入狀態**，避免讓使用者
+   * 誤以為已刪除但 Apple 授權 / 伺服器資料仍存在。
+   */
+  deleteAccount: () => Promise<DeleteAccountResult>;
   setHasHydrated: (v: boolean) => void;
 }
 
@@ -60,6 +68,8 @@ export const useAuthStore = create<AuthStore>()(
         const next =
           provider === 'apple' ? await signInWithApple() : await signInWithGoogle();
         set({ session: mergeSession(get().session, next) });
+        // 登入當下用 fresh authorizationCode 換 refresh_token 保存於後端（best-effort）。
+        await registerAppleSession(next);
       },
 
       signOut: () => {
@@ -68,10 +78,11 @@ export const useAuthStore = create<AuthStore>()(
 
       deleteAccount: async () => {
         const { session } = get();
-        if (!session) return true;
-        const revoked = await requestAccountDeletion(session);
+        if (!session) return 'deleted';
+        const { ok } = await requestAccountDeletion(session);
+        if (!ok) return 'failed';
         set({ session: null });
-        return revoked;
+        return 'deleted';
       },
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
@@ -79,7 +90,13 @@ export const useAuthStore = create<AuthStore>()(
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => platformStorage),
-      partialize: (state) => ({ session: state.session }),
+      // authorizationCode 為單次使用短效憑證，**絕不持久化**——只在登入當下換
+      // refresh_token 後即丟棄。持久化的 session 一律剝除它。
+      partialize: (state) => ({
+        session: state.session
+          ? { ...state.session, authorizationCode: null }
+          : null,
+      }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },

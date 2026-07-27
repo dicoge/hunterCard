@@ -30,11 +30,14 @@ export default function SettingsScreen() {
           text: '刪除帳號',
           style: 'destructive',
           onPress: async () => {
-            const revoked = await deleteAccount();
-            if (!revoked) {
+            const result = await deleteAccount();
+            if (result === 'deleted') {
+              Alert.alert('帳號已刪除', '你的帳號與 Apple 授權已撤銷。');
+            } else {
+              // fail-closed：撤銷未確認成功，維持登入狀態，不誤示為已刪除。
               Alert.alert(
-                '帳號已於本機登出',
-                '伺服器端撤銷授權可能尚未完成，若仍收到相關通知請稍後再試或聯絡我們。'
+                '刪除尚未完成',
+                '目前無法確認伺服器端已撤銷 Apple 授權，帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
               );
             }
           },
@@ -130,6 +133,10 @@ export default function SettingsScreen() {
               >
                 <Text style={[styles.accountBtnText, styles.dangerText]}>刪除帳號</Text>
               </TouchableOpacity>
+              <Text style={styles.hint}>
+                註：帳號刪除的伺服器端撤銷仍在建置中，尚未上線。若後端尚未設定，
+                刪除會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。
+              </Text>
             </>
           ) : (
             <Text style={styles.hint}>尚未登入。登入後可跨裝置同步收藏與入手提醒。</Text>
