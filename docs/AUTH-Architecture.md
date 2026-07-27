@@ -184,8 +184,8 @@ CREATE TABLE entitlements (
 | 資料 | 規則 |
 | --- | --- |
 | scan_usage | **每 period 取 capped sum**：對每個 `period`，target.scan_count = min(target.scan_count + source.scan_count, entitlement.monthly_limit)。source 的 `scan_usage` 全部寫入 audit_log 後設 `scan_count = 0`。capped 部分記 audit_log `merge_quota_capped` 含原始值。全部在 merge transaction 內以 `FOR UPDATE` 執行，防止並發掃描/merge 導致超額。 |
-| subscriptions | **原子轉移所有 active rows**：`UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`。轉移後若 target 有多個 active subscription → 保留單一 survivor：依 `expires_at DESC NULLS FIRST`（永遠有效的 plan 優先）、`started_at DESC`（到期相同則保留最新訂購），其餘 `cancelled_at = now()`、`status = 'cancelled'`。若 survivor 為 pro 且另有 active pro → 轉 `requires_support`。全部在 merge transaction 內。 |
-| entitlements | **upsert-then-delete**（entitlements PK = user_id）：先 `INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit) SELECT <target.id>, tier, daily_limit, monthly_limit FROM entitlements WHERE user_id = <source.id> ON CONFLICT (user_id) DO UPDATE SET tier = CASE WHEN EXCLUDED.tier = 'pro' THEN 'pro' ELSE entitlements.tier END, daily_limit = CASE WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.daily_limit ELSE entitlements.daily_limit END, monthly_limit = CASE WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.monthly_limit ELSE entitlements.monthly_limit END, updated_at = now()`。接著 `DELETE FROM entitlements WHERE user_id = <source.id>`。若 source 與 target 同為 pro → 保留 target（ON CONFLICT 中 CASE 不走），轉 `requires_support` 供人工決策。 |
+| subscriptions | **原子轉移所有 active rows**：`UPDATE subscriptions SET user_id = target.id WHERE user_id = source.id AND status = 'active'`。轉移後若 target 有多個 active subscription → 保留單一 survivor：依 `expires_at DESC NULLS FIRST`（永久 plan 優先）、`started_at DESC`（到期日一致則保留最新訂購）、`id DESC`（連 started_at 都一致則保留最新 insert 的 row）。其餘 `cancelled_at = now()`、`status = 'cancelled'`。若 survivor 為 pro 且另有 active pro → 轉 `requires_support`。全部在 merge transaction 內。 |
+| entitlements | **upsert-then-delete**（entitlements PK = user_id）：先 `INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit) SELECT <target.id>, tier, daily_limit, monthly_limit FROM entitlements WHERE user_id = <source.id> ON CONFLICT (user_id) DO UPDATE SET tier = CASE WHEN EXCLUDED.tier = 'pro' THEN 'pro' ELSE entitlements.tier END, daily_limit = CASE WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.daily_limit ELSE entitlements.daily_limit END, monthly_limit = CASE WHEN EXCLUDED.tier = 'pro' THEN EXCLUDED.monthly_limit ELSE entitlements.monthly_limit END, updated_at = now()`。接著 `DELETE FROM entitlements WHERE user_id = <source.id>`。若 source 與 target 同為 pro → target 權威保留，target tier/daily_limit/monthly_limit 均不變（ON CONFLICT 中 CASE 認定 EXCLUDED.tier='pro' 但 target 也是 pro，CASE WHEN EXCLUDED.tier='pro' THEN 'pro' 仍寫入 pro，limits 也同值 — 實際無變化），記 audit_log 後轉 `requires_support` 供人工確認。
 
 #### 3.5.2 Purge 規則
 
@@ -258,7 +258,7 @@ merge 過程中所有資料移轉（identities / favorites / watchlist / setting
 
 **交易開鎖順序**（避免 deadlock）：
 1. `SELECT ... FROM account_merge_requests WHERE id = <merge_request_id> FOR UPDATE`
-   → 鎖後立即 recheck：若 status NOT IN ('pending','verified') → 409 MERGE_ALREADY_RESOLVED
+   → 鎖後立即 recheck：若 status != 'pending' → 409 MERGE_ALREADY_RESOLVED
 2. `SELECT ... FROM users WHERE id IN (<source>, <target>) ORDER BY id FOR UPDATE`
    → recheck：source 與 target 的 status 仍為 'active'；任一非 active → 409
 3. `SELECT ... FROM auth_identities WHERE user_id IN (<source>, <target>) FOR UPDATE`
@@ -345,34 +345,46 @@ Client 取得 provider ID token
   │     │     → 若 status != 'active' → 403 ACCOUNT_DISABLED
   │     ├─ INSERT INTO auth_identities (user_id, provider, provider_subject, ...)
   │     │     VALUES (<current>, <provider>, <sub>, ...)
-  │     │     ON CONFLICT (provider, provider_subject) WHERE revoked_at IS NULL DO NOTHING
-  │     │     ON CONFLICT (user_id, provider) WHERE revoked_at IS NULL DO NOTHING
+  │     │     ON CONFLICT DO NOTHING
   │     │     →
   │     │     • INSERT 成功（row inserted）→ 200 ok
-  │     │     • INSERT 返回 0 rows（兩項 ON CONFLICT 任一命中）→ re-SELECT：
-  │     │         查 auth_identities WHERE provider=<provider> AND provider_subject=<sub>
-  │     │           AND revoked_at IS NULL
-  │     │         ├─ 命中，user_id = <current> → 200 冪等（idempotent，同 identity 已存在）
-  │     │         ├─ 命中，user_id != <current> → 再查該 user_id 的 users.status：
-  │     │         │     • status = 'active' → 409 IDENTITY_ALREADY_LINKED + merge_token
-  │     │         │     • status != 'active' → 該 owner 已非 active，回自身查詢階段繼續
-  │     │         │       → revoke 該 stale row 後 retry INSERT（見 relink）
-  │     │         └─ 未命中（代表 uq_user_provider_active 命中但 uq_provider_subject_active 未命中：
-  │     │               current user 已有同 provider 但不同 subject）→ 200 冪等
-  │     │               （同一 user 同 provider 已有 active identity，即 current provider 已綁定）
+  │     │     • INSERT 返回 0 rows（任意 partial unique index 衝突）→ re-SELECT 兩路：
+  │     │         Ⓐ 查 auth_identities WHERE provider=<provider> AND provider_subject=<sub>
+  │     │             AND revoked_at IS NULL
+  │     │           ├─ 命中，user_id = <current> → 200 幂等
+  │     │           └─ 命中，user_id != <current> → 409 IDENTITY_ALREADY_LINKED
+  │     │                （見 §5.2.1 collision owner handling）
+  │     │         Ⓑ 若 Ⓐ 未命中 → 必為 uq_user_provider_active 衝突（current user 同
+  │     │              provider 已有不同 subject 的 active identity）
+  │     │             → 409 SAME_PROVIDER_ALREADY_LINKED
+  │     │              （同一 account 同一 provider 已綁定另一 identity；若要切換
+  │     │               需先 unlink 舊的再 link 新的）
   │     └─ COMMIT
-  └─ relink：unlink 後 (provider, subject) 的 revoked row 不佔 uq_provider_subject_active，
-       新 INSERT 不會觸發 ON CONFLICT。若 current user 先前已 revoke 同 provider 但
-       uq_user_provider_active 已釋放（revoked_at IS NOT NULL），新 INSERT 也暢通。
 ```
-> - 所有 conflict resolution 使用 PostgreSQL `INSERT ... ON CONFLICT (...) WHERE ... DO NOTHING`，返回 row-count 後再 `re-SELECT` 區分三種結果：idempotent success / IDENTITY_ALREADY_LINKED / same-provider 已綁定。絕不 retry 一個不可能成功的 INSERT（如 (provider, sub) 已被 active other user 佔據）。
-> - link 前先 `SELECT ... FOR UPDATE` 鎖 current user，保證與 delete/merge 同樣的鎖定順序，防止 status 在 link 過程中改變。
-> - IDENTITY_ALREADY_LINKED 生成 merge_token 前，先確認 collision owner 的 `users.status = 'active'`；若 owner 已非 active → revoke 其 identity 後讓 current user 重新 claim，不觸發 merge。
+> - 僅使用一個 `ON CONFLICT DO NOTHING`（無 target），PostgreSQL 會對所有衝突的 partial unique index 都返回 0 rows。INSERT 後依序 re-read 兩條索引判斷衝突來源，不 retry 不可能成功的 INSERT。
+> - same-provider/different-subject 回 **409 SAME_PROVIDER_ALREADY_LINKED**（非 200 idempotent），因為想要綁定的 (provider, subject) 與既有 active identity 不同。
+
+#### 5.2.1 collision owner 處理（IDENTITY_ALREADY_LINKED 時）
+
+```
+  ├─ Ⓐ 命中，user_id = <other> → 鎖定該 collision owner：
+  │      SELECT id, status FROM users WHERE id = <other> FOR UPDATE
+  │      （按 UUID 排序，若 <other> < <current> 則順序交換避免 deadlock）
+  │     ├─ 若 status = 'active' → 409 IDENTITY_ALREADY_LINKED + merge_token（§4）
+  │     └─ 若 status != 'active' → collision owner 已非 active：
+  │          UPDATE auth_identities SET revoked_at = now()
+  │          WHERE provider = <provider> AND provider_subject = <sub>
+  │            AND user_id = <other> AND revoked_at IS NULL
+  │          → 釋放該 identity 後，retry INSERT（此時不衝突）
+```
+> collision owner 的 users row 也必須 `FOR UPDATE` lock，按 UUID 排序避免 deadlock，re-read status 後才決定 revoke 或發 merge_token。
 
 ### 5.3 解除綁定（unlink）
 ```
 DELETE /api/auth/link/:provider
-  ├─ 在一個 DB transaction 內：
+  ├─ 在一個 DB transaction 內（鎖定順序：users FOR UPDATE → identities FOR UPDATE）：
+  │     ├─ SELECT id, status FROM users WHERE id = <user> FOR UPDATE
+  │     │     → 若 status != 'active' → 409
   │     ├─ SELECT * FROM auth_identities WHERE user_id = <user> FOR UPDATE
   │     │      （row-level lock 鎖住該 user 所有 identity row，防止併發 unlink
   │     │       造成兩個 goroutine 各自看到 ≥2 筆而都 revoke，違反至少保留一個登入方式）
@@ -414,12 +426,12 @@ REST，沿用現有 Vercel handler 風格（`Request → Response.json`）。Acc
 | `POST /api/auth/refresh` | 否（帶 refresh） | `{ refresh_token }` | `{ access_token, refresh_token, expires_in }` |
 | `POST /api/auth/logout` | 是 | `{ refresh_token }` | `{ ok:true }` |
 | `GET /api/auth/me` | 是 | – | `{ user, identities:[{provider,masked_email,linked_at,is_primary}] }` |
-| `POST /api/auth/link` | 是 | `{ provider, id_token, nonce? }` | `200 { ok:true }` \| `409 { error:'IDENTITY_ALREADY_LINKED', merge_token }` |
+| `POST /api/auth/link` | 是 | `{ provider, id_token, nonce? }` | `200 { ok:true }` \| `409 { error:'IDENTITY_ALREADY_LINKED', merge_token }` \| `409 { error:'SAME_PROVIDER_ALREADY_LINKED' }` \| `403 { error:'ACCOUNT_DISABLED' }` |
 | `POST /api/auth/merge/confirm` | 是 | `{ merge_token, google_id_token?, apple_id_token? }` | `{ ok:true, user }` \| `409 { requires_support:true, merge_request_id }` |
 | `DELETE /api/auth/link/:provider` | 是 | – | `200 { ok:true }` \| `409 { error:'CANNOT_UNLINK_LAST_METHOD' }` |
 | `DELETE /api/account` | 是 | `{ confirm:true }` | `{ ok:true, purge_after }` |
 
-**標準錯誤碼**：`INVALID_TOKEN`(401)、`TOKEN_EXPIRED`(401)、`IDENTITY_ALREADY_LINKED`(409)、`CANNOT_UNLINK_LAST_METHOD`(409)、`MERGE_REQUIRES_SUPPORT`(409)、`ACCOUNT_DISABLED`(403)。
+**標準錯誤碼**：`INVALID_TOKEN`(401)、`TOKEN_EXPIRED`(401)、`IDENTITY_ALREADY_LINKED`(409)、`SAME_PROVIDER_ALREADY_LINKED`(409)、`CANNOT_UNLINK_LAST_METHOD`(409)、`MERGE_REQUIRES_SUPPORT`(409)、`ACCOUNT_DISABLED`(403)。
 
 **受保護的既有 API**：`api/push/register`、`api/push/watchlist` 從「以 push token 為 key」改為「帶 `Authorization` → 用 `users.id`」；未登入裝置仍可註冊 push token（`push_tokens.user_id = null`），登入後把該 token 認領 (claim) 到 user。
 
