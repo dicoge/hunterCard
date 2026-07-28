@@ -120,7 +120,7 @@ CREATE TABLE public.subscriptions (
   original_transaction_id text,                       -- Apple: original_transaction_id（stable across renewal）
   purchase_token          text,                       -- Google: current purchase_token（會在 upgrade/downgrade/re-signup 時變更；非 stable identity）
   linked_purchase_token   text,                       -- Google: linkedPurchaseToken（指向前一 token，用於 reconciliation）
-  chain_root_token        text,                       -- Google: 該 token chain 的根 purchase_token（chain 穩定身份；同 chain 所有 row 共用），用於「每 chain 至多一筆 active」
+  chain_root_token        text,                       -- Google only: 該 token chain 的根 purchase_token（chain 穩定身份；同 chain 所有 row 共用）。Google active/in_grace 必為 NOT NULL；非 Google 平台必為 NULL（見 CHECK）
   expires_at              timestamptz,                -- 一般 expires_date_ms / expiryTime
   grace_expires_at        timestamptz,                -- Apple: gracePeriodExpiresDate; Google: lineItems[].expiryTime（grace 期間動態延長）
   auto_renew              boolean DEFAULT false,
@@ -128,11 +128,14 @@ CREATE TABLE public.subscriptions (
   updated_at              timestamptz NOT NULL DEFAULT now(),
 
   -- 完整互斥：每個平台只允許自己的 identifier，其餘一律 NULL（用 CASE 避免 NULL→UNKNOWN 繞過）
+  -- 並約束 chain_root_token 僅屬 Google：非 Google 平台必為 NULL；Google active/in_grace 必為 NOT NULL，
+  -- 否則 NULL 在 partial UNIQUE 被視為 distinct，會讓多筆 active Google row（chain_root_token=NULL）繞過 per-chain 唯一。
   CONSTRAINT subs_platform_check CHECK (
     CASE platform
-      WHEN 'app_store'   THEN original_transaction_id IS NOT NULL AND purchase_token IS NULL AND linked_purchase_token IS NULL
+      WHEN 'app_store'   THEN original_transaction_id IS NOT NULL AND purchase_token IS NULL AND linked_purchase_token IS NULL AND chain_root_token IS NULL
       WHEN 'google_play' THEN purchase_token IS NOT NULL AND original_transaction_id IS NULL
-      WHEN 'stripe'      THEN original_transaction_id IS NULL AND purchase_token IS NULL AND linked_purchase_token IS NULL
+                              AND (status NOT IN ('active', 'in_grace') OR chain_root_token IS NOT NULL)
+      WHEN 'stripe'      THEN original_transaction_id IS NULL AND purchase_token IS NULL AND linked_purchase_token IS NULL AND chain_root_token IS NULL
       ELSE false
     END
   )
@@ -146,7 +149,9 @@ CREATE UNIQUE INDEX subs_apple_tx_unique
 CREATE UNIQUE INDEX subs_google_token_unique
   ON public.subscriptions (purchase_token) WHERE platform = 'google_play';
 
--- DB 層強制「每個 Google token chain 至多一筆 active/in_grace」，作為 reconciliation 邏輯的最後防線。
+-- DB 層 per-chain at-most-one：每個 Google token chain 至多一筆 active/in_grace，作為 reconciliation 的最後防線。
+-- 依賴上方 CHECK 保證 active/in_grace 的 chain_root_token 為 NOT NULL —— 否則 partial UNIQUE 對 NULL 視為 distinct，
+-- 多筆 chain_root_token=NULL 的 active row 會全部通過而繞過唯一性。exactly-one 由 reconciliation transaction 建立。
 CREATE UNIQUE INDEX subs_one_active_per_google_chain
   ON public.subscriptions (chain_root_token)
   WHERE platform = 'google_play' AND status IN ('active', 'in_grace');
