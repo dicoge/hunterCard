@@ -115,30 +115,48 @@ CREATE TABLE public.subscriptions (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id                 uuid REFERENCES public.users(id) ON DELETE SET NULL,
   status                  text NOT NULL DEFAULT 'none',
-  platform                text,
+  platform                text NOT NULL,              -- NOT NULL：row 只由 IAP webhook 建立，必帶平台
   product_id              text,
   original_transaction_id text,                       -- Apple: original_transaction_id（stable across renewal）
   purchase_token          text,                       -- Google: current purchase_token（會在 upgrade/downgrade/re-signup 時變更；非 stable identity）
   linked_purchase_token   text,                       -- Google: linkedPurchaseToken（指向前一 token，用於 reconciliation）
   expires_at              timestamptz,                -- 一般 expires_date_ms / expiryTime
-  grace_expires_at        timestamptz,                -- Apple: gracePeriodExpiresDate; Google: 依 grace period end 計算
+  grace_expires_at        timestamptz,                -- Apple: gracePeriodExpiresDate; Google: lineItems[].expiryTime（grace 期間動態延長）
   auto_renew              boolean DEFAULT false,
   created_at              timestamptz NOT NULL DEFAULT now(),
   updated_at              timestamptz NOT NULL DEFAULT now(),
 
+  -- 完整互斥：每個平台只允許自己的 identifier，其餘一律 NULL（用 CASE 避免 NULL→UNKNOWN 繞過）
   CONSTRAINT subs_platform_check CHECK (
-    platform IN ('app_store', 'google_play', 'stripe') AND
-    (platform != 'app_store' OR (original_transaction_id IS NOT NULL AND purchase_token IS NULL)) AND
-    (platform != 'google_play' OR (purchase_token IS NOT NULL AND original_transaction_id IS NULL))
-  ),
-  CONSTRAINT subs_apple_tx_unique UNIQUE NULLS NOT DISTINCT (platform, original_transaction_id),
-  CONSTRAINT subs_google_token_unique UNIQUE NULLS NOT DISTINCT (platform, purchase_token)
+    CASE platform
+      WHEN 'app_store'   THEN original_transaction_id IS NOT NULL AND purchase_token IS NULL AND linked_purchase_token IS NULL
+      WHEN 'google_play' THEN purchase_token IS NOT NULL AND original_transaction_id IS NULL
+      WHEN 'stripe'      THEN original_transaction_id IS NULL AND purchase_token IS NULL AND linked_purchase_token IS NULL
+      ELSE false
+    END
+  )
 );
 
--- Google linkedPurchaseToken reconciliation:
--- upgrade/downgrade/re-signup 會產生新 purchase_token，linkedPurchaseToken 指向舊 token。
--- Webhook 收到新 token → 查 subscriptions WHERE purchase_token = linkedPurchaseToken → 將舊 row SET status='superseded'
--- → 新 row 繼承同 user_id。亂序時：若舊 token 事件較晚到 → 僅記錄 superseded history，不影響 active entitlement。
+-- 每平台各自的 partial unique index（取代全表 UNIQUE NULLS NOT DISTINCT）
+-- 全表 UNIQUE(platform, id) 會讓所有 Google row 在 Apple 欄位皆為 (google_play, NULL) → NULLS NOT DISTINCT 只允許一筆，反之亦然。
+-- Partial index 僅索引該平台的 row，identifier 已 NOT NULL，故每平台可有多筆訂閱且各自唯一。
+CREATE UNIQUE INDEX subs_apple_tx_unique
+  ON public.subscriptions (original_transaction_id) WHERE platform = 'app_store';
+CREATE UNIQUE INDEX subs_google_token_unique
+  ON public.subscriptions (purchase_token) WHERE platform = 'google_play';
+
+-- Google linkedPurchaseToken reconciliation（雙向 + 多跳 + 亂序）：
+-- upgrade/downgrade/re-signup/re-subscribe 會產生新 purchase_token，linkedPurchaseToken 指向前一 token，形成 token chain。
+-- 每則 Google 事件在單一 transaction 內處理（對相關 row 取 FOR UPDATE lock）：
+--   1. 正向：新 token T 帶 linkedPurchaseToken=L → 找 row WHERE purchase_token=L。
+--        找到 → 沿 linked_purchase_token 鏈往回走到 canonical owner，取其 user_id 建立 T 的 row。
+--   2. 反向（亂序：新 token 先到、舊 token 後到）→ 新 token 先到時 predecessor 尚無 row，
+--        無法取得 user_id → 以 purchase.obfuscatedExternalAccountId 解析 user_id（購買時綁定），暫存 row。
+--        舊 token 事件後到時，反查 row WHERE linked_purchase_token=<oldToken>（successor 已存在）
+--        → 將 ownership/entitlement 前傳給 successor，舊 row 標 status='superseded'，不新增第二筆 active。
+--   3. Canonical owner：一條 chain 只有鏈頭（最新、無人指向的 token）為 active，其餘 superseded。
+--   4. 拒絕環：走鏈時記錄已訪問 token，遇重複即中止並記 reconciliation_log conflict（不覆寫 entitlement）。
+--   5. 原子性：ownership 移交與 status 更新在同一 transaction，避免中途出現 0 或 >1 active entitlement。
 
 -- 帳號刪除 deny marker（階段 A commit 前寫入；所有 RPC/route 入口處檢查）
 CREATE TABLE public.deleted_users (
@@ -146,25 +164,36 @@ CREATE TABLE public.deleted_users (
   deleted_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.deleted_users ENABLE ROW LEVEL SECURITY;
--- 無 SELECT policy（只由 SECURITY DEFINER 函式內部查詢，client 不可見）
+-- 無 SELECT policy：authenticated / anon 一律看不到任何 row。
+-- 因此 policy 不可直接 `SELECT ... FROM deleted_users`（RLS 會讓 authenticated 讀到 0 筆 →
+-- NOT EXISTS 恆為 true → gate 失效）。必須透過下方 SECURITY DEFINER helper 以 owner 身分繞過 RLS 查詢。
 
--- RLS: SELECT only + deleted_users marker
+-- SECURITY DEFINER helper：以 function owner 身分執行，繞過 deleted_users 的 RLS，回傳該 uid 是否已刪除。
+CREATE OR REPLACE FUNCTION public.is_deleted(uid uuid)
+RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $$ SELECT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = uid) $$;
+REVOKE EXECUTE ON FUNCTION public.is_deleted(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_deleted(uuid) TO authenticated;
+
+-- RLS: SELECT only + deleted_users marker（透過 helper，marker 才真正可見並生效）
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY users_read_self ON public.users
-  FOR SELECT USING (auth.uid() = id AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()));
+  FOR SELECT USING (auth.uid() = id AND NOT public.is_deleted(auth.uid()));
 
 ALTER TABLE public.linked_auth_providers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY providers_read_self ON public.linked_auth_providers
-  FOR SELECT USING (auth.uid() = user_id AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()));
+  FOR SELECT USING (auth.uid() = user_id AND NOT public.is_deleted(auth.uid()));
 
 ALTER TABLE public.scan_usage_monthly ENABLE ROW LEVEL SECURITY;
 CREATE POLICY scan_read_self ON public.scan_usage_monthly
-  FOR SELECT USING (auth.uid() = user_id AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()));
+  FOR SELECT USING (auth.uid() = user_id AND NOT public.is_deleted(auth.uid()));
 
 ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY subs_read_self ON public.subscriptions
-  FOR SELECT USING (auth.uid() = user_id AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()));
+  FOR SELECT USING (auth.uid() = user_id AND NOT public.is_deleted(auth.uid()));
 ```
+
+> **既有 access JWT 的即時撤銷**：Supabase GoTrue 的 ban 只在 token refresh 時生效，未過期的 access JWT 在 TTL 內仍可通過 GoTrue。但**所有資料路徑都經過 RLS policy 與 protected RPC**，兩者都在每次查詢當下呼叫 `public.is_deleted(auth.uid())`（SECURITY DEFINER，繞過 RLS 直接讀 marker）。因此即使 access token 尚未過期，被刪除的 user 也會被 DB deny gate 立即拒絕——不依賴 token 過期或 refresh。
 
 ### 2.2 型別設計（新增至 `src/types/index.ts`）
 
@@ -352,10 +381,10 @@ GRANT EXECUTE ON FUNCTION public.consume_scan_quota() TO authenticated;
 **Entitlement 政策（全系統一致）**：`status = 'active'` 且 `expires_at > now()`，或 `status = 'in_grace'` 且 `grace_expires_at > now()` 視為 subscriber。
 
 - 理由：Apple 要求在 Billing Grace Period 期間仍提供服務（App Store Review Guidelines 3.1.2）。Google Play 的 Account Hold / Grace Period 同樣要求。
-- Schema：`subscriptions.grace_expires_at` 儲存 Apple `gracePeriodExpiresDate` 或 Google equivalent grace end time。`expires_at` 保持一般到期時間。
+- Schema：`subscriptions.grace_expires_at` 儲存 Apple `gracePeriodExpiresDate` 或 Google `SubscriptionPurchaseV2.lineItems[].expiryTime`（grace 期間 Play 動態延長）。`expires_at` 保持一般到期時間。
 - RPC `consume_scan_quota` / `require_premium`：active 檢查 `expires_at > now()`；in_grace 檢查 `grace_expires_at > now()`（兩欄位可能不同）
 - 前端 Role scheduler：`(status='active' AND expires_at > now()) OR (status='in_grace' AND grace_expires_at > now())` → `users.role = 'subscriber'`
-- Webhook GRACE_PERIOD_START：收到時寫入 `status='in_grace'` + `grace_expires_at` = Apple `gracePeriodExpiresDate` / Google 計算的 grace end。不變更 `expires_at`（保持原 active 到期日）。GRACE_PERIOD_END：若 renewal 成功 → `status='active'`；失敗 → `status='expired'`
+- 進入 grace（Apple DID_FAIL_TO_RENEW/GRACE_PERIOD、Google (6) SUBSCRIPTION_IN_GRACE_PERIOD）：寫入 `status='in_grace'` + `grace_expires_at` = Apple `gracePeriodExpiresDate` / Google `lineItems[].expiryTime`。不變更 `expires_at`（保持原 active 到期日）。離開 grace：renewal 成功 → `status='active'`；grace 到期未續 → `status='expired'`
 - 此政策在 schema、RPC、scheduler、webhook、QA 中保持一致
 
 ### 6.4 IAP Webhook Reconciliation（P3 設計）
@@ -364,23 +393,26 @@ GRANT EXECUTE ON FUNCTION public.consume_scan_quota() TO authenticated;
 
 | 項目 | 設計 |
 |------|------|
-| Apple V2 Endpoint | 接收 `signedPayload` JWS。驗證：以 header `x5c` 鏈中的憑證驗證簽名（Apple Root CA → G1 → notification signing cert）。解碼 outer `data`（含 `appAppleId`, `bundleId`, `environment`），再解碼 `notificationType` + `subtype`。**`signedTransactionInfo` 與 `signedRenewalInfo` 本身也是 JWS**（各由 App Store 簽名）→ 需分別驗證。從 signedTransactionInfo 取得 `originalTransactionId`, `transactionId`, `expiresDate`。dedup key = `notificationUUID`（Apple 提供的唯一 notification identifier） |
-| Google RTDN | Pub/Sub subscription 接收 `developerNotification`。驗證：Pub/Sub push 自帶 JWT（由 GCP service account 簽發），驗證 token 的 `audience` + `email`。用 `purchaseToken` 呼叫 `purchases.subscriptionsv2.get()` 取得 `SubscriptionPurchaseV2`。dedup 使用 Pub/Sub 官方 `message.messageId`（唯一 per-delivery identifier） + fallback `(notificationType, purchaseToken, eventTimeMillis)` |
-| 共同 schema | `webhook_events` table: `platform, event_type, dedup_key UNIQUE, original_transaction_id, purchase_token, raw_payload jsonb, processed_at timestamptz` |
-| 去重 | `UNIQUE(dedup_key)` + `ON CONFLICT DO NOTHING`（idempotent） |
-| 亂序容忍 | 依 receipt `expiresDate` / `expiryTime` 的實際值覆蓋 `subscriptions.expires_at`，不依賴 event 到達時間排序 |
+| Apple V2 Endpoint | 接收 `signedPayload` JWS。驗證：以 header `x5c` 鏈中的憑證驗證簽名（Apple Root CA → G1 → notification signing cert）。解碼 outer `data`（含 `appAppleId`, `bundleId`, `environment`），再解碼 `notificationType` + `subtype`。**`signedTransactionInfo` 與 `signedRenewalInfo` 本身也是 JWS**（各由 App Store 簽名）→ 需分別驗證。從 signedTransactionInfo 取得 `originalTransactionId`, `transactionId`, `expiresDate`。dedup key = `apple:<notificationUUID>`（Apple 提供的唯一 notification identifier） |
+| Google RTDN | Pub/Sub subscription 接收 `developerNotification`。驗證：Pub/Sub push 自帶 JWT（由 GCP service account 簽發），驗證 token 的 `audience` + `email`。用 `purchaseToken` 呼叫 `purchases.subscriptionsv2.get()` 取得 `SubscriptionPurchaseV2`。dedup key = `google:<projectId>/<topic>:<message.messageId>`（Pub/Sub 官方唯一 per-delivery identifier）；若 messageId 缺失 → fallback `google-fb:` + `encode(sha256(notificationType‖''‖purchaseToken‖''‖eventTimeMillis),'hex')`（固定順序、以 0x1F 分隔避免拼接碰撞） |
+| 共同 schema | `webhook_events` table: `platform, event_type, dedup_key text NOT NULL, original_transaction_id, purchase_token, raw_payload jsonb, processed_at timestamptz`, `UNIQUE(dedup_key)` |
+| 去重 keyspace | dedup_key 一律帶 platform 前綴命名空間（`apple:` / `google:` / `google-fb:`），三者不共用裸值 keyspace → Apple UUID、Google messageId、fallback hash 不會互相碰撞 |
+| 去重 | `UNIQUE(dedup_key)` + `INSERT ... ON CONFLICT (dedup_key) DO NOTHING`（idempotent；先寫 webhook_events，成功寫入才處理事件） |
+| 亂序容忍 | 依 receipt `expiresDate` / `lineItems[].expiryTime` 的實際值覆蓋 `subscriptions.expires_at`，不依賴 event 到達時間排序 |
 
-**事件處理（platform-specific event → unified action）**：
+**事件處理（platform-specific event → unified action）**。Apple 值取自 `App Store Server Notifications V2` `notificationType`(`subtype`)；Google 值取自 `SubscriptionNotification.notificationType` 整數 enum（`purchases.subscriptionsv2.get` 回傳的 `SubscriptionPurchaseV2` 作為狀態真源）。Google 到期/grace 時間一律讀 `lineItems[].expiryTime`（Play 在 grace 期間會動態延長此值）：
 
-| Apple V2 notificationType | Google subscriptionState / RTDN type | 處理 |
-|------|------|------|
-| SUBSCRIBED | SUBSCRIPTION_STATE_ACTIVE（首次） | INSERT: `status='active'`, `expires_at` 取 expiresDate/expiryTime, `auto_renew`=auto_renew_status |
-| DID_CHANGE_RENEWAL_STATUS（subtype=AUTO_RENEW_ENABLED/DISABLED） | RTDN (4) SUBSCRIPTION_RENEWED | UPDATE: `auto_renew`, `expires_at` |
-| DID_RENEW | SUBSCRIPTION_STATE_ACTIVE（renewal） | UPDATE: `status='active'`, `expires_at` 取新 expiresDate/expiryTime |
-| DID_FAIL_TO_RENEW（subtype=GRACE_PERIOD） | SUBSCRIPTION_STATE_IN_GRACE_PERIOD | UPDATE: `status='in_grace'`, `grace_expires_at`=gracePeriodExpiresDate / Google grace end, `expires_at` 保持原值 |
-| EXPIRED（subtype=GRACE_PERIOD） | SUBSCRIPTION_STATE_ON_HOLD / SUBSCRIPTION_STATE_EXPIRED | UPDATE: `status='expired'` |
-| DID_RECOVER | SUBSCRIPTION_STATE_ACTIVE（recover） | UPDATE: `status='active'`, `grace_expires_at`=NULL |
-| REFUND（subtype=REVOKE） | RTDN (3) SUBSCRIPTION_REVOKED | UPDATE: `status='expired'`, `expires_at`=now()。新建 `refund_events` log |
+| Unified action | Apple V2 notificationType(subtype) | Google RTDN notificationType (整數) | 處理 |
+|------|------|------|------|
+| 首購 | SUBSCRIBED | (4) SUBSCRIPTION_PURCHASED | INSERT: `status='active'`, `expires_at`=Apple expiresDate / Google `lineItems[].expiryTime`, `auto_renew`=true |
+| 續訂 | DID_RENEW | (2) SUBSCRIPTION_RENEWED | UPDATE: `status='active'`, `expires_at` 取新 expiresDate / `lineItems[].expiryTime`, `grace_expires_at`=NULL |
+| 自動續訂關/開 | DID_CHANGE_RENEWAL_STATUS(AUTO_RENEW_DISABLED/ENABLED) | (3) SUBSCRIPTION_CANCELED（使用者關閉自動續訂，到期前仍 active） | UPDATE: `auto_renew`；**status 不變**，維持至 `expires_at` |
+| 進入 grace | DID_FAIL_TO_RENEW(GRACE_PERIOD) | (6) SUBSCRIPTION_IN_GRACE_PERIOD | UPDATE: `status='in_grace'`, `grace_expires_at`=Apple gracePeriodExpiresDate / Google `lineItems[].expiryTime`；`expires_at` 保持原值 |
+| grace 後帳戶保留(on hold) | GRACE_PERIOD_EXPIRED | (5) SUBSCRIPTION_ON_HOLD | UPDATE: `status='expired'`（entitlement 結束） |
+| 恢復 | DID_RENEW（grace/retry 後成功） | (1) SUBSCRIPTION_RECOVERED / (7) SUBSCRIPTION_RESTARTED | UPDATE: `status='active'`, `expires_at` 取新值, `grace_expires_at`=NULL |
+| 到期 | EXPIRED(VOLUNTARY/BILLING_RETRY/…) | (13) SUBSCRIPTION_EXPIRED | UPDATE: `status='expired'` |
+| 退款 | REFUND | Google Play Voided Purchases API（RTDN 無退款事件） | UPDATE: `status='expired'`, `expires_at`=now()；寫 `refund_events` log |
+| 撤銷（entitlement 立即失效） | REVOKE | (12) SUBSCRIPTION_REVOKED | UPDATE: `status='expired'`, `expires_at`=now() |
 
 **定期 reconciliation（備援）**：
 
@@ -454,7 +486,9 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
           END IF;
         END; $$;
         — 每個 protected RPC（consume_scan_quota, require_premium）在 auth check 後立即呼叫
-        — RLS SELECT policy 強制附加 marker：AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid())
+          （check_not_deleted 本身即 SECURITY DEFINER，直接讀 marker 不受 RLS 影響）
+        — RLS SELECT policy 強制附加 marker：AND NOT public.is_deleted(auth.uid())
+          （is_deleted 為 SECURITY DEFINER helper，繞過 deleted_users RLS；不可在 policy 內直接 SELECT 該表，否則 authenticated 讀到 0 筆使 gate 失效）
      h. 排程 retry（Edge Function cron sweep）：對 deleted_users 中（在 RPC check_not_deleted 被觸發時記錄的）尚未完成 deleteUser 的 orphan ID 補執行
 
 3. 前端帳號刪除完成後清空所有本機 Zustand persisted stores（reset memory state + 清除 persist storage）：
