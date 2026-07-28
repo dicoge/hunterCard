@@ -16,7 +16,7 @@ AUTH 文件（DIC-662 / PR #50）已定義：`users`、`auth_identities`、`sess
 - 金流 / 訂閱來源的**擴充點**，先保留不實作（§7）。
 - 下游平台任務**接口契約**（§8）。
 
-> ⚠️ **entitlement 數值的單一權威（single source of truth）**：所有 tier 的額度數值（free = 100/月、subscriber = 不限量）**只由本文件 §5.2 定義**，並由本文件 §9 提供唯一的 `entitlements` seed SQL 契約。AUTH-Architecture.md（PR #50，草案未合併）§3.5 中出現的 `monthly_limit = 500` / `daily_limit = 50` 是**非規範的示意預設值，已被本文件取代**；AUTH migration（`migrations/0001_auth.sql`，尚未撰寫）落地時必須採用 §9 的值，且 AUTH 文件的示意數字須改為指向本文件而非另立一份。**規範數字只存在一處（本文件），不存在 100/500 雙重來源。** 同步修正 DIC-662 / PR #50 的追蹤見結案留言。
+> ⚠️ **entitlement 數值的單一權威（single source of truth）**：額度數值的 enforced 權威是 **AUTH-Architecture.md（DIC-662 / PR #50）§3.5 `entitlements` 的 `quota_matches_tier` CHECK**（DB 實際強制 `free=(daily NULL, monthly 100)`、`pro=(NULL, NULL)`）。本文件的 §5.2 / §9 只是該 CHECK 的產品語意鏡像，數值必須與之一致，不得另立第二套。**本契約 free 無 daily cap（`daily_limit = NULL`，DIC-774 acceptance）**；AUTH migration（`migrations/0001_auth.sql`，尚未撰寫）落地時採 AUTH §3.5 的 executable schema。**規範數字只存在一處（AUTH CHECK），本文件引用之。**
 
 ---
 
@@ -147,19 +147,19 @@ effectiveEntitlement(user):
   }
 ```
 
-### 5.2 額度數值（唯一規範來源；AUTH seed 一律取自此表）
+### 5.2 額度數值（產品角色語意；數值鏡像自 AUTH executable schema）
 
-**本表是全系統 entitlement 數值的唯一權威**。任何 migration / seed / 文件都必須引用此表，不得另立數字（見 §0、§9 的 seed SQL）。
+**數值的 enforced 權威是 AUTH-Architecture.md (DIC-662/PR #50) §3.5 `entitlements` 的 `quota_matches_tier` CHECK**（DB 實際強制）。本表描述產品角色語意，數值必須與該 CHECK 一致，不得另立第二套。
 
 | tier | daily_limit | monthly_limit | premium |
 | --- | --- | --- | --- |
-| free（free_user） | 10 | **100** | ❌ |
+| free（free_user） | 無（`NULL`） | **100** | ❌ |
 | pro（subscriber） | 不限（`NULL`） | 不限（`NULL`） | ✅ |
 
-- **不限量以 `NULL` 表示**（而非 sentinel 數字），gate 時 `limit IS NULL → 永遠放行`。
+- **不限量與「無日上限」皆以 `NULL` 表示**（而非 sentinel 數字），gate 時 `limit IS NULL → 該維度永遠放行`。
 - guest 不進 `entitlements`，能力為常數 `scan_limit = 0`（§5.1 提早 return）。
-- `daily_limit` 為防濫用副軌，月額度才是產品承諾；MVP 可只實作 monthly，daily 先寬鬆。
-- AUTH-Architecture.md 草案中的 `500` / `50` 為非規範示意值，**已被本表取代**；不存在第二份數字來源。
+- **本契約不設 daily cap**（free/pro 的 `daily_limit` 皆 `NULL`，DIC-774 acceptance）；月額度是唯一的產品承諾。
+- AUTH schema 的 `CHECK` 強制 `free=(NULL,100)`、`pro=(NULL,NULL)`；本表任何調整都必須同步該 CHECK。
 
 ### 5.3 tier reconcile（訂閱事件驅動）
 
@@ -171,7 +171,7 @@ on subscription change(user_id):
   upsert entitlements(user_id) set
     tier = active ? 'pro' : 'free',
     monthly_limit = active ? NULL : 100,
-    daily_limit   = active ? NULL : 10,
+    daily_limit   = NULL,   -- 本契約無 daily cap（free/pro 皆 NULL）
     updated_at = now()
 ```
 
@@ -293,13 +293,14 @@ RETURNING scan_count;
 ## 9. DB Migration 方向
 
 1. **沿用 AUTH `migrations/0001_auth.sql`** 的 `scan_usage` / `subscriptions` / `entitlements`；本文件不新增這三張表，但**規範其額度數值**。
-2. **entitlements 欄位與 seed（唯一規範，取自 §5.2）**：`monthly_limit` / `daily_limit` 須為 **nullable**（`NULL` = 不限量，供 pro tier）。AUTH schema 若原為 `NOT NULL DEFAULT 500/50`，須改為 nullable 並移除該預設，改由 reconcile（§5.3）寫入。free 的規範 seed：
+2. **entitlements 欄位與 seed（數值與 AUTH §3.5 CHECK 一致）**：`daily_limit` / `monthly_limit` 為 **nullable**（`NULL` = 該維度不限量）；AUTH schema 以 `monthly_limit DEFAULT 100` + `quota_matches_tier` CHECK 強制 `free=(NULL,100)`、`pro=(NULL,NULL)`。free 的 seed 即 AUTH login-or-create 於首建 user 的同 transaction 執行（見 AUTH §3.5 / §5.1）：
 
    ```sql
-   -- entitlement 數值唯一來源：本文件 §5.2。AUTH 草案的 500/50 為非規範示意值，一律以此為準。
-   -- free_user 建立時（AUTH login-or-create 首建 user 後）：
-   INSERT INTO entitlements (user_id, tier, daily_limit, monthly_limit)
-   VALUES ($user, 'free', 10, 100)
+   -- 數值 enforced 權威：AUTH-Architecture.md §3.5 entitlements CHECK。
+   -- free_user 建立時（AUTH login-or-create 首建 user 後，同 transaction）：
+   -- 靠 tier/monthly_limit DEFAULT 形成合法 (free, NULL, 100)。
+   INSERT INTO entitlements (user_id)
+   VALUES ($user)
    ON CONFLICT (user_id) DO NOTHING;
    -- subscriber（reconcile 時，§5.3）：tier='pro', daily_limit=NULL, monthly_limit=NULL。
    ```
