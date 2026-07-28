@@ -13,6 +13,7 @@ import {
   TextInput,
   Modal,
   SafeAreaView,
+  LayoutChangeEvent,
 } from 'react-native';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
@@ -26,7 +27,7 @@ import ScanOverlay from '../components/ScanOverlay';
 import ScanResultCard from '../components/ScanResultCard';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
-import { mapCoverRectToSource } from '../utils/scanGeometry';
+import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
@@ -43,6 +44,7 @@ export default function ScanScreen({ navigation }: any) {
   const [facing, setFacing] = useState<CameraType>('back');
   const cameraRef = useRef<CameraView>(null);
   const webCameraRef = useRef<WebCameraHandle>(null);
+  const scanAreaViewportRef = useRef<Rect | null>(null);
   // 在手勢鏈中取得的 stream，避免 iOS Safari 阻擋 getUserMedia
   const webStreamRef = useRef<MediaStream | null>(null);
   const addCard = useScanSessionStore(s => s.addCard);
@@ -231,6 +233,23 @@ export default function ScanScreen({ navigation }: any) {
     resetAutoScan();
   };
 
+  const handleScanAreaLayout = (event: LayoutChangeEvent) => {
+    if (!isWeb) return;
+    const target: any = (event.nativeEvent as any).target;
+    if (target && typeof target.getBoundingClientRect === 'function') {
+      const rect = target.getBoundingClientRect();
+      scanAreaViewportRef.current = {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+      return;
+    }
+    const { x, y, width, height } = event.nativeEvent.layout;
+    scanAreaViewportRef.current = { x, y, width, height };
+  };
+
   // Web 版無法使用 expo-ocr-kit，用 Tesseract.js 兜底
   const performOcr = async (uri: string): Promise<string> => {
     if (isWeb) {
@@ -289,16 +308,16 @@ export default function ScanScreen({ navigation }: any) {
 
     const fullImage = makeDataUrl(0, 0, video.videoWidth, video.videoHeight, 2048);
     const videoRect = video.getBoundingClientRect();
-    const overlay = {
-      x: (SCREEN_WIDTH - SCAN_AREA_SIZE) / 2,
-      y: SCREEN_HEIGHT * 0.15,
+    const overlayRect = scanAreaViewportRef.current || {
+      x: videoRect.left + (videoRect.width - SCAN_AREA_SIZE) / 2,
+      y: videoRect.top + SCREEN_HEIGHT * 0.15,
       width: SCAN_AREA_SIZE,
       height: SCAN_AREA_SIZE * 0.63,
     };
-    const crop = mapCoverRectToSource(
-      { width: videoRect.width || SCREEN_WIDTH, height: videoRect.height || SCREEN_HEIGHT },
+    const crop = mapViewportRectToSource(
+      { x: videoRect.left, y: videoRect.top, width: videoRect.width || SCREEN_WIDTH, height: videoRect.height || SCREEN_HEIGHT },
       { width: video.videoWidth, height: video.videoHeight },
-      overlay,
+      overlayRect,
       { padXRatio: 0.14, padYRatio: 0.28 },
     );
     const cropImage = makeDataUrl(crop.x, crop.y, crop.width, crop.height, 1536);
@@ -937,6 +956,7 @@ export default function ScanScreen({ navigation }: any) {
             onGallery={pickFromGallery}
             onManualSearch={() => setShowSearch(true)}
             onToggleAutoScan={toggleAutoScan}
+            onScanAreaLayout={handleScanAreaLayout}
             onRetry={() => {
               setCameraError(null);
               if (webCameraRef.current) webCameraRef.current.retry();

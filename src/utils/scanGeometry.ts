@@ -62,3 +62,27 @@ export function mapCoverRectToSource(
     height: padded.height / scale,
   }, source);
 }
+
+/**
+ * Convert an overlay rectangle measured in viewport/page coordinates to source
+ * video pixels. The overlay and video elements can have non-zero origins; only
+ * the overlay's video-local rectangle is passed into the object-fit: cover map.
+ */
+export function mapViewportRectToSource(
+  videoViewport: Rect,
+  source: Size,
+  overlayViewport: Rect,
+  options: CropOptions = {},
+): Rect {
+  return mapCoverRectToSource(
+    { width: videoViewport.width, height: videoViewport.height },
+    source,
+    {
+      x: overlayViewport.x - videoViewport.x,
+      y: overlayViewport.y - videoViewport.y,
+      width: overlayViewport.width,
+      height: overlayViewport.height,
+    },
+    options,
+  );
+}

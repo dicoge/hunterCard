@@ -36,7 +36,7 @@ const prefixMap: Record<string, string> = {
   co: 'hco', wf: 'hwf', ys: 'hys', ent: 'hent', bd: 'hbd',
 };
 
-function normalizeCardNumber(raw: string | null | undefined): string | null {
+export function normalizeCardNumber(raw: string | null | undefined): string | null {
   if (!raw) return null;
   let cleaned = raw.trim().replace(/^['"`\s]+|['"`\s]+$/g, '').replace(/\.$/, '').toLowerCase();
   if (!cleaned || cleaned === 'none' || cleaned === 'unknown') return null;
@@ -173,7 +173,7 @@ async function callVision(images: string[]): Promise<{ reply: string; provider: 
   return { reply, provider: 'gemini', model: GEMINI_MODEL };
 }
 
-function rankCandidates(cards: Record<string, any>, extracted: any) {
+export function rankCandidates(cards: Record<string, any>, extracted: any) {
   const entries = Object.values(cards) as any[];
   const normalizedNumber = normalizeCardNumber(extracted.cardNumberRaw);
   const normalizedNumberFlat = normalizedNumber?.replace(/[^a-z0-9]/g, '') || '';

@@ -1,46 +1,69 @@
 {
-  "version": 1,
-  "description": "Versioned scan-recognition benchmark schema. Image fixtures are omitted until QA exports consented camera samples; current samples exercise deterministic ranking cases.",
+  "version": 2,
+  "description": "Versioned scan-recognition corpus manifest. `seed-smoke` samples are deterministic unit smoke cases and are not acceptance evidence. `acceptance-real-camera` is reserved for consented camera/gallery samples exported by QA; benchmark runs fail in strict acceptance mode until those samples exist.",
   "targets": {
     "top1": 0.9,
     "top3": 0.98
   },
-  "samples": [
+  "confidenceInterval": {
+    "method": "wilson",
+    "level": 0.95
+  },
+  "groups": [
     {
-      "id": "exact-number",
-      "expectedCardNumber": "hBP04-001",
-      "extracted": {
-        "cardNumberRaw": "hBP04-001",
-        "characterName": "博衣こより",
-        "hp": "NONE",
-        "rarity": "SEC",
-        "bloom": "NONE",
-        "cardTitle": ""
-      }
+      "id": "seed-smoke",
+      "purpose": "unit-smoke",
+      "acceptanceEvidence": false,
+      "notes": "Small deterministic ranking seed. Kept only to catch ranking regressions; not used to claim 90%/98% real-world accuracy.",
+      "samples": [
+        {
+          "id": "exact-number",
+          "expectedCardNumber": "hBP04-001",
+          "conditions": ["seed", "exact-number"],
+          "extracted": {
+            "cardNumberRaw": "hBP04-001",
+            "characterName": "博衣こより",
+            "hp": "NONE",
+            "rarity": "SEC",
+            "bloom": "NONE",
+            "cardTitle": ""
+          }
+        },
+        {
+          "id": "fuzzy-number-with-fields",
+          "expectedCardNumber": "hBP04-002",
+          "conditions": ["seed", "fuzzy-number", "variant"],
+          "extracted": {
+            "cardNumberRaw": "hBPO4-002",
+            "characterName": "儒烏風亭らでん",
+            "hp": "NONE",
+            "rarity": "OUR",
+            "bloom": "NONE",
+            "cardTitle": ""
+          }
+        },
+        {
+          "id": "character-rarity-no-number",
+          "expectedCardNumber": "hBP04-003",
+          "conditions": ["seed", "no-number", "variant"],
+          "extracted": {
+            "cardNumberRaw": "NONE",
+            "characterName": "一条莉々華",
+            "hp": "NONE",
+            "rarity": "OUR",
+            "bloom": "NONE",
+            "cardTitle": ""
+          }
+        }
+      ]
     },
     {
-      "id": "fuzzy-number-with-fields",
-      "expectedCardNumber": "hBP04-002",
-      "extracted": {
-        "cardNumberRaw": "hBPO4-002",
-        "characterName": "儒烏風亭らでん",
-        "hp": "NONE",
-        "rarity": "OUR",
-        "bloom": "NONE",
-        "cardTitle": ""
-      }
-    },
-    {
-      "id": "character-rarity-no-number",
-      "expectedCardNumber": "hBP04-003",
-      "extracted": {
-        "cardNumberRaw": "NONE",
-        "characterName": "一条莉々華",
-        "hp": "NONE",
-        "rarity": "OUR",
-        "bloom": "NONE",
-        "cardTitle": ""
-      }
+      "id": "acceptance-real-camera",
+      "purpose": "acceptance",
+      "acceptanceEvidence": true,
+      "requiredCoverage": ["camera", "gallery", "ios", "android", "web", "indoor", "low-light", "glare", "angle", "blur", "same-character-variants", "unreadable"],
+      "consentRequired": true,
+      "samples": []
     }
   ]
 }

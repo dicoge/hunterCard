@@ -12,7 +12,7 @@ const code = fs.readFileSync(src, 'utf8');
 fs.writeFileSync(out, ts.transpileModule(code, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019 },
 }).outputText);
-const { mapCoverRectToSource } = require(out);
+const { mapCoverRectToSource, mapViewportRectToSource } = require(out);
 
 function near(actual, expected, epsilon = 0.02) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} ~= ${expected}`);
@@ -50,6 +50,23 @@ r = mapCoverRectToSource(
   { padXRatio: 0.5, padYRatio: 0.25 },
 );
 near(r.x, 0); near(r.y, 0); near(r.width, 800); near(r.height, 600);
+
+// Non-zero rendered video origin: overlay viewport must first become video-local.
+r = mapViewportRectToSource(
+  { x: 40, y: 120, width: 390, height: 844 },
+  { width: 1920, height: 1080 },
+  { x: 88.75, y: 246.6, width: 292.5, height: 184.275 },
+);
+near(r.x, 772.86); near(r.y, 162); near(r.width, 374.29); near(r.height, 235.8);
+
+// Representative real web layout: 1280x720 video inside a 393x852 viewport.
+r = mapViewportRectToSource(
+  { x: 0, y: 0, width: 393, height: 852 },
+  { width: 1280, height: 720 },
+  { x: 49.125, y: 127.8, width: 294.75, height: 185.6925 },
+  { padXRatio: 0.14, padYRatio: 0.28 },
+);
+near(r.x, 480.59); near(r.y, 64.06); near(r.width, 318.83); near(r.height, 244.8);
 
 fs.rmSync(outDir, { recursive: true, force: true });
 console.log('scan-geometry tests passed');

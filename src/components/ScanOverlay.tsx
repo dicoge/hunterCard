@@ -20,6 +20,7 @@ import {
   TouchableOpacity,
   Animated,
   Dimensions,
+  LayoutChangeEvent,
 } from 'react-native';
 import { COLORS } from '../constants';
 
@@ -47,6 +48,7 @@ export interface ScanOverlayProps {
   onManualSearch: () => void;
   onToggleAutoScan: () => void;
   onRetry: () => void;
+  onScanAreaLayout?: (event: LayoutChangeEvent) => void;
 }
 
 export default function ScanOverlay({
@@ -65,6 +67,7 @@ export default function ScanOverlay({
   onManualSearch,
   onToggleAutoScan,
   onRetry,
+  onScanAreaLayout,
 }: ScanOverlayProps) {
   return (
     <>
@@ -104,6 +107,7 @@ export default function ScanOverlay({
                 }),
               },
             ]}
+            onLayout={onScanAreaLayout}
           >
             <Animated.View
               style={[
