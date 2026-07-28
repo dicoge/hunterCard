@@ -168,28 +168,34 @@ CREATE TABLE subscriptions (
 );
 CREATE INDEX idx_subscriptions_user ON subscriptions(user_id) WHERE status = 'active';
 
--- entitlement（某 user 的權威 tier 與 quota；合併多個來源 plan / promo / migration 的結果）
--- 對應 DIC-674 契約：free = free_user（每月 100 張）、pro = subscriber（不限量）。
--- 單一權威 quota：tier 決定 quota；limit 欄位 NULL = 無上限（unlimited）。
+-- entitlement（某 user 的 tier 與 quota）。**此 executable schema 是全系統 quota 的
+-- 單一 enforced 權威**（DB CHECK 實際強制）：free = free_user、pro = subscriber。
+-- Product-Entitlement-Architecture.md (DIC-674) 的產品角色語意層必須引用此處數值，
+-- 不得另立第二套。NULL = 無上限（unlimited）。DIC-674/DIC-774 acceptance：free 無 daily cap。
 CREATE TABLE entitlements (
   user_id         UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   tier            TEXT NOT NULL DEFAULT 'free'
                     CHECK (tier IN ('free','pro')),   -- free=free_user, pro=subscriber
-  daily_limit     INTEGER,                            -- NULL = 無日上限
-  monthly_limit   INTEGER,                            -- NULL = 無月上限（unlimited）
+  daily_limit     INTEGER,                            -- NULL = 無日上限（本契約 free/pro 皆 NULL）
+  monthly_limit   INTEGER DEFAULT 100,                -- free 預設 100；pro reconcile 時改 NULL
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  -- tier 與 quota 綁死為單一真相，杜絕 50/500 之類的第二套數字：
+  -- tier 與 quota 綁死為單一真相：
   CONSTRAINT quota_matches_tier CHECK (
-    (tier = 'free' AND daily_limit IS NULL AND monthly_limit = 100) OR   -- DIC-674：free 每月 100
-    (tier = 'pro'  AND daily_limit IS NULL AND monthly_limit IS NULL)    -- DIC-674：subscriber 不限量
+    (tier = 'free' AND daily_limit IS NULL AND monthly_limit = 100) OR   -- free 每月 100、無日上限
+    (tier = 'pro'  AND daily_limit IS NULL AND monthly_limit IS NULL)    -- subscriber 不限量
   )
 );
--- Seed：新 user 一律 free → INSERT (user_id, 'free', NULL, 100)。
--- 升級 subscriber → UPDATE SET tier='pro', daily_limit=NULL, monthly_limit=NULL。
--- guest（DIC-674：無 internal user id / 匿名 session）不落 entitlements，不可掃描。
 ```
 
-> **Quota gating（單一真相）**：掃描前讀 `entitlements`。`monthly_limit IS NULL`（pro）→ 不限量放行；否則比對當期 `scan_usage.scan_count < monthly_limit`（free = 100）才放行，達標回 `403 QUOTA_EXCEEDED`。沒有 entitlements row 的請求（guest / 未建 entitlement）不可掃描。任何地方都以 `entitlements.tier` + limit 欄位為唯一 quota 依據，不得在別處硬編 100 以外的數字。
+- **Seed（新 free user，executable + 冪等）** — 只給 `user_id`，靠 `tier`/`monthly_limit` DEFAULT 形成合法 `(free, NULL, 100)`，不會違反 `quota_matches_tier`：
+  ```sql
+  INSERT INTO entitlements (user_id) VALUES ($user) ON CONFLICT (user_id) DO NOTHING;
+  ```
+- **升級 subscriber（reconcile，Product §5.3 事件驅動）**：`UPDATE entitlements SET tier='pro', daily_limit=NULL, monthly_limit=NULL WHERE user_id=$user;`
+- **Backfill（migration `0001_auth.sql`）** — 既有 user 補 free entitlement：`INSERT INTO entitlements (user_id) SELECT id FROM users WHERE deleted_at IS NULL ON CONFLICT (user_id) DO NOTHING;`
+- **guest**（DIC-674：無 internal user id / 匿名 session）不落 `entitlements`，能力為常數、不可掃描。
+
+> **Quota gating（fail-closed）**：掃描前讀 `entitlements`。`monthly_limit IS NULL`（pro）→ 不限量放行；否則比對當期 `scan_usage.scan_count < monthly_limit`（free = 100）才放行，達標回 `403 QUOTA_EXCEEDED`。因 login-or-create（§5.1）與 backfill 保證每個 **active internal user 必有 entitlement row**，唯一「無 row」情形是 guest（無 internal user id），fail-closed 不放行正確。任何地方都以 `entitlements.tier` + limit 欄位為唯一 quota 依據，不得在別處硬編數字。
 
 #### 3.5.1 Merge 規則（scan_usage / subscriptions / entitlements）
 
@@ -340,11 +346,14 @@ Client 取得 provider ID token
        │     │     │          若 users.status != 'active' → 401 ACCOUNT_DISABLED
        │     │     │          若 status = 'active' → UPDATE users.last_login_at，登入
        │     │     └─ 未命中 → 直接 INSERT users（status='active'）+ INSERT auth_identities
+       │     │          + INSERT entitlements (user_id) VALUES (<new_user>) ON CONFLICT (user_id) DO NOTHING
+       │     │            → 依 DEFAULT 形成 (free, NULL, 100)，新 free_user 立即擁有每月 100 額度
        │     │          （uq_provider_subject_active 保證同一 (provider,sub) 同一 transaction 內
        │     │           不會被另一筆 login 插入重複 active row）
        │     └─ 簽發 access + refresh token → INSERT sessions → COMMIT
 ```
 > - 查詢過濾 `revoked_at IS NULL`，已解綁 row 不會被誤選。
+> - **新帳號在同一 transaction 內建立 entitlement**（冪等 `ON CONFLICT DO NOTHING`），配合 §3.5 backfill，保證每個 active user 必有 entitlement row；不會出現「新 free_user 無 row 被 fail-closed 擋掉掃描」。
 > - `FOR UPDATE` lock 與 login-or-create 在同一 transaction：若 delete 流程同時將同一 user 標記 `pending_deletion`，login 的 lock 會等到 delete COMMIT 後看到 `status = 'pending_deletion'` 而回 ACCOUNT_DISABLED，不會出現「剛 delete 又登入」的競態。
 > - INSERT users + INSERT identities 無需 lock：未命中表示全新 user，無競態對手。`uq_provider_subject_active` 在 DB 層保證唯一性，transaction 內失敗可 retry。
 
