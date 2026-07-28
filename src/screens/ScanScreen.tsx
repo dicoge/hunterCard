@@ -36,6 +36,7 @@ import {
   canAcquireScanJob,
   type CardSignature,
   type ScanLockState,
+  type ScanRect,
 } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
 
@@ -127,32 +128,26 @@ export default function ScanScreen() {
     scanLockRef.current = createScanLockState();
     pendingScanSignatureRef.current = null;
   };
-  // Nominal scan-area size/position from the layout. On web the *real* rendered
-  // rect is measured from the DOM (see resolveScanArea); this stays only as a
-  // dimensional last resort when a live measurement isn't available.
-  const getScanArea = () => ({
-    x: Math.round((SCREEN_WIDTH - SCAN_AREA_SIZE) / 2),
-    y: Math.round((SCREEN_HEIGHT - SCAN_AREA_SIZE * 0.63) / 2),
-    width: Math.round(SCAN_AREA_SIZE),
-    height: Math.round(SCAN_AREA_SIZE * 0.63),
-  });
-
-  // Resolve the scan box to a rectangle in window/viewport coordinates. On web we
-  // measure the *actual* rendered scan-box element (getBoundingClientRect), so the
-  // object-fit:cover inversion in autoScanService uses the true on-screen box
+  // Resolve the scan box to a rectangle in window/viewport coordinates by
+  // measuring the *actual* rendered scan-box element (getBoundingClientRect), so
+  // the object-fit:cover inversion in autoScanService uses the true on-screen box
   // rather than a guessed Y. The video's getBoundingClientRect (read inside
   // autoScanService) lives in the same coordinate space, so the two line up.
-  const resolveScanArea = () => {
-    if (isWeb) {
-      const node: any = scanAreaRef.current;
-      if (node && typeof node.getBoundingClientRect === 'function') {
-        const r = node.getBoundingClientRect();
-        if (r && r.width > 0 && r.height > 0) {
-          return { x: r.left, y: r.top, width: r.width, height: r.height };
-        }
+  //
+  // Fail closed: if the overlay ref hasn't mounted, exposes no
+  // getBoundingClientRect, or measures a zero-area box, return null instead of a
+  // guessed layout rect. The frame analysis and signature capture both treat null
+  // as "no scan this frame", so we never fingerprint the wrong pixels. (These
+  // functions are web-only; native never reaches this path.)
+  const resolveScanArea = (): ScanRect | null => {
+    const node: any = scanAreaRef.current;
+    if (node && typeof node.getBoundingClientRect === 'function') {
+      const r = node.getBoundingClientRect();
+      if (r && r.width > 0 && r.height > 0) {
+        return { x: r.left, y: r.top, width: r.width, height: r.height };
       }
     }
-    return getScanArea();
+    return null;
   };
 
   const setScanningStates = (scanning: boolean) => {

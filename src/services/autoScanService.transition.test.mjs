@@ -24,6 +24,8 @@ import {
   emptySignature,
   mapWindowRectToVideoSource,
   videoSourceRect,
+  analyzeFrame,
+  computeCardSignature,
   shouldAnalyzeFrame,
   shouldTriggerAutoScan,
   canAcquireScanJob,
@@ -450,4 +452,121 @@ test('camera/gallery concurrency: a running job blocks the other from starting',
   assert.equal(canAcquireScanJob({ isScanning: true, isGalleryPicking: false }), false, 'scan in flight blocks a new job');
   assert.equal(canAcquireScanJob({ isScanning: false, isGalleryPicking: true }), false, 'gallery pick blocks a new job');
   assert.equal(canAcquireScanJob({ isScanning: true, isGalleryPicking: true }), false);
+});
+
+// ── Consumer integration: analyzeFrame / computeCardSignature over a FRACTIONAL DOM rect ──
+// The scan box is measured with getBoundingClientRect and is fractional — e.g.
+// 292.5×184.275, and worse under an animated scale (295.125…). These exercise the
+// real pixel path (canvas → getImageData → luminanceGrid) through a fake browser
+// canvas whose bitmap is an INTEGER-sized buffer (as a real browser's is). If any
+// consumer used the raw fractional width for the buffer stride, the row index runs
+// off the end of the integer buffer and luminanceGrid yields NaN cells — so these
+// tests would catch that regression by asserting every one of the 144 cells is
+// finite. They also confirm live/manual capture agree and that A→B still separates.
+
+// A minimal fake `document` whose canvas holds an integer-sized pixel buffer and
+// renders a per-video luminance field. Sampling is by DESTINATION pixel over the
+// floored bitmap, matching how a browser rasterizes drawImage into the bitmap.
+globalThis.document = {
+  createElement(tag) {
+    if (tag !== 'canvas') throw new Error(`unexpected element <${tag}>`);
+    let bitmapW = 0;
+    let bitmapH = 0;
+    let field = () => 0.5;
+    const ctx = {
+      drawImage(video) {
+        field = (video && video.field) || (() => 0.5);
+      },
+      getImageData(_x, _y, gw, gh) {
+        // A real browser's ImageData is an integer bitmap; model that so a caller
+        // that indexes it with a fractional stride reads undefined → NaN.
+        const iw = Math.floor(gw);
+        const ih = Math.floor(gh);
+        const data = new Uint8ClampedArray(Math.max(0, iw * ih) * 4);
+        for (let py = 0; py < ih; py++) {
+          for (let px = 0; px < iw; px++) {
+            const lum = Math.max(0, Math.min(1, field((px + 0.5) / iw, (py + 0.5) / ih)));
+            const g = Math.round(lum * 255);
+            const idx = (py * iw + px) * 4;
+            data[idx] = g; data[idx + 1] = g; data[idx + 2] = g; data[idx + 3] = 255;
+          }
+        }
+        return { data, width: iw, height: ih };
+      },
+    };
+    return {
+      get width() { return bitmapW; },
+      set width(v) { bitmapW = v; },
+      get height() { return bitmapH; },
+      set height(v) { bitmapH = v; },
+      getContext: () => ctx,
+    };
+  },
+};
+
+/** A fake <video> whose intrinsic frame carries a 2D luminance `field(u,v)`. */
+function fieldVideo(field) {
+  return {
+    videoWidth: 1280,
+    videoHeight: 720,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 390, height: 844 }),
+    field,
+  };
+}
+// Two visibly different cards (same aggregate ~0.5, different spatial layout).
+const FIELD_A = (u) => 0.3 + u * 0.4;         // horizontal gradient
+const FIELD_B = (_, v) => 0.3 + v * 0.4;      // vertical gradient
+// Fractional scan-box rects as getBoundingClientRect actually reports them.
+const RECT_FRACTIONAL = { x: 49, y: 126, width: 292.5, height: 184.275 };
+const RECT_ANIMATED = { x: 47.4, y: 123.2, width: 295.125, height: 186.03 }; // under a pulse scale
+
+test('analyzeFrame over a fractional DOM rect: all 144 signature cells are finite (no NaN)', () => {
+  const frameA = analyzeFrame(fieldVideo(FIELD_A), RECT_FRACTIONAL);
+  assert.equal(frameA.signature.grid.length, SIGNATURE_GRID * SIGNATURE_GRID, 'a full 144-cell fingerprint');
+  assert.ok(frameA.signature.grid.every(Number.isFinite), 'every cell finite — fractional width never reaches the buffer stride');
+  assert.ok(Number.isFinite(frameA.brightness) && Number.isFinite(frameA.edgeDensity), 'metrics finite too');
+});
+
+test('analyzeFrame under an animated scale (295.125…) still yields 144 finite cells', () => {
+  const frame = analyzeFrame(fieldVideo(FIELD_A), RECT_ANIMATED);
+  assert.equal(frame.signature.grid.length, SIGNATURE_GRID * SIGNATURE_GRID);
+  assert.ok(frame.signature.grid.every(Number.isFinite), 'the worst-case animated fractional rect is still clean');
+});
+
+test('computeCardSignature over a fractional DOM rect: 144 finite cells (manual capture path)', () => {
+  const sig = computeCardSignature(fieldVideo(FIELD_A), RECT_FRACTIONAL);
+  assert.equal(sig.grid.length, SIGNATURE_GRID * SIGNATURE_GRID);
+  assert.ok(sig.grid.every(Number.isFinite), 'manual capture never fingerprints NaN');
+});
+
+test('live and manual fingerprints of the same card agree (both real pixel paths)', () => {
+  const live = analyzeFrame(fieldVideo(FIELD_A), RECT_FRACTIONAL).signature;
+  const manual = computeCardSignature(fieldVideo(FIELD_A), RECT_FRACTIONAL);
+  assert.ok(!isDifferentCard(live, manual), 'same card via analyzeFrame vs computeCardSignature is not a card change');
+});
+
+test('A→B through the real pixel path separates (fractional rect): B unlocks a lock on A', () => {
+  const sigA = computeCardSignature(fieldVideo(FIELD_A), RECT_FRACTIONAL);
+  const sigB = computeCardSignature(fieldVideo(FIELD_B), RECT_FRACTIONAL);
+  assert.ok(sigA.grid.every(Number.isFinite) && sigB.grid.every(Number.isFinite));
+  assert.ok(
+    signatureDistance(sigA, sigB) > CARD_CHANGE_DISTANCE,
+    'two genuinely different cards read as different even after fractional-rect resampling'
+  );
+  assert.ok(isDifferentCard(sigA, sigB), 'A→B is a real card change');
+});
+
+test('a degenerate (sub-pixel) scan rect fails closed: no card, no signature', () => {
+  const tiny = { x: 10, y: 10, width: 0.4, height: 0.4 };
+  const frame = analyzeFrame(fieldVideo(FIELD_A), tiny);
+  assert.equal(frame.hasCard, false, 'a rect that floors to <1px yields no card');
+  assert.equal(frame.signature.grid.length, 0, 'and no fingerprint');
+  assert.equal(computeCardSignature(fieldVideo(FIELD_A), tiny).grid.length, 0, 'capture fails closed too');
+});
+
+test('a null scan rect fails closed: analyzeFrame → no card, computeCardSignature → empty', () => {
+  const frame = analyzeFrame(fieldVideo(FIELD_A), null);
+  assert.equal(frame.hasCard, false);
+  assert.equal(frame.signature.grid.length, 0);
+  assert.equal(computeCardSignature(fieldVideo(FIELD_A), null).grid.length, 0);
 });

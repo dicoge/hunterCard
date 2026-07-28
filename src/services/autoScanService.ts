@@ -163,37 +163,76 @@ export function videoSourceRect(
   return mapped;
 }
 
+/** A scan rectangle in window/viewport coordinates. May be fractional. */
+export interface ScanRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A frame analysis result meaning "nothing to score here". */
+function noCardFrame(): FrameAnalysis {
+  return { hasCard: false, isStable: false, confidence: 0, brightness: 0, edgeDensity: 0, signature: emptySignature() };
+}
+
+/**
+ * Integer, in-bounds bitmap dimensions for the analysis canvas.
+ *
+ * The scan box is measured from the DOM (`getBoundingClientRect`) and is
+ * typically FRACTIONAL — e.g. 292.5×184.275, and more so under an animated
+ * scale (295.125…). A canvas bitmap is always an integer size, so EVERY
+ * downstream consumer — the `drawImage` destination, `getImageData`, the
+ * edge-loop stride and `luminanceGrid` — must use the SAME integer dimensions.
+ * If the pixel buffer is sized to the floored bitmap but the stride/loops use
+ * the raw fractional width, the row stride runs off the end of the buffer and
+ * produces `NaN` luminance cells (12/144 cells at 292.5×184.275, all 144 at
+ * 295.125), corrupting live detection, the manual lock and A→B unlock.
+ *
+ * Returns null for a missing or degenerate rect so callers fail closed (no card
+ * / no signature) instead of scanning garbage.
+ */
+function bitmapDims(scanArea: ScanRect | null): { w: number; h: number } | null {
+  if (!scanArea) return null;
+  const w = Math.floor(scanArea.width);
+  const h = Math.floor(scanArea.height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) return null;
+  return { w, h };
+}
+
 /**
  * Analyze a single video frame for card presence
  * Uses canvas to extract pixel data and detect card characteristics
  */
 export function analyzeFrame(
   videoElement: HTMLVideoElement,
-  scanArea: { x: number; y: number; width: number; height: number }
+  scanArea: ScanRect | null
 ): FrameAnalysis {
+  // Resolve the fractional DOM rect to integer bitmap dimensions used uniformly
+  // below; a missing/degenerate rect fails closed to "no card".
+  const dims = bitmapDims(scanArea);
+  if (!dims) return noCardFrame();
+  const { w, h } = dims;
+
   const canvas = document.createElement('canvas');
-  canvas.width = scanArea.width;
-  canvas.height = scanArea.height;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return { hasCard: false, isStable: false, confidence: 0, brightness: 0, edgeDensity: 0, signature: emptySignature() };
-  }
+  if (!ctx) return noCardFrame();
 
   // Draw the scan-box region (mapped from CSS/window coords to intrinsic video
-  // pixels) into the analysis canvas at its CSS size, so brightness/edge/
-  // fingerprint all sample the same region the user sees. If the region can't be
-  // resolved (video unsized or scan box off-frame) we have nothing real to
-  // analyze — report no card rather than sampling the wrong pixels.
-  const src = videoSourceRect(videoElement, scanArea);
-  if (!src) {
-    return { hasCard: false, isStable: false, confidence: 0, brightness: 0, edgeDensity: 0, signature: emptySignature() };
-  }
+  // pixels) into the analysis canvas at its integer bitmap size, so brightness/
+  // edge/fingerprint all sample the same region the user sees. If the region
+  // can't be resolved (video unsized or scan box off-frame) we have nothing real
+  // to analyze — report no card rather than sampling the wrong pixels.
+  const src = videoSourceRect(videoElement, scanArea as ScanRect);
+  if (!src) return noCardFrame();
   ctx.drawImage(
     videoElement,
     src.x, src.y, src.width, src.height,
-    0, 0, scanArea.width, scanArea.height
+    0, 0, w, h
   );
-  const imageData = ctx.getImageData(0, 0, scanArea.width, scanArea.height);
+  const imageData = ctx.getImageData(0, 0, w, h);
   const pixels = imageData.data;
 
   // Calculate average brightness
@@ -204,8 +243,8 @@ export function analyzeFrame(
   const brightness = totalBrightness / (pixels.length / 4) / 255;
 
   // Edge detection using Sobel-like horizontal gradient
-  const width = scanArea.width;
-  const height = scanArea.height;
+  const width = w;
+  const height = h;
   let edgePixels = 0;
   const threshold = 60; // Higher = fewer false positives (was 30)
 
@@ -252,11 +291,18 @@ export function analyzeFrame(
  */
 export function computeCardSignature(
   videoElement: HTMLVideoElement,
-  scanArea: { x: number; y: number; width: number; height: number }
+  scanArea: ScanRect | null
 ): CardSignature {
+  // Same integer-bitmap discipline as analyzeFrame: a fractional DOM rect must
+  // never reach getImageData/luminanceGrid, or the row stride runs off the pixel
+  // buffer and produces NaN cells. A missing/degenerate rect fails closed.
+  const dims = bitmapDims(scanArea);
+  if (!dims) return emptySignature();
+  const { w, h } = dims;
+
   const canvas = document.createElement('canvas');
-  canvas.width = scanArea.width;
-  canvas.height = scanArea.height;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) return emptySignature();
   // Sample the same mapped scan-box region as the live loop so a manual capture
@@ -264,15 +310,15 @@ export function computeCardSignature(
   // intrinsic frame), keeping capture-time and live fingerprints comparable. If
   // the region can't be resolved, return no signature rather than a fingerprint
   // of the wrong pixels — a null-signature lock only releases via empty frames.
-  const src = videoSourceRect(videoElement, scanArea);
+  const src = videoSourceRect(videoElement, scanArea as ScanRect);
   if (!src) return emptySignature();
   ctx.drawImage(
     videoElement,
     src.x, src.y, src.width, src.height,
-    0, 0, scanArea.width, scanArea.height
+    0, 0, w, h
   );
-  const { data } = ctx.getImageData(0, 0, scanArea.width, scanArea.height);
-  return { grid: luminanceGrid(data, scanArea.width, scanArea.height) };
+  const { data } = ctx.getImageData(0, 0, w, h);
+  return { grid: luminanceGrid(data, w, h) };
 }
 
 // ── Stability Detection ──
@@ -287,7 +333,7 @@ const STABILITY_FRAMES = 10; // Need 10 consecutive frames with card (was 5)
  */
 export function analyzeFrameWithStability(
   videoElement: HTMLVideoElement,
-  scanArea: { x: number; y: number; width: number; height: number }
+  scanArea: ScanRect | null
 ): FrameAnalysis {
   const result = analyzeFrame(videoElement, scanArea);
 
