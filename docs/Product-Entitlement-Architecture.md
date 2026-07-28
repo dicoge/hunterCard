@@ -135,7 +135,16 @@ effectiveEntitlement(user):
   role = resolveRole(...)                        # §2
   if role == 'guest':
       return { role:'guest', can_scan:false, scan_limit:0, premium:false }
-  ent  = entitlements[user.id]  (缺 row → 視為 free 預設)
+
+  ent = entitlements[user.id]
+  if ent is MISSING:
+      # 已驗證的 user 卻查無 entitlements row 是不變式被破壞（未 backfill /
+      # migration/reconcile 未跑完 / 資料損毀），**絕不 synthesize 一個可用的 free 預設**——
+      # 那會在資料異常時「無中生有」出合法存取，違反 AUTH 的 fail-closed gating 契約。
+      # 一律 fail closed：拒絕掃描並回內部 entitlement 錯誤。
+      triggerEntitlementBackfill(user.id)        # 非同步修復（§5.3 reconcile），與 gating 解耦
+      raise EntitlementError(ENTITLEMENT_UNAVAILABLE)   # → 500，caller 不得放行掃描
+
   used = scan_usage[user.id][currentPeriod].scan_count  (缺 → 0)
   return {
     role, tier: ent.tier,
@@ -146,6 +155,7 @@ effectiveEntitlement(user):
     period: currentPeriod
   }
 ```
+> **fail-closed 不變式**：`role != 'guest'`（即已驗證 user）但 `entitlements` 查無 row，**不是** free；是「資料狀態不明」。gating path（§6.1 reserve、§6.2 premium、§6.3 查詢）一律回 `ENTITLEMENT_UNAVAILABLE`（500）而非降級為 free。修復（backfill / reconcile）走**獨立的非同步路徑**觸發，不在 gating 內就地補一個可用額度——否則 migration / reconcile 未完成或資料損毀時會合成出「看似合法」的 free 掃描權限。guest（本就無 row）仍走上面的常數分支，與此不變式不衝突。
 
 ### 5.2 額度數值（產品角色語意；數值鏡像自 AUTH executable schema）
 
@@ -188,7 +198,7 @@ on subscription change(user_id):
 
 | Method & Path | 角色需求 | 行為 |
 | --- | --- | --- |
-| `POST /api/scan/reserve` | 需登入 | 原子預留一次額度，回 `{ scan_ticket, scan_remaining, expires_at }`。guest → `401 SCAN_REQUIRES_LOGIN`；超額 → `403 SCAN_QUOTA_EXCEEDED`（帶 `scan_used/scan_limit/reset_at`） |
+| `POST /api/scan/reserve` | 需登入 | 原子預留一次額度，回 `{ scan_ticket, scan_remaining, expires_at }`。guest → `401 SCAN_REQUIRES_LOGIN`；超額 → `403 SCAN_QUOTA_EXCEEDED`（帶 `scan_used/scan_limit/reset_at`）；**已驗證 user 但查無 entitlements row → `500 ENTITLEMENT_UNAVAILABLE`（fail closed，不得當 free 放行，見 §5.1）** |
 | `POST /api/scan/commit` | 需登入 | 帶 `scan_ticket`：辨識完成後確認消耗（把 ticket 標 `consumed`）。冪等 |
 | `POST /api/scan/release` | 需登入 | 帶 `scan_ticket`：辨識失敗 / 取消 → 補償退還額度（把 ticket 標 `released` 並回補計數）。冪等 |
 
@@ -211,7 +221,10 @@ on subscription change(user_id):
 不使用「`SELECT ... FOR UPDATE` 一個可能不存在的 row」——缺 row 時 `FOR UPDATE` 鎖不到任何東西，兩個併發首扫會各自 INSERT 造成超扣。改用**條件式 UPSERT，單一語句原子完成 create-or-increment**：
 
 ```sql
--- free_user（有限額）：limit 由 effectiveEntitlement 求得（§5.1）
+-- free_user（有限額）：$limit 由 effectiveEntitlement 求得（§5.1）。
+-- 前置不變式：effectiveEntitlement 對「已驗證 user 但查無 entitlements row」已先 raise
+-- ENTITLEMENT_UNAVAILABLE（500），因此執行到這條 UPSERT 時 $limit 必來自真實 entitlements row，
+-- 不可能是被 synthesize 的 free 預設。
 INSERT INTO scan_usage (user_id, period, scan_count)
 VALUES ($user, $period, 1)
 ON CONFLICT (user_id, period)
@@ -255,11 +268,11 @@ RETURNING scan_count;
 
 | Method & Path | 角色需求 | Response |
 | --- | --- | --- |
-| `GET /api/entitlements` | 任意（含 guest） | §5.1 的 `effectiveEntitlement`：`{ role, tier, scan_limit, scan_used, scan_remaining, premium, period }` |
+| `GET /api/entitlements` | 任意（含 guest） | §5.1 的 `effectiveEntitlement`：`{ role, tier, scan_limit, scan_used, scan_remaining, premium, period }`。**已驗證 user 但查無 entitlements row → `500 ENTITLEMENT_UNAVAILABLE`（不得回 free，見 §5.1）**，client 顯示暫時性錯誤並重試，不得因此放行掃描 |
 
 - 也可併入 AUTH `GET /api/auth/me`，多回一個 `entitlement` 物件，省一次 round-trip。二擇一，建議獨立 `GET /api/entitlements` 讓 guest 也能查（`me` 需登入）。
 
-**新增錯誤碼**（延續 AUTH §6 命名）：`SCAN_REQUIRES_LOGIN`(401)、`SCAN_QUOTA_EXCEEDED`(403)、`SCAN_TICKET_INVALID`(409，recognize 端點收到無效/已用/非本人 ticket)、`PREMIUM_REQUIRES_SUBSCRIPTION`(403)。
+**新增錯誤碼**（延續 AUTH §6 命名）：`SCAN_REQUIRES_LOGIN`(401)、`SCAN_QUOTA_EXCEEDED`(403)、`SCAN_TICKET_INVALID`(409，recognize 端點收到無效/已用/非本人 ticket)、`PREMIUM_REQUIRES_SUBSCRIPTION`(403)、`ENTITLEMENT_UNAVAILABLE`(500，已驗證 user 查無 entitlements row → fail closed，不降級為 free)。
 
 ---
 
@@ -285,7 +298,7 @@ RETURNING scan_count;
 | **Web** | §4 Onboarding、§6.3 `GET /api/entitlements`、§6.1 掃描 gate | Home 提供 訪客/Google(/Apple) 進場；依 entitlement 隱藏/引導掃描與 premium；Paywall 靜態方案頁 |
 | **iOS** | §4、§6、§7(IAP 佔位) | Apple+Google 登入按鈕；掃描前查 remaining；premium 鎖；IAP 佔位不接金流 |
 | **Android** | §4、§6、§7(Play 佔位) | Google 登入優先；同上 gating |
-| **QA** | §3 matrix、§3.1 路徑、§6 錯誤碼、§4 flow | 三角色 × 各能力矩陣；quota 邊界（99/100/101、月初 reset）；**每條掃描路徑各驗一次（含 web/本機 OCR fallback、相簿匯入）確認都需 reserve**；**離線時掃描 fail-closed**；併發首扫不超額（多 tab/多裝置同時 reserve）；辨識失敗走 release 退還、逾時 sweeper 回收；**直接 `curl /data/trends/*.json` 應 404/403**、非 subscriber 打 `/api/trends/*` 得 403；guest 登入牆 deferred action；跨裝置訂閱共享 |
+| **QA** | §3 matrix、§3.1 路徑、§5.1 fail-closed、§6 錯誤碼、§4 flow | 三角色 × 各能力矩陣；quota 邊界（99/100/101、月初 reset）；**每條掃描路徑各驗一次（含 web/本機 OCR fallback、相簿匯入）確認都需 reserve**；**離線時掃描 fail-closed**；併發首扫不超額（多 tab/多裝置同時 reserve）；辨識失敗走 release 退還、逾時 sweeper 回收；**直接 `curl /data/trends/*.json` 應 404/403**、非 subscriber 打 `/api/trends/*` 得 403；guest 登入牆 deferred action；跨裝置訂閱共享；**已驗證 user 但 entitlements row 缺失（模擬 migration/reconcile 未完成或資料損毀）→ `/api/scan/reserve` 與 `/api/entitlements` 皆回 `500 ENTITLEMENT_UNAVAILABLE`、掃描被擋，絕不放行任何 free 掃描；backfill 觸發後重試恢復正常** |
 | **隱私權政策** | §2、§5 | 揭露：依 `users.id` 記錄掃描用量與訂閱狀態；email 不決定權限；訪客不建立帳號；刪除帳號連帶清除 scan_usage/subscriptions/entitlements（AUTH §3.5.2 purge） |
 
 ---
