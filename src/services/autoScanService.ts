@@ -19,6 +19,45 @@ export interface FrameAnalysis {
   brightness: number;
   /** Edge density (card has straight edges) */
   edgeDensity: number;
+  /** Spatial luminance fingerprint of the scan area (used to tell cards apart) */
+  signature: CardSignature;
+}
+
+/** Side of the square luminance fingerprint grid (SIGNATURE_GRID² cells). */
+export const SIGNATURE_GRID = 8;
+
+/**
+ * Coarse *spatial* fingerprint used to tell one card apart from another.
+ * `grid` is a row-major SIGNATURE_GRID×SIGNATURE_GRID array of average
+ * luminance (0-1) per cell. Two different cards differ in their spatial layout
+ * even when their frame-wide average brightness/edge density are similar, which
+ * a single aggregate number cannot capture.
+ */
+export interface CardSignature {
+  grid: number[];
+}
+
+/** A signature for a frame with no card (empty grid → never matches a card). */
+export function emptySignature(): CardSignature {
+  return { grid: [] };
+}
+
+/** Downsample raw RGBA pixels into a SIGNATURE_GRID² luminance grid (0-1). */
+function luminanceGrid(pixels: Uint8ClampedArray, width: number, height: number): number[] {
+  const cells = SIGNATURE_GRID * SIGNATURE_GRID;
+  const sums = new Array(cells).fill(0);
+  const counts = new Array(cells).fill(0);
+  for (let y = 0; y < height; y++) {
+    const cy = Math.min(SIGNATURE_GRID - 1, Math.floor((y / height) * SIGNATURE_GRID));
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      const lum = (pixels[idx] + pixels[idx + 1] + pixels[idx + 2]) / 3;
+      const cell = cy * SIGNATURE_GRID + Math.min(SIGNATURE_GRID - 1, Math.floor((x / width) * SIGNATURE_GRID));
+      sums[cell] += lum;
+      counts[cell] += 1;
+    }
+  }
+  return sums.map((s, i) => (counts[i] ? s / counts[i] / 255 : 0));
 }
 
 /**
@@ -34,7 +73,7 @@ export function analyzeFrame(
   canvas.height = scanArea.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    return { hasCard: false, isStable: false, confidence: 0, brightness: 0, edgeDensity: 0 };
+    return { hasCard: false, isStable: false, confidence: 0, brightness: 0, edgeDensity: 0, signature: emptySignature() };
   }
 
   // Draw the scan area portion of the video onto the canvas
@@ -81,6 +120,7 @@ export function analyzeFrame(
   }
 
   const edgeDensity = edgePixels / (width * height);
+  const signature: CardSignature = { grid: luminanceGrid(pixels, width, height) };
 
   // Card detection heuristic:
   // Cards typically have moderate brightness (not too dark/light) and have straight edges
@@ -91,7 +131,30 @@ export function analyzeFrame(
     (edgeDensity > 0.1 && edgeDensity < 0.4 ? 0.2 : 0)
   ));
 
-  return { hasCard, isStable: false, confidence, brightness, edgeDensity };
+  return { hasCard, isStable: false, confidence, brightness, edgeDensity, signature };
+}
+
+/**
+ * Compute just the card fingerprint for the current video frame. Used at
+ * capture time (including manual scans) so the lock records the *actual*
+ * scanned card, enabling direct A→B replacement detection afterwards.
+ */
+export function computeCardSignature(
+  videoElement: HTMLVideoElement,
+  scanArea: { x: number; y: number; width: number; height: number }
+): CardSignature {
+  const canvas = document.createElement('canvas');
+  canvas.width = scanArea.width;
+  canvas.height = scanArea.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return emptySignature();
+  ctx.drawImage(
+    videoElement,
+    scanArea.x, scanArea.y, scanArea.width, scanArea.height,
+    0, 0, scanArea.width, scanArea.height
+  );
+  const { data } = ctx.getImageData(0, 0, scanArea.width, scanArea.height);
+  return { grid: luminanceGrid(data, scanArea.width, scanArea.height) };
 }
 
 // ── Stability Detection ──
@@ -148,12 +211,6 @@ export function resetAutoScan(): void {
 // frames — e.g. while a result overlay is open). A single false-negative
 // no-card frame, or re-detecting the same card (A→A), never releases the lock.
 
-/** Coarse visual signature used to tell one card apart from another. */
-export interface CardSignature {
-  brightness: number;
-  edgeDensity: number;
-}
-
 export interface ScanLockState {
   /** Locked after a successful scan; blocks duplicate auto-scans of that card. */
   locked: boolean;
@@ -165,9 +222,13 @@ export interface ScanLockState {
   lockedSignature: CardSignature | null;
 }
 
-/** Minimum absolute change in a signature dimension to count as a new card. */
-export const CARD_CHANGE_BRIGHTNESS_DELTA = 0.18;
-export const CARD_CHANGE_EDGE_DELTA = 0.06;
+/**
+ * Mean-centred L1 distance between two fingerprints. Centring each grid on its
+ * own mean makes the comparison invariant to a uniform brightness shift (same
+ * card under changing light stays "same"), so only a genuine change in spatial
+ * layout — a different card — drives the distance up.
+ */
+export const CARD_CHANGE_DISTANCE = 0.04;
 /** Consecutive differing frames required before accepting a card swap (noise filter). */
 export const CARD_CHANGE_STABLE_FRAMES = 2;
 
@@ -175,12 +236,27 @@ export function createScanLockState(): ScanLockState {
   return { locked: false, emptyStreak: 0, changedStreak: 0, lockedSignature: null };
 }
 
+function centeredGrid(grid: number[]): number[] {
+  if (grid.length === 0) return grid;
+  const mean = grid.reduce((sum, v) => sum + v, 0) / grid.length;
+  return grid.map(v => v - mean);
+}
+
+/** Distance between two card fingerprints; Infinity if either has no grid. */
+export function signatureDistance(a: CardSignature, b: CardSignature): number {
+  if (a.grid.length === 0 || b.grid.length === 0 || a.grid.length !== b.grid.length) {
+    return Infinity;
+  }
+  const ca = centeredGrid(a.grid);
+  const cb = centeredGrid(b.grid);
+  let sum = 0;
+  for (let i = 0; i < ca.length; i++) sum += Math.abs(ca[i] - cb[i]);
+  return sum / ca.length;
+}
+
 /** True when two signatures are far enough apart to be different cards. */
 export function isDifferentCard(a: CardSignature, b: CardSignature): boolean {
-  return (
-    Math.abs(a.brightness - b.brightness) > CARD_CHANGE_BRIGHTNESS_DELTA ||
-    Math.abs(a.edgeDensity - b.edgeDensity) > CARD_CHANGE_EDGE_DELTA
-  );
+  return signatureDistance(a, b) > CARD_CHANGE_DISTANCE;
 }
 
 /**
@@ -216,8 +292,7 @@ export function advanceScanLock(
     return next;
   }
 
-  const signature: CardSignature = { brightness: frame.brightness, edgeDensity: frame.edgeDensity };
-  if (next.lockedSignature && isDifferentCard(signature, next.lockedSignature)) {
+  if (next.lockedSignature && isDifferentCard(frame.signature, next.lockedSignature)) {
     next.changedStreak = prev.changedStreak + 1;
     if (next.changedStreak >= CARD_CHANGE_STABLE_FRAMES) {
       next.locked = false;

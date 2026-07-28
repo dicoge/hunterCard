@@ -30,6 +30,7 @@ import {
   advanceScanLock,
   createScanLockState,
   lockAfterScan,
+  computeCardSignature,
   shouldAnalyzeFrame,
   shouldTriggerAutoScan,
   canAcquireScanJob,
@@ -123,6 +124,13 @@ export default function ScanScreen() {
     scanLockRef.current = createScanLockState();
     pendingScanSignatureRef.current = null;
   };
+  // Scan-area rectangle (shared by the auto-scan loop and capture-time fingerprinting).
+  const getScanArea = () => ({
+    x: Math.round((SCREEN_WIDTH - SCAN_AREA_SIZE) / 2),
+    y: Math.round(SCREEN_HEIGHT * 0.15),
+    width: Math.round(SCAN_AREA_SIZE),
+    height: Math.round(SCAN_AREA_SIZE * 0.63),
+  });
 
   const setScanningStates = (scanning: boolean) => {
     isScanningRef.current = scanning;
@@ -221,12 +229,7 @@ export default function ScanScreen() {
     if (!canAcquireScanJob({ isScanning: isScanning || isProcessingOCR, isGalleryPicking: isGalleryPickingRef.current })) return;
 
     let mounted = true;
-    const scanArea = {
-      x: Math.round((SCREEN_WIDTH - SCAN_AREA_SIZE) / 2),
-      y: Math.round(SCREEN_HEIGHT * 0.15),
-      width: Math.round(SCAN_AREA_SIZE),
-      height: Math.round(SCAN_AREA_SIZE * 0.63),
-    };
+    const scanArea = getScanArea();
 
     const loop = () => {
       if (!mounted) return;
@@ -262,10 +265,6 @@ export default function ScanScreen() {
 
           if (trigger && now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
             lastScanTimeRef.current = now;
-            pendingScanSignatureRef.current = {
-              brightness: result.brightness,
-              edgeDensity: result.edgeDensity,
-            };
             captureAndRecognize();
           }
         }
@@ -338,6 +337,20 @@ export default function ScanScreen() {
       setScanProgress(1);
       setScanError(null);
       setCapturedPhotoUri(null);
+
+      // Fingerprint the live frame at capture time so the lock records the
+      // actual scanned card — this is what lets a later direct A→B swap unlock,
+      // for auto-scan AND manual scans (which never pass through the loop).
+      if (isWeb) {
+        const sigVideo = document.querySelector('video');
+        if (sigVideo && sigVideo.readyState >= 2) {
+          try {
+            pendingScanSignatureRef.current = computeCardSignature(sigVideo, getScanArea());
+          } catch {
+            pendingScanSignatureRef.current = null;
+          }
+        }
+      }
 
       // 拍攝照片
       let photo;
