@@ -24,13 +24,28 @@ import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCard
 import { recognizeTextWeb } from '../services/webOcr';
 import ScanOverlay from '../components/ScanOverlay';
 import ScanResultCard from '../components/ScanResultCard';
-import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
+import {
+  analyzeFrameWithStability,
+  resetAutoScan,
+  advanceScanLock,
+  createScanLockState,
+  lockAfterScan,
+  shouldAnalyzeFrame,
+  shouldTriggerAutoScan,
+  canAcquireScanJob,
+  type CardSignature,
+  type ScanLockState,
+} from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
 const isWeb = Platform.OS === 'web';
 const SCAN_COOLDOWN_MS = 3000; // Don't re-scan same card within 3s
+const OVERLAY_THROTTLE_MS = 500; // Under a result/search/error overlay, analyze at most every 500ms
+const LIVE_UNLOCK_EMPTY_FRAMES = 10; // ~166ms at 60fps of no-card frames releases the lock (live loop)
+const OVERLAY_UNLOCK_EMPTY_FRAMES = 2; // ~1s of no-card frames releases the lock (throttled overlay loop)
+const AUTO_SCAN_CONFIDENCE = 0.85; // Minimum stability confidence to auto-trigger a capture
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
@@ -92,10 +107,22 @@ export default function ScanScreen() {
 
   // Scan locking and state management
   const isScanningRef = useRef<boolean>(false);
-  const wasCardScannedRef = useRef<boolean>(false);
   const isGalleryPickingRef = useRef<boolean>(false);
-  const noCardFramesRef = useRef<number>(0);
   const lastAnalysisTimeRef = useRef<number>(0);
+  // Auto-scan duplicate/card-swap lock (see autoScanService state machine).
+  const scanLockRef = useRef<ScanLockState>(createScanLockState());
+  // Signature of the card the in-flight auto-scan capture is processing.
+  const pendingScanSignatureRef = useRef<CardSignature | null>(null);
+
+  // Lock auto-scan after a successful capture so the same card isn't re-scanned.
+  const lockScanAfterCapture = (signature: CardSignature | null) => {
+    scanLockRef.current = lockAfterScan(signature);
+  };
+  // Fully release the lock (manual scan / retry — user explicitly wants a fresh capture).
+  const unlockScan = () => {
+    scanLockRef.current = createScanLockState();
+    pendingScanSignatureRef.current = null;
+  };
 
   const setScanningStates = (scanning: boolean) => {
     isScanningRef.current = scanning;
@@ -191,7 +218,7 @@ export default function ScanScreen() {
     // Auto-scan only works on web; native keeps manual scan
     if (!isWeb) return;
     if (!isCameraReady || !autoScanEnabled) return;
-    if (isScanning || isProcessingOCR || isGalleryPickingRef.current) return;
+    if (!canAcquireScanJob({ isScanning: isScanning || isProcessingOCR, isGalleryPicking: isGalleryPickingRef.current })) return;
 
     let mounted = true;
     const scanArea = {
@@ -206,38 +233,40 @@ export default function ScanScreen() {
 
       const video = document.querySelector('video');
       if (video && video.readyState >= 2) {
-        const isOverlayVisible = resultCard.visible || showSearch || scanError || searchError;
+        const isOverlayVisible = !!(resultCard.visible || showSearch || scanError || searchError);
         const now = Date.now();
 
-        // Throttling: If overlay is visible, run at 500ms intervals to save CPU, otherwise every frame
-        const shouldAnalyze = !isOverlayVisible || (now - lastAnalysisTimeRef.current >= 500);
+        // Throttle frame analysis to near-idle CPU while an overlay is shown.
+        const analyze = shouldAnalyzeFrame({
+          isOverlayVisible,
+          nowMs: now,
+          lastAnalysisMs: lastAnalysisTimeRef.current,
+          overlayThrottleMs: OVERLAY_THROTTLE_MS,
+        });
 
-        if (shouldAnalyze) {
+        if (analyze) {
           lastAnalysisTimeRef.current = now;
           const result = analyzeFrameWithStability(video, scanArea);
 
-          if (!result.hasCard) {
-            noCardFramesRef.current += 1;
-            // Unlocked after stable no-card frames (10 frames at 60fps ~ 166ms, or 2 frames at 500ms throttle ~ 1s)
-            const requiredFrames = isOverlayVisible ? 2 : 10;
-            if (noCardFramesRef.current >= requiredFrames) {
-              wasCardScannedRef.current = false;
-            }
-          } else {
-            noCardFramesRef.current = 0;
-          }
+          const requiredEmptyFrames = isOverlayVisible
+            ? OVERLAY_UNLOCK_EMPTY_FRAMES
+            : LIVE_UNLOCK_EMPTY_FRAMES;
+          scanLockRef.current = advanceScanLock(scanLockRef.current, result, requiredEmptyFrames);
 
-          const shouldTriggerScan =
-            !isOverlayVisible &&
-            result.isStable &&
-            result.confidence > 0.85 &&
-            !wasCardScannedRef.current;
+          const trigger = shouldTriggerAutoScan({
+            isOverlayVisible,
+            frame: result,
+            locked: scanLockRef.current.locked,
+            confidenceThreshold: AUTO_SCAN_CONFIDENCE,
+          });
 
-          if (shouldTriggerScan) {
-            if (now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
-              lastScanTimeRef.current = now;
-              captureAndRecognize();
-            }
+          if (trigger && now - lastScanTimeRef.current > SCAN_COOLDOWN_MS) {
+            lastScanTimeRef.current = now;
+            pendingScanSignatureRef.current = {
+              brightness: result.brightness,
+              edgeDensity: result.edgeDensity,
+            };
+            captureAndRecognize();
           }
         }
       }
@@ -292,7 +321,7 @@ export default function ScanScreen() {
 
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
-    if (isScanningRef.current || isGalleryPickingRef.current) return;
+    if (!canAcquireScanJob({ isScanning: isScanningRef.current, isGalleryPicking: isGalleryPickingRef.current })) return;
     if (isWeb) {
       if (!webCameraRef.current) {
         Alert.alert('錯誤', '相機未準備好');
@@ -390,7 +419,7 @@ export default function ScanScreen() {
           setResultCard({ visible: true, card: cardInfo, confidence: 0.9 });
           setSearchResults([]); setSearchError(null); setSuggestions([]);
           setCapturedPhotoUri(null); resetAutoScan();
-          wasCardScannedRef.current = true;
+          lockScanAfterCapture(pendingScanSignatureRef.current);
           return;
         }
 
@@ -416,7 +445,7 @@ export default function ScanScreen() {
             setResultCard({ visible: true, card: result.card, confidence: 0.85 });
             setSearchResults([]); setSearchError(null); setSuggestions([]);
             setCapturedPhotoUri(null); resetAutoScan();
-            wasCardScannedRef.current = true;
+            lockScanAfterCapture(pendingScanSignatureRef.current);
           } else {
             const recognizedText = await recognizeTextWeb(photo.uri);
             const trimmedText = recognizedText.text.trim();
@@ -429,7 +458,7 @@ export default function ScanScreen() {
                 setResultCard({ visible: true, card: fallbackResult.card, confidence: 0.85 });
                 setSearchResults([]); setSearchError(null); setSuggestions([]);
                 setCapturedPhotoUri(null); resetAutoScan();
-                wasCardScannedRef.current = true;
+                lockScanAfterCapture(pendingScanSignatureRef.current);
                 return;
               }
               setSearchError(fallbackResult.error || '找不到匹配的卡牌');
@@ -472,7 +501,7 @@ export default function ScanScreen() {
             setCapturedPhotoUri(null);
             // Reset auto-scan stability buffer after successful scan
             resetAutoScan();
-            wasCardScannedRef.current = true;
+            lockScanAfterCapture(pendingScanSignatureRef.current);
           } else {
             // 沒有精確匹配 — 用全部結果做模糊搜尋，讓用戶選擇
             setSearchError(result.error || '找不到匹配的卡牌');
@@ -500,10 +529,13 @@ export default function ScanScreen() {
 
   // 從相冊選擇圖片進行識別
   const pickFromGallery = async () => {
-    if (isScanningRef.current || isGalleryPickingRef.current) return;
+    if (!canAcquireScanJob({ isScanning: isScanningRef.current, isGalleryPicking: isGalleryPickingRef.current })) return;
     try {
       isGalleryPickingRef.current = true;
       setScanningStates(true);
+      // Gallery images have no live-frame signature; lock without one so only
+      // an empty-frame run (not a spurious signature match) can release it.
+      pendingScanSignatureRef.current = null;
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -532,7 +564,7 @@ export default function ScanScreen() {
             setSuggestions([]);
             setCapturedPhotoUri(null);
             resetAutoScan();
-            wasCardScannedRef.current = true;
+            lockScanAfterCapture(pendingScanSignatureRef.current);
           } else {
             // Fallback 到全圖 OCR
             const recognizedText = await recognizeTextWeb(result.assets[0].uri);
@@ -554,7 +586,7 @@ export default function ScanScreen() {
                 setSuggestions([]);
                 setCapturedPhotoUri(null);
                 resetAutoScan();
-                wasCardScannedRef.current = true;
+                lockScanAfterCapture(pendingScanSignatureRef.current);
                 return;
               }
               setSearchError(fallbackResult.error || '找不到匹配的卡牌');
@@ -585,7 +617,7 @@ export default function ScanScreen() {
               setSuggestions([]);
               setCapturedPhotoUri(null);
               resetAutoScan();
-              wasCardScannedRef.current = true;
+              lockScanAfterCapture(pendingScanSignatureRef.current);
             } else {
               setSearchError(cardResult.error || '找不到匹配的卡牌');
               const searchResult = await searchCards(trimmedText, 10);
@@ -607,7 +639,7 @@ export default function ScanScreen() {
 
   const handleScan = () => {
     if (isScanning || isProcessingOCR) return;
-    wasCardScannedRef.current = false;
+    unlockScan();
     captureAndRecognize();
   };
 
@@ -635,7 +667,7 @@ export default function ScanScreen() {
 
   const handleRetry = () => {
     setCameraError(null);
-    wasCardScannedRef.current = false;
+    unlockScan();
     if (isWeb && webCameraRef.current) {
       webCameraRef.current.retry();
     } else {
@@ -1001,7 +1033,7 @@ export default function ScanScreen() {
             <TouchableOpacity
               style={resultStyles.retryButton}
               onPress={() => {
-                wasCardScannedRef.current = false;
+                unlockScan();
                 captureAndRecognize();
               }}
             >

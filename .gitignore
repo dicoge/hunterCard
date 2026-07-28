@@ -41,6 +41,10 @@ data/push-watchlist.json
 data/push-tokens.json
 data/push-watchlist.json
 
+# benchmark run artifacts (keep metadata.json as ground truth)
+data/benchmark/report.md
+data/benchmark/images/
+
 # typescript
 *.tsbuildinfo
 

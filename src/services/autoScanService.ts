@@ -137,3 +137,147 @@ export function analyzeFrameWithStability(
 export function resetAutoScan(): void {
   frameHistory.length = 0;
 }
+
+// ── Auto-scan lock state machine ──
+//
+// After a card is scanned we must stop auto-scanning it again (duplicate
+// captures) while still letting a *different* card auto-scan. The lock is
+// released either when the card physically leaves the frame (a stable run of
+// no-card frames) OR when a visually different card is held in the frame long
+// enough to be a real replacement (direct A→B swap, even with zero empty
+// frames — e.g. while a result overlay is open). A single false-negative
+// no-card frame, or re-detecting the same card (A→A), never releases the lock.
+
+/** Coarse visual signature used to tell one card apart from another. */
+export interface CardSignature {
+  brightness: number;
+  edgeDensity: number;
+}
+
+export interface ScanLockState {
+  /** Locked after a successful scan; blocks duplicate auto-scans of that card. */
+  locked: boolean;
+  /** Consecutive frames with no card detected. */
+  emptyStreak: number;
+  /** Consecutive frames showing a card that differs from the locked one. */
+  changedStreak: number;
+  /** Visual signature of the currently locked (last-scanned) card. */
+  lockedSignature: CardSignature | null;
+}
+
+/** Minimum absolute change in a signature dimension to count as a new card. */
+export const CARD_CHANGE_BRIGHTNESS_DELTA = 0.18;
+export const CARD_CHANGE_EDGE_DELTA = 0.06;
+/** Consecutive differing frames required before accepting a card swap (noise filter). */
+export const CARD_CHANGE_STABLE_FRAMES = 2;
+
+export function createScanLockState(): ScanLockState {
+  return { locked: false, emptyStreak: 0, changedStreak: 0, lockedSignature: null };
+}
+
+/** True when two signatures are far enough apart to be different cards. */
+export function isDifferentCard(a: CardSignature, b: CardSignature): boolean {
+  return (
+    Math.abs(a.brightness - b.brightness) > CARD_CHANGE_BRIGHTNESS_DELTA ||
+    Math.abs(a.edgeDensity - b.edgeDensity) > CARD_CHANGE_EDGE_DELTA
+  );
+}
+
+/**
+ * Advance the lock state machine by one analyzed frame. Returns a new state
+ * (never mutates the input).
+ *
+ * @param requiredEmptyFrames consecutive no-card frames needed to unlock via
+ *   "card left the frame". Callers pass a larger value for the fast live loop
+ *   and a smaller one for the throttled under-overlay loop.
+ */
+export function advanceScanLock(
+  prev: ScanLockState,
+  frame: FrameAnalysis,
+  requiredEmptyFrames: number
+): ScanLockState {
+  const next: ScanLockState = { ...prev };
+
+  if (!frame.hasCard) {
+    next.changedStreak = 0;
+    next.emptyStreak = prev.emptyStreak + 1;
+    if (next.locked && next.emptyStreak >= requiredEmptyFrames) {
+      next.locked = false;
+      next.lockedSignature = null;
+      next.emptyStreak = 0;
+    }
+    return next;
+  }
+
+  // A card is present in this frame.
+  next.emptyStreak = 0;
+  if (!next.locked) {
+    next.changedStreak = 0;
+    return next;
+  }
+
+  const signature: CardSignature = { brightness: frame.brightness, edgeDensity: frame.edgeDensity };
+  if (next.lockedSignature && isDifferentCard(signature, next.lockedSignature)) {
+    next.changedStreak = prev.changedStreak + 1;
+    if (next.changedStreak >= CARD_CHANGE_STABLE_FRAMES) {
+      next.locked = false;
+      next.lockedSignature = null;
+      next.changedStreak = 0;
+    }
+  } else {
+    // Same card (A→A) or no reference signature — keep the lock.
+    next.changedStreak = 0;
+  }
+
+  return next;
+}
+
+/** Lock auto-scan after a successful capture of the card with `signature`. */
+export function lockAfterScan(signature: CardSignature | null): ScanLockState {
+  return { locked: true, emptyStreak: 0, changedStreak: 0, lockedSignature: signature };
+}
+
+// ── Loop decision helpers (kept pure so the auto-scan loop is testable) ──
+
+/**
+ * Whether the frame should be analyzed this tick. Under an overlay the loop is
+ * throttled to `overlayThrottleMs` to keep camera CPU near idle; otherwise it
+ * analyzes every animation frame.
+ */
+export function shouldAnalyzeFrame(params: {
+  isOverlayVisible: boolean;
+  nowMs: number;
+  lastAnalysisMs: number;
+  overlayThrottleMs: number;
+}): boolean {
+  return (
+    !params.isOverlayVisible ||
+    params.nowMs - params.lastAnalysisMs >= params.overlayThrottleMs
+  );
+}
+
+/** Whether an auto-scan capture should fire for this frame. */
+export function shouldTriggerAutoScan(params: {
+  isOverlayVisible: boolean;
+  frame: FrameAnalysis;
+  locked: boolean;
+  confidenceThreshold: number;
+}): boolean {
+  return (
+    !params.isOverlayVisible &&
+    params.frame.isStable &&
+    params.frame.confidence > params.confidenceThreshold &&
+    !params.locked
+  );
+}
+
+/**
+ * Single source of truth for camera/gallery mutual exclusion: a new scan job
+ * may only start when neither a scan nor a gallery pick is already running.
+ */
+export function canAcquireScanJob(locks: {
+  isScanning: boolean;
+  isGalleryPicking: boolean;
+}): boolean {
+  return !locks.isScanning && !locks.isGalleryPicking;
+}
