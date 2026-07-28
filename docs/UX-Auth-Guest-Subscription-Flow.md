@@ -118,16 +118,27 @@ CREATE TABLE public.subscriptions (
   platform                text,
   product_id              text,
   original_transaction_id text,                       -- Apple: original_transaction_id（stable across renewal）
-  purchase_token          text,                       -- Google: purchase_token（stable identity）；linkedPurchaseToken 為 upgrade/downgrade 鏈接
+  purchase_token          text,                       -- Google: current purchase_token（會在 upgrade/downgrade/re-signup 時變更；非 stable identity）
+  linked_purchase_token   text,                       -- Google: linkedPurchaseToken（指向前一 token，用於 reconciliation）
   expires_at              timestamptz,                -- 一般 expires_date_ms / expiryTime
   grace_expires_at        timestamptz,                -- Apple: gracePeriodExpiresDate; Google: 依 grace period end 計算
   auto_renew              boolean DEFAULT false,
   created_at              timestamptz NOT NULL DEFAULT now(),
   updated_at              timestamptz NOT NULL DEFAULT now(),
 
-  CONSTRAINT subs_apple_tx_unique UNIQUE (platform, original_transaction_id),
-  CONSTRAINT subs_google_token_unique UNIQUE (platform, purchase_token)
+  CONSTRAINT subs_platform_check CHECK (
+    platform IN ('app_store', 'google_play', 'stripe') AND
+    (platform != 'app_store' OR (original_transaction_id IS NOT NULL AND purchase_token IS NULL)) AND
+    (platform != 'google_play' OR (purchase_token IS NOT NULL AND original_transaction_id IS NULL))
+  ),
+  CONSTRAINT subs_apple_tx_unique UNIQUE NULLS NOT DISTINCT (platform, original_transaction_id),
+  CONSTRAINT subs_google_token_unique UNIQUE NULLS NOT DISTINCT (platform, purchase_token)
 );
+
+-- Google linkedPurchaseToken reconciliation:
+-- upgrade/downgrade/re-signup 會產生新 purchase_token，linkedPurchaseToken 指向舊 token。
+-- Webhook 收到新 token → 查 subscriptions WHERE purchase_token = linkedPurchaseToken → 將舊 row SET status='superseded'
+-- → 新 row 繼承同 user_id。亂序時：若舊 token 事件較晚到 → 僅記錄 superseded history，不影響 active entitlement。
 
 -- 帳號刪除 deny marker（階段 A commit 前寫入；所有 RPC/route 入口處檢查）
 CREATE TABLE public.deleted_users (
@@ -137,22 +148,22 @@ CREATE TABLE public.deleted_users (
 ALTER TABLE public.deleted_users ENABLE ROW LEVEL SECURITY;
 -- 無 SELECT policy（只由 SECURITY DEFINER 函式內部查詢，client 不可見）
 
--- RLS: SELECT only
+-- RLS: SELECT only + deleted_users marker
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY users_read_self ON public.users
-  FOR SELECT USING (auth.uid() = id);
+  FOR SELECT USING (auth.uid() = id AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()));
 
 ALTER TABLE public.linked_auth_providers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY providers_read_self ON public.linked_auth_providers
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (auth.uid() = user_id AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()));
 
 ALTER TABLE public.scan_usage_monthly ENABLE ROW LEVEL SECURITY;
 CREATE POLICY scan_read_self ON public.scan_usage_monthly
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (auth.uid() = user_id AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()));
 
 ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY subs_read_self ON public.subscriptions
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (auth.uid() = user_id AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()));
 ```
 
 ### 2.2 型別設計（新增至 `src/types/index.ts`）
@@ -287,6 +298,7 @@ DECLARE
   v_is_sub boolean;
 BEGIN
   IF v_uid IS NULL THEN RAISE EXCEPTION 'not_authenticated' USING ERRCODE = 'P0002'; END IF;
+  PERFORM public.check_not_deleted();
 
   -- fail-closed: 直接查 subscriptions，無 fallback
   SELECT EXISTS(
@@ -352,29 +364,30 @@ GRANT EXECUTE ON FUNCTION public.consume_scan_quota() TO authenticated;
 
 | 項目 | 設計 |
 |------|------|
-| Apple V2 Endpoint | 接收 `signedPayload` JWS。驗證：以 header `x5c` 鏈中的憑證驗證簽名（Apple Root CA → G1 → notification signing cert）。解碼 `notificationType` + `subtype`。**`signedTransactionInfo` 與 `signedRenewalInfo` 本身也是 JWS**（各由 App Store 簽名）→ 需分別驗證。從 signedTransactionInfo 取得 `originalTransactionId`, `transactionId`, `expiresDate`, `bundleId`, `environment`, `appAppleId`。dedup key = `originalTransactionId + notificationUUID`（使用 stable originalTransactionId，而非每筆 renew 的 transactionId）。僅接受 `environment=Production`（或驗證 `appAppleId` 對應本 App） |
-| Google RTDN | Pub/Sub subscription 接收 `developerNotification`。驗證：Pub/Sub push 自帶 JWT（由 GCP service account 簽發），驗證 token 的 `audience` + `email`。用 `purchaseToken` 呼叫 `androidpublisher.purchases.subscriptionsv2.get()`（非 deprecated v1 `purchases.get`）取得 `SubscriptionPurchaseV2`（`subscriptionState`, `expiryTime`, `linkedPurchaseToken`）。dedup key = `purchaseToken + eventTimeMillis`。**Pub/Sub 保證 at-least-once delivery** → `UNIQUE(dedup_key)` + `ON CONFLICT DO NOTHING` 處理重複 |
+| Apple V2 Endpoint | 接收 `signedPayload` JWS。驗證：以 header `x5c` 鏈中的憑證驗證簽名（Apple Root CA → G1 → notification signing cert）。解碼 outer `data`（含 `appAppleId`, `bundleId`, `environment`），再解碼 `notificationType` + `subtype`。**`signedTransactionInfo` 與 `signedRenewalInfo` 本身也是 JWS**（各由 App Store 簽名）→ 需分別驗證。從 signedTransactionInfo 取得 `originalTransactionId`, `transactionId`, `expiresDate`。dedup key = `notificationUUID`（Apple 提供的唯一 notification identifier） |
+| Google RTDN | Pub/Sub subscription 接收 `developerNotification`。驗證：Pub/Sub push 自帶 JWT（由 GCP service account 簽發），驗證 token 的 `audience` + `email`。用 `purchaseToken` 呼叫 `purchases.subscriptionsv2.get()` 取得 `SubscriptionPurchaseV2`。dedup 使用 Pub/Sub 官方 `message.messageId`（唯一 per-delivery identifier） + fallback `(notificationType, purchaseToken, eventTimeMillis)` |
 | 共同 schema | `webhook_events` table: `platform, event_type, dedup_key UNIQUE, original_transaction_id, purchase_token, raw_payload jsonb, processed_at timestamptz` |
 | 去重 | `UNIQUE(dedup_key)` + `ON CONFLICT DO NOTHING`（idempotent） |
 | 亂序容忍 | 依 receipt `expiresDate` / `expiryTime` 的實際值覆蓋 `subscriptions.expires_at`，不依賴 event 到達時間排序 |
 
-**事件處理（idempotent per dedup_key）**：
+**事件處理（platform-specific event → unified action）**：
 
-| 事件 | 處理 |
-|------|------|
-| SUBSCRIBED / PURCHASED / DID_CHANGE_RENEWAL | 寫入: `status='active'`, `expires_at` 取 receipt expiresDate/expiryTime, `auto_renew` 取 renewal status, `original_transaction_id`=Apple originalTransactionId, `purchase_token`=Google purchaseToken |
-| DID_FAIL_TO_RENEW / EXPIRED | 若 receipt 已無 active period → `status='expired'` |
-| REFUND / REVOKED | `status='expired'`, `expires_at` = now()。新建 `refund_events` log |
-| DID_RECOVER / RESTARTED | `status='active'`, 更新 `expires_at` |
-| GRACE_PERIOD_START | `status='in_grace'`, `grace_expires_at` = Apple `gracePeriodExpiresDate` / Google 計算的 grace end（`expires_at` 保持原 active 到期日） |
-| GRACE_PERIOD_END | 若 renewal 成功 → `status='active'`, `grace_expires_at`=NULL；失敗 → `status='expired'` |
+| Apple V2 notificationType | Google subscriptionState / RTDN type | 處理 |
+|------|------|------|
+| SUBSCRIBED | SUBSCRIPTION_STATE_ACTIVE（首次） | INSERT: `status='active'`, `expires_at` 取 expiresDate/expiryTime, `auto_renew`=auto_renew_status |
+| DID_CHANGE_RENEWAL_STATUS（subtype=AUTO_RENEW_ENABLED/DISABLED） | RTDN (4) SUBSCRIPTION_RENEWED | UPDATE: `auto_renew`, `expires_at` |
+| DID_RENEW | SUBSCRIPTION_STATE_ACTIVE（renewal） | UPDATE: `status='active'`, `expires_at` 取新 expiresDate/expiryTime |
+| DID_FAIL_TO_RENEW（subtype=GRACE_PERIOD） | SUBSCRIPTION_STATE_IN_GRACE_PERIOD | UPDATE: `status='in_grace'`, `grace_expires_at`=gracePeriodExpiresDate / Google grace end, `expires_at` 保持原值 |
+| EXPIRED（subtype=GRACE_PERIOD） | SUBSCRIPTION_STATE_ON_HOLD / SUBSCRIPTION_STATE_EXPIRED | UPDATE: `status='expired'` |
+| DID_RECOVER | SUBSCRIPTION_STATE_ACTIVE（recover） | UPDATE: `status='active'`, `grace_expires_at`=NULL |
+| REFUND（subtype=REVOKE） | RTDN (3) SUBSCRIPTION_REVOKED | UPDATE: `status='expired'`, `expires_at`=now()。新建 `refund_events` log |
 
 **定期 reconciliation（備援）**：
 
 - Daily cron：對所有 `status IN ('active', 'in_grace')` 的 row，以 `subscriptions.original_transaction_id`（Apple）/ `purchase_token`（Google）向 platform API 重新查詢最新 subscription status
 - 捕捉 refund / revocation in period（發生在 expiry 之前）、webhook 遺漏的狀態變化
 - Reconciliation 結果寫入 `reconciliation_log`（timestamp, platform, key, before/after status）
-- Fail-closed：每個 RPC 直接查 `subscriptions` 表（`status IN ('active', 'in_grace') AND expires_at > now()`），webhook 全失效 + cron 未觸發時，`expires_at` 到期後自動拒絕
+- Fail-closed：每個 RPC 直接查 `subscriptions` 表（active 用 `expires_at > now()`；in_grace 用 `grace_expires_at > now()`），webhook 全失效 + cron 未觸發時，expiry 到期後自動拒絕
 
 ---
 
@@ -389,6 +402,7 @@ AS $$
 DECLARE v_uid uuid := auth.uid();
 BEGIN
   IF v_uid IS NULL THEN RAISE EXCEPTION 'not_authenticated' USING ERRCODE = 'P0002'; END IF;
+  PERFORM public.check_not_deleted();
   IF NOT EXISTS (
     SELECT 1 FROM public.subscriptions
     WHERE user_id = v_uid
@@ -431,17 +445,16 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
      e. supabase.auth.admin.updateUserById(v_uid, { ban_duration: '876600h' })
         — 立即 ban user，所有現有 session/refresh token 失效（Supabase GoTrue 在 token refresh 時檢查 ban status）
      f. supabase.auth.admin.deleteUser(v_uid) — 移除 auth.users + auth.identities
-     g. 若階段 B 失敗 → deleted_users marker 存在於 DB，所有 RPC/route 入口處檢查:
+     g. 若階段 B 失敗 → deleted_users marker 存在於 DB，所有 RPC 在入口處呼叫 `public.check_not_deleted()`:
         CREATE OR REPLACE FUNCTION public.check_not_deleted()
         RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
         BEGIN
-          IF EXISTS (SELECT 1 FROM deleted_users WHERE user_id = auth.uid()) THEN
+          IF EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid()) THEN
             RAISE EXCEPTION 'account_deleted' USING ERRCODE = 'P0004';
           END IF;
         END; $$;
-        — 每個 protected RPC（consume_scan_quota, require_premium 等）在開頭呼叫 `check_not_deleted()`
-        — RLS SELECT policy 也可附加 `AND NOT EXISTS (SELECT 1 FROM deleted_users WHERE user_id = auth.uid())`
-        → 即使 auth.users 仍存在且 session 未過期，仍拒絕所有操作
+        — 每個 protected RPC（consume_scan_quota, require_premium）在 auth check 後立即呼叫
+        — RLS SELECT policy 強制附加 marker：AND NOT EXISTS (SELECT 1 FROM public.deleted_users WHERE user_id = auth.uid())
      h. 排程 retry（Edge Function cron sweep）：對 deleted_users 中（在 RPC check_not_deleted 被觸發時記錄的）尚未完成 deleteUser 的 orphan ID 補執行
 
 3. 前端帳號刪除完成後清空所有本機 Zustand persisted stores（reset memory state + 清除 persist storage）：
@@ -451,17 +464,17 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
    | Store | Zustand persist key | Fields reset |
    |-------|---------------------|-------------|
    | authStore | `holohunter-auth` | `logout()`: isAuthenticated=false, authResolved=false, role='guest', profile=null, scanQuota={used:0,limit:0}, subscription={tier:'none',isActive:false} |
-   | holoStore | `holohunter-storage` | `clearStorage()` + setState: `favorites:[], recentViews:[], scanHistory:[], lastScannedCard:null, theme:'dark', priceSource:'yuyu'` |
+   | holoStore (both instances) | `holohunter-storage` | `useHoloStorePersisted.persist.clearStorage()` + `useHoloStorePersisted.setState()` + `useHoloStore.setState()`: `favorites:[], recentViews:[], scanHistory:[], lastScannedCard:null, theme:'dark', priceSource:'yuyu', searchQuery:'', searchResults:[], searchFilters:{}, isSearching:false, searchError:null, isLoading:false, activeTab:'home'` |
    | scanSessionStore | `hunterCard-scan-session` | `clearStorage()` + `clearSession()`: `cards:[], totalValue:0, cardCount:0, isSessionActive:false` |
-   | watchlistStore | `watchlist-storage` | `clearStorage()` + setState: `items:[]`（另需呼叫 `removeAllCards()` 或 batch clear） |
-   | settingsStore | `hunterCard-settings` | `clearStorage()` + setState: `preferredCurrency:'TWD', preferredLanguage:'zh'`（restore defaults） |
+   | watchlistStore | `watchlist-storage` | `clearStorage()` + force reset state via `setState`: `items:[]` |
+   | settingsStore | `hunterCard-settings` | `clearStorage()` + force reset via `setState`: `preferredCurrency:'TWD', preferredLanguage:'zh'` |
 
-   清空完成後 navigate 回 AuthScreen
+   注意：holoStore 有兩個 instance（`useHoloStore` 非持久化 + `useHoloStorePersisted` 持久化），**兩個都必須 reset**。watchlistStore 與 settingsStore 目前無 bulk reset action → delete flow 中以 `setState()` 直接重置 internal state，再 `clearStorage()` 清除 persist。
 
 4. 復原性：
    - 階段 A 失敗 → rollback，不觸發 B，user 不受影響
    - 階段 B 失敗 → orphan sweep recovery（見上 e）
-   - 前端 store 清除失敗 → user 重新啟動 App 時因 session invalid（auth.users 已刪除或 orphan RLS 回空）→ authStore detect → 自動清空並回到 AuthScreen
+   - 前端 store 清除失敗 → user 重新啟動 App 時，因 auth.users 已 ban+delete 或 deleted_users marker 存在 → RLS/RPC 拒絕所有操作 → authStore 偵測 auth failure → 自動清空並回到 AuthScreen（此為最後防線，不取代 delete flow 當下的 full memory reset）
 
 注意：auth.admin.deleteUser() 與 Postgres transaction 不共享 ACID 邊界（Admin API 為 HTTP RPC）。
 ```
