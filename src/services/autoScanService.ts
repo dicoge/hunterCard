@@ -24,7 +24,18 @@ export interface FrameAnalysis {
 }
 
 /** Side of the square luminance fingerprint grid (SIGNATURE_GRID² cells). */
-export const SIGNATURE_GRID = 8;
+export const SIGNATURE_GRID = 12;
+
+/**
+ * Half-width, in grid cells, of the integer translation search used when
+ * comparing two fingerprints. The compare takes the *minimum* distance over all
+ * integer cell shifts in [-R, R]² so a card that was merely repositioned inside
+ * the scan box aligns to its best offset instead of reading as a new spatial
+ * layout. At SIGNATURE_GRID = 12 one cell ≈ 8% of the box, so R = 1 tolerates a
+ * reposition up to ~±8% (covers a one-cell / 6% slide) while a genuinely
+ * different card cannot be shifted into agreement.
+ */
+export const SIGNATURE_SHIFT_RADIUS = 1;
 
 /**
  * Coarse *spatial* fingerprint used to tell one card apart from another.
@@ -113,15 +124,22 @@ export function mapWindowRectToVideoSource(params: {
 }
 
 /**
- * Resolve the intrinsic source rectangle to sample for `scanArea`. Uses the
+ * Resolve the intrinsic source rectangle to sample for `scanArea` (a rect in the
+ * same window/viewport coordinates the caller measured the scan box in). Uses the
  * live element layout (`getBoundingClientRect` + `videoWidth`/`videoHeight`) to
- * account for `object-fit: cover`. Falls back to treating `scanArea` as source
- * pixels when layout/intrinsic size is unavailable (e.g. video not yet sized).
+ * invert `object-fit: cover`.
+ *
+ * Returns `null` when the region cannot be resolved honestly — the video is not
+ * yet sized, has no layout box, or the scan box maps entirely off the visible
+ * frame. It deliberately does NOT fall back to treating the CSS/window rect as
+ * intrinsic source pixels: those coordinate spaces are unrelated, so that
+ * "fallback" fingerprinted the wrong pixels. Callers treat `null` as "no
+ * fingerprint / no card this frame" instead.
  */
-function videoSourceRect(
+export function videoSourceRect(
   videoElement: HTMLVideoElement,
   scanArea: PixelRect
-): PixelRect {
+): PixelRect | null {
   const vw = videoElement.videoWidth;
   const vh = videoElement.videoHeight;
   const rect =
@@ -129,7 +147,7 @@ function videoSourceRect(
       ? videoElement.getBoundingClientRect()
       : null;
   if (!rect || !vw || !vh || rect.width <= 0 || rect.height <= 0) {
-    return { x: scanArea.x, y: scanArea.y, width: scanArea.width, height: scanArea.height };
+    return null;
   }
   const mapped = mapWindowRectToVideoSource({
     scanArea,
@@ -137,9 +155,10 @@ function videoSourceRect(
     videoWidth: vw,
     videoHeight: vh,
   });
-  // Degenerate mapping (scan box entirely off the visible frame) → legacy path.
+  // Scan box clamped to an empty region (entirely off the visible frame): we
+  // have nothing real to sample. No legacy CSS-as-intrinsic fallback.
   if (mapped.width < 1 || mapped.height < 1) {
-    return { x: scanArea.x, y: scanArea.y, width: scanArea.width, height: scanArea.height };
+    return null;
   }
   return mapped;
 }
@@ -162,8 +181,13 @@ export function analyzeFrame(
 
   // Draw the scan-box region (mapped from CSS/window coords to intrinsic video
   // pixels) into the analysis canvas at its CSS size, so brightness/edge/
-  // fingerprint all sample the same region the user sees.
+  // fingerprint all sample the same region the user sees. If the region can't be
+  // resolved (video unsized or scan box off-frame) we have nothing real to
+  // analyze — report no card rather than sampling the wrong pixels.
   const src = videoSourceRect(videoElement, scanArea);
+  if (!src) {
+    return { hasCard: false, isStable: false, confidence: 0, brightness: 0, edgeDensity: 0, signature: emptySignature() };
+  }
   ctx.drawImage(
     videoElement,
     src.x, src.y, src.width, src.height,
@@ -237,8 +261,11 @@ export function computeCardSignature(
   if (!ctx) return emptySignature();
   // Sample the same mapped scan-box region as the live loop so a manual capture
   // records the card the user actually framed (not the raw top-left of the
-  // intrinsic frame), keeping capture-time and live fingerprints comparable.
+  // intrinsic frame), keeping capture-time and live fingerprints comparable. If
+  // the region can't be resolved, return no signature rather than a fingerprint
+  // of the wrong pixels — a null-signature lock only releases via empty frames.
   const src = videoSourceRect(videoElement, scanArea);
+  if (!src) return emptySignature();
   ctx.drawImage(
     videoElement,
     src.x, src.y, src.width, src.height,
@@ -314,13 +341,16 @@ export interface ScanLockState {
 }
 
 /**
- * Distance below which two fingerprints are treated as the same card. Same-card
- * perturbations measured on synthetic gradients stay well under this
- * (exposure ×1.4/×1.8 → 0, additive offset → 0, a two-cell reposition ≈ 0.026,
- * a near-blank frame under sensor noise ≈ 0.041) while a genuinely different
- * spatial layout sits far above it (≈ 0.14), giving ~2× margin on both sides.
+ * Distance below which two fingerprints are treated as the same card. With the
+ * translation-tolerant compare (see `signatureDistance`), same-card
+ * perturbations measured across several general 2D textures — not just monotonic
+ * gradients — stay well under this: exposure ×1.4/×1.8 → 0, additive offset → 0,
+ * a one-cell / 6% reposition ≤ 0.017, a low-contrast frame under sensor noise
+ * ≈ 0.032. A genuinely different spatial layout sits far above it (≈ 0.09–0.10),
+ * so the threshold keeps healthy margin on both sides (validated midpoint of the
+ * same-card max ~0.033 and different-card min ~0.08).
  */
-export const CARD_CHANGE_DISTANCE = 0.08;
+export const CARD_CHANGE_DISTANCE = 0.055;
 /** Consecutive differing frames required before accepting a card swap (noise filter). */
 export const CARD_CHANGE_STABLE_FRAMES = 2;
 /**
@@ -338,32 +368,71 @@ export function createScanLockState(): ScanLockState {
 }
 
 /**
- * Mean-centre a grid and divide by its own L2 magnitude (floored at
+ * Mean-centre a set of cell values and divide by their L2 magnitude (floored at
  * MIN_SIGNATURE_SCALE). Centring removes an additive brightness offset; dividing
  * by the magnitude removes a multiplicative exposure/illumination scale — so the
  * same card under any linear lighting change maps to the same normalized vector,
- * while a different spatial layout does not.
+ * while a different spatial layout does not. Operates on an arbitrary subset of
+ * cells so the same invariance holds over the overlapping region of a shift.
  */
-function normalizedGrid(grid: number[]): number[] {
-  if (grid.length === 0) return grid;
-  const mean = grid.reduce((sum, v) => sum + v, 0) / grid.length;
-  const centered = grid.map(v => v - mean);
+function normalizeCells(values: number[]): number[] {
+  if (values.length === 0) return values;
+  const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+  const centered = values.map(v => v - mean);
   let sumSq = 0;
   for (const v of centered) sumSq += v * v;
   const scale = Math.max(Math.sqrt(sumSq), MIN_SIGNATURE_SCALE);
   return centered.map(v => v / scale);
 }
 
-/** Distance between two card fingerprints; Infinity if either has no grid. */
+/**
+ * Distance between two card fingerprints, tolerant of a small in-box translation.
+ *
+ * A rigid cell-by-cell compare treats a card that merely slid a little inside the
+ * scan box as a brand-new spatial layout (a one-cell slide alone measured ~0.16
+ * on a general texture — a false A→B). To fix that *generally* (not by tuning to
+ * one gradient fixture) the compare aligns the two grids: it takes the MINIMUM
+ * mean-L1 distance over every integer cell shift in [-R, R]² (R =
+ * SIGNATURE_SHIFT_RADIUS), comparing only the overlapping cells and normalizing
+ * each side over that overlap (so additive/multiplicative illumination invariance
+ * and the low-contrast noise floor still hold within the overlap). The best
+ * alignment cancels a reposition; a genuinely different card has no shift that
+ * brings it into agreement, so its distance stays high. Returns Infinity if
+ * either grid is empty or the two grids are different sizes.
+ */
 export function signatureDistance(a: CardSignature, b: CardSignature): number {
   if (a.grid.length === 0 || b.grid.length === 0 || a.grid.length !== b.grid.length) {
     return Infinity;
   }
-  const na = normalizedGrid(a.grid);
-  const nb = normalizedGrid(b.grid);
-  let sum = 0;
-  for (let i = 0; i < na.length; i++) sum += Math.abs(na[i] - nb[i]);
-  return sum / na.length;
+  const g = Math.round(Math.sqrt(a.grid.length));
+  if (g * g !== a.grid.length) return Infinity;
+
+  const R = SIGNATURE_SHIFT_RADIUS;
+  const minOverlap = Math.ceil(0.4 * g * g);
+  let best = Infinity;
+  for (let dy = -R; dy <= R; dy++) {
+    for (let dx = -R; dx <= R; dx++) {
+      const av: number[] = [];
+      const bv: number[] = [];
+      for (let y = 0; y < g; y++) {
+        const by = y + dy;
+        if (by < 0 || by >= g) continue;
+        for (let x = 0; x < g; x++) {
+          const bx = x + dx;
+          if (bx < 0 || bx >= g) continue;
+          av.push(a.grid[y * g + x]);
+          bv.push(b.grid[by * g + bx]);
+        }
+      }
+      if (av.length < minOverlap) continue;
+      const na = normalizeCells(av);
+      const nb = normalizeCells(bv);
+      let sum = 0;
+      for (let i = 0; i < na.length; i++) sum += Math.abs(na[i] - nb[i]);
+      best = Math.min(best, sum / na.length);
+    }
+  }
+  return best;
 }
 
 /** True when two signatures are far enough apart to be different cards. */
@@ -404,7 +473,14 @@ export function advanceScanLock(
     return next;
   }
 
-  if (next.lockedSignature && isDifferentCard(frame.signature, next.lockedSignature)) {
+  // An empty/absent live signature (e.g. the scan box briefly mapped off-frame,
+  // so this frame carries no real fingerprint) must NOT be read as a different
+  // card — that would spuriously unlock. Require a real signature to swap.
+  if (
+    next.lockedSignature &&
+    frame.signature.grid.length > 0 &&
+    isDifferentCard(frame.signature, next.lockedSignature)
+  ) {
     next.changedStreak = prev.changedStreak + 1;
     if (next.changedStreak >= CARD_CHANGE_STABLE_FRAMES) {
       next.locked = false;

@@ -27,6 +27,11 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 
 export interface ScanOverlayProps {
+  // Ref to the scan-box view. On web it resolves to the underlying DOM node so
+  // the consumer can measure the *real* rendered rect (getBoundingClientRect)
+  // instead of guessing the scan area's screen position.
+  scanAreaRef?: React.Ref<any>;
+
   // Animation values
   scanLineAnim: Animated.Value;
   pulseAnim: Animated.Value;
@@ -50,6 +55,7 @@ export interface ScanOverlayProps {
 }
 
 export default function ScanOverlay({
+  scanAreaRef,
   scanLineAnim,
   pulseAnim,
   borderAnim,
@@ -94,6 +100,7 @@ export default function ScanOverlay({
         <View style={styles.scanAreaContainer}>
           <View style={styles.overlaySide} />
           <Animated.View
+            ref={scanAreaRef}
             style={[
               styles.scanArea,
               {

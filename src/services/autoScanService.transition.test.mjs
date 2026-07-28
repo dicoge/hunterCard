@@ -23,19 +23,21 @@ import {
   signatureDistance,
   emptySignature,
   mapWindowRectToVideoSource,
+  videoSourceRect,
   shouldAnalyzeFrame,
   shouldTriggerAutoScan,
   canAcquireScanJob,
   CARD_CHANGE_STABLE_FRAMES,
   CARD_CHANGE_DISTANCE,
   SIGNATURE_GRID,
+  SIGNATURE_SHIFT_RADIUS,
 } from './autoScanService.ts';
 
 const LIVE_EMPTY = 10;
 const OVERLAY_EMPTY = 2;
 const CELLS = SIGNATURE_GRID * SIGNATURE_GRID;
 
-/** Build an 8×8 luminance grid from a per-cell function of (col, row). */
+/** Build a SIGNATURE_GRID×SIGNATURE_GRID luminance grid from a per-cell function of (col, row). */
 function makeGrid(fn) {
   return Array.from({ length: CELLS }, (_, i) => fn(i % SIGNATURE_GRID, Math.floor(i / SIGNATURE_GRID)));
 }
@@ -60,6 +62,31 @@ const SIG_FLAT = { grid: GRID_FLAT };
 const SIG_FLAT_NOISY = { grid: GRID_FLAT.map((v, i) => v + ((i * 7 % 5) - 2) * 0.008) };
 
 const mean = (g) => g.reduce((a, b) => a + b, 0) / g.length;
+
+// ── General (non-gradient) 2D textures, for the translation-tolerance case ──
+// A monotonic gradient is an easy fixture; the review required tolerance on a
+// *general* 2D texture. These sample a continuous multi-frequency luminance
+// field into the grid, so we can slide the sample point by a sub-cell fraction
+// of the box (a real reposition) — not just whole cells.
+const TEX_FIELD = (u, v) =>
+  0.5 +
+  0.18 * Math.sin(2 * Math.PI * 2 * u) +
+  0.15 * Math.cos(2 * Math.PI * 2.5 * v) +
+  0.1 * Math.sin(2 * Math.PI * 1.5 * (u + v));
+/** Sample a continuous field into the grid, offsetting the sample point by a fraction of the box. */
+function sampleField(field, shiftFracX = 0, shiftFracY = 0) {
+  return makeGrid((cx, cy) =>
+    field((cx + 0.5) / SIGNATURE_GRID + shiftFracX, (cy + 0.5) / SIGNATURE_GRID + shiftFracY));
+}
+const SIG_TEX = { grid: sampleField(TEX_FIELD) };
+const SIG_TEX_SHIFT_1CELL = { grid: sampleField(TEX_FIELD, 1 / SIGNATURE_GRID, 0) };
+const SIG_TEX_SHIFT_6H = { grid: sampleField(TEX_FIELD, 0.06, 0) };
+const SIG_TEX_SHIFT_6V = { grid: sampleField(TEX_FIELD, 0, 0.06) };
+// A genuinely different texture (radial vs the directional field above).
+const SIG_TEX_OTHER = {
+  grid: makeGrid((cx, cy) =>
+    0.5 + 0.35 * Math.cos(2 * Math.PI * 2.5 * Math.hypot((cx - 5.5) / SIGNATURE_GRID, (cy - 5.5) / SIGNATURE_GRID))),
+};
 
 /** Build a FrameAnalysis-shaped object. */
 function frame(hasCard, sig = SIG_A, { isStable = true, confidence = 0.95 } = {}) {
@@ -119,6 +146,28 @@ test('a low-contrast card under sensor noise is NOT a different card', () => {
   // would amplify that noise and spuriously flag a "different card" every frame.
   assert.ok(signatureDistance(SIG_FLAT, SIG_FLAT_NOISY) < CARD_CHANGE_DISTANCE, 'low-contrast noise stays under the threshold');
   assert.equal(isDifferentCard(SIG_FLAT, SIG_FLAT_NOISY), false);
+});
+
+test('general 2D texture: a small reposition is NOT a different card (translation tolerance)', () => {
+  // Without alignment, a rigid grid reads a one-cell / 6% slide of a general
+  // texture as a whole new layout (measured ~0.16 for one cell, ~0.10 for 6%),
+  // both above the threshold — a false A→B. The shift-search compare must keep
+  // all of these well under it.
+  assert.equal(SIGNATURE_SHIFT_RADIUS >= 1, true, 'a translation search must be enabled');
+  assert.ok(signatureDistance(SIG_TEX, SIG_TEX_SHIFT_1CELL) < CARD_CHANGE_DISTANCE, 'one-cell slide stays same card');
+  assert.ok(signatureDistance(SIG_TEX, SIG_TEX_SHIFT_6H) < CARD_CHANGE_DISTANCE, '6% horizontal slide stays same card');
+  assert.ok(signatureDistance(SIG_TEX, SIG_TEX_SHIFT_6V) < CARD_CHANGE_DISTANCE, '6% vertical slide stays same card');
+  assert.equal(isDifferentCard(SIG_TEX, SIG_TEX_SHIFT_1CELL), false);
+  assert.equal(isDifferentCard(SIG_TEX, SIG_TEX_SHIFT_6H), false);
+  assert.equal(isDifferentCard(SIG_TEX, SIG_TEX_SHIFT_6V), false);
+});
+
+test('general 2D texture: a genuinely different texture is still a different card', () => {
+  // Alignment must not collapse real differences: no shift brings an unrelated
+  // texture into agreement, so A→B separation survives on general textures too.
+  assert.ok(signatureDistance(SIG_TEX, SIG_TEX_OTHER) > CARD_CHANGE_DISTANCE, 'different textures stay above the threshold');
+  assert.ok(signatureDistance(SIG_TEX, SIG_TEX_OTHER) > CARD_CHANGE_DISTANCE * 1.5, 'with a healthy margin');
+  assert.equal(isDifferentCard(SIG_TEX, SIG_TEX_OTHER), true);
 });
 
 test('an empty/absent signature never matches a card', () => {
@@ -210,6 +259,20 @@ test('a null-signature lock (gallery/native) only unlocks via empty frames', () 
   assert.equal(s.locked, false, 'empty frames still release a null-signature lock');
 });
 
+test('a card-present frame carrying an empty signature never unlocks (degenerate mapping)', () => {
+  // If the scan box briefly maps off-frame (video unsized / box off the visible
+  // frame), analyzeFrame reports no real fingerprint. Such a frame must not be
+  // read as a *different* card and spuriously release a signed lock.
+  const cardNoSig = () => ({
+    hasCard: true, isStable: true, confidence: 0.95, brightness: 0.5, edgeDensity: 0.2,
+    signature: emptySignature(),
+  });
+  let s = lockAfterScan(SIG_A);
+  s = run(s, Array.from({ length: 20 }, cardNoSig), LIVE_EMPTY);
+  assert.equal(s.locked, true, 'an empty live signature must not be treated as an A→B swap');
+  assert.equal(s.changedStreak, 0);
+});
+
 test('A→(one B false positive)→A: transient different frame does not unlock A', () => {
   let s = lockAfterScan(SIG_A);
   s = advanceScanLock(s, cardB(), LIVE_EMPTY);
@@ -294,6 +357,60 @@ test('cover mapping: an unsized video (0×0) returns an empty rect', () => {
     videoHeight: 0,
   });
   assert.deepEqual(src, { x: 0, y: 0, width: 0, height: 0 });
+});
+
+// ── Consumer integration: videoSourceRect (the path analyzeFrame / computeCardSignature use) ──
+// Exercises the real resolution the capture/live loop runs — measuring the video
+// element's layout + intrinsic size and inverting object-fit:cover — including
+// the guarantee that a degenerate/off-frame map returns null (no legacy
+// CSS-as-intrinsic fallback), so a bad map yields *no* fingerprint, not a wrong one.
+
+/** A fake <video> element: intrinsic size + a fixed layout rect. */
+function fakeVideo(videoWidth, videoHeight, rect) {
+  return {
+    videoWidth,
+    videoHeight,
+    getBoundingClientRect: () => rect,
+  };
+}
+
+test('videoSourceRect: horizontal crop at a non-zero window origin maps to intrinsic pixels', () => {
+  // Same geometry as the pure-mapping test, but resolved through the consumer
+  // entrypoint using the element's own getBoundingClientRect + videoWidth/Height.
+  const video = fakeVideo(1000, 500, { left: 100, top: 200, width: 200, height: 400 });
+  const src = videoSourceRect(video, { x: 150, y: 300, width: 100, height: 100 });
+  assert.deepEqual(src, { x: 437.5, y: 125, width: 125, height: 125 });
+});
+
+test('videoSourceRect: vertical crop maps to intrinsic pixels', () => {
+  const video = fakeVideo(500, 1000, { left: 0, top: 0, width: 400, height: 300 });
+  const src = videoSourceRect(video, { x: 50, y: 50, width: 100, height: 100 });
+  assert.deepEqual(src, { x: 62.5, y: 375, width: 125, height: 125 });
+});
+
+test('videoSourceRect: a representative phone aspect ratio yields an in-frame region', () => {
+  const video = fakeVideo(1280, 720, { left: 0, top: 0, width: 390, height: 844 });
+  const src = videoSourceRect(video, { x: 49, y: 126, width: 292, height: 184 });
+  assert.ok(src, 'a visible box resolves to a region');
+  assert.ok(src.width > 1 && src.height > 1, 'produces a real region to fingerprint');
+  assert.ok(src.x >= 0 && src.y >= 0, 'origin within frame');
+  assert.ok(src.x + src.width <= 1280 + 1e-9 && src.y + src.height <= 720 + 1e-9, 'clamped to the frame');
+});
+
+test('videoSourceRect: an off-frame scan box returns null (NO legacy CSS fallback)', () => {
+  const video = fakeVideo(1000, 2000, { left: 0, top: 0, width: 400, height: 800 });
+  const src = videoSourceRect(video, { x: 5000, y: 5000, width: 100, height: 100 });
+  assert.equal(src, null, 'a box off the visible frame must not fall back to CSS coords as source pixels');
+});
+
+test('videoSourceRect: an unsized video (0×0) returns null', () => {
+  const video = fakeVideo(0, 0, { left: 0, top: 0, width: 400, height: 800 });
+  assert.equal(videoSourceRect(video, { x: 10, y: 10, width: 100, height: 100 }), null);
+});
+
+test('videoSourceRect: a zero-area layout rect returns null', () => {
+  const video = fakeVideo(1280, 720, { left: 0, top: 0, width: 0, height: 0 });
+  assert.equal(videoSourceRect(video, { x: 10, y: 10, width: 100, height: 100 }), null);
 });
 
 test('overlay throttle: analysis is gated to the throttle window under an overlay', () => {

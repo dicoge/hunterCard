@@ -114,6 +114,9 @@ export default function ScanScreen() {
   const scanLockRef = useRef<ScanLockState>(createScanLockState());
   // Signature of the card the in-flight auto-scan capture is processing.
   const pendingScanSignatureRef = useRef<CardSignature | null>(null);
+  // Ref to the on-screen scan box (web: underlying DOM node) so we can measure
+  // its real rendered rect instead of guessing its screen position.
+  const scanAreaRef = useRef<any>(null);
 
   // Lock auto-scan after a successful capture so the same card isn't re-scanned.
   const lockScanAfterCapture = (signature: CardSignature | null) => {
@@ -124,13 +127,33 @@ export default function ScanScreen() {
     scanLockRef.current = createScanLockState();
     pendingScanSignatureRef.current = null;
   };
-  // Scan-area rectangle (shared by the auto-scan loop and capture-time fingerprinting).
+  // Nominal scan-area size/position from the layout. On web the *real* rendered
+  // rect is measured from the DOM (see resolveScanArea); this stays only as a
+  // dimensional last resort when a live measurement isn't available.
   const getScanArea = () => ({
     x: Math.round((SCREEN_WIDTH - SCAN_AREA_SIZE) / 2),
-    y: Math.round(SCREEN_HEIGHT * 0.15),
+    y: Math.round((SCREEN_HEIGHT - SCAN_AREA_SIZE * 0.63) / 2),
     width: Math.round(SCAN_AREA_SIZE),
     height: Math.round(SCAN_AREA_SIZE * 0.63),
   });
+
+  // Resolve the scan box to a rectangle in window/viewport coordinates. On web we
+  // measure the *actual* rendered scan-box element (getBoundingClientRect), so the
+  // object-fit:cover inversion in autoScanService uses the true on-screen box
+  // rather than a guessed Y. The video's getBoundingClientRect (read inside
+  // autoScanService) lives in the same coordinate space, so the two line up.
+  const resolveScanArea = () => {
+    if (isWeb) {
+      const node: any = scanAreaRef.current;
+      if (node && typeof node.getBoundingClientRect === 'function') {
+        const r = node.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0) {
+          return { x: r.left, y: r.top, width: r.width, height: r.height };
+        }
+      }
+    }
+    return getScanArea();
+  };
 
   const setScanningStates = (scanning: boolean) => {
     isScanningRef.current = scanning;
@@ -229,7 +252,6 @@ export default function ScanScreen() {
     if (!canAcquireScanJob({ isScanning: isScanning || isProcessingOCR, isGalleryPicking: isGalleryPickingRef.current })) return;
 
     let mounted = true;
-    const scanArea = getScanArea();
 
     const loop = () => {
       if (!mounted) return;
@@ -249,7 +271,7 @@ export default function ScanScreen() {
 
         if (analyze) {
           lastAnalysisTimeRef.current = now;
-          const result = analyzeFrameWithStability(video, scanArea);
+          const result = analyzeFrameWithStability(video, resolveScanArea());
 
           const requiredEmptyFrames = isOverlayVisible
             ? OVERLAY_UNLOCK_EMPTY_FRAMES
@@ -345,7 +367,7 @@ export default function ScanScreen() {
         const sigVideo = document.querySelector('video');
         if (sigVideo && sigVideo.readyState >= 2) {
           try {
-            pendingScanSignatureRef.current = computeCardSignature(sigVideo, getScanArea());
+            pendingScanSignatureRef.current = computeCardSignature(sigVideo, resolveScanArea());
           } catch {
             pendingScanSignatureRef.current = null;
           }
@@ -874,6 +896,7 @@ export default function ScanScreen() {
           onMountError={handleMountError}
         >
           <ScanOverlay
+            scanAreaRef={scanAreaRef}
             scanLineAnim={scanLineAnim}
             pulseAnim={pulseAnim}
             borderAnim={borderAnim}
@@ -905,6 +928,7 @@ export default function ScanScreen() {
           onMountError={handleMountError}
         >
           <ScanOverlay
+            scanAreaRef={scanAreaRef}
             scanLineAnim={scanLineAnim}
             pulseAnim={pulseAnim}
             borderAnim={borderAnim}
