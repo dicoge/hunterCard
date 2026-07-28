@@ -60,6 +60,90 @@ function luminanceGrid(pixels: Uint8ClampedArray, width: number, height: number)
   return sums.map((s, i) => (counts[i] ? s / counts[i] / 255 : 0));
 }
 
+/** An axis-aligned rectangle in pixels. */
+export interface PixelRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Map a scan rectangle expressed in CSS/window coordinates to the intrinsic
+ * source-pixel rectangle of a video rendered with `object-fit: cover`.
+ *
+ * The on-screen scan box is laid out in CSS pixels, but `drawImage`'s source
+ * rectangle must be in the video's intrinsic pixels (`videoWidth`×`videoHeight`).
+ * Under `cover` the frame is uniformly scaled by the larger of the two axis
+ * ratios so it fills the element, then centre-cropped. This inverts that
+ * mapping and clamps the result to the intrinsic frame, so the fingerprint is
+ * taken from exactly the region the user sees inside the scan box.
+ */
+export function mapWindowRectToVideoSource(params: {
+  scanArea: PixelRect;
+  videoRect: PixelRect;
+  videoWidth: number;
+  videoHeight: number;
+}): PixelRect {
+  const { scanArea, videoRect, videoWidth, videoHeight } = params;
+  if (
+    videoWidth <= 0 || videoHeight <= 0 ||
+    videoRect.width <= 0 || videoRect.height <= 0
+  ) {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+
+  const scale = Math.max(videoRect.width / videoWidth, videoRect.height / videoHeight);
+  const displayedW = videoWidth * scale;
+  const displayedH = videoHeight * scale;
+  // Top-left of the displayed (post-cover) video content in window coords.
+  const contentLeft = videoRect.x + (videoRect.width - displayedW) / 2;
+  const contentTop = videoRect.y + (videoRect.height - displayedH) / 2;
+
+  const srcX = (scanArea.x - contentLeft) / scale;
+  const srcY = (scanArea.y - contentTop) / scale;
+  const srcW = scanArea.width / scale;
+  const srcH = scanArea.height / scale;
+
+  const x0 = Math.max(0, Math.min(videoWidth, srcX));
+  const y0 = Math.max(0, Math.min(videoHeight, srcY));
+  const x1 = Math.max(0, Math.min(videoWidth, srcX + srcW));
+  const y1 = Math.max(0, Math.min(videoHeight, srcY + srcH));
+  return { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+}
+
+/**
+ * Resolve the intrinsic source rectangle to sample for `scanArea`. Uses the
+ * live element layout (`getBoundingClientRect` + `videoWidth`/`videoHeight`) to
+ * account for `object-fit: cover`. Falls back to treating `scanArea` as source
+ * pixels when layout/intrinsic size is unavailable (e.g. video not yet sized).
+ */
+function videoSourceRect(
+  videoElement: HTMLVideoElement,
+  scanArea: PixelRect
+): PixelRect {
+  const vw = videoElement.videoWidth;
+  const vh = videoElement.videoHeight;
+  const rect =
+    typeof videoElement.getBoundingClientRect === 'function'
+      ? videoElement.getBoundingClientRect()
+      : null;
+  if (!rect || !vw || !vh || rect.width <= 0 || rect.height <= 0) {
+    return { x: scanArea.x, y: scanArea.y, width: scanArea.width, height: scanArea.height };
+  }
+  const mapped = mapWindowRectToVideoSource({
+    scanArea,
+    videoRect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+    videoWidth: vw,
+    videoHeight: vh,
+  });
+  // Degenerate mapping (scan box entirely off the visible frame) → legacy path.
+  if (mapped.width < 1 || mapped.height < 1) {
+    return { x: scanArea.x, y: scanArea.y, width: scanArea.width, height: scanArea.height };
+  }
+  return mapped;
+}
+
 /**
  * Analyze a single video frame for card presence
  * Uses canvas to extract pixel data and detect card characteristics
@@ -76,10 +160,13 @@ export function analyzeFrame(
     return { hasCard: false, isStable: false, confidence: 0, brightness: 0, edgeDensity: 0, signature: emptySignature() };
   }
 
-  // Draw the scan area portion of the video onto the canvas
+  // Draw the scan-box region (mapped from CSS/window coords to intrinsic video
+  // pixels) into the analysis canvas at its CSS size, so brightness/edge/
+  // fingerprint all sample the same region the user sees.
+  const src = videoSourceRect(videoElement, scanArea);
   ctx.drawImage(
     videoElement,
-    scanArea.x, scanArea.y, scanArea.width, scanArea.height,
+    src.x, src.y, src.width, src.height,
     0, 0, scanArea.width, scanArea.height
   );
   const imageData = ctx.getImageData(0, 0, scanArea.width, scanArea.height);
@@ -148,9 +235,13 @@ export function computeCardSignature(
   canvas.height = scanArea.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return emptySignature();
+  // Sample the same mapped scan-box region as the live loop so a manual capture
+  // records the card the user actually framed (not the raw top-left of the
+  // intrinsic frame), keeping capture-time and live fingerprints comparable.
+  const src = videoSourceRect(videoElement, scanArea);
   ctx.drawImage(
     videoElement,
-    scanArea.x, scanArea.y, scanArea.width, scanArea.height,
+    src.x, src.y, src.width, src.height,
     0, 0, scanArea.width, scanArea.height
   );
   const { data } = ctx.getImageData(0, 0, scanArea.width, scanArea.height);
@@ -223,23 +314,44 @@ export interface ScanLockState {
 }
 
 /**
- * Mean-centred L1 distance between two fingerprints. Centring each grid on its
- * own mean makes the comparison invariant to a uniform brightness shift (same
- * card under changing light stays "same"), so only a genuine change in spatial
- * layout — a different card — drives the distance up.
+ * Distance below which two fingerprints are treated as the same card. Same-card
+ * perturbations measured on synthetic gradients stay well under this
+ * (exposure ×1.4/×1.8 → 0, additive offset → 0, a two-cell reposition ≈ 0.026,
+ * a near-blank frame under sensor noise ≈ 0.041) while a genuinely different
+ * spatial layout sits far above it (≈ 0.14), giving ~2× margin on both sides.
  */
-export const CARD_CHANGE_DISTANCE = 0.04;
+export const CARD_CHANGE_DISTANCE = 0.08;
 /** Consecutive differing frames required before accepting a card swap (noise filter). */
 export const CARD_CHANGE_STABLE_FRAMES = 2;
+/**
+ * Contrast floor used when normalizing a fingerprint. A grid whose mean-centred
+ * L2 magnitude is below this is treated as low-information (a near-uniform or
+ * blank frame): its noise is NOT amplified to unit scale, so a low-contrast card
+ * held steady does not drift into a false "different card". Real cards carry far
+ * more spatial contrast than this, so their normalization — and thus the
+ * exposure/brightness invariance — is unaffected.
+ */
+export const MIN_SIGNATURE_SCALE = 0.3;
 
 export function createScanLockState(): ScanLockState {
   return { locked: false, emptyStreak: 0, changedStreak: 0, lockedSignature: null };
 }
 
-function centeredGrid(grid: number[]): number[] {
+/**
+ * Mean-centre a grid and divide by its own L2 magnitude (floored at
+ * MIN_SIGNATURE_SCALE). Centring removes an additive brightness offset; dividing
+ * by the magnitude removes a multiplicative exposure/illumination scale — so the
+ * same card under any linear lighting change maps to the same normalized vector,
+ * while a different spatial layout does not.
+ */
+function normalizedGrid(grid: number[]): number[] {
   if (grid.length === 0) return grid;
   const mean = grid.reduce((sum, v) => sum + v, 0) / grid.length;
-  return grid.map(v => v - mean);
+  const centered = grid.map(v => v - mean);
+  let sumSq = 0;
+  for (const v of centered) sumSq += v * v;
+  const scale = Math.max(Math.sqrt(sumSq), MIN_SIGNATURE_SCALE);
+  return centered.map(v => v / scale);
 }
 
 /** Distance between two card fingerprints; Infinity if either has no grid. */
@@ -247,11 +359,11 @@ export function signatureDistance(a: CardSignature, b: CardSignature): number {
   if (a.grid.length === 0 || b.grid.length === 0 || a.grid.length !== b.grid.length) {
     return Infinity;
   }
-  const ca = centeredGrid(a.grid);
-  const cb = centeredGrid(b.grid);
+  const na = normalizedGrid(a.grid);
+  const nb = normalizedGrid(b.grid);
   let sum = 0;
-  for (let i = 0; i < ca.length; i++) sum += Math.abs(ca[i] - cb[i]);
-  return sum / ca.length;
+  for (let i = 0; i < na.length; i++) sum += Math.abs(na[i] - nb[i]);
+  return sum / na.length;
 }
 
 /** True when two signatures are far enough apart to be different cards. */

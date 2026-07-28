@@ -7,8 +7,10 @@
  * Covers the DIC-702 duplicate-scan cases: A→A, A→(false negative)→A,
  * A→(two stable empty frames), direct A→B — including two *different* cards
  * that share the same aggregate brightness (distinguished only by spatial
- * layout) and a same-card-under-changing-light case that must NOT unlock —
- * plus overlay-throttle and camera/gallery concurrency gating.
+ * layout), a same-card-under-changing-light case (additive AND multiplicative
+ * exposure), a repositioned same card, and a low-contrast card under sensor
+ * noise — none of which may unlock — plus the CSS→intrinsic scan-box coordinate
+ * mapping (object-fit: cover), overlay-throttle and camera/gallery gating.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,10 +22,12 @@ import {
   isDifferentCard,
   signatureDistance,
   emptySignature,
+  mapWindowRectToVideoSource,
   shouldAnalyzeFrame,
   shouldTriggerAutoScan,
   canAcquireScanJob,
   CARD_CHANGE_STABLE_FRAMES,
+  CARD_CHANGE_DISTANCE,
   SIGNATURE_GRID,
 } from './autoScanService.ts';
 
@@ -44,8 +48,16 @@ const GRID_B = makeGrid((_, cy) => 0.3 + (cy / (SIGNATURE_GRID - 1)) * 0.4);
 
 const SIG_A = { grid: GRID_A };
 const SIG_B = { grid: GRID_B };
-const SIG_A_BRIGHTER = { grid: GRID_A.map((v) => v + 0.12) }; // same card, uniform light change
-const SIG_A_NOISY = { grid: GRID_A.map((v, i) => v + ((i % 3) - 1) * 0.004) }; // same card, sensor noise
+const SIG_A_BRIGHTER = { grid: GRID_A.map((v) => v + 0.12) };       // uniform additive light change
+const SIG_A_GAIN = { grid: GRID_A.map((v) => v * 1.4) };            // uniform exposure/gain ×1.4
+const SIG_A_GAIN2 = { grid: GRID_A.map((v) => v * 1.8) };           // stronger exposure ×1.8
+const SIG_A_NOISY = { grid: GRID_A.map((v, i) => v + ((i % 3) - 1) * 0.004) }; // sensor noise
+// Same card slid two cells to the right in the scan box (a plausible reposition).
+const SIG_A_SHIFT = { grid: makeGrid((cx) => 0.3 + (Math.max(0, cx - 2) / (SIGNATURE_GRID - 1)) * 0.4) };
+// A near-uniform (low-contrast) card whose sensor noise dwarfs its own contrast.
+const GRID_FLAT = makeGrid((cx) => 0.5 + (cx / (SIGNATURE_GRID - 1)) * 0.02);
+const SIG_FLAT = { grid: GRID_FLAT };
+const SIG_FLAT_NOISY = { grid: GRID_FLAT.map((v, i) => v + ((i * 7 % 5) - 2) * 0.008) };
 
 const mean = (g) => g.reduce((a, b) => a + b, 0) / g.length;
 
@@ -63,7 +75,9 @@ function frame(hasCard, sig = SIG_A, { isStable = true, confidence = 0.95 } = {}
 
 const cardA = () => frame(true, SIG_A);
 const cardB = () => frame(true, SIG_B);
-const cardABrighter = () => frame(true, SIG_A_BRIGHTER);
+const cardAGain = () => frame(true, SIG_A_GAIN);
+const cardAShift = () => frame(true, SIG_A_SHIFT);
+const cardFlatNoisy = () => frame(true, SIG_FLAT_NOISY);
 const empty = () => frame(false);
 
 function run(state, frames, requiredEmpty) {
@@ -76,13 +90,35 @@ test('A and B share the same aggregate brightness but are still different cards'
   assert.ok(Math.abs(mean(GRID_A) - mean(GRID_B)) < 1e-9, 'A and B must have equal mean brightness');
   assert.equal(isDifferentCard(SIG_A, SIG_A), false);
   assert.equal(isDifferentCard(SIG_A, SIG_B), true, 'different spatial layout ⇒ different card');
+  assert.ok(signatureDistance(SIG_A, SIG_B) > CARD_CHANGE_DISTANCE * 1.5, 'A/B distance keeps a healthy margin above the threshold');
 });
 
-test('same card under a uniform lighting change is NOT a different card', () => {
+test('same card under an additive lighting change is NOT a different card', () => {
   assert.ok(Math.abs(mean(GRID_A) - mean(SIG_A_BRIGHTER.grid)) > 0.1, 'brightness really shifted');
-  assert.ok(signatureDistance(SIG_A, SIG_A_BRIGHTER) < 1e-9, 'mean-centring cancels a uniform shift');
+  assert.ok(signatureDistance(SIG_A, SIG_A_BRIGHTER) < 1e-9, 'mean-centring cancels a uniform additive shift');
   assert.equal(isDifferentCard(SIG_A, SIG_A_BRIGHTER), false);
   assert.equal(isDifferentCard(SIG_A, SIG_A_NOISY), false, 'small sensor noise stays the same card');
+});
+
+test('same card under a multiplicative exposure/gain change is NOT a different card', () => {
+  // The prior mean-centred-only distance grew with gain (×1.4 ≈ 0.0457 > 0.04)
+  // and spuriously unlocked; scale-normalising the fingerprint cancels it.
+  assert.ok(signatureDistance(SIG_A, SIG_A_GAIN) < 1e-9, 'scale-normalising cancels an exposure gain (×1.4)');
+  assert.ok(signatureDistance(SIG_A, SIG_A_GAIN2) < 1e-9, 'and a stronger gain (×1.8)');
+  assert.equal(isDifferentCard(SIG_A, SIG_A_GAIN), false);
+  assert.equal(isDifferentCard(SIG_A, SIG_A_GAIN2), false);
+});
+
+test('a repositioned same card (2-cell shift) is NOT a different card', () => {
+  assert.ok(signatureDistance(SIG_A, SIG_A_SHIFT) < CARD_CHANGE_DISTANCE, 'a modest reposition stays under the threshold');
+  assert.equal(isDifferentCard(SIG_A, SIG_A_SHIFT), false);
+});
+
+test('a low-contrast card under sensor noise is NOT a different card', () => {
+  // Its noise exceeds its own contrast; without a scale floor, normalisation
+  // would amplify that noise and spuriously flag a "different card" every frame.
+  assert.ok(signatureDistance(SIG_FLAT, SIG_FLAT_NOISY) < CARD_CHANGE_DISTANCE, 'low-contrast noise stays under the threshold');
+  assert.equal(isDifferentCard(SIG_FLAT, SIG_FLAT_NOISY), false);
 });
 
 test('an empty/absent signature never matches a card', () => {
@@ -96,10 +132,22 @@ test('A→A: same card held stays locked (no duplicate scan)', () => {
   assert.equal(s.locked, true, 'lock must survive re-detecting the same card');
 });
 
-test('A→(uniform brighter A repeatedly): lighting drift does not cause a duplicate', () => {
+test('A→(exposure gain drifts up repeatedly): a gain-only change does not cause a duplicate', () => {
   let s = lockAfterScan(SIG_A);
-  s = run(s, Array.from({ length: 20 }, cardABrighter), LIVE_EMPTY);
-  assert.equal(s.locked, true, 'a brightness-only change must keep A deduplicated');
+  s = run(s, Array.from({ length: 20 }, cardAGain), LIVE_EMPTY);
+  assert.equal(s.locked, true, 'a multiplicative exposure change must keep A deduplicated');
+});
+
+test('A→(repositioned A repeatedly): sustained same card is not judged a new card', () => {
+  let s = lockAfterScan(SIG_A);
+  s = run(s, Array.from({ length: 20 }, cardAShift), LIVE_EMPTY);
+  assert.equal(s.locked, true, 'a small reposition must keep A deduplicated');
+});
+
+test('A→(low-contrast card under noise repeatedly): no sustained false unlock', () => {
+  let s = lockAfterScan(SIG_FLAT);
+  s = run(s, Array.from({ length: 20 }, cardFlatNoisy), LIVE_EMPTY);
+  assert.equal(s.locked, true, 'a low-contrast card held steady must not drift into a false different-card unlock');
 });
 
 test('A→(one false-negative empty frame)→A: single dropout does not unlock', () => {
@@ -174,6 +222,78 @@ test('unlocked state never spuriously relocks', () => {
   let s = createScanLockState();
   s = run(s, [cardA(), cardB(), empty(), cardA()], LIVE_EMPTY);
   assert.equal(s.locked, false, 'advancing frames must not create a lock');
+});
+
+// ── Scan-box coordinate mapping (CSS/window → intrinsic video, object-fit: cover) ──
+
+test('cover mapping: a centred scan box maps to the centre of the video frame', () => {
+  // Landscape video centre-cropped horizontally inside a taller element at a
+  // non-zero window origin.
+  const videoRect = { x: 100, y: 200, width: 200, height: 400 };
+  const videoWidth = 1000, videoHeight = 500;
+  // A box centred on the element (element centre = 200,400).
+  const scanArea = { x: 150, y: 300, width: 100, height: 200 };
+  const src = mapWindowRectToVideoSource({ scanArea, videoRect, videoWidth, videoHeight });
+  // Its centre must land on the video's intrinsic centre (500,250).
+  assert.ok(Math.abs((src.x + src.width / 2) - videoWidth / 2) < 1e-9, 'x centre maps to frame centre');
+  assert.ok(Math.abs((src.y + src.height / 2) - videoHeight / 2) < 1e-9, 'y centre maps to frame centre');
+});
+
+test('cover mapping (horizontal crop, non-zero origin): exact source rect', () => {
+  const videoRect = { x: 100, y: 200, width: 200, height: 400 };
+  const src = mapWindowRectToVideoSource({
+    scanArea: { x: 150, y: 300, width: 100, height: 100 },
+    videoRect,
+    videoWidth: 1000,
+    videoHeight: 500,
+  });
+  // scale = max(200/1000, 400/500) = 0.8; contentLeft = -200, contentTop = 200.
+  assert.deepEqual(src, { x: 437.5, y: 125, width: 125, height: 125 });
+  assert.ok(src.x >= 0 && src.x + src.width <= 1000, 'stays within intrinsic width');
+  assert.ok(src.y >= 0 && src.y + src.height <= 500, 'stays within intrinsic height');
+});
+
+test('cover mapping (vertical crop): portrait video centre-cropped in a landscape box', () => {
+  const src = mapWindowRectToVideoSource({
+    scanArea: { x: 50, y: 50, width: 100, height: 100 },
+    videoRect: { x: 0, y: 0, width: 400, height: 300 },
+    videoWidth: 500,
+    videoHeight: 1000,
+  });
+  // scale = max(400/500, 300/1000) = 0.8; displayed 400×800, contentTop = -250.
+  assert.deepEqual(src, { x: 62.5, y: 375, width: 125, height: 125 });
+  assert.ok(src.y >= 0 && src.y + src.height <= 1000, 'vertical crop stays within intrinsic height');
+});
+
+test('cover mapping: a visible scan box yields a non-degenerate in-frame source rect', () => {
+  // Representative phone-ish case: 1280×720 sensor rendered into a 390×844 view.
+  const videoRect = { x: 0, y: 0, width: 390, height: 844 };
+  const scanArea = { x: 49, y: 126, width: 292, height: 184 };
+  const src = mapWindowRectToVideoSource({ scanArea, videoRect, videoWidth: 1280, videoHeight: 720 });
+  assert.ok(src.width > 1 && src.height > 1, 'produces a real region to fingerprint');
+  assert.ok(src.x >= 0 && src.y >= 0, 'origin within frame');
+  assert.ok(src.x + src.width <= 1280 + 1e-9 && src.y + src.height <= 720 + 1e-9, 'clamped to the frame');
+});
+
+test('cover mapping: a box entirely off the frame clamps to an empty rect', () => {
+  const off = mapWindowRectToVideoSource({
+    scanArea: { x: 5000, y: 5000, width: 100, height: 100 },
+    videoRect: { x: 0, y: 0, width: 400, height: 800 },
+    videoWidth: 1000,
+    videoHeight: 2000,
+  });
+  assert.equal(off.width, 0);
+  assert.equal(off.height, 0);
+});
+
+test('cover mapping: an unsized video (0×0) returns an empty rect', () => {
+  const src = mapWindowRectToVideoSource({
+    scanArea: { x: 10, y: 10, width: 100, height: 100 },
+    videoRect: { x: 0, y: 0, width: 400, height: 800 },
+    videoWidth: 0,
+    videoHeight: 0,
+  });
+  assert.deepEqual(src, { x: 0, y: 0, width: 0, height: 0 });
 });
 
 test('overlay throttle: analysis is gated to the throttle window under an overlay', () => {
