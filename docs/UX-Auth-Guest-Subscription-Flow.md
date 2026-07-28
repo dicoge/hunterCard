@@ -32,7 +32,7 @@
 
 ### 1.3 非目標（本階段不做）
 - 真實金流串接（IAP 收據驗證、Stripe checkout）— 僅設計介面與資料模型。
-- 明確限制：**不使用 Copilot、不使用 OpenRouter**（見 §12）。
+- 明確限制：**不使用 Copilot**。OpenRouter 僅供現有卡牌辨識（非本設計新增依賴）。
 
 ### 1.4 安全原則（RLS 最小權限）
 
@@ -117,12 +117,16 @@ CREATE TABLE public.subscriptions (
   status                  text NOT NULL DEFAULT 'none',
   platform                text,
   product_id              text,
-  original_transaction_id text,                       -- Apple: original_transaction_id; Google: purchase_token (stable identity across renewal)
+  original_transaction_id text,                       -- Apple: original_transaction_id（stable across renewal）
+  purchase_token          text,                       -- Google: purchase_token（stable identity）；linkedPurchaseToken 為 upgrade/downgrade 鏈接
   expires_at              timestamptz,                -- 一般 expires_date_ms / expiryTime
   grace_expires_at        timestamptz,                -- Apple: gracePeriodExpiresDate; Google: 依 grace period end 計算
   auto_renew              boolean DEFAULT false,
   created_at              timestamptz NOT NULL DEFAULT now(),
-  updated_at              timestamptz NOT NULL DEFAULT now()
+  updated_at              timestamptz NOT NULL DEFAULT now(),
+
+  CONSTRAINT subs_apple_tx_unique UNIQUE (platform, original_transaction_id),
+  CONSTRAINT subs_google_token_unique UNIQUE (platform, purchase_token)
 );
 
 -- 帳號刪除 deny marker（階段 A commit 前寫入；所有 RPC/route 入口處檢查）
@@ -348,8 +352,8 @@ GRANT EXECUTE ON FUNCTION public.consume_scan_quota() TO authenticated;
 
 | 項目 | 設計 |
 |------|------|
-| Apple V2 Endpoint | 接收 `signedPayload` JWS。驗證：以 header `x5c` 鏈中的憑證驗證簽名（Apple Root CA → G1 → notification signing cert）。解碼 `notificationType` + `subtype`。從 `signedTransactionInfo`（JWS signed by App Store）取得 `originalTransactionId`, `transactionId`, `expiresDate`。dedup key = `originalTransactionId + notificationUUID`（使用 stable originalTransactionId，而非每筆 renew 的 transactionId） |
-| Google RTDN | Pub/Sub subscription 接收 `developerNotification`。用 `purchaseToken` 呼叫 `androidpublisher.purchases.subscriptionsv2.get()` 取得 `SubscriptionPurchaseV2`（含 subscriptionState, expiryTime, linkedPurchaseToken）。不依賴 RTDN v1 的舊 `purchases.subscriptions.get()`。dedup key = `purchaseToken + eventTimeMillis` |
+| Apple V2 Endpoint | 接收 `signedPayload` JWS。驗證：以 header `x5c` 鏈中的憑證驗證簽名（Apple Root CA → G1 → notification signing cert）。解碼 `notificationType` + `subtype`。**`signedTransactionInfo` 與 `signedRenewalInfo` 本身也是 JWS**（各由 App Store 簽名）→ 需分別驗證。從 signedTransactionInfo 取得 `originalTransactionId`, `transactionId`, `expiresDate`, `bundleId`, `environment`, `appAppleId`。dedup key = `originalTransactionId + notificationUUID`（使用 stable originalTransactionId，而非每筆 renew 的 transactionId）。僅接受 `environment=Production`（或驗證 `appAppleId` 對應本 App） |
+| Google RTDN | Pub/Sub subscription 接收 `developerNotification`。驗證：Pub/Sub push 自帶 JWT（由 GCP service account 簽發），驗證 token 的 `audience` + `email`。用 `purchaseToken` 呼叫 `androidpublisher.purchases.subscriptionsv2.get()`（非 deprecated v1 `purchases.get`）取得 `SubscriptionPurchaseV2`（`subscriptionState`, `expiryTime`, `linkedPurchaseToken`）。dedup key = `purchaseToken + eventTimeMillis`。**Pub/Sub 保證 at-least-once delivery** → `UNIQUE(dedup_key)` + `ON CONFLICT DO NOTHING` 處理重複 |
 | 共同 schema | `webhook_events` table: `platform, event_type, dedup_key UNIQUE, original_transaction_id, purchase_token, raw_payload jsonb, processed_at timestamptz` |
 | 去重 | `UNIQUE(dedup_key)` + `ON CONFLICT DO NOTHING`（idempotent） |
 | 亂序容忍 | 依 receipt `expiresDate` / `expiryTime` 的實際值覆蓋 `subscriptions.expires_at`，不依賴 event 到達時間排序 |
@@ -424,26 +428,33 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
      d. COMMIT
 
    階段 B：Admin API（非同一 transaction）
-     e. supabase.auth.admin.signOut(v_uid)    — 撤銷所有現有 session + refresh token
+     e. supabase.auth.admin.updateUserById(v_uid, { ban_duration: '876600h' })
+        — 立即 ban user，所有現有 session/refresh token 失效（Supabase GoTrue 在 token refresh 時檢查 ban status）
      f. supabase.auth.admin.deleteUser(v_uid) — 移除 auth.users + auth.identities
-     g. 若階段 B 失敗 → deleted_users marker 存在於 DB，所有 RPC/RLS 在入口處檢查:
-        IF EXISTS (SELECT 1 FROM deleted_users WHERE user_id = auth.uid()) THEN
-          RAISE EXCEPTION 'account_deleted';
-        END IF;
-        → 即使 auth.users 仍存在且 session 仍 valid，仍拒絕所有操作
-     h. 排程 retry（Edge Function cron sweep）：對 deleted_users 中 auth.users 仍存在的 orphan ID 補執行 deleteUser()
+     g. 若階段 B 失敗 → deleted_users marker 存在於 DB，所有 RPC/route 入口處檢查:
+        CREATE OR REPLACE FUNCTION public.check_not_deleted()
+        RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM deleted_users WHERE user_id = auth.uid()) THEN
+            RAISE EXCEPTION 'account_deleted' USING ERRCODE = 'P0004';
+          END IF;
+        END; $$;
+        — 每個 protected RPC（consume_scan_quota, require_premium 等）在開頭呼叫 `check_not_deleted()`
+        — RLS SELECT policy 也可附加 `AND NOT EXISTS (SELECT 1 FROM deleted_users WHERE user_id = auth.uid())`
+        → 即使 auth.users 仍存在且 session 未過期，仍拒絕所有操作
+     h. 排程 retry（Edge Function cron sweep）：對 deleted_users 中（在 RPC check_not_deleted 被觸發時記錄的）尚未完成 deleteUser 的 orphan ID 補執行
 
 3. 前端帳號刪除完成後清空所有本機 Zustand persisted stores（reset memory state + 清除 persist storage）：
 
    各 store 及其 persist key：
 
-   | Store | Zustand persist key | 清除方式 |
-   |-------|---------------------|----------|
-   | authStore | `holohunter-auth` | `authStore.getState().logout()` — 已在 logout() 中 reset 所有欄位 |
-   | holoStore | `holohunter-storage` | `holoStore.persist.clearStorage()` + `holoStore.setState({ favorites:[], recentViews:[], scanHistory:[] })` |
-   | scanSessionStore | `hunterCard-scan-session` | `scanSessionStore.persist.clearStorage()` + `scanSessionStore.getState().clearSession()` |
-   | watchlistStore | `watchlist-storage` | `watchlistStore.persist.clearStorage()` + reset items |
-   | settingsStore | `hunterCard-settings` | `settingsStore.persist.clearStorage()` + reset to defaults |
+   | Store | Zustand persist key | Fields reset |
+   |-------|---------------------|-------------|
+   | authStore | `holohunter-auth` | `logout()`: isAuthenticated=false, authResolved=false, role='guest', profile=null, scanQuota={used:0,limit:0}, subscription={tier:'none',isActive:false} |
+   | holoStore | `holohunter-storage` | `clearStorage()` + setState: `favorites:[], recentViews:[], scanHistory:[], lastScannedCard:null, theme:'dark', priceSource:'yuyu'` |
+   | scanSessionStore | `hunterCard-scan-session` | `clearStorage()` + `clearSession()`: `cards:[], totalValue:0, cardCount:0, isSessionActive:false` |
+   | watchlistStore | `watchlist-storage` | `clearStorage()` + setState: `items:[]`（另需呼叫 `removeAllCards()` 或 batch clear） |
+   | settingsStore | `hunterCard-settings` | `clearStorage()` + setState: `preferredCurrency:'TWD', preferredLanguage:'zh'`（restore defaults） |
 
    清空完成後 navigate 回 AuthScreen
 
@@ -530,14 +541,16 @@ GRANT EXECUTE ON FUNCTION public.require_premium() TO authenticated;
 | 16 | unlink last provider | — | 拒絕 | 拒絕 |
 | 17 | collision | — | 拒絕 | 拒絕 |
 | 18 | Auto-linking | — | GoTrue 平台行為（接受） | 同 left |
-| 19 | Grace period | — | — | entitlement 維持 active/in_grace |
-| 20 | Admin API failure on delete | — | orphan sweep recovery | 同 left |
+| 19 | Grace period (active→in_grace) | — | — | entitlement 維持：`grace_expires_at > now()` |
+| 20 | Grace period end (no renewal→expired) | — | — | entitlement 回 free；status='expired' |
+| 21 | Grace period end (renewal succeeds→active) | — | — | entitlement 維持；status='active', grace_expires_at=NULL |
+| 22 | Admin API failure on delete | — | deleted_users marker 阻擋 orphan session | 同 left |
 
 ---
 
 ## 12. 限制與注意事項
 
-- 不使用 Copilot、不使用 OpenRouter。
+- 不使用 Copilot（額度已滿）。**OpenRouter 僅限現有卡牌辨識 API 使用**（`/api/recognize-card` → Gemini Vision），不作為 agent 編碼/LLM 後援額度。本設計文件內不新增對 OpenRouter 的新依賴。
 - 訂閱符合 App Store / Google Play 規範（IAP, Sign in with Apple, 隱私標籤）。
 - Quota/premium gate fail-closed：直接查 `subscriptions`（status + expires_at），不 fallback 到 `users.role`。
 - Grace period `status = 'in_grace'` 視同 subscriber（Apple/Google 政策要求）。
