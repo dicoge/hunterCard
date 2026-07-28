@@ -275,8 +275,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-013_hPR"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-013_hPR"
     }
   ],
-  "lastUpdated": "2026-07-27T12:16:33.811Z",
+  "lastUpdated": "2026-07-28T12:08:52.529Z",
   "nameZh": "SorAZ"
 }

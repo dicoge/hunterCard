@@ -212,8 +212,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-043_hPR"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 8980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-043_hPR"
     }
   ],
-  "lastUpdated": "2026-07-27T12:16:33.777Z",
+  "lastUpdated": "2026-07-28T12:08:52.494Z",
   "nameZh": "勞菈·潘德菈"
 }

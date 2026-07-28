@@ -275,8 +275,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-102_hBP03"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-102_hBP03"
     }
   ],
-  "lastUpdated": "2026-07-27T12:16:33.710Z",
+  "lastUpdated": "2026-07-28T12:08:52.433Z",
   "nameZh": "胖狗"
 }

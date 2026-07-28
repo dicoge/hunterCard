@@ -261,8 +261,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-015_hBP03"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-015_hBP03"
     }
   ],
-  "lastUpdated": "2026-07-27T12:16:33.701Z",
+  "lastUpdated": "2026-07-28T12:08:52.423Z",
   "nameZh": "轟一"
 }

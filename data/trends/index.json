@@ -1,19 +1,12 @@
 {
-  "lastUpdated": "2026-07-25T12:11:57.779Z",
+  "lastUpdated": "2026-07-28T12:12:08.808Z",
   "totalCards": 2023,
   "summary": {
-    "up": 1,
+    "up": 0,
     "down": 0,
-    "stable": 2022
+    "stable": 2023
   },
   "topGainers": [
-    {
-      "cardId": "hY02-002",
-      "name": "緑エール",
-      "nameZh": "綠色應援",
-      "score": 0.15,
-      "trend": "up"
-    },
     {
       "cardId": "hBD24-001",
       "name": "パヴォリア・レイネ",
@@ -144,6 +137,13 @@
       "cardId": "hBD24-024",
       "name": "ムーナ・ホシノヴァ",
       "nameZh": "姆娜·霍希諾瓦",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-025",
+      "name": "アキ・ローゼンタール",
+      "nameZh": "亞綺·羅森塔爾",
       "score": 0.03,
       "trend": "stable"
     }
