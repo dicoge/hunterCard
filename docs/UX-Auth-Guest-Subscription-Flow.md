@@ -120,6 +120,7 @@ CREATE TABLE public.subscriptions (
   original_transaction_id text,                       -- Apple: original_transaction_id（stable across renewal）
   purchase_token          text,                       -- Google: current purchase_token（會在 upgrade/downgrade/re-signup 時變更；非 stable identity）
   linked_purchase_token   text,                       -- Google: linkedPurchaseToken（指向前一 token，用於 reconciliation）
+  chain_root_token        text,                       -- Google: 該 token chain 的根 purchase_token（chain 穩定身份；同 chain 所有 row 共用），用於「每 chain 至多一筆 active」
   expires_at              timestamptz,                -- 一般 expires_date_ms / expiryTime
   grace_expires_at        timestamptz,                -- Apple: gracePeriodExpiresDate; Google: lineItems[].expiryTime（grace 期間動態延長）
   auto_renew              boolean DEFAULT false,
@@ -145,18 +146,54 @@ CREATE UNIQUE INDEX subs_apple_tx_unique
 CREATE UNIQUE INDEX subs_google_token_unique
   ON public.subscriptions (purchase_token) WHERE platform = 'google_play';
 
--- Google linkedPurchaseToken reconciliation（雙向 + 多跳 + 亂序）：
--- upgrade/downgrade/re-signup/re-subscribe 會產生新 purchase_token，linkedPurchaseToken 指向前一 token，形成 token chain。
--- 每則 Google 事件在單一 transaction 內處理（對相關 row 取 FOR UPDATE lock）：
---   1. 正向：新 token T 帶 linkedPurchaseToken=L → 找 row WHERE purchase_token=L。
---        找到 → 沿 linked_purchase_token 鏈往回走到 canonical owner，取其 user_id 建立 T 的 row。
---   2. 反向（亂序：新 token 先到、舊 token 後到）→ 新 token 先到時 predecessor 尚無 row，
---        無法取得 user_id → 以 purchase.obfuscatedExternalAccountId 解析 user_id（購買時綁定），暫存 row。
---        舊 token 事件後到時，反查 row WHERE linked_purchase_token=<oldToken>（successor 已存在）
---        → 將 ownership/entitlement 前傳給 successor，舊 row 標 status='superseded'，不新增第二筆 active。
---   3. Canonical owner：一條 chain 只有鏈頭（最新、無人指向的 token）為 active，其餘 superseded。
---   4. 拒絕環：走鏈時記錄已訪問 token，遇重複即中止並記 reconciliation_log conflict（不覆寫 entitlement）。
---   5. 原子性：ownership 移交與 status 更新在同一 transaction，避免中途出現 0 或 >1 active entitlement。
+-- DB 層強制「每個 Google token chain 至多一筆 active/in_grace」，作為 reconciliation 邏輯的最後防線。
+CREATE UNIQUE INDEX subs_one_active_per_google_chain
+  ON public.subscriptions (chain_root_token)
+  WHERE platform = 'google_play' AND status IN ('active', 'in_grace');
+
+-- Google 購買歸屬映射：purchase 流程啟動時，client 以我方產生的 obfuscatedAccountId 呼叫 BillingClient
+-- （setObfuscatedAccountId），並由 server 綁定到 user_id。webhook 端不可「反解」obfuscated 值，只能查這張表。
+CREATE TABLE public.google_external_account_map (
+  obfuscated_external_account_id text PRIMARY KEY,   -- 我方產生、不可逆、與 user 綁定的值
+  user_id                        uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  created_at                     timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.google_external_account_map ENABLE ROW LEVEL SECURITY;  -- 無 client policy，只由 service_role/SECURITY DEFINER 存取
+
+-- Google linkedPurchaseToken reconciliation（conflict-safe canonical，單一 SERIALIZABLE transaction + FOR UPDATE）：
+-- token chain 由 linked_purchase_token 邊構成（successor.linked_purchase_token = predecessor.purchase_token）。
+-- 每則 Google 事件（token T，選配 linkedPurchaseToken L）依序：
+--
+--   步驟 1｜解析 owner 候選（可能 0..N 個，全部一起比對）：
+--     a. 既有 T row → 其 user_id（idempotent 更新）。
+--     b. L 存在且有 L row → 沿 chain 走到 root，取 canonical owner 的 user_id。
+--     c. externalAccountIdentifiers.obfuscatedExternalAccountId（僅在購買有設定時存在）→ 查
+--        google_external_account_map 得 user_id。**不可假設 obfuscated 值可逆解析成 user_id**；查無對應即視為缺值。
+--
+--   步驟 2｜owner-mismatch 一律拒絕（不跨帳號覆寫/串接）：
+--     步驟 1 得到的各 user_id 若「彼此不一致」→ REJECT：不改動任何既有 entitlement，
+--     寫 reconciliation_log(conflict='owner_mismatch')，事件標 quarantined，交由人工/對帳處理。
+--     全部候選皆無 user_id（例如新 token 先到、predecessor 未達、又無 external account mapping）→
+--     **fail-closed**：以 status='pending_attribution' 暫存（不授予 entitlement），待 predecessor 事件或 daily
+--     reconciliation 補齊；絕不臆測歸屬。
+--
+--   步驟 3｜chain 綁定與 canonical：
+--     - 解析出唯一 owner 後，設定 chain_root_token（沿鏈到 root；root 事件則 = 自身 purchase_token），同 chain 共用。
+--     - branch 衝突（兩個 successor T1、T2 皆指向同一 predecessor L）→ deterministic tie-break：
+--       取 SubscriptionPurchaseV2.startTime 較晚者為 canonical active（並列時以 purchase_token 字典序較大者）；
+--       另一筆標 status='superseded' 且永不 active，並寫 reconciliation_log(conflict='branch')。
+--     - 一條 chain 僅 canonical（鏈頭）為 active/in_grace，其餘 superseded；由上方
+--       subs_one_active_per_google_chain 索引在 DB 層保證 exactly-one。
+--
+--   步驟 4｜反向 / 亂序多跳傳播：
+--     predecessor 事件較晚到時，遞迴沿 linked_purchase_token 前向（WHERE linked_purchase_token = 當前 purchase_token）
+--     走完整條 multi-hop successor chain，把已確立的 canonical owner + chain_root_token 傳播給沿途
+--     pending_attribution 的 row；每一跳都套用步驟 2 的 mismatch 拒絕，只在 owner 一致時傳播。
+--
+--   步驟 5｜cycle 拒絕：走鏈記錄已訪問 token，遇重複即中止並寫 reconciliation_log(conflict='cycle')，不改 entitlement。
+--
+--   步驟 6｜原子性：步驟 1–5 於同一 SERIALIZABLE transaction 內以 FOR UPDATE 鎖相關 row 完成；
+--     任何 conflict/cycle → abort，無 entitlement 變更（維持 0 或既有 1 active，永不 >1）。
 
 -- 帳號刪除 deny marker（階段 A commit 前寫入；所有 RPC/route 入口處檢查）
 CREATE TABLE public.deleted_users (
@@ -394,9 +431,9 @@ GRANT EXECUTE ON FUNCTION public.consume_scan_quota() TO authenticated;
 | 項目 | 設計 |
 |------|------|
 | Apple V2 Endpoint | 接收 `signedPayload` JWS。驗證：以 header `x5c` 鏈中的憑證驗證簽名（Apple Root CA → G1 → notification signing cert）。解碼 outer `data`（含 `appAppleId`, `bundleId`, `environment`），再解碼 `notificationType` + `subtype`。**`signedTransactionInfo` 與 `signedRenewalInfo` 本身也是 JWS**（各由 App Store 簽名）→ 需分別驗證。從 signedTransactionInfo 取得 `originalTransactionId`, `transactionId`, `expiresDate`。dedup key = `apple:<notificationUUID>`（Apple 提供的唯一 notification identifier） |
-| Google RTDN | Pub/Sub subscription 接收 `developerNotification`。驗證：Pub/Sub push 自帶 JWT（由 GCP service account 簽發），驗證 token 的 `audience` + `email`。用 `purchaseToken` 呼叫 `purchases.subscriptionsv2.get()` 取得 `SubscriptionPurchaseV2`。dedup key = `google:<projectId>/<topic>:<message.messageId>`（Pub/Sub 官方唯一 per-delivery identifier）；若 messageId 缺失 → fallback `google-fb:` + `encode(sha256(notificationType‖''‖purchaseToken‖''‖eventTimeMillis),'hex')`（固定順序、以 0x1F 分隔避免拼接碰撞） |
-| 共同 schema | `webhook_events` table: `platform, event_type, dedup_key text NOT NULL, original_transaction_id, purchase_token, raw_payload jsonb, processed_at timestamptz`, `UNIQUE(dedup_key)` |
-| 去重 keyspace | dedup_key 一律帶 platform 前綴命名空間（`apple:` / `google:` / `google-fb:`），三者不共用裸值 keyspace → Apple UUID、Google messageId、fallback hash 不會互相碰撞 |
+| Google RTDN | Pub/Sub 接收 `DeveloperNotification`，其 payload 為**互斥 envelope**：`subscriptionNotification`（含整數 `notificationType` + `purchaseToken`）、`voidedPurchaseNotification`（含 `purchaseToken`, `productType`, `refundType`）、`oneTimeProductNotification`、`testNotification` — 一則只會有其中一種，**不可固定讀 `notificationType`**。驗證 Pub/Sub push JWT 的 `audience` + `email`。subscription envelope → 以 `purchaseToken` 呼叫 `purchases.subscriptionsv2.get()` 取 `SubscriptionPurchaseV2`；voided envelope → 見退款列。dedup 主鍵一律 `google:<projectId>/<topic>:<message.messageId>`（與 envelope 種類無關）；messageId 缺失 → 依 envelope 選 fallback（欄位以 0x1F 分隔、固定順序、sha256 hex）：subscription = `google-fb-sub:sha256('subscription'|notificationType|purchaseToken|eventTimeMillis)`；voided = `google-fb-void:sha256('voided'|purchaseToken|productType|refundType|eventTimeMillis)` |
+| 共同 schema | `webhook_events` table: `platform, envelope text, event_type, dedup_key text NOT NULL, original_transaction_id, purchase_token, raw_payload jsonb, processed_at timestamptz`, `UNIQUE(dedup_key)` |
+| 去重 keyspace | dedup_key 一律帶前綴命名空間（`apple:` / `google:` / `google-fb-sub:` / `google-fb-void:`），彼此不共用裸值 keyspace → Apple UUID、Google messageId、subscription/voided fallback hash 不會互相碰撞 |
 | 去重 | `UNIQUE(dedup_key)` + `INSERT ... ON CONFLICT (dedup_key) DO NOTHING`（idempotent；先寫 webhook_events，成功寫入才處理事件） |
 | 亂序容忍 | 依 receipt `expiresDate` / `lineItems[].expiryTime` 的實際值覆蓋 `subscriptions.expires_at`，不依賴 event 到達時間排序 |
 
@@ -411,8 +448,8 @@ GRANT EXECUTE ON FUNCTION public.consume_scan_quota() TO authenticated;
 | grace 後帳戶保留(on hold) | GRACE_PERIOD_EXPIRED | (5) SUBSCRIPTION_ON_HOLD | UPDATE: `status='expired'`（entitlement 結束） |
 | 恢復 | DID_RENEW（grace/retry 後成功） | (1) SUBSCRIPTION_RECOVERED / (7) SUBSCRIPTION_RESTARTED | UPDATE: `status='active'`, `expires_at` 取新值, `grace_expires_at`=NULL |
 | 到期 | EXPIRED(VOLUNTARY/BILLING_RETRY/…) | (13) SUBSCRIPTION_EXPIRED | UPDATE: `status='expired'` |
-| 退款 | REFUND | Google Play Voided Purchases API（RTDN 無退款事件） | UPDATE: `status='expired'`, `expires_at`=now()；寫 `refund_events` log |
-| 撤銷（entitlement 立即失效） | REVOKE | (12) SUBSCRIPTION_REVOKED | UPDATE: `status='expired'`, `expires_at`=now() |
+| 退款 | REFUND | RTDN `voidedPurchaseNotification`（互斥 envelope；`purchaseToken`,`productType=SUBSCRIPTION`,`refundType`）＋ Voided Purchases API 對帳 | UPDATE 對應 `purchase_token` 的 row：`status='expired'`, `expires_at`=now()；寫 `refund_events` log。dedup 走 voided keyspace（見接收層去重列） |
+| 撤銷（entitlement 立即失效） | REVOKE | (12) SUBSCRIPTION_REVOKED（subscription envelope） | UPDATE: `status='expired'`, `expires_at`=now() |
 
 **定期 reconciliation（備援）**：
 
