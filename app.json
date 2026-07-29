@@ -73,7 +73,6 @@
       ],
       "expo-notifications",
       "expo-apple-authentication"
-      "expo-notifications"
     ],
     "extra": {
       "eas": {

@@ -201,6 +201,19 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
       <View style={isDesktop ? styles.rightCol : undefined}>
 
+      {/* ====== TOP ACTION ROW (watchlist toggle — reachable without scrolling) ====== */}
+      <View style={styles.topActionRow}>
+        <TouchableOpacity
+          style={[styles.watchlistChip, inWatchlist ? styles.watchlistChipActive : null]}
+          onPress={toggleWatchlist}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.watchlistChipText, inWatchlist ? styles.watchlistChipTextActive : null]}>
+            {inWatchlist ? '🔔 已加入入手提醒' : '🔕 加入入手提醒'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* ====== PRICE SECTION ====== */}
       <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]}>
         <View style={styles.priceHeader}>
@@ -220,6 +233,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
               </View>
               );
             })}
+            <Text style={styles.variantHint}>👇 於下方「市場數據」可選擇版本，買賣差價與漲跌會隨選擇更新</Text>
           </View>
         ) : hasActualPrice ? (
           <><View style={styles.priceRow}>
@@ -757,6 +771,7 @@ const styles = StyleSheet.create({
   variantRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, backgroundColor: COLORS.surfaceLight, borderRadius: 8, marginBottom: 6 },
   variantName: { color: COLORS.text, fontSize: 13, fontWeight: '600', flex: 1, marginRight: 8 },
   variantPrice: { color: COLORS.success, fontSize: 15, fontWeight: 'bold' },
+  variantHint: { color: COLORS.textSecondary, fontSize: 11, marginTop: 2, paddingHorizontal: 4 },
 
   // Info section
   section: { paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' },
@@ -799,6 +814,11 @@ const styles = StyleSheet.create({
   // Watchlist button
   watchlistBtn: { backgroundColor: COLORS.primary, paddingVertical: 15, borderRadius: 12, alignItems: 'center' },
   watchlistBtnActive: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.primary },
+  topActionRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20, paddingTop: 12 },
+  watchlistChip: { backgroundColor: COLORS.primary, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20 },
+  watchlistChipActive: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.primary },
+  watchlistChipText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  watchlistChipTextActive: { color: COLORS.primary },
   watchlistBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
   watchlistBtnTextActive: { color: COLORS.primary },
 

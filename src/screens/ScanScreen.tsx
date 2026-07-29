@@ -52,6 +52,8 @@ export default function ScanScreen({ navigation }: any) {
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
   const [permission, requestPermission] = isWeb ? [null, null] as any : useCameraPermissions();
   const [webCameraStarted, setWebCameraStarted] = useState(false);
+  // Web 相簿上傳模式：相機無法使用（權限卡住/裝置無鏡頭）時的 fallback，不掛載 WebCamera
+  const [webGalleryMode, setWebGalleryMode] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
   const cameraRef = useRef<CameraView>(null);
   const webCameraRef = useRef<WebCameraHandle>(null);
@@ -931,12 +933,24 @@ export default function ScanScreen({ navigation }: any) {
           >
             <Text style={styles.permissionButtonText}>允許相機權限</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.settingsButton}
             onPress={openSettings}
             activeOpacity={0.7}
           >
             <Text style={styles.settingsButtonText}>打開設定</Text>
+          </TouchableOpacity>
+          {/* 相機權限卡住或裝置無鏡頭時的 fallback：改用相簿上傳 */}
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => {
+              setWebGalleryMode(true);
+              setWebCameraStarted(true);
+              pickFromGallery();
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.settingsButtonText}>🖼️ 改用相簿上傳（免相機）</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -990,7 +1004,7 @@ export default function ScanScreen({ navigation }: any) {
     <View style={styles.container}>
       <ScanQuotaBanner />
       {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
-      {!isCameraReady && (
+      {!isCameraReady && !webGalleryMode && (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>相機初始化中...</Text>
@@ -1016,7 +1030,32 @@ export default function ScanScreen({ navigation }: any) {
         </View>
       )}
       {/* 相机预览 — 一定會 mount，不會被初始化中判斷擋住 */}
-{isWeb ? (
+{isWeb && webGalleryMode ? (
+        <View style={[styles.camera, styles.galleryModeContainer]}>
+          <Text style={styles.galleryModeIcon}>🖼️</Text>
+          <Text style={styles.galleryModeTitle}>相簿上傳模式</Text>
+          <Text style={styles.galleryModeText}>
+            相機無法使用時，可從相簿選擇卡牌照片進行辨識。
+          </Text>
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={pickFromGallery}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.permissionButtonText}>選擇卡牌照片</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => {
+              setWebGalleryMode(false);
+              setWebCameraStarted(false);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.settingsButtonText}>← 改回使用相機</Text>
+          </TouchableOpacity>
+        </View>
+      ) : isWeb ? (
         <WebCamera
           ref={webCameraRef}
           style={styles.camera}
@@ -1309,6 +1348,29 @@ const styles = StyleSheet.create({
   },
   camera: {
     flex: 1,
+  },
+  galleryModeContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: COLORS.background,
+  },
+  galleryModeIcon: {
+    fontSize: 64,
+    marginBottom: 20,
+  },
+  galleryModeTitle: {
+    color: COLORS.text,
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  galleryModeText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 30,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
