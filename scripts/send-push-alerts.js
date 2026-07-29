@@ -7,10 +7,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_DIR = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_DIR, 'data');
-const WATCHLIST_PATH = path.join(DATA_DIR, 'push-watchlist.json');
 const DATABASE_PATH = path.join(DATA_DIR, 'database.json');
 const TRENDS_DIR = path.join(DATA_DIR, 'trends');
 const NOTIFY_URL = process.env.PUSH_NOTIFY_URL || process.env.VERCEL_PUSH_NOTIFY_URL || 'https://holocard-hunter.vercel.app/api/push/notify';
+const NOTIFY_SECRET = process.env.PUSH_NOTIFY_SECRET;
+const KV_REST_API_URL = process.env.KV_REST_API_URL;
+const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
+// Watchlist is stored as per-token Redis sets (`push:watchlist:<token>`) plus a
+// registry set of every token that has a watchlist (DIC-390 CR blocker 1).
+const WATCHLIST_TOKENS_KEY = 'push:watchlist-tokens';
+const WATCHLIST_PREFIX = 'push:watchlist:';
 const THRESHOLD = 0.6;
 const MIN_DATA_POINTS = 3;
 
@@ -20,6 +26,33 @@ function readJson(filePath, fallback) {
   } catch {
     return fallback;
   }
+}
+
+async function kvSmembers(key) {
+  const res = await fetch(`${KV_REST_API_URL}/smembers/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
+  });
+  if (!res.ok) throw new Error(`KV smembers ${res.status}: ${await res.text()}`);
+  const { result } = await res.json();
+  return Array.isArray(result) ? result : [];
+}
+
+// Read the push watchlist from Vercel KV (Upstash REST API). The API stores each
+// token's cards in its own Redis set (`push:watchlist:<token>`) and tracks every
+// active token in a registry set, so enumerate the registry then read each set
+// (DIC-390 CR blocker 1 — the old `hgetall push:watchlist` always came back empty).
+async function fetchWatchlist() {
+  if (!KV_REST_API_URL || !KV_REST_API_TOKEN) {
+    throw new Error('KV_REST_API_URL / KV_REST_API_TOKEN not configured');
+  }
+  const tokens = await kvSmembers(WATCHLIST_TOKENS_KEY);
+  const watchlist = {};
+  for (const token of tokens) {
+    if (typeof token !== 'string' || !token) continue;
+    const cards = await kvSmembers(`${WATCHLIST_PREFIX}${token}`);
+    if (cards.length > 0) watchlist[token] = cards;
+  }
+  return watchlist;
 }
 
 function yen(value) {
@@ -56,7 +89,10 @@ function findTrend(card, cardNumber) {
 }
 
 async function main() {
-  const watchlist = readJson(WATCHLIST_PATH, {});
+  if (!NOTIFY_SECRET) {
+    throw new Error('PUSH_NOTIFY_SECRET not set — /api/push/notify would reject the request');
+  }
+  const watchlist = await fetchWatchlist();
   const db = readJson(DATABASE_PATH, { cards: {} });
   const cardNumbers = uniqueWatchlistCards(watchlist);
   const alerts = [];
@@ -85,7 +121,10 @@ async function main() {
 
   const res = await fetch(NOTIFY_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Secret': NOTIFY_SECRET,
+    },
     body: JSON.stringify({ alerts }),
   });
   const resultText = await res.text();
