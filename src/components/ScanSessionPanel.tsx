@@ -11,7 +11,7 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { useScanSessionStore, SessionCard } from '../stores/scanSessionStore';
+import { useScanSessionStore, SessionCard, getEffectivePrice } from '../stores/scanSessionStore';
 import { COLORS, convertPrice, CURRENCIES } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
 
@@ -27,7 +27,7 @@ export default function ScanSessionPanel({
   preferredCurrency = 'TWD',
 }: ScanSessionPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const { cards, totalValue, cardCount, removeCard, clearSession } = useScanSessionStore();
+  const { cards, totalValue, cardCount, removeCard, setCardVersion, clearSession } = useScanSessionStore();
   const { setCurrency } = useSettingsStore();
 
   if (cardCount === 0 && !expanded) return null;
@@ -101,30 +101,62 @@ export default function ScanSessionPanel({
           ) : (
             <>
               <ScrollView style={styles.cardList} nestedScrollEnabled>
-                {cards.map((card, index) => (
-                  <View key={`${card.id}-${index}`} style={styles.cardRow}>
-                    <TouchableOpacity
-                      style={styles.cardInfo}
-                      onPress={() => onViewCard?.(card)}
-                    >
+                {cards.map((card, index) => {
+                  const hasVersions = card.priceVersions && card.priceVersions.length > 1;
+                  const selected = card.priceVersions?.[card.selectedVersion];
+                  return (
+                  <View key={card.instanceId} style={styles.cardRow}>
+                    <View style={styles.cardInfo}>
                       <Text style={styles.cardIndex}>#{index + 1}</Text>
                       <View style={styles.cardDetails}>
-                        <Text style={styles.cardName} numberOfLines={1}>
-                          {card.name}
-                        </Text>
-                        <Text style={styles.cardMeta}>
-                          {card.id} · {formatPrice(card.sellPrice)}
-                        </Text>
+                        <TouchableOpacity onPress={() => onViewCard?.(card)} activeOpacity={0.7}>
+                          <Text style={styles.cardName} numberOfLines={1}>
+                            {card.name}
+                          </Text>
+                          <Text style={styles.cardMeta}>
+                            {card.id}{card.rarity ? ` · ${card.rarity}` : ''} · {formatPrice(getEffectivePrice(card))}
+                          </Text>
+                        </TouchableOpacity>
+                        {hasVersions ? (
+                          <>
+                            <Text style={styles.versionHint}>選擇版本（估價依此版本計算）</Text>
+                            <View style={styles.versionRow}>
+                              {card.priceVersions.map((v, vi) => (
+                                <TouchableOpacity
+                                  key={`${card.instanceId}-v${vi}`}
+                                  style={[
+                                    styles.versionChip,
+                                    vi === card.selectedVersion && styles.versionChipActive,
+                                  ]}
+                                  onPress={() => setCardVersion(card.instanceId, vi)}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.versionChipText,
+                                      vi === card.selectedVersion && styles.versionChipTextActive,
+                                    ]}
+                                    numberOfLines={1}
+                                  >
+                                    {v.name} · {formatPrice(v.sellPrice)}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </>
+                        ) : selected && selected.name && selected.name !== card.series ? (
+                          <Text style={styles.versionSingle} numberOfLines={1}>{selected.name}</Text>
+                        ) : null}
                       </View>
-                    </TouchableOpacity>
+                    </View>
                     <TouchableOpacity
                       style={styles.removeBtn}
-                      onPress={() => removeCard(card.id)}
+                      onPress={() => removeCard(card.instanceId)}
                     >
                       <Text style={styles.removeBtnText}>✕</Text>
                     </TouchableOpacity>
                   </View>
-                ))}
+                  );
+                })}
               </ScrollView>
 
               {/* Total + Actions */}
@@ -150,9 +182,13 @@ export default function ScanSessionPanel({
                         style={[styles.actionBtn, styles.shareBtn]}
                         onPress={() => {
                           // Share/export — build text summary
-                          const summary = cards.map((c, i) =>
-                            `${i + 1}. ${c.name} (${c.id}) — ${formatPrice(c.sellPrice)}`
-                          ).join('\n');
+                          const summary = cards.map((c, i) => {
+                            const v = c.priceVersions?.[c.selectedVersion];
+                            const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
+                              ? ` [${v.name}]`
+                              : '';
+                            return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
+                          }).join('\n');
                           const full = `📋 掃描估值結果\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n總計: ${formatPrice(totalValue)}`;
                           // Trigger native share
                           if (Platform.OS === 'web') {
@@ -259,7 +295,7 @@ const styles = StyleSheet.create({
   cardInfo: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
   },
   cardIndex: {
@@ -280,6 +316,43 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 11,
     marginTop: 2,
+  },
+  versionHint: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    marginTop: 6,
+  },
+  versionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  versionChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    maxWidth: '100%',
+  },
+  versionChipActive: {
+    backgroundColor: 'rgba(0, 200, 83, 0.18)',
+    borderColor: '#00C853',
+  },
+  versionChipText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  versionChipTextActive: {
+    color: '#00C853',
+  },
+  versionSingle: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 10,
+    marginTop: 4,
   },
   removeBtn: {
     width: 28,

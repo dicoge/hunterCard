@@ -9,6 +9,7 @@ import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
 
 const { width } = Dimensions.get('window');
 
@@ -490,8 +491,23 @@ function formatCount(n?: number | null): string {
 }
 
 function MarketDataPanel({ card }: { card: any }) {
-  const sellPrice = card?.sellPrice ?? null;   // 遊々亭賣出價（買入成本）
-  const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）
+  // 同名卡不同 rarity/パラレル/サイン 版的價格都在 card.prices 內；卡號層級的
+  // sellPrice 是「所有版本最低價」，直接顯示會混版。改成依詳情頁這張卡對齊版本。
+  const versions = buildPriceVersions(card);
+  const multiVersion = versions.length > 1;
+  const resolution = resolveVersionForCard(card, versions);
+  // null = 尚未手動選擇；此時沿用自動對齊結果。使用者一旦點選版本即視為已確認。
+  const [override, setOverride] = useState<number | null>(null);
+  const selectedIdx = Math.min(Math.max(override ?? resolution.index, 0), versions.length - 1);
+  const selectedVersion = versions[selectedIdx] ?? null;
+  // 只有「自動唯一對齊」或「使用者手動選過」才算已對齊；否則版本待確認，不把價格當成本卡版本價。
+  const aligned = resolution.confident || override != null;
+  const manualPick = override != null && !resolution.confident;
+  const sellPrice = aligned ? (selectedVersion?.sellPrice ?? null) : null; // 對齊版本後的遊々亭賣價（買入成本）
+  const versionLabel = selectedVersion?.name ?? card?.series ?? '';
+
+  const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
+  const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）— 資料僅卡號層級、未分版
   const ytStats = card?.ytStats ?? null;
   const priceHistory = card?.priceHistory ?? null;
 
@@ -502,11 +518,13 @@ function MarketDataPanel({ card }: { card: any }) {
   let priceChangePct: number | null = null;
   let recentAvg: number | null = null;
   let priorAvg: number | null = null;
+  let latestHistoryValue: number | null = null;
   if (priceHistory != null && typeof priceHistory === 'object') {
     const entries = Object.entries(priceHistory)
       .map(([d, p]) => [d, Number(p)] as [string, number])
       .filter(([d, p]) => !isNaN(p) && p > 0 && !isNaN(Date.parse(d)))
       .sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length >= 1) latestHistoryValue = entries[entries.length - 1][1];
     if (entries.length >= 2) {
       const latestMs = Date.parse(entries[entries.length - 1][0]);
       const DAY_MS = 86400000;
@@ -527,28 +545,69 @@ function MarketDataPanel({ card }: { card: any }) {
       }
     }
   }
-  const hasHistory = priceTrend != null;
+  // priceHistory 只有卡號層級（實測僅追蹤最低價版本），非各版本獨立。若最新歷史值與
+  // 目前選中版本價格差距過大，這段歷史不代表本版本 → 不顯示，避免又是混版數據。
+  const historyRepresentsVersion =
+    latestHistoryValue != null &&
+    typeof sellPrice === 'number' && sellPrice > 0 &&
+    Math.abs(latestHistoryValue - sellPrice) / sellPrice <= 0.15;
+  const hasHistory = priceTrend != null && historyRepresentsVersion;
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
-  // 收購價超過賣價 10 倍幾乎必是資料對齊錯誤（例：低稀有度卡誤標高稀有度收購價）。
-  // 資料層修好前，寧可標示不可靠也不要顯示假的暴利差價。
+  // 收購價（未分版）超過選中版本賣價 10 倍幾乎必是版本對不上（例：選了最低價版本，
+  // 卻配到高稀有度的收購價）。與其顯示假暴利差價，寧可標示待確認。
   const isPriceReliable = !hasSpread || buyPrice <= sellPrice * 10;
 
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>📊 市場數據</Text>
 
+      {/* 版本選擇 — 對齊 rarity/パラレル/サイン 版，避免混版價格 */}
+      {aligned && versionLabel ? (
+        <Text style={styles.versionLabel}>
+          價格對應版本：{versionLabel}{manualPick ? '（已手動選擇）' : ''}
+        </Text>
+      ) : null}
+      {!aligned ? (
+        <View style={styles.versionWarnBox}>
+          <Text style={styles.versionWarnTitle}>⚠️ 版本待確認</Text>
+          <Text style={styles.versionWarnText}>
+            無法依此卡 rarity{displayRarity ? `「${displayRarity}」` : ''}唯一對齊價格版本（{resolution.reason}）。
+            以下價格未分版，請先選擇實際版本再參考。
+          </Text>
+        </View>
+      ) : null}
+      {multiVersion ? (
+        <View style={styles.versionRow}>
+          {versions.map((v, i) => {
+            const active = aligned && i === selectedIdx;
+            return (
+              <TouchableOpacity
+                key={`${v.name}-${i}`}
+                style={[styles.versionChip, active ? styles.versionChipActive : null]}
+                onPress={() => setOverride(i)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.versionChipText, active ? styles.versionChipTextActive : null]} numberOfLines={1}>
+                  {v.name}　¥{(v.sellPrice ?? 0).toLocaleString()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
+
       {/* 買賣差價 */}
       {hasSpread ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>💱 買賣差價</Text>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
+            <Text style={styles.marketLabel}>買入成本（遊々亭賣價 · {versionLabel}）</Text>
             <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
           </View>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
+            <Text style={styles.marketLabel}>賣出可得（店家收購 · 未分版）</Text>
             <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
           </View>
           {isPriceReliable ? (
@@ -557,12 +616,12 @@ function MarketDataPanel({ card }: { card: any }) {
               <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
                 {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
               </Text>
-            </View>
-          ) : (
-            <Text style={styles.marketNotice}>
-              ⚠️ 資料異常，請參考個別價格
-            </Text>
-          )}
+            ) : (
+              <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
+                ⚠️ 價格待確認
+            )}
+          </View>
+          <Text style={styles.marketNote}>※ 收購價為卡號整體資料，未依版本細分，差價僅供參考</Text>
         </View>
       ) : null}
 
@@ -601,11 +660,11 @@ function MarketDataPanel({ card }: { card: any }) {
         ) : null}
       </View>
 
-      {/* 漲跌判斷 */}
+      {/* 漲跌判斷 — 僅在歷史代表目前選中版本時顯示 */}
       {hasHistory ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>
-            {priceTrend === 'up' ? '📈' : priceTrend === 'down' ? '📉' : '➖'} 漲跌判斷
+            {priceTrend === 'up' ? '📈' : priceTrend === 'down' ? '📉' : '➖'} 漲跌判斷（{versionLabel}）
           </Text>
           <View style={styles.marketRow}>
             <Text style={styles.marketLabel}>前 7 日均價</Text>
@@ -621,6 +680,13 @@ function MarketDataPanel({ card }: { card: any }) {
               {priceTrend === 'up' ? '▲' : priceTrend === 'down' ? '▼' : '▬'} {priceChangePct! >= 0 ? '+' : ''}{priceChangePct!.toFixed(1)}%
             </Text>
           </View>
+        </View>
+      ) : aligned && priceTrend != null ? (
+        <View style={styles.marketBlock}>
+          <Text style={styles.marketBlockTitle}>➖ 漲跌判斷</Text>
+          <Text style={styles.marketNote}>
+            此版本（{versionLabel}）暫無歷史均價：歷史資料僅追蹤卡號最低價版本，與目前版本不符，故不顯示以免混版。
+          </Text>
         </View>
       ) : null}
     </View>
@@ -742,7 +808,12 @@ const styles = StyleSheet.create({
   marketLabel: { fontSize: 13, color: COLORS.textSecondary, flex: 1, marginRight: 8 },
   marketValue: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   marketValueStrong: { fontSize: 15, fontWeight: 'bold' },
-  marketNotice: { fontSize: 13, fontWeight: '600', color: '#f59e0b', marginTop: 6 },
+  marketNote: { fontSize: 11, color: COLORS.textSecondary + '99', marginTop: 6, lineHeight: 16 },
+
+  // Version selector (market data)
+  versionLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 8, fontWeight: '600' },
+  versionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  versionChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border + '88' },
 
   // Trend prediction section
   componentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '44' },
