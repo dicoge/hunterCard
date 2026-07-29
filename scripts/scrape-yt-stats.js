@@ -115,10 +115,19 @@ async function fetchChannelStats(channelId, handle = null) {
       lastError = 'no_counts';
       continue;
     }
+    const canonicalChannelId = r.about.channelId || null;
+    // Validate canonical here, inside the candidate loop: a handle that resolves
+    // to a different channel (stale/wrong id or hijacked handle) must not abort
+    // the member — remember the mismatch and let the next candidate (the
+    // /channel/UCxxx/about fallback) be tried before giving up (DIC-340).
+    if (canonicalChannelId && canonicalChannelId !== channelId) {
+      lastError = `canonical_mismatch:${canonicalChannelId}`;
+      continue;
+    }
     return {
       subscriberCount,
       totalViewCount,
-      canonicalChannelId: r.about.channelId || null,
+      canonicalChannelId,
     };
   }
   return { error: lastError };
@@ -172,18 +181,11 @@ async function main() {
     try {
       const stats = await fetchChannelStats(channelId, handle);
       if (stats.error) {
+        // Includes canonical_mismatch:<id> when every candidate resolved to a
+        // different channel — fetchChannelStats already exhausted the fallback.
         failed++;
         failures.push({ name, channelId, error: stats.error });
         console.warn(`  ✗ ${name} (${channelId}): ${stats.error}`);
-      } else if (stats.canonicalChannelId && stats.canonicalChannelId !== channelId) {
-        // The About page resolved to a different channel than configured — a
-        // stale/wrong channelId or a hijacked handle. Skip so we never write
-        // another channel's stats under this member's id.
-        failed++;
-        failures.push({ name, channelId, error: `canonical_mismatch:${stats.canonicalChannelId}` });
-        console.warn(
-          `  ✗ ${name} (${channelId}): canonical channel mismatch → ${stats.canonicalChannelId}, skipping`
-        );
       } else {
         if (!history[channelId]) history[channelId] = { name, history: [] };
         history[channelId].name = name; // keep name fresh
