@@ -130,9 +130,13 @@ export default function ScanScreen({ navigation }: any) {
       Alert.alert('已在清單中', `${card.name || card.cardNumber} 已在本次掃描清單，未重複加入。`);
       return false;
     }
+    // Charge quota BEFORE recording; a denied credit must add nothing.
+    if (!incrementScan()) {
+      promptScanBlocked();
+      return false;
+    }
     addCard(card);
     setLastScannedCard(card);
-    incrementScan();
     return true;
   };
 
@@ -453,25 +457,6 @@ export default function ScanScreen({ navigation }: any) {
     ]);
   };
 
-  // Single choke point for recording a scan: consumes one quota credit and only
-  // records the card if the credit was granted. Shared by manual scan, auto-scan
-  // and gallery import so none of them can record over quota.
-  const registerScannedCard = (card: CardInfo, confidence: number): boolean => {
-    if (!incrementScan()) {
-      promptScanBlocked();
-      return false;
-    }
-    addCard(card);
-    setLastScannedCard(card);
-    setResultCard({ visible: true, card, confidence });
-    setSearchResults([]);
-    setSearchError(null);
-    setSuggestions([]);
-    setCapturedPhotoUri(null);
-    resetAutoScan();
-    return true;
-  };
-
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
     // Enforce the same role/quota gate as handleScan. Auto-scan and retry paths
@@ -615,18 +600,18 @@ export default function ScanScreen({ navigation }: any) {
           setIsScanning(false);
           setScanningStatus('✅ 辨識完成');
           setScanProgress(4);
-          addCard(nativeVisionResult.card);
-          setLastScannedCard(nativeVisionResult.card);
-          setResultCard({
-            visible: true,
-            card: nativeVisionResult.card,
-            confidence: nativeVisionResult.confidence ?? 0.9,
-          });
-          setSearchResults([]);
-          setSearchError(null);
-          setSuggestions([]);
-          setCapturedPhotoUri(null);
-          resetAutoScan();
+          if (commitCard(nativeVisionResult.card)) {
+            setResultCard({
+              visible: true,
+              card: nativeVisionResult.card,
+              confidence: nativeVisionResult.confidence ?? 0.9,
+            });
+            setSearchResults([]);
+            setSearchError(null);
+            setSuggestions([]);
+            setCapturedPhotoUri(null);
+            resetAutoScan();
+          }
           return;
         }
         if (nativeVisionResult.lowConfidence || nativeVisionResult.suggestions?.length) {
@@ -711,18 +696,18 @@ export default function ScanScreen({ navigation }: any) {
         if (galleryVisionResult.success && galleryVisionResult.card) {
           setIsProcessingOCR(false);
           setIsScanning(false);
-          addCard(galleryVisionResult.card);
-          setLastScannedCard(galleryVisionResult.card);
-          setResultCard({
-            visible: true,
-            card: galleryVisionResult.card,
-            confidence: galleryVisionResult.confidence ?? 0.9,
-          });
-          setSearchResults([]);
-          setSearchError(null);
-          setSuggestions([]);
-          setCapturedPhotoUri(null);
-          resetAutoScan();
+          if (commitCard(galleryVisionResult.card)) {
+            setResultCard({
+              visible: true,
+              card: galleryVisionResult.card,
+              confidence: galleryVisionResult.confidence ?? 0.9,
+            });
+            setSearchResults([]);
+            setSearchError(null);
+            setSuggestions([]);
+            setCapturedPhotoUri(null);
+            resetAutoScan();
+          }
           return;
         }
         if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
@@ -1099,7 +1084,7 @@ export default function ScanScreen({ navigation }: any) {
         preferredCurrency={preferredCurrency}
         preferredLanguage={preferredLanguage}
         onSelect={handleConfirmCandidate}
-        onRescan={() => { closeCandidateSelector(); captureAndRecognize(); }}
+        onRescan={() => { closeCandidateSelector(); handleScan(); }}
         onManualSearch={() => { closeCandidateSelector(); setShowSearch(true); }}
         onDismiss={closeCandidateSelector}
       />
@@ -1127,7 +1112,12 @@ export default function ScanScreen({ navigation }: any) {
             <TouchableOpacity
               style={resultStyles.toastAddBtn}
               onPress={() => {
-                // Explicit "add one more of the same card" — bypasses dedup.
+                // Explicit "add one more of the same card" — bypasses dedup but
+                // still costs one quota credit; blocked users get the prompt, no add.
+                if (!incrementScan()) {
+                  promptScanBlocked();
+                  return;
+                }
                 addCard(lastScannedCard, { force: true });
               }}
             >
