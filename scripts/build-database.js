@@ -16,6 +16,7 @@ import path from 'path';
 import https from 'https';
 import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
+import { computeGrowthDeltas } from './lib/yt-growth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -725,71 +726,65 @@ function loadOfficialData() {
 
 // ─── VTuber YouTube stats merge (DIC-249) ───
 
-function daysBetween(earlierYmd, laterYmd) {
-  const [y1, m1, d1] = earlierYmd.split('-').map(Number);
-  const [y2, m2, d2] = laterYmd.split('-').map(Number);
-  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
-}
-
-// A "1d/7d/15d/30d" delta is only meaningful if we actually have a snapshot near
-// N days ago. Cron can miss days, so pick the snapshot whose gap to `latestDate`
-// is closest to N — but reject it (return null) if that gap is outside N ± window.
-// Otherwise a growth_1d could silently be computed from a 10-day-old snapshot and
-// be badly misleading (DIC-250 review finding). Window scales with N (min 1 day).
-function growthWindow(n) {
-  return Math.max(1, Math.round(n * 0.25));
-}
-
-function snapshotValueNDaysAgo(sorted, latestDate, n, field) {
-  const window = growthWindow(n);
-  let best = null;
-  let bestDiff = Infinity;
-  for (const s of sorted) {
-    if (s.date === latestDate) continue; // never compare latest to itself
-    if (s[field] == null) continue;
-    const gap = daysBetween(s.date, latestDate);
-    if (gap <= 0) continue;
-    const diff = Math.abs(gap - n);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = s;
-    }
-  }
-  if (!best) return null;
-  const gap = daysBetween(best.date, latestDate);
-  if (Math.abs(gap - n) > window) return null; // nearest snapshot too far from N days ago
-  return best[field];
-}
-
-// Turn a channel's raw daily history into current stats + computed growth deltas.
+// Turn a channel's raw daily history into the full ytStats object merged onto
+// each card. Subscriber/view growth deltas are computed via the shared
+// lib/yt-growth.js (same algorithm scrape-yt-stats.js stamps into each
+// snapshot). News sentiment counts are read straight from the latest snapshot
+// (written there by scrape-news-sentiment.js). Legacy aliases (growth_1d/7d,
+// viewCount_daily/weekly/monthly) are kept because src/screens/CardDetailScreen
+// reads them — do not drop without updating the UI.
 function computeYtGrowth(history) {
   if (!Array.isArray(history) || history.length === 0) return null;
   const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
-  const latest = sorted[sorted.length - 1];
-  const latestDate = latest.date;
 
-  const subDelta = (n) => {
-    if (latest.subscriberCount == null) return null;
-    const past = snapshotValueNDaysAgo(sorted, latestDate, n, 'subscriberCount');
-    return past == null ? null : latest.subscriberCount - past;
-  };
-  const viewDelta = (n) => {
-    if (latest.totalViewCount == null) return null;
-    const past = snapshotValueNDaysAgo(sorted, latestDate, n, 'totalViewCount');
-    return past == null ? null : latest.totalViewCount - past;
-  };
+  // The newest snapshot may be a news-only "blank" snapshot (both counts null)
+  // that scrape-news-sentiment.js writes on a day scrape-yt-stats didn't run, so
+  // read from snapshots that actually carry YT stats (DIC-391). A snapshot is a
+  // real YT snapshot if it has EITHER count: scrape-yt-stats.js stamps view-only
+  // snapshots (subscriberCount null, totalViewCount set) when YouTube hides the
+  // sub count, and those must not be filtered out or their views/view-growth are
+  // lost (DIC-398). Subscriber and view figures are resolved independently so a
+  // trailing snapshot carrying only one of them can't wipe the other's last
+  // known value.
+  const withStats = sorted.filter(
+    (s) => s.subscriberCount != null || s.totalViewCount != null,
+  );
+  const latestStats = withStats.length ? withStats[withStats.length - 1] : null;
+  const latestSubs = [...withStats].reverse().find((s) => s.subscriberCount != null) ?? null;
+  const latestViews = [...withStats].reverse().find((s) => s.totalViewCount != null) ?? null;
+  const d = computeGrowthDeltas(withStats);
+
+  // News counts come from whichever snapshot the news scraper last stamped,
+  // which may be the trailing blank one.
+  const withNews = sorted.filter((s) => s.newsCount != null);
+  const latestNews = withNews.length ? withNews[withNews.length - 1] : null;
 
   return {
-    subscriberCount: latest.subscriberCount ?? null,
-    growth_1d: subDelta(1),
-    growth_7d: subDelta(7),
-    growth_15d: subDelta(15),
-    growth_30d: subDelta(30),
-    totalViewCount: latest.totalViewCount ?? null,
-    viewCount_daily: viewDelta(1),
-    viewCount_weekly: viewDelta(7),
-    viewCount_monthly: viewDelta(30),
-    date: latestDate,
+    subscriberCount: latestSubs?.subscriberCount ?? null,
+    totalViewCount: latestViews?.totalViewCount ?? null,
+    date: (latestStats ?? sorted[sorted.length - 1]).date,
+
+    subscriberGrowth_1d: d.subscriberGrowth_1d,
+    subscriberGrowth_7d: d.subscriberGrowth_7d,
+    subscriberGrowth_15d: d.subscriberGrowth_15d,
+    subscriberGrowth_30d: d.subscriberGrowth_30d,
+    viewCount_1d: d.viewCount_1d,
+    viewCount_7d: d.viewCount_7d,
+    viewCount_15d: d.viewCount_15d,
+    viewCount_30d: d.viewCount_30d,
+
+    newsCount: latestNews?.newsCount ?? null,
+    newsPositive: latestNews?.newsPositive ?? null,
+    newsNegative: latestNews?.newsNegative ?? null,
+
+    // Legacy aliases for the existing CardDetailScreen UI.
+    growth_1d: d.subscriberGrowth_1d,
+    growth_7d: d.subscriberGrowth_7d,
+    growth_15d: d.subscriberGrowth_15d,
+    growth_30d: d.subscriberGrowth_30d,
+    viewCount_daily: d.viewCount_1d,
+    viewCount_weekly: d.viewCount_7d,
+    viewCount_monthly: d.viewCount_30d,
   };
 }
 
