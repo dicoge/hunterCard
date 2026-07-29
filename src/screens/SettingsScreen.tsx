@@ -2,9 +2,13 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
+import { useAuthStore } from '../store/authStore';
 
 export default function SettingsScreen() {
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -70,6 +74,27 @@ export default function SettingsScreen() {
           <Text style={styles.item}>🔄 Carousell（旋轉拍賣）</Text>
           <Text style={styles.item}>📈 匯率：JP¥1 = NT$0.22 = $0.0067</Text>
         </View>
+
+        {/* ── 帳號 ── */}
+        {isAuthenticated && user && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>🔐 帳號</Text>
+            <View style={styles.accountInfo}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {(user.displayName || user.primaryEmail || '?')[0].toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.accountDetails}>
+                <Text style={styles.accountName}>{user.displayName}</Text>
+                <Text style={styles.accountEmail}>{user.primaryEmail}</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+              <Text style={styles.logoutText}>登出</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <Text style={styles.footer}>專為 hololive PCG 玩家打造</Text>
       </ScrollView>
@@ -152,5 +177,50 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
     marginBottom: 20,
+  },
+  accountInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  avatarText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  accountDetails: {
+    flex: 1,
+  },
+  accountName: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  accountEmail: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  logoutButton: {
+    backgroundColor: COLORS.error + '22',
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  logoutText: {
+    color: COLORS.error,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

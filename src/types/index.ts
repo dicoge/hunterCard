@@ -53,6 +53,11 @@ export type RootStackParamList = {
   TutorialSimulation: undefined;
 };
 
+export type AuthStackParamList = {
+  Login: undefined;
+  Main: undefined;
+};
+
 export type MainDrawerParamList = {
   Home: undefined;
   Scan: undefined;

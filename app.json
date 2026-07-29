@@ -4,6 +4,7 @@
     "slug": "holohunter",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "holohunter",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
