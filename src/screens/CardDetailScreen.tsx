@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, convertPrice } from '../constants';
 import { openUrl } from '../utils/openUrl';
+import { showAlert } from '../utils/platformAlert';
 import { useSettingsStore } from '../store/settingsStore';
 import { useWatchlistStore } from '../stores/watchlistStore';
 import PriceTrendBadge from '../components/PriceTrendBadge';
@@ -150,7 +151,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const toggleWatchlist = () => {
     if (!id) return;
     if (inWatchlist) {
-      Alert.alert(
+      showAlert(
         '移除入手提醒',
         `確定要從入手提醒移除「${displayName}」嗎？`,
         [

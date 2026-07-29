@@ -1,9 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
-import { APPLE_LOGIN_ENABLED } from '../services/authService';
+import { showAlert } from '../utils/platformAlert';
 
 const PROVIDER_LABEL: Record<string, string> = { apple: 'Apple', google: 'Google' };
 
@@ -20,28 +20,34 @@ export default function SettingsScreen() {
   const handleGoogleLogin = async () => {
     try {
       await loginWithGoogle();
-    } catch {
-      Alert.alert('登入失敗', '無法完成 Google 登入，請稍後再試。');
+    } catch (err: any) {
+      const raw = String(err?.message ?? '');
+      const friendly = /client id|not configured|尚未設定/i.test(raw)
+        ? '目前無法使用 Google 登入（登入服務尚未設定），請稍後再試。'
+        : '無法完成 Google 登入，請稍後再試。';
+      showAlert('登入失敗', friendly);
     }
   };
 
   const handleAppleLogin = async () => {
     try {
       await loginWithApple();
-    } catch {
-      Alert.alert('登入失敗', '無法完成 Apple 登入，請稍後再試。');
+    } catch (err: any) {
+      // authService throws an explanatory message when web Apple login is not
+      // yet available (needs server-side token verification) — surface it.
+      showAlert('Apple 登入', String(err?.message ?? '無法完成 Apple 登入，請稍後再試。'));
     }
   };
 
   const confirmSignOut = () => {
-    Alert.alert('登出', '確定要登出嗎？', [
+    showAlert('登出', '確定要登出嗎？', [
       { text: '取消', style: 'cancel' },
       { text: '登出', style: 'destructive', onPress: signOut },
     ]);
   };
 
   const confirmDelete = () => {
-    Alert.alert(
+    showAlert(
       '刪除帳號',
       '這會永久刪除你的帳號與同步資料，且無法復原。確定要刪除嗎？',
       [
@@ -52,9 +58,9 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await deleteAccount();
-              Alert.alert('帳號已刪除', '你的帳號與 Apple 授權已撤銷。');
+              showAlert('帳號已刪除', '你的帳號與 Apple 授權已撤銷。');
             } catch {
-              Alert.alert(
+              showAlert(
                 '刪除尚未完成',
                 '目前無法確認伺服器端已撤銷 Apple 授權，帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
               );
@@ -168,16 +174,14 @@ export default function SettingsScreen() {
               >
                 <Text style={styles.googleBtnText}>使用 Google 帳號登入</Text>
               </TouchableOpacity>
-              {APPLE_LOGIN_ENABLED && (
-                <TouchableOpacity
-                  style={[styles.appleBtn, isLoading && styles.btnDisabled]}
-                  onPress={handleAppleLogin}
-                  disabled={isLoading}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                style={[styles.appleBtn, isLoading && styles.btnDisabled]}
+                onPress={handleAppleLogin}
+                disabled={isLoading}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
+              </TouchableOpacity>
             </>
           )}
         </View>

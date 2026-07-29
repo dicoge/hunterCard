@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, FlatList, Image, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, FlatList, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
+import { showAlert } from '../utils/platformAlert';
 import { useWatchlistStore, WatchlistItem } from '../stores/watchlistStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -18,7 +19,7 @@ export default function WatchlistScreen({ navigation }: any) {
 
   const confirmRemove = (item: WatchlistItem) => {
     const label = (preferredLanguage === 'zh' && item.nameZh) ? item.nameZh : item.name;
-    Alert.alert(
+    showAlert(
       '移除入手提醒',
       `確定要從入手提醒移除「${label}」嗎？`,
       [
