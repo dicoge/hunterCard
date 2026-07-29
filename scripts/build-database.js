@@ -202,6 +202,24 @@ function parseCardHtml(html) {
 }
 
 /**
+ * Detect whether an error represents a browser/page crash (vs. a normal
+ * per-series scrape error). Crashes require a full browser restart, otherwise
+ * the next series keeps using a dead browser and silently scrapes 0 cards.
+ */
+function isBrowserCrash(err) {
+  if (!err) return false;
+  const name = err.name || '';
+  const message = err.message || '';
+
+  if (name === 'TargetCloseError' || name === 'ConnectionClosedError') return true;
+
+  const crashPatterns = ['Protocol error', 'Target closed', 'Session closed', 'Connection closed', 'Browser closed'];
+  if (crashPatterns.some(p => message.includes(p))) return true;
+
+  return /Page crashed|frame was detached|browser.*closed|target.*closed/i.test(message);
+}
+
+/**
  * 降級方案：用 Node.js 內建 fetch + regex 解析 HTML
  * 不需要 Puppeteer/Chrome，減少 CI 環境依賴
  */
@@ -278,6 +296,11 @@ async function downloadImage(url, destPath) {
  */
 async function scrapeSeriesPage(browser, url) {
   const page = await browser.newPage();
+
+  page.on('error', (err) => {
+    console.error(`  [browser-crash] Page error: ${err.message}`);
+    page.__crashed = true;
+  });
 
   // 1. Set extra HTTP headers
   await page.setExtraHTTPHeaders(EXTRA_HEADERS);
@@ -423,9 +446,13 @@ async function scrapeSeriesPage(browser, url) {
       return results;
     });
 
+    if (page.__crashed) {
+      throw new Error('Protocol error: Page crashed during scraping');
+    }
+
     return cards;
   } finally {
-    await page.close();
+    try { await page.close(); } catch {}
   }
 }
 
@@ -450,6 +477,11 @@ async function scrapeYuyuPrices() {
   const allPrices = {};
   let totalCards = 0;
   let seriesWithPrices = 0;
+  // True if any series failed to scrape cleanly (crash retries exhausted,
+  // browser relaunch failure, or other error). Forces the HTTP fetch fallback
+  // even when totalCards > 50, so a single failed series (e.g. hSD) can't be
+  // silently dropped just because earlier series filled the count.
+  let scrapeIncomplete = false;
 
   if (usePuppeteer) {
     console.log('[database] Starting yuyu-tei scrape (Puppeteer)...');
@@ -475,53 +507,107 @@ async function scrapeYuyuPrices() {
           console.log(`[database] Scraping ${seriesInfo.name}: ${seriesInfo.url}`);
 
           const url = BASE_URL + seriesInfo.url;
+          const MAX_RETRIES = 3;
+          let seriesOk = false;
 
-          try {
-            // Random delay between series requests (3-5s)
-            await sleep(3000 + Math.random() * 2000);
+          for (let retries = 0; retries <= MAX_RETRIES; retries++) {
+            try {
+              // Random delay between series requests (3-5s)
+              await sleep(3000 + Math.random() * 2000);
 
-            const cards = await scrapeSeriesPage(browser, url);
+              const cards = await scrapeSeriesPage(browser, url);
 
-            const seriesPrices = {};
-            for (const card of cards) {
-              const key = card.cardNum;
-              if (!seriesPrices[key]) {
-                seriesPrices[key] = [];
+              const seriesPrices = {};
+              for (const card of cards) {
+                const key = card.cardNum;
+                if (!seriesPrices[key]) {
+                  seriesPrices[key] = [];
+                }
+                seriesPrices[key].push({
+                  sellPrice: card.sellPrice,
+                  rarity: card.rarity || '',
+                  name: card.name,
+                  yuyuImage: card.yuyuImage,
+                  imageVersion: card.imageVersion,
+                  imageCid: card.imageCid,
+                  timestamp: new Date().toISOString(),
+                });
               }
-              seriesPrices[key].push({
-                sellPrice: card.sellPrice,
-                rarity: card.rarity || '',
-                name: card.name,
-                yuyuImage: card.yuyuImage,
-                imageVersion: card.imageVersion,
-                imageCid: card.imageCid,
-                timestamp: new Date().toISOString(),
-              });
-            }
 
-            const count = Object.keys(seriesPrices).length;
-            console.log(`  → Found ${count} cards with prices`);
-            if (count > 0) seriesWithPrices++;
-            totalCards += count;
-            for (const [key, entries] of Object.entries(seriesPrices)) {
-              if (!allPrices[key]) allPrices[key] = [];
-              allPrices[key].push(...entries);
-            }
+              const count = Object.keys(seriesPrices).length;
+              console.log(`  → Found ${count} cards with prices`);
+              if (count > 0) seriesWithPrices++;
+              totalCards += count;
+              for (const [key, entries] of Object.entries(seriesPrices)) {
+                if (!allPrices[key]) allPrices[key] = [];
+                allPrices[key].push(...entries);
+              }
 
-          } catch (err) {
-            console.error(`  → Error: ${err.message}`);
+              seriesOk = true;
+              break;
+            } catch (err) {
+              const isCrash = isBrowserCrash(err);
+
+              if (isCrash && retries < MAX_RETRIES) {
+                console.log(`  → Browser crash detected, restarting (retry ${retries + 1}/${MAX_RETRIES} for ${seriesInfo.name})`);
+                try { await browser.close(); } catch {}
+                try {
+                  browser = await puppeteer.launch({
+                    headless: 'new',
+                    args: [
+                      '--no-sandbox',
+                      '--disable-blink-features=AutomationControlled',
+                      '--disable-dev-shm-usage',
+                      '--disable-gpu',
+                    ],
+                  });
+                } catch (launchErr) {
+                  console.log(`[database] Browser relaunch failed: ${launchErr.message}. Falling back to HTTP fetch.`);
+                  usePuppeteer = false;
+                  break;
+                }
+              } else if (isCrash) {
+                console.error(`  → Crash error (retries exhausted): ${err.message}. Restarting browser for next series.`);
+                try { await browser.close(); } catch {}
+                try {
+                  browser = await puppeteer.launch({
+                    headless: 'new',
+                    args: [
+                      '--no-sandbox',
+                      '--disable-blink-features=AutomationControlled',
+                      '--disable-dev-shm-usage',
+                      '--disable-gpu',
+                    ],
+                  });
+                } catch (launchErr) {
+                  console.log(`[database] Browser relaunch failed: ${launchErr.message}. Falling back to HTTP fetch.`);
+                  usePuppeteer = false;
+                }
+                break;
+              } else {
+                console.error(`  → Error: ${err.message}`);
+                break;
+              }
+            }
           }
+
+          if (!seriesOk) scrapeIncomplete = true;
+
+          if (!usePuppeteer) break;
         }
       } finally {
-        await browser.close();
+        try { await browser.close(); } catch {}
       }
     }
   }
 
-  // If puppeteer got too few cards, fall back to HTTP fetch
-  if (totalCards < 50) {
+  // Fall back to HTTP fetch if puppeteer got too few cards OR any series
+  // failed to scrape cleanly (so a failed series like hSD is backfilled even
+  // when totalCards > 50).
+  if (totalCards < 50 || scrapeIncomplete) {
     // Reset and try with fetch
-    console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
+    const reason = totalCards < 50 ? `only got ${totalCards} cards (< 50)` : 'one or more series failed to scrape cleanly';
+    console.log(`\n[database] Puppeteer scrape ${reason}. Switching to HTTP fetch...`);
     const fetchResult = await scrapeAllWithFetch();
     for (const [key, entries] of Object.entries(fetchResult.prices)) {
             if (!allPrices[key]) allPrices[key] = [];
