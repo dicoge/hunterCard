@@ -89,6 +89,13 @@ function generateSeriesPages() {
 
 const SERIES_PAGES = generateSeriesPages();
 
+function getGroup(seriesName) {
+  if (seriesName.startsWith('hBP')) return 'hBP';
+  if (seriesName.startsWith('hSD')) return 'hSD';
+  if (seriesName.startsWith('hYS')) return 'hYS';
+  return 'special';
+}
+
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -162,13 +169,25 @@ async function scrapeYuyuPrices(options = {}) {
   let totalCards = 0;
   let seriesWithPrices = 0;
   let savePath;
+  let currentGroup = null;
 
   try {
     for (const seriesInfo of seriesPages) {
+      const group = getGroup(seriesInfo.name);
+
+      if (group !== currentGroup) {
+        console.log(`[yuyu-scraper] Group change: ${currentGroup || 'none'} → ${group}, restarting browser...`);
+        try { await browser.close(); } catch {}
+        await sleepFn(5000);
+        ({ browser, page } = await launchBrowserFn());
+        currentGroup = group;
+        console.log(`[yuyu-scraper] Browser restarted for group "${group}"`);
+      }
+
       console.log(`[yuyu-scraper] Scraping ${seriesInfo.name}: ${seriesInfo.url}`);
 
       const url = baseUrl + seriesInfo.url;
-      const MAX_RETRIES = 2;
+      const MAX_RETRIES = 3;
 
       for (let retries = 0; retries <= MAX_RETRIES; retries++) {
         try {
