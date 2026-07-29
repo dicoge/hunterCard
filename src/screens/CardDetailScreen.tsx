@@ -8,6 +8,7 @@ import { useWatchlistStore } from '../stores/watchlistStore';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 const { width } = Dimensions.get('window');
 
@@ -59,6 +60,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const [imageError, setImageError] = useState(false);
   const insets = useSafeAreaInsets();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
+  const { isDesktop } = useBreakpoint();
 
   if (!card) {
     return (
@@ -153,7 +155,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingBottom: insets.bottom }}>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={isDesktop ? styles.scrollDesktop : undefined}>
+      <View style={isDesktop ? styles.twoCol : styles.oneCol}>
+      <View style={isDesktop ? styles.leftCol : undefined}>
       {/* ====== CARD IMAGE ====== */}
       <View style={[styles.imageArea, { backgroundColor: rarityColors[rarityKey] + '0a' }]}>
         {!imageError ? (
@@ -177,6 +181,8 @@ export default function CardDetailScreen({ route, navigation }: any) {
           </TouchableOpacity>
         )}
       </View>
+      </View>
+      <View style={isDesktop ? styles.rightCol : undefined}>
 
       {/* ====== PRICE SECTION ====== */}
       <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]}>
@@ -366,6 +372,8 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
 
       <View style={{ height: 20 }} />
+      </View>
+      </View>
     </ScrollView>
     </SafeAreaView>
   );
@@ -632,6 +640,13 @@ function LinkButton({ icon, text, url }: { icon: string; text: string; url: stri
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
+
+  // Desktop two-column layout
+  scrollDesktop: { alignItems: 'center' },
+  oneCol: { width: '100%' },
+  twoCol: { flexDirection: 'row', width: '100%', maxWidth: 1040, alignItems: 'flex-start' },
+  leftCol: { width: 420 },
+  rightCol: { flex: 1 },
 
   // Image area
   imageArea: { width: '100%', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.border + '44', paddingHorizontal: 12, paddingVertical: 16 },
