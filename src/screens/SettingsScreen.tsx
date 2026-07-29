@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Ale
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
+import { APPLE_LOGIN_ENABLED } from '../services/authService';
 
 const PROVIDER_LABEL: Record<string, string> = { apple: 'Apple', google: 'Google' };
 
@@ -12,6 +13,25 @@ export default function SettingsScreen() {
   const signOut = useAuthStore((s) => s.logout);
   const deleteAccount = useAuthStore((s) => s.deleteUserAccount);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
+  const loginWithApple = useAuthStore((s) => s.loginWithApple);
+  const isLoading = useAuthStore((s) => s.isLoading);
+
+  const handleGoogleLogin = async () => {
+    try {
+      await loginWithGoogle();
+    } catch {
+      Alert.alert('登入失敗', '無法完成 Google 登入，請稍後再試。');
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    try {
+      await loginWithApple();
+    } catch {
+      Alert.alert('登入失敗', '無法完成 Apple 登入，請稍後再試。');
+    }
+  };
 
   const confirmSignOut = () => {
     Alert.alert('登出', '確定要登出嗎？', [
@@ -138,7 +158,27 @@ export default function SettingsScreen() {
               </Text>
             </>
           ) : (
-            <Text style={styles.hint}>尚未登入。登入後可跨裝置同步收藏與入手提醒。</Text>
+            <>
+              <Text style={styles.hint}>尚未登入。登入後可跨裝置同步收藏與入手提醒。</Text>
+              <TouchableOpacity
+                style={[styles.googleBtn, isLoading && styles.btnDisabled]}
+                onPress={handleGoogleLogin}
+                disabled={isLoading}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.googleBtnText}>使用 Google 帳號登入</Text>
+              </TouchableOpacity>
+              {APPLE_LOGIN_ENABLED && (
+                <TouchableOpacity
+                  style={[styles.appleBtn, isLoading && styles.btnDisabled]}
+                  onPress={handleAppleLogin}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </View>
 
@@ -234,6 +274,33 @@ const styles = StyleSheet.create({
   dangerBtn: {
     borderColor: COLORS.error,
     backgroundColor: COLORS.error + '18',
+  },
+  googleBtn: {
+    backgroundColor: '#4285F4',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  googleBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  appleBtn: {
+    backgroundColor: '#000',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  appleBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
   dangerText: {
     color: COLORS.error,
