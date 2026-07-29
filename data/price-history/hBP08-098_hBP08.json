@@ -240,8 +240,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP08-098_hBP08"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-098_hBP08"
     }
   ],
-  "lastUpdated": "2026-07-28T12:08:52.550Z",
+  "lastUpdated": "2026-07-29T12:09:57.822Z",
   "nameZh": "hololive Mythology"
 }

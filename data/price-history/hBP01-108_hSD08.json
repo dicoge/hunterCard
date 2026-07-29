@@ -268,8 +268,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-108_hSD08"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-108_hSD08"
     }
   ],
-  "lastUpdated": "2026-07-28T12:08:52.400Z",
+  "lastUpdated": "2026-07-29T12:09:57.642Z",
   "nameZh": "那就是敵人呢"
 }
