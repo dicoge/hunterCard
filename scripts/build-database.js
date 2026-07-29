@@ -307,6 +307,11 @@ async function downloadImage(url, destPath) {
 async function scrapeSeriesPage(browser, url) {
   const page = await browser.newPage();
 
+  // Give navigation more headroom so a slow-but-alive page isn't mistaken for a
+  // crash and forced into a browser relaunch (DIC-442).
+  page.setDefaultNavigationTimeout(45000);
+  page.setDefaultTimeout(30000);
+
   // 1. Set extra HTTP headers
   await page.setExtraHTTPHeaders(EXTRA_HEADERS);
 
@@ -340,7 +345,7 @@ async function scrapeSeriesPage(browser, url) {
   await page.setUserAgent(UA_STRING);
 
   try {
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
 
     // 4. Diagnostic: check page structure (helps debug CI failures)
     const diag = await page.evaluate(() => ({
@@ -479,25 +484,54 @@ async function scrapeYuyuPrices() {
   let totalCards = 0;
   let seriesWithPrices = 0;
 
+  const LAUNCH_OPTS = {
+    headless: 'new',
+    args: [
+      '--no-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+  };
+
   if (usePuppeteer) {
     console.log('[database] Starting yuyu-tei scrape (Puppeteer)...');
     let browser;
     try {
-      browser = await puppeteer.launch({
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-        ],
-      });
+      browser = await puppeteer.launch(LAUNCH_OPTS);
     } catch (e) {
       console.log(`[database] Puppeteer launch failed: ${e.message}. Falling back to HTTP fetch.`);
       usePuppeteer = false;
     }
 
     if (browser) {
+      // Turn a series' scraped cards into allPrices entries. Returns the unique
+      // card count for that series.
+      const accumulateCards = (cards) => {
+        const seriesPrices = {};
+        for (const card of cards) {
+          const key = card.cardNum;
+          if (!seriesPrices[key]) {
+            seriesPrices[key] = [];
+          }
+          seriesPrices[key].push({
+            sellPrice: card.sellPrice,
+            rarity: card.rarity || '',
+            name: card.name,
+            yuyuImage: card.yuyuImage,
+            imageVersion: card.imageVersion,
+            imageCid: card.imageCid,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        const count = Object.keys(seriesPrices).length;
+        for (const [key, entries] of Object.entries(seriesPrices)) {
+          if (!allPrices[key]) allPrices[key] = [];
+          allPrices[key].push(...entries);
+        }
+        return count;
+      };
+
       try {
         for (const seriesInfo of SERIES_PAGES) {
           console.log(`[database] Scraping ${seriesInfo.name}: ${seriesInfo.url}`);
@@ -509,39 +543,38 @@ async function scrapeYuyuPrices() {
             await sleep(3000 + Math.random() * 2000);
 
             const cards = await scrapeSeriesPage(browser, url);
-
-            const seriesPrices = {};
-            for (const card of cards) {
-              const key = card.cardNum;
-              if (!seriesPrices[key]) {
-                seriesPrices[key] = [];
-              }
-              seriesPrices[key].push({
-                sellPrice: card.sellPrice,
-                rarity: card.rarity || '',
-                name: card.name,
-                yuyuImage: card.yuyuImage,
-                imageVersion: card.imageVersion,
-                imageCid: card.imageCid,
-                timestamp: new Date().toISOString(),
-              });
-            }
-
-            const count = Object.keys(seriesPrices).length;
+            const count = accumulateCards(cards);
             console.log(`  → Found ${count} cards with prices`);
             if (count > 0) seriesWithPrices++;
             totalCards += count;
-            for (const [key, entries] of Object.entries(seriesPrices)) {
-              if (!allPrices[key]) allPrices[key] = [];
-              allPrices[key].push(...entries);
-            }
 
           } catch (err) {
-            console.error(`  → Error: ${err.message}`);
+            // A browser-level crash kills every subsequent series if we keep
+            // using the same dead browser object. Detect it, relaunch a fresh
+            // browser, and retry the current series once (DIC-442).
+            const isCrash = /Protocol error|Connection closed|Target closed|Session closed/i.test(err.message || '');
+            if (isCrash) {
+              console.log(`  → Browser crashed on ${seriesInfo.name}, relaunching...`);
+              try { await browser.close(); } catch (_) { /* already dead */ }
+              try {
+                browser = await puppeteer.launch(LAUNCH_OPTS);
+                const cards = await scrapeSeriesPage(browser, url);
+                const count = accumulateCards(cards);
+                console.log(`  → Retry OK: found ${count} cards with prices`);
+                if (count > 0) seriesWithPrices++;
+                totalCards += count;
+              } catch (retryErr) {
+                console.error(`  → Retry failed: ${retryErr.message}`);
+              }
+            } else {
+              console.error(`  → Error: ${err.message}`);
+            }
           }
         }
       } finally {
-        await browser.close();
+        if (browser) {
+          try { await browser.close(); } catch (_) { /* already closed */ }
+        }
       }
     }
   }
