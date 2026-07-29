@@ -455,6 +455,11 @@ export default function ScanScreen({ navigation }: any) {
       setScanProgress(0);
 
       setScanError('無法完成掃描，請重試或使用手動輸入');
+    } finally {
+      // Reset auto-scan stability buffer on every exit (success or failure) so the
+      // same still frame can't immediately re-trigger a scan. Combined with the
+      // store-level dedup, this keeps a single card from being recorded twice.
+      resetAutoScan();
     }
   };
 
@@ -645,7 +650,9 @@ export default function ScanScreen({ navigation }: any) {
   const handleSelectSuggestion = (card: CardInfo) => {
     setRecognizedCard(card);
     setSuggestions([]);
-    addCard(card);
+    // Explicit user pick — always add, even if it repeats the last scan.
+    addCard(card, { force: true });
+    setLastScannedCard(card);
     setResultCard({ visible: true, card, confidence: 0.85 });
   };
   
@@ -872,6 +879,15 @@ export default function ScanScreen({ navigation }: any) {
                 </Text>
               </View>
             </View>
+            <TouchableOpacity
+              style={resultStyles.toastAddBtn}
+              onPress={() => {
+                // Explicit "add one more of the same card" — bypasses dedup.
+                addCard(lastScannedCard, { force: true });
+              }}
+            >
+              <Text style={resultStyles.toastAddText}>＋ 再加入一張</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setLastScannedCard(null)}
             >
@@ -1404,6 +1420,18 @@ const resultStyles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     marginTop: 2,
+  },
+  toastAddBtn: {
+    backgroundColor: 'rgba(0, 200, 83, 0.2)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginLeft: 8,
+  },
+  toastAddText: {
+    color: '#00C853',
+    fontSize: 12,
+    fontWeight: '600',
   },
   toastClose: {
     color: COLORS.textSecondary,
