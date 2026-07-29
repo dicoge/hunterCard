@@ -15,6 +15,15 @@ const { width } = Dimensions.get('window');
 const gradeLabels: Record<string, string> = { debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot' };
 const typeLabels: Record<string, string> = { Oshi: '推し（主推卡）', Member: '成員', Support: '支援卡', Energy: '能量', Buzz: 'Buzz' };
 const rarityColors: Record<string, string> = { N: '#6b7280', C: '#6b7280', U: '#10b981', R: '#3b82f6', SR: '#f59e0b' };
+const japaneseKanaRegex = /[\u3040-\u309F\u30A0-\u30FF]/;
+
+function containsJapaneseKana(value: unknown): boolean {
+  if (typeof value === 'string') return japaneseKanaRegex.test(value);
+  if (Array.isArray(value)) return value.some(containsJapaneseKana);
+  if (value && typeof value === 'object') return Object.values(value).some(containsJapaneseKana);
+  return false;
+}
+
 function parseEffects(keywords: string[]): string[] {
   if (!keywords) return [];
   // Keywords: [0]=JP name, [1]=TW name, [2]=EN name, [3+]=effects
@@ -79,6 +88,13 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
   const typeLabel = typeLabels[card.type] || card.type || '-';
+  const skillsZhContainsJapanese = containsJapaneseKana(card.skillsZh);
+  const displaySkills = preferredLanguage === 'zh'
+    ? (skillsZhContainsJapanese ? (card.skillsJp || card.skillsZh) : (card.skillsZh || card.skillsJp))
+    : (card.skillsJp || card.skillsZh);
+  const skillsFallbackNote = preferredLanguage === 'zh' && skillsZhContainsJapanese && card.skillsJp
+    ? '暫無中文翻譯'
+    : undefined;
 
   const effects = card.effects || parseEffects(allKW);
   const colorNames = card.colorNames && card.colorNames.length > 0
@@ -316,7 +332,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
 
       {/* ====== SKILLS / EFFECTS ====== */}
-      <SkillsPanel skills={preferredLanguage === 'zh' ? (card.skillsZh || card.skillsJp) : (card.skillsJp || card.skillsZh)} />
+      <SkillsPanel skills={displaySkills} fallbackNote={skillsFallbackNote} />
 
       {/* ====== MARKET DATA ====== */}
       <MarketDataPanel card={card} />
@@ -408,7 +424,7 @@ function SkillCard({ badge, badgeColor, meta, name, effect }: {
   );
 }
 
-function SkillsPanel({ skills }: { skills?: Skills }) {
+function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?: string }) {
   const hasAny = skills && (
     skills.oshiSkill || skills.spOshiSkill ||
     (skills.arts && skills.arts.length) ||
@@ -457,6 +473,7 @@ function SkillsPanel({ skills }: { skills?: Skills }) {
           {skills!.keywords?.map((kw, i) => (
             <SkillCard key={`kw${i}`} badge={kw.label || 'キーワード'} effect={kw.effect} />
           ))}
+          {fallbackNote ? <Text style={styles.skillFallbackNote}>{fallbackNote}</Text> : null}
         </>
       )}
     </View>
@@ -700,6 +717,7 @@ const styles = StyleSheet.create({
   skillMeta: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '600' },
   skillName: { fontSize: 15, fontWeight: 'bold', color: COLORS.text, marginBottom: 4 },
   skillEffect: { fontSize: 13, lineHeight: 21, color: COLORS.text + 'cc' },
+  skillFallbackNote: { fontSize: 12, color: COLORS.textSecondary, marginTop: 8 },
   noSkillText: { fontSize: 13, color: COLORS.textSecondary + 'aa', fontStyle: 'italic' },
 
   // Tags
