@@ -35,6 +35,8 @@
         "android.permission.CAMERA"
       ]
     },
+    "privacyPolicyUrl": "https://card-hunter-mu.vercel.app/privacy",
+    "supportUrl": "https://card-hunter-mu.vercel.app/support",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png",
