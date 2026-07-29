@@ -21,6 +21,7 @@ interface AuthStore {
   isAuthenticated: boolean;
   isGuest: boolean;
   isLoading: boolean;
+  hasHydrated: boolean;
   error: string | null;
   role: UserRole;
 
@@ -33,6 +34,7 @@ interface AuthStore {
   deleteUserAccount: () => Promise<void>;
   clearError: () => void;
   setRole: (role: UserRole) => void;
+  setHasHydrated: (v: boolean) => void;
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -43,6 +45,7 @@ export const useAuthStore = create<AuthStore>()(
       isAuthenticated: false,
       isGuest: false,
       isLoading: false,
+      hasHydrated: false,
       error: null,
       role: 'guest',
 
@@ -157,9 +160,13 @@ export const useAuthStore = create<AuthStore>()(
 
       clearError: () => set({ error: null }),
       setRole: (role) => set({ role }),
+      setHasHydrated: (v) => set({ hasHydrated: v }),
     }),
     {
       name: 'holohunter-auth',
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
       storage: createJSONStorage(() => platformStorage),
       partialize: (state) => ({
         user: state.user,

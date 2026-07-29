@@ -64,3 +64,17 @@ export interface AccountDeletionResult {
   deletedProviders: number;
   deletedData: string[];
 }
+
+export interface AuthUser {
+  id: string;
+  name: string | null;
+  email: string | null;
+  provider: AuthProvider;
+}
+
+export interface AuthSession {
+  user: AuthUser;
+  identityToken: string | null;
+  authorizationCode: string | null;
+  createdAt: string;
+}

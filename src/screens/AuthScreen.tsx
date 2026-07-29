@@ -11,17 +11,16 @@ import {
 import * as AppleAuthentication from 'expo-apple-authentication';
 
 import { COLORS, APP_NAME } from '../constants';
-import { useAuthStore } from '../stores/authStore';
+import { useAuthStore } from '../store/authStore';
 import {
   isAppleAuthAvailable,
-  isGoogleAuthConfigured,
-  APPLE_CANCEL_CODE,
 } from '../services/auth';
 
 const PRIVACY_POLICY_URL = 'https://holocard-hunter.vercel.app/privacy';
 
 export default function AuthScreen() {
-  const signIn = useAuthStore((s) => s.signIn);
+  const loginWithApple = useAuthStore((s) => s.loginWithApple);
+  const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -32,18 +31,24 @@ export default function AuthScreen() {
   const handleApple = async () => {
     setBusy(true);
     try {
-      await signIn('apple');
+      await loginWithApple();
     } catch (err) {
-      const code = (err as { code?: string })?.code;
-      if (code !== APPLE_CANCEL_CODE) {
-        Alert.alert('登入失敗', '無法完成 Apple 登入，請稍後再試。');
-      }
+      Alert.alert('登入失敗', '無法完成 Apple 登入，請稍後再試。');
     } finally {
       setBusy(false);
     }
   };
 
-  const googleReady = isGoogleAuthConfigured();
+  const handleGoogle = async () => {
+    setBusy(true);
+    try {
+      await loginWithGoogle();
+    } catch (err) {
+      Alert.alert('登入失敗', '無法完成 Google 登入，請稍後再試。');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -68,14 +73,11 @@ export default function AuthScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.googleButton, !googleReady && styles.disabledButton]}
-              disabled={!googleReady}
-              onPress={() => {
-                /* Google 接線後由此觸發 signIn('google') */
-              }}
+              style={styles.googleButton}
+              onPress={handleGoogle}
             >
               <Text style={styles.googleButtonText}>
-                {googleReady ? '使用 Google 登入' : '使用 Google 登入（即將推出）'}
+                使用 Google 登入
               </Text>
             </TouchableOpacity>
           </>

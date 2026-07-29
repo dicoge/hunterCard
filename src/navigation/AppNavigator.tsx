@@ -5,7 +5,6 @@ import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerC
 import { Text, View, StyleSheet, Image, Platform, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { useAuthStore } from '../stores/authStore';
 import AuthScreen from '../screens/AuthScreen';
 
 // Screens

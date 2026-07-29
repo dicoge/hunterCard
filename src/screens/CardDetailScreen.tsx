@@ -616,11 +616,12 @@ function MarketDataPanel({ card }: { card: any }) {
               <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
                 {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
               </Text>
-            ) : (
-              <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
-                ⚠️ 價格待確認
-            )}
-          </View>
+            </View>
+          ) : (
+            <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
+              ⚠️ 價格待確認
+            </Text>
+          )}
           <Text style={styles.marketNote}>※ 收購價為卡號整體資料，未依版本細分，差價僅供參考</Text>
         </View>
       ) : null}
@@ -814,6 +815,12 @@ const styles = StyleSheet.create({
   versionLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 8, fontWeight: '600' },
   versionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
   versionChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border + '88' },
+  versionChipText: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
+  versionChipActive: { backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
+  versionChipTextActive: { color: COLORS.primary },
+  versionWarnBox: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: '#f59e0b' + '44', borderRadius: 10, padding: 12, marginBottom: 10 },
+  versionWarnTitle: { fontSize: 13, fontWeight: '700', color: '#f59e0b', marginBottom: 4 },
+  versionWarnText: { fontSize: 12, lineHeight: 18, color: COLORS.textSecondary },
 
   // Trend prediction section
   componentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '44' },
