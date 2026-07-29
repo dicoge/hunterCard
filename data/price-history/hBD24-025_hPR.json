@@ -107,8 +107,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-025_hPR"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 14800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-025_hPR"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 14800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-025_hPR"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 14800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-025_hPR"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.952Z",
+  "lastUpdated": "2026-07-29T12:09:57.760Z",
   "nameZh": "亞綺·羅森塔爾"
 }

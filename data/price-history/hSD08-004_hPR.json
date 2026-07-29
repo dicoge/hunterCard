@@ -254,8 +254,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD08-004_hPR"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-004_hPR"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-004_hPR"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-004_hPR"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.976Z",
+  "lastUpdated": "2026-07-29T12:09:57.788Z",
   "nameZh": "天音彼方"
 }

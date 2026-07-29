@@ -268,8 +268,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD02-009_hSD02"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-009_hSD02"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-009_hSD02"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-009_hSD02"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.920Z",
+  "lastUpdated": "2026-07-29T12:09:57.725Z",
   "nameZh": "百鬼綾目"
 }

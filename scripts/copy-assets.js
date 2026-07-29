@@ -88,4 +88,17 @@ if (fs.existsSync(imagesSource)) {
   console.log(`  ⚠️  data/images/ not found, skipping`);
 }
 
+// Copy trends (per-card trend JSON + index.json)
+// 前端 fetch '/data/trends/index.json' 與 '/data/trends/{cardId}.json'
+const trendsSource = path.join(PROJECT_DIR, 'data', 'trends');
+const trendsDest = path.join(DIST_DIR, 'data', 'trends');
+
+if (fs.existsSync(trendsSource)) {
+  fs.cpSync(trendsSource, trendsDest, { recursive: true });
+  const trendCount = fs.readdirSync(trendsDest).length;
+  console.log(`  ✅ ${trendCount} trend files → dist/data/trends/`);
+} else {
+  console.log(`  ⚠️  data/trends/ not found, skipping`);
+}
+
 console.log('[copy-assets] Done!');

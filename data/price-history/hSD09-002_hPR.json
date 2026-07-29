@@ -240,8 +240,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD09-002_hPR"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-002_hPR"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-002_hPR"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-002_hPR"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.976Z",
+  "lastUpdated": "2026-07-29T12:09:57.789Z",
   "nameZh": "寶鍾瑪琳"
 }

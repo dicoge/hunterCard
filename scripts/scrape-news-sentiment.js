@@ -2,9 +2,14 @@
  * scrape-news-sentiment.js
  *
  * 每日爬取 hololive 卡牌相關新聞，進行情緒分類
- * 儲存到 data/news-sentiment/{date}.json
  *
- * 新聞來源：
+ * 兩條輸出：
+ *   1. 全局卡牌新聞 → data/news-sentiment/{date}.json（向後相容，維持現有邏輯）
+ *   2. 逐成員新聞情緒 → 寫入 data/yt-stats-history.json 當天快照的
+ *      newsCount / newsPositive / newsNegative 欄位（每個成員用日文/英文名
+ *      搜尋 Google News RSS，只取最近 7 天文章）
+ *
+ * 全局新聞來源：
  *   - Google News RSS (hololive card game, hololive 卡牌)
  *   - 遊々亭新卡情報
  *   - hololive 官方網站
@@ -24,6 +29,19 @@ const __dirname = path.dirname(__filename);
 const PROJECT_DIR = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_DIR, 'data');
 const NEWS_DIR = path.join(DATA_DIR, 'news-sentiment');
+const MEMBERS_PATH = path.join(DATA_DIR, 'yt-members.json');
+const HISTORY_PATH = path.join(DATA_DIR, 'yt-stats-history.json');
+
+// Per-member scraping: pause between Google News fetches so we don't get
+// rate-limited / blocked when sweeping ~56 members × 2 queries.
+const MEMBER_NEWS_DELAY_MS = 1000;
+// Google News RSS already time-bounds results, but pubDate lets us hard-cap to
+// the recent window the task specifies.
+const NEWS_MAX_AGE_DAYS = 7;
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 // ── 情緒關鍵字詞典 ──
 
@@ -203,6 +221,126 @@ async function scrapeYuyuTeiNews() {
   }
 }
 
+// ── 逐成員新聞情緒 ──
+
+function loadMembers() {
+  const data = JSON.parse(fs.readFileSync(MEMBERS_PATH, 'utf-8'));
+  const members = (data.members || []).filter((m) => m.channelId && m.active !== false);
+  // Dedupe by channelId (e.g. Marine appears twice); keep first occurrence.
+  const seen = new Set();
+  const unique = [];
+  for (const m of members) {
+    if (seen.has(m.channelId)) continue;
+    seen.add(m.channelId);
+    unique.push(m);
+  }
+  return unique;
+}
+
+function loadHistory() {
+  try {
+    return JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf-8'));
+  } catch (err) {
+    // Only a genuinely-missing file means "start fresh". Any other failure
+    // (corrupt/half-written JSON) must abort — returning {} would overwrite the
+    // file and wipe every prior snapshot (mirrors scrape-yt-stats.js guard).
+    if (err.code === 'ENOENT') return {};
+    throw new Error(`Refusing to reset history — cannot read ${HISTORY_PATH}: ${err.message}`);
+  }
+}
+
+function isWithinDays(publishedAt, days) {
+  const t = Date.parse(publishedAt);
+  if (Number.isNaN(t)) return true; // undated RSS items: keep rather than drop
+  return Date.now() - t <= days * 86400000;
+}
+
+// Fetch + classify a single member's recent news. Queries Google News by
+// Japanese name and (if present) English name, both scoped with "hololive".
+async function scrapeMemberNews(member) {
+  const queries = [];
+  if (member.nameJp) queries.push({ q: `"${member.nameJp}" hololive`, lang: 'ja' });
+  if (member.name) queries.push({ q: `"${member.name}" hololive`, lang: 'en' });
+
+  const seen = new Set();
+  const articles = [];
+  for (const { q, lang } of queries) {
+    const items = await scrapeGoogleNews(q, lang);
+    for (const it of items) {
+      const key = it.url || it.title;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!isWithinDays(it.publishedAt, NEWS_MAX_AGE_DAYS)) continue;
+      articles.push(it);
+    }
+    await sleep(MEMBER_NEWS_DELAY_MS);
+  }
+
+  let positive = 0;
+  let negative = 0;
+  for (const a of articles) {
+    const { sentiment } = classifySentiment(a.title, a.description);
+    if (sentiment === 'positive') positive++;
+    else if (sentiment === 'negative') negative++;
+  }
+  return { newsCount: articles.length, newsPositive: positive, newsNegative: negative };
+}
+
+// Scrape each member's news and stamp newsCount/newsPositive/newsNegative onto
+// that member's snapshot for `today` in yt-stats-history.json. A single member
+// failing is non-fatal — we continue to the next.
+async function scrapeAndStoreMemberNews(today) {
+  let members;
+  try {
+    members = loadMembers();
+  } catch (err) {
+    console.warn(`[member-news] Skipping — cannot read members: ${err.message}`);
+    return;
+  }
+
+  let history;
+  try {
+    history = loadHistory();
+  } catch (err) {
+    console.warn(`[member-news] Skipping — ${err.message}`);
+    return;
+  }
+
+  console.log(`\n[member-news] Scraping per-member news for ${members.length} members...`);
+  let ok = 0;
+  let failed = 0;
+  for (const member of members) {
+    try {
+      const stats = await scrapeMemberNews(member);
+      const entry =
+        history[member.channelId] ||
+        (history[member.channelId] = { name: member.name, history: [] });
+      entry.name = member.name;
+      let snap = entry.history.find((s) => s.date === today);
+      if (!snap) {
+        // scrape-yt-stats.js normally creates today's snapshot first; create a
+        // minimal one here so news isn't lost if that scraper failed/was skipped.
+        snap = { date: today, subscriberCount: null, totalViewCount: null };
+        entry.history.push(snap);
+        entry.history.sort((a, b) => a.date.localeCompare(b.date));
+      }
+      snap.newsCount = stats.newsCount;
+      snap.newsPositive = stats.newsPositive;
+      snap.newsNegative = stats.newsNegative;
+      ok++;
+      console.log(
+        `  ✓ ${member.name}: ${stats.newsCount} news (${stats.newsPositive}+ / ${stats.newsNegative}-)`
+      );
+    } catch (err) {
+      failed++;
+      console.warn(`  ✗ ${member.name}: ${err.message}`);
+    }
+  }
+
+  fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
+  console.log(`[member-news] Wrote news stats: ${ok} ok, ${failed} failed → ${HISTORY_PATH}`);
+}
+
 // ── 主流程 ──
 
 async function main() {
@@ -310,12 +448,21 @@ async function main() {
   index.lastUpdated = new Date().toISOString();
   fs.writeFileSync(indexFile, JSON.stringify(index, null, 2));
 
-  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`\n📊 Sentiment Summary:`);
+  console.log(`\n📊 Global Sentiment Summary:`);
   console.log(`  👍 Positive: ${summary.positive} (${(summary.positiveRatio * 100).toFixed(0)}%)`);
   console.log(`  👎 Negative: ${summary.negative}`);
   console.log(`  ➡️ Neutral:  ${summary.neutral}`);
-  console.log(`\n✅ Done in ${duration}s — saved to ${filePath}`);
+  console.log(`\n✅ Global news saved to ${filePath}`);
+
+  // ── Per-member news → yt-stats-history.json (non-fatal) ──
+  try {
+    await scrapeAndStoreMemberNews(today);
+  } catch (err) {
+    console.warn(`[member-news] Non-fatal failure: ${err.message}`);
+  }
+
+  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n✅ Done in ${duration}s`);
 }
 
 // Run

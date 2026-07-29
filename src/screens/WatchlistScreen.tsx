@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
 import { useWatchlistStore, WatchlistItem } from '../stores/watchlistStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 const rarityColors: Record<string, string> = {
   N: '#6b7280', C: '#6b7280', U: '#10b981', R: '#3b82f6', SR: '#8b5cf6',
@@ -12,6 +13,8 @@ const rarityColors: Record<string, string> = {
 export default function WatchlistScreen({ navigation }: any) {
   const { items, removeCard } = useWatchlistStore();
   const { preferredLanguage } = useSettingsStore();
+  const { isDesktop, isWide } = useBreakpoint();
+  const numColumns = isWide ? 3 : isDesktop ? 2 : 1;
 
   const confirmRemove = (item: WatchlistItem) => {
     const label = (preferredLanguage === 'zh' && item.nameZh) ? item.nameZh : item.name;
@@ -63,7 +66,7 @@ export default function WatchlistScreen({ navigation }: any) {
     const subLabel = (preferredLanguage === 'zh' && item.nameZh) ? item.name : item.nameZh;
     const rarityColor = rarityColors[item.rarity] || '#6b7280';
     return (
-      <TouchableOpacity style={styles.row} activeOpacity={0.8} onPress={() => openDetail(item)}>
+      <TouchableOpacity style={[styles.row, numColumns > 1 && styles.rowGrid]} activeOpacity={0.8} onPress={() => openDetail(item)}>
         {item.imageUrl ? (
           <Image source={{ uri: item.imageUrl }} style={styles.thumb} resizeMode="contain" />
         ) : (
@@ -94,10 +97,13 @@ export default function WatchlistScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <FlatList
+        key={`cols-${numColumns}`}
         data={items}
         keyExtractor={(item) => item.cardNumber}
         renderItem={renderItem}
-        contentContainerStyle={styles.list}
+        numColumns={numColumns}
+        columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
+        contentContainerStyle={[styles.list, isDesktop && styles.listDesktop]}
         ListHeaderComponent={
           <Text style={styles.header}>共 {items.length} 張追蹤中的卡牌</Text>
         }
@@ -109,6 +115,8 @@ export default function WatchlistScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   list: { padding: 16 },
+  listDesktop: { maxWidth: 1100, width: '100%', alignSelf: 'center' },
+  columnWrapper: { gap: 10 },
   header: { color: COLORS.textSecondary, fontSize: 13, marginBottom: 12 },
 
   row: {
@@ -121,6 +129,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border + '55',
   },
+  rowGrid: { flex: 1 },
   thumb: { width: 52, height: 73, borderRadius: 6, backgroundColor: COLORS.surfaceLight },
   thumbFallback: { alignItems: 'center', justifyContent: 'center', padding: 4 },
   thumbFallbackText: { color: COLORS.textSecondary, fontSize: 10, textAlign: 'center' },

@@ -28,11 +28,21 @@ git pull origin main >> "$LOG_FILE" 2>&1
 
 # 1b. Snapshot YT channel stats (subscribers + total views) into
 #     data/yt-stats-history.json. MUST run before build-database.js so the
-#     latter can compute growth_1d/7d/15d/30d and view deltas from the fresh
+#     latter can read growth_1d/7d/15d/30d and view deltas from the fresh
 #     snapshot. Non-blocking (DIC-273).
 echo "[$(date)] Running YT stats snapshot..." >> "$LOG_FILE"
 cd scripts
 node scrape-yt-stats.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT stats snapshot failed (non-fatal)" >> "$LOG_FILE"
+cd ..
+
+# 1c. News sentiment: writes per-member newsCount/newsPositive/newsNegative into
+#     TODAY's snapshot in data/yt-stats-history.json (plus the global
+#     news-sentiment/{date}.json). MUST run after scrape-yt-stats.js (so today's
+#     snapshot exists) and before build-database.js (so the merge picks up the
+#     news fields same-day). Non-blocking (DIC-372).
+echo "[$(date)] Running news sentiment analysis..." >> "$LOG_FILE"
+cd scripts
+node scrape-news-sentiment.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
 # 2. Run the scraper (non-fatal: buy crawlers must run even if build-database fails)
@@ -44,12 +54,6 @@ cd ..
 echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
 cd scripts
 node scrape-yt-subscribers.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT subscriber tracker failed (non-fatal)" >> "$LOG_FILE"
-cd ..
-
-# 2c. Optional: Run news sentiment analysis (non-blocking, won't fail pipeline)
-echo "[$(date)] Running news sentiment analysis..." >> "$LOG_FILE"
-cd scripts
-node scrape-news-sentiment.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
 # 2d. Run trend analysis (requires price history data)

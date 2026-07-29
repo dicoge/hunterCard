@@ -73,7 +73,7 @@ def translate_text(text):
         if not os.path.exists(agy_path):
             agy_path = 'agy'
             
-        res = subprocess.run([agy_path, '-p', prompt], capture_output=True, text=True, encoding='utf-8')
+        res = subprocess.run([agy_path, '--model', 'gemini-3.5-flash-medium', '-p', prompt], capture_output=True, text=True, encoding='utf-8')
         if res.returncode == 0:
             translated = res.stdout.strip()
             # Clean up any potential surrounding quotes the LLM might have output

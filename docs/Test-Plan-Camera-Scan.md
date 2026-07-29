@@ -1,85 +1,81 @@
-# HoloHunter 卡牌掃描功能測試計畫
+# HoloHunter 相機掃描 QA Benchmark 與測試計畫
 
-**專案名稱**：HoloHunter - Hololive 卡牌價格查詢 app  
-**功能名稱**：相機掃描功能 (Camera Scan Feature)  
-**版本**：1.0.0  
-**測試類型**：功能測試、效能測試、可用性測試、安全性測試  
-**建立日期**：2026-05-01  
-**QA Engineer**：Test Engineer  
-
----
-
-## 1. 功能概述
-
-### 1.1 功能說明
-相機掃描功能允許使用者透過手機相機掃描 Hololive 卡牌表面，自動識別卡牌資訊並查詢價格。使用者只需將卡牌置於掃描框內，按下掃描按鈕即可快速取得卡牌價格資訊。
-
-### 1.2 主要功能元件
-- **相機權限管理**：請求、授權、拒絕、進入設定
-- **相機預覽**：即時相機畫面顯示
-- **掃描框 UI**：動畫掃描線、角落標記、引導提示
-- **控制功能**：閃光燈切換、鏡頭翻轉、掃描觸發
-- **掃描結果處理**：識別中狀態、完成提示、錯誤處理
-
-### 1.3 技術堆疊
-- **Framework**：React Native 0.81.5 + Expo 54
-- **相機套件**：expo-camera ^55.0.15
-- **動畫**：React Native Animated API
+**專案名稱**：HoloHunter - Hololive 卡牌價格查詢 app
+**功能名稱**：相機掃描 / 卡牌識別 / 掃描紀錄
+**文件版本**：2.0.0
+**測試類型**：準確率 benchmark、回歸測試、功能測試、效能測試、可用性測試
+**QA Owner**：Mac-OpenClaw
+**更新日期**：2026-07-27
 
 ---
 
-## 2. 測試範圍
+## 1. 現況與風險摘要
 
-### 2.1 測試目標
-確保相機掃描功能在各種情境下都能正常運作，並提供良好的使用者體驗。
+相機掃描已不是「未來實作」：目前 pipeline 包含相機取圖、前端辨識服務、Vercel API `api/recognize-card.ts`、OpenRouter Gemini Vision 呼叫、資料庫匹配與掃描 session 紀錄。
 
-### 2.2 測試環境
-| 項目 | 規格 |
-|------|------|
-| 測試裝置 | iOS 模擬器 / 實機 (iPhone 14+) |
-| 作業系統 | iOS 15.0+ |
-| 螢幕尺寸 | 6.1 inch (iPhone 14), 6.7 inch (iPhone 14 Pro Max) |
-| 網路環境 | Wi-Fi 5G, 4G, 離線 |
+已知使用者回報：
+
+1. 同一張卡掃一次，session 內可能紀錄兩張相同卡。
+2. 實測辨識正確率約 70%，低於可接受門檻。
+3. 相同拍照方式，把圖片貼給 chat 模式 Gemini 可正確識別，因此目前 HoloHunter pipeline 需要 benchmark 化並找出差距。
+4. 目前 API 端使用 OpenRouter 的 `google/gemini-3.1-flash-image`；若準確率或穩定度不足，建議評估改為直接 Gemini API 或更穩定的 vision endpoint，而不是硬編 fallback。
 
 ---
 
-## 3. 測試案例
+## 2. QA 目標與通過標準
 
-### 3.1 權限管理測試 (Permission Management)
+| 指標 | 目標 | 阻擋等級 | 說明 |
+|---|---:|---|---|
+| Top-1 準確率 | ≥ 90% | Release blocker | 第一順位輸出需完全符合 expected cardNumber + rarity + series |
+| Top-3 準確率 | ≥ 98% | Release blocker | 前三候選中任一筆完全符合 expected cardNumber + rarity + series |
+| 重複記錄率 | 0% | Release blocker | 一次 physical scan 不可新增 2 筆以上 session cards |
+| 低信心錯配 | 0 P0 / 可追蹤 P1 | Release blocker if user-visible | confidence < 0.75 時不得直接自動入庫；需要求重掃或顯示候選 |
+| 同名不同版本混淆 | 0 P0 / 可追蹤 P1 | Release blocker if top-1 wrong | 同名卡需以 cardNumber、rarity、series、HP/level 等特徵解歧 |
+| API 失敗處理 | 100% 有明確錯誤 | P1 | timeout、API key、provider 5xx、空回覆需可診斷 |
 
-| 測試編號 | 測試案例 | 測試步驟 | 預期結果 | 優先級 |
-|----------|----------|----------|----------|--------|
-| PM-001 | 首次請求相機權限 | 1. 開啟 ScanScreen | 顯示權限請求提示 | P0 |
-| PM-002 | 同意相機權限 | 1. 點擊「允許相機權限」按鈕 | 顯示相機預覽畫面 | P0 |
-| PM-003 | 拒絕相機權限 | 1. 拒絕權限請求 | 顯示權限被拒絕畫面，含「打開設定」按鈕 | P0 |
-| PM-004 | 從設定回來後再次請求 | 1. 從系統設定返回 app<br>2. 點擊「允許相機權限」 | 正常顯示相機預覽 | P1 |
-| PM-005 | 打開設定頁面 | 1. 點擊「打開設定」按鈕 | 開啟系統設定 app-settings: | P1 |
-| PM-006 | 權限載入中顯示 | 1. 打開 ScanScreen<br>2. 觀察權限狀態載入 | 顯示「載入相機中...」文字 | P1 |
+---
 
-### 3.2 相機功能測試 (Camera Functionality)
+## 3. Benchmark 測試集規格
 
-| 測試編號 | 測試案例 | 測試步驟 | 預期結果 | 優先級 |
-|----------|----------|----------|----------|--------|
-| CF-001 | 預設後鏡頭開啟 | 1. 進入 ScanScreen | 後鏡頭相機預覽開啟 | P0 |
-| CF-002 | 切換至前鏡頭 | 1. 點擊「翻轉」按鈕 | 切換至前鏡頭預覽 | P0 |
-| CF-003 | 切換回後鏡頭 | 1. 再次點擊「翻轉」按鈕 | 切換回後鏡頭預覽 | P0 |
-| CF-004 | 開啟閃光燈 | 1. 點擊「閃光燈」按鈕 | 閃光燈開啟，圖示改變 | P1 |
-| CF-005 | 關閉閃光燈 | 1. 再次點擊「閃光燈」按鈕 | 閃光燈關閉 | P1 |
-| CF-006 | 相機畫面填滿全螢幕 | 1. 進入 ScanScreen | 相機畫面佔滿整個螢幕 | P1 |
+正式 benchmark 至少 50 張，建議 100 張；每張卡需保留原始圖片、expected label、拍攝條件與 pipeline 輸出。
 
-### 3.3 掃描 UI 測試 (Scan UI)
+### 3.1 卡牌覆蓋
 
-| 測試編號 | 測試案例 | 測試步驟 | 預期結果 | 優先級 |
-|----------|----------|----------|----------|--------|
-| UI-001 | 掃描框顯示 | 1. 進入 ScanScreen | 顯示掃描框（四角標記） | P0 |
-| UI-002 | 掃描線動畫 | 1. 觀察掃描框內 | 掃描線來回移動動畫 | P0 |
-| UI-003 | 邊框脈衝動畫 | 1. 觀察掃描框 | 邊框有縮放脈衝效果 | P1 |
-| UI-004 | 邊框顏色變化 | 1. 觀察掃描框邊框 | 邊框顏色在 primary 和 primaryLight 間變化 | P1 |
-| UI-005 | 提示文字顯示 | 1. 進入 ScanScreen | 顯示「將卡牌置於掃描框內」 | P1 |
-| UI-006 | 控制按鈕顯示 | 1. 進入 ScanScreen | 顯示閃光燈、掃描、翻轉三個按鈕 | P0 |
-| UI-007 | 遮罩層顯示 | 1. 觀察掃描區域外 | 掃描框外區域為半透明黑色遮罩 | P1 |
+| 維度 | 最低數量 | 要求 |
+|---|---:|---|
+| 稀有度 C / U / R | 各 ≥ 8 | 基礎卡、文字密集與圖面接近者都要有 |
+| 稀有度 SR | ≥ 8 | 需含亮面或高反光情境 |
+| 稀有度 SEC / OUR | 合計 ≥ 6 | 高價與特殊版面需納入 |
+| 稀有度 P | ≥ 6 | promo / event / PR 系列需納入 |
+| 多系列 | ≥ 5 系列 | 至少含 hBP、hSD、hPR/Promo 類型 |
+| 同名不同版本 | ≥ 10 組 | 同角色、同名或近似名，不同 rarity / series / cardNumber |
+| 實體卡 | ≥ 30 張 | 真實使用情境優先 |
+| 手機螢幕拍攝 | ≥ 15 張 | 使用者常用另一台手機顯示圖片再掃描 |
+| 圖片/列印測試 | ≥ 10 張 | 可快速回歸，但不可取代實體卡 |
 
-### 3.4 掃描功能測試 (Scan Functionality)
+### 3.2 拍攝條件覆蓋
+
+每張卡至少一種條件；正式 benchmark 應整體覆蓋：
+
+- 正常光線、低光、強反光、背光。
+- 0° 正拍、10-20° 傾斜、30° 以上大角度。
+- 卡牌佔掃描框 60%、80%、100%。
+- 手震 / 模糊、局部遮擋、背景雜訊。
+- iPhone 實機、Android 實機、Web camera（若支援）。
+- 實體卡與手機螢幕拍攝各自分層統計。
+
+### 3.3 命名與資料夾建議
+
+```text
+docs/fixtures/scan-benchmark/
+  images/
+    hBP04-005_C_hBP04_good-light_001.jpg
+    hBP04-005_C_hBP04_low-light_002.jpg
+  labels.jsonl
+  latest-results.jsonl
+```
+
+### 3.4 掃描功能測試 (Scan Function)
 
 | 測試編號 | 測試案例 | 測試步驟 | 預期結果 | 優先級 |
 |----------|----------|----------|----------|--------|
@@ -97,6 +93,47 @@
 | RI-002 | 識別失敗處理 | 1. 掃描無效圖像<br>2. 完成掃描 | 顯示「無法識別」提示（未來実装） | P1 |
 | RI-003 | 卡牌價格顯示 | 1. 成功識別後 | 顯示價格資訊（未來実装） | P0 |
 | RI-004 | 無庫存提示 | 1. 識別的卡牌無庫存 | 顯示無庫存提示（未來実装） | P1 |
+
+### 3.5b 掃描去重測試 (Scan De-duplication — DIC-700)
+
+背景：使用者實測「掃一張卡會紀錄兩張」。自動掃描在同一張卡穩定停留於畫面時，冷卻時間（3 秒）過後會再次觸發，導致重複 `addCard`。修正方式為在 `scanSessionStore.addCard` 集中做短時間去重（同 `cardNumber/series/rarity` 於 `SCAN_DEDUP_WINDOW_MS`＝8 秒內只記一次），並在每次掃描結束（成功或失敗）都 `resetAutoScan()`。
+
+| 測試編號 | 測試案例 | 測試步驟 | 預期結果 | 優先級 |
+|----------|----------|----------|----------|--------|
+| DD-001 | 單張卡只記一筆 | 1. 將同一張卡穩定放在掃描框內<br>2. 讓自動掃描連續觸發數次（>10 秒） | 清單只新增 **1** 筆 | P0 |
+| DD-002 | 手動掃描不重複 | 1. 對同一張卡快速連按掃描 | 清單只新增 1 筆 | P0 |
+| DD-003 | 連續不同卡可多筆 | 1. 依序掃 A、B、C 三張不同卡 | 清單新增 3 筆 | P0 |
+| DD-004 | 明確再加入一張 | 1. 掃 A 後，於上方 toast 點「＋ 再加入一張」 | 清單新增第 2 筆 A | P1 |
+| DD-005 | 移開後再掃同卡 | 1. 掃 A → 移開卡片 >8 秒 → 再掃 A | 清單新增第 2 筆 A | P1 |
+| DD-006 | 失敗後狀態一致 | 1. 掃描失敗（API error / 空 OCR）<br>2. 觀察是否可立即重掃 | `isScanning`/`isProcessingOCR` 重置、自動掃描 buffer 已清空，可重試 | P1 |
+
+**自動化驗證**：純邏輯（`src/utils/scanDedup.ts`）以獨立 Node 腳本驗證，無需啟動 app 或安裝相依：
+
+```
+npm run test:scan-dedup
+# 或
+node --experimental-strip-types scripts/verify-scan-dedup.mjs
+```
+
+涵蓋：bug 重現（自動掃描重複觸發只記一筆）、連續不同卡皆記錄、視窗過後同卡可再記、`force`（再加入一張）繞過去重。
+
+### 3.5c 低信心辨識與候選確認測試 (Confidence Tiers & Candidate Confirmation) — DIC-704
+
+信心度分層門檻：高信心 ≥ 0.85（自動加入）、中信心 0.55–0.84（候選確認）、低信心 < 0.55（引導重拍/手動）。
+
+| 測試編號 | 測試案例 | 測試步驟 | 預期結果 | 優先級 |
+|----------|----------|----------|----------|--------|
+| CC-001 | 高信心自動加入 | 1. 掃描卡號清晰可讀的卡牌（信心 ≥ 0.85） | 自動加入清單並顯示浮動結果卡 | P0 |
+| CC-002 | 中信心顯示候選 | 1. 掃描僅角色名匹配、卡號模糊的卡牌（0.55–0.84） | 顯示底部候選選擇器，列出 top 3–5 候選，**不自動加入** | P0 |
+| CC-003 | 候選點選確認加入 | 1. 於候選選擇器點選正確卡牌 | 該卡加入清單並顯示結果卡，選擇器關閉 | P0 |
+| CC-004 | 低信心引導 | 1. 掃描模糊/反光導致信心 < 0.55 | 顯示「無法確定是哪張卡」標題 + 引導詞（靠近卡號/避免反光/保持平整）+ 弱候選 | P0 |
+| CC-005 | 候選選擇器重新掃描 | 1. 於選擇器點「重新掃描」 | 關閉選擇器並重新觸發掃描 | P1 |
+| CC-006 | 候選選擇器手動搜尋 | 1. 於選擇器點「手動搜尋」 | 關閉選擇器並開啟手動搜尋 Modal | P1 |
+| CC-007 | 候選信心度視覺 | 1. 觀察候選列 | 每列顯示信心度進度條與百分比，最佳匹配高亮並標「最相符」 | P1 |
+| CC-008 | 完全無候選 | 1. API 回傳無 card 且無候選 | 顯示錯誤提示含引導詞與「手動搜尋」按鈕，不顯示空選擇器 | P1 |
+| CC-009 | 重複掃描防護 | 1. 掃描並加入一張卡<br>2. 再次掃描同一張卡 | 彈出「已在清單中」提示，**不重複加入** | P0 |
+| CC-010 | 候選確認也防重複 | 1. 清單已有某卡<br>2. 從候選選擇器選同一卡 | 彈出「已在清單中」提示，不重複加入 | P1 |
+| CC-011 | 額度扣點單一入口 | 1. 走查所有加入路徑 | 卡牌僅透過 `commitCard` 加入（掃描額度扣點未來只掛此處，錯誤重試不扣點） | P2 |
 
 ### 3.6 效能測試 (Performance)
 
@@ -217,17 +254,145 @@
 
 ### 8.2 測試記錄模板
 ```
-測試日期：YYYY/MM/DD
-測試人員：___
-測試裝置：___
-OS 版本：___
-測試編號：___
-測試結果：Pass / Fail
-問題描述：___
-截圖：___
+
+圖片檔名建議格式：
+
+```text
+<cardNumber>_<rarity>_<series>_<condition>_<sequence>.jpg
 ```
 
 ---
 
-**文件版本**：1.0.0  
-**下次審核日期**：功能完成後
+## 4. 測試紀錄格式
+
+每筆 benchmark record 使用 JSONL / JSON / CSV 皆可；`scripts/scan-benchmark.mjs` 會讀取下列欄位。
+
+| 欄位 | 必填 | 說明 |
+|---|---|---|
+| `image_id` | ✅ | 圖片唯一 ID，需可回查原始圖 |
+| `expected_cardNumber` | ✅ | 正確卡號，例如 `hBP04-005` |
+| `expected_rarity` | ✅ | 正確稀有度，例如 `C`, `U`, `R`, `SR`, `SEC`, `OUR`, `P` |
+| `expected_series` | ✅ | 正確系列，例如 `hBP04`, `hSD01`, `hPR` |
+| `model_output` | 建議 | 原始 API / Gemini / app 輸出；可為 object 或 string |
+| `top_matches` | 建議 | 候選陣列，至少保存前三名 `{ cardNumber, rarity, series, confidence }` |
+| `matched_cardNumber` | 建議 | 實際入庫/顯示的 top-1 cardNumber |
+| `matched_rarity` | 建議 | 實際 top-1 rarity |
+| `matched_series` | 建議 | 實際 top-1 series |
+| `confidence` | 建議 | top-1 confidence，0-1 |
+| `pass` | 選填 | 人工覆核 pass/fail；自動統計仍以 expected vs matched 計算 |
+| `failure_reason` | 失敗必填 | 例如 `number OCR miss`, `same name wrong rarity`, `low confidence accepted`, `duplicate record` |
+| `duplicate_count` | ✅ | 一次 physical scan 新增的 session record 數；正常為 1。**必填、不可省略**：`scripts/scan-benchmark.mjs` 不會替缺欄位補預設值，缺少此欄位會直接 validation fail，避免沒記錄 session insert 數的資料被誤判為「無重複」而遮蔽「掃一張記錄兩張」regression |
+
+範例：
+
+```json
+{"image_id":"hBP04-005_C_hBP04_good-light_001","expected_cardNumber":"hBP04-005","expected_rarity":"C","expected_series":"hBP04","top_matches":[{"cardNumber":"hBP04-005","rarity":"C","series":"hBP04","confidence":0.94}],"duplicate_count":1}
+```
+
+---
+
+## 5. Benchmark 執行方式
+
+已新增本地 benchmark runner：
+
+```bash
+node scripts/scan-benchmark.mjs --input docs/fixtures/scan-benchmark-sample.jsonl
+node scripts/scan-benchmark.mjs --input docs/fixtures/scan-benchmark-sample.jsonl --output reports/scan-benchmark.md
+node scripts/scan-benchmark.mjs --input docs/fixtures/scan-benchmark-sample.jsonl --json
+```
+
+正式流程：
+
+1. 收集 50-100 張 benchmark 圖片與 labels。
+2. 逐張經由目前 app/API pipeline 掃描，保存 raw output 與 top candidates。
+3. 將結果整理成 JSONL / JSON / CSV。
+4. 執行 `node scripts/scan-benchmark.mjs --input <results>`。
+5. 若任一 release blocker 未達標，禁止標記掃描準確率完成，需修 pipeline 後重跑完整集。
+
+`docs/fixtures/scan-benchmark-sample.jsonl` 是格式 fixture，不代表正式準確率。
+
+---
+
+## 6. 回歸測試案例
+
+| ID | 情境 | 步驟 | 預期結果 | 指標 |
+|---|---|---|---|---|
+| REG-001 | 一張卡紀錄兩張 | 開新 scan session → 掃同一張卡一次 → 檢查 session cards | 僅新增 1 筆；`duplicate_count = 1` | 重複記錄率 0% |
+| REG-002 | 低信心錯配 | 使用低光/模糊圖讓 top-1 confidence < 0.75 且候選接近 | 不可直接加入錯卡；需提示重掃或候選確認 | 低信心錯配 0 |
+| REG-003 | 同名不同 rarity 混淆 | 掃同名但不同 rarity / series 的卡 | top-1 必須符合 cardNumber + rarity + series | top-1 準確 |
+| REG-004 | 同 cardNumber 多 series | 掃不同系列復刻/版本 | 不可只用 cardNumber 導致 series 錯配 | 版本解歧準確 |
+| REG-005 | 手機螢幕拍攝 | 在另一支手機顯示卡圖後掃描 | 不因螢幕摩爾紋或反光降到 top-3 以外 | top-3 準確 |
+| REG-006 | API 空回覆 / timeout | 模擬 provider 502、timeout、空 choices | UI 顯示可理解錯誤，不新增 session card | 無錯誤入庫 |
+
+---
+
+## 7. 功能測試 Checklist
+
+### 7.1 相機與權限
+
+- [ ] 首次開啟 ScanScreen 會請求相機權限。
+- [ ] 同意權限後顯示後鏡頭 preview。
+- [ ] 拒絕權限後顯示設定入口與明確說明。
+- [ ] 從系統設定回 app 後權限狀態會更新。
+- [ ] 閃光燈切換有視覺回饋且不影響 scan state。
+- [ ] 前/後鏡頭切換後 auto-scan frame history 會重置。
+
+### 7.2 掃描 UX
+
+- [ ] 掃描框、提示文字、掃描線動畫正常。
+- [ ] 掃描中按鈕 disabled，避免連點觸發多次。
+- [ ] 掃描中離開頁面不會在 unmounted component 更新 state。
+- [ ] 成功結果顯示 cardNumber、rarity、series、名稱與價格。
+- [ ] 失敗結果提供「重掃」或「手動搜尋」路徑。
+- [ ] 低信心結果不可靜默加入 session。
+
+### 7.3 Session 紀錄
+
+- [ ] 一次成功掃描只會呼叫一次 `addCard`。
+- [ ] 同一 physical scan 不會因 auto-scan + manual scan 同時觸發而重複入庫。
+- [ ] 總價值與卡牌數量正確更新。
+- [ ] 刪除卡牌後 totalValue / cardCount 正確重算。
+- [ ] 新 session / clear session 後不殘留上一輪資料。
+
+### 7.4 API / Recognition
+
+- [ ] `api/recognize-card.ts` 對 missing image 回 400。
+- [ ] missing API key 回 500 且不暴露 secret。
+- [ ] provider non-2xx 回可診斷錯誤。
+- [ ] Gemini raw output 會完整保存到 benchmark record。
+- [ ] name match 與 card number match 的 tie-breaker 不會偏向錯 rarity / series。
+- [ ] OpenRouter model / 直接 Gemini API 方案需在 benchmark 中分開標記，避免混淆。
+
+---
+
+## 8. 失敗分類與修正方向
+
+| 分類 | 常見原因 | 建議修正方向 |
+|---|---|---|
+| `number OCR miss` | 底部卡號太小、模糊、反光 | crop bottom edge、提高解析度、要求 Gemini 專注卡號、保存多 frame |
+| `same name wrong rarity` | 只用角色/名稱 matching | 強制 rarity/series/cardNumber tie-breaker；低信心進候選確認 |
+| `same number wrong series` | database compound key 被壓成單一 cardNumber | candidate 需保留 `series`；expected match 必須比對 series |
+| `low confidence accepted` | UI 沒有 confidence gate | confidence < 0.75 要重掃或人工選擇 |
+| `duplicate record` | manual + auto trigger 競態、連點、重試回呼 | scan lock / request id / idempotency key；session store 不應重複記同一 scan event |
+| `provider drift` | OpenRouter routing/model 行為變動 | 固定 model/version，評估直接 Gemini API，benchmark 分 provider 統計 |
+
+---
+
+## 9. Release Gate
+
+掃描準確率相關變更進入部署前，需附上 benchmark report，至少包含：
+
+- 測試圖片數量與分布（rarity、series、條件）。
+- top-1 / top-3 / duplicate record rate。
+- 失敗清單與分類。
+- 對比前一版的差異。
+- 若 API provider 或 model 有改動，需標明 provider、model、日期。
+
+通過條件：
+
+```text
+top-1 >= 90%
+top-3 >= 98%
+duplicate record rate = 0%
+沒有 P0 regression case fail
+```

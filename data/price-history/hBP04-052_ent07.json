@@ -254,8 +254,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-052_ent07"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-052_ent07"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-052_ent07"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-052_ent07"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.712Z",
+  "lastUpdated": "2026-07-29T12:09:57.454Z",
   "nameZh": "詩織·諾維拉"
 }

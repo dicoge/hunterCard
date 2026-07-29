@@ -268,8 +268,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-073_hBP05"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-073_hBP05"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-073_hBP05"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-073_hBP05"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.846Z",
+  "lastUpdated": "2026-07-29T12:09:57.626Z",
   "nameZh": "亞菈妲·麗絲"
 }

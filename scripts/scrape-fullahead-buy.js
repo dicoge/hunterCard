@@ -59,8 +59,8 @@ function readPreviousCount(file) {
   }
 }
 
-function loadCardNumbers() {
-  const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+function loadCardNumbers(dbPath = DB_PATH) {
+  const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
   const map = new Map();
   for (const card of Object.values(db.cards || {})) {
     if (card.cardNumber) map.set(card.cardNumber.toUpperCase(), card.cardNumber);
@@ -157,16 +157,24 @@ async function scrapeWithRestart() {
   }
 }
 
-async function main() {
+async function main(options = {}) {
+  const {
+    dbPath = DB_PATH,
+    outputFile = OUTPUT_FILE,
+    scrapeWithRestartFn = scrapeWithRestart,
+    nowFn = () => new Date(),
+  } = options;
+  const outputDir = path.dirname(outputFile);
+
   console.log('[fullahead-buy] Starting...');
   const startTime = Date.now();
 
-  const cardNumbers = loadCardNumbers();
+  const cardNumbers = loadCardNumbers(dbPath);
   console.log(`[fullahead-buy] database 卡號: ${cardNumbers.size}`);
 
   // scrape 失敗必須中斷整個 run，絕不寫出空檔或 partial 資料，
   // 避免臨時錯誤（API/token/page 失敗）用 {} 空檔污染 merge。
-  const records = await scrapeWithRestart();
+  const records = await scrapeWithRestartFn();
 
   // 以「正規化卡號-稀有度」為 key，同一版本取最高買取價。抓不到稀有度時退回純卡號 key，
   // merge 端會用相同的 exact→fallback 邏輯對齊。
@@ -193,7 +201,7 @@ async function main() {
   }
 
   // 防止用大幅縮水的結果悄悄覆蓋好資料：若舊檔卡數明顯較多，視為可疑縮水，保留舊檔不覆蓋。
-  const prevCount = readPreviousCount(OUTPUT_FILE);
+  const prevCount = readPreviousCount(outputFile);
   if (prevCount > 0 && best.size < prevCount * SHRINK_THRESHOLD) {
     throw new Error(
       `[fullahead-buy] Refusing to write: new crawl has ${best.size} prices but ` +
@@ -202,7 +210,7 @@ async function main() {
     );
   }
 
-  const timestamp = new Date().toISOString();
+  const timestamp = nowFn().toISOString();
   const out = {};
   for (const [key, { buyPrice, cardNumber, rarity }] of best.entries()) {
     const original = cardNumbers.get(cardNumber) || cardNumber;
@@ -210,14 +218,14 @@ async function main() {
     out[outKey] = { buyPrice, rarity: rarity || null, timestamp };
   }
 
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  fs.writeFileSync(OUTPUT_FILE, `${JSON.stringify(out, null, 2)}\n`, 'utf-8');
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(outputFile, `${JSON.stringify(out, null, 2)}\n`, 'utf-8');
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(
     `[fullahead-buy] ✅ Done in ${duration}s — 收到 ${records.length} 筆，寫入 ${Object.keys(out).length} 張卡`
   );
-  console.log(`[fullahead-buy] Output: ${OUTPUT_FILE}`);
+  console.log(`[fullahead-buy] Output: ${outputFile}`);
   return out;
 }
 
@@ -232,4 +240,4 @@ if (isMain) {
     });
 }
 
-export { main as scrapeFullaheadBuy };
+export { main as scrapeFullaheadBuy, scrapeOnce, readPreviousCount, loadCardNumbers };

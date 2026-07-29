@@ -268,8 +268,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-062_hPR"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-062_hPR"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-062_hPR"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-062_hPR"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.973Z",
+  "lastUpdated": "2026-07-29T12:09:57.784Z",
   "nameZh": "蘿蔔子"
 }

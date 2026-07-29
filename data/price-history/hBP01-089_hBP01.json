@@ -268,8 +268,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-089_hBP01"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-089_hBP01"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-089_hBP01"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-089_hBP01"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.937Z",
+  "lastUpdated": "2026-07-29T12:09:57.745Z",
   "nameZh": "姆娜·霍希諾瓦"
 }

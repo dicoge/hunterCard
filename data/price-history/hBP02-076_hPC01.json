@@ -268,8 +268,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-076_hPC01"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-076_hPC01"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-076_hPC01"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-076_hPC01"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.878Z",
+  "lastUpdated": "2026-07-29T12:09:57.670Z",
   "nameZh": "客製電腦"
 }

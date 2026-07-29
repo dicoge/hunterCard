@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 // ── Module-level cache for series data ──
 
@@ -77,6 +78,8 @@ const COLOR_BUTTONS = [
 export default function HomeScreen({ navigation }: any) {
   const [seriesData, setSeriesData] = useState<{ boosters: SeriesItem[]; starters: SeriesItem[]; special: SeriesItem[] } | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isDesktop } = useBreakpoint();
+  const cardBtnStyle = isDesktop ? [styles.cardBtn, styles.cardBtnDesktop] : styles.cardBtn;
 
   useEffect(() => {
     fetchSeriesData()
@@ -87,7 +90,8 @@ export default function HomeScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={isDesktop ? styles.scrollContentDesktop : undefined}>
+       <View style={isDesktop ? styles.innerDesktop : styles.inner}>
         {/* Hero Section */}
         <View style={styles.hero}>
           <Text style={styles.heroTitle}>hololive OFFICIAL CARD GAME</Text>
@@ -119,7 +123,7 @@ export default function HomeScreen({ navigation }: any) {
                   {seriesData.boosters.map((item) => (
                     <TouchableOpacity
                       key={item.query}
-                      style={styles.cardBtn}
+                      style={cardBtnStyle}
                       onPress={() => navigation.navigate('SearchResults', { query: item.query })}
                       activeOpacity={0.7}
                     >
@@ -139,7 +143,7 @@ export default function HomeScreen({ navigation }: any) {
                   {seriesData.starters.map((item) => (
                     <TouchableOpacity
                       key={item.query}
-                      style={styles.cardBtn}
+                      style={cardBtnStyle}
                       onPress={() => navigation.navigate('SearchResults', { query: item.query })}
                       activeOpacity={0.7}
                     >
@@ -159,7 +163,7 @@ export default function HomeScreen({ navigation }: any) {
                   {seriesData.special.map((item) => (
                     <TouchableOpacity
                       key={item.query}
-                      style={styles.cardBtn}
+                      style={cardBtnStyle}
                       onPress={() => navigation.navigate('SearchResults', { query: item.query })}
                       activeOpacity={0.7}
                     >
@@ -194,6 +198,7 @@ export default function HomeScreen({ navigation }: any) {
             ))}
           </View>
         </View>
+       </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -201,6 +206,9 @@ export default function HomeScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
+  scrollContentDesktop: { alignItems: 'center' },
+  inner: { width: '100%' },
+  innerDesktop: { width: '100%', maxWidth: 1100 },
   hero: {
     alignItems: 'center',
     paddingVertical: 40,
@@ -261,6 +269,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333333',
     width: '31%',
+  },
+  cardBtnDesktop: {
+    width: 200,
+    flexGrow: 0,
   },
   cardLabel: {
     color: '#ffffff',

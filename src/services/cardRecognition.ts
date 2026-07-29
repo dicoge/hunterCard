@@ -34,12 +34,20 @@ export interface CardInfo {
   rarity: string;
   series: string;
   sellPrice: number | null;  // null = 無交易記錄
+  buyPrice?: number | null;   // 店家收購價（賣出可得）
   yuyuName: string;
   color: string;
   imageUrl: string;
   prices?: CardPrice[];       // Detailed price variants from database
   variants?: CardVariant[];   // Same cardNumber in different series
   priceHistory?: Record<string, number>;
+  ytStats?: any;              // YouTube 成員數據（訂閱/成長/觀看）
+}
+
+/** A single ranked candidate returned for mid/low-confidence scans. */
+export interface RecognizedCandidate {
+  card: CardInfo;
+  confidence: number; // 0-1
 }
 
 export interface RecognitionResult {
@@ -47,6 +55,14 @@ export interface RecognitionResult {
   card?: CardInfo;
   suggestions?: CardInfo[];
   error?: string;
+  confidence?: number;
+  reason?: string;
+  raw?: string;
+  debug?: any;
+  lowConfidence?: boolean;
+  /** Top 3-5 alternative matches for the candidate-confirmation UI. */
+  candidates?: RecognizedCandidate[];
+}
 }
 
 // ── 資料庫快取 ──
@@ -119,11 +135,13 @@ export async function loadAllCards(): Promise<CardInfo[]> {
         rarity: entry.rarity || '',
         series: entry.series || '',
         sellPrice: entry.sellPrice != null && entry.sellPrice > 0 ? entry.sellPrice : null,
+        buyPrice: (entry as any).buyPrice ?? null,
         yuyuName: entry.yuyuName || '',
         color: entry.color || '',
         imageUrl: entry.officialImage || entry.localImage || '',
         prices: (entry as any).prices || [],
         priceHistory: (entry as any).priceHistory || {},
+        ytStats: (entry as any).ytStats ?? null,
       }));
 
       cachedDb = result;
@@ -323,8 +341,36 @@ async function resizeImage(imageUri: string, maxDim: number): Promise<string> {
   });
 }
 
+/** Map a raw API card payload into the app's CardInfo shape. */
+function mapApiCard(apiCard: any): CardInfo {
+  return {
+    id: apiCard.cardNumber,
+    name: apiCard.name || '',
+    cardNumber: apiCard.cardNumber,
+    type: '',
+    rarity: apiCard.rarity || '',
+    series: apiCard.series || '',
+    sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
+    yuyuName: '',
+    color: '',
+    imageUrl: apiCard.imageUrl || '',
+    prices: apiCard.prices || [],
+  };
+}
+
+/** Map the API's raw candidate list into RecognizedCandidate[]. */
+function mapApiCandidates(raw: any): RecognizedCandidate[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw
+    .filter(c => c && c.cardNumber)
+    .map(c => ({
+      card: mapApiCard(c),
+      confidence: typeof c.confidence === 'number' ? c.confidence : 0,
+    }));
+}
+
 /**
- * Try to recognize card via server-side API (Gemini Vision through OpenRouter)
+ * Try to recognize card via server-side API (direct Gemini Vision).
  * Falls back gracefully without throwing
  */
 async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
@@ -332,8 +378,11 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     // Preprocess with OpenCV: enhance contrast, sharpen, resize
     const processedImage = await preprocessCardImage(imageUri);
 
-    // Call the API — use absolute URL to avoid SPA routing issues
-    const apiUrl = window.location.origin + '/api/recognize-card';
+    // Call the API — web uses current origin; native uses the production API host.
+    const apiBase = typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://holocard-hunter.vercel.app';
+    const apiUrl = apiBase + '/api/recognize-card';
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -348,27 +397,28 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const data = await apiResponse.json();
 
     if (!data.success) {
-      return { success: false, error: data.error || '' };
+      return {
+        success: false,
+        error: data.error || '',
+        suggestions: Array.isArray(data.candidates) ? data.candidates.map(mapApiCard) : undefined,
+        confidence: data.confidence,
+        reason: data.reason,
+        raw: data.raw,
+        debug: data.debug,
+        lowConfidence: !!data.lowConfidence,
+      };
     }
 
     // API returned full card info — use it directly
     if (data.card) {
-      const apiCard = data.card;
-      // Map API response to CardInfo format
-      const cardInfo: CardInfo = {
-        id: apiCard.cardNumber,
-        name: apiCard.name || '',
-        cardNumber: apiCard.cardNumber,
-        type: '',
-        rarity: apiCard.rarity || '',
-        series: apiCard.series || '',
-        sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
-        yuyuName: '',
-        color: '',
-        imageUrl: apiCard.imageUrl || '',
-        prices: apiCard.prices || [],
+      const cardInfo = mapApiCard(data.card);
+      return {
+        success: true,
+        card: cardInfo,
+        confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
+        candidates: mapApiCandidates(data.candidates),
       };
-      return { success: true, card: cardInfo };
+      };
     }
 
     // API only returned cardNumber — look up locally
@@ -409,6 +459,22 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
   }
 }
 
+function mapApiCard(apiCard: any): CardInfo {
+  return {
+    id: apiCard.cardNumber,
+    name: apiCard.name || '',
+    cardNumber: apiCard.cardNumber,
+    type: '',
+    rarity: apiCard.rarity || '',
+    series: apiCard.series || '',
+    sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
+    yuyuName: '',
+    color: '',
+    imageUrl: apiCard.imageUrl || '',
+    prices: apiCard.prices || [],
+  };
+}
+
 /**
  * 用於 OCR 卡牌的智能識別（先裁切找卡號，再比對資料庫）
  * 從圖片直接辨識，優先找卡號（比全圖名稱匹配更可靠）
@@ -418,6 +484,9 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
   try {
     const apiResult = await recognizeViaApi(imageUri);
     if (apiResult.success && apiResult.card) {
+      return apiResult;
+    }
+    if (apiResult.lowConfidence || apiResult.suggestions?.length || apiResult.raw || apiResult.debug) {
       return apiResult;
     }
   } catch (e) {
@@ -438,7 +507,7 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
   // 精確匹配卡號
   const match = allCards.find(c => c.id.toLowerCase() === cardId);
   if (match) {
-    return { success: true, card: match };
+    return { success: true, card: match, confidence: 0.95 };
   }
 
   // 模糊匹配（如 NP04 → hBP04 已在 extractCardId 處理，但仍可能有數位誤判）
@@ -450,7 +519,7 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
            normalizedQuery.includes(normalizedId);
   });
   if (fuzzyMatch) {
-    return { success: true, card: fuzzyMatch };
+    return { success: true, card: fuzzyMatch, confidence: 0.72 };
   }
 
   return { success: false, error: `找到卡號 ${cardId} 但資料庫無匹配，請確認卡牌版本` };
@@ -476,7 +545,7 @@ export async function recognizeCardFromOcr(rawText: string): Promise<Recognition
       // Try lowercase match
       const match = allCards.find(c => c.id.toLowerCase() === cardId);
       if (match) {
-        return { success: true, card: match };
+        return { success: true, card: match, confidence: 0.9 };
       }
       // Try prefix match (e.g. "NP04" matches "hBP04-xxx" → not reliable, skip)
       // Try fuzzy card number (e.g. "hBPO4" → "hBP04")
@@ -488,7 +557,7 @@ export async function recognizeCardFromOcr(rawText: string): Promise<Recognition
                normalizedQuery.includes(normalizedId);
       });
       if (fuzzyMatch) {
-        return { success: true, card: fuzzyMatch };
+        return { success: true, card: fuzzyMatch, confidence: 0.68 };
       }
     }
   }
@@ -500,7 +569,7 @@ export async function recognizeCardFromOcr(rawText: string): Promise<Recognition
     if (lineIds.length > 0) {
       for (const id of lineIds) {
         const match = allCards.find(c => c.id.toLowerCase() === id);
-        if (match) return { success: true, card: match };
+        if (match) return { success: true, card: match, confidence: 0.85 };
       }
     }
     // Only try name match if the text contains Japanese characters (kana/kanji)
@@ -514,7 +583,14 @@ export async function recognizeCardFromOcr(rawText: string): Promise<Recognition
       const cardName = strictResult.card.name.toLowerCase().replace(/[^a-z0-9\u3040-\u9fff]/g, '');
       const sim = calculateSimilarity(query, cardName);
       if (sim > 0.4) {
-        return strictResult;
+        // Name-only OCR match: report similarity as confidence (capped below auto-add
+        // threshold) and expose suggestions as candidates for the confirmation UI.
+        const nameConfidence = Math.min(0.8, sim);
+        const candidates: RecognizedCandidate[] = [
+          { card: strictResult.card, confidence: nameConfidence },
+          ...(strictResult.suggestions || []).map(c => ({ card: c, confidence: Math.min(0.6, sim * 0.7) })),
+        ];
+        return { ...strictResult, confidence: nameConfidence, candidates };
       }
     }
   }

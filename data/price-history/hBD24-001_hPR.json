@@ -107,8 +107,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-001_hPR"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 49800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-001_hPR"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 49800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-001_hPR"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 49800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-001_hPR"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.951Z",
+  "lastUpdated": "2026-07-29T12:09:57.758Z",
   "nameZh": "帕沃莉亞·蕾內"
 }

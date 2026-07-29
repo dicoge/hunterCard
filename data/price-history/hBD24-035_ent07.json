@@ -198,8 +198,29 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-035_ent07"
+    },
+    {
+      "date": "2026-07-27",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-035_ent07"
+    },
+    {
+      "date": "2026-07-28",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-035_ent07"
+    },
+    {
+      "date": "2026-07-29",
+      "price": 5980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-035_ent07"
     }
   ],
-  "lastUpdated": "2026-07-26T12:16:38.693Z",
+  "lastUpdated": "2026-07-29T12:09:57.430Z",
   "nameZh": "桃鈴音音"
 }
