@@ -238,6 +238,31 @@ export function rankCandidates(cards: Record<string, any>, extracted: any) {
   };
 }
 
+
+// Build a ranked candidate list (top N) from scored entries, deduped by cardNumber.
+// Each candidate carries its own confidence relative to the best score so the client
+// can show a "top 3-5 候選" picker for mid/low-confidence scans.
+function buildCandidates(
+  scored: { entry: any; score: number }[],
+  topConfidence: number,
+  limit = 5,
+) {
+  const bestScore = scored.length > 0 ? scored[0].score : 0;
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const { entry, score } of scored) {
+    const key = (entry.cardNumber || entry.name || '').toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const rel = bestScore > 0 ? score / bestScore : 0;
+    const confidence = Math.max(0.15, Math.min(topConfidence, rel * topConfidence));
+    out.push({ ...fmt(entry), confidence: Math.round(confidence * 100) / 100 });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+// ── Main handler ──
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (req.method !== 'POST') return json({ success: false, error: 'Method not allowed' }, 405);
