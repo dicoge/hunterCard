@@ -31,8 +31,8 @@ function resizeAndSharpen(imageUri: string): Promise<string> {
         let w = img.naturalWidth || img.width;
         let h = img.naturalHeight || img.height;
 
-        // Only resize if larger than 1024px
-        const MAX = 1024;
+        // Keep tiny card numbers readable for vision/OCR matching.
+        const MAX = 1536;
         if (w <= MAX && h <= MAX) {
           resolve(imageUri); // already small enough
           return;

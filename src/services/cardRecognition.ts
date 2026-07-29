@@ -49,6 +49,11 @@ export interface RecognitionResult {
   card?: CardInfo;
   suggestions?: CardInfo[];
   error?: string;
+  confidence?: number;
+  reason?: string;
+  raw?: string;
+  debug?: any;
+  lowConfidence?: boolean;
 }
 
 // ── 資料庫快取 ──
@@ -328,7 +333,7 @@ async function resizeImage(imageUri: string, maxDim: number): Promise<string> {
 }
 
 /**
- * Try to recognize card via server-side API (Gemini Vision through OpenRouter)
+ * Try to recognize card via server-side API (direct Gemini Vision).
  * Falls back gracefully without throwing
  */
 async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
@@ -336,8 +341,11 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     // Preprocess with OpenCV: enhance contrast, sharpen, resize
     const processedImage = await preprocessCardImage(imageUri);
 
-    // Call the API — use absolute URL to avoid SPA routing issues
-    const apiUrl = window.location.origin + '/api/recognize-card';
+    // Call the API — web uses current origin; native uses the production API host.
+    const apiBase = typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://holocard-hunter.vercel.app';
+    const apiUrl = apiBase + '/api/recognize-card';
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -352,30 +360,29 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const data = await apiResponse.json();
 
     if (!data.success) {
-      return { success: false, error: data.error || '' };
+      return {
+        success: false,
+        error: data.error || '',
+        suggestions: Array.isArray(data.candidates) ? data.candidates.map(mapApiCard) : undefined,
+        confidence: data.confidence,
+        reason: data.reason,
+        raw: data.raw,
+        debug: data.debug,
+        lowConfidence: !!data.lowConfidence,
+      };
     }
 
     // API returned full card info — use it directly
     if (data.card) {
-      const apiCard = data.card;
-      // Map API response to CardInfo format
-      const cardInfo: CardInfo = {
-        id: apiCard.cardNumber,
-        name: apiCard.name || '',
-        cardNumber: apiCard.cardNumber,
-        type: '',
-        rarity: apiCard.rarity || '',
-        series: apiCard.series || '',
-        sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
-        buyPrice: apiCard.buyPrice ?? null,
-        yuyuName: '',
-        color: '',
-        imageUrl: apiCard.imageUrl || '',
-        prices: apiCard.prices || [],
-        priceHistory: apiCard.priceHistory || {},
-        ytStats: apiCard.ytStats ?? null,
+      return {
+        success: true,
+        card: mapApiCard(data.card),
+        suggestions: Array.isArray(data.candidates) ? data.candidates.slice(1).map(mapApiCard) : undefined,
+        confidence: data.confidence,
+        reason: data.reason || data.matchMethod,
+        raw: data.raw,
+        debug: data.debug,
       };
-      return { success: true, card: cardInfo };
     }
 
     // API only returned cardNumber — look up locally
@@ -416,6 +423,22 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
   }
 }
 
+function mapApiCard(apiCard: any): CardInfo {
+  return {
+    id: apiCard.cardNumber,
+    name: apiCard.name || '',
+    cardNumber: apiCard.cardNumber,
+    type: '',
+    rarity: apiCard.rarity || '',
+    series: apiCard.series || '',
+    sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
+    yuyuName: '',
+    color: '',
+    imageUrl: apiCard.imageUrl || '',
+    prices: apiCard.prices || [],
+  };
+}
+
 /**
  * 用於 OCR 卡牌的智能識別（先裁切找卡號，再比對資料庫）
  * 從圖片直接辨識，優先找卡號（比全圖名稱匹配更可靠）
@@ -425,6 +448,9 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
   try {
     const apiResult = await recognizeViaApi(imageUri);
     if (apiResult.success && apiResult.card) {
+      return apiResult;
+    }
+    if (apiResult.lowConfidence || apiResult.suggestions?.length || apiResult.raw || apiResult.debug) {
       return apiResult;
     }
   } catch (e) {
