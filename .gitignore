@@ -39,6 +39,11 @@ data/push-watchlist.json
 data/push-tokens.json
 data/push-watchlist.json
 
+# scrape stage transient state (DIC-508): checkpoint/cache are per-run scratch
+# data for resuming an interrupted scrape, never a deliverable artifact.
+data/scrape-checkpoint.json
+data/scrape-cache.json
+
 # typescript
 *.tsbuildinfo
 
