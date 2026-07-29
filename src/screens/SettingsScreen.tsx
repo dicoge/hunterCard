@@ -1,382 +1,20 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
-import { useAuthStore, UserIdentity } from '../store/authStore';
+import { useAuthStore } from '../store/authStore';
 
 export default function SettingsScreen() {
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
-  const { 
-    isLoggedIn, 
-    session, 
-    loginWithGoogle, 
-    loginWithApple, 
-    loginAsGuest,
-    linkGoogle, 
-    linkApple, 
-    unlinkProvider, 
-    logout, 
-    deleteAccount,
-    mergeMockIdentity,
-    toggleSubscription
-  } = useAuthStore();
-
-  const handleOpenPrivacy = () => {
-    Linking.openURL('https://card-hunter-mu.vercel.app/privacy');
-  };
-
-  const handleOpenSupport = () => {
-    Linking.openURL('https://card-hunter-mu.vercel.app/support');
-  };
-
-  const handleLinkProvider = (provider: 'google' | 'apple') => {
-    const providerName = provider === 'google' ? 'Google' : 'Apple';
-    Alert.alert(
-      preferredLanguage === 'zh' ? `連結 ${providerName} 帳號` : `Link ${providerName} Account`,
-      preferredLanguage === 'zh'
-        ? '請選擇要模擬的綁定情境：'
-        : 'Please select a linking scenario to simulate:',
-      [
-        {
-          text: preferredLanguage === 'zh' ? '1. 正常綁定 (Normal)' : '1. Normal Link',
-          onPress: () => {
-            const success = provider === 'google' ? linkGoogle(false) : linkApple(false);
-            if (success) {
-              Alert.alert(
-                preferredLanguage === 'zh' ? '綁定成功' : 'Success',
-                preferredLanguage === 'zh'
-                  ? `已成功綁定您的 ${providerName} 帳號。`
-                  : `Successfully linked your ${providerName} account.`
-              );
-            }
-          }
-        },
-        {
-          text: preferredLanguage === 'zh' ? '2. 帳號衝突 (Collision)' : '2. Account Collision',
-          onPress: () => {
-            // Trigger Collision Resolving Flow
-            handleCollisionFlow(provider);
-          }
-        },
-        {
-          text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
-          style: 'cancel'
-        }
-      ]
-    );
-  };
-
-  const handleCollisionFlow = (provider: 'google' | 'apple') => {
-    const providerName = provider === 'google' ? 'Google' : 'Apple';
-    const collidedEmail = provider === 'google' ? 'collided.user@gmail.com' : 'collided.user@icloud.com';
-    const collidedId = provider === 'google' ? 'g_998877665544' : 'ap_998877665544';
-
-    Alert.alert(
-      preferredLanguage === 'zh' ? '⚠️ 帳號衝突 (Account Collision)' : '⚠️ Account Collision',
-      preferredLanguage === 'zh'
-        ? `此 ${providerName} 帳號 (${collidedEmail}) 已經被另一個 HoloHunter 使用者 (ID: user_collision_99) 綁定。\n\n請選擇處理策略：`
-        : `This ${providerName} account (${collidedEmail}) is already linked to another HoloHunter user (ID: user_collision_99).\n\nPlease choose a resolving strategy:`,
-      [
-        {
-          text: preferredLanguage === 'zh' ? '策略 A: 拒絕並取消' : 'Strategy A: Reject & Cancel',
-          style: 'cancel',
-          onPress: () => {
-            Alert.alert(
-              preferredLanguage === 'zh' ? '已取消綁定' : 'Cancelled',
-              preferredLanguage === 'zh'
-                ? '綁定已拒絕，資料未受影響。請先登出並清除衝突帳號再試。'
-                : 'Linking rejected. No changes made.'
-            );
-          }
-        },
-        {
-          text: preferredLanguage === 'zh' ? '策略 B: 合併資料 (Merge)' : 'Strategy B: Merge Data',
-          onPress: () => {
-            const mergedIdentity: UserIdentity = {
-              email: collidedEmail,
-              displayName: `Holo Fan (${providerName} Collided)`,
-              provider,
-              providerId: collidedId,
-            };
-            mergeMockIdentity(mergedIdentity);
-            Alert.alert(
-              preferredLanguage === 'zh' ? '合併成功' : 'Merge Success',
-              preferredLanguage === 'zh'
-                ? `已成功將衝突帳號的卡牌收藏與設定合併至此帳號，並完成 ${providerName} 帳號轉綁。`
-                : `Successfully merged all collections and settings from the collided account and linked your ${providerName} identity.`
-            );
-          }
-        }
-      ]
-    );
-  };
-
-  const handleUnlinkProvider = (provider: 'google' | 'apple') => {
-    const providerName = provider === 'google' ? 'Google' : 'Apple';
-    Alert.alert(
-      preferredLanguage === 'zh' ? `解除綁定 ${providerName}` : `Unlink ${providerName}`,
-      preferredLanguage === 'zh'
-        ? `您確定要解除綁定 ${providerName} 帳號嗎？解除後，您將無法再使用此方式登入。`
-        : `Are you sure you want to unlink ${providerName}? You will no longer be able to log in using this provider.`,
-      [
-        {
-          text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: preferredLanguage === 'zh' ? '確定解除' : 'Unlink',
-          style: 'destructive',
-          onPress: () => {
-            const success = unlinkProvider(provider);
-            if (!success) {
-              Alert.alert(
-                preferredLanguage === 'zh' ? '解除失敗' : 'Error',
-                preferredLanguage === 'zh'
-                  ? '為了避免帳號成為孤兒，您必須保留至少一種登入綁定方式！'
-                  : 'You must retain at least one linked login provider to prevent lockout!'
-              );
-            } else {
-              Alert.alert(
-                preferredLanguage === 'zh' ? '解除綁定成功' : 'Unlinked',
-                preferredLanguage === 'zh'
-                  ? `已成功解除綁定您的 ${providerName} 帳號。`
-                  : `Successfully unlinked your ${providerName} account.`
-              );
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      preferredLanguage === 'zh' ? '刪除帳號與資料（本機）' : 'Delete Account & Data (Local)',
-      preferredLanguage === 'zh'
-        ? '（目前為本機模擬）此 App 目前沒有任何雲端帳號或資料——您的模擬帳號、收藏清單與掃描的卡牌都只存在此裝置本機。\n\n點擊「清除本機資料並登出」會立即清除此裝置上的登入 Session、收藏清單與掃描的卡牌暫存，這已完整刪除本 App 目前持有、關於您的全部資料。\n\n未來正式版串接真實登入與後端後，才會另外提供以電子郵件申請刪除雲端資料的管道；目前並無雲端資料需要刪除。'
-        : '(Currently a local mock) The App holds no cloud account or data right now — your mock account, watchlist, and scanned cards live only on this device.\n\nTapping "Clear local data & sign out" immediately removes your login session, watchlist, and scanned-card session on this device, which fully deletes everything the App currently holds about you.\n\nA cloud-data deletion channel (via email/backend) will only be added in the future production build; there is no cloud data to delete today.',
-      [
-        {
-          text: preferredLanguage === 'zh' ? '取消' : 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: preferredLanguage === 'zh' ? '清除本機資料並登出' : 'Clear local data & sign out',
-          style: 'destructive',
-          onPress: () => {
-            deleteAccount();
-            Alert.alert(
-              preferredLanguage === 'zh' ? '已清除本機資料' : 'Local data cleared',
-              preferredLanguage === 'zh'
-                ? '您的本機 Session、收藏清單與掃描的卡牌暫存已清除並登出。目前並無雲端資料，本 App 持有關於您的全部資料皆已刪除。'
-                : 'Your local session, watchlist, and scanned-card session have been cleared and you have been signed out. There is no cloud data, so everything the App held about you has been deleted.'
-            );
-          },
-        },
-      ]
-    );
-  };
-
-  const isGuest = session?.role === 'guest';
-  const hasGoogle = session?.identities.some(id => id.provider === 'google');
-  const hasApple = session?.identities.some(id => id.provider === 'apple');
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScrollView style={styles.container}>
         <Text style={styles.title}>{APP_NAME}</Text>
         <Text style={styles.version}>版本 {APP_VERSION}</Text>
-
-        {/* ── 帳號登入與管理 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>👤 共通帳號設定</Text>
-          
-          <View style={styles.demoBanner}>
-            <Text style={styles.demoBannerText}>
-              {preferredLanguage === 'zh'
-                ? '⚠️ 示範版本：以下所有帳號功能（Google／Apple 登入、綁定、Internal User ID、訂閱權限、掃描額度、刪除帳號）目前皆為「本機模擬」，資料只存在本機，未串接真實 OAuth、雲端同步或金流。'
-                : '⚠️ Demo build: every account feature below (Google/Apple sign-in, linking, Internal User ID, subscription tier, scan quota, delete account) is a LOCAL MOCK. Data stays on this device only — no real OAuth, cloud sync, or billing is connected yet.'}
-            </Text>
-          </View>
-
-          {!isLoggedIn || !session ? (
-            <View style={styles.authContainer}>
-              <Text style={styles.authDesc}>
-                {preferredLanguage === 'zh'
-                  ? '（示範）此登入為本機模擬，會寫入一組固定的假帳號到本機，不會真的向 Google／Apple 驗證，也不會做雲端同步。'
-                  : '(Demo) Sign-in here is a local mock: it writes a fixed fake account to this device. It does not authenticate with Google/Apple and does not sync to any cloud.'}
-              </Text>
-              
-              <TouchableOpacity style={styles.loginBtnGoogle} onPress={loginWithGoogle}>
-                <Text style={styles.loginBtnTextGoogle}>
-                  {preferredLanguage === 'zh' ? 'Sign in with Google（模擬）' : 'Sign in with Google (Mock)'}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.loginBtnApple} onPress={loginWithApple}>
-                <Text style={styles.loginBtnTextApple}> {preferredLanguage === 'zh' ? 'Sign in with Apple（模擬）' : 'Sign in with Apple (Mock)'}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.loginBtnGuest} onPress={loginAsGuest}>
-                <Text style={styles.loginBtnTextGuest}>
-                  {preferredLanguage === 'zh' ? '以訪客身份繼續' : 'Continue as Guest'}
-                </Text>
-              </TouchableOpacity>
-
-              <Text style={styles.authPrivacyNote}>
-                {preferredLanguage === 'zh'
-                  ? '※ 訪客模式僅能查詢與閱讀規則，無法使用相機掃描與價格預測功能。'
-                  : '* Guest mode only allows searching and reading rules. Camera scanning and price forecasts require login.'}
-              </Text>
-            </View>
-          ) : isGuest ? (
-            <View style={styles.sessionContainer}>
-              <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '目前權限' : 'Current Tier'}</Text>
-                <Text style={[styles.userValue, { color: COLORS.accent }]}>
-                  {preferredLanguage === 'zh' ? '👤 訪客模式' : 'Guest Mode'}
-                </Text>
-              </View>
-              <Text style={styles.authDesc}>
-                {preferredLanguage === 'zh'
-                  ? '您目前以訪客模式進入。（示範）登入為本機模擬，會建立一組固定的假帳號並在本機開啟掃描；收藏同步與每月 100 次免費額度尚未串接，屬未來正式版功能。'
-                  : 'You are in Guest Mode. (Demo) Sign-in is a local mock that creates a fixed fake account and unlocks scanning on-device; favorites sync and the 100 free monthly scans are not wired up yet — they arrive in the future production version.'}
-              </Text>
-
-              <View style={styles.authActionRow}>
-                <TouchableOpacity style={styles.loginBtnGoogle} onPress={loginWithGoogle}>
-                  <Text style={styles.loginBtnTextGoogle}>
-                  {preferredLanguage === 'zh' ? 'Sign in with Google（模擬）' : 'Sign in with Google (Mock)'}
-                </Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.loginBtnApple} onPress={loginWithApple}>
-                  <Text style={styles.loginBtnTextApple}> {preferredLanguage === 'zh' ? 'Sign in with Apple（模擬）' : 'Sign in with Apple (Mock)'}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-                <Text style={styles.logoutBtnText}>
-                  {preferredLanguage === 'zh' ? '回到首頁 Onboarding' : 'Back to Onboarding'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.sessionContainer}>
-              <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>Internal User ID {preferredLanguage === 'zh' ? '（模擬）' : '(Mock)'}</Text>
-                <Text style={styles.userIdValue} numberOfLines={1} ellipsizeMode="middle">
-                  {session.internalUserId}
-                </Text>
-              </View>
-
-              <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '訂閱權限（模擬）' : 'Subscription Tier (Mock)'}</Text>
-                <View style={styles.tierContainer}>
-                  <Text style={[
-                    styles.userValue, 
-                    session.role === 'subscriber' ? styles.subscriberText : styles.freeText
-                  ]}>
-                    {session.role === 'subscriber' 
-                      ? (preferredLanguage === 'zh' ? '⭐ 訂閱版會員 (Subscriber)' : '⭐ Premium Subscriber')
-                      : (preferredLanguage === 'zh' ? '🟢 免費版會員 (Free)' : '🟢 Free Tier')
-                    }
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.userInfoRow}>
-                <Text style={styles.userLabel}>{preferredLanguage === 'zh' ? '每月掃描次數（本機模擬）' : 'Monthly Scans (Local Mock)'}</Text>
-                <Text style={styles.userValue}>
-                  {session.role === 'subscriber' 
-                    ? (preferredLanguage === 'zh' ? '♾️ 無限 (Unlimited)' : '♾️ Unlimited')
-                    : `${session.scanCount} / 100`
-                  }
-                </Text>
-              </View>
-
-              {/* 模擬訂閱按鈕 */}
-              <TouchableOpacity style={styles.mockUpgradeBtn} onPress={toggleSubscription}>
-                <Text style={styles.mockUpgradeBtnText}>
-                  {session.role === 'subscriber'
-                    ? (preferredLanguage === 'zh' ? '🔄 模擬降級至免費版' : '🔄 Mock Downgrade to Free')
-                    : (preferredLanguage === 'zh' ? '⚡ 模擬升級訂閱版會員' : '⚡ Mock Upgrade to Premium')
-                  }
-                </Text>
-              </TouchableOpacity>
-
-              <Text style={styles.identitiesTitle}>
-                {preferredLanguage === 'zh' ? '已綁定登入方式（模擬資料）' : 'Linked Providers (Mock Data)'}
-              </Text>
-
-              {session.identities.map((identity) => (
-                <View key={identity.provider} style={styles.identityCard}>
-                  <View style={styles.identityHeader}>
-                    <Text style={styles.providerBadge}>
-                      {identity.provider === 'google' ? '🟢 Google' : '⚫ Apple'}
-                    </Text>
-                    
-                    {session.identities.length > 1 && (
-                      <TouchableOpacity 
-                        style={styles.unlinkBtn}
-                        onPress={() => handleUnlinkProvider(identity.provider)}
-                      >
-                        <Text style={styles.unlinkBtnText}>
-                          {preferredLanguage === 'zh' ? '解除綁定' : 'Unlink'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <View style={styles.identityBody}>
-                    <Text style={styles.identityText}>📝 {identity.displayName}</Text>
-                    <Text style={styles.identityText}>📧 {identity.email}</Text>
-                    <Text style={styles.identityText}>🆔 {identity.providerId}</Text>
-                  </View>
-                </View>
-              ))}
-
-              {/* 未綁定選項 */}
-              {(!hasGoogle || !hasApple) && (
-                <View style={styles.unlinkedSection}>
-                  <Text style={styles.unlinkedTitle}>
-                    {preferredLanguage === 'zh' ? '可用帳號綁定' : 'Available to Link'}
-                  </Text>
-                  <View style={styles.unlinkBtnRow}>
-                    {!hasGoogle && (
-                      <TouchableOpacity 
-                        style={styles.linkActionBtn} 
-                        onPress={() => handleLinkProvider('google')}
-                      >
-                        <Text style={styles.linkActionText}>🔗 綁定 Google{preferredLanguage === 'zh' ? '（模擬）' : ' (Mock)'}</Text>
-                      </TouchableOpacity>
-                    )}
-                    {!hasApple && (
-                      <TouchableOpacity 
-                        style={styles.linkActionBtn} 
-                        onPress={() => handleLinkProvider('apple')}
-                      >
-                        <Text style={styles.linkActionText}>🔗 綁定 Apple{preferredLanguage === 'zh' ? '（模擬）' : ' (Mock)'}</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              )}
-
-              <View style={styles.authActionRow}>
-                <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-                  <Text style={styles.logoutBtnText}>
-                    {preferredLanguage === 'zh' ? '登出' : 'Sign Out'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteAccount}>
-                  <Text style={styles.deleteBtnText}>
-                    {preferredLanguage === 'zh' ? '刪除帳號與資料（本機）' : 'Delete Account (Local)'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
 
         {/* ── 語言設定 ── */}
         <View style={styles.section}>
@@ -423,9 +61,9 @@ export default function SettingsScreen() {
             ))}
           </View>
           <Text style={styles.hint}>
-            {preferredCurrency === 'TWD' && '價格以新台幣顯示（¥100 ≈ NT$0.22）'}
+            {preferredCurrency === 'TWD' && '價格以新台幣顯示（¥100 ≈ NT$22）'}
             {preferredCurrency === 'JPY' && '價格以日圓原價顯示'}
-            {preferredCurrency === 'USD' && '價格以美元顯示（¥100 ≈ $0.0067）'}
+            {preferredCurrency === 'USD' && '價格以美元顯示（¥100 ≈ $0.67）'}
           </Text>
         </View>
 
@@ -437,16 +75,26 @@ export default function SettingsScreen() {
           <Text style={styles.item}>📈 匯率：JP¥1 = NT$0.22 = $0.0067</Text>
         </View>
 
-        {/* ── 條款與支援 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📄 條款與政策</Text>
-          <TouchableOpacity style={styles.policyRow} onPress={handleOpenPrivacy}>
-            <Text style={styles.policyLink}>🔒 隱私權政策 (Privacy Policy)</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.policyRow} onPress={handleOpenSupport}>
-            <Text style={styles.policyLink}>🛠️ 技術支援與常見問題 (Support & FAQ)</Text>
-          </TouchableOpacity>
-        </View>
+        {/* ── 帳號 ── */}
+        {isAuthenticated && user && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>🔐 帳號</Text>
+            <View style={styles.accountInfo}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {(user.displayName || user.primaryEmail || '?')[0].toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.accountDetails}>
+                <Text style={styles.accountName}>{user.displayName}</Text>
+                <Text style={styles.accountEmail}>{user.primaryEmail}</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+              <Text style={styles.logoutText}>登出</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <Text style={styles.footer}>專為 hololive PCG 玩家打造</Text>
       </ScrollView>
@@ -483,252 +131,6 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
-  },
-  demoBanner: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderColor: '#ef4444',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  demoBannerText: {
-    color: '#ef4444',
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '600',
-  },
-  authContainer: {
-    backgroundColor: COLORS.surface,
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  authDesc: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  loginBtnGoogle: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1.41,
-    elevation: 2,
-    width: '100%',
-  },
-  loginBtnTextGoogle: {
-    color: '#1f1f1f',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  loginBtnApple: {
-    backgroundColor: '#000000',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#333333',
-    width: '100%',
-  },
-  loginBtnTextApple: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  loginBtnGuest: {
-    backgroundColor: COLORS.surfaceLight,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    width: '100%',
-  },
-  loginBtnTextGuest: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  authPrivacyNote: {
-    color: COLORS.textSecondary + 'aa',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 4,
-  },
-  sessionContainer: {
-    backgroundColor: COLORS.surface,
-    padding: 16,
-    borderRadius: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  userInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  userLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
-  userValue: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  userIdValue: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-    maxWidth: '60%',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  tierContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  subscriberText: {
-    color: '#f59e0b', // Gold color for premium
-    fontWeight: 'bold',
-  },
-  freeText: {
-    color: '#10b981', // Green for free
-  },
-  mockUpgradeBtn: {
-    backgroundColor: COLORS.primary + '15',
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  mockUpgradeBtnText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  identitiesTitle: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  identityCard: {
-    backgroundColor: COLORS.surfaceLight,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 8,
-  },
-  identityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  providerBadge: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  unlinkBtn: {
-    backgroundColor: '#ef4444' + '15',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#ef4444',
-  },
-  unlinkBtnText: {
-    color: '#ef4444',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  identityBody: {
-    gap: 2,
-  },
-  identityText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  unlinkedSection: {
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  unlinkedTitle: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  unlinkBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  linkActionBtn: {
-    flex: 1,
-    backgroundColor: COLORS.surfaceLight,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  linkActionText: {
-    color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  authActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-    width: '100%',
-  },
-  logoutBtn: {
-    backgroundColor: COLORS.surfaceLight,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: 8,
-  },
-  logoutBtnText: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  deleteBtn: {
-    flex: 1,
-    backgroundColor: '#ef4444' + '15',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ef4444',
-  },
-  deleteBtnText: {
-    color: '#ef4444',
-    fontSize: 14,
-    fontWeight: '600',
   },
   optionRow: {
     flexDirection: 'row',
@@ -769,24 +171,56 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingLeft: 8,
   },
-  policyRow: {
-    backgroundColor: COLORS.surface,
-    padding: 14,
-    borderRadius: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  policyLink: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
   footer: {
     color: COLORS.textSecondary,
     fontSize: 12,
     textAlign: 'center',
     marginTop: 20,
     marginBottom: 20,
+  },
+  accountInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  avatarText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  accountDetails: {
+    flex: 1,
+  },
+  accountName: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  accountEmail: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  logoutButton: {
+    backgroundColor: COLORS.error + '22',
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  logoutText: {
+    color: COLORS.error,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

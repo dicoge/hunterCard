@@ -1,251 +1,173 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
-import { useWatchlistStore } from '../stores/watchlistStore';
-import { useScanSessionStore } from '../stores/scanSessionStore';
+import {
+  HoloUser,
+  AuthTokens,
+  AuthProvider,
+  UserRole,
+} from '../types/auth';
+import {
+  signInWithProvider,
+  linkProvider,
+  unlinkProvider,
+  deleteAccount,
+  providerSignOut,
+} from '../services/authService';
 
-export type UserRole = 'guest' | 'free_user' | 'subscriber';
-
-export interface UserIdentity {
-  email: string;
-  displayName: string;
-  provider: 'google' | 'apple';
-  providerId: string;
-}
-
-export interface UserSession {
-  internalUserId: string;
+interface AuthStore {
+  user: HoloUser | null;
+  tokens: AuthTokens | null;
+  isAuthenticated: boolean;
+  isGuest: boolean;
+  isLoading: boolean;
+  error: string | null;
   role: UserRole;
-  identities: UserIdentity[];
-  scanCount: number; // monthly scans count
+
+  loginWithGoogle: () => Promise<void>;
+  loginWithApple: () => Promise<void>;
+  continueAsGuest: () => void;
+  linkNewProvider: (provider: AuthProvider) => Promise<void>;
+  removeLinkedProvider: (provider: AuthProvider) => Promise<void>;
+  logout: () => Promise<void>;
+  deleteUserAccount: () => Promise<void>;
+  clearError: () => void;
+  setRole: (role: UserRole) => void;
 }
 
-interface AuthState {
-  isLoggedIn: boolean;
-  session: UserSession | null;
-  loginWithGoogle: () => void;
-  loginWithApple: () => void;
-  loginAsGuest: () => void;
-  linkGoogle: (forceCollision?: boolean) => boolean; // returns true if linked successfully, false if collision
-  linkApple: (forceCollision?: boolean) => boolean;  // returns true if linked successfully, false if collision
-  unlinkProvider: (provider: 'google' | 'apple') => boolean;
-  incrementScanCount: () => boolean; // returns true if scan is allowed, false otherwise
-  toggleSubscription: () => void;    // toggles role between free_user and subscriber for testing
-  logout: () => void;
-  deleteAccount: () => void;
-  // Merges a collided mock identity into the current user
-  mergeMockIdentity: (identity: UserIdentity) => void;
-}
-
-export const useAuthStore = create<AuthState>()(
+export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
-      isLoggedIn: false,
-      session: null,
+      user: null,
+      tokens: null,
+      isAuthenticated: false,
+      isGuest: false,
+      isLoading: false,
+      error: null,
+      role: 'guest',
 
-      loginWithGoogle: () => {
-        set({
-          isLoggedIn: true,
-          session: {
-            internalUserId: 'user_u78291a2bc90',
+      loginWithGoogle: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          const { user, tokens } = await signInWithProvider('google');
+          set({
+            user,
+            tokens,
+            isAuthenticated: true,
+            isGuest: false,
+            isLoading: false,
             role: 'free_user',
-            identities: [
-              {
-                email: 'holofan@gmail.com',
-                displayName: 'Holo Fan (Google)',
-                provider: 'google',
-                providerId: 'g_1092837465241',
-              },
-            ],
-            scanCount: 15, // starts with mock scan count
-          },
+          });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Login failed' });
+          throw err;
+        }
+      },
+
+      loginWithApple: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          const { user, tokens } = await signInWithProvider('apple');
+          set({
+            user,
+            tokens,
+            isAuthenticated: true,
+            isGuest: false,
+            isLoading: false,
+            role: 'free_user',
+          });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Login failed' });
+          throw err;
+        }
+      },
+
+      continueAsGuest: () => {
+        set({
+          user: null,
+          tokens: null,
+          isAuthenticated: false,
+          isGuest: true,
+          role: 'guest',
+          isLoading: false,
+          error: null,
         });
       },
 
-      loginWithApple: () => {
+      linkNewProvider: async (provider) => {
+        const { user } = get();
+        if (!user) throw new Error('No authenticated user');
+        set({ isLoading: true, error: null });
+        try {
+          const updatedUser = await linkProvider(user, provider);
+          set({ user: updatedUser, isLoading: false });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Failed to link provider' });
+          throw err;
+        }
+      },
+
+      removeLinkedProvider: async (provider) => {
+        const { user } = get();
+        if (!user) throw new Error('No authenticated user');
+        set({ isLoading: true, error: null });
+        try {
+          const updatedUser = await unlinkProvider(user, provider);
+          set({ user: updatedUser, isLoading: false });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Failed to unlink provider' });
+          throw err;
+        }
+      },
+
+      logout: async () => {
+        const { tokens } = get();
+        await providerSignOut(tokens);
         set({
-          isLoggedIn: true,
-          session: {
-            internalUserId: 'user_u78291a2bc90',
-            role: 'free_user',
-            identities: [
-              {
-                email: 'holofan@icloud.com',
-                displayName: 'Holo Fan (Apple)',
-                provider: 'apple',
-                providerId: 'ap_88273619472',
-              },
-            ],
-            scanCount: 15,
-          },
+          user: null,
+          tokens: null,
+          isAuthenticated: false,
+          isGuest: false,
+          isLoading: false,
+          error: null,
+          role: 'guest',
         });
       },
 
-      loginAsGuest: () => {
-        set({
-          isLoggedIn: true,
-          session: {
-            internalUserId: 'guest_user',
+      deleteUserAccount: async () => {
+        const { user } = get();
+        if (!user) throw new Error('No authenticated user');
+        set({ isLoading: true, error: null });
+        try {
+          await deleteAccount(user);
+          set({
+            user: null,
+            tokens: null,
+            isAuthenticated: false,
+            isGuest: false,
+            isLoading: false,
+            error: null,
             role: 'guest',
-            identities: [],
-            scanCount: 0,
-          },
-        });
+          });
+        } catch (err: any) {
+          set({ isLoading: false, error: err.message || 'Failed to delete account' });
+          throw err;
+        }
       },
 
-      linkGoogle: (forceCollision = false) => {
-        const { session } = get();
-        if (!session) return false;
-
-        // If user already has google linked, do nothing
-        if (session.identities.some(id => id.provider === 'google')) {
-          return true;
-        }
-
-        if (forceCollision) {
-          // Simulate account collision (Google belongs to another user)
-          return false;
-        }
-
-        const newIdentity: UserIdentity = {
-          email: 'holofan@gmail.com',
-          displayName: 'Holo Fan (Google)',
-          provider: 'google',
-          providerId: 'g_1092837465241',
-        };
-
-        set({
-          session: {
-            ...session,
-            identities: [...session.identities, newIdentity],
-          },
-        });
-        return true;
-      },
-
-      linkApple: (forceCollision = false) => {
-        const { session } = get();
-        if (!session) return false;
-
-        // If user already has apple linked, do nothing
-        if (session.identities.some(id => id.provider === 'apple')) {
-          return true;
-        }
-
-        if (forceCollision) {
-          // Simulate account collision (Apple belongs to another user)
-          return false;
-        }
-
-        const newIdentity: UserIdentity = {
-          email: 'holofan@icloud.com',
-          displayName: 'Holo Fan (Apple)',
-          provider: 'apple',
-          providerId: 'ap_88273619472',
-        };
-
-        set({
-          session: {
-            ...session,
-            identities: [...session.identities, newIdentity],
-          },
-        });
-        return true;
-      },
-
-      unlinkProvider: (provider) => {
-        const { session } = get();
-        if (!session) return false;
-
-        // Cannot unlink if there is only 1 provider left
-        if (session.identities.length <= 1) {
-          return false;
-        }
-
-        set({
-          session: {
-            ...session,
-            identities: session.identities.filter(id => id.provider !== provider),
-          },
-        });
-        return true;
-      },
-
-      incrementScanCount: () => {
-        const { session } = get();
-        if (!session) return false;
-
-        if (session.role === 'guest') {
-          return false; // Guest cannot scan at all
-        }
-
-        if (session.role === 'subscriber') {
-          return true; // Subscriber has unlimited scans
-        }
-
-        // For free user, check limit
-        if (session.scanCount >= 100) {
-          return false; // Limit exceeded
-        }
-
-        set({
-          session: {
-            ...session,
-            scanCount: session.scanCount + 1,
-          },
-        });
-        return true;
-      },
-
-      toggleSubscription: () => {
-        const { session } = get();
-        if (!session || session.role === 'guest') return;
-
-        const nextRole = session.role === 'free_user' ? 'subscriber' : 'free_user';
-        set({
-          session: {
-            ...session,
-            role: nextRole,
-          },
-        });
-      },
-
-      logout: () => {
-        set({ isLoggedIn: false, session: null });
-      },
-
-      deleteAccount: () => {
-        // Local-only mock: there is no cloud account/data at this stage, so this
-        // clears every persisted local store that holds user content — the auth
-        // session, the watchlist, and the scan session (scanned cards). A cloud
-        // deletion channel (email/backend) is only planned for future production.
-        try {
-          useWatchlistStore.setState({ items: [] });
-        } catch (e) {
-          console.warn('Failed to clear watchlist:', e);
-        }
-        try {
-          useScanSessionStore.getState().clearSession();
-        } catch (e) {
-          console.warn('Failed to clear scan session:', e);
-        }
-        set({ isLoggedIn: false, session: null });
-      },
-
-      mergeMockIdentity: (identity) => {
-        const { session } = get();
-        if (!session) return;
-        set({
-          session: {
-            ...session,
-            identities: [...session.identities.filter(id => id.provider !== identity.provider), identity],
-          },
-        });
-      },
+      clearError: () => set({ error: null }),
+      setRole: (role) => set({ role }),
     }),
     {
-      name: 'hunterCard-auth-v3',
+      name: 'holohunter-auth',
       storage: createJSONStorage(() => platformStorage),
+      partialize: (state) => ({
+        user: state.user,
+        tokens: state.tokens,
+        isAuthenticated: state.isAuthenticated,
+        isGuest: state.isGuest,
+        role: state.role,
+      }),
     }
   )
 );

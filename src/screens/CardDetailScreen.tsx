@@ -8,13 +8,23 @@ import { useWatchlistStore } from '../stores/watchlistStore';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
-import { useAuthStore } from '../store/authStore';
+import { useBreakpoint } from '../hooks/useBreakpoint';
+import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
 
 const { width } = Dimensions.get('window');
 
 const gradeLabels: Record<string, string> = { debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot' };
 const typeLabels: Record<string, string> = { Oshi: '推し（主推卡）', Member: '成員', Support: '支援卡', Energy: '能量', Buzz: 'Buzz' };
 const rarityColors: Record<string, string> = { N: '#6b7280', C: '#6b7280', U: '#10b981', R: '#3b82f6', SR: '#f59e0b' };
+const japaneseKanaRegex = /[\u3040-\u309F\u30A0-\u30FF]/;
+
+function containsJapaneseKana(value: unknown): boolean {
+  if (typeof value === 'string') return japaneseKanaRegex.test(value);
+  if (Array.isArray(value)) return value.some(containsJapaneseKana);
+  if (value && typeof value === 'object') return Object.values(value).some(containsJapaneseKana);
+  return false;
+}
+
 function parseEffects(keywords: string[]): string[] {
   if (!keywords) return [];
   // Keywords: [0]=JP name, [1]=TW name, [2]=EN name, [3+]=effects
@@ -60,8 +70,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const [imageError, setImageError] = useState(false);
   const insets = useSafeAreaInsets();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
-  const { isLoggedIn, session, loginWithGoogle, loginWithApple, toggleSubscription } = useAuthStore();
-  const isSubscriber = session?.role === 'subscriber';
+  const { isDesktop } = useBreakpoint();
 
   if (!card) {
     return (
@@ -80,6 +89,13 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
   const typeLabel = typeLabels[card.type] || card.type || '-';
+  const skillsZhContainsJapanese = containsJapaneseKana(card.skillsZh);
+  const displaySkills = preferredLanguage === 'zh'
+    ? (skillsZhContainsJapanese ? (card.skillsJp || card.skillsZh) : (card.skillsZh || card.skillsJp))
+    : (card.skillsJp || card.skillsZh);
+  const skillsFallbackNote = preferredLanguage === 'zh' && skillsZhContainsJapanese && card.skillsJp
+    ? '暫無中文翻譯'
+    : undefined;
 
   const effects = card.effects || parseEffects(allKW);
   const colorNames = card.colorNames && card.colorNames.length > 0
@@ -156,7 +172,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingBottom: insets.bottom }}>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={isDesktop ? styles.scrollDesktop : undefined}>
+      <View style={isDesktop ? styles.twoCol : styles.oneCol}>
+      <View style={isDesktop ? styles.leftCol : undefined}>
       {/* ====== CARD IMAGE ====== */}
       <View style={[styles.imageArea, { backgroundColor: rarityColors[rarityKey] + '0a' }]}>
         {!imageError ? (
@@ -180,6 +198,8 @@ export default function CardDetailScreen({ route, navigation }: any) {
           </TouchableOpacity>
         )}
       </View>
+      </View>
+      <View style={isDesktop ? styles.rightCol : undefined}>
 
       {/* ====== PRICE SECTION ====== */}
       <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]}>
@@ -227,112 +247,61 @@ export default function CardDetailScreen({ route, navigation }: any) {
       {trend && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
-          {isSubscriber ? (
-            <>
-              <View style={styles.mockNotice}>
-                <Text style={styles.mockNoticeText}>
-                  {preferredLanguage === 'zh'
-                    ? '⚠️ 示範版本：此訂閱權限為本機模擬，並未經過真實付款或帳號驗證。以下預測數據僅供介面展示，非正式訂閱服務。'
-                    : '⚠️ Demo build: this subscriber access is a local mock — no real payment or account verification occurred. The forecast below is for UI demonstration only, not a real subscription service.'}
-                </Text>
+          <PriceTrendBadge
+            trend={trend.trend}
+            score={trend.score}
+            confidence={trend.confidence}
+            compact={false}
+          />
+          {/* 各項因子貢獻 */}
+          <View style={styles.componentSection}>
+            <Text style={styles.componentTitle}>因子貢獻</Text>
+            <View style={styles.componentRow}>
+              <Text style={styles.componentLabel}>📊 價格趨勢 (60%)</Text>
+              <View style={styles.componentBarBg}>
+                <View style={[styles.componentBarFill, {
+                  width: `${Math.min(Math.abs(trend.components.priceTrend) * 100, 100)}%`,
+                  backgroundColor: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
+                }]} />
               </View>
-              <PriceTrendBadge
-                trend={trend.trend}
-                score={trend.score}
-                confidence={trend.confidence}
-                compact={false}
-              />
-              {/* 各項因子貢獻 */}
-              <View style={styles.componentSection}>
-                <Text style={styles.componentTitle}>因子貢獻</Text>
-                <View style={styles.componentRow}>
-                  <Text style={styles.componentLabel}>📊 價格趨勢 (60%)</Text>
-                  <View style={styles.componentBarBg}>
-                    <View style={[styles.componentBarFill, {
-                      width: `${Math.min(Math.abs(trend.components.priceTrend) * 100, 100)}%`,
-                      backgroundColor: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
-                    }]} />
-                  </View>
-                  <Text style={[styles.componentValue, {
-                    color: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
-                  }]}>
-                    {(trend.components.priceTrend * 100).toFixed(0)}%
-                  </Text>
-                </View>
-                <View style={styles.componentRow}>
-                  <Text style={styles.componentLabel}>📺 YT 訂閱 (20%)</Text>
-                  <View style={styles.componentBarBg}>
-                    <View style={[styles.componentBarFill, {
-                      width: `${Math.min(Math.abs(trend.components.ytTrend) * 200, 100)}%`,
-                      backgroundColor: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
-                    }]} />
-                  </View>
-                  <Text style={[styles.componentValue, {
-                    color: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
-                  }]}>
-                    {(trend.components.ytTrend * 100).toFixed(0)}%
-                  </Text>
-                </View>
-                <View style={styles.componentRow}>
-                  <Text style={styles.componentLabel}>📰 新聞情緒 (20%)</Text>
-                  <View style={styles.componentBarBg}>
-                    <View style={[styles.componentBarFill, {
-                      width: `${Math.min(Math.abs(trend.components.newsSentiment) * 100, 100)}%`,
-                      backgroundColor: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
-                    }]} />
-                  </View>
-                  <Text style={[styles.componentValue, {
-                    color: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
-                  }]}>
-                    {(trend.components.newsSentiment * 100).toFixed(0)}%
-                  </Text>
-                </View>
-                <Text style={styles.dataPointsNote}>
-                  基於 {trend.dataPoints} 天的價格資料
-                </Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.premiumLockContainer}>
-              <Text style={styles.premiumLockIcon}>🔒</Text>
-              <Text style={styles.premiumLockTitle}>
-                {preferredLanguage === 'zh' ? '價格趨勢預測 (訂閱會員專屬)' : 'AI Price Forecast (Premium)'}
+              <Text style={[styles.componentValue, {
+                color: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
+              }]}>
+                {(trend.components.priceTrend * 100).toFixed(0)}%
               </Text>
-              <Text style={styles.premiumLockDesc}>
-                {preferredLanguage === 'zh'
-                  ? '（示範）此 Premium 鎖定與解鎖流程為本機模擬，登入與升級皆不會真的驗證帳號或付款。正式版才會以真實訂閱狀態開放 AI 價格波動預測與歷史趨勢因子分析。'
-                  : '(Demo) This premium gate is a local mock — sign-in and upgrade do not authenticate an account or take payment. Real AI forecasts, YT metrics, and sentiment analysis unlock via a real subscription in production.'}
-              </Text>
-
-              {!isLoggedIn || !session || session.role === 'guest' ? (
-                <View style={{ width: '100%', gap: 10, marginTop: 10 }}>
-                  <TouchableOpacity style={styles.premiumLoginBtn} onPress={() => {
-                    loginWithGoogle();
-                    Alert.alert('提示', '已模擬以 Google 登入免費版，請再次點擊解鎖或至設定頁升級訂閱版。');
-                  }}>
-                    <Text style={styles.premiumLoginBtnText}>
-                      {preferredLanguage === 'zh' ? '以 Google 登入免費版（模擬）' : 'Sign in with Google — Free (Mock)'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.premiumLoginBtn, { backgroundColor: '#000' }]} onPress={() => {
-                    loginWithApple();
-                    Alert.alert('提示', '已模擬以 Apple 登入免費版，請再次點擊解鎖或至設定頁升級訂閱版。');
-                  }}>
-                    <Text style={styles.premiumLoginBtnText}>
-                      {preferredLanguage === 'zh' ? '以 Apple 登入免費版（模擬）' : 'Sign in with Apple — Free (Mock)'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity style={styles.premiumUpgradeBtn} onPress={() => {
-                  toggleSubscription();
-                  Alert.alert('已模擬解鎖（測試）', '此為測試/示範模式，未串接真實付款。已模擬切換至訂閱版以解除 Premium 限制。');
-                }}>
-                  <Text style={styles.premiumUpgradeBtnText}>⚡ 模擬解鎖 Premium 預測（測試）</Text>
-                </TouchableOpacity>
-              )}
             </View>
-          )}
+            <View style={styles.componentRow}>
+              <Text style={styles.componentLabel}>📺 YT 訂閱 (20%)</Text>
+              <View style={styles.componentBarBg}>
+                <View style={[styles.componentBarFill, {
+                  width: `${Math.min(Math.abs(trend.components.ytTrend) * 200, 100)}%`,
+                  backgroundColor: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
+                }]} />
+              </View>
+              <Text style={[styles.componentValue, {
+                color: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
+              }]}>
+                {(trend.components.ytTrend * 100).toFixed(0)}%
+              </Text>
+            </View>
+            <View style={styles.componentRow}>
+              <Text style={styles.componentLabel}>📰 新聞情緒 (20%)</Text>
+              <View style={styles.componentBarBg}>
+                <View style={[styles.componentBarFill, {
+                  width: `${Math.min(Math.abs(trend.components.newsSentiment) * 100, 100)}%`,
+                  backgroundColor: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
+                }]} />
+              </View>
+              <Text style={[styles.componentValue, {
+                color: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
+              }]}>
+                {(trend.components.newsSentiment * 100).toFixed(0)}%
+              </Text>
+            </View>
+            <Text style={styles.dataPointsNote}>
+              基於 {trend.dataPoints} 天的價格資料
+            </Text>
+          </View>
         </View>
       )}
 
@@ -364,7 +333,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
 
       {/* ====== SKILLS / EFFECTS ====== */}
-      <SkillsPanel skills={preferredLanguage === 'zh' ? (card.skillsZh || card.skillsJp) : (card.skillsJp || card.skillsZh)} />
+      <SkillsPanel skills={displaySkills} fallbackNote={skillsFallbackNote} />
 
       {/* ====== MARKET DATA ====== */}
       <MarketDataPanel card={card} />
@@ -420,6 +389,8 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
 
       <View style={{ height: 20 }} />
+      </View>
+      </View>
     </ScrollView>
     </SafeAreaView>
   );
@@ -454,7 +425,7 @@ function SkillCard({ badge, badgeColor, meta, name, effect }: {
   );
 }
 
-function SkillsPanel({ skills }: { skills?: Skills }) {
+function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?: string }) {
   const hasAny = skills && (
     skills.oshiSkill || skills.spOshiSkill ||
     (skills.arts && skills.arts.length) ||
@@ -503,6 +474,7 @@ function SkillsPanel({ skills }: { skills?: Skills }) {
           {skills!.keywords?.map((kw, i) => (
             <SkillCard key={`kw${i}`} badge={kw.label || 'キーワード'} effect={kw.effect} />
           ))}
+          {fallbackNote ? <Text style={styles.skillFallbackNote}>{fallbackNote}</Text> : null}
         </>
       )}
     </View>
@@ -519,8 +491,23 @@ function formatCount(n?: number | null): string {
 }
 
 function MarketDataPanel({ card }: { card: any }) {
-  const sellPrice = card?.sellPrice ?? null;   // 遊々亭賣出價（買入成本）
-  const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）
+  // 同名卡不同 rarity/パラレル/サイン 版的價格都在 card.prices 內；卡號層級的
+  // sellPrice 是「所有版本最低價」，直接顯示會混版。改成依詳情頁這張卡對齊版本。
+  const versions = buildPriceVersions(card);
+  const multiVersion = versions.length > 1;
+  const resolution = resolveVersionForCard(card, versions);
+  // null = 尚未手動選擇；此時沿用自動對齊結果。使用者一旦點選版本即視為已確認。
+  const [override, setOverride] = useState<number | null>(null);
+  const selectedIdx = Math.min(Math.max(override ?? resolution.index, 0), versions.length - 1);
+  const selectedVersion = versions[selectedIdx] ?? null;
+  // 只有「自動唯一對齊」或「使用者手動選過」才算已對齊；否則版本待確認，不把價格當成本卡版本價。
+  const aligned = resolution.confident || override != null;
+  const manualPick = override != null && !resolution.confident;
+  const sellPrice = aligned ? (selectedVersion?.sellPrice ?? null) : null; // 對齊版本後的遊々亭賣價（買入成本）
+  const versionLabel = selectedVersion?.name ?? card?.series ?? '';
+
+  const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
+  const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）— 資料僅卡號層級、未分版
   const ytStats = card?.ytStats ?? null;
   const priceHistory = card?.priceHistory ?? null;
 
@@ -531,11 +518,13 @@ function MarketDataPanel({ card }: { card: any }) {
   let priceChangePct: number | null = null;
   let recentAvg: number | null = null;
   let priorAvg: number | null = null;
+  let latestHistoryValue: number | null = null;
   if (priceHistory != null && typeof priceHistory === 'object') {
     const entries = Object.entries(priceHistory)
       .map(([d, p]) => [d, Number(p)] as [string, number])
       .filter(([d, p]) => !isNaN(p) && p > 0 && !isNaN(Date.parse(d)))
       .sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length >= 1) latestHistoryValue = entries[entries.length - 1][1];
     if (entries.length >= 2) {
       const latestMs = Date.parse(entries[entries.length - 1][0]);
       const DAY_MS = 86400000;
@@ -556,42 +545,83 @@ function MarketDataPanel({ card }: { card: any }) {
       }
     }
   }
-  const hasHistory = priceTrend != null;
+  // priceHistory 只有卡號層級（實測僅追蹤最低價版本），非各版本獨立。若最新歷史值與
+  // 目前選中版本價格差距過大，這段歷史不代表本版本 → 不顯示，避免又是混版數據。
+  const historyRepresentsVersion =
+    latestHistoryValue != null &&
+    typeof sellPrice === 'number' && sellPrice > 0 &&
+    Math.abs(latestHistoryValue - sellPrice) / sellPrice <= 0.15;
+  const hasHistory = priceTrend != null && historyRepresentsVersion;
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
-  // 收購價超過賣價 10 倍幾乎必是資料對齊錯誤（例：低稀有度卡誤標高稀有度收購價）。
-  // 資料層修好前，寧可標示不可靠也不要顯示假的暴利差價。
+  // 收購價（未分版）超過選中版本賣價 10 倍幾乎必是版本對不上（例：選了最低價版本，
+  // 卻配到高稀有度的收購價）。與其顯示假暴利差價，寧可標示待確認。
   const isPriceReliable = !hasSpread || buyPrice <= sellPrice * 10;
 
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>📊 市場數據</Text>
 
+      {/* 版本選擇 — 對齊 rarity/パラレル/サイン 版，避免混版價格 */}
+      {aligned && versionLabel ? (
+        <Text style={styles.versionLabel}>
+          價格對應版本：{versionLabel}{manualPick ? '（已手動選擇）' : ''}
+        </Text>
+      ) : null}
+      {!aligned ? (
+        <View style={styles.versionWarnBox}>
+          <Text style={styles.versionWarnTitle}>⚠️ 版本待確認</Text>
+          <Text style={styles.versionWarnText}>
+            無法依此卡 rarity{displayRarity ? `「${displayRarity}」` : ''}唯一對齊價格版本（{resolution.reason}）。
+            以下價格未分版，請先選擇實際版本再參考。
+          </Text>
+        </View>
+      ) : null}
+      {multiVersion ? (
+        <View style={styles.versionRow}>
+          {versions.map((v, i) => {
+            const active = aligned && i === selectedIdx;
+            return (
+              <TouchableOpacity
+                key={`${v.name}-${i}`}
+                style={[styles.versionChip, active ? styles.versionChipActive : null]}
+                onPress={() => setOverride(i)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.versionChipText, active ? styles.versionChipTextActive : null]} numberOfLines={1}>
+                  {v.name}　¥{(v.sellPrice ?? 0).toLocaleString()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
+
       {/* 買賣差價 */}
       {hasSpread ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>💱 買賣差價</Text>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
+            <Text style={styles.marketLabel}>買入成本（遊々亭賣價 · {versionLabel}）</Text>
             <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
           </View>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
+            <Text style={styles.marketLabel}>賣出可得（店家收購 · 未分版）</Text>
             <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
           </View>
-          <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>差價</Text>
-            {isPriceReliable ? (
+          {isPriceReliable ? (
+            <View style={styles.marketRow}>
+              <Text style={styles.marketLabel}>差價</Text>
               <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
                 {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
               </Text>
             ) : (
               <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
                 ⚠️ 價格待確認
-              </Text>
             )}
           </View>
+          <Text style={styles.marketNote}>※ 收購價為卡號整體資料，未依版本細分，差價僅供參考</Text>
         </View>
       ) : null}
 
@@ -630,11 +660,11 @@ function MarketDataPanel({ card }: { card: any }) {
         ) : null}
       </View>
 
-      {/* 漲跌判斷 */}
+      {/* 漲跌判斷 — 僅在歷史代表目前選中版本時顯示 */}
       {hasHistory ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>
-            {priceTrend === 'up' ? '📈' : priceTrend === 'down' ? '📉' : '➖'} 漲跌判斷
+            {priceTrend === 'up' ? '📈' : priceTrend === 'down' ? '📉' : '➖'} 漲跌判斷（{versionLabel}）
           </Text>
           <View style={styles.marketRow}>
             <Text style={styles.marketLabel}>前 7 日均價</Text>
@@ -650,6 +680,13 @@ function MarketDataPanel({ card }: { card: any }) {
               {priceTrend === 'up' ? '▲' : priceTrend === 'down' ? '▼' : '▬'} {priceChangePct! >= 0 ? '+' : ''}{priceChangePct!.toFixed(1)}%
             </Text>
           </View>
+        </View>
+      ) : aligned && priceTrend != null ? (
+        <View style={styles.marketBlock}>
+          <Text style={styles.marketBlockTitle}>➖ 漲跌判斷</Text>
+          <Text style={styles.marketNote}>
+            此版本（{versionLabel}）暫無歷史均價：歷史資料僅追蹤卡號最低價版本，與目前版本不符，故不顯示以免混版。
+          </Text>
         </View>
       ) : null}
     </View>
@@ -686,6 +723,13 @@ function LinkButton({ icon, text, url }: { icon: string; text: string; url: stri
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
+
+  // Desktop two-column layout
+  scrollDesktop: { alignItems: 'center' },
+  oneCol: { width: '100%' },
+  twoCol: { flexDirection: 'row', width: '100%', maxWidth: 1040, alignItems: 'flex-start' },
+  leftCol: { width: 420 },
+  rightCol: { flex: 1 },
 
   // Image area
   imageArea: { width: '100%', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.border + '44', paddingHorizontal: 12, paddingVertical: 16 },
@@ -739,6 +783,7 @@ const styles = StyleSheet.create({
   skillMeta: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '600' },
   skillName: { fontSize: 15, fontWeight: 'bold', color: COLORS.text, marginBottom: 4 },
   skillEffect: { fontSize: 13, lineHeight: 21, color: COLORS.text + 'cc' },
+  skillFallbackNote: { fontSize: 12, color: COLORS.textSecondary, marginTop: 8 },
   noSkillText: { fontSize: 13, color: COLORS.textSecondary + 'aa', fontStyle: 'italic' },
 
   // Tags
@@ -763,6 +808,12 @@ const styles = StyleSheet.create({
   marketLabel: { fontSize: 13, color: COLORS.textSecondary, flex: 1, marginRight: 8 },
   marketValue: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   marketValueStrong: { fontSize: 15, fontWeight: 'bold' },
+  marketNote: { fontSize: 11, color: COLORS.textSecondary + '99', marginTop: 6, lineHeight: 16 },
+
+  // Version selector (market data)
+  versionLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 8, fontWeight: '600' },
+  versionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  versionChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border + '88' },
 
   // Trend prediction section
   componentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '44' },
@@ -773,71 +824,4 @@ const styles = StyleSheet.create({
   componentBarFill: { height: '100%', borderRadius: 3 },
   componentValue: { fontSize: 12, fontWeight: '700', width: 45, textAlign: 'right' },
   dataPointsNote: { fontSize: 11, color: COLORS.textSecondary + '88', marginTop: 6, textAlign: 'center' },
-  premiumLockContainer: {
-    backgroundColor: COLORS.surfaceLight + 'cc',
-    borderRadius: 12,
-    padding: 20,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 157, 0.2)',
-    marginTop: 8,
-  },
-  premiumLockIcon: {
-    fontSize: 32,
-    marginBottom: 10,
-  },
-  premiumLockTitle: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  premiumLockDesc: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  mockNotice: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderColor: '#ef4444',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  mockNoticeText: {
-    color: '#ef4444',
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '600',
-  },
-  premiumUpgradeBtn: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    width: '100%',
-    alignItems: 'center',
-  },
-  premiumUpgradeBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  premiumLoginBtn: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    width: '100%',
-    alignItems: 'center',
-  },
-  premiumLoginBtnText: {
-    color: '#1f1f1f',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
 });
