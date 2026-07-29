@@ -9,8 +9,8 @@ const PROVIDER_LABEL: Record<string, string> = { apple: 'Apple', google: 'Google
 export default function SettingsScreen() {
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
   const user = useAuthStore((s) => s.user);
-  const signOut = useAuthStore((s) => s.signOut);
-  const deleteAccount = useAuthStore((s) => s.deleteAccount);
+  const signOut = useAuthStore((s) => s.logout);
+  const deleteAccount = useAuthStore((s) => s.deleteUserAccount);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const confirmSignOut = () => {
@@ -30,11 +30,10 @@ export default function SettingsScreen() {
           text: '刪除帳號',
           style: 'destructive',
           onPress: async () => {
-            const result = await deleteAccount();
-            if (result === 'deleted') {
+            try {
+              await deleteAccount();
               Alert.alert('帳號已刪除', '你的帳號與 Apple 授權已撤銷。');
-            } else {
-              // fail-closed：撤銷未確認成功，維持登入狀態，不誤示為已刪除。
+            } catch {
               Alert.alert(
                 '刪除尚未完成',
                 '目前無法確認伺服器端已撤銷 Apple 授權，帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'

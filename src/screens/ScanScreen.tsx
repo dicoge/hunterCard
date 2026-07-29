@@ -427,6 +427,7 @@ export default function ScanScreen({ navigation }: any) {
     );
     const cropImage = makeDataUrl(crop.x, crop.y, crop.width, crop.height, 1536);
     return [fullImage, cropImage];
+  };
 
   // Single role/quota gate, read from live store state (no stale closures — the
   // auto-scan rAF loop calls this outside the render cycle).
@@ -882,7 +883,6 @@ export default function ScanScreen({ navigation }: any) {
     if (commitCard(card)) {
       setRecognizedCard(card);
       setResultCard({ visible: true, card, confidence: 1 });
-    }
     }
   };
   

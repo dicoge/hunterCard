@@ -63,7 +63,6 @@ export interface RecognitionResult {
   /** Top 3-5 alternative matches for the candidate-confirmation UI. */
   candidates?: RecognizedCandidate[];
 }
-}
 
 // ── 資料庫快取 ──
 
@@ -418,7 +417,6 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
         confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
         candidates: mapApiCandidates(data.candidates),
       };
-      };
     }
 
     // API only returned cardNumber — look up locally
@@ -457,22 +455,6 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     console.warn('[cardRecognition] API call failed:', e);
     return { success: false, error: '' };
   }
-}
-
-function mapApiCard(apiCard: any): CardInfo {
-  return {
-    id: apiCard.cardNumber,
-    name: apiCard.name || '',
-    cardNumber: apiCard.cardNumber,
-    type: '',
-    rarity: apiCard.rarity || '',
-    series: apiCard.series || '',
-    sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
-    yuyuName: '',
-    color: '',
-    imageUrl: apiCard.imageUrl || '',
-    prices: apiCard.prices || [],
-  };
 }
 
 /**
