@@ -14,7 +14,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dicoge.holohunter"
+      "bundleIdentifier": "com.dicoge.holohunter",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,9 +28,9 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.dicoge.holohunter",
+      "versionCode": 1,
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -50,6 +54,12 @@
         "expo-ocr-kit",
         {
           "cameraPermission": "允許 HoloHunter 存取相機以識別卡牌文字"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允許 HoloHunter 從相簿選取卡牌圖片以進行辨識"
         }
       ],
       "expo-notifications"
