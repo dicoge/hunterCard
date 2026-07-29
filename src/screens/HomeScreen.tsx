@@ -94,8 +94,8 @@ export default function HomeScreen({ navigation }: any) {
        <View style={isDesktop ? styles.innerDesktop : styles.inner}>
         {/* Hero Section */}
         <View style={styles.hero}>
-          <Text style={styles.heroTitle}>hololive OFFICIAL CARD GAME</Text>
-          <Text style={styles.heroSub}>卡牌查詢</Text>
+          <Text style={styles.heroTitle}>hololive Card Game</Text>
+          <Text style={styles.heroSub}>卡牌查詢 · 非官方工具</Text>
         </View>
 
         {/* Search Input */}
