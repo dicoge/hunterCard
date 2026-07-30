@@ -10,7 +10,7 @@ import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { buildPriceVersions, resolveVersionForCard, PriceVersion } from '../utils/versionAlignment';
+import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
 
 const { width } = Dimensions.get('window');
 
@@ -523,6 +523,17 @@ function MarketDataPanel({ card }: { card: any }) {
   const sellPrice = aligned ? (selectedVersion?.sellPrice ?? null) : null; // 對齊版本後的遊々亭賣價（買入成本）
   const versionLabel = selectedVersion?.name ?? card?.series ?? '';
 
+  // priceHistory / buyPrice 實測只追蹤卡號「最低價版本」。先找出那一版的 index/名稱，
+  // 之後用「選中版本是否就是這一版」來判定歷史是否代表本版本 —— 用版本身分，而非價格接近度。
+  let lowestVersionIdx = -1;
+  for (let i = 0; i < versions.length; i++) {
+    const p = versions[i]?.sellPrice;
+    if (p == null) continue;
+    if (lowestVersionIdx < 0 || p < (versions[lowestVersionIdx].sellPrice ?? Infinity)) lowestVersionIdx = i;
+  }
+  const lowestVersion = lowestVersionIdx >= 0 ? versions[lowestVersionIdx] : null;
+  const lowestVersionName = lowestVersion?.name ?? '';
+
   const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
   const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）— 資料僅卡號層級、未分版
   const ytStats = card?.ytStats ?? null;
@@ -562,12 +573,12 @@ function MarketDataPanel({ card }: { card: any }) {
       }
     }
   }
-  // priceHistory 只有卡號層級（實測僅追蹤最低價版本），非各版本獨立。若最新歷史值與
-  // 目前選中版本價格差距過大，這段歷史不代表本版本 → 不顯示，避免又是混版數據。
+  // priceHistory 只有卡號層級（實測僅追蹤最低價版本），非各版本獨立。歷史是否代表本版本，
+  // 一律以「選中版本 index 是否等於最低價歷史版本」判定 —— 不能用價格接近度替代版本對齊，
+  // 否則例如最低價版 ¥500、平行版 ¥580（差 13.8%）會把 ¥500 的歷史誤掛到 ¥580 平行版上。
   const historyRepresentsVersion =
-    latestHistoryValue != null &&
-    typeof sellPrice === 'number' && sellPrice > 0 &&
-    Math.abs(latestHistoryValue - sellPrice) / sellPrice <= 0.15;
+    aligned && latestHistoryValue != null &&
+    lowestVersionIdx >= 0 && selectedIdx === lowestVersionIdx;
   const hasHistory = priceTrend != null && historyRepresentsVersion;
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
@@ -580,14 +591,6 @@ function MarketDataPanel({ card }: { card: any }) {
   const spreadOutOfRange = hasSpread && buyPrice > sellPrice * 10;
   // 只有收購價能對應到選中版本（單一版本卡）且未超出合理範圍，才顯示差價當主數字。
   const spreadReliable = hasSpread && !buyPriceUnversioned && !spreadOutOfRange;
-
-  // 歷史/收購資料實測只追蹤卡號最低價版本；找出那個版本名稱，讓 UI 能明確標示歷史適用範圍。
-  let lowestVersion: PriceVersion | null = null;
-  for (const v of versions) {
-    if (v.sellPrice == null) continue;
-    if (lowestVersion == null || (lowestVersion.sellPrice ?? Infinity) > v.sellPrice) lowestVersion = v;
-  }
-  const lowestVersionName = lowestVersion?.name ?? '';
 
   return (
     <View style={styles.section}>
@@ -636,30 +639,32 @@ function MarketDataPanel({ card }: { card: any }) {
             <Text style={styles.marketLabel}>買入成本（遊々亭賣價 · {versionLabel}）</Text>
             <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
           </View>
-          <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>賣出可得（店家收購{buyPriceUnversioned ? ' · 未分版' : ''}）</Text>
-            <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
-          </View>
           {spreadReliable ? (
-            <View style={styles.marketRow}>
-              <Text style={styles.marketLabel}>差價</Text>
-              <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
-                {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
-              </Text>
-            </View>
+            <>
+              <View style={styles.marketRow}>
+                <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
+                <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
+              </View>
+              <View style={styles.marketRow}>
+                <Text style={styles.marketLabel}>差價</Text>
+                <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
+                  {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
+                </Text>
+              </View>
+              <Text style={styles.marketNote}>※ 單一版本卡，收購價對應此版本</Text>
+            </>
           ) : (
             <View style={styles.versionWarnBox}>
               <Text style={styles.versionWarnTitle}>
-                {buyPriceUnversioned ? 'ℹ️ 收購未分版，無法計算可靠差價' : '⚠️ 收購價與版本不符，差價待確認'}
+                {buyPriceUnversioned ? 'ℹ️ 收購未分版／待對版' : '⚠️ 收購價與版本不符／待對版'}
               </Text>
               <Text style={styles.versionWarnText}>
                 {buyPriceUnversioned
-                  ? '店家收購價目前只有整張卡號的資料，未依版本細分，無法與「本版本」賣價算出可靠差價，故不顯示以免誤導。'
-                  : '此收購價與選中版本賣價差距過大（很可能對到不同版本），故不顯示差價以免誤導。'}
+                  ? '店家收購價目前只有整張卡號的資料、未依版本細分，無法對應此版本，故不把它當本版本「賣出可得」，也不計算差價（原始收購值可在設定 → 驗證模式查看）。'
+                  : '此收購價與選中版本賣價差距過大（很可能對到不同版本），故不把它當本版本「賣出可得」，也不計算差價（原始收購值可在設定 → 驗證模式查看）。'}
               </Text>
             </View>
           )}
-          <Text style={styles.marketNote}>※ 收購價為卡號整體資料，未依版本細分</Text>
         </View>
       ) : null}
 
@@ -719,11 +724,13 @@ function MarketDataPanel({ card }: { card: any }) {
             </Text>
           </View>
         </View>
-      ) : aligned && priceTrend != null ? (
+      ) : aligned ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>➖ 漲跌判斷</Text>
           <Text style={styles.marketNote}>
-            此版本（{versionLabel}）暫無歷史均價。歷史/爬蟲資料只追蹤最低價版本{lowestVersionName ? `「${lowestVersionName}」` : ''}，與目前版本不同，故不顯示以免混版（該版本的歷史仍持續記錄中，並非白爬）。
+            {historyRepresentsVersion
+              ? `此版本（${versionLabel}）歷史累積中，樣本尚不足以計算 7 日均價變化，稍後再看。`
+              : `此版本（${versionLabel}）暫無歷史均價。歷史/爬蟲資料只追蹤最低價版本${lowestVersionName ? `「${lowestVersionName}」` : ''}，與目前版本不同，故不顯示以免混版（該版本的歷史仍持續記錄中，並非白爬）。`}
           </Text>
         </View>
       ) : null}
