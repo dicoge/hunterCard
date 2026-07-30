@@ -32,13 +32,22 @@ const appleDiscovery = {
 // Google issues a separate OAuth client per app type; a native iOS build must
 // use the iOS client id (custom-scheme redirect), not the web one. Select by
 // Platform.OS so "有 env 時 Google 可登" holds on device, not just on web
-// (DIC-824 CR). Pure selection lives in googleClientConfig for testability.
-const GOOGLE_CLIENT_ID = resolveGoogleClientId(Platform.OS, {
-  web: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  ios: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  android: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-  generic: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-});
+// (DIC-824 CR). In production a native platform missing its own id resolves to
+// '' (button disabled) rather than falling back to a web id that can't complete
+// native OAuth; the generic/web fallback is dev-only (DIC-835 CR). Pure
+// selection lives in googleClientConfig for testability.
+const IS_DEV = typeof __DEV__ !== 'undefined' && __DEV__;
+
+const GOOGLE_CLIENT_ID = resolveGoogleClientId(
+  Platform.OS,
+  {
+    web: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    ios: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    android: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    generic: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+  },
+  { dev: IS_DEV },
+);
 
 const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 

@@ -24,6 +24,18 @@ export interface GoogleClientEnv {
   generic?: string;
 }
 
+export interface ResolveOptions {
+  /**
+   * When true (development builds only), a native platform missing its own
+   * client id may fall back to the generic/web id so a dev can still exercise
+   * the flow. In production this MUST stay false: a web client id on a native
+   * build cannot complete OAuth (wrong redirect type), so returning it would
+   * ship a button that fails on tap. Production returns '' → button disabled
+   * (DIC-835 CR).
+   */
+  dev?: boolean;
+}
+
 const GOOGLE_CLIENT_SUFFIX = '.apps.googleusercontent.com';
 
 function clean(value: string | undefined): string {
@@ -32,24 +44,33 @@ function clean(value: string | undefined): string {
 
 /**
  * Pick the correct Google OAuth client id for the running platform.
- * Native platforms prefer their own client id and fall back to the generic /
- * web id only so a partially-configured project still attempts a login rather
- * than hard-failing. Web always uses the web client id.
+ * Native platforms require their OWN client id in production; the generic/web
+ * fallback is allowed only in explicit development mode (opts.dev). Web always
+ * uses the web client id (with generic as a same-type fallback).
  */
-export function resolveGoogleClientId(os: OSName, env: GoogleClientEnv): string {
+export function resolveGoogleClientId(
+  os: OSName,
+  env: GoogleClientEnv,
+  opts: ResolveOptions = {},
+): string {
   const web = clean(env.web);
   const ios = clean(env.ios);
   const android = clean(env.android);
   const generic = clean(env.generic);
+  const devFallback = opts.dev ? (generic || web) : '';
 
-  if (os === 'ios') return ios || generic || web;
-  if (os === 'android') return android || generic || web;
+  if (os === 'ios') return ios || devFallback;
+  if (os === 'android') return android || devFallback;
   return web || generic;
 }
 
 /** True when a usable Google client id exists for this platform. */
-export function isGoogleConfigured(os: OSName, env: GoogleClientEnv): boolean {
-  return resolveGoogleClientId(os, env).length > 0;
+export function isGoogleConfigured(
+  os: OSName,
+  env: GoogleClientEnv,
+  opts: ResolveOptions = {},
+): boolean {
+  return resolveGoogleClientId(os, env, opts).length > 0;
 }
 
 /**

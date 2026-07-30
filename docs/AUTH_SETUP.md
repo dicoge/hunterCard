@@ -54,20 +54,20 @@
 
 | 項目 | 位置 |
 | --- | --- |
-| Apple 登入原生流程 | `src/services/auth/appleAuth.ts` |
-| Google 登入介面（尚未接線） | `src/services/auth/googleAuth.ts` |
-| 統一 auth service + 帳號刪除 API 呼叫 | `src/services/auth/index.ts` |
-| Session store（zustand + persist） | `src/stores/authStore.ts` |
-| 登入畫面 + Apple 原生按鈕 | `src/screens/AuthScreen.tsx` |
-| 登入 gate（iOS 強制登入） | `src/navigation/AppNavigator.tsx` |
-| 登出 / 刪除帳號 UI | `src/screens/SettingsScreen.tsx` |
+| Auth service（Google/Apple 流程、可登旗標、缺 env 訊息） | `src/services/authService.ts` |
+| Google OAuth client id 依平台選擇（純函式，可單元測試） | `src/services/googleClientConfig.ts` |
+| Session store（zustand + persist） | `src/store/authStore.ts` |
+| 登入畫面（Google 按鈕依 env 停用、Apple「即將開放」） | `src/screens/LoginScreen.tsx` |
+| 登入 gate | `src/navigation/AppNavigator.tsx` |
+| 設定頁登入入口 + 登出 / 刪除帳號 UI | `src/screens/SettingsScreen.tsx` |
 | Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/lib/apple-auth.ts` |
 | refresh_token 儲存介面樁（seam，尚未接持久化） | `api/lib/apple-token-store.ts` |
 | 登入時換取並保存 refresh_token | `api/auth/apple/register.ts` |
 | 帳號刪除 + Apple token 撤銷後端（用保存的 refresh_token, fail-closed） | `api/auth/delete-account.ts` |
+| Google client 選擇單元測試 | `scripts/verify-google-client-selection.mjs`（CI 於 Node 22 執行） |
 | App 設定 capability / plugin | `app.json` |
 
-App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android 因 Google 尚未接線，暫以訪客模式進入（旗標 `REQUIRE_AUTH` 於 `AppNavigator.tsx`）。
+App 行為：所有平台在 `hasHydrated` 後，未登入且非訪客時顯示 `LoginScreen`；登入或選擇訪客後進入主畫面（見 `AppNavigator.tsx` 的 `isAuthenticated || isGuest` 判斷，無平台專屬強制登入旗標）。Google 按鈕在對應平台的 client id 缺少時停用並顯示提示；Apple 目前以「即將開放」呈現（`APPLE_LOGIN_ENABLED = false`，後端 `/api/auth/apple/register` 尚回 501）。
 
 ## App 設定（已完成於 `app.json`）
 
