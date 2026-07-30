@@ -1,6 +1,17 @@
 # HoloHunter Card Recognition Prompt Benchmark & Pipeline Optimization Plan
 
-This document outlines the benchmark plan, suggested prompt optimizations, and technical transition steps to improve the card scanning recognition accuracy from **70% to 95%+** using direct Google Gemini Vision API integration.
+This document outlines the benchmark plan, suggested prompt optimizations, and technical transition steps intended to improve card-scanning recognition accuracy using direct Google Gemini Vision API integration.
+
+> **Verification status — READ FIRST.** Every accuracy / latency figure in this
+> document (including the "70% → 95%+" goal, and the 85% / 99% / "< 1.5s" numbers
+> in §6) is an **unverified target**, not a measured result. The repo intentionally
+> ships **no** benchmark images (`data/benchmark/images/` is gitignored so no private
+> card photos are committed), so the benchmark's current evidence is **Total Run 0**.
+> To turn these targets into measured numbers, drop your own non-private card images
+> into `data/benchmark/images/`, extend `data/benchmark/metadata.json` ground truth,
+> set the env below, and run `node scripts/benchmark-recognition.js`. The generated
+> `data/benchmark/report.md` (gitignored) is the only source of truth for real
+> accuracy — do not cite the targets below as achieved results.
 
 ---
 
@@ -129,7 +140,33 @@ Assistant:
 
 ## 3. Benchmark Dataset & Flow Setup
 
-Developers can run verification scripts locally using the created benchmark script: `scripts/benchmark-recognition.js`.
+Run the benchmark locally with `scripts/benchmark-recognition.js`. It performs a
+**single pass over the same image batch** and, for **each** image, runs every
+enabled A/B variant so results are directly comparable:
+
+| Variant | What it exercises | Enabled when |
+| :--- | :--- | :--- |
+| `CURRENT_API` | The live app pipeline — POSTs `/api/recognize-card` (current line prompt + OpenRouter model + DB matching). This is the baseline we want to beat; it is the *only* place OpenRouter is used. | `BENCHMARK_API_URL` set (defaults to prod; set `BENCHMARK_API_URL=""` to skip) |
+| `DIRECT_GEMINI_BASELINE` | Direct Google Gemini Vision with the app's **current** line-based prompt (isolates model/provider from prompt). | `GEMINI_API_KEY` set |
+| `DIRECT_GEMINI_NEW_PROMPT` | Direct Google Gemini Vision with the **new** role-based JSON-schema prompt (§1–2). | `GEMINI_API_KEY` set |
+
+The report (`data/benchmark/report.md`) breaks **success rate, per-field accuracy
+(card #, character, rarity, HP, title), latency and errors out per variant**, plus
+a per-image card-number comparison — that is the A/B contrast and pipeline-difference
+quantification DIC-702 asks for. `CURRENT_API` scores only the fields the endpoint
+returns (card #, character, rarity); HP/title are marked `n/a` for that variant.
+
+There is **no** direct-OpenRouter variant: per the issue, OpenRouter must not be an
+agent fallback. It appears solely inside `CURRENT_API`, measured as the incumbent
+pipeline.
+
+### Env
+
+```bash
+GEMINI_API_KEY="AIzaSy..."                          # enables the two DIRECT_GEMINI_* variants
+BENCHMARK_MODEL="gemini-2.5-flash"                   # direct-Gemini model (optional)
+BENCHMARK_API_URL="https://holocard-hunter.vercel.app" # CURRENT_API target; set "" to disable
+```
 
 ### Data Folder Structure
 ```
@@ -246,15 +283,23 @@ const response = await fetch(GEMINI_URL, {
 
 ## 6. Model Routing & Cost-Quality Strategy
 
-To balance speed, cost, and accuracy, we recommend a **hybrid routing strategy**:
+To balance speed, cost, and accuracy, we propose a **hybrid routing strategy**.
+
+> **All numbers in this section are unverified design targets** (see the Verification
+> status note at the top). The percentages and latencies below are hypotheses to
+> validate with the A/B benchmark — not measured outcomes. Confirm or replace them
+> from a real `data/benchmark/report.md` before treating any of them as an SLA or
+> routing-cost commitment.
 
 1.  **Stage 1 (Primary):** Route all scans to `gemini-2.5-flash`.
-    -   *Cost:* Extremely cheap, near zero.
-    -   *Speed:* Fast response time (< 1.5s).
-    -   *Outcome:* Deals with ~85% of well-lit, standard card scans successfully.
+    -   *Cost (target):* Extremely cheap, near zero.
+    -   *Speed (target):* Fast response time (< 1.5s — validate against the report's per-variant latency).
+    -   *Outcome (target):* Handle the majority (~85%, unverified) of well-lit, standard card scans.
 2.  **Stage 2 (Fallback):** If `confidence` from Stage 1 is `< 0.7` or `cardNumber` is returned as `"NONE"`, route the same preprocessed image to `gemini-3.1-pro` (or the Pro family).
-    -   *Cost:* Higher, but only utilized in ~15% of cases.
-    -   *Speed:* Moderate (~2.5s).
-    -   *Outcome:* Leverages the larger Pro model's extreme reasoning capability for blurry, low-light, or angled cards.
+    -   *Cost (target):* Higher, but expected to apply to only a minority (~15%, unverified) of cases.
+    -   *Speed (target):* Moderate (~2.5s).
+    -   *Outcome (target):* Leverage the larger Pro model's reasoning for blurry, low-light, or angled cards.
 
-This hybrid approach ensures high speed for the majority of scans while maintaining a **99% accuracy floor** through the fallback model.
+The intent is high speed for the majority of scans while the fallback lifts the
+hard cases. The **99% "accuracy floor" is an aspiration, not a guarantee** — it can
+only be claimed once the benchmark report on a real image batch shows it.
