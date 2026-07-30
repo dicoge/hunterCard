@@ -10,7 +10,7 @@ import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
+import { buildPriceVersions, resolveVersionForCard, PriceVersion } from '../utils/versionAlignment';
 
 const { width } = Dimensions.get('window');
 
@@ -570,9 +570,22 @@ function MarketDataPanel({ card }: { card: any }) {
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
-  // 收購價（未分版）超過選中版本賣價 10 倍幾乎必是版本對不上（例：選了最低價版本，
-  // 卻配到高稀有度的收購價）。與其顯示假暴利差價，寧可標示待確認。
-  const isPriceReliable = !hasSpread || buyPrice <= sellPrice * 10;
+  // card.buyPrice（店家收購）只有卡號層級、未依版本細分（實測 prices[] 內無 buyPrice）。
+  // 多版本卡時它無法歸屬到選中版本，拿它跟選中版本賣價硬算差價會產生誤導性數字
+  // （例：選平行版時算出 -54% 的假差價）。故多版本卡一律不把差價當可靠主數字。
+  const buyPriceUnversioned = multiVersion;
+  // 收購價超過選中版本賣價 10 倍幾乎必是版本對不上；即使單一版本也要擋這種暴利假差價。
+  const spreadOutOfRange = hasSpread && buyPrice > sellPrice * 10;
+  // 只有收購價能對應到選中版本（單一版本卡）且未超出合理範圍，才顯示差價當主數字。
+  const spreadReliable = hasSpread && !buyPriceUnversioned && !spreadOutOfRange;
+
+  // 歷史/收購資料實測只追蹤卡號最低價版本；找出那個版本名稱，讓 UI 能明確標示歷史適用範圍。
+  let lowestVersion: PriceVersion | null = null;
+  for (const v of versions) {
+    if (v.sellPrice == null) continue;
+    if (lowestVersion == null || (lowestVersion.sellPrice ?? Infinity) > v.sellPrice) lowestVersion = v;
+  }
+  const lowestVersionName = lowestVersion?.name ?? '';
 
   return (
     <View style={styles.section}>
@@ -622,10 +635,10 @@ function MarketDataPanel({ card }: { card: any }) {
             <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
           </View>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>賣出可得（店家收購 · 未分版）</Text>
+            <Text style={styles.marketLabel}>賣出可得（店家收購{buyPriceUnversioned ? ' · 未分版' : ''}）</Text>
             <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
           </View>
-          {isPriceReliable ? (
+          {spreadReliable ? (
             <View style={styles.marketRow}>
               <Text style={styles.marketLabel}>差價</Text>
               <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
@@ -633,11 +646,18 @@ function MarketDataPanel({ card }: { card: any }) {
               </Text>
             </View>
           ) : (
-            <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
-              ⚠️ 價格待確認
-            </Text>
+            <View style={styles.versionWarnBox}>
+              <Text style={styles.versionWarnTitle}>
+                {buyPriceUnversioned ? 'ℹ️ 收購未分版，無法計算可靠差價' : '⚠️ 收購價與版本不符，差價待確認'}
+              </Text>
+              <Text style={styles.versionWarnText}>
+                {buyPriceUnversioned
+                  ? '店家收購價目前只有整張卡號的資料，未依版本細分，無法與「本版本」賣價算出可靠差價，故不顯示以免誤導。'
+                  : '此收購價與選中版本賣價差距過大（很可能對到不同版本），故不顯示差價以免誤導。'}
+              </Text>
+            </View>
           )}
-          <Text style={styles.marketNote}>※ 收購價為卡號整體資料，未依版本細分，差價僅供參考</Text>
+          <Text style={styles.marketNote}>※ 收購價為卡號整體資料，未依版本細分</Text>
         </View>
       ) : null}
 
@@ -701,7 +721,7 @@ function MarketDataPanel({ card }: { card: any }) {
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>➖ 漲跌判斷</Text>
           <Text style={styles.marketNote}>
-            此版本（{versionLabel}）暫無歷史均價：歷史資料僅追蹤卡號最低價版本，與目前版本不符，故不顯示以免混版。
+            此版本（{versionLabel}）暫無歷史均價。歷史/爬蟲資料只追蹤最低價版本{lowestVersionName ? `「${lowestVersionName}」` : ''}，與目前版本不同，故不顯示以免混版（該版本的歷史仍持續記錄中，並非白爬）。
           </Text>
         </View>
       ) : null}
