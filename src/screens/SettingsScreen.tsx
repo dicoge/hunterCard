@@ -186,7 +186,10 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        <Text style={styles.footer}>專為 hololive PCG 玩家打造</Text>
+        <Text style={styles.footer}>
+          專為 hololive OCG 玩家打造{'\n'}
+          HoloHunter 為非官方工具，與 Cover Corp. / hololive production 無關聯，亦非其授權或背書之產品。
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
