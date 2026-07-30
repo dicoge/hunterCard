@@ -9,6 +9,8 @@ const PROVIDER_LABEL: Record<string, string> = { apple: 'Apple', google: 'Google
 
 export default function SettingsScreen() {
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
+  const showMarketReconciliation = useSettingsStore((s) => s.showMarketReconciliation);
+  const setShowMarketReconciliation = useSettingsStore((s) => s.setShowMarketReconciliation);
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.logout);
   const deleteAccount = useAuthStore((s) => s.deleteUserAccount);
@@ -134,6 +136,32 @@ export default function SettingsScreen() {
           <Text style={styles.item}>🏪 遊々亭（日本二手卡牌市場）</Text>
           <Text style={styles.item}>🔄 Carousell（旋轉拍賣）</Text>
           <Text style={styles.item}>📈 匯率：JP¥1 = NT$0.22 = $0.0067</Text>
+        </View>
+
+        {/* ── 驗證模式（開發者對帳） ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🛠️ 驗證模式</Text>
+          <View style={styles.optionRow}>
+            <TouchableOpacity
+              style={[styles.optionBtn, !showMarketReconciliation && styles.optionBtnActive]}
+              onPress={() => setShowMarketReconciliation(false)}
+            >
+              <Text style={[styles.optionText, !showMarketReconciliation && styles.optionTextActive]}>
+                關閉
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.optionBtn, showMarketReconciliation && styles.optionBtnActive]}
+              onPress={() => setShowMarketReconciliation(true)}
+            >
+              <Text style={[styles.optionText, showMarketReconciliation && styles.optionTextActive]}>
+                顯示原始市場對帳
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.hint}>
+            開啟後，卡片詳情頁會顯示各版本原始 yuyu 標價、店家收購原始值、是否可信對版、差價計算過程，方便對資料。正式預設為關閉：資料未可靠對版時不把差價當主指標。
+          </Text>
         </View>
 
         {/* ── 帳號 ── */}
