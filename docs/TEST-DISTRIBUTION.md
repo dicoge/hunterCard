@@ -2,6 +2,9 @@
 
 > HoloHunter 是**非官方**（fan-made / unofficial）hololive OFFICIAL CARD GAME 查價工具。所有商店 / 測試說明文字不可寫成官方授權 App。
 
+> 🚦 **目前優先序（2026-07-30 使用者指示）：先 Android（Play Internal testing），iOS / TestFlight 標為後續。**
+> Play Console 帳號**已註冊**；Android 軌道可先推進、不被 iOS 阻塞。iOS 相關步驟（TestFlight、Apple Developer Program、iOS submit 欄位）維持文件備用，等 iOS 帳號就緒（晚點）再啟動。凡標 **[iOS · 後續]** 的段落現階段可略過。
+
 這份文件是「怎麼把測試包發給測試員 + 在哪看版本紀錄」的**操作速查**。
 每個步驟的完整說明、blocker 排解、可直接貼上的商店文案在
 [`docs/release-testflight-google-play-closed-testing.md`](./release-testflight-google-play-closed-testing.md)（DIC-644 手冊），本文件只在需要時連過去，不重覆。
@@ -99,20 +102,28 @@ npx eas submit --platform android --profile production --latest    # -> Play int
 
 ## 🚧 Blocked-on-user（帳號 / 憑證就緒前無法完成）
 
-這些是 agent **不能代辦**的項目，需使用者處理後回報：
+這些是 agent **不能代辦**的項目，需使用者處理後回報。**優先序：Android 先行，[iOS · 後續] 標記者不阻塞 Android。**
+
+**Android（現在推進）**
 
 | 項目 | 對應 | 狀態 |
 | --- | --- | --- |
-| Apple Developer Program 帳號 | DIC-637 | ⛔ 待使用者辦理，agent 不可代付 |
-| Google Play Console（$25） | DIC-638 | ⛔ 待使用者辦理，agent 不可代付 |
-| `eas.json` `submit.production.ios`：`appleId` / `ascAppId` / `appleTeamId` | iOS submit | ⛔ 目前 placeholder，需填實際值（或互動式 submit 輸入） |
-| Play service account JSON → repo secret `GOOGLE_SERVICE_ACCOUNT_JSON` | Android submit | ⛔ 需使用者在 Play Console 建 service account 並授權 |
-| repo secret `EXPO_TOKEN` | EAS build workflow | ⛔ 需使用者在 Expo 產生並填入 GitHub secrets |
-| App Store Connect 已建立 App record（bundle id `com.dicoge.holohunter`） | iOS | ⛔ 需帳號就緒後建立 |
-| Play Console 已建立 App（package `com.dicoge.holohunter`，**上架後不可改**） | Android | ⛔ 需帳號就緒後建立 |
-| 測試用 Apple ID / Gmail 名單 | 測試員邀請 | ⛔ 待使用者提供 |
+| Google Play Console（$25） | DIC-638 | ✅ 已註冊（2026-07-30） |
+| Play Console 已建立 App（package `com.dicoge.holohunter`，**上架後不可改**） | Android | ⛔ 需建立 |
+| Play service account JSON → repo secret `GOOGLE_SERVICE_ACCOUNT_JSON` | Android submit | ⛔ 需在 Play Console 建 service account 並授權 |
+| repo secret `EXPO_TOKEN` | EAS build workflow | ⛔ 需在 Expo 產生並填入 GitHub secrets |
+| 測試用 Gmail 名單 | 測試員邀請 | ⛔ 待使用者提供 |
 
-完成後請回報：Team/Account 就緒、App 是否已建立、測試員名單 → 交由 follow-up QA（Mac-OpenClaw）在有 build 後驗證。
+**[iOS · 後續]（等 iOS 帳號就緒再啟動，晚點）**
+
+| 項目 | 對應 | 狀態 |
+| --- | --- | --- |
+| Apple Developer Program 帳號 | DIC-637 | 🕓 後續（iOS 晚點） |
+| `eas.json` `submit.production.ios`：`appleId` / `ascAppId` / `appleTeamId` | iOS submit | 🕓 後續，欄位結構已備好，待填實際值 |
+| App Store Connect 已建立 App record（bundle id `com.dicoge.holohunter`） | iOS | 🕓 後續 |
+| 測試用 Apple ID 名單 | iOS 測試員邀請 | 🕓 後續 |
+
+完成後請回報：Account 就緒、App 是否已建立、測試員名單 → 交由 follow-up QA 在有 build 後驗證。
 
 ---
 
@@ -127,10 +138,17 @@ npx eas submit --platform android --profile production --latest    # -> Play int
 
 ## 一次跑通的建議順序
 
-1. 使用者完成 DIC-637 / DIC-638，回報帳號就緒。
-2. 在 App Store Connect / Play Console 各建立一次 App（package/bundle 固定）。
-3. 填 `EXPO_TOKEN` secret。
-4. Actions 跑 `preview` build（`submit=false`）驗證 build pipeline OK，先發直接安裝包給少數測試員。
-5. 填 iOS submit 欄位 + Play service account secret。
-6. Actions 跑 `production` build + `submit=true`，iOS 進 TestFlight、Android 進 Play internal。
-7. 依上面「測試員怎麼加」邀人，於「版本紀錄」處確認 build 出現。
+**現在：Android（Play Console 已註冊）**
+
+1. Play Console 建立 App（package `com.dicoge.holohunter`，固定不可改）。
+2. 填 `EXPO_TOKEN` secret。
+3. Actions 跑 `preview` build（`platform=android`, `submit=false`）驗證 build pipeline OK，先發 APK 給少數測試員直接安裝。
+4. 建 Play service account → 填 `GOOGLE_SERVICE_ACCOUNT_JSON` secret。
+5. Actions 跑 `production` build（`platform=android`, `submit=true`）→ 進 Play internal。
+6. 依「測試員怎麼加（Android）」邀人，於「版本紀錄」處確認 build 出現。
+
+**後續：iOS / TestFlight（等 iOS 帳號就緒，晚點）**
+
+7. 完成 DIC-637（Apple Developer Program），在 App Store Connect 建立 App。
+8. 填 `eas.json` iOS submit 欄位。
+9. Actions 跑 `production` build（`platform=ios`, `submit=true`）→ 進 TestFlight，邀 iOS 測試員。
