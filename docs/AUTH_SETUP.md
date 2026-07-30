@@ -121,12 +121,17 @@ App 行為：所有平台在 `hasHydrated` 後，未登入且非訪客時顯示 
 - `/api/auth/delete-account` 取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
 - 上架前必須完成：實作 `apple-token-store`（真正持久化 + 加密）、於刪除時級聯刪除 / 匿名化使用者資料。Settings 頁已標示此限制。
 
-## Google 登入後續（尚未接線）
+## Google 登入（已接線）
 
-1. `npx expo install expo-auth-session expo-web-browser`
-2. Google Cloud Console 建立 iOS / Web / Android OAuth client ID。
-3. 於 `src/services/auth/googleAuth.ts` 用 `Google.useIdTokenAuthRequest` 換 `id_token`，映射成 `AuthSession`（`isGoogleAuthConfigured()` 回傳 `true`）。
-4. Web 的登入 gate（`AppNavigator.tsx` 的 `REQUIRE_AUTH`）改為全平台強制登入。
+程式碼已完整實作，登入能否走完全取決於各平台是否設好對應的 public client id（見上方 checklist）：
+
+1. 流程實作於 `src/services/authService.ts`（`expo-auth-session` 的 `AuthRequest` + PKCE，`expo-web-browser`）。
+2. Client id 依 `Platform.OS` 由純函式 `src/services/googleClientConfig.ts` 的 `resolveGoogleClientId()` 選擇，並有單元測試（`scripts/verify-google-client-selection.mjs`，CI 於 Node 22 執行）：
+   - **web** → 一律用 web client id（`generic` 為同型別 fallback），native id 永不用於 web。
+   - **iOS / Android（production，fail-closed）**：只用該平台自己的 client id；若缺，回 `''` → `GOOGLE_LOGIN_CONFIGURED` 為 `false`，`LoginScreen` 停用 Google 按鈕並顯示友善提示。**不會**退回 web/generic id，因為 web client id 的 redirect 型別無法完成 native OAuth，硬塞會做出一顆點了必失敗的按鈕。
+   - **iOS / Android（dev-only fallback）**：僅在 `__DEV__` 建置（authService 傳 `{ dev: IS_DEV }`）時，缺平台 id 才退回 `generic` → `web`，讓開發者仍能走流程。
+3. Native（非 web）在有平台 client id 時，redirect 用反轉 client id 的自訂 scheme（`com.googleusercontent.apps.<id>:/oauthredirect`，見 `nativeGoogleRedirectUri()`）；此 scheme 需在 Google Console 對應的 OAuth client 註冊。
+4. 登入 gate 於 `AppNavigator.tsx`：`hasHydrated` 後 `isAuthenticated || isGuest ? Main : LoginScreen`，全平台一致，無平台專屬強制登入旗標。
 
 ## iOS / TestFlight 驗證 checklist
 
