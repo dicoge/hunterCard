@@ -195,6 +195,73 @@ function emptyStats(fields) {
   return s;
 }
 
+// ── Fixture safety ──
+const ALLOWED_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+function mimeForExt(ext) {
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+/**
+ * Resolve a metadata `filename` to a SAFE, contained, regular image file.
+ * Ground truth (metadata.json) is committed but the image files are not, so a
+ * poisoned metadata entry must never make us read/upload something outside the
+ * benchmark images dir. Guards: no path segments / NUL, allowed extension only,
+ * realpath (symlinks resolved) must stay directly under the real images root,
+ * and the final target must be a regular file.
+ *
+ * Returns { path, mimeType } for a runnable fixture, or null when the file is
+ * simply absent. THROWS for a rejected (unsafe/malformed) fixture.
+ */
+function resolveFixture(imagesRealRoot, filename) {
+  if (typeof filename !== 'string' || filename.length === 0) {
+    throw new Error('empty or non-string filename');
+  }
+  if (filename.includes('\0') || /[\\/]/.test(filename) || filename === '.' || filename === '..') {
+    throw new Error(`illegal filename (no path segments allowed): ${filename}`);
+  }
+  const ext = path.extname(filename).toLowerCase();
+  if (!ALLOWED_EXT.has(ext)) {
+    throw new Error(`disallowed extension "${ext || '(none)'}" (allowed: ${[...ALLOWED_EXT].join(', ')})`);
+  }
+  const candidate = path.join(imagesRealRoot, filename);
+  let real;
+  try {
+    real = fs.realpathSync(candidate); // resolves symlinks; throws ENOENT if missing
+  } catch {
+    return null; // absent → not runnable (not an attack, just skip)
+  }
+  const rel = path.relative(imagesRealRoot, real);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(path.sep)) {
+    throw new Error(`fixture escapes images dir (symlink/traversal): ${filename}`);
+  }
+  const st = fs.lstatSync(real); // real is post-symlink; must be a plain file
+  if (!st.isFile()) {
+    throw new Error(`fixture is not a regular file: ${filename}`);
+  }
+  return { path: real, mimeType: mimeForExt(ext) };
+}
+
+// Markdown-safe one-liner (kills table-breaking pipes/newlines/backticks).
+function escapeMd(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|')
+    .replace(/`/g, "'")
+    .trim();
+}
+
+// Coarse error category so the report groups failure modes truthfully.
+function categorizeError(message) {
+  const m = (message || '').toLowerCase();
+  if (m.includes('fetch failed') || m.includes('econn') || m.includes('enotfound') || m.includes('timeout') || m.includes('network')) return 'network';
+  if (/\b\d{3}\b/.test(m) || m.includes('http') || m.includes('status') || m.includes('api key')) return 'api_error';
+  if (m.includes('json') || m.includes('unexpected token') || m.includes('parse')) return 'parse';
+  if (m.includes('no card') || m.includes('returned no') || m.includes('not valid')) return 'no_result';
+  return 'error';
+}
+
 function ensureScaffold() {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
   if (!fs.existsSync(METADATA_FILE)) {
@@ -205,6 +272,12 @@ function ensureScaffold() {
     fs.writeFileSync(METADATA_FILE, JSON.stringify(sample, null, 2), 'utf8');
     console.log(`Created sample metadata file: ${METADATA_FILE}`);
   }
+}
+
+// Fail closed: print why and exit non-zero without emitting a success report.
+function failClosed(reason) {
+  console.error(`\nBENCHMARK FAILED (fail-closed): ${reason}`);
+  process.exit(1);
 }
 
 async function runBenchmark() {
@@ -220,33 +293,51 @@ async function runBenchmark() {
   }
   console.log(`Metadata: ${METADATA_FILE}\n`);
 
+  if (enabled.length === 0) {
+    failClosed('no variant is enabled (set GEMINI_API_KEY and/or BENCHMARK_API_URL).');
+  }
+
   let metadata;
   try {
     metadata = JSON.parse(fs.readFileSync(METADATA_FILE, 'utf8'));
   } catch (e) {
-    console.error(`Error reading metadata: ${e.message}`);
-    process.exit(1);
+    failClosed(`cannot read metadata.json: ${e.message}`);
   }
   const testCases = metadata.images || [];
   if (testCases.length === 0) {
-    console.log('No test cases in metadata.json.');
-    process.exit(0);
+    failClosed('metadata.json has no test cases.');
   }
 
+  // Real root for containment checks (resolves a symlinked images dir too).
+  const imagesRealRoot = fs.realpathSync(IMAGES_DIR);
+
   const statsByVariant = Object.fromEntries(variants.map((v) => [v.name, emptyStats(v.fields)]));
-  const perImage = []; // { filename, expected, results: { [variant]: {status, latency, got, matches, error} } }
+  const perImage = []; // { filename, expected, results: { [variant]: {status, latency, got, matches, error, category} } }
+  let runnableCount = 0;
+  let rejectedCount = 0;
+  let absentCount = 0;
 
   for (let i = 0; i < testCases.length; i++) {
-    const tc = testCases[i];
-    const imagePath = path.join(IMAGES_DIR, tc.filename);
+    const tc = testCases[i] || {};
     console.log(`[${i + 1}/${testCases.length}] ${tc.filename}`);
-    if (!fs.existsSync(imagePath)) {
-      console.warn(`  Warning: not found in ${IMAGES_DIR}. Skipping (no variant runs for it).`);
+
+    let fixture;
+    try {
+      fixture = resolveFixture(imagesRealRoot, tc.filename);
+    } catch (e) {
+      rejectedCount++;
+      console.error(`  REJECTED: ${e.message}`);
+      continue; // unsafe/malformed fixture — never read or upload it
+    }
+    if (!fixture) {
+      absentCount++;
+      console.warn(`  absent in ${IMAGES_DIR} — skipping.`);
       continue;
     }
-    const ext = path.extname(tc.filename).toLowerCase();
-    const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
-    const base64Image = fs.readFileSync(imagePath).toString('base64');
+
+    runnableCount++;
+    const base64Image = fs.readFileSync(fixture.path).toString('base64');
+    const mimeType = fixture.mimeType;
     const dataUri = `data:${mimeType};base64,${base64Image}`;
     const expected = tc.expected || {};
     const rowResults = {};
@@ -272,28 +363,31 @@ async function runBenchmark() {
         const latency = Date.now() - start;
         stats.totalLatency += latency;
         stats.failures++;
-        rowResults[v.name] = { status: 'FAILED', latency, error: e.message };
-        console.error(`  ${v.name}: ❌ ${e.message}`);
+        const category = categorizeError(e.message);
+        rowResults[v.name] = { status: 'FAILED', latency, error: e.message, category };
+        console.error(`  ${v.name}: ❌ [${category}] ${e.message} (${latency}ms)`);
       }
     }
     perImage.push({ filename: tc.filename, expected, results: rowResults });
   }
 
-  writeReport({ variants, enabled, statsByVariant, perImage });
+  if (runnableCount === 0) {
+    failClosed(`no runnable fixture (${absentCount} absent, ${rejectedCount} rejected of ${testCases.length}). Add non-private images under ${IMAGES_DIR}.`);
+  }
+
+  writeReport({ variants, enabled, statsByVariant, perImage, runnableCount, rejectedCount, absentCount });
 }
 
 function pct(n, d) { return d > 0 ? ((n / d) * 100).toFixed(1) : '0.0'; }
 
-function writeReport({ variants, enabled, statsByVariant, perImage }) {
-  const ranImages = perImage.length;
-
+function writeReport({ variants, enabled, statsByVariant, perImage, runnableCount, rejectedCount, absentCount }) {
   console.log('\n======================================================');
   console.log('A/B BENCHMARK COMPLETE');
-  console.log(`Images with a file present: ${ranImages}`);
+  console.log(`Runnable fixtures: ${runnableCount} (absent ${absentCount}, rejected ${rejectedCount})`);
   for (const v of enabled) {
     const s = statsByVariant[v.name];
     const avg = s.total > 0 ? (s.totalLatency / s.total).toFixed(0) : 0;
-    console.log(`  ${v.name}: run ${s.total}, ok ${s.success}, fail ${s.failures}, avg ${avg}ms, cardNumber ${pct(s.fieldCorrect.cardNumber || 0, s.total)}%`);
+    console.log(`  ${v.name}: run ${s.total}, ok ${s.success} (${pct(s.success, s.total)}%), fail ${s.failures}, avg ${avg}ms, cardNumber ${pct(s.fieldCorrect.cardNumber || 0, s.total)}%`);
   }
   console.log('======================================================\n');
 
@@ -301,12 +395,13 @@ function writeReport({ variants, enabled, statsByVariant, perImage }) {
 
 **Run date:** ${new Date().toISOString().split('T')[0]}
 **Direct-Gemini model:** \`${MODEL}\`
-**Images present:** ${ranImages}
+**Runnable fixtures:** ${runnableCount}  (absent ${absentCount}, rejected ${rejectedCount})
 
-> This report is regenerated on every run and is gitignored. If **Images present: 0**,
-> no variant executed and every accuracy below is \`0.0% (0/0)\` — supply your own
-> (gitignored, non-private) images in \`data/benchmark/images/\` matching
-> \`metadata.json\` and re-run. Accuracy figures are only meaningful when Images present > 0.
+> Regenerated on every run and gitignored. A run reaches this report only when at
+> least one runnable fixture existed; runs with no enabled variant, no test case,
+> or no runnable fixture fail closed with a non-zero exit and write no report.
+> Per-field accuracy is over each variant's attempted images (a failed scan counts
+> as a miss). "Success rate" is successful API calls / attempts — not accuracy.
 
 ## Variant configuration
 
@@ -314,22 +409,24 @@ function writeReport({ variants, enabled, statsByVariant, perImage }) {
 | :--- | :--- | :--- |
 `;
   for (const v of variants) {
-    md += `| \`${v.name}\` | ${v.enabled ? 'enabled' : `skipped (${v.disabledReason})`} | ${v.fields.join(', ')} |\n`;
+    md += `| \`${v.name}\` | ${v.enabled ? 'enabled' : `skipped (${escapeMd(v.disabledReason)})`} | ${v.fields.join(', ')} |\n`;
   }
 
   md += `\n## Per-variant summary (same image batch)
 
-| Variant | Run | Success | Failures | Avg latency | Card # | Character | Rarity | HP | Title |
+| Variant | Attempts | Success rate | Failures | Avg latency | Card # | Character | Rarity | HP | Title |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 `;
   for (const v of enabled) {
     const s = statsByVariant[v.name];
     const avg = s.total > 0 ? `${(s.totalLatency / s.total).toFixed(0)} ms` : '-';
     const cell = (f) => (v.fields.includes(f) ? `${pct(s.fieldCorrect[f] || 0, s.total)}% (${s.fieldCorrect[f] || 0}/${s.total})` : 'n/a');
-    md += `| \`${v.name}\` | ${s.total} | ${s.success} | ${s.failures} | ${avg} | ${cell('cardNumber')} | ${cell('character')} | ${cell('rarity')} | ${cell('hp')} | ${cell('title')} |\n`;
+    md += `| \`${v.name}\` | ${s.total} | ${pct(s.success, s.total)}% (${s.success}/${s.total}) | ${s.failures} | ${avg} | ${cell('cardNumber')} | ${cell('character')} | ${cell('rarity')} | ${cell('hp')} | ${cell('title')} |\n`;
   }
 
   md += `\n## Per-image card-number comparison
+
+A failed variant cell shows \`❌ [category] message (latency)\` so error modes stay visible.
 
 | Image | Expected Card # | ${enabled.map((v) => v.name).join(' | ')} |
 | :--- | :--- | ${enabled.map(() => ':---').join(' | ')} |
@@ -338,11 +435,11 @@ function writeReport({ variants, enabled, statsByVariant, perImage }) {
     const cells = enabled.map((v) => {
       const r = row.results[v.name];
       if (!r) return '-';
-      if (r.status === 'FAILED') return '❌ err';
+      if (r.status === 'FAILED') return escapeMd(`❌ [${r.category}] ${r.error} (${r.latency}ms)`);
       const mark = r.matches.cardNumber ? '✓' : '✗';
-      return `\`${r.got.cardNumber ?? 'NONE'}\` ${mark}`;
+      return `\`${escapeMd(r.got.cardNumber ?? 'NONE')}\` ${mark} (${r.latency}ms)`;
     });
-    md += `| ${row.filename} | \`${row.expected.cardNumber ?? 'NONE'}\` | ${cells.join(' | ')} |\n`;
+    md += `| ${escapeMd(row.filename)} | \`${escapeMd(row.expected.cardNumber ?? 'NONE')}\` | ${cells.join(' | ')} |\n`;
   }
 
   fs.writeFileSync(REPORT_FILE, md, 'utf8');
