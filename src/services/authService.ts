@@ -30,6 +30,11 @@ const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
 
 const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
+// True only when a Google OAuth client id is wired up (Vercel/EAS env). The UI
+// reads this to disable the Google CTA with a friendly note instead of letting a
+// tap fail with a raw "Missing client ID ... EXPO_PUBLIC_..." banner (DIC-824).
+export const GOOGLE_LOGIN_CONFIGURED = GOOGLE_CLIENT_ID.length > 0;
+
 // Sign in with Apple is disabled in this web PoC. The client cannot verify the
 // Apple ID token (signature / issuer / audience / expiry / nonce) on its own, so
 // trusting the decoded payload as an identity source would be insecure. Re-enable
@@ -37,8 +42,27 @@ const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 // the product spec (Google is the required web provider).
 export const APPLE_LOGIN_ENABLED = false;
 
-const APPLE_DISABLED_MESSAGE =
-  'Apple 登入尚未開放（需後端驗證 Apple ID token）。請改用 Google 登入。';
+// Shown by the login UI as a passive "coming soon" state for Apple, so the CTA
+// no longer alerts only after a tap.
+export const APPLE_COMING_SOON_LABEL = '即將開放';
+export const APPLE_COMING_SOON_MESSAGE = 'Apple 登入即將開放，敬請期待。';
+
+const APPLE_DISABLED_MESSAGE = APPLE_COMING_SOON_MESSAGE;
+
+// __DEV__ is a React Native global; declare it so this compiles under plain tsc.
+declare const __DEV__: boolean;
+
+function missingClientIdMessage(provider: AuthProvider): string {
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    const envVar = provider === 'google'
+      ? 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID'
+      : 'EXPO_PUBLIC_APPLE_SERVICE_ID';
+    return `Missing client ID for ${provider}. Set ${envVar} in .env`;
+  }
+  return provider === 'google'
+    ? 'Google 登入暫時無法使用，請稍後再試。'
+    : 'Apple 登入暫時無法使用，請稍後再試。';
+}
 
 const googleScopes = ['openid', 'profile', 'email'];
 const appleScopes = ['name', 'email'];
@@ -169,9 +193,7 @@ export async function signInWithProvider(provider: AuthProvider): Promise<SignIn
   }
   const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
   if (!clientId) {
-    throw new Error(
-      `Missing client ID for ${provider}. Set ${provider === 'google' ? 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID' : 'EXPO_PUBLIC_APPLE_SERVICE_ID'} in .env`
-    );
+    throw new Error(missingClientIdMessage(provider));
   }
 
   const redirectUri = AuthSession.makeRedirectUri();
@@ -228,7 +250,7 @@ export async function linkProvider(
   }
   const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
   if (!clientId) {
-    throw new Error(`Missing client ID for ${provider}`);
+    throw new Error(missingClientIdMessage(provider));
   }
 
   const redirectUri = AuthSession.makeRedirectUri();

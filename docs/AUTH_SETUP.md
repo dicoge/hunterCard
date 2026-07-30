@@ -2,6 +2,41 @@
 
 本文件說明 iOS「Sign in with Apple」的設定步驟、需要在 Apple Developer 後台配置的項目、環境變數，以及 TestFlight 驗證 checklist。
 
+## 上架 / Production 必填環境變數 checklist（DIC-824）
+
+實機/Production 出現 `Missing client ID for google` 代表對應平台的 env 沒設。**Public client id 走平台 env，不進 git；Apple secrets 只設在 Vercel。** 依平台分別確認：
+
+### Web（Vercel Project → Settings → Environment Variables）
+
+| 變數 | 必填 | 說明 |
+| --- | --- | --- |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | ✅ | Web 版 Google 登入必需；缺 → 登入按鈕自動 disable + 顯示「Google 登入尚未開放」。 |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | 選填 | 上一項的 fallback（authService 先讀 WEB，再讀這個）。 |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` / `PUSH_NOTIFY_SECRET` | 既有 | 推播後端（DIC-390），與登入無關但屬同一 Vercel env。 |
+| `APPLE_TEAM_ID` / `APPLE_CLIENT_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY` | Apple 上線前 | `/api/auth/apple/*` 與帳號刪除撤銷所需；未設時後端 fail-closed 回 501。**只設在 Vercel，勿提交。** |
+
+設完 env 後 **需重新 deploy** 才會生效（`EXPO_PUBLIC_*` 於 build 時 inline 進 bundle）。
+
+### iOS（EAS → `eas secret` / `eas.json` build env）
+
+| 變數 | 必填 | 說明 |
+| --- | --- | --- |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | ✅ | 目前 authService 以 WEB client id 走 AuthSession；缺 → Google 按鈕 disable。 |
+| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | 建議 | 原生 iOS OAuth client（未來原生 Google 流程用）。 |
+
+設定：`eas secret:create --scope project --name EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID --value ...`，或放進 `eas.json` 各 profile 的 `env`。改 env 後需重新 EAS build。
+
+### Apple 目前狀態（與後端能力一致）
+
+- Client 端 Apple 登入 **停用**（`APPLE_LOGIN_ENABLED = false`，`src/services/authService.ts`）：client 無法安全驗證 Apple ID token 的簽章/issuer/audience/expiry/nonce。
+- 後端 `/api/auth/apple/register` 在 Apple env 或 token store 未就緒時回 **501**（`api/lib/apple-token-store.ts` 仍為 seam）。
+- 因此登入頁 **不再放會失敗的 Apple 主按鈕**：改為 disabled + 「即將開放」pill，不會點了才 alert。要重新開放，需先讓後端 ID-token 驗證上線，再把 `APPLE_LOGIN_ENABLED` 設為 `true`。
+
+### 缺 env 時的 UI 行為（本 issue 修正）
+
+- **Google 缺 client id**：按鈕 disable + 灰字「Google 登入尚未開放，請稍後再試」；**不再**顯示紅字 raw env 變數名。Dev（`__DEV__`）保留可點 + 原始 `Missing client ID ... EXPO_PUBLIC_...` 訊息以利除錯。
+- **Apple 未就緒**：顯示「即將開放」狀態，而非點擊後才 alert。
+
 ## 產品決策
 
 - 只支援 **Apple ID** 與 **Google** 登入，**不提供**自家 Email/密碼。
