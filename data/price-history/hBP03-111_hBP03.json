@@ -289,8 +289,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-111_hBP03"
+    },
+    {
+      "date": "2026-07-30",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-111_hBP03"
     }
   ],
-  "lastUpdated": "2026-07-29T12:09:57.686Z",
+  "lastUpdated": "2026-07-30T12:09:42.648Z",
   "nameZh": "沁音滑雪"
 }

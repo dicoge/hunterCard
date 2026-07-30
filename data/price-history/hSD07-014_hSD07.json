@@ -275,8 +275,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD07-014_hSD07"
+    },
+    {
+      "date": "2026-07-30",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD07-014_hSD07"
     }
   ],
-  "lastUpdated": "2026-07-29T12:09:57.699Z",
+  "lastUpdated": "2026-07-30T12:09:42.662Z",
   "nameZh": "不知火建設"
 }

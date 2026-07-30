@@ -289,8 +289,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-020_hBP01"
+    },
+    {
+      "date": "2026-07-30",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-020_hBP01"
     }
   ],
-  "lastUpdated": "2026-07-29T12:09:57.757Z",
+  "lastUpdated": "2026-07-30T12:09:42.722Z",
   "nameZh": "Hololive之輪"
 }
