@@ -17,14 +17,19 @@
 
 設完 env 後 **需重新 deploy** 才會生效（`EXPO_PUBLIC_*` 於 build 時 inline 進 bundle）。
 
-### iOS（EAS → `eas secret` / `eas.json` build env）
+### iOS / Android（EAS → `eas secret` / `eas.json` build env）
+
+`authService` 依 `Platform.OS` 選 client id（`src/services/googleClientConfig.ts`）：iOS 用 iOS client id、Android 用 Android client id、web 用 web client id；native 缺專屬 id 時才 fallback 到 generic/web。**原生必須用該平台的 client id**——Google 的 web client 只接受 https redirect，把 web id 丟給原生 build 會導致 redirect 失敗（這正是實機「有 env 仍登不了」的原因）。
 
 | 變數 | 必填 | 說明 |
 | --- | --- | --- |
-| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | ✅ | 目前 authService 以 WEB client id 走 AuthSession；缺 → Google 按鈕 disable。 |
-| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | 建議 | 原生 iOS OAuth client（未來原生 Google 流程用）。 |
+| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | ✅ (iOS) | 原生 iOS OAuth client；redirect 用 reversed-client-id 自訂 scheme（`nativeGoogleRedirectUri`）。缺 → iOS Google 按鈕 disable。 |
+| `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` | ✅ (Android) | 原生 Android OAuth client。 |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | fallback | native 缺專屬 id 時的最後備援（僅供 dev，不保證原生 OAuth 可完成）。 |
 
-設定：`eas secret:create --scope project --name EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID --value ...`，或放進 `eas.json` 各 profile 的 `env`。改 env 後需重新 EAS build。
+設定：`eas secret:create --scope project --name EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID --value ...`，或放進 `eas.json` 各 profile 的 `env`。改 env 後需重新 EAS build。
+
+> ⚠️ 原生 redirect scheme（reversed client id，例如 `com.googleusercontent.apps.1234-abc`）也要加進 iOS `CFBundleURLSchemes` / app config，實機 OAuth 才會 callback 回 App。設定後需以 EAS dev/preview build 做一次實機 OAuth smoke（Expo Go 無法測原生 redirect）。
 
 ### Apple 目前狀態（與後端能力一致）
 

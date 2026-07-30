@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import {
@@ -9,6 +10,10 @@ import {
   HoloUser,
   AuthTokens,
 } from '../types/auth';
+import {
+  resolveGoogleClientId,
+  nativeGoogleRedirectUri,
+} from './googleClientConfig';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -24,9 +29,16 @@ const appleDiscovery = {
   revocationEndpoint: 'https://appleid.apple.com/auth/revoke',
 };
 
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
-  || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID
-  || '';
+// Google issues a separate OAuth client per app type; a native iOS build must
+// use the iOS client id (custom-scheme redirect), not the web one. Select by
+// Platform.OS so "有 env 時 Google 可登" holds on device, not just on web
+// (DIC-824 CR). Pure selection lives in googleClientConfig for testability.
+const GOOGLE_CLIENT_ID = resolveGoogleClientId(Platform.OS, {
+  web: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  ios: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  android: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+  generic: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+});
 
 const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
@@ -52,16 +64,33 @@ const APPLE_DISABLED_MESSAGE = APPLE_COMING_SOON_MESSAGE;
 // __DEV__ is a React Native global; declare it so this compiles under plain tsc.
 declare const __DEV__: boolean;
 
+function googleEnvVarForPlatform(): string {
+  if (Platform.OS === 'ios') return 'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID';
+  if (Platform.OS === 'android') return 'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID';
+  return 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID';
+}
+
 function missingClientIdMessage(provider: AuthProvider): string {
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
     const envVar = provider === 'google'
-      ? 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID'
+      ? googleEnvVarForPlatform()
       : 'EXPO_PUBLIC_APPLE_SERVICE_ID';
     return `Missing client ID for ${provider}. Set ${envVar} in .env`;
   }
   return provider === 'google'
     ? 'Google 登入暫時無法使用，請稍後再試。'
     : 'Apple 登入暫時無法使用，請稍後再試。';
+}
+
+// Native Google builds must redirect to the reversed-client-id custom scheme;
+// web keeps AuthSession's default https redirect. Falls back to the default
+// when no native scheme is derivable (e.g. web client id used on a dev build).
+function googleRedirectUri(clientId: string): string {
+  if (Platform.OS !== 'web') {
+    const native = nativeGoogleRedirectUri(clientId);
+    if (native) return AuthSession.makeRedirectUri({ native });
+  }
+  return AuthSession.makeRedirectUri();
 }
 
 const googleScopes = ['openid', 'profile', 'email'];
@@ -196,7 +225,9 @@ export async function signInWithProvider(provider: AuthProvider): Promise<SignIn
     throw new Error(missingClientIdMessage(provider));
   }
 
-  const redirectUri = AuthSession.makeRedirectUri();
+  const redirectUri = provider === 'google'
+    ? googleRedirectUri(clientId)
+    : AuthSession.makeRedirectUri();
   const scopes = provider === 'google' ? googleScopes : appleScopes;
   const discovery = provider === 'google' ? googleDiscovery : appleDiscovery;
 
@@ -253,7 +284,9 @@ export async function linkProvider(
     throw new Error(missingClientIdMessage(provider));
   }
 
-  const redirectUri = AuthSession.makeRedirectUri();
+  const redirectUri = provider === 'google'
+    ? googleRedirectUri(clientId)
+    : AuthSession.makeRedirectUri();
   const scopes = provider === 'google' ? googleScopes : appleScopes;
   const discovery = provider === 'google' ? googleDiscovery : appleDiscovery;
 

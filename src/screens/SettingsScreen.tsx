@@ -4,8 +4,19 @@ import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
 import { showAlert } from '../utils/platformAlert';
+import {
+  GOOGLE_LOGIN_CONFIGURED,
+  APPLE_LOGIN_ENABLED,
+  APPLE_COMING_SOON_LABEL,
+  APPLE_COMING_SOON_MESSAGE,
+} from '../services/authService';
 
 const PROVIDER_LABEL: Record<string, string> = { apple: 'Apple', google: 'Google' };
+
+// __DEV__ is a React Native global; declare it so this compiles under plain tsc.
+declare const __DEV__: boolean;
+
+const IS_DEV = typeof __DEV__ !== 'undefined' && __DEV__;
 
 export default function SettingsScreen() {
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
@@ -17,7 +28,14 @@ export default function SettingsScreen() {
   const loginWithApple = useAuthStore((s) => s.loginWithApple);
   const isLoading = useAuthStore((s) => s.isLoading);
 
+  // Keep the same provider-availability rules as LoginScreen so no reachable
+  // entry leaves a failing button (DIC-824 CR): Google disabled when its client
+  // id is missing (tappable in dev for the raw debug message), Apple shown as a
+  // passive "coming soon" state while server-side verification is not ready.
+  const googleTappable = GOOGLE_LOGIN_CONFIGURED || IS_DEV;
+
   const handleGoogleLogin = async () => {
+    if (!googleTappable) return;
     try {
       await loginWithGoogle();
     } catch (err: any) {
@@ -167,21 +185,40 @@ export default function SettingsScreen() {
             <>
               <Text style={styles.hint}>尚未登入。登入後可跨裝置同步收藏與入手提醒。</Text>
               <TouchableOpacity
-                style={[styles.googleBtn, isLoading && styles.btnDisabled]}
+                style={[styles.googleBtn, (isLoading || !googleTappable) && styles.btnDisabled]}
                 onPress={handleGoogleLogin}
-                disabled={isLoading}
+                disabled={isLoading || !googleTappable}
                 activeOpacity={0.8}
               >
                 <Text style={styles.googleBtnText}>使用 Google 帳號登入</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.appleBtn, isLoading && styles.btnDisabled]}
-                onPress={handleAppleLogin}
-                disabled={isLoading}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
-              </TouchableOpacity>
+              {!GOOGLE_LOGIN_CONFIGURED && (
+                <Text style={styles.hint}>Google 登入尚未開放，請稍後再試。</Text>
+              )}
+              {APPLE_LOGIN_ENABLED ? (
+                <TouchableOpacity
+                  style={[styles.appleBtn, isLoading && styles.btnDisabled]}
+                  onPress={handleAppleLogin}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <View
+                    style={[styles.appleBtn, styles.appleBtnComingSoon]}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: true }}
+                  >
+                    <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
+                    <View style={styles.comingSoonPill}>
+                      <Text style={styles.comingSoonPillText}>{APPLE_COMING_SOON_LABEL}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.hint}>{APPLE_COMING_SOON_MESSAGE}</Text>
+                </>
+              )}
             </>
           )}
         </View>
@@ -298,9 +335,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
   },
+  appleBtnComingSoon: {
+    opacity: 0.45,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
   appleBtnText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  comingSoonPill: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  comingSoonPillText: {
+    color: '#fff',
+    fontSize: 11,
     fontWeight: '600',
   },
   btnDisabled: {
