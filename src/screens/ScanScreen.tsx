@@ -187,6 +187,9 @@ export default function ScanScreen({ navigation }: any) {
     color: '',
     imageUrl: c.imageUrl || '',
     prices: c.prices || [],
+    buyPrice: c.buyPrice ?? null,
+    priceHistory: c.priceHistory || {},
+    ytStats: c.ytStats ?? null,
   });
 
   const mapApiCandidates = (raw: any): RecognizedCandidate[] | undefined => {
@@ -385,6 +388,9 @@ export default function ScanScreen({ navigation }: any) {
     color: '',
     imageUrl: card.imageUrl || '',
     prices: card.prices || [],
+    buyPrice: card.buyPrice ?? null,
+    priceHistory: card.priceHistory || {},
+    ytStats: card.ytStats ?? null,
   });
 
   const captureWebRecognitionImages = async (photoUri: string): Promise<string[]> => {

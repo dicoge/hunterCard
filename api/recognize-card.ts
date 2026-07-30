@@ -106,6 +106,9 @@ function fmt(entry: any) {
     rarity: entry.rarity,
     imageUrl: entry.officialImage || entry.localImage || '',
     prices: entry.prices,
+    buyPrice: entry.buyPrice ?? null,
+    priceHistory: entry.priceHistory || {},
+    ytStats: entry.ytStats ?? null,
   };
 }
 

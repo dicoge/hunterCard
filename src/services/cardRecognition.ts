@@ -354,6 +354,9 @@ function mapApiCard(apiCard: any): CardInfo {
     color: '',
     imageUrl: apiCard.imageUrl || '',
     prices: apiCard.prices || [],
+    buyPrice: apiCard.buyPrice ?? null,
+    priceHistory: apiCard.priceHistory || {},
+    ytStats: apiCard.ytStats ?? null,
   };
 }
 
