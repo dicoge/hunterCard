@@ -161,7 +161,7 @@ flowchart TD
    - 啟用 **Sign In with Apple** 並點擊 **Configure**。
    - 關聯至上述的 App ID。
 3. **設定 Domains and URLs**：
-   - **Domains**：填寫網站域名 (例如 `card-hunter-mu.vercel.app`)。
+   - **Domains**：填寫網站域名 (例如 `holocard-hunter.vercel.app`)。
    - **Return URLs (Redirect URI)**：填寫驗證平台的 Callback 網址。
      - *Supabase 範例*：`https://<project-id>.supabase.co/auth/v1/callback`
      - *Firebase 範例*：`https://<project-id>.firebaseapp.com/__/auth/handler`

@@ -52,7 +52,7 @@
   "devDependencies": {
     "@types/node-fetch": "^2.6.12",
     "@types/react": "~19.1.0",
-    "@vercel/node": "^5.7.11",
+    "@vercel/node": "^5.9.3",
     "typescript": "~5.9.2"
   },
   "overrides": {
@@ -60,7 +60,43 @@
     "tar": "^7.5.22",
     "form-data": "^4.0.6",
     "fast-uri": "^3.1.4",
-    "basic-ftp": "^5.3.1"
+    "basic-ftp": "^5.3.1",
+    "ip-address": "^10.4.0",
+    "smol-toml": "^1.7.1",
+    "ajv": "^8.20.0",
+    "path-to-regexp": "^6.3.0",
+    "@babel/core": "^7.29.7",
+    "cheerio": {
+      "undici": "^7.29.0"
+    },
+    "@ts-morph/common": {
+      "brace-expansion": "^1.1.18"
+    },
+    "@vercel/python-analysis": {
+      "js-yaml": "^4.3.0",
+      "minimatch": "^10.2.6"
+    },
+    "cosmiconfig": {
+      "js-yaml": "^4.3.0"
+    },
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^3.15.0"
+    },
+    "puppeteer-core": {
+      "ws": "^8.21.1"
+    },
+    "metro": {
+      "ws": "^7.5.13"
+    },
+    "react-devtools-core": {
+      "ws": "^7.5.13"
+    },
+    "react-native": {
+      "ws": "^6.2.6"
+    },
+    "@react-native/dev-middleware": {
+      "ws": "^6.2.6"
+    }
   },
   "private": true
 }

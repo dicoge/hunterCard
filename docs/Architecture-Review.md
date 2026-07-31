@@ -123,7 +123,7 @@ setTimeout(() => {
 **問題**：部分 API 調用缺少完善的錯誤處理
 ```typescript
 // SearchResultsScreen.tsx:39-46
-const res = await fetch(`https://card-hunter-mu.vercel.app/api/search?q=...`);
+const res = await fetch(`https://holocard-hunter.vercel.app/api/search?q=...`);
 if (!res.ok) {
   const body = await res.json().catch(() => null);
   setError(body?.error || `HTTP ${res.status}`);

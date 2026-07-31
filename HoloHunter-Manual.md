@@ -2,7 +2,7 @@
 
 > hololive OFFICIAL CARD GAME (hOCG) 卡牌查價 App  
 > 技術棧：Expo + React Native Web + TypeScript + Vercel Edge Functions  
-> 上線網址：https://card-hunter-mu.vercel.app
+> 上線網址：https://holocard-hunter.vercel.app
 
 ---
 
@@ -347,7 +347,7 @@ vercel --prod
 ## 📱 PWA 安裝
 
 ### iOS Safari
-1. 開啟 https://card-hunter-mu.vercel.app
+1. 開啟 https://holocard-hunter.vercel.app
 2. 點擊分享按鈕
 3. 選擇「加到主畫面」
 
@@ -380,7 +380,7 @@ vercel --prod
 ## 📞 聯絡與貢獻
 
 - **Repo**: https://github.com/dicoge/hunterCard
-- **Live**: https://card-hunter-mu.vercel.app
+- **Live**: https://holocard-hunter.vercel.app
 - **Telegram**: @dicoge
 
 ---
