@@ -66,11 +66,9 @@
     "ajv": "^8.20.0",
     "path-to-regexp": "^6.3.0",
     "@babel/core": "^7.29.7",
+    "brace-expansion": "^5.0.8",
     "cheerio": {
       "undici": "^7.29.0"
-    },
-    "@ts-morph/common": {
-      "brace-expansion": "^1.1.18"
     },
     "@vercel/python-analysis": {
       "js-yaml": "^4.3.0",
