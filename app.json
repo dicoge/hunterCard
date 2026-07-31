@@ -38,8 +38,6 @@
         "android.permission.RECORD_AUDIO"
       ]
     },
-    "privacyPolicyUrl": "https://card-hunter-mu.vercel.app/privacy",
-    "supportUrl": "https://card-hunter-mu.vercel.app/support",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png",

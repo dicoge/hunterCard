@@ -20,20 +20,19 @@
     "@react-navigation/native": "^7.2.2",
     "@react-navigation/native-stack": "^7.14.11",
     "@vercel/kv": "^3.0.0",
-    "axios": "^1.16.1",
+    "axios": "^1.19.0",
     "cheerio": "^1.2.0",
-    "expo": "~54.0.33",
-    "expo-auth-session": "^57.0.5",
+    "expo-auth-session": "~7.0.11",
     "expo-apple-authentication": "~8.0.8",
     "expo": "~54.0.36",
     "expo-camera": "~17.0.10",
-    "expo-crypto": "^57.0.1",
+    "expo-crypto": "~15.0.9",
     "expo-dev-client": "~6.0.21",
     "expo-image-picker": "~17.0.11",
     "expo-notifications": "~0.32.17",
     "expo-ocr-kit": "^0.1.4",
     "expo-status-bar": "~3.0.9",
-    "expo-web-browser": "^57.0.2",
+    "expo-web-browser": "~15.0.11",
     "node-fetch": "^2.7.0",
     "puppeteer": "^24.42.0",
     "puppeteer-extra": "^3.3.6",
@@ -55,6 +54,13 @@
     "@types/react": "~19.1.0",
     "@vercel/node": "^5.7.11",
     "typescript": "~5.9.2"
+  },
+  "overrides": {
+    "shell-quote": "^1.10.0",
+    "tar": "^7.5.22",
+    "form-data": "^4.0.6",
+    "fast-uri": "^3.1.4",
+    "basic-ftp": "^5.3.1"
   },
   "private": true
 }

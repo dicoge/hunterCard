@@ -168,9 +168,11 @@
 - [ ] App Store Connect App record 已建立，或同意讓 EAS submit 建立/連接。
 - [ ] App 名稱：`HoloHunter`，若被佔用需準備替代名稱。
 - [ ] SKU：例如 `holohunter-ios`。
-- [ ] 隱私權政策 URL。
-- [ ] Support URL / Marketing URL（可用同一個專案頁或網站）。
+- [ ] 隱私權政策 URL：`https://card-hunter-mu.vercel.app/privacy`（部署自 `public/privacy.html`，經 `vercel.json` rewrite）。
+- [ ] Support URL / Marketing URL（可用同一個專案頁或網站）：`https://card-hunter-mu.vercel.app/support`（部署自 `public/support.html`）。
 - [ ] 測試者 email 清單或 TestFlight group 名稱。
+
+> 註：`privacyPolicyUrl` / `supportUrl` 不是 Expo app config schema 支援的欄位（`expo-doctor` 會報錯），因此不放在 `app.json`。這兩個 URL 於送審時填入 App Store Connect / Google Play Console，值即上方兩個已部署路由。
 
 ### 1.2 建立 iOS production build
 
