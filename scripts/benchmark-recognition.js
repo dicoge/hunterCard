@@ -275,7 +275,14 @@ function ensureScaffold() {
 }
 
 // Fail closed: print why and exit non-zero without emitting a success report.
+// Also delete any stale report so a prior run's output can't be mistaken for
+// current evidence.
 function failClosed(reason) {
+  try {
+    fs.rmSync(REPORT_FILE, { force: true });
+  } catch {
+    /* best-effort: a missing/unlink-failing report must not mask the real reason */
+  }
   console.error(`\nBENCHMARK FAILED (fail-closed): ${reason}`);
   process.exit(1);
 }
@@ -375,6 +382,12 @@ async function runBenchmark() {
     failClosed(`no runnable fixture (${absentCount} absent, ${rejectedCount} rejected of ${testCases.length}). Add non-private images under ${IMAGES_DIR}.`);
   }
 
+  const totalAttempts = enabled.reduce((n, v) => n + statsByVariant[v.name].total, 0);
+  const totalSuccess = enabled.reduce((n, v) => n + statsByVariant[v.name].success, 0);
+  if (totalSuccess === 0) {
+    failClosed(`every recognition call failed (0 of ${totalAttempts} succeeded across ${enabled.length} variant(s)); no usable evidence, so no report is written.`);
+  }
+
   writeReport({ variants, enabled, statsByVariant, perImage, runnableCount, rejectedCount, absentCount });
 }
 
@@ -398,10 +411,12 @@ function writeReport({ variants, enabled, statsByVariant, perImage, runnableCoun
 **Runnable fixtures:** ${runnableCount}  (absent ${absentCount}, rejected ${rejectedCount})
 
 > Regenerated on every run and gitignored. A run reaches this report only when at
-> least one runnable fixture existed; runs with no enabled variant, no test case,
-> or no runnable fixture fail closed with a non-zero exit and write no report.
-> Per-field accuracy is over each variant's attempted images (a failed scan counts
-> as a miss). "Success rate" is successful API calls / attempts — not accuracy.
+> least one runnable fixture existed AND at least one recognition call succeeded;
+> runs with no enabled variant, no test case, no runnable fixture, or zero
+> successful calls fail closed with a non-zero exit, delete any stale report, and
+> write nothing. Per-field accuracy is over each variant's attempted images (a
+> failed scan counts as a miss). "Success rate" is successful API calls / attempts
+> — not accuracy.
 
 ## Variant configuration
 
