@@ -282,8 +282,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-017_hBP02"
+    },
+    {
+      "date": "2026-07-31",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-017_hBP02"
     }
   ],
-  "lastUpdated": "2026-07-30T12:09:42.681Z",
+  "lastUpdated": "2026-07-31T12:12:24.165Z",
   "nameZh": "白銀諾艾爾"
 }

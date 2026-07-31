@@ -254,8 +254,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP08-110_hBP08"
+    },
+    {
+      "date": "2026-07-31",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-110_hBP08"
     }
   ],
-  "lastUpdated": "2026-07-30T12:09:42.786Z",
+  "lastUpdated": "2026-07-31T12:12:24.276Z",
   "nameZh": "Takodachi"
 }
