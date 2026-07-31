@@ -10,6 +10,7 @@
     "build": "expo export --platform web && node scripts/fix-html.js",
     "test:push-backend": "node scripts/test-push-backend.cjs",
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",
+    "test:brace-expansion": "node scripts/verify-brace-expansion.cjs",
     "test:scan-geometry": "node scripts/benchmarks/scan-geometry.test.cjs",
     "benchmark:scan-recognition": "node scripts/benchmarks/scan-recognition-benchmark.cjs"
   },
@@ -66,7 +67,8 @@
     "ajv": "^8.20.0",
     "path-to-regexp": "^6.3.0",
     "@babel/core": "^7.29.7",
-    "brace-expansion": "^5.0.8",
+    "brace-expansion@1": "^1.1.18",
+    "brace-expansion@2": "^2.1.4",
     "cheerio": {
       "undici": "^7.29.0"
     },
