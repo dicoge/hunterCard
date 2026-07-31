@@ -1,4 +1,4 @@
-=== Scrape Log 2026-07-30T12:04:15.061Z ===
+=== Scrape Log 2026-07-31T12:06:47.770Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -70,11 +70,11 @@
 [database] Scraping hPC01: /sell/hocg/s/special/7
   → Found 126 cards with prices
 [database] Scraping hPR: /sell/hocg/s/special/1
-  → Found 123 cards with prices
+  → Found 125 cards with prices
 [database] Scraping hSD2025summer: /sell/hocg/s/special/8
   → Found 128 cards with prices
 
-  Total cards from yuyu-tei: 1880
+  Total cards from yuyu-tei: 1882
 
 ── Step 2: Download images ──
 
@@ -101,7 +101,7 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 2013 new records; index totals: 2023 cards / 80937 records
+  [price-history] Saved 2013 new records; index totals: 2023 cards / 82950 records
 
 ── Step 6: Merge priceHistory into database ──
   [priceHistory] Merged into 2023 cards
@@ -115,7 +115,7 @@
   Total cards: 2105
   Cards with prices: 1181
   Images downloaded: 0
-  Duration: 327.9s
+  Duration: 336.6s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
@@ -124,5 +124,5 @@ Build result: {
   "yuyuCount": 1181,
   "officialCount": 2105,
   "imagesDownloaded": 0,
-  "duration": 327.9
+  "duration": 336.6
 }
