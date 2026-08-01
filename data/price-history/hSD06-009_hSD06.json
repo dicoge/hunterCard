@@ -289,8 +289,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD06-009_hSD06"
+    },
+    {
+      "date": "2026-08-01",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD06-009_hSD06"
     }
   ],
-  "lastUpdated": "2026-07-31T12:12:24.146Z",
+  "lastUpdated": "2026-08-01T12:12:43.215Z",
   "nameZh": "鷹嶺琉衣"
 }

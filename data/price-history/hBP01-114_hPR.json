@@ -303,8 +303,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-114_hPR"
+    },
+    {
+      "date": "2026-08-01",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-114_hPR"
     }
   ],
-  "lastUpdated": "2026-07-31T12:12:24.215Z",
+  "lastUpdated": "2026-08-01T12:12:43.286Z",
   "nameZh": "石斧"
 }

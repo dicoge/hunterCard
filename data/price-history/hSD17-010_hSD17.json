@@ -261,8 +261,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD17-010_hSD17"
+    },
+    {
+      "date": "2026-08-01",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD17-010_hSD17"
     }
   ],
-  "lastUpdated": "2026-07-31T12:12:23.993Z",
+  "lastUpdated": "2026-08-01T12:12:43.057Z",
   "nameZh": "斯特拉"
 }
