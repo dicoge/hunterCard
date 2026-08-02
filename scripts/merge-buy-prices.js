@@ -19,6 +19,7 @@ import {
   normalizeRarity,
   versionClassFromRarity,
   PARALLEL_RARITIES,
+  UNKNOWN_TOKEN,
   classifyVariant,
   sourceToken,
 } from './lib/variant-key.js';
@@ -59,6 +60,7 @@ function buildBuyIndex(now = Date.now()) {
     }
     let fresh = 0;
     let stale = 0;
+    let unknown = 0;
     for (const [srcKey, entry] of Object.entries(raw || {})) {
       const price = entry && Number(entry.buyPrice);
       if (!Number.isFinite(price) || price <= 0) continue;
@@ -71,6 +73,12 @@ function buildBuyIndex(now = Date.now()) {
       if (!numKey) continue;
       // 精確 token：以 entry.rarity 為準，缺失時退而由 key 尾綴推斷（純卡號 key → '' bare）。
       const token = sourceToken(entry.rarity, srcKey.slice(numKey.length));
+      // 有標記但不在 allowlist（UNKNOWN_TOKEN）→ 絕不入 index：不得塌成 bare 原印版、
+      // 也不得與任何版本 Math.max。fail closed，該筆直接丟棄。
+      if (token === UNKNOWN_TOKEN) {
+        unknown += 1;
+        continue;
+      }
       if (!byNum.has(numKey)) byNum.set(numKey, new Map());
       const perNum = byNum.get(numKey);
       const prev = perNum.get(token);
@@ -79,6 +87,9 @@ function buildBuyIndex(now = Date.now()) {
     }
     if (stale > 0) {
       console.warn(`[merge-buy] ${file}: 略過 ${stale} 筆過期／無時間戳資料（>${MAX_SOURCE_AGE_HOURS}h）`);
+    }
+    if (unknown > 0) {
+      console.warn(`[merge-buy] ${file}: fail-closed 丟棄 ${unknown} 筆未知版本標記（不塌成原印版）`);
     }
     console.log(`[merge-buy] ${file}: ${fresh} 筆新鮮買取價`);
   }

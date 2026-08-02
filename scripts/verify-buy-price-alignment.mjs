@@ -18,17 +18,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import {
   normalizeCardNumber,
   normalizeRarity,
   versionClassFromRarity,
   versionClassFromName,
   classifyVariant,
+  classifySourceRarity,
   sourceToken,
   canonicalVariantKey,
   PARALLEL_RARITIES,
+  UNKNOWN_TOKEN,
 } from './lib/variant-key.js';
 import { assignVariantBuyPrices, representativeBuyPrice, buyPriceByToken } from './merge-buy-prices.js';
+import { scrapeFullaheadBuy, extractRarity as fullaheadRarity } from './scrape-fullahead-buy.js';
+import { extractRarityFromHref } from './scrape-torecolo-buy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(__dirname, '../data');
@@ -37,6 +42,15 @@ let failures = 0;
 function check(name, fn) {
   try {
     fn();
+    console.log(`  ✓ ${name}`);
+  } catch (err) {
+    failures += 1;
+    console.error(`  ✗ ${name}\n      ${err.message}`);
+  }
+}
+async function acheck(name, fn) {
+  try {
+    await fn();
     console.log(`  ✓ ${name}`);
   } catch (err) {
     failures += 1;
@@ -60,17 +74,34 @@ check('產品／套牌碼 → 原樣（HSD06 不得被當成 S）', () => {
   assert.notEqual(normalizeRarity('HSD06'), 'S');
   assert.notEqual(normalizeRarity('HBP07'), 'P');
 });
-check('雜訊/含尾綴 → bare（不臆測）', () => {
+check('normalizeRarity（卡層級）：非代碼 → \'\'（不臆測成 P/HR）', () => {
+  // 這是「卡片自身 rarity」正規化：卡的 P_03 屬 base class → 取 bare 來源（合法）。
   assert.equal(normalizeRarity(null), '');
   assert.equal(normalizeRarity(''), '');
-  assert.equal(normalizeRarity('P_03'), ''); // 非精確代碼 → bare，不當 P
-  assert.equal(normalizeRarity('02_HR'), ''); // 前綴雜訊 → 不當 HR
+  assert.equal(normalizeRarity('P_03'), '');
+  assert.equal(normalizeRarity('02_HR'), '');
 });
-check('sourceToken：rarity 欄位優先，缺則用 key 尾綴，bare→\'\'', () => {
+check('classifySourceRarity（來源層級）：bare / known / unknown 三態', () => {
+  assert.deepEqual(classifySourceRarity(null), { kind: 'bare', token: '' });
+  assert.deepEqual(classifySourceRarity(''), { kind: 'bare', token: '' });
+  assert.deepEqual(classifySourceRarity('  '), { kind: 'bare', token: '' });
+  assert.deepEqual(classifySourceRarity('SEC'), { kind: 'known', token: 'SEC' });
+  assert.deepEqual(classifySourceRarity('HSD06'), { kind: 'known', token: 'HSD06' });
+  // 有標記但不在 allowlist → unknown（絕非 bare）。這是與前一版最關鍵的差異：來源的 XYZ /
+  // P_03 標記「不可信」，不得塌成原印版。
+  assert.deepEqual(classifySourceRarity('XYZ'), { kind: 'unknown', token: UNKNOWN_TOKEN });
+  assert.deepEqual(classifySourceRarity('【XYZ】'), { kind: 'unknown', token: UNKNOWN_TOKEN });
+  assert.deepEqual(classifySourceRarity('P_03'), { kind: 'unknown', token: UNKNOWN_TOKEN });
+});
+check('sourceToken：bare→\'\'、known→精確 token、unknown→UNKNOWN_TOKEN（不塌成 bare）', () => {
   assert.equal(sourceToken('SEC', '-SEC'), 'SEC');
   assert.equal(sourceToken(null, '-SEC'), 'SEC');
   assert.equal(sourceToken(null, ''), ''); // 純卡號 → bare
   assert.equal(sourceToken('HSD06', ''), 'HSD06');
+  // 未知來源標記絕不可變 bare（否則會與真原印版合併／取 max）。
+  assert.equal(sourceToken('XYZ', ''), UNKNOWN_TOKEN);
+  assert.equal(sourceToken(null, '-XYZ'), UNKNOWN_TOKEN);
+  assert.notEqual(sourceToken('XYZ', ''), ''); // 明確：不是 bare
 });
 
 console.log('── Unit: 版本分類 ──');
@@ -172,6 +203,49 @@ check('同名重複具體版本 → 全 null（無法證明 provenance）', () =
   assert.deepEqual(assignVariantBuyPrices(variants, buy), [null, null]);
 });
 
+console.log('── Unit: 未知版本標記 fail closed（不塌成原印版、不被 max）──');
+check('merge：UNKNOWN_TOKEN 報價不得洩漏到 base，也不 match 任何 variant', () => {
+  // 來源同時有「真原印 100」與「未知標記 9999（token=UNKNOWN_TOKEN）」。
+  const buy = [{ token: '', price: 100 }, { token: UNKNOWN_TOKEN, price: 9999 }];
+  // 原印版只吃 bare → 100，絕不被 9999 蓋掉。
+  assert.deepEqual(assignVariantBuyPrices([{ name: 'X' }], buy), [100]);
+  assert.equal(representativeBuyPrice('C', buy), 100);
+  // 沒有任何 variant 會對到 UNKNOWN_TOKEN。
+  const parallel = assignVariantBuyPrices([{ name: 'X(パラレル)' }, { name: 'X' }], buy);
+  assert.deepEqual(parallel, [null, 100]);
+});
+check('scraper（Torecolo）extractRarityFromHref：known / bare / unknown', () => {
+  assert.equal(extractRarityFromHref('/shop/g/HL-HBP08-003SEC-S/', 'HBP08-003'), 'SEC');
+  assert.equal(extractRarityFromHref('/shop/g/HBP01-001/', 'HBP01-001'), null); // 無尾綴 → bare
+  assert.equal(extractRarityFromHref('/shop/g/HBP01-001XYZ/', 'HBP01-001'), UNKNOWN_TOKEN);
+});
+check('scraper（Fullahead）extractRarity：known / bare / unknown', () => {
+  assert.equal(fullaheadRarity('【UR】hBP01-091 ムーナ'), 'UR');
+  assert.equal(fullaheadRarity('hBP01-091 ムーナ'), null); // 無【】→ bare
+  assert.equal(fullaheadRarity('【XYZ】hBP01-091 ムーナ'), UNKNOWN_TOKEN);
+});
+await acheck('scraper（Fullahead）整合：【XYZ】9999 + 無標記 100 → base 維持 100，未知筆丟棄', async () => {
+  const outFile = path.join(os.tmpdir(), `fa-unknown-${process.pid}.json`);
+  try { fs.unlinkSync(outFile); } catch { /* noop */ }
+  const records = [
+    { productName: '【XYZ】hBP01-001 テスト', price: '9999' },
+    { productName: 'hBP01-001 テスト', price: '100' },
+  ];
+  await scrapeFullaheadBuy({
+    dbPath: path.join(DATA, 'database.json'),
+    outputFile: outFile,
+    scrapeWithRestartFn: async () => records,
+    nowFn: () => new Date('2026-01-01T00:00:00Z'),
+  });
+  const out = JSON.parse(fs.readFileSync(outFile, 'utf-8'));
+  fs.unlinkSync(outFile);
+  assert.ok(out['hBP01-001'], 'base key 應存在');
+  assert.equal(out['hBP01-001'].buyPrice, 100); // 原印價維持 100
+  const prices = Object.values(out).map((x) => x.buyPrice);
+  assert.ok(!prices.includes(9999), '未知標記 9999 絕不得寫入');
+  assert.ok(!Object.keys(out).some((k) => k.includes(UNKNOWN_TOKEN)), '不得出現 UNKNOWN key');
+});
+
 // ── 真實資料驗證 ──
 console.log('── Integration: 真實 database.json ──');
 const db = JSON.parse(fs.readFileSync(path.join(DATA, 'database.json'), 'utf-8')).cards;
@@ -187,6 +261,7 @@ function loadSourceIndex() {
       const price = v && Number(v.buyPrice);
       if (!num || !(price > 0)) continue;
       const token = sourceToken(v.rarity, k.slice(num.length));
+      if (token === UNKNOWN_TOKEN) continue; // 與 merge buildBuyIndex 一致：未知標記 fail closed
       if (!byNum.has(num)) byNum.set(num, new Map());
       const m = byNum.get(num);
       const prev = m.get(token);

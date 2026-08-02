@@ -34,6 +34,11 @@ const RARITY_ALIASES = { PR: 'P' };
 // 產品／套牌碼（作為替代平行版 token，如 HSD06 / HBP04 / HBP07 / HSD12）。純字母 rarity 不會誤中。
 const PRODUCT_CODE_RE = /^H[A-Z]{1,4}\d{2,}$/;
 
+// 「有標記但不在 allowlist」的來源版本 sentinel：既非 bare、也非任何已知/產品碼 token，
+// 因此對不到任何 variant（fail closed）。與純卡號無標記（bare '' → 原印版）嚴格區分，
+// 避免未知標記的收購價塌成原印價、或被 Math.max 蓋掉真正的原印價（CR DIC-857）。
+const UNKNOWN_TOKEN = '#UNKNOWN';
+
 /** 從任意字串抽第一個卡號（如 hBP04-005），統一大寫；抓不到回 null。 */
 function normalizeCardNumber(str) {
   const m = String(str ?? '').match(/h[A-Za-z]{1,4}\d{0,3}-\d{2,}/i);
@@ -98,13 +103,31 @@ function classifyVariant(name) {
 }
 
 /**
- * 由「來源 rarity 欄位（優先）或 key 尾綴」得出精確來源 token 與版本類別。
- * bare（無 rarity）→ token ''。
+ * 判定一段來源版本標記字串屬於哪一類：
+ *   - 空（null / 純卡號無尾綴）→ { kind:'bare', token:'' }：真正無標記的原印版。
+ *   - 完全等於已知 rarity / 產品碼 → { kind:'known', token }：精確版本。
+ *   - 非空但不在 allowlist（如 XYZ / P_03 這類無法證明的標記）→ { kind:'unknown', token:UNKNOWN_TOKEN }：
+ *     **有標記但不可信**，必須 fail closed，絕不可塌成 bare 與真正原印版合併／取 max。
+ */
+function classifySourceRarity(raw) {
+  const s = raw == null ? '' : String(raw).trim();
+  if (s === '') return { kind: 'bare', token: '' };
+  const norm = normalizeRarity(s);
+  if (norm !== '') return { kind: 'known', token: norm };
+  return { kind: 'unknown', token: UNKNOWN_TOKEN };
+}
+
+/**
+ * 由「來源 rarity 欄位（優先）或 key 尾綴」得出精確來源 token。
+ *   - 無標記 → ''（bare / 原印版）。
+ *   - 已知 rarity / 產品碼 → 該精確 token。
+ *   - 有標記但非 allowlist → UNKNOWN_TOKEN（fail closed，對不到任何 variant）。
  */
 function sourceToken(rarityField, keySuffix) {
-  const raw = rarityField != null && String(rarityField).length > 0 ? rarityField : keySuffix;
-  const cleaned = String(raw ?? '').replace(/^[-_\s]+/, '');
-  return normalizeRarity(cleaned);
+  const rawField = rarityField != null ? String(rarityField) : '';
+  const raw = rawField.length > 0 ? rawField : keySuffix != null ? String(keySuffix) : '';
+  const cleaned = raw.replace(/^[-_\s]+/, '');
+  return classifySourceRarity(cleaned).token;
 }
 
 /**
@@ -129,11 +152,13 @@ export {
   RARITY_SET,
   PARALLEL_RARITIES,
   PRODUCT_CODE_RE,
+  UNKNOWN_TOKEN,
   normalizeCardNumber,
   normalizeRarity,
   versionClassFromRarity,
   versionClassFromName,
   classifyVariant,
+  classifySourceRarity,
   sourceToken,
   rarityTokenInName,
   canonicalVariantKey,

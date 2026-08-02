@@ -18,7 +18,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as cheerio from 'cheerio';
 import { extractCardNumber } from './lib/card-number.js';
-import { normalizeRarity } from './lib/variant-key.js';
+import { classifySourceRarity, UNKNOWN_TOKEN } from './lib/variant-key.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,15 +64,19 @@ function loadCardNumbers() {
 }
 
 // Torecolo 商品碼把稀有度接在卡號後面，例如 `HL-HBP08-003SEC-S` → 卡號 HBP08-003、
-// 稀有度 SEC（`-S` 是尾碼）。取卡號後緊接的字母（含產品碼數字）當稀有度，用共用 canonical
-// 正規化（lib/variant-key.js）轉成精確 token；非已知代碼回 null（→ 原印版）。
+// 稀有度 SEC（`-S` 是尾碼）。三態回傳（CR DIC-857）：
+//   - 卡號後無字母尾綴 → null（無標記 → 原印版 bare）。
+//   - 已知代碼 → 精確 token。
+//   - 有尾綴但非 allowlist → UNKNOWN_TOKEN：有標記但不可信，之後 fail closed，
+//     絕不當成無標記原印版與純卡號報價合併／取 max。
 function extractRarityFromHref(href, cardNumber) {
   if (!href || !cardNumber) return null;
   const idx = href.toUpperCase().indexOf(cardNumber.toUpperCase());
   if (idx === -1) return null;
   const m = href.slice(idx + cardNumber.length).match(/^([A-Za-z]+\d*)/);
   if (!m) return null;
-  return normalizeRarity(m[1]) || null;
+  const { kind, token } = classifySourceRarity(m[1]);
+  return kind === 'known' ? token : UNKNOWN_TOKEN;
 }
 
 function parsePrice(text) {
@@ -157,6 +161,8 @@ async function scrape() {
       for (const { cardNumber, rarity, buyPrice } of rows) {
         const numKey = cardNumber.toUpperCase();
         if (!cardNumbers.has(numKey)) continue; // database 沒有這張卡就跳過
+        // 有標記但不在 allowlist（UNKNOWN_TOKEN）→ fail closed：整筆丟棄，絕不落成純卡號原印版。
+        if (rarity === UNKNOWN_TOKEN) continue;
         matched += 1;
         const key = rarity ? `${numKey}-${rarity}` : numKey;
         const prev = best.get(key);
@@ -225,4 +231,4 @@ if (isMain) {
     });
 }
 
-export { scrape };
+export { scrape, extractRarityFromHref };
