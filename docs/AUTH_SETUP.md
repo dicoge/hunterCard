@@ -2,6 +2,8 @@
 
 本文件說明 iOS「Sign in with Apple」的設定步驟、需要在 Apple Developer 後台配置的項目、環境變數，以及 TestFlight 驗證 checklist。
 
+> **注意（DIC-663 更新）**：本文件描述的是早期 iOS 原生 Apple 流程（`src/services/auth/` + `src/stores/authStore.ts`）。目前**實際運行**的登入路徑是 `src/services/authService.ts` + `src/store/authStore.ts`（HoloUser + linked providers + guest/free/subscriber）。**Web Google 登入已接線並啟用**（`signInWithProvider('google')`）；Web Apple 登入的可行性評估與 Apple Developer 設定清單請見 `docs/Web-Apple-Login-Evaluation.md`。下方「Google 登入後續（尚未接線）」段落僅適用於已停用的舊 `services/auth/googleAuth.ts` 佔位檔。
+
 ## 產品決策
 
 - 只支援 **Apple ID** 與 **Google** 登入，**不提供**自家 Email/密碼。
