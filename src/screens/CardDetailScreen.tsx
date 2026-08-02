@@ -252,14 +252,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
         ) : (
           <Text style={styles.noPriceText}>暫無資料</Text>
         )}
-        <PriceTrend priceHistory={card.priceHistory || {}} />
+        {/* 歷史走勢僅為卡號層級（追蹤單一版本），多版本卡無法歸屬到選中版本 → 不顯示以免混版（DIC-856）。 */}
+        {!hasMultipleVariants ? <PriceTrend priceHistory={card.priceHistory || {}} /> : null}
         <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
           <Text style={styles.checkPriceBtnText}>🔍 查看遊々亭即時價格 →</Text>
         </TouchableOpacity>
       </View>
 
       {/* ====== TREND PREDICTION ====== */}
-      {trend && (
+      {/* 趨勢預測基於卡號層級歷史（單一版本序列）。多版本卡無法歸屬到特定版本 → 隱藏，
+          避免用別版走勢推薦本版（DIC-856：禁止跨版本推薦訊號）。 */}
+      {!hasMultipleVariants && trend && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
           <PriceTrendBadge
@@ -562,13 +565,11 @@ function MarketDataPanel({ card }: { card: any }) {
       }
     }
   }
-  // priceHistory 只有卡號層級（實測僅追蹤最低價版本），非各版本獨立。若最新歷史值與
-  // 目前選中版本價格差距過大，這段歷史不代表本版本 → 不顯示，避免又是混版數據。
-  const historyRepresentsVersion =
-    latestHistoryValue != null &&
-    typeof sellPrice === 'number' && sellPrice > 0 &&
-    Math.abs(latestHistoryValue - sellPrice) / sellPrice <= 0.15;
-  const hasHistory = priceTrend != null && historyRepresentsVersion;
+  // priceHistory 只有卡號層級（實測僅追蹤單一版本序列），非各版本獨立。多版本卡無法把這段
+  // 歷史精確歸屬到選中版本 → 一律不顯示漲跌（fail closed，禁止用近似值臆測本版走勢，DIC-856）。
+  // 僅單一版本卡（歷史必屬該版本）才顯示。
+  void latestHistoryValue;
+  const hasHistory = priceTrend != null && !multiVersion;
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
@@ -717,7 +718,7 @@ function MarketDataPanel({ card }: { card: any }) {
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>➖ 漲跌判斷</Text>
           <Text style={styles.marketNote}>
-            此版本（{versionLabel}）暫無歷史均價：歷史資料僅追蹤卡號最低價版本，與目前版本不符，故不顯示以免混版。
+            此版本（{versionLabel}）暫無歷史均價：多版本卡的歷史為卡號層級、無法精確歸屬到單一版本，故不顯示以免混版。
           </Text>
         </View>
       ) : null}

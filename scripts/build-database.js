@@ -17,6 +17,7 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
+import { canonicalVariantKey } from './lib/variant-key.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -950,12 +951,22 @@ async function buildDatabase() {
         saved.buyPriceHistory = card.buyPriceHistory;
       }
       // Per-version buy prices (DIC-856) also live only in database.json → preserve them
-      // by variant name so a build-only pass (no merge afterward) keeps version alignment.
+      // by EXACT canonical variant key (cardNumber|class|token) so a build-only pass (no merge
+      // afterward) keeps version alignment. Keys that collide within a card (e.g. two identical
+      // (パラレル) variants — hBP02-017) are ambiguous, so we drop them rather than let one
+      // variant's price leak onto its twin; merge-buy-prices.js re-derives those from source.
       if (Array.isArray(card.prices)) {
         const variantBuy = {};
+        const seenKey = new Set();
+        const dupKey = new Set();
         for (const v of card.prices) {
-          if (v && Number.isFinite(v.buyPrice) && v.buyPrice > 0) variantBuy[v.name || ''] = v.buyPrice;
+          if (!v || !Number.isFinite(v.buyPrice) || v.buyPrice <= 0) continue;
+          const key = canonicalVariantKey(card.cardNumber, v.name);
+          if (seenKey.has(key)) { dupKey.add(key); continue; }
+          seenKey.add(key);
+          variantBuy[key] = v.buyPrice;
         }
+        for (const k of dupKey) delete variantBuy[k];
         if (Object.keys(variantBuy).length > 0) saved.variantBuy = variantBuy;
       }
       if (Object.keys(saved).length > 0) prevBuyByCardId.set(cardId, saved);
@@ -1298,8 +1309,17 @@ async function buildDatabase() {
     if (saved.buyPrice != null) card.buyPrice = saved.buyPrice;
     if (saved.buyPriceHistory != null) card.buyPriceHistory = saved.buyPriceHistory;
     if (saved.variantBuy && Array.isArray(card.prices)) {
+      // Only restore onto variants whose canonical key is unique in the rebuilt card, so an
+      // ambiguous (duplicate-key) variant never inherits another version's preserved price.
+      const keyCount = new Map();
       for (const v of card.prices) {
-        const bp = saved.variantBuy[v.name || ''];
+        const k = canonicalVariantKey(card.cardNumber, v.name);
+        keyCount.set(k, (keyCount.get(k) || 0) + 1);
+      }
+      for (const v of card.prices) {
+        const k = canonicalVariantKey(card.cardNumber, v.name);
+        if (keyCount.get(k) !== 1) continue;
+        const bp = saved.variantBuy[k];
         if (bp != null) v.buyPrice = bp;
       }
     }

@@ -17,6 +17,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer';
 import { extractCardNumber } from './lib/card-number.js';
+import { normalizeRarity } from './lib/variant-key.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,14 +40,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 商品名帶稀有度標記，例如「【OUR】hBP04-002 儒烏風亭らでん」。抽出標記並正規化成
-// database 用的 rarity 寫法（【PR】與【P】都對應 database 的 "P"）。抓不到回傳 null。
-const RARITY_ALIASES = { PR: 'P' };
+// 商品名帶稀有度標記，例如「【OUR】hBP04-002 儒烏風亭らでん」。用共用 canonical 正規化
+// （lib/variant-key.js）抽出精確 token；無標記／非已知代碼回 null（純卡號 → 原印版）。
 function extractRarity(productName) {
   const m = productName && String(productName).match(/【\s*([A-Za-z0-9]+)\s*】/);
   if (!m) return null;
-  const raw = m[1].toUpperCase();
-  return RARITY_ALIASES[raw] || raw;
+  return normalizeRarity(m[1]) || null;
 }
 
 // 舊輸出檔的卡數，檔案不存在或讀不到時回傳 0。輸出是 { 卡號: {...} } 物件。

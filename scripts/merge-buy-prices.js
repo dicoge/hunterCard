@@ -18,8 +18,9 @@ import {
   normalizeCardNumber,
   normalizeRarity,
   versionClassFromRarity,
-  versionClassFromName,
-  rarityTokenInName,
+  PARALLEL_RARITIES,
+  classifyVariant,
+  sourceToken,
 } from './lib/variant-key.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -41,11 +42,11 @@ function localDateStr(d = new Date()) {
 
 /**
  * 讀所有來源檔，建 numKey(正規化卡號) -> 該卡號的買取版本清單。
- * 每筆版本：{ rarity(核心代碼或''), versionClass, price }。同一 (numKey, rarity) 出現多次
+ * 每筆版本：{ token(精確 rarity/產品碼，bare='' ), price }。同一 (numKey, token) 多筆
  *（例如 fullahead 與 torecolo 都收 SEC）取較高價——那是「同一版本」的兩個報價，非跨版本。
  */
 function buildBuyIndex(now = Date.now()) {
-  const byNum = new Map(); // numKey -> Map(rarity -> { rarity, versionClass, price })
+  const byNum = new Map(); // numKey -> Map(token -> price)
   for (const file of SOURCE_FILES) {
     const p = path.join(BUY_DIR, file);
     let raw;
@@ -68,13 +69,12 @@ function buildBuyIndex(now = Date.now()) {
       }
       const numKey = normalizeCardNumber(srcKey);
       if (!numKey) continue;
-      // rarity 以 entry.rarity 為準，缺失時退而由 key 尾綴推斷（舊格式純卡號 key → 普通版）。
-      const rarity = normalizeRarity(entry.rarity != null ? entry.rarity : srcKey.slice(numKey.length));
-      const versionClass = versionClassFromRarity(rarity || null);
+      // 精確 token：以 entry.rarity 為準，缺失時退而由 key 尾綴推斷（純卡號 key → '' bare）。
+      const token = sourceToken(entry.rarity, srcKey.slice(numKey.length));
       if (!byNum.has(numKey)) byNum.set(numKey, new Map());
       const perNum = byNum.get(numKey);
-      const prev = perNum.get(rarity);
-      if (!prev || price > prev.price) perNum.set(rarity, { rarity, versionClass, price });
+      const prev = perNum.get(token);
+      if (prev == null || price > prev) perNum.set(token, price);
       fresh += 1;
     }
     if (stale > 0) {
@@ -82,54 +82,75 @@ function buildBuyIndex(now = Date.now()) {
     }
     console.log(`[merge-buy] ${file}: ${fresh} 筆新鮮買取價`);
   }
-  // 攤平成 numKey -> array
+  // 攤平成 numKey -> array of { token, price }
   const out = new Map();
-  for (const [numKey, perNum] of byNum.entries()) out.set(numKey, [...perNum.values()]);
+  for (const [numKey, perNum] of byNum.entries()) {
+    out.set(numKey, [...perNum.entries()].map(([token, price]) => ({ token, price })));
+  }
   return out;
 }
 
+/** 由買取版本清單建 token→最高價（同 token＝同版本兩報價取高，非跨版本）。 */
+function buyPriceByToken(buyEntries) {
+  const map = new Map();
+  for (const b of Array.isArray(buyEntries) ? buyEntries : []) {
+    const prev = map.get(b.token);
+    if (prev == null || b.price > prev) map.set(b.token, b.price);
+  }
+  return map;
+}
+
 /**
- * 把某卡號的買取版本清單，對齊到該卡的 prices[] 版本，回傳與 variants 等長的 buyPrice 陣列
- *（對不到的版本為 null，fail closed，絕不借別版價）。純函式，供測試直接呼叫。
+ * 把某卡號的買取版本清單，精確對齊到該卡 prices[] 的每個版本，回傳與 variants 等長的 buyPrice
+ * 陣列（對不到 / 版本不精確 → null，fail closed，絕不借別版價、絕不 Math.max 跨版本）。純函式。
+ *
+ * 規則（精確 token 比對）：
+ *   - base（''）      只吃來源 bare('')；signed（'SEC'）只吃 'SEC'；帶標籤替代版只吃完全相同 token。
+ *   - 純 (パラレル)（token=null）：唯一一個純平行版本、且唯一一個「未被具體 token 宣告的標準平行來源」
+ *     才可對齊，否則 fail closed（避免 hBP02-017 兩個 (パラレル) 對 {SR,UR} 塌成同價）。
+ *   - 任一具體 token 被兩個以上版本宣告（含同名重複）→ 全部 null（歧義，無法證明精確 provenance）。
  *
  * @param {Array<{name?:string}>} variants  database 卡片的 prices[]（至少含 name）
- * @param {Array<{rarity:string, versionClass:string, price:number}>} buyEntries 該卡號買取版本
+ * @param {Array<{token:string, price:number}>} buyEntries 該卡號買取版本
  */
 function assignVariantBuyPrices(variants, buyEntries) {
-  const list = Array.isArray(buyEntries) ? buyEntries : [];
-  // 被「帶標籤替代平行版」（パラレル/HR…）宣告的 rarity；普通平行版不可再吃這些 rarity 的價。
-  const tokenRarities = new Set();
-  for (const v of variants) {
-    const tok = rarityTokenInName(v && v.name);
-    if (tok) tokenRarities.add(tok);
-  }
-  return variants.map((v) => {
-    const name = v && v.name;
-    const classV = versionClassFromName(name);
-    const tokenV = rarityTokenInName(name);
-    const matched = list.filter((b) => {
-      if (tokenV) return b.rarity === tokenV; // 帶標籤平行版：只吃完全相同 rarity
-      if (classV === 'parallel') return b.versionClass === 'parallel' && !tokenRarities.has(b.rarity);
-      return b.versionClass === classV; // base / signed 依類別對齊
-    });
-    if (matched.length === 0) return null;
-    return matched.reduce((mx, b) => Math.max(mx, b.price), 0); // 同版本多報價取高，非跨版本
+  const list = Array.isArray(variants) ? variants : [];
+  const srcByToken = buyPriceByToken(buyEntries);
+  const cls = list.map((v) => classifyVariant(v && v.name));
+
+  const tokenCount = new Map(); // 具體 token 出現次數 → 判重複歧義
+  for (const c of cls) if (c.token != null) tokenCount.set(c.token, (tokenCount.get(c.token) || 0) + 1);
+
+  // 被具體版本宣告的標準平行 rarity；純 (パラレル) 不可再吃這些。
+  const claimed = new Set();
+  for (const c of cls) if (c.token && PARALLEL_RARITIES.has(c.token)) claimed.add(c.token);
+
+  // 可供純 (パラレル) 對齊的標準平行來源（未被具體版本宣告）。
+  const parallelPool = [...srcByToken.keys()].filter((t) => PARALLEL_RARITIES.has(t) && !claimed.has(t));
+  const plainCount = cls.filter((c) => c.versionClass === 'parallel' && c.token === null).length;
+
+  return cls.map((c) => {
+    if (c.token === null) {
+      if (plainCount === 1 && parallelPool.length === 1) return srcByToken.get(parallelPool[0]);
+      return null; // 0 個或多個平行來源／多個純平行版本 → 無法精確判定
+    }
+    if ((tokenCount.get(c.token) || 0) > 1) return null; // 重複宣告同 token → 歧義
+    const p = srcByToken.get(c.token);
+    return p != null ? p : null;
   });
 }
 
 /**
- * card 層級代表買取價：只取「該卡自身 rarity 所屬版本」的價，對不到即 null。
- * 優先完全相同 rarity，其次同版本類別；絕不跨版本 fallback。
+ * card 層級代表買取價：只取「該卡自身 rarity 精確 token 所屬版本」的價，對不到即 null。
+ * 精確比對，絕不 class fallback、絕不跨版本 Math.max。
  */
 function representativeBuyPrice(cardRarity, buyEntries) {
-  const list = Array.isArray(buyEntries) ? buyEntries : [];
-  if (list.length === 0) return null;
-  const core = normalizeRarity(cardRarity);
-  const classCard = versionClassFromRarity(cardRarity);
-  const exact = core ? list.filter((b) => b.rarity === core) : [];
-  const pool = exact.length ? exact : list.filter((b) => b.versionClass === classCard);
-  if (pool.length === 0) return null;
-  return pool.reduce((mx, b) => Math.max(mx, b.price), 0);
+  const srcByToken = buyPriceByToken(buyEntries);
+  if (srcByToken.size === 0) return null;
+  // 原印/普卡（base class）對應來源的「無 rarity 純卡號」價（token ''）；平行/簽名用精確 rarity token。
+  const token = versionClassFromRarity(cardRarity) === 'base' ? '' : normalizeRarity(cardRarity);
+  const p = srcByToken.get(token);
+  return p != null ? p : null;
 }
 
 function main() {
@@ -193,4 +214,4 @@ if (isMain) {
   }
 }
 
-export { main as mergeBuyPrices, buildBuyIndex, assignVariantBuyPrices, representativeBuyPrice };
+export { main as mergeBuyPrices, buildBuyIndex, buyPriceByToken, assignVariantBuyPrices, representativeBuyPrice };
