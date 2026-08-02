@@ -122,6 +122,11 @@ const DETAIL_KEY = (id: string, p: Provider, sub: string) => `auth:idetail:${id}
 const IDENTITIES_KEY = (id: string) => `auth:user:${id}:identities`;
 const LOCK_KEY = (id: string) => `auth:lock:${id}`;
 const FENCE_KEY = (id: string) => `auth:fence:${id}`;
+// Deletion tombstone, owned by session.ts as `auth:deleted:{userId}`. identity-store
+// reads it DIRECTLY here — symmetric to session.ts reading our `auth:user:{id}` — so
+// login/link/unlink can observe an in-flight account deletion UNDER the per-user lock
+// without importing session.ts (no import cycle). CR round-8 blocker #1.
+const DELETED_KEY = (id: string) => `auth:deleted:${id}`;
 const member = (p: Provider, sub: string) => `${p}:${sub}`;
 const splitMember = (m: string): { provider: Provider; subject: string } => {
   const i = m.indexOf(':');
@@ -163,6 +168,16 @@ interface Lock {
 async function freeIndexIfOwned(provider: Provider, subject: string, userId: string): Promise<boolean> {
   const freed = await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, subject)], [userId]);
   return freed === 1;
+}
+
+/**
+ * True iff a deletion tombstone exists for this user. Read under the per-user lock
+ * by login/link/unlink so an in-flight (or partially-failed) account deletion is
+ * observed before any ownership mutation resurrects the account or mints a session
+ * for it (CR round-8 blocker #1).
+ */
+async function isTombstoned(userId: string): Promise<boolean> {
+  return Boolean(await kv.get(DELETED_KEY(userId)));
 }
 
 export function isIdentityStoreConfigured(): boolean {
@@ -324,6 +339,15 @@ async function loginExistingOwner(
       await freeIndexIfOwned(provider, subject, ownerId);
       return RETRY;
     }
+    if (await isTombstoned(ownerId)) {
+      // The account is being (or has been) deleted — its tombstone was committed
+      // under this SAME lock. Do NOT resurrect the record or mint a session bound
+      // to a deleted user (CR round-8 blocker #1: login must never return a newly
+      // minted but immediately unusable session). Free the stale index iff still
+      // ours so the retry falls through to creating a FRESH user for this subject.
+      await freeIndexIfOwned(provider, subject, ownerId);
+      return RETRY;
+    }
     if (user.status !== 'active') {
       throw new IdentityStoreError('ACCOUNT_DISABLED', `User ${ownerId} is ${user.status}`);
     }
@@ -469,6 +493,7 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
   try {
     const user = await loadUser(userId);
     if (!user) throw new IdentityStoreError('USER_NOT_FOUND', userId);
+    if (await isTombstoned(userId)) throw new IdentityStoreError('USER_NOT_FOUND', userId); // deletion in flight
     if (user.status !== 'active') throw new IdentityStoreError('ACCOUNT_DISABLED', userId);
 
     const owned = await ownedMembers(userId);
@@ -532,6 +557,7 @@ export async function unlinkIdentity(userId: string, provider: Provider): Promis
   try {
     const user = await loadUser(userId);
     if (!user) throw new IdentityStoreError('USER_NOT_FOUND', userId);
+    if (await isTombstoned(userId)) throw new IdentityStoreError('USER_NOT_FOUND', userId); // deletion in flight
 
     const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
     const target = members.find((m) => splitMember(m).provider === provider);
@@ -580,26 +606,68 @@ export interface DeleteResult {
   deletedProviders: number;
 }
 
+/**
+ * §5.4 identity cascade, assuming the per-user lock is ALREADY held. Idempotent:
+ * returns deletedInternalUser:false (no throw) once the user record is gone, so a
+ * convergent retry is safe.
+ */
+async function deleteUserLocked(userId: string): Promise<DeleteResult> {
+  const user = await loadUser(userId);
+  if (!user) return { deletedInternalUser: false, deletedProviders: 0 };
+
+  const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
+  for (const m of members) {
+    const { provider, subject } = splitMember(m);
+    // Atomic compare-and-delete: free the index iff it STILL points at us. The
+    // old GET-then-DEL had a check-then-act race — if a new user reclaimed the
+    // subject between the GET and the DEL, the stale DEL would stomp the new
+    // owner's index (CR blocker #1, delete/reclaim interleaving).
+    await freeIndexIfOwned(provider, subject, userId);
+    await kv.del(DETAIL_KEY(userId, provider, subject));
+  }
+  await kv.del(IDENTITIES_KEY(userId));
+  await kv.del(USER_KEY(userId));
+  return { deletedInternalUser: true, deletedProviders: members.length };
+}
+
 /** §5.4 cascade delete the internal user and all its identities. */
 export async function deleteUser(userId: string): Promise<DeleteResult> {
   const lock = await acquireLock(userId);
   try {
-    const user = await loadUser(userId);
-    if (!user) return { deletedInternalUser: false, deletedProviders: 0 };
+    return await deleteUserLocked(userId);
+  } finally {
+    await releaseLock(userId, lock);
+  }
+}
 
-    const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
-    for (const m of members) {
-      const { provider, subject } = splitMember(m);
-      // Atomic compare-and-delete: free the index iff it STILL points at us. The
-      // old GET-then-DEL had a check-then-act race — if a new user reclaimed the
-      // subject between the GET and the DEL, the stale DEL would stomp the new
-      // owner's index (CR blocker #1, delete/reclaim interleaving).
-      await freeIndexIfOwned(provider, subject, userId);
-      await kv.del(DETAIL_KEY(userId, provider, subject));
-    }
-    await kv.del(IDENTITIES_KEY(userId));
-    await kv.del(USER_KEY(userId));
-    return { deletedInternalUser: true, deletedProviders: members.length };
+/** Callbacks the account-deletion commit runs, kept as callbacks so identity-store
+ *  takes no dependency on session.ts / apple-token-store (no import cycle). */
+export interface DeletionHooks {
+  /** Write the durable deletion tombstone (session.markUserDeleted). */
+  writeTombstone: (userId: string) => Promise<void>;
+  /** Post-cascade idempotent cleanup: discard Apple token + revoke ALL sessions. */
+  afterCascade: (userId: string) => Promise<void>;
+}
+
+/**
+ * Account-deletion state machine as ONE fenced per-user critical section (CR
+ * round-8 blocker #1). The deletion TOMBSTONE is the single durable commit point
+ * and is written FIRST, under the SAME lock login/link/unlink/delete take — not by
+ * the handler lock-free. Fencing it here is what lets a concurrent returning login
+ * (which re-checks the tombstone under this lock) refuse to hand out a session for
+ * an account being deleted, closing the "newly minted but immediately unusable
+ * session" window. After the tombstone: the identity cascade, then afterCascade
+ * (Apple-token discard + revoke-all) — every step idempotent, so a retry converges.
+ * If the tombstone SET itself fails, the lock releases having committed nothing and
+ * the caller's live token simply retries.
+ */
+export async function commitAccountDeletion(userId: string, hooks: DeletionHooks): Promise<void> {
+  const lock = await acquireLock(userId);
+  try {
+    await hooks.writeTombstone(userId);
+    await assertHeld(userId, lock);
+    await deleteUserLocked(userId);
+    await hooks.afterCascade(userId);
   } finally {
     await releaseLock(userId, lock);
   }

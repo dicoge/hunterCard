@@ -478,10 +478,10 @@ Web 的 Sign in with Apple 需要下列設定（無論自管或用 Firebase/Supa
 
 | 項目 | 值 / 說明 |
 | --- | --- |
-| App ID | `com.dicoge.holohunter`（native iOS），啟用 Sign in with Apple capability |
+| App ID（primary App ID） | `com.dicoge.holohunter`（native iOS），啟用 Sign in with Apple capability；Services ID 需關聯到此 primary App ID |
 | **Services ID** | 新建，如 `com.dicoge.holohunter.web`，作為 Web OAuth client（= Apple 的 `aud`/client_id） |
-| Return URLs / redirect URI | 必須 https 且事先登記，如 `https://<domain>/api/auth/apple/callback`；Apple 用 `response_mode=form_post` POST 回來 |
-| Domain verification | 於 Services ID 綁定 domain，並在網站服務 `/.well-known/apple-developer-domain-association.txt` |
+| Return URLs / redirect URI | 必須 https 且事先登記。本 App 自建流程由 **`AuthSession.makeRedirectUri()`**（`src/services/authService.ts`）於執行期產生、指向 App 自身 Web 來源，逐字登記該實際字串（**本 repo 沒有 `/api/auth/apple/callback` 端點**）；若採 broker 則登記其 callback |
+| Domains and Subdomains | 於 Services ID 登記正式站網域即完成網域登記。**不需要** `apple-developer-domain-association.txt`（非本 App 前置需求） |
 | Sign in with Apple Key | 產生 `.p8` 私鑰 → 記錄 **Key ID + Team ID**；後端用 ES256 簽 `client_secret`（JWT），**Apple client_secret 最長 6 個月**，需排程輪替 |
 | CORS / 網域 | Web app 網域需與 Services ID 登記一致 |
 

@@ -54,7 +54,7 @@ Web 的 Sign in with Apple 走 OAuth redirect，需在 Apple Developer 設定（
 - **Services ID**（有別於 app 的 App ID）＋ **Primary App ID** 關聯，作為 Web 的 client_id。
 - **Return / Redirect URI**：本 App 直接以 expo-auth-session 的 **`AuthSession.makeRedirectUri()`** 於執行期產生（指向 App 自身 Web 來源，本 repo **無** `/api/auth/apple/callback` 端點）；將該實際字串逐字登記到 Services ID 的 Return URLs。若改採 broker，才改填 broker 的 callback（例如 `https://<project>.firebaseapp.com/__/auth/handler`）。
 - **Team ID / Key ID / Sign in with Apple 私鑰 (.p8)**：用於動態簽 client secret（勿進 repo，只放環境變數）。採 broker 時 .p8 設在 broker provider。
-- 本 OAuth 重導流程**不需要** `apple-developer-domain-association.txt`（該檔僅 AppleID JS 按鈕才需要，本 App 不使用）。
+- **Domains and Subdomains**：於 Services ID 登記正式站網域即完成網域登記。本 App Apple Web 前置需求為 Services ID、Primary App ID 關聯、登記 Domains and Subdomains 與 Return URLs、Team ID、Key ID、`.p8` / client secret 輪替，以及 `makeRedirectUri()` 產生的實際 redirect URI；**不需要** `apple-developer-domain-association.txt`。
 
 ---
 

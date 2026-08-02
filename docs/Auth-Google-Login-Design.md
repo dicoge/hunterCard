@@ -170,10 +170,10 @@ interface Identity {
 
 - **Services ID**（與 iOS App ID 不同的一個 identifier，類型為 "Services IDs"），例如 `com.dicoge.holohunter.web` —— 這是 web OAuth 的 `client_id`。
 - 在該 Services ID 開啟 "Sign in with Apple"，並關聯 **primary App ID**（`com.dicoge.holohunter`）。
-- **Return URLs / redirect URI**（代管商的 callback）：
+- **Return URLs / redirect URI**：本 App 自建流程由 **`AuthSession.makeRedirectUri()`**（`src/services/authService.ts`）於執行期產生，指向 App 自身 Web 來源，逐字登記到 Services ID 的 Return URLs（**本 repo 沒有 `/api/auth/apple/callback` 端點**）。若改採代管商，則登記其 callback：
   - Firebase：`https://<project>.firebaseapp.com/__/auth/handler`
   - Supabase：`https://<project-ref>.supabase.co/auth/v1/callback`
-- **Domains and Subdomains（domain verification）**：登記正式站網域；Apple 要求把 `apple-developer-domain-association.txt` 放在網域的 `/.well-known/` 下做網域驗證。
+- **Domains and Subdomains**：於 Services ID 登記正式站網域即完成網域登記。**本 App 不需要** `apple-developer-domain-association.txt`（非本流程的前置需求）。
 - **Sign in with Apple 私鑰（.p8）+ Key ID + Team ID**：建一把開啟 Sign in with Apple 的 Key；`.p8` 由 Firebase/Supabase 用來簽 client secret（一個有效期最長 6 個月的 JWT）。**這是機密 → 放 Firebase/Supabase 或 Vercel env，永不進 repo。**
 - 即使用代管商，最終仍要把 Apple identity **正規化進我方 users + identities**（我方 internal user id 為 source of truth）。
 

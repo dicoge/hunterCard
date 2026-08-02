@@ -45,8 +45,8 @@
    session 的 Bearer token POST 至 `/api/auth/apple/register`（該端點現在以 session 推導 userId，不再信任
    request body）。
 3. **Apple Developer 後台前置設定尚未完成。** 需建立 Web 用 **Services ID**（當 `aud`）、
-   設定 Return URL / Domains / domain association、`.p8` 金鑰，並於 Vercel 設好
-   `EXPO_PUBLIC_APPLE_SERVICE_ID` 等變數（見下方清單）。
+   將其關聯到 Primary App ID、登記 **Domains and Subdomains** 與 **Return URLs**、備妥 Team ID /
+   Key ID / `.p8`，並於 Vercel 設好 `EXPO_PUBLIC_APPLE_SERVICE_ID` 等變數（見下方清單）。
 4. **最後才翻兩道旗標。** 上述 (1)(2)(3) 全部完成並端到端驗證後，才把前端 `APPLE_LOGIN_ENABLED`
    與伺服器 `APPLE_WEB_LOGIN_ENABLED` 開啟。任一前置未完成就翻旗標，會讓 Apple 使用者陷入
    「能登入卻不能刪帳號」的違規狀態。
@@ -67,8 +67,8 @@
 | **Services ID** | 於 Identifiers → **Services IDs** 新建一個（例：`com.dicoge.holohunter.web`） | Web Apple 的 `client_id`，與 native 的 App ID `com.dicoge.holohunter` **不同**；對應前端 `EXPO_PUBLIC_APPLE_SERVICE_ID` |
 | **Primary App ID** | 將 Services ID 綁到既有 App ID `com.dicoge.holohunter` | Services ID 需歸屬一個已啟用 Sign in with Apple 的 App ID |
 | **Return URLs（redirect URI）** | 前端由 **`AuthSession.makeRedirectUri()`**（`src/services/authService.ts`）在執行期產生，指向 App 自身的 Web 來源（正式站約為 `https://holocard-hunter.vercel.app` 及其 expo-auth-session 回跳路徑），**本 repo 沒有 `/api/auth/apple/callback` 這支端點**。**啟用前先在執行環境 log 出 `makeRedirectUri()` 的實際字串，並將該完整字串逐字登記**到 Services ID 的 Return URLs。若改走 broker（路徑 B），則登記 broker 提供的 callback。 | 必須是 **https**、完整絕對網址；Apple 不接受 localhost，本機測試需用 ngrok/正式網域 |
-| **Domains and Subdomains** | `holocard-hunter.vercel.app`（及未來自訂網域） | 需與 Return URL 同網域 |
-| **Domain verification / association file** | **本 App 採用的 expo-auth-session OAuth 重導流程不需要** `apple-developer-domain-association.txt`。該檔僅在使用 Apple **AppleID JS SDK**（網頁上的原生「Sign in with Apple」按鈕）時才需要，而本 App 不使用該 SDK。 | 只有改用 AppleID JS 按鈕時才回頭補此檔；OAuth authorize/redirect 流程不需要 |
+| **Domains and Subdomains** | 於 Services ID 登記正式站網域 `holocard-hunter.vercel.app`（及未來自訂網域） | 需與 Return URL 同網域；網域登記即在此 Services ID 面板完成 |
+| **Domain verification** | 網域登記透過上一列的 **Domains and Subdomains** 面板完成即可。**本 App 不需要** `apple-developer-domain-association.txt`——它不是本 App Apple Web 前置需求的一部分。 | 不需在網站放置任何 domain-association 檔 |
 | **Sign in with Apple Key（.p8）** | Keys → 新建 Sign in with Apple 私鑰，記下 **Key ID**，下載 `.p8`（只能下載一次） | 對應 `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY`；`.p8` **不進 repo** |
 | **Team ID** | 帳號右上角 | 對應 `APPLE_TEAM_ID` |
 | **Client secret** | 由 Team ID + Key ID + `.p8` 以 ES256 動態簽 JWT（**有效上限 6 個月**） | 已有產生器 `api/_lib/apple-auth.ts` 的 `buildAppleClientSecret`（目前簽 5 分鐘效期供 token/revoke 用）；web 登入驗證可沿用同一組金鑰 |
@@ -77,7 +77,9 @@
 
 - Services ID 的 Return URL（= `AuthSession.makeRedirectUri()` 產出的字串）與 Domains 必須同網域；
   Vercel preview 的動態子網域無法逐一登記，建議只在**正式網域**開放 Apple web 登入，preview 環境維持 Google-only。
-- 本 OAuth 重導流程**不需要** `apple-developer-domain-association.txt`；僅在改採 AppleID JS 按鈕時才需要該檔並使其可被 Apple 公開存取。
+- 本 App Apple Web 前置需求為：**Services ID、Primary App ID 關聯、登記 Domains and Subdomains 與 Return URLs、
+  Team ID、Key ID、`.p8` / client secret 輪替，以及 `AuthSession.makeRedirectUri()` 產生的實際 redirect URI**；
+  **不需要** `apple-developer-domain-association.txt`。
 
 ### Client secret 輪替方式
 

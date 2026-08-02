@@ -626,38 +626,38 @@ async function unlinkFlow(callerToken, provider) {
   return { user, callerSessionRevoked };
 }
 
+// Deletion hooks the endpoint hands to commitAccountDeletion: tombstone write +
+// idempotent post-cascade cleanup (Apple-token discard is a no-op here — these
+// identity-path tests carry no Apple token — plus revoke ALL sessions incl caller).
+const deletionHooks = {
+  writeTombstone: (uid) => session.markUserDeleted(uid),
+  afterCascade: async (uid) => {
+    await session.revokeAllUserSessions(uid);
+  },
+};
+
 async function deleteAccountFlow(callerToken) {
   const ctx = await session.verifySessionContext(callerToken);
   if (!ctx) {
     // Recovery branch: the caller's token was revoked by a successful delete (or a
-    // tombstone written first), but the response was lost. Its signed claims still
+    // tombstone committed first), but the response was lost. Its signed claims still
     // name the user; paired with the durable deletion receipt, converge to
-    // deleted:true WITHOUT a live session — re-running every idempotent cleanup
-    // step (incl. the identity cascade) so a delete that died right after the
-    // receipt still finishes (CR round-7 blocker #1).
+    // deleted:true WITHOUT a live session by re-running the idempotent commit (CR
+    // round-7 blocker #1).
     const claims = session.readSessionClaims(callerToken);
     if (claims && (await session.wasUserDeleted(claims.sub))) {
-      await store.deleteUser(claims.sub); // converge identity deletion (no-op if done)
-      await session.revokeAllUserSessions(claims.sub);
+      await store.commitAccountDeletion(claims.sub, deletionHooks);
       return { deleted: true, recovered: true };
     }
     throw new Error('invalid_session');
   }
-  const user = await store.getUser(ctx.userId);
-  if (!user) {
-    await session.markUserDeleted(ctx.userId);
-    await store.deleteUser(ctx.userId);
-    await session.revokeAllUserSessions(ctx.userId);
-    return { deleted: true };
-  }
-  // Tombstone-first durable state machine (CR round-7 blocker #1): the receipt is
-  // the single commit point, written BEFORE the identity cascade. Once it lands,
-  // verifySessionContext treats the account as gone, so every bearer (incl. the
-  // caller's) stops authenticating; the cascade + revoke-all are idempotent cleanup.
-  await session.markUserDeleted(ctx.userId); //          1. durable commit point
-  const result = await store.deleteUser(ctx.userId); //   2. identity cascade
-  await session.revokeAllUserSessions(ctx.userId); //     3. revoke ALL incl caller
-  return { deleted: result.deletedInternalUser };
+  // Tombstone + identity cascade + cleanup run as ONE fenced per-user critical
+  // section (CR round-8 blocker #1). Once it returns, the tombstone commit exists,
+  // so this and EVERY concurrent/recovery path reports deleted:true — never
+  // deleted:false, which would leave a concurrent caller holding a dead session
+  // (round-8 blocker #2).
+  await store.commitAccountDeletion(ctx.userId, deletionHooks);
+  return { deleted: true };
 }
 
 // CR round-5 blocker #1 (recoverable caller session after unlink). When the
@@ -952,6 +952,54 @@ async function testConcurrentLoginAndDeleteNeverMintsSessionForDeletedUser() {
   }
 }
 
+// CR round-8 blocker #1 (login must never return a newly minted but immediately
+// unusable session). A deletion tombstone is committed for the current owner while
+// its index/user records still linger (the partial-failure window). A returning
+// login for the SAME provider subject — minting a session exactly as handleLogin
+// does — must NOT resurrect the tombstoned user or bind a session to it: it re-reads
+// the tombstone UNDER the login lock, frees the stale index, and falls through to a
+// FRESH user whose minted session verifies immediately.
+async function testLoginAfterTombstoneMintsUsableFreshSession() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-tomb', 'a@example.com', 'Ann'));
+  const oldId = user.internalId;
+
+  // Tombstone committed, but cascade not yet applied (index + user still present).
+  await session.markUserDeleted(oldId);
+
+  const relogin = await store.loginOrCreate(
+    identity('google', 'g-tomb', 'a@example.com', 'Ann'),
+    (uid) => session.issueSession(uid, 'google'),
+  );
+  assert.notEqual(relogin.user.internalId, oldId, 'login after tombstone creates a FRESH user, not the deleted one');
+  assert.equal(relogin.isNew, true, 'the re-login is a brand-new account');
+  const resolved = await session.verifySession(relogin.session);
+  assert.equal(resolved, relogin.user.internalId, 'the freshly minted session is immediately usable');
+  assert.equal(await session.wasUserDeleted(relogin.user.internalId), false, 'the fresh user carries no tombstone');
+}
+
+// CR round-8 blocker #2 (concurrent delete converges truthfully). Two callers of
+// the SAME account delete concurrently through the handler flow. Once the tombstone
+// commit exists, BOTH must report deleted:true — a second delete that sees the user
+// already gone must not return deleted:false and leave that client holding a dead
+// session. Both callers' tokens end up revoked.
+async function testConcurrentDeleteBothConvergeToDeletedTrue() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-cd', 'a@example.com'));
+  const id = user.internalId;
+  const caller1 = await session.issueSession(id, 'google');
+  const caller2 = await session.issueSession(id, 'google');
+
+  const [r1, r2] = await Promise.all([deleteAccountFlow(caller1), deleteAccountFlow(caller2)]);
+  assert.equal(r1.deleted, true, 'first concurrent delete reports deleted:true');
+  assert.equal(r2.deleted, true, 'second concurrent delete ALSO converges to deleted:true');
+
+  assert.equal(await store.getUser(id), null, 'user is gone after both deletes');
+  assert.equal(await session.wasUserDeleted(id), true, 'deletion tombstone committed');
+  assert.equal(await session.verifySession(caller1), null, 'caller1 token revoked');
+  assert.equal(await session.verifySession(caller2), null, 'caller2 token revoked');
+}
+
 function decodeJti(token) {
   const encoded = token.slice(0, token.indexOf('.'));
   return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')).jti;
@@ -993,6 +1041,8 @@ function decodeJti(token) {
     testUnlinkReportsRevokedWhenCallerTokenConcurrentlyLoggedOut,
     testLoginMintsSessionInsideSerializableBoundary,
     testConcurrentLoginAndDeleteNeverMintsSessionForDeletedUser,
+    testLoginAfterTombstoneMintsUsableFreshSession,
+    testConcurrentDeleteBothConvergeToDeletedTrue,
   ];
   for (const test of tests) {
     await test();

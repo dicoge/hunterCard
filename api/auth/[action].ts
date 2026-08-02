@@ -10,7 +10,8 @@
  * verify) is not configured the endpoint returns 501 and the client must NOT
  * treat the operation as successful.
  */
-import { deleteUser, getUser, linkIdentity, loginOrCreate, unlinkIdentity } from '../_lib/identity-store';
+import { commitAccountDeletion, getUser, linkIdentity, loginOrCreate, unlinkIdentity } from '../_lib/identity-store';
+import type { DeletionHooks } from '../_lib/identity-store';
 import {
   issueSession,
   markUserDeleted,
@@ -130,6 +131,22 @@ async function handleLogout(req: Request): Promise<Response> {
   return json({ ok: true }, 200);
 }
 
+// The deletion commit runs the tombstone write + identity cascade + cleanup as ONE
+// fenced per-user critical section (identity-store.commitAccountDeletion, CR round-8
+// blocker #1). The tombstone is the single durable commit point; afterCascade's
+// Apple-token discard and all-session revoke are idempotent cleanup. `discardApple`
+// is conditioned on the caller having an Apple identity, but every step is
+// re-runnable so recovery paths (Apple state unknown) can always discard defensively.
+function deletionHooks(discardApple: boolean): DeletionHooks {
+  return {
+    writeTombstone: (uid) => markUserDeleted(uid),
+    afterCascade: async (uid) => {
+      if (discardApple) await deleteStoredAppleRefreshToken(uid);
+      await revokeAllUserSessions(uid);
+    },
+  };
+}
+
 async function handleDeleteAccount(req: Request): Promise<Response> {
   const ctx = await sessionContext(req);
   if (!ctx) {
@@ -139,18 +156,11 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
     // arrives here with a token sessionContext rejects. Its signed claims still
     // authentically name which user it was; if that user has a deletion receipt,
     // answer the idempotent "already deleted" WITHOUT authenticating any action,
-    // and re-run the idempotent cleanups so a delete whose later steps were lost
+    // and re-run the idempotent commit so a delete whose later steps were lost
     // still converges. No receipt ⇒ a genuinely invalid/expired token ⇒ 401.
     const claims = sessionClaims(req);
     if (claims && (await wasUserDeleted(claims.sub))) {
-      // The tombstone is the commit point; every step below it is idempotent
-      // cleanup. Re-run ALL of them — including the identity cascade — so a delete
-      // whose original request died right after writing the receipt still fully
-      // converges on this retry (round-7 blocker #1). deleteUser is a no-op once
-      // the cascade already ran, so repeated retries stay idempotent.
-      await deleteUser(claims.sub);
-      await deleteStoredAppleRefreshToken(claims.sub);
-      await revokeAllUserSessions(claims.sub);
+      await commitAccountDeletion(claims.sub, deletionHooks(true));
       return json({ deleted: true, revokedApple: false }, 200);
     }
     return json({ error: 'INVALID_TOKEN', reason: 'invalid_session' }, 401);
@@ -160,13 +170,10 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
   const user = await getUser(userId);
   if (!user) {
     // Defensive convergence: the session verified but the user record is already
-    // gone (a delete committed elsewhere without leaving a tombstone this token
-    // could see). Write the receipt so a later revoked-token retry recovers, then
-    // re-run the idempotent cleanup, instead of returning 404.
-    await markUserDeleted(userId);
-    await deleteUser(userId);
-    await deleteStoredAppleRefreshToken(userId);
-    await revokeAllUserSessions(userId);
+    // gone (a concurrent delete committed the cascade first). The tombstone commit
+    // is idempotent, so re-run it and report success — never 404, and never
+    // deleted:false which would make the client retain a dead session (round-8 #2).
+    await commitAccountDeletion(userId, deletionHooks(true));
     return json({ deleted: true, revokedApple: false }, 200);
   }
 
@@ -184,23 +191,14 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
     if (!revoked) return json({ deleted: false, reason: 'revoke_failed' }, 502);
   }
 
-  // Durable state machine (CR round-7 blocker #1). The deletion TOMBSTONE is the
-  // single commit point and is written FIRST — before the identity cascade. The
-  // moment it lands, verifySessionContext treats the account as gone, so every
-  // bearer (including this caller's own) stops authenticating. Everything after it
-  // — the identity cascade, the Apple-token discard, revoke-all — is idempotent
-  // cleanup. This closes the old ordering's window (delete-then-receipt could
-  // destroy the user but fail before the receipt, leaving every token 401 with no
-  // receipt to converge against): now nothing is destroyed until the receipt
-  // exists, and once it exists a retry with the revoked token converges via the
-  // receipt-recovery branch above. If the receipt SET itself fails, nothing is
-  // committed and the caller's token is still live, so the retry re-runs the whole
-  // flow.
-  await markUserDeleted(userId);
-  const result = await deleteUser(userId);
-  if (hasApple) await deleteStoredAppleRefreshToken(userId);
-  await revokeAllUserSessions(userId);
-  return json({ deleted: result.deletedInternalUser, revokedApple: hasApple }, 200);
+  // Durable state machine as ONE fenced critical section (CR round-8 blocker #1).
+  // Once commitAccountDeletion returns, the tombstone commit exists, so this — and
+  // EVERY concurrent/recovery path — reports deleted:true. Reporting the cascade's
+  // deletedInternalUser (false when a racing delete removed the record first) would
+  // wrongly tell one of two concurrent callers the delete failed and leave it
+  // holding a now-dead session (round-8 blocker #2).
+  await commitAccountDeletion(userId, deletionHooks(hasApple));
+  return json({ deleted: true, revokedApple: hasApple }, 200);
 }
 
 export default async function handler(req: Request): Promise<Response> {
