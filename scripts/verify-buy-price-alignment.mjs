@@ -219,32 +219,40 @@ check('scraper（Torecolo）extractRarityFromHref：known / bare / unknown', () 
   assert.equal(extractRarityFromHref('/shop/g/HBP01-001/', 'HBP01-001'), null); // 無尾綴 → bare
   assert.equal(extractRarityFromHref('/shop/g/HBP01-001XYZ/', 'HBP01-001'), UNKNOWN_TOKEN);
 });
-check('scraper（Fullahead）extractRarity：known / bare / unknown', () => {
+check('scraper（Fullahead）extractRarity：known / bare / unknown（含非 ASCII / 底線標記）', () => {
   assert.equal(fullaheadRarity('【UR】hBP01-091 ムーナ'), 'UR');
   assert.equal(fullaheadRarity('hBP01-091 ムーナ'), null); // 無【】→ bare
   assert.equal(fullaheadRarity('【XYZ】hBP01-091 ムーナ'), UNKNOWN_TOKEN);
+  // CR DIC-857 Round-3：任何非空括號都算「有標記」，不限 ASCII 英數；非 allowlist → UNKNOWN。
+  // 這幾筆在舊 [A-Za-z0-9] regex 下會落空→回 null→塌成 bare→被 max 蓋掉原印價，必須修掉。
+  assert.equal(fullaheadRarity('【謎】hBP01-091 ムーナ'), UNKNOWN_TOKEN); // 非 ASCII
+  assert.equal(fullaheadRarity('【XYZ_1】hBP01-091 ムーナ'), UNKNOWN_TOKEN); // 含底線
+  assert.equal(fullaheadRarity('【 UR 】hBP01-091 ムーナ'), 'UR'); // 內含空白仍精確命中
 });
-await acheck('scraper（Fullahead）整合：【XYZ】9999 + 無標記 100 → base 維持 100，未知筆丟棄', async () => {
-  const outFile = path.join(os.tmpdir(), `fa-unknown-${process.pid}.json`);
-  try { fs.unlinkSync(outFile); } catch { /* noop */ }
-  const records = [
-    { productName: '【XYZ】hBP01-001 テスト', price: '9999' },
-    { productName: 'hBP01-001 テスト', price: '100' },
-  ];
-  await scrapeFullaheadBuy({
-    dbPath: path.join(DATA, 'database.json'),
-    outputFile: outFile,
-    scrapeWithRestartFn: async () => records,
-    nowFn: () => new Date('2026-01-01T00:00:00Z'),
+// 參數化：每一種未知標記（含非 ASCII / 底線）+ 無標記原印，base 都須維持 100 並丟棄未知筆。
+for (const marker of ['【XYZ】', '【謎】', '【XYZ_1】']) {
+  await acheck(`scraper（Fullahead）整合：${marker}9999 + 無標記 100 → base 維持 100，未知筆丟棄`, async () => {
+    const outFile = path.join(os.tmpdir(), `fa-unknown-${process.pid}-${Buffer.from(marker).toString('hex')}.json`);
+    try { fs.unlinkSync(outFile); } catch { /* noop */ }
+    const records = [
+      { productName: `${marker}hBP01-001 テスト`, price: '9999' },
+      { productName: 'hBP01-001 テスト', price: '100' },
+    ];
+    await scrapeFullaheadBuy({
+      dbPath: path.join(DATA, 'database.json'),
+      outputFile: outFile,
+      scrapeWithRestartFn: async () => records,
+      nowFn: () => new Date('2026-01-01T00:00:00Z'),
+    });
+    const out = JSON.parse(fs.readFileSync(outFile, 'utf-8'));
+    fs.unlinkSync(outFile);
+    assert.ok(out['hBP01-001'], 'base key 應存在');
+    assert.equal(out['hBP01-001'].buyPrice, 100); // 原印價維持 100
+    const prices = Object.values(out).map((x) => x.buyPrice);
+    assert.ok(!prices.includes(9999), '未知標記 9999 絕不得寫入');
+    assert.ok(!Object.keys(out).some((k) => k.includes(UNKNOWN_TOKEN)), '不得出現 UNKNOWN key');
   });
-  const out = JSON.parse(fs.readFileSync(outFile, 'utf-8'));
-  fs.unlinkSync(outFile);
-  assert.ok(out['hBP01-001'], 'base key 應存在');
-  assert.equal(out['hBP01-001'].buyPrice, 100); // 原印價維持 100
-  const prices = Object.values(out).map((x) => x.buyPrice);
-  assert.ok(!prices.includes(9999), '未知標記 9999 絕不得寫入');
-  assert.ok(!Object.keys(out).some((k) => k.includes(UNKNOWN_TOKEN)), '不得出現 UNKNOWN key');
-});
+}
 
 // ── 真實資料驗證 ──
 console.log('── Integration: 真實 database.json ──');

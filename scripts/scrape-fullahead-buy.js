@@ -43,11 +43,16 @@ function sleep(ms) {
 // 商品名帶稀有度標記，例如「【OUR】hBP04-002 儒烏風亭らでん」。三態回傳（CR DIC-857）：
 //   - 完全無【】標記 → null（真正無標記 → 原印版 bare）。
 //   - 【已知代碼】→ 精確 token（OUR / SEC / HSD06…）。
-//   - 【非 allowlist 標記】（如【XYZ】）→ UNKNOWN_TOKEN：有標記但不可信，之後 fail closed，
-//     絕不可當成無標記原印版與純卡號報價合併／取 max。
+//   - 【任何其他非空標記】（如【XYZ】【謎】【XYZ_1】）→ UNKNOWN_TOKEN：有標記但不可信，
+//     之後 fail closed，絕不可當成無標記原印版與純卡號報價合併／取 max。
+//
+// 標記偵測必須是「通用」的：任何 【...】 內含非空內容都算「有標記」，不限 ASCII 英數。
+// 舊版只認 [A-Za-z0-9] 的內容，導致 【謎】/【XYZ_1】 這種非 ASCII 或含底線的標記
+// regex 落空→回 null→塌成原印版→被 max 蓋掉真正原印價（CR DIC-857 Round-3）。
+// 唯有「完全沒有 【】括號」的商品名才可能是 bare 原印版。
 function extractRarity(productName) {
-  const m = productName && String(productName).match(/【\s*([A-Za-z0-9]+)\s*】/);
-  if (!m) return null;
+  const m = productName && String(productName).match(/【([^】]*)】/);
+  if (!m) return null; // 完全無括號 → bare 原印版
   const { kind, token } = classifySourceRarity(m[1]);
   return kind === 'known' ? token : UNKNOWN_TOKEN;
 }
