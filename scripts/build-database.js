@@ -949,6 +949,15 @@ async function buildDatabase() {
           Object.keys(card.buyPriceHistory).length > 0) {
         saved.buyPriceHistory = card.buyPriceHistory;
       }
+      // Per-version buy prices (DIC-856) also live only in database.json → preserve them
+      // by variant name so a build-only pass (no merge afterward) keeps version alignment.
+      if (Array.isArray(card.prices)) {
+        const variantBuy = {};
+        for (const v of card.prices) {
+          if (v && Number.isFinite(v.buyPrice) && v.buyPrice > 0) variantBuy[v.name || ''] = v.buyPrice;
+        }
+        if (Object.keys(variantBuy).length > 0) saved.variantBuy = variantBuy;
+      }
       if (Object.keys(saved).length > 0) prevBuyByCardId.set(cardId, saved);
     }
     if (prevBuyByCardId.size > 0) {
@@ -1288,6 +1297,12 @@ async function buildDatabase() {
     if (!card) continue; // card no longer exists in the rebuilt database
     if (saved.buyPrice != null) card.buyPrice = saved.buyPrice;
     if (saved.buyPriceHistory != null) card.buyPriceHistory = saved.buyPriceHistory;
+    if (saved.variantBuy && Array.isArray(card.prices)) {
+      for (const v of card.prices) {
+        const bp = saved.variantBuy[v.name || ''];
+        if (bp != null) v.buyPrice = bp;
+      }
+    }
     buyRestored++;
   }
   console.log(`  [buyPrice] Restored buy prices onto ${buyRestored} cards`);

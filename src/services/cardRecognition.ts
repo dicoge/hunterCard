@@ -15,6 +15,7 @@ export interface CardPrice {
   name: string;
   sellPrice: number | null;
   rarity?: string;
+  buyPrice?: number | null; // 對齊到此版本的店家收購價（DIC-856）；對不到為 null
 }
 
 export interface CardVariant {

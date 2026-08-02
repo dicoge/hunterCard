@@ -522,7 +522,9 @@ function MarketDataPanel({ card }: { card: any }) {
   const versionLabel = selectedVersion?.name ?? card?.series ?? '';
 
   const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
-  const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）— 資料僅卡號層級、未分版
+  // 店家收購價（賣出可得）：依「選中版本」對齊（DIC-856）。未對齊或此版本對不到收購價 → null，
+  // 絕不退回卡號層級最高價/別版價（fail closed）。
+  const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null;
   const ytStats = card?.ytStats ?? null;
   const priceHistory = card?.priceHistory ?? null;
 
@@ -570,9 +572,10 @@ function MarketDataPanel({ card }: { card: any }) {
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
-  // 收購價（未分版）超過選中版本賣價 10 倍幾乎必是版本對不上（例：選了最低價版本，
-  // 卻配到高稀有度的收購價）。與其顯示假暴利差價，寧可標示待確認。
+  // 防呆：收購價超過選中版本賣價 10 倍幾乎必是版本對不上。與其顯示假暴利差價，寧可標示待確認。
   const isPriceReliable = !hasSpread || buyPrice <= sellPrice * 10;
+  // 已對齊、有賣價，但此版本沒有對到收購價 → fail closed 明示「暫無」，不借別版價。
+  const buyMissing = aligned && typeof sellPrice === 'number' && sellPrice > 0 && buyPrice == null;
 
   return (
     <View style={styles.section}>
@@ -613,16 +616,16 @@ function MarketDataPanel({ card }: { card: any }) {
         </View>
       ) : null}
 
-      {/* 買賣差價 */}
+      {/* 買賣差價 — 收購價依選中版本對齊（DIC-856） */}
       {hasSpread ? (
         <View style={styles.marketBlock}>
-          <Text style={styles.marketBlockTitle}>💱 買賣差價</Text>
+          <Text style={styles.marketBlockTitle}>💱 買賣差價（{versionLabel}）</Text>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>買入成本（遊々亭賣價 · {versionLabel}）</Text>
+            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
             <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
           </View>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>賣出可得（店家收購 · 未分版）</Text>
+            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
             <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
           </View>
           {isPriceReliable ? (
@@ -637,7 +640,20 @@ function MarketDataPanel({ card }: { card: any }) {
               ⚠️ 價格待確認
             </Text>
           )}
-          <Text style={styles.marketNote}>※ 收購價為卡號整體資料，未依版本細分，差價僅供參考</Text>
+          <Text style={styles.marketNote}>※ 買入賣出價均為此版本（{versionLabel}）資料</Text>
+        </View>
+      ) : buyMissing ? (
+        <View style={styles.marketBlock}>
+          <Text style={styles.marketBlockTitle}>💱 買賣差價（{versionLabel}）</Text>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
+            <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
+          </View>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
+            <Text style={[styles.marketValue, { color: COLORS.textSecondary }]}>此版本暫無收購價</Text>
+          </View>
+          <Text style={styles.marketNote}>※ 此版本無對應店家收購價；不借用其他版本價格計算差價</Text>
         </View>
       ) : null}
 
