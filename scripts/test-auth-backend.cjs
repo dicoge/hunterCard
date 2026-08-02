@@ -75,8 +75,23 @@ const kv = {
     const set = kvState.sets.get(key);
     return set ? [...set] : [];
   },
+  async incr(key) {
+    maybeFail('incr', key);
+    const next = Number(kvState.values.get(key) ?? 0) + 1;
+    kvState.values.set(key, next);
+    return next;
+  },
   async eval(script, keys, args) {
-    // Only the lock compare-and-delete script is used by the store.
+    // Compare-and-pexpire (renewLock): extend the lease iff we still hold it. The
+    // mock does not model TTLs, so "extend" is a no-op — we only honour the
+    // compare so a non-holder can't renew. Checked before the DEL branch because
+    // both scripts share the GET compare prefix.
+    if (script.includes("redis.call('PEXPIRE', KEYS[1]")) {
+      const [lockKey] = keys;
+      const [token] = args;
+      return kvState.values.get(lockKey) === token ? 1 : 0;
+    }
+    // Compare-and-delete (lock release / freeIndexIfOwned).
     if (script.includes("redis.call('DEL', KEYS[1])")) {
       const [lockKey] = keys;
       const [token] = args;
@@ -116,11 +131,11 @@ function compileTs(relPath) {
 // any issue/verify call is enough. It also lets identity-store sign merge tokens.
 process.env.AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET || 'test-session-secret';
 
-compileTs('api/lib/identity-store.ts');
-const store = require(path.join(outDir, 'api/lib/identity-store.js'));
+compileTs('api/_lib/identity-store.ts');
+const store = require(path.join(outDir, 'api/_lib/identity-store.js'));
 
-compileTs('api/lib/session.ts');
-const session = require(path.join(outDir, 'api/lib/session.js'));
+compileTs('api/_lib/session.ts');
+const session = require(path.join(outDir, 'api/_lib/session.js'));
 
 function identity(provider, subject, email, name) {
   return { provider, subject, email, name };
@@ -458,6 +473,205 @@ async function testDeleteDoesNotStompReclaimedIndex() {
   assert.equal(await store.getUser(user.internalId), null, 'the deleted user is still fully gone');
 }
 
+// ---- CR round-4 blockers -------------------------------------------------
+
+// CR round-4 blocker #3 (fenced/renewable lock). The lease MUST outlive the
+// serverless handler budget or it can lapse mid-handler and let a second writer
+// corrupt the same user's read-modify-write. Assert the invariant directly.
+async function testLockLeaseExceedsHandlerBudget() {
+  assert.ok(
+    store.LOCK_TTL_MS > store.HANDLER_MAX_DURATION_MS,
+    `lock lease (${store.LOCK_TTL_MS}ms) must exceed handler budget (${store.HANDLER_MAX_DURATION_MS}ms)`,
+  );
+}
+
+// CR round-4 blocker #3. Returning-login now takes the SAME per-user fenced lock
+// as link/unlink/delete, so the fence advances across ALL of them (never resets),
+// proving they share one authoritative lock rather than login running unserialised.
+async function testFencedLockIsSharedAndMonotonic() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-f', 'a@example.com'));
+  const id = user.internalId;
+  const fenceKey = `auth:fence:${id}`;
+  // The create path is serialised by the atomic index claim, not the per-user
+  // lock, so no fence is minted for a brand-new user.
+  assert.equal(kvState.values.get(fenceKey) ?? 0, 0, 'create path takes no per-user lock');
+
+  await store.linkIdentity(id, identity('apple', 'a-f', 'a@icloud.com'));
+  const afterLink = Number(kvState.values.get(fenceKey));
+  assert.ok(afterLink >= 1, 'link acquires the fenced lock');
+
+  await store.loginOrCreate(identity('google', 'g-f', 'a@example.com')); // returning login
+  const afterLogin = Number(kvState.values.get(fenceKey));
+  assert.ok(afterLogin > afterLink, 'returning-login shares the SAME fenced lock (monotonic fence)');
+
+  await store.unlinkIdentity(id, 'apple');
+  const afterUnlink = Number(kvState.values.get(fenceKey));
+  assert.ok(afterUnlink > afterLogin, 'unlink advances the same fence further');
+}
+
+// CR round-4 blocker #3 (login-vs-delete). A returning login and a delete of the
+// same user race. The shared lock must prevent a zombie: login either refreshes a
+// live user or (if delete won) creates a fresh user — it must NEVER resurrect the
+// deleted record as a user with no owning index.
+async function testReturningLoginDoesNotResurrectDeletedUser() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-del', 'a@example.com', 'Ann'));
+  const id = user.internalId;
+
+  await Promise.allSettled([
+    store.loginOrCreate(identity('google', 'g-del', 'a@example.com', 'Ann')),
+    store.deleteUser(id),
+  ]);
+
+  // Every identity index must point at an existing user record.
+  for (const key of indexKeys()) {
+    const owner = kvState.values.get(key);
+    assert.ok(kvState.values.has(`auth:user:${owner}`), `index ${key} -> missing user ${owner}`);
+  }
+  // Every surviving user record must be reachable via some index. A resurrected
+  // zombie (user record with no owning index) would violate this.
+  const pointedTo = new Set(indexKeys().map((k) => kvState.values.get(k)));
+  for (const key of userRecordKeys()) {
+    const uid = key.slice('auth:user:'.length);
+    assert.ok(pointedTo.has(uid), `zombie user record ${uid} with no owning identity index`);
+  }
+  // If the original user survived, delete lost the race and it must still own its
+  // index — never exist without ownership.
+  if (kvState.values.has(`auth:user:${id}`)) {
+    assert.equal(kvState.values.get('auth:idx:google:g-del'), id, 'surviving original user still owns its index');
+  }
+}
+
+// CR round-4 blocker #2 (idempotent unlink). Unlinking a provider that is already
+// gone must converge (return the current user), not throw NO_SUCH_IDENTITY — the
+// convergence property a failed-and-retried unlink depends on.
+async function testUnlinkIsIdempotentWhenProviderAbsent() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  await store.linkIdentity(user.internalId, identity('apple', 'a-1', 'a@icloud.com'));
+  const id = user.internalId;
+
+  const first = await store.unlinkIdentity(id, 'apple');
+  assert.equal(first.linkedProviders.length, 1);
+  const second = await store.unlinkIdentity(id, 'apple'); // already gone
+  assert.equal(second.linkedProviders.length, 1, 'idempotent unlink returns the current user');
+  assert.equal(second.linkedProviders[0].provider, 'google');
+}
+
+// These two helpers mirror the endpoint's composition of store + session
+// primitives (api/auth/[action].ts handleUnlink / handleDeleteAccount). The full
+// serverless handler pulls in provider-token verification and can't run
+// in-process, so we drive the exact same ordered sequence here to prove the
+// endpoint contract (rotation, retry-convergence) at the unit level.
+async function unlinkFlow(userId, provider, callerProvider) {
+  const user = await store.unlinkIdentity(userId, provider);
+  await session.revokeSessionsByProvider(userId, provider);
+  const callerSessionRevoked = callerProvider === provider;
+  let rotated;
+  if (callerSessionRevoked) {
+    const remaining = user.linkedProviders[0] && user.linkedProviders[0].provider;
+    if (remaining) rotated = await session.issueSession(user.internalId, remaining);
+  }
+  return { user, callerSessionRevoked, session: rotated };
+}
+
+async function deleteAccountFlow(userId) {
+  const user = await store.getUser(userId);
+  if (!user) {
+    await session.revokeAllUserSessions(userId); // idempotent already-deleted branch
+    return { deleted: true };
+  }
+  const result = await store.deleteUser(userId); // 1. mutate identity
+  await session.revokeAllUserSessions(userId); // 2. revoke LAST so a retry can happen
+  return { deleted: result.deletedInternalUser };
+}
+
+// CR round-4 blocker #1 (stale caller session after unlink). When the caller's
+// own token was minted by the unlinked provider, the endpoint must flag it AND
+// rotate to a fresh session bound to a still-linked provider, keeping the SAME
+// internal user signed in rather than leaving a dead token.
+async function testUnlinkRotatesCallerSessionToRemainingProvider() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  await store.linkIdentity(user.internalId, identity('apple', 'a-1', 'a@icloud.com'));
+  const id = user.internalId;
+
+  const appleCaller = await session.issueSession(id, 'apple');
+  assert.equal(await session.verifySession(appleCaller), id);
+
+  const res = await unlinkFlow(id, 'apple', 'apple');
+  assert.equal(res.callerSessionRevoked, true, 'caller token was minted by the removed provider');
+  assert.equal(await session.verifySession(appleCaller), null, 'old caller token revoked');
+  assert.ok(res.session, 'a rotated session is issued');
+  assert.equal(await session.verifySession(res.session), id, 'rotated session keeps the same user signed in');
+  const ctx = await session.verifySessionContext(res.session);
+  assert.equal(ctx.provider, 'google', 'rotated session bound to the remaining provider');
+}
+
+// CR round-4 blocker #1 (converse). Unlinking a DIFFERENT provider than the one
+// that minted the caller's token must leave the caller session live and rotate
+// nothing.
+async function testUnlinkOtherProviderKeepsCallerSession() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  await store.linkIdentity(user.internalId, identity('apple', 'a-1', 'a@icloud.com'));
+  const id = user.internalId;
+
+  const googleCaller = await session.issueSession(id, 'google');
+  const res = await unlinkFlow(id, 'apple', 'google');
+  assert.equal(res.callerSessionRevoked, false);
+  assert.equal(res.session, undefined, 'no rotation when the caller provider is not the removed one');
+  assert.equal(await session.verifySession(googleCaller), id, 'caller google session stays live');
+}
+
+// CR round-4 blocker #2 (unlink retry convergence). Identity unlink succeeds but
+// the following provider-scoped session revoke fails. Because the caller's token
+// is untouched by that failure, the client can retry; the retry re-runs the now
+// idempotent unlink (no NO_SUCH_IDENTITY) and the revoke, converging.
+async function testUnlinkRetryConvergesAfterRevokeFailure() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  await store.linkIdentity(user.internalId, identity('apple', 'a-1', 'a@icloud.com'));
+  const id = user.internalId;
+  const appleSession = await session.issueSession(id, 'apple');
+
+  const appleJti = decodeJti(appleSession);
+  kvState.failOn = (op, key) => op === 'del' && key === `auth:session:${appleJti}`;
+  await assert.rejects(unlinkFlow(id, 'apple', 'google'), /injected KV failure/);
+  kvState.failOn = null;
+
+  const mid = await store.getUser(id);
+  assert.equal(mid.linkedProviders.length, 1, 'apple already unlinked (identity mutated)');
+  assert.equal(await session.verifySession(appleSession), id, 'apple session still live after partial failure');
+
+  await unlinkFlow(id, 'apple', 'google'); // retry converges
+  assert.equal(await session.verifySession(appleSession), null, 'apple session revoked on convergent retry');
+}
+
+// CR round-4 blocker #2 (delete retry convergence). Delete mutates the identity
+// FIRST and revokes sessions LAST. If the revoke fails, the caller's token is
+// still live so the client can retry; the retry lands in the already-deleted
+// branch and finishes the idempotent revoke — no 500-after-partial-success.
+async function testDeleteRetryConvergesAfterRevokeFailure() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  const id = user.internalId;
+  const caller = await session.issueSession(id, 'google');
+  const callerJti = decodeJti(caller);
+
+  kvState.failOn = (op, key) => op === 'del' && key === `auth:session:${callerJti}`;
+  await assert.rejects(deleteAccountFlow(id), /injected KV failure/);
+  kvState.failOn = null;
+
+  assert.equal(await store.getUser(id), null, 'identity already deleted');
+  assert.equal(await session.verifySession(caller), id, 'caller token still live -> retry is possible');
+
+  const retry = await deleteAccountFlow(id);
+  assert.equal(retry.deleted, true, 'retry converges to deleted:true');
+  assert.equal(await session.verifySession(caller), null, 'caller token revoked after convergent retry');
+}
+
 function decodeJti(token) {
   const encoded = token.slice(0, token.indexOf('.'));
   return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')).jti;
@@ -483,6 +697,14 @@ function decodeJti(token) {
     testRevokeAllSessionsOnDelete,
     testUnlinkPartialWriteConverges,
     testDeleteDoesNotStompReclaimedIndex,
+    testLockLeaseExceedsHandlerBudget,
+    testFencedLockIsSharedAndMonotonic,
+    testReturningLoginDoesNotResurrectDeletedUser,
+    testUnlinkIsIdempotentWhenProviderAbsent,
+    testUnlinkRotatesCallerSessionToRemainingProvider,
+    testUnlinkOtherProviderKeepsCallerSession,
+    testUnlinkRetryConvergesAfterRevokeFailure,
+    testDeleteRetryConvergesAfterRevokeFailure,
   ];
   for (const test of tests) {
     await test();

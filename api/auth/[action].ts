@@ -10,15 +10,15 @@
  * verify) is not configured the endpoint returns 501 and the client must NOT
  * treat the operation as successful.
  */
-import { deleteUser, getUser, linkIdentity, loginOrCreate, unlinkIdentity } from '../lib/identity-store';
+import { deleteUser, getUser, linkIdentity, loginOrCreate, unlinkIdentity } from '../_lib/identity-store';
 import {
   issueSession,
   revokeAllUserSessions,
   revokeSession,
   revokeSessionsByProvider,
-} from '../lib/session';
-import { getAppleConfig, revokeRefreshToken } from '../lib/apple-auth';
-import { deleteStoredAppleRefreshToken, getStoredAppleRefreshToken } from '../lib/apple-token-store';
+} from '../_lib/session';
+import { getAppleConfig, revokeRefreshToken } from '../_lib/apple-auth';
+import { deleteStoredAppleRefreshToken, getStoredAppleRefreshToken } from '../_lib/apple-token-store';
 import {
   backendUnavailable,
   errorResponse,
@@ -27,7 +27,7 @@ import {
   sessionContext,
   sessionUserId,
   verifyProviderToken,
-} from '../lib/auth-endpoint';
+} from '../_lib/auth-endpoint';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;
@@ -91,7 +91,21 @@ async function handleUnlink(req: Request): Promise<Response> {
   // including the caller's own token if it came from the removed provider — while
   // leaving other still-linked providers' sessions intact (CR blocker #2).
   await revokeSessionsByProvider(ctx.userId, body.provider);
-  return json({ ok: true, user }, 200);
+
+  // Stale-caller-session fix (CR round-4 blocker #1). If the caller's own token
+  // was minted by the just-unlinked provider it is now revoked, so returning only
+  // { ok, user } would leave the client holding a dead token while it still
+  // believes it is authenticated. Tell the client the caller session was revoked
+  // AND rotate it to a fresh session bound to a still-linked provider (the
+  // last-method guard guarantees at least one remains), so the same internal user
+  // stays signed in instead of being silently broken until the next reload.
+  const callerSessionRevoked = ctx.provider === body.provider;
+  let session: string | undefined;
+  if (callerSessionRevoked) {
+    const remaining = user.linkedProviders[0]?.provider;
+    if (remaining) session = await issueSession(user.internalId, remaining);
+  }
+  return json({ ok: true, user, callerSessionRevoked, session }, 200);
 }
 
 async function handleLogout(req: Request): Promise<Response> {
@@ -106,22 +120,39 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
   if (!userId) return json({ error: 'INVALID_TOKEN', reason: 'invalid_session' }, 401);
 
   const user = await getUser(userId);
-  if (!user) return json({ deleted: false, reason: 'user_not_found' }, 404);
+  if (!user) {
+    // Already deleted, OR a retry after a partial delete whose identity mutation
+    // succeeded but a later cleanup step (session revocation / Apple token) did
+    // not. Deletion is idempotent (CR round-4 blocker #2): re-run the idempotent
+    // cleanups and report success so the retry converges instead of returning 404.
+    await deleteStoredAppleRefreshToken(userId);
+    await revokeAllUserSessions(userId);
+    return json({ deleted: true, revokedApple: false }, 200);
+  }
 
   const hasApple = user.linkedProviders.some((p) => p.provider === 'apple');
   if (hasApple) {
     // Apple requires the authorization to be revoked (App Store 5.1.1(v)). Fail
-    // closed: without confirmed revocation we delete nothing.
+    // closed: without confirmed revocation we delete nothing. Apple's revoke
+    // endpoint is idempotent, so a retry that re-revokes an already-revoked token
+    // still succeeds — safe under convergence.
     const cfg = getAppleConfig();
     if (!cfg) return json({ deleted: false, reason: 'apple_revocation_not_configured' }, 501);
     const refreshToken = await getStoredAppleRefreshToken(userId);
     if (!refreshToken) return json({ deleted: false, reason: 'apple_deletion_not_implemented' }, 501);
     const revoked = await revokeRefreshToken(cfg, refreshToken);
     if (!revoked) return json({ deleted: false, reason: 'revoke_failed' }, 502);
-    await deleteStoredAppleRefreshToken(userId);
   }
 
+  // Retry-convergent ordering (CR round-4 blocker #2). Delete the identity FIRST
+  // (the durable state change), THEN discard the Apple token, and revoke sessions
+  // LAST. Because the caller's session stays live until the very last step, any
+  // failure before it lets the caller retry — and the retry lands in the
+  // already-deleted branch above, which finishes the idempotent cleanups. This
+  // avoids the old failure mode where a mutation succeeded but a later revoke
+  // failed, leaving a 500 after partial success and a misleading UI.
   const result = await deleteUser(userId);
+  if (hasApple) await deleteStoredAppleRefreshToken(userId);
   await revokeAllUserSessions(userId);
   return json({ deleted: result.deletedInternalUser, revokedApple: hasApple }, 200);
 }

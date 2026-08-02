@@ -121,13 +121,20 @@ const IDX_KEY = (p: Provider, sub: string) => `auth:idx:${p}:${sub}`;
 const DETAIL_KEY = (id: string, p: Provider, sub: string) => `auth:idetail:${id}:${p}:${sub}`;
 const IDENTITIES_KEY = (id: string) => `auth:user:${id}:identities`;
 const LOCK_KEY = (id: string) => `auth:lock:${id}`;
+const FENCE_KEY = (id: string) => `auth:fence:${id}`;
 const member = (p: Provider, sub: string) => `${p}:${sub}`;
 const splitMember = (m: string): { provider: Provider; subject: string } => {
   const i = m.indexOf(':');
   return { provider: m.slice(0, i) as Provider, subject: m.slice(i + 1) };
 };
 
-const LOCK_TTL_MS = 5000;
+// The lock lease MUST outlive the serverless handler budget so it cannot lapse
+// while our handler is still alive and let a second writer corrupt the same
+// user's read-modify-write (CR round-4 blocker #3: "the fixed 5-second lease can
+// expire inside the 10-second handler"). We set the lease above the handler
+// budget and additionally expose renewLock for defence-in-depth on long ops.
+export const HANDLER_MAX_DURATION_MS = 10000; // mirrors maxDuration in api/auth/[action].ts
+export const LOCK_TTL_MS = 15000; // strictly greater than HANDLER_MAX_DURATION_MS
 const LOCK_RETRIES = 50;
 const LOCK_RETRY_MS = 20;
 const CREATE_RETRIES = 5;
@@ -141,6 +148,16 @@ const CREATE_RETRIES = 5;
 // that a separate `kv.get` + `kv.del` would leave open.
 const COMPARE_AND_DELETE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
 const RELEASE_LOCK = COMPARE_AND_DELETE;
+// Extend the lease iff we still hold it (compare-and-pexpire, atomic).
+const RENEW_LOCK = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end`;
+
+// A held lock carries a fencing token: a monotonically increasing number handed
+// out at acquisition so a stale holder (whose lease lapsed) is strictly ordered
+// behind the current holder and can be detected at commit.
+interface Lock {
+  token: string;
+  fence: number;
+}
 
 // Free an identity index iff it still points at `userId` (atomic check-and-del).
 async function freeIndexIfOwned(provider: Provider, subject: string, userId: string): Promise<boolean> {
@@ -163,18 +180,44 @@ function newUserId(): string {
   return 'holo_' + crypto.randomBytes(9).toString('hex');
 }
 
-async function acquireLock(userId: string): Promise<string> {
+async function acquireLock(userId: string): Promise<Lock> {
   const token = crypto.randomUUID();
   for (let i = 0; i < LOCK_RETRIES; i++) {
     const ok = await kv.set(LOCK_KEY(userId), token, { nx: true, px: LOCK_TTL_MS });
-    if (ok === 'OK') return token;
+    if (ok === 'OK') {
+      // Monotonic fence: a later acquisition always reads a strictly higher value.
+      const fence = Number(await kv.incr(FENCE_KEY(userId)));
+      return { token, fence };
+    }
     await sleep(LOCK_RETRY_MS);
   }
   throw new IdentityStoreError('LOCK_TIMEOUT', `Could not acquire lock for ${userId}`);
 }
 
-async function releaseLock(userId: string, token: string): Promise<void> {
-  await kv.eval(RELEASE_LOCK, [LOCK_KEY(userId)], [token]);
+/** Extend our lease (defence-in-depth for unusually long critical sections). */
+async function renewLock(userId: string, lock: Lock): Promise<void> {
+  await kv.eval(RENEW_LOCK, [LOCK_KEY(userId)], [lock.token, String(LOCK_TTL_MS)]);
+}
+
+/** True iff we are still the current lock holder (lease not lapsed/stolen). */
+async function stillHolds(userId: string, lock: Lock): Promise<boolean> {
+  return (await kv.get<string>(LOCK_KEY(userId))) === lock.token;
+}
+
+/**
+ * Guard a commit against a lost lease: if we no longer hold the lock (a stale
+ * holder whose lease lapsed), abort instead of writing over the current holder.
+ * With LOCK_TTL_MS > HANDLER_MAX_DURATION_MS this is belt-and-braces, but it makes
+ * the fencing explicit and fails safe if timings ever drift.
+ */
+async function assertHeld(userId: string, lock: Lock): Promise<void> {
+  if (!(await stillHolds(userId, lock))) {
+    throw new IdentityStoreError('LOCK_TIMEOUT', `Lock lease lost for ${userId} (fence ${lock.fence})`);
+  }
+}
+
+async function releaseLock(userId: string, lock: Lock): Promise<void> {
+  await kv.eval(RELEASE_LOCK, [LOCK_KEY(userId)], [lock.token]);
 }
 
 async function loadUser(userId: string): Promise<StoredUser | null> {
@@ -238,6 +281,49 @@ export interface LoginResult {
   isNew: boolean;
 }
 
+// Sentinel telling loginOrCreate to re-read the index and retry (ownership moved
+// under us while we waited for the lock, or the owner turned out to be deleted).
+const RETRY = Symbol('retry');
+
+/**
+ * Returning-login critical section (CR round-4 blocker #3). Runs under the same
+ * fenced per-user lock delete/unlink hold, so it cannot resurrect a user that a
+ * concurrent delete is removing. Returns RETRY when the caller must re-read the
+ * index (ownership changed / owner deleted), otherwise the resolved login.
+ */
+async function loginExistingOwner(
+  identity: VerifiedIdentity,
+  ownerId: string,
+): Promise<LoginResult | typeof RETRY> {
+  const { provider, subject } = identity;
+  const lock = await acquireLock(ownerId);
+  try {
+    // Re-read ownership under the lock: between reading the index and taking the
+    // lock a delete/unlink may have freed or reassigned it. If it no longer points
+    // at ownerId, do NOT touch ownerId's records — retry from a fresh index read.
+    if ((await kv.get<string>(IDX_KEY(provider, subject))) !== ownerId) return RETRY;
+
+    const user = await loadUser(ownerId);
+    if (!user) {
+      // Index points at a user that no longer exists: a partial delete left the
+      // index dangling. Atomically free it iff still ours (never stomp a reclaim),
+      // then retry as a create.
+      await freeIndexIfOwned(provider, subject, ownerId);
+      return RETRY;
+    }
+    if (user.status !== 'active') {
+      throw new IdentityStoreError('ACCOUNT_DISABLED', `User ${ownerId} is ${user.status}`);
+    }
+    // Fail safe if our lease somehow lapsed before the write (belt-and-braces:
+    // LOCK_TTL_MS already exceeds the handler budget).
+    await assertHeld(ownerId, lock);
+    const refreshed = await refreshSnapshot(user, identity);
+    return { user: await hydrate(refreshed), isNew: false };
+  } finally {
+    await releaseLock(ownerId, lock);
+  }
+}
+
 /**
  * §5.1 login-or-create. The atomic claim on the identity index is the sole
  * serialisation point and the single COMMIT point of a create.
@@ -249,6 +335,17 @@ export interface LoginResult {
  * user, the returning path's "dangling index" cleanup below can never delete an
  * in-progress index and split one provider subject into two internal users. If
  * we lose the claim, we roll the orphan user back and re-read the winner.
+ *
+ * Returning-login serialisation (CR round-4 blocker #3): a returning login does a
+ * read-modify-write of the owner's snapshot (refreshSnapshot writes the user
+ * record + detail). A concurrent delete/unlink mutates the SAME records under the
+ * per-user lock, so a lock-free login could resurrect a just-deleted user
+ * (zombie) or refresh a record the delete is tearing down. We therefore take the
+ * SAME fenced lock those ops hold before touching an existing owner, and re-read
+ * the index under it: if ownership changed out from under us we retry from
+ * scratch (falling through to create when the account was deleted) instead of
+ * writing over a deleted user. Create needs no lock — its SET NX claim is already
+ * the serialisation point for a brand-new subject.
  */
 export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginResult> {
   const { provider, subject } = identity;
@@ -257,19 +354,9 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
     const ownerId = await kv.get<string>(IDX_KEY(provider, subject));
 
     if (ownerId) {
-      const user = await loadUser(ownerId);
-      if (!user) {
-        // Truly dangling index: the user was deleted but the index survived a
-        // partial delete. Safe to free because create writes the index last, so
-        // this is never an in-flight create. Reclaim and retry.
-        await kv.del(IDX_KEY(provider, subject));
-        continue;
-      }
-      if (user.status !== 'active') {
-        throw new IdentityStoreError('ACCOUNT_DISABLED', `User ${ownerId} is ${user.status}`);
-      }
-      const refreshed = await refreshSnapshot(user, identity);
-      return { user: await hydrate(refreshed), isNew: false };
+      const returning = await loginExistingOwner(identity, ownerId);
+      if (returning === RETRY) continue;
+      return returning;
     }
 
     const candidateId = newUserId();
@@ -425,7 +512,13 @@ export async function unlinkIdentity(userId: string, provider: Provider): Promis
 
     const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
     const target = members.find((m) => splitMember(m).provider === provider);
-    if (!target) throw new IdentityStoreError('NO_SUCH_IDENTITY', `${provider} not linked`);
+    if (!target) {
+      // Idempotent (CR round-4 blocker #2): the provider is already unlinked — a
+      // completed unlink, or a retry after one whose session-revocation step
+      // failed. Converge to success (return the current user) instead of throwing
+      // NO_SUCH_IDENTITY, so the caller's retry reaches the correct final state.
+      return await hydrate(user);
+    }
 
     const { subject } = splitMember(target);
     const idxOwner = await kv.get<string>(IDX_KEY(provider, subject));

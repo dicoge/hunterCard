@@ -234,14 +234,27 @@ export async function linkProvider(
   return toHoloUser(data.user);
 }
 
+export interface UnlinkResult {
+  user: HoloUser;
+  // Present only when the caller's own session was minted by the just-unlinked
+  // provider and the server rotated it to a still-linked provider (CR round-4
+  // blocker #1). The client MUST adopt it, otherwise it keeps a revoked token.
+  session?: string;
+  callerSessionRevoked: boolean;
+}
+
 export async function unlinkProvider(
   session: string,
   provider: AuthProvider,
-): Promise<HoloUser> {
+): Promise<UnlinkResult> {
   const res = await apiPost('/auth/unlink', { provider }, session);
   const data = await readJson(res);
   if (!res.ok) throw toAuthError(data, res.status, provider);
-  return toHoloUser(data.user);
+  return {
+    user: toHoloUser(data.user),
+    session: typeof data.session === 'string' ? data.session : undefined,
+    callerSessionRevoked: Boolean(data.callerSessionRevoked),
+  };
 }
 
 // Server-side session revocation. Logout must always clear LOCAL state (the

@@ -114,8 +114,18 @@ export const useAuthStore = create<AuthStore>()(
         if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          const updatedUser = await unlinkProvider(session, provider);
-          set({ user: updatedUser, isLoading: false });
+          const result = await unlinkProvider(session, provider);
+          // If the caller's own session was minted by the unlinked provider the
+          // server revoked it and issued a fresh one bound to a still-linked
+          // provider (CR round-4 blocker #1). Adopt the rotated session so we
+          // don't persist a dead token and get silently logged out on reload;
+          // otherwise keep the current session.
+          set({
+            user: result.user,
+            session: result.session ?? session,
+            isAuthenticated: true,
+            isLoading: false,
+          });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to unlink provider' });
           throw err;
