@@ -18,11 +18,5 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/update-db",
-      "schedule": "0 2 * * *"
-    }
   ]
 }

@@ -244,15 +244,19 @@ export async function unlinkProvider(
   return toHoloUser(data.user);
 }
 
-// Best-effort server-side session revocation. Logout must always clear local
-// state, so a network/backend failure here is swallowed; the server record also
-// expires on its own TTL. When it does reach the server the session is revoked
-// immediately so the bearer token can't be replayed.
-export async function logoutSession(session: string): Promise<void> {
+// Server-side session revocation. Logout must always clear LOCAL state (the
+// caller does that unconditionally), but we must not silently treat an
+// unrevoked server session as revoked: a non-2xx response or a thrown network
+// error means the bearer token may still be live server-side (CR blocker #2).
+// We surface that by returning false so the caller can warn the user that the
+// token is only fully dead once its server TTL expires, while still proceeding
+// with the local sign-out. Returns true only when the server confirmed 2xx.
+export async function logoutSession(session: string): Promise<boolean> {
   try {
-    await apiPost('/auth/logout', {}, session);
+    const res = await apiPost('/auth/logout', {}, session);
+    return res.ok;
   } catch {
-    // ignore — local logout proceeds regardless
+    return false;
   }
 }
 

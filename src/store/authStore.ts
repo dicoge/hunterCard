@@ -123,17 +123,22 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: async () => {
-        // Revoke the session server-side (best-effort) so the bearer token can't
-        // be replayed, then always clear local state.
+        // Revoke the session server-side, then always clear local state. If the
+        // server did NOT confirm revocation (non-2xx or network failure) we don't
+        // pretend the token is dead — we surface a warning so the user knows the
+        // bearer token stays valid until its server TTL expires (CR blocker #2),
+        // while still signing them out locally.
         const { session } = get();
-        if (session) await logoutSession(session);
+        const revoked = session ? await logoutSession(session) : true;
         set({
           user: null,
           session: null,
           isAuthenticated: false,
           isGuest: false,
           isLoading: false,
-          error: null,
+          error: revoked
+            ? null
+            : '已在本機登出，但伺服器未能立即撤銷這個工作階段，該登入權杖會在到期前仍有效。',
           role: 'guest',
         });
       },

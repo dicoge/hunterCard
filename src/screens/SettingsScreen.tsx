@@ -231,8 +231,9 @@ export default function SettingsScreen() {
                 );
               })}
               <Text style={styles.hint}>
-                綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，
-                無法解除最後一個。
+                綁定只是把多種登入方式對應到同一個伺服器帳號，用於登入識別。收藏、設定、入手提醒與推播偏好
+                目前都僅存在本裝置，並未歸屬帳號、也不會跨裝置或跨帳號同步；在同一裝置上換帳號登入仍會看到同一份本機資料。
+                至少需保留一種登入方式，無法解除最後一個。
               </Text>
 
               <TouchableOpacity style={styles.accountBtn} onPress={confirmSignOut}>

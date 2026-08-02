@@ -133,7 +133,15 @@
 - 成本：多一個供應商依賴與資料處理者；需與現有 localStorage / 自建後端整合策略對齊。
 
 **建議**：因 repo 已有 `api/lib/apple-auth.ts`（client secret / token / revoke）且不希望新增供應商依賴，
-啟用時優先走**路徑 A**，只補一支 id_token 驗簽端點即可。
+啟用時優先走**路徑 A**。但**「只補一支 id_token 驗簽端點」的說法是錯的**——驗簽端點其實**已經完成**，
+真正卡住的是下列尚未完成的工作，啟用前全部必補（詳見「為什麼不啟用」與本路徑 1./4./5.）：
+1. **實作 `api/lib/apple-token-store.ts` 的伺服器端加密 refresh_token 儲存**（目前為樁，Apple 刪帳號 fail-closed 回 501）；
+2. **前端 `authService.ts` 於 Apple authorize 後取出 fresh authorizationCode，並帶 session Bearer 呼叫
+   `/api/auth/apple/register`**（目前只取 id_token、未串接 register，因此登入當下不會保存 refresh_token）；
+3. **Apple 後台前置設定**：Web 用 Services ID、Return URL / Domains、domain association file、`.p8` 金鑰，
+   並於 Vercel 設好 `EXPO_PUBLIC_APPLE_SERVICE_ID` 等環境變數；
+4. **端到端（E2E）驗證** login / 綁定 / **刪除撤銷** 全流程；
+5. 上述全部完成後，**最後**才翻前端 `APPLE_LOGIN_ENABLED` 與伺服器 `APPLE_WEB_LOGIN_ENABLED` 兩道旗標。
 
 ## 啟用檢核（Definition of Done）
 

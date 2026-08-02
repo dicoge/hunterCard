@@ -14,8 +14,8 @@ import { deleteUser, getUser, linkIdentity, loginOrCreate, unlinkIdentity } from
 import {
   issueSession,
   revokeAllUserSessions,
-  revokeOtherUserSessions,
   revokeSession,
+  revokeSessionsByProvider,
 } from '../lib/session';
 import { getAppleConfig, revokeRefreshToken } from '../lib/apple-auth';
 import { deleteStoredAppleRefreshToken, getStoredAppleRefreshToken } from '../lib/apple-token-store';
@@ -60,7 +60,9 @@ async function handleLogin(req: Request): Promise<Response> {
 
   const identity = await verifyProviderToken(body.provider, body.idToken, nonce);
   const { user, isNew } = await loginOrCreate(identity);
-  return json({ user, isNew, session: await issueSession(user.internalId) }, 200);
+  // Stamp the session with the provider that minted it so a later unlink of that
+  // provider can revoke exactly these tokens (CR blocker #2).
+  return json({ user, isNew, session: await issueSession(user.internalId, body.provider) }, 200);
 }
 
 async function handleLink(req: Request): Promise<Response> {
@@ -85,10 +87,10 @@ async function handleUnlink(req: Request): Promise<Response> {
   if (!isProvider(body.provider)) return json({ error: 'invalid_provider' }, 400);
 
   const user = await unlinkIdentity(ctx.userId, body.provider);
-  // Removing a login method revokes every OTHER session for this user, so a
-  // token minted on a now-removed device/provider cannot keep acting. The
-  // caller's own session is kept so managing links doesn't log them out.
-  await revokeOtherUserSessions(ctx.userId, ctx.jti);
+  // Removing a login method revokes exactly the sessions that provider minted —
+  // including the caller's own token if it came from the removed provider — while
+  // leaving other still-linked providers' sessions intact (CR blocker #2).
+  await revokeSessionsByProvider(ctx.userId, body.provider);
   return json({ ok: true, user }, 200);
 }
 

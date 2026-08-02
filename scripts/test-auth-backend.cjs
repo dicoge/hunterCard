@@ -360,7 +360,7 @@ async function testCreatePartialWriteLeavesNoLoginnableIndex() {
 // bearer so a stolen/copied 30-day token cannot be replayed.
 async function testSessionRevocationStopsStolenToken() {
   resetKv();
-  const token = await session.issueSession('holo_user_1');
+  const token = await session.issueSession('holo_user_1', 'google');
   assert.equal(await session.verifySession(token), 'holo_user_1', 'fresh session verifies');
 
   // Simulate a stolen copy of the same still-signed, still-unexpired token.
@@ -370,25 +370,92 @@ async function testSessionRevocationStopsStolenToken() {
   assert.equal(await session.verifySession(stolen), null, 'stolen copy is dead once revoked');
 }
 
-async function testRevokeOtherSessionsKeepsCurrent() {
+// CR blocker #2: unlinking a provider must revoke exactly the sessions that
+// provider minted — including the caller's own token if it came from the removed
+// provider — while leaving sessions from other still-linked providers alive. The
+// old "revoke every OTHER session, keep the caller" logic was backwards: it kept
+// the removed provider's caller token and killed the still-valid providers.
+async function testUnlinkRevokesOnlyRemovedProviderSessions() {
   resetKv();
-  const a = await session.issueSession('holo_user_2');
-  const b = await session.issueSession('holo_user_2');
-  const c = await session.issueSession('holo_user_2');
-  // Keep b (the caller's own session), revoke the rest — the unlink behaviour.
-  await session.revokeOtherUserSessions('holo_user_2', decodeJti(b));
-  assert.equal(await session.verifySession(a), null, 'other session a revoked');
-  assert.equal(await session.verifySession(c), null, 'other session c revoked');
-  assert.equal(await session.verifySession(b), 'holo_user_2', 'caller session b kept');
+  const googleSession = await session.issueSession('holo_user_2', 'google');
+  const appleCaller = await session.issueSession('holo_user_2', 'apple');
+  const appleOther = await session.issueSession('holo_user_2', 'apple');
+
+  await session.revokeSessionsByProvider('holo_user_2', 'apple');
+
+  assert.equal(await session.verifySession(googleSession), 'holo_user_2', 'other provider session kept');
+  assert.equal(await session.verifySession(appleCaller), null, 'removed-provider caller token revoked');
+  assert.equal(await session.verifySession(appleOther), null, 'removed-provider other token revoked');
+}
+
+async function testSessionContextCarriesProvider() {
+  resetKv();
+  const token = await session.issueSession('holo_user_p', 'apple');
+  const ctx = await session.verifySessionContext(token);
+  assert.equal(ctx.userId, 'holo_user_p');
+  assert.equal(ctx.provider, 'apple', 'session context exposes the minting provider');
 }
 
 async function testRevokeAllSessionsOnDelete() {
   resetKv();
-  const a = await session.issueSession('holo_user_3');
-  const b = await session.issueSession('holo_user_3');
+  const a = await session.issueSession('holo_user_3', 'google');
+  const b = await session.issueSession('holo_user_3', 'apple');
   await session.revokeAllUserSessions('holo_user_3');
   assert.equal(await session.verifySession(a), null, 'all sessions revoked on delete');
   assert.equal(await session.verifySession(b), null, 'all sessions revoked on delete');
+}
+
+// CR blocker #1: an unlink that fails AFTER the decisive index-free but BEFORE the
+// membership srem must converge on retry, not strand the identity or fail with
+// NO_SUCH_IDENTITY. The target is found via the raw membership set, so a resumed
+// unlink (index already freed) still matches; the last-method guard is skipped
+// because the target is no longer index-owned; cleanup finishes idempotently.
+async function testUnlinkPartialWriteConverges() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  await store.linkIdentity(user.internalId, identity('apple', 'a-1', 'a@icloud.com'));
+
+  // Fail the detail delete, which runs after the atomic index-free. The index is
+  // already gone but membership still lists apple: a half-applied unlink.
+  const detailKey = `auth:idetail:${user.internalId}:apple:a-1`;
+  kvState.failOn = (op, key) => op === 'del' && key === detailKey;
+  await assert.rejects(store.unlinkIdentity(user.internalId, 'apple'), /injected KV failure/);
+  kvState.failOn = null;
+
+  // The apple index is freed already; apple is not loginnable, google remains.
+  assert.equal(await kv.get('auth:idx:apple:a-1'), null, 'index freed by the decisive step');
+  const mid = await store.getUser(user.internalId);
+  assert.equal(mid.linkedProviders.length, 1, 'apple no longer reported as linked');
+  assert.equal(mid.linkedProviders[0].provider, 'google');
+
+  // Retry converges instead of throwing NO_SUCH_IDENTITY / CANNOT_UNLINK_LAST_METHOD.
+  const after = await store.unlinkIdentity(user.internalId, 'apple');
+  assert.equal(after.linkedProviders.length, 1, 'retry completes the unlink cleanly');
+  assert.equal(after.linkedProviders[0].provider, 'google');
+  const members = await kv.smembers(`auth:user:${user.internalId}:identities`);
+  assert.ok(!members.includes('apple:a-1'), 'membership entry cleaned up on convergent retry');
+}
+
+// CR blocker #1: delete frees an index with an atomic compare-and-delete, so if
+// the (provider, subject) has been reclaimed by a NEW user, the stale delete must
+// NOT stomp the new owner's index. The old GET-then-DEL had a check-then-act race;
+// here we assert the invariant directly: a reclaimed index survives the delete.
+async function testDeleteDoesNotStompReclaimedIndex() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+
+  // Simulate the subject reclaimed by another internal user after `user` linked it.
+  kvState.values.set('auth:user:holo_reclaimer', { id: 'holo_reclaimer', status: 'active' });
+  kvState.values.set('auth:idx:google:g-1', 'holo_reclaimer');
+
+  await store.deleteUser(user.internalId);
+
+  assert.equal(
+    kvState.values.get('auth:idx:google:g-1'),
+    'holo_reclaimer',
+    'delete must never free an index a new owner has reclaimed',
+  );
+  assert.equal(await store.getUser(user.internalId), null, 'the deleted user is still fully gone');
 }
 
 function decodeJti(token) {
@@ -411,8 +478,11 @@ function decodeJti(token) {
     testLinkPartialWriteFreesIndex,
     testCreatePartialWriteLeavesNoLoginnableIndex,
     testSessionRevocationStopsStolenToken,
-    testRevokeOtherSessionsKeepsCurrent,
+    testUnlinkRevokesOnlyRemovedProviderSessions,
+    testSessionContextCarriesProvider,
     testRevokeAllSessionsOnDelete,
+    testUnlinkPartialWriteConverges,
+    testDeleteDoesNotStompReclaimedIndex,
   ];
   for (const test of tests) {
     await test();

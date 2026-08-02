@@ -54,7 +54,7 @@ export default function AuthScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{APP_NAME}</Text>
-        <Text style={styles.subtitle}>登入以建立你的帳號（收藏與入手提醒目前僅存在本裝置）</Text>
+        <Text style={styles.subtitle}>登入僅用於建立帳號與登入識別。收藏與入手提醒目前僅存在本裝置，不會歸屬帳號或跨裝置同步。</Text>
       </View>
 
       <View style={styles.buttons}>

@@ -44,7 +44,7 @@ export default function LoginScreen() {
         <View style={styles.card}>
           <Text style={styles.welcome}>歡迎使用 HoloHunter</Text>
           <Text style={styles.description}>
-            登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢
+            登入僅用於建立帳號與登入識別。收藏、掃描與價格追蹤等資料目前都存在本裝置，不會歸屬帳號或跨裝置同步。
           </Text>
 
           {error && (

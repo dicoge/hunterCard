@@ -132,9 +132,21 @@ const LOCK_RETRIES = 50;
 const LOCK_RETRY_MS = 20;
 const CREATE_RETRIES = 5;
 
-// Compare-and-delete so we never delete a lock that has expired and been
-// re-acquired by another writer (KEYS[1]=lock key, ARGV[1]=our token).
-const RELEASE_LOCK = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
+// Compare-and-delete: delete KEYS[1] only if its value equals ARGV[1]. Used for
+// two things that must not clobber a value another writer has since changed:
+//   - lock release (never delete a lock re-acquired after our TTL expired), and
+//   - freeing an identity index (never stomp an index a concurrent flow has
+//     already reclaimed for a different user — CR blocker #1, delete/reclaim).
+// The GET and DEL run atomically on the server, closing the check-then-act race
+// that a separate `kv.get` + `kv.del` would leave open.
+const COMPARE_AND_DELETE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
+const RELEASE_LOCK = COMPARE_AND_DELETE;
+
+// Free an identity index iff it still points at `userId` (atomic check-and-del).
+async function freeIndexIfOwned(provider: Provider, subject: string, userId: string): Promise<boolean> {
+  const freed = await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, subject)], [userId]);
+  return freed === 1;
+}
 
 export function isIdentityStoreConfigured(): boolean {
   return Boolean(
@@ -395,10 +407,15 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
 /**
  * §5.3 unlink a provider, refusing to remove the last login method.
  *
- * The index (login capability) is freed FIRST, so even if a later cleanup write
- * fails there is no residual loginnable ownership (CR blocker #1). The remaining
- * steps are idempotent, so a retry after a transient failure converges. The
- * last-method guard counts only index-owned identities.
+ * Convergent + atomic (CR blocker #1). The decisive step is an atomic
+ * compare-and-delete that frees the identity index iff it still points at us —
+ * this both removes login capability and cannot stomp an index a concurrent flow
+ * reclaimed. Everything else is idempotent cleanup, and the membership `srem`
+ * runs LAST, so any failure leaves the target still discoverable in the set and
+ * a retry re-finds it and completes the unlink instead of failing with
+ * NO_SUCH_IDENTITY. The target is found via the raw membership set (not the
+ * owned set) precisely so a resumed unlink — whose index is already freed — still
+ * matches and converges.
  */
 export async function unlinkIdentity(userId: string, provider: Provider): Promise<PublicUser> {
   const lock = await acquireLock(userId);
@@ -406,22 +423,36 @@ export async function unlinkIdentity(userId: string, provider: Provider): Promis
     const user = await loadUser(userId);
     if (!user) throw new IdentityStoreError('USER_NOT_FOUND', userId);
 
-    const owned = await ownedMembers(userId);
-    const target = owned.find((m) => splitMember(m).provider === provider);
+    const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
+    const target = members.find((m) => splitMember(m).provider === provider);
     if (!target) throw new IdentityStoreError('NO_SUCH_IDENTITY', `${provider} not linked`);
-    if (owned.length <= 1) {
-      throw new IdentityStoreError('CANNOT_UNLINK_LAST_METHOD', 'At least one login method must remain');
-    }
 
     const { subject } = splitMember(target);
-    await kv.del(IDX_KEY(provider, subject)); // remove login capability first
-    await kv.srem(IDENTITIES_KEY(userId), target);
-    await kv.del(DETAIL_KEY(userId, provider, subject));
+    const idxOwner = await kv.get<string>(IDX_KEY(provider, subject));
+    const targetIsOwned = idxOwner === userId;
 
-    const remaining = owned.filter((m) => m !== target);
+    // Last-method guard counts only loginnable (index-owned) identities, and only
+    // applies while the target is still owned. On a resume (index already freed),
+    // the decisive step already passed this guard once — re-blocking it would
+    // strand the half-unlinked identity, so we let cleanup finish.
+    if (targetIsOwned) {
+      const owned = await ownedMembers(userId);
+      if (owned.length <= 1) {
+        throw new IdentityStoreError('CANNOT_UNLINK_LAST_METHOD', 'At least one login method must remain');
+      }
+      // Decisive: atomically free the index iff still ours (never stomp a reclaim).
+      await freeIndexIfOwned(provider, subject, userId);
+    }
+
+    // Idempotent cleanup. Recompute the snapshot from what remains loginnable,
+    // then remove the membership entry LAST so a mid-cleanup failure still leaves
+    // the target discoverable for a convergent retry.
+    await kv.del(DETAIL_KEY(userId, provider, subject));
+    const remaining = await ownedMembers(userId);
     const details = await loadDetails(userId, remaining);
     const next: StoredUser = { ...user, primaryEmail: details[0]?.email ?? user.primaryEmail };
     await kv.set(USER_KEY(userId), next);
+    await kv.srem(IDENTITIES_KEY(userId), target);
     return await hydrate(next);
   } finally {
     await releaseLock(userId, lock);
@@ -443,11 +474,11 @@ export async function deleteUser(userId: string): Promise<DeleteResult> {
     const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
     for (const m of members) {
       const { provider, subject } = splitMember(m);
-      // Only free an index that still points at us, so we never stomp an identity
-      // that a concurrent flow has already re-claimed for another user.
-      if ((await kv.get<string>(IDX_KEY(provider, subject))) === userId) {
-        await kv.del(IDX_KEY(provider, subject));
-      }
+      // Atomic compare-and-delete: free the index iff it STILL points at us. The
+      // old GET-then-DEL had a check-then-act race — if a new user reclaimed the
+      // subject between the GET and the DEL, the stale DEL would stomp the new
+      // owner's index (CR blocker #1, delete/reclaim interleaving).
+      await freeIndexIfOwned(provider, subject, userId);
       await kv.del(DETAIL_KEY(userId, provider, subject));
     }
     await kv.del(IDENTITIES_KEY(userId));

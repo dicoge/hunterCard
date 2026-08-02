@@ -17,10 +17,21 @@
 import { kv } from '@vercel/kv';
 import crypto from 'crypto';
 
+export type SessionProvider = 'google' | 'apple';
+
 const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 const SESSION_KEY = (jti: string) => `auth:session:${jti}`;
 const USER_SESSIONS_KEY = (userId: string) => `auth:user:${userId}:sessions`;
+
+// Each session record stores which internal user it vouches for AND which
+// provider identity minted it. The provider is what lets unlink revoke ONLY the
+// sessions created by the removed identity (CR blocker #2) instead of the caller
+// keeping the removed provider's token while other providers get logged out.
+interface SessionRecord {
+  sub: string; // internal user id
+  provider: SessionProvider;
+}
 
 interface SessionPayload {
   sub: string; // internal user id
@@ -32,6 +43,7 @@ interface SessionPayload {
 export interface SessionContext {
   userId: string;
   jti: string;
+  provider: SessionProvider;
 }
 
 function secret(): string | null {
@@ -46,17 +58,34 @@ export function isSessionConfigured(): boolean {
   return Boolean(secret());
 }
 
-export async function issueSession(userId: string, ttlSeconds = DEFAULT_TTL_SECONDS): Promise<string> {
+export async function issueSession(
+  userId: string,
+  provider: SessionProvider,
+  ttlSeconds = DEFAULT_TTL_SECONDS,
+): Promise<string> {
   const key = secret();
   if (!key) throw new Error('AUTH_SESSION_SECRET is not configured');
   const now = Math.floor(Date.now() / 1000);
   const jti = crypto.randomUUID();
   const payload: SessionPayload = { sub: userId, jti, iat: now, exp: now + ttlSeconds };
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  // Record first so a token is never handed out that cannot be revoked.
-  await kv.set(SESSION_KEY(jti), userId, { px: ttlSeconds * 1000 });
+  // Record first so a token is never handed out that cannot be revoked. The
+  // record carries the source provider so unlink can revoke provider-scoped.
+  const record: SessionRecord = { sub: userId, provider };
+  await kv.set(SESSION_KEY(jti), record, { px: ttlSeconds * 1000 });
   await kv.sadd(USER_SESSIONS_KEY(userId), jti);
   return `${encoded}.${sign(encoded, key)}`;
+}
+
+// Older sessions (pre-provider) stored the raw userId string; tolerate both so
+// existing tokens keep working across the deploy.
+function readRecord(stored: unknown): SessionRecord | null {
+  if (typeof stored === 'string') return { sub: stored, provider: 'google' };
+  if (stored && typeof stored === 'object' && typeof (stored as SessionRecord).sub === 'string') {
+    const r = stored as SessionRecord;
+    return { sub: r.sub, provider: r.provider === 'apple' ? 'apple' : 'google' };
+  }
+  return null;
 }
 
 /** HMAC + expiry check only (no revocation lookup). Returns the claims or null. */
@@ -87,9 +116,9 @@ export async function verifySessionContext(
 ): Promise<SessionContext | null> {
   const claims = decodeClaims(token);
   if (!claims) return null;
-  const stored = await kv.get<string>(SESSION_KEY(claims.jti));
-  if (stored !== claims.sub) return null; // revoked, expired-out, or unknown
-  return { userId: claims.sub, jti: claims.jti };
+  const record = readRecord(await kv.get(SESSION_KEY(claims.jti)));
+  if (!record || record.sub !== claims.sub) return null; // revoked, expired-out, or unknown
+  return { userId: claims.sub, jti: claims.jti, provider: record.provider };
 }
 
 /** Returns the internal user id if the session is valid and not revoked. */
@@ -107,11 +136,26 @@ export async function revokeSession(userId: string, jti: string): Promise<void> 
   await forget(userId, jti);
 }
 
-/** Revoke every session for a user except one (used after unlink). */
-export async function revokeOtherUserSessions(userId: string, keepJti: string): Promise<void> {
+/**
+ * Revoke exactly the sessions minted by a given provider identity (used after
+ * unlink). CR blocker #2: unlinking a provider must invalidate the tokens that
+ * provider created — including the caller's own token if it was minted by the
+ * removed provider — and must leave sessions from OTHER, still-linked providers
+ * untouched. We look each session's stored provider up rather than trusting the
+ * caller token's provider.
+ */
+export async function revokeSessionsByProvider(
+  userId: string,
+  provider: SessionProvider,
+): Promise<void> {
   const jtis = ((await kv.smembers(USER_SESSIONS_KEY(userId))) as string[] | null) ?? [];
   for (const jti of jtis) {
-    if (jti !== keepJti) await forget(userId, jti);
+    const record = readRecord(await kv.get(SESSION_KEY(jti)));
+    if (!record) {
+      await kv.srem(USER_SESSIONS_KEY(userId), jti); // prune dangling ref
+      continue;
+    }
+    if (record.provider === provider) await forget(userId, jti);
   }
 }
 
