@@ -1,5 +1,7 @@
+import { Platform } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import platformStorage from '../stores/storage';
 import {
   AuthProvider,
   ProviderUserInfo,
@@ -9,6 +11,17 @@ import {
   HoloUser,
   AuthTokens,
 } from '../types/auth';
+import {
+  signInWithApple as signInWithAppleNative,
+  isAppleAuthAvailable,
+  APPLE_CANCEL_CODE,
+} from './auth/appleAuth';
+import { registerAppleSession, requestAccountDeletion } from './auth';
+
+// Re-exported so the auth store can check credential state / detect user cancel
+// without importing the native module directly.
+export { isAppleCredentialAuthorized } from './auth/appleAuth';
+export { APPLE_CANCEL_CODE } from './auth/appleAuth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -24,21 +37,82 @@ const appleDiscovery = {
   revocationEndpoint: 'https://appleid.apple.com/auth/revoke',
 };
 
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
   || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID
   || '';
 
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
+
+// iOS 用 iOS OAuth client（reversed-client-id 自訂 scheme 導回）；其餘平台用 web client。
+// 對齊 AUTH-Architecture §6.1：各平台 aud 對應不同 client id。
+function googleClientId(): string {
+  if (Platform.OS === 'ios' && GOOGLE_IOS_CLIENT_ID) return GOOGLE_IOS_CLIENT_ID;
+  return GOOGLE_WEB_CLIENT_ID;
+}
+
+// iOS OAuth client 的 redirect 必須是 reversed client id 的自訂 URL scheme
+// （com.googleusercontent.apps.XXXX:/oauthredirect）。其餘平台用預設 redirect。
+function googleRedirectUri(): string {
+  if (Platform.OS === 'ios' && GOOGLE_IOS_CLIENT_ID) {
+    const reversed = GOOGLE_IOS_CLIENT_ID.split('.').reverse().join('.');
+    return AuthSession.makeRedirectUri({ native: `${reversed}:/oauthredirect` });
+  }
+  return AuthSession.makeRedirectUri();
+}
+
 const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
-// Sign in with Apple is disabled in this web PoC. The client cannot verify the
-// Apple ID token (signature / issuer / audience / expiry / nonce) on its own, so
-// trusting the decoded payload as an identity source would be insecure. Re-enable
-// only once token verification runs server-side. Web Apple login is optional per
-// the product spec (Google is the required web provider).
+// **Web** Sign in with Apple is disabled in this PoC. A browser client cannot
+// verify the Apple ID token (signature / issuer / audience / expiry / nonce) on
+// its own, so trusting the decoded payload as an identity source would be
+// insecure. Re-enable only once token verification runs server-side. Web Apple
+// login is optional per the product spec (Google is the required web provider).
+//
+// This flag does NOT gate **native iOS** Apple login: iOS uses the native
+// `expo-apple-authentication` flow (see signInWithProvider), which returns a
+// trusted Apple `sub` from the OS without any client-side JWT decoding.
 export const APPLE_LOGIN_ENABLED = false;
 
 const APPLE_DISABLED_MESSAGE =
   'Apple 登入尚未開放（需後端驗證 Apple ID token）。請改用 Google 登入。';
+
+/** iOS 上是否可用原生 Sign in with Apple。 */
+async function canUseNativeApple(): Promise<boolean> {
+  return Platform.OS === 'ios' && (await isAppleAuthAvailable());
+}
+
+/**
+ * 觸發原生 Sign in with Apple 並映射成共通模型所需的 ProviderUserInfo。
+ * Apple 只在「首次」授權回傳 name / email；後續登入為 null——呼叫端據此保留既有值
+ * （見 findOrCreateHoloUser）。email 可能為 private relay 或被隱藏，一律不作唯一身份。
+ * 使用者取消時 re-throw 帶 APPLE_CANCEL_CODE 的錯誤，讓上層靜默處理。
+ */
+async function signInWithAppleProviderInfo(): Promise<{
+  info: ProviderUserInfo;
+  tokens: AuthTokens;
+  authorizationCode: string | null;
+}> {
+  let session;
+  try {
+    session = await signInWithAppleNative();
+  } catch (err: any) {
+    if (err?.code === APPLE_CANCEL_CODE) {
+      throw Object.assign(new Error('已取消 Apple 登入'), { code: APPLE_CANCEL_CODE });
+    }
+    throw err;
+  }
+  const email = session.user.email ?? '';
+  const name = session.user.name || email || 'Apple 使用者';
+  return {
+    info: { id: session.user.id, email, name },
+    tokens: {
+      accessToken: session.identityToken ?? '',
+      expiresAt: Date.now() + 3600 * 1000,
+      provider: 'apple',
+    },
+    authorizationCode: session.authorizationCode,
+  };
+}
 
 const googleScopes = ['openid', 'profile', 'email'];
 const appleScopes = ['name', 'email'];
@@ -111,17 +185,20 @@ export interface SignInResult {
 }
 
 async function findOrCreateHoloUser(providerInfo: ProviderUserInfo, provider: AuthProvider): Promise<{ user: HoloUser; isNew: boolean }> {
-  const existing = loadLocalUsers();
+  const existing = await loadLocalUsers();
   let user = existing.find((u) =>
     u.linkedProviders.some((p) => p.provider === provider && p.providerId === providerInfo.id)
   );
 
   if (user) {
     const identity = user.linkedProviders.find((p) => p.provider === provider)!;
-    identity.email = providerInfo.email;
-    identity.displayName = providerInfo.name;
-    identity.photoUrl = providerInfo.picture;
-    saveLocalUsers(existing);
+    // Returning Apple logins (and any provider that hides email) return null
+    // name / email — only overwrite when the provider actually supplied a value,
+    // otherwise we would wipe the values captured on first authorization.
+    if (providerInfo.email) identity.email = providerInfo.email;
+    if (providerInfo.name) identity.displayName = providerInfo.name;
+    if (providerInfo.picture) identity.photoUrl = providerInfo.picture;
+    await saveLocalUsers(existing);
     return { user, isNew: false };
   }
 
@@ -144,37 +221,57 @@ async function findOrCreateHoloUser(providerInfo: ProviderUserInfo, provider: Au
   };
 
   existing.push(newUser);
-  saveLocalUsers(existing);
+  await saveLocalUsers(existing);
   return { user: newUser, isNew: true };
 }
 
-function loadLocalUsers(): HoloUser[] {
+const USERS_STORAGE_KEY = 'holohunter-users';
+
+// The local "users table" that fakes the server-side identity store for this
+// PoC. Backed by platformStorage so it works on both web (localStorage) and
+// native iOS/Android (AsyncStorage) — the previous direct localStorage access
+// crashed on React Native.
+async function loadLocalUsers(): Promise<HoloUser[]> {
   try {
-    const raw = localStorage.getItem('holohunter-users');
+    const raw = await platformStorage.getItem(USERS_STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveLocalUsers(users: HoloUser[]): void {
+async function saveLocalUsers(users: HoloUser[]): Promise<void> {
   try {
-    localStorage.setItem('holohunter-users', JSON.stringify(users));
+    await platformStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
   } catch {}
 }
 
 export async function signInWithProvider(provider: AuthProvider): Promise<SignInResult> {
+  // iOS Apple → native Sign in with Apple (App Store 規範，且回傳可信 sub 無需 client 解 JWT)。
+  if (provider === 'apple' && (await canUseNativeApple())) {
+    const { info, tokens, authorizationCode } = await signInWithAppleProviderInfo();
+    const { user, isNew } = await findOrCreateHoloUser(info, 'apple');
+    // best-effort：把 fresh authorizationCode 送後端換 refresh_token，供日後刪除撤銷用。
+    await registerAppleSession({
+      user: { id: info.id, provider: 'apple', name: info.name, email: info.email || null },
+      identityToken: tokens.accessToken || null,
+      authorizationCode,
+      createdAt: new Date().toISOString(),
+    });
+    return { user, tokens, isNewUser: isNew };
+  }
+
   if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
     throw new Error(APPLE_DISABLED_MESSAGE);
   }
-  const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
+  const clientId = provider === 'google' ? googleClientId() : APPLE_CLIENT_ID;
   if (!clientId) {
     throw new Error(
-      `Missing client ID for ${provider}. Set ${provider === 'google' ? 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID' : 'EXPO_PUBLIC_APPLE_SERVICE_ID'} in .env`
+      `Missing client ID for ${provider}. Set ${provider === 'google' ? 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID' : 'EXPO_PUBLIC_APPLE_SERVICE_ID'} in .env`
     );
   }
 
-  const redirectUri = AuthSession.makeRedirectUri();
+  const redirectUri = provider === 'google' ? googleRedirectUri() : AuthSession.makeRedirectUri();
   const scopes = provider === 'google' ? googleScopes : appleScopes;
   const discovery = provider === 'google' ? googleDiscovery : appleDiscovery;
 
@@ -223,54 +320,61 @@ export async function linkProvider(
   currentUser: HoloUser,
   provider: AuthProvider,
 ): Promise<HoloUser> {
-  if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
-    throw new Error(APPLE_DISABLED_MESSAGE);
-  }
-  const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
-  if (!clientId) {
-    throw new Error(`Missing client ID for ${provider}`);
-  }
-
-  const redirectUri = AuthSession.makeRedirectUri();
-  const scopes = provider === 'google' ? googleScopes : appleScopes;
-  const discovery = provider === 'google' ? googleDiscovery : appleDiscovery;
-
-  const authRequest = new AuthSession.AuthRequest({
-    clientId,
-    scopes,
-    redirectUri,
-    usePKCE: true,
-    extraParams: { login_hint: currentUser.primaryEmail || '' },
-  });
-
-  const result = await authRequest.promptAsync(discovery);
-  if (result.type !== 'success') {
-    throw new Error(result.type === 'cancel' ? 'User cancelled linking' : `Link failed: ${result.type}`);
-  }
-
-  const code = result.params.code;
-  if (!code) throw new Error('No authorization code returned');
-
-  const codeVerifier = authRequest.codeVerifier;
-  if (!codeVerifier) throw new Error('PKCE code verifier missing');
-
-  const tokens = await exchangeOAuthCode(clientId, code, codeVerifier, redirectUri, provider);
-
   let providerInfo: ProviderUserInfo;
-  if (provider === 'google') {
-    providerInfo = await fetchGoogleUserInfo(tokens.accessToken);
+
+  if (provider === 'apple' && (await canUseNativeApple())) {
+    // iOS：原生 Sign in with Apple 取得欲綁定的 Apple identity（sub）。
+    const { info } = await signInWithAppleProviderInfo();
+    providerInfo = info;
   } else {
-    const idToken = result.params.id_token;
-    if (!idToken) throw new Error('No id_token returned from Apple');
-    const appleUser = parseAppleIdToken(idToken as string);
-    providerInfo = {
-      id: appleUser.id,
-      email: appleUser.email,
-      name: appleUser.name,
-    };
+    if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
+      throw new Error(APPLE_DISABLED_MESSAGE);
+    }
+    const clientId = provider === 'google' ? googleClientId() : APPLE_CLIENT_ID;
+    if (!clientId) {
+      throw new Error(`Missing client ID for ${provider}`);
+    }
+
+    const redirectUri = provider === 'google' ? googleRedirectUri() : AuthSession.makeRedirectUri();
+    const scopes = provider === 'google' ? googleScopes : appleScopes;
+    const discovery = provider === 'google' ? googleDiscovery : appleDiscovery;
+
+    const authRequest = new AuthSession.AuthRequest({
+      clientId,
+      scopes,
+      redirectUri,
+      usePKCE: true,
+      extraParams: { login_hint: currentUser.primaryEmail || '' },
+    });
+
+    const result = await authRequest.promptAsync(discovery);
+    if (result.type !== 'success') {
+      throw new Error(result.type === 'cancel' ? 'User cancelled linking' : `Link failed: ${result.type}`);
+    }
+
+    const code = result.params.code;
+    if (!code) throw new Error('No authorization code returned');
+
+    const codeVerifier = authRequest.codeVerifier;
+    if (!codeVerifier) throw new Error('PKCE code verifier missing');
+
+    const tokens = await exchangeOAuthCode(clientId, code, codeVerifier, redirectUri, provider);
+
+    if (provider === 'google') {
+      providerInfo = await fetchGoogleUserInfo(tokens.accessToken);
+    } else {
+      const idToken = result.params.id_token;
+      if (!idToken) throw new Error('No id_token returned from Apple');
+      const appleUser = parseAppleIdToken(idToken as string);
+      providerInfo = {
+        id: appleUser.id,
+        email: appleUser.email,
+        name: appleUser.name,
+      };
+    }
   }
 
-  const allUsers = loadLocalUsers();
+  const allUsers = await loadLocalUsers();
   const collisionUser = allUsers.find(
     (u) => u.internalId !== currentUser.internalId &&
       u.linkedProviders.some((p) => p.provider === provider && p.providerId === providerInfo.id)
@@ -308,7 +412,7 @@ export async function linkProvider(
   const userIndex = allUsers.findIndex((u) => u.internalId === currentUser.internalId);
   if (userIndex >= 0) {
     allUsers[userIndex] = updatedUser;
-    saveLocalUsers(allUsers);
+    await saveLocalUsers(allUsers);
   }
 
   return updatedUser;
@@ -334,21 +438,45 @@ export async function unlinkProvider(
     primaryEmail: updatedProviders[0]?.email || undefined,
   };
 
-  const allUsers = loadLocalUsers();
+  const allUsers = await loadLocalUsers();
   const userIndex = allUsers.findIndex((u) => u.internalId === currentUser.internalId);
   if (userIndex >= 0) {
     allUsers[userIndex] = updatedUser;
-    saveLocalUsers(allUsers);
+    await saveLocalUsers(allUsers);
   }
 
   return updatedUser;
 }
 
 export async function deleteAccount(currentUser: HoloUser): Promise<void> {
+  // App Store 5.1.1(v)：iOS 上以 Apple 登入者，刪除帳號時需撤銷 Apple 授權。
+  // best-effort 通知後端撤銷（後端 refresh_token 儲存目前為 foundation stub，會回
+  // 501；不阻擋本機刪除，以確保「App 內可刪除帳號」這條硬性規範可運作）。
+  if (Platform.OS === 'ios') {
+    const apple = currentUser.linkedProviders.find((p) => p.provider === 'apple');
+    if (apple) {
+      try {
+        await requestAccountDeletion({
+          user: {
+            id: apple.providerId,
+            provider: 'apple',
+            name: apple.displayName ?? null,
+            email: apple.email ?? null,
+          },
+          identityToken: null,
+          authorizationCode: null,
+          createdAt: new Date().toISOString(),
+        });
+      } catch {
+        // best-effort：後端撤銷失敗不阻擋本機資料刪除。
+      }
+    }
+  }
+
   try {
-    const allUsers = loadLocalUsers();
+    const allUsers = await loadLocalUsers();
     const filtered = allUsers.filter((u) => u.internalId !== currentUser.internalId);
-    saveLocalUsers(filtered);
+    await saveLocalUsers(filtered);
   } catch {
     throw new Error('Failed to delete account data.');
   }
@@ -366,7 +494,7 @@ export async function resolveCollision(
   newProviderInfo: ProviderUserInfo,
   strategy: 'reject' | 'merge_into_existing' | 'transfer_to_new',
 ): Promise<CollisionResolution> {
-  const allUsers = loadLocalUsers();
+  const allUsers = await loadLocalUsers();
   const collisionUser = allUsers.find(
     (u) => u.internalId !== currentUser.internalId &&
       u.linkedProviders.some((p) => p.provider === newProvider && p.providerId === newProviderInfo.id)
@@ -408,7 +536,7 @@ export async function providerSignOut(tokens: AuthTokens | null): Promise<void> 
     await fetch(revokeUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `token=${tokens.accessToken}&client_id=${tokens.provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID}`,
+      body: `token=${tokens.accessToken}&client_id=${tokens.provider === 'google' ? googleClientId() : APPLE_CLIENT_ID}`,
     });
   } catch {}
 }
