@@ -18,11 +18,9 @@
 | --- | --- |
 | 伺服器身份存放（KV：唯一 claim、per-user lock、login/link/unlink/delete + 錯誤碼） | `api/lib/identity-store.ts` |
 | provider `id_token` 伺服器驗簽（Google RS256 / Apple ES256，JWKS 快取） | `api/lib/verify-token.ts` |
-| HMAC session 簽發 / 驗證 | `api/lib/session.ts` |
+| HMAC session 簽發 + KV session 記錄 / 撤銷（登出、解綁撤銷其他 session、刪除撤銷全部） | `api/lib/session.ts` |
 | 共用端點輔助（json、錯誤碼→HTTP、旗標、backend 可用性、session 解析） | `api/lib/auth-endpoint.ts` |
-| 登入端點（verify → loginOrCreate → session） | `api/auth/login.ts` |
-| 綁定 / 解綁端點（session 授權） | `api/auth/link.ts`, `api/auth/unlink.ts` |
-| 帳號刪除（session-based 級聯刪除 + Apple 撤銷，fail-closed） | `api/auth/delete-account.ts` |
+| 登入 / 綁定 / 解綁 / 登出 / 刪除端點（單一 dynamic route，session 授權，fail-closed） | `api/auth/[action].ts` |
 | 前端 auth service（PKCE 取 id_token → 呼叫端點，fail-closed） | `src/services/authService.ts` |
 | Session store（zustand + persist，存 session token 非 provider token） | `src/store/authStore.ts` |
 | 登入畫面（Apple 按鈕受旗標 disabled / 「即將推出」） | `src/screens/LoginScreen.tsx` |
@@ -76,12 +74,12 @@
 
 未設定完整變數或撤銷未確認成功時 `api/auth/delete-account` 會回非 2xx（含 501），App 端**fail-closed**：不清除本機 session、顯示「刪除尚未完成」並維持登入狀態。
 
-## 帳號刪除 / Apple 撤銷策略（已採用）
+## 帳號刪除 / Apple 撤銷策略（目標設計，尚未完整上線）
 
-### 正確流程（login-time register → stored refresh_token → revoke）
+### 目標流程（login-time register → stored refresh_token → revoke）
 
-1. **登入當下**：client 拿到 fresh `authorizationCode`，立即 POST `/api/auth/apple/register`（`src/services/auth/index.ts` 的 `registerAppleSession`，best-effort）。後端用它向 `/auth/token` 換 `refresh_token`，以 `userId` 為 key 保存於**伺服器端持久化儲存**（見 `api/lib/apple-token-store.ts`）。
-2. **刪除時**：POST `/api/auth/delete-account`，**以 Bearer session 授權**（`api/auth/delete-account.ts` 由 session 解出 internal user id，**不信任** client 傳來的 userId）。若帳號含 Apple 身份，後端取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後才由 `identity-store` 級聯刪除該 internal user 及其所有 provider 身份索引。
+1. **登入當下**：client 取得 fresh `authorizationCode`，帶**本次 session 的 Bearer**立即 POST `/api/auth/apple/register`（best-effort）。後端用它向 `/auth/token` 換 `refresh_token`，以**由 session 推導的** `userId` 為 key 保存於伺服器端持久化儲存（見 `api/lib/apple-token-store.ts`）。`register.ts` 現在**不信任** request body 的 userId，改由 Bearer session 解出。⚠️ **尚未接線**：Web 前端（`src/services/authService.ts`）目前只取 `id_token`、未取 authorizationCode、也未呼叫此端點，故實務上 refresh_token 仍未被保存。
+2. **刪除時**：POST `/api/auth/delete-account`（由 `api/auth/[action].ts` 的 `handleDeleteAccount` 處理），**以 Bearer session 授權**，由 session 解出 internal user id，**不信任** client 傳來的 userId。若帳號含 Apple 身份，後端取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後才由 `identity-store` 級聯刪除該 internal user 及其所有 provider 身份索引，並撤銷該 user 的所有 session。
 
 原因：`authorizationCode` 為**單次使用且短效**，刪除當下通常已失效，因此不可保存它當作日後刪除憑證——必須在登入當下換成長效 `refresh_token`。client 端也**絕不持久化** `authorizationCode`（`authStore` partialize 會剝除）。
 
@@ -96,7 +94,8 @@
 
 - `/api/auth/apple/register` 在 token store 未實作時回 501 `token_store_not_implemented`（登入不受影響）。
 - `/api/auth/delete-account` 取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
-- 上架前必須完成：實作 `apple-token-store`（真正持久化 + 加密）、於刪除時級聯刪除 / 匿名化使用者資料。Settings 頁已標示此限制。
+- Web 前端亦尚未把 authorizationCode 送到 `register`（見上「目標流程」步驟 1 的 ⚠️），即使 token store 就緒也還需補此段前端串接。
+- 上架前必須完成：實作 `apple-token-store`（真正持久化 + 加密）、Web 前端補 authorizationCode + register 串接、於刪除時級聯刪除 / 匿名化使用者資料。Settings 頁已標示此限制。
 
 ## Google 登入（現況）
 
@@ -120,7 +119,7 @@ Web Google 登入**已接線並啟用**，且為 server-authoritative：前端 `
 - [ ] 取消 Apple 彈窗不會顯示錯誤、停留在登入頁。
 - [ ] 設定頁顯示「以 Apple 登入」與帳號資訊。
 - [ ] **登出**後回到登入頁，重開 App 仍為登入頁。
-- [ ] **刪除帳號（成功路徑，後端撤銷已上線）**：確認對話框 → 後端撤銷成功 → 顯示「帳號已刪除」→ 本機 session 清除 → 回到登入頁；於 Apple ID 設定中該 App 授權消失。
+- [ ] **刪除帳號（成功路徑，需先完成 token store + 前端 register 串接後才可測）**：確認對話框 → 後端撤銷成功 → 顯示「帳號已刪除」→ 本機 session 清除 → 回到登入頁；於 Apple ID 設定中該 App 授權消失。
 - [ ] **刪除帳號（fail-closed，後端未設定 / 未實作）**：顯示「刪除尚未完成」→ **仍為登入狀態**、session 未清除，不誤示為已刪除。
 - [ ] 「隱私權政策與資料刪除說明」連結可開啟。
 - [ ] 在 App Store Connect 填寫隱私權政策 URL 與資料刪除說明。

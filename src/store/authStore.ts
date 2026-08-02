@@ -11,6 +11,7 @@ import {
   linkProvider,
   unlinkProvider,
   deleteAccount,
+  logoutSession,
 } from '../services/authService';
 
 interface AuthStore {
@@ -122,6 +123,10 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: async () => {
+        // Revoke the session server-side (best-effort) so the bearer token can't
+        // be replayed, then always clear local state.
+        const { session } = get();
+        if (session) await logoutSession(session);
         set({
           user: null,
           session: null,

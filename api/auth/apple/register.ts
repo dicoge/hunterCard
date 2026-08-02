@@ -16,26 +16,27 @@ import {
   persistAppleRefreshToken,
   TokenStoreNotImplementedError,
 } from '../../lib/apple-token-store';
+import { json, sessionUserId } from '../../lib/auth-endpoint';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;
 
 interface RegisterRequestBody {
   provider?: string;
-  userId?: string;
   authorizationCode?: string | null;
-}
-
-function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
 }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return json({ error: 'method_not_allowed' }, 405);
+  }
+
+  // The internal user id is taken from the session, never from the request body
+  // (CR blocker #4): a client cannot register a refresh token against an
+  // arbitrary account.
+  const userId = await sessionUserId(req);
+  if (!userId) {
+    return json({ stored: false, reason: 'invalid_session' }, 401);
   }
 
   let body: RegisterRequestBody;
@@ -47,9 +48,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (body.provider !== 'apple') {
     return json({ stored: false, reason: 'provider_not_supported' }, 501);
-  }
-  if (!body.userId) {
-    return json({ stored: false, reason: 'missing_user_id' }, 400);
   }
   if (!body.authorizationCode) {
     return json({ stored: false, reason: 'missing_authorization_code' }, 400);
@@ -66,7 +64,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   try {
-    await persistAppleRefreshToken(body.userId, refreshToken);
+    await persistAppleRefreshToken(userId, refreshToken);
     return json({ stored: true }, 200);
   } catch (err) {
     if (err instanceof TokenStoreNotImplementedError) {

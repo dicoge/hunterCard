@@ -112,8 +112,15 @@ function compileTs(relPath) {
   fs.writeFileSync(output, compiled.outputText);
 }
 
+// session.ts reads AUTH_SESSION_SECRET lazily (per call), so setting it before
+// any issue/verify call is enough. It also lets identity-store sign merge tokens.
+process.env.AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET || 'test-session-secret';
+
 compileTs('api/lib/identity-store.ts');
 const store = require(path.join(outDir, 'api/lib/identity-store.js'));
+
+compileTs('api/lib/session.ts');
+const session = require(path.join(outDir, 'api/lib/session.js'));
 
 function identity(provider, subject, email, name) {
   return { provider, subject, email, name };
@@ -275,6 +282,120 @@ async function testDeleteCascadeRemovesIdentities() {
   assert.notEqual(fresh.user.internalId, user.internalId);
 }
 
+function userRecordKeys() {
+  return [...kvState.values.keys()].filter((k) => /^auth:user:[^:]+$/.test(k));
+}
+
+function indexKeys() {
+  return [...kvState.values.keys()].filter((k) => k.startsWith('auth:idx:'));
+}
+
+// CR blocker #1: two concurrent login-or-creates for the SAME (provider, subject)
+// must converge on ONE internal user. The index is claimed last (the commit), so
+// the loser rolls its orphan user back and re-reads the winner instead of minting
+// a duplicate. Result: one user record, one index, both callers see the same id.
+async function testConcurrentLoginCreateProducesOneUser() {
+  resetKv();
+  const [a, b] = await Promise.all([
+    store.loginOrCreate(identity('google', 'race-sub', 'a@example.com', 'Ann')),
+    store.loginOrCreate(identity('google', 'race-sub', 'a@example.com', 'Ann')),
+  ]);
+  assert.equal(a.user.internalId, b.user.internalId, 'both concurrent logins map to one user');
+  assert.equal(userRecordKeys().length, 1, 'exactly one internal user record survives the race');
+  assert.equal(indexKeys().length, 1, 'exactly one identity index for the shared subject');
+  assert.equal(
+    kvState.values.get('auth:idx:google:race-sub'),
+    a.user.internalId,
+    'the index points at the surviving user',
+  );
+  // Exactly one caller created; the other observed the winner.
+  assert.equal([a.isNew, b.isNew].filter(Boolean).length, 1, 'only one caller is the creator');
+}
+
+// CR blocker #1: when a secondary write fails AFTER the link claimed the index,
+// the claim must be rolled back so the identity is neither loginnable nor owned.
+async function testLinkPartialWriteFreesIndex() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('apple', 'a-1', 'a@icloud.com'));
+
+  kvState.failOn = (op, key) => op === 'sadd' && key === `auth:user:${user.internalId}:identities`;
+  await assert.rejects(
+    store.linkIdentity(user.internalId, identity('google', 'g-free', 'a@example.com')),
+    /injected KV failure/,
+  );
+  kvState.failOn = null;
+
+  // The index the link claimed must be gone — nothing loginnable left behind.
+  assert.equal(
+    await kv.get('auth:idx:google:g-free'),
+    null,
+    'a failed link must free the index it claimed (no residual ownership)',
+  );
+  const after = await store.getUser(user.internalId);
+  assert.equal(after.linkedProviders.length, 1, 'only the original provider remains linked');
+}
+
+// CR blocker #1: a create that fails BEFORE the index commit must leave no
+// loginnable index. The orphan user record is unreachable (no index points at
+// it) and can never resolve a login, and a clean retry mints a valid user.
+async function testCreatePartialWriteLeavesNoLoginnableIndex() {
+  resetKv();
+  kvState.failOn = (op, key) => op === 'sadd' && key.endsWith(':identities');
+  await assert.rejects(
+    store.loginOrCreate(identity('google', 'crash-sub', 'x@example.com')),
+    /injected KV failure/,
+  );
+  kvState.failOn = null;
+
+  assert.equal(await kv.get('auth:idx:google:crash-sub'), null, 'no index written before commit');
+  // A clean login for the same subject now creates a fresh, fully valid user.
+  const fresh = await store.loginOrCreate(identity('google', 'crash-sub', 'x@example.com'));
+  assert.equal(fresh.isNew, true);
+  assert.equal(fresh.user.linkedProviders.length, 1, 'retry yields a valid single-provider user');
+  assert.equal(indexKeys().length, 1, 'exactly one index after clean retry');
+}
+
+// CR blocker #2: a signed, unexpired token must stop working once its session
+// record is revoked. Logout, unlink-others, and delete must all invalidate the
+// bearer so a stolen/copied 30-day token cannot be replayed.
+async function testSessionRevocationStopsStolenToken() {
+  resetKv();
+  const token = await session.issueSession('holo_user_1');
+  assert.equal(await session.verifySession(token), 'holo_user_1', 'fresh session verifies');
+
+  // Simulate a stolen copy of the same still-signed, still-unexpired token.
+  const stolen = token;
+  await session.revokeSession('holo_user_1', decodeJti(token));
+  assert.equal(await session.verifySession(token), null, 'revoked token no longer verifies');
+  assert.equal(await session.verifySession(stolen), null, 'stolen copy is dead once revoked');
+}
+
+async function testRevokeOtherSessionsKeepsCurrent() {
+  resetKv();
+  const a = await session.issueSession('holo_user_2');
+  const b = await session.issueSession('holo_user_2');
+  const c = await session.issueSession('holo_user_2');
+  // Keep b (the caller's own session), revoke the rest — the unlink behaviour.
+  await session.revokeOtherUserSessions('holo_user_2', decodeJti(b));
+  assert.equal(await session.verifySession(a), null, 'other session a revoked');
+  assert.equal(await session.verifySession(c), null, 'other session c revoked');
+  assert.equal(await session.verifySession(b), 'holo_user_2', 'caller session b kept');
+}
+
+async function testRevokeAllSessionsOnDelete() {
+  resetKv();
+  const a = await session.issueSession('holo_user_3');
+  const b = await session.issueSession('holo_user_3');
+  await session.revokeAllUserSessions('holo_user_3');
+  assert.equal(await session.verifySession(a), null, 'all sessions revoked on delete');
+  assert.equal(await session.verifySession(b), null, 'all sessions revoked on delete');
+}
+
+function decodeJti(token) {
+  const encoded = token.slice(0, token.indexOf('.'));
+  return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')).jti;
+}
+
 (async () => {
   const tests = [
     testNewAndReturningUser,
@@ -286,6 +407,12 @@ async function testDeleteCascadeRemovesIdentities() {
     testWriteFailureIsNotReportedAsSuccess,
     testPrivateRelayEmailChangeDoesNotSplitOrMerge,
     testDeleteCascadeRemovesIdentities,
+    testConcurrentLoginCreateProducesOneUser,
+    testLinkPartialWriteFreesIndex,
+    testCreatePartialWriteLeavesNoLoginnableIndex,
+    testSessionRevocationStopsStolenToken,
+    testRevokeOtherSessionsKeepsCurrent,
+    testRevokeAllSessionsOnDelete,
   ];
   for (const test of tests) {
     await test();

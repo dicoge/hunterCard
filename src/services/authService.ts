@@ -244,6 +244,18 @@ export async function unlinkProvider(
   return toHoloUser(data.user);
 }
 
+// Best-effort server-side session revocation. Logout must always clear local
+// state, so a network/backend failure here is swallowed; the server record also
+// expires on its own TTL. When it does reach the server the session is revoked
+// immediately so the bearer token can't be replayed.
+export async function logoutSession(session: string): Promise<void> {
+  try {
+    await apiPost('/auth/logout', {}, session);
+  } catch {
+    // ignore — local logout proceeds regardless
+  }
+}
+
 // Shared server delete/revoke flow. Resolves normally ONLY when the server
 // confirms deletion; otherwise throws so the client keeps the session (the UI
 // must not claim the account was deleted).

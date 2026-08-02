@@ -97,7 +97,7 @@ export default function SettingsScreen() {
   const confirmDelete = () => {
     showAlert(
       '刪除帳號',
-      '這會永久刪除你的帳號與同步資料，且無法復原。確定要刪除嗎？',
+      '這會永久刪除你的伺服器帳號與登入授權，且無法復原。收藏、設定與入手提醒目前僅存在本裝置，刪除帳號不會移除它們。確定要刪除嗎？',
       [
         { text: '取消', style: 'cancel' },
         {
@@ -251,7 +251,7 @@ export default function SettingsScreen() {
             </>
           ) : (
             <>
-              <Text style={styles.hint}>尚未登入。登入後可跨裝置同步收藏與入手提醒。</Text>
+              <Text style={styles.hint}>尚未登入。登入僅用於帳號識別；收藏與入手提醒目前僅存在本裝置，尚未支援跨裝置同步。</Text>
               <TouchableOpacity
                 style={[styles.googleBtn, isLoading && styles.btnDisabled]}
                 onPress={handleGoogleLogin}

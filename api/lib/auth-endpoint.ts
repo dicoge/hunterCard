@@ -8,7 +8,7 @@ import {
   VerifiedIdentity,
   isIdentityStoreConfigured,
 } from './identity-store';
-import { isSessionConfigured, verifySession } from './session';
+import { SessionContext, isSessionConfigured, verifySessionContext } from './session';
 import {
   isGoogleVerifyConfigured,
   verifyAppleIdToken,
@@ -71,10 +71,19 @@ export async function verifyProviderToken(
   throw new IdentityStoreError('INVALID_TOKEN', `unsupported provider: ${provider}`);
 }
 
-export function sessionUserId(req: Request): string | null {
+function bearer(req: Request): string | null {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
   if (!auth || !auth.startsWith('Bearer ')) return null;
-  return verifySession(auth.slice('Bearer '.length).trim());
+  return auth.slice('Bearer '.length).trim();
+}
+
+/** Resolve the session's { userId, jti }, or null if invalid/revoked. */
+export async function sessionContext(req: Request): Promise<SessionContext | null> {
+  return verifySessionContext(bearer(req));
+}
+
+export async function sessionUserId(req: Request): Promise<string | null> {
+  return (await sessionContext(req))?.userId ?? null;
 }
 
 export function isProvider(value: unknown): value is Provider {

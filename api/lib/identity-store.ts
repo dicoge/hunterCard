@@ -179,9 +179,27 @@ async function loadDetails(userId: string, members: string[]): Promise<IdentityD
   return details;
 }
 
+/**
+ * The membership set is a secondary cache; the identity index is the sole
+ * ownership authority. A member counts as linked ONLY when its index still
+ * points at this user. This reconcile-on-read is what makes a partially-applied
+ * link/unlink safe: a membership entry left behind by a rolled-back link, or an
+ * index freed by a half-finished unlink, is simply not reported as linked (and
+ * is never loginnable, because login also goes through the index). Pure read —
+ * no repair writes here, so hydrate/getUser never mutate.
+ */
+async function ownedMembers(userId: string): Promise<string[]> {
+  const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
+  const owned: string[] = [];
+  for (const m of members) {
+    const { provider, subject } = splitMember(m);
+    if ((await kv.get<string>(IDX_KEY(provider, subject))) === userId) owned.push(m);
+  }
+  return owned;
+}
+
 async function hydrate(user: StoredUser): Promise<PublicUser> {
-  const members = ((await kv.smembers(IDENTITIES_KEY(user.id))) as string[] | null) ?? [];
-  const details = await loadDetails(user.id, members);
+  const details = await loadDetails(user.id, await ownedMembers(user.id));
   const linkedProviders: PublicLinkedProvider[] = details
     .map((d) => ({
       provider: d.provider,
@@ -209,8 +227,16 @@ export interface LoginResult {
 }
 
 /**
- * §5.1 login-or-create. Atomic claim on the identity key is the sole
- * serialisation point; no user lock is needed for the create path.
+ * §5.1 login-or-create. The atomic claim on the identity index is the sole
+ * serialisation point and the single COMMIT point of a create.
+ *
+ * Ordering matters (CR blocker #1 — concurrent login-create race): the user
+ * record, detail and membership are written FIRST, keyed by an unguessable id
+ * that is unreachable until the index points at it; only then is the index
+ * claimed with SET NX. Because a live create never exposes an index without its
+ * user, the returning path's "dangling index" cleanup below can never delete an
+ * in-progress index and split one provider subject into two internal users. If
+ * we lose the claim, we roll the orphan user back and re-read the winner.
  */
 export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginResult> {
   const { provider, subject } = identity;
@@ -221,7 +247,9 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
     if (ownerId) {
       const user = await loadUser(ownerId);
       if (!user) {
-        // Dangling index (writer crashed mid-create). Reclaim and retry.
+        // Truly dangling index: the user was deleted but the index survived a
+        // partial delete. Safe to free because create writes the index last, so
+        // this is never an in-flight create. Reclaim and retry.
         await kv.del(IDX_KEY(provider, subject));
         continue;
       }
@@ -233,9 +261,6 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
     }
 
     const candidateId = newUserId();
-    const claimed = await kv.set(IDX_KEY(provider, subject), candidateId, { nx: true });
-    if (claimed !== 'OK') continue; // lost the race; loop re-reads the winner
-
     const now = new Date().toISOString();
     const user: StoredUser = {
       id: candidateId,
@@ -246,13 +271,29 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
       photoUrl: identity.picture,
       createdAt: now,
     };
+    // Secondary records first (unreachable until the index commit below).
     await kv.set(USER_KEY(candidateId), user);
     await writeDetail(candidateId, identity, now);
     await kv.sadd(IDENTITIES_KEY(candidateId), member(provider, subject));
+
+    // Commit: claim the unique index LAST.
+    const claimed = await kv.set(IDX_KEY(provider, subject), candidateId, { nx: true });
+    if (claimed !== 'OK') {
+      // Lost the race. Roll back the orphan user (it was never reachable) and
+      // loop to re-read the winner rather than creating a duplicate.
+      await rollbackCreate(candidateId, provider, subject);
+      continue;
+    }
     return { user: await hydrate(user), isNew: true };
   }
 
   throw new IdentityStoreError('LOCK_TIMEOUT', 'login-or-create contention exceeded retries');
+}
+
+async function rollbackCreate(userId: string, provider: Provider, subject: string): Promise<void> {
+  await kv.del(IDENTITIES_KEY(userId));
+  await kv.del(DETAIL_KEY(userId, provider, subject));
+  await kv.del(USER_KEY(userId));
 }
 
 async function writeDetail(userId: string, identity: VerifiedIdentity, linkedAt: string): Promise<void> {
@@ -291,7 +332,15 @@ export interface LinkResult {
   alreadyLinked: boolean;
 }
 
-/** §5.2 link a second provider to an existing internal user. */
+/**
+ * §5.2 link a second provider to an existing internal user.
+ *
+ * The atomic index claim is the COMMIT point. Secondary records (detail,
+ * membership) are written after it under the per-user lock; if any secondary
+ * write fails we roll the claim back (CR blocker #1) so we never leave a
+ * loginnable-but-invisible identity. A cross-account collision returns 409
+ * IDENTITY_ALREADY_LINKED + merge_token and mutates nothing.
+ */
 export async function linkIdentity(userId: string, identity: VerifiedIdentity): Promise<LinkResult> {
   const { provider, subject } = identity;
   const lock = await acquireLock(userId);
@@ -300,8 +349,8 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
     if (!user) throw new IdentityStoreError('USER_NOT_FOUND', userId);
     if (user.status !== 'active') throw new IdentityStoreError('ACCOUNT_DISABLED', userId);
 
-    const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
-    const sameProvider = members.find((m) => splitMember(m).provider === provider);
+    const owned = await ownedMembers(userId);
+    const sameProvider = owned.find((m) => splitMember(m).provider === provider);
     if (sameProvider) {
       if (sameProvider === member(provider, subject)) {
         return { user: await hydrate(user), alreadyLinked: true }; // idempotent
@@ -312,52 +361,64 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
       );
     }
 
-    const owner = await kv.get<string>(IDX_KEY(provider, subject));
-    if (owner && owner !== userId) {
-      throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${owner}`, {
-        merge_token: issueMergeToken(userId, owner, provider, subject),
-      });
-    }
-
+    // Commit: claim the unique index. If it is already owned by someone else it
+    // is a collision; if already owned by us it is a partial-link leftover to heal.
     const claimed = await kv.set(IDX_KEY(provider, subject), userId, { nx: true });
-    if (claimed !== 'OK') {
-      const owner2 = await kv.get<string>(IDX_KEY(provider, subject));
-      if (owner2 && owner2 !== userId) {
-        throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${owner2}`, {
-          merge_token: issueMergeToken(userId, owner2, provider, subject),
+    const claimedNow = claimed === 'OK';
+    if (!claimedNow) {
+      const owner = await kv.get<string>(IDX_KEY(provider, subject));
+      if (owner !== userId) {
+        throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${owner}`, {
+          merge_token: issueMergeToken(userId, owner ?? '', provider, subject),
         });
       }
     }
 
-    const now = new Date().toISOString();
-    await writeDetail(userId, identity, now);
-    await kv.sadd(IDENTITIES_KEY(userId), member(provider, subject));
+    try {
+      const now = new Date().toISOString();
+      await writeDetail(userId, identity, now);
+      await kv.sadd(IDENTITIES_KEY(userId), member(provider, subject));
+    } catch (err) {
+      // Roll back so the failed link leaves no residual ownership. Only free the
+      // index if we claimed it in THIS call (never revoke pre-existing ownership).
+      if (claimedNow) await kv.del(IDX_KEY(provider, subject));
+      await kv.del(DETAIL_KEY(userId, provider, subject));
+      await kv.srem(IDENTITIES_KEY(userId), member(provider, subject));
+      throw err;
+    }
     return { user: await hydrate(user), alreadyLinked: false };
   } finally {
     await releaseLock(userId, lock);
   }
 }
 
-/** §5.3 unlink a provider, refusing to remove the last login method. */
+/**
+ * §5.3 unlink a provider, refusing to remove the last login method.
+ *
+ * The index (login capability) is freed FIRST, so even if a later cleanup write
+ * fails there is no residual loginnable ownership (CR blocker #1). The remaining
+ * steps are idempotent, so a retry after a transient failure converges. The
+ * last-method guard counts only index-owned identities.
+ */
 export async function unlinkIdentity(userId: string, provider: Provider): Promise<PublicUser> {
   const lock = await acquireLock(userId);
   try {
     const user = await loadUser(userId);
     if (!user) throw new IdentityStoreError('USER_NOT_FOUND', userId);
 
-    const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
-    const target = members.find((m) => splitMember(m).provider === provider);
+    const owned = await ownedMembers(userId);
+    const target = owned.find((m) => splitMember(m).provider === provider);
     if (!target) throw new IdentityStoreError('NO_SUCH_IDENTITY', `${provider} not linked`);
-    if (members.length <= 1) {
+    if (owned.length <= 1) {
       throw new IdentityStoreError('CANNOT_UNLINK_LAST_METHOD', 'At least one login method must remain');
     }
 
     const { subject } = splitMember(target);
-    await kv.del(IDX_KEY(provider, subject));
-    await kv.del(DETAIL_KEY(userId, provider, subject));
+    await kv.del(IDX_KEY(provider, subject)); // remove login capability first
     await kv.srem(IDENTITIES_KEY(userId), target);
+    await kv.del(DETAIL_KEY(userId, provider, subject));
 
-    const remaining = members.filter((m) => m !== target);
+    const remaining = owned.filter((m) => m !== target);
     const details = await loadDetails(userId, remaining);
     const next: StoredUser = { ...user, primaryEmail: details[0]?.email ?? user.primaryEmail };
     await kv.set(USER_KEY(userId), next);
@@ -382,7 +443,11 @@ export async function deleteUser(userId: string): Promise<DeleteResult> {
     const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
     for (const m of members) {
       const { provider, subject } = splitMember(m);
-      await kv.del(IDX_KEY(provider, subject));
+      // Only free an index that still points at us, so we never stomp an identity
+      // that a concurrent flow has already re-claimed for another user.
+      if ((await kv.get<string>(IDX_KEY(provider, subject))) === userId) {
+        await kv.del(IDX_KEY(provider, subject));
+      }
       await kv.del(DETAIL_KEY(userId, provider, subject));
     }
     await kv.del(IDENTITIES_KEY(userId));
