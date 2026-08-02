@@ -113,16 +113,19 @@ export default function SettingsScreen() {
               // error after a possible durable commit — the account MAY already be
               // deleted and this login MAY already be revoked) from a fail-closed
               // 501/502 where the account was genuinely NOT deleted. Claiming "not
-              // deleted, still signed in" for the indeterminate case would be a lie.
+              // deleted, still signed in" for the indeterminate case would be a lie;
+              // for the fail-closed case we surface the server's specific reason.
               if (err?.code === 'delete_indeterminate') {
                 showAlert(
                   '尚未確認刪除結果',
-                  '目前無法確認帳號是否已刪除（連線或伺服器問題）。你的帳號可能已刪除、也可能尚未刪除，登入授權可能已失效。請稍後用同一組帳號重試一次以確認結果。'
+                  err?.message ||
+                    '目前無法確認帳號是否已刪除（連線或伺服器問題）。你的帳號可能已刪除、也可能尚未刪除，登入授權可能已失效。請稍後用同一組帳號重試一次以確認結果。'
                 );
               } else {
                 showAlert(
                   '刪除尚未完成',
-                  '伺服器端尚未確認刪除（後端未就緒或撤銷失敗），帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
+                  err?.message ||
+                    '伺服器端尚未確認刪除（後端未就緒或撤銷失敗），帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
                 );
               }
             }

@@ -49,12 +49,12 @@ auth_identities                       -- linked_auth_providers
 | Android | ✅（優先） | 可評估、非第一優先 |
 | Web | ✅ | 盡量提供（見 1.5） |
 
-### 1.5 Web Apple 登入（採 Firebase / Supabase 時）
-Web 的 Sign in with Apple 走 OAuth redirect，需在 Apple Developer 設定：
-- **Services ID**（有別於 app 的 App ID），作為 Web 的 client_id。
-- **Return / Redirect URI**：指向 Firebase/Supabase 的 callback（例如 `https://<project>.firebaseapp.com/__/auth/handler`）。
-- **Domain verification**：於 Apple 後台登記網域並上傳 `apple-developer-domain-association.txt`。
-- 對應的 Sign in with Apple **私鑰 (.p8)** 設定於 Firebase/Supabase provider（勿進 repo）。
+### 1.5 Web Apple 登入
+Web 的 Sign in with Apple 走 OAuth redirect，需在 Apple Developer 設定（完整清單見 `docs/Web-Apple-Login-Evaluation.md`）：
+- **Services ID**（有別於 app 的 App ID）＋ **Primary App ID** 關聯，作為 Web 的 client_id。
+- **Return / Redirect URI**：本 App 直接以 expo-auth-session 的 **`AuthSession.makeRedirectUri()`** 於執行期產生（指向 App 自身 Web 來源，本 repo **無** `/api/auth/apple/callback` 端點）；將該實際字串逐字登記到 Services ID 的 Return URLs。若改採 broker，才改填 broker 的 callback（例如 `https://<project>.firebaseapp.com/__/auth/handler`）。
+- **Team ID / Key ID / Sign in with Apple 私鑰 (.p8)**：用於動態簽 client secret（勿進 repo，只放環境變數）。採 broker 時 .p8 設在 broker provider。
+- 本 OAuth 重導流程**不需要** `apple-developer-domain-association.txt`（該檔僅 AppleID JS 按鈕才需要，本 App 不使用）。
 
 ---
 

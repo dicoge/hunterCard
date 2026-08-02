@@ -72,7 +72,7 @@
 | `APPLE_PRIVATE_KEY` | .p8 內容（含 BEGIN/END，換行以 `\n` 表示） |
 | `EXPO_PUBLIC_APPLE_SERVICE_ID` | Web authorize 用的 Services ID（= web `client_id`），亦納入 Apple 驗簽 `aud` |
 
-Apple 撤銷是刪除的**前置條件**且在任何身份寫入**之前**執行：未設定完整變數或撤銷未確認成功時 `api/auth/delete-account` 會在**尚未刪除任何資料**前回 501/502，App 端**fail-closed**、顯示「刪除尚未完成」並維持登入狀態。若撤銷通過、identity 已刪除，但**之後**的清理步驟失敗而回 5xx，則結果為**不確定**（帳號可能已刪）：後端**刻意不撤銷呼叫方自己的 session token**，App 端因此保有有效 token 可**重試**（重試會走 already-deleted 分支收斂為 `deleted: true`），文案改提示「無法確認、請稍後再試」而非誤示「未刪除」。
+Apple 撤銷是刪除的**前置條件**且在任何身份寫入**之前**執行：未設定完整變數或撤銷未確認成功時 `api/auth/[action].ts` 的 delete-account 會在**尚未刪除任何資料**前回 501/502（`{ deleted: false, reason }`），App 端**fail-closed**、classification 為 `delete_not_deleted`、顯示「刪除尚未完成」並維持登入狀態（此路徑確實未刪，絕不誤判為「不確定」）。撤銷通過後，後端**先寫入刪除收據（tombstone）作為單一 commit point**，隨即級聯刪除 identity 並撤銷該 user 的**所有** session（含發起端自己）——發起端 token 於收據寫入的當下即失效（`verifySessionContext` 以 tombstone 判定），**不再保留任何活的授權憑證**。若收據寫入後的清理步驟失敗而回未知 5xx，帳號已進入刪除狀態，結果為**不確定**（indeterminate）：App 端帶著**同一枚已被撤銷的 token** 重試，走 already-deleted 收據 recovery 分支收斂為 `deleted: true`，文案提示「無法確認、請稍後再試」而非誤示「未刪除」。
 
 ## 帳號刪除 / Apple 撤銷策略（目標設計，尚未完整上線）
 
@@ -86,7 +86,7 @@ Apple 撤銷是刪除的**前置條件**且在任何身份寫入**之前**執行
 ### fail-closed 行為
 
 - **Apple 撤銷未確認成功前不動任何資料**：撤銷是刪除的前置條件且在 `identity-store` 級聯刪除**之前**執行，因此未設定 / 未實作 / 撤銷失敗 / 網路錯誤 → 回 501/502，此時**確實未刪除**任何伺服器資料。
-- **撤銷通過後才刪除，且順序為 identity 先刪、收據、再 session 清理**：一旦進入級聯刪除，identity 便已 durable committed。若之後的清理步驟失敗而回 5xx，帳號其實**已刪**，結果為不確定（indeterminate）而非「未刪」——舊文案「非 2xx 一律不刪任何資料」在此情境並不成立，故不再如此保證。
+- **撤銷通過後才刪除，順序為「收據（tombstone）先寫 → identity 級聯刪除 → session 全撤銷」**：刪除收據是**唯一 commit point**，在任何身份寫入**之前**寫入。收據一落地，`verifySessionContext` 即視該帳號為已刪，所有 bearer 立刻失效；其後的 identity 級聯、Apple token 丟棄、revoke-all 全為**冪等清理**。這消除了舊「先刪 identity 再寫收據」順序的空窗（可能刪掉 user 卻在寫收據前失敗，導致所有 token 皆 401 卻無收據可收斂）：現在收據存在前不破壞任何資料，收據存在後帶已撤銷 token 的重試都能經 recovery 分支收斂。若收據寫入（`markUserDeleted`）本身失敗，則什麼都沒 commit、發起端 token 仍有效，重試會重跑整個流程。
 - **成功刪除會撤銷該 user 的所有 session，含發起端自己**（`revokeAllUserSessions`）：這是全域撤銷契約——刪除成功後任何 bearer（包含發起端 token）都不得再通過驗證（`verifySessionContext` 另加使用者存在檢查，deleted user 的 token 一律 fail）。
 - **回應遺失以持久化刪除收據重試收斂，而非保留活的授權憑證**：刪除成功會寫入 `auth:deleted:{userId}` 收據（在撤銷發起端 token **之前**寫入）。若回應遺失、client 帶著已被撤銷的同一 token 重試，端點 recovery 分支會用該 token 的**已簽名 claims**（僅驗簽章 + 未過期，不查 session 記錄）解出原 userId，確認收據存在後回 `deleted: true`，且**不授權任何動作**。
 - client 只有在後端回 `{ deleted: true }` 時才清除本機 session。非成功時 `deleteAccount()` throw：對 501/502 提示「刪除尚未完成、確實未刪」，對 5xx / 網路中斷提示「無法確認結果、帳號可能已刪、登入可能已失效、請用同一組帳號重試以確認」，皆不誤示為已刪除。

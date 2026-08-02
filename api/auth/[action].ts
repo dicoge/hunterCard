@@ -143,6 +143,12 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
     // still converges. No receipt ⇒ a genuinely invalid/expired token ⇒ 401.
     const claims = sessionClaims(req);
     if (claims && (await wasUserDeleted(claims.sub))) {
+      // The tombstone is the commit point; every step below it is idempotent
+      // cleanup. Re-run ALL of them — including the identity cascade — so a delete
+      // whose original request died right after writing the receipt still fully
+      // converges on this retry (round-7 blocker #1). deleteUser is a no-op once
+      // the cascade already ran, so repeated retries stay idempotent.
+      await deleteUser(claims.sub);
       await deleteStoredAppleRefreshToken(claims.sub);
       await revokeAllUserSessions(claims.sub);
       return json({ deleted: true, revokedApple: false }, 200);
@@ -153,11 +159,12 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
 
   const user = await getUser(userId);
   if (!user) {
-    // The session verified but the user record is gone: a delete committed in the
-    // narrow window since verifySessionContext read the user. Converge idempotently
-    // — write the receipt (so a later revoked-token retry recovers), then re-run
-    // cleanup — instead of returning 404.
+    // Defensive convergence: the session verified but the user record is already
+    // gone (a delete committed elsewhere without leaving a tombstone this token
+    // could see). Write the receipt so a later revoked-token retry recovers, then
+    // re-run the idempotent cleanup, instead of returning 404.
     await markUserDeleted(userId);
+    await deleteUser(userId);
     await deleteStoredAppleRefreshToken(userId);
     await revokeAllUserSessions(userId);
     return json({ deleted: true, revokedApple: false }, 200);
@@ -177,16 +184,20 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
     if (!revoked) return json({ deleted: false, reason: 'revoke_failed' }, 502);
   }
 
-  // Retry-convergent ordering (CR round-6 blocker #3). Delete the identity FIRST
-  // (the durable commit), THEN write the deletion receipt BEFORE revoking sessions
-  // — the receipt is what lets a caller whose token we are about to revoke recover
-  // from a lost response. Then discard the Apple token and revoke EVERY session
-  // including the caller's own, so after a successful delete no bearer authenticates
-  // (the all-session-revocation contract). If any write here fails, the caller
-  // retries with its (now revoked) token and lands in the receipt-recovery branch
-  // above, which re-runs this idempotent cleanup.
-  const result = await deleteUser(userId);
+  // Durable state machine (CR round-7 blocker #1). The deletion TOMBSTONE is the
+  // single commit point and is written FIRST — before the identity cascade. The
+  // moment it lands, verifySessionContext treats the account as gone, so every
+  // bearer (including this caller's own) stops authenticating. Everything after it
+  // — the identity cascade, the Apple-token discard, revoke-all — is idempotent
+  // cleanup. This closes the old ordering's window (delete-then-receipt could
+  // destroy the user but fail before the receipt, leaving every token 401 with no
+  // receipt to converge against): now nothing is destroyed until the receipt
+  // exists, and once it exists a retry with the revoked token converges via the
+  // receipt-recovery branch above. If the receipt SET itself fails, nothing is
+  // committed and the caller's token is still live, so the retry re-runs the whole
+  // flow.
   await markUserDeleted(userId);
+  const result = await deleteUser(userId);
   if (hasApple) await deleteStoredAppleRefreshToken(userId);
   await revokeAllUserSessions(userId);
   return json({ deleted: result.deletedInternalUser, revokedApple: hasApple }, 200);

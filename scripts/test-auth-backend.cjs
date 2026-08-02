@@ -629,12 +629,16 @@ async function unlinkFlow(callerToken, provider) {
 async function deleteAccountFlow(callerToken) {
   const ctx = await session.verifySessionContext(callerToken);
   if (!ctx) {
-    // Recovery branch: the caller's token was revoked by a successful delete, but
-    // the response was lost. Its signed claims still name the user; paired with the
-    // durable deletion receipt, converge to deleted:true WITHOUT a live session.
+    // Recovery branch: the caller's token was revoked by a successful delete (or a
+    // tombstone written first), but the response was lost. Its signed claims still
+    // name the user; paired with the durable deletion receipt, converge to
+    // deleted:true WITHOUT a live session — re-running every idempotent cleanup
+    // step (incl. the identity cascade) so a delete that died right after the
+    // receipt still finishes (CR round-7 blocker #1).
     const claims = session.readSessionClaims(callerToken);
     if (claims && (await session.wasUserDeleted(claims.sub))) {
-      await session.revokeAllUserSessions(claims.sub); // idempotent cleanup
+      await store.deleteUser(claims.sub); // converge identity deletion (no-op if done)
+      await session.revokeAllUserSessions(claims.sub);
       return { deleted: true, recovered: true };
     }
     throw new Error('invalid_session');
@@ -642,11 +646,16 @@ async function deleteAccountFlow(callerToken) {
   const user = await store.getUser(ctx.userId);
   if (!user) {
     await session.markUserDeleted(ctx.userId);
+    await store.deleteUser(ctx.userId);
     await session.revokeAllUserSessions(ctx.userId);
     return { deleted: true };
   }
-  const result = await store.deleteUser(ctx.userId); // 1. durable identity commit
-  await session.markUserDeleted(ctx.userId); //          2. receipt BEFORE revoke
+  // Tombstone-first durable state machine (CR round-7 blocker #1): the receipt is
+  // the single commit point, written BEFORE the identity cascade. Once it lands,
+  // verifySessionContext treats the account as gone, so every bearer (incl. the
+  // caller's) stops authenticating; the cascade + revoke-all are idempotent cleanup.
+  await session.markUserDeleted(ctx.userId); //          1. durable commit point
+  const result = await store.deleteUser(ctx.userId); //   2. identity cascade
   await session.revokeAllUserSessions(ctx.userId); //     3. revoke ALL incl caller
   return { deleted: result.deletedInternalUser };
 }
@@ -753,12 +762,12 @@ async function testUnlinkRetryConvergesAfterRevokeFailure() {
   assert.equal(await session.verifySession(appleCaller), id, 'caller remains valid throughout');
 }
 
-// CR round-6 blocker #3 (multi-session delete, later session DEL fails). deleteUser
-// commits first, THEN the receipt is written, THEN revokeAllUserSessions revokes
-// every session (including the caller's). We fail a LATER (not first/only) session
-// DEL. The identity is already deleted and the receipt is written, so the client
-// retries with its now-revoked token and converges via the receipt-recovery branch
-// (not a live caller session, which round-6 forbids).
+// CR round-7 blocker #1 (multi-session delete, later session DEL fails). The
+// tombstone (receipt) is written FIRST, THEN deleteUser cascades, THEN
+// revokeAllUserSessions revokes every session (including the caller's). We fail a
+// LATER (not first/only) session DEL. The receipt is already written, so the
+// client retries with its now-revoked token and converges via the receipt-recovery
+// branch (not a live caller session, which round-6+ forbids).
 async function testDeleteRetryConvergesAfterRevokeFailure() {
   resetKv();
   const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
@@ -802,6 +811,35 @@ async function testDeleteReceiptEnablesRevokedTokenRecovery() {
   const retry = await deleteAccountFlow(caller); // client retries with the dead token
   assert.equal(retry.deleted, true, 'retry converges via the durable deletion receipt');
   assert.equal(retry.recovered, true, 'retry used the receipt-recovery branch (no live bearer)');
+}
+
+// CR round-7 blocker #1 (receipt SET failure injection). The tombstone is the
+// FIRST write and the single commit point. If that very SET fails, NOTHING has
+// been destroyed: the user record is intact and the caller's token is still live.
+// The old ordering (delete THEN receipt) could delete the user yet fail the
+// receipt, leaving every token a dead 401 with no receipt to converge against —
+// unrecoverable. With tombstone-first, the caller simply retries with its still-
+// valid token and the delete converges through the normal (non-recovery) path.
+async function testDeleteReceiptWriteFailureIsRetryableWithLiveToken() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  const id = user.internalId;
+  const caller = await session.issueSession(id, 'google');
+
+  kvState.failOn = (op, key) => op === 'set' && key === `auth:deleted:${id}`;
+  await assert.rejects(deleteAccountFlow(caller), /injected KV failure/);
+  kvState.failOn = null;
+
+  // Nothing was committed: user intact, no tombstone, caller token still authenticates.
+  assert.ok(await store.getUser(id), 'user record is untouched when the receipt SET fails');
+  assert.equal(await session.wasUserDeleted(id), false, 'no tombstone was written');
+  assert.equal(await session.verifySession(caller), id, 'caller token is still live and retryable');
+
+  const retry = await deleteAccountFlow(caller); // retry with the STILL-VALID token
+  assert.equal(retry.deleted, true, 'retry converges to deleted:true');
+  assert.equal(retry.recovered, undefined, 'converged via the normal path, not receipt recovery');
+  assert.equal(await store.getUser(id), null, 'user is deleted on the convergent retry');
+  assert.equal(await session.verifySession(caller), null, 'caller token dead after the successful retry');
 }
 
 // CR round-6 blocker #1 (atomic rebind vs. concurrent logout). If a logout revokes
@@ -950,6 +988,7 @@ function decodeJti(token) {
     testUnlinkRetryConvergesAfterRevokeFailure,
     testDeleteRetryConvergesAfterRevokeFailure,
     testDeleteReceiptEnablesRevokedTokenRecovery,
+    testDeleteReceiptWriteFailureIsRetryableWithLiveToken,
     testRebindLosesToConcurrentLogout,
     testUnlinkReportsRevokedWhenCallerTokenConcurrentlyLoggedOut,
     testLoginMintsSessionInsideSerializableBoundary,

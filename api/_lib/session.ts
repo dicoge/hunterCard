@@ -140,9 +140,19 @@ export function readSessionClaims(
 
 /**
  * Full verification: signature + expiry + the session record still exists + the
- * backing user still exists. The user-existence check (CR round-6 blocker #3) is
- * what makes a successful account deletion revoke EVERY bearer: even if a session
- * record somehow outlived revoke-all, a token for a deleted user must not
+ * backing user is neither tombstoned nor gone. Two independent "user is deleted"
+ * signals are checked (CR round-6 blocker #3, round-7 blocker #1):
+ *
+ *   1. The durable deletion TOMBSTONE (wasUserDeleted). Account deletion writes
+ *      this receipt as its FIRST, single commit point — BEFORE the identity
+ *      cascade — so the instant it lands every bearer stops authenticating even
+ *      though the user record still momentarily exists. This is what makes the
+ *      delete a durable state machine: the tombstone alone marks the account gone,
+ *      and all later steps (identity cascade, Apple-token discard, revoke-all) are
+ *      idempotent cleanup that a retry can re-run.
+ *   2. The user record's absence, once the cascade has run.
+ *
+ * Either signal rejects the token, so a token for a deleted user can never
  * authenticate (e.g. Apple register). Returns the context or null.
  */
 export async function verifySessionContext(
@@ -152,6 +162,7 @@ export async function verifySessionContext(
   if (!claims) return null;
   const record = readRecord(await kv.get(SESSION_KEY(claims.jti)));
   if (!record || record.sub !== claims.sub) return null; // revoked, expired-out, or unknown
+  if (await wasUserDeleted(claims.sub)) return null; // deletion tombstone ⇒ account gone
   if (!(await kv.get(USER_KEY(claims.sub)))) return null; // user deleted / nonexistent
   return { userId: claims.sub, jti: claims.jti, provider: record.provider };
 }

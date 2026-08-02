@@ -273,20 +273,38 @@ export async function logoutSession(session: string): Promise<boolean> {
   }
 }
 
+// Server delete/revoke fail-closed reasons that occur STRICTLY BEFORE the durable
+// commit (CR round-7 blocker #2). The endpoint checks Apple authorization
+// revocation first and, if it can't be confirmed, returns `{deleted:false, reason}`
+// with a 501/502 without touching any state. These are DEFINITIVE "not deleted"
+// outcomes — never indeterminate — so the UI must say the account still exists,
+// not "you may already be deleted". Keyed by the endpoint's exact reasons.
+const DELETE_FAIL_CLOSED_MESSAGES: Record<string, string> = {
+  apple_revocation_not_configured:
+    '帳號未刪除：伺服器尚未設定 Apple 授權撤銷，因此無法完成刪除，你仍為登入狀態。請聯絡我們或稍後再試。',
+  apple_deletion_not_implemented:
+    '帳號未刪除：找不到可撤銷的 Apple 授權憑證，因此未刪除任何資料，你仍為登入狀態。請重新登入後再試。',
+  revoke_failed:
+    '帳號未刪除：撤銷 Apple 授權失敗，因此未刪除任何資料，你仍為登入狀態。請稍後再試。',
+};
+
 // Shared server delete/revoke flow. Resolves normally ONLY when the server
 // confirms deletion (`deleted: true`); otherwise throws so the UI never claims
 // the account was deleted.
 //
-// Recoverability (CR round-6 blocker #3): a successful delete revokes EVERY
-// bearer, INCLUDING this one, so we cannot rely on a live token to retry. Instead
-// the server writes a durable deletion receipt; a retry presents the same (now
-// revoked) token and the server's receipt-recovery branch returns `deleted: true`
-// without authenticating anything. So a thrown INDETERMINATE outcome here — a
-// network error or a 5xx after the durable identity commit — is still safely
-// retryable and converges. We surface that truthfully: the delete MAY already have
-// happened (and this login MAY already be revoked), so the user should retry to
-// confirm. A fail-closed 501/502 (Apple revocation not configured / revoke failed)
-// means the account was genuinely NOT deleted and carries its own reason.
+// Three truthful outcomes, distinguished by what the server actually told us:
+//   1. deleted:true                                  → resolve (account gone).
+//   2. deleted:false + a KNOWN pre-commit reason     → fail-closed, code
+//      (501/502)                                        `delete_not_deleted`:
+//      the account genuinely still exists (Apple revocation not configured /
+//      not implemented / failed), reported BEFORE any durable state changed.
+//   3. network error, or an UNEXPECTED 5xx with no    → `delete_indeterminate`:
+//      known reason (could strike AFTER the durable      the delete MAY already
+//      commit)                                           have happened and this
+//      login MAY already be revoked, so retry to confirm. A successful delete
+//      revokes EVERY bearer including this one, but the server's durable deletion
+//      receipt lets a retry with the same now-revoked token converge to
+//      deleted:true without authenticating anything.
 export async function deleteAccount(session: string): Promise<void> {
   let res: Response;
   try {
@@ -302,14 +320,27 @@ export async function deleteAccount(session: string): Promise<void> {
   }
   const data = await readJson(res);
   if (data?.deleted === true) return;
+
+  // KNOWN pre-commit fail-closed: the account was definitively NOT deleted. Route
+  // to the truthful "still exists / still signed in" UI, never to indeterminate,
+  // even though the status is 5xx.
+  const failClosedMessage =
+    data?.deleted === false && typeof data?.reason === 'string'
+      ? DELETE_FAIL_CLOSED_MESSAGES[data.reason]
+      : undefined;
+  if (failClosedMessage) {
+    throw new AuthError(failClosedMessage, res.status, 'delete_not_deleted');
+  }
+
   if (res.status >= 500) {
-    // Server error AFTER a possible durable commit. Indeterminate + retryable.
+    // An UNEXPECTED server error (not a known pre-commit fail-closed reason) that
+    // could have struck AFTER the durable commit. Indeterminate + retryable.
     throw new AuthError(
       '目前無法確認帳號是否已刪除（伺服器忙碌）。你的帳號可能已刪除、也可能尚未刪除，登入授權可能已失效。請稍後用同一組帳號重試一次以確認。',
       res.status,
       'delete_indeterminate',
     );
   }
-  // 4xx / fail-closed 501/502: the account was genuinely not deleted.
+  // 4xx: the account was genuinely not deleted (bad/expired token, etc.).
   throw toAuthError(data, res.status);
 }
