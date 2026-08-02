@@ -41,21 +41,16 @@ export default function SettingsScreen() {
   const handleAppleLogin = async () => {
     try {
       await loginWithApple();
-    } catch (err: any) {
-      // authService throws an explanatory message when web Apple login is not
-      // yet available (needs server-side token verification) — surface it.
-      showAlert('Apple 登入', String(err?.message ?? '無法完成 Apple 登入，請稍後再試。'));
+    } catch {
+      // Errors are reflected via the store `error` state; the Apple entry is
+      // disabled while web Apple login is off, so this is a no-op guard.
     }
   };
 
   const handleLinkProvider = async (provider: AuthProvider) => {
-    if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
-      showAlert(
-        'Apple 綁定尚未開放',
-        'Web 版 Apple 登入 / 綁定需後端驗證 Apple ID token，目前尚未上線。詳見 docs/Web-Apple-Login-Evaluation.md。'
-      );
-      return;
-    }
+    // Defensive guard; the Apple link CTA is rendered disabled when the flag is
+    // off, so this should not normally be reachable.
+    if (provider === 'apple' && !APPLE_LOGIN_ENABLED) return;
     try {
       await linkNewProvider(provider);
       showAlert('綁定完成', `已將 ${PROVIDER_LABEL[provider]} 帳號綁定到你的 HoloHunter 帳號。`);
@@ -110,12 +105,13 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Resolves only on server-confirmed deletion (see authService).
               await deleteAccount();
-              showAlert('帳號已刪除', '你的帳號與 Apple 授權已撤銷。');
+              showAlert('帳號已刪除', '你的帳號已從伺服器刪除，登入授權已撤銷。');
             } catch {
               showAlert(
                 '刪除尚未完成',
-                '目前無法確認伺服器端已撤銷 Apple 授權，帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
+                '伺服器端尚未確認刪除（後端未就緒或撤銷失敗），帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
               );
             }
           },
@@ -225,7 +221,7 @@ export default function SettingsScreen() {
                     key={provider}
                     style={[styles.linkBtn, (isLoading || disabled) && styles.btnDisabled]}
                     onPress={() => handleLinkProvider(provider)}
-                    disabled={isLoading}
+                    disabled={isLoading || disabled}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.linkBtnText}>
@@ -265,13 +261,18 @@ export default function SettingsScreen() {
                 <Text style={styles.googleBtnText}>使用 Google 帳號登入</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.appleBtn, isLoading && styles.btnDisabled]}
+                style={[styles.appleBtn, (isLoading || !APPLE_LOGIN_ENABLED) && styles.btnDisabled]}
                 onPress={handleAppleLogin}
-                disabled={isLoading}
+                disabled={isLoading || !APPLE_LOGIN_ENABLED}
                 activeOpacity={0.8}
               >
-                <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
+                <Text style={styles.appleBtnText}>
+                  使用 Apple 帳號登入{APPLE_LOGIN_ENABLED ? '' : '（即將推出）'}
+                </Text>
               </TouchableOpacity>
+              {!APPLE_LOGIN_ENABLED && (
+                <Text style={styles.hint}>Apple 登入即將推出，目前請使用 Google 登入。</Text>
+              )}
             </>
           )}
         </View>

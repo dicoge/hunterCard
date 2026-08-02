@@ -6,30 +6,35 @@
 
 ## 結論（TL;DR）
 
-- **Web Google 登入：已實作並啟用**（`src/services/authService.ts` 的 `signInWithProvider('google')`，
-  expo-auth-session PKCE + `oauth2/v3/userinfo`，登入畫面 `src/screens/LoginScreen.tsx`）。
-- **Web Apple 登入：技術上可行，但目前刻意不啟用**，以旗標 `APPLE_LOGIN_ENABLED = false`
-  （`src/services/authService.ts`）關閉。原因見下節。
+- **Web Google 登入：已實作並啟用，且為伺服器權威（server-authoritative）。**
+  前端（`src/services/authService.ts` 的 `signInWithProvider('google')`）以 expo-auth-session PKCE
+  取得 Google `id_token` 後，POST 至 `/api/auth/login`；伺服器 `api/lib/verify-token.ts` 以 Google
+  公鑰（`oauth2/v3/certs`）驗簽章 / `iss` / `aud` / `exp` / `nonce`，通過後由
+  `api/lib/identity-store.ts`（Vercel KV）以 internal user id 建立 / 對應身份並發 HMAC session。
+  身份**不再存於瀏覽器 localStorage**，也**不再**用前端 `oauth2/v3/userinfo` 當身份來源。
+- **Web Apple 登入：驗證端點已就緒，但目前刻意不啟用。** 由**兩道旗標**共同關閉：前端
+  `APPLE_LOGIN_ENABLED = false`（`src/services/authService.ts`）、伺服器
+  `APPLE_WEB_LOGIN_ENABLED`（未設為 `'true'` 時 `/api/auth/login` 對 `provider=apple` 回非 2xx）。
+  剩餘前置條件是 Apple Developer 後台設定與翻旗標，而非缺少伺服器驗證端點。原因見下節。
 - 綁定第二 provider 的 UI 已就緒（`src/screens/SettingsScreen.tsx` 的「登入方式綁定」），
-  Google 綁定即刻可用；Apple 綁定按鈕顯示「即將推出」，待後端驗證上線後翻旗標即開通，
-  無需再改 UI。
+  Google 綁定即刻可用；Apple 綁定按鈕顯示「即將推出」，待兩道旗標開啟後即開通，無需再改 UI。
 
 ## 為什麼 Web Apple 目前不啟用
 
-1. **前端無法安全驗證 Apple ID token。** Apple 回傳的 `id_token` 需驗簽章（Apple 公鑰）、
-   `iss`、`aud`、`exp` 與 `nonce`。純前端只能 base64 解 payload（見 `authService.ts` 的
-   `parseAppleIdToken` 註解），把未驗證的 payload 當身份來源會被偽造 token 冒充，屬安全漏洞。
-2. **尚無 Apple web 的伺服器驗證端點。** 目前 `api/` 只有 Apple 的
-   `register`（換 refresh_token）與 `delete-account`（撤銷）流程，沒有「驗證 web 登入 id_token
-   並映射 internal user」的端點。
-3. **Web 目前為 localStorage PoC，非 AUTH-Architecture 的伺服器 DB。** 使用者存在瀏覽器
-   `localStorage`（`holohunter-users`），provider identity key 為 Apple `sub` / Google `sub`。
-   在接上真正後端與 token 驗證前，先不開放 Apple web 以免產生無法驗證的身份。
-4. **產品優先序。** 依 issue，Web 必備的是 Google；Apple web 為「可行則做」。先交付 Google，
-   Apple web 待驗證端點就緒再開。
+1. **伺服器驗證端點已存在，但 Apple 尚缺後台前置設定。** `/api/auth/login` 與
+   `api/lib/verify-token.ts` 已支援 `provider=apple`（以 Apple 公鑰
+   `https://appleid.apple.com/auth/keys` 驗 ES256 簽章 / `iss` / `aud` = Services ID / `exp` / `nonce`）。
+   但要真正驗證，必須先在 Apple Developer 後台建立 Web 用 **Services ID**（當 `aud`）、
+   設定 Return URL / Domains / domain association、`.p8` 金鑰，並於 Vercel 設好
+   `EXPO_PUBLIC_APPLE_SERVICE_ID` 等變數（見下方清單）。在這些就緒前不開放，以免產生無法驗證的身份。
+2. **需同時翻兩道旗標。** 前端 `APPLE_LOGIN_ENABLED` 與伺服器 `APPLE_WEB_LOGIN_ENABLED`
+   皆需開啟；任一未開，Apple web 登入即被 fail-closed 擋下（前端按鈕 disabled、伺服器回非 2xx）。
+3. **產品優先序。** 依 issue，Web 必備的是 Google；Apple web 為「可行則做」。先交付 Google
+   （已上線且伺服器權威），Apple web 待 Apple 後台設定就緒再翻旗標開通。
 
-> Apple private relay / hide-my-email 的處理不是關閉原因：identity key 一律用 Apple `sub`，
-> email 只是快照，不參與身份判斷或自動合併，架構本身已相容 private relay。
+> Apple private relay / hide-my-email 的處理不是關閉原因：identity key 一律用 Apple `sub`
+> （`api/lib/identity-store.ts` 以 `(provider, subject)` 為唯一鍵），email 只是快照，
+> 不參與身份判斷或自動合併，架構本身已相容 private relay。
 
 ## Apple Developer 後台設定清單（啟用 Web Apple 所需）
 
@@ -73,18 +78,22 @@
 
 ## 兩條實作路徑（擇一）
 
-### 路徑 A：自建伺服器驗證（沿用現有 `api/lib/apple-auth.ts`）
+### 路徑 A：自建伺服器驗證（**已實作於 `api/lib/verify-token.ts` + `/api/auth/login`**）
 
-1. 前端以 `response_mode=form_post` 走 Apple authorize（`authService.ts` 已具雛形），拿到 `code` + `id_token`。
-2. 新增 `api/auth/apple/callback` 或 `api/auth/apple/verify`：以 Apple 公鑰（`https://appleid.apple.com/auth/keys`）
-   驗 `id_token` 簽章 / `iss` / `aud`（= Services ID）/ `exp` / `nonce`，通過後取 `sub` 當 provider identity key。
-3. 映射到共通 internal user（login-or-create / link），沿用 `AUTH-Architecture.md` 定義的
-   partial-unique conflict 與 collision 流程。
-4. 沿用既有 `register`（存 refresh_token）與 `delete-account`（撤銷）。
-5. 前端把 `APPLE_LOGIN_ENABLED` 翻為 `true`。
+驗簽與 login-or-create 端點**已存在**，Apple web 只差 Apple 後台設定與翻旗標：
 
-- 優點：不引入第三方 Auth 供應商，與現有 Apple 後端一致。
-- 成本：需自行實作 id_token 驗簽與公鑰快取（可用 `jose` / `apple-signin-auth`）。
+1. 前端走 Apple authorize，拿到 `id_token`（`authService.ts` 已具雛形）。
+2. `api/lib/verify-token.ts` 的 `verifyAppleIdToken` 以 Apple 公鑰（`https://appleid.apple.com/auth/keys`）
+   驗 `id_token` ES256 簽章 / `iss` / `aud`（= Services ID）/ `exp` / `nonce`，通過後取 `sub` 當 provider identity key
+   —— 此段**已完成**，並已納入 `scripts/test-auth-backend.cjs` 的身份存放層迴歸測試。
+3. `/api/auth/login` 映射到共通 internal user（`api/lib/identity-store.ts` 的 `loginOrCreate` / `link`），
+   沿用唯一約束（`(provider, subject)` 原子 claim）與 collision（`IDENTITY_ALREADY_LINKED` + merge_token）流程。
+4. 沿用既有 `register`（存 refresh_token）與 `delete-account`（級聯刪除 + 撤銷，fail-closed）。
+5. **待辦**：完成 Apple 後台設定（Services ID / Return URL / `.p8` / domain association），於 Vercel 設好
+   `EXPO_PUBLIC_APPLE_SERVICE_ID` 等變數，最後把 `APPLE_LOGIN_ENABLED`（前端）與 `APPLE_WEB_LOGIN_ENABLED`（伺服器）翻為開啟。
+
+- 優點：不引入第三方 Auth 供應商，與現有 Apple 後端一致；驗簽以 Node 內建 `crypto`（無額外相依）。
+- 現況：id_token 驗簽 + 公鑰快取（JWKS，10 分鐘快取）已在 `verify-token.ts` 完成。
 
 ### 路徑 B：Firebase / Supabase Auth broker
 
@@ -101,10 +110,11 @@
 
 ## 啟用檢核（Definition of Done）
 
+- [x] 伺服器端 id_token 驗簽端點（路徑 A）：`api/lib/verify-token.ts` + `/api/auth/login` 已支援 `provider=apple`。
 - [ ] Apple 後台：Services ID、Return URL、Domains、domain association file、`.p8` 金鑰、Team/Key ID 皆已設定。
 - [ ] `public/.well-known/apple-developer-domain-association.txt` 可公開存取且通過 Apple 驗證。
-- [ ] 伺服器端 id_token 驗簽端點上線（路徑 A）或 broker 設定完成（路徑 B）。
 - [ ] `EXPO_PUBLIC_APPLE_SERVICE_ID` 與 `APPLE_*` 環境變數於 Vercel 設定完成。
-- [ ] `APPLE_LOGIN_ENABLED` 翻為 `true`，Web Apple 登入 / 綁定端到端驗證：新 user / returning user、
-      Google→Apple 綁定、private relay email 不造成錯誤合併。
+- [ ] 翻兩道旗標：前端 `APPLE_LOGIN_ENABLED = true` 與伺服器 `APPLE_WEB_LOGIN_ENABLED = 'true'`。
+- [ ] Web Apple 登入 / 綁定端到端驗證：新 user / returning user、Google→Apple 綁定、
+      private relay email 不造成錯誤合併（後端邏輯已由 `scripts/test-auth-backend.cjs` 覆蓋，仍需真機端到端驗證）。
 - [ ] 隱私權政策若採 broker，補充第三方處理者說明。

@@ -2,7 +2,7 @@
 
 本文件說明 iOS「Sign in with Apple」的設定步驟、需要在 Apple Developer 後台配置的項目、環境變數，以及 TestFlight 驗證 checklist。
 
-> **注意（DIC-663 更新）**：本文件描述的是早期 iOS 原生 Apple 流程（`src/services/auth/` + `src/stores/authStore.ts`）。目前**實際運行**的登入路徑是 `src/services/authService.ts` + `src/store/authStore.ts`（HoloUser + linked providers + guest/free/subscriber）。**Web Google 登入已接線並啟用**（`signInWithProvider('google')`）；Web Apple 登入的可行性評估與 Apple Developer 設定清單請見 `docs/Web-Apple-Login-Evaluation.md`。下方「Google 登入後續（尚未接線）」段落僅適用於已停用的舊 `services/auth/googleAuth.ts` 佔位檔。
+> **注意（DIC-663 更新）**：本文件保留早期 iOS 原生 Apple 流程（`src/services/auth/` + `src/stores/authStore.ts`）的 checklist 供 native 上架參考。目前**實際運行**的登入路徑是 `src/services/authService.ts` + `src/store/authStore.ts`，且為**伺服器權威**：前端取得 provider `id_token` 後 POST 至 `/api/auth/*`，由伺服器 `api/lib/verify-token.ts` 驗簽、`api/lib/identity-store.ts`（Vercel KV）以 internal user id 歸屬身份、`api/lib/session.ts` 發 HMAC session。身份**不存於瀏覽器 localStorage**。**Web Google 登入已接線並啟用**（`signInWithProvider('google')`，server-authoritative）；Web Apple 的驗證端點已就緒但以旗標關閉，設定清單見 `docs/Web-Apple-Login-Evaluation.md`。下方「Google 登入後續」段落僅適用於已停用的舊 `services/auth/googleAuth.ts` 佔位檔，非目前路徑。
 
 ## 產品決策
 
@@ -12,24 +12,27 @@
 - 上架版必須包含：登出、刪除帳號、隱私權政策/資料刪除說明。
 - 不提交任何 Apple private key / secrets 進 repo。
 
-## 這個 PR 已包含什麼
+## 目前實際路徑包含什麼（DIC-663，server-authoritative）
 
 | 項目 | 位置 |
 | --- | --- |
-| Apple 登入原生流程 | `src/services/auth/appleAuth.ts` |
-| Google 登入介面（尚未接線） | `src/services/auth/googleAuth.ts` |
-| 統一 auth service + 帳號刪除 API 呼叫 | `src/services/auth/index.ts` |
-| Session store（zustand + persist） | `src/stores/authStore.ts` |
-| 登入畫面 + Apple 原生按鈕 | `src/screens/AuthScreen.tsx` |
-| 登入 gate（iOS 強制登入） | `src/navigation/AppNavigator.tsx` |
-| 登出 / 刪除帳號 UI | `src/screens/SettingsScreen.tsx` |
+| 伺服器身份存放（KV：唯一 claim、per-user lock、login/link/unlink/delete + 錯誤碼） | `api/lib/identity-store.ts` |
+| provider `id_token` 伺服器驗簽（Google RS256 / Apple ES256，JWKS 快取） | `api/lib/verify-token.ts` |
+| HMAC session 簽發 / 驗證 | `api/lib/session.ts` |
+| 共用端點輔助（json、錯誤碼→HTTP、旗標、backend 可用性、session 解析） | `api/lib/auth-endpoint.ts` |
+| 登入端點（verify → loginOrCreate → session） | `api/auth/login.ts` |
+| 綁定 / 解綁端點（session 授權） | `api/auth/link.ts`, `api/auth/unlink.ts` |
+| 帳號刪除（session-based 級聯刪除 + Apple 撤銷，fail-closed） | `api/auth/delete-account.ts` |
+| 前端 auth service（PKCE 取 id_token → 呼叫端點，fail-closed） | `src/services/authService.ts` |
+| Session store（zustand + persist，存 session token 非 provider token） | `src/store/authStore.ts` |
+| 登入畫面（Apple 按鈕受旗標 disabled / 「即將推出」） | `src/screens/LoginScreen.tsx` |
+| 登出 / 綁定 / 刪除帳號 UI（旗標一致、fail-closed 文案） | `src/screens/SettingsScreen.tsx` |
 | Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/lib/apple-auth.ts` |
 | refresh_token 儲存介面樁（seam，尚未接持久化） | `api/lib/apple-token-store.ts` |
-| 登入時換取並保存 refresh_token | `api/auth/apple/register.ts` |
-| 帳號刪除 + Apple token 撤銷後端（用保存的 refresh_token, fail-closed） | `api/auth/delete-account.ts` |
+| 後端身份存放迴歸測試（mock KV） | `scripts/test-auth-backend.cjs`（`npm run test:auth-backend`） |
 | App 設定 capability / plugin | `app.json` |
 
-App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android 因 Google 尚未接線，暫以訪客模式進入（旗標 `REQUIRE_AUTH` 於 `AppNavigator.tsx`）。
+行為：登入 / 綁定 / 解綁 / 刪除皆須伺服器回 2xx 才視為成功；後端未設定（KV 或 `AUTH_SESSION_SECRET` 缺）時端點回 501，前端 fail-closed 不誤示成功。native 原生 Apple 流程（`src/services/auth/`）為早期實作，checklist 見文末。
 
 ## App 設定（已完成於 `app.json`）
 
@@ -50,14 +53,26 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
    - 下載 `.p8` 檔（只能下載一次，妥善保存，**勿提交進 repo**）。
 5. 記下 **Team ID**（右上角帳號資訊）。
 
-### 後端環境變數（設定於 Vercel，勿提交）
+### 伺服器權威登入前置（server prerequisites，設定於 Vercel，勿提交）
+
+目前登入路徑需下列後端變數；缺任一，`/api/auth/*` 會 fail-closed 回 501，前端不誤示成功：
+
+| 變數 | 說明 | 缺少時 |
+| --- | --- | --- |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN`（Vercel KV / Upstash） | 身份存放（`api/lib/identity-store.ts`）與 session 所需 | 端點回 501 `store_not_configured` |
+| `AUTH_SESSION_SECRET` | HMAC session 簽發 / 驗證（`api/lib/session.ts`）密鑰 | 端點回 501，無法發 / 驗 session |
+| `GOOGLE_WEB_CLIENT_ID`（或 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` / `GOOGLE_CLIENT_ID`） | Google `id_token` 驗簽的 `aud` | Google 登入回 `store_not_configured` |
+| `APPLE_WEB_LOGIN_ENABLED` | 設為 `'true'` 才允許 `/api/auth/login` 驗 `provider=apple`（配合前端 `APPLE_LOGIN_ENABLED`） | Apple web 登入被擋（fail-closed） |
+
+### Apple 後端環境變數（撤銷 / 驗簽用，設定於 Vercel，勿提交）
 
 | 變數 | 說明 |
 | --- | --- |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
-| `APPLE_CLIENT_ID` | Services ID（web）或 app bundle id `com.dicoge.holohunter`（native） |
+| `APPLE_CLIENT_ID` | Services ID（web）或 app bundle id `com.dicoge.holohunter`（native），亦為 Apple `id_token` 驗簽的 `aud` |
 | `APPLE_KEY_ID` | 上述 .p8 私鑰的 Key ID |
 | `APPLE_PRIVATE_KEY` | .p8 內容（含 BEGIN/END，換行以 `\n` 表示） |
+| `EXPO_PUBLIC_APPLE_SERVICE_ID` | Web authorize 用的 Services ID（= web `client_id`），亦納入 Apple 驗簽 `aud` |
 
 未設定完整變數或撤銷未確認成功時 `api/auth/delete-account` 會回非 2xx（含 501），App 端**fail-closed**：不清除本機 session、顯示「刪除尚未完成」並維持登入狀態。
 
@@ -66,14 +81,14 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 ### 正確流程（login-time register → stored refresh_token → revoke）
 
 1. **登入當下**：client 拿到 fresh `authorizationCode`，立即 POST `/api/auth/apple/register`（`src/services/auth/index.ts` 的 `registerAppleSession`，best-effort）。後端用它向 `/auth/token` 換 `refresh_token`，以 `userId` 為 key 保存於**伺服器端持久化儲存**（見 `api/lib/apple-token-store.ts`）。
-2. **刪除時**：POST `/api/auth/delete-account`，**只帶 `{ provider, userId }`**（不帶 authorizationCode）。後端取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後刪除該 user 的資料與 refresh_token。
+2. **刪除時**：POST `/api/auth/delete-account`，**以 Bearer session 授權**（`api/auth/delete-account.ts` 由 session 解出 internal user id，**不信任** client 傳來的 userId）。若帳號含 Apple 身份，後端取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後才由 `identity-store` 級聯刪除該 internal user 及其所有 provider 身份索引。
 
 原因：`authorizationCode` 為**單次使用且短效**，刪除當下通常已失效，因此不可保存它當作日後刪除憑證——必須在登入當下換成長效 `refresh_token`。client 端也**絕不持久化** `authorizationCode`（`authStore` partialize 會剝除）。
 
 ### fail-closed 行為
 
-- 後端無法確認撤銷成功（未設定 / 未實作 / 撤銷失敗 / 網路錯誤）→ 回非 2xx。
-- client 只有在後端回 `{ ok: true }` 時才清除本機 session（`deleteAccount()` 回 `'deleted'`）；否則回 `'failed'`，維持登入並提示「尚未完成」。避免讓使用者誤以為已刪除但 Apple 授權 / 伺服器資料仍存在。
+- 後端無法確認撤銷成功（未設定 / 未實作 / 撤銷失敗 / 網路錯誤）→ 回非 2xx，且**不刪除**任何伺服器資料。
+- client 只有在後端回 `{ deleted: true }` 時才清除本機 session；否則維持登入並提示「尚未完成」（`deleteAccount()` 於非成功時 throw）。避免讓使用者誤以為已刪除但 Apple 授權 / 伺服器資料仍存在。
 
 ### ⚠️ 目前限制（non-shipping foundation）
 
@@ -83,12 +98,18 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 - `/api/auth/delete-account` 取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
 - 上架前必須完成：實作 `apple-token-store`（真正持久化 + 加密）、於刪除時級聯刪除 / 匿名化使用者資料。Settings 頁已標示此限制。
 
-## Google 登入後續（尚未接線）
+## Google 登入（現況）
 
-1. `npx expo install expo-auth-session expo-web-browser`
-2. Google Cloud Console 建立 iOS / Web / Android OAuth client ID。
-3. 於 `src/services/auth/googleAuth.ts` 用 `Google.useIdTokenAuthRequest` 換 `id_token`，映射成 `AuthSession`（`isGoogleAuthConfigured()` 回傳 `true`）。
-4. Web 的登入 gate（`AppNavigator.tsx` 的 `REQUIRE_AUTH`）改為全平台強制登入。
+Web Google 登入**已接線並啟用**，且為 server-authoritative：前端 `src/services/authService.ts`
+以 expo-auth-session PKCE 取得 `id_token`，POST 至 `/api/auth/login`，伺服器驗簽後由 KV 身份存放層歸屬 internal user。
+啟用只需在 Vercel 設好上方「伺服器權威登入前置」的 KV / `AUTH_SESSION_SECRET` / `GOOGLE_WEB_CLIENT_ID`。
+
+> 下列步驟為**已停用的舊 native 佔位檔** `src/services/auth/googleAuth.ts` 的接線說明，**非目前路徑**，僅保留參考：
+>
+> 1. `npx expo install expo-auth-session expo-web-browser`
+> 2. Google Cloud Console 建立 iOS / Web / Android OAuth client ID。
+> 3. 於 `src/services/auth/googleAuth.ts` 用 `Google.useIdTokenAuthRequest` 換 `id_token`。
+> 4. Web 的登入 gate（`AppNavigator.tsx` 的 `REQUIRE_AUTH`）改為全平台強制登入。
 
 ## iOS / TestFlight 驗證 checklist
 

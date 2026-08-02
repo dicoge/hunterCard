@@ -3,7 +3,6 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import {
   HoloUser,
-  AuthTokens,
   AuthProvider,
   UserRole,
 } from '../types/auth';
@@ -12,12 +11,11 @@ import {
   linkProvider,
   unlinkProvider,
   deleteAccount,
-  providerSignOut,
 } from '../services/authService';
 
 interface AuthStore {
   user: HoloUser | null;
-  tokens: AuthTokens | null;
+  session: string | null;
   isAuthenticated: boolean;
   isGuest: boolean;
   isLoading: boolean;
@@ -41,7 +39,7 @@ export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
       user: null,
-      tokens: null,
+      session: null,
       isAuthenticated: false,
       isGuest: false,
       isLoading: false,
@@ -52,10 +50,10 @@ export const useAuthStore = create<AuthStore>()(
       loginWithGoogle: async () => {
         set({ isLoading: true, error: null });
         try {
-          const { user, tokens } = await signInWithProvider('google');
+          const { user, session } = await signInWithProvider('google');
           set({
             user,
-            tokens,
+            session,
             isAuthenticated: true,
             isGuest: false,
             isLoading: false,
@@ -70,10 +68,10 @@ export const useAuthStore = create<AuthStore>()(
       loginWithApple: async () => {
         set({ isLoading: true, error: null });
         try {
-          const { user, tokens } = await signInWithProvider('apple');
+          const { user, session } = await signInWithProvider('apple');
           set({
             user,
-            tokens,
+            session,
             isAuthenticated: true,
             isGuest: false,
             isLoading: false,
@@ -88,7 +86,7 @@ export const useAuthStore = create<AuthStore>()(
       continueAsGuest: () => {
         set({
           user: null,
-          tokens: null,
+          session: null,
           isAuthenticated: false,
           isGuest: true,
           role: 'guest',
@@ -98,11 +96,11 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       linkNewProvider: async (provider) => {
-        const { user } = get();
-        if (!user) throw new Error('No authenticated user');
+        const { user, session } = get();
+        if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          const updatedUser = await linkProvider(user, provider);
+          const updatedUser = await linkProvider(session, user, provider);
           set({ user: updatedUser, isLoading: false });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to link provider' });
@@ -111,11 +109,11 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       removeLinkedProvider: async (provider) => {
-        const { user } = get();
-        if (!user) throw new Error('No authenticated user');
+        const { user, session } = get();
+        if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          const updatedUser = await unlinkProvider(user, provider);
+          const updatedUser = await unlinkProvider(session, provider);
           set({ user: updatedUser, isLoading: false });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to unlink provider' });
@@ -124,11 +122,9 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: async () => {
-        const { tokens } = get();
-        await providerSignOut(tokens);
         set({
           user: null,
-          tokens: null,
+          session: null,
           isAuthenticated: false,
           isGuest: false,
           isLoading: false,
@@ -138,14 +134,16 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       deleteUserAccount: async () => {
-        const { user } = get();
-        if (!user) throw new Error('No authenticated user');
+        const { user, session } = get();
+        if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          await deleteAccount(user);
+          // Resolves only on server-confirmed deletion; otherwise throws and we
+          // keep the session (do not claim the account was deleted).
+          await deleteAccount(session);
           set({
             user: null,
-            tokens: null,
+            session: null,
             isAuthenticated: false,
             isGuest: false,
             isLoading: false,
@@ -170,7 +168,7 @@ export const useAuthStore = create<AuthStore>()(
       storage: createJSONStorage(() => platformStorage),
       partialize: (state) => ({
         user: state.user,
-        tokens: state.tokens,
+        session: state.session,
         isAuthenticated: state.isAuthenticated,
         isGuest: state.isGuest,
         role: state.role,
