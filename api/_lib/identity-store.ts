@@ -279,7 +279,19 @@ async function hydrate(user: StoredUser): Promise<PublicUser> {
 export interface LoginResult {
   user: PublicUser;
   isNew: boolean;
+  session?: string;
 }
+
+/**
+ * Mints a session token for a just-validated user. login-or-create invokes this
+ * INSIDE the same serialisable boundary that validated the user (the per-user
+ * lock on the returning path; immediately after the atomic index claim on the
+ * create path), so a concurrent unlink/delete cannot slip a valid session out for
+ * an unlinked provider or a deleted user (CR round-6 blocker #2). It is a callback
+ * — not a direct import of session.ts — so identity-store keeps no dependency on
+ * the session layer (no import cycle).
+ */
+export type SessionMinter = (userId: string) => Promise<string>;
 
 // Sentinel telling loginOrCreate to re-read the index and retry (ownership moved
 // under us while we waited for the lock, or the owner turned out to be deleted).
@@ -294,6 +306,7 @@ const RETRY = Symbol('retry');
 async function loginExistingOwner(
   identity: VerifiedIdentity,
   ownerId: string,
+  mintSession?: SessionMinter,
 ): Promise<LoginResult | typeof RETRY> {
   const { provider, subject } = identity;
   const lock = await acquireLock(ownerId);
@@ -318,7 +331,10 @@ async function loginExistingOwner(
     // LOCK_TTL_MS already exceeds the handler budget).
     await assertHeld(ownerId, lock);
     const refreshed = await refreshSnapshot(user, identity);
-    return { user: await hydrate(refreshed), isNew: false };
+    // Mint the session while STILL holding the lock, so a concurrent delete/unlink
+    // cannot complete between validating this user and issuing its token.
+    const sessionToken = mintSession ? await mintSession(refreshed.id) : undefined;
+    return { user: await hydrate(refreshed), isNew: false, session: sessionToken };
   } finally {
     await releaseLock(ownerId, lock);
   }
@@ -347,14 +363,17 @@ async function loginExistingOwner(
  * writing over a deleted user. Create needs no lock — its SET NX claim is already
  * the serialisation point for a brand-new subject.
  */
-export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginResult> {
+export async function loginOrCreate(
+  identity: VerifiedIdentity,
+  mintSession?: SessionMinter,
+): Promise<LoginResult> {
   const { provider, subject } = identity;
 
   for (let attempt = 0; attempt < CREATE_RETRIES; attempt++) {
     const ownerId = await kv.get<string>(IDX_KEY(provider, subject));
 
     if (ownerId) {
-      const returning = await loginExistingOwner(identity, ownerId);
+      const returning = await loginExistingOwner(identity, ownerId, mintSession);
       if (returning === RETRY) continue;
       return returning;
     }
@@ -383,7 +402,11 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
       await rollbackCreate(candidateId, provider, subject);
       continue;
     }
-    return { user: await hydrate(user), isNew: true };
+    // Mint right after the commit — the atomic claim is this path's serialisation
+    // point and the id is unreachable to any concurrent delete until now, so the
+    // session is issued within the same boundary that created the user.
+    const sessionToken = mintSession ? await mintSession(candidateId) : undefined;
+    return { user: await hydrate(user), isNew: true, session: sessionToken };
   }
 
   throw new IdentityStoreError('LOCK_TIMEOUT', 'login-or-create contention exceeded retries');

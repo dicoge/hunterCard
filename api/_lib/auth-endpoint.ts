@@ -8,7 +8,12 @@ import {
   VerifiedIdentity,
   isIdentityStoreConfigured,
 } from './identity-store';
-import { SessionContext, isSessionConfigured, verifySessionContext } from './session';
+import {
+  SessionContext,
+  isSessionConfigured,
+  readSessionClaims,
+  verifySessionContext,
+} from './session';
 import {
   isGoogleVerifyConfigured,
   verifyAppleIdToken,
@@ -84,6 +89,17 @@ export async function sessionContext(req: Request): Promise<SessionContext | nul
 
 export async function sessionUserId(req: Request): Promise<string | null> {
   return (await sessionContext(req))?.userId ?? null;
+}
+
+/**
+ * Decode the bearer's signed claims WITHOUT a revocation/user lookup. Used only by
+ * the delete endpoint's response-loss recovery: a caller retrying a completed
+ * delete holds a token that sessionContext (correctly) rejects, yet its signed
+ * claims still authentically name which user it was — which, paired with the
+ * durable deletion receipt, yields the idempotent "already deleted" answer.
+ */
+export function sessionClaims(req: Request): { sub: string; jti: string } | null {
+  return readSessionClaims(bearer(req));
 }
 
 export function isProvider(value: unknown): value is Provider {

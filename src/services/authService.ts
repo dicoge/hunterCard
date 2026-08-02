@@ -234,20 +234,27 @@ export async function linkProvider(
   return toHoloUser(data.user);
 }
 
-// Unlink never revokes the caller's own token (CR round-5 blocker #1). When the
+export interface UnlinkResult {
+  user: HoloUser;
+  callerSessionRevoked: boolean;
+}
+
+// Unlink normally keeps the caller's own token (CR round-5 blocker #1): when the
 // caller's session was minted by the provider being removed, the server RE-BINDS
 // that same token to a still-linked provider (same token string, no new
-// credential) before doing the provider-scoped revoke, so there is nothing to
-// deliver back and a lost response is harmless — the client keeps using the same
-// still-valid session. We therefore only need the updated user here.
+// credential) before the provider-scoped revoke, so the client keeps using the
+// same still-valid session and `callerSessionRevoked` is false. But the re-bind is
+// atomic and can legitimately fail if a concurrent logout already revoked the
+// token (CR round-6 blocker #1); then the server reports `callerSessionRevoked:
+// true` and the client must drop the now-dead token instead of keeping it.
 export async function unlinkProvider(
   session: string,
   provider: AuthProvider,
-): Promise<HoloUser> {
+): Promise<UnlinkResult> {
   const res = await apiPost('/auth/unlink', { provider }, session);
   const data = await readJson(res);
   if (!res.ok) throw toAuthError(data, res.status, provider);
-  return toHoloUser(data.user);
+  return { user: toHoloUser(data.user), callerSessionRevoked: Boolean(data.callerSessionRevoked) };
 }
 
 // Server-side session revocation. Logout must always clear LOCAL state (the
@@ -270,24 +277,25 @@ export async function logoutSession(session: string): Promise<boolean> {
 // confirms deletion (`deleted: true`); otherwise throws so the UI never claims
 // the account was deleted.
 //
-// Recoverability (CR round-5 blocker #2): the server never revokes the caller's
-// OWN token during delete, so any thrown outcome here — a 5xx after the durable
-// identity commit, or a lost/failed response — is recoverable: the same session
-// is still valid and a retry converges (the server's already-deleted branch
-// re-runs the idempotent cleanup and returns `deleted: true`). We surface that
-// truthfully instead of a flat "failed": a network error or a 5xx is INDETERMINATE
-// (the delete may already have happened) and the user should retry; a fail-closed
-// 501/502 (e.g. Apple revocation not configured / revoke failed) means the account
-// was genuinely NOT deleted and carries its own reason.
+// Recoverability (CR round-6 blocker #3): a successful delete revokes EVERY
+// bearer, INCLUDING this one, so we cannot rely on a live token to retry. Instead
+// the server writes a durable deletion receipt; a retry presents the same (now
+// revoked) token and the server's receipt-recovery branch returns `deleted: true`
+// without authenticating anything. So a thrown INDETERMINATE outcome here — a
+// network error or a 5xx after the durable identity commit — is still safely
+// retryable and converges. We surface that truthfully: the delete MAY already have
+// happened (and this login MAY already be revoked), so the user should retry to
+// confirm. A fail-closed 501/502 (Apple revocation not configured / revoke failed)
+// means the account was genuinely NOT deleted and carries its own reason.
 export async function deleteAccount(session: string): Promise<void> {
   let res: Response;
   try {
     res = await apiPost('/auth/delete-account', {}, session);
   } catch {
     // Never reached the server, or the response was lost. The account may or may
-    // not be deleted; the session is still valid, so a retry is safe.
+    // not be deleted; retry (the deletion receipt makes a completed delete converge).
     throw new AuthError(
-      '目前無法確認帳號是否已刪除（連線中斷）。你的登入仍然有效，請稍後再試一次。',
+      '目前無法確認帳號是否已刪除（連線中斷）。你的帳號可能已刪除、也可能尚未刪除，登入授權可能已失效。請稍後用同一組帳號重試一次以確認。',
       0,
       'delete_indeterminate',
     );
@@ -297,7 +305,7 @@ export async function deleteAccount(session: string): Promise<void> {
   if (res.status >= 500) {
     // Server error AFTER a possible durable commit. Indeterminate + retryable.
     throw new AuthError(
-      '目前無法確認帳號是否已刪除（伺服器忙碌）。你的登入仍然有效，請稍後再試一次。',
+      '目前無法確認帳號是否已刪除（伺服器忙碌）。你的帳號可能已刪除、也可能尚未刪除，登入授權可能已失效。請稍後用同一組帳號重試一次以確認。',
       res.status,
       'delete_indeterminate',
     );

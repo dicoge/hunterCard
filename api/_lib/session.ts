@@ -23,6 +23,18 @@ const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 const SESSION_KEY = (jti: string) => `auth:session:${jti}`;
 const USER_SESSIONS_KEY = (userId: string) => `auth:user:${userId}:sessions`;
+// The identity-store user record (see identity-store.ts USER_KEY). session.ts
+// reads it DIRECTLY — not via an import of identity-store — so verifySession can
+// reject a token whose backing user has been deleted without creating an
+// identity-store ↔ session import cycle (CR round-6 blocker #3).
+const USER_KEY = (userId: string) => `auth:user:${userId}`;
+// Durable deletion receipt (CR round-6 blocker #3). Written on successful account
+// deletion so a retry whose response was lost can be answered idempotently from
+// the caller's still-signed (but now revoked) token WITHOUT keeping a live auth
+// bearer. TTL matches the session lifetime: once every issued token for the user
+// has expired, no retry can present one, so the receipt is no longer needed.
+const DELETED_KEY = (userId: string) => `auth:deleted:${userId}`;
+const DELETED_TTL_SECONDS = DEFAULT_TTL_SECONDS;
 
 // Each session record stores which internal user it vouches for AND which
 // provider identity minted it. The provider is what lets unlink revoke ONLY the
@@ -110,7 +122,29 @@ function decodeClaims(token: string | null | undefined): SessionPayload | null {
   }
 }
 
-/** Full verification: signature + expiry + the session record still exists. */
+/**
+ * Signature + expiry ONLY (no revocation / user lookup). Exposes the claims of a
+ * token that may already be revoked, used exclusively by the delete endpoint's
+ * response-loss recovery: a caller retrying a completed delete presents a token
+ * whose session record is gone, so verifySessionContext rejects it, yet the
+ * signed claims still authentically name which user the caller WAS. Pairing that
+ * with the durable deletion receipt (wasUserDeleted) lets the retry get the
+ * idempotent "already deleted" answer without ever authenticating an action.
+ */
+export function readSessionClaims(
+  token: string | null | undefined,
+): { sub: string; jti: string } | null {
+  const claims = decodeClaims(token);
+  return claims ? { sub: claims.sub, jti: claims.jti } : null;
+}
+
+/**
+ * Full verification: signature + expiry + the session record still exists + the
+ * backing user still exists. The user-existence check (CR round-6 blocker #3) is
+ * what makes a successful account deletion revoke EVERY bearer: even if a session
+ * record somehow outlived revoke-all, a token for a deleted user must not
+ * authenticate (e.g. Apple register). Returns the context or null.
+ */
 export async function verifySessionContext(
   token: string | null | undefined,
 ): Promise<SessionContext | null> {
@@ -118,6 +152,7 @@ export async function verifySessionContext(
   if (!claims) return null;
   const record = readRecord(await kv.get(SESSION_KEY(claims.jti)));
   if (!record || record.sub !== claims.sub) return null; // revoked, expired-out, or unknown
+  if (!(await kv.get(USER_KEY(claims.sub)))) return null; // user deleted / nonexistent
   return { userId: claims.sub, jti: claims.jti, provider: record.provider };
 }
 
@@ -143,20 +178,40 @@ export async function revokeSession(userId: string, jti: string): Promise<void> 
  * linked one instead of revoking it. The token string is unchanged, so nothing has
  * to be delivered back to the client and a lost response is harmless — the client
  * keeps using the SAME, still-valid token. The follow-up provider-scoped revoke
- * then skips this session (its provider no longer matches the removed one). No-op
- * if the session record is already gone (expired) — we never resurrect it. The TTL
- * is preserved via KEEPTTL so re-binding doesn't extend the session's lifetime.
+ * then skips this session (its provider no longer matches the removed one).
+ *
+ * ATOMIC (CR round-6 blocker #1). This is a single `SET ... XX KEEPTTL`: overwrite
+ * ONLY IF the session record still exists (XX), preserving its TTL. The prior
+ * GET-then-SET had a TOCTOU race — a concurrent logout could DEL the record
+ * between our read and write, and the write would RESURRECT the revoked token. XX
+ * makes resurrection impossible: if logout already deleted the record, the SET is
+ * a no-op and returns null. Returns true iff the record still existed and was
+ * re-bound; false means the caller's own token is (already) gone and the handler
+ * must report callerSessionRevoked:true so the client drops it. The sub is not
+ * re-checked here because callers pass the jti straight from a verified
+ * SessionContext whose record.sub already equals userId.
  */
 export async function rebindSessionProvider(
   userId: string,
   jti: string,
   provider: SessionProvider,
 ): Promise<boolean> {
-  const existing = readRecord(await kv.get(SESSION_KEY(jti)));
-  if (!existing || existing.sub !== userId) return false;
   const record: SessionRecord = { sub: userId, provider };
-  await kv.set(SESSION_KEY(jti), record, { keepTtl: true });
-  return true;
+  const res = await kv.set(SESSION_KEY(jti), record, { xx: true, keepTtl: true });
+  return res === 'OK';
+}
+
+/** Record a durable deletion receipt so a lost-response delete retry converges. */
+export async function markUserDeleted(
+  userId: string,
+  ttlSeconds = DELETED_TTL_SECONDS,
+): Promise<void> {
+  await kv.set(DELETED_KEY(userId), Date.now(), { px: ttlSeconds * 1000 });
+}
+
+/** True iff a deletion receipt exists for this user (idempotent-delete recovery). */
+export async function wasUserDeleted(userId: string): Promise<boolean> {
+  return Boolean(await kv.get(DELETED_KEY(userId)));
 }
 
 /**
@@ -183,25 +238,22 @@ export async function revokeSessionsByProvider(
 }
 
 /**
- * Revoke every session for a user EXCEPT the caller's own (`exceptJti`), used on
- * account deletion (CR round-5 blocker #2). Deliberately leaving the caller's token
- * live until the response is delivered is what makes delete retry-convergent: if
- * any write here fails, the caller can retry with its still-valid token and the
- * retry re-runs this idempotent cleanup, instead of getting a dead-token 401 that
- * strands a half-finished delete. The caller drops its own token locally on
- * success; that record points at a now-deleted user (every authenticated action
- * through it fails closed with USER_NOT_FOUND) and expires via its TTL. The
- * membership set is cleared last only after the caller entry is re-added, so the
- * caller's own record is the single intentional leftover.
+ * Revoke EVERY session for a user, INCLUDING the caller's own, used on account
+ * deletion (CR round-6 blocker #3). After a successful delete every bearer must
+ * fail — the round-5 design that kept the caller's token live to survive a lost
+ * response violated the all-session-revocation contract and permitted post-delete
+ * authenticated calls. Response-loss recovery is instead provided by a durable
+ * deletion receipt (markUserDeleted / wasUserDeleted): the retry proves who it was
+ * from its still-signed token and reads the receipt, without any live auth bearer.
+ * Idempotent: safe to re-run on a convergent retry. The membership set is deleted
+ * last; a concurrent add cannot occur because deletion holds the per-user lock and
+ * login (the only session minter) validates the user under that SAME lock, so no
+ * new session for a deleted user is ever created (CR round-6 blocker #2).
  */
-export async function revokeOtherUserSessions(userId: string, exceptJti: string): Promise<void> {
+export async function revokeAllUserSessions(userId: string): Promise<void> {
   const jtis = ((await kv.smembers(USER_SESSIONS_KEY(userId))) as string[] | null) ?? [];
   for (const jti of jtis) {
-    if (jti === exceptJti) continue;
     await kv.del(SESSION_KEY(jti));
   }
-  // Rewrite the membership set to contain only the caller (if it is still a
-  // member), so a later enumeration doesn't resurrect revoked jtis.
   await kv.del(USER_SESSIONS_KEY(userId));
-  if (jtis.includes(exceptJti)) await kv.sadd(USER_SESSIONS_KEY(userId), exceptJti);
 }

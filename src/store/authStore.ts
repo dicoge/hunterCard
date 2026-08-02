@@ -114,17 +114,33 @@ export const useAuthStore = create<AuthStore>()(
         if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          // The caller's session is never revoked by unlink (CR round-5 blocker
-          // #1): if it was minted by the removed provider the server re-binds the
-          // SAME token to a still-linked provider, so we keep the existing session
-          // and only adopt the updated user.
-          const updatedUser = await unlinkProvider(session, provider);
-          set({
-            user: updatedUser,
-            session,
-            isAuthenticated: true,
-            isLoading: false,
-          });
+          // The caller's session normally survives unlink (CR round-5 blocker #1):
+          // if it was minted by the removed provider the server re-binds the SAME
+          // token to a still-linked provider, so we keep the existing session and
+          // only adopt the updated user. But the atomic re-bind can fail if a
+          // concurrent logout already revoked the token (CR round-6 blocker #1);
+          // the server then reports callerSessionRevoked and we must drop the dead
+          // token and sign out locally instead of keeping a session that no longer
+          // works.
+          const { user: updatedUser, callerSessionRevoked } = await unlinkProvider(session, provider);
+          if (callerSessionRevoked) {
+            set({
+              user: null,
+              session: null,
+              isAuthenticated: false,
+              isGuest: false,
+              isLoading: false,
+              role: 'guest',
+              error: '已解除綁定，但你目前的登入工作階段已失效，請重新登入。',
+            });
+          } else {
+            set({
+              user: updatedUser,
+              session,
+              isAuthenticated: true,
+              isLoading: false,
+            });
+          }
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to unlink provider' });
           throw err;
@@ -158,10 +174,12 @@ export const useAuthStore = create<AuthStore>()(
         set({ isLoading: true, error: null });
         try {
           // Resolves only on server-confirmed deletion; otherwise throws and we
-          // keep the session so the user can retry (CR round-5 blocker #2). The
-          // server never revokes the caller's own token during delete, so an
-          // indeterminate failure is safely retryable and the surfaced message is
-          // truthful about that rather than flatly claiming the delete failed.
+          // keep the local session so the user can retry (CR round-6 blocker #3).
+          // A successful delete revokes every bearer including this one, but a
+          // retry after a lost/indeterminate response still converges via the
+          // server's durable deletion receipt. We preserve the thrown error's
+          // truthful message (indeterminate vs. genuinely-not-deleted) verbatim
+          // rather than flattening it to a generic failure.
           await deleteAccount(session);
           set({
             user: null,
@@ -173,7 +191,7 @@ export const useAuthStore = create<AuthStore>()(
             role: 'guest',
           });
         } catch (err: any) {
-          set({ isLoading: false, error: err.message || '刪除帳號時發生問題，你的登入仍然有效，請稍後再試。' });
+          set({ isLoading: false, error: err.message || '刪除帳號時發生問題，請稍後再試。' });
           throw err;
         }
       },

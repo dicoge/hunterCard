@@ -43,6 +43,10 @@ const kv = {
   async set(key, value, opts) {
     maybeFail('set', key);
     if (opts && opts.nx && kvState.values.has(key)) return null;
+    // XX: set only if the key already exists. Models the atomic SET XX KEEPTTL the
+    // round-6 rebind uses, so a concurrently-deleted (logged-out) session record
+    // cannot be resurrected. keepTtl / px are no-ops here (the mock has no TTL).
+    if (opts && opts.xx && !kvState.values.has(key)) return null;
     kvState.values.set(key, value);
     return 'OK';
   },
@@ -139,6 +143,13 @@ const session = require(path.join(outDir, 'api/_lib/session.js'));
 
 function identity(provider, subject, email, name) {
   return { provider, subject, email, name };
+}
+
+// verifySessionContext now requires the backing user record to exist (round-6
+// blocker #3: a token for a deleted user must not authenticate). Pure-session
+// tests that mint tokens for synthetic user ids must seed that record first.
+function seedUser(id) {
+  kvState.values.set(`auth:user:${id}`, { id, status: 'active' });
 }
 
 async function expectError(promise, code) {
@@ -375,6 +386,7 @@ async function testCreatePartialWriteLeavesNoLoginnableIndex() {
 // bearer so a stolen/copied 30-day token cannot be replayed.
 async function testSessionRevocationStopsStolenToken() {
   resetKv();
+  seedUser('holo_user_1');
   const token = await session.issueSession('holo_user_1', 'google');
   assert.equal(await session.verifySession(token), 'holo_user_1', 'fresh session verifies');
 
@@ -392,6 +404,7 @@ async function testSessionRevocationStopsStolenToken() {
 // the removed provider's caller token and killed the still-valid providers.
 async function testUnlinkRevokesOnlyRemovedProviderSessions() {
   resetKv();
+  seedUser('holo_user_2');
   const googleSession = await session.issueSession('holo_user_2', 'google');
   const appleCaller = await session.issueSession('holo_user_2', 'apple');
   const appleOther = await session.issueSession('holo_user_2', 'apple');
@@ -405,30 +418,46 @@ async function testUnlinkRevokesOnlyRemovedProviderSessions() {
 
 async function testSessionContextCarriesProvider() {
   resetKv();
+  seedUser('holo_user_p');
   const token = await session.issueSession('holo_user_p', 'apple');
   const ctx = await session.verifySessionContext(token);
   assert.equal(ctx.userId, 'holo_user_p');
   assert.equal(ctx.provider, 'apple', 'session context exposes the minting provider');
 }
 
-// CR round-5 blocker #2: delete revokes every OTHER device's session but must
-// deliberately KEEP the caller's own token live, so a lost response is recoverable
-// (the client retries into the already-deleted branch). The membership set is left
-// holding only the caller so a later enumeration cannot resurrect revoked jtis.
-async function testDeleteRevokesOtherSessionsButKeepsCaller() {
+// CR round-6 blocker #3: a successful delete revokes EVERY session for the user,
+// INCLUDING the caller's own — the all-session-revocation contract. The round-5
+// "keep the caller live" behaviour is gone; response-loss recovery is provided by
+// the durable deletion receipt instead (see the receipt-recovery test below).
+async function testDeleteRevokesAllSessionsIncludingCaller() {
   resetKv();
+  seedUser('holo_user_3');
   const caller = await session.issueSession('holo_user_3', 'google');
   const other = await session.issueSession('holo_user_3', 'apple');
-  const callerJti = decodeJti(caller);
-  await session.revokeOtherUserSessions('holo_user_3', callerJti);
-  assert.equal(await session.verifySession(other), null, 'other device sessions revoked on delete');
-  assert.equal(
-    await session.verifySession(caller),
-    'holo_user_3',
-    'caller token deliberately kept live so a lost response is retryable',
-  );
+  await session.markUserDeleted('holo_user_3');
+  await session.revokeAllUserSessions('holo_user_3');
+  assert.equal(await session.verifySession(other), null, 'other device session revoked on delete');
+  assert.equal(await session.verifySession(caller), null, "caller's own token revoked on delete");
   const members = await kv.smembers('auth:user:holo_user_3:sessions');
-  assert.deepEqual(members, [callerJti], 'membership set left holding only the caller');
+  assert.deepEqual(members, [], 'membership set fully cleared');
+}
+
+// CR round-6 blocker #3: a token for a deleted/nonexistent user must NOT verify,
+// even though its signature and expiry are still valid and (in a partial-failure
+// window) its session record might still exist. This is what makes a post-delete
+// bearer fail closed everywhere it is checked (e.g. Apple register via sessionUserId).
+async function testVerifySessionRejectsDeletedUser() {
+  resetKv();
+  seedUser('holo_del_1');
+  const token = await session.issueSession('holo_del_1', 'google');
+  assert.equal(await session.verifySession(token), 'holo_del_1', 'verifies while the user exists');
+  // Simulate deletion of the user record while the (unrevoked) session record lingers.
+  kvState.values.delete('auth:user:holo_del_1');
+  assert.equal(
+    await session.verifySession(token),
+    null,
+    'signed, unrevoked token fails once the backing user is gone',
+  );
 }
 
 // CR blocker #1: an unlink that fails AFTER the decisive index-free but BEFORE the
@@ -579,31 +608,46 @@ async function testUnlinkIsIdempotentWhenProviderAbsent() {
 // retry-convergence) at the unit level.
 async function unlinkFlow(callerToken, provider) {
   const ctx = await session.verifySessionContext(callerToken);
-  assert.ok(ctx, 'caller token must still be valid on entry (never revoked by unlink)');
+  assert.ok(ctx, 'caller token must still be valid on entry');
   const user = await store.unlinkIdentity(ctx.userId, provider);
-  // If the caller's own token was minted by the removed provider, RE-BIND that
-  // same token to a still-linked provider BEFORE the provider-scoped revoke, so
-  // the revoke skips it and there is no new credential to deliver.
+  // If the caller's own token was minted by the removed provider, atomically
+  // RE-BIND that same token to a still-linked provider BEFORE the provider-scoped
+  // revoke, so the revoke skips it. The rebind reports whether it succeeded; a
+  // false (concurrent logout already revoked it) means callerSessionRevoked:true.
+  let callerSessionRevoked = false;
   if (ctx.provider === provider) {
     const remaining = user.linkedProviders[0] && user.linkedProviders[0].provider;
-    if (remaining) await session.rebindSessionProvider(ctx.userId, ctx.jti, remaining);
+    const rebound = remaining
+      ? await session.rebindSessionProvider(ctx.userId, ctx.jti, remaining)
+      : false;
+    callerSessionRevoked = !rebound;
   }
   await session.revokeSessionsByProvider(ctx.userId, provider);
-  return { user, callerSessionRevoked: false };
+  return { user, callerSessionRevoked };
 }
 
 async function deleteAccountFlow(callerToken) {
   const ctx = await session.verifySessionContext(callerToken);
-  assert.ok(ctx, 'caller token must still be valid on entry (never revoked by delete)');
+  if (!ctx) {
+    // Recovery branch: the caller's token was revoked by a successful delete, but
+    // the response was lost. Its signed claims still name the user; paired with the
+    // durable deletion receipt, converge to deleted:true WITHOUT a live session.
+    const claims = session.readSessionClaims(callerToken);
+    if (claims && (await session.wasUserDeleted(claims.sub))) {
+      await session.revokeAllUserSessions(claims.sub); // idempotent cleanup
+      return { deleted: true, recovered: true };
+    }
+    throw new Error('invalid_session');
+  }
   const user = await store.getUser(ctx.userId);
   if (!user) {
-    // Already-deleted branch: re-run the idempotent cleanup and report success so
-    // a retry after a lost response converges instead of 404-ing.
-    await session.revokeOtherUserSessions(ctx.userId, ctx.jti);
+    await session.markUserDeleted(ctx.userId);
+    await session.revokeAllUserSessions(ctx.userId);
     return { deleted: true };
   }
   const result = await store.deleteUser(ctx.userId); // 1. durable identity commit
-  await session.revokeOtherUserSessions(ctx.userId, ctx.jti); // 2. revoke OTHERS, keep caller
+  await session.markUserDeleted(ctx.userId); //          2. receipt BEFORE revoke
+  await session.revokeAllUserSessions(ctx.userId); //     3. revoke ALL incl caller
   return { deleted: result.deletedInternalUser };
 }
 
@@ -709,11 +753,12 @@ async function testUnlinkRetryConvergesAfterRevokeFailure() {
   assert.equal(await session.verifySession(appleCaller), id, 'caller remains valid throughout');
 }
 
-// CR round-5 blocker #2/#3 (multi-session delete, later non-caller DEL fails).
-// deleteUser commits first, then revokeOtherUserSessions revokes every OTHER
-// device but keeps the caller. We fail a LATER (not first/only) other-session DEL.
-// The identity is already deleted, the caller's token is deliberately still live,
-// so the client retries into the already-deleted branch and converges.
+// CR round-6 blocker #3 (multi-session delete, later session DEL fails). deleteUser
+// commits first, THEN the receipt is written, THEN revokeAllUserSessions revokes
+// every session (including the caller's). We fail a LATER (not first/only) session
+// DEL. The identity is already deleted and the receipt is written, so the client
+// retries with its now-revoked token and converges via the receipt-recovery branch
+// (not a live caller session, which round-6 forbids).
 async function testDeleteRetryConvergesAfterRevokeFailure() {
   resetKv();
   const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
@@ -728,18 +773,145 @@ async function testDeleteRetryConvergesAfterRevokeFailure() {
   kvState.failOn = null;
 
   assert.equal(await store.getUser(id), null, 'identity already deleted (durable commit)');
-  assert.equal(await session.verifySession(caller), id, 'caller token still live -> retry is possible');
-  assert.equal(await session.verifySession(other1), null, 'earlier other-device session already revoked');
-  assert.equal(await session.verifySession(other2), id, 'later other-device session still live after the failure');
+  assert.equal(await session.wasUserDeleted(id), true, 'deletion receipt written before the revoke step');
+  // Every bearer already fails: even the sessions the failed revoke left behind
+  // can't authenticate, because the user record is gone (verifySession user check).
+  assert.equal(await session.verifySession(caller), null, 'caller bearer already fails (user gone)');
+  assert.equal(await session.verifySession(other2), null, 'leftover session cannot authenticate (user gone)');
 
   const retry = await deleteAccountFlow(caller);
-  assert.equal(retry.deleted, true, 'retry converges to deleted:true via the already-deleted branch');
-  assert.equal(await session.verifySession(other2), null, 'later other-device session revoked on convergent retry');
-  assert.equal(
-    await session.verifySession(caller),
-    id,
-    'caller token deliberately left live for the client to drop locally + TTL',
+  assert.equal(retry.deleted, true, 'retry converges to deleted:true via the receipt-recovery branch');
+  assert.equal(retry.recovered, true, 'recovery used the signed claims + receipt, not a live session');
+}
+
+// CR round-6 blocker #3 (response-loss recovery WITHOUT a live bearer). A first
+// delete succeeds server-side and revokes the caller's own token, but the response
+// is lost. The client retries with the SAME, now-dead token. The receipt-recovery
+// branch decodes the token's signed claims, confirms the deletion receipt, and
+// returns deleted:true — proving recovery does not depend on keeping an auth bearer.
+async function testDeleteReceiptEnablesRevokedTokenRecovery() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  const id = user.internalId;
+  const caller = await session.issueSession(id, 'google');
+
+  const first = await deleteAccountFlow(caller);
+  assert.equal(first.deleted, true, 'first delete succeeds');
+  assert.equal(await session.verifySession(caller), null, 'caller token is dead after a successful delete');
+
+  const retry = await deleteAccountFlow(caller); // client retries with the dead token
+  assert.equal(retry.deleted, true, 'retry converges via the durable deletion receipt');
+  assert.equal(retry.recovered, true, 'retry used the receipt-recovery branch (no live bearer)');
+}
+
+// CR round-6 blocker #1 (atomic rebind vs. concurrent logout). If a logout revokes
+// the caller's session record first, the rebind's SET XX must NOT resurrect it:
+// rebind returns false and the token stays dead. The old GET-then-SET would have
+// re-created the revoked record.
+async function testRebindLosesToConcurrentLogout() {
+  resetKv();
+  seedUser('holo_rb_1');
+  const caller = await session.issueSession('holo_rb_1', 'apple');
+  const jti = decodeJti(caller);
+
+  await session.revokeSession('holo_rb_1', jti); // concurrent logout wins the race
+  const rebound = await session.rebindSessionProvider('holo_rb_1', jti, 'google');
+  assert.equal(rebound, false, 'rebind cannot resurrect a logged-out session (SET XX)');
+  assert.equal(await session.verifySession(caller), null, 'token stays dead after the failed rebind');
+}
+
+// CR round-6 blocker #1 (endpoint reports the real outcome). When the caller's
+// token is concurrently logged out between deriving ctx and the rebind, the
+// endpoint must report callerSessionRevoked:true rather than falsely claiming the
+// session survived, so the client drops the dead token.
+async function testUnlinkReportsRevokedWhenCallerTokenConcurrentlyLoggedOut() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  await store.linkIdentity(user.internalId, identity('apple', 'a-1', 'a@icloud.com'));
+  const id = user.internalId;
+  const appleCaller = await session.issueSession(id, 'apple');
+
+  const ctx = await session.verifySessionContext(appleCaller);
+  // Concurrent logout revokes the caller's token after ctx is derived, before rebind.
+  await session.revokeSession(id, ctx.jti);
+
+  const updated = await store.unlinkIdentity(ctx.userId, 'apple');
+  const remaining = updated.linkedProviders[0].provider;
+  const rebound = await session.rebindSessionProvider(ctx.userId, ctx.jti, remaining);
+  const callerSessionRevoked = !rebound;
+  await session.revokeSessionsByProvider(ctx.userId, 'apple');
+
+  assert.equal(rebound, false, 'atomic rebind fails on the already-revoked record');
+  assert.equal(callerSessionRevoked, true, 'endpoint reports callerSessionRevoked:true (no false success)');
+  assert.equal(await session.verifySession(appleCaller), null, 'caller token stays dead');
+}
+
+// CR round-6 blocker #2 (session minted inside the serialisable boundary). On the
+// returning-login path the mint callback runs while the per-user lock is HELD, so a
+// concurrent unlink/delete cannot slip in between validating the user and issuing
+// its token. On the create path there is no per-user lock — the atomic index claim
+// is the serialisation point — so the mint runs only AFTER the index commit.
+async function testLoginMintsSessionInsideSerializableBoundary() {
+  resetKv();
+
+  // Create path: the index must already point at the new user when we mint.
+  let indexAtMint = null;
+  const created = await store.loginOrCreate(
+    identity('google', 'g-new', 'x@example.com'),
+    async (uid) => {
+      indexAtMint = kvState.values.get('auth:idx:google:g-new');
+      return session.issueSession(uid, 'google');
+    },
   );
+  assert.equal(created.isNew, true);
+  assert.equal(indexAtMint, created.user.internalId, 'create-path mint runs after the index commit');
+  assert.equal(await session.verifySession(created.session), created.user.internalId, 'created session verifies');
+
+  // Returning path: the per-user lock must be held when we mint.
+  let lockHeldAtMint = null;
+  const returning = await store.loginOrCreate(
+    identity('google', 'g-new', 'x@example.com'),
+    async (uid) => {
+      lockHeldAtMint = kvState.values.has(`auth:lock:${uid}`);
+      return session.issueSession(uid, 'google');
+    },
+  );
+  assert.equal(returning.isNew, false);
+  assert.equal(lockHeldAtMint, true, 'returning-login mints its session while holding the per-user lock');
+  assert.equal(await session.verifySession(returning.session), returning.user.internalId, 'returning session verifies');
+}
+
+// CR round-6 blocker #2 (login vs. delete). A returning login (minting a session)
+// and a delete of the same user race. A minted session must never point at a
+// deleted user: because the mint shares the login lock and login re-reads the index
+// under it, login either refreshes a live user or falls through to create a fresh
+// one — never resurrects the deleted record, and never issues a session for it.
+async function testConcurrentLoginAndDeleteNeverMintsSessionForDeletedUser() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-del', 'a@example.com', 'Ann'));
+  const id = user.internalId;
+
+  const results = await Promise.allSettled([
+    store.loginOrCreate(identity('google', 'g-del', 'a@example.com', 'Ann'), (uid) =>
+      session.issueSession(uid, 'google'),
+    ),
+    store.deleteUser(id),
+  ]);
+
+  const login = results[0];
+  if (login.status === 'fulfilled' && login.value.session) {
+    const resolved = await session.verifySession(login.value.session);
+    assert.ok(resolved, 'any minted session must verify against a live user');
+    assert.ok(
+      kvState.values.has(`auth:user:${resolved}`),
+      'a minted session never points at a deleted user',
+    );
+  }
+  // No identity index may dangle to a missing user.
+  for (const key of indexKeys()) {
+    const owner = kvState.values.get(key);
+    assert.ok(kvState.values.has(`auth:user:${owner}`), `index ${key} -> missing user ${owner}`);
+  }
 }
 
 function decodeJti(token) {
@@ -764,7 +936,8 @@ function decodeJti(token) {
     testSessionRevocationStopsStolenToken,
     testUnlinkRevokesOnlyRemovedProviderSessions,
     testSessionContextCarriesProvider,
-    testDeleteRevokesOtherSessionsButKeepsCaller,
+    testDeleteRevokesAllSessionsIncludingCaller,
+    testVerifySessionRejectsDeletedUser,
     testUnlinkPartialWriteConverges,
     testDeleteDoesNotStompReclaimedIndex,
     testLockLeaseExceedsHandlerBudget,
@@ -776,6 +949,11 @@ function decodeJti(token) {
     testUnlinkOtherProviderKeepsCallerSession,
     testUnlinkRetryConvergesAfterRevokeFailure,
     testDeleteRetryConvergesAfterRevokeFailure,
+    testDeleteReceiptEnablesRevokedTokenRecovery,
+    testRebindLosesToConcurrentLogout,
+    testUnlinkReportsRevokedWhenCallerTokenConcurrentlyLoggedOut,
+    testLoginMintsSessionInsideSerializableBoundary,
+    testConcurrentLoginAndDeleteNeverMintsSessionForDeletedUser,
   ];
   for (const test of tests) {
     await test();

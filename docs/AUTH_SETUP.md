@@ -18,7 +18,7 @@
 | --- | --- |
 | 伺服器身份存放（KV：唯一 claim、per-user lock、login/link/unlink/delete + 錯誤碼） | `api/_lib/identity-store.ts` |
 | provider `id_token` 伺服器驗簽（Google RS256 / Apple ES256，JWKS 快取） | `api/_lib/verify-token.ts` |
-| HMAC session 簽發 + KV session 記錄 / 撤銷（登出、解綁撤銷其他 session、刪除撤銷全部） | `api/_lib/session.ts` |
+| HMAC session 簽發 + KV session 記錄 / 撤銷（登出撤銷本 session、解綁撤銷被移除 provider 的 session（發起端 token 原子 re-bind 保留）、刪除撤銷全部 + 刪除收據） | `api/_lib/session.ts` |
 | 共用端點輔助（json、錯誤碼→HTTP、旗標、backend 可用性、session 解析） | `api/_lib/auth-endpoint.ts` |
 | 登入 / 綁定 / 解綁 / 登出 / 刪除端點（單一 dynamic route，session 授權，fail-closed） | `api/auth/[action].ts` |
 | 前端 auth service（PKCE 取 id_token → 呼叫端點，fail-closed） | `src/services/authService.ts` |
@@ -86,9 +86,10 @@ Apple 撤銷是刪除的**前置條件**且在任何身份寫入**之前**執行
 ### fail-closed 行為
 
 - **Apple 撤銷未確認成功前不動任何資料**：撤銷是刪除的前置條件且在 `identity-store` 級聯刪除**之前**執行，因此未設定 / 未實作 / 撤銷失敗 / 網路錯誤 → 回 501/502，此時**確實未刪除**任何伺服器資料。
-- **撤銷通過後才刪除，且順序為 identity 先刪、session 清理在後**：一旦進入級聯刪除，identity 便已 durable committed。若之後的清理步驟失敗而回 5xx，帳號其實**已刪**，結果為不確定（indeterminate）而非「未刪」——舊文案「非 2xx 一律不刪任何資料」在此情境並不成立，故不再如此保證。
-- **呼叫方自己的 session token 在刪除流程中刻意不被撤銷**（`revokeOtherUserSessions` 只撤其他裝置），使不確定結果可**重試收斂**：client 保有有效 token、重試會走 already-deleted 分支回 `deleted: true`。
-- client 只有在後端回 `{ deleted: true }` 時才清除本機 session。非成功時 `deleteAccount()` throw：對 501/502 提示「刪除尚未完成」，對 5xx / 網路中斷提示「無法確認、你的登入仍有效、請稍後再試」，兩者皆維持登入，不誤示為已刪除。
+- **撤銷通過後才刪除，且順序為 identity 先刪、收據、再 session 清理**：一旦進入級聯刪除，identity 便已 durable committed。若之後的清理步驟失敗而回 5xx，帳號其實**已刪**，結果為不確定（indeterminate）而非「未刪」——舊文案「非 2xx 一律不刪任何資料」在此情境並不成立，故不再如此保證。
+- **成功刪除會撤銷該 user 的所有 session，含發起端自己**（`revokeAllUserSessions`）：這是全域撤銷契約——刪除成功後任何 bearer（包含發起端 token）都不得再通過驗證（`verifySessionContext` 另加使用者存在檢查，deleted user 的 token 一律 fail）。
+- **回應遺失以持久化刪除收據重試收斂，而非保留活的授權憑證**：刪除成功會寫入 `auth:deleted:{userId}` 收據（在撤銷發起端 token **之前**寫入）。若回應遺失、client 帶著已被撤銷的同一 token 重試，端點 recovery 分支會用該 token 的**已簽名 claims**（僅驗簽章 + 未過期，不查 session 記錄）解出原 userId，確認收據存在後回 `deleted: true`，且**不授權任何動作**。
+- client 只有在後端回 `{ deleted: true }` 時才清除本機 session。非成功時 `deleteAccount()` throw：對 501/502 提示「刪除尚未完成、確實未刪」，對 5xx / 網路中斷提示「無法確認結果、帳號可能已刪、登入可能已失效、請用同一組帳號重試以確認」，皆不誤示為已刪除。
 
 ### ⚠️ 目前限制（non-shipping foundation）
 
@@ -123,7 +124,7 @@ Web Google 登入**已接線並啟用**，且為 server-authoritative：前端 `
 - [ ] **登出**後回到登入頁，重開 App 仍為登入頁。
 - [ ] **刪除帳號（成功路徑，需先完成 token store + 前端 register 串接後才可測）**：確認對話框 → 後端撤銷成功 → 顯示「帳號已刪除」→ 本機 session 清除 → 回到登入頁；於 Apple ID 設定中該 App 授權消失。
 - [ ] **刪除帳號（fail-closed，Apple 撤銷未設定 / 未實作 → 501/502）**：顯示「刪除尚未完成」→ **仍為登入狀態**、session 未清除，不誤示為已刪除（此時後端確實未刪任何資料）。
-- [ ] **刪除帳號（不確定結果，撤銷通過但後續清理 5xx / 網路中斷）**：顯示「無法確認、請稍後再試」→ **仍為登入狀態**（token 刻意保留）；**重試**後收斂為「帳號已刪除」→ session 清除、回登入頁，不會卡在死 token 401。
+- [ ] **刪除帳號（不確定結果，撤銷通過但後續清理 5xx / 網路中斷）**：顯示「尚未確認刪除結果、帳號可能已刪、登入可能已失效、請重試以確認」→ 本機仍保留 session 供重試；**重試**（帶同一組已可能被撤銷的 token）後由後端刪除收據 recovery 分支收斂為「帳號已刪除」→ session 清除、回登入頁，不會卡在死 token 401。
 - [ ] 「隱私權政策與資料刪除說明」連結可開啟。
 - [ ] 在 App Store Connect 填寫隱私權政策 URL 與資料刪除說明。
 - [ ] 送審前確認：有 Google 登入的畫面同時提供 Sign in with Apple（規範 4.8）。
