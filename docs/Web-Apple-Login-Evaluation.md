@@ -8,9 +8,9 @@
 
 - **Web Google 登入：已實作並啟用，且為伺服器權威（server-authoritative）。**
   前端（`src/services/authService.ts` 的 `signInWithProvider('google')`）以 expo-auth-session PKCE
-  取得 Google `id_token` 後，POST 至 `/api/auth/login`；伺服器 `api/lib/verify-token.ts` 以 Google
+  取得 Google `id_token` 後，POST 至 `/api/auth/login`；伺服器 `api/_lib/verify-token.ts` 以 Google
   公鑰（`oauth2/v3/certs`）驗簽章 / `iss` / `aud` / `exp` / `nonce`，通過後由
-  `api/lib/identity-store.ts`（Vercel KV）以 internal user id 建立 / 對應身份並發 HMAC session。
+  `api/_lib/identity-store.ts`（Vercel KV）以 internal user id 建立 / 對應身份並發 HMAC session。
   身份**不再存於瀏覽器 localStorage**，也**不再**用前端 `oauth2/v3/userinfo` 當身份來源。
 - **Web Apple 登入：id_token 驗簽端點已就緒，但整體流程尚未完成，刻意不啟用。**
   由**兩道旗標**關閉：前端 `APPLE_LOGIN_ENABLED = false`（`src/services/authService.ts`，寫死）、
@@ -25,14 +25,14 @@
 
 ## 為什麼 Web Apple 目前不啟用
 
-**已完成的部分（僅驗簽端點）：** `/api/auth/login` 與 `api/lib/verify-token.ts` 已支援
+**已完成的部分（僅驗簽端點）：** `/api/auth/login` 與 `api/_lib/verify-token.ts` 已支援
 `provider=apple`（以 Apple 公鑰 `https://appleid.apple.com/auth/keys` 驗 ES256 簽章 /
 `iss` / `aud` = Services ID / `exp` / `nonce`）。這代表「拿到 Apple id_token 後能被伺服器驗證」
 這一段已就緒，且已納入 `scripts/test-auth-backend.cjs` 迴歸。
 
 **尚未完成、必須補齊的程式碼工作（不是翻旗標就能解決）：**
 
-1. **refresh_token 儲存層仍是樁（stub）。** `api/lib/apple-token-store.ts` 的三個函式尚未接
+1. **refresh_token 儲存層仍是樁（stub）。** `api/_lib/apple-token-store.ts` 的三個函式尚未接
    後端持久化：`persistAppleRefreshToken` 直接丟 `TokenStoreNotImplementedError`（呼叫端回 501）、
    `getStoredAppleRefreshToken` 回 `null`。因此帳號刪除端（`api/auth/[action].ts` 的
    `handleDeleteAccount`）對 Apple 使用者取不到 refresh_token → **fail-closed 回 501，無法完成刪除**。
@@ -54,7 +54,7 @@
    待上述程式碼與後台工作完成再開通。
 
 > Apple private relay / hide-my-email 的處理不是關閉原因：identity key 一律用 Apple `sub`
-> （`api/lib/identity-store.ts` 以 `(provider, subject)` 為唯一鍵），email 只是快照，
+> （`api/_lib/identity-store.ts` 以 `(provider, subject)` 為唯一鍵），email 只是快照，
 > 不參與身份判斷或自動合併，架構本身已相容 private relay。
 
 ## Apple Developer 後台設定清單（啟用 Web Apple 所需）
@@ -71,7 +71,7 @@
 | **Domain verification / association file** | 下載 Apple 提供的 `apple-developer-domain-association.txt`，放到 `https://<domain>/.well-known/apple-developer-domain-association.txt` | 建議放 `public/.well-known/`；Apple 會抓取驗證網域所有權 |
 | **Sign in with Apple Key（.p8）** | Keys → 新建 Sign in with Apple 私鑰，記下 **Key ID**，下載 `.p8`（只能下載一次） | 對應 `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY`；`.p8` **不進 repo** |
 | **Team ID** | 帳號右上角 | 對應 `APPLE_TEAM_ID` |
-| **Client secret** | 由 Team ID + Key ID + `.p8` 以 ES256 動態簽 JWT（**有效上限 6 個月**） | 已有產生器 `api/lib/apple-auth.ts` 的 `buildAppleClientSecret`（目前簽 5 分鐘效期供 token/revoke 用）；web 登入驗證可沿用同一組金鑰 |
+| **Client secret** | 由 Team ID + Key ID + `.p8` 以 ES256 動態簽 JWT（**有效上限 6 個月**） | 已有產生器 `api/_lib/apple-auth.ts` 的 `buildAppleClientSecret`（目前簽 5 分鐘效期供 token/revoke 用）；web 登入驗證可沿用同一組金鑰 |
 
 ### Web domain 對應限制
 
@@ -105,13 +105,13 @@
 
 1. 前端走 Apple authorize，拿到 `id_token`（`authService.ts` 已具雛形）。**尚待補**：同時取出 fresh
    authorizationCode，並帶 session Bearer 呼叫 `/api/auth/apple/register` 保存 refresh_token。
-2. `api/lib/verify-token.ts` 的 `verifyAppleIdToken` 以 Apple 公鑰（`https://appleid.apple.com/auth/keys`）
+2. `api/_lib/verify-token.ts` 的 `verifyAppleIdToken` 以 Apple 公鑰（`https://appleid.apple.com/auth/keys`）
    驗 `id_token` ES256 簽章 / `iss` / `aud`（= Services ID）/ `exp` / `nonce`，通過後取 `sub` 當 provider identity key
    —— 此段**已完成**，並已納入 `scripts/test-auth-backend.cjs` 的身份存放層迴歸測試。
-3. `/api/auth/login` 映射到共通 internal user（`api/lib/identity-store.ts` 的 `loginOrCreate` / `link`），
+3. `/api/auth/login` 映射到共通 internal user（`api/_lib/identity-store.ts` 的 `loginOrCreate` / `link`），
    沿用唯一約束（`(provider, subject)` 原子 claim）與 collision（`IDENTITY_ALREADY_LINKED`）流程。
 4. `register`（`api/auth/apple/register.ts`）現在以 session 推導 userId、不信任 request body；
-   但其底層 `api/lib/apple-token-store.ts` **仍是樁**，`delete-account` 對 Apple 使用者因此 fail-closed。
+   但其底層 `api/_lib/apple-token-store.ts` **仍是樁**，`delete-account` 對 Apple 使用者因此 fail-closed。
    **尚待補**：實作真正的伺服器端加密 refresh_token 儲存。
 5. **待辦（依序）**：(a) 實作 token store；(b) 前端補 authorizationCode + register 呼叫；
    (c) 完成 Apple 後台設定（Services ID / Return URL / `.p8` / domain association）並於 Vercel 設好
@@ -132,10 +132,10 @@
 - 優點：驗證與金鑰輪替託管，省事。
 - 成本：多一個供應商依賴與資料處理者；需與現有 localStorage / 自建後端整合策略對齊。
 
-**建議**：因 repo 已有 `api/lib/apple-auth.ts`（client secret / token / revoke）且不希望新增供應商依賴，
+**建議**：因 repo 已有 `api/_lib/apple-auth.ts`（client secret / token / revoke）且不希望新增供應商依賴，
 啟用時優先走**路徑 A**。但**「只補一支 id_token 驗簽端點」的說法是錯的**——驗簽端點其實**已經完成**，
 真正卡住的是下列尚未完成的工作，啟用前全部必補（詳見「為什麼不啟用」與本路徑 1./4./5.）：
-1. **實作 `api/lib/apple-token-store.ts` 的伺服器端加密 refresh_token 儲存**（目前為樁，Apple 刪帳號 fail-closed 回 501）；
+1. **實作 `api/_lib/apple-token-store.ts` 的伺服器端加密 refresh_token 儲存**（目前為樁，Apple 刪帳號 fail-closed 回 501）；
 2. **前端 `authService.ts` 於 Apple authorize 後取出 fresh authorizationCode，並帶 session Bearer 呼叫
    `/api/auth/apple/register`**（目前只取 id_token、未串接 register，因此登入當下不會保存 refresh_token）；
 3. **Apple 後台前置設定**：Web 用 Services ID、Return URL / Domains、domain association file、`.p8` 金鑰，
@@ -147,8 +147,8 @@
 
 > ⚠️ 只有第一項完成；其餘皆為未完成的**程式碼或設定**工作。翻旗標是最後一步，不是唯一一步。
 
-- [x] 伺服器端 id_token 驗簽端點（路徑 A）：`api/lib/verify-token.ts` + `/api/auth/login` 已支援 `provider=apple`。
-- [ ] **程式碼**：實作 `api/lib/apple-token-store.ts` 的真正伺服器端加密 refresh_token 儲存
+- [x] 伺服器端 id_token 驗簽端點（路徑 A）：`api/_lib/verify-token.ts` + `/api/auth/login` 已支援 `provider=apple`。
+- [ ] **程式碼**：實作 `api/_lib/apple-token-store.ts` 的真正伺服器端加密 refresh_token 儲存
       （目前為樁 → Apple 帳號刪除 fail-closed 回 501）。
 - [ ] **程式碼**：Web 前端 `authService.ts` 於 Apple authorize 後取出 fresh authorizationCode，
       並帶 session Bearer 呼叫 `/api/auth/apple/register`（目前只取 id_token、未呼叫 register）。

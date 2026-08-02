@@ -13,7 +13,8 @@
 import { deleteUser, getUser, linkIdentity, loginOrCreate, unlinkIdentity } from '../_lib/identity-store';
 import {
   issueSession,
-  revokeAllUserSessions,
+  rebindSessionProvider,
+  revokeOtherUserSessions,
   revokeSession,
   revokeSessionsByProvider,
 } from '../_lib/session';
@@ -87,25 +88,25 @@ async function handleUnlink(req: Request): Promise<Response> {
   if (!isProvider(body.provider)) return json({ error: 'invalid_provider' }, 400);
 
   const user = await unlinkIdentity(ctx.userId, body.provider);
-  // Removing a login method revokes exactly the sessions that provider minted —
-  // including the caller's own token if it came from the removed provider — while
-  // leaving other still-linked providers' sessions intact (CR blocker #2).
+
+  // Recoverable caller-session handling (CR round-5 blocker #1). If the caller's
+  // own token was minted by the provider being removed, RE-BIND that token to a
+  // still-linked provider BEFORE the provider-scoped revoke, instead of revoking
+  // it and minting a replacement. Re-binding keeps the SAME token valid, so there
+  // is no new credential to deliver and a lost response is harmless — the client
+  // keeps using its existing token. The revoke below then skips the caller (its
+  // provider no longer matches) and kills every OTHER token the removed provider
+  // minted. unlink + re-bind + revoke are each idempotent, so a retry converges
+  // and the caller is never left holding a dead token.
+  if (ctx.provider === body.provider) {
+    const remaining = user.linkedProviders[0]?.provider; // last-method guard ⇒ ≥1 remains
+    if (remaining) await rebindSessionProvider(ctx.userId, ctx.jti, remaining);
+  }
   await revokeSessionsByProvider(ctx.userId, body.provider);
 
-  // Stale-caller-session fix (CR round-4 blocker #1). If the caller's own token
-  // was minted by the just-unlinked provider it is now revoked, so returning only
-  // { ok, user } would leave the client holding a dead token while it still
-  // believes it is authenticated. Tell the client the caller session was revoked
-  // AND rotate it to a fresh session bound to a still-linked provider (the
-  // last-method guard guarantees at least one remains), so the same internal user
-  // stays signed in instead of being silently broken until the next reload.
-  const callerSessionRevoked = ctx.provider === body.provider;
-  let session: string | undefined;
-  if (callerSessionRevoked) {
-    const remaining = user.linkedProviders[0]?.provider;
-    if (remaining) session = await issueSession(user.internalId, remaining);
-  }
-  return json({ ok: true, user, callerSessionRevoked, session }, 200);
+  // The caller's token is always still valid here (either untouched, or re-bound
+  // above), so callerSessionRevoked is false and the client keeps its session.
+  return json({ ok: true, user, callerSessionRevoked: false }, 200);
 }
 
 async function handleLogout(req: Request): Promise<Response> {
@@ -116,17 +117,18 @@ async function handleLogout(req: Request): Promise<Response> {
 }
 
 async function handleDeleteAccount(req: Request): Promise<Response> {
-  const userId = await sessionUserId(req);
-  if (!userId) return json({ error: 'INVALID_TOKEN', reason: 'invalid_session' }, 401);
+  const ctx = await sessionContext(req);
+  if (!ctx) return json({ error: 'INVALID_TOKEN', reason: 'invalid_session' }, 401);
+  const userId = ctx.userId;
 
   const user = await getUser(userId);
   if (!user) {
     // Already deleted, OR a retry after a partial delete whose identity mutation
     // succeeded but a later cleanup step (session revocation / Apple token) did
-    // not. Deletion is idempotent (CR round-4 blocker #2): re-run the idempotent
+    // not. Deletion is idempotent (CR round-4/5 blocker #2): re-run the idempotent
     // cleanups and report success so the retry converges instead of returning 404.
     await deleteStoredAppleRefreshToken(userId);
-    await revokeAllUserSessions(userId);
+    await revokeOtherUserSessions(userId, ctx.jti);
     return json({ deleted: true, revokedApple: false }, 200);
   }
 
@@ -144,16 +146,19 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
     if (!revoked) return json({ deleted: false, reason: 'revoke_failed' }, 502);
   }
 
-  // Retry-convergent ordering (CR round-4 blocker #2). Delete the identity FIRST
-  // (the durable state change), THEN discard the Apple token, and revoke sessions
-  // LAST. Because the caller's session stays live until the very last step, any
-  // failure before it lets the caller retry — and the retry lands in the
-  // already-deleted branch above, which finishes the idempotent cleanups. This
-  // avoids the old failure mode where a mutation succeeded but a later revoke
-  // failed, leaving a 500 after partial success and a misleading UI.
+  // Retry-convergent, caller-recoverable ordering (CR round-5 blocker #2). Delete
+  // the identity FIRST (the durable commit), THEN discard the Apple token, and
+  // revoke every OTHER device's session — but deliberately NOT the caller's own.
+  // Keeping the caller's token valid until the response is delivered is what makes
+  // this recoverable: if any write here fails, the caller retries with a live
+  // token and lands in the already-deleted branch above (which re-runs the
+  // idempotent cleanup) rather than being locked out by a dead-token 401 that
+  // leaves the UI wrongly claiming the account was not deleted. The caller drops
+  // its own token locally on success; that record points at a deleted user, is
+  // inert, and expires via TTL.
   const result = await deleteUser(userId);
   if (hasApple) await deleteStoredAppleRefreshToken(userId);
-  await revokeAllUserSessions(userId);
+  await revokeOtherUserSessions(userId, ctx.jti);
   return json({ deleted: result.deletedInternalUser, revokedApple: hasApple }, 200);
 }
 

@@ -234,27 +234,20 @@ export async function linkProvider(
   return toHoloUser(data.user);
 }
 
-export interface UnlinkResult {
-  user: HoloUser;
-  // Present only when the caller's own session was minted by the just-unlinked
-  // provider and the server rotated it to a still-linked provider (CR round-4
-  // blocker #1). The client MUST adopt it, otherwise it keeps a revoked token.
-  session?: string;
-  callerSessionRevoked: boolean;
-}
-
+// Unlink never revokes the caller's own token (CR round-5 blocker #1). When the
+// caller's session was minted by the provider being removed, the server RE-BINDS
+// that same token to a still-linked provider (same token string, no new
+// credential) before doing the provider-scoped revoke, so there is nothing to
+// deliver back and a lost response is harmless — the client keeps using the same
+// still-valid session. We therefore only need the updated user here.
 export async function unlinkProvider(
   session: string,
   provider: AuthProvider,
-): Promise<UnlinkResult> {
+): Promise<HoloUser> {
   const res = await apiPost('/auth/unlink', { provider }, session);
   const data = await readJson(res);
   if (!res.ok) throw toAuthError(data, res.status, provider);
-  return {
-    user: toHoloUser(data.user),
-    session: typeof data.session === 'string' ? data.session : undefined,
-    callerSessionRevoked: Boolean(data.callerSessionRevoked),
-  };
+  return toHoloUser(data.user);
 }
 
 // Server-side session revocation. Logout must always clear LOCAL state (the
@@ -274,12 +267,41 @@ export async function logoutSession(session: string): Promise<boolean> {
 }
 
 // Shared server delete/revoke flow. Resolves normally ONLY when the server
-// confirms deletion; otherwise throws so the client keeps the session (the UI
-// must not claim the account was deleted).
+// confirms deletion (`deleted: true`); otherwise throws so the UI never claims
+// the account was deleted.
+//
+// Recoverability (CR round-5 blocker #2): the server never revokes the caller's
+// OWN token during delete, so any thrown outcome here — a 5xx after the durable
+// identity commit, or a lost/failed response — is recoverable: the same session
+// is still valid and a retry converges (the server's already-deleted branch
+// re-runs the idempotent cleanup and returns `deleted: true`). We surface that
+// truthfully instead of a flat "failed": a network error or a 5xx is INDETERMINATE
+// (the delete may already have happened) and the user should retry; a fail-closed
+// 501/502 (e.g. Apple revocation not configured / revoke failed) means the account
+// was genuinely NOT deleted and carries its own reason.
 export async function deleteAccount(session: string): Promise<void> {
-  const res = await apiPost('/auth/delete-account', {}, session);
-  const data = await readJson(res);
-  if (!res.ok || data?.deleted !== true) {
-    throw toAuthError(data, res.status);
+  let res: Response;
+  try {
+    res = await apiPost('/auth/delete-account', {}, session);
+  } catch {
+    // Never reached the server, or the response was lost. The account may or may
+    // not be deleted; the session is still valid, so a retry is safe.
+    throw new AuthError(
+      '目前無法確認帳號是否已刪除（連線中斷）。你的登入仍然有效，請稍後再試一次。',
+      0,
+      'delete_indeterminate',
+    );
   }
+  const data = await readJson(res);
+  if (data?.deleted === true) return;
+  if (res.status >= 500) {
+    // Server error AFTER a possible durable commit. Indeterminate + retryable.
+    throw new AuthError(
+      '目前無法確認帳號是否已刪除（伺服器忙碌）。你的登入仍然有效，請稍後再試一次。',
+      res.status,
+      'delete_indeterminate',
+    );
+  }
+  // 4xx / fail-closed 501/502: the account was genuinely not deleted.
+  throw toAuthError(data, res.status);
 }

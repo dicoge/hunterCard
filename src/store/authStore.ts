@@ -114,15 +114,14 @@ export const useAuthStore = create<AuthStore>()(
         if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          const result = await unlinkProvider(session, provider);
-          // If the caller's own session was minted by the unlinked provider the
-          // server revoked it and issued a fresh one bound to a still-linked
-          // provider (CR round-4 blocker #1). Adopt the rotated session so we
-          // don't persist a dead token and get silently logged out on reload;
-          // otherwise keep the current session.
+          // The caller's session is never revoked by unlink (CR round-5 blocker
+          // #1): if it was minted by the removed provider the server re-binds the
+          // SAME token to a still-linked provider, so we keep the existing session
+          // and only adopt the updated user.
+          const updatedUser = await unlinkProvider(session, provider);
           set({
-            user: result.user,
-            session: result.session ?? session,
+            user: updatedUser,
+            session,
             isAuthenticated: true,
             isLoading: false,
           });
@@ -159,7 +158,10 @@ export const useAuthStore = create<AuthStore>()(
         set({ isLoading: true, error: null });
         try {
           // Resolves only on server-confirmed deletion; otherwise throws and we
-          // keep the session (do not claim the account was deleted).
+          // keep the session so the user can retry (CR round-5 blocker #2). The
+          // server never revokes the caller's own token during delete, so an
+          // indeterminate failure is safely retryable and the surfaced message is
+          // truthful about that rather than flatly claiming the delete failed.
           await deleteAccount(session);
           set({
             user: null,
@@ -171,7 +173,7 @@ export const useAuthStore = create<AuthStore>()(
             role: 'guest',
           });
         } catch (err: any) {
-          set({ isLoading: false, error: err.message || 'Failed to delete account' });
+          set({ isLoading: false, error: err.message || '刪除帳號時發生問題，你的登入仍然有效，請稍後再試。' });
           throw err;
         }
       },

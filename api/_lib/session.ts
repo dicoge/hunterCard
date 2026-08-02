@@ -137,6 +137,29 @@ export async function revokeSession(userId: string, jti: string): Promise<void> 
 }
 
 /**
+ * Re-bind an existing session to a different provider WITHOUT minting a new token
+ * (CR round-5 blocker #1). Used by unlink: when the caller's own token was minted
+ * by the provider being removed, we switch the token's stored provider to a still-
+ * linked one instead of revoking it. The token string is unchanged, so nothing has
+ * to be delivered back to the client and a lost response is harmless — the client
+ * keeps using the SAME, still-valid token. The follow-up provider-scoped revoke
+ * then skips this session (its provider no longer matches the removed one). No-op
+ * if the session record is already gone (expired) — we never resurrect it. The TTL
+ * is preserved via KEEPTTL so re-binding doesn't extend the session's lifetime.
+ */
+export async function rebindSessionProvider(
+  userId: string,
+  jti: string,
+  provider: SessionProvider,
+): Promise<boolean> {
+  const existing = readRecord(await kv.get(SESSION_KEY(jti)));
+  if (!existing || existing.sub !== userId) return false;
+  const record: SessionRecord = { sub: userId, provider };
+  await kv.set(SESSION_KEY(jti), record, { keepTtl: true });
+  return true;
+}
+
+/**
  * Revoke exactly the sessions minted by a given provider identity (used after
  * unlink). CR blocker #2: unlinking a provider must invalidate the tokens that
  * provider created — including the caller's own token if it was minted by the
@@ -159,9 +182,26 @@ export async function revokeSessionsByProvider(
   }
 }
 
-/** Revoke every session for a user (used on account deletion). */
-export async function revokeAllUserSessions(userId: string): Promise<void> {
+/**
+ * Revoke every session for a user EXCEPT the caller's own (`exceptJti`), used on
+ * account deletion (CR round-5 blocker #2). Deliberately leaving the caller's token
+ * live until the response is delivered is what makes delete retry-convergent: if
+ * any write here fails, the caller can retry with its still-valid token and the
+ * retry re-runs this idempotent cleanup, instead of getting a dead-token 401 that
+ * strands a half-finished delete. The caller drops its own token locally on
+ * success; that record points at a now-deleted user (every authenticated action
+ * through it fails closed with USER_NOT_FOUND) and expires via its TTL. The
+ * membership set is cleared last only after the caller entry is re-added, so the
+ * caller's own record is the single intentional leftover.
+ */
+export async function revokeOtherUserSessions(userId: string, exceptJti: string): Promise<void> {
   const jtis = ((await kv.smembers(USER_SESSIONS_KEY(userId))) as string[] | null) ?? [];
-  for (const jti of jtis) await kv.del(SESSION_KEY(jti));
+  for (const jti of jtis) {
+    if (jti === exceptJti) continue;
+    await kv.del(SESSION_KEY(jti));
+  }
+  // Rewrite the membership set to contain only the caller (if it is still a
+  // member), so a later enumeration doesn't resurrect revoked jtis.
   await kv.del(USER_SESSIONS_KEY(userId));
+  if (jtis.includes(exceptJti)) await kv.sadd(USER_SESSIONS_KEY(userId), exceptJti);
 }
