@@ -10,6 +10,7 @@
     "build": "expo export --platform web && node scripts/fix-html.js",
     "test:push-backend": "node scripts/test-push-backend.cjs",
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",
+    "test:auth-client": "node --experimental-strip-types scripts/verify-google-client-selection.mjs",
     "test:scan-geometry": "node scripts/benchmarks/scan-geometry.test.cjs",
     "benchmark:scan-recognition": "node scripts/benchmarks/scan-recognition-benchmark.cjs"
   },

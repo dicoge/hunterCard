@@ -2,10 +2,9 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
-import { Text, View, StyleSheet, Image, Platform, ActivityIndicator } from 'react-native';
+import { Text, View, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import AuthScreen from '../screens/AuthScreen';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -194,10 +193,6 @@ function StackNavigator() {
     </Stack.Navigator>
   );
 }
-
-// iOS 上架若提供社群登入，必須提供 Sign in with Apple，因此 iOS 強制登入。
-// Web / Android 的 Google 登入尚未接線，暫時以訪客模式進入（見 docs/AUTH_SETUP.md）。
-const REQUIRE_AUTH = Platform.OS === 'ios';
 
 // Root Navigator
 export default function AppNavigator() {

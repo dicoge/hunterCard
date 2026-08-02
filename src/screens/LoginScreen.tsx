@@ -10,6 +10,17 @@ import {
 import { COLORS, APP_NAME } from '../constants';
 import { useAuthStore } from '../store/authStore';
 import { showAlert } from '../utils/platformAlert';
+import {
+  GOOGLE_LOGIN_CONFIGURED,
+  APPLE_LOGIN_ENABLED,
+  APPLE_COMING_SOON_LABEL,
+  APPLE_COMING_SOON_MESSAGE,
+} from '../services/authService';
+
+// __DEV__ is a React Native global; declare it so this compiles under plain tsc.
+declare const __DEV__: boolean;
+
+const IS_DEV = typeof __DEV__ !== 'undefined' && __DEV__;
 
 export default function LoginScreen() {
   const {
@@ -21,19 +32,22 @@ export default function LoginScreen() {
     clearError,
   } = useAuthStore();
 
+  // Keep the button tappable in dev even without env so the raw "Missing client
+  // ID" message still surfaces for debugging; in production a missing client id
+  // means the button is disabled with a friendly note instead (DIC-824).
+  const googleTappable = GOOGLE_LOGIN_CONFIGURED || IS_DEV;
+
   const handleGoogleLogin = useCallback(async () => {
+    if (!googleTappable) return;
     try {
       await loginWithGoogle();
     } catch {}
-  }, [loginWithGoogle]);
+  }, [googleTappable, loginWithGoogle]);
 
   const handleAppleLogin = useCallback(async () => {
     try {
       await loginWithApple();
     } catch (err: any) {
-      // authService throws an explanatory message when web Apple login is not
-      // yet available (needs server-side token verification) — surface it so the
-      // CTA responds instead of silently no-opping.
       showAlert('Apple 登入', String(err?.message ?? '無法完成 Apple 登入，請稍後再試。'));
     }
   }, [loginWithApple]);
@@ -62,9 +76,9 @@ export default function LoginScreen() {
           )}
 
           <TouchableOpacity
-            style={[styles.googleButton, isLoading && styles.buttonDisabled]}
+            style={[styles.googleButton, (isLoading || !googleTappable) && styles.buttonDisabled]}
             onPress={handleGoogleLogin}
-            disabled={isLoading}
+            disabled={isLoading || !googleTappable}
             activeOpacity={0.8}
           >
             {isLoading ? (
@@ -77,6 +91,13 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
+          {!GOOGLE_LOGIN_CONFIGURED && (
+            <Text style={styles.providerNote}>
+              Google 登入尚未開放，請稍後再試。
+            </Text>
+          )}
+
+          {APPLE_LOGIN_ENABLED ? (
           <TouchableOpacity
             style={[styles.appleButton, isLoading && styles.buttonDisabled]}
             onPress={handleAppleLogin}
@@ -86,6 +107,23 @@ export default function LoginScreen() {
             <Text style={styles.appleIcon}></Text>
             <Text style={styles.buttonText}>使用 Apple 帳號登入</Text>
           </TouchableOpacity>
+          ) : (
+            <View
+              style={[styles.appleButton, styles.appleButtonDisabled]}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: true }}
+            >
+              <Text style={styles.appleIcon}>{''}</Text>
+              <Text style={styles.buttonText}>使用 Apple 帳號登入</Text>
+              <View style={styles.comingSoonPill}>
+                <Text style={styles.comingSoonPillText}>{APPLE_COMING_SOON_LABEL}</Text>
+              </View>
+            </View>
+          )}
+
+          {!APPLE_LOGIN_ENABLED && (
+            <Text style={styles.providerNote}>{APPLE_COMING_SOON_MESSAGE}</Text>
+          )}
 
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
@@ -210,6 +248,31 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.7,
+  },
+  appleButtonDisabled: {
+    opacity: 0.45,
+    marginBottom: 4,
+  },
+  providerNote: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    width: '100%',
+    marginTop: 8,
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  comingSoonPill: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  comingSoonPillText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
   },
   googleIcon: {
     fontSize: 18,

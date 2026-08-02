@@ -2,6 +2,46 @@
 
 本文件說明 iOS「Sign in with Apple」的設定步驟、需要在 Apple Developer 後台配置的項目、環境變數，以及 TestFlight 驗證 checklist。
 
+## 上架 / Production 必填環境變數 checklist（DIC-824）
+
+實機/Production 出現 `Missing client ID for google` 代表對應平台的 env 沒設。**Public client id 走平台 env，不進 git；Apple secrets 只設在 Vercel。** 依平台分別確認：
+
+### Web（Vercel Project → Settings → Environment Variables）
+
+| 變數 | 必填 | 說明 |
+| --- | --- | --- |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | ✅ | Web 版 Google 登入必需；缺 → 登入按鈕自動 disable + 顯示「Google 登入尚未開放」。 |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | 選填 | 上一項的 fallback（authService 先讀 WEB，再讀這個）。 |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` / `PUSH_NOTIFY_SECRET` | 既有 | 推播後端（DIC-390），與登入無關但屬同一 Vercel env。 |
+| `APPLE_TEAM_ID` / `APPLE_CLIENT_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY` | Apple 上線前 | `/api/auth/apple/*` 與帳號刪除撤銷所需；未設時後端 fail-closed 回 501。**只設在 Vercel，勿提交。** |
+
+設完 env 後 **需重新 deploy** 才會生效（`EXPO_PUBLIC_*` 於 build 時 inline 進 bundle）。
+
+### iOS / Android（EAS → `eas secret` / `eas.json` build env）
+
+`authService` 依 `Platform.OS` 選 client id（`src/services/googleClientConfig.ts`）：iOS 用 iOS client id、Android 用 Android client id、web 用 web client id；native 缺專屬 id 時才 fallback 到 generic/web。**原生必須用該平台的 client id**——Google 的 web client 只接受 https redirect，把 web id 丟給原生 build 會導致 redirect 失敗（這正是實機「有 env 仍登不了」的原因）。
+
+| 變數 | 必填 | 說明 |
+| --- | --- | --- |
+| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | ✅ (iOS) | 原生 iOS OAuth client；redirect 用 reversed-client-id 自訂 scheme（`nativeGoogleRedirectUri`）。缺 → iOS Google 按鈕 disable。 |
+| `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` | ✅ (Android) | 原生 Android OAuth client。 |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | fallback | native 缺專屬 id 時的最後備援（僅供 dev，不保證原生 OAuth 可完成）。 |
+
+設定：`eas secret:create --scope project --name EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID --value ...`，或放進 `eas.json` 各 profile 的 `env`。改 env 後需重新 EAS build。
+
+> ⚠️ 原生 redirect scheme（reversed client id，例如 `com.googleusercontent.apps.1234-abc`）也要加進 iOS `CFBundleURLSchemes` / app config，實機 OAuth 才會 callback 回 App。設定後需以 EAS dev/preview build 做一次實機 OAuth smoke（Expo Go 無法測原生 redirect）。
+
+### Apple 目前狀態（與後端能力一致）
+
+- Client 端 Apple 登入 **停用**（`APPLE_LOGIN_ENABLED = false`，`src/services/authService.ts`）：client 無法安全驗證 Apple ID token 的簽章/issuer/audience/expiry/nonce。
+- 後端 `/api/auth/apple/register` 在 Apple env 或 token store 未就緒時回 **501**（`api/lib/apple-token-store.ts` 仍為 seam）。
+- 因此登入頁 **不再放會失敗的 Apple 主按鈕**：改為 disabled + 「即將開放」pill，不會點了才 alert。要重新開放，需先讓後端 ID-token 驗證上線，再把 `APPLE_LOGIN_ENABLED` 設為 `true`。
+
+### 缺 env 時的 UI 行為（本 issue 修正）
+
+- **Google 缺 client id**：按鈕 disable + 灰字「Google 登入尚未開放，請稍後再試」；**不再**顯示紅字 raw env 變數名。Dev（`__DEV__`）保留可點 + 原始 `Missing client ID ... EXPO_PUBLIC_...` 訊息以利除錯。
+- **Apple 未就緒**：顯示「即將開放」狀態，而非點擊後才 alert。
+
 ## 產品決策
 
 - 只支援 **Apple ID** 與 **Google** 登入，**不提供**自家 Email/密碼。
@@ -14,20 +54,20 @@
 
 | 項目 | 位置 |
 | --- | --- |
-| Apple 登入原生流程 | `src/services/auth/appleAuth.ts` |
-| Google 登入介面（尚未接線） | `src/services/auth/googleAuth.ts` |
-| 統一 auth service + 帳號刪除 API 呼叫 | `src/services/auth/index.ts` |
-| Session store（zustand + persist） | `src/stores/authStore.ts` |
-| 登入畫面 + Apple 原生按鈕 | `src/screens/AuthScreen.tsx` |
-| 登入 gate（iOS 強制登入） | `src/navigation/AppNavigator.tsx` |
-| 登出 / 刪除帳號 UI | `src/screens/SettingsScreen.tsx` |
+| Auth service（Google/Apple 流程、可登旗標、缺 env 訊息） | `src/services/authService.ts` |
+| Google OAuth client id 依平台選擇（純函式，可單元測試） | `src/services/googleClientConfig.ts` |
+| Session store（zustand + persist） | `src/store/authStore.ts` |
+| 登入畫面（Google 按鈕依 env 停用、Apple「即將開放」） | `src/screens/LoginScreen.tsx` |
+| 登入 gate | `src/navigation/AppNavigator.tsx` |
+| 設定頁登入入口 + 登出 / 刪除帳號 UI | `src/screens/SettingsScreen.tsx` |
 | Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/lib/apple-auth.ts` |
 | refresh_token 儲存介面樁（seam，尚未接持久化） | `api/lib/apple-token-store.ts` |
 | 登入時換取並保存 refresh_token | `api/auth/apple/register.ts` |
 | 帳號刪除 + Apple token 撤銷後端（用保存的 refresh_token, fail-closed） | `api/auth/delete-account.ts` |
+| Google client 選擇單元測試 | `scripts/verify-google-client-selection.mjs`（CI 於 Node 22 執行） |
 | App 設定 capability / plugin | `app.json` |
 
-App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android 因 Google 尚未接線，暫以訪客模式進入（旗標 `REQUIRE_AUTH` 於 `AppNavigator.tsx`）。
+App 行為：所有平台在 `hasHydrated` 後，未登入且非訪客時顯示 `LoginScreen`；登入或選擇訪客後進入主畫面（見 `AppNavigator.tsx` 的 `isAuthenticated || isGuest` 判斷，無平台專屬強制登入旗標）。Google 按鈕在對應平台的 client id 缺少時停用並顯示提示；Apple 目前以「即將開放」呈現（`APPLE_LOGIN_ENABLED = false`，後端 `/api/auth/apple/register` 尚回 501）。
 
 ## App 設定（已完成於 `app.json`）
 
@@ -81,12 +121,17 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 - `/api/auth/delete-account` 取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
 - 上架前必須完成：實作 `apple-token-store`（真正持久化 + 加密）、於刪除時級聯刪除 / 匿名化使用者資料。Settings 頁已標示此限制。
 
-## Google 登入後續（尚未接線）
+## Google 登入（已接線）
 
-1. `npx expo install expo-auth-session expo-web-browser`
-2. Google Cloud Console 建立 iOS / Web / Android OAuth client ID。
-3. 於 `src/services/auth/googleAuth.ts` 用 `Google.useIdTokenAuthRequest` 換 `id_token`，映射成 `AuthSession`（`isGoogleAuthConfigured()` 回傳 `true`）。
-4. Web 的登入 gate（`AppNavigator.tsx` 的 `REQUIRE_AUTH`）改為全平台強制登入。
+程式碼已完整實作，登入能否走完全取決於各平台是否設好對應的 public client id（見上方 checklist）：
+
+1. 流程實作於 `src/services/authService.ts`（`expo-auth-session` 的 `AuthRequest` + PKCE，`expo-web-browser`）。
+2. Client id 依 `Platform.OS` 由純函式 `src/services/googleClientConfig.ts` 的 `resolveGoogleClientId()` 選擇，並有單元測試（`scripts/verify-google-client-selection.mjs`，CI 於 Node 22 執行）：
+   - **web** → 一律用 web client id（`generic` 為同型別 fallback），native id 永不用於 web。
+   - **iOS / Android（production，fail-closed）**：只用該平台自己的 client id；若缺，回 `''` → `GOOGLE_LOGIN_CONFIGURED` 為 `false`，`LoginScreen` 停用 Google 按鈕並顯示友善提示。**不會**退回 web/generic id，因為 web client id 的 redirect 型別無法完成 native OAuth，硬塞會做出一顆點了必失敗的按鈕。
+   - **iOS / Android（dev-only fallback）**：僅在 `__DEV__` 建置（authService 傳 `{ dev: IS_DEV }`）時，缺平台 id 才退回 `generic` → `web`，讓開發者仍能走流程。
+3. Native（非 web）在有平台 client id 時，redirect 用反轉 client id 的自訂 scheme（`com.googleusercontent.apps.<id>:/oauthredirect`，見 `nativeGoogleRedirectUri()`）；此 scheme 需在 Google Console 對應的 OAuth client 註冊。
+4. 登入 gate 於 `AppNavigator.tsx`：`hasHydrated` 後 `isAuthenticated || isGuest ? Main : LoginScreen`，全平台一致，無平台專屬強制登入旗標。
 
 ## iOS / TestFlight 驗證 checklist
 

@@ -18,17 +18,24 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Setup Node.js
+        # Node 22 (>= 22.6) supports --experimental-strip-types, which the pure
+        # unit tests below use to import .ts helpers directly (DIC-835 CR).
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Check TypeScript types
         run: npx tsc --noEmit
-      
+
+      - name: Run unit tests (auth client selection + scan dedup)
+        run: |
+          npm run test:auth-client
+          npm run test:scan-dedup
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
