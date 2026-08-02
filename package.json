@@ -10,6 +10,7 @@
     "build": "expo export --platform web && node scripts/fix-html.js",
     "test:push-backend": "node scripts/test-push-backend.cjs",
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",
+    "test:brace-expansion": "node scripts/verify-brace-expansion.cjs",
     "test:scan-geometry": "node scripts/benchmarks/scan-geometry.test.cjs",
     "benchmark:scan-recognition": "node scripts/benchmarks/scan-recognition-benchmark.cjs"
   },
@@ -20,20 +21,19 @@
     "@react-navigation/native": "^7.2.2",
     "@react-navigation/native-stack": "^7.14.11",
     "@vercel/kv": "^3.0.0",
-    "axios": "^1.16.1",
+    "axios": "^1.19.0",
     "cheerio": "^1.2.0",
-    "expo": "~54.0.33",
-    "expo-auth-session": "^57.0.5",
+    "expo-auth-session": "~7.0.11",
     "expo-apple-authentication": "~8.0.8",
     "expo": "~54.0.36",
     "expo-camera": "~17.0.10",
-    "expo-crypto": "^57.0.1",
+    "expo-crypto": "~15.0.9",
     "expo-dev-client": "~6.0.21",
     "expo-image-picker": "~17.0.11",
     "expo-notifications": "~0.32.17",
     "expo-ocr-kit": "^0.1.4",
     "expo-status-bar": "~3.0.9",
-    "expo-web-browser": "^57.0.2",
+    "expo-web-browser": "~15.0.11",
     "node-fetch": "^2.7.0",
     "puppeteer": "^24.42.0",
     "puppeteer-extra": "^3.3.6",
@@ -53,8 +53,50 @@
   "devDependencies": {
     "@types/node-fetch": "^2.6.12",
     "@types/react": "~19.1.0",
-    "@vercel/node": "^5.7.11",
+    "@vercel/node": "^5.9.3",
     "typescript": "~5.9.2"
+  },
+  "overrides": {
+    "shell-quote": "^1.10.0",
+    "tar": "^7.5.22",
+    "form-data": "^4.0.6",
+    "fast-uri": "^3.1.4",
+    "basic-ftp": "^5.3.1",
+    "ip-address": "^10.4.0",
+    "smol-toml": "^1.7.1",
+    "ajv": "^8.20.0",
+    "path-to-regexp": "^6.3.0",
+    "@babel/core": "^7.29.7",
+    "brace-expansion@1": "^1.1.18",
+    "brace-expansion@2": "^2.1.4",
+    "cheerio": {
+      "undici": "^7.29.0"
+    },
+    "@vercel/python-analysis": {
+      "js-yaml": "^4.3.0",
+      "minimatch": "^10.2.6"
+    },
+    "cosmiconfig": {
+      "js-yaml": "^4.3.0"
+    },
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^3.15.0"
+    },
+    "puppeteer-core": {
+      "ws": "^8.21.1"
+    },
+    "metro": {
+      "ws": "^7.5.13"
+    },
+    "react-devtools-core": {
+      "ws": "^7.5.13"
+    },
+    "react-native": {
+      "ws": "^6.2.6"
+    },
+    "@react-native/dev-middleware": {
+      "ws": "^6.2.6"
+    }
   },
   "private": true
 }
