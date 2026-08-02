@@ -10,10 +10,11 @@ import type { AuthSession } from '../../types/auth';
 
 export {
   isAppleAuthAvailable,
-  isAppleCredentialAuthorized,
+  getAppleCredentialStatus,
   signInWithApple,
   APPLE_CANCEL_CODE,
 } from './appleAuth';
+export type { AppleCredentialStatus } from './appleAuth';
 
 export {
   isGoogleAuthConfigured,

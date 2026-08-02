@@ -112,9 +112,36 @@ AsyncStorage），key `holohunter-users`。這是本 PoC 模擬 server 端 ident
 - 原生 iOS 端到端（Apple / Google 登入、綁定、撤銷後強制登出）需在 iOS 模擬器 / TestFlight +
   真實 Google iOS client / Apple sandbox 帳號驗證（見 DIC-666 QA）。
 
+### CR DIC-855（第一輪 FAIL）回應
+
+第二輪針對 code review 的 client 端可修正項目做了聚焦修正：
+
+- **#3 iOS Google fail-closed**：`googleClientId()` 在 iOS 缺 `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
+  時直接拋錯，**不**再靜默退回 web client（web client 的 aud / 導回 URI 與原生流程不符）。
+  新增 `app.config.js` 動態 config，把 reversed-client-id scheme 注入 iOS `CFBundleURLTypes`。
+- **#5 Apple 憑證素材保存 + fail-safe**：綁定（linking）與登入一致，皆保存 fresh
+  `authorizationCode`（`registerAppleSession`），否則綁進來的 Apple 帳號日後無法撤銷。
+  憑證狀態改為 `getAppleCredentialStatus()` 回 `authorized|revoked|unknown|not_applicable`，
+  查詢失敗回 `unknown`（**不再**於 catch 回 true 佯稱已授權）；只有 `revoked` 才強制登出。
+- **#2 刪除誠實回報**：`deleteAccount` 回 `{ localDataDeleted, serverRevoked, reason }`。本機資料
+  一定刪除，但 501 / stub / local-only **不**被當成「Apple 授權已撤銷」；未確認時 store 記錄
+  `account_deletion_partial`，UI 不得宣稱已完全刪除。
+- **#6 Expo SDK 54 對齊**：`expo install` 修正 `expo-auth-session`（57→~7.0.11）、`expo-crypto`、
+  `expo-web-browser` 的 major 版本不符；移除 config 非法欄位 `privacyPolicyUrl`/`supportUrl`
+  （移入 `extra`）；單一 config 來源（`app.base.json` + `app.config.js`）。`npx expo-doctor` 18/18 通過。
+- **#7 針對性測試**：抽出 platform-free 身份邏輯 `src/services/auth/identityStore.ts`（僅
+  import type，可獨立測試），新增 `scripts/test-identity-store.mjs`（`npm run test:identity-store`）
+  覆蓋 新建 / private-relay 空值不覆寫 / email 非身份鍵 / 綁定 / collision / already-linked /
+  解綁保留最後一個 共 7 案，全數通過。
+
+**仍屬後端範圍（無法於本 client repo 滿足，需 DIC-662 後端實作）**：#1 server-authoritative
+one-account-across-devices、#4 DB transaction/lock 下的原子性、以及 #2 真正 fail-closed 的
+伺服器刪除 + Apple 授權撤銷。本機 `holohunter-users` 表為 PoC 替身；`api/auth/*` 目前是 501 stub。
+
 ### 後續（非本任務範圍）
 
-- 以真正的後端 `POST /api/auth/login|link`（AUTH-Architecture §5/§6）取代本機 `holohunter-users` 表。
-- 後端 Apple refresh_token 儲存 + 撤銷實作，讓刪除帳號可 fail-closed。
+- 以真正的後端 `POST /api/auth/login|link`（AUTH-Architecture §5/§6）取代本機 `holohunter-users` 表，
+  提供跨裝置單一帳號、transaction/lock 原子性（CR #1/#4）。
+- 後端 Apple refresh_token 儲存 + 撤銷實作，讓刪除帳號可真正 fail-closed（CR #2）。
 - 依 Apple HIG 於 iOS 改用官方 `AppleAuthentication.AppleAuthenticationButton`（目前為自訂按鈕，
-  功能等效；HIG polish item）。
+  功能等效；HIG polish item，位於 `LoginScreen.tsx`，與未合併的 PR #70 相同檔案，待其合併後再改）。

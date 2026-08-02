@@ -38,8 +38,6 @@
         "android.permission.RECORD_AUDIO"
       ]
     },
-    "privacyPolicyUrl": "https://card-hunter-mu.vercel.app/privacy",
-    "supportUrl": "https://card-hunter-mu.vercel.app/support",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png",
@@ -72,12 +70,15 @@
         }
       ],
       "expo-notifications",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {
         "projectId": "ca0d046f-cb70-4a42-b36c-2d7f7e01482d"
-      }
+      },
+      "privacyPolicyUrl": "https://card-hunter-mu.vercel.app/privacy",
+      "supportUrl": "https://card-hunter-mu.vercel.app/support"
     },
     "owner": "dicoge"
   }

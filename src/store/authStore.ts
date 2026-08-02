@@ -13,7 +13,7 @@ import {
   unlinkProvider,
   deleteAccount,
   providerSignOut,
-  isAppleCredentialAuthorized,
+  getAppleCredentialStatus,
   APPLE_CANCEL_CODE,
 } from '../services/authService';
 
@@ -95,19 +95,22 @@ export const useAuthStore = create<AuthStore>()(
 
       // 啟動時檢查 iOS Apple 憑證狀態：若使用者已在「設定 → Apple ID」撤銷授權，
       // 強制登出以要求重新驗證（AUTH-Architecture：credential state / revoked / re-auth）。
-      // 非 iOS 或非 Apple 使用者一律 no-op（isAppleCredentialAuthorized 回 true）。
+      // 非 iOS / 非 Apple 使用者一律 no-op（getAppleCredentialStatus 回 not_applicable）。
       verifyAppleCredential: async () => {
         const { user, isAuthenticated } = get();
         if (!isAuthenticated || !user) return;
         const appleId = user.linkedProviders.find((p) => p.provider === 'apple')?.providerId;
         if (!appleId) return;
         try {
-          const authorized = await isAppleCredentialAuthorized(appleId);
-          if (!authorized) {
+          const status = await getAppleCredentialStatus(appleId);
+          // 只有明確 'revoked'（已在設定撤銷 / 已轉移 / 找不到）才強制登出。
+          // 'unknown'（查詢失敗）不登出，避免因暫時性錯誤誤踢——但也不再被當成
+          // 已授權（見 getAppleCredentialStatus fail-safe）。
+          if (status === 'revoked') {
             await get().logout();
           }
         } catch {
-          // 查詢失敗不強制登出，避免誤踢正常使用者。
+          // 極端情況（re-export 失效等）：保守不登出。
         }
       },
 
@@ -168,14 +171,18 @@ export const useAuthStore = create<AuthStore>()(
         if (!user) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          await deleteAccount(user);
+          const result = await deleteAccount(user);
+          // 本機資料已刪除→清 session。但若後端未確認撤銷 Apple 授權，據實記錄
+          // 未完成狀態，切勿讓 UI 宣稱「已完全刪除 / Apple 授權已撤銷」（CR #2）。
           set({
             user: null,
             tokens: null,
             isAuthenticated: false,
             isGuest: false,
             isLoading: false,
-            error: null,
+            error: result.serverRevoked
+              ? null
+              : 'account_deletion_partial: 本機資料已刪除，但伺服器端 Apple 授權撤銷尚未確認（後端未上線）。',
             role: 'guest',
           });
         } catch (err: any) {

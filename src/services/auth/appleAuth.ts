@@ -57,15 +57,30 @@ export async function signInWithApple(): Promise<AuthSession> {
 }
 
 /**
- * 查詢憑證是否仍有效（可用於啟動時檢查使用者是否已在設定中撤銷授權）。
- * 非 iOS 一律回傳 true（該平台不使用 Apple 憑證）。
+ * Apple 憑證狀態（啟動時用來判斷使用者是否已在「設定 → Apple ID」撤銷授權）。
+ * - `authorized`：仍有效。
+ * - `revoked`：已撤銷 / 已轉移 / 找不到——應強制登出要求重新驗證。
+ * - `unknown`：查詢失敗（原生模組拋錯 / 暫時性錯誤）——**不**視為已授權，但也不強制
+ *   登出，避免因網路 / 系統暫時性錯誤誤踢正常使用者。
+ * - `not_applicable`：非 iOS，不使用 Apple 憑證。
  */
-export async function isAppleCredentialAuthorized(userId: string): Promise<boolean> {
-  if (Platform.OS !== 'ios') return true;
+export type AppleCredentialStatus = 'authorized' | 'revoked' | 'unknown' | 'not_applicable';
+
+/**
+ * 查詢 Apple 憑證狀態。
+ *
+ * fail-safe（CR DIC-855 #5）：查詢失敗一律回 `unknown`，**絕不**回 `authorized`——
+ * 過去的實作在 catch 時回 true（等同宣稱已授權），會掩蓋撤銷狀態。呼叫端只在
+ * `revoked` 時才登出（見 authStore.verifyAppleCredential）。
+ */
+export async function getAppleCredentialStatus(userId: string): Promise<AppleCredentialStatus> {
+  if (Platform.OS !== 'ios') return 'not_applicable';
   try {
     const state = await AppleAuthentication.getCredentialStateAsync(userId);
-    return state === AppleAuthentication.AppleAuthenticationCredentialState.AUTHORIZED;
+    return state === AppleAuthentication.AppleAuthenticationCredentialState.AUTHORIZED
+      ? 'authorized'
+      : 'revoked';
   } catch {
-    return true;
+    return 'unknown';
   }
 }

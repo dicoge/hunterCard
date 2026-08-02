@@ -7,7 +7,6 @@ import {
   ProviderUserInfo,
   GoogleUser,
   AppleUser,
-  LinkedIdentity,
   HoloUser,
   AuthTokens,
 } from '../types/auth';
@@ -17,10 +16,19 @@ import {
   APPLE_CANCEL_CODE,
 } from './auth/appleAuth';
 import { registerAppleSession, requestAccountDeletion } from './auth';
+import {
+  IdentityStorage,
+  loadUsers,
+  saveUsers,
+  findOrCreateUser,
+  linkIdentity,
+  unlinkIdentity,
+} from './auth/identityStore';
 
 // Re-exported so the auth store can check credential state / detect user cancel
 // without importing the native module directly.
-export { isAppleCredentialAuthorized } from './auth/appleAuth';
+export { getAppleCredentialStatus } from './auth/appleAuth';
+export type { AppleCredentialStatus } from './auth/appleAuth';
 export { APPLE_CANCEL_CODE } from './auth/appleAuth';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -45,16 +53,32 @@ const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 
 // iOS 用 iOS OAuth client（reversed-client-id 自訂 scheme 導回）；其餘平台用 web client。
 // 對齊 AUTH-Architecture §6.1：各平台 aud 對應不同 client id。
+//
+// **fail closed on iOS**：iOS 不能退回 web client——web client 的 aud 與導回 URI 與
+// 原生流程不符，會導致 token 的 aud 錯誤 / 導回失敗。缺 iOS client id 時直接拋錯，
+// 不靜默降級（CR DIC-855 #3）。
 function googleClientId(): string {
-  if (Platform.OS === 'ios' && GOOGLE_IOS_CLIENT_ID) return GOOGLE_IOS_CLIENT_ID;
+  if (Platform.OS === 'ios') {
+    if (!GOOGLE_IOS_CLIENT_ID) {
+      throw new Error(
+        'Missing EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID. iOS Google 登入必須使用 iOS OAuth client；' +
+        '不可退回 web client。請於 .env / Vercel 設定 iOS client id。'
+      );
+    }
+    return GOOGLE_IOS_CLIENT_ID;
+  }
+  if (!GOOGLE_WEB_CLIENT_ID) {
+    throw new Error('Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID for Google 登入。');
+  }
   return GOOGLE_WEB_CLIENT_ID;
 }
 
 // iOS OAuth client 的 redirect 必須是 reversed client id 的自訂 URL scheme
-// （com.googleusercontent.apps.XXXX:/oauthredirect）。其餘平台用預設 redirect。
+// （com.googleusercontent.apps.XXXX:/oauthredirect），且該 scheme 必須註冊在
+// app.config.js 的 iOS CFBundleURLTypes（見 app.config.js）。其餘平台用預設 redirect。
 function googleRedirectUri(): string {
-  if (Platform.OS === 'ios' && GOOGLE_IOS_CLIENT_ID) {
-    const reversed = GOOGLE_IOS_CLIENT_ID.split('.').reverse().join('.');
+  if (Platform.OS === 'ios') {
+    const reversed = googleClientId().split('.').reverse().join('.');
     return AuthSession.makeRedirectUri({ native: `${reversed}:/oauthredirect` });
   }
   return AuthSession.makeRedirectUri();
@@ -116,10 +140,6 @@ async function signInWithAppleProviderInfo(): Promise<{
 
 const googleScopes = ['openid', 'profile', 'email'];
 const appleScopes = ['name', 'email'];
-
-function generateUserId(): string {
-  return 'holo_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-}
 
 async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUser> {
   const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -184,57 +204,21 @@ export interface SignInResult {
   isNewUser: boolean;
 }
 
-async function findOrCreateHoloUser(providerInfo: ProviderUserInfo, provider: AuthProvider): Promise<{ user: HoloUser; isNew: boolean }> {
-  const existing = await loadLocalUsers();
-  let user = existing.find((u) =>
-    u.linkedProviders.some((p) => p.provider === provider && p.providerId === providerInfo.id)
-  );
-
-  if (user) {
-    const identity = user.linkedProviders.find((p) => p.provider === provider)!;
-    // Returning Apple logins (and any provider that hides email) return null
-    // name / email — only overwrite when the provider actually supplied a value,
-    // otherwise we would wipe the values captured on first authorization.
-    if (providerInfo.email) identity.email = providerInfo.email;
-    if (providerInfo.name) identity.displayName = providerInfo.name;
-    if (providerInfo.picture) identity.photoUrl = providerInfo.picture;
-    await saveLocalUsers(existing);
-    return { user, isNew: false };
-  }
-
-  const newUser: HoloUser = {
-    internalId: generateUserId(),
-    displayName: providerInfo.name,
-    primaryEmail: providerInfo.email,
-    photoUrl: providerInfo.picture,
-    linkedProviders: [
-      {
-        provider,
-        providerId: providerInfo.id,
-        email: providerInfo.email,
-        displayName: providerInfo.name,
-        photoUrl: providerInfo.picture,
-        linkedAt: new Date().toISOString(),
-      },
-    ],
-    createdAt: new Date().toISOString(),
-  };
-
-  existing.push(newUser);
-  await saveLocalUsers(existing);
-  return { user: newUser, isNew: true };
-}
-
-const USERS_STORAGE_KEY = 'holohunter-users';
+// Adapter so the zustand StateStorage (web localStorage / native AsyncStorage)
+// satisfies the identity store's async KV surface with normalized return types.
+const identityStorage: IdentityStorage = {
+  getItem: async (key) => (await platformStorage.getItem(key)) ?? null,
+  setItem: async (key, value) => {
+    await platformStorage.setItem(key, value);
+  },
+};
 
 // The local "users table" that fakes the server-side identity store for this
-// PoC. Backed by platformStorage so it works on both web (localStorage) and
-// native iOS/Android (AsyncStorage) — the previous direct localStorage access
-// crashed on React Native.
+// PoC. Identity invariants live in ./auth/identityStore (unit-tested); this file
+// only wires them to platform storage and the OAuth/native flows.
 async function loadLocalUsers(): Promise<HoloUser[]> {
   try {
-    const raw = await platformStorage.getItem(USERS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return await loadUsers(identityStorage);
   } catch {
     return [];
   }
@@ -242,8 +226,15 @@ async function loadLocalUsers(): Promise<HoloUser[]> {
 
 async function saveLocalUsers(users: HoloUser[]): Promise<void> {
   try {
-    await platformStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+    await saveUsers(identityStorage, users);
   } catch {}
+}
+
+async function findOrCreateHoloUser(providerInfo: ProviderUserInfo, provider: AuthProvider): Promise<{ user: HoloUser; isNew: boolean }> {
+  const existing = await loadLocalUsers();
+  const { users, user, isNew } = findOrCreateUser(existing, providerInfo, provider);
+  await saveLocalUsers(users);
+  return { user, isNew };
 }
 
 export async function signInWithProvider(provider: AuthProvider): Promise<SignInResult> {
@@ -324,8 +315,16 @@ export async function linkProvider(
 
   if (provider === 'apple' && (await canUseNativeApple())) {
     // iOS：原生 Sign in with Apple 取得欲綁定的 Apple identity（sub）。
-    const { info } = await signInWithAppleProviderInfo();
+    // 綁定同樣要保存 fresh authorizationCode，供日後刪除撤銷用（與登入流程一致，
+    // CR DIC-855 #5）——否則綁進來的 Apple 帳號日後無法被 App 撤銷。
+    const { info, tokens, authorizationCode } = await signInWithAppleProviderInfo();
     providerInfo = info;
+    await registerAppleSession({
+      user: { id: info.id, provider: 'apple', name: info.name, email: info.email || null },
+      identityToken: tokens.accessToken || null,
+      authorizationCode,
+      createdAt: new Date().toISOString(),
+    });
   } else {
     if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
       throw new Error(APPLE_DISABLED_MESSAGE);
@@ -375,88 +374,56 @@ export async function linkProvider(
   }
 
   const allUsers = await loadLocalUsers();
-  const collisionUser = allUsers.find(
-    (u) => u.internalId !== currentUser.internalId &&
-      u.linkedProviders.some((p) => p.provider === provider && p.providerId === providerInfo.id)
-  );
-
-  if (collisionUser) {
-    throw new Error(
-      `This ${provider} account is already linked to another HoloHunter account. ` +
-      `Please unlink it from the other account first.`
-    );
-  }
-
-  const alreadyLinked = currentUser.linkedProviders.some(
-    (p) => p.provider === provider && p.providerId === providerInfo.id
-  );
-  if (alreadyLinked) {
-    throw new Error(`This ${provider} account is already linked to your account.`);
-  }
-
-  const newIdentity: LinkedIdentity = {
-    provider,
-    providerId: providerInfo.id,
-    email: providerInfo.email,
-    displayName: providerInfo.name,
-    photoUrl: providerInfo.picture,
-    linkedAt: new Date().toISOString(),
-  };
-
-  const updatedUser: HoloUser = {
-    ...currentUser,
-    linkedProviders: [...currentUser.linkedProviders, newIdentity],
-    photoUrl: currentUser.photoUrl || providerInfo.picture,
-  };
-
-  const userIndex = allUsers.findIndex((u) => u.internalId === currentUser.internalId);
-  if (userIndex >= 0) {
-    allUsers[userIndex] = updatedUser;
-    await saveLocalUsers(allUsers);
-  }
-
-  return updatedUser;
+  const { users, user } = linkIdentity(allUsers, currentUser, providerInfo, provider);
+  await saveLocalUsers(users);
+  return user;
 }
 
 export async function unlinkProvider(
   currentUser: HoloUser,
   provider: AuthProvider,
 ): Promise<HoloUser> {
-  if (currentUser.linkedProviders.length <= 1) {
-    throw new Error('Cannot unlink the only login method. Add another provider first.');
-  }
-
-  const updatedProviders = currentUser.linkedProviders.filter((p) => p.provider !== provider);
-
-  if (updatedProviders.length === currentUser.linkedProviders.length) {
-    throw new Error(`No ${provider} provider linked to this account.`);
-  }
-
-  const updatedUser: HoloUser = {
-    ...currentUser,
-    linkedProviders: updatedProviders,
-    primaryEmail: updatedProviders[0]?.email || undefined,
-  };
-
   const allUsers = await loadLocalUsers();
-  const userIndex = allUsers.findIndex((u) => u.internalId === currentUser.internalId);
-  if (userIndex >= 0) {
-    allUsers[userIndex] = updatedUser;
-    await saveLocalUsers(allUsers);
-  }
-
-  return updatedUser;
+  const { users, user } = unlinkIdentity(allUsers, currentUser, provider);
+  await saveLocalUsers(users);
+  return user;
 }
 
-export async function deleteAccount(currentUser: HoloUser): Promise<void> {
-  // App Store 5.1.1(v)：iOS 上以 Apple 登入者，刪除帳號時需撤銷 Apple 授權。
-  // best-effort 通知後端撤銷（後端 refresh_token 儲存目前為 foundation stub，會回
-  // 501；不阻擋本機刪除，以確保「App 內可刪除帳號」這條硬性規範可運作）。
+export interface DeleteAccountResult {
+  /** 本機使用者資料是否已刪除（本裝置的 identity store 記錄）。 */
+  localDataDeleted: boolean;
+  /**
+   * 後端是否已「確認」撤銷 Apple 授權並刪除伺服器端資料。
+   * 目前後端 refresh_token 儲存為 foundation stub（回 501），因此 iOS Apple 使用者
+   * 一般為 false——呼叫端**不得**據此宣稱「帳號已完全刪除 / Apple 授權已撤銷」。
+   * 非 iOS / 無 Apple provider 者為 true（無需伺服器撤銷）。
+   */
+  serverRevoked: boolean;
+  /** serverRevoked 為 false 時的原因（例：apple_deletion_not_implemented）。 */
+  reason?: string;
+}
+
+/**
+ * 刪除帳號。
+ *
+ * 誠實回報（CR DIC-855 #2）：本機資料一定會刪除，但**不**把 501 / stub / local-only
+ * 當成「已撤銷 Apple 授權 / 伺服器已刪除」。iOS Apple 使用者若後端未確認撤銷，
+ * `serverRevoked` 回 false 並帶 reason，由呼叫端據實告知使用者，切勿宣稱已完成。
+ *
+ * 真正的 fail-closed 伺服器撤銷需 DIC-662 後端 identity/token store 上線（見已知限制）。
+ */
+export async function deleteAccount(currentUser: HoloUser): Promise<DeleteAccountResult> {
+  let serverRevoked = true;
+  let reason: string | undefined;
+
   if (Platform.OS === 'ios') {
     const apple = currentUser.linkedProviders.find((p) => p.provider === 'apple');
     if (apple) {
+      // 尚無伺服器確認的撤銷：預設為未撤銷，只有後端回 ok:true 才翻成 true。
+      serverRevoked = false;
+      reason = 'apple_revocation_unconfirmed';
       try {
-        await requestAccountDeletion({
+        const res = await requestAccountDeletion({
           user: {
             id: apple.providerId,
             provider: 'apple',
@@ -467,8 +434,11 @@ export async function deleteAccount(currentUser: HoloUser): Promise<void> {
           authorizationCode: null,
           createdAt: new Date().toISOString(),
         });
+        serverRevoked = res.ok;
+        reason = res.ok ? undefined : (res.reason ?? 'apple_revocation_unconfirmed');
       } catch {
-        // best-effort：後端撤銷失敗不阻擋本機資料刪除。
+        serverRevoked = false;
+        reason = 'network_error';
       }
     }
   }
@@ -480,6 +450,8 @@ export async function deleteAccount(currentUser: HoloUser): Promise<void> {
   } catch {
     throw new Error('Failed to delete account data.');
   }
+
+  return { localDataDeleted: true, serverRevoked, reason };
 }
 
 export interface CollisionResolution {
