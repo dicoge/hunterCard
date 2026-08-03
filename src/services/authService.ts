@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import {
@@ -30,16 +31,25 @@ const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
   || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID
   || '';
 
+// Native iOS uses a dedicated Google OAuth iOS client (its own client id +
+// reversed-client-id redirect scheme), not the Web client.
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
+
 const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || '/api';
 
-// Sign in with Apple (web) is disabled until the server verify path is enabled.
-// The client cannot verify an Apple ID token on its own, and the server gate
-// (APPLE_WEB_LOGIN_ENABLED) is off by default. Web Apple is optional per the
-// product spec (Google is the required web provider). See
-// docs/Web-Apple-Login-Evaluation.md.
-export const APPLE_LOGIN_ENABLED = false;
+const isIOS = Platform.OS === 'ios';
+
+// Web Sign in with Apple stays gated: the browser cannot verify an Apple ID
+// token, so it requires the server verify path (Services ID + backend secret).
+const APPLE_WEB_ENABLED = process.env.EXPO_PUBLIC_APPLE_WEB_LOGIN_ENABLED === 'true';
+
+// Apple login is delivered NATIVELY on iOS (expo-apple-authentication → backend
+// RS256 verify against the app bundle id) and needs no Services ID. On web it is
+// only offered once APPLE_WEB_ENABLED — otherwise the button is hidden entirely
+// rather than shown as a nonfunctional entry (DIC-866 acceptance #5).
+export const APPLE_LOGIN_ENABLED = isIOS || APPLE_WEB_ENABLED;
 
 export const APPLE_DISABLED_MESSAGE =
   'Apple 登入尚未開放（需後端驗證 Apple ID token）。請改用 Google 登入。';
@@ -138,16 +148,102 @@ function toHoloUser(u: ServerPublicUser): HoloUser {
   };
 }
 
-// Runs the provider OAuth/OIDC prompt and returns an ID token for server-side
-// verification. For Google we PKCE-exchange the code for an id_token; for Apple
-// the id_token arrives directly in the authorize response.
-async function obtainProviderIdToken(
+// Turns an iOS Google OAuth client id into its reversed-client-id custom URL
+// scheme (com.googleusercontent.apps.XXX), which is the redirect Google expects
+// for native iOS and is registered in the app's CFBundleURLTypes (app.config.js).
+function reversedIosClientScheme(iosClientId: string): string {
+  return iosClientId.split('.').reverse().join('.');
+}
+
+// Native iOS Google: run the OAuth prompt against the iOS client and its
+// reversed-client-id redirect, PKCE-exchange the code, and return the id_token
+// (aud = iOS client id) for the SAME server verify path used by web.
+async function obtainGoogleNativeIdToken(
+  loginHint?: string,
+): Promise<{ idToken: string; nonce: string }> {
+  if (!GOOGLE_IOS_CLIENT_ID) {
+    throw new AuthError(
+      '尚未設定 iOS 的 Google client ID（EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID）。',
+      500,
+      'client_id_missing',
+    );
+  }
+  const redirectUri = `${reversedIosClientScheme(GOOGLE_IOS_CLIENT_ID)}:/oauthredirect`;
+  const nonce = randomNonce();
+  const authRequest = new AuthSession.AuthRequest({
+    clientId: GOOGLE_IOS_CLIENT_ID,
+    scopes: googleScopes,
+    redirectUri,
+    usePKCE: true,
+    extraParams: {
+      nonce,
+      ...(loginHint ? { login_hint: loginHint } : {}),
+    },
+  });
+
+  const result = await authRequest.promptAsync(googleDiscovery);
+  if (result.type !== 'success') {
+    throw new AuthError(
+      result.type === 'cancel' ? '已取消登入' : `登入失敗（${result.type}）`,
+      400,
+      result.type,
+    );
+  }
+  const code = result.params.code;
+  if (!code) throw new AuthError('未取得授權碼', 400, 'no_code');
+  const codeVerifier = authRequest.codeVerifier;
+  if (!codeVerifier) throw new AuthError('PKCE code verifier 遺失', 400, 'no_verifier');
+
+  const tokenResponse = await AuthSession.exchangeCodeAsync(
+    {
+      clientId: GOOGLE_IOS_CLIENT_ID,
+      code,
+      redirectUri,
+      extraParams: { code_verifier: codeVerifier },
+    },
+    googleDiscovery,
+  );
+  const idToken = tokenResponse.idToken;
+  if (!idToken) throw new AuthError('Google 未回傳 id_token', 400, 'no_id_token');
+  return { idToken, nonce };
+}
+
+// Native iOS Apple: OS-native Sign in with Apple returns an identityToken (a
+// signed JWT, aud = app bundle id) that we forward to the backend for RS256
+// verification — no client-local trust. `expo-apple-authentication` is imported
+// lazily so it never enters the web bundle.
+async function obtainAppleNativeIdToken(): Promise<{ idToken: string; nonce: string }> {
+  const AppleAuthentication = await import('expo-apple-authentication');
+  if (!(await AppleAuthentication.isAvailableAsync())) {
+    throw new AuthError('此裝置不支援 Apple 登入（需 iOS 13 以上）。', 400, 'apple_unavailable');
+  }
+  const nonce = randomNonce();
+  let credential: import('expo-apple-authentication').AppleAuthenticationCredential;
+  try {
+    credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce,
+    });
+  } catch (e: any) {
+    if (e?.code === 'ERR_REQUEST_CANCELED') {
+      throw new AuthError('已取消登入', 400, 'cancel');
+    }
+    throw new AuthError('Apple 登入失敗，請再試一次。', 400, 'apple_failed');
+  }
+  const idToken = credential.identityToken;
+  if (!idToken) throw new AuthError('Apple 未回傳 identityToken', 400, 'no_id_token');
+  return { idToken, nonce };
+}
+
+// Web OAuth/OIDC prompt (browser). For Google we PKCE-exchange the code for an
+// id_token; for Apple the id_token arrives directly in the authorize response.
+async function obtainWebIdToken(
   provider: AuthProvider,
   loginHint?: string,
 ): Promise<{ idToken: string; nonce: string }> {
-  if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
-    throw new AuthError(APPLE_DISABLED_MESSAGE, 400, 'apple_disabled');
-  }
   const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
   if (!clientId) {
     throw new AuthError(
@@ -206,6 +302,24 @@ async function obtainProviderIdToken(
   const idToken = tokenResponse.idToken;
   if (!idToken) throw new AuthError('Google 未回傳 id_token', 400, 'no_id_token');
   return { idToken, nonce };
+}
+
+// Runs the provider prompt on the right surface (native iOS vs web) and returns
+// a provider ID token for server-side verification. Identity resolution always
+// lives on the server — this only obtains the token.
+async function obtainProviderIdToken(
+  provider: AuthProvider,
+  loginHint?: string,
+): Promise<{ idToken: string; nonce: string }> {
+  if (provider === 'apple') {
+    if (isIOS) return obtainAppleNativeIdToken();
+    if (!APPLE_WEB_ENABLED) {
+      throw new AuthError(APPLE_DISABLED_MESSAGE, 400, 'apple_disabled');
+    }
+    return obtainWebIdToken('apple', loginHint);
+  }
+  if (isIOS) return obtainGoogleNativeIdToken(loginHint);
+  return obtainWebIdToken('google', loginHint);
 }
 
 export interface SignInResult {

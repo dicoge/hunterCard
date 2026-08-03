@@ -25,12 +25,13 @@
 | 帳號刪除（session-based 級聯刪除 + Apple 撤銷，fail-closed） | `api/auth/delete-account.ts` |
 | 前端 auth service（PKCE 取 id_token → 呼叫端點，fail-closed） | `src/services/authService.ts` |
 | Session store（zustand + persist，存 session token 非 provider token） | `src/store/authStore.ts` |
-| 登入畫面（Apple 按鈕受旗標 disabled / 「即將推出」） | `src/screens/LoginScreen.tsx` |
+| 登入畫面（iOS 顯示原生 Apple 按鈕；Web 未啟用時**隱藏**Apple 按鈕，不留假入口） | `src/screens/LoginScreen.tsx` |
 | 登出 / 綁定 / 刪除帳號 UI（旗標一致、fail-closed 文案） | `src/screens/SettingsScreen.tsx` |
 | Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/lib/apple-auth.ts` |
 | refresh_token 儲存介面樁（seam，尚未接持久化） | `api/lib/apple-token-store.ts` |
 | 後端身份存放迴歸測試（mock KV） | `scripts/test-auth-backend.cjs`（`npm run test:auth-backend`） |
-| App 設定 capability / plugin | `app.json` |
+| App 設定 capability / plugin（原 `app.json`，DIC-866 改為靜態 base + 動態 config） | `app.base.json` + `app.config.js` |
+| 前端 iOS 原生登入單元測試（audience 驗簽） | `scripts/test-verify-token.cjs`（`npm run test:verify-token`） |
 
 行為：登入 / 綁定 / 解綁 / 刪除皆須伺服器回 2xx 才視為成功；後端未設定（KV 或 `AUTH_SESSION_SECRET` 缺）時端點回 501，前端 fail-closed 不誤示成功。native 原生 Apple 流程（`src/services/auth/`）為早期實作，checklist 見文末。
 
@@ -61,8 +62,19 @@
 | --- | --- | --- |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN`（Vercel KV / Upstash） | 身份存放（`api/lib/identity-store.ts`）與 session 所需 | 端點回 501 `store_not_configured` |
 | `AUTH_SESSION_SECRET` | HMAC session 簽發 / 驗證（`api/lib/session.ts`）密鑰 | 端點回 501，無法發 / 驗 session |
-| `GOOGLE_WEB_CLIENT_ID`（或 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` / `GOOGLE_CLIENT_ID`） | Google `id_token` 驗簽的 `aud` | Google 登入回 `store_not_configured` |
-| `APPLE_WEB_LOGIN_ENABLED` | 設為 `'true'` 才允許 `/api/auth/login` 驗 `provider=apple`（配合前端 `APPLE_LOGIN_ENABLED`） | Apple web 登入被擋（fail-closed） |
+| `GOOGLE_WEB_CLIENT_ID`（或 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` / `GOOGLE_CLIENT_ID`） | **Web** Google `id_token` 驗簽的 `aud` | Web Google 登入回 `store_not_configured` |
+| `APPLE_WEB_LOGIN_ENABLED` | 設為 `'true'` 才允許 **Web** Apple（Services ID `aud`）通過 `/api/auth/login`。**不影響原生 iOS Apple**（bundle id `aud` 一律接受） | Web Apple 被擋（fail-closed）；iOS 不受影響 |
+
+### 原生 iOS 登入（DIC-866）所需
+
+DIC-866 起，iOS 走**原生**登入（`expo-apple-authentication` + Google iOS OAuth client），並沿用同一套伺服器權威驗簽。原生 token 的 `aud` 與 web 不同，後端 `api/lib/verify-token.ts` 現同時接受：
+
+| 變數 | 說明 | 缺少時 |
+| --- | --- | --- |
+| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`（EAS/build 端；後端可另設 `GOOGLE_IOS_CLIENT_ID`） | 原生 iOS Google `id_token` 的 `aud`（iOS OAuth client id）。其 reversed-client-id 會由 `app.config.js` 注入 iOS `CFBundleURLTypes` 當 redirect scheme | iOS Google 前端報 `client_id_missing`；後端驗簽 `aud` 不符 |
+| （無需 Services ID）原生 Apple `aud` = app bundle id `com.dicoge.holohunter` | 已內建為預設 native audience，**不需** Apple Developer Services ID / .p8 即可登入。可用 `APPLE_NATIVE_CLIENT_ID` / `EXPO_PUBLIC_APPLE_BUNDLE_ID` 覆寫 | — |
+
+因此**原生 iOS Apple 登入只需** KV + `AUTH_SESSION_SECRET`（App ID 的 Sign in with Apple capability 已於 `app.base.json` `usesAppleSignIn:true` 設好）。iOS Google 另需上表的 iOS client id。Web Apple 仍為選配，需另設 Services ID 相關變數並開 `APPLE_WEB_LOGIN_ENABLED`。
 
 ### Apple 後端環境變數（撤銷 / 驗簽用，設定於 Vercel，勿提交）
 

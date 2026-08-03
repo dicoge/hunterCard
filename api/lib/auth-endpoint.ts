@@ -10,6 +10,7 @@ import {
 } from './identity-store';
 import { isSessionConfigured, verifySession } from './session';
 import {
+  isAppleVerifyConfigured,
   isGoogleVerifyConfigured,
   verifyAppleIdToken,
   verifyGoogleIdToken,
@@ -29,11 +30,6 @@ export function errorResponse(err: unknown): Response {
   // Do not leak internals; a thrown write error must surface as a non-2xx so the
   // client fails closed rather than reporting a false success.
   return json({ error: 'internal_error' }, 500);
-}
-
-/** Web Apple login/link stays off until the server verify path is enabled. */
-export function isAppleWebEnabled(): boolean {
-  return process.env.APPLE_WEB_LOGIN_ENABLED === 'true';
 }
 
 /**
@@ -63,8 +59,12 @@ export async function verifyProviderToken(
     return verifyGoogleIdToken(idToken, nonce);
   }
   if (provider === 'apple') {
-    if (!isAppleWebEnabled()) {
-      throw new IdentityStoreError('STORE_NOT_CONFIGURED', 'apple_web_not_enabled');
+    // Native iOS Apple (bundle-id audience) is always accepted; Web Apple
+    // (Services-ID audience) only when the operator enabled it. The audience
+    // allow-list in verify-token enforces which one is honored — a web-issued
+    // token fails closed while the web path is disabled.
+    if (!isAppleVerifyConfigured()) {
+      throw new IdentityStoreError('STORE_NOT_CONFIGURED', 'apple_not_configured');
     }
     return verifyAppleIdToken(idToken, nonce);
   }

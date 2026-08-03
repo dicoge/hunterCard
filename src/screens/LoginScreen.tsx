@@ -72,22 +72,16 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
+          {APPLE_LOGIN_ENABLED && (
           <TouchableOpacity
-            style={[
-              styles.appleButton,
-              (isLoading || !APPLE_LOGIN_ENABLED) && styles.buttonDisabled,
-            ]}
+            style={[styles.appleButton, isLoading && styles.buttonDisabled]}
             onPress={handleAppleLogin}
-            disabled={isLoading || !APPLE_LOGIN_ENABLED}
+            disabled={isLoading}
             activeOpacity={0.8}
           >
             <Text style={styles.appleIcon}></Text>
-            <Text style={styles.buttonText}>
-              {APPLE_LOGIN_ENABLED ? '使用 Apple 帳號登入' : '使用 Apple 帳號登入（即將推出）'}
-            </Text>
+            <Text style={styles.buttonText}>使用 Apple 帳號登入</Text>
           </TouchableOpacity>
-          {!APPLE_LOGIN_ENABLED && (
-            <Text style={styles.appleHint}>Apple 登入即將推出，目前請使用 Google 登入</Text>
           )}
 
           <View style={styles.divider}>

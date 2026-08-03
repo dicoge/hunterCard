@@ -112,11 +112,16 @@ async function verify(
 }
 
 function googleAudiences(): string[] {
+  // A Google ID token's `aud` is the OAuth client that obtained it: the Web
+  // client for browser sign-in, the iOS client for native sign-in. Accept both
+  // so a single backend verifies web and native iOS logins.
   return [
     process.env.GOOGLE_WEB_CLIENT_ID,
     process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     process.env.GOOGLE_CLIENT_ID,
     process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_IOS_CLIENT_ID,
+    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
   ].filter((v): v is string => Boolean(v));
 }
 
@@ -139,10 +144,33 @@ export async function verifyGoogleIdToken(idToken: string, nonce?: string): Prom
   };
 }
 
-function appleAudiences(): string[] {
+// Native iOS Sign in with Apple mints an ID token whose `aud` is the app's
+// bundle identifier, NOT the web Services ID. The bundle id is public (it ships
+// in every build), so we can accept it without any Apple Developer / secret
+// setup — that is what lets native iOS Apple login work while Web Apple stays
+// gated. Overridable via env for other build targets.
+const APPLE_NATIVE_BUNDLE_ID = 'com.dicoge.holohunter';
+
+function appleNativeAudiences(): string[] {
+  return [
+    process.env.APPLE_NATIVE_CLIENT_ID,
+    process.env.EXPO_PUBLIC_APPLE_BUNDLE_ID,
+    APPLE_NATIVE_BUNDLE_ID,
+  ].filter((v): v is string => Boolean(v));
+}
+
+// Web Apple (Services ID audience) is only accepted once the operator has
+// configured the Services ID AND explicitly enabled the web path. Otherwise a
+// web-issued Apple token fails the audience check and login fails closed.
+function appleWebAudiences(): string[] {
+  if (process.env.APPLE_WEB_LOGIN_ENABLED !== 'true') return [];
   return [process.env.APPLE_CLIENT_ID, process.env.EXPO_PUBLIC_APPLE_SERVICE_ID].filter(
     (v): v is string => Boolean(v),
   );
+}
+
+function appleAudiences(): string[] {
+  return [...appleNativeAudiences(), ...appleWebAudiences()];
 }
 
 export function isAppleVerifyConfigured(): boolean {
