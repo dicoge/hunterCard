@@ -381,10 +381,15 @@ export default function ScanScreen({ navigation }: any) {
     rarity: card.rarity || '',
     series: card.series || '',
     sellPrice: card.sellPrice != null ? card.sellPrice : null,
+    // 透傳 API 已對齊的 card 層級精確版本收購價與市場欄位，讓掃描的 session card 帶到
+    // CardDetail 的 MarketDataPanel。對不到 → null，嚴禁卡號 fallback / 跨版本 max（DIC-361 / DIC-856）。
+    buyPrice: card.buyPrice ?? null,
     yuyuName: '',
     color: '',
     imageUrl: card.imageUrl || '',
     prices: card.prices || [],
+    priceHistory: card.priceHistory || {},
+    ytStats: card.ytStats ?? null,
   });
 
   const captureWebRecognitionImages = async (photoUri: string): Promise<string[]> => {

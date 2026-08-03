@@ -351,10 +351,16 @@ function mapApiCard(apiCard: any): CardInfo {
     rarity: apiCard.rarity || '',
     series: apiCard.series || '',
     sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
+    // 直接透傳 API（recognize-card fmt）已對齊的 card 層級精確版本收購價與市場欄位，
+    // 讓掃描→詳情路徑保有 MarketDataPanel 所需資料。對不到 → null（DIC-361 / DIC-856）。
+    // 嚴禁在此做卡號 fallback / 跨版本 Math.max。
+    buyPrice: apiCard.buyPrice ?? null,
     yuyuName: '',
     color: '',
     imageUrl: apiCard.imageUrl || '',
     prices: apiCard.prices || [],
+    priceHistory: apiCard.priceHistory || {},
+    ytStats: apiCard.ytStats ?? null,
   };
 }
 

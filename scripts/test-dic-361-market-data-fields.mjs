@@ -75,9 +75,14 @@ assertSourceIncludes(searchResults, [
 ], 'src/screens/SearchResultsScreen');
 
 // MarketDataPanel should render all requested sections when fields exist.
+// DIC-856: buyPrice is no longer read from the card level; it is derived from the
+// *selected version* (selectedVersion.buyPrice) and fails closed to null when the
+// version is unaligned or has no matched buy price — never a card-number/max fallback.
+// The assertion tracks that exact derivation so this regression stays consistent with
+// DIC-856's exact-variant alignment instead of the pre-DIC-856 card-level read.
 assertSourceIncludes(cardDetail, [
   'function MarketDataPanel',
-  'const buyPrice = card?.buyPrice ?? null',
+  'const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null',
   'const ytStats = card?.ytStats ?? null',
   'const priceHistory = card?.priceHistory ?? null',
   '💱 買賣差價',

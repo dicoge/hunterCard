@@ -32,6 +32,9 @@ jobs:
       - name: Verify buy-price version alignment (DIC-856)
         run: npm run test:buy-price
 
+      - name: Verify scan/search market data fields (DIC-361)
+        run: npm run test:market-fields
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
