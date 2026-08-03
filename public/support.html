@@ -283,10 +283,6 @@
       <h2>🛠️ 聯絡技術支援</h2>
       <p style="margin-bottom: 24px;">若您在使用 HoloHunter 時遇到問題，或有任何功能改進建議，歡迎透過以下方式與我們聯絡：</p>
 
-      <div style="border: 1px solid #ef4444; background: rgba(239,68,68,0.08); border-radius: 12px; padding: 16px 18px; margin-bottom: 24px; line-height: 1.7;">
-        <strong>⚠️ 目前版本狀態（本機模擬 / 示範階段）：</strong> 現階段 App 中的 Google / Apple 登入、帳號綁定、Internal User ID、訂閱狀態與每月掃描配額<strong>全部都是「本機模擬（local mock）」</strong>：登入只會在您的裝置本機寫入一組固定的假帳號，尚未串接真實的 Google / Apple OAuth、後端資料庫、雲端同步或 App Store / Google Play / Stripe 金流。因此本階段<strong>不會實際取得您的個人資料，沒有任何雲端帳號、配額或訂閱紀錄，也不會處理任何真實付款或收取費用</strong>；「升級訂閱」與帳號資訊皆為本機模擬。凡下方標示為「未來正式版」的常見問題，描述的是本 App 正式上架、串接後端與金流之後的預期行為，目前尚未實作。
-      </div>
-      
       <div class="info-grid">
         <div class="info-card">
           <h3>📧 支援信箱</h3>
@@ -309,65 +305,55 @@
       <h2>💬 常見問題 (FAQ)</h2>
 
       <div class="faq-item">
-        <div class="faq-question">Q: 訪客模式 (Guest Mode) 有何功能限制？</div>
+        <div class="faq-question">Q: 我需要登入才能使用嗎？訪客模式有哪些限制？</div>
         <div class="faq-answer">
-          訪客模式僅開放「規則導覽」與「手動搜尋卡牌」。為了防止頻寬與伺服器資源濫用，<strong>卡牌相機掃描 (OCR)</strong> 與 <strong>AI 價格趨勢預測</strong> 等功能，需要您以 Google 或 Apple 帳號登入後方能使用。
+          不一定。<strong>訪客模式</strong>無須登入即可瀏覽卡表與手動查價。若要使用<strong>相機掃描辨識</strong>功能，則需以 <strong>Google 帳號登入</strong>。目前僅開放 Google 登入。
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: 免費版會員的每月掃描配額 (Quota) 是多少？</div>
+        <div class="faq-question">Q: 為什麼「使用 Apple 帳號登入」按鈕沒有反應？</div>
         <div class="faq-answer">
-          <strong>（未來正式版行為）</strong>凡是登入但未付費訂閱的免費版會員，系統每個月會提供 <strong>100 次的卡牌相機掃描額度</strong>。當月額度使用完畢後，相機將自動鎖定，直到次月 1 號 (UTC) 自動重置，或者您也可以選擇訂閱升級以立即解除次數限制。<br><br><strong>目前版本（本機模擬）：</strong>掃描計數僅為本機模擬數值，並非伺服器端配額；清除快取或重裝 App 即會重置，尚未實作真正的每月伺服器端額度控管。
+          Apple 登入目前<strong>尚未開放</strong>。安全啟用 Apple 登入需要在伺服器端驗證 Apple ID Token，此部分尚未建置，因此按鈕暫時停用，點擊後會提示您改用 Google 登入。請先使用 <strong>Google 帳號登入</strong>。
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: 升級「訂閱版會員 (Subscriber)」有哪些專屬功能？</div>
+        <div class="faq-question">Q: 掃描卡牌有次數限制嗎？</div>
         <div class="faq-answer">
-          <strong>（未來正式版）</strong>訂閱會員可享受以下專屬高級功能：<br>
-          1. <strong>無限卡牌掃描</strong>：完全解除每月 100 張的掃描上限限制。<br>
-          2. <strong>AI 價格與趨勢預測</strong>：解鎖獨家的價格走向預測，結合 YT 社群訂閱趨勢、新聞情緒與市場歷史數據綜合演算分析，助您精準掌握卡牌交易的最佳時機。<br><br><strong>目前版本（本機模擬）：</strong>「升級訂閱」只是在本機把角色切換為訂閱版以示範解鎖效果，不會真的驗證帳號或付款，也未串接 StoreKit / Google Play Billing / Stripe。
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 可以同時綁定 Google 與 Apple 帳號嗎？</div>
-        <div class="faq-answer">
-          <strong>（未來正式版）</strong>HoloHunter 支援「共通帳號」機制。您可以先用 Google 登入，然後在<strong>「設定 (Settings)」</strong>頁面中點擊<strong>「綁定 Apple」</strong>完成連結；或是使用 Apple 登入後綁定 Google。綁定後兩者將共享相同的 Internal User ID、雲端收藏與訂閱狀態。<br><br><strong>目前版本（本機模擬）：</strong>登入與綁定皆為本機模擬，會寫入固定的假帳號並在本機切換狀態，尚未串接真實 OAuth、後端資料庫或雲端同步。
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 綁定帳號時顯示「帳號衝突 (Collision)」該怎麼辦？</div>
-        <div class="faq-answer">
-          若您要綁定的 Google 或 Apple 帳號已經關聯到另一個獨立的使用者帳號，系統會偵測到衝突並詢問您：<br>
-          1. <strong>資料合併 (Merge)</strong>：將衝突帳號的卡牌收藏與本帳號合併，並將登入方式轉綁至本帳號。<br>
-          2. <strong>拒絕並取消</strong>：取消綁定，保持現狀。
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 刪除帳號會連同我的掃描紀錄跟訂閱一併刪除嗎？</div>
-        <div class="faq-answer">
-          <strong>目前版本（本機模擬）：</strong>目前並沒有任何雲端帳號或資料。您的所有資料（模擬帳號、掃描計數、收藏清單）都只存在您自己的裝置本機。當您在 App 內點擊「刪除帳號與資料（本機）」後，本機登入狀態與快取會被立即清除並登出——這已完整刪除本 App 目前所持有、關於您的全部資料。此動作無法復原。<br><br>
-          <strong>未來正式版（串接後端與金流後）：</strong>屆時 App 內刪除按鈕會清除本機 Session；若要一併刪除雲端上的 Internal User ID、第三方登入關聯、每月配額計數與收藏清單，並將歷史訂閱交易紀錄去識別化，可透過支援信箱 <code>dicoge.chen@gmail.com</code> 附上 Internal User ID 提交申請，由後端級聯刪除處理並回信通知。（此雲端刪除管道於目前模擬版本尚未實作，因目前並無雲端資料。）
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: 為什麼不支援一般 Email 密碼註冊？</div>
-        <div class="faq-answer">
-          為了維護您的密碼安全與保障隱私，我們<strong>只支援 Google 與 Apple 第三方安全驗證</strong>。不收集也不儲存您的個人密碼，所有身分驗證程序均直接在第三方安全端進行。
+          有。以 Google 登入的使用者，每月可掃描 <strong>100 次</strong>；訪客無法使用掃描。此次數<strong>僅記錄在您的裝置本機</strong>，每月自動重置，並非伺服器端配額（清除本機資料或重裝 App 亦會重置）。目前<strong>沒有可購買的付費方案</strong>，也不處理任何付款。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: 我掃描的卡牌照片會被上傳或儲存嗎？</div>
         <div class="faq-answer">
-          視平台而定：<br>
-          <strong>手機 App（iOS / Android）</strong>：文字辨識完全在您的裝置本機進行，卡牌影像<strong>不會離開您的裝置</strong>，也不會上傳到我們的伺服器。<br>
-          <strong>網頁版</strong>：卡牌影像會傳送到我們的伺服器端點，再交由第三方 AI 視覺辨識服務（Google Gemini，透過 OpenRouter 中介）即時判讀。影像僅用於當次辨識，辨識後不作長期儲存，也不會用於廣告或個人化追蹤。詳見<a href="privacy.html">隱私權政策</a>。
+          會上傳以進行辨識。<strong>手機 App（iOS / Android）與網頁版都會</strong>將擷取的卡牌影像傳送到我們的伺服器端點 <code>/api/recognize-card</code>，再轉送給 <strong>Google Gemini 視覺辨識模型</strong>（Google Generative Language API）即時判讀。影像僅用於當次辨識，本 App 伺服器端不作長期儲存，也不會用於廣告或個人化追蹤。詳見<a href="privacy.html">隱私權政策</a>。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 我的收藏與追蹤清單會跨裝置同步嗎？</div>
+        <div class="faq-answer">
+          不會。本 App <strong>沒有雲端帳號資料庫</strong>，您的登入帳號資料、收藏、追蹤清單與偏好設定<strong>只儲存在您使用的那台裝置本機</strong>（手機為 AsyncStorage、網頁為瀏覽器 localStorage），不會在裝置之間同步。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 點「刪除帳號」實際會刪除哪些資料？</div>
+        <div class="faq-answer">
+          目前「刪除帳號」的實際行為是：<strong>移除儲存在本裝置上的登入帳號紀錄並將您登出</strong>。它<strong>目前不會</strong>自動向 Google 撤銷授權、刪除伺服器端已上傳的推播 Token，或清除本機的追蹤清單／掃描歷史。<br><br>
+          若要更完整地清除：<br>
+          1. <strong>撤銷 Google 授權</strong>：使用「設定 → 登出」（會向 Google 撤銷本 App 授權），或到 Google 帳戶安全性設定移除 HoloHunter。<br>
+          2. <strong>刪除已上傳的推播 Token</strong>：來信 <code>dicoge.chen@gmail.com</code>，我們會於伺服器端移除。<br>
+          3. <strong>清除本機資料</strong>：解除安裝 App（手機）或清除網站資料（網頁）即可移除所有本機收藏、追蹤清單與設定。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 為什麼不支援一般 Email 密碼註冊？</div>
+        <div class="faq-answer">
+          為了維護您的密碼安全與保障隱私，本 App <strong>只支援 Google 第三方安全驗證</strong>（Apple 登入未來開放）。我們不收集也不儲存您的密碼，身分驗證程序均直接在 Google 端進行。
         </div>
       </div>
     </div>
@@ -377,10 +363,6 @@
       <h2>🛠️ Contact Support</h2>
       <p style="margin-bottom: 24px;">If you experience any issues with HoloHunter or have feedback/suggestions, feel free to contact us:</p>
 
-      <div style="border: 1px solid #ef4444; background: rgba(239,68,68,0.08); border-radius: 12px; padding: 16px 18px; margin-bottom: 24px; line-height: 1.7;">
-        <strong>⚠️ Current Build Status (Local Mock / Demo Stage):</strong> In the current build, Google / Apple sign-in, account linking, Internal User ID, subscription status, and the monthly scan quota are <strong>all a "local mock"</strong>: signing in merely writes a fixed fake account onto your own device. Nothing is connected to real Google / Apple OAuth, a backend database, cloud sync, or App Store / Google Play / Stripe billing. This stage does <strong>not actually collect your personal data, holds no cloud account, quota, or subscription record, and does not process any real payment or charge you</strong>; the "upgrade to subscription" and account details shown are a local mock. Any FAQ below marked "Future production" describes the expected behavior once the App ships with a backend and billing — it is not implemented yet.
-      </div>
-      
       <div class="info-grid">
         <div class="info-card">
           <h3>📧 Support Email</h3>
@@ -403,58 +385,55 @@
       <h2>💬 Frequently Asked Questions (FAQ)</h2>
 
       <div class="faq-item">
-        <div class="faq-question">Q: What are the restrictions in Guest Mode?</div>
+        <div class="faq-question">Q: Do I need to sign in? What can I do in Guest Mode?</div>
         <div class="faq-answer">
-          Guest Mode only permits browsing game rules and manually searching cards. To prevent server resources abuse, <strong>card scanning (camera OCR)</strong> and <strong>AI price trend forecasts</strong> require you to log in with a Google or Apple account.
+          Not necessarily. <strong>Guest Mode</strong> lets you browse the card list and look up prices manually without signing in. To use the <strong>camera scan recognition</strong> feature, you must sign in with a <strong>Google account</strong>. Only Google Sign-In is available right now.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: What is the monthly scan quota for Free Users?</div>
+        <div class="faq-question">Q: Why does the "Sign in with Apple" button do nothing?</div>
         <div class="faq-answer">
-          <strong>(Future production behavior)</strong> Registered free tier users receive <strong>100 card scans per month</strong>. Once you exhaust this quota, the scanning capability locks until the 1st of the next month (UTC), when it resets. Alternatively, you can subscribe to upgrade for unlimited scans.<br><br><strong>Current build (local mock):</strong> the scan count is only a local mock value, not a server-side quota; clearing cache or reinstalling resets it. Real server-side monthly quota enforcement is not implemented yet.
+          Sign in with Apple is <strong>not available yet</strong>. Enabling it safely requires server-side verification of the Apple ID token, which has not been built, so the button is temporarily disabled and prompts you to use Google instead. Please use <strong>Google Sign-In</strong> for now.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: What do I unlock as a Premium Subscriber?</div>
+        <div class="faq-question">Q: Is there a limit on card scanning?</div>
         <div class="faq-answer">
-          <strong>(Future production)</strong> Premium Subscribers get full access to: <br>
-          1. <strong>Unlimited Card Scanning</strong>: Scans are completely unlimited.<br>
-          2. <strong>AI Price Trend Forecasts</strong>: Unlock predictions using advanced modeling based on YT subscriber stats, sentiment tracking, and historical price variants.<br><br><strong>Current build (local mock):</strong> "Upgrade to subscription" simply flips your role to subscriber locally to demonstrate the unlock effect. It does not authenticate an account or take payment, and is not connected to StoreKit / Google Play Billing / Stripe.
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: Can I link both my Google and Apple accounts?</div>
-        <div class="faq-answer">
-          <strong>(Future production)</strong> HoloHunter supports a "Common Account" mechanism. You can log in with Google first, then go to the <strong>Settings</strong> page and tap <strong>Link Apple</strong>, or vice versa. Both methods will share the same Internal User ID and cloud card collections.<br><br><strong>Current build (local mock):</strong> sign-in and linking are a local mock that writes a fixed fake account and toggles state on-device; real OAuth, a backend database, and cloud sync are not connected yet.
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: What happens if I get an "Account Collision" warning?</div>
-        <div class="faq-answer">
-          If the Google/Apple account you are linking is already registered, the App will detect the collision and offer two options:<br>
-          1. <strong>Merge Data</strong>: Merge card collections/settings of the collided account into your current account and transfer the identity link.<br>
-          2. <strong>Reject & Cancel</strong>: Cancel the linking process and keep everything as is.
-        </div>
-      </div>
-
-      <div class="faq-item">
-        <div class="faq-question">Q: Does account deletion wipe my scan logs and subscriptions?</div>
-        <div class="faq-answer">
-          <strong>Current build (local mock):</strong> there is no cloud account or data at this stage — all of your data (mock account, scan count, collections) lives only on your own device. Tapping "Delete Account (Local)" clears your local session and caches immediately and signs you out, which fully deletes everything the App currently holds about you. This action is irreversible.<br><br>
-          <strong>Future production (after backend & billing):</strong> the in-app delete button will clear the local session; to also delete your cloud-stored Internal User ID, linked OAuth identities, scan quota histories, and synced card collections — and to de-identify historical payment records — you will be able to submit a request via our support email <code>dicoge.chen@gmail.com</code> with your Internal User ID, handled by backend cascade deletion. (This cloud deletion channel is not implemented in the current mock build, since no cloud data exists yet.)
+          Yes. Users signed in with Google can scan <strong>100 times per month</strong>; guests cannot scan. This count is stored <strong>only on your device</strong> and resets monthly — it is not a server-side quota (clearing local data or reinstalling also resets it). There is currently <strong>no purchasable paid plan</strong>, and no payments are processed.
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: Are my scanned card photos uploaded or stored?</div>
         <div class="faq-answer">
-          It depends on the platform:<br>
-          <strong>Mobile App (iOS / Android)</strong>: Text recognition runs entirely on your device; the card image <strong>never leaves your device</strong> and is not uploaded to our servers.<br>
-          <strong>Web version</strong>: The card image is sent to our server endpoint and processed in real time by a third-party AI vision service (Google Gemini, via OpenRouter). The image is used only for that single recognition, is not retained long-term, and is never used for advertising or personalized tracking. See the <a href="privacy.html">Privacy Policy</a> for details.
+          Yes, they are uploaded for recognition. <strong>Both the mobile App (iOS / Android) and the web version</strong> send the captured card image to our server endpoint <code>/api/recognize-card</code>, which forwards it to <strong>Google's Gemini vision model</strong> (Google Generative Language API) for real-time reading. The image is used only for that single recognition, is not retained long-term on our server, and is never used for advertising or personalized tracking. See the <a href="privacy.html">Privacy Policy</a> for details.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: Do my collections and watchlist sync across devices?</div>
+        <div class="faq-answer">
+          No. The App has <strong>no cloud account database</strong>. Your sign-in account data, collections, watchlist, and preferences are stored <strong>only on the device you use</strong> (AsyncStorage on mobile, browser localStorage on web) and do not sync across devices.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: What does "Delete Account" actually delete?</div>
+        <div class="faq-answer">
+          Today, "Delete Account" <strong>removes the sign-in account record stored on this device and signs you out</strong>. It currently does <strong>not</strong> automatically revoke your Google authorization, delete the push token already uploaded to the server, or clear your local watchlist / scan history.<br><br>
+          For a more complete cleanup:<br>
+          1. <strong>Revoke Google authorization</strong>: use "Settings → Sign Out" (which revokes the App's token with Google), or remove HoloHunter in your Google Account security settings.<br>
+          2. <strong>Delete an uploaded push token</strong>: email <code>dicoge.chen@gmail.com</code> and we will remove it on the server.<br>
+          3. <strong>Clear local data</strong>: uninstall the App (mobile) or clear site data (web) to remove all local collections, watchlist, and settings.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: Why isn't there a regular email/password sign-up?</div>
+        <div class="faq-answer">
+          To protect your password and privacy, the App <strong>only supports secure third-party sign-in with Google</strong> (Apple coming later). We never collect or store your password; authentication happens entirely on Google's side.
         </div>
       </div>
     </div>
