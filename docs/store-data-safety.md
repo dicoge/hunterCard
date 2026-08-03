@@ -112,8 +112,10 @@ above (Google-side retention depends on tier and is not zero).
 ### Account deletion (App Store requirement)
 In-app **Settings → Delete Account** removes the local account record and signs
 the user out. It does **not** by itself revoke Google authorization or delete the
-server-side push token. Full revocation: Sign Out (revokes the Google token) or
-Google Account settings; push-token removal by emailing `dicoge.chen@gmail.com`.
+server-side push token. Full revocation: Sign Out (best-effort — it *attempts*
+to revoke the Google token but ignores network/HTTP failure, so it is not
+guaranteed) or, to guarantee it, Google Account settings; push-token removal by
+emailing `dicoge.chen@gmail.com`.
 Disclose this honestly — do **not** claim all cloud/authorization data is deleted.
 
 ---
@@ -124,8 +126,8 @@ Disclose this honestly — do **not** claim all cloud/authorization data is dele
 - **Does your app collect or share any of the required user data types?** Yes.
 - **Is all collected data encrypted in transit?** Yes (HTTPS).
 - **Do you provide a way for users to request that their data be deleted?** Yes —
-  email `dicoge.chen@gmail.com`; plus in-app sign-out (revokes Google token) and
-  uninstall / clear-data for local data.
+  email `dicoge.chen@gmail.com`; plus in-app sign-out (best-effort Google-token
+  revocation) and uninstall / clear-data for local data.
 
 ### Data types — collected (declare exactly these)
 

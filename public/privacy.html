@@ -314,7 +314,7 @@
       </ul>
 
       <h2>5. 如何登出</h2>
-      <p>您可以隨時在 App 首頁的<strong>「設定」</strong>分頁點擊<strong>「登出」</strong>。登出時，App 會清除裝置本機儲存的登入資料，並向 Google 送出權杖撤銷 (revoke) 請求以撤銷本 App 的授權。</p>
+      <p>您可以隨時在 App 首頁的<strong>「設定」</strong>分頁點擊<strong>「登出」</strong>。登出時，App 會清除裝置本機儲存的登入資料，並<strong>嘗試</strong>向 Google 送出權杖撤銷 (revoke) 請求。此撤銷為<strong>盡力而為（best-effort）</strong>：若因網路或伺服器問題未能成功送達，權杖可能仍有效直到自然到期。若要確保撤銷，請前往 <em>Google 帳戶 → 安全性 → 第三方應用程式與服務</em> 手動移除 HoloHunter 的存取權。</p>
 
       <h2>6. 帳號與資料刪除</h2>
       <div class="danger-card">
@@ -322,7 +322,7 @@
       </div>
       <p>若您想更完整地清除資料，建議：</p>
       <ol>
-        <li><strong>撤銷 Google 授權</strong>：使用「設定 → 登出」（會向 Google 撤銷本 App 的權杖），或前往您的 <em>Google 帳戶 → 安全性 → 第三方應用程式與服務</em> 移除 HoloHunter 的存取權。</li>
+        <li><strong>撤銷 Google 授權</strong>：使用「設定 → 登出」（會<strong>嘗試</strong>向 Google 撤銷本 App 的權杖，屬盡力而為，可能未成功），或前往您的 <em>Google 帳戶 → 安全性 → 第三方應用程式與服務</em> 移除 HoloHunter 的存取權（此方式一定生效）。</li>
         <li><strong>刪除已上傳的推播 Token</strong>：目前尚無 App 內移除入口，如需刪除，請來信 <code>dicoge.chen@gmail.com</code> 告知，我們會於伺服器端移除。</li>
         <li><strong>清除本機資料</strong>：於系統設定解除安裝 App（手機）或清除網站資料（網頁）即可移除所有本機儲存的收藏、追蹤清單與設定。</li>
       </ol>
@@ -397,7 +397,7 @@
       </ul>
 
       <h2>5. How to Sign Out</h2>
-      <p>You can sign out at any time from the <strong>Settings</strong> tab by tapping <strong>Sign Out</strong>. On sign-out, the App clears the sign-in data stored on your device and sends a token revocation request to Google to revoke the App's authorization.</p>
+      <p>You can sign out at any time from the <strong>Settings</strong> tab by tapping <strong>Sign Out</strong>. On sign-out, the App clears the sign-in data stored on your device and <strong>attempts</strong> to send a token revocation request to Google. This revocation is <strong>best-effort</strong>: if the request cannot be delivered (e.g. a network or server error), the token may remain valid until it expires on its own. To guarantee revocation, go to your <em>Google Account → Security → Third-party apps &amp; services</em> and remove HoloHunter's access.</p>
 
       <h2>6. Account & Data Deletion</h2>
       <div class="danger-card">
@@ -405,7 +405,7 @@
       </div>
       <p>If you want a more complete cleanup, we recommend:</p>
       <ol>
-        <li><strong>Revoke Google authorization</strong>: Use "Settings → Sign Out" (which revokes the App's token with Google), or go to your <em>Google Account → Security → Third-party apps &amp; services</em> and remove HoloHunter's access.</li>
+        <li><strong>Revoke Google authorization</strong>: Use "Settings → Sign Out" (which <strong>attempts</strong> to revoke the App's token with Google on a best-effort basis and may not succeed), or go to your <em>Google Account → Security → Third-party apps &amp; services</em> and remove HoloHunter's access (this always works).</li>
         <li><strong>Delete an uploaded push token</strong>: There is no in-app removal entry yet; to delete it, email <code>dicoge.chen@gmail.com</code> and we will remove it on the server.</li>
         <li><strong>Clear local data</strong>: Uninstalling the App (mobile) or clearing site data (web) removes all locally stored collections, watchlist, and settings.</li>
       </ol>
