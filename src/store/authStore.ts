@@ -11,6 +11,7 @@ import {
   linkProvider,
   unlinkProvider,
   deleteAccount,
+  validateSession as validateSessionRemote,
 } from '../services/authService';
 
 interface AuthStore {
@@ -33,6 +34,7 @@ interface AuthStore {
   clearError: () => void;
   setRole: (role: UserRole) => void;
   setHasHydrated: (v: boolean) => void;
+  validateSession: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -159,17 +161,63 @@ export const useAuthStore = create<AuthStore>()(
       clearError: () => set({ error: null }),
       setRole: (role) => set({ role }),
       setHasHydrated: (v) => set({ hasHydrated: v }),
+
+      // Never trust a persisted authenticated flag on its own: a rehydrated
+      // session must be re-validated against the server before the app enters
+      // authenticated UI (CR DIC-866: persisted auth fail-open). A rejected
+      // session (401) is dropped; a transient/network failure keeps the session
+      // but stays unauthenticated so we fail closed, not open.
+      validateSession: async () => {
+        const { session } = get();
+        if (!session) {
+          set({ isAuthenticated: false });
+          get().setHasHydrated(true);
+          return;
+        }
+        try {
+          const user = await validateSessionRemote(session);
+          set({ user, isAuthenticated: true, isGuest: false, role: 'free_user' });
+        } catch (err: any) {
+          if (err?.status === 401) {
+            set({ user: null, session: null, isAuthenticated: false, role: 'guest' });
+          } else {
+            set({ isAuthenticated: false });
+          }
+        } finally {
+          get().setHasHydrated(true);
+        }
+      },
     }),
     {
       name: 'holohunter-auth',
+      version: 1,
+      // Any state persisted before session re-validation existed (unversioned /
+      // v0) may carry a blindly-trusted isAuthenticated. Drop its auth so the
+      // user is re-validated rather than admitted on a legacy/tampered flag.
+      migrate: (persisted: any, fromVersion: number) => {
+        if (fromVersion < 1) {
+          return {
+            ...(persisted ?? {}),
+            user: null,
+            session: null,
+            isAuthenticated: false,
+            isGuest: false,
+            role: 'guest',
+          };
+        }
+        return persisted;
+      },
       onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true);
+        // Enter unauthenticated; validateSession flips hasHydrated once the
+        // server has confirmed (or rejected) the persisted session.
+        state?.validateSession();
       },
       storage: createJSONStorage(() => platformStorage),
+      // isAuthenticated is intentionally NOT persisted: it is derived from a
+      // server-validated session on each launch, never restored from disk.
       partialize: (state) => ({
         user: state.user,
         session: state.session,
-        isAuthenticated: state.isAuthenticated,
         isGuest: state.isGuest,
         role: state.role,
       }),

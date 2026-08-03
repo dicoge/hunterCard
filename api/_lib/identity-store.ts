@@ -121,6 +121,10 @@ const IDX_KEY = (p: Provider, sub: string) => `auth:idx:${p}:${sub}`;
 const DETAIL_KEY = (id: string, p: Provider, sub: string) => `auth:idetail:${id}:${p}:${sub}`;
 const IDENTITIES_KEY = (id: string) => `auth:user:${id}:identities`;
 const LOCK_KEY = (id: string) => `auth:lock:${id}`;
+// Serialises creation for a single (provider, subject) so two concurrent
+// first-logins cannot each mint an internal user (login-or-create is otherwise
+// lock-free; this lock is only taken on the create path).
+const IDENTITY_LOCK_KEY = (p: Provider, sub: string) => `auth:idxlock:${p}:${sub}`;
 const member = (p: Provider, sub: string) => `${p}:${sub}`;
 const splitMember = (m: string): { provider: Provider; subject: string } => {
   const i = m.indexOf(':');
@@ -130,7 +134,6 @@ const splitMember = (m: string): { provider: Provider; subject: string } => {
 const LOCK_TTL_MS = 5000;
 const LOCK_RETRIES = 50;
 const LOCK_RETRY_MS = 20;
-const CREATE_RETRIES = 5;
 
 // Compare-and-delete so we never delete a lock that has expired and been
 // re-acquired by another writer (KEYS[1]=lock key, ARGV[1]=our token).
@@ -151,19 +154,22 @@ function newUserId(): string {
   return 'holo_' + crypto.randomBytes(9).toString('hex');
 }
 
-async function acquireLock(userId: string): Promise<string> {
+async function acquireLockKey(lockKey: string): Promise<string> {
   const token = crypto.randomUUID();
   for (let i = 0; i < LOCK_RETRIES; i++) {
-    const ok = await kv.set(LOCK_KEY(userId), token, { nx: true, px: LOCK_TTL_MS });
+    const ok = await kv.set(lockKey, token, { nx: true, px: LOCK_TTL_MS });
     if (ok === 'OK') return token;
     await sleep(LOCK_RETRY_MS);
   }
-  throw new IdentityStoreError('LOCK_TIMEOUT', `Could not acquire lock for ${userId}`);
+  throw new IdentityStoreError('LOCK_TIMEOUT', `Could not acquire lock ${lockKey}`);
 }
 
-async function releaseLock(userId: string, token: string): Promise<void> {
-  await kv.eval(RELEASE_LOCK, [LOCK_KEY(userId)], [token]);
+async function releaseLockKey(lockKey: string, token: string): Promise<void> {
+  await kv.eval(RELEASE_LOCK, [lockKey], [token]);
 }
+
+const acquireLock = (userId: string) => acquireLockKey(LOCK_KEY(userId));
+const releaseLock = (userId: string, token: string) => releaseLockKey(LOCK_KEY(userId), token);
 
 async function loadUser(userId: string): Promise<StoredUser | null> {
   return (await kv.get<StoredUser>(USER_KEY(userId))) ?? null;
@@ -209,33 +215,56 @@ export interface LoginResult {
 }
 
 /**
- * §5.1 login-or-create. Atomic claim on the identity key is the sole
- * serialisation point; no user lock is needed for the create path.
+ * Resolve an existing identity to its owner, refreshing the display snapshot.
+ * Returns null when the identity has no live owner (no index, or a dangling
+ * index whose user record is gone). `reclaimDangling` deletes such a dangling
+ * index — only safe to pass under the per-identity create lock, so a merely
+ * in-flight create is never mistaken for a crashed one.
+ */
+async function resolveExisting(
+  identity: VerifiedIdentity,
+  reclaimDangling: boolean,
+): Promise<LoginResult | null> {
+  const { provider, subject } = identity;
+  const ownerId = await kv.get<string>(IDX_KEY(provider, subject));
+  if (!ownerId) return null;
+
+  const user = await loadUser(ownerId);
+  if (!user) {
+    if (reclaimDangling) await kv.del(IDX_KEY(provider, subject));
+    return null;
+  }
+  if (user.status !== 'active') {
+    throw new IdentityStoreError('ACCOUNT_DISABLED', `User ${ownerId} is ${user.status}`);
+  }
+  const refreshed = await refreshSnapshot(user, identity);
+  return { user: await hydrate(refreshed), isNew: false };
+}
+
+/**
+ * §5.1 login-or-create.
+ *
+ * Returning logins take the lock-free fast path. Creation is serialised by a
+ * per-(provider, subject) lock and writes the user record BEFORE claiming the
+ * identity index, so the index never points at a missing user and two concurrent
+ * first-logins resolve to a single internal user (CR DIC-866: identity create
+ * race). The previous "reclaim a dangling index and retry" path could not tell a
+ * crashed create from an in-flight one and would mint a duplicate user.
  */
 export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginResult> {
   const { provider, subject } = identity;
 
-  for (let attempt = 0; attempt < CREATE_RETRIES; attempt++) {
-    const ownerId = await kv.get<string>(IDX_KEY(provider, subject));
+  const fast = await resolveExisting(identity, false);
+  if (fast) return fast;
 
-    if (ownerId) {
-      const user = await loadUser(ownerId);
-      if (!user) {
-        // Dangling index (writer crashed mid-create). Reclaim and retry.
-        await kv.del(IDX_KEY(provider, subject));
-        continue;
-      }
-      if (user.status !== 'active') {
-        throw new IdentityStoreError('ACCOUNT_DISABLED', `User ${ownerId} is ${user.status}`);
-      }
-      const refreshed = await refreshSnapshot(user, identity);
-      return { user: await hydrate(refreshed), isNew: false };
-    }
+  const lock = await acquireLockKey(IDENTITY_LOCK_KEY(provider, subject));
+  try {
+    // Re-check under the lock: another creator may have won, or a dangling index
+    // may need reclaiming (safe now that no in-flight create can be running).
+    const existing = await resolveExisting(identity, true);
+    if (existing) return existing;
 
     const candidateId = newUserId();
-    const claimed = await kv.set(IDX_KEY(provider, subject), candidateId, { nx: true });
-    if (claimed !== 'OK') continue; // lost the race; loop re-reads the winner
-
     const now = new Date().toISOString();
     const user: StoredUser = {
       id: candidateId,
@@ -249,10 +278,11 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
     await kv.set(USER_KEY(candidateId), user);
     await writeDetail(candidateId, identity, now);
     await kv.sadd(IDENTITIES_KEY(candidateId), member(provider, subject));
+    await kv.set(IDX_KEY(provider, subject), candidateId); // claim last, under lock
     return { user: await hydrate(user), isNew: true };
+  } finally {
+    await releaseLockKey(IDENTITY_LOCK_KEY(provider, subject), lock);
   }
-
-  throw new IdentityStoreError('LOCK_TIMEOUT', 'login-or-create contention exceeded retries');
 }
 
 async function writeDetail(userId: string, identity: VerifiedIdentity, linkedAt: string): Promise<void> {
@@ -312,10 +342,10 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
       );
     }
 
-    const owner = await kv.get<string>(IDX_KEY(provider, subject));
-    if (owner && owner !== userId) {
-      throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${owner}`, {
-        merge_token: issueMergeToken(userId, owner, provider, subject),
+    const priorOwner = await kv.get<string>(IDX_KEY(provider, subject));
+    if (priorOwner && priorOwner !== userId) {
+      throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${priorOwner}`, {
+        merge_token: issueMergeToken(userId, priorOwner, provider, subject),
       });
     }
 
@@ -329,9 +359,21 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
       }
     }
 
+    // The index now points at this user. If a downstream write fails we must
+    // compensate so a failed link cannot leave a claim that grants future login
+    // (CR DIC-866: partial link fail-open). Only remove the index if WE created
+    // it from nothing (no prior owner); a pre-existing self-owned claim — e.g. a
+    // retry after an earlier partial failure — is legitimate and kept.
     const now = new Date().toISOString();
-    await writeDetail(userId, identity, now);
-    await kv.sadd(IDENTITIES_KEY(userId), member(provider, subject));
+    try {
+      await writeDetail(userId, identity, now);
+      await kv.sadd(IDENTITIES_KEY(userId), member(provider, subject));
+    } catch (err) {
+      if (!priorOwner) await kv.del(IDX_KEY(provider, subject)).catch(() => {});
+      await kv.del(DETAIL_KEY(userId, provider, subject)).catch(() => {});
+      await kv.srem(IDENTITIES_KEY(userId), member(provider, subject)).catch(() => {});
+      throw err;
+    }
     return { user: await hydrate(user), alreadyLinked: false };
   } finally {
     await releaseLock(userId, lock);

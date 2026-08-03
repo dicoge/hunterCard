@@ -24,7 +24,11 @@ export default function SettingsScreen() {
 
   const linkedProviders = user?.linkedProviders ?? [];
   const linkedSet = new Set(linkedProviders.map((p) => p.provider));
-  const unlinkedProviders = ALL_PROVIDERS.filter((p) => !linkedSet.has(p));
+  // Hide the Apple link entry entirely while Apple login is disabled (e.g. Web
+  // without a Services ID), consistent with LoginScreen — no non-functional CTA.
+  const unlinkedProviders = ALL_PROVIDERS.filter(
+    (p) => !linkedSet.has(p) && !(p === 'apple' && !APPLE_LOGIN_ENABLED),
+  );
 
   const handleGoogleLogin = async () => {
     try {
@@ -214,22 +218,17 @@ export default function SettingsScreen() {
                   )}
                 </View>
               ))}
-              {unlinkedProviders.map((provider) => {
-                const disabled = provider === 'apple' && !APPLE_LOGIN_ENABLED;
-                return (
-                  <TouchableOpacity
-                    key={provider}
-                    style={[styles.linkBtn, (isLoading || disabled) && styles.btnDisabled]}
-                    onPress={() => handleLinkProvider(provider)}
-                    disabled={isLoading || disabled}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.linkBtnText}>
-                      綁定 {PROVIDER_LABEL[provider]} 帳號{disabled ? '（即將推出）' : ''}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {unlinkedProviders.map((provider) => (
+                <TouchableOpacity
+                  key={provider}
+                  style={[styles.linkBtn, isLoading && styles.btnDisabled]}
+                  onPress={() => handleLinkProvider(provider)}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.linkBtnText}>綁定 {PROVIDER_LABEL[provider]} 帳號</Text>
+                </TouchableOpacity>
+              ))}
               <Text style={styles.hint}>
                 綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，
                 無法解除最後一個。
@@ -260,18 +259,15 @@ export default function SettingsScreen() {
               >
                 <Text style={styles.googleBtnText}>使用 Google 帳號登入</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.appleBtn, (isLoading || !APPLE_LOGIN_ENABLED) && styles.btnDisabled]}
-                onPress={handleAppleLogin}
-                disabled={isLoading || !APPLE_LOGIN_ENABLED}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.appleBtnText}>
-                  使用 Apple 帳號登入{APPLE_LOGIN_ENABLED ? '' : '（即將推出）'}
-                </Text>
-              </TouchableOpacity>
-              {!APPLE_LOGIN_ENABLED && (
-                <Text style={styles.hint}>Apple 登入即將推出，目前請使用 Google 登入。</Text>
+              {APPLE_LOGIN_ENABLED && (
+                <TouchableOpacity
+                  style={[styles.appleBtn, isLoading && styles.btnDisabled]}
+                  onPress={handleAppleLogin}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
+                </TouchableOpacity>
               )}
             </>
           )}

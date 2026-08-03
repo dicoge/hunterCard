@@ -81,7 +81,12 @@ function assertClaims(
   { issuers, audience, nonce }: { issuers: string[]; audience: string[]; nonce?: string },
 ): void {
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp === 'number' && now >= payload.exp) {
+  // Require a finite numeric exp: a missing / non-numeric / NaN / Infinity exp
+  // must fail closed, not skip the expiry check and accept a never-expiring token.
+  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+    throw new IdentityStoreError('INVALID_TOKEN', 'Missing or non-numeric exp');
+  }
+  if (now >= payload.exp) {
     throw new IdentityStoreError('TOKEN_EXPIRED', 'ID token expired');
   }
   if (!issuers.includes(payload.iss)) {

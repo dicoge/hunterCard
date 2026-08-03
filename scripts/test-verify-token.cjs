@@ -196,6 +196,30 @@ async function testExpiredTokenRejected() {
   );
 }
 
+async function testMissingExpRejected() {
+  clearAuthEnv();
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'web-client.apps.googleusercontent.com';
+  // A token with no exp must fail closed, not skip the expiry check.
+  await expectError(
+    verify.verifyGoogleIdToken(
+      googleToken('web-client.apps.googleusercontent.com', { exp: undefined }),
+    ),
+    'INVALID_TOKEN',
+  );
+}
+
+async function testNonNumericExpRejected() {
+  clearAuthEnv();
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'web-client.apps.googleusercontent.com';
+  // A non-numeric exp (string) must be rejected, not silently accepted.
+  await expectError(
+    verify.verifyGoogleIdToken(
+      googleToken('web-client.apps.googleusercontent.com', { exp: 'not-a-number' }),
+    ),
+    'INVALID_TOKEN',
+  );
+}
+
 (async () => {
   const tests = [
     testGoogleWebAudienceAccepted,
@@ -206,6 +230,8 @@ async function testExpiredTokenRejected() {
     testAppleWebServicesIdAcceptedWhenWebEnabled,
     testNonceMismatchRejected,
     testExpiredTokenRejected,
+    testMissingExpRejected,
+    testNonNumericExpRejected,
   ];
   for (const test of tests) {
     await test();

@@ -368,3 +368,20 @@ export async function deleteAccount(session: string): Promise<void> {
     throw toAuthError(data, res.status);
   }
 }
+
+// Server-validate a persisted session before the app trusts it. On success
+// returns the fresh server user; a rejected session (401) throws an AuthError
+// with status 401 so the caller can fail closed and drop the local session,
+// while a transient/network error throws with status 0 (keep the session, just
+// don't enter authenticated state yet). Never returns a user without a 2xx.
+export async function validateSession(session: string): Promise<HoloUser> {
+  let res: Response;
+  try {
+    res = await apiPost('/auth/me', {}, session);
+  } catch {
+    throw new AuthError('無法驗證登入狀態（網路問題），請稍後再試。', 0, 'network_error');
+  }
+  const data = await readJson(res);
+  if (!res.ok) throw toAuthError(data, res.status);
+  return toHoloUser(data.user);
+}

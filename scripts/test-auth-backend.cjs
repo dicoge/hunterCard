@@ -22,12 +22,14 @@ const kvState = {
   values: new Map(),
   sets: new Map(),
   failOn: null, // (op, key) => boolean — inject a write failure
+  beforeSet: null, // async (key, value) => void — awaited before each set (interleave hook)
 };
 
 function resetKv() {
   kvState.values.clear();
   kvState.sets.clear();
   kvState.failOn = null;
+  kvState.beforeSet = null;
 }
 
 function maybeFail(op, key) {
@@ -41,6 +43,7 @@ const kv = {
     return kvState.values.has(key) ? kvState.values.get(key) : null;
   },
   async set(key, value, opts) {
+    if (kvState.beforeSet) await kvState.beforeSet(key, value);
     maybeFail('set', key);
     if (opts && opts.nx && kvState.values.has(key)) return null;
     kvState.values.set(key, value);
@@ -241,6 +244,60 @@ async function testWriteFailureIsNotReportedAsSuccess() {
   assert.equal(retry.user.linkedProviders.length, 2, 'retry after transient failure succeeds');
 }
 
+async function testConcurrentFirstLoginCreatesSingleUser() {
+  resetKv();
+  const id = () => identity('google', 'race-sub', 'a@example.com', 'Ann');
+
+  // Deterministically drive the create race: hold the FIRST internal-user record
+  // write so a second concurrent first-login has a window to (in the buggy code)
+  // reclaim the freshly-claimed index and mint a duplicate user. The fix takes a
+  // per-identity lock and claims the index only AFTER the user exists, so any
+  // interleaving must still resolve to exactly one internal user.
+  let held = false;
+  kvState.beforeSet = async (key) => {
+    if (!held && /^auth:user:holo_[0-9a-f]+$/.test(key)) {
+      held = true;
+      await new Promise((r) => setTimeout(r, 60));
+    }
+  };
+
+  const results = await Promise.all([store.loginOrCreate(id()), store.loginOrCreate(id())]);
+  kvState.beforeSet = null;
+
+  const ids = new Set(results.map((r) => r.user.internalId));
+  assert.equal(ids.size, 1, 'both concurrent first-logins resolve to one internal user');
+  assert.equal(results.filter((r) => r.isNew).length, 1, 'exactly one create, one returning login');
+
+  const userKeys = [...kvState.values.keys()].filter((k) => /^auth:user:holo_[0-9a-f]+$/.test(k));
+  assert.equal(userKeys.length, 1, 'exactly one internal user record persisted (no duplicate)');
+}
+
+async function testFailedLinkDoesNotGrantFutureLogin() {
+  resetKv();
+  const apple = (await store.loginOrCreate(identity('apple', 'a-1', 'a@icloud.com'))).user;
+
+  // Fail the membership write midway through linking Google: the link must throw
+  // AND leave no index claim behind, or a later Google login would silently enter
+  // this account despite the 500 (CR DIC-866: partial link fail-open).
+  kvState.failOn = (op, key) => op === 'sadd' && key === `auth:user:${apple.internalId}:identities`;
+  await assert.rejects(
+    store.linkIdentity(apple.internalId, identity('google', 'g-1', 'a@example.com')),
+    /injected KV failure/,
+    'a failed link must throw',
+  );
+  kvState.failOn = null;
+
+  // The compensated claim is gone: logging in with that Google identity now
+  // creates a fresh, separate user rather than resolving into the linker.
+  const fresh = await store.loginOrCreate(identity('google', 'g-1', 'a@example.com'));
+  assert.equal(fresh.isNew, true, 'failed link left no claim, so Google login creates a new user');
+  assert.notEqual(
+    fresh.user.internalId,
+    apple.internalId,
+    'a failed link must never grant future login into the linker account',
+  );
+}
+
 async function testPrivateRelayEmailChangeDoesNotSplitOrMerge() {
   resetKv();
   const first = await store.loginOrCreate(identity('apple', 'apple-sub-1', 'real@icloud.com', 'Kim'));
@@ -283,7 +340,9 @@ async function testDeleteCascadeRemovesIdentities() {
     testSameProviderGuard,
     testCannotUnlinkLastMethodAndConcurrency,
     testConcurrentUnlinkAndDeleteLeaveNoDanglingIndex,
+    testConcurrentFirstLoginCreatesSingleUser,
     testWriteFailureIsNotReportedAsSuccess,
+    testFailedLinkDoesNotGrantFutureLogin,
     testPrivateRelayEmailChangeDoesNotSplitOrMerge,
     testDeleteCascadeRemovesIdentities,
   ];
