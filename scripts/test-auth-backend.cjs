@@ -548,6 +548,133 @@ async function testGhostLinkAfterCrashIsHiddenRepairedAndNotSplit() {
   assert.equal(login.user.internalId, apple.internalId, 'no identity split — same internal user');
 }
 
+async function testFailedFinalLinkCommitFailsClosedAndRepairs() {
+  resetKv();
+  const apple = (await store.loginOrCreate(identity('apple', 'a-4', 'a@icloud.com', 'Kim'))).user;
+
+  // Inject ONLY the final pending->committed flip failure: the link publishes the
+  // login-granting index, then throws while flipping the google detail to
+  // committed. Pre-fix the index survived live AND a later google login followed
+  // it while refreshSnapshot cleared pending — granting access despite the failed
+  // link response (CR DIC-874 #1: final-link-commit failure grants login).
+  const detailKey = `auth:idetail:${apple.internalId}:google:g-4`;
+  kvState.beforeSet = async (key, value) => {
+    if (key === detailKey && value && value.pending === false) {
+      throw new Error('injected KV failure: pending->committed flip');
+    }
+  };
+  await assert.rejects(
+    store.linkIdentity(apple.internalId, identity('google', 'g-4', 'g@example.com', 'Kim')),
+    /injected KV failure/,
+    'the final commit failure must throw (no false link success)',
+  );
+  kvState.beforeSet = null;
+
+  // The index was published, but the link is NOT committed (detail still pending).
+  assert.equal(kvState.values.get('auth:idx:google:g-4'), apple.internalId, 'index was published');
+  assert.equal(kvState.values.get(detailKey).pending, true, 'the google detail is still pending');
+
+  // 1) Provider login FAILS CLOSED: it must neither grant access via the live
+  //    index nor auto-commit the pending detail.
+  await expectError(
+    store.loginOrCreate(identity('google', 'g-4', 'g@example.com', 'Kim')),
+    'IDENTITY_LINK_PENDING',
+  );
+  assert.equal(
+    kvState.values.get(detailKey).pending,
+    true,
+    'a failed-closed login must not auto-commit the pending link',
+  );
+  const usersAfterLogin = [...kvState.values.keys()].filter((k) => /^auth:user:holo_[0-9a-f]+$/.test(k));
+  assert.deepEqual(
+    usersAfterLogin,
+    [`auth:user:${apple.internalId}`],
+    'the failed-closed login minted no split user',
+  );
+
+  // getUser/hydrate still hides the ghost: google is NOT reported as linked.
+  const afterFail = await store.getUser(apple.internalId);
+  assert.equal(afterFail.linkedProviders.length, 1, 'pending link stays hidden from hydrate');
+  assert.equal(afterFail.linkedProviders[0].provider, 'apple');
+
+  // 2) Retry REPAIRS safely — the link finishes and commits, no split.
+  const retry = await store.linkIdentity(apple.internalId, identity('google', 'g-4', 'g@example.com', 'Kim'));
+  assert.equal(retry.alreadyLinked, false, 'retry finishes the pending link, not premature alreadyLinked');
+  assert.equal(retry.user.linkedProviders.length, 2, 'both providers committed after repair');
+  assert.equal(kvState.values.get(detailKey).pending, false, 'the google detail is now committed');
+
+  const login = await store.loginOrCreate(identity('google', 'g-4', 'g@example.com', 'Kim'));
+  assert.equal(login.isNew, false, 'google login now resolves into the repaired account');
+  assert.equal(login.user.internalId, apple.internalId, 'no identity split after repair');
+  const usersFinal = [...kvState.values.keys()].filter((k) => /^auth:user:holo_[0-9a-f]+$/.test(k));
+  assert.deepEqual(usersFinal, [`auth:user:${apple.internalId}`], 'exactly one internal user throughout');
+}
+
+// Forge account A's stale/pending ghost for a (provider, subject) whose LIVE
+// index belongs to another account: a membership + pending detail on A, but no
+// index of A's own. This is the exact state a crashed/failed link leaves behind.
+function forgeGhostMembership(userId, provider, subject) {
+  const setKey = `auth:user:${userId}:identities`;
+  const set = kvState.sets.get(setKey) ?? new Set();
+  set.add(`${provider}:${subject}`);
+  kvState.sets.set(setKey, set);
+  kvState.values.set(`auth:idetail:${userId}:${provider}:${subject}`, {
+    provider,
+    subject,
+    email: 'ghost@example.com',
+    linkedAt: new Date().toISOString(),
+    pending: true,
+  });
+}
+
+async function testDeleteDoesNotWipeAnotherAccountsLiveIndex() {
+  resetKv();
+  // B legitimately owns the google identity (committed, live index -> B).
+  const b = (await store.loginOrCreate(identity('google', 'shared', 'b@example.com', 'Bee'))).user;
+  // A is a separate account that carries a stale ghost membership for the SAME
+  // google identity while the live index points at B, not A.
+  const a = (await store.loginOrCreate(identity('apple', 'a-owner', 'a@icloud.com', 'Ann'))).user;
+  forgeGhostMembership(a.internalId, 'google', 'shared');
+  assert.equal(kvState.values.get('auth:idx:google:shared'), b.internalId, 'B owns the live google index');
+
+  // Deleting A must NOT delete B's live google index: cleanup is owner-fenced with
+  // compare-and-delete, so A's ghost delete is a no-op (CR DIC-874 #2). Pre-fix an
+  // unconditional kv.del wiped B's index and split B's login.
+  await store.deleteUser(a.internalId);
+  assert.equal(kvState.values.get('auth:idx:google:shared'), b.internalId, "delete A left B's index intact");
+
+  const bLogin = await store.loginOrCreate(identity('google', 'shared', 'b@example.com', 'Bee'));
+  assert.equal(bLogin.isNew, false, "B's returning login stays stable");
+  assert.equal(bLogin.user.internalId, b.internalId, 'no identity split for B');
+  const users = [...kvState.values.keys()].filter((k) => /^auth:user:holo_[0-9a-f]+$/.test(k));
+  assert.deepEqual(users, [`auth:user:${b.internalId}`], 'only B remains; delete minted no extra user');
+}
+
+async function testUnlinkDoesNotWipeAnotherAccountsLiveIndex() {
+  resetKv();
+  const b = (await store.loginOrCreate(identity('google', 'shared', 'b@example.com', 'Bee'))).user;
+  const a = (await store.loginOrCreate(identity('apple', 'a-owner', 'a@icloud.com', 'Ann'))).user;
+  forgeGhostMembership(a.internalId, 'google', 'shared');
+  assert.equal(kvState.values.get('auth:idx:google:shared'), b.internalId, 'B owns the live google index');
+
+  // Unlinking google from A (a ghost it does not truly own) must leave B's live
+  // index untouched (owner-fenced compare-and-delete). A keeps its apple method.
+  const afterUnlink = await store.unlinkIdentity(a.internalId, 'google');
+  assert.equal(afterUnlink.linkedProviders.length, 1, 'A keeps exactly its real apple method');
+  assert.equal(afterUnlink.linkedProviders[0].provider, 'apple');
+  assert.equal(kvState.values.get('auth:idx:google:shared'), b.internalId, "unlink A left B's index intact");
+
+  const bLogin = await store.loginOrCreate(identity('google', 'shared', 'b@example.com', 'Bee'));
+  assert.equal(bLogin.isNew, false, "B's returning login stays stable");
+  assert.equal(bLogin.user.internalId, b.internalId, 'no identity split for B');
+  const users = [...kvState.values.keys()].filter((k) => /^auth:user:holo_[0-9a-f]+$/.test(k));
+  assert.deepEqual(
+    users.sort(),
+    [`auth:user:${a.internalId}`, `auth:user:${b.internalId}`].sort(),
+    'both accounts remain; unlink minted no extra user',
+  );
+}
+
 (async () => {
   const tests = [
     testNewAndReturningUser,
@@ -560,6 +687,9 @@ async function testGhostLinkAfterCrashIsHiddenRepairedAndNotSplit() {
     testStaleCreatorCannotOverwriteElectedWinner,
     testDanglingIndexReclamationElectsSingleWinner,
     testGhostLinkAfterCrashIsHiddenRepairedAndNotSplit,
+    testFailedFinalLinkCommitFailsClosedAndRepairs,
+    testDeleteDoesNotWipeAnotherAccountsLiveIndex,
+    testUnlinkDoesNotWipeAnotherAccountsLiveIndex,
     testWriteFailureIsNotReportedAsSuccess,
     testFailedLinkDoesNotGrantFutureLogin,
     testLinkCrashBeforeCommitGrantsNoLogin,

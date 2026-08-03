@@ -91,6 +91,7 @@ export type IdentityErrorCode =
   | 'ACCOUNT_DISABLED'
   | 'NO_SUCH_IDENTITY'
   | 'USER_NOT_FOUND'
+  | 'IDENTITY_LINK_PENDING'
   | 'STORE_NOT_CONFIGURED'
   | 'LOCK_TIMEOUT';
 
@@ -103,6 +104,7 @@ const STATUS_BY_CODE: Record<IdentityErrorCode, number> = {
   ACCOUNT_DISABLED: 403,
   NO_SUCH_IDENTITY: 404,
   USER_NOT_FOUND: 404,
+  IDENTITY_LINK_PENDING: 409,
   STORE_NOT_CONFIGURED: 501,
   LOCK_TIMEOUT: 503,
 };
@@ -135,6 +137,9 @@ const splitMember = (m: string): { provider: Provider; subject: string } => {
 const LOCK_TTL_MS = 5000;
 const LOCK_RETRIES = 50;
 const LOCK_RETRY_MS = 20;
+// Bounded retries for the create-path index claim: enough to outlast a concurrent
+// winner's index-publish->commit gap without hanging on a genuinely stuck link.
+const CREATE_CLAIM_RETRIES = 10;
 
 // Atomic compare-and-delete: delete KEYS[1] only while its value still equals
 // ARGV[1]. Two uses: releasing a lock we still hold (never stomp a lock another
@@ -222,14 +227,23 @@ export interface LoginResult {
 
 /**
  * Resolve an existing identity to its owner, refreshing the display snapshot.
- * Returns null when the identity has no live owner (no index, or a dangling
- * index whose user record is gone). `reclaimDangling` deletes such a dangling
- * index — only safe to pass under the per-identity create lock, so a merely
- * in-flight create is never mistaken for a crashed one.
+ * Returns null when the identity has no live, committed owner (no index, a
+ * dangling index whose user record is gone, or an index whose link detail is
+ * still pending). `reclaimDangling` deletes such a dangling index — only safe to
+ * pass under the per-identity create lock, so a merely in-flight create is never
+ * mistaken for a crashed one.
+ *
+ * `requireCommitted` governs the pending case (index published but its detail
+ * not yet flipped pending->committed — see linkIdentity / loginOrCreate). The
+ * login fast path passes true: it must FAIL CLOSED on an uncommitted link rather
+ * than grant access or auto-commit it (CR DIC-874 #1). Create-time adoption
+ * passes false: the pending detail belongs to a concurrent winner mid-commit, so
+ * it returns null and lets the caller retry until that commit lands.
  */
 async function resolveExisting(
   identity: VerifiedIdentity,
   reclaimDangling: boolean,
+  requireCommitted: boolean,
 ): Promise<LoginResult | null> {
   const { provider, subject } = identity;
   const ownerId = await kv.get<string>(IDX_KEY(provider, subject));
@@ -251,6 +265,23 @@ async function resolveExisting(
   if (user.status !== 'active') {
     throw new IdentityStoreError('ACCOUNT_DISABLED', `User ${ownerId} is ${user.status}`);
   }
+  // The login-granting index alone is NOT proof of a committed link. link/create
+  // publish the index and only THEN flip the detail pending->committed, so a
+  // failure in that final flip leaves index->owner with a still-pending detail.
+  // Prove the committed state from the detail; never grant login on — nor let the
+  // refreshSnapshot below auto-commit — a pending link (CR DIC-874 #1).
+  const detail = await kv.get<IdentityDetail>(DETAIL_KEY(ownerId, provider, subject));
+  if (!detail || detail.pending) {
+    if (requireCommitted) {
+      // Login fast path: fail closed. The uncommitted link is repaired by a retry
+      // of linkIdentity under the per-user lock, never by a login side effect.
+      throw new IdentityStoreError(
+        'IDENTITY_LINK_PENDING',
+        `${provider} identity link to ${ownerId} is not committed`,
+      );
+    }
+    return null;
+  }
   const refreshed = await refreshSnapshot(user, identity);
   return { user: await hydrate(refreshed), isNew: false };
 }
@@ -271,7 +302,7 @@ async function resolveExisting(
 export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginResult> {
   const { provider, subject } = identity;
 
-  const fast = await resolveExisting(identity, false);
+  const fast = await resolveExisting(identity, false, /* requireCommitted */ true);
   if (fast) return fast;
 
   const candidateId = newUserId();
@@ -295,22 +326,36 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
 
   let published = false;
   try {
-    // Two attempts: the second only runs if the first NX lost to a *dangling*
-    // index (owner user gone), which resolveExisting reclaims below.
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // Retry the claim: a lost NX is retried when the index was *dangling* (owner
+    // gone → reclaimed below) or is held by a concurrent winner whose detail is
+    // still pending (mid-commit → back off until it lands). Either way we resolve
+    // to a single owner without ever minting a duplicate.
+    for (let attempt = 0; attempt < CREATE_CLAIM_RETRIES; attempt++) {
       const claimed = await kv.set(IDX_KEY(provider, subject), candidateId, { nx: true });
       if (claimed === 'OK') {
+        // Index published → flip the detail to committed so login/hydrate can
+        // enter via it. If that final flip fails we must NOT strand index->us with
+        // a pending detail (login would then fail closed with no create-side
+        // repair), so retract the index we just claimed (compare-and-delete, only
+        // while it still names us) and let `finally` discard the orphan user.
+        try {
+          await writeDetail(candidateId, identity, now, /* pending */ false);
+        } catch (err) {
+          await kv
+            .eval(COMPARE_AND_DELETE, [IDX_KEY(provider, subject)], [candidateId])
+            .catch(() => {});
+          throw err;
+        }
         published = true;
-        // Index published → mark the detail committed so it surfaces in hydrate.
-        await writeDetail(candidateId, identity, now, /* pending */ false);
         return { user: await hydrate(user), isNew: true };
       }
       // Lost the election. Adopt the committed winner; if the index is dangling
-      // (points at a deleted user), reclaim it and retry our own claim once.
-      const winner = await resolveExisting(identity, true);
+      // (points at a deleted user), reclaim it and retry our own claim.
+      const winner = await resolveExisting(identity, true, /* requireCommitted */ false);
       if (winner) return winner;
+      await sleep(LOCK_RETRY_MS);
     }
-    throw new IdentityStoreError('USER_NOT_FOUND', 'identity owner disappeared during create');
+    throw new IdentityStoreError('LOCK_TIMEOUT', 'could not resolve identity owner during create');
   } finally {
     // Anything but a successful publish leaves an unreferenced orphan user; drop
     // it best-effort. It can never grant a login because no index points at it.
@@ -361,7 +406,11 @@ async function refreshSnapshot(user: StoredUser, identity: VerifiedIdentity): Pr
     DETAIL_KEY(user.id, identity.provider, identity.subject),
   );
   const linkedAt = existing?.linkedAt ?? new Date().toISOString();
-  await writeDetail(user.id, identity, linkedAt);
+  // Preserve the existing pending flag: a display-snapshot refresh must NEVER
+  // commit a link (flip pending->false). resolveExisting only reaches here for an
+  // already-committed detail, so this is normally false; keeping it explicit means
+  // no login side effect can ever auto-commit a failed link (CR DIC-874 #1).
+  await writeDetail(user.id, identity, linkedAt, existing?.pending ?? false);
   const next: StoredUser = {
     ...user,
     displayName: identity.name || user.displayName,
@@ -498,7 +547,14 @@ export async function unlinkIdentity(userId: string, provider: Provider): Promis
     }
 
     const { subject } = splitMember(target);
-    await kv.del(IDX_KEY(provider, subject));
+    // Owner-fenced index cleanup: delete the provider index ONLY while it still
+    // names THIS user. If the identity was legitimately (re)claimed by another
+    // account — e.g. this membership is a stale/pending ghost while the live index
+    // points elsewhere — an unconditional delete would wipe that account's live
+    // index and split its login. Compare-and-delete makes such a delete a no-op
+    // (CR DIC-874 #2). The detail/membership below are keyed by THIS user, so they
+    // are always ours to remove.
+    await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, subject)], [userId]);
     await kv.del(DETAIL_KEY(userId, provider, subject));
     await kv.srem(IDENTITIES_KEY(userId), target);
 
@@ -527,7 +583,10 @@ export async function deleteUser(userId: string): Promise<DeleteResult> {
     const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
     for (const m of members) {
       const { provider, subject } = splitMember(m);
-      await kv.del(IDX_KEY(provider, subject));
+      // Owner-fenced: drop the provider index ONLY while it still names THIS user.
+      // A stale/pending membership whose live index was reclaimed by another
+      // account must not let this delete wipe that account's index (CR DIC-874 #2).
+      await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, subject)], [userId]);
       await kv.del(DETAIL_KEY(userId, provider, subject));
     }
     await kv.del(IDENTITIES_KEY(userId));
