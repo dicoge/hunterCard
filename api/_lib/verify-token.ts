@@ -19,6 +19,12 @@ const APPLE_ISSUER = 'https://appleid.apple.com';
 
 const JWKS_TTL_MS = 10 * 60 * 1000;
 
+// Allowed clock skew between our host and the provider when checking time
+// claims. 300s (5 min) is the conventional OIDC leeway and matches Google's and
+// Apple's own tolerance, so a slightly skewed but otherwise valid token is not
+// spuriously rejected — while still failing closed on anything outside it.
+const CLOCK_SKEW_SEC = 300;
+
 interface Jwk {
   kid: string;
   kty: string;
@@ -28,9 +34,17 @@ interface Jwk {
 
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 
-async function fetchJwks(url: string): Promise<Jwk[]> {
-  const cached = jwksCache.get(url);
-  if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) return cached.keys;
+// Test-only: clear the in-process JWKS cache so regression tests can assert
+// force-refresh behaviour deterministically. Not used in production paths.
+export function __resetJwksCache(): void {
+  jwksCache.clear();
+}
+
+async function fetchJwks(url: string, forceRefresh = false): Promise<Jwk[]> {
+  if (!forceRefresh) {
+    const cached = jwksCache.get(url);
+    if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) return cached.keys;
+  }
   const res = await fetch(url);
   if (!res.ok) throw new IdentityStoreError('INVALID_TOKEN', `JWKS fetch failed: ${res.status}`);
   const data = (await res.json()) as { keys: Jwk[] };
@@ -90,8 +104,21 @@ function assertClaims(
   { issuers, audience, nonce }: { issuers: string[]; audience: string[]; nonce?: string },
 ): void {
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp === 'number' && now >= payload.exp) {
+
+  // Fail closed on time claims: a missing or malformed `exp`/`iat` must be
+  // rejected outright, never treated as "no expiry" (the previous check only
+  // rejected a numeric-and-expired exp, so a token with no exp sailed through).
+  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+    throw new IdentityStoreError('INVALID_TOKEN', 'Missing or malformed exp claim');
+  }
+  if (now > payload.exp + CLOCK_SKEW_SEC) {
     throw new IdentityStoreError('TOKEN_EXPIRED', 'ID token expired');
+  }
+  if (typeof payload.iat !== 'number' || !Number.isFinite(payload.iat)) {
+    throw new IdentityStoreError('INVALID_TOKEN', 'Missing or malformed iat claim');
+  }
+  if (payload.iat - CLOCK_SKEW_SEC > now) {
+    throw new IdentityStoreError('INVALID_TOKEN', 'ID token issued in the future');
   }
   if (!issuers.includes(payload.iss)) {
     throw new IdentityStoreError('INVALID_TOKEN', `Bad issuer: ${payload.iss}`);
@@ -112,8 +139,16 @@ async function verify(
   claims: { issuers: string[]; audience: string[]; nonce?: string },
 ): Promise<Record<string, any>> {
   const jwt = decodeJwt(idToken);
-  const keys = await fetchJwks(jwksUrl);
-  const jwk = keys.find((k) => k.kid === jwt.header.kid);
+  let keys = await fetchJwks(jwksUrl);
+  let jwk = keys.find((k) => k.kid === jwt.header.kid);
+  if (!jwk) {
+    // Cached keyset may be stale after a provider key rotation. Force one
+    // refresh (bypassing the TTL cache) before rejecting, so a valid token
+    // signed with a freshly rotated key is not turned away for the full cache
+    // TTL (CR DIC-854 blocker #2).
+    keys = await fetchJwks(jwksUrl, true);
+    jwk = keys.find((k) => k.kid === jwt.header.kid);
+  }
   if (!jwk) throw new IdentityStoreError('INVALID_TOKEN', 'No matching JWKS key');
   verifySignature(jwt, jwk);
   assertClaims(jwt.payload, claims);

@@ -17,7 +17,7 @@
 | 項目 | 位置 |
 | --- | --- |
 | 伺服器身份存放（KV：唯一 claim、per-user lock、login/link/unlink/delete + 錯誤碼） | `api/_lib/identity-store.ts` |
-| provider `id_token` 伺服器驗簽（Google 與 Apple 皆為 RS256，pin RS256 + 驗 JWK kty=RSA，JWKS 快取） | `api/_lib/verify-token.ts` |
+| provider `id_token` 伺服器驗簽（Google 與 Apple 皆為 RS256，pin RS256 + 驗 JWK kty=RSA；fail-closed `exp`+`iat` 含 clock-skew；JWKS 快取，kid miss 時強制刷新一次以容忍金鑰輪替） | `api/_lib/verify-token.ts` |
 | HMAC session 簽發 + KV session 記錄 / 撤銷（登出撤銷本 session、解綁撤銷被移除 provider 的 session（發起端 token 原子 re-bind 保留）、刪除撤銷全部 + 刪除收據） | `api/_lib/session.ts` |
 | 共用端點輔助（json、錯誤碼→HTTP、旗標、backend 可用性、session 解析） | `api/_lib/auth-endpoint.ts` |
 | 登入 / 綁定 / 解綁 / 登出 / 刪除端點（單一 dynamic route，session 授權，fail-closed） | `api/auth/[action].ts` |
@@ -28,6 +28,7 @@
 | Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/_lib/apple-auth.ts` |
 | refresh_token 儲存介面樁（seam，尚未接持久化） | `api/_lib/apple-token-store.ts` |
 | 後端身份存放迴歸測試（mock KV） | `scripts/test-auth-backend.cjs`（`npm run test:auth-backend`） |
+| id_token 驗簽迴歸測試（實跑 `verify-token.ts`，mock JWKS + 本地 RSA 金鑰） | `scripts/test-verify-token.cjs`（`npm run test:verify-token`） |
 | App 設定 capability / plugin | `app.json` |
 
 行為：登入 / 綁定 / 解綁 / 刪除皆須伺服器回 2xx 才視為成功；後端未設定（KV 或 `AUTH_SESSION_SECRET` 缺）時端點回 501，前端 fail-closed 不誤示成功。native 原生 Apple 流程（`src/services/auth/`）為早期實作，checklist 見文末。

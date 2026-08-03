@@ -35,9 +35,10 @@ const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || '/api';
 
 // Sign in with Apple (web) is disabled. The server-side ID-token verifier
-// already exists (api/_lib/verify-token.ts verifies Apple RS256 id_token / iss
-// / aud / exp / nonce and is covered by regression tests). The remaining
-// blockers are NOT the verifier:
+// already exists (api/_lib/verify-token.ts verifies Apple RS256 id_token /
+// iss / aud / fail-closed exp+iat with clock-skew / nonce, and is covered by
+// scripts/test-verify-token.cjs which executes it against mocked JWKS + local
+// RSA keys). The remaining blockers are NOT the verifier:
 //   1. refresh_token storage is still a stub (api/_lib/apple-token-store.ts),
 //      so delete-account revocation for Apple users fail-closes;
 //   2. the client authorizationCode → /api/auth/apple/register wiring that
