@@ -81,12 +81,37 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 - `/api/auth/delete-account` 取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
 - 上架前必須完成：實作 `apple-token-store`（真正持久化 + 加密）、於刪除時級聯刪除 / 匿名化使用者資料。Settings 頁已標示此限制。
 
-## Google 登入後續（尚未接線）
+## Google 登入設定（DIC-665，Android 第一優先）
 
-1. `npx expo install expo-auth-session expo-web-browser`
-2. Google Cloud Console 建立 iOS / Web / Android OAuth client ID。
-3. 於 `src/services/auth/googleAuth.ts` 用 `Google.useIdTokenAuthRequest` 換 `id_token`，映射成 `AuthSession`（`isGoogleAuthConfigured()` 回傳 `true`）。
-4. Web 的登入 gate（`AppNavigator.tsx` 的 `REQUIRE_AUTH`）改為全平台強制登入。
+`src/services/auth/googleAuth.ts` 已用 **expo-auth-session（Authorization Code + PKCE）** 接線，回傳與 Apple 相同形狀的 `AuthSession`：`user.id` = Google `sub`、`identityToken` = Google `id_token`。Android / iOS 走系統 Custom Tabs / Safari（非 WebView，符合 Google 對 embedded webview 的封鎖）。
+
+只差「外部憑證」即可運作——**程式碼本身不需再改**：
+
+1. **Google Cloud Console**（同一 GCP 專案，皆為公開值、可入 repo）：
+   - **Web client** — Web 登入 + 作為 mobile 後端驗證 `id_token` 的 audience。
+   - **iOS client** — Bundle ID `com.dicoge.holohunter`。
+   - **Android client** — Package `com.dicoge.holohunter` + **每一把會簽 app 的 keystore SHA-1**：
+     - EAS build keystore：`eas credentials`（Android → 對應 profile）。
+     - 本機 debug：`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`。
+     - **Google Play App Signing 憑證**（Play Console → App integrity）—最常漏，漏了會「開發版能登入、上架版失敗」。建議 SHA-1 + SHA-256 都登。
+2. 設定環境變數（見 `.env.example`）：`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`、`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`、`EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`。缺該平台專用值時退回 Web client。備妥後 `isGoogleAuthConfigured()` 於該平台回 `true`。
+3. **Redirect URI**：native 使用「反轉 client id」自訂 scheme `com.googleusercontent.apps.<id>:/oauthredirect`（Google installed-app client 允許的 redirect，程式自動由 client ID 推導）。此 scheme **無需**額外註冊進 `app.json`——expo-auth-session 於流程期間自行處理；Web 則用網站 origin 作 redirect（需在 Web client 授權 redirect 清單登記）。
+4. **需 dev client / 正式 build**（已裝 `expo-dev-client`）：原生瀏覽器流程無法在 Expo Go 測試；`app.json` 的 Android `package` 與 iOS `bundleIdentifier` 已就緒（`com.dicoge.holohunter`）。
+5. Web 的登入 gate（`AppNavigator.tsx` 的 `REQUIRE_AUTH`）如需全平台強制登入再一併調整（Web Google 屬 DIC-663）。
+
+> 備選方案（未採用）：`@react-native-google-signin/google-signin` 原生 SDK（見 `docs/Auth-Google-Login-Design.md` 交付 D/E/F）UX 較佳且直接回 `idToken`，但需新增原生模組 + config plugin + 重新 build。本次選 expo-auth-session：已安裝、純 JS/TS 可靜態驗證、不動原生建置。若 Android 瀏覽器 redirect 於實機遇到 `redirect_uri_mismatch`，再評估切換原生 SDK。
+
+## Android Google 驗證 checklist
+
+- [ ] EAS 以 dev/preview profile 重新建置（原生瀏覽器流程無法在 Expo Go 測試）。
+- [ ] Android OAuth client 已登錄「當前 build 對應 keystore」的 SHA-1（dev / EAS / Play App Signing）。
+- [ ] `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`（或退回 Web client）已設定；`isGoogleAuthConfigured()` 回 `true`、按鈕可用。
+- [ ] **新 user**：Google 帳號選擇器出現 → 授權 → 建立新 internal user → 進入 App。
+- [ ] **returning user**：同一 Google 帳號再次登入 → 對應同一 internal user（比對 `sub`，非 email）。
+- [ ] provider email 變更 / 與其他 provider 不同 email → 不造成錯誤帳號關聯（身份鍵為 `sub`）。
+- [ ] 推播 token 綁定 internal user id，而非 provider email。
+- [ ] 取消 Google 彈窗（`GOOGLE_CANCEL_CODE`）不顯示錯誤、停留登入頁。
+- [ ] Android Apple 登入：見 `docs/Android-Apple-Login-Feasibility.md`（本階段不實作）。
 
 ## iOS / TestFlight 驗證 checklist
 

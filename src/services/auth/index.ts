@@ -19,6 +19,7 @@ export {
   isGoogleAuthConfigured,
   signInWithGoogle,
   GoogleAuthNotConfiguredError,
+  GOOGLE_CANCEL_CODE,
 } from './googleAuth';
 
 const PRODUCTION_API_BASE = 'https://holocard-hunter.vercel.app';
