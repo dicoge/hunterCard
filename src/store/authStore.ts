@@ -59,7 +59,7 @@ export const useAuthStore = create<AuthStore>()(
             isAuthenticated: true,
             isGuest: false,
             isLoading: false,
-            role: 'free_user',
+            role: user.role,
           });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Login failed' });
@@ -77,7 +77,7 @@ export const useAuthStore = create<AuthStore>()(
             isAuthenticated: true,
             isGuest: false,
             isLoading: false,
-            role: 'free_user',
+            role: user.role,
           });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Login failed' });
@@ -164,9 +164,12 @@ export const useAuthStore = create<AuthStore>()(
 
       // Never trust a persisted authenticated flag on its own: a rehydrated
       // session must be re-validated against the server before the app enters
-      // authenticated UI (CR DIC-866: persisted auth fail-open). A rejected
-      // session (401) is dropped; a transient/network failure keeps the session
-      // but stays unauthenticated so we fail closed, not open.
+      // authenticated UI (CR DIC-866: persisted auth fail-open). A definitively
+      // rejected session — 401 (invalid) or 403 (account disabled / pending
+      // deletion, CR DIC-866 #3) — is dropped; a transient/network failure keeps
+      // the session but stays unauthenticated so we fail closed, not open. On
+      // success the server-authoritative role is applied, never hard-coded
+      // (CR DIC-866 #4).
       validateSession: async () => {
         const { session } = get();
         if (!session) {
@@ -176,9 +179,9 @@ export const useAuthStore = create<AuthStore>()(
         }
         try {
           const user = await validateSessionRemote(session);
-          set({ user, isAuthenticated: true, isGuest: false, role: 'free_user' });
+          set({ user, isAuthenticated: true, isGuest: false, role: user.role });
         } catch (err: any) {
-          if (err?.status === 401) {
+          if (err?.status === 401 || err?.status === 403) {
             set({ user: null, session: null, isAuthenticated: false, role: 'guest' });
           } else {
             set({ isAuthenticated: false });

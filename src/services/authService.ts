@@ -118,6 +118,7 @@ interface ServerPublicUser {
   displayName: string;
   primaryEmail?: string;
   photoUrl?: string;
+  role: 'free_user' | 'subscriber';
   linkedProviders: Array<{
     provider: AuthProvider;
     providerId: string;
@@ -143,6 +144,9 @@ function toHoloUser(u: ServerPublicUser): HoloUser {
     displayName: u.displayName,
     primaryEmail: u.primaryEmail,
     photoUrl: u.photoUrl,
+    // Carry the server-authoritative role through verbatim; only fall back to
+    // free_user if the server omitted it (never override a real subscriber).
+    role: u.role === 'subscriber' ? 'subscriber' : 'free_user',
     linkedProviders,
     createdAt: u.createdAt,
   };

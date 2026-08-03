@@ -121,10 +121,6 @@ const IDX_KEY = (p: Provider, sub: string) => `auth:idx:${p}:${sub}`;
 const DETAIL_KEY = (id: string, p: Provider, sub: string) => `auth:idetail:${id}:${p}:${sub}`;
 const IDENTITIES_KEY = (id: string) => `auth:user:${id}:identities`;
 const LOCK_KEY = (id: string) => `auth:lock:${id}`;
-// Serialises creation for a single (provider, subject) so two concurrent
-// first-logins cannot each mint an internal user (login-or-create is otherwise
-// lock-free; this lock is only taken on the create path).
-const IDENTITY_LOCK_KEY = (p: Provider, sub: string) => `auth:idxlock:${p}:${sub}`;
 const member = (p: Provider, sub: string) => `${p}:${sub}`;
 const splitMember = (m: string): { provider: Provider; subject: string } => {
   const i = m.indexOf(':');
@@ -244,12 +240,15 @@ async function resolveExisting(
 /**
  * §5.1 login-or-create.
  *
- * Returning logins take the lock-free fast path. Creation is serialised by a
- * per-(provider, subject) lock and writes the user record BEFORE claiming the
- * identity index, so the index never points at a missing user and two concurrent
- * first-logins resolve to a single internal user (CR DIC-866: identity create
- * race). The previous "reclaim a dangling index and retry" path could not tell a
- * crashed create from an in-flight one and would mint a duplicate user.
+ * Returning logins take the lock-free fast path. Creation needs NO lock: a fresh
+ * internal user is fully committed under a brand-new id, and only THEN is the
+ * identity index published with an atomic first-writer-wins `SET NX`. That
+ * single conditional write is the whole election — whoever wins has already
+ * committed their user, so a slow or "stale" creator can neither publish a
+ * duplicate nor overwrite the winner: there is no lease, hence no post-expiry
+ * window in which a stale writer could clobber the index (CR DIC-866 #1). A
+ * losing creator adopts the winner and discards its own orphan, which grants no
+ * login because no index ever referenced it (CR DIC-866 #2, create side).
  */
 export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginResult> {
   const { provider, subject } = identity;
@@ -257,32 +256,61 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
   const fast = await resolveExisting(identity, false);
   if (fast) return fast;
 
-  const lock = await acquireLockKey(IDENTITY_LOCK_KEY(provider, subject));
-  try {
-    // Re-check under the lock: another creator may have won, or a dangling index
-    // may need reclaiming (safe now that no in-flight create can be running).
-    const existing = await resolveExisting(identity, true);
-    if (existing) return existing;
+  const candidateId = newUserId();
+  const now = new Date().toISOString();
+  const user: StoredUser = {
+    id: candidateId,
+    status: 'active',
+    role: 'free_user',
+    displayName: identity.name || identity.email || 'HoloHunter User',
+    primaryEmail: identity.email,
+    photoUrl: identity.picture,
+    createdAt: now,
+  };
+  // Commit the user BEFORE publishing the index, so the index never points at a
+  // half-written user and the SET NX below is a valid linearisation point.
+  await kv.set(USER_KEY(candidateId), user);
+  await writeDetail(candidateId, identity, now);
+  await kv.sadd(IDENTITIES_KEY(candidateId), member(provider, subject));
 
-    const candidateId = newUserId();
-    const now = new Date().toISOString();
-    const user: StoredUser = {
-      id: candidateId,
-      status: 'active',
-      role: 'free_user',
-      displayName: identity.name || identity.email || 'HoloHunter User',
-      primaryEmail: identity.email,
-      photoUrl: identity.picture,
-      createdAt: now,
-    };
-    await kv.set(USER_KEY(candidateId), user);
-    await writeDetail(candidateId, identity, now);
-    await kv.sadd(IDENTITIES_KEY(candidateId), member(provider, subject));
-    await kv.set(IDX_KEY(provider, subject), candidateId); // claim last, under lock
-    return { user: await hydrate(user), isNew: true };
+  let published = false;
+  try {
+    // Two attempts: the second only runs if the first NX lost to a *dangling*
+    // index (owner user gone), which resolveExisting reclaims below.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const claimed = await kv.set(IDX_KEY(provider, subject), candidateId, { nx: true });
+      if (claimed === 'OK') {
+        published = true;
+        return { user: await hydrate(user), isNew: true };
+      }
+      // Lost the election. Adopt the committed winner; if the index is dangling
+      // (points at a deleted user), reclaim it and retry our own claim once.
+      const winner = await resolveExisting(identity, true);
+      if (winner) return winner;
+    }
+    throw new IdentityStoreError('USER_NOT_FOUND', 'identity owner disappeared during create');
   } finally {
-    await releaseLockKey(IDENTITY_LOCK_KEY(provider, subject), lock);
+    // Anything but a successful publish leaves an unreferenced orphan user; drop
+    // it best-effort. It can never grant a login because no index points at it.
+    if (!published) await discardOrphan(candidateId, identity);
   }
+}
+
+// Remove a create-path user that lost the identity-index election (or threw
+// before publishing). Best-effort: the user is unreferenced by any index, so a
+// failed cleanup here cannot grant a login — it only leaves collectable garbage.
+async function discardOrphan(candidateId: string, identity: VerifiedIdentity): Promise<void> {
+  await kv.del(DETAIL_KEY(candidateId, identity.provider, identity.subject)).catch(() => {});
+  await kv.del(IDENTITIES_KEY(candidateId)).catch(() => {});
+  await kv.del(USER_KEY(candidateId)).catch(() => {});
+}
+
+// Undo the membership/detail a link committed before its index publish. The
+// index is not touched: on this path it was either never published or belongs to
+// another account, never to `userId`.
+async function rollbackLink(userId: string, provider: Provider, subject: string): Promise<void> {
+  await kv.srem(IDENTITIES_KEY(userId), member(provider, subject)).catch(() => {});
+  await kv.del(DETAIL_KEY(userId, provider, subject)).catch(() => {});
 }
 
 async function writeDetail(userId: string, identity: VerifiedIdentity, linkedAt: string): Promise<void> {
@@ -349,30 +377,37 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
       });
     }
 
-    const claimed = await kv.set(IDX_KEY(provider, subject), userId, { nx: true });
+    // Commit membership BEFORE publishing the login-granting index. The index is
+    // the only thing login resolves through, so publishing it last means an
+    // interrupted link — a crash, or even a failed rollback — can never leave an
+    // index that grants login without committed membership (CR DIC-866 #2:
+    // partial link fail-open). The final SET NX is the atomic first-writer guard
+    // against a concurrent claim of the same (provider, subject).
+    const now = new Date().toISOString();
+    await writeDetail(userId, identity, now);
+    await kv.sadd(IDENTITIES_KEY(userId), member(provider, subject));
+
+    // Publish the index last. A failure here is after membership commit, so roll
+    // back the now-unpublished membership best-effort; even if that rollback
+    // fails, no index exists so no login can enter via it.
+    const claimed = await kv
+      .set(IDX_KEY(provider, subject), userId, { nx: true })
+      .catch(async (err) => {
+        await rollbackLink(userId, provider, subject);
+        throw err;
+      });
     if (claimed !== 'OK') {
       const owner2 = await kv.get<string>(IDX_KEY(provider, subject));
-      if (owner2 && owner2 !== userId) {
+      if (owner2 !== userId) {
+        // A concurrent account grabbed this identity between our pre-check and
+        // publish: undo the membership we committed and reject the collision.
+        await rollbackLink(userId, provider, subject);
         throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${owner2}`, {
-          merge_token: issueMergeToken(userId, owner2, provider, subject),
+          merge_token: issueMergeToken(userId, owner2 ?? 'unknown', provider, subject),
         });
       }
-    }
-
-    // The index now points at this user. If a downstream write fails we must
-    // compensate so a failed link cannot leave a claim that grants future login
-    // (CR DIC-866: partial link fail-open). Only remove the index if WE created
-    // it from nothing (no prior owner); a pre-existing self-owned claim — e.g. a
-    // retry after an earlier partial failure — is legitimate and kept.
-    const now = new Date().toISOString();
-    try {
-      await writeDetail(userId, identity, now);
-      await kv.sadd(IDENTITIES_KEY(userId), member(provider, subject));
-    } catch (err) {
-      if (!priorOwner) await kv.del(IDX_KEY(provider, subject)).catch(() => {});
-      await kv.del(DETAIL_KEY(userId, provider, subject)).catch(() => {});
-      await kv.srem(IDENTITIES_KEY(userId), member(provider, subject)).catch(() => {});
-      throw err;
+      // owner2 === userId: a prior partial attempt already published our own
+      // claim; the membership we just (re)committed makes it whole. Keep it.
     }
     return { user: await hydrate(user), alreadyLinked: false };
   } finally {
@@ -435,9 +470,17 @@ export async function deleteUser(userId: string): Promise<DeleteResult> {
   }
 }
 
+// Used by the session-restore path (/auth/me). A disabled or pending-deletion
+// user must NOT be restorable: it fails closed with ACCOUNT_DISABLED so a
+// persisted session cannot re-enter authenticated UI for a deactivated account
+// (CR DIC-866 #3). A missing user returns null (session no longer maps to a user).
 export async function getUser(userId: string): Promise<PublicUser | null> {
   const user = await loadUser(userId);
-  return user ? hydrate(user) : null;
+  if (!user) return null;
+  if (user.status !== 'active') {
+    throw new IdentityStoreError('ACCOUNT_DISABLED', `User ${userId} is ${user.status}`);
+  }
+  return hydrate(user);
 }
 
 // Opaque, short-lived collision token. Merge EXECUTION is a separate DIC-662

@@ -332,6 +332,113 @@ async function testDeleteCascadeRemovesIdentities() {
   assert.notEqual(fresh.user.internalId, user.internalId);
 }
 
+async function testStaleCreatorCannotOverwriteElectedWinner() {
+  resetKv();
+  const id = () => identity('google', 'lease-sub', 'a@example.com', 'Ann');
+
+  // Reproduce the create-lock lease-expiry attack (CR DIC-866 #1): park one
+  // creator right before it publishes the identity index — the exact point a
+  // fixed 5s lease would have expired — and force any create lock to "expire"
+  // (delete it) so a lock-based implementation would let a second creator
+  // through. The second creator fully commits and publishes first. The parked
+  // (stale) creator must then be UNABLE to publish a duplicate or overwrite the
+  // winner: the index is claimed with an atomic first-writer-wins SET NX, not an
+  // unconditional set. On the pre-fix lease code both creators reach the
+  // unconditional `kv.set(IDX,…)` and the stale one overwrites → two users.
+  let parked = false;
+  kvState.beforeSet = async (key) => {
+    if (!parked && key.startsWith('auth:idx:')) {
+      parked = true;
+      kvState.values.delete('auth:idxlock:google:lease-sub'); // simulate lease expiry
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  };
+
+  const results = await Promise.all([store.loginOrCreate(id()), store.loginOrCreate(id())]);
+  kvState.beforeSet = null;
+
+  const created = results.filter((r) => r.isNew);
+  assert.equal(created.length, 1, 'exactly one create, one adopt (no duplicate mint)');
+  const winnerId = created[0].user.internalId;
+
+  const ids = new Set(results.map((r) => r.user.internalId));
+  assert.equal(ids.size, 1, 'both logins resolve to a single internal user');
+  assert.equal([...ids][0], winnerId, 'the parked creator adopts the elected winner');
+
+  assert.equal(
+    kvState.values.get('auth:idx:google:lease-sub'),
+    winnerId,
+    'index still points at the elected winner — a stale write neither published nor overwrote',
+  );
+  const userKeys = [...kvState.values.keys()].filter((k) => /^auth:user:holo_[0-9a-f]+$/.test(k));
+  assert.deepEqual(userKeys, [`auth:user:${winnerId}`], 'exactly the winner user persists');
+}
+
+async function testLinkCrashBeforeCommitGrantsNoLogin() {
+  resetKv();
+  const apple = (await store.loginOrCreate(identity('apple', 'a-2', 'a@icloud.com'))).user;
+
+  // Fail the membership commit AND make every compensating cleanup write fail
+  // too (the crash/rollback-failure case). Because the fix publishes the
+  // login-granting index only AFTER membership is committed, an interrupted link
+  // leaves NO index no matter how cleanup fares — so a later login refuses to
+  // enter the linker (CR DIC-866 #2). The pre-fix code published the index
+  // FIRST; with rollback failing, that index survived and a later login silently
+  // entered this account, which is exactly what this asserts against.
+  kvState.failOn = (op, key) =>
+    (op === 'sadd' && key === `auth:user:${apple.internalId}:identities`) ||
+    (op === 'del' && key === 'auth:idx:google:g-2') ||
+    op === 'srem' ||
+    (op === 'del' && key.startsWith('auth:idetail:'));
+  await assert.rejects(
+    store.linkIdentity(apple.internalId, identity('google', 'g-2', 'a@example.com')),
+    /injected KV failure/,
+    'an interrupted link must throw',
+  );
+  kvState.failOn = null;
+
+  assert.notEqual(
+    kvState.values.get('auth:idx:google:g-2'),
+    apple.internalId,
+    'no surviving index may grant login into the linker after a failed link',
+  );
+  const fresh = await store.loginOrCreate(identity('google', 'g-2', 'a@example.com'));
+  assert.equal(fresh.isNew, true, 'interrupted link grants no login into the linker');
+  assert.notEqual(fresh.user.internalId, apple.internalId, 'must never resolve into the linker account');
+}
+
+async function testDisabledUserNotRestorable() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'dis-1', 'a@example.com'));
+  const stored = kvState.values.get(`auth:user:${user.internalId}`);
+
+  // A deactivated account must not be restorable via /auth/me (getUser): the
+  // restore path must fail closed rather than hand the account back (CR DIC-866 #3).
+  kvState.values.set(`auth:user:${user.internalId}`, { ...stored, status: 'disabled' });
+  await expectError(store.getUser(user.internalId), 'ACCOUNT_DISABLED');
+
+  kvState.values.set(`auth:user:${user.internalId}`, { ...stored, status: 'pending_deletion' });
+  await expectError(store.getUser(user.internalId), 'ACCOUNT_DISABLED');
+}
+
+async function testRolePreservedNotDowngraded() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'sub-role', 'a@example.com', 'Ann'));
+  assert.equal(user.role, 'free_user', 'new users start as free_user');
+
+  // Promote to subscriber in the store of record, then prove neither a returning
+  // login nor a session restore downgrades the server-authoritative role
+  // (CR DIC-866 #4: role discarded → subscribers silently downgraded).
+  const stored = kvState.values.get(`auth:user:${user.internalId}`);
+  kvState.values.set(`auth:user:${user.internalId}`, { ...stored, role: 'subscriber' });
+
+  const relogin = await store.loginOrCreate(identity('google', 'sub-role', 'a@example.com', 'Ann'));
+  assert.equal(relogin.user.role, 'subscriber', 'returning login preserves subscriber role');
+
+  const restored = await store.getUser(user.internalId);
+  assert.equal(restored.role, 'subscriber', 'session restore preserves subscriber role');
+}
+
 (async () => {
   const tests = [
     testNewAndReturningUser,
@@ -341,8 +448,12 @@ async function testDeleteCascadeRemovesIdentities() {
     testCannotUnlinkLastMethodAndConcurrency,
     testConcurrentUnlinkAndDeleteLeaveNoDanglingIndex,
     testConcurrentFirstLoginCreatesSingleUser,
+    testStaleCreatorCannotOverwriteElectedWinner,
     testWriteFailureIsNotReportedAsSuccess,
     testFailedLinkDoesNotGrantFutureLogin,
+    testLinkCrashBeforeCommitGrantsNoLogin,
+    testDisabledUserNotRestorable,
+    testRolePreservedNotDowngraded,
     testPrivateRelayEmailChangeDoesNotSplitOrMerge,
     testDeleteCascadeRemovesIdentities,
   ];
