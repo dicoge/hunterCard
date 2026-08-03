@@ -42,6 +42,18 @@ function maybeFail(op, key) {
   }
 }
 
+// A fenced eval passes its value pre-encoded the way real Redis stores it: bare
+// strings verbatim, objects as JSON. kv.get would JSON-parse (raw-string
+// fallback), so decode the same way to keep the in-memory store's shape identical
+// to what a normal kv.set(key, object) would have produced.
+function decodeFencedValue(encoded) {
+  try {
+    return JSON.parse(encoded);
+  } catch {
+    return encoded;
+  }
+}
+
 const kv = {
   async get(key) {
     return kvState.values.has(key) ? kvState.values.get(key) : null;
@@ -85,14 +97,34 @@ const kv = {
   },
   async eval(script, keys, args) {
     if (kvState.beforeEval) await kvState.beforeEval(script, keys, args);
-    // Renew-if-owner fence: extend the lease (a no-op TTL in this mock) only while
-    // the lock KEYS[1] still holds our token ARGV[1]; report ownership 1/0. The
-    // store calls this before every publication/commit point so a stale holder
-    // (lease lapsed → token gone/replaced) is fenced out (CR DIC-877).
-    if (script.includes("redis.call('PEXPIRE'")) {
-      const [lockKey] = keys;
-      const [token] = args;
-      return kvState.values.get(lockKey) === token ? 1 : 0;
+    // Lease-fenced writes (CR DIC-877): the ownership check, lease renewal and the
+    // mutation are ONE atomic op. In this mock the whole handler runs synchronously
+    // after the interleave hook, so — exactly like real Redis Lua — nothing else
+    // can run between the token check and the write. A stale holder (KEYS[1] no
+    // longer holds ARGV[1]) gets 'LOCK_LOST' and no write happens.
+    if (script.includes("return 'LOCK_LOST'")) {
+      const [lockKey, targetKey] = keys;
+      const [token, arg2] = args;
+      if (kvState.values.get(lockKey) !== token) return 'LOCK_LOST';
+      // PEXPIRE lease renewal is a no-op in this TTL-less mock.
+      if (script.includes("'NX'")) {
+        // Fenced first-writer publish. maybeFail mirrors a failed SET so existing
+        // crash-at-publish injections (op 'set', the index key) still fire.
+        maybeFail('set', targetKey);
+        if (kvState.values.has(targetKey)) return 'EXISTS';
+        kvState.values.set(targetKey, decodeFencedValue(arg2));
+        return 'OK';
+      }
+      if (script.includes("redis.call('DEL', KEYS[2])")) {
+        // Fenced owner-fenced index delete.
+        maybeFail('del', targetKey);
+        if (kvState.values.get(targetKey) === arg2) kvState.values.delete(targetKey);
+        return 'OK';
+      }
+      // Fenced unconditional SET (e.g. the pending->committed detail flip).
+      maybeFail('set', targetKey);
+      kvState.values.set(targetKey, decodeFencedValue(arg2));
+      return 'OK';
     }
     // Atomic compare-and-delete (KEYS[1] is deleted only while its value still
     // equals ARGV[1]). Used for lock release and dangling-index reclamation alike.
@@ -566,8 +598,16 @@ async function testFailedFinalLinkCommitFailsClosedAndRepairs() {
   // it while refreshSnapshot cleared pending — granting access despite the failed
   // link response (CR DIC-874 #1: final-link-commit failure grants login).
   const detailKey = `auth:idetail:${apple.internalId}:google:g-4`;
-  kvState.beforeSet = async (key, value) => {
-    if (key === detailKey && value && value.pending === false) {
+  // The commit flip is now a lease-fenced eval (atomic ownership-check + write),
+  // so inject its failure on the eval path: the fenced SET (no NX) targeting the
+  // google detail with pending:false in its encoded value.
+  kvState.beforeEval = async (script, keys, args) => {
+    if (
+      script.includes("return 'LOCK_LOST'") &&
+      !script.includes("'NX'") &&
+      keys[1] === detailKey &&
+      String(args[1]).includes('"pending":false')
+    ) {
       throw new Error('injected KV failure: pending->committed flip');
     }
   };
@@ -576,7 +616,7 @@ async function testFailedFinalLinkCommitFailsClosedAndRepairs() {
     /injected KV failure/,
     'the final commit failure must throw (no false link success)',
   );
-  kvState.beforeSet = null;
+  kvState.beforeEval = null;
 
   // The index was published, but the link is NOT committed (detail still pending).
   assert.equal(kvState.values.get('auth:idx:google:g-4'), apple.internalId, 'index was published');
@@ -825,9 +865,74 @@ async function testStaleLinkHolderCannotCommitPastLeaseExpiry() {
   assert.notEqual(loserLogin.user.internalId, apple.internalId, 'no login into the linker for the loser');
 }
 
+async function testStaleHolderCannotFlipCommitAfterLeaseReplaced() {
+  resetKv();
+  // Codex CR DIC-877 atomic-boundary case. The prior test parks at the PUBLISH
+  // fence and DELETES the lock (lease absent). This one hits the DIFFERENT commit
+  // write and REPLACES the lock token (another holder acquired the lease after
+  // ours lapsed — a mismatch, not mere absence), at the exact instant the stale
+  // holder's pending->committed flip is about to run. Because the ownership check
+  // and the SET are fused into ONE Redis eval, a token that no longer occupies the
+  // lock makes the flip perform NO write and throw: there is no check-then-write
+  // window (the gap Codex flagged) for the stale holder to slip a commit through.
+  // On check-then-write code the holder would pass a separate fence and then flip
+  // the detail to committed, granting login on a lease it no longer holds.
+  const apple = (await store.loginOrCreate(identity('apple', 'a-flip', 'a@icloud.com', 'Kim'))).user;
+  const lockKey = `auth:lock:${apple.internalId}`;
+  const detailKey = `auth:idetail:${apple.internalId}:google:g-flip`;
+  const idxKey = 'auth:idx:google:g-flip';
+
+  let replaced = false;
+  kvState.beforeEval = async (script, keys, args) => {
+    // Fire once, at the first holder's COMMIT flip: the fenced SET (no NX) writing
+    // the google detail with pending:false. The index is already published by this
+    // point, so this is strictly the commit boundary, after the publish succeeded.
+    if (
+      !replaced &&
+      script.includes("return 'LOCK_LOST'") &&
+      !script.includes("'NX'") &&
+      keys[1] === detailKey &&
+      String(args[1]).includes('"pending":false')
+    ) {
+      replaced = true;
+      // Another holder acquired the lease after ours lapsed: overwrite the lock
+      // with a DIFFERENT token. Our token no longer occupies the lock, so the very
+      // next atomic eval — this same commit flip — must refuse and write nothing.
+      kvState.values.set(lockKey, 'someone-elses-token');
+    }
+  };
+
+  await expectError(
+    store.linkIdentity(apple.internalId, identity('google', 'g-flip', 'flip@example.com', 'Ann')),
+    'LOCK_TIMEOUT',
+  );
+  kvState.beforeEval = null;
+
+  // The published index survives (published before the commit boundary), but the
+  // flip wrote nothing: the detail is still PENDING — a repairable ghost, never a
+  // live link.
+  assert.equal(kvState.values.get(idxKey), apple.internalId, 'index was published pre-commit');
+  const detail = kvState.values.get(detailKey);
+  assert.ok(detail && detail.pending === true, 'commit flip performed no write — detail stays pending');
+
+  // The pending ghost is hidden from hydrate: no committed google method appears.
+  const after = await store.getUser(apple.internalId);
+  const googles = after.linkedProviders.filter((p) => p.provider === 'google');
+  assert.equal(googles.length, 0, 'the un-committed link is not a live method');
+
+  // ...and it fails CLOSED on login: a fresh g-flip login neither resolves into the
+  // account nor mints a duplicate — it throws IDENTITY_LINK_PENDING, so the stale
+  // holder's abandoned flip grants no access and strands no login-capable state.
+  await expectError(
+    store.loginOrCreate(identity('google', 'g-flip', 'flip@example.com', 'Ann')),
+    'IDENTITY_LINK_PENDING',
+  );
+}
+
 (async () => {
   const tests = [
     testStaleLinkHolderCannotCommitPastLeaseExpiry,
+    testStaleHolderCannotFlipCommitAfterLeaseReplaced,
     testNewAndReturningUser,
     testLinkSecondProviderAndUnlink,
     testCrossAccountCollision,
