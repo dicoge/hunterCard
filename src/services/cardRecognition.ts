@@ -8,6 +8,7 @@
 
 import { recognizeCardNumber } from './webOcr';
 import { preprocessCardImage } from './imagePreprocessor';
+import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 
 // ── 類型定義 ──
 
@@ -15,6 +16,7 @@ export interface CardPrice {
   name: string;
   sellPrice: number | null;
   rarity?: string;
+  buyPrice?: number | null; // 對齊到此版本的店家收購價（DIC-856）；對不到為 null
 }
 
 export interface CardVariant {
@@ -340,21 +342,9 @@ async function resizeImage(imageUri: string, maxDim: number): Promise<string> {
   });
 }
 
-/** Map a raw API card payload into the app's CardInfo shape. */
+/** Map a raw API card payload into the app's CardInfo shape (single shared mapper). */
 function mapApiCard(apiCard: any): CardInfo {
-  return {
-    id: apiCard.cardNumber,
-    name: apiCard.name || '',
-    cardNumber: apiCard.cardNumber,
-    type: '',
-    rarity: apiCard.rarity || '',
-    series: apiCard.series || '',
-    sellPrice: apiCard.sellPrice != null ? apiCard.sellPrice : null,
-    yuyuName: '',
-    color: '',
-    imageUrl: apiCard.imageUrl || '',
-    prices: apiCard.prices || [],
-  };
+  return mapApiCardToCardInfo(apiCard);
 }
 
 /** Map the API's raw candidate list into RecognizedCandidate[]. */

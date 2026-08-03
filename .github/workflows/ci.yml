@@ -20,7 +20,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 22.6+ is required for `node --experimental-strip-types`, used by the
+          # mapper I/O regression in test:market-fields (and test:scan-dedup). Node 20
+          # rejects the flag with "bad option", so the Validate job must run on 22.
+          node-version: '22'
           cache: 'npm'
       
       - name: Install dependencies
@@ -28,7 +31,16 @@ jobs:
       
       - name: Check TypeScript types
         run: npx tsc --noEmit
-      
+
+      - name: Verify buy-price version alignment (DIC-856)
+        run: npm run test:buy-price
+
+      - name: Verify buy-price regeneration is deterministic (DIC-856)
+        run: npm run test:buy-price-regen
+
+      - name: Verify scan/search market data fields (DIC-361)
+        run: npm run test:market-fields
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)

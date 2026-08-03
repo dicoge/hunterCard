@@ -13,6 +13,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const apiRecognize = read('api/recognize-card.ts');
 const cardRecognition = read('src/services/cardRecognition.ts');
 const scanScreen = read('src/screens/ScanScreen.tsx');
+const apiCardMapper = read('src/utils/apiCardMapper.ts');
 const searchResults = read('src/screens/SearchResultsScreen.tsx');
 const cardDetail = read('src/screens/CardDetailScreen.tsx');
 const database = JSON.parse(read('data/database.json'));
@@ -45,7 +46,17 @@ assertSourceIncludes(apiRecognize, [
   'ytStats: entry.ytStats ?? null',
 ], 'api/recognize-card fmt()');
 
-// Local recognition / Tesseract fallback path must preserve the same fields.
+// The single shared pure mapper (unit-tested directly in test-api-card-mapper.mjs)
+// is the one place the scan/API fields are produced. Assert it passes them through.
+assertSourceIncludes(apiCardMapper, [
+  'export function mapApiCardToCardInfo',
+  'buyPrice: raw.buyPrice ?? null',
+  'priceHistory: raw.priceHistory || {}',
+  'ytStats: raw.ytStats ?? null',
+], 'src/utils/apiCardMapper');
+
+// Local recognition / Tesseract fallback path must preserve the same fields, and
+// the API path must route through the shared mapper (no bespoke duplicate mapper).
 assertSourceIncludes(cardRecognition, [
   'buyPrice?: number | null',
   'priceHistory?: Record<string, number>',
@@ -53,16 +64,15 @@ assertSourceIncludes(cardRecognition, [
   'buyPrice: (entry as any).buyPrice ?? null',
   'priceHistory: (entry as any).priceHistory || {}',
   'ytStats: (entry as any).ytStats ?? null',
-  'buyPrice: apiCard.buyPrice ?? null',
-  'priceHistory: apiCard.priceHistory || {}',
-  'ytStats: apiCard.ytStats ?? null',
+  "import { mapApiCardToCardInfo } from '../utils/apiCardMapper'",
+  'return mapApiCardToCardInfo(apiCard)',
 ], 'src/services/cardRecognition');
 
-// Camera/API success path must place fields on the session card and navigate it to CardDetail.
+// Camera/API success + candidates path must route through the shared mapper (so the
+// session card carries buyPrice/priceHistory/ytStats) and navigate it to CardDetail.
 assertSourceIncludes(scanScreen, [
-  'buyPrice: card.buyPrice ?? null',
-  'priceHistory: card.priceHistory || {}',
-  'ytStats: card.ytStats ?? null',
+  "import { mapApiCardToCardInfo } from '../utils/apiCardMapper'",
+  'mapApiCardToCardInfo(c)',
   "onViewCard={(card) => navigation?.navigate('CardDetail', { card })}",
 ], 'src/screens/ScanScreen');
 
@@ -75,9 +85,14 @@ assertSourceIncludes(searchResults, [
 ], 'src/screens/SearchResultsScreen');
 
 // MarketDataPanel should render all requested sections when fields exist.
+// DIC-856: buyPrice is no longer read from the card level; it is derived from the
+// *selected version* (selectedVersion.buyPrice) and fails closed to null when the
+// version is unaligned or has no matched buy price — never a card-number/max fallback.
+// The assertion tracks that exact derivation so this regression stays consistent with
+// DIC-856's exact-variant alignment instead of the pre-DIC-856 card-level read.
 assertSourceIncludes(cardDetail, [
   'function MarketDataPanel',
-  'const buyPrice = card?.buyPrice ?? null',
+  'const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null',
   'const ytStats = card?.ytStats ?? null',
   'const priceHistory = card?.priceHistory ?? null',
   '💱 買賣差價',

@@ -102,10 +102,15 @@ function fmt(entry: any) {
     cardNumber: entry.cardNumber,
     name: entry.name,
     sellPrice: price,
+    // buyPrice 直接透傳 database 的 card 層級精確版本收購價（merge-buy-prices 已依版本精確對齊，
+    // 對不到即缺欄位 → ?? null）。嚴禁在此做卡號 fallback / 跨版本 Math.max（DIC-856）。
+    buyPrice: entry.buyPrice ?? null,
     series: entry.series,
     rarity: entry.rarity,
     imageUrl: entry.officialImage || entry.localImage || '',
     prices: entry.prices,
+    priceHistory: entry.priceHistory || {},
+    ytStats: entry.ytStats ?? null,
   };
 }
 
