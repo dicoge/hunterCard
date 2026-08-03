@@ -56,6 +56,11 @@ interface IdentityDetail {
   displayName?: string;
   photoUrl?: string;
   linkedAt: string;
+  // true while the membership/detail have been committed but the login-granting
+  // index has NOT yet been published (a crash between the two leaves this set).
+  // A pending detail is invisible to hydrate and never returned as alreadyLinked:
+  // it is a ghost to be finished or discarded, never a live link (CR DIC-866 #2).
+  pending?: boolean;
 }
 
 export interface PublicLinkedProvider {
@@ -131,9 +136,13 @@ const LOCK_TTL_MS = 5000;
 const LOCK_RETRIES = 50;
 const LOCK_RETRY_MS = 20;
 
-// Compare-and-delete so we never delete a lock that has expired and been
-// re-acquired by another writer (KEYS[1]=lock key, ARGV[1]=our token).
-const RELEASE_LOCK = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
+// Atomic compare-and-delete: delete KEYS[1] only while its value still equals
+// ARGV[1]. Two uses: releasing a lock we still hold (never stomp a lock another
+// writer re-acquired after ours expired), and reclaiming a dangling identity
+// index only while it still points at the exact stale owner we observed — so a
+// concurrent creator that already republished a live index is never clobbered
+// (CR DIC-866 #1: dangling-index reclamation race).
+const COMPARE_AND_DELETE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
 
 export function isIdentityStoreConfigured(): boolean {
   return Boolean(
@@ -161,7 +170,7 @@ async function acquireLockKey(lockKey: string): Promise<string> {
 }
 
 async function releaseLockKey(lockKey: string, token: string): Promise<void> {
-  await kv.eval(RELEASE_LOCK, [lockKey], [token]);
+  await kv.eval(COMPARE_AND_DELETE, [lockKey], [token]);
 }
 
 const acquireLock = (userId: string) => acquireLockKey(LOCK_KEY(userId));
@@ -185,6 +194,7 @@ async function hydrate(user: StoredUser): Promise<PublicUser> {
   const members = ((await kv.smembers(IDENTITIES_KEY(user.id))) as string[] | null) ?? [];
   const details = await loadDetails(user.id, members);
   const linkedProviders: PublicLinkedProvider[] = details
+    .filter((d) => !d.pending) // hide ghost links whose index was never published
     .map((d) => ({
       provider: d.provider,
       providerId: d.subject,
@@ -227,7 +237,15 @@ async function resolveExisting(
 
   const user = await loadUser(ownerId);
   if (!user) {
-    if (reclaimDangling) await kv.del(IDX_KEY(provider, subject));
+    // Reclaim ONLY while the index still names the exact dangling owner we just
+    // read. An unconditional delete here lets a slow creator wipe a live index a
+    // concurrent winner republished in the meantime — two creators both observe
+    // the stale owner, one publishes, the other's delayed delete removes the
+    // live index and publishes its own, splitting the identity (CR DIC-866 #1).
+    // Compare-and-delete makes that stale delete a no-op.
+    if (reclaimDangling) {
+      await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, subject)], [ownerId]);
+    }
     return null;
   }
   if (user.status !== 'active') {
@@ -268,9 +286,11 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
     createdAt: now,
   };
   // Commit the user BEFORE publishing the index, so the index never points at a
-  // half-written user and the SET NX below is a valid linearisation point.
+  // half-written user and the SET NX below is a valid linearisation point. The
+  // detail starts PENDING and is committed only once the index is published, so a
+  // crash before publish leaves only an index-less, hidden orphan.
   await kv.set(USER_KEY(candidateId), user);
-  await writeDetail(candidateId, identity, now);
+  await writeDetail(candidateId, identity, now, /* pending */ true);
   await kv.sadd(IDENTITIES_KEY(candidateId), member(provider, subject));
 
   let published = false;
@@ -281,6 +301,8 @@ export async function loginOrCreate(identity: VerifiedIdentity): Promise<LoginRe
       const claimed = await kv.set(IDX_KEY(provider, subject), candidateId, { nx: true });
       if (claimed === 'OK') {
         published = true;
+        // Index published → mark the detail committed so it surfaces in hydrate.
+        await writeDetail(candidateId, identity, now, /* pending */ false);
         return { user: await hydrate(user), isNew: true };
       }
       // Lost the election. Adopt the committed winner; if the index is dangling
@@ -313,7 +335,12 @@ async function rollbackLink(userId: string, provider: Provider, subject: string)
   await kv.del(DETAIL_KEY(userId, provider, subject)).catch(() => {});
 }
 
-async function writeDetail(userId: string, identity: VerifiedIdentity, linkedAt: string): Promise<void> {
+async function writeDetail(
+  userId: string,
+  identity: VerifiedIdentity,
+  linkedAt: string,
+  pending = false,
+): Promise<void> {
   const detail: IdentityDetail = {
     provider: identity.provider,
     subject: identity.subject,
@@ -321,6 +348,7 @@ async function writeDetail(userId: string, identity: VerifiedIdentity, linkedAt:
     displayName: identity.name,
     photoUrl: identity.picture,
     linkedAt,
+    pending,
   };
   await kv.set(DETAIL_KEY(userId, identity.provider, identity.subject), detail);
 }
@@ -359,37 +387,74 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
     if (user.status !== 'active') throw new IdentityStoreError('ACCOUNT_DISABLED', userId);
 
     const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
-    const sameProvider = members.find((m) => splitMember(m).provider === provider);
-    if (sameProvider) {
-      if (sameProvider === member(provider, subject)) {
-        return { user: await hydrate(user), alreadyLinked: true }; // idempotent
+    const selfMember = member(provider, subject);
+
+    // Distinguish a fully COMMITTED link (index published to us, detail not
+    // pending) from a PENDING ghost left by a crash between membership commit and
+    // index publish. We hold the per-user lock, so any pending record we observe
+    // is from a dead prior attempt, never a live concurrent one — safe to finish
+    // or discard here. A ghost must be REPAIRED, never returned as alreadyLinked
+    // (CR DIC-866 #2), or a later provider login would split the identity.
+    let repairing = false;
+    let preservedLinkedAt: string | undefined;
+    if (members.includes(selfMember)) {
+      const detail = await kv.get<IdentityDetail>(DETAIL_KEY(userId, provider, subject));
+      const owner = await kv.get<string>(IDX_KEY(provider, subject));
+      if (owner === userId && !detail?.pending) {
+        return { user: await hydrate(user), alreadyLinked: true }; // fully committed, idempotent
       }
-      throw new IdentityStoreError(
-        'SAME_PROVIDER_ALREADY_LINKED',
-        `User already has a ${provider} identity; unlink it before linking a different one`,
-      );
+      if (owner && owner !== userId) {
+        // The identity was committed to another account while our attempt sat
+        // pending: drop our ghost membership and surface the collision.
+        await rollbackLink(userId, provider, subject);
+        throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${owner}`, {
+          merge_token: issueMergeToken(userId, owner, provider, subject),
+        });
+      }
+      // owner is us-but-pending, or unpublished → finish (repair) the link below.
+      repairing = true;
+      preservedLinkedAt = detail?.linkedAt;
+    } else {
+      // A DIFFERENT subject on the same provider blocks only if it is COMMITTED;
+      // a pending sibling is a crashed attempt we can safely discard so it can't
+      // shadow this link.
+      for (const m of members) {
+        const s = splitMember(m);
+        if (s.provider !== provider) continue;
+        const sibDetail = await kv.get<IdentityDetail>(DETAIL_KEY(userId, provider, s.subject));
+        const sibOwner = await kv.get<string>(IDX_KEY(provider, s.subject));
+        if (sibOwner === userId && !sibDetail?.pending) {
+          throw new IdentityStoreError(
+            'SAME_PROVIDER_ALREADY_LINKED',
+            `User already has a ${provider} identity; unlink it before linking a different one`,
+          );
+        }
+        await rollbackLink(userId, provider, s.subject);
+      }
+
+      const priorOwner = await kv.get<string>(IDX_KEY(provider, subject));
+      if (priorOwner && priorOwner !== userId) {
+        throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${priorOwner}`, {
+          merge_token: issueMergeToken(userId, priorOwner, provider, subject),
+        });
+      }
     }
 
-    const priorOwner = await kv.get<string>(IDX_KEY(provider, subject));
-    if (priorOwner && priorOwner !== userId) {
-      throw new IdentityStoreError('IDENTITY_ALREADY_LINKED', `${provider} identity owned by ${priorOwner}`, {
-        merge_token: issueMergeToken(userId, priorOwner, provider, subject),
-      });
-    }
-
-    // Commit membership BEFORE publishing the login-granting index. The index is
-    // the only thing login resolves through, so publishing it last means an
-    // interrupted link — a crash, or even a failed rollback — can never leave an
-    // index that grants login without committed membership (CR DIC-866 #2:
-    // partial link fail-open). The final SET NX is the atomic first-writer guard
+    // Commit membership/detail as PENDING first, then publish the login-granting
+    // index. Login and hydrate resolve/expose an identity only once the index is
+    // published AND the detail is committed, so an interrupted link — a crash, or
+    // even a failed rollback — can never leak a login-capable or user-visible
+    // identity (CR DIC-866 #2). The final SET NX is the atomic first-writer guard
     // against a concurrent claim of the same (provider, subject).
     const now = new Date().toISOString();
-    await writeDetail(userId, identity, now);
-    await kv.sadd(IDENTITIES_KEY(userId), member(provider, subject));
+    const linkedAt = preservedLinkedAt ?? now;
+    await writeDetail(userId, identity, linkedAt, /* pending */ true);
+    await kv.sadd(IDENTITIES_KEY(userId), selfMember);
 
     // Publish the index last. A failure here is after membership commit, so roll
     // back the now-unpublished membership best-effort; even if that rollback
-    // fails, no index exists so no login can enter via it.
+    // fails, the detail stays PENDING and index-less, so neither login nor
+    // hydrate can enter via it.
     const claimed = await kv
       .set(IDX_KEY(provider, subject), userId, { nx: true })
       .catch(async (err) => {
@@ -409,6 +474,9 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
       // owner2 === userId: a prior partial attempt already published our own
       // claim; the membership we just (re)committed makes it whole. Keep it.
     }
+    // Index now names us → flip the detail to COMMITTED so it becomes visible and
+    // the link is durably complete. On repair this is the finishing write.
+    await writeDetail(userId, identity, linkedAt, /* pending */ false);
     return { user: await hydrate(user), alreadyLinked: false };
   } finally {
     await releaseLock(userId, lock);

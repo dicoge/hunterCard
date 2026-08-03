@@ -23,6 +23,8 @@ const kvState = {
   sets: new Map(),
   failOn: null, // (op, key) => boolean — inject a write failure
   beforeSet: null, // async (key, value) => void — awaited before each set (interleave hook)
+  beforeDel: null, // async (key) => void — awaited before each del (interleave hook)
+  beforeEval: null, // async (script, keys) => void — awaited before each eval (interleave hook)
 };
 
 function resetKv() {
@@ -30,6 +32,8 @@ function resetKv() {
   kvState.sets.clear();
   kvState.failOn = null;
   kvState.beforeSet = null;
+  kvState.beforeDel = null;
+  kvState.beforeEval = null;
 }
 
 function maybeFail(op, key) {
@@ -50,6 +54,7 @@ const kv = {
     return 'OK';
   },
   async del(key) {
+    if (kvState.beforeDel) await kvState.beforeDel(key);
     maybeFail('del', key);
     const had = kvState.values.delete(key) || kvState.sets.delete(key);
     return had ? 1 : 0;
@@ -79,12 +84,15 @@ const kv = {
     return set ? [...set] : [];
   },
   async eval(script, keys, args) {
-    // Only the lock compare-and-delete script is used by the store.
+    if (kvState.beforeEval) await kvState.beforeEval(script, keys, args);
+    // The store uses one Lua script: an atomic compare-and-delete (KEYS[1] is
+    // deleted only while its value still equals ARGV[1]). Used for lock release
+    // and dangling-index reclamation alike.
     if (script.includes("redis.call('DEL', KEYS[1])")) {
-      const [lockKey] = keys;
-      const [token] = args;
-      if (kvState.values.get(lockKey) === token) {
-        kvState.values.delete(lockKey);
+      const [targetKey] = keys;
+      const [expected] = args;
+      if (kvState.values.get(targetKey) === expected) {
+        kvState.values.delete(targetKey);
         return 1;
       }
       return 0;
@@ -439,6 +447,107 @@ async function testRolePreservedNotDowngraded() {
   assert.equal(restored.role, 'subscriber', 'session restore preserves subscriber role');
 }
 
+async function testDanglingIndexReclamationElectsSingleWinner() {
+  resetKv();
+  const id = () => identity('google', 'dang-sub', 'a@example.com', 'Ann');
+  // Seed a DANGLING index: it points at a user record that no longer exists (an
+  // earlier owner deleted out from under it). Two fresh logins now both lose the
+  // first SET NX to this dangling index and race to reclaim it.
+  kvState.values.set('auth:idx:google:dang-sub', 'holo_deadbeef');
+
+  // Force the exact stale-delete interleaving: park creator A's reclaim in the
+  // get→delete window while holding the STALE owner (holo_deadbeef). While A is
+  // suspended, creator B reclaims the dangling index and publishes its own live
+  // candidate. When A resumes, a naive UNCONDITIONAL delete would wipe B's live
+  // index and let A publish a duplicate — an identity split. The fix reclaims
+  // with an atomic compare-and-delete against the observed stale owner, so A's
+  // delete is a no-op and exactly one internal user stays canonical. The park
+  // covers both the pre-fix path (kv.del) and the fixed path (compare-and-delete
+  // eval) so this test is a genuine regression against the old code.
+  let parkedReclaim = false;
+  const parkOnce = async () => {
+    if (!parkedReclaim) {
+      parkedReclaim = true;
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  };
+  kvState.beforeDel = async (key) => {
+    if (key === 'auth:idx:google:dang-sub') await parkOnce();
+  };
+  kvState.beforeEval = async (script, keys) => {
+    if (script.includes("redis.call('DEL', KEYS[1])") && keys[0] === 'auth:idx:google:dang-sub') {
+      await parkOnce();
+    }
+  };
+
+  const results = await Promise.all([store.loginOrCreate(id()), store.loginOrCreate(id())]);
+  kvState.beforeDel = null;
+  kvState.beforeEval = null;
+
+  const ids = new Set(results.map((r) => r.user.internalId));
+  assert.equal(ids.size, 1, 'both creators resolve to exactly one internal user (no split)');
+  assert.equal(results.filter((r) => r.isNew).length, 1, 'exactly one create, one adopt');
+  const winnerId = [...ids][0];
+  assert.equal(
+    kvState.values.get('auth:idx:google:dang-sub'),
+    winnerId,
+    'index still points at the single canonical winner — no stale delete clobbered it',
+  );
+  const userKeys = [...kvState.values.keys()].filter((k) => /^auth:user:holo_[0-9a-f]+$/.test(k));
+  assert.deepEqual(userKeys, [`auth:user:${winnerId}`], 'exactly one internal user persists');
+}
+
+async function testGhostLinkAfterCrashIsHiddenRepairedAndNotSplit() {
+  resetKv();
+  const apple = (await store.loginOrCreate(identity('apple', 'a-3', 'a@icloud.com', 'Kim'))).user;
+
+  // Crash the link EXACTLY after membership+detail are committed and BEFORE the
+  // index is published: fail the index SET and every compensating cleanup write,
+  // so the membership+detail survive with NO index — the ghost-link state.
+  kvState.failOn = (op, key) =>
+    (op === 'set' && key === 'auth:idx:google:g-3') ||
+    op === 'srem' ||
+    (op === 'del' && key.startsWith('auth:idetail:'));
+  await assert.rejects(
+    store.linkIdentity(apple.internalId, identity('google', 'g-3', 'g@example.com', 'Kim')),
+    /injected KV failure/,
+    'a crash before index publish must throw',
+  );
+  kvState.failOn = null;
+
+  // 1) No ghost exposure: the pending, index-less membership must NOT surface
+  //    through getUser/hydrate (pre-fix it would report google as linked).
+  const afterCrash = await store.getUser(apple.internalId);
+  assert.equal(afterCrash.linkedProviders.length, 1, 'ghost pending link is hidden from hydrate');
+  assert.equal(afterCrash.linkedProviders[0].provider, 'apple');
+  assert.equal(
+    kvState.values.get('auth:idx:google:g-3'),
+    undefined,
+    'the crash published no index',
+  );
+
+  // 2) Retry must REPAIR/finish the link, not short-circuit as alreadyLinked
+  //    (pre-fix the surviving membership made retry return alreadyLinked forever,
+  //    so the index was never published).
+  const retry = await store.linkIdentity(
+    apple.internalId,
+    identity('google', 'g-3', 'g@example.com', 'Kim'),
+  );
+  assert.equal(retry.alreadyLinked, false, 'retry finishes the pending link, not a premature alreadyLinked');
+  assert.equal(retry.user.linkedProviders.length, 2, 'both providers are now committed and visible');
+  assert.equal(
+    kvState.values.get('auth:idx:google:g-3'),
+    apple.internalId,
+    'retry published the index to the linker',
+  );
+
+  // 3) No identity split: a fresh Google login now resolves INTO the linker,
+  //    never a separate new user.
+  const login = await store.loginOrCreate(identity('google', 'g-3', 'g@example.com', 'Kim'));
+  assert.equal(login.isNew, false, 'google login resolves into the repaired account');
+  assert.equal(login.user.internalId, apple.internalId, 'no identity split — same internal user');
+}
+
 (async () => {
   const tests = [
     testNewAndReturningUser,
@@ -449,6 +558,8 @@ async function testRolePreservedNotDowngraded() {
     testConcurrentUnlinkAndDeleteLeaveNoDanglingIndex,
     testConcurrentFirstLoginCreatesSingleUser,
     testStaleCreatorCannotOverwriteElectedWinner,
+    testDanglingIndexReclamationElectsSingleWinner,
+    testGhostLinkAfterCrashIsHiddenRepairedAndNotSplit,
     testWriteFailureIsNotReportedAsSuccess,
     testFailedLinkDoesNotGrantFutureLogin,
     testLinkCrashBeforeCommitGrantsNoLogin,
