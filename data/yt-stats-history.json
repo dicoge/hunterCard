@@ -160,6 +160,22 @@
         "newsCount": 3,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1170000,
+        "totalViewCount": 172531107,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 10000,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 453530,
+        "viewCount_15d": 1098175,
+        "viewCount_30d": 1643211,
+        "newsCount": 3,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -322,6 +338,22 @@
         "viewCount_15d": 7245736,
         "viewCount_30d": 10080737,
         "newsCount": 5,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 2440000,
+        "totalViewCount": 1033252337,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 1326467,
+        "viewCount_7d": 4704636,
+        "viewCount_15d": 8201452,
+        "viewCount_30d": 11407204,
+        "newsCount": 7,
         "newsPositive": 0,
         "newsNegative": 0
       }
@@ -488,6 +520,22 @@
         "newsCount": 4,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 2900000,
+        "totalViewCount": 1747266985,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 5877429,
+        "viewCount_15d": 14417673,
+        "viewCount_30d": 16424472,
+        "newsCount": 3,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -648,6 +696,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 1037867,
         "viewCount_15d": 2827469,
+        "viewCount_30d": 4201709,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1590000,
+        "totalViewCount": 287859828,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 988560,
+        "viewCount_15d": 2715612,
         "viewCount_30d": 4201709,
         "newsCount": 2,
         "newsPositive": 0,
@@ -816,6 +880,22 @@
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1030000,
+        "totalViewCount": 166065439,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 80191,
+        "viewCount_15d": 311131,
+        "viewCount_30d": 468958,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -967,6 +1047,22 @@
       },
       {
         "date": "2026-08-02",
+        "subscriberCount": 2180000,
+        "totalViewCount": 631828012,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 0,
+        "viewCount_15d": 6265512,
+        "viewCount_30d": 6265512,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
         "subscriberCount": 2180000,
         "totalViewCount": 631828012,
         "subscriberGrowth_1d": 0,
@@ -1144,6 +1240,22 @@
         "newsCount": 0,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1300000,
+        "totalViewCount": 256223379,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 112336,
+        "viewCount_15d": 292044,
+        "viewCount_30d": 446650,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -1304,6 +1416,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 48590,
         "viewCount_15d": 131032,
+        "viewCount_30d": 174786,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1110000,
+        "totalViewCount": 102183155,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 45197,
+        "viewCount_15d": 124398,
         "viewCount_30d": 174786,
         "newsCount": 1,
         "newsPositive": 0,
@@ -1472,6 +1600,22 @@
         "newsCount": 4,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 2010000,
+        "totalViewCount": 674431099,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 1075002,
+        "viewCount_15d": 4104162,
+        "viewCount_30d": 6064507,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -1634,6 +1778,22 @@
         "viewCount_15d": 6337295,
         "viewCount_30d": 10084108,
         "newsCount": 12,
+        "newsPositive": 4,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 2780000,
+        "totalViewCount": 1158301199,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 2224943,
+        "viewCount_15d": 6181848,
+        "viewCount_30d": 10084108,
+        "newsCount": 13,
         "newsPositive": 4,
         "newsNegative": 0
       }
@@ -1800,6 +1960,22 @@
         "newsCount": 7,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 2050000,
+        "totalViewCount": 451193836,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 10000,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 1240295,
+        "viewCount_15d": 2205469,
+        "viewCount_30d": 2770630,
+        "newsCount": 4,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -1963,6 +2139,22 @@
         "viewCount_30d": 20656461,
         "newsCount": 23,
         "newsPositive": 8,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 4380000,
+        "totalViewCount": 2359991208,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 9224645,
+        "viewCount_15d": 15392970,
+        "viewCount_30d": 20656461,
+        "newsCount": 22,
+        "newsPositive": 6,
         "newsNegative": 0
       }
     ]
@@ -2128,6 +2320,22 @@
         "newsCount": 0,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 250000,
+        "totalViewCount": 52964321,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 19049,
+        "viewCount_15d": 47280,
+        "viewCount_30d": 83836,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -2279,6 +2487,22 @@
       },
       {
         "date": "2026-08-02",
+        "subscriberCount": 264000,
+        "totalViewCount": 38097026,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": -1000,
+        "subscriberGrowth_30d": -1000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 0,
+        "viewCount_15d": 0,
+        "viewCount_30d": 383119,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
         "subscriberCount": 264000,
         "totalViewCount": 38097026,
         "subscriberGrowth_1d": 0,
@@ -2456,6 +2680,22 @@
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1700000,
+        "totalViewCount": 623804779,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 0,
+        "viewCount_15d": 0,
+        "viewCount_30d": 6317314,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -2618,6 +2858,22 @@
         "viewCount_15d": 4703235,
         "viewCount_30d": 6836448,
         "newsCount": 5,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1710000,
+        "totalViewCount": 699787889,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 441171,
+        "viewCount_7d": 2645174,
+        "viewCount_15d": 4850296,
+        "viewCount_30d": 7277619,
+        "newsCount": 6,
         "newsPositive": 0,
         "newsNegative": 0
       }
@@ -2784,6 +3040,22 @@
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1570000,
+        "totalViewCount": 508928472,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 1148279,
+        "viewCount_7d": 1148279,
+        "viewCount_15d": 2375536,
+        "viewCount_30d": 3626420,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -2944,6 +3216,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 260125,
         "viewCount_15d": 958817,
+        "viewCount_30d": 1251019,
+        "newsCount": 3,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1150000,
+        "totalViewCount": 196093308,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 248136,
+        "viewCount_15d": 945310,
         "viewCount_30d": 1251019,
         "newsCount": 3,
         "newsPositive": 0,
@@ -3112,6 +3400,22 @@
         "newsCount": 2,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 590000,
+        "totalViewCount": 56752975,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 1000,
+        "subscriberGrowth_30d": 1000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 90226,
+        "viewCount_15d": 232806,
+        "viewCount_30d": 338719,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -3276,6 +3580,22 @@
         "newsCount": 7,
         "newsPositive": 1,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1330000,
+        "totalViewCount": 244425404,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 1299771,
+        "viewCount_15d": 1745916,
+        "viewCount_30d": 2745413,
+        "newsCount": 6,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -3436,6 +3756,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 564693,
         "viewCount_15d": 1020278,
+        "viewCount_30d": 1556566,
+        "newsCount": 7,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1580000,
+        "totalViewCount": 327690550,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 272101,
+        "viewCount_15d": 976052,
         "viewCount_30d": 1556566,
         "newsCount": 7,
         "newsPositive": 0,
@@ -3604,6 +3940,22 @@
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 2620000,
+        "totalViewCount": 907513435,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 321295,
+        "viewCount_7d": 3186181,
+        "viewCount_15d": 5422942,
+        "viewCount_30d": 8344908,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -3765,6 +4117,22 @@
         "viewCount_7d": 747029,
         "viewCount_15d": 2184166,
         "viewCount_30d": 3380079,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1650000,
+        "totalViewCount": 333157128,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 99276,
+        "viewCount_7d": 846305,
+        "viewCount_15d": 2084800,
+        "viewCount_30d": 3479355,
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
@@ -3932,6 +4300,22 @@
         "newsCount": 3,
         "newsPositive": 1,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 4610000,
+        "totalViewCount": 470153751,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": -10000,
+        "subscriberGrowth_30d": -10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 175427,
+        "viewCount_15d": 430256,
+        "viewCount_30d": 654000,
+        "newsCount": 4,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -4096,6 +4480,22 @@
         "newsCount": 4,
         "newsPositive": 2,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1140000,
+        "totalViewCount": 167372040,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 208894,
+        "viewCount_7d": 739691,
+        "viewCount_15d": 1309119,
+        "viewCount_30d": 2893875,
+        "newsCount": 3,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -4256,6 +4656,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 71695,
         "viewCount_15d": 171234,
+        "viewCount_30d": 257203,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 987000,
+        "totalViewCount": 159612779,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": -1000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 66027,
+        "viewCount_15d": 166139,
         "viewCount_30d": 257203,
         "newsCount": 2,
         "newsPositive": 0,
@@ -4424,6 +4840,22 @@
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1150000,
+        "totalViewCount": 124706578,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 369277,
+        "viewCount_15d": 643134,
+        "viewCount_30d": 908966,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -4586,6 +5018,22 @@
         "viewCount_15d": 2097706,
         "viewCount_30d": 2995970,
         "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1330000,
+        "totalViewCount": 297033786,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 182845,
+        "viewCount_7d": 1178124,
+        "viewCount_15d": 2072760,
+        "viewCount_30d": 3178815,
+        "newsCount": 4,
         "newsPositive": 0,
         "newsNegative": 0
       }
@@ -4752,6 +5200,22 @@
         "newsCount": 4,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1330000,
+        "totalViewCount": 323162505,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 10000,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 445260,
+        "viewCount_7d": 2877726,
+        "viewCount_15d": 4739033,
+        "viewCount_30d": 7061791,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -4916,6 +5380,22 @@
         "newsCount": 6,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 2660000,
+        "totalViewCount": 784834168,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 1601056,
+        "viewCount_15d": 4005010,
+        "viewCount_30d": 6143809,
+        "newsCount": 9,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -5076,6 +5556,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 214682,
         "viewCount_15d": 484028,
+        "viewCount_30d": 752736,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1580000,
+        "totalViewCount": 282429585,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 171448,
+        "viewCount_15d": 410908,
         "viewCount_30d": 752736,
         "newsCount": 0,
         "newsPositive": 0,
@@ -5244,6 +5740,22 @@
         "newsCount": 2,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1710000,
+        "totalViewCount": 196002707,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 185063,
+        "viewCount_15d": 429315,
+        "viewCount_30d": 634248,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -5406,6 +5918,22 @@
         "viewCount_15d": 1361233,
         "viewCount_30d": 1960782,
         "newsCount": 4,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1150000,
+        "totalViewCount": 238807766,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 953495,
+        "viewCount_15d": 1278323,
+        "viewCount_30d": 1960782,
+        "newsCount": 2,
         "newsPositive": 0,
         "newsNegative": 0
       }
@@ -5572,6 +6100,22 @@
         "newsCount": 0,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 144000,
+        "totalViewCount": 14878233,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": -1000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 10357,
+        "viewCount_15d": 27979,
+        "viewCount_30d": 45776,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -5723,6 +6267,22 @@
       },
       {
         "date": "2026-08-02",
+        "subscriberCount": 1660000,
+        "totalViewCount": 199725656,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 545310,
+        "viewCount_15d": 1007886,
+        "viewCount_30d": 1498936,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
         "subscriberCount": 1660000,
         "totalViewCount": 199725656,
         "subscriberGrowth_1d": 0,
@@ -5900,6 +6460,22 @@
         "newsCount": 0,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1160000,
+        "totalViewCount": 122469788,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 76607,
+        "viewCount_15d": 184349,
+        "viewCount_30d": 284476,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -6064,6 +6640,22 @@
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1200000,
+        "totalViewCount": 265317283,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 10000,
+        "subscriberGrowth_15d": 20000,
+        "subscriberGrowth_30d": 30000,
+        "viewCount_1d": 176547,
+        "viewCount_7d": 1984699,
+        "viewCount_15d": 2935830,
+        "viewCount_30d": 4294448,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -6224,6 +6816,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 133803,
         "viewCount_15d": 365917,
+        "viewCount_30d": 503723,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1410000,
+        "totalViewCount": 99158440,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 128246,
+        "viewCount_15d": 360761,
         "viewCount_30d": 503723,
         "newsCount": 1,
         "newsPositive": 0,
@@ -6392,6 +7000,22 @@
         "newsCount": 2,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 792000,
+        "totalViewCount": 49951660,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 3000,
+        "subscriberGrowth_15d": 4000,
+        "subscriberGrowth_30d": 4000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 211893,
+        "viewCount_15d": 425057,
+        "viewCount_30d": 613589,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -6552,6 +7176,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 71367,
         "viewCount_15d": 197279,
+        "viewCount_30d": 275311,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 852000,
+        "totalViewCount": 88235234,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 1000,
+        "subscriberGrowth_15d": 1000,
+        "subscriberGrowth_30d": 1000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 67318,
+        "viewCount_15d": 183070,
         "viewCount_30d": 275311,
         "newsCount": 2,
         "newsPositive": 0,
@@ -6720,6 +7360,22 @@
         "newsCount": 8,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1570000,
+        "totalViewCount": 474520836,
+        "subscriberGrowth_1d": 10000,
+        "subscriberGrowth_7d": 10000,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 1440063,
+        "viewCount_15d": 3054056,
+        "viewCount_30d": 3958794,
+        "newsCount": 4,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -6881,6 +7537,22 @@
         "viewCount_7d": 1649272,
         "viewCount_15d": 3124359,
         "viewCount_30d": 4428905,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1110000,
+        "totalViewCount": 468325002,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 321071,
+        "viewCount_7d": 1970343,
+        "viewCount_15d": 3018511,
+        "viewCount_30d": 4749976,
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
@@ -7048,6 +7720,22 @@
         "newsCount": 2,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1360000,
+        "totalViewCount": 736868328,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 594960,
+        "viewCount_7d": 4062587,
+        "viewCount_15d": 6478393,
+        "viewCount_30d": 10873107,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -7208,6 +7896,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 166422,
         "viewCount_15d": 381870,
+        "viewCount_30d": 553400,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1310000,
+        "totalViewCount": 218445043,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 156699,
+        "viewCount_15d": 356171,
         "viewCount_30d": 553400,
         "newsCount": 2,
         "newsPositive": 0,
@@ -7376,6 +8080,22 @@
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1140000,
+        "totalViewCount": 305935532,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 543663,
+        "viewCount_15d": 1399332,
+        "viewCount_30d": 2067664,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -7540,6 +8260,22 @@
         "newsCount": 5,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 727000,
+        "totalViewCount": 88780721,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 3000,
+        "subscriberGrowth_15d": 5000,
+        "subscriberGrowth_30d": 6000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 436021,
+        "viewCount_15d": 957309,
+        "viewCount_30d": 1775598,
+        "newsCount": 3,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -7700,6 +8436,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 994433,
         "viewCount_15d": 1772207,
+        "viewCount_30d": 2565655,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 972000,
+        "totalViewCount": 133825025,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 3000,
+        "subscriberGrowth_15d": 6000,
+        "subscriberGrowth_30d": 8000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 860762,
+        "viewCount_15d": 1659755,
         "viewCount_30d": 2565655,
         "newsCount": 0,
         "newsPositive": 0,
@@ -7868,6 +8620,22 @@
         "newsCount": 1,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1020000,
+        "totalViewCount": 135540297,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 10000,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 20000,
+        "viewCount_1d": 577179,
+        "viewCount_7d": 2723012,
+        "viewCount_15d": 3574085,
+        "viewCount_30d": 4304459,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -8028,6 +8796,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 741659,
         "viewCount_15d": 1538960,
+        "viewCount_30d": 2355005,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 1350000,
+        "totalViewCount": 161337850,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 695530,
+        "viewCount_15d": 1503139,
         "viewCount_30d": 2355005,
         "newsCount": 0,
         "newsPositive": 0,
@@ -8196,6 +8980,22 @@
         "newsCount": 2,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 722000,
+        "totalViewCount": 117999999,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": -1000,
+        "subscriberGrowth_30d": -1000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 80719,
+        "viewCount_15d": 180134,
+        "viewCount_30d": 276287,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -8360,6 +9160,22 @@
         "newsCount": 2,
         "newsPositive": 0,
         "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 824000,
+        "totalViewCount": 221608239,
+        "subscriberGrowth_1d": 2000,
+        "subscriberGrowth_7d": 10000,
+        "subscriberGrowth_15d": 12000,
+        "subscriberGrowth_30d": 14000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 1055329,
+        "viewCount_15d": 2245214,
+        "viewCount_30d": 3312028,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -8520,6 +9336,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 907434,
         "viewCount_15d": 1902265,
+        "viewCount_30d": 2913581,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 739000,
+        "totalViewCount": 125316162,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 2000,
+        "subscriberGrowth_15d": 3000,
+        "subscriberGrowth_30d": 5000,
+        "viewCount_1d": 0,
+        "viewCount_7d": 765542,
+        "viewCount_15d": 1882014,
         "viewCount_30d": 2913581,
         "newsCount": 1,
         "newsPositive": 0,
@@ -8694,6 +9526,22 @@
         "viewCount_1d": 0,
         "viewCount_7d": 65073,
         "viewCount_15d": 172483,
+        "viewCount_30d": 272109,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
+      },
+      {
+        "date": "2026-08-03",
+        "subscriberCount": 203000,
+        "totalViewCount": 21097077,
+        "subscriberGrowth_1d": 0,
+        "subscriberGrowth_7d": 0,
+        "subscriberGrowth_15d": 0,
+        "subscriberGrowth_30d": 0,
+        "viewCount_1d": 0,
+        "viewCount_7d": 57381,
+        "viewCount_15d": 167875,
         "viewCount_30d": 272109,
         "newsCount": 0,
         "newsPositive": 0,

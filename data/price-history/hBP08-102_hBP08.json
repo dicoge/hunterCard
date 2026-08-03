@@ -275,8 +275,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP08-102_hBP08"
+    },
+    {
+      "date": "2026-08-03",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-102_hBP08"
     }
   ],
-  "lastUpdated": "2026-08-02T12:13:04.780Z",
+  "lastUpdated": "2026-08-03T12:13:36.515Z",
   "nameZh": "酷炫連帽衫"
 }

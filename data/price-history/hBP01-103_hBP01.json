@@ -317,8 +317,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-103_hBP01"
+    },
+    {
+      "date": "2026-08-03",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-103_hBP01"
     }
   ],
-  "lastUpdated": "2026-08-02T12:13:04.705Z",
+  "lastUpdated": "2026-08-03T12:13:36.445Z",
   "nameZh": "電競電腦"
 }
