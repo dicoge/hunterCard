@@ -97,34 +97,100 @@ const kv = {
   },
   async eval(script, keys, args) {
     if (kvState.beforeEval) await kvState.beforeEval(script, keys, args);
-    // Lease-fenced writes (CR DIC-877): the ownership check, lease renewal and the
-    // mutation are ONE atomic op. In this mock the whole handler runs synchronously
-    // after the interleave hook, so — exactly like real Redis Lua — nothing else
-    // can run between the token check and the write. A stale holder (KEYS[1] no
-    // longer holds ARGV[1]) gets 'LOCK_LOST' and no write happens.
+    // Lease-fenced writes (CR DIC-877): the ownership check, lease renewal and ALL
+    // of a logical mutation's writes are ONE atomic op. In this mock the whole
+    // handler runs synchronously after the interleave hook, so — exactly like real
+    // Redis Lua — nothing else can run between the token check and the writes. A
+    // stale holder (KEYS[1] no longer holds ARGV[1]) gets 'LOCK_LOST' and performs
+    // NONE of the writes. Scripts are tagged with a leading `-- <OP>` comment (a
+    // no-op in Lua) so we dispatch each one unambiguously. maybeFail is invoked per
+    // underlying write so the existing failOn(op, key) injections still fire.
     if (script.includes("return 'LOCK_LOST'")) {
-      const [lockKey, targetKey] = keys;
-      const [token, arg2] = args;
-      if (kvState.values.get(lockKey) !== token) return 'LOCK_LOST';
+      if (kvState.values.get(keys[0]) !== args[0]) return 'LOCK_LOST';
       // PEXPIRE lease renewal is a no-op in this TTL-less mock.
-      if (script.includes("'NX'")) {
-        // Fenced first-writer publish. maybeFail mirrors a failed SET so existing
-        // crash-at-publish injections (op 'set', the index key) still fire.
-        maybeFail('set', targetKey);
-        if (kvState.values.has(targetKey)) return 'EXISTS';
-        kvState.values.set(targetKey, decodeFencedValue(arg2));
+      const setValue = (key, encoded) => kvState.values.set(key, decodeFencedValue(encoded));
+      const sremMember = (key, m) => {
+        const set = kvState.sets.get(key);
+        if (set) {
+          set.delete(m);
+          if (set.size === 0) kvState.sets.delete(key);
+        }
+      };
+      if (script.includes('-- PUBLISH')) {
+        // Fenced first-writer index publish. KEYS=[lock, idx]; ARGV=[token, owner].
+        const idxKey = keys[1];
+        maybeFail('set', idxKey);
+        if (kvState.values.has(idxKey)) return 'EXISTS';
+        setValue(idxKey, args[1]);
         return 'OK';
       }
-      if (script.includes("redis.call('DEL', KEYS[2])")) {
-        // Fenced owner-fenced index delete.
-        maybeFail('del', targetKey);
-        if (kvState.values.get(targetKey) === arg2) kvState.values.delete(targetKey);
+      if (script.includes('-- SET')) {
+        // Fenced unconditional SET (pending->committed flip). KEYS=[lock, detail].
+        maybeFail('set', keys[1]);
+        setValue(keys[1], args[1]);
         return 'OK';
       }
-      // Fenced unconditional SET (e.g. the pending->committed detail flip).
-      maybeFail('set', targetKey);
-      kvState.values.set(targetKey, decodeFencedValue(arg2));
-      return 'OK';
+      if (script.includes('-- SADD')) {
+        // Fenced membership add. KEYS=[lock, identities]; ARGV=[token, ttl, member].
+        const identitiesKey = keys[1];
+        maybeFail('sadd', identitiesKey);
+        const set = kvState.sets.get(identitiesKey) ?? new Set();
+        set.add(args[2]);
+        kvState.sets.set(identitiesKey, set);
+        return 'OK';
+      }
+      if (script.includes('-- ROLLBACK')) {
+        // Owner-fenced index release + detail delete + membership removal.
+        // KEYS=[lock, idx, detail, identities]; ARGV=[token, ttl, idxOwner, member].
+        const [, idxKey, detailKey, identitiesKey] = keys;
+        const [, , idxOwner, memberArg] = args;
+        maybeFail('del', idxKey);
+        if (kvState.values.get(idxKey) === idxOwner) kvState.values.delete(idxKey);
+        maybeFail('del', detailKey);
+        kvState.values.delete(detailKey);
+        maybeFail('srem', identitiesKey);
+        sremMember(identitiesKey, memberArg);
+        return 'OK';
+      }
+      if (script.includes('-- UNLINK')) {
+        // Owner-fenced index release + detail delete + membership removal + user set.
+        // KEYS=[lock, idx, detail, identities, user]; ARGV=[token, ttl, idxOwner, member, userJson].
+        const [, idxKey, detailKey, identitiesKey, userKey] = keys;
+        const [, , idxOwner, memberArg, userVal] = args;
+        maybeFail('del', idxKey);
+        if (kvState.values.get(idxKey) === idxOwner) kvState.values.delete(idxKey);
+        maybeFail('del', detailKey);
+        kvState.values.delete(detailKey);
+        maybeFail('srem', identitiesKey);
+        sremMember(identitiesKey, memberArg);
+        maybeFail('set', userKey);
+        setValue(userKey, userVal);
+        return 'OK';
+      }
+      if (script.includes('-- DELUSER')) {
+        // Per-identity owner-fenced index release + detail delete, then identities
+        // set + user record. KEYS=[lock, idx1, detail1, ..., identities, user];
+        // ARGV=[token, ttl, n, owner1, ...].
+        const n = Number(args[2]);
+        for (let i = 0; i < n; i++) {
+          const idxKey = keys[1 + i * 2];
+          const detailKey = keys[2 + i * 2];
+          const owner = args[3 + i];
+          maybeFail('del', idxKey);
+          if (kvState.values.get(idxKey) === owner) kvState.values.delete(idxKey);
+          maybeFail('del', detailKey);
+          kvState.values.delete(detailKey);
+        }
+        const identitiesKey = keys[1 + n * 2];
+        const userKey = keys[2 + n * 2];
+        maybeFail('del', identitiesKey);
+        kvState.values.delete(identitiesKey);
+        kvState.sets.delete(identitiesKey);
+        maybeFail('del', userKey);
+        kvState.values.delete(userKey);
+        return 'OK';
+      }
+      throw new Error(`Unexpected fenced eval script: ${script}`);
     }
     // Atomic compare-and-delete (KEYS[1] is deleted only while its value still
     // equals ARGV[1]). Used for lock release and dangling-index reclamation alike.
@@ -929,10 +995,99 @@ async function testStaleHolderCannotFlipCommitAfterLeaseReplaced() {
   );
 }
 
+async function testStaleUnlinkHolderCannotWipeRepublishedIdentity() {
+  resetKv();
+  // Codex CR DIC-877 CR9, the concrete unlink race. A user with two committed
+  // login methods (apple + google) unlinks google. On the pre-CR9 code the index
+  // release was fenced but the detail/membership/user writes that follow were NOT:
+  // a holder could release google's index, then — after its lease lapsed and a new
+  // holder repaired/republished the same identity — resume and delete the detail +
+  // membership and overwrite the user snapshot, STRANDING a live google index that
+  // no detail or membership backs. We reproduce the stale holder by replacing the
+  // lock token at the instant its unlink write-set is about to run. Because the
+  // ENTIRE write-set is now one atomic fenced eval, a token that no longer occupies
+  // the lock makes it write NOTHING: index, detail, membership and user all survive.
+  const apple = (await store.loginOrCreate(identity('apple', 'a-un', 'a@icloud.com', 'Kim'))).user;
+  await store.linkIdentity(apple.internalId, identity('google', 'g-un', 'g@example.com', 'Ann'));
+  const lockKey = `auth:lock:${apple.internalId}`;
+  const idxKey = 'auth:idx:google:g-un';
+  const detailKey = `auth:idetail:${apple.internalId}:google:g-un`;
+  const identitiesKey = `auth:user:${apple.internalId}:identities`;
+
+  let replaced = false;
+  kvState.beforeEval = async (script, keys) => {
+    // Fire once, at the unlink write-set's atomic eval (its ownership fence).
+    if (!replaced && script.includes('-- UNLINK') && keys[0] === lockKey) {
+      replaced = true;
+      // Another holder acquired the lease after ours lapsed: overwrite the lock with
+      // a DIFFERENT token, so the very next atomic eval — this unlink — must refuse.
+      kvState.values.set(lockKey, 'someone-elses-token');
+    }
+  };
+
+  await expectError(store.unlinkIdentity(apple.internalId, 'google'), 'LOCK_TIMEOUT');
+  kvState.beforeEval = null;
+
+  // The stale holder wrote NOTHING: the google identity is wholly intact, so no
+  // live index is left stranded without a detail/membership behind it.
+  assert.equal(kvState.values.get(idxKey), apple.internalId, 'google index survives — not stranded/released');
+  const detail = kvState.values.get(detailKey);
+  assert.ok(detail && detail.pending === false, 'google detail survives, still committed');
+  const members = kvState.sets.get(identitiesKey);
+  assert.ok(members.has('google:g-un'), 'google membership survives');
+
+  // Both methods remain live and google still grants login into this same account.
+  const after = await store.getUser(apple.internalId);
+  assert.equal(after.linkedProviders.length, 2, 'apple + google both remain after the refused unlink');
+  const relogin = await store.loginOrCreate(identity('google', 'g-un', 'g@example.com', 'Ann'));
+  assert.equal(relogin.isNew, false, 'google still resolves into the account');
+  assert.equal(relogin.user.internalId, apple.internalId, 'google login lands on the same user');
+}
+
+async function testStaleDeleteHolderCannotWipeRepublishedAccount() {
+  resetKv();
+  // Codex CR DIC-877 CR9, the delete-cascade variant. A user with two committed
+  // methods is deleted. On the pre-CR9 code each index release was fenced but the
+  // detail/identities/user deletes were not, so a stale holder could resume after
+  // its lease lapsed and wipe records a new holder had rebuilt. We replace the lock
+  // token at the instant the cascade's atomic eval is about to run: because the
+  // whole cascade is one fenced op, the stale holder writes NOTHING — the user and
+  // every identity survive intact rather than being half-deleted past lease expiry.
+  const apple = (await store.loginOrCreate(identity('apple', 'a-del', 'a@icloud.com', 'Kim'))).user;
+  await store.linkIdentity(apple.internalId, identity('google', 'g-del', 'g@example.com', 'Ann'));
+  const lockKey = `auth:lock:${apple.internalId}`;
+  const userKey = `auth:user:${apple.internalId}`;
+  const identitiesKey = `auth:user:${apple.internalId}:identities`;
+  const appleIdx = 'auth:idx:apple:a-del';
+  const googleIdx = 'auth:idx:google:g-del';
+
+  let replaced = false;
+  kvState.beforeEval = async (script, keys) => {
+    if (!replaced && script.includes('-- DELUSER') && keys[0] === lockKey) {
+      replaced = true;
+      kvState.values.set(lockKey, 'someone-elses-token');
+    }
+  };
+
+  await expectError(store.deleteUser(apple.internalId), 'LOCK_TIMEOUT');
+  kvState.beforeEval = null;
+
+  // The stale holder wrote NOTHING: the whole account survives.
+  assert.ok(kvState.values.get(userKey), 'user record survives the refused delete');
+  assert.equal(kvState.values.get(appleIdx), apple.internalId, 'apple index survives');
+  assert.equal(kvState.values.get(googleIdx), apple.internalId, 'google index survives');
+  const members = kvState.sets.get(identitiesKey);
+  assert.ok(members && members.has('apple:a-del') && members.has('google:g-del'), 'both memberships survive');
+  const after = await store.getUser(apple.internalId);
+  assert.equal(after.linkedProviders.length, 2, 'both methods remain after the refused delete');
+}
+
 (async () => {
   const tests = [
     testStaleLinkHolderCannotCommitPastLeaseExpiry,
     testStaleHolderCannotFlipCommitAfterLeaseReplaced,
+    testStaleUnlinkHolderCannotWipeRepublishedIdentity,
+    testStaleDeleteHolderCannotWipeRepublishedAccount,
     testNewAndReturningUser,
     testLinkSecondProviderAndUnlink,
     testCrossAccountCollision,
