@@ -134,7 +134,14 @@ const splitMember = (m: string): { provider: Provider; subject: string } => {
   return { provider: m.slice(0, i) as Provider, subject: m.slice(i + 1) };
 };
 
-const LOCK_TTL_MS = 5000;
+// Lease length for the per-user lock. This is a RENEWABLE lease, not a hard
+// deadline: every publication/commit point re-validates ownership and PEXPIREs
+// the key (see `assertLeaseHeld`), so a live-but-slow Vercel function keeps
+// extending its own lease while a genuinely stalled/dead holder lets it lapse.
+// The correctness guarantee against a stale holder is the ownership re-check at
+// each mutation, NOT this number — raising it alone would not fix the race
+// (CR DIC-877). It is sized only to give a healthy request comfortable headroom.
+const LOCK_TTL_MS = 15000;
 const LOCK_RETRIES = 50;
 const LOCK_RETRY_MS = 20;
 // Bounded retries for the create-path index claim: enough to outlast a concurrent
@@ -148,6 +155,14 @@ const CREATE_CLAIM_RETRIES = 10;
 // concurrent creator that already republished a live index is never clobbered
 // (CR DIC-866 #1: dangling-index reclamation race).
 const COMPARE_AND_DELETE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
+
+// Atomic renew-if-owner: only while the lock KEYS[1] still holds OUR token
+// (ARGV[1]) do we extend it (PEXPIRE, ARGV[2]) and report ownership. A stale
+// holder — one whose lease already lapsed and was re-acquired by another writer,
+// or released — reads a mismatched/absent token and gets 0, so it can neither
+// renew nor pass the guard. This is the fence that makes a stale link/unlink/
+// delete UNABLE to publish or commit past lease expiry (CR DIC-877).
+const RENEW_IF_OWNER = `if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('PEXPIRE', KEYS[1], ARGV[2]); return 1 else return 0 end`;
 
 export function isIdentityStoreConfigured(): boolean {
   return Boolean(
@@ -164,22 +179,45 @@ function newUserId(): string {
   return 'holo_' + crypto.randomBytes(9).toString('hex');
 }
 
-async function acquireLockKey(lockKey: string): Promise<string> {
+// A held lease. Carries the key + the unique token that proves ownership; every
+// ownership-mutating write revalidates against this token before it runs.
+interface Lease {
+  key: string;
+  token: string;
+}
+
+async function acquireLockKey(lockKey: string): Promise<Lease> {
   const token = crypto.randomUUID();
   for (let i = 0; i < LOCK_RETRIES; i++) {
     const ok = await kv.set(lockKey, token, { nx: true, px: LOCK_TTL_MS });
-    if (ok === 'OK') return token;
+    if (ok === 'OK') return { key: lockKey, token };
     await sleep(LOCK_RETRY_MS);
   }
   throw new IdentityStoreError('LOCK_TIMEOUT', `Could not acquire lock ${lockKey}`);
 }
 
-async function releaseLockKey(lockKey: string, token: string): Promise<void> {
-  await kv.eval(COMPARE_AND_DELETE, [lockKey], [token]);
+async function releaseLockKey(lease: Lease): Promise<void> {
+  await kv.eval(COMPARE_AND_DELETE, [lease.key], [lease.token]);
+}
+
+// Fence + renew. Call this immediately before EVERY publication/commit/index
+// mutation performed under the lease. It atomically confirms we still own the
+// lock and, in the same call, extends the lease. If ownership has lapsed (the
+// lease expired mid-request and another writer took it, or it was released), it
+// throws LOCK_TIMEOUT so the caller aborts BEFORE it can publish or commit —
+// a stale holder is thereby unable to mutate identity ownership (CR DIC-877).
+async function assertLeaseHeld(lease: Lease): Promise<void> {
+  const held = await kv.eval(RENEW_IF_OWNER, [lease.key], [lease.token, String(LOCK_TTL_MS)]);
+  if (held !== 1) {
+    throw new IdentityStoreError(
+      'LOCK_TIMEOUT',
+      `user lock ${lease.key} lost mid-mutation (lease expired); aborting before publish/commit`,
+    );
+  }
 }
 
 const acquireLock = (userId: string) => acquireLockKey(LOCK_KEY(userId));
-const releaseLock = (userId: string, token: string) => releaseLockKey(LOCK_KEY(userId), token);
+const releaseLock = (lease: Lease) => releaseLockKey(lease);
 
 async function loadUser(userId: string): Promise<StoredUser | null> {
   return (await kv.get<StoredUser>(USER_KEY(userId))) ?? null;
@@ -486,7 +524,9 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
         // would leak the old subject (unusable login, and unclaimable by any other
         // account) and could split the identity. Owner-fencing keeps the delete a
         // no-op if the sibling's index was legitimately reclaimed elsewhere
-        // (CR DIC-875 #2).
+        // (CR DIC-875 #2). Fence first: releasing a sibling's index is an
+        // ownership mutation, so a stale holder must not perform it (CR DIC-877).
+        await assertLeaseHeld(lock);
         await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, s.subject)], [userId]);
         await rollbackLink(userId, provider, s.subject);
       }
@@ -510,6 +550,17 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
     await writeDetail(userId, identity, linkedAt, /* pending */ true);
     await kv.sadd(IDENTITIES_KEY(userId), selfMember);
 
+    // PUBLICATION POINT. Fence before granting login: if our lease lapsed while
+    // we were writing membership/detail and another writer took the lock, we are
+    // a stale holder and must NOT publish the login-granting index. Roll back the
+    // (still-unpublished, index-less) membership we committed and abort, so no
+    // stale link can ever reach the index (CR DIC-877).
+    try {
+      await assertLeaseHeld(lock);
+    } catch (err) {
+      await rollbackLink(userId, provider, subject);
+      throw err;
+    }
     // Publish the index last. A failure here is after membership commit, so roll
     // back the now-unpublished membership best-effort; even if that rollback
     // fails, the detail stays PENDING and index-less, so neither login nor
@@ -533,12 +584,18 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
       // owner2 === userId: a prior partial attempt already published our own
       // claim; the membership we just (re)committed makes it whole. Keep it.
     }
+    // COMMIT POINT. Fence again: the pending->committed flip is what makes the
+    // link live and visible, so a stale holder must not perform it either. The
+    // index is already published here, so this leaves a repairable pending ghost
+    // (login fails closed on it) rather than rolling back — a later retry under a
+    // fresh lease finishes it (CR DIC-877 / DIC-874 #1).
+    await assertLeaseHeld(lock);
     // Index now names us → flip the detail to COMMITTED so it becomes visible and
     // the link is durably complete. On repair this is the finishing write.
     await writeDetail(userId, identity, linkedAt, /* pending */ false);
     return { user: await hydrate(user), alreadyLinked: false };
   } finally {
-    await releaseLock(userId, lock);
+    await releaseLock(lock);
   }
 }
 
@@ -582,7 +639,9 @@ export async function unlinkIdentity(userId: string, provider: Provider): Promis
     // points elsewhere — an unconditional delete would wipe that account's live
     // index and split its login. Compare-and-delete makes such a delete a no-op
     // (CR DIC-874 #2). The detail/membership below are keyed by THIS user, so they
-    // are always ours to remove.
+    // are always ours to remove. Fence before the index mutation: a stale holder
+    // whose lease lapsed must not release an index either (CR DIC-877).
+    await assertLeaseHeld(lock);
     await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, subject)], [userId]);
     await kv.del(DETAIL_KEY(userId, provider, subject));
     await kv.srem(IDENTITIES_KEY(userId), target);
@@ -593,7 +652,7 @@ export async function unlinkIdentity(userId: string, provider: Provider): Promis
     await kv.set(USER_KEY(userId), next);
     return await hydrate(next);
   } finally {
-    await releaseLock(userId, lock);
+    await releaseLock(lock);
   }
 }
 
@@ -615,6 +674,9 @@ export async function deleteUser(userId: string): Promise<DeleteResult> {
       // Owner-fenced: drop the provider index ONLY while it still names THIS user.
       // A stale/pending membership whose live index was reclaimed by another
       // account must not let this delete wipe that account's index (CR DIC-874 #2).
+      // Fence before each index mutation so a stale holder cannot cascade-delete
+      // indices past lease expiry (CR DIC-877).
+      await assertLeaseHeld(lock);
       await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, subject)], [userId]);
       await kv.del(DETAIL_KEY(userId, provider, subject));
     }
@@ -622,7 +684,7 @@ export async function deleteUser(userId: string): Promise<DeleteResult> {
     await kv.del(USER_KEY(userId));
     return { deletedInternalUser: true, deletedProviders: members.length };
   } finally {
-    await releaseLock(userId, lock);
+    await releaseLock(lock);
   }
 }
 

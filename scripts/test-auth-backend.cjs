@@ -85,9 +85,17 @@ const kv = {
   },
   async eval(script, keys, args) {
     if (kvState.beforeEval) await kvState.beforeEval(script, keys, args);
-    // The store uses one Lua script: an atomic compare-and-delete (KEYS[1] is
-    // deleted only while its value still equals ARGV[1]). Used for lock release
-    // and dangling-index reclamation alike.
+    // Renew-if-owner fence: extend the lease (a no-op TTL in this mock) only while
+    // the lock KEYS[1] still holds our token ARGV[1]; report ownership 1/0. The
+    // store calls this before every publication/commit point so a stale holder
+    // (lease lapsed → token gone/replaced) is fenced out (CR DIC-877).
+    if (script.includes("redis.call('PEXPIRE'")) {
+      const [lockKey] = keys;
+      const [token] = args;
+      return kvState.values.get(lockKey) === token ? 1 : 0;
+    }
+    // Atomic compare-and-delete (KEYS[1] is deleted only while its value still
+    // equals ARGV[1]). Used for lock release and dangling-index reclamation alike.
     if (script.includes("redis.call('DEL', KEYS[1])")) {
       const [targetKey] = keys;
       const [expected] = args;
@@ -748,8 +756,78 @@ async function testReplacePendingSiblingReleasesOldProviderIndex() {
   assert.notEqual(oldReclaim.user.internalId, apple.internalId, 'old subject no longer resolves into the linker');
 }
 
+async function testStaleLinkHolderCannotCommitPastLeaseExpiry() {
+  resetKv();
+  // One committed apple login method. Two DIFFERENT google subjects then race to
+  // link onto this same user. The per-user lock serialises them — UNLESS the first
+  // holder's lease expires mid-request (the Vercel-function-timeout attack from
+  // CR DIC-877). We reproduce exactly that: park the first link at its index
+  // PUBLICATION point (its first ownership fence), expire its lease so a second
+  // link can take the lock and fully commit its own google identity, then resume
+  // the first. The first is now a STALE holder: its fence must fail, so it can
+  // neither publish nor commit — exactly one google may win, and the loser must
+  // strand no state and grant no login. On the pre-fix 5s-lock code the parked
+  // holder would resume and publish/commit a SECOND google identity onto the user.
+  const apple = (await store.loginOrCreate(identity('apple', 'a-lease', 'a@icloud.com', 'Kim'))).user;
+  const lockKey = `auth:lock:${apple.internalId}`;
+
+  let parked = false;
+  kvState.beforeEval = async (script, keys) => {
+    // Fire once, at the FIRST holder's first ownership fence (its publish point):
+    if (script.includes("redis.call('PEXPIRE'") && keys[0] === lockKey && !parked) {
+      parked = true;
+      // Simulate the lease lapsing under a long function: drop the lock so the
+      // second link can acquire it while the first is suspended here.
+      kvState.values.delete(lockKey);
+      // The second link runs to full completion under its own (valid) lease.
+      await store.linkIdentity(
+        apple.internalId,
+        identity('google', 'g-second', 'second@example.com', 'Bee'),
+      );
+    }
+  };
+
+  // The first link resumes into its fence, discovers its lease is gone, and aborts.
+  await expectError(
+    store.linkIdentity(apple.internalId, identity('google', 'g-first', 'first@example.com', 'Ann')),
+    'LOCK_TIMEOUT',
+  );
+  kvState.beforeEval = null;
+
+  // Exactly one google committed — the second holder — alongside apple.
+  const after = await store.getUser(apple.internalId);
+  const googles = after.linkedProviders.filter((p) => p.provider === 'google');
+  assert.equal(googles.length, 1, 'exactly one google identity committed (no stale double-link)');
+  assert.equal(googles[0].providerId, 'g-second', 'the valid-lease holder is the one that committed');
+  assert.equal(after.linkedProviders.length, 2, 'apple + exactly one google');
+
+  // The winning index points at the user; the loser published no index.
+  assert.equal(kvState.values.get('auth:idx:google:g-second'), apple.internalId, 'winner index -> user');
+  assert.equal(
+    kvState.values.get('auth:idx:google:g-first'),
+    undefined,
+    'the stale holder published no index',
+  );
+
+  // The loser stranded no state: no leftover membership or detail for g-first.
+  assert.equal(
+    kvState.values.get(`auth:idetail:${apple.internalId}:google:g-first`),
+    undefined,
+    'the stale holder left no detail behind',
+  );
+  const members = kvState.sets.get(`auth:user:${apple.internalId}:identities`);
+  assert.ok(!members.has('google:g-first'), 'the stale holder left no membership behind');
+
+  // The loser subject is NOT login-capable into this account: a fresh login with
+  // g-first mints a separate new user rather than resolving into the linker.
+  const loserLogin = await store.loginOrCreate(identity('google', 'g-first', 'first@example.com', 'Ann'));
+  assert.equal(loserLogin.isNew, true, 'the stale-linked subject grants no login into the account');
+  assert.notEqual(loserLogin.user.internalId, apple.internalId, 'no login into the linker for the loser');
+}
+
 (async () => {
   const tests = [
+    testStaleLinkHolderCannotCommitPastLeaseExpiry,
     testNewAndReturningUser,
     testLinkSecondProviderAndUnlink,
     testCrossAccountCollision,
