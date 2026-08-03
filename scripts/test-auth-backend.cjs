@@ -675,6 +675,79 @@ async function testUnlinkDoesNotWipeAnotherAccountsLiveIndex() {
   );
 }
 
+async function testUnlinkLastCommittedMethodIgnoresPendingGhost() {
+  resetKv();
+  // One COMMITTED apple login method plus a forged PENDING google ghost (a
+  // crashed link: membership + pending detail, but no google index of its own).
+  // The last-method invariant must count only the committed apple method, so the
+  // raw two-member set must NOT be read as "two login methods". Pre-fix
+  // (members.length <= 1) the ghost inflated the count and let apple — the only
+  // real login method — be unlinked, stranding the account with zero usable
+  // methods (CR DIC-875 #1).
+  const apple = (await store.loginOrCreate(identity('apple', 'a-875', 'a@icloud.com', 'Kim'))).user;
+  forgeGhostMembership(apple.internalId, 'google', 'g-ghost-875');
+  assert.equal(
+    kvState.values.get('auth:idx:google:g-ghost-875'),
+    undefined,
+    'the pending google ghost owns no index',
+  );
+
+  await expectError(store.unlinkIdentity(apple.internalId, 'apple'), 'CANNOT_UNLINK_LAST_METHOD');
+
+  // Apple remains fully usable: its index and committed detail are untouched, and
+  // a returning apple login still resolves into the same account.
+  assert.equal(
+    kvState.values.get('auth:idx:apple:a-875'),
+    apple.internalId,
+    "apple's index survives the refused unlink",
+  );
+  const afterRefuse = await store.getUser(apple.internalId);
+  assert.equal(afterRefuse.linkedProviders.length, 1, 'apple stays linked; ghost stays hidden');
+  assert.equal(afterRefuse.linkedProviders[0].provider, 'apple');
+  const relogin = await store.loginOrCreate(identity('apple', 'a-875', 'a@icloud.com', 'Kim'));
+  assert.equal(relogin.isNew, false, 'apple login still resolves into the account');
+  assert.equal(relogin.user.internalId, apple.internalId, 'apple is still a working login method');
+}
+
+async function testReplacePendingSiblingReleasesOldProviderIndex() {
+  resetKv();
+  const apple = (await store.loginOrCreate(identity('apple', 'a-876', 'a@icloud.com', 'Kim'))).user;
+
+  // Forge a PENDING google sibling for subject g-old that DID publish its index to
+  // this account before crashing (membership + pending detail + a live index -> us).
+  // This is the "failed pending link" state that a fresh link with a DIFFERENT
+  // google subject must clean up.
+  forgeGhostMembership(apple.internalId, 'google', 'g-old');
+  kvState.values.set('auth:idx:google:g-old', apple.internalId);
+  assert.equal(kvState.values.get('auth:idx:google:g-old'), apple.internalId, 'stale google index -> us');
+
+  // Link a DIFFERENT google subject. The pending-sibling cleanup must atomically
+  // compare-and-delete the old google index (g-old) while it still names us,
+  // BEFORE removing its detail/membership, so g-old is fully released.
+  const linked = await store.linkIdentity(apple.internalId, identity('google', 'g-new', 'g@example.com', 'Kim'));
+  assert.equal(linked.alreadyLinked, false, 'the new google subject links freshly');
+  assert.equal(linked.user.linkedProviders.length, 2, 'apple + the new google subject are linked');
+  const googleLinked = linked.user.linkedProviders.find((p) => p.provider === 'google');
+  assert.equal(googleLinked.providerId, 'g-new', 'the new google subject is the live one');
+
+  // The old index is gone (released), not left dangling at us.
+  assert.equal(
+    kvState.values.get('auth:idx:google:g-old'),
+    undefined,
+    'the old provider index was released, not leaked at the account',
+  );
+  // The new subject is usable: a returning google login resolves INTO this account.
+  const newLogin = await store.loginOrCreate(identity('google', 'g-new', 'g@example.com', 'Kim'));
+  assert.equal(newLogin.isNew, false, 'the new google subject logs into the account');
+  assert.equal(newLogin.user.internalId, apple.internalId, 'no split for the new subject');
+
+  // The released old subject is now claimable by a SEPARATE fresh account — proof
+  // the leaked index no longer locks it (and no owner/split regression).
+  const oldReclaim = await store.loginOrCreate(identity('google', 'g-old', 'other@example.com', 'Oz'));
+  assert.equal(oldReclaim.isNew, true, 'the released old subject is claimable by a new user');
+  assert.notEqual(oldReclaim.user.internalId, apple.internalId, 'old subject no longer resolves into the linker');
+}
+
 (async () => {
   const tests = [
     testNewAndReturningUser,
@@ -690,6 +763,8 @@ async function testUnlinkDoesNotWipeAnotherAccountsLiveIndex() {
     testFailedFinalLinkCommitFailsClosedAndRepairs,
     testDeleteDoesNotWipeAnotherAccountsLiveIndex,
     testUnlinkDoesNotWipeAnotherAccountsLiveIndex,
+    testUnlinkLastCommittedMethodIgnoresPendingGhost,
+    testReplacePendingSiblingReleasesOldProviderIndex,
     testWriteFailureIsNotReportedAsSuccess,
     testFailedLinkDoesNotGrantFutureLogin,
     testLinkCrashBeforeCommitGrantsNoLogin,

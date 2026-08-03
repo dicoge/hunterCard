@@ -478,6 +478,16 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
             `User already has a ${provider} identity; unlink it before linking a different one`,
           );
         }
+        // Discard the crashed pending sibling. Release its provider index FIRST,
+        // and only while it still names US (compare-and-delete), then drop the
+        // detail/membership. Ordering index-first means a crash mid-cleanup can
+        // only ever leave an index-less pending ghost (safe/repairable), never a
+        // live userId-owned index whose detail/membership are already gone — which
+        // would leak the old subject (unusable login, and unclaimable by any other
+        // account) and could split the identity. Owner-fencing keeps the delete a
+        // no-op if the sibling's index was legitimately reclaimed elsewhere
+        // (CR DIC-875 #2).
+        await kv.eval(COMPARE_AND_DELETE, [IDX_KEY(provider, s.subject)], [userId]);
         await rollbackLink(userId, provider, s.subject);
       }
 
@@ -542,7 +552,26 @@ export async function unlinkIdentity(userId: string, provider: Provider): Promis
     const members = ((await kv.smembers(IDENTITIES_KEY(userId))) as string[] | null) ?? [];
     const target = members.find((m) => splitMember(m).provider === provider);
     if (!target) throw new IdentityStoreError('NO_SUCH_IDENTITY', `${provider} not linked`);
-    if (members.length <= 1) {
+
+    // The last-method invariant must count only COMMITTED, owner-matched login
+    // methods — a member whose index still names us AND whose detail is not
+    // pending. A raw membership count would let a hidden pending ghost (a crashed
+    // link whose index was never published, or was reclaimed elsewhere) mask that
+    // the target is the ONLY real login method, and permit unlinking it — leaving
+    // the account with zero usable login methods (CR DIC-875 #1).
+    const committed: string[] = [];
+    for (const m of members) {
+      const { provider: p, subject: s } = splitMember(m);
+      const [idxOwner, detail] = await Promise.all([
+        kv.get<string>(IDX_KEY(p, s)),
+        kv.get<IdentityDetail>(DETAIL_KEY(userId, p, s)),
+      ]);
+      if (idxOwner === userId && detail && !detail.pending) committed.push(m);
+    }
+    // Refuse only when removing the target would drop the committed count from
+    // one to zero. Unlinking a non-committed ghost never reduces that count, and a
+    // degenerate account with no committed method at all is not made worse.
+    if (committed.includes(target) && committed.every((m) => m === target)) {
       throw new IdentityStoreError('CANNOT_UNLINK_LAST_METHOD', 'At least one login method must remain');
     }
 
