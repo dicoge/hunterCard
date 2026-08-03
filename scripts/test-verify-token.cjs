@@ -60,9 +60,9 @@ function compileTs(relPath) {
   fs.writeFileSync(output, compiled.outputText);
 }
 
-compileTs('api/lib/identity-store.ts');
-compileTs('api/lib/verify-token.ts');
-const verify = require(path.join(outDir, 'api/lib/verify-token.js'));
+compileTs('api/_lib/identity-store.ts');
+compileTs('api/_lib/verify-token.ts');
+const verify = require(path.join(outDir, 'api/_lib/verify-token.js'));
 
 function b64url(input) {
   return Buffer.from(input).toString('base64url');

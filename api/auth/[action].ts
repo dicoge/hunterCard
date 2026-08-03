@@ -11,8 +11,8 @@
  *   - link   (§5.2) — Bearer session: link a second verified provider
  *   - unlink (§5.3) — Bearer session: remove a provider, refusing the last method
  */
-import { loginOrCreate, linkIdentity, unlinkIdentity } from '../lib/identity-store';
-import { issueSession } from '../lib/session';
+import { loginOrCreate, linkIdentity, unlinkIdentity } from '../_lib/identity-store';
+import { issueSession } from '../_lib/session';
 import {
   backendUnavailable,
   errorResponse,
@@ -20,7 +20,7 @@ import {
   json,
   sessionUserId,
   verifyProviderToken,
-} from '../lib/auth-endpoint';
+} from '../_lib/auth-endpoint';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;

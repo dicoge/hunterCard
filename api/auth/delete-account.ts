@@ -16,16 +16,16 @@
  *
  * 撤銷所需的 refresh_token 於「登入當下」以 fresh authorizationCode 換取並保存
  * （見 api/auth/apple/register.ts）。⚠️ non-shipping foundation：
- * api/lib/apple-token-store.ts 目前為介面樁，尚未接持久化，因此對「有 Apple identity」
+ * api/_lib/apple-token-store.ts 目前為介面樁，尚未接持久化，因此對「有 Apple identity」
  * 的帳號目前仍會回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
  */
-import { deleteUser, getUser } from '../lib/identity-store';
-import { getAppleConfig, revokeRefreshToken } from '../lib/apple-auth';
+import { deleteUser, getUser } from '../_lib/identity-store';
+import { getAppleConfig, revokeRefreshToken } from '../_lib/apple-auth';
 import {
   getStoredAppleRefreshToken,
   deleteStoredAppleRefreshToken,
-} from '../lib/apple-token-store';
-import { backendUnavailable, errorResponse, json, sessionUserId } from '../lib/auth-endpoint';
+} from '../_lib/apple-token-store';
+import { backendUnavailable, errorResponse, json, sessionUserId } from '../_lib/auth-endpoint';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;

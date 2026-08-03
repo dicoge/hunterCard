@@ -7,15 +7,15 @@
  * 為什麼要在登入時做？authorizationCode 單次使用且短效，刪除當下不一定還有效，
  * 因此不可保存 authorizationCode 供日後使用——必須在登入當下換成長效 refresh_token。
  *
- * ⚠️ non-shipping foundation：refresh_token 儲存尚未接後端持久化（見 api/lib/apple-token-store.ts）。
+ * ⚠️ non-shipping foundation：refresh_token 儲存尚未接後端持久化（見 api/_lib/apple-token-store.ts）。
  * 未設定完整 Apple 環境變數時回 501；token store 未實作時回 501。
  * 本端點對登入流程為「best-effort」，client 端失敗不應阻擋登入（見 registerAppleSession）。
  */
-import { getAppleConfig, exchangeAuthorizationCode } from '../../lib/apple-auth';
+import { getAppleConfig, exchangeAuthorizationCode } from '../../_lib/apple-auth';
 import {
   persistAppleRefreshToken,
   TokenStoreNotImplementedError,
-} from '../../lib/apple-token-store';
+} from '../../_lib/apple-token-store';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;

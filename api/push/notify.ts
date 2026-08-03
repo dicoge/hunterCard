@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { getWatchlist, getLastAlertTimes, setLastAlertTimes } from '../lib/kv-storage';
+import { getWatchlist, getLastAlertTimes, setLastAlertTimes } from '../_lib/kv-storage';
 
 export const config = { runtime: 'nodejs' };
 

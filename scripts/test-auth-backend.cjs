@@ -112,8 +112,8 @@ function compileTs(relPath) {
   fs.writeFileSync(output, compiled.outputText);
 }
 
-compileTs('api/lib/identity-store.ts');
-const store = require(path.join(outDir, 'api/lib/identity-store.js'));
+compileTs('api/_lib/identity-store.ts');
+const store = require(path.join(outDir, 'api/_lib/identity-store.js'));
 
 function identity(provider, subject, email, name) {
   return { provider, subject, email, name };

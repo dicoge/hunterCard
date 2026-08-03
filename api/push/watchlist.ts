@@ -1,4 +1,4 @@
-import { addWatchlistCard, removeWatchlistCard } from '../lib/kv-storage';
+import { addWatchlistCard, removeWatchlistCard } from '../_lib/kv-storage';
 
 export const config = { runtime: 'nodejs' };
 

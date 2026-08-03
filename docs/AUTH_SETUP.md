@@ -2,7 +2,7 @@
 
 本文件說明 iOS「Sign in with Apple」的設定步驟、需要在 Apple Developer 後台配置的項目、環境變數，以及 TestFlight 驗證 checklist。
 
-> **注意（DIC-663 更新）**：本文件保留早期 iOS 原生 Apple 流程（`src/services/auth/` + `src/stores/authStore.ts`）的 checklist 供 native 上架參考。目前**實際運行**的登入路徑是 `src/services/authService.ts` + `src/store/authStore.ts`，且為**伺服器權威**：前端取得 provider `id_token` 後 POST 至 `/api/auth/*`，由伺服器 `api/lib/verify-token.ts` 驗簽、`api/lib/identity-store.ts`（Vercel KV）以 internal user id 歸屬身份、`api/lib/session.ts` 發 HMAC session。身份**不存於瀏覽器 localStorage**。**Web Google 登入已接線並啟用**（`signInWithProvider('google')`，server-authoritative）；Web Apple 的驗證端點已就緒但以旗標關閉，設定清單見 `docs/Web-Apple-Login-Evaluation.md`。下方「Google 登入後續」段落僅適用於已停用的舊 `services/auth/googleAuth.ts` 佔位檔，非目前路徑。
+> **注意（DIC-663 更新）**：本文件保留早期 iOS 原生 Apple 流程（`src/services/auth/` + `src/stores/authStore.ts`）的 checklist 供 native 上架參考。目前**實際運行**的登入路徑是 `src/services/authService.ts` + `src/store/authStore.ts`，且為**伺服器權威**：前端取得 provider `id_token` 後 POST 至 `/api/auth/*`，由伺服器 `api/_lib/verify-token.ts` 驗簽、`api/_lib/identity-store.ts`（Vercel KV）以 internal user id 歸屬身份、`api/_lib/session.ts` 發 HMAC session。身份**不存於瀏覽器 localStorage**。**Web Google 登入已接線並啟用**（`signInWithProvider('google')`，server-authoritative）；Web Apple 的驗證端點已就緒但以旗標關閉，設定清單見 `docs/Web-Apple-Login-Evaluation.md`。下方「Google 登入後續」段落僅適用於已停用的舊 `services/auth/googleAuth.ts` 佔位檔，非目前路徑。
 
 ## 產品決策
 
@@ -16,10 +16,10 @@
 
 | 項目 | 位置 |
 | --- | --- |
-| 伺服器身份存放（KV：唯一 claim、per-user lock、login/link/unlink/delete + 錯誤碼） | `api/lib/identity-store.ts` |
-| provider `id_token` 伺服器驗簽（Google RS256 / Apple ES256，JWKS 快取） | `api/lib/verify-token.ts` |
-| HMAC session 簽發 / 驗證 | `api/lib/session.ts` |
-| 共用端點輔助（json、錯誤碼→HTTP、旗標、backend 可用性、session 解析） | `api/lib/auth-endpoint.ts` |
+| 伺服器身份存放（KV：唯一 claim、per-user lock、login/link/unlink/delete + 錯誤碼） | `api/_lib/identity-store.ts` |
+| provider `id_token` 伺服器驗簽（Google RS256 / Apple ES256，JWKS 快取） | `api/_lib/verify-token.ts` |
+| HMAC session 簽發 / 驗證 | `api/_lib/session.ts` |
+| 共用端點輔助（json、錯誤碼→HTTP、旗標、backend 可用性、session 解析） | `api/_lib/auth-endpoint.ts` |
 | 登入端點（verify → loginOrCreate → session） | `api/auth/login.ts` |
 | 綁定 / 解綁端點（session 授權） | `api/auth/link.ts`, `api/auth/unlink.ts` |
 | 帳號刪除（session-based 級聯刪除 + Apple 撤銷，fail-closed） | `api/auth/delete-account.ts` |
@@ -27,8 +27,8 @@
 | Session store（zustand + persist，存 session token 非 provider token） | `src/store/authStore.ts` |
 | 登入畫面（iOS 顯示原生 Apple 按鈕；Web 未啟用時**隱藏**Apple 按鈕，不留假入口） | `src/screens/LoginScreen.tsx` |
 | 登出 / 綁定 / 刪除帳號 UI（旗標一致、fail-closed 文案） | `src/screens/SettingsScreen.tsx` |
-| Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/lib/apple-auth.ts` |
-| refresh_token 儲存介面樁（seam，尚未接持久化） | `api/lib/apple-token-store.ts` |
+| Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/_lib/apple-auth.ts` |
+| refresh_token 儲存介面樁（seam，尚未接持久化） | `api/_lib/apple-token-store.ts` |
 | 後端身份存放迴歸測試（mock KV） | `scripts/test-auth-backend.cjs`（`npm run test:auth-backend`） |
 | App 設定 capability / plugin（原 `app.json`，DIC-866 改為靜態 base + 動態 config） | `app.base.json` + `app.config.js` |
 | 前端 iOS 原生登入單元測試（audience 驗簽） | `scripts/test-verify-token.cjs`（`npm run test:verify-token`） |
@@ -60,14 +60,14 @@
 
 | 變數 | 說明 | 缺少時 |
 | --- | --- | --- |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN`（Vercel KV / Upstash） | 身份存放（`api/lib/identity-store.ts`）與 session 所需 | 端點回 501 `store_not_configured` |
-| `AUTH_SESSION_SECRET` | HMAC session 簽發 / 驗證（`api/lib/session.ts`）密鑰 | 端點回 501，無法發 / 驗 session |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN`（Vercel KV / Upstash） | 身份存放（`api/_lib/identity-store.ts`）與 session 所需 | 端點回 501 `store_not_configured` |
+| `AUTH_SESSION_SECRET` | HMAC session 簽發 / 驗證（`api/_lib/session.ts`）密鑰 | 端點回 501，無法發 / 驗 session |
 | `GOOGLE_WEB_CLIENT_ID`（或 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` / `GOOGLE_CLIENT_ID`） | **Web** Google `id_token` 驗簽的 `aud` | Web Google 登入回 `store_not_configured` |
 | `APPLE_WEB_LOGIN_ENABLED` | 設為 `'true'` 才允許 **Web** Apple（Services ID `aud`）通過 `/api/auth/login`。**不影響原生 iOS Apple**（bundle id `aud` 一律接受） | Web Apple 被擋（fail-closed）；iOS 不受影響 |
 
 ### 原生 iOS 登入（DIC-866）所需
 
-DIC-866 起，iOS 走**原生**登入（`expo-apple-authentication` + Google iOS OAuth client），並沿用同一套伺服器權威驗簽。原生 token 的 `aud` 與 web 不同，後端 `api/lib/verify-token.ts` 現同時接受：
+DIC-866 起，iOS 走**原生**登入（`expo-apple-authentication` + Google iOS OAuth client），並沿用同一套伺服器權威驗簽。原生 token 的 `aud` 與 web 不同，後端 `api/_lib/verify-token.ts` 現同時接受：
 
 | 變數 | 說明 | 缺少時 |
 | --- | --- | --- |
@@ -92,7 +92,7 @@ DIC-866 起，iOS 走**原生**登入（`expo-apple-authentication` + Google iOS
 
 ### 正確流程（login-time register → stored refresh_token → revoke）
 
-1. **登入當下**：client 拿到 fresh `authorizationCode`，立即 POST `/api/auth/apple/register`（`src/services/auth/index.ts` 的 `registerAppleSession`，best-effort）。後端用它向 `/auth/token` 換 `refresh_token`，以 `userId` 為 key 保存於**伺服器端持久化儲存**（見 `api/lib/apple-token-store.ts`）。
+1. **登入當下**：client 拿到 fresh `authorizationCode`，立即 POST `/api/auth/apple/register`（`src/services/auth/index.ts` 的 `registerAppleSession`，best-effort）。後端用它向 `/auth/token` 換 `refresh_token`，以 `userId` 為 key 保存於**伺服器端持久化儲存**（見 `api/_lib/apple-token-store.ts`）。
 2. **刪除時**：POST `/api/auth/delete-account`，**以 Bearer session 授權**（`api/auth/delete-account.ts` 由 session 解出 internal user id，**不信任** client 傳來的 userId）。若帳號含 Apple 身份，後端取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後才由 `identity-store` 級聯刪除該 internal user 及其所有 provider 身份索引。
 
 原因：`authorizationCode` 為**單次使用且短效**，刪除當下通常已失效，因此不可保存它當作日後刪除憑證——必須在登入當下換成長效 `refresh_token`。client 端也**絕不持久化** `authorizationCode`（`authStore` partialize 會剝除）。
@@ -104,7 +104,7 @@ DIC-866 起，iOS 走**原生**登入（`expo-apple-authentication` + Google iOS
 
 ### ⚠️ 目前限制（non-shipping foundation）
 
-`api/lib/apple-token-store.ts` 目前為**介面樁（seam）**，尚未接後端持久化儲存（refresh_token 是機密，**不可**存入 repo / git-backed storage，需接 Vercel KV / DB 並加密）。因此：
+`api/_lib/apple-token-store.ts` 目前為**介面樁（seam）**，尚未接後端持久化儲存（refresh_token 是機密，**不可**存入 repo / git-backed storage，需接 Vercel KV / DB 並加密）。因此：
 
 - `/api/auth/apple/register` 在 token store 未實作時回 501 `token_store_not_implemented`（登入不受影響）。
 - `/api/auth/delete-account` 取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
