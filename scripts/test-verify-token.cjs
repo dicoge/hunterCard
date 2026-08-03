@@ -383,6 +383,93 @@ async function testStaleKeysetStillServedDuringOutage() {
   }
 }
 
+async function testColdCacheOutageIsRateLimited() {
+  // No cache at all + a provider outage (429): a sequence of logins must trigger
+  // at most one outbound fetch. The failed initial fetch arms the cooldown, so
+  // later requests fail closed without hammering upstream (round-12 P2: the
+  // cold/TTL-expired path must obey the cooldown too).
+  verifier.__resetJwksCache();
+  jwksStatus[GOOGLE_JWKS_URL] = 429;
+  fetchCalls.byUrl.set(GOOGLE_JWKS_URL, 0);
+  try {
+    for (let i = 0; i < 20; i += 1) {
+      const token = signToken({ key: googleKey, payload: googlePayload() });
+      await expectError(verifier.verifyGoogleIdToken(token), 'INVALID_TOKEN');
+    }
+    assert.equal(
+      fetchCalls.byUrl.get(GOOGLE_JWKS_URL),
+      1,
+      'a cold-cache outage must still cap to one outbound JWKS fetch',
+    );
+  } finally {
+    delete jwksStatus[GOOGLE_JWKS_URL];
+  }
+}
+
+async function testStaleBeyondTtlOutageServesKnownKid() {
+  // Cache older than the 10-minute TTL + a 503 outage: a token signed with a
+  // still-cached (known) kid must keep verifying via the bounded stale fallback,
+  // and the outbound fetch must stay rate-limited across repeated logins.
+  verifier.__resetJwksCache();
+  await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+  verifier.__ageJwksCache(GOOGLE_JWKS_URL, 11 * 60 * 1000); // past TTL, within max-stale
+  jwksStatus[GOOGLE_JWKS_URL] = 503;
+  fetchCalls.byUrl.set(GOOGLE_JWKS_URL, 0);
+  try {
+    for (let i = 0; i < 5; i += 1) {
+      const identity = await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+      assert.equal(identity.subject, 'google-sub-123');
+    }
+    assert.equal(
+      fetchCalls.byUrl.get(GOOGLE_JWKS_URL),
+      1,
+      'stale-cache outage must serve the known kid while capping to one fetch',
+    );
+  } finally {
+    delete jwksStatus[GOOGLE_JWKS_URL];
+  }
+}
+
+async function testStaleBeyondTtlOutageUnknownKidIsRateLimited() {
+  // Cache older than TTL + 503 + a spray of unknown kids: served the stale
+  // keyset, the unknown kids still miss and are rejected, and the whole spray
+  // triggers at most one outbound fetch.
+  verifier.__resetJwksCache();
+  await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+  verifier.__ageJwksCache(GOOGLE_JWKS_URL, 11 * 60 * 1000);
+  jwksStatus[GOOGLE_JWKS_URL] = 503;
+  fetchCalls.byUrl.set(GOOGLE_JWKS_URL, 0);
+  try {
+    for (let i = 0; i < 20; i += 1) {
+      const token = signToken({ key: { ...googleKey, kid: `stale-outage-${i}` }, payload: googlePayload() });
+      await expectError(verifier.verifyGoogleIdToken(token), 'INVALID_TOKEN');
+    }
+    assert.equal(
+      fetchCalls.byUrl.get(GOOGLE_JWKS_URL),
+      1,
+      'stale-cache outage unknown-kid spray must cap to one outbound fetch',
+    );
+  } finally {
+    delete jwksStatus[GOOGLE_JWKS_URL];
+  }
+}
+
+async function testStaleBeyondMaxStaleFailsClosedDuringOutage() {
+  // Cache older than the max-stale window + outage: the fallback is bounded, so
+  // even a previously-known kid must now fail closed (we won't trust ancient
+  // keys indefinitely).
+  verifier.__resetJwksCache();
+  await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+  verifier.__ageJwksCache(GOOGLE_JWKS_URL, 61 * 60 * 1000); // past the 60-min max-stale
+  jwksStatus[GOOGLE_JWKS_URL] = 503;
+  try {
+    const token = signToken({ key: googleKey, payload: googlePayload() });
+    await expectError(verifier.verifyGoogleIdToken(token), 'INVALID_TOKEN');
+  } finally {
+    delete jwksStatus[GOOGLE_JWKS_URL];
+  }
+}
+
 async function testConcurrentMissSingleFlightsOneFetch() {
   // Concurrent requests that all miss a cold cache share one upstream fetch.
   verifier.__resetJwksCache();
@@ -424,6 +511,10 @@ async function testConcurrentMissSingleFlightsOneFetch() {
     testUnknownKidSprayIsRateLimited,
     testFailedRefreshDuringOutageIsRateLimited,
     testStaleKeysetStillServedDuringOutage,
+    testColdCacheOutageIsRateLimited,
+    testStaleBeyondTtlOutageServesKnownKid,
+    testStaleBeyondTtlOutageUnknownKidIsRateLimited,
+    testStaleBeyondMaxStaleFailsClosedDuringOutage,
     testConcurrentMissSingleFlightsOneFetch,
   ];
   for (const test of tests) {

@@ -28,6 +28,14 @@ const JWKS_TTL_MS = 10 * 60 * 1000;
 // that a genuine provider key rotation still refreshes on the next attempt.
 const JWKS_MIN_REFRESH_MS = 60 * 1000;
 
+// How long a cached keyset may keep being used past its TTL as an outage
+// fallback. When the provider is returning 429/5xx we would otherwise have no
+// keys at all once the TTL lapses — legitimate tokens signed with a key we
+// already hold would start failing. Serving the last known keyset for a bounded
+// window keeps those logins working while the outbound fetch stays rate-limited.
+// Bounded so a compromised/rotated-away key cannot be trusted indefinitely.
+const JWKS_MAX_STALE_MS = 60 * 60 * 1000;
+
 // Allowed clock skew between our host and the provider when checking time
 // claims. 300s (5 min) is the conventional OIDC leeway and matches Google's and
 // Apple's own tolerance, so a slightly skewed but otherwise valid token is not
@@ -71,12 +79,22 @@ export function __ageJwksCache(url: string, ms: number): void {
   if (attempt !== undefined) jwksLastAttempt.set(url, attempt - ms);
 }
 
-// Single-flight network fetch: hits the provider, updates the cache, and
-// collapses concurrent callers onto one outbound request. The attempt timestamp
-// is recorded up front so it arms the cooldown even when the fetch then fails.
-async function fetchJwksNetwork(url: string): Promise<Jwk[]> {
+// The single outbound-fetch primitive every JWKS request goes through, so the
+// cooldown and single-flight guarantees hold for EVERY fetch — the initial
+// fetch, a TTL refresh, and a kid-miss refresh alike (CR DIC-854 round-12 P2):
+//   - returns the in-flight promise when one exists (single-flight);
+//   - returns null when a fetch was ATTEMPTED (success or failure) within the
+//     cooldown window, so a provider outage cannot be amplified into one
+//     upstream request per login regardless of cache state;
+//   - otherwise records the attempt up front (so a failure still arms the
+//     cooldown) and fetches.
+async function tryFetchJwks(url: string): Promise<Jwk[] | null> {
   const existing = jwksInflight.get(url);
   if (existing) return existing;
+  const lastAttempt = jwksLastAttempt.get(url);
+  if (lastAttempt !== undefined && Date.now() - lastAttempt < JWKS_MIN_REFRESH_MS) {
+    return null;
+  }
   jwksLastAttempt.set(url, Date.now());
   const p = (async () => {
     const res = await fetch(url);
@@ -93,28 +111,46 @@ async function fetchJwksNetwork(url: string): Promise<Jwk[]> {
   }
 }
 
-// Fetch keys honouring the TTL cache. `fresh` reports whether this call hit the
-// network (so the caller knows the keyset is already up to date and a refresh
-// on a `kid` miss would be pointless — avoids the cold-cache double fetch).
-async function getJwks(url: string): Promise<{ keys: Jwk[]; fresh: boolean }> {
+// Bounded stale-key fallback: the last cached keyset if it is still within the
+// max-stale window, else null.
+function staleFallback(url: string): Jwk[] | null {
+  const cached = jwksCache.get(url);
+  if (cached && Date.now() - cached.fetchedAt < JWKS_MAX_STALE_MS) return cached.keys;
+  return null;
+}
+
+// Load a usable keyset honouring the TTL cache, the fetch cooldown, and the
+// bounded stale fallback. `fresh` reports whether the returned keys came from a
+// network fetch performed by THIS call — a fresh keyset is already current, so a
+// kid-miss refresh would be pointless (avoids the cold-cache double fetch).
+async function getUsableJwks(url: string): Promise<{ keys: Jwk[]; fresh: boolean }> {
   const cached = jwksCache.get(url);
   if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) {
     return { keys: cached.keys, fresh: false };
   }
-  return { keys: await fetchJwksNetwork(url), fresh: true };
+  // Cold or TTL-expired: attempt a rate-limited fetch, falling back to bounded
+  // stale keys when the fetch is skipped (cooldown) or fails (outage).
+  let fetched: Jwk[] | null = null;
+  try {
+    fetched = await tryFetchJwks(url);
+  } catch {
+    fetched = null;
+  }
+  if (fetched) return { keys: fetched, fresh: true };
+  const stale = staleFallback(url);
+  if (stale) return { keys: stale, fresh: false };
+  throw new IdentityStoreError('INVALID_TOKEN', 'JWKS unavailable');
 }
 
-// Force one refresh after a cached-keyset `kid` miss, rate-limited by
-// JWKS_MIN_REFRESH_MS. Returns the refreshed keys, or null when a refresh was
-// ATTEMPTED too recently (success or failure) so the caller rejects without
-// hitting upstream again — this is what caps amplification during a provider
-// outage, not just on the happy path.
+// Force one refresh after a cached-keyset `kid` miss, rate-limited by the shared
+// cooldown. Returns the refreshed keys, or null when the fetch was skipped
+// (cooldown) or failed — the caller then rejects without another outbound fetch.
 async function refreshJwks(url: string): Promise<Jwk[] | null> {
-  const lastAttempt = jwksLastAttempt.get(url);
-  if (lastAttempt !== undefined && Date.now() - lastAttempt < JWKS_MIN_REFRESH_MS) {
+  try {
+    return await tryFetchJwks(url);
+  } catch {
     return null;
   }
-  return fetchJwksNetwork(url);
 }
 
 interface JwtParts {
@@ -204,7 +240,7 @@ async function verify(
   claims: { issuers: string[]; audience: string[]; nonce?: string },
 ): Promise<Record<string, any>> {
   const jwt = decodeJwt(idToken);
-  const { keys, fresh } = await getJwks(jwksUrl);
+  const { keys, fresh } = await getUsableJwks(jwksUrl);
   let jwk = keys.find((k) => k.kid === jwt.header.kid);
   if (!jwk && !fresh) {
     // We served a cached keyset and it did not contain this token's `kid`. The
