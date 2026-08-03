@@ -60,7 +60,7 @@ interface CardRecord {
   id: string; name: string; series: string; type: string; rarity: string;
   color: string; localImage?: string; officialImage?: string;
   sellPrice?: number | null; buyPrice?: number | null; yuyuName?: string; yuyuImage?: string;
-  prices?: { name: string; sellPrice: number | null; rarity: string }[];
+  prices?: { name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null }[];
   priceHistory?: Record<string, number>;
   ytStats?: any;
   effects?: string[]; hp?: string; life?: string; arts?: string;
@@ -74,7 +74,7 @@ interface CardResult {
   yuyuUrl: string; carousellUrl: string; officialUrl: string;
   yuyuPrice?: number | null;
   sellPrice?: number | null; buyPrice?: number | null; ytStats?: any;
-  prices?: { name: string; sellPrice: number | null; rarity: string }[];
+  prices?: { name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null }[];
   priceHistory?: Record<string, number>;
   searchKeywords?: string[];
   nameZh?: string;

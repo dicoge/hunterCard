@@ -12,6 +12,7 @@
 export interface PriceVersion {
   name: string;
   sellPrice: number | null;
+  buyPrice: number | null; // 對齊到此版本的店家收購價；對不到為 null（fail closed，不借別版）
 }
 
 /** 對齊邏輯只需要這些欄位；CardInfo 與資料庫原始 record 都符合此結構。 */
@@ -22,7 +23,8 @@ export interface CardLike {
   sourceRarity?: string;
   series?: string;
   sellPrice?: number | null;
-  prices?: Array<{ name?: string; sellPrice: number | null } | null | undefined> | null;
+  buyPrice?: number | null;
+  prices?: Array<{ name?: string; sellPrice: number | null; buyPrice?: number | null } | null | undefined> | null;
 }
 
 export interface VersionResolution {
@@ -37,7 +39,7 @@ export interface VersionResolution {
  */
 export function buildPriceVersions(card: CardLike): PriceVersion[] {
   const raw = (card.prices || []).filter(
-    (p): p is { name?: string; sellPrice: number | null } =>
+    (p): p is { name?: string; sellPrice: number | null; buyPrice?: number | null } =>
       !!p && p.sellPrice != null && p.sellPrice > 0
   );
   const seen = new Set<string>();
@@ -46,10 +48,11 @@ export function buildPriceVersions(card: CardLike): PriceVersion[] {
     const key = `${p.name || ''}|${p.sellPrice}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    versions.push({ name: p.name || card.series || '版本', sellPrice: p.sellPrice });
+    versions.push({ name: p.name || card.series || '版本', sellPrice: p.sellPrice, buyPrice: p.buyPrice ?? null });
   }
   if (versions.length === 0) {
-    versions.push({ name: card.series || '估值', sellPrice: card.sellPrice ?? null });
+    // 無明細版本 → 退回卡號層級。單一版本時 card.buyPrice 即該版本收購價（未混版）。
+    versions.push({ name: card.series || '估值', sellPrice: card.sellPrice ?? null, buyPrice: card.buyPrice ?? null });
   }
   return versions;
 }

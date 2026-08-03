@@ -17,6 +17,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer';
 import { extractCardNumber } from './lib/card-number.js';
+import { classifySourceRarity, UNKNOWN_TOKEN } from './lib/variant-key.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,14 +40,21 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 商品名帶稀有度標記，例如「【OUR】hBP04-002 儒烏風亭らでん」。抽出標記並正規化成
-// database 用的 rarity 寫法（【PR】與【P】都對應 database 的 "P"）。抓不到回傳 null。
-const RARITY_ALIASES = { PR: 'P' };
+// 商品名帶稀有度標記，例如「【OUR】hBP04-002 儒烏風亭らでん」。三態回傳（CR DIC-857）：
+//   - 完全無【】標記 → null（真正無標記 → 原印版 bare）。
+//   - 【已知代碼】→ 精確 token（OUR / SEC / HSD06…）。
+//   - 【任何其他非空標記】（如【XYZ】【謎】【XYZ_1】）→ UNKNOWN_TOKEN：有標記但不可信，
+//     之後 fail closed，絕不可當成無標記原印版與純卡號報價合併／取 max。
+//
+// 標記偵測必須是「通用」的：任何 【...】 內含非空內容都算「有標記」，不限 ASCII 英數。
+// 舊版只認 [A-Za-z0-9] 的內容，導致 【謎】/【XYZ_1】 這種非 ASCII 或含底線的標記
+// regex 落空→回 null→塌成原印版→被 max 蓋掉真正原印價（CR DIC-857 Round-3）。
+// 唯有「完全沒有 【】括號」的商品名才可能是 bare 原印版。
 function extractRarity(productName) {
-  const m = productName && String(productName).match(/【\s*([A-Za-z0-9]+)\s*】/);
-  if (!m) return null;
-  const raw = m[1].toUpperCase();
-  return RARITY_ALIASES[raw] || raw;
+  const m = productName && String(productName).match(/【([^】]*)】/);
+  if (!m) return null; // 完全無括號 → bare 原印版
+  const { kind, token } = classifySourceRarity(m[1]);
+  return kind === 'known' ? token : UNKNOWN_TOKEN;
 }
 
 // 舊輸出檔的卡數，檔案不存在或讀不到時回傳 0。輸出是 { 卡號: {...} } 物件。
@@ -176,8 +184,7 @@ async function main(options = {}) {
   // 避免臨時錯誤（API/token/page 失敗）用 {} 空檔污染 merge。
   const records = await scrapeWithRestartFn();
 
-  // 以「正規化卡號-稀有度」為 key，同一版本取最高買取價。抓不到稀有度時退回純卡號 key，
-  // merge 端會用相同的 exact→fallback 邏輯對齊。
+  // 以「正規化卡號-稀有度」為 key，同一版本取最高買取價。無標記 → 純卡號 key（原印版）。
   const best = new Map(); // key -> { buyPrice, cardNumber, rarity }
   for (const rec of records) {
     const price = parseInt(String(rec.price || '').replace(/,/g, ''), 10);
@@ -187,6 +194,9 @@ async function main(options = {}) {
     const numKey = cardNumber.toUpperCase();
     if (!cardNumbers.has(numKey)) continue; // database 沒有這張卡就跳過
     const rarity = extractRarity(rec.productName);
+    // 有標記但不在 allowlist（【XYZ】）→ fail closed：整筆丟棄，絕不落成純卡號原印版而蓋掉
+    // 真正無標記的原印報價（CR DIC-857）。
+    if (rarity === UNKNOWN_TOKEN) continue;
     const key = rarity ? `${numKey}-${rarity}` : numKey;
     const prev = best.get(key);
     if (!prev || price > prev.buyPrice) best.set(key, { buyPrice: price, cardNumber: numKey, rarity });
@@ -240,4 +250,4 @@ if (isMain) {
     });
 }
 
-export { main as scrapeFullaheadBuy, scrapeOnce, readPreviousCount, loadCardNumbers };
+export { main as scrapeFullaheadBuy, scrapeOnce, readPreviousCount, loadCardNumbers, extractRarity };

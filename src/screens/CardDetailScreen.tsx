@@ -252,14 +252,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
         ) : (
           <Text style={styles.noPriceText}>暫無資料</Text>
         )}
-        <PriceTrend priceHistory={card.priceHistory || {}} />
+        {/* 歷史走勢僅為卡號層級（追蹤單一版本），多版本卡無法歸屬到選中版本 → 不顯示以免混版（DIC-856）。 */}
+        {!hasMultipleVariants ? <PriceTrend priceHistory={card.priceHistory || {}} /> : null}
         <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
           <Text style={styles.checkPriceBtnText}>🔍 查看遊々亭即時價格 →</Text>
         </TouchableOpacity>
       </View>
 
       {/* ====== TREND PREDICTION ====== */}
-      {trend && (
+      {/* 趨勢預測基於卡號層級歷史（單一版本序列）。多版本卡無法歸屬到特定版本 → 隱藏，
+          避免用別版走勢推薦本版（DIC-856：禁止跨版本推薦訊號）。 */}
+      {!hasMultipleVariants && trend && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
           <PriceTrendBadge
@@ -522,7 +525,9 @@ function MarketDataPanel({ card }: { card: any }) {
   const versionLabel = selectedVersion?.name ?? card?.series ?? '';
 
   const displayRarity = card?.sourceRarity ?? card?.rarity ?? '';
-  const buyPrice = card?.buyPrice ?? null;     // 店家收購價（賣出可得）— 資料僅卡號層級、未分版
+  // 店家收購價（賣出可得）：依「選中版本」對齊（DIC-856）。未對齊或此版本對不到收購價 → null，
+  // 絕不退回卡號層級最高價/別版價（fail closed）。
+  const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null;
   const ytStats = card?.ytStats ?? null;
   const priceHistory = card?.priceHistory ?? null;
 
@@ -560,19 +565,18 @@ function MarketDataPanel({ card }: { card: any }) {
       }
     }
   }
-  // priceHistory 只有卡號層級（實測僅追蹤最低價版本），非各版本獨立。若最新歷史值與
-  // 目前選中版本價格差距過大，這段歷史不代表本版本 → 不顯示，避免又是混版數據。
-  const historyRepresentsVersion =
-    latestHistoryValue != null &&
-    typeof sellPrice === 'number' && sellPrice > 0 &&
-    Math.abs(latestHistoryValue - sellPrice) / sellPrice <= 0.15;
-  const hasHistory = priceTrend != null && historyRepresentsVersion;
+  // priceHistory 只有卡號層級（實測僅追蹤單一版本序列），非各版本獨立。多版本卡無法把這段
+  // 歷史精確歸屬到選中版本 → 一律不顯示漲跌（fail closed，禁止用近似值臆測本版走勢，DIC-856）。
+  // 僅單一版本卡（歷史必屬該版本）才顯示。
+  void latestHistoryValue;
+  const hasHistory = priceTrend != null && !multiVersion;
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
-  // 收購價（未分版）超過選中版本賣價 10 倍幾乎必是版本對不上（例：選了最低價版本，
-  // 卻配到高稀有度的收購價）。與其顯示假暴利差價，寧可標示待確認。
+  // 防呆：收購價超過選中版本賣價 10 倍幾乎必是版本對不上。與其顯示假暴利差價，寧可標示待確認。
   const isPriceReliable = !hasSpread || buyPrice <= sellPrice * 10;
+  // 已對齊、有賣價，但此版本沒有對到收購價 → fail closed 明示「暫無」，不借別版價。
+  const buyMissing = aligned && typeof sellPrice === 'number' && sellPrice > 0 && buyPrice == null;
 
   return (
     <View style={styles.section}>
@@ -613,16 +617,16 @@ function MarketDataPanel({ card }: { card: any }) {
         </View>
       ) : null}
 
-      {/* 買賣差價 */}
+      {/* 買賣差價 — 收購價依選中版本對齊（DIC-856） */}
       {hasSpread ? (
         <View style={styles.marketBlock}>
-          <Text style={styles.marketBlockTitle}>💱 買賣差價</Text>
+          <Text style={styles.marketBlockTitle}>💱 買賣差價（{versionLabel}）</Text>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>買入成本（遊々亭賣價 · {versionLabel}）</Text>
+            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
             <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
           </View>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>賣出可得（店家收購 · 未分版）</Text>
+            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
             <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
           </View>
           {isPriceReliable ? (
@@ -637,7 +641,20 @@ function MarketDataPanel({ card }: { card: any }) {
               ⚠️ 價格待確認
             </Text>
           )}
-          <Text style={styles.marketNote}>※ 收購價為卡號整體資料，未依版本細分，差價僅供參考</Text>
+          <Text style={styles.marketNote}>※ 買入賣出價均為此版本（{versionLabel}）資料</Text>
+        </View>
+      ) : buyMissing ? (
+        <View style={styles.marketBlock}>
+          <Text style={styles.marketBlockTitle}>💱 買賣差價（{versionLabel}）</Text>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
+            <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
+          </View>
+          <View style={styles.marketRow}>
+            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
+            <Text style={[styles.marketValue, { color: COLORS.textSecondary }]}>此版本暫無收購價</Text>
+          </View>
+          <Text style={styles.marketNote}>※ 此版本無對應店家收購價；不借用其他版本價格計算差價</Text>
         </View>
       ) : null}
 
@@ -701,7 +718,7 @@ function MarketDataPanel({ card }: { card: any }) {
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>➖ 漲跌判斷</Text>
           <Text style={styles.marketNote}>
-            此版本（{versionLabel}）暫無歷史均價：歷史資料僅追蹤卡號最低價版本，與目前版本不符，故不顯示以免混版。
+            此版本（{versionLabel}）暫無歷史均價：多版本卡的歷史為卡號層級、無法精確歸屬到單一版本，故不顯示以免混版。
           </Text>
         </View>
       ) : null}
