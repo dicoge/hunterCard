@@ -29,6 +29,7 @@ import ScanCandidateSelector from '../components/ScanCandidateSelector';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
 import { useSettingsStore } from '../store/settingsStore';
 import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
+import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
 import ScanQuotaBanner from '../components/ScanQuotaBanner';
@@ -174,20 +175,9 @@ export default function ScanScreen({ navigation }: any) {
     });
   };
 
-  // Map a raw API card payload to CardInfo (mirrors the API response shape).
-  const mapApiCard = (c: any): CardInfo => ({
-    id: c.cardNumber,
-    name: c.name || '',
-    cardNumber: c.cardNumber,
-    type: '',
-    rarity: c.rarity || '',
-    series: c.series || '',
-    sellPrice: c.sellPrice != null ? c.sellPrice : null,
-    yuyuName: '',
-    color: '',
-    imageUrl: c.imageUrl || '',
-    prices: c.prices || [],
-  });
+  // Map a raw API card payload to CardInfo via the single shared mapper so the
+  // scan → CardDetail path keeps buyPrice / priceHistory / ytStats (DIC-361 / DIC-856).
+  const mapApiCard = (c: any): CardInfo => mapApiCardToCardInfo(c);
 
   const mapApiCandidates = (raw: any): RecognizedCandidate[] | undefined => {
     if (!Array.isArray(raw) || raw.length === 0) return undefined;
@@ -372,20 +362,6 @@ export default function ScanScreen({ navigation }: any) {
       return typeof ocrResult?.text === 'string' ? ocrResult.text : '';
     }
   };
-
-  const mapApiCardToInfo = (card: any): CardInfo => ({
-    id: card.cardNumber,
-    name: card.name || '',
-    cardNumber: card.cardNumber,
-    type: '',
-    rarity: card.rarity || '',
-    series: card.series || '',
-    sellPrice: card.sellPrice != null ? card.sellPrice : null,
-    yuyuName: '',
-    color: '',
-    imageUrl: card.imageUrl || '',
-    prices: card.prices || [],
-  });
 
   const captureWebRecognitionImages = async (photoUri: string): Promise<string[]> => {
     const video = document.querySelector('video') as HTMLVideoElement | null;
