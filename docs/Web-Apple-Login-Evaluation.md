@@ -26,7 +26,7 @@
 ## 為什麼 Web Apple 目前不啟用
 
 **已完成的部分（僅驗簽端點）：** `/api/auth/login` 與 `api/_lib/verify-token.ts` 已支援
-`provider=apple`（以 Apple 公鑰 `https://appleid.apple.com/auth/keys` 驗 ES256 簽章 /
+`provider=apple`（以 Apple 公鑰 `https://appleid.apple.com/auth/keys` 驗 RS256 簽章 /
 `iss` / `aud` = Services ID / `exp` / `nonce`）。這代表「拿到 Apple id_token 後能被伺服器驗證」
 這一段已就緒，且已納入 `scripts/test-auth-backend.cjs` 迴歸。
 
@@ -108,7 +108,7 @@
 1. 前端走 Apple authorize，拿到 `id_token`（`authService.ts` 已具雛形）。**尚待補**：同時取出 fresh
    authorizationCode，並帶 session Bearer 呼叫 `/api/auth/apple/register` 保存 refresh_token。
 2. `api/_lib/verify-token.ts` 的 `verifyAppleIdToken` 以 Apple 公鑰（`https://appleid.apple.com/auth/keys`）
-   驗 `id_token` ES256 簽章 / `iss` / `aud`（= Services ID）/ `exp` / `nonce`，通過後取 `sub` 當 provider identity key
+   驗 `id_token` RS256 簽章 / `iss` / `aud`（= Services ID）/ `exp` / `nonce`，通過後取 `sub` 當 provider identity key
    —— 此段**已完成**，並已納入 `scripts/test-auth-backend.cjs` 的身份存放層迴歸測試。
 3. `/api/auth/login` 映射到共通 internal user（`api/_lib/identity-store.ts` 的 `loginOrCreate` / `link`），
    沿用唯一約束（`(provider, subject)` 原子 claim）與 collision（`IDENTITY_ALREADY_LINKED`）流程。

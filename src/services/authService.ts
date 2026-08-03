@@ -34,15 +34,22 @@ const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || '/api';
 
-// Sign in with Apple (web) is disabled until the server verify path is enabled.
-// The client cannot verify an Apple ID token on its own, and the server gate
-// (APPLE_WEB_LOGIN_ENABLED) is off by default. Web Apple is optional per the
-// product spec (Google is the required web provider). See
-// docs/Web-Apple-Login-Evaluation.md.
+// Sign in with Apple (web) is disabled. The server-side ID-token verifier
+// already exists (api/_lib/verify-token.ts verifies Apple RS256 id_token / iss
+// / aud / exp / nonce and is covered by regression tests). The remaining
+// blockers are NOT the verifier:
+//   1. refresh_token storage is still a stub (api/_lib/apple-token-store.ts),
+//      so delete-account revocation for Apple users fail-closes;
+//   2. the client authorizationCode → /api/auth/apple/register wiring that
+//      persists that refresh_token is not hooked up;
+//   3. Apple Developer configuration (Services ID, key/secret) is not set;
+//   4. no end-to-end coverage of the Apple web flow yet.
+// Web Apple is optional per the product spec (Google is the required web
+// provider). See docs/Web-Apple-Login-Evaluation.md.
 export const APPLE_LOGIN_ENABLED = false;
 
 export const APPLE_DISABLED_MESSAGE =
-  'Apple 登入尚未開放（需後端驗證 Apple ID token）。請改用 Google 登入。';
+  'Apple 登入尚未開放（後端 refresh_token 儲存與授權撤銷、端到端串接尚未完成）。請改用 Google 登入。';
 
 const googleScopes = ['openid', 'profile', 'email'];
 const appleScopes = ['openid', 'name', 'email'];

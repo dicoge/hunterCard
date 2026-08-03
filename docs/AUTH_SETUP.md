@@ -17,7 +17,7 @@
 | 項目 | 位置 |
 | --- | --- |
 | 伺服器身份存放（KV：唯一 claim、per-user lock、login/link/unlink/delete + 錯誤碼） | `api/_lib/identity-store.ts` |
-| provider `id_token` 伺服器驗簽（Google RS256 / Apple ES256，JWKS 快取） | `api/_lib/verify-token.ts` |
+| provider `id_token` 伺服器驗簽（Google 與 Apple 皆為 RS256，pin RS256 + 驗 JWK kty=RSA，JWKS 快取） | `api/_lib/verify-token.ts` |
 | HMAC session 簽發 + KV session 記錄 / 撤銷（登出撤銷本 session、解綁撤銷被移除 provider 的 session（發起端 token 原子 re-bind 保留）、刪除撤銷全部 + 刪除收據） | `api/_lib/session.ts` |
 | 共用端點輔助（json、錯誤碼→HTTP、旗標、backend 可用性、session 解析） | `api/_lib/auth-endpoint.ts` |
 | 登入 / 綁定 / 解綁 / 登出 / 刪除端點（單一 dynamic route，session 授權，fail-closed） | `api/auth/[action].ts` |

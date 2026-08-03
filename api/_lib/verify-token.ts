@@ -62,17 +62,26 @@ function decodeJwt(idToken: string): JwtParts {
   }
 }
 
+// Both Google- and Apple-issued ID tokens are signed with RS256 (RSA). ES256
+// only applies to the Apple client_secret we mint ourselves, never to an
+// Apple-issued ID token. Pin the expected alg and reject any token or JWKS key
+// that deviates, so a forged token cannot downgrade us to an unexpected
+// algorithm/key type (alg-confusion hardening).
+const EXPECTED_ALG = 'RS256';
+const EXPECTED_KTY = 'RSA';
+
 function verifySignature(jwt: JwtParts, jwk: Jwk): void {
-  const keyObject = crypto.createPublicKey({ key: jwk as crypto.JsonWebKeyInput['key'], format: 'jwk' });
-  const data = Buffer.from(jwt.signingInput);
-  let ok = false;
-  if (jwt.header.alg === 'RS256') {
-    ok = crypto.verify('RSA-SHA256', data, keyObject, jwt.signature);
-  } else if (jwt.header.alg === 'ES256') {
-    ok = crypto.verify('SHA256', data, { key: keyObject, dsaEncoding: 'ieee-p1363' }, jwt.signature);
-  } else {
-    throw new IdentityStoreError('INVALID_TOKEN', `Unsupported alg: ${jwt.header.alg}`);
+  if (jwt.header.alg !== EXPECTED_ALG) {
+    throw new IdentityStoreError('INVALID_TOKEN', `Unexpected token alg: ${jwt.header.alg} (expected ${EXPECTED_ALG})`);
   }
+  if (jwk.kty !== EXPECTED_KTY) {
+    throw new IdentityStoreError('INVALID_TOKEN', `Unexpected JWKS key type: ${jwk.kty} (expected ${EXPECTED_KTY})`);
+  }
+  if (jwk.alg && jwk.alg !== EXPECTED_ALG) {
+    throw new IdentityStoreError('INVALID_TOKEN', `Unexpected JWKS key alg: ${jwk.alg} (expected ${EXPECTED_ALG})`);
+  }
+  const keyObject = crypto.createPublicKey({ key: jwk as crypto.JsonWebKeyInput['key'], format: 'jwk' });
+  const ok = crypto.verify('RSA-SHA256', Buffer.from(jwt.signingInput), keyObject, jwt.signature);
   if (!ok) throw new IdentityStoreError('INVALID_TOKEN', 'Signature verification failed');
 }
 

@@ -1000,6 +1000,150 @@ async function testConcurrentDeleteBothConvergeToDeletedTrue() {
   assert.equal(await session.verifySession(caller2), null, 'caller2 token revoked');
 }
 
+// A one-shot gate: `promise` resolves when `open()` is called. Used to pin one
+// coroutine at a precise point so the interleaving is deterministic rather than
+// left to the scheduler.
+function makeGate() {
+  let open;
+  const promise = new Promise((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
+}
+
+// An N-party barrier: every arriver blocks on the returned promise until the Nth
+// arrives, at which point all proceed together. Lets us force multiple flows past
+// a shared checkpoint before ANY of them continues.
+function makeBarrier(n) {
+  let count = 0;
+  let releaseAll;
+  const all = new Promise((resolve) => {
+    releaseAll = resolve;
+  });
+  return {
+    arrive() {
+      count += 1;
+      if (count >= n) releaseAll();
+      return all;
+    },
+  };
+}
+
+const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// CR round-9 blocker #3 (deterministic barrier over the REAL commitAccountDeletion
+// vs a returning login). Unlike testLoginAfterTombstoneMintsUsableFreshSession
+// (which hand-writes the tombstone and never exercises the lock), this drives the
+// actual commitAccountDeletion and pins it INSIDE its critical section — tombstone
+// already written under the per-user lock — while a concurrent returning login that
+// mints tries to enter. A shared depth counter trips `overlap` if the two critical
+// sections are ever simultaneously active, so if the tombstone/cascade were ever
+// moved OUT of the lock again the login's mint would run concurrently and fail this
+// test. The login must block until the delete releases, then converge to a FRESH,
+// immediately-usable account — never a session bound to the doomed user.
+async function testCommitDeletionRacingLoginIsMutuallyExclusive() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-r9', 'a@example.com', 'Ann'));
+  const oldId = user.internalId;
+
+  let depth = 0;
+  let overlap = false;
+  const enter = () => {
+    depth += 1;
+    if (depth > 1) overlap = true;
+  };
+  const exit = () => {
+    depth -= 1;
+  };
+
+  const tombstoneWritten = makeGate();
+  const letDeleteProceed = makeGate();
+  const instrumentedHooks = {
+    writeTombstone: async (uid) => {
+      enter(); // delete now holds the lock; mark its critical section active
+      await session.markUserDeleted(uid); // tombstone written UNDER the lock
+      tombstoneWritten.open();
+      await letDeleteProceed.promise; // pin the delete inside the held lock
+    },
+    afterCascade: async (uid) => {
+      await session.revokeAllUserSessions(uid);
+      exit();
+    },
+  };
+
+  const deletePromise = store.commitAccountDeletion(oldId, instrumentedHooks);
+  await tombstoneWritten.promise; // delete is inside its critical section, holding the lock
+
+  let loginDone = false;
+  const loginPromise = store
+    .loginOrCreate(identity('google', 'g-r9', 'a@example.com', 'Ann'), (uid) => {
+      enter(); // login's mint — must NEVER run while the delete section is active
+      const token = session.issueSession(uid, 'google');
+      exit();
+      return token;
+    })
+    .then((r) => {
+      loginDone = true;
+      return r;
+    });
+
+  // Give the login several lock-acquire retries to attempt entry. A correct lock
+  // keeps it blocked; a lock escape would let it enter now and trip `overlap`.
+  await realSleep(5 * 20);
+  assert.equal(loginDone, false, 'returning login cannot complete while delete holds the per-user lock');
+  assert.equal(overlap, false, 'delete and login critical sections never overlap while the lock is held');
+
+  letDeleteProceed.open();
+  const [, relogin] = await Promise.all([deletePromise, loginPromise]);
+
+  assert.equal(overlap, false, 'no critical-section overlap across the entire delete-vs-login race');
+  assert.notEqual(relogin.user.internalId, oldId, 'login converges to a FRESH user, not the deleted one');
+  assert.equal(relogin.isNew, true, 'the re-login minted a brand-new account');
+  assert.equal(
+    await session.verifySession(relogin.session),
+    relogin.user.internalId,
+    'the freshly minted session is immediately usable',
+  );
+  assert.equal(await store.getUser(oldId), null, 'the doomed user is fully deleted');
+  assert.equal(await session.wasUserDeleted(oldId), true, 'tombstone committed for the doomed user');
+}
+
+// CR round-9 blocker #3 (both concurrent deletes forced PAST session verification
+// BEFORE commit contention). testConcurrentDeleteBothConvergeToDeletedTrue lets the
+// scheduler decide whether the second caller still holds a live session or falls
+// into the receipt-recovery branch. Here a 2-party barrier guarantees BOTH callers
+// complete verifySessionContext (both observe a LIVE session — asserted) before
+// EITHER commits. They then contend on the commit lock: one writes the tombstone and
+// cascades, the other acquires the lock to find the user already gone. Both must
+// still return deleted:true (never deleted:false, which would strand a client on a
+// dead session), and both tokens must be revoked.
+async function testConcurrentDeletePastVerifyBeforeCommitConverge() {
+  resetKv();
+  const { user } = await store.loginOrCreate(identity('google', 'g-r9cd', 'a@example.com'));
+  const id = user.internalId;
+  const caller1 = await session.issueSession(id, 'google');
+  const caller2 = await session.issueSession(id, 'google');
+
+  const barrier = makeBarrier(2);
+  async function deletePastVerify(callerToken) {
+    const ctx = await session.verifySessionContext(callerToken);
+    assert.ok(ctx, 'caller must hold a LIVE session at verify time (not the recovery branch)');
+    await barrier.arrive(); // block until BOTH callers have verified a live session
+    await store.commitAccountDeletion(ctx.userId, deletionHooks);
+    return { deleted: true, viaLiveSession: true };
+  }
+
+  const [r1, r2] = await Promise.all([deletePastVerify(caller1), deletePastVerify(caller2)]);
+  assert.equal(r1.deleted, true, 'first concurrent delete reports deleted:true');
+  assert.equal(r2.deleted, true, 'second concurrent delete ALSO converges to deleted:true');
+  assert.equal(r1.viaLiveSession && r2.viaLiveSession, true, 'both committed from a live session, post-verify');
+
+  assert.equal(await store.getUser(id), null, 'user is gone after both deletes');
+  assert.equal(await session.wasUserDeleted(id), true, 'deletion tombstone committed');
+  assert.equal(await session.verifySession(caller1), null, 'caller1 token revoked');
+  assert.equal(await session.verifySession(caller2), null, 'caller2 token revoked');
+}
+
 function decodeJti(token) {
   const encoded = token.slice(0, token.indexOf('.'));
   return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')).jti;
@@ -1043,6 +1187,8 @@ function decodeJti(token) {
     testConcurrentLoginAndDeleteNeverMintsSessionForDeletedUser,
     testLoginAfterTombstoneMintsUsableFreshSession,
     testConcurrentDeleteBothConvergeToDeletedTrue,
+    testCommitDeletionRacingLoginIsMutuallyExclusive,
+    testConcurrentDeletePastVerifyBeforeCommitConverge,
   ];
   for (const test of tests) {
     await test();
