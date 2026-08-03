@@ -266,6 +266,10 @@ async function testKidRotationForcesOneRefresh() {
   await verifier.verifyGoogleIdToken(warm);
   const afterWarm = fetchCalls.byUrl.get(GOOGLE_JWKS_URL) ?? 0;
 
+  // Age the cached keyset past the refresh cooldown so a real rotation is
+  // allowed to refresh (the cooldown only suppresses rapid repeat refreshes).
+  verifier.__ageJwksCache(GOOGLE_JWKS_URL, 61 * 1000);
+
   // Provider rotates: new key, new kid. Cache still holds the old keyset.
   const rotatedKey = makeRsaKey('google-key-2');
   jwksByUrl[GOOGLE_JWKS_URL] = [rotatedKey.jwk];
@@ -285,8 +289,63 @@ async function testKidRotationForcesOneRefresh() {
 
 async function testUnknownKidStillRejectedAfterRefresh() {
   verifier.__resetJwksCache();
+  // Warm the cache, then age it so a refresh is permitted; an unknown kid must
+  // still be rejected after that single refresh finds no match.
+  await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+  verifier.__ageJwksCache(GOOGLE_JWKS_URL, 61 * 1000);
   const token = signToken({ key: { ...googleKey, kid: 'never-served' }, payload: googlePayload() });
   await expectError(verifier.verifyGoogleIdToken(token), 'INVALID_TOKEN');
+}
+
+async function testColdCacheDoesNotDoubleFetch() {
+  // A cold cache serving a keyset that lacks the token's kid must fetch exactly
+  // once: the freshly fetched keyset is already current, so no second refresh.
+  verifier.__resetJwksCache();
+  fetchCalls.byUrl.set(GOOGLE_JWKS_URL, 0);
+  const token = signToken({ key: { ...googleKey, kid: 'cold-unknown' }, payload: googlePayload() });
+  await expectError(verifier.verifyGoogleIdToken(token), 'INVALID_TOKEN');
+  assert.equal(
+    fetchCalls.byUrl.get(GOOGLE_JWKS_URL),
+    1,
+    'cold cache must fetch JWKS exactly once, not twice',
+  );
+}
+
+async function testUnknownKidSprayIsRateLimited() {
+  // Warm cache, age it past the cooldown, then spray many distinct unknown kids.
+  // Only the first miss may hit upstream; the cooldown must cap the rest so the
+  // login endpoint cannot be used as a JWKS request amplifier.
+  verifier.__resetJwksCache();
+  await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+  verifier.__ageJwksCache(GOOGLE_JWKS_URL, 61 * 1000);
+  fetchCalls.byUrl.set(GOOGLE_JWKS_URL, 0);
+
+  for (let i = 0; i < 25; i += 1) {
+    const token = signToken({ key: { ...googleKey, kid: `spray-${i}` }, payload: googlePayload() });
+    await expectError(verifier.verifyGoogleIdToken(token), 'INVALID_TOKEN');
+  }
+
+  assert.equal(
+    fetchCalls.byUrl.get(GOOGLE_JWKS_URL),
+    1,
+    'a spray of unknown kids must trigger at most one upstream JWKS fetch',
+  );
+}
+
+async function testConcurrentMissSingleFlightsOneFetch() {
+  // Concurrent requests that all miss a cold cache share one upstream fetch.
+  verifier.__resetJwksCache();
+  fetchCalls.byUrl.set(GOOGLE_JWKS_URL, 0);
+  const tokens = Array.from({ length: 10 }, (_, i) =>
+    signToken({ key: { ...googleKey, kid: `concurrent-${i}` }, payload: googlePayload() }),
+  );
+  const results = await Promise.allSettled(tokens.map((t) => verifier.verifyGoogleIdToken(t)));
+  for (const r of results) assert.equal(r.status, 'rejected');
+  assert.equal(
+    fetchCalls.byUrl.get(GOOGLE_JWKS_URL),
+    1,
+    'concurrent cold-cache misses must single-flight to one JWKS fetch',
+  );
 }
 
 (async () => {
@@ -310,6 +369,9 @@ async function testUnknownKidStillRejectedAfterRefresh() {
     testBadNonceRejected,
     testKidRotationForcesOneRefresh,
     testUnknownKidStillRejectedAfterRefresh,
+    testColdCacheDoesNotDoubleFetch,
+    testUnknownKidSprayIsRateLimited,
+    testConcurrentMissSingleFlightsOneFetch,
   ];
   for (const test of tests) {
     verifier.__resetJwksCache();

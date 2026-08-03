@@ -28,7 +28,14 @@ jobs:
       
       - name: Check TypeScript types
         run: npx tsc --noEmit
-      
+
+      - name: Run auth + verifier regression tests
+        run: |
+          npm run test:verify-token
+          npm run test:auth-backend
+          npm run test:auth-client
+          npm run test:push-backend
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)

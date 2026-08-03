@@ -19,6 +19,15 @@ const APPLE_ISSUER = 'https://appleid.apple.com';
 
 const JWKS_TTL_MS = 10 * 60 * 1000;
 
+// Minimum spacing between outbound JWKS fetches to the same provider. A cached
+// keyset that missed a token's `kid` triggers at most one refresh per this
+// window, so an attacker spraying `/api/auth/login` with tokens carrying random
+// unknown `kid`s cannot turn the endpoint into a JWKS request amplifier
+// (CR DIC-854 round-10 P2 #1) — the second and later unknown-kid requests reuse
+// the just-fetched keyset instead of hitting upstream again. It is short enough
+// that a genuine provider key rotation still refreshes on the next attempt.
+const JWKS_MIN_REFRESH_MS = 60 * 1000;
+
 // Allowed clock skew between our host and the provider when checking time
 // claims. 300s (5 min) is the conventional OIDC leeway and matches Google's and
 // Apple's own tolerance, so a slightly skewed but otherwise valid token is not
@@ -33,23 +42,66 @@ interface Jwk {
 }
 
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
+// Per-URL in-flight network fetch, so a burst of concurrent requests that all
+// miss the cache share a single upstream fetch (single-flight) rather than each
+// firing its own.
+const jwksInflight = new Map<string, Promise<Jwk[]>>();
 
 // Test-only: clear the in-process JWKS cache so regression tests can assert
 // force-refresh behaviour deterministically. Not used in production paths.
 export function __resetJwksCache(): void {
   jwksCache.clear();
+  jwksInflight.clear();
 }
 
-async function fetchJwks(url: string, forceRefresh = false): Promise<Jwk[]> {
-  if (!forceRefresh) {
-    const cached = jwksCache.get(url);
-    if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) return cached.keys;
+// Test-only: backdate a cached keyset's fetch time so tests can exercise the
+// refresh cooldown without sleeping. Not used in production paths.
+export function __ageJwksCache(url: string, ms: number): void {
+  const cached = jwksCache.get(url);
+  if (cached) cached.fetchedAt -= ms;
+}
+
+// Single-flight network fetch: hits the provider, updates the cache, and
+// collapses concurrent callers onto one outbound request.
+async function fetchJwksNetwork(url: string): Promise<Jwk[]> {
+  const existing = jwksInflight.get(url);
+  if (existing) return existing;
+  const p = (async () => {
+    const res = await fetch(url);
+    if (!res.ok) throw new IdentityStoreError('INVALID_TOKEN', `JWKS fetch failed: ${res.status}`);
+    const data = (await res.json()) as { keys: Jwk[] };
+    jwksCache.set(url, { keys: data.keys, fetchedAt: Date.now() });
+    return data.keys;
+  })();
+  jwksInflight.set(url, p);
+  try {
+    return await p;
+  } finally {
+    jwksInflight.delete(url);
   }
-  const res = await fetch(url);
-  if (!res.ok) throw new IdentityStoreError('INVALID_TOKEN', `JWKS fetch failed: ${res.status}`);
-  const data = (await res.json()) as { keys: Jwk[] };
-  jwksCache.set(url, { keys: data.keys, fetchedAt: Date.now() });
-  return data.keys;
+}
+
+// Fetch keys honouring the TTL cache. `fresh` reports whether this call hit the
+// network (so the caller knows the keyset is already up to date and a refresh
+// on a `kid` miss would be pointless — avoids the cold-cache double fetch).
+async function getJwks(url: string): Promise<{ keys: Jwk[]; fresh: boolean }> {
+  const cached = jwksCache.get(url);
+  if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) {
+    return { keys: cached.keys, fresh: false };
+  }
+  return { keys: await fetchJwksNetwork(url), fresh: true };
+}
+
+// Force one refresh after a cached-keyset `kid` miss, rate-limited by
+// JWKS_MIN_REFRESH_MS. Returns the refreshed keys, or null when a refresh
+// happened too recently (the amplification / negative-kid guard) so the caller
+// rejects without hitting upstream again.
+async function refreshJwks(url: string): Promise<Jwk[] | null> {
+  const cached = jwksCache.get(url);
+  if (cached && Date.now() - cached.fetchedAt < JWKS_MIN_REFRESH_MS) {
+    return null;
+  }
+  return fetchJwksNetwork(url);
 }
 
 interface JwtParts {
@@ -139,15 +191,18 @@ async function verify(
   claims: { issuers: string[]; audience: string[]; nonce?: string },
 ): Promise<Record<string, any>> {
   const jwt = decodeJwt(idToken);
-  let keys = await fetchJwks(jwksUrl);
+  const { keys, fresh } = await getJwks(jwksUrl);
   let jwk = keys.find((k) => k.kid === jwt.header.kid);
-  if (!jwk) {
-    // Cached keyset may be stale after a provider key rotation. Force one
-    // refresh (bypassing the TTL cache) before rejecting, so a valid token
-    // signed with a freshly rotated key is not turned away for the full cache
-    // TTL (CR DIC-854 blocker #2).
-    keys = await fetchJwks(jwksUrl, true);
-    jwk = keys.find((k) => k.kid === jwt.header.kid);
+  if (!jwk && !fresh) {
+    // We served a cached keyset and it did not contain this token's `kid`. The
+    // provider may have rotated keys, so force one refresh (rate-limited) before
+    // rejecting, so a valid token signed with a freshly rotated key is not
+    // turned away for the full cache TTL (CR DIC-854 blocker #2). We only reach
+    // here when the keyset actually came from cache — a fresh network keyset is
+    // already current, so re-fetching it would be pointless (round-10 P2 #1:
+    // no cold-cache double fetch, and refreshJwks caps the outbound rate).
+    const refreshed = await refreshJwks(jwksUrl);
+    if (refreshed) jwk = refreshed.find((k) => k.kid === jwt.header.kid);
   }
   if (!jwk) throw new IdentityStoreError('INVALID_TOKEN', 'No matching JWKS key');
   verifySignature(jwt, jwk);
