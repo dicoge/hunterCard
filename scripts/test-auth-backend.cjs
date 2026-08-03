@@ -130,12 +130,18 @@ const kv = {
         setValue(keys[1], args[1]);
         return 'OK';
       }
-      if (script.includes('-- SADD')) {
-        // Fenced membership add. KEYS=[lock, identities]; ARGV=[token, ttl, member].
-        const identitiesKey = keys[1];
+      if (script.includes('-- STAGE')) {
+        // Fenced link-staging write-set: pending detail SET + membership SADD, one
+        // atomic op. KEYS=[lock, detail, identities]; ARGV=[token, ttl, detailJson,
+        // member]. Because the token check gates the whole handler, a stale holder
+        // (checked above) performs NEITHER write — never a lone orphan detail.
+        const detailKey = keys[1];
+        const identitiesKey = keys[2];
+        maybeFail('set', detailKey);
+        setValue(detailKey, args[2]);
         maybeFail('sadd', identitiesKey);
         const set = kvState.sets.get(identitiesKey) ?? new Set();
-        set.add(args[2]);
+        set.add(args[3]);
         kvState.sets.set(identitiesKey, set);
         return 'OK';
       }
@@ -995,6 +1001,66 @@ async function testStaleHolderCannotFlipCommitAfterLeaseReplaced() {
   );
 }
 
+async function testStaleHolderCannotStrandOrphanPendingDetailAtStaging() {
+  resetKv();
+  // Codex CR DIC-881 CR10, the link-STAGING atomicity case. Before this fix, link
+  // staging wrote the pending detail and the membership as TWO separate owner-fenced
+  // evals. If the lease token was replaced between them (another holder acquired the
+  // lock after ours lapsed), the FIRST eval's pending detail persisted while the
+  // SECOND (membership) was fenced out with LOCK_LOST — stranding an orphan pending
+  // detail with no backing membership or index. We reproduce the stale holder by
+  // replacing the lock token at the instant the staging write-set's atomic eval is
+  // about to run. Because the pending detail and the membership are now ONE fenced
+  // eval, a token that no longer occupies the lock makes it write NOTHING: no detail,
+  // no membership, no index, no login grant, no ownership split. On the pre-fix
+  // two-eval code the first write would persist as an orphan detail.
+  const apple = (await store.loginOrCreate(identity('apple', 'a-stage', 'a@icloud.com', 'Kim'))).user;
+  const lockKey = `auth:lock:${apple.internalId}`;
+  const detailKey = `auth:idetail:${apple.internalId}:google:g-stage`;
+  const idxKey = 'auth:idx:google:g-stage';
+  const identitiesKey = `auth:user:${apple.internalId}:identities`;
+
+  let replaced = false;
+  kvState.beforeEval = async (script, keys) => {
+    // Fire once, at the link-staging write-set's atomic eval (pending detail +
+    // membership), identified by its -- STAGE tag and detail key. This is strictly
+    // BEFORE the index publish, so no index exists yet.
+    if (!replaced && script.includes('-- STAGE') && keys[1] === detailKey) {
+      replaced = true;
+      // Another holder acquired the lease after ours lapsed: overwrite the lock with
+      // a DIFFERENT token, so the very next atomic eval — this staging — must refuse.
+      kvState.values.set(lockKey, 'someone-elses-token');
+    }
+  };
+
+  await expectError(
+    store.linkIdentity(apple.internalId, identity('google', 'g-stage', 'stage@example.com', 'Ann')),
+    'LOCK_TIMEOUT',
+  );
+  kvState.beforeEval = null;
+
+  // The stale holder wrote NOTHING: no orphan pending detail, no membership, no index.
+  assert.equal(
+    kvState.values.get(detailKey),
+    undefined,
+    'no orphan pending detail — the fused staging wrote all-or-nothing',
+  );
+  const members = kvState.sets.get(identitiesKey);
+  assert.ok(!members || !members.has('google:g-stage'), 'no orphan membership was staged');
+  assert.equal(kvState.values.get(idxKey), undefined, 'no index was published');
+
+  // Apple remains the sole live method — no split, no half-linked google.
+  const after = await store.getUser(apple.internalId);
+  assert.equal(after.linkedProviders.length, 1, 'only the pre-existing apple method remains');
+  assert.equal(after.linkedProviders[0].provider, 'apple', 'apple is intact');
+
+  // The staged subject grants no login into the account: a fresh g-stage login mints
+  // a SEPARATE new user rather than resolving into the linker (no ownership split).
+  const loserLogin = await store.loginOrCreate(identity('google', 'g-stage', 'stage@example.com', 'Ann'));
+  assert.equal(loserLogin.isNew, true, 'the stale-staged subject grants no login into the account');
+  assert.notEqual(loserLogin.user.internalId, apple.internalId, 'no login into the linker for the staged loser');
+}
+
 async function testStaleUnlinkHolderCannotWipeRepublishedIdentity() {
   resetKv();
   // Codex CR DIC-877 CR9, the concrete unlink race. A user with two committed
@@ -1086,6 +1152,7 @@ async function testStaleDeleteHolderCannotWipeRepublishedAccount() {
   const tests = [
     testStaleLinkHolderCannotCommitPastLeaseExpiry,
     testStaleHolderCannotFlipCommitAfterLeaseReplaced,
+    testStaleHolderCannotStrandOrphanPendingDetailAtStaging,
     testStaleUnlinkHolderCannotWipeRepublishedIdentity,
     testStaleDeleteHolderCannotWipeRepublishedAccount,
     testNewAndReturningUser,

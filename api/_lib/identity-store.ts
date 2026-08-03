@@ -182,12 +182,22 @@ if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 'LOCK_LOST' end
 redis.call('PEXPIRE', KEYS[1], ARGV[3])
 redis.call('SET', KEYS[2], ARGV[2])
 return 'OK'`;
-// FENCED_SADD → add a membership marker (link staging, before publish).
-//   KEYS = [lock, identities]; ARGV = [token, ttl, member]
-const FENCED_SADD = `-- SADD
+// FENCED_STAGE_LINK → the WHOLE link-staging write-set (the pending detail SET and
+// the membership SADD) in ONE atomic op, before the index publish. Prior to CR10
+// these were two separate fenced evals (FENCED_SET then a standalone SADD): if the lease
+// token was replaced between them, the first (pending detail) persisted while the
+// second (membership) was fenced out with LOCK_LOST, stranding an orphan pending
+// detail with no backing membership. Fusing them means a holder whose token no
+// longer occupies the lock (KEYS[1] != ARGV[1]) writes NEITHER — the staging pair
+// is all-or-nothing, never a lone orphan detail (CR DIC-881 CR10). Both writes are
+// still PENDING and index-less, so even a fully-staged pair is a hidden, repairable
+// ghost — never login-capable.
+//   KEYS = [lock, detail, identities]; ARGV = [token, ttl, detailJson, member]
+const FENCED_STAGE_LINK = `-- STAGE
 if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 'LOCK_LOST' end
 redis.call('PEXPIRE', KEYS[1], ARGV[2])
-redis.call('SADD', KEYS[2], ARGV[3])
+redis.call('SET', KEYS[2], ARGV[3])
+redis.call('SADD', KEYS[3], ARGV[4])
 return 'OK'`;
 // FENCED_ROLLBACK → discard one (provider, subject) link atomically: owner-fenced
 // index release + detail delete + membership removal. Used by pending-sibling
@@ -303,9 +313,27 @@ async function fencedSet(lease: Lease, key: string, value: unknown): Promise<voi
   if (res === 'LOCK_LOST') throw leaseLost(lease);
 }
 
-// Atomic membership add under the lease (throws LOCK_TIMEOUT, no write, if lapsed).
-async function fencedSadd(lease: Lease, key: string, member: string): Promise<void> {
-  const res = await kv.eval(FENCED_SADD, [lease.key, key], [lease.token, String(LOCK_TTL_MS), member]);
+// Atomic link-staging write-set under the lease — the pending detail and the
+// membership marker in ONE op, so a stale holder stages BOTH or NEITHER, never a
+// lone orphan detail past lease replacement (CR DIC-881 CR10). Throws LOCK_TIMEOUT
+// (no write) if the lease has lapsed.
+async function fencedStageLink(
+  lease: Lease,
+  userId: string,
+  identity: VerifiedIdentity,
+  linkedAt: string,
+  member_: string,
+): Promise<void> {
+  const res = await kv.eval(
+    FENCED_STAGE_LINK,
+    [lease.key, DETAIL_KEY(userId, identity.provider, identity.subject), IDENTITIES_KEY(userId)],
+    [
+      lease.token,
+      String(LOCK_TTL_MS),
+      encodeForKv(buildDetail(identity, linkedAt, /* pending */ true)),
+      member_,
+    ],
+  );
   if (res === 'LOCK_LOST') throw leaseLost(lease);
 }
 
@@ -706,12 +734,13 @@ export async function linkIdentity(userId: string, identity: VerifiedIdentity): 
     // against a concurrent claim of the same (provider, subject).
     const now = new Date().toISOString();
     const linkedAt = preservedLinkedAt ?? now;
-    // Stage under the lease: both the pending detail and the membership are fenced,
-    // so a stale holder's first staging write throws LOCK_TIMEOUT and it stages
-    // nothing (CR DIC-877 CR9). These are still PENDING and index-less, so even a
-    // partial stage is a hidden, repairable ghost — never login-capable.
-    await fencedSet(lock, DETAIL_KEY(userId, provider, subject), buildDetail(identity, linkedAt, /* pending */ true));
-    await fencedSadd(lock, IDENTITIES_KEY(userId), selfMember);
+    // Stage the pending detail AND the membership in ONE atomic fenced eval: a
+    // holder whose lease token was replaced mid-staging writes NEITHER, so it can
+    // never persist a lone orphan pending detail with no backing membership (the
+    // split-write-set CR10 flagged — previously two fenced evals with a replaceable
+    // gap between them). These are still PENDING and index-less, so even a fully
+    // staged pair is a hidden, repairable ghost — never login-capable (CR DIC-881).
+    await fencedStageLink(lock, userId, identity, linkedAt, selfMember);
 
     // PUBLICATION POINT. The index publish is ATOMIC with the lease check: the
     // ownership guard and the first-writer SET NX are one Redis eval. If our lease
