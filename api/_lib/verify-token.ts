@@ -46,26 +46,38 @@ const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 // miss the cache share a single upstream fetch (single-flight) rather than each
 // firing its own.
 const jwksInflight = new Map<string, Promise<Jwk[]>>();
+// Per-URL timestamp of the last outbound fetch ATTEMPT, updated whether the
+// fetch succeeds OR fails. The refresh cooldown gates on this rather than on the
+// last *successful* fetch time, so a provider outage (429/5xx) — the case that
+// most needs protection — cannot be turned into a per-request amplifier: a
+// failed refresh still arms the cooldown, so the next sequential unknown-`kid`
+// request is rejected without another outbound fetch (CR DIC-854 round-11 P2).
+const jwksLastAttempt = new Map<string, number>();
 
 // Test-only: clear the in-process JWKS cache so regression tests can assert
 // force-refresh behaviour deterministically. Not used in production paths.
 export function __resetJwksCache(): void {
   jwksCache.clear();
   jwksInflight.clear();
+  jwksLastAttempt.clear();
 }
 
-// Test-only: backdate a cached keyset's fetch time so tests can exercise the
-// refresh cooldown without sleeping. Not used in production paths.
+// Test-only: rewind a URL's cached fetch time AND last-attempt time so tests can
+// exercise the TTL / refresh cooldown without sleeping. Not used in production.
 export function __ageJwksCache(url: string, ms: number): void {
   const cached = jwksCache.get(url);
   if (cached) cached.fetchedAt -= ms;
+  const attempt = jwksLastAttempt.get(url);
+  if (attempt !== undefined) jwksLastAttempt.set(url, attempt - ms);
 }
 
 // Single-flight network fetch: hits the provider, updates the cache, and
-// collapses concurrent callers onto one outbound request.
+// collapses concurrent callers onto one outbound request. The attempt timestamp
+// is recorded up front so it arms the cooldown even when the fetch then fails.
 async function fetchJwksNetwork(url: string): Promise<Jwk[]> {
   const existing = jwksInflight.get(url);
   if (existing) return existing;
+  jwksLastAttempt.set(url, Date.now());
   const p = (async () => {
     const res = await fetch(url);
     if (!res.ok) throw new IdentityStoreError('INVALID_TOKEN', `JWKS fetch failed: ${res.status}`);
@@ -93,12 +105,13 @@ async function getJwks(url: string): Promise<{ keys: Jwk[]; fresh: boolean }> {
 }
 
 // Force one refresh after a cached-keyset `kid` miss, rate-limited by
-// JWKS_MIN_REFRESH_MS. Returns the refreshed keys, or null when a refresh
-// happened too recently (the amplification / negative-kid guard) so the caller
-// rejects without hitting upstream again.
+// JWKS_MIN_REFRESH_MS. Returns the refreshed keys, or null when a refresh was
+// ATTEMPTED too recently (success or failure) so the caller rejects without
+// hitting upstream again — this is what caps amplification during a provider
+// outage, not just on the happy path.
 async function refreshJwks(url: string): Promise<Jwk[] | null> {
-  const cached = jwksCache.get(url);
-  if (cached && Date.now() - cached.fetchedAt < JWKS_MIN_REFRESH_MS) {
+  const lastAttempt = jwksLastAttempt.get(url);
+  if (lastAttempt !== undefined && Date.now() - lastAttempt < JWKS_MIN_REFRESH_MS) {
     return null;
   }
   return fetchJwksNetwork(url);

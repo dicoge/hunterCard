@@ -82,10 +82,17 @@ const jwksByUrl = {
 };
 
 const fetchCalls = { count: 0, byUrl: new Map() };
+// Per-URL forced HTTP status to simulate a provider outage (429/5xx). Cleared
+// per test. When set to a non-2xx status the stub returns { ok:false }.
+const jwksStatus = {};
 
 globalThis.fetch = async (url) => {
   fetchCalls.count += 1;
   fetchCalls.byUrl.set(url, (fetchCalls.byUrl.get(url) ?? 0) + 1);
+  const forced = jwksStatus[url];
+  if (forced && forced >= 400) {
+    return { ok: false, status: forced, async json() { return {}; } };
+  }
   const keys = jwksByUrl[url];
   if (!keys) {
     return { ok: false, status: 404, async json() { return {}; } };
@@ -332,6 +339,50 @@ async function testUnknownKidSprayIsRateLimited() {
   );
 }
 
+async function testFailedRefreshDuringOutageIsRateLimited() {
+  // Warm a keyset, age it past the cooldown, then take the provider down (429).
+  // A sequence of unknown-kid logins must trigger AT MOST one outbound fetch:
+  // the failed refresh still arms the cooldown, so it cannot be amplified into
+  // one JWKS request per login during the outage (the case that matters most).
+  verifier.__resetJwksCache();
+  await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+  verifier.__ageJwksCache(GOOGLE_JWKS_URL, 61 * 1000);
+  jwksStatus[GOOGLE_JWKS_URL] = 429;
+  fetchCalls.byUrl.set(GOOGLE_JWKS_URL, 0);
+
+  try {
+    for (let i = 0; i < 20; i += 1) {
+      const token = signToken({ key: { ...googleKey, kid: `outage-${i}` }, payload: googlePayload() });
+      await expectError(verifier.verifyGoogleIdToken(token), 'INVALID_TOKEN');
+    }
+    assert.equal(
+      fetchCalls.byUrl.get(GOOGLE_JWKS_URL),
+      1,
+      'a failed refresh during an upstream outage must still cap to one fetch',
+    );
+  } finally {
+    delete jwksStatus[GOOGLE_JWKS_URL];
+  }
+}
+
+async function testStaleKeysetStillServedDuringOutage() {
+  // While upstream is down, a token signed with a still-cached (old) kid must
+  // keep verifying from the cached keyset — the outage must not break logins for
+  // keys we already hold (stale-key fallback, no refresh needed).
+  verifier.__resetJwksCache();
+  await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+  verifier.__ageJwksCache(GOOGLE_JWKS_URL, 61 * 1000);
+  jwksStatus[GOOGLE_JWKS_URL] = 503;
+  fetchCalls.byUrl.set(GOOGLE_JWKS_URL, 0);
+  try {
+    const identity = await verifier.verifyGoogleIdToken(signToken({ key: googleKey, payload: googlePayload() }));
+    assert.equal(identity.subject, 'google-sub-123');
+    assert.equal(fetchCalls.byUrl.get(GOOGLE_JWKS_URL), 0, 'a cached kid must not hit upstream at all');
+  } finally {
+    delete jwksStatus[GOOGLE_JWKS_URL];
+  }
+}
+
 async function testConcurrentMissSingleFlightsOneFetch() {
   // Concurrent requests that all miss a cold cache share one upstream fetch.
   verifier.__resetJwksCache();
@@ -371,6 +422,8 @@ async function testConcurrentMissSingleFlightsOneFetch() {
     testUnknownKidStillRejectedAfterRefresh,
     testColdCacheDoesNotDoubleFetch,
     testUnknownKidSprayIsRateLimited,
+    testFailedRefreshDuringOutageIsRateLimited,
+    testStaleKeysetStillServedDuringOutage,
     testConcurrentMissSingleFlightsOneFetch,
   ];
   for (const test of tests) {
