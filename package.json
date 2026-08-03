@@ -11,6 +11,7 @@
     "test:push-backend": "node scripts/test-push-backend.cjs",
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",
     "test:buy-price": "node scripts/verify-buy-price-alignment.mjs",
+    "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",
     "test:market-fields": "node --experimental-strip-types scripts/test-api-card-mapper.mjs && node scripts/test-dic-361-market-data-fields.mjs",
     "test:scan-geometry": "node scripts/benchmarks/scan-geometry.test.cjs",
     "benchmark:scan-recognition": "node scripts/benchmarks/scan-recognition-benchmark.cjs"
