@@ -20,7 +20,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 22.6+ is required for `node --experimental-strip-types`, used by the
+          # mapper I/O regression in test:market-fields (and test:scan-dedup). Node 20
+          # rejects the flag with "bad option", so the Validate job must run on 22.
+          node-version: '22'
           cache: 'npm'
       
       - name: Install dependencies
