@@ -261,8 +261,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-058_hPR"
+    },
+    {
+      "date": "2026-08-04",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-058_hPR"
     }
   ],
-  "lastUpdated": "2026-08-03T12:13:36.463Z",
+  "lastUpdated": "2026-08-04T12:13:36.472Z",
   "nameZh": "輪堂千速"
 }

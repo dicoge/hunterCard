@@ -4,12 +4,12 @@
   "nameZh": "詩織·諾維拉",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.9,
+  "confidence": 1,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-08-03T12:16:40.044Z",
-  "dataPoints": 44
+  "lastUpdated": "2026-08-04T12:16:32.666Z",
+  "dataPoints": 45
 }

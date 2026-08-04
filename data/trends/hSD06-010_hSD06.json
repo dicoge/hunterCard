@@ -4,12 +4,12 @@
   "nameZh": "拉普拉斯·達克尼斯",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.9,
+  "confidence": 1,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-08-03T12:16:40.041Z",
-  "dataPoints": 44
+  "lastUpdated": "2026-08-04T12:16:32.664Z",
+  "dataPoints": 45
 }

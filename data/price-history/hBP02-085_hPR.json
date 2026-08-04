@@ -324,8 +324,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-085_hPR"
+    },
+    {
+      "date": "2026-08-04",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-085_hPR"
     }
   ],
-  "lastUpdated": "2026-08-03T12:13:36.472Z",
+  "lastUpdated": "2026-08-04T12:13:36.482Z",
   "nameZh": "HOLOLIVE FANTASY"
 }

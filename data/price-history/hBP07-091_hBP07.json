@@ -324,8 +324,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP07-091_hBP07"
+    },
+    {
+      "date": "2026-08-04",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-091_hBP07"
     }
   ],
-  "lastUpdated": "2026-08-03T12:13:36.279Z",
+  "lastUpdated": "2026-08-04T12:13:36.250Z",
   "nameZh": "演唱會工作人員"
 }
