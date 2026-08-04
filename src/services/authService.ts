@@ -4,7 +4,10 @@ import {
   HoloUser,
   AuthTokens,
 } from '../types/auth';
-import { signInWithGoogle as signInWithGoogleNative } from './auth/googleAuth';
+import {
+  signInWithGoogle as signInWithGoogleNative,
+  signOutGoogle,
+} from './auth/googleAuth';
 
 const PRODUCTION_API_BASE = 'https://holocard-hunter.vercel.app';
 
@@ -35,12 +38,6 @@ const LINK_NOT_IMPLEMENTED_MESSAGE =
   '帳號綁定尚未開放（需後端權威驗證與 (provider, sub) 身份儲存）。';
 const UNLINK_NOT_IMPLEMENTED_MESSAGE =
   '解除綁定尚未開放（需後端權威端點驗證 token、處理唯一性與競態後更新 (provider, sub) 身份儲存）。';
-
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
-  || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID
-  || '';
-
-const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
 export interface SignInResult {
   user: HoloUser;
@@ -150,16 +147,23 @@ export async function deleteAccount(
   }
 }
 
+/**
+ * 登出時的 provider 端清理。
+ *
+ * Google：呼叫原生 `GoogleSignin.signOut()` 清除 SDK 快取的 Google 帳號 session。
+ * 先前把 app 自己的 session **JWT** 送去 `oauth2.googleapis.com/revoke` 是錯的——那不是
+ * Google 簽發的 access/refresh token，revoke 端點無從辨識，等於什麼都沒登出。正確做法是
+ * 用原生 SDK 的 signOut() 清掉快取帳號；下次登入會重新彈出帳號選擇器並取得**全新** id_token
+ * （新指紋），故後端一次性重放防護不會擋住合法的「登出後立即再登入」。
+ *
+ * Apple：iOS 原生 Apple 無「登出」API（登出即清本機 session 即可），此處 no-op。撤銷授權
+ * 屬帳號刪除流程（見 deleteAccount / delete-handler），不在一般登出做。
+ *
+ * best-effort：provider 端清理失敗不應阻擋本機登出（呼叫端仍會清本機 session）。
+ */
 export async function providerSignOut(tokens: AuthTokens | null): Promise<void> {
-  if (!tokens?.accessToken) return;
-  const revokeUrl = tokens.provider === 'google'
-    ? 'https://oauth2.googleapis.com/revoke'
-    : 'https://appleid.apple.com/auth/revoke';
+  if (tokens?.provider !== 'google') return;
   try {
-    await fetch(revokeUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `token=${tokens.accessToken}&client_id=${tokens.provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID}`,
-    });
+    await signOutGoogle();
   } catch {}
 }

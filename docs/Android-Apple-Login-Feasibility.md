@@ -7,7 +7,7 @@
 - **技術上可行**：Android 沒有原生 Sign in with Apple SDK，但可透過 **Apple Web OAuth（Sign in with Apple, web flow）** 搭配系統 **Custom Tabs**（`expo-web-browser`）在 Android 上完成。
 - **成本 / 風險偏高**：需要一套只為 Android/Web 服務的 Apple **Services ID + domain verification + `.p8` client secret + 後端 code 交換**，等同把「Web Apple 登入」的整組後端基礎設施先建起來。
 - **建議：本階段暫不實作**。Android 先只出 Google（已於 `googleAuth.ts` 接線）。Apple-on-Android 待 **Web Apple 登入（DIC-663）** 的 Services ID / 代管商 / 後端 code 交換就緒後「順帶啟用」，屆時 Android 直接重用同一 web flow，邊際成本才低。
-- **過渡替代流程（見下）**：Android 使用者若需綁定 Apple，引導其至 Web 或 iOS 完成；帳號以 internal user id 歸戶，跨平台一致。
+- **過渡替代流程（見下）**：Android 使用者若需綁定 Apple，引導其至 Web 或 iOS 完成。**注意：帳號綁定（linking）、跨 provider 合併、跨平台身份同步、watchlist 同步目前皆尚未實作**（`authService.ts` 的 `linkProvider`/`unlinkProvider` 為 fail-closed，watchlist / 推播 token 以裝置為界、無 user-id 綁定）；「以 internal user id 跨平台一致歸戶」是身份模型的**設計目標**，需這些後端端點就緒後才成立。
 
 ## 為什麼 Android 不能像 iOS 那樣做
 
@@ -49,8 +49,8 @@
 在 Android 尚未提供 Apple 登入前：
 
 1. Android 只顯示 **Google 登入**（`isGoogleAuthConfigured()` gating；Apple 按鈕不出現在 Android）。
-2. 已登入使用者若要綁定 Apple：於設定頁標示「**請於 Web 或 iOS 版完成 Apple 綁定**」，綁定後因歸屬同一 internal user id，Android 端登入即自動同步。
-3. 收藏 / 設定 / watchlist / 推播 token 一律以 internal user id 為 owner，跨平台一致，Android 缺 Apple 登入不影響資料歸戶。
+2. 已登入使用者若要綁定 Apple：**帳號綁定尚未實作**（`linkProvider` 為 fail-closed，設定頁無綁定入口）。日後端點就緒後的設計是：於設定頁標示「請於 Web 或 iOS 版完成 Apple 綁定」，綁定成功後因歸屬同一 internal user id，Android 端登入自動反映——此為**目標行為，非現況**。
+3. 身份模型設計上，收藏 / 設定 / watchlist / 推播 token 應以 internal user id 為 owner 以跨平台一致；**但目前 watchlist / 推播 token 仍以裝置（Expo push token 字串）為界、未綁 internal user id，跨平台同步尚未實作**（見 `docs/AUTH_SETUP.md` 刪除章節的相同揭露）。
 
 ## 何時重新評估
 

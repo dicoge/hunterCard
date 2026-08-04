@@ -39,13 +39,24 @@ export interface DeleteDeps {
   verifyAccessToken(token: string): SessionPayload;
   /** 以 internal id 讀權威 user；找不到回 null。 */
   getUser(userId: string): Promise<StoredUser | null>;
-  /** 刪除該 user 的所有身份鍵與 user record。 */
+  /**
+   * 原子刪除該 user 的身份鍵 + user record（單一 KV DEL）。若失敗須 throw（handler 回 500，
+   * 且**不**進行任何 Apple token 清理，使整個刪除可安全重試）。
+   */
   deleteUser(userId: string): Promise<DeleteResult>;
   /**
    * 撤銷某 user 的 Apple 授權（僅在該 user 有 apple linked provider 時呼叫）。
-   * 回 ok=false 即 fail-closed：不刪任何資料。未提供而使用者又是 apple → 視為未設定，fail-closed。
+   * **saga 步驟 1／irreversible-but-idempotent**：只撤銷，**不**刪已保存的 refresh token
+   * （重試安全：重複撤銷同一 token 為 no-op）。回 ok=false 即 fail-closed，不刪任何 user 資料。
+   * 未提供而使用者又是 apple → 視為未設定，fail-closed。
    */
   revokeAppleForUser?(userId: string): Promise<AppleRevokeResult>;
+  /**
+   * **saga 步驟 3**：user 狀態原子刪除成功**之後**才做的清理（刪除已保存的 Apple
+   * refresh token）。刻意排在最後：若 user 刪除失敗，保存的 token 不被清掉，重試時仍能取出
+   * 重新撤銷 + 重刪，避免帳號被永久卡住（stranded）。清理失敗不影響刪除結果（best-effort）。
+   */
+  cleanupAppleAfterDelete?(userId: string): Promise<void>;
 }
 
 export interface DeleteResponse {
@@ -109,7 +120,25 @@ export async function handleDeleteAccount(
     }
   }
 
-  const result = await deps.deleteUser(userId);
+  // saga 步驟 2：原子刪除 user 權威狀態。deleteUser 失敗須 throw → 回 500，且**不**進行
+  // 步驟 3 的 token 清理，使保存的 Apple token 得以在重試時重新撤銷＋重刪（帳號不被卡住）。
+  let result: DeleteResult;
+  try {
+    result = await deps.deleteUser(userId);
+  } catch {
+    return { status: 500, body: { error: 'DELETE_FAILED' } };
+  }
+
+  // saga 步驟 3：user 狀態刪除成功之後才清理已保存的 Apple refresh token（best-effort，
+  // 失敗不影響刪除結果——身份鍵與 user 已消失，帳號已無法登入）。
+  if (hasApple && deps.cleanupAppleAfterDelete) {
+    try {
+      await deps.cleanupAppleAfterDelete(userId);
+    } catch {
+      // 忽略：刪除已成功，殘留的 refresh token 僅為已撤銷之無效憑證。
+    }
+  }
+
   return {
     status: 200,
     body: {

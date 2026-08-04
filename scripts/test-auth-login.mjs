@@ -164,4 +164,43 @@ await check('returning user → 200 with is_new_user false', async () => {
   assert.equal(r.body.is_new_user, false);
 });
 
+// Blocker 3（CR round 4）：登入 → app 登出（原生 GoogleSignin.signOut()）→ 立即以同一
+// Google 帳號再登入，以及回應遺失後的重試，都會走一次**全新** signIn() 取得一枚**新** id_token
+// （新指紋）。故對同一使用者、兩枚不同 id_token，一次性重放防護各自首次佔用成功 → 兩次都放行。
+// 只有「重送同一枚快取 id_token」才會被擋（見上方 TOKEN_REPLAYED）。
+await check('same user, two DISTINCT fresh id_tokens → both 200 (logout→re-login & retry not blocked)', async () => {
+  // 以指紋（此處以 token 字串代表）為鍵的一次性佔用；模擬共享 KV 的真實語意。
+  const used = new Set();
+  const deps = baseDeps({
+    verifyIdToken: async (idToken) => {
+      // 兩枚不同 token 都是同一 Google 帳號（同 sub）簽發的合法新鮮 token。
+      if (idToken === 'fresh-token-1' || idToken === 'fresh-token-2') {
+        return {
+          sub: 'sub-abc', email: 'a@example.com', emailVerified: true,
+          name: 'Alice', picture: null, issuedAt: NOW_SEC, expiresAt: NOW_SEC + 3600,
+        };
+      }
+      throw new Error('invalid');
+    },
+    reserveIdTokenOnce: async (idToken) => {
+      if (used.has(idToken)) return false; // 同一 token 重放才擋
+      used.add(idToken);
+      return true;
+    },
+    resolveOrCreateUser: async () => ({ user: makeUser(), isNewUser: false }),
+  });
+
+  const first = await handleLogin({ provider: 'google', id_token: 'fresh-token-1' }, deps);
+  const second = await handleLogin({ provider: 'google', id_token: 'fresh-token-2' }, deps);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(first.body.user.id, 'internal-1');
+  assert.equal(second.body.user.id, 'internal-1');
+
+  // 但重送第一枚（快取／重放同一 token）仍被擋 → 證明防的是 token 重放，非合法再登入。
+  const replayFirst = await handleLogin({ provider: 'google', id_token: 'fresh-token-1' }, deps);
+  assert.equal(replayFirst.status, 401);
+  assert.equal(replayFirst.body.error, 'TOKEN_REPLAYED');
+});
+
 console.log(`\n${passed} checks passed.`);

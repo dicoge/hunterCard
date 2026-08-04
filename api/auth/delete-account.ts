@@ -48,7 +48,12 @@ function json(body: unknown, status: number): Response {
   });
 }
 
-/** 撤銷某 user 的 Apple 授權；任一步未成功皆 fail-closed（ok:false）。 */
+/**
+ * saga 步驟 1：撤銷某 user 的 Apple 授權——**只撤銷，不刪保存的 refresh token**。
+ * 撤銷對 Apple 為 idempotent（重複撤銷同一 token 為 no-op），故重試安全。任一步未成功皆
+ * fail-closed（ok:false）→ handler 不刪任何資料。刪除保存的 token 延後到 user 狀態刪除
+ * 成功之後（cleanupAppleAfterDelete），避免 user 刪除失敗時 token 已被清掉而永久卡住帳號。
+ */
 async function revokeAppleForUser(userId: string): Promise<AppleRevokeResult> {
   const cfg = getAppleConfig();
   if (!cfg) {
@@ -64,11 +69,18 @@ async function revokeAppleForUser(userId: string): Promise<AppleRevokeResult> {
     if (!revoked) {
       return { ok: false, status: 502, reason: 'revoke_failed' };
     }
-    await deleteStoredAppleRefreshToken(userId);
     return { ok: true };
   } catch {
     return { ok: false, status: 500, reason: 'internal_error' };
   }
+}
+
+/**
+ * saga 步驟 3：user 狀態原子刪除成功後才刪保存的 Apple refresh token（best-effort）。
+ * 刻意排最後：若刪除失敗，token 保留供重試重新撤銷＋重刪，帳號不被永久卡住。
+ */
+async function cleanupAppleAfterDelete(userId: string): Promise<void> {
+  await deleteStoredAppleRefreshToken(userId);
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -89,6 +101,7 @@ export default async function handler(req: Request): Promise<Response> {
       deleteUser: (userId) =>
         deleteUser({ kv: kv as unknown as KVLike }, userId),
       revokeAppleForUser,
+      cleanupAppleAfterDelete,
     }
   );
 

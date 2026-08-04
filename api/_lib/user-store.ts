@@ -213,12 +213,14 @@ export async function getUserById(
 }
 
 /**
- * 帳號刪除：以 internal id 移除該 user 的每一個 provider 身份鍵
- * （auth:identity:{provider}:{subject}）與 user record（auth:user:{id}）。
+ * 帳號刪除：**原子**移除該 user 的權威 write-set——每一個 provider 身份鍵
+ * （auth:identity:{provider}:{subject}）與 user record（auth:user:{id}）——於**單一
+ * Redis DEL 指令**完成。Redis 單執行緒，多鍵 DEL 為單一原子指令，故不會出現「身份鍵已刪、
+ * user 未刪」的中途失敗而在下次登入分裂帳號；整個 DEL 要嘛全成功、要嘛全失敗（可重試）。
  *
- * idempotent：user record 不存在時回 { existed:false }，仍嘗試刪 user key（no-op）。
- * 身份鍵取自 user.linkedProviders，逐一刪除，確保 (provider, sub) 映射不再存在——
- * 這正是「返回使用者辨識」的入口，刪掉後同一 Google 帳號再登入會被視為新使用者。
+ * idempotent 且可重試：DEL 拋錯時所有鍵維持原狀，重跑本函式即可補完（多刪不存在的鍵為 no-op）。
+ * user record 不存在時回 { existed:false }，不發任何刪除。刪除後 (provider, sub) 映射消失，
+ * 同一 Google 帳號再登入會被視為新使用者。
  */
 export async function deleteUser(
   deps: UserStoreDeps,
@@ -227,17 +229,14 @@ export async function deleteUser(
   const { kv } = deps;
   const user = await kv.get<StoredUser>(userKey(internalId));
   if (!user) {
-    await kv.del(userKey(internalId));
     return { existed: false, removedIdentities: 0 };
   }
 
   const identityKeys = user.linkedProviders.map((p) =>
     identityKey(p.provider, p.providerId)
   );
-  if (identityKeys.length > 0) {
-    await kv.del(...identityKeys);
-  }
-  await kv.del(userKey(internalId));
+  // 單一原子 DEL：身份鍵 + user key 一起刪，杜絕中途失敗造成的帳號分裂。
+  await kv.del(...identityKeys, userKey(internalId));
 
   return { existed: true, removedIdentities: identityKeys.length };
 }

@@ -46,6 +46,7 @@ function baseDeps(overrides = {}) {
     getUser: async (id) => (id === 'u1' ? googleUser() : id === 'u2' ? appleUser() : null),
     deleteUser: async () => ({ existed: true, removedIdentities: 1 }),
     revokeAppleForUser: async () => ({ ok: true }),
+    cleanupAppleAfterDelete: async () => {},
     ...overrides,
   };
 }
@@ -171,6 +172,64 @@ await check('apple user but no revoke fn wired → 501, no delete', async () => 
   assert.equal(r.status, 501);
   assert.equal(r.body.error, 'APPLE_REVOCATION_NOT_CONFIGURED');
   assert.equal(deleted, false);
+});
+
+// Blocker 1（CR round 4）saga 順序：撤銷（step1）→ 原子刪 user（step2）→ 清理保存的
+// refresh token（step3）。三步嚴格照序，且 step3 必在 step2 成功後才發生。
+await check('apple delete saga runs strictly revoke → deleteUser → cleanup (in order)', async () => {
+  const order = [];
+  const r = await handleDeleteAccount(
+    { authorization: 'Bearer good-access-apple' },
+    baseDeps({
+      revokeAppleForUser: async () => { order.push('revoke'); return { ok: true }; },
+      deleteUser: async () => { order.push('delete'); return { existed: true, removedIdentities: 1 }; },
+      cleanupAppleAfterDelete: async () => { order.push('cleanup'); },
+    })
+  );
+  assert.equal(r.status, 200);
+  assert.deepEqual(order, ['revoke', 'delete', 'cleanup']);
+});
+
+// Blocker 1（CR round 4）不卡帳號：user 狀態刪除失敗 → 回 500，且**不**清理保存的 refresh
+// token（token 保留，重試時可重新撤銷＋重刪）。
+await check('deleteUser throws → 500 DELETE_FAILED and cleanup NOT called (token preserved for retry)', async () => {
+  let cleaned = false;
+  const r = await handleDeleteAccount(
+    { authorization: 'Bearer good-access-apple' },
+    baseDeps({
+      revokeAppleForUser: async () => ({ ok: true }),
+      deleteUser: async () => { throw new Error('kv_down'); },
+      cleanupAppleAfterDelete: async () => { cleaned = true; },
+    })
+  );
+  assert.equal(r.status, 500);
+  assert.equal(r.body.error, 'DELETE_FAILED');
+  assert.equal(cleaned, false);
+});
+
+// best-effort：token 清理失敗不影響刪除結果（身份鍵與 user 已消失，帳號已無法登入）。
+await check('cleanup failure after successful delete → still 200 (best-effort, delete already committed)', async () => {
+  const r = await handleDeleteAccount(
+    { authorization: 'Bearer good-access-apple' },
+    baseDeps({
+      revokeAppleForUser: async () => ({ ok: true }),
+      deleteUser: async () => ({ existed: true, removedIdentities: 1 }),
+      cleanupAppleAfterDelete: async () => { throw new Error('cleanup_failed'); },
+    })
+  );
+  assert.equal(r.status, 200);
+  assert.equal(r.body.deleted, true);
+});
+
+// google user：無 Apple 連結 → cleanup 完全不觸發（避免對非 apple user 做無謂清理）。
+await check('google user → cleanupAppleAfterDelete never called', async () => {
+  let cleaned = false;
+  const r = await handleDeleteAccount(
+    { authorization: 'Bearer good-access' },
+    baseDeps({ cleanupAppleAfterDelete: async () => { cleaned = true; } })
+  );
+  assert.equal(r.status, 200);
+  assert.equal(cleaned, false);
 });
 
 console.log(`\n${passed} checks passed.`);

@@ -3,9 +3,10 @@
  *
  * 為什麼不是「token 內嵌 nonce」：真正的 challenge–response nonce 需要把 server 發的
  * nonce 寫進 Google id_token 的 `nonce` claim，這要求原生登入層支援傳入 nonce
- * （Android Credential Manager `setNonce` / One Tap `signIn({ nonce })`）。目前安裝的
- * **classic** `@react-native-google-signin/google-signin`（free tier）的
- * `GoogleSignin.signIn()` **不接受也不透傳 nonce**——先前用 TS 型別假裝支援是錯的：
+ * （屬付費 Universal Sign In / Credential Manager `setNonce`）。目前安裝的是
+ * **legacy（classic）Google Sign-In**（`@react-native-google-signin/google-signin`
+ * 免費版，**不是** Credential Manager），其 `GoogleSignin.signIn()` **不接受也不透傳
+ * nonce**——先前用 TS 型別假裝支援是錯的：
  * 後端要求 token 帶 nonce 會讓每一次真實裝置登入都被 fail-closed 拒絕。
  *
  * 因此改用**與所選 SDK 實際可執行**的 fail-closed 反重放合約：

@@ -152,4 +152,70 @@ await check('deleteUser on missing user → idempotent { existed:false }', async
   assert.equal(res.removedIdentities, 0);
 });
 
+// Blocker 1（CR round 4）：整個權威 write-set（每個身份鍵 + user key）必須以**單一原子 DEL**
+// 移除，杜絕「身份鍵已刪、user 未刪」的中途失敗在下次登入分裂帳號。
+await check('multi-provider deleteUser issues ONE atomic del covering all identity keys + user key', async () => {
+  const kv = makeKv();
+  // 手動植入一個雙 provider 的 user（google + apple 連結同一 internal user）。
+  const uid = 'internal-multi';
+  kv.store.set('auth:identity:google:sub-g', { userId: uid, provider: 'google', subject: 'sub-g' });
+  kv.store.set('auth:identity:apple:sub-p', { userId: uid, provider: 'apple', subject: 'sub-p' });
+  kv.store.set(`auth:user:${uid}`, {
+    internalId: uid, displayName: null, primaryEmail: null, photoUrl: null,
+    linkedProviders: [
+      { provider: 'google', providerId: 'sub-g', email: null, displayName: null, photoUrl: null, linkedAt: 'T' },
+      { provider: 'apple', providerId: 'sub-p', email: null, displayName: null, photoUrl: null, linkedAt: 'T' },
+    ],
+    createdAt: 'T', lastLoginAt: 'T',
+  });
+
+  // 包一層 del spy 記錄呼叫次數與參數。
+  const calls = [];
+  const spyKv = { ...kv, del: (...keys) => { calls.push(keys); return kv.del(...keys); } };
+
+  const res = await deleteUser(deps(spyKv), uid);
+  assert.equal(res.existed, true);
+  assert.equal(res.removedIdentities, 2);
+  assert.equal(calls.length, 1, 'must be a single atomic DEL, not per-key deletes');
+  assert.deepEqual(
+    [...calls[0]].sort(),
+    ['auth:identity:apple:sub-p', 'auth:identity:google:sub-g', `auth:user:${uid}`].sort()
+  );
+  assert.equal(kv.store.size, 0);
+});
+
+// Blocker 1（CR round 4）：DEL 拋錯（原子指令整體失敗）時，所有鍵維持原狀（無部分刪除），
+// 重跑 deleteUser 即可補完 → idempotent、可安全重試，帳號不會被卡在半刪狀態。
+await check('deleteUser: atomic del failure leaves ALL keys intact; retry recovers fully', async () => {
+  const kv = makeKv();
+  const uid = 'internal-retry';
+  kv.store.set('auth:identity:google:sub-r', { userId: uid, provider: 'google', subject: 'sub-r' });
+  kv.store.set(`auth:user:${uid}`, {
+    internalId: uid, displayName: null, primaryEmail: null, photoUrl: null,
+    linkedProviders: [{ provider: 'google', providerId: 'sub-r', email: null, displayName: null, photoUrl: null, linkedAt: 'T' }],
+    createdAt: 'T', lastLoginAt: 'T',
+  });
+
+  // 第一次：del 拋錯，模擬原子指令整體失敗。
+  let failNext = true;
+  const flakyKv = {
+    ...kv,
+    del: (...keys) => {
+      if (failNext) throw new Error('kv_del_failed');
+      return kv.del(...keys);
+    },
+  };
+  await assert.rejects(() => deleteUser(deps(flakyKv), uid), /kv_del_failed/);
+  // 中途失敗後：兩個鍵都還在（沒有部分刪除造成的帳號分裂）。
+  assert.ok(kv.store.has('auth:identity:google:sub-r'));
+  assert.ok(kv.store.has(`auth:user:${uid}`));
+
+  // 重試（del 恢復）→ 全部清乾淨。
+  failNext = false;
+  const res = await deleteUser(deps(flakyKv), uid);
+  assert.equal(res.existed, true);
+  assert.equal(res.removedIdentities, 1);
+  assert.equal(kv.store.size, 0);
+});
+
 console.log(`\n${passed} checks passed.`);

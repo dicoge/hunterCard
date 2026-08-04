@@ -30,7 +30,7 @@
 | 已驗證帳號刪除（Bearer access token → 刪 identity/user；Apple 撤銷 fail-closed） | `api/auth/delete-account.ts`、`api/_lib/delete-handler.ts` |
 | App 設定 capability / plugin | `app.json` |
 
-App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android 因 Google 尚未接線，暫以訪客模式進入（旗標 `REQUIRE_AUTH` 於 `AppNavigator.tsx`）。
+App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）。**Android 的原生 Google 登入已接線**（`signInWithGoogle` → 後端 `POST /api/auth/login` → 換 app session），惟需備妥 OAuth client / SHA-1 憑證與環境變數（見下方「Google 登入設定」）才能於裝置上實際登入。目前 `REQUIRE_AUTH`（`AppNavigator.tsx`）尚未於全平台強制登入，故 Web/Android 仍可訪客進入；全平台強制登入待 Web Google（DIC-663）就緒後開啟。
 
 ## App 設定（已完成於 `app.json`）
 
@@ -71,8 +71,8 @@ Apple 撤銷環境變數未設定完整、或撤銷未確認成功時 `api/auth/
 1. client 送 `Authorization: Bearer <access_token>`（不帶 body）。後端 `api/_lib/session.ts` **驗簽 + 驗型別（access）**解出 internal `userId`。缺 / 無效 token → 401。`AUTH_SESSION_SECRET` 未設定 → 501 `SESSION_NOT_CONFIGURED`。
 2. 後端讀出權威 user，依 linked provider 決定撤銷需求（見 `api/_lib/delete-handler.ts`）：
    - **google**：無 provider 端撤銷需求，直接刪資料。
-   - **apple**：先撤銷 Apple 授權（App Store 5.1.1(v)），撤銷成功才刪資料；否則 fail-closed（不刪、回非 2xx）。
-3. 刪除後端權威狀態：該 user 的每個 `auth:identity:{provider}:{subject}` 與 `auth:user:{internalId}`（`api/_lib/user-store.ts` 的 `deleteUser`）。刪除後同一 Google 帳號再登入會被視為**新使用者**（辨識入口 `(google, sub)` 已移除）。
+   - **apple**：以**可重試的 saga** 進行——(1) 撤銷 Apple 授權（App Store 5.1.1(v)，**只撤銷、不刪保存的 refresh token**；撤銷對 Apple 為 idempotent，可安全重試）；撤銷未成功 → fail-closed（不刪、回非 2xx）。(2) 撤銷成功才刪 user 狀態。(3) user 狀態刪除成功**之後**才刪保存的 refresh token（best-effort）。刻意排最後：若 user 刪除失敗，保存的 token 不被清掉，重試時仍能取出重新撤銷＋重刪，帳號不會被永久卡住（stranded）。
+3. 刪除後端權威狀態：該 user 的每個 `auth:identity:{provider}:{subject}` 與 `auth:user:{internalId}` 以**單一原子 Redis `DEL`**（`api/_lib/user-store.ts` 的 `deleteUser`，`kv.del(...identityKeys, userKey)`）一起移除。Redis 單執行緒、多鍵 `DEL` 為單一原子指令，故不會出現「身份鍵已刪、user 未刪」的中途失敗而在下次登入分裂帳號；`DEL` 失敗時所有鍵維持原狀（回 500），重跑刪除即可補完（idempotent、可安全重試）。刪除後同一 Google 帳號再登入會被視為**新使用者**（辨識入口 `(google, sub)` 已移除）。
 4. client 端 `src/services/authService.ts` 的 `deleteAccount(user, tokens)` 唯有收到 **2xx** 才清本機 session；任一步失敗都 throw，store `deleteUserAccount` 據此**維持登入狀態**、不清 session。
 
 > 推播 token（`push:tokens` 等鍵）目前以**裝置 Expo push token 字串**為鍵，尚無 user-id 綁定，故帳號刪除**不**級聯刪除推播訂閱（這是誠實揭露，不是遺漏）；需在推播訂閱綁定 internal user id 後才能於刪除時一併清除（後續工作）。
@@ -80,7 +80,7 @@ Apple 撤銷環境變數未設定完整、或撤銷未確認成功時 `api/auth/
 ### Apple 撤銷（login-time register → stored refresh_token → revoke）
 
 1. **登入當下**：client 拿到 fresh `authorizationCode`，立即 POST `/api/auth/apple/register`（best-effort）。後端用它換 `refresh_token`，以 `userId` 為 key 保存於**伺服器端持久化儲存**（見 `api/_lib/apple-token-store.ts`）。
-2. **刪除時**：`delete-handler` 對 apple-linked 使用者呼叫撤銷，取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後才刪 user 資料。
+2. **刪除時**：`delete-handler` 對 apple-linked 使用者呼叫撤銷（取出保存的 `refresh_token` 呼叫 `/auth/revoke`，**只撤銷、不刪 token**），撤銷成功後才原子刪 user 資料，最後才刪保存的 `refresh_token`（saga step 3，見上方刪除策略）。
 
 原因：`authorizationCode` 為**單次使用且短效**，刪除當下通常已失效，必須在登入當下換成長效 `refresh_token`。client 端也**絕不持久化** `authorizationCode`（`authStore` partialize 會剝除）。
 
@@ -98,7 +98,7 @@ Apple 撤銷環境變數未設定完整、或撤銷未確認成功時 `api/auth/
 
 登入流程由**後端權威**決定身份與 session，client 不再自行 mint 內部 user。反重放採用**與所選 SDK 實際可執行**的合約（不是 token 內嵌 nonce，原因見下方 ⚠️）：
 
-1. **client（native）**：用 **`@react-native-google-signin/google-signin`**（classic，free tier）的 `GoogleSignin.signIn()`（**不傳 nonce**）取得 Google **`id_token`**。以 **Web client ID** 當 `webClientId`（故 id_token 的 `aud` 為 Web client）。取消彈窗以 `GOOGLE_CANCEL_CODE` 靜默處理，不顯示錯誤。
+1. **client（native）**：用 **`@react-native-google-signin/google-signin`** 的 **legacy（classic）Google Sign-In**（免費版；**不是** Android Credential Manager，Credential Manager 屬付費 Universal Sign In）的 `GoogleSignin.signIn()`（**不傳 nonce**）取得 Google **`id_token`**。Android 用哪個 OAuth client 是由 **package name + SHA-1 憑證指紋**在 Google Cloud Console 的註冊決定，**不是**由程式指定 Android client id；`configure()` 只帶 **Web client ID** 作 `webClientId`（故 id_token 的 `aud` 一律為 Web client，即後端唯一接受的 audience）。取消彈窗以 `GOOGLE_CANCEL_CODE` 靜默處理，不顯示錯誤。登出以原生 `GoogleSignin.signOut()` 清除快取的 Google 帳號 session（見 `src/services/authService.ts`），**不**把 app 的 session JWT 送往 Google 撤銷端點。
 2. **後端** `POST /api/auth/login`（`api/auth/login.ts` → `api/_lib/login-handler.ts`），送 `{ provider:'google', id_token }`：
    - `api/_lib/google-auth.ts` 以 Google JWKS（`https://www.googleapis.com/oauth2/v3/certs`）**驗簽 RS256、驗 `iss` / `aud`（須為伺服器 Web client ID）/ `exp`（含 clock skew）/ `iat`（必要，且不得早於 `MAX_ID_TOKEN_AGE_SEC`=5 分鐘的**新鮮度視窗**）**，取 `sub` 作身份鍵。**不信任** `userinfo.sub`，不接受 null id_token。
    - **一次性消費 id_token（反重放）**：`api/_lib/replay-guard.ts` 以 token 的 SHA-256 指紋為鍵（`auth:used_idtoken:{fp}`）在 KV `SET NX`，TTL 綁 token 剩餘壽命。首次佔用成功才放行；同一 token 再次交換（重放）→ 401 `TOKEN_REPLAYED`，**不建立 user、不簽 session**。
