@@ -348,6 +348,36 @@ async function testMatchingKidWithoutKeyMaterialFailsClosedAndNotCached() {
   assert.equal(calls, 2, 'a materialless key must not poison the cache; the provider is re-fetched');
 }
 
+// A JWK that passes string-field shape checks but is not actually constructible
+// (invalid EC point → ERR_CRYPTO_INVALID_JWK). It must fail closed with a
+// structured 503 and, critically, NOT poison the cache: a second request must
+// re-fetch the provider rather than reuse the bad key for 10 minutes (CR DIC-891).
+async function testUnconstructibleEcKeyFailsClosedAndNotCached() {
+  configureBackend();
+  process.env.GOOGLE_WEB_CLIENT_ID = 'client-abc';
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ keys: [{ kid: 'k1', kty: 'EC', crv: 'P-256', x: 'a', y: 'a' }] }),
+    };
+  };
+  try {
+    for (let i = 0; i < 2; i += 1) {
+      const res = await handler(req('POST', 'login', { body: { provider: 'google', idToken: googleJwt() } }));
+      assert.equal(res.status, 503, 'an unconstructible EC key must fail closed 503');
+      assert.equal((await readJson(res)).error, 'PROVIDER_UNAVAILABLE');
+    }
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.GOOGLE_WEB_CLIENT_ID;
+  }
+  assert.equal(calls, 2, 'an unconstructible key must not poison the cache; the provider is re-fetched');
+}
+
 (async () => {
   const tests = [
     testGetMeNoSessionReturns401JsonWithoutKv,
@@ -363,6 +393,7 @@ async function testMatchingKidWithoutKeyMaterialFailsClosedAndNotCached() {
     testStalledJwksBodyIsBoundedTo503,
     testMalformedJwksPayloadFailsClosedAndNotCached,
     testMatchingKidWithoutKeyMaterialFailsClosedAndNotCached,
+    testUnconstructibleEcKeyFailsClosedAndNotCached,
   ];
   for (const test of tests) {
     await test();

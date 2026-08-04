@@ -36,26 +36,30 @@ interface Jwk {
 
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 
-function nonEmptyString(v: unknown): v is string {
-  return typeof v === 'string' && v.length > 0;
-}
-
-// A JWK we can actually build a public key from: it must carry a `kid` for
-// lookup plus the key material `crypto.createPublicKey({ format: 'jwk' })`
-// requires. A matching-`kid`-but-materialless entry (e.g. `{ "kid": "k1" }`)
-// must fail the JWKS shape check so it can never be cached and then blow up in
-// key construction as a generic 500 (CR DIC-891).
-function isConstructibleJwk(k: unknown): k is Jwk {
-  if (k === null || typeof k !== 'object') return false;
-  const jwk = k as Record<string, unknown>;
-  if (!nonEmptyString(jwk.kid) || !nonEmptyString(jwk.kty)) return false;
-  if (jwk.kty === 'RSA') return nonEmptyString(jwk.n) && nonEmptyString(jwk.e);
-  if (jwk.kty === 'EC') return nonEmptyString(jwk.crv) && nonEmptyString(jwk.x) && nonEmptyString(jwk.y);
-  return false;
-}
-
-function isJwkArray(value: unknown): value is Jwk[] {
-  return Array.isArray(value) && value.length > 0 && value.every(isConstructibleJwk);
+// Actual constructibility is the ONLY reliable JWK validation: string-field
+// shape checks pass entries such as an invalid EC point
+// `{ kty:'EC', crv:'P-256', x:'a', y:'a' }` that still throw
+// `ERR_CRYPTO_INVALID_JWK` in `crypto.createPublicKey()`. Every returned key is
+// built here so any un-constructible key fails closed with a structured 503
+// BEFORE the set is cached — a bad set must never poison the 10-minute cache and
+// starve a retry after the provider recovers (CR DIC-891).
+function assertConstructibleJwks(value: unknown): asserts value is Jwk[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new IdentityStoreError('PROVIDER_UNAVAILABLE', 'JWKS payload malformed');
+  }
+  for (const k of value) {
+    if (k === null || typeof k !== 'object' || typeof (k as Jwk).kid !== 'string' || !(k as Jwk).kid) {
+      throw new IdentityStoreError('PROVIDER_UNAVAILABLE', 'JWKS entry missing kid');
+    }
+    try {
+      crypto.createPublicKey({ key: k as crypto.JsonWebKeyInput['key'], format: 'jwk' });
+    } catch (err) {
+      throw new IdentityStoreError(
+        'PROVIDER_UNAVAILABLE',
+        `JWKS key construction failed: ${(err as Error)?.name ?? 'unknown'}`,
+      );
+    }
+  }
 }
 
 async function fetchJwks(url: string): Promise<Jwk[]> {
@@ -67,15 +71,13 @@ async function fetchJwks(url: string): Promise<Jwk[]> {
   // response-body read. fetch() resolves after headers arrive, so a body that
   // then stalls would hang unbounded if the timer were cleared here; instead the
   // timer stays live until `res.json()` completes and aborts a stalled body too
-  // (CR DIC-891). Any fetch / body-read / shape failure fails closed with a
-  // bounded structured 503, and a malformed payload is never cached.
+  // (CR DIC-891). Any fetch / body-read / construction failure fails closed with
+  // a bounded structured 503, and only a fully-constructible set is cached.
   try {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) throw new IdentityStoreError('PROVIDER_UNAVAILABLE', `JWKS fetch failed: ${res.status}`);
     const data = (await res.json()) as { keys?: unknown };
-    if (!isJwkArray(data?.keys)) {
-      throw new IdentityStoreError('PROVIDER_UNAVAILABLE', 'JWKS payload malformed');
-    }
+    assertConstructibleJwks(data?.keys);
     jwksCache.set(url, { keys: data.keys, fetchedAt: Date.now() });
     return data.keys;
   } catch (err) {
