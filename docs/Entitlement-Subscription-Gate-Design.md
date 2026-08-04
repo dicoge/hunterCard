@@ -52,9 +52,9 @@ CREATE TABLE subscription_receipts (
   -- 目前反映的「provider 權威狀態」的生效時間與同步時間（見 §2.2；事件只是觸發，狀態一律回抓 provider）：
   state_effective_at   TIMESTAMPTZ,             -- **狀態轉移的 order cursor**：該狀態「發生」的 provider 權威時點，恆為過去/現在、**絕非未來效期界線**。
                                                 --   Apple = 狀態變更通知 signedDate；Stripe = 該狀態變更事件/物件 created（renewal invoice / refund / dispute / dispute.closed Event 的 created）。
-                                                --   Google = SubscriptionPurchaseV2.startTime（**原始授權時點，續訂不變**，故續訂靠 §2.2 step g 的「active→active 效期單調前進」規則收斂，非靠此 cursor；status 轉移仍由 subscriptionState + statusRank 決定）。
+                                                --   Google = SubscriptionPurchaseV2.startTime（**原始授權時點，同一購買在續訂/on-hold/pause/recover 皆不前進**，故此 cursor 無法為 Google 同 token 的狀態轉移定序；改由 §2.2 step g 的「較新權威回抓勝出」規則收斂；status 值仍由 subscriptionState 映射決定）。
                                                 --   效期界線（current_period_end / Google lineItems[].expiryTime）另存於 subscriptions.expires_at，只作 active-window 判斷，**不作排序**（避免未來 expiry 讓當下退款誤判為 stale，見 §2.2 note）。
-  state_synced_at      TIMESTAMPTZ,             -- server 端最近一次套用 provider 權威回抓的時間（stale-guard 用）
+  state_synced_at      TIMESTAMPTZ,             -- 最近一次套用之權威回抓的**觀測時點**（= 該次 fetchObservedAt，非 commit now()）；供 §2.2 step g 的 Google 等-cursor「較新回抓勝出」定序 / stale-guard
   product_id           TEXT NOT NULL,           -- 平台方案 id（sku / price id）
   environment          TEXT NOT NULL DEFAULT 'production'
                          CHECK (environment IN ('production','sandbox')),
@@ -131,6 +131,8 @@ CREATE TABLE subscription_events (
 | 到期未續 | 排程掃 `expires_at < now()`、`SUBSCRIPTION_EXPIRED`、`customer.subscription.deleted` | `expired` | — | 降回 free_user |
 | **退款 / 撤銷 / 拒付**（立即失效） | ASSN `REFUND`、Play `SUBSCRIPTION_REVOKED` / voided、Stripe `charge.refunded`（全額）/ `charge.dispute.created` | **`cancelled`** + `cancelled_at=now()` | — | **立即降回 free_user**，且記 audit（Stripe 全額/部分退款、爭議勝/敗政策見 §2.6） |
 | 暫停（Play pause / Stripe pause） | `SUBSCRIPTION_PAUSED`、`pause_collection` | `paused` | — | 暫停期間**視為無 active 訂閱** → free_user |
+| **帳戶保留**（Play account hold，付款失敗且寬限已過、平台暫扣權限但未終止） | Play `SUBSCRIPTION_ON_HOLD`／`subscriptionState=SUBSCRIPTION_STATE_ON_HOLD` | **`paused`** | — | **視為無 active 訂閱** → free_user（非終止，付款成功後可 `SUBSCRIPTION_RECOVERED` 回復） |
+| **回復**（帳戶保留 / 暫停後付款成功恢復） | Play `SUBSCRIPTION_RECOVERED`／回抓 `subscriptionState=SUBSCRIPTION_STATE_ACTIVE`（同一 purchase token） | **`active`** | 依回抓 `lineItems[].expiryTime` 設 `expires_at` | **回復 subscriber**；同一購買 `startTime` 不變，收斂靠 §2.2 step g「較新權威回抓勝出」 |
 
 > **判定不變式**：`hasActiveSubscription`（Product §2）= 該 user **任一** `subscriptions` row 滿足 `status='active' AND (expires_at IS NULL OR expires_at > now())`（跨多平台 row 聚合，OR 語意）。`paused` / `expired` / `cancelled` 都不算 active。寬限期刻意保持 `active`（權限不中斷），到期時間交由平台事件延長。
 
@@ -153,6 +155,8 @@ verifyEventAuthAndScope(evt)               # Apple JWS+bundleId / Play push-JWT+
 #              + charge.invoice → Invoice.retrieve → invoice.subscription 解出 sub_id
 #     事件只是「觸發」，狀態與帳戶歸屬都以此回應為準（Blocker 1：ordering-independent）。
 state = fetchProviderCurrentState(platform, provider_account, environment, provider_sub_ref, event_type)
+fetchObservedAt = now()                     # 這次「權威回抓」觀測到 provider 當下狀態的 server 時點；
+#     供 §2.2 step g 的 Google 等-cursor 收斂做「較新回抓勝出」的確定性排序（見 §1 state_synced_at）。
 
 # (c) 由「provider 權威回應」導出並驗證內部 UUID（**不從事件 payload 取**）；解不出合法 UUID
 #     或該 user 不存在 → 立即 fail closed，不進交易、不鎖、不寫。
@@ -205,22 +209,29 @@ BEGIN
         # 例外（§2.6 規則 5）：同一 dispute.id 的 terminal 結案相位優先於自身 provisional 撤權，
         # 等時仍讓 won 恢復 active / lost 維持 cancelled，不套 fail-closed statusRank。
         AND NOT (isTerminalDisputeClose AND rec.latest_txn_ref == dispute.id)
-        # 例外（Google 續訂收斂）：Google 的 order cursor = SubscriptionPurchaseV2.startTime（原始授權時點，
-        # 續訂不變），故續訂事件的 stateEffectiveAt 恆等於前次；active→active 且回抓 expiryTime 嚴格晚於
-        # 已存 expires_at 時，這是一次真實續訂（僅續訂能延長效期；退款/撤銷為 active→非 active，走 statusRank
-        # 失權），必須放行以在 (h) 前進 expires_at；expiryTime 相等則為重播、(h) 寫入為 no-op（冪等）。
-        AND NOT (mappedStatus == 'active' AND sub.status == 'active' AND expiresAt > sub.expires_at): COMMIT; return
+        # 例外（Google 等-cursor 當下狀態收斂）：Google 的 order cursor = SubscriptionPurchaseV2.startTime
+        # （原始授權時點，同一購買在 續訂 / 帳戶保留 on-hold / 暫停 pause / 回復 SUBSCRIPTION_RECOVERED 之間
+        #  皆不前進），故這些同一 purchase token 的轉移 stateEffectiveAt 恆等於前次，statusRank 無法定序。
+        # 但 (b) 的 subscriptionsv2.get 回抓的是「單一權威當下狀態」（非兩個並存的競爭訊號），故對 Google
+        # 改採「較新權威回抓勝出」的確定性收斂：本次回抓觀測時點 fetchObservedAt 若嚴格晚於 rec.state_synced_at，
+        # 即放行到 (h) 收斂成回抓狀態（涵蓋 續訂前進 expires_at、on-hold/paused → active 回復存取、
+        # 以及 active → on-hold/paused/cancelled/expired 撤權——三者對稱，皆以「最新權威觀測」為準）。
+        # fail-closed 不被弱化：較舊/同時回抓（fetchObservedAt <= rec.state_synced_at，如遲到的 stale active）被此門檻擋下，
+        # 無法覆蓋較新的撤權；重播（回抓狀態與 expires_at 皆相同）落 mappedStatus==sub.status 由 statusRank<= 收成 no-op（冪等）。
+        # 極少數 fetchObservedAt == rec.state_synced_at 且狀態相異者，門檻為 false → 落回下方 statusRank fail-closed（失權方勝）。
+        AND NOT (platform == 'google' AND fetchObservedAt > rec.state_synced_at
+                 AND (mappedStatus != sub.status OR expiresAt != sub.expires_at)): COMMIT; return
 
   # (h) 首購 → 建立恰好一個 subscriptions row 並回填 receipt.subscription_id；
   #     續訂/取消/退款 → UPDATE receipt.subscription_id 指到的「那一個」row
   if rec not exists:
       sub = INSERT INTO subscriptions (user_id, plan, status, started_at, expires_at) VALUES (...) RETURNING id;
       INSERT INTO subscription_receipts (user_id, subscription_id, ..., state_effective_at, state_synced_at)
-        VALUES (..., sub.id, ..., stateEffectiveAt, now());        # uq_receipt_subscription 保證 1:1
-  else:
+        VALUES (..., sub.id, ..., stateEffectiveAt, fetchObservedAt);   # state_synced_at 存「本次權威回抓觀測時點」
+  else:                                                                  # （非 commit now()），供 step g Google 等-cursor 較新回抓定序
       UPDATE subscriptions SET status=$mappedStatus, expires_at=$expiresAt, cancelled_at=... WHERE id = rec.subscription_id;
       UPDATE subscription_receipts SET latest_txn_ref=$txn, state_effective_at=stateEffectiveAt,
-             state_synced_at=now(), updated_at=now() WHERE id = rec.id;
+             state_synced_at=fetchObservedAt, updated_at=now() WHERE id = rec.id;
 
   # (i) 原子跨平台聚合 reconcile：該 user 的全部 subscriptions row（已被 (d) 鎖序列化）一次算出 active
   active = EXISTS (SELECT 1 FROM subscriptions
@@ -443,7 +454,8 @@ CREATE TABLE billing_records_retained (
        - 斷言 close 生效時間源自**已驗簽 Event `created`**，非 `Dispute` 上不存在的欄位。
      - **Stripe 身分**：由 `subscription.metadata.user_id`（Checkout `client_reference_id` 持久化）/ `customer.metadata.user_id` / 既有 receipt 映射解析 → 斷言**不引用** `Subscription.retrieve` 上不存在的 `client_reference_id`。
    - **未來 period_end 不得讓當下退款/爭議誤判 stale（order cursor ≠ 效期界線）**：先送續訂 → `subscriptions.expires_at` = 未來 `current_period_end`（`t_future`），但 `receipt.state_effective_at` = 續訂**轉移時點**（`t_renew ≈ now`，**非** `t_future`）。隨後送當下全額退款/`charge.dispute.created`（`state_effective_at ≈ now > t_renew`）→ 斷言 (a) step g **不**因 `t_future` 判為 stale，`subscriptions.status` **確實**轉為 `cancelled`、entitlement 降 free；(b) 重播同一退款/爭議事件經 `uq_provider_event` 去重為安全 no-op，狀態維持 `cancelled`（不回退 active）。反例保護：若把 `state_effective_at` 誤設為 `t_future`，此案會退化成「記為已處理卻停留 active、永久漏撤」——斷言不得發生。
-   - **Google 續訂收斂：等 order cursor 仍前進效期（startTime 續訂不變）**：首購後 `subscriptions.expires_at`=`t_exp1`、`receipt.state_effective_at`=`SubscriptionPurchaseV2.startTime`（`t_start`）。送 `SUBSCRIPTION_RENEWED` → 回抓 `subscriptionsv2.get`，`startTime` **仍** `t_start`（等 cursor）、`lineItems[].expiryTime` 前進為 `t_exp2 > t_exp1`、`subscriptionState` 仍 active。斷言 (a) step g 命中「active→active 且 `expiresAt > sub.expires_at`」例外、**不**被 `statusRank<=` 判為 stale 而跳過，(h) 將 `subscriptions.expires_at` 前進為 `t_exp2`、entitlement 維持 pro；(b) 重播同一續訂（`startTime` 與 `expiryTime` 皆不變）→ `expiresAt > sub.expires_at` 為 false 落 stale-guard、或 (h) 寫入相同值，兩者皆為冪等 no-op，`expires_at` 停在 `t_exp2` 不重複前進。反例保護：若無此例外，等 cursor 續訂會被記為已處理卻停留舊 `expires_at`，效期提前到期——斷言不得發生。
+   - **Google 續訂收斂：等 order cursor 仍前進效期（startTime 續訂不變）**：首購後 `subscriptions.expires_at`=`t_exp1`、`receipt.state_effective_at`=`SubscriptionPurchaseV2.startTime`（`t_start`）、`state_synced_at`=`o1`。送 `SUBSCRIPTION_RENEWED` → 回抓 `subscriptionsv2.get`（`fetchObservedAt`=`o2>o1`），`startTime` **仍** `t_start`（等 cursor）、`lineItems[].expiryTime` 前進為 `t_exp2 > t_exp1`、`subscriptionState` 仍 active。斷言 (a) step g 命中 Google「較新回抓勝出」例外（`platform=='google' AND o2>state_synced_at AND expires_at 相異`）、**不**被 `statusRank<=` 判為 stale 而跳過，(h) 將 `subscriptions.expires_at` 前進為 `t_exp2`、`state_synced_at`=`o2`、entitlement 維持 pro；(b) 重播同一續訂（回抓狀態與 `expiryTime` 皆不變）→ `mappedStatus==sub.status AND expiresAt==sub.expires_at` 使例外的相異條件為 false → 落回 stale-guard COMMIT no-op，`expires_at` 停在 `t_exp2` 不重複前進。反例保護：若無此例外，等 cursor 續訂會被記為已處理卻停留舊 `expires_at`，效期提前到期——斷言不得發生。
+   - **Google 帳戶保留 → 回復存取（on-hold/paused → SUBSCRIPTION_RECOVERED → active，同 purchase token，startTime 不變）**：初始 active（`expires_at`=`t_exp`、`startTime`=`t_start`、`state_synced_at`=`o1`）。① 送 `SUBSCRIPTION_ON_HOLD` → 回抓 `subscriptionState=SUBSCRIPTION_STATE_ON_HOLD`（`fetchObservedAt`=`o2>o1`，`startTime` **仍** `t_start`）→ 斷言映射 `paused`、`hasActiveSubscription` 為 false、entitlement 降 free（存取暫扣），`state_synced_at`=`o2`。② 送 `SUBSCRIPTION_RECOVERED` → 回抓 `SUBSCRIPTION_STATE_ACTIVE`（`fetchObservedAt`=`o3>o2`，`startTime` 仍 `t_start`＝**等 cursor**）→ 斷言 step g 命中 Google「較新回抓勝出」例外（`o3>state_synced_at` 且狀態由 `paused`→`active` 相異）、**不**被 `statusRank(active) <= statusRank(paused)` 的 fail-closed 判為 stale 而跳過，(h) 將 `status` 收斂回 `active`、`expires_at` 設回抓 `expiryTime`、entitlement 回 pro（**存取恢復**）。③ 重播該 `SUBSCRIPTION_RECOVERED`（`uq_provider_event` 去重，或回抓同一 active 狀態）→ 冪等 no-op，維持 active、不重複前進。**fail-closed 不被弱化**：另測「遲到的 stale active 回抓」——on-hold 已以 `o2` 落地後，一個 `fetchObservedAt`=`o1'<o2` 的較舊 active 回抓到達 → 斷言 `o1' < state_synced_at(o2)` 使例外條件為 false → 落回 stale-guard 跳過，**不**覆蓋撤權，維持 `paused`/free。
    - **schema-level replay regression（provider_version 型別）**：以 Google 文件記載的 RTDN 信封原文灌入 ledger 並斷言可持久化、無型別錯誤——
      ```json
      { "version": "1.0", "packageName": "com.holohunter.app", "eventTimeMillis": "1730000000000",
