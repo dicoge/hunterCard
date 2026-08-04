@@ -10,10 +10,12 @@
  *   - login  (§5.1) — public: verify provider token, login-or-create, issue session
  *   - link   (§5.2) — Bearer session: link a second verified provider
  *   - unlink (§5.3) — Bearer session: remove a provider, refusing the last method
- *   - me            — Bearer session: validate the session, return the current
- *                     user. The client MUST call this before entering
- *                     authenticated UI so a stale/tampered local flag alone can
- *                     never grant access (CR DIC-866: persisted auth fail-open).
+ *   - me            — Bearer session (GET / HEAD / POST): validate the session,
+ *                     return the current user. Without a valid session it returns
+ *                     structured JSON 401 immediately. The client MUST call this
+ *                     before entering authenticated UI so a stale/tampered local
+ *                     flag alone can never grant access (CR DIC-866: persisted
+ *                     auth fail-open).
  */
 import { loginOrCreate, linkIdentity, unlinkIdentity, getUser } from '../_lib/identity-store';
 import { issueSession } from '../_lib/session';
@@ -40,10 +42,14 @@ function actionFromUrl(url: string): string {
 }
 
 async function handleLogin(body: AuthBody): Promise<Response> {
+  // Validate the request shape BEFORE touching any backend dependency: invalid
+  // input must return a fast 4xx without waiting on KV / session / provider.
   if (!isProvider(body.provider)) return json({ error: 'invalid_provider' }, 400);
   if (typeof body.idToken !== 'string' || !body.idToken) {
     return json({ error: 'missing_id_token' }, 400);
   }
+  const unavailable = backendUnavailable();
+  if (unavailable) return unavailable;
   const nonce = typeof body.nonce === 'string' ? body.nonce : undefined;
   const identity = await verifyProviderToken(body.provider, body.idToken, nonce);
   const { user, isNew } = await loginOrCreate(identity);
@@ -57,6 +63,8 @@ async function handleLink(req: Request, body: AuthBody): Promise<Response> {
   if (typeof body.idToken !== 'string' || !body.idToken) {
     return json({ error: 'missing_id_token' }, 400);
   }
+  const unavailable = backendUnavailable();
+  if (unavailable) return unavailable;
   const nonce = typeof body.nonce === 'string' ? body.nonce : undefined;
   const identity = await verifyProviderToken(body.provider, body.idToken, nonce);
   const { user, alreadyLinked } = await linkIdentity(userId, identity);
@@ -67,23 +75,45 @@ async function handleUnlink(req: Request, body: AuthBody): Promise<Response> {
   const userId = sessionUserId(req);
   if (!userId) return json({ error: 'INVALID_TOKEN', reason: 'invalid_session' }, 401);
   if (!isProvider(body.provider)) return json({ error: 'invalid_provider' }, 400);
+  const unavailable = backendUnavailable();
+  if (unavailable) return unavailable;
   const user = await unlinkIdentity(userId, body.provider);
   return json({ ok: true, user }, 200);
 }
 
 async function handleMe(req: Request): Promise<Response> {
+  // The session check is a pure in-process HMAC verification (no I/O): an
+  // unauthenticated probe returns 401 JSON immediately, before any KV/session
+  // dependency is touched, so it can never hang on backend init (DIC-891).
   const userId = sessionUserId(req);
   if (!userId) return json({ error: 'INVALID_TOKEN', reason: 'invalid_session' }, 401);
+  const unavailable = backendUnavailable();
+  if (unavailable) return unavailable;
   const user = await getUser(userId);
   if (!user) return json({ error: 'USER_NOT_FOUND', reason: 'no_such_user' }, 401);
   return json({ user }, 200);
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  const action = actionFromUrl(req.url);
 
-  const unavailable = backendUnavailable();
-  if (unavailable) return unavailable;
+  // `me` is a read. Accept GET/HEAD (the production auth contract) alongside the
+  // POST the current client already sends, and resolve it without parsing a body
+  // so an unauthenticated GET returns structured JSON 401 fast — never 405, never
+  // a body-parse dependency (DIC-891).
+  if (action === 'me') {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
+      return json({ error: 'method_not_allowed' }, 405);
+    }
+    try {
+      return await handleMe(req);
+    } catch (err) {
+      return errorResponse(err);
+    }
+  }
+
+  // Mutating actions require POST.
+  if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
   let body: AuthBody;
   try {
@@ -93,15 +123,13 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   try {
-    switch (actionFromUrl(req.url)) {
+    switch (action) {
       case 'login':
         return await handleLogin(body);
       case 'link':
         return await handleLink(req, body);
       case 'unlink':
         return await handleUnlink(req, body);
-      case 'me':
-        return await handleMe(req);
       default:
         return json({ error: 'not_found' }, 404);
     }

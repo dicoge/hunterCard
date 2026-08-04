@@ -18,6 +18,14 @@ const APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys';
 const APPLE_ISSUER = 'https://appleid.apple.com';
 
 const JWKS_TTL_MS = 10 * 60 * 1000;
+// A provider JWKS endpoint must never be able to hang the function: bound the
+// fetch and surface a slow/unreachable provider as a structured 503 fail-closed
+// error instead of an unbounded wait (DIC-891). Overridable via env so tests can
+// exercise the timeout deterministically; production keeps the 5s default.
+function jwksFetchTimeoutMs(): number {
+  const raw = Number(process.env.JWKS_FETCH_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 5000;
+}
 
 interface Jwk {
   kid: string;
@@ -31,8 +39,19 @@ const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 async function fetchJwks(url: string): Promise<Jwk[]> {
   const cached = jwksCache.get(url);
   if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) return cached.keys;
-  const res = await fetch(url);
-  if (!res.ok) throw new IdentityStoreError('INVALID_TOKEN', `JWKS fetch failed: ${res.status}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), jwksFetchTimeoutMs());
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    // AbortError (timeout) or a network failure: fail closed with a bounded 503
+    // rather than letting the request hang until the platform kills it.
+    throw new IdentityStoreError('PROVIDER_UNAVAILABLE', `JWKS fetch error: ${(err as Error)?.name ?? 'unknown'}`);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) throw new IdentityStoreError('PROVIDER_UNAVAILABLE', `JWKS fetch failed: ${res.status}`);
   const data = (await res.json()) as { keys: Jwk[] };
   jwksCache.set(url, { keys: data.keys, fetchedAt: Date.now() });
   return data.keys;

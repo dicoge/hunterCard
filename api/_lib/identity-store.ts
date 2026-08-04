@@ -93,6 +93,7 @@ export type IdentityErrorCode =
   | 'USER_NOT_FOUND'
   | 'IDENTITY_LINK_PENDING'
   | 'STORE_NOT_CONFIGURED'
+  | 'PROVIDER_UNAVAILABLE'
   | 'LOCK_TIMEOUT';
 
 const STATUS_BY_CODE: Record<IdentityErrorCode, number> = {
@@ -106,6 +107,7 @@ const STATUS_BY_CODE: Record<IdentityErrorCode, number> = {
   USER_NOT_FOUND: 404,
   IDENTITY_LINK_PENDING: 409,
   STORE_NOT_CONFIGURED: 501,
+  PROVIDER_UNAVAILABLE: 503,
   LOCK_TIMEOUT: 503,
 };
 
