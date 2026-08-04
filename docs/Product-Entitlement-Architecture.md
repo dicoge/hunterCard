@@ -179,7 +179,7 @@ effectiveEntitlement(user):
 | free（free_user） | 無（`NULL`） | **100** | ❌ |
 | pro（subscriber） | 不限（`NULL`） | 不限（`NULL`） | ✅ |
 
-- **不限量與「無日上限」皆以 `NULL` 表示**（而非 sentinel 數字），gate 時 `limit IS NULL → 該維度永遠放行`。
+- **不限量與「無日上限」皆以 `NULL` 表示**（而非 sentinel 數字）。此為**數值語意**：`limit IS NULL` 代表「該維度無數字上限」。但**是否據此不限量放行，必須先通過 §5.1 的 role↔tier fail-closed 閘**——單看 `monthly_limit IS NULL` **不足以**放行不限量；唯有 `role=='subscriber'`（`subscriptions` 當下 active）時 `effectiveEntitlement` 才回 `scan_limit=null`。快取 tier 落後（到期空窗 / reconcile 未跑）時 `NULL` **不得**放行，改回 `ENTITLEMENT_UNAVAILABLE`（§5.1 不變式 2）。此契約亦是 AUTH §3.5 Quota gating 所 defer 的權威。
 - guest 不進 `entitlements`，能力為常數 `scan_limit = 0`（§5.1 提早 return）。
 - **本契約不設 daily cap**（free/pro 的 `daily_limit` 皆 `NULL`，DIC-774 acceptance）；月額度是唯一的產品承諾。
 - AUTH schema 的 `CHECK` 強制 `free=(NULL,100)`、`pro=(NULL,NULL)`；本表任何調整都必須同步該 CHECK。

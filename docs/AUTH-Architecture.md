@@ -195,7 +195,7 @@ CREATE TABLE entitlements (
 - **Backfill（migration `0001_auth.sql`）** — 既有 user 補 free entitlement：`INSERT INTO entitlements (user_id) SELECT id FROM users WHERE deleted_at IS NULL ON CONFLICT (user_id) DO NOTHING;`
 - **guest**（DIC-674：無 internal user id / 匿名 session）不落 `entitlements`，能力為常數、不可掃描。
 
-> **Quota gating（fail-closed）**：掃描前讀 `entitlements`。`monthly_limit IS NULL`（pro）→ 不限量放行；否則比對當期 `scan_usage.scan_count < monthly_limit`（free = 100）才放行，達標回 `403 QUOTA_EXCEEDED`。因 login-or-create（§5.1）與 backfill 保證每個 **active internal user 必有 entitlement row**，唯一「無 row」情形是 guest（無 internal user id），fail-closed 不放行正確。任何地方都以 `entitlements.tier` + limit 欄位為唯一 quota 依據，不得在別處硬編數字。
+> **Quota gating（fail-closed）— 職責分離**：`entitlements` 的 `quota_matches_tier` 與 limit 欄位只是**數值權威**（「free=100 / pro=unlimited」這組數字的唯一來源，不得在別處硬編）。但**營運放行判斷不得只看 `monthly_limit IS NULL`** ——那是物化快取，會落後於 `subscriptions` 即時狀態（到期空窗 / reconcile 未跑），單看它會讓「已到期但快取仍 pro」的 user 無限掃描。因此**實際 gating 一律走 Product `effectiveEntitlement`（Product §5.1，權威契約）**：不限量放行（`scan_limit=null`）的**唯一合法條件是 `role=='subscriber'`（`subscriptions` 當下確有 active row）**；`role != 'subscriber'` 卻 `tier=='pro'` 或 `monthly_limit IS NULL` → fail-closed `ENTITLEMENT_UNAVAILABLE`（500），並觸發非同步 reconcile，不得因快取 `monthly_limit IS NULL` 放行。有限額 user 才比對當期 `scan_usage.scan_count < monthly_limit`（free = 100），達標回 `403 QUOTA_EXCEEDED`。login-or-create（§5.1）與 backfill 保證每個 active internal user 必有 entitlement row；「已驗證 user 但查無 row」不是 free，而是 `ENTITLEMENT_UNAVAILABLE` fail-closed（Product §5.1 不變式 1）。guest（無 internal user id / 無 row）走常數分支、不可掃描。
 
 #### 3.5.1 Merge 規則（scan_usage / subscriptions / entitlements）
 

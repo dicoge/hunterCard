@@ -50,7 +50,10 @@ CREATE TABLE subscription_receipts (
   provider_sub_ref     TEXT NOT NULL,
   latest_txn_ref       TEXT,                    -- 最近一次交易/續訂識別（app store transactionId / stripe invoice 等）
   -- 目前反映的「provider 權威狀態」的生效時間與同步時間（見 §2.2；事件只是觸發，狀態一律回抓 provider）：
-  state_effective_at   TIMESTAMPTZ,             -- 回抓到的 provider 權威狀態之生效時間（Apple status signedDate / Play expiry+start / Stripe current_period_end 等）
+  state_effective_at   TIMESTAMPTZ,             -- **狀態轉移的 order cursor**：該狀態「發生」的 provider 權威時點，恆為過去/現在、**絕非未來效期界線**。
+                                                --   Apple = 狀態變更通知 signedDate；Google = 當期 startTime（**非** lineItems.expiryTime）；
+                                                --   Stripe = 該狀態變更事件/物件 created（renewal invoice / refund / dispute / dispute.closed Event 的 created）。
+                                                --   效期界線（current_period_end / expiry）另存於 subscriptions.expires_at，只作 active-window 判斷，**不作排序**（避免未來 period_end 讓當下退款誤判為 stale，見 §2.2 note）。
   state_synced_at      TIMESTAMPTZ,             -- server 端最近一次套用 provider 權威回抓的時間（stale-guard 用）
   product_id           TEXT NOT NULL,           -- 平台方案 id（sku / price id）
   environment          TEXT NOT NULL DEFAULT 'production'
@@ -165,6 +168,10 @@ user_id = followMergeRedirect(user_id)     # completed merge: source_user_snapsh
 if not isUuid(user_id) or not EXISTS(SELECT 1 FROM users WHERE id=user_id AND status='active'):
     raise USER_UNRESOLVED                  # 500，fail closed（帳戶歸屬無法確立，絕不臆測入帳）
 (mappedStatus, expiresAt, stateEffectiveAt) = mapProviderState(state)   # §2.1 映射
+#     ⚠️ 兩個時鐘分離（見 §1 state_effective_at / §2.2 note）：
+#       stateEffectiveAt = 狀態「發生」的權威時點（order cursor，恆非未來），供 step g 排序；
+#       expiresAt        = 效期界線（current_period_end / expiry），寫入 subscriptions.expires_at 只作 active-window 判斷。
+#     絕不把 expiresAt 當 stateEffectiveAt——否則未來 period_end 會讓當下退款/爭議在 step g 被誤判 stale。
 
 BEGIN
   # (d) 每-user 序列化：先鎖住該 user，讓同一 user 的所有訂閱寫入嚴格串行，
@@ -223,6 +230,7 @@ COMMIT
 `cancelled`（退款/撤銷，立即失權）> `expired` > `paused` > `active`。
 兩個生效時間相同的訊號同時到達時（例：續訂與退款理論上同秒），一律採失權方，寧可短暫少給權限、不誤給。
 
+> **note — order cursor 與效期界線是兩個時鐘，不可混用（Blocker：未來 period_end 不得讓當下退款誤判 stale）**：`state_effective_at` 是「狀態**發生**的時點」（order cursor），`subscriptions.expires_at` 是「權益**有效到**何時」（validity horizon）。若把續訂的 `current_period_end`（未來）寫進 `state_effective_at`，則當下的退款/爭議（`state_effective_at≈now` < 未來 period_end）會在 step g 被判為 stale → **(e) 已把 event_id 記入帳本、(g) 卻跳過寫入並 COMMIT**，該狀態永久停留 `active` 且重播因 `uq_provider_event` 去重而無法再套用（永久漏撤）。故續訂的 `state_effective_at` 必須取**該次續訂的轉移時點**（Apple signedDate / Google 當期 startTime / Stripe renewal invoice `created`），未來的 `current_period_end` 只落 `expires_at`。如此當下退款的 order cursor 恆晚於先前續訂，step g 正常寫入撤權；即便退款與續訂同秒，`statusRank` 仍讓失權方勝出（authenticated 退款/爭議撤權必勝）。
 - **provider current-state 為真相、帳戶歸屬也以它為準（Blocker 1 + Google 帳戶識別）**：任何平台事件都只當「去回抓」的觸發，真正狀態與**內部 user 歸屬**一律讀 provider 的 current-state API（step b）再導出（step c）。Google 尤其關鍵——RTDN 只帶 `purchaseToken`，帳戶識別 `obfuscatedExternalAccountId` 只在 `subscriptionsv2.get` 的 `externalAccountIdentifiers` 回應內，故**必先查詢才能解析 user**，絕不從通知 payload 臆測。因此 Google RTDN `version`（schema 版本、非單調序）**永不用於排序**；亂序 / 遲到 / 重送因回抓的都是「當下」狀態而自然無害。唯一需要防的是「較舊的回抓覆蓋較新的回抓」（例：兩個 worker 各自回抓後寫回），以 `state_effective_at` + `statusRank` 的確定性比較擋下（step g），且 (d) 的 per-user 鎖已讓同一 user 的回抓串行、不交錯。
 - **user 歸屬確立後才進交易，不確立即 fail closed（step c）**：`deriveInternalUserId` 只吃 provider 權威回應；導不出合法 UUID 或該 user 不存在即 `USER_UNRESOLVED`（500），不鎖不寫。既有 receipt 於 step f 再做「身分相等」檢查（`rec.user_id == user_id`），不等即 409、不自動改綁——首購與續訂/取消都無法把一筆平台訂閱綁到錯誤帳號。
 - **per-user 序列化 + 原子跨平台聚合（Blocker 3）**：交易一開始即 `SELECT ... FROM users FOR UPDATE` 鎖住該 user，該 user 名下所有平台的訂閱寫入與 (i) 的跨 row active 聚合都在這把鎖內完成，不會與另一平台的並發事件交錯，聚合看到的是一致快照。寫入永遠針對 `subscription_receipts.subscription_id` 指到的**那一個** row（AUTH `subscriptions` 無 `user_id` 唯一鍵、允許多列），故「A 平台退款」只改 A 的 row，`entitlements` 再跨**所有** row 聚合，不會誤降「B 平台仍 active」的訂閱。
@@ -239,7 +247,7 @@ COMMIT
 1. **effectiveEntitlement 的 role↔tier 一致性檢查（fail-closed）現為 Product §5.1 權威契約**。不限量放行的唯一合法條件是 **role 解析為 subscriber**（即 `subscriptions` 當下確有 active row），而非「快取 tier 剛好是 pro」；`role != 'subscriber'` 卻 `tier=='pro'`（或 `monthly_limit IS NULL`）一律回 `ENTITLEMENT_UNAVAILABLE`（500）擋掃描、絕不因 `quota=NULL` 放行不限量，反向不一致亦 fail-closed。此不變式**已寫入權威文件 [Product-Entitlement-Architecture.md](./Product-Entitlement-Architecture.md) §5.1 的 `effectiveEntitlement` 契約與其 fail-closed 不變式（第 2 條）**，不再只是本設計文件的「強化要求」——實作 Product gating 時 DB/service 必須落實該檢查（QA 見 §7）。
 2. **邊界 reconcile，不只每日排程**：除了每日掃 `status='active' AND expires_at < now()` 標 `expired` 並 reconcile（Product §5.3），另**在寫入訂閱時排一個 `expires_at` 到點即觸發的 reconcile job**（延遲佇列 / cron-at），使快取在到期當下即翻回 free，把空窗窗口壓到最小。每日排程僅為兜底。
 
-**排程的冪等（不虛構 provider event id）**：到期排程**不是** provider 事件，沒有 `notificationUUID`/`messageId`/`evt_id`，因此**不寫也不查** `subscription_events` 帳本。它的冪等來自「以當下狀態收斂」：排程 `UPDATE subscriptions SET status='expired' WHERE user_id=$u AND status='active' AND expires_at < now()`（在 §2.2 (d) 的 per-user `FOR UPDATE` 鎖內），已是 `expired` 的 row 不再命中篩選，重跑天然收斂、無副作用；隨後照 §2.2 (i) 跨 row 聚合 reconcile `entitlements`。webhook 側的回抓寫入則沿用 §2.2 的 `state_effective_at` + `statusRank` 確定性 guard（§2.2 step g，讀對應 `subscriptions.status`），較舊回抓不覆蓋較新狀態；排程把 `state_effective_at` 設為 `expires_at`（該狀態的權威生效時間）、`state_synced_at=now()`，與 webhook 回抓走同一條比較規則，兩路徑對同一 row 的寫入互不回退。
+**排程的冪等（不虛構 provider event id）**：到期排程**不是** provider 事件，沒有 `notificationUUID`/`messageId`/`evt_id`，因此**不寫也不查** `subscription_events` 帳本。它的冪等來自「以當下狀態收斂」：排程 `UPDATE subscriptions SET status='expired' WHERE user_id=$u AND status='active' AND expires_at < now()`（在 §2.2 (d) 的 per-user `FOR UPDATE` 鎖內），已是 `expired` 的 row 不再命中篩選，重跑天然收斂、無副作用；隨後照 §2.2 (i) 跨 row 聚合 reconcile `entitlements`。webhook 側的回抓寫入則沿用 §2.2 的 `state_effective_at` + `statusRank` 確定性 guard（§2.2 step g，讀對應 `subscriptions.status`），較舊回抓不覆蓋較新狀態；排程把 `state_effective_at` 設為 `expires_at`（**到期這個轉移的發生時點就是 `expires_at`**，排程觸發時 `now() >= expires_at`，屬過去/現在，仍是 order cursor 語意、非未來效期界線，與上方 note 一致）、`state_synced_at=now()`，與 webhook 回抓走同一條比較規則，兩路徑對同一 row 的寫入互不回退。
 
 ### 2.4 同一平台訂閱綁不同 user（衝突）
 
@@ -429,6 +437,7 @@ CREATE TABLE billing_records_retained (
        - `status=lost` → 維持 `cancelled`。
        - 斷言 close 生效時間源自**已驗簽 Event `created`**，非 `Dispute` 上不存在的欄位。
      - **Stripe 身分**：由 `subscription.metadata.user_id`（Checkout `client_reference_id` 持久化）/ `customer.metadata.user_id` / 既有 receipt 映射解析 → 斷言**不引用** `Subscription.retrieve` 上不存在的 `client_reference_id`。
+   - **未來 period_end 不得讓當下退款/爭議誤判 stale（order cursor ≠ 效期界線）**：先送續訂 → `subscriptions.expires_at` = 未來 `current_period_end`（`t_future`），但 `receipt.state_effective_at` = 續訂**轉移時點**（`t_renew ≈ now`，**非** `t_future`）。隨後送當下全額退款/`charge.dispute.created`（`state_effective_at ≈ now > t_renew`）→ 斷言 (a) step g **不**因 `t_future` 判為 stale，`subscriptions.status` **確實**轉為 `cancelled`、entitlement 降 free；(b) 重播同一退款/爭議事件經 `uq_provider_event` 去重為安全 no-op，狀態維持 `cancelled`（不回退 active）。反例保護：若把 `state_effective_at` 誤設為 `t_future`，此案會退化成「記為已處理卻停留 active、永久漏撤」——斷言不得發生。
    - **schema-level replay regression（provider_version 型別）**：以 Google 文件記載的 RTDN 信封原文灌入 ledger 並斷言可持久化、無型別錯誤——
      ```json
      { "version": "1.0", "packageName": "com.holohunter.app", "eventTimeMillis": "1730000000000",
