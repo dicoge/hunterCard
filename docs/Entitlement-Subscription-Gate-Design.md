@@ -191,10 +191,13 @@ BEGIN
           ROLLBACK; raise SUBSCRIPTION_LINK_INTEGRITY   # 409（§2.4 / §2.5）
 
   # (g) stale re-fetch guard（同一 provider 的較舊回抓不得覆蓋較新狀態）：
-  #     以回抓狀態的 provider 生效時間比較；相等時用「較嚴格者優先」的確定性 tie-break（見下，讀 sub.status）
+  #     以回抓狀態的 provider 生效時間比較；相等時用「較嚴格者優先」的確定性 tie-break（讀 sub.status）
   if rec exists AND stateEffectiveAt < rec.state_effective_at: COMMIT; return
   if rec exists AND stateEffectiveAt == rec.state_effective_at
-        AND statusRank(mappedStatus) <= statusRank(sub.status): COMMIT; return
+        AND statusRank(mappedStatus) <= statusRank(sub.status)
+        # 例外（§2.6 規則 5）：同一 dispute.id 的 terminal 結案相位優先於自身 provisional 撤權，
+        # 等時仍讓 won 恢復 active / lost 維持 cancelled，不套 fail-closed statusRank。
+        AND NOT (isTerminalDisputeClose AND rec.latest_txn_ref == dispute.id): COMMIT; return
 
   # (h) 首購 → 建立恰好一個 subscriptions row 並回填 receipt.subscription_id；
   #     續訂/取消/退款 → UPDATE receipt.subscription_id 指到的「那一個」row
@@ -262,7 +265,7 @@ Stripe 的退款（`charge.refunded`）與爭議（`charge.dispute.created` / `c
 
 1. **權威回抓對象依事件型別（step b）**：
    - `charge.refunded` → `Charge.retrieve(expand=[refunds.data])` 取 `amount`, `amount_refunded`, `refunded`, `refunds[].created`。
-   - `charge.dispute.created` / `charge.dispute.closed` → `Dispute.retrieve` 取 `status`, `amount`, `created`。
+   - `charge.dispute.created` / `charge.dispute.closed` → `Dispute.retrieve` 取 `status`, `amount`, `created`（Dispute **無 close 時戳**；結案生效時間改取已驗簽 Event `evt_...` 的 `created`，見規則 3 附註）。
    - 由 `charge.invoice → Invoice.retrieve → invoice.subscription` 解出 `sub_...`，作為定位 receipt / subscription 的 `provider_sub_ref`。事件 payload 內的金額/狀態一律**不信**，以上述 retrieve 回應為準（authenticated：webhook secret 驗簽 + `event.account`/`livemode` scope 驗，§3）。
 
 2. **身分解析**：解出 `sub_...` 後讀 `subscription.metadata.user_id`（Checkout 時由 `client_reference_id` 持久化），缺則 `customer.metadata.user_id`，再缺則既有 `uq_platform_sub`（`provider_sub_ref=sub_...`）receipt 映射。**`Subscription.retrieve` 不含 `client_reference_id`**（該欄位在 Checkout Session）；身分絕不從已不存在的欄位取。
@@ -270,11 +273,14 @@ Stripe 的退款（`charge.refunded`）與爭議（`charge.dispute.created` / `c
 3. **退款政策（full vs partial，`mapProviderState` 對這些事件的輸出）**：
    - **全額退款**（`refunded==true`，或退款金額覆蓋當期發票金額）→ `cancelled` + 立即撤權；`state_effective_at = refund.created`。
    - **部分退款**（`amount_refunded < amount`，比例/善意退款）→ **不撤權**，維持 `Subscription.retrieve` 當下狀態；記 audit。避免因比例退款誤降仍在期內的訂閱。
-   - **爭議建立**（`charge.dispute.created`，資金已被凍結/取回）→ 比照失權，`cancelled` + 撤權；`state_effective_at = dispute.created`（fail-closed：資金已離開，先停權）。
-   - **爭議結案—敗訴**（`charge.dispute.closed` `status=lost`）→ 維持 `cancelled`；`state_effective_at = dispute.closed`。
-   - **爭議結案—勝訴**（`charge.dispute.closed` `status=won`，資金退回）→ 回抓 `Subscription.retrieve` 以其當下狀態對帳（仍在期內且未另行取消則恢復 `active`）；`state_effective_at = dispute.closed`。
+   - **爭議建立**（`charge.dispute.created`，資金已被凍結/取回）→ 比照失權，`cancelled` + 撤權；`state_effective_at = dispute.created`（Dispute 物件的 `created`；fail-closed：資金已離開，先停權）。
+   - **爭議結案—敗訴**（`charge.dispute.closed`，retrieved `dispute.status=lost`）→ 維持 `cancelled`；`state_effective_at` = 該 `charge.dispute.closed` Event（`evt_...`）的 `created`。
+   - **爭議結案—勝訴**（`charge.dispute.closed`，retrieved `dispute.status=won`，資金退回）→ 回抓 `Subscription.retrieve` 以其當下狀態對帳（仍在期內且未另行取消則恢復 `active`）；`state_effective_at` = 該 `charge.dispute.closed` Event 的 `created`。
+   > **close-transition 時點**：Stripe `Dispute` 物件**只有 `created` 與當前 `status`，沒有「closed 時戳」**。故結案的生效時間取**已驗簽/回抓的 Stripe Event `evt_...` 的 `created`**（provider-authenticated，非事件 payload 自報）。爭議必先 created 才能 closed，close Event 的 `created` **恆晚於** `dispute.created`。
 
-4. **原子撤權 / 確定生效時間**：上述 `(mappedStatus, expiresAt, stateEffectiveAt)` 交回 §2.2，於 (h) 原子寫 `subscriptions.status`、(i) 跨 row 聚合把 entitlement 降回 free——撤權在**同一交易**完成，不依賴 Stripe 是否自動 cancel 訂閱（我方 entitlement 為權威；如需亦可另呼 `Subscription.cancel` 驗證 provider 端取消，但不作為撤權前提）。`state_effective_at` 一律取自 provider 物件的權威時間戳（refund/dispute `created`、dispute `closed`），讓 §2.2 step g 的 `statusRank` tie-break 對「退款/爭議 vs 續訂」仍成立（失權方勝出）；爭議勝訴的恢復亦經 step g——其較新的 `state_effective_at` 才能覆蓋先前撤權，確保定序確定、不回退。
+4. **原子撤權 / 確定生效時間**：上述 `(mappedStatus, expiresAt, stateEffectiveAt)` 交回 §2.2，於 (h) 原子寫 `subscriptions.status`、(i) 跨 row 聚合把 entitlement 降回 free——撤權在**同一交易**完成，不依賴 Stripe 是否自動 cancel 訂閱（我方 entitlement 為權威；如需亦可另呼 `Subscription.cancel` 驗證 provider 端取消，但不作為撤權前提）。`state_effective_at` 一律取自 provider 的**真實**權威時間戳：refund `created`、`dispute.created`、以及結案的 charge.dispute.closed **Event `created`**（Dispute 物件無 close 時戳），讓 §2.2 step g 的 `statusRank` tie-break 對「退款/爭議 vs 續訂」仍成立（失權方勝出）。
+
+5. **爭議 created→closed 的確定定序（equal-time 相位優先）**：因結案 Event 的 `created` **恆晚於** `dispute.created`，勝訴恢復走 step g 的 `stateEffectiveAt < rec.state_effective_at` 為偽、`==` 為偽 → 落入寫入路徑覆蓋先前撤權，定序天然確定、不回退。**去歧義規則**：萬一兩時戳因時鐘粒度相等，對**同一 `dispute.id`**（比對 receipt 上記錄的觸發爭議）terminal `charge.dispute.closed` **相位優先於**其自身 provisional `charge.dispute.created` 撤權——step g 等時分支加例外：`terminal_dispute_close AND 同一 dispute.id` 時**不套用** fail-closed `statusRank`，改依 retrieved `dispute.status`（won→`active`、lost→`cancelled`）。此例外**僅限**同一爭議的 created→closed，不鬆動其他獨立訊號（如續訂 vs 退款）的 fail-closed 等時 tie-break。
 
 ---
 
@@ -417,8 +423,11 @@ CREATE TABLE billing_records_retained (
    - **Stripe 退款/爭議撤權（不可只靠 Subscription.retrieve，§2.6）**：
      - **全額退款**：`charge.refunded`（`refunded==true`）到達、但 `Subscription.retrieve` 仍 `active` → 斷言走事件專屬回抓（Charge → invoice → sub）、映射 `cancelled` 撤權降 free，`state_effective_at=refund.created`；**不因訂閱物件仍 active 而漏撤**。
      - **部分退款**：`amount_refunded < amount` → 斷言**維持**當下訂閱狀態、entitlement 不誤降。
-     - **爭議建立**：`charge.dispute.created` → 立即 `cancelled` 撤權（`state_effective_at=dispute.created`）。
-     - **爭議結案**：`charge.dispute.closed` `status=won` → 回抓 `Subscription.retrieve`，仍在期內則恢復 `active`（較新 `state_effective_at=dispute.closed` 經 step g 覆蓋先前撤權）；`status=lost` → 維持 `cancelled`。
+     - **爭議建立**：`charge.dispute.created` → 立即 `cancelled` 撤權；斷言 `state_effective_at` = Dispute 物件的 `created`（真實欄位）。
+     - **爭議結案定序（只用真實欄位）**：fixture 僅含真實 Stripe 欄位——`Dispute`{`id`,`status`,`created`}、以及 `charge.dispute.closed` **Event**{`id`,`created`}（**不得**出現不存在的 `dispute.closed` 時戳）。送 `created`（`t0`）後送 `closed`（Event `created`=`t1`）：
+       - `status=won` → 回抓 `Subscription.retrieve`，`t1>t0` 使 step g 落入寫入路徑恢復 `active`；並斷言**時鐘粒度相等（`t1==t0`）時**，§2.6 規則 5 相位優先（同一 `dispute.id`）仍讓 `won` 恢復 `active`、不被 fail-closed `statusRank` 擋住。
+       - `status=lost` → 維持 `cancelled`。
+       - 斷言 close 生效時間源自**已驗簽 Event `created`**，非 `Dispute` 上不存在的欄位。
      - **Stripe 身分**：由 `subscription.metadata.user_id`（Checkout `client_reference_id` 持久化）/ `customer.metadata.user_id` / 既有 receipt 映射解析 → 斷言**不引用** `Subscription.retrieve` 上不存在的 `client_reference_id`。
    - **schema-level replay regression（provider_version 型別）**：以 Google 文件記載的 RTDN 信封原文灌入 ledger 並斷言可持久化、無型別錯誤——
      ```json
