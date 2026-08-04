@@ -26,11 +26,12 @@ import {
   deleteStoredAppleRefreshToken,
 } from '../_lib/apple-token-store';
 import { backendUnavailable, errorResponse, json, sessionUserId } from '../_lib/auth-endpoint';
+import { toNodeHandler } from '../_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;
 
-export default async function handler(req: Request): Promise<Response> {
+async function webHandler(req: Request): Promise<Response> {
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
   const unavailable = backendUnavailable();
@@ -66,3 +67,6 @@ export default async function handler(req: Request): Promise<Response> {
     return errorResponse(err);
   }
 }
+
+// Bridged to Vercel's classic Node `(req, res)` runtime (see node-adapter.ts).
+export default toNodeHandler(webHandler);

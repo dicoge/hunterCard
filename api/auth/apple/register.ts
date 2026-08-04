@@ -16,6 +16,7 @@ import {
   persistAppleRefreshToken,
   TokenStoreNotImplementedError,
 } from '../../_lib/apple-token-store';
+import { toNodeHandler } from '../../_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;
@@ -33,7 +34,7 @@ function json(body: unknown, status: number): Response {
   });
 }
 
-export default async function handler(req: Request): Promise<Response> {
+async function webHandler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return json({ error: 'method_not_allowed' }, 405);
   }
@@ -75,3 +76,6 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ stored: false, reason: 'internal_error' }, 500);
   }
 }
+
+// Bridged to Vercel's classic Node `(req, res)` runtime (see node-adapter.ts).
+export default toNodeHandler(webHandler);
