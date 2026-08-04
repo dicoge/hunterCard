@@ -154,7 +154,10 @@ user_id = deriveInternalUserId(platform, state)
 #     Apple  = state.appAccountToken
 #     Google = state.externalAccountIdentifiers.obfuscatedExternalAccountId
 #     Stripe = state.client_reference_id（缺則 customer.metadata.user_id）
-if not isUuid(user_id) or not EXISTS(SELECT 1 FROM users WHERE id=user_id):
+# provider 端的帳戶識別在「原始購買」當下固定，不隨我方帳號 merge 更新；若該 UUID 是已被
+# merge 併走的來源帳號，須 follow account_merge_requests 重導到存活 target，讓事件落在正確帳號（§2.5）。
+user_id = followMergeRedirect(user_id)     # completed merge: source_user_snapshot → target；無 merge 則原值
+if not isUuid(user_id) or not EXISTS(SELECT 1 FROM users WHERE id=user_id AND status='active'):
     raise USER_UNRESOLVED                  # 500，fail closed（帳戶歸屬無法確立，絕不臆測入帳）
 (mappedStatus, expiresAt, stateEffectiveAt) = mapProviderState(state)   # §2.1 映射
 
@@ -170,19 +173,23 @@ BEGIN
   if row_count == 0: COMMIT; return        # 重播 / 重送，安全丟棄
 
   # (f) 以 provider 穩定訂閱鍵做「確定性」定位（Google = purchaseToken 經 linkedPurchaseToken
-  #     追溯後的根 token；升/降級/重訂會發新 token 但鏈回同一根，確保命中同一 receipt）
+  #     追溯後的根 token；升/降級/重訂會發新 token 但鏈回同一根，確保命中同一 receipt）。
+  #     命中則「一併鎖定其對應的 subscriptions row」，供 (g) 讀 status 做 tie-break、並驗整合完整性。
   rec = SELECT * FROM subscription_receipts
           WHERE platform=$p AND provider_account=$acct AND environment=$env AND provider_sub_ref=$ref
           FOR UPDATE;
-  # 既有 receipt：變更前必須「身分相等」（rec.user_id == 由 provider 回應導出的 user_id），
-  # 不一致 → 不自動改綁，回 409（§2.4），杜絕跨帳號誤綁。
-  if rec exists AND rec.user_id != user_id: ROLLBACK; raise SUBSCRIPTION_ALREADY_LINKED   # §2.4
+  if rec exists:
+      sub = SELECT * FROM subscriptions WHERE id = rec.subscription_id FOR UPDATE;   # 鎖住目標 row
+      # 完整性不變式：receipt 必與其 subscription 同屬「由 provider 回應導出（含 merge 重導）」的 user。
+      # 任一不等 → 不自動改綁、不臆測，回 409 並記 audit（涵蓋 §2.4 already-linked 與 merge 未搬移的破損）。
+      if rec.user_id != user_id OR sub IS NULL OR sub.user_id != rec.user_id:
+          ROLLBACK; raise SUBSCRIPTION_LINK_INTEGRITY   # 409（§2.4 / §2.5）
 
   # (g) stale re-fetch guard（同一 provider 的較舊回抓不得覆蓋較新狀態）：
-  #     以回抓狀態的 provider 生效時間比較；相等時用「較嚴格者優先」的確定性 tie-break（見下）
+  #     以回抓狀態的 provider 生效時間比較；相等時用「較嚴格者優先」的確定性 tie-break（見下，讀 sub.status）
   if rec exists AND stateEffectiveAt < rec.state_effective_at: COMMIT; return
   if rec exists AND stateEffectiveAt == rec.state_effective_at
-        AND statusRank(mappedStatus) <= statusRank(rec.currentStatus): COMMIT; return
+        AND statusRank(mappedStatus) <= statusRank(sub.status): COMMIT; return
 
   # (h) 首購 → 建立恰好一個 subscriptions row 並回填 receipt.subscription_id；
   #     續訂/取消/退款 → UPDATE receipt.subscription_id 指到的「那一個」row
@@ -224,11 +231,25 @@ COMMIT
 1. **effectiveEntitlement 的 role↔tier 一致性檢查（fail-closed）現為 Product §5.1 權威契約**。不限量放行的唯一合法條件是 **role 解析為 subscriber**（即 `subscriptions` 當下確有 active row），而非「快取 tier 剛好是 pro」；`role != 'subscriber'` 卻 `tier=='pro'`（或 `monthly_limit IS NULL`）一律回 `ENTITLEMENT_UNAVAILABLE`（500）擋掃描、絕不因 `quota=NULL` 放行不限量，反向不一致亦 fail-closed。此不變式**已寫入權威文件 [Product-Entitlement-Architecture.md](./Product-Entitlement-Architecture.md) §5.1 的 `effectiveEntitlement` 契約與其 fail-closed 不變式（第 2 條）**，不再只是本設計文件的「強化要求」——實作 Product gating 時 DB/service 必須落實該檢查（QA 見 §7）。
 2. **邊界 reconcile，不只每日排程**：除了每日掃 `status='active' AND expires_at < now()` 標 `expired` 並 reconcile（Product §5.3），另**在寫入訂閱時排一個 `expires_at` 到點即觸發的 reconcile job**（延遲佇列 / cron-at），使快取在到期當下即翻回 free，把空窗窗口壓到最小。每日排程僅為兜底。
 
-**排程的冪等（不虛構 provider event id）**：到期排程**不是** provider 事件，沒有 `notificationUUID`/`messageId`/`evt_id`，因此**不寫也不查** `subscription_events` 帳本。它的冪等來自「以當下狀態收斂」：排程 `UPDATE subscriptions SET status='expired' WHERE user_id=$u AND status='active' AND expires_at < now()`（在 §2.2 (b) 的 per-user `FOR UPDATE` 鎖內），已是 `expired` 的 row 不再命中篩選，重跑天然收斂、無副作用；隨後照 §2.2 (h) 跨 row 聚合 reconcile `entitlements`。webhook 側的回抓寫入則沿用 §2.2 的 `state_effective_at` + `statusRank` 確定性 guard（§2.2 step f），較舊回抓不覆蓋較新狀態；排程把 `state_effective_at` 設為 `expires_at`（該狀態的權威生效時間）、`state_synced_at=now()`，與 webhook 回抓走同一條比較規則，兩路徑對同一 row 的寫入互不回退。
+**排程的冪等（不虛構 provider event id）**：到期排程**不是** provider 事件，沒有 `notificationUUID`/`messageId`/`evt_id`，因此**不寫也不查** `subscription_events` 帳本。它的冪等來自「以當下狀態收斂」：排程 `UPDATE subscriptions SET status='expired' WHERE user_id=$u AND status='active' AND expires_at < now()`（在 §2.2 (d) 的 per-user `FOR UPDATE` 鎖內），已是 `expired` 的 row 不再命中篩選，重跑天然收斂、無副作用；隨後照 §2.2 (i) 跨 row 聚合 reconcile `entitlements`。webhook 側的回抓寫入則沿用 §2.2 的 `state_effective_at` + `statusRank` 確定性 guard（§2.2 step g，讀對應 `subscriptions.status`），較舊回抓不覆蓋較新狀態；排程把 `state_effective_at` 設為 `expires_at`（該狀態的權威生效時間）、`state_synced_at=now()`，與 webhook 回抓走同一條比較規則，兩路徑對同一 row 的寫入互不回退。
 
 ### 2.4 同一平台訂閱綁不同 user（衝突）
 
 `uq_platform_sub` 命中既有 row 但 `user_id` 不同時（例：同一 Apple ID 在兩個 HoloHunter 帳號還原購買）：**不自動改綁**，回 `409 SUBSCRIPTION_ALREADY_LINKED`，記 audit，導向客服/人工，與 AUTH §4 merge 的 `requires_support` 門檻一致（任一方有 active pro 即需人工）。避免「盜綁他人訂閱」或「一單洗多帳號」。
+
+### 2.5 帳號 merge 與 receipt 歸屬（維持 receipt/subscription 同 user）
+
+AUTH §4 的帳號 merge 會把 source 的 active `subscriptions.user_id` 原子搬到 target（§3.5.1 / §4.2 step C）。`subscription_receipts` 是本設計新增的 1:1 對應表，故 merge **必須一併搬移 receipt 歸屬**，否則會出現「receipt 仍指 source、但其 `subscription_id` 指到的 subscription 已屬 target」的裂解，導致日後 provider 事件在 source reconcile、卻更新 target 的 subscription，使 target entitlement 在退款/取消後殘留 stale，且 source purge 會 cascade 掉 receipt 卻留下已搬走的 subscription。
+
+**規則（已寫入權威 AUTH §3.5.1 merge 表與 §4.2 step C，於同一 merge transaction 內）**：
+
+1. **receipt 隨 subscription 原子搬移**：在 subscriptions 搬移之後執行
+   `UPDATE subscription_receipts r SET user_id = target.id, updated_at = now() FROM subscriptions s WHERE r.subscription_id = s.id AND s.user_id = target.id AND r.user_id = source.id;`
+   使每一列 receipt 與其對應 subscription 恆同屬一個 user。留在 source 的非 active subscription 及其 receipt 同屬 source、一併隨 purge 清除，仍一致。
+2. **pro 併入走 requires_support**：任一方 active pro 時 merge 依 AUTH §3.5.1 轉人工確認，receipt 改綁待人工核可後才落，杜絕自動盜併。
+3. **provider 事件的 merge 重導**：provider 端帳戶識別（Apple `appAccountToken` / Google `obfuscatedExternalAccountId` / Stripe `client_reference_id`）在原始購買當下固定、**不隨 merge 更新**。因此 §2.2 step c 解析出的 UUID 若為已被 merge 併走的 source，`followMergeRedirect` 依 `account_merge_requests`（completed）重導到存活 target，事件才落在正確帳號；重導後 receipt（已於規則 1 搬到 target）與 user 相等，§2.2 step f 的完整性檢查通過。
+4. **完整性 fail-closed**：§2.2 step f 鎖定 receipt 與其 `subscriptions` row 後驗 `rec.user_id == user_id AND sub.user_id == rec.user_id`；若因任何遺漏（如 merge 未搬移）而裂解 → 回 `409 SUBSCRIPTION_LINK_INTEGRITY`、不臆測寫入。
+5. **搬移後 reconcile target**：merge 交易末尾照 AUTH §3.5.1（entitlements 先於 scan_usage）與本文件 §2.2 (i) 對 target 跨 row 聚合 reconcile，確保 target 立即反映併入後的 active 狀態。
 
 ---
 
@@ -319,6 +340,8 @@ COMMIT
 
 user purge 時 `ON DELETE CASCADE` 一併刪除：`scan_usage`、`subscriptions`、`entitlements`、`scan_reservations`（Product §9）、`subscription_events`（無 users FK，但含 provider 事件明細，purge 時一併清）、以及本文件的 **`subscription_receipts`**（含 `raw_verification`，內有平台帳戶關聯，屬個資，必須刪）。刪前 `audit_log` 寫 `delete_purged`（AUTH §3.5.2）。
 
+> **與 merge 的次序**：若 user 是先被 merge 併走的 source，其 active subscription 與對應 `subscription_receipts` 已在 merge 交易內搬到 target（§2.5），故 source purge 只 cascade 掉「留在 source 的非 active」殘料，不會孤立 target 已承接的 subscription/receipt。因 receipt/subscription 恆同 user，兩者要嘛同在 source 被清、要嘛同在 target 存活，不會裂解。
+
 ### 6.2 法遵/財稅必要紀錄 → 假名化保留
 
 退款、稅務、對帳、平台稽核可能要求保留「發生過一筆交易」的最小事實。在 purge 前把必要交易欄位轉存到一張**與 `users` 脫鉤（無 FK）**的保留表，但明確視為**假名化的個資**：
@@ -374,7 +397,11 @@ CREATE TABLE billing_records_retained (
      ```
      `version` 是字串 `"1.0"` → 存入 `subscription_events.provider_version TEXT`（若存 `BIGINT` 會解析失敗）；`Pub/Sub messageId` 進 `event_id`；重送同一 `messageId` → `uq_provider_event` 去重、只生效一次。
    - **Google 首購 user 解析次序（帳戶識別不在 RTDN 內）**：灌入首購 RTDN（`notificationType=4`，payload **僅** `purchaseToken`、**無**任何帳戶識別）→ 斷言 (a) 在呼叫 `subscriptionsv2.get` **之前**無法解析 user（不得從通知臆測、不得建立 receipt/subscription）；(b) 唯有取得回應的 `externalAccountIdentifiers.obfuscatedExternalAccountId` 後才導出 UUID 並進交易；(c) 該值缺漏 / 非合法 UUID / 對不到 `users` → `USER_UNRESOLVED` fail closed，不寫任何 row；(d) 既有 receipt 但回應帳戶 ≠ `rec.user_id` → 409、不改綁。
-   - **stale re-fetch guard**：兩個 worker 並發回抓，較舊回抓（`state_effective_at` 較小、或相等但 `statusRank` 較低）不得覆蓋較新回抓。
+   - **equal-effective-time tie-break 讀 `subscriptions.status`（非不存在的 receipt 欄位）**：續訂與退款同 `state_effective_at` → step f 鎖定 receipt 對應的 `subscriptions` row，step g 以 `statusRank(sub.status)` 決勝，失權方（cancelled）勝出；斷言 tie-break 只引用實際存在的 `subscriptions.status`、可由 schema 執行。
+   - **merge 搬移 receipt 歸屬（§2.5）**：source 有 active 訂閱、merge 併入 target → 斷言 merge 交易內 `subscription_receipts.user_id` 隨其 subscription 一併改為 target；merge 後 `rec.user_id == sub.user_id`（完整性不變式成立）。
+   - **merge → 退款（重導 + reconcile target）**：merge 後對該訂閱送退款事件 → `deriveInternalUserId` 得 provider 固定的 source UUID，`followMergeRedirect` 重導到 target → 在 target reconcile、target 降回 free；不因帳戶識別未更新而在 source 誤算或殘留 target stale pro。
+   - **merge → source purge（不孤立）**：merge 後 purge source → 已搬到 target 的 subscription/receipt 存活、不被 cascade；留在 source 的非 active 殘料成對清除，無孤立 subscription 或裂解 receipt。
+   - **完整性 fail-closed**：人為構造 receipt 與其 `subscriptions` row 不同 user（模擬 merge 漏搬）→ step f 回 `409 SUBSCRIPTION_LINK_INTEGRITY`、不寫入。
    - **per-user 序列化 + 跨平台原子聚合**：同一 user 的 A、B 兩平台事件並發 → `users` row 鎖使其串行；A 平台退款只改 A 的 `subscriptions` row，跨 row 聚合後 B 平台仍 active → tier 維持 pro（不誤降）。
    - **1:1 對應**：`uq_receipt_subscription` 使一個 `subscriptions` row 至多一列 receipt；重複回填被擋。
    - **漏 webhook 到期空窗**：模擬到期後 reconcile 落後，`effectiveEntitlement` 對 role(free)↔tier(pro) 不一致回 `ENTITLEMENT_UNAVAILABLE` 擋掃描、絕不放行不限量（Product §5.1 權威不變式）。
