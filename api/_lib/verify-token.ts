@@ -36,11 +36,26 @@ interface Jwk {
 
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 
+function nonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0;
+}
+
+// A JWK we can actually build a public key from: it must carry a `kid` for
+// lookup plus the key material `crypto.createPublicKey({ format: 'jwk' })`
+// requires. A matching-`kid`-but-materialless entry (e.g. `{ "kid": "k1" }`)
+// must fail the JWKS shape check so it can never be cached and then blow up in
+// key construction as a generic 500 (CR DIC-891).
+function isConstructibleJwk(k: unknown): k is Jwk {
+  if (k === null || typeof k !== 'object') return false;
+  const jwk = k as Record<string, unknown>;
+  if (!nonEmptyString(jwk.kid) || !nonEmptyString(jwk.kty)) return false;
+  if (jwk.kty === 'RSA') return nonEmptyString(jwk.n) && nonEmptyString(jwk.e);
+  if (jwk.kty === 'EC') return nonEmptyString(jwk.crv) && nonEmptyString(jwk.x) && nonEmptyString(jwk.y);
+  return false;
+}
+
 function isJwkArray(value: unknown): value is Jwk[] {
-  return (
-    Array.isArray(value) &&
-    value.every((k) => k !== null && typeof k === 'object' && typeof (k as Jwk).kid === 'string')
-  );
+  return Array.isArray(value) && value.length > 0 && value.every(isConstructibleJwk);
 }
 
 async function fetchJwks(url: string): Promise<Jwk[]> {
@@ -99,7 +114,18 @@ function decodeJwt(idToken: string): JwtParts {
 }
 
 function verifySignature(jwt: JwtParts, jwk: Jwk): void {
-  const keyObject = crypto.createPublicKey({ key: jwk as crypto.JsonWebKeyInput['key'], format: 'jwk' });
+  let keyObject: crypto.KeyObject;
+  try {
+    keyObject = crypto.createPublicKey({ key: jwk as crypto.JsonWebKeyInput['key'], format: 'jwk' });
+  } catch (err) {
+    // Defense-in-depth behind the JWKS shape check: a provider key that passes
+    // shape validation but still cannot be constructed is a dependency fault, not
+    // a client token error — surface it as a structured 503, never a generic 500.
+    throw new IdentityStoreError(
+      'PROVIDER_UNAVAILABLE',
+      `JWKS key construction failed: ${(err as Error)?.name ?? 'unknown'}`,
+    );
+  }
   const data = Buffer.from(jwt.signingInput);
   let ok = false;
   if (jwt.header.alg === 'RS256') {

@@ -321,6 +321,33 @@ async function testMalformedJwksPayloadFailsClosedAndNotCached() {
   assert.equal(calls, 2, 'malformed payload must not be cached; the provider is re-fetched');
 }
 
+// A JWK whose `kid` matches the token header but which carries NO usable key
+// material must fail the JWKS shape check (never cached) rather than being cached
+// and then throwing generically in crypto.createPublicKey(). Two calls → two
+// provider fetches and a structured 503 each time (CR DIC-891).
+async function testMatchingKidWithoutKeyMaterialFailsClosedAndNotCached() {
+  configureBackend();
+  process.env.GOOGLE_WEB_CLIENT_ID = 'client-abc';
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    // Matching kid, but no kty / n / e — not constructible.
+    return { ok: true, status: 200, json: async () => ({ keys: [{ kid: 'k1' }] }) };
+  };
+  try {
+    for (let i = 0; i < 2; i += 1) {
+      const res = await handler(req('POST', 'login', { body: { provider: 'google', idToken: googleJwt() } }));
+      assert.equal(res.status, 503, 'matching-kid-without-key-material must fail closed 503');
+      assert.equal((await readJson(res)).error, 'PROVIDER_UNAVAILABLE');
+    }
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.GOOGLE_WEB_CLIENT_ID;
+  }
+  assert.equal(calls, 2, 'a materialless key must not poison the cache; the provider is re-fetched');
+}
+
 (async () => {
   const tests = [
     testGetMeNoSessionReturns401JsonWithoutKv,
@@ -335,6 +362,7 @@ async function testMalformedJwksPayloadFailsClosedAndNotCached() {
     testFailingProviderJwksFailsClosed,
     testStalledJwksBodyIsBoundedTo503,
     testMalformedJwksPayloadFailsClosedAndNotCached,
+    testMatchingKidWithoutKeyMaterialFailsClosedAndNotCached,
   ];
   for (const test of tests) {
     await test();
