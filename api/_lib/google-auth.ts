@@ -24,12 +24,23 @@ const GOOGLE_ISSUERS = new Set([
 
 const CLOCK_SKEW_SEC = 60;
 
+/**
+ * id_token 新鮮度上限（秒）：拒絕 `iat` 早於此值的 token。這是反重放的一環——
+ * classic Google Sign-In 無法把 server nonce 寫入 token，改以「短新鮮度視窗 + 一次性
+ * 消費」（見 replay-guard.ts）取代 nonce channel-binding，壓縮可被重放的時間窗。
+ */
+export const MAX_ID_TOKEN_AGE_SEC = 5 * 60; // 5 分鐘
+
 export interface GoogleIdentity {
   sub: string;
   email: string | null;
   emailVerified: boolean;
   name: string | null;
   picture: string | null;
+  /** token 簽發時間（epoch 秒）。 */
+  issuedAt: number;
+  /** token 過期時間（epoch 秒）；呼叫端據此決定一次性佔用鍵的 TTL。 */
+  expiresAt: number;
 }
 
 export class GoogleTokenInvalidError extends Error {
@@ -171,10 +182,20 @@ export async function verifyGoogleIdToken(
   if (typeof payload.exp !== 'number' || nowSec > payload.exp + CLOCK_SKEW_SEC) {
     throw new GoogleTokenInvalidError('Token expired');
   }
-  if (typeof payload.iat === 'number' && nowSec + CLOCK_SKEW_SEC < payload.iat) {
+  // iat 為必要：反重放的新鮮度視窗與一次性佔用 TTL 都依賴它。
+  if (typeof payload.iat !== 'number') {
+    throw new GoogleTokenInvalidError('Missing iat');
+  }
+  if (nowSec + CLOCK_SKEW_SEC < payload.iat) {
     throw new GoogleTokenInvalidError('Token issued in the future');
   }
+  // 嚴格新鮮度：拒絕過舊的 token，壓縮可被重放的時間窗（見 replay-guard.ts）。
+  if (nowSec - payload.iat > MAX_ID_TOKEN_AGE_SEC + CLOCK_SKEW_SEC) {
+    throw new GoogleTokenInvalidError('Token too old (stale iat)');
+  }
 
+  // nonce 為選用檢查：classic SDK 不寫入 nonce，故一般不傳 expectedNonce。若未來換用
+  // 支援 nonce 的原生層再啟用，此處即可做完整 channel-binding。
   if (options.expectedNonce != null && payload.nonce !== options.expectedNonce) {
     throw new GoogleTokenInvalidError('Nonce mismatch');
   }
@@ -188,6 +209,8 @@ export async function verifyGoogleIdToken(
     emailVerified,
     name: payload.name ?? null,
     picture: payload.picture ?? null,
+    issuedAt: payload.iat,
+    expiresAt: payload.exp,
   };
 }
 

@@ -111,6 +111,19 @@ await expectInvalid('untrusted issuer → invalid', signToken(validPayload({ iss
 await expectInvalid('expired token → invalid', signToken(validPayload({ exp: nowSec - 120 })));
 await expectInvalid('non-RS256 alg → invalid', signToken(validPayload(), { alg: 'none' }));
 
+// Anti-replay freshness window (replaces token-embedded nonce for the classic SDK):
+// a stale / missing / future iat must be rejected fail-closed.
+await expectInvalid('missing iat → invalid (iat required for freshness + one-time TTL)', signToken(validPayload({ iat: undefined })));
+await expectInvalid('stale iat (> MAX_ID_TOKEN_AGE_SEC) → invalid', signToken(validPayload({ iat: nowSec - 400 })));
+await expectInvalid('iat in the future (beyond skew) → invalid', signToken(validPayload({ iat: nowSec + 300 })));
+
+await check('valid token exposes issuedAt / expiresAt for one-time TTL binding', async () => {
+  const payload = validPayload();
+  const id = await verifyGoogleIdToken(signToken(payload), { allowedAudiences: [AUD], now, fetchJwks });
+  assert.equal(id.issuedAt, payload.iat);
+  assert.equal(id.expiresAt, payload.exp);
+});
+
 await expectInvalid(
   'nonce mismatch → invalid',
   signToken(validPayload({ nonce: 'server-nonce' })),

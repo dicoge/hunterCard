@@ -2,15 +2,14 @@
  * test-auth-login.mjs — DIC-665
  *
  * 驗證 POST /api/auth/login 核心邏輯（api/_lib/login-handler.ts）的 fail-closed 契約，
- * 以注入的假 verify / store / signer / nonce 離線驗證各分支的 HTTP 狀態：
+ * 以注入的假 verify / reserve / store / signer 離線驗證各分支的 HTTP 狀態：
  *   - provider 非 google → 501
  *   - 缺 id_token（含 null identity token）→ 400，絕不放行
- *   - 缺 nonce（強制）→ 400 MISSING_NONCE
  *   - AUTH_SESSION_SECRET 未設定 → 501
  *   - 無 audience → 501
- *   - nonce 已消費 / 過期 / 偽造（consumeNonce=false）→ 401 NONCE_REPLAYED，不驗 token
- *   - id_token 驗證失敗（含 nonce claim 不符）→ 401 INVALID_TOKEN（不建立 user、不簽 session）
- *   - 成功 → 200，回後端權威 user + session，新/舊 user 標記正確
+ *   - id_token 驗證失敗 → 401 INVALID_TOKEN（不佔用、不建立 user、不簽 session）
+ *   - id_token 重放（reserveIdTokenOnce=false）→ 401 TOKEN_REPLAYED（不建立 user、不簽 session）
+ *   - 成功 → 200，回後端權威 user + session，新/舊 user 標記正確，且以 token 剩餘壽命佔用
  *
  * Run: node --experimental-strip-types scripts/test-auth-login.mjs
  */
@@ -32,23 +31,28 @@ function makeUser(overrides = {}) {
   };
 }
 
+const NOW_MS = 1_000_000_000_000; // fixed clock
+const NOW_SEC = Math.floor(NOW_MS / 1000);
+
 function baseDeps(overrides = {}) {
   return {
-    consumeNonce: async () => true,
-    // verifyIdToken 模擬後端驗證：token 的 nonce claim 必須等於已消費的 expectedNonce，
-    // 否則 throw（對應 google-auth.ts 的 nonce mismatch fail-closed）。
-    verifyIdToken: async (idToken, opts) => {
-      if (idToken === 'good-token' && opts.expectedNonce === 'n1') {
-        return { sub: 'sub-abc', email: 'a@example.com', emailVerified: true, name: 'Alice', picture: null };
+    verifyIdToken: async (idToken) => {
+      if (idToken === 'good-token') {
+        return {
+          sub: 'sub-abc', email: 'a@example.com', emailVerified: true,
+          name: 'Alice', picture: null, issuedAt: NOW_SEC, expiresAt: NOW_SEC + 3600,
+        };
       }
       throw new Error('invalid');
     },
+    reserveIdTokenOnce: async () => true,
     resolveOrCreateUser: async () => ({ user: makeUser(), isNewUser: true }),
     signAccessToken: (uid) => `access-${uid}`,
     signRefreshToken: (uid) => `refresh-${uid}`,
     audiences: ['web-client'],
     sessionConfigured: true,
     accessTtlSec: 3600,
+    now: () => NOW_MS,
     ...overrides,
   };
 }
@@ -63,100 +67,86 @@ async function check(name, fn) {
 console.log('login handler contract (DIC-665)');
 
 await check('unsupported provider → 501', async () => {
-  const r = await handleLogin({ provider: 'facebook', id_token: 'x', nonce: 'n1' }, baseDeps());
+  const r = await handleLogin({ provider: 'facebook', id_token: 'x' }, baseDeps());
   assert.equal(r.status, 501);
   assert.equal(r.body.error, 'PROVIDER_NOT_SUPPORTED');
 });
 
 await check('missing id_token → 400 (never falls through to session issuance)', async () => {
-  const r = await handleLogin({ provider: 'google', nonce: 'n1' }, baseDeps());
+  const r = await handleLogin({ provider: 'google' }, baseDeps());
   assert.equal(r.status, 400);
   assert.equal(r.body.error, 'MISSING_ID_TOKEN');
 });
 
 await check('null id_token → 400 (null identity token not trusted)', async () => {
-  const r = await handleLogin({ provider: 'google', id_token: null, nonce: 'n1' }, baseDeps());
+  const r = await handleLogin({ provider: 'google', id_token: null }, baseDeps());
   assert.equal(r.status, 400);
 });
 
-await check('missing nonce → 400 MISSING_NONCE (nonce is mandatory, no replay-protection opt-out)', async () => {
-  let consumeCalled = false;
+await check('session secret unset → 501 (no token signed, token not reserved)', async () => {
+  let reserveCalled = false;
   const r = await handleLogin(
     { provider: 'google', id_token: 'good-token' },
-    baseDeps({ consumeNonce: async () => { consumeCalled = true; return true; } })
-  );
-  assert.equal(r.status, 400);
-  assert.equal(r.body.error, 'MISSING_NONCE');
-  assert.equal(consumeCalled, false);
-});
-
-await check('empty-string nonce → 400 MISSING_NONCE', async () => {
-  const r = await handleLogin({ provider: 'google', id_token: 'good-token', nonce: '' }, baseDeps());
-  assert.equal(r.status, 400);
-  assert.equal(r.body.error, 'MISSING_NONCE');
-});
-
-await check('session secret unset → 501 (no token signed, nonce not consumed)', async () => {
-  let consumeCalled = false;
-  const r = await handleLogin(
-    { provider: 'google', id_token: 'good-token', nonce: 'n1' },
-    baseDeps({ sessionConfigured: false, consumeNonce: async () => { consumeCalled = true; return true; } })
+    baseDeps({ sessionConfigured: false, reserveIdTokenOnce: async () => { reserveCalled = true; return true; } })
   );
   assert.equal(r.status, 501);
   assert.equal(r.body.error, 'SESSION_NOT_CONFIGURED');
-  assert.equal(consumeCalled, false);
+  assert.equal(reserveCalled, false);
 });
 
-await check('no configured audience → 501 (nonce not consumed)', async () => {
-  let consumeCalled = false;
+await check('no configured audience → 501 (token not reserved)', async () => {
+  let reserveCalled = false;
   const r = await handleLogin(
-    { provider: 'google', id_token: 'good-token', nonce: 'n1' },
-    baseDeps({ audiences: [], consumeNonce: async () => { consumeCalled = true; return true; } })
+    { provider: 'google', id_token: 'good-token' },
+    baseDeps({ audiences: [], reserveIdTokenOnce: async () => { reserveCalled = true; return true; } })
   );
   assert.equal(r.status, 501);
   assert.equal(r.body.error, 'AUTH_NOT_CONFIGURED');
-  assert.equal(consumeCalled, false);
+  assert.equal(reserveCalled, false);
 });
 
-await check('replayed / expired / forged nonce → 401 NONCE_REPLAYED (token never verified)', async () => {
-  let verifyCalled = false;
+await check('invalid id_token → 401 (never reserved, no user created, no session)', async () => {
+  let reserveCalled = false, resolveCalled = false;
   const r = await handleLogin(
-    { provider: 'google', id_token: 'good-token', nonce: 'n1' },
+    { provider: 'google', id_token: 'bad-token' },
     baseDeps({
-      consumeNonce: async () => false,
-      verifyIdToken: async () => { verifyCalled = true; throw new Error('should not run'); },
+      reserveIdTokenOnce: async () => { reserveCalled = true; return true; },
+      resolveOrCreateUser: async () => { resolveCalled = true; return { user: makeUser(), isNewUser: true }; },
     })
   );
   assert.equal(r.status, 401);
-  assert.equal(r.body.error, 'NONCE_REPLAYED');
-  assert.equal(verifyCalled, false);
-});
-
-await check('nonce mismatch (token nonce claim ≠ consumed nonce) → 401 INVALID_TOKEN', async () => {
-  let resolveCalled = false;
-  const r = await handleLogin(
-    // consumeNonce succeeds for 'n2', but verifyIdToken only accepts expectedNonce 'n1' → throws.
-    { provider: 'google', id_token: 'good-token', nonce: 'n2' },
-    baseDeps({ resolveOrCreateUser: async () => { resolveCalled = true; return { user: makeUser(), isNewUser: true }; } })
-  );
-  assert.equal(r.status, 401);
   assert.equal(r.body.error, 'INVALID_TOKEN');
+  assert.equal(reserveCalled, false);
   assert.equal(resolveCalled, false);
 });
 
-await check('invalid id_token → 401 (no user created, no session)', async () => {
+await check('replayed id_token → 401 TOKEN_REPLAYED (no user created, no session)', async () => {
   let resolveCalled = false;
   const r = await handleLogin(
-    { provider: 'google', id_token: 'bad-token', nonce: 'n1' },
-    baseDeps({ resolveOrCreateUser: async () => { resolveCalled = true; return { user: makeUser(), isNewUser: true }; } })
+    { provider: 'google', id_token: 'good-token' },
+    baseDeps({
+      reserveIdTokenOnce: async () => false,
+      resolveOrCreateUser: async () => { resolveCalled = true; return { user: makeUser(), isNewUser: true }; },
+    })
   );
   assert.equal(r.status, 401);
-  assert.equal(r.body.error, 'INVALID_TOKEN');
+  assert.equal(r.body.error, 'TOKEN_REPLAYED');
   assert.equal(resolveCalled, false);
+});
+
+await check('reserve uses token remaining lifetime (exp - now) as TTL', async () => {
+  let seenTtl = null, seenToken = null;
+  const r = await handleLogin(
+    { provider: 'google', id_token: 'good-token' },
+    baseDeps({ reserveIdTokenOnce: async (idToken, ttl) => { seenToken = idToken; seenTtl = ttl; return true; } })
+  );
+  assert.equal(r.status, 200);
+  assert.equal(seenToken, 'good-token');
+  assert.equal(seenTtl, 3600); // (NOW_SEC + 3600) - NOW_SEC
 });
 
 await check('valid new user → 200 with backend session + is_new_user true', async () => {
-  const r = await handleLogin({ provider: 'google', id_token: 'good-token', nonce: 'n1' }, baseDeps());
+  const r = await handleLogin({ provider: 'google', id_token: 'good-token' }, baseDeps());
   assert.equal(r.status, 200);
   assert.equal(r.body.user.id, 'internal-1');
   assert.equal(r.body.session.access_token, 'access-internal-1');
@@ -167,7 +157,7 @@ await check('valid new user → 200 with backend session + is_new_user true', as
 
 await check('returning user → 200 with is_new_user false', async () => {
   const r = await handleLogin(
-    { provider: 'google', id_token: 'good-token', nonce: 'n1' },
+    { provider: 'google', id_token: 'good-token' },
     baseDeps({ resolveOrCreateUser: async () => ({ user: makeUser(), isNewUser: false }) })
   );
   assert.equal(r.status, 200);

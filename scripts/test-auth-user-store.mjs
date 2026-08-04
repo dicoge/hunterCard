@@ -12,9 +12,9 @@
  * Run: node --experimental-strip-types scripts/test-auth-user-store.mjs
  */
 import assert from 'node:assert/strict';
-import { resolveOrCreateUser } from '../api/_lib/user-store.ts';
+import { resolveOrCreateUser, deleteUser, getUserById } from '../api/_lib/user-store.ts';
 
-/** 最小記憶體 KVLike：get / set（含 nx）。 */
+/** 最小記憶體 KVLike：get / set（含 nx）/ del。 */
 function makeKv() {
   const map = new Map();
   return {
@@ -26,6 +26,11 @@ function makeKv() {
       if (opts?.nx && map.has(key)) return null;
       map.set(key, structuredClone(value));
       return 'OK';
+    },
+    async del(...keys) {
+      let removed = 0;
+      for (const k of keys) if (map.delete(k)) removed++;
+      return removed;
     },
   };
 }
@@ -112,6 +117,39 @@ await check('concurrent first login (NX reservation) → single user for one (pr
   assert.equal(r1.user.internalId, r2.user.internalId);
   // 只有一筆 isNewUser=true，另一筆走既有身份。
   assert.equal([r1.isNewUser, r2.isNewUser].filter(Boolean).length, 1);
+});
+
+await check('deleteUser removes identity + user; same sub re-login is a NEW user afterwards', async () => {
+  counter = 0;
+  const kv = makeKv();
+  const first = await resolveOrCreateUser(deps(kv), 'google', {
+    subject: 'sub-del', email: 'd@example.com', name: 'D', photoUrl: null,
+  });
+  assert.ok(kv.store.has('auth:identity:google:sub-del'));
+  assert.ok(kv.store.has(`auth:user:${first.user.internalId}`));
+
+  const res = await deleteUser(deps(kv), first.user.internalId);
+  assert.equal(res.existed, true);
+  assert.equal(res.removedIdentities, 1);
+  // 身份鍵與 user record 皆已移除。
+  assert.equal(kv.store.has('auth:identity:google:sub-del'), false);
+  assert.equal(kv.store.has(`auth:user:${first.user.internalId}`), false);
+  assert.equal(await getUserById(deps(kv), first.user.internalId), null);
+
+  // 同一 Google 帳號再登入 → 被視為全新 user（辨識入口已移除）。
+  const again = await resolveOrCreateUser(deps(kv), 'google', {
+    subject: 'sub-del', email: 'd@example.com', name: 'D', photoUrl: null,
+  });
+  assert.equal(again.isNewUser, true);
+  assert.notEqual(again.user.internalId, first.user.internalId);
+});
+
+await check('deleteUser on missing user → idempotent { existed:false }', async () => {
+  counter = 0;
+  const kv = makeKv();
+  const res = await deleteUser(deps(kv), 'nope');
+  assert.equal(res.existed, false);
+  assert.equal(res.removedIdentities, 0);
 });
 
 console.log(`\n${passed} checks passed.`);

@@ -23,6 +23,7 @@ export interface KVLike {
     value: unknown,
     opts?: { nx?: boolean }
   ): Promise<unknown>;
+  del(...keys: string[]): Promise<unknown>;
 }
 
 export interface StoredLinkedProvider {
@@ -62,6 +63,13 @@ export interface ProviderProfile {
 export interface ResolveResult {
   user: StoredUser;
   isNewUser: boolean;
+}
+
+export interface DeleteResult {
+  /** 是否存在對應的 user record（false 表示已無資料，視為 idempotent 成功）。 */
+  existed: boolean;
+  /** 被移除的 provider 身份鍵（auth:identity:{provider}:{subject}）數量。 */
+  removedIdentities: number;
 }
 
 export interface UserStoreDeps {
@@ -194,4 +202,42 @@ async function touchExistingUser(
 
   await kv.set(userKey(identity.userId), user);
   return user;
+}
+
+/** 以 internal id 讀取權威 user record（找不到回 null）。 */
+export async function getUserById(
+  deps: UserStoreDeps,
+  internalId: string
+): Promise<StoredUser | null> {
+  return deps.kv.get<StoredUser>(userKey(internalId));
+}
+
+/**
+ * 帳號刪除：以 internal id 移除該 user 的每一個 provider 身份鍵
+ * （auth:identity:{provider}:{subject}）與 user record（auth:user:{id}）。
+ *
+ * idempotent：user record 不存在時回 { existed:false }，仍嘗試刪 user key（no-op）。
+ * 身份鍵取自 user.linkedProviders，逐一刪除，確保 (provider, sub) 映射不再存在——
+ * 這正是「返回使用者辨識」的入口，刪掉後同一 Google 帳號再登入會被視為新使用者。
+ */
+export async function deleteUser(
+  deps: UserStoreDeps,
+  internalId: string
+): Promise<DeleteResult> {
+  const { kv } = deps;
+  const user = await kv.get<StoredUser>(userKey(internalId));
+  if (!user) {
+    await kv.del(userKey(internalId));
+    return { existed: false, removedIdentities: 0 };
+  }
+
+  const identityKeys = user.linkedProviders.map((p) =>
+    identityKey(p.provider, p.providerId)
+  );
+  if (identityKeys.length > 0) {
+    await kv.del(...identityKeys);
+  }
+  await kv.del(userKey(internalId));
+
+  return { existed: true, removedIdentities: identityKeys.length };
 }

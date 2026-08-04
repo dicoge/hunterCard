@@ -16,10 +16,10 @@
 | --- | --- |
 | Apple 登入原生流程 | `src/services/auth/appleAuth.ts` |
 | Google 原生登入 + 後端換 session（已接線） | `src/services/auth/googleAuth.ts` |
-| 後端權威登入端點（消費 nonce → 驗 id_token → 找/建 user → 簽 session） | `api/auth/login.ts`、`api/_lib/{google-auth,user-store,session,login-handler,nonce-store}.ts` |
-| server-bound 一次性 nonce 挑戰端點（防重放） | `api/auth/nonce.ts`、`api/_lib/nonce-store.ts` |
+| 後端權威登入端點（驗 id_token → 一次性消費 token → 找/建 user → 簽 session） | `api/auth/login.ts`、`api/_lib/{google-auth,user-store,session,login-handler}.ts` |
+| 反重放：已驗證 id_token 一次性消費（token 指紋 SET NX） | `api/_lib/replay-guard.ts` |
 | 統一 auth service 進入點 + 帳號刪除 API 呼叫 | `src/services/auth/index.ts` |
-| provider 登入分派 + 帳號綁定 fail-closed（未實作 client-side 綁定） | `src/services/authService.ts` |
+| provider 登入分派 + 帳號綁定/解綁 fail-closed（未實作 client-side 綁定/解綁） | `src/services/authService.ts` |
 | Session store（zustand + persist） | `src/store/authStore.ts` |
 | 登入畫面 + Apple 原生按鈕 | `src/screens/AuthScreen.tsx` |
 | 登入 gate（iOS 強制登入） | `src/navigation/AppNavigator.tsx` |
@@ -27,7 +27,7 @@
 | Apple 伺服器端輔助（client secret / token 交換 / 撤銷） | `api/_lib/apple-auth.ts` |
 | refresh_token 儲存介面樁（seam，尚未接持久化） | `api/_lib/apple-token-store.ts` |
 | 登入時換取並保存 refresh_token | `api/auth/apple/register.ts` |
-| 帳號刪除 + Apple token 撤銷後端（用保存的 refresh_token, fail-closed） | `api/auth/delete-account.ts` |
+| 已驗證帳號刪除（Bearer access token → 刪 identity/user；Apple 撤銷 fail-closed） | `api/auth/delete-account.ts`、`api/_lib/delete-handler.ts` |
 | App 設定 capability / plugin | `app.json` |
 
 App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android 因 Google 尚未接線，暫以訪客模式進入（旗標 `REQUIRE_AUTH` 於 `AppNavigator.tsx`）。
@@ -60,47 +60,54 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 | `APPLE_KEY_ID` | 上述 .p8 私鑰的 Key ID |
 | `APPLE_PRIVATE_KEY` | .p8 內容（含 BEGIN/END，換行以 `\n` 表示） |
 
-未設定完整變數或撤銷未確認成功時 `api/auth/delete-account` 會回非 2xx（含 501），App 端**fail-closed**：不清除本機 session、顯示「刪除尚未完成」並維持登入狀態。
+Apple 撤銷環境變數未設定完整、或撤銷未確認成功時 `api/auth/delete-account` 會回非 2xx（含 501），App 端**fail-closed**：不清除本機 session、顯示「刪除尚未完成」並維持登入狀態。（Google-only 帳號的刪除不依賴這些 Apple 變數，見下。）
 
-## 帳號刪除 / Apple 撤銷策略（已採用）
+## 帳號刪除策略（已採用）
 
-### 正確流程（login-time register → stored refresh_token → revoke）
+### 已驗證、伺服器權威的刪除（Bearer access token）
 
-1. **登入當下**：client 拿到 fresh `authorizationCode`，立即 POST `/api/auth/apple/register`（`src/services/auth/index.ts` 的 `registerAppleSession`，best-effort）。後端用它向 `/auth/token` 換 `refresh_token`，以 `userId` 為 key 保存於**伺服器端持久化儲存**（見 `api/_lib/apple-token-store.ts`）。
-2. **刪除時**：POST `/api/auth/delete-account`，**只帶 `{ provider, userId }`**（不帶 authorizationCode）。後端取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後刪除該 user 的資料與 refresh_token。
+刪除端點 `POST /api/auth/delete-account` **不再信任 client 傳來的 `userId`**（先前版本信任 `body.userId`，可被冒用刪別人帳號）。改為：
 
-原因：`authorizationCode` 為**單次使用且短效**，刪除當下通常已失效，因此不可保存它當作日後刪除憑證——必須在登入當下換成長效 `refresh_token`。client 端也**絕不持久化** `authorizationCode`（`authStore` partialize 會剝除）。
+1. client 送 `Authorization: Bearer <access_token>`（不帶 body）。後端 `api/_lib/session.ts` **驗簽 + 驗型別（access）**解出 internal `userId`。缺 / 無效 token → 401。`AUTH_SESSION_SECRET` 未設定 → 501 `SESSION_NOT_CONFIGURED`。
+2. 後端讀出權威 user，依 linked provider 決定撤銷需求（見 `api/_lib/delete-handler.ts`）：
+   - **google**：無 provider 端撤銷需求，直接刪資料。
+   - **apple**：先撤銷 Apple 授權（App Store 5.1.1(v)），撤銷成功才刪資料；否則 fail-closed（不刪、回非 2xx）。
+3. 刪除後端權威狀態：該 user 的每個 `auth:identity:{provider}:{subject}` 與 `auth:user:{internalId}`（`api/_lib/user-store.ts` 的 `deleteUser`）。刪除後同一 Google 帳號再登入會被視為**新使用者**（辨識入口 `(google, sub)` 已移除）。
+4. client 端 `src/services/authService.ts` 的 `deleteAccount(user, tokens)` 唯有收到 **2xx** 才清本機 session；任一步失敗都 throw，store `deleteUserAccount` 據此**維持登入狀態**、不清 session。
 
-### fail-closed 行為
+> 推播 token（`push:tokens` 等鍵）目前以**裝置 Expo push token 字串**為鍵，尚無 user-id 綁定，故帳號刪除**不**級聯刪除推播訂閱（這是誠實揭露，不是遺漏）；需在推播訂閱綁定 internal user id 後才能於刪除時一併清除（後續工作）。
 
-- 後端無法確認撤銷成功（未設定 / 未實作 / 撤銷失敗 / 網路錯誤）→ 回非 2xx。
-- client 只有在後端回 `{ ok: true }` 時才清除本機 session（`deleteAccount()` 回 `'deleted'`）；否則回 `'failed'`，維持登入並提示「尚未完成」。避免讓使用者誤以為已刪除但 Apple 授權 / 伺服器資料仍存在。
+### Apple 撤銷（login-time register → stored refresh_token → revoke）
 
-### ⚠️ 目前限制（non-shipping foundation）
+1. **登入當下**：client 拿到 fresh `authorizationCode`，立即 POST `/api/auth/apple/register`（best-effort）。後端用它換 `refresh_token`，以 `userId` 為 key 保存於**伺服器端持久化儲存**（見 `api/_lib/apple-token-store.ts`）。
+2. **刪除時**：`delete-handler` 對 apple-linked 使用者呼叫撤銷，取出保存的 `refresh_token` 呼叫 `/auth/revoke`，成功後才刪 user 資料。
+
+原因：`authorizationCode` 為**單次使用且短效**，刪除當下通常已失效，必須在登入當下換成長效 `refresh_token`。client 端也**絕不持久化** `authorizationCode`（`authStore` partialize 會剝除）。
+
+### ⚠️ 目前限制（Apple 撤銷仍為 non-shipping foundation）
 
 `api/_lib/apple-token-store.ts` 目前為**介面樁（seam）**，尚未接後端持久化儲存（refresh_token 是機密，**不可**存入 repo / git-backed storage，需接 Vercel KV / DB 並加密）。因此：
 
 - `/api/auth/apple/register` 在 token store 未實作時回 501 `token_store_not_implemented`（登入不受影響）。
-- `/api/auth/delete-account` 取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
-- 上架前必須完成：實作 `apple-token-store`（真正持久化 + 加密）、於刪除時級聯刪除 / 匿名化使用者資料。Settings 頁已標示此限制。
+- 對 **apple-linked** 使用者刪除時取不到保存的 refresh_token → 回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不刪資料）。**Google-only 帳號的刪除為 shipping 路徑，不受此限制。**
+- 上架前必須完成（Apple）：實作 `apple-token-store`（真正持久化 + 加密）。Settings 頁已標示此限制。
 
 ## Google 登入設定（DIC-665，Android 第一優先）
 
-### 架構：server nonce → native SDK 取 id_token → 後端權威驗證（含 nonce）→ 後端簽 session
+### 架構：native SDK 取 id_token → 後端權威驗證（含 iat 新鮮度）→ 一次性消費 token → 後端簽 session
 
-登入流程改由**後端權威**決定身份與 session，client 不再自行 mint 內部 user；且以 server-bound 一次性 nonce **強制**防重放：
+登入流程由**後端權威**決定身份與 session，client 不再自行 mint 內部 user。反重放採用**與所選 SDK 實際可執行**的合約（不是 token 內嵌 nonce，原因見下方 ⚠️）：
 
-1. **client 先取 nonce**：`src/services/auth/googleAuth.ts` 先 `POST /api/auth/nonce` 取一枚 server-bound 一次性 nonce（`api/auth/nonce.ts` → `api/_lib/nonce-store.ts`，存 Vercel KV `auth:nonce:{nonce}`，TTL 300s）。取不到 → fail-closed 不登入。
-2. **client（native）**：用 **`@react-native-google-signin/google-signin`**（Android Credential Manager / iOS 原生）取得 Google **`id_token`**，並把上一步的 nonce 傳入 `signIn({ nonce })` 使其寫入 id_token 的 `nonce` claim。以 **Web client ID** 當 `webClientId`（故 id_token 的 `aud` 為 Web client）。取消彈窗以 `GOOGLE_CANCEL_CODE` 靜默處理，不顯示錯誤。
-3. **後端** `POST /api/auth/login`（`api/auth/login.ts` → `api/_lib/login-handler.ts`），送 `{ provider:'google', id_token, nonce }`：
-   - **原子消費 nonce**：`api/_lib/nonce-store.ts` 以 KV GETDEL 一次性消費該 nonce。缺 nonce → 400 `MISSING_NONCE`；不存在 / 已消費 / 過期 / 偽造 → 401 `NONCE_REPLAYED`，**不再往下驗 token**。
-   - `api/_lib/google-auth.ts` 以 Google JWKS（`https://www.googleapis.com/oauth2/v3/certs`）**驗簽 RS256、驗 `iss` / `aud`（須為伺服器 Web client ID）/ `exp`（含 clock skew）/ `nonce`（須與已消費的 nonce 完全相等，token 無 nonce claim 亦拒絕）**，取 `sub` 作身份鍵。**不信任** `userinfo.sub`，不接受 null id_token。
+1. **client（native）**：用 **`@react-native-google-signin/google-signin`**（classic，free tier）的 `GoogleSignin.signIn()`（**不傳 nonce**）取得 Google **`id_token`**。以 **Web client ID** 當 `webClientId`（故 id_token 的 `aud` 為 Web client）。取消彈窗以 `GOOGLE_CANCEL_CODE` 靜默處理，不顯示錯誤。
+2. **後端** `POST /api/auth/login`（`api/auth/login.ts` → `api/_lib/login-handler.ts`），送 `{ provider:'google', id_token }`：
+   - `api/_lib/google-auth.ts` 以 Google JWKS（`https://www.googleapis.com/oauth2/v3/certs`）**驗簽 RS256、驗 `iss` / `aud`（須為伺服器 Web client ID）/ `exp`（含 clock skew）/ `iat`（必要，且不得早於 `MAX_ID_TOKEN_AGE_SEC`=5 分鐘的**新鮮度視窗**）**，取 `sub` 作身份鍵。**不信任** `userinfo.sub`，不接受 null id_token。
+   - **一次性消費 id_token（反重放）**：`api/_lib/replay-guard.ts` 以 token 的 SHA-256 指紋為鍵（`auth:used_idtoken:{fp}`）在 KV `SET NX`，TTL 綁 token 剩餘壽命。首次佔用成功才放行；同一 token 再次交換（重放）→ 401 `TOKEN_REPLAYED`，**不建立 user、不簽 session**。
    - `api/_lib/user-store.ts` 以 `(google, sub)` login-or-create（`auth:identity:google:{sub}` NX 佔用 → `auth:user:{internalId}`），internal id 由後端 `crypto.randomUUID()` 產生。身份鍵為 `sub`，**非 email**：email 變更不改歸戶、不同 sub 相同 email 不合併。
    - `api/_lib/session.ts` 以 `AUTH_SESSION_SECRET` 簽 HS256 access（1h）/ refresh（30d）token 回 client。
-   - **fail-closed**：`AUTH_SESSION_SECRET` 未設定 → 501 `SESSION_NOT_CONFIGURED`；未設定伺服器 Web client audience → 501 `AUTH_NOT_CONFIGURED`；缺/空 id_token → 400 `MISSING_ID_TOKEN`；缺/空 nonce → 400 `MISSING_NONCE`；nonce 重放 → 401 `NONCE_REPLAYED`；驗簽 / nonce 不符 → 401 `INVALID_TOKEN`（皆不建立 user、不簽 session）。
-4. client 收到 `{ user, session:{access_token, refresh_token, expires_in}, is_new_user }` 後，以後端回傳的 `user.internalId` 建立本機 session（`src/store/authStore.ts` / `src/services/authService.ts`）。**不再**產生亂數 internal id、不再信任 localStorage 身份。
+   - **fail-closed**：`AUTH_SESSION_SECRET` 未設定 → 501 `SESSION_NOT_CONFIGURED`；未設定伺服器 Web client audience → 501 `AUTH_NOT_CONFIGURED`；缺/空 id_token → 400 `MISSING_ID_TOKEN`；驗簽 / iss / aud / exp / iat 新鮮度不符 → 401 `INVALID_TOKEN`；同一 token 重放 → 401 `TOKEN_REPLAYED`（皆不建立 user、不簽 session）。
+3. client 收到 `{ user, session:{access_token, refresh_token, expires_in}, is_new_user }` 後，以後端回傳的 `user.internalId` 建立本機 session（`src/store/authStore.ts` / `src/services/authService.ts`）。**不再**產生亂數 internal id、不再信任 localStorage 身份。
 
-> ⚠️ **nonce 原生嵌入相依（實機限制）**：後端的 nonce 比對為**強制**且 fail-closed。要讓 Google 把 nonce 寫進 id_token 的 `nonce` claim，原生登入層必須支援傳入 nonce（Android Credential Manager `setNonce` / One Tap `signIn({ nonce })`）。目前安裝的 **free tier** `@react-native-google-signin/google-signin@16.1.4` 的 `GoogleSignin.signIn` **尚未暴露 nonce 參數**（該能力屬付費授權的 **Universal Sign In**）。client 端已把 nonce 傳入並送後端，一旦改用支援 nonce 的原生路徑即可端到端運作；在此之前後端會正確地 fail-closed 拒絕無 nonce 的 token（實機登入需先補上支援 nonce 的原生層）。
+> ⚠️ **為何不用 token 內嵌 nonce（誠實揭露）**：真正的 challenge–response nonce 需把 server 發的 nonce 寫進 Google id_token 的 `nonce` claim，這要求原生登入層支援傳入 nonce（Android Credential Manager `setNonce` / One Tap `signIn({ nonce })`）。目前安裝的 **classic** `@react-native-google-signin/google-signin@16.1.4` 的 `GoogleSignin.signIn()` **不接受也不透傳 nonce**（該能力屬付費授權的 **Universal Sign In**）——先前用 TypeScript 型別假裝支援是錯的：後端若要求 token 帶 nonce，會讓**每一次真實裝置登入都 fail-closed 被拒**。因此改用可端到端執行的合約：**嚴格 iat 新鮮度 + 已驗證 id_token 的一次性消費**。限制：這防的是**同一 token 被重放使用**，不等同 nonce 的 channel-binding（無法防禦即時 MITM 搶先第一次使用）；新鮮度視窗把可被重放的時間壓到很短。要達到完整 nonce 綁定需換成支援 nonce 的原生層（後續工作）。
 
 ### 需在外部後台設定的憑證與環境變數
 
@@ -118,10 +125,10 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 
 ### 尚未實作（後續設計，非本次 shipping 行為）
 
-- **帳號綁定（account linking）/ 跨 provider 合併 / 跨平台身份同步**：**未實作**。`src/services/authService.ts` 的 `linkProvider` 為 **fail-closed**（丟出「尚未開放」錯誤），沒有任何 UI 進入點。綁定必須 server-authoritative（驗第二 provider token、以 `(provider, sub)` 更新伺服器端身份、處理唯一性 / 競態），在後端端點就緒前不提供 client-side 綁定，避免以未驗證身份寫入本機而被信任。SettingsScreen 僅顯示 `linkedProviders[0]`，不做綁定 / 同步。
+- **帳號綁定（linking）/ 解綁（unlinking）/ 跨 provider 合併 / 跨平台身份同步**：**未實作**。`src/services/authService.ts` 的 `linkProvider` 與 `unlinkProvider` 皆為 **fail-closed**（丟出「尚未開放」錯誤），沒有任何 UI 進入點。兩者都必須 server-authoritative（驗 provider token、以 `(provider, sub)` 更新伺服器端身份、保證至少保留一個登入方式、處理唯一性 / 競態），在後端端點就緒前不提供 client-side 綁定 / 解綁，避免以未驗證身份改寫本機而被信任（先前 `unlinkProvider` 直接改寫 localStorage 會與後端身份儲存不一致）。SettingsScreen 僅顯示 `linkedProviders[0]`，不做綁定 / 解綁 / 同步。
 - **Web Google 登入**（DIC-663）：`isGoogleAuthConfigured()` 於 web 回 `false`；Web 端與 `AppNavigator.tsx` 的 `REQUIRE_AUTH` 全平台強制登入待該卡處理。
 - **Android 上的 Apple 登入**：見 `docs/Android-Apple-Login-Feasibility.md`（可行性評估，本階段不實作）。
-- **nonce 原生嵌入**：後端 nonce 驗證已強制上線，但 free tier Google Sign-In 尚無法把 nonce 寫入 id_token（見上方 ⚠️ 說明）；實機端到端登入需先補上支援 nonce 的原生層（Universal Sign In / Credential Manager `setNonce`）。
+- **完整 nonce channel-binding**：目前反重放為 iat 新鮮度 + id_token 一次性消費（見上方 ⚠️）。要達到 nonce 綁定需換成支援傳入 nonce 的原生層（Universal Sign In / Credential Manager `setNonce`），屬後續工作。
 
 ## Android Google 驗證 checklist
 
@@ -131,8 +138,10 @@ App 行為：iOS 未登入時顯示 `AuthScreen`（強制登入）；Web/Android
 - [ ] **新 user**：Google 帳號選擇器出現 → 授權 → 建立新 internal user → 進入 App。
 - [ ] **returning user**：同一 Google 帳號再次登入 → 對應同一 internal user（比對 `sub`，非 email）。
 - [ ] provider email 變更 / 與其他 provider 不同 email → 不造成錯誤帳號關聯（身份鍵為 `sub`）。
-- [ ] 推播 token 綁定 internal user id，而非 provider email。
+- [ ] 同一 id_token 重放交換第二次 → 後端回 401 `TOKEN_REPLAYED`（不建立 user、不簽 session）。
 - [ ] 取消 Google 彈窗（`GOOGLE_CANCEL_CODE`）不顯示錯誤、停留登入頁。
+- [ ] **刪除帳號（Google，成功路徑）**：確認對話框 → 帶 access token 呼叫 `/api/auth/delete-account` → 後端 2xx → 清本機 session → 回登入頁；再以同一 Google 帳號登入被視為**新 user**（`auth:identity:google:{sub}` 已移除）。
+- [ ] **刪除帳號（fail-closed）**：後端回非 2xx（無效 token / 未設定）→ 顯示失敗、**維持登入**、session 未清除。
 - [ ] Android Apple 登入：見 `docs/Android-Apple-Login-Feasibility.md`（本階段不實作）。
 
 ## iOS / TestFlight 驗證 checklist

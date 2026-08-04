@@ -2,12 +2,17 @@
  * `POST /api/auth/login` 的核心邏輯（DIC-665），與 HTTP 層及具體實作解耦以便單元測試。
  *
  * 權威流程（fail-closed）：
- *   1. **消費 server-bound 一次性 nonce**（原子 GETDEL）——見 nonce-store.ts。缺 nonce
- *      → 400；已消費 / 過期 / 偽造 → 401，且**不**進行後續驗證。
- *   2. 驗 provider id_token（簽章 / iss / aud / exp / **nonce 必相等**）——見 google-auth.ts。
+ *   1. 驗 provider id_token（簽章 / iss / aud / exp / **iat 新鮮度**）——見 google-auth.ts。
+ *   2. **一次性消費該 id_token**（以 token 指紋 SET NX 佔用）——見 replay-guard.ts。同一 token
+ *      再次交換（重放）→ 401，且不建立 user / 不簽 session。
  *   3. 以 (provider, sub) 找 / 建 internal user——見 user-store.ts（絕不以 email 為身份）。
  *   4. 後端簽發 access / refresh session token——見 session.ts。
- * client 不決定身份、不簽 session；任一步失敗都不回 2xx。nonce 為**強制**：不接受省略。
+ * client 不決定身份、不簽 session；任一步失敗都不回 2xx。
+ *
+ * 反重放為何不用 token 內嵌 nonce：classic `@react-native-google-signin`（free tier）的
+ * `signIn()` 不透傳 nonce，要求 token 帶 nonce 會讓每次真實裝置登入都 fail-closed。改以
+ * 「嚴格 iat 新鮮度 + id_token 一次性消費」——與所選 SDK 實際可執行的反重放合約（見
+ * replay-guard.ts 對限制的誠實說明）。
  *
  * 依賴以函式介面注入（LoginDeps），僅 `import type` 引用型別（型別在執行期被抹除），
  * 因此本模組在執行期無 sibling import，單元測試可用假的 verify / store / signer 離線驗證。
@@ -18,20 +23,20 @@ import type { ProviderProfile, ResolveResult } from './user-store';
 export interface LoginRequestBody {
   provider?: string;
   id_token?: string;
-  nonce?: string | null;
 }
 
 export interface LoginDeps {
-  /**
-   * 原子消費 server-bound 一次性 nonce。回 true 表示存在且此刻被消費（放行）；
-   * false 表示缺失 / 已消費 / 過期 / 偽造（handler 對應回 401）。
-   */
-  consumeNonce(nonce: string): Promise<boolean>;
-  /** 驗證 Google id_token；驗證失敗須 throw（handler 對應回 401）。 */
+  /** 驗證 Google id_token（含 iat 新鮮度）；驗證失敗須 throw（handler 對應回 401）。 */
   verifyIdToken(
     idToken: string,
-    opts: { allowedAudiences: string[]; expectedNonce: string }
+    opts: { allowedAudiences: string[] }
   ): Promise<GoogleIdentity>;
+  /**
+   * 一次性消費「已驗證的 id_token」。回 true 表示首次被本次呼叫佔用（放行）；
+   * false 表示同一 token 曾被消費（重放）→ handler 對應回 401。
+   * remainingTtlSec 為 token 剩餘壽命（exp - now），用來設定佔用鍵 TTL。
+   */
+  reserveIdTokenOnce(idToken: string, remainingTtlSec: number): Promise<boolean>;
   /** 以 (provider, sub) 找 / 建 internal user。 */
   resolveOrCreateUser(
     provider: string,
@@ -39,12 +44,14 @@ export interface LoginDeps {
   ): Promise<ResolveResult>;
   signAccessToken(userId: string): string;
   signRefreshToken(userId: string): string;
-  /** 允許的 Google audience（各平台 client id）；空 → 501 AUTH_NOT_CONFIGURED。 */
+  /** 允許的 Google audience（伺服器 Web client id）；空 → 501 AUTH_NOT_CONFIGURED。 */
   audiences: string[];
   /** AUTH_SESSION_SECRET 是否已設定；否 → 501 SESSION_NOT_CONFIGURED。 */
   sessionConfigured: boolean;
   /** access token 有效秒數（回應的 expires_in）。 */
   accessTtlSec: number;
+  /** 現在時間（ms）；預設 Date.now，測試可注入。用來計算 token 剩餘壽命。 */
+  now?: () => number;
 }
 
 export interface LoginResult {
@@ -88,12 +95,6 @@ export async function handleLogin(
     return { status: 400, body: { error: 'MISSING_ID_TOKEN' } };
   }
 
-  const nonce = body.nonce;
-  if (typeof nonce !== 'string' || nonce.length === 0) {
-    // nonce 為強制：不接受省略的 nonce（否則等同放棄重放防護）。
-    return { status: 400, body: { error: 'MISSING_NONCE' } };
-  }
-
   if (!deps.sessionConfigured) {
     // AUTH_SESSION_SECRET 未設定：不簽任何 session token。
     return { status: 501, body: { error: 'SESSION_NOT_CONFIGURED' } };
@@ -103,21 +104,22 @@ export async function handleLogin(
     return { status: 501, body: { error: 'AUTH_NOT_CONFIGURED' } };
   }
 
-  // 原子消費一次性 nonce；不存在 / 已消費 / 過期 → 401，且不再驗 token（防重放）。
-  const nonceOk = await deps.consumeNonce(nonce);
-  if (!nonceOk) {
-    return { status: 401, body: { error: 'NONCE_REPLAYED' } };
-  }
-
   let identity: GoogleIdentity;
   try {
     identity = await deps.verifyIdToken(idToken, {
       allowedAudiences: deps.audiences,
-      // 已消費的 nonce 必須與 token 的 nonce claim 完全相等，否則驗證失敗。
-      expectedNonce: nonce,
     });
   } catch {
     return { status: 401, body: { error: 'INVALID_TOKEN' } };
+  }
+
+  // 一次性消費已驗證的 token：同一 token 重放 → 401，且不建立 user / 不簽 session。
+  // TTL 綁 token 剩餘壽命；token 失效後由 exp 檢查接手。
+  const nowSec = Math.floor((deps.now ?? (() => Date.now()))() / 1000);
+  const remainingTtlSec = identity.expiresAt - nowSec;
+  const firstUse = await deps.reserveIdTokenOnce(idToken, remainingTtlSec);
+  if (!firstUse) {
+    return { status: 401, body: { error: 'TOKEN_REPLAYED' } };
   }
 
   const { user, isNewUser } = await deps.resolveOrCreateUser('google', {

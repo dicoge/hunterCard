@@ -1,24 +1,37 @@
 /**
  * POST /api/auth/delete-account
+ *   Authorization: Bearer <access_token>
+ *   → 200 { deleted:true } 才可讓 client 清本機 session。
+ *
+ * 權威、已驗證的帳號刪除（DIC-665）。身份取自 **後端驗過的 access token**，不信任 client
+ * 傳來的 userId。流程與 fail-closed 規則見 api/_lib/delete-handler.ts：
+ *   - google：刪 auth:identity / auth:user（無 provider 端撤銷需求）。
+ *   - apple：先撤銷 Apple 授權（App Store 5.1.1(v)），撤銷成功才刪資料；否則 fail-closed。
  *
  * App Store 審查規範 5.1.1(v)：提供社群登入的 App 必須讓使用者在 App 內刪除帳號，
  * 並在使用 Sign in with Apple 時撤銷 Apple 授權（revoke token）。
  *
- * 撤銷策略（重要）：
- *   撤銷所需的 refresh_token 必須在「登入當下」用 fresh authorizationCode 換取並保存
- *   （見 api/auth/apple/register.ts）。authorizationCode 單次使用且短效，刪除當下
- *   通常已失效，因此本端點**不**接受 client 傳來的 authorizationCode。
- *
- * fail-closed：無法確認撤銷成功時一律回非 2xx，client 端不得將帳號視為已刪除、
- * 不得清除本機 session（見 src/stores/authStore.ts deleteAccount）。
- *
- * ⚠️ non-shipping foundation：refresh_token 儲存尚未接後端持久化
- * （api/_lib/apple-token-store.ts 為介面樁）。因此目前對已設定 Apple 環境變數的情況
- * 仍會回 501 `apple_deletion_not_implemented`——這是刻意的 fail-closed，不是成功。
+ * ⚠️ Apple refresh_token 儲存仍為 non-shipping foundation（api/_lib/apple-token-store.ts
+ * 為介面樁）。故對 apple-linked 使用者，撤銷取不到憑證時 fail-closed 回 501
+ * `apple_deletion_not_implemented`——刻意不回成功。Google 刪除為 shipping 路徑。
  *
  * 依賴環境變數（於 Vercel 設定，切勿提交進 repo）：
- *   APPLE_TEAM_ID / APPLE_CLIENT_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY(.p8)
+ *   AUTH_SESSION_SECRET（驗 access token）
+ *   KV_REST_API_URL / KV_REST_API_TOKEN（@vercel/kv；user / identity 儲存）
+ *   APPLE_TEAM_ID / APPLE_CLIENT_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY(.p8)（Apple 撤銷）
  */
+import { kv } from '@vercel/kv';
+
+import { getSessionConfig, verifySessionToken } from '../_lib/session';
+import {
+  deleteUser,
+  getUserById,
+  type KVLike,
+} from '../_lib/user-store';
+import {
+  handleDeleteAccount,
+  type AppleRevokeResult,
+} from '../_lib/delete-handler';
 import { getAppleConfig, revokeRefreshToken } from '../_lib/apple-auth';
 import {
   getStoredAppleRefreshToken,
@@ -28,11 +41,6 @@ import {
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;
 
-interface DeleteRequestBody {
-  provider?: string;
-  userId?: string;
-}
-
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -40,48 +48,49 @@ function json(body: unknown, status: number): Response {
   });
 }
 
+/** 撤銷某 user 的 Apple 授權；任一步未成功皆 fail-closed（ok:false）。 */
+async function revokeAppleForUser(userId: string): Promise<AppleRevokeResult> {
+  const cfg = getAppleConfig();
+  if (!cfg) {
+    return { ok: false, status: 501, reason: 'apple_revocation_not_configured' };
+  }
+  const refreshToken = await getStoredAppleRefreshToken(userId);
+  if (!refreshToken) {
+    // foundation：token store 未接持久化 → 無憑證可撤銷，fail-closed。
+    return { ok: false, status: 501, reason: 'apple_deletion_not_implemented' };
+  }
+  try {
+    const revoked = await revokeRefreshToken(cfg, refreshToken);
+    if (!revoked) {
+      return { ok: false, status: 502, reason: 'revoke_failed' };
+    }
+    await deleteStoredAppleRefreshToken(userId);
+    return { ok: true };
+  } catch {
+    return { ok: false, status: 500, reason: 'internal_error' };
+  }
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return json({ error: 'method_not_allowed' }, 405);
   }
 
-  let body: DeleteRequestBody;
-  try {
-    body = (await req.json()) as DeleteRequestBody;
-  } catch {
-    return json({ error: 'invalid_json' }, 400);
-  }
+  const sessionConfig = getSessionConfig();
 
-  if (body.provider !== 'apple') {
-    // Google 撤銷尚未接線；fail-closed，client 不得視為已刪除。
-    return json({ revoked: false, reason: 'provider_not_supported' }, 501);
-  }
-  if (!body.userId) {
-    return json({ revoked: false, reason: 'missing_user_id' }, 400);
-  }
-
-  const cfg = getAppleConfig();
-  if (!cfg) {
-    return json({ revoked: false, reason: 'apple_revocation_not_configured' }, 501);
-  }
-
-  // 取出登入時保存的 refresh_token。foundation 階段 token store 未實作 → null。
-  const refreshToken = await getStoredAppleRefreshToken(body.userId);
-  if (!refreshToken) {
-    // 沒有可撤銷的憑證：fail-closed，明確標示尚未實作，切勿回成功。
-    return json({ revoked: false, reason: 'apple_deletion_not_implemented' }, 501);
-  }
-
-  try {
-    const revoked = await revokeRefreshToken(cfg, refreshToken);
-    if (!revoked) {
-      return json({ revoked: false, reason: 'revoke_failed' }, 502);
+  const result = await handleDeleteAccount(
+    { authorization: req.headers.get('authorization') },
+    {
+      sessionSecret: sessionConfig?.secret ?? null,
+      verifyAccessToken: (token) =>
+        verifySessionToken(token, sessionConfig?.secret ?? ''),
+      getUser: (userId) =>
+        getUserById({ kv: kv as unknown as KVLike }, userId),
+      deleteUser: (userId) =>
+        deleteUser({ kv: kv as unknown as KVLike }, userId),
+      revokeAppleForUser,
     }
+  );
 
-    await deleteStoredAppleRefreshToken(body.userId);
-    // TODO(後續): 於此級聯刪除 / 匿名化與此 userId 關聯的後端使用者資料。
-    return json({ revoked: true }, 200);
-  } catch {
-    return json({ revoked: false, reason: 'internal_error' }, 500);
-  }
+  return json(result.body, result.status);
 }

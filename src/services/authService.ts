@@ -1,9 +1,19 @@
+import { Platform } from 'react-native';
 import {
   AuthProvider,
   HoloUser,
   AuthTokens,
 } from '../types/auth';
 import { signInWithGoogle as signInWithGoogleNative } from './auth/googleAuth';
+
+const PRODUCTION_API_BASE = 'https://holocard-hunter.vercel.app';
+
+function getApiBase(): string {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return PRODUCTION_API_BASE;
+}
 
 // Sign in with Apple is disabled in this path. The client cannot verify an Apple
 // ID token (signature / issuer / audience / expiry / nonce) on its own, so
@@ -15,14 +25,16 @@ export const APPLE_LOGIN_ENABLED = false;
 const APPLE_DISABLED_MESSAGE =
   'Apple 登入尚未開放（需後端驗證 Apple ID token）。請改用 Google 登入。';
 
-// Account linking is not yet server-authoritative. The previous client-side
-// implementation ran a browser OAuth flow, trusted the provider's `userinfo.sub`
-// (unverified), and wrote the merged identity to localStorage only — none of
-// which is a trustworthy identity boundary. It is fail-closed here until a
-// backend endpoint verifies the second provider's token and updates the same
-// server-side (provider, sub) identity store with uniqueness/race safety.
+// Account linking / unlinking is not yet server-authoritative. The previous
+// client-side implementation ran a browser OAuth flow, trusted the provider's
+// `userinfo.sub` (unverified), and wrote the merged identity to localStorage
+// only — none of which is a trustworthy identity boundary. Both are fail-closed
+// here until a backend endpoint verifies the provider's token and mutates the
+// same server-side (provider, sub) identity store with uniqueness/race safety.
 const LINK_NOT_IMPLEMENTED_MESSAGE =
   '帳號綁定尚未開放（需後端權威驗證與 (provider, sub) 身份儲存）。';
+const UNLINK_NOT_IMPLEMENTED_MESSAGE =
+  '解除綁定尚未開放（需後端權威端點驗證 token、處理唯一性與競態後更新 (provider, sub) 身份儲存）。';
 
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
   || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID
@@ -36,21 +48,6 @@ export interface SignInResult {
   isNewUser: boolean;
 }
 
-function loadLocalUsers(): HoloUser[] {
-  try {
-    const raw = localStorage.getItem('holohunter-users');
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalUsers(users: HoloUser[]): void {
-  try {
-    localStorage.setItem('holohunter-users', JSON.stringify(users));
-  } catch {}
-}
-
 export async function signInWithProvider(provider: AuthProvider): Promise<SignInResult> {
   if (provider === 'apple') {
     // Apple 登入未在此路徑實作：iOS 原生 Apple 走 appleAuth（原生流程），
@@ -58,10 +55,10 @@ export async function signInWithProvider(provider: AuthProvider): Promise<SignIn
     throw new Error(APPLE_DISABLED_MESSAGE);
   }
 
-  // Google（Android 第一優先）：原生 Sign-In 取 id_token（帶 server-bound nonce）→ 後端
-  // /api/auth/login 驗簽 / iss / aud / exp / nonce 後，以 (google, sub) 找/建 internal
-  // user 並簽發 app session。internal user id 與 session 一律由後端權威決定，client 不 mint
-  // 身份、不信任本地解碼 payload、也不寫入本機 users。
+  // Google（Android 第一優先）：原生 Sign-In 取 id_token → 後端 /api/auth/login 驗簽 /
+  // iss / aud / exp / iat 新鮮度，並對 id_token 做一次性消費（防重放）後，以 (google, sub)
+  // 找/建 internal user 並簽發 app session。internal user id 與 session 一律由後端權威決定，
+  // client 不 mint 身份、不信任本地解碼 payload、也不寫入本機 users。
   const backend = await signInWithGoogleNative();
 
   const user: HoloUser = {
@@ -105,43 +102,51 @@ export async function linkProvider(
   throw new Error(LINK_NOT_IMPLEMENTED_MESSAGE);
 }
 
+/**
+ * 解除綁定：fail-closed。以本機 localStorage 改寫 linkedProviders 只會製造與後端
+ * (provider, sub) 身份儲存不一致的假象——真正的解綁需後端權威端點驗 token、保證帳號
+ * 至少保留一個登入方式、並處理唯一性與競態。未實作前一律拒絕，不做任何本機變更。
+ */
 export async function unlinkProvider(
-  currentUser: HoloUser,
-  provider: AuthProvider,
+  _currentUser: HoloUser,
+  _provider: AuthProvider,
 ): Promise<HoloUser> {
-  if (currentUser.linkedProviders.length <= 1) {
-    throw new Error('Cannot unlink the only login method. Add another provider first.');
-  }
-
-  const updatedProviders = currentUser.linkedProviders.filter((p) => p.provider !== provider);
-
-  if (updatedProviders.length === currentUser.linkedProviders.length) {
-    throw new Error(`No ${provider} provider linked to this account.`);
-  }
-
-  const updatedUser: HoloUser = {
-    ...currentUser,
-    linkedProviders: updatedProviders,
-    primaryEmail: updatedProviders[0]?.email || undefined,
-  };
-
-  const allUsers = loadLocalUsers();
-  const userIndex = allUsers.findIndex((u) => u.internalId === currentUser.internalId);
-  if (userIndex >= 0) {
-    allUsers[userIndex] = updatedUser;
-    saveLocalUsers(allUsers);
-  }
-
-  return updatedUser;
+  throw new Error(UNLINK_NOT_IMPLEMENTED_MESSAGE);
 }
 
-export async function deleteAccount(currentUser: HoloUser): Promise<void> {
+/**
+ * 帳號刪除：呼叫後端權威端點 `POST /api/auth/delete-account`，以 access token 認證身份。
+ * 後端才是唯一能移除 auth:identity / auth:user 的地方；client 不再只清本機 localStorage
+ * 就宣稱成功（那會留下伺服器端身份殘留、且下次登入仍被辨識為舊帳號）。
+ *
+ * fail-closed：無 access token、或後端回非 2xx，一律 throw——呼叫端據此**維持登入狀態**，
+ * 不清 session（見 store deleteUserAccount）。唯有後端 2xx 才算刪除成功。
+ */
+export async function deleteAccount(
+  _currentUser: HoloUser,
+  tokens: AuthTokens | null,
+): Promise<void> {
+  const accessToken = tokens?.accessToken;
+  if (!accessToken) {
+    throw new Error('無有效登入憑證，無法刪除帳號。');
+  }
+
+  let res: Response;
   try {
-    const allUsers = loadLocalUsers();
-    const filtered = allUsers.filter((u) => u.internalId !== currentUser.internalId);
-    saveLocalUsers(filtered);
+    res = await fetch(`${getApiBase()}/api/auth/delete-account`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
   } catch {
-    throw new Error('Failed to delete account data.');
+    throw new Error('刪除帳號失敗：無法連線後端。');
+  }
+
+  if (!res.ok) {
+    // 後端未確認刪除成功：fail-closed，維持登入狀態。
+    throw new Error(`刪除帳號失敗（${res.status}）。`);
   }
 }
 

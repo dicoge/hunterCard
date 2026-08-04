@@ -13,13 +13,11 @@
  * Web 不走此模組（Web Google 屬 DIC-663）；native 缺 webClientId 時 isGoogleAuthConfigured
  * 回 false，UI 應停用按鈕。
  *
- * ⚠️ nonce 相依限制：後端 /api/auth/login 要求 id_token 帶有與 server-issued nonce 相等的
- * `nonce` claim（強制、fail-closed）。要讓 Google 把 nonce 寫入 id_token，原生登入須支援
- * 傳入 nonce——即 Android Credential Manager 的 `setNonce`（由 `@react-native-google-signin`
- * 的 **Universal Sign In**／One Tap `signIn({ nonce })` 提供）。目前安裝的 free tier
- * (`GoogleSignin.signIn`) 尚未暴露 nonce 參數，故實機要通過登入需採用支援 nonce 的原生路徑
- * （見 docs/AUTH_SETUP.md 的「nonce 強制與原生相依」）。此處已把 nonce 傳入 signIn 並送後端，
- * 一旦採用支援 nonce 的原生層即可端到端運作；在此之前後端會正確地 fail-closed 拒絕無 nonce 的 token。
+ * 反重放：目前安裝的 classic `@react-native-google-signin/google-signin`（free tier）的
+ * `GoogleSignin.signIn()` **不接受也不透傳 nonce**（nonce 屬付費 Universal Sign In）。因此
+ * client 只取回 Google 簽發的原始 id_token 交給後端，反重放由**後端**負責：嚴格 iat 新鮮度
+ * 檢查 + 對已驗證的 id_token 做一次性消費（見 api/_lib/replay-guard.ts）。client 不再向
+ * /api/auth/nonce 取 nonce，也不對 signIn 傳入 nonce——那在此 SDK 下不會生效。
  */
 import { Platform } from 'react-native';
 
@@ -36,8 +34,8 @@ type GoogleSigninNative = {
     hasPlayServices(opts?: {
       showPlayServicesUpdateDialog?: boolean;
     }): Promise<boolean>;
-    // nonce 透傳給底層 Credential Manager / GIDSignIn，使其寫入 id_token 的 nonce claim。
-    signIn(params?: { nonce?: string }): Promise<unknown>;
+    // classic free-tier signIn()：不接受 nonce（Universal Sign In 才有），回傳含 id_token。
+    signIn(): Promise<unknown>;
   };
   statusCodes: {
     SIGN_IN_CANCELLED: string;
@@ -127,34 +125,13 @@ function cancelError(): Error & { code: string } {
   return err;
 }
 
-/**
- * 向後端取一枚 server-bound 一次性 nonce（/api/auth/nonce）。此 nonce 會被帶進 Google
- * 登入寫入 id_token 的 nonce claim，並於 /api/auth/login 被原子消費 + 比對，防止 token
- * 重放。取不到 nonce 即 fail-closed（不進行登入）。
- */
-async function fetchLoginNonce(): Promise<string> {
-  const res = await fetch(`${getApiBase()}/api/auth/nonce`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to obtain login nonce: ${res.status}`);
-  }
-  const data = (await res.json()) as { nonce?: string };
-  if (!data.nonce) {
-    throw new Error('Login nonce missing in response');
-  }
-  return data.nonce;
-}
-
 async function exchangeWithBackend(
-  idToken: string,
-  nonce: string
+  idToken: string
 ): Promise<GoogleBackendSession> {
   const res = await fetch(`${getApiBase()}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider: 'google', id_token: idToken, nonce }),
+    body: JSON.stringify({ provider: 'google', id_token: idToken }),
   });
   if (!res.ok) {
     throw new Error(`Google backend login failed: ${res.status}`);
@@ -204,14 +181,10 @@ export async function signInWithGoogle(): Promise<GoogleBackendSession> {
     offlineAccess: false,
   });
 
-  // 先取 server-bound 一次性 nonce，帶進原生登入使其寫入 id_token 的 nonce claim，
-  // 後端登入時會原子消費並要求相等（防重放）。
-  const nonce = await fetchLoginNonce();
-
   let result: unknown;
   try {
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-    result = await GoogleSignin.signIn({ nonce });
+    result = await GoogleSignin.signIn();
   } catch (err) {
     if ((err as { code?: string })?.code === statusCodes.SIGN_IN_CANCELLED) {
       throw cancelError();
@@ -227,5 +200,5 @@ export async function signInWithGoogle(): Promise<GoogleBackendSession> {
     throw new Error('No id_token returned from Google sign-in');
   }
 
-  return exchangeWithBackend(idToken, nonce);
+  return exchangeWithBackend(idToken);
 }

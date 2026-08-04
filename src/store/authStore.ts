@@ -144,11 +144,11 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       deleteUserAccount: async () => {
-        const { user } = get();
+        const { user, tokens } = get();
         if (!user) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          await deleteAccount(user);
+          await deleteAccount(user, tokens);
           set({
             user: null,
             tokens: null,
