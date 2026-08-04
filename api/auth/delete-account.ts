@@ -13,17 +13,17 @@
  * 不得清除本機 session（見 src/stores/authStore.ts deleteAccount）。
  *
  * ⚠️ non-shipping foundation：refresh_token 儲存尚未接後端持久化
- * （api/lib/apple-token-store.ts 為介面樁）。因此目前對已設定 Apple 環境變數的情況
+ * （api/_lib/apple-token-store.ts 為介面樁）。因此目前對已設定 Apple 環境變數的情況
  * 仍會回 501 `apple_deletion_not_implemented`——這是刻意的 fail-closed，不是成功。
  *
  * 依賴環境變數（於 Vercel 設定，切勿提交進 repo）：
  *   APPLE_TEAM_ID / APPLE_CLIENT_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY(.p8)
  */
-import { getAppleConfig, revokeRefreshToken } from '../lib/apple-auth';
+import { getAppleConfig, revokeRefreshToken } from '../_lib/apple-auth';
 import {
   getStoredAppleRefreshToken,
   deleteStoredAppleRefreshToken,
-} from '../lib/apple-token-store';
+} from '../_lib/apple-token-store';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;

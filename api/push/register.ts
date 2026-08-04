@@ -1,4 +1,4 @@
-import { upsertToken } from '../lib/kv-storage';
+import { upsertToken } from '../_lib/kv-storage';
 
 export const config = { runtime: 'nodejs' };
 

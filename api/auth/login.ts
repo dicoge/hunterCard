@@ -18,14 +18,14 @@ import { kv } from '@vercel/kv';
 import {
   verifyGoogleIdToken,
   getConfiguredGoogleAudiences,
-} from '../lib/google-auth';
-import { resolveOrCreateUser, type KVLike } from '../lib/user-store';
+} from '../_lib/google-auth';
+import { resolveOrCreateUser, type KVLike } from '../_lib/user-store';
 import {
   getSessionConfig,
   signAccessToken,
   signRefreshToken,
-} from '../lib/session';
-import { handleLogin, type LoginRequestBody } from '../lib/login-handler';
+} from '../_lib/session';
+import { handleLogin, type LoginRequestBody } from '../_lib/login-handler';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;

@@ -1,7 +1,7 @@
 /**
  * test-auth-login.mjs — DIC-665
  *
- * 驗證 POST /api/auth/login 核心邏輯（api/lib/login-handler.ts）的 fail-closed 契約，
+ * 驗證 POST /api/auth/login 核心邏輯（api/_lib/login-handler.ts）的 fail-closed 契約，
  * 以注入的假 verify / store / signer 離線驗證各分支的 HTTP 狀態：
  *   - provider 非 google → 501
  *   - 缺 id_token（含 null identity token）→ 400，絕不放行
@@ -13,7 +13,7 @@
  * Run: node --experimental-strip-types scripts/test-auth-login.mjs
  */
 import assert from 'node:assert/strict';
-import { handleLogin } from '../api/lib/login-handler.ts';
+import { handleLogin } from '../api/_lib/login-handler.ts';
 
 function makeUser(overrides = {}) {
   return {

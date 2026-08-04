@@ -1,7 +1,7 @@
 /**
  * test-auth-session.mjs — DIC-665
  *
- * 驗證 app session token（api/lib/session.ts）：後端 HS256 簽發 → 驗簽 roundtrip、
+ * 驗證 app session token（api/_lib/session.ts）：後端 HS256 簽發 → 驗簽 roundtrip、
  * 竄改簽章 / payload 被拒、過期被拒、access/refresh type 正確。這是「session 由後端
  * 權威簽發、client 不自行決定」的保證。
  *
@@ -13,7 +13,7 @@ import {
   signRefreshToken,
   verifySessionToken,
   SessionTokenInvalidError,
-} from '../api/lib/session.ts';
+} from '../api/_lib/session.ts';
 
 const CONFIG = { secret: 'test-secret-value', accessTtlSec: 3600, refreshTtlSec: 86400 };
 const NOW_MS = 1_700_000_000_000;

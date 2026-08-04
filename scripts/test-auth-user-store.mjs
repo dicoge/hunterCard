@@ -1,7 +1,7 @@
 /**
  * test-auth-user-store.mjs — DIC-665
  *
- * 驗證 (provider, sub) 為身份鍵的 login-or-create（api/lib/user-store.ts），以純記憶體
+ * 驗證 (provider, sub) 為身份鍵的 login-or-create（api/_lib/user-store.ts），以純記憶體
  * 假 KV 離線驗證：
  *   - 新使用者建立、internal id 由後端產生（非 client mint）。
  *   - returning user（同一 sub）→ 對應同一 internal id（比對 sub，非 email）。
@@ -12,7 +12,7 @@
  * Run: node --experimental-strip-types scripts/test-auth-user-store.mjs
  */
 import assert from 'node:assert/strict';
-import { resolveOrCreateUser } from '../api/lib/user-store.ts';
+import { resolveOrCreateUser } from '../api/_lib/user-store.ts';
 
 /** 最小記憶體 KVLike：get / set（含 nx）。 */
 function makeKv() {

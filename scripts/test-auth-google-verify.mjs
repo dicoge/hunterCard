@@ -1,7 +1,7 @@
 /**
  * test-auth-google-verify.mjs — DIC-665
  *
- * 驗證後端 Google id_token 驗證器 api/lib/google-auth.ts 的 fail-closed 行為：
+ * 驗證後端 Google id_token 驗證器 api/_lib/google-auth.ts 的 fail-closed 行為：
  * 以本地 RSA 金鑰簽 token、注入假 JWKS 離線驗證，確保簽章 / iss / aud / exp / nonce
  * 任一不符即 throw（呼叫端回 401），未設定 audience 即 throw NotConfigured（→ 501）。
  * 這是「不信任 client 解碼 payload、後端權威驗證」的核心保證。
@@ -14,7 +14,7 @@ import {
   verifyGoogleIdToken,
   GoogleTokenInvalidError,
   GoogleAuthNotConfiguredError,
-} from '../api/lib/google-auth.ts';
+} from '../api/_lib/google-auth.ts';
 
 const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
   modulusLength: 2048,
