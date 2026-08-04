@@ -18,6 +18,14 @@ const APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys';
 const APPLE_ISSUER = 'https://appleid.apple.com';
 
 const JWKS_TTL_MS = 10 * 60 * 1000;
+// A provider JWKS endpoint must never be able to hang the function: bound the
+// fetch and surface a slow/unreachable provider as a structured 503 fail-closed
+// error instead of an unbounded wait (DIC-891). Overridable via env so tests can
+// exercise the timeout deterministically; production keeps the 5s default.
+function jwksFetchTimeoutMs(): number {
+  const raw = Number(process.env.JWKS_FETCH_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 5000;
+}
 
 interface Jwk {
   kid: string;
@@ -28,14 +36,59 @@ interface Jwk {
 
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 
+// Actual constructibility is the ONLY reliable JWK validation: string-field
+// shape checks pass entries such as an invalid EC point
+// `{ kty:'EC', crv:'P-256', x:'a', y:'a' }` that still throw
+// `ERR_CRYPTO_INVALID_JWK` in `crypto.createPublicKey()`. Every returned key is
+// built here so any un-constructible key fails closed with a structured 503
+// BEFORE the set is cached — a bad set must never poison the 10-minute cache and
+// starve a retry after the provider recovers (CR DIC-891).
+function assertConstructibleJwks(value: unknown): asserts value is Jwk[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new IdentityStoreError('PROVIDER_UNAVAILABLE', 'JWKS payload malformed');
+  }
+  for (const k of value) {
+    if (k === null || typeof k !== 'object' || typeof (k as Jwk).kid !== 'string' || !(k as Jwk).kid) {
+      throw new IdentityStoreError('PROVIDER_UNAVAILABLE', 'JWKS entry missing kid');
+    }
+    try {
+      crypto.createPublicKey({ key: k as crypto.JsonWebKeyInput['key'], format: 'jwk' });
+    } catch (err) {
+      throw new IdentityStoreError(
+        'PROVIDER_UNAVAILABLE',
+        `JWKS key construction failed: ${(err as Error)?.name ?? 'unknown'}`,
+      );
+    }
+  }
+}
+
 async function fetchJwks(url: string): Promise<Jwk[]> {
   const cached = jwksCache.get(url);
   if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) return cached.keys;
-  const res = await fetch(url);
-  if (!res.ok) throw new IdentityStoreError('INVALID_TOKEN', `JWKS fetch failed: ${res.status}`);
-  const data = (await res.json()) as { keys: Jwk[] };
-  jwksCache.set(url, { keys: data.keys, fetchedAt: Date.now() });
-  return data.keys;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), jwksFetchTimeoutMs());
+  // Keep the abort timer armed across the WHOLE exchange — status check AND the
+  // response-body read. fetch() resolves after headers arrive, so a body that
+  // then stalls would hang unbounded if the timer were cleared here; instead the
+  // timer stays live until `res.json()` completes and aborts a stalled body too
+  // (CR DIC-891). Any fetch / body-read / construction failure fails closed with
+  // a bounded structured 503, and only a fully-constructible set is cached.
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new IdentityStoreError('PROVIDER_UNAVAILABLE', `JWKS fetch failed: ${res.status}`);
+    const data = (await res.json()) as { keys?: unknown };
+    assertConstructibleJwks(data?.keys);
+    jwksCache.set(url, { keys: data.keys, fetchedAt: Date.now() });
+    return data.keys;
+  } catch (err) {
+    if (err instanceof IdentityStoreError) throw err;
+    // AbortError (timeout, including a stalled body) or a network / JSON-parse
+    // failure: fail closed with a bounded 503 rather than letting the request
+    // hang until the platform kills it.
+    throw new IdentityStoreError('PROVIDER_UNAVAILABLE', `JWKS fetch error: ${(err as Error)?.name ?? 'unknown'}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 interface JwtParts {
@@ -63,7 +116,18 @@ function decodeJwt(idToken: string): JwtParts {
 }
 
 function verifySignature(jwt: JwtParts, jwk: Jwk): void {
-  const keyObject = crypto.createPublicKey({ key: jwk as crypto.JsonWebKeyInput['key'], format: 'jwk' });
+  let keyObject: crypto.KeyObject;
+  try {
+    keyObject = crypto.createPublicKey({ key: jwk as crypto.JsonWebKeyInput['key'], format: 'jwk' });
+  } catch (err) {
+    // Defense-in-depth behind the JWKS shape check: a provider key that passes
+    // shape validation but still cannot be constructed is a dependency fault, not
+    // a client token error — surface it as a structured 503, never a generic 500.
+    throw new IdentityStoreError(
+      'PROVIDER_UNAVAILABLE',
+      `JWKS key construction failed: ${(err as Error)?.name ?? 'unknown'}`,
+    );
+  }
   const data = Buffer.from(jwt.signingInput);
   let ok = false;
   if (jwt.header.alg === 'RS256') {
