@@ -1,4 +1,4 @@
-=== Scrape Log 2026-08-03T12:07:42.558Z ===
+=== Scrape Log 2026-08-04T12:07:46.164Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -79,7 +79,7 @@
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 1, Skipped: 1183, Errors: 0
+  [images] Downloaded: 0, Skipped: 1184, Errors: 0
 
 ── Step 3: Merge official data ──
 
@@ -101,7 +101,7 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 2016 new records; index totals: 2024 cards / 88992 records
+  [price-history] Saved 2016 new records; index totals: 2024 cards / 91008 records
 
 ── Step 6: Merge priceHistory into database ──
   [priceHistory] Merged into 2024 cards
@@ -114,8 +114,8 @@
   ✅ Build complete!
   Total cards: 2105
   Cards with prices: 1184
-  Images downloaded: 1
-  Duration: 354.0s
+  Images downloaded: 0
+  Duration: 350.5s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
@@ -123,6 +123,6 @@ Build result: {
   "totalCards": 2105,
   "yuyuCount": 1184,
   "officialCount": 2105,
-  "imagesDownloaded": 1,
-  "duration": 354
+  "imagesDownloaded": 0,
+  "duration": 350.5
 }
