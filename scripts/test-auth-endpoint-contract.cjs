@@ -14,8 +14,12 @@
  *      slow/failing provider JWKS fails closed with a bounded JSON 503 rather
  *      than an unbounded hang.
  *
- * The handler uses the Web Request/Response signature, so each case builds a real
- * Request and inspects the returned Response — the same contract Vercel invokes.
+ * Production invokes the function under Vercel's classic Node.js runtime, i.e.
+ * `(req, res)` with a RELATIVE `req.url` and a pre-parsed `req.body`, NOT the Web
+ * `Request`/`Response` signature the handler is authored in (that mismatch is what
+ * returned FUNCTION_INVOCATION_FAILED in DIC-893). So each case drives the handler
+ * through the real Node boundary — a mock `(req, res)` with a relative url — and
+ * inspects what gets written to `res`, exactly as Vercel does.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -71,21 +75,86 @@ for (const rel of [
   'api/_lib/session.ts',
   'api/_lib/verify-token.ts',
   'api/_lib/auth-endpoint.ts',
+  'api/_lib/node-adapter.ts',
   'api/auth/[action].ts',
 ]) {
   compileTs(rel);
 }
-const handler = require(path.join(outDir, 'api/auth/[action].js')).default;
+// The default export is now the Vercel Node `(req, res)` handler (the Web handler
+// bridged through node-adapter.ts).
+const nodeHandler = require(path.join(outDir, 'api/auth/[action].js')).default;
 
-const BASE = 'https://holocard-hunter.vercel.app';
+const HOST = 'holocard-hunter.vercel.app';
 
+// A request descriptor, NOT a Web Request: the Node boundary receives a relative
+// url + pre-parsed body, so tests describe intent and `handler()` reconstructs the
+// Node req/res that Vercel would hand the function.
 function req(method, action, { headers, body } = {}) {
-  const init = { method, headers: headers ?? {} };
+  return { method, action, headers: headers ?? {}, body };
+}
+
+// Build the mock Node request Vercel passes: RELATIVE url, lowercased header bag,
+// `req.body` pre-parsed by Vercel's JSON body parser (a raw string stands in for a
+// body the parser could not parse, so invalid_json still round-trips).
+function buildNodeReq({ method, action, headers, body }) {
+  const h = {};
+  for (const [k, v] of Object.entries(headers || {})) h[k.toLowerCase()] = v;
+  if (!h.host) h.host = HOST;
+  let parsedBody;
   if (body !== undefined) {
-    init.body = typeof body === 'string' ? body : JSON.stringify(body);
-    init.headers = { 'Content-Type': 'application/json', ...init.headers };
+    if (typeof body === 'string') {
+      parsedBody = body;
+    } else {
+      parsedBody = body;
+      if (!h['content-type']) h['content-type'] = 'application/json';
+    }
   }
-  return new Request(`${BASE}/api/auth/${action}`, init);
+  return { method, url: `/api/auth/${action}`, headers: h, body: parsedBody, query: { action } };
+}
+
+// A mock VercelResponse capturing what the handler writes.
+function buildNodeRes() {
+  return {
+    _status: 200,
+    _headers: {},
+    _body: '',
+    headersSent: false,
+    status(code) {
+      this._status = code;
+      return this;
+    },
+    setHeader(k, v) {
+      this._headers[k.toLowerCase()] = v;
+      return this;
+    },
+    getHeader(k) {
+      return this._headers[k.toLowerCase()];
+    },
+    json(obj) {
+      this.setHeader('content-type', 'application/json');
+      this._body = JSON.stringify(obj);
+      this.headersSent = true;
+      return this;
+    },
+    send(b) {
+      this._body = b == null ? '' : String(b);
+      this.headersSent = true;
+      return this;
+    },
+    end(b) {
+      if (b != null) this._body = String(b);
+      this.headersSent = true;
+      return this;
+    },
+  };
+}
+
+// Drive the handler through the exact Node `(req, res)` boundary Vercel uses, then
+// re-wrap the written result as a Web Response so the assertions below stay simple.
+async function handler(descriptor) {
+  const res = buildNodeRes();
+  await nodeHandler(buildNodeReq(descriptor), res);
+  return new Response(res._body, { status: res._status, headers: res._headers });
 }
 
 async function readJson(res) {
@@ -378,6 +447,59 @@ async function testUnconstructibleEcKeyFailsClosedAndNotCached() {
   assert.equal(calls, 2, 'an unconstructible key must not poison the cache; the provider is re-fetched');
 }
 
+// The core DIC-893 regression: under Vercel's Node runtime the function is invoked
+// as `(req, res)` with a RELATIVE `req.url`. The pre-fix Web-only handler either
+// hung (DIC-890) or threw on `new URL('/api/auth/me')` and surfaced as an opaque
+// `FUNCTION_INVOCATION_FAILED` text/plain 500. Drive the raw Node handler and prove
+// both contract paths now WRITE structured JSON to `res` and never throw.
+async function testNodeBoundaryRelativeUrlReturnsStructuredJsonNotCrash() {
+  configureBackend();
+  // Unauthenticated GET /api/auth/me → 401 JSON written to res.
+  let res = buildNodeRes();
+  await nodeHandler(
+    { method: 'GET', url: '/api/auth/me', headers: { host: HOST }, query: { action: 'me' } },
+    res,
+  );
+  assert.equal(res._status, 401, 'Node-boundary GET /me must write 401, not crash');
+  assert.equal(res._headers['content-type'], 'application/json');
+  assert.equal(JSON.parse(res._body).error, 'INVALID_TOKEN');
+
+  // Invalid POST /api/auth/login → structured 4xx JSON written to res.
+  res = buildNodeRes();
+  await nodeHandler(
+    {
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { host: HOST, 'content-type': 'application/json' },
+      body: { idToken: 'x' },
+      query: { action: 'login' },
+    },
+    res,
+  );
+  assert.equal(res._status, 400, 'Node-boundary invalid login must write 4xx, not crash');
+  assert.equal(JSON.parse(res._body).error, 'invalid_provider');
+}
+
+// The adapter's last line of defense: if anything unexpected throws at the Node
+// boundary, the client must still get a structured JSON 500 — never an opaque
+// platform FUNCTION_INVOCATION_FAILED. Force a throw by making `req.headers` throw
+// on access and assert a structured 500 is written instead of the throw escaping.
+async function testNodeBoundaryCatchesUnexpectedThrow() {
+  const res = buildNodeRes();
+  const hostileReq = {
+    method: 'GET',
+    url: '/api/auth/me',
+    query: { action: 'me' },
+    get headers() {
+      throw new Error('simulated runtime fault');
+    },
+  };
+  await assert.doesNotReject(nodeHandler(hostileReq, res), 'adapter must swallow the throw');
+  assert.equal(res._status, 500, 'an unexpected boundary throw must become a 500');
+  assert.equal(res._headers['content-type'], 'application/json');
+  assert.equal(JSON.parse(res._body).error, 'internal_error');
+}
+
 (async () => {
   const tests = [
     testGetMeNoSessionReturns401JsonWithoutKv,
@@ -394,6 +516,8 @@ async function testUnconstructibleEcKeyFailsClosedAndNotCached() {
     testMalformedJwksPayloadFailsClosedAndNotCached,
     testMatchingKidWithoutKeyMaterialFailsClosedAndNotCached,
     testUnconstructibleEcKeyFailsClosedAndNotCached,
+    testNodeBoundaryRelativeUrlReturnsStructuredJsonNotCrash,
+    testNodeBoundaryCatchesUnexpectedThrow,
   ];
   for (const test of tests) {
     await test();

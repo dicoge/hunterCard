@@ -27,6 +27,7 @@ import {
   sessionUserId,
   verifyProviderToken,
 } from '../_lib/auth-endpoint';
+import { toNodeHandler } from '../_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;
@@ -94,7 +95,7 @@ async function handleMe(req: Request): Promise<Response> {
   return json({ user }, 200);
 }
 
-export default async function handler(req: Request): Promise<Response> {
+async function webHandler(req: Request): Promise<Response> {
   const action = actionFromUrl(req.url);
 
   // `me` is a read. Accept GET/HEAD (the production auth contract) alongside the
@@ -137,3 +138,8 @@ export default async function handler(req: Request): Promise<Response> {
     return errorResponse(err);
   }
 }
+
+// Vercel runs this file under the classic Node.js runtime; export the Node
+// `(req, res)` contract it actually invokes, with the Web handler above bridged
+// through the adapter. See node-adapter.ts for why the bare Web signature 500s.
+export default toNodeHandler(webHandler);
