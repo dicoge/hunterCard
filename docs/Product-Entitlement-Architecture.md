@@ -50,7 +50,8 @@ resolveRole(req):
   return 'free_user'
 ```
 
-- `entitlements.tier` 是這個推導的**快取/物化結果**，由訂閱事件（purchase / renew / expire / cancel）與 merge（AUTH §3.5.1）維護。gating 讀 `entitlements`（單表、有 PK、快），對帳/後台顯示才回 `subscriptions`。
+- `entitlements.tier` 是這個推導的**快取/物化結果**，由訂閱事件（purchase / renew / expire / cancel）與 merge（AUTH §3.5.1）維護。`entitlements` **只是額度數值與物化 tier 的快取**，不是 gating 的權威。
+- **operational gating 一律走 §5.1 的 `effectiveEntitlement`**（權威）：它同時檢查「當下訂閱狀態推導的 role（`resolveRole` / `hasActiveSubscription` 讀 `subscriptions`）」與 `entitlements` 的 tier/數值，並以 §5.1 的 role↔tier fail-closed 守衛擋下兩者不一致（例如 `entitlements.tier='pro'` 但已無 active subscription 的 stale 快取）。**不得**只讀 `entitlements` 就放行 unlimited / premium。`entitlements`（單表、有 PK、快）僅供 `effectiveEntitlement` 取數值與比對；對帳 / 後台顯示才直接回 `subscriptions`。
 - `subscriptions` 為 tier 的**真相來源**；`entitlements.tier` 落後時以 §5.3 的 reconcile job 修正。
 
 ---
@@ -145,6 +146,17 @@ effectiveEntitlement(user):
       triggerEntitlementBackfill(user.id)        # 非同步修復（§5.3 reconcile），與 gating 解耦
       raise EntitlementError(ENTITLEMENT_UNAVAILABLE)   # → 500，caller 不得放行掃描
 
+  # role↔tier 一致性（fail-closed）：`entitlements` 是物化快取，可能落後於 subscriptions
+  # 的即時狀態（到期空窗 / reconcile 未跑）。若 role 與 tier 不一致，**絕不**用快取的
+  # monthly_limit 放行——否則「到期後 role=free_user 但快取仍 pro(limit=NULL)」會回不限量。
+  # 一律 fail-closed 並觸發非同步 reconcile 修復；不限量放行的唯一合法條件是 role=='subscriber'。
+  if role != 'subscriber' and (ent.tier == 'pro' or ent.monthly_limit IS NULL):
+      triggerEntitlementReconcile(user.id)       # 非同步修復（§5.3），與 gating 解耦
+      raise EntitlementError(ENTITLEMENT_UNAVAILABLE)   # → 500，不得因 quota=NULL 放行不限量
+  if role == 'subscriber' and ent.tier != 'pro':
+      triggerEntitlementReconcile(user.id)       # 反向不一致：避免誤扣付費者額度
+      raise EntitlementError(ENTITLEMENT_UNAVAILABLE)
+
   used = scan_usage[user.id][currentPeriod].scan_count  (缺 → 0)
   return {
     role, tier: ent.tier,
@@ -155,7 +167,9 @@ effectiveEntitlement(user):
     period: currentPeriod
   }
 ```
-> **fail-closed 不變式**：`role != 'guest'`（即已驗證 user）但 `entitlements` 查無 row，**不是** free；是「資料狀態不明」。gating path（§6.1 reserve、§6.2 premium、§6.3 查詢）一律回 `ENTITLEMENT_UNAVAILABLE`（500）而非降級為 free。修復（backfill / reconcile）走**獨立的非同步路徑**觸發，不在 gating 內就地補一個可用額度——否則 migration / reconcile 未完成或資料損毀時會合成出「看似合法」的 free 掃描權限。guest（本就無 row）仍走上面的常數分支，與此不變式不衝突。
+> **fail-closed 不變式（兩條）**：
+> 1. **查無 row**：`role != 'guest'`（即已驗證 user）但 `entitlements` 查無 row，**不是** free；是「資料狀態不明」。gating path（§6.1 reserve、§6.2 premium、§6.3 查詢）一律回 `ENTITLEMENT_UNAVAILABLE`（500）而非降級為 free。修復（backfill / reconcile）走**獨立的非同步路徑**觸發，不在 gating 內就地補一個可用額度——否則 migration / reconcile 未完成或資料損毀時會合成出「看似合法」的 free 掃描權限。guest（本就無 row）仍走上面的常數分支，與此不變式不衝突。
+> 2. **role↔tier 不一致**：`entitlements` 是物化快取，會落後於 `subscriptions` 的即時 active 判定（到期空窗、reconcile 未跑）。**不限量放行（`scan_limit=null`、`premium=true`）的唯一合法條件是 `role=='subscriber'`（即 `subscriptions` 當下確有 active row），而非「快取 tier 剛好是 pro」**。因此當 `role != 'subscriber'` 卻 `tier=='pro'`（或 `monthly_limit IS NULL`）時一律 fail-closed 回 `ENTITLEMENT_UNAVAILABLE`——**絕不**用快取的 `monthly_limit` 放行，否則到期後仍可無限掃描。反向（`role=='subscriber'` 但 `tier!='pro'`）亦 fail-closed，避免誤扣付費者額度。兩者都以非同步 reconcile 修復，與 gating 解耦。此不變式是訂閱到期空窗安全的**權威契約**（訂閱來源 / 生命週期細節見 [Entitlement-Subscription-Gate-Design.md](./Entitlement-Subscription-Gate-Design.md) §2.3）。
 
 ### 5.2 額度數值（產品角色語意；數值鏡像自 AUTH executable schema）
 
@@ -166,7 +180,7 @@ effectiveEntitlement(user):
 | free（free_user） | 無（`NULL`） | **100** | ❌ |
 | pro（subscriber） | 不限（`NULL`） | 不限（`NULL`） | ✅ |
 
-- **不限量與「無日上限」皆以 `NULL` 表示**（而非 sentinel 數字），gate 時 `limit IS NULL → 該維度永遠放行`。
+- **不限量與「無日上限」皆以 `NULL` 表示**（而非 sentinel 數字）。此為**數值語意**：`limit IS NULL` 代表「該維度無數字上限」。但**是否據此不限量放行，必須先通過 §5.1 的 role↔tier fail-closed 閘**——單看 `monthly_limit IS NULL` **不足以**放行不限量；唯有 `role=='subscriber'`（`subscriptions` 當下 active）時 `effectiveEntitlement` 才回 `scan_limit=null`。快取 tier 落後（到期空窗 / reconcile 未跑）時 `NULL` **不得**放行，改回 `ENTITLEMENT_UNAVAILABLE`（§5.1 不變式 2）。此契約亦是 AUTH §3.5 Quota gating 所 defer 的權威。
 - guest 不進 `entitlements`，能力為常數 `scan_limit = 0`（§5.1 提早 return）。
 - **本契約不設 daily cap**（free/pro 的 `daily_limit` 皆 `NULL`，DIC-774 acceptance）；月額度是唯一的產品承諾。
 - AUTH schema 的 `CHECK` 強制 `free=(NULL,100)`、`pro=(NULL,NULL)`；本表任何調整都必須同步該 CHECK。
