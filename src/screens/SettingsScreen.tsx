@@ -3,9 +3,12 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } fr
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
+import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { showAlert } from '../utils/platformAlert';
+import type { AuthProvider } from '../types/auth';
 
-const PROVIDER_LABEL: Record<string, string> = { apple: 'Apple', google: 'Google' };
+const PROVIDER_LABEL: Record<AuthProvider, string> = { apple: 'Apple', google: 'Google' };
+const ALL_PROVIDERS: AuthProvider[] = ['google', 'apple'];
 
 export default function SettingsScreen() {
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
@@ -15,7 +18,17 @@ export default function SettingsScreen() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
   const loginWithApple = useAuthStore((s) => s.loginWithApple);
+  const linkNewProvider = useAuthStore((s) => s.linkNewProvider);
+  const removeLinkedProvider = useAuthStore((s) => s.removeLinkedProvider);
   const isLoading = useAuthStore((s) => s.isLoading);
+
+  const linkedProviders = user?.linkedProviders ?? [];
+  const linkedSet = new Set(linkedProviders.map((p) => p.provider));
+  // Hide the Apple link entry entirely while Apple login is disabled (e.g. Web
+  // without a Services ID), consistent with LoginScreen — no non-functional CTA.
+  const unlinkedProviders = ALL_PROVIDERS.filter(
+    (p) => !linkedSet.has(p) && !(p === 'apple' && !APPLE_LOGIN_ENABLED),
+  );
 
   const handleGoogleLogin = async () => {
     try {
@@ -32,11 +45,50 @@ export default function SettingsScreen() {
   const handleAppleLogin = async () => {
     try {
       await loginWithApple();
-    } catch (err: any) {
-      // authService throws an explanatory message when web Apple login is not
-      // yet available (needs server-side token verification) — surface it.
-      showAlert('Apple 登入', String(err?.message ?? '無法完成 Apple 登入，請稍後再試。'));
+    } catch {
+      // Errors are reflected via the store `error` state; the Apple entry is
+      // disabled while web Apple login is off, so this is a no-op guard.
     }
+  };
+
+  const handleLinkProvider = async (provider: AuthProvider) => {
+    // Defensive guard; the Apple link CTA is rendered disabled when the flag is
+    // off, so this should not normally be reachable.
+    if (provider === 'apple' && !APPLE_LOGIN_ENABLED) return;
+    try {
+      await linkNewProvider(provider);
+      showAlert('綁定完成', `已將 ${PROVIDER_LABEL[provider]} 帳號綁定到你的 HoloHunter 帳號。`);
+    } catch (err: any) {
+      // linkProvider throws a descriptive message on collision / already-linked /
+      // user-cancelled — surface it so the CTA responds instead of silently failing.
+      showAlert('綁定失敗', String(err?.message ?? '無法完成綁定，請稍後再試。'));
+    }
+  };
+
+  const confirmUnlinkProvider = (provider: AuthProvider) => {
+    if (linkedProviders.length <= 1) {
+      showAlert('無法解除綁定', '這是你唯一的登入方式。請先綁定另一個帳號，才能解除這一個。');
+      return;
+    }
+    showAlert(
+      '解除綁定',
+      `解除 ${PROVIDER_LABEL[provider]} 綁定後，將無法再用該帳號登入。確定要解除嗎？`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '解除綁定',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeLinkedProvider(provider);
+              showAlert('已解除綁定', `已解除 ${PROVIDER_LABEL[provider]} 綁定。`);
+            } catch (err: any) {
+              showAlert('解除失敗', String(err?.message ?? '無法解除綁定，請稍後再試。'));
+            }
+          },
+        },
+      ]
+    );
   };
 
   const confirmSignOut = () => {
@@ -57,12 +109,13 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Resolves only on server-confirmed deletion (see authService).
               await deleteAccount();
-              showAlert('帳號已刪除', '你的帳號與 Apple 授權已撤銷。');
+              showAlert('帳號已刪除', '你的帳號已從伺服器刪除，登入授權已撤銷。');
             } catch {
               showAlert(
                 '刪除尚未完成',
-                '目前無法確認伺服器端已撤銷 Apple 授權，帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
+                '伺服器端尚未確認刪除（後端未就緒或撤銷失敗），帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
               );
             }
           },
@@ -141,14 +194,46 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>👤 帳號</Text>
           {isAuthenticated && user ? (
             <>
-              <Text style={styles.item}>
-                以 {PROVIDER_LABEL[user.linkedProviders?.[0]?.provider ?? ''] ?? ''} 登入
-              </Text>
               {!!(user.displayName || user.primaryEmail) && (
                 <Text style={styles.item}>
                   {user.displayName ?? user.primaryEmail}
                 </Text>
               )}
+
+              <Text style={styles.subheading}>登入方式綁定</Text>
+              {linkedProviders.map((p) => (
+                <View key={p.provider} style={styles.providerRow}>
+                  <View style={styles.providerInfo}>
+                    <Text style={styles.providerName}>{PROVIDER_LABEL[p.provider]}</Text>
+                    {!!p.email && <Text style={styles.providerEmail}>{p.email}</Text>}
+                  </View>
+                  {linkedProviders.length > 1 && (
+                    <TouchableOpacity
+                      style={styles.unlinkBtn}
+                      onPress={() => confirmUnlinkProvider(p.provider)}
+                      disabled={isLoading}
+                    >
+                      <Text style={styles.unlinkBtnText}>解除綁定</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+              {unlinkedProviders.map((provider) => (
+                <TouchableOpacity
+                  key={provider}
+                  style={[styles.linkBtn, isLoading && styles.btnDisabled]}
+                  onPress={() => handleLinkProvider(provider)}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.linkBtnText}>綁定 {PROVIDER_LABEL[provider]} 帳號</Text>
+                </TouchableOpacity>
+              ))}
+              <Text style={styles.hint}>
+                綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，
+                無法解除最後一個。
+              </Text>
+
               <TouchableOpacity style={styles.accountBtn} onPress={confirmSignOut}>
                 <Text style={styles.accountBtnText}>登出</Text>
               </TouchableOpacity>
@@ -174,14 +259,16 @@ export default function SettingsScreen() {
               >
                 <Text style={styles.googleBtnText}>使用 Google 帳號登入</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.appleBtn, isLoading && styles.btnDisabled]}
-                onPress={handleAppleLogin}
-                disabled={isLoading}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
-              </TouchableOpacity>
+              {APPLE_LOGIN_ENABLED && (
+                <TouchableOpacity
+                  style={[styles.appleBtn, isLoading && styles.btnDisabled]}
+                  onPress={handleAppleLogin}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>
@@ -308,6 +395,66 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: COLORS.error,
+  },
+  subheading: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 6,
+    paddingLeft: 4,
+  },
+  providerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  providerInfo: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  providerName: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  providerEmail: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  unlinkBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  unlinkBtnText: {
+    color: COLORS.error,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  linkBtn: {
+    backgroundColor: COLORS.surfaceLight,
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  linkBtnText: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: '600',
   },
   footer: {
     color: COLORS.textSecondary,

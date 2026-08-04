@@ -9,6 +9,8 @@
     "web": "expo start --web",
     "build": "expo export --platform web && node scripts/fix-html.js",
     "test:push-backend": "node scripts/test-push-backend.cjs",
+    "test:auth-backend": "node scripts/test-auth-backend.cjs",
+    "test:verify-token": "node scripts/test-verify-token.cjs",
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",
     "test:buy-price": "node scripts/verify-buy-price-alignment.mjs",
     "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",

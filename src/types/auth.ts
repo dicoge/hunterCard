@@ -30,6 +30,9 @@ export interface HoloUser {
   displayName: string;
   primaryEmail?: string;
   photoUrl?: string;
+  // Server-authoritative role. Never inferred client-side: hard-coding it on
+  // login/restore silently downgraded subscribers (CR DIC-866 #4).
+  role: 'free_user' | 'subscriber';
   linkedProviders: LinkedIdentity[];
   createdAt: string;
 }

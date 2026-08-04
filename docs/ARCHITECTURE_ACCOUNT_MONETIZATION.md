@@ -132,7 +132,7 @@ Web 的 Sign in with Apple 走 OAuth redirect，需在 Apple Developer 設定：
   - 使用者資料（收藏 / 設定 / watchlist / push token）
   - `scan_usage` / quota
   - `subscriptions` mapping（保留法遵/財務必要的交易紀錄時需**匿名化**，切斷與 user_id 的關聯）
-  - Apple 授權撤銷：採 **login-time register → 後端保存 refresh_token → 刪除時 revoke**（`api/auth/apple/register.ts` + `api/auth/delete-account.ts`）。不使用短效 authorizationCode 當刪除憑證。撤銷未確認成功時 **fail-closed**，不清本機 session、不誤示為已刪除。refresh_token 持久化（`api/lib/apple-token-store.ts`）目前為 seam，上架前需接加密儲存並級聯刪除使用者資料。
+  - Apple 授權撤銷：採 **login-time register → 後端保存 refresh_token → 刪除時 revoke**（`api/auth/apple/register.ts` + `api/auth/delete-account.ts`）。不使用短效 authorizationCode 當刪除憑證。撤銷未確認成功時 **fail-closed**，不清本機 session、不誤示為已刪除。refresh_token 持久化（`api/_lib/apple-token-store.ts`）目前為 seam，上架前需接加密儲存並級聯刪除使用者資料。
 - App Store Connect / Play Console 的資料安全表單需與實際收集一致。
 
 ---

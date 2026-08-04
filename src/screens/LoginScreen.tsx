@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { COLORS, APP_NAME } from '../constants';
 import { useAuthStore } from '../store/authStore';
-import { showAlert } from '../utils/platformAlert';
+import { APPLE_LOGIN_ENABLED } from '../services/authService';
 
 export default function LoginScreen() {
   const {
@@ -30,12 +30,7 @@ export default function LoginScreen() {
   const handleAppleLogin = useCallback(async () => {
     try {
       await loginWithApple();
-    } catch (err: any) {
-      // authService throws an explanatory message when web Apple login is not
-      // yet available (needs server-side token verification) — surface it so the
-      // CTA responds instead of silently no-opping.
-      showAlert('Apple 登入', String(err?.message ?? '無法完成 Apple 登入，請稍後再試。'));
-    }
+    } catch {}
   }, [loginWithApple]);
 
   return (
@@ -77,6 +72,7 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
+          {APPLE_LOGIN_ENABLED && (
           <TouchableOpacity
             style={[styles.appleButton, isLoading && styles.buttonDisabled]}
             onPress={handleAppleLogin}
@@ -86,6 +82,7 @@ export default function LoginScreen() {
             <Text style={styles.appleIcon}></Text>
             <Text style={styles.buttonText}>使用 Apple 帳號登入</Text>
           </TouchableOpacity>
+          )}
 
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
@@ -209,7 +206,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.5,
+  },
+  appleHint: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+    opacity: 0.8,
   },
   googleIcon: {
     fontSize: 18,

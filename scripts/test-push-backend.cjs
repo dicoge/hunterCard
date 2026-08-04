@@ -104,12 +104,12 @@ function compileTs(relPath) {
   fs.writeFileSync(output, compiled.outputText);
 }
 
-for (const rel of ['api/lib/kv-storage.ts', 'api/push/register.ts', 'api/push/watchlist.ts', 'api/push/notify.ts']) compileTs(rel);
+for (const rel of ['api/_lib/kv-storage.ts', 'api/push/register.ts', 'api/push/watchlist.ts', 'api/push/notify.ts']) compileTs(rel);
 
 const register = require(path.join(outDir, 'api/push/register.js')).default;
 const watchlist = require(path.join(outDir, 'api/push/watchlist.js')).default;
 const notify = require(path.join(outDir, 'api/push/notify.js')).default;
-const storage = require(path.join(outDir, 'api/lib/kv-storage.js'));
+const storage = require(path.join(outDir, 'api/_lib/kv-storage.js'));
 
 function req(method, body, headers = {}) {
   return new Request('https://example.test', {

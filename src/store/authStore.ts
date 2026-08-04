@@ -3,7 +3,6 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import {
   HoloUser,
-  AuthTokens,
   AuthProvider,
   UserRole,
 } from '../types/auth';
@@ -12,12 +11,12 @@ import {
   linkProvider,
   unlinkProvider,
   deleteAccount,
-  providerSignOut,
+  validateSession as validateSessionRemote,
 } from '../services/authService';
 
 interface AuthStore {
   user: HoloUser | null;
-  tokens: AuthTokens | null;
+  session: string | null;
   isAuthenticated: boolean;
   isGuest: boolean;
   isLoading: boolean;
@@ -35,13 +34,14 @@ interface AuthStore {
   clearError: () => void;
   setRole: (role: UserRole) => void;
   setHasHydrated: (v: boolean) => void;
+  validateSession: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
       user: null,
-      tokens: null,
+      session: null,
       isAuthenticated: false,
       isGuest: false,
       isLoading: false,
@@ -52,14 +52,14 @@ export const useAuthStore = create<AuthStore>()(
       loginWithGoogle: async () => {
         set({ isLoading: true, error: null });
         try {
-          const { user, tokens } = await signInWithProvider('google');
+          const { user, session } = await signInWithProvider('google');
           set({
             user,
-            tokens,
+            session,
             isAuthenticated: true,
             isGuest: false,
             isLoading: false,
-            role: 'free_user',
+            role: user.role,
           });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Login failed' });
@@ -70,14 +70,14 @@ export const useAuthStore = create<AuthStore>()(
       loginWithApple: async () => {
         set({ isLoading: true, error: null });
         try {
-          const { user, tokens } = await signInWithProvider('apple');
+          const { user, session } = await signInWithProvider('apple');
           set({
             user,
-            tokens,
+            session,
             isAuthenticated: true,
             isGuest: false,
             isLoading: false,
-            role: 'free_user',
+            role: user.role,
           });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Login failed' });
@@ -88,7 +88,7 @@ export const useAuthStore = create<AuthStore>()(
       continueAsGuest: () => {
         set({
           user: null,
-          tokens: null,
+          session: null,
           isAuthenticated: false,
           isGuest: true,
           role: 'guest',
@@ -98,11 +98,11 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       linkNewProvider: async (provider) => {
-        const { user } = get();
-        if (!user) throw new Error('No authenticated user');
+        const { user, session } = get();
+        if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          const updatedUser = await linkProvider(user, provider);
+          const updatedUser = await linkProvider(session, user, provider);
           set({ user: updatedUser, isLoading: false });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to link provider' });
@@ -111,11 +111,11 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       removeLinkedProvider: async (provider) => {
-        const { user } = get();
-        if (!user) throw new Error('No authenticated user');
+        const { user, session } = get();
+        if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          const updatedUser = await unlinkProvider(user, provider);
+          const updatedUser = await unlinkProvider(session, provider);
           set({ user: updatedUser, isLoading: false });
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to unlink provider' });
@@ -124,11 +124,9 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: async () => {
-        const { tokens } = get();
-        await providerSignOut(tokens);
         set({
           user: null,
-          tokens: null,
+          session: null,
           isAuthenticated: false,
           isGuest: false,
           isLoading: false,
@@ -138,14 +136,16 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       deleteUserAccount: async () => {
-        const { user } = get();
-        if (!user) throw new Error('No authenticated user');
+        const { user, session } = get();
+        if (!user || !session) throw new Error('No authenticated user');
         set({ isLoading: true, error: null });
         try {
-          await deleteAccount(user);
+          // Resolves only on server-confirmed deletion; otherwise throws and we
+          // keep the session (do not claim the account was deleted).
+          await deleteAccount(session);
           set({
             user: null,
-            tokens: null,
+            session: null,
             isAuthenticated: false,
             isGuest: false,
             isLoading: false,
@@ -161,17 +161,66 @@ export const useAuthStore = create<AuthStore>()(
       clearError: () => set({ error: null }),
       setRole: (role) => set({ role }),
       setHasHydrated: (v) => set({ hasHydrated: v }),
+
+      // Never trust a persisted authenticated flag on its own: a rehydrated
+      // session must be re-validated against the server before the app enters
+      // authenticated UI (CR DIC-866: persisted auth fail-open). A definitively
+      // rejected session — 401 (invalid) or 403 (account disabled / pending
+      // deletion, CR DIC-866 #3) — is dropped; a transient/network failure keeps
+      // the session but stays unauthenticated so we fail closed, not open. On
+      // success the server-authoritative role is applied, never hard-coded
+      // (CR DIC-866 #4).
+      validateSession: async () => {
+        const { session } = get();
+        if (!session) {
+          set({ isAuthenticated: false });
+          get().setHasHydrated(true);
+          return;
+        }
+        try {
+          const user = await validateSessionRemote(session);
+          set({ user, isAuthenticated: true, isGuest: false, role: user.role });
+        } catch (err: any) {
+          if (err?.status === 401 || err?.status === 403) {
+            set({ user: null, session: null, isAuthenticated: false, role: 'guest' });
+          } else {
+            set({ isAuthenticated: false });
+          }
+        } finally {
+          get().setHasHydrated(true);
+        }
+      },
     }),
     {
       name: 'holohunter-auth',
+      version: 1,
+      // Any state persisted before session re-validation existed (unversioned /
+      // v0) may carry a blindly-trusted isAuthenticated. Drop its auth so the
+      // user is re-validated rather than admitted on a legacy/tampered flag.
+      migrate: (persisted: any, fromVersion: number) => {
+        if (fromVersion < 1) {
+          return {
+            ...(persisted ?? {}),
+            user: null,
+            session: null,
+            isAuthenticated: false,
+            isGuest: false,
+            role: 'guest',
+          };
+        }
+        return persisted;
+      },
       onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true);
+        // Enter unauthenticated; validateSession flips hasHydrated once the
+        // server has confirmed (or rejected) the persisted session.
+        state?.validateSession();
       },
       storage: createJSONStorage(() => platformStorage),
+      // isAuthenticated is intentionally NOT persisted: it is derived from a
+      // server-validated session on each launch, never restored from disk.
       partialize: (state) => ({
         user: state.user,
-        tokens: state.tokens,
-        isAuthenticated: state.isAuthenticated,
+        session: state.session,
         isGuest: state.isGuest,
         role: state.role,
       }),
