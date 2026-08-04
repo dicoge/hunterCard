@@ -246,6 +246,81 @@ async function testFailingProviderJwksFailsClosed() {
   assert.equal((await readJson(res)).error, 'PROVIDER_UNAVAILABLE');
 }
 
+// A syntactically valid (unverifiable) Google JWT so verification reaches JWKS.
+function googleJwt() {
+  return [
+    Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'k1' })).toString('base64url'),
+    Buffer.from(JSON.stringify({ sub: 'user-1', aud: 'client-abc' })).toString('base64url'),
+    Buffer.from('sig').toString('base64url'),
+  ].join('.');
+}
+
+// The core CR DIC-891 regression: headers (200) arrive immediately but the body
+// stalls forever. The abort timer must still fire and abort the body read, so the
+// request fails closed with a bounded 503 instead of hanging.
+async function testStalledJwksBodyIsBoundedTo503() {
+  configureBackend();
+  process.env.GOOGLE_WEB_CLIENT_ID = 'client-abc';
+  process.env.JWKS_FETCH_TIMEOUT_MS = '50';
+  const originalFetch = global.fetch;
+  global.fetch = (url, opts) => {
+    const signal = opts && opts.signal;
+    // Resolve the fetch immediately (headers present) but never resolve the body.
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () =>
+        new Promise((_resolve, reject) => {
+          if (signal) {
+            signal.addEventListener('abort', () => {
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }
+        }),
+    });
+  };
+  const started = Date.now();
+  let res;
+  try {
+    res = await handler(req('POST', 'login', { body: { provider: 'google', idToken: googleJwt() } }));
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.JWKS_FETCH_TIMEOUT_MS;
+    delete process.env.GOOGLE_WEB_CLIENT_ID;
+  }
+  const elapsed = Date.now() - started;
+  assert.equal(res.status, 503, 'a stalled JWKS body must fail closed with 503');
+  assert.equal((await readJson(res)).error, 'PROVIDER_UNAVAILABLE');
+  assert.ok(elapsed < 2000, `stalled body must be bounded by the abort timer, took ${elapsed}ms`);
+}
+
+// Malformed provider payload must fail closed via the same structured 503 and
+// must NOT be cached — a second attempt fails identically rather than serving a
+// poisoned cache entry.
+async function testMalformedJwksPayloadFailsClosedAndNotCached() {
+  configureBackend();
+  process.env.GOOGLE_WEB_CLIENT_ID = 'client-abc';
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return { ok: true, status: 200, json: async () => ({ keys: 'not-an-array' }) };
+  };
+  try {
+    for (let i = 0; i < 2; i += 1) {
+      const res = await handler(req('POST', 'login', { body: { provider: 'google', idToken: googleJwt() } }));
+      assert.equal(res.status, 503, 'malformed JWKS payload fails closed 503');
+      assert.equal((await readJson(res)).error, 'PROVIDER_UNAVAILABLE');
+    }
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.GOOGLE_WEB_CLIENT_ID;
+  }
+  assert.equal(calls, 2, 'malformed payload must not be cached; the provider is re-fetched');
+}
+
 (async () => {
   const tests = [
     testGetMeNoSessionReturns401JsonWithoutKv,
@@ -258,6 +333,8 @@ async function testFailingProviderJwksFailsClosed() {
     testMutatingActionRejectsNonPost,
     testSlowProviderJwksFailsClosedBounded,
     testFailingProviderJwksFailsClosed,
+    testStalledJwksBodyIsBoundedTo503,
+    testMalformedJwksPayloadFailsClosedAndNotCached,
   ];
   for (const test of tests) {
     await test();

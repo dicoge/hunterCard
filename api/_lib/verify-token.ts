@@ -36,25 +36,42 @@ interface Jwk {
 
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 
+function isJwkArray(value: unknown): value is Jwk[] {
+  return (
+    Array.isArray(value) &&
+    value.every((k) => k !== null && typeof k === 'object' && typeof (k as Jwk).kid === 'string')
+  );
+}
+
 async function fetchJwks(url: string): Promise<Jwk[]> {
   const cached = jwksCache.get(url);
   if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) return cached.keys;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), jwksFetchTimeoutMs());
-  let res: Response;
+  // Keep the abort timer armed across the WHOLE exchange — status check AND the
+  // response-body read. fetch() resolves after headers arrive, so a body that
+  // then stalls would hang unbounded if the timer were cleared here; instead the
+  // timer stays live until `res.json()` completes and aborts a stalled body too
+  // (CR DIC-891). Any fetch / body-read / shape failure fails closed with a
+  // bounded structured 503, and a malformed payload is never cached.
   try {
-    res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new IdentityStoreError('PROVIDER_UNAVAILABLE', `JWKS fetch failed: ${res.status}`);
+    const data = (await res.json()) as { keys?: unknown };
+    if (!isJwkArray(data?.keys)) {
+      throw new IdentityStoreError('PROVIDER_UNAVAILABLE', 'JWKS payload malformed');
+    }
+    jwksCache.set(url, { keys: data.keys, fetchedAt: Date.now() });
+    return data.keys;
   } catch (err) {
-    // AbortError (timeout) or a network failure: fail closed with a bounded 503
-    // rather than letting the request hang until the platform kills it.
+    if (err instanceof IdentityStoreError) throw err;
+    // AbortError (timeout, including a stalled body) or a network / JSON-parse
+    // failure: fail closed with a bounded 503 rather than letting the request
+    // hang until the platform kills it.
     throw new IdentityStoreError('PROVIDER_UNAVAILABLE', `JWKS fetch error: ${(err as Error)?.name ?? 'unknown'}`);
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) throw new IdentityStoreError('PROVIDER_UNAVAILABLE', `JWKS fetch failed: ${res.status}`);
-  const data = (await res.json()) as { keys: Jwk[] };
-  jwksCache.set(url, { keys: data.keys, fetchedAt: Date.now() });
-  return data.keys;
 }
 
 interface JwtParts {
