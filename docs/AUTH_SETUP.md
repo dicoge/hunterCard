@@ -114,11 +114,11 @@ Apple 撤銷環境變數未設定完整、或撤銷未確認成功時 `api/auth/
 1. **Google Cloud Console**（同一 GCP 專案，client ID 皆為公開值、可入 repo）：
    - **Web client** — Web 登入 + 作為 native `webClientId` 與後端驗 `id_token` 的 audience。
    - **iOS client** — Bundle ID `com.dicoge.holohunter`。
-   - **Android client** — Package `com.dicoge.holohunter` + **每一把會簽 app 的 keystore SHA-1**（native SDK 依 SHA-1 綁定 client）：
+   - **Android client** — Package `com.dicoge.holohunter` + **每一把會簽 app 的 keystore SHA-1**。這是**純後台註冊**：Google 依「package name + 簽章 SHA-1」自動選對 Android OAuth client，**app 端不需要、也沒有**在程式或環境變數提供 Android client ID（`GoogleSignin.configure()` 只吃 `webClientId`）。需登錄的 SHA-1：
      - EAS build keystore：`eas credentials`（Android → 對應 profile）。
      - 本機 debug：`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`。
      - **Google Play App Signing 憑證**（Play Console → App integrity）—最常漏，漏了會「開發版能登入、上架版失敗」。建議 SHA-1 + SHA-256 都登。
-2. 環境變數（見 `.env.example`）：`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`（native `webClientId` + **後端唯一** audience，必要）、`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`、`EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`（後兩者供原生 SDK 平台設定用）。**後端 audience 只接受伺服器 Web client ID**——native SDK 以 `webClientId` 設定，其 id_token 的 `aud` 一律是 Web client；刻意**不**接受 iOS / Android client ID 當替代 audience（那些 client 沒有 client secret，接受它們會擴大可被接受的 token 來源）。未設定 Web client ID 時後端 fail-closed（501 `AUTH_NOT_CONFIGURED`）。備妥 Web client ID 後 `isGoogleAuthConfigured()` 於 native 回 `true`。
+2. 環境變數（見 `.env.example`）：唯一**必要**的是 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`（native `webClientId` + **後端唯一** audience）；`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`（可選，供 iOS 原生 `iosClientId`）。**不存在 Android client ID 環境變數**——Android 的 client 由 package + SHA-1 註冊決定，非執行期輸入。**後端 audience 只接受伺服器 Web client ID**——native SDK 以 `webClientId` 設定，其 id_token 的 `aud` 一律是 Web client；刻意**不**接受 iOS / Android client ID 當替代 audience（那些 client 沒有 client secret，接受它們會擴大可被接受的 token 來源）。未設定 Web client ID 時後端 fail-closed（501 `AUTH_NOT_CONFIGURED`）。備妥 Web client ID 後 `isGoogleAuthConfigured()` 於 native 回 `true`（gating 條件為 **Web client ID**，與 Android client ID 無關）。
 3. **後端密鑰**：`AUTH_SESSION_SECRET`（Vercel，勿提交）簽發 app session；未設定則 `/api/auth/login` fail-closed（見上）。使用者 / 身份儲存沿用既有 Vercel KV（`KV_REST_API_*`）。
 4. **native SDK 設定**：`app.json` plugins 已加入 `@react-native-google-signin/google-signin`（config plugin）。因是原生模組，**需 dev client / EAS build**（已裝 `expo-dev-client`），**無法**在 Expo Go 測試；`app.json` 的 Android `package` / iOS `bundleIdentifier` 已就緒（`com.dicoge.holohunter`）。
 5. **不需**自訂 redirect scheme：native SDK 走系統帳號選擇器直接回 `id_token`，沒有 browser redirect / reversed-client-id URI 需登記。
@@ -134,7 +134,7 @@ Apple 撤銷環境變數未設定完整、或撤銷未確認成功時 `api/auth/
 
 - [ ] EAS 以 dev/preview profile 重新建置（`@react-native-google-signin` 為原生模組，無法在 Expo Go 測試）。
 - [ ] Android OAuth client 已登錄「當前 build 對應 keystore」的 SHA-1（dev / EAS / Play App Signing）。
-- [ ] `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`（或退回 Web client）已設定；`isGoogleAuthConfigured()` 回 `true`、按鈕可用。
+- [ ] `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` 已設定（Android **不需** client-ID 環境變數，client 由 package + SHA-1 註冊決定）；`isGoogleAuthConfigured()` 回 `true`、按鈕可用。
 - [ ] **新 user**：Google 帳號選擇器出現 → 授權 → 建立新 internal user → 進入 App。
 - [ ] **returning user**：同一 Google 帳號再次登入 → 對應同一 internal user（比對 `sub`，非 email）。
 - [ ] provider email 變更 / 與其他 provider 不同 email → 不造成錯誤帳號關聯（身份鍵為 `sub`）。

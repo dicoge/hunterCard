@@ -203,4 +203,21 @@ await check('same user, two DISTINCT fresh id_tokens → both 200 (logout→re-l
   assert.equal(replayFirst.body.error, 'TOKEN_REPLAYED');
 });
 
+// Blocker 1（CR round 5）：resolveOrCreateUser 因併發刪除 / 身份不一致而 throw 時，登入
+// **不簽發任何 session**，回可重試的 503 fail-closed（client 重試會拿新 token 建乾淨新帳號）。
+await check('resolveOrCreateUser throws (concurrent delete) → 503 LOGIN_CONFLICT_RETRY, no session', async () => {
+  let signed = false;
+  const r = await handleLogin(
+    { provider: 'google', id_token: 'good-token' },
+    baseDeps({
+      resolveOrCreateUser: async () => { throw new Error('account_concurrently_deleted:u1'); },
+      signAccessToken: (uid) => { signed = true; return `access-${uid}`; },
+    })
+  );
+  assert.equal(r.status, 503);
+  assert.equal(r.body.error, 'LOGIN_CONFLICT_RETRY');
+  assert.equal(r.body.session, undefined);
+  assert.equal(signed, false);
+});
+
 console.log(`\n${passed} checks passed.`);

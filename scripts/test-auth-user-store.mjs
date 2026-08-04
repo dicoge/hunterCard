@@ -12,7 +12,12 @@
  * Run: node --experimental-strip-types scripts/test-auth-user-store.mjs
  */
 import assert from 'node:assert/strict';
-import { resolveOrCreateUser, deleteUser, getUserById } from '../api/_lib/user-store.ts';
+import {
+  resolveOrCreateUser,
+  deleteUser,
+  getUserById,
+  AccountConcurrentlyDeletedError,
+} from '../api/_lib/user-store.ts';
 
 /** 最小記憶體 KVLike：get / set（含 nx）/ del。 */
 function makeKv() {
@@ -216,6 +221,79 @@ await check('deleteUser: atomic del failure leaves ALL keys intact; retry recove
   assert.equal(res.existed, true);
   assert.equal(res.removedIdentities, 1);
   assert.equal(kv.store.size, 0);
+});
+
+// Blocker 1（CR round 5）login/delete TOCTOU：returning-user 登入讀到既有 identity+user 後，
+// 一個併發的原子 deleteUser 移除兩者，若登入仍無條件寫回舊 user 會 resurrect 孤兒並在下次
+// 登入分裂帳號。以確定性交錯證明：兩種刪除落點都不留孤兒、不分裂，且登入 fail-closed。
+await check('TOCTOU: delete lands BEFORE guarded write → throws, no orphan, no account split', async () => {
+  counter = 0;
+  const kv = makeKv();
+  const profile = { subject: 'sub-toctou-a', email: 'a@e.com', name: 'A', photoUrl: null };
+  const first = await resolveOrCreateUser(deps(kv), 'google', profile);
+  const oldId = first.user.internalId;
+  const idKey = 'auth:identity:google:sub-toctou-a';
+  assert.ok(kv.store.has(idKey));
+
+  // 當登入讀到既有 user record（stale read）當下，注入一次併發原子刪除（identity+user）。
+  let injected = false;
+  const racingKv = {
+    ...kv,
+    async get(key) {
+      const v = await kv.get(key);
+      if (!injected && key === `auth:user:${oldId}`) {
+        injected = true;
+        await kv.del(idKey, `auth:user:${oldId}`); // 模擬 deleteUser 的單一原子 DEL
+      }
+      return v;
+    },
+  };
+
+  await assert.rejects(
+    () => resolveOrCreateUser(deps(racingKv), 'google', profile),
+    (e) => e instanceof AccountConcurrentlyDeletedError
+  );
+  // 沒有 resurrect 出孤兒 user；身份鍵維持已刪。
+  assert.equal(kv.store.has(`auth:user:${oldId}`), false);
+  assert.equal(kv.store.has(idKey), false);
+
+  // 重試登入（新 token）→ 乾淨建立**單一**新帳號，internal id 與舊的不同（不分裂）。
+  const again = await resolveOrCreateUser(deps(kv), 'google', profile);
+  assert.equal(again.isNewUser, true);
+  assert.notEqual(again.user.internalId, oldId);
+  const userKeys = [...kv.store.keys()].filter((k) => k.startsWith('auth:user:'));
+  assert.equal(userKeys.length, 1);
+});
+
+await check('TOCTOU: delete lands DURING guarded write → compensated, no orphan', async () => {
+  counter = 0;
+  const kv = makeKv();
+  const profile = { subject: 'sub-toctou-b', email: 'b@e.com', name: 'B', photoUrl: null };
+  const first = await resolveOrCreateUser(deps(kv), 'google', profile);
+  const oldId = first.user.internalId;
+  const idKey = 'auth:identity:google:sub-toctou-b';
+
+  // 在登入的 guarded write 落地之後、後置再驗之前，注入併發原子刪除 → 補償路徑須撤銷剛寫入的 user。
+  let injected = false;
+  const racingKv = {
+    ...kv,
+    async set(key, value, opts) {
+      const r = await kv.set(key, value, opts);
+      if (!injected && key === `auth:user:${oldId}`) {
+        injected = true;
+        await kv.del(idKey, `auth:user:${oldId}`);
+      }
+      return r;
+    },
+  };
+
+  await assert.rejects(
+    () => resolveOrCreateUser(deps(racingKv), 'google', profile),
+    (e) => e instanceof AccountConcurrentlyDeletedError
+  );
+  // 補償已把剛寫入的 user 撤銷，無孤兒殘留。
+  assert.equal(kv.store.has(`auth:user:${oldId}`), false);
+  assert.equal(kv.store.has(idKey), false);
 });
 
 console.log(`\n${passed} checks passed.`);

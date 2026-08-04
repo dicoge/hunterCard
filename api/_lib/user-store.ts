@@ -78,6 +78,20 @@ export interface UserStoreDeps {
   newId?: () => string;
 }
 
+/**
+ * returning-user 登入在「讀取身份」與「寫回 user」之間，被一個併發的 `deleteUser`（原子
+ * 移除 identity+user）搶先——若此時仍無條件寫回舊 user record，會 resurrect 一個孤兒 user
+ * （其身份鍵已消失），下次以同一 (provider, sub) 登入會因找不到身份而建立**第二個** internal
+ * user（帳號分裂）。`touchExistingUser` 偵測到此情形時丟出本錯誤，登入端點據此 fail-closed
+ * （回可重試的非 2xx，見 login-handler）；使用者重試登入會取得新 token 並乾淨地建立單一新帳號。
+ */
+export class AccountConcurrentlyDeletedError extends Error {
+  constructor(userId: string) {
+    super(`account_concurrently_deleted:${userId}`);
+    this.name = 'AccountConcurrentlyDeletedError';
+  }
+}
+
 function identityKey(provider: string, subject: string): string {
   return `auth:identity:${provider}:${subject}`;
 }
@@ -163,31 +177,27 @@ async function touchExistingUser(
   profile: ProviderProfile,
   nowIso: string
 ): Promise<StoredUser> {
-  const user = await kv.get<StoredUser>(userKey(identity.userId));
-  if (!user) {
-    // identity 指向的 user 遺失：以身份重建一個一致的 user record（fail-safe）。
-    const rebuilt: StoredUser = {
-      internalId: identity.userId,
-      displayName: profile.name,
-      primaryEmail: profile.email,
-      photoUrl: profile.photoUrl,
-      linkedProviders: [
-        {
-          provider,
-          providerId: profile.subject,
-          email: profile.email,
-          displayName: profile.name,
-          photoUrl: profile.photoUrl,
-          linkedAt: identity.linkedAt,
-        },
-      ],
-      createdAt: identity.linkedAt,
-      lastLoginAt: nowIso,
-    };
-    await kv.set(userKey(identity.userId), rebuilt);
-    return rebuilt;
-  }
+  const existing = await kv.get<StoredUser>(userKey(identity.userId));
+  const record = existing
+    ? applyLoginTouch(existing, provider, profile, nowIso)
+    : rebuildUser(identity, provider, profile, nowIso);
 
+  // 只有在身份鍵仍存活且仍指向同一 internal user 時才寫回，杜絕與併發刪除的 TOCTOU
+  // resurrection / 帳號分裂（見 AccountConcurrentlyDeletedError）。
+  const committed = await writeUserIfIdentityLives(kv, identity, record);
+  if (!committed) {
+    throw new AccountConcurrentlyDeletedError(identity.userId);
+  }
+  return record;
+}
+
+/** returning user：刷新 lastLoginAt 與該 provider 的 email / 顯示名稱（純函式，不觸 KV）。 */
+function applyLoginTouch(
+  user: StoredUser,
+  provider: string,
+  profile: ProviderProfile,
+  nowIso: string
+): StoredUser {
   user.lastLoginAt = nowIso;
   const linked = user.linkedProviders.find(
     (p) => p.provider === provider && p.providerId === profile.subject
@@ -199,9 +209,66 @@ async function touchExistingUser(
   }
   if (!user.displayName && profile.name) user.displayName = profile.name;
   if (!user.photoUrl && profile.photoUrl) user.photoUrl = profile.photoUrl;
-
-  await kv.set(userKey(identity.userId), user);
   return user;
+}
+
+/** identity 指向的 user 遺失時，以身份重建一致的 user record（純函式，不觸 KV）。 */
+function rebuildUser(
+  identity: StoredIdentity,
+  provider: string,
+  profile: ProviderProfile,
+  nowIso: string
+): StoredUser {
+  return {
+    internalId: identity.userId,
+    displayName: profile.name,
+    primaryEmail: profile.email,
+    photoUrl: profile.photoUrl,
+    linkedProviders: [
+      {
+        provider,
+        providerId: profile.subject,
+        email: profile.email,
+        displayName: profile.name,
+        photoUrl: profile.photoUrl,
+        linkedAt: identity.linkedAt,
+      },
+    ],
+    createdAt: identity.linkedAt,
+    lastLoginAt: nowIso,
+  };
+}
+
+/**
+ * 以身份鍵的存活作為與 `deleteUser` 之間的序列化點（optimistic CAS + 補償）：唯有身份鍵
+ * 仍存在且仍指向同一 internal user 時，才寫入 user record。前置檢查後再寫，寫後再驗一次；
+ * 若在檢查與寫入之間發生併發刪除（身份鍵已消失或已被新登入取代為別的 user），撤銷剛寫入的
+ * user 並回 false，避免留下孤兒。deleteUser 端維持單一原子 DEL，序列化完全落在登入這一側。
+ *
+ * 各種交錯下的最終持久狀態：
+ *   - 刪除發生在前置檢查之前 → 檢查即失敗，不寫入。
+ *   - 刪除發生在寫入與後置再驗之間、或再驗之前 → 後置再驗偵測到 → 撤銷剛寫入的 user。
+ *   - 刪除發生在後置再驗之後 → 刪除的原子 DEL 會一併移除我們寫入的 user（乾淨，無孤兒）。
+ * 無論何者皆不留孤兒 user、不使 (provider, sub) 分裂成第二個帳號。
+ */
+async function writeUserIfIdentityLives(
+  kv: KVLike,
+  identity: StoredIdentity,
+  record: StoredUser
+): Promise<boolean> {
+  const idKey = identityKey(identity.provider, identity.subject);
+
+  const before = await kv.get<StoredIdentity>(idKey);
+  if (!before || before.userId !== identity.userId) return false;
+
+  await kv.set(userKey(record.internalId), record);
+
+  const after = await kv.get<StoredIdentity>(idKey);
+  if (!after || after.userId !== identity.userId) {
+    await kv.del(userKey(record.internalId));
+    return false;
+  }
+  return true;
 }
 
 /** 以 internal id 讀取權威 user record（找不到回 null）。 */

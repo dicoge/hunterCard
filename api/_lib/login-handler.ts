@@ -122,12 +122,20 @@ export async function handleLogin(
     return { status: 401, body: { error: 'TOKEN_REPLAYED' } };
   }
 
-  const { user, isNewUser } = await deps.resolveOrCreateUser('google', {
-    subject: identity.sub,
-    email: identity.email,
-    name: identity.name,
-    photoUrl: identity.picture,
-  });
+  let resolved: ResolveResult;
+  try {
+    resolved = await deps.resolveOrCreateUser('google', {
+      subject: identity.sub,
+      email: identity.email,
+      name: identity.name,
+      photoUrl: identity.picture,
+    });
+  } catch {
+    // 併發刪除（AccountConcurrentlyDeletedError）或身份儲存不一致：**不簽發任何 session**。
+    // 回可重試的 fail-closed；client 重試會取得新 id_token 並乾淨建立單一新帳號（不分裂）。
+    return { status: 503, body: { error: 'LOGIN_CONFLICT_RETRY' } };
+  }
+  const { user, isNewUser } = resolved;
 
   return {
     status: 200,
