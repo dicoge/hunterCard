@@ -41,6 +41,9 @@ jobs:
       - name: Verify scan/search market data fields (DIC-361)
         run: npm run test:market-fields
 
+      - name: Verify production /api/* is not swallowed by SPA (DIC-886)
+        run: npm run test:vercel-routing
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
