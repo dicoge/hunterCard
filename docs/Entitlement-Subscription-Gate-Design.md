@@ -80,7 +80,7 @@ CREATE TABLE subscription_events (
   event_type           TEXT NOT NULL,           -- SUBSCRIBED / DID_RENEW / REFUND / invoice.paid ...
   provider_sub_ref     TEXT,                    -- 事件對應的訂閱（去重後用來定位 receipt row）
   event_time           TIMESTAMPTZ NOT NULL,    -- provider 事件時間（signedDate / eventTimeMillis / object.created）；僅記錄與稽核用，不作跨事件排序依據
-  provider_version     BIGINT,                  -- Play RTDN `version`（**schema 版本，非單調序**，不可用於排序）/ 其他平台 NULL；僅存查
+  provider_version     TEXT,                    -- Play RTDN 信封版本，文件值為字串 `"1.0"`（DeveloperNotification.version）；**非序號、不可排序**，僅稽核留存。其他平台填 NULL
   received_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT uq_provider_event UNIQUE (platform, provider_account, environment, event_id)
 );
@@ -209,7 +209,7 @@ COMMIT
 1. **effectiveEntitlement 的 role↔tier 一致性檢查（fail-closed）現為 Product §5.1 權威契約**。不限量放行的唯一合法條件是 **role 解析為 subscriber**（即 `subscriptions` 當下確有 active row），而非「快取 tier 剛好是 pro」；`role != 'subscriber'` 卻 `tier=='pro'`（或 `monthly_limit IS NULL`）一律回 `ENTITLEMENT_UNAVAILABLE`（500）擋掃描、絕不因 `quota=NULL` 放行不限量，反向不一致亦 fail-closed。此不變式**已寫入權威文件 [Product-Entitlement-Architecture.md](./Product-Entitlement-Architecture.md) §5.1 的 `effectiveEntitlement` 契約與其 fail-closed 不變式（第 2 條）**，不再只是本設計文件的「強化要求」——實作 Product gating 時 DB/service 必須落實該檢查（QA 見 §7）。
 2. **邊界 reconcile，不只每日排程**：除了每日掃 `status='active' AND expires_at < now()` 標 `expired` 並 reconcile（Product §5.3），另**在寫入訂閱時排一個 `expires_at` 到點即觸發的 reconcile job**（延遲佇列 / cron-at），使快取在到期當下即翻回 free，把空窗窗口壓到最小。每日排程僅為兜底。
 
-webhook 與排程對同一 row 的寫入沿用 §2.2 的冪等/last-writer 規則（`subscription_events` 去重 + `last_event_time/version`），較舊事件不回退較新狀態。
+**排程的冪等（不虛構 provider event id）**：到期排程**不是** provider 事件，沒有 `notificationUUID`/`messageId`/`evt_id`，因此**不寫也不查** `subscription_events` 帳本。它的冪等來自「以當下狀態收斂」：排程 `UPDATE subscriptions SET status='expired' WHERE user_id=$u AND status='active' AND expires_at < now()`（在 §2.2 (b) 的 per-user `FOR UPDATE` 鎖內），已是 `expired` 的 row 不再命中篩選，重跑天然收斂、無副作用；隨後照 §2.2 (h) 跨 row 聚合 reconcile `entitlements`。webhook 側的回抓寫入則沿用 §2.2 的 `state_effective_at` + `statusRank` 確定性 guard（§2.2 step f），較舊回抓不覆蓋較新狀態；排程把 `state_effective_at` 設為 `expires_at`（該狀態的權威生效時間）、`state_synced_at=now()`，與 webhook 回抓走同一條比較規則，兩路徑對同一 row 的寫入互不回退。
 
 ### 2.4 同一平台訂閱綁不同 user（衝突）
 
@@ -349,8 +349,15 @@ CREATE TABLE billing_records_retained (
    - **事件冪等**：同一 `notificationUUID`/`messageId`/`evt_id` 重送 → `subscription_events` 唯一鍵去重、只生效一次。
    - **亂序 / 遲到重播（每平台各一組）**：
      - Stripe：`customer.subscription.deleted` 先於較早的 `invoice.paid` 到達 → 因狀態一律回抓 `Subscription.retrieve`，最終落在 provider 當下狀態，舊事件不回退。
-     - Google：以**非單調** RTDN `version` 亂序送達（大 version 先、小 version 後）→ 驗證 `version` **未**被用於排序，兩次都回抓 `subscriptionsv2.get`，結果一致且等於當下狀態。
+     - Google：同一 `purchaseToken` 的兩則 RTDN（例先 `SUBSCRIPTION_RENEWED` 後遲到的 `SUBSCRIPTION_PURCHASED`）亂序送達 → 驗證信封 `version`（字串）**未**被用於排序，兩次都回抓 `subscriptionsv2.get`，結果一致且等於當下狀態。
      - Apple：`DID_RENEW` 與 `REFUND` 亂序 → 回抓 `Get Subscription Status` 得當下狀態；若兩訊號 `state_effective_at` 相同，`statusRank` 使失權方（refund→cancelled）勝出（fail-closed tie-break）。
+   - **schema-level replay regression（provider_version 型別）**：以 Google 文件記載的 RTDN 信封原文灌入 ledger 並斷言可持久化、無型別錯誤——
+     ```json
+     { "version": "1.0", "packageName": "com.holohunter.app", "eventTimeMillis": "1730000000000",
+       "subscriptionNotification": { "version": "1.0", "notificationType": 4,
+         "purchaseToken": "abc.def", "subscriptionId": "monthly_pro" } }
+     ```
+     `version` 是字串 `"1.0"` → 存入 `subscription_events.provider_version TEXT`（若存 `BIGINT` 會解析失敗）；`Pub/Sub messageId` 進 `event_id`；重送同一 `messageId` → `uq_provider_event` 去重、只生效一次。
    - **stale re-fetch guard**：兩個 worker 並發回抓，較舊回抓（`state_effective_at` 較小、或相等但 `statusRank` 較低）不得覆蓋較新回抓。
    - **per-user 序列化 + 跨平台原子聚合**：同一 user 的 A、B 兩平台事件並發 → `users` row 鎖使其串行；A 平台退款只改 A 的 `subscriptions` row，跨 row 聚合後 B 平台仍 active → tier 維持 pro（不誤降）。
    - **1:1 對應**：`uq_receipt_subscription` 使一個 `subscriptions` row 至多一列 receipt；重複回填被擋。
