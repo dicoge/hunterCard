@@ -145,6 +145,17 @@ effectiveEntitlement(user):
       triggerEntitlementBackfill(user.id)        # 非同步修復（§5.3 reconcile），與 gating 解耦
       raise EntitlementError(ENTITLEMENT_UNAVAILABLE)   # → 500，caller 不得放行掃描
 
+  # role↔tier 一致性（fail-closed）：`entitlements` 是物化快取，可能落後於 subscriptions
+  # 的即時狀態（到期空窗 / reconcile 未跑）。若 role 與 tier 不一致，**絕不**用快取的
+  # monthly_limit 放行——否則「到期後 role=free_user 但快取仍 pro(limit=NULL)」會回不限量。
+  # 一律 fail-closed 並觸發非同步 reconcile 修復；不限量放行的唯一合法條件是 role=='subscriber'。
+  if role != 'subscriber' and (ent.tier == 'pro' or ent.monthly_limit IS NULL):
+      triggerEntitlementReconcile(user.id)       # 非同步修復（§5.3），與 gating 解耦
+      raise EntitlementError(ENTITLEMENT_UNAVAILABLE)   # → 500，不得因 quota=NULL 放行不限量
+  if role == 'subscriber' and ent.tier != 'pro':
+      triggerEntitlementReconcile(user.id)       # 反向不一致：避免誤扣付費者額度
+      raise EntitlementError(ENTITLEMENT_UNAVAILABLE)
+
   used = scan_usage[user.id][currentPeriod].scan_count  (缺 → 0)
   return {
     role, tier: ent.tier,
@@ -155,7 +166,9 @@ effectiveEntitlement(user):
     period: currentPeriod
   }
 ```
-> **fail-closed 不變式**：`role != 'guest'`（即已驗證 user）但 `entitlements` 查無 row，**不是** free；是「資料狀態不明」。gating path（§6.1 reserve、§6.2 premium、§6.3 查詢）一律回 `ENTITLEMENT_UNAVAILABLE`（500）而非降級為 free。修復（backfill / reconcile）走**獨立的非同步路徑**觸發，不在 gating 內就地補一個可用額度——否則 migration / reconcile 未完成或資料損毀時會合成出「看似合法」的 free 掃描權限。guest（本就無 row）仍走上面的常數分支，與此不變式不衝突。
+> **fail-closed 不變式（兩條）**：
+> 1. **查無 row**：`role != 'guest'`（即已驗證 user）但 `entitlements` 查無 row，**不是** free；是「資料狀態不明」。gating path（§6.1 reserve、§6.2 premium、§6.3 查詢）一律回 `ENTITLEMENT_UNAVAILABLE`（500）而非降級為 free。修復（backfill / reconcile）走**獨立的非同步路徑**觸發，不在 gating 內就地補一個可用額度——否則 migration / reconcile 未完成或資料損毀時會合成出「看似合法」的 free 掃描權限。guest（本就無 row）仍走上面的常數分支，與此不變式不衝突。
+> 2. **role↔tier 不一致**：`entitlements` 是物化快取，會落後於 `subscriptions` 的即時 active 判定（到期空窗、reconcile 未跑）。**不限量放行（`scan_limit=null`、`premium=true`）的唯一合法條件是 `role=='subscriber'`（即 `subscriptions` 當下確有 active row），而非「快取 tier 剛好是 pro」**。因此當 `role != 'subscriber'` 卻 `tier=='pro'`（或 `monthly_limit IS NULL`）時一律 fail-closed 回 `ENTITLEMENT_UNAVAILABLE`——**絕不**用快取的 `monthly_limit` 放行，否則到期後仍可無限掃描。反向（`role=='subscriber'` 但 `tier!='pro'`）亦 fail-closed，避免誤扣付費者額度。兩者都以非同步 reconcile 修復，與 gating 解耦。此不變式是訂閱到期空窗安全的**權威契約**（訂閱來源 / 生命週期細節見 [Entitlement-Subscription-Gate-Design.md](./Entitlement-Subscription-Gate-Design.md) §2.3）。
 
 ### 5.2 額度數值（產品角色語意；數值鏡像自 AUTH executable schema）
 

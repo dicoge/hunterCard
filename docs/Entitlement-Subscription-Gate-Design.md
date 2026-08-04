@@ -36,7 +36,7 @@ AUTH `subscriptions` 是 tier 的真相來源，但它**只記「這個 user 有
 CREATE TABLE subscription_receipts (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  subscription_id      UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE, -- 對應的 AUTH subscriptions row（1:1）
+  subscription_id      UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE, -- 對應的 AUTH subscriptions row（1:1，由 uq_receipt_subscription 強制）
   platform             TEXT NOT NULL CHECK (platform IN ('app_store','google_play','stripe')),
   -- 平台帳戶範圍（scope），驗證與去重都必須綁進來，防跨 app / 跨帳戶事件污染（§3）：
   --   app_store   = bundleId（或 appAppleId）
@@ -49,9 +49,9 @@ CREATE TABLE subscription_receipts (
   --   stripe      = subscription id (sub_...)
   provider_sub_ref     TEXT NOT NULL,
   latest_txn_ref       TEXT,                    -- 最近一次交易/續訂識別（app store transactionId / stripe invoice 等）
-  -- last-writer 排序依據（provider 權威的生效時間 / 版本，見 §2.2）：
-  last_event_time      TIMESTAMPTZ,             -- 該 provider row 目前反映的事件生效時間
-  last_event_version   BIGINT,                  -- 版本序（Play RTDN 用；無則以 last_event_time 判斷）
+  -- 目前反映的「provider 權威狀態」的生效時間與同步時間（見 §2.2；事件只是觸發，狀態一律回抓 provider）：
+  state_effective_at   TIMESTAMPTZ,             -- 回抓到的 provider 權威狀態之生效時間（Apple status signedDate / Play expiry+start / Stripe current_period_end 等）
+  state_synced_at      TIMESTAMPTZ,             -- server 端最近一次套用 provider 權威回抓的時間（stale-guard 用）
   product_id           TEXT NOT NULL,           -- 平台方案 id（sku / price id）
   environment          TEXT NOT NULL DEFAULT 'production'
                          CHECK (environment IN ('production','sandbox')),
@@ -59,7 +59,9 @@ CREATE TABLE subscription_receipts (
   created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- 同一平台帳戶範圍的同一訂閱只能對應一個 internal user，防「一單綁多帳號」與重複入帳：
-  CONSTRAINT uq_platform_sub UNIQUE (platform, provider_account, environment, provider_sub_ref)
+  CONSTRAINT uq_platform_sub UNIQUE (platform, provider_account, environment, provider_sub_ref),
+  -- 每個 AUTH subscriptions row 至多對應一列 receipt（強制 §1 宣稱的 1:1；§2.2 以此 row 為寫入目標）：
+  CONSTRAINT uq_receipt_subscription UNIQUE (subscription_id)
 );
 CREATE INDEX idx_sub_receipts_user ON subscription_receipts(user_id);
 
@@ -77,8 +79,8 @@ CREATE TABLE subscription_events (
   event_id             TEXT NOT NULL,
   event_type           TEXT NOT NULL,           -- SUBSCRIBED / DID_RENEW / REFUND / invoice.paid ...
   provider_sub_ref     TEXT,                    -- 事件對應的訂閱（去重後用來定位 receipt row）
-  event_time           TIMESTAMPTZ NOT NULL,    -- provider 權威生效時間（signedDate / eventTimeMillis / object.created）
-  event_version        BIGINT,                  -- Play RTDN 版本序（無則 NULL）
+  event_time           TIMESTAMPTZ NOT NULL,    -- provider 事件時間（signedDate / eventTimeMillis / object.created）；僅記錄與稽核用，不作跨事件排序依據
+  provider_version     BIGINT,                  -- Play RTDN `version`（**schema 版本，非單調序**，不可用於排序）/ 其他平台 NULL；僅存查
   received_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT uq_provider_event UNIQUE (platform, provider_account, environment, event_id)
 );
@@ -88,8 +90,8 @@ CREATE TABLE subscription_events (
 
 - **對應鍵永遠是 `users.id`，永不是 email**（沿用 AUTH §2）。平台把購買錨定到我方 user 的方式見 §3（Apple `appAccountToken` / Google `obfuscatedAccountId` / Stripe `client_reference_id`），三者一律填 internal user id（UUID）。
 - **`uq_platform_sub` 是去重與防盜綁的核心**：唯一鍵含 **`provider_account`（平台帳戶範圍）+ `environment`**，同一 scope 下的同一 `originalTransactionId` / `purchaseToken` / Stripe `sub_id` 只能存在一列。若同一平台訂閱嘗試綁到**不同** user（換手機、帳號轉移、共享 Apple ID）→ 走 §2.4 衝突處理，不自動改綁。
-- **`subscription_events` 帳本讓事件冪等且可重播**：`uq_provider_event` 以 provider 事件 id（Apple `notificationUUID` / Google Pub/Sub `messageId` / Stripe `evt_...`）去重；`event_time`/`event_version` 提供 last-writer 排序，杜絕 Stripe「不保證事件順序」造成的舊事件覆蓋新狀態（§2.2）。
-- **`subscription_id` 為 1:1 且 `NOT NULL`**：每個 platform 訂閱對應**恰好一個** AUTH `subscriptions` row（§2.2 以此 row 為寫入目標，而非用不存在唯一鍵的 `user_id` upsert）。同一 user 可同時有多個 platform 的 `subscriptions` row（AUTH 允許多列），active 判定跨所有 row 聚合（§2.2）。
+- **`subscription_events` 帳本讓事件冪等且可重播**：`uq_provider_event` 以 provider 事件 id（Apple `notificationUUID` / Google Pub/Sub `messageId` / Stripe `evt_...`）去重，同一事件重送只生效一次。**排序不靠事件本身**：所有平台的事件都只當「去 provider 回抓權威狀態」的觸發，真正的訂閱狀態一律以 provider 的 current-state API 為準（Apple App Store Server API / Google `subscriptionsv2.get` / Stripe `Subscription.retrieve`）。因此 Google RTDN `version` 是 **schema 版本、非單調序**，絕不用於排序；亂序 / 遲到事件因回抓的是「當下」狀態而自然無害（§2.2、§3）。
+- **`subscription_id` 為 1:1 且 `NOT NULL`（`uq_receipt_subscription` 強制）**：每個 platform 訂閱對應**恰好一個** AUTH `subscriptions` row，且該 row **至多**被一列 receipt 引用（DB 層強制，非僅口頭宣稱）。§2.2 以 `subscription_receipts.subscription_id` 指到的**那一列** row 為寫入目標，而非用不存在唯一鍵的 `user_id` upsert。同一 user 可同時有多個 platform 的 `subscriptions` row（AUTH 允許多列），active 判定跨所有 row 聚合（§2.2）。
 - **`raw_verification` 只留驗證所需的最小欄位**（`expires_date`、`auto_renew_status`、`product_id`、環境、最近事件類型），**不落原始 receipt / signed JWS 全文**（含裝置/帳戶敏感資訊，且會膨脹）。這也讓 §6 假名化只需清 `user_id` 與去識別化幾個欄位。
 - `subscription_receipts` 是驗證/對帳層；`subscriptions`（AUTH）仍是 gating 讀取的 tier 真相；`entitlements` 是物化快取。三層關係：**receipt 事件 → 定位並更新對應 `subscriptions` row → 跨所有 row reconcile `entitlements`（Product §5.3）**。
 
@@ -134,48 +136,67 @@ CREATE TABLE subscription_events (
 每次狀態變更（webhook / 排程）在**單一 DB transaction** 內依序執行，任一步失敗即整筆 rollback（不留半套狀態）：
 
 ```
+# (a) 驗證：簽章 + 平台帳戶範圍 scope（§3），失敗直接拒收，不進交易（DB 之外）
+verifyEventAuthAndScope(evt)               # Apple JWS+bundleId / Play push-JWT+packageName / Stripe sig+account+livemode
+user_id = resolveUser(evt)                 # appAccountToken / obfuscatedAccountId / client_reference_id（UUID）
+
 BEGIN
-  # (a) 驗證：簽章 + 平台帳戶範圍 scope（§3），失敗直接拒收，不進交易
-  verifyEventAuthAndScope(evt)              # 見 §3：Apple JWS+bundleId / Play push-JWT+packageName / Stripe sig+account+livemode
+  # (b) 每-user 序列化：先鎖住該 user，讓同一 user 的所有訂閱寫入嚴格串行，
+  #     跨平台並發事件不會交錯（Blocker 3：per-user serialization）
+  SELECT 1 FROM users WHERE id=$user_id FOR UPDATE;   # 序列化點；此後該 user 的訂閱狀態不被他人並發改動
 
-  # (b) 冪等去重：先寫 processed-event ledger；撞唯一鍵 → 已處理過 → COMMIT 空操作
+  # (c) 冪等去重：先寫 processed-event ledger；撞唯一鍵 → 已處理過 → COMMIT 空操作
   INSERT INTO subscription_events (platform, provider_account, environment, event_id,
-              event_type, provider_sub_ref, event_time, event_version)
+              event_type, provider_sub_ref, event_time, provider_version)
     VALUES (...) ON CONFLICT (platform, provider_account, environment, event_id) DO NOTHING;
-  if row_count == 0: COMMIT; return   # 重播 / 重送，安全丟棄
+  if row_count == 0: COMMIT; return        # 重播 / 重送，安全丟棄
 
-  # (c) 定位 internal user 與對應的「單一」subscriptions row（非 user_id upsert）
-  user_id = resolveUser(evt)                # appAccountToken / obfuscatedAccountId / client_reference_id（UUID）
+  # (d) 定位對應的「單一」subscriptions row（非 user_id upsert）
   rec = SELECT * FROM subscription_receipts
           WHERE platform=$p AND provider_account=$acct AND environment=$env AND provider_sub_ref=$ref
-          FOR UPDATE;                       # 命中既有訂閱
+          FOR UPDATE;
   if rec exists AND rec.user_id != user_id: ROLLBACK; raise SUBSCRIPTION_ALREADY_LINKED   # §2.4
 
-  # (d) last-writer 排序：舊事件不得回退新狀態（Stripe 不保證順序）
-  if rec exists AND (evt.event_time, evt.event_version) <= (rec.last_event_time, rec.last_event_version):
-      COMMIT; return                        # 過期事件，忽略（ledger 已記錄，仍冪等）
+  # (e) 事件只是「觸發」；狀態一律回抓 provider current-state API（Blocker 1：ordering-independent）
+  #     Apple  → App Store Server API Get Subscription Status
+  #     Google → purchases.subscriptionsv2.get（RTDN version 是 schema 版本，永不用於排序）
+  #     Stripe → Subscription.retrieve(sub_id)（事件不保證順序，故不信事件 payload、改讀當下狀態）
+  state = fetchProviderCurrentState(platform, provider_account, environment, provider_sub_ref)
+  (mappedStatus, expiresAt, stateEffectiveAt) = mapProviderState(state)   # §2.1 映射
 
-  # (e) 首購 → 建立恰好一個 subscriptions row 並回填 receipt.subscription_id；
-  #     續訂/取消/退款 → UPDATE receipt.subscription_id 指到的「那一個」row（§2.1 映射）
+  # (f) stale re-fetch guard（同一 provider 的較舊回抓不得覆蓋較新狀態）：
+  #     以回抓狀態的 provider 生效時間比較；相等時用「較嚴格者優先」的確定性 tie-break（見下）
+  if rec exists AND stateEffectiveAt < rec.state_effective_at: COMMIT; return
+  if rec exists AND stateEffectiveAt == rec.state_effective_at
+        AND statusRank(mappedStatus) <= statusRank(rec.currentStatus): COMMIT; return
+
+  # (g) 首購 → 建立恰好一個 subscriptions row 並回填 receipt.subscription_id；
+  #     續訂/取消/退款 → UPDATE receipt.subscription_id 指到的「那一個」row
   if rec not exists:
       sub = INSERT INTO subscriptions (user_id, plan, status, started_at, expires_at) VALUES (...) RETURNING id;
-      INSERT INTO subscription_receipts (user_id, subscription_id, ...) VALUES (..., sub.id, ...);
+      INSERT INTO subscription_receipts (user_id, subscription_id, ..., state_effective_at, state_synced_at)
+        VALUES (..., sub.id, ..., stateEffectiveAt, now());        # uq_receipt_subscription 保證 1:1
   else:
-      UPDATE subscriptions SET status=$mappedStatus, expires_at=$exp, cancelled_at=... WHERE id = rec.subscription_id;
-      UPDATE subscription_receipts SET latest_txn_ref=$txn, last_event_time=evt.event_time,
-             last_event_version=evt.event_version, updated_at=now() WHERE id = rec.id;
+      UPDATE subscriptions SET status=$mappedStatus, expires_at=$expiresAt, cancelled_at=... WHERE id = rec.subscription_id;
+      UPDATE subscription_receipts SET latest_txn_ref=$txn, state_effective_at=stateEffectiveAt,
+             state_synced_at=now(), updated_at=now() WHERE id = rec.id;
 
-  # (f) 跨「該 user 全部 subscriptions row」聚合後 reconcile（見下方不變式）
+  # (h) 原子跨平台聚合 reconcile：該 user 的全部 subscriptions row（已被 (b) 鎖序列化）一次算出 active
   active = EXISTS (SELECT 1 FROM subscriptions
                      WHERE user_id=$user_id AND status='active'
-                       AND (expires_at IS NULL OR expires_at > now()) FOR UPDATE);
+                       AND (expires_at IS NULL OR expires_at > now()));
   reconcile entitlements(user_id): active ? pro(NULL,NULL) : free(NULL,100)   # Product §5.3
   audit_log(event_type='subscription_<evt>', metadata={platform, event_id, sub_id})
 COMMIT
 ```
 
-- **row-targeted，不用 `user_id` upsert**：AUTH `subscriptions` **無** `user_id` 唯一鍵、明確允許一個 user 多列（多平台並存）。因此寫入永遠針對 `subscription_receipts.subscription_id` 指到的**那一個** row；`entitlements` 的 active 判定則**跨該 user 所有 subscriptions row 聚合**。這樣「A 平台退款」不會誤蓋/降級「B 平台仍 active」的訂閱（CR finding 3）。
-- **冪等且抗亂序**：`subscription_events` 帳本（唯一鍵去重）+ `last_event_time/version`（last-writer）確保同一事件重送只生效一次、較舊事件不回退較新狀態（CR finding 1）。全部在同一交易內完成 receipt / subscription / reconcile 三寫，無中間可觀察的不一致。
+其中 `statusRank`（確定性 tie-break，**較嚴格 / 失權者優先**，同生效時間時取較高 rank，fail-closed）：
+`cancelled`（退款/撤銷，立即失權）> `expired` > `paused` > `active`。
+兩個生效時間相同的訊號同時到達時（例：續訂與退款理論上同秒），一律採失權方，寧可短暫少給權限、不誤給。
+
+- **provider current-state 為真相，排序無關（Blocker 1）**：任何平台事件都只當「去回抓」的觸發，真正狀態一律讀 provider 的 current-state API（Apple/Google/Stripe 各自的查詢端點）。因此 Google RTDN `version`（schema 版本、非單調序）**永不用於排序**；Apple/Stripe 的亂序、遲到、重送事件因回抓的都是「當下」狀態而自然無害。唯一需要防的是「較舊的回抓覆蓋較新的回抓」（例：兩個 worker 各自回抓後寫回），以 `state_effective_at` + `statusRank` 的確定性比較擋下（step f），且 (b) 的 per-user 鎖已讓同一 user 的回抓串行、不交錯。
+- **per-user 序列化 + 原子跨平台聚合（Blocker 3）**：交易一開始即 `SELECT ... FROM users FOR UPDATE` 鎖住該 user，該 user 名下所有平台的訂閱寫入與 (h) 的跨 row active 聚合都在這把鎖內完成，不會與另一平台的並發事件交錯，聚合看到的是一致快照。寫入永遠針對 `subscription_receipts.subscription_id` 指到的**那一個** row（AUTH `subscriptions` 無 `user_id` 唯一鍵、允許多列），故「A 平台退款」只改 A 的 row，`entitlements` 再跨**所有** row 聚合，不會誤降「B 平台仍 active」的訂閱。
+- **冪等**：`subscription_events` 帳本（唯一鍵去重）確保同一事件重送只生效一次；receipt / subscription / entitlements 三寫都在同一交易內完成，無中間可觀察的不一致。
 - **權威計算在 server**：client 端的購買回呼只是「提示去 pull」，真正入帳一律以**平台簽章事件 + server 驗證**為準（§3），本機不可寫 tier。這對齊需求「quota 重置由 backend 權威計算，防本機竄改」——`entitlements`/`scan_usage` 都在 server，本機時間/快取無法影響。
 - **月 quota 重置**同理由 server 權威：`scan_usage` 以 `period='YYYY-MM'`（server clock）為 PK，換月即新 row，不靠 client（AUTH §3.5 / Product §6.1 已定義；此處僅重申來源不可竄改）。
 
@@ -185,19 +206,7 @@ COMMIT
 
 必須兩道防線同時成立：
 
-1. **effectiveEntitlement 加 role↔tier 一致性檢查，mismatch 一律 fail-closed**（不是降級為 free、也不是放行）：
-   ```
-   role = resolveRole(user)                 # 依 subscriptions active（含 expires_at 即時判定）
-   ent  = entitlements[user.id]
-   # 到期空窗 / reconcile 落後：role 已非 subscriber，但快取仍 pro（limit=NULL）→ 不一致
-   if role != 'subscriber' and (ent.tier == 'pro' or ent.monthly_limit IS NULL):
-       triggerReconcile(user.id)            # 立即修復（同 §2.2 邏輯，非同步）
-       raise EntitlementError(ENTITLEMENT_UNAVAILABLE)   # 500，擋掃描；絕不因 quota=NULL 放行不限量
-   # 反向不一致（role=subscriber 但 tier=free）亦 fail-closed，避免誤扣付費者額度
-   if role == 'subscriber' and ent.tier != 'pro':
-       triggerReconcile(user.id); raise EntitlementError(ENTITLEMENT_UNAVAILABLE)
-   ```
-   > 這是對 Product §5.1 `effectiveEntitlement` 的**強化要求**：不限量放行的唯一合法條件是 **role 解析為 subscriber**（即 subscriptions 當下確有 active row），而非「快取 tier 剛好是 pro」。實作 Product gating 時必須落實此檢查（列入 §7 交棒與 §7 QA）。
+1. **effectiveEntitlement 的 role↔tier 一致性檢查（fail-closed）現為 Product §5.1 權威契約**。不限量放行的唯一合法條件是 **role 解析為 subscriber**（即 `subscriptions` 當下確有 active row），而非「快取 tier 剛好是 pro」；`role != 'subscriber'` 卻 `tier=='pro'`（或 `monthly_limit IS NULL`）一律回 `ENTITLEMENT_UNAVAILABLE`（500）擋掃描、絕不因 `quota=NULL` 放行不限量，反向不一致亦 fail-closed。此不變式**已寫入權威文件 [Product-Entitlement-Architecture.md](./Product-Entitlement-Architecture.md) §5.1 的 `effectiveEntitlement` 契約與其 fail-closed 不變式（第 2 條）**，不再只是本設計文件的「強化要求」——實作 Product gating 時 DB/service 必須落實該檢查（QA 見 §7）。
 2. **邊界 reconcile，不只每日排程**：除了每日掃 `status='active' AND expires_at < now()` 標 `expired` 並 reconcile（Product §5.3），另**在寫入訂閱時排一個 `expires_at` 到點即觸發的 reconcile job**（延遲佇列 / cron-at），使快取在到期當下即翻回 free，把空窗窗口壓到最小。每日排程僅為兜底。
 
 webhook 與排程對同一 row 的寫入沿用 §2.2 的冪等/last-writer 規則（`subscription_events` 去重 + `last_event_time/version`），較舊事件不回退較新狀態。
@@ -218,6 +227,7 @@ webhook 與排程對同一 row 的寫入沿用 §2.2 的冪等/last-writer 規�
 | **Android Google Play** | Play Billing `obfuscatedAccountId` = `users.id` | Play Developer API `purchases.subscriptionsv2.get` + **RTDN**（Pub/Sub push） | **push 本身**驗 authenticated Pub/Sub JWT（`aud` = 我方 endpoint、`email` = 指定 service account、`email_verified`）；**再**用 service account 呼叫 Developer API 覆核 token 取權威狀態 | RTDN payload `packageName` 須等於預期；Developer API 用綁定該 package 的 service account | `purchaseToken`（經 `linkedPurchaseToken` 追溯根 token） |
 | **Web Stripe** | Checkout `client_reference_id` = `users.id`（並存 `customer.metadata.user_id`） | Stripe **Webhooks** | `Stripe-Signature` 用 webhook secret 驗；`event.id`(`evt_...`) 進 ledger | `event.account`（Connect 時）與 `event.livemode` 須等於預期帳戶與模式，否則拒收 | `subscription` id（`sub_...`） |
 
+- **事件是「觸發」，狀態一律回抓 provider current-state（排序無關）**：三平台的通知都不保證順序、可能亂序 / 遲到 / 重送。因此驗過真偽 + scope 後，**不信事件 payload 內的狀態欄位**，一律呼叫該平台的 current-state 查詢端點（Apple App Store Server API `Get Subscription Status` / Google `purchases.subscriptionsv2.get` / Stripe `Subscription.retrieve`）取「當下」權威狀態再入帳（§2.2 step e）。這使亂序天然無害，並讓 Google RTDN `version`（schema 版本、非單調序）**永不被用於排序**。
 - **「驗證購買 token」≠「驗證推送」**：Google RTDN 是一個 HTTP POST，能呼叫 Developer API 只證明「這個 purchaseToken 有效」，**不證明這個 HTTP 請求來自 Google**。因此**必先**驗 authenticated Pub/Sub push JWT（audience + service-account 宣稱），**再**打 Developer API 取權威狀態；兩者缺一即拒收。Apple/Stripe 同理先驗事件真偽（JWS / signature）再取狀態。
 - **scope 綁進去重鍵**：驗過的 `provider_account`（bundleId / packageName / Stripe account）+ `environment` 一併寫入 `subscription_receipts` 與 `subscription_events` 的唯一鍵（§1），使跨 app / 跨帳戶 / 跨環境即使事件 id 或訂閱鍵偶然相同也不會互相污染。任何 scope 不符的事件在 mutate 狀態**之前**即被擋下（§2.2 step a）。
 - **絕不信任 client 自報的購買結果**（防偽造升級）；client 回呼只作「提示 server 去 pull」。
@@ -334,7 +344,19 @@ CREATE TABLE billing_records_retained (
 1. **前置相依**：本設計消費 AUTH（`users`/`sessions`/`subscriptions`/`entitlements`）與 Product（reserve gate）**執行期基礎**，須待該後端落地（Postgres + session 驗證）後才實作；目前 repo 仍為 local mock（`Monetization-Architecture-Plan.md §0`）。
 2. **可先做（不等金流）**：§5 UI 狀態改為讀 `GET /api/entitlements`（server 權威）、fail-closed / 離線提示、Paywall 靜態頁、`PremiumGate` CTA 接 Paywall。
 3. **金流實作 sub-issue**：§1 `subscription_receipts` + `subscription_events` 帳本 + §3 三平台 writer/webhook（含 scope/push-JWT 驗證）+ §2 狀態機 + §6 保留表，建議每平台一個實作子任務，Web Stripe 依 §4 預設留到 Phase 2。
-4. **QA 契約**：訂閱生命週期各轉移（首購/續訂/寬限/到期/取消/退款）→ tier 正確升降；**事件冪等與亂序重播**（同一 `notificationUUID`/`messageId`/`evt_id` 重送只生效一次、較舊事件不回退較新狀態）；**多平台並存**時單一平台退款不誤降其他仍 active 的訂閱（跨 row 聚合）；**漏 webhook 到期空窗**：模擬到期後 reconcile 落後，`effectiveEntitlement` 對 role(free)↔tier(pro) 不一致回 `ENTITLEMENT_UNAVAILABLE` 擋掃描、絕不放行不限量；**scope 驗證**：偽造/跨 app / 跨帳戶 / 未驗 Pub/Sub push JWT 的事件被拒；同一平台訂閱綁不同 user → 409；跨裝置同帳號共享 premium；刪帳號後 `subscription_receipts`/`subscription_events` 已清、`billing_records_retained` 僅存假名化必要欄位、有 `legal_basis`、`retain_until` 到期可硬刪；UI 六種額度狀態與 premium 鎖態、離線 fail-closed。
+4. **QA 契約**：
+   - **生命週期轉移**：首購/續訂/寬限/到期/取消/退款 → tier 正確升降（§2.1 映射）。
+   - **事件冪等**：同一 `notificationUUID`/`messageId`/`evt_id` 重送 → `subscription_events` 唯一鍵去重、只生效一次。
+   - **亂序 / 遲到重播（每平台各一組）**：
+     - Stripe：`customer.subscription.deleted` 先於較早的 `invoice.paid` 到達 → 因狀態一律回抓 `Subscription.retrieve`，最終落在 provider 當下狀態，舊事件不回退。
+     - Google：以**非單調** RTDN `version` 亂序送達（大 version 先、小 version 後）→ 驗證 `version` **未**被用於排序，兩次都回抓 `subscriptionsv2.get`，結果一致且等於當下狀態。
+     - Apple：`DID_RENEW` 與 `REFUND` 亂序 → 回抓 `Get Subscription Status` 得當下狀態；若兩訊號 `state_effective_at` 相同，`statusRank` 使失權方（refund→cancelled）勝出（fail-closed tie-break）。
+   - **stale re-fetch guard**：兩個 worker 並發回抓，較舊回抓（`state_effective_at` 較小、或相等但 `statusRank` 較低）不得覆蓋較新回抓。
+   - **per-user 序列化 + 跨平台原子聚合**：同一 user 的 A、B 兩平台事件並發 → `users` row 鎖使其串行；A 平台退款只改 A 的 `subscriptions` row，跨 row 聚合後 B 平台仍 active → tier 維持 pro（不誤降）。
+   - **1:1 對應**：`uq_receipt_subscription` 使一個 `subscriptions` row 至多一列 receipt；重複回填被擋。
+   - **漏 webhook 到期空窗**：模擬到期後 reconcile 落後，`effectiveEntitlement` 對 role(free)↔tier(pro) 不一致回 `ENTITLEMENT_UNAVAILABLE` 擋掃描、絕不放行不限量（Product §5.1 權威不變式）。
+   - **scope 驗證**：偽造 / 跨 app / 跨帳戶 / 未驗 Pub/Sub push JWT 的事件被拒；同一平台訂閱綁不同 user → 409。
+   - **其他**：跨裝置同帳號共享 premium；刪帳號後 `subscription_receipts`/`subscription_events` 已清、`billing_records_retained` 僅存假名化必要欄位、有 `legal_basis`、`retain_until` 到期可硬刪；UI 六種額度狀態與 premium 鎖態、離線 fail-closed。
 
 ---
 
