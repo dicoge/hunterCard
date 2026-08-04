@@ -50,7 +50,8 @@ resolveRole(req):
   return 'free_user'
 ```
 
-- `entitlements.tier` 是這個推導的**快取/物化結果**，由訂閱事件（purchase / renew / expire / cancel）與 merge（AUTH §3.5.1）維護。gating 讀 `entitlements`（單表、有 PK、快），對帳/後台顯示才回 `subscriptions`。
+- `entitlements.tier` 是這個推導的**快取/物化結果**，由訂閱事件（purchase / renew / expire / cancel）與 merge（AUTH §3.5.1）維護。`entitlements` **只是額度數值與物化 tier 的快取**，不是 gating 的權威。
+- **operational gating 一律走 §5.1 的 `effectiveEntitlement`**（權威）：它同時檢查「當下訂閱狀態推導的 role（`resolveRole` / `hasActiveSubscription` 讀 `subscriptions`）」與 `entitlements` 的 tier/數值，並以 §5.1 的 role↔tier fail-closed 守衛擋下兩者不一致（例如 `entitlements.tier='pro'` 但已無 active subscription 的 stale 快取）。**不得**只讀 `entitlements` 就放行 unlimited / premium。`entitlements`（單表、有 PK、快）僅供 `effectiveEntitlement` 取數值與比對；對帳 / 後台顯示才直接回 `subscriptions`。
 - `subscriptions` 為 tier 的**真相來源**；`entitlements.tier` 落後時以 §5.3 的 reconcile job 修正。
 
 ---

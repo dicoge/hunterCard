@@ -51,9 +51,9 @@ CREATE TABLE subscription_receipts (
   latest_txn_ref       TEXT,                    -- 最近一次交易/續訂識別（app store transactionId / stripe invoice 等）
   -- 目前反映的「provider 權威狀態」的生效時間與同步時間（見 §2.2；事件只是觸發，狀態一律回抓 provider）：
   state_effective_at   TIMESTAMPTZ,             -- **狀態轉移的 order cursor**：該狀態「發生」的 provider 權威時點，恆為過去/現在、**絕非未來效期界線**。
-                                                --   Apple = 狀態變更通知 signedDate；Google = 當期 startTime（**非** lineItems.expiryTime）；
-                                                --   Stripe = 該狀態變更事件/物件 created（renewal invoice / refund / dispute / dispute.closed Event 的 created）。
-                                                --   效期界線（current_period_end / expiry）另存於 subscriptions.expires_at，只作 active-window 判斷，**不作排序**（避免未來 period_end 讓當下退款誤判為 stale，見 §2.2 note）。
+                                                --   Apple = 狀態變更通知 signedDate；Stripe = 該狀態變更事件/物件 created（renewal invoice / refund / dispute / dispute.closed Event 的 created）。
+                                                --   Google = SubscriptionPurchaseV2.startTime（**原始授權時點，續訂不變**，故續訂靠 §2.2 step g 的「active→active 效期單調前進」規則收斂，非靠此 cursor；status 轉移仍由 subscriptionState + statusRank 決定）。
+                                                --   效期界線（current_period_end / Google lineItems[].expiryTime）另存於 subscriptions.expires_at，只作 active-window 判斷，**不作排序**（避免未來 expiry 讓當下退款誤判為 stale，見 §2.2 note）。
   state_synced_at      TIMESTAMPTZ,             -- server 端最近一次套用 provider 權威回抓的時間（stale-guard 用）
   product_id           TEXT NOT NULL,           -- 平台方案 id（sku / price id）
   environment          TEXT NOT NULL DEFAULT 'production'
@@ -204,7 +204,12 @@ BEGIN
         AND statusRank(mappedStatus) <= statusRank(sub.status)
         # 例外（§2.6 規則 5）：同一 dispute.id 的 terminal 結案相位優先於自身 provisional 撤權，
         # 等時仍讓 won 恢復 active / lost 維持 cancelled，不套 fail-closed statusRank。
-        AND NOT (isTerminalDisputeClose AND rec.latest_txn_ref == dispute.id): COMMIT; return
+        AND NOT (isTerminalDisputeClose AND rec.latest_txn_ref == dispute.id)
+        # 例外（Google 續訂收斂）：Google 的 order cursor = SubscriptionPurchaseV2.startTime（原始授權時點，
+        # 續訂不變），故續訂事件的 stateEffectiveAt 恆等於前次；active→active 且回抓 expiryTime 嚴格晚於
+        # 已存 expires_at 時，這是一次真實續訂（僅續訂能延長效期；退款/撤銷為 active→非 active，走 statusRank
+        # 失權），必須放行以在 (h) 前進 expires_at；expiryTime 相等則為重播、(h) 寫入為 no-op（冪等）。
+        AND NOT (mappedStatus == 'active' AND sub.status == 'active' AND expiresAt > sub.expires_at): COMMIT; return
 
   # (h) 首購 → 建立恰好一個 subscriptions row 並回填 receipt.subscription_id；
   #     續訂/取消/退款 → UPDATE receipt.subscription_id 指到的「那一個」row
@@ -438,6 +443,7 @@ CREATE TABLE billing_records_retained (
        - 斷言 close 生效時間源自**已驗簽 Event `created`**，非 `Dispute` 上不存在的欄位。
      - **Stripe 身分**：由 `subscription.metadata.user_id`（Checkout `client_reference_id` 持久化）/ `customer.metadata.user_id` / 既有 receipt 映射解析 → 斷言**不引用** `Subscription.retrieve` 上不存在的 `client_reference_id`。
    - **未來 period_end 不得讓當下退款/爭議誤判 stale（order cursor ≠ 效期界線）**：先送續訂 → `subscriptions.expires_at` = 未來 `current_period_end`（`t_future`），但 `receipt.state_effective_at` = 續訂**轉移時點**（`t_renew ≈ now`，**非** `t_future`）。隨後送當下全額退款/`charge.dispute.created`（`state_effective_at ≈ now > t_renew`）→ 斷言 (a) step g **不**因 `t_future` 判為 stale，`subscriptions.status` **確實**轉為 `cancelled`、entitlement 降 free；(b) 重播同一退款/爭議事件經 `uq_provider_event` 去重為安全 no-op，狀態維持 `cancelled`（不回退 active）。反例保護：若把 `state_effective_at` 誤設為 `t_future`，此案會退化成「記為已處理卻停留 active、永久漏撤」——斷言不得發生。
+   - **Google 續訂收斂：等 order cursor 仍前進效期（startTime 續訂不變）**：首購後 `subscriptions.expires_at`=`t_exp1`、`receipt.state_effective_at`=`SubscriptionPurchaseV2.startTime`（`t_start`）。送 `SUBSCRIPTION_RENEWED` → 回抓 `subscriptionsv2.get`，`startTime` **仍** `t_start`（等 cursor）、`lineItems[].expiryTime` 前進為 `t_exp2 > t_exp1`、`subscriptionState` 仍 active。斷言 (a) step g 命中「active→active 且 `expiresAt > sub.expires_at`」例外、**不**被 `statusRank<=` 判為 stale 而跳過，(h) 將 `subscriptions.expires_at` 前進為 `t_exp2`、entitlement 維持 pro；(b) 重播同一續訂（`startTime` 與 `expiryTime` 皆不變）→ `expiresAt > sub.expires_at` 為 false 落 stale-guard、或 (h) 寫入相同值，兩者皆為冪等 no-op，`expires_at` 停在 `t_exp2` 不重複前進。反例保護：若無此例外，等 cursor 續訂會被記為已處理卻停留舊 `expires_at`，效期提前到期——斷言不得發生。
    - **schema-level replay regression（provider_version 型別）**：以 Google 文件記載的 RTDN 信封原文灌入 ledger 並斷言可持久化、無型別錯誤——
      ```json
      { "version": "1.0", "packageName": "com.holohunter.app", "eventTimeMillis": "1730000000000",
