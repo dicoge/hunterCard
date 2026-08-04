@@ -54,7 +54,7 @@ CREATE TABLE subscription_receipts (
                                                 --   Apple = 狀態變更通知 signedDate；Stripe = 該狀態變更事件/物件 created（renewal invoice / refund / dispute / dispute.closed Event 的 created）。
                                                 --   Google = SubscriptionPurchaseV2.startTime（**原始授權時點，同一購買在續訂/on-hold/pause/recover 皆不前進**，故此 cursor 無法為 Google 同 token 的狀態轉移定序；改由 §2.2 step g 的「較新權威回抓勝出」規則收斂；status 值仍由 subscriptionState 映射決定）。
                                                 --   效期界線（current_period_end / Google lineItems[].expiryTime）另存於 subscriptions.expires_at，只作 active-window 判斷，**不作排序**（避免未來 expiry 讓當下退款誤判為 stale，見 §2.2 note）。
-  state_synced_at      TIMESTAMPTZ,             -- 最近一次套用之權威回抓的**觀測時點**（= 該次 fetchObservedAt，非 commit now()）；供 §2.2 step g 的 Google 等-cursor「較新回抓勝出」定序 / stale-guard
+  state_synced_at      TIMESTAMPTZ,             -- 最近一次套用之權威回抓的**觀測時點**（= 該次 fetchObservedAt，非 commit now()）；供 §2.2 step g 的 Google 等-cursor「較新回抓勝出」定序 / stale-guard。**單調不倒退**：只有嚴格較新的回抓能寫入，較舊/同時回抓一律拒收（見 §2.2 g1）
   product_id           TEXT NOT NULL,           -- 平台方案 id（sku / price id）
   environment          TEXT NOT NULL DEFAULT 'production'
                          CHECK (environment IN ('production','sandbox')),
@@ -201,26 +201,32 @@ BEGIN
       if rec.user_id != user_id OR sub IS NULL OR sub.user_id != rec.user_id:
           ROLLBACK; raise SUBSCRIPTION_LINK_INTEGRITY   # 409（§2.4 / §2.5）
 
-  # (g) stale re-fetch guard（同一 provider 的較舊回抓不得覆蓋較新狀態）：
-  #     以回抓狀態的 provider 生效時間比較；相等時用「較嚴格者優先」的確定性 tie-break（讀 sub.status）
+  # (g) stale re-fetch guard（較舊回抓不得覆蓋較新狀態、且 state_synced_at 絕不倒退）：
+  #     先擋「較舊 order cursor」，再依 provider 分流——Google 走 freshness 收斂，其餘走 statusRank tie-break。
   if rec exists AND stateEffectiveAt < rec.state_effective_at: COMMIT; return
-  if rec exists AND stateEffectiveAt == rec.state_effective_at
+
+  # (g1) Google 等-cursor 收斂 —— **必須先於**下方 statusRank 判斷。Google 的 order cursor =
+  #      SubscriptionPurchaseV2.startTime（同一購買在 續訂 / 帳戶保留 on-hold / 暫停 pause / 回復
+  #      SUBSCRIPTION_RECOVERED 之間皆不前進），statusRank 無法為同 token 定序；且 (b) 的 subscriptionsv2.get
+  #      回抓的是「單一權威當下狀態」（非兩個並存的競爭訊號）。故一律以「較新權威回抓勝出」**對稱**收斂
+  #      （授權與撤權同一條規則），freshness 比較與 statusRank 無關：
+  #      ⚠️ 為何不能沿用下方 statusRank 分支：若把 freshness 藏在 `statusRank(mappedStatus) <= statusRank(sub.status)`
+  #      之內，則一個 stale 的 restrictive 回抓（例：遲到的 ON_HOLD=paused 蓋在較新的 RECOVERED=active 上）因
+  #      statusRank(paused) > statusRank(active) 使該分支條件為 false → 逃過 stale-guard、直落 (h) 覆蓋成 paused
+  #      並讓 state_synced_at 由 o2 倒退回 o1，付費者被永久誤撤（兩個 event_id 都已入帳、無其他觸發不會自癒）。
+  if rec exists AND platform == 'google' AND stateEffectiveAt == rec.state_effective_at:
+      if mappedStatus == sub.status AND expiresAt == sub.expires_at: COMMIT; return   # 無變化＝重播，冪等 no-op
+      if fetchObservedAt <= rec.state_synced_at: COMMIT; return                        # 較舊/同時回抓：一律拒收（**不論授權或撤權**），
+                                                                                       # state_synced_at 不倒退（防 stale ON_HOLD 蓋掉較新 RECOVERED）
+      # 否則 fetchObservedAt 嚴格較新 → 落到 (h) 收斂為回抓狀態（recover / 撤權 / 續訂前進 expires_at，三者對稱）；
+      # 不進下方 statusRank 分支。
+
+  # (g2) 非 Google（Apple / Stripe 的相異 distinct 事件）等時歧義：確定性 fail-closed rank tie-break（讀 sub.status）
+  elif rec exists AND stateEffectiveAt == rec.state_effective_at
         AND statusRank(mappedStatus) <= statusRank(sub.status)
         # 例外（§2.6 規則 5）：同一 dispute.id 的 terminal 結案相位優先於自身 provisional 撤權，
         # 等時仍讓 won 恢復 active / lost 維持 cancelled，不套 fail-closed statusRank。
-        AND NOT (isTerminalDisputeClose AND rec.latest_txn_ref == dispute.id)
-        # 例外（Google 等-cursor 當下狀態收斂）：Google 的 order cursor = SubscriptionPurchaseV2.startTime
-        # （原始授權時點，同一購買在 續訂 / 帳戶保留 on-hold / 暫停 pause / 回復 SUBSCRIPTION_RECOVERED 之間
-        #  皆不前進），故這些同一 purchase token 的轉移 stateEffectiveAt 恆等於前次，statusRank 無法定序。
-        # 但 (b) 的 subscriptionsv2.get 回抓的是「單一權威當下狀態」（非兩個並存的競爭訊號），故對 Google
-        # 改採「較新權威回抓勝出」的確定性收斂：本次回抓觀測時點 fetchObservedAt 若嚴格晚於 rec.state_synced_at，
-        # 即放行到 (h) 收斂成回抓狀態（涵蓋 續訂前進 expires_at、on-hold/paused → active 回復存取、
-        # 以及 active → on-hold/paused/cancelled/expired 撤權——三者對稱，皆以「最新權威觀測」為準）。
-        # fail-closed 不被弱化：較舊/同時回抓（fetchObservedAt <= rec.state_synced_at，如遲到的 stale active）被此門檻擋下，
-        # 無法覆蓋較新的撤權；重播（回抓狀態與 expires_at 皆相同）落 mappedStatus==sub.status 由 statusRank<= 收成 no-op（冪等）。
-        # 極少數 fetchObservedAt == rec.state_synced_at 且狀態相異者，門檻為 false → 落回下方 statusRank fail-closed（失權方勝）。
-        AND NOT (platform == 'google' AND fetchObservedAt > rec.state_synced_at
-                 AND (mappedStatus != sub.status OR expiresAt != sub.expires_at)): COMMIT; return
+        AND NOT (isTerminalDisputeClose AND rec.latest_txn_ref == dispute.id): COMMIT; return
 
   # (h) 首購 → 建立恰好一個 subscriptions row 並回填 receipt.subscription_id；
   #     續訂/取消/退款 → UPDATE receipt.subscription_id 指到的「那一個」row
@@ -455,7 +461,8 @@ CREATE TABLE billing_records_retained (
      - **Stripe 身分**：由 `subscription.metadata.user_id`（Checkout `client_reference_id` 持久化）/ `customer.metadata.user_id` / 既有 receipt 映射解析 → 斷言**不引用** `Subscription.retrieve` 上不存在的 `client_reference_id`。
    - **未來 period_end 不得讓當下退款/爭議誤判 stale（order cursor ≠ 效期界線）**：先送續訂 → `subscriptions.expires_at` = 未來 `current_period_end`（`t_future`），但 `receipt.state_effective_at` = 續訂**轉移時點**（`t_renew ≈ now`，**非** `t_future`）。隨後送當下全額退款/`charge.dispute.created`（`state_effective_at ≈ now > t_renew`）→ 斷言 (a) step g **不**因 `t_future` 判為 stale，`subscriptions.status` **確實**轉為 `cancelled`、entitlement 降 free；(b) 重播同一退款/爭議事件經 `uq_provider_event` 去重為安全 no-op，狀態維持 `cancelled`（不回退 active）。反例保護：若把 `state_effective_at` 誤設為 `t_future`，此案會退化成「記為已處理卻停留 active、永久漏撤」——斷言不得發生。
    - **Google 續訂收斂：等 order cursor 仍前進效期（startTime 續訂不變）**：首購後 `subscriptions.expires_at`=`t_exp1`、`receipt.state_effective_at`=`SubscriptionPurchaseV2.startTime`（`t_start`）、`state_synced_at`=`o1`。送 `SUBSCRIPTION_RENEWED` → 回抓 `subscriptionsv2.get`（`fetchObservedAt`=`o2>o1`），`startTime` **仍** `t_start`（等 cursor）、`lineItems[].expiryTime` 前進為 `t_exp2 > t_exp1`、`subscriptionState` 仍 active。斷言 (a) step g 命中 Google「較新回抓勝出」例外（`platform=='google' AND o2>state_synced_at AND expires_at 相異`）、**不**被 `statusRank<=` 判為 stale 而跳過，(h) 將 `subscriptions.expires_at` 前進為 `t_exp2`、`state_synced_at`=`o2`、entitlement 維持 pro；(b) 重播同一續訂（回抓狀態與 `expiryTime` 皆不變）→ `mappedStatus==sub.status AND expiresAt==sub.expires_at` 使例外的相異條件為 false → 落回 stale-guard COMMIT no-op，`expires_at` 停在 `t_exp2` 不重複前進。反例保護：若無此例外，等 cursor 續訂會被記為已處理卻停留舊 `expires_at`，效期提前到期——斷言不得發生。
-   - **Google 帳戶保留 → 回復存取（on-hold/paused → SUBSCRIPTION_RECOVERED → active，同 purchase token，startTime 不變）**：初始 active（`expires_at`=`t_exp`、`startTime`=`t_start`、`state_synced_at`=`o1`）。① 送 `SUBSCRIPTION_ON_HOLD` → 回抓 `subscriptionState=SUBSCRIPTION_STATE_ON_HOLD`（`fetchObservedAt`=`o2>o1`，`startTime` **仍** `t_start`）→ 斷言映射 `paused`、`hasActiveSubscription` 為 false、entitlement 降 free（存取暫扣），`state_synced_at`=`o2`。② 送 `SUBSCRIPTION_RECOVERED` → 回抓 `SUBSCRIPTION_STATE_ACTIVE`（`fetchObservedAt`=`o3>o2`，`startTime` 仍 `t_start`＝**等 cursor**）→ 斷言 step g 命中 Google「較新回抓勝出」例外（`o3>state_synced_at` 且狀態由 `paused`→`active` 相異）、**不**被 `statusRank(active) <= statusRank(paused)` 的 fail-closed 判為 stale 而跳過，(h) 將 `status` 收斂回 `active`、`expires_at` 設回抓 `expiryTime`、entitlement 回 pro（**存取恢復**）。③ 重播該 `SUBSCRIPTION_RECOVERED`（`uq_provider_event` 去重，或回抓同一 active 狀態）→ 冪等 no-op，維持 active、不重複前進。**fail-closed 不被弱化**：另測「遲到的 stale active 回抓」——on-hold 已以 `o2` 落地後，一個 `fetchObservedAt`=`o1'<o2` 的較舊 active 回抓到達 → 斷言 `o1' < state_synced_at(o2)` 使例外條件為 false → 落回 stale-guard 跳過，**不**覆蓋撤權，維持 `paused`/free。
+   - **Google 帳戶保留 → 回復存取（on-hold/paused → SUBSCRIPTION_RECOVERED → active，同 purchase token，startTime 不變）**：初始 active（`expires_at`=`t_exp`、`startTime`=`t_start`、`state_synced_at`=`o1`）。① 送 `SUBSCRIPTION_ON_HOLD` → 回抓 `subscriptionState=SUBSCRIPTION_STATE_ON_HOLD`（`fetchObservedAt`=`o2>o1`，`startTime` **仍** `t_start`）→ 斷言映射 `paused`、`hasActiveSubscription` 為 false、entitlement 降 free（存取暫扣），`state_synced_at`=`o2`。② 送 `SUBSCRIPTION_RECOVERED` → 回抓 `SUBSCRIPTION_STATE_ACTIVE`（`fetchObservedAt`=`o3>o2`，`startTime` 仍 `t_start`＝**等 cursor**）→ 斷言 step g 命中 g1 Google 收斂分支（`platform=='google' AND o3==cursor AND o3>state_synced_at AND 狀態由 `paused`→`active` 相異`）、g1 **先於** statusRank 執行故**不**被 `statusRank(active) <= statusRank(paused)` 影響，(h) 將 `status` 收斂回 `active`、`expires_at` 設回抓 `expiryTime`、`state_synced_at`=`o3`、entitlement 回 pro（**存取恢復**）。③ 重播該 `SUBSCRIPTION_RECOVERED`（`uq_provider_event` 去重，或回抓同一 active 狀態）→ g1 首條 `mappedStatus==sub.status AND expiresAt==sub.expires_at` 命中 → 冪等 no-op，維持 active、不重複前進。
+   - **Google 併發：較舊 restrictive 回抓不得覆蓋較新 recovered（freshness 先於 statusRank，state_synced_at 不倒退）**：模擬兩 worker 併發同一 purchase token（`startTime`=`t_start` 恆等）。worker A 於 `fetchObservedAt`=`o1` 回抓 `ON_HOLD`（映射 `paused`）後**卡住**未進交易；期間 Google 已 recover，worker B 於 `o2>o1` 回抓 `ACTIVE`、先取得 (d) per-user 鎖並 commit `active`/`state_synced_at=o2`/entitlement pro；A 隨後才取得鎖嘗試寫入。斷言：(a) A 在 g1 命中 `platform=='google' AND 等 cursor AND 狀態相異(paused≠active)`，且 `o1 <= rec.state_synced_at(o2)` → **一律拒收**（COMMIT no-op），**不**因 `statusRank(paused) > statusRank(active)` 逃過 stale-guard 而落 (h)；(b) 最終狀態維持 `active`/pro、`state_synced_at` **維持 `o2`（不倒退回 `o1`）**，付費者不被誤撤。反例保護：若 freshness 仍藏在 statusRank 分支內，此案會退化成 A 覆蓋為 `paused`、`state_synced_at` 倒退、永久誤撤——斷言不得發生。
    - **schema-level replay regression（provider_version 型別）**：以 Google 文件記載的 RTDN 信封原文灌入 ledger 並斷言可持久化、無型別錯誤——
      ```json
      { "version": "1.0", "packageName": "com.holohunter.app", "eventTimeMillis": "1730000000000",
