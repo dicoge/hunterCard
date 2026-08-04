@@ -126,7 +126,7 @@ CREATE TABLE subscription_events (
 | **帳單重試 / 寬限期**（付款失敗但平台仍給權限） | `DID_FAIL_TO_RENEW`(grace)、`IN_GRACE_PERIOD`、Stripe `past_due` | **`active`**（保留權限） | `expires_at` 暫延到寬限截止 | **仍為 subscriber**（依平台規範不可立即降級） |
 | 使用者關閉自動續訂（付費到期前） | `DID_CHANGE_RENEWAL_STATUS(off)`、`SUBSCRIPTION_CANCELED`(仍有效)、`cancel_at_period_end=true` | `active` | 不變 | 到期前仍 subscriber；UI 顯示「到期後不續訂」 |
 | 到期未續 | 排程掃 `expires_at < now()`、`SUBSCRIPTION_EXPIRED`、`customer.subscription.deleted` | `expired` | — | 降回 free_user |
-| **退款 / 撤銷 / 拒付**（立即失效） | ASSN `REFUND`、Play `SUBSCRIPTION_REVOKED` / voided、Stripe `charge.refunded` / dispute | **`cancelled`** + `cancelled_at=now()` | — | **立即降回 free_user**，且記 audit |
+| **退款 / 撤銷 / 拒付**（立即失效） | ASSN `REFUND`、Play `SUBSCRIPTION_REVOKED` / voided、Stripe `charge.refunded`（全額）/ `charge.dispute.created` | **`cancelled`** + `cancelled_at=now()` | — | **立即降回 free_user**，且記 audit（Stripe 全額/部分退款、爭議勝/敗政策見 §2.6） |
 | 暫停（Play pause / Stripe pause） | `SUBSCRIPTION_PAUSED`、`pause_collection` | `paused` | — | 暫停期間**視為無 active 訂閱** → free_user |
 
 > **判定不變式**：`hasActiveSubscription`（Product §2）= 該 user **任一** `subscriptions` row 滿足 `status='active' AND (expires_at IS NULL OR expires_at > now())`（跨多平台 row 聚合，OR 語意）。`paused` / `expired` / `cancelled` 都不算 active。寬限期刻意保持 `active`（權限不中斷），到期時間交由平台事件延長。
@@ -144,16 +144,21 @@ verifyEventAuthAndScope(evt)               # Apple JWS+bundleId / Play push-JWT+
 #     內部 UUID 不在通知內，必須先向 provider 查詢才拿得到（見 §3）。三平台一律先取權威狀態：
 #     Apple  → App Store Server API Get Subscription Status（含 appAccountToken）
 #     Google → purchases.subscriptionsv2.get（含 externalAccountIdentifiers.obfuscatedExternalAccountId）
-#     Stripe → Subscription.retrieve(sub_id)（含 client_reference_id / customer.metadata.user_id）
+#     Stripe → 依事件型別回抓（見 §2.6，退款/爭議不能只靠 Subscription.retrieve）：
+#              lifecycle（customer.subscription.*）→ Subscription.retrieve(sub_id)
+#              退款/爭議（charge.refunded / charge.dispute.*）→ Refund/Charge/Dispute.retrieve
+#              + charge.invoice → Invoice.retrieve → invoice.subscription 解出 sub_id
 #     事件只是「觸發」，狀態與帳戶歸屬都以此回應為準（Blocker 1：ordering-independent）。
-state = fetchProviderCurrentState(platform, provider_account, environment, provider_sub_ref)
+state = fetchProviderCurrentState(platform, provider_account, environment, provider_sub_ref, event_type)
 
 # (c) 由「provider 權威回應」導出並驗證內部 UUID（**不從事件 payload 取**）；解不出合法 UUID
 #     或該 user 不存在 → 立即 fail closed，不進交易、不鎖、不寫。
 user_id = deriveInternalUserId(platform, state)
 #     Apple  = state.appAccountToken
 #     Google = state.externalAccountIdentifiers.obfuscatedExternalAccountId
-#     Stripe = state.client_reference_id（缺則 customer.metadata.user_id）
+#     Stripe = subscription.metadata.user_id（Checkout 時由 client_reference_id 持久化）；
+#              缺則 customer.metadata.user_id；再缺則既有 uq_platform_sub receipt 映射（sub_id）。
+#              注意：Subscription.retrieve **不含** client_reference_id（該欄位在 Checkout Session）。
 # provider 端的帳戶識別在「原始購買」當下固定，不隨我方帳號 merge 更新；若該 UUID 是已被
 # merge 併走的來源帳號，須 follow account_merge_requests 重導到存活 target，讓事件落在正確帳號（§2.5）。
 user_id = followMergeRedirect(user_id)     # completed merge: source_user_snapshot → target；無 merge 則原值
@@ -247,9 +252,29 @@ AUTH §4 的帳號 merge 會把 source 的 active `subscriptions.user_id` 原子
    `UPDATE subscription_receipts r SET user_id = target.id, updated_at = now() FROM subscriptions s WHERE r.subscription_id = s.id AND s.user_id = target.id AND r.user_id = source.id;`
    使每一列 receipt 與其對應 subscription 恆同屬一個 user。留在 source 的非 active subscription 及其 receipt 同屬 source、一併隨 purge 清除，仍一致。
 2. **pro 併入走 requires_support**：任一方 active pro 時 merge 依 AUTH §3.5.1 轉人工確認，receipt 改綁待人工核可後才落，杜絕自動盜併。
-3. **provider 事件的 merge 重導**：provider 端帳戶識別（Apple `appAccountToken` / Google `obfuscatedExternalAccountId` / Stripe `client_reference_id`）在原始購買當下固定、**不隨 merge 更新**。因此 §2.2 step c 解析出的 UUID 若為已被 merge 併走的 source，`followMergeRedirect` 依 `account_merge_requests`（completed）重導到存活 target，事件才落在正確帳號；重導後 receipt（已於規則 1 搬到 target）與 user 相等，§2.2 step f 的完整性檢查通過。
+3. **provider 事件的 merge 重導**：provider 端帳戶識別（Apple `appAccountToken` / Google `obfuscatedExternalAccountId` / Stripe `subscription.metadata.user_id`，源自 Checkout `client_reference_id`）在原始購買當下固定、**不隨 merge 更新**。因此 §2.2 step c 解析出的 UUID 若為已被 merge 併走的 source，`followMergeRedirect` 依 `account_merge_requests`（completed）重導到存活 target，事件才落在正確帳號；重導後 receipt（已於規則 1 搬到 target）與 user 相等，§2.2 step f 的完整性檢查通過。
 4. **完整性 fail-closed**：§2.2 step f 鎖定 receipt 與其 `subscriptions` row 後驗 `rec.user_id == user_id AND sub.user_id == rec.user_id`；若因任何遺漏（如 merge 未搬移）而裂解 → 回 `409 SUBSCRIPTION_LINK_INTEGRITY`、不臆測寫入。
 5. **搬移後 reconcile target**：merge 交易末尾照 AUTH §3.5.1（entitlements 先於 scan_usage）與本文件 §2.2 (i) 對 target 跨 row 聚合 reconcile，確保 target 立即反映併入後的 active 狀態。
+
+### 2.6 Stripe 退款 / 爭議對帳（不可只靠 Subscription.retrieve）
+
+Stripe 的退款（`charge.refunded`）與爭議（`charge.dispute.created` / `charge.dispute.closed`）**不會**改動 `Subscription` 物件——退款/爭議發生時該 `sub_...` 常仍是 `active`。若沿用 §2.2 只回抓 `Subscription.retrieve`，會與 §2.1「退款/撤銷立即失權」矛盾（漏撤權）。故 Stripe 這兩類事件走**事件專屬的權威回抓路徑**，仍在 §2.2 同一交易內入帳（(d)–(i) 不變）：
+
+1. **權威回抓對象依事件型別（step b）**：
+   - `charge.refunded` → `Charge.retrieve(expand=[refunds.data])` 取 `amount`, `amount_refunded`, `refunded`, `refunds[].created`。
+   - `charge.dispute.created` / `charge.dispute.closed` → `Dispute.retrieve` 取 `status`, `amount`, `created`。
+   - 由 `charge.invoice → Invoice.retrieve → invoice.subscription` 解出 `sub_...`，作為定位 receipt / subscription 的 `provider_sub_ref`。事件 payload 內的金額/狀態一律**不信**，以上述 retrieve 回應為準（authenticated：webhook secret 驗簽 + `event.account`/`livemode` scope 驗，§3）。
+
+2. **身分解析**：解出 `sub_...` 後讀 `subscription.metadata.user_id`（Checkout 時由 `client_reference_id` 持久化），缺則 `customer.metadata.user_id`，再缺則既有 `uq_platform_sub`（`provider_sub_ref=sub_...`）receipt 映射。**`Subscription.retrieve` 不含 `client_reference_id`**（該欄位在 Checkout Session）；身分絕不從已不存在的欄位取。
+
+3. **退款政策（full vs partial，`mapProviderState` 對這些事件的輸出）**：
+   - **全額退款**（`refunded==true`，或退款金額覆蓋當期發票金額）→ `cancelled` + 立即撤權；`state_effective_at = refund.created`。
+   - **部分退款**（`amount_refunded < amount`，比例/善意退款）→ **不撤權**，維持 `Subscription.retrieve` 當下狀態；記 audit。避免因比例退款誤降仍在期內的訂閱。
+   - **爭議建立**（`charge.dispute.created`，資金已被凍結/取回）→ 比照失權，`cancelled` + 撤權；`state_effective_at = dispute.created`（fail-closed：資金已離開，先停權）。
+   - **爭議結案—敗訴**（`charge.dispute.closed` `status=lost`）→ 維持 `cancelled`；`state_effective_at = dispute.closed`。
+   - **爭議結案—勝訴**（`charge.dispute.closed` `status=won`，資金退回）→ 回抓 `Subscription.retrieve` 以其當下狀態對帳（仍在期內且未另行取消則恢復 `active`）；`state_effective_at = dispute.closed`。
+
+4. **原子撤權 / 確定生效時間**：上述 `(mappedStatus, expiresAt, stateEffectiveAt)` 交回 §2.2，於 (h) 原子寫 `subscriptions.status`、(i) 跨 row 聚合把 entitlement 降回 free——撤權在**同一交易**完成，不依賴 Stripe 是否自動 cancel 訂閱（我方 entitlement 為權威；如需亦可另呼 `Subscription.cancel` 驗證 provider 端取消，但不作為撤權前提）。`state_effective_at` 一律取自 provider 物件的權威時間戳（refund/dispute `created`、dispute `closed`），讓 §2.2 step g 的 `statusRank` tie-break 對「退款/爭議 vs 續訂」仍成立（失權方勝出）；爭議勝訴的恢復亦經 step g——其較新的 `state_effective_at` 才能覆蓋先前撤權，確保定序確定、不回退。
 
 ---
 
@@ -263,7 +288,7 @@ AUTH §4 的帳號 merge 會把 source 的 active `subscriptions.user_id` 原子
 | **Android Google Play** | 購買時 `setObfuscatedAccountId(users.id)`；**回抓時**由 `subscriptionsv2.get` 的 `externalAccountIdentifiers.obfuscatedExternalAccountId` 取回（**不在 RTDN 內**） | Play Developer API `purchases.subscriptionsv2.get` + **RTDN**（Pub/Sub push） | **push 本身**驗 authenticated Pub/Sub JWT（`aud` = 我方 endpoint、`email` = 指定 service account、`email_verified`）；**再**用 service account 呼叫 Developer API 覆核 token 取權威狀態與帳戶識別 | RTDN payload `packageName` 須等於預期；Developer API 用綁定該 package 的 service account | `purchaseToken`（經 `linkedPurchaseToken` 追溯根 token） |
 | **Web Stripe** | Checkout `client_reference_id` = `users.id`（並存 `customer.metadata.user_id`） | Stripe **Webhooks** | `Stripe-Signature` 用 webhook secret 驗；`event.id`(`evt_...`) 進 ledger | `event.account`（Connect 時）與 `event.livemode` 須等於預期帳戶與模式，否則拒收 | `subscription` id（`sub_...`） |
 
-- **事件是「觸發」，狀態一律回抓 provider current-state（排序無關）**：三平台的通知都不保證順序、可能亂序 / 遲到 / 重送。因此驗過真偽 + scope 後，**不信事件 payload 內的狀態欄位**，一律呼叫該平台的 current-state 查詢端點（Apple App Store Server API `Get Subscription Status` / Google `purchases.subscriptionsv2.get` / Stripe `Subscription.retrieve`）取「當下」權威狀態再入帳（§2.2 step e）。這使亂序天然無害，並讓 Google RTDN `version`（schema 版本、非單調序）**永不被用於排序**。
+- **事件是「觸發」，狀態一律回抓 provider current-state（排序無關）**：三平台的通知都不保證順序、可能亂序 / 遲到 / 重送。因此驗過真偽 + scope 後，**不信事件 payload 內的狀態欄位**，一律呼叫該平台的 current-state 查詢端點（Apple App Store Server API `Get Subscription Status` / Google `purchases.subscriptionsv2.get` / Stripe `Subscription.retrieve`）取「當下」權威狀態再入帳（§2.2 step e）。這使亂序天然無害，並讓 Google RTDN `version`（schema 版本、非單調序）**永不被用於排序**。**例外：Stripe 退款/爭議**（`charge.refunded` / `charge.dispute.*`）不改動 `Subscription` 物件，須改抓 Refund/Charge/Dispute 並由 invoice 解出 sub（§2.6），不可只靠 `Subscription.retrieve`。
 - **「驗證購買 token」≠「驗證推送」**：Google RTDN 是一個 HTTP POST，能呼叫 Developer API 只證明「這個 purchaseToken 有效」，**不證明這個 HTTP 請求來自 Google**。因此**必先**驗 authenticated Pub/Sub push JWT（audience + service-account 宣稱），**再**打 Developer API 取權威狀態；兩者缺一即拒收。Apple/Stripe 同理先驗事件真偽（JWS / signature）再取狀態。
 - **scope 綁進去重鍵**：驗過的 `provider_account`（bundleId / packageName / Stripe account）+ `environment` 一併寫入 `subscription_receipts` 與 `subscription_events` 的唯一鍵（§1），使跨 app / 跨帳戶 / 跨環境即使事件 id 或訂閱鍵偶然相同也不會互相污染。任何 scope 不符的事件在 mutate 狀態**之前**即被擋下（§2.2 step a）。
 - **絕不信任 client 自報的購買結果**（防偽造升級）；client 回呼只作「提示 server 去 pull」。
@@ -389,6 +414,12 @@ CREATE TABLE billing_records_retained (
      - Stripe：`customer.subscription.deleted` 先於較早的 `invoice.paid` 到達 → 因狀態一律回抓 `Subscription.retrieve`，最終落在 provider 當下狀態，舊事件不回退。
      - Google：同一 `purchaseToken` 的兩則 RTDN（例先 `SUBSCRIPTION_RENEWED` 後遲到的 `SUBSCRIPTION_PURCHASED`）亂序送達 → 驗證信封 `version`（字串）**未**被用於排序，兩次都回抓 `subscriptionsv2.get`，結果一致且等於當下狀態。
      - Apple：`DID_RENEW` 與 `REFUND` 亂序 → 回抓 `Get Subscription Status` 得當下狀態；若兩訊號 `state_effective_at` 相同，`statusRank` 使失權方（refund→cancelled）勝出（fail-closed tie-break）。
+   - **Stripe 退款/爭議撤權（不可只靠 Subscription.retrieve，§2.6）**：
+     - **全額退款**：`charge.refunded`（`refunded==true`）到達、但 `Subscription.retrieve` 仍 `active` → 斷言走事件專屬回抓（Charge → invoice → sub）、映射 `cancelled` 撤權降 free，`state_effective_at=refund.created`；**不因訂閱物件仍 active 而漏撤**。
+     - **部分退款**：`amount_refunded < amount` → 斷言**維持**當下訂閱狀態、entitlement 不誤降。
+     - **爭議建立**：`charge.dispute.created` → 立即 `cancelled` 撤權（`state_effective_at=dispute.created`）。
+     - **爭議結案**：`charge.dispute.closed` `status=won` → 回抓 `Subscription.retrieve`，仍在期內則恢復 `active`（較新 `state_effective_at=dispute.closed` 經 step g 覆蓋先前撤權）；`status=lost` → 維持 `cancelled`。
+     - **Stripe 身分**：由 `subscription.metadata.user_id`（Checkout `client_reference_id` 持久化）/ `customer.metadata.user_id` / 既有 receipt 映射解析 → 斷言**不引用** `Subscription.retrieve` 上不存在的 `client_reference_id`。
    - **schema-level replay regression（provider_version 型別）**：以 Google 文件記載的 RTDN 信封原文灌入 ledger 並斷言可持久化、無型別錯誤——
      ```json
      { "version": "1.0", "packageName": "com.holohunter.app", "eventTimeMillis": "1730000000000",
