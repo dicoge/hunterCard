@@ -15,6 +15,7 @@ import { useAuthStore } from '../store/authStore';
 import {
   isAppleAuthAvailable,
 } from '../services/auth';
+import { GOOGLE_CANCEL_CODE } from '../services/auth/googleAuth';
 
 const PRIVACY_POLICY_URL = 'https://holocard-hunter.vercel.app/privacy';
 
@@ -44,7 +45,10 @@ export default function AuthScreen() {
     try {
       await loginWithGoogle();
     } catch (err) {
-      Alert.alert('登入失敗', '無法完成 Google 登入，請稍後再試。');
+      // 使用者取消不顯示錯誤，停留在登入頁。
+      if ((err as { code?: string })?.code !== GOOGLE_CANCEL_CODE) {
+        Alert.alert('登入失敗', '無法完成 Google 登入，請稍後再試。');
+      }
     } finally {
       setBusy(false);
     }

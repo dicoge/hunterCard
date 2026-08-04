@@ -14,6 +14,7 @@ import {
   deleteAccount,
   providerSignOut,
 } from '../services/authService';
+import { GOOGLE_CANCEL_CODE } from '../services/auth/googleAuth';
 
 interface AuthStore {
   user: HoloUser | null;
@@ -62,6 +63,11 @@ export const useAuthStore = create<AuthStore>()(
             role: 'free_user',
           });
         } catch (err: any) {
+          // 使用者取消登入：靜默處理，不設 error（呼叫端亦不顯示錯誤）。
+          if (err?.code === GOOGLE_CANCEL_CODE) {
+            set({ isLoading: false, error: null });
+            throw err;
+          }
           set({ isLoading: false, error: err.message || 'Login failed' });
           throw err;
         }

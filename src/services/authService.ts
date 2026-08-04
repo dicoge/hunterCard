@@ -9,6 +9,7 @@ import {
   HoloUser,
   AuthTokens,
 } from '../types/auth';
+import { signInWithGoogle as signInWithGoogleNative } from './auth/googleAuth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -42,10 +43,6 @@ const APPLE_DISABLED_MESSAGE =
 
 const googleScopes = ['openid', 'profile', 'email'];
 const appleScopes = ['name', 'email'];
-
-function generateUserId(): string {
-  return 'holo_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-}
 
 async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUser> {
   const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -110,44 +107,6 @@ export interface SignInResult {
   isNewUser: boolean;
 }
 
-async function findOrCreateHoloUser(providerInfo: ProviderUserInfo, provider: AuthProvider): Promise<{ user: HoloUser; isNew: boolean }> {
-  const existing = loadLocalUsers();
-  let user = existing.find((u) =>
-    u.linkedProviders.some((p) => p.provider === provider && p.providerId === providerInfo.id)
-  );
-
-  if (user) {
-    const identity = user.linkedProviders.find((p) => p.provider === provider)!;
-    identity.email = providerInfo.email;
-    identity.displayName = providerInfo.name;
-    identity.photoUrl = providerInfo.picture;
-    saveLocalUsers(existing);
-    return { user, isNew: false };
-  }
-
-  const newUser: HoloUser = {
-    internalId: generateUserId(),
-    displayName: providerInfo.name,
-    primaryEmail: providerInfo.email,
-    photoUrl: providerInfo.picture,
-    linkedProviders: [
-      {
-        provider,
-        providerId: providerInfo.id,
-        email: providerInfo.email,
-        displayName: providerInfo.name,
-        photoUrl: providerInfo.picture,
-        linkedAt: new Date().toISOString(),
-      },
-    ],
-    createdAt: new Date().toISOString(),
-  };
-
-  existing.push(newUser);
-  saveLocalUsers(existing);
-  return { user: newUser, isNew: true };
-}
-
 function loadLocalUsers(): HoloUser[] {
   try {
     const raw = localStorage.getItem('holohunter-users');
@@ -164,59 +123,42 @@ function saveLocalUsers(users: HoloUser[]): void {
 }
 
 export async function signInWithProvider(provider: AuthProvider): Promise<SignInResult> {
-  if (provider === 'apple' && !APPLE_LOGIN_ENABLED) {
+  if (provider === 'apple') {
+    // Apple 登入未在此路徑實作：iOS 原生 Apple 走 appleAuth（原生流程），
+    // Web Apple 屬 DIC-663。無論如何都需後端驗證 Apple id_token，client 不自行信任。
     throw new Error(APPLE_DISABLED_MESSAGE);
   }
-  const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
-  if (!clientId) {
-    throw new Error(
-      `Missing client ID for ${provider}. Set ${provider === 'google' ? 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID' : 'EXPO_PUBLIC_APPLE_SERVICE_ID'} in .env`
-    );
-  }
 
-  const redirectUri = AuthSession.makeRedirectUri();
-  const scopes = provider === 'google' ? googleScopes : appleScopes;
-  const discovery = provider === 'google' ? googleDiscovery : appleDiscovery;
+  // Google（Android 第一優先）：原生 Sign-In 取 id_token → 後端 /api/auth/login
+  // 驗證簽章 / iss / aud / exp 後，以 (google, sub) 找/建 internal user 並簽發 app
+  // session。internal user id 與 session 一律由後端權威決定，client 不 mint 身份、
+  // 不再寫入本機 users（移除舊的 localStorage client-mint 信任路徑）。
+  const backend = await signInWithGoogleNative();
 
-  const authRequest = new AuthSession.AuthRequest({
-    clientId,
-    scopes,
-    redirectUri,
-    usePKCE: true,
-    extraParams: provider === 'apple'
-      ? { response_mode: 'form_post' }
-      : undefined,
-  });
+  const user: HoloUser = {
+    internalId: backend.user.internalId,
+    displayName: backend.user.displayName ?? '',
+    primaryEmail: backend.user.primaryEmail ?? undefined,
+    photoUrl: backend.user.photoUrl ?? undefined,
+    linkedProviders: backend.user.linkedProviders.map((p) => ({
+      provider: p.provider as AuthProvider,
+      providerId: p.providerId,
+      email: p.email ?? '',
+      displayName: p.displayName ?? '',
+      photoUrl: p.photoUrl ?? undefined,
+      linkedAt: p.linkedAt,
+    })),
+    createdAt: backend.user.createdAt,
+  };
 
-  const result = await authRequest.promptAsync(discovery);
-  if (result.type !== 'success') {
-    throw new Error(result.type === 'cancel' ? 'User cancelled login' : `Auth failed: ${result.type}`);
-  }
+  const tokens: AuthTokens = {
+    accessToken: backend.accessToken,
+    refreshToken: backend.refreshToken ?? undefined,
+    expiresAt: backend.expiresAt,
+    provider: 'google',
+  };
 
-  const code = result.params.code;
-  if (!code) throw new Error('No authorization code returned');
-
-  const codeVerifier = authRequest.codeVerifier;
-  if (!codeVerifier) throw new Error('PKCE code verifier missing');
-
-  const tokens = await exchangeOAuthCode(clientId, code, codeVerifier, redirectUri, provider);
-
-  let providerInfo: ProviderUserInfo;
-  if (provider === 'google') {
-    providerInfo = await fetchGoogleUserInfo(tokens.accessToken);
-  } else {
-    const idToken = result.params.id_token;
-    if (!idToken) throw new Error('No id_token returned from Apple');
-    const appleUser = parseAppleIdToken(idToken as string);
-    providerInfo = {
-      id: appleUser.id,
-      email: appleUser.email,
-      name: appleUser.name,
-    };
-  }
-
-  const { user, isNew } = await findOrCreateHoloUser(providerInfo, provider);
-  return { user, tokens, isNewUser: isNew };
+  return { user, tokens, isNewUser: backend.isNewUser };
 }
 
 export async function linkProvider(
