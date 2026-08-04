@@ -191,12 +191,18 @@ export async function verifyGoogleIdToken(
   };
 }
 
-/** 從環境變數收集允許的 Google audience（各平台 OAuth client id，皆為公開值）。 */
+/**
+ * 允許的 Google audience：**僅**伺服器 Web client ID。
+ *
+ * native Google Sign-In 以 `webClientId`（= 伺服器 Web client）設定，故其 id_token 的
+ * `aud` 一律是 Web client。刻意**不**接受 iOS / Android OAuth client id 當替代 audience——
+ * 那些 client 沒有 client secret，接受它們會擴大可被接受的 token 來源。未設定 Web client
+ * ID 時回空陣列，端點 fail-closed（501 AUTH_NOT_CONFIGURED）。
+ */
 export function getConfiguredGoogleAudiences(): string[] {
-  return [
-    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    process.env.GOOGLE_WEB_CLIENT_ID,
-  ].filter((v): v is string => typeof v === 'string' && v.length > 0);
+  const webClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+    process.env.GOOGLE_WEB_CLIENT_ID ||
+    '';
+  return webClientId.length > 0 ? [webClientId] : [];
 }

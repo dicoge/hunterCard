@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {
   verifyGoogleIdToken,
+  getConfiguredGoogleAudiences,
   GoogleTokenInvalidError,
   GoogleAuthNotConfiguredError,
 } from '../api/_lib/google-auth.ts';
@@ -116,6 +117,14 @@ await expectInvalid(
   { expectedNonce: 'different-nonce' }
 );
 
+// Blocker 2 backend guarantee: when the server expects a nonce, a token that carries
+// NO nonce claim must be rejected (an omitted nonce is not an opt-out of replay protection).
+await expectInvalid(
+  'token without nonce claim, but expectedNonce provided → invalid (no silent opt-out)',
+  signToken(validPayload()),
+  { expectedNonce: 'server-nonce' }
+);
+
 await check('matching nonce → valid', async () => {
   const id = await verifyGoogleIdToken(signToken(validPayload({ nonce: 'server-nonce' })), {
     allowedAudiences: [AUD],
@@ -128,5 +137,52 @@ await check('matching nonce → valid', async () => {
 
 await expectInvalid('empty id_token → invalid', '');
 await expectInvalid('malformed (two segments) → invalid', 'aaa.bbb');
+
+// Blocker 3: allowed audience is the server Web client ID ONLY. iOS / Android OAuth
+// client ids (no client secret) must NOT widen the accepted token sources.
+console.log('\nGoogle audience restriction (DIC-665 CR — Web client only)');
+
+function withEnv(vars, fn) {
+  const saved = {};
+  for (const [k, v] of Object.entries(vars)) {
+    saved[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    fn();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+await check('audience = server Web client ID only (iOS/Android client ids ignored)', async () => {
+  withEnv(
+    {
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 'web-client.apps.googleusercontent.com',
+      GOOGLE_WEB_CLIENT_ID: undefined,
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 'ios-client.apps.googleusercontent.com',
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 'android-client.apps.googleusercontent.com',
+    },
+    () => {
+      const auds = getConfiguredGoogleAudiences();
+      assert.deepEqual(auds, ['web-client.apps.googleusercontent.com']);
+      assert.ok(!auds.includes('ios-client.apps.googleusercontent.com'));
+      assert.ok(!auds.includes('android-client.apps.googleusercontent.com'));
+    }
+  );
+});
+
+await check('no Web client ID configured → empty audiences (endpoint fail-closes 501)', async () => {
+  withEnv(
+    { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: undefined, GOOGLE_WEB_CLIENT_ID: undefined },
+    () => {
+      assert.deepEqual(getConfiguredGoogleAudiences(), []);
+    }
+  );
+});
 
 console.log(`\n${passed} checks passed.`);
