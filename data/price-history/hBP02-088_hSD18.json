@@ -331,8 +331,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-088_hSD18"
+    },
+    {
+      "date": "2026-08-05",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-088_hSD18"
     }
   ],
-  "lastUpdated": "2026-08-04T12:13:36.245Z",
+  "lastUpdated": "2026-08-05T12:12:16.687Z",
   "nameZh": "森美聲的鐮刀"
 }
