@@ -9,6 +9,32 @@ whenever the auth, scan, or push flows change.
 Support / deletion contact: `dicoge.chen@gmail.com`
 Privacy Policy: `/privacy` · Support: `/support`
 
+## Auth model — server-authoritative (DIC-663 / DIC-866)
+
+HoloHunter uses a **server-authoritative account system**, not device-only
+storage. At sign-in the client only runs the provider OAuth/OIDC prompt to obtain
+a short-lived provider **ID token** and posts it to `POST /api/auth/login`
+(`src/services/authService.ts` → `api/auth/[action].ts`). The backend verifies the
+token, resolves the identity, and **stores an internal account and per-provider
+identity records in Vercel KV** (`api/_lib/identity-store.ts`), then issues a
+self-signed session token (`api/_lib/session.ts`). Consequences that drive the
+answers below:
+
+- The account identity fields (internal user id, provider `subject`, and the
+  **email / display name / profile-picture** snapshots, plus role and link
+  timestamps) **leave the device and are stored on our server** → under both
+  Apple's and Google Play's definitions they are **collected**. (This reverses the
+  earlier device-only assumption.)
+- Identity is keyed by `(provider, subject)`; **email is a stored snapshot only**
+  and never used for identity resolution or account merging.
+- **Sign in with Apple is enabled natively on iOS**
+  (`APPLE_LOGIN_ENABLED = isIOS || APPLE_WEB_ENABLED`, `src/services/authService.ts`);
+  web Apple stays gated behind `EXPO_PUBLIC_APPLE_WEB_LOGIN_ENABLED`. Both Google
+  and Apple are live login providers → declare Apple on the Apple label.
+- The client does **not** store Google/Apple OAuth access/refresh tokens; it holds
+  only the server-issued **session token** and a cached copy of the account
+  snapshot (`holohunter-auth` persist), re-validated against the server each launch.
+
 ## Gemini API tier / billing — NOT verified in this repo (answers do not assume paid)
 
 The card-scan image is uploaded to **Google Gemini**
@@ -47,21 +73,23 @@ exclusion without a verified paid-tier Data Processing Addendum).
 
 | Data | Source in code | Where it goes | Linked to identity? | Retention |
 |---|---|---|---|---|
-| Google account ID (`sub`), email, name (given/family), profile picture URL | `signInWithProvider('google')` → `fetchGoogleUserInfo` (`src/services/authService.ts`) | Stored **on device only** (`localStorage 'holohunter-users'` + zustand persist `'holohunter-auth'` / AsyncStorage). **Not** sent to our backend. | Yes (account) | Until sign-out / delete / uninstall (local) |
-| Google OAuth access + refresh token | `exchangeOAuthCode` | Stored **on device only** (persist `'holohunter-auth'`) | Yes (account) | Until sign-out / delete / uninstall (local) |
+| Provider `subject`, email, display name, profile-picture URL, role, link timestamps | `signInWithProvider` → `POST /api/auth/login` (`src/services/authService.ts`, `api/auth/[action].ts`) | **Transmitted off-device to our backend** and stored in the **server identity DB (Vercel KV)** (`api/_lib/identity-store.ts`). A snapshot is also cached on-device (`holohunter-auth`). | Yes (account) | On server until account deletion (`/api/auth/delete-account`); local cache until sign-out / delete / uninstall |
+| Provider ID token (transient) + server session token | `obtainProviderIdToken` → `/api/auth/login` → `api/_lib/session.ts` | ID token sent to our backend for verification (not stored). Session token stored **on device** (`holohunter-auth`); validated server-side each launch. | Yes (account) | Session TTL 30 days / until sign-out |
 | Card scan images | `recognizeViaApi` (`src/services/cardRecognition.ts`), native path in `ScanScreen.tsx` | Uploaded (both native + web) to our `POST /api/recognize-card` → forwarded to **Google Gemini** (`gemini-2.5-flash` on `generativelanguage.googleapis.com`, `api/recognize-card.ts` `callVision`). **No OpenRouter.** | No (image only) | Not stored by our server. Google's retention depends on the (unverified) API tier; Gemini terms permit limited-period logging → treat as retained beyond the request |
-| Expo push token + platform (iOS/Android) | `pushNotificationService.ts` → `POST /api/push/register` | **Vercel KV** (`api/lib/kv-storage.ts`), keyed by push token | **No** — anonymous, not tied to Google account | Until removed on request (no in-app delete yet) |
+| Expo push token + platform (iOS/Android) | `pushNotificationService.ts` → `POST /api/push/register` | **Vercel KV** (`api/lib/kv-storage.ts`), keyed by push token | **No** — anonymous, not tied to the account | Until removed on request (no in-app delete yet) |
 | Watchlist card numbers, favorites, language/currency prefs, scan count | `watchlistStore.ts`, `scanQuotaStore.ts`, settings | **On device only** (localStorage / AsyncStorage). Not uploaded. | Device-local | Until uninstall / clear data |
 
 Key facts that drive the answers below:
-- **Apple Sign-In is disabled** (`APPLE_LOGIN_ENABLED = false`). Only Google is live.
-- Account profile data is retrieved from Google and kept **on the device**; it is
-  **not transmitted to a HoloHunter backend**. Under Google Play's definition,
-  data that stays on the device is **not "collected"** — so these fields are
-  **not** declared as collected on Play (see §C).
-- The **only** user data that leaves the device to our / third-party servers:
-  (1) scan **images** (forwarded to Google Gemini), (2) an anonymous **push
-  token** (Vercel KV).
+- **Google and Apple Sign-In are both live** — Google on web + iOS, Apple natively
+  on iOS (web Apple gated by feature flag). Providers can be linked/unlinked.
+- Account identity data (subject, email, name, photo, role) is **transmitted to and
+  stored on our backend** (Vercel KV) → it **is "collected"** under both stores'
+  definitions and is declared as such (§B, §C).
+- The user data that leaves the device to our / third-party servers: (1) **account
+  identity data** at sign-in (our Vercel backend), (2) scan **images** (forwarded
+  to Google Gemini), (3) an anonymous **push token** (Vercel KV).
+- Collections/favorites, watchlist, language/currency prefs, and the monthly scan
+  counter stay **on device only** and are **not** synced across devices.
 - **No** advertising SDKs, **no** analytics SDKs, **no** data sold or shared for
   ads/tracking. Scan quota is a local, device-only counter (100/month for
   signed-in free users; guests cannot scan). No paid subscription / no payments.
@@ -75,20 +103,19 @@ Key facts that drive the answers below:
 advertising or third-party analytics SDKs.
 
 ### Data Linked to You
-The account profile fields below are obtained via Google Sign-In and kept only on
-the device (never sent to our servers). We **declare them anyway** on the App
-Store — over-disclosure is review-safe and keeps the label consistent with the
-OAuth flow the user sees. (Google Play is handled differently — see §C — because
-Play's "collect" definition excludes on-device-only data.)
+Obtained via Google / Apple Sign-In and **stored on our server** (Vercel KV
+identity DB) as well as cached on-device. These are genuinely collected — declare
+them:
 
 | Category → Type | Purpose | Linked | Tracking |
 |---|---|---|---|
 | Contact Info → Email Address | App Functionality (sign-in / account) | Yes | No |
-| Contact Info → Name | App Functionality | Yes | No |
-| Identifiers → User ID (Google account ID) | App Functionality (authentication) | Yes | No |
+| Contact Info → Name | App Functionality (account display) | Yes | No |
+| Identifiers → User ID (internal user id + provider `subject`) | App Functionality (authentication) | Yes | No |
 
-(The Google profile-picture URL is stored on-device with the above and needs no
-separate line item.)
+(The profile-picture URL snapshot is stored server-side alongside the above and
+needs no separate line item. Apple private-relay emails are accepted; email is a
+snapshot only and is not used to key identity.)
 
 ### Data Not Linked to You
 | Category → Type | Purpose | Linked | Tracking |
@@ -110,13 +137,19 @@ the production project. Declaring it is the accurate, review-safe answer.
 above (Google-side retention depends on tier and is not zero).
 
 ### Account deletion (App Store requirement)
-In-app **Settings → Delete Account** removes the local account record and signs
-the user out. It does **not** by itself revoke Google authorization or delete the
-server-side push token. Full revocation: Sign Out (best-effort — it *attempts*
-to revoke the Google token but ignores network/HTTP failure, so it is not
-guaranteed) or, to guarantee it, Google Account settings; push-token removal by
-emailing `dicoge.chen@gmail.com`.
-Disclose this honestly — do **not** claim all cloud/authorization data is deleted.
+In-app **Settings → Delete Account** runs a **server-authoritative, fail-closed**
+deletion (`POST /api/auth/delete-account`): only on server-confirmed success does
+it permanently delete the internal account and all linked identities from the
+server (Vercel KV) and clear the device session (`api/auth/delete-account.ts`,
+`api/_lib/identity-store.ts` `deleteUser`). Per Apple guideline **5.1.1(v)**, an
+account with a linked **Apple** identity requires the server to **revoke the Apple
+authorization** before deletion; if it cannot, the request fails and nothing is
+deleted (Apple-token revocation persistence is still being finalized, so such
+accounts currently receive a fail-closed "not yet available" and are not deleted).
+**Sign Out** only clears the local session — it does **not** revoke Google/Apple
+authorization. Deletion does not cover the anonymous push token (email
+`dicoge.chen@gmail.com`) or device-local data (uninstall / clear data). Disclose
+this honestly.
 
 ---
 
@@ -126,18 +159,39 @@ Disclose this honestly — do **not** claim all cloud/authorization data is dele
 - **Does your app collect or share any of the required user data types?** Yes.
 - **Is all collected data encrypted in transit?** Yes (HTTPS).
 - **Do you provide a way for users to request that their data be deleted?** Yes —
-  email `dicoge.chen@gmail.com`; plus in-app sign-out (best-effort Google-token
-  revocation) and uninstall / clear-data for local data.
+  in-app **Settings → Delete Account** (server-authoritative, fail-closed cascade
+  delete of the server account/identities); plus email `dicoge.chen@gmail.com` and
+  uninstall / clear-data for device-local data.
 
 ### Data types — collected (declare exactly these)
 
 Under Google Play's Data Safety definitions, "collected" means data transmitted
-off the device. The Google Sign-In profile fields (email, name, User ID, picture)
-are stored **on the device only** and are **never sent to our servers**, so they
-are **not collected** on Play — see the "NOT collected" list below. Only the two
-types that actually leave the device are declared here.
+off the device. The sign-in identity fields **are transmitted to and stored on our
+backend** (Vercel KV), so they **are collected** and declared here.
 
-**1. Photos and videos → Photos (card scan image)**
+**1. Personal info → Name (display name)**
+- Collected: **Yes** · Shared: **No**
+- Purpose: **App functionality** (account) · Required or optional: Optional (only if you sign in)
+- Processed ephemerally: No · Linked to identity: Yes
+
+**2. Personal info → Email address**
+- Collected: **Yes** · Shared: **No**
+- Purpose: **App functionality** (account) · Required or optional: Optional (only if you sign in)
+- Processed ephemerally: No · Linked to identity: Yes
+
+**3. Personal info → User IDs (internal user id + provider `subject`)**
+- Collected: **Yes** · Shared: **No**
+- Purpose: **App functionality** (authentication) · Required or optional: Optional (only if you sign in)
+- Processed ephemerally: No · Linked to identity: Yes
+- *(Note the Play taxonomy: "User IDs" is under **Personal info**, not a separate
+  Identifiers group. The profile-picture URL snapshot is stored with these and
+  needs no separate line item.)*
+- *Why "Shared: No":* the identity data is stored in our own Vercel backend. The
+  provider `subject` originates **from** Google/Apple (we do not transfer new user
+  data to them beyond returning their own token for verification), so there is no
+  third-party recipient to declare as sharing.
+
+**4. Photos and videos → Photos (card scan image)**
 - Collected: **Yes** · Shared: **Yes** · Processed ephemerally: **No**
 - Purpose: **App functionality** (card recognition)
 - Required or optional: Optional (only if the user scans) · Linked to identity: No
@@ -152,7 +206,7 @@ types that actually leave the device are declared here.
   the request), so it does not meet Play's "ephemeral" bar (Gemini API Terms,
   cited above).
 
-**2. Device or other IDs → Device or other IDs (Expo push token)**
+**5. Device or other IDs → Device or other IDs (Expo push token)**
 - Collected: **Yes** · Shared: **No**
 - Purpose: **App functionality** (push price notifications)
 - Required or optional: Optional (only if notifications granted; mobile only)
@@ -163,20 +217,18 @@ The following stay on the device (localStorage / AsyncStorage) and are never
 uploaded to our servers, so under Play's definition they are **Not collected** —
 do **not** declare them:
 
-- **Personal info → Name** and **Personal info → Email address** — obtained via
-  Google Sign-In, stored on-device only.
-- **Personal info → User IDs** (Google account ID `sub`) — on-device only. *(Note
-  the Play taxonomy: "User IDs" is under **Personal info**, not a separate
-  Identifiers group.)*
-- Google OAuth access / refresh tokens and the profile-picture URL — on-device only.
 - Favorites / collections, watchlist card numbers, language/currency preferences,
-  and the monthly scan counter — on-device only.
+  and the monthly scan counter — on-device only, not synced across devices.
+- The server-issued session token cached on-device — a local credential, not
+  independently declared (the account it represents is declared above).
 
 ### Security practices
 - Data encrypted in transit: **Yes**.
-- Data deletion request mechanism: **Yes** (email + sign-out + uninstall).
-- No data sold. No data shared with advertisers or analytics providers. The only
-  off-device recipients are: Google (Sign-In runs on-device; the card **image**
-  is sent to the Gemini API for recognition — tier/billing unverified, so the
-  transfer is declared as sharing on Play), Vercel (backend + KV for the
-  anonymous push token), Expo (push delivery).
+- Data deletion request mechanism: **Yes** (in-app server-authoritative Delete
+  Account + email + uninstall).
+- No data sold. No data shared with advertisers or analytics providers. Off-device
+  recipients are: Google (Sign-In ID-token verification; and the card **image**
+  sent to the Gemini API for recognition — tier/billing unverified, so that
+  transfer is declared as sharing on Play), Apple (Sign in with Apple identity
+  verification on iOS), Vercel (backend + KV storing the account/identity data and
+  the anonymous push token), Expo (push delivery).

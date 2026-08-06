@@ -307,21 +307,21 @@
       <div class="faq-item">
         <div class="faq-question">Q: 我需要登入才能使用嗎？訪客模式有哪些限制？</div>
         <div class="faq-answer">
-          不一定。<strong>訪客模式</strong>無須登入即可瀏覽卡表與手動查價。若要使用<strong>相機掃描辨識</strong>功能，則需以 <strong>Google 帳號登入</strong>。目前僅開放 Google 登入。
+          不一定。<strong>訪客模式</strong>無須登入即可瀏覽卡表與手動查價。若要使用<strong>相機掃描辨識</strong>功能，則需登入。目前可用 <strong>Google 帳號登入</strong>；在 iOS 上也可使用 <strong>Sign in with Apple</strong>。
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: 為什麼「使用 Apple 帳號登入」按鈕沒有反應？</div>
+        <div class="faq-question">Q: 我可以用 Apple 帳號登入嗎？</div>
         <div class="faq-answer">
-          Apple 登入目前<strong>尚未開放</strong>。安全啟用 Apple 登入需要在伺服器端驗證 Apple ID Token，此部分尚未建置，因此按鈕暫時停用，點擊後會提示您改用 Google 登入。請先使用 <strong>Google 帳號登入</strong>。
+          可以，<strong>在 iOS 上 Sign in with Apple 已啟用</strong>，以系統原生的 Apple 登入進行，並由我們的後端驗證 Apple 身分權杖。<strong>網頁版的 Apple 登入</strong>則由伺服器端功能旗標控管（需 Services ID 與後端密鑰）；未開啟時，Apple 按鈕會完全隱藏。您也可以將 Google 與 Apple 綁定到同一個帳號。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: 掃描卡牌有次數限制嗎？</div>
         <div class="faq-answer">
-          有。以 Google 登入的使用者，每月可掃描 <strong>100 次</strong>；訪客無法使用掃描。此次數<strong>僅記錄在您的裝置本機</strong>，每月自動重置，並非伺服器端配額（清除本機資料或重裝 App 亦會重置）。目前<strong>沒有可購買的付費方案</strong>，也不處理任何付款。
+          有。已登入的使用者每月可掃描 <strong>100 次</strong>；訪客無法使用掃描。此次數<strong>僅記錄在您的裝置本機</strong>，每月自動重置，並非伺服器端配額（清除本機資料或重裝 App 亦會重置）。目前<strong>沒有可購買的付費方案</strong>，也不處理任何付款。
         </div>
       </div>
 
@@ -333,19 +333,19 @@
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: 我的收藏與追蹤清單會跨裝置同步嗎？</div>
+        <div class="faq-question">Q: 我的帳號資料存在哪裡？收藏與追蹤清單會跨裝置同步嗎？</div>
         <div class="faq-answer">
-          不會。本 App <strong>沒有雲端帳號資料庫</strong>，您的登入帳號資料、收藏、追蹤清單與偏好設定<strong>只儲存在您使用的那台裝置本機</strong>（手機為 AsyncStorage、網頁為瀏覽器 localStorage），不會在裝置之間同步。
+          您的<strong>帳號身分資料</strong>（內部使用者 ID、Google／Apple 的 subject，以及 Email／名稱／頭像快照）採<strong>伺服器權威</strong>方式，儲存於我們的後端（Vercel KV）；您的裝置僅快取一份快照與登入 session。相對地，您的<strong>收藏、追蹤清單與偏好設定只儲存在您使用的那台裝置本機</strong>（手機為 AsyncStorage、網頁為瀏覽器 localStorage），<strong>不會在裝置之間同步</strong>。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: 點「刪除帳號」實際會刪除哪些資料？</div>
         <div class="faq-answer">
-          目前「刪除帳號」的實際行為是：<strong>移除儲存在本裝置上的登入帳號紀錄並將您登出</strong>。它<strong>目前不會</strong>自動向 Google 撤銷授權、刪除伺服器端已上傳的推播 Token，或清除本機的追蹤清單／掃描歷史。<br><br>
-          若要更完整地清除：<br>
-          1. <strong>撤銷 Google 授權</strong>：使用「設定 → 登出」（會<strong>嘗試</strong>向 Google 撤銷本 App 授權，屬盡力而為、可能未成功），或到 Google 帳戶安全性設定移除 HoloHunter（此方式一定生效）。<br>
-          2. <strong>刪除已上傳的推播 Token</strong>：來信 <code>dicoge.chen@gmail.com</code>，我們會於伺服器端移除。<br>
+          「刪除帳號」是<strong>伺服器權威、fail-closed</strong> 的刪除：只有在<strong>伺服器確認成功</strong>時，才會將您的內部帳號與所有綁定身分（Google／Apple 的 subject、Email／名稱／頭像快照）從我們的資料庫（Vercel KV）<strong>永久刪除</strong>並清除本裝置 session；若伺服器未能確認，App 不會宣稱已刪除，您仍為登入狀態。<br><br>
+          其他須知：<br>
+          1. <strong>Apple 授權撤銷</strong>：依 App Store 規範 5.1.1(v)，若帳號綁定了 Apple，刪除時伺服器須先成功撤銷 Apple 授權才會繼續；無法撤銷則拒絕刪除（fail-closed）。（此撤銷持久化仍在完成中，綁定 Apple 的帳號可能暫時收到「尚未開放」並刻意不予刪除。）<br>
+          2. <strong>刪除範圍</strong>：不含匿名推播 Token（請來信 <code>dicoge.chen@gmail.com</code> 移除）與裝置本機資料（收藏、追蹤清單、偏好、掃描歷史）。<br>
           3. <strong>清除本機資料</strong>：解除安裝 App（手機）或清除網站資料（網頁）即可移除所有本機收藏、追蹤清單與設定。
         </div>
       </div>
@@ -353,7 +353,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: 為什麼不支援一般 Email 密碼註冊？</div>
         <div class="faq-answer">
-          為了維護您的密碼安全與保障隱私，本 App <strong>只支援 Google 第三方安全驗證</strong>（Apple 登入未來開放）。我們不收集也不儲存您的密碼，身分驗證程序均直接在 Google 端進行。
+          為了維護您的密碼安全與保障隱私，本 App <strong>只支援 Google 與 Apple 的第三方安全驗證</strong>。我們不收集也不儲存您的密碼；登入時只在裝置取得服務商的 ID Token，交由我們的後端驗證。
         </div>
       </div>
     </div>
@@ -387,21 +387,21 @@
       <div class="faq-item">
         <div class="faq-question">Q: Do I need to sign in? What can I do in Guest Mode?</div>
         <div class="faq-answer">
-          Not necessarily. <strong>Guest Mode</strong> lets you browse the card list and look up prices manually without signing in. To use the <strong>camera scan recognition</strong> feature, you must sign in with a <strong>Google account</strong>. Only Google Sign-In is available right now.
+          Not necessarily. <strong>Guest Mode</strong> lets you browse the card list and look up prices manually without signing in. To use the <strong>camera scan recognition</strong> feature, you must sign in. You can sign in with a <strong>Google account</strong>, and on iOS you can also use <strong>Sign in with Apple</strong>.
         </div>
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: Why does the "Sign in with Apple" button do nothing?</div>
+        <div class="faq-question">Q: Can I sign in with Apple?</div>
         <div class="faq-answer">
-          Sign in with Apple is <strong>not available yet</strong>. Enabling it safely requires server-side verification of the Apple ID token, which has not been built, so the button is temporarily disabled and prompts you to use Google instead. Please use <strong>Google Sign-In</strong> for now.
+          Yes — <strong>Sign in with Apple is enabled on iOS</strong>, using the system-native Apple sign-in, with the Apple identity token verified by our backend. <strong>Web Apple sign-in</strong> is gated behind a server-side feature flag (it needs a Services ID and a backend secret); while off, the Apple button is hidden entirely. You can also link both Google and Apple to the same account.
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: Is there a limit on card scanning?</div>
         <div class="faq-answer">
-          Yes. Users signed in with Google can scan <strong>100 times per month</strong>; guests cannot scan. This count is stored <strong>only on your device</strong> and resets monthly — it is not a server-side quota (clearing local data or reinstalling also resets it). There is currently <strong>no purchasable paid plan</strong>, and no payments are processed.
+          Yes. Signed-in users can scan <strong>100 times per month</strong>; guests cannot scan. This count is stored <strong>only on your device</strong> and resets monthly — it is not a server-side quota (clearing local data or reinstalling also resets it). There is currently <strong>no purchasable paid plan</strong>, and no payments are processed.
         </div>
       </div>
 
@@ -413,19 +413,19 @@
       </div>
 
       <div class="faq-item">
-        <div class="faq-question">Q: Do my collections and watchlist sync across devices?</div>
+        <div class="faq-question">Q: Where is my account data stored? Do my collections and watchlist sync across devices?</div>
         <div class="faq-answer">
-          No. The App has <strong>no cloud account database</strong>. Your sign-in account data, collections, watchlist, and preferences are stored <strong>only on the device you use</strong> (AsyncStorage on mobile, browser localStorage on web) and do not sync across devices.
+          Your <strong>account identity data</strong> (internal user ID, the Google/Apple subject, and email/name/photo snapshots) is <strong>server-authoritative</strong> and stored in our backend (Vercel KV); your device only caches a snapshot plus the session. By contrast, your <strong>collections, watchlist, and preferences are stored only on the device you use</strong> (AsyncStorage on mobile, browser localStorage on web) and <strong>do not sync across devices</strong>.
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-question">Q: What does "Delete Account" actually delete?</div>
         <div class="faq-answer">
-          Today, "Delete Account" <strong>removes the sign-in account record stored on this device and signs you out</strong>. It currently does <strong>not</strong> automatically revoke your Google authorization, delete the push token already uploaded to the server, or clear your local watchlist / scan history.<br><br>
-          For a more complete cleanup:<br>
-          1. <strong>Revoke Google authorization</strong>: use "Settings → Sign Out" (which <strong>attempts</strong> to revoke the App's token with Google on a best-effort basis and may not succeed), or remove HoloHunter in your Google Account security settings (this always works).<br>
-          2. <strong>Delete an uploaded push token</strong>: email <code>dicoge.chen@gmail.com</code> and we will remove it on the server.<br>
+          "Delete Account" is a <strong>server-authoritative, fail-closed</strong> deletion: only when the <strong>server confirms success</strong> does it <strong>permanently delete</strong> your internal account and all linked identities (the Google/Apple subjects and the email/name/photo snapshots) from our database (Vercel KV) and clear the session on this device. If the server cannot confirm, the App does not claim it was deleted and you remain signed in.<br><br>
+          Also note:<br>
+          1. <strong>Apple authorization revocation</strong>: per App Store guideline 5.1.1(v), if the account has a linked Apple identity, deletion first requires the server to successfully revoke the Apple authorization; if it cannot, deletion is refused (fail-closed). (This revocation persistence is still being finalized, so accounts with a linked Apple identity may temporarily get a "not yet available" result and are intentionally not deleted.)<br>
+          2. <strong>Deletion scope</strong>: it does not cover the anonymous push token (email <code>dicoge.chen@gmail.com</code> to remove) or device-local data (collections, watchlist, preferences, scan history).<br>
           3. <strong>Clear local data</strong>: uninstall the App (mobile) or clear site data (web) to remove all local collections, watchlist, and settings.
         </div>
       </div>
@@ -433,7 +433,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: Why isn't there a regular email/password sign-up?</div>
         <div class="faq-answer">
-          To protect your password and privacy, the App <strong>only supports secure third-party sign-in with Google</strong> (Apple coming later). We never collect or store your password; authentication happens entirely on Google's side.
+          To protect your password and privacy, the App <strong>only supports secure third-party sign-in with Google and Apple</strong>. We never collect or store your password; at sign-in the App only obtains the provider's ID token on your device, which our backend verifies.
         </div>
       </div>
     </div>
