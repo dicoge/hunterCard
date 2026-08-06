@@ -45,7 +45,10 @@
       top: -150px;
       left: 50%;
       transform: translateX(-50%);
-      width: 600px;
+      /* Cap to 70vw so even the 1.2x pulse-scaled frame (0.84 * viewport when
+         capped) stays within the viewport and never causes horizontal overflow
+         on narrow mobile widths; stays 600px on desktop (>=857px). */
+      width: min(600px, 70vw);
       height: 300px;
       background: radial-gradient(circle, var(--secondary-glow) 0%, rgba(15,15,35,0) 70%);
       filter: blur(50px);
