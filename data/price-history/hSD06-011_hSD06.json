@@ -324,8 +324,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD06-011_hSD06"
+    },
+    {
+      "date": "2026-08-06",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD06-011_hSD06"
     }
   ],
-  "lastUpdated": "2026-08-05T12:12:16.972Z",
+  "lastUpdated": "2026-08-06T12:12:49.520Z",
   "nameZh": "茶鬼丸"
 }

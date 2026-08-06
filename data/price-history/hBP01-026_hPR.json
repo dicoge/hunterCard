@@ -338,8 +338,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-026_hPR"
+    },
+    {
+      "date": "2026-08-06",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-026_hPR"
     }
   ],
-  "lastUpdated": "2026-08-05T12:12:17.086Z",
+  "lastUpdated": "2026-08-06T12:12:49.617Z",
   "nameZh": "貝絲緹亞·澤塔"
 }

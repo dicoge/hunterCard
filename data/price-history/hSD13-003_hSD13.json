@@ -324,8 +324,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD13-003_hSD13"
+    },
+    {
+      "date": "2026-08-06",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-003_hSD13"
     }
   ],
-  "lastUpdated": "2026-08-05T12:12:16.738Z",
+  "lastUpdated": "2026-08-06T12:12:49.405Z",
   "nameZh": "伊莉莎白·蘿絲·布拉德弗雷姆"
 }

@@ -275,8 +275,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD18-007_hSD18"
+    },
+    {
+      "date": "2026-08-06",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD18-007_hSD18"
     }
   ],
-  "lastUpdated": "2026-08-05T12:12:16.686Z",
+  "lastUpdated": "2026-08-06T12:12:49.363Z",
   "nameZh": "森美聲"
 }

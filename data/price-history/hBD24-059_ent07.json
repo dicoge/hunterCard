@@ -275,8 +275,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-059_ent07"
+    },
+    {
+      "date": "2026-08-06",
+      "price": 19800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-059_ent07"
     }
   ],
-  "lastUpdated": "2026-08-05T12:12:16.480Z",
+  "lastUpdated": "2026-08-06T12:12:49.221Z",
   "nameZh": "艾拉妮·伊歐菲芙汀"
 }

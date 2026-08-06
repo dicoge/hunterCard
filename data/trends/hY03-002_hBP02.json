@@ -2,14 +2,14 @@
   "cardId": "hY03-002",
   "name": "赤エール",
   "nameZh": "紅色應援",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.15,
   "confidence": 0.4,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.2,
     "ytTrend": 0,
     "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-08-05T12:15:19.963Z",
+  "lastUpdated": "2026-08-06T12:15:55.150Z",
   "dataPoints": 26
 }
