@@ -151,6 +151,16 @@ authorization. Deletion does not cover the anonymous push token (email
 `dicoge.chen@gmail.com`) or device-local data (uninstall / clear data). Disclose
 this honestly.
 
+**Lawful-retention exception (narrow).** As a rule, server-confirmed deletion
+retains none of the account/identity data. Data is retained **only where
+applicable law explicitly requires it**, and then only the **minimum data
+necessary for that legal obligation**, **only for the legally mandated period**,
+used solely to satisfy that obligation, and deleted once the period ends. The App
+currently has **no payment or transaction features, so there are no
+payment/transaction records to retain today**; this exception does **not** extend
+to retention for general operational or business purposes. State the exception in
+these narrow terms — do not describe open-ended operational retention.
+
 ---
 
 ## C. Google Play — Data Safety form (definitive)

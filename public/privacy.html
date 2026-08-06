@@ -322,6 +322,7 @@
       <ol>
         <li><strong>Apple 授權撤銷</strong>：依 App Store 規範 5.1.1(v)，若您的帳號綁定了 Apple，刪除時伺服器<strong>必須先成功撤銷 Apple 授權</strong>才會繼續刪除；若無法完成撤銷，刪除會被拒絕、不刪除任何資料（fail-closed）。（註：Apple 授權撤銷的持久化目前仍在完成中，綁定 Apple 身分的帳號可能會收到「尚未開放」的結果，並在該功能上線前刻意不予刪除。）</li>
         <li><strong>刪除範圍</strong>：帳號刪除涵蓋伺服器端的帳號／身分資料，<strong>不包含</strong>：匿名推播 Token（請來信移除，見下）、以及您裝置本機的資料（收藏、追蹤清單、偏好、掃描歷史）。</li>
+        <li><strong>合法保留例外（狹義）</strong>：一般情況下，伺服器確認刪除後即不再保留您的帳號／身分資料。唯有在<strong>適用法律明確要求</strong>時，我們才會保留，且僅限<strong>法律義務所需的最低必要資料</strong>、<strong>僅保留法定期間</strong>、目的僅限於履行該法律義務，期滿即刪除。目前本 App <strong>沒有任何付款或交易功能，因此目前沒有付款／交易紀錄需要保留</strong>；此例外<strong>不會</strong>擴張為一般營運或商業目的的資料保留。</li>
         <li><strong>刪除已上傳的推播 Token</strong>：目前尚無 App 內移除入口，如需刪除，請來信 <code>dicoge.chen@gmail.com</code> 告知，我們會於伺服器端移除。</li>
         <li><strong>清除本機資料</strong>：於系統設定解除安裝 App（手機）或清除網站資料（網頁）即可移除所有本機儲存的收藏、追蹤清單與設定。</li>
       </ol>
@@ -405,6 +406,7 @@
       <ol>
         <li><strong>Apple authorization revocation</strong>: Per App Store guideline 5.1.1(v), if your account has a linked Apple identity, deletion first requires the server to <strong>successfully revoke your Apple authorization</strong>; if revocation cannot be completed, the deletion is refused and nothing is deleted (fail-closed). (Note: persistence for Apple-token revocation is still being finalized, so accounts with a linked Apple identity may currently receive a "not yet available" result and are intentionally not deleted until it ships.)</li>
         <li><strong>Deletion scope</strong>: Account deletion covers your server-side account/identity data. It does <strong>not</strong> cover: the anonymous push token (email us to remove — see below), or your device-local data (collections, watchlist, preferences, scan history).</li>
+        <li><strong>Lawful-retention exception (narrow)</strong>: As a rule, once the server confirms deletion we retain none of your account/identity data. We retain data <strong>only where applicable law explicitly requires it</strong>, and then only the <strong>minimum data necessary for that legal obligation</strong>, <strong>only for the legally mandated period</strong>, used solely to meet that obligation, and deleted once the period ends. The App currently has <strong>no payment or transaction features, so there are no payment/transaction records to retain today</strong>; this exception does <strong>not</strong> extend to retention for general operational or business purposes.</li>
         <li><strong>Delete an uploaded push token</strong>: There is no in-app removal entry yet; to delete it, email <code>dicoge.chen@gmail.com</code> and we will remove it on the server.</li>
         <li><strong>Clear local data</strong>: Uninstalling the App (mobile) or clearing site data (web) removes all locally stored collections, watchlist, and settings.</li>
       </ol>
