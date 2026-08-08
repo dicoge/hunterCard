@@ -345,8 +345,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD11-002_hSD11"
+    },
+    {
+      "date": "2026-08-08",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD11-002_hSD11"
     }
   ],
-  "lastUpdated": "2026-08-06T12:12:49.439Z",
+  "lastUpdated": "2026-08-08T12:12:31.307Z",
   "nameZh": "虎金妃笑虎"
 }
