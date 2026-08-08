@@ -229,4 +229,37 @@ if (fs.existsSync(realDb)) {
   console.log('  ⚠️ data/database.json not present — skipped built-artifact inspection');
 }
 
+// ── At-rest committed native asset (public/data/database.json) — DIC-916 ──
+// A native export (expo export/prebuild) copies public/ verbatim with NO post-hook,
+// so the ONLY fail-closed guarantee for the store bundle is that this committed file
+// is already sanitized. It is env-independent, so this one check covers every native
+// Store MVP profile (unset/unknown/malformed/explicit). The real end-to-end export
+// audit lives in test:store-mvp-native-export; this keeps a cheap guard in the fast
+// suite so a re-generated full public asset can never land unnoticed.
+const nativeAsset = path.join(__dirname, '..', 'public', 'data', 'database.json');
+if (fs.existsSync(nativeAsset)) {
+  const nativeDb = JSON.parse(fs.readFileSync(nativeAsset, 'utf-8'));
+  let nativeCards = 0;
+  let nativeSellKept = 0;
+  const nativeForbidden = Object.fromEntries(FORBIDDEN_CARD_FIELDS.map((f) => [f, 0]));
+  for (const entry of Object.values(nativeDb.cards ?? {})) {
+    nativeCards++;
+    for (const field of FORBIDDEN_CARD_FIELDS) if (field in entry) nativeForbidden[field]++;
+    if (Array.isArray(entry.prices)) {
+      for (const p of entry.prices) {
+        assert.ok(!('buyPrice' in p), 'committed native asset must not retain prices[].buyPrice');
+      }
+    }
+    if ('sellPrice' in entry) nativeSellKept++;
+  }
+  assert.ok(nativeCards > 0, 'committed native asset contains cards');
+  for (const field of FORBIDDEN_CARD_FIELDS) {
+    assert.equal(nativeForbidden[field], 0, `committed public/data/database.json must not retain ${field}`);
+  }
+  assert.equal(nativeSellKept, nativeCards, 'committed native asset preserves retail sellPrice on every card');
+  console.log(`Committed native asset: ${nativeCards} cards, 0 forbidden fields, ${nativeSellKept} retain sellPrice.`);
+} else {
+  console.log('  ⚠️ public/data/database.json not present — skipped native at-rest inspection');
+}
+
 console.log('Store MVP field-strip regression checks passed');
