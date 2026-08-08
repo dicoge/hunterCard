@@ -38,8 +38,8 @@
         "android.permission.RECORD_AUDIO"
       ]
     },
-    "privacyPolicyUrl": "https://holocard-hunter.vercel.app/privacy",
-    "supportUrl": "https://holocard-hunter.vercel.app/support",
+    "privacyPolicyUrl": "https://holohunter.dicoge.com/privacy",
+    "supportUrl": "https://holohunter.dicoge.com/support",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png",
