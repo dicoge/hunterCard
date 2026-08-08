@@ -101,6 +101,7 @@ function parseField(reply: string, field: string): string {
 function stripStoreMvpFields<T extends Record<string, any>>(card: T): T {
   const out: Record<string, any> = { ...card };
   delete out.buyPrice;
+  delete out.buyPriceHistory;
   delete out.priceHistory;
   delete out.ytStats;
   if (Array.isArray(out.prices)) {

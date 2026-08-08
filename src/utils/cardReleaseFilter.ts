@@ -12,7 +12,7 @@
  * (see scripts/test-store-mvp-field-strip.mjs); callers pass the resolved flags.
  */
 export interface ReleaseCardFlags {
-  /** 店家收購價 / buyPrice — includes per-version prices[].buyPrice. */
+  /** 店家收購價 / buyPrice — includes per-version prices[].buyPrice and buyPriceHistory. */
   buyPrice: boolean;
   /** 價格歷史（漲跌判斷來源）— priceHistory. */
   trendPrediction: boolean;
@@ -34,6 +34,8 @@ export function stripDisabledCardFields<T extends Record<string, any>>(
 
   if (!flags.buyPrice) {
     delete out.buyPrice;
+    // buyPriceHistory is buy-back history — same feature group as buyPrice.
+    delete out.buyPriceHistory;
     if (Array.isArray(out.prices)) {
       out.prices = out.prices.map((p: any) => {
         if (p && typeof p === 'object' && 'buyPrice' in p) {

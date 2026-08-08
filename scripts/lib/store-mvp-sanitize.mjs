@@ -15,8 +15,12 @@
 import fs from 'fs';
 import path from 'path';
 
-/** Advanced card-level fields hidden under Store MVP. Sale price stays. */
-export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'priceHistory', 'ytStats'];
+/**
+ * Advanced card-level fields hidden under Store MVP. Sale price stays.
+ * `buyPriceHistory` is buy-back historical data (same feature group as buyPrice),
+ * so it must fail closed too — CR DIC-913 flagged it shipping in the web artifact.
+ */
+export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHistory', 'ytStats'];
 
 /**
  * Resolve the Store MVP profile for a BUILD context (web export) from env.

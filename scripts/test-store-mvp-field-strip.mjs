@@ -37,6 +37,7 @@ const sampleCard = () => ({
     { name: 'サイン', sellPrice: 5000, rarity: 'SR', buyPrice: 3600 },
   ],
   priceHistory: { '2026-07-01': 1100, '2026-07-08': 1200 },
+  buyPriceHistory: { '2026-07-01': 750, '2026-07-08': 800 },
   ytStats: { subscribers: 1000000, views: 5000000 },
 });
 
@@ -48,6 +49,7 @@ const original = sampleCard();
 const full = stripDisabledCardFields(sampleCard(), FULL_FLAGS);
 assert.equal(full.buyPrice, 800, 'full mode keeps buyPrice');
 assert.deepEqual(full.priceHistory, original.priceHistory, 'full mode keeps priceHistory');
+assert.deepEqual(full.buyPriceHistory, original.buyPriceHistory, 'full mode keeps buyPriceHistory');
 assert.deepEqual(full.ytStats, original.ytStats, 'full mode keeps ytStats');
 assert.equal(full.prices[0].buyPrice, 800, 'full mode keeps prices[].buyPrice');
 assert.equal(full.prices[1].buyPrice, 3600, 'full mode keeps every version buyPrice');
@@ -56,6 +58,7 @@ assert.equal(full.prices[1].buyPrice, 3600, 'full mode keeps every version buyPr
 const input = sampleCard();
 const mvp = stripDisabledCardFields(input, MVP_FLAGS);
 assert.ok(!('buyPrice' in mvp), 'Store MVP strips card buyPrice');
+assert.ok(!('buyPriceHistory' in mvp), 'Store MVP strips card buyPriceHistory (buy-back history)');
 assert.ok(!('priceHistory' in mvp), 'Store MVP strips priceHistory');
 assert.ok(!('ytStats' in mvp), 'Store MVP strips ytStats');
 for (const p of mvp.prices) {
@@ -73,7 +76,16 @@ assert.equal(input.prices[0].buyPrice, 800, 'strip does not mutate input prices'
 const onlyYt = stripDisabledCardFields(sampleCard(), { buyPrice: true, trendPrediction: true, ytStats: false });
 assert.ok(!('ytStats' in onlyYt), 'ytStats-off strips ytStats only');
 assert.equal(onlyYt.buyPrice, 800, 'ytStats-off keeps buyPrice');
+assert.ok('buyPriceHistory' in onlyYt, 'ytStats-off keeps buyPriceHistory (buyPrice group still on)');
 assert.ok('priceHistory' in onlyYt, 'ytStats-off keeps priceHistory');
+
+// buyPrice-off strips the whole buy-back group (buyPrice + buyPriceHistory) but
+// leaves the other advanced groups untouched.
+const noBuy = stripDisabledCardFields(sampleCard(), { buyPrice: false, trendPrediction: true, ytStats: true });
+assert.ok(!('buyPrice' in noBuy), 'buyPrice-off strips buyPrice');
+assert.ok(!('buyPriceHistory' in noBuy), 'buyPrice-off strips buyPriceHistory');
+assert.ok('priceHistory' in noBuy, 'buyPrice-off keeps priceHistory');
+assert.ok('ytStats' in noBuy, 'buyPrice-off keeps ytStats');
 
 // ── Build-context profile resolution (fail-closed opt-out, explicit opt-in) ──
 assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: '1' }), true, "env '1' → Store MVP on");
@@ -109,6 +121,7 @@ const dbInput = { version: 3, cards: { 'hBP04-005::base': sampleCard() } };
 const sanitizedDb = sanitizeDatabase(dbInput);
 assert.equal(sanitizedDb.version, 3, 'sanitizeDatabase preserves top-level metadata');
 assert.ok(!('buyPrice' in sanitizedDb.cards['hBP04-005::base']), 'sanitizeDatabase strips nested card buyPrice');
+assert.ok(!('buyPriceHistory' in sanitizedDb.cards['hBP04-005::base']), 'sanitizeDatabase strips nested card buyPriceHistory');
 assert.equal(dbInput.cards['hBP04-005::base'].buyPrice, 800, 'sanitizeDatabase does not mutate input db');
 
 // ── Real recognize-card API response boundary (over-the-wire fields) ──
@@ -126,6 +139,7 @@ const apiCards = {
       { name: 'サイン', sellPrice: 5000, rarity: 'SR', buyPrice: 3600 },
     ],
     priceHistory: { '2026-07-01': 1100, '2026-07-08': 1200 },
+    buyPriceHistory: { '2026-07-01': 750, '2026-07-08': 800 },
     ytStats: { subscribers: 1000000, views: 5000000 },
   },
 };
@@ -140,6 +154,9 @@ assert.equal(fullBest.buyPrice, 800, 'non-MVP API response carries buyPrice');
 assert.deepEqual(fullBest.priceHistory, apiCards['hBP04-005::base'].priceHistory, 'non-MVP API carries priceHistory');
 assert.ok(fullBest.ytStats, 'non-MVP API carries ytStats');
 assert.equal(fullBest.prices[0].buyPrice, 800, 'non-MVP API carries prices[].buyPrice');
+// buyPriceHistory is never part of the recognize-card response whitelist (fmt()),
+// so it must not surface in either profile — including the non-MVP one.
+assert.ok(!('buyPriceHistory' in fullBest), 'API whitelist never surfaces buyPriceHistory');
 
 // Store MVP request: the response bytes must NOT contain the forbidden fields.
 const mvpRanking = rankCandidates(apiCards, extracted, true);
@@ -147,6 +164,7 @@ const mvpBest = mvpRanking.candidates[0];
 assert.ok(mvpBest, 'API still ranks the match under Store MVP');
 assert.equal(mvpBest.sellPrice, 1200, 'Store MVP API keeps sellPrice');
 assert.ok(!('buyPrice' in mvpBest), 'Store MVP API response omits buyPrice');
+assert.ok(!('buyPriceHistory' in mvpBest), 'Store MVP API response omits buyPriceHistory');
 assert.ok(!('priceHistory' in mvpBest), 'Store MVP API response omits priceHistory');
 assert.ok(!('ytStats' in mvpBest), 'Store MVP API response omits ytStats');
 for (const p of mvpBest.prices) {
@@ -171,12 +189,23 @@ if (fs.existsSync(realDb)) {
     const mvpDest = path.join(tmpDir, 'mvp', 'database.json');
     const { sanitized } = copyDatabaseFile(realDb, mvpDest, true);
     assert.equal(sanitized, true, 'Store MVP export reports sanitized');
+    // Count forbidden fields in the SOURCE so the audit proves it removed real
+    // data (not a vacuous pass) — CR DIC-913 flagged buyPriceHistory specifically.
+    const srcDb = JSON.parse(fs.readFileSync(realDb, 'utf-8'));
+    const srcForbidden = Object.fromEntries(FORBIDDEN_CARD_FIELDS.map((f) => [f, 0]));
+    for (const entry of Object.values(srcDb.cards ?? {})) {
+      for (const field of FORBIDDEN_CARD_FIELDS) if (field in entry) srcForbidden[field]++;
+    }
+    assert.ok(srcForbidden.buyPriceHistory > 0, 'source database actually contains buyPriceHistory to strip');
+
     const builtDb = JSON.parse(fs.readFileSync(mvpDest, 'utf-8'));
     let inspected = 0;
     let sellPricesKept = 0;
+    const builtForbidden = Object.fromEntries(FORBIDDEN_CARD_FIELDS.map((f) => [f, 0]));
     for (const entry of Object.values(builtDb.cards ?? {})) {
       inspected++;
       for (const field of FORBIDDEN_CARD_FIELDS) {
+        if (field in entry) builtForbidden[field]++;
         assert.ok(!(field in entry), `built Store MVP artifact must not retain card ${field}`);
       }
       if (Array.isArray(entry.prices)) {
@@ -188,7 +217,11 @@ if (fs.existsSync(realDb)) {
     }
     assert.ok(inspected > 0, 'built artifact contains cards to inspect');
     assert.ok(sellPricesKept > 0, 'built Store MVP artifact preserves retail sellPrice');
-    console.log(`Inspected ${inspected} built Store MVP cards; ${sellPricesKept} retain sellPrice, 0 leak forbidden fields`);
+    for (const field of FORBIDDEN_CARD_FIELDS) {
+      assert.equal(builtForbidden[field], 0, `zero ${field} occurrences in Store MVP artifact`);
+    }
+    console.log(`Inspected ${inspected} built Store MVP cards; ${sellPricesKept} retain sellPrice.`);
+    console.log(`Source forbidden-field counts stripped: ${JSON.stringify(srcForbidden)} → all 0 in artifact.`);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
