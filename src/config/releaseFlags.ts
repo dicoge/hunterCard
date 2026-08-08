@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import type { ReleaseCardFlags } from '../utils/cardReleaseFilter';
 
 // Single source of truth for Store MVP release gating (DIC-908).
 //
@@ -57,4 +58,15 @@ export type FeatureKey = keyof typeof FEATURES;
 
 export function isFeatureEnabled(key: FeatureKey): boolean {
   return FEATURES[key];
+}
+
+// Resolved card-field flags for the mapping-boundary filter. Every card mapper
+// passes this to stripDisabledCardFields so Store MVP objects never carry the
+// disabled advanced fields (buyPrice / priceHistory / ytStats) — QA DIC-915.
+export function releaseCardFlags(): ReleaseCardFlags {
+  return {
+    buyPrice: FEATURES.buyPrice,
+    trendPrediction: FEATURES.trendPrediction,
+    ytStats: FEATURES.ytStats,
+  };
 }

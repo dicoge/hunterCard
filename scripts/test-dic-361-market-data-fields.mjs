@@ -65,14 +65,14 @@ assertSourceIncludes(cardRecognition, [
   'priceHistory: (entry as any).priceHistory || {}',
   'ytStats: (entry as any).ytStats ?? null',
   "import { mapApiCardToCardInfo } from '../utils/apiCardMapper'",
-  'return mapApiCardToCardInfo(apiCard)',
+  'stripDisabledCardFields(mapApiCardToCardInfo(apiCard), releaseCardFlags())',
 ], 'src/services/cardRecognition');
 
 // Camera/API success + candidates path must route through the shared mapper (so the
 // session card carries buyPrice/priceHistory/ytStats) and navigate it to CardDetail.
 assertSourceIncludes(scanScreen, [
   "import { mapApiCardToCardInfo } from '../utils/apiCardMapper'",
-  'mapApiCardToCardInfo(c)',
+  'stripDisabledCardFields(mapApiCardToCardInfo(c), releaseCardFlags())',
   "onViewCard={(card) => navigation?.navigate('CardDetail', { card })}",
 ], 'src/screens/ScanScreen');
 

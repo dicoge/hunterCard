@@ -14,6 +14,8 @@ import type { CardInfo } from '../services/cardRecognition';
  *
  * Kept free of React / react-native / browser imports (the CardInfo import is
  * type-only and stripped at runtime) so it can be unit-verified in plain Node.
+ * Store MVP field fail-closing is applied by callers via stripDisabledCardFields
+ * (they own the release flags) — this mapper stays a pure full-mode passthrough.
  */
 export function mapApiCardToCardInfo(raw: any): CardInfo {
   return {
