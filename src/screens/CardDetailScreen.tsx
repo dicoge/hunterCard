@@ -131,6 +131,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const { fetchTrendForCard, getTrendForCard } = useTrendStore();
 
   useEffect(() => {
+    // Store MVP: never fetch or read trend/prediction data — gate the execution
+    // path, not only the render, so no forbidden network call fires (CR DIC-913 #3).
+    if (!FEATURES.trendPrediction) return;
     const cardId = card.id || card.cardNumber || '';
     if (cardId) {
       // Check cache first

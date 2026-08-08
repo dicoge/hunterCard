@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import { UserRole } from '../types/auth';
-import { isQuotaExceeded } from '../services/permissionService';
+import { isQuotaExceeded, effectiveRole } from '../services/permissionService';
 import { useAuthStore } from './authStore';
 
 interface ScanQuotaState {
@@ -47,7 +47,9 @@ export const useScanQuotaStore = create<ScanQuotaState>()(
       },
 
       getRemaining: () => {
-        const role = currentRole();
+        // effectiveRole collapses subscriber→free_user in Store MVP so unlimited
+        // scan (-1) is never returned when premium is disabled (CR DIC-913 #2).
+        const role = effectiveRole(currentRole());
         const { scanCount, currentMonth } = get();
         const now = getCurrentMonth();
         const effectiveCount = currentMonth !== now ? 0 : scanCount;

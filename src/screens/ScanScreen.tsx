@@ -32,6 +32,7 @@ import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
+import { effectiveRole } from '../services/permissionService';
 import ScanQuotaBanner from '../components/ScanQuotaBanner';
 import { FEATURES } from '../config/releaseFlags';
 
@@ -415,18 +416,22 @@ export default function ScanScreen({ navigation }: any) {
   // Single role/quota gate, read from live store state (no stale closures — the
   // auto-scan rAF loop calls this outside the render cycle).
   const canScanNow = (): boolean => {
-    const currentRole = useAuthStore.getState().role;
+    // effectiveRole collapses subscriber→free_user in Store MVP, so unlimited
+    // scan is never granted when premium is disabled (CR DIC-913 #2).
+    const currentRole = effectiveRole(useAuthStore.getState().role);
     if (currentRole === 'guest') return false;
     if (currentRole === 'subscriber') return true;
     return getRemaining() > 0;
   };
 
   const promptScanBlocked = () => {
-    const currentRole = useAuthStore.getState().role;
+    const currentRole = effectiveRole(useAuthStore.getState().role);
     if (currentRole === 'guest') {
+      // Route to the real login flow: clearing the guest session drops the app
+      // back to LoginScreen (no-op CTA removed — CR DIC-913 #4).
       Alert.alert('需要登入', '請登入以使用卡片掃描功能', [
         { text: '取消', style: 'cancel' },
-        { text: '登入', onPress: () => {} },
+        { text: '登入', onPress: () => useAuthStore.getState().logout() },
       ]);
       return;
     }

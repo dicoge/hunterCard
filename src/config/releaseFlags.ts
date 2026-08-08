@@ -8,20 +8,25 @@ import { Platform } from 'react-native';
 // premium) is HIDDEN unless the profile is explicitly turned off. Do not add
 // scattered `if (__DEV__)` / magic booleans elsewhere — read from FEATURES.
 //
-// Resolution of STORE_MVP:
+// Resolution of STORE_MVP (fail-closed — CR DIC-913 #1):
+//   EXPO_PUBLIC_STORE_MVP = '0' | 'false' → Store MVP OFF (full app). This is
+//       the ONLY way to disable the profile; nothing else opens the gate.
 //   EXPO_PUBLIC_STORE_MVP = '1' | 'true'  → Store MVP ON  (hide advanced)
-//   EXPO_PUBLIC_STORE_MVP = '0' | 'false' → Store MVP OFF (full app)
-//   unset:
-//     • native (iOS / Android store builds) → ON  (fail-closed: a missing env
-//       must never leak a disabled feature into a store submission)
+//   unset / whitespace / malformed / unknown:
+//     • native (iOS / Android store builds) → ON  (fail-closed: a missing or
+//       garbled env must never leak a disabled feature into a store build)
 //     • web                                  → OFF (the existing web production
 //       site keeps its full feature set; the release flag must not break it)
 function resolveStoreMvp(): boolean {
-  const raw = process.env.EXPO_PUBLIC_STORE_MVP;
-  if (raw != null && raw !== '') {
-    const v = raw.toLowerCase();
-    return v === '1' || v === 'true';
-  }
+  const raw = typeof process.env.EXPO_PUBLIC_STORE_MVP === 'string'
+    ? process.env.EXPO_PUBLIC_STORE_MVP.trim().toLowerCase()
+    : '';
+  // Explicit opt-out is the only path to OFF.
+  if (raw === '0' || raw === 'false') return false;
+  // Explicit opt-in.
+  if (raw === '1' || raw === 'true') return true;
+  // Anything else (unset / whitespace / typo like 'yes' / '01' / 'off') is
+  // treated as unresolved → fail-closed on native, preserve full web prod.
   return Platform.OS !== 'web';
 }
 
