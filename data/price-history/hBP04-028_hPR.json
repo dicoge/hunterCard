@@ -331,8 +331,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-028_hPR"
+    },
+    {
+      "date": "2026-08-08",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-028_hPR"
     }
   ],
-  "lastUpdated": "2026-08-06T12:12:49.607Z",
+  "lastUpdated": "2026-08-08T12:12:31.460Z",
   "nameZh": "塞西莉亞·伊瑪格林"
 }
