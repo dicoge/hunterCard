@@ -35,7 +35,7 @@ import { useScanQuotaStore } from '../store/scanQuotaStore';
 import { effectiveRole } from '../services/permissionService';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import ScanQuotaBanner from '../components/ScanQuotaBanner';
-import { FEATURES, releaseCardFlags } from '../config/releaseFlags';
+import { FEATURES, releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
@@ -510,7 +510,7 @@ export default function ScanScreen({ navigation }: any) {
           const resp = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: recognitionImages[0], images: recognitionImages }),
+            body: JSON.stringify({ image: recognitionImages[0], images: recognitionImages, storeMvp: STORE_MVP }),
             signal: controller.signal,
           });
           clearTimeout(timeoutId);

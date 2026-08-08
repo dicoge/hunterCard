@@ -5,10 +5,16 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { copyDatabaseFile, resolveStoreMvpFromEnv } from './lib/store-mvp-sanitize.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, '../dist');
 const publicDir = path.join(__dirname, '../public');
+
+// Store MVP web exports must fail closed: the shipped database.json is sanitized
+// so forbidden advanced fields never reach the client (CR DIC-913 #1). Full web
+// production (env off/unset) copies the database byte-identically.
+const STORE_MVP = resolveStoreMvpFromEnv();
 
 // Read the generated index.html
 const htmlPath = path.join(distDir, 'index.html');
@@ -33,13 +39,12 @@ if (html.includes('manifest')) {
   // Save the HTML (type=module fix applied above)
   fs.writeFileSync(htmlPath, html, 'utf-8');
 
-  // Also copy database.json (needed by frontend search)
+  // Also copy database.json (needed by frontend search) — sanitized under Store MVP.
   const dbSource = path.join(__dirname, '..', 'data', 'database.json');
   const dbDest = path.join(distDir, 'data', 'database.json');
   if (fs.existsSync(dbSource)) {
-    fs.mkdirSync(path.dirname(dbDest), { recursive: true });
-    fs.copyFileSync(dbSource, dbDest);
-    console.log('  ✅ database.json → dist/data/database.json');
+    const { sanitized } = copyDatabaseFile(dbSource, dbDest, STORE_MVP);
+    console.log(`  ✅ database.json → dist/data/database.json${sanitized ? ' (Store MVP sanitized)' : ''}`);
   } else {
     console.log('  ⚠️ database.json not found, skipping');
   }

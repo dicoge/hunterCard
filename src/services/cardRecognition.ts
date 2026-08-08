@@ -10,7 +10,7 @@ import { recognizeCardNumber } from './webOcr';
 import { preprocessCardImage } from './imagePreprocessor';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
-import { releaseCardFlags } from '../config/releaseFlags';
+import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 
 // ── 類型定義 ──
 
@@ -378,7 +378,7 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: processedImage }),
+      body: JSON.stringify({ image: processedImage, storeMvp: STORE_MVP }),
     });
 
     if (!apiResponse.ok) {
