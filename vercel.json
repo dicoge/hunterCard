@@ -11,6 +11,10 @@
       "destination": "/support.html"
     },
     {
+      "source": "/account-deletion",
+      "destination": "/privacy.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
