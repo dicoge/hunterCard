@@ -45,7 +45,10 @@
       top: -150px;
       left: 50%;
       transform: translateX(-50%);
-      width: 600px;
+      /* Cap to 70vw so even the 1.2x pulse-scaled frame (0.84 * viewport when
+         capped) stays within the viewport and never causes horizontal overflow
+         on narrow mobile widths; stays 600px on desktop (>=857px). */
+      width: min(600px, 70vw);
       height: 300px;
       background: radial-gradient(circle, var(--primary-glow) 0%, rgba(15,15,35,0) 70%);
       filter: blur(50px);
@@ -267,189 +270,169 @@
 
     <!-- ── 繁體中文版本 ── -->
     <div id="content-zh" class="content-section active">
-      <p><em>最後更新日期：2026 年 7 月 27 日</em></p>
-      
-      <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。我們非常重視您的個人隱私。本政策說明我們如何處理多方帳號登入、綁定、訂閱狀態與相關個人資料。當您使用本 App 時，即表示您同意本政策。</p>
+      <p><em>最後更新日期：2026 年 8 月 6 日</em></p>
 
-      <div class="danger-card">
-        <p><strong>⚠️ 目前版本狀態（本機模擬 / 示範階段）：</strong> 現階段的 App 中，Google / Apple 登入、帳號綁定、Internal User ID、訂閱狀態與每月掃描配額<strong>全部都是「本機模擬（local mock）」</strong>：登入只會在您的裝置本機寫入一組固定的假帳號資料，尚未串接真實的 Google / Apple OAuth、後端資料庫、雲端同步或 App Store / Google Play / Stripe 金流。因此本階段<strong>不會實際向 Google / Apple 取得您的個人資料，沒有任何雲端帳號、配額或訂閱紀錄，也不會處理任何真實付款或收取費用</strong>。相對地，這也表示<strong>目前並沒有任何儲存在雲端、需要被刪除的個人資料或交易</strong>——App 內的資料只存在您自己的裝置上。</p>
-        <p>以下第 1～3、6 節描述的資料模型、雲端同步、配額與訂閱處理，屬於本 App <strong>未來正式上架、串接真實登入與金流後</strong>的目標設計；在目前的模擬版本中尚未實作。凡標示為「未來正式版」的段落皆為規劃藍圖，並非現況。</p>
-      </div>
+      <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。本 App 是一款專為 hololive OFFICIAL CARD GAME (hOCG) 玩家設計的<strong>非官方</strong>卡牌查價工具。本政策說明本 App 目前實際會收集哪些資料、如何使用與儲存、與哪些第三方服務互動，以及您如何登出與刪除資料。當您使用本 App 時，即表示您同意本政策。</p>
 
-      <h2>1. 我們只支援第三方登入 (OAuth) 與訪客模式</h2>
-      <p>為了保障使用者的帳號密碼安全，HoloHunter 採用現代化的身分驗證機制：</p>
       <div class="highlight-card">
-        <p><strong>🔒 重要產品決策：</strong> 本 App <strong>不提供也不支援</strong> 自行註冊 Email 帳號與設定密碼。我們僅支援安全第三方驗證，包含 <strong>Google 帳號登入</strong> 與 <strong>Apple ID 登入</strong>。同時我們提供「訪客模式」，無須登入即可閱讀規則與手動查卡。</p>
+        <p><strong>ℹ️ 資料儲存重點：</strong> 本 App 採用<strong>伺服器權威 (server-authoritative) 的帳號系統</strong>。當您登入後，我們的後端（託管於 Vercel，身分資料存放於 Vercel KV）會為您建立並儲存一個內部帳號，並發給您的裝置一組登入 session。相對地，您的<strong>收藏、追蹤清單、語言／幣別偏好與每月掃描次數計數僅儲存在您自己的裝置本機</strong>（手機 App 為 AsyncStorage、網頁版為瀏覽器 localStorage），不會上傳到伺服器，也不會在裝置之間同步。會離開您裝置的資料為：(1) 登入時送交伺服器驗證與儲存的帳號身分資料，(2) 掃描卡牌時上傳的卡片影像，(3) 若您在手機上開啟通知，會上傳的推播 Token。詳見下方各節。</p>
       </div>
-      <p>我們絕對不會要求您輸入、也不會儲存您的任何密碼。身分驗證程序均直接在 Google 或 Apple 的安全防護端進行。</p>
 
-      <h2>2. 共通帳號、權限模型與多方綁定機制</h2>
-      <p>為了讓您可以在不同裝置及平台上無縫管理您的卡牌資料與訂閱狀態，我們設計了共通帳號系統：</p>
+      <h2>1. 登入方式：Google／Apple 登入與訪客模式</h2>
+      <p>本 App 不提供自建 Email／密碼註冊，也<strong>不會要求、傳輸或儲存您的任何密碼</strong>，也不會在您的裝置上儲存 Google／Apple 的 OAuth access／refresh token。登入時，App 只在您的裝置上向登入服務商取得一組短效的 <strong>ID Token</strong>，交由我們的後端驗證；身分的解析與帳號的擁有權都由伺服器負責（server-authoritative）。目前提供的使用方式：</p>
       <ul>
-        <li><strong>多方綁定</strong>：您可以用 Google 登入後再綁定 Apple 帳號，或是用 Apple 登入後再綁定 Google 帳號。</li>
-        <li><strong>同一識別碼</strong>：綁定後，該 Google 與 Apple 帳號將共同對應到同一個內部使用者識別碼 (Internal User ID)，共享相同的卡牌收藏、使用量配額與訂閱權限。</li>
-        <li><strong>權限模型</strong>：我們區分為訪客 (guest)、免費會員 (free_user) 以及付費訂閱會員 (subscriber) 三種角色。免費會員可使用卡牌掃描，但每月上限 100 次；付費訂閱會員享無限掃描，並可解鎖 AI 價格與趨勢預測。訪客模式不支援掃描與價格預測功能。</li>
-        <li><strong>身分識別原則</strong>：我們<strong>不使用 Email 作為唯一身分依據</strong>（以防 Apple Private Relay 隱藏真實 Email，或不同平台的 Email 不一致）。身分綁定完全基於第三方 Provider 提供的非敏感帳號唯一識別碼。</li>
+        <li><strong>Google 帳號登入（已啟用）</strong>：採 Google 官方 OAuth 2.0 / OIDC。網頁版走 PKCE、iOS 走原生 Google OAuth client；驗證由 Google 完成，最終身分由我們的後端解析。</li>
+        <li><strong>Sign in with Apple（iOS 已啟用）</strong>：在 iOS 上以系統原生的 Sign in with Apple 進行，App 會將 Apple 身分權杖交由後端驗證。<strong>網頁版的 Apple 登入</strong>則由伺服器端功能旗標控管（需 Services ID 與後端密鑰）；未開啟時，Apple 按鈕會<strong>完全隱藏</strong>，不會顯示為無法使用的按鈕。</li>
+        <li><strong>綁定多個登入方式</strong>：您可將 Google 與 Apple 綁定至同一個帳號，也可以解除綁定（但需至少保留一種登入方式）。</li>
+        <li><strong>訪客模式</strong>：無須登入即可瀏覽卡表與手動查價。（相機掃描辨識功能需登入後才能使用。）</li>
       </ul>
 
-      <h2>3. 我們取得的資料與用途</h2>
-      <p>當您登入、綁定或訂閱 Google 或 Apple 帳號時，我們會取得以下有限的資料：</p>
+      <h2>2. 登入時我們取得並儲存哪些資料，儲存在哪裡</h2>
+      <p>當您登入時，我們的後端會在<strong>伺服器端（Vercel KV 身分資料庫）</strong>為您建立並儲存一個內部帳號，其中包含：</p>
       <ul>
-        <li><strong>電子郵件地址 (Email)</strong>：用於帳號聯絡、客服驗證與通知；不作為唯一登入或帳號合併依據，實際身分綁定以 Google/Apple Provider User ID 為準。</li>
-        <li><strong>顯示名稱 (Display Name)</strong>：用於在 App 介面上提供個人化的歡迎資訊。</li>
-        <li><strong>第三方帳號識別碼 (Provider User ID)</strong>：Google 或 Apple 提供的一串非敏感的唯一識別代碼。</li>
-        <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：安全記錄您在當月所進行的卡牌掃描次數，用於實施免費版每月 100 次的額度控管與防竄改機制。</li>
-        <li><strong>付費訂閱狀態 (Subscription Status)</strong>：記錄您的交易代碼 (Transaction ID / App Store 或 Google Play 憑證) 以開啟付費無限次數與進階預測權限。我們<strong>絕不經手且不儲存</strong>您的信用卡號等敏感財務資料。</li>
+        <li><strong>內部使用者識別碼</strong>：本 App 自行產生的帳號主鍵。</li>
+        <li><strong>登入服務商的識別碼 (provider subject)</strong>：來自 Google／Apple 的穩定識別碼。帳號身分以 <code>(登入服務商, subject)</code> 為鍵，<strong>不以 Email 作為身分依據</strong>——Email 僅為快照，不參與身分解析或帳號合併（因此 Apple 私密轉寄或變更 Email 不會造成錯誤合併）。</li>
+        <li><strong>電子郵件、顯示名稱、個人資料相片網址</strong>：向登入服務商取得的快照，儲存於伺服器帳號與各綁定身分紀錄中，用於在介面顯示。</li>
+        <li><strong>帳號角色 (role) 與綁定時間</strong>：例如免費／訂閱者狀態、各登入方式的綁定時間戳。</li>
       </ul>
-      
-      <h3>資料用途說明：</h3>
-      <ol>
-        <li><strong>使用者身分驗證與登入</strong>：確保您的帳號安全。</li>
-        <li><strong>雲端同步服務與訂閱管理</strong>：同步您的關注清單、收藏卡牌、每月掃描剩餘額度以及付費訂閱狀態。</li>
-        <li><strong>推播通知 (Push Notifications)</strong>：若您啟用了卡牌價格提醒功能，我們會使用您的推播 Token（由 Expo Push Service 產生並管理）來發送降價或波動通知。此 Token 僅用於發送通知，不做他用。</li>
-      </ol>
+      <p>您的裝置會<strong>快取一份上述帳號快照與 session 權杖</strong>（手機 AsyncStorage／網頁 localStorage）以維持登入；每次啟動時 session 會向伺服器重新驗證，<strong>伺服器永遠是資料的權威來源</strong>。以上資料僅用於：讓您登入、在介面顯示帳號資訊、維持登入狀態與帳號管理。掃描功能設有<strong>每月次數上限（登入的免費使用者每月 100 次）</strong>，此計數<strong>僅儲存在您的裝置本機</strong>、非伺服器端配額，訪客則無法使用掃描。本 App 目前<strong>沒有可購買的付費訂閱、也不處理任何付款</strong>；如未來導入，將於本政策另行揭露。</p>
 
-      <h3>相機影像與卡牌辨識處理：</h3>
-      <p>掃描卡牌時，本 App 會使用相機取得卡牌影像進行辨識。影像僅用於辨識卡牌，不會用於廣告或建立個人檔案：</p>
-      <ul>
-        <li><strong>手機 App（iOS / Android）</strong>：文字辨識 (OCR) 完全在您的裝置本機進行（expo-ocr-kit），卡牌影像不會離開您的裝置，也不會上傳到我們的伺服器。</li>
-        <li><strong>網頁版</strong>：因瀏覽器無法在本機進行高精度辨識，卡牌影像會傳送到我們的伺服器端點 <code>/api/recognize-card</code>，再由第三方 AI 視覺辨識服務（Google Gemini，透過 OpenRouter 中介）即時判讀卡片內容。影像僅用於當次辨識，辨識完成後不作長期儲存，也不會用於廣告或個人化追蹤。</li>
-      </ul>
-
-      <h2>4. 使用者如何登出</h2>
-      <p>您可以隨時結束您在 App 中的登入狀態：</p>
-      <ul>
-        <li>點擊 App 首頁右下角的<strong>「設定 (Settings)」</strong>分頁。</li>
-        <li>在「共通帳號設定」區段中，點擊<strong>「登出 (Sign Out)」</strong>按鈕（若為訪客則可登出回到登入頁面）。</li>
-        <li>登出後，App 將立即清除您在本機裝置上的登入暫存快取。</li>
-      </ul>
-
-      <h2>5. 帳號與資料刪除方式</h2>
-
-      <h3>目前版本（本機模擬）：</h3>
+      <h2>3. 相機影像與卡牌辨識（會上傳到伺服器並交由 Google Gemini 辨識）</h2>
+      <p>使用掃描功能時，本 App 會以相機取得卡牌影像來辨識卡片。請注意目前的實際流程：</p>
       <div class="danger-card">
-        <p><strong>⚠️ 目前並沒有任何雲端帳號或資料需要刪除。</strong> 由於現階段登入與訂閱皆為本機模擬，您的所有資料（模擬帳號、卡牌收藏、掃描計數）都只存在您自己的裝置本機。進入<strong>「設定」</strong>分頁點擊紅色的<strong>「刪除帳號與資料（本機）」</strong>按鈕並確認後，App 會立即清除本機的登入 Session 與卡牌收藏快取並將您登出——這已完整刪除本 App 目前所持有、關於您的全部資料。此為不可逆操作。</p>
+        <p><strong>📷 手機 App（iOS / Android）與網頁版皆會上傳影像。</strong> 兩個平台在掃描時都會將擷取並前處理後的卡牌影像，傳送到我們的伺服器端點 <code>/api/recognize-card</code>；伺服器再將影像轉送給 <strong>Google Gemini 視覺辨識模型</strong>（Google 的 Generative Language API，<code>generativelanguage.googleapis.com</code>）進行即時判讀。</p>
       </div>
+      <ul>
+        <li><strong>用途</strong>：影像僅用於辨識該張卡片以提供查價，不會用於廣告或建立個人檔案。</li>
+        <li><strong>內容</strong>：影像為卡片畫面，可能含背景，不含您的帳號或身分識別資訊。</li>
+        <li><strong>保留</strong>：本 App 伺服器端不長期儲存影像；影像於傳輸期間交由 Google 依其政策處理。Google 隱私權政策：<code>https://policies.google.com/privacy</code></li>
+      </ul>
 
-      <h3>未來正式版（串接後端與金流後）：</h3>
-      <p>當本 App 正式上架、串接真實的 OAuth 登入、雲端資料庫與金流之後，我們將補上以下刪除機制以符合 Apple App Store 與 Google Play 的合規規範：</p>
+      <h2>4. 推播通知與追蹤清單</h2>
+      <ul>
+        <li><strong>追蹤清單 (Watchlist)</strong>：您加入追蹤的卡牌<strong>只儲存在裝置本機</strong>，不會上傳到伺服器。</li>
+        <li><strong>推播 Token（僅手機 App）</strong>：若您在手機上允許通知權限，App 會取得一組 <strong>Expo 推播 Token</strong>，連同平台別（iOS / Android）上傳到我們的伺服器並存放於 <strong>Vercel KV</strong>。此 Token 以裝置為索引、<strong>不與您的 Google 帳號綁定</strong>，僅用於未來發送卡牌價格通知。網頁版不會取得或上傳推播 Token。</li>
+      </ul>
+
+      <h2>5. 如何登出</h2>
+      <p>您可以隨時在 App 首頁的<strong>「設定」</strong>分頁點擊<strong>「登出」</strong>。登出僅會<strong>清除儲存在您裝置上的 session 與帳號快照</strong>，讓您在本裝置登出。登出<strong>不會</strong>向 Google 或 Apple 撤銷授權，也不會刪除伺服器端的帳號資料。若您想在登入服務商端撤銷本 App 的存取權，請前往 <em>Google 帳戶 → 安全性 → 第三方應用程式與服務</em>，或 <em>Apple ID → 使用 Apple 登入</em> 移除 HoloHunter。</p>
+
+      <h2>6. 帳號與資料刪除</h2>
+      <div class="highlight-card">
+        <p><strong>ℹ️ 「刪除帳號」為伺服器權威、fail-closed 的刪除。</strong> 在<strong>「設定」</strong>分頁點擊<strong>「刪除帳號」</strong>並確認後，App 會呼叫後端執行刪除；<strong>只有在伺服器確認成功時</strong>，才會將您的內部帳號與所有綁定身分（Google／Apple 的 subject、Email／名稱／頭像快照等）從我們的資料庫（Vercel KV）<strong>永久刪除</strong>，並清除本裝置的 session。若伺服器未能確認刪除，App <strong>不會</strong>宣稱已刪除，您仍為登入狀態，可稍後再試或聯絡我們。</p>
+      </div>
+      <p>其他須知：</p>
       <ol>
-        <li><strong>本機清除（App 內）</strong>：App 內的刪除按鈕會清除本機 Session 與快取並登出。</li>
-        <li><strong>雲端資料刪除申請（電子郵件）</strong>：屆時如需刪除儲存於雲端的資料（卡牌收藏、掃描配額紀錄、訂閱關聯等），可使用您登入所用的電子郵件，將刪除申請寄至 <code>dicoge.chen@gmail.com</code> 並附上您的 Internal User ID。我們會以後端級聯刪除處理帳號、配額與必要之交易紀錄去識別化，並回信通知您完成。（此雲端刪除管道於目前模擬版本尚未實作，因目前並無雲端資料。）</li>
+        <li><strong>Apple 授權撤銷</strong>：依 App Store 規範 5.1.1(v)，若您的帳號綁定了 Apple，刪除時伺服器<strong>必須先成功撤銷 Apple 授權</strong>才會繼續刪除；若無法完成撤銷，刪除會被拒絕、不刪除任何資料（fail-closed）。（註：Apple 授權撤銷的持久化目前仍在完成中，綁定 Apple 身分的帳號可能會收到「尚未開放」的結果，並在該功能上線前刻意不予刪除。）</li>
+        <li><strong>刪除範圍</strong>：帳號刪除涵蓋伺服器端的帳號／身分資料，<strong>不包含</strong>：匿名推播 Token（請來信移除，見下）、以及您裝置本機的資料（收藏、追蹤清單、偏好、掃描歷史）。</li>
+        <li><strong>合法保留例外（狹義）</strong>：一般情況下，伺服器確認刪除後即不再保留您的帳號／身分資料。唯有在<strong>適用法律明確要求</strong>時，我們才會保留，且僅限<strong>法律義務所需的最低必要資料</strong>、<strong>僅保留法定期間</strong>、目的僅限於履行該法律義務，期滿即刪除。目前本 App <strong>沒有任何付款或交易功能，因此目前沒有付款／交易紀錄需要保留</strong>；此例外<strong>不會</strong>擴張為一般營運或商業目的的資料保留。</li>
+        <li><strong>刪除已上傳的推播 Token</strong>：目前尚無 App 內移除入口，如需刪除，請來信 <code>dicoge.chen@gmail.com</code> 告知，我們會於伺服器端移除。</li>
+        <li><strong>清除本機資料</strong>：於系統設定解除安裝 App（手機）或清除網站資料（網頁）即可移除所有本機儲存的收藏、追蹤清單與設定。</li>
       </ol>
 
-      <h2>6. App Store / Google Play 行動商店規範合規（未來正式版）</h2>
-      <p>以下商店合規項目適用於本 App 未來串接真實金流與後端之後；目前模擬版本尚未實作真實訂閱與帳號刪除後端。</p>
+      <h2>7. 第三方服務與資料安全</h2>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>：正式版將在「設定」內提供帳號刪除入口，並提供以電子郵件申請刪除雲端資料的管道。訂閱屆時將由 Apple StoreKit 2 與 Google Play Billing 進行，可隨時在您的商店設定中取消訂閱。（目前為本機模擬，尚未串接。）</li>
-        <li><strong>Google Play Data Safety (資料安全)</strong>：
+        <li><strong>傳輸加密</strong>：所有離開裝置的資料皆透過 HTTPS 加密傳輸。</li>
+        <li><strong>不作廣告用途、不販售或分享個資</strong>：本 App 不含廣告或分析追蹤 SDK，不會將您的個人資料出售或分享給廣告商。</li>
+        <li><strong>使用到的第三方處理者</strong>：
           <ul>
-            <li>傳輸安全性：本 App 收集的所有資料皆透過安全的加密協定（HTTPS）傳輸，確保傳輸過程不被竊聽。</li>
-            <li>不向第三方分享（廣告 / 分析）：我們絕不將您的個人資料（Email、姓名、關注清單、使用紀錄）出售或分享給任何廣告商或分析機構。</li>
-            <li>功能性第三方處理：唯一的例外是為完成卡牌辨識功能，網頁版掃描時會將卡牌影像即時傳送給 AI 視覺辨識服務（Google Gemini，透過 OpenRouter 中介）處理；此僅用於提供辨識功能，非用於廣告、轉售或建立個人檔案。手機 App 的辨識則在裝置端完成、不上傳。</li>
+            <li><strong>Google</strong>：Google 登入的 ID Token 驗證，以及卡牌辨識所用的 Gemini 視覺模型。</li>
+            <li><strong>Apple</strong>：iOS 上 Sign in with Apple 的身分權杖驗證。</li>
+            <li><strong>Vercel</strong>：本 App 後端 API（<code>/api/auth/*</code>、<code>/api/recognize-card</code>、<code>/api/push/register</code>），以及 Vercel KV 儲存（(a) 您的伺服器端帳號／身分資料、(b) 匿名推播 Token）之託管。</li>
+            <li><strong>Expo</strong>：手機推播通知的遞送服務。</li>
           </ul>
         </li>
       </ul>
 
-      <h2>7. 聲明與限制</h2>
-      <p>HoloHunter 是一款專為 hololive OFFICIAL CARD GAME 玩家設計的<strong>非官方</strong>卡牌價格查詢工具。本 App 與 Cover 株式會社 (Cover Corp.) 無任何官方關聯、授權或代言關係。</p>
+      <h2>8. 聲明與限制</h2>
+      <p>HoloHunter 是一款<strong>非官方</strong>的 hololive OFFICIAL CARD GAME 玩家工具，與 Cover 株式會社 (Cover Corp.) 無任何官方關聯、授權或代言關係。</p>
 
-      <h2>8. 聯絡我們</h2>
+      <h2>9. 聯絡我們</h2>
       <p>如果您對本隱私權政策或資料刪除有任何疑問，歡迎來信與我們聯絡：</p>
-      <p>📬 技術支援信箱：<code>dicoge.chen@gmail.com</code> (開發者：dicoge)</p>
+      <p>📬 技術支援信箱：<code>dicoge.chen@gmail.com</code>（開發者：dicoge）</p>
     </div>
 
     <!-- ── English Version ── -->
     <div id="content-en" class="content-section">
-      <p><em>Last Updated: July 27, 2026</em></p>
-      
-      <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). We highly value your personal privacy. This policy describes how we handle multi-provider sign-ins, account linking, subscriptions, and related personal data. By using the App, you agree to this policy.</p>
+      <p><em>Last Updated: August 6, 2026</em></p>
 
-      <div class="danger-card">
-        <p><strong>⚠️ Current Build Status (Local Mock / Demo Stage):</strong> In the current build, Google / Apple sign-in, account linking, Internal User ID, subscription status, and the monthly scan quota are <strong>all a "local mock"</strong>: signing in merely writes a fixed fake account onto your own device. Nothing is connected to real Google / Apple OAuth, a backend database, cloud sync, or App Store / Google Play / Stripe billing. As a result, this stage does <strong>not actually collect any personal data from Google / Apple, holds no cloud account, quota, or subscription record, and does not process any real payment or charge you</strong>. Consequently there is <strong>currently no personal data or transaction stored in any cloud that would need to be deleted</strong> — the App's data lives only on your own device.</p>
-        <p>Sections 1–3 and 6 below (the data model, cloud sync, quota, and subscription handling) describe the <strong>future production design once the App ships with real authentication and billing</strong>; they are not implemented in the current mock build. Any paragraph marked "Future production" is a planned blueprint, not the current state.</p>
-      </div>
+      <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). HoloHunter is an <strong>unofficial</strong> price-lookup tool for players of the hololive OFFICIAL CARD GAME (hOCG). This policy describes what data the App actually collects today, how it is used and stored, which third parties it talks to, and how you can sign out and delete data. By using the App, you agree to this policy.</p>
 
-      <h2>1. Third-Party Authentication Only (OAuth) & Guest Mode</h2>
-      <p>To ensure account credential security, HoloHunter employs modern authentication mechanisms:</p>
       <div class="highlight-card">
-        <p><strong>🔒 Critical Product Decision:</strong> The App <strong>does not provide or support</strong> custom email/password registration. We exclusively support secure third-party login via <strong>Google Sign-In</strong> and <strong>Sign in with Apple</strong>. We also provide a "Guest Mode" allowing users to read game rules and manually search cards without logging in.</p>
+        <p><strong>ℹ️ Where your data lives:</strong> HoloHunter uses a <strong>server-authoritative account system</strong>. When you sign in, our backend (hosted on Vercel, with identity data in Vercel KV) creates and stores an internal account for you and issues a session to your device. By contrast, your <strong>collections, watchlist, language/currency preferences, and monthly scan counter are stored only on your own device</strong> (AsyncStorage on the mobile App, browser localStorage on the web); they are not uploaded to our servers and do not sync across devices. The data that leaves your device is: (1) the account/identity data sent to our server for verification and storage at sign-in, (2) the card image uploaded when you scan a card, and (3) if you enable notifications on the mobile App, your push token. See the sections below.</p>
       </div>
-      <p>We will never ask for, transmit, or store your passwords. All authentication procedures are performed directly on Google's or Apple's secure servers.</p>
 
-      <h2>2. Common Account, Permission Model & Multi-Provider Linking</h2>
-      <p>To let you manage card data and subscription states seamlessly across platforms, we use a unified account system:</p>
+      <h2>1. Sign-In: Google / Apple Sign-In & Guest Mode</h2>
+      <p>The App does not offer custom email/password registration, <strong>never asks for, transmits, or stores any password</strong>, and does not store Google/Apple OAuth access or refresh tokens on your device. At sign-in, the App only obtains a short-lived provider <strong>ID token</strong> on your device and sends it to our backend for verification; identity resolution and account ownership are handled on the server (server-authoritative). The available ways to use it:</p>
       <ul>
-        <li><strong>Account Linking</strong>: You can log in with Google and then link your Apple account, or log in with Apple and link your Google account.</li>
-        <li><strong>Single Identity ID</strong>: Once linked, both Google and Apple identities point to a single Internal User ID, sharing the same card collections, monthly quotas, and subscription state.</li>
-        <li><strong>Permission Model</strong>: Users are categorized as guest, free_user, or subscriber. Free users can scan cards up to 100 times per month. Paid subscribers enjoy unlimited scans and access to AI price trend forecasts. Guest mode does not support scanning or forecasts.</li>
-        <li><strong>Identification Principle</strong>: We **do NOT use Email as the primary unique key** (to prevent issues with Apple's Private Relay email hiding, or mismatching emails between providers). All linking is tied to the unique provider account ID.</li>
+        <li><strong>Google Sign-In (enabled)</strong>: Uses Google's official OAuth 2.0 / OIDC — PKCE on the web, a native Google OAuth client on iOS. Google performs authentication; the final identity is resolved by our backend.</li>
+        <li><strong>Sign in with Apple (enabled on iOS)</strong>: On iOS this uses the system-native Sign in with Apple, and the App forwards the Apple identity token to our backend for verification. <strong>Web Apple sign-in</strong> is gated behind a server-side feature flag (it requires a Services ID and a backend secret); while off, the Apple button is <strong>hidden entirely</strong> rather than shown as a non-functional control.</li>
+        <li><strong>Linking multiple methods</strong>: You may link both Google and Apple to the same account, and unlink them (as long as at least one login method remains).</li>
+        <li><strong>Guest Mode</strong>: Browse the card list and look up prices manually without signing in. (The camera scan recognition feature requires signing in.)</li>
       </ul>
 
-      <h2>3. Data We Collect and How We Use It</h2>
-      <p>When you sign in, link, or subscribe on HoloHunter, we collect limited profile and usage data:</p>
+      <h2>2. What We Collect and Store at Sign-In, and Where</h2>
+      <p>When you sign in, our backend creates and stores an internal account for you in the <strong>server-side identity database (Vercel KV)</strong>, containing:</p>
       <ul>
-        <li><strong>Email Address</strong>: Used for account contact, support verification, and notifications. It is not used as the unique login or account-linking key; Google/Apple Provider User ID is the source of truth.</li>
-        <li><strong>Display Name</strong>: Used to personalize greetings on the App interface.</li>
-        <li><strong>Provider User ID</strong>: A non-sensitive unique ID string provided by Google or Apple.</li>
-        <li><strong>Scan Usage & Quota Logs</strong>: Securely logs your monthly scan count to enforce the 100-scan monthly limit for the free tier and prevent local client tampering.</li>
-        <li><strong>Paid Subscription Status</strong>: Logs your transaction identifier (Transaction ID / App Store or Google Play receipt metadata) to activate premium features. We **never process or store** your credit card numbers or sensitive financial data.</li>
+        <li><strong>Internal user ID</strong>: The App's own account primary key.</li>
+        <li><strong>Provider subject</strong>: The stable identifier from Google/Apple. Account identity is keyed by <code>(provider, subject)</code>, <strong>not by email</strong> — email is only a snapshot and never participates in identity resolution or account merging (so Apple private-relay or a changed email cannot cause a wrong merge).</li>
+        <li><strong>Email, display name, and profile picture URL</strong>: Snapshots obtained from the provider, stored on the server account and on each linked identity record, used to display your account in the UI.</li>
+        <li><strong>Account role and link timestamps</strong>: e.g. free/subscriber status and the timestamp each login method was linked.</li>
       </ul>
-      
-      <h3>How Data is Used:</h3>
-      <ol>
-        <li><strong>User Authentication</strong>: To secure your account and access.</li>
-        <li><strong>Cloud Syncing & Subscription Management</strong>: To sync your watchlists, card collections, monthly quota progress, and premium subscription state.</li>
-        <li><strong>Push Notifications</strong>: If you enable card price alerts, we use your device push token (generated and managed by Expo Push Service) to deliver notifications. This token is used solely for sending alerts.</li>
-      </ol>
+      <p>Your device <strong>caches a copy of that account snapshot plus the session token</strong> (AsyncStorage on mobile / localStorage on web) to keep you signed in; on each launch the session is re-validated against the server, and <strong>the server is always the source of truth</strong>. This data is used solely to sign you in, display your account info in the UI, keep you signed in, and manage your account. The scan feature has a <strong>monthly usage limit (100 scans/month for signed-in free users)</strong>; this count is stored <strong>only on your device</strong> and is not a server-side quota, and guests cannot scan. The App currently has <strong>no purchasable paid subscription and processes no payments</strong>; if any are introduced later, this policy will be updated to disclose them.</p>
 
-      <h3>Camera Images & Card Recognition Processing:</h3>
-      <p>When scanning a card, the App uses the camera to capture the card image for recognition. Images are used only to identify the card, never for advertising or profiling:</p>
-      <ul>
-        <li><strong>Mobile App (iOS / Android)</strong>: Text recognition (OCR) runs entirely on your device (expo-ocr-kit). The card image never leaves your device and is not uploaded to our servers.</li>
-        <li><strong>Web version</strong>: Because browsers cannot perform high-accuracy recognition locally, the card image is sent to our server endpoint <code>/api/recognize-card</code>, which uses a third-party AI vision service (Google Gemini, via OpenRouter) to read the card in real time. The image is used only for that single recognition, is not retained long-term, and is never used for advertising or personalized tracking.</li>
-      </ul>
-
-      <h2>4. How Users Sign Out</h2>
-      <p>You can sign out of the App at any time:</p>
-      <ul>
-        <li>Tap the <strong>Settings</strong> tab at the bottom right of the App home screen.</li>
-        <li>In the "Common Account Settings" section, tap the <strong>Sign Out</strong> button (Guests can sign out to return to onboarding).</li>
-        <li>Upon signing out, cached user profile credentials on your local device will be cleared immediately.</li>
-      </ul>
-
-      <h2>5. Account & Data Deletion</h2>
-
-      <h3>Current build (local mock):</h3>
+      <h2>3. Camera Images & Card Recognition (uploaded and processed by Google Gemini)</h2>
+      <p>When you use the scan feature, the App uses the camera to capture a card image for recognition. Please note the actual flow today:</p>
       <div class="danger-card">
-        <p><strong>⚠️ There is currently no cloud account or data to delete.</strong> Because sign-in and subscriptions are a local mock at this stage, all of your data (the mock account, card collection, scan count) lives only on your own device. Go to the <strong>Settings</strong> tab, tap the red <strong>Delete Account (Local)</strong> button, and confirm — the App immediately clears your local session and card collection cache and signs you out. This fully deletes everything the App currently holds about you. The action is irreversible.</p>
+        <p><strong>📷 Both the mobile App (iOS / Android) and the web version upload the image.</strong> On both platforms, the captured and pre-processed card image is sent to our server endpoint <code>/api/recognize-card</code>, which then forwards it to <strong>Google's Gemini vision model</strong> (Google's Generative Language API, <code>generativelanguage.googleapis.com</code>) for real-time reading.</p>
       </div>
+      <ul>
+        <li><strong>Purpose</strong>: The image is used only to identify that card for price lookup, never for advertising or profiling.</li>
+        <li><strong>Contents</strong>: The image is a picture of the card and may include background; it carries no account or identity information.</li>
+        <li><strong>Retention</strong>: Our server does not retain the image long-term; during transit it is processed by Google under its policy. Google Privacy Policy: <code>https://policies.google.com/privacy</code></li>
+      </ul>
 
-      <h3>Future production (after backend & billing are integrated):</h3>
-      <p>Once the App ships with real OAuth login, a cloud database, and billing, we will add the following deletion mechanisms to comply with Apple App Store and Google Play requirements:</p>
+      <h2>4. Push Notifications & Watchlist</h2>
+      <ul>
+        <li><strong>Watchlist</strong>: Cards you add to your watchlist are stored <strong>only on your device</strong> and are not uploaded to the server.</li>
+        <li><strong>Push token (mobile App only)</strong>: If you grant notification permission on the mobile App, it obtains an <strong>Expo push token</strong> and uploads it, together with the platform (iOS / Android), to our server, where it is stored in <strong>Vercel KV</strong>. The token is keyed by device and is <strong>not linked to your Google account</strong>; it is only for delivering future card price notifications. The web version does not obtain or upload a push token.</li>
+      </ul>
+
+      <h2>5. How to Sign Out</h2>
+      <p>You can sign out at any time from the <strong>Settings</strong> tab by tapping <strong>Sign Out</strong>. Signing out only <strong>clears the session and account snapshot stored on your device</strong>, signing you out on this device. It does <strong>not</strong> revoke your Google or Apple authorization, and does not delete your server-side account data. To revoke the App's access at the provider, go to your <em>Google Account → Security → Third-party apps &amp; services</em>, or <em>Apple ID → Sign in with Apple</em>, and remove HoloHunter.</p>
+
+      <h2>6. Account & Data Deletion</h2>
+      <div class="highlight-card">
+        <p><strong>ℹ️ "Delete Account" is a server-authoritative, fail-closed deletion.</strong> When you tap <strong>Delete Account</strong> in <strong>Settings</strong> and confirm, the App calls the backend to perform the deletion. <strong>Only when the server confirms success</strong> does it <strong>permanently delete</strong> your internal account and all linked identities (the Google/Apple subjects and the email/name/photo snapshots) from our database (Vercel KV) and clear the session on this device. If the server cannot confirm deletion, the App does <strong>not</strong> claim it was deleted — you remain signed in and can retry later or contact us.</p>
+      </div>
+      <p>Also note:</p>
       <ol>
-        <li><strong>Local Clear (In-App)</strong>: The in-app delete button clears the local session and cache and signs you out.</li>
-        <li><strong>Cloud Data Deletion Request (Email)</strong>: At that point, to delete data stored in the cloud (card collections, scan quota logs, subscription links), send a request from your registered email to <code>dicoge.chen@gmail.com</code> with your Internal User ID. We will handle account cascade deletion, quota removal, and any required transaction de-identification, and email you once complete. (This cloud deletion channel is not implemented in the current mock build, since no cloud data exists yet.)</li>
+        <li><strong>Apple authorization revocation</strong>: Per App Store guideline 5.1.1(v), if your account has a linked Apple identity, deletion first requires the server to <strong>successfully revoke your Apple authorization</strong>; if revocation cannot be completed, the deletion is refused and nothing is deleted (fail-closed). (Note: persistence for Apple-token revocation is still being finalized, so accounts with a linked Apple identity may currently receive a "not yet available" result and are intentionally not deleted until it ships.)</li>
+        <li><strong>Deletion scope</strong>: Account deletion covers your server-side account/identity data. It does <strong>not</strong> cover: the anonymous push token (email us to remove — see below), or your device-local data (collections, watchlist, preferences, scan history).</li>
+        <li><strong>Lawful-retention exception (narrow)</strong>: As a rule, once the server confirms deletion we retain none of your account/identity data. We retain data <strong>only where applicable law explicitly requires it</strong>, and then only the <strong>minimum data necessary for that legal obligation</strong>, <strong>only for the legally mandated period</strong>, used solely to meet that obligation, and deleted once the period ends. The App currently has <strong>no payment or transaction features, so there are no payment/transaction records to retain today</strong>; this exception does <strong>not</strong> extend to retention for general operational or business purposes.</li>
+        <li><strong>Delete an uploaded push token</strong>: There is no in-app removal entry yet; to delete it, email <code>dicoge.chen@gmail.com</code> and we will remove it on the server.</li>
+        <li><strong>Clear local data</strong>: Uninstalling the App (mobile) or clearing site data (web) removes all locally stored collections, watchlist, and settings.</li>
       </ol>
 
-      <h2>6. App Store & Google Play Store Compliance (Future production)</h2>
-      <p>The following store-compliance items apply after the App integrates real billing and a backend; the current mock build does not yet implement real subscriptions or a deletion backend.</p>
+      <h2>7. Third-Party Services & Data Safety</h2>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>: The production version will provide an account deletion entry point in the App's Settings together with an email channel to request deletion of cloud data. Subscriptions will then be verified via StoreKit 2 and Google Play Billing, and can be cancelled anytime in your store account settings. (Currently a local mock, not yet integrated.)</li>
-        <li><strong>Google Play Data Safety</strong>:
+        <li><strong>Encryption in transit</strong>: All data that leaves your device is transmitted over HTTPS.</li>
+        <li><strong>No advertising use, no selling or sharing personal data</strong>: The App contains no advertising or analytics-tracking SDKs and never sells or shares your personal data with advertisers.</li>
+        <li><strong>Third-party processors used</strong>:
           <ul>
-            <li>Transit Security: All data collected is transmitted using secure encryption protocols (HTTPS) to prevent interception.</li>
-            <li>No Third-Party Sharing (Ads / Analytics): We never sell or share your personal data (email, name, watchlist, scan logs) with any advertisers or analytics platforms.</li>
-            <li>Functional Third-Party Processing: The only exception is card recognition — on the web version, the card image is sent in real time to an AI vision service (Google Gemini, via OpenRouter) for processing. This is solely to provide the recognition feature, never for advertising, resale, or profiling. On the mobile App, recognition runs on-device and images are not uploaded.</li>
+            <li><strong>Google</strong>: Google Sign-In ID-token verification, and the Gemini vision model used for card recognition.</li>
+            <li><strong>Apple</strong>: Sign in with Apple identity-token verification (iOS).</li>
+            <li><strong>Vercel</strong>: Hosting for the App's backend APIs (<code>/api/auth/*</code>, <code>/api/recognize-card</code>, <code>/api/push/register</code>) and Vercel KV storage for (a) your server-side account/identity data and (b) the anonymous push token.</li>
+            <li><strong>Expo</strong>: Delivery service for mobile push notifications.</li>
           </ul>
         </li>
       </ul>
 
-      <h2>7. Disclaimer</h2>
-      <p>HoloHunter is an <strong>unofficial</strong> fan-made card price check tool for the hololive OFFICIAL CARD GAME. The App is not affiliated with, authorized, or endorsed by Cover Corp.</p>
+      <h2>8. Disclaimer</h2>
+      <p>HoloHunter is an <strong>unofficial</strong> fan-made tool for the hololive OFFICIAL CARD GAME. The App is not affiliated with, authorized, or endorsed by Cover Corp.</p>
 
-      <h2>8. Contact Us</h2>
-      <p>If you have any questions about this Privacy Policy or data deletion, please contact us at: </p>
+      <h2>9. Contact Us</h2>
+      <p>If you have any questions about this Privacy Policy or data deletion, please contact us at:</p>
       <p>📬 Support Email: <code>dicoge.chen@gmail.com</code> (Developer: dicoge)</p>
     </div>
 

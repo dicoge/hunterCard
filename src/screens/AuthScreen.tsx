@@ -54,7 +54,7 @@ export default function AuthScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{APP_NAME}</Text>
-        <Text style={styles.subtitle}>登入以同步收藏與入手提醒</Text>
+        <Text style={styles.subtitle}>登入以使用卡牌掃描辨識</Text>
       </View>
 
       <View style={styles.buttons}>
