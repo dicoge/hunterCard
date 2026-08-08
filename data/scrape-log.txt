@@ -1,4 +1,4 @@
-=== Scrape Log 2026-08-06T12:07:15.080Z ===
+=== Scrape Log 2026-08-08T12:06:57.638Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -64,22 +64,22 @@
 [database] Scraping hYS01: /sell/hocg/s/hys01
   → Found 4 cards with prices
 [database] Scraping ent07: /sell/hocg/s/special/4
-  → Found 142 cards with prices
+  → Found 134 cards with prices
 [database] Scraping hCS01: /sell/hocg/s/special/5
-  → Found 201 cards with prices
+  → Found 197 cards with prices
 [database] Scraping hPC01: /sell/hocg/s/special/7
   → Found 126 cards with prices
 [database] Scraping hPR: /sell/hocg/s/special/1
-  → Found 119 cards with prices
+  → Found 118 cards with prices
 [database] Scraping hSD2025summer: /sell/hocg/s/special/8
   → Found 128 cards with prices
 
-  Total cards from yuyu-tei: 1884
+  Total cards from yuyu-tei: 1871
 
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 0, Skipped: 1184, Errors: 0
+  [images] Downloaded: 1, Skipped: 1182, Errors: 0
 
 ── Step 3: Merge official data ──
 
@@ -101,10 +101,10 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 2016 new records; index totals: 2024 cards / 95040 records
+  [price-history] Saved 2014 new records; index totals: 2025 cards / 97054 records
 
 ── Step 6: Merge priceHistory into database ──
-  [priceHistory] Merged into 2024 cards
+  [priceHistory] Merged into 2025 cards
   [buyPrice] Restored buy prices onto 1663 cards
 
 ── Step 7: Merge VTuber YouTube stats ──
@@ -113,16 +113,16 @@
 ═══════════════════════════════════════
   ✅ Build complete!
   Total cards: 2105
-  Cards with prices: 1184
-  Images downloaded: 0
-  Duration: 334.7s
+  Cards with prices: 1183
+  Images downloaded: 1
+  Duration: 334.0s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
 Build result: {
   "totalCards": 2105,
-  "yuyuCount": 1184,
+  "yuyuCount": 1183,
   "officialCount": 2105,
-  "imagesDownloaded": 0,
-  "duration": 334.7
+  "imagesDownloaded": 1,
+  "duration": 334
 }
