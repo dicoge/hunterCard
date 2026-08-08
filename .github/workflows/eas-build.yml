@@ -1,0 +1,105 @@
+name: EAS Build (Test Tracks)
+
+# Manual, on-demand cloud build via EAS.
+#   iOS      -> TestFlight (submit with the `production` profile)
+#   Android  -> Google Play Internal testing (AAB, `production` profile)
+#   preview  -> internal-distribution build (ad-hoc APK / iOS internal) for direct installs
+#
+# Run this only after CI on `main` is green. It never runs on push — it is
+# workflow_dispatch only so a build is always a deliberate, human-triggered action.
+#
+# Required repo secret:
+#   EXPO_TOKEN  — Expo access token (Expo dashboard -> Account -> Access Tokens).
+#                 Without it the job fails fast; nothing is committed to git.
+# Optional (only needed when submit == true):
+#   iOS      -> fill eas.json submit.production.ios (appleId / ascAppId / appleTeamId)
+#   Android  -> GOOGLE_SERVICE_ACCOUNT_JSON secret, materialised to
+#               ./google-service-account.json (git-ignored) at submit time.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Target platform"
+        type: choice
+        required: true
+        default: ios
+        options:
+          - ios
+          - android
+          - all
+      profile:
+        description: "EAS build profile"
+        type: choice
+        required: true
+        default: preview
+        options:
+          - preview
+          - production
+      submit:
+        description: "Submit to store after build (production -> TestFlight / Play internal)"
+        type: boolean
+        required: true
+        default: false
+
+jobs:
+  build:
+    name: EAS ${{ inputs.profile }} build (${{ inputs.platform }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Assert EXPO_TOKEN is set
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::EXPO_TOKEN secret is not set. Add it in repo Settings -> Secrets -> Actions."
+            exit 1
+          fi
+
+      - name: EAS Build
+        run: |
+          eas build \
+            --platform "${{ inputs.platform }}" \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            --no-wait
+
+      - name: Write Google service account (Android submit only)
+        if: ${{ inputs.submit && (inputs.platform == 'android' || inputs.platform == 'all') }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::submit=true for Android but GOOGLE_SERVICE_ACCOUNT_JSON secret is empty."
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > ./google-service-account.json
+
+      - name: EAS Submit
+        if: ${{ inputs.submit }}
+        run: |
+          eas submit \
+            --platform "${{ inputs.platform }}" \
+            --profile "${{ inputs.profile }}" \
+            --latest \
+            --non-interactive
+
+      - name: Cleanup service account
+        if: ${{ always() }}
+        run: rm -f ./google-service-account.json

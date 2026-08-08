@@ -2,6 +2,8 @@
 
 > HoloHunter 是非官方 hololive OFFICIAL CARD GAME 輔助查價工具。商店資料不可寫成官方授權 App；建議用「fan-made / unofficial companion tool」表述。
 
+> 📎 操作速查（怎麼發測試包給測試員、GitHub Actions 手動觸發 EAS build、blocked-on-user 清單）見 [`docs/TEST-DISTRIBUTION.md`](./TEST-DISTRIBUTION.md)。本文件是完整流程與 blocker / 文案手冊。
+
 ## 目前專案設定確認
 
 - Expo app name：`HoloHunter`
@@ -28,7 +30,7 @@
 
 ### 0.1 版本與 build number 管理
 
-> ⚠️ 這是最常見的第二次送審 blocker。`expo.version` 只是「使用者可見版本字串」（marketing version），商店真正用來判斷「這是不是新 build」的是 **iOS `buildNumber`** 與 **Android `versionCode`**。目前 `app.json` **沒有**設定 `ios.buildNumber` 與 `android.versionCode`，`eas.json` 也**沒有** `appVersionSource` / `autoIncrement`。若不處理，第二次送同一版本會被：
+> ⚠️ 這是最常見的第二次送審 blocker。`expo.version` 只是「使用者可見版本字串」（marketing version），商店真正用來判斷「這是不是新 build」的是 **iOS `buildNumber`** 與 **Android `versionCode`**。`app.json` 目前**沒有**寫死 `ios.buildNumber` / `android.versionCode`——這是刻意的，因為 `eas.json` **已採用方案 A**（`cli.appVersionSource: "remote"` + `preview`/`production` `autoIncrement: true`），build number / versionCode 由 EAS 雲端自動遞增。若日後改回方案 B（本機手動維護版本），未遞增就送同一版本會被：
 >
 > - App Store Connect：`The bundle version must be higher than the previously uploaded version`
 > - Play Console：`Version code N has already been used`
@@ -197,16 +199,17 @@ cd hunterCard
 npx eas submit --platform ios --profile production --latest
 ```
 
-目前 `eas.json` 的 iOS submit 欄位仍是 placeholder：
+目前 `eas.json` 的 iOS submit 欄位結構已補齊，但值仍是 placeholder：
 
 ```json
 {
   "appleId": "YOUR_APPLE_ID@example.com",
-  "ascAppId": "YOUR_ASC_APP_ID"
+  "ascAppId": "YOUR_ASC_APP_ID",
+  "appleTeamId": "YOUR_APPLE_TEAM_ID"
 }
 ```
 
-正式 submit 前需改成實際 Apple ID / App Store Connect App ID，或在互動式 submit 時輸入。
+正式 submit 前需改成實際 Apple ID / App Store Connect App ID / Apple Team ID，或在互動式 submit 時輸入。
 
 也可從 EAS build 頁下載 `.ipa`，用 Transporter 手動上傳。
 

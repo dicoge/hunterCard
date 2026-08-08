@@ -1,6 +1,7 @@
 {
   "cli": {
     "version": ">= 15.0.0",
+    "appVersionSource": "remote",
     "promptToConfigurePushNotifications": false
   },
   "build": {
@@ -16,6 +17,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "autoIncrement": true,
       "ios": {
         "simulator": false
       },
@@ -35,14 +37,24 @@
     }
   },
   "submit": {
+    "preview": {
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "internal",
+        "releaseStatus": "draft"
+      }
+    },
     "production": {
       "ios": {
         "appleId": "YOUR_APPLE_ID@example.com",
-        "ascAppId": "YOUR_ASC_APP_ID"
+        "ascAppId": "YOUR_ASC_APP_ID",
+        "appleTeamId": "YOUR_APPLE_TEAM_ID"
       },
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
-        "track": "internal"
+        "track": "internal",
+        "releaseStatus": "completed",
+        "changesNotSentForReview": false
       }
     }
   }
