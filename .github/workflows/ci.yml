@@ -47,6 +47,9 @@ jobs:
       - name: Verify Store MVP fail-closed field strip (DIC-908)
         run: npm run test:store-mvp-strip
 
+      - name: Verify native asset == sanitizeDatabase(canonical) (DIC-916)
+        run: node scripts/generate-native-database.mjs --check
+
       - name: Verify real Android export is fail-closed (DIC-916)
         run: npm run test:store-mvp-native-export
 

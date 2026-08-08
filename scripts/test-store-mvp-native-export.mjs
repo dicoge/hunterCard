@@ -24,7 +24,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FORBIDDEN_CARD_FIELDS } from './lib/store-mvp-sanitize.mjs';
+import { FORBIDDEN_CARD_FIELDS, sanitizeDatabase } from './lib/store-mvp-sanitize.mjs';
+import { buildNativeDatabaseString } from './generate-native-database.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..');
@@ -52,7 +53,8 @@ function auditDatabase(db) {
 // is fail-closed by construction — no env branch can reopen it.
 const publicAsset = path.join(repoRoot, 'public', 'data', 'database.json');
 assert.ok(fs.existsSync(publicAsset), 'public/data/database.json (native bundled asset) must exist');
-const restDb = JSON.parse(fs.readFileSync(publicAsset, 'utf-8'));
+const committedBytes = fs.readFileSync(publicAsset, 'utf-8');
+const restDb = JSON.parse(committedBytes);
 const rest = auditDatabase(restDb);
 assert.ok(rest.total > 0, 'committed native asset contains cards');
 for (const field of FORBIDDEN_CARD_FIELDS) {
@@ -61,6 +63,42 @@ for (const field of FORBIDDEN_CARD_FIELDS) {
 assert.equal(rest.nestedBuyPrice, 0, 'committed native asset must not retain prices[].buyPrice');
 assert.equal(rest.sellPriceKept, rest.total, 'committed native asset preserves retail sellPrice on every card');
 console.log(`At-rest native asset: ${rest.total} cards, 0 forbidden fields, ${rest.sellPriceKept} retain sellPrice.`);
+
+// ── 1b. Native asset must be EXACTLY sanitizeDatabase(data/database.json) ──
+// The stale-snapshot failure (CR DIC-913): a drifted public copy stripped forbidden
+// fields yet silently lost 831 prices[] variants and turned 387 real sellPrice into
+// null. Pin the committed bytes to the deterministic generator output, then prove
+// per-card that every retail sellPrice value and the COMPLETE prices[] array survive
+// canonical → native minus only the forbidden fields.
+assert.equal(
+  committedBytes,
+  buildNativeDatabaseString(),
+  'public/data/database.json must byte-equal sanitizeDatabase(data/database.json) — regenerate via scripts/generate-native-database.mjs',
+);
+
+const canonical = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'database.json'), 'utf-8'));
+const expectedNative = sanitizeDatabase(canonical);
+const canonicalKeys = Object.keys(canonical.cards ?? {});
+const nativeKeys = Object.keys(restDb.cards ?? {});
+assert.deepEqual(nativeKeys, canonicalKeys, 'native asset must carry the exact canonical card set (no dropped/added cards)');
+for (const key of canonicalKeys) {
+  const expected = expectedNative.cards[key];
+  const actual = restDb.cards[key];
+  // Whole-entry deep equality already covers everything, but assert the retail
+  // fields explicitly so a regression names the exact lost data.
+  assert.deepEqual(actual, expected, `native card ${key} must equal canonical-minus-forbidden`);
+  assert.equal(actual.sellPrice, canonical.cards[key].sellPrice, `native card ${key} keeps canonical top-level sellPrice`);
+  const canonPrices = canonical.cards[key].prices;
+  if (Array.isArray(canonPrices)) {
+    assert.ok(Array.isArray(actual.prices), `native card ${key} keeps prices[] array`);
+    assert.equal(actual.prices.length, canonPrices.length, `native card ${key} keeps every canonical prices[] variant`);
+    for (let i = 0; i < canonPrices.length; i++) {
+      assert.equal(actual.prices[i].name, canonPrices[i].name, `native card ${key} prices[${i}] keeps variant name`);
+      assert.equal(actual.prices[i].sellPrice, canonPrices[i].sellPrice, `native card ${key} prices[${i}] keeps variant sellPrice`);
+    }
+  }
+}
+console.log(`Native asset deep-equals sanitizeDatabase(data/database.json) across ${canonicalKeys.length} cards (full prices[] + sellPrice preserved).`);
 
 // ── 2. A REAL expo export --platform android artifact must be fail-closed ──
 // Reproduces the exact QA command: env unset → native resolves Store MVP ON, and
