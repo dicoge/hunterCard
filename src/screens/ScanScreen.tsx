@@ -33,6 +33,7 @@ import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
 import ScanQuotaBanner from '../components/ScanQuotaBanner';
+import { FEATURES } from '../config/releaseFlags';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
@@ -429,9 +430,16 @@ export default function ScanScreen({ navigation }: any) {
       ]);
       return;
     }
-    Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)。升級訂閱即可無限掃描。', [
-      { text: '稍後', style: 'cancel' },
-      { text: '升級訂閱', onPress: () => {} },
+    // Store MVP 不賣訂閱，額度已滿時不露出升級/付費入口（DIC-908）。
+    if (FEATURES.premium) {
+      Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)。升級訂閱即可無限掃描。', [
+        { text: '稍後', style: 'cancel' },
+        { text: '升級訂閱', onPress: () => {} },
+      ]);
+      return;
+    }
+    Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)，下個月會重置。', [
+      { text: '好', style: 'cancel' },
     ]);
   };
 

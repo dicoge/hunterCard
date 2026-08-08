@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, convertPrice } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { openUrl } from '../utils/openUrl';
 import { showAlert } from '../utils/platformAlert';
 import { useSettingsStore } from '../store/settingsStore';
@@ -203,17 +204,19 @@ export default function CardDetailScreen({ route, navigation }: any) {
       <View style={isDesktop ? styles.rightCol : undefined}>
 
       {/* ====== TOP ACTION ROW (watchlist toggle — reachable without scrolling) ====== */}
-      <View style={styles.topActionRow}>
-        <TouchableOpacity
-          style={[styles.watchlistChip, inWatchlist ? styles.watchlistChipActive : null]}
-          onPress={toggleWatchlist}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.watchlistChipText, inWatchlist ? styles.watchlistChipTextActive : null]}>
-            {inWatchlist ? '🔔 已加入入手提醒' : '🔕 加入入手提醒'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {FEATURES.watchlist && (
+        <View style={styles.topActionRow}>
+          <TouchableOpacity
+            style={[styles.watchlistChip, inWatchlist ? styles.watchlistChipActive : null]}
+            onPress={toggleWatchlist}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.watchlistChipText, inWatchlist ? styles.watchlistChipTextActive : null]}>
+              {inWatchlist ? '🔔 已加入入手提醒' : '🔕 加入入手提醒'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ====== PRICE SECTION ====== */}
       <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]}>
@@ -234,7 +237,11 @@ export default function CardDetailScreen({ route, navigation }: any) {
               </View>
               );
             })}
-            <Text style={styles.variantHint}>👇 於下方「市場數據」可選擇版本，買賣差價與漲跌會隨選擇更新</Text>
+            <Text style={styles.variantHint}>
+              {FEATURES.priceSpread
+                ? '👇 於下方「市場數據」可選擇版本，買賣差價與漲跌會隨選擇更新'
+                : '👇 於下方「市場數據」可選擇版本，售價會隨選擇更新'}
+            </Text>
           </View>
         ) : hasActualPrice ? (
           <><View style={styles.priceRow}>
@@ -252,8 +259,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
         ) : (
           <Text style={styles.noPriceText}>暫無資料</Text>
         )}
-        {/* 歷史走勢僅為卡號層級（追蹤單一版本），多版本卡無法歸屬到選中版本 → 不顯示以免混版（DIC-856）。 */}
-        {!hasMultipleVariants ? <PriceTrend priceHistory={card.priceHistory || {}} /> : null}
+        {/* 歷史走勢僅為卡號層級（追蹤單一版本），多版本卡無法歸屬到選中版本 → 不顯示以免混版（DIC-856）。
+            價格趨勢圖屬預測類功能 → Store MVP 隱藏（DIC-908）。 */}
+        {FEATURES.trendPrediction && !hasMultipleVariants ? <PriceTrend priceHistory={card.priceHistory || {}} /> : null}
         <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
           <Text style={styles.checkPriceBtnText}>🔍 查看遊々亭即時價格 →</Text>
         </TouchableOpacity>
@@ -261,8 +269,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
       {/* ====== TREND PREDICTION ====== */}
       {/* 趨勢預測基於卡號層級歷史（單一版本序列）。多版本卡無法歸屬到特定版本 → 隱藏，
-          避免用別版走勢推薦本版（DIC-856：禁止跨版本推薦訊號）。 */}
-      {!hasMultipleVariants && trend && (
+          避免用別版走勢推薦本版（DIC-856：禁止跨版本推薦訊號）。
+          漲跌預測 / trendScore / 信心度 / YT / 新聞情緒 → Store MVP 隱藏（DIC-908）。 */}
+      {FEATURES.trendPrediction && !hasMultipleVariants && trend && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
           <PriceTrendBadge
@@ -394,17 +403,19 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
 
       {/* ====== WATCHLIST BUTTON ====== */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          style={[styles.watchlistBtn, inWatchlist ? styles.watchlistBtnActive : null]}
-          onPress={toggleWatchlist}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.watchlistBtnText, inWatchlist ? styles.watchlistBtnTextActive : null]}>
-            {inWatchlist ? '🔔 已加入入手提醒（點擊移除）' : '🔕 加入入手提醒'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {FEATURES.watchlist && (
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[styles.watchlistBtn, inWatchlist ? styles.watchlistBtnActive : null]}
+            onPress={toggleWatchlist}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.watchlistBtnText, inWatchlist ? styles.watchlistBtnTextActive : null]}>
+              {inWatchlist ? '🔔 已加入入手提醒（點擊移除）' : '🔕 加入入手提醒'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={{ height: 20 }} />
       </View>
@@ -617,8 +628,8 @@ function MarketDataPanel({ card }: { card: any }) {
         </View>
       ) : null}
 
-      {/* 買賣差價 — 收購價依選中版本對齊（DIC-856） */}
-      {hasSpread ? (
+      {/* 買賣差價 / 店家收購價 — Store MVP 隱藏（DIC-908）；正常售價仍於上方價格區顯示。 */}
+      {FEATURES.priceSpread && (hasSpread ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>💱 買賣差價（{versionLabel}）</Text>
           <View style={styles.marketRow}>
@@ -656,9 +667,10 @@ function MarketDataPanel({ card }: { card: any }) {
           </View>
           <Text style={styles.marketNote}>※ 此版本無對應店家收購價；不借用其他版本價格計算差價</Text>
         </View>
-      ) : null}
+      ) : null)}
 
-      {/* YouTube 成員數據 — 一律顯示，無資料時各欄位顯示 — */}
+      {/* YouTube 成員數據 / 訂閱・觀看成長 — Store MVP 隱藏（DIC-908） */}
+      {FEATURES.ytStats && (
       <View style={styles.marketBlock}>
         <Text style={styles.marketBlockTitle}>📺 YouTube 成員數據</Text>
         <View style={styles.marketRow}>
@@ -692,9 +704,10 @@ function MarketDataPanel({ card }: { card: any }) {
           </View>
         ) : null}
       </View>
+      )}
 
-      {/* 漲跌判斷 — 僅在歷史代表目前選中版本時顯示 */}
-      {hasHistory ? (
+      {/* 漲跌判斷 — 僅在歷史代表目前選中版本時顯示；漲跌預測 → Store MVP 隱藏（DIC-908） */}
+      {FEATURES.trendPrediction && (hasHistory ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>
             {priceTrend === 'up' ? '📈' : priceTrend === 'down' ? '📉' : '➖'} 漲跌判斷（{versionLabel}）
@@ -721,7 +734,7 @@ function MarketDataPanel({ card }: { card: any }) {
             此版本（{versionLabel}）暫無歷史均價：多版本卡的歷史為卡號層級、無法精確歸屬到單一版本，故不顯示以免混版。
           </Text>
         </View>
-      ) : null}
+      ) : null)}
     </View>
   );
 }

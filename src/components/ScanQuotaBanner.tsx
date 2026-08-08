@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { COLORS } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
 import { getRoleLabel } from '../services/permissionService';
@@ -10,7 +11,8 @@ export default function ScanQuotaBanner() {
   const remaining = useScanQuotaStore((s) => s.getRemaining());
   const scanCount = useScanQuotaStore((s) => s.scanCount);
 
-  if (role === 'subscriber') {
+  // 訂閱會員狀態 — Store MVP 不賣訂閱，隱藏此入口（DIC-908）。
+  if (FEATURES.premium && role === 'subscriber') {
     return (
       <View style={styles.bannerUnlimited}>
         <Text style={styles.icon}>♾️</Text>
