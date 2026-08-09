@@ -7,7 +7,7 @@ import {
   LinkedIdentity,
   HoloUser,
 } from '../types/auth';
-import { appleLoginSurface, googleLoginSurface } from './authStrategy';
+import { appleLoginSurface, googleLoginSurface, resolveApiBase } from './authStrategy';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -39,7 +39,18 @@ const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 
 const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || '/api';
+// Backend API base. Native (iOS/Android) MUST use an absolute URL — a relative
+// '/api' cannot be resolved by React Native's fetch and breaks every auth call
+// (DIC-922 blocker 5). Web uses its own same-origin. Computed per call so web
+// picks up window.location at runtime and native never depends on a build-time
+// window global. See resolveApiBase (authStrategy) for the precedence rules.
+function apiBase(): string {
+  return resolveApiBase({
+    platformOS: Platform.OS,
+    webOrigin: typeof window !== 'undefined' ? window.location?.origin ?? null : null,
+    envOverride: process.env.EXPO_PUBLIC_API_BASE_URL,
+  });
+}
 
 // Web Sign in with Apple stays gated: the browser cannot verify an Apple ID
 // token, so it requires the server verify path (Services ID + backend secret).
@@ -97,6 +108,24 @@ class AuthError extends Error {
   }
 }
 
+// Turns a non-success expo-auth-session prompt result into an AuthError whose
+// `code` is specific enough for the UI to diagnose (DIC-922 blocker 4). A real
+// cancel stays 'cancel'; otherwise we prefer the OAuth `error` param Google
+// returns (e.g. redirect_uri_mismatch, access_denied) so a misconfigured
+// redirect no longer looks like a generic failure. We only read the short
+// machine `error` code, never a raw description that could carry detail.
+function authErrorFromPromptResult(result: {
+  type: string;
+  params?: Record<string, string> | null;
+  error?: { code?: string } | null;
+}): AuthError {
+  if (result.type === 'cancel' || result.type === 'dismiss') {
+    return new AuthError('已取消登入', 400, 'cancel');
+  }
+  const oauthError = result.params?.error || result.error?.code || result.type;
+  return new AuthError(`登入失敗（${oauthError}）`, 400, oauthError);
+}
+
 function toAuthError(data: any, status: number, provider?: AuthProvider): AuthError {
   const code: string | undefined = data?.error;
   const friendly = code && PROVIDER_ERROR_MESSAGES[code];
@@ -111,7 +140,7 @@ function toAuthError(data: any, status: number, provider?: AuthProvider): AuthEr
 async function apiPost(path: string, body: unknown, session?: string): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (session) headers.Authorization = `Bearer ${session}`;
-  return fetch(`${API_BASE}${path}`, {
+  return fetch(`${apiBase()}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -200,11 +229,7 @@ async function obtainGoogleNativeIdToken(
 
   const result = await authRequest.promptAsync(googleDiscovery);
   if (result.type !== 'success') {
-    throw new AuthError(
-      result.type === 'cancel' ? '已取消登入' : `登入失敗（${result.type}）`,
-      400,
-      result.type,
-    );
+    throw authErrorFromPromptResult(result as any);
   }
   const code = result.params.code;
   if (!code) throw new AuthError('未取得授權碼', 400, 'no_code');
@@ -391,11 +416,7 @@ async function obtainWebIdToken(
 
   const result = await authRequest.promptAsync(discovery);
   if (result.type !== 'success') {
-    throw new AuthError(
-      result.type === 'cancel' ? '已取消登入' : `登入失敗（${result.type}）`,
-      400,
-      result.type,
-    );
+    throw authErrorFromPromptResult(result as any);
   }
 
   if (provider === 'apple') {

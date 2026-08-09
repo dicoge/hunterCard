@@ -29,3 +29,32 @@ export function appleLoginSurface(os: string, webEnabled: boolean): AppleLoginSu
   if (os === 'android') return 'disabled';
   return webEnabled ? 'web' : 'disabled';
 }
+
+// Resolves the backend API base URL the auth calls hit (DIC-922 blocker 5).
+//
+// The critical rule: native iOS/Android MUST use an ABSOLUTE origin. React
+// Native's fetch cannot resolve a relative '/api', so a native build that fell
+// back to '/api' fails every auth request before it leaves the device. Web, by
+// contrast, is served same-origin with the API (holohunter.dicoge.com and any
+// Vercel preview both host /api under the page origin), so it uses its own
+// origin — which keeps cookies/CORS trivial and works on every deploy URL.
+//
+// Precedence: an explicit env override wins (must already include the '/api'
+// path segment, e.g. https://staging.example.com/api); then web same-origin;
+// then the canonical production base for native. We never return a relative
+// path here. Pure (no react-native/expo imports) so it is unit-testable.
+const DEFAULT_NATIVE_API_BASE = 'https://holohunter.dicoge.com/api';
+
+export function resolveApiBase(params: {
+  platformOS: string;
+  webOrigin?: string | null;
+  envOverride?: string | null;
+}): string {
+  const { platformOS, webOrigin, envOverride } = params;
+  const override = (envOverride ?? '').trim();
+  if (override) return override.replace(/\/+$/, '');
+  if (platformOS === 'web' && webOrigin) {
+    return `${webOrigin.replace(/\/+$/, '')}/api`;
+  }
+  return DEFAULT_NATIVE_API_BASE;
+}

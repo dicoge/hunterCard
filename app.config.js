@@ -43,8 +43,34 @@ function assertAndroidGoogleClientConfigured() {
   }
 }
 
+// Build-time fail-closed guard for native iOS (DIC-922 blocker 1). The iOS
+// Google flow runs the OAuth prompt against the dedicated iOS OAuth client and
+// receives the redirect on that client's reversed-client-id custom URL scheme
+// (registered below). Without EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID the IPA ships
+// with no scheme registered AND authService throws `client_id_missing` at
+// runtime — exactly the "登入失敗" the user hit. Turn that silent broken-IPA
+// into a loud build failure, but ONLY for iOS native builds so web export and
+// local `expo start` are never affected. `EAS_BUILD_PLATFORM` is set by EAS;
+// `ASSERT_GOOGLE_IOS_CLIENT` can be set by a CI iOS build step.
+function assertIosGoogleClientConfigured() {
+  const isIosBuild =
+    process.env.EAS_BUILD_PLATFORM === 'ios' ||
+    process.env.ASSERT_GOOGLE_IOS_CLIENT === '1';
+  if (!isIosBuild) return;
+  if (!process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID) {
+    throw new Error(
+      'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID is required for iOS builds: native Google ' +
+        'Sign-In runs against the dedicated iOS OAuth client and receives its redirect ' +
+        'on that client\'s reversed-client-id URL scheme. Set it in the EAS build ' +
+        'profile env (or the iOS build workflow) before building — refusing to produce ' +
+        'an IPA that would fail Google login at runtime with client_id_missing.',
+    );
+  }
+}
+
 module.exports = () => {
   assertAndroidGoogleClientConfigured();
+  assertIosGoogleClientConfigured();
   const expo = { ...base.expo };
   const scheme = reversedGoogleIosScheme();
 
