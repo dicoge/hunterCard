@@ -104,6 +104,24 @@ function testEnvOverrideWins() {
   );
 }
 
+// DIC-934 CR round 3: trailing-slash removal must only strip from the
+// pathname, never from the query string (e.g. ?next=/ would become ?next=).
+function testCanonicalPathnameSlashTrim() {
+  assert.equal(
+    resolveApiBase({ platformOS: 'ios', envOverride: 'https://example.com/api/' }),
+    'https://example.com/api',
+  );
+  assert.equal(
+    resolveApiBase({ platformOS: 'ios', envOverride: 'https://example.com/' }),
+    'https://example.com',
+  );
+  // Trailing slash in query is preserved; only pathname slash is stripped.
+  assert.equal(
+    resolveApiBase({ platformOS: 'ios', envOverride: 'https://example.com/api?next=/' }),
+    'https://example.com/api?next=/',
+  );
+}
+
 // DIC-928 blocker 4 + DIC-934 CR fix: an override that is not a well-formed
 // ABSOLUTE http(s) URL must be rejected and resolution must FAIL CLOSED to the
 // safe platform default — never adopt a relative/malformed value that would
@@ -130,6 +148,10 @@ function testMalformedNativeOverrideFailsClosed() {
     'https://example.com\\api', // backslash — parser-differential normalisation
     'https://example.com/a\nb', // embedded LF control character
     'https://example.com/%zz', // invalid percent-encoding (%z is not hex)
+    // DIC-934 CR round 3: control chars before .trim() must still fail closed
+    '\nhttps://example.com/api', // leading LF
+    'https://example.com/api\n', // trailing LF
+    '\thttps://example.com/api', // leading TAB
   ];
   for (const envOverride of bad) {
     assert.equal(
@@ -164,6 +186,7 @@ const tests = [
   testWebUsesSameOrigin,
   testWebWithoutOriginFallsBackToNative,
   testEnvOverrideWins,
+  testCanonicalPathnameSlashTrim,
   testMalformedNativeOverrideFailsClosed,
   testMalformedWebOverrideFallsBackToSameOrigin,
 ];

@@ -58,13 +58,14 @@ const DEFAULT_NATIVE_API_BASE = 'https://holohunter.dicoge.com/api';
 // back to the safe platform default.
 function absoluteHttpOverride(raw: string): string | null {
   if (!raw) return null;
-  // Reject control characters and backslashes outright — the WHATWG parser
-  // silently strips/percent-encodes/rewrites them, producing a different URL
-  // than intended, and backslash handling is parser-differential.
+  // Reject control characters and backslashes on the RAW input before any
+  // normalization like .trim() that would silently drop them (DIC-934 CR).
   if (/[\\\x00-\x1F\x7F]/.test(raw)) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(trimmed);
   } catch {
     return null;
   }
@@ -75,7 +76,7 @@ function absoluteHttpOverride(raw: string): string | null {
   if (url.hostname.startsWith('[') && !/^\[[0-9a-fA-F:]+\]$/.test(url.hostname)) return null;
   // Guard against quasi-URLs like http:///api where the WHATWG parser
   // synthesises a host from the would-be path.
-  if (!raw.startsWith(url.protocol + '//' + url.hostname)) return null;
+  if (!trimmed.startsWith(url.protocol + '//' + url.hostname)) return null;
   // Return the parser-canonical form — this normalises backslashes, redundant
   // dots, and other edge cases to a single deterministic string that native
   // fetch will resolve consistently. Never return the raw input.
@@ -85,7 +86,9 @@ function absoluteHttpOverride(raw: string): string | null {
   // encodings like %zz are parser-differential — different runtimes resolve
   // them differently — so we fail closed.
   if (/%(?![0-9a-fA-F]{2})/.test(normalized)) return null;
-  return normalized.replace(/\/+$/, '');
+  // Strip trailing slashes from the pathname only — never from the full href,
+  // which would corrupt query values (e.g. ?next=/ → ?next=).
+  return url.origin + url.pathname.replace(/\/+$/, '') + url.search + url.hash;
 }
 
 export function resolveApiBase(params: {
@@ -94,7 +97,7 @@ export function resolveApiBase(params: {
   envOverride?: string | null;
 }): string {
   const { platformOS, webOrigin, envOverride } = params;
-  const override = absoluteHttpOverride((envOverride ?? '').trim());
+  const override = absoluteHttpOverride(envOverride ?? '');
   if (override) return override;
   if (platformOS === 'web' && webOrigin) {
     return `${webOrigin.replace(/\/+$/, '')}/api`;
