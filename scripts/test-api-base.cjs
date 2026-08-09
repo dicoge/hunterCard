@@ -126,6 +126,10 @@ function testMalformedNativeOverrideFailsClosed() {
     'https://:bad/api', // colon-separator with no host
     'https://[GGGG::1]/api', // non-hex inside IPv6 brackets
     'https://example.com:99999/api', // invalid port (>65535)
+    // DIC-934 CR round 2: parser-differential malformed inputs
+    'https://example.com\\api', // backslash — parser-differential normalisation
+    'https://example.com/a\nb', // embedded LF control character
+    'https://example.com/%zz', // invalid percent-encoding (%z is not hex)
   ];
   for (const envOverride of bad) {
     assert.equal(
