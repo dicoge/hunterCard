@@ -3,6 +3,8 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, ActivityIn
 import { COLORS, convertPrice } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { releaseCardFlags } from '../config/releaseFlags';
+import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 
 // ── Server-side search constants ──
 
@@ -186,6 +188,7 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
     return aSuffix - bSuffix;
   });
 
+  const cardFlags = releaseCardFlags();
   return deduped.map((c: CardRecord) => {
     const id = c.id || '';
     const name = c.name || '';
@@ -212,7 +215,7 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
     // Use official image (400×559) first for sharp display, local image (100×140) as fallback
     const imageUrl = c.officialImage || c.localImage || '';
 
-    return {
+    return stripDisabledCardFields({
       id,
       name,
       cardNumber,
@@ -247,7 +250,7 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
       yuyuUrl: `https://yuyu-tei.jp/sell/hocg/s/search?search_word=${encodeURIComponent(cardNumber)}`,
       carousellUrl: '',
       officialUrl: `https://hololive-official-cardgame.com/cardlist/?keyword=${encodeURIComponent(cardNumber)}&view=image`,
-    };
+    }, cardFlags);
   });
 }
 

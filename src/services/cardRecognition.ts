@@ -9,6 +9,8 @@
 import { recognizeCardNumber } from './webOcr';
 import { preprocessCardImage } from './imagePreprocessor';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
+import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
+import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 
 // ── 類型定義 ──
 
@@ -127,7 +129,8 @@ export async function loadAllCards(): Promise<CardInfo[]> {
 
       // Each compound-key entry (e.g. hBP04-005_hBP04, hBP04-005_ent07) is a separate CardInfo
       // This preserves correct series/category filtering unlike grouped-by-cardNumber
-      const result: CardInfo[] = Object.values(cards).map(entry => ({
+      const cardFlags = releaseCardFlags();
+      const result: CardInfo[] = Object.values(cards).map(entry => stripDisabledCardFields({
         id: (entry as any).cardNumber || entry.id || '',
         name: entry.name || '',
         nameZh: (entry as any).nameZh || '',
@@ -143,7 +146,7 @@ export async function loadAllCards(): Promise<CardInfo[]> {
         prices: (entry as any).prices || [],
         priceHistory: (entry as any).priceHistory || {},
         ytStats: (entry as any).ytStats ?? null,
-      }));
+      }, cardFlags));
 
       cachedDb = result;
       return result;
@@ -344,7 +347,7 @@ async function resizeImage(imageUri: string, maxDim: number): Promise<string> {
 
 /** Map a raw API card payload into the app's CardInfo shape (single shared mapper). */
 function mapApiCard(apiCard: any): CardInfo {
-  return mapApiCardToCardInfo(apiCard);
+  return stripDisabledCardFields(mapApiCardToCardInfo(apiCard), releaseCardFlags());
 }
 
 /** Map the API's raw candidate list into RecognizedCandidate[]. */
@@ -375,7 +378,7 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: processedImage }),
+      body: JSON.stringify({ image: processedImage, storeMvp: STORE_MVP }),
     });
 
     if (!apiResponse.ok) {

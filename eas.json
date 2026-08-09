@@ -18,6 +18,9 @@
     "preview": {
       "distribution": "internal",
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_STORE_MVP": "1"
+      },
       "ios": {
         "simulator": false
       },
@@ -28,6 +31,9 @@
     "production": {
       "distribution": "store",
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_STORE_MVP": "1"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },

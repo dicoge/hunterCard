@@ -8,6 +8,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { COLORS, APP_NAME } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 
@@ -44,7 +45,9 @@ export default function LoginScreen() {
         <View style={styles.card}>
           <Text style={styles.welcome}>歡迎使用 HoloHunter</Text>
           <Text style={styles.description}>
-            登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢
+            {FEATURES.trendPrediction
+              ? '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢'
+              : '登入後可追蹤卡牌收藏、掃描卡牌'}
           </Text>
 
           {error && (

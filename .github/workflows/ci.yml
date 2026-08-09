@@ -44,6 +44,15 @@ jobs:
       - name: Verify production /api/* is not swallowed by SPA (DIC-886)
         run: npm run test:vercel-routing
 
+      - name: Verify Store MVP fail-closed field strip (DIC-908)
+        run: npm run test:store-mvp-strip
+
+      - name: Verify native asset == sanitizeDatabase(canonical) (DIC-916)
+        run: node scripts/generate-native-database.mjs --check
+
+      - name: Verify real Android export is fail-closed (DIC-916)
+        run: npm run test:store-mvp-native-export
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)

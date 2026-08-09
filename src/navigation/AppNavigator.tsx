@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Text, View, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import AuthScreen from '../screens/AuthScreen';
 
@@ -115,16 +116,21 @@ function MainDrawer() {
           ),
         }}
       />
-      <Drawer.Screen
-        name="Watchlist"
-        component={WatchlistScreen}
-        options={{
-          title: '入手提醒',
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
-          ),
-        }}
-      />
+      {/* 入手提醒 = watchlist trend alerts — hidden in Store MVP (DIC-908).
+          Removing the Drawer.Screen unregisters the route so nav + deep link are
+          both blocked, not just visually hidden. */}
+      {FEATURES.watchlist && (
+        <Drawer.Screen
+          name="Watchlist"
+          component={WatchlistScreen}
+          options={{
+            title: '入手提醒',
+            drawerIcon: ({ focused }) => (
+              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
+            ),
+          }}
+        />
+      )}
       <Drawer.Screen
         name="Tutorial"
         component={TutorialScreen}

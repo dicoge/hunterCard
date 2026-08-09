@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
@@ -230,8 +231,9 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               ))}
               <Text style={styles.hint}>
-                綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，
-                無法解除最後一個。
+                {FEATURES.watchlist
+                  ? '綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'
+                  : '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'}
               </Text>
 
               <TouchableOpacity style={styles.accountBtn} onPress={confirmSignOut}>
@@ -250,7 +252,11 @@ export default function SettingsScreen() {
             </>
           ) : (
             <>
-              <Text style={styles.hint}>尚未登入。登入後可跨裝置同步收藏與入手提醒。</Text>
+              <Text style={styles.hint}>
+                {FEATURES.watchlist
+                  ? '尚未登入。登入後可跨裝置同步收藏與入手提醒。'
+                  : '尚未登入。登入後可跨裝置同步收藏。'}
+              </Text>
               <TouchableOpacity
                 style={[styles.googleBtn, isLoading && styles.btnDisabled]}
                 onPress={handleGoogleLogin}

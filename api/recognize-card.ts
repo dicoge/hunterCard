@@ -93,12 +93,35 @@ function parseField(reply: string, field: string): string {
   return /^(none|unknown|n\/a|-)?$/i.test(value) ? '' : value;
 }
 
-function fmt(entry: any) {
+// Store MVP fail-closed boundary (CR DIC-913 #2): when the client identifies as a
+// Store MVP build (POST body `storeMvp: true`), the recognition response must not
+// carry the advanced fields OVER THE WIRE — stripping them app-side is not enough.
+// Mirrors the field set of src/utils/cardReleaseFilter + scripts sanitizer. Sale
+// price (sellPrice / prices[].sellPrice) is always preserved.
+function stripStoreMvpFields<T extends Record<string, any>>(card: T): T {
+  const out: Record<string, any> = { ...card };
+  delete out.buyPrice;
+  delete out.buyPriceHistory;
+  delete out.priceHistory;
+  delete out.ytStats;
+  if (Array.isArray(out.prices)) {
+    out.prices = out.prices.map((p: any) => {
+      if (p && typeof p === 'object' && 'buyPrice' in p) {
+        const { buyPrice: _drop, ...rest } = p;
+        return rest;
+      }
+      return p;
+    });
+  }
+  return out as T;
+}
+
+function fmt(entry: any, storeMvp = false) {
   let price = entry.sellPrice;
   if (entry.rarity === 'SEC' && entry.prices?.length > 0) {
     price = Math.max(...entry.prices.map((p: any) => p.sellPrice || 0));
   }
-  return {
+  const base = {
     cardNumber: entry.cardNumber,
     name: entry.name,
     sellPrice: price,
@@ -112,6 +135,7 @@ function fmt(entry: any) {
     priceHistory: entry.priceHistory || {},
     ytStats: entry.ytStats ?? null,
   };
+  return storeMvp ? stripStoreMvpFields(base) : base;
 }
 
 function json(d: any, status = 200): Response {
@@ -178,7 +202,7 @@ async function callVision(images: string[]): Promise<{ reply: string; provider: 
   return { reply, provider: 'gemini', model: GEMINI_MODEL };
 }
 
-export function rankCandidates(cards: Record<string, any>, extracted: any) {
+export function rankCandidates(cards: Record<string, any>, extracted: any, storeMvp = false) {
   const entries = Object.values(cards) as any[];
   const normalizedNumber = normalizeCardNumber(extracted.cardNumberRaw);
   const normalizedNumberFlat = normalizedNumber?.replace(/[^a-z0-9]/g, '') || '';
@@ -229,7 +253,7 @@ export function rankCandidates(cards: Record<string, any>, extracted: any) {
   const secondScore = ranked[1]?.score || 0;
   const confidence = Math.max(0, Math.min(0.99, (topScore / 118) * Math.min(1, (topScore - secondScore + 18) / 38)));
   const candidates = ranked.slice(0, 5).map(item => ({
-    ...fmt(item.entry),
+    ...fmt(item.entry, storeMvp),
     confidence: Math.round(Math.max(0.05, Math.min(0.99, item.score / 118)) * 100) / 100,
     reason: item.reasons.join(', '),
     score: Math.round(item.score * 10) / 10,
@@ -251,6 +275,7 @@ function buildCandidates(
   scored: { entry: any; score: number }[],
   topConfidence: number,
   limit = 5,
+  storeMvp = false,
 ) {
   const bestScore = scored.length > 0 ? scored[0].score : 0;
   const seen = new Set<string>();
@@ -261,7 +286,7 @@ function buildCandidates(
     seen.add(key);
     const rel = bestScore > 0 ? score / bestScore : 0;
     const confidence = Math.max(0.15, Math.min(topConfidence, rel * topConfidence));
-    out.push({ ...fmt(entry), confidence: Math.round(confidence * 100) / 100 });
+    out.push({ ...fmt(entry, storeMvp), confidence: Math.round(confidence * 100) / 100 });
     if (out.length >= limit) break;
   }
   return out;
@@ -276,6 +301,8 @@ export default async function handler(req: Request): Promise<Response> {
     const body = await req.json();
     const images = Array.isArray(body.images) ? body.images : [body.image];
     if (!images[0] || typeof images[0] !== 'string') return json({ success: false, error: 'Invalid image' }, 400);
+    // Store MVP clients send `storeMvp: true` so forbidden fields never cross the wire.
+    const storeMvp = body?.storeMvp === true;
 
     const [{ reply, provider, model }, cards] = await Promise.all([
       callVision(images),
@@ -292,7 +319,7 @@ export default async function handler(req: Request): Promise<Response> {
       cardNumberRaw: parseField(reply, 'CARD_NUMBER'),
       cardTitle: parseField(reply, 'TITLE'),
     };
-    const ranking = rankCandidates(cards, extracted);
+    const ranking = rankCandidates(cards, extracted, storeMvp);
     const debug = {
       provider,
       model,

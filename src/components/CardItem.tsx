@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { COLORS } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { HoloCard } from '../types/hololive';
 import PriceTrendBadge from './PriceTrendBadge';
 import type { TrendPrediction } from '../store/trendStore';
@@ -106,8 +107,8 @@ export default function CardItem({ card, onPress, showPrices = true, trend }: Ca
           </View>
         )}
         
-        {/* 趨勢預測 */}
-        {showPrices && trend && (
+        {/* 趨勢預測 — Store MVP 隱藏（DIC-908） */}
+        {FEATURES.trendPrediction && showPrices && trend && (
           <View style={styles.trendSection}>
             <PriceTrendBadge
               trend={trend.trend}

@@ -32,7 +32,10 @@ import { mapViewportRectToSource, Rect } from '../utils/scanGeometry';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
+import { effectiveRole } from '../services/permissionService';
+import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import ScanQuotaBanner from '../components/ScanQuotaBanner';
+import { FEATURES, releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
@@ -177,7 +180,7 @@ export default function ScanScreen({ navigation }: any) {
 
   // Map a raw API card payload to CardInfo via the single shared mapper so the
   // scan → CardDetail path keeps buyPrice / priceHistory / ytStats (DIC-361 / DIC-856).
-  const mapApiCard = (c: any): CardInfo => mapApiCardToCardInfo(c);
+  const mapApiCard = (c: any): CardInfo => stripDisabledCardFields(mapApiCardToCardInfo(c), releaseCardFlags());
 
   const mapApiCandidates = (raw: any): RecognizedCandidate[] | undefined => {
     if (!Array.isArray(raw) || raw.length === 0) return undefined;
@@ -414,24 +417,35 @@ export default function ScanScreen({ navigation }: any) {
   // Single role/quota gate, read from live store state (no stale closures — the
   // auto-scan rAF loop calls this outside the render cycle).
   const canScanNow = (): boolean => {
-    const currentRole = useAuthStore.getState().role;
+    // effectiveRole collapses subscriber→free_user in Store MVP, so unlimited
+    // scan is never granted when premium is disabled (CR DIC-913 #2).
+    const currentRole = effectiveRole(useAuthStore.getState().role);
     if (currentRole === 'guest') return false;
     if (currentRole === 'subscriber') return true;
     return getRemaining() > 0;
   };
 
   const promptScanBlocked = () => {
-    const currentRole = useAuthStore.getState().role;
+    const currentRole = effectiveRole(useAuthStore.getState().role);
     if (currentRole === 'guest') {
+      // Route to the real login flow: clearing the guest session drops the app
+      // back to LoginScreen (no-op CTA removed — CR DIC-913 #4).
       Alert.alert('需要登入', '請登入以使用卡片掃描功能', [
         { text: '取消', style: 'cancel' },
-        { text: '登入', onPress: () => {} },
+        { text: '登入', onPress: () => useAuthStore.getState().logout() },
       ]);
       return;
     }
-    Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)。升級訂閱即可無限掃描。', [
-      { text: '稍後', style: 'cancel' },
-      { text: '升級訂閱', onPress: () => {} },
+    // Store MVP 不賣訂閱，額度已滿時不露出升級/付費入口（DIC-908）。
+    if (FEATURES.premium) {
+      Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)。升級訂閱即可無限掃描。', [
+        { text: '稍後', style: 'cancel' },
+        { text: '升級訂閱', onPress: () => {} },
+      ]);
+      return;
+    }
+    Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)，下個月會重置。', [
+      { text: '好', style: 'cancel' },
     ]);
   };
 
@@ -496,7 +510,7 @@ export default function ScanScreen({ navigation }: any) {
           const resp = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: recognitionImages[0], images: recognitionImages }),
+            body: JSON.stringify({ image: recognitionImages[0], images: recognitionImages, storeMvp: STORE_MVP }),
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
