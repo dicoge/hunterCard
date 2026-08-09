@@ -65,6 +65,12 @@ jobs:
       - name: Verify real Android export is fail-closed (DIC-916)
         run: npm run test:store-mvp-native-export
 
+      - name: Verify local cron pipeline regressions (DIC-923)
+        run: npm run test:local-cron-pipeline
+
+      - name: Syntax-check local-scrape-and-push.sh (DIC-923)
+        run: bash -n scripts/local-scrape-and-push.sh
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
