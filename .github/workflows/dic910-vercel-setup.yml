@@ -39,19 +39,15 @@ jobs:
       - name: Detect account scope (team vs personal) and confirm project
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
           try_scope() {
-            # $1 = query suffix, e.g. "?teamId=xyz" or ""
             curl -sS -w '\n%{http_code}' \
               --oauth2-bearer "${VERCEL_TOKEN}" \
               "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}$1"
           }
-          # VERCEL_ORG_ID may be a team id or a personal account id; the
-          # `teamId` query param only works for actual teams, so try that
-          # first, then fall back to the bare (personal-account) call.
           resp=$(try_scope "?teamId=${VERCEL_ORG_ID}")
           code=$(echo "$resp" | tail -n1)
           if [ "$code" = "200" ]; then
@@ -64,7 +60,68 @@ jobs:
               echo "Resolved scope: personal account (no teamId)"
               echo "TEAM_QS=" >> "$GITHUB_ENV"
             else
-              echo "::error::Could not read Vercel project in either team or personal scope (last status $code). Aborting before any writes."
+              echo "::error::Could not read Vercel project in either team or personal scope (last status $code)."
+              echo ""
+
+              echo "::group::Diagnostic: Token identity"
+              user_resp=$(curl -sS -w '\n%{http_code}' \
+                --oauth2-bearer "${VERCEL_TOKEN}" \
+                "https://api.vercel.com/v2/user")
+              user_code=$(echo "$user_resp" | tail -n1)
+              echo "GET /v2/user -> HTTP $user_code"
+              echo "$user_resp" | sed '$d' | node -e '
+                const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+                console.log("  user: " + ((d.user||d).username||"?") + " (" + ((d.user||d).email||"?") + ")");
+              ' 2>/dev/null || echo "  (could not parse user)"
+              echo "::endgroup::"
+
+              echo ""
+              echo "::group::Diagnostic: Teams accessible"
+              teams_resp=$(curl -sS -w '\n%{http_code}' \
+                --oauth2-bearer "${VERCEL_TOKEN}" \
+                "https://api.vercel.com/v2/teams")
+              teams_code=$(echo "$teams_resp" | tail -n1)
+              echo "GET /v2/teams -> HTTP $teams_code"
+              echo "$teams_resp" | sed '$d' | node -e '
+                const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+                (d.teams||[]).forEach(t => console.log("  team: " + t.name + " (slug=" + t.slug + ", id=" + t.id + ")"));
+              ' 2>/dev/null || echo "  (could not parse teams)"
+              echo "::endgroup::"
+
+              echo ""
+              echo "::group::Diagnostic: Projects in team scope"
+              proj_resp=$(curl -sS -w '\n%{http_code}' \
+                --oauth2-bearer "${VERCEL_TOKEN}" \
+                "https://api.vercel.com/v9/projects?teamId=${VERCEL_ORG_ID}")
+              proj_code=$(echo "$proj_resp" | tail -n1)
+              echo "GET /v9/projects?teamId=... -> HTTP $proj_code"
+              echo "$proj_resp" | sed '$d' | node -e '
+                const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+                const projs = d.projects || [];
+                if (projs.length === 0) console.log("  (no projects)");
+                projs.forEach(p => console.log("  project: " + p.name + " (id=" + p.id + ")"));
+              ' 2>/dev/null || echo "  (could not parse projects)"
+              echo "::endgroup::"
+
+              echo ""
+              echo "::group::Diagnostic: Projects in personal scope"
+              proj_resp_personal=$(curl -sS -w '\n%{http_code}' \
+                --oauth2-bearer "${VERCEL_TOKEN}" \
+                "https://api.vercel.com/v9/projects")
+              proj_code_personal=$(echo "$proj_resp_personal" | tail -n1)
+              echo "GET /v9/projects -> HTTP $proj_code_personal"
+              echo "$proj_resp_personal" | sed '$d' | node -e '
+                const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+                const projs = d.projects || [];
+                if (projs.length === 0) console.log("  (no projects)");
+                projs.forEach(p => console.log("  project: " + p.name + " (id=" + p.id + ")"));
+              ' 2>/dev/null || echo "  (could not parse projects)"
+              echo "::endgroup::"
+
+              echo ""
+              echo "::notice::Diagnosis: VERCEL_PROJECT_ID may be stale or VERCEL_TOKEN scope insufficient."
+              echo "Fix: update the VERCEL_PROJECT_ID repo secret to match a project id from the lists above,"
+              echo "or update VERCEL_TOKEN with a token that has access to the target project."
               exit 1
             fi
           fi
@@ -86,8 +143,6 @@ jobs:
           set_env_var() {
             key="$1"
             value="$2"
-            # Remove any existing entries for this key on production+preview first,
-            # so re-runs are idempotent instead of erroring on duplicates.
             existing=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
               "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env$(qs)")
             ids=$(echo "$existing" | node -pe '
@@ -161,7 +216,6 @@ jobs:
             "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/domains$(qs)")
           echo "Add-domain HTTP status: $code"
           cat /tmp/domain_resp.json
-          # 200/201 = added, 409 = already attached to this project — both OK.
           if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "409" ]; then
             echo "::error::Failed to attach domain (status $code)"
             exit 1
@@ -193,6 +247,5 @@ jobs:
             code=$(curl -sS -o /dev/null -w '%{http_code}' -L "$url" || echo "curl_failed")
             echo "$url -> $code"
           done
-          # Also confirm the pre-existing production alias still works.
           code=$(curl -sS -o /dev/null -w '%{http_code}' -L "https://holocard-hunter.vercel.app/" || echo "curl_failed")
           echo "https://holocard-hunter.vercel.app/ -> $code"
