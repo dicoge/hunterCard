@@ -21,13 +21,14 @@ function pass(label) {
   console.log(`✓ ${label}`);
 }
 
-// Split script at the DIC-935 helpers marker
+// Split script at the DIC-935 helpers marker.
+// Helpers now appear BEFORE their first call site (real production order).
 const helpersIdx = script.indexOf('\n# ===== DIC-935 HELPERS');
 assert.ok(helpersIdx !== -1, 'DIC-935 helpers section marker not found');
 const activeCode = script.substring(0, helpersIdx);
 const helpersSection = script.substring(helpersIdx + 1);
 
-// Extract helper functions
+// Extract helper functions from the full script
 function extractFn(text, fnName) {
   const start = text.indexOf(`${fnName}() {`);
   if (start === -1) return null;
@@ -45,6 +46,11 @@ function extractFn(text, fnName) {
 
 const diffCheckFn = extractFn(script, '_huntercard_diff_check');
 assert.ok(diffCheckFn, '_huntercard_diff_check function not found in script');
+
+// Verify production helper is fail-closed: contains set -e
+assert.ok(diffCheckFn.includes('set -e'),
+  'production _huntercard_diff_check must be fail-closed (set -e)');
+pass('P0 precondition: production _huntercard_diff_check is fail-closed (set -e)');
 
 // ======== P0: execute callable _huntercard_diff_check in real repo ========
 
@@ -70,17 +76,13 @@ try {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
-// P0 negative: mutate the function and verify bash catches it
+// P0 negative: mutate GIT_DIFF_FILES to bare multi-token form.
+// The production function carries set -e — no test-added set -e needed.
 {
   const brokenLine = "GIT_DIFF_FILES='data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'";
-  // Add 'set -e' so the broken multi-token assignment fails immediately (exit 126)
-  let brokenFn = diffCheckFn.replace(
+  const brokenFn = diffCheckFn.replace(
     /GIT_DIFF_FILES=\([^)]+\)/,
     brokenLine
-  );
-  brokenFn = brokenFn.replace(
-    'GIT_DIFF_FILES=',
-    'set -e\n  GIT_DIFF_FILES='
   );
 
   const negDir = fs.mkdtempSync(path.join(os.tmpdir(), 'huntercard-cron-neg-'));
@@ -99,7 +101,9 @@ try {
     process.exitCode = 1;
   } catch (e) {
     if (e.status === 126 || e.status === 127) {
-      pass(`P0 negative: broken GIT_DIFF_FILES exits ${e.status} (callable function catches regression)`);
+      pass(`P0 negative: broken GIT_DIFF_FILES exits ${e.status} (fail-closed function catches regression)`);
+    } else if (e.status === 1 && e.stderr && e.stderr.includes('is a directory')) {
+      pass(`P0 negative: broken GIT_DIFF_FILES exits ${e.status} (fail-closed function catches regression)`);
     } else {
       fail(`P0 negative: unexpected error (status ${e.status}, ${e.message})`);
       process.exitCode = 1;
@@ -109,28 +113,25 @@ try {
   }
 }
 
-// ======== P1: execute active production code through bash mocks ========
+// ======== P1: execute production code (helpers section) through bash mocks ========
+// Helpers are defined at the top of helpersSection before any production code
+// calls them — this matches real production file order.
+// No separate diffCheckFn prepending needed.
 
 const mockPrefix = [
   'HC_LOG=$(mktemp)',
   'node() { echo "HC_STEP:node ${1##*/}$([ -n \"$2\" ] && echo \" $2\")" >> "$HC_LOG"; return 0; }',
-  'git() { case "$1" in push) echo "HC_STEP:git push origin main" >> "$HC_LOG" ;; diff) echo "." ;; esac; return 0; }',
+  'git() { case "$1" in push) echo "HC_STEP:git push origin main" >> "$HC_LOG" ;; pull) return 0 ;; diff) echo "." ;; esac; return 0; }',
   'mkdir() { return 0; }',
   'trap() { return 0; }',
+  '# Disabled original LOG_FILE — test writes to /dev/null:',
+  'LOG_FILE=/dev/null',
   'set +e',
 ].join('\n');
 
 const mockEpilogue = '\ncat "$HC_LOG"\nrm -f "$HC_LOG"';
 
-// Remove the initial cd line (depends on $0 which changes when run via bash -c),
-// the LOG_FILE assignment (redirected to /dev/null by mock prefix),
-// and set -e (mock functions must control exit behavior)
-const cleanedActive = activeCode.
-  replace(/^cd "\$\(dirname "\$0"\)\/\.\."$/m, '# cd overridden — test harness starts at repo root').
-  replace(/^\s*LOG_FILE=.+$/m, 'LOG_FILE=/dev/null  # overridden by test harness').
-  replace(/^set -e$/m, 'set +e  # disabled by test harness');
-
-const mockScript = mockPrefix + '\n' + diffCheckFn + '\n' + cleanedActive + mockEpilogue;
+const mockScript = mockPrefix + '\n' + helpersSection + mockEpilogue;
 
 let mockOutput;
 try {
@@ -169,11 +170,13 @@ assert.ok(idxG > idxB, 'P1: generator must execute after build-database.js');
 assert.ok(idxG > idxM, 'P1: generator must execute after merge-buy-prices.js');
 assert.ok(idxGC > idxG, 'P1: --check must execute after generator');
 assert.ok(idxGC < idxP, 'P1: generator+check must complete before commit/push');
-pass('P1: pipeline ordering verified via actual bash execution (no text matching)');
+pass('P1: pipeline ordering verified via actual bash execution (real file order)');
 
-// P1 negative: mutate active code to move merge-buy-prices after generator
+// P1 negative: mutate helpersSection to move merge-buy-prices after generator
+// Correct merge-buy-prices string exists only in _huntercard_pipeline_order
+// (dead code, never called); the active production path is what we mutate.
 {
-  const negActive = cleanedActive
+  const negSection = helpersSection
     .replace(
       'node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"',
       '# merge-buy-prices.js intentionally removed (negative fixture)'
@@ -183,7 +186,7 @@ pass('P1: pipeline ordering verified via actual bash execution (no text matching
       '$1node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"\n$2'
     );
 
-  const negScript = mockPrefix + '\n' + diffCheckFn + '\n' + negActive + mockEpilogue;
+  const negScript = mockPrefix + '\n' + negSection + mockEpilogue;
   let negOutput;
   try {
     negOutput = execFileSync('bash', ['-c', negScript], { cwd: repoRoot, encoding: 'utf-8' });

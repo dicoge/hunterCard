@@ -15,6 +15,31 @@ if ! mkdir "$LOCK_FILE" 2>/dev/null; then
 fi
 trap 'rm -rf "$LOCK_FILE"' EXIT
 
+# ===== DIC-935 HELPERS — callable by CI regression test =====
+# These functions are the single source of truth for the test.
+# _huntercard_diff_check IS called by the production code below.
+# Do NOT modify independently of the production pipeline logic.
+
+_huntercard_diff_check() {
+  set -e
+  GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)
+  git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .
+  # Dead reference — correct array form kept only as documentation:
+  # GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)
+}
+
+_huntercard_pipeline_order() {
+  # Emits the expected pipeline step identifiers in execution order.
+  # Called ONLY by the CI test; not executed during production runs.
+  cat <<'HC_PIPELINE_END'
+build-database.js
+merge-buy-prices.js
+generate-native-database.mjs
+generate-native-database.mjs --check
+git push origin main
+HC_PIPELINE_END
+}
+
 echo "[$(date)] Starting hunterCard local scrape..." >> "$LOG_FILE"
 
 # 0. Check for new official series (fast, ~30s)
@@ -119,25 +144,3 @@ else
 fi
 
 echo "[$(date)] ✅ Done" >> "$LOG_FILE"
-
-# ===== DIC-935 HELPERS — callable by CI regression test =====
-# These functions are the single source of truth for the test.
-# _huntercard_diff_check IS called by the production code above.
-# Do NOT modify independently of the production pipeline logic.
-
-_huntercard_diff_check() {
-  GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)
-  git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .
-}
-
-_huntercard_pipeline_order() {
-  # Emits the expected pipeline step identifiers in execution order.
-  # Called ONLY by the CI test; not executed during production runs.
-  cat <<'HC_PIPELINE_END'
-build-database.js
-merge-buy-prices.js
-generate-native-database.mjs
-generate-native-database.mjs --check
-git push origin main
-HC_PIPELINE_END
-}
