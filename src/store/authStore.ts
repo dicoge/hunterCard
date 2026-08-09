@@ -11,6 +11,7 @@ import {
   linkProvider,
   unlinkProvider,
   deleteAccount,
+  signOutNativeGoogle,
   validateSession as validateSessionRemote,
 } from '../services/authService';
 
@@ -124,6 +125,12 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: async () => {
+        // Clear the native Google SDK's cached account (Android) so the next
+        // login re-prompts the account chooser and a different Gmail can be
+        // chosen — without this the SDK silently reuses the last account. The
+        // server session is authoritative; SDK sign-out is best-effort and never
+        // blocks logout.
+        await signOutNativeGoogle();
         set({
           user: null,
           session: null,
@@ -143,6 +150,9 @@ export const useAuthStore = create<AuthStore>()(
           // Resolves only on server-confirmed deletion; otherwise throws and we
           // keep the session (do not claim the account was deleted).
           await deleteAccount(session);
+          // Server confirmed deletion — also clear the native Google SDK's
+          // cached account so a subsequent login starts from a clean chooser.
+          await signOutNativeGoogle();
           set({
             user: null,
             session: null,

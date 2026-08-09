@@ -9,6 +9,7 @@ import {
   isIdentityStoreConfigured,
 } from './identity-store';
 import { isSessionConfigured, verifySession } from './session';
+import { consumeIdTokenOnce } from './token-replay';
 import {
   isAppleVerifyConfigured,
   isGoogleVerifyConfigured,
@@ -52,13 +53,13 @@ export async function verifyProviderToken(
   idToken: string,
   nonce?: string,
 ): Promise<VerifiedIdentity> {
+  let identity: VerifiedIdentity;
   if (provider === 'google') {
     if (!isGoogleVerifyConfigured()) {
       throw new IdentityStoreError('STORE_NOT_CONFIGURED', 'google_not_configured');
     }
-    return verifyGoogleIdToken(idToken, nonce);
-  }
-  if (provider === 'apple') {
+    identity = await verifyGoogleIdToken(idToken, nonce);
+  } else if (provider === 'apple') {
     // Native iOS Apple (bundle-id audience) is always accepted; Web Apple
     // (Services-ID audience) only when the operator enabled it. The audience
     // allow-list in verify-token enforces which one is honored — a web-issued
@@ -66,9 +67,18 @@ export async function verifyProviderToken(
     if (!isAppleVerifyConfigured()) {
       throw new IdentityStoreError('STORE_NOT_CONFIGURED', 'apple_not_configured');
     }
-    return verifyAppleIdToken(idToken, nonce);
+    identity = await verifyAppleIdToken(idToken, nonce);
+  } else {
+    throw new IdentityStoreError('INVALID_TOKEN', `unsupported provider: ${provider}`);
   }
-  throw new IdentityStoreError('INVALID_TOKEN', `unsupported provider: ${provider}`);
+  // Enforce single use ONLY after signature/claims verification passes, so a
+  // malformed or forged token fails fast without ever touching KV. This binds
+  // replay protection to the token itself and is what covers the classic Android
+  // Google path, which cannot carry an OIDC nonce (DIC-665 / DIC-920).
+  if (typeof identity.expiresAt === 'number') {
+    await consumeIdTokenOnce(idToken, identity.expiresAt);
+  }
+  return identity;
 }
 
 export function sessionUserId(req: Request): string | null {

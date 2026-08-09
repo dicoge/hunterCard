@@ -38,6 +38,12 @@ jobs:
       - name: Verify platform login-surface routing (DIC-665)
         run: npm run test:auth-strategy
 
+      - name: Verify native Google Sign-In logout / account switch (DIC-665)
+        run: npm run test:google-signout
+
+      - name: Verify server-side ID-token single-use replay protection (DIC-665)
+        run: npm run test:token-replay
+
       - name: Verify buy-price version alignment (DIC-856)
         run: npm run test:buy-price
 

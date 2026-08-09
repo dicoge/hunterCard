@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as Crypto from 'expo-crypto';
 import {
   AuthProvider,
   LinkedIdentity,
@@ -40,17 +41,18 @@ const APPLE_CLIENT_ID = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID || '';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || '/api';
 
-const isIOS = Platform.OS === 'ios';
-
 // Web Sign in with Apple stays gated: the browser cannot verify an Apple ID
 // token, so it requires the server verify path (Services ID + backend secret).
 const APPLE_WEB_ENABLED = process.env.EXPO_PUBLIC_APPLE_WEB_LOGIN_ENABLED === 'true';
 
 // Apple login is delivered NATIVELY on iOS (expo-apple-authentication → backend
 // RS256 verify against the app bundle id) and needs no Services ID. On web it is
-// only offered once APPLE_WEB_ENABLED — otherwise the button is hidden entirely
-// rather than shown as a nonfunctional entry (DIC-866 acceptance #5).
-export const APPLE_LOGIN_ENABLED = isIOS || APPLE_WEB_ENABLED;
+// only offered once APPLE_WEB_ENABLED; on Android it is hard-disabled regardless
+// of the flag (DIC-665 / DIC-920). Deriving this from the SAME pure surface
+// function that dispatch uses keeps the UI and the runtime in lockstep — the
+// button is hidden exactly when the surface is 'disabled', never shown as a
+// nonfunctional entry (DIC-866 acceptance #5).
+export const APPLE_LOGIN_ENABLED = appleLoginSurface(Platform.OS, APPLE_WEB_ENABLED) !== 'disabled';
 
 export const APPLE_DISABLED_MESSAGE =
   'Apple 登入尚未開放（需後端驗證 Apple ID token）。請改用 Google 登入。';
@@ -58,8 +60,17 @@ export const APPLE_DISABLED_MESSAGE =
 const googleScopes = ['openid', 'profile', 'email'];
 const appleScopes = ['openid', 'name', 'email'];
 
+// CSPRNG nonce (expo-crypto). Math.random() is not cryptographically secure and
+// must not be used to mint an OIDC nonce; 16 random bytes hex-encoded gives 128
+// bits of entropy. Used for the iOS/web OIDC nonce that the backend binds against
+// the ID token's `nonce` claim.
 function randomNonce(): string {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const bytes = Crypto.getRandomBytes(16);
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return out;
 }
 
 const PROVIDER_ERROR_MESSAGES: Record<string, (provider?: string) => string> = {
@@ -71,6 +82,7 @@ const PROVIDER_ERROR_MESSAGES: Record<string, (provider?: string) => string> = {
   ACCOUNT_DISABLED: () => '此帳號已停用，請聯絡客服。',
   INVALID_TOKEN: () => '登入驗證失敗，請重新登入。',
   TOKEN_EXPIRED: () => '登入已逾時，請重新登入。',
+  TOKEN_REPLAYED: () => '此登入憑證已使用過，請重新登入。',
   STORE_NOT_CONFIGURED: () => '登入服務尚未設定完成（後端未就緒），請稍後再試。',
 };
 
@@ -213,12 +225,12 @@ async function obtainGoogleNativeIdToken(
   return { idToken, nonce };
 }
 
-// Minimal structural view of @react-native-google-signin/google-signin. The
-// module is imported dynamically (below) and typed against this local interface
-// so it never enters the web/iOS bundle and so tsc/CI don't hard-depend on the
-// package's evolving type surface. v13+ returns a discriminated response
-// ({ type: 'success', data } | { type: 'cancelled' }); older builds throw on
-// cancel — both are handled.
+// Minimal structural view of @react-native-google-signin/google-signin (v16,
+// classic play-services-auth GoogleSignin). The module is imported dynamically
+// (below) and typed against this local interface so it never enters the web/iOS
+// bundle and so tsc/CI don't hard-depend on the package's evolving type surface.
+// signIn() returns a discriminated response ({ type: 'success', data } |
+// { type: 'cancelled' }); older builds throw on cancel — both are handled.
 interface NativeGoogleUser {
   idToken?: string | null;
 }
@@ -232,24 +244,30 @@ interface NativeGoogleSignInModule {
     configure(options: { webClientId: string; offlineAccess?: boolean }): void;
     hasPlayServices(options?: { showPlayServicesUpdateDialog?: boolean }): Promise<boolean>;
     signIn(): Promise<NativeGoogleSignInResponse>;
+    signOut(): Promise<null>;
   };
 }
 
 function isCancelledError(err: unknown): boolean {
   const code = String((err as { code?: unknown })?.code ?? '');
-  // SIGN_IN_CANCELLED (Credential Manager), 12501 (legacy GoogleSignInStatusCodes),
-  // -5 (iOS). Match defensively across library versions.
+  // SIGN_IN_CANCELLED (classic GoogleSignin), 12501 (legacy
+  // GoogleSignInStatusCodes), -5 (iOS). Match defensively across library versions.
   return code === 'SIGN_IN_CANCELLED' || code === '12501' || code === '-5';
 }
 
-// Native Android Google (DIC-665): Credential Manager / Google Sign-In. We
-// configure the library with the Web (server) OAuth client id so the returned
-// ID token's `aud` is that Web client — exactly the audience the backend already
-// verifies — and forward it to the SAME server verify path used by web and iOS.
-// The Android OAuth client (package `com.dicoge.holohunter` + signing-cert SHA-1)
-// only authorizes the native flow in Google Console; it is not passed here and is
-// never trusted client-side. The module is imported lazily so it stays out of the
-// web/iOS bundle (mirrors the iOS-only expo-apple-authentication import).
+// Native Android Google (DIC-665): classic play-services-auth Google Sign-In
+// (@react-native-google-signin/google-signin v16 `GoogleSignin`; NOT Credential
+// Manager — that API is not exported by this library version, and this classic
+// flow cannot bind an OIDC nonce). We configure the library with the Web (server)
+// OAuth client id so the returned ID token's `aud` is that Web client — exactly
+// the audience the backend already verifies — and forward it to the SAME server
+// verify path used by web and iOS. Because there is no client-supplied nonce,
+// replay protection is enforced server-side: each ID token is single-use (see
+// api/_lib/token-replay.ts). The Android OAuth client (package
+// `com.dicoge.holohunter` + signing-cert SHA-1) only authorizes the native flow
+// in Google Console; it is not passed here and is never trusted client-side. The
+// module is imported lazily so it stays out of the web/iOS bundle (mirrors the
+// iOS-only expo-apple-authentication import).
 async function obtainGoogleNativeIdTokenAndroid(): Promise<{ idToken: string; nonce?: string }> {
   if (!GOOGLE_CLIENT_ID) {
     throw new AuthError(
@@ -289,6 +307,24 @@ async function obtainGoogleNativeIdTokenAndroid(): Promise<{ idToken: string; no
   const idToken = response?.data?.idToken ?? response?.idToken;
   if (!idToken) throw new AuthError('Google 未回傳 id_token', 400, 'no_id_token');
   return { idToken };
+}
+
+// Clears the classic Google Sign-In SDK's cached account on Android so the next
+// sign-in re-prompts the account chooser instead of silently reusing the last
+// account. Called on logout / account deletion. Android-only and best-effort: the
+// server session is already invalidated by the caller, so a failure here (module
+// absent on web/iOS, or no cached account) must never surface as a logout error.
+// The module is imported lazily so it stays out of the web/iOS bundle.
+export async function signOutNativeGoogle(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    const mod = (await import(
+      '@react-native-google-signin/google-signin'
+    )) as unknown as NativeGoogleSignInModule;
+    await mod.GoogleSignin.signOut();
+  } catch {
+    // Best-effort: never block logout on provider SDK state.
+  }
 }
 
 // Native iOS Apple: OS-native Sign in with Apple returns an identityToken (a

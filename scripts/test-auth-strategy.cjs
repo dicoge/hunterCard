@@ -52,14 +52,26 @@ function testAndroidNeverFallsBackToWeb() {
 function testAppleSurfaces() {
   assert.equal(strategy.appleLoginSurface('ios', false), 'native-ios');
   assert.equal(strategy.appleLoginSurface('ios', true), 'native-ios');
-  // On Android/web Apple is disabled unless the server-verified web path is on.
-  assert.equal(strategy.appleLoginSurface('android', false), 'disabled');
+  // Web Apple is disabled unless the server-verified web path is on.
   assert.equal(strategy.appleLoginSurface('web', false), 'disabled');
   assert.equal(strategy.appleLoginSurface('web', true), 'web');
-  assert.equal(strategy.appleLoginSurface('android', true), 'web');
 }
 
-const tests = [testGoogleSurfaces, testAndroidNeverFallsBackToWeb, testAppleSurfaces];
+function testAndroidAppleAlwaysDisabled() {
+  // DIC-665 / DIC-920: Android Apple is hard-disabled regardless of the Web Apple
+  // flag. The Android web-Apple path (Custom Tabs + App Links redirect) has no
+  // real-device evidence yet, so enabling APPLE_WEB_ENABLED must NOT surface an
+  // Apple button on Android.
+  assert.equal(strategy.appleLoginSurface('android', false), 'disabled');
+  assert.equal(strategy.appleLoginSurface('android', true), 'disabled');
+}
+
+const tests = [
+  testGoogleSurfaces,
+  testAndroidNeverFallsBackToWeb,
+  testAppleSurfaces,
+  testAndroidAppleAlwaysDisabled,
+];
 try {
   for (const test of tests) {
     test();

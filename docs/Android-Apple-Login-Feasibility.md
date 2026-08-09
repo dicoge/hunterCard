@@ -27,9 +27,9 @@ DIC-665 的硬需求是 **Android Google 登入**；Apple 在 Android 明列為�
 
 ## 決策與替代流程
 
-- **暫不於 Android 實作 Apple 登入**（fail-closed）。目前 `authStrategy.appleLoginSurface('android', false)` 回傳 `disabled`，Android 不顯示 Apple 按鈕（不呈現不可用的入口）。
+- **暫不於 Android 實作 Apple 登入**（fail-closed）。`authStrategy.appleLoginSurface('android', …)` 對 Android **一律回傳 `disabled`**，**與 `APPLE_WEB_ENABLED` 無關**（DIC-920 blocker 3）：即使日後 Web Apple 開通、`APPLE_WEB_LOGIN_ENABLED=true`，Android 仍不暴露 web-Apple 入口，直到 App Links / redirect 有真機證據。Android 不顯示 Apple 按鈕（不呈現不可用的入口）。此行為由 `scripts/test-auth-strategy.cjs` 的 `testAndroidAppleAlwaysDisabled` 鎖定。
 - **替代流程（已綁定使用者）**：已用 Google 登入的使用者若同時擁有 Apple identity，可**到 iOS 或 Web（Web Apple 開通後）完成 Apple 綁定**，之後在 Android 以 Google 登入即進入同一 internal user id —— 收藏 / 設定 / watchlist / 推播 token 皆歸戶，功能不受影響。
-- **開通條件**：一旦 `Web-Apple-Login-Evaluation.md` 所需的 Services ID / domain verification / `.p8` 落地並 `APPLE_WEB_LOGIN_ENABLED=true`，即可以低成本把 `appleLoginSurface` 的 Android 分支接到既有 web-Apple 流程（前端觸發 Custom Tabs + 沿用後端驗證），屆時再以真機驗收。
+- **開通條件**：`APPLE_WEB_LOGIN_ENABLED=true` **本身不足以**開通 Android Apple —— `appleLoginSurface` 的 Android 分支目前是**無條件 `disabled`**（DIC-920 blocker 3）。要開通須：(1) `Web-Apple-Login-Evaluation.md` 所需的 Services ID / domain verification / `.p8` 落地；(2) 明確改寫該 Android 分支（移除 hard-disable）並接到既有 web-Apple 流程（前端 Custom Tabs + 沿用後端驗證）；(3) **在 Android 真機驗收 App Links / redirect 回帶**後才可上線。在 (3) 之前，Android 一律不顯示 Apple 入口。
 
 ## 驗收對照（DIC-665）
 
