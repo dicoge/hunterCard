@@ -50,14 +50,6 @@ cd scripts
 node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
 cd ..
 
-# 2a. Regenerate public/data/database.json (native asset) from data/database.json
-#     Must run after build-database.js — fail if the generator fails (DIC-923).
-echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
-if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
-  exit 1
-fi
-
 # 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)
 echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
 cd scripts
@@ -89,9 +81,24 @@ node scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fulla
 node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
+# 2h. Regenerate public/data/database.json (native asset) from data/database.json.
+#     MUST run last, after every writer that can touch data/database.json
+#     (build-database.js AND merge-buy-prices.js), so the committed native
+#     asset is never stale relative to the canonical DB (DIC-923). Fail-closed:
+#     if the generator fails, abort before committing/pushing anything.
+echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
+if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
+  exit 1
+fi
+if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ generate-native-database --check FAILED after regen, exiting" >> "$LOG_FILE"
+  exit 1
+fi
+
 # 3. Check if data changed
-GIT_DIFF_FILES='data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
-if git diff --stat -- $GIT_DIFF_FILES | grep -q .; then
+GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)
+if git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
   EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json public/data/database.json"
