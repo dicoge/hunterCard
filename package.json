@@ -16,6 +16,7 @@
     "test:api-base": "node scripts/test-api-base.cjs",
     "test:web-redirect": "node scripts/test-web-redirect.cjs",
     "test:auth-error-map": "node scripts/test-auth-error-map.cjs",
+    "test:auth-store-error-wiring": "node scripts/test-auth-store-error-wiring.cjs",
     "test:ios-build-guard": "node scripts/test-ios-build-guard.cjs",
     "test:google-signout": "node scripts/test-google-signout.cjs",
     "test:token-replay": "node scripts/test-token-replay.cjs",

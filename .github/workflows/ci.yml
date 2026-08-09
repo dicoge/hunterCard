@@ -47,6 +47,9 @@ jobs:
       - name: Verify friendly-but-safe auth error mapping (DIC-922)
         run: npm run test:auth-error-map
 
+      - name: Verify login-gate auth store never leaks raw errors (DIC-928)
+        run: npm run test:auth-store-error-wiring
+
       - name: Verify iOS/Android build fail-closed client guards (DIC-922)
         run: npm run test:ios-build-guard
 

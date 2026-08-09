@@ -97,6 +97,54 @@ function testEnvOverrideWins() {
   );
   // Empty / whitespace override is ignored (not treated as a value).
   assert.equal(resolveApiBase({ platformOS: 'ios', envOverride: '   ' }), PROD);
+  // A plain http (not https) absolute override is still accepted (e.g. LAN dev).
+  assert.equal(
+    resolveApiBase({ platformOS: 'ios', envOverride: 'http://192.168.1.10:3000/api' }),
+    'http://192.168.1.10:3000/api',
+  );
+}
+
+// DIC-928 blocker 4: an override that is not an ABSOLUTE http(s) URL must be
+// rejected and resolution must FAIL CLOSED to the safe platform default —
+// never adopt a relative/malformed value that would break native fetch or point
+// auth at the wrong place.
+function testMalformedNativeOverrideFailsClosed() {
+  const bad = [
+    '/api', // relative — the exact on-device bug we fixed
+    'api', // bare relative segment
+    './api',
+    'holohunter.dicoge.com/api', // absolute-looking but no scheme (bare host)
+    'ftp://holohunter.dicoge.com/api', // wrong scheme
+    'https://', // scheme with no host
+    'http:///api', // empty host
+    'not a url',
+    'javascript:alert(1)',
+  ];
+  for (const envOverride of bad) {
+    assert.equal(
+      resolveApiBase({ platformOS: 'ios', envOverride }),
+      PROD,
+      `native must fail closed to production for malformed override ${JSON.stringify(envOverride)}`,
+    );
+    const androidBase = resolveApiBase({ platformOS: 'android', envOverride });
+    assert.ok(
+      /^https?:\/\//.test(androidBase) && !androidBase.startsWith('/'),
+      `android must stay absolute for malformed override ${JSON.stringify(envOverride)}, got ${androidBase}`,
+    );
+  }
+}
+
+function testMalformedWebOverrideFallsBackToSameOrigin() {
+  // A bad override on web is ignored too; web falls back to its own same-origin
+  // /api rather than the broken value.
+  assert.equal(
+    resolveApiBase({
+      platformOS: 'web',
+      webOrigin: 'https://holohunter.dicoge.com',
+      envOverride: '/api',
+    }),
+    'https://holohunter.dicoge.com/api',
+  );
 }
 
 const tests = [
@@ -105,6 +153,8 @@ const tests = [
   testWebUsesSameOrigin,
   testWebWithoutOriginFallsBackToNative,
   testEnvOverrideWins,
+  testMalformedNativeOverrideFailsClosed,
+  testMalformedWebOverrideFallsBackToSameOrigin,
 ];
 try {
   for (const test of tests) {

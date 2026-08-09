@@ -39,11 +39,32 @@ export function appleLoginSurface(os: string, webEnabled: boolean): AppleLoginSu
 // Vercel preview both host /api under the page origin), so it uses its own
 // origin — which keeps cookies/CORS trivial and works on every deploy URL.
 //
-// Precedence: an explicit env override wins (must already include the '/api'
-// path segment, e.g. https://staging.example.com/api); then web same-origin;
-// then the canonical production base for native. We never return a relative
-// path here. Pure (no react-native/expo imports) so it is unit-testable.
+// Precedence: an explicit env override wins ONLY if it is an absolute http(s)
+// URL (must already include the '/api' path segment, e.g.
+// https://staging.example.com/api); then web same-origin; then the canonical
+// production base for native. We never return a relative path here. Pure (no
+// react-native/expo imports) so it is unit-testable.
 const DEFAULT_NATIVE_API_BASE = 'https://holohunter.dicoge.com/api';
+
+// An EXPO_PUBLIC_API_BASE_URL override is only trustworthy if it is an ABSOLUTE
+// http(s) URL (DIC-928 blocker 4). A relative value like '/api' is exactly the
+// bug we fixed — React Native's fetch can't resolve it and every auth call dies
+// on-device — and a malformed value ('ftp://x', 'not a url', a bare host) would
+// silently point auth at the wrong place. So we validate and FAIL CLOSED: an
+// override that isn't absolute http(s) is ignored, and resolution falls back to
+// the safe platform default (web same-origin / native production base) rather
+// than adopting the broken value.
+// http(s):// followed by a non-empty host (no whitespace, at least one host
+// char before any path). Deliberately regex-based, not `new URL()`: React
+// Native's URL implementation is incomplete, but authService runs this at
+// runtime, so the check must not depend on a full URL parser.
+const ABSOLUTE_HTTP_URL = /^https?:\/\/[^\s/]+/i;
+
+function absoluteHttpOverride(raw: string): string | null {
+  if (!raw) return null;
+  if (!ABSOLUTE_HTTP_URL.test(raw)) return null; // relative '/api', bare host, ftp://, garbage → fail closed
+  return raw.replace(/\/+$/, '');
+}
 
 export function resolveApiBase(params: {
   platformOS: string;
@@ -51,8 +72,8 @@ export function resolveApiBase(params: {
   envOverride?: string | null;
 }): string {
   const { platformOS, webOrigin, envOverride } = params;
-  const override = (envOverride ?? '').trim();
-  if (override) return override.replace(/\/+$/, '');
+  const override = absoluteHttpOverride((envOverride ?? '').trim());
+  if (override) return override;
   if (platformOS === 'web' && webOrigin) {
     return `${webOrigin.replace(/\/+$/, '')}/api`;
   }
