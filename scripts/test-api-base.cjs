@@ -104,10 +104,10 @@ function testEnvOverrideWins() {
   );
 }
 
-// DIC-928 blocker 4: an override that is not an ABSOLUTE http(s) URL must be
-// rejected and resolution must FAIL CLOSED to the safe platform default —
-// never adopt a relative/malformed value that would break native fetch or point
-// auth at the wrong place.
+// DIC-928 blocker 4 + DIC-934 CR fix: an override that is not a well-formed
+// ABSOLUTE http(s) URL must be rejected and resolution must FAIL CLOSED to the
+// safe platform default — never adopt a relative/malformed value that would
+// break native fetch or point auth at the wrong place.
 function testMalformedNativeOverrideFailsClosed() {
   const bad = [
     '/api', // relative — the exact on-device bug we fixed
@@ -119,6 +119,13 @@ function testMalformedNativeOverrideFailsClosed() {
     'http:///api', // empty host
     'not a url',
     'javascript:alert(1)',
+    // DIC-934 CR: scheme-looking values that regex alone accepts
+    'https://?', // query-only, no host
+    'https://#frag', // fragment-only, no host
+    'https://%', // bare percent-encoding, no host
+    'https://:bad/api', // colon-separator with no host
+    'https://[GGGG::1]/api', // non-hex inside IPv6 brackets
+    'https://example.com:99999/api', // invalid port (>65535)
   ];
   for (const envOverride of bad) {
     assert.equal(

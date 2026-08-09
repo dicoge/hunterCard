@@ -33,6 +33,17 @@ const IOS_CLIENT_ID = '123-abc.apps.googleusercontent.com';
 const EXPECTED_SCHEME = 'com.googleusercontent.apps.123-abc';
 const WEB_CLIENT_ID = '999-web.apps.googleusercontent.com';
 
+// DIC-934 CR: malformed iOS client IDs that must fail the build closed.
+// (empty/missing is already covered by testIosBuildMissingClientThrows.)
+const MALFORMED_IOS_IDS = [
+  'not-an-ios-client-id',             // completely wrong structure
+  'apps.googleusercontent.com',       // empty prefix
+  '123.apps.bad.googleusercontent.com', // wrong domain
+  'my-app.apps.googleusercontent',     // missing .com
+  '-.apps.googleusercontent.com',      // bare hyphen prefix
+  '123$$.apps.googleusercontent.com',  // invalid chars in prefix
+];
+
 function hasScheme(config, scheme) {
   const types = config?.expo?.ios?.infoPlist?.CFBundleURLTypes || [];
   return types.some(
@@ -61,6 +72,21 @@ function testIosBuildWithClientRegistersReversedScheme() {
     hasScheme(config, EXPECTED_SCHEME),
     `expected reversed scheme ${EXPECTED_SCHEME} to be registered`,
   );
+}
+
+// DIC-934 CR: a malformed iOS client ID must fail the build closed so an
+// invalid CFBundleURLScheme is never registered.
+function testIosBuildMalformedClientIdThrows() {
+  for (const badId of MALFORMED_IOS_IDS) {
+    resetEnv();
+    process.env.EAS_BUILD_PLATFORM = 'ios';
+    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID = badId;
+    assert.throws(
+      () => configFactory(),
+      /not a valid iOS OAuth client ID/,
+      `malformed client ID ${JSON.stringify(badId)} must fail build closed`,
+    );
+  }
 }
 
 function testAndroidBuildMissingWebClientStillThrows() {
@@ -92,6 +118,7 @@ const tests = [
   testIosBuildMissingClientThrows,
   testIosAssertFlagMissingClientThrows,
   testIosBuildWithClientRegistersReversedScheme,
+  testIosBuildMalformedClientIdThrows,
   testAndroidBuildMissingWebClientStillThrows,
   testAndroidBuildWithWebClientPasses,
   testNonBuildEvalNeverThrows,

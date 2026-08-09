@@ -47,22 +47,29 @@ export function appleLoginSurface(os: string, webEnabled: boolean): AppleLoginSu
 const DEFAULT_NATIVE_API_BASE = 'https://holohunter.dicoge.com/api';
 
 // An EXPO_PUBLIC_API_BASE_URL override is only trustworthy if it is an ABSOLUTE
-// http(s) URL (DIC-928 blocker 4). A relative value like '/api' is exactly the
-// bug we fixed — React Native's fetch can't resolve it and every auth call dies
-// on-device — and a malformed value ('ftp://x', 'not a url', a bare host) would
-// silently point auth at the wrong place. So we validate and FAIL CLOSED: an
-// override that isn't absolute http(s) is ignored, and resolution falls back to
-// the safe platform default (web same-origin / native production base) rather
-// than adopting the broken value.
-// http(s):// followed by a non-empty host (no whitespace, at least one host
-// char before any path). Deliberately regex-based, not `new URL()`: React
-// Native's URL implementation is incomplete, but authService runs this at
-// runtime, so the check must not depend on a full URL parser.
-const ABSOLUTE_HTTP_URL = /^https?:\/\/[^\s/]+/i;
-
+// http(s) URL with a valid host (DIC-928 blocker 4, DIC-934 CR fix). A relative
+// value like '/api' is exactly the bug we fixed — React Native's fetch can't
+// resolve it and every auth call dies on-device — and a malformed value
+// (scheme-looking garbage, bad IPv6, invalid port) would silently point auth at
+// the wrong place. So we validate with real URL parsing and FAIL CLOSED: an
+// override that isn't a well-formed absolute http(s) URL is ignored, and
+// resolution falls back to the safe platform default.
 function absoluteHttpOverride(raw: string): string | null {
   if (!raw) return null;
-  if (!ABSOLUTE_HTTP_URL.test(raw)) return null; // relative '/api', bare host, ftp://, garbage → fail closed
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (!url.hostname) return null;
+  // The WHATWG URL parser treats any bracket-wrapped string as a hostname;
+  // explicitly reject bare brackets that aren't valid IPv6.
+  if (url.hostname.startsWith('[') && !/^\[[0-9a-fA-F:]+\]$/.test(url.hostname)) return null;
+  // Guard against quasi-URLs like http:///api where the WHATWG parser
+  // synthesises a host from the would-be path.
+  if (!raw.startsWith(url.protocol + '//' + url.hostname)) return null;
   return raw.replace(/\/+$/, '');
 }
 
