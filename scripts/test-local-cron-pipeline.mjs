@@ -11,6 +11,26 @@ const repoRoot = path.join(__dirname, '..');
 const SCRIPT_PATH = path.join(repoRoot, 'scripts', 'local-scrape-and-push.sh');
 const script = fs.readFileSync(SCRIPT_PATH, 'utf-8');
 
+function stripFunctions(text) {
+  const lines = text.split('\n');
+  const out = [];
+  let depth = 0;
+  for (const line of lines) {
+    const t = line.trim();
+    if (depth === 0 && /^\w[\w_-]*\s*\(\s*\)\s*\{/.test(t)) {
+      depth = 1;
+      continue;
+    }
+    if (depth > 0) {
+      depth += (t.match(/\{/g) || []).length - (t.match(/\}/g) || []).length;
+      if (depth <= 0) { depth = 0; }
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 function executableLines(text) {
   return text.split('\n')
     .map(l => l.trim())
@@ -27,104 +47,100 @@ function pass(label) {
   console.log(`✓ ${label}`);
 }
 
-// --- P1: pipeline ordering (executable lines only, ignoring comments) -------
-
-const commands = executableLines(script);
-
-const dbIdx = commands.findIndex(l => l.includes('node build-database.js'));
-const mergeIdx = commands.findIndex(l => l.includes('node merge-buy-prices.js'));
-const genIdx = commands.findIndex(
-  l => l.includes('node scripts/generate-native-database.mjs') && !l.includes('--check')
-);
-const genCheckIdx = commands.findIndex(
-  l => l.includes('node scripts/generate-native-database.mjs --check')
-);
-const pushIdx = commands.findIndex(l => l.includes('git push origin main'));
-
-assert.ok(dbIdx !== -1, 'build-database.js not found in executable lines');
-assert.ok(mergeIdx !== -1, 'merge-buy-prices.js not found in executable lines');
-assert.ok(genIdx !== -1, 'generate-native-database.mjs not found in executable lines');
-assert.ok(genCheckIdx !== -1, 'generate-native-database.mjs --check not found in executable lines');
-assert.ok(pushIdx !== -1, 'git push origin main not found in executable lines');
-
-assert.ok(
-  genIdx > dbIdx,
-  'generator must run after build-database.js'
-);
-assert.ok(
-  genIdx > mergeIdx,
-  'generator must run after merge-buy-prices.js — late DB writer would leave native asset stale (DIC-923 P1)'
-);
-assert.ok(
-  genCheckIdx > genIdx,
-  '--check fail-closed guard must run after the regen write'
-);
-assert.ok(
-  genCheckIdx < pushIdx,
-  'generator + --check must complete before commit/push'
-);
-pass('P1: generator runs after every DB writer, --check guards before push');
-
-// P1 negative fixture: swap merge-buy-prices after generator, keep comments correct
-{
-  const negScript = [
-    '#!/bin/bash',
-    '# Step 2g: merge buy-prices — must run AFTER build-database AND BEFORE generator',
-    '# This comment correctly describes the required ordering.',
-    'node build-database.js',
-    'wait',
-    '# merge-buy-prices.js used to run here (correctly, before the generator)',
-    '# BUT the actual invocation has been moved AFTER the generator — the test MUST catch this.',
-    'node scripts/generate-native-database.mjs',
-    'node scripts/generate-native-database.mjs --check',
-    '# merge moved: now runs after generator (BROKEN — late writer regression)',
-    'node merge-buy-prices.js',
-    'git push origin main',
-  ].join('\n');
-
-  const negCommands = executableLines(negScript);
-  const nMergeIdx = negCommands.findIndex(l => l.includes('node merge-buy-prices.js'));
-  const nGenIdx = negCommands.findIndex(
+function assertOrdering(commands, label) {
+  const dbIdx = commands.findIndex(l => l.includes('node build-database.js'));
+  const mergeIdx = commands.findIndex(l => l.includes('node merge-buy-prices.js'));
+  const genIdx = commands.findIndex(
     l => l.includes('node scripts/generate-native-database.mjs') && !l.includes('--check')
   );
+  const genCheckIdx = commands.findIndex(
+    l => l.includes('node scripts/generate-native-database.mjs --check')
+  );
+  const pushIdx = commands.findIndex(l => l.includes('git push origin main'));
+
+  assert.ok(dbIdx !== -1, `${label}: build-database.js not found`);
+  assert.ok(mergeIdx !== -1, `${label}: merge-buy-prices.js not found`);
+  assert.ok(genIdx !== -1, `${label}: generate-native-database.mjs not found`);
+  assert.ok(genCheckIdx !== -1, `${label}: generate-native-database.mjs --check not found`);
+  assert.ok(pushIdx !== -1, `${label}: git push origin main not found`);
+  assert.ok(genIdx > dbIdx, `${label}: generator must run after build-database.js`);
+  assert.ok(genIdx > mergeIdx, `${label}: generator must run after merge-buy-prices.js`);
+  assert.ok(genCheckIdx > genIdx, `${label}: --check must run after generator`);
+  assert.ok(genCheckIdx < pushIdx, `${label}: generator+check must complete before push`);
+}
+
+// ======== P1: pipeline ordering (top-level active code only) ========
+
+const activeScript = stripFunctions(script);
+const commands = executableLines(activeScript);
+assertOrdering(commands, 'P1');
+pass('P1: generator runs after every DB writer, --check before push (active path only)');
+
+// P1 negative: dead function with correct ordering + broken active path
+{
+  const deadOrderFn = [
+    '_dead_order_ref() {',
+    '  node build-database.js',
+    '  node merge-buy-prices.js',
+    '  node scripts/generate-native-database.mjs',
+    '  node scripts/generate-native-database.mjs --check',
+    '  git push origin main',
+    '}',
+  ].join('\n');
+
+  const p1mut = script.replace(
+    'node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"',
+    '# merge-buy-prices.js INTENTIONALLY REMOVED (negative fixture: moved after generator)'
+  );
+
+  const p1final = p1mut.replace(
+    /(\nfi\n)(\n# 3\. Check)/s,
+    '$1node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"\n$2'
+  );
+
+  const mutatedScript = deadOrderFn + '\n' + p1final;
+  const mutatedActive = stripFunctions(mutatedScript);
+  const mutatedCmds = executableLines(mutatedActive);
 
   let caught = false;
   try {
-    assert.ok(nGenIdx > nMergeIdx,
-      'P1 NEGATIVE: generator after merge-buy-prices — should be true in correct code,'
-    );
+    assertOrdering(mutatedCmds, 'P1 NEGATIVE');
   } catch (e) {
     if (e.code === 'ERR_ASSERTION') caught = true;
     else throw e;
   }
+
   if (caught) {
-    pass('P1 negative: broken ordering (generator before merge-buy-prices) correctly detected');
+    pass('P1 negative: broken active ordering detected (dead function with correct strings ignored)');
   } else {
-    fail('P1 negative fixture: late-writer ordering regression NOT detected (false positive!)');
+    fail('P1 negative: false positive — dead function fooled ordering check');
     process.exitCode = 1;
   }
 }
 
-// --- P0: GIT_DIFF_FILES exit 126 — execute actual production lines -----------
+// ======== P0: GIT_DIFF_FILES exit 126 (top-level active code only) ========
 
-const scriptLines = script.split('\n');
-const assignmentLine = scriptLines.find(l => l.trim().startsWith('GIT_DIFF_FILES=('));
-const diffLine = scriptLines.find(l => l.includes('git diff --stat -- "${GIT_DIFF_FILES[@]}"'));
+const activeLines = activeScript.split('\n');
+const assignmentLine = activeLines.find(l => l.trim().startsWith('GIT_DIFF_FILES=('));
+const diffLineRaw = activeLines.find(l => l.includes('git diff --stat -- "${GIT_DIFF_FILES[@]}"'));
 
-assert.ok(assignmentLine, 'GIT_DIFF_FILES=(...) array assignment not found in production script');
-assert.ok(diffLine, 'git diff --stat -- "${GIT_DIFF_FILES[@]}" not found in production script');
-
-// Verify the array syntax is the correct form
+assert.ok(assignmentLine, 'GIT_DIFF_FILES=(...) array assignment not found in active (top-level) code');
+assert.ok(diffLineRaw, 'git diff --stat -- "${GIT_DIFF_FILES[@]}" not found in active code');
 assert.ok(
   assignmentLine.trim().startsWith('GIT_DIFF_FILES=('),
-  'GIT_DIFF_FILES must be a bash array `GIT_DIFF_FILES=(...)` — bare unquoted multi-token form exits 126 (DIC-923 P0)'
+  'GIT_DIFF_FILES must be a bash array — bare unquoted multi-token form exits 126 (DIC-923 P0)'
 );
 assert.ok(
-  diffLine.includes('"${GIT_DIFF_FILES[@]}"'),
-  'change detection must reference GIT_DIFF_FILES as a quoted array expansion'
+  diffLineRaw.includes('"${GIT_DIFF_FILES[@]}"'),
+  'change detection must use quoted array expansion'
 );
 
-// Execute the exact production lines in a real git repo
+// Execute the exact production lines from the active path
+const diffCmd = diffLineRaw.trim()
+  .replace(/^if\s+/, '')
+  .replace(/;\s*then\s*$/, '');
+const prodSnippet = `${assignmentLine.trim()}\n${diffCmd}`;
+
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'huntercard-cron-test-'));
 try {
   execFileSync('git', ['init', '-q'], { cwd: tmpDir });
@@ -137,20 +153,50 @@ try {
   fs.writeFileSync(path.join(tmpDir, 'public', 'data', 'database.json'), '{}');
   execFileSync('git', ['add', '-A'], { cwd: tmpDir });
   execFileSync('git', ['commit', '-q', '-m', 'initial'], { cwd: tmpDir });
-
   fs.writeFileSync(path.join(tmpDir, 'data', 'database.json'), '{"changed":true}');
-
-  const diffCmd = diffLine.trim()
-    .replace(/^if\s+/, '')
-    .replace(/;\s*then\s*$/, '');
-  const prodSnippet = `${assignmentLine.trim()}\n${diffCmd}`;
   execFileSync('bash', ['-c', prodSnippet], { cwd: tmpDir, encoding: 'utf-8' });
-  pass('P0: actual production GIT_DIFF_FILES array + git diff runs (no exit 126)');
+  pass('P0: production GIT_DIFF_FILES array + git diff runs in real repo (no exit 126)');
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
-// P0 negative fixture: broken unquoted-multi-token form must fail
+// P0 negative: dead function with correct array + broken active form
+{
+  const deadDiffFn = [
+    '_dead_diff_ref() {',
+    '  GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)',
+    '  git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .',
+    '}',
+  ].join('\n');
+
+  const brokenLine = "GIT_DIFF_FILES='data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'";
+  const p0mut = script.replace(/GIT_DIFF_FILES=\([^)]+\)/, brokenLine);
+  const mutatedScript = deadDiffFn + '\n' + p0mut;
+
+  const mutatedActive = stripFunctions(mutatedScript);
+  const ml = mutatedActive.split('\n');
+  const foundLine = ml.find(l => l.trim().startsWith('GIT_DIFF_FILES='));
+
+  let caught = false;
+  try {
+    assert.ok(
+      foundLine && foundLine.trim().startsWith('GIT_DIFF_FILES=('),
+      'P0 NEGATIVE: GIT_DIFF_FILES must be array form (dead function must not satisfy this)'
+    );
+  } catch (e) {
+    if (e.code === 'ERR_ASSERTION') caught = true;
+    else throw e;
+  }
+
+  if (caught) {
+    pass('P0 negative: broken active array form detected (dead function with correct form ignored)');
+  } else {
+    fail('P0 negative: false positive — dead function satisfied the array-form check');
+    process.exitCode = 1;
+  }
+}
+
+// P0 execution-level negative: broken form actually fails at runtime
 {
   const brokenDir = fs.mkdtempSync(path.join(os.tmpdir(), 'huntercard-cron-neg-'));
   try {
@@ -164,13 +210,13 @@ try {
 
     const brokenSnippet = "GIT_DIFF_FILES='data/database.json' 'data/images/' 'data/official/'";
     execFileSync('bash', ['-c', brokenSnippet], { cwd: brokenDir, encoding: 'utf-8' });
-    fail('P0 negative fixture: broken form was expected to fail but exited 0');
+    fail('P0 execution negative: broken form was expected to exit ≠ 0 but exited 0');
     process.exitCode = 1;
   } catch (e) {
     if (e.status === 126 || e.status === 127) {
-      pass(`P0 negative: broken unquoted-multi-token GIT_DIFF_FILES exits ${e.status} (regression caught)`);
+      pass(`P0 execution negative: broken unquoted-multi-token form exits ${e.status} (regression confirmed)`);
     } else {
-      fail(`P0 negative fixture: unexpected failure (status ${e.status}, ${e.message})`);
+      fail(`P0 execution negative: unexpected error (status ${e.status}, ${e.message})`);
       process.exitCode = 1;
     }
   } finally {
@@ -178,5 +224,5 @@ try {
   }
 }
 
-// --- Summary -----------------------------------------------------------------
+// ======== Summary ========
 console.log(`\n✓ All local cron pipeline regression checks passed (${passed} assertions)`);
