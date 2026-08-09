@@ -1,0 +1,178 @@
+name: DIC-910 Vercel Domain & Env Setup
+
+# One-time, auditable, manual-dispatch tool to finish the Vercel-side wiring
+# for the HoloHunter production site:
+#   - confirm the target Vercel project
+#   - sync EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / GOOGLE_WEB_CLIENT_ID into
+#     Production + Preview env (values come from the same-named repo secrets,
+#     never echoed)
+#   - report (name/target only, no values) whether AUTH_SESSION_SECRET,
+#     KV_REST_API_URL, KV_REST_API_TOKEN already exist
+#   - attach holohunter.dicoge.com to the project
+#   - trigger a production redeploy and verify HTTP 200 on the custom domain,
+#     /privacy, /support, /account-deletion
+#
+# Nothing here prints secret values. This workflow is a temporary, explicit
+# hand tool: keep it only as a manual-dispatch maintenance step, or delete it
+# once the domain/env wiring is confirmed stable.
+#
+# Required repo secrets:
+#   VERCEL_TOKEN, VERCEL_PROJECT_ID, VERCEL_ORG_ID (already present)
+#   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, GOOGLE_WEB_CLIENT_ID (already present)
+
+on:
+  workflow_dispatch:
+    inputs:
+      redeploy:
+        description: "Trigger a production redeploy after applying config"
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  setup:
+    name: Configure Vercel domain + env
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm target Vercel project
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          resp=$(curl -sS -w '\n%{http_code}' \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}")
+          code=$(echo "$resp" | tail -n1)
+          body=$(echo "$resp" | sed '$d')
+          echo "HTTP status: $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Could not read Vercel project (status $code). Aborting before any writes."
+            exit 1
+          fi
+          name=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).name')
+          echo "Vercel project name: $name"
+          echo "PROJECT_NAME=$name" >> "$GITHUB_ENV"
+
+      - name: Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / GOOGLE_WEB_CLIENT_ID (Production + Preview)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          set_env_var() {
+            key="$1"
+            value="$2"
+            # Remove any existing entries for this key on production+preview first,
+            # so re-runs are idempotent instead of erroring on duplicates.
+            existing=$(curl -sS "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}")
+            ids=$(echo "$existing" | node -pe '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              (d.envs||[]).filter(e => e.key === process.argv[1]).map(e => e.id).join("\n")
+            ' "$key" 2>/dev/null || true)
+            for id in $ids; do
+              [ -z "$id" ] && continue
+              curl -sS -o /dev/null -X DELETE \
+                "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_ORG_ID}" \
+                -H "Authorization: Bearer ${VERCEL_TOKEN}"
+            done
+            code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST \
+              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data-raw "$(node -e '
+                const key = process.argv[1];
+                const value = process.argv[2];
+                console.log(JSON.stringify({
+                  key, value, type: "encrypted",
+                  target: ["production", "preview"],
+                }));
+              ' "$key" "$value")")
+            echo "Set $key -> HTTP $code"
+            if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+              echo "::error::Failed to set $key (status $code)"
+              cat /tmp/resp.json
+              exit 1
+            fi
+          }
+          set_env_var "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID" "$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID"
+          set_env_var "GOOGLE_WEB_CLIENT_ID" "$GOOGLE_WEB_CLIENT_ID"
+
+      - name: Report existing auth runtime env (names/targets only, no values)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          curl -sS "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+          | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const wanted = ["AUTH_SESSION_SECRET","KV_REST_API_URL","KV_REST_API_TOKEN"];
+              for (const key of wanted) {
+                const matches = (d.envs||[]).filter(e => e.key === key);
+                if (matches.length === 0) {
+                  console.log(`MISSING: ${key}`);
+                } else {
+                  for (const m of matches) {
+                    console.log(`present: ${key} (target=${(m.target||[]).join(",")})`);
+                  }
+                }
+              }
+            '
+
+      - name: Attach holohunter.dicoge.com domain
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/domain_resp.json -w '%{http_code}' -X POST \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/domains?teamId=${VERCEL_ORG_ID}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-raw '{"name":"holohunter.dicoge.com"}')
+          echo "Add-domain HTTP status: $code"
+          cat /tmp/domain_resp.json
+          # 200/201 = added, 409 = already attached to this project — both OK.
+          if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "409" ]; then
+            echo "::error::Failed to attach domain (status $code)"
+            exit 1
+          fi
+
+      - name: Trigger production redeploy
+        if: ${{ inputs.redeploy }}
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_DEPLOY_HOOK}" ]; then
+            echo "::error::VERCEL_DEPLOY_HOOK secret is empty — cannot trigger redeploy."
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/hook_resp.json -w '%{http_code}' -X POST "${VERCEL_DEPLOY_HOOK}")
+          echo "Deploy hook HTTP status: $code"
+          cat /tmp/hook_resp.json
+
+      - name: Wait for deployment to go live
+        if: ${{ inputs.redeploy }}
+        run: sleep 90
+
+      - name: Verify public HTTP endpoints
+        run: |
+          set -uo pipefail
+          for path in "/" "/privacy" "/support" "/account-deletion"; do
+            url="https://holohunter.dicoge.com${path}"
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -L "$url" || echo "curl_failed")
+            echo "$url -> $code"
+          done
+          # Also confirm the pre-existing production alias still works.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -L "https://holocard-hunter.vercel.app/" || echo "curl_failed")
+          echo "https://holocard-hunter.vercel.app/ -> $code"
