@@ -352,8 +352,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP07-090_ent07"
+    },
+    {
+      "date": "2026-08-09",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-090_ent07"
     }
   ],
-  "lastUpdated": "2026-08-08T12:12:31.180Z",
+  "lastUpdated": "2026-08-09T12:12:51.279Z",
   "nameZh": "虎金妃笑虎"
 }

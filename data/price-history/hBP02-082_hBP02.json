@@ -352,8 +352,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-082_hBP02"
+    },
+    {
+      "date": "2026-08-09",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-082_hBP02"
     }
   ],
-  "lastUpdated": "2026-08-08T12:12:31.397Z",
+  "lastUpdated": "2026-08-09T12:12:51.488Z",
   "nameZh": "hololive Gamers"
 }

@@ -191,8 +191,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-038_ent07"
+    },
+    {
+      "date": "2026-08-09",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-038_ent07"
     }
   ],
-  "lastUpdated": "2026-08-08T12:12:31.099Z",
+  "lastUpdated": "2026-08-09T12:12:51.201Z",
   "nameZh": "古石比珠"
 }
