@@ -74,6 +74,7 @@ for (const rel of [
   'api/_lib/identity-store.ts',
   'api/_lib/session.ts',
   'api/_lib/verify-token.ts',
+  'api/_lib/token-replay.ts',
   'api/_lib/auth-endpoint.ts',
   'api/_lib/node-adapter.ts',
   'api/auth/[action].ts',

@@ -8,6 +8,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "environment": "development",
       "ios": {
         "simulator": false
       },
@@ -18,6 +19,7 @@
     "preview": {
       "distribution": "internal",
       "autoIncrement": true,
+      "environment": "preview",
       "env": {
         "EXPO_PUBLIC_STORE_MVP": "1"
       },
@@ -31,6 +33,7 @@
     "production": {
       "distribution": "store",
       "autoIncrement": true,
+      "environment": "production",
       "env": {
         "EXPO_PUBLIC_STORE_MVP": "1"
       },

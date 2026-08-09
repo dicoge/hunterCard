@@ -52,10 +52,22 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
+      # EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is a PUBLIC OAuth client id (safe to embed
+      # in the app). Native Android Google Sign-In needs it so the ID token's `aud`
+      # is the audience the backend verifies; without it the APK ships and Google
+      # login fails at runtime with `client_id_missing`. ASSERT_GOOGLE_WEB_CLIENT=1
+      # makes app.config.js fail the build loudly if the secret is absent (DIC-665
+      # / DIC-920 blocker 1) rather than producing a broken login APK.
       - name: Prebuild (generate native android project)
+        env:
+          ASSERT_GOOGLE_WEB_CLIENT: '1'
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
         run: npx expo prebuild --platform android --no-install
 
       - name: Build Android debug APK
+        env:
+          ASSERT_GOOGLE_WEB_CLIENT: '1'
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
         run: |
           cd android
           chmod +x gradlew

@@ -1,10 +1,12 @@
-# Android 原生 Google 登入（Credential Manager / Google Sign-In）
+# Android 原生 Google 登入（classic play-services-auth Google Sign-In）
 
 對應 issue **DIC-665**。本文件記錄 Android 原生 Google 登入的實作、設定與 QA 驗收；與 `docs/Auth-Google-Login-Design.md`（整體設計、交付 D/F）互補。
 
 ## 為什麼改走原生（而非瀏覽器 PKCE）
 
-main 先前的 Android Google 登入是靠 `src/services/authService.ts` 落入 `obtainWebIdToken()` 的 `expo-auth-session` + Custom Tabs PKCE 流程 —— 能運作，但 UX 較差（跳出瀏覽器分頁）、且沒有 standalone Android 真機證據。產品優先序為 **HoloHunter Android / Google Play Internal first**，因此改採 Google 官方目前支援的 Android 原生登入（`@react-native-google-signin/google-signin`，Credential Manager 為底），直接在 App 內完成，回傳可被後端驗證的 `idToken`。
+main 先前的 Android Google 登入是靠 `src/services/authService.ts` 落入 `obtainWebIdToken()` 的 `expo-auth-session` + Custom Tabs PKCE 流程 —— 能運作，但 UX 較差（跳出瀏覽器分頁）、且沒有 standalone Android 真機證據。產品優先序為 **HoloHunter Android / Google Play Internal first**，因此改採 `@react-native-google-signin/google-signin`（v16）的 **classic `GoogleSignin`（play-services-auth 為底）** 原生登入，直接在 App 內完成，回傳可被後端驗證的 `idToken`。
+
+> **契約澄清（DIC-920 CR）**：此路徑是 **classic play-services-auth**，**不是 Credential Manager**。本套件 v16 只匯出 classic `GoogleSignin`，其 `signIn()` **無法帶入 OIDC nonce**，因此 Android ID token 沒有 client 端 nonce 綁定。防重放改由**後端單次使用**保證（見下方「Replay 防護」）。日後若要遷移到真正的 Credential Manager + nonce，需升級套件並改寫 adapter，再以真機驗收。
 
 **server-authoritative 不變**：client 只負責取得 provider `idToken`，身份解析（login-or-create、identities、collision）與 session 全部在後端 `POST /api/auth/login` → `api/_lib/verify-token.ts` 完成。client 端從不自行判定登入成功。
 
@@ -15,7 +17,7 @@ main 先前的 Android Google 登入是靠 `src/services/authService.ts` 落入 
 | 平台 | Google surface | 實作 |
 |------|----------------|------|
 | iOS | `native-ios` | `obtainGoogleNativeIdToken`（iOS OAuth client + reversed-client-id，PKCE） |
-| Android | `native-android` | `obtainGoogleNativeIdTokenAndroid`（Credential Manager） |
+| Android | `native-android` | `obtainGoogleNativeIdTokenAndroid`（classic play-services-auth `GoogleSignin`） |
 | Web | `web` | `obtainWebIdToken`（瀏覽器 PKCE） |
 
 iOS / Web 路徑**完全未改動**，不退化。`scripts/test-auth-strategy.cjs` 鎖定「Android 不得回落到 `web`」這個回歸點。
@@ -43,11 +45,37 @@ Client ID 已由 PM 存於 GitHub secrets（Google Cloud project `holohunter-505
 
 只有在後端 `/api/auth/login` 回 2xx 時，`authStore` 才會標記為已登入。
 
+## 建置時注入 Web client id（DIC-920 blocker 1）
+
+runtime 的 `client_id_missing` 之所以會發生，是因為 build 沒把 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`（`EXPO_PUBLIC_*` 於打包時 inline）帶進 App。修正：
+
+- **EAS profiles**（`eas.json`）：`development` / `preview` / `production` 皆加上 `"environment"`，讓 EAS 載入該環境的**公開** env var（含 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`，此為公開 OAuth client id，非 secret）。PM 需在對應 EAS environment 設定此公開值。
+- **Android CI build**（`.github/workflows/build-android.yml`）：prebuild 與 gradle 步驟從 GitHub secret 注入 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`，並設 `ASSERT_GOOGLE_WEB_CLIENT=1`。
+- **build-time fail-closed 斷言**（`app.config.js`）：Android build（`EAS_BUILD_PLATFORM=android` 或 `ASSERT_GOOGLE_WEB_CLIENT=1`）若缺此值即 **build 失敗**，把「靜默的 runtime 登入失敗」變成「明顯的 build 失敗」。iOS / web export / 本機 `expo start` 不受影響。
+- **後端 audience 對齊**：`api/_lib/verify-token.ts` 的 `googleAudiences()` 已包含 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` 與 `GOOGLE_WEB_CLIENT_ID`，故 aud=Web client 的 Android token 直接被接受（後端另需在 Vercel 專案 env 設定同一 Web client id）。
+
 ## 建置需求（原生模組）
 
 - `@react-native-google-signin/google-signin` 是原生模組：**不能用 Expo Go**，需 dev-client 或 EAS build；加套件後必須**重新 build**（JS OTA 不會帶入原生設定）。
-- library 在 Android 端透過 autolinking 納入，Credential Manager 不需額外 URL scheme。**未加該套件的 Expo config plugin**：其 plugin 主要作用是替 iOS 註冊 GoogleSignin URL scheme，而本專案 iOS 走 `expo-auth-session`，不使用該原生 library；為避免更動 / 退化既有 iOS 設定，暫不引入 plugin。日後若要讓 iOS 也改用原生 library，再加 plugin 並帶入 `iosUrlScheme`（見 `Auth-Google-Login-Design.md` 交付 E）。
-- import 為 **lazy dynamic import**，且只在 Android 分支呼叫，故不進入 web / iOS bundle。
+- library 在 Android 端透過 autolinking 納入，classic Google Sign-In 不需額外 URL scheme。**未加該套件的 Expo config plugin**：其 plugin 主要作用是替 iOS 註冊 GoogleSignin URL scheme，而本專案 iOS 走 `expo-auth-session`，不使用該原生 library；為避免更動 / 退化既有 iOS 設定，暫不引入 plugin。日後若要讓 iOS 也改用原生 library，再加 plugin 並帶入 `iosUrlScheme`（見 `Auth-Google-Login-Design.md` 交付 E）。
+- import 為 **lazy dynamic import**，且只在 Android 分支（`obtainGoogleNativeIdTokenAndroid` / `signOutNativeGoogle`）呼叫。**準確說法（DIC-920 CR 修正）**：這是 *runtime* 保證 —— iOS / web 執行路徑永遠不會 `import()` 該原生模組，因此不會在 iOS/web 上載入或崩潰；套件本身沒有 web 實作。但這**不等於**「bundler 一定會把它從 web export 中完全 tree-shake 掉」；先前文件宣稱「web export 不含 native package」並不精確，已更正。真正的保證是「iOS/web 不執行、不依賴該模組」，而非「打包器保證剔除」。
+
+## Replay 防護（classic 路徑無 nonce 的補償）
+
+classic `GoogleSignin.signIn()` 無法帶入 OIDC nonce，故 Android ID token 缺少 client 端一次性綁定。後端以**單次使用**補上（`api/_lib/token-replay.ts`）：`verifyProviderToken` 在**簽章 / claims 驗證通過後**，以 `SHA-256(idToken)` 為 key 呼叫 KV `SET NX EX`，TTL 綁定 token 的 `exp`。同一 token 第二次提交回 `TOKEN_REPLAYED`（401）。
+
+- **對 happy path 透明**：每次合法登入 / 綁定都會取得**全新** token（新 `iat`/`exp`），單次使用只會擋真正的重放，不影響正常登入或重試。
+- **fail-fast**：偽造 / 過期 token 在簽章或 claims 驗證階段就被拒，**不會**寫入 replay marker，也不觸碰 KV。
+- **並發安全**：`SET NX` 是原子操作，同一 token 兩個並發請求只有一個成功。
+- 涵蓋全 provider（Google web/iOS/Android + Apple），不只 Android。
+
+## 登出 / 換帳號（清除原生 SDK 狀態）
+
+classic `GoogleSignin` 會快取上次登入的帳號。若登出時不清，returning user 無法選第二個 Gmail（第二帳號流程會卡在同一帳號）。因此 `authStore.logout()` 與帳號刪除成功後都會呼叫 `signOutNativeGoogle()`：
+
+- Android-only、lazy import，best-effort：server session 才是權威，SDK 清除失敗（模組不存在 / 無快取帳號）**永不**讓登出報錯。
+- iOS / web 為 no-op，且不 import 原生模組。
+- 覆蓋測試：`scripts/test-google-signout.cjs`。
 
 ## SHA-1 / Play App Signing（最常被漏）
 

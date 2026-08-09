@@ -37,6 +37,9 @@ export interface VerifiedIdentity {
   email?: string;
   name?: string;
   picture?: string;
+  // ID token `exp` (epoch seconds). Carried through from verification so the
+  // single-use replay guard can bound its marker's TTL to the token's lifetime.
+  expiresAt?: number;
 }
 
 export interface StoredUser {
@@ -85,6 +88,7 @@ export interface PublicUser {
 export type IdentityErrorCode =
   | 'INVALID_TOKEN'
   | 'TOKEN_EXPIRED'
+  | 'TOKEN_REPLAYED'
   | 'IDENTITY_ALREADY_LINKED'
   | 'SAME_PROVIDER_ALREADY_LINKED'
   | 'CANNOT_UNLINK_LAST_METHOD'
@@ -99,6 +103,7 @@ export type IdentityErrorCode =
 const STATUS_BY_CODE: Record<IdentityErrorCode, number> = {
   INVALID_TOKEN: 401,
   TOKEN_EXPIRED: 401,
+  TOKEN_REPLAYED: 401,
   IDENTITY_ALREADY_LINKED: 409,
   SAME_PROVIDER_ALREADY_LINKED: 409,
   CANNOT_UNLINK_LAST_METHOD: 409,

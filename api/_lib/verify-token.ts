@@ -183,9 +183,10 @@ async function verify(
 function googleAudiences(): string[] {
   // A Google ID token's `aud` is the OAuth client that obtained it: the Web
   // client for browser sign-in, the iOS client for native iOS sign-in. Native
-  // Android Google Sign-In (Credential Manager) is configured with the Web
-  // (server) client id, so an Android-issued token also carries the Web-client
-  // aud and is already covered above. The dedicated Android OAuth client id is
+  // Android Google Sign-In (classic play-services-auth) is configured with the
+  // Web (server) client id, so an Android-issued token also carries the
+  // Web-client aud and is already covered above. The dedicated Android OAuth
+  // client id is
   // additionally accepted as defense-in-depth in case a build ever mints a token
   // audienced directly to it. Accepting all so one backend verifies web + native
   // iOS + native Android logins.
@@ -217,6 +218,7 @@ export async function verifyGoogleIdToken(idToken: string, nonce?: string): Prom
     email: payload.email,
     name: payload.name,
     picture: payload.picture,
+    expiresAt: payload.exp,
   };
 }
 
@@ -264,5 +266,6 @@ export async function verifyAppleIdToken(idToken: string, nonce?: string): Promi
     subject: payload.sub,
     email: payload.email,
     name: payload.name,
+    expiresAt: payload.exp,
   };
 }
