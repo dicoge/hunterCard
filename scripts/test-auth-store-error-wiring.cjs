@@ -18,90 +18,85 @@
  * store→gate wiring at the source level (LoginScreen renders the store error;
  * AppNavigator mounts LoginScreen) so a future refactor can't silently reroute
  * the gate around the safe mapping.
+ *
+ * IMPLEMENTATION NOTE (DIC-934): this test loads the real .ts modules via Node's
+ * built-in type stripping + synchronous module hooks, NOT the standalone
+ * `typescript` transpiler. The earlier `ts.transpileModule` variant pulled the
+ * whole `typescript` compiler into this process, and on the CI Linux runner its
+ * regexp compilation aborted the process (`RegExpCompiler Allocation failed`,
+ * exit 134) before any assertion ran. The stripping path here compiles no such
+ * regexp and keeps the process bounded, while still exercising the real store.
+ * The test's own assertions use plain string checks (no `RegExp`) on purpose.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const Module = require('node:module');
-const ts = require('typescript');
 
 const ROOT = path.resolve(__dirname, '..');
-const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-store-wiring-'));
 
-function compileTs(relPath) {
-  const input = path.join(ROOT, relPath);
-  const output = path.join(outDir, relPath).replace(/\.ts$/, '.js');
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  const compiled = ts.transpileModule(fs.readFileSync(input, 'utf8'), {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-      esModuleInterop: true,
-    },
-    fileName: input,
-  });
-  fs.writeFileSync(output, compiled.outputText);
-  return output;
-}
+// Mutable box the mocked authService throws from. Kept on globalThis because the
+// mock module bodies below are provided to the loader as source strings and run
+// in this same realm — they read the live value at throw time.
+globalThis.__authStoreWiringMock = { signInError: null };
 
-// Mock authService: only signInWithProvider matters for these tests; it throws
-// whatever the current case configures. The other named exports authStore
-// destructures must exist so the module import doesn't blow up.
-const MOCK = { signInError: null };
-const mockAuthServicePath = path.join(outDir, 'mock-authService.js');
-fs.writeFileSync(
-  mockAuthServicePath,
-  `const MOCK = require(${JSON.stringify(path.join(outDir, 'mock-state.js'))});
-module.exports = {
-  signInWithProvider: async () => { throw MOCK.signInError; },
-  linkProvider: async () => { throw new Error('unused'); },
-  unlinkProvider: async () => { throw new Error('unused'); },
-  deleteAccount: async () => { throw new Error('unused'); },
-  signOutNativeGoogle: async () => {},
-  validateSession: async () => { throw new Error('unused'); },
-};
-`,
-);
-fs.writeFileSync(
-  path.join(outDir, 'mock-state.js'),
-  `module.exports = ${JSON.stringify(MOCK)};`,
-);
-// Re-point MOCK to the live required object so mutations are visible in the mock.
-const liveMock = require(path.join(outDir, 'mock-state.js'));
+// Mock authService: only signInWithProvider matters (login failure path); the
+// other named exports the store destructures must exist so its import resolves.
+const MOCK_AUTH_SERVICE = `
+export const signInWithProvider = async () => { throw globalThis.__authStoreWiringMock.signInError; };
+export const linkProvider = async () => { throw new Error('unused'); };
+export const unlinkProvider = async () => { throw new Error('unused'); };
+export const deleteAccount = async () => { throw new Error('unused'); };
+export const signOutNativeGoogle = async () => {};
+export const validateSession = async () => { throw new Error('unused'); };
+`;
 
-// Mock platform storage: an in-memory no-op is enough; the store never persists
-// anything meaningful in this test and rehydration finds nothing.
-const mockStoragePath = path.join(outDir, 'mock-storage.js');
-fs.writeFileSync(
-  mockStoragePath,
-  `module.exports = { __esModule: true, default: { getItem: async () => null, setItem: async () => {}, removeItem: async () => {} } };`,
-);
+// Mock platform storage: in-memory no-op. persist reads getItem once on init and
+// finds nothing, so the store starts unauthenticated and never persists here.
+const MOCK_STORAGE = `export default { getItem: async () => null, setItem: async () => {}, removeItem: async () => {} };`;
 
-const authErrorMessagesJs = compileTs('src/services/authErrorMessages.ts');
-const authStoreJs = compileTs('src/store/authStore.ts');
+// Mock the types module: authStore imports { HoloUser, AuthProvider, UserRole }
+// as VALUES-looking bindings, but they are type-only. Node's type stripping
+// leaves the import in place, so the referenced names must exist as (unused)
+// runtime exports or the ESM binding check fails. They are never read.
+const MOCK_TYPES = `export const HoloUser = undefined; export const AuthProvider = undefined; export const UserRole = undefined;`;
 
-// Redirect the store's relative deps to our mocks / compiled pure module, and
-// resolve bare deps (zustand, react) from the repo's node_modules since the
-// compiled files live in a tmp dir outside the tree.
-const origResolve = Module._resolveFilename;
-Module._resolveFilename = function (request, parent, ...rest) {
-  if (request === '../services/authService') return mockAuthServicePath;
-  if (request === '../services/authErrorMessages') return authErrorMessagesJs;
-  if (request === '../stores/storage') return mockStoragePath;
-  if (!request.startsWith('.') && !path.isAbsolute(request)) {
-    try {
-      return require.resolve(request, { paths: [ROOT] });
-    } catch {
-      /* fall through to default */
+// Synchronous resolve/load hooks (Node >=22.15): redirect the store's relative
+// deps to the in-memory mocks, resolve the remaining extensionless relative
+// imports (e.g. ../services/authErrorMessages) to their real .ts files, and let
+// bare deps (zustand) fall through to normal node_modules resolution.
+Module.registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.endsWith('/services/authService')) {
+      return { url: 'mock:///authService', shortCircuit: true };
     }
-  }
-  return origResolve.call(this, request, parent, ...rest);
-};
+    if (specifier.endsWith('/stores/storage')) {
+      return { url: 'mock:///storage', shortCircuit: true };
+    }
+    if (specifier.endsWith('/types/auth')) {
+      return { url: 'mock:///types-auth', shortCircuit: true };
+    }
+    if (specifier.startsWith('.') && !path.extname(specifier) && context.parentURL) {
+      const baseDir = path.dirname(new URL(context.parentURL).pathname);
+      const candidate = path.resolve(baseDir, `${specifier}.ts`);
+      if (fs.existsSync(candidate)) {
+        return nextResolve(`file://${candidate}`, context);
+      }
+    }
+    return nextResolve(specifier, context);
+  },
+  load(url, context, nextLoad) {
+    if (url === 'mock:///authService') return { format: 'module', source: MOCK_AUTH_SERVICE, shortCircuit: true };
+    if (url === 'mock:///storage') return { format: 'module', source: MOCK_STORAGE, shortCircuit: true };
+    if (url === 'mock:///types-auth') return { format: 'module', source: MOCK_TYPES, shortCircuit: true };
+    return nextLoad(url, context);
+  },
+});
 
-let useAuthStore;
-try {
-  ({ useAuthStore } = require(authStoreJs));
+const liveMock = globalThis.__authStoreWiringMock;
+
+(async () => {
+  const { useAuthStore } = await import(`file://${path.join(ROOT, 'src/store/authStore.ts')}`);
 
   async function driveLogin(method, signInError) {
     liveMock.signInError = signInError;
@@ -123,8 +118,10 @@ try {
     };
     const shown = await driveLogin('loginWithGoogle', leaky);
     assert.ok(shown, 'a backend 500 must still surface SOME error banner');
-    assert.ok(!/eyJhbGci|id_token|alice@example\.com|secret/.test(shown),
-      `error must not echo the raw message, got: ${shown}`);
+    for (const secret of ['eyJhbGci', 'id_token', 'alice@example.com', 'secret']) {
+      assert.ok(!shown.includes(secret),
+        `error must not echo the raw message (leaked "${secret}"), got: ${shown}`);
+    }
     // 500 → friendly server-error copy.
     assert.equal(shown, 'Google 登入服務暫時無法使用（伺服器錯誤），請稍後再試。');
   }
@@ -133,7 +130,7 @@ try {
   // maps to the safe default, not the raw string.
   async function testRawNetworkErrorMapped() {
     const shown = await driveLogin('loginWithGoogle', new TypeError('Network request failed'));
-    assert.ok(!/Network request failed/.test(shown),
+    assert.ok(!shown.includes('Network request failed'),
       `error must not echo the raw network message, got: ${shown}`);
     assert.equal(shown, '無法完成 Google 登入，請稍後再試。');
   }
@@ -161,23 +158,24 @@ try {
       name: 'AuthError', code: 'redirect_uri_mismatch', status: 400,
       message: 'raw apple redirect detail',
     });
-    assert.ok(!/raw apple redirect detail/.test(shown), `must not echo raw, got: ${shown}`);
+    assert.ok(!shown.includes('raw apple redirect detail'), `must not echo raw, got: ${shown}`);
     assert.equal(shown, 'Apple 登入設定不符（redirect 網址未授權），請稍後再試或聯絡我們。');
   }
 
   // Source-level wiring guard: the safe string is only meaningful if the gate
   // actually renders the store `error`. Assert LoginScreen reads `error` from
   // the store and renders it, does NOT map/echo a raw message itself, and that
-  // AppNavigator mounts LoginScreen as the unauthenticated gate.
+  // AppNavigator mounts LoginScreen as the unauthenticated gate. Plain string
+  // checks — deliberately no RegExp.
   function testGateWiringAtSource() {
     const login = fs.readFileSync(path.join(ROOT, 'src/screens/LoginScreen.tsx'), 'utf8');
-    assert.ok(/useAuthStore\(\)/.test(login), 'LoginScreen must consume useAuthStore');
-    assert.ok(/\berror\b/.test(login) && /\{error\}/.test(login),
+    assert.ok(login.includes('useAuthStore()'), 'LoginScreen must consume useAuthStore');
+    assert.ok(login.includes('error') && login.includes('{error}'),
       'LoginScreen must render the store error');
-    assert.ok(!/err\.message|friendlyAuthErrorMessage/.test(login),
+    assert.ok(!login.includes('err.message') && !login.includes('friendlyAuthErrorMessage'),
       'LoginScreen must NOT map/echo errors itself — the store owns safe mapping');
     const nav = fs.readFileSync(path.join(ROOT, 'src/navigation/AppNavigator.tsx'), 'utf8');
-    assert.ok(/component=\{LoginScreen\}/.test(nav),
+    assert.ok(nav.includes('component={LoginScreen}'),
       'AppNavigator must mount LoginScreen as the unauthenticated gate');
   }
 
@@ -190,19 +188,10 @@ try {
   ];
   const syncTests = [testGateWiringAtSource];
 
-  (async () => {
-    for (const t of asyncTests) { await t(); console.log(`✓ ${t.name}`); }
-    for (const t of syncTests) { t(); console.log(`✓ ${t.name}`); }
-    console.log(`\n${asyncTests.length + syncTests.length} auth-store error-wiring tests passed`);
-  })().catch((e) => {
-    console.error(e);
-    process.exitCode = 1;
-  }).finally(() => {
-    Module._resolveFilename = origResolve;
-    fs.rmSync(outDir, { recursive: true, force: true });
-  });
-} catch (e) {
-  Module._resolveFilename = origResolve;
-  fs.rmSync(outDir, { recursive: true, force: true });
-  throw e;
-}
+  for (const t of asyncTests) { await t(); console.log(`✓ ${t.name}`); }
+  for (const t of syncTests) { t(); console.log(`✓ ${t.name}`); }
+  console.log(`\n${asyncTests.length + syncTests.length} auth-store error-wiring tests passed`);
+})().catch((e) => {
+  console.error(e);
+  process.exitCode = 1;
+});
