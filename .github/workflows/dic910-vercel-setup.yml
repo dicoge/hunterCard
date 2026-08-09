@@ -92,7 +92,27 @@ jobs:
                 console.log(httpLine);
               });
             '
-          echo "-- expected VERCEL_PROJECT_ID secret matches one of the above? (compare manually) --"
+          echo "-- Does VERCEL_PROJECT_ID secret match the holocard-hunter project id? --"
+          curl -sS -w '\nHTTP %{http_code}\n' --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/holocard-hunter" \
+          | node -e '
+              let inp = "";
+              process.stdin.on("data", d => inp += d);
+              process.stdin.on("end", () => {
+                const lines = inp.trim().split("\n");
+                const httpLine = lines.pop();
+                try {
+                  const d = JSON.parse(lines.join("\n"));
+                  console.log("by-name project id:", d.id, "name:", d.name);
+                  console.log("VERCEL_PROJECT_ID secret matches by-name id:", d.id === process.env.VERCEL_PROJECT_ID);
+                } catch (e) { console.log("parse failed", e.message); }
+                console.log(httpLine);
+              });
+            '
+          echo "-- VERCEL_PROJECT_ID secret length (no value) --"
+          echo -n "${VERCEL_PROJECT_ID}" | wc -c
+          echo "-- VERCEL_ORG_ID secret length (no value) --"
+          echo -n "${VERCEL_ORG_ID}" | wc -c
 
       - name: Detect account scope (team vs personal) and confirm project
         env:
