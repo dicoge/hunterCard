@@ -171,7 +171,7 @@ jobs:
             --oauth2-bearer "${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-raw '{"name":"holocard-hunter-production","ref":"main"}' \
-            "https://api.vercel.com/v1/integrations/deploy/${PROJECT_ID}/hooks?teamId=${VERCEL_ORG_ID}")
+            "https://api.vercel.com/v1/integrations/deploy/${PROJECT_ID}?teamId=${VERCEL_ORG_ID}")
           echo "Create deploy hook HTTP status: $code"
           cat /tmp/hook_resp.json
           hook_url=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/hook_resp.json","utf8")).url' 2>/dev/null || echo "")
