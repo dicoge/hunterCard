@@ -159,7 +159,7 @@ jobs:
             exit 1
           fi
 
-      - name: Create deploy hook
+      - name: Trigger production redeploy
         if: ${{ inputs.redeploy }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -167,37 +167,48 @@ jobs:
           PROJECT_ID: ${{ env.PROJECT_ID }}
         run: |
           set -euo pipefail
-          code=$(curl -sS -o /tmp/hook_resp.json -w '%{http_code}' -X POST \
-            --oauth2-bearer "${VERCEL_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data-raw '{"name":"holocard-hunter-production","ref":"main"}' \
-            "https://api.vercel.com/v1/integrations/deploy/${PROJECT_ID}?teamId=${VERCEL_ORG_ID}")
-          echo "Create deploy hook HTTP status: $code"
-          cat /tmp/hook_resp.json
-          hook_url=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/hook_resp.json","utf8")).url' 2>/dev/null || echo "")
-          if [ -n "$hook_url" ]; then
-            echo "DEPLOY_HOOK_URL=$hook_url" >> "$GITHUB_ENV"
-          fi
-
-      - name: Trigger production redeploy
-        if: ${{ inputs.redeploy }}
-        env:
-          DEPLOY_HOOK_URL: ${{ env.DEPLOY_HOOK_URL }}
-          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
-        run: |
-          set -euo pipefail
-          hook="${DEPLOY_HOOK_URL:-${VERCEL_DEPLOY_HOOK}}"
-          if [ -z "$hook" ]; then
-            echo "::error::No deploy hook available — cannot trigger redeploy."
+          # Both the static VERCEL_DEPLOY_HOOK secret (404, stale) and the
+          # dynamic /v1/integrations/deploy hook-creation endpoint (404, not
+          # the right path) turned out not to work. Redeploy via the
+          # documented Vercel REST API instead: look up the latest
+          # production deployment, then POST /v13/deployments with that
+          # deploymentId + forceNew=1 to force a fresh build — required so
+          # the just-set EXPO_PUBLIC_* build-time env vars are actually
+          # baked into the new client bundle.
+          latest=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_ORG_ID}")
+          uid=$(echo "$latest" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            (d.deployments && d.deployments[0] && d.deployments[0].uid) || ""
+          ')
+          name=$(echo "$latest" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            (d.deployments && d.deployments[0] && d.deployments[0].name) || ""
+          ')
+          if [ -z "$uid" ]; then
+            echo "::error::Could not find a latest production deployment to redeploy from."
             exit 1
           fi
-          code=$(curl -sS -o /tmp/hook_trigger.json -w '%{http_code}' -X POST "$hook")
-          echo "Deploy hook HTTP status: $code"
-          cat /tmp/hook_trigger.json
+          echo "Redeploying from deployment: $uid"
+          code=$(curl -sS -o /tmp/redeploy_resp.json -w '%{http_code}' -X POST \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-raw "$(node -e '
+              console.log(JSON.stringify({ name: process.argv[1], deploymentId: process.argv[2], target: "production" }));
+            ' "$name" "$uid")" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_ORG_ID}")
+          echo "Redeploy HTTP status: $code"
+          cat /tmp/redeploy_resp.json
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Failed to trigger redeploy (status $code)"
+            exit 1
+          fi
+          url=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/redeploy_resp.json","utf8")).url || ""')
+          echo "New deployment URL: $url"
 
       - name: Wait for deployment to go live
         if: ${{ inputs.redeploy }}
-        run: sleep 90
+        run: sleep 120
 
       - name: Verify public HTTP endpoints
         run: |
