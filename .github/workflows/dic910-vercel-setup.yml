@@ -170,8 +170,11 @@ jobs:
           code=$(curl -sS -o /tmp/hook_resp.json -w '%{http_code}' -X POST \
             --oauth2-bearer "${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data-raw '{"name":"holocard-hunter-production","ref":"main"}' \
-            "https://api.vercel.com/v1/integrations/deploy/${PROJECT_ID}?teamId=${VERCEL_ORG_ID}")
+            --data-raw "$(node -e '
+              const id = process.argv[1];
+              console.log(JSON.stringify({name:"holocard-hunter-production",projectId:id}));
+            ' "${PROJECT_ID}")" \
+            "https://api.vercel.com/v1/integrations/deploy?teamId=${VERCEL_ORG_ID}")
           echo "Create deploy hook HTTP status: $code"
           cat /tmp/hook_resp.json
           hook_url=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/hook_resp.json","utf8")).url' 2>/dev/null || echo "")
