@@ -136,6 +136,29 @@ async function testGoogleIosAudienceAccepted() {
   assert.equal(identity.subject, 'google-sub-1');
 }
 
+async function testGoogleAndroidWebClientAudienceAccepted() {
+  clearAuthEnv();
+  // Native Android Google Sign-In configures the library with the Web client id,
+  // so an Android-issued token carries the Web-client aud and must verify with
+  // only the Web client configured (DIC-665).
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'web-client.apps.googleusercontent.com';
+  const identity = await verify.verifyGoogleIdToken(
+    googleToken('web-client.apps.googleusercontent.com'),
+  );
+  assert.equal(identity.subject, 'google-sub-1');
+}
+
+async function testGoogleAndroidClientAudienceAccepted() {
+  clearAuthEnv();
+  // Defense-in-depth: a token audienced directly to the dedicated Android OAuth
+  // client id is also accepted when that client id is configured (DIC-665).
+  process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID = 'android-client.apps.googleusercontent.com';
+  const identity = await verify.verifyGoogleIdToken(
+    googleToken('android-client.apps.googleusercontent.com'),
+  );
+  assert.equal(identity.subject, 'google-sub-1');
+}
+
 async function testGoogleWrongAudienceRejected() {
   clearAuthEnv();
   process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'web-client.apps.googleusercontent.com';
@@ -224,6 +247,8 @@ async function testNonNumericExpRejected() {
   const tests = [
     testGoogleWebAudienceAccepted,
     testGoogleIosAudienceAccepted,
+    testGoogleAndroidWebClientAudienceAccepted,
+    testGoogleAndroidClientAudienceAccepted,
     testGoogleWrongAudienceRejected,
     testAppleNativeBundleIdAcceptedWithoutAppleSetup,
     testAppleWebServicesIdRejectedWhenWebDisabled,

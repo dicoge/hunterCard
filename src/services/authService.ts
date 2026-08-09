@@ -6,6 +6,7 @@ import {
   LinkedIdentity,
   HoloUser,
 } from '../types/auth';
+import { appleLoginSurface, googleLoginSurface } from './authStrategy';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -212,6 +213,84 @@ async function obtainGoogleNativeIdToken(
   return { idToken, nonce };
 }
 
+// Minimal structural view of @react-native-google-signin/google-signin. The
+// module is imported dynamically (below) and typed against this local interface
+// so it never enters the web/iOS bundle and so tsc/CI don't hard-depend on the
+// package's evolving type surface. v13+ returns a discriminated response
+// ({ type: 'success', data } | { type: 'cancelled' }); older builds throw on
+// cancel — both are handled.
+interface NativeGoogleUser {
+  idToken?: string | null;
+}
+interface NativeGoogleSignInResponse {
+  type?: string;
+  data?: NativeGoogleUser | null;
+  idToken?: string | null;
+}
+interface NativeGoogleSignInModule {
+  GoogleSignin: {
+    configure(options: { webClientId: string; offlineAccess?: boolean }): void;
+    hasPlayServices(options?: { showPlayServicesUpdateDialog?: boolean }): Promise<boolean>;
+    signIn(): Promise<NativeGoogleSignInResponse>;
+  };
+}
+
+function isCancelledError(err: unknown): boolean {
+  const code = String((err as { code?: unknown })?.code ?? '');
+  // SIGN_IN_CANCELLED (Credential Manager), 12501 (legacy GoogleSignInStatusCodes),
+  // -5 (iOS). Match defensively across library versions.
+  return code === 'SIGN_IN_CANCELLED' || code === '12501' || code === '-5';
+}
+
+// Native Android Google (DIC-665): Credential Manager / Google Sign-In. We
+// configure the library with the Web (server) OAuth client id so the returned
+// ID token's `aud` is that Web client — exactly the audience the backend already
+// verifies — and forward it to the SAME server verify path used by web and iOS.
+// The Android OAuth client (package `com.dicoge.holohunter` + signing-cert SHA-1)
+// only authorizes the native flow in Google Console; it is not passed here and is
+// never trusted client-side. The module is imported lazily so it stays out of the
+// web/iOS bundle (mirrors the iOS-only expo-apple-authentication import).
+async function obtainGoogleNativeIdTokenAndroid(): Promise<{ idToken: string; nonce?: string }> {
+  if (!GOOGLE_CLIENT_ID) {
+    throw new AuthError(
+      '尚未設定 Google Web client ID（EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID）；Android 原生登入無法取得可被後端驗證的 ID token。',
+      500,
+      'client_id_missing',
+    );
+  }
+  const mod = (await import(
+    '@react-native-google-signin/google-signin'
+  )) as unknown as NativeGoogleSignInModule;
+  const { GoogleSignin } = mod;
+  GoogleSignin.configure({ webClientId: GOOGLE_CLIENT_ID });
+
+  try {
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  } catch {
+    throw new AuthError(
+      '此裝置的 Google Play 服務不可用或需更新，無法使用 Google 登入。',
+      400,
+      'play_services_unavailable',
+    );
+  }
+
+  let response: NativeGoogleSignInResponse;
+  try {
+    response = await GoogleSignin.signIn();
+  } catch (err) {
+    if (isCancelledError(err)) throw new AuthError('已取消登入', 400, 'cancel');
+    throw new AuthError('Google 登入失敗，請再試一次。', 400, 'google_failed');
+  }
+
+  // v13+ signals cancellation as a value, not a throw.
+  if (response?.type === 'cancelled') {
+    throw new AuthError('已取消登入', 400, 'cancel');
+  }
+  const idToken = response?.data?.idToken ?? response?.idToken;
+  if (!idToken) throw new AuthError('Google 未回傳 id_token', 400, 'no_id_token');
+  return { idToken };
+}
+
 // Native iOS Apple: OS-native Sign in with Apple returns an identityToken (a
 // signed JWT, aud = app bundle id) that we forward to the backend for RS256
 // verification — no client-local trust. `expo-apple-authentication` is imported
@@ -308,21 +387,24 @@ async function obtainWebIdToken(
   return { idToken, nonce };
 }
 
-// Runs the provider prompt on the right surface (native iOS vs web) and returns
-// a provider ID token for server-side verification. Identity resolution always
-// lives on the server — this only obtains the token.
+// Runs the provider prompt on the right surface (native iOS, native Android, or
+// web) and returns a provider ID token for server-side verification. Identity
+// resolution always lives on the server — this only obtains the token. The
+// surface is decided by the pure helpers in authStrategy (unit-tested) so the
+// Android native path can never silently regress to the browser PKCE fallback.
 async function obtainProviderIdToken(
   provider: AuthProvider,
   loginHint?: string,
-): Promise<{ idToken: string; nonce: string }> {
+): Promise<{ idToken: string; nonce?: string }> {
   if (provider === 'apple') {
-    if (isIOS) return obtainAppleNativeIdToken();
-    if (!APPLE_WEB_ENABLED) {
-      throw new AuthError(APPLE_DISABLED_MESSAGE, 400, 'apple_disabled');
-    }
+    const surface = appleLoginSurface(Platform.OS, APPLE_WEB_ENABLED);
+    if (surface === 'native-ios') return obtainAppleNativeIdToken();
+    if (surface === 'disabled') throw new AuthError(APPLE_DISABLED_MESSAGE, 400, 'apple_disabled');
     return obtainWebIdToken('apple', loginHint);
   }
-  if (isIOS) return obtainGoogleNativeIdToken(loginHint);
+  const surface = googleLoginSurface(Platform.OS);
+  if (surface === 'native-ios') return obtainGoogleNativeIdToken(loginHint);
+  if (surface === 'native-android') return obtainGoogleNativeIdTokenAndroid();
   return obtainWebIdToken('google', loginHint);
 }
 
