@@ -50,6 +50,14 @@ cd scripts
 node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
 cd ..
 
+# 2a. Regenerate public/data/database.json (native asset) from data/database.json
+#     Must run after build-database.js — fail if the generator fails (DIC-923).
+echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
+if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
+  exit 1
+fi
+
 # 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)
 echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
 cd scripts
@@ -82,10 +90,11 @@ node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price
 cd ..
 
 # 3. Check if data changed
-if git diff --stat -- 'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' | grep -q .; then
+GIT_DIFF_FILES='data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
+if git diff --stat -- $GIT_DIFF_FILES | grep -q .; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
-  EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json"
+  EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json public/data/database.json"
   [ -f data/yt-stats-history.json ] && EXISTING_DATA="$EXISTING_DATA data/yt-stats-history.json"
   for dir in data/yt-subscribers data/news-sentiment data/trends; do
     [ -d "$dir" ] && EXISTING_DATA="$EXISTING_DATA $dir/*.json"

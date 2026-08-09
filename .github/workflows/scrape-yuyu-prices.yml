@@ -51,10 +51,13 @@ jobs:
           fi
           echo "✅ Validation passed"
 
+      - name: Generate native database asset
+        run: node scripts/generate-native-database.mjs
+
       - name: Check data changes
         id: check
         run: |
-          if git diff --stat -- 'data/database.json' 'data/images/' | grep -q .; then
+          if git diff --stat -- 'data/database.json' 'data/images/' 'public/data/database.json' | grep -q .; then
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "Data has changed"
           else
@@ -67,7 +70,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/database.json data/images/
+          git add data/database.json data/images/ public/data/database.json
           git diff --staged --quiet || git commit -m "chore: update database $(date +%Y-%m-%d)"
           git push origin main
 
