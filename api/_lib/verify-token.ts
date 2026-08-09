@@ -182,8 +182,13 @@ async function verify(
 
 function googleAudiences(): string[] {
   // A Google ID token's `aud` is the OAuth client that obtained it: the Web
-  // client for browser sign-in, the iOS client for native sign-in. Accept both
-  // so a single backend verifies web and native iOS logins.
+  // client for browser sign-in, the iOS client for native iOS sign-in. Native
+  // Android Google Sign-In (Credential Manager) is configured with the Web
+  // (server) client id, so an Android-issued token also carries the Web-client
+  // aud and is already covered above. The dedicated Android OAuth client id is
+  // additionally accepted as defense-in-depth in case a build ever mints a token
+  // audienced directly to it. Accepting all so one backend verifies web + native
+  // iOS + native Android logins.
   return [
     process.env.GOOGLE_WEB_CLIENT_ID,
     process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
@@ -191,6 +196,8 @@ function googleAudiences(): string[] {
     process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
     process.env.GOOGLE_IOS_CLIENT_ID,
     process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    process.env.GOOGLE_ANDROID_CLIENT_ID,
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
   ].filter((v): v is string => Boolean(v));
 }
 

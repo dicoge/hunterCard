@@ -32,6 +32,12 @@ jobs:
       - name: Check TypeScript types
         run: npx tsc --noEmit
 
+      - name: Verify provider ID-token audience acceptance (DIC-665)
+        run: npm run test:verify-token
+
+      - name: Verify platform login-surface routing (DIC-665)
+        run: npm run test:auth-strategy
+
       - name: Verify buy-price version alignment (DIC-856)
         run: npm run test:buy-price
 
