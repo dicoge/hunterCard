@@ -162,20 +162,48 @@ jobs:
       - name: Trigger production redeploy
         if: ${{ inputs.redeploy }}
         env:
-          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
         run: |
           set -euo pipefail
-          if [ -z "${VERCEL_DEPLOY_HOOK}" ]; then
-            echo "::error::VERCEL_DEPLOY_HOOK secret is empty — cannot trigger redeploy."
+          # Find the latest production deployment and redeploy it so the new
+          # env vars are picked up in a fresh build (EXPO_PUBLIC_* values are
+          # baked in at build time, so just setting them isn't enough).
+          latest=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_ORG_ID}")
+          uid=$(echo "$latest" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            (d.deployments && d.deployments[0] && d.deployments[0].uid) || ""
+          ')
+          name=$(echo "$latest" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            (d.deployments && d.deployments[0] && d.deployments[0].name) || ""
+          ')
+          if [ -z "$uid" ]; then
+            echo "::error::Could not find a latest production deployment to redeploy from."
             exit 1
           fi
-          code=$(curl -sS -o /tmp/hook_resp.json -w '%{http_code}' -X POST "${VERCEL_DEPLOY_HOOK}")
-          echo "Deploy hook HTTP status: $code"
-          cat /tmp/hook_resp.json
+          echo "Redeploying from deployment: $uid"
+          code=$(curl -sS -o /tmp/redeploy_resp.json -w '%{http_code}' -X POST \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-raw "$(node -e '
+              console.log(JSON.stringify({ name: process.argv[1], deploymentId: process.argv[2], target: "production" }));
+            ' "$name" "$uid")" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_ORG_ID}")
+          echo "Redeploy HTTP status: $code"
+          cat /tmp/redeploy_resp.json
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Failed to trigger redeploy (status $code)"
+            exit 1
+          fi
+          url=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/redeploy_resp.json","utf8")).url || ""')
+          echo "New deployment URL: $url"
 
       - name: Wait for deployment to go live
         if: ${{ inputs.redeploy }}
-        run: sleep 90
+        run: sleep 120
 
       - name: Verify public HTTP endpoints
         run: |
