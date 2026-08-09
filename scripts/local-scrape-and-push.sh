@@ -96,9 +96,8 @@ if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
   exit 1
 fi
 
-# 3. Check if data changed
-GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)
-if git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .; then
+# 3. Check if data changed (delegates to _huntercard_diff_check – DIC-935 helper)
+if _huntercard_diff_check; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
   EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json public/data/database.json"
@@ -120,3 +119,25 @@ else
 fi
 
 echo "[$(date)] ✅ Done" >> "$LOG_FILE"
+
+# ===== DIC-935 HELPERS — callable by CI regression test =====
+# These functions are the single source of truth for the test.
+# _huntercard_diff_check IS called by the production code above.
+# Do NOT modify independently of the production pipeline logic.
+
+_huntercard_diff_check() {
+  GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)
+  git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .
+}
+
+_huntercard_pipeline_order() {
+  # Emits the expected pipeline step identifiers in execution order.
+  # Called ONLY by the CI test; not executed during production runs.
+  cat <<'HC_PIPELINE_END'
+build-database.js
+merge-buy-prices.js
+generate-native-database.mjs
+generate-native-database.mjs --check
+git push origin main
+HC_PIPELINE_END
+}
