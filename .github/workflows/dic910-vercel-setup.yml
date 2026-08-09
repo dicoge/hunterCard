@@ -12,9 +12,11 @@ name: DIC-910 Vercel Domain & Env Setup
 #   - trigger a production redeploy and verify HTTP 200 on the custom domain,
 #     /privacy, /support, /account-deletion
 #
-# Nothing here prints secret values. This workflow is a temporary, explicit
-# hand tool: keep it only as a manual-dispatch maintenance step, or delete it
-# once the domain/env wiring is confirmed stable.
+# Nothing here prints secret values. curl's --oauth2-bearer flag is used
+# instead of a hand-built header so the token is passed directly to curl.
+# This workflow is a temporary, explicit hand tool: keep it only as a
+# manual-dispatch maintenance step, or delete it once the domain/env wiring
+# is confirmed stable.
 #
 # Required repo secrets:
 #   VERCEL_TOKEN, VERCEL_PROJECT_ID, VERCEL_ORG_ID (already present)
@@ -34,23 +36,39 @@ jobs:
     name: Configure Vercel domain + env
     runs-on: ubuntu-latest
     steps:
-      - name: Confirm target Vercel project
+      - name: Detect account scope (team vs personal) and confirm project
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           set -euo pipefail
-          resp=$(curl -sS -w '\n%{http_code}' \
-            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}" \
-            -H "Authorization: Bearer ${VERCEL_TOKEN}")
+          try_scope() {
+            # $1 = query suffix, e.g. "?teamId=xyz" or ""
+            curl -sS -w '\n%{http_code}' \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}$1"
+          }
+          # VERCEL_ORG_ID may be a team id or a personal account id; the
+          # `teamId` query param only works for actual teams, so try that
+          # first, then fall back to the bare (personal-account) call.
+          resp=$(try_scope "?teamId=${VERCEL_ORG_ID}")
           code=$(echo "$resp" | tail -n1)
-          body=$(echo "$resp" | sed '$d')
-          echo "HTTP status: $code"
-          if [ "$code" != "200" ]; then
-            echo "::error::Could not read Vercel project (status $code). Aborting before any writes."
-            exit 1
+          if [ "$code" = "200" ]; then
+            echo "Resolved scope: team (teamId=${VERCEL_ORG_ID})"
+            echo "TEAM_QS=teamId=${VERCEL_ORG_ID}" >> "$GITHUB_ENV"
+          else
+            resp=$(try_scope "")
+            code=$(echo "$resp" | tail -n1)
+            if [ "$code" = "200" ]; then
+              echo "Resolved scope: personal account (no teamId)"
+              echo "TEAM_QS=" >> "$GITHUB_ENV"
+            else
+              echo "::error::Could not read Vercel project in either team or personal scope (last status $code). Aborting before any writes."
+              exit 1
+            fi
           fi
+          body=$(echo "$resp" | sed '$d')
           name=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).name')
           echo "Vercel project name: $name"
           echo "PROJECT_NAME=$name" >> "$GITHUB_ENV"
@@ -59,31 +77,30 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          TEAM_QS: ${{ env.TEAM_QS }}
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
+          qs() { [ -n "${TEAM_QS:-}" ] && echo "?${TEAM_QS}" || echo ""; }
           set_env_var() {
             key="$1"
             value="$2"
             # Remove any existing entries for this key on production+preview first,
             # so re-runs are idempotent instead of erroring on duplicates.
-            existing=$(curl -sS "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
-              -H "Authorization: Bearer ${VERCEL_TOKEN}")
+            existing=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env$(qs)")
             ids=$(echo "$existing" | node -pe '
               const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
               (d.envs||[]).filter(e => e.key === process.argv[1]).map(e => e.id).join("\n")
             ' "$key" 2>/dev/null || true)
             for id in $ids; do
               [ -z "$id" ] && continue
-              curl -sS -o /dev/null -X DELETE \
-                "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_ORG_ID}" \
-                -H "Authorization: Bearer ${VERCEL_TOKEN}"
+              curl -sS -o /dev/null -X DELETE --oauth2-bearer "${VERCEL_TOKEN}" \
+                "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}$(qs)"
             done
             code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST \
-              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
-              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
               -H "Content-Type: application/json" \
               --data-raw "$(node -e '
                 const key = process.argv[1];
@@ -92,7 +109,8 @@ jobs:
                   key, value, type: "encrypted",
                   target: ["production", "preview"],
                 }));
-              ' "$key" "$value")")
+              ' "$key" "$value")" \
+              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env$(qs)")
             echo "Set $key -> HTTP $code"
             if [ "$code" != "200" ] && [ "$code" != "201" ]; then
               echo "::error::Failed to set $key (status $code)"
@@ -107,11 +125,12 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          TEAM_QS: ${{ env.TEAM_QS }}
         run: |
           set -euo pipefail
-          curl -sS "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
-            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+          qs() { [ -n "${TEAM_QS:-}" ] && echo "?${TEAM_QS}" || echo ""; }
+          curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env$(qs)" \
           | node -e '
               const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
               const wanted = ["AUTH_SESSION_SECRET","KV_REST_API_URL","KV_REST_API_TOKEN"];
@@ -131,14 +150,15 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          TEAM_QS: ${{ env.TEAM_QS }}
         run: |
           set -euo pipefail
+          qs() { [ -n "${TEAM_QS:-}" ] && echo "?${TEAM_QS}" || echo ""; }
           code=$(curl -sS -o /tmp/domain_resp.json -w '%{http_code}' -X POST \
-            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/domains?teamId=${VERCEL_ORG_ID}" \
-            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data-raw '{"name":"holohunter.dicoge.com"}')
+            --data-raw '{"name":"holohunter.dicoge.com"}' \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/domains$(qs)")
           echo "Add-domain HTTP status: $code"
           cat /tmp/domain_resp.json
           # 200/201 = added, 409 = already attached to this project — both OK.
