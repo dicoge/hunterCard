@@ -112,22 +112,25 @@ try {
 // ======== P1: execute active production code through bash mocks ========
 
 const mockPrefix = [
-  'node() { echo "HC_STEP:node ${1##*/}$([ -n \"$2\" ] && echo \" $2\")" >&2; return 0; }',
-  'git() { case "$1" in push) echo "HC_STEP:git push origin main" >&2 ;; diff) echo "." ;; esac; return 0; }',
+  'HC_LOG=$(mktemp)',
+  'node() { echo "HC_STEP:node ${1##*/}$([ -n \"$2\" ] && echo \" $2\")" >> "$HC_LOG"; return 0; }',
+  'git() { case "$1" in push) echo "HC_STEP:git push origin main" >> "$HC_LOG" ;; diff) echo "." ;; esac; return 0; }',
   'mkdir() { return 0; }',
   'trap() { return 0; }',
-  'LOG_FILE=/dev/stdout',
   'set +e',
-  'exec 2>&1',
 ].join('\n');
 
-// Remove the initial cd line (depends on $0 which changes when run via bash -c)
-// and the LOG_FILE assignment (redirected to /dev/stdout in mock prefix)
+const mockEpilogue = '\ncat "$HC_LOG"\nrm -f "$HC_LOG"';
+
+// Remove the initial cd line (depends on $0 which changes when run via bash -c),
+// the LOG_FILE assignment (redirected to /dev/null by mock prefix),
+// and set -e (mock functions must control exit behavior)
 const cleanedActive = activeCode.
   replace(/^cd "\$\(dirname "\$0"\)\/\.\."$/m, '# cd overridden — test harness starts at repo root').
-  replace(/^LOG_FILE=.+$/m, '# LOG_FILE overridden to /dev/stdout by test harness');
+  replace(/^\s*LOG_FILE=.+$/m, 'LOG_FILE=/dev/null  # overridden by test harness').
+  replace(/^set -e$/m, 'set +e  # disabled by test harness');
 
-const mockScript = mockPrefix + '\n' + diffCheckFn + '\n' + cleanedActive;
+const mockScript = mockPrefix + '\n' + diffCheckFn + '\n' + cleanedActive + mockEpilogue;
 
 let mockOutput;
 try {
@@ -180,7 +183,7 @@ pass('P1: pipeline ordering verified via actual bash execution (no text matching
       '$1node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"\n$2'
     );
 
-  const negScript = mockPrefix + '\n' + diffCheckFn + '\n' + negActive;
+  const negScript = mockPrefix + '\n' + diffCheckFn + '\n' + negActive + mockEpilogue;
   let negOutput;
   try {
     negOutput = execFileSync('bash', ['-c', negScript], { cwd: repoRoot, encoding: 'utf-8' });
