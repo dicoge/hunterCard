@@ -36,6 +36,64 @@ jobs:
     name: Configure Vercel domain + env
     runs-on: ubuntu-latest
     steps:
+      - name: Diagnose token identity and accessible projects
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -uo pipefail
+          echo "-- /v2/user --"
+          curl -sS -w '\nHTTP %{http_code}\n' --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v2/user" \
+          | node -e '
+              let inp = "";
+              process.stdin.on("data", d => inp += d);
+              process.stdin.on("end", () => {
+                const lines = inp.trim().split("\n");
+                const httpLine = lines.pop();
+                try {
+                  const d = JSON.parse(lines.join("\n"));
+                  console.log("user id present:", !!(d.user && d.user.id));
+                  console.log("username:", d.user && d.user.username);
+                } catch (e) { console.log("parse failed", e.message); }
+                console.log(httpLine);
+              });
+            '
+          echo "-- /v2/teams (accessible teams) --"
+          curl -sS -w '\nHTTP %{http_code}\n' --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v2/teams" \
+          | node -e '
+              let inp = "";
+              process.stdin.on("data", d => inp += d);
+              process.stdin.on("end", () => {
+                const lines = inp.trim().split("\n");
+                const httpLine = lines.pop();
+                try {
+                  const d = JSON.parse(lines.join("\n"));
+                  for (const t of (d.teams||[])) console.log("team:", t.id, t.name || t.slug);
+                } catch (e) { console.log("parse failed", e.message); }
+                console.log(httpLine);
+              });
+            '
+          echo "-- /v9/projects (first 20, no teamId) --"
+          curl -sS -w '\nHTTP %{http_code}\n' --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects?limit=20" \
+          | node -e '
+              let inp = "";
+              process.stdin.on("data", d => inp += d);
+              process.stdin.on("end", () => {
+                const lines = inp.trim().split("\n");
+                const httpLine = lines.pop();
+                try {
+                  const d = JSON.parse(lines.join("\n"));
+                  for (const p of (d.projects||[])) console.log("project:", p.id, p.name);
+                } catch (e) { console.log("parse failed", e.message); }
+                console.log(httpLine);
+              });
+            '
+          echo "-- expected VERCEL_PROJECT_ID secret matches one of the above? (compare manually) --"
+
       - name: Detect account scope (team vs personal) and confirm project
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
