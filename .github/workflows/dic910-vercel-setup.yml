@@ -221,19 +221,44 @@ jobs:
             exit 1
           fi
 
+      - name: Create deploy hook
+        if: ${{ inputs.redeploy }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          TEAM_QS: ${{ env.TEAM_QS }}
+        run: |
+          set -euo pipefail
+          qs() { [ -n "${TEAM_QS:-}" ] && echo "?${TEAM_QS}" || echo ""; }
+          code=$(curl -sS -o /tmp/hook_resp.json -w '%{http_code}' -X POST \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-raw '{"name":"holocard-hunter-production","ref":"main"}' \
+            "https://api.vercel.com/v1/integrations/deploy/${VERCEL_PROJECT_ID}/hooks$(qs)")
+          echo "Create deploy hook HTTP status: $code"
+          cat /tmp/hook_resp.json
+          hook_url=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/hook_resp.json","utf8")).url' 2>/dev/null || echo "")
+          if [ -n "$hook_url" ]; then
+            echo "DEPLOY_HOOK_URL=$hook_url" >> "$GITHUB_ENV"
+            echo "Deploy hook created."
+          else
+            echo "::warning::Could not create deploy hook — will fall back to VERCEL_DEPLOY_HOOK secret."
+            echo "DEPLOY_HOOK_URL=${{ secrets.VERCEL_DEPLOY_HOOK }}" >> "$GITHUB_ENV"
+          fi
+
       - name: Trigger production redeploy
         if: ${{ inputs.redeploy }}
         env:
-          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+          DEPLOY_HOOK_URL: ${{ env.DEPLOY_HOOK_URL }}
         run: |
           set -euo pipefail
-          if [ -z "${VERCEL_DEPLOY_HOOK}" ]; then
-            echo "::error::VERCEL_DEPLOY_HOOK secret is empty — cannot trigger redeploy."
+          if [ -z "${DEPLOY_HOOK_URL}" ]; then
+            echo "::error::No deploy hook available — cannot trigger redeploy."
             exit 1
           fi
-          code=$(curl -sS -o /tmp/hook_resp.json -w '%{http_code}' -X POST "${VERCEL_DEPLOY_HOOK}")
+          code=$(curl -sS -o /tmp/hook_trigger.json -w '%{http_code}' -X POST "${DEPLOY_HOOK_URL}")
           echo "Deploy hook HTTP status: $code"
-          cat /tmp/hook_resp.json
+          cat /tmp/hook_trigger.json
 
       - name: Wait for deployment to go live
         if: ${{ inputs.redeploy }}
