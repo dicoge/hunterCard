@@ -58,3 +58,29 @@ export function resolveApiBase(params: {
   }
   return DEFAULT_NATIVE_API_BASE;
 }
+
+// Deterministic Web Google OAuth redirect URI (DIC-922).
+//
+// PM hit a hard `400 redirect_uri_mismatch` in production: the app sent exactly
+// `https://holohunter.dicoge.com` but Google Console had no matching Authorized
+// redirect URI. expo-auth-session's makeRedirectUri() derives the web redirect
+// from the CURRENT window.location, so the value silently changes with the page
+// path/hash the login was launched from and with the deploy origin (preview
+// URLs, localhost) — impossible to keep byte-identical to a single registered
+// URI. Expo's own docs say to hard-code the redirect for production web.
+//
+// We pin it to the bare page ORIGIN — no path, query, or hash — which is
+// exactly what production was already observed to send. It is stable per-origin,
+// so each origin (prod / preview / localhost) needs registering in Console just
+// once, with NO trailing slash. An explicit override wins for atypical hosting.
+// Returns '' when no origin is known (e.g. SSR); the caller then falls back to
+// makeRedirectUri(). Pure (no react-native/expo imports) so it is unit-testable.
+export function resolveWebRedirectUri(params: {
+  origin?: string | null;
+  override?: string | null;
+}): string {
+  const override = (params.override ?? '').trim();
+  if (override) return override.replace(/\/+$/, '');
+  const origin = (params.origin ?? '').trim();
+  return origin.replace(/\/+$/, '');
+}

@@ -116,6 +116,23 @@ Web Google 登入**已接線並啟用**，且為 server-authoritative：前端 `
 以 expo-auth-session PKCE 取得 `id_token`，POST 至 `/api/auth/login`，伺服器驗簽後由 KV 身份存放層歸屬 internal user。
 啟用只需在 Vercel 設好上方「伺服器權威登入前置」的 KV / `AUTH_SESSION_SECRET` / `GOOGLE_WEB_CLIENT_ID`。
 
+### ⚠️ Web Google OAuth redirect URI（Google Console 必須登記，否則 400 redirect_uri_mismatch）
+
+Web 端送給 Google 的 `redirect_uri` 為**當前頁面 origin，不含 path / query / 尾斜線**（DIC-922，
+`src/services/authStrategy.ts` 的 `resolveWebRedirectUri` 釘死為 origin，取代 `makeRedirectUri()` 依
+`window.location` 推導、會隨頁面路徑/部署網址漂移的行為）。**Google Cloud Console →
+該 Web OAuth client → Authorized redirect URIs** 必須逐一登記與 App 實送**完全一致**的值：
+
+| 環境 | 必須登記的 redirect URI（精確、無尾斜線） |
+| --- | --- |
+| Production | `https://holohunter.dicoge.com` |
+| 本機 web dev（`expo start --web`） | `http://localhost:8081` |
+| 其他部署 origin（如 Vercel preview） | 該 origin 本身（例：`https://holohunter-git-xxx.vercel.app`）；每個 origin 各登記一次 |
+
+- **PM 2026-08-09 實測**：production 送出 `https://holohunter.dicoge.com`（無尾斜線），Console 未登記 → Google 回 `400 redirect_uri_mismatch`。**登記此精確值後才會通過**。
+- 非標準 hosting 可用 `EXPO_PUBLIC_GOOGLE_WEB_REDIRECT_URI` 覆寫（值需與 Console 登記者完全一致）。
+- **Web E2E 驗收 gate**：在 Console 登記完全相同的 URI 前，Web Google 登入 E2E **不得判為 PASS**（單元測試只驗生成值的決定性，不能取代 Console 登記）。
+
 > 下列步驟為**已停用的舊 native 佔位檔** `src/services/auth/googleAuth.ts` 的接線說明，**非目前路徑**，僅保留參考：
 >
 > 1. `npx expo install expo-auth-session expo-web-browser`

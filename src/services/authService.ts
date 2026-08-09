@@ -7,7 +7,12 @@ import {
   LinkedIdentity,
   HoloUser,
 } from '../types/auth';
-import { appleLoginSurface, googleLoginSurface, resolveApiBase } from './authStrategy';
+import {
+  appleLoginSurface,
+  googleLoginSurface,
+  resolveApiBase,
+  resolveWebRedirectUri,
+} from './authStrategy';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -397,7 +402,16 @@ async function obtainWebIdToken(
     );
   }
 
-  const redirectUri = AuthSession.makeRedirectUri();
+  // Pin the web redirect to the page origin so it byte-matches the URI
+  // registered in Google Console (DIC-922). makeRedirectUri() is
+  // window.location-derived and drifts by page path / deploy origin, which is
+  // what produced the production `redirect_uri_mismatch`. Fall back to
+  // makeRedirectUri() only if no origin is resolvable (e.g. SSR).
+  const pinnedRedirect = resolveWebRedirectUri({
+    origin: typeof window !== 'undefined' ? window.location?.origin ?? null : null,
+    override: process.env.EXPO_PUBLIC_GOOGLE_WEB_REDIRECT_URI,
+  });
+  const redirectUri = pinnedRedirect || AuthSession.makeRedirectUri();
   const scopes = provider === 'google' ? googleScopes : appleScopes;
   const discovery = provider === 'google' ? googleDiscovery : appleDiscovery;
   const nonce = randomNonce();

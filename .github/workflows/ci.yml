@@ -41,6 +41,9 @@ jobs:
       - name: Verify native/web API base resolution (DIC-922)
         run: npm run test:api-base
 
+      - name: Verify deterministic web OAuth redirect URI (DIC-922)
+        run: npm run test:web-redirect
+
       - name: Verify friendly-but-safe auth error mapping (DIC-922)
         run: npm run test:auth-error-map
 
