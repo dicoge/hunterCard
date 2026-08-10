@@ -24,11 +24,15 @@ export default function DeckEditorScreen() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [newDeckName, setNewDeckName] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameError, setRenameError] = useState(false);
 
   const decks = useDeckStore((s) => s.decks);
   const activeDeckId = useDeckStore((s) => s.activeDeckId);
   const collection = useDeckStore((s) => s.collection);
   const createDeck = useDeckStore((s) => s.createDeck);
+  const renameDeck = useDeckStore((s) => s.renameDeck);
   const setActiveDeck = useDeckStore((s) => s.setActiveDeck);
   const changeCard = useDeckStore((s) => s.changeCard);
   const setOwned = useDeckStore((s) => s.setOwned);
@@ -44,6 +48,13 @@ export default function DeckEditorScreen() {
       .catch(() => setDb(null))
       .finally(() => setLoading(false));
   }, []);
+
+  // Reset the rename editor whenever the active deck changes.
+  useEffect(() => {
+    setRenaming(false);
+    setRenameValue('');
+    setRenameError(false);
+  }, [activeDeckId]);
 
   const results = useMemo(
     () => (db ? searchCards(db.cards, query) : []),
@@ -61,6 +72,32 @@ export default function DeckEditorScreen() {
     const zone = eligibleZone(card);
     if (!zone) return;
     changeCard(activeDeck.id, zone, card, 1);
+  }
+
+  function startRename() {
+    if (!activeDeck) return;
+    setRenameValue(activeDeck.name);
+    setRenameError(false);
+    setRenaming(true);
+  }
+
+  function commitRename() {
+    if (!activeDeck) return;
+    // Reject an empty/whitespace-only name: keep the existing name intact and
+    // leave the editor open so the user can correct it. renameDeck also
+    // fail-safes on empty, but we guard here to surface the error inline.
+    if (!renameValue.trim()) {
+      setRenameError(true);
+      return;
+    }
+    renameDeck(activeDeck.id, renameValue);
+    setRenaming(false);
+    setRenameError(false);
+  }
+
+  function cancelRename() {
+    setRenaming(false);
+    setRenameError(false);
   }
 
   if (loading) {
@@ -156,12 +193,60 @@ export default function DeckEditorScreen() {
 
   const zonesPanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <View style={styles.deckHeaderRow}>
-        <Text style={styles.h2}>{activeDeck.name}</Text>
-        <TouchableOpacity onPress={() => setActiveDeck(null)}>
-          <Text style={styles.link}>切換牌組</Text>
-        </TouchableOpacity>
-      </View>
+      {renaming ? (
+        <View style={styles.renameBlock}>
+          <TextInput
+            style={[styles.input, styles.renameInput, renameError && styles.renameInputError]}
+            placeholder="牌組名稱"
+            placeholderTextColor={COLORS.textSecondary}
+            value={renameValue}
+            onChangeText={(t) => { setRenameValue(t); if (renameError) setRenameError(false); }}
+            onSubmitEditing={commitRename}
+            autoFocus
+            testID="deck-rename-input"
+            accessibilityLabel="牌組名稱"
+          />
+          <View style={styles.renameActions}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={commitRename}
+              testID="deck-rename-save"
+              accessibilityRole="button"
+              accessibilityLabel="儲存牌組名稱"
+            >
+              <Text style={styles.primaryBtnText}>儲存</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={cancelRename}
+              testID="deck-rename-cancel"
+              accessibilityRole="button"
+              accessibilityLabel="取消重新命名"
+            >
+              <Text style={styles.link}>取消</Text>
+            </TouchableOpacity>
+          </View>
+          {renameError && (
+            <Text style={styles.renameErrorText}>名稱不可為空白</Text>
+          )}
+        </View>
+      ) : (
+        <View style={styles.deckHeaderRow}>
+          <Text style={[styles.h2, { flexShrink: 1 }]} numberOfLines={1}>{activeDeck.name}</Text>
+          <View style={styles.deckHeaderActions}>
+            <TouchableOpacity
+              onPress={startRename}
+              testID="deck-rename-button"
+              accessibilityRole="button"
+              accessibilityLabel="重新命名牌組"
+            >
+              <Text style={styles.link}>重新命名</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setActiveDeck(null)}>
+              <Text style={styles.link}>切換牌組</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {stats && (
         <View style={styles.statsRow}>
@@ -333,7 +418,13 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: '#fff', fontWeight: 'bold' },
   deckRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 8, padding: 12, marginTop: 8 },
   deckName: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
-  deckHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  deckHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 },
+  deckHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  renameBlock: { marginBottom: 10 },
+  renameInput: { marginBottom: 8 },
+  renameInputError: { borderColor: COLORS.error },
+  renameActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  renameErrorText: { color: COLORS.error, fontSize: 12, marginTop: 6 },
   statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 },
   stat: { minWidth: 68, alignItems: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10 },
   statLabel: { color: COLORS.textSecondary, fontSize: 11 },

@@ -1,11 +1,25 @@
 /**
- * Fallback storage module for TypeScript type resolution.
- * Metro resolves to storage.web.ts (web) or storage.native.ts (native).
- * This file exists only so tsc can find the module declaration.
+ * Fallback storage module used only when Metro's platform-specific resolution
+ * does NOT apply — i.e. tsc type-checking and Node-based test scripts. On device
+ * Metro resolves storage.web.ts (web) or storage.native.ts (native) instead, so
+ * this implementation never runs in the app.
  *
- * At runtime, Metro/platform-specific resolution takes over.
+ * It is a real in-memory StateStorage (not a type-only stub) so persistent
+ * zustand stores can be imported and exercised end-to-end in Node regressions
+ * (e.g. scripts/test-deck-store-rename.mjs), including persistence + rehydration.
  */
-import { StateStorage } from 'zustand/middleware';
+import type { StateStorage } from 'zustand/middleware';
 
-declare const platformStorage: StateStorage;
-export default platformStorage;
+const memory = new Map<string, string>();
+
+const memoryStorage: StateStorage = {
+  getItem: (name) => (memory.has(name) ? memory.get(name)! : null),
+  setItem: (name, value) => {
+    memory.set(name, value);
+  },
+  removeItem: (name) => {
+    memory.delete(name);
+  },
+};
+
+export default memoryStorage;
