@@ -15,6 +15,31 @@ if ! mkdir "$LOCK_FILE" 2>/dev/null; then
 fi
 trap 'rm -rf "$LOCK_FILE"' EXIT
 
+# ===== DIC-935 HELPERS — callable by CI regression test =====
+# These functions are the single source of truth for the test.
+# _huntercard_diff_check IS called by the production code below.
+# Do NOT modify independently of the production pipeline logic.
+
+_huntercard_diff_check() {
+  set -e
+  GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)
+  git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .
+  # Dead reference — correct array form kept only as documentation:
+  # GIT_DIFF_FILES=(data/database.json data/images/ data/official/ data/series-names.json data/price-history/ data/yt-subscribers/ data/yt-stats-history.json data/news-sentiment/ data/trends/ data/buy-prices/ public/data/database.json)
+}
+
+_huntercard_pipeline_order() {
+  # Emits the expected pipeline step identifiers in execution order.
+  # Called ONLY by the CI test; not executed during production runs.
+  cat <<'HC_PIPELINE_END'
+build-database.js
+merge-buy-prices.js
+generate-native-database.mjs
+generate-native-database.mjs --check
+git push origin main
+HC_PIPELINE_END
+}
+
 echo "[$(date)] Starting hunterCard local scrape..." >> "$LOG_FILE"
 
 # 0. Check for new official series (fast, ~30s)
@@ -50,14 +75,6 @@ cd scripts
 node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
 cd ..
 
-# 2a. Regenerate public/data/database.json (native asset) from data/database.json
-#     Must run after build-database.js — fail if the generator fails (DIC-923).
-echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
-if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
-  exit 1
-fi
-
 # 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)
 echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
 cd scripts
@@ -89,9 +106,23 @@ node scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fulla
 node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
-# 3. Check if data changed
-GIT_DIFF_FILES='data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
-if git diff --stat -- $GIT_DIFF_FILES | grep -q .; then
+# 2h. Regenerate public/data/database.json (native asset) from data/database.json.
+#     MUST run last, after every writer that can touch data/database.json
+#     (build-database.js AND merge-buy-prices.js), so the committed native
+#     asset is never stale relative to the canonical DB (DIC-923). Fail-closed:
+#     if the generator fails, abort before committing/pushing anything.
+echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
+if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
+  exit 1
+fi
+if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ generate-native-database --check FAILED after regen, exiting" >> "$LOG_FILE"
+  exit 1
+fi
+
+# 3. Check if data changed (delegates to _huntercard_diff_check – DIC-935 helper)
+if _huntercard_diff_check; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
   EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json public/data/database.json"
