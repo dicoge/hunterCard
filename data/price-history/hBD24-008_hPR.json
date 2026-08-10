@@ -198,8 +198,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-008_hPR"
+    },
+    {
+      "date": "2026-08-10",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-008_hPR"
     }
   ],
-  "lastUpdated": "2026-08-09T12:12:51.536Z",
+  "lastUpdated": "2026-08-10T12:12:40.840Z",
   "nameZh": "貝絲緹亞·澤塔"
 }

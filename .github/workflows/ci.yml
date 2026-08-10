@@ -38,6 +38,21 @@ jobs:
       - name: Verify platform login-surface routing (DIC-665)
         run: npm run test:auth-strategy
 
+      - name: Verify native/web API base resolution (DIC-922)
+        run: npm run test:api-base
+
+      - name: Verify deterministic web OAuth redirect URI (DIC-922)
+        run: npm run test:web-redirect
+
+      - name: Verify friendly-but-safe auth error mapping (DIC-922)
+        run: npm run test:auth-error-map
+
+      - name: Verify login-gate auth store never leaks raw errors (DIC-928)
+        run: npm run test:auth-store-error-wiring
+
+      - name: Verify iOS/Android build fail-closed client guards (DIC-922)
+        run: npm run test:ios-build-guard
+
       - name: Verify native Google Sign-In logout / account switch (DIC-665)
         run: npm run test:google-signout
 

@@ -345,8 +345,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD13-013_ent07"
+    },
+    {
+      "date": "2026-08-10",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD13-013_ent07"
     }
   ],
-  "lastUpdated": "2026-08-09T12:12:51.299Z",
+  "lastUpdated": "2026-08-10T12:12:40.502Z",
   "nameZh": "琪琪·沐恩"
 }

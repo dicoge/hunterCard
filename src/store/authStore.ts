@@ -14,6 +14,10 @@ import {
   signOutNativeGoogle,
   validateSession as validateSessionRemote,
 } from '../services/authService';
+import {
+  friendlyAuthErrorMessage,
+  isCancelAuthError,
+} from '../services/authErrorMessages';
 
 interface AuthStore {
   user: HoloUser | null;
@@ -63,7 +67,15 @@ export const useAuthStore = create<AuthStore>()(
             role: user.role,
           });
         } catch (err: any) {
-          set({ isLoading: false, error: err.message || 'Login failed' });
+          // The root login gate (LoginScreen) renders `error` verbatim, so we
+          // must map it to a friendly-but-safe string HERE — never store a raw
+          // provider/SDK/network/backend message that could leak an id_token,
+          // email, or internal detail (DIC-928 blocker 1). A user cancel is not
+          // a failure, so it shows no error banner.
+          set({
+            isLoading: false,
+            error: isCancelAuthError(err) ? null : friendlyAuthErrorMessage(err, 'google'),
+          });
           throw err;
         }
       },
@@ -81,7 +93,12 @@ export const useAuthStore = create<AuthStore>()(
             role: user.role,
           });
         } catch (err: any) {
-          set({ isLoading: false, error: err.message || 'Login failed' });
+          // Same friendly-but-safe mapping as Google (DIC-928 blocker 1): the
+          // gate renders this string, so it must never be a raw provider error.
+          set({
+            isLoading: false,
+            error: isCancelAuthError(err) ? null : friendlyAuthErrorMessage(err, 'apple'),
+          });
           throw err;
         }
       },

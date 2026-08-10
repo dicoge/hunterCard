@@ -345,8 +345,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD15-010_hSD15"
+    },
+    {
+      "date": "2026-08-10",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD15-010_hSD15"
     }
   ],
-  "lastUpdated": "2026-08-09T12:12:51.307Z",
+  "lastUpdated": "2026-08-10T12:12:40.512Z",
   "nameZh": "松茸之舞"
 }

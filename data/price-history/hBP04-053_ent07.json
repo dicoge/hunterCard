@@ -359,8 +359,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-053_ent07"
+    },
+    {
+      "date": "2026-08-10",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-053_ent07"
     }
   ],
-  "lastUpdated": "2026-08-09T12:12:51.229Z",
+  "lastUpdated": "2026-08-10T12:12:40.410Z",
   "nameZh": "詩織·諾維拉"
 }

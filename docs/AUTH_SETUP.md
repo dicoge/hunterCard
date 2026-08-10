@@ -112,9 +112,40 @@ DIC-866 起，iOS 走**原生**登入（`expo-apple-authentication` + Google iOS
 
 ## Google 登入（現況）
 
+### 驗證狀態（DIC-928，誠實標註 — 請勿讀成「三方登入矩陣已驗收」）
+
+DIC-922 這條線交付的是 **Google 登入 slice**；Apple 原生登入是**另一條獨立工作項**（見上方 Apple 章節與 `docs/Web-Apple-Login-Evaluation.md`），本次改動**不代表** Apple + Google + 訪客整體矩陣已端對端驗收。各表面實際狀態：
+
+| 表面 | 程式碼狀態 | E2E 實測狀態 |
+| --- | --- | --- |
+| Google Web | 已接線、server-authoritative（見下） | **未驗證**：需先在 Google Console 登記精確 redirect URI（見下方 gate），否則不得判 PASS |
+| Google iOS（native） | 已接線；缺 `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` 時 build fail-closed（`app.config.js`） | **未驗證**：需先在 Console 建立 iOS OAuth client 並提供該 client id，實機登入前不得判 PASS |
+| Google Android（native） | 沿用 PR #94 行為，未回退 | 依 PR #94 既有狀態 |
+| 訪客（guest） | 可用（純本機，不打後端） | — |
+| Apple（native iOS） | **不在本 slice 範圍**，另案追蹤 | 依 Apple 工作項 |
+
+> 單元 / 整合測試（`npm run test:*`）只驗**決定性邏輯**（surface routing、redirect/API base 生成、錯誤映射安全性、登入 gate 不外洩原始錯誤），**不能**取代需要外部 Google Console 設定與實機的 E2E；在外部證據出現前，Web / iOS 的 E2E 一律標記為未驗證，不得宣稱 PASS。
+
 Web Google 登入**已接線並啟用**，且為 server-authoritative：前端 `src/services/authService.ts`
 以 expo-auth-session PKCE 取得 `id_token`，POST 至 `/api/auth/login`，伺服器驗簽後由 KV 身份存放層歸屬 internal user。
 啟用只需在 Vercel 設好上方「伺服器權威登入前置」的 KV / `AUTH_SESSION_SECRET` / `GOOGLE_WEB_CLIENT_ID`。
+
+### ⚠️ Web Google OAuth redirect URI（Google Console 必須登記，否則 400 redirect_uri_mismatch）
+
+Web 端送給 Google 的 `redirect_uri` 為**當前頁面 origin，不含 path / query / 尾斜線**（DIC-922，
+`src/services/authStrategy.ts` 的 `resolveWebRedirectUri` 釘死為 origin，取代 `makeRedirectUri()` 依
+`window.location` 推導、會隨頁面路徑/部署網址漂移的行為）。**Google Cloud Console →
+該 Web OAuth client → Authorized redirect URIs** 必須逐一登記與 App 實送**完全一致**的值：
+
+| 環境 | 必須登記的 redirect URI（精確、無尾斜線） |
+| --- | --- |
+| Production | `https://holohunter.dicoge.com` |
+| 本機 web dev（`expo start --web`） | `http://localhost:8081` |
+| 其他部署 origin（如 Vercel preview） | 該 origin 本身（例：`https://holohunter-git-xxx.vercel.app`）；每個 origin 各登記一次 |
+
+- **PM 2026-08-09 實測**：production 送出 `https://holohunter.dicoge.com`（無尾斜線），Console 未登記 → Google 回 `400 redirect_uri_mismatch`。**登記此精確值後才會通過**。
+- 非標準 hosting 可用 `EXPO_PUBLIC_GOOGLE_WEB_REDIRECT_URI` 覆寫（值需與 Console 登記者完全一致）。
+- **Web E2E 驗收 gate**：在 Console 登記完全相同的 URI 前，Web Google 登入 E2E **不得判為 PASS**（單元測試只驗生成值的決定性，不能取代 Console 登記）。
 
 > 下列步驟為**已停用的舊 native 佔位檔** `src/services/auth/googleAuth.ts` 的接線說明，**非目前路徑**，僅保留參考：
 >
