@@ -1,9 +1,12 @@
 // hOCG deck-construction rules engine — pure, framework-free so it can be unit
-// tested with plain node. Source of truth for the rules is DIC-943; the concrete
-// numbers live in data/deck-rules.json, not hardcoded here. Anything the current
-// card dataset cannot verify (e.g. Bloom/Debut warnings, which need Bloom-level
-// data the dataset does not carry) is intentionally NOT emitted, rather than
-// guessed — an unconfirmed rule must not fire a false Error/Warning.
+// tested with plain node. The concrete rule numbers are NOT hardcoded here: they
+// are loaded from data/deck-rules.json (the single authoritative source) below.
+// Anything the current card dataset cannot verify (e.g. Bloom/Debut warnings,
+// which need Bloom-level data the dataset does not carry) is intentionally NOT
+// emitted, rather than guessed — an unconfirmed rule must not fire a false
+// Error/Warning.
+
+import rawRules from '../../data/deck-rules.json';
 
 export type DeckZone = 'oshi' | 'main' | 'yell';
 
@@ -47,31 +50,31 @@ export interface DeckRulesConfig {
   unlimitedCopyCards: { cardNumbers: string[] };
 }
 
-// Data-driven rule configuration. Source of truth: DIC-943 official rule matrix.
-// This is the ONE place to edit rule numbers — the engine below reads only from
-// it, never hardcoding values inline. Only rules the current card dataset can
-// actually verify are enabled; unconfirmed rules (e.g. Bloom/Debut warnings that
-// need Bloom-level data the dataset does not carry) are intentionally omitted so
-// they are NOT hardcoded as false positives. See data/deck-rules.json for the
-// same values kept as a human-readable spec artifact.
-export const RULES: DeckRulesConfig = {
-  version: '2026-08-10',
-  source: 'DIC-943',
-  zones: {
-    oshi: { label: '推しホロメン', exactCount: 1 },
-    main: { label: '主牌組', exactCount: 50 },
-    yell: { label: 'エール', exactCount: 20 },
-  },
-  totalCards: 71,
-  identity: { field: 'cardNumber' },
-  copyLimits: { mainDefault: 4, yellUnlimited: true },
-  // cardNumber -> max copies. Official restricted cards (e.g. hBP07-101
-  // restricted to 1 from 2026-06-19).
-  restrictedCards: { 'hBP07-101': 1 },
-  // Cards printed with 'このカードはデッキに何枚でも入れられる' — exempt from the
-  // 4-copy limit. Populate cardNumbers as confirmed.
-  unlimitedCopyCards: { cardNumbers: [] },
-};
+// Recursively drop the human-readable `_comment` annotations the JSON spec file
+// carries, so the loaded config matches DeckRulesConfig exactly.
+function stripComments<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((v) => stripComments(v)) as unknown as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      if (key === '_comment') continue;
+      out[key] = stripComments(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+// Data-driven rule configuration. Single source of truth: data/deck-rules.json
+// (DIC-943 official rule matrix). The engine below reads ONLY from RULES, and
+// RULES is loaded from the JSON file at import time — the numbers are never
+// hardcoded in this module. Only rules the current card dataset can actually
+// verify are enabled in that file; unconfirmed rules (e.g. Bloom/Debut warnings
+// that need Bloom-level data the dataset does not carry) are intentionally
+// omitted there so they are NOT baked in as false positives.
+export const RULES: DeckRulesConfig = stripComments(
+  rawRules as unknown as DeckRulesConfig,
+);
 
 export type ValidationLevel = 'error' | 'warning';
 

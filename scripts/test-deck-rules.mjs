@@ -8,10 +8,15 @@
  * Run: node --experimental-strip-types scripts/test-deck-rules.mjs
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   validateDeck, isDeckLegal, deckStats, computeGap, resolveExactPrice,
-  eligibleZone,
+  eligibleZone, RULES,
 } from '../src/utils/deckRules.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let passed = 0;
 function test(name, fn) {
@@ -42,6 +47,36 @@ function legalDeck() {
     yell: [slot(yell('hYELL-001'), 20)],
   };
 }
+
+// ── Source of truth: runtime RULES is loaded from data/deck-rules.json ───────
+// Proves the drift is gone — the engine consumes the JSON file, it is not a dead
+// spec artifact shadowed by hardcoded TS values (DIC-952). If someone edits the
+// JSON, RULES must change with it; if someone re-hardcodes values in TS, this
+// deepEqual against the freshly-read file fails.
+function stripComments(value) {
+  if (Array.isArray(value)) return value.map(stripComments);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (k === '_comment') continue;
+      out[k] = stripComments(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+test('runtime RULES is loaded from data/deck-rules.json (no drift)', () => {
+  const jsonPath = path.join(__dirname, '..', 'data', 'deck-rules.json');
+  const fromFile = stripComments(JSON.parse(fs.readFileSync(jsonPath, 'utf8')));
+  assert.deepEqual(RULES, fromFile, 'RULES must equal the JSON file, not a TS copy');
+  // Spot-check the values the validation matrix depends on come from the file.
+  assert.equal(RULES.zones.oshi.exactCount, fromFile.zones.oshi.exactCount);
+  assert.equal(RULES.zones.main.exactCount, fromFile.zones.main.exactCount);
+  assert.equal(RULES.zones.yell.exactCount, fromFile.zones.yell.exactCount);
+  assert.equal(RULES.copyLimits.mainDefault, fromFile.copyLimits.mainDefault);
+  assert.deepEqual(RULES.restrictedCards, fromFile.restrictedCards);
+});
 
 // ── Zone classification sanity ──────────────────────────────────────────────
 test('eligibleZone classifies oshi / main / yell', () => {
