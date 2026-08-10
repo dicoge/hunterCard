@@ -1,0 +1,27 @@
+{
+  "_comment": "Data-driven hOCG deck construction rules for the HoloHunter deck editor. Source of truth: DIC-943 official rule matrix. Only rules that the current card dataset can actually verify are enabled; unconfirmed rules (e.g. Bloom/Debut warnings that need Bloom-level data the dataset does not carry) are left disabled so they are NOT hardcoded as false positives. Update this file when the official rules or dataset change — do not hardcode rule values in TypeScript.",
+  "version": "2026-08-10",
+  "source": "DIC-943",
+  "zones": {
+    "oshi": { "label": "推しホロメン", "exactCount": 1 },
+    "main": { "label": "主牌組", "exactCount": 50 },
+    "yell": { "label": "エール", "exactCount": 20 }
+  },
+  "totalCards": 71,
+  "identity": {
+    "_comment": "Same-card determination is strictly by card number (cardNumber). Same name / different number = different cards. Different version/rarity but same cardNumber = same card, copies combine.",
+    "field": "cardNumber"
+  },
+  "copyLimits": {
+    "mainDefault": 4,
+    "yellUnlimited": true
+  },
+  "restrictedCards": {
+    "_comment": "Official restricted cards: max 1 copy. cardNumber -> limit. Keep in sync with official announcements (e.g. hBP07-101 restricted to 1 from 2026-06-19).",
+    "hBP07-101": 1
+  },
+  "unlimitedCopyCards": {
+    "_comment": "Cards printed with 'このカードはデッキに何枚でも入れられる' are exempt from the 4-copy limit. List their cardNumbers here as they are confirmed.",
+    "cardNumbers": []
+  }
+}
