@@ -58,7 +58,7 @@ sequenceDiagram
             Client-->>User: 顯示價格與預測資訊 (Premium)
         else 角色為 free_user
             Server->>Cache: quota_reserve(userId, YYYY-MM, scan_request_id, limit=100)
-            Note over Cache: 單一原子 Lua：冪等回放 / 超額判定 / 允許才 INCR 保留
+            Note over Cache: 單一原子 Lua：冪等回放 / 超額判定 / 允許才 INCR 保留<br/>保留同時存 userId+month_key 並 ZADD quota:pending(到期score)
             alt 回傳 DENIED (current >= 100，未 INCR、無回退)
                 Cache-->>Server: DENIED
                 Server-->>Client: 429 Too Many Requests (配額已滿)
@@ -68,7 +68,7 @@ sequenceDiagram
                 Server->>Vision: 執行卡牌辨識
                 alt 辨識成功 (或使用者端無結果)
                     Vision-->>Server: 回傳辨識結果
-                    Server->>Cache: quota_commit(scan_request_id) (reserved→committed，不變更計數)
+                    Server->>Cache: quota_commit(scan_request_id) (reserved→committed，不變更計數，ZREM quota:pending)
                     Server-->>Client: 200 OK (結果 + 剩餘配額 + 加密 Quota 簽章)
                     Client->>Client: 將加密 Quota 簽章儲入安全儲存區
                     Client-->>User: 顯示價格 (無 Premium 預測資訊)
@@ -83,9 +83,9 @@ sequenceDiagram
     end
     opt 最終放棄 (重試用盡 / 使用者取消)
         Client->>Server: POST /api/scan/abandon (scan_request_id)
-        Server->>Cache: quota_refund(scan_request_id) (僅 reserved→refunded 才 DECR，退回保留)
+        Server->>Cache: quota_refund (依保存 month_key，if current>0 DECR；計數器已過期則 no-op；標記 refunded + ZREM quota:pending)
     end
-    Note over Cache: 保留設 TTL；逾期未 commit/refund 的 reserved 由對帳工作自動退額
+    Note over Cache: 對帳工作 ZRANGEBYSCORE quota:pending -inf now 列舉孤兒保留<br/>quota_reconcile_refund：認領(ZREM)+依保存 month_key 下限保護退額；月計數器已過期→no-op
 ```
 
 ---
@@ -116,6 +116,7 @@ sequenceDiagram
 2. **Redis 週期性計數器**：
    - 當月次數以 `user:{userId}:scans:{YYYY-MM}` 為 Redis Key 累計；其增量**一律經由 §3.3 的 `quota_reserve` 原子契約在確認未達上限時發生**，後端不在收到請求時先行裸 `INCR`。
    - 該 Key 設定過期時間為當月最後一天的 23:59:59 (基於伺服器 UTC 時間)，下月自動重置為 0。
+   - **計數器過期後的退額為 no-op**：任何遲來的退額（放棄或對帳）只對保留紀錄保存的原始 `month_key` 計數器動作，且採下限保護（`if current > 0 then DECR`）；若該月計數器已過期消失，退額不重建鍵、不遞減，避免產生 `-1` 負值或污染新月計數（細節見 §3.3 第 5、6 點）。
 3. **時鐘防禦 (Clock Attack Prevention)**：不依賴手機端時間判定月份，完全以伺服器端接收請求的時間戳記進行統計。
 
 ### 3.2 本地安全防護同步 (Local Security Storage)
@@ -139,15 +140,17 @@ sequenceDiagram
      - `refunded` → 回終態 `REFUNDED`（已於最終放棄時退額，不可再取得 `RESERVED`、不再進 Vision）。
      - `denied` → 回 `DENIED`。
    - **(b) 超額判定**：否則讀取 `user:{userId}:scans:{month_key}` 目前值；若 `current >= limit`，寫入 `reservation:{scan_request_id} = denied` 後回傳 `DENIED`——**此路徑完全不對計數器做 `INCR`，因此不需要、也不會有任何 `DECR` 回退**。
-   - **(c) 允許才保留**：否則對計數器 `INCR`（此 `INCR` 只在確認未達上限後於同一 script 內發生），寫入 `reservation:{scan_request_id} = reserved`（含 remaining），回傳 `RESERVED` 與 remaining。
-   計數器 Key 首次建立時設定過期為當月最後一刻（承 §3.1）；`reservation:{scan_request_id}` 設短 TTL（如 24h）供重試去重。
+   - **(c) 允許才保留**：否則對計數器 `INCR`（此 `INCR` 只在確認未達上限後於同一 script 內發生），並在**同一 script 內**：
+     - 寫入耐久保留紀錄 `reservation:{scan_request_id} = { state=reserved, userId, month_key, remaining }`——**明確保存 `userId` 與 `month_key`**，退額時不需再依賴任何會過期的鍵去推斷歸屬月份。
+     - 將該 id 登記進**耐久且可列舉的待決索引** `quota:pending`（Redis Sorted Set，score = 保留到期 deadline 的 epoch 秒，member = `scan_request_id`）。
+     回傳 `RESERVED` 與 remaining。
+   計數器 Key 首次建立時設定過期為當月最後一刻（承 §3.1）。**保留紀錄 `reservation:{scan_request_id}` 不設會令對帳失去 `userId`/`month_key` 的短 TTL**；其生命週期由終態轉移（commit/refund）或對帳明確結束，`quota:pending` 為「哪些保留尚待落定」的唯一可列舉真理來源。
 
 2. **保留 → 落定 / 退額 (reserve → commit / refund)；保留在同 ID 重試間持續持有**
    `quota_reserve` 回 `RESERVED` 後才呼叫 Vision 辨識。每個 `scan_request_id` 僅能單向終態一次（`reserved → committed` 或 `reserved → refunded`）：
-   - **成功 → `quota_commit`**：將 `reservation` 由 `reserved` 標記為 `committed`；額度已於保留時計入，**不再變更計數**。
+   - **成功 → `quota_commit`**：原子將 `reservation` 由 `reserved` 標記為 `committed` 並 `ZREM quota:pending {scan_request_id}`；額度已於保留時計入，**不再變更計數**。
    - **系統性失敗（Vision 例外／逾時，非使用者原因）→ 不退額、保留維持 `reserved`**：後端回 5xx，請 App 以**同一 `scan_request_id`** 重試；重試時 `quota_reserve` 依契約 (a) 回放 `RESERVED` 並**重進 Vision**。保留額度在整段重試期間持續持有，避免退額後於接近上限時被其他併發請求搶走名額、造成重試反被 `DENIED`。
-   - **最終放棄 → `quota_refund`**：僅在 App 判定放棄時（重試次數/時間用盡，或使用者取消）呼叫 `POST /api/scan/abandon` 觸發 `quota_refund`——另一支原子 Lua script，**僅當狀態為 `reserved` 時**才 `DECR` 計數並標記 `refunded`。此 `DECR` 為狀態機守護下的補償退額（`reserved → refunded` 僅一次），**不是** (c) 保留判定的原子回退；`refunded` 為終態，重試命中直接回放、不重複 `DECR`、不可再取得 `RESERVED`。
-   - **保留 TTL 與對帳兜底**：`reservation:{scan_request_id}` 設 TTL（如 24h）。App 若在未 `commit`/`refund` 前即崩潰或永不回來，逾期的 `reserved` 由對帳工作（reconciliation）自動以 `quota_refund` 退額，確保被遺留的保留不永久佔用當月名額。
+   - **最終放棄 → `quota_refund`**：僅在 App 判定放棄時（重試次數/時間用盡，或使用者取消）呼叫 `POST /api/scan/abandon` 觸發 `quota_refund`。這是一支原子 Lua script，語意與對帳退額**完全一致**（見下方 6）：以保留紀錄內保存的 `month_key` 為準、**僅當狀態為 `reserved`** 時才對 `user:{userId}:scans:{month_key}` 做**有下限保護的退額**（`if current > 0 then DECR`，永不使計數轉負），標記 `refunded` 並 `ZREM quota:pending`。**若該月計數器 Key 已過期不存在（跨月）→ no-op**：不重建鍵、不 `DECR`，僅標記終態並移出待決索引。`refunded` 為終態，重試命中直接回放、不重複 `DECR`、不可再取得 `RESERVED`。
 
 3. **Redis 逾時 / 不可用 → Fail-closed**
    - `quota_reserve` 執行逾時或 Redis 不可用時，後端**拒絕該次掃描（回 503），不放行辨識**，確保無法原子計數時不被繞過上限。
@@ -157,7 +160,14 @@ sequenceDiagram
    - 系統性/服務端失敗（Vision 例外、逾時）→ 保留維持 `reserved` 並以同 ID 重試；若最終放棄才走 `quota_refund` 退額，不計入 100 次。
    - 使用者端可辨識但無結果（非卡牌影像、信心度過低）→ 視為一次有效掃描，走 `quota_commit` 計額；UI 告知「已使用 1 次額度但未辨識到卡牌」，避免爭議。
 
-5. **月度重置邊界**：跨月時以伺服器 UTC 時間決定 `month_key`，重置僅換 Key，不影響進行中的 `scan_request_id` 狀態機。
+5. **月度重置邊界**：跨月時以伺服器 UTC 時間決定 `month_key`，重置僅換 Key，不影響進行中的 `scan_request_id` 狀態機。**任何退額一律針對保留紀錄內保存的原始 `month_key`，絕不對其他（含新月）計數器動作**；新月計數器不會被舊月保留的退額誤減。
+
+6. **孤兒保留對帳契約 (Reconciliation of orphaned reservations)**
+   針對 App 崩潰或永不回來、`reserved` 從未 `commit`/`refund` 的孤兒保留，由對帳工作依耐久索引安全回收，不依賴任何會過期的鍵：
+   - **可列舉來源**：對帳工作以 `ZRANGEBYSCORE quota:pending -inf {now}` 列舉所有已逾期（score ≤ 現在）的待決保留；`quota:pending` 為耐久 Sorted Set，即使個別保留的細節鍵不在也仍可被列舉。
+   - **原子認領 + 退額 `quota_reconcile_refund`（單一 Lua）**：對每個逾期 member，於同一 script 內原子完成：讀取 `reservation:{scan_request_id}`（取其保存的 `userId` / `month_key`）→ **僅當狀態仍為 `reserved`** 才對 `user:{userId}:scans:{month_key}` 執行**有下限保護退額**（`if current > 0 then DECR`）→ 標記 `refunded` → `ZREM quota:pending {scan_request_id}`。認領即 `ZREM`，確保多個對帳實例不會重複處理同一 member。
+   - **計數器已過期 → no-op（跨月安全）**：若原始 `month_key` 計數器 Key 已因當月到期而消失，退額為 **no-op**——不 `SET`/`INCR` 重建該鍵、不 `DECR`（避免把不存在的鍵建成 `-1` 之負值），僅將保留標記終態並移出 `quota:pending`。語意上跨月後該月配額已整體重置，舊保留無需、也不應影響任何計數器。
+   - **與 `quota_refund` 同語意**：`POST /api/scan/abandon` 的 `quota_refund` 與對帳退額共用「認保存 month_key、下限保護、計數器過期即 no-op、終態 + `ZREM`」這組不變式，兩條路徑對同一 `scan_request_id` 皆冪等且互斥於終態。
 
 ---
 
@@ -320,6 +330,18 @@ UI 設計需要遵循精緻的 HoloHunter 暗色系與高質感漸層美學。
   - 步驟 2 期間計數恆為 `99`，證明保留在同 ID 重試間持續持有、無重複扣額。
   - 步驟 3 成功後 `R1` 轉 `committed`，計數落定為 `99`（該次僅計一次）。
   - 步驟 4 放棄後 `R2` 轉 `refunded` 並 `DECR`，計數退回；再以 `R2` 重試僅回放 `REFUNDED`，不再進 Vision、不再變更計數。
+
+### 測試案例 2c：孤兒保留對帳與跨月退額 no-op (Reconciliation / Cross-Month No-op)
+- **前提條件**：已登入未訂閱帳號。
+- **步驟**：
+  1. 觸發一次掃描取得 `RESERVED`（記 `R3`，`month_key = 當月`），在 `commit`/`refund` 前**強制中止 App**（模擬崩潰），使 `R3` 停在 `reserved`。確認 `quota:pending` 含 `R3`、計數已 +1。
+  2. 將 `R3` 於 `quota:pending` 的 score 調成已逾期，執行對帳工作 `quota_reconcile_refund`。
+  3. 另備一筆孤兒保留 `R4`，其 `month_key` 指向**上一個月**，並讓上月計數器 Key **已過期不存在**；同樣調為逾期後執行對帳。
+  4. 重跑一次對帳工作（冪等驗證）。
+- **預期結果**：
+  - 步驟 2：`R3` 依保存的 `userId`/`month_key` 被下限保護退額（計數 −1），標記 `refunded` 並自 `quota:pending` 移除。
+  - 步驟 3：`R4` 因原月計數器已過期 → **no-op**：不重建鍵、不 `DECR`（不得出現 `-1`），僅標記終態並移出 `quota:pending`；當月/新月計數器不受影響。
+  - 步驟 4：已終態的 `R3`/`R4` 不再被處理，計數不再變動（對帳冪等、認領互斥）。
 
 ### 測試案例 3：訂閱解鎖測試 (Subscriber Full Unlock)
 - **前提條件**：已登入 Google 帳號，並在設定中點擊模擬購買「月費訂閱」成功。
