@@ -13,6 +13,7 @@ import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ScanScreen from '../screens/ScanScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
+import DeckEditorScreen from '../screens/DeckEditorScreen';
 import WatchlistScreen from '../screens/WatchlistScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CardDetailScreen from '../screens/CardDetailScreen';
@@ -113,6 +114,16 @@ function MainDrawer() {
           title: '收藏',
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
+          ),
+        }}
+      />
+      <Drawer.Screen
+        name="DeckEditor"
+        component={DeckEditorScreen}
+        options={{
+          title: '牌組編輯器',
+          drawerIcon: ({ focused }) => (
+            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🃏</Text>
           ),
         }}
       />

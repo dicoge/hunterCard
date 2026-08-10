@@ -65,6 +65,9 @@ jobs:
       - name: Verify real Android export is fail-closed (DIC-916)
         run: npm run test:store-mvp-native-export
 
+      - name: Verify deck editor rules engine (DIC-945)
+        run: npm run test:deck-rules
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
