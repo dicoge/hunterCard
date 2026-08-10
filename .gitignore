@@ -43,8 +43,10 @@ data/push-watchlist.json
 # typescript
 *.tsbuildinfo
 
-# google play service account (do not commit)
+# firebase / google play credentials (do not commit)
 /google-service-account.json
+/google-services.json
+/GoogleService-Info.plist
 
 # generated native folders
 /ios
