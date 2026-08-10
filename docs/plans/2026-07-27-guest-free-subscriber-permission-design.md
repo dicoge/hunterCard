@@ -63,7 +63,7 @@ sequenceDiagram
                 Cache-->>Server: DENIED
                 Server-->>Client: 429 Too Many Requests (配額已滿)
                 Client-->>User: 顯示「配額已滿，升級訂閱」彈出視窗
-            else 回傳 RESERVED (remaining)
+            else 回傳 RESERVED (remaining，含重試回放同一保留)
                 Cache-->>Server: RESERVED + remaining
                 Server->>Vision: 執行卡牌辨識
                 alt 辨識成功 (或使用者端無結果)
@@ -74,13 +74,18 @@ sequenceDiagram
                     Client-->>User: 顯示價格 (無 Premium 預測資訊)
                 else 系統性失敗 (Vision 例外/逾時)
                     Vision-->>Server: 錯誤/逾時
-                    Server->>Cache: quota_refund(scan_request_id) (僅 reserved→refunded 才 DECR)
+                    Note over Server,Cache: 保留維持 reserved，不退額；同一 scan_request_id 重試會回放 RESERVED 並重進 Vision
                     Server-->>Client: 5xx (請以同一 scan_request_id 重試)
                     Client-->>User: 顯示暫時性錯誤提示
                 end
             end
         end
     end
+    opt 最終放棄 (重試用盡 / 使用者取消)
+        Client->>Server: POST /api/scan/abandon (scan_request_id)
+        Server->>Cache: quota_refund(scan_request_id) (僅 reserved→refunded 才 DECR，退回保留)
+    end
+    Note over Cache: 保留設 TTL；逾期未 commit/refund 的 reserved 由對帳工作自動退額
 ```
 
 ---
@@ -128,22 +133,28 @@ sequenceDiagram
 
 1. **唯一保留契約 `quota_reserve`（單一原子 Lua script）**
    輸入：`userId`、`month_key = YYYY-MM`（伺服器 UTC 決定）、`scan_request_id`、`limit = 100`。在同一次 script 執行內依序判斷並回傳，全程原子：
-   - **(a) 冪等回放**：若 `reservation:{scan_request_id}` 已存在，直接回傳其既有結果（`RESERVED`＋當時 remaining，或 `DENIED`），**不再變更計數**。這是重試的唯一正確路徑。
+   - **(a) 冪等回放**：若 `reservation:{scan_request_id}` 已存在，依其狀態原子回放、**不再變更計數**——這是重試的唯一正確路徑：
+     - `reserved` → 回 `RESERVED`＋當時 remaining，呼叫端**重進 Vision**（保留在重試間持續持有，見下方 2）。
+     - `committed` → 回終態 `COMMITTED`（已落定，回放前次結果）。
+     - `refunded` → 回終態 `REFUNDED`（已於最終放棄時退額，不可再取得 `RESERVED`、不再進 Vision）。
+     - `denied` → 回 `DENIED`。
    - **(b) 超額判定**：否則讀取 `user:{userId}:scans:{month_key}` 目前值；若 `current >= limit`，寫入 `reservation:{scan_request_id} = denied` 後回傳 `DENIED`——**此路徑完全不對計數器做 `INCR`，因此不需要、也不會有任何 `DECR` 回退**。
    - **(c) 允許才保留**：否則對計數器 `INCR`（此 `INCR` 只在確認未達上限後於同一 script 內發生），寫入 `reservation:{scan_request_id} = reserved`（含 remaining），回傳 `RESERVED` 與 remaining。
    計數器 Key 首次建立時設定過期為當月最後一刻（承 §3.1）；`reservation:{scan_request_id}` 設短 TTL（如 24h）供重試去重。
 
-2. **保留 → 落定 / 退額 (reserve → commit / refund)**
-   `quota_reserve` 回 `RESERVED` 後才呼叫 Vision 辨識，依結果對**同一 `scan_request_id`** 做一次狀態轉移，每個 id 僅能單向轉移一次（`reserved → committed` 或 `reserved → refunded`）：
+2. **保留 → 落定 / 退額 (reserve → commit / refund)；保留在同 ID 重試間持續持有**
+   `quota_reserve` 回 `RESERVED` 後才呼叫 Vision 辨識。每個 `scan_request_id` 僅能單向終態一次（`reserved → committed` 或 `reserved → refunded`）：
    - **成功 → `quota_commit`**：將 `reservation` 由 `reserved` 標記為 `committed`；額度已於保留時計入，**不再變更計數**。
-   - **系統性失敗（Vision 例外／逾時，非使用者原因）→ `quota_refund`**：另一支原子 Lua script，且**僅當狀態為 `reserved` 時**才 `DECR` 計數並標記 `refunded`。此 `DECR` 是狀態機守護下的補償退額（reserved→refunded 僅一次），**不是** (c) 保留判定的一部分，也不會被描述為保留契約的原子回退；重試命中 `refunded` 直接回放，不重複 `DECR`。
+   - **系統性失敗（Vision 例外／逾時，非使用者原因）→ 不退額、保留維持 `reserved`**：後端回 5xx，請 App 以**同一 `scan_request_id`** 重試；重試時 `quota_reserve` 依契約 (a) 回放 `RESERVED` 並**重進 Vision**。保留額度在整段重試期間持續持有，避免退額後於接近上限時被其他併發請求搶走名額、造成重試反被 `DENIED`。
+   - **最終放棄 → `quota_refund`**：僅在 App 判定放棄時（重試次數/時間用盡，或使用者取消）呼叫 `POST /api/scan/abandon` 觸發 `quota_refund`——另一支原子 Lua script，**僅當狀態為 `reserved` 時**才 `DECR` 計數並標記 `refunded`。此 `DECR` 為狀態機守護下的補償退額（`reserved → refunded` 僅一次），**不是** (c) 保留判定的原子回退；`refunded` 為終態，重試命中直接回放、不重複 `DECR`、不可再取得 `RESERVED`。
+   - **保留 TTL 與對帳兜底**：`reservation:{scan_request_id}` 設 TTL（如 24h）。App 若在未 `commit`/`refund` 前即崩潰或永不回來，逾期的 `reserved` 由對帳工作（reconciliation）自動以 `quota_refund` 退額，確保被遺留的保留不永久佔用當月名額。
 
 3. **Redis 逾時 / 不可用 → Fail-closed**
    - `quota_reserve` 執行逾時或 Redis 不可用時，後端**拒絕該次掃描（回 503），不放行辨識**，確保無法原子計數時不被繞過上限。
    - App 收到 503 以同一 `scan_request_id` 有限次退避重試（靠契約 (a) 去重）；仍失敗則提示網路問題，不在本地放行掃描、不本地遞減配額。
 
 4. **辨識失敗 (Recognition failure) 的計額原則**
-   - 系統性/服務端失敗（Vision 例外、逾時）→ 走 `quota_refund` 退額，不計入 100 次。
+   - 系統性/服務端失敗（Vision 例外、逾時）→ 保留維持 `reserved` 並以同 ID 重試；若最終放棄才走 `quota_refund` 退額，不計入 100 次。
    - 使用者端可辨識但無結果（非卡牌影像、信心度過低）→ 視為一次有效掃描，走 `quota_commit` 計額；UI 告知「已使用 1 次額度但未辨識到卡牌」，避免爭議。
 
 5. **月度重置邊界**：跨月時以伺服器 UTC 時間決定 `month_key`，重置僅換 Key，不影響進行中的 `scan_request_id` 狀態機。
@@ -297,6 +308,18 @@ UI 設計需要遵循精緻的 HoloHunter 暗色系與高質感漸層美學。
 - **預期結果**：
   - 第 101 次點擊掃描時，App 立刻彈出「額度已達上限」的 Block Modal。
   - 後端 API 應對此請求返回 429 狀態碼。
+
+### 測試案例 2b：Vision 失敗重試與最終放棄退額 (Reserve Retry / Abandon Refund)
+- **前提條件**：已登入未訂閱帳號；（測試後門）將當月計數設為 `98`，並注入 Vision 服務暫時性失敗。
+- **步驟**：
+  1. 掃描一次（記 `scan_request_id = R1`）；因 Vision 失敗，後端回 5xx，保留維持 `reserved`，計數為 `99`。
+  2. 以**同一** `R1` 重試 3 次；每次應回放 `RESERVED` 並重進 Vision，計數**維持 99**（不重複扣、不退額）。
+  3. 解除 Vision 失敗注入後，再以 `R1` 重試一次。
+  4. 另開一次新掃描（新 `scan_request_id = R2`）並在 Vision 失敗後由 App 觸發 `POST /api/scan/abandon(R2)`。
+- **預期結果**：
+  - 步驟 2 期間計數恆為 `99`，證明保留在同 ID 重試間持續持有、無重複扣額。
+  - 步驟 3 成功後 `R1` 轉 `committed`，計數落定為 `99`（該次僅計一次）。
+  - 步驟 4 放棄後 `R2` 轉 `refunded` 並 `DECR`，計數退回；再以 `R2` 重試僅回放 `REFUNDED`，不再進 Vision、不再變更計數。
 
 ### 測試案例 3：訂閱解鎖測試 (Subscriber Full Unlock)
 - **前提條件**：已登入 Google 帳號，並在設定中點擊模擬購買「月費訂閱」成功。
