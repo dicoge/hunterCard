@@ -16,6 +16,7 @@ import { useAuthStore } from '../store/authStore';
 import {
   isAppleAuthAvailable,
 } from '../services/auth';
+import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErrorMessages';
 
 const PRIVACY_POLICY_URL = 'https://holocard-hunter.vercel.app/privacy';
 
@@ -34,7 +35,9 @@ export default function AuthScreen() {
     try {
       await loginWithApple();
     } catch (err) {
-      Alert.alert('登入失敗', '無法完成 Apple 登入，請稍後再試。');
+      if (!isCancelAuthError(err as any)) {
+        Alert.alert('登入失敗', friendlyAuthErrorMessage(err as any, 'apple'));
+      }
     } finally {
       setBusy(false);
     }
@@ -45,7 +48,9 @@ export default function AuthScreen() {
     try {
       await loginWithGoogle();
     } catch (err) {
-      Alert.alert('登入失敗', '無法完成 Google 登入，請稍後再試。');
+      if (!isCancelAuthError(err as any)) {
+        Alert.alert('登入失敗', friendlyAuthErrorMessage(err as any, 'google'));
+      }
     } finally {
       setBusy(false);
     }

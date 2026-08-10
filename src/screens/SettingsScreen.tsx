@@ -5,6 +5,7 @@ import { FEATURES } from '../config/releaseFlags';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
+import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErrorMessages';
 import { showAlert } from '../utils/platformAlert';
 import type { AuthProvider } from '../types/auth';
 
@@ -35,11 +36,9 @@ export default function SettingsScreen() {
     try {
       await loginWithGoogle();
     } catch (err: any) {
-      const raw = String(err?.message ?? '');
-      const friendly = /client id|not configured|尚未設定/i.test(raw)
-        ? '目前無法使用 Google 登入（登入服務尚未設定），請稍後再試。'
-        : '無法完成 Google 登入，請稍後再試。';
-      showAlert('登入失敗', friendly);
+      // A user cancel is not a failure — don't nag with a dialog.
+      if (isCancelAuthError(err)) return;
+      showAlert('登入失敗', friendlyAuthErrorMessage(err, 'google'));
     }
   };
 
