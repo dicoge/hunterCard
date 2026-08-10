@@ -58,7 +58,7 @@ sequenceDiagram
             Client-->>User: 顯示價格與預測資訊 (Premium)
         else 角色為 free_user
             Server->>Cache: quota_reserve(userId, YYYY-MM, scan_request_id, limit=100)
-            Note over Cache: 單一原子 Lua：冪等回放 / 超額判定 / 允許才 INCR 保留<br/>保留同時存 userId+month_key、ZADD quota:pending(到期score)、SADD user:{userId}:reservations
+            Note over Cache: 單一原子 Lua：冪等回放 / 超額判定 / 允許才 INCR 保留<br/>保留同時存 userId+month_key、ZADD quota:pending(到期score)、SADD user:{userId}:reservations(耐久，含終態，留待 retention/刪除)
             alt 回傳 DENIED (current >= 100，未 INCR、無回退)
                 Cache-->>Server: DENIED
                 Server-->>Client: 429 Too Many Requests (配額已滿)
@@ -68,7 +68,7 @@ sequenceDiagram
                 Server->>Vision: 執行卡牌辨識
                 alt 辨識成功 (或使用者端無結果)
                     Vision-->>Server: 回傳辨識結果
-                    Server->>Cache: quota_commit(scan_request_id) (reserved→committed，不變更計數，ZREM quota:pending)
+                    Server->>Cache: quota_commit(scan_request_id) (reserved→committed，不變更計數，ZREM quota:pending；id 留耐久索引待 retention/刪除)
                     Server-->>Client: 200 OK (結果 + 剩餘配額 + 加密 Quota 簽章)
                     Client->>Client: 將加密 Quota 簽章儲入安全儲存區
                     Client-->>User: 顯示價格 (無 Premium 預測資訊)
@@ -83,9 +83,9 @@ sequenceDiagram
     end
     opt 最終放棄 (重試用盡 / 使用者取消)
         Client->>Server: POST /api/scan/abandon (scan_request_id)
-        Server->>Cache: quota_refund (依保存 month_key，if current>0 DECR；計數器已過期則 no-op；標記 refunded + ZREM quota:pending)
+        Server->>Cache: quota_refund (依保存 month_key，if current>0 DECR；計數器已過期則 no-op；標記 refunded + ZREM quota:pending；id 留耐久索引)
     end
-    Note over Cache: 對帳工作 ZRANGEBYSCORE quota:pending -inf now 列舉孤兒保留<br/>quota_reconcile_refund：認領(ZREM)+依保存 month_key 下限保護退額；月計數器已過期→no-op
+    Note over Cache: 對帳工作 ZRANGEBYSCORE quota:pending -inf now 列舉孤兒保留<br/>quota_reconcile_refund：認領(ZREM)+依保存 month_key 下限保護退額；月計數器已過期→no-op；保留紀錄缺失→僅 ZREM 收斂<br/>終態紀錄留 user:{userId}:reservations 直到 retention prune 或帳號刪除
 ```
 
 ---
@@ -143,15 +143,17 @@ sequenceDiagram
    - **(c) 允許才保留**：否則對計數器 `INCR`（此 `INCR` 只在確認未達上限後於同一 script 內發生），並在**同一 script 內**：
      - 寫入耐久保留紀錄 `reservation:{scan_request_id} = { state=reserved, userId, month_key, remaining }`——**明確保存 `userId` 與 `month_key`**，退額時不需再依賴任何會過期的鍵去推斷歸屬月份。
      - 將該 id 登記進**耐久且可列舉的全域待決索引** `quota:pending`（Redis Sorted Set，score = 保留到期 deadline 的 epoch 秒，member = `scan_request_id`）。
-     - 同時 `SADD user:{userId}:reservations {scan_request_id}`——**每位使用者一份可列舉的未決保留索引**，供帳號刪除時 O(n) 掃出並清除該用戶散落在全域 `quota:pending` 的 member（見 §6.1）。
+     - 同時 `SADD user:{userId}:reservations {scan_request_id}`——**每位使用者一份耐久且可列舉的保留索引，涵蓋該用戶「待決 + 已終態（committed/refunded）」的所有 `scan_request_id`**。此索引在終態轉移時**不**移除，一路保留到「保留紀錄 retention 清理」或「帳號刪除」為止，使刪除能列舉並清除全部（含終態）保留紀錄（見 §6.1、下方 retention 說明）。
      回傳 `RESERVED` 與 remaining。
-   計數器 Key 首次建立時設定過期為當月最後一刻（承 §3.1）。**保留紀錄 `reservation:{scan_request_id}` 不設會令對帳失去 `userId`/`month_key` 的短 TTL**；其生命週期由終態轉移（commit/refund）或對帳明確結束，`quota:pending` 為「哪些保留尚待落定」的唯一可列舉真理來源。
+   計數器 Key 首次建立時設定過期為當月最後一刻（承 §3.1）。**保留紀錄 `reservation:{scan_request_id}` 不設會令對帳或刪除失去 `userId`/`month_key` 的短 TTL**。
+   - **兩索引職責不同、生命週期刻意不一致**：`quota:pending`（Sorted Set）只含**待決**保留，是對帳「哪些尚待落定」的唯一可列舉來源，終態即 `ZREM` 移出；`user:{userId}:reservations`（Set）為**每用戶耐久索引**，含待決 + 終態，供帳號刪除完整列舉，終態時不移出。
+   - **終態保留紀錄 retention 清理**：`committed`/`refunded` 保留紀錄僅作冪等回放/稽核之用，設一個 retention 窗（如 90 天）。retention 到期由 prune 工作**同步刪除** `reservation:{id}` 與其在 `user:{userId}:reservations` 的成員，讓耐久索引不會無界成長；未到期前該終態 id 仍可被列舉與刪除。
 
 2. **保留 → 落定 / 退額 (reserve → commit / refund)；保留在同 ID 重試間持續持有**
    `quota_reserve` 回 `RESERVED` 後才呼叫 Vision 辨識。每個 `scan_request_id` 僅能單向終態一次（`reserved → committed` 或 `reserved → refunded`）：
-   - **成功 → `quota_commit`**：原子將 `reservation` 由 `reserved` 標記為 `committed`，並 `ZREM quota:pending {scan_request_id}` 與 `SREM user:{userId}:reservations {scan_request_id}`；額度已於保留時計入，**不再變更計數**。（每次終態轉移都同時移出全域待決索引與該用戶未決索引，兩索引恆保持一致。）
+   - **成功 → `quota_commit`**：原子將 `reservation` 由 `reserved` 標記為 `committed`，並 `ZREM quota:pending {scan_request_id}`；額度已於保留時計入，**不再變更計數**。**該 id 仍留在 `user:{userId}:reservations` 耐久索引內**（供刪除列舉），直到 retention prune 或帳號刪除才移除——終態只移出 `quota:pending`，不移出耐久索引。
    - **系統性失敗（Vision 例外／逾時，非使用者原因）→ 不退額、保留維持 `reserved`**：後端回 5xx，請 App 以**同一 `scan_request_id`** 重試；重試時 `quota_reserve` 依契約 (a) 回放 `RESERVED` 並**重進 Vision**。保留額度在整段重試期間持續持有，避免退額後於接近上限時被其他併發請求搶走名額、造成重試反被 `DENIED`。
-   - **最終放棄 → `quota_refund`**：僅在 App 判定放棄時（重試次數/時間用盡，或使用者取消）呼叫 `POST /api/scan/abandon` 觸發 `quota_refund`。這是一支原子 Lua script，語意與對帳退額**完全一致**（見下方 6）：以保留紀錄內保存的 `month_key` 為準、**僅當狀態為 `reserved`** 時才對 `user:{userId}:scans:{month_key}` 做**有下限保護的退額**（`if current > 0 then DECR`，永不使計數轉負），標記 `refunded` 並 `ZREM quota:pending` 與 `SREM user:{userId}:reservations`。**若該月計數器 Key 已過期不存在（跨月）→ no-op**：不重建鍵、不 `DECR`，僅標記終態並移出兩索引。`refunded` 為終態，重試命中直接回放、不重複 `DECR`、不可再取得 `RESERVED`。
+   - **最終放棄 → `quota_refund`**：僅在 App 判定放棄時（重試次數/時間用盡，或使用者取消）呼叫 `POST /api/scan/abandon` 觸發 `quota_refund`。這是一支原子 Lua script，語意與對帳退額**完全一致**（見下方 6）：以保留紀錄內保存的 `month_key` 為準、**僅當狀態為 `reserved`** 時才對 `user:{userId}:scans:{month_key}` 做**有下限保護的退額**（`if current > 0 then DECR`，永不使計數轉負），標記 `refunded` 並 `ZREM quota:pending`（**id 仍留在 `user:{userId}:reservations` 耐久索引**，待 retention prune 或刪除移除）。**若該月計數器 Key 已過期不存在（跨月）→ no-op**：不重建鍵、不 `DECR`，僅標記終態並 `ZREM quota:pending`。`refunded` 為終態，重試命中直接回放、不重複 `DECR`、不可再取得 `RESERVED`。
 
 3. **Redis 逾時 / 不可用 → Fail-closed**
    - `quota_reserve` 執行逾時或 Redis 不可用時，後端**拒絕該次掃描（回 503），不放行辨識**，確保無法原子計數時不被繞過上限。
@@ -166,10 +168,10 @@ sequenceDiagram
 6. **孤兒保留對帳契約 (Reconciliation of orphaned reservations)**
    針對 App 崩潰或永不回來、`reserved` 從未 `commit`/`refund` 的孤兒保留，由對帳工作依耐久索引安全回收，不依賴任何會過期的鍵：
    - **可列舉來源**：對帳工作以 `ZRANGEBYSCORE quota:pending -inf {now}` 列舉所有已逾期（score ≤ 現在）的待決保留；`quota:pending` 為耐久 Sorted Set，即使個別保留的細節鍵不在也仍可被列舉。
-   - **原子認領 + 退額 `quota_reconcile_refund`（單一 Lua）**：對每個逾期 member，於同一 script 內原子完成：讀取 `reservation:{scan_request_id}`（取其保存的 `userId` / `month_key`）→ **僅當狀態仍為 `reserved`** 才對 `user:{userId}:scans:{month_key}` 執行**有下限保護退額**（`if current > 0 then DECR`）→ 標記 `refunded` → `ZREM quota:pending {scan_request_id}` 與 `SREM user:{userId}:reservations {scan_request_id}`。認領即 `ZREM`，確保多個對帳實例不會重複處理同一 member。
-   - **計數器已過期 → no-op（跨月安全）**：若原始 `month_key` 計數器 Key 已因當月到期而消失，退額為 **no-op**——不 `SET`/`INCR` 重建該鍵、不 `DECR`（避免把不存在的鍵建成 `-1` 之負值），僅將保留標記終態並移出兩索引。語意上跨月後該月配額已整體重置，舊保留無需、也不應影響任何計數器。
-   - **保留紀錄缺失 → 清理 no-op（dangling member 收斂）**：若某 `quota:pending` member 的 `reservation:{scan_request_id}` 已不存在（例如帳號刪除已移除紀錄、或紀錄遭手動清除），對帳**不試圖退額、不 `DECR`、不重建任何鍵**，僅 `ZREM quota:pending {scan_request_id}` 將該 dangling member 移除即結束；若能自 member 反解出 userId，一併 `SREM user:{userId}:reservations`。此規則確保任何殘留的懸空 member 最終都會被對帳收斂清除，`quota:pending` 不會永久累積無法處理的項目。
-   - **與 `quota_refund` 同語意**：`POST /api/scan/abandon` 的 `quota_refund` 與對帳退額共用「認保存 month_key、下限保護、計數器過期即 no-op、缺失紀錄即清理、終態 + `ZREM`/`SREM`」這組不變式，兩條路徑對同一 `scan_request_id` 皆冪等且互斥於終態。
+   - **原子認領 + 退額 `quota_reconcile_refund`（單一 Lua）**：對每個逾期 member，於同一 script 內原子完成：讀取 `reservation:{scan_request_id}`（取其保存的 `userId` / `month_key`）→ **僅當狀態仍為 `reserved`** 才對 `user:{userId}:scans:{month_key}` 執行**有下限保護退額**（`if current > 0 then DECR`）→ 標記 `refunded` → `ZREM quota:pending {scan_request_id}`（id 續留 `user:{userId}:reservations` 耐久索引待 retention/刪除）。認領即 `ZREM`，確保多個對帳實例不會重複處理同一 member。
+   - **計數器已過期 → no-op（跨月安全）**：若原始 `month_key` 計數器 Key 已因當月到期而消失，退額為 **no-op**——不 `SET`/`INCR` 重建該鍵、不 `DECR`（避免把不存在的鍵建成 `-1` 之負值），僅將保留標記終態並 `ZREM quota:pending`。語意上跨月後該月配額已整體重置，舊保留無需、也不應影響任何計數器。
+   - **保留紀錄缺失 → 清理 no-op（dangling member 收斂）**：若某 `quota:pending` member 的 `reservation:{scan_request_id}` 已不存在（例如帳號刪除已移除紀錄、或紀錄遭手動清除），對帳**不試圖退額、不 `DECR`、不重建任何鍵**，僅 `ZREM quota:pending {scan_request_id}` 將該 dangling member 移除即結束（該用戶耐久索引通常已隨刪除移除，若殘留可反解 userId 則一併 `SREM`）。此規則確保任何殘留的懸空 member 最終都會被對帳收斂清除，`quota:pending` 不會永久累積無法處理的項目。
+   - **與 `quota_refund` 同語意**：`POST /api/scan/abandon` 的 `quota_refund` 與對帳退額共用「認保存 month_key、下限保護、計數器過期即 no-op、缺失紀錄即清理、終態僅 `ZREM quota:pending`（耐久索引留待 retention/刪除）」這組不變式，兩條路徑對同一 `scan_request_id` 皆冪等且互斥於終態。
 
 ---
 
@@ -282,9 +284,9 @@ UI 設計需要遵循精緻的 HoloHunter 暗色系與高質感漸層美學。
    - 刪除該用戶名下的卡牌收藏清單 (`Favorites`)、卡牌追蹤警示 (`Watchlist`)。
    - 刪除其每月卡牌掃描的紀錄檔與照片快取。
 2. **掃描配額計數器與保留索引 (Quota Counter & Reservations — Deleted)**：
-   - **以每用戶保留索引原子清除全域待決 member**：帳號刪除必須同時把該用戶散落在全域 `quota:pending` 的 member 一併移除，否則會留下無法對帳的懸空 member。刪除流程以 `SMEMBERS user:{userId}:reservations` 列舉該用戶所有未決 `scan_request_id`，在**單一 Lua/`MULTI` 交易**內對每個 id 原子完成 `ZREM quota:pending {id}` + 刪除 `reservation:{id}`，最後刪除 `user:{userId}:reservations` 本身。由於整段是刪除語意（計數器也一併移除），**不需退額/`DECR`**，只需移除，避免任何 dangling member 殘留於全域索引。
-   - 刪除該用戶所有 Redis 配額 Key（`user:{userId}:scans:{YYYY-MM}`，含歷史月份）與所有 `scan_request_id` 狀態機紀錄（含已終態者）。
-   - **兜底**：即便個別 member 因競態未在上一步被清到，§3.3 第 6 點「保留紀錄缺失 → 清理 no-op」保證對帳會將任何 `reservation` 已不存在的懸空 `quota:pending` member 收斂移除，不退額、不重建鍵。
+   - **以耐久每用戶保留索引完整列舉並刪除全部保留（含終態）**：`user:{userId}:reservations` 為涵蓋「待決 + 已終態（committed/refunded）」的耐久索引（§3.3 第 1 點），因此它是刪除時列舉該用戶**所有** `scan_request_id`（不只待決）的完整可列舉機制。刪除流程以 `SMEMBERS user:{userId}:reservations` 取得全部 id，在**單一 Lua/`MULTI` 交易**內對每個 id 原子完成 `ZREM quota:pending {id}`（待決者移出全域待決索引；終態者本就不在，為 no-op）+ **`DEL reservation:{id}`（無論 reserved／committed／refunded 一律刪除，含仍保存 `userId` 的終態紀錄）**，最後 `DEL user:{userId}:reservations` 本身。整段為刪除語意（計數器也一併移除），**不需退額/`DECR`**。
+   - 刪除該用戶所有 Redis 配額 Key（`user:{userId}:scans:{YYYY-MM}`，含歷史月份）。上一步已保證所有 `scan_request_id` 狀態機紀錄（含已終態、含保存 `userId` 者）都被 `DEL`，不遺留任何帶 `userId` 的殘跡。
+   - **兜底**：即便個別待決 member 因競態未在上一步被清到，§3.3 第 6 點「保留紀錄缺失 → 清理 no-op」保證對帳會將任何 `reservation` 已不存在的懸空 `quota:pending` member 收斂移除，不退額、不重建鍵。
    - 由於 quota 以 internal user 為 key，帳號刪除後即無殘留；同一人日後重新註冊為新 internal user，配額從 0 起算。
 3. **訂閱 Entitlement 與 Provider Mapping (Unlinked / Deleted)**：
    - 刪除 §4.1 的 identity mapping 列（`provider` / `provider_subject` / `store_app_account_token`），解除 internal user 與 Apple / Google / Web identity 的連結。
@@ -347,14 +349,16 @@ UI 設計需要遵循精緻的 HoloHunter 暗色系與高質感漸層美學。
   - 步驟 3：`R4` 因原月計數器已過期 → **no-op**：不重建鍵、不 `DECR`（不得出現 `-1`），僅標記終態並移出 `quota:pending`；當月/新月計數器不受影響。
   - 步驟 4：已終態的 `R3`/`R4` 不再被處理，計數不再變動（對帳冪等、認領互斥）。
 
-### 測試案例 2d：帳號刪除清除待決保留與懸空 member 收斂 (Deletion Purge / Dangling Cleanup)
-- **前提條件**：已登入未訂閱帳號，且該用戶有 2 筆未決保留 `D1`、`D2`（皆 `reserved`、皆在全域 `quota:pending` 與 `user:{userId}:reservations` 內）。
+### 測試案例 2d：帳號刪除清除待決＋終態保留與懸空 member 收斂 (Deletion Purge / Terminal Records / Dangling Cleanup)
+- **前提條件**：已登入未訂閱帳號，且該用戶同時存在待決與終態保留：
+  - 待決：`D1`、`D2`（皆 `reserved`，同時在全域 `quota:pending` 與耐久索引 `user:{userId}:reservations` 內）。
+  - 終態：`D3`（`committed`）、`D4`（`refunded`）。兩者依 §3.3 已於終態時自 `quota:pending` `ZREM` 移除，故**不在** `quota:pending` 內；但其 `reservation:D3|D4` hash **仍保存 `userId`**，且其 id **仍留在耐久索引** `user:{userId}:reservations`（待 retention prune 或帳號刪除才移除）。
 - **步驟**：
   1. 於設定頁發起「刪除帳號」。
-  2. 檢查全域 `quota:pending` 是否仍含 `D1`/`D2`、`reservation:D1|D2` 與 `user:{userId}:reservations` 是否仍存在。
+  2. 檢查全域 `quota:pending`、`reservation:D1|D2|D3|D4`、`user:{userId}:reservations` 與各月計數器 `user:{userId}:scans:{YYYY-MM}` 是否仍存在。
   3. （競態模擬）手動先刪除 `reservation:D2` 但**故意保留** `quota:pending` 內的 `D2` member，再執行對帳工作。
 - **預期結果**：
-  - 步驟 2：刪除流程已於單一交易內 `ZREM` 移除 `D1`/`D2`、刪除其 `reservation` 紀錄與 `user:{userId}:reservations`，全域 `quota:pending` **不留該用戶任何 member**；過程為刪除語意，未對任何計數器 `DECR`。
+  - 步驟 2：刪除流程以 `SMEMBERS user:{userId}:reservations` **完整列舉**待決＋終態的所有 id（`D1`~`D4`），於單一 Lua/`MULTI` 交易內對每個 id `ZREM quota:pending`（僅待決者實際命中）並 `DEL reservation:{id}`——**包含仍帶 `userId` 的終態紀錄 `D3`/`D4`**，最後 `DEL user:{userId}:reservations` 與各月計數器 Key。刪除後 `reservation:D3`/`reservation:D4` **不存在**，任何鍵中不再殘留該 `userId`；全程為刪除語意，未對任何計數器 `DECR`。
   - 步驟 3：對帳依 §3.3 第 6 點「保留紀錄缺失 → 清理 no-op」，將懸空的 `D2` member 僅 `ZREM` 收斂移除，不退額、不重建鍵；`quota:pending` 最終不殘留無法處理的項目。
 
 ### 測試案例 3：訂閱解鎖測試 (Subscriber Full Unlock)
