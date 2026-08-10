@@ -345,8 +345,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-069_hBP05"
+    },
+    {
+      "date": "2026-08-10",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-069_hBP05"
     }
   ],
-  "lastUpdated": "2026-08-09T12:12:51.404Z",
+  "lastUpdated": "2026-08-10T12:12:40.643Z",
   "nameZh": "白上吹雪"
 }

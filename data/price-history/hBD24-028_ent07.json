@@ -289,8 +289,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-028_ent07"
+    },
+    {
+      "date": "2026-08-10",
+      "price": 7980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-028_ent07"
     }
   ],
-  "lastUpdated": "2026-08-09T12:12:51.198Z",
+  "lastUpdated": "2026-08-10T12:12:40.374Z",
   "nameZh": "霸子·貝爾茲"
 }

@@ -345,8 +345,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD05-014_hSD05"
+    },
+    {
+      "date": "2026-08-10",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD05-014_hSD05"
     }
   ],
-  "lastUpdated": "2026-08-09T12:12:51.470Z",
+  "lastUpdated": "2026-08-10T12:12:40.750Z",
   "nameZh": "萬平"
 }

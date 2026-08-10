@@ -359,8 +359,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-008_hPR"
+    },
+    {
+      "date": "2026-08-10",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-008_hPR"
     }
   ],
-  "lastUpdated": "2026-08-09T12:12:51.553Z",
+  "lastUpdated": "2026-08-10T12:12:40.863Z",
   "nameZh": "博衣可佑理"
 }
