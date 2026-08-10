@@ -45,11 +45,11 @@ sequenceDiagram
     participant Vision as Gemini Vision API / DB
 
     User->>Client: 點擊「啟動掃描」
-    Client->>Client: 檢查本地角色類型
+    Client->>Client: 檢查本地角色類型 & 產生 scan_request_id
     alt 角色為 guest
         Client-->>User: 阻擋並彈出「請先登入」引導
     else 角色為 free_user 或 subscriber
-        Client->>Server: POST /api/recognize-card (帶 JWT & 影像)
+        Client->>Server: POST /api/recognize-card (帶 JWT、scan_request_id & 影像)
         Note over Server: 驗證 JWT 簽章並提取角色 & userId
         alt 角色為 subscriber
             Server->>Vision: 執行卡牌辨識
@@ -57,17 +57,27 @@ sequenceDiagram
             Server-->>Client: 200 OK (結果 + 無限配額)
             Client-->>User: 顯示價格與預測資訊 (Premium)
         else 角色為 free_user
-            Server->>Cache: 讀取並遞增使用次數 (key: user:id:scans:YYYY-MM)
-            Cache-->>Server: 回傳當月已用次數 (Count)
-            alt Count > 100
+            Server->>Cache: quota_reserve(userId, YYYY-MM, scan_request_id, limit=100)
+            Note over Cache: 單一原子 Lua：冪等回放 / 超額判定 / 允許才 INCR 保留
+            alt 回傳 DENIED (current >= 100，未 INCR、無回退)
+                Cache-->>Server: DENIED
                 Server-->>Client: 429 Too Many Requests (配額已滿)
                 Client-->>User: 顯示「配額已滿，升級訂閱」彈出視窗
-            else Count <= 100
+            else 回傳 RESERVED (remaining)
+                Cache-->>Server: RESERVED + remaining
                 Server->>Vision: 執行卡牌辨識
-                Vision-->>Server: 回傳辨識結果
-                Server-->>Client: 200 OK (結果 + 剩餘配額 + 加密 Quota 簽章)
-                Client->>Client: 將加密 Quota 簽章儲入安全儲存區
-                Client-->>User: 顯示價格 (無 Premium 預測資訊)
+                alt 辨識成功 (或使用者端無結果)
+                    Vision-->>Server: 回傳辨識結果
+                    Server->>Cache: quota_commit(scan_request_id) (reserved→committed，不變更計數)
+                    Server-->>Client: 200 OK (結果 + 剩餘配額 + 加密 Quota 簽章)
+                    Client->>Client: 將加密 Quota 簽章儲入安全儲存區
+                    Client-->>User: 顯示價格 (無 Premium 預測資訊)
+                else 系統性失敗 (Vision 例外/逾時)
+                    Vision-->>Server: 錯誤/逾時
+                    Server->>Cache: quota_refund(scan_request_id) (僅 reserved→refunded 才 DECR)
+                    Server-->>Client: 5xx (請以同一 scan_request_id 重試)
+                    Client-->>User: 顯示暫時性錯誤提示
+                end
             end
         end
     end
@@ -99,7 +109,7 @@ sequenceDiagram
 ### 3.1 伺服器主控配額管理 (Server-Centric Control)
 1. **無離線掃描支援**：由於 OCR 與 Gemini Vision 圖像識別服務需要連線到伺服器處理，後端將作為配額審查的唯一真理來源 (Source of Truth)。
 2. **Redis 週期性計數器**：
-   - 伺服器在接收到 `/api/recognize-card` 時，會以 `user:{userId}:scans:{YYYY-MM}` 作為 Redis Key 進行 `INCR` 累加。
+   - 當月次數以 `user:{userId}:scans:{YYYY-MM}` 為 Redis Key 累計；其增量**一律經由 §3.3 的 `quota_reserve` 原子契約在確認未達上限時發生**，後端不在收到請求時先行裸 `INCR`。
    - 該 Key 設定過期時間為當月最後一天的 23:59:59 (基於伺服器 UTC 時間)，下月自動重置為 0。
 3. **時鐘防禦 (Clock Attack Prevention)**：不依賴手機端時間判定月份，完全以伺服器端接收請求的時間戳記進行統計。
 
@@ -114,22 +124,29 @@ sequenceDiagram
 
 ### 3.3 扣額原子語意、冪等與失敗處理 (Atomicity / Idempotency / Fail-closed)
 
-配額扣減必須是原子的，且在逾時、辨識失敗、重試等狀況下**不重複扣額也不漏扣**。
+配額扣減必須是原子的，且在逾時、辨識失敗、重試等狀況下**不重複扣額也不漏扣**。核心是**單一伺服器端原子契約**：一個 Redis Lua script（在 Redis 內單執行緒不可分割地執行）同時完成「檢查上限 + 記錄冪等/保留狀態 + 僅在允許時保留額度」。**不存在**「先 `INCR` 再比對、超額才 `DECR` 回退」這種以多個獨立指令拼湊而被視為原子的作法。
 
-1. **請求冪等 (Idempotency)**：
-   - App 每次掃描產生一個 `scan_request_id` (UUID)，隨 `/api/recognize-card` 送出；重試沿用同一個 id。
-   - 後端以 `scan_request_id` 去重：同一 id 只扣一次額、只計一次結果；重試命中已處理 id 時直接回放前次結果與當時的剩餘配額，不再 `INCR`。
-2. **先保留額度、辨識成功才落定 (reserve → commit/refund)**：
-   - 進入 `INCR` 前先原子檢查上限：以 Lua script 或 `INCR` 後比對回傳值（>100 即視為超額並立即 `DECR` 回退），確保 check-and-increment 為單一原子操作，杜絕併發競態。
-   - 扣額成功後才呼叫 Vision 辨識。**若辨識失敗（Vision 錯誤、逾時、非使用者原因）→ 對該 `scan_request_id` 執行一次補償退額 (`DECR`)**，使失敗掃描不佔用當月額度；退額同樣以 `scan_request_id` 去重，避免重試造成多次退額。
-   - reserve 與最終 commit/refund 以 `scan_request_id` 綁定狀態機（`reserved` / `committed` / `refunded`），每個 id 僅能單向轉移一次。
-3. **Redis 逾時 / 不可用 → Fail-closed**：
-   - 讀寫 Redis 逾時或連線失敗時，後端**拒絕該次掃描（回 503 並提示稍後重試），不放行辨識**，確保無法計數時不會被繞過上限。
-   - App 收到 503 以同一 `scan_request_id` 有限次退避重試；仍失敗則提示網路問題，不在本地放行掃描、不本地遞減配額。
-4. **辨識失敗 (Recognition failure) 的計額原則**：
-   - 系統性/服務端失敗（Vision 例外、逾時）→ 退額，不計入 100 次。
-   - 使用者端可辨識但無結果（例如非卡牌影像、信心度過低）→ 視為一次有效掃描，計額；於 UI 明確告知「已使用 1 次額度但未辨識到卡牌」，避免爭議。
-5. **月度重置與扣額的邊界**：跨月時以伺服器 UTC 時間決定 Key，重置僅換 Key 不影響進行中的 `scan_request_id` 狀態機。
+1. **唯一保留契約 `quota_reserve`（單一原子 Lua script）**
+   輸入：`userId`、`month_key = YYYY-MM`（伺服器 UTC 決定）、`scan_request_id`、`limit = 100`。在同一次 script 執行內依序判斷並回傳，全程原子：
+   - **(a) 冪等回放**：若 `reservation:{scan_request_id}` 已存在，直接回傳其既有結果（`RESERVED`＋當時 remaining，或 `DENIED`），**不再變更計數**。這是重試的唯一正確路徑。
+   - **(b) 超額判定**：否則讀取 `user:{userId}:scans:{month_key}` 目前值；若 `current >= limit`，寫入 `reservation:{scan_request_id} = denied` 後回傳 `DENIED`——**此路徑完全不對計數器做 `INCR`，因此不需要、也不會有任何 `DECR` 回退**。
+   - **(c) 允許才保留**：否則對計數器 `INCR`（此 `INCR` 只在確認未達上限後於同一 script 內發生），寫入 `reservation:{scan_request_id} = reserved`（含 remaining），回傳 `RESERVED` 與 remaining。
+   計數器 Key 首次建立時設定過期為當月最後一刻（承 §3.1）；`reservation:{scan_request_id}` 設短 TTL（如 24h）供重試去重。
+
+2. **保留 → 落定 / 退額 (reserve → commit / refund)**
+   `quota_reserve` 回 `RESERVED` 後才呼叫 Vision 辨識，依結果對**同一 `scan_request_id`** 做一次狀態轉移，每個 id 僅能單向轉移一次（`reserved → committed` 或 `reserved → refunded`）：
+   - **成功 → `quota_commit`**：將 `reservation` 由 `reserved` 標記為 `committed`；額度已於保留時計入，**不再變更計數**。
+   - **系統性失敗（Vision 例外／逾時，非使用者原因）→ `quota_refund`**：另一支原子 Lua script，且**僅當狀態為 `reserved` 時**才 `DECR` 計數並標記 `refunded`。此 `DECR` 是狀態機守護下的補償退額（reserved→refunded 僅一次），**不是** (c) 保留判定的一部分，也不會被描述為保留契約的原子回退；重試命中 `refunded` 直接回放，不重複 `DECR`。
+
+3. **Redis 逾時 / 不可用 → Fail-closed**
+   - `quota_reserve` 執行逾時或 Redis 不可用時，後端**拒絕該次掃描（回 503），不放行辨識**，確保無法原子計數時不被繞過上限。
+   - App 收到 503 以同一 `scan_request_id` 有限次退避重試（靠契約 (a) 去重）；仍失敗則提示網路問題，不在本地放行掃描、不本地遞減配額。
+
+4. **辨識失敗 (Recognition failure) 的計額原則**
+   - 系統性/服務端失敗（Vision 例外、逾時）→ 走 `quota_refund` 退額，不計入 100 次。
+   - 使用者端可辨識但無結果（非卡牌影像、信心度過低）→ 視為一次有效掃描，走 `quota_commit` 計額；UI 告知「已使用 1 次額度但未辨識到卡牌」，避免爭議。
+
+5. **月度重置邊界**：跨月時以伺服器 UTC 時間決定 `month_key`，重置僅換 Key，不影響進行中的 `scan_request_id` 狀態機。
 
 ---
 
