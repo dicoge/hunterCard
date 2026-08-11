@@ -352,8 +352,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-067_ent07"
+    },
+    {
+      "date": "2026-08-11",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-067_ent07"
     }
   ],
-  "lastUpdated": "2026-08-10T12:12:40.431Z",
+  "lastUpdated": "2026-08-11T12:20:41.803Z",
   "nameZh": "不知火芙蕾雅"
 }

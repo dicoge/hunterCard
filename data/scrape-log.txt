@@ -1,4 +1,4 @@
-=== Scrape Log 2026-08-10T12:07:14.570Z ===
+=== Scrape Log 2026-08-11T12:15:24.922Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -70,16 +70,16 @@
 [database] Scraping hPC01: /sell/hocg/s/special/7
   → Found 126 cards with prices
 [database] Scraping hPR: /sell/hocg/s/special/1
-  → Found 118 cards with prices
+  → Found 109 cards with prices
 [database] Scraping hSD2025summer: /sell/hocg/s/special/8
   → Found 128 cards with prices
 
-  Total cards from yuyu-tei: 1872
+  Total cards from yuyu-tei: 1863
 
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 0, Skipped: 1183, Errors: 0
+  [images] Downloaded: 0, Skipped: 1184, Errors: 0
 
 ── Step 3: Merge official data ──
 
@@ -92,8 +92,6 @@
 [add-zh-names] ⚠️ 過濾了 2 個損壞的翻譯條目 (含 U+FFFD)
 [add-zh-names] ✅ 載入 339 筆翻譯對照
 [add-zh-names] 📝 處理 2105 張卡片...
-[ERROR] [add-zh-names] ⚠️ API 錯誤 (401): {"error":{"message":"User not found.","code":401}}
-[ERROR] [add-zh-names] ⚠️ API 錯誤 (401): {"error":{"message":"User not found.","code":401}}
 [add-zh-names] ✅ 完成！
 [add-zh-names]   靜態匹配: 2103 張卡片
 [add-zh-names]   自動翻譯: 0 張卡片
@@ -101,7 +99,7 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 2014 new records; index totals: 2025 cards / 101082 records
+  [price-history] Saved 0 new records; index totals: 2025 cards / 103098 records
 
 ── Step 6: Merge priceHistory into database ──
   [priceHistory] Merged into 2025 cards
@@ -113,16 +111,16 @@
 ═══════════════════════════════════════
   ✅ Build complete!
   Total cards: 2105
-  Cards with prices: 1183
+  Cards with prices: 1184
   Images downloaded: 0
-  Duration: 326.5s
+  Duration: 317.4s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
 Build result: {
   "totalCards": 2105,
-  "yuyuCount": 1183,
+  "yuyuCount": 1184,
   "officialCount": 2105,
   "imagesDownloaded": 0,
-  "duration": 326.5
+  "duration": 317.4
 }

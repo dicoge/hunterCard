@@ -4,12 +4,12 @@
   "nameZh": "不知火芙蕾雅",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.6,
+  "confidence": 0.9,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-08-10T12:15:37.799Z",
-  "dataPoints": 25
+  "lastUpdated": "2026-08-11T12:14:56.603Z",
+  "dataPoints": 26
 }
