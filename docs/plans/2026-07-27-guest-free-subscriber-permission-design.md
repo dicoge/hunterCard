@@ -285,12 +285,13 @@ UI 設計需要遵循精緻的 HoloHunter 暗色系與高質感漸層美學。
    - 刪除該用戶名下的卡牌收藏清單 (`Favorites`)、卡牌追蹤警示 (`Watchlist`)。
    - 刪除其每月卡牌掃描的紀錄檔與照片快取。
 2. **掃描配額計數器與保留索引 (Quota Counter & Reservations — Deleted)**：
-   - **單一 `quota_close_account` Lua script 於同一原子邊界內列舉＋刪除**：刪除**不**由 App 端先 `SMEMBERS` 再拼 `MULTI`——那會在「讀成員」與「送刪除」之間留下空窗，且 Redis `MULTI` 無法依 `SMEMBERS` 結果動態展開指令。改以**一支 Redis Lua script**完成，Lua 在 Redis 內**單執行緒不可分割地執行**，script 內的列舉與刪除屬同一原子邊界、期間**沒有任何併發 `quota_reserve` 能插入**：
-     1. 先 `SET user:{userId}:closed = 1`（帳號關閉墓碑），使**此後**抵達的 `quota_reserve` 依 §3.3 第 1 點 (a′) fail-closed、無法重建任何鍵（封住「刪除完成後才到達的保留」競態）。
-     2. 於**同一 script 內** `redis.call('SMEMBERS', 'user:{userId}:reservations')` 取得待決＋終態全部 id，逐一 `ZREM quota:pending {id}`（待決者移出；終態者本就不在，為 no-op）＋ **`DEL reservation:{id}`（無論 reserved／committed／refunded 一律刪除，含仍保存 `userId` 的終態紀錄）**。
-     3. `DEL user:{userId}:reservations` 本身，並 `DEL` 該用戶所有月配額計數器 `user:{userId}:scans:{YYYY-MM}`（含歷史月份，key 集合由呼叫端以 `KEYS` 前綴掃描後當作 `KEYS[]` 傳入，避免在 script 內 `KEYS`）。
-     整段為刪除語意，**不需退額/`DECR`**；script 回傳後該用戶不再遺留任何帶 `userId` 的鍵。
-   - **併發保留無法存活**：因列舉＋刪除在單一 Lua 原子邊界內，刪除**執行期間**不可能有 `quota_reserve` 交錯新增成員；而墓碑令刪除**完成之後**到達的保留一律 fail-closed，故任一時序的併發保留都無法在帳號刪除後留下殘跡（見測試案例 2e）。
+   - **無空窗帳號關閉協定 `quota_close_account`（墓碑優先 → 收斂刪除）**：關鍵在**先設墓碑、再枚舉刪除**，且**不得**在墓碑之前對計數器做任何外部 `SCAN`／`KEYS` 快照——否則快照與關閉之間到達的 `quota_reserve` 會新建一個不在快照內的 `user:{userId}:scans:{YYYY-MM}` 計數器而漏刪。協定固定順序如下：
+     1. **墓碑優先（原子且冪等）**：`SET user:{userId}:closed = 1`。此步完成後，**任何**後續 `quota_reserve` 皆依 §3.3 第 1 點 (a′) fail-closed，**無法再新建** `reservation`、索引成員、`quota:pending` member **或計數器**——這是收斂能成立的前提。
+     2. **保留與索引（單一 Lua script，原子）**：`redis.call('SMEMBERS', 'user:{userId}:reservations')` 取得待決＋終態全部 id，逐一 `ZREM quota:pending {id}`（待決者移出；終態者本就不在，為 no-op）＋ **`DEL reservation:{id}`（無論 reserved／committed／refunded 一律刪除，含仍保存 `userId` 的終態紀錄）**，最後 `DEL user:{userId}:reservations`。因在墓碑之後執行，期間不可能有併發保留新增成員。
+     3. **計數器收斂刪除（retry-safe）**：`SCAN`（游標式、非阻塞）比對前綴 `user:{userId}:scans:*` 並 `DEL` 命中的鍵，**重複整輪直到一次完整 `SCAN` 不再回傳任何鍵**。因墓碑已封鎖新計數器的產生，此迴圈**保證收斂**（最多殘存的是墓碑前已完成的有限筆計數器，全部刪除後不再有新鍵出現），涵蓋所有月份（含歷史月份）。**不用 `KEYS` 阻塞式掃描、不在墓碑前快照。**
+     整段為刪除語意，**不需退額/`DECR`**；協定回傳後該用戶不再遺留任何帶 `userId` 的鍵（計數器、保留、索引、pending member 皆盡）。
+   - **崩潰／重試語意（冪等、可重入）**：`quota_close_account` 可安全重跑到底。墓碑 `SET` 冪等；步驟 2 對已空／不存在的索引為 no-op；步驟 3 的 `SCAN`+`DEL` 收斂迴圈天然可重入。若程序在任一步之間崩潰，重新呼叫即從墓碑仍在的狀態續清剩餘計數器/保留——期間因墓碑常駐，**不會有新狀態累積**，故最終一致收斂到「零殘留」。墓碑本身可設一個遠大於計數器月末 TTL 的保留期（或於確認零殘留後再清除），確保不因墓碑早退而讓遲到保留復活。
+   - **併發保留無法存活**：墓碑優先使刪除**執行期間與完成之後**到達的 `quota_reserve` 全數 fail-closed（不建任何鍵）；墓碑之前已完成的保留與計數器則由步驟 2、3 完整枚舉刪除。故任一時序（前／中／後）的併發保留都無法在帳號刪除後留下 `reservation`、per-user 索引、`quota:pending` member 或計數器殘跡（見測試案例 2e、2f）。
    - **兜底**：即便個別待決 member 因跨鍵競態（如對帳與刪除交錯）未被清到，§3.3 第 6 點「保留紀錄缺失 → 清理 no-op」保證對帳會將任何 `reservation` 已不存在的懸空 `quota:pending` member 收斂移除，不退額、不重建鍵。
    - 由於 quota 以 internal user 為 key，帳號刪除後即無殘留；同一人日後重新註冊為新 internal user，配額從 0 起算。
 3. **訂閱 Entitlement 與 Provider Mapping (Unlinked / Deleted)**：
@@ -363,7 +364,7 @@ UI 設計需要遵循精緻的 HoloHunter 暗色系與高質感漸層美學。
   2. 檢查全域 `quota:pending`、`reservation:D1|D2|D3|D4`、`user:{userId}:reservations` 與各月計數器 `user:{userId}:scans:{YYYY-MM}` 是否仍存在。
   3. （競態模擬）手動先刪除 `reservation:D2` 但**故意保留** `quota:pending` 內的 `D2` member，再執行對帳工作。
 - **預期結果**：
-  - 步驟 2：刪除由單一 `quota_close_account` Lua script 於**同一原子邊界**內完成——script 內 `SMEMBERS user:{userId}:reservations` **完整列舉**待決＋終態的所有 id（`D1`~`D4`），逐一 `ZREM quota:pending`（僅待決者實際命中）並 `DEL reservation:{id}`——**包含仍帶 `userId` 的終態紀錄 `D3`/`D4`**，最後 `DEL user:{userId}:reservations` 與各月計數器 Key，並已先 `SET user:{userId}:closed`。刪除後 `reservation:D3`/`reservation:D4` **不存在**，任何鍵中不再殘留該 `userId`；全程為刪除語意，未對任何計數器 `DECR`。
+  - 步驟 2：`quota_close_account` 依協定順序執行——先 `SET user:{userId}:closed`（墓碑優先），再以單一 Lua script `SMEMBERS user:{userId}:reservations` **完整列舉**待決＋終態的所有 id（`D1`~`D4`），逐一 `ZREM quota:pending`（僅待決者實際命中）並 `DEL reservation:{id}`——**包含仍帶 `userId` 的終態紀錄 `D3`/`D4`**、`DEL user:{userId}:reservations`，最後以 `SCAN`+`DEL` 收斂迴圈刪除 `user:{userId}:scans:*` 各月計數器（含歷史月份）。刪除後 `reservation:D3`/`reservation:D4` 與所有計數器 Key **不存在**，任何鍵中不再殘留該 `userId`；全程為刪除語意，未對任何計數器 `DECR`。
   - 步驟 3：對帳依 §3.3 第 6 點「保留紀錄缺失 → 清理 no-op」，將懸空的 `D2` member 僅 `ZREM` 收斂移除，不退額、不重建鍵；`quota:pending` 最終不殘留無法處理的項目。
 
 ### 測試案例 2e：帳號刪除與併發保留之競態封閉 (Deletion vs. Concurrent Reserve)
@@ -373,11 +374,23 @@ UI 設計需要遵循精緻的 HoloHunter 暗色系與高質感漸層美學。
   2. **刪除完成後**：帳號刪除回傳後，再送一筆新掃描 `quota_reserve`（新 `scan_request_id = E2`）。
   3. 於兩步後皆檢查 `user:{userId}:reservations`、`reservation:E1|E2`、`quota:pending`、`user:{userId}:scans:{YYYY-MM}` 與 `user:{userId}:closed`。
 - **預期結果**：
-  - 步驟 1：因列舉＋刪除在單一 Lua 原子邊界內執行、Redis 單執行緒不可分割，`E1` 的 `quota_reserve` 只可能**完全排在刪除之前或之後**，不可能與之交錯：
-    - 排在刪除**之前** → `E1` 的紀錄／member／計數皆會被同一 script 的 `SMEMBERS` 列舉並刪除，事後不殘留。
-    - 排在刪除**之後** → 墓碑 `user:{userId}:closed` 已設，`E1` 依 §3.3 第 1 點 (a′) 回 `ACCOUNT_CLOSED`，**完全不** `INCR`／不寫 `reservation`／不動索引。
+  - 步驟 1：`quota_reserve` 自身為單一原子 Lua，故 `E1` 只能**整體排在墓碑 `SET` 之前或之後**，不可能與關閉協定的枚舉半途交錯：
+    - 排在墓碑**之前** → `E1` 已完成 `INCR`／寫 `reservation`／`SADD` 索引；其保留與索引由步驟 2 的 `SMEMBERS` 列舉刪除，其計數器由步驟 3 的收斂 `SCAN`+`DEL` 刪除（即使是新月份計數器亦然），事後不殘留。
+    - 排在墓碑**之後** → `E1` 依 §3.3 第 1 點 (a′) 回 `ACCOUNT_CLOSED`，**完全不** `INCR`／不寫 `reservation`／不動索引／不建計數器。
   - 步驟 2：`E2` 同樣命中 (a′) fail-closed，回 `ACCOUNT_CLOSED`（HTTP 410），未重建任何鍵。
   - 步驟 3：兩步之後 `reservation:E1`/`reservation:E2` **不存在**、`user:{userId}:reservations` 不存在、`quota:pending` 不含該用戶任何 member、計數器 Key 不存在；任何鍵不殘留該 `userId`。全程無 `DECR`。
+
+### 測試案例 2f：帳號刪除與併發保留新建計數器之收斂 (Deletion vs. Concurrent New-Month Counter)
+- **前提條件**：已登入未訂閱帳號。此案例專門驗證「墓碑優先＋收斂刪除」封住舊版「先快照計數器再關閉」的漏刪窗——併發保留即使新建一個原不在任何快照內的計數器，也不會殘留。
+- **步驟**：
+  1. 觸發帳號關閉協定 `quota_close_account`，但**在墓碑 `SET` 完成之前**，以高併發送出一筆新掃描 `quota_reserve`（`scan_request_id = F1`），且刻意讓其 `month_key` 指向一個**先前不存在計數器的新月份**（例如跨月邊界），使其 `INCR` 新建 `user:{userId}:scans:{新月}`。重複多次撞窗。
+  2. **在墓碑 `SET` 完成之後**再送一筆 `quota_reserve`（`scan_request_id = F2`，同樣指向新月份）。
+  3. 關閉協定回傳後，掃描 `user:{userId}:scans:*`（所有月份）、`reservation:F1|F2`、`user:{userId}:reservations`、`quota:pending`、`user:{userId}:closed`。
+- **預期結果**：
+  - `F1` 若排在墓碑**之前**完成：它新建的新月份計數器**不依賴任何預先快照**——步驟 3 的收斂 `SCAN`+`DEL` 迴圈重複整輪直到 `user:{userId}:scans:*` 一次完整掃描為空，因此連這個新建計數器一併刪除；其 `reservation:F1` 與索引成員由保留枚舉刪除。
+  - `F1`/`F2` 若排在墓碑**之後**：命中 §3.3 第 1 點 (a′) fail-closed，**根本不新建**任何計數器或保留。
+  - 最終：**任何月份**的 `user:{userId}:scans:*` 皆不存在、`reservation:F1|F2` 不存在、`user:{userId}:reservations` 不存在、`quota:pending` 不含該用戶 member；沒有任何帶 `userId` 的計數器殘活，全程無 `DECR`。
+  - **崩潰重試**：於步驟 1 與步驟 3 之間強制中止關閉程序再重新呼叫 `quota_close_account`，墓碑仍在、收斂迴圈續清剩餘計數器，最終同樣零殘留（協定冪等可重入）。
 
 ### 測試案例 3：訂閱解鎖測試 (Subscriber Full Unlock)
 - **前提條件**：已登入 Google 帳號，並在設定中點擊模擬購買「月費訂閱」成功。
