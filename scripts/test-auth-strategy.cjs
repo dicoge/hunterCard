@@ -50,6 +50,7 @@ function testAndroidNeverFallsBackToWeb() {
 }
 
 function testAppleSurfaces() {
+  // iOS always native, regardless of the web flag.
   assert.equal(strategy.appleLoginSurface('ios', false), 'native-ios');
   assert.equal(strategy.appleLoginSurface('ios', true), 'native-ios');
   // Web Apple is disabled unless the server-verified web path is on.
@@ -57,20 +58,44 @@ function testAppleSurfaces() {
   assert.equal(strategy.appleLoginSurface('web', true), 'web');
 }
 
-function testAndroidAppleAlwaysDisabled() {
-  // DIC-665 / DIC-920: Android Apple is hard-disabled regardless of the Web Apple
-  // flag. The Android web-Apple path (Custom Tabs + App Links redirect) has no
-  // real-device evidence yet, so enabling APPLE_WEB_ENABLED must NOT surface an
-  // Apple button on Android.
-  assert.equal(strategy.appleLoginSurface('android', false), 'disabled');
+function testAndroidAppleServerCallbackWhenEnabled() {
+  // DIC-960 / CR DIC-961: Android Apple runs the server-callback web-OAuth path
+  // (Custom Tabs → /api/auth/apple/web → VERIFIED HTTPS App Link return) ONLY when
+  // BOTH the web Apple path is on AND the Android gate (androidEnabled) is on. The
+  // Android gate must stay off until a verified App Link is deployed, since a
+  // custom scheme is not app-exclusive and could be intercepted. When both gates
+  // are on it routes to 'android-web' (NOT 'web') so dispatch launches Custom Tabs
+  // with the App Link return rather than the browser page-origin return.
+  assert.equal(strategy.appleLoginSurface('android', true, true), 'android-web');
+  assert.notEqual(strategy.appleLoginSurface('android', true, true), 'web');
+}
+
+function testAndroidFailsClosedWithoutAppLinkGate() {
+  // The CR DIC-961 blocker: even with the web Apple path ON, Android must FAIL
+  // CLOSED to 'disabled' until the App Link gate is explicitly turned on. It must
+  // NEVER fall back to the custom-scheme 'android-web' surface on the gate alone.
+  assert.equal(strategy.appleLoginSurface('android', true, false), 'disabled');
+  // The gate also defaults to off when omitted (fail-closed by default).
   assert.equal(strategy.appleLoginSurface('android', true), 'disabled');
+}
+
+function testAppleFailClosedWhenWebDisabled() {
+  // Fail-closed: with the web Apple path OFF, both web and Android are disabled —
+  // never surfaced as a nonfunctional button (DIC-866 acceptance #5). This is the
+  // single gate that keeps a half-configured deploy from exposing Apple login.
+  assert.equal(strategy.appleLoginSurface('android', false), 'disabled');
+  assert.equal(strategy.appleLoginSurface('web', false), 'disabled');
+  // An unexpected OS string also fails closed when web is off.
+  assert.equal(strategy.appleLoginSurface('windows', false), 'disabled');
 }
 
 const tests = [
   testGoogleSurfaces,
   testAndroidNeverFallsBackToWeb,
   testAppleSurfaces,
-  testAndroidAppleAlwaysDisabled,
+  testAndroidAppleServerCallbackWhenEnabled,
+  testAndroidFailsClosedWithoutAppLinkGate,
+  testAppleFailClosedWhenWebDisabled,
 ];
 try {
   for (const test of tests) {

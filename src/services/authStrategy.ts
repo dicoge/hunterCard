@@ -7,7 +7,7 @@
 // of which surface produced the provider ID token.
 
 export type GoogleLoginSurface = 'native-ios' | 'native-android' | 'web';
-export type AppleLoginSurface = 'native-ios' | 'web' | 'disabled';
+export type AppleLoginSurface = 'native-ios' | 'web' | 'android-web' | 'disabled';
 
 // Google: native SDK on iOS (dedicated iOS OAuth client) and Android (classic
 // play-services-auth Google Sign-In, ID token audienced to the Web/server
@@ -18,16 +18,31 @@ export function googleLoginSurface(os: string): GoogleLoginSurface {
   return 'web';
 }
 
-// Apple: native Sign in with Apple on iOS. Android is hard-disabled regardless of
-// the Web Apple flag — the Android web-Apple path (Custom Tabs + App Links
-// redirect) has no real-device evidence yet (DIC-665 / DIC-920), so we never
-// expose it even when APPLE_WEB_ENABLED is on. On web it is offered only when the
-// operator enabled the server-verified Web Apple path, otherwise disabled (never
-// shown as a nonfunctional button).
-export function appleLoginSurface(os: string, webEnabled: boolean): AppleLoginSurface {
+// Apple: native Sign in with Apple on iOS. Web and Android both run the
+// server-callback web-OAuth path (DIC-960): the browser / Custom Tabs hit
+// /api/auth/apple/web, Apple form_posts the id_token back to that server
+// endpoint, and the app is deep-linked back with a one-time exchange code the app
+// redeems for a server session. Web and Android are gated behind the
+// operator-enabled server-verified Web Apple path (APPLE_WEB_ENABLED) and FAIL
+// CLOSED to 'disabled' when it is off.
+//
+// Android carries an EXTRA gate (androidEnabled). Its return channel MUST be a
+// VERIFIED HTTPS App Link — a custom scheme is not app-exclusive and could let
+// another installed app intercept the return (CR DIC-961). App Link verification
+// depends on a deployed /.well-known/assetlinks.json carrying the real signing-
+// cert fingerprint, which is owner-only. Until the operator supplies it and flips
+// androidEnabled on, Android Apple stays 'disabled' (never a custom-scheme
+// fallback). Android differs from web only in the return surface ('android-web' →
+// Custom Tabs + App Link return); both share the same backend contract.
+export function appleLoginSurface(
+  os: string,
+  webEnabled: boolean,
+  androidEnabled = false,
+): AppleLoginSurface {
   if (os === 'ios') return 'native-ios';
-  if (os === 'android') return 'disabled';
-  return webEnabled ? 'web' : 'disabled';
+  if (!webEnabled) return 'disabled';
+  if (os === 'android') return androidEnabled ? 'android-web' : 'disabled';
+  return 'web';
 }
 
 // Resolves the backend API base URL the auth calls hit (DIC-922 blocker 5).

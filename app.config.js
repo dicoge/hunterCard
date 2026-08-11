@@ -89,11 +89,63 @@ function assertIosGoogleClientConfigured() {
   }
 }
 
+// Android Apple return channel (DIC-960 / CR DIC-961). The server-callback Apple
+// flow must return to the app over a VERIFIED HTTPS App Link, never a custom
+// scheme (a custom scheme is not app-exclusive and another installed app could
+// intercept the return). We register an `autoVerify` intent filter for the exact
+// production host/path so Android verifies ownership against the deployed
+// /.well-known/assetlinks.json. Fail-closed: the filter is only emitted when the
+// operator has turned Android Apple on (EXPO_PUBLIC_APPLE_ANDROID_ENABLED=true) —
+// which they should do only after deploying assetlinks.json with the real
+// signing-cert fingerprint. Until then no App Link intent filter ships, so the
+// Android Apple button is hidden (authStrategy fail-closes to 'disabled') and no
+// session can ever traverse a custom scheme.
+const APPLE_ANDROID_APP_LINK_HOST =
+  process.env.EXPO_PUBLIC_APPLE_ANDROID_APP_LINK_HOST || 'holohunter.dicoge.com';
+const APPLE_ANDROID_APP_LINK_PATH_PREFIX = '/auth/apple/return';
+
+function appleAndroidAppLinkIntentFilter() {
+  if (process.env.EXPO_PUBLIC_APPLE_ANDROID_ENABLED !== 'true') return null;
+  return {
+    action: 'VIEW',
+    autoVerify: true,
+    data: [
+      {
+        scheme: 'https',
+        host: APPLE_ANDROID_APP_LINK_HOST,
+        pathPrefix: APPLE_ANDROID_APP_LINK_PATH_PREFIX,
+      },
+    ],
+    category: ['BROWSABLE', 'DEFAULT'],
+  };
+}
+
 module.exports = () => {
   assertAndroidGoogleClientConfigured();
   assertIosGoogleClientConfigured();
   const expo = { ...base.expo };
   const scheme = reversedGoogleIosScheme();
+
+  const appleIntentFilter = appleAndroidAppLinkIntentFilter();
+  if (appleIntentFilter) {
+    const android = { ...(expo.android || {}) };
+    const existingFilters = Array.isArray(android.intentFilters) ? android.intentFilters : [];
+    const alreadyRegistered = existingFilters.some(
+      (f) =>
+        f?.autoVerify === true &&
+        Array.isArray(f?.data) &&
+        f.data.some(
+          (d) =>
+            d?.scheme === 'https' &&
+            d?.host === APPLE_ANDROID_APP_LINK_HOST &&
+            d?.pathPrefix === APPLE_ANDROID_APP_LINK_PATH_PREFIX,
+        ),
+    );
+    if (!alreadyRegistered) {
+      android.intentFilters = [...existingFilters, appleIntentFilter];
+    }
+    expo.android = android;
+  }
 
   if (scheme) {
     const ios = { ...(expo.ios || {}) };

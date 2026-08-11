@@ -43,6 +43,9 @@ data/push-watchlist.json
 # typescript
 *.tsbuildinfo
 
+# transient test compile output (test-apple-android-applink.cjs)
+.applink-tests-*/
+
 # google play service account (do not commit)
 /google-service-account.json
 
