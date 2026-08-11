@@ -79,6 +79,13 @@ export interface AppleWebState {
   ret: string;
   // Anti-CSRF random; bound into the signature so a state cannot be spliced.
   csrf: string;
+  // PKCE-style code challenge = base64url(SHA-256(verifier)). The app mints a
+  // verifier at start, sends ONLY the challenge (through the TLS start request
+  // and, signed, through Apple), and later presents the verifier to redeem the
+  // one-time exchange code. The raw session therefore never rides the (on
+  // Android, potentially interceptable) return channel — an interceptor of the
+  // returned code cannot redeem it without the verifier, which never left the app.
+  chal: string;
   // Epoch seconds. A stale authorize round-trip must not be replayable forever.
   exp: number;
 }
@@ -122,6 +129,7 @@ export function verifyAppleState(
     if (typeof payload.nonce !== 'string' || !payload.nonce) return null;
     if (payload.platform !== 'web' && payload.platform !== 'android') return null;
     if (typeof payload.ret !== 'string' || !payload.ret) return null;
+    if (typeof payload.chal !== 'string' || !payload.chal) return null;
     if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) return null;
     if (nowSec >= payload.exp) return null;
     return payload;
@@ -132,6 +140,34 @@ export function verifyAppleState(
 
 export function randomToken(bytes = 16): string {
   return crypto.randomBytes(bytes).toString('hex');
+}
+
+// ---------------------------------------------------------------------------
+// PKCE-style exchange-code binding
+// ---------------------------------------------------------------------------
+//
+// The callback never emits the raw session on the return channel; it emits a
+// one-time exchange code and stores the session under it server-side, bound to
+// the code challenge from the signed state. The app redeems the code by
+// presenting the verifier; the server recomputes SHA-256(verifier) and compares
+// it to the stored challenge. So even if the returned code leaks (a not-yet-
+// verified Android App Link, a race), it is unredeemable without the verifier.
+
+export function codeChallengeOf(verifier: string): string {
+  return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
+
+/**
+ * Constant-time check that `verifier` hashes to `challenge`. Returns false for
+ * any empty input or length mismatch, mirroring verifyAppleState's timing-safe
+ * compare so a redemption attempt cannot be distinguished by timing.
+ */
+export function verifyCodeChallenge(verifier: string, challenge: string): boolean {
+  if (!verifier || !challenge) return false;
+  const expected = Buffer.from(codeChallengeOf(verifier));
+  const provided = Buffer.from(challenge);
+  if (expected.length !== provided.length) return false;
+  return crypto.timingSafeEqual(expected, provided);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,11 +270,14 @@ export function resolveReturnTarget(
 //
 // The callback cannot hand the session back as JSON (Apple drove the browser
 // here via a top-level POST). It returns a tiny HTML page that navigates the
-// browser to the in-app return target with the session in the URL FRAGMENT.
-// Fragment (not query): fragments are never sent to a server and are kept out of
-// access logs / Referer, so the bearer session is not leaked in transit. The SPA
-// / deep-link handler reads the fragment on load and validates it against
-// /api/auth/me before entering authenticated UI.
+// browser to the in-app return target with a ONE-TIME EXCHANGE CODE (never the
+// session itself) in the URL FRAGMENT. Fragment (not query): fragments are never
+// sent to a server and are kept out of access logs / Referer. The app reads the
+// fragment, POSTs the code + its PKCE verifier to /api/auth/apple-exchange to
+// redeem the actual session, then validates it against /api/auth/me before
+// entering authenticated UI. Putting a code (not the bearer session) on the
+// return channel is what keeps a not-yet-verified Android App Link fail-closed:
+// an intercepted code is useless without the verifier held only by the real app.
 
 // Encode a value safely for embedding inside a <script> string literal: JSON
 // escapes quotes/backslashes/control chars, and we additionally neutralise `<`
@@ -253,11 +292,8 @@ function htmlDoc(redirectUrl: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"></head><body><script>location.replace(${literal});</script><noscript><a href="${noscriptHref}">Continue</a></noscript></body></html>`;
 }
 
-export function buildAppleReturnHtml(
-  target: string,
-  result: { session: string; isNew: boolean },
-): string {
-  const frag = `session=${encodeURIComponent(result.session)}&isNew=${result.isNew ? '1' : '0'}`;
+export function buildAppleReturnHtml(target: string, result: { code: string }): string {
+  const frag = `code=${encodeURIComponent(result.code)}`;
   return htmlDoc(`${target}#${frag}`);
 }
 

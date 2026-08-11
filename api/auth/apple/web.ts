@@ -15,8 +15,13 @@
  *                       the id_token (issuer/audience/exp/signature/nonce) on the
  *                       SAME server verify path as native iOS, resolve identity
  *                       by (provider=apple, sub), issue the SAME server session,
- *                       and return HTML that deep-links back into the app with
- *                       the session in the URL fragment.
+ *                       and return HTML that deep-links back into the app with a
+ *                       ONE-TIME exchange code (not the session) in the URL
+ *                       fragment. The app redeems that code for the session at
+ *                       POST /api/auth/apple-exchange using its PKCE verifier, so
+ *                       a leaked/intercepted return never yields a usable session
+ *                       (CR DIC-961: Android custom-scheme return is not
+ *                       app-exclusive).
  *
  * Fail-closed: when the Apple web config is absent the start returns 501 and the
  * callback renders a terminal error page — a half-configured flow never runs.
@@ -25,6 +30,7 @@
 import { loginOrCreate } from '../../_lib/identity-store';
 import { issueSession } from '../../_lib/session';
 import { backendUnavailable, verifyProviderToken } from '../../_lib/auth-endpoint';
+import { storeAppleExchange } from '../../_lib/apple-exchange-store';
 import { toNodeHandler } from '../../_lib/node-adapter';
 import {
   buildAppleAuthorizeUrl,
@@ -74,9 +80,22 @@ async function handleStart(req: Request): Promise<Response> {
   const target = resolveReturnTarget(url.searchParams.get('return'), cfg);
   if (!target) return json({ error: 'invalid_return' }, 400);
 
+  // The app mints a PKCE verifier and sends only its challenge; without it we
+  // cannot bind the exchange code, so fail closed rather than fall back to a raw-
+  // session return (that is exactly the interceptable channel CR DIC-961 rejects).
+  const challenge = (url.searchParams.get('code_challenge') ?? '').trim();
+  if (!challenge) return json({ error: 'missing_code_challenge' }, 400);
+
   const nonce = randomToken();
   const state = signAppleState(
-    { nonce, platform, ret: target, csrf: randomToken(), exp: Math.floor(Date.now() / 1000) + STATE_TTL_SECONDS },
+    {
+      nonce,
+      platform,
+      ret: target,
+      csrf: randomToken(),
+      chal: challenge,
+      exp: Math.floor(Date.now() / 1000) + STATE_TTL_SECONDS,
+    },
     cfg.secret,
   );
   const authorizeUrl = buildAppleAuthorizeUrl({
@@ -108,8 +127,7 @@ async function handleCallback(req: Request): Promise<Response> {
   const unavailable = backendUnavailable();
   if (unavailable) return html(buildAppleErrorHtml(target, 'backend_unavailable'), 200);
 
-  let session: string;
-  let isNew: boolean;
+  let code: string;
   try {
     // Same server verify path as native iOS: RS256 signature + issuer + audience
     // (Services ID, allow-listed only while APPLE_WEB_LOGIN_ENABLED) + exp +
@@ -120,13 +138,17 @@ async function handleCallback(req: Request): Promise<Response> {
     const name = parseAppleUserName(user);
     const enriched = name && !identity.name ? { ...identity, name } : identity;
     const result = await loginOrCreate(enriched);
-    session = issueSession(result.user.internalId);
-    isNew = result.isNew;
+    const session = issueSession(result.user.internalId);
+    // Hand back a one-time exchange code (not the session), bound to the request's
+    // PKCE challenge. The app redeems it via /api/auth/apple-exchange with the
+    // verifier it never put on the return channel.
+    code = randomToken(24);
+    await storeAppleExchange(code, { session, isNew: result.isNew, challenge: parsed.chal });
   } catch (err) {
     return html(buildAppleErrorHtml(target, errorCodeOf(err)), 200);
   }
 
-  return html(buildAppleReturnHtml(target, { session, isNew }), 200);
+  return html(buildAppleReturnHtml(target, { code }), 200);
 }
 
 async function webHandler(req: Request): Promise<Response> {

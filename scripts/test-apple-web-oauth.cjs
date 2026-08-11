@@ -82,6 +82,7 @@ function makeState(overrides = {}) {
     platform: 'web',
     ret: 'https://example.test',
     csrf: 'csrf-xyz',
+    chal: 'challenge-abc',
     exp: Math.floor(Date.now() / 1000) + 600,
     ...overrides,
   };
@@ -133,6 +134,24 @@ function testStateFieldValidation() {
   assert.equal(m.verifyAppleState(emptyNonce, SECRET), null);
   const emptyRet = m.signAppleState(makeState({ ret: '' }), SECRET);
   assert.equal(m.verifyAppleState(emptyRet, SECRET), null);
+  // A missing PKCE challenge fails closed even with a valid signature — the
+  // callback would have nothing to bind the one-time exchange code to.
+  const emptyChal = m.signAppleState(makeState({ chal: '' }), SECRET);
+  assert.equal(m.verifyAppleState(emptyChal, SECRET), null);
+}
+
+function testCodeChallenge() {
+  const verifier = 'verifier-0123456789abcdef';
+  const challenge = m.codeChallengeOf(verifier);
+  // Deterministic base64url SHA-256 (no padding, url-safe alphabet).
+  assert.ok(/^[A-Za-z0-9_-]+$/.test(challenge));
+  assert.equal(m.codeChallengeOf(verifier), challenge);
+  // The matching verifier verifies; anything else fails closed.
+  assert.equal(m.verifyCodeChallenge(verifier, challenge), true);
+  assert.equal(m.verifyCodeChallenge('wrong-verifier', challenge), false);
+  assert.equal(m.verifyCodeChallenge(verifier, 'not-the-challenge'), false);
+  assert.equal(m.verifyCodeChallenge('', challenge), false);
+  assert.equal(m.verifyCodeChallenge(verifier, ''), false);
 }
 
 function testSignStateRequiresSecret() {
@@ -205,19 +224,19 @@ function countOccurrences(haystack, needle) {
 }
 
 function testReturnHtml() {
-  const htmlOut = m.buildAppleReturnHtml('https://example.test', { session: 'sess ion/+=', isNew: true });
-  // Session goes in the FRAGMENT, url-encoded, and isNew is flagged.
-  assert.ok(htmlOut.includes('#session=sess%20ion%2F%2B%3D&isNew=1'));
+  const htmlOut = m.buildAppleReturnHtml('https://example.test', { code: 'the code/+=' });
+  // A ONE-TIME code (never the session) goes in the FRAGMENT, url-encoded.
+  assert.ok(htmlOut.includes('#code=the%20code%2F%2B%3D'));
+  // The session must never appear on the return channel.
+  assert.ok(!htmlOut.includes('session='));
   assert.ok(htmlOut.includes('location.replace('));
   // Exactly one legitimate </script> closing tag — no breakout from the embedded
   // literal. A crafted target carrying a </script> must stay escaped (<), so
   // the count remains one even then.
   assert.equal(countOccurrences(htmlOut.toLowerCase(), '</script>'), 1);
-  const crafted = m.buildAppleReturnHtml('https://example.test/</script><script>x', { session: 's', isNew: false });
+  const crafted = m.buildAppleReturnHtml('https://example.test/</script><script>x', { code: 'c' });
   assert.equal(countOccurrences(crafted.toLowerCase(), '</script>'), 1);
   assert.equal(countOccurrences(crafted.toLowerCase(), '<script>'), 1);
-  const notNew = m.buildAppleReturnHtml('https://example.test', { session: 's', isNew: false });
-  assert.ok(notNew.includes('isNew=0'));
 }
 
 function testErrorHtml() {
@@ -238,6 +257,7 @@ const tests = [
   testStateTamperFailsClosed,
   testStateExpiry,
   testStateFieldValidation,
+  testCodeChallenge,
   testSignStateRequiresSecret,
   testAuthorizeUrl,
   testParseFormPost,

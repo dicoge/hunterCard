@@ -61,6 +61,20 @@ function apiBase(): string {
 // token, so it requires the server verify path (Services ID + backend secret).
 const APPLE_WEB_ENABLED = process.env.EXPO_PUBLIC_APPLE_WEB_LOGIN_ENABLED === 'true';
 
+// Android Apple carries an extra gate: its return channel must be a VERIFIED
+// HTTPS App Link (a custom scheme is not app-exclusive — CR DIC-961). App Link
+// verification depends on a deployed assetlinks.json with the real signing-cert
+// fingerprint (owner-only), so Android Apple stays OFF until the operator both
+// deploys that file and sets EXPO_PUBLIC_APPLE_ANDROID_ENABLED=true. Fail-closed.
+const APPLE_ANDROID_ENABLED = process.env.EXPO_PUBLIC_APPLE_ANDROID_ENABLED === 'true';
+
+// The verified HTTPS App Link the Android callback returns to. It MUST match the
+// intent-filter host/path (app.config.js) and be on the server's return allow-
+// list (APPLE_WEB_ALLOWED_RETURNS). Overridable for non-prod hosting.
+const APPLE_ANDROID_RETURN_URL =
+  process.env.EXPO_PUBLIC_APPLE_ANDROID_RETURN_URL ||
+  'https://holohunter.dicoge.com/auth/apple/return';
+
 // Apple login is delivered NATIVELY on iOS (expo-apple-authentication → backend
 // RS256 verify against the app bundle id) and needs no Services ID. On web it is
 // only offered once APPLE_WEB_ENABLED; on Android it is hard-disabled regardless
@@ -68,7 +82,8 @@ const APPLE_WEB_ENABLED = process.env.EXPO_PUBLIC_APPLE_WEB_LOGIN_ENABLED === 't
 // function that dispatch uses keeps the UI and the runtime in lockstep — the
 // button is hidden exactly when the surface is 'disabled', never shown as a
 // nonfunctional entry (DIC-866 acceptance #5).
-export const APPLE_LOGIN_ENABLED = appleLoginSurface(Platform.OS, APPLE_WEB_ENABLED) !== 'disabled';
+export const APPLE_LOGIN_ENABLED =
+  appleLoginSurface(Platform.OS, APPLE_WEB_ENABLED, APPLE_ANDROID_ENABLED) !== 'disabled';
 
 export const APPLE_DISABLED_MESSAGE =
   'Apple 登入尚未開放（需後端驗證 Apple ID token）。請改用 Google 登入。';
@@ -475,7 +490,7 @@ async function obtainProviderIdToken(
   loginHint?: string,
 ): Promise<{ idToken: string; nonce?: string }> {
   if (provider === 'apple') {
-    const surface = appleLoginSurface(Platform.OS, APPLE_WEB_ENABLED);
+    const surface = appleLoginSurface(Platform.OS, APPLE_WEB_ENABLED, APPLE_ANDROID_ENABLED);
     if (surface === 'native-ios') return obtainAppleNativeIdToken();
     if (surface === 'disabled') throw new AuthError(APPLE_DISABLED_MESSAGE, 400, 'apple_disabled');
     // 'web' / 'android-web' are handled by obtainAppleWebSession (server-callback)
@@ -495,20 +510,32 @@ export interface SignInResult {
 }
 
 // The in-app URL the server-callback bounces back to after Apple login. On web
-// it is the SPA page origin; on Android it is the app's registered deep-link
-// scheme (app.json `scheme: "holohunter"`), which openAuthSessionAsync watches
-// for. The server re-validates this against its own allow-list (open-redirect
-// defence), so a value here that the operator has not allow-listed fails closed.
+// it is the SPA page origin; on Android it is a VERIFIED HTTPS App Link (NOT a
+// custom scheme — a custom scheme is not app-exclusive and another installed app
+// could intercept the return, CR DIC-961). openAuthSessionAsync watches for it;
+// if the App Link is not yet verified the OS opens it in the browser (no silent
+// interception) — fail-closed. The server also re-validates this against its own
+// allow-list (open-redirect defence), so a non-allow-listed value fails closed.
 function appleWebReturnUrl(platform: 'web' | 'android'): string {
   if (platform === 'web') {
     return typeof window !== 'undefined' ? window.location?.origin ?? '' : '';
   }
-  return AuthSession.makeRedirectUri({ scheme: 'holohunter', path: 'auth/apple/return' });
+  return APPLE_ANDROID_RETURN_URL;
 }
 
-// Parse the `#session=...&isNew=...` (or `#error=...`) fragment the server-
-// callback return page deep-links back with. Fragments are used (not query) so
-// the bearer session never reaches a server log / Referer header.
+// base64url(SHA-256(input)) — the PKCE code challenge derivation, matching the
+// server's crypto.createHash('sha256').digest('base64url'). expo-crypto returns
+// standard base64, which we convert to the unpadded base64url alphabet.
+async function sha256Base64Url(input: string): Promise<string> {
+  const b64 = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, input, {
+    encoding: Crypto.CryptoEncoding.BASE64,
+  });
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Parse the `#code=...` (or `#error=...`) fragment the server-callback return
+// page deep-links back with. Fragments are used (not query) so even the one-time
+// code never reaches a server log / Referer header.
 function parseAuthFragment(url: string): Record<string, string> {
   const hash = url.indexOf('#');
   if (hash < 0) return {};
@@ -521,22 +548,30 @@ function parseAuthFragment(url: string): Record<string, string> {
 
 // Server-callback Sign in with Apple for web + Android (DIC-960). The browser /
 // Custom Tabs is sent to /api/auth/apple/web, Apple form_posts the id_token back
-// to that server endpoint, and the app is deep-linked back with a server-issued
-// session in the URL fragment. Identity resolution + session issuance happen
-// server-side (server-authoritative); the client only adopts and re-validates the
-// returned session, never trusts a client-local token.
+// to that server endpoint, and the app is deep-linked back with a ONE-TIME
+// exchange code (never the session). The app redeems that code for the session by
+// presenting a PKCE verifier it kept entirely off the return channel, so an
+// intercepted return yields nothing usable (CR DIC-961). Identity resolution +
+// session issuance stay server-side; the client re-validates via /auth/me.
 async function obtainAppleWebSession(surface: 'web' | 'android-web'): Promise<SignInResult> {
   const platform = surface === 'android-web' ? 'android' : 'web';
   const returnUrl = appleWebReturnUrl(platform);
   if (!returnUrl) {
     throw new AuthError('無法決定 Apple 登入的回程網址。', 400, 'no_return_url');
   }
-  const startUrl = `${apiBase()}/auth/apple/web?platform=${platform}&return=${encodeURIComponent(returnUrl)}`;
+  // Mint a fresh PKCE verifier (256 bits) and send ONLY its challenge to the
+  // server. The verifier never leaves the app / the interceptable return channel.
+  const verifier = `${randomNonce()}${randomNonce()}`;
+  const challenge = await sha256Base64Url(verifier);
+  const startUrl =
+    `${apiBase()}/auth/apple/web?platform=${platform}` +
+    `&return=${encodeURIComponent(returnUrl)}` +
+    `&code_challenge=${encodeURIComponent(challenge)}`;
 
   const result = await WebBrowser.openAuthSessionAsync(startUrl, returnUrl);
   if (result.type !== 'success' || !result.url) {
     // dismiss / cancel / opened — treat uniformly as a cancel (fail-closed: no
-    // session was delivered, so the app must not enter authenticated state).
+    // code was delivered, so the app must not enter authenticated state).
     throw new AuthError('已取消登入', 400, 'cancel');
   }
 
@@ -544,20 +579,28 @@ async function obtainAppleWebSession(surface: 'web' | 'android-web'): Promise<Si
   if (frag.error) {
     throw new AuthError(`Apple 登入失敗（${frag.error}）`, 400, frag.error);
   }
-  const session = frag.session;
+  const code = frag.code;
+  if (!code) {
+    throw new AuthError('Apple 登入未回傳授權碼，請重試。', 400, 'no_code');
+  }
+  // Redeem the one-time code for the server session. Only the matching verifier
+  // unlocks it; a bad/expired/replayed code returns a generic 401.
+  const res = await apiPost('/auth/apple-exchange', { code, verifier });
+  const data = await readJson(res);
+  if (!res.ok) throw toAuthError(data, res.status, 'apple');
+  const session = data.session;
   if (!session) {
     throw new AuthError('Apple 登入未回傳 session，請重試。', 400, 'no_session');
   }
-  // The server already issued the session; validate it against /auth/me to obtain
-  // the server-authoritative user before trusting it (never adopt a session the
-  // server won't confirm).
+  // Validate the redeemed session against /auth/me before trusting it (never adopt
+  // a session the server won't confirm).
   const user = await validateSession(session);
-  return { user, session, isNewUser: frag.isNew === '1' };
+  return { user, session, isNewUser: Boolean(data.isNew) };
 }
 
 export async function signInWithProvider(provider: AuthProvider): Promise<SignInResult> {
   if (provider === 'apple') {
-    const surface = appleLoginSurface(Platform.OS, APPLE_WEB_ENABLED);
+    const surface = appleLoginSurface(Platform.OS, APPLE_WEB_ENABLED, APPLE_ANDROID_ENABLED);
     if (surface === 'web' || surface === 'android-web') {
       return obtainAppleWebSession(surface);
     }

@@ -59,13 +59,24 @@ function testAppleSurfaces() {
 }
 
 function testAndroidAppleServerCallbackWhenEnabled() {
-  // DIC-960: Android Apple now runs the server-callback web-OAuth path (Custom
-  // Tabs → /api/auth/apple/web → deep-link return) when the operator has enabled
-  // the server-verified web Apple path. It routes to 'android-web' (NOT 'web'),
-  // so dispatch launches Custom Tabs with the Android deep-link return rather than
-  // the browser page-origin return.
-  assert.equal(strategy.appleLoginSurface('android', true), 'android-web');
-  assert.notEqual(strategy.appleLoginSurface('android', true), 'web');
+  // DIC-960 / CR DIC-961: Android Apple runs the server-callback web-OAuth path
+  // (Custom Tabs → /api/auth/apple/web → VERIFIED HTTPS App Link return) ONLY when
+  // BOTH the web Apple path is on AND the Android gate (androidEnabled) is on. The
+  // Android gate must stay off until a verified App Link is deployed, since a
+  // custom scheme is not app-exclusive and could be intercepted. When both gates
+  // are on it routes to 'android-web' (NOT 'web') so dispatch launches Custom Tabs
+  // with the App Link return rather than the browser page-origin return.
+  assert.equal(strategy.appleLoginSurface('android', true, true), 'android-web');
+  assert.notEqual(strategy.appleLoginSurface('android', true, true), 'web');
+}
+
+function testAndroidFailsClosedWithoutAppLinkGate() {
+  // The CR DIC-961 blocker: even with the web Apple path ON, Android must FAIL
+  // CLOSED to 'disabled' until the App Link gate is explicitly turned on. It must
+  // NEVER fall back to the custom-scheme 'android-web' surface on the gate alone.
+  assert.equal(strategy.appleLoginSurface('android', true, false), 'disabled');
+  // The gate also defaults to off when omitted (fail-closed by default).
+  assert.equal(strategy.appleLoginSurface('android', true), 'disabled');
 }
 
 function testAppleFailClosedWhenWebDisabled() {
@@ -83,6 +94,7 @@ const tests = [
   testAndroidNeverFallsBackToWeb,
   testAppleSurfaces,
   testAndroidAppleServerCallbackWhenEnabled,
+  testAndroidFailsClosedWithoutAppLinkGate,
   testAppleFailClosedWhenWebDisabled,
 ];
 try {

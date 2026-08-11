@@ -41,6 +41,9 @@ jobs:
       - name: Verify Web/Android Apple server-callback OAuth (DIC-960)
         run: npm run test:apple-web-oauth
 
+      - name: Verify Android Apple App Link + exchange-code fail-closed (DIC-960)
+        run: npm run test:apple-android-applink
+
       - name: Verify native/web API base resolution (DIC-922)
         run: npm run test:api-base
 

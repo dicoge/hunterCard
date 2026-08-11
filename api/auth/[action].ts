@@ -7,9 +7,11 @@
  * (/api/auth/login | link | unlink); the static sibling routes delete-account and
  * apple/register keep filesystem-routing priority over this dynamic segment.
  *
- *   - login  (§5.1) — public: verify provider token, login-or-create, issue session
- *   - link   (§5.2) — Bearer session: link a second verified provider
- *   - unlink (§5.3) — Bearer session: remove a provider, refusing the last method
+ *   - login          (§5.1) — public: verify provider token, login-or-create, issue session
+ *   - link           (§5.2) — Bearer session: link a second verified provider
+ *   - unlink         (§5.3) — Bearer session: remove a provider, refusing the last method
+ *   - apple-exchange (DIC-960) — public: redeem the one-time Apple web/android
+ *                     exchange code (+ PKCE verifier) for its server session
  *   - me            — Bearer session (GET / HEAD / POST): validate the session,
  *                     return the current user. Without a valid session it returns
  *                     structured JSON 401 immediately. The client MUST call this
@@ -27,6 +29,7 @@ import {
   sessionUserId,
   verifyProviderToken,
 } from '../_lib/auth-endpoint';
+import { redeemAppleExchange } from '../_lib/apple-exchange-store';
 import { toNodeHandler } from '../_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
@@ -36,6 +39,8 @@ interface AuthBody {
   provider?: unknown;
   idToken?: unknown;
   nonce?: unknown;
+  code?: unknown;
+  verifier?: unknown;
 }
 
 function actionFromUrl(url: string): string {
@@ -80,6 +85,23 @@ async function handleUnlink(req: Request, body: AuthBody): Promise<Response> {
   if (unavailable) return unavailable;
   const user = await unlinkIdentity(userId, body.provider);
   return json({ ok: true, user }, 200);
+}
+
+// Redeem the one-time Apple exchange code minted by /api/auth/apple/web. The app
+// presents the code (received on the return channel) plus the PKCE verifier it
+// kept off that channel; only a matching verifier unlocks the session. A bad /
+// unknown / already-redeemed code fails as a generic 401 so the two cases are
+// indistinguishable. This folds the Apple web/android session hand-off into the
+// existing dynamic auth function — no new Serverless Function (12-function cap).
+async function handleAppleExchange(body: AuthBody): Promise<Response> {
+  const code = typeof body.code === 'string' ? body.code : '';
+  const verifier = typeof body.verifier === 'string' ? body.verifier : '';
+  if (!code || !verifier) return json({ error: 'invalid_request' }, 400);
+  const unavailable = backendUnavailable();
+  if (unavailable) return unavailable;
+  const redeemed = await redeemAppleExchange(code, verifier);
+  if (!redeemed) return json({ error: 'INVALID_TOKEN', reason: 'invalid_exchange' }, 401);
+  return json({ session: redeemed.session, isNew: redeemed.isNew }, 200);
 }
 
 async function handleMe(req: Request): Promise<Response> {
@@ -131,6 +153,8 @@ async function webHandler(req: Request): Promise<Response> {
         return await handleLink(req, body);
       case 'unlink':
         return await handleUnlink(req, body);
+      case 'apple-exchange':
+        return await handleAppleExchange(body);
       default:
         return json({ error: 'not_found' }, 404);
     }

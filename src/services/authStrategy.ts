@@ -21,16 +21,27 @@ export function googleLoginSurface(os: string): GoogleLoginSurface {
 // Apple: native Sign in with Apple on iOS. Web and Android both run the
 // server-callback web-OAuth path (DIC-960): the browser / Custom Tabs hit
 // /api/auth/apple/web, Apple form_posts the id_token back to that server
-// endpoint, and the app is deep-linked back with a server-issued session. Both
-// are gated behind the operator-enabled server-verified Web Apple path
-// (APPLE_WEB_ENABLED) and FAIL CLOSED to 'disabled' when it is off — never shown
-// as a nonfunctional button. Android differs from web only in the return surface
-// ('android-web' → Custom Tabs + App Link/deep-link return), so dispatch can pick
-// the browser vs Custom Tabs launcher while both share the same backend contract.
-export function appleLoginSurface(os: string, webEnabled: boolean): AppleLoginSurface {
+// endpoint, and the app is deep-linked back with a one-time exchange code the app
+// redeems for a server session. Web and Android are gated behind the
+// operator-enabled server-verified Web Apple path (APPLE_WEB_ENABLED) and FAIL
+// CLOSED to 'disabled' when it is off.
+//
+// Android carries an EXTRA gate (androidEnabled). Its return channel MUST be a
+// VERIFIED HTTPS App Link — a custom scheme is not app-exclusive and could let
+// another installed app intercept the return (CR DIC-961). App Link verification
+// depends on a deployed /.well-known/assetlinks.json carrying the real signing-
+// cert fingerprint, which is owner-only. Until the operator supplies it and flips
+// androidEnabled on, Android Apple stays 'disabled' (never a custom-scheme
+// fallback). Android differs from web only in the return surface ('android-web' →
+// Custom Tabs + App Link return); both share the same backend contract.
+export function appleLoginSurface(
+  os: string,
+  webEnabled: boolean,
+  androidEnabled = false,
+): AppleLoginSurface {
   if (os === 'ios') return 'native-ios';
   if (!webEnabled) return 'disabled';
-  if (os === 'android') return 'android-web';
+  if (os === 'android') return androidEnabled ? 'android-web' : 'disabled';
   return 'web';
 }
 
