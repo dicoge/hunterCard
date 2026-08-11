@@ -50,6 +50,7 @@ function testAndroidNeverFallsBackToWeb() {
 }
 
 function testAppleSurfaces() {
+  // iOS always native, regardless of the web flag.
   assert.equal(strategy.appleLoginSurface('ios', false), 'native-ios');
   assert.equal(strategy.appleLoginSurface('ios', true), 'native-ios');
   // Web Apple is disabled unless the server-verified web path is on.
@@ -57,20 +58,32 @@ function testAppleSurfaces() {
   assert.equal(strategy.appleLoginSurface('web', true), 'web');
 }
 
-function testAndroidAppleAlwaysDisabled() {
-  // DIC-665 / DIC-920: Android Apple is hard-disabled regardless of the Web Apple
-  // flag. The Android web-Apple path (Custom Tabs + App Links redirect) has no
-  // real-device evidence yet, so enabling APPLE_WEB_ENABLED must NOT surface an
-  // Apple button on Android.
+function testAndroidAppleServerCallbackWhenEnabled() {
+  // DIC-960: Android Apple now runs the server-callback web-OAuth path (Custom
+  // Tabs → /api/auth/apple/web → deep-link return) when the operator has enabled
+  // the server-verified web Apple path. It routes to 'android-web' (NOT 'web'),
+  // so dispatch launches Custom Tabs with the Android deep-link return rather than
+  // the browser page-origin return.
+  assert.equal(strategy.appleLoginSurface('android', true), 'android-web');
+  assert.notEqual(strategy.appleLoginSurface('android', true), 'web');
+}
+
+function testAppleFailClosedWhenWebDisabled() {
+  // Fail-closed: with the web Apple path OFF, both web and Android are disabled —
+  // never surfaced as a nonfunctional button (DIC-866 acceptance #5). This is the
+  // single gate that keeps a half-configured deploy from exposing Apple login.
   assert.equal(strategy.appleLoginSurface('android', false), 'disabled');
-  assert.equal(strategy.appleLoginSurface('android', true), 'disabled');
+  assert.equal(strategy.appleLoginSurface('web', false), 'disabled');
+  // An unexpected OS string also fails closed when web is off.
+  assert.equal(strategy.appleLoginSurface('windows', false), 'disabled');
 }
 
 const tests = [
   testGoogleSurfaces,
   testAndroidNeverFallsBackToWeb,
   testAppleSurfaces,
-  testAndroidAppleAlwaysDisabled,
+  testAndroidAppleServerCallbackWhenEnabled,
+  testAppleFailClosedWhenWebDisabled,
 ];
 try {
   for (const test of tests) {

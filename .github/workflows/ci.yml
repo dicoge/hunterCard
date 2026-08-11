@@ -38,6 +38,9 @@ jobs:
       - name: Verify platform login-surface routing (DIC-665)
         run: npm run test:auth-strategy
 
+      - name: Verify Web/Android Apple server-callback OAuth (DIC-960)
+        run: npm run test:apple-web-oauth
+
       - name: Verify native/web API base resolution (DIC-922)
         run: npm run test:api-base
 
