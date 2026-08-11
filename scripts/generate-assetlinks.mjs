@@ -18,7 +18,11 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const DEFAULT_PACKAGE = 'com.dicoge.holohunter';
+// The App Link delegation target is the product's own package and is NOT
+// operator-configurable: an env override would let anyone with build access
+// delegate the HoloHunter host to an attacker package (CR DIC-961). It is
+// hard-coded so the ownership artifact can only ever name HoloHunter.
+const PRODUCT_PACKAGE = 'com.dicoge.holohunter';
 
 // A SHA-256 cert fingerprint is 32 hex byte-pairs joined by colons, e.g.
 // "14:6D:E9:83:C5:...". Accept upper/lowercase, normalise to uppercase, and drop
@@ -31,7 +35,6 @@ function normalizeFingerprint(raw) {
 }
 
 export function buildAssetLinks(env = process.env) {
-  const packageName = (env.ANDROID_APP_LINK_PACKAGE || DEFAULT_PACKAGE).trim() || DEFAULT_PACKAGE;
   const fingerprints = (env.ANDROID_APP_LINK_SHA256 || '')
     .split(',')
     .map(normalizeFingerprint)
@@ -44,7 +47,7 @@ export function buildAssetLinks(env = process.env) {
       relation: ['delegate_permission/common.handle_all_urls'],
       target: {
         namespace: 'android_app',
-        package_name: packageName,
+        package_name: PRODUCT_PACKAGE,
         sha256_cert_fingerprints: unique,
       },
     },

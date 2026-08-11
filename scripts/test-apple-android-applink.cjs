@@ -150,13 +150,19 @@ async function testAssetLinksValid() {
   // Lowercase is normalised to uppercase.
   const lower = buildAssetLinks({ ANDROID_APP_LINK_SHA256: VALID_FP.toLowerCase() });
   assert.deepEqual(lower[0].target.sha256_cert_fingerprints, [VALID_FP]);
-  // Two fingerprints (upload + Play signing keys), deduplicated, custom package.
+  // Two fingerprints (upload + Play signing keys), deduplicated.
   const two = buildAssetLinks({
     ANDROID_APP_LINK_SHA256: `${VALID_FP}, ${VALID_FP2}, ${VALID_FP}`,
-    ANDROID_APP_LINK_PACKAGE: 'com.example.app',
   });
-  assert.equal(two[0].target.package_name, 'com.example.app');
+  assert.equal(two[0].target.package_name, 'com.dicoge.holohunter');
   assert.deepEqual(two[0].target.sha256_cert_fingerprints, [VALID_FP, VALID_FP2]);
+  // Package is NOT operator-configurable: an ANDROID_APP_LINK_PACKAGE override
+  // must NOT delegate the HoloHunter host to another package (CR DIC-961).
+  const spoofed = buildAssetLinks({
+    ANDROID_APP_LINK_SHA256: VALID_FP,
+    ANDROID_APP_LINK_PACKAGE: 'com.attacker.app',
+  });
+  assert.equal(spoofed[0].target.package_name, 'com.dicoge.holohunter');
 }
 
 // A minimal in-memory KV mirroring the two ops the store uses. `getdel` is atomic
