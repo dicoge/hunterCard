@@ -4,6 +4,8 @@ const ALLOWED_DOMAINS = [
   'yuyu-tei.jp',
   'hololive-official-cardgame.com',
   'carousell.com.tw',
+  // decklog deck permalinks referenced by the tournament report (DIC-979).
+  'decklog.bushiroad.com',
 ];
 
 function isAllowedUrl(url: string): boolean {

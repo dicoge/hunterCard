@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "month": "2026-07",
+  "generatedAt": "2026-08-01T05:00:00Z",
+  "source": {
+    "name": "hololive OFFICIAL CARD GAME — 公式コラム「イチ推し！デッキ紹介」vol.10",
+    "url": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
+    "disclaimer": "資料僅來自官方專欄公開的精選牌組，非完整賽事結果。每篇專欄僅精選少數牌組；官方不公開參賽人數、完整名次或全部牌組。占比僅反映已觀測樣本，不代表整體 meta。"
+  },
+  "coverage": {
+    "knownEvents": 3,
+    "totalEvents": null,
+    "observedDecks": 3,
+    "rankedDecks": 3,
+    "note": "本月僅收錄 3 場的公開精選牌組（共 3 副，其中 3 副有公開名次）。賽事總場數未公開，涵蓋率無法計算完整母體。"
+  },
+  "events": [
+    {
+      "eventId": "extreamer-cup-25-26-area-tohoku-a",
+      "name": "エクストリーマーカップ25-26 エリア予選 東北 A ブロック",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東北 A 組",
+      "date": null,
+      "region": "東北",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
+      "sourceType": "official-column",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整 8 強與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "decks": [
+        {
+          "deckId": "decklog:5USA7",
+          "decklogCode": "5USA7",
+          "sourceUrl": "https://decklog.bushiroad.com/view/5USA7",
+          "playerName": "まっさん3297",
+          "rank": 8,
+          "rankLabel": "予選8位",
+          "archetypeId": "takane-lui",
+          "archetypeLabel": "鷹嶺ルイ（紫単）",
+          "oshi": "鷹嶺ルイ",
+          "colors": [
+            "紫"
+          ],
+          "cards": [],
+          "cardsVerified": false,
+          "coverage": "partial",
+          "fetchedAt": "2026-08-01T05:00:00Z"
+        }
+      ],
+      "fetchedAt": "2026-08-01T05:00:00Z"
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-kyushu-okinawa-2",
+      "name": "エクストリーマーカップ25-26 エリア予選 九州・沖縄②",
+      "nameZh": "Extreamer Cup 25-26 地區預選 九州・沖繩②",
+      "date": null,
+      "region": "九州・沖縄",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
+      "sourceType": "official-column",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "decks": [
+        {
+          "deckId": "decklog:1XQQF",
+          "decklogCode": "1XQQF",
+          "sourceUrl": "https://decklog.bushiroad.com/view/1XQQF",
+          "playerName": "スバ友",
+          "rank": 7,
+          "rankLabel": "予選7位",
+          "archetypeId": "wando-chihaya-tokanehi",
+          "archetypeLabel": "輪堂千速＋虎金妃笑虎（青赤混合）",
+          "oshi": "輪堂千速",
+          "colors": [
+            "青",
+            "赤"
+          ],
+          "cards": [],
+          "cardsVerified": false,
+          "coverage": "partial",
+          "fetchedAt": "2026-08-01T05:00:00Z"
+        }
+      ],
+      "fetchedAt": "2026-08-01T05:00:00Z"
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-hokkaido",
+      "name": "エクストリーマーカップ25-26 エリア予選 北海道",
+      "nameZh": "Extreamer Cup 25-26 地區預選 北海道",
+      "date": null,
+      "region": "北海道",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
+      "sourceType": "official-column",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "decks": [
+        {
+          "deckId": "decklog:4PQXH",
+          "decklogCode": "4PQXH",
+          "sourceUrl": "https://decklog.bushiroad.com/view/4PQXH",
+          "playerName": "りかるど",
+          "rank": 4,
+          "rankLabel": "予選4位",
+          "archetypeId": "jiji-murin",
+          "archetypeLabel": "ジジ・ムリン（紫青混合）",
+          "oshi": "ジジ・ムリン",
+          "colors": [
+            "紫",
+            "青"
+          ],
+          "cards": [],
+          "cardsVerified": false,
+          "coverage": "partial",
+          "fetchedAt": "2026-08-01T05:00:00Z"
+        }
+      ],
+      "fetchedAt": "2026-08-01T05:00:00Z"
+    }
+  ],
+  "archetypeShare": [
+    {
+      "archetypeId": "jiji-murin",
+      "label": "ジジ・ムリン（紫青混合）",
+      "count": 1,
+      "share": 0.3333333333333333
+    },
+    {
+      "archetypeId": "takane-lui",
+      "label": "鷹嶺ルイ（紫単）",
+      "count": 1,
+      "share": 0.3333333333333333
+    },
+    {
+      "archetypeId": "wando-chihaya-tokanehi",
+      "label": "輪堂千速＋虎金妃笑虎（青赤混合）",
+      "count": 1,
+      "share": 0.3333333333333333
+    }
+  ],
+  "observedSampleSize": 3
+}

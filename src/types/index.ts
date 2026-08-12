@@ -64,6 +64,7 @@ export type MainDrawerParamList = {
   Search: undefined;
   Favorites: undefined;
   DeckEditor: undefined;
+  TournamentReport: undefined;
   Watchlist: undefined;
   Settings: undefined;
   Tutorial: undefined;
