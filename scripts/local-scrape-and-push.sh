@@ -50,14 +50,6 @@ cd scripts
 node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
 cd ..
 
-# 2a. Regenerate public/data/database.json (native asset) from data/database.json
-#     Must run after build-database.js — fail if the generator fails (DIC-923).
-echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
-if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
-  exit 1
-fi
-
 # 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)
 echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
 cd scripts
@@ -88,6 +80,18 @@ node scrape-torecolo-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Toreco
 node scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fullahead buy scrape failed (non-fatal)" >> "$LOG_FILE"
 node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"
 cd ..
+
+# 2h. Regenerate public/data/database.json (native asset) from data/database.json.
+#     MUST be the LAST mutation-consuming step: it must run after merge-buy-prices.js
+#     (step 2g), the final writer of data/database.json, so the native asset is
+#     generated from the FINAL canonical bytes and committed atomically in the same
+#     commit below. Regenerating it earlier (before buy-price merge) leaves it stale
+#     and fails the DIC-916 --check gate (DIC-989). Fail if the generator fails (DIC-923).
+echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
+if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
+  exit 1
+fi
 
 # 3. Check if data changed
 GIT_DIFF_FILES='data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
