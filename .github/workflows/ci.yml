@@ -28,6 +28,9 @@ jobs:
       
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify Expo native-module compatibility (DIC-969)
+        run: npm run test:expo-native-compat
       
       - name: Check TypeScript types
         run: npx tsc --noEmit
