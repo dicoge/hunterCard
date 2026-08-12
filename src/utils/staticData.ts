@@ -17,15 +17,17 @@
  * no card fields, so it is safe to bundle as-is.
  */
 
-// require (not import) so tsc does not build a multi-MB literal type for the DB,
-// and Metro inlines the parsed JSON into the native bundle.
-const databaseJson = require('../../public/data/database.json');
-const seriesNamesJson = require('../../data/series-names.json');
+// Plain (attribute-free) JSON imports: Metro inlines them into the native bundle,
+// and Node resolves them via scripts/register-ts.mjs so the guest-data regression
+// executes this exact loader. Consumed as `any`, so tsc does not materialize a
+// multi-MB literal type for the DB.
+import databaseJson from '../../public/data/database.json';
+import seriesNamesJson from '../../data/series-names.json';
 
 export async function loadDatabaseJson(): Promise<any> {
   return databaseJson;
 }
 
 export async function loadSeriesNamesJson(): Promise<Record<string, string>> {
-  return seriesNamesJson;
+  return seriesNamesJson as Record<string, string>;
 }

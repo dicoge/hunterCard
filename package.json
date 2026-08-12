@@ -32,7 +32,7 @@
     "test:deck-store-rename": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-store-rename.mjs",
     "test:store-mvp-strip": "node --experimental-strip-types scripts/test-store-mvp-field-strip.mjs",
     "test:store-mvp-native-export": "node scripts/test-store-mvp-native-export.mjs",
-    "test:native-guest-data": "node scripts/test-native-guest-series-data.mjs",
+    "test:native-guest-data": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-native-guest-series-data.mjs",
     "test:vercel-routing": "node scripts/test-vercel-api-routing.mjs",
     "test:scan-geometry": "node scripts/benchmarks/scan-geometry.test.cjs",
     "benchmark:scan-recognition": "node scripts/benchmarks/scan-recognition-benchmark.cjs"
