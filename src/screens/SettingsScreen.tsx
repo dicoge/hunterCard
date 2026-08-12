@@ -59,9 +59,15 @@ export default function SettingsScreen() {
       await linkNewProvider(provider);
       showAlert('綁定完成', `已將 ${PROVIDER_LABEL[provider]} 帳號綁定到你的 HoloHunter 帳號。`);
     } catch (err: any) {
-      // linkProvider throws a descriptive message on collision / already-linked /
-      // user-cancelled — surface it so the CTA responds instead of silently failing.
-      showAlert('綁定失敗', String(err?.message ?? '無法完成綁定，請稍後再試。'));
+      // A cancel — or the web-Google redirect sentinel (code 'redirecting'),
+      // thrown as the page full-page-navigates to Google for the link flow
+      // (DIC-976) — is NOT a failure. Suppress it so the CTA does not flash a
+      // false "綁定失敗 / 正在導向 Google 登入…" alert before navigation completes.
+      if (isCancelAuthError(err)) return;
+      // Real errors: map to a friendly-but-SAFE string via the shared mapper
+      // (never echo the raw error text, which can carry provider/backend
+      // detail) — the same safe mapping the login CTA uses.
+      showAlert('綁定失敗', friendlyAuthErrorMessage(err, provider));
     }
   };
 

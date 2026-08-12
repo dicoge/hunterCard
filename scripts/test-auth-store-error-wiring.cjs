@@ -49,6 +49,8 @@ export const unlinkProvider = async () => { throw new Error('unused'); };
 export const deleteAccount = async () => { throw new Error('unused'); };
 export const signOutNativeGoogle = async () => {};
 export const validateSession = async () => { throw new Error('unused'); };
+export const completePendingWebGoogleLogin = async () => null;
+export const hasPendingWebGoogleRedirectReturn = () => false;
 `;
 
 // Mock platform storage: in-memory no-op. persist reads getItem once on init and

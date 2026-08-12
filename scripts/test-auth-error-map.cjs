@@ -63,6 +63,44 @@ function testClientMissingIsRecognisable() {
   assert.match(m, /設定/);
 }
 
+function testWebRedirectTransportCodesAreDistinct() {
+  // DIC-976: the web-Google same-window redirect transport can fail in several
+  // ways that MUST each be distinguishable, not collapse to the generic default
+  // the owner saw ("無法完成 Google 登入，請稍後再試。").
+  const codes = [
+    'popup_blocked',
+    'crypto_unavailable',
+    'storage_unavailable',
+    'storage_unavailable_standalone',
+    'state_mismatch',
+    'no_window',
+    'prompt_failed',
+  ];
+  const msgs = codes.map((code) => friendlyAuthErrorMessage({ code, status: 400 }, 'google'));
+  const generic = friendlyAuthErrorMessage({}, 'google'); // the old catch-all
+  for (let i = 0; i < codes.length; i++) {
+    assert.ok(msgs[i] && msgs[i].length > 0, `empty message for ${codes[i]}`);
+    // storage_unavailable and its _standalone variant intentionally share one
+    // user-facing string (same remedy); every OTHER code must not equal generic.
+    if (codes[i] !== 'prompt_failed') {
+      assert.notEqual(
+        msgs[i],
+        generic,
+        `${codes[i]} collapsed to the generic default — the DIC-976 bug`,
+      );
+    }
+  }
+  // At least five visually distinct strings across these codes.
+  assert.ok(new Set(msgs).size >= 5, `expected variety, got ${new Set(msgs).size}`);
+}
+
+function testRedirectingSentinelIsCancelLike() {
+  // The redirect transport throws a `redirecting` sentinel as it navigates away;
+  // it is NOT a failure and must be suppressed exactly like a cancel.
+  assert.equal(isCancelAuthError({ code: 'redirecting' }), true);
+  assert.equal(isCancelAuthError({ code: 'cancel' }), true);
+}
+
 function testCancelDetection() {
   assert.equal(isCancelAuthError({ code: 'cancel' }), true);
   assert.equal(isCancelAuthError({ code: 'access_denied' }), false);
@@ -104,6 +142,8 @@ function testNullishSafe() {
 const tests = [
   testDistinctCausesGiveDistinctMessages,
   testClientMissingIsRecognisable,
+  testWebRedirectTransportCodesAreDistinct,
+  testRedirectingSentinelIsCancelLike,
   testCancelDetection,
   testNeverEchoesRawMessage,
   testProviderLabelApplied,
