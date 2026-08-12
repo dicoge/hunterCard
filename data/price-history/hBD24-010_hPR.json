@@ -128,8 +128,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBD24-010_hPR"
+    },
+    {
+      "date": "2026-08-12",
+      "price": 9980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-010_hPR"
     }
   ],
-  "lastUpdated": "2026-08-11T12:20:42.057Z",
+  "lastUpdated": "2026-08-12T12:21:20.834Z",
   "nameZh": "雪花菈米"
 }

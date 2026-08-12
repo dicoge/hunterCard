@@ -373,8 +373,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-122_hBP01"
+    },
+    {
+      "date": "2026-08-12",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-122_hBP01"
     }
   ],
-  "lastUpdated": "2026-08-11T12:20:42.047Z",
+  "lastUpdated": "2026-08-12T12:21:20.822Z",
   "nameZh": "蘿絲隊"
 }

@@ -373,8 +373,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-113_hBP03"
+    },
+    {
+      "date": "2026-08-12",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-113_hBP03"
     }
   ],
-  "lastUpdated": "2026-08-11T12:20:41.973Z",
+  "lastUpdated": "2026-08-12T12:21:20.758Z",
   "nameZh": "Risuners"
 }

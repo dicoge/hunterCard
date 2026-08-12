@@ -373,8 +373,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP07-094_hBP07"
+    },
+    {
+      "date": "2026-08-12",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-094_hBP07"
     }
   ],
-  "lastUpdated": "2026-08-11T12:20:41.870Z",
+  "lastUpdated": "2026-08-12T12:21:20.628Z",
   "nameZh": "極惡機器人"
 }

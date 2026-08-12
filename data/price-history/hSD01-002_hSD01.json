@@ -373,8 +373,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-002_hSD01"
+    },
+    {
+      "date": "2026-08-12",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-002_hSD01"
     }
   ],
-  "lastUpdated": "2026-08-11T12:20:42.033Z",
+  "lastUpdated": "2026-08-12T12:21:20.802Z",
   "nameZh": "AZKi"
 }
