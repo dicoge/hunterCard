@@ -174,7 +174,18 @@ export const useAuthStore = create<AuthStore>()(
           const updatedUser = await linkProvider(session, user, provider);
           set({ user: updatedUser, isLoading: false });
         } catch (err: any) {
-          set({ isLoading: false, error: err.message || 'Failed to link provider' });
+          // The web-Google link flow full-page-navigates to Google and throws the
+          // 'redirecting' sentinel (also true of a user cancel). That is NOT a
+          // failure — do not set an error banner (the login gate renders it) and
+          // do not stop loading as if it failed; just rethrow so the caller's
+          // suppression runs. For real errors, store a friendly-but-SAFE mapped
+          // string (never the raw err.message) — same discipline as login
+          // (DIC-976 CR).
+          if (isCancelAuthError(err)) {
+            set({ isLoading: false, error: null });
+            throw err;
+          }
+          set({ isLoading: false, error: friendlyAuthErrorMessage(err, provider) });
           throw err;
         }
       },

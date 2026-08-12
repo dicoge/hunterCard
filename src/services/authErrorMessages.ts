@@ -78,6 +78,29 @@ export function friendlyAuthErrorMessage(
       return `無法在此環境啟動 ${label} 登入，請改用瀏覽器開啟。`;
     case 'prompt_failed':
       return `${label} 登入未完成，請再試一次。`;
+    // Account-linking / session server codes (DIC-976 CR). SettingsScreen's link
+    // CTA now routes real link errors through THIS safe mapper (never echoing a
+    // raw err.message). These mirror the server-provided friendly strings so the
+    // specific link-collision guidance is preserved rather than degraded to the
+    // generic 4xx fallback.
+    case 'IDENTITY_ALREADY_LINKED':
+      return `此 ${label} 帳號已綁定到另一個 HoloHunter 帳號，請先從該帳號解除綁定後再試。`;
+    case 'SAME_PROVIDER_ALREADY_LINKED':
+      return `你已綁定一個 ${label} 帳號。若要更換，請先解除舊的再綁定新的。`;
+    case 'CANNOT_UNLINK_LAST_METHOD':
+      return '無法解除唯一的登入方式，請先綁定其他登入方式。';
+    case 'ACCOUNT_DISABLED':
+      return '此帳號已停用，請聯絡客服。';
+    case 'INVALID_TOKEN':
+      return '登入驗證失敗，請重新登入。';
+    case 'TOKEN_EXPIRED':
+      return '登入已逾時，請重新登入。';
+    case 'TOKEN_REPLAYED':
+      return '此登入憑證已使用過，請重新登入。';
+    case 'STORE_NOT_CONFIGURED':
+      return '登入服務尚未設定完成（後端未就緒），請稍後再試。';
+    case 'no_session':
+      return `無法綁定 ${label}：找不到目前的登入狀態，請重新登入後再試。`;
     case 'network_error':
       return '網路連線異常，請檢查網路後再試。';
     default:
