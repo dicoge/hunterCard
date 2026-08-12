@@ -13,6 +13,7 @@ import {
   deleteAccount,
   signOutNativeGoogle,
   validateSession as validateSessionRemote,
+  completePendingWebGoogleLogin,
 } from '../services/authService';
 import {
   friendlyAuthErrorMessage,
@@ -31,6 +32,7 @@ interface AuthStore {
 
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
+  completeWebRedirectLogin: () => Promise<void>;
   continueAsGuest: () => void;
   linkNewProvider: (provider: AuthProvider) => Promise<void>;
   removeLinkedProvider: (provider: AuthProvider) => Promise<void>;
@@ -100,6 +102,34 @@ export const useAuthStore = create<AuthStore>()(
             error: isCancelAuthError(err) ? null : friendlyAuthErrorMessage(err, 'apple'),
           });
           throw err;
+        }
+      },
+
+      // Return leg of the web-Google same-window redirect flow (DIC-976). Runs
+      // ONCE on app boot: if the app was just redirected back from Google with a
+      // code, complete the PKCE exchange + server login and enter authenticated
+      // state. A no-op (resolves immediately) on every ordinary launch and on
+      // native. A failure is surfaced via the friendly `error` string (same
+      // mapping as loginWithGoogle) so the user isn't left on a blank guest
+      // screen with no explanation; a cancel/redirecting sentinel shows nothing.
+      completeWebRedirectLogin: async () => {
+        try {
+          const result = await completePendingWebGoogleLogin();
+          if (!result) return; // no pending redirect login — normal boot.
+          set({
+            user: result.user,
+            session: result.session,
+            isAuthenticated: true,
+            isGuest: false,
+            isLoading: false,
+            role: result.user.role,
+            error: null,
+          });
+        } catch (err: any) {
+          set({
+            isLoading: false,
+            error: isCancelAuthError(err) ? null : friendlyAuthErrorMessage(err, 'google'),
+          });
         }
       },
 

@@ -26,9 +26,12 @@ const PROVIDER_LABEL: Record<AuthErrorProvider, string> = {
 };
 
 // True cancellations are a user choice, not an error — callers should suppress
-// any alert for these rather than nagging the user with a failure dialog.
+// any alert for these rather than nagging the user with a failure dialog. The
+// web-Google redirect transport (DIC-976) also throws a `redirecting` sentinel
+// as it full-page-navigates away; that is NOT a failure either (the login
+// resolves on the next app load), so it is suppressed exactly like a cancel.
 export function isCancelAuthError(err: MappableAuthError | null | undefined): boolean {
-  return err?.code === 'cancel';
+  return err?.code === 'cancel' || err?.code === 'redirecting';
 }
 
 export function friendlyAuthErrorMessage(
@@ -41,6 +44,9 @@ export function friendlyAuthErrorMessage(
 
   switch (code) {
     case 'cancel':
+    case 'redirecting':
+      // `redirecting` should be suppressed by isCancelAuthError before reaching
+      // here; map it defensively to the same benign string just in case.
       return '已取消登入。';
     case 'client_id_missing':
       return `${label} 登入尚未設定完成（缺少登入服務設定），請稍後再試或聯絡我們。`;
@@ -56,6 +62,22 @@ export function friendlyAuthErrorMessage(
     case 'no_verifier':
     case 'no_id_token':
       return `${label} 登入未完成（未取得授權憑證），請再試一次。`;
+    // Web-Google same-window redirect transport diagnostics (DIC-976). Each maps
+    // to a DISTINCT safe message so a real device no longer collapses every
+    // failure into the generic "無法完成 Google 登入" the owner saw.
+    case 'popup_blocked':
+      return `瀏覽器封鎖了 ${label} 登入視窗，請允許彈出視窗或改用系統瀏覽器後再試。`;
+    case 'crypto_unavailable':
+      return '此瀏覽器不支援安全登入所需的加密功能，請改用其他瀏覽器。';
+    case 'storage_unavailable':
+    case 'storage_unavailable_standalone':
+      return '此瀏覽器不允許儲存登入狀態（可能為無痕模式），請關閉無痕模式後再試。';
+    case 'state_mismatch':
+      return `${label} 登入驗證失敗（狀態不符），請重新登入。`;
+    case 'no_window':
+      return `無法在此環境啟動 ${label} 登入，請改用瀏覽器開啟。`;
+    case 'prompt_failed':
+      return `${label} 登入未完成，請再試一次。`;
     case 'network_error':
       return '網路連線異常，請檢查網路後再試。';
     default:

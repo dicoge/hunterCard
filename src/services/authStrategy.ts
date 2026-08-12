@@ -145,3 +145,122 @@ export function resolveWebRedirectUri(params: {
   const origin = (params.origin ?? '').trim();
   return origin.replace(/\/+$/, '');
 }
+
+// Web Google login TRANSPORT selection (DIC-976).
+//
+// The default expo-auth-session web flow opens the provider in a popup
+// (WebBrowser.openAuthSessionAsync → window.open) and waits for the popup to
+// postMessage the code back to window.opener. That transport is fundamentally
+// broken inside an iOS Home-Screen PWA (manifest display:standalone): iOS opens
+// the OAuth URL in a SEPARATE Safari process with no opener relationship to the
+// standalone webview, so the code is never posted back — window.open either
+// returns null (ERR_WEB_BROWSER_BLOCKED, the observed 登入失敗 alert) or opens a
+// detached tab whose result the PWA can never read. The owner reproduced exactly
+// this on an iPhone standalone Settings page (DIC-976).
+//
+// The fix is to run the OAuth prompt as a SAME-WINDOW full-page redirect on web:
+// navigate the app's own window to Google, let Google 302 back to the app origin
+// with ?code&state, and finish the PKCE exchange on the next app load. That has
+// no popup and no opener dependency, so it works in standalone PWAs, regular
+// mobile Safari, and desktop alike. We therefore use the redirect transport for
+// ALL web (never just standalone) — one code path, no UA sniffing, and it is the
+// transport Google itself documents for browser OIDC. Native iOS/Android are
+// unaffected (they never reach this — they use the native SDK surfaces).
+export type WebGoogleTransport = 'redirect' | 'popup';
+
+// `os` is the react-native Platform.OS; only the web platform uses a browser
+// transport at all. Kept as a parameter (not a constant) so the decision stays
+// pure and unit-testable, and so a future flag could re-enable popup for a
+// specific surface without touching authService.
+export function webGoogleTransport(os: string): WebGoogleTransport {
+  if (os !== 'web') return 'popup'; // native never uses this; value is inert.
+  return 'redirect';
+}
+
+// Detects an iOS Home-Screen standalone PWA from the two signals a browser
+// exposes: navigator.standalone (legacy iOS Safari) and the
+// display-mode:standalone media query (installed PWAs on every engine). Pure —
+// the caller passes the already-read booleans so this stays testable in Node.
+// Not used to GATE the redirect transport (we redirect on all web) but kept for
+// diagnostics: it lets us tag a standalone launch in the (safe) error code so a
+// future standalone-only regression is distinguishable from a desktop one.
+export function isStandalonePwa(params: {
+  navigatorStandalone?: boolean | null;
+  displayModeStandalone?: boolean | null;
+}): boolean {
+  return Boolean(params.navigatorStandalone) || Boolean(params.displayModeStandalone);
+}
+
+// Serialises the minimal state the redirect flow must survive across the
+// full-page navigation to Google and back. Only PKCE verifier + OIDC nonce +
+// the CSRF `state` are kept; nothing secret beyond the verifier (which never
+// leaves the origin — it is stored in same-origin localStorage and consumed on
+// return, exactly like the popup flow held it in memory). Pure JSON, no browser
+// APIs, so serialise/parse round-trips are unit-testable.
+export interface WebRedirectPendingState {
+  codeVerifier: string;
+  nonce: string;
+  state: string;
+  createdAt: number;
+}
+
+export function serializeWebRedirectState(s: WebRedirectPendingState): string {
+  return JSON.stringify(s);
+}
+
+// Parse + validate persisted redirect state. Returns null (never throws) for
+// any malformed / incomplete / stale (> maxAgeMs) payload so a corrupt or
+// leftover localStorage entry fails CLOSED — the app simply treats it as "no
+// pending login" rather than attempting an exchange with half state.
+export function parseWebRedirectState(
+  raw: string | null | undefined,
+  maxAgeMs = 10 * 60 * 1000,
+  now = Date.now(),
+): WebRedirectPendingState | null {
+  if (!raw) return null;
+  let obj: unknown;
+  try {
+    obj = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== 'object') return null;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.codeVerifier !== 'string' || !o.codeVerifier) return null;
+  if (typeof o.nonce !== 'string' || !o.nonce) return null;
+  if (typeof o.state !== 'string' || !o.state) return null;
+  if (typeof o.createdAt !== 'number' || !Number.isFinite(o.createdAt)) return null;
+  if (now - o.createdAt > maxAgeMs) return null;
+  return {
+    codeVerifier: o.codeVerifier,
+    nonce: o.nonce,
+    state: o.state,
+    createdAt: o.createdAt,
+  };
+}
+
+// Classifies the OAuth return encoded in the app URL after Google redirects
+// back. Reads ONLY the short machine params (code / state / error) from the
+// query string; never a human error_description (which can carry detail). The
+// caller matches `state` against the persisted state before trusting `code`
+// (CSRF defence), and surfaces `error` as a safe code. Returns kind 'none' when
+// this is an ordinary app load with no OAuth params, so boot stays a no-op.
+// Pure: takes the raw search string (e.g. window.location.search), no globals.
+export interface WebRedirectReturn {
+  kind: 'none' | 'success' | 'error';
+  code?: string;
+  state?: string;
+  error?: string;
+}
+
+export function parseWebRedirectReturn(search: string | null | undefined): WebRedirectReturn {
+  const raw = (search ?? '').replace(/^\?/, '');
+  if (!raw) return { kind: 'none' };
+  const params = new URLSearchParams(raw);
+  const error = params.get('error');
+  const code = params.get('code');
+  const state = params.get('state') ?? undefined;
+  if (error) return { kind: 'error', error, state };
+  if (code && state) return { kind: 'success', code, state };
+  return { kind: 'none' };
+}

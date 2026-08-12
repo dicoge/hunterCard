@@ -12,6 +12,12 @@ import {
   googleLoginSurface,
   resolveApiBase,
   resolveWebRedirectUri,
+  webGoogleTransport,
+  isStandalonePwa,
+  serializeWebRedirectState,
+  parseWebRedirectState,
+  parseWebRedirectReturn,
+  type WebRedirectPendingState,
 } from './authStrategy';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -133,6 +139,54 @@ class AuthError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+// Thrown by the web redirect flow when the app is ABOUT to full-page navigate to
+// Google (DIC-976). It is NOT a failure: the store treats it like a cancel (no
+// error banner, no alert) because the browser is leaving this page — the login
+// resolves on the next app load via completePendingWebGoogleLogin(). Carries
+// code 'redirecting' so isRedirectPendingAuthError can detect it without string
+// matching, and status 0 so any accidental generic mapping still says nothing
+// alarming.
+class AuthRedirectPendingError extends Error {
+  code = 'redirecting';
+  status = 0;
+  constructor() {
+    super('正在導向 Google 登入…');
+    this.name = 'AuthRedirectPendingError';
+  }
+}
+
+export function isRedirectPendingAuthError(err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === 'redirecting';
+}
+
+// Wraps ANY thrown value from the browser OAuth transport (expo-web-browser /
+// expo-auth-session / fetch) into a typed AuthError so it can NEVER reach the UI
+// as a raw Error that collapses to the generic "無法完成 Google 登入" default
+// (DIC-976: that generic alert is exactly the diagnostic black hole the owner
+// hit). We map the few known coded errors to distinguishable safe codes; an
+// already-typed AuthError passes through unchanged; anything else becomes a
+// generic 400 with a stable 'prompt_failed' code (still no raw message echo).
+function wrapUnknownAuthError(err: unknown): AuthError {
+  if (err instanceof AuthError) return err;
+  const code = String((err as { code?: unknown } | null)?.code ?? '');
+  // expo-web-browser throws this when window.open() is blocked or opens a
+  // detached tab the page can't read — the primary iOS standalone PWA failure
+  // the redirect transport now avoids, but still mapped for any residual popup
+  // path so it is never a generic alert again.
+  if (code === 'ERR_WEB_BROWSER_BLOCKED') {
+    return new AuthError('瀏覽器封鎖了登入視窗，請改用系統瀏覽器或允許彈出視窗。', 400, 'popup_blocked');
+  }
+  if (code === 'ERR_WEB_BROWSER_CRYPTO') {
+    return new AuthError('此瀏覽器不支援安全登入所需的加密功能。', 400, 'crypto_unavailable');
+  }
+  // TypeError from fetch (network / CORS) — surface as a network error so the UI
+  // says "check your connection", not a generic failure.
+  if (err instanceof TypeError) {
+    return new AuthError('網路連線異常，請檢查網路後再試。', 0, 'network_error');
+  }
+  return new AuthError('Google 登入未完成，請再試一次。', 400, 'prompt_failed');
 }
 
 // Turns a non-success expo-auth-session prompt result into an AuthError whose
@@ -409,12 +463,130 @@ async function obtainAppleNativeIdToken(): Promise<{ idToken: string; nonce: str
   return { idToken, nonce };
 }
 
-// Web OAuth/OIDC prompt (browser). For Google we PKCE-exchange the code for an
-// id_token; for Apple the id_token arrives directly in the authorize response.
+// Same-origin localStorage key holding the pending web-Google redirect state
+// (PKCE verifier + nonce + CSRF state) across the full-page navigation to Google
+// and back (DIC-976). Consumed exactly once by completePendingWebGoogleLogin().
+const WEB_GOOGLE_REDIRECT_KEY = 'holohunter-web-google-redirect';
+
+function webWindowOrigin(): string | null {
+  return typeof window !== 'undefined' ? window.location?.origin ?? null : null;
+}
+
+// The page-origin redirect URI, pinned so it byte-matches the URI registered in
+// Google Console (DIC-922). makeRedirectUri() drifts by page path / deploy
+// origin, which produced the production `redirect_uri_mismatch`. Fall back to
+// makeRedirectUri() only if no origin is resolvable (e.g. SSR).
+function webGoogleRedirectUri(): string {
+  const pinned = resolveWebRedirectUri({
+    origin: webWindowOrigin(),
+    override: process.env.EXPO_PUBLIC_GOOGLE_WEB_REDIRECT_URI,
+  });
+  return pinned || AuthSession.makeRedirectUri();
+}
+
+// Reads the two browser signals for "installed iOS standalone PWA" and folds
+// them through the pure helper. Best-effort — any missing global is treated as
+// "not standalone". Used only to TAG the safe error code for diagnostics.
+function detectStandalonePwa(): boolean {
+  try {
+    const nav = typeof navigator !== 'undefined' ? (navigator as { standalone?: boolean }) : null;
+    const mm =
+      typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(display-mode: standalone)').matches
+        : false;
+    return isStandalonePwa({
+      navigatorStandalone: nav?.standalone ?? false,
+      displayModeStandalone: mm,
+    });
+  } catch {
+    return false;
+  }
+}
+
+// Web Google login via SAME-WINDOW full-page redirect (DIC-976). Builds the
+// authorize URL with expo-auth-session (reusing its tested PKCE + state crypto),
+// persists the verifier/nonce/state to same-origin localStorage, then navigates
+// the app's OWN window to Google. Returns nothing normally — it throws
+// AuthRedirectPendingError because the page is being unloaded; the login
+// resolves on the next app load in completePendingWebGoogleLogin(). No popup, no
+// window.opener dependency, so it works inside an iOS standalone PWA.
+async function startWebGoogleRedirect(loginHint?: string): Promise<never> {
+  if (!GOOGLE_CLIENT_ID) {
+    throw new AuthError(
+      '尚未設定 Google 的 client ID（EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID）。',
+      500,
+      'client_id_missing',
+    );
+  }
+  if (typeof window === 'undefined' || !window.location || !window.localStorage) {
+    // No browser to navigate (SSR / non-web) — fail closed rather than silently
+    // hang. Should be unreachable: this path only runs when Platform.OS==='web'.
+    throw new AuthError('無法在此環境啟動 Google 登入。', 400, 'no_window');
+  }
+  const redirectUri = webGoogleRedirectUri();
+  const nonce = randomNonce();
+  const authRequest = new AuthSession.AuthRequest({
+    clientId: GOOGLE_CLIENT_ID,
+    scopes: googleScopes,
+    redirectUri,
+    usePKCE: true,
+    extraParams: {
+      nonce,
+      ...(loginHint ? { login_hint: loginHint } : {}),
+    },
+  });
+
+  // makeAuthUrlAsync loads crypto state (codeVerifier + state) into the request
+  // and returns the full authorize URL. We read verifier/state AFTER this so the
+  // persisted values match the ones baked into the outgoing URL.
+  let url: string;
+  try {
+    url = await authRequest.makeAuthUrlAsync(googleDiscovery);
+  } catch (err) {
+    throw wrapUnknownAuthError(err);
+  }
+  const codeVerifier = authRequest.codeVerifier;
+  const state = authRequest.state;
+  if (!codeVerifier || !state) {
+    throw new AuthError('無法建立安全登入請求，請再試一次。', 400, 'no_verifier');
+  }
+
+  const pending: WebRedirectPendingState = {
+    codeVerifier,
+    nonce,
+    state,
+    createdAt: Date.now(),
+  };
+  try {
+    window.localStorage.setItem(WEB_GOOGLE_REDIRECT_KEY, serializeWebRedirectState(pending));
+  } catch (err) {
+    // Private-mode / disabled storage — the return leg couldn't read the
+    // verifier, so fail closed BEFORE navigating rather than stranding the user.
+    // Tag standalone-PWA context: on iOS a Home-Screen PWA has its own storage
+    // partition, so this being standalone is a useful diagnostic distinction.
+    const code = detectStandalonePwa() ? 'storage_unavailable_standalone' : 'storage_unavailable';
+    throw new AuthError('此瀏覽器不允許儲存登入狀態，無法完成登入。', 400, code);
+  }
+
+  window.location.assign(url);
+  throw new AuthRedirectPendingError();
+}
+
+// Web OAuth/OIDC prompt (browser). Google on web uses the same-window redirect
+// transport (DIC-976); Apple web still uses the popup form_post exchange. For
+// the popup path we PKCE-exchange the code for an id_token; for Apple the
+// id_token arrives directly in the authorize response. Any raw throw from the
+// browser transport is wrapped so it can never reach the UI as a generic error.
 async function obtainWebIdToken(
   provider: AuthProvider,
   loginHint?: string,
 ): Promise<{ idToken: string; nonce: string }> {
+  // Google on web: redirect transport. This never returns (it navigates away),
+  // so the code below is only ever reached for the Apple popup path.
+  if (provider === 'google' && webGoogleTransport(Platform.OS) === 'redirect') {
+    await startWebGoogleRedirect(loginHint);
+  }
+
   const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
   if (!clientId) {
     throw new AuthError(
@@ -424,16 +596,7 @@ async function obtainWebIdToken(
     );
   }
 
-  // Pin the web redirect to the page origin so it byte-matches the URI
-  // registered in Google Console (DIC-922). makeRedirectUri() is
-  // window.location-derived and drifts by page path / deploy origin, which is
-  // what produced the production `redirect_uri_mismatch`. Fall back to
-  // makeRedirectUri() only if no origin is resolvable (e.g. SSR).
-  const pinnedRedirect = resolveWebRedirectUri({
-    origin: typeof window !== 'undefined' ? window.location?.origin ?? null : null,
-    override: process.env.EXPO_PUBLIC_GOOGLE_WEB_REDIRECT_URI,
-  });
-  const redirectUri = pinnedRedirect || AuthSession.makeRedirectUri();
+  const redirectUri = webGoogleRedirectUri();
   const scopes = provider === 'google' ? googleScopes : appleScopes;
   const discovery = provider === 'google' ? googleDiscovery : appleDiscovery;
   const nonce = randomNonce();
@@ -450,7 +613,14 @@ async function obtainWebIdToken(
     },
   });
 
-  const result = await authRequest.promptAsync(discovery);
+  let result: Awaited<ReturnType<typeof authRequest.promptAsync>>;
+  try {
+    result = await authRequest.promptAsync(discovery);
+  } catch (err) {
+    // expo-web-browser/-auth-session can THROW (e.g. popup blocked) rather than
+    // return a non-success result; wrap so it never hits the generic default.
+    throw wrapUnknownAuthError(err);
+  }
   if (result.type !== 'success') {
     throw authErrorFromPromptResult(result as any);
   }
@@ -466,15 +636,20 @@ async function obtainWebIdToken(
   const codeVerifier = authRequest.codeVerifier;
   if (!codeVerifier) throw new AuthError('PKCE code verifier 遺失', 400, 'no_verifier');
 
-  const tokenResponse = await AuthSession.exchangeCodeAsync(
-    {
-      clientId,
-      code,
-      redirectUri,
-      extraParams: { code_verifier: codeVerifier },
-    },
-    discovery,
-  );
+  let tokenResponse: Awaited<ReturnType<typeof AuthSession.exchangeCodeAsync>>;
+  try {
+    tokenResponse = await AuthSession.exchangeCodeAsync(
+      {
+        clientId,
+        code,
+        redirectUri,
+        extraParams: { code_verifier: codeVerifier },
+      },
+      discovery,
+    );
+  } catch (err) {
+    throw wrapUnknownAuthError(err);
+  }
   const idToken = tokenResponse.idToken;
   if (!idToken) throw new AuthError('Google 未回傳 id_token', 400, 'no_id_token');
   return { idToken, nonce };
@@ -609,6 +784,100 @@ export async function signInWithProvider(provider: AuthProvider): Promise<SignIn
   const res = await apiPost('/auth/login', { provider, idToken, nonce });
   const data = await readJson(res);
   if (!res.ok) throw toAuthError(data, res.status, provider);
+  return { user: toHoloUser(data.user), session: data.session, isNewUser: Boolean(data.isNew) };
+}
+
+// Strips the OAuth return params (code/state/error/scope/…) from the address bar
+// after the redirect leg completes, without adding a history entry or reloading.
+// Keeps any UNrelated query params the app itself relies on. Best-effort — a
+// failure here never blocks the login result.
+function cleanOAuthReturnFromUrl(): void {
+  if (typeof window === 'undefined' || !window.history || !window.location) return;
+  try {
+    const url = new URL(window.location.href);
+    let touched = false;
+    for (const key of ['code', 'state', 'error', 'error_description', 'scope', 'authuser', 'prompt', 'hd']) {
+      if (url.searchParams.has(key)) {
+        url.searchParams.delete(key);
+        touched = true;
+      }
+    }
+    if (touched) {
+      const clean = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : '') + url.hash;
+      window.history.replaceState({}, '', clean);
+    }
+  } catch {
+    // Non-fatal: the URL just keeps its params; the login already succeeded.
+  }
+}
+
+// Return leg of the web-Google same-window redirect flow (DIC-976). Called ONCE
+// on app boot (web only). If the current URL is an OAuth return matching a
+// pending redirect we persisted before navigating, it: validates state (CSRF),
+// PKCE-exchanges the code for an id_token, POSTs it to /api/auth/login, and
+// returns the SignInResult for the store to adopt. Returns null when there is no
+// pending web-Google login (the overwhelmingly common boot case), so wiring it
+// into boot is a no-op on ordinary launches. The pending state is consumed
+// (deleted) up-front so a reload / double-invoke can't replay it. Never throws
+// for the no-pending case; a genuine failure throws a typed AuthError.
+export async function completePendingWebGoogleLogin(): Promise<SignInResult | null> {
+  if (Platform.OS !== 'web') return null;
+  if (typeof window === 'undefined' || !window.localStorage || !window.location) return null;
+
+  const ret = parseWebRedirectReturn(window.location.search);
+  if (ret.kind === 'none') return null;
+
+  // We have OAuth params in the URL. Load and immediately CLEAR the pending
+  // state so it can be redeemed at most once, then clean the address bar.
+  let rawPending: string | null = null;
+  try {
+    rawPending = window.localStorage.getItem(WEB_GOOGLE_REDIRECT_KEY);
+    window.localStorage.removeItem(WEB_GOOGLE_REDIRECT_KEY);
+  } catch {
+    rawPending = null;
+  }
+  const pending = parseWebRedirectState(rawPending);
+  cleanOAuthReturnFromUrl();
+
+  // Provider returned an error (e.g. access_denied, redirect_uri_mismatch) — map
+  // to a safe code so the UI can distinguish it, never a generic failure.
+  if (ret.kind === 'error') {
+    throw new AuthError(`登入失敗（${ret.error}）`, 400, ret.error || 'oauth_error');
+  }
+
+  // No matching pending state means this return isn't ours (stale link, replay,
+  // or storage was cleared mid-flow). Fail closed silently — treat as no login.
+  if (!pending) return null;
+
+  // CSRF: the state Google echoed MUST equal the one we minted and stored.
+  if (!ret.state || ret.state !== pending.state) {
+    throw new AuthError('登入驗證失敗（狀態不符），請重新登入。', 400, 'state_mismatch');
+  }
+  if (!ret.code) {
+    throw new AuthError('未取得授權碼', 400, 'no_code');
+  }
+
+  const redirectUri = webGoogleRedirectUri();
+  let tokenResponse: Awaited<ReturnType<typeof AuthSession.exchangeCodeAsync>>;
+  try {
+    tokenResponse = await AuthSession.exchangeCodeAsync(
+      {
+        clientId: GOOGLE_CLIENT_ID,
+        code: ret.code,
+        redirectUri,
+        extraParams: { code_verifier: pending.codeVerifier },
+      },
+      googleDiscovery,
+    );
+  } catch (err) {
+    throw wrapUnknownAuthError(err);
+  }
+  const idToken = tokenResponse.idToken;
+  if (!idToken) throw new AuthError('Google 未回傳 id_token', 400, 'no_id_token');
+
+  const res = await apiPost('/auth/login', { provider: 'google', idToken, nonce: pending.nonce });
+  const data = await readJson(res);
+  if (!res.ok) throw toAuthError(data, res.status, 'google');
   return { user: toHoloUser(data.user), session: data.session, isNewUser: Boolean(data.isNew) };
 }
 
