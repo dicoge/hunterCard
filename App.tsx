@@ -3,7 +3,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { initPushNotifications } from './src/services/pushNotificationService';
 import { FEATURES } from './src/config/releaseFlags';
-import { useAuthStore } from './src/store/authStore';
 
 export default function App() {
   useEffect(() => {
@@ -12,10 +11,12 @@ export default function App() {
     if (FEATURES.pushAlerts) {
       initPushNotifications();
     }
-    // Web-Google same-window redirect return leg (DIC-976): if this launch is a
-    // redirect back from Google, finish the login. No-op on native and on every
-    // ordinary web launch. Run once on mount.
-    useAuthStore.getState().completeWebRedirectLogin();
+    // NOTE (DIC-976 CR blocker 2): the web-Google redirect RETURN leg is no
+    // longer kicked off here. Boot is now owned exclusively by the auth store's
+    // onRehydrateStorage, which serializes the redirect-completion and
+    // persisted-session-validation flows so a stale /auth/me can't race/overwrite
+    // the callback result. Kicking it off from here too would double-run and
+    // reintroduce the race.
   }, []);
 
   return (

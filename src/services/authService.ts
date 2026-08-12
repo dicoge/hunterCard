@@ -18,6 +18,7 @@ import {
   parseWebRedirectState,
   parseWebRedirectReturn,
   type WebRedirectPendingState,
+  type WebRedirectOperation,
 } from './authStrategy';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -510,7 +511,17 @@ function detectStandalonePwa(): boolean {
 // AuthRedirectPendingError because the page is being unloaded; the login
 // resolves on the next app load in completePendingWebGoogleLogin(). No popup, no
 // window.opener dependency, so it works inside an iOS standalone PWA.
-async function startWebGoogleRedirect(loginHint?: string): Promise<never> {
+async function startWebGoogleRedirect(
+  operation: WebRedirectOperation,
+  opts: { loginHint?: string; session?: string } = {},
+): Promise<never> {
+  const { loginHint, session } = opts;
+  // A 'link' MUST carry the authenticated session to resume on return; without
+  // it the callback would fall back to an unauthenticated login and switch
+  // accounts (CR blocker 1). Fail closed BEFORE navigating.
+  if (operation === 'link' && !session) {
+    throw new AuthError('無法綁定：找不到目前的登入狀態，請重新登入後再試。', 400, 'no_session');
+  }
   if (!GOOGLE_CLIENT_ID) {
     throw new AuthError(
       '尚未設定 Google 的 client ID（EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID）。',
@@ -556,6 +567,8 @@ async function startWebGoogleRedirect(loginHint?: string): Promise<never> {
     nonce,
     state,
     createdAt: Date.now(),
+    operation,
+    ...(operation === 'link' && session ? { session } : {}),
   };
   try {
     window.localStorage.setItem(WEB_GOOGLE_REDIRECT_KEY, serializeWebRedirectState(pending));
@@ -572,21 +585,25 @@ async function startWebGoogleRedirect(loginHint?: string): Promise<never> {
   throw new AuthRedirectPendingError();
 }
 
-// Web OAuth/OIDC prompt (browser). Google on web uses the same-window redirect
-// transport (DIC-976); Apple web still uses the popup form_post exchange. For
-// the popup path we PKCE-exchange the code for an id_token; for Apple the
-// id_token arrives directly in the authorize response. Any raw throw from the
-// browser transport is wrapped so it can never reach the UI as a generic error.
+// True when the current platform runs web-Google login via the same-window
+// redirect transport (DIC-976). The redirect is launched explicitly by the
+// login/link callers (so each can pass its operation + session), NOT inside the
+// generic token-obtaining path — that keeps the login-vs-link context from being
+// lost (CR blocker 1).
+function usesWebGoogleRedirect(provider: AuthProvider): boolean {
+  return provider === 'google' && webGoogleTransport(Platform.OS) === 'redirect';
+}
+
+// Web OAuth/OIDC prompt (browser). Only reached for Apple web (popup form_post)
+// now — web-Google takes the redirect transport via startWebGoogleRedirect,
+// launched by its callers. We PKCE-exchange the code for an id_token; for Apple
+// the id_token arrives directly in the authorize response. Any raw throw from
+// the browser transport is wrapped so it can never reach the UI as a generic
+// error.
 async function obtainWebIdToken(
   provider: AuthProvider,
   loginHint?: string,
 ): Promise<{ idToken: string; nonce: string }> {
-  // Google on web: redirect transport. This never returns (it navigates away),
-  // so the code below is only ever reached for the Apple popup path.
-  if (provider === 'google' && webGoogleTransport(Platform.OS) === 'redirect') {
-    await startWebGoogleRedirect(loginHint);
-  }
-
   const clientId = provider === 'google' ? GOOGLE_CLIENT_ID : APPLE_CLIENT_ID;
   if (!clientId) {
     throw new AuthError(
@@ -780,6 +797,12 @@ export async function signInWithProvider(provider: AuthProvider): Promise<SignIn
       return obtainAppleWebSession(surface);
     }
   }
+  // Web-Google login: launch the same-window redirect (operation 'login'). This
+  // never returns — it navigates away and resolves in completePendingWebGoogleLogin
+  // on the next app load. Throws AuthRedirectPendingError, suppressed by the store.
+  if (usesWebGoogleRedirect(provider)) {
+    await startWebGoogleRedirect('login');
+  }
   const { idToken, nonce } = await obtainProviderIdToken(provider);
   const res = await apiPost('/auth/login', { provider, idToken, nonce });
   const data = await readJson(res);
@@ -811,16 +834,37 @@ function cleanOAuthReturnFromUrl(): void {
   }
 }
 
+// Synchronous, side-effect-free check for whether THIS app load is a web-Google
+// OAuth return (i.e. the URL carries ?code&state or ?error). The store reads
+// this at boot BEFORE any await to decide ordering: when a redirect return is
+// pending, persisted-session validation must defer so a stale /auth/me can't
+// overwrite or clear the fresh callback result (CR blocker 2). Native / SSR / no
+// OAuth params → false, so ordinary launches are unaffected.
+export function hasPendingWebGoogleRedirectReturn(): boolean {
+  if (Platform.OS !== 'web') return false;
+  if (typeof window === 'undefined' || !window.location) return false;
+  return parseWebRedirectReturn(window.location.search).kind !== 'none';
+}
+
+// Discriminated result of the web-Google redirect return leg (DIC-976). The
+// store dispatches on `operation`: a 'login' brings a fresh session+user to
+// adopt; a 'link' brings the updated user while KEEPING the existing session
+// (the account was augmented, not switched).
+export type WebRedirectCompletion =
+  | { operation: 'login'; user: HoloUser; session: string; isNewUser: boolean }
+  | { operation: 'link'; user: HoloUser; session: string };
+
 // Return leg of the web-Google same-window redirect flow (DIC-976). Called ONCE
 // on app boot (web only). If the current URL is an OAuth return matching a
 // pending redirect we persisted before navigating, it: validates state (CSRF),
-// PKCE-exchanges the code for an id_token, POSTs it to /api/auth/login, and
-// returns the SignInResult for the store to adopt. Returns null when there is no
-// pending web-Google login (the overwhelmingly common boot case), so wiring it
-// into boot is a no-op on ordinary launches. The pending state is consumed
-// (deleted) up-front so a reload / double-invoke can't replay it. Never throws
-// for the no-pending case; a genuine failure throws a typed AuthError.
-export async function completePendingWebGoogleLogin(): Promise<SignInResult | null> {
+// PKCE-exchanges the code for an id_token, and then dispatches on the persisted
+// OPERATION — 'login' → POST /auth/login (fresh session), 'link' → POST
+// /auth/link WITH the persisted session (attach Google to the current account,
+// CR blocker 1). Returns null when there is no pending web-Google redirect (the
+// overwhelmingly common boot case). The pending state is consumed (deleted)
+// up-front so a reload / double-invoke can't replay it. Never throws for the
+// no-pending case; a genuine failure throws a typed AuthError.
+export async function completePendingWebGoogleLogin(): Promise<WebRedirectCompletion | null> {
   if (Platform.OS !== 'web') return null;
   if (typeof window === 'undefined' || !window.localStorage || !window.location) return null;
 
@@ -845,8 +889,8 @@ export async function completePendingWebGoogleLogin(): Promise<SignInResult | nu
     throw new AuthError(`登入失敗（${ret.error}）`, 400, ret.error || 'oauth_error');
   }
 
-  // No matching pending state means this return isn't ours (stale link, replay,
-  // or storage was cleared mid-flow). Fail closed silently — treat as no login.
+  // No matching (or fail-closed-rejected, e.g. a 'link' missing its session)
+  // pending state means this return isn't safely ours. Fail closed silently.
   if (!pending) return null;
 
   // CSRF: the state Google echoed MUST equal the one we minted and stored.
@@ -875,10 +919,26 @@ export async function completePendingWebGoogleLogin(): Promise<SignInResult | nu
   const idToken = tokenResponse.idToken;
   if (!idToken) throw new AuthError('Google 未回傳 id_token', 400, 'no_id_token');
 
+  if (pending.operation === 'link') {
+    // Resume the link against the EXISTING session. parseWebRedirectState already
+    // guaranteed pending.session is present for a 'link'; guard again defensively.
+    const session = pending.session;
+    if (!session) throw new AuthError('無法綁定：登入狀態遺失，請重新登入後再試。', 400, 'no_session');
+    const res = await apiPost('/auth/link', { provider: 'google', idToken, nonce: pending.nonce }, session);
+    const data = await readJson(res);
+    if (!res.ok) throw toAuthError(data, res.status, 'google');
+    return { operation: 'link', user: toHoloUser(data.user), session };
+  }
+
   const res = await apiPost('/auth/login', { provider: 'google', idToken, nonce: pending.nonce });
   const data = await readJson(res);
   if (!res.ok) throw toAuthError(data, res.status, 'google');
-  return { user: toHoloUser(data.user), session: data.session, isNewUser: Boolean(data.isNew) };
+  return {
+    operation: 'login',
+    user: toHoloUser(data.user),
+    session: data.session,
+    isNewUser: Boolean(data.isNew),
+  };
 }
 
 export async function linkProvider(
@@ -886,6 +946,15 @@ export async function linkProvider(
   currentUser: HoloUser,
   provider: AuthProvider,
 ): Promise<HoloUser> {
+  // Web-Google link: launch the same-window redirect with operation 'link' and
+  // the CURRENT session, so the return leg resumes /auth/link (attaching Google
+  // to THIS account) instead of an unauthenticated /auth/login that would switch
+  // accounts (CR blocker 1). Never returns — resolves in
+  // completePendingWebGoogleLogin on the next load; the store suppresses the
+  // AuthRedirectPendingError sentinel.
+  if (usesWebGoogleRedirect(provider)) {
+    await startWebGoogleRedirect('link', { loginHint: currentUser.primaryEmail, session });
+  }
   const { idToken, nonce } = await obtainProviderIdToken(provider, currentUser.primaryEmail);
   const res = await apiPost('/auth/link', { provider, idToken, nonce }, session);
   const data = await readJson(res);

@@ -197,11 +197,29 @@ export function isStandalonePwa(params: {
 // leaves the origin — it is stored in same-origin localStorage and consumed on
 // return, exactly like the popup flow held it in memory). Pure JSON, no browser
 // APIs, so serialise/parse round-trips are unit-testable.
+// The operation the redirect was launched FOR (DIC-976 CR blocker 1). The web
+// redirect transport is shared by BOTH sign-in and Settings "link Google", but
+// the return leg must dispatch to the RIGHT endpoint: 'login' → /auth/login
+// (unauthenticated, may create/switch account), 'link' → /auth/link with the
+// caller's EXISTING session (attaches Google to the current account). Losing
+// this distinction let a "link Google" silently log the user in as a different
+// account — the exact bug the CR flagged.
+export type WebRedirectOperation = 'login' | 'link';
+
 export interface WebRedirectPendingState {
   codeVerifier: string;
   nonce: string;
   state: string;
   createdAt: number;
+  // Which flow launched the redirect. Persisted so the return leg calls the
+  // correct endpoint. Absent in legacy payloads → treated as 'login' on parse.
+  operation: WebRedirectOperation;
+  // The authenticated session to resume a 'link' with. REQUIRED when
+  // operation === 'link' (parse fails closed without it) and MUST be absent for
+  // 'login' (a login has no prior session). This is the same session token the
+  // auth store already persists in localStorage, so it introduces no new
+  // exposure surface.
+  session?: string;
 }
 
 export function serializeWebRedirectState(s: WebRedirectPendingState): string {
@@ -211,7 +229,10 @@ export function serializeWebRedirectState(s: WebRedirectPendingState): string {
 // Parse + validate persisted redirect state. Returns null (never throws) for
 // any malformed / incomplete / stale (> maxAgeMs) payload so a corrupt or
 // leftover localStorage entry fails CLOSED — the app simply treats it as "no
-// pending login" rather than attempting an exchange with half state.
+// pending login" rather than attempting an exchange with half state. A 'link'
+// payload MISSING its session is rejected (null): resuming a link without the
+// authenticated session would fall back to an unauthenticated /auth/login and
+// switch accounts, so we refuse it rather than guess (CR blocker 1, fail closed).
 export function parseWebRedirectState(
   raw: string | null | undefined,
   maxAgeMs = 10 * 60 * 1000,
@@ -231,11 +252,37 @@ export function parseWebRedirectState(
   if (typeof o.state !== 'string' || !o.state) return null;
   if (typeof o.createdAt !== 'number' || !Number.isFinite(o.createdAt)) return null;
   if (now - o.createdAt > maxAgeMs) return null;
+
+  // Operation defaults to 'login' when absent (legacy / login payloads); any
+  // other explicit value than 'login'/'link' is corrupt → fail closed.
+  let operation: WebRedirectOperation;
+  if (o.operation === undefined || o.operation === 'login') {
+    operation = 'login';
+  } else if (o.operation === 'link') {
+    operation = 'link';
+  } else {
+    return null;
+  }
+
+  let session: string | undefined;
+  if (operation === 'link') {
+    // A link MUST carry the session to resume; without it we'd silently degrade
+    // to an unauthenticated login (account switch). Refuse.
+    if (typeof o.session !== 'string' || !o.session) return null;
+    session = o.session;
+  } else {
+    // A login must NOT carry a session; if one is present the payload is
+    // malformed/tampered — fail closed rather than trust mixed state.
+    if (o.session !== undefined) return null;
+  }
+
   return {
     codeVerifier: o.codeVerifier,
     nonce: o.nonce,
     state: o.state,
     createdAt: o.createdAt,
+    operation,
+    ...(session ? { session } : {}),
   };
 }
 

@@ -78,10 +78,76 @@ function testStandaloneDetection() {
 }
 
 function testPendingStateRoundTrip() {
-  const s = { codeVerifier: 'verifier-123', nonce: 'nonce-abc', state: 'state-xyz', createdAt: 1000 };
-  const raw = strategy.serializeWebRedirectState(s);
-  const parsed = strategy.parseWebRedirectState(raw, 10 * 60 * 1000, 1000);
-  assert.deepEqual(parsed, s);
+  // A login payload round-trips with operation:'login' and no session.
+  const login = {
+    codeVerifier: 'verifier-123',
+    nonce: 'nonce-abc',
+    state: 'state-xyz',
+    createdAt: 1000,
+    operation: 'login',
+  };
+  const parsedLogin = strategy.parseWebRedirectState(
+    strategy.serializeWebRedirectState(login),
+    10 * 60 * 1000,
+    1000,
+  );
+  assert.deepEqual(parsedLogin, login);
+
+  // A link payload round-trips WITH operation:'link' and its session preserved.
+  const link = {
+    codeVerifier: 'v2',
+    nonce: 'n2',
+    state: 's2',
+    createdAt: 1000,
+    operation: 'link',
+    session: 'sess-token-abc',
+  };
+  const parsedLink = strategy.parseWebRedirectState(
+    strategy.serializeWebRedirectState(link),
+    10 * 60 * 1000,
+    1000,
+  );
+  assert.deepEqual(parsedLink, link);
+}
+
+function testOperationDefaultsToLoginForLegacyPayload() {
+  // Legacy payload (pre-DIC-976-CR) has no `operation`; it must parse as 'login'
+  // so old in-flight logins still complete, never accidentally as a link.
+  const legacy = JSON.stringify({ codeVerifier: 'v', nonce: 'n', state: 's', createdAt: 1000 });
+  const parsed = strategy.parseWebRedirectState(legacy, 10 * 60 * 1000, 1000);
+  assert.ok(parsed);
+  assert.equal(parsed.operation, 'login');
+  assert.equal(parsed.session, undefined);
+}
+
+function testLinkWithoutSessionFailsClosed() {
+  // CR blocker 1: a 'link' payload MISSING its session must be rejected (null) —
+  // resuming without the authenticated session would degrade to /auth/login and
+  // switch accounts. Refuse rather than guess.
+  const linkNoSession = JSON.stringify({
+    codeVerifier: 'v', nonce: 'n', state: 's', createdAt: 1000, operation: 'link',
+  });
+  assert.equal(strategy.parseWebRedirectState(linkNoSession, 10 * 60 * 1000, 1000), null);
+
+  const linkEmptySession = JSON.stringify({
+    codeVerifier: 'v', nonce: 'n', state: 's', createdAt: 1000, operation: 'link', session: '',
+  });
+  assert.equal(strategy.parseWebRedirectState(linkEmptySession, 10 * 60 * 1000, 1000), null);
+}
+
+function testLoginWithSessionFailsClosed() {
+  // A 'login' carrying a session is malformed/tampered mixed state — fail closed.
+  const loginWithSession = JSON.stringify({
+    codeVerifier: 'v', nonce: 'n', state: 's', createdAt: 1000, operation: 'login', session: 'x',
+  });
+  assert.equal(strategy.parseWebRedirectState(loginWithSession, 10 * 60 * 1000, 1000), null);
+}
+
+function testUnknownOperationFailsClosed() {
+  const bad = JSON.stringify({
+    codeVerifier: 'v', nonce: 'n', state: 's', createdAt: 1000, operation: 'delete',
+  });
+  assert.equal(strategy.parseWebRedirectState(bad, 10 * 60 * 1000, 1000), null);
 }
 
 function testPendingStateFailsClosed() {
@@ -149,6 +215,10 @@ const tests = [
   testNativeTransportIsInert,
   testStandaloneDetection,
   testPendingStateRoundTrip,
+  testOperationDefaultsToLoginForLegacyPayload,
+  testLinkWithoutSessionFailsClosed,
+  testLoginWithSessionFailsClosed,
+  testUnknownOperationFailsClosed,
   testPendingStateFailsClosed,
   testPendingStateExpires,
   testParseReturnSuccess,
