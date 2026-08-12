@@ -302,19 +302,52 @@ export interface GapRow {
   subtotal?: number;
 }
 
-export interface GapSummary {
-  rows: GapRow[];
-  currency: string | null;
+/** One currency's isolated subtotal. Prices in different currencies are NEVER
+ * added together (DIC-978 #5/#8 currency separation) — each currency keeps its
+ * own running subtotal and "data as of" marker. */
+export interface CurrencySubtotal {
+  currency: string;
   total: number;
-  /** rows with missing>0 that have no exact-version price → excluded from total */
-  unpriced: GapRow[];
-  /** oldest price timestamp across priced rows — the "data as of" marker */
+  /** oldest price timestamp among this currency's priced rows */
   dataAsOf: string | null;
 }
 
-/** ownershipKey = cardNumber|version */
+export interface GapSummary {
+  rows: GapRow[];
+  /** primary currency = the first priced row's currency; null when nothing priced */
+  currency: string | null;
+  /** subtotal for the PRIMARY currency only — never a cross-currency sum */
+  total: number;
+  /** per-currency isolated subtotals, in first-seen order */
+  subtotals: CurrencySubtotal[];
+  /** rows with missing>0 that have no exact-version price → excluded from total */
+  unpriced: GapRow[];
+  /** oldest price timestamp among PRIMARY-currency priced rows — the "data as of" marker */
+  dataAsOf: string | null;
+}
+
+// Normalize a printing/version identity so the global collection inventory and
+// the deck requirement collapse to the SAME key when they mean the same
+// printing (DIC-978 #2). Rarity codes reach us from several surfaces (deck
+// slots, hand entry, a future scanner) with incidental case / width / spacing
+// differences — ' sr ', 'Sr', full-width 'ＳＲ' all denote the R-parallel SR.
+// NFKC folds full-width forms, whitespace is collapsed, and the code is
+// upper-cased so those variants share one owned bucket. This never crosses two
+// genuinely distinct rarities (they differ by more than case/spacing), so it
+// stays faithful to the "exact version" contract.
+export function normalizeVersion(version: string): string {
+  return (version ?? '')
+    .normalize('NFKC')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+/** ownershipKey = cardNumber|normalizedVersion (DIC-978 #2). cardNumber is
+ * kept exact (identity is case-sensitive) but stray surrounding whitespace is
+ * trimmed so a hand-typed entry keys the same bucket as the dataset value. */
 export function ownershipKey(cardNumber: string, version: string): string {
-  return `${cardNumber}|${version}`;
+  return `${(cardNumber ?? '').trim()}|${normalizeVersion(version)}`;
 }
 
 export function computeGap(
@@ -334,12 +367,15 @@ export function computeGap(
 
   const rows: GapRow[] = [];
   const unpriced: GapRow[] = [];
-  let total = 0;
+  // Currency separation: each currency accumulates in its own bucket so a
+  // JPY price is never summed into a USD (or any other) total.
+  const byCurrency = new Map<string, { total: number; dataAsOf: string | null }>();
   let currency: string | null = null;
-  let dataAsOf: string | null = null;
 
   for (const [key, { card, qty }] of Object.entries(req)) {
-    const have = owned[key] || 0;
+    // `key` is already the normalized ownershipKey; the collection is stored
+    // under the same normalized key, so a direct lookup matches (DIC-978 #3).
+    const have = owned[key] ?? 0;
     const missing = Math.max(0, qty - have);
     const price = resolveExactPrice(card.cardNumber, card.rarity, priceRecords);
     const row: GapRow = {
@@ -349,9 +385,11 @@ export function computeGap(
     if (missing > 0) {
       if (price.status === 'ok') {
         row.subtotal = price.price * missing;
-        total += row.subtotal;
         currency = currency ?? price.currency;
-        if (!dataAsOf || price.timestamp < dataAsOf) dataAsOf = price.timestamp;
+        const bucket = byCurrency.get(price.currency) ?? { total: 0, dataAsOf: null };
+        bucket.total += row.subtotal;
+        if (!bucket.dataAsOf || price.timestamp < bucket.dataAsOf) bucket.dataAsOf = price.timestamp;
+        byCurrency.set(price.currency, bucket);
       } else {
         unpriced.push(row);
       }
@@ -359,5 +397,17 @@ export function computeGap(
     rows.push(row);
   }
 
-  return { rows, currency, total, unpriced, dataAsOf };
+  const subtotals: CurrencySubtotal[] = Array.from(byCurrency.entries()).map(
+    ([cur, b]) => ({ currency: cur, total: b.total, dataAsOf: b.dataAsOf }),
+  );
+  const primary = currency ? byCurrency.get(currency) : undefined;
+
+  return {
+    rows,
+    currency,
+    total: primary?.total ?? 0,
+    subtotals,
+    unpriced,
+    dataAsOf: primary?.dataAsOf ?? null,
+  };
 }
