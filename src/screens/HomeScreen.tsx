@@ -2,64 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
+import { buildSeriesCatalog, SeriesCatalog } from '../utils/seriesCatalog';
 
 // ── Module-level cache for series data ──
 
-interface SeriesItem {
-  label: string;
-  query: string;
-  name: string;
-}
+let cachedSeries: SeriesCatalog | null = null;
+let seriesFetchPromise: Promise<SeriesCatalog> | null = null;
 
-let cachedSeries: { boosters: SeriesItem[]; starters: SeriesItem[]; special: SeriesItem[] } | null = null;
-let seriesFetchPromise: Promise<{ boosters: SeriesItem[]; starters: SeriesItem[]; special: SeriesItem[] }> | null = null;
-
-async function fetchSeriesData(): Promise<{ boosters: SeriesItem[]; starters: SeriesItem[]; special: SeriesItem[] }> {
+async function fetchSeriesData(): Promise<SeriesCatalog> {
   if (cachedSeries) return cachedSeries;
   if (seriesFetchPromise) return seriesFetchPromise;
 
   seriesFetchPromise = (async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-      // Fetch both files in parallel
-      const [dbRes, namesRes] = await Promise.all([
-        fetch('/data/database.json', { signal: controller.signal }),
-        fetch('/data/series-names.json', { signal: controller.signal }),
-      ]);
-      clearTimeout(timeoutId);
-      if (!dbRes.ok || !namesRes.ok) throw new Error('Failed to load series data');
+    // Load both files in parallel. On native these resolve from the bundled,
+    // pre-sanitized asset; on web from the same-origin /data/* URL (staticData).
+    const [db, seriesNames] = await Promise.all([
+      loadDatabaseJson(),
+      loadSeriesNamesJson(),
+    ]);
 
-      const db = await dbRes.json();
-      const seriesNames: Record<string, string> = await namesRes.json();
-
-      // Extract unique series from database
-      const seriesSet = new Set<string>();
-      for (const card of Object.values(db.cards || {}) as any[]) {
-        const s = card.series || '';
-        if (s) seriesSet.add(s);
-      }
-
-      // Build series items sorted by code
-      const allSeries: SeriesItem[] = Array.from(seriesSet)
-        .sort()
-        .map(code => ({
-          label: code,
-          query: code,
-          name: seriesNames[code] || code,
-        }));
-
-      // Categorize
-      const boosters = allSeries.filter(s => s.label.startsWith('hBP'));
-      const starters = allSeries.filter(s => s.label.startsWith('hSD'));
-      const special = allSeries.filter(s => !s.label.startsWith('hBP') && !s.label.startsWith('hSD'));
-
-      const result = { boosters, starters, special };
-      cachedSeries = result;
-      return result;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const result = buildSeriesCatalog(db, seriesNames);
+    cachedSeries = result;
+    return result;
   })();
 
   return seriesFetchPromise;
@@ -76,7 +41,7 @@ const COLOR_BUTTONS = [
 ];
 
 export default function HomeScreen({ navigation }: any) {
-  const [seriesData, setSeriesData] = useState<{ boosters: SeriesItem[]; starters: SeriesItem[]; special: SeriesItem[] } | null>(null);
+  const [seriesData, setSeriesData] = useState<SeriesCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const { isDesktop } = useBreakpoint();
   const cardBtnStyle = isDesktop ? [styles.cardBtn, styles.cardBtnDesktop] : styles.cardBtn;
