@@ -7,7 +7,7 @@ import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDeckStore } from '../store/deckStore';
 import {
-  validateDeck, deckStats, computeGap, eligibleZone, isDeckLegal,
+  validateDeck, deckStats, computeGap, eligibleZone, isDeckLegal, ownershipKey,
   type DeckCard, type DeckZone, type Deck,
 } from '../utils/deckRules';
 import { loadCardDatabase, searchCards, type CardDatabase } from '../utils/deckCardData';
@@ -36,6 +36,7 @@ export default function DeckEditorScreen() {
   const setActiveDeck = useDeckStore((s) => s.setActiveDeck);
   const changeCard = useDeckStore((s) => s.changeCard);
   const setOwned = useDeckStore((s) => s.setOwned);
+  const adjustOwned = useDeckStore((s) => s.adjustOwned);
 
   const activeDeck = useMemo(
     () => decks.find((d) => d.id === activeDeckId) || null,
@@ -60,6 +61,30 @@ export default function DeckEditorScreen() {
     () => (db ? searchCards(db.cards, query) : []),
     [db, query],
   );
+
+  // Resolve a collection entry (keyed by normalized ownershipKey) back to a
+  // displayable card. Built from the loaded database so the global inventory can
+  // show real names/versions for owned entries independent of any deck.
+  const cardByOwnershipKey = useMemo(() => {
+    const map = new Map<string, DeckCard>();
+    if (db) for (const c of db.cards) map.set(ownershipKey(c.cardNumber, c.rarity), c);
+    return map;
+  }, [db]);
+
+  // The global collection inventory, newest-heavier entries first is not needed;
+  // sort by cardNumber for a stable, deterministic order.
+  const collectionEntries = useMemo(() => {
+    return Object.entries(collection)
+      .filter(([, qty]) => qty > 0)
+      .map(([key, qty]) => {
+        const sep = key.indexOf('|');
+        const cardNumber = sep === -1 ? key : key.slice(0, sep);
+        const version = sep === -1 ? '' : key.slice(sep + 1);
+        const card = cardByOwnershipKey.get(key);
+        return { key, cardNumber, version, qty, name: card?.name || cardNumber };
+      })
+      .sort((a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.version.localeCompare(b.version));
+  }, [collection, cardByOwnershipKey]);
 
   const stats = activeDeck ? deckStats(activeDeck) : null;
   const issues = activeDeck ? validateDeck(activeDeck) : [];
@@ -175,9 +200,20 @@ export default function DeckEditorScreen() {
                 </Text>
               </View>
               <TouchableOpacity
+                style={styles.ownBtn}
+                onPress={() => adjustOwned(item.cardNumber, item.rarity, 1)}
+                accessibilityRole="button"
+                accessibilityLabel={`收藏 +1 ${item.name}`}
+                testID={`collection-add-${item.id}`}
+              >
+                <Text style={styles.ownBtnText}>＋擁有</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[styles.addBtn, !zone && styles.addBtnDisabled]}
                 disabled={!zone}
                 onPress={() => addToDeck(item)}
+                accessibilityRole="button"
+                accessibilityLabel={zone ? `加入牌組 ${item.name}` : '無法分類'}
               >
                 <Text style={styles.addBtnText}>＋</Text>
               </TouchableOpacity>
@@ -285,6 +321,58 @@ export default function DeckEditorScreen() {
     </View>
   );
 
+  const collectionPanel = (
+    <View style={[styles.panel, isDesktop && styles.panelCol]}>
+      <Text style={styles.h2}>收藏擁有數量</Text>
+      <Text style={styles.muted}>
+        全域收藏（跨所有牌組共用，僅存於此裝置）· 依精確卡號＋版本記錄擁有張數
+      </Text>
+      {collectionEntries.length === 0 ? (
+        <Text style={styles.muted}>尚無收藏紀錄。可從左側搜尋結果的「＋擁有」加入。</Text>
+      ) : (
+        collectionEntries.map((e) => (
+          <View key={e.key} style={styles.slotRow} testID={`collection-row-${e.key}`}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardName}>{e.name}</Text>
+              <Text style={styles.cardMeta}>
+                {e.cardNumber}{e.version ? ` · ${e.version}` : ''}
+              </Text>
+            </View>
+            <View style={styles.qtyControls}>
+              <TouchableOpacity
+                style={styles.qtyBtn}
+                onPress={() => adjustOwned(e.cardNumber, e.version, -1)}
+                accessibilityRole="button"
+                accessibilityLabel={`收藏 -1 ${e.name}`}
+                testID={`collection-dec-${e.key}`}
+              >
+                <Text style={styles.qtyBtnText}>－</Text>
+              </TouchableOpacity>
+              <Text style={styles.qtyValue}>{e.qty}</Text>
+              <TouchableOpacity
+                style={styles.qtyBtn}
+                onPress={() => adjustOwned(e.cardNumber, e.version, 1)}
+                accessibilityRole="button"
+                accessibilityLabel={`收藏 +1 ${e.name}`}
+                testID={`collection-inc-${e.key}`}
+              >
+                <Text style={styles.qtyBtnText}>＋</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setOwned(e.cardNumber, e.version, 0)}
+                accessibilityRole="button"
+                accessibilityLabel={`移除收藏 ${e.name}`}
+                testID={`collection-remove-${e.key}`}
+              >
+                <Text style={styles.link}>移除</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))
+      )}
+    </View>
+  );
+
   const validationPanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
       <Text style={styles.h2}>規則校驗</Text>
@@ -340,19 +428,28 @@ export default function DeckEditorScreen() {
         ? <Text style={styles.muted}>牌組為空，無缺卡。</Text>
         : (
           <View style={styles.totalCard}>
-            <Text style={styles.totalText}>
-              缺卡估算總額：{gap.total} {gap.currency || 'JPY'}
-            </Text>
-            <Text style={styles.muted}>
-              來源 yuyu-tei.jp · 幣別 {gap.currency || 'JPY'}
-              {gap.dataAsOf ? ` · 資料截至 ${gap.dataAsOf}` : ''}
-            </Text>
+            {gap.subtotals.length === 0 ? (
+              <Text style={styles.totalText}>缺卡估算總額：—（無精確版本價格）</Text>
+            ) : (
+              gap.subtotals.map((s) => (
+                <View key={s.currency}>
+                  <Text style={styles.totalText}>
+                    缺卡估算小計（{s.currency}）：{s.total} {s.currency}
+                  </Text>
+                  <Text style={styles.muted}>
+                    來源 yuyu-tei.jp · 幣別 {s.currency}
+                    {s.dataAsOf ? ` · 資料截至 ${s.dataAsOf}` : ''}
+                  </Text>
+                </View>
+              ))
+            )}
             {gap.unpriced.length > 0 && (
               <Text style={[styles.muted, { color: COLORS.warning }]}>
-                未計價項目（無精確版本價格）：{gap.unpriced.map((u) => u.cardNumber).join('、')}
+                未計價項目（{gap.unpriced.length}）（無精確版本價格）：
+                {gap.unpriced.map((u) => `${u.cardNumber}${u.version ? `·${u.version}` : ''}`).join('、')}
               </Text>
             )}
-            <Text style={styles.muted}>不採用最高價／跨版本／同名價替代。</Text>
+            <Text style={styles.muted}>不採用最高價／跨版本／同名價替代；不同幣別分開計算，不合併加總。</Text>
           </View>
         ))}
     </View>
@@ -365,13 +462,17 @@ export default function DeckEditorScreen() {
           <View style={styles.desktopCols}>
             {searchPanel}
             {zonesPanel}
-            {validationPanel}
+            <View style={styles.desktopStackCol}>
+              {collectionPanel}
+              {validationPanel}
+            </View>
           </View>
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.pad}>
           {zonesPanel}
           {searchPanel}
+          {collectionPanel}
           {validationPanel}
         </ScrollView>
       )}
@@ -441,7 +542,10 @@ const styles = StyleSheet.create({
   qtyBtnText: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' },
   qtyValue: { color: COLORS.text, fontSize: 15, fontWeight: 'bold', minWidth: 20, textAlign: 'center' },
   resultList: { maxHeight: 380, marginTop: 8 },
-  resultRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  resultRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  desktopStackCol: { flex: 1, gap: 16 },
+  ownBtn: { height: 34, paddingHorizontal: 10, borderRadius: 8, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  ownBtnText: { color: COLORS.text, fontSize: 13, fontWeight: 'bold' },
   addBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   addBtnDisabled: { backgroundColor: COLORS.border },
   addBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },

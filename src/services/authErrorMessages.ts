@@ -26,9 +26,12 @@ const PROVIDER_LABEL: Record<AuthErrorProvider, string> = {
 };
 
 // True cancellations are a user choice, not an error — callers should suppress
-// any alert for these rather than nagging the user with a failure dialog.
+// any alert for these rather than nagging the user with a failure dialog. The
+// web-Google redirect transport (DIC-976) also throws a `redirecting` sentinel
+// as it full-page-navigates away; that is NOT a failure either (the login
+// resolves on the next app load), so it is suppressed exactly like a cancel.
 export function isCancelAuthError(err: MappableAuthError | null | undefined): boolean {
-  return err?.code === 'cancel';
+  return err?.code === 'cancel' || err?.code === 'redirecting';
 }
 
 export function friendlyAuthErrorMessage(
@@ -41,6 +44,9 @@ export function friendlyAuthErrorMessage(
 
   switch (code) {
     case 'cancel':
+    case 'redirecting':
+      // `redirecting` should be suppressed by isCancelAuthError before reaching
+      // here; map it defensively to the same benign string just in case.
       return '已取消登入。';
     case 'client_id_missing':
       return `${label} 登入尚未設定完成（缺少登入服務設定），請稍後再試或聯絡我們。`;
@@ -54,8 +60,49 @@ export function friendlyAuthErrorMessage(
       return '此裝置不支援 Apple 登入（需 iOS 13 以上）。';
     case 'no_code':
     case 'no_verifier':
+    case 'no_state':
+    case 'malformed_callback':
     case 'no_id_token':
       return `${label} 登入未完成（未取得授權憑證），請再試一次。`;
+    // Web-Google same-window redirect transport diagnostics (DIC-976). Each maps
+    // to a DISTINCT safe message so a real device no longer collapses every
+    // failure into the generic "無法完成 Google 登入" the owner saw.
+    case 'popup_blocked':
+      return `瀏覽器封鎖了 ${label} 登入視窗，請允許彈出視窗或改用系統瀏覽器後再試。`;
+    case 'crypto_unavailable':
+      return '此瀏覽器不支援安全登入所需的加密功能，請改用其他瀏覽器。';
+    case 'storage_unavailable':
+    case 'storage_unavailable_standalone':
+      return '此瀏覽器不允許儲存登入狀態（可能為無痕模式），請關閉無痕模式後再試。';
+    case 'state_mismatch':
+      return `${label} 登入驗證失敗（狀態不符），請重新登入。`;
+    case 'no_window':
+      return `無法在此環境啟動 ${label} 登入，請改用瀏覽器開啟。`;
+    case 'prompt_failed':
+      return `${label} 登入未完成，請再試一次。`;
+    // Account-linking / session server codes (DIC-976 CR). SettingsScreen's link
+    // CTA now routes real link errors through THIS safe mapper (never echoing a
+    // raw err.message). These mirror the server-provided friendly strings so the
+    // specific link-collision guidance is preserved rather than degraded to the
+    // generic 4xx fallback.
+    case 'IDENTITY_ALREADY_LINKED':
+      return `此 ${label} 帳號已綁定到另一個 HoloHunter 帳號，請先從該帳號解除綁定後再試。`;
+    case 'SAME_PROVIDER_ALREADY_LINKED':
+      return `你已綁定一個 ${label} 帳號。若要更換，請先解除舊的再綁定新的。`;
+    case 'CANNOT_UNLINK_LAST_METHOD':
+      return '無法解除唯一的登入方式，請先綁定其他登入方式。';
+    case 'ACCOUNT_DISABLED':
+      return '此帳號已停用，請聯絡客服。';
+    case 'INVALID_TOKEN':
+      return '登入驗證失敗，請重新登入。';
+    case 'TOKEN_EXPIRED':
+      return '登入已逾時，請重新登入。';
+    case 'TOKEN_REPLAYED':
+      return '此登入憑證已使用過，請重新登入。';
+    case 'STORE_NOT_CONFIGURED':
+      return '登入服務尚未設定完成（後端未就緒），請稍後再試。';
+    case 'no_session':
+      return `無法綁定 ${label}：找不到目前的登入狀態，請重新登入後再試。`;
     case 'network_error':
       return '網路連線異常，請檢查網路後再試。';
     default:

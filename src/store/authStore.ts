@@ -13,6 +13,8 @@ import {
   deleteAccount,
   signOutNativeGoogle,
   validateSession as validateSessionRemote,
+  completePendingWebGoogleLogin,
+  hasPendingWebGoogleRedirectReturn,
 } from '../services/authService';
 import {
   friendlyAuthErrorMessage,
@@ -28,9 +30,15 @@ interface AuthStore {
   hasHydrated: boolean;
   error: string | null;
   role: UserRole;
+  // True on a boot that is a web-Google redirect RETURN (DIC-976 CR blocker 2).
+  // While set, persisted-session validation defers to completeWebRedirectLogin
+  // so a stale /auth/me cannot overwrite/clear the fresh callback result. Never
+  // persisted — it describes THIS launch only.
+  redirectPending: boolean;
 
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
+  completeWebRedirectLogin: () => Promise<void>;
   continueAsGuest: () => void;
   linkNewProvider: (provider: AuthProvider) => Promise<void>;
   removeLinkedProvider: (provider: AuthProvider) => Promise<void>;
@@ -53,6 +61,7 @@ export const useAuthStore = create<AuthStore>()(
       hasHydrated: false,
       error: null,
       role: 'guest',
+      redirectPending: false,
 
       loginWithGoogle: async () => {
         set({ isLoading: true, error: null });
@@ -103,6 +112,59 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
 
+      // Return leg of the web-Google same-window redirect flow (DIC-976). Runs
+      // ONCE on app boot. When this launch is a redirect return, boot routes
+      // hydration THROUGH here instead of validateSession (see onRehydrateStorage)
+      // so the two never race: this call OWNS the auth result and flips
+      // hasHydrated. It completes the PKCE exchange + server call and dispatches
+      // on the operation — 'login' adopts the fresh session+user; 'link' keeps
+      // the existing session and only updates the user (the account was
+      // augmented, not switched, CR blocker 1). A no-op on ordinary launches and
+      // native. On completion it clears the redirect-pending guard and, whether
+      // it succeeded, failed, or found nothing, marks the app hydrated so the UI
+      // never hangs on a blank gate (CR blocker 2). A cancel/redirecting sentinel
+      // shows no error banner.
+      completeWebRedirectLogin: async () => {
+        // Whether this call ADOPTED a session. Only that outcome makes the
+        // ordinary boot validation redundant. Anything else — a malformed/stale
+        // OAuth-shaped URL, or a callback that failed — leaves the persisted
+        // session unexamined, and isAuthenticated is never restored from disk,
+        // so skipping validation there would silently sign the user out. A
+        // failure is surfaced AND followed by validation: the user sees why the
+        // callback failed without losing the session they already had.
+        let adoptedSession = false;
+        try {
+          const result = await completePendingWebGoogleLogin();
+          if (result) {
+            // For 'login' result.session is the fresh session; for 'link' it is
+            // the existing session the callback resumed with (account augmented,
+            // not switched). Either way it is the session to adopt now.
+            set({
+              user: result.user,
+              session: result.session,
+              isAuthenticated: true,
+              isGuest: false,
+              isLoading: false,
+              role: result.user.role,
+              error: null,
+            });
+            adoptedSession = true;
+          }
+        } catch (err: any) {
+          set({
+            isLoading: false,
+            error: isCancelAuthError(err) ? null : friendlyAuthErrorMessage(err, 'google'),
+          });
+        } finally {
+          // This call owned boot for a redirect return: release the guard and
+          // mark hydrated exactly once so validateSession (which deferred) does
+          // not also need to run, and the gate is never stuck un-hydrated.
+          set({ redirectPending: false });
+          get().setHasHydrated(true);
+        }
+        if (!adoptedSession) await get().validateSession();
+      },
+
       continueAsGuest: () => {
         set({
           user: null,
@@ -123,7 +185,18 @@ export const useAuthStore = create<AuthStore>()(
           const updatedUser = await linkProvider(session, user, provider);
           set({ user: updatedUser, isLoading: false });
         } catch (err: any) {
-          set({ isLoading: false, error: err.message || 'Failed to link provider' });
+          // The web-Google link flow full-page-navigates to Google and throws the
+          // 'redirecting' sentinel (also true of a user cancel). That is NOT a
+          // failure — do not set an error banner (the login gate renders it) and
+          // do not stop loading as if it failed; just rethrow so the caller's
+          // suppression runs. For real errors, store a friendly-but-SAFE mapped
+          // string (never the raw err.message) — same discipline as login
+          // (DIC-976 CR).
+          if (isCancelAuthError(err)) {
+            set({ isLoading: false, error: null });
+            throw err;
+          }
+          set({ isLoading: false, error: friendlyAuthErrorMessage(err, provider) });
           throw err;
         }
       },
@@ -196,18 +269,34 @@ export const useAuthStore = create<AuthStore>()(
       // deletion, CR DIC-866 #3) — is dropped; a transient/network failure keeps
       // the session but stays unauthenticated so we fail closed, not open. On
       // success the server-authoritative role is applied, never hard-coded
-      // (CR DIC-866 #4).
+      // (CR DIC-866 #4). It deliberately never writes `error`: it also runs as
+      // the fallback after a FAILED redirect callback, and that callback's
+      // surfaced reason must survive (PR #107 CR).
       validateSession: async () => {
-        const { session } = get();
-        if (!session) {
+        // Defer entirely when this boot is a web-Google redirect return:
+        // completeWebRedirectLogin OWNS the auth result and hydration for that
+        // launch, so re-validating the OLD persisted session here would race it
+        // (CR blocker 2). It clears redirectPending + flips hasHydrated itself.
+        if (get().redirectPending) return;
+
+        const capturedSession = get().session;
+        if (!capturedSession) {
           set({ isAuthenticated: false });
           get().setHasHydrated(true);
           return;
         }
         try {
-          const user = await validateSessionRemote(session);
+          const user = await validateSessionRemote(capturedSession);
+          // Guard against a late landing: if the session changed underneath us
+          // (e.g. a redirect callback adopted a NEW session while /auth/me was in
+          // flight), this validation is stale — discard it rather than overwrite
+          // the newer authenticated state (CR blocker 2).
+          if (get().session !== capturedSession) return;
           set({ user, isAuthenticated: true, isGuest: false, role: user.role });
         } catch (err: any) {
+          // Same staleness guard on the failure path: a late 401/403 for the OLD
+          // session must NOT clear a session the callback just established.
+          if (get().session !== capturedSession) return;
           if (err?.status === 401 || err?.status === 403) {
             set({ user: null, session: null, isAuthenticated: false, role: 'guest' });
           } else {
@@ -238,9 +327,18 @@ export const useAuthStore = create<AuthStore>()(
         return persisted;
       },
       onRehydrateStorage: () => (state) => {
-        // Enter unauthenticated; validateSession flips hasHydrated once the
-        // server has confirmed (or rejected) the persisted session.
-        state?.validateSession();
+        if (!state) return;
+        // Serialize the two boot flows so they can't race (CR blocker 2). If THIS
+        // launch is a web-Google redirect return, route hydration ONLY through
+        // completeWebRedirectLogin (it owns the auth result + hasHydrated); mark
+        // redirectPending first so any incidental validateSession call defers.
+        // Otherwise, the ordinary path: re-validate the persisted session.
+        if (hasPendingWebGoogleRedirectReturn()) {
+          state.redirectPending = true;
+          state.completeWebRedirectLogin();
+        } else {
+          state.validateSession();
+        }
       },
       storage: createJSONStorage(() => platformStorage),
       // isAuthenticated is intentionally NOT persisted: it is derived from a

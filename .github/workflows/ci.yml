@@ -53,6 +53,18 @@ jobs:
       - name: Verify deterministic web OAuth redirect URI (DIC-922)
         run: npm run test:web-redirect
 
+      - name: Verify web-Google redirect callback leg (DIC-976)
+        run: npm run test:web-google-callback
+
+      - name: Verify web-Google link redirect start (DIC-976)
+        run: npm run test:auth-link-start
+
+      - name: Verify callback vs persisted-session validation ordering (DIC-976)
+        run: npm run test:auth-redirect-race
+
+      - name: Verify session survives a malformed OAuth callback (DIC-976)
+        run: npm run test:auth-callback-recovery
+
       - name: Verify friendly-but-safe auth error mapping (DIC-922)
         run: npm run test:auth-error-map
 
@@ -89,6 +101,9 @@ jobs:
       - name: Verify real Android export is fail-closed (DIC-916)
         run: npm run test:store-mvp-native-export
 
+      - name: Verify native guest series/card data loads fail-closed (DIC-972)
+        run: npm run test:native-guest-data
+
       - name: Verify deck editor rules engine (DIC-945)
         run: npm run test:deck-rules
 
@@ -103,6 +118,9 @@ jobs:
 
       - name: Verify deck rename persistence + empty-name rejection (DIC-957)
         run: npm run test:deck-store-rename
+
+      - name: Verify global collection + missing-card estimate (DIC-978)
+        run: npm run test:deck-collection
 
       - name: Check for console.log statements
         run: |

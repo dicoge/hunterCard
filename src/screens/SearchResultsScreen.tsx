@@ -5,6 +5,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
+import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 
 // ── Server-side search constants ──
 
@@ -17,18 +18,10 @@ async function fetchSeriesNames(): Promise<Record<string, string>> {
   if (seriesNamesFetchPromise) return seriesNamesFetchPromise;
 
   seriesNamesFetchPromise = (async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    try {
-      const res = await fetch('/data/series-names.json', { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const names: Record<string, string> = await res.json();
-      cachedSeriesNames = names;
-      return names;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    // Native reads the bundled asset; web fetches same-origin /data/* (staticData).
+    const names = await loadSeriesNamesJson();
+    cachedSeriesNames = names;
+    return names;
   })();
 
   return seriesNamesFetchPromise;
@@ -100,18 +93,10 @@ async function fetchDatabase(): Promise<DatabaseSchema> {
   if (databaseFetchPromise) return databaseFetchPromise;
 
   databaseFetchPromise = (async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-      const res = await fetch('/data/database.json', { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const db: DatabaseSchema = await res.json();
-      cachedDatabase = db;
-      return db;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    // Native reads the bundled sanitized asset; web fetches same-origin /data/*.
+    const db: DatabaseSchema = await loadDatabaseJson();
+    cachedDatabase = db;
+    return db;
   })();
 
   return databaseFetchPromise;
