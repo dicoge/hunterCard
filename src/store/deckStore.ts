@@ -53,7 +53,35 @@ interface DeckState {
   removeCard: (deckId: string, zone: DeckZone, cardId: string) => void;
 
   setOwned: (cardNumber: string, version: string, qty: number) => void;
+  /** apply a signed delta to the owned count; clamps at 0 (never negative) */
+  adjustOwned: (cardNumber: string, version: string, delta: number) => void;
   getOwned: (cardNumber: string, version: string) => number;
+}
+
+// Sanitize a raw owned quantity into a non-negative integer. Guards the global
+// inventory against zero / negative / fractional / NaN input from +/- controls
+// or a rehydrated payload (DIC-978 #8): anything that is not a positive integer
+// collapses to 0, which the setters treat as "remove the entry".
+function sanitizeQty(qty: number): number {
+  const n = Math.floor(Number(qty));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Re-key a persisted collection through the normalized ownershipKey, summing
+ * any buckets that collapse together and dropping non-positive/garbage counts.
+ * Used by the persist migration (DIC-978 #2). */
+function normalizeCollection(raw: Record<string, unknown>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, val] of Object.entries(raw || {})) {
+    const sep = key.indexOf('|');
+    const cardNumber = sep === -1 ? key : key.slice(0, sep);
+    const version = sep === -1 ? '' : key.slice(sep + 1);
+    const qty = sanitizeQty(val as number);
+    if (qty <= 0) continue;
+    const nk = ownershipKey(cardNumber, version);
+    out[nk] = (out[nk] || 0) + qty;
+  }
+  return out;
 }
 
 const ZONES: DeckZone[] = ['oshi', 'main', 'yell'];
@@ -99,16 +127,38 @@ export const useDeckStore = create<DeckState>()(
       setOwned: (cardNumber, version, qty) => set((s) => {
         const key = ownershipKey(cardNumber, version);
         const next = { ...s.collection };
-        if (qty <= 0) delete next[key];
-        else next[key] = qty;
+        const clean = sanitizeQty(qty);
+        if (clean <= 0) delete next[key];
+        else next[key] = clean;
+        return { collection: next };
+      }),
+      adjustOwned: (cardNumber, version, delta) => set((s) => {
+        const key = ownershipKey(cardNumber, version);
+        const next = { ...s.collection };
+        const clean = sanitizeQty((next[key] || 0) + delta);
+        if (clean <= 0) delete next[key];
+        else next[key] = clean;
         return { collection: next };
       }),
       getOwned: (cardNumber, version) => get().collection[ownershipKey(cardNumber, version)] || 0,
     }),
     {
       name: 'hunterCard-decks',
+      // v1 (DIC-978): the global collection is now keyed by the NORMALIZED
+      // ownershipKey. A v0 payload (raw cardNumber|rarity keys) is re-keyed and
+      // collision-summed on load so existing on-device inventories carry over.
+      version: 1,
       storage: createJSONStorage(() => platformStorage),
       partialize: (s) => ({ decks: s.decks, activeDeckId: s.activeDeckId, collection: s.collection }),
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Partial<DeckState>;
+        if (version < 1) {
+          state.collection = normalizeCollection(
+            (state.collection as Record<string, unknown>) || {},
+          );
+        }
+        return state as DeckState;
+      },
     }
   )
 );

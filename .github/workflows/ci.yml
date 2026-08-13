@@ -113,6 +113,9 @@ jobs:
       - name: Verify deck rename persistence + empty-name rejection (DIC-957)
         run: npm run test:deck-store-rename
 
+      - name: Verify global collection + missing-card estimate (DIC-978)
+        run: npm run test:deck-collection
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
