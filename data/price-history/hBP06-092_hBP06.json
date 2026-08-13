@@ -380,8 +380,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-092_hBP06"
+    },
+    {
+      "date": "2026-08-13",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-092_hBP06"
     }
   ],
-  "lastUpdated": "2026-08-12T12:21:20.678Z",
+  "lastUpdated": "2026-08-13T12:20:33.294Z",
   "nameZh": "美乃滋親親"
 }

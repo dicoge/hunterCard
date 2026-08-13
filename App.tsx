@@ -11,6 +11,12 @@ export default function App() {
     if (FEATURES.pushAlerts) {
       initPushNotifications();
     }
+    // NOTE (DIC-976 CR blocker 2): the web-Google redirect RETURN leg is no
+    // longer kicked off here. Boot is now owned exclusively by the auth store's
+    // onRehydrateStorage, which serializes the redirect-completion and
+    // persisted-session-validation flows so a stale /auth/me can't race/overwrite
+    // the callback result. Kicking it off from here too would double-run and
+    // reintroduce the race.
   }, []);
 
   return (
