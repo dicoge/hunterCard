@@ -107,6 +107,12 @@ jobs:
       - name: Verify deck editor rules engine (DIC-945)
         run: npm run test:deck-rules
 
+      - name: Verify tournament report pipeline core (DIC-979)
+        run: npm run test:tournament-report
+
+      - name: Verify tournament collector failure preservation (DIC-979)
+        run: npm run test:tournament-collector
+
       - name: Verify deck editor price adapter fail-closed (DIC-952)
         run: npm run test:deck-price-adapter
 
