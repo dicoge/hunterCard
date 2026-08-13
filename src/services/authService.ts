@@ -17,6 +17,7 @@ import {
   serializeWebRedirectState,
   parseWebRedirectState,
   parseWebRedirectReturn,
+  OAUTH_RETURN_KEYS,
   type WebRedirectPendingState,
   type WebRedirectOperation,
 } from './authStrategy';
@@ -832,24 +833,9 @@ function cleanOAuthReturnFromUrl(): void {
   if (typeof window === 'undefined' || !window.history || !window.location) return;
   try {
     const url = new URL(window.location.href);
-    const oauthKeys = [
-      'code',
-      'id_token',
-      'state',
-      'error',
-      'error_description',
-      'scope',
-      'authuser',
-      'prompt',
-      'hd',
-      'token_type',
-      'expires_in',
-      'access_token',
-      // RFC 9207 issuer identifier. Harmless, but leaving it behind is what made
-      // the callback look credential-free during QA — strip it so a post-login
-      // URL is clean and the address bar stops implying a half-finished flow.
-      'iss',
-    ];
+    // Shared with the return CLASSIFIER, so every key that marks a URL as a
+    // callback is also a key we scrub (authStrategy.OAUTH_RETURN_KEYS).
+    const oauthKeys = OAUTH_RETURN_KEYS;
     let touched = false;
     for (const key of oauthKeys) {
       if (url.searchParams.has(key)) {
@@ -937,6 +923,18 @@ export async function completePendingWebGoogleLogin(): Promise<WebRedirectComple
   // to a safe code so the UI can distinguish it, never a generic failure.
   if (ret.kind === 'error') {
     throw new AuthError(`登入失敗（${ret.error}）`, 400, ret.error || 'oauth_error');
+  }
+
+  // OAuth-shaped but unusable. The pending state is already consumed and the URL
+  // already scrubbed above, which is the whole reason this is not treated as an
+  // ordinary page load. Never call the backend from here.
+  if (ret.kind === 'malformed') {
+    // No pending state means this was a stale bookmark or a crafted link rather
+    // than a login this app started — clean it up silently. With pending state
+    // the user really did launch a login, so surface a distinguishable error
+    // instead of leaving them on a screen that looks like nothing happened.
+    if (!pending) return null;
+    throw new AuthError('Google 登入未完成（回應不完整），請再試一次。', 400, 'malformed_callback');
   }
 
   // No matching (or fail-closed-rejected, e.g. a 'link' missing its session)

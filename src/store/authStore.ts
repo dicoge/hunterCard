@@ -125,26 +125,38 @@ export const useAuthStore = create<AuthStore>()(
       // never hangs on a blank gate (CR blocker 2). A cancel/redirecting sentinel
       // shows no error banner.
       completeWebRedirectLogin: async () => {
+        // Whether this call produced an auth OUTCOME (a session to adopt, or an
+        // error the user must see). When it did not, this boot was routed here by
+        // a URL that only LOOKED like a callback — a malformed or stale OAuth
+        // return — and the ordinary boot path still owes the user a session
+        // check. Without that fallback, landing on such a URL would silently
+        // drop a perfectly valid persisted session (isAuthenticated is never
+        // restored from disk).
+        let resolved = false;
         try {
           const result = await completePendingWebGoogleLogin();
-          if (!result) return; // no pending redirect return — normal boot.
-          // For 'login' result.session is the fresh session; for 'link' it is the
-          // existing session the callback resumed with (account augmented, not
-          // switched). Either way it is the session to adopt now.
-          set({
-            user: result.user,
-            session: result.session,
-            isAuthenticated: true,
-            isGuest: false,
-            isLoading: false,
-            role: result.user.role,
-            error: null,
-          });
+          if (result) {
+            // For 'login' result.session is the fresh session; for 'link' it is
+            // the existing session the callback resumed with (account augmented,
+            // not switched). Either way it is the session to adopt now.
+            set({
+              user: result.user,
+              session: result.session,
+              isAuthenticated: true,
+              isGuest: false,
+              isLoading: false,
+              role: result.user.role,
+              error: null,
+            });
+            resolved = true;
+          }
         } catch (err: any) {
           set({
             isLoading: false,
             error: isCancelAuthError(err) ? null : friendlyAuthErrorMessage(err, 'google'),
           });
+          // A surfaced failure IS an outcome — do not re-validate over it.
+          resolved = true;
         } finally {
           // This call owned boot for a redirect return: release the guard and
           // mark hydrated exactly once so validateSession (which deferred) does
@@ -152,6 +164,7 @@ export const useAuthStore = create<AuthStore>()(
           set({ redirectPending: false });
           get().setHasHydrated(true);
         }
+        if (!resolved) await get().validateSession();
       },
 
       continueAsGuest: () => {

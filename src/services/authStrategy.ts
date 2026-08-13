@@ -304,10 +304,45 @@ export function parseWebRedirectState(
 // this is an ordinary app load with no OAuth params, so boot stays a no-op.
 // Pure: takes the raw search string (e.g. window.location.search), no globals.
 export interface WebRedirectReturn {
-  kind: 'none' | 'success' | 'error';
+  // 'malformed' = OAuth-SHAPED but unusable (a credential without its CSRF
+  // state, a bare unredeemable code, a lone `iss`). It is deliberately NOT
+  // 'none': the caller must still consume the pending state and scrub the URL,
+  // or provider material would linger in history and the pending state would
+  // stay replayable. 'none' means an ordinary page load we must not touch.
+  kind: 'none' | 'success' | 'error' | 'malformed';
   idToken?: string;
   state?: string;
   error?: string;
+}
+
+// Every key an OAuth/OIDC provider may put on the return URL. ONE list drives
+// both detection and scrubbing, so anything we clean up is also something we
+// recognise as a callback — the two can never drift apart.
+export const OAUTH_RETURN_KEYS = [
+  'code',
+  'id_token',
+  'access_token',
+  'token_type',
+  'expires_in',
+  'error',
+  'error_description',
+  'state',
+  'scope',
+  'authuser',
+  'prompt',
+  'hd',
+  // RFC 9207 issuer identifier.
+  'iss',
+] as const;
+
+// True when the URL carries ANY provider-owned key, in the query or fragment.
+export function hasOAuthReturnKeys(
+  search: string | null | undefined,
+  hash?: string | null | undefined,
+): boolean {
+  const query = new URLSearchParams((search ?? '').replace(/^\?/, ''));
+  const frag = new URLSearchParams((hash ?? '').replace(/^#/, ''));
+  return OAUTH_RETURN_KEYS.some((key) => query.has(key) || frag.has(key));
 }
 
 // Google delivers an `id_token` response in the URL FRAGMENT (response_mode
@@ -335,5 +370,10 @@ export function parseWebRedirectReturn(
   if (error) return { kind: 'error', error, state };
   const idToken = pick('id_token');
   if (idToken && state) return { kind: 'success', idToken, state };
+  // OAuth-shaped but not usable. Reported as 'malformed' (not 'none') so the
+  // caller still cleans up: an id_token without state, a bare code, or an
+  // `iss`-only return must never be left sitting in the URL/history, and the
+  // pending state must not survive to be replayed.
+  if (hasOAuthReturnKeys(queryRaw, hashRaw)) return { kind: 'malformed' };
   return { kind: 'none' };
 }

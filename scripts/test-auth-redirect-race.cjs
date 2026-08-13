@@ -39,6 +39,8 @@ globalThis.__redirectRaceMock = {
   // forcing the "stale validation lands AFTER the callback" ordering.
   validateGate: null,
   hasPendingReturn: false,
+  // When true, completePendingWebGoogleLogin throws a typed non-cancel failure.
+  throwOnComplete: false,
 };
 
 function makeUser(id, role) {
@@ -68,7 +70,16 @@ export const validateSession = async (session) => {
              : m.validateMode === 'reject403' ? 403 : 0;
   throw err;
 };
-export const completePendingWebGoogleLogin = async () => globalThis.__redirectRaceMock.completion;
+export const completePendingWebGoogleLogin = async () => {
+  const m = globalThis.__redirectRaceMock;
+  if (m.throwOnComplete) {
+    const err = new Error('callback failed');
+    err.code = 'malformed_callback';
+    err.status = 400;
+    throw err;
+  }
+  return m.completion;
+};
 export const hasPendingWebGoogleRedirectReturn = () => globalThis.__redirectRaceMock.hasPendingReturn;
 `;
 
@@ -250,7 +261,54 @@ const m = globalThis.__redirectRaceMock;
     assert.equal(s.hasHydrated, true);
   }
 
+  // Scenario G (PR #107 CR): a malformed / stale OAuth-shaped URL now routes boot
+  // through the callback so the pending state is consumed and the URL scrubbed.
+  // That must NOT cost the user their session: when the callback yields no
+  // outcome, ordinary session validation still has to run. isAuthenticated is
+  // never restored from disk, so skipping it would silently log the user out.
+  async function testNoOutcomeFallsBackToValidateSession() {
+    resetStore();
+    useAuthStore.setState({ session: 'persisted-session', redirectPending: true });
+    m.completion = null;            // malformed callback: cleaned up, no login
+    m.hasPendingReturn = true;
+    m.validateMode = 'ok';
+    m.validateUser = makeUser('persisted-user', 'subscriber');
+
+    await useAuthStore.getState().completeWebRedirectLogin();
+
+    const s = useAuthStore.getState();
+    assert.equal(s.isAuthenticated, true, 'a valid persisted session must survive');
+    assert.equal(s.user.internalId, 'persisted-user');
+    assert.equal(s.session, 'persisted-session');
+    assert.equal(s.redirectPending, false);
+    assert.equal(s.hasHydrated, true);
+  }
+
+  // ...but a callback that DID surface an error must not be papered over by a
+  // follow-up validation: the user needs to see why their login failed.
+  async function testCallbackErrorIsNotOverwrittenByValidation() {
+    resetStore();
+    useAuthStore.setState({ redirectPending: true });
+    m.hasPendingReturn = true;
+    m.completion = null;
+    m.validateMode = 'ok';
+    m.validateUser = makeUser('other-user', 'free_user');
+    m.throwOnComplete = true;
+    try {
+      await useAuthStore.getState().completeWebRedirectLogin();
+    } finally {
+      m.throwOnComplete = false;
+    }
+    const s = useAuthStore.getState();
+    assert.ok(s.error, 'the failure must remain visible to the user');
+    assert.equal(s.isAuthenticated, false, 'a failed callback must not silently authenticate');
+    assert.equal(s.user, null, 'no user may be adopted from a failed callback');
+    assert.equal(s.hasHydrated, true);
+  }
+
   const tests = [
+    testNoOutcomeFallsBackToValidateSession,
+    testCallbackErrorIsNotOverwrittenByValidation,
     testStaleValidateSuccessDoesNotOverwrite,
     testStaleValidate401DoesNotClearNewSession,
     testSessionGuardDiscardsStaleValidation,

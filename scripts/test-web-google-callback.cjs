@@ -162,39 +162,98 @@ process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'test-client.apps.googleuserconte
     assert.equal(result.user.internalId, 'u-1');
   }
 
-  // DIC-976 QA regression: the exact production callback shape. No credential →
-  // no backend call, no session, and a typed failure rather than a false success.
-  async function testIssOnlyCallbackFailsSafely() {
-    setupBrowser({
-      search: '?iss=https%3A%2F%2Faccounts.google.com',
-      hash: '',
-      pending: pendingLogin(),
-    });
-    const result = await svc.completePendingWebGoogleLogin().then(
-      (r) => ({ ok: true, r }),
-      (e) => ({ ok: false, e }),
-    );
-    // Classified as "not an OAuth return at all" → resolves null, never a login.
-    assert.equal(result.ok, true, 'must not throw an untyped error');
-    assert.equal(result.r, null, 'iss-only callback must not produce a session');
-    assert.equal(calls.length, 0, 'iss-only callback must NOT call the backend');
+  // CR blocker (PR #107 review): a malformed OAuth-shaped callback must not just
+  // "do nothing". It must fail closed AND still consume the pending state and
+  // scrub the URL — otherwise provider material lingers in history and the
+  // pending state stays replayable. Covers all three shapes the review named.
+  async function testMalformedCallbacksAreCleanedAndConsumed() {
+    const cases = [
+      {
+        name: 'iss-only (the exact production shape)',
+        search: '?iss=https%3A%2F%2Faccounts.google.com',
+        hash: '',
+        leak: 'iss=',
+      },
+      {
+        name: 'code-only (unredeemable in a browser)',
+        search: '?code=4%2F0Areal-looking-code&state=state-xyz&iss=https%3A%2F%2Faccounts.google.com',
+        hash: '',
+        leak: '4%2F0Areal-looking-code',
+      },
+      {
+        name: 'id_token WITHOUT state (no CSRF binding)',
+        search: '',
+        hash: '#id_token=header.payload.sig',
+        leak: 'header.payload.sig',
+      },
+    ];
+    for (const c of cases) {
+      const { replaced, store } = setupBrowser({ search: c.search, hash: c.hash, pending: pendingLogin() });
+      const outcome = await svc.completePendingWebGoogleLogin().then(
+        (r) => ({ ok: true, r }),
+        (e) => ({ ok: false, e }),
+      );
+
+      // Fail closed: never a backend call, never a session.
+      assert.equal(calls.length, 0, `[${c.name}] must NOT call the backend`);
+      assert.equal(outcome.ok, false, `[${c.name}] a launched login must surface a failure`);
+      assert.equal(outcome.e.code, 'malformed_callback', `[${c.name}] distinguishable safe code`);
+
+      // Pending state consumed exactly once — it must not remain replayable.
+      assert.equal(store[STORAGE_KEY], undefined, `[${c.name}] pending state must be consumed`);
+
+      // URL scrubbed — no provider material left in the address bar / history.
+      assert.ok(replaced.length > 0, `[${c.name}] the URL must be rewritten`);
+      const finalUrl = replaced[replaced.length - 1];
+      assert.ok(!finalUrl.includes(c.leak), `[${c.name}] material must be scrubbed: ${finalUrl}`);
+      for (const key of ['code=', 'id_token=', 'state=', 'iss=']) {
+        assert.ok(!finalUrl.includes(key), `[${c.name}] ${key} must not remain: ${finalUrl}`);
+      }
+
+      // A replay of the same URL now finds nothing to consume and stays silent.
+      globalThis.window.location.search = c.search;
+      globalThis.window.location.hash = c.hash;
+      const replay = await svc.completePendingWebGoogleLogin().then(
+        (r) => ({ ok: true, r }),
+        (e) => ({ ok: false, e }),
+      );
+      assert.equal(replay.ok, true, `[${c.name}] replay must not throw`);
+      assert.equal(replay.r, null, `[${c.name}] replay must not produce a session`);
+      assert.equal(calls.length, 0, `[${c.name}] replay must NOT call the backend`);
+    }
   }
 
-  // A bare authorization code is unredeemable in the browser (Google requires a
-  // client secret). It must fail closed, never be forwarded as a credential.
-  async function testCodeOnlyCallbackFailsSafely() {
-    setupBrowser({
-      search: '?code=4%2F0Areal-looking-code&state=state-xyz&iss=https%3A%2F%2Faccounts.google.com',
-      hash: '',
-      pending: pendingLogin(),
+  // The same malformed URL with NO pending state is a stale bookmark or a
+  // crafted link, not a login this app started: clean it up, but stay silent
+  // rather than showing the user an error they did not cause.
+  async function testMalformedCallbackWithoutPendingIsSilent() {
+    const { replaced } = setupBrowser({
+      search: '?iss=https%3A%2F%2Faccounts.google.com',
+      hash: '#id_token=stray.token.sig',
+      pending: undefined,
     });
-    const result = await svc.completePendingWebGoogleLogin().then(
+    const outcome = await svc.completePendingWebGoogleLogin().then(
       (r) => ({ ok: true, r }),
       (e) => ({ ok: false, e }),
     );
-    assert.equal(result.ok, true);
-    assert.equal(result.r, null, 'a code-only callback is not a usable credential');
-    assert.equal(calls.length, 0, 'must not call the backend with an unredeemable code');
+    assert.equal(outcome.ok, true, 'no pending state → no user-facing error');
+    assert.equal(outcome.r, null);
+    assert.equal(calls.length, 0, 'must NOT call the backend');
+    // Still scrubbed: a stray credential must never be left in the URL.
+    const finalUrl = replaced[replaced.length - 1];
+    assert.ok(!finalUrl.includes('stray.token.sig'), `stray credential must be scrubbed: ${finalUrl}`);
+    assert.ok(!finalUrl.includes('iss='), `iss must be scrubbed: ${finalUrl}`);
+  }
+
+  // An ordinary page load carries no provider keys and must be left completely
+  // untouched — no URL rewrite, no storage read, no error.
+  async function testOrdinaryPageLoadIsUntouched() {
+    const { replaced, store } = setupBrowser({ search: '?tab=deck', hash: '#/settings', pending: pendingLogin() });
+    const result = await svc.completePendingWebGoogleLogin();
+    assert.equal(result, null, 'ordinary boot returns null');
+    assert.equal(calls.length, 0);
+    assert.equal(replaced.length, 0, 'an ordinary URL must NOT be rewritten');
+    assert.ok(store[STORAGE_KEY], 'an ordinary load must NOT consume a pending login');
   }
 
   // The link leg must resume against the EXISTING session (never /auth/login,
@@ -264,11 +323,17 @@ process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'test-client.apps.googleuserconte
     setupBrowser({ search: '', hash: '#id_token=t&state=state-xyz', pending: pendingLogin() });
     assert.equal(svc.hasPendingWebGoogleRedirectReturn(), true);
 
+    // An OAuth-shaped but malformed return MUST be detected: boot has to route
+    // through the callback for the pending state to be consumed and the URL
+    // scrubbed. Treating it as an ordinary load is the CR blocker itself.
     setupBrowser({ search: '?iss=https%3A%2F%2Faccounts.google.com', hash: '', pending: pendingLogin() });
-    assert.equal(svc.hasPendingWebGoogleRedirectReturn(), false, 'iss-only is not a pending return');
+    assert.equal(svc.hasPendingWebGoogleRedirectReturn(), true, 'malformed returns need cleanup');
 
     setupBrowser({ search: '', hash: '', pending: pendingLogin() });
     assert.equal(svc.hasPendingWebGoogleRedirectReturn(), false, 'ordinary boot is unaffected');
+
+    setupBrowser({ search: '?tab=deck', hash: '#/settings', pending: pendingLogin() });
+    assert.equal(svc.hasPendingWebGoogleRedirectReturn(), false, 'app params are not a callback');
   }
 
   // The outbound leg is where the root cause lived: requesting `code` produced a
@@ -298,8 +363,9 @@ process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'test-client.apps.googleuserconte
   const tests = [
     testOutboundRequestAsksForIdTokenNotCode,
     testValidIdTokenCallbackReachesLogin,
-    testIssOnlyCallbackFailsSafely,
-    testCodeOnlyCallbackFailsSafely,
+    testMalformedCallbacksAreCleanedAndConsumed,
+    testMalformedCallbackWithoutPendingIsSilent,
+    testOrdinaryPageLoadIsUntouched,
     testLinkCallbackReachesLinkWithSession,
     testStateMismatchIsRefused,
     testCredentialIsStrippedFromUrl,

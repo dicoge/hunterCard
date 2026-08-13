@@ -61,6 +61,7 @@ export function friendlyAuthErrorMessage(
     case 'no_code':
     case 'no_verifier':
     case 'no_state':
+    case 'malformed_callback':
     case 'no_id_token':
       return `${label} 登入未完成（未取得授權憑證），請再試一次。`;
     // Web-Google same-window redirect transport diagnostics (DIC-976). Each maps
