@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useReducer, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,10 @@ import type {
   TournamentIndex,
   ArchetypeShareRow,
 } from '../types/tournament';
+import {
+  tournamentReportReducer,
+  initialTournamentReportState,
+} from '../utils/tournamentReportState';
 
 // Deterministic palette for archetype slices; the unknown slice is always the
 // muted gray below (never a "real" archetype color) so it reads as a gap.
@@ -51,24 +55,17 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 export default function TournamentReportScreen() {
-  const [index, setIndex] = useState<TournamentIndex | null>(null);
-  const [month, setMonth] = useState<string | null>(null);
-  const [report, setReport] = useState<MonthlyReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(tournamentReportReducer, initialTournamentReportState);
+  const { index, month, report, loading, error } = state;
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const idx = await fetchJson<TournamentIndex>('/data/tournaments/index.json');
-        if (!alive) return;
-        setIndex(idx);
-        setMonth(idx.months[0]?.month ?? null);
+        if (alive) dispatch({ type: 'index-loaded', index: idx });
       } catch {
-        if (alive) setError('目前沒有可用的賽事月報資料。');
-      } finally {
-        if (alive) setLoading(false);
+        if (alive) dispatch({ type: 'index-failed', message: '目前沒有可用的賽事月報資料。' });
       }
     })();
     return () => {
@@ -79,16 +76,18 @@ export default function TournamentReportScreen() {
   useEffect(() => {
     if (!month) return;
     let alive = true;
-    setLoading(true);
-    setError(null);
     (async () => {
       try {
         const r = await fetchJson<MonthlyReport>(`/data/tournaments/${month}.json`);
-        if (alive) setReport(r);
+        if (alive) dispatch({ type: 'report-loaded', month, report: r });
       } catch {
-        if (alive) setError(`無法載入 ${month} 的賽事月報。`);
-      } finally {
-        if (alive) setLoading(false);
+        if (alive) {
+          dispatch({
+            type: 'report-failed',
+            month,
+            message: `無法載入 ${month} 的賽事月報。`,
+          });
+        }
       }
     })();
     return () => {
@@ -100,7 +99,7 @@ export default function TournamentReportScreen() {
     void openUrl(url);
   }, []);
 
-  if (loading && !report) {
+  if (loading && !index) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={COLORS.primary} size="large" />
@@ -108,11 +107,11 @@ export default function TournamentReportScreen() {
     );
   }
 
-  if (error && !report) {
+  if (!index) {
     return (
       <View style={styles.center}>
         <Text style={styles.emptyTitle}>🏆 賽事月報</Text>
-        <Text style={styles.emptyText}>{error}</Text>
+        <Text style={styles.emptyText}>{error ?? '目前沒有可用的賽事月報資料。'}</Text>
       </View>
     );
   }
@@ -129,7 +128,7 @@ export default function TournamentReportScreen() {
             return (
               <TouchableOpacity
                 key={m.month}
-                onPress={() => setMonth(m.month)}
+                onPress={() => dispatch({ type: 'select-month', month: m.month })}
                 style={[styles.monthChip, active && styles.monthChipActive]}
               >
                 <Text style={[styles.monthChipText, active && styles.monthChipTextActive]}>
@@ -139,6 +138,9 @@ export default function TournamentReportScreen() {
             );
           })}
         </View>
+
+        {loading && <ActivityIndicator color={COLORS.primary} style={styles.inlineLoader} />}
+        {error && !loading && <Text style={styles.emptyText}>{error}</Text>}
 
         {report && (
           <>
@@ -282,6 +284,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
   emptyText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
   monthRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  inlineLoader: { marginVertical: 24 },
   monthChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,

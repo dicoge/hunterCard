@@ -47,11 +47,26 @@ const LIVE = args.includes('--live');
 const nowFlagIdx = args.indexOf('--now');
 const NOW = nowFlagIdx >= 0 ? args[nowFlagIdx + 1] : new Date().toISOString();
 
-const SOURCES_DIR = path.join(ROOT, 'data', 'tournaments', 'sources');
-const OUT_DIRS = [
-  path.join(ROOT, 'data', 'tournaments'),
-  path.join(ROOT, 'public', 'data', 'tournaments'),
-];
+// --sources-dir / --out-dir keep the collector runnable against a throwaway
+// fixture tree, so the failure branches can be regression-tested for real
+// without touching the committed data.
+function flagValue(name) {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : null;
+}
+
+const SOURCES_DIR = flagValue('--sources-dir')
+  ? path.resolve(flagValue('--sources-dir'))
+  : path.join(ROOT, 'data', 'tournaments', 'sources');
+const OUT_DIRS = flagValue('--out-dir')
+  ? [path.resolve(flagValue('--out-dir'))]
+  : [
+      path.join(ROOT, 'data', 'tournaments'),
+      path.join(ROOT, 'public', 'data', 'tournaments'),
+    ];
+// First out dir is canonical: it is the one read back for last-known-good and
+// change detection.
+const CANONICAL_DIR = OUT_DIRS[0];
 
 const alerts = [];
 function alert(level, message, extra = {}) {
@@ -88,10 +103,22 @@ function readJsonSafe(file) {
 }
 
 function loadExistingReport(month) {
-  const file = path.join(ROOT, 'data', 'tournaments', `${month}.json`);
+  const file = path.join(CANONICAL_DIR, `${month}.json`);
   if (!fs.existsSync(file)) return null;
   const r = readJsonSafe(file);
   return r.ok ? r.data : null;
+}
+
+// Months that already have a good report on disk. Used to keep the index
+// pointing at last-known-good data even when this run's source for that month
+// failed — dropping the entry would hide an existing report from the UI.
+function existingMonthsOnDisk() {
+  if (!fs.existsSync(CANONICAL_DIR)) return [];
+  return fs
+    .readdirSync(CANONICAL_DIR)
+    .filter((f) => /^\d{4}-\d{2}\.json$/.test(f))
+    .map((f) => f.slice(0, -'.json'.length))
+    .sort();
 }
 
 function writeJson(fileName, obj) {
@@ -105,7 +132,7 @@ function writeJson(fileName, obj) {
 // Write only when the stable portion changed, preserving the prior generatedAt
 // so an unchanged scheduled run produces no diff (no churn commit).
 function writeStable(fileName, obj, stableFn) {
-  const canonical = path.join(ROOT, 'data', 'tournaments', fileName);
+  const canonical = path.join(CANONICAL_DIR, fileName);
   let toWrite = obj;
   let changed = true;
   if (fs.existsSync(canonical)) {
@@ -213,6 +240,27 @@ function main() {
   }
 
   // Rebuild the month index from the (post-merge) reports on disk / in memory.
+  // A month whose only source failed this run has no entry in `summary`, but its
+  // last-known-good report is still on disk — carry it into the index from disk
+  // so the failure never hides an existing report from the UI.
+  const collected = new Set(summary.map((s) => s.month));
+  for (const month of existingMonthsOnDisk()) {
+    if (collected.has(month)) continue;
+    const prev = loadExistingReport(month);
+    if (!prev) continue;
+    summary.push({
+      month,
+      events: prev.events?.length ?? 0,
+      observedDecks: prev.observedSampleSize ?? 0,
+      changed: false,
+      preserved: true,
+    });
+    alert('warn', `No usable source for ${month}; preserving last-known-good report.`, {
+      month,
+    });
+  }
+  summary.sort((a, b) => a.month.localeCompare(b.month));
+
   const indexMonths = summary
     .map((s) => ({
       month: s.month,
@@ -234,7 +282,7 @@ function main() {
   for (const s of summary) {
     console.log(
       `  ${s.month}: ${s.events} event(s), ${s.observedDecks} observed deck(s)` +
-        `${s.changed ? '  [changed]' : '  [unchanged]'}`,
+        `${s.preserved ? '  [preserved]' : s.changed ? '  [changed]' : '  [unchanged]'}`,
     );
   }
   console.log(`alerts: ${alerts.length}`);
