@@ -220,8 +220,12 @@ if (isMain) {
     main();
     process.exit(0);
   } catch (err) {
+    // Must be NON-ZERO: this is the final writer of data/database.json and the
+    // scrape pipeline's fail-fast guard keys off this exit code to stop before
+    // native generation, staging, commit and push. The old exit(0) ("不讓整個流程
+    // 中斷") let malformed canonical data flow into the bot commit (DIC-989).
     console.error('[merge-buy] fatal:', err);
-    process.exit(0);
+    process.exit(1);
   }
 }
 

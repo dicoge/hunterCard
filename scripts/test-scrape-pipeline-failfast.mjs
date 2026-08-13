@@ -2,9 +2,9 @@
 /**
  * test-scrape-pipeline-failfast.mjs — DIC-989 pipeline control-flow invariants.
  *
- * Runs the REAL scripts/local-scrape-and-push.sh in a throwaway tree with `node`
- * and `git` replaced by tracing shims, so the ordering and failure semantics are
- * proven behaviourally rather than by reading the source.
+ * Runs the REAL scripts/local-scrape-and-push.sh in a throwaway tree, so the
+ * ordering and failure semantics are proven behaviourally rather than by reading
+ * the source.
  *
  *   1. Fail-fast — when merge-buy-prices.js (the final writer of
  *      data/database.json) exits non-zero, the pipeline must abort BEFORE the
@@ -13,6 +13,11 @@
  *   2. Ordering — on the success path the native asset must be regenerated AFTER
  *      the buy-price merge and BEFORE staging, so both files are committed
  *      atomically from the same canonical bytes.
+ *   3. Real failure contract (DIC-998) — cases 1/2 drive control flow with a node
+ *      shim, which cannot catch merge-buy-prices.js swallowing its own fatal error
+ *      and exiting 0. This case runs the REAL merge-buy-prices.js under the REAL
+ *      node against malformed canonical JSON and proves the real pipeline stops
+ *      before native generation, staging, commit and push.
  *
  * Run: node scripts/test-scrape-pipeline-failfast.mjs
  */
@@ -91,6 +96,95 @@ exit 0
 
 const indexOfCall = (lines, needle) => lines.findIndex((l) => l.includes(needle));
 
+/** Canonical bytes the real merge cannot parse. */
+const MALFORMED_DB = '{ "cards": { truncated mid-write';
+
+/**
+ * Every script the pipeline invokes. Only merge-buy-prices.js runs for real here;
+ * the rest are inert stubs so the surrounding steps neither scrape nor mutate.
+ * generate-native-database.mjs records its invocation so we can prove it never runs.
+ */
+const PIPELINE_STUBS = [
+  'scrape-official-cards.js', 'scrape-yt-stats.js', 'scrape-news-sentiment.js',
+  'build-database.js', 'scrape-yt-subscribers.js', 'trend-analysis.js',
+  'send-push-alerts.js', 'scrape-torecolo-buy.js', 'scrape-fullahead-buy.js',
+];
+
+/**
+ * Same pipeline, but with the REAL node binary and the REAL merge-buy-prices.js
+ * (plus its lib/) against malformed canonical JSON. A node shim can only model the
+ * exit code we WISH the merger returned; this executes its actual contract.
+ */
+function runPipelineWithRealMerge() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dic989-realmerge-'));
+  const bin = path.join(dir, 'bin');
+  const repo = path.join(dir, 'repo');
+  const trace = path.join(dir, 'trace.log');
+  const nativeMarker = path.join(dir, 'native-invoked');
+  const repoScripts = path.join(repo, 'scripts');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(repoScripts, { recursive: true });
+  for (const d of ['data/buy-prices', 'data/yt-subscribers', 'data/news-sentiment', 'data/trends']) {
+    fs.mkdirSync(path.join(repo, d), { recursive: true });
+  }
+  fs.writeFileSync(trace, '');
+
+  fs.copyFileSync(PIPELINE, path.join(repoScripts, 'local-scrape-and-push.sh'));
+  // The real merger and the module graph it imports.
+  fs.copyFileSync(path.join(__dirname, 'merge-buy-prices.js'), path.join(repoScripts, 'merge-buy-prices.js'));
+  fs.cpSync(path.join(__dirname, 'lib'), path.join(repoScripts, 'lib'), { recursive: true });
+
+  for (const stub of PIPELINE_STUBS) {
+    fs.writeFileSync(path.join(repoScripts, stub), 'process.exit(0);\n');
+  }
+  fs.writeFileSync(
+    path.join(repoScripts, 'generate-native-database.mjs'),
+    `import fs from 'node:fs';\nfs.writeFileSync(process.env.NATIVE_MARKER, 'invoked');\n`,
+  );
+
+  // A fresh buy-price source, otherwise the merger no-ops before ever reading
+  // canonical and the failure path is never reached.
+  fs.writeFileSync(
+    path.join(repo, 'data/buy-prices/torecolo-prices.json'),
+    JSON.stringify({ 'hBP04-005': { buyPrice: 1200, rarity: null, timestamp: new Date().toISOString() } }),
+  );
+  fs.writeFileSync(path.join(repo, 'data/database.json'), MALFORMED_DB);
+  fs.writeFileSync(path.join(repo, 'data/yt-stats-history.json'), '{}\n');
+
+  // git alone is shimmed: the sandbox is not a repo, and this is how we observe
+  // whether staging/commit/push were ever attempted.
+  fs.writeFileSync(
+    path.join(bin, 'git'),
+    `#!/bin/bash
+echo "git $*" >> "$TRACE_FILE"
+if [ "$1" = "diff" ]; then echo " data/database.json | 2 +-"; fi
+exit 0
+`,
+    { mode: 0o755 },
+  );
+
+  const result = spawnSync('bash', [path.join(repoScripts, 'local-scrape-and-push.sh')], {
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      HOME: dir,
+      TRACE_FILE: trace,
+      NATIVE_MARKER: nativeMarker,
+      HUNTERCARD_LOCK_FILE: path.join(dir, 'scrape.lock'),
+    },
+    encoding: 'utf-8',
+  });
+
+  const out = {
+    status: result.status,
+    lines: fs.readFileSync(trace, 'utf-8').split('\n').filter(Boolean),
+    dbBytes: fs.readFileSync(path.join(repo, 'data/database.json'), 'utf-8'),
+    nativeInvoked: fs.existsSync(nativeMarker),
+  };
+  fs.rmSync(dir, { recursive: true, force: true });
+  return out;
+}
+
 // ── 1. Fail-fast: a failed buy-price merge must never reach the commit path ──
 {
   const { status, lines } = runPipeline({ failOn: 'merge-buy-prices.js' });
@@ -143,6 +237,34 @@ const indexOfCall = (lines, needle) => lines.findIndex((l) => l.includes(needle)
   );
 }
 
+// ── 3. Real failure contract: the actual merge-buy-prices.js, no node shim ──
+{
+  const { status, lines, dbBytes, nativeInvoked } = runPipelineWithRealMerge();
+
+  assert.notStrictEqual(
+    status,
+    0,
+    'pipeline must exit non-zero when the REAL merge-buy-prices.js hits malformed canonical JSON (it caught the error and exited 0, so the shell guard never fired)',
+  );
+  assert.strictEqual(
+    nativeInvoked,
+    false,
+    'native generator must NOT run after a real merge failure — it would regenerate the shipped asset from unusable canonical bytes',
+  );
+  for (const forbidden of ['git add', 'git -c user.name', 'commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(lines, forbidden),
+      -1,
+      `a real merge failure must never reach the commit path (found: ${forbidden})`,
+    );
+  }
+  assert.strictEqual(
+    dbBytes,
+    MALFORMED_DB,
+    'a failed merge must leave data/database.json untouched rather than half-written',
+  );
+}
+
 console.log(
-  'scrape pipeline OK — failed buy-price merge aborts before native generation and the commit path; native regen runs after the final canonical mutation and before staging.',
+  'scrape pipeline OK — failed buy-price merge aborts before native generation and the commit path (proven with both a shim and the REAL merge-buy-prices.js on malformed canonical JSON); native regen runs after the final canonical mutation and before staging.',
 );
