@@ -163,7 +163,7 @@ export async function addZhNames(dbPath = DEFAULT_DB_PATH) {
   }
 
   // 寫回資料庫
-  fs.writeFileSync(dbPath, JSON.stringify(database, null, 2, 'utf-8'));
+  fs.writeFileSync(dbPath, `${JSON.stringify(database, null, 2)}\n`, 'utf-8');
 
   console.log(`[add-zh-names] ✅ 完成！`);
   console.log(`[add-zh-names]   靜態匹配: ${matchCount} 張卡片`);

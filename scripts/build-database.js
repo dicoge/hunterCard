@@ -1167,7 +1167,7 @@ async function buildDatabase() {
   database.totalCards = Object.keys(database.cards).length;
 
   // Write database.json
-  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(database, null, 2, 'utf-8'));
+  fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(database, null, 2)}\n`, 'utf-8');
 
   // Add Chinese names to cards
   await addZhNames(OUTPUT_PATH);
@@ -1332,7 +1332,7 @@ async function buildDatabase() {
   mergeYtStats(database);
 
   // Re-write database.json with priceHistory + preserved buyPrice included
-  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(database, null, 2));
+  fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(database, null, 2)}\n`);
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n═══════════════════════════════════════`);

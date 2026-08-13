@@ -4,7 +4,9 @@
 
 set -e
 cd "$(dirname "$0")/.."
-LOCK_FILE="/tmp/huntercard-scrape.lock"
+# Overridable so the pipeline regression can run hermetically without contending
+# with (or clearing) the real cron lock.
+LOCK_FILE="${HUNTERCARD_LOCK_FILE:-/tmp/huntercard-scrape.lock}"
 LOG_FILE="$HOME/.hermes/logs/huntercard-scrape-$(date +%Y%m%d).log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
@@ -50,14 +52,6 @@ cd scripts
 node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
 cd ..
 
-# 2a. Regenerate public/data/database.json (native asset) from data/database.json
-#     Must run after build-database.js — fail if the generator fails (DIC-923).
-echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
-if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
-  exit 1
-fi
-
 # 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)
 echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
 cd scripts
@@ -81,17 +75,45 @@ node scripts/send-push-alerts.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ P
 #     nothing, so the duplicate scrape was dropped and 2f is the single source.
 
 # 2g. Scrape buy prices (torecolo + fullahead) into data/buy-prices/ and merge
-#     into database.json (buyPrice + buyPriceHistory). Non-blocking (DIC-155).
+#     into database.json (buyPrice + buyPriceHistory).
+#     The two SCRAPERS stay non-blocking (DIC-155) — they are network-dependent and
+#     the merge runs on whatever fresh snapshots exist. The MERGE itself must NOT be
+#     masked: it is the final writer of data/database.json, so a failed or partial
+#     merge would otherwise flow into native generation (2h) and be committed as a
+#     stale/inconsistent canonical+native pair. Fail fast before 2h and the commit
+#     path (DIC-989).
 echo "[$(date)] Scraping buy prices into database.json (torecolo + fullahead + merge)..." >> "$LOG_FILE"
 cd scripts
 node scrape-torecolo-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Torecolo buy scrape failed (non-fatal)" >> "$LOG_FILE"
 node scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fullahead buy scrape failed (non-fatal)" >> "$LOG_FILE"
-node merge-buy-prices.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Buy price merge failed (non-fatal)" >> "$LOG_FILE"
+if ! node merge-buy-prices.js >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ merge-buy-prices FAILED, exiting before native generation/commit" >> "$LOG_FILE"
+  exit 1
+fi
 cd ..
 
+# 2h. Regenerate public/data/database.json (native asset) from data/database.json.
+#     MUST be the LAST mutation-consuming step: it must run after merge-buy-prices.js
+#     (step 2g), the final writer of data/database.json, so the native asset is
+#     generated from the FINAL canonical bytes and committed atomically in the same
+#     commit below. Regenerating it earlier (before buy-price merge) leaves it stale
+#     and fails the DIC-916 --check gate (DIC-989). Fail if the generator fails (DIC-923).
+echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
+if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
+  exit 1
+fi
+
 # 3. Check if data changed
-GIT_DIFF_FILES='data/database.json' 'data/images/' 'data/official/' 'data/series-names.json' 'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json' 'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
-if git diff --stat -- $GIT_DIFF_FILES | grep -q .; then
+# NOTE: must be an ARRAY. As a bare `VAR='a' 'b' 'c'` list (DIC-923) bash read this
+# as an assignment prefix followed by the COMMAND `data/images/`, which aborts the
+# run with exit 126 under `set -e` — before anything was ever committed (DIC-989).
+GIT_DIFF_FILES=(
+  'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json'
+  'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json'
+  'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
+)
+if git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
   EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json public/data/database.json"

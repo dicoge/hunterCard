@@ -102,7 +102,7 @@ for (const [cardNum, variants] of Object.entries(newPrices)) {
 db.totalCards = Object.keys(db.cards).length;
 db.lastUpdated = new Date().toISOString();
 
-fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf-8');
+fs.writeFileSync(DB_PATH, `${JSON.stringify(db, null, 2)}\n`, 'utf-8');
 
 console.log('=== MERGE COMPLETE ===');
 console.log('Updated cards (more variants):', updatedCount);

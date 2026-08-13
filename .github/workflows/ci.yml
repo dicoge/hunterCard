@@ -86,6 +86,9 @@ jobs:
       - name: Verify buy-price regeneration is deterministic (DIC-856)
         run: npm run test:buy-price-regen
 
+      - name: Verify scrape pipeline fail-fast + atomic commit ordering (DIC-989)
+        run: npm run test:scrape-pipeline
+
       - name: Verify scan/search market data fields (DIC-361)
         run: npm run test:market-fields
 
