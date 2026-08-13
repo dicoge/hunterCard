@@ -26,6 +26,7 @@
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",
     "test:buy-price": "node scripts/verify-buy-price-alignment.mjs",
     "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",
+    "test:scrape-pipeline": "node scripts/test-scrape-pipeline-failfast.mjs",
     "test:market-fields": "node --experimental-strip-types scripts/test-api-card-mapper.mjs && node scripts/test-dic-361-market-data-fields.mjs",
     "test:deck-rules": "node --experimental-strip-types --import ./scripts/register-json.mjs scripts/test-deck-rules.mjs",
     "test:deck-price-adapter": "node --experimental-strip-types --import ./scripts/register-json.mjs scripts/test-deck-price-adapter.mjs",
