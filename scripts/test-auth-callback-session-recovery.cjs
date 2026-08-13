@@ -125,6 +125,7 @@ let calls = [];
 let replaced = [];
 let redirectStore = {};
 let meMode = 'ok';
+let linkMode = 'ok';
 
 function setupBrowser({ search, hash, pending }) {
   calls = [];
@@ -162,6 +163,9 @@ globalThis.fetch = async (url, init) => {
     }
     if (meMode === 'network') throw new Error('offline');
     return { ok: true, status: 200, json: async () => ({ user: PERSISTED_USER }) };
+  }
+  if (String(url).endsWith('/api/auth/link') && linkMode === 'conflict') {
+    return { ok: false, status: 409, json: async () => ({ error: 'PROVIDER_ALREADY_LINKED' }) };
   }
   return {
     ok: true,
@@ -255,7 +259,10 @@ process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'test-client.apps.googleuserconte
   }
 
   // Same for a user mid-"link Google" from Settings: they were signed in when
-  // they started, so a malformed return must not sign them out either.
+  // they started, so a malformed return must not sign them out either. (The
+  // service rejects a malformed shape before it dispatches on the pending
+  // operation, so what this pins is the STORE outcome for a link-pending boot;
+  // testLinkFailureKeepsSession covers the operation-dispatched path.)
   async function testLinkingUserKeepsSessionAcrossMalformedCallback() {
     for (const shape of MALFORMED_SHAPES) {
       meMode = 'ok';
@@ -277,6 +284,33 @@ process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'test-client.apps.googleuserconte
       assert.equal(s.user.internalId, PERSISTED_USER.internalId);
       assert.equal(s.hasHydrated, true);
     }
+  }
+
+  // A WELL-FORMED link callback that the backend rejects (e.g. the Google
+  // account is already attached elsewhere) reaches /auth/link and fails there —
+  // the operation-dispatched failure path. Attaching a provider failed; being
+  // signed in did not, so the session must survive that too.
+  async function testLinkFailureKeepsSession() {
+    meMode = 'ok';
+    linkMode = 'conflict';
+    setupBrowser({
+      search: '',
+      hash: `#id_token=${CREDENTIAL}&state=state-xyz`,
+      pending: pendingLogin({ operation: 'link', session: PERSISTED_SESSION }),
+    });
+    bootFromPersistedSession(PERSISTED_SESSION);
+
+    await useAuthStore.getState().completeWebRedirectLogin();
+
+    const s = useAuthStore.getState();
+    assert.equal(callsTo('/api/auth/link').length, 1, 'a well-formed link callback must reach /auth/link');
+    assert.equal(callsTo('/api/auth/login').length, 0, 'a link must never fall back to /auth/login');
+    assertSafeDiagnostic('link-conflict', s.error);
+    assert.equal(callsTo('/api/auth/me').length, 1, 'the session must still be validated');
+    assert.equal(s.isAuthenticated, true, 'a failed link must not sign the user out');
+    assert.equal(s.session, PERSISTED_SESSION);
+    assert.equal(s.user.internalId, PERSISTED_USER.internalId);
+    linkMode = 'ok';
   }
 
   // No pending state = a stale bookmark or crafted link, not a login this app
@@ -374,6 +408,7 @@ process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'test-client.apps.googleuserconte
   const tests = [
     testSignedInUserKeepsSessionAcrossMalformedCallback,
     testLinkingUserKeepsSessionAcrossMalformedCallback,
+    testLinkFailureKeepsSession,
     testStaleOauthUrlRestoresSessionSilently,
     testSignedOutUserSeesDiagnosticOnly,
     testRejectedSessionIsStillDropped,
