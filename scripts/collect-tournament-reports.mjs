@@ -150,9 +150,11 @@ function main() {
   if (LIVE) {
     alert(
       'error',
-      'Live fetch is disabled: official-column DOM contract and ToS/robots ' +
-        'evidence are not verified yet (issue #8). Run offline from committed ' +
-        'source files instead. Aborting.',
+      'Live fetch is disabled. Deck Log terms prohibit unauthorized ' +
+        'reproduction/transmission/publication of its content, and its deck ' +
+        'endpoint ships no CORS grant and X-Robots-Tag: noindex, nofollow ' +
+        '(DIC-1001). Reachability is not permission. Run offline from ' +
+        'committed source files instead. Aborting.',
     );
     finish(1);
     return;

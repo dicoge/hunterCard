@@ -23,6 +23,13 @@ export interface DeckCard {
   type?: string;
   cardTypeJp?: string;
   imageUrl?: string;
+  /** official card-list printing path (`<folder>/<file>.png`) — the exact
+   *  printing identity, used to match an imported source slot to this entry */
+  printingPath?: string;
+  /** set when the slot came from an import whose exact printing has no entry in
+   *  the local card catalog. The source-supplied cardNumber/version are kept
+   *  verbatim; nothing is substituted, so price and catalog lookups fail closed. */
+  unresolvedPrinting?: boolean;
 }
 
 export interface DeckSlot {

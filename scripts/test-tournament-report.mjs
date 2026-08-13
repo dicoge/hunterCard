@@ -61,6 +61,21 @@ const rawFeatured = {
   ],
 };
 
+// A COMPLETE list (1 / 50 / 20). Only a complete list is treated as verified,
+// so anything asserting the verified path has to start from one.
+function completeList(mainOverrides = {}) {
+  const main = Array.from({ length: 12 }, (_, i) => ({
+    zone: 'main',
+    cardNumber: `hBP08-1${String(i).padStart(2, '0')}`,
+    count: i === 0 ? 6 : 4,
+  }));
+  return [
+    { zone: 'oshi', cardNumber: 'hSD10-001', count: 1 },
+    ...main.map((c, i) => (i === 0 ? { ...c, ...mainOverrides } : c)),
+    { zone: 'yell', cardNumber: 'hY04-001', count: 20 },
+  ];
+}
+
 // ── Parser / normalizer ─────────────────────────────────────────────────────
 test('normalizeEvent builds stable ids and decklog-derived deck identity', () => {
   const e = normalizeEvent(rawFeatured, NOW);
@@ -107,17 +122,86 @@ test('missing rank/archetype/cards stay unknown, not back-filled', () => {
 
 test('card version is preserved, never inferred; missing version → null', () => {
   const d = normalizeDeck(
-    { rank: 1, cards: [{ cardNumber: 'hBP08-067', count: 4 }] },
+    { rank: 1, cards: completeList({ cardNumber: 'hBP08-067' }) },
     'evt',
     'https://src',
     0,
     NOW,
   );
   assert.equal(d.cardsVerified, true);
+  assert.equal(d.cardsIssue, null);
   assert.equal(d.coverage, 'ranked'); // rank + verified cards
-  assert.equal(d.cards[0].cardNumber, 'hBP08-067');
-  assert.equal(d.cards[0].version, null); // not fabricated
-  assert.equal(d.cards[0].count, 4);
+  const card = d.cards.find((c) => c.cardNumber === 'hBP08-067');
+  assert.equal(card.version, null); // not fabricated
+  assert.equal(card.count, 6);
+  assert.equal(card.zone, 'main');
+});
+
+// DIC-1001 #2: a list read only in part describes a deck nobody played. It is
+// kept out of the importable set with a reason instead of being trimmed into a
+// plausible-looking illegal deck.
+test('an incomplete or malformed list is never marked verified', () => {
+  const short = normalizeDeck(
+    { rank: 1, cards: completeList().slice(0, -1) },
+    'evt', 'https://src', 0, NOW,
+  );
+  assert.equal(short.cardsVerified, false);
+  assert.equal(short.cardsIssue, 'incomplete');
+  assert.equal(short.coverage, 'partial');
+
+  const malformed = normalizeDeck(
+    { rank: 1, cards: [...completeList(), { zone: 'main', cardNumber: '', count: 2 }] },
+    'evt', 'https://src', 0, NOW,
+  );
+  assert.equal(malformed.cardsVerified, false);
+  assert.equal(malformed.cardsIssue, 'incomplete');
+
+  const none = normalizeDeck({ rank: 1 }, 'evt', 'https://src', 0, NOW);
+  assert.equal(none.cardsIssue, 'missing');
+});
+
+// DIC-1000: a slot the source did not place in a zone cannot be imported into
+// the editor, and guessing a zone would fabricate deck structure. DIC-1001: nor
+// is the rest of the list kept — a trimmed list is a deck nobody played.
+test('a card with no zone (or an unknown one) rejects the list, never guesses', () => {
+  const d = normalizeDeck(
+    {
+      rank: 1,
+      cards: [
+        { cardNumber: 'hBP08-067', count: 4 },
+        { zone: 'bench', cardNumber: 'hBP08-068', count: 2 },
+        { zone: 'yell', cardNumber: 'hY04-001', count: 20 },
+      ],
+    },
+    'evt',
+    'https://src',
+    0,
+    NOW,
+  );
+  assert.deepEqual(d.cards, []);
+  assert.equal(d.cardsIssue, 'incomplete');
+});
+
+// Runtime shapes the DeckCardRef type only claims to guarantee. Each mutation
+// below keeps the totals at exactly 1/50/20, so coercion would let it through
+// as a complete deck.
+test('runtime field types are checked exactly, never coerced', () => {
+  const mutations = [
+    (c) => (c.zone === 'oshi' ? { ...c, count: '1' } : c),
+    (c) => (c.zone === 'oshi' ? { ...c, cardNumber: '  ' } : c),
+    (c) => (c.zone === 'oshi' ? { ...c, version: {} } : c),
+    (c) => (c.zone === 'oshi' ? { ...c, name: 7 } : c),
+    (c) => (c.zone === 'oshi' ? { ...c, imagePath: ['a/b.png'] } : c),
+  ];
+  for (const mutate of mutations) {
+    const d = normalizeDeck(
+      { rank: 1, cards: completeList().map(mutate) },
+      'evt', 'https://src', 0, NOW,
+    );
+    assert.equal(d.cardsVerified, false);
+    assert.equal(d.cardsIssue, 'incomplete');
+    assert.deepEqual(d.cards, []);
+  }
 });
 
 test('ranked deck with no card list is partial (placement known, list unknown)', () => {

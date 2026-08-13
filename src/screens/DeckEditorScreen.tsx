@@ -86,6 +86,16 @@ export default function DeckEditorScreen() {
       .sort((a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.version.localeCompare(b.version));
   }, [collection, cardByOwnershipKey]);
 
+  // Slots whose exact printing has no local catalog entry — imported from a
+  // source that named a version we cannot match. They keep the source's own
+  // cardNumber + version, so nothing was substituted, but price and catalog
+  // lookups for them return nothing and the user has to be told which.
+  const unresolvedSlots = activeDeck
+    ? (['oshi', 'main', 'yell'] as DeckZone[])
+        .flatMap((zone) => activeDeck[zone])
+        .filter((slot) => slot.card.unresolvedPrinting)
+    : [];
+
   const stats = activeDeck ? deckStats(activeDeck) : null;
   const issues = activeDeck ? validateDeck(activeDeck) : [];
   const errors = issues.filter((i) => i.level === 'error');
@@ -303,6 +313,7 @@ export default function DeckEditorScreen() {
                 <Text style={styles.cardName}>{slot.card.name}</Text>
                 <Text style={styles.cardMeta}>
                   {slot.card.cardNumber}{slot.card.rarity ? ` · ${slot.card.rarity}` : ''}
+                  {slot.card.unresolvedPrinting ? ' · 版本未對應本地卡庫' : ''}
                 </Text>
               </View>
               <View style={styles.qtyControls}>
@@ -391,6 +402,20 @@ export default function DeckEditorScreen() {
           <Text style={styles.issueMsg}>{i.message}</Text>
         </View>
       ))}
+
+      {unresolvedSlots.length > 0 && (
+        <View style={[styles.issue, styles.issueWarn]} testID="unresolved-printing-notice">
+          <Text style={styles.issueLevel}>⚠️ 匯入限制</Text>
+          <Text style={styles.issueMsg}>
+            以下 {unresolvedSlots.length} 張卡的來源版本在本地卡庫沒有對應版本，已依來源原樣保留卡號與版本，
+            未替換成其他版本；這些卡無法比對收藏與精確版本價格：
+            {'\n'}
+            {unresolvedSlots
+              .map((s) => `${s.card.cardNumber}${s.card.rarity ? `·${s.card.rarity}` : ''}`)
+              .join('、')}
+          </Text>
+        </View>
+      )}
 
       <Text style={[styles.h2, { marginTop: 16 }]}>缺卡估價</Text>
       <Text style={styles.muted}>需求 / 擁有 / 缺少 · 價格僅取同卡號＋同版本精確匹配</Text>

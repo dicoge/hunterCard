@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useCallback } from 'react';
+import React, { useEffect, useReducer, useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,32 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { COLORS } from '../constants';
 import { openUrl } from '../utils/openUrl';
 import type {
   MonthlyReport,
   TournamentIndex,
   ArchetypeShareRow,
+  TournamentEvent,
+  DeckEntry,
 } from '../types/tournament';
 import {
   tournamentReportReducer,
   initialTournamentReportState,
 } from '../utils/tournamentReportState';
+import { useDeckStore } from '../store/deckStore';
+import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
+import { buildImportedDeck, isImportable } from '../utils/tournamentDeckImport';
+
+const NO_CARD_LIST_REASON = '此牌組卡表尚未取得，暫時無法匯入';
+// A list we could only read part of is a different, worse failure: importing it
+// would show the player as having built an illegal deck. Say which one it is.
+const PARTIAL_CARD_LIST_REASON = '此牌組卡表不完整（未達 推し1／主50／エール20），暫時無法匯入';
+
+function importReasonOf(deck: DeckEntry): string {
+  return deck.cardsIssue === 'incomplete' ? PARTIAL_CARD_LIST_REASON : NO_CARD_LIST_REASON;
+}
 
 // Deterministic palette for archetype slices; the unknown slice is always the
 // muted gray below (never a "real" archetype color) so it reads as a gap.
@@ -57,6 +72,21 @@ async function fetchJson<T>(url: string): Promise<T> {
 export default function TournamentReportScreen() {
   const [state, dispatch] = useReducer(tournamentReportReducer, initialTournamentReportState);
   const { index, month, report, loading, error } = state;
+  const navigation = useNavigation<{ navigate: (screen: string) => void }>();
+  const [db, setDb] = useState<CardDatabase | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const decks = useDeckStore((s) => s.decks);
+  const importDeck = useDeckStore((s) => s.importDeck);
+
+  // The catalog is only needed to match imported slots to local printings, so a
+  // failed load must not break the report itself — it only blocks importing.
+  useEffect(() => {
+    let alive = true;
+    loadCardDatabase()
+      .then((data) => { if (alive) setDb(data); })
+      .catch(() => { if (alive) setDb(null); });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -98,6 +128,23 @@ export default function TournamentReportScreen() {
   const onOpen = useCallback((url: string) => {
     void openUrl(url);
   }, []);
+
+  // One tap → a NEW local deck copy, made active, then straight into the
+  // editor. Existing decks are never touched, so importing the same tournament
+  // deck twice yields two independent copies.
+  const onImport = useCallback(
+    (event: TournamentEvent, deck: DeckEntry) => {
+      if (!db) {
+        setImportError('卡片資料庫尚未載入，請稍後再試。');
+        return;
+      }
+      const draft = buildImportedDeck(event, deck, db.cards, decks.map((d) => d.name));
+      importDeck(draft.name, draft.zones);
+      setImportError(null);
+      navigation.navigate('DeckEditor');
+    },
+    [db, decks, importDeck, navigation],
+  );
 
   if (loading && !index) {
     return (
@@ -200,6 +247,7 @@ export default function TournamentReportScreen() {
 
             {/* Events + featured decks */}
             <Text style={styles.h2}>賽事與精選牌組</Text>
+            {importError && <Text style={styles.importError}>{importError}</Text>}
             {report.events.map((e) => (
               <View key={e.eventId} style={styles.eventCard}>
                 <Text style={styles.eventName}>{e.name}</Text>
@@ -211,29 +259,49 @@ export default function TournamentReportScreen() {
                 </View>
                 <Text style={styles.eventCoverage}>{e.coverageNote}</Text>
 
-                {e.decks.map((d) => (
-                  <View key={d.deckId} style={styles.deckRow}>
-                    <View style={styles.deckHead}>
-                      <Text style={styles.deckArchetype}>
-                        {d.archetypeLabel ?? '未知牌組'}
+                {e.decks.map((d) => {
+                  const importable = isImportable(d);
+                  const reason = importReasonOf(d);
+                  return (
+                    <View key={d.deckId} style={styles.deckRow}>
+                      <View style={styles.deckHead}>
+                        <Text style={styles.deckArchetype}>
+                          {d.archetypeLabel ?? '未知牌組'}
+                        </Text>
+                        <Text style={styles.deckRank}>{d.rankLabel ?? '名次未公開'}</Text>
+                      </View>
+                      <Text style={styles.deckPlayer}>
+                        玩家：{d.playerName ?? '未公開'}
                       </Text>
-                      <Text style={styles.deckRank}>{d.rankLabel ?? '名次未公開'}</Text>
-                    </View>
-                    <Text style={styles.deckPlayer}>
-                      玩家：{d.playerName ?? '未公開'}
-                    </Text>
-                    <Text style={styles.deckCards}>
-                      {d.cardsVerified
-                        ? `卡表：${d.cards.length} 種卡`
-                        : '卡表：未收錄（decklog 需 JS 渲染，尚未讀取）'}
-                    </Text>
-                    {d.decklogCode ? (
-                      <TouchableOpacity onPress={() => onOpen(d.sourceUrl)}>
-                        <Text style={styles.link}>在 decklog 查看牌組 ({d.decklogCode}) ↗</Text>
+                      <Text style={styles.deckCards}>
+                        {importable
+                          ? `卡表：${d.cards.length} 種卡（${zoneSummary(d)}）`
+                          : '卡表：未收錄'}
+                      </Text>
+
+                      <TouchableOpacity
+                        style={[styles.importBtn, !importable && styles.importBtnDisabled]}
+                        disabled={!importable}
+                        onPress={() => onImport(e, d)}
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: !importable }}
+                        accessibilityLabel={importable ? '匯入我的牌組' : reason}
+                        testID={`tournament-import-${d.deckId}`}
+                      >
+                        <Text style={styles.importBtnText}>匯入我的牌組</Text>
                       </TouchableOpacity>
-                    ) : null}
-                  </View>
-                ))}
+                      {!importable && (
+                        <Text style={styles.importReason}>{reason}</Text>
+                      )}
+
+                      {d.decklogCode ? (
+                        <TouchableOpacity onPress={() => onOpen(d.sourceUrl)}>
+                          <Text style={styles.link}>在 decklog 查看牌組 ({d.decklogCode}) ↗</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  );
+                })}
 
                 <TouchableOpacity onPress={() => onOpen(e.sourceUrl)}>
                   <Text style={styles.link}>官方來源 ↗</Text>
@@ -249,6 +317,12 @@ export default function TournamentReportScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function zoneSummary(deck: DeckEntry): string {
+  const totals = { oshi: 0, main: 0, yell: 0 };
+  for (const c of deck.cards) totals[c.zone] += c.count;
+  return `推し ${totals.oshi}／主 ${totals.main}／エール ${totals.yell}`;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -356,5 +430,16 @@ const styles = StyleSheet.create({
   deckPlayer: { color: COLORS.textSecondary, fontSize: 12, marginTop: 4 },
   deckCards: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   link: { color: COLORS.primary, fontSize: 12, fontWeight: '600', marginTop: 8 },
+  importBtn: {
+    marginTop: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  importBtnDisabled: { backgroundColor: COLORS.border },
+  importBtnText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+  importReason: { color: COLORS.warning, fontSize: 12, marginTop: 6 },
+  importError: { color: COLORS.error, fontSize: 13, marginBottom: 8 },
   generatedAt: { color: COLORS.textSecondary, fontSize: 11, marginTop: 16, textAlign: 'center' },
 });

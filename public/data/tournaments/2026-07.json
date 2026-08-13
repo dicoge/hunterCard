@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "month": "2026-07",
-  "generatedAt": "2026-08-01T05:00:00Z",
+  "generatedAt": "2026-08-13T19:15:01.272Z",
   "source": {
     "name": "hololive OFFICIAL CARD GAME — 公式コラム「イチ推し！デッキ紹介」vol.10",
     "url": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
@@ -25,7 +25,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整 8 強與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整 8 強與參賽數未公開。牌組卡表版權屬 Deck Log／ブシロード，未取得授權前不轉載，故無法匯入，請由來源連結查看。",
       "decks": [
         {
           "deckId": "decklog:5USA7",
@@ -42,11 +42,12 @@
           ],
           "cards": [],
           "cardsVerified": false,
+          "cardsIssue": "missing",
           "coverage": "partial",
-          "fetchedAt": "2026-08-01T05:00:00Z"
+          "fetchedAt": "2026-08-13T19:15:01.272Z"
         }
       ],
-      "fetchedAt": "2026-08-01T05:00:00Z"
+      "fetchedAt": "2026-08-13T19:15:01.272Z"
     },
     {
       "eventId": "extreamer-cup-25-26-area-kyushu-okinawa-2",
@@ -58,7 +59,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表版權屬 Deck Log／ブシロード，未取得授權前不轉載，故無法匯入，請由來源連結查看。",
       "decks": [
         {
           "deckId": "decklog:1XQQF",
@@ -76,11 +77,12 @@
           ],
           "cards": [],
           "cardsVerified": false,
+          "cardsIssue": "missing",
           "coverage": "partial",
-          "fetchedAt": "2026-08-01T05:00:00Z"
+          "fetchedAt": "2026-08-13T19:15:01.272Z"
         }
       ],
-      "fetchedAt": "2026-08-01T05:00:00Z"
+      "fetchedAt": "2026-08-13T19:15:01.272Z"
     },
     {
       "eventId": "extreamer-cup-25-26-area-hokkaido",
@@ -92,7 +94,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表版權屬 Deck Log／ブシロード，未取得授權前不轉載，故無法匯入，請由來源連結查看。",
       "decks": [
         {
           "deckId": "decklog:4PQXH",
@@ -110,11 +112,12 @@
           ],
           "cards": [],
           "cardsVerified": false,
+          "cardsIssue": "missing",
           "coverage": "partial",
-          "fetchedAt": "2026-08-01T05:00:00Z"
+          "fetchedAt": "2026-08-13T19:15:01.272Z"
         }
       ],
-      "fetchedAt": "2026-08-01T05:00:00Z"
+      "fetchedAt": "2026-08-13T19:15:01.272Z"
     }
   ],
   "archetypeShare": [

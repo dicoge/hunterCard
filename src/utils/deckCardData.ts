@@ -28,6 +28,18 @@ export interface CardDatabase {
 let cache: CardDatabase | null = null;
 let inflight: Promise<CardDatabase> | null = null;
 
+// The official card list serves every printing at
+// `.../wp-content/images/cardlist/<folder>/<file>.png`, and that path is the
+// only field that identifies a printing exactly (a rarity code alone is
+// ambiguous across products, and a cardNumber alone spans every reprint). It is
+// lifted into its own field so an imported source slot can be matched against
+// it without parsing a display URL. A record with no official image gets no
+// path — it simply never matches, rather than matching loosely.
+export function printingPathOf(raw: RawCard): string | undefined {
+  const m = /\/cardlist\/(.+)$/.exec(raw.officialImage || '');
+  return m ? m[1] : undefined;
+}
+
 export function adaptCard(raw: RawCard): DeckCard {
   return {
     id: raw.id,
@@ -38,6 +50,7 @@ export function adaptCard(raw: RawCard): DeckCard {
     type: raw.type || '',
     cardTypeJp: raw.skillsJp?.cardType || '',
     imageUrl: raw.officialImage || raw.localImage || undefined,
+    printingPath: printingPathOf(raw),
   };
 }
 

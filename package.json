@@ -35,6 +35,7 @@
     "test:deck-rules": "node --experimental-strip-types --import ./scripts/register-json.mjs scripts/test-deck-rules.mjs",
     "test:tournament-report": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-report.mjs",
     "test:tournament-collector": "node scripts/test-tournament-collector.mjs",
+    "test:tournament-deck-import": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-deck-import.mjs",
     "collect:tournaments": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/collect-tournament-reports.mjs",
     "test:deck-price-adapter": "node --experimental-strip-types --import ./scripts/register-json.mjs scripts/test-deck-price-adapter.mjs",
     "test:deck-store-rename": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-store-rename.mjs",

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "month": "2026-07",
   "publishedDate": "2026-07-31",
-  "provenance": "DIC-942 verified sample. Official column 「イチ推し！デッキ紹介」vol.10 (2026-07-31). Human-verified extraction: player, placement, oshi/archetype and decklog code are published in the column prose; card lists are NOT read (decklog is a JS-rendered SPA), so they stay unknown; participant counts and full standings are not published by the source.",
+  "provenance": "DIC-942 verified sample. Official column 「イチ推し！デッキ紹介」vol.10 (2026-07-31): player, placement, oshi/archetype and decklog code are published in the column prose; participant counts and full standings are not published by the source. Card lists are NOT carried here: Deck Log publishes complete lists behind POST /system/app/api/view/<code>, but its terms prohibit unauthorized reproduction, transmission, distribution and publication of site content, and that endpoint sends no CORS grant and X-Robots-Tag: noindex, nofollow. Reachability is not permission (DIC-1001), so this repo stores and republishes none of it and every deck below stays non-importable, linking to Deck Log instead.",
   "source": {
     "name": "hololive OFFICIAL CARD GAME — 公式コラム「イチ推し！デッキ紹介」vol.10",
     "url": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
@@ -19,7 +19,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整 8 強與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整 8 強與參賽數未公開。牌組卡表版權屬 Deck Log／ブシロード，未取得授權前不轉載，故無法匯入，請由來源連結查看。",
       "decks": [
         {
           "decklogCode": "5USA7",
@@ -29,7 +29,9 @@
           "archetypeId": "takane-lui",
           "archetypeLabel": "鷹嶺ルイ（紫単）",
           "oshi": "鷹嶺ルイ",
-          "colors": ["紫"]
+          "colors": [
+            "紫"
+          ]
         }
       ]
     },
@@ -43,7 +45,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表版權屬 Deck Log／ブシロード，未取得授權前不轉載，故無法匯入，請由來源連結查看。",
       "decks": [
         {
           "decklogCode": "1XQQF",
@@ -53,7 +55,10 @@
           "archetypeId": "wando-chihaya-tokanehi",
           "archetypeLabel": "輪堂千速＋虎金妃笑虎（青赤混合）",
           "oshi": "輪堂千速",
-          "colors": ["青", "赤"]
+          "colors": [
+            "青",
+            "赤"
+          ]
         }
       ]
     },
@@ -67,7 +72,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表版權屬 Deck Log／ブシロード，未取得授權前不轉載，故無法匯入，請由來源連結查看。",
       "decks": [
         {
           "decklogCode": "4PQXH",
@@ -77,7 +82,10 @@
           "archetypeId": "jiji-murin",
           "archetypeLabel": "ジジ・ムリン（紫青混合）",
           "oshi": "ジジ・ムリン",
-          "colors": ["紫", "青"]
+          "colors": [
+            "紫",
+            "青"
+          ]
         }
       ]
     }

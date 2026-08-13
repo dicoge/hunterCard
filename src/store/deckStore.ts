@@ -43,6 +43,10 @@ interface DeckState {
   collection: Record<string, number>;
 
   createDeck: (name: string) => string;
+  /** Create a NEW deck from pre-built zones (tournament import, DIC-1000) and
+   *  make it active. Never merges into or overwrites an existing deck, so
+   *  repeated imports produce independent copies. */
+  importDeck: (name: string, zones: Record<DeckZone, DeckSlot[]>) => string;
   renameDeck: (deckId: string, name: string) => void;
   deleteDeck: (deckId: string) => void;
   setActiveDeck: (deckId: string | null) => void;
@@ -95,6 +99,20 @@ export const useDeckStore = create<DeckState>()(
 
       createDeck: (name) => {
         const deck = emptyDeck(name.trim() || '新牌組');
+        set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id }));
+        return deck.id;
+      },
+      importDeck: (name, zones) => {
+        // Slots are deep-copied so a later edit to the imported deck can never
+        // reach back into the source report or into a previously imported copy.
+        const deck: Deck = {
+          id: newId(),
+          name: name.trim() || '匯入的牌組',
+          oshi: zones.oshi.map((s) => ({ card: { ...s.card }, qty: s.qty })),
+          main: zones.main.map((s) => ({ card: { ...s.card }, qty: s.qty })),
+          yell: zones.yell.map((s) => ({ card: { ...s.card }, qty: s.qty })),
+          updatedAt: new Date().toISOString(),
+        };
         set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id }));
         return deck.id;
       },

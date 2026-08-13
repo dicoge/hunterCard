@@ -21,6 +21,7 @@ import {
   type MonthlyReport,
   type TournamentEvent,
 } from '../types/tournament';
+import { RULES } from './deckRules';
 
 // ── Raw (pre-normalization) source records ──────────────────────────────────
 // These mirror what a human-verified extraction of the official column yields.
@@ -71,21 +72,70 @@ export function monthOf(dateISO: string | null | undefined): string | null {
   return m ? `${m[1]}-${m[2]}` : null;
 }
 
+// These run against whatever a source file or a future fetcher actually hands
+// us at runtime, where the DeckCardRef type is only a claim. Coercion is
+// deliberately refused: Number('50') would turn a string into a plausible
+// quantity, and `${{}}` would turn an object into a plausible version, both of
+// which invent data the source never published.
+function isExactString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value == null || isExactString(value);
+}
+
+// A card list is only usable if it is COMPLETE and every slot is exactly the
+// shape it claims to be. A partially-read source must never present itself as a
+// deck the user can import: a 46-card "main deck" looks like a deck the player
+// chose to build illegally, which is a lie about the tournament. So ONE bad slot
+// rejects the whole list — it is not trimmed into a plausible-looking deck
+// (DIC-1001 finding #2).
 function normalizeCards(cards: DeckCardRef[] | undefined): {
   cards: DeckCardRef[];
   verified: boolean;
+  issue: DeckEntry['cardsIssue'];
 } {
-  if (!cards || cards.length === 0) return { cards: [], verified: false };
-  // Only accept entries that carry an exact cardNumber. version stays null when
-  // not supplied — never inferred from a same-named/same-numbered printing.
-  const clean = cards
-    .filter((c) => typeof c.cardNumber === 'string' && c.cardNumber.length > 0)
-    .map((c) => ({
-      cardNumber: c.cardNumber,
+  if (!Array.isArray(cards) || cards.length === 0) {
+    return { cards: [], verified: false, issue: 'missing' };
+  }
+
+  const clean: DeckCardRef[] = [];
+  for (const c of cards) {
+    const zoneOk = c?.zone === 'oshi' || c?.zone === 'main' || c?.zone === 'yell';
+    const numberOk = isExactString(c?.cardNumber);
+    const countOk = typeof c?.count === 'number' && Number.isInteger(c.count) && c.count > 0;
+    // version stays null when not supplied — never inferred from a same-named or
+    // same-numbered printing. A supplied-but-blank or non-string value is a
+    // failed read, not a published value.
+    const optionalsOk =
+      isOptionalString(c?.version) &&
+      isOptionalString(c?.name) &&
+      isOptionalString(c?.cardKind) &&
+      isOptionalString(c?.imagePath);
+    if (!zoneOk || !numberOk || !countOk || !optionalsOk) {
+      return { cards: [], verified: false, issue: 'incomplete' };
+    }
+    clean.push({
+      zone: c.zone,
+      cardNumber: c.cardNumber.trim(),
       version: c.version ?? null,
-      count: typeof c.count === 'number' && c.count > 0 ? c.count : 1,
-    }));
-  return { cards: clean, verified: clean.length > 0 };
+      count: c.count,
+      name: c.name ?? null,
+      cardKind: c.cardKind ?? null,
+      imagePath: c.imagePath ?? null,
+    });
+  }
+
+  const totals = { oshi: 0, main: 0, yell: 0 };
+  for (const c of clean) totals[c.zone] += c.count;
+  const complete =
+    totals.oshi === RULES.zones.oshi.exactCount &&
+    totals.main === RULES.zones.main.exactCount &&
+    totals.yell === RULES.zones.yell.exactCount;
+
+  if (!complete) return { cards: [], verified: false, issue: 'incomplete' };
+  return { cards: clean, verified: true, issue: null };
 }
 
 export function normalizeDeck(
@@ -95,7 +145,7 @@ export function normalizeDeck(
   index: number,
   fetchedAt: string,
 ): DeckEntry {
-  const { cards, verified } = normalizeCards(raw.cards);
+  const { cards, verified, issue } = normalizeCards(raw.cards);
   const rank = typeof raw.rank === 'number' ? raw.rank : null;
   const decklogCode = raw.decklogCode ?? null;
   const deckId = decklogCode
@@ -120,6 +170,7 @@ export function normalizeDeck(
     colors: Array.isArray(raw.colors) ? raw.colors : [],
     cards,
     cardsVerified: verified,
+    cardsIssue: issue,
     coverage,
     fetchedAt,
   };

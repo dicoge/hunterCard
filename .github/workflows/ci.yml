@@ -113,6 +113,9 @@ jobs:
       - name: Verify tournament collector failure preservation (DIC-979)
         run: npm run test:tournament-collector
 
+      - name: Verify tournament deck import into the deck editor (DIC-1000)
+        run: npm run test:tournament-deck-import
+
       - name: Verify deck editor price adapter fail-closed (DIC-952)
         run: npm run test:deck-price-adapter
 
