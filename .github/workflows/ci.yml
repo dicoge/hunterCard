@@ -53,6 +53,18 @@ jobs:
       - name: Verify deterministic web OAuth redirect URI (DIC-922)
         run: npm run test:web-redirect
 
+      - name: Verify web-Google redirect callback leg (DIC-976)
+        run: npm run test:web-google-callback
+
+      - name: Verify web-Google link redirect start (DIC-976)
+        run: npm run test:auth-link-start
+
+      - name: Verify callback vs persisted-session validation ordering (DIC-976)
+        run: npm run test:auth-redirect-race
+
+      - name: Verify session survives a malformed OAuth callback (DIC-976)
+        run: npm run test:auth-callback-recovery
+
       - name: Verify friendly-but-safe auth error mapping (DIC-922)
         run: npm run test:auth-error-map
 

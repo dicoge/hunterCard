@@ -182,32 +182,118 @@ function testPendingStateExpires() {
 }
 
 function testParseReturnSuccess() {
-  const r = strategy.parseWebRedirectReturn('?code=abc123&state=st-42&scope=email');
+  // The real shape Google returns for response_type=id_token: the credential and
+  // state arrive in the FRAGMENT, with RFC 9207 `iss` echoed in the query.
+  const r = strategy.parseWebRedirectReturn(
+    '?iss=https%3A%2F%2Faccounts.google.com',
+    '#id_token=header.payload.sig&state=st-42',
+  );
   assert.equal(r.kind, 'success');
-  assert.equal(r.code, 'abc123');
+  assert.equal(r.idToken, 'header.payload.sig');
   assert.equal(r.state, 'st-42');
+}
+
+// DIC-976 post-deploy QA regression. Production returned a callback carrying ONLY
+// the non-sensitive `iss` key — no id_token, no code, no credential of any kind.
+// That must fail CLOSED ('none'), never be mistaken for a completed login.
+// It is classified 'malformed', NOT 'none': the caller must still consume the
+// pending state and scrub the URL. Calling it 'none' was the PR #107 CR blocker.
+function testIssOnlyCallbackFailsSafely() {
+  const issOnly = strategy.parseWebRedirectReturn('?iss=https%3A%2F%2Faccounts.google.com', '');
+  assert.equal(issOnly.kind, 'malformed');
+  assert.equal(issOnly.idToken, undefined);
+  assert.equal(issOnly.state, undefined);
+
+  // Same with no fragment argument at all, and with an empty fragment marker.
+  assert.equal(strategy.parseWebRedirectReturn('?iss=https%3A%2F%2Faccounts.google.com').kind, 'malformed');
+  assert.equal(strategy.parseWebRedirectReturn('?iss=https%3A%2F%2Faccounts.google.com', '#').kind, 'malformed');
+}
+
+// A credential arriving WITHOUT its CSRF state cannot be trusted, but it is
+// still a credential sitting in the URL — it must be cleaned up, not ignored.
+function testIdTokenWithoutStateIsMalformedNotNone() {
+  assert.equal(strategy.parseWebRedirectReturn('', '#id_token=header.payload.sig').kind, 'malformed');
+  assert.equal(strategy.parseWebRedirectReturn('?id_token=header.payload.sig').kind, 'malformed');
+}
+
+// Detection and scrubbing share one key list, so anything we clean is also
+// something we recognise. Ordinary app URLs must not match.
+function testOAuthReturnKeyDetection() {
+  assert.equal(strategy.hasOAuthReturnKeys('?iss=x', ''), true);
+  assert.equal(strategy.hasOAuthReturnKeys('', '#id_token=t'), true);
+  assert.equal(strategy.hasOAuthReturnKeys('?code=abc', ''), true);
+  assert.equal(strategy.hasOAuthReturnKeys('?tab=deck', '#/settings'), false);
+  assert.equal(strategy.hasOAuthReturnKeys('', ''), false);
+  assert.equal(strategy.hasOAuthReturnKeys(null, null), false);
+  // Every key the classifier recognises is one the cleanup list also scrubs.
+  for (const key of strategy.OAUTH_RETURN_KEYS) {
+    assert.equal(strategy.hasOAuthReturnKeys(`?${key}=v`, ''), true, `query ${key}`);
+    assert.equal(strategy.hasOAuthReturnKeys('', `#${key}=v`), true, `fragment ${key}`);
+  }
+}
+
+// A bare authorization code is NOT a usable browser credential: Google's token
+// endpoint advertises only client_secret_post/client_secret_basic, so a public
+// browser client cannot redeem it. Treating it as success is exactly what made
+// the flow dead-end, so a code-only callback is never 'success' — it is
+// 'malformed', which still requires the caller to scrub it from the URL.
+function testAuthorizationCodeIsNotTreatedAsCredential() {
+  assert.equal(strategy.parseWebRedirectReturn('?code=abc123&state=st-42').kind, 'malformed');
+  assert.equal(strategy.parseWebRedirectReturn('', '#code=abc123&state=st-42').kind, 'malformed');
 }
 
 function testParseReturnError() {
   const r = strategy.parseWebRedirectReturn('?error=access_denied&state=st-42');
   assert.equal(r.kind, 'error');
   assert.equal(r.error, 'access_denied');
-  // error path never yields a usable code.
-  assert.equal(r.code, undefined);
+  // error path never yields a usable credential.
+  assert.equal(r.idToken, undefined);
+
+  // Google reports errors on the fragment too when response_mode=fragment.
+  const fragErr = strategy.parseWebRedirectReturn('', '#error=access_denied&state=st-42');
+  assert.equal(fragErr.kind, 'error');
+  assert.equal(fragErr.error, 'access_denied');
+
+  // An error alongside a token is still an error — never a success.
+  const mixed = strategy.parseWebRedirectReturn('', '#error=access_denied&id_token=t&state=s');
+  assert.equal(mixed.kind, 'error');
+  assert.equal(mixed.idToken, undefined);
 }
 
 function testParseReturnNone() {
   assert.equal(strategy.parseWebRedirectReturn('').kind, 'none');
   assert.equal(strategy.parseWebRedirectReturn(null).kind, 'none');
+  assert.equal(strategy.parseWebRedirectReturn(null, null).kind, 'none');
   assert.equal(strategy.parseWebRedirectReturn('?foo=bar').kind, 'none');
-  // code without state is NOT a trusted success (CSRF: state is mandatory).
-  assert.equal(strategy.parseWebRedirectReturn('?code=abc').kind, 'none');
+  // id_token without state is NOT a trusted success (CSRF: state is mandatory);
+  // it is 'malformed' so the caller still scrubs it. See the dedicated test.
 }
 
-function testParseReturnLeadingQuestionMarkOptional() {
-  const a = strategy.parseWebRedirectReturn('?code=x&state=y');
-  const b = strategy.parseWebRedirectReturn('code=x&state=y');
+function testParseReturnLeadingMarkersOptional() {
+  const a = strategy.parseWebRedirectReturn('?iss=x', '#id_token=t&state=y');
+  const b = strategy.parseWebRedirectReturn('iss=x', 'id_token=t&state=y');
   assert.deepEqual(a, b);
+}
+
+// The new flow persists no PKCE verifier (there is no code to redeem), so a
+// verifier-less payload must parse. Legacy payloads that still carry one keep
+// working, so a login already in flight across the deploy is not stranded.
+function testPendingStateWithoutVerifier() {
+  const noVerifier = JSON.stringify({
+    nonce: 'n', state: 's', createdAt: 1000, operation: 'login',
+  });
+  const parsed = strategy.parseWebRedirectState(noVerifier, 10 * 60 * 1000, 1000);
+  assert.ok(parsed);
+  assert.equal(parsed.nonce, 'n');
+  assert.equal(parsed.state, 's');
+  assert.equal(parsed.operation, 'login');
+  assert.equal(parsed.codeVerifier, undefined);
+
+  // A link without a verifier still requires its session (fail-closed intact).
+  const linkNoVerifier = JSON.stringify({
+    nonce: 'n', state: 's', createdAt: 1000, operation: 'link',
+  });
+  assert.equal(strategy.parseWebRedirectState(linkNoVerifier, 10 * 60 * 1000, 1000), null);
 }
 
 const tests = [
@@ -221,10 +307,15 @@ const tests = [
   testUnknownOperationFailsClosed,
   testPendingStateFailsClosed,
   testPendingStateExpires,
+  testPendingStateWithoutVerifier,
   testParseReturnSuccess,
+  testIssOnlyCallbackFailsSafely,
+  testIdTokenWithoutStateIsMalformedNotNone,
+  testOAuthReturnKeyDetection,
+  testAuthorizationCodeIsNotTreatedAsCredential,
   testParseReturnError,
   testParseReturnNone,
-  testParseReturnLeadingQuestionMarkOptional,
+  testParseReturnLeadingMarkersOptional,
 ];
 try {
   for (const test of tests) {

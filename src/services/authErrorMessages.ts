@@ -60,6 +60,8 @@ export function friendlyAuthErrorMessage(
       return '此裝置不支援 Apple 登入（需 iOS 13 以上）。';
     case 'no_code':
     case 'no_verifier':
+    case 'no_state':
+    case 'malformed_callback':
     case 'no_id_token':
       return `${label} 登入未完成（未取得授權憑證），請再試一次。`;
     // Web-Google same-window redirect transport diagnostics (DIC-976). Each maps

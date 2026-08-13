@@ -125,21 +125,31 @@ export const useAuthStore = create<AuthStore>()(
       // never hangs on a blank gate (CR blocker 2). A cancel/redirecting sentinel
       // shows no error banner.
       completeWebRedirectLogin: async () => {
+        // Whether this call ADOPTED a session. Only that outcome makes the
+        // ordinary boot validation redundant. Anything else — a malformed/stale
+        // OAuth-shaped URL, or a callback that failed — leaves the persisted
+        // session unexamined, and isAuthenticated is never restored from disk,
+        // so skipping validation there would silently sign the user out. A
+        // failure is surfaced AND followed by validation: the user sees why the
+        // callback failed without losing the session they already had.
+        let adoptedSession = false;
         try {
           const result = await completePendingWebGoogleLogin();
-          if (!result) return; // no pending redirect return — normal boot.
-          // For 'login' result.session is the fresh session; for 'link' it is the
-          // existing session the callback resumed with (account augmented, not
-          // switched). Either way it is the session to adopt now.
-          set({
-            user: result.user,
-            session: result.session,
-            isAuthenticated: true,
-            isGuest: false,
-            isLoading: false,
-            role: result.user.role,
-            error: null,
-          });
+          if (result) {
+            // For 'login' result.session is the fresh session; for 'link' it is
+            // the existing session the callback resumed with (account augmented,
+            // not switched). Either way it is the session to adopt now.
+            set({
+              user: result.user,
+              session: result.session,
+              isAuthenticated: true,
+              isGuest: false,
+              isLoading: false,
+              role: result.user.role,
+              error: null,
+            });
+            adoptedSession = true;
+          }
         } catch (err: any) {
           set({
             isLoading: false,
@@ -152,6 +162,7 @@ export const useAuthStore = create<AuthStore>()(
           set({ redirectPending: false });
           get().setHasHydrated(true);
         }
+        if (!adoptedSession) await get().validateSession();
       },
 
       continueAsGuest: () => {
@@ -258,7 +269,9 @@ export const useAuthStore = create<AuthStore>()(
       // deletion, CR DIC-866 #3) — is dropped; a transient/network failure keeps
       // the session but stays unauthenticated so we fail closed, not open. On
       // success the server-authoritative role is applied, never hard-coded
-      // (CR DIC-866 #4).
+      // (CR DIC-866 #4). It deliberately never writes `error`: it also runs as
+      // the fallback after a FAILED redirect callback, and that callback's
+      // surfaced reason must survive (PR #107 CR).
       validateSession: async () => {
         // Defer entirely when this boot is a web-Google redirect return:
         // completeWebRedirectLogin OWNS the auth result and hydration for that

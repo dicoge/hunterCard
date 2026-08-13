@@ -17,6 +17,7 @@ import {
   serializeWebRedirectState,
   parseWebRedirectState,
   parseWebRedirectReturn,
+  OAUTH_RETURN_KEYS,
   type WebRedirectPendingState,
   type WebRedirectOperation,
 } from './authStrategy';
@@ -536,34 +537,48 @@ async function startWebGoogleRedirect(
   }
   const redirectUri = webGoogleRedirectUri();
   const nonce = randomNonce();
+  // Ask Google for an ID TOKEN, not an authorization code (DIC-976 root cause).
+  // Google's token endpoint advertises only client_secret_post/client_secret_basic
+  // — `none` is absent — so it refuses a public-client PKCE redemption with
+  // `invalid_request: client_secret is missing`. A browser SPA cannot hold that
+  // secret, so the code leg is unredeemable here by construction. The OIDC
+  // id_token response needs no exchange: the token comes back signed, audience-
+  // bound and nonce-bound, and the existing backend already verifies exactly that
+  // (it is the same credential shape native iOS posts). PKCE is intentionally off
+  // — there is no code to protect — while `state` (CSRF) and `nonce` (replay) are
+  // both still minted, sent, and checked.
   const authRequest = new AuthSession.AuthRequest({
     clientId: GOOGLE_CLIENT_ID,
     scopes: googleScopes,
     redirectUri,
-    usePKCE: true,
+    responseType: AuthSession.ResponseType.IdToken,
+    usePKCE: false,
     extraParams: {
       nonce,
+      // Google returns id_token responses in the fragment; be explicit rather
+      // than relying on the default so the return leg's source is unambiguous.
+      response_mode: 'fragment',
       ...(loginHint ? { login_hint: loginHint } : {}),
     },
   });
 
-  // makeAuthUrlAsync loads crypto state (codeVerifier + state) into the request
-  // and returns the full authorize URL. We read verifier/state AFTER this so the
-  // persisted values match the ones baked into the outgoing URL.
+  // makeAuthUrlAsync loads the request's crypto state (here just `state`) and
+  // returns the full authorize URL. We read state AFTER this so the persisted
+  // value matches the one baked into the outgoing URL.
   let url: string;
   try {
     url = await authRequest.makeAuthUrlAsync(googleDiscovery);
   } catch (err) {
     throw wrapUnknownAuthError(err);
   }
-  const codeVerifier = authRequest.codeVerifier;
   const state = authRequest.state;
-  if (!codeVerifier || !state) {
-    throw new AuthError('無法建立安全登入請求，請再試一次。', 400, 'no_verifier');
+  if (!state) {
+    // No CSRF state means the return leg could not be matched back to this
+    // request — refuse before navigating rather than start an unverifiable login.
+    throw new AuthError('無法建立安全登入請求，請再試一次。', 400, 'no_state');
   }
 
   const pending: WebRedirectPendingState = {
-    codeVerifier,
     nonce,
     state,
     createdAt: Date.now(),
@@ -818,10 +833,31 @@ function cleanOAuthReturnFromUrl(): void {
   if (typeof window === 'undefined' || !window.history || !window.location) return;
   try {
     const url = new URL(window.location.href);
+    // Shared with the return CLASSIFIER, so every key that marks a URL as a
+    // callback is also a key we scrub (authStrategy.OAUTH_RETURN_KEYS).
+    const oauthKeys = OAUTH_RETURN_KEYS;
     let touched = false;
-    for (const key of ['code', 'state', 'error', 'error_description', 'scope', 'authuser', 'prompt', 'hd']) {
+    for (const key of oauthKeys) {
       if (url.searchParams.has(key)) {
         url.searchParams.delete(key);
+        touched = true;
+      }
+    }
+    // The id_token arrives in the FRAGMENT. Clearing it is a security
+    // requirement, not cosmetics: it otherwise stays in the address bar, in
+    // history, and in anything the user copy-pastes or shares.
+    if (url.hash) {
+      const frag = new URLSearchParams(url.hash.replace(/^#/, ''));
+      let fragTouched = false;
+      for (const key of oauthKeys) {
+        if (frag.has(key)) {
+          frag.delete(key);
+          fragTouched = true;
+        }
+      }
+      if (fragTouched) {
+        const rest = frag.toString();
+        url.hash = rest ? `#${rest}` : '';
         touched = true;
       }
     }
@@ -843,7 +879,7 @@ function cleanOAuthReturnFromUrl(): void {
 export function hasPendingWebGoogleRedirectReturn(): boolean {
   if (Platform.OS !== 'web') return false;
   if (typeof window === 'undefined' || !window.location) return false;
-  return parseWebRedirectReturn(window.location.search).kind !== 'none';
+  return parseWebRedirectReturn(window.location.search, window.location.hash).kind !== 'none';
 }
 
 // Discriminated result of the web-Google redirect return leg (DIC-976). The
@@ -868,7 +904,7 @@ export async function completePendingWebGoogleLogin(): Promise<WebRedirectComple
   if (Platform.OS !== 'web') return null;
   if (typeof window === 'undefined' || !window.localStorage || !window.location) return null;
 
-  const ret = parseWebRedirectReturn(window.location.search);
+  const ret = parseWebRedirectReturn(window.location.search, window.location.hash);
   if (ret.kind === 'none') return null;
 
   // We have OAuth params in the URL. Load and immediately CLEAR the pending
@@ -889,6 +925,18 @@ export async function completePendingWebGoogleLogin(): Promise<WebRedirectComple
     throw new AuthError(`登入失敗（${ret.error}）`, 400, ret.error || 'oauth_error');
   }
 
+  // OAuth-shaped but unusable. The pending state is already consumed and the URL
+  // already scrubbed above, which is the whole reason this is not treated as an
+  // ordinary page load. Never call the backend from here.
+  if (ret.kind === 'malformed') {
+    // No pending state means this was a stale bookmark or a crafted link rather
+    // than a login this app started — clean it up silently. With pending state
+    // the user really did launch a login, so surface a distinguishable error
+    // instead of leaving them on a screen that looks like nothing happened.
+    if (!pending) return null;
+    throw new AuthError('Google 登入未完成（回應不完整），請再試一次。', 400, 'malformed_callback');
+  }
+
   // No matching (or fail-closed-rejected, e.g. a 'link' missing its session)
   // pending state means this return isn't safely ours. Fail closed silently.
   if (!pending) return null;
@@ -897,27 +945,13 @@ export async function completePendingWebGoogleLogin(): Promise<WebRedirectComple
   if (!ret.state || ret.state !== pending.state) {
     throw new AuthError('登入驗證失敗（狀態不符），請重新登入。', 400, 'state_mismatch');
   }
-  if (!ret.code) {
-    throw new AuthError('未取得授權碼', 400, 'no_code');
+  // The callback must carry a usable credential. A callback WITHOUT one — the
+  // `?iss=…`-only shape production returned (DIC-976 QA) — fails closed here with
+  // a distinguishable code instead of being mistaken for a completed login.
+  const idToken = ret.idToken;
+  if (!idToken) {
+    throw new AuthError('Google 未回傳登入憑證', 400, 'no_id_token');
   }
-
-  const redirectUri = webGoogleRedirectUri();
-  let tokenResponse: Awaited<ReturnType<typeof AuthSession.exchangeCodeAsync>>;
-  try {
-    tokenResponse = await AuthSession.exchangeCodeAsync(
-      {
-        clientId: GOOGLE_CLIENT_ID,
-        code: ret.code,
-        redirectUri,
-        extraParams: { code_verifier: pending.codeVerifier },
-      },
-      googleDiscovery,
-    );
-  } catch (err) {
-    throw wrapUnknownAuthError(err);
-  }
-  const idToken = tokenResponse.idToken;
-  if (!idToken) throw new AuthError('Google 未回傳 id_token', 400, 'no_id_token');
 
   if (pending.operation === 'link') {
     // Resume the link against the EXISTING session. parseWebRedirectState already
