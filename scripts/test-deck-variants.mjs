@@ -10,6 +10,11 @@
  * Run: npm run test:deck-variants
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {
+  normalizeRarityCode as jsNormalizeRarityCode,
+  isPremiumRarityCode as jsIsPremiumRarityCode,
+} from './lib/variant-key.js';
 import {
   resolveLowCostVariant, groupVariantsByCardNumber, searchVariantGroups,
   buildLowCostIndex, normalizeSlotsToLowCost, countLowCostDrift,
@@ -63,6 +68,21 @@ test('SEC / S / OUR / OSR / P / UR are premium; base set rarities are not', () =
   }
   for (const r of ['C', 'U', 'R', 'RR', 'SR', 'OC', 'C_2', 'U_02']) {
     assert.equal(isPremiumPrinting(r), false, `${r} should be base`);
+  }
+});
+
+// The buy-price merge (scripts/, plain JS) classifies a card row's printing with
+// its own copy of this vocabulary. If the two drift, a premium printing can be
+// scored as base on one side and leak the bare listing's price (DIC-1008 CR), so
+// pin them together over every rarity string the shipped dataset actually uses.
+test('scripts/lib/variant-key.js shares this rarity vocabulary over the whole dataset', () => {
+  const cards = Object.values(JSON.parse(fs.readFileSync('data/database.json', 'utf-8')).cards);
+  const vocabulary = [...new Set(cards.map((c) => c.rarity ?? ''))];
+  assert.ok(vocabulary.length > 20, `rarity vocabulary too small (${vocabulary.length})`);
+  for (const rarity of vocabulary) {
+    assert.equal(jsNormalizeRarityCode(rarity), normalizeRarityCode(rarity), `normalizeRarityCode drift on ${rarity}`);
+    const code = normalizeRarityCode(rarity);
+    assert.equal(jsIsPremiumRarityCode(code), isPremiumPrinting(rarity), `premium classification drift on ${rarity}`);
   }
 });
 

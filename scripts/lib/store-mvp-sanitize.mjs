@@ -22,6 +22,12 @@ import path from 'path';
  */
 export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHistory', 'ytStats'];
 
+/** Buy-price fields stripped from each prices[] variant entry. Besides the price
+ * itself, the per-version provenance stamped by merge-buy-prices.js
+ * (buyPriceVersion / buyPriceSource / buyPriceTimestamp) is the same feature
+ * group and must fail closed too — it would otherwise leak store buy-back data. */
+export const FORBIDDEN_VARIANT_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp'];
+
 /**
  * Resolve the Store MVP profile for a BUILD context (web export) from env.
  * Fail-closed opt-out is the only path to OFF; explicit opt-in is the only path
@@ -50,8 +56,9 @@ export function stripForbiddenCardFields(entry) {
   for (const field of FORBIDDEN_CARD_FIELDS) delete out[field];
   if (Array.isArray(out.prices)) {
     out.prices = out.prices.map((p) => {
-      if (p && typeof p === 'object' && 'buyPrice' in p) {
-        const { buyPrice: _drop, ...rest } = p;
+      if (p && typeof p === 'object') {
+        const rest = { ...p };
+        for (const field of FORBIDDEN_VARIANT_FIELDS) delete rest[field];
         return rest;
       }
       return p;

@@ -16,7 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { normalizeCardNumber } from './lib/variant-key.js';
-import { buildBuyIndex, assignVariantBuyPrices, representativeBuyPrice } from './merge-buy-prices.js';
+import { buildBuyIndex, assignVariantBuyMatches, applyVariantBuyProvenance, representativeBuyPrice } from './merge-buy-prices.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.join(__dirname, '../data/database.json');
@@ -60,14 +60,14 @@ export function regenerateBuyAlignment(db, { now, date }) {
     const buyEntries = (numKey && buyIndex.get(numKey)) || [];
 
     if (Array.isArray(card.prices) && card.prices.length > 0) {
-      const perVariant = assignVariantBuyPrices(card.prices, buyEntries);
+      const perVariant = assignVariantBuyMatches(card.prices, buyEntries);
       card.prices.forEach((v, i) => {
-        if (perVariant[i] != null) { v.buyPrice = perVariant[i]; variantsMatched += 1; }
-        else delete v.buyPrice;
+        applyVariantBuyProvenance(v, perVariant[i]);
+        if (perVariant[i] != null) variantsMatched += 1;
       });
     }
 
-    const rep = representativeBuyPrice(card.rarity, buyEntries);
+    const rep = representativeBuyPrice(card, buyEntries);
     if (rep != null) {
       card.buyPrice = rep;
       if (!card.buyPriceHistory || typeof card.buyPriceHistory !== 'object') card.buyPriceHistory = {};

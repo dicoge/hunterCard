@@ -38,8 +38,12 @@ export function stripDisabledCardFields<T extends Record<string, any>>(
     delete out.buyPriceHistory;
     if (Array.isArray(out.prices)) {
       out.prices = out.prices.map((p: any) => {
-        if (p && typeof p === 'object' && 'buyPrice' in p) {
-          const { buyPrice: _drop, ...rest } = p;
+        if (p && typeof p === 'object') {
+          const rest: Record<string, any> = { ...p };
+          // per-version buyPrice + its merge-buy-prices provenance stamps
+          for (const field of ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp']) {
+            delete rest[field];
+          }
           return rest;
         }
         return p;

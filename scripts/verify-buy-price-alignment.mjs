@@ -22,7 +22,8 @@ import os from 'node:os';
 import {
   normalizeCardNumber,
   normalizeRarity,
-  versionClassFromRarity,
+  normalizeRarityCode,
+  isOwnSetPrinting,
   versionClassFromName,
   classifyVariant,
   classifySourceRarity,
@@ -31,7 +32,8 @@ import {
   PARALLEL_RARITIES,
   UNKNOWN_TOKEN,
 } from './lib/variant-key.js';
-import { assignVariantBuyPrices, representativeBuyPrice, buyPriceByToken } from './merge-buy-prices.js';
+import { assignVariantBuyPrices, assignVariantBuyMatches, applyVariantBuyProvenance, buildBuyIndex, buyPriceByToken, representativeBuyPrice } from './merge-buy-prices.js';
+import { latestSourceTs } from './regen-buy-alignment.mjs';
 import { scrapeFullaheadBuy, extractRarity as fullaheadRarity } from './scrape-fullahead-buy.js';
 import { extractRarityFromHref } from './scrape-torecolo-buy.js';
 
@@ -60,6 +62,8 @@ async function acheck(name, fn) {
 
 // 買取版本清單 entry：assignVariantBuyPrices 讀 { token, price }。token = 精確正規化 rarity。
 const E = (rarity, price) => ({ token: normalizeRarity(rarity), price });
+// 一列 database card：representativeBuyPrice 需要卡號 + 該印次 rarity + series。
+const ROW = (cardNumber, rarity, series) => ({ cardNumber, rarity, series });
 
 console.log('── Unit: token 精確正規化（不子字串臆測）──');
 check('已知 rarity 代碼 → 原碼', () => {
@@ -105,17 +109,22 @@ check('sourceToken：bare→\'\'、known→精確 token、unknown→UNKNOWN_TOKE
 });
 
 console.log('── Unit: 版本分類 ──');
-check('rarity → class（產品碼不臆測成平行/簽名）', () => {
-  assert.equal(versionClassFromRarity('SEC'), 'signed');
-  assert.equal(versionClassFromRarity('OUR'), 'parallel');
-  assert.equal(versionClassFromRarity('UR'), 'parallel');
-  assert.equal(versionClassFromRarity('HR'), 'parallel');
-  assert.equal(versionClassFromRarity(null), 'base');
-  assert.equal(versionClassFromRarity('C'), 'base');
-  assert.equal(versionClassFromRarity('S'), 'base');
-  assert.equal(versionClassFromRarity('P'), 'base');
-  assert.equal(versionClassFromRarity('HSD06'), 'base');
-  assert.equal(versionClassFromRarity('HBP04'), 'base');
+check('normalizeRarityCode（卡層級別名）：序號後綴剝掉後得真代碼', () => {
+  assert.equal(normalizeRarityCode('02_HR'), 'HR');
+  assert.equal(normalizeRarityCode('UR_02'), 'UR');
+  assert.equal(normalizeRarityCode('P_02'), 'P');
+  assert.equal(normalizeRarityCode('C_re'), 'C');
+  assert.equal(normalizeRarityCode(' sr '), 'SR');
+  // 看起來像後綴的 premium 代碼不得被切壞
+  assert.equal(normalizeRarityCode('OSR'), 'OSR');
+  assert.equal(normalizeRarityCode('OUR'), 'OUR');
+  assert.equal(normalizeRarityCode(null), '');
+});
+check('isOwnSetPrinting：series 等於卡號集前綴才是原印列', () => {
+  assert.equal(isOwnSetPrinting('hBP03-025', 'hBP03'), true);
+  assert.equal(isOwnSetPrinting('hBP03-025', 'ent07'), false);
+  assert.equal(isOwnSetPrinting('hBP03-025', 'hPR'), false);
+  assert.equal(isOwnSetPrinting('hBP03-025', ''), false);
 });
 check('classifyVariant：名稱 → { versionClass, token }', () => {
   assert.deepEqual(classifyVariant('ラプラス'), { versionClass: 'base', token: '' });
@@ -154,13 +163,56 @@ check('完全無收購資料 → 全 null', () => {
 });
 check('representativeBuyPrice 精確 token，不跨版本 fallback', () => {
   const buy = [E(null, 150)]; // 只有原印版
-  assert.equal(representativeBuyPrice('SEC', buy), null); // 簽名卡對不到 → null（非退回 150）
-  assert.equal(representativeBuyPrice('C', buy), 150); // base 卡 → bare 來源
-  // 標準平行卡 rarity 用精確 token，對不到不退回 bare。
-  assert.equal(representativeBuyPrice('UR', [E('UR', 300), E(null, 150)]), 300);
-  assert.equal(representativeBuyPrice('HR', [E(null, 150)]), null); // 無 HR 來源 → null，不吃 bare 150
-  // 卡層級：產品碼/雜訊 rarity 屬 base class → 取 bare 來源（hBP01-050 P_03 → 原印價）。
-  assert.equal(representativeBuyPrice('P_03', [E('HSD06', 70), E(null, 5800)]), 5800);
+  // 簽名／平行印次對不到自己的 token → null（非退回 150）
+  assert.equal(representativeBuyPrice(ROW('hBP04-005', 'SEC', 'hBP04'), buy), null);
+  assert.equal(representativeBuyPrice(ROW('hBP04-005', 'HR', 'hBP04'), buy), null);
+  // 卡號原印集的一般 rarity 列 → 吃無標記 listing
+  assert.equal(representativeBuyPrice(ROW('hBP04-005', 'C', 'hBP04'), buy), 150);
+  // premium 印次用精確 token，且不因為來源另有 bare 就退回 bare
+  assert.equal(representativeBuyPrice(ROW('hBP04-005', 'UR', 'ent07'), [E('UR', 300), E(null, 150)]), 300);
+});
+check('representativeBuyPrice：非原印列不得吃無標記（bare）listing', () => {
+  const buy = [E(null, 150)];
+  // 再刷／促銷列與「無標記 listing」無從連結 → fail closed
+  assert.equal(representativeBuyPrice(ROW('hBP03-025', 'C', 'ent07'), buy), null);
+  assert.equal(representativeBuyPrice(ROW('hBP03-025', 'C_02', 'hBP07'), buy), null);
+  // 原印列才可以
+  assert.equal(representativeBuyPrice(ROW('hBP03-025', 'C', 'hBP03'), buy), 150);
+});
+check('representativeBuyPrice：未知 rarity 標記 fail closed，絕不當成原印版', () => {
+  const buy = [E(null, 150), E('HR', 4200)];
+  for (const rarity of ['XYZ', 'P_XX', '謎', '', null]) {
+    assert.equal(representativeBuyPrice(ROW('hBP03-025', rarity, 'hBP03'), buy), null, `rarity=${rarity}`);
+  }
+});
+check('representativeBuyPrice：來源同時有 bare 與本列代碼 → 歧義 fail closed', () => {
+  // hBP08-014 情境：卡本身是 SR，來源同時列出無標記 ¥1 與 -SR ¥250，
+  // 無法證明本列對應哪一個 listing。
+  const buy = [E(null, 1), E('SR', 250), E('UR', 1600)];
+  assert.equal(representativeBuyPrice(ROW('hBP08-014', 'SR', 'hBP08'), buy), null);
+  // 代碼不撞就沒有歧義：RR 原印列照樣吃 bare
+  assert.equal(representativeBuyPrice(ROW('hSD04-009', 'RR', 'hSD04'), buy), 1);
+});
+
+console.log('── Regression: hBP03-025（DIC-1008 CR：02_HR 曾拿到 bare ¥10）──');
+check('production-shaped hBP03-025：只有原印 C 列拿 ¥10，HR ¥4200 不外溢', () => {
+  // 來源（fullahead）實際只有兩筆：無標記 ¥10、-HR ¥4200。
+  const buy = [E(null, 10), E('HR', 4200)];
+  // database 的四列印次，rarity 依 committed 資料原樣（含 02_HR 別名）。
+  const rows = [
+    ROW('hBP03-025', 'C', 'hBP03'), // 原印列
+    ROW('hBP03-025', 'HR', 'hBP07'), // HR 再刷
+    ROW('hBP03-025', '02_HR', 'ent07'), // HR 再刷（別名寫法）
+    ROW('hBP03-025', 'P', 'hPR'), // 促銷列，來源無 P listing
+  ];
+  const out = rows.map((r) => representativeBuyPrice(r, buy));
+  assert.deepEqual(out, [10, 4200, 4200, null]);
+  // bare ¥10 只能出現在原印列；任何 premium 印次拿到 10 就是本次 CR 的洩漏
+  assert.deepEqual(out.map((p) => p === 10), [true, false, false, false]);
+  // 版本相互隔離：base 不吃 HR、HR 不吃 base
+  assert.notEqual(out[1], out[0]);
+  const variants = [{ name: 'さくらみこ' }, { name: 'さくらみこ(パラレル/HR)(エラッタ前)' }];
+  assert.deepEqual(assignVariantBuyPrices(variants, buy), [10, 4200]);
 });
 
 console.log('── Unit: 帶標籤替代平行版精確對齊 ──');
@@ -209,7 +261,7 @@ check('merge：UNKNOWN_TOKEN 報價不得洩漏到 base，也不 match 任何 va
   const buy = [{ token: '', price: 100 }, { token: UNKNOWN_TOKEN, price: 9999 }];
   // 原印版只吃 bare → 100，絕不被 9999 蓋掉。
   assert.deepEqual(assignVariantBuyPrices([{ name: 'X' }], buy), [100]);
-  assert.equal(representativeBuyPrice('C', buy), 100);
+  assert.equal(representativeBuyPrice(ROW('hBP01-001', 'C', 'hBP01'), buy), 100);
   // 沒有任何 variant 會對到 UNKNOWN_TOKEN。
   const parallel = assignVariantBuyPrices([{ name: 'X(パラレル)' }, { name: 'X' }], buy);
   assert.deepEqual(parallel, [null, 100]);
@@ -254,34 +306,61 @@ for (const marker of ['【XYZ】', '【謎】', '【XYZ_1】']) {
   });
 }
 
+console.log('── Unit: provenance 輸出 ──');
+check('assignVariantBuyMatches 帶出 token/source/timestamp；applyVariantBuyProvenance 寫入欄位', () => {
+  const variants = [{ name: 'X(パラレル/サイン)' }, { name: 'X' }];
+  const buy = [
+    { token: 'SEC', price: 38000, source: 'fullahead', timestamp: '2026-08-14T12:15:00Z' },
+    { token: '', price: 150, source: 'torecolo', timestamp: '2026-08-13T09:00:00Z' },
+  ];
+  const matches = assignVariantBuyMatches(variants, buy);
+  assert.equal(matches[0].price, 38000);
+  assert.equal(matches[0].token, 'SEC');
+  assert.equal(matches[0].source, 'fullahead');
+  assert.equal(matches[1].token, '');
+  assert.equal(matches[1].source, 'torecolo');
+  const v1 = {};
+  const v2 = {};
+  applyVariantBuyProvenance(v1, matches[0]);
+  applyVariantBuyProvenance(v2, matches[1]);
+  assert.deepEqual(v1, {
+    buyPrice: 38000, buyPriceVersion: 'SEC',
+    buyPriceSource: 'fullahead', buyPriceTimestamp: '2026-08-14T12:15:00Z',
+  });
+  assert.equal(v2.buyPriceVersion, 'BASE'); // bare 原印版以 'BASE' 標記
+  assert.equal(v2.buyPriceSource, 'torecolo');
+  // null → 連同 provenance 一起清乾淨（不留殘值）
+  applyVariantBuyProvenance(v1, null);
+  assert.deepEqual(v1, {});
+});
+check('buildBuyIndex 每筆都帶來源店家 + 抓取時間戳', () => {
+  const idx = buildBuyIndex(latestSourceTs() + 1000); // 以來源自身時間基準，跨日重跑也新鮮
+  let saw = 0;
+  for (const [, perNum] of idx) {
+    for (const e of perNum) {
+      if (saw >= 3) break;
+      assert.ok(typeof e.price === 'number' && e.price > 0, 'price 異常');
+      assert.ok(e.source, '每筆都必須有來源店家');
+      assert.ok(e.timestamp, '每筆都必須有來源抓取時間戳');
+      assert.ok(['fullahead', 'torecolo'].includes(e.source), `來源店家異常 ${e.source}`);
+      saw += 1;
+    }
+    if (saw >= 3) break;
+  }
+  assert.ok(saw >= 3, '買取來源應有資料可驗');
+});
+
 // ── 真實資料驗證 ──
 console.log('── Integration: 真實 database.json ──');
 const db = JSON.parse(fs.readFileSync(path.join(DATA, 'database.json'), 'utf-8')).cards;
 
-// 由來源檔重建 numKey → Map(token → maxPrice)，即 merge 端 buildBuyIndex 的等價重算。
-function loadSourceIndex() {
-  const byNum = new Map(); // numKey -> Map(token -> maxPrice)
-  for (const f of ['fullahead-prices.json', 'torecolo-prices.json']) {
-    let raw;
-    try { raw = JSON.parse(fs.readFileSync(path.join(DATA, 'buy-prices', f), 'utf-8')); } catch { continue; }
-    for (const [k, v] of Object.entries(raw || {})) {
-      const num = normalizeCardNumber(k);
-      const price = v && Number(v.buyPrice);
-      if (!num || !(price > 0)) continue;
-      const token = sourceToken(v.rarity, k.slice(num.length));
-      if (token === UNKNOWN_TOKEN) continue; // 與 merge buildBuyIndex 一致：未知標記 fail closed
-      if (!byNum.has(num)) byNum.set(num, new Map());
-      const m = byNum.get(num);
-      const prev = m.get(token);
-      if (prev == null || price > prev) m.set(token, price);
-    }
-  }
-  return byNum;
-}
-const srcIdx = loadSourceIndex();
+// 直接使用 merge 端的 buildBuyIndex（以來源自身最新時間戳為基準 → 跨日重跑都新鮮）重建
+// numKey → Map(token → { price, source, timestamp })，與寫入 DB 的同一支邏輯、同一檔案
+// 順序，保證 provenance 重算與 committed 完全可比（不另造一份可能 drift 的 replica）。
+const srcIdx = buildBuyIndex(latestSourceTs() + 1000);
 function buyEntriesFor(num) {
   const m = (num && srcIdx.get(num)) || new Map();
-  return [...m.entries()].map(([token, price]) => ({ token, price }));
+  return [...m.entries()].map(([token, e]) => ({ token, ...e }));
 }
 function findByCardNumber(cardNum) {
   const target = String(cardNum).toUpperCase();
@@ -294,13 +373,21 @@ function findByCardNumber(cardNum) {
 check('acceptance: hBP04-005 base=150 / parallel=5000 / signed=38000（不固定 38000）', () => {
   const c = findByCardNumber('hBP04-005');
   assert.ok(c, 'card hBP04-005 存在');
-  const byName = Object.fromEntries(c.prices.map((v) => [v.name, v.buyPrice ?? null]));
-  assert.equal(byName['ラプラス・ダークネス'], 150);
-  assert.equal(byName['ラプラス・ダークネス(パラレル)'], 5000);
-  assert.equal(byName['ラプラス・ダークネス(パラレル/サイン)'], 38000);
+  const byName = Object.fromEntries(c.prices.map((v) => [v.name, v]));
+  assert.equal(byName['ラプラス・ダークネス'].buyPrice, 150);
+  assert.equal(byName['ラプラス・ダークネス(パラレル)'].buyPrice, 5000);
+  assert.equal(byName['ラプラス・ダークネス(パラレル/サイン)'].buyPrice, 38000);
   // 三版本必須互異（證明無 max 塌陷）
-  const vals = [byName['ラプラス・ダークネス'], byName['ラプラス・ダークネス(パラレル)'], byName['ラプラス・ダークネス(パラレル/サイン)']];
+  const vals = [byName['ラプラス・ダークネス'].buyPrice, byName['ラプラス・ダークネス(パラレル)'].buyPrice, byName['ラプラス・ダークネス(パラレル/サイン)'].buyPrice];
   assert.equal(new Set(vals).size, 3);
+  // 每個版本都必須有來源可追溯的版本 token（5000 來自全速面 leftover 平行來源 OUR）
+  assert.equal(byName['ラプラス・ダークネス'].buyPriceVersion, 'BASE');
+  assert.equal(byName['ラプラス・ダークネス(パラレル)'].buyPriceVersion, 'OUR');
+  assert.equal(byName['ラプラス・ダークネス(パラレル/サイン)'].buyPriceVersion, 'SEC');
+  for (const [nm, v] of Object.entries(byName)) {
+    assert.ok(v.buyPriceSource, `hBP04-005 ${nm} 缺來源店家`);
+    assert.ok(v.buyPriceTimestamp, `hBP04-005 ${nm} 缺來源時間戳`);
+  }
 });
 
 check('acceptance: hBP02-017 兩個純 (パラレル) 不得塌成同價（歧義 → fail closed）', () => {
@@ -334,15 +421,106 @@ check('全庫 invariant: 逐版本以 assignVariantBuyPrices 重算，與 DB 完
   console.log(`      （掃描 ${scanned} 個版本，全部等於精確 token 重算結果）`);
 });
 
-check('全庫 invariant: card.buyPrice 等於 representativeBuyPrice（本卡 rarity 精確 token）', () => {
+check('全庫 invariant: 每個版本 buyPrice 的 provenance（版本/來源/時間戳）與來源重算一致', () => {
+  let scanned = 0;
+  const violations = [];
+  for (const [id, c] of Object.entries(db)) {
+    if (!Array.isArray(c.prices) || c.prices.length === 0) continue;
+    const num = normalizeCardNumber(c.cardNumber);
+    const expected = assignVariantBuyMatches(c.prices, buyEntriesFor(num));
+    c.prices.forEach((v, i) => {
+      const e = expected[i];
+      scanned += 1;
+      const wantVersion = e ? (e.token === '' ? 'BASE' : e.token) : null;
+      const wantSource = e ? e.source : null;
+      const wantTs = e ? e.timestamp : null;
+      if ((v.buyPrice ?? null) !== (e ? e.price : null)) violations.push(`${id} :: ${v.name} buyPrice`);
+      if ((v.buyPriceVersion ?? null) !== wantVersion) violations.push(`${id} :: ${v.name} buyPriceVersion stored=${v.buyPriceVersion ?? null} want=${wantVersion}`);
+      if ((v.buyPriceSource ?? null) !== wantSource) violations.push(`${id} :: ${v.name} buyPriceSource stored=${v.buyPriceSource ?? null} want=${wantSource}`);
+      if ((v.buyPriceTimestamp ?? null) !== wantTs) violations.push(`${id} :: ${v.name} buyPriceTimestamp`);
+    });
+  }
+  assert.ok(scanned > 500, `掃描版本數過少（${scanned}）`);
+  assert.equal(violations.length, 0, `provenance 與精確重算不符 ${violations.length} 筆，例：\n      ${violations.slice(0, 8).join('\n      ')}`);
+  console.log(`      （掃描 ${scanned} 個版本，buyPrice/版本/來源/時間戳全等於來源重算）`);
+});
+
+check('全庫 invariant: card.buyPrice 等於 representativeBuyPrice（本列印次精確 token）', () => {
   const violations = [];
   for (const [id, c] of Object.entries(db)) {
     const num = normalizeCardNumber(c.cardNumber);
-    const expected = representativeBuyPrice(c.rarity, buyEntriesFor(num));
+    const expected = representativeBuyPrice(c, buyEntriesFor(num));
     const stored = c.buyPrice ?? null;
     if (stored !== (expected ?? null)) violations.push(`${id} stored=${stored} expected=${expected ?? null}`);
   }
   assert.equal(violations.length, 0, `card.buyPrice 與精確重算不符 ${violations.length} 筆，例：\n      ${violations.slice(0, 8).join('\n      ')}`);
+});
+
+// DIC-1008 CR：上一版的全庫 invariant 用「同一支 resolver」算期望值，resolver 自己的
+// 洩漏因此永遠測不出來（107 列非原印卡拿到 bare 報價卻全綠）。以下這條刻意 **不呼叫
+// resolver**，直接從來源檔重建每個卡號的 listing 表，逐列檢查「這個價格是哪一筆 listing
+// 給的、那筆 listing 能不能綁到這一列印次」。
+check('全庫 invariant（獨立於 resolver）: 每個 card.buyPrice 都能綁回一筆可證明的來源 listing', () => {
+  // 直接讀原始來源檔（不經 buildBuyIndex）：numKey → { token → 最高報價 }。
+  const listings = new Map();
+  for (const file of ['torecolo-prices.json', 'fullahead-prices.json']) {
+    const raw = JSON.parse(fs.readFileSync(path.join(DATA, 'buy-prices', file), 'utf-8'));
+    for (const [key, entry] of Object.entries(raw || {})) {
+      const price = Number(entry && entry.buyPrice);
+      const num = normalizeCardNumber(key);
+      if (!num || !Number.isFinite(price) || price <= 0) continue;
+      const token = normalizeRarity((entry && entry.rarity) || key.slice(num.length).replace(/^[-_\s]+/, ''));
+      if (!listings.has(num)) listings.set(num, new Map());
+      const perNum = listings.get(num);
+      if (!perNum.has(token) || price > perNum.get(token)) perNum.set(token, price);
+    }
+  }
+
+  const bareOnPremium = []; // CR 指出的 107 列類別
+  const unprovable = [];
+  const ambiguous = [];
+  let priced = 0;
+  let ownSetBase = 0;
+  for (const [id, c] of Object.entries(db)) {
+    const stored = c.buyPrice ?? null;
+    if (stored === null) continue; // fail closed 永遠合法
+    priced += 1;
+    const perNum = listings.get(normalizeCardNumber(c.cardNumber)) || new Map();
+    const code = normalizeRarityCode(c.rarity);
+    const bare = perNum.get('') ?? null;
+    const exact = perNum.get(code) ?? null;
+    const own = isOwnSetPrinting(c.cardNumber, c.series);
+    const where = `${id} rarity=${c.rarity} series=${c.series} stored=${stored} bare=${bare} exact(${code})=${exact}`;
+    if (exact !== null && stored === exact) continue; // 來源以本列代碼明確標記
+    if (stored === bare) {
+      // 無標記 listing 只描述「卡號的原印版」：非原印列拿到它就是跨印次借價。
+      if (!own) bareOnPremium.push(where);
+      else if (exact !== null) ambiguous.push(where); // bare 與 -CODE 並存 → 無從選定
+      else ownSetBase += 1;
+      continue;
+    }
+    unprovable.push(where); // 既非 bare 也非本列代碼的報價 → 來源根本沒證明過
+  }
+
+  assert.equal(bareOnPremium.length, 0,
+    `非原印列吃到無標記（原印）報價 ${bareOnPremium.length} 筆，例：\n      ${bareOnPremium.slice(0, 8).join('\n      ')}`);
+  assert.equal(ambiguous.length, 0,
+    `bare 與同代碼 listing 並存卻仍給價 ${ambiguous.length} 筆，例：\n      ${ambiguous.slice(0, 8).join('\n      ')}`);
+  assert.equal(unprovable.length, 0,
+    `card.buyPrice 對不到任何來源 listing ${unprovable.length} 筆，例：\n      ${unprovable.slice(0, 8).join('\n      ')}`);
+  assert.ok(priced > 100, `帶價卡列過少（${priced}），invariant 失去意義`);
+  console.log(`      （${priced} 張帶價卡列全部可綁回來源 listing：原印 bare ${ownSetBase} 張、來源明確標記 ${priced - ownSetBase} 張）`);
+});
+
+check('acceptance: hBP03-025 四列印次 —— 只有原印 C 列帶 bare ¥10（DIC-1008 CR 具體案例）', () => {
+  const rows = Object.entries(db).filter(([, c]) => c.cardNumber === 'hBP03-025');
+  assert.equal(rows.length, 4, `hBP03-025 應有 4 列印次，實得 ${rows.length}`);
+  const byId = Object.fromEntries(rows.map(([id, c]) => [id, c.buyPrice ?? null]));
+  assert.equal(byId['hBP03-025_hBP03'], 10, '原印 C 列應為 bare ¥10');
+  assert.equal(byId['hBP03-025_hBP07'], 4200, 'HR 列應為精確 HR ¥4200');
+  assert.equal(byId['hBP03-025_ent07'], 4200, '02_HR 別名列應正規化成 HR ¥4200，絕不是 bare ¥10');
+  assert.equal(byId['hBP03-025_hPR'], null, '來源無 P listing，促銷列須 fail closed');
+  assert.equal(Object.values(byId).filter((p) => p === 10).length, 1, '¥10 只能出現在原印列');
 });
 
 check('全庫 invariant: 多版本卡不得所有版本共用同一收購價（當來源本身分版時）', () => {
