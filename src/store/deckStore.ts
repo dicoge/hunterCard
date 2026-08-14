@@ -14,6 +14,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import type { Deck, DeckCard, DeckZone, DeckSlot } from '../utils/deckRules';
 import { ownershipKey } from '../utils/deckRules';
+import { normalizeSlotsToLowCost } from '../utils/deckVariants';
 
 function newId(): string {
   return `deck_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -51,6 +52,9 @@ interface DeckState {
   /** add `delta` copies of a card to a zone (negative removes; removes slot at 0) */
   changeCard: (deckId: string, zone: DeckZone, card: DeckCard, delta: number) => void;
   removeCard: (deckId: string, zone: DeckZone, cardId: string) => void;
+  /** rewrite every slot onto its low-cost default printing (DIC-1004 §A5).
+   * Zones and quantities are preserved; the global collection is never touched. */
+  applyLowCostVariants: (deckId: string, index: Map<string, DeckCard>) => void;
 
   setOwned: (cardNumber: string, version: string, qty: number) => void;
   /** apply a signed delta to the owned count; clamps at 0 (never negative) */
@@ -121,6 +125,17 @@ export const useDeckStore = create<DeckState>()(
       removeCard: (deckId, zone, cardId) => set((s) => ({
         decks: s.decks.map((d) => d.id === deckId
           ? { ...d, [zone]: d[zone].filter((sl) => sl.card.id !== cardId), updatedAt: new Date().toISOString() }
+          : d),
+      })),
+      applyLowCostVariants: (deckId, index) => set((s) => ({
+        decks: s.decks.map((d) => d.id === deckId
+          ? {
+              ...d,
+              oshi: normalizeSlotsToLowCost(d.oshi, 'oshi', index),
+              main: normalizeSlotsToLowCost(d.main, 'main', index),
+              yell: normalizeSlotsToLowCost(d.yell, 'yell', index),
+              updatedAt: new Date().toISOString(),
+            }
           : d),
       })),
 

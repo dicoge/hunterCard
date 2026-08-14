@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  SafeAreaView, ActivityIndicator, FlatList,
+  SafeAreaView, ActivityIndicator, FlatList, Modal,
 } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDeckStore } from '../store/deckStore';
 import {
   validateDeck, deckStats, computeGap, eligibleZone, isDeckLegal, ownershipKey,
-  type DeckCard, type DeckZone, type Deck,
+  type DeckCard, type DeckZone, type Deck, type ValidationIssue,
 } from '../utils/deckRules';
-import { loadCardDatabase, searchCards, type CardDatabase } from '../utils/deckCardData';
+import {
+  groupVariantsByCardNumber, searchVariantGroups, buildLowCostIndex, countLowCostDrift,
+} from '../utils/deckVariants';
+import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
 
 const ZONE_LABELS: Record<DeckZone, string> = {
   oshi: '推しホロメン',
@@ -27,6 +30,9 @@ export default function DeckEditorScreen() {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState(false);
+  // Full rule validation is surfaced ONLY when the player presses 完成組牌
+  // (DIC-1004 §B) — null means the result sheet is closed.
+  const [finalizeIssues, setFinalizeIssues] = useState<ValidationIssue[] | null>(null);
 
   const decks = useDeckStore((s) => s.decks);
   const activeDeckId = useDeckStore((s) => s.activeDeckId);
@@ -35,6 +41,7 @@ export default function DeckEditorScreen() {
   const renameDeck = useDeckStore((s) => s.renameDeck);
   const setActiveDeck = useDeckStore((s) => s.setActiveDeck);
   const changeCard = useDeckStore((s) => s.changeCard);
+  const applyLowCostVariants = useDeckStore((s) => s.applyLowCostVariants);
   const setOwned = useDeckStore((s) => s.setOwned);
   const adjustOwned = useDeckStore((s) => s.adjustOwned);
 
@@ -55,12 +62,21 @@ export default function DeckEditorScreen() {
     setRenaming(false);
     setRenameValue('');
     setRenameError(false);
+    setFinalizeIssues(null);
   }, [activeDeckId]);
 
-  const results = useMemo(
-    () => (db ? searchCards(db.cards, query) : []),
-    [db, query],
+  // MVP search shows ONE row per card number: its low-cost default printing,
+  // not every premium reprint (DIC-1004 §A2).
+  const variantGroups = useMemo(
+    () => (db ? groupVariantsByCardNumber(db.cards, db.priceRecords) : []),
+    [db],
   );
+  const lowCostIndex = useMemo(() => buildLowCostIndex(variantGroups), [variantGroups]);
+  const results = useMemo(
+    () => searchVariantGroups(variantGroups, query),
+    [variantGroups, query],
+  );
+  const lowCostDrift = activeDeck ? countLowCostDrift(activeDeck, lowCostIndex) : 0;
 
   // Resolve a collection entry (keyed by normalized ownershipKey) back to a
   // displayable card. Built from the loaded database so the global inventory can
@@ -87,9 +103,6 @@ export default function DeckEditorScreen() {
   }, [collection, cardByOwnershipKey]);
 
   const stats = activeDeck ? deckStats(activeDeck) : null;
-  const issues = activeDeck ? validateDeck(activeDeck) : [];
-  const errors = issues.filter((i) => i.level === 'error');
-  const warnings = issues.filter((i) => i.level === 'warning');
   const gap = activeDeck && db ? computeGap(activeDeck, collection, db.priceRecords) : null;
 
   function addToDeck(card: DeckCard) {
@@ -97,6 +110,11 @@ export default function DeckEditorScreen() {
     const zone = eligibleZone(card);
     if (!zone) return;
     changeCard(activeDeck.id, zone, card, 1);
+  }
+
+  function finalizeDeck() {
+    if (!activeDeck) return;
+    setFinalizeIssues(validateDeck(activeDeck));
   }
 
   function startRename() {
@@ -183,37 +201,44 @@ export default function DeckEditorScreen() {
         value={query}
         onChangeText={setQuery}
       />
+      <Text style={styles.muted}>每個卡號只顯示一列，預設採用可出賽的低配版本。</Text>
       <FlatList
         data={results}
-        keyExtractor={(c) => c.id}
+        keyExtractor={(g) => g.cardNumber}
         style={styles.resultList}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => {
-          const zone = eligibleZone(item);
+        renderItem={({ item: group }) => {
+          const card = group.card;
+          const zone = eligibleZone(card);
           return (
             <View style={styles.resultRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardName}>{item.name}</Text>
+                <Text style={styles.cardName}>{card.name}</Text>
                 <Text style={styles.cardMeta}>
-                  {item.cardNumber}{item.rarity ? ` · ${item.rarity}` : ''}
+                  {card.cardNumber}{card.rarity ? ` · ${card.rarity}` : ''}
                   {zone ? ` · ${ZONE_LABELS[zone]}` : ' · 無法分類'}
                 </Text>
+                {group.variants.length > 1 && (
+                  <Text style={styles.lowCostTag} testID={`low-cost-tag-${group.cardNumber}`}>
+                    預設低配版本（共 {group.variants.length} 種版本）
+                  </Text>
+                )}
               </View>
               <TouchableOpacity
                 style={styles.ownBtn}
-                onPress={() => adjustOwned(item.cardNumber, item.rarity, 1)}
+                onPress={() => adjustOwned(card.cardNumber, card.rarity, 1)}
                 accessibilityRole="button"
-                accessibilityLabel={`收藏 +1 ${item.name}`}
-                testID={`collection-add-${item.id}`}
+                accessibilityLabel={`收藏 +1 ${card.name}`}
+                testID={`collection-add-${card.id}`}
               >
                 <Text style={styles.ownBtnText}>＋擁有</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.addBtn, !zone && styles.addBtnDisabled]}
                 disabled={!zone}
-                onPress={() => addToDeck(item)}
+                onPress={() => addToDeck(card)}
                 accessibilityRole="button"
-                accessibilityLabel={zone ? `加入牌組 ${item.name}` : '無法分類'}
+                accessibilityLabel={zone ? `加入牌組 ${card.name}` : '無法分類'}
               >
                 <Text style={styles.addBtnText}>＋</Text>
               </TouchableOpacity>
@@ -292,6 +317,29 @@ export default function DeckEditorScreen() {
           <Stat label="總計" value={stats.total} target={stats.totalTarget} emphasize />
         </View>
       )}
+
+      <View style={styles.finalizeRow}>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={finalizeDeck}
+          testID="deck-finalize-button"
+          accessibilityRole="button"
+          accessibilityLabel="完成組牌並檢查規則"
+        >
+          <Text style={styles.primaryBtnText}>完成組牌</Text>
+        </TouchableOpacity>
+        {lowCostDrift > 0 && (
+          <TouchableOpacity
+            onPress={() => applyLowCostVariants(activeDeck.id, lowCostIndex)}
+            testID="deck-apply-low-cost"
+            accessibilityRole="button"
+            accessibilityLabel={`套用低配版本，將改寫 ${lowCostDrift} 張卡片`}
+          >
+            <Text style={styles.link}>套用低配版本（{lowCostDrift}）</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      <Text style={styles.muted}>編輯中不中斷提示；按「完成組牌」才會檢查完整規則。</Text>
 
       {(['oshi', 'main', 'yell'] as DeckZone[]).map((zone) => (
         <View key={zone} style={styles.zoneBlock}>
@@ -373,26 +421,9 @@ export default function DeckEditorScreen() {
     </View>
   );
 
-  const validationPanel = (
+  const estimatePanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <Text style={styles.h2}>規則校驗</Text>
-      {errors.length === 0 && warnings.length === 0 && (
-        <Text style={[styles.badgeText, { color: COLORS.success }]}>✓ 目前無違規（合法牌組）</Text>
-      )}
-      {errors.map((i, idx) => (
-        <View key={`e${idx}`} style={[styles.issue, styles.issueError]}>
-          <Text style={styles.issueLevel}>🚫 錯誤</Text>
-          <Text style={styles.issueMsg}>{i.message}</Text>
-        </View>
-      ))}
-      {warnings.map((i, idx) => (
-        <View key={`w${idx}`} style={[styles.issue, styles.issueWarn]}>
-          <Text style={styles.issueLevel}>⚠️ 警告</Text>
-          <Text style={styles.issueMsg}>{i.message}</Text>
-        </View>
-      ))}
-
-      <Text style={[styles.h2, { marginTop: 16 }]}>缺卡估價</Text>
+      <Text style={styles.h2}>缺卡估價</Text>
       <Text style={styles.muted}>需求 / 擁有 / 缺少 · 價格僅取同卡號＋同版本精確匹配</Text>
       {gap && gap.rows.map((r) => (
         <View key={`${r.cardNumber}|${r.version}`} style={styles.gapRow}>
@@ -455,8 +486,57 @@ export default function DeckEditorScreen() {
     </View>
   );
 
+  // Full rule validation lives here and nowhere else: it opens only after
+  // 完成組牌, so an in-progress draft never looks like a system failure.
+  const finalizeSheet = (
+    <Modal
+      visible={finalizeIssues !== null}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setFinalizeIssues(null)}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard} accessibilityViewIsModal testID="deck-finalize-sheet">
+          {finalizeIssues && finalizeIssues.length === 0 ? (
+            <>
+              <Text style={[styles.h2, { color: COLORS.success }]}>✓ 組牌完成</Text>
+              <Text style={styles.muted}>此牌組符合所有規則，已可出賽。</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.h2}>尚未完成，還有 {finalizeIssues?.length ?? 0} 項需要調整</Text>
+              <ScrollView style={styles.modalList}>
+                {finalizeIssues?.map((i, idx) => (
+                  <View
+                    key={`${i.code}-${idx}`}
+                    style={[styles.issue, i.level === 'error' ? styles.issueError : styles.issueWarn]}
+                  >
+                    <Text style={styles.issueLevel}>{i.level === 'error' ? '🚫 錯誤' : '⚠️ 警告'}</Text>
+                    <Text style={styles.issueMsg}>{i.message}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          )}
+          <TouchableOpacity
+            style={[styles.primaryBtn, styles.modalBtn]}
+            onPress={() => setFinalizeIssues(null)}
+            testID="deck-finalize-close"
+            accessibilityRole="button"
+            accessibilityLabel="關閉並回到編輯"
+          >
+            <Text style={styles.primaryBtnText}>
+              {finalizeIssues && finalizeIssues.length === 0 ? '完成' : '回到編輯'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
+      {finalizeSheet}
       {isDesktop ? (
         <ScrollView horizontal={false} contentContainerStyle={styles.desktopWrap}>
           <View style={styles.desktopCols}>
@@ -464,7 +544,7 @@ export default function DeckEditorScreen() {
             {zonesPanel}
             <View style={styles.desktopStackCol}>
               {collectionPanel}
-              {validationPanel}
+              {estimatePanel}
             </View>
           </View>
         </ScrollView>
@@ -473,18 +553,23 @@ export default function DeckEditorScreen() {
           {zonesPanel}
           {searchPanel}
           {collectionPanel}
-          {validationPanel}
+          {estimatePanel}
         </ScrollView>
       )}
     </SafeAreaView>
   );
 }
 
+// An incomplete deck is a 草稿, not a failure — error wording is reserved for a
+// failed 完成組牌 attempt (DIC-1004 §B5).
 function LegalBadge({ deck }: { deck: Deck }) {
   const legal = isDeckLegal(deck);
   return (
-    <Text style={[styles.badgeText, { color: legal ? COLORS.success : COLORS.error }]}>
-      {legal ? '合法' : '有錯誤'}
+    <Text
+      style={[styles.badgeText, { color: legal ? COLORS.success : COLORS.textSecondary }]}
+      testID={`deck-badge-${deck.id}`}
+    >
+      {legal ? '可出賽' : '草稿'}
     </Text>
   );
 }
@@ -564,4 +649,10 @@ const styles = StyleSheet.create({
   gapPrice: { color: COLORS.primaryLight, fontSize: 12 },
   totalCard: { marginTop: 12, backgroundColor: COLORS.surfaceLight, borderRadius: 8, padding: 12 },
   totalText: { color: COLORS.text, fontSize: 15, fontWeight: 'bold' },
+  lowCostTag: { color: COLORS.primaryLight, fontSize: 11, marginTop: 2 },
+  finalizeRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 4 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  modalCard: { width: '100%', maxWidth: 460, backgroundColor: COLORS.surface, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: COLORS.border },
+  modalList: { maxHeight: 300 },
+  modalBtn: { marginTop: 14, alignSelf: 'flex-end' },
 });
