@@ -282,8 +282,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hYS01-004_hYS01"
+    },
+    {
+      "date": "2026-08-14",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hYS01-004_hYS01"
     }
   ],
-  "lastUpdated": "2026-08-13T12:20:33.492Z",
+  "lastUpdated": "2026-08-14T12:20:47.524Z",
   "nameZh": "星街彗星"
 }

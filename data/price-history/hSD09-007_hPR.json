@@ -373,8 +373,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD09-007_hPR"
+    },
+    {
+      "date": "2026-08-14",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-007_hPR"
     }
   ],
-  "lastUpdated": "2026-08-13T12:20:33.537Z",
+  "lastUpdated": "2026-08-14T12:20:47.571Z",
   "nameZh": "不知火芙蕾雅"
 }

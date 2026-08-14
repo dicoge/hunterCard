@@ -373,8 +373,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD08-007_hSD08"
+    },
+    {
+      "date": "2026-08-14",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD08-007_hSD08"
     }
   ],
-  "lastUpdated": "2026-08-13T12:20:33.336Z",
+  "lastUpdated": "2026-08-14T12:20:47.407Z",
   "nameZh": "角卷綿芽"
 }
