@@ -108,20 +108,3 @@ export async function loadCardDatabase(): Promise<CardDatabase> {
 
   return inflight;
 }
-
-export function searchCards(cards: DeckCard[], query: string, limit = 60): DeckCard[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const out: DeckCard[] = [];
-  for (const c of cards) {
-    if (
-      c.cardNumber.toLowerCase().includes(q) ||
-      c.name.toLowerCase().includes(q) ||
-      c.series.toLowerCase().includes(q)
-    ) {
-      out.push(c);
-      if (out.length >= limit) break;
-    }
-  }
-  return out;
-}
