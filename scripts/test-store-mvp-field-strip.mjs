@@ -33,8 +33,8 @@ const sampleCard = () => ({
   sellPrice: 1200,
   buyPrice: 800,
   prices: [
-    { name: 'ノーマル', sellPrice: 1200, rarity: 'R', buyPrice: 800 },
-    { name: 'サイン', sellPrice: 5000, rarity: 'SR', buyPrice: 3600 },
+    { name: 'ノーマル', sellPrice: 1200, rarity: 'R', buyPrice: 800, buyPriceVersion: 'BASE', buyPriceSource: 'torecolo', buyPriceTimestamp: '2026-08-14T12:15:00Z' },
+    { name: 'サイン', sellPrice: 5000, rarity: 'SR', buyPrice: 3600, buyPriceVersion: 'SR', buyPriceSource: 'fullahead', buyPriceTimestamp: '2026-08-14T12:15:00Z' },
   ],
   priceHistory: { '2026-07-01': 1100, '2026-07-08': 1200 },
   buyPriceHistory: { '2026-07-01': 750, '2026-07-08': 800 },
@@ -53,6 +53,9 @@ assert.deepEqual(full.buyPriceHistory, original.buyPriceHistory, 'full mode keep
 assert.deepEqual(full.ytStats, original.ytStats, 'full mode keeps ytStats');
 assert.equal(full.prices[0].buyPrice, 800, 'full mode keeps prices[].buyPrice');
 assert.equal(full.prices[1].buyPrice, 3600, 'full mode keeps every version buyPrice');
+assert.equal(full.prices[0].buyPriceVersion, 'BASE', 'full mode keeps prices[].buyPriceVersion');
+assert.equal(full.prices[1].buyPriceSource, 'fullahead', 'full mode keeps prices[].buyPriceSource');
+assert.ok('buyPriceTimestamp' in full.prices[0], 'full mode keeps prices[].buyPriceTimestamp');
 
 // ── Store MVP mode: disabled fields removed, sale price preserved ──
 const input = sampleCard();
@@ -63,6 +66,9 @@ assert.ok(!('priceHistory' in mvp), 'Store MVP strips priceHistory');
 assert.ok(!('ytStats' in mvp), 'Store MVP strips ytStats');
 for (const p of mvp.prices) {
   assert.ok(!('buyPrice' in p), 'Store MVP strips prices[].buyPrice');
+  assert.ok(!('buyPriceVersion' in p), 'Store MVP strips prices[].buyPriceVersion');
+  assert.ok(!('buyPriceSource' in p), 'Store MVP strips prices[].buyPriceSource');
+  assert.ok(!('buyPriceTimestamp' in p), 'Store MVP strips prices[].buyPriceTimestamp');
   assert.ok('sellPrice' in p, 'Store MVP keeps prices[].sellPrice (sale reference)');
 }
 // Sale reference price is a must-show field — never stripped.
@@ -112,6 +118,9 @@ assert.deepEqual(
 );
 for (const p of sanitizedEntry.prices) {
   assert.ok(!('buyPrice' in p), 'DB sanitizer strips prices[].buyPrice');
+  assert.ok(!('buyPriceVersion' in p), 'DB sanitizer strips prices[].buyPriceVersion');
+  assert.ok(!('buyPriceSource' in p), 'DB sanitizer strips prices[].buyPriceSource');
+  assert.ok(!('buyPriceTimestamp' in p), 'DB sanitizer strips prices[].buyPriceTimestamp');
   assert.ok('sellPrice' in p, 'DB sanitizer keeps prices[].sellPrice');
 }
 assert.equal(sanitizedEntry.sellPrice, 1200, 'DB sanitizer keeps card sellPrice');
@@ -135,8 +144,8 @@ const apiCards = {
     series: 'hbp',
     officialImage: 'https://example/x.png',
     prices: [
-      { name: 'ノーマル', sellPrice: 1200, rarity: 'R', buyPrice: 800 },
-      { name: 'サイン', sellPrice: 5000, rarity: 'SR', buyPrice: 3600 },
+      { name: 'ノーマル', sellPrice: 1200, rarity: 'R', buyPrice: 800, buyPriceVersion: 'BASE', buyPriceSource: 'torecolo', buyPriceTimestamp: '2026-08-14T12:15:00Z' },
+      { name: 'サイン', sellPrice: 5000, rarity: 'SR', buyPrice: 3600, buyPriceVersion: 'SR', buyPriceSource: 'fullahead', buyPriceTimestamp: '2026-08-14T12:15:00Z' },
     ],
     priceHistory: { '2026-07-01': 1100, '2026-07-08': 1200 },
     buyPriceHistory: { '2026-07-01': 750, '2026-07-08': 800 },
@@ -169,6 +178,9 @@ assert.ok(!('priceHistory' in mvpBest), 'Store MVP API response omits priceHisto
 assert.ok(!('ytStats' in mvpBest), 'Store MVP API response omits ytStats');
 for (const p of mvpBest.prices) {
   assert.ok(!('buyPrice' in p), 'Store MVP API response omits prices[].buyPrice');
+  assert.ok(!('buyPriceVersion' in p), 'Store MVP API response omits prices[].buyPriceVersion');
+  assert.ok(!('buyPriceSource' in p), 'Store MVP API response omits prices[].buyPriceSource');
+  assert.ok(!('buyPriceTimestamp' in p), 'Store MVP API response omits prices[].buyPriceTimestamp');
   assert.ok('sellPrice' in p, 'Store MVP API response keeps prices[].sellPrice');
 }
 
@@ -211,6 +223,9 @@ if (fs.existsSync(realDb)) {
       if (Array.isArray(entry.prices)) {
         for (const p of entry.prices) {
           assert.ok(!('buyPrice' in p), 'built Store MVP artifact must not retain prices[].buyPrice');
+          assert.ok(!('buyPriceVersion' in p), 'built artifact must not retain prices[].buyPriceVersion');
+          assert.ok(!('buyPriceSource' in p), 'built artifact must not retain prices[].buyPriceSource');
+          assert.ok(!('buyPriceTimestamp' in p), 'built artifact must not retain prices[].buyPriceTimestamp');
         }
       }
       if ('sellPrice' in entry) sellPricesKept++;
@@ -248,6 +263,9 @@ if (fs.existsSync(nativeAsset)) {
     if (Array.isArray(entry.prices)) {
       for (const p of entry.prices) {
         assert.ok(!('buyPrice' in p), 'committed native asset must not retain prices[].buyPrice');
+        assert.ok(!('buyPriceVersion' in p), 'committed native asset must not retain prices[].buyPriceVersion');
+        assert.ok(!('buyPriceSource' in p), 'committed native asset must not retain prices[].buyPriceSource');
+        assert.ok(!('buyPriceTimestamp' in p), 'committed native asset must not retain prices[].buyPriceTimestamp');
       }
     }
     if ('sellPrice' in entry) nativeSellKept++;

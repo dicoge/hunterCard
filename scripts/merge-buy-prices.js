@@ -10,6 +10,14 @@
  *
  * 來源檔格式（爬蟲輸出）：
  *   { "hBP04-005-SEC": { buyPrice, rarity:"SEC", timestamp }, "hBP04-005": { buyPrice, rarity:null, ... } }
+ *
+ * 對齊時同時寫入 provenance：
+ *   `prices[i].buyPrice`           該版本的收購價
+ *   `prices[i].buyPriceVersion`    該價格的精確版本 token（base 印在 bare = 'BASE'）
+ *   `prices[i].buyPriceSource`     來源店家（torecolo / fullahead）
+ *   `prices[i].buyPriceTimestamp`  來源抓取時間
+ * 讓資料面直接可驗證「每個價格都精確對應一個來源的特定版本」，且 build-database / 讀取層
+ * 不需重複推測 provenance（DIC-856 版本來源可追溯）。
  */
 import fs from 'fs';
 import path from 'path';
@@ -43,11 +51,12 @@ function localDateStr(d = new Date()) {
 
 /**
  * 讀所有來源檔，建 numKey(正規化卡號) -> 該卡號的買取版本清單。
- * 每筆版本：{ token(精確 rarity/產品碼，bare='' ), price }。同一 (numKey, token) 多筆
- *（例如 fullahead 與 torecolo 都收 SEC）取較高價——那是「同一版本」的兩個報價，非跨版本。
+ * 每筆版本：{ token(精確 rarity/產品碼，bare='' ), price, source, timestamp }。同一
+ * (numKey, token) 多筆（例如 fullahead 與 torecolo 都收 SEC）取較高價——那是「同一版本」
+ * 的兩個報價，非跨版本；同時記錄該報價的來源店家與抓取時間戳。
  */
 function buildBuyIndex(now = Date.now()) {
-  const byNum = new Map(); // numKey -> Map(token -> price)
+  const byNum = new Map(); // numKey -> Map(token -> { price, source, timestamp })
   for (const file of SOURCE_FILES) {
     const p = path.join(BUY_DIR, file);
     let raw;
@@ -82,7 +91,10 @@ function buildBuyIndex(now = Date.now()) {
       if (!byNum.has(numKey)) byNum.set(numKey, new Map());
       const perNum = byNum.get(numKey);
       const prev = perNum.get(token);
-      if (prev == null || price > prev) perNum.set(token, price);
+      const source = file.replace(/-prices\.json$/, '');
+      if (prev == null || price > prev.price) {
+        perNum.set(token, { price, source, timestamp: entry.timestamp });
+      }
       fresh += 1;
     }
     if (stale > 0) {
@@ -93,10 +105,10 @@ function buildBuyIndex(now = Date.now()) {
     }
     console.log(`[merge-buy] ${file}: ${fresh} 筆新鮮買取價`);
   }
-  // 攤平成 numKey -> array of { token, price }
+  // 攤平成 numKey -> array of { token, price, source, timestamp }
   const out = new Map();
   for (const [numKey, perNum] of byNum.entries()) {
-    out.set(numKey, [...perNum.entries()].map(([token, price]) => ({ token, price })));
+    out.set(numKey, [...perNum.entries()].map(([token, v]) => ({ token, ...v })));
   }
   return out;
 }
@@ -112,8 +124,9 @@ function buyPriceByToken(buyEntries) {
 }
 
 /**
- * 把某卡號的買取版本清單，精確對齊到該卡 prices[] 的每個版本，回傳與 variants 等長的 buyPrice
- * 陣列（對不到 / 版本不精確 → null，fail closed，絕不借別版價、絕不 Math.max 跨版本）。純函式。
+ * 把某卡號的買取版本清單，精確對齊到該卡 prices[] 的每個版本，回傳與 variants 等長的
+ * 比對結果陣列（{ price, token, source, timestamp } | null）。對不到 / 版本不精確 → null，
+ * fail closed，絕不借別版價、絕不 Math.max 跨版本。純函式。
  *
  * 規則（精確 token 比對）：
  *   - base（''）      只吃來源 bare('')；signed（'SEC'）只吃 'SEC'；帶標籤替代版只吃完全相同 token。
@@ -122,11 +135,17 @@ function buyPriceByToken(buyEntries) {
  *   - 任一具體 token 被兩個以上版本宣告（含同名重複）→ 全部 null（歧義，無法證明精確 provenance）。
  *
  * @param {Array<{name?:string}>} variants  database 卡片的 prices[]（至少含 name）
- * @param {Array<{token:string, price:number}>} buyEntries 該卡號買取版本
+ * @param {Array<{token:string, price:number, source?:string, timestamp?:string}>} buyEntries 該卡號買取版本
  */
-function assignVariantBuyPrices(variants, buyEntries) {
+function assignVariantBuyMatches(variants, buyEntries) {
   const list = Array.isArray(variants) ? variants : [];
-  const srcByToken = buyPriceByToken(buyEntries);
+  // token → 完整比對 entry（{ price, token, source, timestamp }）。同 token＝同版本兩報價取高
+  // （非跨版本）；保留該報價的來源店家與時間戳以寫入 provenance。
+  const srcByToken = new Map();
+  for (const b of Array.isArray(buyEntries) ? buyEntries : []) {
+    const prev = srcByToken.get(b.token);
+    if (prev == null || b.price > prev.price) srcByToken.set(b.token, b);
+  }
   const cls = list.map((v) => classifyVariant(v && v.name));
 
   const tokenCount = new Map(); // 具體 token 出現次數 → 判重複歧義
@@ -142,13 +161,42 @@ function assignVariantBuyPrices(variants, buyEntries) {
 
   return cls.map((c) => {
     if (c.token === null) {
-      if (plainCount === 1 && parallelPool.length === 1) return srcByToken.get(parallelPool[0]);
+      if (plainCount === 1 && parallelPool.length === 1) return srcByToken.get(parallelPool[0]) ?? null;
       return null; // 0 個或多個平行來源／多個純平行版本 → 無法精確判定
     }
     if ((tokenCount.get(c.token) || 0) > 1) return null; // 重複宣告同 token → 歧義
     const p = srcByToken.get(c.token);
     return p != null ? p : null;
   });
+}
+
+/**
+ * assignVariantBuyPrices 的相容版：只回傳每個版本的 buyPrice（null = 對不到）。內部以
+ * assignVariantBuyMatches 精確對齊，供舊呼叫點／驗證腳本使用。
+ */
+function assignVariantBuyPrices(variants, buyEntries) {
+  return assignVariantBuyMatches(variants, buyEntries).map((m) => (m ? m.price : null));
+}
+
+/**
+ * 把單一版本的比對結果寫進 variant（含 provenance）。null → 清掉 buyPrice 與其 provenance。
+ * 這是 merge 與 regen 共用、確保輸出完全一致的唯一寫入點。
+ *
+ * @param {{[k:string]:unknown}} variant
+ * @param {{price:number, token:string, source?:string, timestamp?:string}|null} match
+ */
+function applyVariantBuyProvenance(variant, match) {
+  if (match == null) {
+    delete variant.buyPrice;
+    delete variant.buyPriceVersion;
+    delete variant.buyPriceSource;
+    delete variant.buyPriceTimestamp;
+    return;
+  }
+  variant.buyPrice = match.price;
+  variant.buyPriceVersion = match.token === '' ? 'BASE' : match.token;
+  variant.buyPriceSource = match.source || '';
+  variant.buyPriceTimestamp = match.timestamp || '';
 }
 
 /**
@@ -182,17 +230,13 @@ function main() {
     const numKey = normalizeCardNumber(card.cardNumber);
     const buyEntries = (numKey && buyIndex.get(numKey)) || [];
 
-    // 1) 每個版本自帶 matched buyPrice（對不到 → null）。
+    // 1) 每個版本自帶 matched buyPrice + provenance（對不到 → 清掉，fail closed）。
     if (Array.isArray(card.prices) && card.prices.length > 0) {
-      const perVariant = assignVariantBuyPrices(card.prices, buyEntries);
+      const perVariant = assignVariantBuyMatches(card.prices, buyEntries);
       card.prices.forEach((v, i) => {
-        const bp = perVariant[i];
-        if (bp != null) {
-          v.buyPrice = bp;
-          variantsMatched += 1;
-        } else {
-          delete v.buyPrice; // fail closed：此版本暫無收購價
-        }
+        const m = perVariant[i];
+        applyVariantBuyProvenance(v, m);
+        if (m != null) variantsMatched += 1;
       });
     }
 
@@ -229,4 +273,4 @@ if (isMain) {
   }
 }
 
-export { main as mergeBuyPrices, buildBuyIndex, buyPriceByToken, assignVariantBuyPrices, representativeBuyPrice };
+export { main as mergeBuyPrices, buildBuyIndex, buyPriceByToken, assignVariantBuyMatches, assignVariantBuyPrices, applyVariantBuyProvenance, representativeBuyPrice };

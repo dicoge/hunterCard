@@ -31,7 +31,8 @@ import {
   PARALLEL_RARITIES,
   UNKNOWN_TOKEN,
 } from './lib/variant-key.js';
-import { assignVariantBuyPrices, representativeBuyPrice, buyPriceByToken } from './merge-buy-prices.js';
+import { assignVariantBuyPrices, assignVariantBuyMatches, applyVariantBuyProvenance, buildBuyIndex, buyPriceByToken, representativeBuyPrice } from './merge-buy-prices.js';
+import { latestSourceTs } from './regen-buy-alignment.mjs';
 import { scrapeFullaheadBuy, extractRarity as fullaheadRarity } from './scrape-fullahead-buy.js';
 import { extractRarityFromHref } from './scrape-torecolo-buy.js';
 
@@ -254,34 +255,61 @@ for (const marker of ['【XYZ】', '【謎】', '【XYZ_1】']) {
   });
 }
 
+console.log('── Unit: provenance 輸出 ──');
+check('assignVariantBuyMatches 帶出 token/source/timestamp；applyVariantBuyProvenance 寫入欄位', () => {
+  const variants = [{ name: 'X(パラレル/サイン)' }, { name: 'X' }];
+  const buy = [
+    { token: 'SEC', price: 38000, source: 'fullahead', timestamp: '2026-08-14T12:15:00Z' },
+    { token: '', price: 150, source: 'torecolo', timestamp: '2026-08-13T09:00:00Z' },
+  ];
+  const matches = assignVariantBuyMatches(variants, buy);
+  assert.equal(matches[0].price, 38000);
+  assert.equal(matches[0].token, 'SEC');
+  assert.equal(matches[0].source, 'fullahead');
+  assert.equal(matches[1].token, '');
+  assert.equal(matches[1].source, 'torecolo');
+  const v1 = {};
+  const v2 = {};
+  applyVariantBuyProvenance(v1, matches[0]);
+  applyVariantBuyProvenance(v2, matches[1]);
+  assert.deepEqual(v1, {
+    buyPrice: 38000, buyPriceVersion: 'SEC',
+    buyPriceSource: 'fullahead', buyPriceTimestamp: '2026-08-14T12:15:00Z',
+  });
+  assert.equal(v2.buyPriceVersion, 'BASE'); // bare 原印版以 'BASE' 標記
+  assert.equal(v2.buyPriceSource, 'torecolo');
+  // null → 連同 provenance 一起清乾淨（不留殘值）
+  applyVariantBuyProvenance(v1, null);
+  assert.deepEqual(v1, {});
+});
+check('buildBuyIndex 每筆都帶來源店家 + 抓取時間戳', () => {
+  const idx = buildBuyIndex(latestSourceTs() + 1000); // 以來源自身時間基準，跨日重跑也新鮮
+  let saw = 0;
+  for (const [, perNum] of idx) {
+    for (const e of perNum) {
+      if (saw >= 3) break;
+      assert.ok(typeof e.price === 'number' && e.price > 0, 'price 異常');
+      assert.ok(e.source, '每筆都必須有來源店家');
+      assert.ok(e.timestamp, '每筆都必須有來源抓取時間戳');
+      assert.ok(['fullahead', 'torecolo'].includes(e.source), `來源店家異常 ${e.source}`);
+      saw += 1;
+    }
+    if (saw >= 3) break;
+  }
+  assert.ok(saw >= 3, '買取來源應有資料可驗');
+});
+
 // ── 真實資料驗證 ──
 console.log('── Integration: 真實 database.json ──');
 const db = JSON.parse(fs.readFileSync(path.join(DATA, 'database.json'), 'utf-8')).cards;
 
-// 由來源檔重建 numKey → Map(token → maxPrice)，即 merge 端 buildBuyIndex 的等價重算。
-function loadSourceIndex() {
-  const byNum = new Map(); // numKey -> Map(token -> maxPrice)
-  for (const f of ['fullahead-prices.json', 'torecolo-prices.json']) {
-    let raw;
-    try { raw = JSON.parse(fs.readFileSync(path.join(DATA, 'buy-prices', f), 'utf-8')); } catch { continue; }
-    for (const [k, v] of Object.entries(raw || {})) {
-      const num = normalizeCardNumber(k);
-      const price = v && Number(v.buyPrice);
-      if (!num || !(price > 0)) continue;
-      const token = sourceToken(v.rarity, k.slice(num.length));
-      if (token === UNKNOWN_TOKEN) continue; // 與 merge buildBuyIndex 一致：未知標記 fail closed
-      if (!byNum.has(num)) byNum.set(num, new Map());
-      const m = byNum.get(num);
-      const prev = m.get(token);
-      if (prev == null || price > prev) m.set(token, price);
-    }
-  }
-  return byNum;
-}
-const srcIdx = loadSourceIndex();
+// 直接使用 merge 端的 buildBuyIndex（以來源自身最新時間戳為基準 → 跨日重跑都新鮮）重建
+// numKey → Map(token → { price, source, timestamp })，與寫入 DB 的同一支邏輯、同一檔案
+// 順序，保證 provenance 重算與 committed 完全可比（不另造一份可能 drift 的 replica）。
+const srcIdx = buildBuyIndex(latestSourceTs() + 1000);
 function buyEntriesFor(num) {
   const m = (num && srcIdx.get(num)) || new Map();
-  return [...m.entries()].map(([token, price]) => ({ token, price }));
+  return [...m.entries()].map(([token, e]) => ({ token, ...e }));
 }
 function findByCardNumber(cardNum) {
   const target = String(cardNum).toUpperCase();
@@ -294,13 +322,21 @@ function findByCardNumber(cardNum) {
 check('acceptance: hBP04-005 base=150 / parallel=5000 / signed=38000（不固定 38000）', () => {
   const c = findByCardNumber('hBP04-005');
   assert.ok(c, 'card hBP04-005 存在');
-  const byName = Object.fromEntries(c.prices.map((v) => [v.name, v.buyPrice ?? null]));
-  assert.equal(byName['ラプラス・ダークネス'], 150);
-  assert.equal(byName['ラプラス・ダークネス(パラレル)'], 5000);
-  assert.equal(byName['ラプラス・ダークネス(パラレル/サイン)'], 38000);
+  const byName = Object.fromEntries(c.prices.map((v) => [v.name, v]));
+  assert.equal(byName['ラプラス・ダークネス'].buyPrice, 150);
+  assert.equal(byName['ラプラス・ダークネス(パラレル)'].buyPrice, 5000);
+  assert.equal(byName['ラプラス・ダークネス(パラレル/サイン)'].buyPrice, 38000);
   // 三版本必須互異（證明無 max 塌陷）
-  const vals = [byName['ラプラス・ダークネス'], byName['ラプラス・ダークネス(パラレル)'], byName['ラプラス・ダークネス(パラレル/サイン)']];
+  const vals = [byName['ラプラス・ダークネス'].buyPrice, byName['ラプラス・ダークネス(パラレル)'].buyPrice, byName['ラプラス・ダークネス(パラレル/サイン)'].buyPrice];
   assert.equal(new Set(vals).size, 3);
+  // 每個版本都必須有來源可追溯的版本 token（5000 來自全速面 leftover 平行來源 OUR）
+  assert.equal(byName['ラプラス・ダークネス'].buyPriceVersion, 'BASE');
+  assert.equal(byName['ラプラス・ダークネス(パラレル)'].buyPriceVersion, 'OUR');
+  assert.equal(byName['ラプラス・ダークネス(パラレル/サイン)'].buyPriceVersion, 'SEC');
+  for (const [nm, v] of Object.entries(byName)) {
+    assert.ok(v.buyPriceSource, `hBP04-005 ${nm} 缺來源店家`);
+    assert.ok(v.buyPriceTimestamp, `hBP04-005 ${nm} 缺來源時間戳`);
+  }
 });
 
 check('acceptance: hBP02-017 兩個純 (パラレル) 不得塌成同價（歧義 → fail closed）', () => {
@@ -332,6 +368,30 @@ check('全庫 invariant: 逐版本以 assignVariantBuyPrices 重算，與 DB 完
   assert.ok(scanned > 500, `掃描版本數過少（${scanned}）`);
   assert.equal(violations.length, 0, `發現與精確重算不符 ${violations.length} 筆，例：\n      ${violations.slice(0, 8).join('\n      ')}`);
   console.log(`      （掃描 ${scanned} 個版本，全部等於精確 token 重算結果）`);
+});
+
+check('全庫 invariant: 每個版本 buyPrice 的 provenance（版本/來源/時間戳）與來源重算一致', () => {
+  let scanned = 0;
+  const violations = [];
+  for (const [id, c] of Object.entries(db)) {
+    if (!Array.isArray(c.prices) || c.prices.length === 0) continue;
+    const num = normalizeCardNumber(c.cardNumber);
+    const expected = assignVariantBuyMatches(c.prices, buyEntriesFor(num));
+    c.prices.forEach((v, i) => {
+      const e = expected[i];
+      scanned += 1;
+      const wantVersion = e ? (e.token === '' ? 'BASE' : e.token) : null;
+      const wantSource = e ? e.source : null;
+      const wantTs = e ? e.timestamp : null;
+      if ((v.buyPrice ?? null) !== (e ? e.price : null)) violations.push(`${id} :: ${v.name} buyPrice`);
+      if ((v.buyPriceVersion ?? null) !== wantVersion) violations.push(`${id} :: ${v.name} buyPriceVersion stored=${v.buyPriceVersion ?? null} want=${wantVersion}`);
+      if ((v.buyPriceSource ?? null) !== wantSource) violations.push(`${id} :: ${v.name} buyPriceSource stored=${v.buyPriceSource ?? null} want=${wantSource}`);
+      if ((v.buyPriceTimestamp ?? null) !== wantTs) violations.push(`${id} :: ${v.name} buyPriceTimestamp`);
+    });
+  }
+  assert.ok(scanned > 500, `掃描版本數過少（${scanned}）`);
+  assert.equal(violations.length, 0, `provenance 與精確重算不符 ${violations.length} 筆，例：\n      ${violations.slice(0, 8).join('\n      ')}`);
+  console.log(`      （掃描 ${scanned} 個版本，buyPrice/版本/來源/時間戳全等於來源重算）`);
 });
 
 check('全庫 invariant: card.buyPrice 等於 representativeBuyPrice（本卡 rarity 精確 token）', () => {

@@ -955,6 +955,9 @@ async function buildDatabase() {
       // afterward) keeps version alignment. Keys that collide within a card (e.g. two identical
       // (パラレル) variants — hBP02-017) are ambiguous, so we drop them rather than let one
       // variant's price leak onto its twin; merge-buy-prices.js re-derives those from source.
+      // Since DIC-856 follow-up each variant's buy price also carries its provenance
+      // (buyPriceVersion / buyPriceSource / buyPriceTimestamp) so the reading layer never has
+      // to re-guess which version a price belongs to — preserve those fields too.
       if (Array.isArray(card.prices)) {
         const variantBuy = {};
         const seenKey = new Set();
@@ -964,7 +967,12 @@ async function buildDatabase() {
           const key = canonicalVariantKey(card.cardNumber, v.name);
           if (seenKey.has(key)) { dupKey.add(key); continue; }
           seenKey.add(key);
-          variantBuy[key] = v.buyPrice;
+          variantBuy[key] = {
+            price: v.buyPrice,
+            version: v.buyPriceVersion,
+            source: v.buyPriceSource,
+            timestamp: v.buyPriceTimestamp,
+          };
         }
         for (const k of dupKey) delete variantBuy[k];
         if (Object.keys(variantBuy).length > 0) saved.variantBuy = variantBuy;
@@ -1320,7 +1328,15 @@ async function buildDatabase() {
         const k = canonicalVariantKey(card.cardNumber, v.name);
         if (keyCount.get(k) !== 1) continue;
         const bp = saved.variantBuy[k];
-        if (bp != null) v.buyPrice = bp;
+        if (bp != null) {
+          v.buyPrice = bp.price;
+          if (bp.version != null) v.buyPriceVersion = bp.version;
+          else delete v.buyPriceVersion;
+          if (bp.source != null) v.buyPriceSource = bp.source;
+          else delete v.buyPriceSource;
+          if (bp.timestamp != null) v.buyPriceTimestamp = bp.timestamp;
+          else delete v.buyPriceTimestamp;
+        }
       }
     }
     buyRestored++;
