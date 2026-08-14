@@ -151,6 +151,44 @@ test('unplayable entries are never the default', () => {
   assert.equal(resolveLowCostVariant(variants, []).id, 'hBP04-057_hBP04');
 });
 
+// The committed database really does ship untyped promo rows: `202_hPR`
+// ("ReGLOSS") has empty type AND empty rarity, so the rules engine can place it
+// in no zone. Such a card number must disappear, not fall back to itself.
+const regloss202 = {
+  id: '202_hPR', cardNumber: '202', name: 'ReGLOSS', type: '', rarity: '', series: 'hPR',
+};
+
+test('a card number whose every printing is unplayable resolves to null', () => {
+  assert.equal(resolveLowCostVariant([regloss202], []), null);
+  // still null when the unplayable printing carries a price
+  assert.equal(resolveLowCostVariant([regloss202], [price('202', '', 10)]), null);
+});
+
+test('an all-unplayable card number is omitted from grouping and search', () => {
+  const cards = [regloss202, holomen('hBP01-024', 'C', 'hBP01')];
+  const groups = groupVariantsByCardNumber(cards, []);
+  assert.deepEqual(groups.map((g) => g.cardNumber), ['hBP01-024']);
+  assert.equal(searchVariantGroups(groups, '202').length, 0);
+  assert.equal(searchVariantGroups(groups, 'ReGLOSS').length, 0);
+  assert.equal(searchVariantGroups(groups, 'hPR').length, 0);
+  // and it can never seed a normalization index
+  assert.equal(buildLowCostIndex(groups).has('202'), false);
+});
+
+test('a mixed group keeps its playable printing and stays selectable', () => {
+  const untypedBase = { id: 'hBP01-024_hPR', cardNumber: 'hBP01-024', name: 'card hBP01-024', type: '', rarity: 'C', series: 'hPR' };
+  const playablePremium = holomen('hBP01-024', 'SEC', 'hBP01');
+  const groups = groupVariantsByCardNumber([untypedBase, playablePremium], []);
+  assert.equal(groups.length, 1);
+  // the unplayable C printing is cheaper-ranked but unusable, so the playable
+  // SEC wins — order of the inputs must not change that
+  assert.equal(groups[0].card.id, 'hBP01-024_hBP01');
+  assert.equal(
+    resolveLowCostVariant([playablePremium, untypedBase], []).id, 'hBP01-024_hBP01',
+  );
+  assert.equal(searchVariantGroups(groups, 'hBP01-024').length, 1);
+});
+
 // ── Search grouping ────────────────────────────────────────────────────────
 test('search returns one row per card number, carrying the low-cost default', () => {
   const cards = [

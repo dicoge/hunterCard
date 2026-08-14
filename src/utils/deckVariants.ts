@@ -68,7 +68,9 @@ function comparePrintings(a: DeckCard, b: DeckCard): number {
  * Pick the MVP default printing among the variants of ONE card number.
  *
  * 1. Only playable printings are considered (an entry the rules engine cannot
- *    place in a zone can never be a deck default).
+ *    place in a zone can never be a deck default). A card number whose every
+ *    printing is unplayable — the committed dataset has untyped promo rows such
+ *    as `202_hPR` — resolves to null so it is never offered as a deck card.
  * 2. Base printings win outright over premium ones — never default to SEC / S /
  *    OUR / OSR / P / UR while a base printing exists.
  * 3. Inside the winning tier, the lowest EXACT-version price wins, compared only
@@ -81,12 +83,11 @@ export function resolveLowCostVariant(
   variants: DeckCard[],
   priceRecords: PriceRecord[],
 ): DeckCard | null {
-  if (variants.length === 0) return null;
-
   const playable = variants.filter((c) => eligibleZone(c) !== null);
-  const pool = playable.length > 0 ? playable : variants;
-  const base = pool.filter((c) => !isPremiumPrinting(c.rarity));
-  const tier = (base.length > 0 ? base : pool).slice().sort(comparePrintings);
+  if (playable.length === 0) return null;
+
+  const base = playable.filter((c) => !isPremiumPrinting(c.rarity));
+  const tier = (base.length > 0 ? base : playable).slice().sort(comparePrintings);
 
   const priced: Array<{ card: DeckCard; price: number; currency: string }> = [];
   for (const card of tier) {
@@ -114,7 +115,8 @@ export interface VariantGroup {
 }
 
 /** Collapse a card list into one row per card number, each exposing its
- * low-cost default. First-seen card-number order is preserved. */
+ * low-cost default. Card numbers with no playable printing are omitted entirely,
+ * so search can never offer one. First-seen card-number order is preserved. */
 export function groupVariantsByCardNumber(
   cards: DeckCard[],
   priceRecords: PriceRecord[],
