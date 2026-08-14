@@ -28,6 +28,10 @@ const RARITY_SET = new Set(RARITY_CODES);
 // 標準平行版 rarity；純 (パラレル) 只可能對上這些（不含 SEC 簽名、不含產品碼替代版）。
 const PARALLEL_RARITIES = new Set(['OUR', 'OSR', 'UR', 'SR', 'HR', 'RR']);
 
+// 一般集內 rarity（非 premium 印次）。必須與 src/utils/deckVariants.ts 的
+// BASE_RARITY_ORDER 是同一份詞彙 —— test-deck-variants.mjs 有 parity 斷言。
+const BASE_RARITIES = new Set(['OC', 'C', 'U', 'R', 'RR', 'SR']);
+
 // 來源標記別名：【PR】與【P】都對應 database 的 "P"。
 const RARITY_ALIASES = { PR: 'P' };
 
@@ -64,12 +68,35 @@ function normalizeRarity(raw) {
   return '';
 }
 
-/** 由 rarity 代碼判 canonical 版本類別（僅 SEC→signed、標準平行→parallel，其餘 base）。 */
-function versionClassFromRarity(raw) {
-  const r = normalizeRarity(raw);
-  if (r === 'SEC') return 'signed';
-  if (PARALLEL_RARITIES.has(r)) return 'parallel';
-  return 'base';
+/**
+ * 卡片自身 rarity 欄位 → canonical rarity 代碼。爬蟲以序號區分同集重複 rarity
+ * （P_02 / 02_HR / C_2 / C_re 都是 P / HR / C / C 這個印次），剝掉序號才是代碼。
+ * 這是 src/utils/deckVariants.ts `normalizeRarityCode` 的逐字 twin：兩邊必須對
+ * 整個 production rarity 詞彙給出相同結果（test-deck-variants.mjs parity 斷言）。
+ */
+function normalizeRarityCode(raw) {
+  return String(raw ?? '')
+    .normalize('NFKC')
+    .trim()
+    .toUpperCase()
+    .replace(/^\d+_/, '')
+    .replace(/_(?:\d+|RE)$/, '');
+}
+
+/** rarity 代碼是否在已知詞彙內（已知 rarity 或產品／套牌碼）。不在 → 不可信。 */
+function isKnownRarityCode(code) {
+  return code !== '' && (RARITY_SET.has(code) || PRODUCT_CODE_RE.test(code));
+}
+
+/** premium 印次（SEC / HR / UR / S / P / 產品碼…）：來源會以同名 token 明確標記。 */
+function isPremiumRarityCode(code) {
+  return !BASE_RARITIES.has(code);
+}
+
+/** 這一列是否為卡號自身原印集的印次（series === 卡號的集前綴）。 */
+function isOwnSetPrinting(cardNumber, series) {
+  const prefix = String(cardNumber ?? '').split('-')[0].toLowerCase();
+  return prefix !== '' && String(series ?? '').toLowerCase() === prefix;
 }
 
 /** 由遊々亭版本名稱判 canonical 版本類別。 */
@@ -151,11 +178,15 @@ export {
   RARITY_CODES,
   RARITY_SET,
   PARALLEL_RARITIES,
+  BASE_RARITIES,
   PRODUCT_CODE_RE,
   UNKNOWN_TOKEN,
   normalizeCardNumber,
   normalizeRarity,
-  versionClassFromRarity,
+  normalizeRarityCode,
+  isKnownRarityCode,
+  isPremiumRarityCode,
+  isOwnSetPrinting,
   versionClassFromName,
   classifyVariant,
   classifySourceRarity,

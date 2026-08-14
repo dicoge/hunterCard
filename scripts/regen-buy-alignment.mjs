@@ -67,7 +67,7 @@ export function regenerateBuyAlignment(db, { now, date }) {
       });
     }
 
-    const rep = representativeBuyPrice(card.rarity, buyEntries);
+    const rep = representativeBuyPrice(card, buyEntries);
     if (rep != null) {
       card.buyPrice = rep;
       if (!card.buyPriceHistory || typeof card.buyPriceHistory !== 'object') card.buyPriceHistory = {};

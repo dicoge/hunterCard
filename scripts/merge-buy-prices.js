@@ -24,8 +24,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   normalizeCardNumber,
-  normalizeRarity,
-  versionClassFromRarity,
+  normalizeRarityCode,
+  isKnownRarityCode,
+  isPremiumRarityCode,
+  isOwnSetPrinting,
   PARALLEL_RARITIES,
   UNKNOWN_TOKEN,
   classifyVariant,
@@ -200,16 +202,28 @@ function applyVariantBuyProvenance(variant, match) {
 }
 
 /**
- * card 層級代表買取價：只取「該卡自身 rarity 精確 token 所屬版本」的價，對不到即 null。
- * 精確比對，絕不 class fallback、絕不跨版本 Math.max。
+ * card 層級代表買取價：只在來源明確標記了「本列這個印次」時給價，否則 null。
+ *
+ * 一列 card 是一個實體印次（cardNumber + series + 該印次 rarity）；來源則把版本標在
+ * listing 上：無標記 listing = 卡號的原印版，帶 rarity／產品碼的 listing = 該標記的
+ * 平行／簽名版。兩者的對應只在下列情況可被來源證明：
+ *   - premium rarity（SEC/HR/UR/S/P/產品碼…）→ 只吃完全同 token 的 listing。
+ *   - 一般集內 rarity（OC/C/U/R/RR/SR）→ 只有「卡號原印集那一列」可吃無標記 listing；
+ *     再刷／促銷列（series ≠ 卡號集前綴）與無標記 listing 無從連結 → fail closed。
+ *   - 同一代碼同時有無標記與帶標記 listing（SR 卡又有 -SR listing）→ 無法證明本列是
+ *     哪一個 → fail closed（與 app 端 dropConflictingPrices 同一判準）。
+ *   - rarity 缺失或不在已知詞彙 → fail closed；別名（02_HR / UR_02 / P_02）先正規化成
+ *     真代碼，絕不因為認不得就當成原印版（DIC-1008 CR：02_HR 曾拿到 bare ¥10）。
  */
-function representativeBuyPrice(cardRarity, buyEntries) {
+function representativeBuyPrice(card, buyEntries) {
   const srcByToken = buyPriceByToken(buyEntries);
   if (srcByToken.size === 0) return null;
-  // 原印/普卡（base class）對應來源的「無 rarity 純卡號」價（token ''）；平行/簽名用精確 rarity token。
-  const token = versionClassFromRarity(cardRarity) === 'base' ? '' : normalizeRarity(cardRarity);
-  const p = srcByToken.get(token);
-  return p != null ? p : null;
+  const code = normalizeRarityCode(card && card.rarity);
+  if (!isKnownRarityCode(code)) return null;
+  if (isPremiumRarityCode(code)) return srcByToken.get(code) ?? null;
+  if (!isOwnSetPrinting(card && card.cardNumber, card && card.series)) return null;
+  if (srcByToken.has(code)) return null;
+  return srcByToken.get('') ?? null;
 }
 
 function main() {
@@ -240,8 +254,8 @@ function main() {
       });
     }
 
-    // 2) card 層級只放「本卡 rarity 版本」的價（無則清掉，不留舊的混版值）。
-    const rep = representativeBuyPrice(card.rarity, buyEntries);
+    // 2) card 層級只放「本列這個印次」被來源證明的價（無則清掉，不留舊的混版值）。
+    const rep = representativeBuyPrice(card, buyEntries);
     if (rep != null) {
       card.buyPrice = rep;
       if (!card.buyPriceHistory || typeof card.buyPriceHistory !== 'object') card.buyPriceHistory = {};
