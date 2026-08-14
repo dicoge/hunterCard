@@ -366,6 +366,52 @@ await test('one printing reprinted across products resolves without substitution
   assert.equal(resolved.id, 'hY01-001_hBP01', 'pick must be deterministic (lowest id)');
 });
 
+// A printing path is a string, not an identity. Two source slots below name a
+// path the catalog serves, but disagree with the entry behind it — resolving
+// either would hand the player a different card than the one that was played.
+await test('a printing path match with a conflicting card number resolves to nothing', () => {
+  const ref = {
+    zone: 'main', cardNumber: 'hMAIN-999', version: 'C', count: 1,
+    name: '主力', cardKind: 'ホロメン', imagePath: 'hBP01/hMAIN-001_C.png',
+  };
+  assert.equal(resolvePrinting(ref, index), null, 'hMAIN-999 must never become hMAIN-001');
+  const { zones, unresolved } = buildImportZones([ref], index);
+  assert.deepEqual(unresolved.map((c) => c.cardNumber), ['hMAIN-999']);
+  assert.equal(zones.main[0].card.cardNumber, 'hMAIN-999', 'the source number is kept verbatim');
+  assert.equal(zones.main[0].card.unresolvedPrinting, true);
+});
+
+await test('a printing path match with a conflicting version resolves to nothing', () => {
+  const ref = {
+    zone: 'main', cardNumber: 'hMAIN-001', version: 'SR', count: 1,
+    name: '主力', cardKind: 'ホロメン', imagePath: 'hBP01/hMAIN-001_C.png',
+  };
+  // The catalog entry behind that path is the C printing, and an SR printing of
+  // the same number exists at 5000 — neither may be borrowed.
+  assert.equal(resolvePrinting(ref, index), null);
+  const { zones } = buildImportZones([ref], index);
+  assert.equal(zones.main[0].card.rarity, 'SR', 'the source version is kept verbatim');
+  assert.equal(zones.main[0].card.unresolvedPrinting, true);
+  const gap = computeGap(
+    { id: 'd', name: 'n', oshi: [], main: zones.main, yell: [], updatedAt: '' },
+    {},
+    catalog.priceRecords,
+  );
+  // Pricing still keys off the SOURCE's version, so the 30-yen C printing that
+  // shares the path is not what this slot costs.
+  assert.equal(gap.rows[0].version, 'SR');
+  assert.equal(gap.rows[0].price.price, 5000);
+});
+
+await test('a printing bucket that disagrees on card number resolves to nothing', () => {
+  const ambiguous = buildPrintingIndex([
+    { id: 'a', cardNumber: 'hZ-001', name: 'z', rarity: 'C', series: 's', printingPath: 'X/shared.png' },
+    { id: 'b', cardNumber: 'hZ-002', name: 'z', rarity: 'C', series: 's', printingPath: 'X/shared.png' },
+  ]);
+  const ref = { zone: 'main', cardNumber: 'hZ-001', version: 'C', count: 1, name: 'z', cardKind: 'ホロメン', imagePath: 'X/shared.png' };
+  assert.equal(resolvePrinting(ref, ambiguous), null);
+});
+
 await test('a printing bucket that disagrees on version resolves to nothing', () => {
   const ambiguous = buildPrintingIndex([
     { id: 'a', cardNumber: 'hZ-001', name: 'z', rarity: 'C', series: 's', printingPath: 'X/hZ-001.png' },

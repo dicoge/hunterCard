@@ -17,7 +17,7 @@
 //     editor's rule checker reports the real errors.
 
 import type { DeckEntry, DeckCardRef, TournamentEvent } from '../types/tournament';
-import type { DeckCard, DeckSlot, DeckZone } from './deckRules';
+import { normalizeVersion, type DeckCard, type DeckSlot, type DeckZone } from './deckRules';
 
 export type ImportZones = Record<DeckZone, DeckSlot[]>;
 
@@ -41,11 +41,18 @@ export function buildPrintingIndex(cards: DeckCard[]): Map<string, DeckCard[]> {
 }
 
 /** Resolve one source slot to the local catalog entry for that exact printing,
- *  or null when there is none. The same printing is often listed once per
- *  product it was reprinted in (identical art, identical rarity) — those are
- *  one version, so a deterministic pick among them substitutes nothing. If the
- *  bucket ever disagrees on rarity the printing is ambiguous and we resolve
- *  nothing rather than choose. */
+ *  or null when there is none. The printing path alone is not proof of identity:
+ *  it is a string two unrelated catalog entries can carry, so the match is only
+ *  accepted when the candidate ALSO agrees on the source's exact cardNumber and
+ *  version. Without that check a source slot resolves to a different card that
+ *  happens to share a path, which is precisely the substitution this module
+ *  exists to prevent.
+ *
+ *  The same printing is often listed once per product it was reprinted in
+ *  (identical art, identical rarity) — those are one version, so a deterministic
+ *  pick among them substitutes nothing. If the bucket disagrees with itself on
+ *  cardNumber or rarity the printing is ambiguous and we resolve nothing rather
+ *  than choose one of two mutually inconsistent entries. */
 export function resolvePrinting(
   ref: DeckCardRef,
   index: Map<string, DeckCard[]>,
@@ -53,8 +60,15 @@ export function resolvePrinting(
   if (!ref.imagePath || !ref.version) return null;
   const candidates = index.get(ref.imagePath);
   if (!candidates || candidates.length === 0) return null;
-  const versions = new Set(candidates.map((c) => c.rarity));
-  if (versions.size > 1) return null;
+
+  const numbers = new Set(candidates.map((c) => c.cardNumber));
+  const versions = new Set(candidates.map((c) => normalizeVersion(c.rarity)));
+  if (numbers.size > 1 || versions.size > 1) return null;
+
+  const [candidate] = candidates;
+  if (candidate.cardNumber !== ref.cardNumber) return null;
+  if (normalizeVersion(candidate.rarity) !== normalizeVersion(ref.version)) return null;
+
   return candidates.slice().sort((a, b) => a.id.localeCompare(b.id))[0];
 }
 
