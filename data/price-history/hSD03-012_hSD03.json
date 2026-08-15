@@ -380,8 +380,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD03-012_hSD03"
+    },
+    {
+      "date": "2026-08-15",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-012_hSD03"
     }
   ],
-  "lastUpdated": "2026-08-14T12:20:47.485Z",
+  "lastUpdated": "2026-08-15T12:11:57.636Z",
   "nameZh": "泥棒建設"
 }

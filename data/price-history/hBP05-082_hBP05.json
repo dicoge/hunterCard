@@ -394,8 +394,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-082_hBP05"
+    },
+    {
+      "date": "2026-08-15",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-082_hBP05"
     }
   ],
-  "lastUpdated": "2026-08-14T12:20:47.393Z",
+  "lastUpdated": "2026-08-15T12:11:57.500Z",
   "nameZh": "亞綺·羅森塔爾之斧"
 }

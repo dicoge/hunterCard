@@ -380,8 +380,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-088_hBP03"
+    },
+    {
+      "date": "2026-08-15",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-088_hBP03"
     }
   ],
-  "lastUpdated": "2026-08-14T12:20:47.449Z",
+  "lastUpdated": "2026-08-15T12:11:57.589Z",
   "nameZh": "突襲等待"
 }

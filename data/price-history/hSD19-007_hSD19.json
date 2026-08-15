@@ -331,8 +331,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD19-007_hSD19"
+    },
+    {
+      "date": "2026-08-15",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD19-007_hSD19"
     }
   ],
-  "lastUpdated": "2026-08-14T12:20:47.309Z",
+  "lastUpdated": "2026-08-15T12:11:57.408Z",
   "nameZh": "大空昴"
 }
