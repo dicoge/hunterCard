@@ -28,19 +28,6 @@ export interface SessionCard extends CardInfo {
   selectedVersion: number;
 }
 
-/**
- * 預估清單用的預設版本 index。
- * 能唯一對齊 rarity → 用對齊結果；無法唯一對齊時，預估流程採保守預設（等於 sellPrice 的那筆，
- * 避免高估連續掃描總價），使用者仍可在面板逐張改選正確版本。
- */
-export function pickDefaultVersion(card: CardInfo, versions: PriceVersion[]): number {
-  const resolution = resolveVersionForCard(card, versions);
-  if (resolution.confident) return resolution.index;
-  const spIdx = versions.findIndex(v => v.sellPrice === card.sellPrice);
-  if (spIdx >= 0) return spIdx;
-  return 0;
-}
-
 export function getEffectivePrice(card: SessionCard): number | null {
   const v = card.priceVersions?.[card.selectedVersion];
   if (v) return v.sellPrice;
@@ -91,8 +78,10 @@ export const useScanSessionStore = create<ScanSessionState>()(
           return false;
         }
 
+        // 掃描清單的預設版本走與卡片頁、組牌器同一個來源版本解析，三邊不會對同一張卡
+        // 給出不同的版本。
         const priceVersions = buildPriceVersions(card);
-        const selectedVersion = pickDefaultVersion(card, priceVersions);
+        const selectedVersion = Math.max(resolveVersionForCard(priceVersions).index, 0);
         const sessionCard: SessionCard = {
           ...card,
           instanceId: makeInstanceId(),

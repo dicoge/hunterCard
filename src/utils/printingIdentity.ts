@@ -28,11 +28,17 @@ export function normalizePrinting(value: string): string {
   return (value ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
-// Vocabulary the source uses to mark a printing. A parenthetical that carries
-// none of these is part of the card's NAME (e.g. 「スペシャルイベント(白銀ノエル)」)
-// and must not become a variant marker.
-const MARKER_RE = /パラレル|サイン|エラッタ|箔押し/;
-
+// Every parenthetical descriptor the source prints is part of the printing's
+// identity, not just the premium-treatment vocabulary. yuyu-tei distinguishes a
+// card number's base reprints the same way it distinguishes its parallels —
+// `みっころね24` ¥120 and `みっころね24(hBP04)` ¥180 are two different physical
+// printings at two different prices. Reading only パラレル/サイン/… collapsed
+// those onto one key, which made an unambiguous pair look ambiguous and dropped
+// both prices.
+//
+// Known treatments below get a stable ASCII token; anything else (set codes such
+// as `hBP04`, art descriptors such as `白銀ノエル`) is kept verbatim so the
+// identity never claims more than the label states.
 const MARKER_TOKENS: Record<string, string> = {
   'パラレル': 'PARALLEL',
   'サイン': 'SIGN',
@@ -45,16 +51,17 @@ const MARKER_TOKENS: Record<string, string> = {
 // printing and is what a budget deck defaults to.
 const PREMIUM_TOKEN_RE = /(^|\/)(PARALLEL|SIGN|FOIL)(\/|$)/;
 
-/** Listing label → deterministic printing token. An unmarked listing is BASE;
- * a marked one spells out exactly the markers the label carries, so
- * `(パラレル/hBP07)` and `(パラレル/HR)` stay distinct printings. */
+/** Listing label → deterministic printing token. A listing with no parenthetical
+ * is the card number's plain printing (BASE); otherwise the token spells out
+ * exactly the descriptors the label carries, so `(パラレル/hBP07)`,
+ * `(パラレル/HR)` and a bare `(hBP04)` reprint all stay distinct printings. */
 export function printingFromLabel(label: string): string {
   const norm = (label ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim();
-  const marked = Array.from(norm.matchAll(/[(（]([^)）]*)[)）]/g))
+  const groups = Array.from(norm.matchAll(/[(（]([^)）]*)[)）]/g))
     .map((m) => m[1].trim())
-    .filter((group) => MARKER_RE.test(group));
-  if (marked.length === 0) return BASE_PRINTING;
-  const token = marked
+    .filter(Boolean);
+  if (groups.length === 0) return BASE_PRINTING;
+  const token = groups
     .flatMap((group) => group.split('/'))
     .map((part) => part.trim())
     .filter(Boolean)
@@ -65,6 +72,48 @@ export function printingFromLabel(label: string): string {
 
 export function isPlainPrinting(printing: string): boolean {
   return !PREMIUM_TOKEN_RE.test(normalizePrinting(printing));
+}
+
+export interface PrintingPrice {
+  printing: string;
+  /** exact reference SELL price of THIS printing, or null when unpriced */
+  sellPrice: number | null;
+  currency?: string;
+}
+
+/**
+ * The ONE default-printing rule, shared by the deck's low-cost resolver and the
+ * card-lookup/scan version alignment so the two can never disagree about which
+ * printing a card number defaults to.
+ *
+ * Plain printings win outright over premium ones — never default to a
+ * パラレル / サイン printing while a plain listing exists. Inside the winning
+ * tier the lowest exact sell price wins, compared only against prices in the
+ * same currency; an unpriced printing never borrows a sibling's price, it simply
+ * loses. With nothing priced the first entry of the tier wins, which keeps the
+ * choice deterministic in source-listing order.
+ *
+ * Returns an index into `entries`, or -1 when `entries` is empty.
+ */
+export function pickDefaultPrintingIndex(entries: readonly PrintingPrice[]): number {
+  const all = entries.map((_, i) => i);
+  const plain = all.filter((i) => isPlainPrinting(entries[i].printing));
+  const tier = plain.length > 0 ? plain : all;
+  if (tier.length === 0) return -1;
+
+  const priced = tier.filter((i) => {
+    const p = entries[i].sellPrice;
+    return typeof p === 'number' && p > 0;
+  });
+  if (priced.length === 0) return tier[0];
+
+  const currency = entries[priced[0]].currency ?? '';
+  let best = priced[0];
+  for (const i of priced) {
+    if ((entries[i].currency ?? '') !== currency) continue;
+    if ((entries[i].sellPrice as number) < (entries[best].sellPrice as number)) best = i;
+  }
+  return best;
 }
 
 /** One raw price listing as the scraped dataset stores it. */

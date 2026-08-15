@@ -413,7 +413,10 @@ const REAL_GROUPS = groupVariantsByCardNumber(REAL.cards, REAL.priceRecords);
 const REAL_INDEX = buildLowCostIndex(REAL_GROUPS);
 
 test('search/add, normalization and migration agree on the default printing', () => {
-  const sample = ['hBP04-005', 'hBP04-057', 'hBP04-041', 'hSD01-001', 'hBP01-044', 'hBP03-027'];
+  const sample = [
+    'hBP04-005', 'hBP04-057', 'hBP04-041', 'hSD01-001', 'hBP01-044', 'hBP03-027',
+    'hBP02-084', 'hSD01-017',
+  ];
   for (const cardNumber of sample) {
     const group = REAL_GROUPS.find((g) => g.cardNumber === cardNumber);
     assert.ok(group, `${cardNumber} must be offered by search`);
@@ -460,6 +463,28 @@ test('hBP04-005 really defaults to the ¥980 plain printing in the shipped data'
   );
   assert.equal(gap.total, 980, 'not ¥69,800 (signed) and not ¥150 (store buy price)');
   assert.equal(REAL_INDEX.get('hBP04-057').id, 'hBP04-057#BASE');
+});
+
+test('an explicit base reprint is a separate, separately priced deck choice', () => {
+  // hBP02-084 ships both みっころね24 ¥120 and みっころね24(hBP04) ¥180; hSD01-017
+  // ships マネちゃん ¥80 and マネちゃん(hBP04) ¥120. Both printings must be
+  // offered, both must be priced, and the cheaper original must win the default.
+  for (const [cardNumber, base, reprint] of [['hBP02-084', 120, 180], ['hSD01-017', 80, 120]]) {
+    const group = REAL_GROUPS.find((g) => g.cardNumber === cardNumber);
+    const ids = group.variants.map((v) => v.id);
+    assert.ok(ids.includes(`${cardNumber}#BASE`), `${cardNumber} must offer the original printing`);
+    assert.ok(ids.includes(`${cardNumber}#HBP04`), `${cardNumber} must offer the hBP04 reprint`);
+    assert.equal(group.card.id, `${cardNumber}#BASE`, `${cardNumber} defaults to the cheaper original`);
+
+    const estimate = (card) => computeGap(
+      { id: 'd', name: 'd', oshi: [], main: [{ card, qty: 1 }], yell: [], updatedAt: '' },
+      {},
+      REAL.priceRecords,
+    );
+    assert.equal(estimate(group.card).total, base, `${cardNumber} original price`);
+    const reprintCard = group.variants.find((v) => v.id === `${cardNumber}#HBP04`);
+    assert.equal(estimate(reprintCard).total, reprint, `${cardNumber} reprint price`);
+  }
 });
 
 console.log(`\n${passed} checks passed`);

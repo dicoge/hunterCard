@@ -30,6 +30,7 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(4173, r));
 
 const OUT = process.env.SHOT_DIR || '/tmp';
+const DB_TIMEOUT = 120000;
 const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
 const report = {};
 
@@ -72,14 +73,21 @@ async function run(label, viewport) {
     return { oshi: zone('oshi'), main: zone('main'), yell: zone('yell'), collection: state.collection };
   });
 
+  // Entering the editor only proves the screen mounted; the ~10MB card database
+  // still has to stream in before the low-cost index (and therefore the legacy
+  // migration and the gap estimate) exists.
+  const waitForEditorReady = () => page.waitForFunction(
+    () => document.body.innerText.includes('缺卡預估'), { timeout: DB_TIMEOUT },
+  );
+
   async function enterDeckEditor() {
     await page.waitForFunction(() => document.body.innerText.includes('以訪客身份進入')
-      || document.body.innerText.includes('牌組編輯器'), { timeout: 30000 });
+      || document.body.innerText.includes('牌組編輯器'), { timeout: DB_TIMEOUT });
     if (await hasText('以訪客身份進入')) await clickText('以訪客身份進入');
-    await page.waitForFunction(() => document.body.innerText.includes('牌組編輯器'), { timeout: 30000 });
+    await page.waitForFunction(() => document.body.innerText.includes('牌組編輯器'), { timeout: DB_TIMEOUT });
     await clickText('牌組編輯器');
     await page.waitForFunction(() => document.body.innerText.includes('本地牌組')
-      || document.body.innerText.includes('完成組牌'), { timeout: 30000 });
+      || document.body.innerText.includes('完成組牌'), { timeout: DB_TIMEOUT });
   }
 
   // ── 1. Fresh deck: search offers the plain printing ───────────────────────
@@ -89,10 +97,10 @@ async function run(label, viewport) {
   await enterDeckEditor();
   await page.type('input[placeholder="新牌組名稱"]', 'DIC-1013 驗證');
   await clickText('建立');
-  await page.waitForFunction(() => document.body.innerText.includes('完成組牌'), { timeout: 15000 });
+  await page.waitForFunction(() => document.body.innerText.includes('完成組牌'), { timeout: DB_TIMEOUT });
 
   await page.type('input[placeholder="卡號 / 名稱 / 系列"]', 'hBP04-005');
-  await page.waitForSelector('[data-testid="low-cost-tag-hBP04-005"]', { timeout: 15000 });
+  await page.waitForSelector('[data-testid="low-cost-tag-hBP04-005"]', { timeout: DB_TIMEOUT });
   const searchRow = await page.evaluate(() => {
     const tag = document.querySelector('[data-testid="low-cost-tag-hBP04-005"]');
     return tag ? tag.parentElement.parentElement.innerText.replace(/\n/g, ' | ') : null;
@@ -112,7 +120,7 @@ async function run(label, viewport) {
     [...row.querySelectorAll('div,span,button')].reverse()
       .find((n) => n.textContent.trim() === '＋').click();
   });
-  await page.waitForFunction(() => document.body.innerText.includes('缺卡預估'), { timeout: 15000 });
+  await waitForEditorReady();
 
   // ── 2. Estimate uses the exact SELL price, never the store buy price ──────
   const estimate = await subtotal(page);
@@ -127,11 +135,11 @@ async function run(label, viewport) {
   const persistedBeforeReload = await readDeck();
   await page.reload({ waitUntil: 'networkidle0' });
   await enterDeckEditor();
-  await page.waitForFunction(() => document.body.innerText.includes('缺卡預估'), { timeout: 30000 });
+  await waitForEditorReady();
   const persistedAfterReload = await readDeck();
   const estimateAfterReload = await subtotal(page);
   await clickText('切換牌組');
-  await page.waitForFunction(() => document.body.innerText.includes('我的牌組'), { timeout: 15000 });
+  await page.waitForFunction(() => document.body.innerText.includes('我的牌組'), { timeout: DB_TIMEOUT });
   const deckListText = await page.evaluate(() => document.body.innerText);
   await shot('deck-list');
 
@@ -155,10 +163,11 @@ async function run(label, viewport) {
   await page.evaluate((s) => localStorage.setItem('hunterCard-decks', JSON.stringify(s)), legacyDraft);
   await page.reload({ waitUntil: 'networkidle0' });
   await enterDeckEditor();
+  await waitForEditorReady();
   await page.waitForFunction(() => {
     const raw = localStorage.getItem('hunterCard-decks');
     return raw && JSON.parse(raw).state.decks[0].oshi[0].card.printing;
-  }, { timeout: 30000 });
+  }, { timeout: DB_TIMEOUT });
   const migrated = await readDeck();
   const migratedEstimate = await subtotal(page);
   await shot('migrated');
@@ -179,7 +188,7 @@ async function run(label, viewport) {
   });
   await page.reload({ waitUntil: 'networkidle0' });
   await enterDeckEditor();
-  await page.waitForFunction(() => document.body.innerText.includes('缺卡預估'), { timeout: 30000 });
+  await waitForEditorReady();
   const premiumEstimate = await subtotal(page);
   const premiumStillPremium = await page.evaluate(
     () => JSON.parse(localStorage.getItem('hunterCard-decks')).state.decks[0].oshi[0].card.printing,

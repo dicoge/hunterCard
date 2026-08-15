@@ -73,14 +73,20 @@ test('nested plain / parallel / signed listings become three isolated printings'
   assert.equal(byToken['PARALLEL/SIGN'].label, 'ラプラス・ダークネス(パラレル/サイン)');
 });
 
-test('a character-name parenthetical is not read as a variant marker', () => {
-  // Listing names routinely carry the holomen name in parentheses; only the
-  // whitelisted marker vocabulary may create a printing.
+test('every source descriptor is identity-bearing, not just premium markers', () => {
+  // A listing with no parenthetical is the plain printing.
   assert.equal(printingFromLabel('ときのそら'), 'BASE');
-  assert.equal(printingFromLabel('AZKi(hBP07)'), 'BASE');
+  // Known treatments get a stable ASCII token …
   assert.equal(printingFromLabel('白銀ノエル(パラレル)'), 'PARALLEL');
   assert.equal(printingFromLabel('AZKi(パラレル/HR)'), 'PARALLEL/HR');
   assert.equal(printingFromLabel('AZKi(パラレル/hBP07)'), 'PARALLEL/HBP07');
+  // … and an explicit base REPRINT is its own printing, not the plain one.
+  // Collapsing it onto BASE made two unambiguous listings look ambiguous and
+  // dropped both of their prices (DIC-1013 CR).
+  assert.equal(printingFromLabel('AZKi(hBP07)'), 'HBP07');
+  assert.equal(printingFromLabel('みっころね24(hBP04)'), 'HBP04');
+  // Both are plain: a reprint is playable and budget-eligible like the original.
+  assert.equal(isPlainPrinting(printingFromLabel('みっころね24(hBP04)')), true);
 });
 
 test('plain printings are distinguished from premium ones', () => {
@@ -158,6 +164,43 @@ test('two identical labels at different sell prices leave the printing unpriced'
   assert.equal(resolveExactPrice('hBP02-017', 'PARALLEL', priceRecords).status, 'NO_EXACT_PRICE');
   // The unambiguous plain printing is unaffected — ambiguity is per printing.
   assert.equal(resolveExactPrice('hBP02-017', 'BASE', priceRecords).price, 120);
+});
+
+test('an explicit base reprint keeps its own price instead of colliding with BASE', () => {
+  // Real shape (hBP02-084): the source lists the original みっころね24 at ¥120 and
+  // its hBP04 reprint at ¥180. These are NOT ambiguous — the labels say which is
+  // which — so reading only パラレル/サイン markers collapsed them onto one key
+  // and dropped both prices (DIC-1013 CR blocker).
+  const rows = [{
+    id: 'hBP02-084_hBP04', cardNumber: 'hBP02-084', name: 'みっころね24',
+    rarity: 'SR', series: 'hBP04', timestamp: SRC_TS,
+    skillsJp: { cardType: 'サポート・イベント・LIMITED' },
+    prices: [
+      { name: 'みっころね24(パラレル/箔押し)', sellPrice: 99800, rarity: '' },
+      { name: 'みっころね24(パラレル)', sellPrice: 1780, rarity: '', buyPrice: 2000 },
+      { name: 'みっころね24', sellPrice: 120, rarity: '' },
+      { name: 'みっころね24(パラレル/hBP04)', sellPrice: 5980, rarity: '', buyPrice: 1 },
+      { name: 'みっころね24(hBP04)', sellPrice: 180, rarity: '' },
+    ],
+  }];
+  const { cards, priceRecords } = adaptCardNumber(rows);
+  assert.equal(resolveExactPrice('hBP02-084', 'BASE', priceRecords).price, 120);
+  assert.equal(resolveExactPrice('hBP02-084', 'HBP04', priceRecords).price, 180);
+  assert.equal(resolveExactPrice('hBP02-084', 'PARALLEL', priceRecords).price, 1780);
+  assert.equal(resolveExactPrice('hBP02-084', 'PARALLEL/HBP04', priceRecords).price, 5980);
+  assert.equal(resolveExactPrice('hBP02-084', 'PARALLEL/FOIL', priceRecords).price, 99800);
+  // Each printing is separately ownable, and each keeps its raw source label.
+  const byId = Object.fromEntries(cards.map((c) => [c.id, c]));
+  assert.equal(byId['hBP02-084#BASE'].printingLabel, 'みっころね24');
+  assert.equal(byId['hBP02-084#HBP04'].printingLabel, 'みっころね24(hBP04)');
+  // Owning the reprint never satisfies a deck slot asking for the original.
+  const deck = {
+    id: 'd', name: 'reprint', updatedAt: '',
+    oshi: [], main: [{ card: byId['hBP02-084#BASE'], qty: 2 }], yell: [],
+  };
+  const gap = computeGap(deck, { 'hBP02-084|HBP04': 2 }, priceRecords);
+  assert.equal(gap.rows[0].owned, 0);
+  assert.equal(gap.total, 240);
 });
 
 test('a listing with no sell price stays unpriced rather than borrowing one', () => {
@@ -243,8 +286,8 @@ const DB = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'databa
 const RAW_CARDS = Object.values(DB.cards || {});
 const REAL = adaptDatabase(RAW_CARDS);
 
-// Five real cards spanning plain-only, plain+parallel, plain+parallel+signed,
-// duplicated-label (fail closed) and single-listing reprint cases.
+// Real cards spanning plain-only, plain+parallel, plain+parallel+signed,
+// duplicated-label (fail closed) and explicit base-reprint cases.
 const REAL_EXPECTATIONS = [
   { cardNumber: 'hBP04-005', printings: { BASE: 980, PARALLEL: 9980, 'PARALLEL/SIGN': 69800 } },
   { cardNumber: 'hBP04-057', printings: { BASE: 120, PARALLEL: 980 } },
@@ -252,6 +295,15 @@ const REAL_EXPECTATIONS = [
   { cardNumber: 'hSD01-001', printings: { BASE: 180 } },
   { cardNumber: 'hBP01-044', printings: { BASE: 220, 'PARALLEL/HR': 9980, 'PARALLEL/HBP07': 80 } },
   { cardNumber: 'hBP02-017', printings: { BASE: 120 }, unpriced: ['PARALLEL'] },
+  // Base reprints: original and hBP04 reprint must BOTH keep their exact price.
+  {
+    cardNumber: 'hBP02-084',
+    printings: { BASE: 120, HBP04: 180, PARALLEL: 1780, 'PARALLEL/HBP04': 5980, 'PARALLEL/FOIL': 99800 },
+  },
+  {
+    cardNumber: 'hSD01-017',
+    printings: { BASE: 80, HBP04: 120, 'PARALLEL/HBP04': 1980, 'PARALLEL/ベーシックPRパック VOL.3': 980 },
+  },
 ];
 
 test('five+ real cards resolve each printing to its own listed sell price', () => {

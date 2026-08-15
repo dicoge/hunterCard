@@ -15,7 +15,9 @@ import {
   eligibleZone, resolveExactPrice,
   type DeckCard, type DeckSlot, type Deck, type DeckZone, type PriceRecord,
 } from './deckRules';
-import { BASE_PRINTING, isPlainPrinting } from './printingIdentity';
+import {
+  BASE_PRINTING, isPlainPrinting, pickDefaultPrintingIndex, type PrintingPrice,
+} from './printingIdentity';
 
 /** Deterministic tie-break used whenever price cannot decide: plain printings
  * first, then printing token, then card id. */
@@ -34,13 +36,10 @@ function comparePrintings(a: DeckCard, b: DeckCard): number {
  *    place in a zone can never be a deck default). A card number whose every
  *    printing is unplayable — the committed dataset has untyped promo rows such
  *    as `202_hPR` — resolves to null so it is never offered as a deck card.
- * 2. Plain printings win outright over premium ones — never default to a
- *    パラレル / サイン printing while a plain listing exists.
- * 3. Inside the winning tier, the lowest EXACT sell price wins, compared only
- *    against prices in the same currency. A printing with no exact sell price
- *    never borrows another printing's price (DIC-945 #6): it simply loses to the
- *    priced candidates, and when nothing is priced the deterministic first plain
- *    printing wins and the estimate stays unpriced.
+ * 2. The plain-tier / lowest-exact-sell-price choice itself is delegated to
+ *    `pickDefaultPrintingIndex`, the same primitive card lookup and scan use, so
+ *    the deck and the card page can never disagree about a card's default
+ *    printing.
  */
 export function resolveLowCostVariant(
   variants: DeckCard[],
@@ -49,24 +48,14 @@ export function resolveLowCostVariant(
   const playable = variants.filter((c) => eligibleZone(c) !== null);
   if (playable.length === 0) return null;
 
-  const plain = playable.filter((c) => isPlainPrinting(c.printing));
-  const tier = (plain.length > 0 ? plain : playable).slice().sort(comparePrintings);
-
-  const priced: Array<{ card: DeckCard; price: number; currency: string }> = [];
-  for (const card of tier) {
+  const ordered = playable.slice().sort(comparePrintings);
+  const entries: PrintingPrice[] = ordered.map((card) => {
     const p = resolveExactPrice(card.cardNumber, card.printing, priceRecords);
-    if (p.status === 'ok') priced.push({ card, price: p.price, currency: p.currency });
-  }
-  if (priced.length === 0) return tier[0];
-
-  // Prices in different currencies are never compared; the deterministically
-  // first priced printing fixes the currency context for the comparison.
-  const currency = priced[0].currency;
-  let best = priced[0];
-  for (const entry of priced) {
-    if (entry.currency === currency && entry.price < best.price) best = entry;
-  }
-  return best.card;
+    return p.status === 'ok'
+      ? { printing: card.printing, sellPrice: p.price, currency: p.currency }
+      : { printing: card.printing, sellPrice: null };
+  });
+  return ordered[pickDefaultPrintingIndex(entries)];
 }
 
 export interface VariantGroup {
