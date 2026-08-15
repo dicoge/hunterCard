@@ -19,3 +19,16 @@ export const RECOGNITION_UNAVAILABLE_MESSAGE = '辨識服務暫時無法使用�
 export function isRecognitionUnavailable(status: number, body?: any): boolean {
   return status === 503 || body?.code === RECOGNITION_UNAVAILABLE_CODE;
 }
+
+/**
+ * True when the failure belongs to the deployment rather than to this photo: an
+ * unprovisioned key (503), a dead vision upstream or a failed database load (502).
+ * None of those ever looked at the image, so the UI has to fall through to local
+ * OCR and must not suggest a retake.
+ *
+ * 404 is deliberately excluded — that one IS the ranker reporting it could not
+ * match THIS image, and asking for a better shot is the correct advice there.
+ */
+export function isRecognitionInfrastructureFailure(status: number, body?: any): boolean {
+  return status >= 500 || isRecognitionUnavailable(status, body);
+}

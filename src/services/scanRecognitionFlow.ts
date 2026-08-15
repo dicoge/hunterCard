@@ -8,7 +8,7 @@
  */
 
 import type { CardInfo, RecognitionResult, RecognizedCandidate } from './cardRecognition';
-import { isRecognitionUnavailable, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
+import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
 
 /** 本地 OCR 也讀不到字時的一般引導；服務本身掛掉時不得使用。 */
 export const NO_TEXT_GUIDANCE = '無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。';
@@ -48,13 +48,14 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
 
   let apiBody: any = null;
   let apiNetworkError = false;
-  let serviceUnavailable = false;
+  let backendFailed = false;
   try {
     const response = await io.callRecognitionApi();
     apiBody = response.body;
-    // 未佈署金鑰是「這個環境不能辨識」，不是「這張照片不好」。status 必須留到這裡判斷，
-    // 先前把它丟掉，才會讓沒設 key 的環境叫使用者去調光線（DIC-1013）。
-    serviceUnavailable = isRecognitionUnavailable(response.status, apiBody);
+    // 未佈署金鑰（503）、vision 上游掛掉或資料庫載入失敗（502）都是「這個環境不能辨識」，
+    // 不是「這張照片不好」。status 必須留到這裡判斷，先前把它丟掉，才會讓後端故障叫使用者
+    // 去調光線（DIC-1013）。只有 404 才是排序器真的比對不到這張圖。
+    backendFailed = isRecognitionInfrastructureFailure(response.status, apiBody);
   } catch (e: any) {
     apiNetworkError = true;
     console.warn('[scanFlow] recognition API unreachable:', e?.message);
@@ -69,7 +70,7 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
   }
 
   // 後端有回應且是「這張卡辨識不出來」→ 才可以請使用者重拍。
-  if (apiBody && !apiBody.success && !serviceUnavailable) {
+  if (apiBody && !apiBody.success && !backendFailed) {
     ui.setStatus('', 0);
     ui.setBusy(false);
     if (apiBody.raw) ui.setRecognizedText(apiBody.raw);
@@ -83,7 +84,7 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
     return;
   }
 
-  if (!apiNetworkError && !serviceUnavailable) {
+  if (!apiNetworkError && !backendFailed) {
     // 沒網路錯誤也沒 API 結果（不該發生，但兜底）
     ui.setScanError('無法完成掃描，請重試或使用手動搜尋');
     ui.setBusy(false);
@@ -91,14 +92,14 @@ export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: Sca
   }
 
   // 後端不可用（掛掉或未佈署）→ 本地 OCR 仍要跑，它是這時唯一還能辨識的路。
-  await runWebLocalFallback(imageUri, io, ui, serviceUnavailable);
+  await runWebLocalFallback(imageUri, io, ui, backendFailed);
 }
 
 async function runWebLocalFallback(
   imageUri: string,
   io: ScanFlowIo,
   ui: ScanFlowUi,
-  serviceUnavailable: boolean,
+  backendFailed: boolean,
 ): Promise<void> {
   const result = await io.recognizeFromImage(imageUri);
   ui.setBusy(false);
@@ -122,7 +123,7 @@ async function runWebLocalFallback(
     return;
   }
 
-  ui.setScanError(serviceUnavailable || result.serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE : NO_TEXT_GUIDANCE);
+  ui.setScanError(backendFailed || result.serviceUnavailable ? RECOGNITION_UNAVAILABLE_MESSAGE : NO_TEXT_GUIDANCE);
 }
 
 export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: ScanFlowUi): Promise<void> {

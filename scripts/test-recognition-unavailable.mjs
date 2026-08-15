@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import handler, { RECOGNITION_UNAVAILABLE_CODE } from '../api/recognize-card.ts';
 import {
   isRecognitionUnavailable,
+  isRecognitionInfrastructureFailure,
   RECOGNITION_UNAVAILABLE_MESSAGE,
   RECOGNITION_UNAVAILABLE_CODE as CLIENT_CODE,
 } from '../src/services/recognitionOutcome.ts';
@@ -274,20 +275,97 @@ delete process.env.GEMINI_API_KEY;
   });
 }
 
-// 5d. A genuine "this card could not be matched" must keep its retake guidance.
+// 5d. A photo the backend genuinely could not place must stay on the user-facing
+//     path — an outage and an unrecognisable photo are not the same event.
+process.env.GEMINI_API_KEY = 'test-key';
+geminiStatus = 200;
+geminiReply = 'CARD_NUMBER: hZZ99-999\nCHARACTER: 不存在\nRARITY: C';
 {
   const { calls, ui } = recorder();
   const { spy, io: deps } = io({
-    callRecognitionApi: async () => ({ status: 200, body: { success: false, error: '無法辨識' } }),
+    callRecognitionApi: async () => {
+      const res = await post({ image: PIXEL });
+      return { status: res.status, body: await res.json() };
+    },
+  });
+  // The ranker always emits a top-5, so a card it cannot place surfaces as
+  // 200 + lowConfidence rather than the handler's 404 arm.
+  const unmatched = await post({ image: PIXEL });
+  const unmatchedBody = await unmatched.json();
+  check('the real handler hands back a candidate list for a card it cannot place', () => {
+    assert.equal(unmatched.status, 200);
+    assert.equal(unmatchedBody.success, false);
+    assert.ok(unmatchedBody.candidates.length > 0);
+    assert.equal(isRecognitionInfrastructureFailure(unmatched.status, unmatchedBody), false);
+  });
+
+  await runWebCameraScan(PHOTO, deps, ui);
+  check('web camera: an unplaced card opens the candidate picker, not an outage notice', () => {
+    assert.equal(calls.candidates.length, 1);
+    assert.deepEqual(calls.scanError, []);
+    assert.equal(spy.ocrCalls, 0, 'the backend answered about this photo; OCR must not re-run');
+  });
+}
+geminiReply = 'CARD_NUMBER: hBP04-005\nCHARACTER: ラプラス・ダークネス\nRARITY: SEC';
+
+// 5d2. And when the backend answers about the photo with no candidates at all,
+//      the retake guidance is still the right advice.
+{
+  const { calls, ui } = recorder();
+  const { spy, io: deps } = io({
+    callRecognitionApi: async () => ({ status: 404, body: { success: false, error: '無法辨識此卡牌', candidates: [] } }),
   });
   await runWebCameraScan(PHOTO, deps, ui);
 
   check('web camera: an unmatched card still gets the retake guidance (contract preserved)', () => {
     assert.equal(calls.scanError.length, 1);
-    assert.ok(calls.scanError[0].includes('請靠近卡號'));
+    assert.ok(calls.scanError[0].includes('請靠近卡號'), calls.scanError[0]);
     assert.equal(spy.ocrCalls, 0, 'the matched-nothing path must not change');
   });
 }
+
+// 5g. The real handler's upstream-502 is infrastructure, not a bad photo.
+geminiStatus = 500;
+{
+  const { calls, ui } = recorder();
+  const { spy, io: deps } = io({
+    callRecognitionApi: async () => {
+      const res = await post({ image: PIXEL });
+      return { status: res.status, body: await res.json() };
+    },
+  });
+  const outage = await post({ image: PIXEL });
+  check('the real handler answers 502 when the vision upstream is down', () => {
+    assert.equal(outage.status, 502);
+    assert.equal(isRecognitionUnavailable(outage.status, null), false, '502 is not the 503 code');
+    assert.equal(isRecognitionInfrastructureFailure(outage.status, null), true);
+  });
+
+  await runWebCameraScan(PHOTO, deps, ui);
+  check('web camera: a real upstream 502 still runs the local OCR fallback', () => {
+    assert.equal(spy.visionCalls, 1);
+    assert.equal(spy.ocrCalls, 1, 'an infrastructure outage must not skip OCR');
+  });
+  check('web camera: a real upstream 502 never blames the photo', () => {
+    assertNoBlame(calls.scanError);
+    assert.deepEqual(calls.scanError, [RECOGNITION_UNAVAILABLE_MESSAGE]);
+  });
+}
+geminiStatus = 200;
+
+// 5h. The infrastructure predicate draws the line where the handler does.
+check('every 5xx is infrastructure; 404/400 stay the caller-visible outcome', () => {
+  for (const s of [500, 502, 503, 504]) {
+    assert.equal(isRecognitionInfrastructureFailure(s, null), true, `${s} must be infrastructure`);
+  }
+  for (const s of [200, 400, 404]) {
+    assert.equal(isRecognitionInfrastructureFailure(s, null), false, `${s} must not be infrastructure`);
+  }
+  // The 503-specific meaning survives: only 503 / the explicit code is "unprovisioned".
+  assert.equal(isRecognitionUnavailable(502, null), false);
+  assert.equal(isRecognitionUnavailable(503, null), true);
+  assert.equal(isRecognitionInfrastructureFailure(200, { code: RECOGNITION_UNAVAILABLE_CODE }), true);
+});
 
 // 5e. Native camera carries serviceUnavailable into the final outcome.
 {

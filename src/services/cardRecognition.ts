@@ -11,7 +11,7 @@ import { preprocessCardImage } from './imagePreprocessor';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
-import { isRecognitionUnavailable, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
+import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
 
 // ── 類型定義 ──
 
@@ -65,7 +65,7 @@ export interface RecognitionResult {
   raw?: string;
   debug?: any;
   lowConfidence?: boolean;
-  /** The recognition backend is unavailable — not a card that failed to match. */
+  /** The recognition backend failed (unprovisioned or 5xx) — not a card that failed to match. */
   serviceUnavailable?: boolean;
   /** Top 3-5 alternative matches for the candidate-confirmation UI. */
   candidates?: RecognizedCandidate[];
@@ -387,7 +387,8 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     if (!apiResponse.ok) {
       console.warn(`[cardRecognition] API returned ${apiResponse.status}`);
       const errorBody = await apiResponse.json().catch(() => null);
-      if (isRecognitionUnavailable(apiResponse.status, errorBody)) {
+      // 5xx 一律算後端故障（未佈署 503、vision 上游或資料庫 502）；404 才是真的比對不到。
+      if (isRecognitionInfrastructureFailure(apiResponse.status, errorBody)) {
         return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
       }
       return { success: false, error: '' };
