@@ -25,6 +25,11 @@ import {
   RECOGNITION_UNAVAILABLE_MESSAGE,
   RECOGNITION_UNAVAILABLE_CODE as CLIENT_CODE,
 } from '../src/services/recognitionOutcome.ts';
+import {
+  runWebCameraScan,
+  runNativeCameraScan,
+  NO_TEXT_GUIDANCE,
+} from '../src/services/scanRecognitionFlow.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const database = JSON.parse(
@@ -146,6 +151,175 @@ check('a ranked result is never classified as unavailable', () => {
 check('vision was actually exercised once a key exists', () => {
   assert.ok(geminiCalls >= 1);
 });
+
+// ── 5. The REAL camera flows, fed by the REAL handler ─────────────────────────
+// These are the functions ScanScreen's web and native camera branches call. The
+// CR blocker was that the UI dropped the status, showed retake guidance and
+// returned before local OCR, so all three are pinned here on production code.
+
+const PHOTO = 'file:///tmp/scan.jpg';
+
+function recorder() {
+  const calls = { scanError: [], searchError: [], recognized: [], visionRecognized: [], candidates: [], status: [] };
+  const ui = {
+    setStatus: (label) => calls.status.push(label),
+    setBusy: () => {},
+    setScanError: (m) => calls.scanError.push(m),
+    setSearchError: (m) => calls.searchError.push(m),
+    setSearchResults: () => {},
+    setSuggestions: () => {},
+    setRecognizedText: () => {},
+    setCandidateReason: () => {},
+    showLowConfidenceCandidates: (c) => calls.candidates.push(c),
+    onRecognized: (card) => calls.recognized.push(card),
+    onVisionRecognized: (card) => calls.visionRecognized.push(card),
+  };
+  return { calls, ui };
+}
+
+const CARD = { id: 'x', name: 'ラプラス・ダークネス', cardNumber: 'hBP04-005' };
+
+function io(overrides = {}) {
+  const spy = { ocrCalls: 0, visionCalls: 0 };
+  return {
+    spy,
+    io: {
+      callRecognitionApi: async () => {
+        throw new Error('callRecognitionApi not stubbed');
+      },
+      recognizeFromImage: async () => {
+        spy.visionCalls++;
+        return { success: false };
+      },
+      ocrText: async () => {
+        spy.ocrCalls++;
+        return '';
+      },
+      recognizeFromOcr: async () => ({ success: false, error: '找不到匹配的卡牌' }),
+      searchCards: async () => [],
+      mapApiCard: (c) => c,
+      mapApiCandidates: (raw) =>
+        Array.isArray(raw) && raw.length ? raw.map((c) => ({ card: c, confidence: 0 })) : undefined,
+      ...overrides,
+    },
+  };
+}
+
+// The photo-blaming fragments the user must never see for a platform outage.
+const BLAME_FRAGMENTS = ['調整角度', '光線', '請靠近卡號', '避免反光', '保持卡片平整'];
+const assertNoBlame = (messages) => {
+  for (const m of messages) {
+    for (const fragment of BLAME_FRAGMENTS) {
+      assert.ok(!m.includes(fragment), `photo-blaming copy leaked: ${m}`);
+    }
+  }
+};
+
+// 5a. Web camera + the real unprovisioned handler.
+delete process.env.GEMINI_API_KEY;
+{
+  const { calls, ui } = recorder();
+  const { spy, io: deps } = io({
+    callRecognitionApi: async () => {
+      const res = await post({ image: PIXEL });
+      return { status: res.status, body: await res.json() };
+    },
+  });
+  await runWebCameraScan(PHOTO, deps, ui);
+
+  check('web camera: a 503 from the real handler still runs the local OCR fallback', () => {
+    assert.equal(spy.visionCalls, 1, 'local vision fallback must run');
+    assert.equal(spy.ocrCalls, 1, 'local OCR must not be skipped');
+  });
+  check('web camera: an unavailable backend never blames the photo', () => {
+    assertNoBlame(calls.scanError);
+  });
+  check('web camera: the user is told the service is unavailable', () => {
+    assert.deepEqual(calls.scanError, [RECOGNITION_UNAVAILABLE_MESSAGE]);
+    assert.notEqual(calls.scanError[0], NO_TEXT_GUIDANCE);
+  });
+}
+
+// 5b. Same outage, but the local OCR fallback actually finds the card.
+{
+  const { calls, ui } = recorder();
+  const { spy, io: deps } = io({
+    callRecognitionApi: async () => {
+      const res = await post({ image: PIXEL });
+      return { status: res.status, body: await res.json() };
+    },
+    ocrText: async () => 'hBP04-005',
+    recognizeFromOcr: async () => ({ success: true, card: CARD, confidence: 0.9 }),
+  });
+  await runWebCameraScan(PHOTO, deps, ui);
+
+  check('web camera: the OCR fallback can still recognise while the backend is down', () => {
+    assert.deepEqual(calls.recognized, [CARD]);
+    assert.deepEqual(calls.scanError, []);
+    assert.equal(spy.visionCalls, 1);
+  });
+}
+
+// 5c. Status must carry the decision even when a proxy strips the body code.
+{
+  const { calls, ui } = recorder();
+  const { spy, io: deps } = io({
+    callRecognitionApi: async () => ({ status: 503, body: { success: false, error: 'Service Unavailable' } }),
+  });
+  await runWebCameraScan(PHOTO, deps, ui);
+
+  check('web camera: a bare 503 (code stripped) is still an outage, not a bad photo', () => {
+    assert.equal(spy.ocrCalls, 1, 'dropping the HTTP status would skip OCR here');
+    assert.deepEqual(calls.scanError, [RECOGNITION_UNAVAILABLE_MESSAGE]);
+  });
+}
+
+// 5d. A genuine "this card could not be matched" must keep its retake guidance.
+{
+  const { calls, ui } = recorder();
+  const { spy, io: deps } = io({
+    callRecognitionApi: async () => ({ status: 200, body: { success: false, error: '無法辨識' } }),
+  });
+  await runWebCameraScan(PHOTO, deps, ui);
+
+  check('web camera: an unmatched card still gets the retake guidance (contract preserved)', () => {
+    assert.equal(calls.scanError.length, 1);
+    assert.ok(calls.scanError[0].includes('請靠近卡號'));
+    assert.equal(spy.ocrCalls, 0, 'the matched-nothing path must not change');
+  });
+}
+
+// 5e. Native camera carries serviceUnavailable into the final outcome.
+{
+  const { calls, ui } = recorder();
+  const { spy, io: deps } = io({
+    recognizeFromImage: async () => ({
+      success: false,
+      serviceUnavailable: true,
+      error: RECOGNITION_UNAVAILABLE_MESSAGE,
+    }),
+  });
+  await runNativeCameraScan(PHOTO, deps, ui);
+
+  check('native camera: local OCR still runs after the backend reports unavailable', () => {
+    assert.equal(spy.ocrCalls, 1);
+  });
+  check('native camera: the outcome keeps the unavailable notice, not generic photo guidance', () => {
+    assert.deepEqual(calls.scanError, [RECOGNITION_UNAVAILABLE_MESSAGE]);
+    assertNoBlame(calls.scanError);
+  });
+}
+
+// 5f. Native camera without an outage keeps the existing generic guidance.
+{
+  const { calls, ui } = recorder();
+  const { io: deps } = io();
+  await runNativeCameraScan(PHOTO, deps, ui);
+
+  check('native camera: an ordinary empty-OCR scan keeps the existing guidance', () => {
+    assert.deepEqual(calls.scanError, [NO_TEXT_GUIDANCE]);
+  });
+}
 
 if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
 else process.env.GEMINI_API_KEY = savedKey;
