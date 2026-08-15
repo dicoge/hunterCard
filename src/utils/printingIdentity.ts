@@ -74,6 +74,25 @@ export function isPlainPrinting(printing: string): boolean {
   return !PREMIUM_TOKEN_RE.test(normalizePrinting(printing));
 }
 
+/**
+ * Canonical order over printing tokens: plain printings first, then code-unit
+ * order. Code units rather than `localeCompare` because the same deck has to
+ * resolve identically on V8, Hermes and JSC, whose collation tables differ.
+ *
+ * This is what makes the default printing a property of the card number instead
+ * of a property of whichever list a caller happened to build — card detail reads
+ * listings in source order while deck search reads them sorted, and at equal
+ * price that difference used to hand them different printings (`エラッタ前` vs
+ * `エラッタ後` on hBP03-027 and five others).
+ */
+export function comparePrintingTokens(a: string, b: string): number {
+  const na = normalizePrinting(a);
+  const nb = normalizePrinting(b);
+  if (isPlainPrinting(na) !== isPlainPrinting(nb)) return isPlainPrinting(na) ? -1 : 1;
+  if (na === nb) return 0;
+  return na < nb ? -1 : 1;
+}
+
 export interface PrintingPrice {
   printing: string;
   /** exact reference SELL price of THIS printing, or null when unpriced */
@@ -90,16 +109,21 @@ export interface PrintingPrice {
  * パラレル / サイン printing while a plain listing exists. Inside the winning
  * tier the lowest exact sell price wins, compared only against prices in the
  * same currency; an unpriced printing never borrows a sibling's price, it simply
- * loses. With nothing priced the first entry of the tier wins, which keeps the
- * choice deterministic in source-listing order.
+ * loses.
+ *
+ * Every step that price cannot decide falls back to `comparePrintingTokens`, so
+ * the answer depends only on the card number's printings — not on the order the
+ * caller listed them in.
  *
  * Returns an index into `entries`, or -1 when `entries` is empty.
  */
 export function pickDefaultPrintingIndex(entries: readonly PrintingPrice[]): number {
-  const all = entries.map((_, i) => i);
-  const plain = all.filter((i) => isPlainPrinting(entries[i].printing));
-  const tier = plain.length > 0 ? plain : all;
-  if (tier.length === 0) return -1;
+  if (entries.length === 0) return -1;
+  const ranked = entries
+    .map((_, i) => i)
+    .sort((a, b) => comparePrintingTokens(entries[a].printing, entries[b].printing) || a - b);
+  const plain = ranked.filter((i) => isPlainPrinting(entries[i].printing));
+  const tier = plain.length > 0 ? plain : ranked;
 
   const priced = tier.filter((i) => {
     const p = entries[i].sellPrice;

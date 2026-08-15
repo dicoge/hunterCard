@@ -16,17 +16,14 @@ import {
   type DeckCard, type DeckSlot, type Deck, type DeckZone, type PriceRecord,
 } from './deckRules';
 import {
-  BASE_PRINTING, isPlainPrinting, pickDefaultPrintingIndex, type PrintingPrice,
+  BASE_PRINTING, comparePrintingTokens, pickDefaultPrintingIndex, type PrintingPrice,
 } from './printingIdentity';
 
-/** Deterministic tie-break used whenever price cannot decide: plain printings
- * first, then printing token, then card id. */
+/** Display order for a card number's printings — the same canonical order the
+ * shared default resolver ranks by, so the row the editor lists first is the row
+ * it defaults to. */
 function comparePrintings(a: DeckCard, b: DeckCard): number {
-  return (
-    Number(isPlainPrinting(b.printing)) - Number(isPlainPrinting(a.printing)) ||
-    a.printing.localeCompare(b.printing) ||
-    a.id.localeCompare(b.id)
-  );
+  return comparePrintingTokens(a.printing, b.printing) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 /**

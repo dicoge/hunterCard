@@ -14,6 +14,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { buildPriceVersions, resolveVersionForCard } from '../src/utils/versionAlignment.ts';
 import { printingFromLabel, isPlainPrinting } from '../src/utils/printingIdentity.ts';
+import { adaptDatabase } from '../src/utils/deckCardData.ts';
+import { groupVariantsByCardNumber, buildLowCostIndex } from '../src/utils/deckVariants.ts';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.join(dirname, '..', 'public', 'data', 'database.json');
@@ -155,6 +157,68 @@ for (const [, c] of multi) {
 console.log(`  多版本卡：${multi.length}｜版本待確認：${waitCount}`);
 check('所有解析的 index 皆合法', badIndex === 0, `${badIndex} 筆越界`);
 check('有原印掛牌時，預設一律不落在パラレル/サイン 版', premiumDefault === 0, `${premiumDefault} 筆誤選溢價版`);
+
+console.log('\n=== 跨消費端一致性（卡片頁／掃描 vs 組牌搜尋／遷移）===');
+
+// 卡片頁與掃描讀的是來源掛牌順序，組牌搜尋讀的是排序後的版本清單。同價時若讓輸入順序
+// 決定勝負，兩邊就會對同一張卡給出不同的版本代碼 —— 那是不同的擁有權／持久化／缺卡鍵。
+// 這裡跑的是真正的兩條產線，不是重寫的簡化版。
+{
+  const db = adaptDatabase(Object.values(cards));
+  const deckPick = new Map(
+    groupVariantsByCardNumber(db.cards, db.priceRecords).map((g) => [g.cardNumber, g.card.printing]),
+  );
+  const rowFor = new Map();
+  for (const c of Object.values(cards)) if (!rowFor.has(c.cardNumber)) rowFor.set(c.cardNumber, c);
+
+  const detailPick = (row) => {
+    const versions = buildPriceVersions(row);
+    return versions[resolveVersionForCard(versions).index].printing;
+  };
+
+  // CR 具名的六張：同價的エラッタ前／エラッタ後，先前一邊挑前、一邊挑後。
+  const CR_CASES = ['hBP03-027', 'hSD07-003', 'hBP01-081', 'hBP02-003', 'hBP02-078', 'hBP02-102'];
+  for (const num of CR_CASES) {
+    const detail = detailPick(rowFor.get(num));
+    const deck = deckPick.get(num);
+    check(
+      `${num} 卡片頁／掃描與組牌選到同一個版本代碼`,
+      detail === deck && !!deck,
+      `detail=${detail} deck=${deck}`,
+    );
+  }
+
+  let compared = 0;
+  const diverged = [];
+  for (const [num, row] of rowFor) {
+    const deck = deckPick.get(num);
+    if (!deck) continue; // 組牌完全不提供（無可放置分區）的卡號
+    compared++;
+    if (detailPick(row) !== deck) diverged.push(`${num}: detail=${detailPick(row)} deck=${deck}`);
+  }
+  console.log(`  比對卡號：${compared}`);
+  check(
+    '全庫每個卡號的預設版本在兩條產線上一致',
+    diverged.length === 0,
+    `${diverged.length} 筆分歧，例如 ${diverged.slice(0, 3).join('；')}`,
+  );
+
+  // 舊草稿遷移吃的就是 buildLowCostIndex，上面比對的即是它的值域。
+  const index = buildLowCostIndex(groupVariantsByCardNumber(db.cards, db.priceRecords));
+  check(
+    '草稿遷移索引與組牌搜尋同源（同一個 printing）',
+    CR_CASES.every((n) => index.get(n)?.printing === deckPick.get(n)),
+    CR_CASES.map((n) => `${n}=${index.get(n)?.printing}`).join(' '),
+  );
+
+  // 順序無關性本身：把來源掛牌反轉後仍解析到同一個版本代碼。
+  const orderStable = CR_CASES.every((num) => {
+    const versions = buildPriceVersions(rowFor.get(num));
+    const reversed = versions.slice().reverse();
+    return reversed[resolveVersionForCard(reversed).index].printing === detailPick(rowFor.get(num));
+  });
+  check('反轉來源掛牌順序不改變預設版本', orderStable, '順序仍然影響結果');
+}
 
 console.log('');
 if (failures > 0) {

@@ -13,7 +13,9 @@
  * confident=false，由呼叫端標示「版本待確認」。
  */
 
-import { printingFromLabel, pickDefaultPrintingIndex, BASE_PRINTING } from './printingIdentity';
+import {
+  printingFromLabel, pickDefaultPrintingIndex, buildSourcePrintings, BASE_PRINTING,
+} from './printingIdentity';
 
 export interface PriceVersion {
   name: string;
@@ -79,20 +81,23 @@ export function buildPriceVersions(card: CardLike): PriceVersion[] {
 /**
  * 選出這張卡的預設版本。
  *
- * 預設值來自 pickDefaultPrintingIndex —— 與組牌器低配預設完全同一條規則（原印版優先，
- * 同層取最低參考售價）。當同一個版本代碼有多筆掛牌（來源真的會出現兩筆同名
- * 「白銀ノエル(パラレル)」分別 ¥3,480／¥500）時，光看來源無法辨識是哪一筆，回報
- * confident=false 由使用者自行挑選，絕不替他選一個價格。
+ * 這裡刻意先用 buildSourcePrintings 收斂成「一個版本代碼一筆」的檢視，再交給
+ * pickDefaultPrintingIndex —— 與組牌器走的是同兩個函式、同一份輸入形狀。差別只在顯示：
+ * 卡片頁保留每一筆掛牌讓使用者自己挑，組牌器只留可辨識的那些。若這裡改用未收斂的清單，
+ * 同代碼多筆掛牌（來源真的會出現兩筆同名「白銀ノエル(パラレル)」¥3,480／¥500）在這側
+ * 會是「最低價候選」、在組牌器那側卻是無價的，兩邊就會挑到不同版本。
+ *
+ * 選中的版本代碼若有多筆掛牌，回報 confident=false 由使用者自行挑選，絕不替他選價格。
  */
 export function resolveVersionForCard(versions: PriceVersion[]): VersionResolution {
   if (versions.length === 0) return { index: 0, confident: false, reason: '無價格版本' };
   if (versions.length === 1) return { index: 0, confident: true, reason: '單一版本' };
 
-  const index = pickDefaultPrintingIndex(versions);
-  const chosen = versions[index];
-  const sameToken = versions.filter(v => v.printing === chosen.printing);
-  if (sameToken.length > 1) {
-    return { index, confident: false, reason: `來源有多筆「${chosen.name}」掛牌，無法辨識版本` };
+  const printings = buildSourcePrintings(versions);
+  const chosen = printings[pickDefaultPrintingIndex(printings)];
+  const index = versions.findIndex(v => v.printing === chosen.printing);
+  if (chosen.ambiguous) {
+    return { index, confident: false, reason: `來源有多筆「${chosen.label}」掛牌，無法辨識版本` };
   }
   return { index, confident: true, reason: `來源版本 ${chosen.printing}` };
 }
