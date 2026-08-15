@@ -134,6 +134,9 @@ jobs:
       - name: Verify scan totals fail closed on unresolved versions (DIC-1013)
         run: npm run test:scan-fail-closed
 
+      - name: Verify an unprovisioned recognition backend is not blamed on the photo (DIC-1013)
+        run: npm run test:recognition-unavailable
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)

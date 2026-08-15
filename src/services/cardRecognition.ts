@@ -11,6 +11,7 @@ import { preprocessCardImage } from './imagePreprocessor';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
+import { isRecognitionUnavailable, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
 
 // ── 類型定義 ──
 
@@ -64,6 +65,8 @@ export interface RecognitionResult {
   raw?: string;
   debug?: any;
   lowConfidence?: boolean;
+  /** The recognition backend is unavailable — not a card that failed to match. */
+  serviceUnavailable?: boolean;
   /** Top 3-5 alternative matches for the candidate-confirmation UI. */
   candidates?: RecognizedCandidate[];
 }
@@ -383,6 +386,10 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
 
     if (!apiResponse.ok) {
       console.warn(`[cardRecognition] API returned ${apiResponse.status}`);
+      const errorBody = await apiResponse.json().catch(() => null);
+      if (isRecognitionUnavailable(apiResponse.status, errorBody)) {
+        return { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE };
+      }
       return { success: false, error: '' };
     }
 
@@ -456,6 +463,7 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
  */
 export async function recognizeCardFromImage(imageUri: string): Promise<RecognitionResult> {
   // Step 0: Try server-side Gemini Vision API first
+  let serviceUnavailable = false;
   try {
     const apiResult = await recognizeViaApi(imageUri);
     if (apiResult.success && apiResult.card) {
@@ -464,6 +472,7 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
     if (apiResult.lowConfidence || apiResult.suggestions?.length || apiResult.raw || apiResult.debug) {
       return apiResult;
     }
+    serviceUnavailable = !!apiResult.serviceUnavailable;
   } catch (e) {
     console.warn('[cardRecognition] API recognition failed, falling back to local:', e);
   }
@@ -471,7 +480,11 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
   const { cardId, rawText } = await recognizeCardNumber(imageUri);
 
   if (!cardId || cardId.trim().length === 0) {
-    return { success: false, error: '無法從卡牌識別到卡號，請調整角度或光線後重試' };
+    // A down backend must not masquerade as a badly-lit photo — the local OCR pass
+    // above is a best-effort fallback, not evidence about the user's image.
+    return serviceUnavailable
+      ? { success: false, serviceUnavailable: true, error: RECOGNITION_UNAVAILABLE_MESSAGE }
+      : { success: false, error: '無法從卡牌識別到卡號，請調整角度或光線後重試' };
   }
 
   const allCards = await loadAllCards();

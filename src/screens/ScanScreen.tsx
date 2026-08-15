@@ -22,6 +22,7 @@ import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
 import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
+import { RECOGNITION_UNAVAILABLE_MESSAGE } from '../services/recognitionOutcome';
 import { recognizeTextWeb } from '../services/webOcr';
 import ScanOverlay from '../components/ScanOverlay';
 import ScanResultCard from '../components/ScanResultCard';
@@ -714,6 +715,12 @@ export default function ScanScreen({ navigation }: any) {
           return;
         }
 
+        // When the recognition backend is unavailable the local OCR passes below are
+        // only a best-effort fallback, so their failure says nothing about the photo.
+        const noTextError = galleryVisionResult.serviceUnavailable
+          ? RECOGNITION_UNAVAILABLE_MESSAGE
+          : '無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。';
+
         if (isWeb) {
           // Web: 卡號優先 OCR
           const cardResult = await recognizeCardFromImage(result.assets[0].uri);
@@ -739,7 +746,7 @@ export default function ScanScreen({ navigation }: any) {
               const searchResult = await searchCards(trimmedText, 10);
               setSearchResults(searchResult);
             } else {
-              setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
+              setScanError(noTextError);
             }
           }
         } else {
@@ -760,7 +767,7 @@ export default function ScanScreen({ navigation }: any) {
               setSearchResults(searchResult);
             }
           } else {
-            setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
+            setScanError(noTextError);
           }
         }
       }
