@@ -1,4 +1,4 @@
-=== Scrape Log 2026-08-14T12:15:29.976Z ===
+=== Scrape Log 2026-08-15T12:06:24.973Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -92,6 +92,8 @@
 [add-zh-names] ⚠️ 過濾了 2 個損壞的翻譯條目 (含 U+FFFD)
 [add-zh-names] ✅ 載入 339 筆翻譯對照
 [add-zh-names] 📝 處理 2105 張卡片...
+[ERROR] [add-zh-names] ⚠️ API 錯誤 (401): {"error":{"message":"User not found.","code":401}}
+[ERROR] [add-zh-names] ⚠️ API 錯誤 (401): {"error":{"message":"User not found.","code":401}}
 [add-zh-names] ✅ 完成！
 [add-zh-names]   靜態匹配: 2103 張卡片
 [add-zh-names]   自動翻譯: 0 張卡片
@@ -99,7 +101,7 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 0 new records; index totals: 2025 cards / 109143 records
+  [price-history] Saved 2015 new records; index totals: 2025 cards / 111158 records
 
 ── Step 6: Merge priceHistory into database ──
   [priceHistory] Merged into 2025 cards
@@ -113,7 +115,7 @@
   Total cards: 2105
   Cards with prices: 1183
   Images downloaded: 0
-  Duration: 317.8s
+  Duration: 332.9s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
@@ -122,5 +124,5 @@ Build result: {
   "yuyuCount": 1183,
   "officialCount": 2105,
   "imagesDownloaded": 0,
-  "duration": 317.8
+  "duration": 332.9
 }
