@@ -131,6 +131,9 @@ jobs:
       - name: Verify card-lookup version alignment is source-proven (DIC-1013)
         run: npm run test:version-alignment
 
+      - name: Verify scan totals fail closed on unresolved versions (DIC-1013)
+        run: npm run test:scan-fail-closed
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)

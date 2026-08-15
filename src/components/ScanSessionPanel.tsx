@@ -32,6 +32,8 @@ export default function ScanSessionPanel({
 
   if (cardCount === 0 && !expanded) return null;
 
+  const pendingCount = cards.filter((c) => !c.versionConfident).length;
+
   const formatPrice = (price: number | null) => {
     if (price == null || price === 0) return '—';
     if (preferredCurrency === 'JPY') return `¥${price.toLocaleString()}`;
@@ -104,6 +106,7 @@ export default function ScanSessionPanel({
                 {cards.map((card, index) => {
                   const hasVersions = card.priceVersions && card.priceVersions.length > 1;
                   const selected = card.priceVersions?.[card.selectedVersion];
+                  const pending = !card.versionConfident;
                   return (
                   <View key={card.instanceId} style={styles.cardRow}>
                     <View style={styles.cardInfo}>
@@ -114,33 +117,35 @@ export default function ScanSessionPanel({
                             {card.name}
                           </Text>
                           <Text style={styles.cardMeta}>
-                            {card.id}{card.rarity ? ` · ${card.rarity}` : ''} · {formatPrice(getEffectivePrice(card))}
+                            {card.id}{card.rarity ? ` · ${card.rarity}` : ''} ·{' '}
+                            {pending ? '版本待確認' : formatPrice(getEffectivePrice(card))}
                           </Text>
                         </TouchableOpacity>
                         {hasVersions ? (
                           <>
-                            <Text style={styles.versionHint}>選擇版本（估價依此版本計算）</Text>
+                            <Text style={styles.versionHint}>
+                              {pending
+                                ? '來源無法辨識版本，未計入總計 —— 請選擇你手上的那一版'
+                                : '選擇版本（估價依此版本計算）'}
+                            </Text>
                             <View style={styles.versionRow}>
-                              {card.priceVersions.map((v, vi) => (
+                              {card.priceVersions.map((v, vi) => {
+                                const active = !pending && vi === card.selectedVersion;
+                                return (
                                 <TouchableOpacity
                                   key={`${card.instanceId}-v${vi}`}
-                                  style={[
-                                    styles.versionChip,
-                                    vi === card.selectedVersion && styles.versionChipActive,
-                                  ]}
+                                  style={[styles.versionChip, active && styles.versionChipActive]}
                                   onPress={() => setCardVersion(card.instanceId, vi)}
                                 >
                                   <Text
-                                    style={[
-                                      styles.versionChipText,
-                                      vi === card.selectedVersion && styles.versionChipTextActive,
-                                    ]}
+                                    style={[styles.versionChipText, active && styles.versionChipTextActive]}
                                     numberOfLines={1}
                                   >
                                     {v.name} · {formatPrice(v.sellPrice)}
                                   </Text>
                                 </TouchableOpacity>
-                              ))}
+                                );
+                              })}
                             </View>
                           </>
                         ) : selected && selected.name && selected.name !== card.series ? (
@@ -167,6 +172,11 @@ export default function ScanSessionPanel({
                     {formatPrice(totalValue)}
                   </Text>
                 </View>
+                {pendingCount > 0 && (
+                  <Text style={styles.pendingNote}>
+                    {pendingCount} 張版本待確認，未計入總計
+                  </Text>
+                )}
                 <View style={styles.actionRow}>
                   {cardCount > 0 && (
                     <>
@@ -183,13 +193,15 @@ export default function ScanSessionPanel({
                         onPress={() => {
                           // Share/export — build text summary
                           const summary = cards.map((c, i) => {
+                            if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — 版本待確認，未計入`;
                             const v = c.priceVersions?.[c.selectedVersion];
                             const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
                               ? ` [${v.name}]`
                               : '';
                             return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
                           }).join('\n');
-                          const full = `📋 掃描估值結果\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n總計: ${formatPrice(totalValue)}`;
+                          const pendingNote = pendingCount > 0 ? `\n（${pendingCount} 張版本待確認，未計入）` : '';
+                          const full = `📋 掃描估值結果\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n總計: ${formatPrice(totalValue)}${pendingNote}`;
                           // Trigger native share
                           if (Platform.OS === 'web') {
                             navigator.clipboard?.writeText(full);
@@ -321,6 +333,12 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     fontSize: 10,
     marginTop: 6,
+  },
+  pendingNote: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    marginTop: 4,
+    textAlign: 'right',
   },
   versionRow: {
     flexDirection: 'row',
