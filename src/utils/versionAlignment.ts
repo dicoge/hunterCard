@@ -9,8 +9,12 @@
  * 並當成已對齊 —— 必須回報 confident=false，由呼叫端標示「版本待確認」。
  */
 
+import { printingFromLabel, BASE_PRINTING } from './printingIdentity';
+
 export interface PriceVersion {
   name: string;
+  /** 與組牌器共用的來源版本代碼（BASE / PARALLEL / PARALLEL/SIGN …）。 */
+  printing: string;
   sellPrice: number | null;
   buyPrice: number | null; // 對齊到此版本的店家收購價；對不到為 null（fail closed，不借別版）
 }
@@ -36,6 +40,10 @@ export interface VersionResolution {
 /**
  * 從一張卡的 prices 陣列建出可選版本清單（去重）。
  * 沒有明細時退回單一版本（用卡的 series 當標籤、sellPrice 當價格）。
+ *
+ * 每個版本都帶上與組牌器共用的 printing 代碼（printingIdentity），兩邊對「這是哪一個版本」
+ * 的判定因此永遠一致。此處刻意保留同名不同價的兩筆掛牌（讓使用者自行挑選），組牌器那側則
+ * 因為無法辨識而 fail closed 不計價 —— 兩者用同一個版本模型，只是各自的採用門檻不同。
  */
 export function buildPriceVersions(card: CardLike): PriceVersion[] {
   const raw = (card.prices || []).filter(
@@ -48,11 +56,21 @@ export function buildPriceVersions(card: CardLike): PriceVersion[] {
     const key = `${p.name || ''}|${p.sellPrice}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    versions.push({ name: p.name || card.series || '版本', sellPrice: p.sellPrice, buyPrice: p.buyPrice ?? null });
+    versions.push({
+      name: p.name || card.series || '版本',
+      printing: printingFromLabel(p.name || ''),
+      sellPrice: p.sellPrice,
+      buyPrice: p.buyPrice ?? null,
+    });
   }
   if (versions.length === 0) {
     // 無明細版本 → 退回卡號層級。單一版本時 card.buyPrice 即該版本收購價（未混版）。
-    versions.push({ name: card.series || '估值', sellPrice: card.sellPrice ?? null, buyPrice: card.buyPrice ?? null });
+    versions.push({
+      name: card.series || '估值',
+      printing: BASE_PRINTING,
+      sellPrice: card.sellPrice ?? null,
+      buyPrice: card.buyPrice ?? null,
+    });
   }
   return versions;
 }

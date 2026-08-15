@@ -34,7 +34,11 @@ async function test(name, fn) {
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
-const holomen = (n, r = 'R') => ({ id: `${n}-${r}`, cardNumber: n, name: `holomen ${n}`, rarity: r, series: 's', cardTypeJp: 'ホロメン' });
+// Identity is (cardNumber, printing) — the source-proven printing token (DIC-1013).
+const holomen = (n, printing = 'BASE') => ({
+  id: `${n}#${printing}`, cardNumber: n, name: `holomen ${n}`,
+  printing, printingLabel: '', series: 's', cardTypeJp: 'ホロメン',
+});
 const slot = (card, qty) => ({ card, qty });
 const deck = (id, main) => ({ id, name: id, updatedAt: '', oshi: [], main, yell: [] });
 
@@ -94,15 +98,15 @@ await test('adjustOwned clamps at 0 and never goes negative', () => {
 
 // ── Missing math per exact version ───────────────────────────────────────────
 await test('computeGap missing = required − globally owned, per exact version', () => {
-  const d = deck('d', [slot(holomen('hMN-001', 'R'), 4)]);
-  const owned = { [ownershipKey('hMN-001', 'R')]: 1 };
+  const d = deck('d', [slot(holomen('hMN-001'), 4)]);
+  const owned = { [ownershipKey('hMN-001', 'BASE')]: 1 };
   const gap = computeGap(d, owned, []);
   const row = gap.rows.find((r) => r.cardNumber === 'hMN-001');
   assert.equal(row.required, 4);
   assert.equal(row.owned, 1);
   assert.equal(row.missing, 3);
   // Over-owning never yields a negative missing.
-  const over = computeGap(d, { [ownershipKey('hMN-001', 'R')]: 9 }, []);
+  const over = computeGap(d, { [ownershipKey('hMN-001', 'BASE')]: 9 }, []);
   assert.equal(over.rows[0].missing, 0);
 });
 
@@ -110,12 +114,12 @@ await test('computeGap missing = required − globally owned, per exact version'
 await test('two decks read the same inventory without double-counting or mutation', () => {
   resetStore();
   const s = useDeckStore.getState();
-  s.setOwned('hMN-001', 'R', 2);
+  s.setOwned('hMN-001', 'BASE', 2);
   const snapshot = JSON.stringify(useDeckStore.getState().collection);
 
   const owned = useDeckStore.getState().collection;
-  const deckA = deck('A', [slot(holomen('hMN-001', 'R'), 4)]);
-  const deckB = deck('B', [slot(holomen('hMN-001', 'R'), 3)]);
+  const deckA = deck('A', [slot(holomen('hMN-001'), 4)]);
+  const deckB = deck('B', [slot(holomen('hMN-001'), 3)]);
 
   // Each deck sees the FULL global owned (2), not a per-deck split.
   const gapA = computeGap(deckA, owned, []);
@@ -127,7 +131,7 @@ await test('two decks read the same inventory without double-counting or mutatio
 
   // Editing a deck's slots must not touch the global inventory.
   const bId = useDeckStore.getState().createDeck('B');
-  useDeckStore.getState().changeCard(bId, 'main', holomen('hMN-001', 'R'), 3);
+  useDeckStore.getState().changeCard(bId, 'main', holomen('hMN-001'), 3);
   assert.equal(
     JSON.stringify(useDeckStore.getState().collection), snapshot,
     'deck edits must leave the shared inventory unchanged',
@@ -136,11 +140,12 @@ await test('two decks read the same inventory without double-counting or mutatio
 
 // ── Ambiguous / cross-version price excluded ─────────────────────────────────
 await test('cross-version price never used; row lands in unpriced, not the total', () => {
-  const d = deck('p', [slot(holomen('hMN-001', 'R'), 2), slot(holomen('hMN-002', 'C'), 2)]);
+  const d = deck('p', [slot(holomen('hMN-001'), 2), slot(holomen('hMN-002', 'PARALLEL'), 2)]);
   const records = [
-    { cardNumber: 'hMN-001', version: 'R', price: 300, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-15' },
-    // hMN-002 only has a DIFFERENT-version (SR) price → must not price the C copy.
-    { cardNumber: 'hMN-002', version: 'SR', price: 9999, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-01' },
+    { cardNumber: 'hMN-001', version: 'BASE', price: 300, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-15' },
+    // hMN-002 only has a DIFFERENT-printing (BASE) price → must not price the
+    // PARALLEL copy the deck actually requires.
+    { cardNumber: 'hMN-002', version: 'BASE', price: 9999, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-01' },
   ];
   const gap = computeGap(d, {}, records);
   assert.equal(gap.total, 600); // only hMN-001 (300×2)
@@ -155,10 +160,10 @@ await test('cross-version price never used; row lands in unpriced, not the total
 
 // ── Currency separation ──────────────────────────────────────────────────────
 await test('different currencies are kept in separate subtotals, never summed', () => {
-  const d = deck('c', [slot(holomen('hMN-001', 'R'), 2), slot(holomen('hMN-002', 'C'), 2)]);
+  const d = deck('c', [slot(holomen('hMN-001'), 2), slot(holomen('hMN-002', 'PARALLEL'), 2)]);
   const records = [
-    { cardNumber: 'hMN-001', version: 'R', price: 300, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-15' },
-    { cardNumber: 'hMN-002', version: 'C', price: 5, currency: 'USD', source: 'other', timestamp: '2026-06-01' },
+    { cardNumber: 'hMN-001', version: 'BASE', price: 300, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-15' },
+    { cardNumber: 'hMN-002', version: 'PARALLEL', price: 5, currency: 'USD', source: 'other', timestamp: '2026-06-01' },
   ];
   const gap = computeGap(d, {}, records);
   // Primary total is the first-seen currency ONLY (JPY 300×2), not 600+10.
@@ -220,6 +225,34 @@ await test('current-version inventory persists and survives reload', async () =>
   platformStorage.setItem(STORE_KEY, raw);
   await useDeckStore.persist.rehydrate();
   assert.equal(useDeckStore.getState().getOwned('hMN-009', 'OSR'), 4, 'owned count survives reload');
+});
+
+// ── DIC-1013: deck slots migrate, inventory does not ─────────────────────────
+await test('a pre-DIC-1013 inventory entry survives rehydration untouched', async () => {
+  resetStore();
+  // Owning an SEC copy of hBP04-005 does NOT prove ownership of the plain ¥980
+  // printing, so the persist migration must leave the entry exactly where it is
+  // rather than re-keying it onto BASE and fabricating ownership.
+  const payload = JSON.stringify({
+    state: { decks: [], activeDeckId: null, collection: { 'hBP04-005|SEC': 2 } },
+    version: 1,
+  });
+  useDeckStore.setState({ decks: [], activeDeckId: null, collection: {} });
+  platformStorage.setItem(STORE_KEY, payload);
+  await useDeckStore.persist.rehydrate();
+
+  assert.deepEqual(useDeckStore.getState().collection, { 'hBP04-005|SEC': 2 },
+    'legacy inventory entries stay visible and editable, and stay put');
+  assert.equal(useDeckStore.getState().getOwned('hBP04-005', 'BASE'), 0);
+  // A deck requiring the plain printing therefore reports all copies missing,
+  // priced at the exact ¥980 sell listing.
+  const gap = computeGap(
+    deck('m', [slot(holomen('hBP04-005'), 1)]),
+    useDeckStore.getState().collection,
+    [{ cardNumber: 'hBP04-005', version: 'BASE', price: 980, currency: 'JPY', source: 'yuyu-tei.jp', timestamp: '2026-08-14' }],
+  );
+  assert.equal(gap.rows[0].owned, 0);
+  assert.equal(gap.total, 980);
 });
 
 console.log(`\nDIC-978 deck-collection: ${passed} tests passed`);

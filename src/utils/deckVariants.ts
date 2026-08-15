@@ -1,83 +1,46 @@
-// Low-cost default printing resolver (DIC-1004 §A).
+// Low-cost default printing resolver (DIC-1004 §A, corrected by DIC-1013).
 //
-// The dataset stores every printing of a card number as its OWN entry, keyed by
-// `${cardNumber}_${series}` and tagged with that printing's rarity — hBP01-024
-// exists as C/hBP01 (the original set printing), HR/hBP07 + HR/ent07 (parallels)
-// and P/hPR (promo). The MVP must build a playable, low-cost deck, so a premium
-// printing is never the default while a base printing of the same card number
-// exists. Explicit version picking is a later enhancement.
+// A card number's printings come from the SOURCE LISTINGS — plain, パラレル,
+// パラレル/サイン … — not from the dataset's row-level rarity, which describes the
+// card number as a whole and would default hBP04-005 to its ¥69,800 signed
+// printing when the source clearly lists a plain ¥980 one. See
+// src/utils/printingIdentity.ts for how those printings are derived.
 //
-// This module is the SINGLE resolver for that choice: the deck editor's search /
-// add flow, the one-time 套用低配版本 normalization and any future tournament
-// import (DIC-1000) all go through it, so they cannot drift apart.
+// This module is the SINGLE resolver for the deck's default choice: the deck
+// editor's search / add flow, the one-time 套用低配版本 normalization, existing
+// draft migration and tournament import (DIC-1000) all go through it, so they
+// cannot drift apart.
 
 import {
   eligibleZone, resolveExactPrice,
   type DeckCard, type DeckSlot, type Deck, type DeckZone, type PriceRecord,
 } from './deckRules';
+import { BASE_PRINTING, isPlainPrinting } from './printingIdentity';
 
-/** Ordinary set rarities, cheapest first. Anything outside this list counts as a
- * premium printing (SEC, S/signature, OUR, OSR, P/PR, UR, HR, SY …). */
-const BASE_RARITY_ORDER = ['OC', 'C', 'U', 'R', 'RR', 'SR'];
-
-/** Premium printings, ordered so the resolver stays deterministic when a card
- * number has no base printing at all (e.g. an oshi that only ships as SEC). */
-const PREMIUM_RARITY_ORDER = ['HR', 'SY', 'P', 'PR', 'S', 'UR', 'OSR', 'OUR', 'SEC'];
-
-// The scraper disambiguates repeated rarities within a set by tacking on an
-// index — `P_02`, `C_2`, `02_HR`, `C_re` all denote the plain P / C / HR / C
-// printing. Strip those affixes so rarity ranking sees the real code.
-export function normalizeRarityCode(rarity: string): string {
-  return (rarity ?? '')
-    .normalize('NFKC')
-    .trim()
-    .toUpperCase()
-    .replace(/^\d+_/, '')
-    .replace(/_(?:\d+|RE)$/, '');
-}
-
-export function isPremiumPrinting(rarity: string): boolean {
-  return !BASE_RARITY_ORDER.includes(normalizeRarityCode(rarity));
-}
-
-function rarityRank(rarity: string): number {
-  const code = normalizeRarityCode(rarity);
-  const base = BASE_RARITY_ORDER.indexOf(code);
-  if (base !== -1) return base;
-  const premium = PREMIUM_RARITY_ORDER.indexOf(code);
-  return BASE_RARITY_ORDER.length + (premium === -1 ? PREMIUM_RARITY_ORDER.length : premium);
-}
-
-// The printing whose series equals the card number's own set (hBP01-024 in set
-// hBP01) is the original set printing; reprints carry another set's series.
-function isOriginalSetPrinting(card: DeckCard): boolean {
-  return card.series === card.cardNumber.split('-')[0];
-}
-
-/** Deterministic tie-break used whenever price cannot decide: cheapest rarity
- * tier, then the original set printing, then card id. */
+/** Deterministic tie-break used whenever price cannot decide: plain printings
+ * first, then printing token, then card id. */
 function comparePrintings(a: DeckCard, b: DeckCard): number {
   return (
-    rarityRank(a.rarity) - rarityRank(b.rarity) ||
-    Number(isOriginalSetPrinting(b)) - Number(isOriginalSetPrinting(a)) ||
+    Number(isPlainPrinting(b.printing)) - Number(isPlainPrinting(a.printing)) ||
+    a.printing.localeCompare(b.printing) ||
     a.id.localeCompare(b.id)
   );
 }
 
 /**
- * Pick the MVP default printing among the variants of ONE card number.
+ * Pick the MVP default printing among the printings of ONE card number.
  *
  * 1. Only playable printings are considered (an entry the rules engine cannot
  *    place in a zone can never be a deck default). A card number whose every
  *    printing is unplayable — the committed dataset has untyped promo rows such
  *    as `202_hPR` — resolves to null so it is never offered as a deck card.
- * 2. Base printings win outright over premium ones — never default to SEC / S /
- *    OUR / OSR / P / UR while a base printing exists.
- * 3. Inside the winning tier, the lowest EXACT-version price wins, compared only
- *    against prices in the same currency. A printing with no exact-version price
- *    never borrows another version's price (DIC-945 #6): it simply loses to the
- *    priced candidates, and when nothing is priced the deterministic
- *    lowest-rarity printing wins and the estimate stays unpriced.
+ * 2. Plain printings win outright over premium ones — never default to a
+ *    パラレル / サイン printing while a plain listing exists.
+ * 3. Inside the winning tier, the lowest EXACT sell price wins, compared only
+ *    against prices in the same currency. A printing with no exact sell price
+ *    never borrows another printing's price (DIC-945 #6): it simply loses to the
+ *    priced candidates, and when nothing is priced the deterministic first plain
+ *    printing wins and the estimate stays unpriced.
  */
 export function resolveLowCostVariant(
   variants: DeckCard[],
@@ -86,12 +49,12 @@ export function resolveLowCostVariant(
   const playable = variants.filter((c) => eligibleZone(c) !== null);
   if (playable.length === 0) return null;
 
-  const base = playable.filter((c) => !isPremiumPrinting(c.rarity));
-  const tier = (base.length > 0 ? base : playable).slice().sort(comparePrintings);
+  const plain = playable.filter((c) => isPlainPrinting(c.printing));
+  const tier = (plain.length > 0 ? plain : playable).slice().sort(comparePrintings);
 
   const priced: Array<{ card: DeckCard; price: number; currency: string }> = [];
   for (const card of tier) {
-    const p = resolveExactPrice(card.cardNumber, card.rarity, priceRecords);
+    const p = resolveExactPrice(card.cardNumber, card.printing, priceRecords);
     if (p.status === 'ok') priced.push({ card, price: p.price, currency: p.currency });
   }
   if (priced.length === 0) return tier[0];
@@ -110,7 +73,7 @@ export interface VariantGroup {
   cardNumber: string;
   /** the MVP default — lowest-cost playable printing of this card number */
   card: DeckCard;
-  /** every printing of this card number, in database order */
+  /** every printing of this card number, in source-listing order */
   variants: DeckCard[];
 }
 
@@ -161,19 +124,11 @@ export function buildLowCostIndex(groups: VariantGroup[]): Map<string, DeckCard>
   return new Map(groups.map((g) => [g.cardNumber, g.card]));
 }
 
-/** Replace each slot's printing with its low-cost default, preserving quantity
- * and zone. A replacement that would change the slot's zone is skipped, and
- * slots that collapse onto the same printing merge their quantities. */
-export function normalizeSlotsToLowCost(
-  slots: DeckSlot[],
-  zone: DeckZone,
-  index: Map<string, DeckCard>,
-): DeckSlot[] {
+function mergeSlots(slots: DeckSlot[], resolve: (card: DeckCard) => DeckCard): DeckSlot[] {
   const out: DeckSlot[] = [];
   const seen = new Map<string, DeckSlot>();
   for (const slot of slots) {
-    const candidate = index.get(slot.card.cardNumber);
-    const card = candidate && eligibleZone(candidate) === zone ? candidate : slot.card;
+    const card = resolve(slot.card);
     const existing = seen.get(card.id);
     if (existing) {
       existing.qty += slot.qty;
@@ -184,6 +139,52 @@ export function normalizeSlotsToLowCost(
     out.push(next);
   }
   return out;
+}
+
+/** Replace each slot's printing with its low-cost default, preserving quantity
+ * and zone. A replacement that would change the slot's zone is skipped, and
+ * slots that collapse onto the same printing merge their quantities. */
+export function normalizeSlotsToLowCost(
+  slots: DeckSlot[],
+  zone: DeckZone,
+  index: Map<string, DeckCard>,
+): DeckSlot[] {
+  return mergeSlots(slots, (card) => {
+    const candidate = index.get(card.cardNumber);
+    return candidate && eligibleZone(candidate) === zone ? candidate : card;
+  });
+}
+
+/** A slot persisted before DIC-1013 keys its version off the row-level rarity
+ * and carries no printing at all. */
+export function isLegacySlotCard(card: DeckCard): boolean {
+  return typeof card.printing !== 'string' || card.printing === '';
+}
+
+/**
+ * Move slots persisted under the pre-DIC-1013 rarity model onto real printings.
+ *
+ * Zones and quantities are the player's data and are always preserved; only the
+ * printing identity is rewritten, and only for slots that have none. A slot that
+ * already names a printing is left exactly as it is, so a deliberately picked
+ * premium printing is never silently downgraded. The global collection is NOT
+ * touched: owning an SEC copy does not prove ownership of the plain printing, so
+ * re-keying inventory would fabricate ownership (DIC-1013 §3).
+ */
+export function migrateSlotsToPrintings(
+  slots: DeckSlot[],
+  zone: DeckZone,
+  index: Map<string, DeckCard>,
+): DeckSlot[] {
+  return mergeSlots(slots, (card) => {
+    if (!isLegacySlotCard(card)) return card;
+    const candidate = index.get(card.cardNumber);
+    if (candidate && eligibleZone(candidate) === zone) return candidate;
+    // Card number no longer in the dataset (or no longer playable in this zone):
+    // keep the slot on the unmarked printing so the draft survives intact. It
+    // has no price record, so it shows as 無精確版本價格 rather than a wrong cost.
+    return { ...card, printing: BASE_PRINTING, printingLabel: '' };
+  });
 }
 
 /** How many slots would 套用低配版本 rewrite — 0 means the deck is already on

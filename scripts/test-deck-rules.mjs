@@ -26,10 +26,16 @@ function test(name, fn) {
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
-const oshi = (n) => ({ id: `oshi-${n}`, cardNumber: n, name: `oshi ${n}`, rarity: 'OSR', series: 's', cardTypeJp: '推しホロメン' });
-const holomen = (n, r = 'R') => ({ id: `${n}-${r}`, cardNumber: n, name: `holomen ${n}`, rarity: r, series: 's', cardTypeJp: 'ホロメン' });
-const support = (n) => ({ id: `sup-${n}`, cardNumber: n, name: `support ${n}`, rarity: 'C', series: 's', cardTypeJp: 'サポート・アイテム' });
-const yell = (n) => ({ id: `yell-${n}`, cardNumber: n, name: `yell ${n}`, rarity: 'C', series: 's', cardTypeJp: 'エール' });
+// Cards are identified by (cardNumber, printing) — the source-proven printing
+// token, never the dataset's row-level rarity (DIC-1013).
+const card = (n, printing, cardTypeJp) => ({
+  id: `${n}#${printing}`, cardNumber: n, name: `${cardTypeJp} ${n}`,
+  printing, printingLabel: '', series: 's', cardTypeJp,
+});
+const oshi = (n) => card(n, 'BASE', '推しホロメン');
+const holomen = (n, printing = 'BASE') => card(n, printing, 'ホロメン');
+const support = (n) => card(n, 'BASE', 'サポート・アイテム');
+const yell = (n) => card(n, 'BASE', 'エール');
 
 function slot(card, qty) { return { card, qty }; }
 
@@ -126,7 +132,7 @@ test('same cardNumber over 4 copies triggers ERR_CARD_LIMIT', () => {
   const d = legalDeck();
   // 46 unique + 5 copies of one number = 51; trim to keep count at 50 while
   // still exceeding the per-number limit.
-  d.main = [...mainSlots(45), slot(holomen('hDUP-001', 'R'), 5)];
+  d.main = [...mainSlots(45), slot(holomen('hDUP-001'), 5)];
   const issues = validateDeck(d);
   const limit = issues.find((i) => i.code === 'ERR_CARD_LIMIT');
   assert.ok(limit, 'expected ERR_CARD_LIMIT');
@@ -135,11 +141,11 @@ test('same cardNumber over 4 copies triggers ERR_CARD_LIMIT', () => {
 
 test('different versions of same cardNumber combine toward the limit', () => {
   const d = legalDeck();
-  // 3 of the base printing + 2 of a "SEC" printing, same number → 5 → over limit.
+  // 3 of the plain printing + 2 of the signed parallel, same number → 5 → over limit.
   d.main = [
     ...mainSlots(45),
-    slot(holomen('hMIX-001', 'R'), 3),
-    slot(holomen('hMIX-001', 'SEC'), 2),
+    slot(holomen('hMIX-001'), 3),
+    slot(holomen('hMIX-001', 'PARALLEL/SIGN'), 2),
   ];
   const codes = validateDeck(d).map((i) => i.code);
   assert.ok(codes.includes('ERR_CARD_LIMIT'));
@@ -147,20 +153,20 @@ test('different versions of same cardNumber combine toward the limit', () => {
 
 test('restricted card over its 1-copy cap triggers ERR_RESTRICTED', () => {
   const d = legalDeck();
-  d.main = [...mainSlots(48), slot(holomen('hBP07-101', 'R'), 2)];
+  d.main = [...mainSlots(48), slot(holomen('hBP07-101'), 2)];
   const codes = validateDeck(d).map((i) => i.code);
   assert.ok(codes.includes('ERR_RESTRICTED'));
 });
 
 // ── Case: gap missing count ─────────────────────────────────────────────────
-test('gap computes required/owned/missing per (cardNumber, version)', () => {
+test('gap computes required/owned/missing per (cardNumber, printing)', () => {
   const d = {
     id: 'g', name: 'gap', updatedAt: '',
     oshi: [slot(oshi('hOSHI-001'), 1)],
-    main: [slot(holomen('hMN-001', 'R'), 4)],
+    main: [slot(holomen('hMN-001'), 4)],
     yell: [slot(yell('hYELL-001'), 20)],
   };
-  const owned = { 'hMN-001|R': 1 }; // own 1 of the 4 needed
+  const owned = { 'hMN-001|BASE': 1 }; // own 1 of the 4 needed
   const gap = computeGap(d, owned, []);
   const row = gap.rows.find((r) => r.cardNumber === 'hMN-001');
   assert.equal(row.required, 4);
@@ -171,14 +177,14 @@ test('gap computes required/owned/missing per (cardNumber, version)', () => {
 // ── Case: no exact-version price → no fallback, excluded from total ──────────
 test('price resolves only on exact cardNumber+version, never fallback', () => {
   const records = [
-    { cardNumber: 'hMN-001', version: 'SR', price: 500, currency: 'JPY', source: 'yuyu', timestamp: '2026-08-01' },
+    { cardNumber: 'hMN-001', version: 'PARALLEL', price: 500, currency: 'JPY', source: 'yuyu', timestamp: '2026-08-01' },
   ];
-  // exact version match → ok
-  const ok = resolveExactPrice('hMN-001', 'SR', records);
+  // exact printing match → ok
+  const ok = resolveExactPrice('hMN-001', 'PARALLEL', records);
   assert.equal(ok.status, 'ok');
   assert.equal(ok.price, 500);
-  // same number, different version → NO_EXACT_PRICE (no cross-version fallback)
-  assert.equal(resolveExactPrice('hMN-001', 'R', records).status, 'NO_EXACT_PRICE');
+  // same number, different printing → NO_EXACT_PRICE (no cross-version fallback)
+  assert.equal(resolveExactPrice('hMN-001', 'BASE', records).status, 'NO_EXACT_PRICE');
   // empty version never matches
   assert.equal(resolveExactPrice('hMN-001', '', [{ cardNumber: 'hMN-001', version: '', price: 9, currency: 'JPY', source: 's', timestamp: 't' }]).status, 'NO_EXACT_PRICE');
 });
@@ -187,14 +193,14 @@ test('gap total uses only exact-version prices; others land in unpriced', () => 
   const d = {
     id: 'g2', name: 'gap2', updatedAt: '',
     oshi: [],
-    main: [slot(holomen('hMN-001', 'R'), 2), slot(holomen('hMN-002', 'C'), 2)],
+    main: [slot(holomen('hMN-001'), 2), slot(holomen('hMN-002'), 2)],
     yell: [],
   };
   const owned = {}; // own nothing → all missing
   const records = [
-    { cardNumber: 'hMN-001', version: 'R', price: 300, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-15' },
-    // hMN-002 has only a different-version price → must NOT be used
-    { cardNumber: 'hMN-002', version: 'SR', price: 9999, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-01' },
+    { cardNumber: 'hMN-001', version: 'BASE', price: 300, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-15' },
+    // hMN-002 has only a different-printing price → must NOT be used
+    { cardNumber: 'hMN-002', version: 'PARALLEL', price: 9999, currency: 'JPY', source: 'yuyu', timestamp: '2026-07-01' },
   ];
   const gap = computeGap(d, owned, records);
   assert.equal(gap.total, 300 * 2); // only hMN-001 priced

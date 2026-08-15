@@ -1,26 +1,26 @@
 #!/usr/bin/env node
 /**
- * DIC-1004 §A regression — low-cost default printing resolver.
+ * DIC-1004 §A low-cost default resolver, corrected by DIC-1013 to key on the
+ * SOURCE-PROVEN printing instead of the dataset's row-level rarity.
  *
- * Covers: base beats premium, cheapest exact-version price wins inside the base
- * tier, a missing price never borrows another version's price, search groups
- * duplicate printings by card number, and the 套用低配版本 normalization
- * preserves zone + quantity.
+ * Covers: plain beats premium, cheapest exact sell price inside the plain tier,
+ * a missing price never borrows a sibling's, search groups printings by card
+ * number, 套用低配版本 preserves zone + quantity, pre-DIC-1013 drafts migrate
+ * onto real printings without rewriting ownership, and every entry point
+ * (search/add, normalization, migration) shares ONE resolver.
  *
  * Run: npm run test:deck-variants
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  normalizeRarityCode as jsNormalizeRarityCode,
-  isPremiumRarityCode as jsIsPremiumRarityCode,
-} from './lib/variant-key.js';
-import {
   resolveLowCostVariant, groupVariantsByCardNumber, searchVariantGroups,
   buildLowCostIndex, normalizeSlotsToLowCost, countLowCostDrift,
-  isPremiumPrinting, normalizeRarityCode,
+  isLegacySlotCard, migrateSlotsToPrintings,
 } from '../src/utils/deckVariants.ts';
-import { computeGap, resolveExactPrice } from '../src/utils/deckRules.ts';
+import { computeGap, resolveExactPrice, ownershipKey } from '../src/utils/deckRules.ts';
+import { isPlainPrinting, BASE_PRINTING } from '../src/utils/printingIdentity.ts';
+import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { useDeckStore } from '../src/store/deckStore.ts';
 
 let passed = 0;
@@ -30,263 +30,228 @@ function test(name, fn) {
   console.log(`  ✓ ${name}`);
 }
 
-const holomen = (cardNumber, rarity, series) => ({
-  id: `${cardNumber}_${series}`,
+const make = (cardNumber, printing, label, cardTypeJp, series = 'hBP04') => ({
+  id: `${cardNumber}#${printing}`,
   cardNumber,
   name: `card ${cardNumber}`,
-  rarity,
+  printing,
+  printingLabel: label,
   series,
-  cardTypeJp: 'ホロメン',
+  cardTypeJp,
 });
-const oshi = (cardNumber, rarity, series) => ({
-  ...holomen(cardNumber, rarity, series), cardTypeJp: '推しホロメン',
-});
-const yell = (cardNumber, rarity, series) => ({
-  ...holomen(cardNumber, rarity, series), cardTypeJp: 'エール',
-});
+const holomen = (cardNumber, printing, label = '') => make(cardNumber, printing, label, 'ホロメン');
+const oshi = (cardNumber, printing, label = '') => make(cardNumber, printing, label, '推しホロメン');
+const yell = (cardNumber, printing, label = '') => make(cardNumber, printing, label, 'エール');
 const price = (cardNumber, version, p, currency = 'JPY') => ({
   cardNumber, version, price: p, currency, source: 'yuyu-tei.jp', timestamp: '2026-08-01',
 });
 
-console.log('DIC-1004 low-cost variant resolver');
-
-// ── Rarity classification ──────────────────────────────────────────────────
-test('scraper disambiguation affixes normalize to the real rarity code', () => {
-  assert.equal(normalizeRarityCode('P_02'), 'P');
-  assert.equal(normalizeRarityCode('02_HR'), 'HR');
-  assert.equal(normalizeRarityCode('C_2'), 'C');
-  assert.equal(normalizeRarityCode('C_re'), 'C');
-  assert.equal(normalizeRarityCode(' sr '), 'SR');
-  // premium codes that merely look suffixed must survive intact
-  assert.equal(normalizeRarityCode('OSR'), 'OSR');
-  assert.equal(normalizeRarityCode('OUR'), 'OUR');
-});
-
-test('SEC / S / OUR / OSR / P / UR are premium; base set rarities are not', () => {
-  for (const r of ['SEC', 'S', 'OUR', 'OSR', 'P', 'PR', 'UR', 'HR', 'S_02']) {
-    assert.equal(isPremiumPrinting(r), true, `${r} should be premium`);
-  }
-  for (const r of ['C', 'U', 'R', 'RR', 'SR', 'OC', 'C_2', 'U_02']) {
-    assert.equal(isPremiumPrinting(r), false, `${r} should be base`);
-  }
-});
-
-// The buy-price merge (scripts/, plain JS) classifies a card row's printing with
-// its own copy of this vocabulary. If the two drift, a premium printing can be
-// scored as base on one side and leak the bare listing's price (DIC-1008 CR), so
-// pin them together over every rarity string the shipped dataset actually uses.
-test('scripts/lib/variant-key.js shares this rarity vocabulary over the whole dataset', () => {
-  const cards = Object.values(JSON.parse(fs.readFileSync('data/database.json', 'utf-8')).cards);
-  const vocabulary = [...new Set(cards.map((c) => c.rarity ?? ''))];
-  assert.ok(vocabulary.length > 20, `rarity vocabulary too small (${vocabulary.length})`);
-  for (const rarity of vocabulary) {
-    assert.equal(jsNormalizeRarityCode(rarity), normalizeRarityCode(rarity), `normalizeRarityCode drift on ${rarity}`);
-    const code = normalizeRarityCode(rarity);
-    assert.equal(jsIsPremiumRarityCode(code), isPremiumPrinting(rarity), `premium classification drift on ${rarity}`);
-  }
-});
+console.log('DIC-1013 low-cost printing resolver');
 
 // ── Default selection ──────────────────────────────────────────────────────
-test('base printing is chosen over a SEC/signature variant of the same card number', () => {
+test('the plain printing beats the signed parallel of the same card number', () => {
   const variants = [
-    holomen('hBP04-057', 'SEC', 'ent07'),
-    holomen('hBP04-057', 'S', 'hPR'),
-    holomen('hBP04-057', 'C', 'hBP04'),
-  ];
-  assert.equal(resolveLowCostVariant(variants, []).rarity, 'C');
-});
-
-test('premium is never the default while ANY base printing exists, even if cheaper', () => {
-  const variants = [
-    holomen('hBP01-024', 'SEC', 'ent07'),
-    holomen('hBP01-024', 'C', 'hBP01'),
-  ];
-  // The SEC printing carries the (absurdly) cheaper exact price — the base
-  // printing must still win, because premium defaults are the reported bug.
-  const records = [price('hBP01-024', 'SEC', 10), price('hBP01-024', 'C', 500)];
-  assert.equal(resolveLowCostVariant(variants, records).rarity, 'C');
-});
-
-test('inside the base tier the lowest exact-version price wins', () => {
-  const variants = [
-    holomen('hBP01-050', 'SR', 'hBP05'),
-    holomen('hBP01-050', 'U', 'hSD06'),
-    holomen('hBP01-050', 'C', 'hBP01'),
+    oshi('hBP04-005', 'PARALLEL/SIGN', 'ラプラス・ダークネス(パラレル/サイン)'),
+    oshi('hBP04-005', 'PARALLEL', 'ラプラス・ダークネス(パラレル)'),
+    oshi('hBP04-005', 'BASE', 'ラプラス・ダークネス'),
   ];
   const records = [
-    price('hBP01-050', 'SR', 40),
-    price('hBP01-050', 'U', 900),
-    price('hBP01-050', 'C', 800),
+    price('hBP04-005', 'PARALLEL/SIGN', 69800),
+    price('hBP04-005', 'PARALLEL', 9980),
+    price('hBP04-005', 'BASE', 980),
   ];
-  assert.equal(resolveLowCostVariant(variants, records).rarity, 'SR');
+  const chosen = resolveLowCostVariant(variants, records);
+  assert.equal(chosen.printing, 'BASE');
+  assert.equal(resolveExactPrice('hBP04-005', chosen.printing, records).price, 980);
+});
+
+test('premium is never the default while ANY plain printing exists, even if cheaper', () => {
+  const variants = [
+    holomen('hBP01-024', 'PARALLEL', 'x(パラレル)'),
+    holomen('hBP01-024', 'BASE', 'x'),
+  ];
+  // The parallel printing carries the (absurdly) cheaper price — the plain one
+  // must still win, because premium defaults are the reported bug.
+  const records = [price('hBP01-024', 'PARALLEL', 10), price('hBP01-024', 'BASE', 500)];
+  assert.equal(resolveLowCostVariant(variants, records).printing, 'BASE');
+});
+
+test('inside the plain tier the lowest exact sell price wins', () => {
+  // Real shape (hBP03-027 / hSD07-003): a card number can have no bare listing
+  // at all, only errata-marked plain printings.
+  const variants = [
+    holomen('hBP03-027', 'ERRATA-PRE', 'さくらみこ(エラッタ前)'),
+    holomen('hBP03-027', 'ERRATA-POST', 'さくらみこ(エラッタ後)'),
+    holomen('hBP03-027', 'PARALLEL/ERRATA-PRE', 'さくらみこ(パラレル)(エラッタ前)'),
+  ];
+  const records = [
+    price('hBP03-027', 'ERRATA-PRE', 30),
+    price('hBP03-027', 'ERRATA-POST', 25),
+    price('hBP03-027', 'PARALLEL/ERRATA-PRE', 5),
+  ];
+  const chosen = resolveLowCostVariant(variants, records);
+  assert.equal(chosen.printing, 'ERRATA-POST');
+  assert.equal(isPlainPrinting(chosen.printing), true);
 });
 
 test('prices in a different currency are never compared against the primary one', () => {
   const variants = [
-    holomen('hBP01-052', 'C', 'hBP01'),
-    holomen('hBP01-052', 'U', 'hSD06'),
+    holomen('hBP01-052', 'BASE', 'x'),
+    holomen('hBP01-052', 'ERRATA-POST', 'x(エラッタ後)'),
   ];
-  // The USD 1 record must not undercut the JPY context set by the C printing.
-  const records = [price('hBP01-052', 'C', 300), price('hBP01-052', 'U', 1, 'USD')];
-  assert.equal(resolveLowCostVariant(variants, records).rarity, 'C');
+  // The USD 1 record must not undercut the JPY context set by the BASE printing.
+  const records = [price('hBP01-052', 'BASE', 300), price('hBP01-052', 'ERRATA-POST', 1, 'USD')];
+  assert.equal(resolveLowCostVariant(variants, records).printing, 'BASE');
 });
 
-test('unpriced base printings fall back to the deterministic lowest rarity, never a borrowed price', () => {
+test('an unpriced plain printing still wins and stays unpriced, never borrowing', () => {
   const variants = [
-    holomen('hBP01-044', 'R', 'hBP07'),
-    holomen('hBP01-044', 'C', 'hBP01'),
-    holomen('hBP01-044', 'C', 'hSD06'),
+    holomen('hBP01-044', 'PARALLEL/HR', 'AZKi(パラレル/HR)'),
+    holomen('hBP01-044', 'BASE', 'AZKi'),
   ];
-  const chosen = resolveLowCostVariant(variants, []);
-  assert.equal(chosen.rarity, 'C');
-  // Ties break to the original set printing (series === the card number's set).
-  assert.equal(chosen.series, 'hBP01');
-  // …and the estimate stays unpriced rather than borrowing the R price.
+  const records = [price('hBP01-044', 'PARALLEL/HR', 50)];
+  const chosen = resolveLowCostVariant(variants, records);
+  assert.equal(chosen.printing, 'BASE');
   assert.deepEqual(
-    resolveExactPrice(chosen.cardNumber, chosen.rarity, [price('hBP01-044', 'R', 50)]),
+    resolveExactPrice(chosen.cardNumber, chosen.printing, records),
     { status: 'NO_EXACT_PRICE' },
   );
 });
 
 test('resolution is stable regardless of variant input order', () => {
   const variants = [
-    holomen('hBP01-048', 'HR', 'ent07'),
-    holomen('hBP01-048', 'C_2', 'hSD06'),
-    holomen('hBP01-048', 'C', 'hBP01'),
-    holomen('hBP01-048', 'P', 'hPR'),
+    holomen('hBP01-048', 'PARALLEL/SIGN', 'x(パラレル/サイン)'),
+    holomen('hBP01-048', 'ERRATA-PRE', 'x(エラッタ前)'),
+    holomen('hBP01-048', 'BASE', 'x'),
+    holomen('hBP01-048', 'PARALLEL', 'x(パラレル)'),
   ];
   const first = resolveLowCostVariant(variants, []).id;
   assert.equal(resolveLowCostVariant(variants.slice().reverse(), []).id, first);
-  assert.equal(first, 'hBP01-048_hBP01');
+  assert.equal(first, 'hBP01-048#BASE');
 });
 
 test('an all-premium card number still resolves deterministically', () => {
-  const variants = [oshi('hBP04-005', 'SEC', 'ent07'), oshi('hBP04-005', 'SEC', 'hBP04')];
-  assert.equal(resolveLowCostVariant(variants, []).series, 'hBP04');
+  const variants = [
+    oshi('hBP04-090', 'PARALLEL/SIGN', 'x(パラレル/サイン)'),
+    oshi('hBP04-090', 'PARALLEL', 'x(パラレル)'),
+  ];
+  assert.equal(resolveLowCostVariant(variants, []).printing, 'PARALLEL');
+  assert.equal(resolveLowCostVariant(variants.slice().reverse(), []).printing, 'PARALLEL');
 });
 
 test('unplayable entries are never the default', () => {
-  const broken = { id: 'x_ent07', cardNumber: 'hBP04-057', name: 'x', rarity: 'C', series: 'ent07' };
-  const variants = [broken, holomen('hBP04-057', 'SEC', 'hBP04')];
-  assert.equal(resolveLowCostVariant(variants, []).id, 'hBP04-057_hBP04');
+  const broken = { id: 'hBP04-057#BASE', cardNumber: 'hBP04-057', name: 'x', printing: 'BASE', printingLabel: '', series: 'ent07' };
+  const variants = [broken, holomen('hBP04-057', 'PARALLEL', 'x(パラレル)')];
+  assert.equal(resolveLowCostVariant(variants, []).id, 'hBP04-057#PARALLEL');
 });
 
 // The committed database really does ship untyped promo rows: `202_hPR`
-// ("ReGLOSS") has empty type AND empty rarity, so the rules engine can place it
-// in no zone. Such a card number must disappear, not fall back to itself.
+// ("ReGLOSS") has empty type AND no classifiable card type, so the rules engine
+// can place it in no zone. Such a card number must disappear, not fall back.
 const regloss202 = {
-  id: '202_hPR', cardNumber: '202', name: 'ReGLOSS', type: '', rarity: '', series: 'hPR',
+  id: '202#BASE', cardNumber: '202', name: 'ReGLOSS', type: '',
+  printing: 'BASE', printingLabel: '', series: 'hPR',
 };
 
 test('a card number whose every printing is unplayable resolves to null', () => {
   assert.equal(resolveLowCostVariant([regloss202], []), null);
-  // still null when the unplayable printing carries a price
-  assert.equal(resolveLowCostVariant([regloss202], [price('202', '', 10)]), null);
+  assert.equal(resolveLowCostVariant([regloss202], [price('202', 'BASE', 10)]), null);
 });
 
 test('an all-unplayable card number is omitted from grouping and search', () => {
-  const cards = [regloss202, holomen('hBP01-024', 'C', 'hBP01')];
+  const cards = [regloss202, holomen('hBP01-024', 'BASE', 'x')];
   const groups = groupVariantsByCardNumber(cards, []);
   assert.deepEqual(groups.map((g) => g.cardNumber), ['hBP01-024']);
   assert.equal(searchVariantGroups(groups, '202').length, 0);
   assert.equal(searchVariantGroups(groups, 'ReGLOSS').length, 0);
-  assert.equal(searchVariantGroups(groups, 'hPR').length, 0);
-  // and it can never seed a normalization index
   assert.equal(buildLowCostIndex(groups).has('202'), false);
-});
-
-test('a mixed group keeps its playable printing and stays selectable', () => {
-  const untypedBase = { id: 'hBP01-024_hPR', cardNumber: 'hBP01-024', name: 'card hBP01-024', type: '', rarity: 'C', series: 'hPR' };
-  const playablePremium = holomen('hBP01-024', 'SEC', 'hBP01');
-  const groups = groupVariantsByCardNumber([untypedBase, playablePremium], []);
-  assert.equal(groups.length, 1);
-  // the unplayable C printing is cheaper-ranked but unusable, so the playable
-  // SEC wins — order of the inputs must not change that
-  assert.equal(groups[0].card.id, 'hBP01-024_hBP01');
-  assert.equal(
-    resolveLowCostVariant([playablePremium, untypedBase], []).id, 'hBP01-024_hBP01',
-  );
-  assert.equal(searchVariantGroups(groups, 'hBP01-024').length, 1);
 });
 
 // ── Search grouping ────────────────────────────────────────────────────────
 test('search returns one row per card number, carrying the low-cost default', () => {
   const cards = [
-    holomen('hBP04-057', 'SEC', 'ent07'),
-    holomen('hBP04-057', 'C', 'hBP04'),
-    holomen('hBP01-024', 'P', 'hPR'),
+    holomen('hBP04-057', 'PARALLEL', 'ラプラス・ダークネス(パラレル)'),
+    holomen('hBP04-057', 'BASE', 'ラプラス・ダークネス'),
+    holomen('hBP01-024', 'PARALLEL', 'x(パラレル)'),
   ];
   const groups = groupVariantsByCardNumber(cards, []);
   assert.equal(groups.length, 2);
   const hit = searchVariantGroups(groups, 'hBP04-057');
   assert.equal(hit.length, 1);
-  assert.equal(hit[0].card.rarity, 'C');
-  assert.equal(hit[0].variants.length, 2);
+  assert.equal(hit[0].card.printing, 'BASE');
+  assert.equal(hit[0].variants.length, 2, 'the premium printing stays selectable in the group');
 });
 
-test('a promo-series query still finds the card and yields the base default', () => {
-  const cards = [holomen('hBP01-026', 'P', 'hPR'), holomen('hBP01-026', 'U', 'hBP01')];
-  const groups = groupVariantsByCardNumber(cards, []);
-  const hit = searchVariantGroups(groups, 'hPR');
-  assert.equal(hit.length, 1);
-  assert.equal(hit[0].card.rarity, 'U');
+test('two card numbers sharing a listing label never collide', () => {
+  // hBP04-005 and hBP04-057 are both ラプラス・ダークネス: identical labels, hence
+  // identical printing tokens. Identity is (cardNumber, printing), so the two
+  // must stay separate groups with separate prices.
+  const cards = [
+    oshi('hBP04-005', 'BASE', 'ラプラス・ダークネス'),
+    holomen('hBP04-057', 'BASE', 'ラプラス・ダークネス'),
+  ];
+  const records = [price('hBP04-005', 'BASE', 980), price('hBP04-057', 'BASE', 120)];
+  const groups = groupVariantsByCardNumber(cards, records);
+  assert.equal(groups.length, 2);
+  assert.equal(resolveExactPrice('hBP04-005', 'BASE', records).price, 980);
+  assert.equal(resolveExactPrice('hBP04-057', 'BASE', records).price, 120);
+  assert.notEqual(ownershipKey('hBP04-005', 'BASE'), ownershipKey('hBP04-057', 'BASE'));
 });
 
 // ── Existing-draft normalization ───────────────────────────────────────────
 test('套用低配版本 preserves zone and quantity while swapping the printing', () => {
-  const secOshi = oshi('hBP04-005', 'SEC', 'ent07');
-  const baseOshi = oshi('hBP04-005', 'C', 'hBP04');
-  const secMain = holomen('hBP04-057', 'S', 'hPR');
-  const baseMain = holomen('hBP04-057', 'C', 'hBP04');
+  const signedOshi = oshi('hBP04-005', 'PARALLEL/SIGN', 'ラプラス・ダークネス(パラレル/サイン)');
+  const plainOshi = oshi('hBP04-005', 'BASE', 'ラプラス・ダークネス');
+  const parMain = holomen('hBP04-057', 'PARALLEL', 'ラプラス・ダークネス(パラレル)');
+  const plainMain = holomen('hBP04-057', 'BASE', 'ラプラス・ダークネス');
   const index = buildLowCostIndex(groupVariantsByCardNumber(
-    [secOshi, baseOshi, secMain, baseMain], [],
+    [signedOshi, plainOshi, parMain, plainMain], [],
   ));
 
-  const normalizedOshi = normalizeSlotsToLowCost([{ card: secOshi, qty: 1 }], 'oshi', index);
-  assert.deepEqual(normalizedOshi, [{ card: baseOshi, qty: 1 }]);
-
-  const normalizedMain = normalizeSlotsToLowCost([{ card: secMain, qty: 4 }], 'main', index);
-  assert.equal(normalizedMain[0].card.id, baseMain.id);
+  assert.deepEqual(
+    normalizeSlotsToLowCost([{ card: signedOshi, qty: 1 }], 'oshi', index),
+    [{ card: plainOshi, qty: 1 }],
+  );
+  const normalizedMain = normalizeSlotsToLowCost([{ card: parMain, qty: 4 }], 'main', index);
+  assert.equal(normalizedMain[0].card.id, plainMain.id);
   assert.equal(normalizedMain[0].qty, 4);
 });
 
 test('slots collapsing onto the same printing merge their quantities', () => {
-  const a = holomen('hBP01-070', 'P_02', 'hPR');
-  const b = holomen('hBP01-070', 'HR', 'ent07');
-  const base = holomen('hBP01-070', 'U', 'hBP01');
-  const index = buildLowCostIndex(groupVariantsByCardNumber([a, b, base], []));
+  const a = holomen('hBP01-070', 'PARALLEL', 'x(パラレル)');
+  const b = holomen('hBP01-070', 'PARALLEL/SIGN', 'x(パラレル/サイン)');
+  const plain = holomen('hBP01-070', 'BASE', 'x');
+  const index = buildLowCostIndex(groupVariantsByCardNumber([a, b, plain], []));
   const out = normalizeSlotsToLowCost([{ card: a, qty: 2 }, { card: b, qty: 1 }], 'main', index);
   assert.equal(out.length, 1);
-  assert.equal(out[0].card.id, base.id);
+  assert.equal(out[0].card.id, plain.id);
   assert.equal(out[0].qty, 3);
 });
 
 test('a replacement that would change the slot zone is skipped', () => {
-  const yellSlotCard = yell('hY01-001', 'SEC', 'ent07');
-  // The "cheaper" printing of the same number is a main-deck card — swapping it
-  // into the yell zone would silently corrupt the deck, so it must be left alone.
-  const index = new Map([['hY01-001', holomen('hY01-001', 'C', 'hBP01')]]);
+  const yellSlotCard = yell('hY01-001', 'PARALLEL', 'x(パラレル)');
+  const index = new Map([['hY01-001', holomen('hY01-001', 'BASE', 'x')]]);
   const out = normalizeSlotsToLowCost([{ card: yellSlotCard, qty: 20 }], 'yell', index);
   assert.deepEqual(out, [{ card: yellSlotCard, qty: 20 }]);
 });
 
 test('drift count reports only slots the action would actually rewrite', () => {
-  const secMain = holomen('hBP04-057', 'S', 'hPR');
-  const baseMain = holomen('hBP04-057', 'C', 'hBP04');
-  const index = buildLowCostIndex(groupVariantsByCardNumber([secMain, baseMain], []));
-  const deck = { id: 'd', name: 'd', oshi: [], main: [{ card: secMain, qty: 3 }], yell: [], updatedAt: '' };
+  const parMain = holomen('hBP04-057', 'PARALLEL', 'x(パラレル)');
+  const plainMain = holomen('hBP04-057', 'BASE', 'x');
+  const index = buildLowCostIndex(groupVariantsByCardNumber([parMain, plainMain], []));
+  const deck = { id: 'd', name: 'd', oshi: [], main: [{ card: parMain, qty: 3 }], yell: [], updatedAt: '' };
   assert.equal(countLowCostDrift(deck, index), 1);
 
   const normalized = { ...deck, main: normalizeSlotsToLowCost(deck.main, 'main', index) };
   assert.equal(countLowCostDrift(normalized, index), 0);
 });
 
-test('normalization does not rewrite collection ownership, so the gap re-targets the new version', () => {
-  const secMain = holomen('hBP04-057', 'S', 'hPR');
-  const baseMain = holomen('hBP04-057', 'C', 'hBP04');
-  const index = buildLowCostIndex(groupVariantsByCardNumber([secMain, baseMain], []));
-  const collection = { 'hBP04-057|S': 2 };
-  const deck = { id: 'd', name: 'd', oshi: [], main: [{ card: secMain, qty: 3 }], yell: [], updatedAt: '' };
+test('normalization does not rewrite collection ownership, so the gap re-targets the new printing', () => {
+  const parMain = holomen('hBP04-057', 'PARALLEL', 'x(パラレル)');
+  const plainMain = holomen('hBP04-057', 'BASE', 'x');
+  const index = buildLowCostIndex(groupVariantsByCardNumber([parMain, plainMain], []));
+  const collection = { 'hBP04-057|PARALLEL': 2 };
+  const deck = { id: 'd', name: 'd', oshi: [], main: [{ card: parMain, qty: 3 }], yell: [], updatedAt: '' };
 
   const before = computeGap(deck, collection, []);
   assert.equal(before.rows[0].owned, 2);
@@ -297,16 +262,19 @@ test('normalization does not rewrite collection ownership, so the gap re-targets
     collection,
     [],
   );
-  // Ownership of the S printing is untouched and does NOT transfer to C.
-  assert.deepEqual(collection, { 'hBP04-057|S': 2 });
-  assert.equal(after.rows[0].version, 'C');
+  // Ownership of the parallel printing is untouched and does NOT transfer.
+  assert.deepEqual(collection, { 'hBP04-057|PARALLEL': 2 });
+  assert.equal(after.rows[0].version, 'BASE');
   assert.equal(after.rows[0].owned, 0);
   assert.equal(after.rows[0].missing, 3);
 });
 
-test('a priced low-cost default still produces an exact-version estimate', () => {
-  const variants = [holomen('hBP01-052', 'SEC', 'ent07'), holomen('hBP01-052', 'C', 'hBP01')];
-  const records = [price('hBP01-052', 'C', 80), price('hBP01-052', 'SEC', 9800)];
+test('a priced low-cost default produces an exact-version sell estimate', () => {
+  const variants = [
+    holomen('hBP01-052', 'PARALLEL', 'x(パラレル)'),
+    holomen('hBP01-052', 'BASE', 'x'),
+  ];
+  const records = [price('hBP01-052', 'BASE', 80), price('hBP01-052', 'PARALLEL', 9800)];
   const card = resolveLowCostVariant(variants, records);
   const gap = computeGap(
     { id: 'd', name: 'd', oshi: [], main: [{ card, qty: 4 }], yell: [], updatedAt: '' },
@@ -318,30 +286,180 @@ test('a priced low-cost default still produces an exact-version estimate', () =>
   assert.equal(gap.unpriced.length, 0);
 });
 
-test('the store action normalizes an existing draft across all three zones', () => {
-  const secOshi = oshi('hBP04-005', 'SEC', 'ent07');
-  const baseOshi = oshi('hBP04-005', 'C', 'hBP04');
-  const secMain = holomen('hBP04-057', 'S', 'hPR');
-  const baseMain = holomen('hBP04-057', 'C', 'hBP04');
-  const yellCard = yell('hY01-001', 'C', 'hBP01');
+// ── Pre-DIC-1013 draft migration ───────────────────────────────────────────
+// A slot persisted under the old model keys its version off the row-level rarity
+// and carries no `printing` field at all.
+const legacySlotCard = (cardNumber, rarity, series, cardTypeJp) => ({
+  id: `${cardNumber}_${series}`, cardNumber, name: `card ${cardNumber}`,
+  rarity, series, cardTypeJp,
+});
+
+test('a legacy slot is recognised, a migrated one is not', () => {
+  assert.equal(isLegacySlotCard(legacySlotCard('hBP04-005', 'SEC', 'ent07', '推しホロメン')), true);
+  assert.equal(isLegacySlotCard(oshi('hBP04-005', 'BASE', 'x')), false);
+  assert.equal(isLegacySlotCard({ ...oshi('hBP04-005', 'BASE', 'x'), printing: '' }), true);
+});
+
+test('migration moves the screenshot draft onto the plain ¥980 printing', () => {
+  const legacy = legacySlotCard('hBP04-005', 'SEC', 'ent07', '推しホロメン');
+  const plain = oshi('hBP04-005', 'BASE', 'ラプラス・ダークネス');
+  const records = [price('hBP04-005', 'BASE', 980), price('hBP04-005', 'PARALLEL/SIGN', 69800)];
   const index = buildLowCostIndex(groupVariantsByCardNumber(
-    [secOshi, baseOshi, secMain, baseMain, yellCard], [],
+    [oshi('hBP04-005', 'PARALLEL/SIGN', 'ラプラス・ダークネス(パラレル/サイン)'), plain], records,
+  ));
+  const out = migrateSlotsToPrintings([{ card: legacy, qty: 1 }], 'oshi', index);
+  assert.equal(out[0].card.id, 'hBP04-005#BASE');
+  assert.equal(out[0].qty, 1, 'quantity is the player’s data and is preserved');
+  const gap = computeGap(
+    { id: 'd', name: 'd', oshi: out, main: [], yell: [], updatedAt: '' }, {}, records,
+  );
+  assert.equal(gap.total, 980);
+});
+
+test('migration never downgrades an already-migrated premium pick', () => {
+  const signed = oshi('hBP04-005', 'PARALLEL/SIGN', 'ラプラス・ダークネス(パラレル/サイン)');
+  const plain = oshi('hBP04-005', 'BASE', 'ラプラス・ダークネス');
+  const index = new Map([['hBP04-005', plain]]);
+  assert.deepEqual(
+    migrateSlotsToPrintings([{ card: signed, qty: 1 }], 'oshi', index),
+    [{ card: signed, qty: 1 }],
+  );
+});
+
+test('a legacy slot whose card number left the dataset survives as an unpriced BASE slot', () => {
+  const legacy = legacySlotCard('hZZ-999', 'C', 'hZZ', 'ホロメン');
+  const out = migrateSlotsToPrintings([{ card: legacy, qty: 4 }], 'main', new Map());
+  assert.equal(out[0].card.printing, BASE_PRINTING);
+  assert.equal(out[0].card.printingLabel, '');
+  assert.equal(out[0].qty, 4);
+  assert.equal(resolveExactPrice('hZZ-999', BASE_PRINTING, []).status, 'NO_EXACT_PRICE');
+});
+
+test('a legacy slot is not migrated into a different zone', () => {
+  const legacy = legacySlotCard('hY01-001', 'SEC', 'ent07', 'エール');
+  const index = new Map([['hY01-001', holomen('hY01-001', 'BASE', 'x')]]);
+  const out = migrateSlotsToPrintings([{ card: legacy, qty: 20 }], 'yell', index);
+  assert.equal(out[0].card.printing, BASE_PRINTING, 'stays a yell card on the unmarked printing');
+  assert.equal(out[0].card.cardTypeJp, 'エール');
+  assert.equal(out[0].qty, 20);
+});
+
+test('the store migrates every zone once and never rewrites the collection', () => {
+  const legacyOshi = legacySlotCard('hBP04-005', 'SEC', 'ent07', '推しホロメン');
+  const legacyMain = legacySlotCard('hBP04-057', 'S', 'hPR', 'ホロメン');
+  const legacyYell = legacySlotCard('hY01-001', 'C', 'hBP01', 'エール');
+  const index = new Map([
+    ['hBP04-005', oshi('hBP04-005', 'BASE', 'ラプラス・ダークネス')],
+    ['hBP04-057', holomen('hBP04-057', 'BASE', 'ラプラス・ダークネス')],
+    ['hY01-001', yell('hY01-001', 'BASE', 'x')],
+  ]);
+
+  useDeckStore.setState({ decks: [], activeDeckId: null, collection: { 'hBP04-005|SEC': 1 } });
+  const deckId = useDeckStore.getState().createDeck('螢幕截圖牌組');
+  useDeckStore.getState().changeCard(deckId, 'oshi', legacyOshi, 1);
+  useDeckStore.getState().changeCard(deckId, 'main', legacyMain, 4);
+  useDeckStore.getState().changeCard(deckId, 'yell', legacyYell, 20);
+
+  useDeckStore.getState().migrateLegacyPrintings(index);
+  const deck = () => useDeckStore.getState().decks.find((d) => d.id === deckId);
+  assert.equal(deck().oshi[0].card.id, 'hBP04-005#BASE');
+  assert.equal(deck().main[0].card.id, 'hBP04-057#BASE');
+  assert.equal(deck().yell[0].card.id, 'hY01-001#BASE');
+  assert.deepEqual([deck().oshi[0].qty, deck().main[0].qty, deck().yell[0].qty], [1, 4, 20]);
+
+  // Owning an SEC copy does not prove ownership of the plain printing.
+  assert.deepEqual(useDeckStore.getState().collection, { 'hBP04-005|SEC': 1 });
+
+  // Idempotent: a second pass is a no-op and does not touch the deck object.
+  const before = deck();
+  useDeckStore.getState().migrateLegacyPrintings(index);
+  assert.equal(deck(), before, 'a settled deck must not be re-created');
+});
+
+test('the store action normalizes an existing draft across all three zones', () => {
+  const signedOshi = oshi('hBP04-005', 'PARALLEL/SIGN', 'ラプラス・ダークネス(パラレル/サイン)');
+  const plainOshi = oshi('hBP04-005', 'BASE', 'ラプラス・ダークネス');
+  const parMain = holomen('hBP04-057', 'PARALLEL', 'ラプラス・ダークネス(パラレル)');
+  const plainMain = holomen('hBP04-057', 'BASE', 'ラプラス・ダークネス');
+  const yellCard = yell('hY01-001', 'BASE', 'x');
+  const index = buildLowCostIndex(groupVariantsByCardNumber(
+    [signedOshi, plainOshi, parMain, plainMain, yellCard], [],
   ));
 
-  useDeckStore.setState({ decks: [], activeDeckId: null, collection: { 'hBP04-057|S': 2 } });
+  useDeckStore.setState({ decks: [], activeDeckId: null, collection: { 'hBP04-057|PARALLEL': 2 } });
   const deckId = useDeckStore.getState().createDeck('螢幕截圖牌組');
-  useDeckStore.getState().changeCard(deckId, 'oshi', secOshi, 1);
-  useDeckStore.getState().changeCard(deckId, 'main', secMain, 4);
+  useDeckStore.getState().changeCard(deckId, 'oshi', signedOshi, 1);
+  useDeckStore.getState().changeCard(deckId, 'main', parMain, 4);
   useDeckStore.getState().changeCard(deckId, 'yell', yellCard, 20);
 
   useDeckStore.getState().applyLowCostVariants(deckId, index);
 
   const deck = useDeckStore.getState().decks.find((d) => d.id === deckId);
-  assert.deepEqual(deck.oshi, [{ card: baseOshi, qty: 1 }]);
-  assert.deepEqual(deck.main, [{ card: baseMain, qty: 4 }]);
+  assert.deepEqual(deck.oshi, [{ card: plainOshi, qty: 1 }]);
+  assert.deepEqual(deck.main, [{ card: plainMain, qty: 4 }]);
   assert.deepEqual(deck.yell, [{ card: yellCard, qty: 20 }]);
-  // The global collection is never rewritten into another version.
-  assert.deepEqual(useDeckStore.getState().collection, { 'hBP04-057|S': 2 });
+  assert.deepEqual(useDeckStore.getState().collection, { 'hBP04-057|PARALLEL': 2 });
+});
+
+// ── One shared resolver over the real database ─────────────────────────────
+// Every deck entry point (search/add, 套用低配版本, legacy-draft migration and
+// any future import such as DIC-1000's tournament decklists) must land on the
+// SAME DeckCard for a card number. They all read buildLowCostIndex, so pin the
+// three observable paths together over the real dataset.
+const REAL = adaptDatabase(Object.values(
+  JSON.parse(fs.readFileSync('data/database.json', 'utf-8')).cards,
+));
+const REAL_GROUPS = groupVariantsByCardNumber(REAL.cards, REAL.priceRecords);
+const REAL_INDEX = buildLowCostIndex(REAL_GROUPS);
+
+test('search/add, normalization and migration agree on the default printing', () => {
+  const sample = ['hBP04-005', 'hBP04-057', 'hBP04-041', 'hSD01-001', 'hBP01-044', 'hBP03-027'];
+  for (const cardNumber of sample) {
+    const group = REAL_GROUPS.find((g) => g.cardNumber === cardNumber);
+    assert.ok(group, `${cardNumber} must be offered by search`);
+    const expected = group.card;
+    const zone = expected.cardTypeJp.includes('推し') ? 'oshi'
+      : expected.cardTypeJp.includes('エール') ? 'yell' : 'main';
+
+    // search/add path
+    const hit = searchVariantGroups(REAL_GROUPS, cardNumber);
+    assert.equal(hit[0].card.id, expected.id, `${cardNumber}: search default`);
+    // 套用低配版本 path — a premium slot normalizes onto the same card
+    const premium = group.variants.find((v) => !isPlainPrinting(v.printing)) ?? expected;
+    const normalized = normalizeSlotsToLowCost([{ card: premium, qty: 2 }], zone, REAL_INDEX);
+    assert.equal(normalized[0].card.id, expected.id, `${cardNumber}: normalization default`);
+    // migration path — a pre-DIC-1013 slot lands on the same card
+    const legacy = { ...expected, id: `${cardNumber}_legacy`, printing: undefined };
+    const migrated = migrateSlotsToPrintings([{ card: legacy, qty: 2 }], zone, REAL_INDEX);
+    assert.equal(migrated[0].card.id, expected.id, `${cardNumber}: migration default`);
+  }
+});
+
+test('every real default is playable, and plain whenever the source lists one', () => {
+  let plainDefaults = 0;
+  for (const group of REAL_GROUPS) {
+    const hasPlain = group.variants.some((v) => isPlainPrinting(v.printing));
+    if (hasPlain) {
+      assert.equal(isPlainPrinting(group.card.printing), true,
+        `${group.cardNumber} defaulted to ${group.card.printing} despite a plain listing`);
+      plainDefaults += 1;
+    }
+    assert.equal(group.card.cardNumber, group.cardNumber);
+  }
+  assert.ok(plainDefaults > 500, `too few plain defaults to be meaningful (${plainDefaults})`);
+});
+
+test('hBP04-005 really defaults to the ¥980 plain printing in the shipped data', () => {
+  const chosen = REAL_INDEX.get('hBP04-005');
+  assert.equal(chosen.id, 'hBP04-005#BASE');
+  assert.equal(chosen.printingLabel, 'ラプラス・ダークネス');
+  const gap = computeGap(
+    { id: 'd', name: 'd', oshi: [{ card: chosen, qty: 1 }], main: [], yell: [], updatedAt: '' },
+    {},
+    REAL.priceRecords,
+  );
+  assert.equal(gap.total, 980, 'not ¥69,800 (signed) and not ¥150 (store buy price)');
+  assert.equal(REAL_INDEX.get('hBP04-057').id, 'hBP04-057#BASE');
 });
 
 console.log(`\n${passed} checks passed`);

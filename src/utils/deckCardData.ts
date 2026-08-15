@@ -4,16 +4,14 @@
 // the screen component so it can be reused and reasoned about independently.
 
 import type { DeckCard, PriceRecord } from './deckRules';
-import { normalizeVersion } from './deckRules';
-import { isPremiumPrinting } from './deckVariants';
+import { eligibleZone } from './deckRules';
+import {
+  BASE_PRINTING, buildSourcePrintings, type SourceListing, type SourcePrinting,
+} from './printingIdentity';
 
-export interface RawPriceEntry {
-  name?: string;
-  sellPrice?: number | null;
-  rarity?: string;
-  buyPrice?: number | null;
-  /** merge-buy-prices.js provenance: exact version token this buy price belongs
-   * to; 'BASE' = the bare (original-printing) listing. Absent = no version. */
+export interface RawPriceEntry extends SourceListing {
+  /** merge-buy-prices.js provenance for the store's acquisition price. Retained
+   * for the card-market display; never an input to a deck cost. */
   buyPriceVersion?: string;
   buyPriceSource?: string;
   buyPriceTimestamp?: string;
@@ -28,6 +26,7 @@ export interface RawCard {
   rarity?: string;
   series?: string;
   sellPrice?: number | null;
+  timestamp?: string;
   officialImage?: string;
   localImage?: string;
   skillsJp?: { cardType?: string };
@@ -39,90 +38,87 @@ export interface CardDatabase {
   priceRecords: PriceRecord[];
 }
 
+export const PRICE_SOURCE = 'yuyu-tei.jp';
+export const PRICE_CURRENCY = 'JPY';
+
 let cache: CardDatabase | null = null;
 let inflight: Promise<CardDatabase> | null = null;
 
-export function adaptCard(raw: RawCard): DeckCard {
+function toDeckCard(rep: RawCard, printing: SourcePrinting): DeckCard {
   return {
-    id: raw.id,
-    cardNumber: raw.cardNumber,
-    name: raw.nameZh || raw.name || raw.cardNumber,
-    rarity: raw.rarity || '',
-    series: raw.series || '',
-    type: raw.type || '',
-    cardTypeJp: raw.skillsJp?.cardType || '',
-    imageUrl: raw.officialImage || raw.localImage || undefined,
+    id: `${rep.cardNumber}#${printing.printing}`,
+    cardNumber: rep.cardNumber,
+    name: rep.nameZh || rep.name || rep.cardNumber,
+    printing: printing.printing,
+    printingLabel: printing.label,
+    series: rep.series || '',
+    type: rep.type || '',
+    cardTypeJp: rep.skillsJp?.cardType || '',
+    imageUrl: rep.officialImage || rep.localImage || undefined,
   };
 }
 
-// Build version-precise price records — FAIL CLOSED (DIC-952).
-//
-// A price may only claim a version when the SOURCE LISTING itself explicitly
-// declares that version. Two explicit listing→version channels exist:
-//
-//  A) a `prices[]` entry that carries its own non-empty `rarity` (yuyu-tei);
-//     none exists in the current dataset — every entry ships `rarity: ""`.
-//  B) merge-buy-prices.js buy-price provenance (`buyPrice` + `buyPriceVersion`
-//     + `buyPriceSource` + `buyPriceTimestamp`), stamped per variant from the
-//     store's own listing. This is the version-precise channel used by the deck.
-//
-// Every other mapping is inference and is NOT emitted: the top-level
-// `sellPrice`/`rarity` pair is copied across every printing of a card number and
-// has no verified link to this record's rarity, so it never becomes a record
-// (DIC-952). And a buy price whose version token is missing stays versionless —
-// resolveExactPrice requires an exact (cardNumber, version) match and drops
-// empty-version records, so nothing leaks cross-version.
-export function adaptPrices(raw: RawCard): PriceRecord[] {
-  const out: PriceRecord[] = [];
-  const ts = (raw as RawCard & { timestamp?: string }).timestamp || '';
+const UNLISTED: SourcePrinting = {
+  printing: BASE_PRINTING, label: '', sellPrice: null, buyPrice: null, ambiguous: false,
+};
 
-  // Does this row actually represent the card number's own base printing
-  // (original set + non-premium rarity)? Only that printing may claim the bare
-  // 'BASE' buy price; a premium row (SEC/signed/parallel) must NOT absorb it.
-  const setPrefix = String(raw.cardNumber ?? '').split('-')[0].toLowerCase();
-  const isOwnSetBase = setPrefix !== '' &&
-    (raw.series || '').toLowerCase() === setPrefix &&
-    !isPremiumPrinting(raw.rarity || '');
+function isClassifiable(raw: RawCard): boolean {
+  return eligibleZone(toDeckCard(raw, UNLISTED)) !== null;
+}
 
-  const push = (version: string, price: number, source: string, timestamp: string) => {
-    const v = normalizeVersion(version);
-    if (!v) return; // fail closed: never emit a versionless record
-    out.push({
-      cardNumber: raw.cardNumber,
-      version: v,
-      price,
-      currency: 'JPY',
-      source,
-      timestamp,
-    });
-  };
+// A card number is stored as one row per set it was printed in, and those rows
+// carry the SAME listing set — the printing identity lives in the listings, not
+// in the row. One row is elected to supply the display fields: a row the rules
+// engine can place in a zone wins (some reprint rows ship an empty `type`), then
+// the card number's own set, then the lowest id so the choice is deterministic.
+export function pickRepresentative(rows: RawCard[]): RawCard {
+  const ownSet = String(rows[0]?.cardNumber ?? '').split('-')[0].toLowerCase();
+  return rows.slice().sort((a, b) => (
+    Number(isClassifiable(b)) - Number(isClassifiable(a))
+    || Number((b.series || '').toLowerCase() === ownSet) - Number((a.series || '').toLowerCase() === ownSet)
+    || String(a.id).localeCompare(String(b.id))
+  ))[0];
+}
 
-  for (const p of raw.prices || []) {
-    if (typeof p.sellPrice === 'number' && p.rarity) {
-      push(p.rarity, p.sellPrice, 'yuyu-tei.jp', ts);
-    }
-    if (typeof p.buyPrice === 'number') {
-      const v = p.buyPriceVersion;
-      if (v && v !== 'BASE') {
-        // Explicit parallel / signed token (e.g. SEC, SR, OUR): the version is
-        // already proven by the source, so it applies to every row of this card
-        // number alike (they share the same listing set).
-        push(v, p.buyPrice, p.buyPriceSource || 'buy-price', p.buyPriceTimestamp || ts);
-      } else if (v === 'BASE' && isOwnSetBase) {
-        // Bare listing = original printing. Only this card's own-set base row
-        // may claim it — premium rows stay excluded (no cross-version fallback).
-        // isOwnSetBase implies a non-empty, non-premium rarity.
-        push(String(raw.rarity || ''), p.buyPrice, p.buyPriceSource || 'buy-price', p.buyPriceTimestamp || ts);
-      }
+/**
+ * Adapt every row of ONE card number into its printings and their prices.
+ *
+ * Only the player-facing SELL price becomes a PriceRecord. The store's buy
+ * (acquisition) price is a different commercial quantity — what a shop pays the
+ * player — so it can never stand in for what a missing card costs to acquire,
+ * and is deliberately left out of this pipeline (DIC-1013 §5). It stays
+ * available to the card-market display, which reads the raw listings directly.
+ *
+ * A printing whose sell price the source states ambiguously stays unpriced
+ * rather than borrowing a sibling's price.
+ */
+export function adaptCardNumber(rows: RawCard[]): CardDatabase {
+  const rep = pickRepresentative(rows);
+  const listings = rows.flatMap((row) => row.prices ?? []);
+  const printings = buildSourcePrintings(listings);
+  const timestamp = rep.timestamp || '';
+
+  const cards: DeckCard[] = [];
+  const priceRecords: PriceRecord[] = [];
+  for (const printing of printings.length > 0 ? printings : [UNLISTED]) {
+    cards.push(toDeckCard(rep, printing));
+    if (printing.sellPrice !== null) {
+      priceRecords.push({
+        cardNumber: rep.cardNumber,
+        version: printing.printing,
+        price: printing.sellPrice,
+        currency: PRICE_CURRENCY,
+        source: PRICE_SOURCE,
+        timestamp,
+      });
     }
   }
-  return out;
+  return { cards, priceRecords };
 }
 
-// Same (cardNumber, version) reached with conflicting prices across the card
-// number's rows (e.g. two stores disagree) → ambiguous, drop ALL of them rather
-// than trust an arbitrary pick (fail closed). Runs at database level because a
-// card number's price rows are split across separate card entries.
+// Same (cardNumber, printing) reached with conflicting prices → ambiguous, drop
+// ALL of them rather than trust an arbitrary pick (fail closed). Kept as a
+// database-level guard for rows that reach the adapter through another path.
 export function dropConflictingPrices(records: PriceRecord[]): PriceRecord[] {
   const byKey = new Map<string, Set<number>>();
   for (const r of records) {
@@ -138,10 +134,20 @@ export function dropConflictingPrices(records: PriceRecord[]): PriceRecord[] {
 // wrapper so the raw-database-to-PriceRecord boundary can be regression-tested
 // directly against real ambiguous data (DIC-952).
 export function adaptDatabase(rawCards: RawCard[]): CardDatabase {
-  return {
-    cards: rawCards.map(adaptCard),
-    priceRecords: dropConflictingPrices(rawCards.flatMap(adaptPrices)),
-  };
+  const byNumber = new Map<string, RawCard[]>();
+  for (const raw of rawCards) {
+    const list = byNumber.get(raw.cardNumber);
+    if (list) list.push(raw);
+    else byNumber.set(raw.cardNumber, [raw]);
+  }
+  const cards: DeckCard[] = [];
+  const priceRecords: PriceRecord[] = [];
+  for (const rows of byNumber.values()) {
+    const adapted = adaptCardNumber(rows);
+    cards.push(...adapted.cards);
+    priceRecords.push(...adapted.priceRecords);
+  }
+  return { cards, priceRecords: dropConflictingPrices(priceRecords) };
 }
 
 export async function loadCardDatabase(): Promise<CardDatabase> {
