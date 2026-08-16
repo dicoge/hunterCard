@@ -113,6 +113,9 @@ jobs:
       - name: Verify tournament report pipeline core (DIC-979)
         run: npm run test:tournament-report
 
+      - name: Verify verified tournament deck one-tap import fail-closed (DIC-1033)
+        run: npm run test:tournament-deck-import
+
       - name: Verify tournament collector failure preservation (DIC-979)
         run: npm run test:tournament-collector
 

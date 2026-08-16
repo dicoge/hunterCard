@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useCallback } from 'react';
+import React, { useEffect, useReducer, useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,30 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { DrawerNavigationProp } from '@react-navigation/drawer';
 import { COLORS } from '../constants';
 import { openUrl } from '../utils/openUrl';
 import type {
   MonthlyReport,
   TournamentIndex,
   ArchetypeShareRow,
+  TournamentEvent,
+  DeckEntry,
 } from '../types/tournament';
+import type { MainDrawerParamList } from '../types';
 import {
   tournamentReportReducer,
   initialTournamentReportState,
 } from '../utils/tournamentReportState';
+import { useDeckStore } from '../store/deckStore';
+import { loadCardDatabase } from '../utils/deckCardData';
+import type { DeckCard } from '../utils/deckRules';
+import {
+  buildCatalogIndex,
+  buildImportedDeck,
+  evaluateImport,
+} from '../utils/tournamentDeckImport';
 
 // Deterministic palette for archetype slices; the unknown slice is always the
 // muted gray below (never a "real" archetype color) so it reads as a gap.
@@ -57,6 +70,12 @@ async function fetchJson<T>(url: string): Promise<T> {
 export default function TournamentReportScreen() {
   const [state, dispatch] = useReducer(tournamentReportReducer, initialTournamentReportState);
   const { index, month, report, loading, error } = state;
+  const navigation = useNavigation<DrawerNavigationProp<MainDrawerParamList>>();
+  const importDeck = useDeckStore((s) => s.importDeck);
+  // Card catalog, keyed by card number. Stays null until the database resolves;
+  // the import gate reports that state rather than enabling a guessing import.
+  const [catalog, setCatalog] = useState<Map<string, DeckCard[]> | null>(null);
+  const [imported, setImported] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -95,9 +114,44 @@ export default function TournamentReportScreen() {
     };
   }, [month]);
 
+  useEffect(() => {
+    let alive = true;
+    loadCardDatabase()
+      .then((db) => {
+        if (alive) setCatalog(buildCatalogIndex(db.cards));
+      })
+      .catch(() => {
+        // Leaving the catalog null keeps every import button disabled with its
+        // own reason — an unavailable database must never soften the gate.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const onOpen = useCallback((url: string) => {
     void openUrl(url);
   }, []);
+
+  const onImport = useCallback(
+    (event: TournamentEvent, deck: DeckEntry) => {
+      if (!catalog) return;
+      const draft = buildImportedDeck(
+        event,
+        deck,
+        catalog,
+        useDeckStore.getState().decks.map((d) => d.name),
+        new Date().toISOString(),
+      );
+      // buildImportedDeck re-runs the fail-closed gate and returns null when it
+      // rejects, so a partial or unverified deck can never reach the store.
+      if (!draft) return;
+      importDeck(draft);
+      setImported(draft.name);
+      navigation.navigate('DeckEditor');
+    },
+    [catalog, importDeck, navigation],
+  );
 
   if (loading && !index) {
     return (
@@ -120,6 +174,14 @@ export default function TournamentReportScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.h1}>🏆 每月賽事月報</Text>
+
+        {imported ? (
+          <View style={styles.importedBanner}>
+            <Text style={styles.importedText}>
+              ✓ 已匯入「{imported}」，並已在牌組編輯器中開啟。
+            </Text>
+          </View>
+        ) : null}
 
         {/* Month selector */}
         <View style={styles.monthRow}>
@@ -227,6 +289,7 @@ export default function TournamentReportScreen() {
                         ? `卡表：${d.cards.length} 種卡`
                         : '卡表：未收錄（decklog 需 JS 渲染，尚未讀取）'}
                     </Text>
+                    <ImportAction deck={d} catalog={catalog} onImport={() => onImport(e, d)} />
                     {d.decklogCode ? (
                       <TouchableOpacity onPress={() => onOpen(d.sourceUrl)}>
                         <Text style={styles.link}>在 decklog 查看牌組 ({d.decklogCode}) ↗</Text>
@@ -248,6 +311,58 @@ export default function TournamentReportScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * The one-tap import CTA (DIC-1033).
+ *
+ * Enabled only when the fail-closed gate passes. When it does not, the button
+ * stays visibly disabled and states the gate's own reason verbatim, so an
+ * unverified July record reads "卡表尚未取得，無法匯入" rather than silently
+ * offering an import that would produce a partial deck.
+ */
+function ImportAction({
+  deck,
+  catalog,
+  onImport,
+}: {
+  deck: DeckEntry;
+  catalog: Map<string, DeckCard[]> | null;
+  onImport: () => void;
+}) {
+  const gate = useMemo(() => evaluateImport(deck, catalog), [deck, catalog]);
+
+  if (!gate.importable) {
+    return (
+      <View style={styles.importBlock}>
+        <View
+          style={[styles.importBtn, styles.importBtnDisabled]}
+          testID={`deck-import-disabled-${deck.deckId}`}
+        >
+          <Text style={styles.importBtnTextDisabled} numberOfLines={2}>
+            一鍵匯入我的牌組
+          </Text>
+        </View>
+        <Text style={styles.importReason} testID={`deck-import-reason-${deck.deckId}`}>
+          {gate.reason}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.importBlock}>
+      <TouchableOpacity
+        style={styles.importBtn}
+        onPress={onImport}
+        testID={`deck-import-${deck.deckId}`}
+        accessibilityRole="button"
+        accessibilityLabel="一鍵匯入我的牌組"
+      >
+        <Text style={styles.importBtnText} numberOfLines={2}>一鍵匯入我的牌組</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -356,5 +471,33 @@ const styles = StyleSheet.create({
   deckPlayer: { color: COLORS.textSecondary, fontSize: 12, marginTop: 4 },
   deckCards: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   link: { color: COLORS.primary, fontSize: 12, fontWeight: '600', marginTop: 8 },
+  // The CTA is a full-width block rather than a floated pill: at 390px a fixed
+  // width would push the row past the viewport, so it wraps its own line and the
+  // label is allowed two lines instead of overflowing horizontally.
+  importBlock: { marginTop: 10, width: '100%' },
+  importBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  importBtnDisabled: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  importBtnText: { color: '#fff', fontSize: 14, fontWeight: 'bold', textAlign: 'center' },
+  importBtnTextDisabled: {
+    color: COLORS.textSecondary, fontSize: 14, fontWeight: 'bold', textAlign: 'center',
+  },
+  importReason: { color: COLORS.textSecondary, fontSize: 12, marginTop: 6, lineHeight: 17 },
+  importedBanner: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    padding: 10,
+    marginBottom: 12,
+  },
+  importedText: { color: COLORS.text, fontSize: 13, fontWeight: '600', lineHeight: 19 },
   generatedAt: { color: COLORS.textSecondary, fontSize: 11, marginTop: 16, textAlign: 'center' },
 });
