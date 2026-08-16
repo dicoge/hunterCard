@@ -14,7 +14,7 @@ import * as Notifications from 'expo-notifications';
 // 後端 base URL：web 用當前 origin，native 用正式部署網址
 const PRODUCTION_API_BASE = 'https://holocard-hunter.vercel.app';
 
-function getApiBase(): string {
+export function getApiBase(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     return window.location.origin;
   }
@@ -23,6 +23,14 @@ function getApiBase(): string {
 
 function getProjectId(): string | undefined {
   return Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+}
+
+// 最近一次成功取得的 Expo push token。到價提醒（DIC-1023）需要知道這台裝置
+// 能不能收背景推播：null 代表 web / 未授權 / 未註冊，此時提醒僅在本機運作。
+let cachedPushToken: string | null = null;
+
+export function getCachedPushToken(): string | null {
+  return cachedPushToken;
 }
 
 /**
@@ -49,7 +57,8 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const tokenResponse = await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined
     );
-    return tokenResponse.data;
+    cachedPushToken = tokenResponse.data;
+    return cachedPushToken;
   } catch (err) {
     console.warn('[push] failed to register for notifications:', err);
     return null;

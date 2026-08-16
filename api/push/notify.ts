@@ -1,5 +1,5 @@
-import { timingSafeEqual } from 'node:crypto';
 import { getWatchlist, getLastAlertTimes, setLastAlertTimes } from '../_lib/kv-storage';
+import { isInternalRequest } from '../_lib/internal-auth';
 
 export const config = { runtime: 'nodejs' };
 
@@ -39,18 +39,6 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: CORS_HEADERS });
 }
 
-// Fail-closed shared-secret check: this endpoint may only be called by the cron
-// script / Vercel cron, never by end users (DIC-390 #1). If the secret env var
-// is unset, every request is rejected rather than left open.
-function isAuthorized(req: Request): boolean {
-  const secret = process.env.PUSH_NOTIFY_SECRET;
-  if (!secret) return false;
-  const provided = req.headers.get('x-internal-secret') ?? '';
-  const a = Buffer.from(provided);
-  const b = Buffer.from(secret);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
@@ -71,7 +59,7 @@ function normalizeAlert(alert: any): Alert | null {
 export default async function handler(req: Request) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-  if (!isAuthorized(req)) return json({ error: 'Unauthorized' }, 401);
+  if (!isInternalRequest(req)) return json({ error: 'Unauthorized' }, 401);
 
   try {
     const body = await req.json().catch(() => ({}));
