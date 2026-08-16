@@ -39,8 +39,12 @@ const database = JSON.parse(
 
 // The exact retake hint the user must NEVER see for a backend outage.
 const RETAKE_HINT = '無法從卡牌識別到卡號，請調整角度或光線後重試';
+// A stand-in for a normal camera frame. Only its declared dimensions matter here: the
+// vision leg is stubbed, but the handler refuses images too small to hold a readable
+// card number (DIC-1021), and every case below is about a BACKEND fault rather than a
+// bad photo — a 1x1 pixel would be answered as "retake it" before the backend is reached.
 const PIXEL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAV4CAIAAAAAAAAA';
 
 let geminiReply = 'CARD_NUMBER: hBP04-005\nCHARACTER: ラプラス・ダークネス\nRARITY: SEC';
 let geminiStatus = 200;
@@ -75,7 +79,12 @@ const check = (label, fn) => {
 };
 
 // ── 1. No key → the exact production failure, now classified ──────────────────
+// "Unprovisioned" now means NO provider key at all: since DIC-1019 an OpenRouter key
+// alone is enough to serve recognition, so this suite must own both names rather than
+// inherit whatever the developer happens to have exported.
 const savedKey = process.env.GEMINI_API_KEY;
+const savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
+delete process.env.OPENROUTER_API_KEY;
 delete process.env.GEMINI_API_KEY;
 
 const missing = await post({ image: PIXEL });
@@ -401,6 +410,8 @@ check('every 5xx is infrastructure; 404/400 stay the caller-visible outcome', ()
 
 if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
 else process.env.GEMINI_API_KEY = savedKey;
+if (savedOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+else process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
 
 for (const label of results) console.log(`  ✓ ${label}`);
 console.log(`\n✅ recognition-unavailable: ${results.length} checks passed`);

@@ -1,20 +1,48 @@
 /**
- * @version 6
- * recognize-card.ts — Gemini Vision API + deterministic candidate ranking for Hololive TCG cards.
+ * @version 7
+ * recognize-card.ts — Gemini Vision + deterministic candidate ranking for Hololive TCG cards.
  *
  * Accepts one or more image data URIs. The web scanner sends both a full-frame image
  * and a scan-area crop so the model can read tiny bottom-edge card numbers without
  * losing whole-card context.
+ *
+ * The vision call is served by the first working provider adapter: Google direct
+ * (GEMINI_API_KEY), then OpenRouter (OPENROUTER_API_KEY), then 503.
  */
 
 export const config = { runtime: 'edge' };
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
+// Same underlying model as the Google-direct leg, reached through OpenRouter, so a
+// fallback scan ranks identically to a primary one (DIC-1019).
+const OPENROUTER_MODEL = 'google/gemini-2.5-flash';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const VISION_MAX_TOKENS = 180;
+
+// The scanner abandons the request after RECOGNITION_REQUEST_TIMEOUT_MS (15s, see
+// src/services/recognitionOutcome). Every provider leg shares ONE budget sized below
+// that, leaving room for the JSON round trip and ranking — otherwise a sequential
+// fallback "succeeds" server-side after the caller has already aborted, which is a
+// fallback the user can never receive (DIC-1020 CR).
+export const VISION_TOTAL_BUDGET_MS = 11000;
+// A leg that still has a fallback behind it may not spend the whole budget: it is
+// capped, and must leave at least VISION_FALLBACK_RESERVE_MS for the next provider.
+const VISION_PRIMARY_CAP_MS = 6500;
+const VISION_FALLBACK_RESERVE_MS = 4500;
+// Below this there is no point opening a connection at all.
+const VISION_MIN_LEG_MS = 1500;
 const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
 const AUTO_ACCEPT_CONFIDENCE = 0.82;
 
-// Recognition stays unavailable until the operator provisions GEMINI_API_KEY in the
-// deployment environment. Raised as its own type so the handler can answer 503 with a
+// A card number occupies roughly 3% of a card's height, so a frame shorter than this
+// cannot physically carry a legible one. Asked anyway, the model does not answer NONE —
+// it invents a plausible number, which then scores as "cardNumber exact" (+100) and
+// buries the real card under five confident wrong candidates (DIC-1021 QA). The scanner
+// sends up to 1536px, so this floor is far below anything a real scan produces.
+const MIN_LEGIBLE_IMAGE_PX = 320;
+
+// Recognition stays unavailable until the operator provisions a vision provider key in
+// the deployment environment. Raised as its own type so the handler can answer 503 with a
 // stable code instead of a bare 500: the client has to tell "this deployment cannot
 // recognise anything" apart from "this card has no match", otherwise an unprovisioned
 // environment tells the user to fix their lighting (DIC-1013 QA).
@@ -163,6 +191,88 @@ function json(d: any, status = 200): Response {
   });
 }
 
+// Size markers live near the front of a JPEG/PNG, so a bounded prefix is all this needs.
+const HEADER_B64_CHARS = 24000;
+// `data:image/jpeg;base64,` and friends are far shorter than this; a comma further out
+// does not describe a data URI worth parsing.
+const DATA_URI_HEAD_CHARS = 1024;
+// Doubled so base64 broken across lines still yields a full HEADER_B64_CHARS prefix.
+const HEADER_RAW_CHARS = HEADER_B64_CHARS * 2;
+
+function decodeImageHeader(image: string): Uint8Array | null {
+  // Every step below must stay bounded: this runs on the edge hot path against
+  // multi-megabyte camera frames, so nothing may scan, copy, or sanitize the payload
+  // tail (CR DIC-1020).
+  const comma = image.slice(0, DATA_URI_HEAD_CHARS).indexOf(',');
+  const start = comma >= 0 ? comma + 1 : 0;
+  const prefix = image.slice(start, start + HEADER_RAW_CHARS)
+    .replace(/[^A-Za-z0-9+/]/g, '')
+    .slice(0, HEADER_B64_CHARS);
+  const usable = prefix.slice(0, prefix.length - (prefix.length % 4));
+  if (usable.length < 32) return null;
+  try {
+    const binary = atob(usable);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Longest edge of a JPEG or PNG, read straight from its header bytes.
+ *
+ * Returns null whenever the size cannot be established, and every caller must then fail
+ * OPEN: refusing to scan a real photo would be far worse than scanning a small one.
+ */
+export function imageLongestEdge(image: string): number | null {
+  const b = decodeImageHeader(image);
+  if (!b || b.length < 26) return null;
+
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+    const at = (o: number) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+    const width = at(16), height = at(20);
+    return width && height ? Math.max(width, height) : null;
+  }
+
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const marker = b[i + 1];
+      // Padding and standalone markers carry no length field.
+      if (marker === 0xff || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) { i += 2; continue; }
+      const segment = (b[i + 2] << 8) | b[i + 3];
+      // SOF0-SOF15 hold height then width; c4/c8/cc share the range but are not frames.
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        const height = (b[i + 5] << 8) | b[i + 6];
+        const width = (b[i + 7] << 8) | b[i + 8];
+        return width && height ? Math.max(width, height) : null;
+      }
+      if (segment < 2) return null;
+      i += 2 + segment;
+    }
+  }
+  return null;
+}
+
+/**
+ * True when the full-frame image is too small to contain a readable card number.
+ *
+ * Only the FIRST image counts, because that is the whole card by this endpoint's
+ * contract and the scan-area crop is cut out of it: a crop is legitimately smaller than
+ * the frame, so the smallest image proves nothing, and an upscaled crop would hide a
+ * useless frame behind a large pixel count without adding a single readable digit.
+ * An unmeasurable frame returns false — callers must fail open.
+ */
+export function isBelowLegibleResolution(images: any[]): boolean {
+  const frame = images.find((image): image is string => typeof image === 'string' && image.length > 0);
+  if (!frame) return false;
+  const edge = imageLongestEdge(frame);
+  return edge !== null && edge < MIN_LEGIBLE_IMAGE_PX;
+}
+
 function dataUriToGeminiPart(image: string) {
   const match = image.match(/^data:([^;]+);base64,(.+)$/);
   return {
@@ -185,6 +295,8 @@ Critical reading order:
 5. BLOOM_LEVEL / card type: Spot, Debut, 1st, 2nd, Buzz, Oshi, Support, Event, etc.
 6. TITLE: card title/support event name, if distinct from character.
 
+CARD_NUMBER discipline: transcribe only characters you can actually read in this photo. If the bottom-edge code is blurred, cropped, or too small to read character by character, answer NONE. Never infer it from the artwork, the character, the set, or a card you remember — an invented number is far worse than NONE, because it is trusted as an exact match.
+
 If a field is not clearly visible, write NONE. Do not guess missing digits. Return exactly:
 CHARACTER: [name or NONE]
 HP: [number only or NONE]
@@ -193,26 +305,123 @@ BLOOM_LEVEL: [level/type or NONE]
 CARD_NUMBER: [exact card number or NONE]
 TITLE: [title or NONE]`;
 
-async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
-  const imageList = images.filter(Boolean).slice(0, 2).map(img => img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`);
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new RecognitionUnavailableError('GEMINI_API_KEY not set');
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
+type VisionAdapter = {
+  provider: string;
+  model: string;
+  request: (images: string[], timeoutMs: number) => Promise<Response>;
+  extract: (data: any) => string;
+};
+
+// The key travels in x-goog-api-key rather than the ?key= query parameter: a URL is the
+// part of a request that leaks into logs, error strings and referrers, and this handler
+// must never expose a provider key value (DIC-1019).
+const googleAdapter = (apiKey: string): VisionAdapter => ({
+  provider: 'gemini',
+  model: GEMINI_MODEL,
+  request: (images, timeoutMs) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
       contents: [{
         role: 'user',
-        parts: [{ text: visionPrompt }, ...imageList.map(dataUriToGeminiPart)],
+        parts: [{ text: visionPrompt }, ...images.map(dataUriToGeminiPart)],
       }],
-      generationConfig: { temperature: 0, maxOutputTokens: 180 },
+      generationConfig: { temperature: 0, maxOutputTokens: VISION_MAX_TOKENS },
     }),
-    signal: AbortSignal.timeout(14000),
-  });
-  if (!res.ok) throw new Error(`Gemini API error (${res.status})`);
-  const data = await res.json();
-  const reply = (data?.candidates?.[0]?.content?.parts || []).map((part: any) => part.text || '').join('\n').trim();
-  return { reply, provider: 'gemini', model: GEMINI_MODEL };
+    signal: AbortSignal.timeout(timeoutMs),
+  }),
+  extract: (data) => (data?.candidates?.[0]?.content?.parts || [])
+    .map((part: any) => part.text || '').join('\n').trim(),
+});
+
+const openRouterAdapter = (apiKey: string): VisionAdapter => ({
+  provider: 'openrouter',
+  model: OPENROUTER_MODEL,
+  request: (images, timeoutMs) => fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://holohunter.dicoge.com',
+      'X-Title': 'HoloHunter',
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: visionPrompt },
+          ...images.map(url => ({ type: 'image_url', image_url: { url } })),
+        ],
+      }],
+      temperature: 0,
+      max_tokens: VISION_MAX_TOKENS,
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  }),
+  extract: (data) => String(data?.choices?.[0]?.message?.content || '').trim(),
+});
+
+function readKey(name: string): string | null {
+  const value = process.env[name];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+// Runtime priority: Google direct, then OpenRouter, then nothing (→ 503). Both keys
+// present is not ambiguous — Google direct always wins, and OpenRouter is only reached
+// when Google is unconfigured or its leg fails.
+function resolveAdapters(): VisionAdapter[] {
+  const adapters: VisionAdapter[] = [];
+  const geminiKey = readKey('GEMINI_API_KEY');
+  if (geminiKey) adapters.push(googleAdapter(geminiKey));
+  const openRouterKey = readKey('OPENROUTER_API_KEY');
+  if (openRouterKey) adapters.push(openRouterAdapter(openRouterKey));
+  return adapters;
+}
+
+async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
+  const imageList = images.filter(Boolean).slice(0, 2).map(img => img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`);
+  const adapters = resolveAdapters();
+  if (adapters.length === 0) throw new RecognitionUnavailableError('no vision provider key configured');
+
+  const deadline = Date.now() + VISION_TOTAL_BUDGET_MS;
+  let lastError: Error | null = null;
+  for (let i = 0; i < adapters.length; i++) {
+    const adapter = adapters[i];
+    const remaining = deadline - Date.now();
+    // The last leg may use everything that is left; anything before it is capped and has
+    // to hand the reserve on, so its timeout can never starve the fallback behind it.
+    const legBudget = i === adapters.length - 1
+      ? remaining
+      : Math.min(VISION_PRIMARY_CAP_MS, remaining - VISION_FALLBACK_RESERVE_MS);
+    if (legBudget < VISION_MIN_LEG_MS) {
+      lastError = lastError || new Error('vision budget exhausted');
+      console.error(`[recognize-card] provider ${adapter.provider} skipped: vision budget exhausted`);
+      continue;
+    }
+
+    // Upstream bodies and raw transport errors never escape this block: a failing leg is
+    // reduced to provider + HTTP status before it can reach a client response or a log.
+    let reply: string;
+    try {
+      const res = await adapter.request(imageList, legBudget);
+      if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
+      reply = adapter.extract(await res.json());
+    } catch (e: any) {
+      lastError = e instanceof Error && /^\w+ API error \(\d+\)$/.test(e.message)
+        ? e
+        : new Error(`${adapter.provider} API request failed`);
+      console.error(`[recognize-card] provider ${adapter.provider} failed: ${lastError.message}`);
+      continue;
+    }
+    // An empty reply is a failed leg too, but the last provider's empty answer still has
+    // to surface as the existing "empty response" 502 rather than a transport error.
+    if (reply) return { reply, provider: adapter.provider, model: adapter.model };
+    lastError = null;
+    console.error(`[recognize-card] provider ${adapter.provider} returned an empty reply`);
+  }
+  if (lastError) throw lastError;
+  return { reply: '', provider: adapters[adapters.length - 1].provider, model: adapters[adapters.length - 1].model };
 }
 
 export function rankCandidates(cards: Record<string, any>, extracted: any, storeMvp = false) {
@@ -316,6 +525,21 @@ export default async function handler(req: Request): Promise<Response> {
     if (!images[0] || typeof images[0] !== 'string') return json({ success: false, error: 'Invalid image' }, 400);
     // Store MVP clients send `storeMvp: true` so forbidden fields never cross the wire.
     const storeMvp = body?.storeMvp === true;
+
+    // A frame too small to hold a legible card number never reaches the model: it would
+    // answer with an invented one rather than NONE. 404 keeps this a photo-level outcome,
+    // so the client asks for a closer shot instead of reporting a broken backend.
+    //
+    // The provider check comes first on purpose: a deployment that cannot recognise
+    // anything owes the user a 503 even for a bad photo. Answering "retake it" on an
+    // unprovisioned backend is exactly the DIC-1013 defect.
+    if (resolveAdapters().length > 0 && isBelowLegibleResolution(images)) {
+      return json({
+        success: false,
+        error: '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝',
+        candidates: [],
+      }, 404);
+    }
 
     const [{ reply, provider, model }, cards] = await Promise.all([
       callVision(images),

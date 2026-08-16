@@ -7,6 +7,15 @@
 
 export const RECOGNITION_UNAVAILABLE_CODE = 'RECOGNITION_UNAVAILABLE';
 
+/**
+ * How long the scanner waits for /api/recognize-card before aborting the request.
+ *
+ * This is the real deadline the whole server-side provider chain has to finish inside:
+ * a fallback leg that only succeeds after this has already been abandoned by the caller
+ * (DIC-1020 CR). The handler sizes its own shared budget from it.
+ */
+export const RECOGNITION_REQUEST_TIMEOUT_MS = 15000;
+
 /** Shown when the deployment cannot recognise anything — never a "retake the photo" hint. */
 export const RECOGNITION_UNAVAILABLE_MESSAGE = '辨識服務暫時無法使用，請稍後再試或改用手動搜尋';
 

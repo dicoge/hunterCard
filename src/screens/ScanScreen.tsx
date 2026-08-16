@@ -22,7 +22,7 @@ import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
 import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
-import { RECOGNITION_UNAVAILABLE_MESSAGE } from '../services/recognitionOutcome';
+import { RECOGNITION_UNAVAILABLE_MESSAGE, RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
 import {
   runWebCameraScan,
   runNativeCameraScan,
@@ -462,7 +462,7 @@ export default function ScanScreen({ navigation }: any) {
   const buildScanFlowIo = (recognitionImages?: string[]): ScanFlowIo => ({
     callRecognitionApi: async () => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), RECOGNITION_REQUEST_TIMEOUT_MS);
       try {
         const resp = await fetch(window.location.origin + '/api/recognize-card', {
           method: 'POST',

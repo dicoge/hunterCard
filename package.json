@@ -44,6 +44,8 @@
     "test:version-alignment": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/verify-version-alignment.js",
     "test:scan-fail-closed": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-version-fail-closed.mjs",
     "test:recognition-unavailable": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-unavailable.mjs",
+    "test:recognition-provider": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-provider-fallback.mjs",
+    "test:recognition-image-quality": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-image-quality.mjs",
     "test:store-mvp-strip": "node --experimental-strip-types scripts/test-store-mvp-field-strip.mjs",
     "test:store-mvp-native-export": "node scripts/test-store-mvp-native-export.mjs",
     "test:native-guest-data": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-native-guest-series-data.mjs",
