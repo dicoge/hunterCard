@@ -29,10 +29,12 @@
  * decklogCode and either no committed cards yet or a committed list that fails
  * revalidation, the collector:
  *   1. POSTs the public Deck Log view API (/system/app/api/view/{code}) with
- *      same-origin headers, one request per deck, sequential, ≥500ms apart,
- *      bounded retries with backoff (no auth, no CAPTCHA, no pagination — the
- *      response is a single JSON body). The exact endpoint was verified against
- *      live public decks (game_title_id 9 = hOCG).
+ *      same-origin headers, one request per deck, sequential, ≥500ms after
+ *      every attempt, bounded retries with backoff (no auth, no CAPTCHA, no
+ *      pagination — the response is a single JSON body). 401/403 are terminal;
+ *      429 is terminal unless the server sent a usable Retry-After, which buys
+ *      exactly one more attempt. The exact endpoint was verified against live
+ *      public decks (game_title_id 9 = hOCG).
  *   2. Maps the three Deck Log lists to zones (p_list→oshi, list→main,
  *      sub_list→yell) with the shared pure core, then validates 1/50/20 totals,
  *      no duplicate slots within a zone, and every cardNumber against the local
@@ -113,22 +115,70 @@ function alert(level, message, extra = {}) {
   console.error(`${tag} ${message}`);
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Minimum gap between Deck Log requests. Enforced in a `finally` around every
+// single attempt, so no downstream early exit (fetch failure, wrong game title,
+// validation failure) can shorten the gap to the next request.
+export const DECKLOG_MIN_REQUEST_INTERVAL_MS = 500;
+// A Retry-After longer than this means "come back later", not "sit here and
+// wait" — a scheduled run gives up instead of stalling.
+export const DECKLOG_MAX_RETRY_AFTER_MS = 60_000;
+
+/** Retry-After as milliseconds. Either delta-seconds or an HTTP date; anything
+ * else is null, which makes a 429 terminal rather than guessing a wait. */
+export function retryAfterMs(headerValue, now = Date.now()) {
+  if (typeof headerValue !== 'string') return null;
+  const raw = headerValue.trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return Number(raw) * 1000;
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
+}
+
+/** Decide whether a non-OK response is worth another identical request.
+ * 401/403 are settled answers — the retry re-sends the same anonymous request
+ * and gets the same reply, so it is pure extra load. 429 is only retried for
+ * the wait the server itself specified, once. */
+function classifyHttpFailure(res, { rateLimitRetried }) {
+  const status = res.status;
+  if (status === 401 || status === 403) {
+    return { terminal: true, waitMs: null, message: `HTTP ${status}: terminal, not retried` };
+  }
+  if (status === 429) {
+    const after = retryAfterMs(res.headers?.get?.('retry-after'));
+    if (after === null || after > DECKLOG_MAX_RETRY_AFTER_MS || rateLimitRetried) {
+      return { terminal: true, waitMs: null, message: 'HTTP 429: rate limited, not retried' };
+    }
+    return { terminal: false, waitMs: after, message: `HTTP 429: honoring Retry-After ${after}ms` };
+  }
+  return { terminal: false, waitMs: null, message: `HTTP ${status}` };
+}
+
 // Bounded-retry helper shared by the live paths. Retries with backoff, never
 // bypasses auth/CAPTCHA/rate limits — it simply re-issues the SAME public
 // request a browser would make, with a small delay between attempts.
 export async function fetchWithRetry(url, { retries = 3, backoffMs = 800 } = {}) {
   let lastErr;
+  let rateLimitRetried = false;
   for (let attempt = 1; attempt <= retries; attempt++) {
+    let terminal = false;
+    let waitMs = null;
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const verdict = classifyHttpFailure(res, { rateLimitRetried });
+        terminal = verdict.terminal;
+        waitMs = verdict.waitMs;
+        if (waitMs !== null) rateLimitRetried = true;
+        throw new Error(verdict.message);
+      }
       return await res.text();
     } catch (err) {
       lastErr = err;
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, backoffMs * attempt));
-      }
     }
+    if (terminal) break;
+    if (attempt < retries) await sleep(waitMs ?? backoffMs * attempt);
   }
   throw lastErr;
 }
@@ -149,14 +199,23 @@ export async function fetchDecklogView(code, { retries = 3, backoffMs = 800 } = 
     'X-Requested-With': 'XMLHttpRequest',
   };
   let lastErr;
+  let rateLimitRetried = false;
   for (let attempt = 1; attempt <= retries; attempt++) {
+    let terminal = false;
+    let waitMs = null;
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers,
         signal: AbortSignal.timeout(15000),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const verdict = classifyHttpFailure(res, { rateLimitRetried });
+        terminal = verdict.terminal;
+        waitMs = verdict.waitMs;
+        if (waitMs !== null) rateLimitRetried = true;
+        throw new Error(`${verdict.message} (${code})`);
+      }
       const data = await res.json();
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
         throw new Error(`unexpected Deck Log response shape for ${code}`);
@@ -164,10 +223,14 @@ export async function fetchDecklogView(code, { retries = 3, backoffMs = 800 } = 
       return data;
     } catch (err) {
       lastErr = err;
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, backoffMs * attempt));
-      }
+    } finally {
+      // Pacing belongs to the request, not to the caller's control flow: every
+      // attempt — successful, failed, or terminal — is followed by the floor,
+      // so no `continue`/`return`/`throw` downstream can skip it.
+      await sleep(DECKLOG_MIN_REQUEST_INTERVAL_MS);
     }
+    if (terminal) break;
+    if (attempt < retries) await sleep(waitMs ?? backoffMs * attempt);
   }
   throw lastErr;
 }
@@ -351,8 +414,9 @@ async function liveCollectDecklogCards(catalogNumbers) {
             { file, decklogCode: code },
           );
         }
-        // Sequential, polite rate limiting: ≥500ms between Deck Log requests.
-        await new Promise((r) => setTimeout(r, 500));
+        // No pacing call here on purpose: the ≥500ms floor is enforced inside
+        // fetchDecklogView's finally, so the early `continue`s above (fetch
+        // failure, wrong game title, validation failure) cannot outrun it.
       }
     }
     if (fileChanged && !DRY_RUN) {

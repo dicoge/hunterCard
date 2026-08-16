@@ -10,7 +10,9 @@
  * must not drop that month from index.json — otherwise the UI loses the ability
  * to discover a report that is still sitting valid on disk. Since DIC-1029 the
  * same guarantee covers a source whose committed card array fails strict
- * revalidation (totals, duplicate zone slots, catalog membership).
+ * revalidation (totals, duplicate zone slots, catalog membership, unreadable
+ * counts and card numbers), plus Deck Log request safety in --live mode
+ * (401/403/429 handling and the ≥500ms floor) driven through a mocked fetch.
  *
  * Run: node scripts/test-tournament-collector.mjs
  */
@@ -19,7 +21,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -269,6 +271,20 @@ for (const [label, mutate, failurePattern] of [
     /has no readable copy count \(count=0\)/,
   ],
   [
+    'a negative copy count',
+    (src) => {
+      src.events[0].decks[0].cards.find((c) => c.zone === 'yell').count = -3;
+    },
+    /has no readable copy count \(count=-3\)/,
+  ],
+  [
+    'a fractional copy count',
+    (src) => {
+      src.events[0].decks[0].cards.find((c) => c.zone === 'main').count = 1.5;
+    },
+    /has no readable copy count \(count=1\.5\)/,
+  ],
+  [
     'a non-numeric copy count',
     (src) => {
       src.events[0].decks[0].cards.find((c) => c.zone === 'main').count = '4';
@@ -390,6 +406,191 @@ test('--live skips a valid committed deck without touching the network', () => {
   assert.deepEqual(deck.cards, committedValidCards());
   assert.equal(deck.cardsVerified, true);
   assert.doesNotMatch(res.stderr, /Deck Log fetch failed|Deck Log .*: verified/);
+});
+
+// ── DIC-1029: Deck Log request safety ───────────────────────────────────────
+// A deterministic network double installed with --import, so it is in place
+// before the collector issues its first request. Every attempt is appended to a
+// log file with a timestamp — that log is what the pacing assertions read, so
+// they measure the real collector's real gaps rather than a simulation.
+const FETCH_STUB = `
+import fs from 'node:fs';
+const plan = JSON.parse(process.env.DECKLOG_STUB_PLAN);
+const logFile = process.env.DECKLOG_STUB_LOG;
+const calls = [];
+globalThis.fetch = async (url) => {
+  const code = String(url).split('/').pop();
+  calls.push({ code, at: Date.now() });
+  fs.writeFileSync(logFile, JSON.stringify(calls));
+  const queue = plan[code];
+  if (!Array.isArray(queue) || queue.length === 0) {
+    throw new Error('unstubbed Deck Log request: ' + url);
+  }
+  const step = queue.length > 1 ? queue.shift() : queue[0];
+  const headers = new Map(
+    Object.entries(step.headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]),
+  );
+  return {
+    ok: step.status >= 200 && step.status < 300,
+    status: step.status,
+    headers: { get: (k) => headers.get(String(k).toLowerCase()) ?? null },
+    json: async () => step.body ?? {},
+    text: async () => JSON.stringify(step.body ?? {}),
+  };
+};
+`;
+
+function runLiveCollector(tree, now, plan) {
+  const stubFile = path.join(tree.dir, 'fetch-stub.mjs');
+  const logFile = path.join(tree.dir, 'fetch-log.json');
+  fs.writeFileSync(stubFile, FETCH_STUB);
+  fs.rmSync(logFile, { force: true });
+  const res = spawnSync(
+    process.execPath,
+    [
+      '--experimental-strip-types',
+      '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON',
+      '--import',
+      './scripts/register-ts.mjs',
+      '--import',
+      pathToFileURL(stubFile).href,
+      COLLECTOR,
+      '--sources-dir',
+      tree.sources,
+      '--out-dir',
+      tree.out,
+      '--now',
+      now,
+      '--live',
+      '--skip-discovery',
+    ],
+    {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        DECKLOG_STUB_PLAN: JSON.stringify(plan),
+        DECKLOG_STUB_LOG: logFile,
+      },
+    },
+  );
+  const calls = fs.existsSync(logFile)
+    ? JSON.parse(fs.readFileSync(logFile, 'utf8'))
+    : [];
+  return { code: res.status, stdout: res.stdout ?? '', stderr: res.stderr ?? '', calls };
+}
+
+// Live source whose decks all still need fetching (empty committed lists), so
+// every deck below is one real request through the stub.
+function liveTree(codes) {
+  const tree = makeTree();
+  const src = JSON.parse(JSON.stringify(GOOD_SOURCE));
+  src.liveDecklog = true;
+  src.events[0].decks = codes.map((code, i) => ({
+    decklogCode: code,
+    rank: i + 1,
+    rankLabel: `予選${i + 1}位`,
+    archetypeId: 'a',
+    archetypeLabel: 'A',
+    cards: [],
+  }));
+  fs.writeFileSync(path.join(tree.sources, 'jul.json'), JSON.stringify(src, null, 2));
+  return tree;
+}
+
+// The shipped DUKHN list re-expressed in Deck Log's own response shape, so a
+// stubbed success drives the real parse + strict validation path.
+function decklogPayload() {
+  const cards = committedValidCards();
+  const listFor = (zone, type) =>
+    cards
+      .filter((c) => c.zone === zone)
+      .map((c) => ({ card_number: c.cardNumber, num: c.count, type, rare: c.version ?? '' }));
+  return {
+    game_title_id: 9,
+    p_list: listFor('oshi', 3),
+    list: listFor('main', 1),
+    sub_list: listFor('yell', 2),
+  };
+}
+
+// An auth/permission answer is settled: re-sending the identical anonymous
+// request cannot change it, so a retry is pure extra load on a public endpoint.
+for (const status of [401, 403]) {
+  test(`--live treats HTTP ${status} as terminal and still paces the next deck`, () => {
+    const tree = liveTree(['5USA7', '1XQQF']);
+    const run = runLiveCollector(tree, '2026-09-01T05:00:00Z', {
+      '5USA7': [{ status }],
+      '1XQQF': [{ status }],
+    });
+
+    assert.equal(run.code, 1, 'a failed live fetch must surface as an incident');
+    assert.equal(
+      run.calls.length,
+      2,
+      `HTTP ${status} must not be retried — expected one attempt per deck`,
+    );
+    assert.match(run.stderr, new RegExp(`HTTP ${status}: terminal, not retried`));
+    const gap = run.calls[1].at - run.calls[0].at;
+    assert.ok(gap >= 500, `pacing must survive a failed request, waited only ${gap}ms`);
+  });
+}
+
+test('--live gives up on a 429 that specifies no Retry-After', () => {
+  const tree = liveTree(['5USA7']);
+  const run = runLiveCollector(tree, '2026-09-01T05:00:00Z', {
+    '5USA7': [{ status: 429 }],
+  });
+
+  assert.equal(run.code, 1);
+  assert.equal(run.calls.length, 1, 'an unqualified 429 must not be retried');
+  assert.match(run.stderr, /HTTP 429: rate limited, not retried/);
+});
+
+test('--live honors Retry-After for exactly one more 429 attempt', () => {
+  const tree = liveTree(['5USA7']);
+  const run = runLiveCollector(tree, '2026-09-01T05:00:00Z', {
+    '5USA7': [
+      { status: 429, headers: { 'Retry-After': '1' } },
+      { status: 200, body: decklogPayload() },
+    ],
+  });
+
+  assert.equal(run.code, 0, `the run should recover after the wait:\n${run.stderr}`);
+  assert.equal(run.calls.length, 2, 'the rate-limit retry is bounded to one extra attempt');
+  const gap = run.calls[1].at - run.calls[0].at;
+  assert.ok(gap >= 1000, `the server's Retry-After must be honored, waited only ${gap}ms`);
+
+  const deck = readOut(tree.out, '2026-07.json').events[0].decks[0];
+  assert.equal(deck.cardsVerified, true);
+  assert.deepEqual(deck.cards, committedValidCards());
+});
+
+test('--live paces after early exits, not just after a successful request', () => {
+  const truncated = decklogPayload();
+  truncated.sub_list = []; // parses fine, then fails the strict 1/50/20 gate
+  const tree = liveTree(['5USA7', '1XQQF', 'ABCDE']);
+  const run = runLiveCollector(tree, '2026-09-01T05:00:00Z', {
+    '5USA7': [{ status: 200, body: { game_title_id: 1 } }],
+    '1XQQF': [{ status: 200, body: truncated }],
+    'ABCDE': [{ status: 200, body: decklogPayload() }],
+  });
+
+  assert.equal(run.code, 1);
+  assert.match(run.stderr, /is not an hOCG deck \(game_title_id=1\)/);
+  assert.match(
+    run.stderr,
+    /failed validation: deck totals must be 1 oshi \/ 50 main \/ 20 yell, got 1\/50\/0/,
+  );
+  assert.equal(run.calls.length, 3);
+  assert.ok(
+    run.calls[1].at - run.calls[0].at >= 500,
+    'a wrong game_title_id must not let the next request jump the queue',
+  );
+  assert.ok(
+    run.calls[2].at - run.calls[1].at >= 500,
+    'a validation failure must not let the next request jump the queue',
+  );
 });
 
 // Offline (default) mode stays fully hermetic and is unchanged by the live path.
