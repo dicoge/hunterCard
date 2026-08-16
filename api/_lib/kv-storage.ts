@@ -1,4 +1,5 @@
 import { kv } from '@vercel/kv';
+import type { PriceAlert, AlertArmState } from '../../src/utils/priceAlerts';
 
 export type Platform = 'ios' | 'android';
 
@@ -101,4 +102,85 @@ export async function setLastAlertTimes(keys: string[], timestamp: number): Prom
   const patch: Record<string, number> = {};
   for (const key of keys) patch[key] = timestamp;
   await kv.hset(LAST_ALERT_KEY, patch);
+}
+
+// ── Exact-version desired-price alerts (DIC-1023) ───────────────────────────
+//
+// Stored separately from the card-number trend watchlist above: identity here is
+// `cardNumber|PRINTING` and the record carries a desired interval, so the two
+// semantics can never be confused for one another. One hash per token
+// (`push:price-alerts:<token>`, field = alert key) so add/remove of one alert
+// never rewrites the device's other alerts, plus a registry set so the
+// evaluator can enumerate subscribers.
+
+const PRICE_ALERT_PREFIX = 'push:price-alerts:';
+const PRICE_ALERT_TOKENS_KEY = 'push:price-alert-tokens';
+const PRICE_ALERT_STATE_KEY = 'push:price-alert-state';
+
+function priceAlertsKey(token: string): string {
+  return `${PRICE_ALERT_PREFIX}${token}`;
+}
+
+export async function getPriceAlertsForToken(token: string): Promise<PriceAlert[]> {
+  const entries = await kv.hgetall<Record<string, PriceAlert>>(priceAlertsKey(token));
+  return Object.values(entries ?? {}).sort(
+    (a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.printing.localeCompare(b.printing),
+  );
+}
+
+export async function countPriceAlertsForToken(token: string): Promise<number> {
+  return (await kv.hlen(priceAlertsKey(token))) ?? 0;
+}
+
+/** Upsert one alert and DROP its arm state: an explicit user edit re-arms the
+ * alert, so a price already sitting inside the new interval notifies once. */
+export async function upsertPriceAlert(token: string, key: string, alert: PriceAlert): Promise<void> {
+  await kv.hset(priceAlertsKey(token), { [key]: alert });
+  await kv.sadd(PRICE_ALERT_TOKENS_KEY, token);
+  await kv.hdel(PRICE_ALERT_STATE_KEY, `${token}|${key}`);
+}
+
+// Same TOCTOU-safe shape as REMOVE_WATCHLIST_CARD: the emptiness check and the
+// registry SREM happen inside one atomic script, so a concurrent upsert can
+// never leave a token with alerts missing from the registry.
+// KEYS[1] = the token's alert hash, KEYS[2] = registry; ARGV[1] = alert key,
+// ARGV[2] = token.
+const REMOVE_PRICE_ALERT = `
+redis.call('HDEL', KEYS[1], ARGV[1])
+if redis.call('HLEN', KEYS[1]) == 0 then
+  redis.call('SREM', KEYS[2], ARGV[2])
+end
+return redis.call('HLEN', KEYS[1])
+`;
+
+export async function removePriceAlert(token: string, key: string): Promise<void> {
+  await kv.eval(REMOVE_PRICE_ALERT, [priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY], [key, token]);
+  await kv.hdel(PRICE_ALERT_STATE_KEY, `${token}|${key}`);
+}
+
+/** Every subscriber's alerts. Pure read — registry cleanup lives only in
+ * removePriceAlert, so this can never race a concurrent upsert. */
+export async function getAllPriceAlerts(): Promise<Record<string, PriceAlert[]>> {
+  const tokens = ((await kv.smembers(PRICE_ALERT_TOKENS_KEY)) as string[] | null) ?? [];
+  const out: Record<string, PriceAlert[]> = {};
+  for (const token of tokens) {
+    const alerts = await getPriceAlertsForToken(token);
+    if (alerts.length > 0) out[token] = alerts;
+  }
+  return out;
+}
+
+export async function getAlertArmStates(keys: string[]): Promise<Record<string, AlertArmState>> {
+  if (keys.length === 0) return {};
+  const values = await kv.hmget<Record<string, AlertArmState>>(PRICE_ALERT_STATE_KEY, ...keys);
+  const out: Record<string, AlertArmState> = {};
+  for (const [key, value] of Object.entries(values ?? {})) {
+    if (value && typeof value === 'object') out[key] = value;
+  }
+  return out;
+}
+
+export async function setAlertArmStates(patch: Record<string, AlertArmState>): Promise<void> {
+  if (Object.keys(patch).length === 0) return;
+  await kv.hset(PRICE_ALERT_STATE_KEY, patch);
 }

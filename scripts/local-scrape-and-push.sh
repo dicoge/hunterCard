@@ -68,6 +68,12 @@ cd ..
 echo "[$(date)] 📣 Sending push alerts..." >> "$LOG_FILE"
 node scripts/send-push-alerts.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Push alerts failed (non-fatal)" >> "$LOG_FILE"
 
+# 2e2. Evaluate exact-version desired-price alerts (DIC-1023). Feeds only the
+#      reference SELL price of the printings that actually have alerts; the
+#      serverless evaluator decides who to notify and records the arm state.
+echo "[$(date)] 🎯 Evaluating desired-price alerts..." >> "$LOG_FILE"
+npm run --silent send:price-alerts >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Price alerts failed (non-fatal)" >> "$LOG_FILE"
+
 # 2f. (removed, DIC-187) scrape-buy-prices.js used to scrape fullahead + torecolo
 #     into data/buy-price-history.json. It scraped the SAME two sites as step 2f
 #     in the same cron pass — double traffic and a risk of inconsistent results

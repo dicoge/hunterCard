@@ -14,6 +14,9 @@ import {
   groupVariantsByCardNumber, searchVariantGroups, buildLowCostIndex, countLowCostDrift,
 } from '../utils/deckVariants';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
+import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
+import { usePriceAlertStore } from '../stores/priceAlertStore';
+import { formatInterval, priceAlertKey } from '../utils/priceAlerts';
 
 const ZONE_LABELS: Record<DeckZone, string> = {
   oshi: '推しホロメン',
@@ -39,6 +42,8 @@ export default function DeckEditorScreen() {
   // Full rule validation is surfaced ONLY when the player presses 完成組牌
   // (DIC-1004 §B) — null means the result sheet is closed.
   const [finalizeIssues, setFinalizeIssues] = useState<ValidationIssue[] | null>(null);
+  const [alertTarget, setAlertTarget] = useState<PriceAlertTarget | null>(null);
+  const priceAlerts = usePriceAlertStore((s) => s.alerts);
 
   const decks = useDeckStore((s) => s.decks);
   const activeDeckId = useDeckStore((s) => s.activeDeckId);
@@ -447,36 +452,67 @@ export default function DeckEditorScreen() {
         需求 / 擁有 / 缺少 · 單價採 yuyu-tei「參考售價」（玩家購入價），僅取同卡號＋同版本精確匹配
       </Text>
       <Text style={styles.muted}>※ 不使用「店家收購價」估算缺卡成本；收購價僅於卡片行情頁顯示。</Text>
-      {gap && gap.rows.map((r) => (
-        <View key={`${r.cardNumber}|${r.version}`} style={styles.gapRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardName}>{r.name}</Text>
-            <Text style={styles.cardMeta}>
-              {r.cardNumber} · {r.versionLabel || r.version}
-            </Text>
-          </View>
-          <View style={styles.gapNumbers}>
-            <Text style={styles.gapNeed}>需 {r.required}</Text>
-            <View style={styles.ownedControls}>
-              <TouchableOpacity style={styles.qtyBtnSm} onPress={() => setOwned(r.cardNumber, r.version, Math.max(0, r.owned - 1))}>
-                <Text style={styles.qtyBtnText}>－</Text>
-              </TouchableOpacity>
-              <Text style={styles.gapOwned}>有 {r.owned}</Text>
-              <TouchableOpacity style={styles.qtyBtnSm} onPress={() => setOwned(r.cardNumber, r.version, r.owned + 1)}>
-                <Text style={styles.qtyBtnText}>＋</Text>
-              </TouchableOpacity>
+      {gap && gap.rows.map((r) => {
+        const alert = priceAlerts[priceAlertKey(r.cardNumber, r.version)] ?? null;
+        return (
+          <View key={`${r.cardNumber}|${r.version}`} style={styles.gapBlock}>
+            <View style={styles.gapRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardName}>{r.name}</Text>
+                <Text style={styles.cardMeta}>
+                  {r.cardNumber} · {r.versionLabel || r.version}
+                </Text>
+              </View>
+              <View style={styles.gapNumbers}>
+                <Text style={styles.gapNeed}>需 {r.required}</Text>
+                <View style={styles.ownedControls}>
+                  <TouchableOpacity style={styles.qtyBtnSm} onPress={() => setOwned(r.cardNumber, r.version, Math.max(0, r.owned - 1))}>
+                    <Text style={styles.qtyBtnText}>－</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.gapOwned}>有 {r.owned}</Text>
+                  <TouchableOpacity style={styles.qtyBtnSm} onPress={() => setOwned(r.cardNumber, r.version, r.owned + 1)}>
+                    <Text style={styles.qtyBtnText}>＋</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={[styles.gapMissing, r.missing > 0 && { color: COLORS.error }]}>缺 {r.missing}</Text>
+                <Text style={styles.gapPrice}>
+                  {r.missing === 0
+                    ? '—'
+                    : r.price.status === 'ok'
+                      ? `${r.subtotal} ${r.price.currency}`
+                      : '無精確版本價格'}
+                </Text>
+              </View>
             </View>
-            <Text style={[styles.gapMissing, r.missing > 0 && { color: COLORS.error }]}>缺 {r.missing}</Text>
-            <Text style={styles.gapPrice}>
-              {r.missing === 0
-                ? '—'
-                : r.price.status === 'ok'
-                  ? `${r.subtotal} ${r.price.currency}`
-                  : '無精確版本價格'}
-            </Text>
+            {r.missing > 0 && (
+              r.price.status === 'ok' ? (
+                <TouchableOpacity
+                  style={styles.alertRow}
+                  onPress={() => setAlertTarget({
+                    cardNumber: r.cardNumber,
+                    printing: r.version,
+                    printingLabel: r.versionLabel,
+                    name: r.name,
+                    currency: r.price.status === 'ok' ? r.price.currency : '',
+                    currentPrice: r.price.status === 'ok' ? r.price.price : null,
+                  })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`設定 ${r.name} ${r.versionLabel || r.version} 的期望入手價格區間`}
+                  testID={`price-alert-open-${r.cardNumber}|${r.version}`}
+                >
+                  <Text style={styles.alertLink}>
+                    {alert ? `🔔 期望入手 ${formatInterval(alert)}・編輯` : '🔔 設定期望入手價格區間'}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.alertDisabled} testID={`price-alert-unavailable-${r.cardNumber}|${r.version}`}>
+                  無精確版本價格，無法設定到價提醒
+                </Text>
+              )
+            )}
           </View>
-        </View>
-      ))}
+        );
+      })}
       {gap && (gap.rows.length === 0
         ? <Text style={styles.muted}>牌組為空，無缺卡。</Text>
         : (
@@ -561,6 +597,7 @@ export default function DeckEditorScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {finalizeSheet}
+      <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
       {isDesktop ? (
         <ScrollView horizontal={false} contentContainerStyle={styles.desktopWrap}>
           <View style={styles.desktopCols}>
@@ -664,7 +701,11 @@ const styles = StyleSheet.create({
   issueLevel: { fontSize: 12, fontWeight: 'bold', color: COLORS.text },
   issueMsg: { flex: 1, color: COLORS.text, fontSize: 13 },
   badgeText: { fontSize: 13, fontWeight: 'bold' },
-  gapRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  gapBlock: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border, paddingBottom: 6 },
+  gapRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  alertRow: { paddingVertical: 4 },
+  alertLink: { color: COLORS.primary, fontSize: 12 },
+  alertDisabled: { color: COLORS.textSecondary, fontSize: 11, paddingVertical: 4 },
   gapNumbers: { alignItems: 'flex-end', gap: 3 },
   gapNeed: { color: COLORS.textSecondary, fontSize: 12 },
   ownedControls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
