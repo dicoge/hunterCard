@@ -8,7 +8,9 @@
  * Guarantee under test: a source that fails to parse or fails top-level
  * validation must not clobber the last-known-good report for its month, and
  * must not drop that month from index.json — otherwise the UI loses the ability
- * to discover a report that is still sitting valid on disk.
+ * to discover a report that is still sitting valid on disk. Since DIC-1029 the
+ * same guarantee covers a source whose committed card array fails strict
+ * revalidation (totals, duplicate zone slots, catalog membership).
  *
  * Run: node scripts/test-tournament-collector.mjs
  */
@@ -187,16 +189,122 @@ test('re-running an unchanged source rewrites nothing (idempotent, no churn)', (
   assert.equal(fs.readFileSync(path.join(tree.out, 'index.json'), 'utf8'), before.index);
 });
 
-test('--live collects opt-in sources with committed cards without network', () => {
-  const tree = seeded();
-  // Opt the fixture source into live Deck Log mode, but every deck already has
-  // committed cards (or no decklog code), so --live must NOT hit the network:
-  // it skips the already-committed decks and the offline collection still runs.
-  const src = JSON.parse(fs.readFileSync(path.join(tree.sources, 'jul.json'), 'utf8'));
-  src.liveDecklog = true;
-  src.events[0].decks[0].cards = [{ zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 }];
+// ── DIC-1029: committed card arrays are revalidated on every run ─────────────
+// A committed (last-known-good) array is an input, not a certificate. These
+// tests drive the REAL collector over a genuinely valid 1/50/20 deck and over
+// each way it can be corrupted.
+
+// The real shipped DUKHN list: 1 oshi / 50 main / 20 yell, every number in the
+// local official catalog. Using the real data keeps the fixture honest — a
+// future edit that breaks the shipped deck breaks these tests too.
+function committedValidCards() {
+  const src = JSON.parse(
+    fs.readFileSync(
+      path.join(ROOT, 'data', 'tournaments', 'sources', '2026-08-extreamer-cup-tokai-2.json'),
+      'utf8',
+    ),
+  );
+  const deck = src.events[0].decks.find((d) => d.decklogCode === 'DUKHN');
+  assert.ok(deck?.cards?.length > 0, 'committed 2026-08 source must carry DUKHN cards');
+  return deck.cards.map((c) => ({ ...c }));
+}
+
+function writeSource(tree, mutate) {
+  const src = JSON.parse(JSON.stringify(GOOD_SOURCE));
+  src.events[0].decks[0].cards = committedValidCards();
   src.events[0].decks[0].cardsVerified = true;
+  mutate?.(src);
   fs.writeFileSync(path.join(tree.sources, 'jul.json'), JSON.stringify(src, null, 2));
+}
+
+// A tree whose last-known-good report holds a genuinely verified deck — the
+// valid output the corruption cases below must not be allowed to overwrite.
+function seededWithVerifiedDeck() {
+  const tree = makeTree();
+  writeSource(tree);
+  const run = runCollector(tree, '2026-08-01T05:00:00Z');
+  assert.equal(run.code, 0, `baseline run should succeed:\n${run.stderr}`);
+  const deck = readOut(tree.out, '2026-07.json').events[0].decks.find(
+    (d) => d.decklogCode === '5USA7',
+  );
+  assert.equal(deck.cardsVerified, true, 'baseline deck must be verified');
+  return tree;
+}
+
+// Each corruption must: exit non-zero, name the exact failing slot, and leave
+// the previously valid report byte-identical.
+for (const [label, mutate, failurePattern] of [
+  [
+    'truncated totals',
+    (src) => {
+      src.events[0].decks[0].cards = src.events[0].decks[0].cards.filter((c) => c.zone !== 'yell');
+    },
+    /failed revalidation: deck totals must be 1 oshi \/ 50 main \/ 20 yell, got 1\/50\/0/,
+  ],
+  [
+    'a duplicate slot within a zone',
+    (src) => {
+      const cards = src.events[0].decks[0].cards;
+      const i = cards.findIndex((c) => c.zone === 'main' && c.count > 1);
+      const base = cards[i];
+      cards.splice(i, 1, { ...base, count: 1 }, { ...base, count: base.count - 1 });
+    },
+    /failed revalidation: duplicate card slot within zone: main:/,
+  ],
+  [
+    'a card missing from the catalog',
+    (src) => {
+      src.events[0].decks[0].cards.find((c) => c.zone === 'main').cardNumber = 'hBP99-999';
+    },
+    /failed revalidation: card not found in local official catalog: hBP99-999/,
+  ],
+]) {
+  test(`committed cards with ${label} never overwrite the valid report`, () => {
+    const tree = seededWithVerifiedDeck();
+    const before = fs.readFileSync(path.join(tree.out, '2026-07.json'), 'utf8');
+
+    writeSource(tree, mutate);
+    const run = runCollector(tree, '2026-09-01T05:00:00Z');
+
+    assert.equal(run.code, 1, 'invalid committed data must exit non-zero');
+    assert.match(run.stderr, failurePattern);
+    assert.equal(
+      fs.readFileSync(path.join(tree.out, '2026-07.json'), 'utf8'),
+      before,
+      'the last valid report must stay byte-identical',
+    );
+    assert.match(run.stdout, /2026-07.*\[preserved\]/);
+    assert.deepEqual(readOut(tree.out, 'index.json').months, [
+      { month: '2026-07', events: 1, observedDecks: 2 },
+    ]);
+  });
+}
+
+test('invalid committed cards are emitted unverified when no valid report exists', () => {
+  const tree = makeTree();
+  writeSource(tree, (src) => {
+    src.events[0].decks[0].cards = src.events[0].decks[0].cards.slice(0, 1);
+  });
+  const run = runCollector(tree, '2026-08-01T05:00:00Z');
+
+  assert.equal(run.code, 1);
+  assert.match(run.stderr, /failed revalidation/);
+  // Nothing to preserve, so the data is written — but never as verified.
+  const deck = readOut(tree.out, '2026-07.json').events[0].decks.find(
+    (d) => d.decklogCode === '5USA7',
+  );
+  assert.ok(deck.cards.length > 0);
+  assert.equal(deck.cardsVerified, false);
+  assert.equal(deck.coverage, 'partial');
+});
+
+test('--live skips a valid committed deck without touching the network', () => {
+  const tree = seededWithVerifiedDeck();
+  // Opt into live Deck Log mode. Every deck either has a valid committed list or
+  // no decklog code, so --live must NOT hit the network.
+  writeSource(tree, (src) => {
+    src.liveDecklog = true;
+  });
   const before = fs.readFileSync(path.join(tree.out, '2026-07.json'), 'utf8');
 
   const res = spawnSync(
@@ -221,14 +329,13 @@ test('--live collects opt-in sources with committed cards without network', () =
   assert.equal(res.status, 0, `live run should succeed:\n${res.stderr}`);
   assert.match(res.stdout, /mode: LIVE/);
 
-  // Committed cards were preserved verbatim (already-committed decks are not
-  // re-fetched), and the report reflects them.
-  const report = readOut(tree.out, '2026-07.json');
-  const deck = report.events[0].decks.find((d) => d.decklogCode === '5USA7');
-  assert.deepEqual(deck.cards, [{ zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 }]);
+  // Revalidated, still verified, byte-identical output → no fetch, no churn.
+  assert.equal(fs.readFileSync(path.join(tree.out, '2026-07.json'), 'utf8'), before);
+  const deck = readOut(tree.out, '2026-07.json').events[0].decks.find(
+    (d) => d.decklogCode === '5USA7',
+  );
+  assert.deepEqual(deck.cards, committedValidCards());
   assert.equal(deck.cardsVerified, true);
-
-  // No live fetch happened → nothing re-fetched, no network in this run.
   assert.doesNotMatch(res.stderr, /Deck Log fetch failed|Deck Log .*: verified/);
 });
 

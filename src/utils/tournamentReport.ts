@@ -80,11 +80,15 @@ export function isDeckZone(value: unknown): value is DeckZone {
   return typeof value === 'string' && (DECK_ZONES as readonly string[]).includes(value);
 }
 
-export function normalizeCards(cards: DeckCardRef[] | undefined): {
+export function normalizeCards(
+  cards: DeckCardRef[] | undefined,
+  catalogCardNumbers?: ReadonlySet<string> | null,
+): {
   cards: DeckCardRef[];
   verified: boolean;
+  failure: string | null;
 } {
-  if (!cards || cards.length === 0) return { cards: [], verified: false };
+  if (!cards || cards.length === 0) return { cards: [], verified: false, failure: null };
   // Only accept entries that carry an exact cardNumber AND a valid zone. version
   // stays null when not supplied — never inferred from a same-named/same-numbered
   // printing. A slot whose zone is unreadable is a real extraction failure and
@@ -104,7 +108,19 @@ export function normalizeCards(cards: DeckCardRef[] | undefined): {
         count: typeof c.count === 'number' && c.count > 0 ? c.count : 1,
       };
     });
-  return { cards: clean, verified: clean.length > 0 };
+  // A non-empty list is NOT evidence of a complete deck. Every card list —
+  // freshly fetched or read back from a committed last-known-good source —
+  // goes through the same strict gate, so a truncated, duplicate-slot or
+  // catalog-invalid list can never be emitted as verified (DIC-1029).
+  if (!catalogCardNumbers) {
+    return {
+      cards: clean,
+      verified: false,
+      failure: 'no card catalog supplied; cannot verify catalog membership',
+    };
+  }
+  const { cardsVerified, failure } = verifyDeckCards(clean, catalogCardNumbers);
+  return { cards: clean, verified: cardsVerified, failure };
 }
 
 export function normalizeDeck(
@@ -113,8 +129,9 @@ export function normalizeDeck(
   sourceUrl: string,
   index: number,
   fetchedAt: string,
+  catalogCardNumbers?: ReadonlySet<string> | null,
 ): DeckEntry {
-  const { cards, verified } = normalizeCards(raw.cards);
+  const { cards, verified } = normalizeCards(raw.cards, catalogCardNumbers);
   const rank = typeof raw.rank === 'number' ? raw.rank : null;
   const decklogCode = raw.decklogCode ?? null;
   const deckId = decklogCode
@@ -152,6 +169,7 @@ export function normalizeDeck(
 export function normalizeEvent(
   raw: RawEventRecord,
   fetchedAt: string,
+  catalogCardNumbers?: ReadonlySet<string> | null,
 ): TournamentEvent {
   const eventId =
     raw.eventId ||
@@ -160,7 +178,7 @@ export function normalizeEvent(
 
   const decks = dedupeDecks(
     (raw.decks ?? []).map((d, i) =>
-      normalizeDeck(d, eventId, raw.sourceUrl, i, fetchedAt),
+      normalizeDeck(d, eventId, raw.sourceUrl, i, fetchedAt, catalogCardNumbers),
     ),
   );
 
@@ -306,6 +324,9 @@ export interface BuildReportOptions {
   fetchedAt?: string;
   source?: MonthlyReport['source'];
   filterByEventDate?: boolean;
+  // Official card numbers used to gate `cardsVerified` for raw events. Omitted
+  // → raw card lists stay unverified (fail closed).
+  catalogCardNumbers?: ReadonlySet<string> | null;
 }
 
 const DEFAULT_SOURCE: MonthlyReport['source'] = {
@@ -322,7 +343,7 @@ function isRaw(e: RawEventRecord | TournamentEvent): e is RawEventRecord {
 export function buildMonthlyReport(opts: BuildReportOptions): MonthlyReport {
   const fetchedAt = opts.fetchedAt ?? opts.generatedAt;
   const normalized: TournamentEvent[] = opts.events.map((e) =>
-    isRaw(e) ? normalizeEvent(e, fetchedAt) : e,
+    isRaw(e) ? normalizeEvent(e, fetchedAt, opts.catalogCardNumbers) : e,
   );
   const selected = opts.filterByEventDate
     ? eventsForMonth(normalized, opts.month)

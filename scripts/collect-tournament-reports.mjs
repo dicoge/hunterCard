@@ -18,10 +18,16 @@
  *     data/tournaments/collector-alerts.json).
  *   • Honest by construction: all normalization goes through the shared pure
  *     core (src/utils/tournamentReport.ts) which preserves unknowns.
+ *   • Strict on every run (DIC-1029): committed card arrays are revalidated
+ *     against 1/50/20 totals, duplicate zone slots and catalog membership on
+ *     every offline AND live run — being already committed is not evidence.
+ *     Data that fails is reported, marked unverified, and never overwrites a
+ *     report already on disk.
  *
  * Live mode (--live, DIC-1024): only source files that opt in with
  * `"liveDecklog": true` are fetched. For each of their decks that has a
- * decklogCode but no committed cards yet, the collector:
+ * decklogCode and either no committed cards yet or a committed list that fails
+ * revalidation, the collector:
  *   1. POSTs the public Deck Log view API (/system/app/api/view/{code}) with
  *      same-origin headers, one request per deck, sequential, ≥500ms apart,
  *      bounded retries with backoff (no auth, no CAPTCHA, no pagination — the
@@ -57,6 +63,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   normalizeEvent,
+  normalizeCards,
   mergeMonthlyReport,
   reportContentKey,
   cardsFromDecklog,
@@ -231,6 +238,30 @@ function loadCatalogCardNumbers() {
   return new Set(Object.values(cards).map((c) => String(c.cardNumber ?? '').trim()));
 }
 
+// Catalog for the whole run. An unreadable catalog is an alert, not a crash:
+// with no catalog nothing can pass verification, so every card list is marked
+// unverified and the preserve rule below keeps the last valid report on disk.
+function loadCatalogOrAlert() {
+  try {
+    return loadCatalogCardNumbers();
+  } catch (err) {
+    alert('error', `${err.message}; no deck can be verified this run.`);
+    return null;
+  }
+}
+
+// Strict revalidation of a committed (last-known-good) card array. Committed
+// data is an input like any other: it is re-checked against 1/50/20 totals,
+// duplicate zone slots and catalog membership on EVERY run (DIC-1029).
+function revalidateCommittedCards(cards, catalogNumbers) {
+  try {
+    const { failure } = normalizeCards(cards, catalogNumbers);
+    return { ok: failure === null, failure };
+  } catch (err) {
+    return { ok: false, failure: err.message };
+  }
+}
+
 function listSourceFiles() {
   if (!fs.existsSync(SOURCES_DIR)) return [];
   return fs
@@ -240,10 +271,9 @@ function listSourceFiles() {
 }
 
 // Fetch + validate + persist card data for every opt-in deck that has a
-// decklogCode but no committed cards yet. Returns nothing; writes back into the
-// source files (the last-known-good store) when data changed.
-async function liveCollectDecklogCards() {
-  const catalogNumbers = loadCatalogCardNumbers();
+// decklogCode and no card list that currently passes verification. Writes back
+// into the source files (the last-known-good store) when data changed.
+async function liveCollectDecklogCards(catalogNumbers) {
   const files = listSourceFiles();
   let changedAny = false;
   for (const file of files) {
@@ -257,10 +287,21 @@ async function liveCollectDecklogCards() {
     let fileChanged = false;
     for (const evt of src.events) {
       for (const deck of evt.decks ?? []) {
-        if (!deck?.decklogCode || !Array.isArray(deck.cards) || deck.cards.length > 0) {
-          continue; // no code, or cards already committed (last-known-good)
-        }
+        if (!deck?.decklogCode || !Array.isArray(deck.cards)) continue;
         const code = deck.decklogCode;
+        if (deck.cards.length > 0) {
+          // Committed cards are trusted only while they still pass the strict
+          // gate. Valid → skip (no request, no churn). Invalid → report it and
+          // re-fetch, so a corrupted last-known-good list is repaired from the
+          // source instead of being republished as verified.
+          const { ok, failure } = revalidateCommittedCards(deck.cards, catalogNumbers);
+          if (ok) continue;
+          alert(
+            'error',
+            `Committed cards for ${code} failed revalidation: ${failure}; re-fetching.`,
+            { file, decklogCode: code, failure },
+          );
+        }
         let fetched;
         try {
           fetched = await fetchDecklogView(code);
@@ -401,6 +442,10 @@ function main() {
 }
 
 async function mainAsync() {
+  // Loaded in BOTH modes: offline runs revalidate committed card arrays against
+  // it just as live runs do.
+  const catalogNumbers = loadCatalogOrAlert();
+
   if (LIVE) {
     if (!fs.existsSync(SOURCES_DIR)) {
       alert('error', `No sources directory at ${path.relative(ROOT, SOURCES_DIR)}`);
@@ -408,7 +453,7 @@ async function mainAsync() {
       return;
     }
     if (!SKIP_DISCOVERY) await discoverFreshness();
-    await liveCollectDecklogCards();
+    await liveCollectDecklogCards(catalogNumbers);
   }
 
   if (!fs.existsSync(SOURCES_DIR)) {
@@ -426,6 +471,9 @@ async function mainAsync() {
   // Group verified source events by their declared month. A per-file failure is
   // recorded as an alert and skipped — it must not drop other files' data.
   const byMonth = new Map(); // month -> { events: TournamentEvent[], source }
+  // Months whose source carries a card list that failed strict revalidation.
+  // Their existing report must not be overwritten with the degraded data.
+  const invalidMonths = new Set();
   for (const file of sourceFiles) {
     const full = path.join(SOURCES_DIR, file);
     const r = readJsonSafe(full);
@@ -445,7 +493,21 @@ async function mainAsync() {
     const bucket = byMonth.get(src.month) ?? { events: [], source: src.source };
     for (const rawEvent of src.events) {
       try {
-        bucket.events.push(normalizeEvent(rawEvent, NOW));
+        const event = normalizeEvent(rawEvent, NOW, catalogNumbers);
+        // A deck that ships cards but does not come out verified means the
+        // committed array failed the strict gate. Name the exact slot and mark
+        // the month so the degraded data cannot replace a valid report.
+        for (const deck of event.decks) {
+          if (deck.cards.length === 0 || deck.cardsVerified) continue;
+          const { failure } = revalidateCommittedCards(deck.cards, catalogNumbers);
+          alert(
+            'error',
+            `Committed cards for ${deck.deckId} in ${file} failed revalidation: ${failure}`,
+            { file, month: src.month, deckId: deck.deckId, failure },
+          );
+          invalidMonths.add(src.month);
+        }
+        bucket.events.push(event);
       } catch (err) {
         alert('error', `Bad event in ${file}: ${err.message}`, { file });
       }
@@ -460,6 +522,24 @@ async function mainAsync() {
   for (const month of months) {
     const { events, source } = byMonth.get(month);
     const existing = loadExistingReport(month);
+
+    // Invalid committed data never overwrites a report that is already on disk:
+    // the last genuinely valid generated output is kept byte-identical and the
+    // run exits non-zero. With no prior report there is nothing to preserve, so
+    // the month is still written — with the offending decks marked unverified.
+    if (invalidMonths.has(month) && existing) {
+      summary.push({
+        month,
+        events: existing.events?.length ?? 0,
+        observedDecks: existing.observedSampleSize ?? 0,
+        changed: false,
+        preserved: true,
+      });
+      alert('warn', `Invalid committed card data for ${month}; preserving last-known-good report.`, {
+        month,
+      });
+      continue;
+    }
 
     // Merge with last-known-good so a partial re-run never drops prior events.
     const merged = mergeMonthlyReport(existing, events, {

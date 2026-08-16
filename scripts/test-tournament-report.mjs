@@ -121,11 +121,12 @@ test('card version is preserved, never inferred; missing version → null', () =
     0,
     NOW,
   );
-  assert.equal(d.cardsVerified, true);
-  assert.equal(d.coverage, 'ranked'); // rank + verified cards
   assert.equal(d.cards[0].cardNumber, 'hBP08-067');
   assert.equal(d.cards[0].version, null); // not fabricated
   assert.equal(d.cards[0].count, 4);
+  // A single main card is a partial list, not a deck → never "verified".
+  assert.equal(d.cardsVerified, false);
+  assert.equal(d.coverage, 'partial');
 });
 
 test('ranked deck with no card list is partial (placement known, list unknown)', () => {
@@ -382,7 +383,7 @@ function loadCatalogCardNumbers() {
 // cards of the DIC-1024 verified sample, so the happy path is tested against the
 // REAL shipped data and the real local catalog — and a future edit to the source
 // file that breaks 1/50/20 or drifts from the catalog fails this test.
-function decklogFromCommittedDeck(decklogCode) {
+function committedDeck(decklogCode) {
   const src = JSON.parse(
     fs.readFileSync(
       path.join(ROOT, 'data', 'tournaments', 'sources', '2026-08-extreamer-cup-tokai-2.json'),
@@ -392,6 +393,16 @@ function decklogFromCommittedDeck(decklogCode) {
   const deck = src.events[0].decks.find((d) => d.decklogCode === decklogCode);
   assert.ok(deck && deck.cardsVerified && deck.cards.length > 0,
     `committed 2026-08 source must carry verified cards for ${decklogCode}`);
+  return deck;
+}
+
+// Deep copy of a committed card list, so a test can mutate it freely.
+function committedCards(decklogCode) {
+  return committedDeck(decklogCode).cards.map((c) => ({ ...c }));
+}
+
+function decklogFromCommittedDeck(decklogCode) {
+  const deck = committedDeck(decklogCode);
   const LIST_BY_ZONE = { oshi: 'p_list', main: 'list', yell: 'sub_list' };
   const body = { title: deck.deckName, game_title_id: HOCG_DECKLOG_GAME_TITLE_ID, p_list: [], list: [], sub_list: [] };
   for (const c of deck.cards) {
@@ -472,6 +483,103 @@ test('normalizeCards requires a readable zone (never infers one)', () => {
     () => normalizeCards([{ cardNumber: 'hBP08-067', count: 4 }]),
     /has no readable zone/,
   );
+});
+
+// ── DIC-1029: committed (last-known-good) arrays get the SAME strict gate ────
+// A non-empty card list is not evidence of a complete deck. These cover the
+// committed-array path that previously skipped verification entirely.
+test('committed cards are verified only when they pass the full gate', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const code of ['DUKHN', '2H33J8']) {
+    const { verified, failure } = normalizeCards(committedCards(code), catalog);
+    assert.equal(verified, true, `${code}: ${failure}`);
+    assert.equal(failure, null);
+  }
+});
+
+test('a truncated committed card array is never verified', () => {
+  const cards = committedCards('DUKHN').filter((c) => c.zone !== 'main');
+  const { verified, failure } = normalizeCards(cards, loadCatalogCardNumbers());
+  assert.equal(verified, false);
+  assert.match(failure, /1 oshi \/ 50 main \/ 20 yell, got 1\/0\/20/);
+});
+
+test('a committed array with a single oshi card is never verified', () => {
+  // The exact shape a "last-known-good" file could be truncated to.
+  const { verified, failure } = normalizeCards(
+    [{ zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 }],
+    loadCatalogCardNumbers(),
+  );
+  assert.equal(verified, false);
+  assert.match(failure, /got 1\/0\/0/);
+});
+
+test('a committed array with a duplicate zone slot is never verified', () => {
+  const cards = committedCards('DUKHN');
+  const i = cards.findIndex((c) => c.zone === 'main' && c.count > 1);
+  const base = cards[i];
+  // Same 50 main cards, but one number now occupies two slots.
+  cards.splice(i, 1, { ...base, count: 1 }, { ...base, count: base.count - 1 });
+  const { verified, failure } = normalizeCards(cards, loadCatalogCardNumbers());
+  assert.equal(verified, false);
+  assert.match(failure, new RegExp(`duplicate card slot within zone: main:${base.cardNumber}`));
+});
+
+test('a committed array with a card missing from the catalog is never verified', () => {
+  const cards = committedCards('2H33J8');
+  cards.find((c) => c.zone === 'main').cardNumber = 'hBP99-999';
+  const { verified, failure } = normalizeCards(cards, loadCatalogCardNumbers());
+  assert.equal(verified, false);
+  assert.match(failure, /card not found in local official catalog: hBP99-999/);
+});
+
+test('no catalog → fail closed, catalog membership cannot be assumed', () => {
+  const { verified, failure } = normalizeCards(committedCards('DUKHN'));
+  assert.equal(verified, false);
+  assert.match(failure, /no card catalog supplied/);
+});
+
+test('normalizeEvent applies the gate to committed decks (verified + degraded)', () => {
+  const catalog = loadCatalogCardNumbers();
+  const raw = {
+    eventId: 'evt-committed',
+    name: 'committed',
+    sourceUrl: 'https://example.test',
+    decks: [
+      { decklogCode: 'DUKHN', rank: 1, cards: committedCards('DUKHN') },
+      // same deck, one main card dropped from the committed array
+      {
+        decklogCode: 'TRUNC',
+        rank: 1,
+        cards: committedCards('DUKHN').filter((c, i) => !(c.zone === 'main' && i % 7 === 0)),
+      },
+    ],
+  };
+  const e = normalizeEvent(raw, NOW, catalog);
+  const [good, degraded] = e.decks;
+  assert.equal(good.cardsVerified, true);
+  assert.equal(good.coverage, 'ranked');
+  assert.ok(degraded.cards.length > 0, 'cards are kept for inspection');
+  assert.equal(degraded.cardsVerified, false, 'a non-empty list is not a verified deck');
+  assert.equal(degraded.coverage, 'partial');
+});
+
+test('buildMonthlyReport threads the catalog to raw events', () => {
+  const raw = {
+    eventId: 'evt-x',
+    name: 'x',
+    sourceUrl: 'https://example.test',
+    decks: [{ decklogCode: 'DUKHN', rank: 1, cards: committedCards('DUKHN') }],
+  };
+  const withCatalog = buildMonthlyReport({
+    month: '2026-08',
+    events: [raw],
+    generatedAt: NOW,
+    catalogCardNumbers: loadCatalogCardNumbers(),
+  });
+  assert.equal(withCatalog.events[0].decks[0].cardsVerified, true);
+  const without = buildMonthlyReport({ month: '2026-08', events: [raw], generatedAt: NOW });
+  assert.equal(without.events[0].decks[0].cardsVerified, false);
 });
 
 test('classifyFreshness flags only a strictly newer official publication', () => {
