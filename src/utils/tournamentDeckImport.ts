@@ -236,9 +236,7 @@ export function resolveSlotCard(
  *  them would hide that behind a slot whose quantity still looks legal, which is
  *  how a duplicate previously became invisible — so it fails closed instead. */
 function pushSlot(slots: DeckSlot[], card: DeckCard, qty: number): boolean {
-  if (slots.some((s) => s.card.id === card.id || s.card.cardNumber === card.cardNumber)) {
-    return false;
-  }
+  if (slots.some((s) => s.card.id === card.id)) return false;
   slots.push({ card, qty });
   return true;
 }
