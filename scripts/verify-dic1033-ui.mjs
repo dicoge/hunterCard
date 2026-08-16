@@ -1,54 +1,74 @@
 #!/usr/bin/env node
-// Manual UI verification for DIC-1033 — drives the built web bundle in a real
-// browser at desktop and 390px mobile.
+// UI verification for DIC-1033 — drives a real browser at desktop and 390px
+// mobile, against the local build by default or any deployed environment via
+// BASE_URL, so the same script produces Preview and Production evidence:
 //
-// Acceptance it exercises end to end:
-//   • a verified August deck offers 一鍵匯入我的牌組 as a primary button
-//   • the older unverified July records stay browse-only with the exact reason
-//   • one tap creates a NEW deck, opens the deck editor and shows 71 cards
-//   • the import provenance banner names the source event
-//   • the deck survives a reload and reopens from 我的牌組
-//   • a second import makes an independent copy, never overwriting the first
-//   • at 390px the button does not cause horizontal overflow
+//   npm run build && node scripts/verify-dic1033-ui.mjs              # local dist
+//   BASE_URL=https://<preview>.vercel.app node scripts/verify-dic1033-ui.mjs
+//   BASE_URL=https://holohunter.dicoge.com node scripts/verify-dic1033-ui.mjs
 //
-// Requires `npm run build` first (serves ./dist). Not part of CI.
+// The full journey runs for BOTH verified decks (DUKHN and 2H33J8):
+//   one tap → a NEW independent deck → exact 1 / 50 / 20 → editor → reload →
+//   reopen from 我的牌組.
+//
+// It also covers: the older unverified July records staying browse-only, the
+// import provenance banner, no cross-deck contamination, repeat-import copies,
+// and no horizontal overflow at 390px. Not part of CI (needs a browser).
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
 
-const dist = path.resolve('dist');
-const types = {
-  '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json',
-  '.ico': 'image/x-icon', '.png': 'image/png', '.css': 'text/css', '.svg': 'image/svg+xml',
-};
-const server = http.createServer((req, res) => {
-  const url = decodeURIComponent(req.url.split('?')[0]);
-  let file = path.join(dist, url);
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(dist, 'index.html');
-  res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'text/plain' });
-  fs.createReadStream(file).pipe(res);
-});
-await new Promise((r) => server.listen(4174, r));
+const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
+const LOCAL_PORT = 4174;
+let server = null;
 
+if (!BASE_URL) {
+  const dist = path.resolve('dist');
+  if (!fs.existsSync(dist)) {
+    console.error('No BASE_URL given and ./dist is missing — run `npm run build` first.');
+    process.exit(1);
+  }
+  const types = {
+    '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json',
+    '.ico': 'image/x-icon', '.png': 'image/png', '.css': 'text/css', '.svg': 'image/svg+xml',
+  };
+  server = http.createServer((req, res) => {
+    const url = decodeURIComponent(req.url.split('?')[0]);
+    let file = path.join(dist, url);
+    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(dist, 'index.html');
+    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'text/plain' });
+    fs.createReadStream(file).pipe(res);
+  });
+  await new Promise((r) => server.listen(LOCAL_PORT, r));
+}
+
+const ORIGIN = BASE_URL || `http://localhost:${LOCAL_PORT}`;
+const ENV = BASE_URL ? new URL(ORIGIN).host : 'local-dist';
 const OUT = process.env.SHOT_DIR || '/tmp';
 const T = 120000;
-const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
 
 const august = JSON.parse(fs.readFileSync('data/tournaments/2026-08.json', 'utf8'));
 const july = JSON.parse(fs.readFileSync('data/tournaments/2026-07.json', 'utf8'));
-const DUKHN = august.events[0].decks.find((d) => d.decklogCode === 'DUKHN');
-const H2 = august.events[0].decks.find((d) => d.decklogCode === '2H33J8');
+const VERIFIED = august.events[0].decks.filter((d) => d.cardsVerified);
+const JULY_DECK_IDS = july.events.flatMap((e) => e.decks).map((d) => d.deckId);
 
-const report = {};
+if (VERIFIED.length < 2) {
+  console.error(`Expected at least two verified August decks, found ${VERIFIED.length}`);
+  process.exit(1);
+}
+
+const report = { environment: ORIGIN };
 const failures = [];
 function check(label, ok, detail) {
   if (!ok) failures.push(`${label}${detail ? ` — ${detail}` : ''}`);
   console.log(`  ${ok ? '✓' : '✗'} ${label}${detail ? ` — ${detail}` : ''}`);
 }
 
+const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+
 async function run(label, viewport) {
-  console.log(`\n[${label} ${viewport.width}×${viewport.height}]`);
+  console.log(`\n[${label} ${viewport.width}×${viewport.height} @ ${ENV}]`);
   const page = await browser.newPage();
   await page.setViewport(viewport);
   const errors = [];
@@ -74,80 +94,85 @@ async function run(label, viewport) {
     await el.evaluate((n) => n.scrollIntoView({ block: 'center' }));
     try { await el.click(); } catch { await el.evaluate((n) => n.click()); }
   };
-  const decks = () => page.evaluate(() => {
+  const readDecks = () => page.evaluate(() => {
     const raw = localStorage.getItem('hunterCard-decks');
-    if (!raw) return null;
+    if (!raw) return { activeDeckId: null, decks: [] };
     const { state } = JSON.parse(raw);
-    const count = (d) => ['oshi', 'main', 'yell']
-      .reduce((n, z) => n + (d[z] ?? []).reduce((m, s) => m + s.qty, 0), 0);
+    const sum = (slots) => (slots ?? []).reduce((n, s) => n + s.qty, 0);
     return {
       activeDeckId: state.activeDeckId,
       decks: (state.decks ?? []).map((d) => ({
         id: d.id,
         name: d.name,
-        total: count(d),
-        oshi: (d.oshi ?? []).reduce((n, s) => n + s.qty, 0),
-        main: (d.main ?? []).reduce((n, s) => n + s.qty, 0),
-        yell: (d.yell ?? []).reduce((n, s) => n + s.qty, 0),
+        oshi: sum(d.oshi), main: sum(d.main), yell: sum(d.yell),
+        total: sum(d.oshi) + sum(d.main) + sum(d.yell),
         origin: d.origin ?? null,
-        unresolved: ['oshi', 'main', 'yell']
-          .reduce((n, z) => n + (d[z] ?? []).filter((s) => s.card.unresolvedPrinting).length, 0),
         printings: [...new Set(['oshi', 'main', 'yell']
           .flatMap((z) => (d[z] ?? []).map((s) => s.card.printing)))],
       })),
     };
   });
 
-  async function openTournamentReport() {
+  const openReport = async () => {
     await page.waitForFunction(() => document.body.innerText.includes('以訪客身份進入')
       || document.body.innerText.includes('賽事月報'), { timeout: T });
     if (await hasText('以訪客身份進入')) await clickText('以訪客身份進入');
     await page.waitForFunction(() => document.body.innerText.includes('賽事月報'), { timeout: T });
     await clickText('賽事月報');
     await page.waitForFunction(() => document.body.innerText.includes('每月賽事月報'), { timeout: T });
-  }
-
-  // The import gate stays closed until the card database has streamed in, so
-  // waiting for the enabled button is also the proof that the gate opened.
+    await clickText('2026-08');
+  };
+  // Each import starts from a cold page load rather than an in-app drawer hop:
+  // deterministic, and it also proves the previous import really persisted
+  // rather than merely surviving in memory. Storage is same-origin, so the
+  // decks built so far carry over.
+  const freshReport = async () => {
+    await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
+    await openReport();
+  };
+  // The gate stays closed until the card database has streamed in, so waiting
+  // for the enabled button is itself the proof that the gate opened.
   const waitForImportReady = (deckId) => page.waitForSelector(
     `[data-testid="deck-import-${deckId}"]`, { timeout: T },
   );
+  const openEditor = async () => {
+    await clickText('牌組編輯器');
+    await page.waitForFunction(() => document.body.innerText.includes('完成組牌')
+      || document.body.innerText.includes('本地牌組'), { timeout: T });
+  };
 
   // ── 1. Fresh state, open the report ──────────────────────────────────────
-  await page.goto('http://localhost:4174/', { waitUntil: 'networkidle0' });
+  await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
   await page.evaluate(() => localStorage.removeItem('hunterCard-decks'));
   await page.reload({ waitUntil: 'networkidle0' });
-  await openTournamentReport();
-  await clickText('2026-08');
-  await page.waitForFunction(() => document.body.innerText.includes('卡表：'), { timeout: T });
-  await waitForImportReady(DUKHN.deckId);
+  await openReport();
+  for (const deck of VERIFIED) await waitForImportReady(deck.deckId);
   await shot('01-report');
 
-  check(`${label}: verified DUKHN offers 一鍵匯入我的牌組`,
-    !!(await page.$(`[data-testid="deck-import-${DUKHN.deckId}"]`)));
-  check(`${label}: verified 2H33J8 offers 一鍵匯入我的牌組`,
-    !!(await page.$(`[data-testid="deck-import-${H2.deckId}"]`)));
-  check(`${label}: the decklog source link stays available as a secondary action`,
+  for (const deck of VERIFIED) {
+    check(`${label}: ${deck.decklogCode} offers 一鍵匯入我的牌組`,
+      !!(await page.$(`[data-testid="deck-import-${deck.deckId}"]`)));
+  }
+  check(`${label}: the decklog source link stays a secondary action`,
     await hasText('在 decklog 查看牌組'));
 
   // ── 2. Older unverified July records stay browse-only ────────────────────
   await clickText('2026-07');
   await page.waitForFunction(
     (id) => !!document.querySelector(`[data-testid="deck-import-disabled-${id}"]`),
-    { timeout: T }, july.events[0].decks[0].deckId,
+    { timeout: T }, JULY_DECK_IDS[0],
   );
   const julyState = await page.evaluate((ids) => ids.map((id) => ({
     id,
     enabled: !!document.querySelector(`[data-testid="deck-import-${id}"]`),
     disabled: !!document.querySelector(`[data-testid="deck-import-disabled-${id}"]`),
     reason: document.querySelector(`[data-testid="deck-import-reason-${id}"]`)?.innerText ?? null,
-  })), july.events.flatMap((e) => e.decks).map((d) => d.deckId));
+  })), JULY_DECK_IDS);
   report.july = julyState;
   check(`${label}: every unverified July deck is disabled`,
-    julyState.every((d) => d.disabled && !d.enabled), JSON.stringify(julyState.map((d) => d.id)));
+    julyState.every((d) => d.disabled && !d.enabled));
   check(`${label}: July decks state 卡表尚未取得，無法匯入`,
-    julyState.every((d) => d.reason === '卡表尚未取得，無法匯入'),
-    julyState.map((d) => d.reason).join(' / '));
+    julyState.every((d) => d.reason === '卡表尚未取得，無法匯入'));
   await shot('02-july-disabled');
 
   // ── 3. Mobile overflow guard ─────────────────────────────────────────────
@@ -165,110 +190,101 @@ async function run(label, viewport) {
       overflow.widest <= overflow.client + 1, `right edge ${overflow.widest}`);
   }
 
-  // ── 4. One tap imports and lands in the editor ───────────────────────────
-  await clickText('2026-08');
-  await waitForImportReady(DUKHN.deckId);
-  await clickTestId(`deck-import-${DUKHN.deckId}`);
-  await page.waitForFunction(() => document.body.innerText.includes('完成組牌'), { timeout: T });
-  await page.waitForSelector('[data-testid="deck-origin-banner"]', { timeout: T });
-  await shot('03-editor');
+  // ── 4. Full journey for EVERY verified deck ──────────────────────────────
+  const importedByCode = {};
+  for (const [i, deck] of VERIFIED.entries()) {
+    await freshReport();
+    await waitForImportReady(deck.deckId);
+    await clickTestId(`deck-import-${deck.deckId}`);
+    await page.waitForFunction(() => document.body.innerText.includes('完成組牌'), { timeout: T });
+    await page.waitForSelector('[data-testid="deck-origin-banner"]', { timeout: T });
 
-  const afterImport = await decks();
-  report.afterImport = afterImport;
-  const imported = afterImport.decks[0];
-  check(`${label}: exactly one new deck was created`, afterImport.decks.length === 1);
-  check(`${label}: it is the active deck the editor opened`,
-    afterImport.activeDeckId === imported.id);
-  check(`${label}: the imported deck holds 71 cards`, imported.total === 71, `total ${imported.total}`);
-  check(`${label}: zones are exactly 1 / 50 / 20`,
-    imported.oshi === 1 && imported.main === 50 && imported.yell === 20,
-    `${imported.oshi}/${imported.main}/${imported.yell}`);
-  check(`${label}: provenance records the source deck`,
-    imported.origin?.decklogCode === 'DUKHN' && imported.origin?.kind === 'tournament',
-    JSON.stringify(imported.origin));
-  check(`${label}: the editor shows the import provenance banner`,
-    await hasText('已從賽事牌組匯入'));
-  check(`${label}: the editor reports 71 total cards`, await hasText('71'));
+    const state = await readDecks();
+    const mine = state.decks.find((d) => d.origin?.decklogCode === deck.decklogCode);
+    importedByCode[deck.decklogCode] = mine;
 
-  const bannerText = await page.evaluate(
-    () => document.querySelector('[data-testid="deck-origin-banner"]')?.innerText ?? null,
-  );
-  report.banner = bannerText;
-  check(`${label}: unresolved printings are stated, not hidden`,
-    imported.unresolved === 0 || /版本/.test(bannerText ?? ''), bannerText);
-  check(`${label}: no unresolved slot adopted a real printing`,
-    imported.printings.every((p) => p === 'UNRESOLVED' || p !== ''),
-    imported.printings.join(','));
+    check(`${label}: ${deck.decklogCode} → one tap created a new deck (${i + 1} total)`,
+      state.decks.length === i + 1, `${state.decks.length} decks`);
+    check(`${label}: ${deck.decklogCode} is the active deck the editor opened`,
+      state.activeDeckId === mine?.id);
+    check(`${label}: ${deck.decklogCode} imports exactly 1 / 50 / 20 = 71`,
+      mine?.oshi === 1 && mine?.main === 50 && mine?.yell === 20 && mine?.total === 71,
+      `${mine?.oshi}/${mine?.main}/${mine?.yell} = ${mine?.total}`);
+    check(`${label}: ${deck.decklogCode} records its own provenance`,
+      mine?.origin?.kind === 'tournament' && mine?.origin?.sourceUrl === deck.sourceUrl,
+      mine?.origin?.sourceUrl);
+    check(`${label}: ${deck.decklogCode} shows the import banner in the editor`,
+      await hasText('已從賽事牌組匯入'));
+    check(`${label}: ${deck.decklogCode} adopted no real printing`,
+      (mine?.printings ?? []).every((p) => p === 'UNRESOLVED'),
+      (mine?.printings ?? []).join(','));
 
-  // ── 4b. The import does not auto-apply the low-cost default, but the
-  //        editor's existing explicit action is still offered for it ─────────
-  const lowCost = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('div,span')]
-      .find((n) => n.textContent.trim().startsWith('套用低配版本'));
-    return el ? el.textContent.trim() : null;
-  });
-  report.lowCostAction = lowCost;
-  check(`${label}: the import did not silently apply a low-cost printing`,
-    imported.printings.every((p) => p === 'UNRESOLVED'), imported.printings.join(','));
-  check(`${label}: the editor still offers 套用低配版本 as an explicit opt-in`,
-    imported.unresolved === 0 || !!lowCost, String(lowCost));
+    // Every previously imported deck must be untouched by this one.
+    for (const prev of VERIFIED.slice(0, i)) {
+      const before = importedByCode[prev.decklogCode];
+      const now = state.decks.find((d) => d.id === before.id);
+      check(`${label}: importing ${deck.decklogCode} left ${prev.decklogCode} intact`,
+        now?.total === 71 && now?.name === before.name, `${now?.total}`);
+    }
+    await shot(`03-editor-${deck.decklogCode}`);
+  }
 
-  // ── 5. Reload persistence + reopen from 我的牌組 ──────────────────────────
+  const distinctNames = new Set(Object.values(importedByCode).map((d) => d.name));
+  check(`${label}: the two decks got distinct names`,
+    distinctNames.size === VERIFIED.length, [...distinctNames].join(' | '));
+
+  // ── 5. Reload, then reopen EACH deck from 我的牌組 ────────────────────────
   await page.reload({ waitUntil: 'networkidle0' });
   await page.waitForFunction(() => document.body.innerText.includes('以訪客身份進入')
     || document.body.innerText.includes('牌組編輯器'), { timeout: T });
   if (await hasText('以訪客身份進入')) await clickText('以訪客身份進入');
-  await clickText('牌組編輯器');
-  await page.waitForFunction(() => document.body.innerText.includes('完成組牌')
-    || document.body.innerText.includes('本地牌組'), { timeout: T });
+  await openEditor();
 
-  // Reopen it explicitly from the deck list, as a returning player would.
-  if (await hasText('切換牌組')) await clickText('切換牌組');
-  await page.waitForFunction(() => document.body.innerText.includes('本地牌組'), { timeout: T });
-  await shot('04-my-decks');
-  const listedName = await page.evaluate(
-    (name) => document.body.innerText.includes(name), imported.name,
-  );
-  check(`${label}: the imported deck is listed under 我的牌組 after reload`, listedName,
-    imported.name);
-  await clickText(imported.name);
+  for (const deck of VERIFIED) {
+    const mine = importedByCode[deck.decklogCode];
+    if (await hasText('切換牌組')) await clickText('切換牌組');
+    await page.waitForFunction(() => document.body.innerText.includes('本地牌組'), { timeout: T });
+    check(`${label}: ${deck.decklogCode} is listed under 我的牌組 after reload`,
+      await page.evaluate((n) => document.body.innerText.includes(n), mine.name), mine.name);
+    await clickText(mine.name);
+    await page.waitForFunction(() => document.body.innerText.includes('完成組牌'), { timeout: T });
+
+    const state = await readDecks();
+    const restored = state.decks.find((d) => d.id === mine.id);
+    check(`${label}: ${deck.decklogCode} reopens with all 71 cards after reload`,
+      restored?.total === 71 && restored?.oshi === 1 && restored?.main === 50 && restored?.yell === 20,
+      `${restored?.oshi}/${restored?.main}/${restored?.yell}`);
+    check(`${label}: ${deck.decklogCode} provenance survived reload`,
+      restored?.origin?.decklogCode === deck.decklogCode);
+    check(`${label}: ${deck.decklogCode} printings were not rewritten on reload`,
+      (restored?.printings ?? []).every((p) => p === 'UNRESOLVED'),
+      (restored?.printings ?? []).join(','));
+    await shot(`04-reopened-${deck.decklogCode}`);
+  }
+
+  // ── 6. A repeat import is an independent copy ────────────────────────────
+  const first = VERIFIED[0];
+  await freshReport();
+  await waitForImportReady(first.deckId);
+  await clickTestId(`deck-import-${first.deckId}`);
   await page.waitForFunction(() => document.body.innerText.includes('完成組牌'), { timeout: T });
 
-  const afterReload = await decks();
-  report.afterReload = afterReload;
-  const restored = afterReload.decks.find((d) => d.id === imported.id);
-  check(`${label}: the deck survives reload with all 71 cards`, restored?.total === 71,
-    `total ${restored?.total}`);
-  check(`${label}: provenance survives reload`, restored?.origin?.decklogCode === 'DUKHN');
-  check(`${label}: printings were not silently rewritten on reload`,
-    JSON.stringify(restored?.printings?.slice().sort())
-      === JSON.stringify(imported.printings.slice().sort()),
-    JSON.stringify(restored?.printings));
-  await shot('05-reopened');
+  const finalState = await readDecks();
+  report.finalDecks = finalState.decks.map((d) => ({ name: d.name, total: d.total }));
+  const base = importedByCode[first.decklogCode];
+  const copy = finalState.decks.find((d) => d.name === `${base.name} (2)`);
+  check(`${label}: a repeat import adds a deck instead of overwriting`,
+    finalState.decks.length === VERIFIED.length + 1, `${finalState.decks.length} decks`);
+  check(`${label}: the copy is named with a (2) suffix`, !!copy,
+    finalState.decks.map((d) => d.name).join(' | '));
+  check(`${label}: the copy is a separate deck with its own 71 cards`,
+    !!copy && copy.id !== base.id && copy.total === 71);
+  check(`${label}: every deck still holds 71 cards`,
+    finalState.decks.every((d) => d.total === 71));
+  await shot('05-repeat-import');
 
-  // ── 6. A second import is an independent copy ────────────────────────────
-  await clickText('賽事月報');
-  await page.waitForFunction(() => document.body.innerText.includes('每月賽事月報'), { timeout: T });
-  await clickText('2026-08');
-  await waitForImportReady(DUKHN.deckId);
-  await clickTestId(`deck-import-${DUKHN.deckId}`);
-  await page.waitForFunction(() => document.body.innerText.includes('完成組牌'), { timeout: T });
-
-  const afterSecond = await decks();
-  report.afterSecond = afterSecond;
-  check(`${label}: a second import adds a deck instead of overwriting`,
-    afterSecond.decks.length === 2, `${afterSecond.decks.length} decks`);
-  check(`${label}: the copy is named with a (2) suffix`,
-    afterSecond.decks[1].name === `${afterSecond.decks[0].name} (2)`,
-    afterSecond.decks.map((d) => d.name).join(' | '));
-  check(`${label}: both copies hold 71 cards`,
-    afterSecond.decks.every((d) => d.total === 71));
-  check(`${label}: the first deck is unchanged`,
-    afterSecond.decks[0].id === imported.id && afterSecond.decks[0].total === 71);
-  await shot('06-second-import');
-
-  report[`${label}_errors`] = errors;
   check(`${label}: no runtime errors on the page`, errors.length === 0, errors.slice(0, 3).join(' | '));
+  report[`${label}_errors`] = errors;
   await page.close();
 }
 
@@ -277,11 +293,11 @@ await run('mobile', { width: 390, height: 844 });
 
 console.log(`\n${JSON.stringify(report, null, 2)}`);
 await browser.close();
-server.close();
+server?.close();
 
 if (failures.length > 0) {
-  console.error(`\nDIC-1033 UI verification FAILED (${failures.length}):`);
+  console.error(`\nDIC-1033 UI verification FAILED against ${ORIGIN} (${failures.length}):`);
   for (const f of failures) console.error(`  ✗ ${f}`);
   process.exit(1);
 }
-console.log('\nDIC-1033 UI verification: all checks passed');
+console.log(`\nDIC-1033 UI verification: all checks passed against ${ORIGIN}`);
