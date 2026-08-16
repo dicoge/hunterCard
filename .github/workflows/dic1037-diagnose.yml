@@ -55,7 +55,7 @@ jobs:
             console.log("buildCommand:", (d.settings && d.settings.buildCommand || "").slice(0, 120));
             console.log("rootDirectory:", d.settings && d.settings.rootDirectory);
             console.log("link:", JSON.stringify(d.link));
-            const repoId = d.link && d.link.gitRepoId;
+            const repoId = d.link && (d.link.repoId || d.link.gitRepoId);
             if (repoId) require("fs").writeFileSync("/tmp/repoId.txt", String(repoId));
           '
 
@@ -93,7 +93,7 @@ jobs:
           node -e '
             const d = JSON.parse(require("fs").readFileSync("/tmp/deployment.json","utf8"));
             const cfg = d.config || {};
-            console.log("uid:", d.uid);
+            console.log("uid:", d.uid || d.id);
             console.log("url:", d.url, "| status:", d.status);
             console.log("functionType:", cfg.functionType, "| functionTimeout:", cfg.functionTimeout);
             console.log("isUsingActiveCPU:", cfg.isUsingActiveCPU, "| regions:", JSON.stringify(cfg.regions));
@@ -136,7 +136,7 @@ jobs:
               if (d.error) { console.log("api error:", JSON.stringify(d.error)); process.exit(1); }
               console.log("uid:", d.uid, "| url:", d.url, "| state:", d.readyState || d.status);
               require("fs").writeFileSync("/tmp/exp_url.txt", d.url);
-              require("fs").writeFileSync("/tmp/exp_uid.txt", d.uid);
+              require("fs").writeFileSync("/tmp/exp_uid.txt", d.uid || d.id);
             ' || exit 1
             exp_uid=$(cat /tmp/exp_uid.txt)
             exp_url=$(cat /tmp/exp_url.txt)
