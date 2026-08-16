@@ -485,6 +485,66 @@ test('normalizeCards requires a readable zone (never infers one)', () => {
   );
 });
 
+// ── DIC-1029 (re-review): no sanitizing before verification ─────────────────
+// Dropping an unreadable slot or repairing a bad count destroys the evidence
+// the strict gate runs on: a repaired count can make a broken list add up to a
+// legal 1/50/20 deck, and dropping slots can empty a list into "no data".
+test('an unreadable copy count is rejected, never repaired to 1', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const count of [0, -1, 1.5, NaN, '4', null, undefined]) {
+    const cards = committedCards('DUKHN');
+    cards.find((c) => c.zone === 'oshi').count = count;
+    assert.throws(
+      () => normalizeCards(cards, catalog),
+      /has no readable copy count/,
+      `count ${JSON.stringify(count)} must be rejected`,
+    );
+  }
+});
+
+test('the oshi count-0 deck cannot normalize into a verified 1/50/20 deck', () => {
+  const cards = committedCards('DUKHN');
+  cards.find((c) => c.zone === 'oshi').count = 0;
+  // Before the fix this normalized to count 1 and passed the whole gate.
+  assert.throws(() => normalizeCards(cards, loadCatalogCardNumbers()), /readable copy count/);
+});
+
+test('an unreadable card number is rejected, never dropped from the list', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const cardNumber of ['', '   ', null, undefined, 42]) {
+    const cards = committedCards('DUKHN');
+    cards.find((c) => c.zone === 'main').cardNumber = cardNumber;
+    assert.throws(
+      () => normalizeCards(cards, catalog),
+      /has no readable card number/,
+      `cardNumber ${JSON.stringify(cardNumber)} must be rejected`,
+    );
+  }
+});
+
+test('a list of unreadable slots never sanitizes down to "no card data"', () => {
+  // Silently emptying a committed list is how a valid report got overwritten
+  // with zero cards; a non-empty list must fail loudly instead.
+  assert.throws(
+    () => normalizeCards([{ zone: 'main', cardNumber: '', count: 1 }], loadCatalogCardNumbers()),
+    /has no readable card number/,
+  );
+  assert.throws(() => normalizeCards([null], loadCatalogCardNumbers()), /is not a card object/);
+  // A genuinely absent list stays an honest unknown, not a failure.
+  const empty = normalizeCards([], loadCatalogCardNumbers());
+  assert.deepEqual(empty, { cards: [], verified: false, failure: null });
+});
+
+test('cardsFromDecklog rejects an unreadable copy count', () => {
+  for (const num of [0, -2, 2.5, undefined, '4']) {
+    assert.throws(
+      () => cardsFromDecklog({ list: [{ card_number: 'hBP07-063', num, type: 1 }] }),
+      /has no readable copy count/,
+      `num ${JSON.stringify(num)} must be rejected`,
+    );
+  }
+});
+
 // ── DIC-1029: committed (last-known-good) arrays get the SAME strict gate ────
 // A non-empty card list is not evidence of a complete deck. These cover the
 // committed-array path that previously skipped verification entirely.

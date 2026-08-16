@@ -80,6 +80,37 @@ export function isDeckZone(value: unknown): value is DeckZone {
   return typeof value === 'string' && (DECK_ZONES as readonly string[]).includes(value);
 }
 
+// A copy count is only readable as a positive integer. 0, negatives, fractions,
+// NaN, numeric strings and missing values are all unreadable — and an unreadable
+// count must never be repaired into 1, because a repaired count can make a
+// broken list add up to a legal 1/50/20 deck (DIC-1029).
+export function isReadableCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+/** Reject a raw card slot before any normalization touches it. Sanitizing first
+ * — dropping unreadable entries or defaulting bad counts — destroys the very
+ * evidence the strict gate needs, so every malformed slot throws here instead. */
+function assertReadableSlot(card: DeckCardRef, index: number): asserts card is DeckCardRef {
+  const at = `slot ${index}`;
+  if (!card || typeof card !== 'object') {
+    throw new Error(`${at} is not a card object (${JSON.stringify(card)})`);
+  }
+  if (typeof card.cardNumber !== 'string' || card.cardNumber.trim().length === 0) {
+    throw new Error(`${at} has no readable card number (cardNumber=${JSON.stringify(card.cardNumber)})`);
+  }
+  if (!isDeckZone(card.zone)) {
+    throw new Error(
+      `card ${card.cardNumber} has no readable zone (zone=${JSON.stringify(card.zone)})`,
+    );
+  }
+  if (!isReadableCount(card.count)) {
+    throw new Error(
+      `card ${card.cardNumber} has no readable copy count (count=${JSON.stringify(card.count)})`,
+    );
+  }
+}
+
 export function normalizeCards(
   cards: DeckCardRef[] | undefined,
   catalogCardNumbers?: ReadonlySet<string> | null,
@@ -88,26 +119,22 @@ export function normalizeCards(
   verified: boolean;
   failure: string | null;
 } {
+  // No card list at all is an honest unknown (the source published no cards).
+  // A list that HAS entries must be readable in full: every slot is validated as
+  // published, and a single unreadable one throws rather than being dropped or
+  // repaired (DIC-1024: fail validation, never guess).
   if (!cards || cards.length === 0) return { cards: [], verified: false, failure: null };
-  // Only accept entries that carry an exact cardNumber AND a valid zone. version
-  // stays null when not supplied — never inferred from a same-named/same-numbered
-  // printing. A slot whose zone is unreadable is a real extraction failure and
-  // must surface as one (DIC-1024: fail validation, never guess).
-  const clean = cards
-    .filter((c) => typeof c.cardNumber === 'string' && c.cardNumber.length > 0)
-    .map((c) => {
-      if (!isDeckZone(c.zone)) {
-        throw new Error(
-          `card ${c.cardNumber} has no readable zone (zone=${JSON.stringify(c.zone)})`,
-        );
-      }
-      return {
-        zone: c.zone,
-        cardNumber: c.cardNumber,
-        version: c.version ?? null,
-        count: typeof c.count === 'number' && c.count > 0 ? c.count : 1,
-      };
-    });
+  const clean = cards.map((c, i) => {
+    assertReadableSlot(c, i);
+    return {
+      zone: c.zone,
+      cardNumber: c.cardNumber,
+      // version stays null when not supplied — never inferred from a
+      // same-named/same-numbered printing.
+      version: c.version ?? null,
+      count: c.count,
+    };
+  });
   // A non-empty list is NOT evidence of a complete deck. Every card list —
   // freshly fetched or read back from a committed last-known-good source —
   // goes through the same strict gate, so a truncated, duplicate-slot or
@@ -452,8 +479,9 @@ export function zoneFromDecklogList(
 }
 
 /** Map a Deck Log view-API response into normalized, zoned deck cards. Throws on
- * the first unreadable slot (missing card number or a list/type mismatch) so a
- * half-parsed deck can never silently become a "verified" one. */
+ * the first unreadable slot (missing card number, unreadable copy count, or a
+ * list/type mismatch) so a half-parsed deck can never silently become a
+ * "verified" one. */
 export function cardsFromDecklog(deck: DecklogApiDeck | null | undefined): DeckCardRef[] {
   if (!deck) throw new Error('empty Deck Log response');
   const out: DeckCardRef[] = [];
@@ -468,11 +496,19 @@ export function cardsFromDecklog(deck: DecklogApiDeck | null | undefined): DeckC
           `Deck Log ${String(key)} slot ${cardNumber} has type ${raw.type}, expected ${type}`,
         );
       }
+      // An unreadable copy count is an extraction failure like any other: it is
+      // never defaulted to 1, or a partially readable response could be
+      // persisted as a legal-looking deck.
+      if (!isReadableCount(raw.num)) {
+        throw new Error(
+          `Deck Log ${String(key)} slot ${cardNumber} has no readable copy count (num=${JSON.stringify(raw.num)})`,
+        );
+      }
       out.push({
         zone,
         cardNumber,
         version: (raw.rare ?? '').trim() || null,
-        count: typeof raw.num === 'number' && raw.num > 0 ? raw.num : 1,
+        count: raw.num,
       });
     }
   }

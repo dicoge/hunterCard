@@ -509,7 +509,12 @@ async function mainAsync() {
         }
         bucket.events.push(event);
       } catch (err) {
-        alert('error', `Bad event in ${file}: ${err.message}`, { file });
+        // An unreadable slot (bad shape, card number or copy count) throws out
+        // of normalization. The event carries no trustworthy card data, so the
+        // whole month is invalid — its existing report must not be rewritten
+        // from a source we could not read in full.
+        alert('error', `Bad event in ${file}: ${err.message}`, { file, month: src.month });
+        invalidMonths.add(src.month);
       }
     }
     if (src.source) bucket.source = src.source;

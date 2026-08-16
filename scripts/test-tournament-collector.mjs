@@ -258,6 +258,37 @@ for (const [label, mutate, failurePattern] of [
     },
     /failed revalidation: card not found in local official catalog: hBP99-999/,
   ],
+  // The counts and card numbers below were previously sanitized away — a zero
+  // count became 1 and an unreadable number was dropped — so a broken list
+  // could still add up to a legal deck or empty out into "no card data".
+  [
+    'a zero copy count',
+    (src) => {
+      src.events[0].decks[0].cards.find((c) => c.zone === 'oshi').count = 0;
+    },
+    /has no readable copy count \(count=0\)/,
+  ],
+  [
+    'a non-numeric copy count',
+    (src) => {
+      src.events[0].decks[0].cards.find((c) => c.zone === 'main').count = '4';
+    },
+    /has no readable copy count \(count="4"\)/,
+  ],
+  [
+    'an empty card number',
+    (src) => {
+      src.events[0].decks[0].cards.find((c) => c.zone === 'main').cardNumber = '';
+    },
+    /has no readable card number \(cardNumber=""\)/,
+  ],
+  [
+    'a missing card number',
+    (src) => {
+      delete src.events[0].decks[0].cards.find((c) => c.zone === 'yell').cardNumber;
+    },
+    /has no readable card number \(cardNumber=undefined\)/,
+  ],
 ]) {
   test(`committed cards with ${label} never overwrite the valid report`, () => {
     const tree = seededWithVerifiedDeck();
@@ -279,6 +310,28 @@ for (const [label, mutate, failurePattern] of [
     ]);
   });
 }
+
+test('a wholly unreadable committed list never empties the valid report', () => {
+  // The exact regression: every slot was dropped as unreadable, the list
+  // sanitized down to "no card data", the run exited 0 and replaced a verified
+  // 1/50/20 deck with zero cards.
+  const tree = seededWithVerifiedDeck();
+  const before = fs.readFileSync(path.join(tree.out, '2026-07.json'), 'utf8');
+
+  writeSource(tree, (src) => {
+    src.events[0].decks[0].cards = src.events[0].decks[0].cards.map((c) => ({ ...c, cardNumber: '' }));
+  });
+  const run = runCollector(tree, '2026-09-01T05:00:00Z');
+
+  assert.equal(run.code, 1);
+  assert.match(run.stderr, /has no readable card number/);
+  assert.equal(fs.readFileSync(path.join(tree.out, '2026-07.json'), 'utf8'), before);
+  const deck = readOut(tree.out, '2026-07.json').events[0].decks.find(
+    (d) => d.decklogCode === '5USA7',
+  );
+  assert.deepEqual(deck.cards, committedValidCards(), 'the verified deck must still be there in full');
+  assert.equal(deck.cardsVerified, true);
+});
 
 test('invalid committed cards are emitted unverified when no valid report exists', () => {
   const tree = makeTree();
