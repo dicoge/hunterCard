@@ -195,6 +195,80 @@ const check = (label, fn) => { fn(); results.push(label); };
   });
 }
 
+// ── 6. A hostile multi-megabyte data URI costs only its header (CR DIC-1020) ──
+{
+  // The guard runs on the edge hot path for every scan, so its work must depend on the
+  // header prefix alone. Sanitizing the payload before bounding it scaled linearly with
+  // the tail (1 MiB/1.44 ms → 64 MiB/49.66 ms) even though the header never changed.
+  const MIB = 1024 * 1024;
+  const withTail = (header, mib) => header + 'A'.repeat(mib * MIB);
+
+  const fastest = (image, expected) => {
+    let best = Infinity;
+    for (let i = 0; i < 7; i++) {
+      const started = process.hrtime.bigint();
+      const edge = imageLongestEdge(image);
+      const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
+      assert.equal(edge, expected, 'the tail must never change what the header says');
+      if (elapsed < best) best = elapsed;
+    }
+    return best;
+  };
+
+  const timings = {};
+  for (const mib of [1, 8, 32, 64]) {
+    timings[mib] = fastest(withTail(LEGIBLE, mib), 1400);
+  }
+
+  check('measuring a 64 MiB data URI costs no more than measuring a 1 MiB one', () => {
+    // Linear scaling put 64 MiB at ~34x the 1 MiB cost; bounded work keeps every size in
+    // the sub-millisecond noise floor.
+    const budget = Math.max(1, timings[1] * 8);
+    assert.ok(
+      timings[64] <= budget,
+      `64 MiB took ${timings[64].toFixed(3)}ms against a ${budget.toFixed(3)}ms budget (1 MiB: ${timings[1].toFixed(3)}ms, 8 MiB: ${timings[8].toFixed(3)}ms, 32 MiB: ${timings[32].toFixed(3)}ms)`,
+    );
+  });
+
+  check('measuring a 64 MiB data URI does not allocate a payload-sized copy', () => {
+    const huge = withTail(LEGIBLE, 64);
+    imageLongestEdge(huge); // warm the code path so JIT churn is not counted
+    const before = process.memoryUsage().heapUsed;
+    assert.equal(imageLongestEdge(huge), 1400);
+    const grown = (process.memoryUsage().heapUsed - before) / MIB;
+    assert.ok(grown < 16, `slicing/sanitizing the payload would cost ~64 MiB; grew ${grown.toFixed(2)} MiB`);
+  });
+
+  check('the same header prefix yields the same measurement at every tail size', () => {
+    const edges = [0, 1, 8, 32, 64].map(mib => imageLongestEdge(withTail(LEGIBLE, mib)));
+    assert.deepEqual(edges, [1400, 1400, 1400, 1400, 1400]);
+    // And an illegible header stays illegible no matter how much tail is appended.
+    assert.equal(imageLongestEdge(withTail(THUMBNAIL, 64)), 140);
+    assert.equal(isBelowLegibleResolution([withTail(THUMBNAIL, 64)]), true);
+  });
+
+  // The real handler, not just the helper: an illegible frame padded out to 64 MiB is
+  // still refused on its header, without a provider call and without reading the tail.
+  const started = process.hrtime.bigint();
+  const refused = await scan([withTail(THUMBNAIL, 64)], REPLY_FROM_THUMBNAIL);
+  const handlerMs = Number(process.hrtime.bigint() - started) / 1e6;
+  check('the real handler refuses a 64 MiB illegible frame on its header alone', () => {
+    assert.equal(refused.res.status, 404);
+    assert.equal(refused.body.success, false);
+    assert.deepEqual(refused.body.candidates, []);
+    assert.deepEqual(refused.providerCalls, []);
+    assert.ok(handlerMs < 1000, `refusal took ${handlerMs.toFixed(1)}ms`);
+  });
+
+  const accepted = await scan([withTail(LEGIBLE, 8)], REPLY_FROM_FULL_RESOLUTION);
+  check('the real handler still recognises a legible frame carrying a huge tail', () => {
+    assert.equal(accepted.res.status, 200);
+    assert.equal(accepted.body.success, true);
+    assert.equal(accepted.body.card.cardNumber, 'hBP07-029');
+    assert.equal(accepted.providerCalls.length, 1);
+  });
+}
+
 if (savedGoogle === undefined) delete process.env.GEMINI_API_KEY;
 else process.env.GEMINI_API_KEY = savedGoogle;
 if (savedOpenRouter === undefined) delete process.env.OPENROUTER_API_KEY;

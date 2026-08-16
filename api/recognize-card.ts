@@ -191,12 +191,23 @@ function json(d: any, status = 200): Response {
   });
 }
 
+// Size markers live near the front of a JPEG/PNG, so a bounded prefix is all this needs.
+const HEADER_B64_CHARS = 24000;
+// `data:image/jpeg;base64,` and friends are far shorter than this; a comma further out
+// does not describe a data URI worth parsing.
+const DATA_URI_HEAD_CHARS = 1024;
+// Doubled so base64 broken across lines still yields a full HEADER_B64_CHARS prefix.
+const HEADER_RAW_CHARS = HEADER_B64_CHARS * 2;
+
 function decodeImageHeader(image: string): Uint8Array | null {
-  const comma = image.indexOf(',');
-  const b64 = (comma >= 0 ? image.slice(comma + 1) : image).replace(/[^A-Za-z0-9+/]/g, '');
-  // Size markers live near the front, so decoding a bounded prefix is enough and keeps
-  // this off the hot path for multi-megabyte camera frames.
-  const prefix = b64.slice(0, 24000);
+  // Every step below must stay bounded: this runs on the edge hot path against
+  // multi-megabyte camera frames, so nothing may scan, copy, or sanitize the payload
+  // tail (CR DIC-1020).
+  const comma = image.slice(0, DATA_URI_HEAD_CHARS).indexOf(',');
+  const start = comma >= 0 ? comma + 1 : 0;
+  const prefix = image.slice(start, start + HEADER_RAW_CHARS)
+    .replace(/[^A-Za-z0-9+/]/g, '')
+    .slice(0, HEADER_B64_CHARS);
   const usable = prefix.slice(0, prefix.length - (prefix.length % 4));
   if (usable.length < 32) return null;
   try {
