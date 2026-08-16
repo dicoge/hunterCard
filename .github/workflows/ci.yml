@@ -95,6 +95,9 @@ jobs:
       - name: Verify production /api/* is not swallowed by SPA (DIC-886)
         run: npm run test:vercel-routing
 
+      - name: Verify Node-runtime API routes export toNodeHandler (DIC-1043)
+        run: npm run test:node-runtime-adapter
+
       - name: Verify Store MVP fail-closed field strip (DIC-908)
         run: npm run test:store-mvp-strip
 
