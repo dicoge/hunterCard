@@ -427,6 +427,7 @@ globalThis.fetch = async (url) => {
     throw new Error('unstubbed Deck Log request: ' + url);
   }
   const step = queue.length > 1 ? queue.shift() : queue[0];
+  if (step.throw) throw new Error(step.throw);
   const headers = new Map(
     Object.entries(step.headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]),
   );
@@ -565,6 +566,29 @@ test('--live honors Retry-After for exactly one more 429 attempt', () => {
   assert.equal(deck.cardsVerified, true);
   assert.deepEqual(deck.cards, committedValidCards());
 });
+
+// The retry a Retry-After buys is the last request, not a reset of the budget:
+// whatever that second attempt returns, there is no third.
+for (const [label, second] of [
+  ['a retryable status', { status: 500 }],
+  ['a transport failure', { throw: 'socket hang up' }],
+]) {
+  test(`--live stops after the Retry-After retry when it hits ${label}`, () => {
+    const tree = liveTree(['5USA7']);
+    const run = runLiveCollector(tree, '2026-09-01T05:00:00Z', {
+      '5USA7': [{ status: 429, headers: { 'Retry-After': '1' } }, second],
+    });
+
+    assert.equal(run.code, 1);
+    assert.equal(
+      run.calls.length,
+      2,
+      'the 429 retry budget is total: its one extra attempt must be the last request',
+    );
+    const gap = run.calls[1].at - run.calls[0].at;
+    assert.ok(gap >= 1000, `the server's Retry-After must be honored, waited only ${gap}ms`);
+  });
+}
 
 test('--live paces after early exits, not just after a successful request', () => {
   const truncated = decklogPayload();

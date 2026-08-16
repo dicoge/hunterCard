@@ -160,17 +160,19 @@ function classifyHttpFailure(res, { rateLimitRetried }) {
 // request a browser would make, with a small delay between attempts.
 export async function fetchWithRetry(url, { retries = 3, backoffMs = 800 } = {}) {
   let lastErr;
-  let rateLimitRetried = false;
+  let rateLimitGrantedAt = null;
   for (let attempt = 1; attempt <= retries; attempt++) {
     let terminal = false;
     let waitMs = null;
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
       if (!res.ok) {
-        const verdict = classifyHttpFailure(res, { rateLimitRetried });
+        const verdict = classifyHttpFailure(res, {
+          rateLimitRetried: rateLimitGrantedAt !== null,
+        });
         terminal = verdict.terminal;
         waitMs = verdict.waitMs;
-        if (waitMs !== null) rateLimitRetried = true;
+        if (waitMs !== null) rateLimitGrantedAt = attempt;
         throw new Error(verdict.message);
       }
       return await res.text();
@@ -178,6 +180,9 @@ export async function fetchWithRetry(url, { retries = 3, backoffMs = 800 } = {})
       lastErr = err;
     }
     if (terminal) break;
+    // A Retry-After-qualified 429 spends the whole retry budget: the attempt it
+    // bought is the last one, whatever it returns.
+    if (rateLimitGrantedAt !== null && attempt > rateLimitGrantedAt) break;
     if (attempt < retries) await sleep(waitMs ?? backoffMs * attempt);
   }
   throw lastErr;
@@ -199,7 +204,7 @@ export async function fetchDecklogView(code, { retries = 3, backoffMs = 800 } = 
     'X-Requested-With': 'XMLHttpRequest',
   };
   let lastErr;
-  let rateLimitRetried = false;
+  let rateLimitGrantedAt = null;
   for (let attempt = 1; attempt <= retries; attempt++) {
     let terminal = false;
     let waitMs = null;
@@ -210,10 +215,12 @@ export async function fetchDecklogView(code, { retries = 3, backoffMs = 800 } = 
         signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) {
-        const verdict = classifyHttpFailure(res, { rateLimitRetried });
+        const verdict = classifyHttpFailure(res, {
+          rateLimitRetried: rateLimitGrantedAt !== null,
+        });
         terminal = verdict.terminal;
         waitMs = verdict.waitMs;
-        if (waitMs !== null) rateLimitRetried = true;
+        if (waitMs !== null) rateLimitGrantedAt = attempt;
         throw new Error(`${verdict.message} (${code})`);
       }
       const data = await res.json();
@@ -230,6 +237,9 @@ export async function fetchDecklogView(code, { retries = 3, backoffMs = 800 } = 
       await sleep(DECKLOG_MIN_REQUEST_INTERVAL_MS);
     }
     if (terminal) break;
+    // A Retry-After-qualified 429 spends the whole retry budget: the attempt it
+    // bought is the last one, whatever it returns.
+    if (rateLimitGrantedAt !== null && attempt > rateLimitGrantedAt) break;
     if (attempt < retries) await sleep(waitMs ?? backoffMs * attempt);
   }
   throw lastErr;
