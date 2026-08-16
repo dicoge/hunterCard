@@ -387,8 +387,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP05-005_ent07"
+    },
+    {
+      "date": "2026-08-16",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-005_ent07"
     }
   ],
-  "lastUpdated": "2026-08-15T12:11:57.313Z",
+  "lastUpdated": "2026-08-16T12:14:22.767Z",
   "nameZh": "癒月巧可"
 }

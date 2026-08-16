@@ -401,8 +401,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-081_ent07"
+    },
+    {
+      "date": "2026-08-16",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-081_ent07"
     }
   ],
-  "lastUpdated": "2026-08-15T12:11:57.310Z",
+  "lastUpdated": "2026-08-16T12:14:22.766Z",
   "nameZh": "夏色祭"
 }

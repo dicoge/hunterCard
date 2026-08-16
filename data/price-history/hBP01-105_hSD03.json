@@ -401,8 +401,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-105_hSD03"
+    },
+    {
+      "date": "2026-08-16",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-105_hSD03"
     }
   ],
-  "lastUpdated": "2026-08-15T12:11:57.636Z",
+  "lastUpdated": "2026-08-16T12:14:22.982Z",
   "nameZh": "螢光棒"
 }

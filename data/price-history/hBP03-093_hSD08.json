@@ -387,8 +387,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-093_hSD08"
+    },
+    {
+      "date": "2026-08-16",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-093_hSD08"
     }
   ],
-  "lastUpdated": "2026-08-15T12:11:57.525Z",
+  "lastUpdated": "2026-08-16T12:14:22.916Z",
   "nameZh": "hololive 4期生"
 }
