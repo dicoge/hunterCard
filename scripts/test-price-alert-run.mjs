@@ -11,6 +11,8 @@
  *   - an explicit user edit re-arms the alert
  *   - a failed Expo ticket does NOT record the alert as notified
  *   - two OVERLAPPING runs make exactly one Expo call for one armed alert
+ *   - an edit landing mid-send cannot hand a second evaluator the same send
+ *   - a stale lease owner cannot clean up or commit after a takeover
  *   - an unconfirmed or crashed send releases/expires its claim so it retries
  *   - the run endpoint is unauthorized without the shared secret
  *
@@ -21,7 +23,9 @@ import assert from 'node:assert/strict';
 import { resetKv, advanceKvClock } from './fixtures/kv-mock.mjs';
 import runHandler from '../api/push/price-alert-run.ts';
 import configHandler from '../api/push/price-alerts.ts';
-import { claimAlertSend, ALERT_CLAIM_LEASE_MS } from '../api/_lib/kv-storage.ts';
+import {
+  claimAlertSend, releaseAlertClaim, commitAlertClaim, ALERT_CLAIM_LEASE_MS,
+} from '../api/_lib/kv-storage.ts';
 import { armStateKey } from '../src/utils/priceAlerts.ts';
 
 const SECRET = 'test-internal-secret';
@@ -39,6 +43,8 @@ async function test(name, fn) {
 
 // ── Stubbed Expo Push API ───────────────────────────────────────────────────
 let pushes = [];
+/** Every `ok` ticket Expo has handed back, across every run in a test. */
+let okTickets = 0;
 let ticketStatus = 'ok';
 /** When set, the stub parks inside the Expo call until the test releases it. */
 let expoGate = null;
@@ -51,6 +57,7 @@ globalThis.fetch = async (url, init) => {
   pushes.push(...batch);
   if (expoGate) await expoGate.promise;
   if (expoRespond) return expoRespond(batch);
+  if (ticketStatus === 'ok') okTickets += batch.length;
   return new Response(
     JSON.stringify({ data: batch.map(() => ({ status: ticketStatus })) }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -250,6 +257,88 @@ await test('two overlapping runs make exactly one Expo call for one armed alert'
   assert.equal((await runAt(1000)).body.sent, 1);
 });
 
+await test('an edit landing mid-send cannot hand a second evaluator the same send', async () => {
+  resetKv();
+  ticketStatus = 'ok';
+  await saveAlert(BASE_ALERT);
+
+  pushes = [];
+  okTickets = 0;
+
+  // Runner A wins the claim and parks inside its Expo call, so the alert is
+  // visible and still armed to everyone else while a send is genuinely in
+  // flight — the window an edit used to reopen.
+  const gate = deferred();
+  expoGate = gate;
+  const runA = startRun(1000);
+  await waitFor(() => pushes.length === 1, 'the first runner to reach the Expo Push API');
+
+  // The user edits the alert mid-send. Publishing the new alert and retiring
+  // the old episode is one atomic transition, and it may only supersede A's
+  // live claim — freeing it is what let a second evaluator send again.
+  await saveAlert({ ...BASE_ALERT, lowerPrice: 700, upperPrice: 1300 });
+
+  // A second evaluator now sees the edited alert and must find it claimed.
+  let settledB = false;
+  const runB = startRun(1000).then((res) => { settledB = true; return res; });
+  await waitFor(
+    // Either B lost the claim (correct), or the edit freed it and B reached
+    // Expo — release the gate for both so the assertions report the real
+    // outcome instead of deadlocking behind the parked runner.
+    () => settledB || pushes.length >= 2,
+    'the second evaluator to either lose the claim or reach the Expo Push API',
+  );
+  gate.resolve();
+  expoGate = null;
+
+  const bodyB = await expectOk(await runB);
+  const bodyA = await expectOk(await runA);
+
+  assert.equal(pushes.length, 1, 'an edit must not hand a second runner the same send');
+  assert.equal(bodyB.sent, 0);
+  assert.equal(bodyB.contended, 1, 'the edited alert must still be claimed by the runner mid-send');
+  assert.equal(okTickets, 1, 'exactly one successful ticket for the whole interleave');
+  assert.equal(bodyA.sent, 1);
+  assert.equal(bodyA.superseded, 1, "A delivered for the episode the edit replaced, so it cannot disarm");
+
+  // The edit re-armed the alert, so the new interval notifies once — the
+  // superseded claim must not have wedged it.
+  const afterEdit = await runAt(1000);
+  assert.equal(afterEdit.body.sent, 1);
+  assert.equal(afterEdit.pushes.length, 1);
+});
+
+await test('a stale lease owner cannot clean up or commit after a takeover', async () => {
+  resetKv();
+  ticketStatus = 'ok';
+  await saveAlert(BASE_ALERT);
+
+  pushes = [];
+  okTickets = 0;
+
+  // A runner takes the claim and then stalls past its lease.
+  const stateKey = armStateKey(TOKEN, BASE_ALERT.cardNumber, BASE_ALERT.printing);
+  const stale = await claimAlertSend(stateKey);
+  assert.ok(stale, 'the first claim must win');
+  advanceKvClock(ALERT_CLAIM_LEASE_MS + 1);
+
+  // The next run takes the episode over and delivers it.
+  assert.equal((await expectOk(await startRun(1000))).sent, 1);
+  assert.equal(pushes.length, 1);
+  assert.equal(okTickets, 1);
+
+  // The stalled runner finally wakes up. Both of its cleanup paths are fenced
+  // by the owner it was handed, so neither can touch the episode that now
+  // belongs to somebody else.
+  await releaseAlertClaim(stateKey, stale);
+  assert.equal(await commitAlertClaim(stateKey, stale, Date.now(), 999), 'superseded');
+
+  const after = await runAt(1000);
+  assert.equal(after.body.sent, 0, 'a stale owner must not re-arm an alert that was just delivered');
+  assert.equal(after.pushes.length, 0);
+  assert.equal(okTickets, 1, 'exactly one successful ticket across the takeover');
+});
+
 await test('a whole-batch Expo failure releases the claim for the next run', async () => {
   resetKv();
   ticketStatus = 'ok';
@@ -286,7 +375,7 @@ await test('a crashed run only suppresses the alert until its lease expires', as
 
   // A runner that took the claim and then died: nothing ever released it.
   const stateKey = armStateKey(TOKEN, BASE_ALERT.cardNumber, BASE_ALERT.printing);
-  assert.equal(await claimAlertSend(stateKey), true);
+  assert.ok(await claimAlertSend(stateKey));
 
   const blocked = await runAt(1000);
   assert.equal(blocked.body.sent, 0);

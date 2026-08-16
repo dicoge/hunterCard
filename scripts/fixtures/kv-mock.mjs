@@ -4,7 +4,8 @@
  * credentials or any network access.
  *
  * Only the commands api/_lib/kv-storage.ts actually issues are implemented, plus
- * the one Lua script it EVALs (interpreted here by shape, not by running Lua).
+ * the Lua scripts it EVALs. Those are dispatched on the `-- @script <name>`
+ * marker in the source and interpreted here by shape, not by running Lua.
  */
 const hashes = new Map();
 const sets = new Map();
@@ -36,6 +37,18 @@ function liveString(key) {
   return entry;
 }
 
+/** Remaining lease in ms, using Redis' PTTL convention: -1 = no expiry. */
+function pttl(key) {
+  const entry = liveString(key);
+  if (!entry) return -2;
+  if (entry.expiresAt === null) return -1;
+  return entry.expiresAt - nowMs();
+}
+
+function writeString(key, value, px) {
+  strings.set(key, { value, expiresAt: typeof px === 'number' ? nowMs() + px : null });
+}
+
 export function resetKv() {
   hashes.clear();
   sets.clear();
@@ -55,6 +68,79 @@ export function kvSnapshot() {
     strings: Object.fromEntries([...strings].map(([k, v]) => [k, v.value])),
   };
 }
+
+/** Retire the claim of the episode being replaced — the SUPERSEDE_EPISODE
+ * fragment shared by the upsert and remove scripts. A live lease is only
+ * marked, never dropped, so its remaining TTL keeps a second sender out. */
+function supersedeEpisode(episodeKey) {
+  const claim = liveString(episodeKey)?.value ?? null;
+  if (claim === null) return;
+  const ttl = pttl(episodeKey);
+  if (ttl <= 0) {
+    strings.delete(episodeKey);
+  } else if (claim.slice(0, 2) === 'o:') {
+    writeString(episodeKey, `x:${claim.slice(2)}`, ttl);
+  }
+}
+
+const SCRIPTS = {
+  'remove-watchlist-card'([setKey, registryKey], [card, token]) {
+    set(setKey).delete(card);
+    if (set(setKey).size === 0) set(registryKey).delete(token);
+    return set(setKey).size;
+  },
+
+  'upsert-price-alert'([hashKey, registryKey, episodeKey], [field, alertJson, token]) {
+    // The real client auto-deserializes JSON on read, so store the parsed
+    // object the way hgetall would hand it back.
+    hash(hashKey).set(field, JSON.parse(alertJson));
+    set(registryKey).add(token);
+    supersedeEpisode(episodeKey);
+    return 1;
+  },
+
+  'remove-price-alert'([hashKey, registryKey, episodeKey], [field, token]) {
+    hash(hashKey).delete(field);
+    if (hash(hashKey).size === 0) set(registryKey).delete(token);
+    supersedeEpisode(episodeKey);
+    return hash(hashKey).size;
+  },
+
+  'claim-alert-send'([episodeKey], [owner, leaseMs]) {
+    if (liveString(episodeKey)) return 0;
+    writeString(episodeKey, `o:${owner}`, Number(leaseMs));
+    return 1;
+  },
+
+  'release-alert-claim'([episodeKey], [owner]) {
+    const claim = liveString(episodeKey)?.value ?? null;
+    if (claim === `o:${owner}` || claim === `x:${owner}`) {
+      return strings.delete(episodeKey) ? 1 : 0;
+    }
+    return 0;
+  },
+
+  'commit-alert-claim'([episodeKey], [owner, notifiedAt, price]) {
+    const claim = liveString(episodeKey)?.value ?? null;
+    if (claim === `o:${owner}`) {
+      writeString(episodeKey, `s:${notifiedAt}:${price}`, null);
+      return 1;
+    }
+    if (claim === `x:${owner}`) {
+      strings.delete(episodeKey);
+      return 2;
+    }
+    return 0;
+  },
+
+  'rearm-alert-episode'([episodeKey]) {
+    const claim = liveString(episodeKey)?.value ?? null;
+    if (claim !== null && claim.slice(0, 2) === 's:') {
+      return strings.delete(episodeKey) ? 1 : 0;
+    }
+    return 0;
+  },
+};
 
 export const kv = {
   async hset(key, patch) {
@@ -86,13 +172,12 @@ export const kv = {
   async smembers(key) {
     return [...set(key)];
   },
-  // SET with the NX / PX options the alert send claim relies on. The whole body
-  // runs synchronously, so — exactly like a real single-threaded Redis — two
-  // interleaved callers can never both observe the key as absent.
+  async mget(...keys) {
+    return keys.map((key) => liveString(key)?.value ?? null);
+  },
   async set(key, value, options = {}) {
     if (options.nx && liveString(key)) return null;
-    const expiresAt = typeof options.px === 'number' ? nowMs() + options.px : null;
-    strings.set(key, { value, expiresAt });
+    writeString(key, value, options.px);
     return 'OK';
   },
   async get(key) {
@@ -101,11 +186,14 @@ export const kv = {
   async del(key) {
     return strings.delete(key) ? 1 : 0;
   },
-  // REMOVE_PRICE_ALERT: HDEL the alert, drop the token from the registry when
-  // the hash is now empty, return the remaining length.
-  async eval(_script, [hashKey, registryKey], [field, token]) {
-    hash(hashKey).delete(field);
-    if (hash(hashKey).size === 0) set(registryKey).delete(token);
-    return hash(hashKey).size;
+  // Dispatch on the `-- @script <name>` marker kv-storage.ts tags every script
+  // with. Each body below runs synchronously, so — exactly like a real
+  // single-threaded Redis — no two interleaved callers can observe a partial
+  // episode transition.
+  async eval(script, keys, argv) {
+    const name = /--\s*@script\s+([\w-]+)/.exec(script)?.[1];
+    const run = name && SCRIPTS[name];
+    if (!run) throw new Error(`kv-mock: unknown Lua script${name ? ` "${name}"` : ''}`);
+    return run(keys, argv);
   },
 };
