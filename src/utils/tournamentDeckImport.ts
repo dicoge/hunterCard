@@ -17,12 +17,17 @@
 // parallel and a ¥148,000 signed parallel.
 //
 // So this module takes the only honest position available (issue §6):
-//   • when the source's token IS one of the card number's local printings, that
-//     exact printing is preserved;
+//   • a printing is preserved only when the source EXPLICITLY claims its token
+//     names one (`printingProven`) and that token identifies exactly one local
+//     printing. Matching alone is not proof — a grade can spell the same string
+//     as a printing token by coincidence, and promoting it would turn a grade
+//     into a priced physical printing (DIC-1036);
 //   • otherwise the slot keeps its exact cardNumber, zone and count but its
 //     printing is marked UNRESOLVED. It never borrows a sibling printing's price
 //     — the existing resolver returns NO_EXACT_PRICE for it — and it is never
 //     silently rewritten onto the cheapest or the most expensive version.
+// Every deck the shipped collectors produce therefore lands fully unresolved:
+// nothing sets `printingProven`, because Deck Log never proves a printing.
 // No same-name, same-number cross-version, highest-price, SEC/signed or
 // cross-printing fallback is used anywhere in this file.
 //
@@ -31,6 +36,7 @@
 // low-cost default, which would silently alter a published printing on reload.
 
 import type { DeckEntry, TournamentEvent, DeckCardRef } from '../types/tournament';
+import { duplicateSlotsWithinZone } from './tournamentReport';
 import {
   RULES,
   normalizeVersion,
@@ -120,7 +126,6 @@ export function evaluateImport(
   const cards = Array.isArray(deck.cards) ? deck.cards : [];
   if (cards.length === 0) return blocked('NO_CARDS', '卡表尚未取得，無法匯入');
 
-  const seen = new Set<string>();
   const totals: Record<DeckZone, number> = { oshi: 0, main: 0, yell: 0 };
 
   for (const ref of cards) {
@@ -133,10 +138,17 @@ export function evaluateImport(
     if (!isPositiveInt(ref.count)) {
       return blocked('BAD_COUNT', '卡表張數資料異常，無法匯入');
     }
-    const key = `${ref.zone}|${ref.cardNumber}|${normalizeVersion(ref.version ?? '')}`;
-    if (seen.has(key)) return blocked('DUPLICATE_SLOT', '卡表有重複項目，無法匯入');
-    seen.add(key);
     totals[ref.zone] += ref.count;
+  }
+
+  // A slot's identity is (zone, cardNumber) and nothing else. The rarity grade
+  // the source publishes alongside the number is not part of it, so two rows
+  // for one number inside one zone are a duplicate even when their grades read
+  // differently — that pair used to slip through and land as one silently
+  // doubled slot (DIC-1036). This is the collector's own revalidation rule,
+  // shared rather than restated so the runtime gate cannot drift from it again.
+  if (duplicateSlotsWithinZone(cards).length > 0) {
+    return blocked('DUPLICATE_SLOT', '卡表有重複項目，無法匯入');
   }
 
   const want = zoneTargets();
@@ -189,11 +201,17 @@ function unresolvedCard(entries: DeckCard[], sourceVersion: string | null): Deck
  * Resolve one source slot to a local card.
  *
  * Returns null only when the card NUMBER itself is unknown locally — the gate
- * rejects that case, so a null here never reaches a deck. When the source's
- * token matches exactly one of this card number's local printings that printing
- * is preserved; anything else (no token, a rarity grade the catalog does not
- * publish as a printing, or a token two entries both claim) yields the
- * unresolved-printing card rather than a substituted version.
+ * rejects that case, so a null here never reaches a deck.
+ *
+ * A printing is preserved only when the source EXPLICITLY claims its token names
+ * a collectible printing (`printingProven === true`) and that token identifies
+ * exactly one of this card number's local printings. A token alone is not proof:
+ * Deck Log publishes a rarity grade, and a grade that happens to spell the same
+ * string as a local printing token — `SR`, or a set-code token the yuyu-tei
+ * label produced — matches by coincidence, which would promote a grade into a
+ * priced physical printing (DIC-1036). Everything short of explicit proof keeps
+ * the exact cardNumber, zone and count and marks the printing unresolved rather
+ * than substituting a version.
  */
 export function resolveSlotCard(
   ref: DeckCardRef,
@@ -202,21 +220,27 @@ export function resolveSlotCard(
   const entries = index.get(ref.cardNumber);
   if (!entries || entries.length === 0) return null;
 
-  const wanted = normalizeVersion(ref.version ?? '');
-  if (wanted) {
-    const exact = entries.filter((e) => normalizeVersion(e.printing) === wanted);
-    if (exact.length === 1) return exact[0];
+  if (ref.printingProven === true) {
+    const wanted = normalizeVersion(ref.version ?? '');
+    if (wanted) {
+      const exact = entries.filter((e) => normalizeVersion(e.printing) === wanted);
+      if (exact.length === 1) return exact[0];
+    }
   }
   return unresolvedCard(entries, ref.version);
 }
 
-/** Add `qty` of `card` to a zone, combining with an existing slot for the same
- *  card. Two source slots collapse here only when they resolved to the SAME
- *  local card; the combined quantity is the sum, so no copy is ever lost. */
-function pushSlot(slots: DeckSlot[], card: DeckCard, qty: number): void {
-  const existing = slots.find((s) => s.card.id === card.id);
-  if (existing) existing.qty += qty;
-  else slots.push({ card, qty });
+/** Add `qty` of `card` to a zone, or refuse. The gate has already rejected two
+ *  rows for one cardNumber in one zone, so a collision here means two source
+ *  rows the report presented as distinct collapsed onto ONE local card. Summing
+ *  them would hide that behind a slot whose quantity still looks legal, which is
+ *  how a duplicate previously became invisible — so it fails closed instead. */
+function pushSlot(slots: DeckSlot[], card: DeckCard, qty: number): boolean {
+  if (slots.some((s) => s.card.id === card.id || s.card.cardNumber === card.cardNumber)) {
+    return false;
+  }
+  slots.push({ card, qty });
+  return true;
 }
 
 /** Name built only from values the source published: event, then block, rank and
@@ -275,7 +299,7 @@ export function buildImportedDeck(
   for (const ref of deck.cards) {
     const card = resolveSlotCard(ref, index);
     if (!card) return null;
-    pushSlot(zones[ref.zone], card, ref.count);
+    if (!pushSlot(zones[ref.zone], card, ref.count)) return null;
   }
   for (const zone of ZONES) {
     unresolvedPrintings += zones[zone].filter((s) => s.card.unresolvedPrinting).length;

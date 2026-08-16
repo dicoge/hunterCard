@@ -196,7 +196,8 @@ const decoyCatalog = buildCatalogIndex([
 
 await test('a source-proven printing is preserved exactly', () => {
   const card = resolveSlotCard(
-    { zone: 'main', cardNumber: 'hDX-001', version: 'PARALLEL', count: 1 }, decoyCatalog,
+    { zone: 'main', cardNumber: 'hDX-001', version: 'PARALLEL', count: 1, printingProven: true },
+    decoyCatalog,
   );
   assert.equal(card.printing, 'PARALLEL', 'the proven printing must be kept');
   assert.ok(!card.unresolvedPrinting, 'a proven printing is not flagged unresolved');
@@ -204,16 +205,104 @@ await test('a source-proven printing is preserved exactly', () => {
 
 await test('a proven printing matches case / width-insensitively but never approximately', () => {
   const exact = resolveSlotCard(
-    { zone: 'main', cardNumber: 'hDX-001', version: ' parallel ', count: 1 }, decoyCatalog,
+    { zone: 'main', cardNumber: 'hDX-001', version: ' parallel ', count: 1, printingProven: true },
+    decoyCatalog,
   );
   assert.equal(exact.printing, 'PARALLEL', 'normalization folds case and padding only');
 
   // "PARALLEL/SIGN" is a DIFFERENT printing from "PARALLEL" — a prefix or
   // substring relationship must never be treated as a match.
   const sign = resolveSlotCard(
-    { zone: 'main', cardNumber: 'hDX-001', version: 'PARALLEL/SIGN', count: 1 }, decoyCatalog,
+    {
+      zone: 'main', cardNumber: 'hDX-001', version: 'PARALLEL/SIGN', count: 1, printingProven: true,
+    },
+    decoyCatalog,
   );
   assert.equal(sign.printing, 'PARALLEL/SIGN');
+});
+
+// The DIC-1036 promotion hole: matching a local printing token is a COLLISION,
+// not proof. Deck Log grades the card number (OSR/RR/SR/…) and never states a
+// physical printing, so without an explicit claim the token may not select one
+// — otherwise a grade would silently acquire a real printing's price.
+await test('a token that matches a local printing is NOT promoted without an explicit claim', () => {
+  for (const version of ['PARALLEL', ' parallel ', 'PARALLEL/SIGN', 'BASE']) {
+    const card = resolveSlotCard(
+      { zone: 'main', cardNumber: 'hDX-001', version, count: 1 }, decoyCatalog,
+    );
+    assert.equal(
+      card.printing, UNRESOLVED_PRINTING,
+      `an unclaimed token (${version}) must never select a printing`,
+    );
+    assert.equal(card.unresolvedPrinting, true);
+    assert.equal(card.sourceVersion, version.trim(), 'the token survives as provenance only');
+  }
+});
+
+await test('only a strictly-true proof claim unlocks the printing', () => {
+  // Anything merely truthy — a stringified flag, a 1 — is data of the wrong
+  // shape, not a claim, and must fail closed exactly like an absent key.
+  for (const printingProven of [false, 'true', 1, 'yes', null, undefined, {}]) {
+    const card = resolveSlotCard(
+      { zone: 'main', cardNumber: 'hDX-001', version: 'PARALLEL', count: 1, printingProven },
+      decoyCatalog,
+    );
+    assert.equal(
+      card.printing, UNRESOLVED_PRINTING,
+      `printingProven=${JSON.stringify(printingProven)} must not count as proof`,
+    );
+  }
+});
+
+// A grade and a printing token can collide outright: printing identity keeps any
+// parenthetical the yuyu-tei label prints verbatim, so a listing named
+// `カード名(SR)` yields the token "SR" — the same string Deck Log uses as a grade.
+await test('a rarity grade equal to a local printing token stays unresolved', () => {
+  const collidingCatalog = buildCatalogIndex([
+    {
+      id: 'hDX-002#BASE', cardNumber: 'hDX-002', name: 'collide', printing: 'BASE',
+      printingLabel: 'collide', series: 'hDX', cardTypeJp: 'ホロメン',
+    },
+    {
+      id: 'hDX-002#SR', cardNumber: 'hDX-002', name: 'collide', printing: 'SR',
+      printingLabel: 'collide(SR)', series: 'hDX', cardTypeJp: 'ホロメン',
+    },
+  ]);
+  const graded = resolveSlotCard(
+    { zone: 'main', cardNumber: 'hDX-002', version: 'SR', count: 1 }, collidingCatalog,
+  );
+  assert.equal(
+    graded.printing, UNRESOLVED_PRINTING,
+    'the grade "SR" must not be promoted onto the printing that spells "SR"',
+  );
+  assert.equal(graded.id, 'hDX-002#UNRESOLVED', 'and it may not borrow that printing’s identity');
+
+  // The same token, explicitly claimed as a printing, is honoured — the rule
+  // discriminates on the claim, not on the string.
+  const claimed = resolveSlotCard(
+    { zone: 'main', cardNumber: 'hDX-002', version: 'SR', count: 1, printingProven: true },
+    collidingCatalog,
+  );
+  assert.equal(claimed.printing, 'SR');
+  assert.equal(claimed.id, 'hDX-002#SR');
+});
+
+await test('the shipped reports claim no printing, so every real slot stays unresolved', () => {
+  for (const deck of [DUKHN, H2]) {
+    for (const ref of deck.cards) {
+      assert.equal(
+        ref.printingProven, undefined,
+        `${deck.decklogCode} ${ref.cardNumber}: a shipped Deck Log row may not claim a printing`,
+      );
+    }
+    const draft = importOf(deck);
+    const slots = [...draft.oshi, ...draft.main, ...draft.yell];
+    assert.equal(
+      draft.unresolvedPrintings, slots.length,
+      `${deck.decklogCode}: every slot of a Deck Log deck is printing-unresolved`,
+    );
+    for (const s of slots) assert.equal(s.card.printing, UNRESOLVED_PRINTING);
+  }
 });
 
 await test('an unknown version picks NEITHER the cheapest nor the dearest decoy', () => {
@@ -317,6 +406,106 @@ await test('fail-closed: a duplicate slot is rejected rather than merged', () =>
   assert.equal(gate.importable, false);
   assert.equal(gate.code, 'DUPLICATE_SLOT');
   assert.equal(gate.reason, '卡表有重複項目，無法匯入');
+});
+
+// ── 6b. DIC-1036: a slot's identity is (zone, cardNumber) and NOTHING else ───
+// The rarity grade used to be part of the duplicate key, so one card number
+// could occupy two rows of one zone as long as the grades read differently.
+// Totals still summed to 1/50/20, the gate opened, and the two rows collapsed
+// into a single silently doubled slot. Each case below splits a REAL slot of a
+// REAL shipped deck, leaving 1/50/20 exactly intact, so nothing but the
+// duplicate rule itself can be what rejects it.
+const splitRealSlot = (deck, zone, versions) => {
+  const cards = deck.cards.map((c) => ({ ...c }));
+  const i = cards.findIndex((c) => c.zone === zone && c.count > 1);
+  assert.notEqual(i, -1, `precondition: ${deck.decklogCode} has a splittable ${zone} slot`);
+  const base = cards[i];
+  cards.splice(
+    i, 1,
+    { ...base, count: 1, version: versions[0] },
+    { ...base, count: base.count - 1, version: versions[1] },
+  );
+  return { ...deck, cards, cardNumber: base.cardNumber };
+};
+
+for (const deck of [DUKHN, H2]) {
+  for (const zone of ['main', 'yell']) {
+    for (const versions of [['C', 'SR'], ['SR', 'SR'], [null, 'OSR'], ['sr', 'SR']]) {
+      const label = versions.map((v) => JSON.stringify(v)).join(' vs ');
+      await test(
+        `fail-closed: ${deck.decklogCode} ${zone} duplicate cardNumber (${label}) is rejected`,
+        () => {
+          const mutated = splitRealSlot(deck, zone, versions);
+
+          // The mutation must be invisible to every OTHER gate, or this test
+          // would pass for the wrong reason.
+          const totals = { oshi: 0, main: 0, yell: 0 };
+          for (const c of mutated.cards) totals[c.zone] += c.count;
+          assert.deepEqual(totals, { oshi: 1, main: 50, yell: 20 }, 'totals stay exactly 1/50/20');
+          assert.equal(mutated.cardsVerified, true, 'the deck is still flagged verified');
+
+          const gate = evaluateImport(mutated, catalog);
+          assert.equal(gate.importable, false, 'differing grades may not unlock a duplicate');
+          assert.equal(gate.code, 'DUPLICATE_SLOT');
+          assert.equal(gate.reason, '卡表有重複項目，無法匯入');
+
+          assert.equal(
+            buildImportedDeck(augustEvent, mutated, catalog, [], IMPORTED_AT), null,
+            'and no draft is built — the two rows are never merged into one slot',
+          );
+        },
+      );
+    }
+  }
+
+  await test(`fail-closed: ${deck.decklogCode} repeating the oshi is rejected`, () => {
+    const oshi = deck.cards.find((c) => c.zone === 'oshi');
+    const mutated = {
+      ...deck,
+      cards: [...deck.cards, { ...oshi, count: 1, version: 'OSR-ALT' }],
+    };
+    const gate = evaluateImport(mutated, catalog);
+    assert.equal(gate.importable, false);
+    assert.equal(gate.code, 'DUPLICATE_SLOT');
+    assert.equal(
+      buildImportedDeck(augustEvent, mutated, catalog, [], IMPORTED_AT), null,
+      'a second oshi row can never reach the planner',
+    );
+  });
+}
+
+// The rule is scoped to a zone, so the fix must not start rejecting a card
+// number that legitimately appears in two different zones.
+await test('one card number in two different zones is still importable', () => {
+  const deck = syntheticDeck();
+  deck.cards = deck.cards.map((c) => (
+    c.zone === 'yell' && c.cardNumber === 'hYELL-0' ? { ...c, cardNumber: 'hMAIN-0' } : c
+  ));
+  const gate = evaluateImport(deck, fullIndex);
+  assert.equal(gate.importable, true, 'main and yell are independent slot namespaces');
+  const draft = buildImportedDeck(augustEvent, deck, fullIndex, [], IMPORTED_AT);
+  assert.ok(draft, 'the deck still builds');
+  assert.equal(draft.main.filter((s) => s.card.cardNumber === 'hMAIN-0').length, 1);
+  assert.equal(draft.yell.filter((s) => s.card.cardNumber === 'hMAIN-0').length, 1);
+});
+
+// Last line of defence: even if two rows the gate accepted as distinct card
+// numbers resolved onto ONE local card, their quantities may not be summed into
+// a slot whose count still looks legal.
+await test('two rows resolving to one local card refuse to merge', () => {
+  const shared = {
+    id: 'hMAIN-0#BASE', cardNumber: 'hMAIN-0', name: 'shared', printing: 'BASE',
+    printingLabel: '', series: 's', cardTypeJp: 'ホロメン',
+  };
+  const collidingIndex = new Map(fullIndex);
+  collidingIndex.set('hMAIN-1', [shared]); // hMAIN-1 now resolves to hMAIN-0's card
+
+  const deck = syntheticDeck();
+  assert.equal(evaluateImport(deck, collidingIndex).importable, true, 'the gate sees 71 numbers');
+  assert.equal(
+    buildImportedDeck(augustEvent, deck, collidingIndex, [], IMPORTED_AT), null,
+    'the collision fails closed instead of producing a doubled slot',
+  );
 });
 
 await test('fail-closed: totals that are not 1 / 50 / 20 are rejected with the counts', () => {

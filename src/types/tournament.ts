@@ -35,6 +35,14 @@ export interface DeckCardRef {
   cardNumber: string;
   version: string | null;
   count: number;
+  // Whether `version` names an exact COLLECTIBLE PRINTING rather than a rarity
+  // grade. Deck Log publishes `rare` (OSR/RR/SR/C/…), which grades the card
+  // number as a whole and never states which physical printing was played, so
+  // no collector sets this and the key stays absent from every month file. A
+  // consumer may preserve a printing only when this is strictly true: a grade
+  // that happens to spell the same string as a local printing token is a
+  // collision, not proof (DIC-1036).
+  printingProven?: boolean;
 }
 
 // How much of a deck's data we actually observed from the source.
