@@ -122,6 +122,9 @@ jobs:
       - name: Verify tournament collector failure preservation (DIC-979)
         run: npm run test:tournament-collector
 
+      - name: Verify deterministic tournament deck analytics (DIC-1032)
+        run: npm run test:tournament-analytics
+
       - name: Verify deck editor price adapter fail-closed (DIC-952)
         run: npm run test:deck-price-adapter
 

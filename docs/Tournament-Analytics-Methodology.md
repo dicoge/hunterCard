@@ -20,9 +20,20 @@
 zone|exact cardNumber|source-proven version
 ```
 
-若 source 沒有 version，使用 `NO_VERSION` 作為明確占位。`oshi` / `main` / `yell` 三區不合併；同 cardNumber 的不同 version 不合併；不使用卡名、同號 fallback、跨版本 fallback 或價格 fallback。
+`oshi` / `main` / `yell` 三區不合併；同 cardNumber 的不同 **source-proven** version 不合併；不使用卡名、同號 fallback、跨版本 fallback 或價格 fallback。
 
-向量保留數量，例如 `main|hBP07-063|C: 4`。Feature dictionary 以 zone、cardNumber、version 穩定排序。
+#### Version 必須 source-proven（DIC-1042）
+
+只有 source 明確證明「這是哪一個印刷版本」時，version 才會進入 feature identity。判定條件（strict）：
+
+- `versionProven === true`，或
+- `versionSource` 屬於 allowlist：`printingId`、`catalogPrinting`。
+
+其餘一律使用 `NO_VERSION` 作為明確占位。
+
+**Deck Log 的 `rare` 欄位是 rarity label（U / C / R / RR / S / SR / OSR / P / SY），不是印刷版本證明**，因此不得作為 identity。實際資料中 `hBP01-108` 在一副牌顯示 `U`、另一副顯示 `P`；若把 rarity 當成 version，同一張卡會被拆成兩個 feature，使共用數量、weighted Jaccard、clusters 及所有 association 全部失真。被丟棄的 label 不會消失，而是保留在該 feature 的 `unprovenVersionLabels`，並在 artifact `warnings` 中明確列出。
+
+向量保留數量，例如 `main|hBP07-063|NO_VERSION: 4`。Feature dictionary 以 zone、cardNumber、version 穩定排序，`index` 為 artifact-local。
 
 ### Yell / basic resources 與 zone weights
 
@@ -104,7 +115,13 @@ public/data/tournaments/analytics/index.json
 public/data/tournaments/analytics/YYYY-MM.json
 ```
 
-每個 month artifact 包含：input deck IDs、source report hash、generatedAt、algorithm/version/config、sampleSize、excludedIncompleteDecks、warnings、vectors/schema、similarity matrix、clusters、associations。
+每個 month artifact 包含：`month`、input deck IDs、source report hash、generatedAt、algorithm/version/config、sampleSize、excludedIncompleteDecks、warnings、vectors/schema、similarity matrix、clusters、associations。
+
+#### Month artifact 是獨立重算，不是全域過濾（DIC-1042）
+
+每個 `YYYY-MM.json` 都是「只用該月牌組」重跑整條 pipeline 的結果：feature dictionary、similarity matrix、clustering、cluster representative / `coreCards` / presence / averageCount / `differentiatingCards`、association denominators 全部以該月 subset 重新計算。
+
+先做全域分析再過濾 cluster members 是錯的：全域 cluster 可能跨月合併，過濾後只留下該月成員，卻沿用全域的 representative 與 core cards——月度 singleton 會報出別月的 archetype、別月才有的卡，以及大於 sampleSize 的 presence。因此 month artifact 的 feature `index` 是 artifact-local，不同月之間不可互相對照 index。
 
 ### 目前真實資料限制
 

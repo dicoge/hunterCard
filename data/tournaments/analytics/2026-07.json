@@ -64,6 +64,7 @@
       "month": "2026-07"
     }
   ],
+  "month": "2026-07",
   "sampleSize": 0,
   "schemaVersion": 1,
   "similarity": {
@@ -75,7 +76,7 @@
   "vectors": {
     "deckVectors": [],
     "featureDictionary": [],
-    "schema": "sparse count vector: feature key = zone|exact cardNumber|source-proven version or NO_VERSION; quantities preserved; zones and versions are never conflated."
+    "schema": "sparse count vector: feature key = zone|exact cardNumber|source-proven version or NO_VERSION; a version enters identity only when the card carries explicit printing provenance (versionProven===true or versionSource in [printingId, catalogPrinting]) — a published rarity label is not proof and maps to NO_VERSION, with the discarded label kept in unprovenVersionLabels. Quantities preserved; zones and versions are never conflated. Feature indexes are artifact-local: each month artifact is analyzed independently from its own deck subset."
   },
   "warnings": [
     "N=0: no cardsVerified:true decks; quantitative outputs are empty.",

@@ -53,9 +53,27 @@ export function round(value, digits = DEFAULT_CONFIG.roundingDigits) {
   return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
+// A `version` string on a deck card is NOT self-proving. Deck Log publishes a
+// rarity label (`rare`: U/C/R/OSR/P…) in that slot, and rarity does not identify
+// a collectible printing — the same hBP01-108 shows up as `U` in one deck and
+// `P` in another. Admitting those into feature identity splits one card into
+// several features and corrupts similarity, clusters and every association
+// derived from them (DIC-1042). So identity uses a version only when the source
+// explicitly proves a printing; everything else is an honest NO_VERSION.
+export const PROVEN_VERSION_SOURCES = Object.freeze(['printingId', 'catalogPrinting']);
+
+export function provenVersion(card) {
+  const version = card.version == null ? '' : String(card.version).trim();
+  if (!version) return null;
+  // Strict `=== true` / allowlist membership: a truthy-but-unproven marker such
+  // as the string 'false' or an unknown source name must never pass the gate.
+  if (card.versionProven === true) return version;
+  if (typeof card.versionSource === 'string' && PROVEN_VERSION_SOURCES.includes(card.versionSource)) return version;
+  return null;
+}
+
 export function featureKey(card) {
-  const version = card.version == null || card.version === '' ? 'NO_VERSION' : String(card.version);
-  return `${card.zone}|${card.cardNumber}|${version}`;
+  return `${card.zone}|${card.cardNumber}|${provenVersion(card) ?? 'NO_VERSION'}`;
 }
 
 export function parseFeatureKey(key) {
@@ -141,6 +159,7 @@ export function extractDecks(monthlyReports) {
 
 export function buildVectors(decks, config = DEFAULT_CONFIG) {
   const featureSet = new Set();
+  const unprovenVersionLabels = new Map();
   const vectors = decks.map((deck) => {
     const entries = new Map();
     for (const card of deck.cards) {
@@ -148,17 +167,27 @@ export function buildVectors(decks, config = DEFAULT_CONFIG) {
       const count = Number(card.count);
       if (!Number.isFinite(count) || count <= 0) continue;
       const key = featureKey(card);
+      const rawVersion = card.version == null ? '' : String(card.version).trim();
+      if (rawVersion && provenVersion(card) == null) {
+        if (!unprovenVersionLabels.has(key)) unprovenVersionLabels.set(key, new Set());
+        unprovenVersionLabels.get(key).add(rawVersion);
+      }
       entries.set(key, (entries.get(key) ?? 0) + count);
       featureSet.add(key);
     }
     return { deckId: deck.deckId, entries };
   });
-  const featureDictionary = [...featureSet].sort(featureComparator).map((key, index) => ({
-    index,
-    key,
-    ...parseFeatureKey(key),
-    weight: config.zoneWeights[parseFeatureKey(key).zone] ?? 1,
-  }));
+  const featureDictionary = [...featureSet].sort(featureComparator).map((key, index) => {
+    const parsed = parseFeatureKey(key);
+    return {
+      index,
+      key,
+      ...parsed,
+      versionProven: parsed.version != null,
+      unprovenVersionLabels: [...(unprovenVersionLabels.get(key) ?? [])].sort(),
+      weight: config.zoneWeights[parsed.zone] ?? 1,
+    };
+  });
   const featureIndex = new Map(featureDictionary.map((feature) => [feature.key, feature.index]));
   const deckVectors = vectors.map((vector) => ({
     deckId: vector.deckId,
@@ -356,15 +385,50 @@ export function analyzeReports(monthlyReports, options = {}) {
   const config = mergeConfig(DEFAULT_CONFIG, options.config ?? {});
   const generatedAt = options.generatedAt ?? deterministicGeneratedAt(monthlyReports);
   const { decks, excludedIncompleteDecks } = extractDecks(monthlyReports);
+  return analyzeDeckSet(decks, {
+    config,
+    generatedAt,
+    month: null,
+    inputReports: monthlyReports,
+    excludedIncompleteDecks,
+  });
+}
+
+// A month artifact is a full analysis of that month's decks, never a filtered
+// view of the global one. Filtering kept global cluster summaries — so a
+// month-scoped singleton could report another month's representative archetype,
+// core cards and presence counts (DIC-1042). Every summary below is therefore
+// recomputed from the month subset.
+export function analyzeMonth(monthlyReports, month, options = {}) {
+  const config = mergeConfig(DEFAULT_CONFIG, options.config ?? {});
+  const generatedAt = options.generatedAt ?? deterministicGeneratedAt(monthlyReports);
+  const { decks, excludedIncompleteDecks } = extractDecks(monthlyReports);
+  return analyzeDeckSet(
+    decks.filter((deck) => deck.month === month),
+    {
+      config,
+      generatedAt,
+      month,
+      inputReports: monthlyReports.filter((entry) => (entry.report.month ?? entry.fileName.slice(0, -5)) === month),
+      excludedIncompleteDecks: excludedIncompleteDecks.filter((deck) => deck.month === month),
+    },
+  );
+}
+
+function analyzeDeckSet(decks, { config, generatedAt, month, inputReports, excludedIncompleteDecks }) {
   const { featureDictionary, deckVectors } = buildVectors(decks, config);
   const similarity = buildSimilarity(decks, deckVectors, config);
   const clusters = buildClusters(decks, deckVectors, similarity, config);
   const associations = buildAssociations(decks, deckVectors, config);
-  const warnings = sampleWarnings(decks.length, excludedIncompleteDecks.length);
+  const warnings = [
+    ...sampleWarnings(decks.length, excludedIncompleteDecks.length),
+    ...unprovenVersionWarnings(featureDictionary),
+  ];
 
   return {
     schemaVersion: ANALYTICS_SCHEMA_VERSION,
     generatedAt,
+    month: month ?? null,
     algorithm: {
       name: ANALYTICS_ALGORITHM_VERSION,
       config,
@@ -375,7 +439,7 @@ export function analyzeReports(monthlyReports, options = {}) {
         lift: 'support(A,B) / (support(A) * support(B))',
       },
     },
-    inputReports: monthlyReports.map((entry) => ({
+    inputReports: inputReports.map((entry) => ({
       file: entry.fileName,
       month: entry.report.month ?? entry.fileName.slice(0, -5),
       contentSha256: entry.hash,
@@ -398,55 +462,18 @@ export function analyzeReports(monthlyReports, options = {}) {
       archetypeLabel: deck.archetypeLabel,
     })),
     vectors: {
-      schema: 'sparse count vector: feature key = zone|exact cardNumber|source-proven version or NO_VERSION; quantities preserved; zones and versions are never conflated.',
+      schema:
+        'sparse count vector: feature key = zone|exact cardNumber|source-proven version or NO_VERSION; ' +
+        'a version enters identity only when the card carries explicit printing provenance (versionProven===true or ' +
+        `versionSource in [${PROVEN_VERSION_SOURCES.join(', ')}]) — a published rarity label is not proof and maps to ` +
+        'NO_VERSION, with the discarded label kept in unprovenVersionLabels. Quantities preserved; zones and versions are never conflated. ' +
+        'Feature indexes are artifact-local: each month artifact is analyzed independently from its own deck subset.',
       featureDictionary,
       deckVectors,
     },
     similarity,
     clusters,
     associations,
-  };
-}
-
-export function monthAnalytics(fullAnalytics, month) {
-  const deckIdSet = new Set(fullAnalytics.decks.filter((deck) => deck.month === month).map((deck) => deck.deckId));
-  const monthExcluded = fullAnalytics.excludedIncompleteDecks.filter((deck) => deck.month === month);
-  const warnings = sampleWarnings(deckIdSet.size, monthExcluded.length);
-  const deckIndexes = fullAnalytics.similarity.deckIds
-    .map((deckId, index) => ({ deckId, index }))
-    .filter((item) => deckIdSet.has(item.deckId));
-  const usedFeatureKeys = new Set();
-  for (const vector of fullAnalytics.vectors.deckVectors.filter((vector) => deckIdSet.has(vector.deckId))) {
-    for (const feature of vector.features) usedFeatureKeys.add(feature.key);
-  }
-  const featureDictionary = fullAnalytics.vectors.featureDictionary.filter((feature) => usedFeatureKeys.has(feature.key));
-  return {
-    ...fullAnalytics,
-    inputReports: fullAnalytics.inputReports.filter((report) => report.month === month),
-    inputDeckIds: [...deckIdSet],
-    sampleSize: deckIdSet.size,
-    excludedIncompleteDecks: monthExcluded,
-    warnings,
-    decks: fullAnalytics.decks.filter((deck) => deck.month === month),
-    vectors: {
-      ...fullAnalytics.vectors,
-      featureDictionary,
-      deckVectors: fullAnalytics.vectors.deckVectors.filter((vector) => deckIdSet.has(vector.deckId)),
-    },
-    similarity: {
-      ...fullAnalytics.similarity,
-      deckIds: deckIndexes.map((item) => item.deckId),
-      matrix: deckIndexes.map((row) => deckIndexes.map((col) => fullAnalytics.similarity.matrix[row.index][col.index])),
-    },
-    clusters: fullAnalytics.clusters
-      .map((cluster) => ({ ...cluster, members: cluster.members.filter((deckId) => deckIdSet.has(deckId)) }))
-      .filter((cluster) => cluster.members.length > 0)
-      .map((cluster, index) => ({ ...cluster, clusterId: `cluster-${String(index + 1).padStart(3, '0')}`, sampleCount: cluster.members.length })),
-    associations: buildAssociations(
-      fullAnalytics.decks.filter((deck) => deck.month === month).map((deck) => ({ deckId: deck.deckId })),
-      fullAnalytics.vectors.deckVectors.filter((vector) => deckIdSet.has(vector.deckId)),
-      fullAnalytics.algorithm.config,
-    ),
   };
 }
 
@@ -459,6 +486,18 @@ function sampleWarnings(sampleSize, excludedCount) {
   return warnings;
 }
 
+function unprovenVersionWarnings(featureDictionary) {
+  const labels = new Set();
+  for (const feature of featureDictionary) {
+    for (const label of feature.unprovenVersionLabels) labels.add(label);
+  }
+  if (labels.size === 0) return [];
+  return [
+    `Unproven version label(s) ${[...labels].sort().join(', ')} were NOT used as feature identity; ` +
+      'the source published a rarity label rather than a proven printing, so those cards use NO_VERSION.',
+  ];
+}
+
 export function analyticsIndex(monthArtifacts, generatedAt) {
   return {
     schemaVersion: ANALYTICS_SCHEMA_VERSION,
@@ -466,7 +505,7 @@ export function analyticsIndex(monthArtifacts, generatedAt) {
     algorithmVersion: ANALYTICS_ALGORITHM_VERSION,
     months: monthArtifacts
       .map((artifact) => ({
-        month: artifact.inputReports[0]?.month ?? null,
+        month: artifact.month ?? artifact.inputReports[0]?.month ?? null,
         sampleSize: artifact.sampleSize,
         inputDeckIds: artifact.inputDeckIds,
         warnings: artifact.warnings,

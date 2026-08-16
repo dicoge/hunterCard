@@ -4,9 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   analyticsIndex,
+  analyzeMonth,
   analyzeReports,
   loadMonthlyReports,
-  monthAnalytics,
   stableStringify,
 } from './tournament-analytics-core.mjs';
 
@@ -33,14 +33,14 @@ if (minSupport != null) config.association = { minSupportCount: Number(minSuppor
 const reports = loadMonthlyReports(tournamentsDir);
 const full = analyzeReports(reports, { generatedAt: generatedAt ?? undefined, config });
 const months = [...new Set(reports.map((entry) => entry.report.month ?? entry.fileName.slice(0, -5)))].sort();
-const monthArtifacts = months.map((month) => monthAnalytics(full, month));
+const monthArtifacts = months.map((month) => analyzeMonth(reports, month, { generatedAt: full.generatedAt, config }));
 const index = analyticsIndex(monthArtifacts, full.generatedAt);
 
 for (const outDir of outDirs) {
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, 'index.json'), stableStringify(index));
   for (const artifact of monthArtifacts) {
-    const month = artifact.inputReports[0]?.month;
+    const month = artifact.month;
     if (month) fs.writeFileSync(path.join(outDir, `${month}.json`), stableStringify(artifact));
   }
 }

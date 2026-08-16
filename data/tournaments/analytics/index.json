@@ -10,7 +10,8 @@
       "month": "2026-08",
       "sampleSize": 2,
       "warnings": [
-        "N=2: exploratory pipeline proof only; not statistically representative."
+        "N=2: exploratory pipeline proof only; not statistically representative.",
+        "Unproven version label(s) C, OSR, P, R, RR, S, SR, SY, U were NOT used as feature identity; the source published a rarity label rather than a proven printing, so those cards use NO_VERSION."
       ]
     },
     {
