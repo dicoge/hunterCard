@@ -1,0 +1,192 @@
+name: DIC-1022 Vercel Vision-Provider Env Provision
+
+# Temporary, auditable, manual-dispatch hand tool (DIC-1022, platform-only
+# remediation). Mirrors the dic910-vercel-setup.yml pattern:
+#   - resolve the target Vercel project by well-known name
+#   - report existing env var NAMES/TARGETS only (never values)
+#   - set OPENROUTER_API_KEY on Production + Preview from the same-named
+#     repo secret (never echoed)
+#   - find the existing preview deployment for PR #112 exact head
+#     (ef35321fa97d) and force a fresh redeploy so the key is baked in
+#   - report the new deployment id/url and the verified git sha
+#
+# Required repo secrets: VERCEL_TOKEN, VERCEL_ORG_ID, OPENROUTER_API_KEY.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  provision:
+    name: Provision OPENROUTER_API_KEY + redeploy PR head
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_PROJECT_NAME: holocard-hunter
+      EXPECTED_HEAD: ef35321fa97d2186d73b7d71da9f0347d9b3224d
+    steps:
+      - name: Confirm target Vercel project
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          resp=$(curl -sS -w '\n%{http_code}' \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")
+          code=$(echo "$resp" | tail -n1)
+          body=$(echo "$resp" | sed '$d')
+          echo "HTTP status: $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Could not read Vercel project '${VERCEL_PROJECT_NAME}' (status $code). Aborting before any writes."
+            exit 1
+          fi
+          id=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
+          echo "Resolved project id: $id"
+          echo "PROJECT_ID=$id" >> "$GITHUB_ENV"
+
+      - name: Inspect existing env names/targets (no values)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+        run: |
+          set -uo pipefail
+          curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+          | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const keys = {};
+              for (const e of (d.envs||[])) {
+                keys[e.key] = keys[e.key] || new Set();
+                (e.target||[]).forEach(t => keys[e.key].add(t));
+              }
+              for (const k of Object.keys(keys).sort()) {
+                console.log(`${k} -> [${Array.from(keys[k]).join(",")}]`);
+              }
+              console.log(`total envs: ${(d.envs||[]).length}`);
+            '
+
+      - name: Set OPENROUTER_API_KEY on Production + Preview
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          ORK: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          set -euo pipefail
+          key="OPENROUTER_API_KEY"
+          value="$ORK"
+          # idempotent: drop any existing production+preview entries first
+          existing=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
+          ids=$(echo "$existing" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            (d.envs||[]).filter(e => e.key === process.argv[1]).map(e => e.id).join("\n")
+          ' "$key" 2>/dev/null || true)
+          for id in $ids; do
+            [ -z "$id" ] && continue
+            curl -sS -o /dev/null -X DELETE --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v9/projects/${PROJECT_ID}/env/${id}?teamId=${VERCEL_ORG_ID}"
+          done
+          code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-raw "$(node -e '
+              const key = process.argv[1];
+              const value = process.argv[2];
+              console.log(JSON.stringify({
+                key, value, type: "encrypted",
+                target: ["production", "preview"],
+              }));
+            ' "$key" "$value")" \
+            "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
+          echo "Set OPENROUTER_API_KEY -> HTTP $code"
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Failed to set OPENROUTER_API_KEY (status $code)"
+            cat /tmp/resp.json
+            exit 1
+          fi
+          # verify it now resolves for production+preview (names only)
+          curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+          | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const matches = (d.envs||[]).filter(e => e.key === "OPENROUTER_API_KEY");
+              if (matches.length === 0) { console.error("OPENROUTER_API_KEY still missing"); process.exit(1); }
+              for (const m of matches) console.log(`present: OPENROUTER_API_KEY (target=${(m.target||[]).join(",")})`);
+            '
+
+      - name: Find PR #112 preview deployment and verify exact head
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          EXPECTED_HEAD: ${{ env.EXPECTED_HEAD }}
+        run: |
+          set -euo pipefail
+          curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&target=preview&limit=20&teamId=${VERCEL_ORG_ID}" \
+          | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const expected = process.argv[1];
+              const wantedBranch = "fix/dic-1019-openrouter-provider-fallback";
+              const matches = (d.deployments||[]).filter(dep => {
+                const git = dep.gitSource || dep.meta || {};
+                const sha = dep.gitSource && dep.gitSource.sha
+                  ? dep.gitSource.sha
+                  : (dep.meta && (dep.meta.githubCommitSha || dep.meta["github.commit.sha"]) || "");
+                const branch = dep.gitSource && dep.gitSource.ref
+                  ? dep.gitSource.ref
+                  : (dep.meta && (dep.meta.githubCommitRef || dep.meta["github.commit.ref"]) || "");
+                return String(sha).startsWith(expected.slice(0,8)) || branch === wantedBranch;
+              });
+              if (matches.length === 0) {
+                console.error("No preview deployment found for PR head " + expected);
+                process.exit(1);
+              }
+              const pick = matches[0];
+              const sha = pick.gitSource && pick.gitSource.sha
+                ? pick.gitSource.sha
+                : (pick.meta && (pick.meta.githubCommitSha || pick.meta["github.commit.sha"]) || "");
+              console.log("preview deployment uid: " + pick.uid);
+              console.log("preview deployment url: " + (pick.url || ""));
+              console.log("preview git sha: " + sha);
+              console.log("preview state: " + pick.state);
+              if (!String(sha).startsWith(process.argv[1].slice(0,12))) {
+                console.error("HEAD MISMATCH: found " + sha);
+                process.exit(1);
+              }
+              console.log("DEPLOY_UID=" + pick.uid);
+              console.log("DEPLOY_URL=" + (pick.url || ""));
+              require("fs").writeFileSync(process.env.GITHUB_ENV, "DEPLOY_UID=" + pick.uid + "\nDEPLOY_URL=" + (pick.url || "") + "\n", {flag:"a"});
+            ' "$EXPECTED_HEAD"
+
+      - name: Force fresh redeploy of PR #112 exact head
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          DEPLOY_UID: ${{ env.DEPLOY_UID }}
+          DEPLOY_URL: ${{ env.DEPLOY_URL }}
+        run: |
+          set -euo pipefail
+          name="${VERCEL_PROJECT_NAME}"
+          code=$(curl -sS -o /tmp/redeploy_resp.json -w '%{http_code}' -X POST \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-raw "$(node -e '
+              console.log(JSON.stringify({ name: process.argv[1], deploymentId: process.argv[2], target: "preview" }));
+            ' "$name" "$DEPLOY_UID")" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_ORG_ID}")
+          echo "Redeploy HTTP status: $code"
+          cat /tmp/redeploy_resp.json
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Failed to trigger preview redeploy (status $code)"
+            exit 1
+          fi
+          uid=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/redeploy_resp.json","utf8")).id || JSON.parse(require("fs").readFileSync("/tmp/redeploy_resp.json","utf8")).uid || ""')
+          url=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/redeploy_resp.json","utf8")).url || ""')
+          echo "New preview deployment id: $uid"
+          echo "New preview deployment url: $url"
+          echo "Expected head: ${EXPECTED_HEAD}"
+          echo "NEW_DEPLOY_ID=$uid" >> "$GITHUB_ENV"
+          echo "NEW_DEPLOY_URL=$url" >> "$GITHUB_ENV"
