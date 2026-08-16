@@ -12,6 +12,9 @@
  *   scripts/test-tournament-report.mjs
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   normalizeEvent,
   normalizeDeck,
@@ -25,6 +28,11 @@ import {
   buildMonthlyReport,
   mergeMonthlyReport,
   reportContentKey,
+  cardsFromDecklog,
+  verifyDeckCards,
+  normalizeCards,
+  classifyFreshness,
+  HOCG_DECKLOG_GAME_TITLE_ID,
 } from '../src/utils/tournamentReport.ts';
 import {
   tournamentReportReducer,
@@ -107,7 +115,7 @@ test('missing rank/archetype/cards stay unknown, not back-filled', () => {
 
 test('card version is preserved, never inferred; missing version → null', () => {
   const d = normalizeDeck(
-    { rank: 1, cards: [{ cardNumber: 'hBP08-067', count: 4 }] },
+    { rank: 1, cards: [{ zone: 'main', cardNumber: 'hBP08-067', count: 4 }] },
     'evt',
     'https://src',
     0,
@@ -359,6 +367,118 @@ test('an empty index reports "no data" instead of hanging on the spinner', () =>
   assert.equal(s.month, null);
   assert.equal(s.loading, false);
   assert.ok(s.error);
+});
+
+// ── DIC-1024: Deck Log live import core (pure, no network) ──────────────────
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(__dirname, '..');
+
+function loadCatalogCardNumbers() {
+  const db = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'database.json'), 'utf8'));
+  return new Set(Object.values(db.cards).map((c) => String(c.cardNumber ?? '').trim()));
+}
+
+// Rebuild a Deck Log view-API-shaped body from the committed last-known-good
+// cards of the DIC-1024 verified sample, so the happy path is tested against the
+// REAL shipped data and the real local catalog — and a future edit to the source
+// file that breaks 1/50/20 or drifts from the catalog fails this test.
+function decklogFromCommittedDeck(decklogCode) {
+  const src = JSON.parse(
+    fs.readFileSync(
+      path.join(ROOT, 'data', 'tournaments', 'sources', '2026-08-extreamer-cup-tokai-2.json'),
+      'utf8',
+    ),
+  );
+  const deck = src.events[0].decks.find((d) => d.decklogCode === decklogCode);
+  assert.ok(deck && deck.cardsVerified && deck.cards.length > 0,
+    `committed 2026-08 source must carry verified cards for ${decklogCode}`);
+  const LIST_BY_ZONE = { oshi: 'p_list', main: 'list', yell: 'sub_list' };
+  const body = { title: deck.deckName, game_title_id: HOCG_DECKLOG_GAME_TITLE_ID, p_list: [], list: [], sub_list: [] };
+  for (const c of deck.cards) {
+    body[LIST_BY_ZONE[c.zone]].push({ card_number: c.cardNumber, num: c.count, rare: c.version ?? '' });
+  }
+  return body;
+}
+
+test('cardsFromDecklog maps Deck Log lists to zones and normalizes versions', () => {
+  const cards = cardsFromDecklog({
+    game_title_id: HOCG_DECKLOG_GAME_TITLE_ID,
+    p_list: [{ card_number: 'hBP07-006', num: 1, rare: 'OSR', type: 3 }],
+    list: [{ card_number: 'hBP07-063', num: 4, rare: 'C', type: 1 }],
+    sub_list: [{ card_number: 'hY05-003', num: 20, rare: 'SY', type: 2 }],
+  });
+  assert.deepEqual(cards, [
+    { zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 },
+    { zone: 'main', cardNumber: 'hBP07-063', version: 'C', count: 4 },
+    { zone: 'yell', cardNumber: 'hY05-003', version: 'SY', count: 20 },
+  ]);
+});
+
+test('cardsFromDecklog throws on unreadable slots instead of guessing', () => {
+  assert.throws(() => cardsFromDecklog(null), /empty Deck Log response/);
+  assert.throws(
+    () => cardsFromDecklog({ p_list: [{ num: 1 }] }),
+    /has no card number/,
+  );
+  // numeric `type` is a cross-signal: yell card in the main list must fail
+  assert.throws(
+    () => cardsFromDecklog({ list: [{ card_number: 'hY05-003', type: 2 }] }),
+    /type 2, expected 1/,
+  );
+});
+
+test('verifyDeckCards passes the real committed DUKHN and 2H33J8 lists', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const code of ['DUKHN', '2H33J8']) {
+    const { cardsVerified, totals, failure } = verifyDeckCards(
+      cardsFromDecklog(decklogFromCommittedDeck(code)),
+      catalog,
+    );
+    assert.equal(cardsVerified, true, `${code}: ${failure}`);
+    assert.deepEqual(totals, { oshi: 1, main: 50, yell: 20 });
+  }
+});
+
+test('verifyDeckCards fails closed on a duplicate slot inside a zone', () => {
+  const cards = cardsFromDecklog(decklogFromCommittedDeck('DUKHN'));
+  // Split one main slot into two entries of the same number (totals still 1/50/20).
+  const i = cards.findIndex((c) => c.zone === 'main' && c.count > 1);
+  const base = cards[i];
+  cards.splice(i, 1, { ...base, count: 2 }, { ...base, count: base.count - 2 });
+  const { cardsVerified, failure } = verifyDeckCards(cards, loadCatalogCardNumbers());
+  assert.equal(cardsVerified, false);
+  assert.match(failure, new RegExp(`duplicate card slot within zone: main:${base.cardNumber}`));
+});
+
+test('verifyDeckCards reports the exact slot of a card missing from the catalog', () => {
+  const cards = cardsFromDecklog(decklogFromCommittedDeck('2H33J8'));
+  const target = cards.find((c) => c.zone === 'main');
+  target.cardNumber = 'hBP99-999'; // totals unchanged, but not in the local catalog
+  const { cardsVerified, failure } = verifyDeckCards(cards, loadCatalogCardNumbers());
+  assert.equal(cardsVerified, false);
+  assert.match(failure, /card not found in local official catalog: hBP99-999/);
+});
+
+test('verifyDeckCards fails when totals deviate from 1/50/20', () => {
+  const cards = cardsFromDecklog(decklogFromCommittedDeck('DUKHN'));
+  cards[0].count += 1; // oshi 1 → 2
+  const { cardsVerified, failure } = verifyDeckCards(cards, loadCatalogCardNumbers());
+  assert.equal(cardsVerified, false);
+  assert.match(failure, /2\/50\/20/);
+});
+
+test('normalizeCards requires a readable zone (never infers one)', () => {
+  assert.throws(
+    () => normalizeCards([{ cardNumber: 'hBP08-067', count: 4 }]),
+    /has no readable zone/,
+  );
+});
+
+test('classifyFreshness flags only a strictly newer official publication', () => {
+  assert.equal(classifyFreshness(null, '2026-08-09'), 'unknown');
+  assert.equal(classifyFreshness('2026-08-09T12:00:00Z', '2026-08-09'), 'same');
+  assert.equal(classifyFreshness('2026-08-10T12:00:00Z', '2026-08-09'), 'newer');
+  assert.equal(classifyFreshness('2026-08-01T12:00:00Z', '2026-08-09'), 'older');
 });
 
 console.log(`\nDIC-979 tournament-report: ${passed} tests passed`);

@@ -9,16 +9,29 @@
 //     a participant count, a full-coverage claim, an archetype, or a card
 //     version. Unknown remains unknown.
 //   • Card lists are only populated when an exact cardNumber (+ version when
-//     supplied) is available. decklog deck pages are a JS-rendered SPA, so the
-//     automated pipeline cannot read card lists yet — those decks carry
-//     `cardsVerified: false` and an empty `cards` array, not a guess.
+//     supplied) is available. Deck Log's public view API (POST
+//     /system/app/api/view/{code}, same-origin headers) returns every card with
+//     its exact cardNumber and printing rarity, so verified decks carry a full
+//     zoned `cards` array (DIC-1024). A deck whose card list could not be read
+//     or validated stays `cardsVerified: false` — never a guess.
+//
+// DIC-1024 additive upgrade (schema stays v1 so older month files and the UI
+// remain byte-compatible): each card now also records which deck zone it sits
+// in (`zone`), and each deck records its event block and its own deck name.
 
 export const TOURNAMENT_SCHEMA_VERSION = 1;
 
+// The three zones of a hOCG deck. Ground truth for zone placement: which Deck
+// Log list the card came from (推し=p_list, 主=main list, エール=sub_list).
+export type DeckZone = 'oshi' | 'main' | 'yell';
+
 // A single card reference inside a deck. version is only ever set when the
 // source supplied it; a missing version is `null`, never inferred from a
-// same-named or same-numbered printing.
+// same-named or same-numbered printing. `zone` is the deck zone the card sits
+// in (oshi/main/yell) — for Deck Log data this is source-proven by the list the
+// card was published in.
 export interface DeckCardRef {
+  zone: DeckZone;
   cardNumber: string;
   version: string | null;
   count: number;
@@ -39,6 +52,12 @@ export interface DeckEntry {
   playerName: string | null;
   rank: number | null;
   rankLabel: string | null;
+  // Event block (A/B/…) this deck belongs to, when the source states one. The
+  // key is only present when known — months collected before block/deckName
+  // existed must stay byte-identical (no schema-migration churn).
+  block?: string;
+  // The deck's own name (Deck Log title), when the source states one.
+  deckName?: string;
   // null archetype means UNKNOWN — it is never force-classified into a named
   // bucket and is rendered as its own "unknown" slice.
   archetypeId: string | null;

@@ -18,6 +18,7 @@ import {
   type CoverageInfo,
   type DeckCardRef,
   type DeckEntry,
+  type DeckZone,
   type MonthlyReport,
   type TournamentEvent,
 } from '../types/tournament';
@@ -31,6 +32,8 @@ export interface RawDeckRecord {
   playerName?: string | null;
   rank?: number | null;
   rankLabel?: string | null;
+  block?: string | null;
+  deckName?: string | null;
   archetypeId?: string | null;
   archetypeLabel?: string | null;
   oshi?: string | null;
@@ -71,20 +74,36 @@ export function monthOf(dateISO: string | null | undefined): string | null {
   return m ? `${m[1]}-${m[2]}` : null;
 }
 
-function normalizeCards(cards: DeckCardRef[] | undefined): {
+const DECK_ZONES: readonly DeckZone[] = ['oshi', 'main', 'yell'];
+
+export function isDeckZone(value: unknown): value is DeckZone {
+  return typeof value === 'string' && (DECK_ZONES as readonly string[]).includes(value);
+}
+
+export function normalizeCards(cards: DeckCardRef[] | undefined): {
   cards: DeckCardRef[];
   verified: boolean;
 } {
   if (!cards || cards.length === 0) return { cards: [], verified: false };
-  // Only accept entries that carry an exact cardNumber. version stays null when
-  // not supplied — never inferred from a same-named/same-numbered printing.
+  // Only accept entries that carry an exact cardNumber AND a valid zone. version
+  // stays null when not supplied — never inferred from a same-named/same-numbered
+  // printing. A slot whose zone is unreadable is a real extraction failure and
+  // must surface as one (DIC-1024: fail validation, never guess).
   const clean = cards
     .filter((c) => typeof c.cardNumber === 'string' && c.cardNumber.length > 0)
-    .map((c) => ({
-      cardNumber: c.cardNumber,
-      version: c.version ?? null,
-      count: typeof c.count === 'number' && c.count > 0 ? c.count : 1,
-    }));
+    .map((c) => {
+      if (!isDeckZone(c.zone)) {
+        throw new Error(
+          `card ${c.cardNumber} has no readable zone (zone=${JSON.stringify(c.zone)})`,
+        );
+      }
+      return {
+        zone: c.zone,
+        cardNumber: c.cardNumber,
+        version: c.version ?? null,
+        count: typeof c.count === 'number' && c.count > 0 ? c.count : 1,
+      };
+    });
   return { cards: clean, verified: clean.length > 0 };
 }
 
@@ -114,6 +133,11 @@ export function normalizeDeck(
     playerName: raw.playerName ?? null,
     rank,
     rankLabel: raw.rankLabel ?? null,
+    // block/deckName are only emitted when the source states them, so older
+    // months (which never carried them) stay byte-identical instead of picking
+    // up a null-key migration.
+    ...(raw.block != null ? { block: raw.block } : {}),
+    ...(raw.deckName != null ? { deckName: raw.deckName } : {}),
     archetypeId: raw.archetypeId ?? null,
     archetypeLabel: raw.archetypeLabel ?? null,
     oshi: raw.oshi ?? null,
@@ -353,4 +377,189 @@ export function reportContentKey(report: MonthlyReport): string {
     })),
   };
   return JSON.stringify(stable);
+}
+
+// ── Deck Log live import (DIC-1024) ─────────────────────────────────────────
+// Deck Log (decklog.bushiroad.com) is the public Bushiroad deck-sharing site
+// behind the /view/{code} SPA. Its public view API — POST
+// /system/app/api/view/{code} with same-origin headers — returns the deck as
+// JSON with three card lists: p_list (推しホロメン), list (主牌組) and
+// sub_list (エールデッキ). Which list a card came from IS its zone, so zone is
+// source-proven, never inferred. Only normalized fields (zone/cardNumber/
+// version/count) survive the import — Deck Log's raw response fields (img,
+// p_param, width, height, …) are never stored or republished.
+//
+// The functions below are pure so the collector and the fixture tests exercise
+// exactly the same code path with no network.
+
+export interface DecklogApiCard {
+  card_number?: string;
+  num?: number;
+  type?: number;
+  rare?: string | null;
+}
+
+export interface DecklogApiDeck {
+  id?: number;
+  deck_id?: string;
+  title?: string | null;
+  status?: number;
+  game_title_id?: number;
+  list?: DecklogApiCard[] | null;
+  sub_list?: DecklogApiCard[] | null;
+  p_list?: DecklogApiCard[] | null;
+}
+
+// Deck Log's numeric game id for hololive OFFICIAL CARD GAME (confirmed against
+// a live public deck: /system/app/api/view/5USA7 returns game_title_id 9).
+export const HOCG_DECKLOG_GAME_TITLE_ID = 9;
+
+// Zone comes from which Deck Log list the card was published in — the same
+// lists the deck editor renders as 推し / 主牌組 / エール. The numeric `type`
+// field is checked as a cross-signal only and must agree.
+const ZONE_BY_DECKLOG_LIST: Array<{ key: keyof DecklogApiDeck; zone: DeckZone; type: number }> = [
+  { key: 'p_list', zone: 'oshi', type: 3 },
+  { key: 'list', zone: 'main', type: 1 },
+  { key: 'sub_list', zone: 'yell', type: 2 },
+];
+
+export function zoneFromDecklogList(
+  listKey: keyof DecklogApiDeck | string,
+): DeckZone | null {
+  const match = ZONE_BY_DECKLOG_LIST.find((z) => z.key === listKey);
+  return match ? match.zone : null;
+}
+
+/** Map a Deck Log view-API response into normalized, zoned deck cards. Throws on
+ * the first unreadable slot (missing card number or a list/type mismatch) so a
+ * half-parsed deck can never silently become a "verified" one. */
+export function cardsFromDecklog(deck: DecklogApiDeck | null | undefined): DeckCardRef[] {
+  if (!deck) throw new Error('empty Deck Log response');
+  const out: DeckCardRef[] = [];
+  for (const { key, zone, type } of ZONE_BY_DECKLOG_LIST) {
+    for (const raw of (deck[key] as DecklogApiCard[] | null) ?? []) {
+      const cardNumber = String(raw.card_number ?? '').trim();
+      if (!cardNumber) {
+        throw new Error(`Deck Log ${String(key)} slot has no card number`);
+      }
+      if (typeof raw.type === 'number' && raw.type !== type) {
+        throw new Error(
+          `Deck Log ${String(key)} slot ${cardNumber} has type ${raw.type}, expected ${type}`,
+        );
+      }
+      out.push({
+        zone,
+        cardNumber,
+        version: (raw.rare ?? '').trim() || null,
+        count: typeof raw.num === 'number' && raw.num > 0 ? raw.num : 1,
+      });
+    }
+  }
+  return out;
+}
+
+// Official hOCG deck composition: exactly 1 推し / 50 main / 20 yell (DIC-943,
+// enforced here only when the source published full card data).
+export const REQUIRED_DECK_TOTALS: Readonly<Record<DeckZone, number>> = {
+  oshi: 1,
+  main: 50,
+  yell: 20,
+};
+
+export interface ZoneTotals {
+  oshi: number;
+  main: number;
+  yell: number;
+}
+
+export function totalsByZone(cards: DeckCardRef[]): ZoneTotals {
+  const totals: ZoneTotals = { oshi: 0, main: 0, yell: 0 };
+  for (const c of cards) totals[c.zone] += c.count;
+  return totals;
+}
+
+/** Cards that repeat a cardNumber inside the SAME zone. Copies of the same
+ * card number are legal across zones (e.g. the same card number can exist in
+ * main and in a different printing) — what is not legal is one zone listing the
+ * same number twice. */
+export function duplicateSlotsWithinZone(cards: DeckCardRef[]): DeckCardRef[] {
+  const seen = new Set<string>();
+  const dups: DeckCardRef[] = [];
+  for (const c of cards) {
+    const key = `${c.zone}:${c.cardNumber}`;
+    if (seen.has(key)) dups.push(c);
+    seen.add(key);
+  }
+  return dups;
+}
+
+export function validateDeckTotals(cards: DeckCardRef[]): {
+  ok: boolean;
+  totals: ZoneTotals;
+  failure: string | null;
+} {
+  const totals = totalsByZone(cards);
+  const ok =
+    totals.oshi === REQUIRED_DECK_TOTALS.oshi &&
+    totals.main === REQUIRED_DECK_TOTALS.main &&
+    totals.yell === REQUIRED_DECK_TOTALS.yell;
+  return {
+    ok,
+    totals,
+    failure: ok
+      ? null
+      : `deck totals must be 1 oshi / 50 main / 20 yell, got ${totals.oshi}/${totals.main}/${totals.yell}`,
+  };
+}
+
+/** Fail-closed gate a deck's fetched cards must pass before it may claim
+ * `cardsVerified`. Reports the FIRST single failing slot — never a guess. */
+export function verifyDeckCards(
+  cards: DeckCardRef[],
+  catalogCardNumbers: ReadonlySet<string>,
+): { cardsVerified: boolean; totals: ZoneTotals; failure: string | null } {
+  const totals = totalsByZone(cards);
+  const totalCheck = validateDeckTotals(cards);
+  if (!totalCheck.ok) return { cardsVerified: false, totals, failure: totalCheck.failure };
+  const dups = duplicateSlotsWithinZone(cards);
+  if (dups.length > 0) {
+    return {
+      cardsVerified: false,
+      totals,
+      failure: `duplicate card slot within zone: ${dups[0].zone}:${dups[0].cardNumber}`,
+    };
+  }
+  for (const c of cards) {
+    if (!catalogCardNumbers.has(c.cardNumber)) {
+      return {
+        cardsVerified: false,
+        totals,
+        failure: `card not found in local official catalog: ${c.cardNumber}`,
+      };
+    }
+  }
+  return { cardsVerified: true, totals, failure: null };
+}
+
+/**
+ * Source freshness discovery (issue requirement 6). The collector checks the
+ * newest official publication date it can reach (WordPress news feed / X result
+ * tweet) against the newest source record it already has. A strictly newer
+ * discovery is an ALERT, never an auto-collect — a new source post still needs
+ * human/agent verification before its decks are parsed. When discovery is
+ * unavailable the last-known-good data is simply preserved.
+ */
+export type FreshnessVerdict = 'newer' | 'same' | 'older' | 'unknown';
+
+export function classifyFreshness(
+  discoveredDateISO: string | null | undefined,
+  knownDateISO: string | null | undefined,
+): FreshnessVerdict {
+  if (!discoveredDateISO) return 'unknown';
+  const d = /^(\d{4}-\d{2}-\d{2})/.exec(discoveredDateISO.trim());
+  const k = /^(\d{4}-\d{2}-\d{2})/.exec((knownDateISO ?? '').trim());
+  if (!d) return 'unknown';
+  if (!k) return 'newer';
+  if (d[1] === k[1]) return 'same';
+  return d[1] > k[1] ? 'newer' : 'older';
 }

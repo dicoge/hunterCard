@@ -1,0 +1,337 @@
+{
+  "schemaVersion": 1,
+  "month": "2026-08",
+  "generatedAt": "2026-08-16T12:36:37.696Z",
+  "source": {
+    "name": "hololive OFFICIAL CARD GAME X 官方賽果 — エクストリーマーカップ25-26 エリア予選 東海② + Deck Log 公開牌組",
+    "url": "https://x.com/hololive_OCG/status/2086361278742978976",
+    "disclaimer": "資料僅來自官方 X 賽果與 Deck Log 公開牌組。官方僅公布 A/B block 冠軍的牌組與名次；完整 8 強、參賽人數與其他名次牌組未公開。占比僅反映已觀測樣本，不代表整體 meta。"
+  },
+  "coverage": {
+    "knownEvents": 1,
+    "totalEvents": null,
+    "observedDecks": 2,
+    "rankedDecks": 2,
+    "note": "本月僅收錄 1 場的公開精選牌組（共 2 副，其中 2 副有公開名次）。賽事總場數未公開，涵蓋率無法計算完整母體。"
+  },
+  "events": [
+    {
+      "eventId": "extreamer-cup-25-26-area-tokai-2",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海②",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海②",
+      "date": "2026-08-09",
+      "region": "東海",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2086361278742978976",
+      "sourceType": "official-x-result",
+      "coverageNote": "官方於 X 公布 A/B block 冠軍（rank 1 / champion）及其牌組；完整 8 強、其他名次牌組與參賽數未公開。",
+      "decks": [
+        {
+          "deckId": "decklog:DUKHN",
+          "decklogCode": "DUKHN",
+          "sourceUrl": "https://decklog.bushiroad.com/view/DUKHN",
+          "playerName": "杯",
+          "rank": 1,
+          "rankLabel": "champion",
+          "block": "A",
+          "deckName": "AZKi テンプレ",
+          "archetypeId": "azki",
+          "archetypeLabel": "AZKi（紫単）",
+          "oshi": "AZKi",
+          "colors": [
+            "紫"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP07-006",
+              "version": "OSR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-044",
+              "version": "P",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-045",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-046",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-009",
+              "version": "R",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-063",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-064",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-065",
+              "version": "S",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-066",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-067",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-068",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-069",
+              "version": "SR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-108",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-080",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-090",
+              "version": "SR",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-094",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-016",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD14-010",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-124",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-100",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY05-003",
+              "version": "SY",
+              "count": 20
+            }
+          ],
+          "cardsVerified": true,
+          "coverage": "ranked",
+          "fetchedAt": "2026-08-16T12:36:37.696Z"
+        },
+        {
+          "deckId": "decklog:2H33J8",
+          "decklogCode": "2H33J8",
+          "sourceUrl": "https://decklog.bushiroad.com/view/2H33J8",
+          "playerName": "zx",
+          "rank": 1,
+          "rankLabel": "champion",
+          "block": "B",
+          "deckName": "zx式闇堕ちクロニー単12（エリア用）",
+          "archetypeId": "auro-chrony",
+          "archetypeLabel": "オーロ・クロニー（青単）",
+          "oshi": "オーロ・クロニー",
+          "colors": [
+            "青"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP07-005",
+              "version": "OSR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-054",
+              "version": "R",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-092",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-094",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-095",
+              "version": "R",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-050",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-051",
+              "version": "U",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-053",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-055",
+              "version": "U",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-056",
+              "version": "RR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-108",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-094",
+              "version": "P",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-097",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-017",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "C",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-018",
+              "version": "SR",
+              "count": 3
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY04-005",
+              "version": "SY",
+              "count": 20
+            }
+          ],
+          "cardsVerified": true,
+          "coverage": "ranked",
+          "fetchedAt": "2026-08-16T12:36:37.696Z"
+        }
+      ],
+      "fetchedAt": "2026-08-16T12:36:37.696Z"
+    }
+  ],
+  "archetypeShare": [
+    {
+      "archetypeId": "auro-chrony",
+      "label": "オーロ・クロニー（青単）",
+      "count": 1,
+      "share": 0.5
+    },
+    {
+      "archetypeId": "azki",
+      "label": "AZKi（紫単）",
+      "count": 1,
+      "share": 0.5
+    }
+  ],
+  "observedSampleSize": 2
+}

@@ -187,9 +187,18 @@ test('re-running an unchanged source rewrites nothing (idempotent, no churn)', (
   assert.equal(fs.readFileSync(path.join(tree.out, 'index.json'), 'utf8'), before.index);
 });
 
-test('--live refuses to run and writes nothing', () => {
+test('--live collects opt-in sources with committed cards without network', () => {
   const tree = seeded();
+  // Opt the fixture source into live Deck Log mode, but every deck already has
+  // committed cards (or no decklog code), so --live must NOT hit the network:
+  // it skips the already-committed decks and the offline collection still runs.
+  const src = JSON.parse(fs.readFileSync(path.join(tree.sources, 'jul.json'), 'utf8'));
+  src.liveDecklog = true;
+  src.events[0].decks[0].cards = [{ zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 }];
+  src.events[0].decks[0].cardsVerified = true;
+  fs.writeFileSync(path.join(tree.sources, 'jul.json'), JSON.stringify(src, null, 2));
   const before = fs.readFileSync(path.join(tree.out, '2026-07.json'), 'utf8');
+
   const res = spawnSync(
     process.execPath,
     [
@@ -202,13 +211,34 @@ test('--live refuses to run and writes nothing', () => {
       tree.sources,
       '--out-dir',
       tree.out,
+      '--now',
+      '2026-09-01T05:00:00Z',
       '--live',
+      '--skip-discovery',
     ],
     { cwd: ROOT, encoding: 'utf8' },
   );
-  assert.equal(res.status, 1);
-  assert.match(res.stderr, /Live fetch is disabled/);
-  assert.equal(fs.readFileSync(path.join(tree.out, '2026-07.json'), 'utf8'), before);
+  assert.equal(res.status, 0, `live run should succeed:\n${res.stderr}`);
+  assert.match(res.stdout, /mode: LIVE/);
+
+  // Committed cards were preserved verbatim (already-committed decks are not
+  // re-fetched), and the report reflects them.
+  const report = readOut(tree.out, '2026-07.json');
+  const deck = report.events[0].decks.find((d) => d.decklogCode === '5USA7');
+  assert.deepEqual(deck.cards, [{ zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 }]);
+  assert.equal(deck.cardsVerified, true);
+
+  // No live fetch happened → nothing re-fetched, no network in this run.
+  assert.doesNotMatch(res.stderr, /Deck Log fetch failed|Deck Log .*: verified/);
+});
+
+// Offline (default) mode stays fully hermetic and is unchanged by the live path.
+test('offline mode never performs live network work', () => {
+  const tree = seeded();
+  const res = runCollector(tree, '2026-09-01T05:00:00Z');
+  assert.equal(res.code, 0);
+  assert.match(res.stdout, /mode: offline/);
+  assert.doesNotMatch(res.stdout, /Deck Log/);
 });
 
 console.log(`\nDIC-979 tournament-collector: ${passed} tests passed`);
