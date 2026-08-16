@@ -290,6 +290,15 @@ for (const [label, deck, code, reason] of failCases) {
   });
 }
 
+for (const truthy of ['true', 'false', 1, {}, 'yes']) {
+  await test(`fail-closed: a non-boolean cardsVerified (${JSON.stringify(truthy)}) is not permission`, () => {
+    const gate = evaluateImport(syntheticDeck({ cardsVerified: truthy }), fullIndex);
+    assert.equal(gate.importable, false, 'only a real boolean true may unlock the import');
+    assert.equal(gate.code, 'NOT_VERIFIED');
+    assert.equal(gate.reason, '卡表尚未取得，無法匯入');
+  });
+}
+
 for (const badCount of [0, -1, 2.5, NaN, null, '3']) {
   await test(`fail-closed: quantity ${String(badCount)} is rejected`, () => {
     const deck = syntheticDeck();

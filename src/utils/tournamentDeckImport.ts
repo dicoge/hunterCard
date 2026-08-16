@@ -113,7 +113,9 @@ export function evaluateImport(
   deck: DeckEntry,
   index: Map<string, DeckCard[]> | null,
 ): ImportGate {
-  if (!deck?.cardsVerified) return blocked('NOT_VERIFIED', '卡表尚未取得，無法匯入');
+  // Strictly `true`, not merely truthy: a report that ever carried the string
+  // "false" or a 1/0 flag must read as unverified rather than as permission.
+  if (deck?.cardsVerified !== true) return blocked('NOT_VERIFIED', '卡表尚未取得，無法匯入');
 
   const cards = Array.isArray(deck.cards) ? deck.cards : [];
   if (cards.length === 0) return blocked('NO_CARDS', '卡表尚未取得，無法匯入');
