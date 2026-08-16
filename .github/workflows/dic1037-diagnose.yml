@@ -128,9 +128,10 @@ jobs:
           echo "== uploading api/hello.js =="
           hello='export default async function handler(req) { return new Response(JSON.stringify({ok:true, hello:"world"}), {status:200, headers:{"Content-Type":"application/json"}}); }'
           b64=$(printf '%s' "$hello" | base64)
+          sha=$(printf '%s' "$hello" | shasum | awk '{print $1}')
           code=$(curl -sS -o /tmp/up.json -w "%{http_code}" -X POST --oauth2-bearer "$VERCEL_TOKEN" \
             -H "Content-Type: application/json" \
-            --data-raw "$(node -e 'console.log(JSON.stringify({data: process.argv[1]}))' "$b64")" \
+            --data-raw "$(node -e 'console.log(JSON.stringify({sha: process.argv[1], data: process.argv[2]}))' "$sha" "$b64")" \
             "https://api.vercel.com/v2/files?teamId=${VERCEL_ORG_ID}")
           echo "upload HTTP $code"
           node -e 'const d=JSON.parse(require("fs").readFileSync("/tmp/up.json","utf8")); console.log("file sha:", d.sha || JSON.stringify(d))' || true
@@ -140,7 +141,7 @@ jobs:
             console.log(JSON.stringify({
               name: process.argv[1],
               files: [{ file: "api/hello.js", sha: d.sha }],
-              projectSettings: { framework: "other", nodeVersion: "22.x" },
+              projectSettings: { nodeVersion: "22.x" },
             }));
           ' "$proj")
           code=$(curl -sS -o /tmp/dep.json -w "%{http_code}" -X POST --oauth2-bearer "$VERCEL_TOKEN" \
