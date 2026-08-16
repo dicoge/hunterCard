@@ -75,7 +75,12 @@ const check = (label, fn) => {
 };
 
 // ── 1. No key → the exact production failure, now classified ──────────────────
+// "Unprovisioned" now means NO provider key at all: since DIC-1019 an OpenRouter key
+// alone is enough to serve recognition, so this suite must own both names rather than
+// inherit whatever the developer happens to have exported.
 const savedKey = process.env.GEMINI_API_KEY;
+const savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
+delete process.env.OPENROUTER_API_KEY;
 delete process.env.GEMINI_API_KEY;
 
 const missing = await post({ image: PIXEL });
@@ -401,6 +406,8 @@ check('every 5xx is infrastructure; 404/400 stay the caller-visible outcome', ()
 
 if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
 else process.env.GEMINI_API_KEY = savedKey;
+if (savedOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+else process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
 
 for (const label of results) console.log(`  ✓ ${label}`);
 console.log(`\n✅ recognition-unavailable: ${results.length} checks passed`);

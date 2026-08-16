@@ -1,20 +1,29 @@
 /**
- * @version 6
- * recognize-card.ts — Gemini Vision API + deterministic candidate ranking for Hololive TCG cards.
+ * @version 7
+ * recognize-card.ts — Gemini Vision + deterministic candidate ranking for Hololive TCG cards.
  *
  * Accepts one or more image data URIs. The web scanner sends both a full-frame image
  * and a scan-area crop so the model can read tiny bottom-edge card numbers without
  * losing whole-card context.
+ *
+ * The vision call is served by the first working provider adapter: Google direct
+ * (GEMINI_API_KEY), then OpenRouter (OPENROUTER_API_KEY), then 503.
  */
 
 export const config = { runtime: 'edge' };
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
+// Same underlying model as the Google-direct leg, reached through OpenRouter, so a
+// fallback scan ranks identically to a primary one (DIC-1019).
+const OPENROUTER_MODEL = 'google/gemini-2.5-flash';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const VISION_TIMEOUT_MS = 14000;
+const VISION_MAX_TOKENS = 180;
 const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
 const AUTO_ACCEPT_CONFIDENCE = 0.82;
 
-// Recognition stays unavailable until the operator provisions GEMINI_API_KEY in the
-// deployment environment. Raised as its own type so the handler can answer 503 with a
+// Recognition stays unavailable until the operator provisions a vision provider key in
+// the deployment environment. Raised as its own type so the handler can answer 503 with a
 // stable code instead of a bare 500: the client has to tell "this deployment cannot
 // recognise anything" apart from "this card has no match", otherwise an unprovisioned
 // environment tells the user to fix their lighting (DIC-1013 QA).
@@ -193,26 +202,109 @@ BLOOM_LEVEL: [level/type or NONE]
 CARD_NUMBER: [exact card number or NONE]
 TITLE: [title or NONE]`;
 
-async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
-  const imageList = images.filter(Boolean).slice(0, 2).map(img => img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`);
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new RecognitionUnavailableError('GEMINI_API_KEY not set');
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
+type VisionAdapter = {
+  provider: string;
+  model: string;
+  request: (images: string[]) => Promise<Response>;
+  extract: (data: any) => string;
+};
+
+// The key travels in x-goog-api-key rather than the ?key= query parameter: a URL is the
+// part of a request that leaks into logs, error strings and referrers, and this handler
+// must never expose a provider key value (DIC-1019).
+const googleAdapter = (apiKey: string): VisionAdapter => ({
+  provider: 'gemini',
+  model: GEMINI_MODEL,
+  request: (images) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
       contents: [{
         role: 'user',
-        parts: [{ text: visionPrompt }, ...imageList.map(dataUriToGeminiPart)],
+        parts: [{ text: visionPrompt }, ...images.map(dataUriToGeminiPart)],
       }],
-      generationConfig: { temperature: 0, maxOutputTokens: 180 },
+      generationConfig: { temperature: 0, maxOutputTokens: VISION_MAX_TOKENS },
     }),
-    signal: AbortSignal.timeout(14000),
-  });
-  if (!res.ok) throw new Error(`Gemini API error (${res.status})`);
-  const data = await res.json();
-  const reply = (data?.candidates?.[0]?.content?.parts || []).map((part: any) => part.text || '').join('\n').trim();
-  return { reply, provider: 'gemini', model: GEMINI_MODEL };
+    signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
+  }),
+  extract: (data) => (data?.candidates?.[0]?.content?.parts || [])
+    .map((part: any) => part.text || '').join('\n').trim(),
+});
+
+const openRouterAdapter = (apiKey: string): VisionAdapter => ({
+  provider: 'openrouter',
+  model: OPENROUTER_MODEL,
+  request: (images) => fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://holohunter.dicoge.com',
+      'X-Title': 'HoloHunter',
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: visionPrompt },
+          ...images.map(url => ({ type: 'image_url', image_url: { url } })),
+        ],
+      }],
+      temperature: 0,
+      max_tokens: VISION_MAX_TOKENS,
+    }),
+    signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
+  }),
+  extract: (data) => String(data?.choices?.[0]?.message?.content || '').trim(),
+});
+
+function readKey(name: string): string | null {
+  const value = process.env[name];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+// Runtime priority: Google direct, then OpenRouter, then nothing (→ 503). Both keys
+// present is not ambiguous — Google direct always wins, and OpenRouter is only reached
+// when Google is unconfigured or its leg fails.
+function resolveAdapters(): VisionAdapter[] {
+  const adapters: VisionAdapter[] = [];
+  const geminiKey = readKey('GEMINI_API_KEY');
+  if (geminiKey) adapters.push(googleAdapter(geminiKey));
+  const openRouterKey = readKey('OPENROUTER_API_KEY');
+  if (openRouterKey) adapters.push(openRouterAdapter(openRouterKey));
+  return adapters;
+}
+
+async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
+  const imageList = images.filter(Boolean).slice(0, 2).map(img => img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`);
+  const adapters = resolveAdapters();
+  if (adapters.length === 0) throw new RecognitionUnavailableError('no vision provider key configured');
+
+  let lastError: Error | null = null;
+  for (const adapter of adapters) {
+    // Upstream bodies and raw transport errors never escape this block: a failing leg is
+    // reduced to provider + HTTP status before it can reach a client response or a log.
+    let reply: string;
+    try {
+      const res = await adapter.request(imageList);
+      if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
+      reply = adapter.extract(await res.json());
+    } catch (e: any) {
+      lastError = e instanceof Error && /^\w+ API error \(\d+\)$/.test(e.message)
+        ? e
+        : new Error(`${adapter.provider} API request failed`);
+      console.error(`[recognize-card] provider ${adapter.provider} failed: ${lastError.message}`);
+      continue;
+    }
+    // An empty reply is a failed leg too, but the last provider's empty answer still has
+    // to surface as the existing "empty response" 502 rather than a transport error.
+    if (reply) return { reply, provider: adapter.provider, model: adapter.model };
+    lastError = null;
+    console.error(`[recognize-card] provider ${adapter.provider} returned an empty reply`);
+  }
+  if (lastError) throw lastError;
+  return { reply: '', provider: adapters[adapters.length - 1].provider, model: adapters[adapters.length - 1].model };
 }
 
 export function rankCandidates(cards: Record<string, any>, extracted: any, storeMvp = false) {

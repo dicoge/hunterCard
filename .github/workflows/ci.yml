@@ -137,6 +137,9 @@ jobs:
       - name: Verify an unprovisioned recognition backend is not blamed on the photo (DIC-1013)
         run: npm run test:recognition-unavailable
 
+      - name: Verify recognition provider priority, fallback and key isolation (DIC-1019)
+        run: npm run test:recognition-provider
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
