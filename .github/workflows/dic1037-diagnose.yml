@@ -1,0 +1,116 @@
+name: DIC-1037 Vercel Function Diagnostic
+
+# TEMPORARY read-only diagnostic for the DIC-1037 /api outage investigation.
+# Runs on the PR itself (pull_request synchronize) so it can inspect the
+# PR's auto-created Vercel preview deployment: real deployment config (was
+# vercel.json honored?), /api/hello timing, and Vercel runtime logs (did the
+# Node function even boot?). Remove this workflow once the outage is resolved.
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    name: Inspect deployment config + probe /api/hello
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_PROJECT_NAME: holocard-hunter
+    steps:
+      - name: Resolve Vercel project id by name
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          body=$(curl -sS --fail --oauth2-bearer "$VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")
+          id=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
+          echo "PROJECT_ID=$id" >> "$GITHUB_ENV"
+          echo "resolved project id: $id"
+
+      - name: Find latest deployment for this branch and dump effective config
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          curl -sS --fail --oauth2-bearer "$VERCEL_TOKEN" \
+            "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&limit=25&teamId=${VERCEL_ORG_ID}" \
+            -o /tmp/deployments.json
+          BRANCH="$BRANCH" node -e '
+            const fs = require("fs");
+            const d = JSON.parse(fs.readFileSync("/tmp/deployments.json","utf8"));
+            const branch = process.env.BRANCH;
+            const list = d.deployments || [];
+            const byBranch = list.filter(x => x.meta && x.meta.githubCommitRef === branch);
+            const sel = byBranch[0] || list[0];
+            const cfg = sel.config || {};
+            console.log("selected deployment uid:", sel.uid);
+            console.log("url:", sel.url, "| target:", sel.target, "| readyState:", sel.readyState, "| created:", sel.created);
+            console.log("branch match:", byBranch.length > 0 ? "yes" : "NO (falling back to latest)");
+            console.log("meta.githubCommitSha:", (sel.meta && sel.meta.githubCommitSha) || "(none)");
+            console.log("meta.githubCommitRef:", (sel.meta && sel.meta.githubCommitRef) || "(none)");
+            console.log("config.functionType:", cfg.functionType);
+            console.log("config.functionTimeout:", cfg.functionTimeout);
+            console.log("config.functionMemoryType:", cfg.functionMemoryType);
+            console.log("config.isUsingActiveCPU:", cfg.isUsingActiveCPU);
+            console.log("config.regions:", JSON.stringify(cfg.regions));
+            console.log("config.nodeVersion:", cfg.nodeVersion);
+            console.log("config.type:", cfg.type);
+            console.log("config.lambdaRuntimeStats:", JSON.stringify(cfg.lambdaRuntimeStats));
+            fs.writeFileSync("/tmp/selected.txt", sel.uid + "\n" + (sel.url || ""));
+          '
+          echo "DEPLOYMENT_UID=$(sed -n 1p /tmp/selected.txt)" >> "$GITHUB_ENV"
+          echo "DEPLOYMENT_URL=$(sed -n 2p /tmp/selected.txt)" >> "$GITHUB_ENV"
+
+      - name: Probe static root, /api/hello, and a 404 route
+        run: |
+          set +e
+          url="https://$DEPLOYMENT_URL"
+          echo "== static / =="
+          curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" -m 20 "$url/" || echo "static rc=$?"
+          echo "== /api/hello (max 75s) =="
+          curl -sS -m 75 -w "\nHTTP %{http_code} in %{time_total}s\n" "$url/api/hello" || echo "hello rc=$?"
+          echo "== /api/nonexistent-xyz (max 20s) =="
+          curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" -m 20 "$url/api/nonexistent-xyz" || echo "404 rc=$?"
+
+      - name: Fetch Vercel runtime logs for the deployment (best effort)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set +e
+          curl -sS --oauth2-bearer "$VERCEL_TOKEN" \
+            "https://api.vercel.com/v1/deployments/${DEPLOYMENT_UID}/runtime-logs?projectId=${PROJECT_ID}&teamId=${VERCEL_ORG_ID}&limit=100&direction=backward" \
+            -o /tmp/logs.json -w "runtime-logs API HTTP %{http_code}\n"
+          node -e '
+            const fs = require("fs");
+            let d;
+            try { d = JSON.parse(fs.readFileSync("/tmp/logs.json","utf8")); }
+            catch (e) { console.log("could not parse runtime-logs response"); process.exit(0); }
+            if (d.error) { console.log("log api error:", JSON.stringify(d.error)); process.exit(0); }
+            const lines = d.lines || d.logs || [];
+            console.log("runtime log lines:", lines.length);
+            for (const l of lines.slice(0, 50)) {
+              const msg = (l.payload && l.payload.msg) || l.text || l.body || JSON.stringify(l);
+              console.log(l.type || "log", l.created || l.timestamp || "", JSON.stringify(msg).slice(0, 400));
+            }
+          '
+
+      - name: Post diagnostic summary to PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## DIC-1037 function diagnostic (automated)"
+            echo
+            echo "- deployment: $DEPLOYMENT_URL"
+            echo "- branch: ${{ github.head_ref || github.ref_name }} / sha: ${{ github.event.pull_request.head.sha || github.sha }}"
+            echo
+            echo "See the check run log for the full deployment config, probe timings, and runtime logs."
+          } > /tmp/summary.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/summary.md || echo "could not comment"
