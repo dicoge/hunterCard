@@ -1,4 +1,5 @@
 import { addWatchlistCard, removeWatchlistCard } from '../_lib/kv-storage';
+import { toNodeHandler } from '../_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
 
@@ -20,7 +21,7 @@ function isCardNumber(cardNumber: unknown): cardNumber is string {
   return typeof cardNumber === 'string' && cardNumber.trim().length > 0 && cardNumber.length <= 80;
 }
 
-export default async function handler(req: Request) {
+async function webHandler(req: Request) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
@@ -44,3 +45,5 @@ export default async function handler(req: Request) {
     return json({ error: err.message || 'Watchlist update failed' }, 500);
   }
 }
+
+export default toNodeHandler(webHandler);

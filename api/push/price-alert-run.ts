@@ -16,6 +16,7 @@ import {
   evaluatePriceAlerts, buildAlertMessage, armStateKey, priceAlertKey,
   type AlertRecipient, type AlertSend,
 } from '../../src/utils/priceAlerts';
+import { toNodeHandler } from '../_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
 
@@ -42,7 +43,7 @@ function chunk<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-export default async function handler(req: Request) {
+async function webHandler(req: Request) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   if (!isInternalRequest(req)) return json({ error: 'Unauthorized' }, 401);
@@ -208,3 +209,5 @@ export default async function handler(req: Request) {
     return json({ error: err.message || 'Price alert run failed', sent: 0, errors: 1 }, 500);
   }
 }
+
+export default toNodeHandler(webHandler);

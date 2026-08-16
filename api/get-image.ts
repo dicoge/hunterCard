@@ -1,10 +1,11 @@
 // get-image.ts — 從 data/images/ 提供卡片圖片
 import fs from 'fs';
 import path from 'path';
+import { toNodeHandler } from './_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
 
-export default async function handler(req: Request) {
+async function webHandler(req: Request) {
   try {
     const url = new URL(req.url);
     const filename = url.searchParams.get('file');
@@ -48,3 +49,5 @@ export default async function handler(req: Request) {
     return new Response(e.message || 'Error', { status: 500 });
   }
 }
+
+export default toNodeHandler(webHandler);

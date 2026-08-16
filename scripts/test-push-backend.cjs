@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const Module = require('node:module');
 const ts = require('typescript');
+const { asWebHandler } = require('./fixtures/node-boundary.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'push-backend-tests-'));
@@ -107,14 +108,17 @@ function compileTs(relPath) {
 for (const rel of [
   'api/_lib/kv-storage.ts',
   'api/_lib/internal-auth.ts',
+  'api/_lib/node-adapter.ts',
   'api/push/register.ts',
   'api/push/watchlist.ts',
   'api/push/notify.ts',
 ]) compileTs(rel);
 
-const register = require(path.join(outDir, 'api/push/register.js')).default;
-const watchlist = require(path.join(outDir, 'api/push/watchlist.js')).default;
-const notify = require(path.join(outDir, 'api/push/notify.js')).default;
+// Each route's default export is the Node `(req, res)` function Vercel invokes;
+// drive it through that real boundary rather than calling it as a Web handler.
+const register = asWebHandler(require(path.join(outDir, 'api/push/register.js')).default);
+const watchlist = asWebHandler(require(path.join(outDir, 'api/push/watchlist.js')).default);
+const notify = asWebHandler(require(path.join(outDir, 'api/push/notify.js')).default);
 const storage = require(path.join(outDir, 'api/_lib/kv-storage.js'));
 
 function req(method, body, headers = {}) {

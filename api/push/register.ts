@@ -1,4 +1,5 @@
 import { upsertToken } from '../_lib/kv-storage';
+import { toNodeHandler } from '../_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
 
@@ -16,7 +17,7 @@ function isExpoToken(token: unknown): token is string {
   return typeof token === 'string' && /^ExponentPushToken\[[^\]]+\]$|^ExpoPushToken\[[^\]]+\]$/.test(token);
 }
 
-export default async function handler(req: Request) {
+async function webHandler(req: Request) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
@@ -35,3 +36,5 @@ export default async function handler(req: Request) {
     return json({ error: err.message || 'Registration failed' }, 500);
   }
 }
+
+export default toNodeHandler(webHandler);
