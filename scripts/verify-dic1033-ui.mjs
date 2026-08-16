@@ -46,6 +46,7 @@ if (!BASE_URL) {
 const ORIGIN = BASE_URL || `http://localhost:${LOCAL_PORT}`;
 const ENV = BASE_URL ? new URL(ORIGIN).host : 'local-dist';
 const OUT = process.env.SHOT_DIR || '/tmp';
+fs.mkdirSync(OUT, { recursive: true });
 const T = 120000;
 
 const august = JSON.parse(fs.readFileSync('data/tournaments/2026-08.json', 'utf8'));
@@ -110,6 +111,28 @@ async function run(label, viewport) {
         printings: [...new Set(['oshi', 'main', 'yell']
           .flatMap((z) => (d[z] ?? []).map((s) => s.card.printing)))],
       })),
+    };
+  });
+
+  // What the deck editor is actually RENDERING right now — the zone counters it
+  // paints ("總計 71/71") and the import banner. Storage can prove a record
+  // exists; only the DOM proves the open editor is showing that deck.
+  const readEditorDom = () => page.evaluate(() => {
+    const stats = {};
+    for (const node of document.querySelectorAll('div,span')) {
+      const label = node.textContent.trim();
+      if (!['推しホロメン', '主牌組', 'エール', '總計'].includes(label)) continue;
+      const lines = (node.parentElement?.innerText ?? '').trim().split('\n').map((s) => s.trim());
+      const value = lines.find((l) => /^\d+\/\d+$/.test(l));
+      if (value) stats[label] = value;
+    }
+    return {
+      stats,
+      oshi: stats['推しホロメン'] ?? null,
+      main: stats['主牌組'] ?? null,
+      yell: stats['エール'] ?? null,
+      total: stats['總計'] ?? null,
+      banner: document.querySelector('[data-testid="deck-origin-banner"]')?.innerText ?? null,
     };
   });
 
@@ -213,8 +236,12 @@ async function run(label, viewport) {
     check(`${label}: ${deck.decklogCode} records its own provenance`,
       mine?.origin?.kind === 'tournament' && mine?.origin?.sourceUrl === deck.sourceUrl,
       mine?.origin?.sourceUrl);
-    check(`${label}: ${deck.decklogCode} shows the import banner in the editor`,
-      await hasText('已從賽事牌組匯入'));
+    const dom = await readEditorDom();
+    check(`${label}: ${deck.decklogCode} renders 1 / 50 / 20 = 71 in the editor`,
+      dom.oshi === '1/1' && dom.main === '50/50' && dom.yell === '20/20' && dom.total === '71/71',
+      JSON.stringify(dom.stats));
+    check(`${label}: the editor banner names ${deck.decklogCode} as the source`,
+      (dom.banner ?? '').includes(deck.decklogCode), dom.banner);
     check(`${label}: ${deck.decklogCode} adopted no real printing`,
       (mine?.printings ?? []).every((p) => p === 'UNRESOLVED'),
       (mine?.printings ?? []).join(','));
@@ -251,6 +278,21 @@ async function run(label, viewport) {
 
     const state = await readDecks();
     const restored = state.decks.find((d) => d.id === mine.id);
+
+    // The binding that matters: the deck TAPPED in 我的牌組 is the one the editor
+    // opened. Reading storage alone would go green even if a different deck were
+    // tapped, since the record would still be there from before the reload.
+    check(`${label}: ${deck.decklogCode} is the deck the editor actually reopened`,
+      state.activeDeckId === mine.id, `active=${state.activeDeckId} expected=${mine.id}`);
+
+    // And the editor must RENDER the 71 cards, not merely have them in storage.
+    const dom = await readEditorDom();
+    check(`${label}: ${deck.decklogCode} renders 1 / 50 / 20 = 71 in the editor after reload`,
+      dom.oshi === '1/1' && dom.main === '50/50' && dom.yell === '20/20' && dom.total === '71/71',
+      JSON.stringify(dom.stats));
+    check(`${label}: the reopened editor names ${deck.decklogCode} as its source`,
+      (dom.banner ?? '').includes(deck.decklogCode), dom.banner);
+
     check(`${label}: ${deck.decklogCode} reopens with all 71 cards after reload`,
       restored?.total === 71 && restored?.oshi === 1 && restored?.main === 50 && restored?.yell === 20,
       `${restored?.oshi}/${restored?.main}/${restored?.yell}`);
