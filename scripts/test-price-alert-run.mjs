@@ -13,6 +13,10 @@
  *   - two OVERLAPPING runs make exactly one Expo call for one armed alert
  *   - an edit landing mid-send cannot hand a second evaluator the same send
  *   - an edit completed between snapshot read and claim fences the stale runner
+ *   - a delete completed between snapshot read and claim fences it too, even
+ *     for an alert an older build stored without a revision
+ *   - payload and revision are one atomic snapshot, so no runner can pair a
+ *     stale interval with a current revision
  *   - a stale lease owner cannot clean up or commit after a takeover
  *   - an unconfirmed or crashed send releases/expires its claim so it retries
  *   - the run endpoint is unauthorized without the shared secret
@@ -21,7 +25,7 @@
  *        scripts/test-price-alert-run.mjs
  */
 import assert from 'node:assert/strict';
-import { resetKv, advanceKvClock, setKvHook } from './fixtures/kv-mock.mjs';
+import { resetKv, advanceKvClock, setKvHook, kv } from './fixtures/kv-mock.mjs';
 import runHandler from '../api/push/price-alert-run.ts';
 import configHandler from '../api/push/price-alerts.ts';
 import {
@@ -108,6 +112,14 @@ async function currentRev(alert = BASE_ALERT) {
 async function saveAlert(alert) {
   return expectOk(await configHandler(post('https://x.test/api/push/price-alerts', {
     token: TOKEN, action: 'upsert', alert,
+  })));
+}
+
+async function removeAlert(alert = BASE_ALERT) {
+  return expectOk(await configHandler(post('https://x.test/api/push/price-alerts', {
+    token: TOKEN,
+    action: 'remove',
+    alert: { cardNumber: alert.cardNumber, printing: alert.printing },
   })));
 }
 
@@ -361,6 +373,133 @@ await test('an edit completed before the claim stops the stale snapshot from sen
   const inNew = await runAt(400);
   assert.equal(inNew.body.sent, 1, 'the edited interval must still notify on its own terms');
   assert.equal(inNew.pushes.length, 1);
+});
+
+await test('a delete completed before the claim stops the stale snapshot from sending', async () => {
+  resetKv();
+  ticketStatus = 'ok';
+  await saveAlert(BASE_ALERT); // 800–1200 includes 1000
+
+  pushes = [];
+  okTickets = 0;
+
+  const gate = deferred();
+  let parked = false;
+  setKvHook(async (command) => {
+    if (command !== 'mget') return;
+    setKvHook(null);
+    parked = true;
+    await gate.promise;
+  });
+
+  const stale = startRun(1000);
+  await waitFor(() => parked, 'the runner to reach its arm-state read');
+
+  // The user deletes the alert outright while the runner holds its snapshot.
+  await removeAlert();
+
+  gate.resolve();
+  const body = await expectOk(await stale);
+
+  assert.equal(pushes.length, 0, 'a deleted alert must not be sent by the runner that still holds it');
+  assert.equal(okTickets, 0);
+  assert.equal(body.sent, 0);
+  assert.equal(body.stale, 1, 'the claim must prove the alert still exists');
+
+  // Re-creating the alert is a new configuration and notifies on its own terms,
+  // so the stale runner cannot have left a delivery recorded against it.
+  await saveAlert(BASE_ALERT);
+  const recreated = await runAt(1000);
+  assert.equal(recreated.body.sent, 1);
+  assert.equal(recreated.pushes.length, 1);
+});
+
+await test('a legacy alert stored without a revision is still fenced by a delete', async () => {
+  resetKv();
+  ticketStatus = 'ok';
+
+  // Exactly what an older build left behind: an alert with no revision beside
+  // it. A missing revision must never read as "matches" — that is what let a
+  // deleted alert claim and send.
+  await kv.hset(`push:price-alerts:${TOKEN}`, {
+    [priceAlertKey(BASE_ALERT.cardNumber, BASE_ALERT.printing)]: BASE_ALERT,
+  });
+  await kv.sadd('push:price-alert-tokens', TOKEN);
+
+  pushes = [];
+  okTickets = 0;
+
+  const gate = deferred();
+  let parked = false;
+  setKvHook(async (command) => {
+    if (command !== 'mget') return;
+    setKvHook(null);
+    parked = true;
+    await gate.promise;
+  });
+
+  const stale = startRun(1000);
+  await waitFor(() => parked, 'the runner to reach its arm-state read');
+  await removeAlert();
+
+  gate.resolve();
+  const body = await expectOk(await stale);
+
+  assert.equal(pushes.length, 0, 'a deleted legacy alert must not send');
+  assert.equal(okTickets, 0);
+  assert.equal(body.sent, 0);
+  assert.equal(body.stale, 1);
+});
+
+await test('a legacy alert is adopted with a real revision and still notifies once', async () => {
+  resetKv();
+  ticketStatus = 'ok';
+  await kv.hset(`push:price-alerts:${TOKEN}`, {
+    [priceAlertKey(BASE_ALERT.cardNumber, BASE_ALERT.printing)]: BASE_ALERT,
+  });
+  await kv.sadd('push:price-alert-tokens', TOKEN);
+
+  // Stamping a revision must not silence an alert an older build wrote.
+  const entry = await runAt(1000);
+  assert.equal(entry.body.sent, 1, 'a pre-revision alert must keep firing');
+  assert.equal(entry.pushes.length, 1);
+  assert.equal((await runAt(1000)).body.sent, 0, 'and must then disarm like any other');
+  assert.notEqual(await currentRev(), '0', 'the alert must have been adopted with a real revision');
+});
+
+await test('the alert payload and its revision are read by one command', async () => {
+  resetKv();
+  ticketStatus = 'ok';
+  await saveAlert(BASE_ALERT);
+
+  // The claim can only compare the revision, so it cannot detect a snapshot
+  // whose payload and revision came from DIFFERENT moments. Reading them with
+  // two commands leaves exactly that gap: an edit landing between them hands
+  // the runner the old interval beside the new revision, and the claim waves it
+  // through. There is no observable seam to gate on once the read is one
+  // command — which is the property itself, so assert it directly.
+  const log = [];
+  setKvHook((command, ...args) => { log.push({ command, args }); });
+  await runAt(1000);
+  setKvHook(null);
+
+  const alertsKey = `push:price-alerts:${TOKEN}`;
+  const revsKey = `push:price-alert-revs:${TOKEN}`;
+  const claimAt = log.findIndex(
+    (e) => e.command === 'eval' && String(e.args[0]).includes('@script claim-alert-send'),
+  );
+  assert.ok(claimAt > 0, 'the run must reach a claim');
+
+  const configReads = log.slice(0, claimAt)
+    .filter((e) => JSON.stringify(e.args).includes(alertsKey) || JSON.stringify(e.args).includes(revsKey));
+  assert.equal(
+    configReads.length, 1,
+    'payload and revision must not be read by separate commands',
+  );
+  assert.ok(
+    configReads[0].args[1].includes(alertsKey) && configReads[0].args[1].includes(revsKey),
+    'the one configuration read must return the payload and its revision together',
+  );
 });
 
 await test('a stale lease owner cannot clean up or commit after a takeover', async () => {

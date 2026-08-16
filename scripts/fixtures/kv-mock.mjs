@@ -98,9 +98,6 @@ function supersedeEpisode(episodeKey) {
   }
 }
 
-/** Mirrors the `'${NO_REVISION}'` literal the claim script falls back to. */
-const NO_REVISION = '0';
-
 const SCRIPTS = {
   'remove-watchlist-card'([setKey, registryKey], [card, token]) {
     set(setKey).delete(card);
@@ -126,8 +123,25 @@ const SCRIPTS = {
     return hash(hashKey).size;
   },
 
-  'claim-alert-send'([episodeKey, revKey], [field, rev, owner, leaseMs]) {
-    if ((hash(revKey).get(field) ?? NO_REVISION) !== rev) return 2;
+  // Returns the flat `field, json, rev, ...` array the real script builds. EVAL
+  // yields the stored payload as a raw string, unlike hgetall — so stringify
+  // what upsert parsed on the way in.
+  'load-price-alerts'([hashKey, revKey], [seed]) {
+    const out = [];
+    for (const [field, alert] of hash(hashKey)) {
+      let rev = hash(revKey).get(field);
+      if (rev === undefined) {
+        rev = `${seed}:${field}`;
+        hash(revKey).set(field, rev);
+      }
+      out.push(field, JSON.stringify(alert), rev);
+    }
+    return out;
+  },
+
+  'claim-alert-send'([episodeKey, revKey, hashKey], [field, rev, owner, leaseMs]) {
+    if (!hash(hashKey).has(field)) return 2;
+    if (hash(revKey).get(field) !== rev) return 2;
     if (liveString(episodeKey)) return 0;
     writeString(episodeKey, `o:${rev}:${owner}`, Number(leaseMs));
     return 1;
