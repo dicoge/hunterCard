@@ -1,0 +1,27 @@
+{
+  "algorithmVersion": "tournament-analytics-v1",
+  "generatedAt": "2026-08-16T12:36:37.696Z",
+  "months": [
+    {
+      "inputDeckIds": [
+        "decklog:DUKHN",
+        "decklog:2H33J8"
+      ],
+      "month": "2026-08",
+      "sampleSize": 2,
+      "warnings": [
+        "N=2: exploratory pipeline proof only; not statistically representative."
+      ]
+    },
+    {
+      "inputDeckIds": [],
+      "month": "2026-07",
+      "sampleSize": 0,
+      "warnings": [
+        "N=0: no cardsVerified:true decks; quantitative outputs are empty.",
+        "3 incomplete deck(s) excluded because cardsVerified is not true."
+      ]
+    }
+  ],
+  "schemaVersion": 1
+}
