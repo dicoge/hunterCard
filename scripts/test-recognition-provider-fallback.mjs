@@ -17,8 +17,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import handler, { RECOGNITION_UNAVAILABLE_CODE } from '../api/recognize-card.ts';
-import { isRecognitionInfrastructureFailure } from '../src/services/recognitionOutcome.ts';
+import handler, { RECOGNITION_UNAVAILABLE_CODE, VISION_TOTAL_BUDGET_MS } from '../api/recognize-card.ts';
+import {
+  isRecognitionInfrastructureFailure,
+  RECOGNITION_REQUEST_TIMEOUT_MS,
+} from '../src/services/recognitionOutcome.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const database = JSON.parse(
@@ -43,8 +46,32 @@ const UPSTREAM_BODY = 'upstream stack trace: quota project holo-secret-project';
 const savedGoogle = process.env.GEMINI_API_KEY;
 const savedOpenRouter = process.env.OPENROUTER_API_KEY;
 
+/**
+ * An upstream that never answers, exactly like a hung provider: it only settles when
+ * the handler's own AbortSignal fires, so the real per-leg timeout is what ends it.
+ *
+ * The keepalive is required, not decorative: AbortSignal.timeout() arms an unref'd
+ * timer, so without a ref'd handle Node would consider the loop idle and exit before
+ * the leg ever times out.
+ */
+const hangUntilAborted = (signal) => new Promise((_resolve, reject) => {
+  const keepAlive = setInterval(() => {}, 50);
+  const done = () => {
+    clearInterval(keepAlive);
+    reject(new Error('The operation was aborted'));
+  };
+  if (signal?.aborted) return done();
+  signal?.addEventListener('abort', done);
+});
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 /** Route both provider legs deterministically and record every outgoing request. */
-function stubNetwork({ google = 200, openrouter = 200, googleReply = REPLY, openrouterReply = REPLY } = {}) {
+function stubNetwork({
+  google = 200, openrouter = 200,
+  googleReply = REPLY, openrouterReply = REPLY,
+  googleDelay = 0, openrouterDelay = 0,
+} = {}) {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     const href = String(url);
@@ -53,13 +80,17 @@ function stubNetwork({ google = 200, openrouter = 200, googleReply = REPLY, open
     const record = { href, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null };
 
     if (href.includes(GOOGLE_HOST)) {
-      calls.push({ provider: 'gemini', ...record });
+      calls.push({ provider: 'gemini', at: Date.now(), ...record });
+      if (google === 'hang') return hangUntilAborted(init.signal);
+      if (googleDelay) await sleep(googleDelay);
       if (google === 'network') throw new Error(`connect ECONNREFUSED ${href}?key=${GOOGLE_KEY}`);
       if (google !== 200) return new Response(UPSTREAM_BODY, { status: google });
       return Response.json({ candidates: [{ content: { parts: [{ text: googleReply }] } }] });
     }
     if (href.includes(OPENROUTER_HOST)) {
-      calls.push({ provider: 'openrouter', ...record });
+      calls.push({ provider: 'openrouter', at: Date.now(), ...record });
+      if (openrouter === 'hang') return hangUntilAborted(init.signal);
+      if (openrouterDelay) await sleep(openrouterDelay);
       if (openrouter === 'network') throw new Error(`connect ECONNREFUSED ${href} bearer ${OPENROUTER_KEY}`);
       if (openrouter !== 200) return new Response(UPSTREAM_BODY, { status: openrouter });
       return Response.json({ choices: [{ message: { content: openrouterReply } }] });
@@ -313,6 +344,65 @@ for (const env of [{}, { google: '   ', openrouter: '' }]) {
       assert.ok(!('priceHistory' in candidate));
       assert.ok(!('ytStats' in candidate));
     }
+  });
+}
+
+// ── 9. The fallback has to land before the caller's own deadline (DIC-1020 CR) ─
+//
+// A fallback that only succeeds after ScanScreen has aborted is not a fallback: the
+// original head gave each leg 14s and ran them in sequence, so a hung Google plus a
+// 2s OpenRouter success answered at ~16.1s against a client that gave up at 15.0s.
+{
+  check('the whole provider chain is budgeted inside the caller deadline', () => {
+    assert.ok(
+      VISION_TOTAL_BUDGET_MS < RECOGNITION_REQUEST_TIMEOUT_MS,
+      `vision budget ${VISION_TOTAL_BUDGET_MS}ms must fit inside the ${RECOGNITION_REQUEST_TIMEOUT_MS}ms client deadline`,
+    );
+    // Ranking, the database load and the JSON round trip all happen outside the budget.
+    assert.ok(
+      RECOGNITION_REQUEST_TIMEOUT_MS - VISION_TOTAL_BUDGET_MS >= 3000,
+      'the budget must leave headroom for ranking and the JSON round trip',
+    );
+  });
+
+  const startedAt = Date.now();
+  const { res, body, calls } = await scan(
+    { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY },
+    { google: 'hang', openrouterDelay: 2000 },
+  );
+  const elapsed = Date.now() - startedAt;
+
+  check('a hung Google leg times out and OpenRouter still recognises the card', () => {
+    assert.deepEqual(calls.map(c => c.provider), ['gemini', 'openrouter']);
+    assert.equal(res.status, 200);
+    assert.equal(body.debug.provider, 'openrouter');
+    assert.equal(body.candidates[0].cardNumber, 'hBP04-005');
+  });
+  check('that fallback answers well before the 15s client abort', () => {
+    assert.ok(
+      elapsed < RECOGNITION_REQUEST_TIMEOUT_MS - 2000,
+      `fallback took ${elapsed}ms, the client aborts at ${RECOGNITION_REQUEST_TIMEOUT_MS}ms`,
+    );
+  });
+  check('the primary leg is capped so it cannot starve the fallback behind it', () => {
+    const handedOverAfter = calls[1].at - calls[0].at;
+    assert.ok(
+      handedOverAfter < VISION_TOTAL_BUDGET_MS,
+      `primary leg held the budget for ${handedOverAfter}ms of ${VISION_TOTAL_BUDGET_MS}ms`,
+    );
+    assert.ok(handedOverAfter >= 1000, 'the primary leg must actually have been attempted');
+  });
+}
+
+// A single configured provider is not capped — it may use the whole shared budget.
+{
+  const startedAt = Date.now();
+  const { res, body } = await scan({ openrouter: OPENROUTER_KEY }, { openrouterDelay: 2000 });
+  const elapsed = Date.now() - startedAt;
+  check('a lone provider keeps answering normally under the shared budget', () => {
+    assert.equal(res.status, 200);
+    assert.equal(body.debug.provider, 'openrouter');
+    assert.ok(elapsed < RECOGNITION_REQUEST_TIMEOUT_MS - 2000, `took ${elapsed}ms`);
   });
 }
 

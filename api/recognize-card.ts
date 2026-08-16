@@ -17,8 +17,20 @@ const GEMINI_MODEL = 'gemini-2.5-flash';
 // fallback scan ranks identically to a primary one (DIC-1019).
 const OPENROUTER_MODEL = 'google/gemini-2.5-flash';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const VISION_TIMEOUT_MS = 14000;
 const VISION_MAX_TOKENS = 180;
+
+// The scanner abandons the request after RECOGNITION_REQUEST_TIMEOUT_MS (15s, see
+// src/services/recognitionOutcome). Every provider leg shares ONE budget sized below
+// that, leaving room for the JSON round trip and ranking — otherwise a sequential
+// fallback "succeeds" server-side after the caller has already aborted, which is a
+// fallback the user can never receive (DIC-1020 CR).
+export const VISION_TOTAL_BUDGET_MS = 11000;
+// A leg that still has a fallback behind it may not spend the whole budget: it is
+// capped, and must leave at least VISION_FALLBACK_RESERVE_MS for the next provider.
+const VISION_PRIMARY_CAP_MS = 6500;
+const VISION_FALLBACK_RESERVE_MS = 4500;
+// Below this there is no point opening a connection at all.
+const VISION_MIN_LEG_MS = 1500;
 const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
 const AUTO_ACCEPT_CONFIDENCE = 0.82;
 
@@ -205,7 +217,7 @@ TITLE: [title or NONE]`;
 type VisionAdapter = {
   provider: string;
   model: string;
-  request: (images: string[]) => Promise<Response>;
+  request: (images: string[], timeoutMs: number) => Promise<Response>;
   extract: (data: any) => string;
 };
 
@@ -215,7 +227,7 @@ type VisionAdapter = {
 const googleAdapter = (apiKey: string): VisionAdapter => ({
   provider: 'gemini',
   model: GEMINI_MODEL,
-  request: (images) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+  request: (images, timeoutMs) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
@@ -225,7 +237,7 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
       }],
       generationConfig: { temperature: 0, maxOutputTokens: VISION_MAX_TOKENS },
     }),
-    signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   }),
   extract: (data) => (data?.candidates?.[0]?.content?.parts || [])
     .map((part: any) => part.text || '').join('\n').trim(),
@@ -234,7 +246,7 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
 const openRouterAdapter = (apiKey: string): VisionAdapter => ({
   provider: 'openrouter',
   model: OPENROUTER_MODEL,
-  request: (images) => fetch(OPENROUTER_URL, {
+  request: (images, timeoutMs) => fetch(OPENROUTER_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -254,7 +266,7 @@ const openRouterAdapter = (apiKey: string): VisionAdapter => ({
       temperature: 0,
       max_tokens: VISION_MAX_TOKENS,
     }),
-    signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   }),
   extract: (data) => String(data?.choices?.[0]?.message?.content || '').trim(),
 });
@@ -281,13 +293,27 @@ async function callVision(images: string[]): Promise<{ reply: string; provider: 
   const adapters = resolveAdapters();
   if (adapters.length === 0) throw new RecognitionUnavailableError('no vision provider key configured');
 
+  const deadline = Date.now() + VISION_TOTAL_BUDGET_MS;
   let lastError: Error | null = null;
-  for (const adapter of adapters) {
+  for (let i = 0; i < adapters.length; i++) {
+    const adapter = adapters[i];
+    const remaining = deadline - Date.now();
+    // The last leg may use everything that is left; anything before it is capped and has
+    // to hand the reserve on, so its timeout can never starve the fallback behind it.
+    const legBudget = i === adapters.length - 1
+      ? remaining
+      : Math.min(VISION_PRIMARY_CAP_MS, remaining - VISION_FALLBACK_RESERVE_MS);
+    if (legBudget < VISION_MIN_LEG_MS) {
+      lastError = lastError || new Error('vision budget exhausted');
+      console.error(`[recognize-card] provider ${adapter.provider} skipped: vision budget exhausted`);
+      continue;
+    }
+
     // Upstream bodies and raw transport errors never escape this block: a failing leg is
     // reduced to provider + HTTP status before it can reach a client response or a log.
     let reply: string;
     try {
-      const res = await adapter.request(imageList);
+      const res = await adapter.request(imageList, legBudget);
       if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
       reply = adapter.extract(await res.json());
     } catch (e: any) {
