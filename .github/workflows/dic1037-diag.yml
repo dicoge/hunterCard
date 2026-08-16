@@ -1,0 +1,46 @@
+name: DIC-1037 Vercel Diagnostic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    name: Vercel diagnostics (read-only)
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_PROJECT_NAME: holocard-hunter
+    steps:
+      - name: Diagnose project + deployments + logs
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          PROJECT_ID="prj_eL50xWcqlBdUWWbrOSgeuIDUCjeX"
+          echo "### PROJECT CONFIG ###"
+          curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${VERCEL_ORG_ID}" \
+            | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); console.log(JSON.stringify({id:d.id,name:d.name,framework:d.framework,functionDefaultRegion:d.functionDefaultRegion,settings:d.settings,createdAt:d.createdAt,updatedAt:d.updatedAt,accountId:d.accountId,link:d.link||null},null,1))'
+
+          echo "### RECENT DEPLOYMENTS ###"
+          curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&limit=15&teamId=${VERCEL_ORG_ID}" \
+            | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); for (const x of (d.deployments||[])) console.log(JSON.stringify({uid:x.uid,url:x.url,target:x.target||null,readyState:x.readyState,readyStateAt:x.readyStateAt,createdAt:x.createdAt,regions:x.regions||null,type:x.type||null,meta:{sha:x.meta&&x.meta.githubCommitSha,origin:x.meta&&x.meta.githubCommitOrg}}))'
+
+          echo "### LATEST PROD DEPLOYMENT DETAIL ###"
+          curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v13/deployments/dpl_F77hY4tLPL2RTQPYmXiHVwgKVgix?teamId=${VERCEL_ORG_ID}" \
+            | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); console.log(JSON.stringify({uid:d.uid,url:d.url,readyState:d.readyState,readyStateAt:d.readyStateAt,regions:d.regions,type:d.type,functions:d.functions,lambdaStats:d.lambdaRuntimeStats,config:d.config,errorMessage:d.errorMessage||null},null,1))'
+
+          echo "### FUNCTION RUNTIME LOGS ###"
+          for q in "projectId=${PROJECT_ID}&deploymentId=dpl_F77hY4tLPL2RTQPYmXiHVwgKVgix&type=functions&limit=50" "projectId=${PROJECT_ID}&deploymentId=dpl_F77hY4tLPL2RTQPYmXiHVwgKVgix&type=runtime-logs&limit=50"; do
+            echo "--- query: ${q} ---"
+            curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v2/logs?${q}&teamId=${VERCEL_ORG_ID}" | head -c 4000
+            echo
+          done
+
+          echo "### ENV SNAPSHOT (names only) ###"
+          curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+            | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); for (const e of (d.envs||[])) console.log(JSON.stringify({key:e.key,type:e.type,target:e.target||null,createdAt:e.createdAt}))'
