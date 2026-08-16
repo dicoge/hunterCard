@@ -116,9 +116,19 @@ export async function setLastAlertTimes(keys: string[], timestamp: number): Prom
 const PRICE_ALERT_PREFIX = 'push:price-alerts:';
 const PRICE_ALERT_TOKENS_KEY = 'push:price-alert-tokens';
 const PRICE_ALERT_STATE_KEY = 'push:price-alert-state';
+const PRICE_ALERT_CLAIM_PREFIX = 'push:price-alert-claim:';
+
+/** How long one runner may hold a send claim before another may take it over.
+ * Bounds crash recovery: a runner that dies mid-send suppresses its alert for at
+ * most this long, instead of forever. Far longer than an Expo batch call. */
+export const ALERT_CLAIM_LEASE_MS = 5 * 60_000;
 
 function priceAlertsKey(token: string): string {
   return `${PRICE_ALERT_PREFIX}${token}`;
+}
+
+function alertClaimKey(stateKey: string): string {
+  return `${PRICE_ALERT_CLAIM_PREFIX}${stateKey}`;
 }
 
 export async function getPriceAlertsForToken(token: string): Promise<PriceAlert[]> {
@@ -137,6 +147,7 @@ export async function countPriceAlertsForToken(token: string): Promise<number> {
 export async function upsertPriceAlert(token: string, key: string, alert: PriceAlert): Promise<void> {
   await kv.hset(priceAlertsKey(token), { [key]: alert });
   await kv.sadd(PRICE_ALERT_TOKENS_KEY, token);
+  await releaseAlertClaim(`${token}|${key}`);
   await kv.hdel(PRICE_ALERT_STATE_KEY, `${token}|${key}`);
 }
 
@@ -155,6 +166,7 @@ return redis.call('HLEN', KEYS[1])
 
 export async function removePriceAlert(token: string, key: string): Promise<void> {
   await kv.eval(REMOVE_PRICE_ALERT, [priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY], [key, token]);
+  await releaseAlertClaim(`${token}|${key}`);
   await kv.hdel(PRICE_ALERT_STATE_KEY, `${token}|${key}`);
 }
 
@@ -183,4 +195,43 @@ export async function getAlertArmStates(keys: string[]): Promise<Record<string, 
 export async function setAlertArmStates(patch: Record<string, AlertArmState>): Promise<void> {
   if (Object.keys(patch).length === 0) return;
   await kv.hset(PRICE_ALERT_STATE_KEY, patch);
+}
+
+// ── Send claims ─────────────────────────────────────────────────────────────
+//
+// The arm state above is read-modify-write, so two overlapping evaluator runs
+// can both observe the same alert as armed and both notify before either
+// disarm lands (DIC-1025). The claim below is the atomic gate that decides who
+// may actually call Expo for one alert: a single `SET NX PX` per
+// `<token>|<cardNumber>|<PRINTING>`, so exactly one runner can win regardless of
+// how the two runs interleave.
+//
+// Claim lifetime mirrors one arming episode:
+//   absent   → nobody is sending and nobody has sent since the last re-arm
+//   <lease>  → a runner is mid-send; auto-expires so a crash cannot suppress
+//              the alert for more than ALERT_CLAIM_LEASE_MS
+//   'sent'   → a confirmed Expo ticket ended this episode; persistent (no TTL)
+//              so an expired lease can never grant a second send. Cleared only
+//              by a re-arm, an explicit user edit, or removal.
+
+/** Try to become the one runner allowed to notify this alert. */
+export async function claimAlertSend(stateKey: string): Promise<boolean> {
+  const claimed = await kv.set(alertClaimKey(stateKey), Date.now(), {
+    nx: true,
+    px: ALERT_CLAIM_LEASE_MS,
+  });
+  return claimed === 'OK';
+}
+
+/** Give the claim back so the very next run can retry — used when Expo did not
+ * confirm the delivery, and as best-effort cleanup when a run fails outright. */
+export async function releaseAlertClaim(stateKey: string): Promise<void> {
+  await kv.del(alertClaimKey(stateKey));
+}
+
+/** Close the episode after a confirmed Expo `ok` ticket. Call this only AFTER
+ * the matching `armed: false` has been persisted: the reverse order could leave
+ * an alert armed but permanently claimed if the run died in between. */
+export async function commitAlertClaim(stateKey: string): Promise<void> {
+  await kv.set(alertClaimKey(stateKey), 'sent');
 }

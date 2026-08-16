@@ -131,8 +131,11 @@ jobs:
       - name: Verify desired-price interval alerts (DIC-1023)
         run: npm run test:price-alerts
 
-      - name: Verify server price-alert evaluator dedupe/re-arm (DIC-1023)
+      - name: Verify server price-alert evaluator dedupe/re-arm/claim (DIC-1023)
         run: npm run test:price-alert-run
+
+      - name: Verify push notification backend (DIC-390)
+        run: npm run test:push-backend
 
       - name: Verify card-lookup version alignment is source-proven (DIC-1013)
         run: npm run test:version-alignment
