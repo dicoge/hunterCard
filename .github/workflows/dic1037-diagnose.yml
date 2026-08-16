@@ -1,10 +1,17 @@
 name: DIC-1037 Vercel Function Diagnostic
 
 # TEMPORARY read-only diagnostic for the DIC-1037 /api outage investigation.
-# Runs on the PR itself (pull_request synchronize) so it can inspect the
-# PR's auto-created Vercel preview deployment: real deployment config (was
-# vercel.json honored?), /api/hello timing, and Vercel runtime logs (did the
-# Node function even boot?). Remove this workflow once the outage is resolved.
+# Runs on the PR itself (pull_request synchronize).
+# Diagnoses why every /api/* function on this project hangs (504
+# FUNCTION_INVOCATION_TIMEOUT, zero bytes) while static + routing work:
+#   - dump the deployed deployment's effective config (was vercel.json honored?)
+#   - dump project settings (nodeVersion pin, git link)
+#   - probe /api/hello on the auto-created preview deployment
+#   - create PER-DEPLOYMENT experimental deployments of the same branch with
+#     nodeVersion overridden to 20.x and 22.x, and probe /api/hello on each.
+#     projectSettings passed to POST /v13/deployments apply only to that
+#     deployment and are NOT persisted to the project.
+# Remove this workflow once the outage is resolved.
 
 on:
   pull_request:
@@ -12,7 +19,7 @@ on:
 
 jobs:
   diagnose:
-    name: Inspect deployment config + probe /api/hello
+    name: Inspect config + probe /api/hello on node 20/22 experiments
     runs-on: ubuntu-latest
     env:
       VERCEL_PROJECT_NAME: holocard-hunter
@@ -29,109 +36,135 @@ jobs:
           echo "PROJECT_ID=$id" >> "$GITHUB_ENV"
           echo "resolved project id: $id"
 
-      - name: Wait for the deployment of this commit to go READY and dump its config
+      - name: Dump project settings (node version, git link)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          curl -sS --fail --oauth2-bearer "$VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${VERCEL_ORG_ID}" -o /tmp/project.json
+          node -e '
+            const d = JSON.parse(require("fs").readFileSync("/tmp/project.json","utf8"));
+            console.log("name:", d.name);
+            console.log("nodeVersion (settings):", d.settings && d.settings.nodeVersion);
+            console.log("nodeVersion (top-level):", d.nodeVersion);
+            console.log("serverlessFunctionRegion:", d.serverlessFunctionRegion);
+            console.log("framework:", d.settings && d.settings.framework);
+            console.log("outputDirectory:", d.settings && d.settings.outputDirectory);
+            console.log("buildCommand:", (d.settings && d.settings.buildCommand || "").slice(0, 120));
+            console.log("rootDirectory:", d.settings && d.settings.rootDirectory);
+            console.log("link:", JSON.stringify(d.link));
+            const repoId = d.link && d.link.gitRepoId;
+            if (repoId) require("fs").writeFileSync("/tmp/repoId.txt", String(repoId));
+          '
+
+      - name: Wait for the auto preview deployment of this commit and probe it
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          found=0
+          uid=""
           for i in $(seq 1 24); do
             curl -sS --fail --oauth2-bearer "$VERCEL_TOKEN" \
               "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&limit=25&teamId=${VERCEL_ORG_ID}" \
               -o /tmp/deployments.json
-            HEAD_SHA="$HEAD_SHA" node -e '
-              const fs = require("fs");
-              const d = JSON.parse(fs.readFileSync("/tmp/deployments.json","utf8"));
-              const list = d.deployments || [];
-              const sel = list.find(x => x.meta && x.meta.githubCommitSha === process.env.HEAD_SHA);
-              if (!sel) process.exit(1);
-              fs.writeFileSync("/tmp/sel_uid.txt", sel.uid);
-            ' && found=1 && break
+            uid=$(HEAD_SHA="$HEAD_SHA" node -pe '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const sel = (d.deployments||[]).find(x => x.meta && x.meta.githubCommitSha === process.env.HEAD_SHA);
+              sel ? sel.uid : ""
+            ' </tmp/deployments.json)
+            [ -n "$uid" ] && break
             sleep 10
           done
-          if [ "$found" = "0" ]; then echo "::error::no deployment found for HEAD $HEAD_SHA"; exit 1; fi
-          echo "DEPLOYMENT_UID=$(cat /tmp/sel_uid.txt)" >> "$GITHUB_ENV"
-
-          uid=$(cat /tmp/sel_uid.txt)
+          [ -n "$uid" ] || { echo "::error::no auto deployment for HEAD $HEAD_SHA"; exit 1; }
           for i in $(seq 1 24); do
             state=$(curl -sS --fail --oauth2-bearer "$VERCEL_TOKEN" \
               "https://api.vercel.com/v13/deployments/${uid}?teamId=${VERCEL_ORG_ID}" \
               | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).status || "unknown"')
-            echo "deployment status: $state"
             [ "$state" = "READY" ] && break
             sleep 10
           done
-
+          echo "== auto deployment config =="
           curl -sS --fail --oauth2-bearer "$VERCEL_TOKEN" \
             "https://api.vercel.com/v13/deployments/${uid}?teamId=${VERCEL_ORG_ID}" -o /tmp/deployment.json
           node -e '
-            const fs = require("fs");
-            const d = JSON.parse(fs.readFileSync("/tmp/deployment.json","utf8"));
-            console.log("== deployment ==");
-            console.log("uid:", d.uid);
-            console.log("url:", d.url);
-            console.log("status:", d.status, "| readyState:", d.readyState, "| target:", d.target, "| created:", d.created);
-            console.log("git commit:", JSON.stringify(d.gitSource && d.gitSource.ref) || "(none)");
+            const d = JSON.parse(require("fs").readFileSync("/tmp/deployment.json","utf8"));
             const cfg = d.config || {};
-            console.log("== effective config ==");
-            console.log("functionType:", cfg.functionType);
-            console.log("functionTimeout:", cfg.functionTimeout);
-            console.log("functionMemoryType:", cfg.functionMemoryType);
-            console.log("functionDefaultMemoryType:", cfg.functionDefaultMemoryType);
-            console.log("isUsingActiveCPU:", cfg.isUsingActiveCPU);
-            console.log("regions:", JSON.stringify(cfg.regions));
+            console.log("uid:", d.uid);
+            console.log("url:", d.url, "| status:", d.status);
+            console.log("functionType:", cfg.functionType, "| functionTimeout:", cfg.functionTimeout);
+            console.log("isUsingActiveCPU:", cfg.isUsingActiveCPU, "| regions:", JSON.stringify(cfg.regions));
             console.log("nodeVersion:", cfg.nodeVersion);
-            console.log("runtime:", JSON.stringify(cfg.runtime));
-            console.log("type:", cfg.type);
-            console.log("maxDuration:", cfg.maxDuration);
-            console.log("lambdaRuntimeStats:", JSON.stringify(cfg.lambdaRuntimeStats));
-            console.log("functions:", JSON.stringify(cfg.functions));
-            console.log("builds:", JSON.stringify((cfg.builds || []).map(b => ({ src: b.src, use: b.use }))));
           '
-          echo "DEPLOYMENT_URL=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/deployment.json","utf8")).url')" >> "$GITHUB_ENV"
+          echo "AUTO_URL=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/deployment.json","utf8")).url')" >> "$GITHUB_ENV"
+          url="https://$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/deployment.json","utf8")).url')"
+          echo "== probe auto deployment =="
+          echo "static /:"; curl -sS -o /dev/null -w "  HTTP %{http_code} in %{time_total}s\n" -m 20 "$url/" || echo "  rc=$?"
+          echo "api/hello (75s):"; curl -sS -m 75 -w "\n  HTTP %{http_code} in %{time_total}s\n" "$url/api/hello" || echo "  rc=$?"
 
-      - name: Probe static root, /api/hello, and a 404 route
-        run: |
-          set +e
-          url="https://$DEPLOYMENT_URL"
-          echo "== static / =="
-          curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" -m 20 "$url/" || echo "static rc=$?"
-          echo "== /api/hello (max 75s) =="
-          curl -sS -m 75 -w "\nHTTP %{http_code} in %{time_total}s\n" "$url/api/hello" || echo "hello rc=$?"
-          echo "== /api/nonexistent-xyz (max 20s) =="
-          curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" -m 20 "$url/api/nonexistent-xyz" || echo "404 rc=$?"
-
-      - name: Fetch Vercel runtime logs (try several endpoints, best effort)
+      - name: Experiment - deploy this branch with nodeVersion overrides and probe
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH: ${{ github.head_ref }}
         run: |
-          set +e
-          uid="$DEPLOYMENT_UID"
-          for ep in \
-            "v1/deployments/${uid}/runtime-logs?direction=backward&limit=100" \
-            "v2/deployments/${uid}/events?direction=backward&limit=100" \
-            "v3/deployments/${uid}/events?direction=backward&limit=100" \
-            "v2/deployments/${uid}/runtime-logs?direction=backward&limit=100" ; do
-            echo "== GET $ep =="
-            code=$(curl -sS --oauth2-bearer "$VERCEL_TOKEN" \
-              "https://api.vercel.com/${ep}&projectId=${PROJECT_ID}&teamId=${VERCEL_ORG_ID}" \
-              -o /tmp/logs.json -w "%{http_code}")
-            echo "HTTP $code"
+          set -uo pipefail
+          repo_id=$(cat /tmp/repoId.txt)
+          sha="$HEAD_SHA"
+          ref="$BRANCH"
+          for nv in 20.x 22.x; do
+            echo "================== nodeVersion=${nv} =================="
+            payload=$(node -e '
+              console.log(JSON.stringify({
+                name: "holocard-hunter",
+                gitSource: { type: "github", repoId: Number(process.argv[1]), ref: process.argv[2], sha: process.argv[3] },
+                projectSettings: { nodeVersion: process.argv[4] },
+              }));
+            ' "$repo_id" "$ref" "$sha" "$nv")
+            code=$(curl -sS -o /tmp/exp.json -w "%{http_code}" -X POST \
+              --oauth2-bearer "$VERCEL_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data-raw "$payload" \
+              "https://api.vercel.com/v13/deployments?teamId=${VERCEL_ORG_ID}")
+            echo "create deployment HTTP $code"
             node -e '
-              const fs = require("fs");
-              let d; try { d = JSON.parse(fs.readFileSync("/tmp/logs.json","utf8")); } catch(e) { console.log("unparseable"); process.exit(0); }
-              if (d.error) { console.log("api error:", JSON.stringify(d.error)); process.exit(0); }
-              const items = d.lines || d.events || [];
-              console.log("items:", items.length);
-              for (const it of items.slice(0, 40)) {
-                if (it.type === "command" || it.type === "stderr") continue;
-                const msg = (it.payload && (it.payload.msg || it.payload.message)) || it.text || it.body || JSON.stringify(it);
-                console.log((it.type||"log"), (it.created||it.timestamp||""), JSON.stringify(msg).slice(0, 300));
-              }
+              const d = JSON.parse(require("fs").readFileSync("/tmp/exp.json","utf8"));
+              if (d.error) { console.log("api error:", JSON.stringify(d.error)); process.exit(1); }
+              console.log("uid:", d.uid, "| url:", d.url, "| state:", d.readyState || d.status);
+              require("fs").writeFileSync("/tmp/exp_url.txt", d.url);
+              require("fs").writeFileSync("/tmp/exp_uid.txt", d.uid);
+            ' || exit 1
+            exp_uid=$(cat /tmp/exp_uid.txt)
+            exp_url=$(cat /tmp/exp_url.txt)
+            for i in $(seq 1 30); do
+              state=$(curl -sS --fail --oauth2-bearer "$VERCEL_TOKEN" \
+                "https://api.vercel.com/v13/deployments/${exp_uid}?teamId=${VERCEL_ORG_ID}" \
+                | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).status || "unknown"')
+              echo "  status: $state"
+              case "$state" in
+                READY|ERROR|CANCELED|CANCELED_SYSTEM) break ;;
+              esac
+              sleep 10
+            done
+            echo "== probe node ${nv} deployment =="
+            echo "static /:"; curl -sS -o /dev/null -w "  HTTP %{http_code} in %{time_total}s\n" -m 20 "https://$exp_url/" || echo "  rc=$?"
+            echo "api/hello (75s):"; curl -sS -m 75 -D /tmp/h.txt -w "\n  HTTP %{http_code} in %{time_total}s\n" "https://$exp_url/api/hello" || echo "  rc=$?"
+            grep -i "x-vercel" /tmp/h.txt || true
+            echo "== probe api/hello again (warm?) =="
+            curl -sS -m 30 -w "  HTTP %{http_code} in %{time_total}s\n" "https://$exp_url/api/hello" || echo "  rc=$?"
+            echo "== config for this deployment =="
+            curl -sS --fail --oauth2-bearer "$VERCEL_TOKEN" \
+              "https://api.vercel.com/v13/deployments/${exp_uid}?teamId=${VERCEL_ORG_ID}" -o /tmp/expdep.json
+            node -e '
+              const d = JSON.parse(require("fs").readFileSync("/tmp/expdep.json","utf8"));
+              const cfg = d.config || {};
+              console.log("functionType:", cfg.functionType, "| functionTimeout:", cfg.functionTimeout);
+              console.log("isUsingActiveCPU:", cfg.isUsingActiveCPU, "| regions:", JSON.stringify(cfg.regions));
+              console.log("nodeVersion:", cfg.nodeVersion, "| runtime:", JSON.stringify(cfg.runtime));
             '
-            [ -f /tmp/logs.json ] && node -e 'const d=JSON.parse(require("fs").readFileSync("/tmp/logs.json","utf8")); process.exit(d.error?1:0)' 2>/dev/null && break
+            echo "================== end node ${nv} =================="
           done
-          true
