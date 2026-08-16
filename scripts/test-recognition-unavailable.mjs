@@ -39,8 +39,12 @@ const database = JSON.parse(
 
 // The exact retake hint the user must NEVER see for a backend outage.
 const RETAKE_HINT = '無法從卡牌識別到卡號，請調整角度或光線後重試';
+// A stand-in for a normal camera frame. Only its declared dimensions matter here: the
+// vision leg is stubbed, but the handler refuses images too small to hold a readable
+// card number (DIC-1021), and every case below is about a BACKEND fault rather than a
+// bad photo — a 1x1 pixel would be answered as "retake it" before the backend is reached.
 const PIXEL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAV4CAIAAAAAAAAA';
 
 let geminiReply = 'CARD_NUMBER: hBP04-005\nCHARACTER: ラプラス・ダークネス\nRARITY: SEC';
 let geminiStatus = 200;

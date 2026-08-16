@@ -34,6 +34,13 @@ const VISION_MIN_LEG_MS = 1500;
 const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
 const AUTO_ACCEPT_CONFIDENCE = 0.82;
 
+// A card number occupies roughly 3% of a card's height, so a frame shorter than this
+// cannot physically carry a legible one. Asked anyway, the model does not answer NONE —
+// it invents a plausible number, which then scores as "cardNumber exact" (+100) and
+// buries the real card under five confident wrong candidates (DIC-1021 QA). The scanner
+// sends up to 1536px, so this floor is far below anything a real scan produces.
+const MIN_LEGIBLE_IMAGE_PX = 320;
+
 // Recognition stays unavailable until the operator provisions a vision provider key in
 // the deployment environment. Raised as its own type so the handler can answer 503 with a
 // stable code instead of a bare 500: the client has to tell "this deployment cannot
@@ -184,6 +191,73 @@ function json(d: any, status = 200): Response {
   });
 }
 
+function decodeImageHeader(image: string): Uint8Array | null {
+  const comma = image.indexOf(',');
+  const b64 = (comma >= 0 ? image.slice(comma + 1) : image).replace(/[^A-Za-z0-9+/]/g, '');
+  // Size markers live near the front, so decoding a bounded prefix is enough and keeps
+  // this off the hot path for multi-megabyte camera frames.
+  const prefix = b64.slice(0, 24000);
+  const usable = prefix.slice(0, prefix.length - (prefix.length % 4));
+  if (usable.length < 32) return null;
+  try {
+    const binary = atob(usable);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Longest edge of a JPEG or PNG, read straight from its header bytes.
+ *
+ * Returns null whenever the size cannot be established, and every caller must then fail
+ * OPEN: refusing to scan a real photo would be far worse than scanning a small one.
+ */
+export function imageLongestEdge(image: string): number | null {
+  const b = decodeImageHeader(image);
+  if (!b || b.length < 26) return null;
+
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+    const at = (o: number) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+    const width = at(16), height = at(20);
+    return width && height ? Math.max(width, height) : null;
+  }
+
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const marker = b[i + 1];
+      // Padding and standalone markers carry no length field.
+      if (marker === 0xff || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) { i += 2; continue; }
+      const segment = (b[i + 2] << 8) | b[i + 3];
+      // SOF0-SOF15 hold height then width; c4/c8/cc share the range but are not frames.
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        const height = (b[i + 5] << 8) | b[i + 6];
+        const width = (b[i + 7] << 8) | b[i + 8];
+        return width && height ? Math.max(width, height) : null;
+      }
+      if (segment < 2) return null;
+      i += 2 + segment;
+    }
+  }
+  return null;
+}
+
+/**
+ * True only when every image whose size could actually be measured is too small to
+ * contain a readable card number. Unmeasurable images make this false — see above.
+ */
+export function isBelowLegibleResolution(images: any[]): boolean {
+  const measured = images
+    .filter((image): image is string => typeof image === 'string' && image.length > 0)
+    .map(imageLongestEdge)
+    .filter((edge): edge is number => edge !== null);
+  return measured.length > 0 && Math.max(...measured) < MIN_LEGIBLE_IMAGE_PX;
+}
+
 function dataUriToGeminiPart(image: string) {
   const match = image.match(/^data:([^;]+);base64,(.+)$/);
   return {
@@ -205,6 +279,8 @@ Critical reading order:
 4. RARITY: C, U, R, RR, S, SR, SEC, OUR, P, etc. near card number.
 5. BLOOM_LEVEL / card type: Spot, Debut, 1st, 2nd, Buzz, Oshi, Support, Event, etc.
 6. TITLE: card title/support event name, if distinct from character.
+
+CARD_NUMBER discipline: transcribe only characters you can actually read in this photo. If the bottom-edge code is blurred, cropped, or too small to read character by character, answer NONE. Never infer it from the artwork, the character, the set, or a card you remember — an invented number is far worse than NONE, because it is trusted as an exact match.
 
 If a field is not clearly visible, write NONE. Do not guess missing digits. Return exactly:
 CHARACTER: [name or NONE]
@@ -434,6 +510,21 @@ export default async function handler(req: Request): Promise<Response> {
     if (!images[0] || typeof images[0] !== 'string') return json({ success: false, error: 'Invalid image' }, 400);
     // Store MVP clients send `storeMvp: true` so forbidden fields never cross the wire.
     const storeMvp = body?.storeMvp === true;
+
+    // A frame too small to hold a legible card number never reaches the model: it would
+    // answer with an invented one rather than NONE. 404 keeps this a photo-level outcome,
+    // so the client asks for a closer shot instead of reporting a broken backend.
+    //
+    // The provider check comes first on purpose: a deployment that cannot recognise
+    // anything owes the user a 503 even for a bad photo. Answering "retake it" on an
+    // unprovisioned backend is exactly the DIC-1013 defect.
+    if (resolveAdapters().length > 0 && isBelowLegibleResolution(images)) {
+      return json({
+        success: false,
+        error: '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝',
+        candidates: [],
+      }, 404);
+    }
 
     const [{ reply, provider, model }, cards] = await Promise.all([
       callVision(images),

@@ -140,6 +140,9 @@ jobs:
       - name: Verify recognition provider priority, fallback and key isolation (DIC-1019)
         run: npm run test:recognition-provider
 
+      - name: Verify an illegible photo is refused instead of matched (DIC-1021)
+        run: npm run test:recognition-image-quality
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
