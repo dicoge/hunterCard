@@ -11,6 +11,7 @@ const hashes = new Map();
 const sets = new Map();
 const strings = new Map();
 let clockSkewMs = 0;
+let hook = null;
 
 function hash(key) {
   if (!hashes.has(key)) hashes.set(key, new Map());
@@ -54,11 +55,25 @@ export function resetKv() {
   sets.clear();
   strings.clear();
   clockSkewMs = 0;
+  hook = null;
 }
 
 /** Jump the fixture's clock forward so a PX lease expires without a real wait. */
 export function advanceKvClock(ms) {
   clockSkewMs += ms;
+}
+
+/**
+ * Install an async seam the mock awaits BEFORE running a command, so a test can
+ * park a real handler at an exact point between two KV round trips. It only
+ * delays a command, never splits one: an `eval` still runs atomically once it
+ * starts, exactly like a real single-threaded Redis.
+ *
+ * `hook(command, ...args)` — return a promise to park, anything else to pass
+ * straight through.
+ */
+export function setKvHook(fn) {
+  hook = fn;
 }
 
 export function kvSnapshot() {
@@ -83,6 +98,9 @@ function supersedeEpisode(episodeKey) {
   }
 }
 
+/** Mirrors the `'${NO_REVISION}'` literal the claim script falls back to. */
+const NO_REVISION = '0';
+
 const SCRIPTS = {
   'remove-watchlist-card'([setKey, registryKey], [card, token]) {
     set(setKey).delete(card);
@@ -90,59 +108,62 @@ const SCRIPTS = {
     return set(setKey).size;
   },
 
-  'upsert-price-alert'([hashKey, registryKey, episodeKey], [field, alertJson, token]) {
+  'upsert-price-alert'([hashKey, registryKey, episodeKey, revKey], [field, alertJson, token, rev]) {
     // The real client auto-deserializes JSON on read, so store the parsed
     // object the way hgetall would hand it back.
     hash(hashKey).set(field, JSON.parse(alertJson));
+    hash(revKey).set(field, rev);
     set(registryKey).add(token);
     supersedeEpisode(episodeKey);
     return 1;
   },
 
-  'remove-price-alert'([hashKey, registryKey, episodeKey], [field, token]) {
+  'remove-price-alert'([hashKey, registryKey, episodeKey, revKey], [field, token]) {
     hash(hashKey).delete(field);
+    hash(revKey).delete(field);
     if (hash(hashKey).size === 0) set(registryKey).delete(token);
     supersedeEpisode(episodeKey);
     return hash(hashKey).size;
   },
 
-  'claim-alert-send'([episodeKey], [owner, leaseMs]) {
+  'claim-alert-send'([episodeKey, revKey], [field, rev, owner, leaseMs]) {
+    if ((hash(revKey).get(field) ?? NO_REVISION) !== rev) return 2;
     if (liveString(episodeKey)) return 0;
-    writeString(episodeKey, `o:${owner}`, Number(leaseMs));
+    writeString(episodeKey, `o:${rev}:${owner}`, Number(leaseMs));
     return 1;
   },
 
-  'release-alert-claim'([episodeKey], [owner]) {
+  'release-alert-claim'([episodeKey], [rev, owner]) {
     const claim = liveString(episodeKey)?.value ?? null;
-    if (claim === `o:${owner}` || claim === `x:${owner}`) {
+    if (claim === `o:${rev}:${owner}` || claim === `x:${rev}:${owner}`) {
       return strings.delete(episodeKey) ? 1 : 0;
     }
     return 0;
   },
 
-  'commit-alert-claim'([episodeKey], [owner, notifiedAt, price]) {
+  'commit-alert-claim'([episodeKey], [rev, owner, notifiedAt, price]) {
     const claim = liveString(episodeKey)?.value ?? null;
-    if (claim === `o:${owner}`) {
-      writeString(episodeKey, `s:${notifiedAt}:${price}`, null);
+    if (claim === `o:${rev}:${owner}`) {
+      writeString(episodeKey, `s:${rev}:${notifiedAt}:${price}`, null);
       return 1;
     }
-    if (claim === `x:${owner}`) {
+    if (claim === `x:${rev}:${owner}`) {
       strings.delete(episodeKey);
       return 2;
     }
     return 0;
   },
 
-  'rearm-alert-episode'([episodeKey]) {
+  'rearm-alert-episode'([episodeKey], [rev]) {
     const claim = liveString(episodeKey)?.value ?? null;
-    if (claim !== null && claim.slice(0, 2) === 's:') {
+    if (claim !== null && claim.startsWith(`s:${rev}:`)) {
       return strings.delete(episodeKey) ? 1 : 0;
     }
     return 0;
   },
 };
 
-export const kv = {
+const commands = {
   async hset(key, patch) {
     for (const [field, value] of Object.entries(patch)) hash(key).set(field, value);
   },
@@ -197,3 +218,10 @@ export const kv = {
     return run(keys, argv);
   },
 };
+
+export const kv = Object.fromEntries(
+  Object.entries(commands).map(([name, fn]) => [name, async (...args) => {
+    if (hook) await hook(name, ...args);
+    return fn(...args);
+  }]),
+);

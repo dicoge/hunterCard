@@ -12,6 +12,7 @@
  *   - a failed Expo ticket does NOT record the alert as notified
  *   - two OVERLAPPING runs make exactly one Expo call for one armed alert
  *   - an edit landing mid-send cannot hand a second evaluator the same send
+ *   - an edit completed between snapshot read and claim fences the stale runner
  *   - a stale lease owner cannot clean up or commit after a takeover
  *   - an unconfirmed or crashed send releases/expires its claim so it retries
  *   - the run endpoint is unauthorized without the shared secret
@@ -20,13 +21,14 @@
  *        scripts/test-price-alert-run.mjs
  */
 import assert from 'node:assert/strict';
-import { resetKv, advanceKvClock } from './fixtures/kv-mock.mjs';
+import { resetKv, advanceKvClock, setKvHook } from './fixtures/kv-mock.mjs';
 import runHandler from '../api/push/price-alert-run.ts';
 import configHandler from '../api/push/price-alerts.ts';
 import {
-  claimAlertSend, releaseAlertClaim, commitAlertClaim, ALERT_CLAIM_LEASE_MS,
+  claimAlertSend, releaseAlertClaim, commitAlertClaim, getAllPriceAlerts,
+  ALERT_CLAIM_LEASE_MS,
 } from '../api/_lib/kv-storage.ts';
-import { armStateKey } from '../src/utils/priceAlerts.ts';
+import { armStateKey, priceAlertKey } from '../src/utils/priceAlerts.ts';
 
 const SECRET = 'test-internal-secret';
 const TOKEN = 'ExponentPushToken[aaaaaaaaaaaaaaaaaaaaaa]';
@@ -91,6 +93,16 @@ function post(url, body, headers = {}) {
 async function expectOk(res) {
   if (res.status !== 200) assert.fail(`${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+/** The revision the stored BASE alert currently carries. */
+async function currentRev(alert = BASE_ALERT) {
+  const stored = (await getAllPriceAlerts())[TOKEN] ?? [];
+  const found = stored.find(
+    (a) => a.cardNumber === alert.cardNumber && a.printing === alert.printing,
+  );
+  assert.ok(found?.rev, 'the stored alert must carry a revision');
+  return found.rev;
 }
 
 async function saveAlert(alert) {
@@ -308,6 +320,49 @@ await test('an edit landing mid-send cannot hand a second evaluator the same sen
   assert.equal(afterEdit.pushes.length, 1);
 });
 
+await test('an edit completed before the claim stops the stale snapshot from sending', async () => {
+  resetKv();
+  ticketStatus = 'ok';
+  await saveAlert(BASE_ALERT); // 800–1200 includes 1000
+
+  pushes = [];
+  okTickets = 0;
+
+  // Park the runner between reading its alert snapshot and taking its claim —
+  // the arm-state read is exactly that seam. Nothing is claimed yet, so the
+  // episode key is simply absent, which is what used to let this runner through.
+  const gate = deferred();
+  let parked = false;
+  setKvHook(async (command) => {
+    if (command !== 'mget') return;
+    setKvHook(null);
+    parked = true;
+    await gate.promise;
+  });
+
+  const stale = startRun(1000);
+  await waitFor(() => parked, 'the runner to reach its arm-state read');
+
+  // The user narrows the interval so 1000 now falls OUTSIDE it. The edit lands
+  // and completes entirely while the runner still holds the old snapshot.
+  await saveAlert({ ...BASE_ALERT, lowerPrice: 100, upperPrice: 500 });
+
+  gate.resolve();
+  const body = await expectOk(await stale);
+
+  assert.equal(pushes.length, 0, 'a stale snapshot must not send under the interval it replaced');
+  assert.equal(okTickets, 0);
+  assert.equal(body.sent, 0);
+  assert.equal(body.stale, 1, 'the claim must reject the superseded revision');
+
+  // Later runs judge only the new setting: the old interval is dead, and the
+  // stale runner did not disarm the configuration that replaced it.
+  assert.equal((await runAt(1000)).body.sent, 0, '1000 is outside the edited interval');
+  const inNew = await runAt(400);
+  assert.equal(inNew.body.sent, 1, 'the edited interval must still notify on its own terms');
+  assert.equal(inNew.pushes.length, 1);
+});
+
 await test('a stale lease owner cannot clean up or commit after a takeover', async () => {
   resetKv();
   ticketStatus = 'ok';
@@ -318,8 +373,11 @@ await test('a stale lease owner cannot clean up or commit after a takeover', asy
 
   // A runner takes the claim and then stalls past its lease.
   const stateKey = armStateKey(TOKEN, BASE_ALERT.cardNumber, BASE_ALERT.printing);
-  const stale = await claimAlertSend(stateKey);
-  assert.ok(stale, 'the first claim must win');
+  const rev = await currentRev();
+  const claim = await claimAlertSend(
+    TOKEN, priceAlertKey(BASE_ALERT.cardNumber, BASE_ALERT.printing), rev,
+  );
+  assert.equal(claim.status, 'claimed', 'the first claim must win');
   advanceKvClock(ALERT_CLAIM_LEASE_MS + 1);
 
   // The next run takes the episode over and delivers it.
@@ -328,10 +386,13 @@ await test('a stale lease owner cannot clean up or commit after a takeover', asy
   assert.equal(okTickets, 1);
 
   // The stalled runner finally wakes up. Both of its cleanup paths are fenced
-  // by the owner it was handed, so neither can touch the episode that now
-  // belongs to somebody else.
-  await releaseAlertClaim(stateKey, stale);
-  assert.equal(await commitAlertClaim(stateKey, stale, Date.now(), 999), 'superseded');
+  // by the revision and owner it was handed, so neither can touch the episode
+  // that now belongs to somebody else.
+  await releaseAlertClaim(stateKey, rev, claim.owner);
+  assert.equal(
+    await commitAlertClaim(stateKey, rev, claim.owner, Date.now(), 999),
+    'superseded',
+  );
 
   const after = await runAt(1000);
   assert.equal(after.body.sent, 0, 'a stale owner must not re-arm an alert that was just delivered');
@@ -374,8 +435,10 @@ await test('a crashed run only suppresses the alert until its lease expires', as
   await saveAlert(BASE_ALERT);
 
   // A runner that took the claim and then died: nothing ever released it.
-  const stateKey = armStateKey(TOKEN, BASE_ALERT.cardNumber, BASE_ALERT.printing);
-  assert.ok(await claimAlertSend(stateKey));
+  const claim = await claimAlertSend(
+    TOKEN, priceAlertKey(BASE_ALERT.cardNumber, BASE_ALERT.printing), await currentRev(),
+  );
+  assert.equal(claim.status, 'claimed');
 
   const blocked = await runAt(1000);
   assert.equal(blocked.body.sent, 0);

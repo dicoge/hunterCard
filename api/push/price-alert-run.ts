@@ -19,6 +19,11 @@ import {
 
 export const config = { runtime: 'nodejs' };
 
+/** The claim this run holds for one alert. Both halves fence every later write:
+ * `rev` proves the configuration has not been edited underneath us, `owner`
+ * proves the lease has not been taken over. */
+type HeldClaim = { rev: string; owner: string };
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 const CORS_HEADERS = {
@@ -42,31 +47,39 @@ export default async function handler(req: Request) {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   if (!isInternalRequest(req)) return json({ error: 'Unauthorized' }, 401);
 
-  // Claims this run owns and has not yet resolved, keyed by alert → owner token,
-  // so an unexpected failure can hand them back immediately instead of waiting
-  // out the lease.
-  const held = new Map<string, string>();
+  // Claims this run owns and has not yet resolved, keyed by alert state key, so
+  // an unexpected failure can hand them back immediately instead of waiting out
+  // the lease.
+  const held = new Map<string, HeldClaim>();
 
   try {
     const body = await req.json().catch(() => ({}));
     const snapshot = parsePriceSnapshot(body?.prices);
     if (!snapshot.ok) return json({ error: snapshot.error }, 400);
 
+    // The revision each alert was read at. Everything downstream — arm state,
+    // claim, release, commit, re-arm — is fenced with it, so a configuration
+    // the user edits after this read can never be judged by this snapshot.
     const byToken = await getAllPriceAlerts();
-    const recipients: AlertRecipient[] = Object.entries(byToken).flatMap(
-      ([token, alerts]) => alerts.map((alert) => ({ token, alert })),
-    );
+    const recipients: AlertRecipient[] = [];
+    const revisions = new Map<string, string>();
+    for (const [token, alerts] of Object.entries(byToken)) {
+      for (const { rev, ...alert } of alerts) {
+        recipients.push({ token, alert });
+        revisions.set(armStateKey(token, alert.cardNumber, alert.printing), rev);
+      }
+    }
     if (recipients.length === 0) {
       return json({
-        ok: true, sent: 0, errors: 0, skipped: 0, contended: 0, superseded: 0,
-        rearmed: 0, unpriced: 0,
+        ok: true, sent: 0, errors: 0, skipped: 0, contended: 0, stale: 0,
+        superseded: 0, rearmed: 0, unpriced: 0,
       });
     }
 
     const prices = indexPrices(snapshot.prices);
-    const stateKeys = recipients.map(({ token, alert }) =>
-      armStateKey(token, alert.cardNumber, alert.printing));
-    const states = await getAlertArmStates([...new Set(stateKeys)]);
+    const states = await getAlertArmStates(
+      [...revisions].map(([stateKey, rev]) => ({ stateKey, rev })),
+    );
 
     const evaluation = evaluatePriceAlerts(
       recipients,
@@ -80,7 +93,7 @@ export default async function handler(req: Request) {
     // contingent on any delivery outcome. One atomic write per alert, and it
     // only clears a delivered episode, so it can never disturb a send that
     // another runner is in the middle of.
-    for (const key of evaluation.rearm) await rearmAlertEpisode(key);
+    for (const key of evaluation.rearm) await rearmAlertEpisode(key, revisions.get(key)!);
 
     // Take the atomic claim before building any Expo payload. Two overlapping
     // runs both see the alert as armed, but only one can win the claim, so only
@@ -90,11 +103,20 @@ export default async function handler(req: Request) {
     // disarm on the current owner's behalf.
     const claimed: AlertSend[] = [];
     let contended = 0;
+    let stale = 0;
     for (const send of evaluation.sends) {
-      const owner = await claimAlertSend(send.stateKey);
-      if (owner) {
+      const rev = revisions.get(send.stateKey)!;
+      const claim = await claimAlertSend(
+        send.token, priceAlertKey(send.alert.cardNumber, send.alert.printing), rev,
+      );
+      if (claim.status === 'claimed') {
         claimed.push(send);
-        held.set(send.stateKey, owner);
+        held.set(send.stateKey, { rev, owner: claim.owner });
+      } else if (claim.status === 'stale') {
+        // The user edited or deleted this alert after we read it. The decision
+        // in hand was made against a configuration that no longer exists, so it
+        // is dropped outright — the next run re-evaluates the new one.
+        stale += 1;
       } else {
         contended += 1;
       }
@@ -106,9 +128,9 @@ export default async function handler(req: Request) {
 
     /** Hand a claim back so the next run retries this alert straight away. */
     const release = async (send: AlertSend) => {
-      const owner = held.get(send.stateKey);
-      if (!owner) return;
-      await releaseAlertClaim(send.stateKey, owner);
+      const claim = held.get(send.stateKey);
+      if (!claim) return;
+      await releaseAlertClaim(send.stateKey, claim.rev, claim.owner);
       held.delete(send.stateKey);
     };
 
@@ -158,8 +180,8 @@ export default async function handler(req: Request) {
         // Confirmed delivery. Disarming IS closing the claim, so it cannot be
         // half-applied — and it only lands if we still own the episode.
         sent += 1;
-        const owner = held.get(send.stateKey)!;
-        const outcome = await commitAlertClaim(send.stateKey, owner, now, send.price);
+        const { rev, owner } = held.get(send.stateKey)!;
+        const outcome = await commitAlertClaim(send.stateKey, rev, owner, now, send.price);
         if (outcome !== 'committed') superseded += 1;
         held.delete(send.stateKey);
       }
@@ -171,6 +193,7 @@ export default async function handler(req: Request) {
       errors,
       skipped: evaluation.skipped,
       contended,
+      stale,
       superseded,
       rearmed: evaluation.rearm.length,
       unpriced: evaluation.unpriced,
@@ -179,8 +202,8 @@ export default async function handler(req: Request) {
     console.error('[push/price-alert-run]', err);
     // Best effort only: if this fails too (or the process is killed outright)
     // the lease expiry is what guarantees the alert comes back.
-    for (const [stateKey, owner] of held) {
-      await releaseAlertClaim(stateKey, owner).catch(() => {});
+    for (const [stateKey, { rev, owner }] of held) {
+      await releaseAlertClaim(stateKey, rev, owner).catch(() => {});
     }
     return json({ error: err.message || 'Price alert run failed', sent: 0, errors: 1 }, 500);
   }

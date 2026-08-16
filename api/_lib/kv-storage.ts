@@ -118,6 +118,16 @@ export async function setLastAlertTimes(keys: string[], timestamp: number): Prom
 const PRICE_ALERT_PREFIX = 'push:price-alerts:';
 const PRICE_ALERT_TOKENS_KEY = 'push:price-alert-tokens';
 const PRICE_ALERT_EPISODE_PREFIX = 'push:price-alert-episode:';
+// Revisions live in their own hash rather than inside the alert record: the
+// claim script must compare one against the stored config atomically, and a
+// bare string field is something Lua can compare without parsing JSON. It also
+// keeps the revision out of the alert body the config API echoes back.
+const PRICE_ALERT_REV_PREFIX = 'push:price-alert-revs:';
+
+/** Revision reported for an alert stored before revisions existed. Claims accept
+ * it, so a config written by an older build keeps firing; the first edit
+ * replaces it with a real revision and the fence applies from then on. */
+const NO_REVISION = '0';
 
 /** How long one runner may hold a send claim before another may take it over.
  * Bounds crash recovery: a runner that dies mid-send suppresses its alert for at
@@ -126,6 +136,10 @@ export const ALERT_CLAIM_LEASE_MS = 5 * 60_000;
 
 function priceAlertsKey(token: string): string {
   return `${PRICE_ALERT_PREFIX}${token}`;
+}
+
+function alertRevsKey(token: string): string {
+  return `${PRICE_ALERT_REV_PREFIX}${token}`;
 }
 
 // ── Alert episode state ─────────────────────────────────────────────────────
@@ -138,19 +152,27 @@ function priceAlertsKey(token: string): string {
 // claim was reset, letting a second evaluator send again (DIC-1025).
 //
 // Values, all written and compared only by the Lua scripts below:
-//   absent          armed, nobody sending
-//   o:<owner>       armed, <owner> is mid-send; PX lease bounds a crash
-//   x:<owner>       armed, <owner>'s send was superseded by an episode
-//                   transition — it may release, never commit. Keeps the
-//                   remaining lease so no second sender starts while the
-//                   superseded one is still in flight.
-//   s:<ms>:<price>  delivered, so this alert is disarmed until it re-arms.
-//                   Persistent: no lease expiry can resurrect it into a
-//                   second notification.
+//   absent                armed, nobody sending
+//   o:<rev>:<owner>       armed, <owner> is mid-send for configuration <rev>;
+//                         PX lease bounds a crash
+//   x:<rev>:<owner>       armed, that send was superseded by an episode
+//                         transition — it may release, never commit. Keeps the
+//                         remaining lease so no second sender starts while the
+//                         superseded one is still in flight.
+//   s:<rev>:<ms>:<price>  <rev> was delivered, so this alert is disarmed until
+//                         it re-arms. Persistent: no lease expiry can resurrect
+//                         it into a second notification.
 //
-// `<owner>` is a per-attempt UUID. Release and commit compare against it, so a
-// runner whose lease was taken over or superseded can never clean up or
-// disarm on the current owner's behalf.
+// `<owner>` is a per-attempt UUID and `<rev>` the configuration revision the
+// runner evaluated. Every script compares BOTH, so neither a runner whose lease
+// was taken over nor one holding a snapshot the user has since edited can clean
+// up, disarm or re-arm on the current episode's behalf.
+//
+// Absence deliberately carries no revision — it means "armed at whatever the
+// stored configuration is now". That is why the claim is the fence: it compares
+// the evaluator's expected revision against the live config hash in the same
+// atomic script that takes the lease, so a snapshot read before a completed
+// edit can never be turned into a send (DIC-1025).
 
 function alertEpisodeKey(stateKey: string): string {
   return `${PRICE_ALERT_EPISODE_PREFIX}${stateKey}`;
@@ -183,27 +205,34 @@ export async function countPriceAlertsForToken(token: string): Promise<number> {
   return (await kv.hlen(priceAlertsKey(token))) ?? 0;
 }
 
-// Publishing the alert and retiring the episode it belongs to happen in ONE
-// script: an evaluator can never observe the edited alert while the previous
-// episode's claim is still standing, so an explicit edit cannot hand two
-// runners a send for the same entry. KEYS[1] = the token's alert hash,
-// KEYS[2] = registry, KEYS[3] = episode key; ARGV[1] = alert key,
-// ARGV[2] = alert JSON, ARGV[3] = token.
+// Publishing the alert, stamping its new revision and retiring the episode it
+// belongs to happen in ONE script: an evaluator can never observe the edited
+// alert while the previous episode's claim is still standing, and can never
+// observe a configuration whose revision has not caught up with it.
+// KEYS[1] = the token's alert hash, KEYS[2] = registry, KEYS[3] = episode key,
+// KEYS[4] = revision hash; ARGV[1] = alert key, ARGV[2] = alert JSON,
+// ARGV[3] = token, ARGV[4] = the new revision.
 const UPSERT_PRICE_ALERT = `
 -- @script upsert-price-alert
 redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+redis.call('HSET', KEYS[4], ARGV[1], ARGV[4])
 redis.call('SADD', KEYS[2], ARGV[3])
 ${SUPERSEDE_EPISODE}
 return 1
 `;
 
 /** Upsert one alert and retire its episode: an explicit user edit re-arms the
- * alert, so a price already sitting inside the new interval notifies once. */
+ * alert, so a price already sitting inside the new interval notifies once. The
+ * fresh revision is what stops a runner still holding the previous snapshot
+ * from claiming afterwards. */
 export async function upsertPriceAlert(token: string, key: string, alert: PriceAlert): Promise<void> {
   await kv.eval(
     UPSERT_PRICE_ALERT,
-    [priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY, alertEpisodeKey(`${token}|${key}`)],
-    [key, JSON.stringify(alert), token],
+    [
+      priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY,
+      alertEpisodeKey(`${token}|${key}`), alertRevsKey(token),
+    ],
+    [key, JSON.stringify(alert), token, randomUUID()],
   );
 }
 
@@ -211,11 +240,14 @@ export async function upsertPriceAlert(token: string, key: string, alert: PriceA
 // registry SREM happen inside one atomic script, so a concurrent upsert can
 // never leave a token with alerts missing from the registry. The episode is
 // retired in the same script for the same reason as the upsert above.
-// KEYS[1] = the token's alert hash, KEYS[2] = registry, KEYS[3] = episode key;
-// ARGV[1] = alert key, ARGV[2] = token.
+// KEYS[1] = the token's alert hash, KEYS[2] = registry, KEYS[3] = episode key,
+// KEYS[4] = revision hash; ARGV[1] = alert key, ARGV[2] = token. Dropping the
+// revision with the alert is what makes a delete fence a runner mid-send: its
+// expected revision can no longer match anything.
 const REMOVE_PRICE_ALERT = `
 -- @script remove-price-alert
 redis.call('HDEL', KEYS[1], ARGV[1])
+redis.call('HDEL', KEYS[4], ARGV[1])
 if redis.call('HLEN', KEYS[1]) == 0 then
   redis.call('SREM', KEYS[2], ARGV[2])
 end
@@ -226,132 +258,183 @@ return redis.call('HLEN', KEYS[1])
 export async function removePriceAlert(token: string, key: string): Promise<void> {
   await kv.eval(
     REMOVE_PRICE_ALERT,
-    [priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY, alertEpisodeKey(`${token}|${key}`)],
+    [
+      priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY,
+      alertEpisodeKey(`${token}|${key}`), alertRevsKey(token),
+    ],
     [key, token],
   );
 }
 
-/** Every subscriber's alerts. Pure read — registry cleanup lives only in
- * removePriceAlert, so this can never race a concurrent upsert. */
-export async function getAllPriceAlerts(): Promise<Record<string, PriceAlert[]>> {
+/** One alert as the evaluator read it, tagged with the configuration revision
+ * that snapshot came from. Every later write for this alert is fenced with it. */
+export type StoredPriceAlert = PriceAlert & { rev: string };
+
+/** Every subscriber's alerts, each carrying its revision. Pure read — registry
+ * cleanup lives only in removePriceAlert, so this can never race a concurrent
+ * upsert. The revision may be a moment out of date by the time it is used; that
+ * is exactly what the claim rejects. */
+export async function getAllPriceAlerts(): Promise<Record<string, StoredPriceAlert[]>> {
   const tokens = ((await kv.smembers(PRICE_ALERT_TOKENS_KEY)) as string[] | null) ?? [];
-  const out: Record<string, PriceAlert[]> = {};
+  const out: Record<string, StoredPriceAlert[]> = {};
   for (const token of tokens) {
-    const alerts = await getPriceAlertsForToken(token);
+    const entries = await kv.hgetall<Record<string, PriceAlert>>(priceAlertsKey(token));
+    if (!entries) continue;
+    const revs = (await kv.hgetall<Record<string, string>>(alertRevsKey(token))) ?? {};
+    const alerts = Object.entries(entries)
+      .map(([key, alert]) => ({ ...alert, rev: String(revs[key] ?? NO_REVISION) }))
+      .sort((a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.printing.localeCompare(b.printing));
     if (alerts.length > 0) out[token] = alerts;
   }
   return out;
 }
 
-/** Arm state for each alert, derived from its episode key. Only a delivered
- * episode is disarmed; anything else (including a lease held by another runner)
- * is still armed, and the claim below is what stops a second send. */
-export async function getAlertArmStates(keys: string[]): Promise<Record<string, AlertArmState>> {
-  if (keys.length === 0) return {};
-  const values = await kv.mget<(string | null)[]>(...keys.map(alertEpisodeKey));
+/** One alert's episode, identified by state key and the revision the caller
+ * evaluated it at. */
+export type AlertEpisodeRef = { stateKey: string; rev: string };
+
+/** Arm state for each alert, derived from its episode key. Only an episode
+ * delivered for THIS revision counts as disarmed — a delivery recorded against
+ * a configuration the user has since replaced reads as armed, so an edit always
+ * gets its own chance to fire. Anything else (including a lease held by another
+ * runner) is armed too, and the claim below is what stops a second send. */
+export async function getAlertArmStates(
+  refs: readonly AlertEpisodeRef[],
+): Promise<Record<string, AlertArmState>> {
+  if (refs.length === 0) return {};
+  const values = await kv.mget<(string | null)[]>(...refs.map((r) => alertEpisodeKey(r.stateKey)));
   const out: Record<string, AlertArmState> = {};
-  keys.forEach((key, i) => {
+  refs.forEach(({ stateKey, rev }, i) => {
     const value = values?.[i];
-    if (typeof value !== 'string' || !value.startsWith('s:')) return;
-    const [, notifiedAt, price] = value.split(':');
-    out[key] = { armed: false, lastNotifiedAt: Number(notifiedAt), lastPrice: Number(price) };
+    if (typeof value !== 'string' || !value.startsWith(`s:${rev}:`)) return;
+    const [, , notifiedAt, price] = value.split(':');
+    out[stateKey] = { armed: false, lastNotifiedAt: Number(notifiedAt), lastPrice: Number(price) };
   });
   return out;
 }
 
 // ── Send claims ─────────────────────────────────────────────────────────────
 
-// Become the one runner allowed to notify this alert. NX is what makes it
-// exclusive; the lease is what stops a crashed runner from silencing the alert
-// forever. KEYS[1] = episode key; ARGV[1] = owner, ARGV[2] = lease ms.
+// Become the one runner allowed to notify this alert, for the exact
+// configuration revision this runner evaluated. Re-reading the stored revision
+// and taking the lease in ONE script is the whole point: a runner that read its
+// snapshot before an edit and only got here afterwards finds a different
+// revision and is turned away, so it can neither send under the old interval
+// nor disarm the new one. NX is what makes the claim exclusive; the lease is
+// what stops a crashed runner from silencing the alert forever.
+// KEYS[1] = episode key, KEYS[2] = the token's revision hash; ARGV[1] = alert
+// key, ARGV[2] = expected revision, ARGV[3] = owner, ARGV[4] = lease ms.
 const CLAIM_ALERT_SEND = `
 -- @script claim-alert-send
-if redis.call('SET', KEYS[1], 'o:' .. ARGV[1], 'PX', ARGV[2], 'NX') then
+local rev = redis.call('HGET', KEYS[2], ARGV[1])
+if not rev then rev = '${NO_REVISION}' end
+if rev ~= ARGV[2] then
+  return 2
+end
+if redis.call('SET', KEYS[1], 'o:' .. ARGV[2] .. ':' .. ARGV[3], 'PX', ARGV[4], 'NX') then
   return 1
 end
 return 0
 `;
 
-// Compare-and-delete. A superseded owner may still clean up its own attempt,
-// but neither form can touch a claim belonging to anyone else.
+// Compare-and-delete on revision AND owner. A superseded owner may still clean
+// up its own attempt, but neither form can touch a claim belonging to anyone
+// else or to a configuration that has moved on.
 const RELEASE_ALERT_CLAIM = `
 -- @script release-alert-claim
 local claim = redis.call('GET', KEYS[1])
-if claim == 'o:' .. ARGV[1] or claim == 'x:' .. ARGV[1] then
+if claim == 'o:' .. ARGV[1] .. ':' .. ARGV[2] or claim == 'x:' .. ARGV[1] .. ':' .. ARGV[2] then
   return redis.call('DEL', KEYS[1])
 end
 return 0
 `;
 
-// Compare-and-set. Only the current owner may disarm; an owner whose episode
-// was replaced mid-send delivered a notification for a visit that no longer
-// exists, so it drops its claim and leaves the new episode armed.
+// Compare-and-set on revision AND owner. Only the runner that still owns this
+// revision's episode may disarm it; one whose episode was replaced mid-send
+// delivered a notification for a configuration that no longer exists, so it
+// drops its claim and leaves the new episode armed.
 const COMMIT_ALERT_CLAIM = `
 -- @script commit-alert-claim
 local claim = redis.call('GET', KEYS[1])
-if claim == 'o:' .. ARGV[1] then
-  redis.call('SET', KEYS[1], 's:' .. ARGV[2] .. ':' .. ARGV[3])
+if claim == 'o:' .. ARGV[1] .. ':' .. ARGV[2] then
+  redis.call('SET', KEYS[1], 's:' .. ARGV[1] .. ':' .. ARGV[3] .. ':' .. ARGV[4])
   return 1
 end
-if claim == 'x:' .. ARGV[1] then
+if claim == 'x:' .. ARGV[1] .. ':' .. ARGV[2] then
   redis.call('DEL', KEYS[1])
   return 2
 end
 return 0
 `;
 
-// Re-arm on leaving the interval clears ONLY a delivered episode — it must not
-// disturb a lease, whose alert is armed already.
+// Re-arm on leaving the interval clears ONLY an episode delivered for the
+// revision the caller evaluated. It must not disturb a lease (whose alert is
+// armed already), nor a delivery belonging to a configuration this runner never
+// saw. KEYS[1] = episode key; ARGV[1] = expected revision.
 const REARM_ALERT_EPISODE = `
 -- @script rearm-alert-episode
+local prefix = 's:' .. ARGV[1] .. ':'
 local claim = redis.call('GET', KEYS[1])
-if claim and string.sub(claim, 1, 2) == 's:' then
+if claim and string.sub(claim, 1, string.len(prefix)) == prefix then
   return redis.call('DEL', KEYS[1])
 end
 return 0
 `;
 
-/** Try to become the one runner allowed to notify this alert. Returns the owner
- * token to fence every later mutation with, or null if someone else owns the
- * attempt or the alert was already delivered this visit. */
-export async function claimAlertSend(stateKey: string): Promise<string | null> {
+export type ClaimOutcome =
+  /** this runner owns the episode and must fence every later write with `owner` */
+  | { status: 'claimed'; owner: string }
+  /** another runner is already sending this episode */
+  | { status: 'contended' }
+  /** the configuration changed after this runner read it — the snapshot in hand
+   * is stale, so it must not send */
+  | { status: 'stale' };
+
+/** Try to become the one runner allowed to notify this alert, for the revision
+ * this runner evaluated. */
+export async function claimAlertSend(
+  token: string, key: string, rev: string,
+): Promise<ClaimOutcome> {
   const owner = randomUUID();
-  const won = await kv.eval(
+  const result = await kv.eval(
     CLAIM_ALERT_SEND,
-    [alertEpisodeKey(stateKey)],
-    [owner, String(ALERT_CLAIM_LEASE_MS)],
+    [alertEpisodeKey(`${token}|${key}`), alertRevsKey(token)],
+    [key, rev, owner, String(ALERT_CLAIM_LEASE_MS)],
   );
-  return won === 1 ? owner : null;
+  if (result === 1) return { status: 'claimed', owner };
+  return result === 2 ? { status: 'stale' } : { status: 'contended' };
 }
 
 /** Give the claim back so the very next run can retry — used when Expo did not
  * confirm the delivery, and as best-effort cleanup when a run fails outright. */
-export async function releaseAlertClaim(stateKey: string, owner: string): Promise<void> {
-  await kv.eval(RELEASE_ALERT_CLAIM, [alertEpisodeKey(stateKey)], [owner]);
+export async function releaseAlertClaim(
+  stateKey: string, rev: string, owner: string,
+): Promise<void> {
+  await kv.eval(RELEASE_ALERT_CLAIM, [alertEpisodeKey(stateKey)], [rev, owner]);
 }
 
 export type ClaimCommit =
   /** this runner still owned the episode: the alert is now disarmed */
   | 'committed'
-  /** delivered, but the episode was replaced or taken over meanwhile, so the
-   * alert stays armed for whoever owns it now */
+  /** delivered, but the episode was replaced, edited or taken over meanwhile,
+   * so the alert stays armed for whatever configuration is current now */
   | 'superseded';
 
 /** Close the episode after a confirmed Expo `ok` ticket. Disarming and closing
  * the claim are the same write, so no interruption can leave an alert armed
  * behind a claim that nothing will ever clear. */
 export async function commitAlertClaim(
-  stateKey: string, owner: string, notifiedAt: number, price: number,
+  stateKey: string, rev: string, owner: string, notifiedAt: number, price: number,
 ): Promise<ClaimCommit> {
   const result = await kv.eval(
     COMMIT_ALERT_CLAIM,
     [alertEpisodeKey(stateKey)],
-    [owner, String(notifiedAt), String(price)],
+    [rev, owner, String(notifiedAt), String(price)],
   );
   return result === 1 ? 'committed' : 'superseded';
 }
 
 /** Leaving the interval re-arms the alert for its next entry. */
-export async function rearmAlertEpisode(stateKey: string): Promise<void> {
-  await kv.eval(REARM_ALERT_EPISODE, [alertEpisodeKey(stateKey)], []);
+export async function rearmAlertEpisode(stateKey: string, rev: string): Promise<void> {
+  await kv.eval(REARM_ALERT_EPISODE, [alertEpisodeKey(stateKey)], [rev]);
 }
