@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 /**
- * DIC-952 fail-closed price-provenance regression + buy-price provenance channel
- * (merge-buy-prices.js buyPriceVersion stamps). Guards the raw-database →
- * PriceRecord boundary in src/utils/deckCardData.ts, which previously turned a
- * single marketplace listing into an "exact" price for every rarity variant of
- * a cardNumber — and, before that, never surfaced version-precise buy prices at
- * all (every slot showed the collapsed card-level max).
+ * DIC-1013 price-provenance regression: the deck estimate is built from the
+ * player-facing SELL price of a SOURCE-PROVEN printing.
  *
- * The adapter may only emit a (cardNumber, version) price when the SOURCE
- * explicitly declares that version:
- *  - a prices[] entry with its own non-empty `rarity` (yuyu-tei), or
- *  - merge-buy-prices.js provenance (buyPrice + buyPriceVersion + buyPriceSource
- *    + buyPriceTimestamp). 'BASE' = the bare original-printing listing, claimable
- *    ONLY by the card number's own-set non-premium row — never by SEC/signed/
- *    parallel rows (no cross-version fallback).
+ * Two invariants are guarded at the raw-database → PriceRecord boundary
+ * (src/utils/deckCardData.ts):
+ *
+ *  1. A printing exists only when the source listing's own label names it —
+ *     plain, (パラレル), (パラレル/サイン) … — never the dataset's row-level
+ *     rarity, which describes the card number as a whole (hBP04-005 is SEC on
+ *     both of its rows while the source plainly lists a ¥980 printing).
+ *  2. Only the sell price becomes a PriceRecord. A store's buy price is what a
+ *     shop PAYS the player; it can never stand in for what a missing card costs
+ *     to acquire, so it must not appear anywhere in the deck pipeline.
+ *
+ * Ambiguity fails closed: two listings that reach the same printing at different
+ * prices leave that printing unpriced rather than picking one.
  *
  * Run: node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-price-adapter.mjs
  */
@@ -21,9 +23,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { adaptPrices, adaptDatabase, dropConflictingPrices } from '../src/utils/deckCardData.ts';
-import { computeGap, resolveExactPrice, normalizeVersion } from '../src/utils/deckRules.ts';
-import { isPremiumPrinting } from '../src/utils/deckVariants.ts';
+import {
+  adaptCardNumber, adaptDatabase, dropConflictingPrices, pickRepresentative,
+  PRICE_CURRENCY, PRICE_SOURCE,
+} from '../src/utils/deckCardData.ts';
+import { computeGap, resolveExactPrice } from '../src/utils/deckRules.ts';
+import { buildSourcePrintings, printingFromLabel, isPlainPrinting } from '../src/utils/printingIdentity.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,256 +39,334 @@ function test(name, fn) {
   console.log(`  ✓ ${name}`);
 }
 
-// Real database shape: the same scraped listing ("AZKi(パラレル/hBP07)", 80) is
-// copied onto three different rarity variants of hBP01-044. The `prices[]`
-// breakdown carries no per-listing rarity, so nothing here proves which variant
-// the 80円 listing belongs to. No buy provenance either → must stay unpriced.
-const AMBIGUOUS_HBP01_044 = ['HR', 'C', 'P_02'].map((rarity, i) => ({
-  id: `hBP01-044_${i}`,
-  cardNumber: 'hBP01-044',
-  name: 'AZKi',
-  rarity,
-  sellPrice: 80,
-  yuyuName: 'AZKi(パラレル/hBP07)',
-  timestamp: '2026-08-09T12:12:09.518Z',
-  prices: [
-    { name: 'AZKi', sellPrice: 220, rarity: '' },
-    { name: 'AZKi(パラレル/HR)', sellPrice: 9980, rarity: '' },
-    { name: 'AZKi(パラレル/hBP07)', sellPrice: 80, rarity: '' },
-  ],
-}));
-
-// ── Adapter boundary: ambiguous provenance yields NO version-keyed price ─────
-test('ambiguous top-level sellPrice is NOT assigned to rarity', () => {
-  for (const raw of AMBIGUOUS_HBP01_044) {
-    assert.deepEqual(
-      adaptPrices(raw), [],
-      `expected no price record for hBP01-044 ${raw.rarity}, provenance is ambiguous`,
-    );
-  }
-});
-
-test('one listing is never spread across the C/HR/P_02 versions', () => {
-  const { priceRecords } = adaptDatabase(AMBIGUOUS_HBP01_044);
-  assert.equal(priceRecords.length, 0);
-  // Even the resolver, asked for each specific version, must fail closed.
-  for (const v of ['C', 'HR', 'P_02']) {
-    assert.equal(resolveExactPrice('hBP01-044', v, priceRecords).status, 'NO_EXACT_PRICE');
-  }
-});
-
-// ── Gap total: ambiguous items are excluded, never summed ────────────────────
-test('gap excludes the ambiguous card from the total', () => {
-  const { priceRecords } = adaptDatabase(AMBIGUOUS_HBP01_044);
-  const card = (rarity) => ({
-    id: `hBP01-044_${rarity}`, cardNumber: 'hBP01-044', name: 'AZKi',
-    rarity, series: '', cardTypeJp: 'ホロメン',
-  });
-  const deck = {
-    id: 'd', name: 'ambiguous', updatedAt: '',
-    oshi: [], yell: [],
-    main: [
-      { card: card('C'), qty: 2 },
-      { card: card('HR'), qty: 1 },
-    ],
-  };
-  const gap = computeGap(deck, {}, priceRecords); // own nothing → all missing
-  assert.equal(gap.total, 0, 'no fabricated price may enter the total');
-  assert.equal(gap.currency, null);
-  assert.equal(gap.unpriced.length, 2, 'both versions land in unpriced');
-  for (const row of gap.rows) assert.equal(row.price.status, 'NO_EXACT_PRICE');
-});
-
-// ── Positive: an EXPLICIT per-listing rarity is a verified mapping ───────────
-test('a prices[] entry with explicit rarity yields a version-keyed price', () => {
-  const raw = {
-    id: 'hXX-001_HR', cardNumber: 'hXX-001', name: 'X', rarity: 'HR',
-    sellPrice: 80, yuyuName: 'X(パラレル)', timestamp: '2026-08-09T00:00:00Z',
-    // This listing explicitly declares its own version → verified mapping.
-    prices: [{ name: 'X(SR)', sellPrice: 1200, rarity: 'SR' }],
-  };
-  const recs = adaptPrices(raw);
-  assert.equal(recs.length, 1);
-  assert.equal(recs[0].version, 'SR');
-  assert.equal(recs[0].price, 1200);
-  // Resolves only for the explicitly-declared version, never for the card's own
-  // top-level rarity (HR), which had no verified price.
-  assert.equal(resolveExactPrice('hXX-001', 'SR', recs).status, 'ok');
-  assert.equal(resolveExactPrice('hXX-001', 'HR', recs).status, 'NO_EXACT_PRICE');
-});
-
-// ── Buy-price provenance channel (DIC-856 follow-up) ─────────────────────────
-// The database now stores version-precise buy prices per variant, each stamped
-// with its source (merge-buy-prices.js buyPriceVersion / buyPriceSource /
-// buyPriceTimestamp). The adapter must turn those into exact PriceRecords so a
-// low-cost deck slot resolves ITS version's price — and must never let a premium
-// row absorb the bare BASE price.
 const SRC_TS = '2026-08-14T12:15:00.000Z';
-const HBP04_005_ROW = {
-  id: 'hBP04-005_hBP04', cardNumber: 'hBP04-005', name: 'ラプラス・ダークネス',
-  rarity: 'SEC', series: 'hBP04', sellPrice: 980, timestamp: SRC_TS,
+
+// Production shape of hBP04-005 (the screenshot case). Both rows carry rarity
+// SEC and the SAME listing set; the printings live in the listing labels.
+const HBP04_005_ROWS = ['ent07', 'hBP04'].map((series) => ({
+  id: `hBP04-005_${series}`,
+  cardNumber: 'hBP04-005',
+  name: 'ラプラス・ダークネス',
+  rarity: 'SEC',
+  series,
+  sellPrice: 980,
+  timestamp: SRC_TS,
+  skillsJp: { cardType: '推しホロメン' },
   prices: [
     { name: 'ラプラス・ダークネス(パラレル/サイン)', sellPrice: 69800, rarity: '', buyPrice: 38000, buyPriceVersion: 'SEC', buyPriceSource: 'fullahead', buyPriceTimestamp: SRC_TS },
     { name: 'ラプラス・ダークネス(パラレル)', sellPrice: 9980, rarity: '', buyPrice: 5000, buyPriceVersion: 'SR', buyPriceSource: 'fullahead', buyPriceTimestamp: SRC_TS },
     { name: 'ラプラス・ダークネス', sellPrice: 980, rarity: '', buyPrice: 150, buyPriceVersion: 'BASE', buyPriceSource: 'fullahead', buyPriceTimestamp: SRC_TS },
   ],
-};
-const BASE_CARD_ROW = {
-  id: 'hXX-002_hXX', cardNumber: 'hXX-002', name: 'Base Card',
-  rarity: 'U', series: 'hXX', sellPrice: 120, timestamp: SRC_TS,
-  prices: [
-    { name: 'Base Card', sellPrice: 120, rarity: '', buyPrice: 300, buyPriceVersion: 'BASE', buyPriceSource: 'torecolo', buyPriceTimestamp: SRC_TS },
-  ],
-};
+}));
 
-test('explicit SEC/parallel buy-price provenance yields exact records on any row', () => {
-  // The premium SEC row of hBP04-005 shares the listing set; SEC and SR tokens
-  // are proven by the source and apply to every row of the card number alike.
-  const recs = adaptPrices(HBP04_005_ROW);
-  const byVersion = Object.fromEntries(recs.map((r) => [r.version, r]));
-  assert.deepEqual(Object.keys(byVersion).sort(), ['SEC', 'SR']);
-  assert.equal(byVersion.SEC.price, 38000);
-  assert.equal(byVersion.SEC.source, 'fullahead');
-  assert.equal(byVersion.SR.price, 5000);
-  // resolves each version to ITS OWN price
-  assert.equal(resolveExactPrice('hBP04-005', 'SEC', recs).price, 38000);
-  assert.equal(resolveExactPrice('hBP04-005', 'SR', recs).price, 5000);
+// ── Printing identity: nested sell variants stay isolated ────────────────────
+
+test('nested plain / parallel / signed listings become three isolated printings', () => {
+  const printings = buildSourcePrintings(HBP04_005_ROWS[0].prices);
+  const byToken = Object.fromEntries(printings.map((p) => [p.printing, p]));
+  assert.deepEqual(Object.keys(byToken).sort(), ['BASE', 'PARALLEL', 'PARALLEL/SIGN']);
+  assert.equal(byToken.BASE.sellPrice, 980);
+  assert.equal(byToken.PARALLEL.sellPrice, 9980);
+  assert.equal(byToken['PARALLEL/SIGN'].sellPrice, 69800);
+  // The raw label is preserved for display / provenance, never fabricated.
+  assert.equal(byToken.BASE.label, 'ラプラス・ダークネス');
+  assert.equal(byToken['PARALLEL/SIGN'].label, 'ラプラス・ダークネス(パラレル/サイン)');
 });
 
-test('BASE buy price is NOT leaked onto a premium row', () => {
-  const recs = adaptPrices(HBP04_005_ROW);
-  // The 150円 bare listing must never become a version-keyed record via this
-  // SEC row (a hypothetical 'C'/'SEC' slot may NOT inherit the base price).
-  assert.equal(recs.filter((r) => r.price === 150).length, 0);
-  assert.equal(resolveExactPrice('hBP04-005', 'C', recs).status, 'NO_EXACT_PRICE');
-  assert.equal(resolveExactPrice('hBP04-005', 'BASE', recs).status, 'NO_EXACT_PRICE');
+test('every source descriptor is identity-bearing, not just premium markers', () => {
+  // A listing with no parenthetical is the plain printing.
+  assert.equal(printingFromLabel('ときのそら'), 'BASE');
+  // Known treatments get a stable ASCII token …
+  assert.equal(printingFromLabel('白銀ノエル(パラレル)'), 'PARALLEL');
+  assert.equal(printingFromLabel('AZKi(パラレル/HR)'), 'PARALLEL/HR');
+  assert.equal(printingFromLabel('AZKi(パラレル/hBP07)'), 'PARALLEL/HBP07');
+  // … and an explicit base REPRINT is its own printing, not the plain one.
+  // Collapsing it onto BASE made two unambiguous listings look ambiguous and
+  // dropped both of their prices (DIC-1013 CR).
+  assert.equal(printingFromLabel('AZKi(hBP07)'), 'HBP07');
+  assert.equal(printingFromLabel('みっころね24(hBP04)'), 'HBP04');
+  // Both are plain: a reprint is playable and budget-eligible like the original.
+  assert.equal(isPlainPrinting(printingFromLabel('みっころね24(hBP04)')), true);
 });
 
-test('BASE buy price IS claimed by the own-set base row (exact base-version price)', () => {
-  const recs = adaptPrices(BASE_CARD_ROW);
-  assert.equal(recs.length, 1);
-  assert.equal(recs[0].version, 'U');
-  assert.equal(recs[0].price, 300);
-  assert.equal(recs[0].source, 'torecolo');
-  assert.equal(resolveExactPrice('hXX-002', 'U', recs).price, 300);
+test('plain printings are distinguished from premium ones', () => {
+  assert.equal(isPlainPrinting('BASE'), true);
+  assert.equal(isPlainPrinting('PARALLEL'), false);
+  assert.equal(isPlainPrinting('PARALLEL/SIGN'), false);
+  assert.equal(isPlainPrinting('PARALLEL/HR'), false);
+  assert.equal(isPlainPrinting('FOIL'), false);
 });
 
-test('buy price without a version token stays unpriced (fail closed)', () => {
-  const raw = {
-    ...BASE_CARD_ROW, id: 'hXX-003', cardNumber: 'hXX-003',
-    prices: [{ name: 'X', rarity: '', buyPrice: 999, buyPriceSource: 'fullahead' }],
-  };
-  assert.deepEqual(adaptPrices(raw), [], 'no buyPriceVersion → cannot prove a version');
+// ── Buy price never enters the deck pipeline ────────────────────────────────
+
+test('buy prices never become PriceRecords', () => {
+  const { priceRecords } = adaptCardNumber(HBP04_005_ROWS);
+  const prices = priceRecords.map((r) => r.price).sort((a, b) => a - b);
+  assert.deepEqual(prices, [980, 9980, 69800]);
+  for (const buy of [150, 5000, 38000]) {
+    assert.equal(priceRecords.some((r) => r.price === buy), false,
+      `store buy price ${buy} must never reach the deck price pipeline`);
+  }
 });
 
-test('conflicting prices for the same (cardNumber, version) are all dropped', () => {
-  // Two rows of the same card number claim the same version at DIFFERENT prices
-  // (simulating two stores disagreeing) → ambiguous → fail closed.
-  const rows = [
-    { ...BASE_CARD_ROW, id: 'hXX-004_a', cardNumber: 'hXX-004', rarity: 'R', prices: [{ name: 'X', rarity: '', buyPrice: 100, buyPriceVersion: 'R', buyPriceSource: 'fullahead', buyPriceTimestamp: SRC_TS }] },
-    { ...BASE_CARD_ROW, id: 'hXX-004_b', cardNumber: 'hXX-004', rarity: 'R', prices: [{ name: 'X', rarity: '', buyPrice: 250, buyPriceVersion: 'R', buyPriceSource: 'torecolo', buyPriceTimestamp: SRC_TS }] },
-  ];
-  const { priceRecords } = adaptDatabase(rows);
-  assert.equal(priceRecords.length, 0, 'conflict must be dropped, not arbitrarily picked');
-  assert.equal(resolveExactPrice('hXX-004', 'R', priceRecords).status, 'NO_EXACT_PRICE');
+test('every emitted record carries currency, source and the row timestamp', () => {
+  const { priceRecords } = adaptCardNumber(HBP04_005_ROWS);
+  for (const r of priceRecords) {
+    assert.equal(r.currency, PRICE_CURRENCY);
+    assert.equal(r.source, PRICE_SOURCE);
+    assert.equal(r.timestamp, SRC_TS, 'timestamp comes from the source row, never fabricated');
+    assert.notEqual(r.version, '');
+  }
 });
 
-test('version tokens are normalized (case/width/spacing)', () => {
-  const raw = {
-    ...BASE_CARD_ROW, id: 'hXX-005', cardNumber: 'hXX-005', rarity: 'SR',
-    prices: [{ name: 'X', rarity: '', buyPrice: 700, buyPriceVersion: ' sr ', buyPriceSource: 'fullahead', buyPriceTimestamp: SRC_TS }],
-  };
-  const recs = adaptPrices(raw);
-  assert.equal(recs[0].version, 'SR');
-  assert.equal(resolveExactPrice('hXX-005', 'SR', recs).price, 700);
+// ── Low-cost / exact-version resolution ─────────────────────────────────────
+
+test('the plain printing resolves to its own ¥980 sell price', () => {
+  const { priceRecords } = adaptCardNumber(HBP04_005_ROWS);
+  assert.equal(resolveExactPrice('hBP04-005', 'BASE', priceRecords).price, 980);
+  assert.equal(resolveExactPrice('hBP04-005', 'PARALLEL', priceRecords).price, 9980);
+  assert.equal(resolveExactPrice('hBP04-005', 'PARALLEL/SIGN', priceRecords).price, 69800);
 });
 
-test('e2e: low-cost deck slot totals exactly its base-version price (no max)', () => {
-  // Rebuild the pre-merge database.json shape: every printing is its own card,
-  // and every row of a card number shares the same prices[] (with provenance).
-  const rawCards = [
-    HBP04_005_ROW,
-    { ...HBP04_005_ROW, id: 'hBP04-005_ent07', series: 'ent07' }, // reprint SEC row
-    BASE_CARD_ROW,
-  ];
-  const { priceRecords } = adaptDatabase(rawCards);
-  // The deck wants ONE base printing of hXX-002 and one SEC printing of hBP04-005.
-  const card = (cn, rarity, series) => ({
-    id: `${cn}_${series}`, cardNumber: cn, name: cn, rarity, series, cardTypeJp: 'ホロメン',
-  });
-  const deck = {
-    id: 'd', name: 'low-cost', updatedAt: '',
-    oshi: [], yell: [],
-    main: [
-      { card: card('hXX-002', 'U', 'hXX'), qty: 1 },
-      { card: card('hBP04-005', 'SEC', 'hBP04'), qty: 1 },
+test('the row-level rarity is never a price key', () => {
+  const { priceRecords } = adaptCardNumber(HBP04_005_ROWS);
+  // 'SEC' is what both rows declare; no listing proves it, so it stays unpriced.
+  assert.equal(resolveExactPrice('hBP04-005', 'SEC', priceRecords).status, 'NO_EXACT_PRICE');
+});
+
+test('reprint rows of one card number collapse to one printing set', () => {
+  // ent07 + hBP04 rows share the listing set → three cards, three prices, not six.
+  const { cards, priceRecords } = adaptCardNumber(HBP04_005_ROWS);
+  assert.equal(cards.length, 3);
+  assert.equal(priceRecords.length, 3);
+  assert.deepEqual(cards.map((c) => c.id).sort(),
+    ['hBP04-005#BASE', 'hBP04-005#PARALLEL', 'hBP04-005#PARALLEL/SIGN']);
+  // The representative supplies display fields; the card number's own set wins.
+  assert.equal(pickRepresentative(HBP04_005_ROWS).series, 'hBP04');
+});
+
+// ── Fail closed on ambiguity ────────────────────────────────────────────────
+
+test('two identical labels at different sell prices leave the printing unpriced', () => {
+  // Real shape (hBP02-017): the source lists 白銀ノエル(パラレル) twice, ¥3,480 and
+  // ¥500. Nothing distinguishes them, so PARALLEL must not be priced at either.
+  const rows = [{
+    id: 'hBP02-017_hBP02', cardNumber: 'hBP02-017', name: '白銀ノエル',
+    rarity: 'UR', series: 'hBP02', timestamp: SRC_TS,
+    skillsJp: { cardType: 'Buzzホロメン' },
+    prices: [
+      { name: '白銀ノエル(パラレル)', sellPrice: 3480, rarity: '' },
+      { name: '白銀ノエル(パラレル)', sellPrice: 500, rarity: '' },
+      { name: '白銀ノエル', sellPrice: 120, rarity: '', buyPrice: 1 },
     ],
+  }];
+  const { priceRecords } = adaptCardNumber(rows);
+  assert.equal(resolveExactPrice('hBP02-017', 'PARALLEL', priceRecords).status, 'NO_EXACT_PRICE');
+  // The unambiguous plain printing is unaffected — ambiguity is per printing.
+  assert.equal(resolveExactPrice('hBP02-017', 'BASE', priceRecords).price, 120);
+});
+
+test('an explicit base reprint keeps its own price instead of colliding with BASE', () => {
+  // Real shape (hBP02-084): the source lists the original みっころね24 at ¥120 and
+  // its hBP04 reprint at ¥180. These are NOT ambiguous — the labels say which is
+  // which — so reading only パラレル/サイン markers collapsed them onto one key
+  // and dropped both prices (DIC-1013 CR blocker).
+  const rows = [{
+    id: 'hBP02-084_hBP04', cardNumber: 'hBP02-084', name: 'みっころね24',
+    rarity: 'SR', series: 'hBP04', timestamp: SRC_TS,
+    skillsJp: { cardType: 'サポート・イベント・LIMITED' },
+    prices: [
+      { name: 'みっころね24(パラレル/箔押し)', sellPrice: 99800, rarity: '' },
+      { name: 'みっころね24(パラレル)', sellPrice: 1780, rarity: '', buyPrice: 2000 },
+      { name: 'みっころね24', sellPrice: 120, rarity: '' },
+      { name: 'みっころね24(パラレル/hBP04)', sellPrice: 5980, rarity: '', buyPrice: 1 },
+      { name: 'みっころね24(hBP04)', sellPrice: 180, rarity: '' },
+    ],
+  }];
+  const { cards, priceRecords } = adaptCardNumber(rows);
+  assert.equal(resolveExactPrice('hBP02-084', 'BASE', priceRecords).price, 120);
+  assert.equal(resolveExactPrice('hBP02-084', 'HBP04', priceRecords).price, 180);
+  assert.equal(resolveExactPrice('hBP02-084', 'PARALLEL', priceRecords).price, 1780);
+  assert.equal(resolveExactPrice('hBP02-084', 'PARALLEL/HBP04', priceRecords).price, 5980);
+  assert.equal(resolveExactPrice('hBP02-084', 'PARALLEL/FOIL', priceRecords).price, 99800);
+  // Each printing is separately ownable, and each keeps its raw source label.
+  const byId = Object.fromEntries(cards.map((c) => [c.id, c]));
+  assert.equal(byId['hBP02-084#BASE'].printingLabel, 'みっころね24');
+  assert.equal(byId['hBP02-084#HBP04'].printingLabel, 'みっころね24(hBP04)');
+  // Owning the reprint never satisfies a deck slot asking for the original.
+  const deck = {
+    id: 'd', name: 'reprint', updatedAt: '',
+    oshi: [], main: [{ card: byId['hBP02-084#BASE'], qty: 2 }], yell: [],
   };
-  const gap = computeGap(deck, {}, priceRecords); // own nothing → all missing
-  const byNumber = Object.fromEntries(gap.rows.map((r) => [r.cardNumber, r]));
-  // Base slot gets the BASE (bare) price, NOT the card's highest listing.
-  assert.equal(byNumber['hXX-002'].price.status, 'ok');
-  assert.equal(byNumber['hXX-002'].price.price, 300);
-  // SEC slot gets the exact SEC price.
-  assert.equal(byNumber['hBP04-005'].price.price, 38000);
-  // Both slots were priced → total = 300 + 38000, no unpriced leakage.
-  assert.equal(gap.total, 38300);
+  const gap = computeGap(deck, { 'hBP02-084|HBP04': 2 }, priceRecords);
+  assert.equal(gap.rows[0].owned, 0);
+  assert.equal(gap.total, 240);
+});
+
+test('a listing with no sell price stays unpriced rather than borrowing one', () => {
+  const rows = [{
+    id: 'hXX-001', cardNumber: 'hXX-001', name: 'X', rarity: 'R', series: 'hXX',
+    timestamp: SRC_TS, skillsJp: { cardType: 'ホロメン' },
+    prices: [
+      { name: 'X', sellPrice: 500, rarity: '' },
+      { name: 'X(パラレル)', sellPrice: null, rarity: '', buyPrice: 4000 },
+    ],
+  }];
+  const { cards, priceRecords } = adaptCardNumber(rows);
+  assert.equal(cards.length, 2, 'the parallel printing still exists as a choice');
+  assert.equal(resolveExactPrice('hXX-001', 'PARALLEL', priceRecords).status, 'NO_EXACT_PRICE');
+  assert.equal(resolveExactPrice('hXX-001', 'BASE', priceRecords).price, 500);
+});
+
+test('conflicting records for the same (cardNumber, printing) are all dropped', () => {
+  const records = [
+    { cardNumber: 'hXX-004', version: 'BASE', price: 100, currency: 'JPY', source: 's', timestamp: SRC_TS },
+    { cardNumber: 'hXX-004', version: 'BASE', price: 250, currency: 'JPY', source: 's', timestamp: SRC_TS },
+    { cardNumber: 'hXX-004', version: 'PARALLEL', price: 900, currency: 'JPY', source: 's', timestamp: SRC_TS },
+  ];
+  const kept = dropConflictingPrices(records);
+  assert.deepEqual(kept.map((r) => r.version), ['PARALLEL']);
+  assert.equal(resolveExactPrice('hXX-004', 'BASE', kept).status, 'NO_EXACT_PRICE');
+});
+
+test('a card number with no listings at all yields one unpriced BASE printing', () => {
+  const rows = [{
+    id: 'hXX-006', cardNumber: 'hXX-006', name: 'Y', rarity: 'C', series: 'hXX',
+    timestamp: SRC_TS, skillsJp: { cardType: 'ホロメン' }, prices: [],
+  }];
+  const { cards, priceRecords } = adaptCardNumber(rows);
+  assert.deepEqual(cards.map((c) => c.printing), ['BASE']);
+  assert.deepEqual(priceRecords, []);
+});
+
+// ── Gap estimate: the screenshot case ───────────────────────────────────────
+
+const deckCard = (cards, id) => {
+  const card = cards.find((c) => c.id === id);
+  assert.ok(card, `fixture is missing ${id}`);
+  return card;
+};
+
+test('missing-card subtotal uses the exact plain sell price, never the buy price', () => {
+  const { cards, priceRecords } = adaptCardNumber(HBP04_005_ROWS);
+  const deck = {
+    id: 'd', name: 'screenshot', updatedAt: '',
+    oshi: [{ card: deckCard(cards, 'hBP04-005#BASE'), qty: 1 }], main: [], yell: [],
+  };
+  const gap = computeGap(deck, {}, priceRecords); // own nothing → 1 missing
+  assert.equal(gap.total, 980, 'the ¥980 plain sell price, not ¥69,800 and not the ¥150 buy price');
+  assert.equal(gap.currency, 'JPY');
+  assert.equal(gap.rows[0].versionLabel, 'ラプラス・ダークネス');
   assert.equal(gap.unpriced.length, 0);
 });
 
-// ── Whole-dataset invariant: no fabricated cross-version exact prices ────────
-test('real database.json emits only source-proven exact-version records', () => {
-  const dbPath = path.join(__dirname, '..', 'data', 'database.json');
-  const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-  const rawCards = Object.values(db.cards || {});
-  const { priceRecords } = adaptDatabase(rawCards);
-  // With buy-price provenance stamped by the merge, the production dataset now
-  // carries version-precise prices (the pre-DIC-856 collapse emitted none).
-  assert.ok(priceRecords.length > 0, 'production dataset now carries buy-price provenance');
-  const byNumber = new Map();
-  for (const r of priceRecords) {
-    assert.ok(r.version !== '', `emitted record for ${r.cardNumber} has empty version`);
-    assert.ok(r.source, `emitted record for ${r.cardNumber} ${r.version} has no source`);
-    if (!byNumber.has(r.cardNumber)) byNumber.set(r.cardNumber, new Map());
-    const versions = byNumber.get(r.cardNumber);
-    if (versions.has(r.version)) {
-      assert.equal(versions.get(r.version), r.price,
-        `conflicting price for ${r.cardNumber} ${r.version}`);
+test('a deliberately picked signed printing is priced at ITS listing, not the base one', () => {
+  const { cards, priceRecords } = adaptCardNumber(HBP04_005_ROWS);
+  const deck = {
+    id: 'd', name: 'premium', updatedAt: '',
+    oshi: [{ card: deckCard(cards, 'hBP04-005#PARALLEL/SIGN'), qty: 1 }], main: [], yell: [],
+  };
+  assert.equal(computeGap(deck, {}, priceRecords).total, 69800);
+});
+
+test('owning the plain printing does not satisfy a signed requirement', () => {
+  const { cards, priceRecords } = adaptCardNumber(HBP04_005_ROWS);
+  const deck = {
+    id: 'd', name: 'mixed', updatedAt: '',
+    oshi: [{ card: deckCard(cards, 'hBP04-005#PARALLEL/SIGN'), qty: 1 }], main: [], yell: [],
+  };
+  const gap = computeGap(deck, { 'hBP04-005|BASE': 4 }, priceRecords);
+  assert.equal(gap.rows[0].owned, 0);
+  assert.equal(gap.total, 69800);
+});
+
+// ── Whole-dataset invariants against the committed database ─────────────────
+
+const DB = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'database.json'), 'utf8'));
+const RAW_CARDS = Object.values(DB.cards || {});
+const REAL = adaptDatabase(RAW_CARDS);
+
+// Real cards spanning plain-only, plain+parallel, plain+parallel+signed,
+// duplicated-label (fail closed) and explicit base-reprint cases.
+const REAL_EXPECTATIONS = [
+  { cardNumber: 'hBP04-005', printings: { BASE: 980, PARALLEL: 9980, 'PARALLEL/SIGN': 69800 } },
+  { cardNumber: 'hBP04-057', printings: { BASE: 120, PARALLEL: 980 } },
+  { cardNumber: 'hBP04-041', printings: { BASE: 50, PARALLEL: 180 } },
+  { cardNumber: 'hSD01-001', printings: { BASE: 180 } },
+  { cardNumber: 'hBP01-044', printings: { BASE: 220, 'PARALLEL/HR': 9980, 'PARALLEL/HBP07': 80 } },
+  { cardNumber: 'hBP02-017', printings: { BASE: 120 }, unpriced: ['PARALLEL'] },
+  // Base reprints: original and hBP04 reprint must BOTH keep their exact price.
+  {
+    cardNumber: 'hBP02-084',
+    printings: { BASE: 120, HBP04: 180, PARALLEL: 1780, 'PARALLEL/HBP04': 5980, 'PARALLEL/FOIL': 99800 },
+  },
+  {
+    cardNumber: 'hSD01-017',
+    printings: { BASE: 80, HBP04: 120, 'PARALLEL/HBP04': 1980, 'PARALLEL/ベーシックPRパック VOL.3': 980 },
+  },
+];
+
+test('five+ real cards resolve each printing to its own listed sell price', () => {
+  for (const { cardNumber, printings, unpriced = [] } of REAL_EXPECTATIONS) {
+    for (const [printing, price] of Object.entries(printings)) {
+      const res = resolveExactPrice(cardNumber, printing, REAL.priceRecords);
+      assert.equal(res.status, 'ok', `${cardNumber} ${printing} should be priced`);
+      assert.equal(res.price, price, `${cardNumber} ${printing}`);
     }
-    versions.set(r.version, r.price);
+    for (const printing of unpriced) {
+      assert.equal(resolveExactPrice(cardNumber, printing, REAL.priceRecords).status,
+        'NO_EXACT_PRICE', `${cardNumber} ${printing} is ambiguous and must fail closed`);
+    }
   }
-  // BASE price may never leak onto a premium printing: for each card number, a
-  // premium row's OWN rarity may only carry a price when an explicit non-BASE
-  // token backs it. Without such a token, the only path that could produce a
-  // (cardNumber, premiumVersion) record is the BASE claim on that premium row —
-  // which is exactly the cross-version fallback the adapter must never do.
-  const legitTokens = new Map();   // cardNumber -> Set<explicit non-BASE version tokens>
-  const premiumOwn = new Map();    // cardNumber -> Set<premium row own-versions>
-  for (const card of rawCards) {
+});
+
+test('no buy price from the real dataset appears as a deck price', () => {
+  // Build the set of (cardNumber, buyPrice) pairs the source states, then assert
+  // no emitted record for that card number carries a buy-only amount.
+  const sellByNumber = new Map();
+  const buyByNumber = new Map();
+  const bucket = (map, key) => {
+    let set = map.get(key);
+    if (!set) { set = new Set(); map.set(key, set); }
+    return set;
+  };
+  for (const card of RAW_CARDS) {
     for (const p of card.prices || []) {
-      if (typeof p.buyPrice === 'number' && p.buyPriceVersion && p.buyPriceVersion !== 'BASE') {
-        const v = normalizeVersion(p.buyPriceVersion);
-        if (v) {
-          if (!legitTokens.has(card.cardNumber)) legitTokens.set(card.cardNumber, new Set());
-          legitTokens.get(card.cardNumber).add(v);
-        }
-      }
-    }
-    if (isPremiumPrinting(card.rarity || '')) {
-      const v = normalizeVersion(card.rarity || '');
-      if (v) {
-        if (!premiumOwn.has(card.cardNumber)) premiumOwn.set(card.cardNumber, new Set());
-        premiumOwn.get(card.cardNumber).add(v);
-      }
+      if (typeof p.sellPrice === 'number' && p.sellPrice > 0) bucket(sellByNumber, card.cardNumber).add(p.sellPrice);
+      if (typeof p.buyPrice === 'number' && p.buyPrice > 0) bucket(buyByNumber, card.cardNumber).add(p.buyPrice);
     }
   }
   const leaked = [];
-  for (const r of priceRecords) {
-    if (legitTokens.get(r.cardNumber)?.has(r.version)) continue; // explicit token claim
-    if (premiumOwn.get(r.cardNumber)?.has(r.version)) leaked.push(`${r.cardNumber} ${r.version}`);
+  for (const r of REAL.priceRecords) {
+    if (sellByNumber.get(r.cardNumber)?.has(r.price)) continue; // a real sell price
+    if (buyByNumber.get(r.cardNumber)?.has(r.price)) leaked.push(`${r.cardNumber} ${r.version}=${r.price}`);
   }
-  assert.deepEqual(leaked, [],
-    'BASE buy price leaked onto premium versions (no explicit token backs them): ' + leaked.slice(0, 5).join(', '));
+  assert.deepEqual(leaked, [], 'buy prices leaked into the deck price pipeline: ' + leaked.slice(0, 5).join(', '));
 });
 
-console.log(`\nDIC-952 price adapter: ${passed} tests passed`);
+test('every real record is an exact, source-labelled printing with provenance', () => {
+  assert.ok(REAL.priceRecords.length > 1000, 'the dataset must actually be priced now');
+  const seen = new Map();
+  for (const r of REAL.priceRecords) {
+    assert.notEqual(r.version, '', `${r.cardNumber} emitted an empty printing`);
+    assert.equal(r.currency, PRICE_CURRENCY);
+    assert.equal(r.source, PRICE_SOURCE);
+    assert.ok(r.price > 0);
+    const key = `${r.cardNumber}|${r.version}`;
+    assert.equal(seen.has(key), false, `duplicate record for ${key} survived the conflict filter`);
+    seen.set(key, r.price);
+  }
+});
+
+test('every real card id is unique and re-derivable from its printing', () => {
+  const ids = new Set();
+  for (const c of REAL.cards) {
+    assert.equal(ids.has(c.id), false, `duplicate card id ${c.id}`);
+    ids.add(c.id);
+    assert.equal(c.id, `${c.cardNumber}#${c.printing}`);
+    assert.equal(printingFromLabel(c.printingLabel), c.printing,
+      `${c.id}: printing must be derivable from its own source label`);
+  }
+});
+
+console.log(`\nDIC-1013 deck price adapter: ${passed} tests passed`);

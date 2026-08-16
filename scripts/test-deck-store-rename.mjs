@@ -10,7 +10,7 @@
  *   3. Empty / whitespace-only name is rejected without corrupting the name.
  *   4. Deck identity and all card / owned-count contents are preserved.
  *
- * Run: node --experimental-strip-types --import ./scripts/register-json.mjs \
+ * Run: node --experimental-strip-types --import ./scripts/register-ts.mjs \
  *        scripts/test-deck-store-rename.mjs
  */
 import assert from 'node:assert/strict';
@@ -32,10 +32,11 @@ function resetStore() {
 }
 
 const sampleCard = {
-  id: 'hMN-001-R',
+  id: 'hMN-001#BASE',
   cardNumber: 'hMN-001',
   name: 'holomen 001',
-  rarity: 'R',
+  printing: 'BASE',
+  printingLabel: '',
   series: 's',
   cardTypeJp: 'ホロメン',
 };
@@ -44,7 +45,7 @@ function seedDeckWithContents() {
   const s = useDeckStore.getState();
   const id = s.createDeck('初始牌組');
   s.changeCard(id, 'main', sampleCard, 3);
-  s.setOwned('hMN-001', 'R', 2);
+  s.setOwned('hMN-001', 'BASE', 2);
   return id;
 }
 
@@ -91,7 +92,7 @@ await test('renameDeck preserves deck id and all card / owned contents', () => {
   assert.equal(after.name, '重新命名後');
   assert.deepEqual(after.main, mainBefore, 'card slots must be preserved');
   assert.equal(after.main[0].qty, 3);
-  assert.equal(useDeckStore.getState().getOwned('hMN-001', 'R'), 2, 'owned counts preserved');
+  assert.equal(useDeckStore.getState().getOwned('hMN-001', 'BASE'), 2, 'owned counts preserved');
 });
 
 // ── 2b. Rename persists to storage and survives reload / rehydration ─────────
@@ -118,7 +119,7 @@ await test('renamed deck persists and survives reload (rehydration)', async () =
   assert.ok(restored, 'deck must be restored after rehydration');
   assert.equal(restored.name, '持久化名稱', 'renamed name must survive reload');
   assert.equal(restored.main[0].qty, 3, 'contents must survive reload');
-  assert.equal(useDeckStore.getState().getOwned('hMN-001', 'R'), 2);
+  assert.equal(useDeckStore.getState().getOwned('hMN-001', 'BASE'), 2);
 });
 
 console.log(`\nDIC-957 deck-store rename: ${passed} tests passed`);

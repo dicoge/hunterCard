@@ -13,6 +13,15 @@ const GEMINI_MODEL = 'gemini-2.5-flash';
 const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
 const AUTO_ACCEPT_CONFIDENCE = 0.82;
 
+// Recognition stays unavailable until the operator provisions GEMINI_API_KEY in the
+// deployment environment. Raised as its own type so the handler can answer 503 with a
+// stable code instead of a bare 500: the client has to tell "this deployment cannot
+// recognise anything" apart from "this card has no match", otherwise an unprovisioned
+// environment tells the user to fix their lighting (DIC-1013 QA).
+class RecognitionUnavailableError extends Error {}
+
+export const RECOGNITION_UNAVAILABLE_CODE = 'RECOGNITION_UNAVAILABLE';
+
 let dbFetchPromise: Promise<Record<string, any> | null> | null = null;
 
 async function getDatabase(): Promise<Record<string, any> | null> {
@@ -187,7 +196,7 @@ TITLE: [title or NONE]`;
 async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
   const imageList = images.filter(Boolean).slice(0, 2).map(img => img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`);
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('GEMINI_API_KEY not set');
+  if (!geminiKey) throw new RecognitionUnavailableError('GEMINI_API_KEY not set');
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -364,6 +373,16 @@ export default async function handler(req: Request): Promise<Response> {
       debug,
     });
   } catch (e: any) {
-    return json({ success: false, error: `Error: ${e.message}` }, /GEMINI_API_KEY not set/.test(e.message) ? 500 : 502);
+    if (e instanceof RecognitionUnavailableError) {
+      // Operator-facing detail (which variable is missing) stays in the runtime log;
+      // the wire only carries the stable code + a user-safe message.
+      console.error(`[recognize-card] recognition unavailable: ${e.message}`);
+      return json({
+        success: false,
+        code: RECOGNITION_UNAVAILABLE_CODE,
+        error: '辨識服務暫時無法使用，請稍後再試或改用手動搜尋',
+      }, 503);
+    }
+    return json({ success: false, error: `Error: ${e.message}` }, 502);
   }
 }

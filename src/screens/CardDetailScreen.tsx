@@ -523,11 +523,11 @@ function formatCount(n?: number | null): string {
 }
 
 function MarketDataPanel({ card }: { card: any }) {
-  // 同名卡不同 rarity/パラレル/サイン 版的價格都在 card.prices 內；卡號層級的
-  // sellPrice 是「所有版本最低價」，直接顯示會混版。改成依詳情頁這張卡對齊版本。
+  // 同卡號不同掛牌（原印／重印／パラレル／サイン）的價格都在 card.prices 內；卡號層級的
+  // sellPrice 是「所有版本最低價」，直接顯示會混版。改成對齊到來源掛牌的單一版本。
   const versions = buildPriceVersions(card);
   const multiVersion = versions.length > 1;
-  const resolution = resolveVersionForCard(card, versions);
+  const resolution = resolveVersionForCard(versions);
   // null = 尚未手動選擇；此時沿用自動對齊結果。使用者一旦點選版本即視為已確認。
   const [override, setOverride] = useState<number | null>(null);
   const selectedIdx = Math.min(Math.max(override ?? resolution.index, 0), versions.length - 1);

@@ -1,159 +1,224 @@
 /**
  * 版本對齊回歸檢查（用真實 public/data/database.json）
  *
- * 跑法：  npx tsx scripts/verify-version-alignment.js
- *   （需經 tsx 以便載入 TS 版對齊邏輯；scripts 目錄為 ESM）
+ * 跑法：npm run test:version-alignment
  *
- * 驗證 src/utils/versionAlignment.ts 的 resolveVersionForCard：
- *  - 能唯一對齊時，選中的是「對的版本」而非最低價彙總值。
- *  - 無法唯一對齊時，回報 confident=false（讓 UI 標示「版本待確認」），
- *    絕不靜默把最低價當成已對齊。
- * 覆蓋 CR 指名的 hBP01-008、hBP01-024 等 case。失敗以非零碼結束。
+ * 驗證 src/utils/versionAlignment.ts 在 DIC-1013 之後的合約：
+ *  - 版本身分只來自來源掛牌名稱，不再由 rarity 推論（不得再出現 SEC→パラレル/サイン、
+ *    SR→パラレル 這種來源沒說過的對應）。
+ *  - 預設版本與組牌器低配預設是同一條規則（原印版優先、同層取最低參考售價）。
+ *  - 同一版本代碼有多筆掛牌時 confident=false（版本待確認），不替使用者選價格。
  */
 import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import versionAlignment from '../src/utils/versionAlignment';
-
-const { buildPriceVersions, resolveVersionForCard } = versionAlignment;
+import { buildPriceVersions, resolveVersionForCard } from '../src/utils/versionAlignment.ts';
+import { printingFromLabel, isPlainPrinting } from '../src/utils/printingIdentity.ts';
+import { adaptDatabase } from '../src/utils/deckCardData.ts';
+import { groupVariantsByCardNumber, buildLowCostIndex } from '../src/utils/deckVariants.ts';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.join(dirname, '..', 'public', 'data', 'database.json');
-const db = JSON.parse(readFileSync(dbPath, 'utf8'));
-const cards = db.cards || {};
+const cards = JSON.parse(readFileSync(dbPath, 'utf8')).cards || {};
 
 let failures = 0;
 function check(name, cond, detail) {
-  if (cond) {
-    console.log(`  ✅ ${name}`);
-  } else {
-    console.error(`  ❌ ${name} — ${detail}`);
-    failures++;
-  }
+  if (cond) console.log(`  ✅ ${name}`);
+  else { console.error(`  ❌ ${name} — ${detail}`); failures++; }
 }
 
+const entryFor = (cardNumber, rarityFrag) => Object.keys(cards).find(
+  (k) => cards[k].cardNumber === cardNumber
+    && (!rarityFrag || new RegExp(rarityFrag).test(cards[k].rarity || ''))
+);
 function resolveEntry(key) {
   const card = cards[key];
   if (!card) return null;
   const versions = buildPriceVersions(card);
-  const r = resolveVersionForCard(card, versions);
+  const r = resolveVersionForCard(versions);
   return { card, versions, r, selected: versions[r.index] };
 }
 
-console.log('=== 指名 case（CR 要求）===');
+console.log('=== 版本身分只來自來源掛牌 ===');
 
-// hBP01-024：rarity HR 的 entry 必須對齊到 "(パラレル/HR)" ¥3980（非最低 ¥50、非 base ¥120）。
-for (const key of Object.keys(cards).filter(
-  k => cards[k].cardNumber === 'hBP01-024' && /HR/.test(cards[k].rarity || '')
-)) {
-  const e = resolveEntry(key);
-  check(
-    `${key} (rarity ${e.card.rarity}) → 對齊 パラレル/HR ¥3980`,
-    e.r.confident && e.selected.sellPrice === 3980 && /HR/.test(e.selected.name),
-    `got confident=${e.r.confident} name="${e.selected.name}" ¥${e.selected.sellPrice} (${e.r.reason})`
-  );
-}
-
-// hBP01-008：rarity OUR，必須對齊到 パラレル ¥14800，且不可靜默退回最低價 ¥280（CR 核心 case）。
-for (const key of ['hBP01-008_hBP01', 'hBP01-008_ent07']) {
-  const e = resolveEntry(key);
-  if (!e) { check(`${key} 存在`, false, '找不到此 entry'); continue; }
-  check(
-    `${key} (rarity ${e.card.rarity}) → 對齊 パラレル ¥14800，非最低 ¥${e.card.sellPrice}`,
-    e.r.confident && e.selected.sellPrice === 14800 && e.selected.sellPrice !== e.card.sellPrice,
-    `got confident=${e.r.confident} name="${e.selected.name}" ¥${e.selected.sellPrice} (${e.r.reason})`
-  );
-}
-
-// SEC → パラレル/サイン（最高簽名版）。
+// 每個版本的 printing 必須等於它自己的掛牌名稱推導值，且與 rarity 無關。
 {
-  const key = Object.keys(cards).find(k => cards[k].cardNumber === 'hBP03-003');
-  const e = key ? resolveEntry(key) : null;
-  if (e) check(
-    `hBP03-003 (rarity ${e.card.rarity}) → 對齊 パラレル/サイン`,
-    e.r.confident && e.selected.name.includes('サイン'),
-    `got confident=${e.r.confident} name="${e.selected.name}" (${e.r.reason})`
-  );
+  let mismatched = 0;
+  for (const c of Object.values(cards)) {
+    for (const v of buildPriceVersions(c)) {
+      if (v.printing !== printingFromLabel(v.name)) mismatched++;
+    }
+  }
+  check('全庫每個版本的 printing 都由自己的掛牌名稱推導', mismatched === 0, `${mismatched} 筆不符`);
 }
 
-// 真實歧義 case（多個原印/重印版本）必須 confident=false，不可硬選價格當成已對齊。
+// rarity 完全不影響對齊結果：同一組 versions 換掉 rarity 也得到同一個 index。
 {
-  const key = Object.keys(cards).find(k => cards[k].cardNumber === 'hSD01-017');
-  const e = key ? resolveEntry(key) : null;
-  if (e) check(
-    `hSD01-017 (rarity ${e.card.rarity}) 多原印版本 → 版本待確認 (confident=false)`,
-    !e.r.confident,
-    `got confident=${e.r.confident} (${e.r.reason})`
+  const key = entryFor('hBP04-005');
+  const e = resolveEntry(key);
+  const versions = buildPriceVersions({ ...e.card, rarity: 'C', sourceRarity: 'C' });
+  check(
+    'hBP04-005 改寫 rarity 不改變對齊結果（rarity 不再參與推論）',
+    resolveVersionForCard(versions).index === e.r.index,
+    `got ${resolveVersionForCard(versions).index} vs ${e.r.index}`
   );
 }
 
-// === 搜尋畫面 rarity 重映射情境（QA 回報的真正 root cause）===
-// SearchResultsScreen 會把資料庫 rarity 重映射成顯示用色階（HR/SEC 落到預設 'C'、OUR→'SR'），
-// 詳情頁若直接拿這個重映射後的 rarity 對齊，高 rarity 卡會被當成低 rarity → 對到最低價版本。
-// 修正：搜尋結果同時帶 sourceRarity（原始 rarity），對齊改用 sourceRarity。
-console.log('\n=== 搜尋 rarity 重映射（sourceRarity）===');
-function remapRarityForDisplay(raw) {
-  const code = (raw || '').toUpperCase();
-  if (code.includes('OSR') || code.includes('OUR')) return 'SR';
-  if (code === 'UR') return 'R';
-  if (code === 'SR') return 'U';
-  if (code === 'RR' || code === 'R' || code === 'U' || code === 'C') return 'C';
-  if (code === 'N') return 'N';
-  return 'C'; // HR / SEC 等未列舉者落到預設 'C'
-}
-// 模擬搜尋結果送進詳情頁的 card 物件：rarity 已被重映射，並附上 sourceRarity。
-function asSearchResult(dbCard) {
-  return { ...dbCard, rarity: remapRarityForDisplay(dbCard.rarity), sourceRarity: dbCard.rarity };
-}
-for (const [key, expectFrag, expectPrice] of [
-  ['hBP01-024_ent07', '(パラレル/HR)', 3980],
-  ['hBP03-003_ent07', 'サイン', 128000],
-]) {
-  const db = cards[key];
-  if (!db) { check(`${key} 存在`, false, '找不到此 entry'); continue; }
-  const versions = buildPriceVersions(db);
-  const sr = asSearchResult(db);
-  const withSource = resolveVersionForCard(sr, versions);
-  const wSel = versions[withSource.index];
+console.log('\n=== 預設版本 = 原印版最低參考售價（與組牌器同規則）===');
+
+// hBP04-005 的 row rarity 是 SEC。舊版會據此對到 ¥69,800 簽名版；現在必須是 ¥980 原印版。
+{
+  const e = resolveEntry(entryFor('hBP04-005'));
   check(
-    `${key}（搜尋重映射 rarity=${sr.rarity}，sourceRarity=${sr.sourceRarity}）→ 對齊 ${expectFrag} ¥${expectPrice}`,
-    withSource.confident && wSel.name.includes(expectFrag) && wSel.sellPrice === expectPrice,
-    `got confident=${withSource.confident} name="${wSel.name}" ¥${wSel.sellPrice} (${withSource.reason})`
+    'hBP04-005（rarity SEC）→ 原印 ¥980，而非簽名 ¥69,800',
+    e.r.confident && e.selected.sellPrice === 980 && e.selected.printing === 'BASE',
+    `got confident=${e.r.confident} printing=${e.selected.printing} ¥${e.selected.sellPrice} (${e.r.reason})`
   );
-  // 若沒有 sourceRarity（舊 bug），只剩重映射 rarity → 會誤判並選錯版本，作為 root-cause 佐證。
-  const noSource = resolveVersionForCard({ ...db, rarity: sr.rarity, sourceRarity: undefined }, versions);
-  const nSel = versions[noSource.index];
+}
+
+// hBP02-084 的 hBP04 row rarity 是 SR。舊版會據此對到 ¥1,780 的泛用パラレル；
+// 現在必須是原印最低價 ¥120，且 hBP04 重印 ¥180 是另一個獨立版本。
+{
+  const e = resolveEntry(entryFor('hBP02-084', 'SR'));
+  const reprint = e.versions.find((v) => v.printing === 'HBP04');
   check(
-    `${key} 若無 sourceRarity 會誤對齊（證明 root cause）`,
-    !(noSource.confident && nSel.sellPrice === expectPrice),
-    `unexpectedly still correct: name="${nSel.name}" ¥${nSel.sellPrice}`
+    'hBP02-084（rarity SR）→ 原印 ¥120，而非泛用パラレル ¥1,780',
+    e.r.confident && e.selected.sellPrice === 120 && e.selected.printing === 'BASE',
+    `got confident=${e.r.confident} printing=${e.selected.printing} ¥${e.selected.sellPrice} (${e.r.reason})`
   );
+  check(
+    'hBP02-084 的 (hBP04) 重印是獨立版本 ¥180，未與原印 ¥120 併鍵',
+    !!reprint && reprint.sellPrice === 180,
+    `got ${JSON.stringify(reprint)}`
+  );
+}
+
+// hSD01-017：原印 ¥80 與 (hBP04) 重印 ¥120 必須各自保有價格。
+{
+  const e = resolveEntry(entryFor('hSD01-017'));
+  const base = e.versions.find((v) => v.printing === 'BASE');
+  const reprint = e.versions.find((v) => v.printing === 'HBP04');
+  check(
+    'hSD01-017 原印 ¥80 與 (hBP04) 重印 ¥120 各自獨立且都有價',
+    base?.sellPrice === 80 && reprint?.sellPrice === 120,
+    `base=${JSON.stringify(base)} reprint=${JSON.stringify(reprint)}`
+  );
+  check(
+    'hSD01-017 預設取較便宜的原印 ¥80',
+    e.r.confident && e.selected.sellPrice === 80,
+    `got confident=${e.r.confident} ¥${e.selected.sellPrice} (${e.r.reason})`
+  );
+}
+
+console.log('\n=== 來源無法辨識時 fail closed ===');
+
+// hBP02-017 真的有兩筆同名「白銀ノエル(パラレル)」¥3,480／¥500。預設仍是原印 ¥120，
+// 但若使用者切到那個版本，來源無法辨識 —— 這裡驗證預設不會落在歧義版本上。
+{
+  const e = resolveEntry(entryFor('hBP02-017'));
+  const dupes = e.versions.filter((v) => v.printing === 'PARALLEL');
+  check(
+    'hBP02-017 來源確實有多筆同代碼 パラレル 掛牌',
+    dupes.length > 1,
+    `got ${dupes.length}`
+  );
+  check(
+    'hBP02-017 預設落在可辨識的原印 ¥120',
+    e.r.confident && e.selected.sellPrice === 120 && e.selected.printing === 'BASE',
+    `got confident=${e.r.confident} printing=${e.selected.printing} ¥${e.selected.sellPrice} (${e.r.reason})`
+  );
+}
+
+// 預設版本本身是重複代碼時必須 confident=false。
+{
+  const versions = [
+    { name: 'X(パラレル)', printing: 'PARALLEL', sellPrice: 3480, buyPrice: null },
+    { name: 'X(パラレル)', printing: 'PARALLEL', sellPrice: 500, buyPrice: null },
+  ];
+  const r = resolveVersionForCard(versions);
+  check('預設版本代碼有多筆掛牌 → confident=false', !r.confident, `got ${JSON.stringify(r)}`);
 }
 
 console.log('\n=== 全庫掃描（多版本卡）===');
 const multi = Object.entries(cards).filter(
-  ([, c]) => buildPriceVersions(c).filter(v => (v.sellPrice ?? 0) > 0).length > 1
+  ([, c]) => buildPriceVersions(c).filter((v) => (v.sellPrice ?? 0) > 0).length > 1
 );
-let confidentCount = 0;
-let waitCount = 0;
-let confidentPickedMin = 0; // 已對齊卻選到該卡最低價版本的張數（審視是否仍有混版嫌疑）
 let badIndex = 0;
+let premiumDefault = 0;
+let waitCount = 0;
 for (const [, c] of multi) {
   const versions = buildPriceVersions(c);
-  const r = resolveVersionForCard(c, versions);
+  const r = resolveVersionForCard(versions);
   if (r.index < 0 || r.index >= versions.length) badIndex++;
-  if (r.confident) {
-    confidentCount++;
-    const prices = versions.map(v => v.sellPrice ?? 0);
-    const min = Math.min(...prices);
-    if ((versions[r.index].sellPrice ?? 0) === min && new Set(prices).size > 1) confidentPickedMin++;
-  } else {
-    waitCount++;
-  }
+  if (!r.confident) waitCount++;
+  const hasPlain = versions.some((v) => isPlainPrinting(v.printing));
+  if (hasPlain && !isPlainPrinting(versions[r.index].printing)) premiumDefault++;
 }
-console.log(`  多版本卡：${multi.length}｜唯一對齊：${confidentCount}｜版本待確認：${waitCount}`);
-console.log(`  （其中「已對齊但選中最低價版本」：${confidentPickedMin} — 多為低 rarity 原印版，屬正常）`);
+console.log(`  多版本卡：${multi.length}｜版本待確認：${waitCount}`);
 check('所有解析的 index 皆合法', badIndex === 0, `${badIndex} 筆越界`);
+check('有原印掛牌時，預設一律不落在パラレル/サイン 版', premiumDefault === 0, `${premiumDefault} 筆誤選溢價版`);
+
+console.log('\n=== 跨消費端一致性（卡片頁／掃描 vs 組牌搜尋／遷移）===');
+
+// 卡片頁與掃描讀的是來源掛牌順序，組牌搜尋讀的是排序後的版本清單。同價時若讓輸入順序
+// 決定勝負，兩邊就會對同一張卡給出不同的版本代碼 —— 那是不同的擁有權／持久化／缺卡鍵。
+// 這裡跑的是真正的兩條產線，不是重寫的簡化版。
+{
+  const db = adaptDatabase(Object.values(cards));
+  const deckPick = new Map(
+    groupVariantsByCardNumber(db.cards, db.priceRecords).map((g) => [g.cardNumber, g.card.printing]),
+  );
+  const rowFor = new Map();
+  for (const c of Object.values(cards)) if (!rowFor.has(c.cardNumber)) rowFor.set(c.cardNumber, c);
+
+  const detailPick = (row) => {
+    const versions = buildPriceVersions(row);
+    return versions[resolveVersionForCard(versions).index].printing;
+  };
+
+  // CR 具名的六張：同價的エラッタ前／エラッタ後，先前一邊挑前、一邊挑後。
+  const CR_CASES = ['hBP03-027', 'hSD07-003', 'hBP01-081', 'hBP02-003', 'hBP02-078', 'hBP02-102'];
+  for (const num of CR_CASES) {
+    const detail = detailPick(rowFor.get(num));
+    const deck = deckPick.get(num);
+    check(
+      `${num} 卡片頁／掃描與組牌選到同一個版本代碼`,
+      detail === deck && !!deck,
+      `detail=${detail} deck=${deck}`,
+    );
+  }
+
+  let compared = 0;
+  const diverged = [];
+  for (const [num, row] of rowFor) {
+    const deck = deckPick.get(num);
+    if (!deck) continue; // 組牌完全不提供（無可放置分區）的卡號
+    compared++;
+    if (detailPick(row) !== deck) diverged.push(`${num}: detail=${detailPick(row)} deck=${deck}`);
+  }
+  console.log(`  比對卡號：${compared}`);
+  check(
+    '全庫每個卡號的預設版本在兩條產線上一致',
+    diverged.length === 0,
+    `${diverged.length} 筆分歧，例如 ${diverged.slice(0, 3).join('；')}`,
+  );
+
+  // 舊草稿遷移吃的就是 buildLowCostIndex，上面比對的即是它的值域。
+  const index = buildLowCostIndex(groupVariantsByCardNumber(db.cards, db.priceRecords));
+  check(
+    '草稿遷移索引與組牌搜尋同源（同一個 printing）',
+    CR_CASES.every((n) => index.get(n)?.printing === deckPick.get(n)),
+    CR_CASES.map((n) => `${n}=${index.get(n)?.printing}`).join(' '),
+  );
+
+  // 順序無關性本身：把來源掛牌反轉後仍解析到同一個版本代碼。
+  const orderStable = CR_CASES.every((num) => {
+    const versions = buildPriceVersions(rowFor.get(num));
+    const reversed = versions.slice().reverse();
+    return reversed[resolveVersionForCard(reversed).index].printing === detailPick(rowFor.get(num));
+  });
+  check('反轉來源掛牌順序不改變預設版本', orderStable, '順序仍然影響結果');
+}
 
 console.log('');
 if (failures > 0) {

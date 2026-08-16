@@ -22,6 +22,14 @@ import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
 import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
+import { RECOGNITION_UNAVAILABLE_MESSAGE } from '../services/recognitionOutcome';
+import {
+  runWebCameraScan,
+  runNativeCameraScan,
+  NO_TEXT_GUIDANCE,
+  type ScanFlowIo,
+  type ScanFlowUi,
+} from '../services/scanRecognitionFlow';
 import { recognizeTextWeb } from '../services/webOcr';
 import ScanOverlay from '../components/ScanOverlay';
 import ScanResultCard from '../components/ScanResultCard';
@@ -449,6 +457,67 @@ export default function ScanScreen({ navigation }: any) {
     ]);
   };
 
+  // 相機辨識流程本身住在 scanRecognitionFlow，這兩個 adapter 只把 I/O 與 setState 接上，
+  // 所以 Node 回歸能執行到與相機完全相同的分支。
+  const buildScanFlowIo = (recognitionImages?: string[]): ScanFlowIo => ({
+    callRecognitionApi: async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      try {
+        const resp = await fetch(window.location.origin + '/api/recognize-card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: recognitionImages?.[0],
+            images: recognitionImages,
+            storeMvp: STORE_MVP,
+          }),
+          signal: controller.signal,
+        });
+        return { status: resp.status, body: await resp.json() };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+    recognizeFromImage: (uri) => recognizeCardFromImage(uri),
+    ocrText: (uri) => performOcr(uri),
+    recognizeFromOcr: (text) => recognizeCardFromOcr(text),
+    searchCards: (text, limit) => searchCards(text, limit),
+    mapApiCard,
+    mapApiCandidates,
+  });
+
+  const scanFlowUi: ScanFlowUi = {
+    setStatus: (label, progress) => {
+      setScanningStatus(label);
+      if (progress !== undefined) setScanProgress(progress);
+    },
+    setBusy: (busy) => {
+      setIsProcessingOCR(busy);
+      setIsScanning(busy);
+    },
+    setScanError,
+    setSearchError,
+    setSearchResults,
+    setSuggestions,
+    setRecognizedText,
+    setCandidateReason,
+    showLowConfidenceCandidates: (candidates) => {
+      resetAutoScan();
+      setCandidateSelector({ visible: true, tier: 'low', candidates });
+    },
+    onRecognized: handleRecognized,
+    onVisionRecognized: (card, confidence) => {
+      if (!commitCard(card)) return;
+      setResultCard({ visible: true, card, confidence });
+      setSearchResults([]);
+      setSearchError(null);
+      setSuggestions([]);
+      setCapturedPhotoUri(null);
+      resetAutoScan();
+    },
+  };
+
   // OCR 識別功能（支援 web/native，自動降級）
   const captureAndRecognize = async () => {
     // Enforce the same role/quota gate as handleScan. Auto-scan and retry paths
@@ -497,156 +566,9 @@ export default function ScanScreen({ navigation }: any) {
         setScanningStatus('📤 處理影像中…');
         setScanProgress(2);
         const recognitionImages = await captureWebRecognitionImages(photo.uri);
-
-        // ── Step 2: 叫 API 辨識（15 秒 timeout）──
-        setScanningStatus('🤖 AI 辨識中…');
-        setScanProgress(3);
-        let apiResult: any = null;
-        let apiNetworkError = false;
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 15000);
-          const apiUrl = window.location.origin + '/api/recognize-card';
-          const resp = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: recognitionImages[0], images: recognitionImages, storeMvp: STORE_MVP }),
-            signal: controller.signal,
-          });
-          clearTimeout(timeoutId);
-          apiResult = await resp.json();
-          console.log('[ScanScreen] API:', JSON.stringify(apiResult).slice(0, 600));
-        } catch (e: any) {
-          apiNetworkError = true;
-          console.warn('[ScanScreen] API network error:', e.message);
-        }
-
-        // ── Step 3: API 成功 → 依信心度分層處理 ──
-        if (apiResult?.success && apiResult?.card) {
-          setScanningStatus('✅ 辨識完成');
-          setScanProgress(4);
-          const cardInfo = mapApiCard(apiResult.card);
-          const confidence = typeof apiResult.confidence === 'number' ? apiResult.confidence : 0.9;
-          handleRecognized(cardInfo, confidence, mapApiCandidates(apiResult.candidates));
-          setIsProcessingOCR(false); setIsScanning(false);
-          return;
-        }
-
-        // ── Step 4: API 有回錯誤 → 無信心，引導重拍/手動，若有弱候選則顯示候選 ──
-        if (apiResult && !apiResult.success) {
-          setScanningStatus('');
-          setScanProgress(0);
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          if (apiResult.raw) setRecognizedText(apiResult.raw);
-          const weakCandidates = mapApiCandidates(apiResult.candidates);
-          if (weakCandidates && weakCandidates.length > 0) {
-            resetAutoScan();
-            setCandidateSelector({ visible: true, tier: 'low', candidates: weakCandidates.slice(0, 5) });
-          } else {
-            const errMsg = apiResult.error || '無法辨識';
-            setScanError(`⚠️ 辨識失敗: ${errMsg}。請靠近卡號、避免反光、保持卡片平整後重試，或改用手動搜尋。`);
-          }
-          return;
-        }
-
-        // ── Step 5: 網路錯誤 → 降級到本地 Tesseract ──
-        if (apiNetworkError) {
-          console.warn('[ScanScreen] API unreachable, falling back to Tesseract');
-          const result = await recognizeCardFromImage(photo.uri);
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-
-          if (result.success && result.card) {
-            handleRecognized(result.card, result.confidence ?? 0.85, result.candidates);
-          } else {
-            const recognizedText = await recognizeTextWeb(photo.uri);
-            const trimmedText = recognizedText.text.trim();
-            setRecognizedText(trimmedText);
-            if (trimmedText.length > 0) {
-              const fallbackResult = await recognizeCardFromOcr(trimmedText);
-              if (fallbackResult.success && fallbackResult.card) {
-                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
-                return;
-              }
-              setSearchError(fallbackResult.error || '找不到匹配的卡牌');
-              const searchResult = await searchCards(trimmedText, 10);
-              setSearchResults(searchResult);
-            } else {
-              setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
-            }
-          }
-        } else {
-          // 沒網路錯誤也沒 API 結果（不該發生，但兜底）
-          setScanError('無法完成掃描，請重試或使用手動搜尋');
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-        }
+        await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages), scanFlowUi);
       } else {
-        // Native: first use the same direct Gemini/ranking pipeline as web, then OCR fallback.
-        setScanningStatus('🤖 AI 辨識中…');
-        setScanProgress(3);
-        const nativeVisionResult = await recognizeCardFromImage(photo.uri);
-        if (nativeVisionResult.success && nativeVisionResult.card) {
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          setScanningStatus('✅ 辨識完成');
-          setScanProgress(4);
-          if (commitCard(nativeVisionResult.card)) {
-            setResultCard({
-              visible: true,
-              card: nativeVisionResult.card,
-              confidence: nativeVisionResult.confidence ?? 0.9,
-            });
-            setSearchResults([]);
-            setSearchError(null);
-            setSuggestions([]);
-            setCapturedPhotoUri(null);
-            resetAutoScan();
-          }
-          return;
-        }
-        if (nativeVisionResult.lowConfidence || nativeVisionResult.suggestions?.length) {
-          setIsProcessingOCR(false);
-          setIsScanning(false);
-          const candidateCards = nativeVisionResult.suggestions || [];
-          setSearchResults(candidateCards);
-          setSuggestions(candidateCards);
-          setSearchError(nativeVisionResult.error || '辨識信心不足，請從候選卡中選擇');
-          setCandidateReason(`信心 ${Math.round((nativeVisionResult.confidence || 0) * 100)}%：${nativeVisionResult.reason || '需要人工確認'}`);
-          if (nativeVisionResult.raw) setRecognizedText(nativeVisionResult.raw);
-          return;
-        }
-
-        setScanningStatus('🔍 OCR 辨識中…');
-        const recognizedText = await performOcr(photo.uri);
-        const trimmedText = recognizedText.trim();
-        setRecognizedText(trimmedText);
-
-        setIsProcessingOCR(false);
-        setIsScanning(false);
-
-        if (trimmedText.length > 0) {
-          // 使用 OCR 專用辨識（含行分割、卡號提取）
-          const result = await recognizeCardFromOcr(trimmedText);
-
-          if (result.success && result.card) {
-            setScanningStatus('✅ 辨識完成');
-            setScanProgress(4);
-            handleRecognized(result.card, result.confidence ?? 0.85, result.candidates);
-          } else {
-            // 沒有精確匹配 — 用全部結果做模糊搜尋，讓用戶選擇
-            setSearchError(result.error || '找不到匹配的卡牌');
-            const searchResult = await searchCards(trimmedText, 10);
-            setSearchResults(searchResult);
-          }
-        } else {
-          // OCR 回傳空文字（常見於 web 版）
-          // 直接向使用者顯示已拍攝的照片，提供手動搜尋
-          // 不彈 Alert，讓畫面底部的錯誤提示引導使用者
-          setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
-          // 用完整字串搜尋（雖然為空，但仍給個機會）
-        }
+        await runNativeCameraScan(photo.uri, buildScanFlowIo(), scanFlowUi);
       }
     } catch (error) {
       console.error('OCR Error:', error);
@@ -714,6 +636,12 @@ export default function ScanScreen({ navigation }: any) {
           return;
         }
 
+        // When the recognition backend is unavailable the local OCR passes below are
+        // only a best-effort fallback, so their failure says nothing about the photo.
+        const noTextError = galleryVisionResult.serviceUnavailable
+          ? RECOGNITION_UNAVAILABLE_MESSAGE
+          : NO_TEXT_GUIDANCE;
+
         if (isWeb) {
           // Web: 卡號優先 OCR
           const cardResult = await recognizeCardFromImage(result.assets[0].uri);
@@ -739,7 +667,7 @@ export default function ScanScreen({ navigation }: any) {
               const searchResult = await searchCards(trimmedText, 10);
               setSearchResults(searchResult);
             } else {
-              setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
+              setScanError(noTextError);
             }
           }
         } else {
@@ -760,7 +688,7 @@ export default function ScanScreen({ navigation }: any) {
               setSearchResults(searchResult);
             }
           } else {
-            setScanError('無法自動辨識卡牌文字。請使用手動搜尋或從下方搜尋結果中選擇。');
+            setScanError(noTextError);
           }
         }
       }

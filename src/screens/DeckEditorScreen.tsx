@@ -21,6 +21,12 @@ const ZONE_LABELS: Record<DeckZone, string> = {
   yell: 'エール',
 };
 
+// 版本一律顯示來源掛牌原文（如「ラプラス・ダークネス(パラレル)」）；沒有原文時退回版本代碼。
+// 絕不顯示資料庫的卡號層級 rarity —— hBP04-005 兩列都標 SEC，拿來標示 ¥980 的原印版會誤導。
+function printingLabelOf(card: { printing: string; printingLabel?: string }): string {
+  return card.printingLabel?.trim() || card.printing;
+}
+
 export default function DeckEditorScreen() {
   const { isDesktop } = useBreakpoint();
   const [db, setDb] = useState<CardDatabase | null>(null);
@@ -42,6 +48,7 @@ export default function DeckEditorScreen() {
   const setActiveDeck = useDeckStore((s) => s.setActiveDeck);
   const changeCard = useDeckStore((s) => s.changeCard);
   const applyLowCostVariants = useDeckStore((s) => s.applyLowCostVariants);
+  const migrateLegacyPrintings = useDeckStore((s) => s.migrateLegacyPrintings);
   const setOwned = useDeckStore((s) => s.setOwned);
   const adjustOwned = useDeckStore((s) => s.adjustOwned);
 
@@ -72,6 +79,13 @@ export default function DeckEditorScreen() {
     [db],
   );
   const lowCostIndex = useMemo(() => buildLowCostIndex(variantGroups), [variantGroups]);
+
+  // Drafts saved before DIC-1013 key their slots off the row-level rarity and
+  // must be moved onto real source printings before any estimate is shown.
+  useEffect(() => {
+    if (lowCostIndex.size > 0) migrateLegacyPrintings(lowCostIndex);
+  }, [lowCostIndex, migrateLegacyPrintings]);
+
   const results = useMemo(
     () => searchVariantGroups(variantGroups, query),
     [variantGroups, query],
@@ -83,7 +97,7 @@ export default function DeckEditorScreen() {
   // show real names/versions for owned entries independent of any deck.
   const cardByOwnershipKey = useMemo(() => {
     const map = new Map<string, DeckCard>();
-    if (db) for (const c of db.cards) map.set(ownershipKey(c.cardNumber, c.rarity), c);
+    if (db) for (const c of db.cards) map.set(ownershipKey(c.cardNumber, c.printing), c);
     return map;
   }, [db]);
 
@@ -97,7 +111,12 @@ export default function DeckEditorScreen() {
         const cardNumber = sep === -1 ? key : key.slice(0, sep);
         const version = sep === -1 ? '' : key.slice(sep + 1);
         const card = cardByOwnershipKey.get(key);
-        return { key, cardNumber, version, qty, name: card?.name || cardNumber };
+        return {
+          key, cardNumber, version, qty,
+          name: card?.name || cardNumber,
+          // 找不到卡片（例如 DIC-1013 前以 rarity 記錄的舊項目）就照原樣顯示版本碼，不臆測。
+          versionLabel: card ? printingLabelOf(card) : version,
+        };
       })
       .sort((a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.version.localeCompare(b.version));
   }, [collection, cardByOwnershipKey]);
@@ -201,7 +220,7 @@ export default function DeckEditorScreen() {
         value={query}
         onChangeText={setQuery}
       />
-      <Text style={styles.muted}>每個卡號只顯示一列，預設採用可出賽的低配版本。</Text>
+      <Text style={styles.muted}>每個卡號只顯示一列，預設採用可出賽、參考售價最低的原印版本。</Text>
       <FlatList
         data={results}
         keyExtractor={(g) => g.cardNumber}
@@ -215,7 +234,7 @@ export default function DeckEditorScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardName}>{card.name}</Text>
                 <Text style={styles.cardMeta}>
-                  {card.cardNumber}{card.rarity ? ` · ${card.rarity}` : ''}
+                  {card.cardNumber} · {printingLabelOf(card)}
                   {zone ? ` · ${ZONE_LABELS[zone]}` : ' · 無法分類'}
                 </Text>
                 {group.variants.length > 1 && (
@@ -226,7 +245,7 @@ export default function DeckEditorScreen() {
               </View>
               <TouchableOpacity
                 style={styles.ownBtn}
-                onPress={() => adjustOwned(card.cardNumber, card.rarity, 1)}
+                onPress={() => adjustOwned(card.cardNumber, card.printing, 1)}
                 accessibilityRole="button"
                 accessibilityLabel={`收藏 +1 ${card.name}`}
                 testID={`collection-add-${card.id}`}
@@ -350,7 +369,7 @@ export default function DeckEditorScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardName}>{slot.card.name}</Text>
                 <Text style={styles.cardMeta}>
-                  {slot.card.cardNumber}{slot.card.rarity ? ` · ${slot.card.rarity}` : ''}
+                  {slot.card.cardNumber} · {printingLabelOf(slot.card)}
                 </Text>
               </View>
               <View style={styles.qtyControls}>
@@ -383,7 +402,7 @@ export default function DeckEditorScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.cardName}>{e.name}</Text>
               <Text style={styles.cardMeta}>
-                {e.cardNumber}{e.version ? ` · ${e.version}` : ''}
+                {e.cardNumber}{e.versionLabel ? ` · ${e.versionLabel}` : ''}
               </Text>
             </View>
             <View style={styles.qtyControls}>
@@ -423,14 +442,17 @@ export default function DeckEditorScreen() {
 
   const estimatePanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <Text style={styles.h2}>缺卡估價</Text>
-      <Text style={styles.muted}>需求 / 擁有 / 缺少 · 價格僅取同卡號＋同版本精確匹配</Text>
+      <Text style={styles.h2}>缺卡預估（參考售價）</Text>
+      <Text style={styles.muted}>
+        需求 / 擁有 / 缺少 · 單價採 yuyu-tei「參考售價」（玩家購入價），僅取同卡號＋同版本精確匹配
+      </Text>
+      <Text style={styles.muted}>※ 不使用「店家收購價」估算缺卡成本；收購價僅於卡片行情頁顯示。</Text>
       {gap && gap.rows.map((r) => (
         <View key={`${r.cardNumber}|${r.version}`} style={styles.gapRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.cardName}>{r.name}</Text>
             <Text style={styles.cardMeta}>
-              {r.cardNumber}{r.version ? ` · ${r.version}` : ''}
+              {r.cardNumber} · {r.versionLabel || r.version}
             </Text>
           </View>
           <View style={styles.gapNumbers}>
@@ -460,15 +482,15 @@ export default function DeckEditorScreen() {
         : (
           <View style={styles.totalCard}>
             {gap.subtotals.length === 0 ? (
-              <Text style={styles.totalText}>缺卡估算總額：—（無精確版本價格）</Text>
+              <Text style={styles.totalText}>缺卡預估總額（參考售價）：—（無精確版本價格）</Text>
             ) : (
               gap.subtotals.map((s) => (
                 <View key={s.currency}>
-                  <Text style={styles.totalText}>
-                    缺卡估算小計（{s.currency}）：{s.total} {s.currency}
+                  <Text style={styles.totalText} testID={`gap-subtotal-${s.currency}`}>
+                    缺卡預估小計（參考售價 · {s.currency}）：{s.total} {s.currency}
                   </Text>
                   <Text style={styles.muted}>
-                    來源 yuyu-tei.jp · 幣別 {s.currency}
+                    來源 yuyu-tei.jp 參考售價 · 幣別 {s.currency}
                     {s.dataAsOf ? ` · 資料截至 ${s.dataAsOf}` : ''}
                   </Text>
                 </View>
@@ -480,7 +502,9 @@ export default function DeckEditorScreen() {
                 {gap.unpriced.map((u) => `${u.cardNumber}${u.version ? `·${u.version}` : ''}`).join('、')}
               </Text>
             )}
-            <Text style={styles.muted}>不採用最高價／跨版本／同名價替代；不同幣別分開計算，不合併加總。</Text>
+            <Text style={styles.muted}>
+              不採用店家收購價／最高價／跨版本／同名價替代；不同幣別分開計算，不合併加總。
+            </Text>
           </View>
         ))}
     </View>

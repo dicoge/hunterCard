@@ -14,7 +14,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from '../stores/storage';
 import type { Deck, DeckCard, DeckZone, DeckSlot } from '../utils/deckRules';
 import { ownershipKey } from '../utils/deckRules';
-import { normalizeSlotsToLowCost } from '../utils/deckVariants';
+import { isLegacySlotCard, migrateSlotsToPrintings, normalizeSlotsToLowCost } from '../utils/deckVariants';
 
 function newId(): string {
   return `deck_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -55,6 +55,9 @@ interface DeckState {
   /** rewrite every slot onto its low-cost default printing (DIC-1004 §A5).
    * Zones and quantities are preserved; the global collection is never touched. */
   applyLowCostVariants: (deckId: string, index: Map<string, DeckCard>) => void;
+  /** move drafts persisted under the pre-DIC-1013 rarity model onto real source
+   * printings. Idempotent, runs across every deck once the database is loaded. */
+  migrateLegacyPrintings: (index: Map<string, DeckCard>) => void;
 
   setOwned: (cardNumber: string, version: string, qty: number) => void;
   /** apply a signed delta to the owned count; clamps at 0 (never negative) */
@@ -139,6 +142,24 @@ export const useDeckStore = create<DeckState>()(
           : d),
       })),
 
+      migrateLegacyPrintings: (index) => set((s) => {
+        const pending = s.decks.filter(
+          (d) => ZONES.some((z) => d[z].some((slot) => isLegacySlotCard(slot.card))),
+        );
+        if (pending.length === 0) return {};
+        const migrated = new Set(pending.map((d) => d.id));
+        return {
+          decks: s.decks.map((d) => (migrated.has(d.id)
+            ? {
+                ...d,
+                oshi: migrateSlotsToPrintings(d.oshi, 'oshi', index),
+                main: migrateSlotsToPrintings(d.main, 'main', index),
+                yell: migrateSlotsToPrintings(d.yell, 'yell', index),
+              }
+            : d)),
+        };
+      }),
+
       setOwned: (cardNumber, version, qty) => set((s) => {
         const key = ownershipKey(cardNumber, version);
         const next = { ...s.collection };
@@ -162,6 +183,13 @@ export const useDeckStore = create<DeckState>()(
       // v1 (DIC-978): the global collection is now keyed by the NORMALIZED
       // ownershipKey. A v0 payload (raw cardNumber|rarity keys) is re-keyed and
       // collision-summed on load so existing on-device inventories carry over.
+      //
+      // DIC-1013 deliberately does NOT bump this again: deck slots move onto
+      // source printings lazily via migrateLegacyPrintings (it needs the card
+      // database, which loads async), and collection entries are left untouched
+      // — owning `hBP04-005|SEC` does not prove ownership of the plain printing,
+      // so re-keying inventory here would fabricate ownership the player never
+      // recorded. Legacy entries stay visible and editable in the inventory.
       version: 1,
       storage: createJSONStorage(() => platformStorage),
       partialize: (s) => ({ decks: s.decks, activeDeckId: s.activeDeckId, collection: s.collection }),

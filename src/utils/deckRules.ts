@@ -7,17 +7,24 @@
 // Error/Warning.
 
 import rawRules from '../../data/deck-rules.json';
+import { normalizePrinting } from './printingIdentity';
 
 export type DeckZone = 'oshi' | 'main' | 'yell';
 
-// A card as the editor needs it. Kept minimal on purpose — this mirrors the
-// fields actually present in data/database.json entries.
+// A card as the editor needs it — one entry per (card number, printing).
+//
+// The version identity is the SOURCE-PROVEN printing token, never the dataset's
+// row-level rarity: hBP04-005 ships as SEC on both of its rows while its listings
+// expose a plain ¥980 printing alongside the ¥9,980 parallel and the ¥69,800
+// signed parallel (DIC-1013).
 export interface DeckCard {
   id: string;
   cardNumber: string;
   name: string;
-  /** printing/version identity — the card's rarity string acts as the version key */
-  rarity: string;
+  /** printing/version identity — see src/utils/printingIdentity.ts */
+  printing: string;
+  /** the source's own listing label for this printing (provenance / display) */
+  printingLabel: string;
   series: string;
   /** raw card-type string as stored (JP or EN); classification handles both */
   type?: string;
@@ -254,14 +261,18 @@ export function deckStats(deck: Deck): DeckStats {
 }
 
 // ── Version-precise price resolution (DIC-945 #6, DIC-944 §C) ───────────────
-// A price counts ONLY when it matches the same cardNumber AND the same version
-// (rarity). No cross-version, no highest-price, no same-name fallback — ever.
-// When no exact match exists the resolver returns NO_EXACT_PRICE, and callers
-// must display "無精確版本價格" and exclude the item from any total.
+// A price counts ONLY when it matches the same cardNumber AND the same printing.
+// No cross-version, no highest-price, no same-name fallback — ever. When no exact
+// match exists the resolver returns NO_EXACT_PRICE, and callers must display
+// "無精確版本價格" and exclude the item from any total.
+//
+// The price carried here is the player's purchase / reference SELL price. A
+// store's buy (acquisition) price is a different commercial quantity and must
+// never reach this resolver (DIC-1013 §5).
 
 export interface PriceRecord {
   cardNumber: string;
-  /** version/rarity this price applies to; empty string means "version unknown" */
+  /** printing this price applies to; empty string means "printing unknown" */
   version: string;
   price: number;
   currency: string;
@@ -292,7 +303,10 @@ export function resolveExactPrice(
 
 export interface GapRow {
   cardNumber: string;
+  /** the printing this requirement is for */
   version: string;
+  /** the source's own listing label for that printing */
+  versionLabel: string;
   name: string;
   required: number;
   owned: number;
@@ -326,21 +340,12 @@ export interface GapSummary {
   dataAsOf: string | null;
 }
 
-// Normalize a printing/version identity so the global collection inventory and
-// the deck requirement collapse to the SAME key when they mean the same
-// printing (DIC-978 #2). Rarity codes reach us from several surfaces (deck
-// slots, hand entry, a future scanner) with incidental case / width / spacing
-// differences — ' sr ', 'Sr', full-width 'ＳＲ' all denote the R-parallel SR.
-// NFKC folds full-width forms, whitespace is collapsed, and the code is
-// upper-cased so those variants share one owned bucket. This never crosses two
-// genuinely distinct rarities (they differ by more than case/spacing), so it
-// stays faithful to the "exact version" contract.
+// Normalize a printing identity so the global collection inventory and the deck
+// requirement collapse to the SAME key when they mean the same printing
+// (DIC-978 #2). Delegates to the shared printing model so ownership can never
+// drift from the identity the price pipeline emits (DIC-1013 §7).
 export function normalizeVersion(version: string): string {
-  return (version ?? '')
-    .normalize('NFKC')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toUpperCase();
+  return normalizePrinting(version);
 }
 
 /** ownershipKey = cardNumber|normalizedVersion (DIC-978 #2). cardNumber is
@@ -355,11 +360,11 @@ export function computeGap(
   owned: Record<string, number>,
   priceRecords: PriceRecord[],
 ): GapSummary {
-  // Requirements combine oshi + main + yell per (cardNumber, version).
+  // Requirements combine oshi + main + yell per (cardNumber, printing).
   const req: Record<string, { card: DeckCard; qty: number }> = {};
   for (const slots of [deck.oshi, deck.main, deck.yell]) {
     for (const s of slots) {
-      const key = ownershipKey(s.card.cardNumber, s.card.rarity);
+      const key = ownershipKey(s.card.cardNumber, s.card.printing);
       if (!req[key]) req[key] = { card: s.card, qty: 0 };
       req[key].qty += s.qty;
     }
@@ -377,9 +382,10 @@ export function computeGap(
     // under the same normalized key, so a direct lookup matches (DIC-978 #3).
     const have = owned[key] ?? 0;
     const missing = Math.max(0, qty - have);
-    const price = resolveExactPrice(card.cardNumber, card.rarity, priceRecords);
+    const price = resolveExactPrice(card.cardNumber, card.printing, priceRecords);
     const row: GapRow = {
-      cardNumber: card.cardNumber, version: card.rarity, name: card.name,
+      cardNumber: card.cardNumber, version: card.printing,
+      versionLabel: card.printingLabel ?? '', name: card.name,
       required: qty, owned: have, missing, price,
     };
     if (missing > 0) {
