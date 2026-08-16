@@ -107,19 +107,27 @@ const check = (label, fn) => { fn(); results.push(label); };
     assert.equal(imageLongestEdge('data:image/jpeg;base64,ZnVsbC1mcmFtZQ=='), null);
     assert.equal(imageLongestEdge('not-an-image'), null);
   });
-  check('only positively measured, too-small images are refused', () => {
+  check('only positively measured, too-small frames are refused', () => {
     assert.equal(isBelowLegibleResolution([THUMBNAIL]), true);
     assert.equal(isBelowLegibleResolution([LEGIBLE]), false);
-    // The crop is smaller than the full frame; one legible image is enough.
-    assert.equal(isBelowLegibleResolution([LEGIBLE, THUMBNAIL]), false);
     assert.equal(isBelowLegibleResolution(['data:image/jpeg;base64,ZnVsbC1mcmFtZQ==']), false);
     assert.equal(isBelowLegibleResolution([]), false);
+  });
+  check('the scan-area crop is judged by its frame, not the other way round', () => {
+    // A crop is legitimately smaller than the frame it was cut from, so a small second
+    // image must never condemn a good scan.
+    assert.equal(isBelowLegibleResolution([LEGIBLE, THUMBNAIL]), false);
+    // And upscaling the crop must not rescue an unreadable frame — which is exactly how
+    // QA's payload slipped past a max-of-all-images rule.
+    assert.equal(isBelowLegibleResolution([THUMBNAIL, pngOfSize(400, 112)]), true);
   });
 }
 
 // ── 2. QA's exact failure case: no invented card may reach the user ───────────
 {
-  const { res, body, providerCalls } = await scan([THUMBNAIL], REPLY_FROM_THUMBNAIL);
+  // The exact payload shape QA sent: the thumbnail as the frame, plus an upscaled
+  // bottom-edge crop as the second image.
+  const { res, body, providerCalls } = await scan([THUMBNAIL, pngOfSize(400, 112)], REPLY_FROM_THUMBNAIL);
   check('the thumbnail QA scanned is refused instead of matched', () => {
     assert.equal(res.status, 404);
     assert.equal(body.success, false);

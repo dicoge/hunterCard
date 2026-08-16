@@ -247,15 +247,19 @@ export function imageLongestEdge(image: string): number | null {
 }
 
 /**
- * True only when every image whose size could actually be measured is too small to
- * contain a readable card number. Unmeasurable images make this false — see above.
+ * True when the full-frame image is too small to contain a readable card number.
+ *
+ * Only the FIRST image counts, because that is the whole card by this endpoint's
+ * contract and the scan-area crop is cut out of it: a crop is legitimately smaller than
+ * the frame, so the smallest image proves nothing, and an upscaled crop would hide a
+ * useless frame behind a large pixel count without adding a single readable digit.
+ * An unmeasurable frame returns false — callers must fail open.
  */
 export function isBelowLegibleResolution(images: any[]): boolean {
-  const measured = images
-    .filter((image): image is string => typeof image === 'string' && image.length > 0)
-    .map(imageLongestEdge)
-    .filter((edge): edge is number => edge !== null);
-  return measured.length > 0 && Math.max(...measured) < MIN_LEGIBLE_IMAGE_PX;
+  const frame = images.find((image): image is string => typeof image === 'string' && image.length > 0);
+  if (!frame) return false;
+  const edge = imageLongestEdge(frame);
+  return edge !== null && edge < MIN_LEGIBLE_IMAGE_PX;
 }
 
 function dataUriToGeminiPart(image: string) {
