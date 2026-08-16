@@ -86,8 +86,12 @@ N=0 / N=1 / N=2 均誠實處理：可輸出空集合或 singleton clusters，但
 - `members`
 - `representativeOshi`
 - `representativeArchetype`
-- `coreCards`：cluster 內所有牌組皆出現的 feature。
-- `differentiatingCards`：cluster 內 presence rate 減去 cluster 外 presence rate 最高的 feature。
+- `coreCards`：cluster 內所有牌組皆出現的 feature，**完整輸出、不截斷**；`coreCardCount` 為其總數。
+- `differentiatingCards`：cluster 內 presence rate 減去 cluster 外 presence rate 最高的 feature，這是明示的 **ranked preview**：`differentiatingCardsPreviewLimit`（預設 12，可由 config `clusterSummary.differentiatingPreviewLimit` 調整）為輸出上限，`differentiatingCardsTotal` 為排序候選總數。
+
+#### coreCards 不得截斷（DIC-1045）
+
+`coreCards` 是定義（「cluster 內每副牌都有」），不是排行榜。原本的 `slice(0, 20)` 會在定義成立的情況下悄悄丟掉合格成員——2026-08 的 `decklog:DUKHN` singleton 有 23 個 core feature，卻只輸出 20 個，等於發佈了一個與其定義不符的集合。截斷已移除。真正屬於 ranking 的 `differentiatingCards` 仍可保留上限，但必須連同 limit 與 total 一起輸出，讀者才知道自己看到的是節錄。
 
 ### Card association
 

@@ -9,6 +9,9 @@
         "method": "agglomerative",
         "threshold": 0.55
       },
+      "clusterSummary": {
+        "differentiatingPreviewLimit": 12
+      },
       "roundingDigits": 6,
       "similarity": "weightedJaccard",
       "zoneWeights": {

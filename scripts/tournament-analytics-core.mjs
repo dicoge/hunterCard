@@ -19,6 +19,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   association: {
     minSupportCount: 1,
   },
+  clusterSummary: {
+    differentiatingPreviewLimit: 12,
+  },
   roundingDigits: 6,
 });
 
@@ -284,12 +287,13 @@ export function buildClusters(decks, deckVectors, similarity, config = DEFAULT_C
       }
     }
     const sampleCount = memberDecks.length;
+    // coreCards is a definition ("present in every member deck"), not a ranking:
+    // dropping members of that set would publish a false definition (DIC-1045).
     const coreCards = [...localPresence.entries()]
       .filter(([, count]) => count === sampleCount)
       .sort(([a], [b]) => featureComparator(a, b))
-      .slice(0, 20)
       .map(([key]) => ({ key, ...parseFeatureKey(key), presence: sampleCount, averageCount: round((localCounts.get(key) ?? 0) / sampleCount) }));
-    const differentiatingCards = [...localPresence.entries()]
+    const rankedDifferentiatingCards = [...localPresence.entries()]
       .map(([key, count]) => {
         const inRate = count / sampleCount;
         const outsideDecks = decks.length - sampleCount;
@@ -297,8 +301,9 @@ export function buildClusters(decks, deckVectors, similarity, config = DEFAULT_C
         const outsideRate = outsideDecks === 0 ? 0 : outsideCount / outsideDecks;
         return { key, ...parseFeatureKey(key), presence: count, liftOverRest: round(inRate - outsideRate) };
       })
-      .sort((a, b) => b.liftOverRest - a.liftOverRest || featureComparator(a.key, b.key))
-      .slice(0, 12);
+      .sort((a, b) => b.liftOverRest - a.liftOverRest || featureComparator(a.key, b.key));
+    const differentiatingPreviewLimit = config.clusterSummary?.differentiatingPreviewLimit ?? DEFAULT_CONFIG.clusterSummary.differentiatingPreviewLimit;
+    const differentiatingCards = rankedDifferentiatingCards.slice(0, differentiatingPreviewLimit);
     const oshiCounts = countLabels(memberDecks.map((deck) => deck.oshi ?? 'UNKNOWN'));
     const archetypeCounts = countLabels(memberDecks.map((deck) => deck.archetypeLabel ?? deck.archetypeId ?? 'UNKNOWN'));
     return {
@@ -308,7 +313,10 @@ export function buildClusters(decks, deckVectors, similarity, config = DEFAULT_C
       representativeOshi: topLabel(oshiCounts),
       representativeArchetype: topLabel(archetypeCounts),
       coreCards,
+      coreCardCount: coreCards.length,
       differentiatingCards,
+      differentiatingCardsPreviewLimit: differentiatingPreviewLimit,
+      differentiatingCardsTotal: rankedDifferentiatingCards.length,
     };
   });
 }

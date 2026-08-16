@@ -214,6 +214,36 @@ const aug = analyzeMonth(twoMonths, '2026-08', { generatedAt: '2026-09-01T00:00:
 assert.equal(aug.clusters[0].representativeArchetype, 'alpha');
 assert(!stableStringify(aug).includes('BONLY'));
 
+// ── Core cards are a definition, not a top-N preview (DIC-1045) ─────────────
+// `coreCards` means "present in every member deck". A silent slice(0, 20)
+// published that definition while omitting valid members of the set, so a
+// cluster with more than 20 core features must report all of them.
+const wideCards = Array.from({ length: 25 }, (_, i) => card('main', `CORE-${String(i + 1).padStart(2, '0')}`, 'C', 1));
+const wide = analyzeReports([
+  report([
+    deck('decklog:W1', 'wide', [...wideCards, card('main', 'W1-ONLY', 'R', 1)]),
+    deck('decklog:W2', 'wide', [...wideCards, card('main', 'W2-ONLY', 'R', 1)]),
+  ]),
+]);
+assert.equal(wide.clusters.length, 1, 'fixture must form a single cluster');
+assert.equal(wide.clusters[0].sampleCount, 2);
+const wideCore = wide.clusters[0].coreCards;
+assert.equal(wideCore.length, 25, 'every feature shared by all members is reported, not the first 20');
+assert.equal(wide.clusters[0].coreCardCount, 25);
+assert(wideCore.every((c) => c.presence === 2), 'core cards are present in every member deck');
+assert(
+  wideCore.some((c) => c.cardNumber === 'CORE-25'),
+  'core cards past the old 20-item cut are not dropped',
+);
+assert(
+  !wideCore.some((c) => c.cardNumber === 'W1-ONLY' || c.cardNumber === 'W2-ONLY'),
+  'features missing from a member deck are not core',
+);
+// The differentiating list stays a ranked preview, but says so explicitly.
+assert.equal(wide.clusters[0].differentiatingCardsPreviewLimit, 12);
+assert.equal(wide.clusters[0].differentiatingCardsTotal, 27);
+assert.equal(wide.clusters[0].differentiatingCards.length, 12);
+
 const noBadNumbers = stableStringify(analysis);
 assert(!noBadNumbers.includes('NaN'));
 assert(!noBadNumbers.includes('Infinity'));

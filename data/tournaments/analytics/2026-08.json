@@ -9,6 +9,9 @@
         "method": "agglomerative",
         "threshold": 0.55
       },
+      "clusterSummary": {
+        "differentiatingPreviewLimit": 12
+      },
       "roundingDigits": 6,
       "similarity": "weightedJaccard",
       "zoneWeights": {
@@ -8734,6 +8737,7 @@
   "clusters": [
     {
       "clusterId": "cluster-001",
+      "coreCardCount": 23,
       "coreCards": [
         {
           "averageCount": 1,
@@ -8894,6 +8898,30 @@
           "presence": 1,
           "version": null,
           "zone": "main"
+        },
+        {
+          "averageCount": 4,
+          "cardNumber": "hSD01-016",
+          "key": "main|hSD01-016|NO_VERSION",
+          "presence": 1,
+          "version": null,
+          "zone": "main"
+        },
+        {
+          "averageCount": 1,
+          "cardNumber": "hSD14-010",
+          "key": "main|hSD14-010|NO_VERSION",
+          "presence": 1,
+          "version": null,
+          "zone": "main"
+        },
+        {
+          "averageCount": 20,
+          "cardNumber": "hY05-003",
+          "key": "yell|hY05-003|NO_VERSION",
+          "presence": 1,
+          "version": null,
+          "zone": "yell"
         }
       ],
       "differentiatingCards": [
@@ -8994,6 +9022,8 @@
           "zone": "main"
         }
       ],
+      "differentiatingCardsPreviewLimit": 12,
+      "differentiatingCardsTotal": 23,
       "members": [
         "decklog:DUKHN"
       ],
@@ -9003,6 +9033,7 @@
     },
     {
       "clusterId": "cluster-002",
+      "coreCardCount": 18,
       "coreCards": [
         {
           "averageCount": 1,
@@ -9247,6 +9278,8 @@
           "zone": "main"
         }
       ],
+      "differentiatingCardsPreviewLimit": 12,
+      "differentiatingCardsTotal": 18,
       "members": [
         "decklog:2H33J8"
       ],
