@@ -440,6 +440,62 @@ await test('fail-closed: a duplicate slot is rejected rather than merged', () =>
   assert.equal(gate.reason, '卡表有重複項目，無法匯入');
 });
 
+// ── 6a. DIC-1057: an unreadable version blocks the import instead of crashing ─
+// A committed report whose slot carried a version that is not a token — an
+// object, an array, a number, a boolean or a blank string — used to pass this
+// gate as importable and then throw inside unresolvedCard's `.trim()`. The gate
+// must name it BAD_VERSION and buildImportedDeck must return null, without
+// throwing and without quietly coercing the value away.
+const UNREADABLE_VERSIONS = [{ rare: 'OSR' }, ['OSR'], 42, 0, true, false, '', '   '];
+
+for (const version of UNREADABLE_VERSIONS) {
+  await test(`fail-closed: version ${JSON.stringify(version)} is rejected as BAD_VERSION`, () => {
+    const deck = syntheticDeck();
+    deck.cards = deck.cards.map((c, i) => (i === 0 ? { ...c, version } : c));
+    const gate = evaluateImport(deck, fullIndex);
+    assert.equal(gate.importable, false);
+    assert.equal(gate.code, 'BAD_VERSION');
+    assert.equal(gate.reason, '卡表版本資料異常，無法匯入');
+    let draft;
+    assert.doesNotThrow(() => {
+      draft = buildImportedDeck(augustEvent, deck, fullIndex, db.priceRecords, [], IMPORTED_AT);
+    }, 'a caller that skips the gate must get null, not an exception');
+    assert.equal(draft, null);
+  });
+}
+
+// The same mutation on a REAL shipped deck: exactly one slot's version changes,
+// so 1/50/20, duplicates and catalog membership all still pass and only the
+// version rule can be what rejects it.
+for (const version of [{ rare: 'OSR' }, 42, '   ']) {
+  await test(`fail-closed: a real deck with version ${JSON.stringify(version)} never imports`, () => {
+    const deck = { ...DUKHN, cards: DUKHN.cards.map((c) => ({ ...c })) };
+    deck.cards[0] = { ...deck.cards[0], version };
+    assert.equal(evaluateImport(deck, catalog).code, 'BAD_VERSION');
+    let draft;
+    assert.doesNotThrow(() => { draft = importOf(deck); });
+    assert.equal(draft, null);
+    // the untouched deck still imports, so the mutation is what blocked it
+    assert.ok(importOf(DUKHN), 'the unmutated real deck must still import');
+  });
+}
+
+await test('a readable version — absent, null or a non-blank string — still imports', () => {
+  for (const version of [null, undefined, 'OSR', ' parallel ']) {
+    const deck = syntheticDeck();
+    deck.cards = deck.cards.map((c, i) => {
+      if (i !== 0) return c;
+      const slot = { ...c, version };
+      if (version === undefined) delete slot.version;
+      return slot;
+    });
+    assert.equal(
+      evaluateImport(deck, fullIndex).importable, true,
+      `version ${JSON.stringify(version)} must remain importable`,
+    );
+  }
+});
+
 // ── 6b. DIC-1036: a slot's identity is (zone, cardNumber) and NOTHING else ───
 // The rarity grade used to be part of the duplicate key, so one card number
 // could occupy two rows of one zone as long as the grades read differently.

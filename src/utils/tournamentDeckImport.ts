@@ -50,7 +50,7 @@
 // low-cost default, which would silently alter a published printing on reload.
 
 import type { DeckEntry, TournamentEvent, DeckCardRef } from '../types/tournament';
-import { duplicateSlotsWithinZone } from './tournamentReport';
+import { duplicateSlotsWithinZone, isReadableVersion } from './tournamentReport';
 import { resolveLowCostVariant } from './deckVariants';
 import { isPlainPrinting } from './printingIdentity';
 import {
@@ -96,6 +96,7 @@ export type ImportBlockCode =
   | 'BAD_ZONE'
   | 'BAD_CARD_NUMBER'
   | 'BAD_COUNT'
+  | 'BAD_VERSION'
   | 'DUPLICATE_SLOT'
   | 'ZONE_TOTAL'
   | 'CATALOG_LOADING'
@@ -161,6 +162,14 @@ export function evaluateImport(
     }
     if (!isPositiveInt(ref.count)) {
       return blocked('BAD_COUNT', '卡表張數資料異常，無法匯入');
+    }
+    // A committed report can carry a version this module cannot read — an
+    // object, an array, a number, or a blank token. It used to pass the gate and
+    // then throw inside unresolvedCard's `.trim()` (DIC-1057). The same shared
+    // predicate the collector validates with rejects it here, so the value is
+    // neither coerced nor dropped: the deck simply does not import.
+    if (!isReadableVersion(ref.version)) {
+      return blocked('BAD_VERSION', '卡表版本資料異常，無法匯入');
     }
     totals[ref.zone] += ref.count;
   }
@@ -254,7 +263,8 @@ function defaultedCard(base: DeckCard, sourceVersion: string | null | undefined)
  * Resolve one source slot to a local card.
  *
  * Returns null only when the card NUMBER itself is unknown locally — the gate
- * rejects that case, so a null here never reaches a deck.
+ * rejects that case, so a null here never reaches a deck. `ref.version` is
+ * likewise already gate-checked as absent or a non-blank string.
  *
  * A printing is preserved only when the source EXPLICITLY claims its token names
  * a collectible printing (`printingProven === true`) and that token identifies

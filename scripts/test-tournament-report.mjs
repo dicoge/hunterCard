@@ -642,6 +642,61 @@ test('buildMonthlyReport threads the catalog to raw events', () => {
   assert.equal(without.events[0].decks[0].cardsVerified, false);
 });
 
+// ── DIC-1057: a version is absent or a non-blank string, nothing else ───────
+// An object version used to survive this gate as a fully `verified` deck and
+// only surface downstream, where the importer's `.trim()` threw. Each case
+// mutates ONE slot of a REAL committed 1/50/20 deck, so totals, duplicates and
+// catalog membership all still pass and nothing but the version rule can reject
+// it.
+test('an unreadable version is rejected, never coerced or dropped', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const version of [{ v: 'OSR' }, ['OSR'], 42, 0, true, false, '', '   ']) {
+    const cards = committedCards('DUKHN');
+    cards.find((c) => c.zone === 'oshi').version = version;
+    assert.throws(
+      () => normalizeCards(cards, catalog),
+      /has no readable version/,
+      `version ${JSON.stringify(version)} must be rejected`,
+    );
+  }
+});
+
+test('an object version cannot normalize into a verified report', () => {
+  const cards = committedCards('DUKHN');
+  cards.find((c) => c.zone === 'main').version = { rare: 'OSR' };
+  assert.throws(() => normalizeCards(cards, loadCatalogCardNumbers()), /readable version/);
+  assert.throws(
+    () => normalizeEvent(
+      {
+        eventId: 'evt-bad-version',
+        name: 'bad version',
+        sourceUrl: 'https://example.test',
+        decks: [{ decklogCode: 'DUKHN', rank: 1, cards }],
+      },
+      NOW,
+      loadCatalogCardNumbers(),
+    ),
+    /readable version/,
+  );
+});
+
+test('valid absent and non-blank string versions keep normalizing verified', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const version of [null, undefined, 'OSR', ' OSR ']) {
+    const cards = committedCards('DUKHN');
+    const slot = cards.find((c) => c.zone === 'oshi');
+    if (version === undefined) delete slot.version;
+    else slot.version = version;
+    const { cards: clean, verified, failure } = normalizeCards(cards, catalog);
+    assert.equal(verified, true, `version ${JSON.stringify(version)}: ${failure}`);
+    assert.equal(
+      clean.find((c) => c.zone === 'oshi').version,
+      version === undefined ? null : version,
+      'a readable version is preserved verbatim, never trimmed or rewritten',
+    );
+  }
+});
+
 test('classifyFreshness flags only a strictly newer official publication', () => {
   assert.equal(classifyFreshness(null, '2026-08-09'), 'unknown');
   assert.equal(classifyFreshness('2026-08-09T12:00:00Z', '2026-08-09'), 'same');
