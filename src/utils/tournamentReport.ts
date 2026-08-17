@@ -88,6 +88,19 @@ export function isReadableCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
+// A version is the rarity/printing token the source published alongside a slot.
+// It is readable only as an explicit absence (null/undefined → honest unknown)
+// or a non-blank string. An object, array, boolean or number is not a token any
+// consumer can carry: such a value used to normalize as `verified` and then
+// crash the deck importer on `.trim()` (DIC-1057). A blank/whitespace string is
+// equally unreadable — it claims a token exists while naming none — and must not
+// be repaired into null, for the same reason an unreadable count is never
+// repaired into 1.
+export function isReadableVersion(value: unknown): value is string | null | undefined {
+  if (value === null || value === undefined) return true;
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 /** Reject a raw card slot before any normalization touches it. Sanitizing first
  * — dropping unreadable entries or defaulting bad counts — destroys the very
  * evidence the strict gate needs, so every malformed slot throws here instead. */
@@ -107,6 +120,11 @@ function assertReadableSlot(card: DeckCardRef, index: number): asserts card is D
   if (!isReadableCount(card.count)) {
     throw new Error(
       `card ${card.cardNumber} has no readable copy count (count=${JSON.stringify(card.count)})`,
+    );
+  }
+  if (!isReadableVersion(card.version)) {
+    throw new Error(
+      `card ${card.cardNumber} has no readable version (version=${JSON.stringify(card.version)})`,
     );
   }
 }
