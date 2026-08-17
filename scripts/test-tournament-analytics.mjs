@@ -392,4 +392,51 @@ for (const month of committedMonths) {
   }
 }
 
+// index.json is a generated artifact too. It was previously excluded from every
+// committed-artifact assertion, so a wrong month sampleSize in the index — the
+// number the UI reads — survived the whole suite (DIC-1065 CR FAIL #3).
+const generatedIndex = path.join(tmpAnalytics, 'index.json');
+assert.ok(fs.existsSync(generatedIndex), 'regeneration must produce analytics/index.json');
+
+const committedIndex = path.join(ANALYTICS_DIR, 'index.json');
+const publicIndex = path.join(PUBLIC_ANALYTICS_DIR, 'index.json');
+assert.ok(fs.existsSync(committedIndex), 'analytics/index.json must be committed');
+assert.ok(fs.existsSync(publicIndex), 'public mirror of analytics/index.json must exist');
+
+assert.equal(
+  fs.readFileSync(committedIndex, 'utf8'),
+  fs.readFileSync(generatedIndex, 'utf8'),
+  'analytics/index.json must be byte-identical to deterministic regeneration',
+);
+assert.equal(
+  fs.readFileSync(committedIndex, 'utf8'),
+  fs.readFileSync(publicIndex, 'utf8'),
+  'data/ and public/ analytics/index.json must be byte-identical',
+);
+
+// Targeted per-month assertions so a drifted index names the month and field
+// instead of failing as an opaque whole-file byte mismatch.
+const indexDoc = JSON.parse(fs.readFileSync(committedIndex, 'utf8'));
+assert.ok(Array.isArray(indexDoc.months) && indexDoc.months.length > 0, 'index must list months');
+assert.deepEqual(
+  indexDoc.months.map((m) => m.month).sort(),
+  [...committedMonths].sort(),
+  'index must list exactly the committed months',
+);
+for (const month of committedMonths) {
+  const entry = indexDoc.months.find((m) => m.month === month);
+  assert.ok(entry, `index must contain an entry for ${month}`);
+  const artifact = JSON.parse(fs.readFileSync(path.join(ANALYTICS_DIR, `${month}.json`), 'utf8'));
+  assert.equal(
+    entry.sampleSize,
+    artifact.sampleSize,
+    `index ${month} sampleSize must match the ${month}.json artifact sampleSize`,
+  );
+  assert.deepEqual(
+    [...(entry.inputDeckIds ?? [])].sort(),
+    [...(artifact.inputDeckIds ?? [])].sort(),
+    `index ${month} inputDeckIds must match the ${month}.json artifact`,
+  );
+}
+
 console.log('test-tournament-analytics: PASS');
