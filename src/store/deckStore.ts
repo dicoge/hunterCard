@@ -15,6 +15,7 @@ import platformStorage from '../stores/storage';
 import type { Deck, DeckCard, DeckZone, DeckSlot } from '../utils/deckRules';
 import { ownershipKey } from '../utils/deckRules';
 import { isLegacySlotCard, migrateSlotsToPrintings, normalizeSlotsToLowCost } from '../utils/deckVariants';
+import type { ImportedDeckDraft } from '../utils/tournamentDeckImport';
 
 function newId(): string {
   return `deck_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -44,6 +45,10 @@ interface DeckState {
   collection: Record<string, number>;
 
   createDeck: (name: string) => string;
+  /** Add a NEW independent deck from a tournament import draft (DIC-1033) and
+   * make it active. Never overwrites, merges into, or renames an existing deck:
+   * repeat imports of the same source deck produce separate copies. */
+  importDeck: (draft: ImportedDeckDraft) => string;
   renameDeck: (deckId: string, name: string) => void;
   deleteDeck: (deckId: string) => void;
   setActiveDeck: (deckId: string | null) => void;
@@ -102,6 +107,19 @@ export const useDeckStore = create<DeckState>()(
 
       createDeck: (name) => {
         const deck = emptyDeck(name.trim() || '新牌組');
+        set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id }));
+        return deck.id;
+      },
+      importDeck: (draft) => {
+        const deck: Deck = {
+          id: newId(),
+          name: draft.name.trim() || '賽事牌組',
+          oshi: draft.oshi,
+          main: draft.main,
+          yell: draft.yell,
+          origin: draft.origin,
+          updatedAt: new Date().toISOString(),
+        };
         set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id }));
         return deck.id;
       },

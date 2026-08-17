@@ -26,7 +26,17 @@ const ZONE_LABELS: Record<DeckZone, string> = {
 
 // 版本一律顯示來源掛牌原文（如「ラプラス・ダークネス(パラレル)」）；沒有原文時退回版本代碼。
 // 絕不顯示資料庫的卡號層級 rarity —— hBP04-005 兩列都標 SEC，拿來標示 ¥980 的原印版會誤導。
-function printingLabelOf(card: { printing: string; printingLabel?: string }): string {
+// 賽事匯入時來源只證明卡號與稀有度、未指明可購買版本的卡，標為「版本未確認」，
+// 不冒用任一實際版本的名稱或價格（DIC-1033）。
+function printingLabelOf(card: {
+  printing: string;
+  printingLabel?: string;
+  unresolvedPrinting?: boolean;
+  sourceVersion?: string;
+}): string {
+  if (card.unresolvedPrinting) {
+    return card.sourceVersion ? `版本未確認（來源：${card.sourceVersion}）` : '版本未確認';
+  }
   return card.printingLabel?.trim() || card.printing;
 }
 
@@ -96,6 +106,12 @@ export default function DeckEditorScreen() {
     [variantGroups, query],
   );
   const lowCostDrift = activeDeck ? countLowCostDrift(activeDeck, lowCostIndex) : 0;
+  const unresolvedPrintings = activeDeck
+    ? (['oshi', 'main', 'yell'] as DeckZone[]).reduce(
+        (n, zone) => n + activeDeck[zone].filter((s) => s.card.unresolvedPrinting).length,
+        0,
+      )
+    : 0;
 
   // Resolve a collection entry (keyed by normalized ownershipKey) back to a
   // displayable card. Built from the loaded database so the global inventory can
@@ -330,6 +346,21 @@ export default function DeckEditorScreen() {
               <Text style={styles.link}>切換牌組</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {activeDeck.origin?.kind === 'tournament' && (
+        <View style={styles.originBanner} testID="deck-origin-banner">
+          <Text style={styles.originText}>
+            ✓ 已從賽事牌組匯入：{activeDeck.origin.eventName}
+            {activeDeck.origin.decklogCode ? `（${activeDeck.origin.decklogCode}）` : ''}
+          </Text>
+          {unresolvedPrintings > 0 && (
+            <Text style={styles.originNote}>
+              其中 {unresolvedPrintings} 張卡的來源只註明卡號與稀有度，未指明可購買的版本；
+              這些卡以「版本未確認」匯入，價格顯示為無精確版本價格，不會套用其他版本的價格。
+            </Text>
+          )}
         </View>
       )}
 
@@ -673,6 +704,16 @@ const styles = StyleSheet.create({
   renameActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   renameErrorText: { color: COLORS.error, fontSize: 12, marginTop: 6 },
   statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 },
+  originBanner: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    padding: 10,
+    marginBottom: 12,
+  },
+  originText: { color: COLORS.text, fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  originNote: { color: COLORS.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 6 },
   stat: { minWidth: 68, alignItems: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10 },
   statLabel: { color: COLORS.textSecondary, fontSize: 11 },
   statValue: { fontSize: 15, fontWeight: 'bold', marginTop: 2 },

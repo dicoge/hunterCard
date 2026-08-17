@@ -30,6 +30,25 @@ export interface DeckCard {
   type?: string;
   cardTypeJp?: string;
   imageUrl?: string;
+  /** the source named the card number but not which collectible printing it is
+   * (DIC-1033). Such a slot never keys a real price record, so it resolves to
+   * NO_EXACT_PRICE instead of borrowing another printing's price. */
+  unresolvedPrinting?: boolean;
+  /** the version token the source did publish, kept verbatim as provenance */
+  sourceVersion?: string;
+}
+
+/** Where a deck came from, when it was not hand-built in the editor. Optional on
+ * Deck so every already-persisted local deck stays valid without migration. */
+export interface DeckOrigin {
+  kind: 'tournament';
+  eventId: string;
+  eventName: string;
+  /** the source report's own deck id */
+  sourceDeckId: string;
+  decklogCode: string | null;
+  sourceUrl: string;
+  importedAt: string;
 }
 
 export interface DeckSlot {
@@ -44,6 +63,7 @@ export interface Deck {
   main: DeckSlot[];
   yell: DeckSlot[];
   updatedAt: string;
+  origin?: DeckOrigin;
 }
 
 export interface DeckRulesConfig {
