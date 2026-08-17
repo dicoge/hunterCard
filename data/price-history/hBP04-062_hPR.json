@@ -408,8 +408,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-062_hPR"
+    },
+    {
+      "date": "2026-08-17",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-062_hPR"
     }
   ],
-  "lastUpdated": "2026-08-16T12:14:23.037Z",
+  "lastUpdated": "2026-08-17T12:11:37.651Z",
   "nameZh": "森美聲"
 }

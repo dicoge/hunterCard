@@ -345,8 +345,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hY05-008_hBP06"
+    },
+    {
+      "date": "2026-08-17",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY05-008_hBP06"
     }
   ],
-  "lastUpdated": "2026-08-16T12:14:22.890Z",
+  "lastUpdated": "2026-08-17T12:11:37.430Z",
   "nameZh": "紫色應援"
 }

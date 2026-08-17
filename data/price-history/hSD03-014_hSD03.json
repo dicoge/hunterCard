@@ -387,8 +387,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD03-014_hSD03"
+    },
+    {
+      "date": "2026-08-17",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-014_hSD03"
     }
   ],
-  "lastUpdated": "2026-08-16T12:14:22.982Z",
+  "lastUpdated": "2026-08-17T12:11:37.569Z",
   "nameZh": "飯糰俠"
 }
