@@ -56,3 +56,5 @@ data/push-watchlist.json
 scripts/chrome/
 scripts/.metadata
 e2e-shots/
+e2e-shots-preview/
+e2e-shots-prod/
