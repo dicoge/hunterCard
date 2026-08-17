@@ -584,13 +584,13 @@ await test('the repair survives a reload without the user re-importing', async (
 });
 
 // ── 9. The UI copy the defaulted state must state ────────────────────────────
+// Only the constant is pinned here. Whether the deck editor actually RENDERS it
+// is asserted against the real component tree by
+// scripts/test-tournament-default-banner-render.mjs (DIC-1064) — the source-text
+// check this used to make also passed off the import line and the per-card
+// label, so it survived deleting the banner outright.
 await test('the defaulted state has its exact user-facing wording', () => {
   assert.equal(DEFAULTED_PRINTING_NOTE, '來源未指定版本，已使用最低普通版本估價');
-  const source = fs.readFileSync('src/screens/DeckEditorScreen.tsx', 'utf8');
-  assert.ok(
-    source.includes('DEFAULTED_PRINTING_NOTE'),
-    'the deck editor must render the shared defaulted-printing wording',
-  );
 });
 
 console.log(`\nDIC-1060 tournament ordinary-printing default: ${passed} tests passed`);

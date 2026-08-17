@@ -122,6 +122,9 @@ jobs:
       - name: Verify tournament import defaults to the lowest ordinary printing (DIC-1060)
         run: npm run test:tournament-printing-default
 
+      - name: Verify the defaulted-printing note actually renders (DIC-1064)
+        run: npm run test:tournament-banner-render
+
       - name: Verify tournament collector failure preservation (DIC-979)
         run: npm run test:tournament-collector
 
