@@ -8,6 +8,7 @@ import { eligibleZone } from './deckRules';
 import {
   BASE_PRINTING, buildSourcePrintings, type SourceListing, type SourcePrinting,
 } from './printingIdentity';
+import { buildFacetIndex, type CardFacets } from './cardCatalog';
 
 export interface RawPriceEntry extends SourceListing {
   /** merge-buy-prices.js provenance for the store's acquisition price. Retained
@@ -29,13 +30,19 @@ export interface RawCard {
   timestamp?: string;
   officialImage?: string;
   localImage?: string;
-  skillsJp?: { cardType?: string };
+  skillsJp?: { cardType?: string; color?: string };
+  skillsZh?: { cardType?: string; color?: string; name?: string };
   prices?: RawPriceEntry[];
 }
 
-export interface CardDatabase {
+export interface AdaptedCards {
   cards: DeckCard[];
   priceRecords: PriceRecord[];
+}
+
+export interface CardDatabase extends AdaptedCards {
+  /** cardNumber → the player-facing filter/search facets of the visual picker */
+  facets: Map<string, CardFacets>;
 }
 
 export const PRICE_SOURCE = 'yuyu-tei.jp';
@@ -92,7 +99,7 @@ export function pickRepresentative(rows: RawCard[]): RawCard {
  * A printing whose sell price the source states ambiguously stays unpriced
  * rather than borrowing a sibling's price.
  */
-export function adaptCardNumber(rows: RawCard[]): CardDatabase {
+export function adaptCardNumber(rows: RawCard[]): AdaptedCards {
   const rep = pickRepresentative(rows);
   const listings = rows.flatMap((row) => row.prices ?? []);
   const printings = buildSourcePrintings(listings);
@@ -147,7 +154,11 @@ export function adaptDatabase(rawCards: RawCard[]): CardDatabase {
     cards.push(...adapted.cards);
     priceRecords.push(...adapted.priceRecords);
   }
-  return { cards, priceRecords: dropConflictingPrices(priceRecords) };
+  return {
+    cards,
+    priceRecords: dropConflictingPrices(priceRecords),
+    facets: buildFacetIndex(rawCards),
+  };
 }
 
 export async function loadCardDatabase(): Promise<CardDatabase> {
