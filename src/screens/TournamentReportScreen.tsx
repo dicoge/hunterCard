@@ -15,7 +15,6 @@ import { openUrl } from '../utils/openUrl';
 import type {
   MonthlyReport,
   TournamentIndex,
-  ArchetypeShareRow,
   TournamentEvent,
   DeckEntry,
 } from '../types/tournament';
@@ -23,7 +22,25 @@ import type { MainDrawerParamList } from '../types';
 import {
   tournamentReportReducer,
   initialTournamentReportState,
+  reportsInScope,
+  scopeLoading,
+  scopeError,
+  scopeWindow,
+  omittedMonths,
+  incompleteMonths,
+  scopeIsPartial,
+  runBounded,
+  MAX_SCOPE_MONTHS,
+  MAX_CONCURRENT_REPORT_LOADS,
 } from '../utils/tournamentReportState';
+import {
+  ALL_SCOPE,
+  buildDonutModel,
+  filterEventsBySlice,
+  SMALL_SAMPLE_MIN,
+  type DonutDimension,
+} from '../utils/tournamentDonut';
+import ObservedShareDonut from '../components/ObservedShareDonut';
 import { useDeckStore } from '../store/deckStore';
 import { loadCardDatabase } from '../utils/deckCardData';
 import type { DeckCard, PriceRecord } from '../utils/deckRules';
@@ -33,27 +50,13 @@ import {
   evaluateImport,
 } from '../utils/tournamentDeckImport';
 
-// Deterministic palette for archetype slices; the unknown slice is always the
-// muted gray below (never a "real" archetype color) so it reads as a gap.
-const SLICE_COLORS = [
-  '#ff6b9d',
-  '#6366f1',
-  '#10b981',
-  '#f59e0b',
-  '#8b5cf6',
-  '#ef4444',
-  '#14b8a6',
-  '#eab308',
+const DIMENSIONS: Array<{ key: DonutDimension; label: string }> = [
+  { key: 'archetype', label: '牌型' },
+  // Oshi is published per deck, so grouping by it needs no inference. Color is
+  // deliberately absent: a deck can be multi-color, and splitting it across
+  // color slices would invent a breakdown the source never stated.
+  { key: 'oshi', label: '推し' },
 ];
-const UNKNOWN_COLOR = '#4b5563';
-
-function sliceColor(row: ArchetypeShareRow, index: number): string {
-  return row.archetypeId == null ? UNKNOWN_COLOR : SLICE_COLORS[index % SLICE_COLORS.length];
-}
-
-function pct(share: number): string {
-  return `${Math.round(share * 1000) / 10}%`;
-}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const controller = new AbortController();
@@ -69,7 +72,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export default function TournamentReportScreen() {
   const [state, dispatch] = useReducer(tournamentReportReducer, initialTournamentReportState);
-  const { index, month, report, loading, error } = state;
+  const { index, scope } = state;
   const navigation = useNavigation<DrawerNavigationProp<MainDrawerParamList>>();
   const importDeck = useDeckStore((s) => s.importDeck);
   // Card catalog, keyed by card number. Stays null until the database resolves;
@@ -80,6 +83,8 @@ export default function TournamentReportScreen() {
   // against a catalog without them.
   const [priceRecords, setPriceRecords] = useState<PriceRecord[]>([]);
   const [imported, setImported] = useState<string | null>(null);
+  const [dimension, setDimension] = useState<DonutDimension>('archetype');
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -96,10 +101,17 @@ export default function TournamentReportScreen() {
     };
   }, []);
 
+  // The newest MAX_SCOPE_MONTHS months are fetched once each, because the
+  // default scope aggregates them. A month added to the index later enters the
+  // window with no code change; the archive behind the window is never
+  // requested, so neither the request count nor the resident data grows with it.
+  const windowMonths = useMemo(() => scopeWindow(index), [index]);
+  const windowKey = windowMonths.join(',');
   useEffect(() => {
-    if (!month) return;
+    if (!windowKey) return;
     let alive = true;
-    (async () => {
+    void runBounded(windowKey.split(','), MAX_CONCURRENT_REPORT_LOADS, async (month) => {
+      if (!alive) return;
       try {
         const r = await fetchJson<MonthlyReport>(`/data/tournaments/${month}.json`);
         if (alive) dispatch({ type: 'report-loaded', month, report: r });
@@ -112,11 +124,11 @@ export default function TournamentReportScreen() {
           });
         }
       }
-    })();
+    });
     return () => {
       alive = false;
     };
-  }, [month]);
+  }, [windowKey]);
 
   useEffect(() => {
     let alive = true;
@@ -160,7 +172,40 @@ export default function TournamentReportScreen() {
     [catalog, priceRecords, importDeck, navigation],
   );
 
-  if (loading && !index) {
+  const reports = useMemo(() => reportsInScope(state), [state]);
+  const model = useMemo(
+    () => buildDonutModel(reports, scope, dimension),
+    [reports, scope, dimension],
+  );
+  const allEvents = useMemo(() => reports.flatMap((r) => r.events), [reports]);
+  const events = useMemo(
+    () => filterEventsBySlice(allEvents, selectedKey, dimension),
+    [allEvents, selectedKey, dimension],
+  );
+  const loading = scopeLoading(state);
+  const error = scopeError(state);
+  const selectedSlice = model.slices.find((s) => s.key === selectedKey) ?? null;
+  // A slice that no longer exists (scope or dimension changed under it) must not
+  // silently filter everything away.
+  useEffect(() => {
+    if (selectedKey != null && !model.slices.some((s) => s.key === selectedKey)) {
+      setSelectedKey(null);
+    }
+  }, [model.slices, selectedKey]);
+
+  const coverage = useMemo(
+    () =>
+      reports.reduce(
+        (acc, r) => ({
+          knownEvents: acc.knownEvents + r.coverage.knownEvents,
+          rankedDecks: acc.rankedDecks + r.coverage.rankedDecks,
+        }),
+        { knownEvents: 0, rankedDecks: 0 },
+      ),
+    [reports],
+  );
+
+  if (state.loading && !index) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={COLORS.primary} size="large" />
@@ -172,10 +217,31 @@ export default function TournamentReportScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.emptyTitle}>🏆 賽事月報</Text>
-        <Text style={styles.emptyText}>{error ?? '目前沒有可用的賽事月報資料。'}</Text>
+        <Text style={styles.emptyText}>{state.error ?? '目前沒有可用的賽事月報資料。'}</Text>
       </View>
     );
   }
+
+  const hasData = reports.length > 0;
+  // A scope missing any of its months is never labeled as the complete set. The
+  // heading is the claim a reader takes at face value, so it degrades to
+  // "部分月份" and the notice below names exactly what is in and what is out.
+  const partial = scopeIsPartial(state);
+  const scopeLabel = scope !== ALL_SCOPE ? scope : partial ? '部分月份' : '全部月份';
+  const incomplete = incompleteMonths(state);
+  const omitted = omittedMonths(state);
+  const partialNotice = partial
+    ? [
+        reports.length > 0 ? `已納入 ${reports.map((r) => r.month).join('、')}` : null,
+        incomplete.failed.length > 0 ? `${incomplete.failed.join('、')} 載入失敗` : null,
+        incomplete.pending.length > 0 ? `${incomplete.pending.join('、')} 仍在載入` : null,
+        omitted.length > 0 && scope === ALL_SCOPE
+          ? `僅取最近 ${MAX_SCOPE_MONTHS} 個月，另有 ${omitted.length} 個較早月份未納入`
+          : null,
+      ]
+        .filter((s): s is string => s != null)
+        .join('；')
+    : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -190,18 +256,25 @@ export default function TournamentReportScreen() {
           </View>
         ) : null}
 
-        {/* Month selector */}
+        {/* Scope selector: all verified months by default, then each month the
+            index publishes. */}
         <View style={styles.monthRow}>
-          {(index?.months ?? []).map((m) => {
-            const active = m.month === month;
+          {[
+            { month: ALL_SCOPE, label: '全部' },
+            ...windowMonths.map((m) => ({ month: m, label: m })),
+          ].map((opt) => {
+            const active = opt.month === scope;
             return (
               <TouchableOpacity
-                key={m.month}
-                onPress={() => dispatch({ type: 'select-month', month: m.month })}
+                key={opt.month}
+                onPress={() => dispatch({ type: 'select-scope', scope: opt.month })}
                 style={[styles.monthChip, active && styles.monthChipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                testID={`scope-${opt.month}`}
               >
                 <Text style={[styles.monthChipText, active && styles.monthChipTextActive]}>
-                  {m.month}
+                  {opt.label}
                 </Text>
               </TouchableOpacity>
             );
@@ -209,67 +282,118 @@ export default function TournamentReportScreen() {
         </View>
 
         {loading && <ActivityIndicator color={COLORS.primary} style={styles.inlineLoader} />}
-        {error && !loading && <Text style={styles.emptyText}>{error}</Text>}
+        {error && !loading ? (
+          <Text style={styles.errorText} testID="scope-error">
+            {error}
+          </Text>
+        ) : null}
 
-        {report && (
+        {/* Suppressed only while the first months are still in flight, where the
+            spinner already says the same thing and there is nothing to overstate
+            yet. */}
+        {partialNotice && (hasData || !loading) ? (
+          <Text style={styles.partialNotice} testID="scope-partial">
+            ⚠ 這不是全部月份的資料：{partialNotice}。占比僅以上列已納入月份為母體。
+          </Text>
+        ) : null}
+
+        {hasData && (
           <>
             {/* Source + honesty disclaimer */}
             <View style={styles.disclaimer}>
               <Text style={styles.disclaimerTitle}>資料來源與涵蓋率</Text>
-              <Text style={styles.sourceName}>{report.source.name}</Text>
-              <Text style={styles.disclaimerText}>{report.source.disclaimer}</Text>
-              <Text style={styles.coverageNote}>{report.coverage.note}</Text>
+              <Text style={styles.sourceName}>{reports[0].source.name}</Text>
+              <Text style={styles.disclaimerText}>{reports[0].source.disclaimer}</Text>
+              {reports.map((r) => (
+                <Text key={r.month} style={styles.coverageNote}>
+                  {r.month}：{r.coverage.note}
+                </Text>
+              ))}
               <View style={styles.statRow}>
-                <Stat label="收錄賽事" value={`${report.coverage.knownEvents}`} />
-                <Stat label="觀測牌組" value={`${report.coverage.observedDecks}`} />
-                <Stat label="有名次" value={`${report.coverage.rankedDecks}`} />
-                <Stat label="賽事總數" value="未公開" />
+                <Stat label="收錄賽事" value={`${coverage.knownEvents}`} />
+                <Stat label="觀測牌組" value={`${model.observedSize}`} />
+                <Stat label="已公開卡表" value={`${model.sampleSize}`} />
+                <Stat label="有名次" value={`${coverage.rankedDecks}`} />
               </View>
             </View>
 
-            {/* Archetype share over the observed sample only */}
-            <Text style={styles.h2}>牌組占比（僅限已觀測樣本，共 {report.observedSampleSize} 副）</Text>
-            {report.archetypeShare.length === 0 ? (
-              <Text style={styles.emptyText}>本月無可觀測牌組。</Text>
-            ) : (
-              <>
-                <View style={styles.bar}>
-                  {report.archetypeShare.map((row, i) => (
-                    <View
-                      key={row.archetypeId ?? 'unknown'}
-                      style={{
-                        flex: row.count,
-                        backgroundColor: sliceColor(row, i),
-                        height: 22,
+            {/* Observed-share donut over the verified sample only */}
+            <Text style={styles.h2}>已公開樣本分布（{scopeLabel}）</Text>
+            <View style={styles.chartCard}>
+              <View style={styles.dimensionRow}>
+                {DIMENSIONS.map((d) => {
+                  const active = d.key === dimension;
+                  return (
+                    <TouchableOpacity
+                      key={d.key}
+                      onPress={() => {
+                        setDimension(d.key);
+                        setSelectedKey(null);
                       }}
-                    />
-                  ))}
-                </View>
-                {report.archetypeShare.map((row, i) => (
-                  <View key={row.archetypeId ?? 'unknown'} style={styles.legendRow}>
-                    <View style={[styles.swatch, { backgroundColor: sliceColor(row, i) }]} />
-                    <Text
-                      style={[
-                        styles.legendLabel,
-                        row.archetypeId == null && styles.legendUnknown,
-                      ]}
+                      style={[styles.dimChip, active && styles.dimChipActive]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      testID={`dimension-${d.key}`}
                     >
-                      {row.label}
-                    </Text>
-                    <Text style={styles.legendPct}>
-                      {pct(row.share)}（{row.count}）
-                    </Text>
-                  </View>
-                ))}
-                <Text style={styles.finePrint}>
-                  * 占比分母為已觀測樣本，非整體 meta。「未知」為未歸類牌組，不併入任何具名牌組。
+                      <Text style={[styles.dimChipText, active && styles.dimChipTextActive]}>
+                        {d.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {model.sampleSize === 0 ? (
+                <Text style={styles.emptyChart} testID="donut-empty">
+                  此範圍尚無已取得完整卡表的樣本，因此不繪製圖表。
+                  {model.observedSize > 0
+                    ? `（已觀測 ${model.observedSize} 副精選牌組，卡表尚未公開。）`
+                    : ''}
                 </Text>
-              </>
-            )}
+              ) : (
+                <>
+                  {model.smallSample ? (
+                    <Text style={styles.smallSample} testID="donut-small-sample">
+                      ⚠ 樣本數偏少（n={model.sampleSize}，少於 {SMALL_SAMPLE_MIN}
+                      ），僅供參考，不足以代表趨勢。
+                    </Text>
+                  ) : null}
+                  <ObservedShareDonut
+                    model={model}
+                    selectedKey={selectedKey}
+                    onSelect={setSelectedKey}
+                  />
+                  {selectedSlice ? (
+                    <TouchableOpacity
+                      onPress={() => setSelectedKey(null)}
+                      style={styles.clearBtn}
+                      accessibilityRole="button"
+                      testID="donut-clear"
+                    >
+                      <Text style={styles.clearBtnText}>
+                        ✕ 清除篩選：{selectedSlice.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={styles.hint}>點選色塊或圖例可篩選下方牌組。</Text>
+                  )}
+                  <Text style={styles.finePrint}>
+                    * 分母僅為已公開完整卡表的 {model.sampleSize} 副樣本，非整體 meta，也未涵蓋未公開卡表的參賽者。
+                    此範圍共觀測 {model.observedSize} 副精選牌組。「
+                    {DIMENSIONS.find((d) => d.key === dimension)?.label}」未知者獨立成一塊，不併入任何具名分類。
+                  </Text>
+                </>
+              )}
+            </View>
 
             {/* Events + featured decks */}
-            <Text style={styles.h2}>賽事與精選牌組</Text>
-            {report.events.map((e) => (
+            <Text style={styles.h2}>
+              賽事與精選牌組{selectedSlice ? `：${selectedSlice.label}` : ''}
+            </Text>
+            {events.length === 0 ? (
+              <Text style={styles.emptyText}>此篩選條件下沒有牌組。</Text>
+            ) : null}
+            {events.map((e) => (
               <View key={e.eventId} style={styles.eventCard}>
                 <Text style={styles.eventName}>{e.name}</Text>
                 {e.nameZh ? <Text style={styles.eventNameZh}>{e.nameZh}</Text> : null}
@@ -281,7 +405,7 @@ export default function TournamentReportScreen() {
                 <Text style={styles.eventCoverage}>{e.coverageNote}</Text>
 
                 {e.decks.map((d) => (
-                  <View key={d.deckId} style={styles.deckRow}>
+                  <View key={d.deckId} style={styles.deckRow} testID={`deck-${d.deckId}`}>
                     <View style={styles.deckHead}>
                       <Text style={styles.deckArchetype}>
                         {d.archetypeLabel ?? '未知牌組'}
@@ -292,7 +416,7 @@ export default function TournamentReportScreen() {
                       玩家：{d.playerName ?? '未公開'}
                     </Text>
                     <Text style={styles.deckCards}>
-                      {d.cardsVerified
+                      {d.cardsVerified === true
                         ? `卡表：${d.cards.length} 種卡`
                         : '卡表：未收錄（decklog 需 JS 渲染，尚未讀取）'}
                     </Text>
@@ -312,7 +436,7 @@ export default function TournamentReportScreen() {
             ))}
 
             <Text style={styles.generatedAt}>
-              產生時間：{report.generatedAt}
+              產生時間：{reports.map((r) => `${r.month} ${r.generatedAt}`).join('｜')}
             </Text>
           </>
         )}
@@ -405,6 +529,8 @@ const styles = StyleSheet.create({
   h2: { color: COLORS.text, fontSize: 17, fontWeight: 'bold', marginTop: 20, marginBottom: 10 },
   emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
   emptyText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
+  errorText: { color: COLORS.error, fontSize: 14, marginTop: 16 },
+  partialNotice: { color: COLORS.accent, fontSize: 12, lineHeight: 18, marginTop: 12 },
   monthRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   inlineLoader: { marginVertical: 24 },
   monthChip: {
@@ -439,19 +565,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statValue: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' },
-  statLabel: { color: COLORS.textSecondary, fontSize: 11, marginTop: 2 },
-  bar: {
-    flexDirection: 'row',
-    borderRadius: 6,
-    overflow: 'hidden',
+  statLabel: { color: COLORS.textSecondary, fontSize: 11, marginTop: 2, textAlign: 'center' },
+  chartCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  dimensionRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  dimChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  dimChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.background },
+  dimChipText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+  dimChipTextActive: { color: COLORS.primary },
+  emptyChart: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 19 },
+  smallSample: {
+    color: COLORS.accent,
+    fontSize: 12,
+    lineHeight: 18,
     marginBottom: 12,
   },
-  legendRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
-  swatch: { width: 14, height: 14, borderRadius: 3, marginRight: 8 },
-  legendLabel: { color: COLORS.text, fontSize: 13, flex: 1 },
-  legendUnknown: { color: COLORS.textSecondary, fontStyle: 'italic' },
-  legendPct: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  finePrint: { color: COLORS.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 8 },
+  hint: { color: COLORS.textSecondary, fontSize: 12, marginTop: 12, textAlign: 'center' },
+  clearBtn: {
+    marginTop: 12,
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  clearBtnText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
+  finePrint: { color: COLORS.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 12 },
   eventCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 12,
