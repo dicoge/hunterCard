@@ -57,7 +57,16 @@ if (!process.env.E2E_ORIGIN) {
 }
 
 fs.mkdirSync(OUT, { recursive: true });
-const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+const browser = await puppeteer.launch({
+  headless: 'new',
+  args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+});
+
+// Production sits behind Vercel's bot challenge, which interposes its own page
+// before the app ever mounts. Every navigation has to ride that out.
+const settle = (page) => page.waitForFunction(
+  () => !document.title.includes('Security Checkpoint'), { timeout: 120000 },
+);
 
 let passed = 0;
 const failures = [];
@@ -131,9 +140,11 @@ async function run(label, viewport) {
   const waitForCatalog = () => page.waitForSelector('[data-testid="card-picker-grid"] [data-testid^="card-cell-"]', { timeout: DB_TIMEOUT });
 
   // ── Fresh session ────────────────────────────────────────────────────────
-  await page.goto(ORIGIN, { waitUntil: 'networkidle0', timeout: DB_TIMEOUT });
+  await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: DB_TIMEOUT });
+  await settle(page);
   await page.evaluate(() => localStorage.removeItem('hunterCard-decks'));
-  await page.reload({ waitUntil: 'networkidle0', timeout: DB_TIMEOUT });
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: DB_TIMEOUT });
+  await settle(page);
   await enterEditor();
   await page.type('input[placeholder="新牌組名稱"]', `DIC-1067 ${label}`);
   await clickText('建立');
@@ -338,7 +349,8 @@ async function run(label, viewport) {
     assert.equal(before.yell.reduce((a, [, q]) => a + q, 0), 20);
   });
 
-  await page.reload({ waitUntil: 'networkidle0', timeout: DB_TIMEOUT });
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: DB_TIMEOUT });
+  await settle(page);
   await enterEditor();
   await page.waitForSelector('[data-testid="deck-zone-tabs"]', { timeout: DB_TIMEOUT });
   await waitForCatalog();
