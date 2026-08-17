@@ -71,7 +71,7 @@ const H2 = deckByCode('2H33J8');
 assert.ok(DUKHN && H2, 'both real August decks must be present in the shipped report');
 
 const importOf = (deck, existingNames = []) =>
-  buildImportedDeck(augustEvent, deck, catalog, existingNames, IMPORTED_AT);
+  buildImportedDeck(augustEvent, deck, catalog, db.priceRecords, existingNames, IMPORTED_AT);
 
 const draftToDeck = (draft) => ({
   id: 'test', name: draft.name, oshi: draft.oshi, main: draft.main, yell: draft.yell,
@@ -137,8 +137,11 @@ for (const deck of [DUKHN, H2]) {
 // ── 7. Exact-version handling on the REAL data ───────────────────────────────
 // Deck Log publishes a RARITY GRADE (OSR/RR/C/…); the local catalog's printing
 // identity comes from the yuyu-tei listing label (BASE/PARALLEL/PARALLEL/SIGN).
-// A grade therefore proves the card number, not a collectible printing.
-await test('a source grade that is not a local printing never selects a printing', () => {
+// A grade therefore proves the card number, not a collectible printing — so it
+// may not SELECT a printing, and the slot takes the card number's lowest
+// ordinary printing as a declared planning default instead (DIC-1060). The
+// exhaustive default-selection matrix lives in test-tournament-printing-default.
+await test('a source grade never selects a printing; the slot is defaulted instead', () => {
   const draft = importOf(DUKHN);
   const oshi = draft.oshi[0];
   const sourceRef = DUKHN.cards.find((c) => c.zone === 'oshi');
@@ -147,21 +150,28 @@ await test('a source grade that is not a local printing never selects a printing
   assert.equal(sourceRef.version, 'OSR');
   assert.ok(!localPrintings.includes('OSR'), 'precondition: OSR is not a local printing');
   assert.equal(oshi.card.cardNumber, sourceRef.cardNumber, 'card number is preserved exactly');
-  assert.equal(oshi.card.unresolvedPrinting, true, 'the printing must be flagged unresolved');
-  assert.equal(oshi.card.printing, UNRESOLVED_PRINTING);
   assert.equal(oshi.card.sourceVersion, 'OSR', 'the source grade is kept verbatim as provenance');
-  // The decisive assertion: it did not silently become any real printing —
-  // not the ¥1,280 plain one, not the ¥29,800 parallel, not the ¥148,000 signed.
-  for (const printing of localPrintings) {
-    assert.notEqual(oshi.card.printing, printing, `must not adopt local printing ${printing}`);
-  }
+  assert.equal(
+    oshi.card.defaultedPrinting, true,
+    'the printing is the planner’s declared default, not something the source stated',
+  );
+  assert.notEqual(oshi.card.unresolvedPrinting, true);
+  // The decisive assertion: the default is the ¥1,280 ordinary printing — never
+  // the ¥29,800 parallel and never the ¥148,000 signed parallel.
+  assert.equal(oshi.card.printing, 'BASE');
+  assert.equal(
+    resolveExactPrice(oshi.card.cardNumber, oshi.card.printing, db.priceRecords).price, 1280,
+  );
 });
 
-await test('an unresolved printing prices NO_EXACT_PRICE, never a sibling version price', () => {
-  const draft = importOf(DUKHN);
-  const imported = draftToDeck(draft);
-  assert.ok(draft.unresolvedPrintings > 0, 'precondition: this deck has unresolved printings');
-
+await test('the unresolved sentinel itself can never carry a price', () => {
+  // The sentinel is still the fail-closed state for a card number with no
+  // ordinary printing, and no price record may ever key it.
+  assert.deepEqual(
+    resolveExactPrice(DUKHN.cards[0].cardNumber, UNRESOLVED_PRINTING, db.priceRecords),
+    { status: 'NO_EXACT_PRICE' },
+  );
+  const imported = draftToDeck(importOf(DUKHN));
   const gap = computeGap(imported, {}, db.priceRecords);
   for (const row of gap.rows) {
     const slot = [...imported.oshi, ...imported.main, ...imported.yell]
@@ -171,11 +181,6 @@ await test('an unresolved printing prices NO_EXACT_PRICE, never a sibling versio
       assert.equal(row.subtotal, undefined, 'an unpriced row contributes no subtotal');
     }
   }
-  // Directly: the sentinel printing resolves to no price at all.
-  assert.deepEqual(
-    resolveExactPrice(DUKHN.cards[0].cardNumber, UNRESOLVED_PRINTING, db.priceRecords),
-    { status: 'NO_EXACT_PRICE' },
-  );
 });
 
 // ── 7b. Decoys: a proven printing IS used; a grade next to decoys is not ─────
@@ -194,19 +199,24 @@ const decoyCatalog = buildCatalogIndex([
   },
 ]);
 
+const decoyPrices = [];
+
 await test('a source-proven printing is preserved exactly', () => {
   const card = resolveSlotCard(
     { zone: 'main', cardNumber: 'hDX-001', version: 'PARALLEL', count: 1, printingProven: true },
     decoyCatalog,
+    decoyPrices,
   );
   assert.equal(card.printing, 'PARALLEL', 'the proven printing must be kept');
   assert.ok(!card.unresolvedPrinting, 'a proven printing is not flagged unresolved');
+  assert.ok(!card.defaultedPrinting, 'nor relabelled as the planner’s default');
 });
 
 await test('a proven printing matches case / width-insensitively but never approximately', () => {
   const exact = resolveSlotCard(
     { zone: 'main', cardNumber: 'hDX-001', version: ' parallel ', count: 1, printingProven: true },
     decoyCatalog,
+    decoyPrices,
   );
   assert.equal(exact.printing, 'PARALLEL', 'normalization folds case and padding only');
 
@@ -217,6 +227,7 @@ await test('a proven printing matches case / width-insensitively but never appro
       zone: 'main', cardNumber: 'hDX-001', version: 'PARALLEL/SIGN', count: 1, printingProven: true,
     },
     decoyCatalog,
+    decoyPrices,
   );
   assert.equal(sign.printing, 'PARALLEL/SIGN');
 });
@@ -224,31 +235,34 @@ await test('a proven printing matches case / width-insensitively but never appro
 // The DIC-1036 promotion hole: matching a local printing token is a COLLISION,
 // not proof. Deck Log grades the card number (OSR/RR/SR/…) and never states a
 // physical printing, so without an explicit claim the token may not select one
-// — otherwise a grade would silently acquire a real printing's price.
+// — otherwise a grade would silently acquire a premium printing's price. The
+// slot takes the ordinary default instead, which is the planner's own choice.
 await test('a token that matches a local printing is NOT promoted without an explicit claim', () => {
   for (const version of ['PARALLEL', ' parallel ', 'PARALLEL/SIGN', 'BASE']) {
     const card = resolveSlotCard(
-      { zone: 'main', cardNumber: 'hDX-001', version, count: 1 }, decoyCatalog,
+      { zone: 'main', cardNumber: 'hDX-001', version, count: 1 }, decoyCatalog, decoyPrices,
     );
     assert.equal(
-      card.printing, UNRESOLVED_PRINTING,
-      `an unclaimed token (${version}) must never select a printing`,
+      card.printing, 'BASE',
+      `an unclaimed token (${version}) must never select a premium printing`,
     );
-    assert.equal(card.unresolvedPrinting, true);
+    assert.equal(card.defaultedPrinting, true);
     assert.equal(card.sourceVersion, version.trim(), 'the token survives as provenance only');
   }
 });
 
 await test('only a strictly-true proof claim unlocks the printing', () => {
   // Anything merely truthy — a stringified flag, a 1 — is data of the wrong
-  // shape, not a claim, and must fail closed exactly like an absent key.
+  // shape, not a claim, and must fail closed onto the ordinary default exactly
+  // like an absent key.
   for (const printingProven of [false, 'true', 1, 'yes', null, undefined, {}]) {
     const card = resolveSlotCard(
       { zone: 'main', cardNumber: 'hDX-001', version: 'PARALLEL', count: 1, printingProven },
       decoyCatalog,
+      decoyPrices,
     );
     assert.equal(
-      card.printing, UNRESOLVED_PRINTING,
+      card.printing, 'BASE',
       `printingProven=${JSON.stringify(printingProven)} must not count as proof`,
     );
   }
@@ -269,25 +283,27 @@ await test('a rarity grade equal to a local printing token stays unresolved', ()
     },
   ]);
   const graded = resolveSlotCard(
-    { zone: 'main', cardNumber: 'hDX-002', version: 'SR', count: 1 }, collidingCatalog,
+    { zone: 'main', cardNumber: 'hDX-002', version: 'SR', count: 1 }, collidingCatalog, decoyPrices,
   );
   assert.equal(
-    graded.printing, UNRESOLVED_PRINTING,
+    graded.printing, 'BASE',
     'the grade "SR" must not be promoted onto the printing that spells "SR"',
   );
-  assert.equal(graded.id, 'hDX-002#UNRESOLVED', 'and it may not borrow that printing’s identity');
+  assert.equal(graded.defaultedPrinting, true, 'it is the ordinary default, not a source claim');
+  assert.equal(graded.id, 'hDX-002#BASE', 'and it may not borrow the "SR" printing’s identity');
 
   // The same token, explicitly claimed as a printing, is honoured — the rule
   // discriminates on the claim, not on the string.
   const claimed = resolveSlotCard(
     { zone: 'main', cardNumber: 'hDX-002', version: 'SR', count: 1, printingProven: true },
     collidingCatalog,
+    decoyPrices,
   );
   assert.equal(claimed.printing, 'SR');
   assert.equal(claimed.id, 'hDX-002#SR');
 });
 
-await test('the shipped reports claim no printing, so every real slot stays unresolved', () => {
+await test('the shipped reports claim no printing, so every real slot is defaulted', () => {
   for (const deck of [DUKHN, H2]) {
     for (const ref of deck.cards) {
       assert.equal(
@@ -298,37 +314,53 @@ await test('the shipped reports claim no printing, so every real slot stays unre
     const draft = importOf(deck);
     const slots = [...draft.oshi, ...draft.main, ...draft.yell];
     assert.equal(
-      draft.unresolvedPrintings, slots.length,
-      `${deck.decklogCode}: every slot of a Deck Log deck is printing-unresolved`,
+      draft.defaultedPrintings, slots.length,
+      `${deck.decklogCode}: every slot of a Deck Log deck takes the ordinary default`,
     );
-    for (const s of slots) assert.equal(s.card.printing, UNRESOLVED_PRINTING);
+    assert.equal(draft.unresolvedPrintings, 0);
+    for (const s of slots) {
+      assert.notEqual(s.card.printing, UNRESOLVED_PRINTING);
+      assert.equal(s.card.defaultedPrinting, true);
+    }
   }
 });
 
-await test('an unknown version picks NEITHER the cheapest nor the dearest decoy', () => {
+await test('an unknown version picks the ordinary decoy, NEITHER the cheapest nor the dearest', () => {
   for (const version of ['SEC', 'OSR', 'RR', 'C', '']) {
     const card = resolveSlotCard(
-      { zone: 'main', cardNumber: 'hDX-001', version: version || null, count: 1 }, decoyCatalog,
+      { zone: 'main', cardNumber: 'hDX-001', version: version || null, count: 1 },
+      decoyCatalog,
+      // The parallel is deliberately the CHEAPEST listing here: ordinary-version
+      // priority has to beat market price, not follow it.
+      [
+        { cardNumber: 'hDX-001', version: 'BASE', price: 500, currency: 'JPY', source: 't', timestamp: 'T' },
+        { cardNumber: 'hDX-001', version: 'PARALLEL', price: 60, currency: 'JPY', source: 't', timestamp: 'T' },
+        { cardNumber: 'hDX-001', version: 'PARALLEL/SIGN', price: 90000, currency: 'JPY', source: 't', timestamp: 'T' },
+      ],
     );
-    assert.equal(card.unresolvedPrinting, true, `version ${version || '(none)'} must stay unresolved`);
-    assert.equal(card.printing, UNRESOLVED_PRINTING);
+    assert.equal(card.printing, 'BASE', `version ${version || '(none)'} takes the ordinary printing`);
+    assert.equal(card.defaultedPrinting, true);
     assert.equal(card.cardNumber, 'hDX-001', 'the card number is still exact');
   }
 });
 
 await test('same-name cards with a different number are never substituted', () => {
   const card = resolveSlotCard(
-    { zone: 'main', cardNumber: 'hDX-999', version: 'BASE', count: 1 }, decoyCatalog,
+    { zone: 'main', cardNumber: 'hDX-999', version: 'BASE', count: 1 }, decoyCatalog, decoyPrices,
   );
   assert.equal(card, null, 'an unknown card number resolves to nothing, not to a same-name card');
 });
 
-await test('an unresolved slot keeps a real card type so rule validation stays honest', () => {
+await test('a defaulted slot keeps a real card type so rule validation stays honest', () => {
   const card = resolveSlotCard(
-    { zone: 'main', cardNumber: 'hDX-001', version: 'SEC', count: 1 }, decoyCatalog,
+    { zone: 'main', cardNumber: 'hDX-001', version: 'SEC', count: 1 }, decoyCatalog, decoyPrices,
   );
   assert.equal(card.cardTypeJp, 'ホロメン', 'the local card identity supplies the type');
-  assert.equal(card.printingLabel, '', 'no other printing label is borrowed');
+  // The label is the ORDINARY printing's own listing label — the printing the
+  // slot actually adopted. A premium sibling's label is never borrowed.
+  assert.equal(card.printingLabel, 'decoy');
+  assert.notEqual(card.printingLabel, 'decoy(パラレル)');
+  assert.notEqual(card.printingLabel, 'decoy(パラレル/サイン)');
 });
 
 // ── 6. Fail-closed matrix ────────────────────────────────────────────────────
@@ -720,26 +752,29 @@ await test('an imported deck survives reload and reopens from 我的牌組', asy
   assert.deepEqual(validateDeck(restored).filter((i) => i.level === 'error'), []);
 });
 
-await test('a reloaded unresolved printing is NOT silently rewritten to another version', async () => {
+await test('a reloaded printing is NOT silently rewritten by the legacy migration', async () => {
   resetStore();
   const store = () => useDeckStore.getState();
   const id = store().importDeck(importOf(DUKHN));
+  const before = JSON.stringify(store().decks.find((d) => d.id === id));
   const raw = platformStorage.getItem(STORE_KEY);
   useDeckStore.setState({ decks: [], activeDeckId: null, collection: {} });
   platformStorage.setItem(STORE_KEY, raw);
   await useDeckStore.persist.rehydrate();
 
   // migrateLegacyPrintings runs on every DB load and rewrites slots that carry
-  // NO printing. The unresolved sentinel is deliberately non-empty so it is not
-  // mistaken for a pre-DIC-1013 draft and downgraded onto a real printing.
-  const lowCostIndex = new Map();
-  for (const card of db.cards) if (!lowCostIndex.has(card.cardNumber)) lowCostIndex.set(card.cardNumber, card);
-  store().migrateLegacyPrintings(lowCostIndex);
+  // NO printing at all. An imported slot always names one — its declared
+  // ordinary default, or the non-empty UNRESOLVED sentinel — so this pass must
+  // leave every one of them exactly as reloaded. The index below is deliberately
+  // FIRST-SEEN rather than lowest-cost, so a slot it did touch would move onto a
+  // different printing and show up here.
+  const firstSeenIndex = new Map();
+  for (const card of db.cards) if (!firstSeenIndex.has(card.cardNumber)) firstSeenIndex.set(card.cardNumber, card);
+  store().migrateLegacyPrintings(firstSeenIndex);
 
   const restored = store().decks.find((d) => d.id === id);
-  const oshi = restored.oshi[0];
-  assert.equal(oshi.card.printing, UNRESOLVED_PRINTING, 'the unresolved printing is preserved');
-  assert.equal(oshi.card.unresolvedPrinting, true);
+  assert.equal(JSON.stringify(restored), before, 'the reloaded deck is byte-identical');
+  assert.equal(restored.oshi[0].card.defaultedPrinting, true);
   assert.equal(deckStats(restored).total, 71);
 });
 

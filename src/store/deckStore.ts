@@ -15,7 +15,7 @@ import platformStorage from '../stores/storage';
 import type { Deck, DeckCard, DeckZone, DeckSlot } from '../utils/deckRules';
 import { ownershipKey } from '../utils/deckRules';
 import { isLegacySlotCard, migrateSlotsToPrintings, normalizeSlotsToLowCost } from '../utils/deckVariants';
-import type { ImportedDeckDraft } from '../utils/tournamentDeckImport';
+import { migrateUnresolvedSlots, type ImportedDeckDraft } from '../utils/tournamentDeckImport';
 
 function newId(): string {
   return `deck_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -63,6 +63,10 @@ interface DeckState {
   /** move drafts persisted under the pre-DIC-1013 rarity model onto real source
    * printings. Idempotent, runs across every deck once the database is loaded. */
   migrateLegacyPrintings: (index: Map<string, DeckCard>) => void;
+  /** move TOURNAMENT decks persisted with DIC-1033's unresolved printings onto
+   * their lowest ordinary printing (DIC-1060). Idempotent, tournament-only, and
+   * never touches a printing the player picked themselves. */
+  migrateTournamentDefaults: (index: Map<string, DeckCard>) => void;
 
   setOwned: (cardNumber: string, version: string, qty: number) => void;
   /** apply a signed delta to the owned count; clamps at 0 (never negative) */
@@ -176,6 +180,25 @@ export const useDeckStore = create<DeckState>()(
               }
             : d)),
         };
+      }),
+
+      // Only decks the tournament import created are eligible: an unresolved
+      // printing in a hand-built deck was not put there by this pipeline, so it
+      // is left alone. Each zone comes back as the SAME array when nothing in it
+      // changed, so an already-migrated store returns no update at all and the
+      // editor's load effect cannot re-render itself in a loop.
+      migrateTournamentDefaults: (index) => set((s) => {
+        let changed = false;
+        const decks = s.decks.map((d) => {
+          if (d.origin?.kind !== 'tournament') return d;
+          const oshi = migrateUnresolvedSlots(d.oshi, 'oshi', index);
+          const main = migrateUnresolvedSlots(d.main, 'main', index);
+          const yell = migrateUnresolvedSlots(d.yell, 'yell', index);
+          if (oshi === d.oshi && main === d.main && yell === d.yell) return d;
+          changed = true;
+          return { ...d, oshi, main, yell };
+        });
+        return changed ? { decks } : {};
       }),
 
       setOwned: (cardNumber, version, qty) => set((s) => {

@@ -30,10 +30,16 @@ export interface DeckCard {
   type?: string;
   cardTypeJp?: string;
   imageUrl?: string;
-  /** the source named the card number but not which collectible printing it is
-   * (DIC-1033). Such a slot never keys a real price record, so it resolves to
-   * NO_EXACT_PRICE instead of borrowing another printing's price. */
+  /** the source named the card number but not which collectible printing it is,
+   * and the card number has no ordinary printing to default to (DIC-1060). Such
+   * a slot never keys a real price record, so it resolves to NO_EXACT_PRICE
+   * instead of borrowing another printing's price. */
   unresolvedPrinting?: boolean;
+  /** the source did not specify a printing, so the planner deliberately chose
+   * this card number's lowest ORDINARY printing as the planning default
+   * (DIC-1060). The identity and price are that printing's real ones; the flag
+   * exists so the UI never claims the source specified it. */
+  defaultedPrinting?: boolean;
   /** the version token the source did publish, kept verbatim as provenance */
   sourceVersion?: string;
 }

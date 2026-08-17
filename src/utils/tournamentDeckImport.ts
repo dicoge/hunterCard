@@ -1,6 +1,7 @@
-// Verified tournament deck → deck-planner import (DIC-1033). Pure and
-// framework-free so the whole mapping and its fail-closed gate can be regression
-// tested with plain node, without React or the store.
+// Verified tournament deck → deck-planner import (DIC-1033, printing rule
+// corrected by DIC-1060). Pure and framework-free so the whole mapping and its
+// fail-closed gate can be regression tested with plain node, without React or
+// the store.
 //
 // What the source actually proves, and what it does not
 // -----------------------------------------------------
@@ -16,39 +17,60 @@
 // "OSR" at Deck Log while its listings are a ¥1,280 plain copy, a ¥29,800
 // parallel and a ¥148,000 signed parallel.
 //
-// So this module takes the only honest position available (issue §6):
-//   • a printing is preserved only when the source EXPLICITLY claims its token
-//     names one (`printingProven`) and that token identifies exactly one local
-//     printing. Matching alone is not proof — a grade can spell the same string
-//     as a printing token by coincidence, and promoting it would turn a grade
-//     into a priced physical printing (DIC-1036);
-//   • otherwise the slot keeps its exact cardNumber, zone and count but its
-//     printing is marked UNRESOLVED. It never borrows a sibling printing's price
-//     — the existing resolver returns NO_EXACT_PRICE for it — and it is never
-//     silently rewritten onto the cheapest or the most expensive version.
-// Every deck the shipped collectors produce therefore lands fully unresolved:
-// nothing sets `printingProven`, because Deck Log never proves a printing.
-// No same-name, same-number cross-version, highest-price, SEC/signed or
-// cross-printing fallback is used anywhere in this file.
+// A deck plan whose printing is unspecified is not undecidable, though — it has
+// a correct planning answer, and DIC-1033 shipped the wrong one. Marking every
+// slot UNRESOLVED priced a whole imported deck at NO_EXACT_PRICE, so it could
+// not estimate its own completion cost, which is the entire point of importing
+// it. The authoritative product rule (DIC-1060) is:
 //
-// The printing token is deliberately a non-empty sentinel: `printing: ''` is the
-// pre-DIC-1013 legacy marker that migrateLegacyPrintings rewrites onto the
+//   • a printing the source EXPLICITLY proves (`printingProven === true`, and
+//     the token identifies exactly one local printing) is preserved exactly and
+//     is never downgraded. Matching alone is still not proof — a grade can spell
+//     the same string as a printing token by coincidence, and promoting it would
+//     turn a grade into a priced physical printing (DIC-1036);
+//   • otherwise the slot INTENTIONALLY defaults to the lowest ORDINARY printing
+//     of the exact same cardNumber, and is marked `defaultedPrinting` so the UI
+//     states it is the planner's choice, not something the source specified. The
+//     source's own grade is kept alongside it as provenance.
+//
+// "Lowest ordinary" is decided by `resolveLowCostVariant` — the one DIC-1004 /
+// DIC-1013 selector a hand-built deck already uses — so an imported deck and a
+// hand-built one can never disagree about a card number's default. Ordinary
+// printings outrank premium ones BEFORE price is consulted, which is why
+// hBP01-044 defaults to its ¥220 base copy rather than its ¥80 パラレル/hBP07.
+//
+// The default is accepted only when it really is an ordinary printing of that
+// very card number. A card number whose every printing is parallel / signed /
+// premium has no safe planning default, so it still fails closed on UNRESOLVED
+// rather than crossing onto a premium version. No same-name, cross-number,
+// highest-price or cross-printing fallback exists anywhere in this file.
+//
+// The unresolved token is deliberately a non-empty sentinel: `printing: ''` is
+// the pre-DIC-1013 legacy marker that migrateLegacyPrintings rewrites onto the
 // low-cost default, which would silently alter a published printing on reload.
 
 import type { DeckEntry, TournamentEvent, DeckCardRef } from '../types/tournament';
 import { duplicateSlotsWithinZone } from './tournamentReport';
+import { resolveLowCostVariant } from './deckVariants';
+import { isPlainPrinting } from './printingIdentity';
 import {
   RULES,
+  eligibleZone,
   normalizeVersion,
   type DeckCard,
   type DeckOrigin,
   type DeckSlot,
   type DeckZone,
+  type PriceRecord,
 } from './deckRules';
 
-/** Printing identity for a slot whose collectible printing the source did not
- *  prove. No price record can ever carry it, so it prices NO_EXACT_PRICE. */
+/** Printing identity for a slot that has no safe ordinary printing to default
+ *  to. No price record can ever carry it, so it prices NO_EXACT_PRICE. */
 export const UNRESOLVED_PRINTING = 'UNRESOLVED';
+
+/** The exact wording a defaulted slot must carry in the UI. Shared so the copy
+ *  cannot drift between the deck editor and its regression test. */
+export const DEFAULTED_PRINTING_NOTE = '來源未指定版本，已使用最低普通版本估價';
 
 export const ZONES: DeckZone[] = ['oshi', 'main', 'yell'];
 
@@ -58,7 +80,9 @@ export interface ImportedDeckDraft {
   main: DeckSlot[];
   yell: DeckSlot[];
   origin: DeckOrigin;
-  /** how many slots carry an unresolved printing — surfaced verbatim in the UI */
+  /** slots defaulted to their card number's lowest ordinary printing */
+  defaultedPrintings: number;
+  /** slots with no ordinary printing to default to — surfaced verbatim in the UI */
   unresolvedPrintings: number;
 }
 
@@ -183,18 +207,47 @@ function firstById(entries: DeckCard[]): DeckCard {
   return entries.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
 }
 
-function unresolvedCard(entries: DeckCard[], sourceVersion: string | null): DeckCard {
+/** Carry the source's own version token across as provenance. It is never part
+ *  of the printing identity — only a record of what the source did publish. */
+function withSourceVersion(card: DeckCard, sourceVersion: string | null | undefined): DeckCard {
+  const version = (sourceVersion ?? '').trim();
+  return version ? { ...card, sourceVersion: version } : card;
+}
+
+function unresolvedCard(entries: DeckCard[], sourceVersion: string | null | undefined): DeckCard {
   const rep = firstById(entries);
-  const card: DeckCard = {
+  return withSourceVersion({
     ...rep,
     id: `${rep.cardNumber}#${UNRESOLVED_PRINTING}`,
     printing: UNRESOLVED_PRINTING,
     printingLabel: '',
     unresolvedPrinting: true,
-  };
-  const version = (sourceVersion ?? '').trim();
-  if (version) card.sourceVersion = version;
-  return card;
+  }, sourceVersion);
+}
+
+/**
+ * Gate a candidate default before a slot may adopt it.
+ *
+ * `resolveLowCostVariant` falls back to the premium tier when a card number has
+ * no ordinary printing at all — correct for a player who deliberately searched
+ * for that card, wrong as an automatic planning default for a printing the
+ * source never named. So a premium candidate is refused here and the slot fails
+ * closed instead of quietly costing a parallel or a signed copy. The zone check
+ * keeps a default from moving a slot into a zone its local card cannot occupy.
+ */
+function ordinaryDefault(candidate: DeckCard | null | undefined, zone: DeckZone): DeckCard | null {
+  if (!candidate) return null;
+  if (candidate.unresolvedPrinting === true) return null;
+  if (!isPlainPrinting(candidate.printing)) return null;
+  if (eligibleZone(candidate) !== zone) return null;
+  return candidate;
+}
+
+/** Mark a printing as the planner's deliberate default. The identity, label and
+ *  price key stay exactly those of the chosen ordinary printing — only the
+ *  provenance says the source did not specify it. */
+function defaultedCard(base: DeckCard, sourceVersion: string | null | undefined): DeckCard {
+  return withSourceVersion({ ...base, defaultedPrinting: true }, sourceVersion);
 }
 
 /**
@@ -209,13 +262,17 @@ function unresolvedCard(entries: DeckCard[], sourceVersion: string | null): Deck
  * Deck Log publishes a rarity grade, and a grade that happens to spell the same
  * string as a local printing token — `SR`, or a set-code token the yuyu-tei
  * label produced — matches by coincidence, which would promote a grade into a
- * priced physical printing (DIC-1036). Everything short of explicit proof keeps
- * the exact cardNumber, zone and count and marks the printing unresolved rather
- * than substituting a version.
+ * source-proven physical printing (DIC-1036).
+ *
+ * Short of that proof the slot takes the shared lowest-ordinary-printing default
+ * of the SAME card number, flagged `defaultedPrinting`, and falls back to
+ * UNRESOLVED only when that card number offers no ordinary printing to default
+ * to (DIC-1060).
  */
 export function resolveSlotCard(
   ref: DeckCardRef,
   index: Map<string, DeckCard[]>,
+  priceRecords: PriceRecord[],
 ): DeckCard | null {
   const entries = index.get(ref.cardNumber);
   if (!entries || entries.length === 0) return null;
@@ -227,7 +284,66 @@ export function resolveSlotCard(
       if (exact.length === 1) return exact[0];
     }
   }
-  return unresolvedCard(entries, ref.version);
+
+  const base = ordinaryDefault(resolveLowCostVariant(entries, priceRecords), ref.zone);
+  return base ? defaultedCard(base, ref.version) : unresolvedCard(entries, ref.version);
+}
+
+/** A slot the import left without a printing — either one persisted by DIC-1033,
+ *  which marked every slot unresolved, or one whose card number genuinely has no
+ *  ordinary printing. */
+export function isUnresolvedSlotCard(card: DeckCard): boolean {
+  return card.unresolvedPrinting === true || card.printing === UNRESOLVED_PRINTING;
+}
+
+/**
+ * Move ALREADY PERSISTED unresolved tournament slots onto their ordinary default
+ * (DIC-1060 §5), so an existing saved deck starts estimating without the player
+ * deleting and re-importing it.
+ *
+ * `index` is the shared cardNumber → lowest-ordinary-printing map the deck
+ * editor already builds for hand-built decks, so this migration cannot pick a
+ * different printing than a fresh import would.
+ *
+ * Only unresolved slots are rewritten: a printing the player picked themselves
+ * is their data and is returned untouched, and a card number with no ordinary
+ * printing keeps its honest unresolved state. When nothing changes the ORIGINAL
+ * array is returned, which is what makes repeat runs referentially stable and
+ * keeps the editor's load effect from looping.
+ */
+export function migrateUnresolvedSlots(
+  slots: DeckSlot[],
+  zone: DeckZone,
+  index: Map<string, DeckCard>,
+): DeckSlot[] {
+  const out: DeckSlot[] = [];
+  const byId = new Map<string, DeckSlot>();
+  let rewrote = false;
+
+  for (const slot of slots) {
+    let card = slot.card;
+    if (isUnresolvedSlotCard(card)) {
+      const base = ordinaryDefault(index.get(card.cardNumber), zone);
+      if (base) {
+        card = defaultedCard(base, card.sourceVersion);
+        rewrote = true;
+      }
+    }
+    // The player may have added the ordinary printing by hand next to the
+    // unresolved slot; the two now name one card, so their counts combine
+    // rather than becoming two rows the editor renders under one key.
+    const existing = byId.get(card.id);
+    if (existing) {
+      existing.qty += slot.qty;
+      continue;
+    }
+    const next: DeckSlot = { card, qty: slot.qty };
+    byId.set(card.id, next);
+    out.push(next);
+  }
+  // A zone whose unresolved slots all stayed unresolved is returned as the very
+  // same array, so a store that is already migrated reports no change at all.
+  return rewrote ? out : slots;
 }
 
 /** Add `qty` of `card` to a zone, or refuse. The gate has already rejected two
@@ -285,6 +401,7 @@ export function buildImportedDeck(
   event: TournamentEvent,
   deck: DeckEntry,
   catalog: DeckCard[] | Map<string, DeckCard[]>,
+  priceRecords: PriceRecord[],
   existingNames: string[],
   importedAt: string,
 ): ImportedDeckDraft | null {
@@ -292,14 +409,16 @@ export function buildImportedDeck(
   if (!evaluateImport(deck, index).importable) return null;
 
   const zones: Record<DeckZone, DeckSlot[]> = { oshi: [], main: [], yell: [] };
+  let defaultedPrintings = 0;
   let unresolvedPrintings = 0;
 
   for (const ref of deck.cards) {
-    const card = resolveSlotCard(ref, index);
+    const card = resolveSlotCard(ref, index, priceRecords);
     if (!card) return null;
     if (!pushSlot(zones[ref.zone], card, ref.count)) return null;
   }
   for (const zone of ZONES) {
+    defaultedPrintings += zones[zone].filter((s) => s.card.defaultedPrinting).length;
     unresolvedPrintings += zones[zone].filter((s) => s.card.unresolvedPrinting).length;
   }
 
@@ -308,6 +427,7 @@ export function buildImportedDeck(
     oshi: zones.oshi,
     main: zones.main,
     yell: zones.yell,
+    defaultedPrintings,
     unresolvedPrintings,
     origin: {
       kind: 'tournament',

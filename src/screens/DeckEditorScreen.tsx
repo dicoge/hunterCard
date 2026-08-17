@@ -14,6 +14,7 @@ import {
   groupVariantsByCardNumber, searchVariantGroups, buildLowCostIndex, countLowCostDrift,
 } from '../utils/deckVariants';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
+import { DEFAULTED_PRINTING_NOTE } from '../utils/tournamentDeckImport';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { formatInterval, priceAlertKey } from '../utils/priceAlerts';
@@ -26,18 +27,21 @@ const ZONE_LABELS: Record<DeckZone, string> = {
 
 // 版本一律顯示來源掛牌原文（如「ラプラス・ダークネス(パラレル)」）；沒有原文時退回版本代碼。
 // 絕不顯示資料庫的卡號層級 rarity —— hBP04-005 兩列都標 SEC，拿來標示 ¥980 的原印版會誤導。
-// 賽事匯入時來源只證明卡號與稀有度、未指明可購買版本的卡，標為「版本未確認」，
-// 不冒用任一實際版本的名稱或價格（DIC-1033）。
+// 賽事匯入時來源未指明可購買版本的卡，已改用同卡號最低普通版本估價（DIC-1060）：
+// 顯示該版本的真實掛牌原文，並加註這是預設值，避免讓人誤以為來源指定了此版本。
+// 同卡號完全沒有普通版本可用時才維持「版本未確認」，不冒用平行／簽名版的價格。
 function printingLabelOf(card: {
   printing: string;
   printingLabel?: string;
   unresolvedPrinting?: boolean;
+  defaultedPrinting?: boolean;
   sourceVersion?: string;
 }): string {
   if (card.unresolvedPrinting) {
     return card.sourceVersion ? `版本未確認（來源：${card.sourceVersion}）` : '版本未確認';
   }
-  return card.printingLabel?.trim() || card.printing;
+  const label = card.printingLabel?.trim() || card.printing;
+  return card.defaultedPrinting ? `${label}（${DEFAULTED_PRINTING_NOTE}）` : label;
 }
 
 export default function DeckEditorScreen() {
@@ -64,6 +68,7 @@ export default function DeckEditorScreen() {
   const changeCard = useDeckStore((s) => s.changeCard);
   const applyLowCostVariants = useDeckStore((s) => s.applyLowCostVariants);
   const migrateLegacyPrintings = useDeckStore((s) => s.migrateLegacyPrintings);
+  const migrateTournamentDefaults = useDeckStore((s) => s.migrateTournamentDefaults);
   const setOwned = useDeckStore((s) => s.setOwned);
   const adjustOwned = useDeckStore((s) => s.adjustOwned);
 
@@ -97,21 +102,30 @@ export default function DeckEditorScreen() {
 
   // Drafts saved before DIC-1013 key their slots off the row-level rarity and
   // must be moved onto real source printings before any estimate is shown.
+  // Tournament decks imported under DIC-1033 were saved with every printing
+  // unresolved, which priced the whole deck NO_EXACT_PRICE; they are repaired
+  // onto the same ordinary defaults a fresh import now picks, so the player
+  // never has to delete and re-import (DIC-1060). Both passes are idempotent
+  // and return the store unchanged once there is nothing left to move.
   useEffect(() => {
-    if (lowCostIndex.size > 0) migrateLegacyPrintings(lowCostIndex);
-  }, [lowCostIndex, migrateLegacyPrintings]);
+    if (lowCostIndex.size === 0) return;
+    migrateLegacyPrintings(lowCostIndex);
+    migrateTournamentDefaults(lowCostIndex);
+  }, [lowCostIndex, migrateLegacyPrintings, migrateTournamentDefaults]);
 
   const results = useMemo(
     () => searchVariantGroups(variantGroups, query),
     [variantGroups, query],
   );
   const lowCostDrift = activeDeck ? countLowCostDrift(activeDeck, lowCostIndex) : 0;
-  const unresolvedPrintings = activeDeck
+  const countSlots = (predicate: (card: DeckCard) => boolean): number => (activeDeck
     ? (['oshi', 'main', 'yell'] as DeckZone[]).reduce(
-        (n, zone) => n + activeDeck[zone].filter((s) => s.card.unresolvedPrinting).length,
+        (n, zone) => n + activeDeck[zone].filter((s) => predicate(s.card)).length,
         0,
       )
-    : 0;
+    : 0);
+  const unresolvedPrintings = countSlots((card) => card.unresolvedPrinting === true);
+  const defaultedPrintings = countSlots((card) => card.defaultedPrinting === true);
 
   // Resolve a collection entry (keyed by normalized ownershipKey) back to a
   // displayable card. Built from the loaded database so the global inventory can
@@ -355,10 +369,16 @@ export default function DeckEditorScreen() {
             ✓ 已從賽事牌組匯入：{activeDeck.origin.eventName}
             {activeDeck.origin.decklogCode ? `（${activeDeck.origin.decklogCode}）` : ''}
           </Text>
+          {defaultedPrintings > 0 && (
+            <Text style={styles.originNote} testID="deck-defaulted-printings-note">
+              其中 {defaultedPrintings} 張卡的來源只註明卡號與稀有度，未指明可購買的版本；
+              {DEFAULTED_PRINTING_NOTE}（同卡號的普通版本，非平行／簽名版，採 yuyu-tei 參考售價）。
+            </Text>
+          )}
           {unresolvedPrintings > 0 && (
-            <Text style={styles.originNote}>
-              其中 {unresolvedPrintings} 張卡的來源只註明卡號與稀有度，未指明可購買的版本；
-              這些卡以「版本未確認」匯入，價格顯示為無精確版本價格，不會套用其他版本的價格。
+            <Text style={styles.originNote} testID="deck-unresolved-printings-note">
+              另有 {unresolvedPrintings} 張卡的同卡號沒有可用的普通版本，維持「版本未確認」，
+              價格顯示為無精確版本價格，不會套用平行／簽名等其他版本的價格。
             </Text>
           )}
         </View>
