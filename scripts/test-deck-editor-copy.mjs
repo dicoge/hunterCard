@@ -180,16 +180,24 @@ function setViewport({ width, height }) {
   dom.window.dispatchEvent(new dom.window.Event('resize'));
 }
 
-/** Desktop puts the search column before the deck column; mobile stacks the deck
- *  first. Asserted so a viewport that stopped taking effect cannot turn the two
- *  layout cases into the same render. */
+/** Desktop puts the filter column inline, before the deck column; mobile moves it
+ *  behind a 搜尋 / 篩選 button and stacks the picker first (DIC-1067). Asserted so
+ *  a viewport that stopped taking effect cannot turn the two layout cases into
+ *  the same render. */
 function layoutOf(container) {
-  const search = container.querySelector('input[placeholder="卡號 / 名稱 / 系列"]');
+  const picker = container.querySelector('[data-testid="card-picker-grid"]');
   const deck = container.querySelector('[data-testid="deck-origin-banner"]');
-  assert.ok(search && deck, 'both the search field and the deck column must render');
-  const searchComesFirst =
-    (search.compareDocumentPosition(deck) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-  return searchComesFirst ? 'desktop' : 'mobile';
+  assert.ok(picker && deck, 'both the card picker and the deck column must render');
+  const inlineFilters = container.querySelector('[data-testid="card-filter-panel"]');
+  const filterButton = container.querySelector('[data-testid="open-filters"]');
+  if (inlineFilters && !filterButton) {
+    const filtersComeFirst =
+      (inlineFilters.compareDocumentPosition(deck) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    assert.ok(filtersComeFirst, 'desktop must render the filter column before the deck column');
+    return 'desktop';
+  }
+  assert.ok(filterButton && !inlineFilters, 'mobile must hide the filters behind 搜尋 / 篩選');
+  return 'mobile';
 }
 
 async function renderDeckEditor() {

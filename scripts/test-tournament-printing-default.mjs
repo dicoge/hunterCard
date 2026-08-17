@@ -582,9 +582,10 @@ await test('the repair survives a reload without the user re-importing', async (
   assert.equal(computeGap(fixed, {}, db.priceRecords).total, 13220);
 });
 
-// The defaulted state is deliberately SILENT in the UI (DIC-1064): the printing
-// it selected is shown, the reason it was selected is not. That absence is
-// asserted against the real component tree by
-// scripts/test-deck-editor-copy.mjs, so nothing is pinned here.
+// The defaulted state is deliberately SILENT in the UI (DIC-1064, and DIC-1067
+// retired the same copy from the picker rewrite): the printing it selected is
+// shown, the reason it was selected is not. The constant is gone rather than
+// merely unrendered, so nothing is pinned here — the absence is asserted against
+// the real component tree by scripts/test-deck-editor-copy.mjs.
 
 console.log(`\nDIC-1060 tournament ordinary-printing default: ${passed} tests passed`);

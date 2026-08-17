@@ -380,8 +380,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD12-011_hSD12"
+    },
+    {
+      "date": "2026-08-17",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-011_hSD12"
     }
   ],
-  "lastUpdated": "2026-08-16T12:14:22.862Z",
+  "lastUpdated": "2026-08-17T12:11:37.386Z",
   "nameZh": "古石比珠"
 }
