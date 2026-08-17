@@ -405,7 +405,7 @@ for (const [label, deck, code, reason] of failCases) {
     assert.equal(gate.code, code);
     assert.equal(gate.reason, reason);
     assert.equal(
-      buildImportedDeck(augustEvent, deck, fullIndex, [], IMPORTED_AT), null,
+      buildImportedDeck(augustEvent, deck, fullIndex, db.priceRecords, [], IMPORTED_AT), null,
       'a blocked deck must never build a draft, even if a caller skips the gate',
     );
   });
@@ -482,7 +482,7 @@ for (const deck of [DUKHN, H2]) {
           assert.equal(gate.reason, '卡表有重複項目，無法匯入');
 
           assert.equal(
-            buildImportedDeck(augustEvent, mutated, catalog, [], IMPORTED_AT), null,
+            buildImportedDeck(augustEvent, mutated, catalog, db.priceRecords, [], IMPORTED_AT), null,
             'and no draft is built — the two rows are never merged into one slot',
           );
         },
@@ -500,7 +500,7 @@ for (const deck of [DUKHN, H2]) {
     assert.equal(gate.importable, false);
     assert.equal(gate.code, 'DUPLICATE_SLOT');
     assert.equal(
-      buildImportedDeck(augustEvent, mutated, catalog, [], IMPORTED_AT), null,
+      buildImportedDeck(augustEvent, mutated, catalog, db.priceRecords, [], IMPORTED_AT), null,
       'a second oshi row can never reach the planner',
     );
   });
@@ -515,7 +515,7 @@ await test('one card number in two different zones is still importable', () => {
   ));
   const gate = evaluateImport(deck, fullIndex);
   assert.equal(gate.importable, true, 'main and yell are independent slot namespaces');
-  const draft = buildImportedDeck(augustEvent, deck, fullIndex, [], IMPORTED_AT);
+  const draft = buildImportedDeck(augustEvent, deck, fullIndex, db.priceRecords, [], IMPORTED_AT);
   assert.ok(draft, 'the deck still builds');
   assert.equal(draft.main.filter((s) => s.card.cardNumber === 'hMAIN-0').length, 1);
   assert.equal(draft.yell.filter((s) => s.card.cardNumber === 'hMAIN-0').length, 1);
@@ -535,7 +535,7 @@ await test('two rows resolving to one local card refuse to merge', () => {
   const deck = syntheticDeck();
   assert.equal(evaluateImport(deck, collidingIndex).importable, true, 'the gate sees 71 numbers');
   assert.equal(
-    buildImportedDeck(augustEvent, deck, collidingIndex, [], IMPORTED_AT), null,
+    buildImportedDeck(augustEvent, deck, collidingIndex, db.priceRecords, [], IMPORTED_AT), null,
     'the collision fails closed instead of producing a doubled slot',
   );
 });
@@ -554,7 +554,7 @@ await test('fail-closed: a partial deck can never be imported', () => {
   const deck = syntheticDeck();
   deck.cards = deck.cards.slice(0, 10);
   assert.equal(evaluateImport(deck, fullIndex).importable, false);
-  assert.equal(buildImportedDeck(augustEvent, deck, fullIndex, [], IMPORTED_AT), null);
+  assert.equal(buildImportedDeck(augustEvent, deck, fullIndex, db.priceRecords, [], IMPORTED_AT), null);
 });
 
 await test('fail-closed: an empty oshi / yell zone is rejected', () => {
@@ -594,7 +594,7 @@ await test('every unverified July deck is disabled with 卡表尚未取得，無
     assert.equal(gate.importable, false, `${deck.deckId} must not offer an import`);
     assert.equal(gate.reason, '卡表尚未取得，無法匯入');
     assert.equal(
-      buildImportedDeck(july.events[0], deck, catalog, [], IMPORTED_AT), null,
+      buildImportedDeck(july.events[0], deck, catalog, db.priceRecords, [], IMPORTED_AT), null,
       'no July record may produce a deck',
     );
   }

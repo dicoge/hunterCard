@@ -19,10 +19,14 @@
  *   • when a card number has no ordinary printing at all, the slot still fails
  *     closed on UNRESOLVED rather than crossing onto a premium version.
  *
- * Every price assertion is checked against an INDEPENDENT oracle read straight
- * off the raw shipped listings (`public/data/database.json`), not off the
- * resolver under test, so a resolver that silently changes its mind cannot make
- * this file agree with it.
+ * Every price assertion is checked against an oracle built straight off the raw
+ * shipped listings in `public/data/database.json` rather than off the resolver
+ * under test, so a resolver that silently changes its mind cannot make this file
+ * agree with it. The oracle shares the printing-IDENTITY primitives
+ * (`buildSourcePrintings` / `isPlainPrinting`) — identity is the one thing both
+ * sides must agree on for a comparison to mean anything — but it does the tier
+ * filtering and the lowest-price SELECTION itself, which is the behaviour under
+ * test. The five reported prices are additionally pinned as literals below.
  *
  * Run: npm run test:tournament-printing-default
  */
@@ -510,8 +514,11 @@ await test('a printing the user picked themselves is never rewritten', () => {
 
 await test('a hand-built deck with no tournament origin is never touched', () => {
   resetStore();
+  // The card number MUST be one the index can actually default, or this test
+  // would pass even with the tournament-origin guard deleted.
+  assert.ok(lowCostIndex.has('hBP01-044'), 'precondition: this number IS defaultable');
   const handCard = {
-    id: 'hMN-777#UNRESOLVED', cardNumber: 'hMN-777', name: 'mine', printing: UNRESOLVED_PRINTING,
+    id: 'hBP01-044#UNRESOLVED', cardNumber: 'hBP01-044', name: 'mine', printing: UNRESOLVED_PRINTING,
     printingLabel: '', series: 's', cardTypeJp: 'ホロメン', unresolvedPrinting: true,
   };
   const hand = {
