@@ -99,12 +99,21 @@ async function run(label, viewport) {
   await clickText('建立');
   await page.waitForFunction(() => document.body.innerText.includes('完成組牌'), { timeout: DB_TIMEOUT });
 
-  await page.type('input[placeholder="卡號 / 名稱 / 系列"]', 'hBP04-005');
-  await page.waitForSelector('[data-testid="low-cost-tag-hBP04-005"]', { timeout: DB_TIMEOUT });
+  // DIC-1067 replaced the single search box with zone tabs + a mode-switched
+  // picker, so reaching hBP04-005 now means opening 主牌組 and switching to the
+  // advanced card-number mode. The DIC-1013 acceptance below is unchanged.
+  await page.click('[data-testid="deck-zone-tab-main"]');
+  if (await page.$('[data-testid="open-filters"]')) await page.click('[data-testid="open-filters"]');
+  await page.click('[data-testid="search-mode-number"]');
+  await page.type('[data-testid="card-search-input"]', 'hBP04-005');
+  await page.waitForSelector('[data-testid="card-cell-hBP04-005"]', { timeout: DB_TIMEOUT });
+  if (await page.$('[data-testid="close-filters"]')) await page.click('[data-testid="close-filters"]');
   const searchRow = await page.evaluate(() => {
-    const tag = document.querySelector('[data-testid="low-cost-tag-hBP04-005"]');
-    return tag ? tag.parentElement.parentElement.innerText.replace(/\n/g, ' | ') : null;
+    const cell = document.querySelector('[data-testid="card-cell-hBP04-005"]');
+    return cell ? cell.parentElement.innerText.replace(/\n/g, ' | ') : null;
   });
+  // One cell per card number, carrying the low-cost default printing: the plain
+  // one is offered, the ¥69,800 signed one is never the default.
   const offersPlainPrinting = await page.evaluate(
     () => !!document.querySelector('[data-testid="collection-add-hBP04-005#BASE"]'),
   );
@@ -113,13 +122,7 @@ async function run(label, viewport) {
   );
   await shot('search');
 
-  // Add it to the deck (the ＋ button on the low-cost row).
-  await page.evaluate(() => {
-    const tag = document.querySelector('[data-testid="low-cost-tag-hBP04-005"]');
-    const row = tag.parentElement.parentElement.parentElement;
-    [...row.querySelectorAll('div,span,button')].reverse()
-      .find((n) => n.textContent.trim() === '＋').click();
-  });
+  await page.click('[data-testid="card-cell-hBP04-005"]');
   await waitForEditorReady();
 
   // ── 2. Estimate uses the exact SELL price, never the store buy price ──────

@@ -55,3 +55,4 @@ data/push-watchlist.json
 .vercel
 scripts/chrome/
 scripts/.metadata
+e2e-shots/

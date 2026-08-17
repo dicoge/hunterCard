@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  SafeAreaView, ActivityIndicator, FlatList, Modal,
+  SafeAreaView, ActivityIndicator, Modal,
 } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -11,10 +11,14 @@ import {
   type DeckCard, type DeckZone, type Deck, type ValidationIssue,
 } from '../utils/deckRules';
 import {
-  groupVariantsByCardNumber, searchVariantGroups, buildLowCostIndex, countLowCostDrift,
+  groupVariantsByCardNumber, buildLowCostIndex, countLowCostDrift,
 } from '../utils/deckVariants';
+import {
+  collectFilterOptions, filterCatalog, EMPTY_CRITERIA,
+  type CardCategory, type CardFacets, type PickerCriteria,
+} from '../utils/cardCatalog';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
-import { DEFAULTED_PRINTING_NOTE } from '../utils/tournamentDeckImport';
+import { CardFilterPanel, CardPickerGrid } from '../components/CardPicker';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { formatInterval, priceAlertKey } from '../utils/priceAlerts';
@@ -25,34 +29,41 @@ const ZONE_LABELS: Record<DeckZone, string> = {
   yell: 'エール',
 };
 
+const ZONES: DeckZone[] = ['oshi', 'main', 'yell'];
+
+/** The card classes a zone accepts. 主牌組 takes two, so its tab offers a
+ * ホロメン／サポート sub-filter; the other zones take exactly one and hide it. */
+const ZONE_CATEGORIES: Record<DeckZone, CardCategory[]> = {
+  oshi: ['oshi'],
+  main: ['holomen', 'support'],
+  yell: ['yell'],
+};
+
 // 版本一律顯示來源掛牌原文（如「ラプラス・ダークネス(パラレル)」）；沒有原文時退回版本代碼。
 // 絕不顯示資料庫的卡號層級 rarity —— hBP04-005 兩列都標 SEC，拿來標示 ¥980 的原印版會誤導。
-// 賽事匯入時來源未指明可購買版本的卡，已改用同卡號最低普通版本估價（DIC-1060）：
-// 顯示該版本的真實掛牌原文，並加註這是預設值，避免讓人誤以為來源指定了此版本。
-// 同卡號完全沒有普通版本可用時才維持「版本未確認」，不冒用平行／簽名版的價格。
 function printingLabelOf(card: {
   printing: string;
   printingLabel?: string;
   unresolvedPrinting?: boolean;
-  defaultedPrinting?: boolean;
   sourceVersion?: string;
 }): string {
   if (card.unresolvedPrinting) {
     return card.sourceVersion ? `版本未確認（來源：${card.sourceVersion}）` : '版本未確認';
   }
-  const label = card.printingLabel?.trim() || card.printing;
-  return card.defaultedPrinting ? `${label}（${DEFAULTED_PRINTING_NOTE}）` : label;
+  return card.printingLabel?.trim() || card.printing;
 }
 
 export default function DeckEditorScreen() {
-  const { isDesktop } = useBreakpoint();
+  const { isDesktop, isWide } = useBreakpoint();
   const [db, setDb] = useState<CardDatabase | null>(null);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState('');
   const [newDeckName, setNewDeckName] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState(false);
+  const [activeZone, setActiveZone] = useState<DeckZone>('oshi');
+  const [criteria, setCriteria] = useState<PickerCriteria>(EMPTY_CRITERIA);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // Full rule validation is surfaced ONLY when the player presses 完成組牌
   // (DIC-1004 §B) — null means the result sheet is closed.
   const [finalizeIssues, setFinalizeIssues] = useState<ValidationIssue[] | null>(null);
@@ -66,6 +77,7 @@ export default function DeckEditorScreen() {
   const renameDeck = useDeckStore((s) => s.renameDeck);
   const setActiveDeck = useDeckStore((s) => s.setActiveDeck);
   const changeCard = useDeckStore((s) => s.changeCard);
+  const removeCard = useDeckStore((s) => s.removeCard);
   const applyLowCostVariants = useDeckStore((s) => s.applyLowCostVariants);
   const migrateLegacyPrintings = useDeckStore((s) => s.migrateLegacyPrintings);
   const migrateTournamentDefaults = useDeckStore((s) => s.migrateTournamentDefaults);
@@ -92,8 +104,9 @@ export default function DeckEditorScreen() {
     setFinalizeIssues(null);
   }, [activeDeckId]);
 
-  // MVP search shows ONE row per card number: its low-cost default printing,
-  // not every premium reprint (DIC-1004 §A2).
+  // Every card offered to the player is the card number's low-cost ORDINARY
+  // default printing, the same choice tournament import and the card page make
+  // (DIC-1060) — a parallel listing never wins just by being cheaper.
   const variantGroups = useMemo(
     () => (db ? groupVariantsByCardNumber(db.cards, db.priceRecords) : []),
     [db],
@@ -113,19 +126,46 @@ export default function DeckEditorScreen() {
     migrateTournamentDefaults(lowCostIndex);
   }, [lowCostIndex, migrateLegacyPrintings, migrateTournamentDefaults]);
 
-  const results = useMemo(
-    () => searchVariantGroups(variantGroups, query),
-    [variantGroups, query],
+  const facets = db?.facets ?? new Map();
+  const categoryChoices = ZONE_CATEGORIES[activeZone];
+
+  // Cards the OPEN zone can legally hold. Filter options are collected from this
+  // set, so a zone never offers a colour or set that none of its cards has.
+  const zoneGroups = useMemo(
+    () => filterCatalog(variantGroups, facets, { ...EMPTY_CRITERIA, categories: categoryChoices }),
+    [variantGroups, facets, categoryChoices],
   );
+  const filterOptions = useMemo(
+    () => collectFilterOptions(
+      zoneGroups.flatMap((g): CardFacets[] => {
+        const f = facets.get(g.cardNumber);
+        return f ? [f] : [];
+      }),
+    ),
+    [zoneGroups, facets],
+  );
+  const results = useMemo(
+    () => filterCatalog(zoneGroups, facets, {
+      ...criteria,
+      categories: criteria.categories.length > 0 ? criteria.categories : categoryChoices,
+    }),
+    [zoneGroups, facets, criteria, categoryChoices],
+  );
+
   const lowCostDrift = activeDeck ? countLowCostDrift(activeDeck, lowCostIndex) : 0;
-  const countSlots = (predicate: (card: DeckCard) => boolean): number => (activeDeck
-    ? (['oshi', 'main', 'yell'] as DeckZone[]).reduce(
-        (n, zone) => n + activeDeck[zone].filter((s) => predicate(s.card)).length,
-        0,
-      )
-    : 0);
-  const unresolvedPrintings = countSlots((card) => card.unresolvedPrinting === true);
-  const defaultedPrintings = countSlots((card) => card.defaultedPrinting === true);
+
+  // Copies of a card number already in the deck, for the grid's quantity badge.
+  const qtyByCardNumber = useMemo(() => {
+    const map = new Map<string, number>();
+    if (activeDeck) {
+      for (const zone of ZONES) {
+        for (const slot of activeDeck[zone]) {
+          map.set(slot.card.cardNumber, (map.get(slot.card.cardNumber) ?? 0) + slot.qty);
+        }
+      }
+    }
+    return map;
+  }, [activeDeck]);
 
   // Resolve a collection entry (keyed by normalized ownershipKey) back to a
   // displayable card. Built from the loaded database so the global inventory can
@@ -136,8 +176,6 @@ export default function DeckEditorScreen() {
     return map;
   }, [db]);
 
-  // The global collection inventory, newest-heavier entries first is not needed;
-  // sort by cardNumber for a stable, deterministic order.
   const collectionEntries = useMemo(() => {
     return Object.entries(collection)
       .filter(([, qty]) => qty > 0)
@@ -245,68 +283,85 @@ export default function DeckEditorScreen() {
   }
 
   // ── Editor ──
-  const searchPanel = (
-    <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <Text style={styles.h2}>搜尋卡片</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="卡號 / 名稱 / 系列"
-        placeholderTextColor={COLORS.textSecondary}
-        value={query}
-        onChangeText={setQuery}
-      />
-      <Text style={styles.muted}>每個卡號只顯示一列，預設採用可出賽、參考售價最低的原印版本。</Text>
-      <FlatList
-        data={results}
-        keyExtractor={(g) => g.cardNumber}
-        style={styles.resultList}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item: group }) => {
-          const card = group.card;
-          const zone = eligibleZone(card);
-          return (
-            <View style={styles.resultRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardName}>{card.name}</Text>
-                <Text style={styles.cardMeta}>
-                  {card.cardNumber} · {printingLabelOf(card)}
-                  {zone ? ` · ${ZONE_LABELS[zone]}` : ' · 無法分類'}
-                </Text>
-                {group.variants.length > 1 && (
-                  <Text style={styles.lowCostTag} testID={`low-cost-tag-${group.cardNumber}`}>
-                    預設低配版本（共 {group.variants.length} 種版本）
-                  </Text>
-                )}
-              </View>
-              <TouchableOpacity
-                style={styles.ownBtn}
-                onPress={() => adjustOwned(card.cardNumber, card.printing, 1)}
-                accessibilityRole="button"
-                accessibilityLabel={`收藏 +1 ${card.name}`}
-                testID={`collection-add-${card.id}`}
-              >
-                <Text style={styles.ownBtnText}>＋擁有</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.addBtn, !zone && styles.addBtnDisabled]}
-                disabled={!zone}
-                onPress={() => addToDeck(card)}
-                accessibilityRole="button"
-                accessibilityLabel={zone ? `加入牌組 ${card.name}` : '無法分類'}
-              >
-                <Text style={styles.addBtnText}>＋</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        }}
-        ListEmptyComponent={
-          <Text style={styles.muted}>{query ? '找不到符合的卡片' : '輸入關鍵字搜尋卡片'}</Text>
-        }
+  // The zone tabs sit OUTSIDE the scrolling body so the live progress stays on
+  // screen while the player scrolls the grid (DIC-1067 §1/§10).
+  const zoneTabs = (
+    <View style={styles.tabBar} testID="deck-zone-tabs">
+      {ZONES.map((zone) => {
+        const active = zone === activeZone;
+        const value = stats ? stats[zone] : 0;
+        const target = stats
+          ? { oshi: stats.oshiTarget, main: stats.mainTarget, yell: stats.yellTarget }[zone]
+          : 0;
+        return (
+          <TouchableOpacity
+            key={zone}
+            style={[styles.tab, active && styles.tabActive]}
+            onPress={() => { setActiveZone(zone); setCriteria(EMPTY_CRITERIA); }}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={`${ZONE_LABELS[zone]} ${value}/${target}`}
+            testID={`deck-zone-tab-${zone}`}
+          >
+            <Text style={[styles.tabLabel, active && styles.tabLabelActive]} numberOfLines={1}>
+              {ZONE_LABELS[zone]}
+            </Text>
+            <Text
+              style={[styles.tabProgress, value === target && { color: COLORS.success }]}
+              testID={`deck-zone-progress-${zone}`}
+            >
+              {value}/{target}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const numColumns = isWide ? 4 : isDesktop ? 3 : 2;
+  const filterPanel = (
+    <CardFilterPanel
+      criteria={criteria}
+      onChange={setCriteria}
+      options={filterOptions}
+      categoryChoices={categoryChoices}
+      resultCount={results.length}
+    />
+  );
+
+  const pickerPanel = (
+    <View style={[styles.panel, isDesktop && styles.panelGrid]}>
+      <Text style={styles.h2}>選擇卡片</Text>
+      {!isDesktop && (
+        <View style={styles.mobileFilterRow}>
+          <TouchableOpacity
+            style={styles.filterBtn}
+            onPress={() => setFiltersOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="開啟搜尋與篩選"
+            testID="open-filters"
+          >
+            <Text style={styles.filterBtnText}>搜尋 / 篩選</Text>
+          </TouchableOpacity>
+          <Text style={styles.resultCount} testID="card-result-count-mobile">
+            {results.length} 張卡片
+          </Text>
+        </View>
+      )}
+      <CardPickerGrid
+        groups={results}
+        numColumns={numColumns}
+        height={isDesktop ? 620 : 460}
+        qtyOf={(cardNumber) => qtyByCardNumber.get(cardNumber) ?? 0}
+        onAdd={addToDeck}
+        onAddOwned={(card) => adjustOwned(card.cardNumber, card.printing, 1)}
+        emptyLabel="沒有符合條件的卡片，請調整搜尋或篩選條件。"
       />
     </View>
   );
 
-  const zonesPanel = (
+  const selectedSlots = activeDeck[activeZone];
+  const deckPanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
       {renaming ? (
         <View style={styles.renameBlock}>
@@ -369,18 +424,6 @@ export default function DeckEditorScreen() {
             ✓ 已從賽事牌組匯入：{activeDeck.origin.eventName}
             {activeDeck.origin.decklogCode ? `（${activeDeck.origin.decklogCode}）` : ''}
           </Text>
-          {defaultedPrintings > 0 && (
-            <Text style={styles.originNote} testID="deck-defaulted-printings-note">
-              其中 {defaultedPrintings} 張卡的來源只註明卡號與稀有度，未指明可購買的版本；
-              {DEFAULTED_PRINTING_NOTE}（同卡號的普通版本，非平行／簽名版，採 yuyu-tei 參考售價）。
-            </Text>
-          )}
-          {unresolvedPrintings > 0 && (
-            <Text style={styles.originNote} testID="deck-unresolved-printings-note">
-              另有 {unresolvedPrintings} 張卡的同卡號沒有可用的普通版本，維持「版本未確認」，
-              價格顯示為無精確版本價格，不會套用平行／簽名等其他版本的價格。
-            </Text>
-          )}
         </View>
       )}
 
@@ -414,33 +457,51 @@ export default function DeckEditorScreen() {
           </TouchableOpacity>
         )}
       </View>
-      <Text style={styles.muted}>編輯中不中斷提示；按「完成組牌」才會檢查完整規則。</Text>
 
-      {(['oshi', 'main', 'yell'] as DeckZone[]).map((zone) => (
-        <View key={zone} style={styles.zoneBlock}>
-          <Text style={styles.zoneTitle}>{ZONE_LABELS[zone]}</Text>
-          {activeDeck[zone].length === 0 && <Text style={styles.muted}>（尚無卡片）</Text>}
-          {activeDeck[zone].map((slot) => (
-            <View key={slot.card.id} style={styles.slotRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardName}>{slot.card.name}</Text>
-                <Text style={styles.cardMeta}>
-                  {slot.card.cardNumber} · {printingLabelOf(slot.card)}
-                </Text>
-              </View>
-              <View style={styles.qtyControls}>
-                <TouchableOpacity style={styles.qtyBtn} onPress={() => changeCard(activeDeck.id, zone, slot.card, -1)}>
-                  <Text style={styles.qtyBtnText}>－</Text>
-                </TouchableOpacity>
-                <Text style={styles.qtyValue}>{slot.qty}</Text>
-                <TouchableOpacity style={styles.qtyBtn} onPress={() => changeCard(activeDeck.id, zone, slot.card, 1)}>
-                  <Text style={styles.qtyBtnText}>＋</Text>
-                </TouchableOpacity>
-              </View>
+      <View style={styles.zoneBlock}>
+        <Text style={styles.zoneTitle}>{ZONE_LABELS[activeZone]}（已選）</Text>
+        {selectedSlots.length === 0 && <Text style={styles.muted}>（尚無卡片）</Text>}
+        {selectedSlots.map((slot) => (
+          <View key={slot.card.id} style={styles.slotRow} testID={`deck-slot-${slot.card.cardNumber}`}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardName}>{slot.card.name}</Text>
+              <Text style={styles.cardMeta}>
+                {slot.card.cardNumber} · {printingLabelOf(slot.card)}
+              </Text>
             </View>
-          ))}
-        </View>
-      ))}
+            <View style={styles.qtyControls}>
+              <TouchableOpacity
+                style={styles.qtyBtn}
+                onPress={() => changeCard(activeDeck.id, activeZone, slot.card, -1)}
+                accessibilityRole="button"
+                accessibilityLabel={`減少 ${slot.card.name}`}
+                testID={`deck-slot-dec-${slot.card.cardNumber}`}
+              >
+                <Text style={styles.qtyBtnText}>－</Text>
+              </TouchableOpacity>
+              <Text style={styles.qtyValue}>{slot.qty}</Text>
+              <TouchableOpacity
+                style={styles.qtyBtn}
+                onPress={() => changeCard(activeDeck.id, activeZone, slot.card, 1)}
+                accessibilityRole="button"
+                accessibilityLabel={`增加 ${slot.card.name}`}
+                testID={`deck-slot-inc-${slot.card.cardNumber}`}
+              >
+                <Text style={styles.qtyBtnText}>＋</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.removeBtn}
+                onPress={() => removeCard(activeDeck.id, activeZone, slot.card.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`移除 ${slot.card.name}`}
+                testID={`deck-slot-remove-${slot.card.cardNumber}`}
+              >
+                <Text style={styles.link}>移除</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </View>
     </View>
   );
 
@@ -451,7 +512,7 @@ export default function DeckEditorScreen() {
         全域收藏（跨所有牌組共用，僅存於此裝置）· 依精確卡號＋版本記錄擁有張數
       </Text>
       {collectionEntries.length === 0 ? (
-        <Text style={styles.muted}>尚無收藏紀錄。可從左側搜尋結果的「＋擁有」加入。</Text>
+        <Text style={styles.muted}>尚無收藏紀錄。</Text>
       ) : (
         collectionEntries.map((e) => (
           <View key={e.key} style={styles.slotRow} testID={`collection-row-${e.key}`}>
@@ -502,7 +563,6 @@ export default function DeckEditorScreen() {
       <Text style={styles.muted}>
         需求 / 擁有 / 缺少 · 單價採 yuyu-tei「參考售價」（玩家購入價），僅取同卡號＋同版本精確匹配
       </Text>
-      <Text style={styles.muted}>※ 不使用「店家收購價」估算缺卡成本；收購價僅於卡片行情頁顯示。</Text>
       {gap && gap.rows.map((r) => {
         const alert = priceAlerts[priceAlertKey(r.cardNumber, r.version)] ?? null;
         return (
@@ -589,9 +649,6 @@ export default function DeckEditorScreen() {
                 {gap.unpriced.map((u) => `${u.cardNumber}${u.version ? `·${u.version}` : ''}`).join('、')}
               </Text>
             )}
-            <Text style={styles.muted}>
-              不採用店家收購價／最高價／跨版本／同名價替代；不同幣別分開計算，不合併加總。
-            </Text>
           </View>
         ))}
     </View>
@@ -645,16 +702,50 @@ export default function DeckEditorScreen() {
     </Modal>
   );
 
+  // On a phone the filters live in a sheet so the grid keeps the full width.
+  const filterSheet = (
+    <Modal
+      visible={filtersOpen}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setFiltersOpen(false)}
+    >
+      <View style={styles.sheetBackdrop}>
+        <View style={styles.sheet} accessibilityViewIsModal testID="filter-sheet">
+          <View style={styles.sheetHeader}>
+            <Text style={styles.h2}>搜尋 / 篩選</Text>
+            <TouchableOpacity
+              onPress={() => setFiltersOpen(false)}
+              accessibilityRole="button"
+              accessibilityLabel="關閉篩選"
+              testID="close-filters"
+              style={styles.sheetClose}
+            >
+              <Text style={styles.link}>完成</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView>{filterPanel}</ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {finalizeSheet}
+      {filterSheet}
       <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
+      {zoneTabs}
       {isDesktop ? (
-        <ScrollView horizontal={false} contentContainerStyle={styles.desktopWrap}>
+        <ScrollView contentContainerStyle={styles.desktopWrap}>
           <View style={styles.desktopCols}>
-            {searchPanel}
-            {zonesPanel}
+            <View style={[styles.panel, styles.panelCol]}>
+              <Text style={styles.h2}>搜尋與篩選</Text>
+              {filterPanel}
+            </View>
+            {pickerPanel}
             <View style={styles.desktopStackCol}>
+              {deckPanel}
               {collectionPanel}
               {estimatePanel}
             </View>
@@ -662,8 +753,8 @@ export default function DeckEditorScreen() {
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.pad}>
-          {zonesPanel}
-          {searchPanel}
+          {pickerPanel}
+          {deckPanel}
           {collectionPanel}
           {estimatePanel}
         </ScrollView>
@@ -706,14 +797,25 @@ const styles = StyleSheet.create({
   desktopCols: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   panel: { backgroundColor: COLORS.surface, borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border },
   panelCol: { flex: 1, marginBottom: 0 },
+  panelGrid: { flex: 1.6, marginBottom: 0 },
   h1: { fontSize: 22, fontWeight: 'bold', color: COLORS.primary, marginBottom: 6 },
   h2: { fontSize: 17, fontWeight: 'bold', color: COLORS.text, marginBottom: 8 },
   muted: { color: COLORS.textSecondary, fontSize: 13, marginTop: 4 },
   link: { color: COLORS.primary, fontSize: 14 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
   input: { backgroundColor: COLORS.surfaceLight, color: COLORS.text, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: COLORS.border },
-  primaryBtn: { backgroundColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 },
-  primaryBtnText: { color: '#fff', fontWeight: 'bold' },
+  primaryBtn: { backgroundColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 16, minHeight: 44, justifyContent: 'center' },
+  primaryBtnText: { color: '#fff', fontWeight: 'bold', textAlign: 'center' },
+  tabBar: { flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  tab: { flex: 1, minHeight: 48, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border },
+  tabActive: { borderColor: COLORS.primary, backgroundColor: COLORS.background },
+  tabLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  tabLabelActive: { color: COLORS.primary },
+  tabProgress: { color: COLORS.text, fontSize: 14, fontWeight: 'bold', marginTop: 2 },
+  mobileFilterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  filterBtn: { minHeight: 44, paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary, backgroundColor: COLORS.surfaceLight },
+  filterBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold' },
+  resultCount: { color: COLORS.text, fontSize: 13, fontWeight: 'bold' },
   deckRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 8, padding: 12, marginTop: 8 },
   deckName: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
   deckHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 },
@@ -733,7 +835,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   originText: { color: COLORS.text, fontSize: 13, fontWeight: '600', lineHeight: 19 },
-  originNote: { color: COLORS.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 6 },
   stat: { minWidth: 68, alignItems: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10 },
   statLabel: { color: COLORS.textSecondary, fontSize: 11 },
   statValue: { fontSize: 15, fontWeight: 'bold', marginTop: 2 },
@@ -744,18 +845,12 @@ const styles = StyleSheet.create({
   cardName: { color: COLORS.text, fontSize: 14 },
   cardMeta: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   qtyControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  qtyBtn: { width: 30, height: 30, borderRadius: 6, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  qtyBtn: { width: 44, height: 44, borderRadius: 6, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
   qtyBtnSm: { width: 24, height: 24, borderRadius: 5, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
   qtyBtnText: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' },
-  qtyValue: { color: COLORS.text, fontSize: 15, fontWeight: 'bold', minWidth: 20, textAlign: 'center' },
-  resultList: { maxHeight: 380, marginTop: 8 },
-  resultRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  qtyValue: { color: COLORS.text, fontSize: 15, fontWeight: 'bold', minWidth: 28, textAlign: 'center' },
+  removeBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
   desktopStackCol: { flex: 1, gap: 16 },
-  ownBtn: { height: 34, paddingHorizontal: 10, borderRadius: 8, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
-  ownBtnText: { color: COLORS.text, fontSize: 13, fontWeight: 'bold' },
-  addBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  addBtnDisabled: { backgroundColor: COLORS.border },
-  addBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   issue: { borderRadius: 8, padding: 10, marginTop: 8, flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   issueError: { backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: 1, borderColor: COLORS.error },
   issueWarn: { backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: COLORS.warning },
@@ -775,10 +870,13 @@ const styles = StyleSheet.create({
   gapPrice: { color: COLORS.primaryLight, fontSize: 12 },
   totalCard: { marginTop: 12, backgroundColor: COLORS.surfaceLight, borderRadius: 8, padding: 12 },
   totalText: { color: COLORS.text, fontSize: 15, fontWeight: 'bold' },
-  lowCostTag: { color: COLORS.primaryLight, fontSize: 11, marginTop: 2 },
   finalizeRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 4 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   modalCard: { width: '100%', maxWidth: 460, backgroundColor: COLORS.surface, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: COLORS.border },
   modalList: { maxHeight: 300 },
   modalBtn: { marginTop: 14, alignSelf: 'flex-end' },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet: { maxHeight: '85%', backgroundColor: COLORS.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, borderTopWidth: 1, borderColor: COLORS.border },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetClose: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
 });
