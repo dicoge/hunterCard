@@ -496,6 +496,59 @@ await test('a readable version — absent, null or a non-blank string — still 
   }
 });
 
+// DIC-1060 gave a slot a second way to reach the version token: the DEFAULTED
+// branch carries it as provenance too, so the crash the gate prevents is no
+// longer reachable only through UNRESOLVED. Both branches are pinned here — if
+// the gate is ever removed, these prove the failure is a throw, not a coerced
+// value, which is what makes the BAD_VERSION check load-bearing rather than
+// redundant.
+const PREMIUM_ONLY = buildCatalogIndex([
+  {
+    id: 'hDX-003#PARALLEL', cardNumber: 'hDX-003', name: 'premium only',
+    printing: 'PARALLEL', printingLabel: 'premium only(パラレル)', series: 'hDX',
+    cardTypeJp: 'ホロメン',
+  },
+]);
+
+await test('the gate is the only guard on BOTH the defaulted and unresolved branch', () => {
+  const branches = [
+    ['defaulted', decoyCatalog, 'hDX-001'],
+    ['unresolved', PREMIUM_ONLY, 'hDX-003'],
+  ];
+  for (const [branch, index, cardNumber] of branches) {
+    // a readable version reaches the branch this case is meant to exercise
+    const ok = resolveSlotCard(
+      { zone: 'main', cardNumber, version: 'OSR', count: 1 }, index, decoyPrices,
+    );
+    assert.equal(
+      branch === 'defaulted' ? ok.defaultedPrinting === true : ok.printing === UNRESOLVED_PRINTING,
+      true, `${branch}: the fixture must actually take the ${branch} branch`,
+    );
+    assert.equal(ok.sourceVersion, 'OSR', `${branch}: the readable token survives as provenance`);
+
+    assert.throws(
+      () => resolveSlotCard(
+        { zone: 'main', cardNumber, version: { rare: 'OSR' }, count: 1 }, index, decoyPrices,
+      ),
+      `${branch}: an unreadable version must throw here, so the gate cannot be dropped`,
+    );
+  }
+});
+
+await test('a bad version blocks the import before any printing default is chosen', () => {
+  // The whole deck is otherwise importable and every slot would default, so the
+  // rejection can only come from the version rule — and no partially-defaulted
+  // draft may escape.
+  const clean = importOf(DUKHN);
+  assert.ok(clean && clean.defaultedPrintings > 0, 'the unmutated deck defaults its printings');
+
+  const deck = { ...DUKHN, cards: DUKHN.cards.map((c) => ({ ...c })) };
+  deck.cards[deck.cards.length - 1] = { ...deck.cards.at(-1), version: { rare: 'OSR' } };
+  const gate = evaluateImport(deck, catalog);
+  assert.equal(gate.code, 'BAD_VERSION');
+  assert.equal(importOf(deck), null, 'no draft — not even one with the other slots defaulted');
+});
+
 // ── 6b. DIC-1036: a slot's identity is (zone, cardNumber) and NOTHING else ───
 // The rarity grade used to be part of the duplicate key, so one card number
 // could occupy two rows of one zone as long as the grades read differently.

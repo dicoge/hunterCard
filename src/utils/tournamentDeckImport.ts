@@ -165,7 +165,8 @@ export function evaluateImport(
     }
     // A committed report can carry a version this module cannot read — an
     // object, an array, a number, or a blank token. It used to pass the gate and
-    // then throw inside unresolvedCard's `.trim()` (DIC-1057). The same shared
+    // then throw inside withSourceVersion's `.trim()` (DIC-1057), on both the
+    // defaulted and the unresolved branch. The same shared
     // predicate the collector validates with rejects it here, so the value is
     // neither coerced nor dropped: the deck simply does not import.
     if (!isReadableVersion(ref.version)) {
