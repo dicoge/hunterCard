@@ -4,9 +4,8 @@
  * network. Exercises the honesty invariants of src/utils/tournamentReport.ts:
  * parser/normalizer, dedupe, partial/unknown preservation, source-failure
  * last-known-good preservation, monthly boundary bucketing, and the
- * observed-sample percentage denominator + coverage labeling. Also covers the
- * screen state machine in src/utils/tournamentReportState.ts, where a month
- * switch must clear the prior report so a failed fetch can never render it.
+ * observed-sample percentage denominator + coverage labeling. The screen state
+ * machine that drives the scope selector lives in scripts/test-tournament-donut.mjs.
  *
  * Run: node --experimental-strip-types --import ./scripts/register-ts.mjs \
  *   scripts/test-tournament-report.mjs
@@ -34,10 +33,6 @@ import {
   classifyFreshness,
   HOCG_DECKLOG_GAME_TITLE_ID,
 } from '../src/utils/tournamentReport.ts';
-import {
-  tournamentReportReducer,
-  initialTournamentReportState,
-} from '../src/utils/tournamentReportState.ts';
 
 const NOW = '2026-08-01T05:00:00Z';
 
@@ -277,97 +272,6 @@ test('reportContentKey ignores timestamps but reacts to real data changes', () =
     normalizeEvent({ ...rawFeatured, decks: [...rawFeatured.decks, { decklogCode: 'NEW11', archetypeId: 'q', archetypeLabel: 'Q' }] }, NOW),
   ], generatedAt: NOW });
   assert.notEqual(reportContentKey(a), reportContentKey(c)); // data changed
-});
-
-// ── Screen state machine (month switch must never show a stale report) ──────
-const idx = {
-  schemaVersion: 1,
-  generatedAt: NOW,
-  months: [
-    { month: '2026-07', events: 3, observedDecks: 3 },
-    { month: '2026-06', events: 1, observedDecks: 1 },
-  ],
-};
-const reportJuly = buildMonthlyReport({
-  month: '2026-07',
-  events: [normalizeEvent(rawFeatured, NOW)],
-  generatedAt: NOW,
-});
-
-function reduceAll(actions, from = initialTournamentReportState) {
-  return actions.reduce(tournamentReportReducer, from);
-}
-
-test('index load selects the newest month and starts loading its report', () => {
-  const s = reduceAll([{ type: 'index-loaded', index: idx }]);
-  assert.equal(s.month, '2026-07');
-  assert.equal(s.report, null);
-  assert.equal(s.loading, true);
-  assert.equal(s.error, null);
-});
-
-test('switching month clears the previous report before the fetch resolves', () => {
-  const s = reduceAll([
-    { type: 'index-loaded', index: idx },
-    { type: 'report-loaded', month: '2026-07', report: reportJuly },
-    { type: 'select-month', month: '2026-06' },
-  ]);
-  assert.equal(s.month, '2026-06');
-  assert.equal(s.report, null, 'stale report must be cleared on month switch');
-  assert.equal(s.loading, true);
-});
-
-test('failed fetch after month switch shows an error, never the previous month', () => {
-  const s = reduceAll([
-    { type: 'index-loaded', index: idx },
-    { type: 'report-loaded', month: '2026-07', report: reportJuly },
-    { type: 'select-month', month: '2026-06' },
-    { type: 'report-failed', month: '2026-06', message: 'boom' },
-  ]);
-  assert.equal(s.report, null, 'must not fall back to the 2026-07 report');
-  assert.equal(s.loading, false);
-  assert.equal(s.error, 'boom');
-});
-
-test('a late response for an abandoned month is ignored', () => {
-  const base = reduceAll([
-    { type: 'index-loaded', index: idx },
-    { type: 'select-month', month: '2026-06' },
-  ]);
-  const late = tournamentReportReducer(base, {
-    type: 'report-loaded',
-    month: '2026-07',
-    report: reportJuly,
-  });
-  assert.equal(late.report, null);
-  assert.equal(late.month, '2026-06');
-  assert.equal(late.loading, true);
-
-  const lateFail = tournamentReportReducer(base, {
-    type: 'report-failed',
-    month: '2026-07',
-    message: 'stale failure',
-  });
-  assert.equal(lateFail.error, null, 'a stale failure must not surface as an error');
-  assert.equal(lateFail.loading, true);
-});
-
-test('re-selecting the current month is a no-op (no refetch flicker)', () => {
-  const base = reduceAll([
-    { type: 'index-loaded', index: idx },
-    { type: 'report-loaded', month: '2026-07', report: reportJuly },
-  ]);
-  const same = tournamentReportReducer(base, { type: 'select-month', month: '2026-07' });
-  assert.equal(same, base);
-});
-
-test('an empty index reports "no data" instead of hanging on the spinner', () => {
-  const s = reduceAll([
-    { type: 'index-loaded', index: { schemaVersion: 1, generatedAt: NOW, months: [] } },
-  ]);
-  assert.equal(s.month, null);
-  assert.equal(s.loading, false);
-  assert.ok(s.error);
 });
 
 // ── DIC-1024: Deck Log live import core (pure, no network) ──────────────────

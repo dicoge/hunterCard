@@ -128,6 +128,9 @@ jobs:
       - name: Verify deterministic tournament deck analytics (DIC-1032)
         run: npm run test:tournament-analytics
 
+      - name: Verify observed-share donut model, geometry and filtering (DIC-1066)
+        run: npm run test:tournament-donut
+
       - name: Verify deck editor price adapter fail-closed (DIC-952)
         run: npm run test:deck-price-adapter
 
