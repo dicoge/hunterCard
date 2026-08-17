@@ -2,7 +2,8 @@
   "schemaVersion": 1,
   "month": "2026-07",
   "publishedDate": "2026-07-31",
-  "provenance": "DIC-942 verified sample. Official column 「イチ推し！デッキ紹介」vol.10 (2026-07-31). Human-verified extraction: player, placement, oshi/archetype and decklog code are published in the column prose; card lists are NOT read (decklog is a JS-rendered SPA), so they stay unknown; participant counts and full standings are not published by the source.",
+  "liveDecklog": true,
+  "provenance": "DIC-1065 backfill. Official column 「イチ推し！デッキ紹介」vol.10 (2026-07-31). Human-verified extraction: player, placement, oshi/archetype and decklog code are published in the column prose. Card lists fetched from the public Deck Log view API and strict-validated (1 oshi / 50 main / 20 yell, every cardNumber in data/database.json) by the collector's --live path. Participant counts and full standings are not published by the source.",
   "source": {
     "name": "hololive OFFICIAL CARD GAME — 公式コラム「イチ推し！デッキ紹介」vol.10",
     "url": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
@@ -19,7 +20,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整 8 強與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整 8 強與參賽數未公開。牌組卡表已透過 Deck Log 公開 API 驗證。",
       "decks": [
         {
           "decklogCode": "5USA7",
@@ -29,7 +30,145 @@
           "archetypeId": "takane-lui",
           "archetypeLabel": "鷹嶺ルイ（紫単）",
           "oshi": "鷹嶺ルイ",
-          "colors": ["紫"]
+          "colors": [
+            "紫"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hBP08-005",
+              "version": "SEC",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-056",
+              "version": "HR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-060",
+              "version": "P",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-061",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-061",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-062",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-064",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-065",
+              "version": "SR",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-066",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-067",
+              "version": "UR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-108",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP03-088",
+              "version": "P",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-090",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP06-093",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-094",
+              "version": "P",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "P",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP02-086",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "S",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-099",
+              "version": "S",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-109",
+              "version": "S",
+              "count": 4
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY05-005",
+              "version": "SY",
+              "count": 18
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY05-010",
+              "version": "SY",
+              "count": 2
+            }
+          ],
+          "cardsVerified": true,
+          "fetchedAt": "2026-08-17T13:05:09.361Z"
         }
       ]
     },
@@ -43,7 +182,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表已透過 Deck Log 公開 API 驗證。",
       "decks": [
         {
           "decklogCode": "1XQQF",
@@ -53,7 +192,128 @@
           "archetypeId": "wando-chihaya-tokanehi",
           "archetypeLabel": "輪堂千速＋虎金妃笑虎（青赤混合）",
           "oshi": "輪堂千速",
-          "colors": ["青", "赤"]
+          "colors": [
+            "青",
+            "赤"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hSD10-001",
+              "version": "OSR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-032",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-033",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-034",
+              "version": "R",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-035",
+              "version": "RR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD10-002",
+              "version": "C",
+              "count": 6
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD10-004",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD10-006",
+              "version": "RR",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-089",
+              "version": "R",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD11-002",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-108",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-080",
+              "version": "U",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-094",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-099",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD14-010",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-104",
+              "version": "C",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP05-074",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD10-013",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY02-001",
+              "version": "C",
+              "count": 20
+            }
+          ],
+          "cardsVerified": true,
+          "fetchedAt": "2026-08-17T13:05:10.071Z"
         }
       ]
     },
@@ -67,7 +327,7 @@
       "entrants": null,
       "sourceUrl": "https://hololive-official-cardgame.com/news/post/deck-showcase_vol-10/",
       "sourceType": "official-column",
-      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表需 decklog（JS 渲染）故未讀取。",
+      "coverageNote": "官方專欄僅展示 1 副精選牌組；完整名次與參賽數未公開。牌組卡表已透過 Deck Log 公開 API 驗證。",
       "decks": [
         {
           "decklogCode": "4PQXH",
@@ -77,7 +337,122 @@
           "archetypeId": "jiji-murin",
           "archetypeLabel": "ジジ・ムリン（紫青混合）",
           "oshi": "ジジ・ムリン",
-          "colors": ["紫", "青"]
+          "colors": [
+            "紫",
+            "青"
+          ],
+          "cards": [
+            {
+              "zone": "oshi",
+              "cardNumber": "hSD13-002",
+              "version": "OSR",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-086",
+              "version": "R",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP08-089",
+              "version": "R",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD13-008",
+              "version": "C",
+              "count": 8
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD13-009",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD13-011",
+              "version": "U",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD13-012",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD13-013",
+              "version": "RR",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD13-014",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP01-108",
+              "version": "U",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-094",
+              "version": "U",
+              "count": 2
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hBP07-099",
+              "version": "C",
+              "count": 1
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD01-016",
+              "version": "P",
+              "count": 3
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD14-010",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD13-018",
+              "version": "C",
+              "count": 4
+            },
+            {
+              "zone": "main",
+              "cardNumber": "hSD17-010",
+              "version": "C",
+              "count": 2
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY06-001",
+              "version": "C",
+              "count": 17
+            },
+            {
+              "zone": "yell",
+              "cardNumber": "hY06-003",
+              "version": "P",
+              "count": 3
+            }
+          ],
+          "cardsVerified": true,
+          "fetchedAt": "2026-08-17T13:05:10.875Z"
         }
       ]
     }

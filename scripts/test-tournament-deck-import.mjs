@@ -693,19 +693,22 @@ await test('fail-closed: the button stays disabled while the catalog is still lo
   assert.equal(gate.reason, '卡片資料庫載入中，請稍候');
 });
 
-// ── 8. Older unverified July records stay browse-only ────────────────────────
-await test('every unverified July deck is disabled with 卡表尚未取得，無法匯入', () => {
-  const julyDecks = july.events.flatMap((e) => e.decks);
-  assert.ok(julyDecks.length >= 3, 'precondition: July ships the older featured records');
-  for (const deck of julyDecks) {
-    assert.equal(deck.cardsVerified, false, `${deck.deckId} precondition: unverified`);
-    const gate = evaluateImport(deck, catalog);
-    assert.equal(gate.importable, false, `${deck.deckId} must not offer an import`);
-    assert.equal(gate.reason, '卡表尚未取得，無法匯入');
-    assert.equal(
-      buildImportedDeck(july.events[0], deck, catalog, db.priceRecords, [], IMPORTED_AT), null,
-      'no July record may produce a deck',
-    );
+// ── 8. July records are now backfilled and importable (DIC-1065) ─────────────
+await test('every backfilled July deck is verified and importable with 1/50/20', () => {
+  for (const evt of july.events) {
+    for (const deck of evt.decks) {
+      assert.equal(deck.cardsVerified, true, `${deck.deckId} precondition: verified after backfill`);
+      const gate = evaluateImport(deck, catalog);
+      assert.equal(gate.importable, true, `${deck.deckId} must offer an import`);
+      assert.ok(!gate.code, `${deck.deckId} has no error code`);
+      const imported = buildImportedDeck(evt, deck, catalog, db.priceRecords, [], IMPORTED_AT);
+      assert.ok(imported !== null, `${deck.deckId} may produce a deck`);
+      const stats = deckStats(draftToDeck(imported));
+      assert.equal(stats.oshi, 1, `${deck.deckId} has 1 oshi`);
+      assert.equal(stats.main, 50, `${deck.deckId} has 50 main`);
+      assert.equal(stats.yell, 20, `${deck.deckId} has 20 yell`);
+      assert.equal(stats.total, 71, `${deck.deckId} has 71 total cards`);
+    }
   }
 });
 
