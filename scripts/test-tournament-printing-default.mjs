@@ -33,7 +33,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  DEFAULTED_PRINTING_NOTE,
   UNRESOLVED_PRINTING,
   buildCatalogIndex,
   buildImportedDeck,
@@ -583,18 +582,10 @@ await test('the repair survives a reload without the user re-importing', async (
   assert.equal(computeGap(fixed, {}, db.priceRecords).total, 13220);
 });
 
-// ── 9. The defaulting BEHAVIOUR survives the copy being retired ───────────────
-// DIC-1067 removed the explanatory paragraph from the editor: a player building a
-// deck by looking at cards must not be lectured about how the printing was
-// chosen. The wording stays exported for non-editor surfaces, but the editor
-// itself must no longer render it — only the silent low-cost default remains.
-await test('the defaulted state has its exact user-facing wording', () => {
-  assert.equal(DEFAULTED_PRINTING_NOTE, '來源未指定版本，已使用最低普通版本估價');
-  const source = fs.readFileSync('src/screens/DeckEditorScreen.tsx', 'utf8');
-  assert.ok(
-    !source.includes('DEFAULTED_PRINTING_NOTE'),
-    'DIC-1067: the deck editor must not render the defaulted-printing explanation',
-  );
-});
+// The defaulted state is deliberately SILENT in the UI (DIC-1064, and DIC-1067
+// retired the same copy from the picker rewrite): the printing it selected is
+// shown, the reason it was selected is not. The constant is gone rather than
+// merely unrendered, so nothing is pinned here — the absence is asserted against
+// the real component tree by scripts/test-deck-editor-copy.mjs.
 
 console.log(`\nDIC-1060 tournament ordinary-printing default: ${passed} tests passed`);

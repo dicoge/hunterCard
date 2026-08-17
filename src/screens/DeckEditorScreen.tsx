@@ -560,9 +560,6 @@ export default function DeckEditorScreen() {
   const estimatePanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
       <Text style={styles.h2}>缺卡預估（參考售價）</Text>
-      <Text style={styles.muted}>
-        需求 / 擁有 / 缺少 · 單價採 yuyu-tei「參考售價」（玩家購入價），僅取同卡號＋同版本精確匹配
-      </Text>
       {gap && gap.rows.map((r) => {
         const alert = priceAlerts[priceAlertKey(r.cardNumber, r.version)] ?? null;
         return (
