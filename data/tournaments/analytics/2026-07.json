@@ -1,0 +1,88 @@
+{
+  "algorithm": {
+    "config": {
+      "association": {
+        "minSupportCount": 1
+      },
+      "cluster": {
+        "linkage": "average",
+        "method": "agglomerative",
+        "threshold": 0.55
+      },
+      "clusterSummary": {
+        "differentiatingPreviewLimit": 12
+      },
+      "roundingDigits": 6,
+      "similarity": "weightedJaccard",
+      "zoneWeights": {
+        "main": 1,
+        "oshi": 1,
+        "yell": 0.25
+      }
+    },
+    "formulas": {
+      "confidenceAB": "cooccurrenceDecks(A,B) / decksContaining(A)",
+      "lift": "support(A,B) / (support(A) * support(B))",
+      "support": "cooccurrenceDecks(A,B) / sampleSize",
+      "weightedJaccard": "sum_i min(w_i*x_i, w_i*y_i) / sum_i max(w_i*x_i, w_i*y_i)"
+    },
+    "name": "tournament-analytics-v1"
+  },
+  "associations": {
+    "index": [],
+    "method": "deckPresenceCooccurrence",
+    "minSupportCount": 1,
+    "relations": [],
+    "sparseMatrix": []
+  },
+  "clusters": [],
+  "decks": [],
+  "excludedIncompleteDecks": [
+    {
+      "deckId": "decklog:5USA7",
+      "eventId": "extreamer-cup-25-26-area-tohoku-a",
+      "month": "2026-07",
+      "reason": "cardsVerified is not true; card list excluded from quantitative analysis"
+    },
+    {
+      "deckId": "decklog:1XQQF",
+      "eventId": "extreamer-cup-25-26-area-kyushu-okinawa-2",
+      "month": "2026-07",
+      "reason": "cardsVerified is not true; card list excluded from quantitative analysis"
+    },
+    {
+      "deckId": "decklog:4PQXH",
+      "eventId": "extreamer-cup-25-26-area-hokkaido",
+      "month": "2026-07",
+      "reason": "cardsVerified is not true; card list excluded from quantitative analysis"
+    }
+  ],
+  "generatedAt": "2026-08-16T12:36:37.696Z",
+  "inputDeckIds": [],
+  "inputReports": [
+    {
+      "contentSha256": "ad3dc263860436227eb26426a4d45d2af235eef2a74dbb31c35ed604121897a1",
+      "file": "2026-07.json",
+      "generatedAt": "2026-08-01T05:00:00Z",
+      "month": "2026-07"
+    }
+  ],
+  "month": "2026-07",
+  "sampleSize": 0,
+  "schemaVersion": 1,
+  "similarity": {
+    "deckIds": [],
+    "justification": "Weighted Jaccard compares sparse count vectors by shared quantities over union quantities, handles different deck sizes/features transparently, and keeps exact zone/version features isolated.",
+    "matrix": [],
+    "method": "weightedJaccard"
+  },
+  "vectors": {
+    "deckVectors": [],
+    "featureDictionary": [],
+    "schema": "sparse count vector: feature key = zone|exact cardNumber|source-proven version or NO_VERSION; a version enters identity only when the card carries explicit printing provenance (versionProven===true or versionSource in [printingId, catalogPrinting]) — a published rarity label is not proof and maps to NO_VERSION, with the discarded label kept in unprovenVersionLabels. Quantities preserved; zones and versions are never conflated. Feature indexes are artifact-local: each month artifact is analyzed independently from its own deck subset."
+  },
+  "warnings": [
+    "N=0: no cardsVerified:true decks; quantitative outputs are empty.",
+    "3 incomplete deck(s) excluded because cardsVerified is not true."
+  ]
+}
