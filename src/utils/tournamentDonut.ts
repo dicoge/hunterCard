@@ -63,9 +63,16 @@ export function deckSliceKey(deck: DeckEntry, dimension: DonutDimension): string
 
 /** The published verified sample: decks whose card list passed the fail-closed
  * gate. De-duped by deckId so an 'all' scope can never double-count a deck that
- * appears in two month files. */
+ * appears in two month files.
+ *
+ * The `=== true` is load-bearing, not style. These reports are fetched JSON that
+ * is only type-cast, never runtime-validated, so `cardsVerified` can arrive as
+ * the string "false", a number, or an object. Under truthiness every one of
+ * those would enter the published sample and inflate the denominator — the exact
+ * claim this chart is not allowed to get wrong. Anything that is not the boolean
+ * true is treated as unverified. */
 export function verifiedDecks(events: readonly TournamentEvent[]): DeckEntry[] {
-  return dedupeDecks(events.flatMap((e) => e.decks).filter((d) => d.cardsVerified));
+  return dedupeDecks(events.flatMap((e) => e.decks).filter((d) => d.cardsVerified === true));
 }
 
 export function reportsForScope(

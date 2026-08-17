@@ -75,7 +75,10 @@ const reports = Object.fromEntries(
 const decksOf = (months) =>
   months.flatMap((m) => reports[m].events.flatMap((e) => e.decks));
 const uniq = (decks) => [...new Map(decks.map((d) => [d.deckId, d])).values()];
-const verifiedOf = (months) => uniq(decksOf(months)).filter((d) => d.cardsVerified);
+// `=== true`, not truthiness: this oracle has to state the rule independently of
+// the app. Accepting any truthy value here would make the check agree with a
+// screen that had wrongly counted `cardsVerified: "false"` as published.
+const verifiedOf = (months) => uniq(decksOf(months)).filter((d) => d.cardsVerified === true);
 
 const SCOPES = [
   { id: 'all', months: MONTHS },
@@ -320,8 +323,82 @@ async function run(label, viewport) {
   await page.close();
 }
 
+/**
+ * A month that fails to load must not leave the rest rendering as the complete
+ * set. Blocking one month's request is the only honest way to reach that state
+ * from outside the app, so the browser check drives it rather than trusting the
+ * reducer test alone.
+ */
+async function runPartialScope(label, viewport) {
+  if (MONTHS.length < 2) {
+    console.log(`\n[${label} partial-scope] skipped — needs 2+ months, index has ${MONTHS.length}`);
+    return;
+  }
+  const blocked = MONTHS[MONTHS.length - 1];
+  const kept = MONTHS.filter((m) => m !== blocked);
+  console.log(`\n[${label} partial-scope @ ${ENV}] blocking ${blocked}.json`);
+
+  const page = await browser.newPage();
+  await page.setViewport(viewport);
+  await page.setRequestInterception(true);
+  page.on('request', (req) => {
+    if (req.url().includes(`/data/tournaments/${blocked}.json`)) req.abort();
+    else req.continue();
+  });
+
+  const hasText = (t) => page.evaluate((x) => document.body.innerText.includes(x), t);
+  const clickText = async (text) => {
+    const handle = await page.evaluateHandle((t) => {
+      const el = [...document.querySelectorAll('div,span,button')]
+        .reverse().find((n) => n.textContent.trim() === t) || null;
+      el?.scrollIntoView({ block: 'center' });
+      return el;
+    }, text);
+    const el = handle.asElement();
+    if (!el) throw new Error(`no clickable element with text "${text}"`);
+    try { await el.click(); } catch { await el.evaluate((n) => n.click()); }
+  };
+
+  await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
+  await page.waitForFunction(() => document.body.innerText.includes('以訪客身份進入')
+    || document.body.innerText.includes('賽事月報'), { timeout: T });
+  if (await hasText('以訪客身份進入')) await clickText('以訪客身份進入');
+  await page.waitForFunction(() => document.body.innerText.includes('賽事月報'), { timeout: T });
+  await clickText('賽事月報');
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="scope-partial"]')
+      || document.querySelector('[data-testid="scope-error"]'),
+    { timeout: T },
+  );
+
+  const notice = await page.evaluate(() =>
+    document.querySelector('[data-testid="scope-partial"]')?.innerText ?? null);
+  const body = await page.evaluate(() => document.body.innerText);
+
+  check('a failed month is called out instead of silently dropped',
+    notice != null && notice.includes(blocked), notice ?? 'no scope-partial notice');
+  check('the heading no longer claims the complete set',
+    !body.includes('已公開樣本分布（全部月份）'),
+    body.split('\n').find((l) => l.includes('已公開樣本分布')) ?? 'heading missing');
+  check('the months that did load are still named and rendered',
+    kept.every((m) => notice?.includes(m)), `kept=${kept.join(',')} notice=${notice}`);
+  check('the surviving month still charts its own verified sample',
+    (await page.evaluate(() =>
+      document.querySelector('[data-testid="donut-center"]')?.innerText ?? null))
+      === `n=${verifiedOf(kept).length}`,
+    `expected n=${verifiedOf(kept).length}`);
+
+  await page.screenshot({
+    path: path.join(OUT, `dic1066-${label}-05-partial-scope.png`),
+    fullPage: true,
+  });
+  await page.close();
+}
+
 await run('desktop', { width: 1440, height: 900 });
 await run('mobile', { width: 390, height: 844, isMobile: true, hasTouch: true });
+await runPartialScope('desktop', { width: 1440, height: 900 });
+await runPartialScope('mobile', { width: 390, height: 844, isMobile: true, hasTouch: true });
 
 await browser.close();
 if (server) server.close();

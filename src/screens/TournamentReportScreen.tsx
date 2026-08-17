@@ -25,6 +25,13 @@ import {
   reportsInScope,
   scopeLoading,
   scopeError,
+  scopeWindow,
+  omittedMonths,
+  incompleteMonths,
+  scopeIsPartial,
+  runBounded,
+  MAX_SCOPE_MONTHS,
+  MAX_CONCURRENT_REPORT_LOADS,
 } from '../utils/tournamentReportState';
 import {
   ALL_SCOPE,
@@ -94,36 +101,34 @@ export default function TournamentReportScreen() {
     };
   }, []);
 
-  // Every month the index lists is fetched once, because the default scope
-  // aggregates all of them. A month added to the index later is picked up with
-  // no code change.
-  const indexMonths = useMemo(
-    () => (index?.months ?? []).map((m) => m.month).join(','),
-    [index],
-  );
+  // The newest MAX_SCOPE_MONTHS months are fetched once each, because the
+  // default scope aggregates them. A month added to the index later enters the
+  // window with no code change; the archive behind the window is never
+  // requested, so neither the request count nor the resident data grows with it.
+  const windowMonths = useMemo(() => scopeWindow(index), [index]);
+  const windowKey = windowMonths.join(',');
   useEffect(() => {
-    if (!indexMonths) return;
+    if (!windowKey) return;
     let alive = true;
-    for (const month of indexMonths.split(',')) {
-      (async () => {
-        try {
-          const r = await fetchJson<MonthlyReport>(`/data/tournaments/${month}.json`);
-          if (alive) dispatch({ type: 'report-loaded', month, report: r });
-        } catch {
-          if (alive) {
-            dispatch({
-              type: 'report-failed',
-              month,
-              message: `無法載入 ${month} 的賽事月報。`,
-            });
-          }
+    void runBounded(windowKey.split(','), MAX_CONCURRENT_REPORT_LOADS, async (month) => {
+      if (!alive) return;
+      try {
+        const r = await fetchJson<MonthlyReport>(`/data/tournaments/${month}.json`);
+        if (alive) dispatch({ type: 'report-loaded', month, report: r });
+      } catch {
+        if (alive) {
+          dispatch({
+            type: 'report-failed',
+            month,
+            message: `無法載入 ${month} 的賽事月報。`,
+          });
         }
-      })();
-    }
+      }
+    });
     return () => {
       alive = false;
     };
-  }, [indexMonths]);
+  }, [windowKey]);
 
   useEffect(() => {
     let alive = true;
@@ -217,8 +222,26 @@ export default function TournamentReportScreen() {
     );
   }
 
-  const scopeLabel = scope === ALL_SCOPE ? '全部月份' : scope;
   const hasData = reports.length > 0;
+  // A scope missing any of its months is never labeled as the complete set. The
+  // heading is the claim a reader takes at face value, so it degrades to
+  // "部分月份" and the notice below names exactly what is in and what is out.
+  const partial = scopeIsPartial(state);
+  const scopeLabel = scope !== ALL_SCOPE ? scope : partial ? '部分月份' : '全部月份';
+  const incomplete = incompleteMonths(state);
+  const omitted = omittedMonths(state);
+  const partialNotice = partial
+    ? [
+        reports.length > 0 ? `已納入 ${reports.map((r) => r.month).join('、')}` : null,
+        incomplete.failed.length > 0 ? `${incomplete.failed.join('、')} 載入失敗` : null,
+        incomplete.pending.length > 0 ? `${incomplete.pending.join('、')} 仍在載入` : null,
+        omitted.length > 0 && scope === ALL_SCOPE
+          ? `僅取最近 ${MAX_SCOPE_MONTHS} 個月，另有 ${omitted.length} 個較早月份未納入`
+          : null,
+      ]
+        .filter((s): s is string => s != null)
+        .join('；')
+    : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -236,10 +259,10 @@ export default function TournamentReportScreen() {
         {/* Scope selector: all verified months by default, then each month the
             index publishes. */}
         <View style={styles.monthRow}>
-          {[{ month: ALL_SCOPE, label: '全部' }, ...(index?.months ?? []).map((m) => ({
-            month: m.month,
-            label: m.month,
-          }))].map((opt) => {
+          {[
+            { month: ALL_SCOPE, label: '全部' },
+            ...windowMonths.map((m) => ({ month: m, label: m })),
+          ].map((opt) => {
             const active = opt.month === scope;
             return (
               <TouchableOpacity
@@ -262,6 +285,15 @@ export default function TournamentReportScreen() {
         {error && !loading ? (
           <Text style={styles.errorText} testID="scope-error">
             {error}
+          </Text>
+        ) : null}
+
+        {/* Suppressed only while the first months are still in flight, where the
+            spinner already says the same thing and there is nothing to overstate
+            yet. */}
+        {partialNotice && (hasData || !loading) ? (
+          <Text style={styles.partialNotice} testID="scope-partial">
+            ⚠ 這不是全部月份的資料：{partialNotice}。占比僅以上列已納入月份為母體。
           </Text>
         ) : null}
 
@@ -384,7 +416,7 @@ export default function TournamentReportScreen() {
                       玩家：{d.playerName ?? '未公開'}
                     </Text>
                     <Text style={styles.deckCards}>
-                      {d.cardsVerified
+                      {d.cardsVerified === true
                         ? `卡表：${d.cards.length} 種卡`
                         : '卡表：未收錄（decklog 需 JS 渲染，尚未讀取）'}
                     </Text>
@@ -498,6 +530,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: COLORS.text, fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
   emptyText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
   errorText: { color: COLORS.error, fontSize: 14, marginTop: 16 },
+  partialNotice: { color: COLORS.accent, fontSize: 12, lineHeight: 18, marginTop: 12 },
   monthRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   inlineLoader: { marginVertical: 24 },
   monthChip: {

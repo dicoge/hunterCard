@@ -32,6 +32,14 @@ import {
   reportsInScope,
   scopeLoading,
   scopeError,
+  scopeWindow,
+  monthsInScope,
+  omittedMonths,
+  incompleteMonths,
+  scopeIsPartial,
+  runBounded,
+  MAX_SCOPE_MONTHS,
+  MAX_CONCURRENT_REPORT_LOADS,
 } from '../src/utils/tournamentReportState.ts';
 
 const NOW = '2026-08-17T00:00:00Z';
@@ -39,6 +47,12 @@ const NOW = '2026-08-17T00:00:00Z';
 let passed = 0;
 function test(name, fn) {
   fn();
+  passed += 1;
+  console.log(`  ✓ ${name}`);
+}
+
+async function testAsync(name, fn) {
+  await fn();
   passed += 1;
   console.log(`  ✓ ${name}`);
 }
@@ -416,6 +430,162 @@ test('an empty index reports no data rather than an endless spinner', () => {
   ]);
   assert.equal(scopeLoading(s), false);
   assert.equal(scopeError(s), '目前沒有可用的賽事月報資料。');
+});
+
+// ── Fail-closed verification (DIC-1070 CR finding 1) ────────────────────────
+// These reports are fetched JSON that is only type-cast, so `cardsVerified` can
+// arrive as anything. The expectations below are written as literals on purpose:
+// deriving them from a `cardsVerified` predicate would re-use the very rule
+// under test and would bless a truthiness regression.
+const NON_BOOLEAN_VERIFIED = ['true', 'false', '', 'yes', 1, 0, -1, {}, [], null, undefined, NaN];
+
+test('only the boolean true is verified — no non-boolean value enters the sample', () => {
+  const decks = NON_BOOLEAN_VERIFIED.map((v, i) => ({
+    ...deck(`M${i}`, { archetypeId: 'a', label: 'A', oshi: 'A' }),
+    cardsVerified: v,
+  }));
+  assert.equal(decks.length, 12);
+  assert.equal(verifiedDecks([event('malformed', decks)]).length, 0);
+
+  // The exact probe from the review: a string "false" must not count.
+  const stringFalse = { ...deck('SF', { archetypeId: 'a', label: 'A' }), cardsVerified: 'false' };
+  assert.equal(verifiedDecks([event('probe', [stringFalse])]).length, 0);
+
+  // ...and a string "true" must not either — truthiness would pass this one.
+  const stringTrue = { ...deck('ST', { archetypeId: 'a', label: 'A' }), cardsVerified: 'true' };
+  assert.equal(verifiedDecks([event('probe', [stringTrue])]).length, 0);
+});
+
+test('a malformed deck is still observed, just never published', () => {
+  const decks = NON_BOOLEAN_VERIFIED.map((v, i) => ({
+    ...deck(`M${i}`, { archetypeId: 'a', label: 'A', oshi: 'A' }),
+    cardsVerified: v,
+  }));
+  const real = deck('REAL', { archetypeId: 'a', label: 'A', oshi: 'A' });
+  const m = buildDonutModel(
+    [report('2026-09', [event('mixed', [...decks, real])])],
+    ALL_SCOPE,
+    'archetype',
+  );
+  assert.equal(m.observedSize, 13, 'every deck is observed');
+  assert.equal(m.sampleSize, 1, 'exactly the one genuinely verified deck is published');
+  assert.equal(m.slices.length, 1);
+  assert.equal(m.slices[0].count, 1);
+  assert.equal(m.slices[0].percent, 100);
+});
+
+// ── Bounded loading and retention (DIC-1070 CR finding 3) ───────────────────
+function bigIndex(monthCount) {
+  const months = [];
+  for (let i = 0; i < monthCount; i += 1) {
+    const y = 2010 + Math.floor(i / 12);
+    const mo = String((i % 12) + 1).padStart(2, '0');
+    months.push({ month: `${y}-${mo}`, events: 1, observedDecks: 1 });
+  }
+  return { schemaVersion: 1, generatedAt: NOW, months };
+}
+
+test('a large index requests only the newest MAX_SCOPE_MONTHS months', () => {
+  const big = bigIndex(240);
+  assert.equal(big.months.length, 240);
+  const s = reduceAll([{ type: 'index-loaded', index: big }]);
+  assert.equal(s.pending.length, MAX_SCOPE_MONTHS);
+  assert.equal(monthsInScope(s).length, MAX_SCOPE_MONTHS);
+  assert.equal(s.pending[0], '2029-12', 'newest month first');
+  assert.equal(s.pending[MAX_SCOPE_MONTHS - 1], '2029-01');
+  assert.equal(omittedMonths(s).length, 240 - MAX_SCOPE_MONTHS);
+});
+
+test('the window is the newest months regardless of how the index is ordered', () => {
+  const big = bigIndex(240);
+  const shuffled = { ...big, months: [...big.months].reverse() };
+  assert.deepEqual(scopeWindow(shuffled), scopeWindow(big));
+});
+
+test('retained reports never exceed the window, however many months respond', () => {
+  const big = bigIndex(240);
+  const s = reduceAll([{ type: 'index-loaded', index: big }]);
+  const flooded = big.months.reduce(
+    (acc, m) => tournamentReportReducer(acc, {
+      type: 'report-loaded',
+      month: m.month,
+      report: report(m.month, []),
+    }),
+    s,
+  );
+  assert.equal(Object.keys(flooded.reports).length, MAX_SCOPE_MONTHS);
+  assert.equal(flooded.pending.length, 0);
+});
+
+await testAsync('report loads never exceed the concurrency bound', async () => {
+  const items = Array.from({ length: 240 }, (_, i) => i);
+  let inFlight = 0;
+  let peak = 0;
+  const done = [];
+  await runBounded(items, MAX_CONCURRENT_REPORT_LOADS, async (i) => {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, 0));
+    done.push(i);
+    inFlight -= 1;
+  });
+  assert.equal(peak, MAX_CONCURRENT_REPORT_LOADS, 'never more than the limit in flight');
+  assert.equal(done.length, 240, 'every month still gets fetched');
+  assert.equal(new Set(done).size, 240, 'and none is fetched twice');
+});
+
+// ── Partial scope is never presented as complete (DIC-1070 CR finding 2) ────
+test('a fully loaded all-scope is not flagged partial', () => {
+  const s = reduceAll([
+    { type: 'index-loaded', index: idx },
+    { type: 'report-loaded', month: '2026-08', report: august },
+    { type: 'report-loaded', month: '2026-07', report: july },
+  ]);
+  assert.equal(scopeIsPartial(s), false);
+  assert.deepEqual(incompleteMonths(s), { pending: [], failed: [] });
+});
+
+test('an all-scope with a failed month is flagged partial and names that month', () => {
+  const s = reduceAll([
+    { type: 'index-loaded', index: idx },
+    { type: 'report-loaded', month: '2026-08', report: august },
+    { type: 'report-failed', month: '2026-07', message: 'boom' },
+  ]);
+  assert.equal(scopeError(s), null, 'the loaded month still renders');
+  assert.equal(scopeIsPartial(s), true, 'but it must not read as the complete sample');
+  assert.deepEqual(incompleteMonths(s), { pending: [], failed: ['2026-07'] });
+});
+
+test('an all-scope with a month still loading is flagged partial', () => {
+  const s = reduceAll([
+    { type: 'index-loaded', index: idx },
+    { type: 'report-loaded', month: '2026-08', report: august },
+  ]);
+  assert.equal(scopeIsPartial(s), true);
+  assert.deepEqual(incompleteMonths(s), { pending: ['2026-07'], failed: [] });
+});
+
+test('a truncated window is partial even when every requested month loaded', () => {
+  const big = bigIndex(240);
+  const s = big.months.slice(-MAX_SCOPE_MONTHS).reduce(
+    (acc, m) => tournamentReportReducer(acc, {
+      type: 'report-loaded',
+      month: m.month,
+      report: report(m.month, []),
+    }),
+    reduceAll([{ type: 'index-loaded', index: big }]),
+  );
+  assert.deepEqual(incompleteMonths(s), { pending: [], failed: [] });
+  assert.equal(scopeIsPartial(s), true, 'the months behind the window are still missing');
+});
+
+test('a single-month scope is complete once that month loads', () => {
+  const s = reduceAll([
+    { type: 'index-loaded', index: idx },
+    { type: 'report-loaded', month: '2026-08', report: august },
+    { type: 'select-scope', scope: '2026-08' },
+  ]);
+  assert.equal(scopeIsPartial(s), false, 'one month is all this scope ever claimed');
 });
 
 console.log(`test-tournament-donut: PASS (${passed} checks)`);
