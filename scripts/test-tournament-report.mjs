@@ -12,6 +12,9 @@
  *   scripts/test-tournament-report.mjs
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   normalizeEvent,
   normalizeDeck,
@@ -25,6 +28,11 @@ import {
   buildMonthlyReport,
   mergeMonthlyReport,
   reportContentKey,
+  cardsFromDecklog,
+  verifyDeckCards,
+  normalizeCards,
+  classifyFreshness,
+  HOCG_DECKLOG_GAME_TITLE_ID,
 } from '../src/utils/tournamentReport.ts';
 import {
   tournamentReportReducer,
@@ -107,17 +115,18 @@ test('missing rank/archetype/cards stay unknown, not back-filled', () => {
 
 test('card version is preserved, never inferred; missing version → null', () => {
   const d = normalizeDeck(
-    { rank: 1, cards: [{ cardNumber: 'hBP08-067', count: 4 }] },
+    { rank: 1, cards: [{ zone: 'main', cardNumber: 'hBP08-067', count: 4 }] },
     'evt',
     'https://src',
     0,
     NOW,
   );
-  assert.equal(d.cardsVerified, true);
-  assert.equal(d.coverage, 'ranked'); // rank + verified cards
   assert.equal(d.cards[0].cardNumber, 'hBP08-067');
   assert.equal(d.cards[0].version, null); // not fabricated
   assert.equal(d.cards[0].count, 4);
+  // A single main card is a partial list, not a deck → never "verified".
+  assert.equal(d.cardsVerified, false);
+  assert.equal(d.coverage, 'partial');
 });
 
 test('ranked deck with no card list is partial (placement known, list unknown)', () => {
@@ -359,6 +368,285 @@ test('an empty index reports "no data" instead of hanging on the spinner', () =>
   assert.equal(s.month, null);
   assert.equal(s.loading, false);
   assert.ok(s.error);
+});
+
+// ── DIC-1024: Deck Log live import core (pure, no network) ──────────────────
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(__dirname, '..');
+
+function loadCatalogCardNumbers() {
+  const db = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'database.json'), 'utf8'));
+  return new Set(Object.values(db.cards).map((c) => String(c.cardNumber ?? '').trim()));
+}
+
+// Rebuild a Deck Log view-API-shaped body from the committed last-known-good
+// cards of the DIC-1024 verified sample, so the happy path is tested against the
+// REAL shipped data and the real local catalog — and a future edit to the source
+// file that breaks 1/50/20 or drifts from the catalog fails this test.
+function committedDeck(decklogCode) {
+  const src = JSON.parse(
+    fs.readFileSync(
+      path.join(ROOT, 'data', 'tournaments', 'sources', '2026-08-extreamer-cup-tokai-2.json'),
+      'utf8',
+    ),
+  );
+  const deck = src.events[0].decks.find((d) => d.decklogCode === decklogCode);
+  assert.ok(deck && deck.cardsVerified && deck.cards.length > 0,
+    `committed 2026-08 source must carry verified cards for ${decklogCode}`);
+  return deck;
+}
+
+// Deep copy of a committed card list, so a test can mutate it freely.
+function committedCards(decklogCode) {
+  return committedDeck(decklogCode).cards.map((c) => ({ ...c }));
+}
+
+function decklogFromCommittedDeck(decklogCode) {
+  const deck = committedDeck(decklogCode);
+  const LIST_BY_ZONE = { oshi: 'p_list', main: 'list', yell: 'sub_list' };
+  const body = { title: deck.deckName, game_title_id: HOCG_DECKLOG_GAME_TITLE_ID, p_list: [], list: [], sub_list: [] };
+  for (const c of deck.cards) {
+    body[LIST_BY_ZONE[c.zone]].push({ card_number: c.cardNumber, num: c.count, rare: c.version ?? '' });
+  }
+  return body;
+}
+
+test('cardsFromDecklog maps Deck Log lists to zones and normalizes versions', () => {
+  const cards = cardsFromDecklog({
+    game_title_id: HOCG_DECKLOG_GAME_TITLE_ID,
+    p_list: [{ card_number: 'hBP07-006', num: 1, rare: 'OSR', type: 3 }],
+    list: [{ card_number: 'hBP07-063', num: 4, rare: 'C', type: 1 }],
+    sub_list: [{ card_number: 'hY05-003', num: 20, rare: 'SY', type: 2 }],
+  });
+  assert.deepEqual(cards, [
+    { zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 },
+    { zone: 'main', cardNumber: 'hBP07-063', version: 'C', count: 4 },
+    { zone: 'yell', cardNumber: 'hY05-003', version: 'SY', count: 20 },
+  ]);
+});
+
+test('cardsFromDecklog throws on unreadable slots instead of guessing', () => {
+  assert.throws(() => cardsFromDecklog(null), /empty Deck Log response/);
+  assert.throws(
+    () => cardsFromDecklog({ p_list: [{ num: 1 }] }),
+    /has no card number/,
+  );
+  // numeric `type` is a cross-signal: yell card in the main list must fail
+  assert.throws(
+    () => cardsFromDecklog({ list: [{ card_number: 'hY05-003', type: 2 }] }),
+    /type 2, expected 1/,
+  );
+});
+
+test('verifyDeckCards passes the real committed DUKHN and 2H33J8 lists', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const code of ['DUKHN', '2H33J8']) {
+    const { cardsVerified, totals, failure } = verifyDeckCards(
+      cardsFromDecklog(decklogFromCommittedDeck(code)),
+      catalog,
+    );
+    assert.equal(cardsVerified, true, `${code}: ${failure}`);
+    assert.deepEqual(totals, { oshi: 1, main: 50, yell: 20 });
+  }
+});
+
+test('verifyDeckCards fails closed on a duplicate slot inside a zone', () => {
+  const cards = cardsFromDecklog(decklogFromCommittedDeck('DUKHN'));
+  // Split one main slot into two entries of the same number (totals still 1/50/20).
+  const i = cards.findIndex((c) => c.zone === 'main' && c.count > 1);
+  const base = cards[i];
+  cards.splice(i, 1, { ...base, count: 2 }, { ...base, count: base.count - 2 });
+  const { cardsVerified, failure } = verifyDeckCards(cards, loadCatalogCardNumbers());
+  assert.equal(cardsVerified, false);
+  assert.match(failure, new RegExp(`duplicate card slot within zone: main:${base.cardNumber}`));
+});
+
+test('verifyDeckCards reports the exact slot of a card missing from the catalog', () => {
+  const cards = cardsFromDecklog(decklogFromCommittedDeck('2H33J8'));
+  const target = cards.find((c) => c.zone === 'main');
+  target.cardNumber = 'hBP99-999'; // totals unchanged, but not in the local catalog
+  const { cardsVerified, failure } = verifyDeckCards(cards, loadCatalogCardNumbers());
+  assert.equal(cardsVerified, false);
+  assert.match(failure, /card not found in local official catalog: hBP99-999/);
+});
+
+test('verifyDeckCards fails when totals deviate from 1/50/20', () => {
+  const cards = cardsFromDecklog(decklogFromCommittedDeck('DUKHN'));
+  cards[0].count += 1; // oshi 1 → 2
+  const { cardsVerified, failure } = verifyDeckCards(cards, loadCatalogCardNumbers());
+  assert.equal(cardsVerified, false);
+  assert.match(failure, /2\/50\/20/);
+});
+
+test('normalizeCards requires a readable zone (never infers one)', () => {
+  assert.throws(
+    () => normalizeCards([{ cardNumber: 'hBP08-067', count: 4 }]),
+    /has no readable zone/,
+  );
+});
+
+// ── DIC-1029 (re-review): no sanitizing before verification ─────────────────
+// Dropping an unreadable slot or repairing a bad count destroys the evidence
+// the strict gate runs on: a repaired count can make a broken list add up to a
+// legal 1/50/20 deck, and dropping slots can empty a list into "no data".
+test('an unreadable copy count is rejected, never repaired to 1', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const count of [0, -1, 1.5, NaN, '4', null, undefined]) {
+    const cards = committedCards('DUKHN');
+    cards.find((c) => c.zone === 'oshi').count = count;
+    assert.throws(
+      () => normalizeCards(cards, catalog),
+      /has no readable copy count/,
+      `count ${JSON.stringify(count)} must be rejected`,
+    );
+  }
+});
+
+test('the oshi count-0 deck cannot normalize into a verified 1/50/20 deck', () => {
+  const cards = committedCards('DUKHN');
+  cards.find((c) => c.zone === 'oshi').count = 0;
+  // Before the fix this normalized to count 1 and passed the whole gate.
+  assert.throws(() => normalizeCards(cards, loadCatalogCardNumbers()), /readable copy count/);
+});
+
+test('an unreadable card number is rejected, never dropped from the list', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const cardNumber of ['', '   ', null, undefined, 42]) {
+    const cards = committedCards('DUKHN');
+    cards.find((c) => c.zone === 'main').cardNumber = cardNumber;
+    assert.throws(
+      () => normalizeCards(cards, catalog),
+      /has no readable card number/,
+      `cardNumber ${JSON.stringify(cardNumber)} must be rejected`,
+    );
+  }
+});
+
+test('a list of unreadable slots never sanitizes down to "no card data"', () => {
+  // Silently emptying a committed list is how a valid report got overwritten
+  // with zero cards; a non-empty list must fail loudly instead.
+  assert.throws(
+    () => normalizeCards([{ zone: 'main', cardNumber: '', count: 1 }], loadCatalogCardNumbers()),
+    /has no readable card number/,
+  );
+  assert.throws(() => normalizeCards([null], loadCatalogCardNumbers()), /is not a card object/);
+  // A genuinely absent list stays an honest unknown, not a failure.
+  const empty = normalizeCards([], loadCatalogCardNumbers());
+  assert.deepEqual(empty, { cards: [], verified: false, failure: null });
+});
+
+test('cardsFromDecklog rejects an unreadable copy count', () => {
+  for (const num of [0, -2, 2.5, undefined, '4']) {
+    assert.throws(
+      () => cardsFromDecklog({ list: [{ card_number: 'hBP07-063', num, type: 1 }] }),
+      /has no readable copy count/,
+      `num ${JSON.stringify(num)} must be rejected`,
+    );
+  }
+});
+
+// ── DIC-1029: committed (last-known-good) arrays get the SAME strict gate ────
+// A non-empty card list is not evidence of a complete deck. These cover the
+// committed-array path that previously skipped verification entirely.
+test('committed cards are verified only when they pass the full gate', () => {
+  const catalog = loadCatalogCardNumbers();
+  for (const code of ['DUKHN', '2H33J8']) {
+    const { verified, failure } = normalizeCards(committedCards(code), catalog);
+    assert.equal(verified, true, `${code}: ${failure}`);
+    assert.equal(failure, null);
+  }
+});
+
+test('a truncated committed card array is never verified', () => {
+  const cards = committedCards('DUKHN').filter((c) => c.zone !== 'main');
+  const { verified, failure } = normalizeCards(cards, loadCatalogCardNumbers());
+  assert.equal(verified, false);
+  assert.match(failure, /1 oshi \/ 50 main \/ 20 yell, got 1\/0\/20/);
+});
+
+test('a committed array with a single oshi card is never verified', () => {
+  // The exact shape a "last-known-good" file could be truncated to.
+  const { verified, failure } = normalizeCards(
+    [{ zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 }],
+    loadCatalogCardNumbers(),
+  );
+  assert.equal(verified, false);
+  assert.match(failure, /got 1\/0\/0/);
+});
+
+test('a committed array with a duplicate zone slot is never verified', () => {
+  const cards = committedCards('DUKHN');
+  const i = cards.findIndex((c) => c.zone === 'main' && c.count > 1);
+  const base = cards[i];
+  // Same 50 main cards, but one number now occupies two slots.
+  cards.splice(i, 1, { ...base, count: 1 }, { ...base, count: base.count - 1 });
+  const { verified, failure } = normalizeCards(cards, loadCatalogCardNumbers());
+  assert.equal(verified, false);
+  assert.match(failure, new RegExp(`duplicate card slot within zone: main:${base.cardNumber}`));
+});
+
+test('a committed array with a card missing from the catalog is never verified', () => {
+  const cards = committedCards('2H33J8');
+  cards.find((c) => c.zone === 'main').cardNumber = 'hBP99-999';
+  const { verified, failure } = normalizeCards(cards, loadCatalogCardNumbers());
+  assert.equal(verified, false);
+  assert.match(failure, /card not found in local official catalog: hBP99-999/);
+});
+
+test('no catalog → fail closed, catalog membership cannot be assumed', () => {
+  const { verified, failure } = normalizeCards(committedCards('DUKHN'));
+  assert.equal(verified, false);
+  assert.match(failure, /no card catalog supplied/);
+});
+
+test('normalizeEvent applies the gate to committed decks (verified + degraded)', () => {
+  const catalog = loadCatalogCardNumbers();
+  const raw = {
+    eventId: 'evt-committed',
+    name: 'committed',
+    sourceUrl: 'https://example.test',
+    decks: [
+      { decklogCode: 'DUKHN', rank: 1, cards: committedCards('DUKHN') },
+      // same deck, one main card dropped from the committed array
+      {
+        decklogCode: 'TRUNC',
+        rank: 1,
+        cards: committedCards('DUKHN').filter((c, i) => !(c.zone === 'main' && i % 7 === 0)),
+      },
+    ],
+  };
+  const e = normalizeEvent(raw, NOW, catalog);
+  const [good, degraded] = e.decks;
+  assert.equal(good.cardsVerified, true);
+  assert.equal(good.coverage, 'ranked');
+  assert.ok(degraded.cards.length > 0, 'cards are kept for inspection');
+  assert.equal(degraded.cardsVerified, false, 'a non-empty list is not a verified deck');
+  assert.equal(degraded.coverage, 'partial');
+});
+
+test('buildMonthlyReport threads the catalog to raw events', () => {
+  const raw = {
+    eventId: 'evt-x',
+    name: 'x',
+    sourceUrl: 'https://example.test',
+    decks: [{ decklogCode: 'DUKHN', rank: 1, cards: committedCards('DUKHN') }],
+  };
+  const withCatalog = buildMonthlyReport({
+    month: '2026-08',
+    events: [raw],
+    generatedAt: NOW,
+    catalogCardNumbers: loadCatalogCardNumbers(),
+  });
+  assert.equal(withCatalog.events[0].decks[0].cardsVerified, true);
+  const without = buildMonthlyReport({ month: '2026-08', events: [raw], generatedAt: NOW });
+  assert.equal(without.events[0].decks[0].cardsVerified, false);
+});
+
+test('classifyFreshness flags only a strictly newer official publication', () => {
+  assert.equal(classifyFreshness(null, '2026-08-09'), 'unknown');
+  assert.equal(classifyFreshness('2026-08-09T12:00:00Z', '2026-08-09'), 'same');
+  assert.equal(classifyFreshness('2026-08-10T12:00:00Z', '2026-08-09'), 'newer');
+  assert.equal(classifyFreshness('2026-08-01T12:00:00Z', '2026-08-09'), 'older');
 });
 
 console.log(`\nDIC-979 tournament-report: ${passed} tests passed`);

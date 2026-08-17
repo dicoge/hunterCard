@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * DIC-979 monthly tournament-report collector.
+ * DIC-979 monthly tournament-report collector (+ DIC-1024 live Deck Log import).
  *
  * Reads human-verified source records under data/tournaments/sources/*.json
  * (each tagged with the month it covers) and produces per-month normalized
  * reports plus an index, written to both data/tournaments/ and
  * public/data/tournaments/ (the app fetches from /data/... i.e. public/).
  *
- * Design goals from the issue:
+ * Design goals:
  *   • Incremental & idempotent: re-runs merge with last-known-good, never
  *     duplicate events/decks (dedupe by eventId / deckId in the shared core).
  *   • Change detection: only rewrites a month when its stable content changed,
@@ -18,24 +18,60 @@
  *     data/tournaments/collector-alerts.json).
  *   • Honest by construction: all normalization goes through the shared pure
  *     core (src/utils/tournamentReport.ts) which preserves unknowns.
+ *   • Strict on every run (DIC-1029): committed card arrays are revalidated
+ *     against 1/50/20 totals, duplicate zone slots and catalog membership on
+ *     every offline AND live run — being already committed is not evidence.
+ *     Data that fails is reported, marked unverified, and never overwrites a
+ *     report already on disk.
  *
- * Live network fetching is intentionally NOT enabled: the official column DOM
- * contract and its ToS/robots posture are not verified in this slice, so the
- * collector runs OFFLINE from committed source files. `--live` is a guarded
- * stub that refuses to run until that evidence passes (issue requirement 8).
+ * Live mode (--live, DIC-1024): only source files that opt in with
+ * `"liveDecklog": true` are fetched. For each of their decks that has a
+ * decklogCode and either no committed cards yet or a committed list that fails
+ * revalidation, the collector:
+ *   1. POSTs the public Deck Log view API (/system/app/api/view/{code}) with
+ *      same-origin headers, one request per deck, sequential, ≥500ms after
+ *      every attempt, bounded retries with backoff (no auth, no CAPTCHA, no
+ *      pagination — the response is a single JSON body). 401/403 are terminal;
+ *      429 is terminal unless the server sent a usable Retry-After, which buys
+ *      exactly one more attempt. The exact endpoint was verified against live
+ *      public decks (game_title_id 9 = hOCG).
+ *   2. Maps the three Deck Log lists to zones (p_list→oshi, list→main,
+ *      sub_list→yell) with the shared pure core, then validates 1/50/20 totals,
+ *      no duplicate slots within a zone, and every cardNumber against the local
+ *      official catalog (data/database.json). Only the normalized
+ *      {zone, cardNumber, version, count} fields survive — Deck Log's raw
+ *      response fields and official images are never stored or republished.
+ *   3. On verification failure: the single failing slot is reported, cards stay
+ *      unverified (cardsVerified:false) — never guessed.
+ *   4. Persists the fetched, validated cards back into the committed source
+ *      file (the last-known-good store), so a later OFFLINE run is
+ *      byte-identical (no churn, deterministic).
+ * Freshness discovery (--live): checks the official WordPress news feed
+ * (post_news, category 16 = イチ推し！デッキ紹介) and confirms each committed
+ * result tweet still resolves via fxtwitter. A strictly newer official
+ * publication is an ALERT, never an auto-collect; when discovery is
+ * unavailable the last-known-good data is preserved.
  *
- * Run:
+ *  Run:
+ *   # offline (deterministic, from committed sources — CI/manual default):
  *   node --experimental-strip-types --import ./scripts/register-ts.mjs \
- *     scripts/collect-tournament-reports.mjs [--dry-run] [--now <iso>] [--live]
+ *     scripts/collect-tournament-reports.mjs [--dry-run] [--now <iso>]
+ *   # live (fetch Deck Log card data + freshness discovery):
+ *   node --experimental-strip-types --import ./scripts/register-ts.mjs \
+ *     scripts/collect-tournament-reports.mjs --live [--skip-discovery] [--dry-run]
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   normalizeEvent,
-  buildMonthlyReport,
+  normalizeCards,
   mergeMonthlyReport,
   reportContentKey,
+  cardsFromDecklog,
+  verifyDeckCards,
+  classifyFreshness,
+  HOCG_DECKLOG_GAME_TITLE_ID,
 } from '../src/utils/tournamentReport.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,6 +80,10 @@ const ROOT = path.join(__dirname, '..');
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const LIVE = args.includes('--live');
+// Skip the external freshness probes (official news feed + tweet liveness) in
+// --live mode. Used in sandboxed CI / offline runners where those hosts are
+// unreachable; Deck Log collection itself still runs.
+const SKIP_DISCOVERY = args.includes('--skip-discovery');
 const nowFlagIdx = args.indexOf('--now');
 const NOW = nowFlagIdx >= 0 ? args[nowFlagIdx + 1] : new Date().toISOString();
 
@@ -75,21 +115,132 @@ function alert(level, message, extra = {}) {
   console.error(`${tag} ${message}`);
 }
 
-// Bounded-retry helper reserved for the future live path. Kept here so the
-// retry/backoff policy lives with the collector, not scattered per-source.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Minimum gap between Deck Log requests. Enforced in a `finally` around every
+// single attempt, so no downstream early exit (fetch failure, wrong game title,
+// validation failure) can shorten the gap to the next request.
+export const DECKLOG_MIN_REQUEST_INTERVAL_MS = 500;
+// A Retry-After longer than this means "come back later", not "sit here and
+// wait" — a scheduled run gives up instead of stalling.
+export const DECKLOG_MAX_RETRY_AFTER_MS = 60_000;
+
+/** Retry-After as milliseconds. Either delta-seconds or an HTTP date; anything
+ * else is null, which makes a 429 terminal rather than guessing a wait. */
+export function retryAfterMs(headerValue, now = Date.now()) {
+  if (typeof headerValue !== 'string') return null;
+  const raw = headerValue.trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return Number(raw) * 1000;
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
+}
+
+/** Decide whether a non-OK response is worth another identical request.
+ * 401/403 are settled answers — the retry re-sends the same anonymous request
+ * and gets the same reply, so it is pure extra load. 429 is only retried for
+ * the wait the server itself specified, once. */
+function classifyHttpFailure(res, { rateLimitRetried }) {
+  const status = res.status;
+  if (status === 401 || status === 403) {
+    return { terminal: true, waitMs: null, message: `HTTP ${status}: terminal, not retried` };
+  }
+  if (status === 429) {
+    const after = retryAfterMs(res.headers?.get?.('retry-after'));
+    if (after === null || after > DECKLOG_MAX_RETRY_AFTER_MS || rateLimitRetried) {
+      return { terminal: true, waitMs: null, message: 'HTTP 429: rate limited, not retried' };
+    }
+    return { terminal: false, waitMs: after, message: `HTTP 429: honoring Retry-After ${after}ms` };
+  }
+  return { terminal: false, waitMs: null, message: `HTTP ${status}` };
+}
+
+// Bounded-retry helper shared by the live paths. Retries with backoff, never
+// bypasses auth/CAPTCHA/rate limits — it simply re-issues the SAME public
+// request a browser would make, with a small delay between attempts.
 export async function fetchWithRetry(url, { retries = 3, backoffMs = 800 } = {}) {
   let lastErr;
+  let rateLimitGrantedAt = null;
   for (let attempt = 1; attempt <= retries; attempt++) {
+    let terminal = false;
+    let waitMs = null;
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const verdict = classifyHttpFailure(res, {
+          rateLimitRetried: rateLimitGrantedAt !== null,
+        });
+        terminal = verdict.terminal;
+        waitMs = verdict.waitMs;
+        if (waitMs !== null) rateLimitGrantedAt = attempt;
+        throw new Error(verdict.message);
+      }
       return await res.text();
     } catch (err) {
       lastErr = err;
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, backoffMs * attempt));
-      }
     }
+    if (terminal) break;
+    // A Retry-After-qualified 429 spends the whole retry budget: the attempt it
+    // bought is the last one, whatever it returns.
+    if (rateLimitGrantedAt !== null && attempt > rateLimitGrantedAt) break;
+    if (attempt < retries) await sleep(waitMs ?? backoffMs * attempt);
+  }
+  throw lastErr;
+}
+
+// JSON POST variant used by the Deck Log view API. The endpoint requires the
+// same-origin headers a browser would send (Origin/Referer/X-Requested-With)
+// and returns a single JSON body. One request per deck, sequential.
+export async function fetchDecklogView(code, { retries = 3, backoffMs = 800 } = {}) {
+  const url = `https://decklog.bushiroad.com/system/app/api/view/${encodeURIComponent(code)}`;
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    Accept: 'application/json, text/plain, */*',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Origin: 'https://decklog.bushiroad.com',
+    Referer: `https://decklog.bushiroad.com/view/${encodeURIComponent(code)}`,
+    'X-Requested-With': 'XMLHttpRequest',
+  };
+  let lastErr;
+  let rateLimitGrantedAt = null;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    let terminal = false;
+    let waitMs = null;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) {
+        const verdict = classifyHttpFailure(res, {
+          rateLimitRetried: rateLimitGrantedAt !== null,
+        });
+        terminal = verdict.terminal;
+        waitMs = verdict.waitMs;
+        if (waitMs !== null) rateLimitGrantedAt = attempt;
+        throw new Error(`${verdict.message} (${code})`);
+      }
+      const data = await res.json();
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error(`unexpected Deck Log response shape for ${code}`);
+      }
+      return data;
+    } catch (err) {
+      lastErr = err;
+    } finally {
+      // Pacing belongs to the request, not to the caller's control flow: every
+      // attempt — successful, failed, or terminal — is followed by the floor,
+      // so no `continue`/`return`/`throw` downstream can skip it.
+      await sleep(DECKLOG_MIN_REQUEST_INTERVAL_MS);
+    }
+    if (terminal) break;
+    // A Retry-After-qualified 429 spends the whole retry budget: the attempt it
+    // bought is the last one, whatever it returns.
+    if (rateLimitGrantedAt !== null && attempt > rateLimitGrantedAt) break;
+    if (attempt < retries) await sleep(waitMs ?? backoffMs * attempt);
   }
   throw lastErr;
 }
@@ -146,16 +297,237 @@ function writeStable(fileName, obj, stableFn) {
   return changed;
 }
 
-function main() {
-  if (LIVE) {
-    alert(
-      'error',
-      'Live fetch is disabled: official-column DOM contract and ToS/robots ' +
-        'evidence are not verified yet (issue #8). Run offline from committed ' +
-        'source files instead. Aborting.',
+// ── Live Deck Log import (DIC-1024) ──────────────────────────────────────────
+// Load the local official card catalog once; only card NUMBERS are kept, so the
+// verification is exact identity, never name or price fallback.
+function loadCatalogCardNumbers() {
+  const dbFile = path.join(ROOT, 'data', 'database.json');
+  const r = readJsonSafe(dbFile);
+  if (!r.ok) throw new Error(`cannot read local card catalog: ${r.error.message}`);
+  const cards = r.data?.cards;
+  if (!cards || typeof cards !== 'object') {
+    throw new Error('local card catalog has no cards map');
+  }
+  return new Set(Object.values(cards).map((c) => String(c.cardNumber ?? '').trim()));
+}
+
+// Catalog for the whole run. An unreadable catalog is an alert, not a crash:
+// with no catalog nothing can pass verification, so every card list is marked
+// unverified and the preserve rule below keeps the last valid report on disk.
+function loadCatalogOrAlert() {
+  try {
+    return loadCatalogCardNumbers();
+  } catch (err) {
+    alert('error', `${err.message}; no deck can be verified this run.`);
+    return null;
+  }
+}
+
+// Strict revalidation of a committed (last-known-good) card array. Committed
+// data is an input like any other: it is re-checked against 1/50/20 totals,
+// duplicate zone slots and catalog membership on EVERY run (DIC-1029).
+function revalidateCommittedCards(cards, catalogNumbers) {
+  try {
+    const { failure } = normalizeCards(cards, catalogNumbers);
+    return { ok: failure === null, failure };
+  } catch (err) {
+    return { ok: false, failure: err.message };
+  }
+}
+
+function listSourceFiles() {
+  if (!fs.existsSync(SOURCES_DIR)) return [];
+  return fs
+    .readdirSync(SOURCES_DIR)
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+}
+
+// Fetch + validate + persist card data for every opt-in deck that has a
+// decklogCode and no card list that currently passes verification. Writes back
+// into the source files (the last-known-good store) when data changed.
+async function liveCollectDecklogCards(catalogNumbers) {
+  const files = listSourceFiles();
+  let changedAny = false;
+  for (const file of files) {
+    const full = path.join(SOURCES_DIR, file);
+    const r = readJsonSafe(full);
+    if (!r.ok) continue;
+    const src = r.data;
+    if (src.liveDecklog !== true) continue; // only opt-in sources are fetched
+    if (!Array.isArray(src.events)) continue;
+
+    let fileChanged = false;
+    for (const evt of src.events) {
+      for (const deck of evt.decks ?? []) {
+        if (!deck?.decklogCode || !Array.isArray(deck.cards)) continue;
+        const code = deck.decklogCode;
+        if (deck.cards.length > 0) {
+          // Committed cards are trusted only while they still pass the strict
+          // gate. Valid → skip (no request, no churn). Invalid → report it and
+          // re-fetch, so a corrupted last-known-good list is repaired from the
+          // source instead of being republished as verified.
+          const { ok, failure } = revalidateCommittedCards(deck.cards, catalogNumbers);
+          if (ok) continue;
+          alert(
+            'error',
+            `Committed cards for ${code} failed revalidation: ${failure}; re-fetching.`,
+            { file, decklogCode: code, failure },
+          );
+        }
+        let fetched;
+        try {
+          fetched = await fetchDecklogView(code);
+        } catch (err) {
+          alert(
+            'error',
+            `Deck Log fetch failed for ${code}: ${err.message}`,
+            { file, decklogCode: code },
+          );
+          continue;
+        }
+        if (fetched.game_title_id !== HOCG_DECKLOG_GAME_TITLE_ID) {
+          alert(
+            'error',
+            `Deck Log ${code} is not an hOCG deck (game_title_id=${fetched.game_title_id})`,
+            { file, decklogCode: code },
+          );
+          continue;
+        }
+        try {
+          const cards = cardsFromDecklog(fetched);
+          const { cardsVerified, totals, failure } = verifyDeckCards(cards, catalogNumbers);
+          if (!cardsVerified) {
+            // Fail validation, report the single slot, and do NOT persist the
+            // cards: the deck stays unverified and a later run retries instead
+            // of trusting a half-parsed list.
+            alert(
+              'error',
+              `Deck Log ${code} failed validation: ${failure}`,
+              { file, decklogCode: code, failure },
+            );
+            continue;
+          }
+          deck.cards = cards;
+          deck.cardsVerified = true;
+          deck.fetchedAt = new Date().toISOString();
+          alert(
+            'info',
+            `Deck Log ${code}: verified ${totals.oshi}/${totals.main}/${totals.yell}`,
+            { file, decklogCode: code },
+          );
+          fileChanged = true;
+        } catch (err) {
+          alert(
+            'error',
+            `Deck Log ${code} could not be parsed: ${err.message}`,
+            { file, decklogCode: code },
+          );
+        }
+        // No pacing call here on purpose: the ≥500ms floor is enforced inside
+        // fetchDecklogView's finally, so the early `continue`s above (fetch
+        // failure, wrong game title, validation failure) cannot outrun it.
+      }
+    }
+    if (fileChanged && !DRY_RUN) {
+      fs.writeFileSync(full, JSON.stringify(src, null, 2) + '\n');
+      changedAny = true;
+    }
+  }
+  return changedAny;
+}
+
+// Freshness discovery (issue requirement 6). Newest official publication found
+// vs newest committed source publication; an unavailable source just warns and
+// preserves last-known-good.
+async function discoverFreshness() {
+  const knownDates = listSourceFiles()
+    .map((f) => readJsonSafe(path.join(SOURCES_DIR, f)))
+    .filter((r) => r.ok && r.data?.publishedDate)
+    .map((r) => String(r.data.publishedDate).trim())
+    .sort();
+  const knownNewest = knownDates[knownDates.length - 1] ?? null;
+
+  // 1) Official WordPress news feed: category 16 = イチ推し！デッキ紹介 column.
+  try {
+    const body = await fetchWithRetry(
+      'https://hololive-official-cardgame.com/wp-json/wp/v2/post_news' +
+        '?cat_news=16&per_page=10&_fields=date,link,title',
     );
+    const posts = JSON.parse(body);
+    const newest = Array.isArray(posts)
+      ? posts.map((p) => String(p.date ?? '').trim()).filter(Boolean).sort().pop() ?? null
+      : null;
+    const verdict = classifyFreshness(newest, knownNewest);
+    if (verdict === 'newer') {
+      alert(
+        'warn',
+        `A newer official deck-showcase column was published (${newest}); it has not ` +
+          'been parsed yet — last-known-good is preserved.',
+        { discovered: newest, known: knownNewest },
+      );
+    } else {
+      alert('info', `Official column freshness: ${verdict} (newest ${newest ?? 'n/a'})`, {
+        discovered: newest,
+        known: knownNewest,
+      });
+    }
+  } catch (err) {
+    alert('warn', `Official news feed unreachable (${err.message}); last-known-good preserved.`);
+  }
+
+  // 2) Result-tweet liveness via fxtwitter (source-discovery only).
+  const tweetCodes = [];
+  for (const f of listSourceFiles()) {
+    const r = readJsonSafe(path.join(SOURCES_DIR, f));
+    if (!r.ok) continue;
+    for (const t of r.data?.resultTweets ?? []) {
+      if (t?.code) tweetCodes.push({ file: f, code: String(t.code) });
+    }
+  }
+  for (const { file, code } of tweetCodes) {
+    try {
+      const body = await fetchWithRetry(`https://api.fxtwitter.com/status/${code}`);
+      const j = JSON.parse(body);
+      const ok = j?.code === 200 && j?.tweet?.id;
+      if (ok) {
+        alert('info', `Result tweet ${code} resolves (${j.tweet.date ?? 'date unknown'})`, { file });
+      } else {
+        alert('warn', `Result tweet ${code} no longer resolves; last-known-good preserved.`, {
+          file,
+          code,
+        });
+      }
+    } catch (err) {
+      alert('warn', `Result tweet ${code} check failed (${err.message}); last-known-good preserved.`, {
+        file,
+        code,
+      });
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+}
+
+function main() {
+  mainAsync().catch((err) => {
+    alert('error', err.message);
     finish(1);
-    return;
+  });
+}
+
+async function mainAsync() {
+  // Loaded in BOTH modes: offline runs revalidate committed card arrays against
+  // it just as live runs do.
+  const catalogNumbers = loadCatalogOrAlert();
+
+  if (LIVE) {
+    if (!fs.existsSync(SOURCES_DIR)) {
+      alert('error', `No sources directory at ${path.relative(ROOT, SOURCES_DIR)}`);
+      finish(1);
+      return;
+    }
+    if (!SKIP_DISCOVERY) await discoverFreshness();
+    await liveCollectDecklogCards(catalogNumbers);
   }
 
   if (!fs.existsSync(SOURCES_DIR)) {
@@ -164,10 +536,7 @@ function main() {
     return;
   }
 
-  const sourceFiles = fs
-    .readdirSync(SOURCES_DIR)
-    .filter((f) => f.endsWith('.json'))
-    .sort();
+  const sourceFiles = listSourceFiles();
 
   if (sourceFiles.length === 0) {
     alert('warn', 'No source files found; nothing to collect.');
@@ -176,6 +545,9 @@ function main() {
   // Group verified source events by their declared month. A per-file failure is
   // recorded as an alert and skipped — it must not drop other files' data.
   const byMonth = new Map(); // month -> { events: TournamentEvent[], source }
+  // Months whose source carries a card list that failed strict revalidation.
+  // Their existing report must not be overwritten with the degraded data.
+  const invalidMonths = new Set();
   for (const file of sourceFiles) {
     const full = path.join(SOURCES_DIR, file);
     const r = readJsonSafe(full);
@@ -195,9 +567,28 @@ function main() {
     const bucket = byMonth.get(src.month) ?? { events: [], source: src.source };
     for (const rawEvent of src.events) {
       try {
-        bucket.events.push(normalizeEvent(rawEvent, NOW));
+        const event = normalizeEvent(rawEvent, NOW, catalogNumbers);
+        // A deck that ships cards but does not come out verified means the
+        // committed array failed the strict gate. Name the exact slot and mark
+        // the month so the degraded data cannot replace a valid report.
+        for (const deck of event.decks) {
+          if (deck.cards.length === 0 || deck.cardsVerified) continue;
+          const { failure } = revalidateCommittedCards(deck.cards, catalogNumbers);
+          alert(
+            'error',
+            `Committed cards for ${deck.deckId} in ${file} failed revalidation: ${failure}`,
+            { file, month: src.month, deckId: deck.deckId, failure },
+          );
+          invalidMonths.add(src.month);
+        }
+        bucket.events.push(event);
       } catch (err) {
-        alert('error', `Bad event in ${file}: ${err.message}`, { file });
+        // An unreadable slot (bad shape, card number or copy count) throws out
+        // of normalization. The event carries no trustworthy card data, so the
+        // whole month is invalid — its existing report must not be rewritten
+        // from a source we could not read in full.
+        alert('error', `Bad event in ${file}: ${err.message}`, { file, month: src.month });
+        invalidMonths.add(src.month);
       }
     }
     if (src.source) bucket.source = src.source;
@@ -210,6 +601,24 @@ function main() {
   for (const month of months) {
     const { events, source } = byMonth.get(month);
     const existing = loadExistingReport(month);
+
+    // Invalid committed data never overwrites a report that is already on disk:
+    // the last genuinely valid generated output is kept byte-identical and the
+    // run exits non-zero. With no prior report there is nothing to preserve, so
+    // the month is still written — with the offending decks marked unverified.
+    if (invalidMonths.has(month) && existing) {
+      summary.push({
+        month,
+        events: existing.events?.length ?? 0,
+        observedDecks: existing.observedSampleSize ?? 0,
+        changed: false,
+        preserved: true,
+      });
+      alert('warn', `Invalid committed card data for ${month}; preserving last-known-good report.`, {
+        month,
+      });
+      continue;
+    }
 
     // Merge with last-known-good so a partial re-run never drops prior events.
     const merged = mergeMonthlyReport(existing, events, {
@@ -277,7 +686,9 @@ function main() {
 
   // ── Report ────────────────────────────────────────────────────────────────
   console.log('\n=== Tournament report collection ===');
-  console.log(`mode: ${DRY_RUN ? 'DRY-RUN (no files written)' : 'WRITE'}`);
+  console.log(`mode: ${LIVE ? 'LIVE (Deck Log fetch on)' : 'offline'}${
+    DRY_RUN ? ' · DRY-RUN (no files written)' : ''
+  }`);
   console.log(`sources: ${sourceFiles.length} file(s)`);
   for (const s of summary) {
     console.log(
