@@ -26,7 +26,7 @@ import {
 } from '../utils/tournamentReportState';
 import { useDeckStore } from '../store/deckStore';
 import { loadCardDatabase } from '../utils/deckCardData';
-import type { DeckCard } from '../utils/deckRules';
+import type { DeckCard, PriceRecord } from '../utils/deckRules';
 import {
   buildCatalogIndex,
   buildImportedDeck,
@@ -75,6 +75,10 @@ export default function TournamentReportScreen() {
   // Card catalog, keyed by card number. Stays null until the database resolves;
   // the import gate reports that state rather than enabling a guessing import.
   const [catalog, setCatalog] = useState<Map<string, DeckCard[]> | null>(null);
+  // Sell prices for the same database load. The import needs them to pick each
+  // unspecified slot's LOWEST ordinary printing, so an import must never run
+  // against a catalog without them.
+  const [priceRecords, setPriceRecords] = useState<PriceRecord[]>([]);
   const [imported, setImported] = useState<string | null>(null);
 
   useEffect(() => {
@@ -118,7 +122,9 @@ export default function TournamentReportScreen() {
     let alive = true;
     loadCardDatabase()
       .then((db) => {
-        if (alive) setCatalog(buildCatalogIndex(db.cards));
+        if (!alive) return;
+        setPriceRecords(db.priceRecords);
+        setCatalog(buildCatalogIndex(db.cards));
       })
       .catch(() => {
         // Leaving the catalog null keeps every import button disabled with its
@@ -140,6 +146,7 @@ export default function TournamentReportScreen() {
         event,
         deck,
         catalog,
+        priceRecords,
         useDeckStore.getState().decks.map((d) => d.name),
         new Date().toISOString(),
       );
@@ -150,7 +157,7 @@ export default function TournamentReportScreen() {
       setImported(draft.name);
       navigation.navigate('DeckEditor');
     },
-    [catalog, importDeck, navigation],
+    [catalog, priceRecords, importDeck, navigation],
   );
 
   if (loading && !index) {
