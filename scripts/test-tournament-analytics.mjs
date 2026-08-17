@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -265,5 +266,62 @@ assert.deepEqual(
   ['2026-09', '2026-08'],
   'index lists every generated month',
 );
+
+// ── Committed-artifact consistency (DIC-1065 / CR fix) ──────────────────────
+// The analytics file must record the live content SHA-256 of every report it
+// consumed.  If someone re-runs the collector (changing the report) but forgets
+// to re-run analytics, the embedded hash diverges and downstream consumers see
+// stale data.  This block catches that class of drift on committed files.
+const ROOT = path.resolve(import.meta.dirname, '..');
+const REPORTS_DIR = path.join(ROOT, 'data', 'tournaments');
+const ANALYTICS_DIR = path.join(ROOT, 'data', 'tournaments', 'analytics');
+const PUBLIC_ANALYTICS_DIR = path.join(ROOT, 'public', 'data', 'tournaments', 'analytics');
+const PUBLIC_REPORTS_DIR = path.join(ROOT, 'public', 'data', 'tournaments');
+
+function committedSha256(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath, 'utf8')).digest('hex');
+}
+
+const committedMonths = fs
+  .readdirSync(REPORTS_DIR)
+  .filter((f) => /^\d{4}-\d{2}\.json$/.test(f))
+  .map((f) => f.replace('.json', ''));
+
+for (const month of committedMonths) {
+  const reportPath = path.join(REPORTS_DIR, `${month}.json`);
+  const analyticsPath = path.join(ANALYTICS_DIR, `${month}.json`);
+  if (!fs.existsSync(analyticsPath)) continue;
+
+  const reportHash = committedSha256(reportPath);
+  const analytics = JSON.parse(fs.readFileSync(analyticsPath, 'utf8'));
+
+  for (const ir of analytics.inputReports ?? []) {
+    assert.equal(
+      ir.contentSha256,
+      reportHash,
+      `analytics ${month}.json inputReport contentSha256 must match live report hash`,
+    );
+    assert.equal(ir.file, `${month}.json`, 'inputReport file field must reference the report');
+    assert.ok(ir.generatedAt, 'inputReport must have a generatedAt timestamp');
+    assert.ok(ir.month, 'inputReport must have a month field');
+  }
+
+  // data/ and public/ mirrors must be byte-identical
+  const publicAnalyticsPath = path.join(PUBLIC_ANALYTICS_DIR, `${month}.json`);
+  assert.ok(fs.existsSync(publicAnalyticsPath), `public mirror of analytics ${month}.json must exist`);
+  assert.equal(
+    fs.readFileSync(analyticsPath, 'utf8'),
+    fs.readFileSync(publicAnalyticsPath, 'utf8'),
+    `data/ and public/ analytics ${month}.json must be byte-identical`,
+  );
+
+  const publicReportPath = path.join(PUBLIC_REPORTS_DIR, `${month}.json`);
+  assert.ok(fs.existsSync(publicReportPath), `public mirror of report ${month}.json must exist`);
+  assert.equal(
+    fs.readFileSync(reportPath, 'utf8'),
+    fs.readFileSync(publicReportPath, 'utf8'),
+    `data/ and public/ report ${month}.json must be byte-identical`,
+  );
+}
 
 console.log('test-tournament-analytics: PASS');
