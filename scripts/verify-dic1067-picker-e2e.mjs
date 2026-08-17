@@ -8,7 +8,8 @@
 //   • zone tabs stay visible with live progress while the grid scrolls
 //   • clicking a card adds one copy; the grid badge and the zone progress agree
 //   • the deck saves, survives a reload, and reopens with the same contents
-//   • 390px renders at least two columns, keeps tap targets >= 44px and does not
+//   • 390px renders at least two columns, keeps tap targets >= 44px — zone tabs,
+//     search modes, slot steppers and the per-card ＋擁有 control — and does not
 //     overflow horizontally
 //   • the copy retired by DIC-1067 §9 appears nowhere
 //
@@ -317,7 +318,9 @@ async function run(label, viewport) {
     const columns = Math.max(0, ...tops.values());
     const tabs = document.querySelector('[data-testid="deck-zone-tabs"]');
     const tabRect = tabs ? tabs.getBoundingClientRect() : null;
-    const targets = [...document.querySelectorAll('[data-testid^="deck-zone-tab-"],[data-testid^="search-mode-"],[data-testid^="deck-slot-inc-"],[data-testid^="deck-slot-dec-"],[data-testid="open-filters"]')]
+    // The per-card ＋擁有 control lives in the grid, so it is audited here too:
+    // a thumb lands on it as readily as on a zone tab (DIC-1074).
+    const targets = [...document.querySelectorAll('[data-testid^="deck-zone-tab-"],[data-testid^="search-mode-"],[data-testid^="deck-slot-inc-"],[data-testid^="deck-slot-dec-"],[data-testid="open-filters"],[data-testid^="collection-add-"]')]
       .map((n) => ({ id: n.getAttribute('data-testid'), h: Math.round(n.getBoundingClientRect().height) }))
       .filter((t) => t.h > 0);
     return {
@@ -326,11 +329,15 @@ async function run(label, viewport) {
       tabsVisible: !!tabRect && tabRect.top < window.innerHeight && tabRect.bottom > 0,
       overflow: document.documentElement.scrollWidth - window.innerWidth,
       smallTargets: targets.filter((t) => t.h < 44),
+      collectionAdds: targets.filter((t) => t.id.startsWith('collection-add-')).length,
     };
   });
   check('卡片格線至少兩欄', () => assert.ok(layout.columns >= 2, `only ${layout.columns} column(s)`));
   check('區域分頁與進度保持可見', () => assert.ok(layout.tabsVisible));
   check('沒有水平溢出', () => assert.ok(layout.overflow <= 1, `scrollWidth exceeds viewport by ${layout.overflow}px`));
+  check('每張卡的＋擁有控制項都納入稽核', () => assert.ok(
+    layout.collectionAdds > 0, 'no collection-add control was measured',
+  ));
   check('主要點擊目標至少 44px', () => assert.deepEqual(layout.smallTargets, []));
   check('格線沒有一次渲染整個卡表', () => assert.ok(layout.cells <= 120, `${layout.cells} cells rendered at once`));
 

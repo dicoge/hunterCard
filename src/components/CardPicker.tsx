@@ -319,6 +319,10 @@ export function CardPickerGrid({
 // 390px viewport, where the grid renders two columns.
 const CELL_MIN_HEIGHT = 168;
 
+// Every control a thumb can land on carries this floor, including the ＋擁有
+// button tucked into the cell footer (DIC-1074).
+const TOUCH_TARGET = 44;
+
 const styles = StyleSheet.create({
   input: {
     backgroundColor: COLORS.surfaceLight, color: COLORS.text, borderRadius: 8,
@@ -357,7 +361,7 @@ const styles = StyleSheet.create({
   cellFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 4 },
   cellMeta: { color: COLORS.textSecondary, fontSize: 11, flexShrink: 1 },
   ownBtn: {
-    minHeight: 30, paddingHorizontal: 8, justifyContent: 'center', borderRadius: 6,
+    minHeight: TOUCH_TARGET, paddingHorizontal: 8, justifyContent: 'center', borderRadius: 6,
     borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface,
   },
   ownBtnText: { color: COLORS.text, fontSize: 11, fontWeight: 'bold' },
