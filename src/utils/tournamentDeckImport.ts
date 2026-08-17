@@ -68,10 +68,6 @@ import {
  *  to. No price record can ever carry it, so it prices NO_EXACT_PRICE. */
 export const UNRESOLVED_PRINTING = 'UNRESOLVED';
 
-/** The exact wording a defaulted slot must carry in the UI. Shared so the copy
- *  cannot drift between the deck editor and its regression test. */
-export const DEFAULTED_PRINTING_NOTE = '來源未指定版本，已使用最低普通版本估價';
-
 export const ZONES: DeckZone[] = ['oshi', 'main', 'yell'];
 
 export interface ImportedDeckDraft {

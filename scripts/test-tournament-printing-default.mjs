@@ -33,7 +33,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  DEFAULTED_PRINTING_NOTE,
   UNRESOLVED_PRINTING,
   buildCatalogIndex,
   buildImportedDeck,
@@ -583,14 +582,9 @@ await test('the repair survives a reload without the user re-importing', async (
   assert.equal(computeGap(fixed, {}, db.priceRecords).total, 13220);
 });
 
-// ── 9. The UI copy the defaulted state must state ────────────────────────────
-// Only the constant is pinned here. Whether the deck editor actually RENDERS it
-// is asserted against the real component tree by
-// scripts/test-tournament-default-banner-render.mjs (DIC-1064) — the source-text
-// check this used to make also passed off the import line and the per-card
-// label, so it survived deleting the banner outright.
-await test('the defaulted state has its exact user-facing wording', () => {
-  assert.equal(DEFAULTED_PRINTING_NOTE, '來源未指定版本，已使用最低普通版本估價');
-});
+// The defaulted state is deliberately SILENT in the UI (DIC-1064): the printing
+// it selected is shown, the reason it was selected is not. That absence is
+// asserted against the real component tree by
+// scripts/test-deck-editor-copy.mjs, so nothing is pinned here.
 
 console.log(`\nDIC-1060 tournament ordinary-printing default: ${passed} tests passed`);
