@@ -295,7 +295,15 @@ for (const month of committedMonths) {
   const reportHash = committedSha256(reportPath);
   const analytics = JSON.parse(fs.readFileSync(analyticsPath, 'utf8'));
 
-  for (const ir of analytics.inputReports ?? []) {
+  // inputReports must be a non-empty array for months that produced decks
+  assert.ok(Array.isArray(analytics.inputReports), `${month} analytics must have inputReports array`);
+  assert.ok(analytics.inputReports.length > 0, `${month} analytics inputReports must not be empty`);
+
+  // The expected month entry must exist in inputReports
+  const matchingInputReport = analytics.inputReports.find((ir) => ir.month === month);
+  assert.ok(matchingInputReport, `${month} analytics must contain an inputReport for month ${month}`);
+
+  for (const ir of analytics.inputReports) {
     assert.equal(
       ir.contentSha256,
       reportHash,
@@ -304,6 +312,17 @@ for (const month of committedMonths) {
     assert.equal(ir.file, `${month}.json`, 'inputReport file field must reference the report');
     assert.ok(ir.generatedAt, 'inputReport must have a generatedAt timestamp');
     assert.ok(ir.month, 'inputReport must have a month field');
+  }
+
+  // Every deck in the analytics must carry the correct sourceReportHash —
+  // this is the mutation-sensitive check that prevents a bogus hash from
+  // slipping through when only inputReports is fixed but decks are not.
+  for (const dk of analytics.decks ?? []) {
+    assert.equal(
+      dk.sourceReportHash,
+      reportHash,
+      `analytics ${month}.json deck ${dk.deckId} sourceReportHash must equal the live report hash`,
+    );
   }
 
   // data/ and public/ mirrors must be byte-identical
@@ -322,6 +341,55 @@ for (const month of committedMonths) {
     fs.readFileSync(publicReportPath, 'utf8'),
     `data/ and public/ report ${month}.json must be byte-identical`,
   );
+}
+
+// ── Deterministic regeneration comparison (preferred CR proof) ───────────────
+// Re-run analytics CLI against the committed reports and byte-compare the
+// output.  This proves the committed artifacts are exactly what the code
+// produces, not hand-patched hashes.
+const tmpArtifact = fs.mkdtempSync(path.join(os.tmpdir(), 'hocg-artifact-'));
+const tmpTournaments = path.join(tmpArtifact, 'tournaments');
+const tmpAnalytics = path.join(tmpArtifact, 'analytics');
+fs.mkdirSync(tmpTournaments, { recursive: true });
+// Copy committed reports into the temp dir
+for (const month of committedMonths) {
+  const src = path.join(REPORTS_DIR, `${month}.json`);
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, path.join(tmpTournaments, `${month}.json`));
+  }
+}
+const analyzeScript = path.join(ROOT, 'scripts', 'analyze-tournaments.mjs');
+execFileSync(process.execPath, [analyzeScript, '--tournaments-dir', tmpTournaments, '--out-dir', tmpAnalytics], {
+  cwd: ROOT,
+  stdio: 'pipe',
+});
+for (const month of committedMonths) {
+  const generated = path.join(tmpAnalytics, `${month}.json`);
+  if (!fs.existsSync(generated)) continue;
+  const committed = path.join(ANALYTICS_DIR, `${month}.json`);
+  assert.equal(
+    fs.readFileSync(generated, 'utf8'),
+    fs.readFileSync(committed, 'utf8'),
+    `analytics ${month}.json must be byte-identical to deterministic regeneration`,
+  );
+}
+// Also verify the regenerated analytics pass the same deck sourceReportHash checks
+for (const month of committedMonths) {
+  const generated = path.join(tmpAnalytics, `${month}.json`);
+  if (!fs.existsSync(generated)) continue;
+  const reportHash = committedSha256(path.join(tmpTournaments, `${month}.json`));
+  const gen = JSON.parse(fs.readFileSync(generated, 'utf8'));
+  for (const dk of gen.decks ?? []) {
+    assert.equal(
+      dk.sourceReportHash,
+      reportHash,
+      `regenerated ${month}.json deck ${dk.deckId} sourceReportHash must equal report hash`,
+    );
+  }
+  assert.ok(gen.inputReports?.length > 0, `regenerated ${month}.json inputReports must not be empty`);
+  for (const ir of gen.inputReports) {
+    assert.equal(ir.contentSha256, reportHash, `regenerated ${month}.json inputReport hash must match`);
+  }
 }
 
 console.log('test-tournament-analytics: PASS');
