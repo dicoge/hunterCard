@@ -1,10 +1,12 @@
 /**
  * Simple test endpoint to verify Vercel function deployment
  */
+import { toNodeHandler } from './_lib/node-adapter';
+
 export const config = { runtime: 'nodejs' };
 export const maxDuration = 10;
 
-export default async function handler(req: Request): Promise<Response> {
+async function webHandler(req: Request): Promise<Response> {
   return new Response(JSON.stringify({
     success: true,
     message: 'API function is working!',
@@ -16,3 +18,5 @@ export default async function handler(req: Request): Promise<Response> {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+export default toNodeHandler(webHandler);

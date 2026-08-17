@@ -1,11 +1,11 @@
 // hunterCard Search API
-// @deprecated — Vercel Serverless Functions (Node runtime) timeout on this project.
-// Search is now handled client-side in SearchResultsScreen.tsx which fetches
-// /data/database.json directly and runs the same matching/mapping logic in JS.
-// This file is kept for reference but no longer called by the frontend.
+// @deprecated — search is handled client-side in SearchResultsScreen.tsx, which
+// fetches /data/database.json directly and runs the same matching/mapping logic
+// in JS. This file is kept for reference but no longer called by the frontend.
 
 import fs from 'fs';
 import path from 'path';
+import { toNodeHandler } from './_lib/node-adapter';
 
 const SERIES_NAMES: Record<string, string> = {
   hBP01: 'ブルーミングレディアンス', hBP02: 'クインテットスペクトラム',
@@ -55,7 +55,7 @@ async function initDatabase(): Promise<void> {
 
 export const config = { runtime: 'nodejs' };
 
-export default async function handler(req: Request) {
+async function webHandler(req: Request) {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -180,3 +180,5 @@ export default async function handler(req: Request) {
     });
   }
 }
+
+export default toNodeHandler(webHandler);

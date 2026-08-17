@@ -26,13 +26,20 @@
  */
 import assert from 'node:assert/strict';
 import { resetKv, advanceKvClock, setKvHook, kv } from './fixtures/kv-mock.mjs';
-import runHandler from '../api/push/price-alert-run.ts';
-import configHandler from '../api/push/price-alerts.ts';
+import nodeBoundary from './fixtures/node-boundary.cjs';
+import runNodeHandler from '../api/push/price-alert-run.ts';
+import configNodeHandler from '../api/push/price-alerts.ts';
 import {
   claimAlertSend, releaseAlertClaim, commitAlertClaim, getAllPriceAlerts,
   ALERT_CLAIM_LEASE_MS,
 } from '../api/_lib/kv-storage.ts';
 import { armStateKey, priceAlertKey } from '../src/utils/priceAlerts.ts';
+
+// Each route's default export is the Node `(req, res)` function Vercel invokes;
+// drive it through that real boundary rather than calling it as a Web handler.
+const { asWebHandler } = nodeBoundary;
+const runHandler = asWebHandler(runNodeHandler);
+const configHandler = asWebHandler(configNodeHandler);
 
 const SECRET = 'test-internal-secret';
 const TOKEN = 'ExponentPushToken[aaaaaaaaaaaaaaaaaaaaaa]';

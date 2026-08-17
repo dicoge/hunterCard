@@ -9,6 +9,7 @@ import {
   getPriceAlertsForToken, countPriceAlertsForToken, upsertPriceAlert, removePriceAlert,
 } from '../_lib/kv-storage';
 import { parsePriceAlertRequest, MAX_ALERTS_PER_TOKEN } from '../_lib/price-alert-request';
+import { toNodeHandler } from '../_lib/node-adapter';
 
 export const config = { runtime: 'nodejs' };
 
@@ -22,7 +23,7 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: CORS_HEADERS });
 }
 
-export default async function handler(req: Request) {
+async function webHandler(req: Request) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
@@ -49,3 +50,5 @@ export default async function handler(req: Request) {
     return json({ error: err.message || 'Price alert update failed' }, 500);
   }
 }
+
+export default toNodeHandler(webHandler);

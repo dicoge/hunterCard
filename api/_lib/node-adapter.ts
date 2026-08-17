@@ -69,8 +69,14 @@ async function writeWebResponse(res: VercelResponse, webRes: Response): Promise<
     if (key === 'content-length' || key === 'transfer-encoding') return;
     res.setHeader(key, value);
   });
-  const text = await webRes.text();
-  res.send(text);
+  // Bytes, not text: `get-image` answers with image data, which a `text()`
+  // round-trip would corrupt.
+  const body = Buffer.from(await webRes.arrayBuffer());
+  if (body.length === 0) {
+    res.end();
+    return;
+  }
+  res.send(body);
 }
 
 export function toNodeHandler(handler: WebHandler) {
