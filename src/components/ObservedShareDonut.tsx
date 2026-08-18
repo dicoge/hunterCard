@@ -1,17 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { COLORS } from '../constants';
+import { useTranslation } from '../i18n';
 import { donutArcs, type DonutModel } from '../utils/tournamentDonut';
 
-// Each wedge is drawn by intersecting a rotated half-disc with a fixed
-// half-plane — the classic CSS pie trick, expressed in plain Views. That keeps
-// the chart dependency-free (no SVG/canvas runtime) and identical on web and
-// native. Wedges wider than a half turn are pre-split by donutArcs().
-//
-// Wedges are only pressable on web, where `overflow: hidden` clips pointer
-// events to the visible wedge. On native the clip is visual only, so a rotated
-// wedge's touch rect would overlap its neighbours and select the wrong slice —
-// there the legend rows below are the selection control.
 const WEDGE_PRESSABLE = Platform.OS === 'web';
 
 const MIN_SIZE = 140;
@@ -27,11 +19,10 @@ export default function ObservedShareDonut({
   selectedKey: string | null;
   onSelect: (key: string | null) => void;
 }) {
+  const { t } = useTranslation();
   const [boxWidth, setBoxWidth] = useState<number | null>(null);
   const arcs = useMemo(() => donutArcs(model.slices), [model.slices]);
 
-  // Clamped to the measured column so a 390px viewport never overflows
-  // horizontally and a wide desktop column does not stretch the ring.
   const size = Math.round(
     Math.max(MIN_SIZE, Math.min(MAX_SIZE, boxWidth ?? MAX_SIZE)),
   );
@@ -45,16 +36,10 @@ export default function ObservedShareDonut({
         style={styles.chartBox}
         onLayout={(e) => setBoxWidth(e.nativeEvent.layout.width)}
       >
-        {/* No accessibilityRole here on purpose: an image/graphic role would make
-            the slice buttons below presentational and hide them from assistive
-            tech. The legend rows carry the same labels in text. */}
         <View style={{ width: size, height: size }} testID="donut-chart">
           {arcs.map((arc) => {
             const dimmed = selectedKey != null && selectedKey !== arc.sliceKey;
             const slice = model.slices.find((s) => s.key === arc.sliceKey);
-            // The half-disc IS the touch target: its border radius plus the
-            // parent's clip make the hit region exactly the visible wedge, so
-            // neighbouring wedges never steal each other's clicks.
             const wedgeStyle = [
               styles.halfDisc,
               {
@@ -67,9 +52,6 @@ export default function ObservedShareDonut({
               },
             ];
             return (
-              // Every wrapper is box-none: each one spans the whole chart, so a
-              // later wedge's transparent layers would otherwise swallow the
-              // clicks meant for the wedges drawn before it.
               <View
                 key={arc.key}
                 pointerEvents="box-none"

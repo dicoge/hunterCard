@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useTranslation } from '../i18n';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { buildSeriesCatalog, SeriesCatalog } from '../utils/seriesCatalog';
-
-// ── Module-level cache for series data ──
 
 let cachedSeries: SeriesCatalog | null = null;
 let seriesFetchPromise: Promise<SeriesCatalog> | null = null;
@@ -15,8 +14,6 @@ async function fetchSeriesData(): Promise<SeriesCatalog> {
   if (seriesFetchPromise) return seriesFetchPromise;
 
   seriesFetchPromise = (async () => {
-    // Load both files in parallel. On native these resolve from the bundled,
-    // pre-sanitized asset; on web from the same-origin /data/* URL (staticData).
     const [db, seriesNames] = await Promise.all([
       loadDatabaseJson(),
       loadSeriesNamesJson(),
@@ -30,7 +27,6 @@ async function fetchSeriesData(): Promise<SeriesCatalog> {
   return seriesFetchPromise;
 }
 
-// Color quick access buttons (static, unchanged)
 const COLOR_BUTTONS = [
   { label: '白', query: '白色', color: '#ffffff' },
   { label: '青', query: '青色', color: '#3b82f6' },
@@ -41,6 +37,7 @@ const COLOR_BUTTONS = [
 ];
 
 export default function HomeScreen({ navigation }: any) {
+  const { t } = useTranslation();
   const [seriesData, setSeriesData] = useState<SeriesCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const { isDesktop } = useBreakpoint();
@@ -59,8 +56,8 @@ export default function HomeScreen({ navigation }: any) {
        <View style={isDesktop ? styles.innerDesktop : styles.inner}>
         {/* Hero Section */}
         <View style={styles.hero}>
-          <Text style={styles.heroTitle}>hololive Card Game</Text>
-          <Text style={styles.heroSub}>卡牌查詢 · 非官方工具</Text>
+          <Text style={styles.heroTitle}>{t('home_hero_title')}</Text>
+          <Text style={styles.heroSub}>{t('home_hero_sub')}</Text>
         </View>
 
         {/* Search Input */}
@@ -70,20 +67,20 @@ export default function HomeScreen({ navigation }: any) {
           activeOpacity={0.7}
         >
           <Text style={styles.searchIcon}>🔍</Text>
-          <Text style={styles.searchPlaceholder}>卡號或成員名稱...</Text>
+          <Text style={styles.searchPlaceholder}>{t('home_search_placeholder')}</Text>
         </TouchableOpacity>
 
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>載入系列資料...</Text>
+            <Text style={styles.loadingText}>{t('home_loading_series')}</Text>
           </View>
         ) : seriesData ? (
           <>
             {/* Booster Packs */}
             {seriesData.boosters.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>ブースターパック</Text>
+                <Text style={styles.sectionTitle}>{t('home_boosters')}</Text>
                 <View style={styles.cardGrid}>
                   {seriesData.boosters.map((item) => (
                     <TouchableOpacity
@@ -103,7 +100,7 @@ export default function HomeScreen({ navigation }: any) {
             {/* Starter Decks */}
             {seriesData.starters.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>スタートデッキ</Text>
+                <Text style={styles.sectionTitle}>{t('home_starters')}</Text>
                 <View style={styles.cardGrid}>
                   {seriesData.starters.map((item) => (
                     <TouchableOpacity
@@ -148,7 +145,7 @@ export default function HomeScreen({ navigation }: any) {
 
         {/* Color Search */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>カラー</Text>
+          <Text style={styles.sectionTitle}>{t('home_color_filter')}</Text>
           <View style={styles.colorGrid}>
             {COLOR_BUTTONS.map((btn) => (
               <TouchableOpacity
@@ -198,72 +195,95 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 4,
+    backgroundColor: '#141414',
     marginHorizontal: 16,
     marginTop: 20,
-    marginBottom: 20,
-    padding: 14,
+    marginBottom: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#333333',
+    borderColor: '#262626',
   },
-  searchIcon: { fontSize: 16, marginRight: 12 },
-  searchPlaceholder: { color: '#666666', fontSize: 14 },
-  loadingContainer: { padding: 40, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { color: '#666666', fontSize: 14, marginTop: 12 },
-  errorText: { color: '#ef4444', fontSize: 14 },
-  section: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  searchIcon: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+  searchPlaceholder: {
+    color: '#666666',
+    fontSize: 15,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    color: '#666666',
+    fontSize: 14,
+    marginTop: 12,
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 14,
+  },
+  section: {
+    marginHorizontal: 16,
+    marginBottom: 28,
+  },
   sectionTitle: {
-    color: '#888888',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 2,
-    marginBottom: 16,
-    textTransform: 'uppercase',
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 14,
   },
   cardGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   cardBtn: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 2,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    width: '48%',
+    backgroundColor: '#141414',
+    padding: 14,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#333333',
-    width: '31%',
+    borderColor: '#262626',
   },
   cardBtnDesktop: {
-    width: 200,
-    flexGrow: 0,
+    width: '23%',
   },
   cardLabel: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 2,
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   cardName: {
-    color: '#666666',
-    fontSize: 10,
-    fontWeight: '400',
+    color: '#cccccc',
+    fontSize: 13,
   },
   colorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   colorBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 2,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    paddingHorizontal: 14,
+    borderRadius: 8,
     borderWidth: 1,
     gap: 8,
   },
-  colorDot: { width: 8, height: 8, borderRadius: 4 },
-  colorBtnText: { fontSize: 13, fontWeight: '500', letterSpacing: 1 },
+  colorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  colorBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

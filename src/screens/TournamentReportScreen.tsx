@@ -12,6 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
 import { COLORS } from '../constants';
 import { openUrl } from '../utils/openUrl';
+import { useTranslation } from '../i18n';
 import type {
   MonthlyReport,
   TournamentIndex,
@@ -40,6 +41,10 @@ import {
   SMALL_SAMPLE_MIN,
   type DonutDimension,
 } from '../utils/tournamentDonut';
+import {
+  buildTournamentMonthlySummary,
+  type TournamentMonthlySummaryModel,
+} from '../utils/tournamentSummary';
 import ObservedShareDonut from '../components/ObservedShareDonut';
 import { useDeckStore } from '../store/deckStore';
 import { loadCardDatabase } from '../utils/deckCardData';
@@ -50,12 +55,9 @@ import {
   evaluateImport,
 } from '../utils/tournamentDeckImport';
 
-const DIMENSIONS: Array<{ key: DonutDimension; label: string }> = [
-  { key: 'archetype', label: '牌型' },
-  // Oshi is published per deck, so grouping by it needs no inference. Color is
-  // deliberately absent: a deck can be multi-color, and splitting it across
-  // color slices would invent a breakdown the source never stated.
-  { key: 'oshi', label: '推し' },
+const DIMENSIONS: Array<{ key: DonutDimension; labelKey: string }> = [
+  { key: 'archetype', labelKey: 'search_filter_category' },
+  { key: 'oshi', labelKey: 'deck_zone_oshi' },
 ];
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -71,16 +73,13 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 export default function TournamentReportScreen() {
+  const { t, language } = useTranslation();
   const [state, dispatch] = useReducer(tournamentReportReducer, initialTournamentReportState);
   const { index, scope } = state;
   const navigation = useNavigation<DrawerNavigationProp<MainDrawerParamList>>();
   const importDeck = useDeckStore((s) => s.importDeck);
-  // Card catalog, keyed by card number. Stays null until the database resolves;
-  // the import gate reports that state rather than enabling a guessing import.
+
   const [catalog, setCatalog] = useState<Map<string, DeckCard[]> | null>(null);
-  // Sell prices for the same database load. The import needs them to pick each
-  // unspecified slot's LOWEST ordinary printing, so an import must never run
-  // against a catalog without them.
   const [priceRecords, setPriceRecords] = useState<PriceRecord[]>([]);
   const [imported, setImported] = useState<string | null>(null);
   const [dimension, setDimension] = useState<DonutDimension>('archetype');
@@ -101,10 +100,6 @@ export default function TournamentReportScreen() {
     };
   }, []);
 
-  // The newest MAX_SCOPE_MONTHS months are fetched once each, because the
-  // default scope aggregates them. A month added to the index later enters the
-  // window with no code change; the archive behind the window is never
-  // requested, so neither the request count nor the resident data grows with it.
   const windowMonths = useMemo(() => scopeWindow(index), [index]);
   const windowKey = windowMonths.join(',');
   useEffect(() => {
@@ -138,10 +133,7 @@ export default function TournamentReportScreen() {
         setPriceRecords(db.priceRecords);
         setCatalog(buildCatalogIndex(db.cards));
       })
-      .catch(() => {
-        // Leaving the catalog null keeps every import button disabled with its
-        // own reason — an unavailable database must never soften the gate.
-      });
+      .catch(() => {});
     return () => {
       alive = false;
     };
@@ -162,8 +154,6 @@ export default function TournamentReportScreen() {
         useDeckStore.getState().decks.map((d) => d.name),
         new Date().toISOString(),
       );
-      // buildImportedDeck re-runs the fail-closed gate and returns null when it
-      // rejects, so a partial or unverified deck can never reach the store.
       if (!draft) return;
       importDeck(draft);
       setImported(draft.name);
@@ -177,16 +167,21 @@ export default function TournamentReportScreen() {
     () => buildDonutModel(reports, scope, dimension),
     [reports, scope, dimension],
   );
+  const summary = useMemo(
+    () => buildTournamentMonthlySummary(reports, scope, language),
+    [reports, scope, language],
+  );
+
   const allEvents = useMemo(() => reports.flatMap((r) => r.events), [reports]);
   const events = useMemo(
     () => filterEventsBySlice(allEvents, selectedKey, dimension),
     [allEvents, selectedKey, dimension],
   );
+
   const loading = scopeLoading(state);
   const error = scopeError(state);
   const selectedSlice = model.slices.find((s) => s.key === selectedKey) ?? null;
-  // A slice that no longer exists (scope or dimension changed under it) must not
-  // silently filter everything away.
+
   useEffect(() => {
     if (selectedKey != null && !model.slices.some((s) => s.key === selectedKey)) {
       setSelectedKey(null);
@@ -216,18 +211,15 @@ export default function TournamentReportScreen() {
   if (!index) {
     return (
       <View style={styles.center}>
-        <Text style={styles.emptyTitle}>🏆 賽事月報</Text>
+        <Text style={styles.emptyTitle}>{t('tournament_title')}</Text>
         <Text style={styles.emptyText}>{state.error ?? '目前沒有可用的賽事月報資料。'}</Text>
       </View>
     );
   }
 
   const hasData = reports.length > 0;
-  // A scope missing any of its months is never labeled as the complete set. The
-  // heading is the claim a reader takes at face value, so it degrades to
-  // "部分月份" and the notice below names exactly what is in and what is out.
   const partial = scopeIsPartial(state);
-  const scopeLabel = scope !== ALL_SCOPE ? scope : partial ? '部分月份' : '全部月份';
+  const scopeLabel = scope !== ALL_SCOPE ? scope : partial ? '部分月份' : t('tournament_scope_all');
   const incomplete = incompleteMonths(state);
   const omitted = omittedMonths(state);
   const partialNotice = partial
@@ -246,7 +238,7 @@ export default function TournamentReportScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.h1}>🏆 每月賽事月報</Text>
+        <Text style={styles.h1}>{t('tournament_title')}</Text>
 
         {imported ? (
           <View style={styles.importedBanner}>
@@ -256,11 +248,10 @@ export default function TournamentReportScreen() {
           </View>
         ) : null}
 
-        {/* Scope selector: all verified months by default, then each month the
-            index publishes. */}
+        {/* Scope selector */}
         <View style={styles.monthRow}>
           {[
-            { month: ALL_SCOPE, label: '全部' },
+            { month: ALL_SCOPE, label: t('tournament_scope_all') },
             ...windowMonths.map((m) => ({ month: m, label: m })),
           ].map((opt) => {
             const active = opt.month === scope;
@@ -288,9 +279,6 @@ export default function TournamentReportScreen() {
           </Text>
         ) : null}
 
-        {/* Suppressed only while the first months are still in flight, where the
-            spinner already says the same thing and there is nothing to overstate
-            yet. */}
         {partialNotice && (hasData || !loading) ? (
           <Text style={styles.partialNotice} testID="scope-partial">
             ⚠ 這不是全部月份的資料：{partialNotice}。占比僅以上列已納入月份為母體。
@@ -299,6 +287,103 @@ export default function TournamentReportScreen() {
 
         {hasData && (
           <>
+            {/* ── Monthly Summary Block (DIC-1085) ── */}
+            <View style={styles.summaryCard} testID="tournament-monthly-summary">
+              <Text style={styles.summaryTitle}>{t('tournament_summary_title')}</Text>
+              <View style={styles.summaryMetaRow}>
+                <View style={styles.summaryMetaItem}>
+                  <Text style={styles.summaryMetaLabel}>{t('tournament_summary_scope')}</Text>
+                  <Text style={styles.summaryMetaVal}>{summary.scopeLabel}</Text>
+                </View>
+                <View style={styles.summaryMetaItem}>
+                  <Text style={styles.summaryMetaLabel}>{t('tournament_summary_events')}</Text>
+                  <Text style={styles.summaryMetaVal}>{summary.eventCount}</Text>
+                </View>
+                <View style={styles.summaryMetaItem}>
+                  <Text style={styles.summaryMetaLabel}>{t('tournament_summary_decks')}</Text>
+                  <Text style={styles.summaryMetaVal}>{summary.verifiedDeckCount}</Text>
+                </View>
+                <View style={styles.summaryMetaItem}>
+                  <Text style={styles.summaryMetaLabel}>{t('tournament_summary_observed')}</Text>
+                  <Text style={styles.summaryMetaVal}>{summary.observedDeckCount}</Text>
+                </View>
+              </View>
+
+              {summary.topArchetypes.length > 0 && (
+                <View style={styles.summarySection}>
+                  <Text style={styles.summarySectionTitle}>{t('tournament_summary_top_archetypes')}</Text>
+                  <View style={styles.chipRow}>
+                    {summary.topArchetypes.map((item) => {
+                      const active = dimension === 'archetype' && selectedKey === item.id;
+                      return (
+                        <TouchableOpacity
+                          key={item.id ?? 'unknown'}
+                          style={[styles.summaryChip, active && styles.summaryChipActive]}
+                          onPress={() => {
+                            setDimension('archetype');
+                            setSelectedKey(active ? null : item.id);
+                          }}
+                          testID={`summary-archetype-${item.id ?? 'unknown'}`}
+                        >
+                          <Text style={[styles.summaryChipText, active && styles.summaryChipTextActive]}>
+                            {item.label} ({item.count})
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {summary.topOshi.length > 0 && (
+                <View style={styles.summarySection}>
+                  <Text style={styles.summarySectionTitle}>{t('tournament_summary_top_oshi')}</Text>
+                  <View style={styles.chipRow}>
+                    {summary.topOshi.map((item) => {
+                      const active = dimension === 'oshi' && selectedKey === item.id;
+                      return (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={[styles.summaryChip, active && styles.summaryChipActive]}
+                          onPress={() => {
+                            setDimension('oshi');
+                            setSelectedKey(active ? null : item.id);
+                          }}
+                          testID={`summary-oshi-${item.id}`}
+                        >
+                          <Text style={[styles.summaryChipText, active && styles.summaryChipTextActive]}>
+                            {item.label} ({item.count})
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {summary.notablePlacements.length > 0 && (
+                <View style={styles.summarySection}>
+                  <Text style={styles.summarySectionTitle}>{t('tournament_summary_notable_placements')}</Text>
+                  {summary.notablePlacements.map((p) => (
+                    <View key={p.deckId} style={styles.notableRow}>
+                      <Text style={styles.notableRank}>{p.rankLabel || `第 ${p.rank} 位`}</Text>
+                      <Text style={styles.notableDetails} numberOfLines={1}>
+                        {p.archetypeLabel || p.oshi || '精選牌組'} · {p.eventNameZh || p.eventName} ({p.playerName || '玩家'})
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {summary.smallSample && (
+                <Text style={styles.summaryWarning} testID="summary-small-sample">
+                  {t('tournament_summary_small_sample_warning', { count: summary.verifiedDeckCount })}
+                </Text>
+              )}
+
+              <Text style={styles.summaryHint}>{t('tournament_summary_filter_hint')}</Text>
+            </View>
+
             {/* Source + honesty disclaimer */}
             <View style={styles.disclaimer}>
               <Text style={styles.disclaimerTitle}>資料來源與涵蓋率</Text>
@@ -310,9 +395,9 @@ export default function TournamentReportScreen() {
                 </Text>
               ))}
               <View style={styles.statRow}>
-                <Stat label="收錄賽事" value={`${coverage.knownEvents}`} />
-                <Stat label="觀測牌組" value={`${model.observedSize}`} />
-                <Stat label="已公開卡表" value={`${model.sampleSize}`} />
+                <Stat label={t('tournament_summary_events')} value={`${coverage.knownEvents}`} />
+                <Stat label={t('tournament_summary_observed')} value={`${model.observedSize}`} />
+                <Stat label={t('tournament_summary_decks')} value={`${model.sampleSize}`} />
                 <Stat label="有名次" value={`${coverage.rankedDecks}`} />
               </View>
             </View>
@@ -336,7 +421,7 @@ export default function TournamentReportScreen() {
                       testID={`dimension-${d.key}`}
                     >
                       <Text style={[styles.dimChipText, active && styles.dimChipTextActive]}>
-                        {d.label}
+                        {d.key === 'archetype' ? '牌型' : '推し'}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -379,8 +464,7 @@ export default function TournamentReportScreen() {
                   )}
                   <Text style={styles.finePrint}>
                     * 分母僅為已公開完整卡表的 {model.sampleSize} 副樣本，非整體 meta，也未涵蓋未公開卡表的參賽者。
-                    此範圍共觀測 {model.observedSize} 副精選牌組。「
-                    {DIMENSIONS.find((d) => d.key === dimension)?.label}」未知者獨立成一塊，不併入任何具名分類。
+                    此範圍共觀測 {model.observedSize} 副精選牌組。
                   </Text>
                 </>
               )}
@@ -423,14 +507,14 @@ export default function TournamentReportScreen() {
                     <ImportAction deck={d} catalog={catalog} onImport={() => onImport(e, d)} />
                     {d.decklogCode ? (
                       <TouchableOpacity onPress={() => onOpen(d.sourceUrl)}>
-                        <Text style={styles.link}>在 decklog 查看牌組 ({d.decklogCode}) ↗</Text>
+                        <Text style={styles.link}>{t('tournament_decklog_link', { code: d.decklogCode })}</Text>
                       </TouchableOpacity>
                     ) : null}
                   </View>
                 ))}
 
                 <TouchableOpacity onPress={() => onOpen(e.sourceUrl)}>
-                  <Text style={styles.link}>官方來源 ↗</Text>
+                  <Text style={styles.link}>{t('tournament_official_source')}</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -445,14 +529,6 @@ export default function TournamentReportScreen() {
   );
 }
 
-/**
- * The one-tap import CTA (DIC-1033).
- *
- * Enabled only when the fail-closed gate passes. When it does not, the button
- * stays visibly disabled and states the gate's own reason verbatim, so an
- * unverified July record reads "卡表尚未取得，無法匯入" rather than silently
- * offering an import that would produce a partial deck.
- */
 function ImportAction({
   deck,
   catalog,
@@ -462,6 +538,7 @@ function ImportAction({
   catalog: Map<string, DeckCard[]> | null;
   onImport: () => void;
 }) {
+  const { t } = useTranslation();
   const gate = useMemo(() => evaluateImport(deck, catalog), [deck, catalog]);
 
   if (!gate.importable) {
@@ -472,7 +549,7 @@ function ImportAction({
           testID={`deck-import-disabled-${deck.deckId}`}
         >
           <Text style={styles.importBtnTextDisabled} numberOfLines={2}>
-            一鍵匯入我的牌組
+            {t('tournament_import_cta')}
           </Text>
         </View>
         <Text style={styles.importReason} testID={`deck-import-reason-${deck.deckId}`}>
@@ -489,9 +566,9 @@ function ImportAction({
         onPress={onImport}
         testID={`deck-import-${deck.deckId}`}
         accessibilityRole="button"
-        accessibilityLabel="一鍵匯入我的牌組"
+        accessibilityLabel={t('tournament_import_cta')}
       >
-        <Text style={styles.importBtnText} numberOfLines={2}>一鍵匯入我的牌組</Text>
+        <Text style={styles.importBtnText} numberOfLines={2}>{t('tournament_import_cta')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -544,11 +621,119 @@ const styles = StyleSheet.create({
   monthChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   monthChipText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
   monthChipTextActive: { color: '#fff' },
+
+  // Summary Card Styles
+  summaryCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '40',
+  },
+  summaryTitle: {
+    color: COLORS.primary,
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  summaryMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  summaryMetaItem: {
+    flex: 1,
+    minWidth: 70,
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 8,
+    padding: 8,
+    alignItems: 'center',
+  },
+  summaryMetaLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  summaryMetaVal: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  summarySection: {
+    marginTop: 10,
+  },
+  summarySectionTitle: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  summaryChip: {
+    backgroundColor: COLORS.surfaceLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  summaryChipActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '20',
+  },
+  summaryChipText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  summaryChipTextActive: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
+  },
+  notableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceLight,
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  notableRank: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginRight: 8,
+  },
+  notableDetails: {
+    color: COLORS.text,
+    fontSize: 12,
+    flex: 1,
+  },
+  summaryWarning: {
+    color: COLORS.accent,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
+  },
+  summaryHint: {
+    color: COLORS.textSecondary + 'aa',
+    fontSize: 11,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+
   disclaimer: {
     backgroundColor: COLORS.surface,
     borderRadius: 12,
     padding: 14,
-    marginTop: 16,
+    marginTop: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
@@ -630,9 +815,6 @@ const styles = StyleSheet.create({
   deckPlayer: { color: COLORS.textSecondary, fontSize: 12, marginTop: 4 },
   deckCards: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   link: { color: COLORS.primary, fontSize: 12, fontWeight: '600', marginTop: 8 },
-  // The CTA is a full-width block rather than a floated pill: at 390px a fixed
-  // width would push the row past the viewport, so it wraps its own line and the
-  // label is allowed two lines instead of overflowing horizontally.
   importBlock: { marginTop: 10, width: '100%' },
   importBtn: {
     backgroundColor: COLORS.primary,

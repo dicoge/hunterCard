@@ -2,10 +2,11 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
-import { Text, View, StyleSheet, Image, ActivityIndicator } from 'react-native';
+import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useTranslation } from '../i18n';
 import AuthScreen from '../screens/AuthScreen';
 
 // Screens
@@ -37,11 +38,12 @@ const Drawer = createDrawerNavigator<MainDrawerParamList>();
 
 // Custom Drawer Content
 function CustomDrawerContent(props: DrawerContentComponentProps) {
+  const { language } = useTranslation();
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={styles.drawerContent}>
       <View style={styles.drawerHeader}>
         <Text style={styles.appTitle}>HoloHunter</Text>
-        <Text style={styles.appSubtitle}>卡牌獵人</Text>
+        <Text style={styles.appSubtitle}>{language === 'ja' ? 'カードハンター' : '卡牌獵人'}</Text>
       </View>
       <DrawerItemList {...props} />
     </DrawerContentScrollView>
@@ -51,11 +53,12 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 // Main Drawer Navigator
 function MainDrawer() {
   const { isDesktop } = useBreakpoint();
+  const { t } = useTranslation();
+
   return (
     <Drawer.Navigator
       drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
-        // PC (>= 768px): permanent sidebar always visible. Mobile keeps the slide-out drawer.
         drawerType: isDesktop ? 'permanent' : 'front',
         drawerActiveTintColor: COLORS.primary,
         drawerInactiveTintColor: COLORS.textSecondary,
@@ -82,7 +85,7 @@ function MainDrawer() {
         name="Home" 
         component={HomeScreen}
         options={{ 
-          title: '首頁',
+          title: t('nav_home'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏠</Text>
           ),
@@ -92,7 +95,7 @@ function MainDrawer() {
         name="Scan" 
         component={ScanScreen}
         options={{ 
-          title: '掃描卡牌',
+          title: t('nav_scan'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📷</Text>
           ),
@@ -102,7 +105,7 @@ function MainDrawer() {
         name="Search" 
         component={SearchScreen}
         options={{ 
-          title: '搜尋',
+          title: t('nav_search'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔍</Text>
           ),
@@ -112,7 +115,7 @@ function MainDrawer() {
         name="Favorites" 
         component={FavoritesScreen}
         options={{ 
-          title: '收藏',
+          title: t('nav_favorites'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
           ),
@@ -122,7 +125,7 @@ function MainDrawer() {
         name="DeckEditor"
         component={DeckEditorScreen}
         options={{
-          title: '牌組編輯器',
+          title: t('nav_deck_editor'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🃏</Text>
           ),
@@ -132,21 +135,18 @@ function MainDrawer() {
         name="TournamentReport"
         component={TournamentReportScreen}
         options={{
-          title: '賽事月報',
+          title: t('nav_tournament_report'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏆</Text>
           ),
         }}
       />
-      {/* 入手提醒 = watchlist trend alerts — hidden in Store MVP (DIC-908).
-          Removing the Drawer.Screen unregisters the route so nav + deep link are
-          both blocked, not just visually hidden. */}
       {FEATURES.watchlist && (
         <Drawer.Screen
           name="Watchlist"
           component={WatchlistScreen}
           options={{
-            title: '入手提醒',
+            title: t('nav_watchlist'),
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
             ),
@@ -157,7 +157,7 @@ function MainDrawer() {
         name="Tutorial"
         component={TutorialScreen}
         options={{ 
-          title: '規則教學',
+          title: t('nav_tutorial'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
           ),
@@ -167,7 +167,7 @@ function MainDrawer() {
         name="Settings" 
         component={SettingsScreen}
         options={{ 
-          title: '設定',
+          title: t('nav_settings'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>⚙️</Text>
           ),
@@ -179,6 +179,8 @@ function MainDrawer() {
 
 // Stack Navigator for screens that need navigation (CardDetail, SearchResults)
 function StackNavigator() {
+  const { t } = useTranslation();
+
   return (
     <Stack.Navigator
       screenOptions={{
@@ -202,31 +204,27 @@ function StackNavigator() {
       <Stack.Screen
         name="CardDetail"
         component={CardDetailScreen}
-        options={{ title: '卡牌詳情' }}
+        options={{ title: t('nav_card_detail') }}
       />
       <Stack.Screen
         name="SearchResults"
         component={SearchResultsScreen}
-        options={{ title: '搜尋結果' }}
+        options={{ title: t('nav_search_results') }}
       />
       <Stack.Screen
         name="TutorialDetail"
         component={TutorialDetailScreen}
-        options={{ title: '規則詳解' }}
+        options={{ title: t('nav_tutorial_detail') }}
       />
       <Stack.Screen
         name="TutorialSimulation"
         component={TutorialSimulationScreen}
-        options={{ title: '模擬實戰' }}
+        options={{ title: t('nav_tutorial_simulation') }}
       />
     </Stack.Navigator>
   );
 }
 
-// 登入 gate：全平台未登入且非訪客時顯示 LoginScreen。Web Google 登入已接線
-// （見 docs/Web-Apple-Login-Evaluation.md）；訪客可瀏覽規則與查卡但無法掃描。
-
-// Root Navigator
 export default function AppNavigator() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isGuest = useAuthStore((s) => s.isGuest);

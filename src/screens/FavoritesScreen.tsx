@@ -1,12 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { COLORS } from '../constants';
+import { useTranslation } from '../i18n';
 
 export default function FavoritesScreen() {
+  const { t } = useTranslation();
+
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>❤️ 收藏</Text>
-      <Text style={styles.subtitle}>收藏你喜愛的 hololive 卡牌</Text>
+      <Text style={styles.text}>❤️ {t('favorites_title')}</Text>
+      <Text style={styles.subtitle}>{t('favorites_empty')}</Text>
     </View>
   );
 }

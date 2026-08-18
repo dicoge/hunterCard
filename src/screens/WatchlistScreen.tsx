@@ -7,6 +7,7 @@ import { useWatchlistStore, WatchlistItem } from '../stores/watchlistStore';
 import { usePriceAlertStore, sortedAlerts } from '../stores/priceAlertStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useTranslation } from '../i18n';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { syncAlertRemove } from '../services/priceAlertSync';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
@@ -23,6 +24,7 @@ const rarityColors: Record<string, string> = {
 type DbState = 'loading' | 'ready' | 'unavailable';
 
 export default function WatchlistScreen({ navigation }: any) {
+  const { t } = useTranslation();
   const { items, removeCard } = useWatchlistStore();
   const alerts = usePriceAlertStore((s) => s.alerts);
   const removeAlert = usePriceAlertStore((s) => s.removeAlert);
@@ -44,8 +46,6 @@ export default function WatchlistScreen({ navigation }: any) {
 
   const alertList = useMemo(() => sortedAlerts(alerts), [alerts]);
 
-  // Exact (cardNumber, printing) reference SELL price. Never a cross-version or
-  // same-name fallback — an unmatched printing simply has no price.
   function priceOf(alert: PriceAlert): AlertPrice | null {
     if (!db) return null;
     const resolved = resolveExactPrice(alert.cardNumber, alert.printing, db.priceRecords);
@@ -94,16 +94,12 @@ export default function WatchlistScreen({ navigation }: any) {
     });
   };
 
-  // ── Exact-version desired-price alerts ────────────────────────────────────
-  // Kept in its own section: these are (cardNumber + printing) alerts with a
-  // desired interval, a different thing from the card-number trend watchlist
-  // below, and the two must not read as one list.
   const alertSection = (
     <View style={styles.section} testID="price-alert-section">
-      <Text style={styles.sectionTitle}>到價提醒（精確版本 · 期望入手價格區間）</Text>
+      <Text style={styles.sectionTitle}>{t('watchlist_title')}</Text>
       {alertList.length === 0 ? (
         <Text style={styles.sectionHint}>
-          尚未設定。到「牌組編輯器」的缺卡預估，在有價格的缺卡列點「設定期望入手價格區間」即可建立。
+          {t('watchlist_empty')}
         </Text>
       ) : (
         <>
@@ -191,9 +187,6 @@ export default function WatchlistScreen({ navigation }: any) {
             <Text style={styles.cardNumber}>{item.cardNumber}</Text>
           </View>
           {item.targetPrice != null ? (
-            // Legacy card-number-only target from before DIC-1023. Displayed as
-            // recorded; it names no printing, so it is NOT an exact-version
-            // price alert and never enters the alert pipeline.
             <Text style={styles.targetPrice}>🎯 舊版目標價（未指定版本）¥{item.targetPrice.toLocaleString()}</Text>
           ) : null}
         </View>
@@ -209,17 +202,14 @@ export default function WatchlistScreen({ navigation }: any) {
       <SafeAreaView style={styles.emptyContainer} edges={['bottom']}>
         <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
         <Text style={styles.emptyIcon}>🔔</Text>
-        <Text style={styles.emptyTitle}>還沒有入手提醒</Text>
-        <Text style={styles.emptyHint}>
-          在「牌組編輯器」的缺卡預估設定期望入手價格區間，{'\n'}
-          或從卡牌詳情頁加入趨勢追蹤。
-        </Text>
+        <Text style={styles.emptyTitle}>{t('watchlist_title')}</Text>
+        <Text style={styles.emptyHint}>{t('watchlist_empty')}</Text>
         <View style={styles.emptyActions}>
           <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('Search')}>
-            <Text style={styles.emptyBtnText}>🔍 前往搜尋</Text>
+            <Text style={styles.emptyBtnText}>🔍 {t('nav_search')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.emptyBtn, styles.emptyBtnAlt]} onPress={() => navigation.navigate('Scan')}>
-            <Text style={styles.emptyBtnText}>📷 掃描卡牌</Text>
+            <Text style={styles.emptyBtnText}>📷 {t('nav_scan')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

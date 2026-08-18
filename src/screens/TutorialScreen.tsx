@@ -2,11 +2,13 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
+import { useTranslation } from '../i18n';
 import tutorialData from '../data/tutorialData';
 
 const MOBILE_BREAKPOINT = 480;
 
 export default function TutorialScreen({ navigation }: any) {
+  const { t } = useTranslation();
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < MOBILE_BREAKPOINT;
 
@@ -20,7 +22,7 @@ export default function TutorialScreen({ navigation }: any) {
         {/* Hero */}
         <View style={[styles.hero, isMobile && styles.heroMobile]}>
           <Text style={[styles.heroEmoji, isMobile && styles.heroEmojiMobile]}>📚</Text>
-          <Text style={[styles.heroTitle, isMobile && styles.heroTitleMobile]}>規則教學</Text>
+          <Text style={[styles.heroTitle, isMobile && styles.heroTitleMobile]}>{t('tutorial_title')}</Text>
           <Text style={[styles.heroSub, isMobile && styles.heroSubMobile]}>hOCG 完全攻略</Text>
         </View>
 
@@ -87,7 +89,7 @@ export default function TutorialScreen({ navigation }: any) {
           </View>
           <View style={styles.simulationContent}>
             <Text style={[styles.simulationTitle, isMobile && styles.simulationTitleMobile]}>
-              實戰模擬
+              {t('tutorial_simulation')}
             </Text>
             <Text style={[styles.simulationDesc, isMobile && styles.simulationDescMobile]}>
               跟著 step-by-step 引導，體驗一場簡化的 hOCG 對局
@@ -314,7 +316,6 @@ const styles = StyleSheet.create({
   footerSubMobile: {
     fontSize: 10,
   },
-  // Simulation entry card styles
   simulationCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 16,
