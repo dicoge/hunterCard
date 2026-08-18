@@ -1,0 +1,52 @@
+{
+  "issue": "DIC-1084",
+  "generatedAt": "2026-08-18T13:12:22.043Z",
+  "dataset": {
+    "rows": 2104,
+    "canonicalTotalCards": 2104,
+    "publicRows": 2104
+  },
+  "before": {
+    "badgeCounts": {
+      "(hidden)": 1074,
+      "Buzz": 59,
+      "Debut": 619,
+      "2nd": 117,
+      "1st": 235
+    }
+  },
+  "after": {
+    "badgeCounts": {
+      "Oshi": 215,
+      "Holomen": 1346,
+      "Buzz": 83,
+      "Support": 310,
+      "Mascot": 50,
+      "Yell": 100
+    },
+    "categoryCounts": {
+      "oshi": 215,
+      "holomen": 1429,
+      "support": 310,
+      "mascot": 50,
+      "yell": 100
+    }
+  },
+  "subscribers": {
+    "rowsWithStats": 1136,
+    "displayableWithRequiredProvenance": 0
+  },
+  "trends": {
+    "rowsWithPriceHistory": 2025,
+    "rowsWithExactCardPrintingCurrencyProvenance": 0
+  },
+  "printings": {
+    "rowsWithAmbiguousSourcePrinting": 129
+  },
+  "summary": {
+    "criticalViolations": 0,
+    "warnings": 0
+  },
+  "violations": [],
+  "warnings": []
+}

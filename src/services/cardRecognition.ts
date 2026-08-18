@@ -47,6 +47,7 @@ export interface CardInfo {
   variants?: CardVariant[];   // Same cardNumber in different series
   priceHistory?: Record<string, number>;
   ytStats?: any;              // YouTube 成員數據（訂閱/成長/觀看）
+  normalized?: any;
 }
 
 /** A single ranked candidate returned for mid/low-confidence scans. */

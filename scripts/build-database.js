@@ -757,7 +757,8 @@ function loadOfficialData() {
       const cards = JSON.parse(content);
       if (Array.isArray(cards)) {
         for (const card of cards) {
-          const cardNum = card.cardNumber || card.id || '';
+          const imageCardNumber = String(card.imageUrl || '').match(/\/(h[A-Za-z0-9]+-\d{3})(?:_[^/]*)?\.png$/i)?.[1] || '';
+          const cardNum = card.cardNumber || imageCardNumber;
           if (!cardNum) continue;
           const series = card.expansion || card.series || '';
           // Use compound key to preserve all series, even reprints
@@ -824,6 +825,10 @@ function computeYtGrowth(history) {
     subscriberCount: latestSubs?.subscriberCount ?? null,
     totalViewCount: latestViews?.totalViewCount ?? null,
     date: (latestStats ?? sorted[sorted.length - 1]).date,
+    channelId: latestStats?.channelId ?? null,
+    source: latestStats?.source ?? null,
+    parser: latestStats?.parser ?? null,
+    fetchedAt: latestStats?.fetchedAt ?? null,
 
     subscriberGrowth_1d: d.subscriberGrowth_1d,
     subscriberGrowth_7d: d.subscriberGrowth_7d,

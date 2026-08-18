@@ -9,6 +9,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useWatchlistStore } from '../stores/watchlistStore';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
+import { hasDisplayableSubscriberStats, isValidatedTrendPrediction } from '../utils/cardNormalization';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
@@ -90,7 +91,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const displayName = preferredLanguage === 'zh' && nameZH ? nameZH : nameJP;
   const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
-  const typeLabel = typeLabels[card.type] || card.type || '-';
+  const typeLabel = card.normalized?.categoryLabel || typeLabels[card.type] || card.type || '';
   const skillsZhContainsJapanese = containsJapaneseKana(card.skillsZh);
   const displaySkills = preferredLanguage === 'zh'
     ? (skillsZhContainsJapanese ? (card.skillsJp || card.skillsZh) : (card.skillsZh || card.skillsJp))
@@ -274,7 +275,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       {/* 趨勢預測基於卡號層級歷史（單一版本序列）。多版本卡無法歸屬到特定版本 → 隱藏，
           避免用別版走勢推薦本版（DIC-856：禁止跨版本推薦訊號）。
           漲跌預測 / trendScore / 信心度 / YT / 新聞情緒 → Store MVP 隱藏（DIC-908）。 */}
-      {FEATURES.trendPrediction && !hasMultipleVariants && trend && (
+      {FEATURES.trendPrediction && !hasMultipleVariants && trend && isValidatedTrendPrediction(trend, card) && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
           <PriceTrendBadge
@@ -339,9 +340,11 @@ export default function CardDetailScreen({ route, navigation }: any) {
       <View style={styles.section}>
         <View style={styles.headerRow}>
           <Text style={styles.cardNumber}>{id}</Text>
-          <View style={[styles.rarityBadge, { backgroundColor: rarityColors[rarityKey] || '#6b7280' }]}>
-            <Text style={styles.rarityText}>{gradeLabels[card.grade] || card.grade || rarityKey}</Text>
-          </View>
+          {card.normalized?.displayBadge ? (
+            <View style={[styles.rarityBadge, { backgroundColor: rarityColors[rarityKey] || '#6b7280' }]}>
+              <Text style={styles.rarityText}>{card.normalized.displayBadge}</Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={styles.nameJP}>{displayName}</Text>
@@ -579,11 +582,14 @@ function MarketDataPanel({ card }: { card: any }) {
       }
     }
   }
-  // priceHistory 只有卡號層級（實測僅追蹤單一版本序列），非各版本獨立。多版本卡無法把這段
-  // 歷史精確歸屬到選中版本 → 一律不顯示漲跌（fail closed，禁止用近似值臆測本版走勢，DIC-856）。
-  // 僅單一版本卡（歷史必屬該版本）才顯示。
+  // 趨勢必須由來源明示卡號、版本與幣別；舊的卡號層級 priceHistory 沒有這些 provenance，
+  // 即使只有一筆掛牌也不能反推它屬於該版本或 JPY，故一律 fail closed。
   void latestHistoryValue;
-  const hasHistory = priceTrend != null && !multiVersion;
+  const historyMeta = card?.priceHistoryMeta;
+  const hasExactHistoryIdentity = historyMeta?.cardNumber === card?.cardNumber
+    && historyMeta?.printing === selectedVersion?.printing
+    && historyMeta?.currency === 'JPY';
+  const hasHistory = priceTrend != null && !multiVersion && hasExactHistoryIdentity;
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
@@ -673,7 +679,7 @@ function MarketDataPanel({ card }: { card: any }) {
       ) : null)}
 
       {/* YouTube 成員數據 / 訂閱・觀看成長 — Store MVP 隱藏（DIC-908） */}
-      {FEATURES.ytStats && (
+      {FEATURES.ytStats && hasDisplayableSubscriberStats(ytStats) && (
       <View style={styles.marketBlock}>
         <Text style={styles.marketBlockTitle}>📺 YouTube 成員數據</Text>
         <View style={styles.marketRow}>
