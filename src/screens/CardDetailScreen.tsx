@@ -6,12 +6,14 @@ import { FEATURES } from '../config/releaseFlags';
 import { openUrl } from '../utils/openUrl';
 import { showAlert } from '../utils/platformAlert';
 import { useSettingsStore } from '../store/settingsStore';
+import { useDeckStore } from '../store/deckStore';
 import { useWatchlistStore } from '../stores/watchlistStore';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
+import { ownershipKey } from '../utils/deckRules';
 
 const { width } = Dimensions.get('window');
 
@@ -73,6 +75,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
   const { isDesktop } = useBreakpoint();
+  const collection = useDeckStore((state) => state.collection);
+  const adjustOwned = useDeckStore((state) => state.adjustOwned);
+  const setOwned = useDeckStore((state) => state.setOwned);
 
   if (!card) {
     return (
@@ -83,6 +88,16 @@ export default function CardDetailScreen({ route, navigation }: any) {
   }
 
   const id = card.cardNumber || card.id || '';
+  const collectionVersions = buildPriceVersions(card);
+  const collectionResolution = resolveVersionForCard(collectionVersions);
+  const collectionVersion = card.printing
+    ? { printing: card.printing, name: card.printingLabel || card.printing }
+    : collectionResolution.confident
+      ? collectionVersions[collectionResolution.index]
+      : null;
+  const ownedQuantity = collectionVersion
+    ? collection[ownershipKey(id, collectionVersion.printing)] || 0
+    : 0;
   const allKW = card.searchKeywords || [];
   const nameJP = allKW[0] || card.name || '';
   const nameZH = card.nameZh || allKW[1] || '';
@@ -205,6 +220,47 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
       </View>
       <View style={isDesktop ? styles.rightCol : undefined}>
+
+      {collectionVersion && (
+        <View style={styles.collectionCard} testID="card-detail-collection">
+          <View style={styles.collectionCopy}>
+            <Text style={styles.collectionTitle}>收藏數量</Text>
+            <Text style={styles.collectionVersion} numberOfLines={2}>{collectionVersion.name}</Text>
+          </View>
+          <View style={styles.collectionControls}>
+            <TouchableOpacity
+              style={styles.collectionButton}
+              onPress={() => adjustOwned(id, collectionVersion.printing, -1)}
+              disabled={ownedQuantity <= 0}
+              accessibilityRole="button"
+              accessibilityLabel={`收藏 -1 ${displayName}`}
+              testID="card-detail-collection-dec"
+            >
+              <Text style={[styles.collectionButtonText, ownedQuantity <= 0 && styles.collectionButtonDisabled]}>－</Text>
+            </TouchableOpacity>
+            <Text style={styles.collectionQuantity} testID="card-detail-collection-qty">{ownedQuantity}</Text>
+            <TouchableOpacity
+              style={styles.collectionButton}
+              onPress={() => adjustOwned(id, collectionVersion.printing, 1)}
+              accessibilityRole="button"
+              accessibilityLabel={`收藏 +1 ${displayName}`}
+              testID="card-detail-collection-inc"
+            >
+              <Text style={styles.collectionButtonText}>＋</Text>
+            </TouchableOpacity>
+            {ownedQuantity > 0 && (
+              <TouchableOpacity
+                onPress={() => setOwned(id, collectionVersion.printing, 0)}
+                accessibilityRole="button"
+                accessibilityLabel={`移除收藏 ${displayName}`}
+                testID="card-detail-collection-remove"
+              >
+                <Text style={styles.collectionRemove}>移除</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* ====== TOP ACTION ROW (watchlist toggle — reachable without scrolling) ====== */}
       {FEATURES.watchlist && (
@@ -790,6 +846,16 @@ const styles = StyleSheet.create({
   fallbackHint: { fontSize: 13, color: COLORS.primary },
 
   // Price section
+  collectionCard: { marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  collectionCopy: { flex: 1, minWidth: 0 },
+  collectionTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  collectionVersion: { color: COLORS.textSecondary, fontSize: 11, marginTop: 3 },
+  collectionControls: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  collectionButton: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border },
+  collectionButtonText: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  collectionButtonDisabled: { color: COLORS.border },
+  collectionQuantity: { minWidth: 24, color: COLORS.text, fontSize: 15, fontWeight: '800', textAlign: 'center' },
+  collectionRemove: { color: COLORS.error, fontSize: 12, fontWeight: '700' },
   priceSection: { paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' },
   priceHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   priceSourceName: { fontSize: 17, fontWeight: '700', color: COLORS.text },
