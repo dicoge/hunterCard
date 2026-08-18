@@ -15,6 +15,7 @@ import {
   evaluateAlertStatus, formatAlertAmount, formatInterval, ALERT_STATUS_LABELS,
   type AlertPrice, type PriceAlert,
 } from '../utils/priceAlerts';
+import { uniformGridItemStyle } from '../utils/gridLayout';
 
 const rarityColors: Record<string, string> = {
   N: '#6b7280', C: '#6b7280', U: '#10b981', R: '#3b82f6', SR: '#8b5cf6',
@@ -29,6 +30,7 @@ export default function WatchlistScreen({ navigation }: any) {
   const { preferredLanguage } = useSettingsStore();
   const { isDesktop, isWide } = useBreakpoint();
   const numColumns = isWide ? 3 : isDesktop ? 2 : 1;
+  const gridItemStyle = useMemo(() => uniformGridItemStyle(numColumns), [numColumns]);
 
   const [db, setDb] = useState<CardDatabase | null>(null);
   const [dbState, setDbState] = useState<DbState>('loading');
@@ -173,7 +175,7 @@ export default function WatchlistScreen({ navigation }: any) {
     const subLabel = (preferredLanguage === 'zh' && item.nameZh) ? item.name : item.nameZh;
     const rarityColor = rarityColors[item.rarity] || '#6b7280';
     return (
-      <TouchableOpacity style={[styles.row, numColumns > 1 && styles.rowGrid]} activeOpacity={0.8} onPress={() => openDetail(item)}>
+      <TouchableOpacity style={[styles.row, gridItemStyle]} activeOpacity={0.8} onPress={() => openDetail(item)}>
         {item.imageUrl ? (
           <Image source={{ uri: item.imageUrl }} style={styles.thumb} resizeMode="contain" />
         ) : (
@@ -296,7 +298,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border + '55',
   },
-  rowGrid: { flex: 1 },
   thumb: { width: 52, height: 73, borderRadius: 6, backgroundColor: COLORS.surfaceLight },
   thumbFallback: { alignItems: 'center', justifyContent: 'center', padding: 4 },
   thumbFallbackText: { color: COLORS.textSecondary, fontSize: 10, textAlign: 'center' },

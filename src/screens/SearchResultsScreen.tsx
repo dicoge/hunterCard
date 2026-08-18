@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, ActivityIndicator, Image } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
@@ -6,6 +6,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
+import { uniformGridItemStyle } from '../utils/gridLayout';
 
 // ── Server-side search constants ──
 
@@ -254,6 +255,7 @@ export default function SearchResultsScreen({ route, navigation }: any) {
   const [error, setError] = useState<string | null>(null);
   const { isDesktop, isWide } = useBreakpoint();
   const numColumns = isWide ? 3 : isDesktop ? 2 : 1;
+  const gridItemStyle = useMemo(() => uniformGridItemStyle(numColumns), [numColumns]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -320,7 +322,7 @@ export default function SearchResultsScreen({ route, navigation }: any) {
           numColumns={numColumns}
           columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           renderItem={({ item }) => (
-            <View style={numColumns > 1 ? styles.gridCell : undefined}>
+            <View style={gridItemStyle}>
               <CardListItem card={item} onPress={() => navigation.navigate('CardDetail', { card: item })} />
             </View>
           )}
@@ -403,7 +405,6 @@ const styles = StyleSheet.create({
   centerWrap: { flex: 1, width: '100%' },
   centerWrapDesktop: { maxWidth: 1100, alignSelf: 'center' },
   columnWrapper: { gap: 12 },
-  gridCell: { flex: 1 },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
   loadingText: { color: COLORS.text, fontSize: 16, fontWeight: '600', marginTop: 16, textAlign: 'center' },
   loadingSubtext: { color: COLORS.textSecondary, fontSize: 13, marginTop: 6 },
