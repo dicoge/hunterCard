@@ -1,4 +1,4 @@
-// Desired-purchase-price interval alerts for a deck's missing cards (DIC-1023).
+// 到價提醒 — the one alert feature (DIC-1087, formerly DIC-1023).
 //
 // Framework-free on purpose: the same module backs the editor UI, the local
 // status display, the serverless alert evaluator and the Node regressions, so
@@ -8,7 +8,9 @@
 // Identity is the SAME source-proven (cardNumber, printing) pair the deck editor,
 // ownership and the gap estimate already use (DIC-1013). A card-number-only
 // alert is not representable here — `printing` is required — so a legacy
-// watchlist entry can never be silently promoted into an exact-version alert.
+// card-number tracking entry can never be silently promoted into an
+// exact-version alert. It becomes a `PendingAlert` instead and waits for the
+// user to name the printing (see ./alertMigration).
 //
 // The price compared is always the player's reference SELL price of that exact
 // printing. A store's buy (acquisition) price is a different commercial quantity
@@ -34,6 +36,9 @@ export interface PriceAlert {
   lowerPrice: number | null;
   /** required upper bound — the most the user is willing to pay */
   upperPrice: number;
+  /** thumbnail of THIS printing, captured from the exact (cardNumber, printing)
+   * catalog entry. Never a same-name or sibling-printing image. */
+  imageUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -97,6 +102,125 @@ export function validateInterval(
   if (upper.value === null) return intervalError('UPPER_REQUIRED');
   if (lower.value !== null && lower.value > upper.value) return intervalError('LOWER_ABOVE_UPPER');
   return { ok: true, lowerPrice: lower.value, upperPrice: upper.value };
+}
+
+/** An alert only means something while its interval is one the editor itself
+ * would have accepted. Used by the dedupe rule to make sure a configured range
+ * is never dropped in favour of a malformed twin. */
+export function hasUsableInterval(alert: Pick<PriceAlert, 'lowerPrice' | 'upperPrice'>): boolean {
+  return validateInterval(alert.lowerPrice, alert.upperPrice).ok;
+}
+
+// ── Deduplication ───────────────────────────────────────────────────────────
+//
+// Historic writes could reach the same printing under more than one storage key
+// — an un-normalized `printing` (`パラレル` vs `PARALLEL`), an untrimmed card
+// number, or the same identity re-added from a second surface. Those are ONE
+// alert to the user, and the evaluator keys its arm state by the normalized
+// identity, so duplicates would also arm/disarm each other.
+//
+// The winner is chosen by a total order, so the same stored records always
+// collapse to the same survivor no matter what order they are read in:
+//   1. a record whose interval is still valid beats one whose isn't — the
+//      user's configured range is the thing we must not lose;
+//   2. then the most recently updated;
+//   3. then the most recently created;
+//   4. then the lexicographically smallest storage key (always decides).
+// Display-only fields the winner happens to lack (label, thumbnail, name) are
+// filled in from the losers, so collapsing never blanks the row.
+
+export interface AlertDedupeResult {
+  /** survivors, re-keyed by the normalized identity */
+  alerts: Record<string, PriceAlert>;
+  /** records that collapsed into a survivor of the same identity */
+  merged: number;
+  /** records dropped for having no representable identity or interval at all */
+  dropped: number;
+}
+
+interface DedupeEntry {
+  storageKey: string;
+  alert: PriceAlert;
+}
+
+function outranks(a: DedupeEntry, b: DedupeEntry): boolean {
+  const usableA = hasUsableInterval(a.alert);
+  const usableB = hasUsableInterval(b.alert);
+  if (usableA !== usableB) return usableA;
+  const updatedA = a.alert.updatedAt ?? '';
+  const updatedB = b.alert.updatedAt ?? '';
+  if (updatedA !== updatedB) return updatedA > updatedB;
+  const createdA = a.alert.createdAt ?? '';
+  const createdB = b.alert.createdAt ?? '';
+  if (createdA !== createdB) return createdA > createdB;
+  return a.storageKey < b.storageKey;
+}
+
+function firstNonEmpty(entries: readonly DedupeEntry[], read: (a: PriceAlert) => string | undefined): string | undefined {
+  for (const entry of entries) {
+    const value = read(entry.alert)?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/** Collapse stored alert records onto one record per exact printing. */
+export function dedupePriceAlerts(
+  stored: Readonly<Record<string, PriceAlert>> | readonly PriceAlert[],
+): AlertDedupeResult {
+  const entries: DedupeEntry[] = Array.isArray(stored)
+    ? stored.map((alert, i) => ({ storageKey: String(i), alert }))
+    : Object.entries(stored as Record<string, PriceAlert>).map(([storageKey, alert]) => ({ storageKey, alert }));
+
+  const groups = new Map<string, DedupeEntry[]>();
+  let dropped = 0;
+  for (const entry of entries) {
+    const alert = entry.alert;
+    const cardNumber = (alert?.cardNumber ?? '').trim();
+    const printing = normalizePrinting(alert?.printing ?? '');
+    if (!cardNumber || !printing) {
+      dropped += 1;
+      continue;
+    }
+    const key = priceAlertKey(cardNumber, printing);
+    const group = groups.get(key);
+    if (group) group.push(entry);
+    else groups.set(key, [entry]);
+  }
+
+  const alerts: Record<string, PriceAlert> = {};
+  let merged = 0;
+  for (const [key, group] of groups) {
+    // Storage-key order first so every later tie-break sees the same sequence.
+    const ordered = group.slice().sort((a, b) => (a.storageKey < b.storageKey ? -1 : a.storageKey > b.storageKey ? 1 : 0));
+    const winner = ordered.reduce((best, entry) => (outranks(entry, best) ? entry : best));
+    if (!hasUsableInterval(winner.alert)) {
+      // No record of this identity carries an interval the editor would accept,
+      // so there is no configured range to preserve.
+      dropped += ordered.length;
+      continue;
+    }
+    merged += ordered.length - 1;
+    // Winner first: its own display fields win, the losers only fill blanks.
+    const backfill = [winner, ...ordered.filter((e) => e !== winner)];
+    const cardNumber = winner.alert.cardNumber.trim();
+    const created = ordered
+      .map((e) => e.alert.createdAt)
+      .filter((v): v is string => typeof v === 'string' && v !== '')
+      .sort();
+    alerts[key] = {
+      ...winner.alert,
+      cardNumber,
+      printing: normalizePrinting(winner.alert.printing),
+      printingLabel: firstNonEmpty(backfill, (a) => a.printingLabel) ?? '',
+      name: firstNonEmpty(backfill, (a) => a.name) ?? cardNumber,
+      imageUrl: firstNonEmpty(backfill, (a) => a.imageUrl),
+      // The identity has been tracked since its earliest record.
+      createdAt: created[0] ?? winner.alert.updatedAt ?? '',
+    };
+  }
+
+  return { alerts, merged, dropped };
 }
 
 // ── Interval evaluation ─────────────────────────────────────────────────────

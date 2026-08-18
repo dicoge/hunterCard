@@ -1,57 +1,39 @@
 /**
- * Watchlist Store (Zustand + persistent)
+ * Legacy card-number tracking list (read-only since DIC-1087).
  *
- * 入手提醒的本機 watchlist：用戶追蹤想入手的卡牌清單。
- * Persisted via platform-specific storage (localStorage / AsyncStorage).
+ * This was the 趨勢追蹤 list: one row per card NUMBER, with an optional target
+ * price that named no printing. 到價提醒 replaced it, so nothing writes here any
+ * more — the store exists only so an installed device can still read what it
+ * persisted and hand it to `priceAlertStore.importLegacyTracking`, which resolves
+ * each row to an exact printing or asks the user for one.
  *
- * Usage:
- *   const { items, addCard, removeCard, isInWatchlist } = useWatchlistStore();
+ * Once imported the list is cleared; when the last device has migrated this
+ * store and its storage key can go.
  */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from './storage';
+import type { LegacyTrackedCard } from '../utils/alertMigration';
 
-export interface WatchlistItem {
-  cardNumber: string;   // e.g. "hBP01-075"
-  name: string;
-  nameZh?: string;
-  rarity: string;
-  imageUrl?: string;
-  addedAt: string;      // ISO date
-  targetPrice?: number; // 可選：用戶設定的目標入手價
+export interface WatchlistItem extends LegacyTrackedCard {
+  addedAt: string;
 }
 
 interface WatchlistStore {
   items: WatchlistItem[];
-  addCard: (card: WatchlistItem) => void;
-  removeCard: (cardNumber: string) => void;
-  isInWatchlist: (cardNumber: string) => boolean;
+  clearAll: () => void;
 }
 
 export const useWatchlistStore = create<WatchlistStore>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       items: [],
-
-      addCard: (card) => {
-        const { items } = get();
-        if (items.some((item) => item.cardNumber === card.cardNumber)) return;
-        set({ items: [...items, { ...card, addedAt: card.addedAt || new Date().toISOString() }] });
-      },
-
-      removeCard: (cardNumber) => {
-        set((state) => ({
-          items: state.items.filter((item) => item.cardNumber !== cardNumber),
-        }));
-      },
-
-      isInWatchlist: (cardNumber) => {
-        return get().items.some((item) => item.cardNumber === cardNumber);
-      },
+      clearAll: () => set({ items: [] }),
     }),
     {
       name: 'watchlist-storage',
       storage: createJSONStorage(() => platformStorage),
+      partialize: (s) => ({ items: s.items }),
     }
   )
 );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, convertPrice } from '../constants';
@@ -6,7 +6,12 @@ import { FEATURES } from '../config/releaseFlags';
 import { openUrl } from '../utils/openUrl';
 import { showAlert } from '../utils/platformAlert';
 import { useSettingsStore } from '../store/settingsStore';
-import { useWatchlistStore } from '../stores/watchlistStore';
+import { usePriceAlertStore } from '../stores/priceAlertStore';
+import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
+import { buildSourcePrintings } from '../utils/printingIdentity';
+import { PRICE_CURRENCY } from '../utils/deckCardData';
+import { formatInterval } from '../utils/priceAlerts';
+import type { PrintingOption } from '../utils/alertMigration';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { PriceTrend } from '../components/PriceTrend';
@@ -146,37 +151,55 @@ export default function CardDetailScreen({ route, navigation }: any) {
     }
   }, [card.id, card.cardNumber]);
 
-  // ── Watchlist (入手提醒) ──
-  const watchlistItems = useWatchlistStore((s) => s.items);
-  const addToWatchlist = useWatchlistStore((s) => s.addCard);
-  const removeFromWatchlist = useWatchlistStore((s) => s.removeCard);
-  const inWatchlist = !!id && watchlistItems.some((item) => item.cardNumber === id);
+  // ── 到價提醒 ──
+  // The card page knows a card NUMBER, and an alert is about one exact printing,
+  // so the button opens the editor with this number's real listings and lets the
+  // player choose. Which printing is never decided here.
+  const alerts = usePriceAlertStore((s) => s.alerts);
+  const [alertTarget, setAlertTarget] = useState<PriceAlertTarget | null>(null);
 
-  const toggleWatchlist = () => {
+  const printingChoices: PrintingOption[] = useMemo(
+    () => buildSourcePrintings(priceVariants).map((p) => ({
+      printing: p.printing,
+      printingLabel: p.label,
+      sellPrice: p.sellPrice,
+      currency: PRICE_CURRENCY,
+      imageUrl,
+    })),
+    [priceVariants, imageUrl],
+  );
+
+  const cardAlerts = useMemo(
+    () => Object.values(alerts).filter((a) => a.cardNumber === id),
+    [alerts, id],
+  );
+
+  const openAlertEditor = () => {
     if (!id) return;
-    if (inWatchlist) {
-      showAlert(
-        '移除入手提醒',
-        `確定要從入手提醒移除「${displayName}」嗎？`,
-        [
-          { text: '取消', style: 'cancel' },
-          { text: '移除', style: 'destructive', onPress: () => removeFromWatchlist(id) },
-        ]
-      );
-    } else {
-      addToWatchlist({
-        cardNumber: id,
-        name: nameJP || displayName,
-        nameZh: nameZH || undefined,
-        rarity: rarityKey,
-        imageUrl,
-        addedAt: new Date().toISOString(),
-      });
-    }
+    // One existing alert on this card number edits in place; anything else makes
+    // the player name the printing.
+    const only = cardAlerts.length === 1 ? cardAlerts[0] : null;
+    setAlertTarget({
+      cardNumber: id,
+      printing: only ? only.printing : null,
+      printingLabel: only?.printingLabel ?? '',
+      name: nameZH || nameJP || displayName,
+      currency: only?.currency || PRICE_CURRENCY,
+      currentPrice: printingChoices.find((c) => c.printing === only?.printing)?.sellPrice ?? null,
+      imageUrl,
+      choices: printingChoices,
+    });
   };
+
+  const alertButtonLabel = cardAlerts.length === 1
+    ? `🔔 到價提醒 ${formatInterval(cardAlerts[0])}（點擊編輯）`
+    : cardAlerts.length > 1
+      ? `🔔 已設定 ${cardAlerts.length} 個版本的到價提醒`
+      : '🔕 設定到價提醒';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingBottom: insets.bottom }}>
+      <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
       <ScrollView style={styles.container} contentContainerStyle={isDesktop ? styles.scrollDesktop : undefined}>
       <View style={isDesktop ? styles.twoCol : styles.oneCol}>
       <View style={isDesktop ? styles.leftCol : undefined}>
@@ -206,16 +229,19 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
       <View style={isDesktop ? styles.rightCol : undefined}>
 
-      {/* ====== TOP ACTION ROW (watchlist toggle — reachable without scrolling) ====== */}
+      {/* ====== TOP ACTION ROW (到價提醒 — reachable without scrolling) ====== */}
       {FEATURES.watchlist && (
         <View style={styles.topActionRow}>
           <TouchableOpacity
-            style={[styles.watchlistChip, inWatchlist ? styles.watchlistChipActive : null]}
-            onPress={toggleWatchlist}
+            style={[styles.watchlistChip, cardAlerts.length > 0 ? styles.watchlistChipActive : null]}
+            onPress={openAlertEditor}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="設定到價提醒"
+            testID="card-price-alert-chip"
           >
-            <Text style={[styles.watchlistChipText, inWatchlist ? styles.watchlistChipTextActive : null]}>
-              {inWatchlist ? '🔔 已加入入手提醒' : '🔕 加入入手提醒'}
+            <Text style={[styles.watchlistChipText, cardAlerts.length > 0 ? styles.watchlistChipTextActive : null]}>
+              {alertButtonLabel}
             </Text>
           </TouchableOpacity>
         </View>
@@ -405,16 +431,19 @@ export default function CardDetailScreen({ route, navigation }: any) {
         <LinkButton icon="🔄" text="Carousell 二手價格" url={`https://www.carousell.com.tw/search/?q=${encodeURIComponent(id)}`} />
       </View>
 
-      {/* ====== WATCHLIST BUTTON ====== */}
+      {/* ====== 到價提醒 BUTTON ====== */}
       {FEATURES.watchlist && (
         <View style={styles.section}>
           <TouchableOpacity
-            style={[styles.watchlistBtn, inWatchlist ? styles.watchlistBtnActive : null]}
-            onPress={toggleWatchlist}
+            style={[styles.watchlistBtn, cardAlerts.length > 0 ? styles.watchlistBtnActive : null]}
+            onPress={openAlertEditor}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="設定到價提醒"
+            testID="card-price-alert-button"
           >
-            <Text style={[styles.watchlistBtnText, inWatchlist ? styles.watchlistBtnTextActive : null]}>
-              {inWatchlist ? '🔔 已加入入手提醒（點擊移除）' : '🔕 加入入手提醒'}
+            <Text style={[styles.watchlistBtnText, cardAlerts.length > 0 ? styles.watchlistBtnTextActive : null]}>
+              {alertButtonLabel}
             </Text>
           </TouchableOpacity>
         </View>

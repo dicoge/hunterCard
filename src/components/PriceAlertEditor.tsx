@@ -1,11 +1,18 @@
 /**
- * Desired-purchase-price interval editor for ONE exact printing (DIC-1023).
+ * The one 到價提醒 editor (DIC-1087).
  *
- * Shared by the deck editor's missing-card rows and the alert list so both
- * surfaces validate, persist and sync identically.
+ * Every surface that creates or changes an alert goes through here — the deck
+ * editor's missing-card rows, the alert list, the card page and the rows
+ * migrated from the old card-number tracking list — so all of them validate,
+ * persist and sync identically.
+ *
+ * A target may arrive without a printing (a card page, or a migrated row). The
+ * editor then makes the user pick one from the card number's real listings; it
+ * never defaults to a printing, because a price alert on a printing the player
+ * did not choose is an alert about a different physical card.
  */
-import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Modal, View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { COLORS } from '../constants';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { syncAlertUpsert, syncAlertRemove, pushAlertAvailable } from '../services/priceAlertSync';
@@ -13,15 +20,22 @@ import {
   validateInterval, evaluateAlertStatus, formatAlertAmount, formatInterval,
   priceAlertKey, ALERT_STATUS_LABELS,
 } from '../utils/priceAlerts';
+import type { PrintingOption } from '../utils/alertMigration';
 
 export interface PriceAlertTarget {
   cardNumber: string;
-  printing: string;
+  /** null when the user must still choose which printing this alert is for */
+  printing: string | null;
   printingLabel: string;
   name: string;
   currency: string;
   /** exact-version reference SELL price, or null when this printing is unpriced */
   currentPrice: number | null;
+  imageUrl?: string;
+  /** the card number's real printings; required when `printing` is null */
+  choices?: readonly PrintingOption[];
+  /** suggested upper bound for a row migrated from the old tracking list */
+  suggestedUpper?: number | null;
 }
 
 interface Props {
@@ -34,38 +48,66 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
   const upsertAlert = usePriceAlertStore((s) => s.upsertAlert);
   const removeAlert = usePriceAlertStore((s) => s.removeAlert);
 
-  const existing = target
-    ? alerts[priceAlertKey(target.cardNumber, target.printing)] ?? null
-    : null;
-
+  const [chosen, setChosen] = useState<string | null>(null);
   const [lower, setLower] = useState('');
   const [upper, setUpper] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Re-seed the fields each time a row opens the editor.
+  const printing = target?.printing ?? chosen;
+  const choices = useMemo(() => target?.choices ?? [], [target]);
+  const selectedChoice = choices.find((c) => c.printing === printing) ?? null;
+
+  const existing = target && printing
+    ? alerts[priceAlertKey(target.cardNumber, printing)] ?? null
+    : null;
+
+  // Re-seed each time a row opens the editor, and again when the user picks a
+  // different printing — the interval belongs to the printing, not to the modal.
   useEffect(() => {
     if (!target) return;
-    setLower(existing?.lowerPrice != null ? String(existing.lowerPrice) : '');
-    setUpper(existing?.upperPrice != null ? String(existing.upperPrice) : '');
+    setChosen(null);
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.cardNumber, target?.printing]);
 
+  useEffect(() => {
+    if (!target) return;
+    const current = printing ? alerts[priceAlertKey(target.cardNumber, printing)] ?? null : null;
+    setLower(current?.lowerPrice != null ? String(current.lowerPrice) : '');
+    setUpper(
+      current?.upperPrice != null ? String(current.upperPrice)
+        : target.suggestedUpper != null ? String(target.suggestedUpper)
+          : '',
+    );
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.cardNumber, printing]);
+
   if (!target) return null;
 
-  const priceLabel = target.currentPrice === null
-    ? '無精確版本價格'
-    : formatAlertAmount(target.currentPrice, target.currency);
+  const needsChoice = target.printing === null;
+  const printingLabel = selectedChoice?.printingLabel || target.printingLabel || printing || '';
+  const currency = selectedChoice ? selectedChoice.currency || target.currency : target.currency;
+  const currentPrice = selectedChoice ? selectedChoice.sellPrice : target.currentPrice;
+  const imageUrl = selectedChoice?.imageUrl ?? target.imageUrl;
+
+  const priceLabel = currentPrice === null || currentPrice === undefined
+    ? '暫無此版本的參考售價'
+    : formatAlertAmount(currentPrice, currency);
 
   const status = existing
     ? evaluateAlertStatus(
         existing,
-        target.currentPrice === null ? null : { price: target.currentPrice, currency: target.currency },
+        currentPrice === null || currentPrice === undefined ? null : { price: currentPrice, currency },
       )
     : null;
 
   function save() {
     if (!target) return;
+    if (!printing) {
+      setError('請先選擇版本，到價提醒只比對你選定的那一個版本。');
+      return;
+    }
     const interval = validateInterval(lower, upper);
     if (!interval.ok) {
       setError(interval.message);
@@ -73,23 +115,28 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
     }
     const saved = upsertAlert({
       cardNumber: target.cardNumber,
-      printing: target.printing,
-      printingLabel: target.printingLabel,
+      printing,
+      printingLabel,
       name: target.name,
-      currency: target.currency,
+      currency,
       lowerPrice: interval.lowerPrice,
       upperPrice: interval.upperPrice,
+      imageUrl,
     });
+    if (!saved) {
+      setError('無法建立提醒：這張卡沒有可辨識的版本。');
+      return;
+    }
     // Server mirror is best-effort: the alert is already saved locally, and an
     // offline device must not lose the edit.
-    if (saved) void syncAlertUpsert(saved);
+    void syncAlertUpsert(saved);
     onClose();
   }
 
   function remove() {
-    if (!target) return;
-    removeAlert(target.cardNumber, target.printing);
-    void syncAlertRemove(target.cardNumber, target.printing);
+    if (!target || !printing) return;
+    removeAlert(target.cardNumber, printing);
+    void syncAlertRemove(target.cardNumber, printing);
     onClose();
   }
 
@@ -97,13 +144,51 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.card} accessibilityViewIsModal testID="price-alert-editor">
-          <Text style={styles.title}>期望入手價格區間</Text>
+          <Text style={styles.title}>到價提醒</Text>
           <Text style={styles.cardName}>{target.name}</Text>
           <Text style={styles.meta}>
-            {target.cardNumber} · {target.printingLabel || target.printing}
+            {printing ? `${target.cardNumber} · ${printingLabel}` : target.cardNumber}
           </Text>
+
+          {needsChoice && (
+            <View style={styles.choices} testID="price-alert-printing-choices">
+              <Text style={styles.fieldLabel}>選擇版本（必選）</Text>
+              {choices.length === 0 ? (
+                <Text style={styles.hint} testID="price-alert-no-printings">
+                  這張卡目前沒有可辨識的版本資料，無法建立到價提醒。
+                </Text>
+              ) : (
+                <ScrollView style={styles.choiceScroll}>
+                  {choices.map((choice) => {
+                    const active = choice.printing === printing;
+                    return (
+                      <TouchableOpacity
+                        key={choice.printing}
+                        style={[styles.choice, active && styles.choiceActive]}
+                        onPress={() => { setChosen(choice.printing); setError(null); }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={`選擇版本 ${choice.printingLabel || choice.printing}`}
+                        testID={`price-alert-printing-${choice.printing}`}
+                      >
+                        <Text style={[styles.choiceLabel, active && styles.choiceLabelActive]} numberOfLines={1}>
+                          {choice.printingLabel || choice.printing}
+                        </Text>
+                        <Text style={styles.choicePrice}>
+                          {choice.sellPrice === null
+                            ? '暫無參考售價'
+                            : formatAlertAmount(choice.sellPrice, choice.currency)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+          )}
+
           <Text style={styles.meta} testID="price-alert-current-price">
-            目前參考售價（{target.currency}）：{priceLabel}
+            目前參考售價：{priceLabel}
           </Text>
           <Text style={styles.hint}>
             僅比對此精確版本的玩家「參考售價」；不採用店家收購價、最高價或跨版本價格。
@@ -151,8 +236,8 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
 
           <Text style={styles.hint} testID="price-alert-push-note">
             {pushAlertAvailable()
-              ? '此裝置已取得推播權杖：價格進入區間時會發送推播（同一次進入只通知一次）。'
-              : '此裝置沒有推播權杖（Web 或未開啟通知權限），提醒只會在本機顯示狀態，不會有背景推播。'}
+              ? '此裝置已取得推播權杖：價格進入區間時會發送到價提醒（同一次進入只通知一次）。'
+              : '此裝置沒有推播權杖（Web 或未開啟通知權限），到價提醒只會在本機顯示狀態，不會有背景推播。'}
           </Text>
 
           <View style={styles.actions}>
@@ -199,6 +284,17 @@ const styles = StyleSheet.create({
   cardName: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
   meta: { color: COLORS.textSecondary, fontSize: 12, marginTop: 3 },
   hint: { color: COLORS.textSecondary, fontSize: 11, marginTop: 8, lineHeight: 16 },
+  choices: { marginTop: 12 },
+  choiceScroll: { maxHeight: 168 },
+  choice: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    backgroundColor: COLORS.surfaceLight, borderRadius: 8, paddingHorizontal: 12,
+    minHeight: 44, borderWidth: 1, borderColor: COLORS.border, marginBottom: 6,
+  },
+  choiceActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '22' },
+  choiceLabel: { color: COLORS.text, fontSize: 13, flexShrink: 1 },
+  choiceLabelActive: { color: COLORS.primary, fontWeight: '700' },
+  choicePrice: { color: COLORS.textSecondary, fontSize: 12 },
   fieldRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   field: { flex: 1 },
   fieldLabel: { color: COLORS.textSecondary, fontSize: 12, marginBottom: 4 },
@@ -209,6 +305,6 @@ const styles = StyleSheet.create({
   actionsRight: { flexDirection: 'row', alignItems: 'center', gap: 16, marginLeft: 'auto' },
   destructive: { color: COLORS.error, fontSize: 14 },
   link: { color: COLORS.primary, fontSize: 14 },
-  primaryBtn: { backgroundColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 },
+  primaryBtn: { backgroundColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10, minHeight: 44, justifyContent: 'center' },
   primaryBtnText: { color: '#fff', fontWeight: 'bold' },
 });
