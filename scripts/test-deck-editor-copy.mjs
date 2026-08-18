@@ -110,7 +110,7 @@ const IMPORTED_AT = '2026-08-17T00:00:00.000Z';
 /** The slot DIC-1060 reported: its ordinary printing and the deck's exact total. */
 const ANCHOR_CARD_NUMBER = 'hBP07-006';
 const ANCHOR_PRINTING = 'BASE';
-const ANCHOR_SUBTOTAL = '13220';
+const ANCHOR_SUBTOTAL = '13260';
 
 let passed = 0;
 async function test(name, fn) {
