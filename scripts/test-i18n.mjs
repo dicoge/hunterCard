@@ -20,6 +20,8 @@ import {
 import { verifiedDecks, ALL_SCOPE } from '../src/utils/tournamentDonut.ts';
 import fs from 'node:fs';
 import path from 'node:path';
+import { getTutorialData } from '../src/data/tutorialData.ts';
+import { getSimulationPhases } from '../src/data/tutorialSimulationData.ts';
 
 let passed = 0;
 function test(name, fn) {
@@ -68,6 +70,7 @@ test('t() fails closed for missing keys instead of rendering the raw key', () =>
 
 // ── 3. Mutation-sensitive source coverage ──────────────────────────────────
 const SOURCE_COVERAGE = {
+  'src/screens/HomeScreen.tsx': 9,
   'src/screens/SearchScreen.tsx': 4,
   'src/screens/SearchResultsScreen.tsx': 9,
   'src/screens/CardDetailScreen.tsx': 65,
@@ -75,6 +78,8 @@ const SOURCE_COVERAGE = {
   'src/screens/DeckEditorScreen.tsx': 70,
   'src/screens/SettingsScreen.tsx': 40,
   'src/screens/TutorialScreen.tsx': 11,
+  'src/screens/TutorialDetailScreen.tsx': 3,
+  'src/screens/TutorialSimulationScreen.tsx': 3,
   'src/screens/WatchlistScreen.tsx': 24,
   'src/screens/TournamentReportScreen.tsx': 55,
   'src/components/ObservedShareDonut.tsx': 4,
@@ -87,6 +92,10 @@ const SOURCE_COVERAGE = {
   'src/components/ScanSessionPanel.tsx': 14,
   'src/components/WebCamera.tsx': 2,
   'src/components/CardItem.tsx': 2,
+  'src/components/PriceTrend.tsx': 6,
+  'src/components/tutorial/SimulationStepCard.tsx': 4,
+  'src/components/tutorial/TutorialPhaseCard.tsx': 3,
+  'src/components/tutorial/SimulationBoard.tsx': 19,
 };
 
 const stripComments = (source) => source
@@ -128,6 +137,48 @@ test('required surfaces contain no hardcoded Traditional-Chinese JSX or UI props
 test('CI runs the i18n source/key gate', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
   assert.match(workflow, /npm run test:i18n/, 'CI must execute npm run test:i18n');
+});
+
+const phaseShape = (phase) => ({
+  steps: phase.steps?.length ?? 0,
+  notes: phase.notes?.length ?? 0,
+  conditions: phase.conditions?.length ?? 0,
+  canDo: phase.canDo?.length ?? 0,
+  cannotDo: phase.cannotDo?.length ?? 0,
+  subPhases: phase.subPhases?.map(phaseShape) ?? [],
+});
+
+test('rule detail and simulation datasets cover every offered language with matching structure', () => {
+  const zhTutorial = getTutorialData('zh');
+  const jaTutorial = getTutorialData('ja');
+  assert.deepEqual(
+    jaTutorial.map((section) => ({
+      id: section.id,
+      items: section.items?.length ?? 0,
+      content: section.content?.length ?? 0,
+      links: section.links?.length ?? 0,
+      phases: section.phases?.map(phaseShape) ?? [],
+    })),
+    zhTutorial.map((section) => ({
+      id: section.id,
+      items: section.items?.length ?? 0,
+      content: section.content?.length ?? 0,
+      links: section.links?.length ?? 0,
+      phases: section.phases?.map(phaseShape) ?? [],
+    })),
+  );
+
+  const zhSimulation = getSimulationPhases('zh');
+  const jaSimulation = getSimulationPhases('ja');
+  assert.deepEqual(
+    jaSimulation.map((phase) => [phase.id, phase.steps.length]),
+    zhSimulation.map((phase) => [phase.id, phase.steps.length]),
+  );
+
+  const japaneseCopy = JSON.stringify([jaTutorial, jaSimulation]);
+  for (const traditionalChinese of ['牌組', '吶喊', '聯動', '舞台後方', '主推位置', '步驟', '模擬實戰', '卡牌', '比賽流程']) {
+    assert.ok(!japaneseCopy.includes(traditionalChinese), `Japanese rule data leaks: ${traditionalChinese}`);
+  }
 });
 
 // ── 4. Live Tournament Data Fixtures & Summary Derivation ───────────────────
@@ -196,6 +247,23 @@ test('summary ignores unverified decks for top archetype counts', () => {
   const summary = buildTournamentMonthlySummary([unverifiedReport], '2026-08', 'zh');
   assert.equal(summary.verifiedDeckCount, 0);
   assert.equal(summary.topArchetypes.length, 0);
+});
+
+test('summary omits unknown archetypes instead of leaking a fixed-language label', () => {
+  const unknownReport = {
+    ...augustReport,
+    events: [{
+      ...augustReport.events[0],
+      decks: [{
+        ...augustReport.events[0].decks[0],
+        archetypeId: null,
+        archetypeLabel: null,
+        cardsVerified: true,
+      }],
+    }],
+  };
+  assert.deepEqual(buildTournamentMonthlySummary([unknownReport], '2026-08', 'zh').topArchetypes, []);
+  assert.deepEqual(buildTournamentMonthlySummary([unknownReport], '2026-08', 'ja').topArchetypes, []);
 });
 
 console.log(`test-i18n: PASS (${passed} checks)`);

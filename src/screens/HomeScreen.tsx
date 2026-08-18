@@ -120,7 +120,7 @@ export default function HomeScreen({ navigation }: any) {
             {/* Special & Promo */}
             {seriesData.special.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>特殊・PR</Text>
+                <Text style={styles.sectionTitle}>{t('home_special')}</Text>
                 <View style={styles.cardGrid}>
                   {seriesData.special.map((item) => (
                     <TouchableOpacity
@@ -139,7 +139,7 @@ export default function HomeScreen({ navigation }: any) {
           </>
         ) : (
           <View style={styles.loadingContainer}>
-            <Text style={styles.errorText}>⚠️ 無法載入系列資料</Text>
+            <Text style={styles.errorText}>{t('home_series_error')}</Text>
           </View>
         )}
 

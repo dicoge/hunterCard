@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
 import { useTranslation } from '../i18n';
-import tutorialData from '../data/tutorialData';
+import { getTutorialData } from '../data/tutorialData';
 
 const MOBILE_BREAKPOINT = 480;
 
@@ -11,6 +11,7 @@ export default function TutorialScreen({ navigation }: any) {
   const { t, language } = useTranslation();
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < MOBILE_BREAKPOINT;
+  const tutorialData = useMemo(() => getTutorialData(language), [language]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -46,7 +47,8 @@ export default function TutorialScreen({ navigation }: any) {
             <TouchableOpacity
               key={section.id}
               style={[styles.categoryCard, isMobile && styles.categoryCardMobile]}
-              onPress={() => navigation.navigate('TutorialDetail', { section })}
+              onPress={() => navigation.navigate('TutorialDetail', { sectionId: section.id })}
+              testID={`tutorial-section-${section.id}`}
               activeOpacity={0.7}
             >
               <View style={[styles.categoryIconWrap, isMobile && styles.categoryIconWrapMobile]}>
@@ -82,6 +84,7 @@ export default function TutorialScreen({ navigation }: any) {
           style={[styles.simulationCard, isMobile && styles.simulationCardMobile]}
           onPress={() => navigation.navigate('TutorialSimulation')}
           activeOpacity={0.7}
+          testID="tutorial-simulation-entry"
         >
           <View style={[styles.simulationIconWrap, isMobile && styles.simulationIconWrapMobile]}>
             <Text style={[styles.simulationEmoji, isMobile && styles.simulationEmojiMobile]}>🎮</Text>

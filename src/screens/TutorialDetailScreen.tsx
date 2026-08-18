@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
-import { TutorialSection } from '../data/tutorialData';
+import { getTutorialData } from '../data/tutorialData';
+import { useTranslation } from '../i18n';
 import TutorialCard from '../components/tutorial/TutorialCard';
 import TutorialPhaseCard from '../components/tutorial/TutorialPhaseCard';
 import TutorialImageView from '../components/tutorial/TutorialImageView';
@@ -10,12 +11,14 @@ import TutorialImageView from '../components/tutorial/TutorialImageView';
 const MOBILE_BREAKPOINT = 480;
 
 interface TutorialDetailScreenProps {
-  route: { params: { section: TutorialSection } };
+  route: { params: { sectionId: string } };
   navigation: any;
 }
 
 export default function TutorialDetailScreen({ route, navigation }: TutorialDetailScreenProps) {
-  const { section } = route.params;
+  const { t, language } = useTranslation();
+  const section = getTutorialData(language).find((item) => item.id === route.params.sectionId)
+    ?? getTutorialData(language)[0];
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < MOBILE_BREAKPOINT;
 
@@ -115,7 +118,7 @@ export default function TutorialDetailScreen({ route, navigation }: TutorialDeta
         {section.links && section.links.length > 0 && (
           <TutorialCard>
             <Text style={[styles.linksTitle, isMobile && styles.linksTitleMobile]}>
-              🔗 參考連結
+              {t('tutorial_detail_links')}
             </Text>
             {section.links.map((link, index) => (
               <TouchableOpacity
@@ -136,10 +139,10 @@ export default function TutorialDetailScreen({ route, navigation }: TutorialDeta
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={[styles.footerText, isMobile && styles.footerTextMobile]}>
-            資料來源：巴哈姆特論壇 — 桜雪 (h503323)
+            {t('tutorial_detail_source')}
           </Text>
           <Text style={[styles.footerDate, isMobile && styles.footerDateMobile]}>
-            更新：2026 年 4 月 24 日
+            {t('tutorial_detail_updated')}
           </Text>
         </View>
       </ScrollView>

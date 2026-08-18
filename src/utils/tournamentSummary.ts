@@ -105,10 +105,11 @@ export function buildTournamentMonthlySummary(
   const verifiedDeckCount = verified.length;
 
   // Top Archetypes
-  const archetypeCounts = new Map<string | null, { label: string; count: number }>();
+  const archetypeCounts = new Map<string, { label: string; count: number }>();
   for (const d of verified) {
-    const key = d.archetypeId || null;
-    const label = d.archetypeLabel || (key ? key : '未知牌組');
+    const key = d.archetypeId || d.archetypeLabel;
+    if (!key) continue;
+    const label = d.archetypeLabel || key;
     const existing = archetypeCounts.get(key) || { label, count: 0 };
     existing.count += 1;
     archetypeCounts.set(key, existing);

@@ -132,6 +132,27 @@ async function run(label, viewport) {
   check(`${label}: Tutorial landing is Japanese`, !(await hasText('共同創造、共同競爭')));
   check(`${label}: Tutorial has no horizontal overflow`, await noOverflow());
 
+  await page.click('[data-testid="tutorial-section-intro"]');
+  await waitText('プレイヤーはファンとなり');
+  check(`${label}: Tutorial detail content is Japanese`,
+    (await hasText('自分だけのステージを作ります')) && !(await hasText('這是一款')));
+  check(`${label}: Tutorial detail has no horizontal overflow`, await noOverflow());
+  await shot('ja-tutorial-detail');
+
+  await page.reload({ waitUntil: 'networkidle0' });
+  await waitText('大会月報');
+  await clickText('ルールチュートリアル');
+  await waitText('「共に創り、共に競う」');
+  await page.click('[data-testid="tutorial-simulation-entry"]');
+  await waitText('手順に沿って対戦を体験しましょう');
+  await waitText('推しホロメンを選ぶ');
+  check(`${label}: Tutorial simulation content and controls are Japanese`,
+    (await hasText('推しホロメンを置く')) && !(await hasText('選擇主推')) && !(await hasText('上一步')));
+  check(`${label}: Tutorial simulation has no horizontal overflow`, await noOverflow());
+  await shot('ja-tutorial-simulation');
+
+  await page.reload({ waitUntil: 'networkidle0' });
+  await waitText('大会月報');
   await clickText('大会月報');
   await page.waitForSelector('[data-testid="tournament-monthly-summary"]', { timeout: T });
   await waitText('人気色');

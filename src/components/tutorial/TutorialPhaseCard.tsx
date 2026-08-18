@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { COLORS } from '../../constants';
 import { TutorialPhase } from '../../data/tutorialData';
 import TutorialCard from './TutorialCard';
+import { useTranslation } from '../../i18n';
 
 interface TutorialPhaseCardProps {
   phase: TutorialPhase;
@@ -15,6 +16,7 @@ export default function TutorialPhaseCard({
   depth = 0, 
   defaultExpanded = depth < 1 
 }: TutorialPhaseCardProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasChildren = phase.steps?.length || phase.notes?.length || 
     phase.conditions?.length || phase.canDo?.length || 
@@ -63,7 +65,7 @@ export default function TutorialPhaseCard({
           {phase.conditions && phase.conditions.length > 0 && (
             <View style={styles.conditionBox}>
               <Text style={styles.conditionTitle}>
-                ⚠️ 無法進行的情況
+                {t('tutorial_conditions_unavailable')}
               </Text>
               {phase.conditions.map((condition, index) => (
                 <View key={`condition-${index}`} style={styles.listItem}>
@@ -78,7 +80,7 @@ export default function TutorialPhaseCard({
           {phase.cannotDo && phase.cannotDo.length > 0 && (
             <View style={styles.cannotBox}>
               <Text style={styles.cannotTitle}>
-                ❌ 休息狀態不能做的事情
+                {t('tutorial_rest_cannot')}
               </Text>
               {phase.cannotDo.map((item, index) => (
                 <View key={`cannot-${index}`} style={styles.listItem}>
@@ -93,7 +95,7 @@ export default function TutorialPhaseCard({
           {phase.canDo && phase.canDo.length > 0 && (
             <View style={styles.canBox}>
               <Text style={styles.canTitle}>
-                ✅ 休息狀態可以做的事情
+                {t('tutorial_rest_can')}
               </Text>
               {phase.canDo.map((item, index) => (
                 <View key={`can-${index}`} style={styles.listItem}>

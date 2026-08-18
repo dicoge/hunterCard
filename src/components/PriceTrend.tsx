@@ -1,14 +1,15 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { COLORS } from '../constants';
+import { useTranslation } from '../i18n';
 
 interface PriceTrendProps {
   priceHistory: Record<string, number>;
 }
 
-function calcTrend(history: Record<string, number>, days: number): { pct: number; dir: 'up' | 'down' | 'flat'; label: string } {
+function calcTrend(history: Record<string, number>, days: number): { pct: number; dir: 'up' | 'down' | 'flat'; label: string | null } {
   const sorted = Object.entries(history).sort((a, b) => a[0].localeCompare(b[0]));
-  if (sorted.length < 2) return { pct: 0, dir: 'flat', label: '資料不足' };
+  if (sorted.length < 2) return { pct: 0, dir: 'flat', label: null };
 
   const latest = sorted[sorted.length - 1][1];
   const cutoff = new Date();
@@ -17,10 +18,10 @@ function calcTrend(history: Record<string, number>, days: number): { pct: number
 
   // 找最接近 cutoff 日期的價格
   const past = sorted.find(([d]) => d >= cutoffStr);
-  if (!past) return { pct: 0, dir: 'flat', label: '資料不足' };
+  if (!past) return { pct: 0, dir: 'flat', label: null };
 
   const pastPrice = past[1];
-  if (pastPrice <= 0) return { pct: 0, dir: 'flat', label: '資料不足' };
+  if (pastPrice <= 0) return { pct: 0, dir: 'flat', label: null };
 
   const pct = ((latest - pastPrice) / pastPrice) * 100;
 
@@ -30,6 +31,7 @@ function calcTrend(history: Record<string, number>, days: number): { pct: number
 }
 
 export const PriceTrend: React.FC<PriceTrendProps> = ({ priceHistory }) => {
+  const { t } = useTranslation();
   const d1 = useMemo(() => calcTrend(priceHistory, 1), [priceHistory]);
   const d7 = useMemo(() => calcTrend(priceHistory, 7), [priceHistory]);
   const d30 = useMemo(() => calcTrend(priceHistory, 30), [priceHistory]);
@@ -39,8 +41,8 @@ export const PriceTrend: React.FC<PriceTrendProps> = ({ priceHistory }) => {
   if (!hasData) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>📈 價格趨勢</Text>
-        <Text style={styles.noData}>歷史資料累積中，明日起顯示趨勢</Text>
+        <Text style={styles.title}>{t('price_trend_title')}</Text>
+        <Text style={styles.noData}>{t('price_trend_collecting')}</Text>
       </View>
     );
   }
@@ -52,7 +54,7 @@ export const PriceTrend: React.FC<PriceTrendProps> = ({ priceHistory }) => {
       <View style={styles.item} key={label}>
         <Text style={styles.period}>{label}</Text>
         <Text style={[styles.value, { color }]}>
-          {trend.label === '資料不足' ? '—' : `${arrow} ${trend.label}`}
+          {trend.label === null ? '—' : `${arrow} ${trend.label}`}
         </Text>
       </View>
     );
@@ -60,11 +62,11 @@ export const PriceTrend: React.FC<PriceTrendProps> = ({ priceHistory }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>📈 價格趨勢</Text>
+      <Text style={styles.title}>{t('price_trend_title')}</Text>
       <View style={styles.row}>
-        {renderItem('1天', d1)}
-        {renderItem('7天', d7)}
-        {renderItem('30天', d30)}
+        {renderItem(t('price_trend_day_one'), d1)}
+        {renderItem(t('price_trend_day_seven'), d7)}
+        {renderItem(t('price_trend_day_thirty'), d30)}
       </View>
     </View>
   );
