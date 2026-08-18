@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -265,5 +266,177 @@ assert.deepEqual(
   ['2026-09', '2026-08'],
   'index lists every generated month',
 );
+
+// ── Committed-artifact consistency (DIC-1065 / CR fix) ──────────────────────
+// The analytics file must record the live content SHA-256 of every report it
+// consumed.  If someone re-runs the collector (changing the report) but forgets
+// to re-run analytics, the embedded hash diverges and downstream consumers see
+// stale data.  This block catches that class of drift on committed files.
+const ROOT = path.resolve(import.meta.dirname, '..');
+const REPORTS_DIR = path.join(ROOT, 'data', 'tournaments');
+const ANALYTICS_DIR = path.join(ROOT, 'data', 'tournaments', 'analytics');
+const PUBLIC_ANALYTICS_DIR = path.join(ROOT, 'public', 'data', 'tournaments', 'analytics');
+const PUBLIC_REPORTS_DIR = path.join(ROOT, 'public', 'data', 'tournaments');
+
+function committedSha256(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath, 'utf8')).digest('hex');
+}
+
+const committedMonths = fs
+  .readdirSync(REPORTS_DIR)
+  .filter((f) => /^\d{4}-\d{2}\.json$/.test(f))
+  .map((f) => f.replace('.json', ''));
+
+for (const month of committedMonths) {
+  const reportPath = path.join(REPORTS_DIR, `${month}.json`);
+  const analyticsPath = path.join(ANALYTICS_DIR, `${month}.json`);
+  if (!fs.existsSync(analyticsPath)) continue;
+
+  const reportHash = committedSha256(reportPath);
+  const analytics = JSON.parse(fs.readFileSync(analyticsPath, 'utf8'));
+
+  // inputReports must be a non-empty array for months that produced decks
+  assert.ok(Array.isArray(analytics.inputReports), `${month} analytics must have inputReports array`);
+  assert.ok(analytics.inputReports.length > 0, `${month} analytics inputReports must not be empty`);
+
+  // The expected month entry must exist in inputReports
+  const matchingInputReport = analytics.inputReports.find((ir) => ir.month === month);
+  assert.ok(matchingInputReport, `${month} analytics must contain an inputReport for month ${month}`);
+
+  for (const ir of analytics.inputReports) {
+    assert.equal(
+      ir.contentSha256,
+      reportHash,
+      `analytics ${month}.json inputReport contentSha256 must match live report hash`,
+    );
+    assert.equal(ir.file, `${month}.json`, 'inputReport file field must reference the report');
+    assert.ok(ir.generatedAt, 'inputReport must have a generatedAt timestamp');
+    assert.ok(ir.month, 'inputReport must have a month field');
+  }
+
+  // Every deck in the analytics must carry the correct sourceReportHash —
+  // this is the mutation-sensitive check that prevents a bogus hash from
+  // slipping through when only inputReports is fixed but decks are not.
+  for (const dk of analytics.decks ?? []) {
+    assert.equal(
+      dk.sourceReportHash,
+      reportHash,
+      `analytics ${month}.json deck ${dk.deckId} sourceReportHash must equal the live report hash`,
+    );
+  }
+
+  // data/ and public/ mirrors must be byte-identical
+  const publicAnalyticsPath = path.join(PUBLIC_ANALYTICS_DIR, `${month}.json`);
+  assert.ok(fs.existsSync(publicAnalyticsPath), `public mirror of analytics ${month}.json must exist`);
+  assert.equal(
+    fs.readFileSync(analyticsPath, 'utf8'),
+    fs.readFileSync(publicAnalyticsPath, 'utf8'),
+    `data/ and public/ analytics ${month}.json must be byte-identical`,
+  );
+
+  const publicReportPath = path.join(PUBLIC_REPORTS_DIR, `${month}.json`);
+  assert.ok(fs.existsSync(publicReportPath), `public mirror of report ${month}.json must exist`);
+  assert.equal(
+    fs.readFileSync(reportPath, 'utf8'),
+    fs.readFileSync(publicReportPath, 'utf8'),
+    `data/ and public/ report ${month}.json must be byte-identical`,
+  );
+}
+
+// ── Deterministic regeneration comparison (preferred CR proof) ───────────────
+// Re-run analytics CLI against the committed reports and byte-compare the
+// output.  This proves the committed artifacts are exactly what the code
+// produces, not hand-patched hashes.
+const tmpArtifact = fs.mkdtempSync(path.join(os.tmpdir(), 'hocg-artifact-'));
+const tmpTournaments = path.join(tmpArtifact, 'tournaments');
+const tmpAnalytics = path.join(tmpArtifact, 'analytics');
+fs.mkdirSync(tmpTournaments, { recursive: true });
+// Copy committed reports into the temp dir
+for (const month of committedMonths) {
+  const src = path.join(REPORTS_DIR, `${month}.json`);
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, path.join(tmpTournaments, `${month}.json`));
+  }
+}
+const analyzeScript = path.join(ROOT, 'scripts', 'analyze-tournaments.mjs');
+execFileSync(process.execPath, [analyzeScript, '--tournaments-dir', tmpTournaments, '--out-dir', tmpAnalytics], {
+  cwd: ROOT,
+  stdio: 'pipe',
+});
+for (const month of committedMonths) {
+  const generated = path.join(tmpAnalytics, `${month}.json`);
+  if (!fs.existsSync(generated)) continue;
+  const committed = path.join(ANALYTICS_DIR, `${month}.json`);
+  assert.equal(
+    fs.readFileSync(generated, 'utf8'),
+    fs.readFileSync(committed, 'utf8'),
+    `analytics ${month}.json must be byte-identical to deterministic regeneration`,
+  );
+}
+// Also verify the regenerated analytics pass the same deck sourceReportHash checks
+for (const month of committedMonths) {
+  const generated = path.join(tmpAnalytics, `${month}.json`);
+  if (!fs.existsSync(generated)) continue;
+  const reportHash = committedSha256(path.join(tmpTournaments, `${month}.json`));
+  const gen = JSON.parse(fs.readFileSync(generated, 'utf8'));
+  for (const dk of gen.decks ?? []) {
+    assert.equal(
+      dk.sourceReportHash,
+      reportHash,
+      `regenerated ${month}.json deck ${dk.deckId} sourceReportHash must equal report hash`,
+    );
+  }
+  assert.ok(gen.inputReports?.length > 0, `regenerated ${month}.json inputReports must not be empty`);
+  for (const ir of gen.inputReports) {
+    assert.equal(ir.contentSha256, reportHash, `regenerated ${month}.json inputReport hash must match`);
+  }
+}
+
+// index.json is a generated artifact too. It was previously excluded from every
+// committed-artifact assertion, so a wrong month sampleSize in the index — the
+// number the UI reads — survived the whole suite (DIC-1065 CR FAIL #3).
+const generatedIndex = path.join(tmpAnalytics, 'index.json');
+assert.ok(fs.existsSync(generatedIndex), 'regeneration must produce analytics/index.json');
+
+const committedIndex = path.join(ANALYTICS_DIR, 'index.json');
+const publicIndex = path.join(PUBLIC_ANALYTICS_DIR, 'index.json');
+assert.ok(fs.existsSync(committedIndex), 'analytics/index.json must be committed');
+assert.ok(fs.existsSync(publicIndex), 'public mirror of analytics/index.json must exist');
+
+assert.equal(
+  fs.readFileSync(committedIndex, 'utf8'),
+  fs.readFileSync(generatedIndex, 'utf8'),
+  'analytics/index.json must be byte-identical to deterministic regeneration',
+);
+assert.equal(
+  fs.readFileSync(committedIndex, 'utf8'),
+  fs.readFileSync(publicIndex, 'utf8'),
+  'data/ and public/ analytics/index.json must be byte-identical',
+);
+
+// Targeted per-month assertions so a drifted index names the month and field
+// instead of failing as an opaque whole-file byte mismatch.
+const indexDoc = JSON.parse(fs.readFileSync(committedIndex, 'utf8'));
+assert.ok(Array.isArray(indexDoc.months) && indexDoc.months.length > 0, 'index must list months');
+assert.deepEqual(
+  indexDoc.months.map((m) => m.month).sort(),
+  [...committedMonths].sort(),
+  'index must list exactly the committed months',
+);
+for (const month of committedMonths) {
+  const entry = indexDoc.months.find((m) => m.month === month);
+  assert.ok(entry, `index must contain an entry for ${month}`);
+  const artifact = JSON.parse(fs.readFileSync(path.join(ANALYTICS_DIR, `${month}.json`), 'utf8'));
+  assert.equal(
+    entry.sampleSize,
+    artifact.sampleSize,
+    `index ${month} sampleSize must match the ${month}.json artifact sampleSize`,
+  );
+  assert.deepEqual(
+    [...(entry.inputDeckIds ?? [])].sort(),
+    [...(artifact.inputDeckIds ?? [])].sort(),
+    `index ${month} inputDeckIds must match the ${month}.json artifact`,
+  );
+}
 
 console.log('test-tournament-analytics: PASS');
