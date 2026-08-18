@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { COLORS, convertPrice, CURRENCIES } from '../constants';
 import { CardInfo } from '../services/cardRecognition';
+import { useTranslation } from '../i18n';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -48,6 +49,7 @@ export default function ScanResultCard({
   preferredCurrency = 'TWD',
   preferredLanguage = 'zh',
 }: ScanResultCardProps) {
+  const { t } = useTranslation();
   const slideAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -129,10 +131,10 @@ export default function ScanResultCard({
   };
 
   const formatPrice = (price: number | null): string => {
-    if (price == null) return '暫無交易';
+    if (price == null) return t('scan_no_trade');
     if (preferredCurrency === 'JPY') return `¥${price.toLocaleString()}`;
     const { value, symbol } = convertPrice(price, preferredCurrency);
-    if (value == null) return '暫無交易';
+    if (value == null) return t('scan_no_trade');
     return `${symbol}${value.toLocaleString()} (¥${price.toLocaleString()})`;
   };
 
@@ -217,7 +219,7 @@ export default function ScanResultCard({
             ))
           ) : (
             <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>{card.series || '估值'}</Text>
+              <Text style={styles.priceLabel}>{card.series || t('scan_estimate')}</Text>
               <Text style={[
                 styles.priceValue,
                 sellPriceNull ? styles.priceValueNull : styles.priceValuePositive,
@@ -231,7 +233,7 @@ export default function ScanResultCard({
         {/* Series reprint variants */}
         {variants && (
           <View style={styles.variantsSection}>
-            <Text style={styles.variantsHeader}>其他系列版本</Text>
+            <Text style={styles.variantsHeader}>{t('scan_other_versions')}</Text>
             {variants.map((v, i) => {
               const vPrices = v.prices && v.prices.length > 0 ? v.prices : null;
               return (
@@ -269,7 +271,7 @@ export default function ScanResultCard({
           </View>
         )}
 
-        <Text style={styles.dismissHint}>點擊關閉</Text>
+        <Text style={styles.dismissHint}>{t('scan_dismiss_hint')}</Text>
       </TouchableOpacity>
     </Animated.View>
   );

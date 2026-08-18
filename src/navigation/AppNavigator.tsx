@@ -7,7 +7,6 @@ import { COLORS } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTranslation } from '../i18n';
-import AuthScreen from '../screens/AuthScreen';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -38,12 +37,12 @@ const Drawer = createDrawerNavigator<MainDrawerParamList>();
 
 // Custom Drawer Content
 function CustomDrawerContent(props: DrawerContentComponentProps) {
-  const { language } = useTranslation();
+  const { t } = useTranslation();
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={styles.drawerContent}>
       <View style={styles.drawerHeader}>
         <Text style={styles.appTitle}>HoloHunter</Text>
-        <Text style={styles.appSubtitle}>{language === 'ja' ? 'カードハンター' : '卡牌獵人'}</Text>
+        <Text style={styles.appSubtitle}>{t('nav_app_subtitle')}</Text>
       </View>
       <DrawerItemList {...props} />
     </DrawerContentScrollView>

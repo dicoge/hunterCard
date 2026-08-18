@@ -35,6 +35,9 @@ jobs:
       - name: Check TypeScript types
         run: npx tsc --noEmit
 
+      - name: Verify interface i18n key parity and source coverage (DIC-1085)
+        run: npm run test:i18n
+
       - name: Verify provider ID-token audience acceptance (DIC-665)
         run: npm run test:verify-token
 

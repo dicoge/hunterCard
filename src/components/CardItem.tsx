@@ -5,6 +5,7 @@ import { FEATURES } from '../config/releaseFlags';
 import { HoloCard } from '../types/hololive';
 import PriceTrendBadge from './PriceTrendBadge';
 import type { TrendPrediction } from '../store/trendStore';
+import { useTranslation } from '../i18n';
 
 interface CardItemProps {
   card: HoloCard;
@@ -14,6 +15,7 @@ interface CardItemProps {
 }
 
 export default function CardItem({ card, onPress, showPrices = true, trend }: CardItemProps) {
+  const { t } = useTranslation();
   const minPrice = card.prices && card.prices.length > 0 
     ? Math.min(...card.prices.map(p => p.price))
     : null;
@@ -79,7 +81,7 @@ export default function CardItem({ card, onPress, showPrices = true, trend }: Ca
         {showPrices && minPrice !== null && card.prices && card.prices.length > 0 && (
           <View style={styles.priceSection}>
             <View style={styles.priceHeader}>
-              <Text style={styles.priceLabel}>最低價</Text>
+              <Text style={styles.priceLabel}>{t('card_item_lowest_price')}</Text>
               <Text style={styles.priceValue}>NT$ {minPrice.toLocaleString()}</Text>
             </View>
             
@@ -103,7 +105,7 @@ export default function CardItem({ card, onPress, showPrices = true, trend }: Ca
         )}
         {showPrices && (!card.prices || card.prices.length === 0) && (
           <View style={styles.priceSection}>
-            <Text style={styles.noPriceLabel}>尚無交易</Text>
+            <Text style={styles.noPriceLabel}>{t('card_item_no_sales')}</Text>
           </View>
         )}
         

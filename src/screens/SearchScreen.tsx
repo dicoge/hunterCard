@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, TextInput, TouchableOpacity, Text, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useTranslation } from '../i18n';
 
 interface SearchScreenProps {
   navigation: any;
@@ -10,6 +11,7 @@ interface SearchScreenProps {
 export default function SearchScreen({ navigation }: SearchScreenProps) {
   const [query, setQuery] = useState('');
   const { isDesktop } = useBreakpoint();
+  const { t } = useTranslation();
 
   const handleSearch = () => {
     if (!query.trim()) return;
@@ -25,7 +27,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       <View style={styles.searchBar}>
         <TextInput
           style={styles.input}
-          placeholder="輸入卡號（hBP01-001）或成員名稱..."
+          placeholder={t('search_landing_placeholder')}
           placeholderTextColor={COLORS.textSecondary}
           value={query}
           onChangeText={setQuery}
@@ -35,19 +37,19 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           autoCorrect={false}
         />
         <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.searchButtonText}>搜尋</Text>
+          <Text style={styles.searchButtonText}>{t('common_search')}</Text>
         </TouchableOpacity>
       </View>
 
       {/* 說明 */}
       <View style={styles.hintBox}>
-        <Text style={styles.hintTitle}>🔍 搜尋功能</Text>
-        <Text style={styles.hintText}>輸入卡號（例：hBP01-001）或成員名稱即可搜尋</Text>
+        <Text style={styles.hintTitle}>{t('search_feature_title')}</Text>
+        <Text style={styles.hintText}>{t('search_feature_hint')}</Text>
       </View>
 
       {/* 熱門搜尋建議 */}
       <View style={styles.suggestions}>
-        <Text style={styles.suggestionTitle}>💡 熱門搜尋</Text>
+        <Text style={styles.suggestionTitle}>{t('search_popular_title')}</Text>
         <View style={styles.suggestionTags}>
           <TouchableOpacity 
             style={styles.suggestionTag}

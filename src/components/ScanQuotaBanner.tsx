@@ -5,8 +5,10 @@ import { FEATURES } from '../config/releaseFlags';
 import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
 import { getRoleLabel } from '../services/permissionService';
+import { useTranslation } from '../i18n';
 
 export default function ScanQuotaBanner() {
+  const { t, language } = useTranslation();
   const role = useAuthStore((s) => s.role);
   const remaining = useScanQuotaStore((s) => s.getRemaining());
   const scanCount = useScanQuotaStore((s) => s.scanCount);
@@ -16,7 +18,7 @@ export default function ScanQuotaBanner() {
     return (
       <View style={styles.bannerUnlimited}>
         <Text style={styles.icon}>♾️</Text>
-        <Text style={styles.text}>訂閱會員 — 無限掃描</Text>
+        <Text style={styles.text}>{t('scan_quota_unlimited')}</Text>
       </View>
     );
   }
@@ -25,7 +27,7 @@ export default function ScanQuotaBanner() {
     return (
       <View style={styles.bannerGuest}>
         <Text style={styles.icon}>🔒</Text>
-        <Text style={styles.text}>請登入以使用掃描功能</Text>
+        <Text style={styles.text}>{t('scan_quota_login')}</Text>
       </View>
     );
   }
@@ -40,10 +42,14 @@ export default function ScanQuotaBanner() {
     ]}>
       <Text style={styles.quotaText}>
         {isExhausted
-          ? `⚠️ 本月掃描額度已用完 (${scanCount}/100)`
-          : `📷 本月剩餘掃描：${remaining}/100`}
+          ? t('scan_quota_exhausted', { count: scanCount })
+          : t('scan_quota_remaining_banner', { count: remaining })}
       </Text>
-      <Text style={styles.roleTag}>{getRoleLabel(role)}</Text>
+      <Text style={styles.roleTag}>
+        {language === 'ja'
+          ? (role === 'subscriber' ? t('scan_role_subscriber') : t('scan_role_free'))
+          : getRoleLabel(role)}
+      </Text>
     </View>
   );
 }

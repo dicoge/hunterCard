@@ -22,12 +22,7 @@ import { CardFilterPanel, CardPickerGrid } from '../components/CardPicker';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { formatInterval, priceAlertKey } from '../utils/priceAlerts';
-
-const ZONE_LABELS: Record<DeckZone, string> = {
-  oshi: '推しホロメン',
-  main: '主牌組',
-  yell: 'エール',
-};
+import { useTranslation, type TranslationKey } from '../i18n';
 
 const ZONES: DeckZone[] = ['oshi', 'main', 'yell'];
 
@@ -46,15 +41,24 @@ function printingLabelOf(card: {
   printingLabel?: string;
   unresolvedPrinting?: boolean;
   sourceVersion?: string;
-}): string {
+}, translate?: (key: TranslationKey, params?: Record<string, string | number>) => string): string {
   if (card.unresolvedPrinting) {
-    return card.sourceVersion ? `版本未確認（來源：${card.sourceVersion}）` : '版本未確認';
+    if (translate) {
+      return card.sourceVersion
+        ? translate('deck_printing_source', { source: card.sourceVersion })
+        : translate('deck_printing_unresolved');
+    }
+    return card.sourceVersion || card.printing;
   }
   return card.printingLabel?.trim() || card.printing;
 }
 
 export default function DeckEditorScreen() {
+  const { t } = useTranslation();
   const { isDesktop, isWide } = useBreakpoint();
+  const zoneLabels: Record<DeckZone, string> = {
+    oshi: t('deck_zone_oshi'), main: t('deck_zone_main'), yell: t('deck_zone_yell'),
+  };
   const [db, setDb] = useState<CardDatabase | null>(null);
   const [loading, setLoading] = useState(true);
   const [newDeckName, setNewDeckName] = useState('');
@@ -188,14 +192,29 @@ export default function DeckEditorScreen() {
           key, cardNumber, version, qty,
           name: card?.name || cardNumber,
           // 找不到卡片（例如 DIC-1013 前以 rarity 記錄的舊項目）就照原樣顯示版本碼，不臆測。
-          versionLabel: card ? printingLabelOf(card) : version,
+          versionLabel: card ? printingLabelOf(card, t) : version,
         };
       })
       .sort((a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.version.localeCompare(b.version));
-  }, [collection, cardByOwnershipKey]);
+  }, [collection, cardByOwnershipKey, t]);
 
   const stats = activeDeck ? deckStats(activeDeck) : null;
   const gap = activeDeck && db ? computeGap(activeDeck, collection, db.priceRecords) : null;
+
+  function validationMessage(issue: ValidationIssue): string {
+    const card = issue.cardNumber || '—';
+    switch (issue.code) {
+      case 'ERR_OSHI_QTY': return t('deck_rule_oshi_qty', { target: stats?.oshiTarget ?? 1, current: stats?.oshi ?? 0 });
+      case 'ERR_OSHI_TYPE': return t('deck_rule_oshi_type', { card });
+      case 'ERR_MAIN_QTY': return t('deck_rule_main_qty', { target: stats?.mainTarget ?? 50, current: stats?.main ?? 0 });
+      case 'ERR_MAIN_TYPE': return t('deck_rule_main_type', { card });
+      case 'ERR_CHEER_QTY': return t('deck_rule_yell_qty', { target: stats?.yellTarget ?? 20, current: stats?.yell ?? 0 });
+      case 'ERR_CHEER_TYPE': return t('deck_rule_yell_type', { card });
+      case 'ERR_CARD_LIMIT': return t('deck_rule_card_limit', { card });
+      case 'ERR_RESTRICTED': return t('deck_rule_restricted', { card });
+      default: return issue.message;
+    }
+  }
 
   function addToDeck(card: DeckCard) {
     if (!activeDeck) return;
@@ -240,7 +259,7 @@ export default function DeckEditorScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.primary} size="large" />
-          <Text style={styles.muted}>載入卡片資料庫…</Text>
+          <Text style={styles.muted}>{t('deck_loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -251,13 +270,13 @@ export default function DeckEditorScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.pad}>
-          <Text style={styles.h1}>牌組編輯器</Text>
-          <Text style={styles.muted}>本地牌組（僅存於此裝置）。建立或選擇一個牌組開始編輯。</Text>
+          <Text style={styles.h1}>{t('deck_title')}</Text>
+          <Text style={styles.muted}>{t('deck_local_hint')}</Text>
 
           <View style={styles.row}>
             <TextInput
               style={[styles.input, { flex: 1 }]}
-              placeholder="新牌組名稱"
+              placeholder={t('deck_new_name')}
               placeholderTextColor={COLORS.textSecondary}
               value={newDeckName}
               onChangeText={setNewDeckName}
@@ -266,11 +285,11 @@ export default function DeckEditorScreen() {
               style={styles.primaryBtn}
               onPress={() => { createDeck(newDeckName); setNewDeckName(''); }}
             >
-              <Text style={styles.primaryBtnText}>建立</Text>
+              <Text style={styles.primaryBtnText}>{t('deck_create')}</Text>
             </TouchableOpacity>
           </View>
 
-          {decks.length > 0 && <Text style={styles.h2}>我的牌組</Text>}
+          {decks.length > 0 && <Text style={styles.h2}>{t('deck_my_decks')}</Text>}
           {decks.map((d) => (
             <TouchableOpacity key={d.id} style={styles.deckRow} onPress={() => setActiveDeck(d.id)}>
               <Text style={styles.deckName}>{d.name}</Text>
@@ -300,11 +319,11 @@ export default function DeckEditorScreen() {
             onPress={() => { setActiveZone(zone); setCriteria(EMPTY_CRITERIA); }}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
-            accessibilityLabel={`${ZONE_LABELS[zone]} ${value}/${target}`}
+            accessibilityLabel={`${zoneLabels[zone]} ${value}/${target}`}
             testID={`deck-zone-tab-${zone}`}
           >
             <Text style={[styles.tabLabel, active && styles.tabLabelActive]} numberOfLines={1}>
-              {ZONE_LABELS[zone]}
+              {zoneLabels[zone]}
             </Text>
             <Text
               style={[styles.tabProgress, value === target && { color: COLORS.success }]}
@@ -331,20 +350,20 @@ export default function DeckEditorScreen() {
 
   const pickerPanel = (
     <View style={[styles.panel, isDesktop && styles.panelGrid]}>
-      <Text style={styles.h2}>選擇卡片</Text>
+      <Text style={styles.h2}>{t('deck_choose_card')}</Text>
       {!isDesktop && (
         <View style={styles.mobileFilterRow}>
           <TouchableOpacity
             style={styles.filterBtn}
             onPress={() => setFiltersOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel="開啟搜尋與篩選"
+            accessibilityLabel={t('deck_open_filters')}
             testID="open-filters"
           >
-            <Text style={styles.filterBtnText}>搜尋 / 篩選</Text>
+            <Text style={styles.filterBtnText}>{t('deck_search_filters')}</Text>
           </TouchableOpacity>
           <Text style={styles.resultCount} testID="card-result-count-mobile">
-            {results.length} 張卡片
+            {t('deck_cards_count', { count: results.length })}
           </Text>
         </View>
       )}
@@ -355,7 +374,7 @@ export default function DeckEditorScreen() {
         qtyOf={(cardNumber) => qtyByCardNumber.get(cardNumber) ?? 0}
         onAdd={addToDeck}
         onAddOwned={(card) => adjustOwned(card.cardNumber, card.printing, 1)}
-        emptyLabel="沒有符合條件的卡片，請調整搜尋或篩選條件。"
+        emptyLabel={t('deck_no_results')}
       />
     </View>
   );
@@ -367,14 +386,14 @@ export default function DeckEditorScreen() {
         <View style={styles.renameBlock}>
           <TextInput
             style={[styles.input, styles.renameInput, renameError && styles.renameInputError]}
-            placeholder="牌組名稱"
+            placeholder={t('deck_name_placeholder')}
             placeholderTextColor={COLORS.textSecondary}
             value={renameValue}
             onChangeText={(t) => { setRenameValue(t); if (renameError) setRenameError(false); }}
             onSubmitEditing={commitRename}
             autoFocus
             testID="deck-rename-input"
-            accessibilityLabel="牌組名稱"
+            accessibilityLabel={t('deck_name_placeholder')}
           />
           <View style={styles.renameActions}>
             <TouchableOpacity
@@ -382,21 +401,21 @@ export default function DeckEditorScreen() {
               onPress={commitRename}
               testID="deck-rename-save"
               accessibilityRole="button"
-              accessibilityLabel="儲存牌組名稱"
+              accessibilityLabel={t('deck_rename_save_a11y')}
             >
-              <Text style={styles.primaryBtnText}>儲存</Text>
+              <Text style={styles.primaryBtnText}>{t('common_save')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={cancelRename}
               testID="deck-rename-cancel"
               accessibilityRole="button"
-              accessibilityLabel="取消重新命名"
+              accessibilityLabel={t('deck_rename_cancel_a11y')}
             >
-              <Text style={styles.link}>取消</Text>
+              <Text style={styles.link}>{t('common_cancel')}</Text>
             </TouchableOpacity>
           </View>
           {renameError && (
-            <Text style={styles.renameErrorText}>名稱不可為空白</Text>
+            <Text style={styles.renameErrorText}>{t('deck_name_empty')}</Text>
           )}
         </View>
       ) : (
@@ -407,12 +426,12 @@ export default function DeckEditorScreen() {
               onPress={startRename}
               testID="deck-rename-button"
               accessibilityRole="button"
-              accessibilityLabel="重新命名牌組"
+              accessibilityLabel={t('deck_rename')}
             >
-              <Text style={styles.link}>重新命名</Text>
+              <Text style={styles.link}>{t('deck_rename')}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setActiveDeck(null)}>
-              <Text style={styles.link}>切換牌組</Text>
+              <Text style={styles.link}>{t('deck_switch')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -421,18 +440,20 @@ export default function DeckEditorScreen() {
       {activeDeck.origin?.kind === 'tournament' && (
         <View style={styles.originBanner} testID="deck-origin-banner">
           <Text style={styles.originText}>
-            ✓ 已從賽事牌組匯入：{activeDeck.origin.eventName}
-            {activeDeck.origin.decklogCode ? `（${activeDeck.origin.decklogCode}）` : ''}
+            {t('deck_imported_from', {
+              event: activeDeck.origin.eventName,
+              code: activeDeck.origin.decklogCode ? `（${activeDeck.origin.decklogCode}）` : '',
+            })}
           </Text>
         </View>
       )}
 
       {stats && (
         <View style={styles.statsRow}>
-          <Stat label={ZONE_LABELS.oshi} value={stats.oshi} target={stats.oshiTarget} />
-          <Stat label={ZONE_LABELS.main} value={stats.main} target={stats.mainTarget} />
-          <Stat label={ZONE_LABELS.yell} value={stats.yell} target={stats.yellTarget} />
-          <Stat label="總計" value={stats.total} target={stats.totalTarget} emphasize />
+          <Stat label={zoneLabels.oshi} value={stats.oshi} target={stats.oshiTarget} />
+          <Stat label={zoneLabels.main} value={stats.main} target={stats.mainTarget} />
+          <Stat label={zoneLabels.yell} value={stats.yell} target={stats.yellTarget} />
+          <Stat label={t('deck_total')} value={stats.total} target={stats.totalTarget} emphasize />
         </View>
       )}
 
@@ -442,31 +463,31 @@ export default function DeckEditorScreen() {
           onPress={finalizeDeck}
           testID="deck-finalize-button"
           accessibilityRole="button"
-          accessibilityLabel="完成組牌並檢查規則"
+          accessibilityLabel={t('deck_finalize_a11y')}
         >
-          <Text style={styles.primaryBtnText}>完成組牌</Text>
+          <Text style={styles.primaryBtnText}>{t('deck_finalize')}</Text>
         </TouchableOpacity>
         {lowCostDrift > 0 && (
           <TouchableOpacity
             onPress={() => applyLowCostVariants(activeDeck.id, lowCostIndex)}
             testID="deck-apply-low-cost"
             accessibilityRole="button"
-            accessibilityLabel={`套用低配版本，將改寫 ${lowCostDrift} 張卡片`}
+            accessibilityLabel={t('deck_apply_low_cost_a11y', { count: lowCostDrift })}
           >
-            <Text style={styles.link}>套用低配版本（{lowCostDrift}）</Text>
+            <Text style={styles.link}>{t('deck_low_cost_variants')}（{lowCostDrift}）</Text>
           </TouchableOpacity>
         )}
       </View>
 
       <View style={styles.zoneBlock}>
-        <Text style={styles.zoneTitle}>{ZONE_LABELS[activeZone]}（已選）</Text>
-        {selectedSlots.length === 0 && <Text style={styles.muted}>（尚無卡片）</Text>}
+        <Text style={styles.zoneTitle}>{t('deck_selected_zone', { zone: zoneLabels[activeZone] })}</Text>
+        {selectedSlots.length === 0 && <Text style={styles.muted}>{t('deck_no_cards')}</Text>}
         {selectedSlots.map((slot) => (
           <View key={slot.card.id} style={styles.slotRow} testID={`deck-slot-${slot.card.cardNumber}`}>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardName}>{slot.card.name}</Text>
               <Text style={styles.cardMeta}>
-                {slot.card.cardNumber} · {printingLabelOf(slot.card)}
+                {slot.card.cardNumber} · {printingLabelOf(slot.card, t)}
               </Text>
             </View>
             <View style={styles.qtyControls}>
@@ -474,7 +495,7 @@ export default function DeckEditorScreen() {
                 style={styles.qtyBtn}
                 onPress={() => changeCard(activeDeck.id, activeZone, slot.card, -1)}
                 accessibilityRole="button"
-                accessibilityLabel={`減少 ${slot.card.name}`}
+                accessibilityLabel={t('deck_decrease_a11y', { name: slot.card.name })}
                 testID={`deck-slot-dec-${slot.card.cardNumber}`}
               >
                 <Text style={styles.qtyBtnText}>－</Text>
@@ -484,7 +505,7 @@ export default function DeckEditorScreen() {
                 style={styles.qtyBtn}
                 onPress={() => changeCard(activeDeck.id, activeZone, slot.card, 1)}
                 accessibilityRole="button"
-                accessibilityLabel={`增加 ${slot.card.name}`}
+                accessibilityLabel={t('deck_increase_a11y', { name: slot.card.name })}
                 testID={`deck-slot-inc-${slot.card.cardNumber}`}
               >
                 <Text style={styles.qtyBtnText}>＋</Text>
@@ -493,10 +514,10 @@ export default function DeckEditorScreen() {
                 style={styles.removeBtn}
                 onPress={() => removeCard(activeDeck.id, activeZone, slot.card.id)}
                 accessibilityRole="button"
-                accessibilityLabel={`移除 ${slot.card.name}`}
+                accessibilityLabel={t('deck_remove_a11y', { name: slot.card.name })}
                 testID={`deck-slot-remove-${slot.card.cardNumber}`}
               >
-                <Text style={styles.link}>移除</Text>
+                <Text style={styles.link}>{t('common_remove')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -507,12 +528,10 @@ export default function DeckEditorScreen() {
 
   const collectionPanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <Text style={styles.h2}>收藏擁有數量</Text>
-      <Text style={styles.muted}>
-        全域收藏（跨所有牌組共用，僅存於此裝置）· 依精確卡號＋版本記錄擁有張數
-      </Text>
+      <Text style={styles.h2}>{t('deck_collection_title')}</Text>
+      <Text style={styles.muted}>{t('deck_collection_hint')}</Text>
       {collectionEntries.length === 0 ? (
-        <Text style={styles.muted}>尚無收藏紀錄。</Text>
+        <Text style={styles.muted}>{t('deck_collection_empty')}</Text>
       ) : (
         collectionEntries.map((e) => (
           <View key={e.key} style={styles.slotRow} testID={`collection-row-${e.key}`}>
@@ -527,7 +546,7 @@ export default function DeckEditorScreen() {
                 style={styles.qtyBtn}
                 onPress={() => adjustOwned(e.cardNumber, e.version, -1)}
                 accessibilityRole="button"
-                accessibilityLabel={`收藏 -1 ${e.name}`}
+                accessibilityLabel={t('deck_collection_decrease_a11y', { name: e.name })}
                 testID={`collection-dec-${e.key}`}
               >
                 <Text style={styles.qtyBtnText}>－</Text>
@@ -537,7 +556,7 @@ export default function DeckEditorScreen() {
                 style={styles.qtyBtn}
                 onPress={() => adjustOwned(e.cardNumber, e.version, 1)}
                 accessibilityRole="button"
-                accessibilityLabel={`收藏 +1 ${e.name}`}
+                accessibilityLabel={t('deck_collection_increase_a11y', { name: e.name })}
                 testID={`collection-inc-${e.key}`}
               >
                 <Text style={styles.qtyBtnText}>＋</Text>
@@ -545,10 +564,10 @@ export default function DeckEditorScreen() {
               <TouchableOpacity
                 onPress={() => setOwned(e.cardNumber, e.version, 0)}
                 accessibilityRole="button"
-                accessibilityLabel={`移除收藏 ${e.name}`}
+                accessibilityLabel={t('deck_collection_remove_a11y', { name: e.name })}
                 testID={`collection-remove-${e.key}`}
               >
-                <Text style={styles.link}>移除</Text>
+                <Text style={styles.link}>{t('common_remove')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -559,7 +578,7 @@ export default function DeckEditorScreen() {
 
   const estimatePanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <Text style={styles.h2}>缺卡預估（參考售價）</Text>
+      <Text style={styles.h2}>{t('deck_gap_title')}</Text>
       {gap && gap.rows.map((r) => {
         const alert = priceAlerts[priceAlertKey(r.cardNumber, r.version)] ?? null;
         return (
@@ -572,23 +591,23 @@ export default function DeckEditorScreen() {
                 </Text>
               </View>
               <View style={styles.gapNumbers}>
-                <Text style={styles.gapNeed}>需 {r.required}</Text>
+                <Text style={styles.gapNeed}>{t('deck_required', { count: r.required })}</Text>
                 <View style={styles.ownedControls}>
                   <TouchableOpacity style={styles.qtyBtnSm} onPress={() => setOwned(r.cardNumber, r.version, Math.max(0, r.owned - 1))}>
                     <Text style={styles.qtyBtnText}>－</Text>
                   </TouchableOpacity>
-                  <Text style={styles.gapOwned}>有 {r.owned}</Text>
+                  <Text style={styles.gapOwned}>{t('deck_owned', { count: r.owned })}</Text>
                   <TouchableOpacity style={styles.qtyBtnSm} onPress={() => setOwned(r.cardNumber, r.version, r.owned + 1)}>
                     <Text style={styles.qtyBtnText}>＋</Text>
                   </TouchableOpacity>
                 </View>
-                <Text style={[styles.gapMissing, r.missing > 0 && { color: COLORS.error }]}>缺 {r.missing}</Text>
+                <Text style={[styles.gapMissing, r.missing > 0 && { color: COLORS.error }]}>{t('deck_missing', { count: r.missing })}</Text>
                 <Text style={styles.gapPrice}>
                   {r.missing === 0
                     ? '—'
                     : r.price.status === 'ok'
                       ? `${r.subtotal} ${r.price.currency}`
-                      : '無精確版本價格'}
+                      : t('deck_no_exact_price')}
                 </Text>
               </View>
             </View>
@@ -605,16 +624,16 @@ export default function DeckEditorScreen() {
                     currentPrice: r.price.status === 'ok' ? r.price.price : null,
                   })}
                   accessibilityRole="button"
-                  accessibilityLabel={`設定 ${r.name} ${r.versionLabel || r.version} 的期望入手價格區間`}
+                  accessibilityLabel={t('deck_alert_a11y', { name: r.name, version: r.versionLabel || r.version })}
                   testID={`price-alert-open-${r.cardNumber}|${r.version}`}
                 >
                   <Text style={styles.alertLink}>
-                    {alert ? `🔔 期望入手 ${formatInterval(alert)}・編輯` : '🔔 設定期望入手價格區間'}
+                    {alert ? t('deck_alert_edit', { interval: formatInterval(alert) }) : t('deck_alert_set')}
                   </Text>
                 </TouchableOpacity>
               ) : (
                 <Text style={styles.alertDisabled} testID={`price-alert-unavailable-${r.cardNumber}|${r.version}`}>
-                  無精確版本價格，無法設定到價提醒
+                  {t('deck_alert_unavailable')}
                 </Text>
               )
             )}
@@ -622,28 +641,32 @@ export default function DeckEditorScreen() {
         );
       })}
       {gap && (gap.rows.length === 0
-        ? <Text style={styles.muted}>牌組為空，無缺卡。</Text>
+        ? <Text style={styles.muted}>{t('deck_empty_gap')}</Text>
         : (
           <View style={styles.totalCard}>
             {gap.subtotals.length === 0 ? (
-              <Text style={styles.totalText}>缺卡預估總額（參考售價）：—（無精確版本價格）</Text>
+              <Text style={styles.totalText}>{t('deck_gap_total_unavailable')}</Text>
             ) : (
               gap.subtotals.map((s) => (
                 <View key={s.currency}>
                   <Text style={styles.totalText} testID={`gap-subtotal-${s.currency}`}>
-                    缺卡預估小計（參考售價 · {s.currency}）：{s.total} {s.currency}
+                    {t('deck_gap_subtotal', { currency: s.currency, total: s.total })}
                   </Text>
                   <Text style={styles.muted}>
-                    來源 yuyu-tei.jp 參考售價 · 幣別 {s.currency}
-                    {s.dataAsOf ? ` · 資料截至 ${s.dataAsOf}` : ''}
+                    {t('deck_gap_source', {
+                      currency: s.currency,
+                      date: s.dataAsOf ? t('deck_data_as_of', { date: s.dataAsOf }) : '',
+                    })}
                   </Text>
                 </View>
               ))
             )}
             {gap.unpriced.length > 0 && (
               <Text style={[styles.muted, { color: COLORS.warning }]}>
-                未計價項目（{gap.unpriced.length}）（無精確版本價格）：
-                {gap.unpriced.map((u) => `${u.cardNumber}${u.version ? `·${u.version}` : ''}`).join('、')}
+                {t('deck_unpriced', {
+                  count: gap.unpriced.length,
+                  items: gap.unpriced.map((u) => `${u.cardNumber}${u.version ? `·${u.version}` : ''}`).join('、'),
+                })}
               </Text>
             )}
           </View>
@@ -664,20 +687,20 @@ export default function DeckEditorScreen() {
         <View style={styles.modalCard} accessibilityViewIsModal testID="deck-finalize-sheet">
           {finalizeIssues && finalizeIssues.length === 0 ? (
             <>
-              <Text style={[styles.h2, { color: COLORS.success }]}>✓ 組牌完成</Text>
-              <Text style={styles.muted}>此牌組符合所有規則，已可出賽。</Text>
+              <Text style={[styles.h2, { color: COLORS.success }]}>{t('deck_complete_title')}</Text>
+              <Text style={styles.muted}>{t('deck_complete_body')}</Text>
             </>
           ) : (
             <>
-              <Text style={styles.h2}>尚未完成，還有 {finalizeIssues?.length ?? 0} 項需要調整</Text>
+              <Text style={styles.h2}>{t('deck_incomplete_title', { count: finalizeIssues?.length ?? 0 })}</Text>
               <ScrollView style={styles.modalList}>
                 {finalizeIssues?.map((i, idx) => (
                   <View
                     key={`${i.code}-${idx}`}
                     style={[styles.issue, i.level === 'error' ? styles.issueError : styles.issueWarn]}
                   >
-                    <Text style={styles.issueLevel}>{i.level === 'error' ? '🚫 錯誤' : '⚠️ 警告'}</Text>
-                    <Text style={styles.issueMsg}>{i.message}</Text>
+                    <Text style={styles.issueLevel}>{i.level === 'error' ? t('deck_error') : t('deck_warning')}</Text>
+                    <Text style={styles.issueMsg}>{validationMessage(i)}</Text>
                   </View>
                 ))}
               </ScrollView>
@@ -688,10 +711,10 @@ export default function DeckEditorScreen() {
             onPress={() => setFinalizeIssues(null)}
             testID="deck-finalize-close"
             accessibilityRole="button"
-            accessibilityLabel="關閉並回到編輯"
+            accessibilityLabel={t('deck_close_edit_a11y')}
           >
             <Text style={styles.primaryBtnText}>
-              {finalizeIssues && finalizeIssues.length === 0 ? '完成' : '回到編輯'}
+              {finalizeIssues && finalizeIssues.length === 0 ? t('common_done') : t('deck_back_to_edit')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -710,15 +733,15 @@ export default function DeckEditorScreen() {
       <View style={styles.sheetBackdrop}>
         <View style={styles.sheet} accessibilityViewIsModal testID="filter-sheet">
           <View style={styles.sheetHeader}>
-            <Text style={styles.h2}>搜尋 / 篩選</Text>
+            <Text style={styles.h2}>{t('deck_search_filters')}</Text>
             <TouchableOpacity
               onPress={() => setFiltersOpen(false)}
               accessibilityRole="button"
-              accessibilityLabel="關閉篩選"
+              accessibilityLabel={t('deck_close_filters_a11y')}
               testID="close-filters"
               style={styles.sheetClose}
             >
-              <Text style={styles.link}>完成</Text>
+              <Text style={styles.link}>{t('common_done')}</Text>
             </TouchableOpacity>
           </View>
           <ScrollView>{filterPanel}</ScrollView>
@@ -737,7 +760,7 @@ export default function DeckEditorScreen() {
         <ScrollView contentContainerStyle={styles.desktopWrap}>
           <View style={styles.desktopCols}>
             <View style={[styles.panel, styles.panelCol]}>
-              <Text style={styles.h2}>搜尋與篩選</Text>
+              <Text style={styles.h2}>{t('deck_search_and_filter')}</Text>
               {filterPanel}
             </View>
             {pickerPanel}
@@ -763,13 +786,14 @@ export default function DeckEditorScreen() {
 // An incomplete deck is a 草稿, not a failure — error wording is reserved for a
 // failed 完成組牌 attempt (DIC-1004 §B5).
 function LegalBadge({ deck }: { deck: Deck }) {
+  const { t } = useTranslation();
   const legal = isDeckLegal(deck);
   return (
     <Text
       style={[styles.badgeText, { color: legal ? COLORS.success : COLORS.textSecondary }]}
       testID={`deck-badge-${deck.id}`}
     >
-      {legal ? '可出賽' : '草稿'}
+      {legal ? t('deck_legal_badge') : t('deck_draft_badge')}
     </Text>
   );
 }

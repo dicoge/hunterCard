@@ -19,7 +19,11 @@ export function t(
   params?: Record<string, string | number>,
 ): string {
   const dict = dictionaries[language] || dictionaries.zh;
-  let text = dict[key] || dictionaries.zh[key] || (key as string);
+  const resolved = dict[key] || dictionaries.zh[key];
+  if (!resolved) {
+    throw new Error(`Missing translation key: ${String(key)} (${language})`);
+  }
+  let text = resolved;
 
   if (params) {
     Object.entries(params).forEach(([paramKey, val]) => {

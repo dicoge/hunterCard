@@ -86,7 +86,7 @@ export default function ObservedShareDonut({
                         activeOpacity={0.8}
                         onPress={() => onSelect(selectedKey === slice.key ? null : slice.key)}
                         accessibilityRole="button"
-                        accessibilityLabel={`${slice.label}，${slice.count} 副，${slice.percent}%`}
+                        accessibilityLabel={t('tournament_slice_a11y', { label: slice.label, count: slice.count, percent: slice.percent })}
                         testID={`donut-slice-${slice.key}`}
                         style={wedgeStyle}
                       />
@@ -111,13 +111,13 @@ export default function ObservedShareDonut({
               },
             ]}
           >
-            <Text style={styles.centerCaption}>已公開樣本</Text>
+            <Text style={styles.centerCaption}>{t('tournament_published_sample')}</Text>
             <Text style={styles.centerValue} testID="donut-center">
               n={model.sampleSize}
             </Text>
             {selected ? (
               <Text style={styles.centerSelected} numberOfLines={2}>
-                {selected.label} {selected.count} 副
+                {selected.label} {t('common_decks_count', { count: selected.count })}
               </Text>
             ) : null}
           </View>
@@ -134,7 +134,7 @@ export default function ObservedShareDonut({
               onPress={() => onSelect(active ? null : s.key)}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={`${s.label}，${s.count} 副，${s.percent}%`}
+              accessibilityLabel={t('tournament_slice_a11y', { label: s.label, count: s.count, percent: s.percent })}
               testID={`donut-legend-${s.key}`}
             >
               <View style={[styles.swatch, { backgroundColor: s.color }]} />
@@ -145,7 +145,7 @@ export default function ObservedShareDonut({
                 {active ? '✓ ' : ''}
                 {s.label}
               </Text>
-              <Text style={styles.legendCount}>{s.count} 副</Text>
+              <Text style={styles.legendCount}>{t('common_decks_count', { count: s.count })}</Text>
               <Text style={styles.legendPct}>{s.percent}%</Text>
             </TouchableOpacity>
           );

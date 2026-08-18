@@ -14,7 +14,9 @@
 
 import assert from 'node:assert/strict';
 import { t, zh, ja } from '../src/i18n/index.ts';
-import { buildTournamentMonthlySummary } from '../src/utils/tournamentSummary.ts';
+import {
+  buildTournamentMonthlySummary, filterEventsByColor, normalizeTournamentColor,
+} from '../src/utils/tournamentSummary.ts';
 import { verifiedDecks, ALL_SCOPE } from '../src/utils/tournamentDonut.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,7 +59,78 @@ test('t() returns default fallback string when given an invalid language', () =>
   assert.equal(fallback, '首頁');
 });
 
-// ── 3. Live Tournament Data Fixtures & Summary Derivation ───────────────────
+test('t() fails closed for missing keys instead of rendering the raw key', () => {
+  assert.throws(
+    () => t('definitely_missing_key', 'ja'),
+    /Missing translation key: definitely_missing_key \(ja\)/,
+  );
+});
+
+// ── 3. Mutation-sensitive source coverage ──────────────────────────────────
+const SOURCE_COVERAGE = {
+  'src/screens/SearchScreen.tsx': 4,
+  'src/screens/SearchResultsScreen.tsx': 9,
+  'src/screens/CardDetailScreen.tsx': 65,
+  'src/screens/ScanScreen.tsx': 55,
+  'src/screens/DeckEditorScreen.tsx': 70,
+  'src/screens/SettingsScreen.tsx': 40,
+  'src/screens/TutorialScreen.tsx': 11,
+  'src/screens/WatchlistScreen.tsx': 24,
+  'src/screens/TournamentReportScreen.tsx': 55,
+  'src/components/ObservedShareDonut.tsx': 4,
+  'src/components/CardPicker.tsx': 18,
+  'src/components/PriceAlertEditor.tsx': 18,
+  'src/components/ScanOverlay.tsx': 12,
+  'src/components/ScanCandidateSelector.tsx': 10,
+  'src/components/ScanQuotaBanner.tsx': 5,
+  'src/components/ScanResultCard.tsx': 4,
+  'src/components/ScanSessionPanel.tsx': 14,
+  'src/components/WebCamera.tsx': 2,
+  'src/components/CardItem.tsx': 2,
+};
+
+const stripComments = (source) => source
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+
+test('every required reachable surface subscribes to locale changes and uses translated copy', () => {
+  for (const [file, minimumLookups] of Object.entries(SOURCE_COVERAGE)) {
+    const source = fs.readFileSync(path.resolve(file), 'utf8');
+    assert.match(source, /useTranslation/, `${file} must subscribe to language changes`);
+    const lookups = source.match(/\bt\(/g)?.length ?? 0;
+    assert.ok(
+      lookups >= minimumLookups,
+      `${file} translation coverage regressed: ${lookups} < ${minimumLookups}`,
+    );
+  }
+});
+
+test('required surfaces contain no hardcoded Traditional-Chinese JSX or UI props', () => {
+  const allowedVisibleData = new Set([
+    '星街すいせい', '湊あくあ', '巴哈姆特 — 桜雪', '🏪 遊々亭',
+  ]);
+  const failures = [];
+  for (const file of Object.keys(SOURCE_COVERAGE)) {
+    const source = stripComments(fs.readFileSync(path.resolve(file), 'utf8'));
+    const candidates = [
+      ...source.matchAll(/>([^<{\n]*[\u3400-\u9fff][^<{\n]*)</g),
+      ...source.matchAll(/(?:placeholder|accessibilityLabel|emptyLabel|title|label)=["']([^"']*[\u3400-\u9fff][^"']*)["']/g),
+      ...source.matchAll(/(?:Alert\.alert|showAlert|set(?:Scan|Search|Camera|Scanning)\w*)\(\s*["']([^"']*[\u3400-\u9fff][^"']*)["']/g),
+    ];
+    for (const match of candidates) {
+      const literal = match[1].trim();
+      if (!allowedVisibleData.has(literal)) failures.push(`${file}: ${literal}`);
+    }
+  }
+  assert.deepEqual(failures, [], `Hardcoded UI strings found:\n${failures.join('\n')}`);
+});
+
+test('CI runs the i18n source/key gate', () => {
+  const workflow = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
+  assert.match(workflow, /npm run test:i18n/, 'CI must execute npm run test:i18n');
+});
+
+// ── 4. Live Tournament Data Fixtures & Summary Derivation ───────────────────
 const julyPath = path.resolve('public/data/tournaments/2026-07.json');
 const augustPath = path.resolve('public/data/tournaments/2026-08.json');
 const indexPath = path.resolve('public/data/tournaments/index.json');
@@ -76,6 +149,7 @@ test('buildTournamentMonthlySummary generates real accurate stats for 2026-08', 
   assert.equal(summaryZh.verifiedDeckCount, 2);
   assert.equal(summaryZh.smallSample, true, 'n=2 is below SMALL_SAMPLE_MIN (3)');
   assert.ok(summaryZh.topArchetypes.length > 0);
+  assert.ok(summaryZh.topColors.length > 0);
   assert.ok(summaryZh.notablePlacements.length > 0);
   assert.equal(summaryZh.notablePlacements[0].rankLabel, 'champion');
 });
@@ -87,6 +161,19 @@ test('buildTournamentMonthlySummary aggregates all-months scope correctly', () =
   assert.equal(summaryZh.verifiedDeckCount, 5);
   assert.equal(summaryZh.smallSample, false, 'n=5 is >= 3');
   assert.ok(summaryZh.scopeLabel.includes('2026-07 ~ 2026-08'));
+  assert.deepEqual(
+    Object.fromEntries(summaryZh.topColors.map(({ color, count }) => [color, count])),
+    { purple: 3, blue: 3, red: 1 },
+  );
+});
+
+test('top-color actions filter the live verified deck list without inventing shares', () => {
+  const events = [augustReport, julyReport].flatMap((report) => report.events);
+  const filtered = filterEventsByColor(events, 'purple');
+  const decks = filtered.flatMap((event) => event.decks);
+  assert.equal(decks.length, 3);
+  assert.ok(decks.every((deck) => deck.colors.some((color) => normalizeTournamentColor(color) === 'purple')));
+  assert.deepEqual(filterEventsByColor(events, null), events);
 });
 
 test('buildTournamentMonthlySummary translates scope labels into Japanese when requested', () => {
@@ -95,7 +182,7 @@ test('buildTournamentMonthlySummary translates scope labels into Japanese when r
   assert.ok(summaryJa.scopeLabel.includes('2026-07 ~ 2026-08'));
 });
 
-// ── 4. Fail-closed gates & unknown handling in summary ─────────────────────
+// ── 5. Fail-closed gates & unknown handling in summary ─────────────────────
 test('summary ignores unverified decks for top archetype counts', () => {
   const unverifiedReport = {
     ...augustReport,

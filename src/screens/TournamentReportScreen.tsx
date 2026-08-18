@@ -43,6 +43,7 @@ import {
 } from '../utils/tournamentDonut';
 import {
   buildTournamentMonthlySummary,
+  filterEventsByColor,
   type TournamentMonthlySummaryModel,
 } from '../utils/tournamentSummary';
 import ObservedShareDonut from '../components/ObservedShareDonut';
@@ -84,6 +85,7 @@ export default function TournamentReportScreen() {
   const [imported, setImported] = useState<string | null>(null);
   const [dimension, setDimension] = useState<DonutDimension>('archetype');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -92,13 +94,13 @@ export default function TournamentReportScreen() {
         const idx = await fetchJson<TournamentIndex>('/data/tournaments/index.json');
         if (alive) dispatch({ type: 'index-loaded', index: idx });
       } catch {
-        if (alive) dispatch({ type: 'index-failed', message: '目前沒有可用的賽事月報資料。' });
+        if (alive) dispatch({ type: 'index-failed', message: t('tournament_no_data') });
       }
     })();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [language]);
 
   const windowMonths = useMemo(() => scopeWindow(index), [index]);
   const windowKey = windowMonths.join(',');
@@ -115,7 +117,7 @@ export default function TournamentReportScreen() {
           dispatch({
             type: 'report-failed',
             month,
-            message: `無法載入 ${month} 的賽事月報。`,
+            message: t('tournament_month_load_failed', { month }),
           });
         }
       }
@@ -123,7 +125,7 @@ export default function TournamentReportScreen() {
     return () => {
       alive = false;
     };
-  }, [windowKey]);
+  }, [windowKey, language]);
 
   useEffect(() => {
     let alive = true;
@@ -173,20 +175,29 @@ export default function TournamentReportScreen() {
   );
 
   const allEvents = useMemo(() => reports.flatMap((r) => r.events), [reports]);
-  const events = useMemo(
-    () => filterEventsBySlice(allEvents, selectedKey, dimension),
-    [allEvents, selectedKey, dimension],
-  );
+  const events = useMemo(() => {
+    if (selectedColor) return filterEventsByColor(allEvents, selectedColor);
+    return filterEventsBySlice(allEvents, selectedKey, dimension);
+  }, [allEvents, selectedKey, selectedColor, dimension]);
 
   const loading = scopeLoading(state);
   const error = scopeError(state);
   const selectedSlice = model.slices.find((s) => s.key === selectedKey) ?? null;
+  const selectedColorLabel = selectedColor
+    ? t(`color_${selectedColor}` as Parameters<typeof t>[0])
+    : null;
 
   useEffect(() => {
     if (selectedKey != null && !model.slices.some((s) => s.key === selectedKey)) {
       setSelectedKey(null);
     }
   }, [model.slices, selectedKey]);
+
+  useEffect(() => {
+    if (selectedColor != null && !summary.topColors.some((item) => item.color === selectedColor)) {
+      setSelectedColor(null);
+    }
+  }, [summary.topColors, selectedColor]);
 
   const coverage = useMemo(
     () =>
@@ -212,23 +223,23 @@ export default function TournamentReportScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.emptyTitle}>{t('tournament_title')}</Text>
-        <Text style={styles.emptyText}>{state.error ?? '目前沒有可用的賽事月報資料。'}</Text>
+        <Text style={styles.emptyText}>{state.error ?? t('tournament_no_data')}</Text>
       </View>
     );
   }
 
   const hasData = reports.length > 0;
   const partial = scopeIsPartial(state);
-  const scopeLabel = scope !== ALL_SCOPE ? scope : partial ? '部分月份' : t('tournament_scope_all');
+  const scopeLabel = scope !== ALL_SCOPE ? scope : partial ? t('tournament_partial_scope') : t('tournament_scope_all');
   const incomplete = incompleteMonths(state);
   const omitted = omittedMonths(state);
   const partialNotice = partial
     ? [
-        reports.length > 0 ? `已納入 ${reports.map((r) => r.month).join('、')}` : null,
-        incomplete.failed.length > 0 ? `${incomplete.failed.join('、')} 載入失敗` : null,
-        incomplete.pending.length > 0 ? `${incomplete.pending.join('、')} 仍在載入` : null,
+        reports.length > 0 ? t('tournament_included_months', { months: reports.map((r) => r.month).join('、') }) : null,
+        incomplete.failed.length > 0 ? t('tournament_failed_months', { months: incomplete.failed.join('、') }) : null,
+        incomplete.pending.length > 0 ? t('tournament_pending_months', { months: incomplete.pending.join('、') }) : null,
         omitted.length > 0 && scope === ALL_SCOPE
-          ? `僅取最近 ${MAX_SCOPE_MONTHS} 個月，另有 ${omitted.length} 個較早月份未納入`
+          ? t('tournament_omitted_months', { limit: MAX_SCOPE_MONTHS, count: omitted.length })
           : null,
       ]
         .filter((s): s is string => s != null)
@@ -243,7 +254,7 @@ export default function TournamentReportScreen() {
         {imported ? (
           <View style={styles.importedBanner}>
             <Text style={styles.importedText}>
-              ✓ 已匯入「{imported}」，並已在牌組編輯器中開啟。
+              {t('tournament_imported', { name: imported })}
             </Text>
           </View>
         ) : null}
@@ -258,7 +269,11 @@ export default function TournamentReportScreen() {
             return (
               <TouchableOpacity
                 key={opt.month}
-                onPress={() => dispatch({ type: 'select-scope', scope: opt.month })}
+                onPress={() => {
+                  dispatch({ type: 'select-scope', scope: opt.month });
+                  setSelectedKey(null);
+                  setSelectedColor(null);
+                }}
                 style={[styles.monthChip, active && styles.monthChipActive]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
@@ -281,7 +296,7 @@ export default function TournamentReportScreen() {
 
         {partialNotice && (hasData || !loading) ? (
           <Text style={styles.partialNotice} testID="scope-partial">
-            ⚠ 這不是全部月份的資料：{partialNotice}。占比僅以上列已納入月份為母體。
+            {t('tournament_partial_notice', { details: partialNotice })}
           </Text>
         ) : null}
 
@@ -321,6 +336,7 @@ export default function TournamentReportScreen() {
                           style={[styles.summaryChip, active && styles.summaryChipActive]}
                           onPress={() => {
                             setDimension('archetype');
+                            setSelectedColor(null);
                             setSelectedKey(active ? null : item.id);
                           }}
                           testID={`summary-archetype-${item.id ?? 'unknown'}`}
@@ -347,6 +363,7 @@ export default function TournamentReportScreen() {
                           style={[styles.summaryChip, active && styles.summaryChipActive]}
                           onPress={() => {
                             setDimension('oshi');
+                            setSelectedColor(null);
                             setSelectedKey(active ? null : item.id);
                           }}
                           testID={`summary-oshi-${item.id}`}
@@ -361,14 +378,41 @@ export default function TournamentReportScreen() {
                 </View>
               )}
 
+              {summary.topColors.length > 0 && (
+                <View style={styles.summarySection}>
+                  <Text style={styles.summarySectionTitle}>{t('tournament_summary_top_colors')}</Text>
+                  <View style={styles.chipRow}>
+                    {summary.topColors.map((item) => {
+                      const active = selectedColor === item.color;
+                      const label = t(`color_${item.color}` as Parameters<typeof t>[0]);
+                      return (
+                        <TouchableOpacity
+                          key={item.color}
+                          style={[styles.summaryChip, active && styles.summaryChipActive]}
+                          onPress={() => {
+                            setSelectedKey(null);
+                            setSelectedColor(active ? null : item.color);
+                          }}
+                          testID={`summary-color-${item.color}`}
+                        >
+                          <Text style={[styles.summaryChipText, active && styles.summaryChipTextActive]}>
+                            {t('tournament_color_filter_label', { color: label })} ({item.count})
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
               {summary.notablePlacements.length > 0 && (
                 <View style={styles.summarySection}>
                   <Text style={styles.summarySectionTitle}>{t('tournament_summary_notable_placements')}</Text>
                   {summary.notablePlacements.map((p) => (
                     <View key={p.deckId} style={styles.notableRow}>
-                      <Text style={styles.notableRank}>{p.rankLabel || `第 ${p.rank} 位`}</Text>
+                      <Text style={styles.notableRank}>{p.rankLabel || t('tournament_rank', { rank: p.rank ?? '—' })}</Text>
                       <Text style={styles.notableDetails} numberOfLines={1}>
-                        {p.archetypeLabel || p.oshi || '精選牌組'} · {p.eventNameZh || p.eventName} ({p.playerName || '玩家'})
+                        {p.archetypeLabel || p.oshi || t('tournament_featured_deck')} · {language === 'zh' ? (p.eventNameZh || p.eventName) : p.eventName} ({p.playerName || t('tournament_player')})
                       </Text>
                     </View>
                   ))}
@@ -386,24 +430,26 @@ export default function TournamentReportScreen() {
 
             {/* Source + honesty disclaimer */}
             <View style={styles.disclaimer}>
-              <Text style={styles.disclaimerTitle}>資料來源與涵蓋率</Text>
+              <Text style={styles.disclaimerTitle}>{t('tournament_source_coverage')}</Text>
               <Text style={styles.sourceName}>{reports[0].source.name}</Text>
-              <Text style={styles.disclaimerText}>{reports[0].source.disclaimer}</Text>
+              <Text style={styles.disclaimerText}>
+                {language === 'zh' ? reports[0].source.disclaimer : t('tournament_source_disclaimer_generic')}
+              </Text>
               {reports.map((r) => (
                 <Text key={r.month} style={styles.coverageNote}>
-                  {r.month}：{r.coverage.note}
+                  {r.month}：{language === 'zh' ? r.coverage.note : t('tournament_coverage_note_generic')}
                 </Text>
               ))}
               <View style={styles.statRow}>
                 <Stat label={t('tournament_summary_events')} value={`${coverage.knownEvents}`} />
                 <Stat label={t('tournament_summary_observed')} value={`${model.observedSize}`} />
                 <Stat label={t('tournament_summary_decks')} value={`${model.sampleSize}`} />
-                <Stat label="有名次" value={`${coverage.rankedDecks}`} />
+                <Stat label={t('tournament_ranked')} value={`${coverage.rankedDecks}`} />
               </View>
             </View>
 
             {/* Observed-share donut over the verified sample only */}
-            <Text style={styles.h2}>已公開樣本分布（{scopeLabel}）</Text>
+            <Text style={styles.h2}>{t('tournament_distribution', { scope: scopeLabel })}</Text>
             <View style={styles.chartCard}>
               <View style={styles.dimensionRow}>
                 {DIMENSIONS.map((d) => {
@@ -414,6 +460,7 @@ export default function TournamentReportScreen() {
                       onPress={() => {
                         setDimension(d.key);
                         setSelectedKey(null);
+                        setSelectedColor(null);
                       }}
                       style={[styles.dimChip, active && styles.dimChipActive]}
                       accessibilityRole="button"
@@ -421,7 +468,7 @@ export default function TournamentReportScreen() {
                       testID={`dimension-${d.key}`}
                     >
                       <Text style={[styles.dimChipText, active && styles.dimChipTextActive]}>
-                        {d.key === 'archetype' ? '牌型' : '推し'}
+                        {d.key === 'archetype' ? t('tournament_dimension_archetype') : t('tournament_dimension_oshi')}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -430,41 +477,39 @@ export default function TournamentReportScreen() {
 
               {model.sampleSize === 0 ? (
                 <Text style={styles.emptyChart} testID="donut-empty">
-                  此範圍尚無已取得完整卡表的樣本，因此不繪製圖表。
+                  {t('tournament_empty_chart')}
                   {model.observedSize > 0
-                    ? `（已觀測 ${model.observedSize} 副精選牌組，卡表尚未公開。）`
+                    ? t('tournament_empty_chart_observed', { count: model.observedSize })
                     : ''}
                 </Text>
               ) : (
                 <>
                   {model.smallSample ? (
                     <Text style={styles.smallSample} testID="donut-small-sample">
-                      ⚠ 樣本數偏少（n={model.sampleSize}，少於 {SMALL_SAMPLE_MIN}
-                      ），僅供參考，不足以代表趨勢。
+                      {t('tournament_small_sample', { count: model.sampleSize, minimum: SMALL_SAMPLE_MIN })}
                     </Text>
                   ) : null}
                   <ObservedShareDonut
                     model={model}
                     selectedKey={selectedKey}
-                    onSelect={setSelectedKey}
+                    onSelect={(key) => { setSelectedColor(null); setSelectedKey(key); }}
                   />
-                  {selectedSlice ? (
+                  {selectedSlice || selectedColorLabel ? (
                     <TouchableOpacity
-                      onPress={() => setSelectedKey(null)}
+                      onPress={() => { setSelectedKey(null); setSelectedColor(null); }}
                       style={styles.clearBtn}
                       accessibilityRole="button"
                       testID="donut-clear"
                     >
                       <Text style={styles.clearBtnText}>
-                        ✕ 清除篩選：{selectedSlice.label}
+                        {t('tournament_clear_filter', { label: selectedSlice?.label || selectedColorLabel || '' })}
                       </Text>
                     </TouchableOpacity>
                   ) : (
-                    <Text style={styles.hint}>點選色塊或圖例可篩選下方牌組。</Text>
+                    <Text style={styles.hint}>{t('tournament_chart_hint')}</Text>
                   )}
                   <Text style={styles.finePrint}>
-                    * 分母僅為已公開完整卡表的 {model.sampleSize} 副樣本，非整體 meta，也未涵蓋未公開卡表的參賽者。
-                    此範圍共觀測 {model.observedSize} 副精選牌組。
+                    {t('tournament_denominator_note', { sample: model.sampleSize, observed: model.observedSize })}
                   </Text>
                 </>
               )}
@@ -472,19 +517,19 @@ export default function TournamentReportScreen() {
 
             {/* Events + featured decks */}
             <Text style={styles.h2}>
-              賽事與精選牌組{selectedSlice ? `：${selectedSlice.label}` : ''}
+              {t('tournament_events_decks', { filter: selectedSlice || selectedColorLabel ? `：${selectedSlice?.label || selectedColorLabel}` : '' })}
             </Text>
             {events.length === 0 ? (
-              <Text style={styles.emptyText}>此篩選條件下沒有牌組。</Text>
+              <Text style={styles.emptyText}>{t('tournament_no_filtered_decks')}</Text>
             ) : null}
             {events.map((e) => (
               <View key={e.eventId} style={styles.eventCard}>
                 <Text style={styles.eventName}>{e.name}</Text>
-                {e.nameZh ? <Text style={styles.eventNameZh}>{e.nameZh}</Text> : null}
+                {language === 'zh' && e.nameZh ? <Text style={styles.eventNameZh}>{e.nameZh}</Text> : null}
                 <View style={styles.metaRow}>
-                  <Meta label="地區" value={e.region ?? '未知'} />
-                  <Meta label="日期" value={e.date ?? '未公開'} />
-                  <Meta label="參賽數" value={e.entrants == null ? '未公開' : `${e.entrants}`} />
+                  <Meta label={t('tournament_region')} value={e.region ?? t('common_unknown')} />
+                  <Meta label={t('tournament_date')} value={e.date ?? t('common_unavailable')} />
+                  <Meta label={t('tournament_entrants')} value={e.entrants == null ? t('common_unavailable') : `${e.entrants}`} />
                 </View>
                 <Text style={styles.eventCoverage}>{e.coverageNote}</Text>
 
@@ -492,17 +537,17 @@ export default function TournamentReportScreen() {
                   <View key={d.deckId} style={styles.deckRow} testID={`deck-${d.deckId}`}>
                     <View style={styles.deckHead}>
                       <Text style={styles.deckArchetype}>
-                        {d.archetypeLabel ?? '未知牌組'}
+                        {d.archetypeLabel ?? t('tournament_unknown_deck')}
                       </Text>
-                      <Text style={styles.deckRank}>{d.rankLabel ?? '名次未公開'}</Text>
+                      <Text style={styles.deckRank}>{d.rankLabel ?? t('tournament_rank_unavailable')}</Text>
                     </View>
                     <Text style={styles.deckPlayer}>
-                      玩家：{d.playerName ?? '未公開'}
+                      {t('tournament_player_label', { name: d.playerName ?? t('common_unavailable') })}
                     </Text>
                     <Text style={styles.deckCards}>
                       {d.cardsVerified === true
-                        ? `卡表：${d.cards.length} 種卡`
-                        : '卡表：未收錄（decklog 需 JS 渲染，尚未讀取）'}
+                        ? t('tournament_cards_count', { count: d.cards.length })
+                        : t('tournament_cards_unavailable')}
                     </Text>
                     <ImportAction deck={d} catalog={catalog} onImport={() => onImport(e, d)} />
                     {d.decklogCode ? (
@@ -520,7 +565,7 @@ export default function TournamentReportScreen() {
             ))}
 
             <Text style={styles.generatedAt}>
-              產生時間：{reports.map((r) => `${r.month} ${r.generatedAt}`).join('｜')}
+              {t('tournament_generated_at', { value: reports.map((r) => `${r.month} ${r.generatedAt}`).join('｜') })}
             </Text>
           </>
         )}

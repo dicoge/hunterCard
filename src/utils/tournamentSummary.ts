@@ -48,6 +48,36 @@ export interface TournamentMonthlySummaryModel {
   coverageNote: string;
 }
 
+const COLOR_ID: Record<string, string> = {
+  白: 'white', white: 'white',
+  青: 'blue', 藍: 'blue', blue: 'blue',
+  緑: 'green', 綠: 'green', green: 'green',
+  赤: 'red', 紅: 'red', red: 'red',
+  紫: 'purple', purple: 'purple',
+  黄: 'yellow', 黃: 'yellow', yellow: 'yellow',
+  '◇': 'colorless', 無色: 'colorless', colorless: 'colorless',
+};
+
+export function normalizeTournamentColor(color: string): string {
+  return COLOR_ID[color] || color.toLowerCase();
+}
+
+/** Filters the visible event list by a published deck color. Multi-color decks
+ * stay in one event row and are never split into invented fractional shares. */
+export function filterEventsByColor(
+  events: readonly TournamentEvent[],
+  color: string | null,
+): TournamentEvent[] {
+  if (color == null) return [...events];
+  return events
+    .map((event) => ({
+      ...event,
+      decks: event.decks.filter((deck) =>
+        (deck.colors || []).some((deckColor) => normalizeTournamentColor(deckColor) === color)),
+    }))
+    .filter((event) => event.decks.length > 0);
+}
+
 export function buildTournamentMonthlySummary(
   reports: MonthlyReport[],
   scope: string,
@@ -105,7 +135,8 @@ export function buildTournamentMonthlySummary(
   // Top Colors
   const colorCounts = new Map<string, number>();
   for (const d of verified) {
-    for (const c of d.colors || []) {
+    for (const rawColor of d.colors || []) {
+      const c = normalizeTournamentColor(rawColor);
       if (c) {
         colorCounts.set(c, (colorCounts.get(c) || 0) + 1);
       }

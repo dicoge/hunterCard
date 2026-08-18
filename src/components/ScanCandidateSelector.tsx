@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { CardInfo, RecognizedCandidate } from '../services/cardRecognition';
+import { useTranslation } from '../i18n';
 
 export interface ScanCandidateSelectorProps {
   visible: boolean;
@@ -32,8 +33,6 @@ export interface ScanCandidateSelectorProps {
   preferredLanguage?: string;
 }
 
-const GUIDANCE_TIPS = ['靠近卡號', '避免反光', '保持卡片平整'];
-
 export default function ScanCandidateSelector({
   visible,
   tier,
@@ -45,24 +44,26 @@ export default function ScanCandidateSelector({
   preferredCurrency = 'TWD',
   preferredLanguage = 'zh',
 }: ScanCandidateSelectorProps) {
+  const { t } = useTranslation();
   if (!visible || candidates.length === 0) return null;
 
   const formatPrice = (price: number | null): string => {
-    if (price == null) return '暫無交易';
+    if (price == null) return t('scan_no_trade');
     if (preferredCurrency === 'JPY') return `¥${price.toLocaleString()}`;
     const { value, symbol } = convertPrice(price, preferredCurrency);
-    if (value == null) return '暫無交易';
+    if (value == null) return t('scan_no_trade');
     return `${symbol}${value.toLocaleString()}`;
   };
 
   const confidenceColor = (c: number): string =>
     c >= 0.8 ? '#10b981' : c >= 0.55 ? '#f59e0b' : '#ef4444';
 
-  const title = tier === 'low' ? '無法確定是哪張卡' : '請確認正確的卡牌';
+  const title = tier === 'low' ? t('scan_candidate_low_title') : t('scan_candidate_mid_title');
   const subtitle =
     tier === 'low'
-      ? '辨識信心偏低，建議重新拍攝或手動搜尋。若下方有相符的卡牌也可直接點選加入。'
-      : '辨識信心中等，請從下方候選中點選正確的卡牌後加入。';
+      ? t('scan_candidate_low_body')
+      : t('scan_candidate_mid_body');
+  const guidanceTips = [t('scan_tip_number'), t('scan_tip_glare'), t('scan_tip_flat')];
 
   return (
     <View style={styles.overlay} pointerEvents="box-none">
@@ -78,7 +79,7 @@ export default function ScanCandidateSelector({
         </View>
 
         <View style={styles.guidanceRow}>
-          {GUIDANCE_TIPS.map(tip => (
+          {guidanceTips.map(tip => (
             <View key={tip} style={styles.guidanceChip}>
               <Text style={styles.guidanceText}>{tip}</Text>
             </View>
@@ -105,7 +106,7 @@ export default function ScanCandidateSelector({
                 <View style={styles.itemInfo}>
                   <Text style={styles.itemName} numberOfLines={1}>
                     {displayName}
-                    {isBest ? <Text style={styles.bestTag}>  最相符</Text> : null}
+                    {isBest ? <Text style={styles.bestTag}>  {t('scan_best_match')}</Text> : null}
                   </Text>
                   <Text style={styles.itemMeta} numberOfLines={1}>
                     #{card.cardNumber || card.id}
@@ -131,14 +132,14 @@ export default function ScanCandidateSelector({
 
         <View style={styles.actions}>
           <TouchableOpacity style={styles.actionBtn} onPress={onRescan} activeOpacity={0.8}>
-            <Text style={styles.actionText}>重新掃描</Text>
+            <Text style={styles.actionText}>{t('scan_rescan')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionBtnAlt]}
             onPress={onManualSearch}
             activeOpacity={0.8}
           >
-            <Text style={[styles.actionText, styles.actionTextAlt]}>手動搜尋</Text>
+            <Text style={[styles.actionText, styles.actionTextAlt]}>{t('scan_manual_search')}</Text>
           </TouchableOpacity>
         </View>
       </View>

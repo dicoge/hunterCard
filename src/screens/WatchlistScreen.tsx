@@ -13,8 +13,8 @@ import { syncAlertRemove } from '../services/priceAlertSync';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
 import { resolveExactPrice } from '../utils/deckRules';
 import {
-  evaluateAlertStatus, formatAlertAmount, formatInterval, ALERT_STATUS_LABELS,
-  type AlertPrice, type PriceAlert,
+  evaluateAlertStatus, formatAlertAmount, formatInterval,
+  type AlertPrice, type PriceAlert, type AlertStatus,
 } from '../utils/priceAlerts';
 
 const rarityColors: Record<string, string> = {
@@ -35,6 +35,7 @@ export default function WatchlistScreen({ navigation }: any) {
   const [db, setDb] = useState<CardDatabase | null>(null);
   const [dbState, setDbState] = useState<DbState>('loading');
   const [alertTarget, setAlertTarget] = useState<PriceAlertTarget | null>(null);
+  const statusLabel = (status: AlertStatus) => t(`watchlist_status_${status.toLowerCase()}` as Parameters<typeof t>[0]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,23 +56,23 @@ export default function WatchlistScreen({ navigation }: any) {
   const confirmRemove = (item: WatchlistItem) => {
     const label = (preferredLanguage === 'zh' && item.nameZh) ? item.nameZh : item.name;
     showAlert(
-      '移除趨勢追蹤',
-      `確定要從趨勢追蹤移除「${label}」嗎？`,
+      t('watchlist_remove_tracking'),
+      t('watchlist_remove_tracking_confirm', { name: label }),
       [
-        { text: '取消', style: 'cancel' },
-        { text: '移除', style: 'destructive', onPress: () => removeCard(item.cardNumber) },
+        { text: t('common_cancel'), style: 'cancel' },
+        { text: t('common_remove'), style: 'destructive', onPress: () => removeCard(item.cardNumber) },
       ]
     );
   };
 
   const confirmRemoveAlert = (alert: PriceAlert) => {
     showAlert(
-      '移除到價提醒',
-      `確定要移除「${alert.name}（${alert.printingLabel || alert.printing}）」的期望入手價格提醒嗎？`,
+      t('watchlist_remove_alert'),
+      t('watchlist_remove_alert_confirm', { name: alert.name, printing: alert.printingLabel || alert.printing }),
       [
-        { text: '取消', style: 'cancel' },
+        { text: t('common_cancel'), style: 'cancel' },
         {
-          text: '移除',
+          text: t('common_remove'),
           style: 'destructive',
           onPress: () => {
             removeAlert(alert.cardNumber, alert.printing);
@@ -104,7 +105,7 @@ export default function WatchlistScreen({ navigation }: any) {
       ) : (
         <>
           <Text style={styles.sectionHint}>
-            比對該精確版本的玩家「參考售價」；不採用店家收購價或跨版本價格。
+            {t('watchlist_exact_price_hint')}
           </Text>
           {alertList.map((alert) => {
             const price = priceOf(alert);
@@ -121,14 +122,14 @@ export default function WatchlistScreen({ navigation }: any) {
                     {alert.cardNumber} · {alert.printingLabel || alert.printing}
                   </Text>
                   <Text style={styles.alertInterval}>
-                    期望入手 {formatInterval(alert)}
+                    {t('watchlist_desired_interval', { interval: formatInterval(alert) })}
                   </Text>
                   <Text style={styles.alertStatus}>
                     {dbState === 'loading'
-                      ? '目前價格：載入中…'
+                      ? t('watchlist_price_loading')
                       : dbState === 'unavailable'
-                        ? '目前價格：價格資料無法載入'
-                        : `目前 ${price ? formatAlertAmount(price.price, price.currency) : '—'} · ${ALERT_STATUS_LABELS[status]}`}
+                        ? t('watchlist_price_unavailable')
+                        : t('watchlist_current_price', { price: price ? formatAlertAmount(price.price, price.currency) : '—', status: statusLabel(status) })}
                   </Text>
                 </View>
                 <View style={styles.alertActions}>
@@ -142,18 +143,18 @@ export default function WatchlistScreen({ navigation }: any) {
                       currentPrice: price && price.currency === alert.currency ? price.price : null,
                     })}
                     accessibilityRole="button"
-                    accessibilityLabel={`編輯 ${alert.name} 的期望入手價格區間`}
+                    accessibilityLabel={t('watchlist_edit_a11y', { name: alert.name })}
                     testID={`price-alert-edit-${alert.cardNumber}|${alert.printing}`}
                   >
-                    <Text style={styles.link}>編輯</Text>
+                    <Text style={styles.link}>{t('common_edit')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => confirmRemoveAlert(alert)}
                     accessibilityRole="button"
-                    accessibilityLabel={`移除 ${alert.name} 的到價提醒`}
+                    accessibilityLabel={t('watchlist_remove_a11y', { name: alert.name })}
                     testID={`price-alert-delete-${alert.cardNumber}|${alert.printing}`}
                   >
-                    <Text style={styles.destructive}>移除</Text>
+                    <Text style={styles.destructive}>{t('common_remove')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -187,7 +188,7 @@ export default function WatchlistScreen({ navigation }: any) {
             <Text style={styles.cardNumber}>{item.cardNumber}</Text>
           </View>
           {item.targetPrice != null ? (
-            <Text style={styles.targetPrice}>🎯 舊版目標價（未指定版本）¥{item.targetPrice.toLocaleString()}</Text>
+            <Text style={styles.targetPrice}>{t('watchlist_legacy_target', { price: item.targetPrice.toLocaleString() })}</Text>
           ) : null}
         </View>
         <TouchableOpacity style={styles.removeBtn} onPress={() => confirmRemove(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -230,12 +231,12 @@ export default function WatchlistScreen({ navigation }: any) {
         ListHeaderComponent={
           <View>
             {alertSection}
-            <Text style={styles.sectionTitle}>趨勢追蹤（依卡號）</Text>
-            <Text style={styles.header}>共 {items.length} 張追蹤中的卡牌</Text>
+            <Text style={styles.sectionTitle}>{t('watchlist_tracking_title')}</Text>
+            <Text style={styles.header}>{t('watchlist_tracking_count', { count: items.length })}</Text>
           </View>
         }
         ListEmptyComponent={
-          <Text style={styles.sectionHint}>尚無趨勢追蹤的卡牌。</Text>
+          <Text style={styles.sectionHint}>{t('watchlist_tracking_empty')}</Text>
         }
       />
     </SafeAreaView>

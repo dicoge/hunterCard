@@ -37,7 +37,7 @@ export default function SettingsScreen() {
       await loginWithGoogle();
     } catch (err: any) {
       if (isCancelAuthError(err)) return;
-      showAlert('登入失敗', friendlyAuthErrorMessage(err, 'google'));
+      showAlert(t('settings_login_failed'), friendlyAuthErrorMessage(err, 'google'));
     }
   };
 
@@ -51,32 +51,32 @@ export default function SettingsScreen() {
     if (provider === 'apple' && !APPLE_LOGIN_ENABLED) return;
     try {
       await linkNewProvider(provider);
-      showAlert('綁定完成', `已將 ${PROVIDER_LABEL[provider]} 帳號綁定到你的 HoloHunter 帳號。`);
+      showAlert(t('settings_link_complete'), t('settings_link_complete_body', { provider: PROVIDER_LABEL[provider] }));
     } catch (err: any) {
       if (isCancelAuthError(err)) return;
-      showAlert('綁定失敗', friendlyAuthErrorMessage(err, provider));
+      showAlert(t('settings_link_failed'), friendlyAuthErrorMessage(err, provider));
     }
   };
 
   const confirmUnlinkProvider = (provider: AuthProvider) => {
     if (linkedProviders.length <= 1) {
-      showAlert('無法解除綁定', '這是你唯一的登入方式。請先綁定另一個帳號，才能解除這一個。');
+      showAlert(t('settings_unlink_blocked'), t('settings_unlink_blocked_body'));
       return;
     }
     showAlert(
       t('settings_account_unlink'),
-      `解除 ${PROVIDER_LABEL[provider]} 綁定後，將無法再用該帳號登入。確定要解除嗎？`,
+      t('settings_unlink_confirm', { provider: PROVIDER_LABEL[provider] }),
       [
-        { text: '取消', style: 'cancel' },
+        { text: t('common_cancel'), style: 'cancel' },
         {
           text: t('settings_account_unlink'),
           style: 'destructive',
           onPress: async () => {
             try {
               await removeLinkedProvider(provider);
-              showAlert('已解除綁定', `已解除 ${PROVIDER_LABEL[provider]} 綁定。`);
+              showAlert(t('settings_unlink_complete'), t('settings_unlink_complete_body', { provider: PROVIDER_LABEL[provider] }));
             } catch (err: any) {
-              showAlert('解除失敗', String(err?.message ?? '無法解除綁定，請稍後再試。'));
+              showAlert(t('settings_unlink_failed'), String(err?.message ?? t('settings_unlink_failed_body')));
             }
           },
         },
@@ -85,8 +85,8 @@ export default function SettingsScreen() {
   };
 
   const confirmSignOut = () => {
-    showAlert(t('settings_account_signout'), '確定要登出嗎？', [
-      { text: '取消', style: 'cancel' },
+    showAlert(t('settings_account_signout'), t('settings_signout_confirm'), [
+      { text: t('common_cancel'), style: 'cancel' },
       { text: t('settings_account_signout'), style: 'destructive', onPress: signOut },
     ]);
   };
@@ -94,20 +94,20 @@ export default function SettingsScreen() {
   const confirmDelete = () => {
     showAlert(
       t('settings_account_delete'),
-      '這會永久刪除你的帳號與同步資料，且無法復原。確定要刪除嗎？',
+      t('settings_delete_confirm'),
       [
-        { text: '取消', style: 'cancel' },
+        { text: t('common_cancel'), style: 'cancel' },
         {
           text: t('settings_account_delete'),
           style: 'destructive',
           onPress: async () => {
             try {
               await deleteAccount();
-              showAlert('帳號已刪除', '你的帳號已從伺服器刪除，登入授權已撤銷。');
+              showAlert(t('settings_delete_complete'), t('settings_delete_complete_body'));
             } catch {
               showAlert(
-                '刪除尚未完成',
-                '伺服器端尚未確認刪除（後端未就緒或撤銷失敗），帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
+                t('settings_delete_pending'),
+                t('settings_delete_pending_body')
               );
             }
           },
@@ -174,9 +174,9 @@ export default function SettingsScreen() {
         {/* ── 價格來源資訊 ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings_price_sources')}</Text>
-          <Text style={styles.item}>🏪 遊々亭（日本二手卡牌市場）</Text>
-          <Text style={styles.item}>🔄 Carousell（旋轉拍賣）</Text>
-          <Text style={styles.item}>📈 匯率：JP¥1 = NT$0.22 = $0.0067</Text>
+          <Text style={styles.item}>{t('settings_price_yuyu')}</Text>
+          <Text style={styles.item}>{t('settings_price_carousell')}</Text>
+          <Text style={styles.item}>{t('settings_exchange_rate')}</Text>
         </View>
 
         {/* ── 帳號 ── */}
@@ -221,8 +221,8 @@ export default function SettingsScreen() {
               ))}
               <Text style={styles.hint}>
                 {FEATURES.watchlist
-                  ? '綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'
-                  : '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'}
+                  ? t('settings_link_hint_watchlist')
+                  : t('settings_link_hint')}
               </Text>
 
               <TouchableOpacity style={styles.accountBtn} onPress={confirmSignOut}>
@@ -234,17 +234,14 @@ export default function SettingsScreen() {
               >
                 <Text style={[styles.accountBtnText, styles.dangerText]}>{t('settings_account_delete')}</Text>
               </TouchableOpacity>
-              <Text style={styles.hint}>
-                註：帳號刪除的伺服器端撤銷仍在建置中，尚未上線。若後端尚未設定，
-                刪除會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。
-              </Text>
+              <Text style={styles.hint}>{t('settings_delete_note')}</Text>
             </>
           ) : (
             <>
               <Text style={styles.hint}>
                 {FEATURES.watchlist
-                  ? '尚未登入。登入後可跨裝置同步收藏與入手提醒。'
-                  : '尚未登入。登入後可跨裝置同步收藏。'}
+                  ? t('settings_guest_sync_watchlist')
+                  : t('settings_guest_sync')}
               </Text>
               <TouchableOpacity
                 style={[styles.googleBtn, isLoading && styles.btnDisabled]}
@@ -268,7 +265,7 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        <Text style={styles.footer}>專為 hololive PCG 玩家打造</Text>
+        <Text style={styles.footer}>{t('settings_footer')}</Text>
       </ScrollView>
     </SafeAreaView>
   );
