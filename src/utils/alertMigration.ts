@@ -81,7 +81,9 @@ export interface CatalogPrinting {
   cardNumber: string;
   printing: string;
   printingLabel?: string;
-  imageUrl?: string;
+  /** Image proven by this exact printing's source listing. Card-level images
+   * are deliberately excluded because they may depict a sibling printing. */
+  exactImageUrl?: string;
 }
 
 export interface CatalogPrice {
@@ -116,7 +118,7 @@ export function buildPrintingIndex(
       printingLabel: card.printingLabel?.trim() || '',
       sellPrice: match ? match.price : null,
       currency: match ? match.currency : '',
-      imageUrl: card.imageUrl,
+      imageUrl: card.exactImageUrl,
     });
     index.set(cardNumber, options);
   }
@@ -184,7 +186,7 @@ export function migrateLegacyTracking(
         currency: only.currency || '',
         lowerPrice: null,
         upperPrice: (interval as { ok: true; upperPrice: number }).upperPrice,
-        imageUrl: only.imageUrl ?? row?.imageUrl,
+        imageUrl: only.imageUrl,
         createdAt: row?.addedAt || now,
         updatedAt: now,
       });

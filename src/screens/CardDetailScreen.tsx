@@ -164,9 +164,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
       printingLabel: p.label,
       sellPrice: p.sellPrice,
       currency: PRICE_CURRENCY,
-      imageUrl,
+      imageUrl: p.imageUrl,
     })),
-    [priceVariants, imageUrl],
+    [priceVariants],
   );
 
   const cardAlerts = useMemo(
@@ -186,7 +186,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
       name: nameZH || nameJP || displayName,
       currency: only?.currency || PRICE_CURRENCY,
       currentPrice: printingChoices.find((c) => c.printing === only?.printing)?.sellPrice ?? null,
-      imageUrl,
+      imageUrl: only
+        ? printingChoices.find((choice) => choice.printing === only.printing)?.imageUrl
+        : undefined,
       choices: printingChoices,
     });
   };

@@ -95,7 +95,7 @@ export default function WatchlistScreen({ navigation }: any) {
       name: alert.name,
       currency: alert.currency,
       currentPrice: price && price.currency === alert.currency ? price.price : null,
-      imageUrl: resolvePrintingImage(alert.cardNumber, alert.printing, printingIndex) ?? alert.imageUrl,
+      imageUrl: resolvePrintingImage(alert.cardNumber, alert.printing, printingIndex),
     });
   };
 
@@ -107,7 +107,7 @@ export default function WatchlistScreen({ navigation }: any) {
       name: item.name,
       currency: '',
       currentPrice: null,
-      imageUrl: item.imageUrl,
+      imageUrl: undefined,
       choices: printingIndex.get(item.cardNumber) ?? [],
       suggestedUpper: item.legacyTargetPrice,
     });
@@ -144,9 +144,17 @@ export default function WatchlistScreen({ navigation }: any) {
 
   const thumb = (uri: string | undefined, fallback: string) => (
     uri ? (
-      <Image source={{ uri }} style={styles.thumb} resizeMode="contain" />
+      <Image
+        source={{ uri }}
+        style={styles.thumb}
+        resizeMode="contain"
+        testID={`price-alert-thumb-image-${fallback}`}
+      />
     ) : (
-      <View style={[styles.thumb, styles.thumbFallback]}>
+      <View
+        style={[styles.thumb, styles.thumbFallback]}
+        testID={`price-alert-thumb-placeholder-${fallback}`}
+      >
         <Text style={styles.thumbFallbackText}>{fallback}</Text>
       </View>
     )
@@ -155,7 +163,7 @@ export default function WatchlistScreen({ navigation }: any) {
   const renderAlert = (alert: PriceAlert) => {
     const price = priceOf(alert);
     const status = evaluateAlertStatus(alert, price);
-    const image = resolvePrintingImage(alert.cardNumber, alert.printing, printingIndex) ?? alert.imageUrl;
+    const image = resolvePrintingImage(alert.cardNumber, alert.printing, printingIndex);
     return (
       <View
         style={[styles.row, numColumns > 1 && styles.rowGrid]}
@@ -207,7 +215,7 @@ export default function WatchlistScreen({ navigation }: any) {
       style={[styles.row, styles.rowPending, numColumns > 1 && styles.rowGrid]}
       testID={`price-alert-pending-${item.cardNumber}`}
     >
-      {thumb(item.imageUrl, item.cardNumber)}
+      {thumb(undefined, item.cardNumber)}
       <View style={styles.info}>
         <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.meta} numberOfLines={1}>{item.cardNumber}</Text>

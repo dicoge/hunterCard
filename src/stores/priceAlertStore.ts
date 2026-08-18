@@ -119,16 +119,22 @@ export const usePriceAlertStore = create<PriceAlertState>()(
     }),
     {
       name: 'hunterCard-price-alerts',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => platformStorage),
       partialize: (s) => ({ alerts: s.alerts, pending: s.pending }),
-      // v1 keyed some records by an un-normalized printing, so one printing
-      // could hold more than one record. Collapse them deterministically on the
-      // way in — see dedupePriceAlerts for the rule.
-      migrate: (persisted: any) => ({
-        alerts: dedupePriceAlerts(persisted?.alerts ?? {}).alerts,
-        pending: persisted?.pending ?? {},
-      }),
+      // v1 keyed some records by an un-normalized printing. v2 also persisted a
+      // representative card image as though it belonged to every printing. On
+      // upgrade, collapse duplicates and discard those unprovable thumbnails;
+      // the current catalog supplies a source-proven exact image when it has one.
+      migrate: (persisted: any, version: number) => {
+        const deduped = dedupePriceAlerts(persisted?.alerts ?? {}).alerts;
+        const alerts = version < 3
+          ? Object.fromEntries(Object.entries(deduped).map(([key, alert]) => [
+              key, { ...alert, imageUrl: undefined },
+            ]))
+          : deduped;
+        return { alerts, pending: persisted?.pending ?? {} };
+      },
     }
   )
 );

@@ -12,8 +12,8 @@
  *   - interval boundaries: both ends inclusive, one step outside does not fire
  *   - exact-version isolation: two printings of one card number are two alerts
  *     with two prices and two arm states
- *   - image identity: a row's thumbnail comes from its own printing or from
- *     nothing — never from a sibling printing or another card
+ *   - image identity: a row's thumbnail comes from its own source listing or
+ *     from a stable placeholder — never from a representative/sibling image
  *   - reload: alerts, pending rows and the collapse survive rehydration
  *   - notification dedupe: one push per entry into the interval, per device
  *
@@ -70,20 +70,46 @@ const CATALOG = adaptDatabase([
     id: 'single', cardNumber: 'hBP01-075', name: 'single', nameZh: '單一版本',
     series: 'hBP01', type: 'Member', timestamp: '2026-08-01',
     officialImage: 'https://img.test/hBP01-075.png',
-    prices: [{ name: '單一版本', sellPrice: 600, buyPrice: 200 }],
+    prices: [{
+      name: '單一版本', sellPrice: 600, buyPrice: 200,
+      imageUrl: 'https://img.test/hBP01-075-base.png',
+    }],
   },
   {
     id: 'multi', cardNumber: 'hBP04-005', name: 'multi', nameZh: 'ラプラス・ダークネス',
     series: 'hBP04', type: 'Member', timestamp: '2026-08-01',
-    officialImage: 'https://img.test/hBP04-005.png',
+    // This card-level image depicts the signed printing. It must never leak
+    // into BASE or PARALLEL merely because this row is representative.
+    officialImage: 'https://img.test/hBP04-005_SEC.png',
     prices: [
-      { name: 'ラプラス・ダークネス', sellPrice: 980, buyPrice: 300 },
-      { name: 'ラプラス・ダークネス(パラレル)', sellPrice: 9980 },
-      { name: 'ラプラス・ダークネス(パラレル/サイン)', sellPrice: 69800 },
+      {
+        name: 'ラプラス・ダークネス', sellPrice: 980, buyPrice: 300,
+        imageUrl: 'https://img.test/hBP04-005_BASE.png',
+      },
+      {
+        name: 'ラプラス・ダークネス(パラレル)', sellPrice: 9980,
+        imageUrl: 'https://img.test/hBP04-005_PARALLEL.png',
+      },
+      {
+        name: 'ラプラス・ダークネス(パラレル/サイン)', sellPrice: 69800,
+        imageUrl: 'https://img.test/hBP04-005_PARALLEL_SIGN.png',
+      },
     ],
   },
 ]);
 const INDEX = buildPrintingIndex(CATALOG.cards, CATALOG.priceRecords);
+
+// Mirrors the currently shipped hBP04-005 shape: three price listings but only
+// one representative SEC image at card level. No printing has image provenance.
+const UNPROVEN_INDEX = buildPrintingIndex(adaptDatabase([{
+  id: 'unproven', cardNumber: 'hBP04-005', name: 'multi', series: 'hBP04', type: 'Member',
+  officialImage: 'https://img.test/hBP04-005_SEC.png',
+  prices: [
+    { name: 'ラプラス・ダークネス', sellPrice: 980 },
+    { name: 'ラプラス・ダークネス(パラレル)', sellPrice: 9980 },
+    { name: 'ラプラス・ダークネス(パラレル/サイン)', sellPrice: 69800 },
+  ],
+}]).cards, CATALOG.priceRecords);
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
 await test('a one-printing row with a target price migrates into a real alert', () => {
@@ -315,15 +341,30 @@ await test('the two printings keep separate arm states', () => {
 });
 
 // ── 5. Image identity ───────────────────────────────────────────────────────
-await test('a row resolves its thumbnail through its own exact printing', () => {
-  for (const printing of ['BASE', 'PARALLEL', 'PARALLEL/SIGN']) {
+await test('BASE, PARALLEL and signed rows resolve three source-proven images', () => {
+  const expected = {
+    BASE: 'https://img.test/hBP04-005_BASE.png',
+    PARALLEL: 'https://img.test/hBP04-005_PARALLEL.png',
+    'PARALLEL/SIGN': 'https://img.test/hBP04-005_PARALLEL_SIGN.png',
+  };
+  for (const [printing, imageUrl] of Object.entries(expected)) {
     assert.equal(
       resolvePrintingImage('hBP04-005', printing, INDEX),
-      'https://img.test/hBP04-005.png',
-      `${printing} resolves through its own catalog entry`,
+      imageUrl,
+      `${printing} keeps its own listing image`,
     );
   }
-  assert.equal(resolvePrintingImage('hBP01-075', 'BASE', INDEX), 'https://img.test/hBP01-075.png');
+  assert.equal(resolvePrintingImage('hBP01-075', 'BASE', INDEX), 'https://img.test/hBP01-075-base.png');
+});
+
+await test('a shared card-level SEC image becomes placeholders for all three printings', () => {
+  for (const printing of ['BASE', 'PARALLEL', 'PARALLEL/SIGN']) {
+    assert.equal(
+      resolvePrintingImage('hBP04-005', printing, UNPROVEN_INDEX),
+      undefined,
+      `${printing} must not borrow the representative signed image`,
+    );
+  }
 });
 
 await test('an unknown printing or card number borrows no image at all', () => {
@@ -339,7 +380,7 @@ await test('alerts and pending rows survive a reload', async () => {
   store.upsertAlert({
     cardNumber: 'hBP04-005', printing: 'base', printingLabel: 'ラプラス・ダークネス',
     name: 'ラプラス', currency: 'JPY', lowerPrice: 800, upperPrice: 1200,
-    imageUrl: 'https://img.test/hBP04-005.png',
+    imageUrl: 'https://img.test/hBP04-005_BASE.png',
   });
   store.importLegacyTracking([{ cardNumber: 'hBP99-999', name: 'unknown', targetPrice: 100 }], INDEX, NOW);
 
@@ -354,7 +395,7 @@ await test('alerts and pending rows survive a reload', async () => {
   assert.ok(alert, 'the alert survives');
   assert.equal(alert.lowerPrice, 800);
   assert.equal(alert.upperPrice, 1200);
-  assert.equal(alert.imageUrl, 'https://img.test/hBP04-005.png', 'the exact printing thumbnail survives');
+  assert.equal(alert.imageUrl, 'https://img.test/hBP04-005_BASE.png', 'the exact printing thumbnail survives');
   assert.ok(restored.pending['hBP99-999'], 'an unanswered prompt is still asked after a reload');
 });
 
@@ -366,7 +407,10 @@ await test('a v1 payload with duplicate records rehydrates collapsed', async () 
       alerts: {
         'hBP04-005|parallel': alertOf({ printing: 'parallel', upperPrice: 5000, updatedAt: '2026-08-01T00:00:00.000Z' }),
         'hBP04-005|PARALLEL': alertOf({ printing: 'PARALLEL', upperPrice: 9000, updatedAt: '2026-08-10T00:00:00.000Z' }),
-        'hBP04-005|BASE': alertOf({ printing: 'BASE', upperPrice: 1200 }),
+        'hBP04-005|BASE': alertOf({
+          printing: 'BASE', upperPrice: 1200,
+          imageUrl: 'https://img.test/hBP04-005_SEC.png',
+        }),
       },
     },
   }));
@@ -376,6 +420,11 @@ await test('a v1 payload with duplicate records rehydrates collapsed', async () 
   assert.equal(Object.keys(alerts).length, 2, 'the two PARALLEL records became one');
   assert.equal(alerts[priceAlertKey('hBP04-005', 'PARALLEL')].upperPrice, 9000, 'range preserved');
   assert.equal(alerts[priceAlertKey('hBP04-005', 'BASE')].upperPrice, 1200, 'BASE untouched');
+  assert.equal(
+    alerts[priceAlertKey('hBP04-005', 'BASE')].imageUrl,
+    undefined,
+    'v1/v2 representative thumbnails are discarded because their printing was never proven',
+  );
 });
 
 // ── 7. Notification dedupe ──────────────────────────────────────────────────

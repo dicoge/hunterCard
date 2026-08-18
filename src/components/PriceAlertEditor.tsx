@@ -89,7 +89,10 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
   const printingLabel = selectedChoice?.printingLabel || target.printingLabel || printing || '';
   const currency = selectedChoice ? selectedChoice.currency || target.currency : target.currency;
   const currentPrice = selectedChoice ? selectedChoice.sellPrice : target.currentPrice;
-  const imageUrl = selectedChoice?.imageUrl ?? target.imageUrl;
+  // Once a choice exists, its exact-listing provenance is authoritative. An
+  // absent exact image must stay absent rather than falling back to a generic
+  // card image that may depict another printing.
+  const imageUrl = selectedChoice ? selectedChoice.imageUrl : target.imageUrl;
 
   const priceLabel = currentPrice === null || currentPrice === undefined
     ? '暫無此版本的參考售價'
