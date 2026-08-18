@@ -401,8 +401,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD12-015_hSD12"
+    },
+    {
+      "date": "2026-08-18",
+      "price": 2480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-015_hSD12"
     }
   ],
-  "lastUpdated": "2026-08-17T12:11:37.381Z",
+  "lastUpdated": "2026-08-18T12:12:48.989Z",
   "nameZh": "越獄成功的共犯們"
 }

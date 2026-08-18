@@ -415,8 +415,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP07-027_hBP07"
+    },
+    {
+      "date": "2026-08-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-027_hBP07"
     }
   ],
-  "lastUpdated": "2026-08-17T12:11:37.358Z",
+  "lastUpdated": "2026-08-18T12:12:48.971Z",
   "nameZh": "大神澪"
 }
