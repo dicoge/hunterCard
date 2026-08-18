@@ -156,11 +156,17 @@ async function run(label, viewport) {
   await clickText('大会月報');
   await page.waitForSelector('[data-testid="tournament-monthly-summary"]', { timeout: T });
   await waitText('人気色');
+  const expectedColorIds = [...expectedColors.keys()];
+  await page.waitForFunction(
+    (colors) => colors.every((color) => document.querySelector(`[data-testid="summary-color-${color}"]`)),
+    { timeout: T },
+    expectedColorIds,
+  ).catch(() => {});
   const renderedColors = await page.evaluate(() =>
     [...document.querySelectorAll('[data-testid^="summary-color-"]')]
       .map((node) => node.getAttribute('data-testid').replace('summary-color-', '')));
   check(`${label}: monthly summary renders every live top color`,
-    [...expectedColors.keys()].every((color) => renderedColors.includes(color)),
+    expectedColorIds.every((color) => renderedColors.includes(color)),
     renderedColors.join(','));
   check(`${label}: monthly summary uses Japanese chrome`,
     (await hasText('データソースと収録範囲')) && !(await hasText('資料來源與涵蓋率')));
