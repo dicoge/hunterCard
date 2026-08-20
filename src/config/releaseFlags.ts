@@ -46,7 +46,7 @@ export const FEATURES = {
   newsSentiment: !STORE_MVP,
   // YT 訂閱 / 觀看成長及衍生預測
   ytStats: !STORE_MVP,
-  // 入手提醒 / watchlist trend alerts
+  // 到價提醒
   watchlist: !STORE_MVP,
   // 價格預判通知 / push trend alerts
   pushAlerts: !STORE_MVP,

@@ -155,6 +155,12 @@ jobs:
       - name: Verify server price-alert evaluator dedupe/re-arm/claim (DIC-1023)
         run: npm run test:price-alert-run
 
+      - name: Verify legacy tracking migration, dedupe and version isolation (DIC-1087)
+        run: npm run test:alert-unification
+
+      - name: Verify the alerts page is one feature end to end (DIC-1087)
+        run: npm run test:alert-unification-e2e
+
       - name: Verify push notification backend (DIC-390)
         run: npm run test:push-backend
 

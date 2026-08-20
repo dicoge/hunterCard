@@ -140,6 +140,9 @@ function MainDrawer() {
           ),
         }}
       />
+      {/* 到價提醒 — hidden in Store MVP (DIC-908). Removing the Drawer.Screen
+          unregisters the route so nav + deep link are both blocked, not just
+          visually hidden. */}
       {FEATURES.watchlist && (
         <Drawer.Screen
           name="Watchlist"

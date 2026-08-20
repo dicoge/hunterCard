@@ -1,7 +1,7 @@
 /**
  * Push Notification Service
  *
- * 入手提醒的 device token 管理：
+ * 到價提醒的 device token 管理：
  *   1. registerForPushNotifications() — 取得權限 + Expo push token
  *   2. uploadDeviceToken(token)       — 上傳 token 到後端 (POST /api/push/register)
  *
