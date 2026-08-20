@@ -162,6 +162,17 @@ test('Collection browser verification waits for controls, not loading copy', () 
   assert.doesNotMatch(verifier, /await waitText\(['"]收藏卡片['"]\)/);
 });
 
+test('DIC-1086 production verification waits for editor controls, not obsolete copy', () => {
+  const verifier = fs.readFileSync(path.resolve('scripts/verify-dic1086-production-e2e.mjs'), 'utf8');
+  assert.equal(zh.deck_zone_main, '主牌組', 'negative control keeps the localized label distinct from obsolete 主牌');
+  assert.match(
+    verifier,
+    /waitDeckEditorReady[\s\S]*deck-mobile-panel-switch[\s\S]*deck-phone-progress[\s\S]*deck-zone-tabs/,
+    'mobile readiness must wait for the rendered editor controls',
+  );
+  assert.doesNotMatch(verifier, /主牌 2\/50/, 'obsolete pre-localization copy cannot gate readiness');
+});
+
 const phaseShape = (phase) => ({
   steps: phase.steps?.length ?? 0,
   notes: phase.notes?.length ?? 0,

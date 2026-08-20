@@ -121,6 +121,15 @@ async function assertCollectionPersists(page) {
   );
 }
 
+async function waitDeckEditorReady(page, phone) {
+  if (phone) {
+    await page.waitForSelector('[data-testid="deck-mobile-panel-switch"]', { visible: true, timeout: TIMEOUT });
+    await page.waitForSelector('[data-testid="deck-phone-progress"]', { visible: true, timeout: TIMEOUT });
+    return;
+  }
+  await page.waitForSelector('[data-testid="deck-zone-tabs"]', { visible: true, timeout: TIMEOUT });
+}
+
 async function run(viewport, phone) {
   const page = await browser.newPage();
   await page.setViewport(viewport);
@@ -134,12 +143,7 @@ async function run(viewport, phone) {
   await enterGuest(page);
   await navigate(page, '牌組編輯器');
   try {
-    await page.waitForFunction((isPhone) => (
-      isPhone
-        ? !!document.querySelector('[data-testid="deck-mobile-panel-switch"]')
-          && document.body.innerText.includes('主牌 2/50')
-        : document.body.innerText.includes('DIC-1086 E2E')
-    ), { timeout: TIMEOUT }, phone);
+    await waitDeckEditorReady(page, phone);
   } catch (error) {
     const diagnostic = await page.evaluate(() => ({
       body: document.body.innerText.slice(0, 1500),
