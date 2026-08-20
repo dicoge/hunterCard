@@ -9,6 +9,7 @@ import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Image, ScrollView,
 } from 'react-native';
 import { COLORS } from '../constants';
+import { uniformGridItemStyle } from '../utils/gridLayout';
 import type { DeckCard } from '../utils/deckRules';
 import type { VariantGroup } from '../utils/deckVariants';
 import {
@@ -241,6 +242,7 @@ export function CardPickerGrid({
   // first paint, so the grid pages in as the player scrolls (DIC-1067 §11).
   const [visible, setVisible] = useState(PAGE_SIZE);
   const page = useMemo(() => groups.slice(0, visible), [groups, visible]);
+  const gridItemStyle = useMemo(() => uniformGridItemStyle(numColumns), [numColumns]);
 
   // A new filter/search result must start from the top of the page window.
   const resetKey = groups.length;
@@ -269,7 +271,10 @@ export function CardPickerGrid({
       renderItem={({ item }) => {
         const qty = qtyOf(item.cardNumber);
         return (
-          <View style={[styles.cell, qty > 0 && styles.cellSelected]}>
+          // The ＋擁有 control is a SIBLING of the add-to-deck target, never
+          // nested inside it: a tap meant for the collection must not also drop
+          // a copy into the deck.
+          <View style={[styles.cell, gridItemStyle, qty > 0 && styles.cellSelected]}>
             <TouchableOpacity
               style={styles.cellTap}
               onPress={() => onAdd(item.card)}
@@ -328,7 +333,7 @@ const styles = StyleSheet.create({
   grid: { marginTop: 10 },
   gridRow: { gap: 8 },
   cell: {
-    flex: 1, minHeight: CELL_MIN_HEIGHT, marginBottom: 8, padding: 6,
+    minHeight: CELL_MIN_HEIGHT, marginBottom: 8, padding: 6,
     borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
     backgroundColor: COLORS.surfaceLight,
   },
