@@ -131,6 +131,9 @@ async function fetchChannelStats(channelId, handle = null) {
       subscriberCount,
       totalViewCount,
       canonicalChannelId,
+      source: 'youtube_about_ssr',
+      parser: 'ytInitialData.aboutChannelViewModel/v1',
+      fetchedAt: new Date().toISOString(),
     };
   }
   return { error: lastError };
@@ -202,6 +205,10 @@ async function main() {
           date: today,
           subscriberCount: stats.subscriberCount,
           totalViewCount: stats.totalViewCount,
+          channelId,
+          source: stats.source,
+          parser: stats.parser,
+          fetchedAt: stats.fetchedAt,
           subscriberGrowth_1d: null,
           subscriberGrowth_7d: null,
           subscriberGrowth_15d: null,

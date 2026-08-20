@@ -86,7 +86,8 @@ assertSourceIncludes(searchResults, [
   'priceHistory: c.priceHistory || {}',
 ], 'src/screens/SearchResultsScreen');
 
-// MarketDataPanel should render all requested sections when fields exist.
+// MarketDataPanel should render exact-version buy/subscriber sections, while
+// CardDetail routes price history through the DIC-1084 exact-identity validator.
 // DIC-856: buyPrice is no longer read from the card level; it is derived from the
 // *selected version* (selectedVersion.buyPrice) and fails closed to null when the
 // version is unaligned or has no matched buy price — never a card-number/max fallback.
@@ -96,10 +97,12 @@ assertSourceIncludes(cardDetail, [
   'function MarketDataPanel',
   'const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null',
   'const ytStats = card?.ytStats ?? null',
-  'const priceHistory = card?.priceHistory ?? null',
   "t('card_detail_spread_title', { version: versionLabel })",
   "t('card_detail_youtube_data')",
-  'priceTrend',
+  'computeValidatedPriceTrend({',
+  'priceHistory: card.priceHistory',
+  'meta: card.priceHistoryMeta',
+  'printing: detailVersions[0].printing',
 ], 'src/screens/CardDetailScreen MarketDataPanel');
 
 // The labels are localized, so keep the DIC-361 copy contract mutation-sensitive

@@ -7,7 +7,7 @@ import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDeckStore } from '../store/deckStore';
 import {
-  validateDeck, deckStats, computeGap, eligibleZone, isDeckLegal, ownershipKey,
+  validateDeck, deckStats, computeGap, eligibleZone, isDeckLegal,
   type DeckCard, type DeckZone, type Deck, type ValidationIssue,
 } from '../utils/deckRules';
 import {
@@ -25,6 +25,7 @@ import { formatInterval, priceAlertKey } from '../utils/priceAlerts';
 import { useTranslation, type TranslationKey } from '../i18n';
 
 const ZONES: DeckZone[] = ['oshi', 'main', 'yell'];
+type MobilePanel = 'picker' | DeckZone | 'shortage';
 
 /** The card classes a zone accepts. 主牌組 takes two, so its tab offers a
  * ホロメン／サポート sub-filter; the other zones take exactly one and hide it. */
@@ -55,7 +56,8 @@ function printingLabelOf(card: {
 
 export default function DeckEditorScreen() {
   const { t } = useTranslation();
-  const { isDesktop, isWide } = useBreakpoint();
+  const { width, isDesktop, isWide } = useBreakpoint();
+  const isPhone = width <= 480;
   const zoneLabels: Record<DeckZone, string> = {
     oshi: t('deck_zone_oshi'), main: t('deck_zone_main'), yell: t('deck_zone_yell'),
   };
@@ -66,6 +68,7 @@ export default function DeckEditorScreen() {
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState(false);
   const [activeZone, setActiveZone] = useState<DeckZone>('oshi');
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>('picker');
   const [criteria, setCriteria] = useState<PickerCriteria>(EMPTY_CRITERIA);
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Full rule validation is surfaced ONLY when the player presses 完成組牌
@@ -85,8 +88,6 @@ export default function DeckEditorScreen() {
   const applyLowCostVariants = useDeckStore((s) => s.applyLowCostVariants);
   const migrateLegacyPrintings = useDeckStore((s) => s.migrateLegacyPrintings);
   const migrateTournamentDefaults = useDeckStore((s) => s.migrateTournamentDefaults);
-  const setOwned = useDeckStore((s) => s.setOwned);
-  const adjustOwned = useDeckStore((s) => s.adjustOwned);
 
   const activeDeck = useMemo(
     () => decks.find((d) => d.id === activeDeckId) || null,
@@ -170,33 +171,6 @@ export default function DeckEditorScreen() {
     }
     return map;
   }, [activeDeck]);
-
-  // Resolve a collection entry (keyed by normalized ownershipKey) back to a
-  // displayable card. Built from the loaded database so the global inventory can
-  // show real names/versions for owned entries independent of any deck.
-  const cardByOwnershipKey = useMemo(() => {
-    const map = new Map<string, DeckCard>();
-    if (db) for (const c of db.cards) map.set(ownershipKey(c.cardNumber, c.printing), c);
-    return map;
-  }, [db]);
-
-  const collectionEntries = useMemo(() => {
-    return Object.entries(collection)
-      .filter(([, qty]) => qty > 0)
-      .map(([key, qty]) => {
-        const sep = key.indexOf('|');
-        const cardNumber = sep === -1 ? key : key.slice(0, sep);
-        const version = sep === -1 ? '' : key.slice(sep + 1);
-        const card = cardByOwnershipKey.get(key);
-        return {
-          key, cardNumber, version, qty,
-          name: card?.name || cardNumber,
-          // 找不到卡片（例如 DIC-1013 前以 rarity 記錄的舊項目）就照原樣顯示版本碼，不臆測。
-          versionLabel: card ? printingLabelOf(card, t) : version,
-        };
-      })
-      .sort((a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.version.localeCompare(b.version));
-  }, [collection, cardByOwnershipKey, t]);
 
   const stats = activeDeck ? deckStats(activeDeck) : null;
   const gap = activeDeck && db ? computeGap(activeDeck, collection, db.priceRecords) : null;
@@ -373,7 +347,6 @@ export default function DeckEditorScreen() {
         height={isDesktop ? 620 : 460}
         qtyOf={(cardNumber) => qtyByCardNumber.get(cardNumber) ?? 0}
         onAdd={addToDeck}
-        onAddOwned={(card) => adjustOwned(card.cardNumber, card.printing, 1)}
         emptyLabel={t('deck_no_results')}
       />
     </View>
@@ -526,56 +499,6 @@ export default function DeckEditorScreen() {
     </View>
   );
 
-  const collectionPanel = (
-    <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <Text style={styles.h2}>{t('deck_collection_title')}</Text>
-      <Text style={styles.muted}>{t('deck_collection_hint')}</Text>
-      {collectionEntries.length === 0 ? (
-        <Text style={styles.muted}>{t('deck_collection_empty')}</Text>
-      ) : (
-        collectionEntries.map((e) => (
-          <View key={e.key} style={styles.slotRow} testID={`collection-row-${e.key}`}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardName}>{e.name}</Text>
-              <Text style={styles.cardMeta}>
-                {e.cardNumber}{e.versionLabel ? ` · ${e.versionLabel}` : ''}
-              </Text>
-            </View>
-            <View style={styles.qtyControls}>
-              <TouchableOpacity
-                style={styles.qtyBtn}
-                onPress={() => adjustOwned(e.cardNumber, e.version, -1)}
-                accessibilityRole="button"
-                accessibilityLabel={t('deck_collection_decrease_a11y', { name: e.name })}
-                testID={`collection-dec-${e.key}`}
-              >
-                <Text style={styles.qtyBtnText}>－</Text>
-              </TouchableOpacity>
-              <Text style={styles.qtyValue}>{e.qty}</Text>
-              <TouchableOpacity
-                style={styles.qtyBtn}
-                onPress={() => adjustOwned(e.cardNumber, e.version, 1)}
-                accessibilityRole="button"
-                accessibilityLabel={t('deck_collection_increase_a11y', { name: e.name })}
-                testID={`collection-inc-${e.key}`}
-              >
-                <Text style={styles.qtyBtnText}>＋</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setOwned(e.cardNumber, e.version, 0)}
-                accessibilityRole="button"
-                accessibilityLabel={t('deck_collection_remove_a11y', { name: e.name })}
-                testID={`collection-remove-${e.key}`}
-              >
-                <Text style={styles.link}>{t('common_remove')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))
-      )}
-    </View>
-  );
-
   const estimatePanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
       <Text style={styles.h2}>{t('deck_gap_title')}</Text>
@@ -592,15 +515,6 @@ export default function DeckEditorScreen() {
               </View>
               <View style={styles.gapNumbers}>
                 <Text style={styles.gapNeed}>{t('deck_required', { count: r.required })}</Text>
-                <View style={styles.ownedControls}>
-                  <TouchableOpacity style={styles.qtyBtnSm} onPress={() => setOwned(r.cardNumber, r.version, Math.max(0, r.owned - 1))}>
-                    <Text style={styles.qtyBtnText}>－</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.gapOwned}>{t('deck_owned', { count: r.owned })}</Text>
-                  <TouchableOpacity style={styles.qtyBtnSm} onPress={() => setOwned(r.cardNumber, r.version, r.owned + 1)}>
-                    <Text style={styles.qtyBtnText}>＋</Text>
-                  </TouchableOpacity>
-                </View>
                 <Text style={[styles.gapMissing, r.missing > 0 && { color: COLORS.error }]}>{t('deck_missing', { count: r.missing })}</Text>
                 <Text style={styles.gapPrice}>
                   {r.missing === 0
@@ -750,12 +664,64 @@ export default function DeckEditorScreen() {
     </Modal>
   );
 
+  const phoneProgress = stats && (
+    <View style={styles.phoneProgress} testID="deck-phone-progress">
+      <Text style={styles.phoneProgressText}>推し {stats.oshi}/{stats.oshiTarget}</Text>
+      <Text style={styles.phoneProgressText}>主牌 {stats.main}/{stats.mainTarget}</Text>
+      <Text style={styles.phoneProgressText}>エール {stats.yell}/{stats.yellTarget}</Text>
+      <Text style={[styles.phoneProgressText, styles.phoneProgressTotal]}>
+        總計 {stats.total}/{stats.totalTarget}
+      </Text>
+    </View>
+  );
+
+  const phonePanelSwitch = (
+    <View style={styles.phonePanelSwitch} testID="deck-mobile-panel-switch">
+      {([
+        ['picker', '選卡'],
+        ['oshi', '推し'],
+        ['main', '主牌'],
+        ['yell', 'エール'],
+        ['shortage', '缺卡'],
+      ] as Array<[MobilePanel, string]>).map(([panel, label]) => {
+        const active = mobilePanel === panel;
+        return (
+          <TouchableOpacity
+            key={panel}
+            style={[styles.phonePanelTab, active && styles.phonePanelTabActive]}
+            onPress={() => {
+              setMobilePanel(panel);
+              if (panel === 'oshi' || panel === 'main' || panel === 'yell') {
+                setActiveZone(panel);
+                setCriteria(EMPTY_CRITERIA);
+              }
+            }}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            testID={`deck-mobile-panel-${panel}`}
+          >
+            <Text style={[styles.phonePanelLabel, active && styles.phonePanelLabelActive]} numberOfLines={1}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const phonePanel = mobilePanel === 'picker'
+    ? pickerPanel
+    : mobilePanel === 'shortage'
+      ? estimatePanel
+      : deckPanel;
+
   return (
     <SafeAreaView style={styles.container}>
       {finalizeSheet}
       {filterSheet}
       <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
-      {zoneTabs}
+      {isPhone ? phoneProgress : zoneTabs}
+      {isPhone && phonePanelSwitch}
       {isDesktop ? (
         <ScrollView contentContainerStyle={styles.desktopWrap}>
           <View style={styles.desktopCols}>
@@ -766,16 +732,18 @@ export default function DeckEditorScreen() {
             {pickerPanel}
             <View style={styles.desktopStackCol}>
               {deckPanel}
-              {collectionPanel}
               {estimatePanel}
             </View>
           </View>
+        </ScrollView>
+      ) : isPhone ? (
+        <ScrollView contentContainerStyle={styles.pad}>
+          {phonePanel}
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.pad}>
           {pickerPanel}
           {deckPanel}
-          {collectionPanel}
           {estimatePanel}
         </ScrollView>
       )}
@@ -833,6 +801,14 @@ const styles = StyleSheet.create({
   tabLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
   tabLabelActive: { color: COLORS.primary },
   tabProgress: { color: COLORS.text, fontSize: 14, fontWeight: 'bold', marginTop: 2 },
+  phoneProgress: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 6, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  phoneProgressText: { flex: 1, color: COLORS.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' },
+  phoneProgressTotal: { color: COLORS.primaryLight },
+  phonePanelSwitch: { flexDirection: 'row', paddingHorizontal: 6, paddingVertical: 6, gap: 4, backgroundColor: COLORS.surface },
+  phonePanelTab: { flex: 1, minWidth: 0, minHeight: 44, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border },
+  phonePanelTabActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  phonePanelLabel: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '700' },
+  phonePanelLabelActive: { color: '#fff' },
   mobileFilterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   filterBtn: { minHeight: 44, paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary, backgroundColor: COLORS.surfaceLight },
   filterBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold' },
@@ -867,7 +843,6 @@ const styles = StyleSheet.create({
   cardMeta: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   qtyControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   qtyBtn: { width: 44, height: 44, borderRadius: 6, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
-  qtyBtnSm: { width: 24, height: 24, borderRadius: 5, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
   qtyBtnText: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' },
   qtyValue: { color: COLORS.text, fontSize: 15, fontWeight: 'bold', minWidth: 28, textAlign: 'center' },
   removeBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
@@ -885,8 +860,6 @@ const styles = StyleSheet.create({
   alertDisabled: { color: COLORS.textSecondary, fontSize: 11, paddingVertical: 4 },
   gapNumbers: { alignItems: 'flex-end', gap: 3 },
   gapNeed: { color: COLORS.textSecondary, fontSize: 12 },
-  ownedControls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  gapOwned: { color: COLORS.text, fontSize: 12, minWidth: 40, textAlign: 'center' },
   gapMissing: { color: COLORS.textSecondary, fontSize: 12 },
   gapPrice: { color: COLORS.primaryLight, fontSize: 12 },
   totalCard: { marginTop: 12, backgroundColor: COLORS.surfaceLight, borderRadius: 8, padding: 12 },

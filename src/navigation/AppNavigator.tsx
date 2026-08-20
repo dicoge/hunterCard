@@ -12,7 +12,7 @@ import { useTranslation } from '../i18n';
 import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ScanScreen from '../screens/ScanScreen';
-import FavoritesScreen from '../screens/FavoritesScreen';
+import CollectionScreen from '../screens/CollectionScreen';
 import DeckEditorScreen from '../screens/DeckEditorScreen';
 import TournamentReportScreen from '../screens/TournamentReportScreen';
 import WatchlistScreen from '../screens/WatchlistScreen';
@@ -111,8 +111,8 @@ function MainDrawer() {
         }}
       />
       <Drawer.Screen 
-        name="Favorites" 
-        component={FavoritesScreen}
+        name="Collection"
+        component={CollectionScreen}
         options={{ 
           title: t('nav_favorites'),
           drawerIcon: ({ focused }) => (

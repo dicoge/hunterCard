@@ -224,15 +224,13 @@ interface GridProps {
   /** copies of this card number already in the deck, for the quantity badge */
   qtyOf: (cardNumber: string) => number;
   onAdd: (card: DeckCard) => void;
-  /** record one more owned copy of the card's default printing */
-  onAddOwned: (card: DeckCard) => void;
   emptyLabel: string;
 }
 
 const PAGE_SIZE = 60;
 
 export function CardPickerGrid({
-  groups, numColumns, height, qtyOf, onAdd, onAddOwned, emptyLabel,
+  groups, numColumns, height, qtyOf, onAdd, emptyLabel,
 }: GridProps) {
   const { t } = useTranslation();
   // The catalog holds ~2,100 card numbers; rendering them all would stall the
@@ -267,9 +265,6 @@ export function CardPickerGrid({
       renderItem={({ item }) => {
         const qty = qtyOf(item.cardNumber);
         return (
-          // The ＋擁有 control is a SIBLING of the add-to-deck target, never
-          // nested inside it: a tap meant for the collection must not also drop
-          // a copy into the deck.
           <View style={[styles.cell, qty > 0 && styles.cellSelected]}>
             <TouchableOpacity
               style={styles.cellTap}
@@ -290,18 +285,7 @@ export function CardPickerGrid({
                 <Text style={styles.qtyBadgeText}>{qty}</Text>
               </View>
             )}
-            <View style={styles.cellFooter}>
-              <Text style={styles.cellMeta} numberOfLines={1}>{item.cardNumber}</Text>
-              <TouchableOpacity
-                style={styles.ownBtn}
-                onPress={() => onAddOwned(item.card)}
-                accessibilityRole="button"
-                accessibilityLabel={t('picker_add_owned_a11y', { name: item.card.name })}
-                testID={`collection-add-${item.card.id}`}
-              >
-                <Text style={styles.ownBtnText}>{t('picker_add_owned')}</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.cellMeta} numberOfLines={1}>{item.cardNumber}</Text>
           </View>
         );
       }}
@@ -318,10 +302,6 @@ export function CardPickerGrid({
 // A grid cell must stay comfortably above the 44px minimum touch target at the
 // 390px viewport, where the grid renders two columns.
 const CELL_MIN_HEIGHT = 168;
-
-// Every control a thumb can land on carries this floor, including the ＋擁有
-// button tucked into the cell footer (DIC-1074).
-const TOUCH_TARGET = 44;
 
 const styles = StyleSheet.create({
   input: {
@@ -358,13 +338,7 @@ const styles = StyleSheet.create({
   thumbFallback: { alignItems: 'center', justifyContent: 'center', padding: 6 },
   thumbFallbackText: { color: COLORS.textSecondary, fontSize: 11, textAlign: 'center' },
   cellName: { color: COLORS.text, fontSize: 13, marginTop: 6 },
-  cellFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 4 },
   cellMeta: { color: COLORS.textSecondary, fontSize: 11, flexShrink: 1 },
-  ownBtn: {
-    minHeight: TOUCH_TARGET, paddingHorizontal: 8, justifyContent: 'center', borderRadius: 6,
-    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface,
-  },
-  ownBtnText: { color: COLORS.text, fontSize: 11, fontWeight: 'bold' },
   qtyBadge: {
     position: 'absolute', top: 10, right: 10, minWidth: 26, height: 26, borderRadius: 13,
     backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
