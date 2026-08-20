@@ -98,6 +98,9 @@ export function hasDisplayableSubscriberStats(ytStats: any, now = Date.now()): b
 export function isValidatedTrendPrediction(trend: any, card: any): boolean {
   if (!trend || !card || !['up', 'down', 'stable'].includes(trend.trend)) return false;
   if (!Number.isFinite(trend.score) || !Number.isFinite(trend.confidence)) return false;
+  if (trend.trend === 'up' && trend.score <= 0.15) return false;
+  if (trend.trend === 'down' && trend.score >= -0.15) return false;
+  if (trend.trend === 'stable' && Math.abs(trend.score) > 0.15) return false;
   if (!Number.isInteger(trend.dataPoints) || trend.dataPoints < 3) return false;
   if (!Array.isArray(trend.timestamps) || new Set(trend.timestamps).size < 3) return false;
   if (trend.cardNumber !== card.cardNumber || !trend.printing || trend.printing !== card.printing) return false;

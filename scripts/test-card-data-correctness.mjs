@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PriceTrend } from '../src/components/PriceTrend.tsx';
-import { hasDisplayableSubscriberStats } from '../src/utils/cardNormalization.ts';
+import { hasDisplayableSubscriberStats, isValidatedTrendPrediction } from '../src/utils/cardNormalization.ts';
 import { computeValidatedPriceTrend } from '../src/utils/priceTrend.ts';
 import { computeYtGrowth } from './build-database.js';
 
@@ -58,6 +58,16 @@ assert.doesNotMatch(renderedTrend, /資料不足|歷史資料累積中|—/);
 
 const cardDetailSource = fs.readFileSync(new URL('../src/screens/CardDetailScreen.tsx', import.meta.url), 'utf8');
 assert.doesNotMatch(cardDetailSource, /暫無歷史均價|歷史資料累積中|<PriceTrend\s+priceHistory=/, 'CardDetail must not retain a placeholder trend path');
+
+const predictionCard = { cardNumber: 'hBP01-001', printing: 'BASE', currency: 'JPY' };
+const prediction = {
+  trend: 'up', score: 0.5, confidence: 0.8, dataPoints: 3,
+  timestamps: ['2026-08-01', '2026-08-08', '2026-08-15'],
+  cardNumber: 'hBP01-001', printing: 'BASE', currency: 'JPY',
+};
+assert.equal(isValidatedTrendPrediction(prediction, predictionCard), true, 'prediction direction must agree with its numeric score');
+assert.equal(isValidatedTrendPrediction({ ...prediction, score: -0.5 }, predictionCard), false, 'contradictory up/negative prediction must fail closed');
+assert.equal(isValidatedTrendPrediction({ ...prediction, trend: 'stable', score: 0.5 }, predictionCard), false, 'stable prediction outside the stable threshold must fail closed');
 
 const oldSubscriberFetchedAt = '2026-08-01T01:00:00Z';
 const freshViewFetchedAt = '2026-08-20T01:00:00Z';
