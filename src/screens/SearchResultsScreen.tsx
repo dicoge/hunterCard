@@ -6,6 +6,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
+import { normalizeCardIdentity } from '../utils/cardNormalization';
 
 // ── Server-side search constants ──
 
@@ -60,6 +61,7 @@ interface CardRecord {
   ytStats?: any;
   effects?: string[]; hp?: string; life?: string; arts?: string;
   nameZh?: string;
+  skillsJp?: any; skillsZh?: any;
 }
 
 interface CardResult {
@@ -75,6 +77,7 @@ interface CardResult {
   nameZh?: string;
   skillsJp?: any;
   skillsZh?: any;
+  normalized?: any;
 }
 
 interface DatabaseSchema {
@@ -184,18 +187,8 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
     const seriesNames = series.map((s: string) => nameMap[s] || s);
     const cardNumber = (c as any).cardNumber || id;
 
-    // Grade/rarity mapping (same as original api/search.ts logic)
-    const rarityCode = (c.rarity || '').toUpperCase();
-    let grade = '';
-    let rarity = 'C';
-    if (rarityCode.includes('OSR') || rarityCode.includes('OUR')) { grade = 'buzz'; rarity = 'SR'; }
-    else if (rarityCode === 'UR') { grade = '2nd'; rarity = 'R'; }
-    else if (rarityCode === 'SR') { grade = '1st'; rarity = 'U'; }
-    else if (rarityCode === 'RR') { grade = 'debut'; rarity = 'C'; }
-    else if (rarityCode === 'R') { grade = 'debut'; rarity = 'C'; }
-    else if (rarityCode === 'U') { grade = 'debut'; rarity = 'C'; }
-    else if (rarityCode === 'C') { grade = 'debut'; rarity = 'C'; }
-    else if (rarityCode === 'N') { grade = 'spot'; rarity = 'N'; }
+    const normalized = normalizeCardIdentity(c);
+    const rarity = (c.rarity || '').toUpperCase();
 
     // Use official image (400×559) first for sharp display, local image (100×140) as fallback
     const imageUrl = c.officialImage || c.localImage || '';
@@ -204,8 +197,9 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
       id,
       name,
       cardNumber,
-      type: c.type || '',
-      grade,
+      type: normalized.category || '',
+      grade: normalized.stage || '',
+      normalized,
       rarity,
       sourceRarity: c.rarity || '',
       colors,
@@ -362,9 +356,11 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
       <View style={styles.cardContent}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardNumber}>{id}</Text>
-          <View style={[styles.rarityBadge, { backgroundColor: rarityColors[card.rarity] || '#6b7280' }]}>
-            <Text style={styles.rarityText}>{gradeLabels[card.grade] || card.grade}</Text>
-          </View>
+          {card.normalized?.displayBadge ? (
+            <View style={[styles.rarityBadge, { backgroundColor: rarityColors[card.rarity] || '#6b7280' }]}>
+              <Text style={styles.rarityText}>{card.normalized.displayBadge}</Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={styles.cardName} numberOfLines={1}>

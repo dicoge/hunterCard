@@ -15,6 +15,8 @@ import { formatInterval } from '../utils/priceAlerts';
 import type { PrintingOption } from '../utils/alertMigration';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
+import { hasDisplayableSubscriberStats, isValidatedTrendPrediction } from '../utils/cardNormalization';
+import { computeValidatedPriceTrend } from '../utils/priceTrend';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
@@ -110,7 +112,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const displayName = preferredLanguage === 'zh' && nameZH ? nameZH : nameJP;
   const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
-  const typeLabel = typeLabels[card.type] || card.type || '-';
+  const typeLabel = card.normalized?.categoryLabel || typeLabels[card.type] || card.type || '';
   const skillsZhContainsJapanese = containsJapaneseKana(card.skillsZh);
   const displaySkills = preferredLanguage === 'zh'
     ? (skillsZhContainsJapanese ? (card.skillsJp || card.skillsZh) : (card.skillsZh || card.skillsJp))
@@ -145,6 +147,16 @@ export default function CardDetailScreen({ route, navigation }: any) {
   // Handle multiple price variants (signed vs unsigned)
   const priceVariants = card.prices || [];
   const hasMultipleVariants = priceVariants.length > 1;
+  const detailVersions = buildPriceVersions(card);
+  const detailPriceTrend = detailVersions.length === 1
+    ? computeValidatedPriceTrend({
+        priceHistory: card.priceHistory,
+        meta: card.priceHistoryMeta,
+        cardNumber: card.cardNumber,
+        printing: detailVersions[0].printing,
+        currency: 'JPY',
+      })
+    : null;
 
   // ── Trend prediction ──
   const [trend, setTrend] = useState<TrendPrediction | null>(null);
@@ -346,9 +358,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
         ) : (
           <Text style={styles.noPriceText}>暫無資料</Text>
         )}
-        {/* 歷史走勢僅為卡號層級（追蹤單一版本），多版本卡無法歸屬到選中版本 → 不顯示以免混版（DIC-856）。
-            價格趨勢圖屬預測類功能 → Store MVP 隱藏（DIC-908）。 */}
-        {FEATURES.trendPrediction && !hasMultipleVariants ? <PriceTrend priceHistory={card.priceHistory || {}} /> : null}
+        {FEATURES.trendPrediction ? <PriceTrend trend={detailPriceTrend} /> : null}
         <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
           <Text style={styles.checkPriceBtnText}>🔍 查看遊々亭即時價格 →</Text>
         </TouchableOpacity>
@@ -358,7 +368,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       {/* 趨勢預測基於卡號層級歷史（單一版本序列）。多版本卡無法歸屬到特定版本 → 隱藏，
           避免用別版走勢推薦本版（DIC-856：禁止跨版本推薦訊號）。
           漲跌預測 / trendScore / 信心度 / YT / 新聞情緒 → Store MVP 隱藏（DIC-908）。 */}
-      {FEATURES.trendPrediction && !hasMultipleVariants && trend && (
+      {FEATURES.trendPrediction && !hasMultipleVariants && trend && isValidatedTrendPrediction(trend, card) && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
           <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
           <PriceTrendBadge
@@ -423,9 +433,11 @@ export default function CardDetailScreen({ route, navigation }: any) {
       <View style={styles.section}>
         <View style={styles.headerRow}>
           <Text style={styles.cardNumber}>{id}</Text>
-          <View style={[styles.rarityBadge, { backgroundColor: rarityColors[rarityKey] || '#6b7280' }]}>
-            <Text style={styles.rarityText}>{gradeLabels[card.grade] || card.grade || rarityKey}</Text>
-          </View>
+          {card.normalized?.displayBadge ? (
+            <View style={[styles.rarityBadge, { backgroundColor: rarityColors[rarityKey] || '#6b7280' }]}>
+              <Text style={styles.rarityText}>{card.normalized.displayBadge}</Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={styles.nameJP}>{displayName}</Text>
@@ -630,47 +642,7 @@ function MarketDataPanel({ card }: { card: any }) {
   // 絕不退回卡號層級最高價/別版價（fail closed）。
   const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null;
   const ytStats = card?.ytStats ?? null;
-  const priceHistory = card?.priceHistory ?? null;
-
   const hasSpread = typeof sellPrice === 'number' && sellPrice > 0 && typeof buyPrice === 'number' && buyPrice > 0;
-
-  // 漲跌判斷：近 7 日均價 vs 前 7 日均價，±3% 閾值 → up / down / flat
-  let priceTrend: 'up' | 'down' | 'flat' | null = null;
-  let priceChangePct: number | null = null;
-  let recentAvg: number | null = null;
-  let priorAvg: number | null = null;
-  let latestHistoryValue: number | null = null;
-  if (priceHistory != null && typeof priceHistory === 'object') {
-    const entries = Object.entries(priceHistory)
-      .map(([d, p]) => [d, Number(p)] as [string, number])
-      .filter(([d, p]) => !isNaN(p) && p > 0 && !isNaN(Date.parse(d)))
-      .sort((a, b) => a[0].localeCompare(b[0]));
-    if (entries.length >= 1) latestHistoryValue = entries[entries.length - 1][1];
-    if (entries.length >= 2) {
-      const latestMs = Date.parse(entries[entries.length - 1][0]);
-      const DAY_MS = 86400000;
-      const recent: number[] = [];
-      const prior: number[] = [];
-      for (const [d, p] of entries) {
-        const offsetDays = Math.round((latestMs - Date.parse(d)) / DAY_MS);
-        if (offsetDays >= 0 && offsetDays <= 6) recent.push(p);
-        else if (offsetDays >= 7 && offsetDays <= 13) prior.push(p);
-      }
-      if (recent.length > 0 && prior.length > 0) {
-        recentAvg = recent.reduce((s, v) => s + v, 0) / recent.length;
-        priorAvg = prior.reduce((s, v) => s + v, 0) / prior.length;
-        if (priorAvg > 0) {
-          priceChangePct = ((recentAvg - priorAvg) / priorAvg) * 100;
-          priceTrend = priceChangePct >= 3 ? 'up' : priceChangePct <= -3 ? 'down' : 'flat';
-        }
-      }
-    }
-  }
-  // priceHistory 只有卡號層級（實測僅追蹤單一版本序列），非各版本獨立。多版本卡無法把這段
-  // 歷史精確歸屬到選中版本 → 一律不顯示漲跌（fail closed，禁止用近似值臆測本版走勢，DIC-856）。
-  // 僅單一版本卡（歷史必屬該版本）才顯示。
-  void latestHistoryValue;
-  const hasHistory = priceTrend != null && !multiVersion;
 
   const spreadPct = hasSpread ? ((buyPrice - sellPrice) / sellPrice) * 100 : 0;
   const spreadUp = spreadPct >= 0;
@@ -760,7 +732,7 @@ function MarketDataPanel({ card }: { card: any }) {
       ) : null)}
 
       {/* YouTube 成員數據 / 訂閱・觀看成長 — Store MVP 隱藏（DIC-908） */}
-      {FEATURES.ytStats && (
+      {FEATURES.ytStats && hasDisplayableSubscriberStats(ytStats) && (
       <View style={styles.marketBlock}>
         <Text style={styles.marketBlockTitle}>📺 YouTube 成員數據</Text>
         <View style={styles.marketRow}>
@@ -796,35 +768,6 @@ function MarketDataPanel({ card }: { card: any }) {
       </View>
       )}
 
-      {/* 漲跌判斷 — 僅在歷史代表目前選中版本時顯示；漲跌預測 → Store MVP 隱藏（DIC-908） */}
-      {FEATURES.trendPrediction && (hasHistory ? (
-        <View style={styles.marketBlock}>
-          <Text style={styles.marketBlockTitle}>
-            {priceTrend === 'up' ? '📈' : priceTrend === 'down' ? '📉' : '➖'} 漲跌判斷（{versionLabel}）
-          </Text>
-          <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>前 7 日均價</Text>
-            <Text style={styles.marketValue}>¥{Math.round(priorAvg!).toLocaleString()}</Text>
-          </View>
-          <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>近 7 日均價</Text>
-            <Text style={styles.marketValue}>¥{Math.round(recentAvg!).toLocaleString()}</Text>
-          </View>
-          <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>變化</Text>
-            <Text style={[styles.marketValueStrong, { color: priceTrend === 'up' ? '#10b981' : priceTrend === 'down' ? '#ef4444' : '#6b7280' }]}>
-              {priceTrend === 'up' ? '▲' : priceTrend === 'down' ? '▼' : '▬'} {priceChangePct! >= 0 ? '+' : ''}{priceChangePct!.toFixed(1)}%
-            </Text>
-          </View>
-        </View>
-      ) : aligned && priceTrend != null ? (
-        <View style={styles.marketBlock}>
-          <Text style={styles.marketBlockTitle}>➖ 漲跌判斷</Text>
-          <Text style={styles.marketNote}>
-            此版本（{versionLabel}）暫無歷史均價：多版本卡的歷史為卡號層級、無法精確歸屬到單一版本，故不顯示以免混版。
-          </Text>
-        </View>
-      ) : null)}
     </View>
   );
 }

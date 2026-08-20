@@ -1,6 +1,6 @@
 {
   "lastUpdated": "2026-08-18T12:12:47.883Z",
-  "totalCards": 2105,
+  "totalCards": 2104,
   "source": "hunterCard unified database",
   "cards": {
     "hBD24-007_ent07": {
@@ -271968,26 +271968,6 @@
         "2026-08-17": 80,
         "2026-08-18": 80
       }
-    },
-    "202_hPR": {
-      "id": "202_hPR",
-      "cardNumber": "202",
-      "name": "ReGLOSS",
-      "type": "",
-      "color": "",
-      "rarity": "",
-      "series": "hPR",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hPR-002.png",
-      "localImage": "",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "timestamp": "",
-      "nameZh": "ReGLOSS"
     },
     "hPR-002_hPR": {
       "id": "hPR-002_hPR",

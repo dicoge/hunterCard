@@ -92,6 +92,12 @@ jobs:
       - name: Verify scan/search market data fields (DIC-361)
         run: npm run test:market-fields
 
+      - name: Audit normalized card labels, subscriber provenance, and exact-printing trends (DIC-1084)
+        run: npm run test:card-data-audit
+
+      - name: Verify trend math/UI and subscriber provenance are mutation-sensitive (DIC-1084)
+        run: npm run test:card-data-correctness
+
       - name: Verify production /api/* is not swallowed by SPA (DIC-886)
         run: npm run test:vercel-routing
 

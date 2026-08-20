@@ -1,0 +1,109 @@
+export type NormalizedCardCategory = 'oshi' | 'holomen' | 'support' | 'mascot' | 'yell';
+export type NormalizedCardZone = 'oshi' | 'main' | 'yell';
+export type NormalizedHolomenStage = 'debut' | '1st' | '2nd' | 'buzz' | 'spot';
+
+export interface NormalizedCardIdentity {
+  category: NormalizedCardCategory | null;
+  zone: NormalizedCardZone | null;
+  stage: NormalizedHolomenStage | null;
+  categoryLabel: string | null;
+  stageLabel: string | null;
+  displayBadge: string | null;
+  color: string | null;
+  setCode: string | null;
+  source: { cardType: string | null; stage: string | null; color: string | null };
+}
+
+const STAGE_LABELS: Record<NormalizedHolomenStage, string> = {
+  debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot',
+};
+
+function clean(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function normalizeStage(value: unknown): NormalizedHolomenStage | null {
+  const raw = clean(value)?.toLowerCase().replace(/\s+/g, '');
+  if (!raw) return null;
+  if (raw === 'debut' || raw === 'デビュー') return 'debut';
+  if (raw === '1st' || raw === 'first' || raw === '１st') return '1st';
+  if (raw === '2nd' || raw === 'second' || raw === '２nd') return '2nd';
+  if (raw === 'buzz' || raw === 'buzzホロメン' || raw === 'buzzholomen') return 'buzz';
+  if (raw === 'spot' || raw === 'スポット') return 'spot';
+  return null;
+}
+
+function sourceStageOf(card: any): string | null {
+  for (const source of [card?.skillsJp, card?.skillsZh, card]) {
+    if (!source || typeof source !== 'object') continue;
+    for (const key of ['bloomLevel', 'bloom_level', 'stage', 'grade']) {
+      const value = clean(source[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+export function normalizeCardIdentity(card: any): NormalizedCardIdentity {
+  const cardNumber = clean(card?.cardNumber ?? card?.id) || '';
+  const sourceCardType = clean(card?.skillsJp?.cardType) ?? clean(card?.type) ?? clean(card?.skillsZh?.cardType);
+  const sourceStage = sourceStageOf(card);
+  const sourceColor = clean(card?.skillsJp?.color) ?? clean(card?.color) ?? clean(card?.skillsZh?.color);
+  const type = sourceCardType?.toLowerCase() ?? '';
+
+  let category: NormalizedCardCategory | null = null;
+  if (/^hy\d/i.test(cardNumber) || type.includes('エール') || type.includes('yell') || type.includes('cheer') || type.includes('應援')) category = 'yell';
+  else if (type.includes('推し') || type.includes('oshi') || type.includes('主推')) category = 'oshi';
+  else if (type.includes('マスコット') || type.includes('mascot') || type.includes('吉祥物')) category = 'mascot';
+  else if (type.includes('サポート') || type.includes('support') || type.includes('支援')) category = 'support';
+  else if (type.includes('ホロメン') || type.includes('ホロ��ン') || type.includes('holomen') || type.includes('成員')) category = 'holomen';
+
+  let stage = normalizeStage(sourceStage);
+  if (category === 'holomen' && type.includes('buzz')) stage = 'buzz';
+  if (category !== 'holomen') stage = null;
+
+  const categoryLabel = category === 'oshi' ? 'Oshi'
+    : category === 'holomen' ? 'Holomen'
+      : category === 'support' ? 'Support'
+        : category === 'mascot' ? 'Mascot'
+          : category === 'yell' ? 'Yell' : null;
+  const stageLabel = stage ? STAGE_LABELS[stage] : null;
+
+  return {
+    category,
+    zone: category === 'oshi' ? 'oshi' : category === 'yell' ? 'yell' : category ? 'main' : null,
+    stage,
+    categoryLabel,
+    stageLabel,
+    displayBadge: stageLabel ?? categoryLabel,
+    color: sourceColor,
+    setCode: cardNumber.includes('-') ? cardNumber.split('-')[0] : null,
+    source: { cardType: sourceCardType, stage: sourceStage, color: sourceColor },
+  };
+}
+
+export function hasDisplayableSubscriberStats(ytStats: any, now = Date.now()): boolean {
+  if (!ytStats || typeof ytStats !== 'object') return false;
+  if (!Number.isInteger(ytStats.subscriberCount) || ytStats.subscriberCount < 0) return false;
+  if (!/^UC[\w-]{20,}$/.test(String(ytStats.channelId || ''))) return false;
+  if (ytStats.source !== 'youtube_about_ssr') return false;
+  if (ytStats.parser !== 'ytInitialData.aboutChannelViewModel/v1') return false;
+  const fetchedAt = Date.parse(String(ytStats.fetchedAt || ''));
+  if (!Number.isFinite(fetchedAt)) return false;
+  return now - fetchedAt <= 72 * 60 * 60 * 1000 && fetchedAt <= now + 5 * 60 * 1000;
+}
+
+export function isValidatedTrendPrediction(trend: any, card: any): boolean {
+  if (!trend || !card || !['up', 'down', 'stable'].includes(trend.trend)) return false;
+  if (!Number.isFinite(trend.score) || !Number.isFinite(trend.confidence)) return false;
+  if (trend.trend === 'up' && trend.score <= 0.15) return false;
+  if (trend.trend === 'down' && trend.score >= -0.15) return false;
+  if (trend.trend === 'stable' && Math.abs(trend.score) > 0.15) return false;
+  if (!Number.isInteger(trend.dataPoints) || trend.dataPoints < 3) return false;
+  if (!Array.isArray(trend.timestamps) || new Set(trend.timestamps).size < 3) return false;
+  if (trend.cardNumber !== card.cardNumber || !trend.printing || trend.printing !== card.printing) return false;
+  if (!trend.currency || trend.currency !== card.currency) return false;
+  return trend.timestamps.every((value: unknown) => Number.isFinite(Date.parse(String(value))));
+}

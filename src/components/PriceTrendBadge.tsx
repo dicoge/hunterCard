@@ -57,6 +57,7 @@ export default function PriceTrendBadge({
   confidence,
   compact = false,
 }: PriceTrendBadgeProps) {
+  if (trend == null || score == null || !Number.isFinite(score)) return null;
   const style = getTrendStyle(trend);
 
   if (compact) {
