@@ -33,7 +33,10 @@ export default function SimulationStepCard({
 }: SimulationStepCardProps) {
   const { t } = useTranslation();
   return (
-    <View style={[styles.container, isMobile && styles.containerMobile]}>
+    <View
+      style={[styles.container, isMobile && styles.containerMobile]}
+      testID={`tutorial-simulation-step-${step.phaseId}-${step.stepNumber}`}
+    >
       {/* Phase indicator */}
       <View style={[styles.phaseBar, isMobile && styles.phaseBarMobile]}>
         <Text style={[styles.phaseIcon, isMobile && styles.phaseIconMobile]}>{phaseIcon}</Text>

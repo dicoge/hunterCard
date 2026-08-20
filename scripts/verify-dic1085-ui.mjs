@@ -7,6 +7,7 @@
 //   BASE_URL=https://preview.example npm run verify:i18n-ui
 
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
@@ -56,6 +57,36 @@ for (const deck of decks) for (const raw of deck.colors || []) {
   expectedColors.set(color, (expectedColors.get(color) || 0) + 1);
 }
 
+const TUTORIAL_DETAILS = [
+  { id: 'intro', title: 'ゲーム紹介', digest: '3d3230fe7ca9228dd77ce53adce86b7ec90d64a9095f66f7df4c62ee09297475' },
+  { id: 'cards', title: 'カード紹介', digest: 'b28c83b103875efa75d932eee5dd78178c924e5141f4f348949ee64a137f5a76' },
+  { id: 'field', title: 'プレイエリア', digest: '092c6048444c7e1d07b54a70828eb6cf51582b4fd822c68b620bca2aade75eb4' },
+  { id: 'preparation', title: 'ゲームの準備', digest: '6e6b655d47da800b378032e40eef2ae670c1a70e2e674d8091eb1b52ea93c092' },
+  { id: 'victory', title: '勝利条件', digest: '47f5a9fd62876789c350a316b08ee48d7f9bbe3ac91b6b3314410b330ddb9bd3' },
+  { id: 'states', title: 'カードの状態', digest: '5962d6880443013fe65a8191d1c3437ac2c5047ad9351af2649151a5a26cf4db' },
+  { id: 'flow', title: 'ゲームの流れ', digest: '33d92ba0dad6eb8be9cdf83ed1872b9e1294f2507520aeed155bc07ad90250e2' },
+  { id: 'references', title: '参考資料', digest: 'b60e7479764822f6c5c274ddb5ca9499d1bf78ebac20128b54522f06de25007f' },
+];
+
+const SIMULATION_STEPS = [
+  { id: 'setup-1', title: '推しホロメンを選ぶ', digest: 'aee431b5ad69da5130a5d1b0124eda40a9ce47818cf7c704e75934e620b0c049' },
+  { id: 'setup-2', title: 'デッキを用意する', digest: '3d3c2d538ab520fc23872916161ceaddd0ed6315eb610671a718db4d7cc7cc5d' },
+  { id: 'setup-3', title: 'じゃんけんで先攻・後攻を決める', digest: '11ba0d93c5d4e4ba563a76be8b0dba7a8da9eefcac594f44c2dd58a875595409' },
+  { id: 'reset-1', title: 'アクティブ状態に戻す', digest: 'eb2d2d9ddbdaf357023a9d447322fd9200f56d29d912f20c1c8701b519010041' },
+  { id: 'draw-1', title: 'カードを1枚引く', digest: 'cb28825d42eac315000453d3fc35ad69834376ff677fa8dce1bd53806a094926' },
+  { id: 'cheer-1', title: 'エールカードを公開する', digest: '1b32733db0bded617f4586c91398402e9de7cdba40e3bde4fbcbd9262edc7c54' },
+  { id: 'main-1', title: 'ホロメンを登場させる', digest: '40055b32b4d567016daaeba414b2440731a29d47ef5b910387bbd52f8a2a8913' },
+  { id: 'main-2', title: 'ブルームする', digest: '15ab9becf6ebde9beb225fe49e08bdd7dc75fa84af2f6ece639df132a6e8a5d3' },
+  { id: 'main-3', title: 'サポートカードを使う', digest: '9d5b5c409ac439dbca29acc9bda25892a62dfb80e8872492baac9d32b6a38f0c' },
+  { id: 'main-4', title: '推しスキルを使う', digest: 'f783cf6d3a1238cd364edeffe504fff8964e0bcd3c7388cdabebefeda7b96cf4' },
+  { id: 'main-5', title: 'コラボする', digest: '3a8ea32cbe003ae0874d1bc4c8d0970e2f4e79691c543abe4337cd251ab82644' },
+  { id: 'main-6', title: 'バトンタッチする', digest: '28ce71cc5f287b04cfc54fa8d9a4cda795b83fc17813c670eda4c3ec85f784df' },
+  { id: 'performance-1', title: '攻撃対象を選ぶ', digest: '83c1e15bfc01f356df437b199968902ca8fa9ebdc5f86e46a32567f609ab54b1' },
+  { id: 'performance-2', title: 'アーツを使う', digest: '1e4ca12e6e77b75930a631518e4af41bf4559ffb1ec463eed68818b5ce017217' },
+  { id: 'performance-3', title: 'ダメージとダウンを確認する', digest: '4cf033419548949cb24f06fa0680c22f2006cc41f1dc56ad2a8bf5712c787a50' },
+  { id: 'end-1', title: 'ターンを終える', digest: '0a887085f9888ea78ecf459b8c8aa036ea48408404a1d3639a6e632883d5e4d0' },
+];
+
 const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
 
 async function run(label, viewport) {
@@ -82,6 +113,14 @@ async function run(label, viewport) {
   };
   const waitText = (value) => page.waitForFunction(
     (needle) => document.body.innerText.includes(needle), { timeout: T }, value);
+  const localeDigest = async (selector) => {
+    const snapshot = await page.$eval(selector, (node) => JSON.stringify({
+      text: node.innerText.replace(/\s+/g, ' ').trim(),
+      alts: [...node.querySelectorAll('[alt]')].map((item) => item.getAttribute('alt')),
+      labels: [...node.querySelectorAll('[aria-label]')].map((item) => item.getAttribute('aria-label')),
+    }));
+    return createHash('sha256').update(snapshot).digest('hex');
+  };
   const shot = async (name) => {
     const file = path.resolve(SHOT_DIR, `dic1085-${label}-${name}.png`);
     await page.screenshot({ path: file, fullPage: true });
@@ -132,12 +171,25 @@ async function run(label, viewport) {
   check(`${label}: Tutorial landing is Japanese`, !(await hasText('共同創造、共同競爭')));
   check(`${label}: Tutorial has no horizontal overflow`, await noOverflow());
 
-  await page.click('[data-testid="tutorial-section-intro"]');
-  await waitText('プレイヤーはファンとなり');
-  check(`${label}: Tutorial detail content is Japanese`,
-    (await hasText('自分だけのステージを作ります')) && !(await hasText('這是一款')));
-  check(`${label}: Tutorial detail has no horizontal overflow`, await noOverflow());
-  await shot('ja-tutorial-detail');
+  for (let index = 0; index < TUTORIAL_DETAILS.length; index += 1) {
+    const detail = TUTORIAL_DETAILS[index];
+    if (index > 0) {
+      await page.reload({ waitUntil: 'networkidle0' });
+      await waitText('大会月報');
+      await clickText('ルールチュートリアル');
+      await waitText('「共に創り、共に競う」');
+    }
+    await page.click(`[data-testid="tutorial-section-${detail.id}"]`);
+    const selector = `[data-testid="tutorial-detail-content-${detail.id}"]`;
+    await page.waitForSelector(selector, { timeout: T });
+    await waitText(detail.title);
+    const digest = await localeDigest(selector);
+    check(`${label}: Japanese detail ${detail.id} matches the approved localized content`,
+      digest === detail.digest, digest);
+    check(`${label}: Japanese detail ${detail.id} has no horizontal overflow`, await noOverflow());
+    if (detail.id === 'intro') await shot('ja-tutorial-detail');
+    if (detail.id === 'references') await shot('ja-tutorial-detail-last');
+  }
 
   await page.reload({ waitUntil: 'networkidle0' });
   await waitText('大会月報');
@@ -145,11 +197,20 @@ async function run(label, viewport) {
   await waitText('「共に創り、共に競う」');
   await page.click('[data-testid="tutorial-simulation-entry"]');
   await waitText('手順に沿って対戦を体験しましょう');
-  await waitText('推しホロメンを選ぶ');
-  check(`${label}: Tutorial simulation content and controls are Japanese`,
-    (await hasText('推しホロメンを置く')) && !(await hasText('選擇主推')) && !(await hasText('上一步')));
-  check(`${label}: Tutorial simulation has no horizontal overflow`, await noOverflow());
-  await shot('ja-tutorial-simulation');
+  await page.waitForSelector('[data-testid="tutorial-simulation-content"]', { timeout: T });
+  for (let index = 0; index < SIMULATION_STEPS.length; index += 1) {
+    const step = SIMULATION_STEPS[index];
+    const selector = `[data-testid="tutorial-simulation-step-${step.id}"]`;
+    await page.waitForSelector(selector, { timeout: T });
+    await waitText(step.title);
+    const digest = await localeDigest('[data-testid="tutorial-simulation-content"]');
+    check(`${label}: Japanese simulation ${step.id} matches the approved localized content`,
+      digest === step.digest, digest);
+    check(`${label}: Japanese simulation ${step.id} has no horizontal overflow`, await noOverflow());
+    if (index === 0) await shot('ja-tutorial-simulation');
+    if (index === SIMULATION_STEPS.length - 1) await shot('ja-tutorial-simulation-last');
+    if (index < SIMULATION_STEPS.length - 1) await clickText('次へ →');
+  }
 
   await page.reload({ waitUntil: 'networkidle0' });
   await waitText('大会月報');

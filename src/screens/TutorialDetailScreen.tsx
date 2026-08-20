@@ -28,6 +28,7 @@ export default function TutorialDetailScreen({ route, navigation }: TutorialDeta
         style={styles.container}
         contentContainerStyle={[styles.contentContainer, isMobile && styles.contentContainerMobile]}
         showsVerticalScrollIndicator={false}
+        testID={`tutorial-detail-content-${section.id}`}
       >
         {/* Header */}
         <View style={[styles.header, isMobile && styles.headerMobile]}>

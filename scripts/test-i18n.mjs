@@ -96,6 +96,8 @@ const SOURCE_COVERAGE = {
   'src/components/tutorial/SimulationStepCard.tsx': 4,
   'src/components/tutorial/TutorialPhaseCard.tsx': 3,
   'src/components/tutorial/SimulationBoard.tsx': 19,
+  'src/data/tutorialDataJa.ts': null,
+  'src/data/tutorialSimulationDataJa.ts': null,
 };
 
 const stripComments = (source) => source
@@ -105,6 +107,10 @@ const stripComments = (source) => source
 test('every required reachable surface subscribes to locale changes and uses translated copy', () => {
   for (const [file, minimumLookups] of Object.entries(SOURCE_COVERAGE)) {
     const source = fs.readFileSync(path.resolve(file), 'utf8');
+    if (minimumLookups == null) {
+      assert.match(source, /const\s+\w+Ja\s*:/, `${file} must export an explicit Japanese dataset`);
+      continue;
+    }
     assert.match(source, /useTranslation/, `${file} must subscribe to language changes`);
     const lookups = source.match(/\bt\(/g)?.length ?? 0;
     assert.ok(
@@ -119,7 +125,8 @@ test('required surfaces contain no hardcoded Traditional-Chinese JSX or UI props
     '星街すいせい', '湊あくあ', '巴哈姆特 — 桜雪', '🏪 遊々亭',
   ]);
   const failures = [];
-  for (const file of Object.keys(SOURCE_COVERAGE)) {
+  for (const [file, minimumLookups] of Object.entries(SOURCE_COVERAGE)) {
+    if (minimumLookups == null) continue;
     const source = stripComments(fs.readFileSync(path.resolve(file), 'utf8'));
     const candidates = [
       ...source.matchAll(/>([^<{\n]*[\u3400-\u9fff][^<{\n]*)</g),
@@ -147,6 +154,58 @@ const phaseShape = (phase) => ({
   cannotDo: phase.cannotDo?.length ?? 0,
   subPhases: phase.subPhases?.map(phaseShape) ?? [],
 });
+
+const LOCALIZED_DATA_KEYS = new Set([
+  'title', 'description', 'alt', 'label', 'content', 'notes', 'steps',
+  'conditions', 'canDo', 'cannotDo', 'actionLabel', 'explanation', 'name',
+]);
+const JAPANESE_HAN_ONLY_ALLOWLIST = new Set([
+  '勝利条件',
+  '参考資料',
+  'hololive OCG 公式 X（Twitter）',
+]);
+const HAN = /\p{Script=Han}/u;
+const KANA = /[\p{Script=Hiragana}\p{Script=Katakana}ー]/u;
+
+function collectLocalizedLeaves(value, objectPath = [], localized = false, leaves = []) {
+  if (typeof value === 'string') {
+    if (localized) leaves.push({ objectPath, value });
+    return leaves;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectLocalizedLeaves(item, [...objectPath, index], localized, leaves));
+    return leaves;
+  }
+  if (!value || typeof value !== 'object') return leaves;
+  for (const [key, child] of Object.entries(value)) {
+    collectLocalizedLeaves(child, [...objectPath, key], LOCALIZED_DATA_KEYS.has(key), leaves);
+  }
+  return leaves;
+}
+
+function setValueAtPath(root, objectPath, value) {
+  const parent = objectPath.slice(0, -1).reduce((current, key) => current[key], root);
+  parent[objectPath.at(-1)] = value;
+}
+
+function validateJapaneseLocalizedDataset(japanese, chinese, datasetName) {
+  const japaneseLeaves = collectLocalizedLeaves(japanese);
+  const chineseLeaves = new Map(
+    collectLocalizedLeaves(chinese).map((leaf) => [JSON.stringify(leaf.objectPath), leaf.value]),
+  );
+  assert.ok(japaneseLeaves.length > 0, `${datasetName} must expose localized text`);
+  for (const { objectPath, value } of japaneseLeaves) {
+    const field = `${datasetName}${objectPath.map((part) => `[${JSON.stringify(part)}]`).join('')}`;
+    const chineseValue = chineseLeaves.get(JSON.stringify(objectPath));
+    assert.equal(typeof chineseValue, 'string', `${field} must have a matching Chinese source field`);
+    if (value === chineseValue) {
+      throw new Error(`${field}: Japanese localized text must not fall back to Chinese`);
+    }
+    if (HAN.test(value) && !KANA.test(value) && !JAPANESE_HAN_ONLY_ALLOWLIST.has(value)) {
+      throw new Error(`${field}: Japanese localized text containing Han characters must include kana`);
+    }
+  }
+}
 
 test('rule detail and simulation datasets cover every offered language with matching structure', () => {
   const zhTutorial = getTutorialData('zh');
@@ -178,6 +237,25 @@ test('rule detail and simulation datasets cover every offered language with matc
   const japaneseCopy = JSON.stringify([jaTutorial, jaSimulation]);
   for (const traditionalChinese of ['牌組', '吶喊', '聯動', '舞台後方', '主推位置', '步驟', '模擬實戰', '卡牌', '比賽流程']) {
     assert.ok(!japaneseCopy.includes(traditionalChinese), `Japanese rule data leaks: ${traditionalChinese}`);
+  }
+});
+
+test('every reachable Japanese rule field rejects arbitrary untranslated Traditional-Chinese content', () => {
+  const fixtures = [
+    ['tutorial', getTutorialData('ja'), getTutorialData('zh')],
+    ['simulation', getSimulationPhases('ja'), getSimulationPhases('zh')],
+  ];
+  for (const [name, japanese, chinese] of fixtures) {
+    validateJapaneseLocalizedDataset(japanese, chinese, name);
+    for (const { objectPath } of collectLocalizedLeaves(japanese)) {
+      const mutated = structuredClone(japanese);
+      setValueAtPath(mutated, objectPath, '這段規則內容尚未翻譯');
+      assert.throws(
+        () => validateJapaneseLocalizedDataset(mutated, chinese, name),
+        /Japanese localized text/,
+        `${name}${JSON.stringify(objectPath)} must be mutation-sensitive`,
+      );
+    }
   }
 });
 

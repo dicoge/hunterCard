@@ -64,7 +64,11 @@ export default function TutorialSimulationScreen({ navigation }: any) {
     : Math.min(screenHeight * 0.4, 320);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={['top', 'bottom']}
+      testID="tutorial-simulation-content"
+    >
       {/* Top bar */}
       <View style={[styles.topBar, isMobile && styles.topBarMobile]}>
         <Text style={[styles.topBarTitle, isMobile && styles.topBarTitleMobile]}>
