@@ -84,7 +84,8 @@ assertSourceIncludes(searchResults, [
   'priceHistory: c.priceHistory || {}',
 ], 'src/screens/SearchResultsScreen');
 
-// MarketDataPanel should render all requested sections when fields exist.
+// MarketDataPanel should render exact-version buy/subscriber sections, while
+// CardDetail routes price history through the DIC-1084 exact-identity validator.
 // DIC-856: buyPrice is no longer read from the card level; it is derived from the
 // *selected version* (selectedVersion.buyPrice) and fails closed to null when the
 // version is unaligned or has no matched buy price — never a card-number/max fallback.
@@ -94,10 +95,12 @@ assertSourceIncludes(cardDetail, [
   'function MarketDataPanel',
   'const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null',
   'const ytStats = card?.ytStats ?? null',
-  'const priceHistory = card?.priceHistory ?? null',
   '💱 買賣差價',
   '📺 YouTube 成員數據',
-  'priceTrend',
+  'computeValidatedPriceTrend({',
+  'priceHistory: card.priceHistory',
+  'meta: card.priceHistoryMeta',
+  'printing: detailVersions[0].printing',
 ], 'src/screens/CardDetailScreen MarketDataPanel');
 
 console.log('DIC-361 market data field regression checks passed');
