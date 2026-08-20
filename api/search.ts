@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { toNodeHandler } from './_lib/node-adapter';
+import { normalizeCardIdentity } from '../src/utils/cardNormalization';
 
 const SERIES_NAMES: Record<string, string> = {
   hBP01: 'ブルーミングレディアンス', hBP02: 'クインテットスペクトラム',
@@ -117,18 +118,8 @@ async function webHandler(req: Request) {
       const series = c.series ? [c.series] : [];
       const seriesNames = series.map((s: any) => SERIES_NAMES[s] || s);
 
-      // Grade/rarity mapping
-      let grade = '';
-      let rarity = GRADE_RARITY[grade] || 'C';
-      const rarityCode = (c.rarity || '').toUpperCase();
-      if (rarityCode.includes('OSR') || rarityCode.includes('OUR')) { grade = 'buzz'; rarity = 'SR'; }
-      else if (rarityCode === 'UR') { grade = '2nd'; rarity = 'R'; }
-      else if (rarityCode === 'SR') { grade = '1st'; rarity = 'U'; }
-      else if (rarityCode === 'RR') { grade = 'debut'; rarity = 'C'; }
-      else if (rarityCode === 'R') { grade = 'debut'; rarity = 'C'; }
-      else if (rarityCode === 'U') { grade = 'debut'; rarity = 'C'; }
-      else if (rarityCode === 'C') { grade = 'debut'; rarity = 'C'; }
-      else if (rarityCode === 'N') { grade = 'spot'; rarity = 'N'; }
+      const normalized = normalizeCardIdentity(c);
+      const rarity = (c.rarity || '').toUpperCase();
 
       // Image URL: prefer local, fallback to official
       const imageUrl = c.localImage || c.officialImage || '';
@@ -137,8 +128,9 @@ async function webHandler(req: Request) {
         id,
         name,
         cardNumber: id,
-        type: c.type || '',
-        grade,
+        type: normalized.category || '',
+        grade: normalized.stage || '',
+        normalized,
         rarity,
         colors,
         colorNames,

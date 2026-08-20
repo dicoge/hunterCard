@@ -180,23 +180,23 @@ function setViewport({ width, height }) {
   dom.window.dispatchEvent(new dom.window.Event('resize'));
 }
 
-/** Desktop puts the filter column inline, before the deck column; mobile moves it
- *  behind a 搜尋 / 篩選 button and stacks the picker first (DIC-1067). Asserted so
- *  a viewport that stopped taking effect cannot turn the two layout cases into
- *  the same render. */
+/** Desktop keeps the filter, picker and deck columns together. At <=480px only
+ * one major panel is mounted and the five-way switch owns navigation (DIC-1086). */
 function layoutOf(container) {
   const picker = container.querySelector('[data-testid="card-picker-grid"]');
   const deck = container.querySelector('[data-testid="deck-origin-banner"]');
-  assert.ok(picker && deck, 'both the card picker and the deck column must render');
   const inlineFilters = container.querySelector('[data-testid="card-filter-panel"]');
   const filterButton = container.querySelector('[data-testid="open-filters"]');
-  if (inlineFilters && !filterButton) {
+  const mobileSwitch = container.querySelector('[data-testid="deck-mobile-panel-switch"]');
+  if (picker && deck && inlineFilters && !filterButton && !mobileSwitch) {
     const filtersComeFirst =
       (inlineFilters.compareDocumentPosition(deck) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
     assert.ok(filtersComeFirst, 'desktop must render the filter column before the deck column');
     return 'desktop';
   }
-  assert.ok(filterButton && !inlineFilters, 'mobile must hide the filters behind 搜尋 / 篩選');
+  assert.ok(mobileSwitch, 'phone must render the five-panel switch');
+  assert.ok(picker && !deck, 'phone must mount only the initial picker panel');
+  assert.ok(filterButton && !inlineFilters, 'phone picker must hide filters behind 搜尋 / 篩選');
   return 'mobile';
 }
 
@@ -225,17 +225,36 @@ async function assertSilentEditor(deck, viewport, expectedLayout) {
   setViewport(viewport);
   const { container, cleanup } = await renderDeckEditor();
   try {
-    const text = container.textContent;
-
-    // Anchors — without these the absence assertions below prove nothing.
     assert.equal(layoutOf(container), expectedLayout, `must render the ${expectedLayout} layout`);
-    assert.ok(text.includes(deck.name), `the deck "${deck.name}" must be on screen`);
+    const observedText = [container.textContent];
+
+    if (expectedLayout === 'mobile') {
+      await act(async () => byTestId(container, 'deck-mobile-panel-oshi').click());
+      assert.equal(byTestId(container, 'card-picker-grid'), null, 'phone deck panel must replace the picker');
+      observedText.push(container.textContent);
+    }
+
+    const deckText = container.textContent;
+    assert.ok(deckText.includes(deck.name), `the deck "${deck.name}" must be on screen`);
     assert.ok(byTestId(container, 'deck-origin-banner'), 'the tournament provenance line stays');
-    assert.ok(text.includes(ANCHOR_CARD_NUMBER), `${ANCHOR_CARD_NUMBER} must be listed`);
+    assert.ok(deckText.includes(ANCHOR_CARD_NUMBER), `${ANCHOR_CARD_NUMBER} must be listed`);
+    const anchorSlot = ['oshi', 'main', 'yell']
+      .flatMap((zone) => deck[zone])
+      .find((slot) => slot.card.cardNumber === ANCHOR_CARD_NUMBER);
+    assert.ok(anchorSlot, `${ANCHOR_CARD_NUMBER} must remain in the imported deck`);
+    assert.equal(anchorSlot.card.printing, ANCHOR_PRINTING, 'the exact ordinary printing identity must remain BASE');
+    const anchorLabel = anchorSlot.card.printingLabel || anchorSlot.card.printing;
     assert.ok(
-      text.includes(ANCHOR_PRINTING),
-      `the exact selected ordinary printing ${ANCHOR_PRINTING} must still be shown`,
+      deckText.includes(anchorLabel),
+      `the exact selected ordinary printing label ${anchorLabel} must still be shown`,
     );
+
+    if (expectedLayout === 'mobile') {
+      await act(async () => byTestId(container, 'deck-mobile-panel-shortage').click());
+      assert.equal(byTestId(container, 'deck-origin-banner'), null, 'phone shortage panel must replace the deck');
+      observedText.push(container.textContent);
+    }
+
     const subtotal = byTestId(container, 'gap-subtotal-JPY');
     assert.ok(subtotal, 'the shortage subtotal must render');
     assert.ok(
@@ -243,7 +262,7 @@ async function assertSilentEditor(deck, viewport, expectedLayout) {
       `the exact total must stay ${ANCHOR_SUBTOTAL}, got: ${subtotal.textContent}`,
     );
 
-    // The contract.
+    const text = observedText.join('\n');
     for (const phrase of FORBIDDEN_COPY) {
       assert.ok(!text.includes(phrase), `the deck editor must no longer say "${phrase}"`);
     }

@@ -22,7 +22,7 @@ export function mapApiCardToCardInfo(raw: any): CardInfo {
     id: raw.cardNumber,
     name: raw.name || '',
     cardNumber: raw.cardNumber,
-    type: '',
+    type: raw.type || '',
     rarity: raw.rarity || '',
     series: raw.series || '',
     sellPrice: raw.sellPrice != null ? raw.sellPrice : null,
@@ -33,5 +33,6 @@ export function mapApiCardToCardInfo(raw: any): CardInfo {
     prices: raw.prices || [],
     priceHistory: raw.priceHistory || {},
     ytStats: raw.ytStats ?? null,
+    normalized: raw.normalized,
   };
 }

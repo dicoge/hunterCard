@@ -1,3 +1,5 @@
+import { normalizeCardIdentity } from '../src/utils/cardNormalization';
+
 /**
  * @version 7
  * recognize-card.ts — Gemini Vision + deterministic candidate ranking for Hololive TCG cards.
@@ -162,6 +164,7 @@ function fmt(entry: any, storeMvp = false) {
   if (entry.rarity === 'SEC' && entry.prices?.length > 0) {
     price = Math.max(...entry.prices.map((p: any) => p.sellPrice || 0));
   }
+  const normalized = normalizeCardIdentity(entry);
   const base = {
     cardNumber: entry.cardNumber,
     name: entry.name,
@@ -175,6 +178,9 @@ function fmt(entry: any, storeMvp = false) {
     prices: entry.prices,
     priceHistory: entry.priceHistory || {},
     ytStats: entry.ytStats ?? null,
+    type: normalized.category || '',
+    grade: normalized.stage || '',
+    normalized,
   };
   return storeMvp ? stripStoreMvpFields(base) : base;
 }
