@@ -113,6 +113,8 @@ async function run(label, viewport) {
   };
   const waitText = (value) => page.waitForFunction(
     (needle) => document.body.innerText.includes(needle), { timeout: T }, value);
+  const waitCollectionReady = () => page.waitForSelector(
+    '[data-testid="collection-search"]', { visible: true, timeout: T });
   const localeDigest = async (selector) => {
     const snapshot = await page.$eval(selector, (node) => JSON.stringify({
       text: node.innerText.replace(/\s+/g, ' ').trim(),
@@ -161,7 +163,7 @@ async function run(label, viewport) {
   check(`${label}: Search has no horizontal overflow`, await noOverflow());
 
   await clickText('お気に入り');
-  await waitText('コレクション');
+  await waitCollectionReady();
   const japaneseCollectionSearch = await page.$eval('[data-testid="collection-search"]', (input) => ({
     placeholder: input.getAttribute('placeholder'),
     label: input.getAttribute('aria-label'),
@@ -278,7 +280,7 @@ async function run(label, viewport) {
   check(`${label}: Chinese preference survives reload`, storedChinese === 'zh', storedChinese);
 
   await clickText('收藏');
-  await waitText('收藏卡片');
+  await waitCollectionReady();
   const chineseCollectionSearch = await page.$eval('[data-testid="collection-search"]', (input) => ({
     placeholder: input.getAttribute('placeholder'),
     label: input.getAttribute('aria-label'),

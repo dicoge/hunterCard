@@ -11,8 +11,8 @@ const e2e = fs.readFileSync('scripts/verify-dic1086-production-e2e.mjs', 'utf8')
 
 assert.ok(editor.includes('width <= 480'), 'phone panel switching must activate at <=480px');
 assert.ok(editor.includes('deck-mobile-panel-switch'));
-for (const label of ['選卡', '推し', '主牌', 'エール', '缺卡']) {
-  assert.ok(editor.includes(`'${label}'`), `mobile switch is missing ${label}`);
+for (const key of ['deck_choose_card', 'deck_zone_oshi', 'deck_zone_main', 'deck_zone_yell', 'deck_shortage']) {
+  assert.ok(editor.includes(`'${key}'`), `mobile switch is missing ${key}`);
 }
 assert.ok(editor.includes('deck-phone-progress'));
 assert.ok(editor.includes('stats.total}/{stats.totalTarget}'));

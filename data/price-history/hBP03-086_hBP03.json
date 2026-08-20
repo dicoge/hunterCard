@@ -422,8 +422,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-086_hBP03"
+    },
+    {
+      "date": "2026-08-20",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-086_hBP03"
     }
   ],
-  "lastUpdated": "2026-08-18T12:12:49.116Z",
+  "lastUpdated": "2026-08-20T12:12:30.641Z",
   "nameZh": "雙螢幕電腦"
 }

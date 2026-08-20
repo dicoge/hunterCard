@@ -147,6 +147,21 @@ test('CI runs the i18n source/key gate', () => {
   assert.match(workflow, /npm run test:i18n/, 'CI must execute npm run test:i18n');
 });
 
+test('Collection browser verification waits for controls, not loading copy', () => {
+  const verifier = fs.readFileSync(path.resolve('scripts/verify-dic1085-ui.mjs'), 'utf8');
+  assert.ok(
+    ja.collection_loading.includes(ja.collection_title),
+    'negative control must preserve the Japanese loading/title substring race',
+  );
+  assert.match(
+    verifier,
+    /waitCollectionReady\s*=\s*\(\)\s*=>\s*page\.waitForSelector\([\s\S]*collection-search[\s\S]*visible:\s*true/,
+    'Collection verification must wait for the real search control',
+  );
+  assert.doesNotMatch(verifier, /await waitText\(['"]コレクション['"]\)/);
+  assert.doesNotMatch(verifier, /await waitText\(['"]收藏卡片['"]\)/);
+});
+
 const phaseShape = (phase) => ({
   steps: phase.steps?.length ?? 0,
   notes: phase.notes?.length ?? 0,

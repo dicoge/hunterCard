@@ -408,8 +408,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD04-013_hSD04"
+    },
+    {
+      "date": "2026-08-20",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD04-013_hSD04"
     }
   ],
-  "lastUpdated": "2026-08-18T12:12:49.170Z",
+  "lastUpdated": "2026-08-20T12:12:30.700Z",
   "nameZh": "巧可的蛋包飯"
 }

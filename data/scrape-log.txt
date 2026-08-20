@@ -1,4 +1,4 @@
-=== Scrape Log 2026-08-18T12:07:16.070Z ===
+=== Scrape Log 2026-08-20T12:06:38.212Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
@@ -64,47 +64,50 @@
 [database] Scraping hYS01: /sell/hocg/s/hys01
   → Found 4 cards with prices
 [database] Scraping ent07: /sell/hocg/s/special/4
-  → Found 123 cards with prices
+  → Found 124 cards with prices
 [database] Scraping hCS01: /sell/hocg/s/special/5
-  → Found 196 cards with prices
+  → Found 194 cards with prices
 [database] Scraping hPC01: /sell/hocg/s/special/7
-  → Found 126 cards with prices
+  [diag] Page title: "特集 | シングルカード販売 | ホロライブOCG | トレカの買取・通販ならカードショップ -遊々亭-"
+  [diag] No .card-product found — will retry with short wait
+  [diag] Still no .card-product — proceeding with fallback
+  → Found 0 cards with prices
 [database] Scraping hPR: /sell/hocg/s/special/1
-  → Found 109 cards with prices
+  → Found 116 cards with prices
 [database] Scraping hSD2025summer: /sell/hocg/s/special/8
   → Found 128 cards with prices
 
-  Total cards from yuyu-tei: 1850
+  Total cards from yuyu-tei: 1730
 
 ── Step 2: Download images ──
 
 [database] Downloading images...
-  [images] Downloaded: 0, Skipped: 1183, Errors: 0
+  [images] Downloaded: 1, Skipped: 1178, Errors: 0
 
 ── Step 3: Merge official data ──
 
 [database] Loading official card data...
-  [official] Loaded 2105 cards from 43 files
+  [official] Loaded 2104 cards from 43 files
 
 ── Step 4: Build unified database ──
   [skills] Merged skills into 1988 cards
 [add-zh-names] 開始為卡片添加中文名稱...
 [add-zh-names] ⚠️ 過濾了 2 個損壞的翻譯條目 (含 U+FFFD)
 [add-zh-names] ✅ 載入 339 筆翻譯對照
-[add-zh-names] 📝 處理 2105 張卡片...
+[add-zh-names] 📝 處理 2104 張卡片...
 [ERROR] [add-zh-names] ⚠️ API 錯誤 (401): {"error":{"message":"User not found.","code":401}}
 [ERROR] [add-zh-names] ⚠️ API 錯誤 (401): {"error":{"message":"User not found.","code":401}}
 [add-zh-names] ✅ 完成！
-[add-zh-names]   靜態匹配: 2103 張卡片
+[add-zh-names]   靜態匹配: 2102 張卡片
 [add-zh-names]   自動翻譯: 0 張卡片
 [add-zh-names]   未匹配: 2 張卡片
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 2015 new records; index totals: 2025 cards / 117203 records
+  [price-history] Saved 2011 new records; index totals: 2026 cards / 119214 records
 
 ── Step 6: Merge priceHistory into database ──
-  [priceHistory] Merged into 2025 cards
+  [priceHistory] Merged into 2026 cards
   [buyPrice] Restored buy prices onto 1663 cards
 
 ── Step 7: Merge VTuber YouTube stats ──
@@ -112,17 +115,17 @@
 
 ═══════════════════════════════════════
   ✅ Build complete!
-  Total cards: 2105
-  Cards with prices: 1183
-  Images downloaded: 0
-  Duration: 333.3s
+  Total cards: 2104
+  Cards with prices: 1179
+  Images downloaded: 1
+  Duration: 353.6s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
 Build result: {
-  "totalCards": 2105,
-  "yuyuCount": 1183,
-  "officialCount": 2105,
-  "imagesDownloaded": 0,
-  "duration": 333.3
+  "totalCards": 2104,
+  "yuyuCount": 1179,
+  "officialCount": 2104,
+  "imagesDownloaded": 1,
+  "duration": 353.6
 }

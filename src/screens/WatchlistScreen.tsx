@@ -27,6 +27,7 @@ import {
   evaluateAlertStatus, formatAlertAmount, formatInterval,
   type AlertPrice, type PriceAlert, type AlertStatus,
 } from '../utils/priceAlerts';
+import { uniformGridItemStyle } from '../utils/gridLayout';
 
 type DbState = 'loading' | 'ready' | 'unavailable';
 
@@ -45,6 +46,7 @@ export default function WatchlistScreen({ navigation }: any) {
   const importLegacyTracking = usePriceAlertStore((s) => s.importLegacyTracking);
   const { isDesktop, isWide } = useBreakpoint();
   const numColumns = isWide ? 3 : isDesktop ? 2 : 1;
+  const gridItemStyle = useMemo(() => uniformGridItemStyle(numColumns), [numColumns]);
 
   const [db, setDb] = useState<CardDatabase | null>(null);
   const [dbState, setDbState] = useState<DbState>('loading');
@@ -174,7 +176,7 @@ export default function WatchlistScreen({ navigation }: any) {
     const image = resolvePrintingImage(alert.cardNumber, alert.printing, printingIndex);
     return (
       <View
-        style={[styles.row, numColumns > 1 && styles.rowGrid]}
+        style={[styles.row, gridItemStyle]}
         testID={`price-alert-row-${alert.cardNumber}|${alert.printing}`}
       >
         {thumb(image, alert.cardNumber)}
@@ -227,7 +229,7 @@ export default function WatchlistScreen({ navigation }: any) {
 
   const renderPending = (item: PendingAlert) => (
     <View
-      style={[styles.row, styles.rowPending, numColumns > 1 && styles.rowGrid]}
+      style={[styles.row, styles.rowPending, gridItemStyle]}
       testID={`price-alert-pending-${item.cardNumber}`}
     >
       {thumb(undefined, item.cardNumber)}
@@ -326,7 +328,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border + '55',
   },
-  rowGrid: { flex: 1 },
   rowPending: { borderColor: COLORS.primary + '99' },
   thumb: { width: 52, height: 73, borderRadius: 6, backgroundColor: COLORS.surfaceLight },
   thumbFallback: { alignItems: 'center', justifyContent: 'center', padding: 4 },

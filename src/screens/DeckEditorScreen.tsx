@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  SafeAreaView, ActivityIndicator, Modal,
+  SafeAreaView, ActivityIndicator, Modal, Image,
 } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -75,6 +75,8 @@ export default function DeckEditorScreen() {
   // (DIC-1004 §B) — null means the result sheet is closed.
   const [finalizeIssues, setFinalizeIssues] = useState<ValidationIssue[] | null>(null);
   const [alertTarget, setAlertTarget] = useState<PriceAlertTarget | null>(null);
+  const [menuDeckId, setMenuDeckId] = useState<string | null>(null);
+  const [deleteDeckId, setDeleteDeckId] = useState<string | null>(null);
   const priceAlerts = usePriceAlertStore((s) => s.alerts);
 
   const decks = useDeckStore((s) => s.decks);
@@ -82,6 +84,7 @@ export default function DeckEditorScreen() {
   const collection = useDeckStore((s) => s.collection);
   const createDeck = useDeckStore((s) => s.createDeck);
   const renameDeck = useDeckStore((s) => s.renameDeck);
+  const deleteDeck = useDeckStore((s) => s.deleteDeck);
   const setActiveDeck = useDeckStore((s) => s.setActiveDeck);
   const changeCard = useDeckStore((s) => s.changeCard);
   const removeCard = useDeckStore((s) => s.removeCard);
@@ -93,6 +96,8 @@ export default function DeckEditorScreen() {
     () => decks.find((d) => d.id === activeDeckId) || null,
     [decks, activeDeckId],
   );
+  const menuDeck = decks.find((deck) => deck.id === menuDeckId) || null;
+  const deleteCandidate = decks.find((deck) => deck.id === deleteDeckId) || null;
 
   useEffect(() => {
     loadCardDatabase()
@@ -228,6 +233,127 @@ export default function DeckEditorScreen() {
     setRenameError(false);
   }
 
+  function confirmDeleteDeck() {
+    if (!deleteCandidate) return;
+    deleteDeck(deleteCandidate.id);
+    setDeleteDeckId(null);
+    setMenuDeckId(null);
+  }
+
+  const deckOverlays = (
+    <>
+      <Modal
+        visible={menuDeck != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuDeckId(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.actionMenu}>
+            <Text style={styles.actionMenuTitle} numberOfLines={2}>{menuDeck?.name}</Text>
+            <TouchableOpacity
+              style={styles.actionMenuItem}
+              onPress={() => {
+                if (!menuDeck) return;
+                setActiveDeck(menuDeck.id);
+                setMenuDeckId(null);
+              }}
+              testID="deck-menu-open"
+              accessibilityRole="button"
+              accessibilityLabel={t('deck_open_a11y', { name: menuDeck?.name || '' })}
+            >
+              <Text style={styles.actionMenuText}>{t('deck_open_edit')}</Text>
+            </TouchableOpacity>
+            {menuDeck?.id === activeDeck?.id && (
+              <TouchableOpacity
+                style={styles.actionMenuItem}
+                onPress={() => {
+                  setMenuDeckId(null);
+                  startRename();
+                }}
+                testID="deck-menu-rename"
+                accessibilityRole="button"
+                accessibilityLabel={t('deck_rename')}
+              >
+                <Text style={styles.actionMenuText}>{t('deck_rename')}</Text>
+              </TouchableOpacity>
+            )}
+            {menuDeck?.id === activeDeck?.id && (
+              <TouchableOpacity
+                style={styles.actionMenuItem}
+                onPress={() => {
+                  setActiveDeck(null);
+                  setMenuDeckId(null);
+                }}
+                testID="deck-menu-library"
+                accessibilityRole="button"
+                accessibilityLabel={t('deck_back_library')}
+              >
+                <Text style={styles.actionMenuText}>{t('deck_back_library')}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.actionMenuItem}
+              onPress={() => {
+                setDeleteDeckId(menuDeck?.id || null);
+                setMenuDeckId(null);
+              }}
+              testID="deck-menu-delete"
+              accessibilityRole="button"
+              accessibilityLabel={t('deck_delete_a11y', { name: menuDeck?.name || '' })}
+            >
+              <Text style={styles.destructiveText}>{t('deck_delete')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionMenuCancel}
+              onPress={() => setMenuDeckId(null)}
+              testID="deck-menu-cancel"
+              accessibilityRole="button"
+            >
+              <Text style={styles.link}>{t('common_cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={deleteCandidate != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteDeckId(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard} testID="deck-delete-confirmation">
+            <Text style={styles.h2}>{t('deck_delete_title')}</Text>
+            <Text style={styles.confirmText}>
+              {t('deck_delete_body', { name: deleteCandidate?.name || '' })}
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => setDeleteDeckId(null)}
+                testID="deck-delete-cancel"
+                accessibilityRole="button"
+                accessibilityLabel={t('deck_delete_cancel_a11y', { name: deleteCandidate?.name || '' })}
+              >
+                <Text style={styles.secondaryBtnText}>{t('common_cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={confirmDeleteDeck}
+                testID="deck-delete-confirm"
+                accessibilityRole="button"
+                accessibilityLabel={t('deck_delete_confirm_a11y', { name: deleteCandidate?.name || '' })}
+              >
+                <Text style={styles.deleteBtnText}>{t('deck_delete_confirm', { name: deleteCandidate?.name || '' })}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -243,7 +369,8 @@ export default function DeckEditorScreen() {
   if (!activeDeck) {
     return (
       <SafeAreaView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.pad}>
+        {deckOverlays}
+        <ScrollView contentContainerStyle={[styles.pad, isDesktop && styles.libraryDesktop]}>
           <Text style={styles.h1}>{t('deck_title')}</Text>
           <Text style={styles.muted}>{t('deck_local_hint')}</Text>
 
@@ -263,13 +390,18 @@ export default function DeckEditorScreen() {
             </TouchableOpacity>
           </View>
 
-          {decks.length > 0 && <Text style={styles.h2}>{t('deck_my_decks')}</Text>}
-          {decks.map((d) => (
-            <TouchableOpacity key={d.id} style={styles.deckRow} onPress={() => setActiveDeck(d.id)}>
-              <Text style={styles.deckName}>{d.name}</Text>
-              <LegalBadge deck={d} />
-            </TouchableOpacity>
-          ))}
+          {decks.length > 0 && <Text style={[styles.h2, styles.libraryTitle]}>{t('deck_my_decks')}</Text>}
+          <View style={styles.deckLibraryGrid} testID="deck-library-grid">
+            {decks.map((deck) => (
+              <DeckLibraryCard
+                key={deck.id}
+                deck={deck}
+                desktop={isDesktop}
+                onOpen={() => setActiveDeck(deck.id)}
+                onMenu={() => setMenuDeckId(deck.id)}
+              />
+            ))}
+          </View>
         </ScrollView>
       </SafeAreaView>
     );
@@ -394,19 +526,15 @@ export default function DeckEditorScreen() {
       ) : (
         <View style={styles.deckHeaderRow}>
           <Text style={[styles.h2, { flexShrink: 1 }]} numberOfLines={1}>{activeDeck.name}</Text>
-          <View style={styles.deckHeaderActions}>
-            <TouchableOpacity
-              onPress={startRename}
-              testID="deck-rename-button"
-              accessibilityRole="button"
-              accessibilityLabel={t('deck_rename')}
-            >
-              <Text style={styles.link}>{t('deck_rename')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setActiveDeck(null)}>
-              <Text style={styles.link}>{t('deck_switch')}</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => setMenuDeckId(activeDeck.id)}
+            testID="deck-editor-menu"
+            accessibilityRole="button"
+            accessibilityLabel={t('deck_actions_a11y', { name: activeDeck.name })}
+          >
+            <Text style={styles.menuButtonText}>•••</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -666,11 +794,11 @@ export default function DeckEditorScreen() {
 
   const phoneProgress = stats && (
     <View style={styles.phoneProgress} testID="deck-phone-progress">
-      <Text style={styles.phoneProgressText}>推し {stats.oshi}/{stats.oshiTarget}</Text>
-      <Text style={styles.phoneProgressText}>主牌 {stats.main}/{stats.mainTarget}</Text>
-      <Text style={styles.phoneProgressText}>エール {stats.yell}/{stats.yellTarget}</Text>
+      <Text style={styles.phoneProgressText}>{zoneLabels.oshi} {stats.oshi}/{stats.oshiTarget}</Text>
+      <Text style={styles.phoneProgressText}>{zoneLabels.main} {stats.main}/{stats.mainTarget}</Text>
+      <Text style={styles.phoneProgressText}>{zoneLabels.yell} {stats.yell}/{stats.yellTarget}</Text>
       <Text style={[styles.phoneProgressText, styles.phoneProgressTotal]}>
-        總計 {stats.total}/{stats.totalTarget}
+        {t('deck_total')} {stats.total}/{stats.totalTarget}
       </Text>
     </View>
   );
@@ -678,11 +806,11 @@ export default function DeckEditorScreen() {
   const phonePanelSwitch = (
     <View style={styles.phonePanelSwitch} testID="deck-mobile-panel-switch">
       {([
-        ['picker', '選卡'],
-        ['oshi', '推し'],
-        ['main', '主牌'],
-        ['yell', 'エール'],
-        ['shortage', '缺卡'],
+        ['picker', t('deck_choose_card')],
+        ['oshi', zoneLabels.oshi],
+        ['main', zoneLabels.main],
+        ['yell', zoneLabels.yell],
+        ['shortage', t('deck_shortage')],
       ] as Array<[MobilePanel, string]>).map(([panel, label]) => {
         const active = mobilePanel === panel;
         return (
@@ -717,6 +845,7 @@ export default function DeckEditorScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {deckOverlays}
       {finalizeSheet}
       {filterSheet}
       <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
@@ -748,6 +877,97 @@ export default function DeckEditorScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+  );
+}
+
+function DeckLibraryCard({
+  deck, desktop, onOpen, onMenu,
+}: {
+  deck: Deck;
+  desktop: boolean;
+  onOpen: () => void;
+  onMenu: () => void;
+}) {
+  const { t } = useTranslation();
+  const stats = deckStats(deck);
+  const oshiCard = deck.oshi[0]?.card;
+  return (
+    <View style={[styles.deckTile, desktop && styles.deckTileDesktop]} testID={`deck-tile-${deck.id}`}>
+      <TouchableOpacity
+        style={styles.deckTileMain}
+        onPress={onOpen}
+        accessibilityRole="button"
+        accessibilityLabel={t('deck_open_a11y', { name: deck.name })}
+        testID={`deck-open-${deck.id}`}
+      >
+        <DeckOshiPreview card={oshiCard} />
+        <View style={styles.deckTileBody}>
+          <View style={styles.deckTileHeading}>
+            <Text style={styles.deckTileName} numberOfLines={2}>{deck.name}</Text>
+            <LegalBadge deck={deck} />
+          </View>
+          {deck.origin?.kind === 'tournament' && (
+            <Text style={styles.importedLabel} numberOfLines={1}>{t('deck_imported_label')}</Text>
+          )}
+          <Text style={styles.oshiName} numberOfLines={2}>
+            {oshiCard ? oshiCard.name : t('deck_oshi_unselected')}
+          </Text>
+          <View style={styles.compactProgress} accessibilityLabel={t('deck_progress_a11y', {
+            oshi: stats.oshi, oshiTarget: stats.oshiTarget,
+            main: stats.main, mainTarget: stats.mainTarget,
+            yell: stats.yell, yellTarget: stats.yellTarget,
+          })}>
+            <Text style={styles.compactProgressText}>{t('deck_zone_oshi')} {stats.oshi}/{stats.oshiTarget}</Text>
+            <Text style={styles.compactProgressText}>{t('deck_zone_main')} {stats.main}/{stats.mainTarget}</Text>
+            <Text style={styles.compactProgressText}>{t('deck_zone_yell')} {stats.yell}/{stats.yellTarget}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+      <View style={styles.deckTileActions}>
+        <TouchableOpacity
+          style={styles.openDeckBtn}
+          onPress={onOpen}
+          accessibilityRole="button"
+          accessibilityLabel={t('deck_edit_a11y', { name: deck.name })}
+        >
+          <Text style={styles.openDeckBtnText}>{t('deck_edit')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.menuButton}
+          onPress={onMenu}
+          accessibilityRole="button"
+          accessibilityLabel={t('deck_actions_a11y', { name: deck.name })}
+          testID={`deck-menu-${deck.id}`}
+        >
+          <Text style={styles.menuButtonText}>•••</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function DeckOshiPreview({ card }: { card?: DeckCard }) {
+  const { t } = useTranslation();
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [card?.imageUrl]);
+
+  if (!card?.imageUrl || failed) {
+    return (
+      <View style={[styles.deckOshiImage, styles.deckOshiPlaceholder]} testID="deck-oshi-placeholder">
+        <Text style={styles.deckOshiPlaceholderIcon}>☆</Text>
+        <Text style={styles.deckOshiPlaceholderText}>{t('deck_oshi_placeholder')}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: card.imageUrl }}
+      style={styles.deckOshiImage}
+      resizeMode="contain"
+      onError={() => setFailed(true)}
+      accessibilityLabel={t('deck_oshi_image_a11y', { name: card.name })}
+    />
   );
 }
 
@@ -795,6 +1015,10 @@ const styles = StyleSheet.create({
   input: { backgroundColor: COLORS.surfaceLight, color: COLORS.text, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: COLORS.border },
   primaryBtn: { backgroundColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 16, minHeight: 44, justifyContent: 'center' },
   primaryBtnText: { color: '#fff', fontWeight: 'bold', textAlign: 'center' },
+  secondaryBtn: { minHeight: 44, paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surfaceLight },
+  secondaryBtnText: { color: COLORS.text, fontWeight: 'bold', textAlign: 'center' },
+  deleteBtn: { minHeight: 44, flex: 1, paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8, backgroundColor: COLORS.error },
+  deleteBtnText: { color: '#fff', fontWeight: 'bold', textAlign: 'center' },
   tabBar: { flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   tab: { flex: 1, minHeight: 48, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border },
   tabActive: { borderColor: COLORS.primary, backgroundColor: COLORS.background },
@@ -813,10 +1037,29 @@ const styles = StyleSheet.create({
   filterBtn: { minHeight: 44, paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary, backgroundColor: COLORS.surfaceLight },
   filterBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold' },
   resultCount: { color: COLORS.text, fontSize: 13, fontWeight: 'bold' },
-  deckRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 8, padding: 12, marginTop: 8 },
-  deckName: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
+  libraryDesktop: { width: '100%', maxWidth: 1100, alignSelf: 'center' },
+  libraryTitle: { marginTop: 24 },
+  deckLibraryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' },
+  deckTile: { width: '100%', minWidth: 0, backgroundColor: COLORS.surface, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
+  deckTileDesktop: { flexBasis: '48%', maxWidth: '48%', flexGrow: 0 },
+  deckTileMain: { flexDirection: 'row', padding: 12, minHeight: 154 },
+  deckOshiImage: { width: 88, aspectRatio: 5 / 7, borderRadius: 8, backgroundColor: COLORS.surfaceLight },
+  deckOshiPlaceholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  deckOshiPlaceholderIcon: { color: COLORS.primary, fontSize: 28, lineHeight: 32 },
+  deckOshiPlaceholderText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: 'bold', marginTop: 4 },
+  deckTileBody: { flex: 1, minWidth: 0, marginLeft: 12 },
+  deckTileHeading: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  deckTileName: { flex: 1, color: COLORS.text, fontSize: 16, lineHeight: 21, fontWeight: 'bold' },
+  importedLabel: { color: COLORS.primaryLight, fontSize: 11, fontWeight: 'bold', marginTop: 5 },
+  oshiName: { color: COLORS.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 7 },
+  compactProgress: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 'auto', paddingTop: 10 },
+  compactProgressText: { color: COLORS.text, fontSize: 11, fontWeight: '700', backgroundColor: COLORS.surfaceLight, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 4 },
+  deckTileActions: { flexDirection: 'row', gap: 8, padding: 10, paddingTop: 0 },
+  openDeckBtn: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: COLORS.primary },
+  openDeckBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  menuButton: { width: 44, height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surfaceLight },
+  menuButtonText: { color: COLORS.text, fontSize: 18, fontWeight: 'bold', letterSpacing: 1 },
   deckHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 },
-  deckHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   renameBlock: { marginBottom: 10 },
   renameInput: { marginBottom: 8 },
   renameInputError: { borderColor: COLORS.error },
@@ -867,6 +1110,14 @@ const styles = StyleSheet.create({
   finalizeRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 4 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   modalCard: { width: '100%', maxWidth: 460, backgroundColor: COLORS.surface, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: COLORS.border },
+  actionMenu: { width: '100%', maxWidth: 420, backgroundColor: COLORS.surface, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: COLORS.border },
+  actionMenuTitle: { color: COLORS.text, fontSize: 17, lineHeight: 23, fontWeight: 'bold', padding: 10 },
+  actionMenuItem: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
+  actionMenuText: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
+  actionMenuCancel: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
+  destructiveText: { color: COLORS.error, fontSize: 15, fontWeight: 'bold' },
+  confirmText: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 21 },
+  confirmActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
   modalList: { maxHeight: 300 },
   modalBtn: { marginTop: 14, alignSelf: 'flex-end' },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
