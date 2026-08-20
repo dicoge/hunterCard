@@ -16,6 +16,11 @@ for (const label of ['選卡', '推し', '主牌', 'エール', '缺卡']) {
 }
 assert.ok(editor.includes('deck-phone-progress'));
 assert.ok(editor.includes('stats.total}/{stats.totalTarget}'));
+assert.match(
+  editor,
+  /phonePanelTab:\s*\{[^}]*minHeight:\s*44/,
+  'all five primary phone panel controls must keep a >=44px touch target',
+);
 assert.ok(breakpoint.includes('useWindowDimensions'), 'orientation changes must use live dimensions');
 
 assert.ok(!editor.includes('收藏擁有數量'), 'deck editor must not duplicate the Collection panel');
@@ -42,5 +47,7 @@ assert.ok(e2e.includes("DIC1086_URL || 'https://holohunter.dicoge.com'"));
 assert.ok(e2e.includes("{ width: 390, height: 844"));
 assert.ok(e2e.includes("editorText.includes('缺 1')"));
 assert.ok(e2e.includes('assertCollectionPersists'));
+assert.ok(e2e.includes('getBoundingClientRect'));
+assert.ok(e2e.includes('target.height >= 44'));
 
 console.log('DIC-1086 collection/mobile UI regression passed.');

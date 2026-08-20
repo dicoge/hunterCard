@@ -153,6 +153,19 @@ async function run(viewport, phone) {
     await page.waitForSelector('[data-testid="deck-mobile-panel-switch"]', { timeout: TIMEOUT });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     assert.ok(overflow <= 1, `390px layout overflows horizontally by ${overflow}px`);
+    const panelTargets = await page.evaluate(() => (
+      ['picker', 'oshi', 'main', 'yell', 'shortage'].map((panel) => {
+        const node = document.querySelector(`[data-testid="deck-mobile-panel-${panel}"]`);
+        if (!node) return { panel, width: 0, height: 0 };
+        const rect = node.getBoundingClientRect();
+        return { panel, width: rect.width, height: rect.height };
+      })
+    ));
+    assert.equal(panelTargets.length, 5, 'all five phone panel targets must render');
+    for (const target of panelTargets) {
+      assert.ok(target.width > 0, `${target.panel} panel target must have rendered width`);
+      assert.ok(target.height >= 44, `${target.panel} panel target is ${target.height}px high; expected >=44px`);
+    }
     await clickTestId(page, 'deck-mobile-panel-shortage');
     await page.waitForFunction(() => document.body.innerText.includes('缺卡預估'), { timeout: TIMEOUT });
     assert.ok((await page.$('[data-testid="card-picker-grid"]')) === null, 'phone must render one major panel');

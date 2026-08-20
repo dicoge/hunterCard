@@ -779,7 +779,7 @@ const styles = StyleSheet.create({
   phoneProgressText: { flex: 1, color: COLORS.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' },
   phoneProgressTotal: { color: COLORS.primaryLight },
   phonePanelSwitch: { flexDirection: 'row', paddingHorizontal: 6, paddingVertical: 6, gap: 4, backgroundColor: COLORS.surface },
-  phonePanelTab: { flex: 1, minWidth: 0, minHeight: 38, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border },
+  phonePanelTab: { flex: 1, minWidth: 0, minHeight: 44, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border },
   phonePanelTabActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   phonePanelLabel: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '700' },
   phonePanelLabelActive: { color: '#fff' },
