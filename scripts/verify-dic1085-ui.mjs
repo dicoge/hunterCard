@@ -160,6 +160,19 @@ async function run(label, viewport) {
     (await hasText('人気の検索')) && !(await hasText('搜尋功能')));
   check(`${label}: Search has no horizontal overflow`, await noOverflow());
 
+  await clickText('お気に入り');
+  await waitText('コレクション');
+  const japaneseCollectionSearch = await page.$eval('[data-testid="collection-search"]', (input) => ({
+    placeholder: input.getAttribute('placeholder'),
+    label: input.getAttribute('aria-label'),
+  }));
+  check(`${label}: Collection chrome is Japanese`,
+    (await hasText('所持済み')) && japaneseCollectionSearch.placeholder === 'カード名・カード番号・版を検索'
+      && japaneseCollectionSearch.label === 'コレクションのカードを検索' && !(await hasText('已擁有')),
+    JSON.stringify(japaneseCollectionSearch));
+  check(`${label}: Collection has no horizontal overflow`, await noOverflow());
+  await shot('ja-collection');
+
   await clickText('デッキエディタ');
   await waitText('この端末だけに保存されるデッキです');
   check(`${label}: Deck Editor chrome is Japanese`,
@@ -263,6 +276,19 @@ async function run(label, viewport) {
   const storedChinese = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('hunterCard-settings')).state.preferredLanguage);
   check(`${label}: Chinese preference survives reload`, storedChinese === 'zh', storedChinese);
+
+  await clickText('收藏');
+  await waitText('收藏卡片');
+  const chineseCollectionSearch = await page.$eval('[data-testid="collection-search"]', (input) => ({
+    placeholder: input.getAttribute('placeholder'),
+    label: input.getAttribute('aria-label'),
+  }));
+  check(`${label}: Chinese Collection remains available`,
+    (await hasText('已擁有')) && chineseCollectionSearch.placeholder === '搜尋卡名、卡號或版本'
+      && chineseCollectionSearch.label === '搜尋收藏卡片' && !(await hasText('所持済み')),
+    JSON.stringify(chineseCollectionSearch));
+  check(`${label}: Chinese Collection has no horizontal overflow`, await noOverflow());
+  await shot('zh-collection');
 
   await clickText('賽事月報');
   await page.waitForSelector('[data-testid="tournament-monthly-summary"]', { timeout: T });

@@ -36,6 +36,9 @@ assert.ok(collection.includes('loadCardDatabase'), 'Collection must browse exact
 assert.ok(collection.includes('<Image'), 'Collection must render card images');
 assert.ok(collection.includes('collection-search'));
 assert.ok(collection.includes('collection-filters'));
+assert.ok(collection.includes('useTranslation'), 'Collection must react to locale changes');
+assert.ok(collection.includes("t('collection_title')"), 'Collection title must be localized');
+assert.ok(collection.includes("t('collection_search_placeholder')"), 'Collection search must be localized');
 assert.ok(collection.includes('adjustOwned(item.cardNumber, item.printing'));
 assert.ok(collection.includes('setOwned(item.cardNumber, item.printing, 0)'));
 assert.ok(collection.includes('legacyCard(key)'), 'persisted legacy ownership must remain visible');

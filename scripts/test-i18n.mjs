@@ -74,6 +74,7 @@ const SOURCE_COVERAGE = {
   'src/screens/SearchScreen.tsx': 4,
   'src/screens/SearchResultsScreen.tsx': 9,
   'src/screens/CardDetailScreen.tsx': 65,
+  'src/screens/CollectionScreen.tsx': 13,
   'src/screens/ScanScreen.tsx': 55,
   'src/screens/DeckEditorScreen.tsx': 70,
   'src/screens/SettingsScreen.tsx': 40,
