@@ -408,8 +408,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD10-013_hSD11"
+    },
+    {
+      "date": "2026-08-20",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-013_hSD11"
     }
   ],
-  "lastUpdated": "2026-08-18T12:12:49.041Z",
+  "lastUpdated": "2026-08-20T12:12:30.441Z",
   "nameZh": "河豚太郎"
 }

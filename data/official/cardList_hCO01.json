@@ -1,5 +1,16 @@
 [
   {
+    "cardNumber": "hBP03-055",
+    "name": "常闇トワ",
+    "cardType": "Holomen",
+    "color": "purple",
+    "rarity": "SR",
+    "expansion": "hCO01",
+    "series": "hCO01",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCO01/hBP03-055_SR.png",
+    "hp": "130"
+  },
+  {
     "cardNumber": "hBP02-026",
     "name": "大神ミオ",
     "cardType": "Holomen",
@@ -20,17 +31,6 @@
     "series": "hCO01",
     "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCO01/hBP03-044_SR.png",
     "hp": "150"
-  },
-  {
-    "cardNumber": "hBP03-055",
-    "name": "常闇トワ",
-    "cardType": "Holomen",
-    "color": "purple",
-    "rarity": "SR",
-    "expansion": "hCO01",
-    "series": "hCO01",
-    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCO01/hBP03-055_SR.png",
-    "hp": "130"
   },
   {
     "cardNumber": "hBP05-043",

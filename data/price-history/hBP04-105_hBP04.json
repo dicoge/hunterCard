@@ -422,8 +422,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP04-105_hBP04"
+    },
+    {
+      "date": "2026-08-20",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-105_hBP04"
     }
   ],
-  "lastUpdated": "2026-08-18T12:12:49.093Z",
+  "lastUpdated": "2026-08-20T12:12:30.607Z",
   "nameZh": "可佑理的助手君"
 }
