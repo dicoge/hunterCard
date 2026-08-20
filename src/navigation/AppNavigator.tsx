@@ -138,15 +138,15 @@ function MainDrawer() {
           ),
         }}
       />
-      {/* 入手提醒 = watchlist trend alerts — hidden in Store MVP (DIC-908).
-          Removing the Drawer.Screen unregisters the route so nav + deep link are
-          both blocked, not just visually hidden. */}
+      {/* 到價提醒 — hidden in Store MVP (DIC-908). Removing the Drawer.Screen
+          unregisters the route so nav + deep link are both blocked, not just
+          visually hidden. */}
       {FEATURES.watchlist && (
         <Drawer.Screen
           name="Watchlist"
           component={WatchlistScreen}
           options={{
-            title: '入手提醒',
+            title: '到價提醒',
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
             ),

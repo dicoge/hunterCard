@@ -145,6 +145,9 @@ export interface SourceListing {
   name?: string;
   sellPrice?: number | null;
   buyPrice?: number | null;
+  /** Image published on this exact listing. A card-level/representative image
+   * must never be copied here because it does not prove a printing identity. */
+  imageUrl?: string;
   /** kept as provenance only — identity always comes from the label */
   rarity?: string;
 }
@@ -158,6 +161,9 @@ export interface SourcePrinting {
   sellPrice: number | null;
   /** store acquisition price — card-market display only, never a deck cost */
   buyPrice: number | null;
+  /** Image proven by the source listing for this printing. Missing when the
+   * source has no image or conflicting listings publish different images. */
+  imageUrl?: string;
   /** two listings claim this printing at different prices → priced fail-closed */
   ambiguous: boolean;
 }
@@ -177,6 +183,7 @@ export function buildSourcePrintings(
   const order: string[] = [];
   const byPrinting = new Map<string, SourcePrinting>();
   const sellPrices = new Map<string, Set<number>>();
+  const imageUrls = new Map<string, Set<string>>();
 
   for (const raw of listings ?? []) {
     if (!raw) continue;
@@ -184,6 +191,7 @@ export function buildSourcePrintings(
     const printing = printingFromLabel(label);
     const sell = typeof raw.sellPrice === 'number' && raw.sellPrice > 0 ? raw.sellPrice : null;
     const buy = typeof raw.buyPrice === 'number' && raw.buyPrice > 0 ? raw.buyPrice : null;
+    const imageUrl = (raw.imageUrl ?? '').trim();
 
     let entry = byPrinting.get(printing);
     if (!entry) {
@@ -198,6 +206,11 @@ export function buildSourcePrintings(
       if (entry.sellPrice === null) entry.sellPrice = sell;
     }
     if (buy !== null && entry.buyPrice === null) entry.buyPrice = buy;
+    if (imageUrl) {
+      const seen = imageUrls.get(printing) ?? new Set<string>();
+      seen.add(imageUrl);
+      imageUrls.set(printing, seen);
+    }
   }
 
   for (const [printing, prices] of sellPrices) {
@@ -205,6 +218,12 @@ export function buildSourcePrintings(
       const entry = byPrinting.get(printing) as SourcePrinting;
       entry.ambiguous = true;
       entry.sellPrice = null;
+    }
+  }
+
+  for (const [printing, images] of imageUrls) {
+    if (images.size === 1) {
+      (byPrinting.get(printing) as SourcePrinting).imageUrl = Array.from(images)[0];
     }
   }
 

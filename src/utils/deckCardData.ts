@@ -61,6 +61,7 @@ function toDeckCard(rep: RawCard, printing: SourcePrinting): DeckCard {
     series: rep.series || '',
     type: rep.type || '',
     cardTypeJp: rep.skillsJp?.cardType || '',
+    exactImageUrl: printing.imageUrl,
     imageUrl: rep.officialImage || rep.localImage || undefined,
   };
 }

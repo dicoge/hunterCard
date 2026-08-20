@@ -51,6 +51,8 @@
     "test:deck-collection": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-collection.mjs",
     "test:price-alerts": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-price-alerts.mjs",
     "test:price-alert-run": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-kv-mock.mjs scripts/test-price-alert-run.mjs",
+    "test:alert-unification": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-alert-unification.mjs",
+    "test:alert-unification-e2e": "node --import ./scripts/register-web-render.mjs scripts/test-alert-unification-e2e.mjs",
     "send:price-alerts": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/send-price-alerts.mjs",
     "test:deck-variants": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-variants.mjs",
     "test:card-picker": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-card-picker.mjs",

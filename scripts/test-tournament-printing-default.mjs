@@ -411,7 +411,7 @@ await test('the shortage total uses only ordinary-printing SELL prices', () => {
   }
 });
 
-await test('DUKHN now prices 13,220 JPY with only the genuinely unlisted card unpriced', () => {
+await test('DUKHN now prices 13,260 JPY with only the genuinely unlisted card unpriced', () => {
   const imported = draftToDeck(importOf(DUKHN));
   const gap = computeGap(imported, {}, db.priceRecords);
   assert.equal(gap.total, 13260);

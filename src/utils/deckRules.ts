@@ -29,6 +29,9 @@ export interface DeckCard {
   /** raw card-type string as stored (JP or EN); classification handles both */
   type?: string;
   cardTypeJp?: string;
+  /** Exact-printing image proven by the source listing. This is intentionally
+   * separate from imageUrl, which is only a card-level visual for deck UI. */
+  exactImageUrl?: string;
   imageUrl?: string;
   /** the source named the card number but not which collectible printing it is,
    * and the card number has no ordinary printing to default to (DIC-1060). Such
