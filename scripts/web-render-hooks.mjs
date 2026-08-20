@@ -29,9 +29,18 @@ const NATIVE_MODULE_STUBS = new Set([
 
 const STUB_URL = new URL('./fixtures/native-module-stub.mjs', import.meta.url).href;
 
+// react-native-safe-area-context pulls the Flow-typed `react-native` package in
+// through CJS `require`, which the alias below cannot reach. It only supplies
+// device inset padding — zero on web — so it resolves to a passthrough.
+const SAFE_AREA_STUB_URL = new URL('./fixtures/safe-area-context-stub.mjs', import.meta.url).href;
+
 export async function resolve(specifier, context, next) {
   if (NATIVE_MODULE_STUBS.has(specifier)) {
     return { url: STUB_URL, format: 'module', shortCircuit: true };
+  }
+
+  if (specifier === 'react-native-safe-area-context') {
+    return { url: SAFE_AREA_STUB_URL, format: 'module', shortCircuit: true };
   }
 
   const aliased = PACKAGE_ALIASES.get(specifier);

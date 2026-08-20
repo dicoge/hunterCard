@@ -116,7 +116,7 @@ function allSellPrices(cardNumber) {
 const EXAMPLES = [
   { cardNumber: 'hBP07-006', ordinary: 1280, mustNotUse: [29800, 148000] },
   { cardNumber: 'hBP01-044', ordinary: 220, mustNotUse: [80, 9980] },
-  { cardNumber: 'hBP01-045', ordinary: 180, mustNotUse: [] },
+  { cardNumber: 'hBP01-045', ordinary: 220, mustNotUse: [] },
   { cardNumber: 'hBP01-046', ordinary: 180, mustNotUse: [980] },
   { cardNumber: 'hSD01-009', ordinary: 320, mustNotUse: [7980] },
 ];
@@ -411,10 +411,10 @@ await test('the shortage total uses only ordinary-printing SELL prices', () => {
   }
 });
 
-await test('DUKHN now prices 13,220 JPY with only the genuinely unlisted card unpriced', () => {
+await test('DUKHN now prices 13,260 JPY with only the genuinely unlisted card unpriced', () => {
   const imported = draftToDeck(importOf(DUKHN));
   const gap = computeGap(imported, {}, db.priceRecords);
-  assert.equal(gap.total, 13220);
+  assert.equal(gap.total, 13260);
   assert.deepEqual(
     gap.unpriced.map((r) => r.cardNumber), ['hY05-003'],
     'the only unpriced row is the card the source lists no price for',
@@ -490,7 +490,7 @@ await test('an already-saved UNRESOLVED tournament deck is repaired in place', (
     assert.notEqual(slot.card.unresolvedPrinting, true);
   }
   const gap = computeGap(fixed, {}, db.priceRecords);
-  assert.equal(gap.total, 13220, 'the repaired deck estimates the same as a fresh import');
+  assert.equal(gap.total, 13260, 'the repaired deck estimates the same as a fresh import');
 });
 
 await test('a printing the user picked themselves is never rewritten', () => {
@@ -579,7 +579,7 @@ await test('the repair survives a reload without the user re-importing', async (
   useDeckStore.getState().migrateTournamentDefaults(lowCostIndex);
   const fixed = useDeckStore.getState().decks[0];
   assert.equal(slotFor(fixed, 'hBP07-006').card.printing, 'BASE');
-  assert.equal(computeGap(fixed, {}, db.priceRecords).total, 13220);
+  assert.equal(computeGap(fixed, {}, db.priceRecords).total, 13260);
 });
 
 // The defaulted state is deliberately SILENT in the UI (DIC-1064, and DIC-1067

@@ -56,7 +56,7 @@ const alertOf = (over = {}) => ({
 });
 
 function resetStores() {
-  usePriceAlertStore.setState({ alerts: {} });
+  usePriceAlertStore.setState({ alerts: {}, pending: {} });
   useWatchlistStore.setState({ items: [] });
   platformStorage.removeItem(STORE_KEY);
 }
@@ -279,16 +279,18 @@ await test('an ambiguous printing stays unpriced and offers no alert', () => {
   );
 });
 
-// ── 7. Legacy watchlist migration ───────────────────────────────────────────
-await test('a legacy card-number-only watchlist item stays readable and is never promoted', () => {
+// ── 7. Legacy card-number rows ──────────────────────────────────────────────
+await test('a legacy card-number-only row is never an alert by merely existing', () => {
   resetStores();
-  useWatchlistStore.getState().addCard({
-    cardNumber: 'hBP01-075', name: 'Legacy', rarity: 'SR',
-    addedAt: '2025-01-01T00:00:00.000Z', targetPrice: 500,
+  useWatchlistStore.setState({
+    items: [{
+      cardNumber: 'hBP01-075', name: 'Legacy',
+      addedAt: '2025-01-01T00:00:00.000Z', targetPrice: 500,
+    }],
   });
 
-  const legacy = useWatchlistStore.getState().items[0];
-  assert.equal(legacy.targetPrice, 500, 'legacy target price remains readable');
+  // Reading the old list must not create anything: DIC-1087 promotes a row only
+  // through migrateLegacyTracking, and only when the source proves the printing.
   assert.deepEqual(usePriceAlertStore.getState().alerts, {}, 'no exact-version alert is invented');
   assert.equal(usePriceAlertStore.getState().getAlert('hBP01-075', 'BASE'), null);
   assert.equal(usePriceAlertStore.getState().getAlert('hBP01-075', ''), null);

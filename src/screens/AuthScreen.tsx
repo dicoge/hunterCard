@@ -60,7 +60,7 @@ export default function AuthScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{APP_NAME}</Text>
-        <Text style={styles.subtitle}>{FEATURES.watchlist ? '登入以同步收藏與入手提醒' : '登入以同步收藏'}</Text>
+        <Text style={styles.subtitle}>{FEATURES.watchlist ? '登入以同步收藏與到價提醒' : '登入以同步收藏'}</Text>
       </View>
 
       <View style={styles.buttons}>

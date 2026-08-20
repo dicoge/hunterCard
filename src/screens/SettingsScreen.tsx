@@ -237,7 +237,7 @@ export default function SettingsScreen() {
               ))}
               <Text style={styles.hint}>
                 {FEATURES.watchlist
-                  ? '綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'
+                  ? '綁定後收藏、設定、到價提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'
                   : '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'}
               </Text>
 
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
             <>
               <Text style={styles.hint}>
                 {FEATURES.watchlist
-                  ? '尚未登入。登入後可跨裝置同步收藏與入手提醒。'
+                  ? '尚未登入。登入後可跨裝置同步收藏與到價提醒。'
                   : '尚未登入。登入後可跨裝置同步收藏。'}
               </Text>
               <TouchableOpacity
