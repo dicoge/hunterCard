@@ -6,6 +6,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
+import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
 import { normalizeCardIdentity } from '../utils/cardNormalization';
 
@@ -243,6 +244,7 @@ function getEffectPreview(kw: string[] = []): string {
 // ── Screen component ──
 
 export default function SearchResultsScreen({ route, navigation }: any) {
+  const { t, language } = useTranslation();
   const query = route?.params?.query || '';
   const [loading, setLoading] = useState(true);
   const [results, setResults] = useState<CardResult[] | null>(null);
@@ -253,7 +255,7 @@ export default function SearchResultsScreen({ route, navigation }: any) {
 
   useEffect(() => {
     if (!query.trim()) {
-      setError('無搜尋關鍵字');
+      setError(t('search_missing_query'));
       setLoading(false);
       return;
     }
@@ -267,21 +269,21 @@ export default function SearchResultsScreen({ route, navigation }: any) {
         setResults(matched);
       } catch (err) {
         if ((err as any)?.name === 'AbortError') {
-          setError('查詢逾時，請稍後再試');
+          setError(t('search_timeout'));
         } else {
-          setError(err instanceof Error ? err.message : '資料庫載入失敗');
+          setError(language === 'ja' ? t('search_database_failed') : (err instanceof Error ? err.message : t('search_database_failed')));
         }
       } finally {
         setLoading(false);
       }
     };
     run();
-  }, [query]);
+  }, [query, language]);
 
   if (loading) return (
     <View style={styles.centerContainer}>
       <ActivityIndicator size="large" color={COLORS.primary} />
-      <Text style={styles.loadingText}>正在載入卡牌資料庫...</Text>
+      <Text style={styles.loadingText}>{t('search_database_loading')}</Text>
     </View>
   );
 
@@ -295,8 +297,8 @@ export default function SearchResultsScreen({ route, navigation }: any) {
   if (!results || results.length === 0) return (
     <View style={styles.centerContainer}>
       <Text style={styles.emptyIcon}>🔍</Text>
-      <Text style={styles.emptyText}>找不到「{query}」的結果</Text>
-      <Text style={styles.emptyHint}>試試看日文名稱、卡號、或系列代碼</Text>
+      <Text style={styles.emptyText}>{t('search_empty_query', { query })}</Text>
+      <Text style={styles.emptyHint}>{t('search_empty_hint')}</Text>
     </View>
   );
 
@@ -306,8 +308,8 @@ export default function SearchResultsScreen({ route, navigation }: any) {
     <View style={styles.container}>
       <View style={[styles.centerWrap, isDesktop && styles.centerWrapDesktop]}>
         <View style={styles.header}>
-          <Text style={{ ...styles.queryText, color: COLORS.text }}>搜尋結果：{query}</Text>
-          <Text style={{ ...styles.resultCount, color: COLORS.textSecondary }}>找到 {results.length} 張卡牌</Text>
+          <Text style={{ ...styles.queryText, color: COLORS.text }}>{t('search_results_for', { query })}</Text>
+          <Text style={{ ...styles.resultCount, color: COLORS.textSecondary }}>{t('search_found_count', { count: results.length })}</Text>
         </View>
         <FlatList
           key={`cols-${numColumns}`}
@@ -329,6 +331,7 @@ export default function SearchResultsScreen({ route, navigation }: any) {
 
 // ──────────────────────────────────────────────
 function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void }) {
+  const { t } = useTranslation();
   const [imgErr, setImgErr] = React.useState(false);
   const id = card.cardNumber || card.id;
   const effects = getEffectPreview(card.searchKeywords);
@@ -376,7 +379,11 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
 
         <View style={styles.metaRow}>
           {card.seriesNames.map((s, i) => <Text key={i} style={styles.seriesTag}>{s}</Text>)}
-          {card.colorNames.length > 0 && <Text style={styles.colorText}>{card.colorNames.join(' / ')}</Text>}
+          {card.colors.length > 0 && (
+            <Text style={styles.colorText}>
+              {card.colors.map((color) => t(`color_${color}` as Parameters<typeof t>[0])).join(' / ')}
+            </Text>
+          )}
         </View>
 
         {card.yuyuPrice != null && card.yuyuPrice > 0 ? (
@@ -387,7 +394,7 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
             )}
           </View>
         ) : (
-          <Text style={styles.noPriceBadgeList}>尚無交易</Text>
+          <Text style={styles.noPriceBadgeList}>{t('scan_no_trade')}</Text>
         )}
 
 

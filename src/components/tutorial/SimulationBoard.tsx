@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Image, useWindowDimensions } from 'react-native';
 import { COLORS } from '../../constants';
 import { SimulationCardRef } from '../../data/tutorialSimulationData';
+import { useTranslation } from '../../i18n';
 
 interface ZoneConfig {
   id: string;
@@ -10,18 +11,6 @@ interface ZoneConfig {
   gridArea: string;
 }
 
-const ZONES: ZoneConfig[] = [
-  { id: 'oshi', label: '主推位置', shortLabel: '主推', gridArea: 'topLeft' },
-  { id: 'center', label: '中心位置', shortLabel: '中心', gridArea: 'topCenter' },
-  { id: 'collab', label: '聯動位置', shortLabel: '聯動', gridArea: 'topRight' },
-  { id: 'backstage', label: '舞台後方', shortLabel: '後台', gridArea: 'midLeft' },
-  { id: 'deck', label: '牌組', shortLabel: '牌組', gridArea: 'midCenter' },
-  { id: 'energy', label: '能量區', shortLabel: '能量', gridArea: 'midRight' },
-  { id: 'life', label: '生命區', shortLabel: '生命', gridArea: 'botLeft' },
-  { id: 'cheerDeck', label: '吶喊牌組', shortLabel: '吶喊', gridArea: 'botCenter' },
-  { id: 'archive', label: '存檔區', shortLabel: '存檔', gridArea: 'botRight' },
-];
-
 interface SimulationBoardProps {
   highlightZone?: string;
   cardRef?: SimulationCardRef;
@@ -29,42 +18,54 @@ interface SimulationBoardProps {
 }
 
 export default function SimulationBoard({ highlightZone, cardRef, isMobile = false }: SimulationBoardProps) {
+  const { t } = useTranslation();
   const { width: screenWidth } = useWindowDimensions();
   const boardPadding = isMobile ? 14 : 16;
   const boardWidth = screenWidth - boardPadding * 2;
 
   const getCardZone = (): string | null => {
     if (!cardRef) return null;
-    if (cardRef.name.includes('推し')) return 'oshi';
-    if (cardRef.name.includes('ホロメン')) return 'backstage';
+    if (cardRef.id === 'hbp04-005') return 'oshi';
+    if (cardRef.id === 'hbp04-055') return 'backstage';
     return null;
   };
 
   const cardZone = getCardZone();
+  const zones: ZoneConfig[] = [
+    { id: 'oshi', label: t('tutorial_zone_oshi'), shortLabel: t('tutorial_zone_oshi_short'), gridArea: 'topLeft' },
+    { id: 'center', label: t('tutorial_zone_center'), shortLabel: t('tutorial_zone_center_short'), gridArea: 'topCenter' },
+    { id: 'collab', label: t('tutorial_zone_collab'), shortLabel: t('tutorial_zone_collab_short'), gridArea: 'topRight' },
+    { id: 'backstage', label: t('tutorial_zone_backstage'), shortLabel: t('tutorial_zone_backstage_short'), gridArea: 'midLeft' },
+    { id: 'deck', label: t('tutorial_zone_deck'), shortLabel: t('tutorial_zone_deck_short'), gridArea: 'midCenter' },
+    { id: 'energy', label: t('tutorial_zone_energy'), shortLabel: t('tutorial_zone_energy_short'), gridArea: 'midRight' },
+    { id: 'life', label: t('tutorial_zone_life'), shortLabel: t('tutorial_zone_life_short'), gridArea: 'botLeft' },
+    { id: 'cheerDeck', label: t('tutorial_zone_cheer'), shortLabel: t('tutorial_zone_cheer_short'), gridArea: 'botCenter' },
+    { id: 'archive', label: t('tutorial_zone_archive'), shortLabel: t('tutorial_zone_archive_short'), gridArea: 'botRight' },
+  ];
 
   return (
     <View style={styles.container}>
       <Text style={[styles.boardTitle, isMobile && styles.boardTitleMobile]}>
-        🎮 遊戲盤面
+        {t('tutorial_simulation_board')}
       </Text>
 
       <View style={[styles.grid, { width: boardWidth }]}>
         {/* Row 1: Oshi | Center | Collab */}
         <View style={[styles.row, isMobile && styles.rowMobile]}>
           <ZoneBox
-            zone={ZONES[0]}
+            zone={zones[0]}
             isHighlighted={highlightZone === 'oshi' || cardZone === 'oshi'}
             cardRef={cardZone === 'oshi' ? cardRef : undefined}
             isMobile={isMobile}
           />
           <ZoneBox
-            zone={ZONES[1]}
+            zone={zones[1]}
             isHighlighted={highlightZone === 'center' || cardZone === 'center'}
             cardRef={cardZone === 'center' ? cardRef : undefined}
             isMobile={isMobile}
           />
           <ZoneBox
-            zone={ZONES[2]}
+            zone={zones[2]}
             isHighlighted={highlightZone === 'collab' || cardZone === 'collab'}
             cardRef={cardZone === 'collab' ? cardRef : undefined}
             isMobile={isMobile}
@@ -74,19 +75,19 @@ export default function SimulationBoard({ highlightZone, cardRef, isMobile = fal
         {/* Row 2: Backstage | Deck | Energy */}
         <View style={[styles.row, isMobile && styles.rowMobile]}>
           <ZoneBox
-            zone={ZONES[3]}
+            zone={zones[3]}
             isHighlighted={highlightZone === 'backstage' || cardZone === 'backstage'}
             cardRef={cardZone === 'backstage' ? cardRef : undefined}
             isMobile={isMobile}
           />
           <ZoneBox
-            zone={ZONES[4]}
+            zone={zones[4]}
             isHighlighted={highlightZone === 'deck' || cardZone === 'deck'}
             cardRef={cardZone === 'deck' ? cardRef : undefined}
             isMobile={isMobile}
           />
           <ZoneBox
-            zone={ZONES[5]}
+            zone={zones[5]}
             isHighlighted={highlightZone === 'energy' || cardZone === 'energy'}
             cardRef={cardZone === 'energy' ? cardRef : undefined}
             isMobile={isMobile}
@@ -96,19 +97,19 @@ export default function SimulationBoard({ highlightZone, cardRef, isMobile = fal
         {/* Row 3: Life | CheerDeck | Archive */}
         <View style={[styles.row, isMobile && styles.rowMobile]}>
           <ZoneBox
-            zone={ZONES[6]}
+            zone={zones[6]}
             isHighlighted={highlightZone === 'life' || cardZone === 'life'}
             cardRef={cardZone === 'life' ? cardRef : undefined}
             isMobile={isMobile}
           />
           <ZoneBox
-            zone={ZONES[7]}
+            zone={zones[7]}
             isHighlighted={highlightZone === 'cheerDeck' || cardZone === 'cheerDeck'}
             cardRef={cardZone === 'cheerDeck' ? cardRef : undefined}
             isMobile={isMobile}
           />
           <ZoneBox
-            zone={ZONES[8]}
+            zone={zones[8]}
             isHighlighted={highlightZone === 'archive' || cardZone === 'archive'}
             cardRef={cardZone === 'archive' ? cardRef : undefined}
             isMobile={isMobile}

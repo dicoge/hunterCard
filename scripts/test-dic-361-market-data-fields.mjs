@@ -16,6 +16,8 @@ const scanScreen = read('src/screens/ScanScreen.tsx');
 const apiCardMapper = read('src/utils/apiCardMapper.ts');
 const searchResults = read('src/screens/SearchResultsScreen.tsx');
 const cardDetail = read('src/screens/CardDetailScreen.tsx');
+const zhLocale = read('src/i18n/locales/zh.ts');
+const jaLocale = read('src/i18n/locales/ja.ts');
 const database = JSON.parse(read('data/database.json'));
 
 function assertSourceIncludes(source, needles, label) {
@@ -95,13 +97,26 @@ assertSourceIncludes(cardDetail, [
   'function MarketDataPanel',
   'const buyPrice = aligned ? (selectedVersion?.buyPrice ?? null) : null',
   'const ytStats = card?.ytStats ?? null',
-  '💱 買賣差價',
-  '📺 YouTube 成員數據',
+  "t('card_detail_spread_title', { version: versionLabel })",
+  "t('card_detail_youtube_data')",
   'computeValidatedPriceTrend({',
   'priceHistory: card.priceHistory',
   'meta: card.priceHistoryMeta',
   'printing: detailVersions[0].printing',
 ], 'src/screens/CardDetailScreen MarketDataPanel');
+
+// The labels are localized, so keep the DIC-361 copy contract mutation-sensitive
+// at both ends: MarketDataPanel must request these keys (above), and each locale
+// must retain the approved user-facing text.
+assertSourceIncludes(zhLocale, [
+  "card_detail_spread_title: '💱 買賣差價（{{version}}）'",
+  "card_detail_youtube_data: '📺 YouTube 成員數據'",
+], 'src/i18n/locales/zh DIC-361 labels');
+
+assertSourceIncludes(jaLocale, [
+  "card_detail_spread_title: '💱 売買価格差（{{version}}）'",
+  "card_detail_youtube_data: '📺 YouTube メンバーデータ'",
+], 'src/i18n/locales/ja DIC-361 labels');
 
 console.log('DIC-361 market data field regression checks passed');
 console.log(JSON.stringify({

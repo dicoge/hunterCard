@@ -17,29 +17,22 @@ import {
   type CardCategory, type FilterOptions, type ParallelMode,
   type PickerCriteria, type SearchMode,
 } from '../utils/cardCatalog';
+import { useTranslation, type TranslationKey } from '../i18n';
 
-export const SEARCH_MODE_LABELS: Record<SearchMode, string> = {
-  name: '卡片名稱',
-  text: '技能／效果',
-  number: '卡號（進階）',
+const SEARCH_MODE_KEYS: Record<SearchMode, TranslationKey> = {
+  name: 'picker_mode_name', text: 'picker_mode_text', number: 'picker_mode_number',
 };
-
-export const CATEGORY_LABELS: Record<CardCategory, string> = {
-  oshi: '推しホロメン',
-  holomen: 'ホロメン',
-  support: 'サポート',
-  yell: 'エール',
+const CATEGORY_KEYS: Record<CardCategory, TranslationKey> = {
+  oshi: 'picker_category_oshi', holomen: 'picker_category_holomen',
+  support: 'picker_category_support', yell: 'picker_category_yell',
 };
-
-export const COLOR_LABELS: Record<string, string> = {
-  白: '白', 緑: '綠', 赤: '紅', 青: '藍', 紫: '紫', 黄: '黃', '◇': '無色',
+const COLOR_KEYS: Record<string, TranslationKey> = {
+  白: 'color_white', 緑: 'color_green', 赤: 'color_red', 青: 'color_blue',
+  紫: 'color_purple', 黄: 'color_yellow', '◇': 'color_colorless',
 };
-
-const PARALLEL_LABELS: Record<ParallelMode, string> = {
-  all: '全部版本',
-  hasBase: '有原印版',
-  hasParallel: '有平行版',
-  noParallel: '無平行版',
+const PARALLEL_KEYS: Record<ParallelMode, TranslationKey> = {
+  all: 'picker_parallel_all', hasBase: 'picker_parallel_has_base',
+  hasParallel: 'picker_parallel_has_parallel', noParallel: 'picker_parallel_no_parallel',
 };
 
 const PARALLEL_MODES: ParallelMode[] = ['all', 'hasBase', 'hasParallel', 'noParallel'];
@@ -79,7 +72,9 @@ function Chip({
 export function CardFilterPanel({
   criteria, onChange, options, categoryChoices, resultCount,
 }: FilterPanelProps) {
+  const { t } = useTranslation();
   const set = (patch: Partial<PickerCriteria>) => onChange({ ...criteria, ...patch });
+  const modeLabel = t(SEARCH_MODE_KEYS[criteria.mode]);
 
   return (
     <View testID="card-filter-panel">
@@ -87,7 +82,7 @@ export function CardFilterPanel({
         {(['name', 'text', 'number'] as SearchMode[]).map((mode) => (
           <Chip
             key={mode}
-            label={SEARCH_MODE_LABELS[mode]}
+            label={t(SEARCH_MODE_KEYS[mode])}
             active={criteria.mode === mode}
             onPress={() => set({ mode })}
             testID={`search-mode-${mode}`}
@@ -96,20 +91,20 @@ export function CardFilterPanel({
       </View>
       <TextInput
         style={styles.input}
-        placeholder={criteria.mode === 'number' ? '輸入卡號，例如 hBP04-005' : `搜尋${SEARCH_MODE_LABELS[criteria.mode]}`}
+        placeholder={criteria.mode === 'number' ? t('picker_number_placeholder') : t('picker_search_placeholder', { mode: modeLabel })}
         placeholderTextColor={COLORS.textSecondary}
         value={criteria.query}
         onChangeText={(query) => set({ query })}
         testID="card-search-input"
-        accessibilityLabel={`搜尋卡片（${SEARCH_MODE_LABELS[criteria.mode]}）`}
+        accessibilityLabel={t('picker_search_a11y', { mode: modeLabel })}
       />
 
       {categoryChoices.length > 1 && (
-        <FilterGroup title="卡片種類">
+        <FilterGroup title={t('picker_category_title')}>
           {categoryChoices.map((c) => (
             <Chip
               key={c}
-              label={CATEGORY_LABELS[c]}
+              label={t(CATEGORY_KEYS[c])}
               active={criteria.categories.includes(c)}
               onPress={() => set({ categories: toggle(criteria.categories, c) })}
               testID={`filter-category-${c}`}
@@ -119,11 +114,11 @@ export function CardFilterPanel({
       )}
 
       {options.colors.length > 0 && (
-        <FilterGroup title="顏色">
+        <FilterGroup title={t('picker_color_title')}>
           {options.colors.map((c) => (
             <Chip
               key={c}
-              label={COLOR_LABELS[c] ?? c}
+              label={COLOR_KEYS[c] ? t(COLOR_KEYS[c]) : c}
               active={criteria.colors.includes(c)}
               onPress={() => set({ colors: toggle(criteria.colors, c) })}
               testID={`filter-color-${c}`}
@@ -133,7 +128,7 @@ export function CardFilterPanel({
       )}
 
       {options.rarities.length > 0 && (
-        <FilterGroup title="稀有度">
+        <FilterGroup title={t('picker_rarity_title')}>
           {options.rarities.map((r) => (
             <Chip
               key={r}
@@ -147,7 +142,7 @@ export function CardFilterPanel({
       )}
 
       {options.sets.length > 0 && (
-        <FilterGroup title="商品／系列">
+        <FilterGroup title={t('picker_set_title')}>
           {options.sets.map((s) => (
             <Chip
               key={s}
@@ -160,11 +155,11 @@ export function CardFilterPanel({
         </FilterGroup>
       )}
 
-      <FilterGroup title="版本">
+      <FilterGroup title={t('picker_version_title')}>
         {PARALLEL_MODES.map((m) => (
           <Chip
             key={m}
-            label={PARALLEL_LABELS[m]}
+            label={t(PARALLEL_KEYS[m])}
             active={criteria.parallel === m}
             onPress={() => set({ parallel: m })}
             testID={`filter-parallel-${m}`}
@@ -174,17 +169,17 @@ export function CardFilterPanel({
 
       <View style={styles.resultRow}>
         <Text style={styles.resultCount} testID="card-result-count">
-          {resultCount} 張卡片
+          {t('deck_cards_count', { count: resultCount })}
         </Text>
         {hasActiveFilters(criteria) && (
           <TouchableOpacity
             onPress={() => set({ query: '', categories: [], sets: [], colors: [], rarities: [], parallel: 'all' })}
             accessibilityRole="button"
-            accessibilityLabel="清除所有篩選"
+            accessibilityLabel={t('picker_clear_a11y')}
             testID="filter-reset"
             style={styles.resetBtn}
           >
-            <Text style={styles.link}>清除全部</Text>
+            <Text style={styles.link}>{t('picker_clear_all')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -238,6 +233,7 @@ const PAGE_SIZE = 60;
 export function CardPickerGrid({
   groups, numColumns, height, qtyOf, onAdd, emptyLabel,
 }: GridProps) {
+  const { t } = useTranslation();
   // The catalog holds ~2,100 card numbers; rendering them all would stall the
   // first paint, so the grid pages in as the player scrolls (DIC-1067 §11).
   const [visible, setVisible] = useState(PAGE_SIZE);
@@ -279,7 +275,11 @@ export function CardPickerGrid({
               style={styles.cellTap}
               onPress={() => onAdd(item.card)}
               accessibilityRole="button"
-              accessibilityLabel={`加入牌組 ${item.card.name} ${item.cardNumber}${qty > 0 ? `，已選 ${qty} 張` : ''}`}
+              accessibilityLabel={t('picker_add_deck_a11y', {
+                name: item.card.name,
+                number: item.cardNumber,
+                selected: qty > 0 ? t('picker_selected_count', { count: qty }) : '',
+              })}
               testID={`card-cell-${item.cardNumber}`}
             >
               <CardThumb card={item.card} />
@@ -297,7 +297,7 @@ export function CardPickerGrid({
       ListEmptyComponent={<Text style={styles.muted}>{emptyLabel}</Text>}
       ListFooterComponent={
         page.length < groups.length
-          ? <Text style={styles.muted}>向下捲動載入更多（{page.length}/{groups.length}）</Text>
+          ? <Text style={styles.muted}>{t('picker_load_more', { visible: page.length, total: groups.length })}</Text>
           : null
       }
     />

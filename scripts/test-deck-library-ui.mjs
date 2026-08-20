@@ -87,7 +87,7 @@ for (const [label, width, height] of [['mobile', 390, 844], ['desktop', 1280, 90
       assert.ok(container.querySelector('[data-testid="deck-tile-imported"]'));
       assert.ok(container.querySelector('[data-testid="deck-oshi-placeholder"]'));
       assert.ok(container.textContent.includes('賽事匯入'));
-      assert.ok(container.textContent.includes('推し 1/1'));
+      assert.ok(container.textContent.includes('推しホロメン 1/1'));
     } finally { await cleanup(); }
   });
 }

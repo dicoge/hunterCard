@@ -12,18 +12,19 @@ import {
 } from 'react-native';
 import { COLORS } from '../constants';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useTranslation, type TranslationKey } from '../i18n';
 import { useDeckStore } from '../store/deckStore';
 import { loadCardDatabase } from '../utils/deckCardData';
 import { eligibleZone, ownershipKey, type DeckCard, type DeckZone } from '../utils/deckRules';
 
 type CollectionFilter = 'all' | 'owned' | DeckZone;
 
-const FILTERS: Array<{ key: CollectionFilter; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'owned', label: '已擁有' },
-  { key: 'oshi', label: '推し' },
-  { key: 'main', label: '主牌' },
-  { key: 'yell', label: 'エール' },
+const FILTERS: Array<{ key: CollectionFilter; label: TranslationKey }> = [
+  { key: 'all', label: 'collection_filter_all' },
+  { key: 'owned', label: 'collection_filter_owned' },
+  { key: 'oshi', label: 'collection_filter_oshi' },
+  { key: 'main', label: 'collection_filter_main' },
+  { key: 'yell', label: 'collection_filter_yell' },
 ];
 
 function labelOf(card: DeckCard): string {
@@ -46,6 +47,7 @@ function legacyCard(key: string): DeckCard {
 
 export default function CollectionScreen({ navigation }: any) {
   const { width } = useBreakpoint();
+  const { t } = useTranslation();
   const [cards, setCards] = useState<DeckCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -96,7 +98,7 @@ export default function CollectionScreen({ navigation }: any) {
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.primary} size="large" />
-          <Text style={styles.muted}>載入收藏卡表…</Text>
+          <Text style={styles.muted}>{t('collection_loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -106,16 +108,16 @@ export default function CollectionScreen({ navigation }: any) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          <Text style={styles.title}>收藏</Text>
-          <Text style={styles.total} testID="collection-owned-total">共 {ownedTotal} 張</Text>
+          <Text style={styles.title}>{t('collection_title')}</Text>
+          <Text style={styles.total} testID="collection-owned-total">{t('collection_total', { count: ownedTotal })}</Text>
         </View>
         <TextInput
           style={styles.search}
           value={query}
           onChangeText={setQuery}
-          placeholder="搜尋卡名、卡號或版本"
+          placeholder={t('collection_search_placeholder')}
           placeholderTextColor={COLORS.textSecondary}
-          accessibilityLabel="搜尋收藏卡片"
+          accessibilityLabel={t('collection_search_a11y')}
           testID="collection-search"
         />
         <View style={styles.filters} testID="collection-filters">
@@ -130,7 +132,7 @@ export default function CollectionScreen({ navigation }: any) {
                 accessibilityState={{ selected: active }}
                 testID={`collection-filter-${item.key}`}
               >
-                <Text style={[styles.filterText, active && styles.filterTextActive]}>{item.label}</Text>
+                <Text style={[styles.filterText, active && styles.filterTextActive]}>{t(item.label)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -144,7 +146,7 @@ export default function CollectionScreen({ navigation }: any) {
         initialNumToRender={18}
         windowSize={7}
         keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={<Text style={styles.empty}>沒有符合條件的卡片。</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{t('collection_empty')}</Text>}
         renderItem={({ item }) => {
           const key = ownershipKey(item.cardNumber, item.printing);
           const quantity = collection[key] || 0;
@@ -154,14 +156,14 @@ export default function CollectionScreen({ navigation }: any) {
                 style={styles.cardInfo}
                 onPress={() => navigation.navigate('CardDetail', { card: item })}
                 accessibilityRole="button"
-                accessibilityLabel={`查看 ${item.name} ${labelOf(item)}`}
+                accessibilityLabel={t('collection_view_a11y', { name: item.name, version: labelOf(item) })}
               >
                 {item.imageUrl ? (
                   <Image
                     source={{ uri: item.imageUrl }}
                     style={[styles.image, width <= 390 && styles.imageSmall]}
                     resizeMode="contain"
-                    accessibilityLabel={`${item.name} ${labelOf(item)} 卡圖`}
+                    accessibilityLabel={t('collection_image_a11y', { name: item.name, version: labelOf(item) })}
                   />
                 ) : (
                   <View style={[styles.image, styles.imageFallback, width <= 390 && styles.imageSmall]}>
@@ -181,7 +183,7 @@ export default function CollectionScreen({ navigation }: any) {
                     onPress={() => adjustOwned(item.cardNumber, item.printing, -1)}
                     disabled={quantity <= 0}
                     accessibilityRole="button"
-                    accessibilityLabel={`收藏 -1 ${item.name}`}
+                    accessibilityLabel={t('deck_collection_decrease_a11y', { name: item.name })}
                     testID={`collection-dec-${key}`}
                   >
                     <Text style={[styles.quantityButtonText, quantity <= 0 && styles.disabled]}>－</Text>
@@ -191,7 +193,7 @@ export default function CollectionScreen({ navigation }: any) {
                     style={styles.quantityButton}
                     onPress={() => adjustOwned(item.cardNumber, item.printing, 1)}
                     accessibilityRole="button"
-                    accessibilityLabel={`收藏 +1 ${item.name}`}
+                    accessibilityLabel={t('deck_collection_increase_a11y', { name: item.name })}
                     testID={`collection-inc-${key}`}
                   >
                     <Text style={styles.quantityButtonText}>＋</Text>
@@ -201,10 +203,10 @@ export default function CollectionScreen({ navigation }: any) {
                   <TouchableOpacity
                     onPress={() => setOwned(item.cardNumber, item.printing, 0)}
                     accessibilityRole="button"
-                    accessibilityLabel={`移除收藏 ${item.name}`}
+                    accessibilityLabel={t('deck_collection_remove_a11y', { name: item.name })}
                     testID={`collection-remove-${key}`}
                   >
-                    <Text style={styles.remove}>移除</Text>
+                    <Text style={styles.remove}>{t('common_remove')}</Text>
                   </TouchableOpacity>
                 )}
               </View>

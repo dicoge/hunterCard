@@ -85,6 +85,7 @@ const CARD_NUMBER = 'hBP04-005';
 const CHOSEN_PRINTING = 'PARALLEL';
 const CHOSEN_LABEL = 'ラプラス・ダークネス(パラレル)';
 const CHOSEN_PRICE = 9980;
+const CHOSEN_IMAGE = 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10012.jpg';
 const SHARED_SIGNED_IMAGE = 'https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-005_SEC.png';
 const OTHER_PRINTING = 'BASE';
 
@@ -280,18 +281,15 @@ await test('answering the prompt creates one alert on the exact chosen printing'
 });
 
 // ── 4. Image identity ───────────────────────────────────────────────────────
-await test('an unproven shared SEC image renders the stable placeholder', async () => {
+await test('the source-proven PARALLEL image renders without borrowing SEC art', async () => {
   const { container, cleanup } = await render();
   try {
     const row = byTestId(`price-alert-row-${CARD_NUMBER}|${CHOSEN_PRINTING}`);
-    assert.ok(
-      row.querySelector(`[data-testid="price-alert-thumb-placeholder-${CARD_NUMBER}"]`),
-      'the row shows the stable card-number placeholder',
-    );
-    const img = row.querySelector('img') ?? row.querySelector('[style*="background-image"]');
-    assert.equal(img, null, 'no unproven printing art is rendered');
+    const img = row.querySelector(`[data-testid="price-alert-thumb-image-${CARD_NUMBER}"]`);
+    assert.ok(img, 'the row shows the exact printing image');
+    assert.ok(row.innerHTML.includes(CHOSEN_IMAGE), 'the image comes from the PARALLEL source listing');
     assert.ok(!row.innerHTML.includes(SHARED_SIGNED_IMAGE), 'PARALLEL never borrows signed SEC art');
-    assert.equal(storedAlert().imageUrl, undefined, 'the unproven image is not persisted');
+    assert.equal(storedAlert().imageUrl, CHOSEN_IMAGE, 'the proven exact-printing image is persisted');
   } finally {
     await cleanup();
   }

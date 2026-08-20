@@ -2,15 +2,18 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
-import simulationPhases from '../data/tutorialSimulationData';
+import { getSimulationPhases } from '../data/tutorialSimulationData';
 import SimulationBoard from '../components/tutorial/SimulationBoard';
 import SimulationStepCard from '../components/tutorial/SimulationStepCard';
+import { useTranslation } from '../i18n';
 
 const MOBILE_BREAKPOINT = 480;
 
 export default function TutorialSimulationScreen({ navigation }: any) {
+  const { t, language } = useTranslation();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isMobile = screenWidth < MOBILE_BREAKPOINT;
+  const simulationPhases = useMemo(() => getSimulationPhases(language), [language]);
 
   const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -61,14 +64,18 @@ export default function TutorialSimulationScreen({ navigation }: any) {
     : Math.min(screenHeight * 0.4, 320);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={['top', 'bottom']}
+      testID="tutorial-simulation-content"
+    >
       {/* Top bar */}
       <View style={[styles.topBar, isMobile && styles.topBarMobile]}>
         <Text style={[styles.topBarTitle, isMobile && styles.topBarTitleMobile]}>
-          🎮 模擬實戰
+          {t('tutorial_simulation_title')}
         </Text>
         <Text style={[styles.topBarSub, isMobile && styles.topBarSubMobile]}>
-          跟著步驟體驗一場對局
+          {t('tutorial_simulation_subtitle')}
         </Text>
       </View>
 
@@ -83,7 +90,7 @@ export default function TutorialSimulationScreen({ navigation }: any) {
           />
         </View>
         <Text style={[styles.progressText, isMobile && styles.progressTextMobile]}>
-          階段 {currentPhaseIndex + 1}/{simulationPhases.length}
+          {t('tutorial_simulation_phase', { current: currentPhaseIndex + 1, total: simulationPhases.length })}
         </Text>
       </View>
 

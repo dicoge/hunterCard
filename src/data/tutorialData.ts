@@ -4,6 +4,9 @@
  * 更新：2026 年 4 月 24 日
  */
 
+import type { LanguageCode } from '../store/settingsStore';
+import tutorialDataJa from './tutorialDataJa';
+
 export interface TutorialImage {
   url: string;
   alt: string;
@@ -302,5 +305,9 @@ const tutorialData: TutorialSection[] = [
     ],
   },
 ];
+
+export function getTutorialData(language: LanguageCode): TutorialSection[] {
+  return language === 'ja' ? tutorialDataJa : tutorialData;
+}
 
 export default tutorialData;

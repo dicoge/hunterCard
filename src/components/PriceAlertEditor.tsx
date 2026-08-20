@@ -18,8 +18,9 @@ import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { syncAlertUpsert, syncAlertRemove, pushAlertAvailable } from '../services/priceAlertSync';
 import {
   validateInterval, evaluateAlertStatus, formatAlertAmount, formatInterval,
-  priceAlertKey, ALERT_STATUS_LABELS,
+  priceAlertKey,
 } from '../utils/priceAlerts';
+import { useTranslation } from '../i18n';
 import type { PrintingOption } from '../utils/alertMigration';
 
 export interface PriceAlertTarget {
@@ -44,6 +45,7 @@ interface Props {
 }
 
 export default function PriceAlertEditor({ target, onClose }: Props) {
+  const { t } = useTranslation();
   const alerts = usePriceAlertStore((s) => s.alerts);
   const upsertAlert = usePriceAlertStore((s) => s.upsertAlert);
   const removeAlert = usePriceAlertStore((s) => s.removeAlert);
@@ -95,7 +97,7 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
   const imageUrl = selectedChoice ? selectedChoice.imageUrl : target.imageUrl;
 
   const priceLabel = currentPrice === null || currentPrice === undefined
-    ? '暫無此版本的參考售價'
+    ? t('price_alert_no_exact_price')
     : formatAlertAmount(currentPrice, currency);
 
   const status = existing
@@ -108,12 +110,12 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
   function save() {
     if (!target) return;
     if (!printing) {
-      setError('請先選擇版本，到價提醒只比對你選定的那一個版本。');
+      setError(t('price_alert_choose_printing_error'));
       return;
     }
     const interval = validateInterval(lower, upper);
     if (!interval.ok) {
-      setError(interval.message);
+      setError(t(`price_alert_error_${interval.code.toLowerCase()}` as Parameters<typeof t>[0]));
       return;
     }
     const saved = upsertAlert({
@@ -127,7 +129,7 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
       imageUrl,
     });
     if (!saved) {
-      setError('無法建立提醒：這張卡沒有可辨識的版本。');
+      setError(t('price_alert_unrecognized_printing_error'));
       return;
     }
     // Server mirror is best-effort: the alert is already saved locally, and an
@@ -147,7 +149,7 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.card} accessibilityViewIsModal testID="price-alert-editor">
-          <Text style={styles.title}>到價提醒</Text>
+          <Text style={styles.title}>{t('price_alert_title')}</Text>
           <Text style={styles.cardName}>{target.name}</Text>
           <Text style={styles.meta}>
             {printing ? `${target.cardNumber} · ${printingLabel}` : target.cardNumber}
@@ -155,10 +157,10 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
 
           {needsChoice && (
             <View style={styles.choices} testID="price-alert-printing-choices">
-              <Text style={styles.fieldLabel}>選擇版本（必選）</Text>
+              <Text style={styles.fieldLabel}>{t('price_alert_choose_printing')}</Text>
               {choices.length === 0 ? (
                 <Text style={styles.hint} testID="price-alert-no-printings">
-                  這張卡目前沒有可辨識的版本資料，無法建立到價提醒。
+                  {t('price_alert_no_printings')}
                 </Text>
               ) : (
                 <ScrollView style={styles.choiceScroll}>
@@ -171,7 +173,9 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
                         onPress={() => { setChosen(choice.printing); setError(null); }}
                         accessibilityRole="button"
                         accessibilityState={{ selected: active }}
-                        accessibilityLabel={`選擇版本 ${choice.printingLabel || choice.printing}`}
+                        accessibilityLabel={t('price_alert_choose_printing_a11y', {
+                          printing: choice.printingLabel || choice.printing,
+                        })}
                         testID={`price-alert-printing-${choice.printing}`}
                       >
                         <Text style={[styles.choiceLabel, active && styles.choiceLabelActive]} numberOfLines={1}>
@@ -179,7 +183,7 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
                         </Text>
                         <Text style={styles.choicePrice}>
                           {choice.sellPrice === null
-                            ? '暫無參考售價'
+                            ? t('price_alert_no_reference_price')
                             : formatAlertAmount(choice.sellPrice, choice.currency)}
                         </Text>
                       </TouchableOpacity>
@@ -191,40 +195,40 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
           )}
 
           <Text style={styles.meta} testID="price-alert-current-price">
-            目前參考售價：{priceLabel}
+            {t('price_alert_current', { currency, price: priceLabel })}
           </Text>
           <Text style={styles.hint}>
-            僅比對此精確版本的玩家「參考售價」；不採用店家收購價、最高價或跨版本價格。
+            {t('price_alert_hint')}
           </Text>
 
           <View style={styles.fieldRow}>
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>下限（可選）</Text>
+              <Text style={styles.fieldLabel}>{t('price_alert_lower')}</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="number-pad"
                 inputMode="numeric"
-                placeholder="不限"
+                placeholder={t('price_alert_no_limit')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={lower}
                 onChangeText={(t) => { setLower(t); setError(null); }}
                 testID="price-alert-lower"
-                accessibilityLabel="期望入手價下限"
+                accessibilityLabel={t('price_alert_lower_a11y')}
               />
             </View>
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>上限（必填）</Text>
+              <Text style={styles.fieldLabel}>{t('price_alert_upper')}</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="number-pad"
                 inputMode="numeric"
-                placeholder="例如 1200"
+                placeholder={t('price_alert_example')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={upper}
                 onChangeText={(t) => { setUpper(t); setError(null); }}
                 onSubmitEditing={save}
                 testID="price-alert-upper"
-                accessibilityLabel="期望入手價上限"
+                accessibilityLabel={t('price_alert_upper_a11y')}
               />
             </View>
           </View>
@@ -233,14 +237,17 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
 
           {existing && status && (
             <Text style={styles.status} testID="price-alert-status">
-              目前設定 {formatInterval(existing)} · {ALERT_STATUS_LABELS[status]}
+              {t('price_alert_current_setting', {
+                interval: formatInterval(existing),
+                status: t(`watchlist_status_${status.toLowerCase()}` as Parameters<typeof t>[0]),
+              })}
             </Text>
           )}
 
           <Text style={styles.hint} testID="price-alert-push-note">
             {pushAlertAvailable()
-              ? '此裝置已取得推播權杖：價格進入區間時會發送到價提醒（同一次進入只通知一次）。'
-              : '此裝置沒有推播權杖（Web 或未開啟通知權限），到價提醒只會在本機顯示狀態，不會有背景推播。'}
+              ? t('price_alert_push_available')
+              : t('price_alert_push_unavailable')}
           </Text>
 
           <View style={styles.actions}>
@@ -249,9 +256,9 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
                 onPress={remove}
                 testID="price-alert-remove"
                 accessibilityRole="button"
-                accessibilityLabel="移除到價提醒"
+                accessibilityLabel={t('watchlist_remove_alert')}
               >
-                <Text style={styles.destructive}>移除提醒</Text>
+                <Text style={styles.destructive}>{t('price_alert_remove')}</Text>
               </TouchableOpacity>
             )}
             <View style={styles.actionsRight}>
@@ -259,18 +266,18 @@ export default function PriceAlertEditor({ target, onClose }: Props) {
                 onPress={onClose}
                 testID="price-alert-cancel"
                 accessibilityRole="button"
-                accessibilityLabel="取消"
+                accessibilityLabel={t('common_cancel')}
               >
-                <Text style={styles.link}>取消</Text>
+                <Text style={styles.link}>{t('common_cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.primaryBtn}
                 onPress={save}
                 testID="price-alert-save"
                 accessibilityRole="button"
-                accessibilityLabel="儲存到價提醒"
+                accessibilityLabel={t('price_alert_save_a11y')}
               >
-                <Text style={styles.primaryBtnText}>儲存</Text>
+                <Text style={styles.primaryBtnText}>{t('common_save')}</Text>
               </TouchableOpacity>
             </View>
           </View>

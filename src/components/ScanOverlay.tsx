@@ -23,6 +23,7 @@ import {
   LayoutChangeEvent,
 } from 'react-native';
 import { COLORS } from '../constants';
+import { useTranslation } from '../i18n';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
@@ -69,13 +70,14 @@ export default function ScanOverlay({
   onRetry,
   onScanAreaLayout,
 }: ScanOverlayProps) {
+  const { t } = useTranslation();
   return (
     <>
       {/* Camera loading overlay */}
       {!isCameraReady && (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>相機初始化中...</Text>
+            <Text style={styles.loadingText}>{t('scan_camera_initializing')}</Text>
             {cameraError && (
               <View style={resultStyles.errorContainer}>
                 <Text style={resultStyles.errorText}>❌ {cameraError}</Text>
@@ -83,7 +85,7 @@ export default function ScanOverlay({
                   style={resultStyles.retryButton}
                   onPress={onRetry}
                 >
-                  <Text style={resultStyles.retryText}>重試</Text>
+                  <Text style={resultStyles.retryText}>{t('common_retry')}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -135,7 +137,7 @@ export default function ScanOverlay({
                 <Animated.Text
                   style={[styles.scanningText, { transform: [{ scale: pulseAnim }] }]}
                 >
-                  識別中⋯
+                  {t('scan_recognizing')}
                 </Animated.Text>
               </View>
             )}
@@ -144,7 +146,7 @@ export default function ScanOverlay({
         </View>
         <View style={styles.overlayBottom}>
           <Text style={styles.hintText}>
-            {autoScanEnabled ? '將卡牌置於掃描框內' : '點擊掃描按鈕拍攝卡牌'}
+            {autoScanEnabled ? t('scan_frame_auto') : t('scan_frame_manual')}
           </Text>
           <View style={styles.controls}>
             {/* Flash toggle */}
@@ -154,7 +156,7 @@ export default function ScanOverlay({
               activeOpacity={0.7}
             >
               <Text style={styles.controlIcon}>{flash ? '🔦' : '💡'}</Text>
-              <Text style={styles.controlLabel}>{flash ? '閃光燈開' : '閃光燈'}</Text>
+              <Text style={styles.controlLabel}>{flash ? t('scan_flash_on') : t('scan_flash')}</Text>
             </TouchableOpacity>
 
             {/* Gallery button */}
@@ -164,7 +166,7 @@ export default function ScanOverlay({
               activeOpacity={0.7}
             >
               <Text style={styles.controlIcon}>🖼️</Text>
-              <Text style={styles.controlLabel}>相簿</Text>
+              <Text style={styles.controlLabel}>{t('scan_gallery')}</Text>
             </TouchableOpacity>
 
             {/* Scan button */}
@@ -178,7 +180,7 @@ export default function ScanOverlay({
                 <Text style={styles.scanButtonIcon}>{isScanning ? '⏳' : '📷'}</Text>
               </View>
               <Text style={styles.scanButtonLabel}>
-                {isScanning ? '識別中...' : autoScanEnabled ? '手動' : '掃描'}
+                {isScanning ? t('scan_recognizing') : autoScanEnabled ? t('scan_manual') : t('scan_scan_action')}
               </Text>
             </TouchableOpacity>
 
@@ -189,7 +191,7 @@ export default function ScanOverlay({
               activeOpacity={0.7}
             >
               <Text style={styles.controlIcon}>🔄</Text>
-              <Text style={styles.controlLabel}>翻轉</Text>
+              <Text style={styles.controlLabel}>{t('scan_flip')}</Text>
             </TouchableOpacity>
 
             {/* Manual search */}
@@ -199,7 +201,7 @@ export default function ScanOverlay({
               activeOpacity={0.7}
             >
               <Text style={styles.controlIcon}>🔤</Text>
-              <Text style={styles.controlLabel}>搜尋</Text>
+              <Text style={styles.controlLabel}>{t('common_search')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -214,7 +216,7 @@ export default function ScanOverlay({
               activeOpacity={0.7}
             >
               <Text style={[styles.autoScanToggleText, autoScanEnabled && styles.autoScanToggleTextActive]}>
-                {autoScanEnabled ? '⚡ 自動掃描' : '⏸️ 手動模式'}
+                {autoScanEnabled ? t('scan_auto_mode') : t('scan_manual_mode')}
               </Text>
             </TouchableOpacity>
           </View>

@@ -22,11 +22,10 @@ import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
 import { recognizeCard, recognizeCardFromOcr, recognizeCardFromImage, searchCards, CardInfo, RecognizedCandidate } from '../services/cardRecognition';
-import { RECOGNITION_UNAVAILABLE_MESSAGE, RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
+import { RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
 import {
   runWebCameraScan,
   runNativeCameraScan,
-  NO_TEXT_GUIDANCE,
   type ScanFlowIo,
   type ScanFlowUi,
 } from '../services/scanRecognitionFlow';
@@ -44,6 +43,7 @@ import { effectiveRole } from '../services/permissionService';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import ScanQuotaBanner from '../components/ScanQuotaBanner';
 import { FEATURES, releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
+import { useTranslation, type TranslationKey } from '../i18n';
 
 // iOS Safari: getUserMedia 需直接從使用者手勢觸發
 // 所以 web 版跳過 expo-camera 的 useCameraPermissions，改用 WebCamera 直接管
@@ -61,6 +61,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 
 export default function ScanScreen({ navigation }: any) {
+  const { t } = useTranslation();
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
   const [permission, requestPermission] = isWeb ? [null, null] as any : useCameraPermissions();
   const [webCameraStarted, setWebCameraStarted] = useState(false);
@@ -118,6 +119,8 @@ export default function ScanScreen({ navigation }: any) {
 
   // Currency preference (from global settings)
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
+  const localizedError = (message: string | null | undefined, fallback: TranslationKey) =>
+    preferredLanguage === 'ja' ? t(fallback) : (message || t(fallback));
   const incrementScan = useScanQuotaStore((s) => s.incrementScan);
   const getRemaining = useScanQuotaStore((s) => s.getRemaining);
 
@@ -141,7 +144,10 @@ export default function ScanScreen({ navigation }: any) {
   const commitCard = (card: CardInfo): boolean => {
     const existing = useScanSessionStore.getState().cards;
     if (existing.some(c => c.id === card.id)) {
-      Alert.alert('已在清單中', `${card.name || card.cardNumber} 已在本次掃描清單，未重複加入。`);
+      Alert.alert(
+        t('scan_duplicate_title'),
+        t('scan_duplicate_body', { name: card.name || card.cardNumber }),
+      );
       return false;
     }
     // Charge quota BEFORE recording; a denied credit must add nothing.
@@ -438,22 +444,22 @@ export default function ScanScreen({ navigation }: any) {
     if (currentRole === 'guest') {
       // Route to the real login flow: clearing the guest session drops the app
       // back to LoginScreen (no-op CTA removed — CR DIC-913 #4).
-      Alert.alert('需要登入', '請登入以使用卡片掃描功能', [
-        { text: '取消', style: 'cancel' },
-        { text: '登入', onPress: () => useAuthStore.getState().logout() },
+      Alert.alert(t('scan_login_title'), t('scan_login_body'), [
+        { text: t('common_cancel'), style: 'cancel' },
+        { text: t('scan_login_action'), onPress: () => useAuthStore.getState().logout() },
       ]);
       return;
     }
     // Store MVP 不賣訂閱，額度已滿時不露出升級/付費入口（DIC-908）。
     if (FEATURES.premium) {
-      Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)。升級訂閱即可無限掃描。', [
-        { text: '稍後', style: 'cancel' },
-        { text: '升級訂閱', onPress: () => {} },
+      Alert.alert(t('scan_quota_title'), t('scan_quota_premium_body'), [
+        { text: t('scan_later'), style: 'cancel' },
+        { text: t('scan_upgrade'), onPress: () => {} },
       ]);
       return;
     }
-    Alert.alert('掃描額度已用完', '本月掃描額度已達上限 (100 張)，下個月會重置。', [
-      { text: '好', style: 'cancel' },
+    Alert.alert(t('scan_quota_title'), t('scan_quota_body'), [
+      { text: t('scan_ok'), style: 'cancel' },
     ]);
   };
 
@@ -527,18 +533,18 @@ export default function ScanScreen({ navigation }: any) {
     if (!canScanNow()) return;
     if (isWeb) {
       if (!webCameraRef.current) {
-        Alert.alert('錯誤', '相機未準備好');
+        Alert.alert(t('scan_error_title'), t('scan_camera_not_ready'));
         return;
       }
     } else if (!cameraRef.current) {
-      Alert.alert('錯誤', '相機未準備好');
+      Alert.alert(t('scan_error_title'), t('scan_camera_not_ready'));
       return;
     }
 
     try {
       setIsProcessingOCR(true);
       setIsScanning(true);
-      setScanningStatus('📷 拍攝中…');
+      setScanningStatus(t('scan_taking_photo'));
       setScanProgress(1);
       setScanError(null);
       setCapturedPhotoUri(null);
@@ -556,14 +562,14 @@ export default function ScanScreen({ navigation }: any) {
       }
 
       if (!photo?.uri) {
-        throw new Error('無法拍攝照片');
+        throw new Error(t('scan_capture_failed'));
       }
 
       // 儲存照片 uri 用於預覽
       setCapturedPhotoUri(photo.uri);
 
       if (isWeb) {
-        setScanningStatus('📤 處理影像中…');
+        setScanningStatus(t('scan_processing_image'));
         setScanProgress(2);
         const recognitionImages = await captureWebRecognitionImages(photo.uri);
         await runWebCameraScan(photo.uri, buildScanFlowIo(recognitionImages), scanFlowUi);
@@ -577,7 +583,7 @@ export default function ScanScreen({ navigation }: any) {
       setScanningStatus('');
       setScanProgress(0);
 
-      setScanError('無法完成掃描，請重試或使用手動輸入');
+      setScanError(t('scan_failed_retry_manual'));
     } finally {
       // Reset auto-scan stability buffer on every exit (success or failure) so the
       // same still frame can't immediately re-trigger a scan. Combined with the
@@ -630,8 +636,11 @@ export default function ScanScreen({ navigation }: any) {
           const candidateCards = galleryVisionResult.suggestions || [];
           setSearchResults(candidateCards);
           setSuggestions(candidateCards);
-          setSearchError(galleryVisionResult.error || '辨識信心不足，請從候選卡中選擇');
-          setCandidateReason(`信心 ${Math.round((galleryVisionResult.confidence || 0) * 100)}%：${galleryVisionResult.reason || '需要人工確認'}`);
+          setSearchError(localizedError(galleryVisionResult.error, 'scan_confidence_low'));
+          setCandidateReason(t('scan_confidence_reason', {
+            percent: Math.round((galleryVisionResult.confidence || 0) * 100),
+            reason: preferredLanguage === 'ja' ? t('scan_manual_review') : (galleryVisionResult.reason || t('scan_manual_review')),
+          }));
           if (galleryVisionResult.raw) setRecognizedText(galleryVisionResult.raw);
           return;
         }
@@ -639,8 +648,8 @@ export default function ScanScreen({ navigation }: any) {
         // When the recognition backend is unavailable the local OCR passes below are
         // only a best-effort fallback, so their failure says nothing about the photo.
         const noTextError = galleryVisionResult.serviceUnavailable
-          ? RECOGNITION_UNAVAILABLE_MESSAGE
-          : NO_TEXT_GUIDANCE;
+          ? t('scan_service_unavailable')
+          : t('scan_no_text_guidance');
 
         if (isWeb) {
           // Web: 卡號優先 OCR
@@ -663,7 +672,7 @@ export default function ScanScreen({ navigation }: any) {
                 handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
                 return;
               }
-              setSearchError(fallbackResult.error || '找不到匹配的卡牌');
+              setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
               const searchResult = await searchCards(trimmedText, 10);
               setSearchResults(searchResult);
             } else {
@@ -683,7 +692,7 @@ export default function ScanScreen({ navigation }: any) {
             if (cardResult.success && cardResult.card) {
               handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
             } else {
-              setSearchError(cardResult.error || '找不到匹配的卡牌');
+              setSearchError(localizedError(cardResult.error, 'scan_no_match'));
               const searchResult = await searchCards(trimmedText, 10);
               setSearchResults(searchResult);
             }
@@ -696,7 +705,7 @@ export default function ScanScreen({ navigation }: any) {
       console.error('Gallery OCR Error:', error);
       setIsProcessingOCR(false);
       setIsScanning(false);
-      setScanError('無法讀取或識別圖片，請重試或使用手動輸入');
+      setScanError(t('scan_image_failed'));
     }
   };
 
@@ -726,7 +735,9 @@ export default function ScanScreen({ navigation }: any) {
 
   // 相機載入錯誤的回調
   const handleMountError = (error: { message?: string }) => {
-    const errorMessage = error?.message || '相機載入失敗，請重新開啟應用程式';
+    const errorMessage = preferredLanguage === 'ja'
+      ? t('scan_camera_load_failed')
+      : (error?.message || t('scan_camera_load_failed'));
     setCameraError(errorMessage);
     setIsCameraReady(false);
   };
@@ -752,14 +763,14 @@ export default function ScanScreen({ navigation }: any) {
       setRecognizedCard(result.card);
       setSuggestions(result.suggestions || []);
     } else {
-      setSearchError(result.error || '辨識失敗');
+      setSearchError(localizedError(result.error, 'scan_recognition_failed'));
     }
   };
   
   // 執行搜尋
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      Alert.alert('請輸入搜尋內容');
+      Alert.alert(t('scan_input_required'));
       return;
     }
     
@@ -772,7 +783,7 @@ export default function ScanScreen({ navigation }: any) {
       setShowSearch(false);
       setSearchQuery('');
     } else {
-      setSearchError(result.error || '找不到匹配的卡牌');
+      setSearchError(localizedError(result.error, 'scan_no_match'));
       // 顯示搜尋結果作為建議
       const searchResult = await searchCards(searchQuery, 5);
       setSearchResults(searchResult);
@@ -811,10 +822,8 @@ export default function ScanScreen({ navigation }: any) {
       <View style={styles.container}>
         <View style={styles.permissionContainer}>
           <Text style={styles.permissionIcon}>📷</Text>
-          <Text style={styles.permissionTitle}>需要相機權限</Text>
-          <Text style={styles.permissionText}>
-            掃描卡牌需要使用相機功能，請點擊下方按鈕以允許存取相機。
-          </Text>
+          <Text style={styles.permissionTitle}>{t('scan_permission_title')}</Text>
+          <Text style={styles.permissionText}>{t('scan_permission_web_body')}</Text>
           <TouchableOpacity 
             style={styles.permissionButton}
             onPress={async () => {
@@ -828,20 +837,20 @@ export default function ScanScreen({ navigation }: any) {
                 webStreamRef.current = stream;
                 setWebCameraStarted(true);
               } catch (e: any) {
-                setCameraError(e?.message || '無法開啟相機');
+                setCameraError(preferredLanguage === 'ja' ? t('scan_camera_open_failed') : (e?.message || t('scan_camera_open_failed')));
                 setIsCameraReady(false);
               }
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.permissionButtonText}>允許相機權限</Text>
+            <Text style={styles.permissionButtonText}>{t('scan_permission_allow')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={openSettings}
             activeOpacity={0.7}
           >
-            <Text style={styles.settingsButtonText}>打開設定</Text>
+            <Text style={styles.settingsButtonText}>{t('scan_open_settings')}</Text>
           </TouchableOpacity>
           {/* 相機權限卡住或裝置無鏡頭時的 fallback：改用相簿上傳 */}
           <TouchableOpacity
@@ -853,7 +862,7 @@ export default function ScanScreen({ navigation }: any) {
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.settingsButtonText}>🖼️ 改用相簿上傳（免相機）</Text>
+            <Text style={styles.settingsButtonText}>{t('scan_use_gallery')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -867,7 +876,7 @@ export default function ScanScreen({ navigation }: any) {
       return (
         <View style={styles.container}>
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>載入相機中...</Text>
+            <Text style={styles.loadingText}>{t('scan_camera_loading')}</Text>
           </View>
         </View>
       );
@@ -879,23 +888,21 @@ export default function ScanScreen({ navigation }: any) {
         <View style={styles.container}>
           <View style={styles.permissionContainer}>
             <Text style={styles.permissionIcon}>📷</Text>
-            <Text style={styles.permissionTitle}>需要相機權限</Text>
-            <Text style={styles.permissionText}>
-              掃描卡牌需要使用相機功能，請允許存取相機以使用此功能。
-            </Text>
+            <Text style={styles.permissionTitle}>{t('scan_permission_title')}</Text>
+            <Text style={styles.permissionText}>{t('scan_permission_native_body')}</Text>
             <TouchableOpacity 
               style={styles.permissionButton}
               onPress={requestPermission}
               activeOpacity={0.7}
             >
-              <Text style={styles.permissionButtonText}>允許相機權限</Text>
+              <Text style={styles.permissionButtonText}>{t('scan_permission_allow')}</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.settingsButton}
               onPress={openSettings}
               activeOpacity={0.7}
             >
-              <Text style={styles.settingsButtonText}>打開設定</Text>
+              <Text style={styles.settingsButtonText}>{t('scan_open_settings')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -910,7 +917,7 @@ export default function ScanScreen({ navigation }: any) {
       {!isCameraReady && !webGalleryMode && (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>相機初始化中...</Text>
+            <Text style={styles.loadingText}>{t('scan_camera_initializing')}</Text>
             {cameraError && (
               <View style={resultStyles.errorContainer}>
                 <Text style={resultStyles.errorText}>❌ {cameraError}</Text>
@@ -925,7 +932,7 @@ export default function ScanScreen({ navigation }: any) {
                     }
                   }}
                 >
-                  <Text style={resultStyles.retryText}>重試</Text>
+                  <Text style={resultStyles.retryText}>{t('common_retry')}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -936,16 +943,14 @@ export default function ScanScreen({ navigation }: any) {
 {isWeb && webGalleryMode ? (
         <View style={[styles.camera, styles.galleryModeContainer]}>
           <Text style={styles.galleryModeIcon}>🖼️</Text>
-          <Text style={styles.galleryModeTitle}>相簿上傳模式</Text>
-          <Text style={styles.galleryModeText}>
-            相機無法使用時，可從相簿選擇卡牌照片進行辨識。
-          </Text>
+          <Text style={styles.galleryModeTitle}>{t('scan_gallery_title')}</Text>
+          <Text style={styles.galleryModeText}>{t('scan_gallery_body')}</Text>
           <TouchableOpacity
             style={styles.permissionButton}
             onPress={pickFromGallery}
             activeOpacity={0.7}
           >
-            <Text style={styles.permissionButtonText}>選擇卡牌照片</Text>
+            <Text style={styles.permissionButtonText}>{t('scan_choose_photo')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.settingsButton}
@@ -955,7 +960,7 @@ export default function ScanScreen({ navigation }: any) {
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.settingsButtonText}>← 改回使用相機</Text>
+            <Text style={styles.settingsButtonText}>{t('scan_back_to_camera')}</Text>
           </TouchableOpacity>
         </View>
       ) : isWeb ? (
@@ -1078,7 +1083,7 @@ export default function ScanScreen({ navigation }: any) {
                 addCard(lastScannedCard, { force: true });
               }}
             >
-              <Text style={resultStyles.toastAddText}>＋ 再加入一張</Text>
+              <Text style={resultStyles.toastAddText}>{t('scan_add_another')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setLastScannedCard(null)}
@@ -1101,16 +1106,16 @@ export default function ScanScreen({ navigation }: any) {
                 setShowSearch(true);
               }}
             >
-              <Text style={resultStyles.retryText}>手動搜尋</Text>
+              <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
             </TouchableOpacity>
             {recognizedText ? (
               <TouchableOpacity
                 style={resultStyles.debugButton}
                 onPress={() => {
-                  Alert.alert('識別文字偵錯', `OCR 識別到的原始文字：\n\n"${recognizedText}"`);
+                  Alert.alert(t('scan_debug_title'), t('scan_debug_body', { text: recognizedText }));
                 }}
               >
-                <Text style={resultStyles.debugText}>查看識別文字</Text>
+                <Text style={resultStyles.debugText}>{t('scan_view_debug')}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -1126,7 +1131,7 @@ export default function ScanScreen({ navigation }: any) {
           </View>
           {/* 步驟清單 */}
           <View style={progressStyles.stepsRow}>
-            {['📷 拍攝', '📤 處理', '🤖 辨識', '✅ 完成'].map((label, i) => {
+            {[t('scan_step_capture'), t('scan_step_process'), t('scan_step_recognize'), t('scan_step_done')].map((label, i) => {
               const step = i + 1;
               const isActive = scanProgress === step;
               const isDone = scanProgress > step;
@@ -1163,13 +1168,13 @@ export default function ScanScreen({ navigation }: any) {
                 setShowSearch(true);
               }}
             >
-              <Text style={resultStyles.retryText}>手動搜尋</Text>
+              <Text style={resultStyles.retryText}>{t('scan_manual_search')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={resultStyles.retryButton}
               onPress={handleScan}
             >
-              <Text style={resultStyles.retryText}>重試掃描</Text>
+              <Text style={resultStyles.retryText}>{t('scan_retry_scan')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1178,7 +1183,7 @@ export default function ScanScreen({ navigation }: any) {
       {/* 搜尋建議列表 */}
       {searchResults.length > 0 && (
         <View style={resultStyles.suggestionsListContainer}>
-          <Text style={resultStyles.suggestionsTitle}>{candidateReason || '搜尋結果:'}</Text>
+          <Text style={resultStyles.suggestionsTitle}>{candidateReason || t('scan_results')}</Text>
           <ScrollView style={resultStyles.suggestionsList}>
             {searchResults.map((card, index) => (
               <TouchableOpacity 
@@ -1189,7 +1194,7 @@ export default function ScanScreen({ navigation }: any) {
                 <Text style={resultStyles.listItemName}>{card.name}</Text>
                 <Text style={resultStyles.listItemMeta}>{card.cardNumber} · {card.rarity} · {card.series}</Text>
                 <Text style={resultStyles.listItemPrice}>
-                  ¥{card.sellPrice?.toLocaleString() || '尚無交易'}
+                  ¥{card.sellPrice?.toLocaleString() || t('scan_no_trade')}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1206,10 +1211,10 @@ export default function ScanScreen({ navigation }: any) {
       >
         <View style={modalStyles.modalOverlay}>
           <View style={modalStyles.modalContent}>
-            <Text style={modalStyles.modalTitle}>🔍 搜尋卡牌</Text>
+            <Text style={modalStyles.modalTitle}>{t('scan_search_modal')}</Text>
             <TextInput
               style={modalStyles.searchInput}
-              placeholder="輸入卡牌名稱或編號..."
+              placeholder={t('scan_search_placeholder')}
               placeholderTextColor="#999"
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -1220,7 +1225,7 @@ export default function ScanScreen({ navigation }: any) {
                 style={modalStyles.searchButton}
                 onPress={handleSearch}
               >
-                <Text style={modalStyles.searchButtonText}>搜尋</Text>
+                <Text style={modalStyles.searchButtonText}>{t('common_search')}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={modalStyles.cancelButton}
@@ -1229,7 +1234,7 @@ export default function ScanScreen({ navigation }: any) {
                   setSearchQuery('');
                 }}
               >
-                <Text style={modalStyles.cancelText}>取消</Text>
+                <Text style={modalStyles.cancelText}>{t('common_cancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>

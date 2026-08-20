@@ -15,16 +15,17 @@ import { showAlert } from '../utils/platformAlert';
 import { useWatchlistStore } from '../stores/watchlistStore';
 import { usePriceAlertStore, sortedAlerts, sortedPending } from '../stores/priceAlertStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useTranslation } from '../i18n';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { syncAlertRemove } from '../services/priceAlertSync';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
 import {
-  buildPrintingIndex, pendingPrompt, resolvePrintingImage,
+  buildPrintingIndex, resolvePrintingImage,
   type PendingAlert, type PrintingOption,
 } from '../utils/alertMigration';
 import {
-  evaluateAlertStatus, formatAlertAmount, formatInterval, ALERT_STATUS_LABELS,
-  type AlertPrice, type PriceAlert,
+  evaluateAlertStatus, formatAlertAmount, formatInterval,
+  type AlertPrice, type PriceAlert, type AlertStatus,
 } from '../utils/priceAlerts';
 import { uniformGridItemStyle } from '../utils/gridLayout';
 
@@ -35,6 +36,7 @@ type Row =
   | { kind: 'alert'; key: string; alert: PriceAlert };
 
 export default function WatchlistScreen({ navigation }: any) {
+  const { t } = useTranslation();
   const legacyTracked = useWatchlistStore((s) => s.items);
   const clearLegacyTracked = useWatchlistStore((s) => s.clearAll);
   const alerts = usePriceAlertStore((s) => s.alerts);
@@ -49,6 +51,12 @@ export default function WatchlistScreen({ navigation }: any) {
   const [db, setDb] = useState<CardDatabase | null>(null);
   const [dbState, setDbState] = useState<DbState>('loading');
   const [alertTarget, setAlertTarget] = useState<PriceAlertTarget | null>(null);
+  const statusLabel = (status: AlertStatus) => t(`watchlist_status_${status.toLowerCase()}` as Parameters<typeof t>[0]);
+  const pendingPrompt = (item: PendingAlert) => t('watchlist_pending_prompt', {
+    needs: item.needs
+      .map((need) => t(`watchlist_pending_need_${need.toLowerCase()}` as Parameters<typeof t>[0]))
+      .join('、'),
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -117,12 +125,12 @@ export default function WatchlistScreen({ navigation }: any) {
 
   const confirmRemoveAlert = (alert: PriceAlert) => {
     showAlert(
-      '移除到價提醒',
-      `確定要移除「${alert.name}（${alert.printingLabel || alert.printing}）」的到價提醒嗎？`,
+      t('watchlist_remove_alert'),
+      t('watchlist_remove_alert_confirm', { name: alert.name, printing: alert.printingLabel || alert.printing }),
       [
-        { text: '取消', style: 'cancel' },
+        { text: t('common_cancel'), style: 'cancel' },
         {
-          text: '移除',
+          text: t('common_remove'),
           style: 'destructive',
           onPress: () => {
             removeAlert(alert.cardNumber, alert.printing);
@@ -135,11 +143,11 @@ export default function WatchlistScreen({ navigation }: any) {
 
   const confirmRemovePending = (item: PendingAlert) => {
     showAlert(
-      '移除到價提醒',
-      `「${item.name}」尚未選定版本，確定要移除嗎？`,
+      t('watchlist_remove_alert'),
+      t('watchlist_remove_pending_confirm', { name: item.name }),
       [
-        { text: '取消', style: 'cancel' },
-        { text: '移除', style: 'destructive', onPress: () => dismissPending(item.cardNumber) },
+        { text: t('common_cancel'), style: 'cancel' },
+        { text: t('common_remove'), style: 'destructive', onPress: () => dismissPending(item.cardNumber) },
       ]
     );
   };
@@ -177,15 +185,22 @@ export default function WatchlistScreen({ navigation }: any) {
           <Text style={styles.meta} numberOfLines={1}>
             {alert.cardNumber} · {alert.printingLabel || alert.printing}
           </Text>
-          <Text style={styles.interval}>期望入手 {formatInterval(alert)}</Text>
+          <Text style={styles.interval}>
+            {t('watchlist_desired_interval', { interval: formatInterval(alert) })}
+          </Text>
           <Text style={styles.status} testID={`price-alert-status-${alert.cardNumber}|${alert.printing}`}>
             {dbState === 'loading'
-              ? '目前參考售價：載入中'
+              ? t('watchlist_price_loading')
               : dbState === 'unavailable'
-                ? '目前參考售價：價格資料無法載入'
+                ? t('watchlist_price_unavailable')
                 : price
-                  ? `目前參考售價 ${formatAlertAmount(price.price, price.currency)}・${ALERT_STATUS_LABELS[status]}`
-                  : `目前參考售價：暫無資料・${ALERT_STATUS_LABELS[status]}`}
+                  ? t('watchlist_current_price', {
+                      price: formatAlertAmount(price.price, price.currency),
+                      status: statusLabel(status),
+                    })
+                  : t('watchlist_current_unpriced', {
+                      status: statusLabel(status),
+                    })}
           </Text>
         </View>
         <View style={styles.actions}>
@@ -193,19 +208,19 @@ export default function WatchlistScreen({ navigation }: any) {
             style={styles.action}
             onPress={() => editAlert(alert)}
             accessibilityRole="button"
-            accessibilityLabel={`編輯 ${alert.name} 的到價提醒`}
+            accessibilityLabel={t('watchlist_edit_a11y', { name: alert.name })}
             testID={`price-alert-edit-${alert.cardNumber}|${alert.printing}`}
           >
-            <Text style={styles.link}>編輯</Text>
+            <Text style={styles.link}>{t('common_edit')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.action}
             onPress={() => confirmRemoveAlert(alert)}
             accessibilityRole="button"
-            accessibilityLabel={`移除 ${alert.name} 的到價提醒`}
+            accessibilityLabel={t('watchlist_remove_a11y', { name: alert.name })}
             testID={`price-alert-delete-${alert.cardNumber}|${alert.printing}`}
           >
-            <Text style={styles.destructive}>移除</Text>
+            <Text style={styles.destructive}>{t('common_remove')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -223,7 +238,9 @@ export default function WatchlistScreen({ navigation }: any) {
         <Text style={styles.meta} numberOfLines={1}>{item.cardNumber}</Text>
         <Text style={styles.pendingPrompt}>{pendingPrompt(item)}</Text>
         {item.legacyTargetPrice !== null && (
-          <Text style={styles.status}>先前的目標價 {item.legacyTargetPrice.toLocaleString('en-US')}，選定版本後即可套用</Text>
+          <Text style={styles.status}>
+            {t('watchlist_previous_target', { price: item.legacyTargetPrice.toLocaleString('en-US') })}
+          </Text>
         )}
       </View>
       <View style={styles.actions}>
@@ -231,19 +248,19 @@ export default function WatchlistScreen({ navigation }: any) {
           style={styles.action}
           onPress={() => resolvePending(item)}
           accessibilityRole="button"
-          accessibilityLabel={`設定 ${item.name} 的到價提醒版本與價格區間`}
+          accessibilityLabel={t('watchlist_resolve_a11y', { name: item.name })}
           testID={`price-alert-resolve-${item.cardNumber}`}
         >
-          <Text style={styles.link}>設定</Text>
+          <Text style={styles.link}>{t('watchlist_set')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.action}
           onPress={() => confirmRemovePending(item)}
           accessibilityRole="button"
-          accessibilityLabel={`移除 ${item.name}`}
+          accessibilityLabel={t('watchlist_remove_a11y', { name: item.name })}
           testID={`price-alert-pending-delete-${item.cardNumber}`}
         >
-          <Text style={styles.destructive}>移除</Text>
+          <Text style={styles.destructive}>{t('common_remove')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -256,17 +273,14 @@ export default function WatchlistScreen({ navigation }: any) {
       <SafeAreaView style={styles.emptyContainer} edges={['bottom']} testID="price-alert-empty">
         {editor}
         <Text style={styles.emptyIcon}>🔔</Text>
-        <Text style={styles.emptyTitle}>還沒有到價提醒</Text>
-        <Text style={styles.emptyHint}>
-          選定卡片的精確版本並設定期望入手價格區間，{'\n'}
-          價格進入區間時就會通知你。
-        </Text>
+        <Text style={styles.emptyTitle}>{t('watchlist_empty_title')}</Text>
+        <Text style={styles.emptyHint}>{t('watchlist_empty_detail')}</Text>
         <View style={styles.emptyActions}>
           <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('Search')}>
-            <Text style={styles.emptyBtnText}>🔍 前往搜尋</Text>
+            <Text style={styles.emptyBtnText}>🔍 {t('nav_search')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.emptyBtn, styles.emptyBtnAlt]} onPress={() => navigation.navigate('Scan')}>
-            <Text style={styles.emptyBtnText}>📷 掃描卡牌</Text>
+            <Text style={styles.emptyBtnText}>📷 {t('nav_scan')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -286,10 +300,8 @@ export default function WatchlistScreen({ navigation }: any) {
         contentContainerStyle={[styles.list, isDesktop && styles.listDesktop]}
         ListHeaderComponent={
           <View testID="price-alert-section">
-            <Text style={styles.sectionTitle}>到價提醒</Text>
-            <Text style={styles.sectionHint}>
-              比對你選定版本的玩家「參考售價」；不採用店家收購價或跨版本價格。價格進入區間時通知一次。
-            </Text>
+            <Text style={styles.sectionTitle}>{t('watchlist_title')}</Text>
+            <Text style={styles.sectionHint}>{t('watchlist_exact_price_hint')}</Text>
           </View>
         }
       />

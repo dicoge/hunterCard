@@ -4,7 +4,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { COLORS, convertPrice } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { openUrl } from '../utils/openUrl';
-import { showAlert } from '../utils/platformAlert';
 import { useSettingsStore } from '../store/settingsStore';
 import { useDeckStore } from '../store/deckStore';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
@@ -20,12 +19,12 @@ import { computeValidatedPriceTrend } from '../utils/priceTrend';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
+import { useTranslation } from '../i18n';
 import { ownershipKey } from '../utils/deckRules';
 
 const { width } = Dimensions.get('window');
 
 const gradeLabels: Record<string, string> = { debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot' };
-const typeLabels: Record<string, string> = { Oshi: '推し（主推卡）', Member: '成員', Support: '支援卡', Energy: '能量', Buzz: 'Buzz' };
 const rarityColors: Record<string, string> = { N: '#6b7280', C: '#6b7280', U: '#10b981', R: '#3b82f6', SR: '#f59e0b' };
 const japaneseKanaRegex = /[\u3040-\u309F\u30A0-\u30FF]/;
 
@@ -82,6 +81,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
   const { isDesktop } = useBreakpoint();
+  const { t } = useTranslation();
   const collection = useDeckStore((state) => state.collection);
   const adjustOwned = useDeckStore((state) => state.adjustOwned);
   const setOwned = useDeckStore((state) => state.setOwned);
@@ -89,7 +89,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
   if (!card) {
     return (
       <View style={styles.center}>
-        <Text style={{ color: COLORS.text }}>無法載入卡牌資料</Text>
+        <Text style={{ color: COLORS.text }}>{t('card_detail_load_failed')}</Text>
       </View>
     );
   }
@@ -112,20 +112,27 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const displayName = preferredLanguage === 'zh' && nameZH ? nameZH : nameJP;
   const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
-  const typeLabel = card.normalized?.categoryLabel || typeLabels[card.type] || card.type || '';
+  const typeLabels: Record<string, string> = {
+    Oshi: t('card_detail_type_oshi'), Member: t('card_detail_type_member'),
+    Support: t('card_detail_type_support'), Energy: t('card_detail_type_energy'), Buzz: 'Buzz',
+  };
+  const typeLabel = card.normalized?.categoryLabel || typeLabels[card.type] || card.type || '-';
   const skillsZhContainsJapanese = containsJapaneseKana(card.skillsZh);
   const displaySkills = preferredLanguage === 'zh'
     ? (skillsZhContainsJapanese ? (card.skillsJp || card.skillsZh) : (card.skillsZh || card.skillsJp))
     : (card.skillsJp || card.skillsZh);
   const skillsFallbackNote = preferredLanguage === 'zh' && skillsZhContainsJapanese && card.skillsJp
-    ? '暫無中文翻譯'
+    ? t('card_detail_translation_unavailable')
     : undefined;
 
   const effects = card.effects || parseEffects(allKW);
   const colorNames = card.colorNames && card.colorNames.length > 0
     ? card.colorNames
     : (card.color ? (Array.isArray(card.color) ? card.color : [card.color]).filter(Boolean).map((c: string) => {
-        const map: Record<string, string> = { white: '白', blue: '藍', green: '綠', red: '紅', purple: '紫', yellow: '黃', colorless: '無色', multicolor: '多色' };
+        const map: Record<string, string> = Object.fromEntries(
+          ['white', 'blue', 'green', 'red', 'purple', 'yellow', 'colorless', 'multicolor']
+            .map((color) => [color, t(`color_${color}` as Parameters<typeof t>[0])]),
+        );
         return map[c] || c;
       }) : []);
   
@@ -221,10 +228,10 @@ export default function CardDetailScreen({ route, navigation }: any) {
   };
 
   const alertButtonLabel = cardAlerts.length === 1
-    ? `🔔 到價提醒 ${formatInterval(cardAlerts[0])}（點擊編輯）`
+    ? t('card_detail_alert_one', { interval: formatInterval(cardAlerts[0]) })
     : cardAlerts.length > 1
-      ? `🔔 已設定 ${cardAlerts.length} 個版本的到價提醒`
-      : '🔕 設定到價提醒';
+      ? t('card_detail_alert_many', { count: cardAlerts.length })
+      : t('card_detail_alert_set');
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingBottom: insets.bottom }}>
@@ -251,7 +258,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
             <Text style={styles.fallbackId}>{id}</Text>
             <Text style={styles.fallbackName}>{displayName}</Text>
             {displayNameSub && <Text style={styles.fallbackTw}>{displayNameSub}</Text>}
-            <Text style={styles.fallbackHint}>點擊查看官方卡面 →</Text>
+            <Text style={styles.fallbackHint}>{t('card_detail_official_image')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -261,7 +268,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       {collectionVersion && (
         <View style={styles.collectionCard} testID="card-detail-collection">
           <View style={styles.collectionCopy}>
-            <Text style={styles.collectionTitle}>收藏數量</Text>
+            <Text style={styles.collectionTitle}>{t('deck_collection_title')}</Text>
             <Text style={styles.collectionVersion} numberOfLines={2}>{collectionVersion.name}</Text>
           </View>
           <View style={styles.collectionControls}>
@@ -270,7 +277,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
               onPress={() => adjustOwned(id, collectionVersion.printing, -1)}
               disabled={ownedQuantity <= 0}
               accessibilityRole="button"
-              accessibilityLabel={`收藏 -1 ${displayName}`}
+              accessibilityLabel={t('deck_collection_decrease_a11y', { name: displayName })}
               testID="card-detail-collection-dec"
             >
               <Text style={[styles.collectionButtonText, ownedQuantity <= 0 && styles.collectionButtonDisabled]}>－</Text>
@@ -280,7 +287,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
               style={styles.collectionButton}
               onPress={() => adjustOwned(id, collectionVersion.printing, 1)}
               accessibilityRole="button"
-              accessibilityLabel={`收藏 +1 ${displayName}`}
+              accessibilityLabel={t('deck_collection_increase_a11y', { name: displayName })}
               testID="card-detail-collection-inc"
             >
               <Text style={styles.collectionButtonText}>＋</Text>
@@ -289,10 +296,10 @@ export default function CardDetailScreen({ route, navigation }: any) {
               <TouchableOpacity
                 onPress={() => setOwned(id, collectionVersion.printing, 0)}
                 accessibilityRole="button"
-                accessibilityLabel={`移除收藏 ${displayName}`}
+                accessibilityLabel={t('deck_collection_remove_a11y', { name: displayName })}
                 testID="card-detail-collection-remove"
               >
-                <Text style={styles.collectionRemove}>移除</Text>
+                <Text style={styles.collectionRemove}>{t('common_remove')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -307,7 +314,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
             onPress={openAlertEditor}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="設定到價提醒"
+            accessibilityLabel={t('card_detail_alert_a11y')}
             testID="card-price-alert-chip"
           >
             <Text style={[styles.watchlistChipText, cardAlerts.length > 0 ? styles.watchlistChipTextActive : null]}>
@@ -322,7 +329,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
         <View style={styles.priceHeader}>
           <Text style={styles.priceSourceName}>🏪 遊々亭</Text>
           <Text style={styles.priceBadge}>
-            {hasActualPrice ? '實際售價' : '暫無資料'}
+            {hasActualPrice ? t('card_detail_actual_price') : t('card_detail_no_data')}
           </Text>
         </View>
         {hasActualPrice && hasMultipleVariants ? (
@@ -338,8 +345,8 @@ export default function CardDetailScreen({ route, navigation }: any) {
             })}
             <Text style={styles.variantHint}>
               {FEATURES.priceSpread
-                ? '👇 於下方「市場數據」可選擇版本，買賣差價與漲跌會隨選擇更新'
-                : '👇 於下方「市場數據」可選擇版本，售價會隨選擇更新'}
+                ? t('card_detail_variant_hint_spread')
+                : t('card_detail_variant_hint')}
             </Text>
           </View>
         ) : hasActualPrice ? (
@@ -349,18 +356,18 @@ export default function CardDetailScreen({ route, navigation }: any) {
         {(() => {
           const converted = convertPrice(actualPrice, preferredCurrency);
           return (
-            <Text style={styles.priceNote}>💰 約 {converted.symbol}{converted.value?.toLocaleString()}（{preferredCurrency}）</Text>
+            <Text style={styles.priceNote}>{t('card_detail_approx_price', { price: `${converted.symbol}${converted.value?.toLocaleString()}`, currency: preferredCurrency })}</Text>
           );
         })()}
         {priceName ? (
           <Text style={styles.priceNote}>📋 {priceName}</Text>
         ) : null}</>
         ) : (
-          <Text style={styles.noPriceText}>暫無資料</Text>
+          <Text style={styles.noPriceText}>{t('card_detail_no_data')}</Text>
         )}
         {FEATURES.trendPrediction ? <PriceTrend trend={detailPriceTrend} /> : null}
         <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
-          <Text style={styles.checkPriceBtnText}>🔍 查看遊々亭即時價格 →</Text>
+          <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -370,7 +377,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
           漲跌預測 / trendScore / 信心度 / YT / 新聞情緒 → Store MVP 隱藏（DIC-908）。 */}
       {FEATURES.trendPrediction && !hasMultipleVariants && trend && isValidatedTrendPrediction(trend, card) && (
         <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
-          <Text style={styles.sectionTitle}>📈 價格趨勢預測</Text>
+          <Text style={styles.sectionTitle}>{t('card_detail_prediction_title')}</Text>
           <PriceTrendBadge
             trend={trend.trend}
             score={trend.score}
@@ -379,9 +386,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
           />
           {/* 各項因子貢獻 */}
           <View style={styles.componentSection}>
-            <Text style={styles.componentTitle}>因子貢獻</Text>
+            <Text style={styles.componentTitle}>{t('card_detail_factors')}</Text>
             <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>📊 價格趨勢 (60%)</Text>
+              <Text style={styles.componentLabel}>{t('card_detail_factor_price')}</Text>
               <View style={styles.componentBarBg}>
                 <View style={[styles.componentBarFill, {
                   width: `${Math.min(Math.abs(trend.components.priceTrend) * 100, 100)}%`,
@@ -395,7 +402,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
               </Text>
             </View>
             <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>📺 YT 訂閱 (20%)</Text>
+              <Text style={styles.componentLabel}>{t('card_detail_factor_youtube')}</Text>
               <View style={styles.componentBarBg}>
                 <View style={[styles.componentBarFill, {
                   width: `${Math.min(Math.abs(trend.components.ytTrend) * 200, 100)}%`,
@@ -409,7 +416,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
               </Text>
             </View>
             <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>📰 新聞情緒 (20%)</Text>
+              <Text style={styles.componentLabel}>{t('card_detail_factor_news')}</Text>
               <View style={styles.componentBarBg}>
                 <View style={[styles.componentBarFill, {
                   width: `${Math.min(Math.abs(trend.components.newsSentiment) * 100, 100)}%`,
@@ -423,7 +430,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
               </Text>
             </View>
             <Text style={styles.dataPointsNote}>
-              基於 {trend.dataPoints} 天的價格資料
+              {t('card_detail_data_days', { count: trend.dataPoints })}
             </Text>
           </View>
         </View>
@@ -445,13 +452,13 @@ export default function CardDetailScreen({ route, navigation }: any) {
         {nameEN && nameEN !== nameJP && nameEN !== nameZH && <Text style={styles.nameEN}>{nameEN}</Text>}
 
         {typeLabel && (
-          <InfoRow label="類型" value={typeLabel} />
+          <InfoRow label={t('card_detail_type_label')} value={typeLabel} />
         )}
         {colorNames.length > 0 && (
-          <InfoRow label="顏色" value={colorNames.join(' / ')} />
+          <InfoRow label={t('card_detail_color_label')} value={colorNames.join(' / ')} />
         )}
         {seriesNames.length > 0 && (
-          <InfoRow label="系列" value={seriesNames.join(' / ')} />
+          <InfoRow label={t('card_detail_series_label')} value={seriesNames.join(' / ')} />
         )}
         {tags.length > 0 && (
           <InfoRow label="Tag" value={tags.join(' / ')} />
@@ -467,7 +474,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       {/* ====== EFFECT TEXTS ====== */}
       {(effects.length > 0 || card.type === 'Oshi') && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>卡牌效果</Text>
+          <Text style={styles.sectionTitle}>{t('card_detail_effects')}</Text>
           {effects.length > 0 ? (
             effects.map((kw: string, i: number) => (
               <View key={i} style={styles.effectBlock}>
@@ -475,17 +482,14 @@ export default function CardDetailScreen({ route, navigation }: any) {
               </View>
             ))
           ) : (
-            <Text style={styles.noEffectText}>
-              推い卡為牌組「主推卡」代表，本身無效果文本。{'\n'}
-              其能力由牌組中同名成員卡所表現。
-            </Text>
+            <Text style={styles.noEffectText}>{t('card_detail_oshi_no_effect')}</Text>
           )}
         </View>
       )}
 
       {/* ====== SEARCH KEYWORDS ====== */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>搜尋關鍵字</Text>
+        <Text style={styles.sectionTitle}>{t('card_detail_keywords')}</Text>
         <View style={styles.tagWrap}>
           {nameJP && <Tag text={nameJP} />}
           {nameZH && <Tag text={nameZH} />}
@@ -495,10 +499,10 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
       {/* ====== EXTERNAL LINKS ====== */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>外部連結</Text>
-        <LinkButton icon="🏛️" text="官方卡表" url={officialUrl} />
-        <LinkButton icon="🏪" text="遊々亭（價格查詢）" url={yuyuUrl} />
-        <LinkButton icon="🔄" text="Carousell 二手價格" url={`https://www.carousell.com.tw/search/?q=${encodeURIComponent(id)}`} />
+        <Text style={styles.sectionTitle}>{t('card_detail_external_links')}</Text>
+        <LinkButton icon="🏛️" text={t('card_detail_official_list')} url={officialUrl} />
+        <LinkButton icon="🏪" text={t('card_detail_yuyu_link')} url={yuyuUrl} />
+        <LinkButton icon="🔄" text={t('card_detail_carousell_link')} url={`https://www.carousell.com.tw/search/?q=${encodeURIComponent(id)}`} />
       </View>
 
       {/* ====== 到價提醒 BUTTON ====== */}
@@ -509,7 +513,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
             onPress={openAlertEditor}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="設定到價提醒"
+            accessibilityLabel={t('card_detail_alert_a11y')}
             testID="card-price-alert-button"
           >
             <Text style={[styles.watchlistBtnText, cardAlerts.length > 0 ? styles.watchlistBtnTextActive : null]}>
@@ -557,6 +561,7 @@ function SkillCard({ badge, badgeColor, meta, name, effect }: {
 }
 
 function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?: string }) {
+  const { t } = useTranslation();
   const hasAny = skills && (
     skills.oshiSkill || skills.spOshiSkill ||
     (skills.arts && skills.arts.length) ||
@@ -566,16 +571,16 @@ function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?:
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>🎯 技能說明</Text>
+      <Text style={styles.sectionTitle}>{t('card_detail_skills_title')}</Text>
       {!hasAny ? (
-        <Text style={styles.noSkillText}>此卡無技能資料</Text>
+        <Text style={styles.noSkillText}>{t('card_detail_no_skills')}</Text>
       ) : (
         <>
           {skills!.oshiSkill && (
             <SkillCard
               badge="推しスキル"
               badgeColor="#f59e0b"
-              meta={skills!.oshiSkill.cost ? `ホロパワー ${skills!.oshiSkill.cost}` : undefined}
+              meta={skills!.oshiSkill.cost ? t('card_detail_holo_power', { cost: skills!.oshiSkill.cost }) : undefined}
               name={skills!.oshiSkill.name}
               effect={skills!.oshiSkill.effect}
             />
@@ -584,7 +589,7 @@ function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?:
             <SkillCard
               badge="SP推しスキル"
               badgeColor="#ef4444"
-              meta={skills!.spOshiSkill.cost ? `ホロパワー ${skills!.spOshiSkill.cost}` : undefined}
+              meta={skills!.spOshiSkill.cost ? t('card_detail_holo_power', { cost: skills!.spOshiSkill.cost }) : undefined}
               name={skills!.spOshiSkill.name}
               effect={skills!.spOshiSkill.effect}
             />
@@ -592,18 +597,18 @@ function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?:
           {skills!.arts?.map((art, i) => (
             <SkillCard
               key={`art${i}`}
-              badge="アーツ"
+              badge={t('card_detail_art')}
               badgeColor="#3b82f6"
-              meta={[art.cost ? `${art.cost}` : '', art.damage ? `傷害 ${art.damage}` : ''].filter(Boolean).join('　')}
+              meta={[art.cost ? `${art.cost}` : '', art.damage ? t('card_detail_damage', { value: art.damage }) : ''].filter(Boolean).join('　')}
               name={art.name}
               effect={art.effect}
             />
           ))}
           {skills!.abilityText ? (
-            <SkillCard badge="能力テキスト" badgeColor="#10b981" effect={skills!.abilityText} />
+            <SkillCard badge={t('card_detail_ability_text')} badgeColor="#10b981" effect={skills!.abilityText} />
           ) : null}
           {skills!.keywords?.map((kw, i) => (
-            <SkillCard key={`kw${i}`} badge={kw.label || 'キーワード'} effect={kw.effect} />
+            <SkillCard key={`kw${i}`} badge={kw.label || t('card_detail_keyword')} effect={kw.effect} />
           ))}
           {fallbackNote ? <Text style={styles.skillFallbackNote}>{fallbackNote}</Text> : null}
         </>
@@ -613,15 +618,16 @@ function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?:
 }
 
 // ─── Market data panel ────────────────────────────────
-function formatCount(n?: number | null): string {
+function formatCount(n: number | null | undefined, language: 'zh' | 'ja'): string {
   if (n == null || typeof n !== 'number' || isNaN(n)) return '—';
-  const abs = Math.abs(n);
-  if (abs >= 1e8) return (n / 1e8).toFixed(2) + '億';
-  if (abs >= 1e4) return (n / 1e4).toFixed(1) + '萬';
-  return n.toLocaleString();
+  return new Intl.NumberFormat(language === 'ja' ? 'ja-JP' : 'zh-TW', {
+    notation: Math.abs(n) >= 10_000 ? 'compact' : 'standard',
+    maximumFractionDigits: 2,
+  }).format(n);
 }
 
 function MarketDataPanel({ card }: { card: any }) {
+  const { t, language } = useTranslation();
   // 同卡號不同掛牌（原印／重印／パラレル／サイン）的價格都在 card.prices 內；卡號層級的
   // sellPrice 是「所有版本最低價」，直接顯示會混版。改成對齊到來源掛牌的單一版本。
   const versions = buildPriceVersions(card);
@@ -653,20 +659,19 @@ function MarketDataPanel({ card }: { card: any }) {
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>📊 市場數據</Text>
+      <Text style={styles.sectionTitle}>{t('card_detail_market_data')}</Text>
 
       {/* 版本選擇 — 對齊 rarity/パラレル/サイン 版，避免混版價格 */}
       {aligned && versionLabel ? (
         <Text style={styles.versionLabel}>
-          價格對應版本：{versionLabel}{manualPick ? '（已手動選擇）' : ''}
+          {t('card_detail_price_version', { version: versionLabel, manual: manualPick ? t('card_detail_manual_selected') : '' })}
         </Text>
       ) : null}
       {!aligned ? (
         <View style={styles.versionWarnBox}>
-          <Text style={styles.versionWarnTitle}>⚠️ 版本待確認</Text>
+          <Text style={styles.versionWarnTitle}>{t('card_detail_version_pending')}</Text>
           <Text style={styles.versionWarnText}>
-            無法依此卡 rarity{displayRarity ? `「${displayRarity}」` : ''}唯一對齊價格版本（{resolution.reason}）。
-            以下價格未分版，請先選擇實際版本再參考。
+            {t('card_detail_version_pending_body', { rarity: displayRarity ? `「${displayRarity}」` : '', reason: resolution.reason })}
           </Text>
         </View>
       ) : null}
@@ -693,76 +698,76 @@ function MarketDataPanel({ card }: { card: any }) {
       {/* 買賣差價 / 店家收購價 — Store MVP 隱藏（DIC-908）；正常售價仍於上方價格區顯示。 */}
       {FEATURES.priceSpread && (hasSpread ? (
         <View style={styles.marketBlock}>
-          <Text style={styles.marketBlockTitle}>💱 買賣差價（{versionLabel}）</Text>
+          <Text style={styles.marketBlockTitle}>{t('card_detail_spread_title', { version: versionLabel })}</Text>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
+            <Text style={styles.marketLabel}>{t('card_detail_buy_cost')}</Text>
             <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
           </View>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
+            <Text style={styles.marketLabel}>{t('card_detail_sell_value')}</Text>
             <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
           </View>
           {isPriceReliable ? (
             <View style={styles.marketRow}>
-              <Text style={styles.marketLabel}>差價</Text>
+              <Text style={styles.marketLabel}>{t('card_detail_spread')}</Text>
               <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
                 {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
               </Text>
             </View>
           ) : (
             <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
-              ⚠️ 價格待確認
+              {t('card_detail_price_pending')}
             </Text>
           )}
-          <Text style={styles.marketNote}>※ 買入賣出價均為此版本（{versionLabel}）資料</Text>
+          <Text style={styles.marketNote}>{t('card_detail_same_version_note', { version: versionLabel })}</Text>
         </View>
       ) : buyMissing ? (
         <View style={styles.marketBlock}>
-          <Text style={styles.marketBlockTitle}>💱 買賣差價（{versionLabel}）</Text>
+          <Text style={styles.marketBlockTitle}>{t('card_detail_spread_title', { version: versionLabel })}</Text>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>買入成本（遊々亭賣價）</Text>
+            <Text style={styles.marketLabel}>{t('card_detail_buy_cost')}</Text>
             <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
           </View>
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>賣出可得（店家收購）</Text>
-            <Text style={[styles.marketValue, { color: COLORS.textSecondary }]}>此版本暫無收購價</Text>
+            <Text style={styles.marketLabel}>{t('card_detail_sell_value')}</Text>
+            <Text style={[styles.marketValue, { color: COLORS.textSecondary }]}>{t('card_detail_buy_unavailable')}</Text>
           </View>
-          <Text style={styles.marketNote}>※ 此版本無對應店家收購價；不借用其他版本價格計算差價</Text>
+          <Text style={styles.marketNote}>{t('card_detail_buy_unavailable_note')}</Text>
         </View>
       ) : null)}
 
       {/* YouTube 成員數據 / 訂閱・觀看成長 — Store MVP 隱藏（DIC-908） */}
       {FEATURES.ytStats && hasDisplayableSubscriberStats(ytStats) && (
       <View style={styles.marketBlock}>
-        <Text style={styles.marketBlockTitle}>📺 YouTube 成員數據</Text>
+        <Text style={styles.marketBlockTitle}>{t('card_detail_youtube_data')}</Text>
         <View style={styles.marketRow}>
-          <Text style={styles.marketLabel}>訂閱數</Text>
-          <Text style={styles.marketValue}>{formatCount(ytStats?.subscriberCount)}</Text>
+          <Text style={styles.marketLabel}>{t('card_detail_subscribers')}</Text>
+          <Text style={styles.marketValue}>{formatCount(ytStats?.subscriberCount, language)}</Text>
         </View>
         <View style={styles.marketRow}>
-          <Text style={styles.marketLabel}>總觀看數</Text>
-          <Text style={styles.marketValue}>{formatCount(ytStats?.totalViewCount)}</Text>
+          <Text style={styles.marketLabel}>{t('card_detail_total_views')}</Text>
+          <Text style={styles.marketValue}>{formatCount(ytStats?.totalViewCount, language)}</Text>
         </View>
         {ytStats?.growth_1d != null ? (
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>單日成長</Text>
+            <Text style={styles.marketLabel}>{t('card_detail_growth_day')}</Text>
             <Text style={[styles.marketValue, { color: ytStats.growth_1d >= 0 ? '#10b981' : '#ef4444' }]}>
-              {ytStats.growth_1d >= 0 ? '+' : ''}{formatCount(ytStats.growth_1d)}
+              {ytStats.growth_1d >= 0 ? '+' : ''}{formatCount(ytStats.growth_1d, language)}
             </Text>
           </View>
         ) : null}
         {ytStats?.growth_7d != null ? (
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>7 日成長</Text>
+            <Text style={styles.marketLabel}>{t('card_detail_growth_week')}</Text>
             <Text style={[styles.marketValue, { color: ytStats.growth_7d >= 0 ? '#10b981' : '#ef4444' }]}>
-              {ytStats.growth_7d >= 0 ? '+' : ''}{formatCount(ytStats.growth_7d)}
+              {ytStats.growth_7d >= 0 ? '+' : ''}{formatCount(ytStats.growth_7d, language)}
             </Text>
           </View>
         ) : null}
         {ytStats?.viewCount_daily != null ? (
           <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>單日觀看</Text>
-            <Text style={styles.marketValue}>{formatCount(ytStats.viewCount_daily)}</Text>
+            <Text style={styles.marketLabel}>{t('card_detail_views_day')}</Text>
+            <Text style={styles.marketValue}>{formatCount(ytStats.viewCount_daily, language)}</Text>
           </View>
         ) : null}
       </View>

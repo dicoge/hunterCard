@@ -11,8 +11,8 @@ const e2e = fs.readFileSync('scripts/verify-dic1086-production-e2e.mjs', 'utf8')
 
 assert.ok(editor.includes('width <= 480'), 'phone panel switching must activate at <=480px');
 assert.ok(editor.includes('deck-mobile-panel-switch'));
-for (const label of ['選卡', '推し', '主牌', 'エール', '缺卡']) {
-  assert.ok(editor.includes(`'${label}'`), `mobile switch is missing ${label}`);
+for (const key of ['deck_choose_card', 'deck_zone_oshi', 'deck_zone_main', 'deck_zone_yell', 'deck_shortage']) {
+  assert.ok(editor.includes(`'${key}'`), `mobile switch is missing ${key}`);
 }
 assert.ok(editor.includes('deck-phone-progress'));
 assert.ok(editor.includes('stats.total}/{stats.totalTarget}'));
@@ -36,6 +36,9 @@ assert.ok(collection.includes('loadCardDatabase'), 'Collection must browse exact
 assert.ok(collection.includes('<Image'), 'Collection must render card images');
 assert.ok(collection.includes('collection-search'));
 assert.ok(collection.includes('collection-filters'));
+assert.ok(collection.includes('useTranslation'), 'Collection must react to locale changes');
+assert.ok(collection.includes("t('collection_title')"), 'Collection title must be localized');
+assert.ok(collection.includes("t('collection_search_placeholder')"), 'Collection search must be localized');
 assert.ok(collection.includes('adjustOwned(item.cardNumber, item.printing'));
 assert.ok(collection.includes('setOwned(item.cardNumber, item.printing, 0)'));
 assert.ok(collection.includes('legacyCard(key)'), 'persisted legacy ownership must remain visible');

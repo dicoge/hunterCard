@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { COLORS } from '../../constants';
 import { SimulationStep } from '../../data/tutorialSimulationData';
+import { useTranslation } from '../../i18n';
 
 interface SimulationStepCardProps {
   step: SimulationStep;
@@ -30,15 +31,19 @@ export default function SimulationStepCard({
   isLastPhase,
   isMobile = false,
 }: SimulationStepCardProps) {
+  const { t } = useTranslation();
   return (
-    <View style={[styles.container, isMobile && styles.containerMobile]}>
+    <View
+      style={[styles.container, isMobile && styles.containerMobile]}
+      testID={`tutorial-simulation-step-${step.phaseId}-${step.stepNumber}`}
+    >
       {/* Phase indicator */}
       <View style={[styles.phaseBar, isMobile && styles.phaseBarMobile]}>
         <Text style={[styles.phaseIcon, isMobile && styles.phaseIconMobile]}>{phaseIcon}</Text>
         <Text style={[styles.phaseTitle, isMobile && styles.phaseTitleMobile]}>{phaseTitle}</Text>
         <View style={[styles.stepBadge, isMobile && styles.stepBadgeMobile]}>
           <Text style={[styles.stepBadgeText, isMobile && styles.stepBadgeTextMobile]}>
-            步驟 {step.stepNumber}/{totalStepsInPhase}
+            {t('tutorial_simulation_step', { current: step.stepNumber, total: totalStepsInPhase })}
           </Text>
         </View>
       </View>
@@ -98,7 +103,7 @@ export default function SimulationStepCard({
             activeOpacity={0.7}
           >
             <Text style={[styles.prevArrow, isMobile && styles.prevArrowMobile]}>←</Text>
-            <Text style={[styles.prevText, isMobile && styles.prevTextMobile]}>上一步</Text>
+            <Text style={[styles.prevText, isMobile && styles.prevTextMobile]}>{t('tutorial_simulation_previous')}</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.spacer} />
@@ -110,7 +115,7 @@ export default function SimulationStepCard({
           activeOpacity={0.8}
         >
           <Text style={[styles.nextText, isMobile && styles.nextTextMobile]}>
-            {isLast && isLastPhase ? '🎉 完成模擬' : '下一步 →'}
+            {isLast && isLastPhase ? t('tutorial_simulation_complete') : t('tutorial_simulation_next')}
           </Text>
         </TouchableOpacity>
       </View>

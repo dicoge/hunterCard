@@ -14,6 +14,7 @@ import {
 import { useScanSessionStore, SessionCard, getEffectivePrice } from '../stores/scanSessionStore';
 import { COLORS, convertPrice, CURRENCIES } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
+import { useTranslation } from '../i18n';
 
 interface ScanSessionPanelProps {
   onContinueScanning?: () => void;
@@ -26,6 +27,7 @@ export default function ScanSessionPanel({
   onViewCard,
   preferredCurrency = 'TWD',
 }: ScanSessionPanelProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const { cards, totalValue, cardCount, removeCard, setCardVersion, clearSession } = useScanSessionStore();
   const { setCurrency } = useSettingsStore();
@@ -54,8 +56,8 @@ export default function ScanSessionPanel({
           <Text style={styles.headerIcon}>📋</Text>
           <Text style={styles.headerText}>
             {cardCount > 0
-              ? `已掃描 ${cardCount} 張卡牌`
-              : '掃描估值清單'}
+              ? t('scan_session_count', { count: cardCount })
+              : t('scan_session_title')}
           </Text>
         </View>
         <View style={styles.headerRight}>
@@ -97,8 +99,8 @@ export default function ScanSessionPanel({
           </View>
           {cardCount === 0 ? (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>尚未掃描任何卡牌</Text>
-              <Text style={styles.emptyHint}>點擊「掃描」按鈕開始加入卡牌</Text>
+              <Text style={styles.emptyText}>{t('scan_session_empty')}</Text>
+              <Text style={styles.emptyHint}>{t('scan_session_empty_hint')}</Text>
             </View>
           ) : (
             <>
@@ -118,15 +120,15 @@ export default function ScanSessionPanel({
                           </Text>
                           <Text style={styles.cardMeta}>
                             {card.id}{card.rarity ? ` · ${card.rarity}` : ''} ·{' '}
-                            {pending ? '版本待確認' : formatPrice(getEffectivePrice(card))}
+                            {pending ? t('scan_version_pending') : formatPrice(getEffectivePrice(card))}
                           </Text>
                         </TouchableOpacity>
                         {hasVersions ? (
                           <>
                             <Text style={styles.versionHint}>
                               {pending
-                                ? '來源無法辨識版本，未計入總計 —— 請選擇你手上的那一版'
-                                : '選擇版本（估價依此版本計算）'}
+                                ? t('scan_version_pending_hint')
+                                : t('scan_version_select_hint')}
                             </Text>
                             <View style={styles.versionRow}>
                               {card.priceVersions.map((v, vi) => {
@@ -167,14 +169,14 @@ export default function ScanSessionPanel({
               {/* Total + Actions */}
               <View style={styles.footer}>
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>總計</Text>
+                  <Text style={styles.totalLabel}>{t('scan_total')}</Text>
                   <Text style={styles.totalValue}>
                     {formatPrice(totalValue)}
                   </Text>
                 </View>
                 {pendingCount > 0 && (
                   <Text style={styles.pendingNote}>
-                    {pendingCount} 張版本待確認，未計入總計
+                    {t('scan_pending_count', { count: pendingCount })}
                   </Text>
                 )}
                 <View style={styles.actionRow}>
@@ -185,7 +187,7 @@ export default function ScanSessionPanel({
                           style={styles.actionBtn}
                           onPress={onContinueScanning}
                         >
-                          <Text style={styles.actionBtnText}>📸 繼續掃描</Text>
+                          <Text style={styles.actionBtnText}>{t('scan_continue')}</Text>
                         </TouchableOpacity>
                       )}
                       <TouchableOpacity
@@ -193,29 +195,29 @@ export default function ScanSessionPanel({
                         onPress={() => {
                           // Share/export — build text summary
                           const summary = cards.map((c, i) => {
-                            if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — 版本待確認，未計入`;
+                            if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — ${t('scan_export_pending')}`;
                             const v = c.priceVersions?.[c.selectedVersion];
                             const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
                               ? ` [${v.name}]`
                               : '';
                             return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
                           }).join('\n');
-                          const pendingNote = pendingCount > 0 ? `\n（${pendingCount} 張版本待確認，未計入）` : '';
-                          const full = `📋 掃描估值結果\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n總計: ${formatPrice(totalValue)}${pendingNote}`;
+                          const pendingNote = pendingCount > 0 ? `\n（${t('scan_pending_count', { count: pendingCount })}）` : '';
+                          const full = `${t('scan_export_title')}\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n${t('scan_export_total', { total: formatPrice(totalValue) })}${pendingNote}`;
                           // Trigger native share
                           if (Platform.OS === 'web') {
                             navigator.clipboard?.writeText(full);
-                            alert('已複製到剪貼簿！');
+                            alert(t('scan_copied'));
                           }
                         }}
                       >
-                        <Text style={styles.shareBtnText}>📋 複製結果</Text>
+                        <Text style={styles.shareBtnText}>{t('scan_copy_results')}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.actionBtn, styles.clearBtn]}
                         onPress={clearSession}
                       >
-                        <Text style={styles.clearBtnText}>🗑️ 清除</Text>
+                        <Text style={styles.clearBtnText}>{t('scan_clear')}</Text>
                       </TouchableOpacity>
                     </>
                   )}

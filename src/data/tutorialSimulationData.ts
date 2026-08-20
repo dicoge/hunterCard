@@ -2,7 +2,9 @@
  * 模擬實戰教學 — 互動式對局步驟資料
  * 引導初學者體驗 hOCG 一場簡化對局
  */
-import { SimPhase } from '../types';
+import type { SimPhase } from '../types';
+import type { LanguageCode } from '../store/settingsStore';
+import simulationPhasesJa from './tutorialSimulationDataJa';
 
 export interface SimulationCardRef {
   id: string;
@@ -236,5 +238,9 @@ const simulationPhases: SimulationPhase[] = [
     ],
   },
 ];
+
+export function getSimulationPhases(language: LanguageCode): SimulationPhase[] {
+  return language === 'ja' ? simulationPhasesJa : simulationPhases;
+}
 
 export default simulationPhases;

@@ -11,8 +11,10 @@ import { COLORS, APP_NAME } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
+import { useTranslation } from '../i18n';
 
 export default function LoginScreen() {
+  const { t } = useTranslation();
   const {
     loginWithGoogle,
     loginWithApple,
@@ -39,16 +41,12 @@ export default function LoginScreen() {
       <View style={styles.content}>
         <View style={styles.brand}>
           <Text style={styles.appName}>{APP_NAME}</Text>
-          <Text style={styles.tagline}>hololive TCG 卡牌查價 App</Text>
+          <Text style={styles.tagline}>{t('login_tagline')}</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.welcome}>歡迎使用 HoloHunter</Text>
-          <Text style={styles.description}>
-            {FEATURES.trendPrediction
-              ? '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢'
-              : '登入後可追蹤卡牌收藏、掃描卡牌'}
-          </Text>
+          <Text style={styles.welcome}>{t('login_welcome')}</Text>
+          <Text style={styles.description}>{t('login_description')}</Text>
 
           {error && (
             <View style={styles.errorBox}>
@@ -70,7 +68,7 @@ export default function LoginScreen() {
             ) : (
               <>
                 <Text style={styles.googleIcon}>G</Text>
-                <Text style={styles.buttonText}>使用 Google 帳號登入</Text>
+                <Text style={styles.buttonText}>{t('settings_google_login')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -83,13 +81,13 @@ export default function LoginScreen() {
             activeOpacity={0.8}
           >
             <Text style={styles.appleIcon}></Text>
-            <Text style={styles.buttonText}>使用 Apple 帳號登入</Text>
+            <Text style={styles.buttonText}>{t('settings_apple_login')}</Text>
           </TouchableOpacity>
           )}
 
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>或</Text>
+            <Text style={styles.dividerText}>{t('login_or')}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -98,17 +96,13 @@ export default function LoginScreen() {
             onPress={continueAsGuest}
             activeOpacity={0.8}
           >
-            <Text style={styles.guestButtonText}>以訪客身份進入</Text>
+            <Text style={styles.guestButtonText}>{t('login_guest_button')}</Text>
           </TouchableOpacity>
 
-          <Text style={styles.guestHint}>
-            訪客可瀏覽規則與查詢卡片，但無法使用掃描功能
-          </Text>
+          <Text style={styles.guestHint}>{t('login_guest_hint')}</Text>
         </View>
 
-        <Text style={styles.footer}>
-          登入即表示同意隱私權政策與服務條款
-        </Text>
+        <Text style={styles.footer}>{t('login_terms_footer')}</Text>
       </View>
     </SafeAreaView>
   );

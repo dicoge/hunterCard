@@ -5,6 +5,7 @@
 
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
+import { useTranslation } from '../i18n';
 
 export interface WebCameraHandle {
   takePictureAsync: (options?: { quality?: number }) => Promise<{ uri: string } | null>;
@@ -22,6 +23,7 @@ interface WebCameraProps {
 }
 
 const WebCamera = forwardRef<WebCameraHandle, WebCameraProps>((props, ref) => {
+  const { t, language } = useTranslation();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const cameraIdRef = useRef(0); // 避免 async race condition
@@ -64,7 +66,7 @@ const WebCamera = forwardRef<WebCameraHandle, WebCameraProps>((props, ref) => {
       useStream(stream);
     } catch (err: any) {
       if (id !== cameraIdRef.current) return;
-      const msg = err?.message || '無法開啟相機';
+      const msg = language === 'ja' ? t('scan_camera_open_failed') : (err?.message || t('scan_camera_open_failed'));
       setError(msg);
       setReady(false);
       if (props.onMountError) props.onMountError({ message: msg });
@@ -142,7 +144,7 @@ const WebCamera = forwardRef<WebCameraHandle, WebCameraProps>((props, ref) => {
       />
       {!ready && !error && (
         <View style={styles.loading}>
-          <Text style={styles.loadingText}>相機啟動中...</Text>
+          <Text style={styles.loadingText}>{t('scan_camera_starting')}</Text>
         </View>
       )}
       {error && (

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { COLORS } from '../constants';
+import { useTranslation } from '../i18n';
 import type { ValidatedPriceTrend } from '../utils/priceTrend';
 
 interface PriceTrendProps {
@@ -8,6 +9,7 @@ interface PriceTrendProps {
 }
 
 export const PriceTrend: React.FC<PriceTrendProps> = ({ trend }) => {
+  const { t } = useTranslation();
   if (!trend) return null;
   const color = trend.direction === 'up' ? COLORS.error : trend.direction === 'down' ? COLORS.success : COLORS.textSecondary;
   const arrow = trend.direction === 'up' ? '↑' : trend.direction === 'down' ? '↓' : '→';
@@ -15,18 +17,26 @@ export const PriceTrend: React.FC<PriceTrendProps> = ({ trend }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>📈 價格趨勢</Text>
+      <Text style={styles.title}>{t('price_trend_title')}</Text>
       <View style={styles.row}>
-        <View style={styles.item}>
-          <Text style={styles.period}>前 7 日均價</Text>
+        <View
+          style={styles.item}
+          accessible
+          accessibilityLabel={`${t('card_detail_previous_week')} ¥${Math.round(trend.priorAverage).toLocaleString()}`}
+        >
+          <Text style={styles.period}>{t('card_detail_previous_week')}</Text>
           <Text style={styles.value}>¥{Math.round(trend.priorAverage).toLocaleString()}</Text>
         </View>
-        <View style={styles.item}>
-          <Text style={styles.period}>近 7 日均價</Text>
+        <View
+          style={styles.item}
+          accessible
+          accessibilityLabel={`${t('card_detail_recent_week')} ¥${Math.round(trend.recentAverage).toLocaleString()}`}
+        >
+          <Text style={styles.period}>{t('card_detail_recent_week')}</Text>
           <Text style={styles.value}>¥{Math.round(trend.recentAverage).toLocaleString()}</Text>
         </View>
         <View style={styles.item}>
-          <Text style={styles.period}>變化</Text>
+          <Text style={styles.period}>{t('card_detail_change')}</Text>
           <Text style={[styles.value, { color }]}>{arrow} {percentage}</Text>
         </View>
       </View>

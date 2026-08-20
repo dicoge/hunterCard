@@ -7,12 +7,14 @@ import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErrorMessages';
 import { showAlert } from '../utils/platformAlert';
+import { useTranslation } from '../i18n';
 import type { AuthProvider } from '../types/auth';
 
 const PROVIDER_LABEL: Record<AuthProvider, string> = { apple: 'Apple', google: 'Google' };
 const ALL_PROVIDERS: AuthProvider[] = ['google', 'apple'];
 
 export default function SettingsScreen() {
+  const { t } = useTranslation();
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.logout);
@@ -26,8 +28,6 @@ export default function SettingsScreen() {
 
   const linkedProviders = user?.linkedProviders ?? [];
   const linkedSet = new Set(linkedProviders.map((p) => p.provider));
-  // Hide the Apple link entry entirely while Apple login is disabled (e.g. Web
-  // without a Services ID), consistent with LoginScreen — no non-functional CTA.
   const unlinkedProviders = ALL_PROVIDERS.filter(
     (p) => !linkedSet.has(p) && !(p === 'apple' && !APPLE_LOGIN_ENABLED),
   );
@@ -36,60 +36,47 @@ export default function SettingsScreen() {
     try {
       await loginWithGoogle();
     } catch (err: any) {
-      // A user cancel is not a failure — don't nag with a dialog.
       if (isCancelAuthError(err)) return;
-      showAlert('登入失敗', friendlyAuthErrorMessage(err, 'google'));
+      showAlert(t('settings_login_failed'), friendlyAuthErrorMessage(err, 'google'));
     }
   };
 
   const handleAppleLogin = async () => {
     try {
       await loginWithApple();
-    } catch {
-      // Errors are reflected via the store `error` state; the Apple entry is
-      // disabled while web Apple login is off, so this is a no-op guard.
-    }
+    } catch {}
   };
 
   const handleLinkProvider = async (provider: AuthProvider) => {
-    // Defensive guard; the Apple link CTA is rendered disabled when the flag is
-    // off, so this should not normally be reachable.
     if (provider === 'apple' && !APPLE_LOGIN_ENABLED) return;
     try {
       await linkNewProvider(provider);
-      showAlert('綁定完成', `已將 ${PROVIDER_LABEL[provider]} 帳號綁定到你的 HoloHunter 帳號。`);
+      showAlert(t('settings_link_complete'), t('settings_link_complete_body', { provider: PROVIDER_LABEL[provider] }));
     } catch (err: any) {
-      // A cancel — or the web-Google redirect sentinel (code 'redirecting'),
-      // thrown as the page full-page-navigates to Google for the link flow
-      // (DIC-976) — is NOT a failure. Suppress it so the CTA does not flash a
-      // false "綁定失敗 / 正在導向 Google 登入…" alert before navigation completes.
       if (isCancelAuthError(err)) return;
-      // Real errors: map to a friendly-but-SAFE string via the shared mapper
-      // (never echo the raw error text, which can carry provider/backend
-      // detail) — the same safe mapping the login CTA uses.
-      showAlert('綁定失敗', friendlyAuthErrorMessage(err, provider));
+      showAlert(t('settings_link_failed'), friendlyAuthErrorMessage(err, provider));
     }
   };
 
   const confirmUnlinkProvider = (provider: AuthProvider) => {
     if (linkedProviders.length <= 1) {
-      showAlert('無法解除綁定', '這是你唯一的登入方式。請先綁定另一個帳號，才能解除這一個。');
+      showAlert(t('settings_unlink_blocked'), t('settings_unlink_blocked_body'));
       return;
     }
     showAlert(
-      '解除綁定',
-      `解除 ${PROVIDER_LABEL[provider]} 綁定後，將無法再用該帳號登入。確定要解除嗎？`,
+      t('settings_account_unlink'),
+      t('settings_unlink_confirm', { provider: PROVIDER_LABEL[provider] }),
       [
-        { text: '取消', style: 'cancel' },
+        { text: t('common_cancel'), style: 'cancel' },
         {
-          text: '解除綁定',
+          text: t('settings_account_unlink'),
           style: 'destructive',
           onPress: async () => {
             try {
               await removeLinkedProvider(provider);
-              showAlert('已解除綁定', `已解除 ${PROVIDER_LABEL[provider]} 綁定。`);
+              showAlert(t('settings_unlink_complete'), t('settings_unlink_complete_body', { provider: PROVIDER_LABEL[provider] }));
             } catch (err: any) {
-              showAlert('解除失敗', String(err?.message ?? '無法解除綁定，請稍後再試。'));
+              showAlert(t('settings_unlink_failed'), String(err?.message ?? t('settings_unlink_failed_body')));
             }
           },
         },
@@ -98,30 +85,29 @@ export default function SettingsScreen() {
   };
 
   const confirmSignOut = () => {
-    showAlert('登出', '確定要登出嗎？', [
-      { text: '取消', style: 'cancel' },
-      { text: '登出', style: 'destructive', onPress: signOut },
+    showAlert(t('settings_account_signout'), t('settings_signout_confirm'), [
+      { text: t('common_cancel'), style: 'cancel' },
+      { text: t('settings_account_signout'), style: 'destructive', onPress: signOut },
     ]);
   };
 
   const confirmDelete = () => {
     showAlert(
-      '刪除帳號',
-      '這會永久刪除你的帳號與同步資料，且無法復原。確定要刪除嗎？',
+      t('settings_account_delete'),
+      t('settings_delete_confirm'),
       [
-        { text: '取消', style: 'cancel' },
+        { text: t('common_cancel'), style: 'cancel' },
         {
-          text: '刪除帳號',
+          text: t('settings_account_delete'),
           style: 'destructive',
           onPress: async () => {
             try {
-              // Resolves only on server-confirmed deletion (see authService).
               await deleteAccount();
-              showAlert('帳號已刪除', '你的帳號已從伺服器刪除，登入授權已撤銷。');
+              showAlert(t('settings_delete_complete'), t('settings_delete_complete_body'));
             } catch {
               showAlert(
-                '刪除尚未完成',
-                '伺服器端尚未確認刪除（後端未就緒或撤銷失敗），帳號並未刪除，你仍為登入狀態。請稍後再試或聯絡我們。'
+                t('settings_delete_pending'),
+                t('settings_delete_pending_body')
               );
             }
           },
@@ -134,18 +120,18 @@ export default function SettingsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScrollView style={styles.container}>
         <Text style={styles.title}>{APP_NAME}</Text>
-        <Text style={styles.version}>版本 {APP_VERSION}</Text>
+        <Text style={styles.version}>{t('settings_app_version', { version: APP_VERSION })}</Text>
 
         {/* ── 語言設定 ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🌐 顯示語言</Text>
+          <Text style={styles.sectionTitle}>{t('settings_language_section')}</Text>
           <View style={styles.optionRow}>
             <TouchableOpacity
               style={[styles.optionBtn, preferredLanguage === 'zh' && styles.optionBtnActive]}
               onPress={() => setLanguage('zh')}
             >
               <Text style={[styles.optionText, preferredLanguage === 'zh' && styles.optionTextActive]}>
-                中文
+                {t('settings_language_zh')}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -153,20 +139,18 @@ export default function SettingsScreen() {
               onPress={() => setLanguage('ja')}
             >
               <Text style={[styles.optionText, preferredLanguage === 'ja' && styles.optionTextActive]}>
-                日本語
+                {t('settings_language_ja')}
               </Text>
             </TouchableOpacity>
           </View>
           <Text style={styles.hint}>
-            {preferredLanguage === 'zh'
-              ? '卡牌名稱將顯示中文翻譯（如：セシリア → 塞西莉亞·伊瑪格林）'
-              : 'カード名は日本語で表示されます'}
+            {t('settings_language_hint')}
           </Text>
         </View>
 
         {/* ── 幣別設定 ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💰 顯示幣別</Text>
+          <Text style={styles.sectionTitle}>{t('settings_currency_section')}</Text>
           <View style={styles.optionRow}>
             {CURRENCIES.map((cur) => (
               <TouchableOpacity
@@ -181,23 +165,23 @@ export default function SettingsScreen() {
             ))}
           </View>
           <Text style={styles.hint}>
-            {preferredCurrency === 'TWD' && '價格以新台幣顯示（¥100 ≈ NT$22）'}
-            {preferredCurrency === 'JPY' && '價格以日圓原價顯示'}
-            {preferredCurrency === 'USD' && '價格以美元顯示（¥100 ≈ $0.67）'}
+            {preferredCurrency === 'TWD' && t('settings_currency_hint_twd')}
+            {preferredCurrency === 'JPY' && t('settings_currency_hint_jpy')}
+            {preferredCurrency === 'USD' && t('settings_currency_hint_usd')}
           </Text>
         </View>
 
         {/* ── 價格來源資訊 ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 價格來源</Text>
-          <Text style={styles.item}>🏪 遊々亭（日本二手卡牌市場）</Text>
-          <Text style={styles.item}>🔄 Carousell（旋轉拍賣）</Text>
-          <Text style={styles.item}>📈 匯率：JP¥1 = NT$0.22 = $0.0067</Text>
+          <Text style={styles.sectionTitle}>{t('settings_price_sources')}</Text>
+          <Text style={styles.item}>{t('settings_price_yuyu')}</Text>
+          <Text style={styles.item}>{t('settings_price_carousell')}</Text>
+          <Text style={styles.item}>{t('settings_exchange_rate')}</Text>
         </View>
 
         {/* ── 帳號 ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>👤 帳號</Text>
+          <Text style={styles.sectionTitle}>{t('settings_account_section')}</Text>
           {isAuthenticated && user ? (
             <>
               {!!(user.displayName || user.primaryEmail) && (
@@ -206,7 +190,7 @@ export default function SettingsScreen() {
                 </Text>
               )}
 
-              <Text style={styles.subheading}>登入方式綁定</Text>
+              <Text style={styles.subheading}>{t('settings_account_linked_auth')}</Text>
               {linkedProviders.map((p) => (
                 <View key={p.provider} style={styles.providerRow}>
                   <View style={styles.providerInfo}>
@@ -219,7 +203,7 @@ export default function SettingsScreen() {
                       onPress={() => confirmUnlinkProvider(p.provider)}
                       disabled={isLoading}
                     >
-                      <Text style={styles.unlinkBtnText}>解除綁定</Text>
+                      <Text style={styles.unlinkBtnText}>{t('settings_account_unlink')}</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -232,35 +216,32 @@ export default function SettingsScreen() {
                   disabled={isLoading}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.linkBtnText}>綁定 {PROVIDER_LABEL[provider]} 帳號</Text>
+                  <Text style={styles.linkBtnText}>{t('settings_account_link_provider', { provider: PROVIDER_LABEL[provider] })}</Text>
                 </TouchableOpacity>
               ))}
               <Text style={styles.hint}>
                 {FEATURES.watchlist
-                  ? '綁定後收藏、設定、到價提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'
-                  : '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。'}
+                  ? t('settings_link_hint_watchlist')
+                  : t('settings_link_hint')}
               </Text>
 
               <TouchableOpacity style={styles.accountBtn} onPress={confirmSignOut}>
-                <Text style={styles.accountBtnText}>登出</Text>
+                <Text style={styles.accountBtnText}>{t('settings_account_signout')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.accountBtn, styles.dangerBtn]}
                 onPress={confirmDelete}
               >
-                <Text style={[styles.accountBtnText, styles.dangerText]}>刪除帳號</Text>
+                <Text style={[styles.accountBtnText, styles.dangerText]}>{t('settings_account_delete')}</Text>
               </TouchableOpacity>
-              <Text style={styles.hint}>
-                註：帳號刪除的伺服器端撤銷仍在建置中，尚未上線。若後端尚未設定，
-                刪除會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。
-              </Text>
+              <Text style={styles.hint}>{t('settings_delete_note')}</Text>
             </>
           ) : (
             <>
               <Text style={styles.hint}>
                 {FEATURES.watchlist
-                  ? '尚未登入。登入後可跨裝置同步收藏與到價提醒。'
-                  : '尚未登入。登入後可跨裝置同步收藏。'}
+                  ? t('settings_guest_sync_watchlist')
+                  : t('settings_guest_sync')}
               </Text>
               <TouchableOpacity
                 style={[styles.googleBtn, isLoading && styles.btnDisabled]}
@@ -268,7 +249,7 @@ export default function SettingsScreen() {
                 disabled={isLoading}
                 activeOpacity={0.8}
               >
-                <Text style={styles.googleBtnText}>使用 Google 帳號登入</Text>
+                <Text style={styles.googleBtnText}>{t('settings_google_login')}</Text>
               </TouchableOpacity>
               {APPLE_LOGIN_ENABLED && (
                 <TouchableOpacity
@@ -277,14 +258,14 @@ export default function SettingsScreen() {
                   disabled={isLoading}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.appleBtnText}>使用 Apple 帳號登入</Text>
+                  <Text style={styles.appleBtnText}>{t('settings_apple_login')}</Text>
                 </TouchableOpacity>
               )}
             </>
           )}
         </View>
 
-        <Text style={styles.footer}>專為 hololive PCG 玩家打造</Text>
+        <Text style={styles.footer}>{t('settings_footer')}</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -473,50 +454,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
     marginBottom: 20,
-  },
-  accountInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  avatarText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  accountDetails: {
-    flex: 1,
-  },
-  accountName: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  accountEmail: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  logoutButton: {
-    backgroundColor: COLORS.error + '22',
-    borderWidth: 1,
-    borderColor: COLORS.error,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  logoutText: {
-    color: COLORS.error,
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

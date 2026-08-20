@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
-import tutorialData from '../data/tutorialData';
+import { useTranslation } from '../i18n';
+import { getTutorialData } from '../data/tutorialData';
 
 const MOBILE_BREAKPOINT = 480;
 
 export default function TutorialScreen({ navigation }: any) {
+  const { t, language } = useTranslation();
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < MOBILE_BREAKPOINT;
+  const tutorialData = useMemo(() => getTutorialData(language), [language]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -20,21 +23,20 @@ export default function TutorialScreen({ navigation }: any) {
         {/* Hero */}
         <View style={[styles.hero, isMobile && styles.heroMobile]}>
           <Text style={[styles.heroEmoji, isMobile && styles.heroEmojiMobile]}>📚</Text>
-          <Text style={[styles.heroTitle, isMobile && styles.heroTitleMobile]}>規則教學</Text>
-          <Text style={[styles.heroSub, isMobile && styles.heroSubMobile]}>hOCG 完全攻略</Text>
+          <Text style={[styles.heroTitle, isMobile && styles.heroTitleMobile]}>{t('tutorial_title')}</Text>
+          <Text style={[styles.heroSub, isMobile && styles.heroSubMobile]}>{t('tutorial_hero_subtitle')}</Text>
         </View>
 
         {/* Description */}
         <View style={styles.introCard}>
           <Text style={[styles.introText, isMobile && styles.introTextMobile]}>
-            這是一款以「共同創造、共同競爭」為概念的集換式卡牌遊戲。
-            玩家們將化身粉絲，與主推以及其他 holo 成員一同打造屬於自己的舞台。
+            {t('tutorial_intro_one')}
           </Text>
           <Text style={[styles.introText, isMobile && styles.introTextMobile]}>
-            一起為 holo 成員加油，並以「hololive 極限大賽」的頂點為目標！
+            {t('tutorial_intro_two')}
           </Text>
           <View style={styles.sourceRow}>
-            <Text style={styles.sourceLabel}>📝 來源：</Text>
+            <Text style={styles.sourceLabel}>{t('tutorial_source')}</Text>
             <Text style={styles.sourceValue}>巴哈姆特 — 桜雪</Text>
           </View>
         </View>
@@ -45,7 +47,8 @@ export default function TutorialScreen({ navigation }: any) {
             <TouchableOpacity
               key={section.id}
               style={[styles.categoryCard, isMobile && styles.categoryCardMobile]}
-              onPress={() => navigation.navigate('TutorialDetail', { section })}
+              onPress={() => navigation.navigate('TutorialDetail', { sectionId: section.id })}
+              testID={`tutorial-section-${section.id}`}
               activeOpacity={0.7}
             >
               <View style={[styles.categoryIconWrap, isMobile && styles.categoryIconWrapMobile]}>
@@ -54,21 +57,21 @@ export default function TutorialScreen({ navigation }: any) {
                 </Text>
               </View>
               <Text style={[styles.categoryTitle, isMobile && styles.categoryTitleMobile]}>
-                {section.title}
+                {t(`tutorial_section_${section.id}` as Parameters<typeof t>[0])}
               </Text>
               <Text 
                 style={[styles.categoryDesc, isMobile && styles.categoryDescMobile]} 
                 numberOfLines={2}
               >
-                {section.description || (
-                  section.phases ? `共 ${section.phases.length} 個章節` : 
-                  section.items ? `${section.items.length} 個區域說明` : 
-                  '點擊查看詳情'
+                {language === 'zh' && section.description ? section.description : (
+                  section.phases ? t('tutorial_chapters_count', { count: section.phases.length }) :
+                  section.items ? t('tutorial_areas_count', { count: section.items.length }) :
+                  t('tutorial_view_details')
                 )}
               </Text>
               <View style={styles.arrowRow}>
                 <Text style={[styles.arrowText, isMobile && styles.arrowTextMobile]}>
-                  開始學習
+                  {t('tutorial_start_learning')}
                 </Text>
                 <Text style={[styles.arrow, isMobile && styles.arrowMobile]}>→</Text>
               </View>
@@ -81,16 +84,17 @@ export default function TutorialScreen({ navigation }: any) {
           style={[styles.simulationCard, isMobile && styles.simulationCardMobile]}
           onPress={() => navigation.navigate('TutorialSimulation')}
           activeOpacity={0.7}
+          testID="tutorial-simulation-entry"
         >
           <View style={[styles.simulationIconWrap, isMobile && styles.simulationIconWrapMobile]}>
             <Text style={[styles.simulationEmoji, isMobile && styles.simulationEmojiMobile]}>🎮</Text>
           </View>
           <View style={styles.simulationContent}>
             <Text style={[styles.simulationTitle, isMobile && styles.simulationTitleMobile]}>
-              實戰模擬
+              {t('tutorial_simulation')}
             </Text>
             <Text style={[styles.simulationDesc, isMobile && styles.simulationDescMobile]}>
-              跟著 step-by-step 引導，體驗一場簡化的 hOCG 對局
+              {t('tutorial_simulation_hint')}
             </Text>
           </View>
           <Text style={[styles.simulationArrow, isMobile && styles.simulationArrowMobile]}>→</Text>
@@ -102,7 +106,7 @@ export default function TutorialScreen({ navigation }: any) {
             hololive Card Game
           </Text>
           <Text style={[styles.footerSub, isMobile && styles.footerSubMobile]}>
-            非官方 hOCG 規則教學
+            {t('tutorial_unofficial')}
           </Text>
         </View>
       </ScrollView>
@@ -314,7 +318,6 @@ const styles = StyleSheet.create({
   footerSubMobile: {
     fontSize: 10,
   },
-  // Simulation entry card styles
   simulationCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 16,
