@@ -1,0 +1,16 @@
+{
+  "cardId": "hEB01-008",
+  "cardNumber": "hEB01-008",
+  "name": "ときのそら",
+  "records": [
+    {
+      "date": "2026-08-21",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-008"
+    }
+  ],
+  "lastUpdated": "2026-08-21T12:12:45.829Z",
+  "nameZh": "時乃空"
+}

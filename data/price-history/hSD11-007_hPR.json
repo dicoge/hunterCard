@@ -415,8 +415,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD11-007_hPR"
+    },
+    {
+      "date": "2026-08-21",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD11-007_hPR"
     }
   ],
-  "lastUpdated": "2026-08-20T12:12:31.459Z",
+  "lastUpdated": "2026-08-21T12:12:45.782Z",
   "nameZh": "水宮樞"
 }

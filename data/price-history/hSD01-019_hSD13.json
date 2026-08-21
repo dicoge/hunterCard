@@ -429,8 +429,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-019_hSD13"
+    },
+    {
+      "date": "2026-08-21",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-019_hSD13"
     }
   ],
-  "lastUpdated": "2026-08-20T12:12:30.186Z",
+  "lastUpdated": "2026-08-21T12:12:45.594Z",
   "nameZh": "超厲害電腦"
 }

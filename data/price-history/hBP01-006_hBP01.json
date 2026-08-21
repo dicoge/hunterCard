@@ -415,8 +415,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-006_hBP01"
+    },
+    {
+      "date": "2026-08-21",
+      "price": 280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-006_hBP01"
     }
   ],
-  "lastUpdated": "2026-08-20T12:12:30.729Z",
+  "lastUpdated": "2026-08-21T12:12:45.726Z",
   "nameZh": "小鳥遊琪亞拉"
 }

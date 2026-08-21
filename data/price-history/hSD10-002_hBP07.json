@@ -429,8 +429,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD10-002_hBP07"
+    },
+    {
+      "date": "2026-08-21",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-002_hBP07"
     }
   ],
-  "lastUpdated": "2026-08-20T12:12:30.112Z",
+  "lastUpdated": "2026-08-21T12:12:45.587Z",
   "nameZh": "輪堂千速"
 }

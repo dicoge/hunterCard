@@ -429,8 +429,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-094_hBP03"
+    },
+    {
+      "date": "2026-08-21",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-094_hBP03"
     }
   ],
-  "lastUpdated": "2026-08-20T12:12:30.644Z",
+  "lastUpdated": "2026-08-21T12:12:45.680Z",
   "nameZh": "FPS直播"
 }
