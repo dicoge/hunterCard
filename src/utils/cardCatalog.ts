@@ -34,8 +34,11 @@ export interface CardFacets {
   colors: string[];
   /** normalized rarity tokens across every row of this card number */
   rarities: string[];
-  /** product codes this card number belongs to or was reprinted in */
-  sets: string[];
+  /** the ONE card-number series this card belongs to ("hBP04-088" → "hBP04").
+   * A reprint row's scraped `series` is deliberately NOT merged in: a row of
+   * hBP02-084 scraped out of the hBP04 product is still an hBP02 card, and the
+   * picker's series filter must never surface it under hBP04 (DIC-1117). */
+  series: string;
   /** lower-cased names in every language the catalog carries */
   names: string[];
   /** lower-cased skill / arts / keyword text, JP and ZH concatenated */
@@ -101,6 +104,64 @@ export function setOfCardNumber(cardNumber: string): string {
   return String(cardNumber || '').split('-')[0];
 }
 
+/**
+ * The card-number series a card belongs to, normalized to the catalog's own
+ * casing so a filter matches case-insensitively ("hbp04-088" → "hBP04").
+ *
+ * This is derived from the CARD NUMBER and nothing else. It is the only input
+ * the series filter accepts, which is what makes `series: hBP04` on an
+ * hBP02-084 reprint row unable to leak that card into an hBP04 selection.
+ */
+export function seriesOfCardNumber(cardNumber: string): string {
+  const raw = setOfCardNumber(cardNumber);
+  if (!raw) return '';
+  // The catalog spells a series with a lower-case "h" and an upper-case family
+  // ("hBP04", "hSD01"). Normalizing to that shape — rather than remembering the
+  // first spelling seen — keeps this a pure function of the card number, so the
+  // same number always resolves to the same series and the same chip label.
+  return `h${raw.slice(1).toUpperCase()}`;
+}
+
+/** True when a card number is shaped like a real series member — a series
+ * prefix and a numeric suffix ("hBP04-088"). A malformed row ("202") has no
+ * series and must not become a filter option nor be sorted as though it did. */
+export function isSeriesCardNumber(cardNumber: string): boolean {
+  return /^h[A-Za-z]+[A-Za-z0-9]*-\d+$/.test(String(cardNumber || ''));
+}
+
+/** Ascending sort position of a card number: its series, then its suffix as a
+ * NUMBER. Lexicographic ordering would put hBP04-010 before hBP04-002. */
+export interface CardNumberSortKey {
+  series: string;
+  number: number;
+}
+
+export function cardNumberSortKey(cardNumber: string): CardNumberSortKey {
+  const raw = String(cardNumber || '');
+  const dash = raw.indexOf('-');
+  const series = dash === -1 ? raw : raw.slice(0, dash);
+  const suffix = dash === -1 ? '' : raw.slice(dash + 1);
+  const digits = suffix.match(/\d+/);
+  return {
+    series: seriesOfCardNumber(raw) || series,
+    number: digits ? Number(digits[0]) : Number.MAX_SAFE_INTEGER,
+  };
+}
+
+/** Order two card numbers the way a player reads a set list: series first, then
+ * the printing number ascending as an integer. Equal keys fall back to the raw
+ * string so the order is total and stable. */
+export function compareCardNumbers(a: string, b: string): number {
+  const ka = cardNumberSortKey(a);
+  const kb = cardNumberSortKey(b);
+  const [fa, ca] = setSortKey(ka.series);
+  const [fb, cb] = setSortKey(kb.series);
+  return fa - fb
+    || ca.localeCompare(cb)
+    || ka.number - kb.number
+    || String(a).localeCompare(String(b));
+}
+
 // A row's `series` is the set the ROW was scraped from, which is a real product
 // for a reprint ("hBP07") but is also used for internal scrape buckets such as
 // "ent07" that no player would recognise. A handful of rows also carry a
@@ -143,18 +204,19 @@ export function buildFacetIndex(rows: CatalogRow[]): Map<string, CardFacets> {
     if (!cardNumber) continue;
     let facets = index.get(cardNumber);
     if (!facets) {
+      // The series is fixed by the card number the moment the card is first
+      // seen; no later row can widen it.
+      const own = isSeriesCardNumber(cardNumber) ? seriesOfCardNumber(cardNumber) : '';
       facets = {
         cardNumber,
         category: null,
         colors: [],
         rarities: [],
-        sets: [],
+        series: isProductCode(own) ? own : '',
         names: [],
         text: '',
       };
       index.set(cardNumber, facets);
-      const own = setOfCardNumber(cardNumber);
-      if (isProductCode(own)) facets.sets.push(own);
     }
 
     const jp = (row.skillsJp || {}) as { cardType?: string; color?: string };
@@ -165,7 +227,10 @@ export function buildFacetIndex(rows: CatalogRow[]): Map<string, CardFacets> {
 
     for (const color of splitColors(jp.color || zh.color || '')) pushUnique(facets.colors, color);
     pushUnique(facets.rarities, normalizeRarity(row.rarity || ''));
-    if (row.series && isProductCode(row.series)) pushUnique(facets.sets, row.series);
+    // row.series is the product this ROW was scraped from — a reprint of
+    // hBP02-084 sold inside hBP04 carries `series: hBP04`. It is provenance,
+    // not identity, so it is deliberately never merged into the card's series
+    // (DIC-1117): doing so put hBP02-* and hSD01-* into the hBP04 selection.
     for (const name of [row.name, row.nameZh, (zh as { name?: string }).name]) {
       if (name) pushUnique(facets.names, String(name).toLowerCase());
     }
@@ -183,7 +248,8 @@ export function buildFacetIndex(rows: CatalogRow[]): Map<string, CardFacets> {
 // ── Filter options ────────────────────────────────────────────────────────
 
 export interface FilterOptions {
-  sets: string[];
+  /** every card-number series the loaded catalog carries, in reading order */
+  series: string[];
   colors: string[];
   rarities: string[];
 }
@@ -205,16 +271,16 @@ const RARITY_ORDER = ['C', 'U', 'R', 'RR', 'SR', 'HR', 'UR', 'SEC', 'S', 'P', 'S
  * requirement 5's "no fake options unsupported by the current catalog".
  */
 export function collectFilterOptions(facets: Iterable<CardFacets>): FilterOptions {
-  const sets = new Set<string>();
+  const series = new Set<string>();
   const colors = new Set<string>();
   const rarities = new Set<string>();
   for (const f of facets) {
-    for (const s of f.sets) sets.add(s);
+    if (f.series) series.add(f.series);
     for (const c of f.colors) colors.add(c);
     for (const r of f.rarities) if (r) rarities.add(r);
   }
   return {
-    sets: Array.from(sets).sort((a, b) => {
+    series: Array.from(series).sort((a, b) => {
       const [fa, ca] = setSortKey(a);
       const [fb, cb] = setSortKey(b);
       return fa - fb || ca.localeCompare(cb);
@@ -236,7 +302,9 @@ export interface PickerCriteria {
   mode: SearchMode;
   /** empty = every category */
   categories: CardCategory[];
-  sets: string[];
+  /** card-number series to keep; empty = every series. A card matches only when
+   * its OWN card number carries the series (DIC-1117). */
+  series: string[];
   colors: string[];
   rarities: string[];
   parallel: ParallelMode;
@@ -246,7 +314,7 @@ export const EMPTY_CRITERIA: PickerCriteria = {
   query: '',
   mode: 'name',
   categories: [],
-  sets: [],
+  series: [],
   colors: [],
   rarities: [],
   parallel: 'all',
@@ -256,7 +324,7 @@ export const EMPTY_CRITERIA: PickerCriteria = {
  * control only needs to be offered when this is false. */
 export function hasActiveFilters(criteria: PickerCriteria): boolean {
   return criteria.query.trim() !== ''
-    || criteria.sets.length > 0
+    || criteria.series.length > 0
     || criteria.colors.length > 0
     || criteria.rarities.length > 0
     || criteria.parallel !== 'all';
@@ -286,12 +354,32 @@ function matchesQuery(
     || group.card.name.toLowerCase().includes(q);
 }
 
+/** True when a card number belongs to one of the selected card-number series.
+ *
+ * The test is on the CARD NUMBER, case-insensitively, and on nothing else. A
+ * facet record is not even required: an unscraped card number still resolves its
+ * own series, and a row that merely names hBP04 as its scrape source cannot
+ * produce a match (DIC-1117 §2/§3).
+ */
+export function matchesSeries(cardNumber: string, selected: string[]): boolean {
+  if (selected.length === 0) return true;
+  const own = seriesOfCardNumber(cardNumber);
+  if (!own) return false;
+  return selected.some((s) => s.toLowerCase() === own.toLowerCase());
+}
+
 /**
  * Apply the combined search + filter state.
  *
  * Every dimension is an AND across dimensions and an OR within one, which is
  * what a player expects from a chip-style filter bar: picking 白 and 青 widens,
  * picking 白 and hBP04 narrows.
+ *
+ * Results come back in card-number reading order — series, then numeric suffix
+ * ascending — because that is how a set list is read and how a player scans for
+ * a card they half-remember (DIC-1117 §4). Grouping already guarantees one entry
+ * per card number, so no printing can appear twice (§5) and the caller's
+ * `length` is the true unique count (§6).
  */
 export function filterCatalog(
   groups: VariantGroup[],
@@ -304,12 +392,18 @@ export function filterCatalog(
     if (criteria.categories.length > 0) {
       if (!f?.category || !criteria.categories.includes(f.category)) continue;
     }
-    if (criteria.sets.length > 0 && !criteria.sets.some((s) => f?.sets.includes(s))) continue;
+    if (!matchesSeries(group.cardNumber, criteria.series)) continue;
     if (criteria.colors.length > 0 && !criteria.colors.some((c) => f?.colors.includes(c))) continue;
     if (criteria.rarities.length > 0 && !criteria.rarities.some((r) => f?.rarities.includes(r))) continue;
     if (!matchesParallel(group.variants, criteria.parallel)) continue;
     if (!matchesQuery(group, f, criteria.query, criteria.mode)) continue;
     out.push(group);
   }
-  return out;
+  return sortByCardNumber(out);
+}
+
+/** Order grouped results by card number ascending. Returns a new array; the
+ * input order is never mutated. */
+export function sortByCardNumber(groups: VariantGroup[]): VariantGroup[] {
+  return groups.slice().sort((a, b) => compareCardNumbers(a.cardNumber, b.cardNumber));
 }
