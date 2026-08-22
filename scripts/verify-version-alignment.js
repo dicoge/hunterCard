@@ -1,7 +1,13 @@
 /**
- * 版本對齊回歸檢查（用真實 public/data/database.json）
+ * 版本對齊回歸檢查
  *
  * 跑法：npm run test:version-alignment
+ *
+ * 具名個案（釘住 ¥ 金額的那些）讀的是凍結快照 scripts/fixtures/frozen-card-prices.json，
+ * 不是每晚會被重寫的 public/data/database.json（DIC-1127）。yuyu-tei 價格是市場資料：
+ * 2026-08-21 的爬取為 hBP02-017 新增了 ¥80 的 (hEB01) 重印掛牌，於是「預設 ¥120」這條
+ * 斷言在程式碼毫無變動的情況下失敗並卡住所有 PR。凍結輸入才能讓釘住的金額有意義。
+ * 全庫掃描（不釘金額、只驗規則）仍然跑真實出貨資料，任何價格都成立。
  *
  * 驗證 src/utils/versionAlignment.ts 在 DIC-1013 之後的合約：
  *  - 版本身分只來自來源掛牌名稱，不再由 rarity 推論（不得再出現 SEC→パラレル/サイン、
@@ -16,10 +22,18 @@ import { buildPriceVersions, resolveVersionForCard } from '../src/utils/versionA
 import { printingFromLabel, isPlainPrinting } from '../src/utils/printingIdentity.ts';
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { groupVariantsByCardNumber, buildLowCostIndex } from '../src/utils/deckVariants.ts';
+import { frozenRawCards } from './lib/frozen-price-fixture.mjs';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.join(dirname, '..', 'public', 'data', 'database.json');
-const cards = JSON.parse(readFileSync(dbPath, 'utf8')).cards || {};
+const liveCards = JSON.parse(readFileSync(dbPath, 'utf8')).cards || {};
+
+// 具名個案用的資料：真實出貨列，但把受測卡號的掛牌換成凍結快照。
+const frozenRows = frozenRawCards(Object.values(liveCards));
+const frozenById = new Map(frozenRows.map((r) => [r.id, r]));
+const cards = Object.fromEntries(
+  Object.entries(liveCards).map(([k, row]) => [k, frozenById.get(row.id) ?? row]),
+);
 
 let failures = 0;
 function check(name, cond, detail) {
@@ -139,8 +153,8 @@ console.log('\n=== 來源無法辨識時 fail closed ===');
   check('預設版本代碼有多筆掛牌 → confident=false', !r.confident, `got ${JSON.stringify(r)}`);
 }
 
-console.log('\n=== 全庫掃描（多版本卡）===');
-const multi = Object.entries(cards).filter(
+console.log('\n=== 全庫掃描（多版本卡，真實出貨資料）===');
+const multi = Object.entries(liveCards).filter(
   ([, c]) => buildPriceVersions(c).filter((v) => (v.sellPrice ?? 0) > 0).length > 1
 );
 let badIndex = 0;
@@ -164,12 +178,12 @@ console.log('\n=== 跨消費端一致性（卡片頁／掃描 vs 組牌搜尋／
 // 決定勝負，兩邊就會對同一張卡給出不同的版本代碼 —— 那是不同的擁有權／持久化／缺卡鍵。
 // 這裡跑的是真正的兩條產線，不是重寫的簡化版。
 {
-  const db = adaptDatabase(Object.values(cards));
+  const db = adaptDatabase(Object.values(liveCards));
   const deckPick = new Map(
     groupVariantsByCardNumber(db.cards, db.priceRecords).map((g) => [g.cardNumber, g.card.printing]),
   );
   const rowFor = new Map();
-  for (const c of Object.values(cards)) if (!rowFor.has(c.cardNumber)) rowFor.set(c.cardNumber, c);
+  for (const c of Object.values(liveCards)) if (!rowFor.has(c.cardNumber)) rowFor.set(c.cardNumber, c);
 
   const detailPick = (row) => {
     const versions = buildPriceVersions(row);

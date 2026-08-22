@@ -20,6 +20,15 @@
  * deck migrated in place, that deck after a persist/rehydrate reload, each at
  * desktop and mobile width.
  *
+ * The subtotal anchor is rendered from FROZEN listings
+ * (scripts/fixtures/frozen-card-prices.json), not from the live scraped
+ * `public/data/database.json` (DIC-1127). The anchor's job is to prove the editor
+ * really rendered a priced deck — but yuyu-tei prices are market data, so pinning
+ * today's total made this suite fail whenever the nightly scrape moved a price,
+ * with nothing in the app changed. The rendered TOTAL is now anchored on frozen
+ * data, while the live dataset is still checked for the property that matters
+ * here: it renders a real, non-zero total (§6).
+ *
  * Run: npm run test:deck-editor-copy
  */
 import assert from 'node:assert/strict';
@@ -54,15 +63,22 @@ class NoopResizeObserver {
 globalThis.ResizeObserver = NoopResizeObserver;
 dom.window.ResizeObserver = NoopResizeObserver;
 
-const rawDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
+const liveDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
 const august = JSON.parse(fs.readFileSync('data/tournaments/2026-08.json', 'utf8'));
+
+const { frozenDatabase } = await import('./lib/frozen-price-fixture.mjs');
+// The real shipped catalog, with only the listings of the cards under test pinned
+// to the frozen snapshot. Swapped per test rather than globally so the same render
+// path can be pointed at either dataset.
+const frozenDb = frozenDatabase(liveDb);
+let servedDb = frozenDb;
 
 // The screen loads its catalog over fetch(); serve the shipped file instead of
 // the network so the render path itself is unchanged.
 globalThis.fetch = async (input) => {
   const url = typeof input === 'string' ? input : String(input?.url ?? input);
   assert.equal(url, '/data/database.json', `unexpected fetch during render: ${url}`);
-  return { ok: true, json: async () => rawDb };
+  return { ok: true, json: async () => servedDb };
 };
 
 const React = (await import('react')).default;
@@ -107,7 +123,8 @@ const MOBILE = { width: 390, height: 844 };
 const STORE_KEY = 'hunterCard-decks';
 const IMPORTED_AT = '2026-08-17T00:00:00.000Z';
 
-/** The slot DIC-1060 reported: its ordinary printing and the deck's exact total. */
+/** The slot DIC-1060 reported: its ordinary printing and the deck's exact total
+ * at the FROZEN prices this suite renders. */
 const ANCHOR_CARD_NUMBER = 'hBP07-006';
 const ANCHOR_PRINTING = 'BASE';
 const ANCHOR_SUBTOTAL = '12660';
@@ -120,7 +137,7 @@ async function test(name, fn) {
 }
 
 // ── Real shipped artefacts, imported by the real importer ────────────────────
-const db = adaptDatabase(Object.values(rawDb.cards || {}));
+const db = adaptDatabase(Object.values(frozenDb.cards || {}));
 const catalog = buildCatalogIndex(db.cards);
 const lowCostIndex = buildLowCostIndex(groupVariantsByCardNumber(db.cards, db.priceRecords));
 const event = august.events[0];
@@ -221,7 +238,7 @@ const byTestId = (container, testID) => container.querySelector(`[data-testid="$
  * it must show the deck, the slot's selected printing and the exact total, and
  * must say nothing about why that printing was selected.
  */
-async function assertSilentEditor(deck, viewport, expectedLayout) {
+async function assertSilentEditor(deck, viewport, expectedLayout, expectedSubtotal = ANCHOR_SUBTOTAL) {
   setViewport(viewport);
   const { container, cleanup } = await renderDeckEditor();
   try {
@@ -257,10 +274,20 @@ async function assertSilentEditor(deck, viewport, expectedLayout) {
 
     const subtotal = byTestId(container, 'gap-subtotal-JPY');
     assert.ok(subtotal, 'the shortage subtotal must render');
-    assert.ok(
-      subtotal.textContent.includes(ANCHOR_SUBTOTAL),
-      `the exact total must stay ${ANCHOR_SUBTOTAL}, got: ${subtotal.textContent}`,
-    );
+    if (expectedSubtotal === null) {
+      // Live-data mode: the number is today's market, so only the property that
+      // proves the editor priced the deck at all is asserted.
+      const rendered = Number((subtotal.textContent.match(/([\d,]+)\s*JPY/) ?? [])[1]?.replace(/,/g, ''));
+      assert.ok(
+        Number.isFinite(rendered) && rendered > 0,
+        `the live dataset must still render a real total, got: ${subtotal.textContent}`,
+      );
+    } else {
+      assert.ok(
+        subtotal.textContent.includes(expectedSubtotal),
+        `the exact total must stay ${expectedSubtotal}, got: ${subtotal.textContent}`,
+      );
+    }
 
     const text = observedText.join('\n');
     for (const phrase of FORBIDDEN_COPY) {
@@ -334,6 +361,36 @@ await test('the migrated deck still explains nothing after a reload', async () =
   assert.ok(reloaded, 'the deck must come back from storage');
   await assertSilentEditor(reloaded, DESKTOP, 'desktop');
   await assertSilentEditor(reloaded, MOBILE, 'mobile');
+});
+
+// ── 6. The same screen, on the LIVE scraped dataset ─────────────────────────
+// Everything above renders frozen prices so the anchor total can be exact. This
+// renders the real public/data/database.json, where the total is whatever the
+// last scrape published: a moved price must NOT fail (DIC-1127), but a dataset
+// that stopped pricing the deck, or copy creeping back in, still must.
+await test('the live scraped dataset renders the same silent editor', async () => {
+  servedDb = liveDb;
+  try {
+    const liveCards = adaptDatabase(Object.values(liveDb.cards || {}));
+    const liveCatalog = buildCatalogIndex(liveCards.cards);
+    const draft = buildImportedDeck(
+      event, sourceDeck, liveCatalog, liveCards.priceRecords, [], IMPORTED_AT,
+    );
+    const deck = {
+      id: 'live-import',
+      name: draft.name,
+      oshi: draft.oshi,
+      main: draft.main,
+      yell: draft.yell,
+      origin: draft.origin,
+      updatedAt: IMPORTED_AT,
+    };
+    seed(deck);
+    await assertSilentEditor(deck, DESKTOP, 'desktop', null);
+    await assertSilentEditor(deck, MOBILE, 'mobile', null);
+  } finally {
+    servedDb = frozenDb;
+  }
 });
 
 console.log(`\nDIC-1064 deck editor says nothing it should not: ${passed} tests passed`);
