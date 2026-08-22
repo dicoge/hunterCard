@@ -7,6 +7,11 @@
  * 走真正的 scanSessionStore（zustand + persist + 記憶體 storage），資料取自出貨用的
  * public/data/database.json —— 不是重寫的簡化版管線。
  *
+ * 具名個案（釘住 ¥ 金額的那些）的掛牌來自凍結快照 scripts/fixtures/frozen-card-prices.json
+ * （DIC-1127）：yuyu-tei 價格是市場資料，每晚爬取都可能改寫，先前「hBP02-017 預設 ¥120」
+ * 這種硬寫金額會在程式碼毫無變動的日子失敗。全庫掃描仍跑真實出貨資料，因為它驗的是
+ * 「有價 ⇔ 版本已確認」這條與價格無關的規則。
+ *
  * 釘住的合約：來源無法證明是哪一筆掛牌時，掃描不得替使用者挑一個價格。hBP02-017 真的有
  * 兩筆同名「白銀ノエル(パラレル)」¥3,480／¥500；先前掃描會直接取第一筆，於是同一張實體
  * 卡的估值會隨來源掛牌順序在 ¥3,480 與 ¥500 之間跳動。
@@ -17,11 +22,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { useScanSessionStore, getEffectivePrice } from '../src/stores/scanSessionStore.ts';
 import { buildPriceVersions, resolveVersionForCard } from '../src/utils/versionAlignment.ts';
+import { frozenRawCards } from './lib/frozen-price-fixture.mjs';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.join(dirname, '..', 'public', 'data', 'database.json');
 const cards = JSON.parse(readFileSync(dbPath, 'utf8')).cards || {};
-const rowFor = (cardNumber) => Object.values(cards).find((c) => c.cardNumber === cardNumber);
+const frozenRows = frozenRawCards(Object.values(cards));
+const frozenRowFor = (cardNumber) => frozenRows.find((c) => c.cardNumber === cardNumber);
 
 let passed = 0;
 function test(name, fn) {
@@ -38,8 +45,8 @@ const scan = (card) => {
   return { card: state.cards[0], total: state.totalValue };
 };
 
-// 真實出貨資料，未經修改。
-const NOEL = rowFor('hBP02-017');
+// 真實出貨列，掛牌取自凍結快照。
+const NOEL = frozenRowFor('hBP02-017');
 assert.ok(NOEL, 'hBP02-017 必須存在於出貨資料庫');
 const DUPES = NOEL.prices.filter((p) => p.name === '白銀ノエル(パラレル)');
 assert.equal(DUPES.length, 2, '前提：來源真的有兩筆同名 パラレル 掛牌');
@@ -133,7 +140,7 @@ test('移除待確認卡後總計不變（本來就沒算它）', () => {
   assert.equal(before, 120);
 });
 
-console.log('\n=== 全庫掃描 ===');
+console.log('\n=== 全庫掃描（真實出貨資料，不釘金額）===');
 
 test('出貨資料庫每一張卡：有價 ⇔ 版本已確認（掃描與卡片頁同一個判定）', () => {
   let priced = 0;

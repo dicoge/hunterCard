@@ -37,6 +37,7 @@
     "test:tournament-report": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-report.mjs",
     "test:tournament-collector": "node scripts/test-tournament-collector.mjs",
     "test:tournament-deck-import": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-deck-import.mjs",
+    "test:frozen-prices": "node scripts/generate-frozen-price-fixture.mjs --check",
     "test:tournament-printing-default": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-printing-default.mjs",
     "test:deck-editor-copy": "node --import ./scripts/register-web-render.mjs scripts/test-deck-editor-copy.mjs",
     "test:tournament-analytics": "node scripts/test-tournament-analytics.mjs",

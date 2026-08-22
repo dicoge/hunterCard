@@ -20,6 +20,15 @@
  * deck migrated in place, that deck after a persist/rehydrate reload, each at
  * desktop and mobile width.
  *
+ * The subtotal anchor is rendered from FROZEN listings
+ * (scripts/fixtures/frozen-card-prices.json), not from the live scraped
+ * `public/data/database.json` (DIC-1127). The anchor's job is to prove the editor
+ * really rendered a priced deck — but yuyu-tei prices are market data, so pinning
+ * today's total made this suite fail whenever the nightly scrape moved a price,
+ * with nothing in the app changed. The rendered TOTAL is now anchored on frozen
+ * data, while the live dataset is still checked for the property that matters
+ * here: it renders a real, non-zero total (§6).
+ *
  * Run: npm run test:deck-editor-copy
  */
 import assert from 'node:assert/strict';
@@ -54,15 +63,38 @@ class NoopResizeObserver {
 globalThis.ResizeObserver = NoopResizeObserver;
 dom.window.ResizeObserver = NoopResizeObserver;
 
-const rawDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
+const liveDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
 const august = JSON.parse(fs.readFileSync('data/tournaments/2026-08.json', 'utf8'));
+
+const { frozenDatabase } = await import('./lib/frozen-price-fixture.mjs');
+// The real shipped catalog, with only the listings of the cards under test pinned
+// to the frozen snapshot.
+const frozenDb = frozenDatabase(liveDb);
+
+/**
+ * The screen loads its catalog through `loadCardDatabase()`, which memoizes the
+ * parsed database in a module-level `cache` — correct in production (one fetch
+ * per session) but it means ONE process can only ever observe ONE dataset: the
+ * first render wins the cache and every later render reuses it, whatever a
+ * re-pointed fetch stub returns.
+ *
+ * So the frozen leg and the live leg cannot share a process. Swapping the served
+ * database mid-suite silently re-verified the frozen data twice while the live
+ * assertions never ran at all — a test that could not fail. Each leg therefore
+ * gets its own process with a fresh module registry: this file re-executes
+ * itself with DECK_EDITOR_LIVE_DB=1 for the live leg (see the bottom of the
+ * file). Production code stays untouched — no test-only cache reset, and the
+ * render path is the real one.
+ */
+const LIVE_MODE = process.env.DECK_EDITOR_LIVE_DB === '1';
+let servedDb = LIVE_MODE ? liveDb : frozenDb;
 
 // The screen loads its catalog over fetch(); serve the shipped file instead of
 // the network so the render path itself is unchanged.
 globalThis.fetch = async (input) => {
   const url = typeof input === 'string' ? input : String(input?.url ?? input);
   assert.equal(url, '/data/database.json', `unexpected fetch during render: ${url}`);
-  return { ok: true, json: async () => rawDb };
+  return { ok: true, json: async () => servedDb };
 };
 
 const React = (await import('react')).default;
@@ -107,20 +139,29 @@ const MOBILE = { width: 390, height: 844 };
 const STORE_KEY = 'hunterCard-decks';
 const IMPORTED_AT = '2026-08-17T00:00:00.000Z';
 
-/** The slot DIC-1060 reported: its ordinary printing and the deck's exact total. */
+/** The slot DIC-1060 reported: its ordinary printing and the deck's exact total
+ * at the FROZEN prices this suite renders. */
 const ANCHOR_CARD_NUMBER = 'hBP07-006';
 const ANCHOR_PRINTING = 'BASE';
 const ANCHOR_SUBTOTAL = '12660';
 
+/** The live leg is the one case that must observe the live scraped dataset; every
+ * other case pins exact frozen totals. A process runs exactly one of the two, so
+ * neither can be silently served the other's data. */
+const isLiveCase = (name) => name.includes('live scraped dataset');
+const FROZEN_CASES = 5;
+const LIVE_CASES = 1;
+
 let passed = 0;
 async function test(name, fn) {
+  if (LIVE_MODE !== isLiveCase(name)) return;
   await fn();
   passed += 1;
   console.log(`  ✓ ${name}`);
 }
 
 // ── Real shipped artefacts, imported by the real importer ────────────────────
-const db = adaptDatabase(Object.values(rawDb.cards || {}));
+const db = adaptDatabase(Object.values(frozenDb.cards || {}));
 const catalog = buildCatalogIndex(db.cards);
 const lowCostIndex = buildLowCostIndex(groupVariantsByCardNumber(db.cards, db.priceRecords));
 const event = august.events[0];
@@ -221,7 +262,7 @@ const byTestId = (container, testID) => container.querySelector(`[data-testid="$
  * it must show the deck, the slot's selected printing and the exact total, and
  * must say nothing about why that printing was selected.
  */
-async function assertSilentEditor(deck, viewport, expectedLayout) {
+async function assertSilentEditor(deck, viewport, expectedLayout, expectedSubtotal = ANCHOR_SUBTOTAL) {
   setViewport(viewport);
   const { container, cleanup } = await renderDeckEditor();
   try {
@@ -257,10 +298,20 @@ async function assertSilentEditor(deck, viewport, expectedLayout) {
 
     const subtotal = byTestId(container, 'gap-subtotal-JPY');
     assert.ok(subtotal, 'the shortage subtotal must render');
-    assert.ok(
-      subtotal.textContent.includes(ANCHOR_SUBTOTAL),
-      `the exact total must stay ${ANCHOR_SUBTOTAL}, got: ${subtotal.textContent}`,
-    );
+    if (expectedSubtotal === null) {
+      // Live-data mode: the number is today's market, so only the property that
+      // proves the editor priced the deck at all is asserted.
+      const rendered = Number((subtotal.textContent.match(/([\d,]+)\s*JPY/) ?? [])[1]?.replace(/,/g, ''));
+      assert.ok(
+        Number.isFinite(rendered) && rendered > 0,
+        `the live dataset must still render a real total, got: ${subtotal.textContent}`,
+      );
+    } else {
+      assert.ok(
+        subtotal.textContent.includes(expectedSubtotal),
+        `the exact total must stay ${expectedSubtotal}, got: ${subtotal.textContent}`,
+      );
+    }
 
     const text = observedText.join('\n');
     for (const phrase of FORBIDDEN_COPY) {
@@ -336,4 +387,61 @@ await test('the migrated deck still explains nothing after a reload', async () =
   await assertSilentEditor(reloaded, MOBILE, 'mobile');
 });
 
-console.log(`\nDIC-1064 deck editor says nothing it should not: ${passed} tests passed`);
+// ── 6. The same screen, on the LIVE scraped dataset ─────────────────────────
+// Everything above renders frozen prices so the anchor total can be exact. This
+// renders the real public/data/database.json, where the total is whatever the
+// last scrape published: a moved price must NOT fail (DIC-1127), but a dataset
+// that stopped pricing the deck, or copy creeping back in, still must.
+await test('the live scraped dataset renders the same silent editor', async () => {
+  // This process serves the live database to the screen (LIVE_MODE), so what the
+  // screen renders below really is the scraped dataset.
+  const liveCards = adaptDatabase(Object.values(liveDb.cards || {}));
+  const liveCatalog = buildCatalogIndex(liveCards.cards);
+  const draft = buildImportedDeck(
+    event, sourceDeck, liveCatalog, liveCards.priceRecords, [], IMPORTED_AT,
+  );
+  const deck = {
+    id: 'live-import',
+    name: draft.name,
+    oshi: draft.oshi,
+    main: draft.main,
+    yell: draft.yell,
+    origin: draft.origin,
+    updatedAt: IMPORTED_AT,
+  };
+  seed(deck);
+  await assertSilentEditor(deck, DESKTOP, 'desktop', null);
+  await assertSilentEditor(deck, MOBILE, 'mobile', null);
+});
+
+// A leg that ran nothing must never look like a pass — that is exactly how the
+// original defect hid: the live assertions silently never executed. Pinning the
+// per-leg count means a rename or a filter drift fails loudly instead of
+// collapsing both legs back onto one dataset.
+const EXPECTED_CASES = LIVE_MODE ? LIVE_CASES : FROZEN_CASES;
+assert.equal(
+  passed, EXPECTED_CASES,
+  `the ${LIVE_MODE ? 'live' : 'frozen'} leg must run exactly ${EXPECTED_CASES} case(s), ran ${passed}`,
+);
+
+console.log(
+  `\nDIC-1064 deck editor says nothing it should not: ${passed} tests passed`
+  + ` (${LIVE_MODE ? 'live scraped' : 'frozen'} database)`,
+);
+
+// ── The other leg, in its own process ────────────────────────────────────────
+// Run last so this leg's result is already reported. execArgv carries the loader
+// flags (--import ./scripts/register-web-render.mjs), without which the child
+// could not load .ts/.tsx at all. stdio is inherited so the child's ✓ lines and
+// any failure surface directly; a non-zero child exit fails this suite.
+if (!LIVE_MODE) {
+  const { spawnSync } = await import('node:child_process');
+  const child = spawnSync(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
+    stdio: 'inherit',
+    env: { ...process.env, DECK_EDITOR_LIVE_DB: '1' },
+  });
+  if (child.status !== 0) {
+    console.error('\n✗ the live-database leg failed');
+    process.exit(child.status === null ? 1 : child.status);
+  }
+}

@@ -10,7 +10,10 @@
  *     同名重複版本 → 全 null。
  *  6. 對真實 database.json：以同一支 assignVariantBuyPrices 由來源重算，逐版本比對，
  *     證明每個 buyPrice 都是精確 token 對齊的結果，不存在跨版本借價。
- *  7. 抽樣 ≥10 張多版本卡，輸出 canonical key / 販售 / 收購 / 是否 fail-closed。
+ *  7. 版本塌陷以 **provenance 相等** 判定（DIC-1128）：多個版本共用同一個來源 listing／token
+ *     才算塌陷；兩個不同印次恰好報同價（市場常態，尤其低價位）必須放行。變異測試同時釘住
+ *     兩個方向 —— 合法同價不誤報、真正的 token 複製一定失敗。
+ *  8. 抽樣 ≥10 張多版本卡，輸出 canonical key / 販售 / 收購 / 是否 fail-closed。
  *
  * 純 node，無測試框架；任何斷言失敗 → process.exit(1)（CI 會擋）。
  */
@@ -362,6 +365,92 @@ function buyEntriesFor(num) {
   const m = (num && srcIdx.get(num)) || new Map();
   return [...m.entries()].map(([token, e]) => ({ token, ...e }));
 }
+
+// ── 純函式偵測器（供全庫 invariant 與變異測試共用同一支邏輯）──
+// 全庫 invariant 直接呼叫這些函式，變異測試則餵入「注入過塌陷的卡列」，證明偵測器真的會抓。
+
+/** 該卡號來源本身有幾個版本（token 數）。<2 代表來源不分版，塌陷檢查無意義。 */
+function sourceTokenCount(num, entriesFor) {
+  return new Set(entriesFor(num).map((e) => e.token)).size;
+}
+
+/**
+ * 版本塌陷偵測（provenance 相等，非數值相等）——DIC-1128。
+ *
+ * 塌陷的定義是「**同一筆來源 listing 的價格被複製到多個版本**」，也就是多個版本共用同一個
+ * provenance token。判斷依據必須是 provenance，不是價格數值：同卡號的兩個不同印次（例如
+ * hBP02-022 的 SR 與 HEB01）各自綁回自己的 listing、卻剛好都報 ¥50，是完全合法的市場情形，
+ * 尤其在低價位很常見。舊版以 `new Set(prices).size === 1` 推論塌陷，每晚爬取只要有兩個版本
+ * 撞價就誤報一次（DIC-1128 讓乾淨 main 的 CI 全紅），且無法用白名單根治。
+ *
+ * 這裡改成：同一張卡內，兩個以上帶價版本宣告同一個 (numKey, token) → 塌陷；帶價卻沒有
+ * provenance token → 無法證明來源，同樣算違規。價格相等本身不再是證據。
+ */
+function findVersionCollapses(cards, entriesFor) {
+  const violations = [];
+  for (const [id, c] of Object.entries(cards)) {
+    if (!Array.isArray(c.prices) || c.prices.length < 2) continue;
+    const num = normalizeCardNumber(c.cardNumber);
+    if (sourceTokenCount(num, entriesFor) < 2) continue; // 來源本身只有單一版本，跳過
+    const byToken = new Map(); // provenance token → 宣告它的版本名稱
+    for (const v of c.prices) {
+      if (!v || v.buyPrice == null) continue;
+      const token = v.buyPriceVersion ?? null;
+      if (token == null) {
+        violations.push(`${id} :: ${v.name} buyPrice=${v.buyPrice} 無 provenance token（無法證明來源 listing）`);
+        continue;
+      }
+      if (!byToken.has(token)) byToken.set(token, []);
+      byToken.get(token).push(v.name);
+    }
+    for (const [token, names] of byToken) {
+      if (names.length > 1) {
+        violations.push(`${id} token=${token} 被 ${names.length} 個版本共用：${names.join(' / ')}`);
+      }
+    }
+  }
+  return violations;
+}
+
+/** 逐版本以 assignVariantBuyPrices 重算並比對 DB（回傳違規列表 + 掃描數）。 */
+function findRecomputeViolations(cards, entriesFor) {
+  const violations = [];
+  let scanned = 0;
+  for (const [id, c] of Object.entries(cards)) {
+    if (!Array.isArray(c.prices) || c.prices.length === 0) continue;
+    const expected = assignVariantBuyPrices(c.prices, entriesFor(normalizeCardNumber(c.cardNumber)));
+    c.prices.forEach((v, i) => {
+      scanned += 1;
+      const stored = v.buyPrice ?? null;
+      if (stored !== (expected[i] ?? null)) {
+        violations.push(`${id} :: ${v.name} stored=${stored} expected=${expected[i] ?? null}`);
+      }
+    });
+  }
+  return { violations, scanned };
+}
+
+/** 逐版本比對 provenance（價格/版本/來源/時間戳）與來源重算（回傳違規列表 + 掃描數）。 */
+function findProvenanceViolations(cards, entriesFor) {
+  const violations = [];
+  let scanned = 0;
+  for (const [id, c] of Object.entries(cards)) {
+    if (!Array.isArray(c.prices) || c.prices.length === 0) continue;
+    const expected = assignVariantBuyMatches(c.prices, entriesFor(normalizeCardNumber(c.cardNumber)));
+    c.prices.forEach((v, i) => {
+      const e = expected[i];
+      scanned += 1;
+      const wantVersion = e ? (e.token === '' ? 'BASE' : e.token) : null;
+      const wantSource = e ? e.source : null;
+      const wantTs = e ? e.timestamp : null;
+      if ((v.buyPrice ?? null) !== (e ? e.price : null)) violations.push(`${id} :: ${v.name} buyPrice`);
+      if ((v.buyPriceVersion ?? null) !== wantVersion) violations.push(`${id} :: ${v.name} buyPriceVersion stored=${v.buyPriceVersion ?? null} want=${wantVersion}`);
+      if ((v.buyPriceSource ?? null) !== wantSource) violations.push(`${id} :: ${v.name} buyPriceSource stored=${v.buyPriceSource ?? null} want=${wantSource}`);
+      if ((v.buyPriceTimestamp ?? null) !== wantTs) violations.push(`${id} :: ${v.name} buyPriceTimestamp`);
+    });
+  }
+  return { violations, scanned };
+}
 function findByCardNumber(cardNum) {
   const target = String(cardNum).toUpperCase();
   for (const [, c] of Object.entries(db)) {
@@ -402,44 +491,14 @@ check('acceptance: hBP02-017 兩個純 (パラレル) 不得塌成同價（歧�
 });
 
 check('全庫 invariant: 逐版本以 assignVariantBuyPrices 重算，與 DB 完全一致（精確 token provenance）', () => {
-  let scanned = 0;
-  const violations = [];
-  for (const [id, c] of Object.entries(db)) {
-    if (!Array.isArray(c.prices) || c.prices.length === 0) continue;
-    const num = normalizeCardNumber(c.cardNumber);
-    const expected = assignVariantBuyPrices(c.prices, buyEntriesFor(num));
-    c.prices.forEach((v, i) => {
-      scanned += 1;
-      const stored = v.buyPrice ?? null;
-      if (stored !== (expected[i] ?? null)) {
-        violations.push(`${id} :: ${v.name} stored=${stored} expected=${expected[i] ?? null}`);
-      }
-    });
-  }
+  const { violations, scanned } = findRecomputeViolations(db, buyEntriesFor);
   assert.ok(scanned > 500, `掃描版本數過少（${scanned}）`);
   assert.equal(violations.length, 0, `發現與精確重算不符 ${violations.length} 筆，例：\n      ${violations.slice(0, 8).join('\n      ')}`);
   console.log(`      （掃描 ${scanned} 個版本，全部等於精確 token 重算結果）`);
 });
 
 check('全庫 invariant: 每個版本 buyPrice 的 provenance（版本/來源/時間戳）與來源重算一致', () => {
-  let scanned = 0;
-  const violations = [];
-  for (const [id, c] of Object.entries(db)) {
-    if (!Array.isArray(c.prices) || c.prices.length === 0) continue;
-    const num = normalizeCardNumber(c.cardNumber);
-    const expected = assignVariantBuyMatches(c.prices, buyEntriesFor(num));
-    c.prices.forEach((v, i) => {
-      const e = expected[i];
-      scanned += 1;
-      const wantVersion = e ? (e.token === '' ? 'BASE' : e.token) : null;
-      const wantSource = e ? e.source : null;
-      const wantTs = e ? e.timestamp : null;
-      if ((v.buyPrice ?? null) !== (e ? e.price : null)) violations.push(`${id} :: ${v.name} buyPrice`);
-      if ((v.buyPriceVersion ?? null) !== wantVersion) violations.push(`${id} :: ${v.name} buyPriceVersion stored=${v.buyPriceVersion ?? null} want=${wantVersion}`);
-      if ((v.buyPriceSource ?? null) !== wantSource) violations.push(`${id} :: ${v.name} buyPriceSource stored=${v.buyPriceSource ?? null} want=${wantSource}`);
-      if ((v.buyPriceTimestamp ?? null) !== wantTs) violations.push(`${id} :: ${v.name} buyPriceTimestamp`);
-    });
-  }
+  const { violations, scanned } = findProvenanceViolations(db, buyEntriesFor);
   assert.ok(scanned > 500, `掃描版本數過少（${scanned}）`);
   assert.equal(violations.length, 0, `provenance 與精確重算不符 ${violations.length} 筆，例：\n      ${violations.slice(0, 8).join('\n      ')}`);
   console.log(`      （掃描 ${scanned} 個版本，buyPrice/版本/來源/時間戳全等於來源重算）`);
@@ -523,17 +582,91 @@ check('acceptance: hBP03-025 四列印次 —— 只有原印 C 列帶 bare ¥10
   assert.equal(Object.values(byId).filter((p) => p === 10).length, 1, '¥10 只能出現在原印列');
 });
 
-check('全庫 invariant: 多版本卡不得所有版本共用同一收購價（當來源本身分版時）', () => {
-  const collapsed = [];
-  for (const [id, c] of Object.entries(db)) {
-    if (!Array.isArray(c.prices) || c.prices.length < 2) continue;
-    const num = normalizeCardNumber(c.cardNumber);
-    const tokens = new Set([...((num && srcIdx.get(num)) || new Map()).keys()]);
-    if (tokens.size < 2) continue; // 來源本身只有單一版本，跳過
-    const buys = c.prices.map((v) => v.buyPrice).filter((x) => x != null);
-    if (buys.length >= 2 && new Set(buys).size === 1) collapsed.push(`${id} all=${buys[0]}`);
+check('全庫 invariant: 多版本卡不得多個版本共用同一來源 listing（provenance 相等，非數值相等）', () => {
+  const collapsed = findVersionCollapses(db, buyEntriesFor);
+  assert.equal(collapsed.length, 0, `發現版本塌陷（多版本共用同一 provenance token）例：\n      ${collapsed.slice(0, 5).join('\n      ')}`);
+});
+
+// ── DIC-1128 變異測試：塌陷偵測必須對「真塌陷」敏感、對「不同印次恰好同價」放行 ──
+// 舊版 invariant 用「所有版本價格數值相等」推論塌陷，2026-08-22 的爬取讓 hBP02-022 的
+// SR / HEB01 兩個印次都報 ¥50，乾淨 main 因此全紅。下面三條把偵測器的兩個方向都釘住：
+// 合法資料不得誤報，真正的 token 複製必須失敗（且被三條 invariant 各自獨立抓到）。
+console.log('── Mutation: 版本塌陷偵測靈敏度（DIC-1128）──');
+
+const MUT_TS = '2026-08-22T12:13:15.218Z';
+// production-shaped：hBP02-022 兩筆 fullahead listing，SR 與 HEB01 各自獨立、恰好同為 ¥50。
+const mutEntries = {
+  'HBP02-022': [
+    { token: 'SR', price: 50, source: 'fullahead', timestamp: MUT_TS },
+    { token: 'HEB01', price: 50, source: 'fullahead', timestamp: MUT_TS },
+  ],
+};
+const mutEntriesFor = (num) => mutEntries[num] || [];
+const mutCard = (parallel, heb01) => ({
+  'hBP02-022_hBP02': {
+    cardNumber: 'hBP02-022',
+    rarity: 'SR',
+    series: 'hBP02',
+    prices: [
+      { name: 'パヴォリア・レイネ(パラレル)', sellPrice: 580, ...parallel },
+      { name: 'パヴォリア・レイネ', sellPrice: 80 },
+      { name: 'パヴォリア・レイネ(パラレル/hEB01)', sellPrice: 120, ...heb01 },
+      { name: 'パヴォリア・レイネ(hEB01)', sellPrice: 50 },
+    ],
+  },
+});
+const P = (price, version) => ({ buyPrice: price, buyPriceVersion: version, buyPriceSource: 'fullahead', buyPriceTimestamp: MUT_TS });
+
+check('不同印次（SR / HEB01）各自綁回自己的 listing 卻同為 ¥50 → 合法，不得誤報塌陷', () => {
+  const cards = mutCard(P(50, 'SR'), P(50, 'HEB01'));
+  assert.deepEqual(findVersionCollapses(cards, mutEntriesFor), [],
+    '兩個不同 provenance token 恰好同價必須放行（DIC-1128 false positive）');
+  // 同一份資料在兩條較強的 provenance invariant 下也必須是乾淨的 —— 證明 fixture 就是
+  // committed database 的真實形狀，不是為了過測而捏出來的。
+  assert.deepEqual(findRecomputeViolations(cards, mutEntriesFor).violations, []);
+  assert.deepEqual(findProvenanceViolations(cards, mutEntriesFor).violations, []);
+});
+
+check('真塌陷（SR 的價與 token 一起複製到 HEB01 版本）→ 三條 invariant 各自獨立抓到', () => {
+  // 注入「借別版價」：HEB01 版本拿到 SR listing 的價格與 provenance。
+  const cards = mutCard(P(6500, 'SR'), P(6500, 'SR'));
+  const entriesFor = (num) => (num === 'HBP02-022'
+    ? [{ token: 'SR', price: 6500, source: 'fullahead', timestamp: MUT_TS },
+       { token: 'HEB01', price: 50, source: 'fullahead', timestamp: MUT_TS }]
+    : []);
+  const collapsed = findVersionCollapses(cards, entriesFor);
+  assert.equal(collapsed.length, 1, `塌陷偵測器未抓到 token 複製：${JSON.stringify(collapsed)}`);
+  assert.match(collapsed[0], /token=SR 被 2 個版本共用/);
+  // 兩條較強的 provenance invariant 必須維持有效（不因本次改寫而失去偵測力）。
+  assert.ok(findRecomputeViolations(cards, entriesFor).violations.length > 0, '重算 invariant 應抓到借價');
+  assert.ok(findProvenanceViolations(cards, entriesFor).violations.length > 0, 'provenance invariant 應抓到借價');
+});
+
+check('帶價但無 provenance token → 視為無法證明來源，塌陷偵測必須報', () => {
+  const cards = mutCard({ buyPrice: 50 }, P(50, 'HEB01'));
+  const violations = findVersionCollapses(cards, mutEntriesFor);
+  assert.equal(violations.length, 1, '缺 provenance token 的帶價版本必須被抓到');
+  assert.match(violations[0], /無 provenance token/);
+});
+
+check('真實 committed hBP02-022：現況合法；把 SR provenance 複製到 hEB01 列即失敗', () => {
+  const realId = 'hBP02-022_hBP02';
+  const real = db[realId];
+  if (!real || !Array.isArray(real.prices)) { console.log('      （DB 無 hBP02-022，跳過）'); return; }
+  const asIs = { [realId]: real };
+  assert.deepEqual(findVersionCollapses(asIs, buyEntriesFor), [], '乾淨 main 的 hBP02-022 必須通過');
+  // 深拷貝後注入塌陷：把第一個帶價版本的 provenance 覆蓋到其他帶價版本上。
+  const mutated = JSON.parse(JSON.stringify(real));
+  const priced = mutated.prices.filter((v) => v.buyPrice != null);
+  if (priced.length < 2) { console.log('      （帶價版本不足 2 個，跳過注入）'); return; }
+  for (const v of priced.slice(1)) {
+    v.buyPrice = priced[0].buyPrice;
+    v.buyPriceVersion = priced[0].buyPriceVersion;
+    v.buyPriceSource = priced[0].buyPriceSource;
+    v.buyPriceTimestamp = priced[0].buyPriceTimestamp;
   }
-  assert.equal(collapsed.length, 0, `發現版本塌陷（來源分版卻共用同價）例：\n      ${collapsed.slice(0, 5).join('\n      ')}`);
+  assert.ok(findVersionCollapses({ [realId]: mutated }, buyEntriesFor).length > 0,
+    '注入真塌陷後 invariant 必須失敗（否則檢查已失去意義）');
 });
 
 check('全庫 invariant: 同一卡片內不得有重複 canonical key 卻都帶收購價', () => {

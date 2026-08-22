@@ -128,6 +128,9 @@ jobs:
       - name: Verify verified tournament deck one-tap import fail-closed (DIC-1033)
         run: npm run test:tournament-deck-import
 
+      - name: Verify the frozen price fixture still describes the repo (DIC-1127)
+        run: npm run test:frozen-prices
+
       - name: Verify tournament import defaults to the lowest ordinary printing (DIC-1060)
         run: npm run test:tournament-printing-default
 
