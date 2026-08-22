@@ -20,13 +20,23 @@
  *     closed on UNRESOLVED rather than crossing onto a premium version.
  *
  * Every price assertion is checked against an oracle built straight off the raw
- * shipped listings in `public/data/database.json` rather than off the resolver
- * under test, so a resolver that silently changes its mind cannot make this file
- * agree with it. The oracle shares the printing-IDENTITY primitives
- * (`buildSourcePrintings` / `isPlainPrinting`) — identity is the one thing both
- * sides must agree on for a comparison to mean anything — but it does the tier
- * filtering and the lowest-price SELECTION itself, which is the behaviour under
- * test. The five reported prices are additionally pinned as literals below.
+ * listings rather than off the resolver under test, so a resolver that silently
+ * changes its mind cannot make this file agree with it. The oracle shares the
+ * printing-IDENTITY primitives (`buildSourcePrintings` / `isPlainPrinting`) —
+ * identity is the one thing both sides must agree on for a comparison to mean
+ * anything — but it does the tier filtering and the lowest-price SELECTION
+ * itself, which is the behaviour under test. The five reported prices are
+ * additionally pinned as literals below.
+ *
+ * Those literals are asserted against FROZEN listings
+ * (scripts/fixtures/frozen-card-prices.json), not against the live scraped
+ * `public/data/database.json` (DIC-1127). yuyu-tei prices are market data: the
+ * nightly scrape moves them, and a hard-coded ¥12,660 deck total therefore used
+ * to fail on a day this repo changed nothing — the 2026-08-21 scrape moved three
+ * DUKHN listings and blocked every open PR. Freezing the INPUT keeps the exact
+ * numbers meaningful and makes the suite deterministic; the live dataset is still
+ * exercised, but through price-independent invariants (§9) that catch a broken
+ * pipeline without pinning today's market.
  *
  * Run: npm run test:tournament-printing-default
  */
@@ -41,9 +51,12 @@ import {
 import { computeGap, deckStats, isDeckLegal, validateDeck } from '../src/utils/deckRules.ts';
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { buildLowCostIndex, groupVariantsByCardNumber } from '../src/utils/deckVariants.ts';
-import { buildSourcePrintings, isPlainPrinting } from '../src/utils/printingIdentity.ts';
+import {
+  buildSourcePrintings, isPlainPrinting, printingFromLabel,
+} from '../src/utils/printingIdentity.ts';
 import { useDeckStore } from '../src/store/deckStore.ts';
 import platformStorage from '../src/stores/storage.ts';
+import { frozenRawCards } from './lib/frozen-price-fixture.mjs';
 
 const STORE_KEY = 'hunterCard-decks';
 const IMPORTED_AT = '2026-08-17T00:00:00.000Z';
@@ -60,10 +73,14 @@ function resetStore() {
   platformStorage.removeItem(STORE_KEY);
 }
 
-// ── Real shipped artefacts ───────────────────────────────────────────────────
+// ── Real shipped artefacts, at frozen prices ─────────────────────────────────
+// The deck reports and the card rows are the real committed ones; only the
+// LISTINGS of the card numbers under test are pinned to the frozen snapshot, so
+// what runs here is the shipped catalog with a market that cannot move.
 const august = JSON.parse(fs.readFileSync('data/tournaments/2026-08.json', 'utf8'));
 const rawDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
-const rawRows = Object.values(rawDb.cards || {});
+const liveRows = Object.values(rawDb.cards || {});
+const rawRows = frozenRawCards(liveRows);
 const db = adaptDatabase(rawRows);
 const catalog = buildCatalogIndex(db.cards);
 const lowCostIndex = buildLowCostIndex(groupVariantsByCardNumber(db.cards, db.priceRecords));
@@ -102,8 +119,8 @@ function expectedOrdinary(cardNumber) {
 }
 
 /** Every sell price the source lists for a card number, ordinary or premium. */
-function allSellPrices(cardNumber) {
-  return rawRows
+function allSellPrices(cardNumber, rows = rawRows) {
+  return rows
     .filter((r) => r.cardNumber === cardNumber)
     .flatMap((r) => r.prices ?? [])
     .map((p) => p.sellPrice)
@@ -411,7 +428,7 @@ await test('the shortage total uses only ordinary-printing SELL prices', () => {
   }
 });
 
-await test('DUKHN prices the current 12,660 JPY ordinary-printing total with only the genuinely unlisted card unpriced', () => {
+await test('DUKHN prices the frozen 12,660 JPY ordinary-printing total with only the genuinely unlisted card unpriced', () => {
   const imported = draftToDeck(importOf(DUKHN));
   const gap = computeGap(imported, {}, db.priceRecords);
   assert.equal(gap.total, 12660);
@@ -442,6 +459,131 @@ await test('price alerts become available for every defaulted, priced slot', () 
     assert.equal(row.price.price, ex.ordinary, 'the alert range anchors on the ordinary price');
   }
 });
+
+// ── 7b. The exact totals are a property of the DATA, not of today's market ───
+// The two totals above are pinned literals, which is only honest while the input
+// is frozen. These prove the SAME resolver re-derives a different total from
+// deliberately changed prices — so a passing pinned total means "the resolver
+// still sums the ordinary printings", not "nobody has re-scraped lately". This is
+// what the old suite could not distinguish (DIC-1127).
+await test('a deliberately changed ordinary price moves the total by exactly its delta', () => {
+  // Re-price ONE ordinary listing of a DUKHN slot and nothing else.
+  const TARGET = 'hBP01-104';
+  const slotCount = DUKHN.cards.find((ref) => ref.cardNumber === TARGET)?.count;
+  assert.ok(slotCount > 0, `precondition: ${TARGET} is really a DUKHN slot`);
+  const before = expectedOrdinary(TARGET);
+  assert.ok(before, `precondition: ${TARGET} has a priced ordinary listing`);
+  const delta = 500;
+
+  const repriced = rawRows.map((row) => (row.cardNumber === TARGET ? {
+    ...row,
+    prices: (row.prices ?? []).map((p) => (
+      p.name === before.label ? { ...p, sellPrice: before.sellPrice + delta } : p
+    )),
+  } : row));
+  const shifted = adaptDatabase(repriced);
+  const shiftedCatalog = buildCatalogIndex(shifted.cards);
+  const draft = buildImportedDeck(
+    augustEvent, DUKHN, shiftedCatalog, shifted.priceRecords, [], IMPORTED_AT,
+  );
+  const gap = computeGap(draftToDeck(draft), {}, shifted.priceRecords);
+
+  assert.equal(
+    gap.total, 12660 + delta * slotCount,
+    'the total tracks the ordinary price it is made of',
+  );
+  const row = gap.rows.find((r) => r.cardNumber === TARGET);
+  assert.equal(row.price.price, before.sellPrice + delta, 'and the changed slot carries the new price');
+  assert.equal(row.version, before.printing, 'while still selecting the same ordinary printing');
+});
+
+await test('a changed PREMIUM price cannot move the total at all', () => {
+  // The mirror case: version priority precedes market price, so re-pricing a
+  // parallel — even below the ordinary printing — must leave the total alone.
+  const repriced = rawRows.map((row) => ({
+    ...row,
+    prices: (row.prices ?? []).map((p) => (
+      isPlainPrinting(printingFromLabel(p.name ?? '')) ? p : { ...p, sellPrice: 1 }
+    )),
+  }));
+  const shifted = adaptDatabase(repriced);
+  const shiftedCatalog = buildCatalogIndex(shifted.cards);
+  const draft = buildImportedDeck(
+    augustEvent, DUKHN, shiftedCatalog, shifted.priceRecords, [], IMPORTED_AT,
+  );
+  assert.equal(
+    computeGap(draftToDeck(draft), {}, shifted.priceRecords).total, 12660,
+    'a ¥1 parallel never becomes the planning price',
+  );
+});
+
+// ── 9. The LIVE scraped dataset is still wired up — as invariants ────────────
+// Everything above runs on frozen prices, so these are what still guard the real
+// public/data/database.json. They assert relations that hold at ANY price, which
+// is precisely what a pinned total could not do: a scrape may move every number
+// here without failing, but a dataset that stopped pricing the tournament decks,
+// or a resolver that started preferring parallels, fails immediately.
+{
+  const liveDb = adaptDatabase(liveRows);
+  const liveCatalog = buildCatalogIndex(liveDb.cards);
+  const liveOrdinary = (cardNumber) => {
+    const ordinary = buildSourcePrintings(
+      liveRows.filter((r) => r.cardNumber === cardNumber).flatMap((r) => r.prices ?? []),
+    ).filter((p) => isPlainPrinting(p.printing) && typeof p.sellPrice === 'number');
+    if (ordinary.length === 0) return null;
+    return ordinary.slice().sort((a, b) => a.sellPrice - b.sellPrice)[0];
+  };
+
+  for (const [code, deck] of [['DUKHN', DUKHN], ['2H33J8', H2]]) {
+    await test(`${code}: the live dataset still prices the deck off ordinary printings`, () => {
+      const draft = buildImportedDeck(
+        augustEvent, deck, liveCatalog, liveDb.priceRecords, [], IMPORTED_AT,
+      );
+      const imported = draftToDeck(draft);
+      assert.equal(deckStats(imported).total, 71, 'the live catalog still knows every slot');
+
+      const gap = computeGap(imported, {}, liveDb.priceRecords);
+      let expected = 0;
+      for (const ref of deck.cards) {
+        const oracle = liveOrdinary(ref.cardNumber);
+        if (oracle) expected += oracle.sellPrice * ref.count;
+      }
+      assert.equal(gap.total, expected, 'the total is the live ordinary-price sum, whatever it is');
+      assert.ok(gap.total > 0, 'and the deck is really priced, not silently all-unpriced');
+      assert.equal(gap.currency, 'JPY');
+
+      for (const row of gap.rows) {
+        if (row.price.status !== 'ok') continue;
+        const oracle = liveOrdinary(row.cardNumber);
+        assert.ok(isPlainPrinting(row.version), `${row.cardNumber}: priced off an ordinary printing`);
+        assert.equal(row.price.price, oracle.sellPrice, `${row.cardNumber}: the lowest ordinary price`);
+        const premium = allSellPrices(row.cardNumber, liveRows)
+          .filter((p) => p < oracle.sellPrice);
+        for (const cheaper of premium) {
+          assert.notEqual(
+            row.price.price, cheaper,
+            `${row.cardNumber}: a cheaper premium listing never wins`,
+          );
+        }
+      }
+    });
+  }
+
+  await test('the live dataset still resolves every reported slot to its ordinary printing', () => {
+    for (const ex of EXAMPLES) {
+      const oracle = liveOrdinary(ex.cardNumber);
+      assert.ok(oracle, `${ex.cardNumber}: the live data must still price an ordinary printing`);
+      // The deck's own reference, so each card is resolved into the zone the
+      // source actually published it in (hBP07-006 is the oshi).
+      const ref = DUKHN.cards.find((c) => c.cardNumber === ex.cardNumber);
+      assert.ok(ref, `${ex.cardNumber}: must still be a DUKHN slot`);
+      const card = resolveSlotCard(ref, liveCatalog, liveDb.priceRecords);
+      assert.equal(card.printing, oracle.printing, `${ex.cardNumber}: same printing as the oracle`);
+      assert.ok(isPlainPrinting(card.printing), `${ex.cardNumber}: an ordinary printing`);
+      assert.equal(card.defaultedPrinting, true);
+    }
+  });
+}
 
 // ── 8. Migration of decks already persisted with UNRESOLVED slots ────────────
 
