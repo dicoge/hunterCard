@@ -18,8 +18,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  buildFacetIndex, categoryOf, collectFilterOptions, filterCatalog, hasActiveFilters,
-  normalizeRarity, splitColors, zoneOfCategory, EMPTY_CRITERIA,
+  buildFacetIndex, categoryOf, collectFilterOptions, compareCardNumbers, filterCatalog,
+  hasActiveFilters, normalizeRarity, splitColors, zoneOfCategory, EMPTY_CRITERIA,
 } from '../src/utils/cardCatalog.ts';
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { groupVariantsByCardNumber } from '../src/utils/deckVariants.ts';
@@ -173,11 +173,11 @@ await test('同一個維度內多選是聯集，跨維度是交集', () => {
   assert.equal(both.length, new Set([...white, ...blue].map((g) => g.cardNumber)).size);
   assert.ok(both.length > white.length);
 
-  const whiteInSet = search({ colors: ['白'], sets: ['hBP04'] });
-  assert.ok(whiteInSet.length > 0 && whiteInSet.length < white.length);
-  for (const g of whiteInSet) {
+  const whiteInSeries = search({ colors: ['白'], series: ['hBP04'] });
+  assert.ok(whiteInSeries.length > 0 && whiteInSeries.length < white.length);
+  for (const g of whiteInSeries) {
     assert.ok(facets.get(g.cardNumber).colors.includes('白'));
-    assert.ok(facets.get(g.cardNumber).sets.includes('hBP04'));
+    assert.equal(facets.get(g.cardNumber).series, 'hBP04');
   }
 });
 
@@ -194,12 +194,12 @@ await test('稀有度的改版拼法收斂成同一個選項', () => {
   }
 });
 
-await test('商品／系列篩選只提供真實的商品代號，不提供內部抓取分類', () => {
+await test('卡號系列篩選只提供真實的系列代號，不提供內部抓取分類', () => {
   const options = collectFilterOptions(facets.values());
-  assert.ok(options.sets.includes('hBP04'));
-  assert.ok(options.sets.includes('hPR'));
-  assert.ok(!options.sets.includes('ent07'), 'ent07 是抓取來源分類，不是玩家認得的商品');
-  for (const s of options.sets) assert.match(s, /^h/);
+  assert.ok(options.series.includes('hBP04'));
+  assert.ok(options.series.includes('hPR'));
+  assert.ok(!options.series.includes('ent07'), 'ent07 是抓取來源分類，不是玩家認得的系列');
+  for (const s of options.series) assert.match(s, /^h/);
 });
 
 await test('篩選選項全部來自載入的卡表，沒有無資料的假選項', () => {
@@ -214,8 +214,8 @@ await test('篩選選項全部來自載入的卡表，沒有無資料的假選�
   for (const rarity of options.rarities) {
     assert.ok(search({ categories: ['oshi'], rarities: [rarity] }).length > 0);
   }
-  for (const s of options.sets) {
-    assert.ok(search({ categories: ['oshi'], sets: [s] }).length > 0);
+  for (const s of options.series) {
+    assert.ok(search({ categories: ['oshi'], series: [s] }).length > 0);
   }
 });
 
@@ -235,24 +235,24 @@ await test('平行版篩選依卡號實際擁有的版本分流', () => {
   }
 });
 
-await test('組合篩選：商品＋顏色＋稀有度＋版本同時生效', () => {
+await test('組合篩選：卡號系列＋顏色＋稀有度＋版本同時生效', () => {
   const combined = search({
     categories: ['holomen', 'support'],
-    sets: ['hBP04'],
+    series: ['hBP04'],
     colors: ['紫'],
     parallel: 'hasParallel',
   });
   assert.ok(combined.length > 0, '這組條件必須在真實卡表中有結果');
   for (const g of combined) {
     const f = facets.get(g.cardNumber);
-    assert.ok(f.sets.includes('hBP04'));
+    assert.equal(f.series, 'hBP04');
     assert.ok(f.colors.includes('紫'));
     assert.ok(['holomen', 'support'].includes(f.category));
     assert.ok(g.variants.some((v) => !isPlainPrinting(v.printing)));
   }
   // Narrowing further never widens the result.
   const narrower = search({
-    categories: ['holomen', 'support'], sets: ['hBP04'], colors: ['紫'],
+    categories: ['holomen', 'support'], series: ['hBP04'], colors: ['紫'],
     parallel: 'hasParallel', query: 'シオン', mode: 'name',
   });
   assert.ok(narrower.length <= combined.length);
@@ -267,8 +267,8 @@ await test('清除全部只在真的有條件時才需要出現', () => {
   assert.equal(hasActiveFilters({ ...EMPTY_CRITERIA, categories: ['oshi'] }), false);
   assert.deepEqual(
     filterCatalog(groups, facets, EMPTY_CRITERIA).map((g) => g.cardNumber),
-    groups.map((g) => g.cardNumber),
-    '清除後必須回到完整清單',
+    groups.map((g) => g.cardNumber).sort(compareCardNumbers),
+    '清除後必須回到完整清單（卡號遞增排序）',
   );
 });
 

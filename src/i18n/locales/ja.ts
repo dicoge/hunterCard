@@ -488,7 +488,7 @@ export const ja: Record<keyof typeof zh, string> = {
   picker_category_title: 'カード種類',
   picker_color_title: '色',
   picker_rarity_title: 'レアリティ',
-  picker_set_title: '商品／シリーズ',
+  picker_series_title: 'カード番号シリーズ',
   picker_version_title: '版',
   picker_clear_a11y: 'すべての絞り込みを解除',
   picker_clear_all: 'すべて解除',

@@ -3,6 +3,11 @@
 // A player builds a deck by looking at card art, names and filters — typing a
 // card number is never required. Card Number stays available as an ADVANCED
 // search mode for the player who already knows what they want.
+//
+// The series chips are a CARD-NUMBER series filter (DIC-1117): picking hBP04
+// shows the hBP04-### card numbers and nothing else, in ascending numeric
+// order. They are not a source/product/reprint filter, so the label says
+// 卡號系列 / カード番号シリーズ rather than 商品.
 
 import React, { useMemo, useState } from 'react';
 import {
@@ -141,15 +146,15 @@ export function CardFilterPanel({
         </FilterGroup>
       )}
 
-      {options.sets.length > 0 && (
-        <FilterGroup title={t('picker_set_title')}>
-          {options.sets.map((s) => (
+      {options.series.length > 0 && (
+        <FilterGroup title={t('picker_series_title')}>
+          {options.series.map((s) => (
             <Chip
               key={s}
               label={s}
-              active={criteria.sets.includes(s)}
-              onPress={() => set({ sets: toggle(criteria.sets, s) })}
-              testID={`filter-set-${s}`}
+              active={criteria.series.includes(s)}
+              onPress={() => set({ series: toggle(criteria.series, s) })}
+              testID={`filter-series-${s}`}
             />
           ))}
         </FilterGroup>
@@ -173,7 +178,7 @@ export function CardFilterPanel({
         </Text>
         {hasActiveFilters(criteria) && (
           <TouchableOpacity
-            onPress={() => set({ query: '', categories: [], sets: [], colors: [], rarities: [], parallel: 'all' })}
+            onPress={() => set({ query: '', categories: [], series: [], colors: [], rarities: [], parallel: 'all' })}
             accessibilityRole="button"
             accessibilityLabel={t('picker_clear_a11y')}
             testID="filter-reset"

@@ -486,7 +486,7 @@ export const zh = {
   picker_category_title: '卡片種類',
   picker_color_title: '顏色',
   picker_rarity_title: '稀有度',
-  picker_set_title: '商品／系列',
+  picker_series_title: '卡號系列',
   picker_version_title: '版本',
   picker_clear_a11y: '清除所有篩選',
   picker_clear_all: '清除全部',
