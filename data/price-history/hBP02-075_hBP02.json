@@ -443,8 +443,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP02-075_hBP02"
+    },
+    {
+      "date": "2026-08-23",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-075_hBP02"
     }
   ],
-  "lastUpdated": "2026-08-22T12:12:24.347Z",
+  "lastUpdated": "2026-08-23T12:12:54.279Z",
   "nameZh": "偶像簽名筆"
 }
