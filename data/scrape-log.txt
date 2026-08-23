@@ -1,9 +1,9 @@
-=== Scrape Log 2026-08-22T12:06:43.342Z ===
+=== Scrape Log 2026-08-23T12:07:16.730Z ===
 ═══════════════════════════════════════
   hunterCard Database Builder
 ═══════════════════════════════════════
 
-  [buyPrice] Preserving buy prices for 1663 cards from previous build
+  [buyPrice] Preserving buy prices for 1689 cards from previous build
   [skills] Preserving skills for 1988 cards from previous build
 ── Step 1: Scrape yuyu-tei ──
 [database] Starting yuyu-tei scrape (Puppeteer)...
@@ -99,11 +99,11 @@
 [add-zh-names]   輸出: /Users/dicoge/hunterCard/data/database.json
 
 ── Step 5: Save price history ──
-  [price-history] Saved 2057 new records; index totals: 2072 cards / 123328 records
+  [price-history] Saved 2057 new records; index totals: 2072 cards / 125385 records
 
 ── Step 6: Merge priceHistory into database ──
   [priceHistory] Merged into 2072 cards
-  [buyPrice] Restored buy prices onto 1663 cards
+  [buyPrice] Restored buy prices onto 1689 cards
 
 ── Step 7: Merge VTuber YouTube stats ──
   [yt-stats] Merged stats onto 1160 cards (54 channels tracked)
@@ -113,7 +113,7 @@
   Total cards: 2150
   Cards with prices: 1225
   Images downloaded: 0
-  Duration: 341.3s
+  Duration: 337.8s
   Output: /Users/dicoge/hunterCard/data/database.json
 ═══════════════════════════════════════
 
@@ -122,5 +122,5 @@ Build result: {
   "yuyuCount": 1225,
   "officialCount": 2104,
   "imagesDownloaded": 0,
-  "duration": 341.3
+  "duration": 337.8
 }
