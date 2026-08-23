@@ -16,7 +16,7 @@
 // printing. A store's buy (acquisition) price is a different commercial quantity
 // and never reaches this module.
 
-import { normalizePrinting } from './printingIdentity';
+import { canonicalPrinting, normalizePrinting } from './printingIdentity';
 
 /** Upper bound on a desired price. Guards the input and the API against
  * absurd/overflow values while staying far above any real listing. */
@@ -44,9 +44,12 @@ export interface PriceAlert {
 }
 
 /** `cardNumber|NORMALIZED-PRINTING` — same shape as the ownership key so an
- * alert, a deck slot and a collection entry all address the same printing. */
+ * alert, a deck slot and a collection entry all address the same printing.
+ * Routes through `canonicalPrinting` so a legacy alert stored under
+ * `hBP02-003|PARALLEL/SIGN/ERRATA-PRE` and a new one on `hBP02-003|PARALLEL/SIGN`
+ * key the same bucket (DIC-1139). */
 export function priceAlertKey(cardNumber: string, printing: string): string {
-  return `${(cardNumber ?? '').trim()}|${normalizePrinting(printing)}`;
+  return `${(cardNumber ?? '').trim()}|${canonicalPrinting(normalizePrinting(printing))}`;
 }
 
 // ── Input validation ────────────────────────────────────────────────────────
@@ -211,7 +214,9 @@ export function dedupePriceAlerts(
     alerts[key] = {
       ...winner.alert,
       cardNumber,
-      printing: normalizePrinting(winner.alert.printing),
+      // Persist the canonical printing so a re-loaded alert never carries
+      // errata history the current catalog no longer exposes (DIC-1139).
+      printing: canonicalPrinting(normalizePrinting(winner.alert.printing)),
       printingLabel: firstNonEmpty(backfill, (a) => a.printingLabel) ?? '',
       name: firstNonEmpty(backfill, (a) => a.name) ?? cardNumber,
       imageUrl: firstNonEmpty(backfill, (a) => a.imageUrl),

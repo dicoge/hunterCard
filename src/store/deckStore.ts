@@ -231,12 +231,19 @@ export const useDeckStore = create<DeckState>()(
       // — owning `hBP04-005|SEC` does not prove ownership of the plain printing,
       // so re-keying inventory here would fabricate ownership the player never
       // recorded. Legacy entries stay visible and editable in the inventory.
-      version: 1,
+      //
+      // v2 (DIC-1139): ownershipKey now folds errata-history tokens out of the
+      // printing (`PARALLEL/SIGN/ERRATA-PRE` → `PARALLEL/SIGN`) so the corrected
+      // reprint and the pre-errata row share ONE canonical bucket. Re-key any
+      // legacy inventory through the new normalizer, summing quantities that
+      // collapse together — the player owned the tier, not the shop's audit
+      // history, so folded entries add up rather than being dropped.
+      version: 2,
       storage: createJSONStorage(() => platformStorage),
       partialize: (s) => ({ decks: s.decks, activeDeckId: s.activeDeckId, collection: s.collection }),
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<DeckState>;
-        if (version < 1) {
+        if (version < 2) {
           state.collection = normalizeCollection(
             (state.collection as Record<string, unknown>) || {},
           );

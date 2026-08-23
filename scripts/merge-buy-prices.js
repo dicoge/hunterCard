@@ -39,7 +39,7 @@ const __dirname = path.dirname(__filename);
 
 const DB_PATH = path.join(__dirname, '../data/database.json');
 const BUY_DIR = path.join(__dirname, '../data/buy-prices');
-const SOURCE_FILES = ['torecolo-prices.json', 'fullahead-prices.json'];
+const SOURCE_FILES = ['torecolo-prices.json', 'fullahead-prices.json', 'yuyu-prices.json'];
 
 // 來源檔的 timestamp 超過這個時數就視為過期，避免把昨天殘留檔當今天資料寫入（DIC-187）。
 const MAX_SOURCE_AGE_HOURS = 18;

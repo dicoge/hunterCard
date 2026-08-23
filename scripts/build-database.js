@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
 import { canonicalVariantKey } from './lib/variant-key.js';
+import { canonicalizePrices, canonicalYuyuName } from './lib/canonical-printings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1105,6 +1106,18 @@ async function buildDatabase() {
     const baseCardNum = official.cardNumber || '';
     const yuyu = getYuyuForCard(baseCardNum);
 
+    const rawEntries = yuyu ? yuyu.priceEntries.map(e => ({
+      name: e.name || '',
+      sellPrice: e.sellPrice || null,
+      rarity: e.rarity || '',
+      imageUrl: e.yuyuImage || undefined,
+    })) : [];
+    // DIC-1139: user-facing prices[] never carries source-maintenance errata
+    // history. When both `エラッタ前` and `エラッタ後` exist in the same tier,
+    // keep only the corrected row; raw rows survive internally on
+    // `_rawPricesArchive` for audit but are not rendered.
+    const { canonical, archive } = canonicalizePrices(rawEntries);
+
     database.cards[key] = {
       id: key,
       cardNumber: baseCardNum,
@@ -1114,20 +1127,16 @@ async function buildDatabase() {
       rarity: official.rarity || '',
       series: official.series || '',
       sellPrice: yuyu ? yuyu.lowestPrice : null,
-      yuyuName: yuyu ? yuyu.lowestName : '',
+      yuyuName: canonicalYuyuName(yuyu ? yuyu.lowestName : ''),
       yuyuImage: yuyu ? yuyu.firstImage : '',
-      prices: yuyu ? yuyu.priceEntries.map(e => ({
-        name: e.name || '',
-        sellPrice: e.sellPrice || null,
-        rarity: e.rarity || '',
-        imageUrl: e.yuyuImage || undefined,
-      })) : [],
+      prices: canonical,
       officialImage: official.officialImage || '',
       localImage: fs.existsSync(path.join(IMAGES_DIR, `${baseCardNum}.jpg`)) ? `/images/${baseCardNum}.jpg` : '',
       hp: official.hp || '',
       life: official.life || '',
       arts: official.arts || '',
       timestamp: yuyu ? yuyu.firstTimestamp : '',
+      _rawPricesArchive: archive,
     };
   }
 
@@ -1153,6 +1162,17 @@ async function buildDatabase() {
       }
     }
 
+    const rawEntries = priceEntries.map(e => ({
+      name: e.name || '',
+      sellPrice: e.sellPrice || null,
+      rarity: e.rarity || '',
+      imageUrl: e.yuyuImage || undefined,
+    }));
+    // Same canonicalisation as the official-cards branch (DIC-1139): the
+    // yuyu-only fallback must also hide errata history and archive the raw
+    // rows for internal audit.
+    const { canonical, archive } = canonicalizePrices(rawEntries);
+
     database.cards[cardNum] = {
       id: cardNum,
       cardNumber: cardNum,
@@ -1162,20 +1182,16 @@ async function buildDatabase() {
       rarity: '',
       series: '',
       sellPrice: lowestPrice,
-      yuyuName: lowestName,
+      yuyuName: canonicalYuyuName(lowestName),
       yuyuImage: firstImage,
-      prices: priceEntries.map(e => ({
-        name: e.name || '',
-        sellPrice: e.sellPrice || null,
-        rarity: e.rarity || '',
-        imageUrl: e.yuyuImage || undefined,
-      })),
+      prices: canonical,
       officialImage: '',
       localImage: fs.existsSync(path.join(IMAGES_DIR, `${cardNum}.jpg`)) ? `/images/${cardNum}.jpg` : '',
       hp: '',
       life: '',
       arts: '',
       timestamp: firstTimestamp,
+      _rawPricesArchive: archive,
     };
   }
 
