@@ -133,13 +133,72 @@ console.log('\n── Full-DB: no user-facing errata history ──');
   let dirty = 0;
   const samples = [];
   for (const [id, card] of Object.entries(db.cards || {})) {
-    const surfaces = [card.name, card.yuyuName, ...(card.prices || []).map((p) => p?.name || '')];
+    // DIC-1140 blocker #1 widened the surface: card.name / yuyuName / prices[].name
+    // were the only fields previously checked. But an errata leak can also
+    // hide in yuyuImage (a pre-errata JPG that no canonical row publishes)
+    // and — most importantly — in `_rawPricesArchive`, which was never
+    // stripped by sanitize and therefore shipped in every export path. This
+    // walk enumerates the whole surface a shipped card exposes and refuses
+    // any errata label anywhere on it.
+    const surfaces = [
+      card.name, card.yuyuName, card.yuyuImage,
+      ...(card.prices || []).flatMap((p) => [p?.name || '', p?.imageUrl || '']),
+    ];
     if (surfaces.some((s) => hasErrataLabel(s))) {
       dirty += 1;
       if (samples.length < 5) samples.push(id);
     }
   }
   eq(dirty, 0, `no card carries user-facing errata history (dirty samples: ${samples.join(',')})`);
+}
+{
+  // Shipped artifact assertion (DIC-1140): public/data/database.json is what
+  // native / web actually loads. It must have NO `_rawPricesArchive` on any
+  // card — that field is internal audit only, and every raw errata row lives
+  // there. Even after canonicalisation, forgetting to strip it in sanitize
+  // put 28 archives with `エラッタ前/後` back on the wire (the CR blocker).
+  const publicPath = path.resolve(__dirname, '../public/data/database.json');
+  const pub = JSON.parse(fs.readFileSync(publicPath, 'utf-8'));
+  let leaked = 0;
+  let publicErrata = 0;
+  const samples = [];
+  for (const [id, card] of Object.entries(pub.cards || {})) {
+    if (Object.prototype.hasOwnProperty.call(card, '_rawPricesArchive')) {
+      leaked += 1;
+      if (samples.length < 5) samples.push(id);
+    }
+    // Full-surface errata scan on the ACTUAL shipped bytes, not just canonical
+    // source. Includes yuyuImage and every prices[] descriptor.
+    const surfaces = [
+      card.name, card.yuyuName, card.yuyuImage,
+      ...(card.prices || []).flatMap((p) => [p?.name || '', p?.imageUrl || '']),
+    ];
+    if (surfaces.some((s) => hasErrataLabel(s))) publicErrata += 1;
+  }
+  eq(leaked, 0, `no card in public/data/database.json carries _rawPricesArchive (samples: ${samples.join(',')})`);
+  eq(publicErrata, 0, 'shipped native artifact carries no user-facing errata label anywhere');
+}
+{
+  // Image alignment (DIC-1140): the top-level yuyuImage was silently pointing
+  // at the FIRST raw listing (often pre-errata SIGNED) even after the
+  // canonical yuyuName settled on the base tier. Every card's yuyuImage must
+  // be an image URL that appears in the canonical prices[] — if it's an
+  // orphan URL (only present in _rawPricesArchive), we shipped a pre-errata
+  // pic. This is the check that would have caught hBP02-003's 10008.jpg leak.
+  const dbPath = path.resolve(__dirname, '../data/database.json');
+  const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+  let orphaned = 0;
+  const samples = [];
+  for (const [id, card] of Object.entries(db.cards || {})) {
+    const yuyuImage = (card.yuyuImage || '').trim();
+    if (!yuyuImage) continue;
+    const canonicalImages = new Set((card.prices || []).map((p) => (p?.imageUrl || '').trim()).filter(Boolean));
+    if (!canonicalImages.has(yuyuImage)) {
+      orphaned += 1;
+      if (samples.length < 5) samples.push(`${id}: ${yuyuImage}`);
+    }
+  }
+  eq(orphaned, 0, `every yuyuImage is proven by a canonical prices[] row (samples: ${samples.join(' | ')})`);
 }
 
 console.log('\n── Regression: hBP02-003 Marine ──');
@@ -165,6 +224,12 @@ console.log('\n── Regression: hBP02-003 Marine ──');
       eq(signed.buyPrice, 62000, 'signed row carries the yuyu-proven buy price (62,000)');
       eq(signed.buyPriceSource, 'yuyu', 'signed row buy source is yuyu');
       eq(signed.buyPriceVersion, 'SEC', 'signed row buy provenance token is SEC');
+      // DIC-1140 blocker #1 image regression: signed row's imageUrl is the
+      // post-errata SEC image (10212), not pre-errata 10008.
+      eq(
+        signed.imageUrl && signed.imageUrl.endsWith('/10212.jpg'), true,
+        `signed row image is the post-errata 10212 (actual: ${signed.imageUrl})`,
+      );
     }
     if (!parallel) fail('parallel (パラレル) tier missing');
     else {
@@ -174,6 +239,11 @@ console.log('\n── Regression: hBP02-003 Marine ──');
     else {
       eq(base.buyPrice !== 62000, true, 'base row does NOT inherit signed 62,000 price');
     }
+    // Top-level yuyuImage aligns with a canonical row (never orphan pre-errata).
+    eq(
+      card.yuyuImage && !card.yuyuImage.endsWith('/10008.jpg'), true,
+      `hBP02-003 top-level image is not pre-errata 10008 (actual: ${card.yuyuImage})`,
+    );
   }
 }
 

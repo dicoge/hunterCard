@@ -43,14 +43,20 @@ function eq(actual, expected, msg) {
   else fail(`${msg} — expected ${JSON.stringify(expected)} got ${JSON.stringify(actual)}`);
 }
 
+// Every proven-happy-path unit test carries full provenance so the
+// DIC-1140 provenance gate exercises real matching rather than accidentally
+// short-circuiting through legacy-null fields.
+const PROV = { channelId: 'UCTEST_CH', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1' };
+const prov = (extra) => ({ ...PROV, ...extra });
+
 console.log('── Unit: computeGrowthDeltas ──');
 {
   // subscriberCount all divisible by 10_000 → precision 10_000. Delta of 0
   // is below precision, must fold to null.
   const history = [
-    { date: '2026-08-20', subscriberCount: 4400000, totalViewCount: 2400000000 },
-    { date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400500000 },
-    { date: '2026-08-22', subscriberCount: 4400000, totalViewCount: 2401000000 },
+    prov({ date: '2026-08-20', subscriberCount: 4400000, totalViewCount: 2400000000 }),
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400500000 }),
+    prov({ date: '2026-08-22', subscriberCount: 4400000, totalViewCount: 2401000000 }),
   ];
   const d = computeGrowthDeltas(history);
   eq(d.subscriberGrowth_1d, null, 'sub delta 0 folds to null when source precision > delta');
@@ -60,8 +66,8 @@ console.log('── Unit: computeGrowthDeltas ──');
   // Precision detects at 100 when values are 100-multiples; then a delta of
   // 100 is above precision and REPORTED, not folded.
   const history = [
-    { date: '2026-08-20', subscriberCount: 4400, totalViewCount: 1000000 },
-    { date: '2026-08-21', subscriberCount: 4500, totalViewCount: 1050000 },
+    prov({ date: '2026-08-20', subscriberCount: 4400, totalViewCount: 1000000 }),
+    prov({ date: '2026-08-21', subscriberCount: 4500, totalViewCount: 1050000 }),
   ];
   const d = computeGrowthDeltas(history);
   eq(d.subscriberGrowth_1d, 100, 'exact sub delta reported when precision is finer');
@@ -69,8 +75,8 @@ console.log('── Unit: computeGrowthDeltas ──');
 {
   // Identical totalViewCount across contiguous days → stale-snapshot heuristic.
   const history = [
-    { date: '2026-08-20', subscriberCount: 4400000, totalViewCount: 2400000000 },
-    { date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000 },
+    prov({ date: '2026-08-20', subscriberCount: 4400000, totalViewCount: 2400000000 }),
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000 }),
   ];
   const d = computeGrowthDeltas(history);
   eq(d.viewCount_1d, null, 'view delta null when totalViewCount identical (stale snapshot)');
@@ -78,8 +84,8 @@ console.log('── Unit: computeGrowthDeltas ──');
 {
   // 1-day requires exactly-adjacent snapshot. Two-day gap is non-contiguous.
   const history = [
-    { date: '2026-08-20', subscriberCount: 4400000, totalViewCount: 2400000000 },
-    { date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000 },
+    prov({ date: '2026-08-20', subscriberCount: 4400000, totalViewCount: 2400000000 }),
+    prov({ date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000 }),
   ];
   const d = computeGrowthDeltas(history);
   eq(d.subscriberGrowth_1d, null, '1d sub delta null when only non-adjacent snapshot exists');
@@ -89,12 +95,82 @@ console.log('── Unit: computeGrowthDeltas ──');
 {
   // Real delta with contiguous snapshot and above-precision growth.
   const history = [
-    { date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000 },
-    { date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000 },
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000 }),
+    prov({ date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000 }),
   ];
   const d = computeGrowthDeltas(history);
   eq(d.subscriberGrowth_1d, 10000, 'reports true 1d sub growth exactly at precision');
   eq(d.viewCount_1d, 11000000, 'reports true 1d view growth');
+}
+
+console.log('\n── Unit: DIC-1140 provenance gate ──');
+{
+  // Cross-channel adjacent snapshots must not produce a numeric delta — this
+  // is the exact case the CR named ("Cross-channel adjacent snapshots
+  // currently produce numeric 1d deltas"). Mutation-sensitive: setting the
+  // channelId back to a match would make the delta reappear.
+  const history = [
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000 }),
+    prov({ date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000, channelId: 'UCOTHER' }),
+  ];
+  const d = computeGrowthDeltas(history);
+  eq(d.subscriberGrowth_1d, null, 'cross-channel snapshots produce null (never a numeric delta)');
+  eq(d.viewCount_1d, null, 'cross-channel view snapshots produce null');
+  // Sanity: aligning channelId restores the true delta so the test is
+  // mutation-sensitive to the very field it guards.
+  const aligned = [
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000 }),
+    prov({ date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000 }),
+  ];
+  eq(computeGrowthDeltas(aligned).viewCount_1d, 11000000, 'aligning channelId restores the real 1d');
+}
+{
+  // Source (scraper) discontinuity: same channel, different scraper produces
+  // measurements from different pipelines — fail closed.
+  const history = [
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000, source: 'youtube_channelapi' }),
+    prov({ date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000, source: 'youtube_about_ssr' }),
+  ];
+  const d = computeGrowthDeltas(history);
+  eq(d.subscriberGrowth_1d, null, 'source discontinuity produces null');
+  eq(d.viewCount_1d, null, 'source discontinuity nulls views too');
+}
+{
+  // Parser version bump: same channel + source, but the parser changed —
+  // measurement semantics may have shifted, so fail closed.
+  const history = [
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000, parser: 'ytInitialData.aboutChannelViewModel/v0' }),
+    prov({ date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000 }),
+  ];
+  const d = computeGrowthDeltas(history);
+  eq(d.subscriberGrowth_1d, null, 'parser version bump produces null');
+  eq(d.viewCount_1d, null, 'parser version bump nulls views');
+}
+{
+  // Missing current-day evidence: trailing snapshot has counts but no
+  // provenance (parser failed to stamp identity) → all deltas null even
+  // though counts look present.
+  const history = [
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2400000000 }),
+    { date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2411000000 },
+  ];
+  const d = computeGrowthDeltas(history);
+  eq(d.subscriberGrowth_1d, null, 'latest snapshot without provenance produces null (parser failure)');
+  eq(d.viewCount_1d, null, 'latest snapshot without provenance nulls views');
+}
+{
+  // Legacy no-provenance snapshot exists at the ONLY position inside the 7d
+  // window — the gate refuses it, and since no other provenance-matching
+  // snapshot is close enough to 7d, the delta stays null. Proves the gate
+  // isn't quietly fallen-back-to on legacy data.
+  const history = [
+    { date: '2026-08-15', subscriberCount: 4400000, totalViewCount: 2380000000 },
+    prov({ date: '2026-08-21', subscriberCount: 4400000, totalViewCount: 2386000000 }),
+    prov({ date: '2026-08-22', subscriberCount: 4410000, totalViewCount: 2387000000 }),
+  ];
+  const d = computeGrowthDeltas(history);
+  eq(d.viewCount_1d, 1000000, '1d aligned to provenance-matching adjacent snapshot');
+  eq(d.viewCount_7d, null, '7d refuses to cross legacy no-provenance snapshot');
 }
 
 console.log('\n── Full-DB: no synthetic zero daily metrics ──');

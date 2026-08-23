@@ -142,6 +142,41 @@ function canonicalYuyuName(name) {
 }
 
 /**
+ * Choose the canonical top-level image URL for a card given the canonical
+ * prices[] (post-collapse) and the previous top-level yuyuName / yuyuImage.
+ *
+ * Prefers the canonical row whose stripped name equals the canonical yuyuName
+ * — that keeps the top-level image aligned with the top-level name (a signed-
+ * only card ships its signed post-errata image; a base-anchored card ships
+ * its base post-errata image). Falls back to the first canonical row's image,
+ * finally to the previous value untouched (nothing to canonicalise).
+ *
+ * Never returns an image URL that appears ONLY in the raw archive rows — that
+ * is the exact leak DIC-1140 blocker #1 named (hBP02-003 previously shipped
+ * pre-errata 10008.jpg because build-database.js took the FIRST raw row's
+ * image before the collapse). If no canonical row publishes an image, returns
+ * an empty string.
+ */
+function canonicalYuyuImage(canonicalPrices, yuyuName, previousImage) {
+  const rows = Array.isArray(canonicalPrices) ? canonicalPrices : [];
+  const target = (yuyuName || '').normalize('NFKC').trim();
+  const withImages = rows.filter((r) => r && typeof r.imageUrl === 'string' && r.imageUrl);
+  if (withImages.length === 0) {
+    // Preserve the old value only when it's genuinely absent from prices[] —
+    // never invent a canonical image. When there is no canonical row image,
+    // fall back to an empty string, mirroring build-database.js's original
+    // "no yuyu image" case rather than smuggling in an archive URL.
+    return '';
+  }
+  const matched = withImages.find((r) => (r.name || '').normalize('NFKC').trim() === target);
+  if (matched) return matched.imageUrl;
+  // No canonical row shares the name; take the first canonical row's image
+  // (deterministic, source-order-preserving fallback). Do not fall back to
+  // previousImage — that is the very field the caller is asking us to fix.
+  return withImages[0].imageUrl;
+}
+
+/**
  * True when any user-facing string still carries an errata-history label.
  * Used by the full-DB assertion to prove the collapse ran everywhere.
  */
@@ -153,6 +188,7 @@ function hasErrataLabel(value) {
 export {
   canonicalizePrices,
   canonicalYuyuName,
+  canonicalYuyuImage,
   stripErrataLabel,
   canonicalGroupKey,
   detectErrataKind,

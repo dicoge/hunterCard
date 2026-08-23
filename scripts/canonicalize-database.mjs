@@ -20,7 +20,9 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { canonicalizePrices, canonicalYuyuName, hasErrataLabel } from './lib/canonical-printings.js';
+import {
+  canonicalizePrices, canonicalYuyuName, canonicalYuyuImage, hasErrataLabel,
+} from './lib/canonical-printings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,18 +44,27 @@ function main() {
       ? card._rawPricesArchive
       : (Array.isArray(card.prices) ? card.prices : []);
     const originalYuyuName = card.yuyuName || '';
+    const originalYuyuImage = card.yuyuImage || '';
     const { canonical, archive } = canonicalizePrices(sourceRows);
     const nextYuyuName = canonicalYuyuName(originalYuyuName);
+    // DIC-1140 blocker #1: recompute the top-level image from the canonical
+    // prices[] — the old build wrote `yuyu.firstImage` (first raw listing),
+    // which for hBP02-003 was the pre-errata signed 10008.jpg even though the
+    // canonical yuyuName is the base row. Aligning image with the canonical
+    // row keeps the public artifact free of pre-errata leakage.
+    const nextYuyuImage = canonicalYuyuImage(canonical, nextYuyuName, originalYuyuImage);
 
     const priorPrices = Array.isArray(card.prices) ? card.prices : [];
     const pricesChanged =
       canonical.length !== priorPrices.length ||
       canonical.some((p, i) => (priorPrices[i]?.name || '') !== (p.name || ''));
     const yuyuChanged = nextYuyuName !== originalYuyuName;
-    if (!pricesChanged && !yuyuChanged && Array.isArray(card._rawPricesArchive)) continue;
+    const imageChanged = nextYuyuImage !== originalYuyuImage;
+    if (!pricesChanged && !yuyuChanged && !imageChanged && Array.isArray(card._rawPricesArchive)) continue;
 
     card.prices = canonical;
     card.yuyuName = nextYuyuName;
+    card.yuyuImage = nextYuyuImage;
     card._rawPricesArchive = archive;
     touched += 1;
 

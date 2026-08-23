@@ -63,18 +63,52 @@ export function detectFieldPrecision(sorted, field) {
 }
 
 /**
+ * Provenance fields that must agree between the latest snapshot and any past
+ * snapshot we're about to compare against (DIC-1140 blocker #2). A comparison
+ * across a channelId change, a scraper source swap, or a parser version bump
+ * mixes measurements taken by different processes — the resulting delta is
+ * not a proven single-channel single-parser observation and must fail closed.
+ */
+const PROVENANCE_FIELDS = ['channelId', 'source', 'parser'];
+
+/**
+ * True when `latest` and `past` share proveable provenance: every provenance
+ * field is present (non-null, non-empty) on BOTH sides and the two sides
+ * agree. Missing provenance on either side is treated as untrusted rather
+ * than "assumed equal" — a legacy snapshot from before the scraper stamped
+ * channelId/source/parser is not proof that today's snapshot came from the
+ * same pipeline.
+ */
+export function hasProvenanceMatch(latest, past) {
+  if (!latest || !past) return false;
+  for (const f of PROVENANCE_FIELDS) {
+    const a = latest[f];
+    const b = past[f];
+    if (a == null || a === '' || b == null || b === '') return false;
+    if (a !== b) return false;
+  }
+  return true;
+}
+
+/**
  * Value of `field` from the snapshot nearest N days before `latestDate`, or
  * null if none falls within the required window. `sorted` must be
  * date-ascending. When `strictContiguous` is true (1-day deltas), the gap
  * must be exactly N; otherwise the ±growthWindow(n) tolerance applies.
+ *
+ * When a `reference` snapshot is supplied (the latest one), candidate past
+ * snapshots must share its provenance (channelId + source + parser). This
+ * closes the DIC-1140 hole where a cross-channel or cross-parser snapshot
+ * in the same history array would compute a numeric 1d delta.
  */
-export function snapshotValueNDaysAgo(sorted, latestDate, n, field, strictContiguous = false) {
+export function snapshotValueNDaysAgo(sorted, latestDate, n, field, strictContiguous = false, reference = null) {
   const window = strictContiguous ? 0 : growthWindow(n);
   let best = null;
   let bestDiff = Infinity;
   for (const s of sorted) {
     if (s.date === latestDate) continue; // never compare latest to itself
     if (s[field] == null) continue;
+    if (reference && !hasProvenanceMatch(reference, s)) continue;
     const gap = daysBetween(s.date, latestDate);
     if (gap <= 0) continue;
     const diff = Math.abs(gap - n);
@@ -94,6 +128,12 @@ const GROWTH_DAYS = [1, 7, 15, 30];
 // Compute subscriber/view growth deltas for the LATEST snapshot in `history`.
 // Returns { subscriberGrowth_1d/7d/15d/30d, viewCount_1d/7d/15d/30d } — each
 // value is a delta or null. `history` may be unsorted; a fresh copy is sorted.
+//
+// Latest-snapshot provenance gate (DIC-1140 blocker #2): the newest snapshot
+// itself must carry channelId + source + parser. A blank trailing snapshot
+// (e.g. news-only stamp when the stats scraper failed) is not proof of a
+// successful current-day observation, so every delta stays null. Past
+// snapshots then have to match that provenance triple (see snapshotValueNDaysAgo).
 export function computeGrowthDeltas(history) {
   const out = {};
   for (const n of GROWTH_DAYS) {
@@ -105,6 +145,15 @@ export function computeGrowthDeltas(history) {
   const latest = sorted[sorted.length - 1];
   const latestDate = latest.date;
 
+  // Fail closed on latest-snapshot provenance holes — no channelId / source /
+  // parser means we cannot verify that today's row was produced by the same
+  // pipeline as any past row, so no comparison is provable.
+  const latestHasProvenance = PROVENANCE_FIELDS.every((f) => {
+    const v = latest[f];
+    return v != null && v !== '';
+  });
+  if (!latestHasProvenance) return out;
+
   // Source-side precision for the rounded subscriberCount. If the channel's
   // history shows every value divisible by 10k, then a delta of 0 does not
   // prove no growth — the true delta could be anywhere in [-9999, 9999].
@@ -113,7 +162,7 @@ export function computeGrowthDeltas(history) {
   for (const n of GROWTH_DAYS) {
     const strict = n === 1;
     if (latest.subscriberCount != null) {
-      const past = snapshotValueNDaysAgo(sorted, latestDate, n, 'subscriberCount', strict);
+      const past = snapshotValueNDaysAgo(sorted, latestDate, n, 'subscriberCount', strict, latest);
       if (past != null) {
         const delta = latest.subscriberCount - past;
         // Reject deltas smaller than the source's rounding step — those are
@@ -125,7 +174,7 @@ export function computeGrowthDeltas(history) {
       }
     }
     if (latest.totalViewCount != null) {
-      const past = snapshotValueNDaysAgo(sorted, latestDate, n, 'totalViewCount', strict);
+      const past = snapshotValueNDaysAgo(sorted, latestDate, n, 'totalViewCount', strict, latest);
       if (past != null && past !== latest.totalViewCount) {
         // Identical consecutive totalViewCount ⇒ source snapshot didn't tick
         // (stale scrape) — a channel of holomen scale never truly has zero

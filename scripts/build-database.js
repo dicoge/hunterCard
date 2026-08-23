@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
 import { canonicalVariantKey } from './lib/variant-key.js';
-import { canonicalizePrices, canonicalYuyuName } from './lib/canonical-printings.js';
+import { canonicalizePrices, canonicalYuyuName, canonicalYuyuImage } from './lib/canonical-printings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -815,7 +815,15 @@ function computeYtGrowth(history) {
   const latestStats = withStats.length ? withStats[withStats.length - 1] : null;
   const latestSubs = [...withStats].reverse().find((s) => s.subscriberCount != null) ?? null;
   const latestViews = [...withStats].reverse().find((s) => s.totalViewCount != null) ?? null;
-  const d = computeGrowthDeltas(withStats);
+  // DIC-1140 blocker #2: compute deltas from the FULL sorted history so
+  // computeGrowthDeltas' "latest snapshot" is the true trailing scrape.
+  // Feeding it the pre-filtered `withStats` used to hide today's parser
+  // failure — if scrape-yt-stats.js produced no counts today, the trailing
+  // row got dropped and yesterday's success became the "latest", yielding
+  // a numeric delta stamped against today's build date. computeGrowthDeltas
+  // now fails closed on that missing current-day evidence (both a null
+  // count and any provenance discontinuity).
+  const d = computeGrowthDeltas(sorted);
 
   // News counts come from whichever snapshot the news scraper last stamped,
   // which may be the trailing blank one.
@@ -1117,6 +1125,12 @@ async function buildDatabase() {
     // keep only the corrected row; raw rows survive internally on
     // `_rawPricesArchive` for audit but are not rendered.
     const { canonical, archive } = canonicalizePrices(rawEntries);
+    const cleanYuyuName = canonicalYuyuName(yuyu ? yuyu.lowestName : '');
+    // DIC-1140 blocker #1: the top-level image must come from a CANONICAL row
+    // — never from the raw first-seen listing which is often the pre-errata
+    // signed image on a card the top-level name calls "base" (hBP02-003 was
+    // shipping 10008.jpg / signed / pre-errata while yuyuName said 宝鐘マリン).
+    const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, yuyu ? yuyu.firstImage : '');
 
     database.cards[key] = {
       id: key,
@@ -1127,8 +1141,8 @@ async function buildDatabase() {
       rarity: official.rarity || '',
       series: official.series || '',
       sellPrice: yuyu ? yuyu.lowestPrice : null,
-      yuyuName: canonicalYuyuName(yuyu ? yuyu.lowestName : ''),
-      yuyuImage: yuyu ? yuyu.firstImage : '',
+      yuyuName: cleanYuyuName,
+      yuyuImage: cleanYuyuImage,
       prices: canonical,
       officialImage: official.officialImage || '',
       localImage: fs.existsSync(path.join(IMAGES_DIR, `${baseCardNum}.jpg`)) ? `/images/${baseCardNum}.jpg` : '',
@@ -1172,6 +1186,8 @@ async function buildDatabase() {
     // yuyu-only fallback must also hide errata history and archive the raw
     // rows for internal audit.
     const { canonical, archive } = canonicalizePrices(rawEntries);
+    const cleanYuyuName = canonicalYuyuName(lowestName);
+    const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, firstImage);
 
     database.cards[cardNum] = {
       id: cardNum,
@@ -1182,8 +1198,8 @@ async function buildDatabase() {
       rarity: '',
       series: '',
       sellPrice: lowestPrice,
-      yuyuName: canonicalYuyuName(lowestName),
-      yuyuImage: firstImage,
+      yuyuName: cleanYuyuName,
+      yuyuImage: cleanYuyuImage,
       prices: canonical,
       officialImage: '',
       localImage: fs.existsSync(path.join(IMAGES_DIR, `${cardNum}.jpg`)) ? `/images/${cardNum}.jpg` : '',
