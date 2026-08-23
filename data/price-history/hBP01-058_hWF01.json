@@ -443,8 +443,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-058_hWF01"
+    },
+    {
+      "date": "2026-08-23",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-058_hWF01"
     }
   ],
-  "lastUpdated": "2026-08-22T12:12:24.489Z",
+  "lastUpdated": "2026-08-23T12:12:54.401Z",
   "nameZh": "鷹嶺琉衣"
 }

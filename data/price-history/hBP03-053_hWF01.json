@@ -443,8 +443,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP03-053_hWF01"
+    },
+    {
+      "date": "2026-08-23",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-053_hWF01"
     }
   ],
-  "lastUpdated": "2026-08-22T12:12:24.492Z",
+  "lastUpdated": "2026-08-23T12:12:54.403Z",
   "nameZh": "常暗永遠"
 }
