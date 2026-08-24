@@ -14,7 +14,7 @@ import { formatInterval } from '../utils/priceAlerts';
 import type { PrintingOption } from '../utils/alertMigration';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
-import { hasDisplayableSubscriberStats, isValidatedTrendPrediction } from '../utils/cardNormalization';
+import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, bloomLevelBadgeColor, categoryBadgeColor } from '../utils/cardNormalization';
 import { computeValidatedPriceTrend } from '../utils/priceTrend';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -440,11 +440,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       <View style={styles.section}>
         <View style={styles.headerRow}>
           <Text style={styles.cardNumber}>{id}</Text>
-          {card.normalized?.displayBadge ? (
-            <View style={[styles.rarityBadge, { backgroundColor: rarityColors[rarityKey] || '#6b7280' }]}>
-              <Text style={styles.rarityText}>{card.normalized.displayBadge}</Text>
-            </View>
-          ) : null}
+          <DetailIdentityBadges normalized={card.normalized} rarity={rarityKey} t={t} />
         </View>
 
         <Text style={styles.nameJP}>{displayName}</Text>
@@ -453,6 +449,15 @@ export default function CardDetailScreen({ route, navigation }: any) {
 
         {typeLabel && (
           <InfoRow label={t('card_detail_type_label')} value={typeLabel} />
+        )}
+        {/* DIC-1141: category and Bloom Level live on distinct rows — never
+            collapse them into one field, and never impersonate Bloom Level
+            with the category label. */}
+        {card.normalized?.category === 'holomen' && (
+          <InfoRow
+            label={t('card_detail_bloom_level_label')}
+            value={card.normalized?.stageLabel || t('search_bloom_level_pending')}
+          />
         )}
         {colorNames.length > 0 && (
           <InfoRow label={t('card_detail_color_label')} value={colorNames.join(' / ')} />
@@ -786,6 +791,59 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// DIC-1141: header badges on the detail page. Bloom Level (Debut/1st/2nd/Buzz/
+// Spot) is the primary badge for Holomen — never the category label, never
+// colored by printing rarity. A separate "rarity chip" surfaces the printing
+// rarity so it stays legible without impersonating a Bloom Level.
+function DetailIdentityBadges({
+  normalized,
+  rarity,
+  t,
+}: {
+  normalized: any;
+  rarity: string;
+  t: (k: any, p?: any) => string;
+}) {
+  const rarityChip = rarity ? (
+    <View style={[styles.detailRarityChip, { borderColor: rarityColors[rarity] || '#6b7280' }]} testID="detail-rarity-chip">
+      <Text style={[styles.detailRarityChipText, { color: rarityColors[rarity] || '#6b7280' }]}>{rarity}</Text>
+    </View>
+  ) : null;
+  if (!normalized) {
+    return rarityChip ? <View style={styles.detailBadgeRow}>{rarityChip}</View> : null;
+  }
+  const isHolomen = normalized.category === 'holomen';
+  const stageLabel = normalized.stageLabel;
+  const categoryLabel = normalized.categoryLabel;
+  const bloomColor = bloomLevelBadgeColor(normalized.stage);
+  const catColor = categoryBadgeColor(normalized.category);
+  return (
+    <View style={styles.detailBadgeRow}>
+      {isHolomen ? (
+        stageLabel ? (
+          <View style={[styles.detailBloomBadge, { backgroundColor: bloomColor || '#6b7280' }]} testID="detail-bloom-badge">
+            <Text style={styles.detailBloomBadgeText}>{stageLabel}</Text>
+          </View>
+        ) : (
+          <View style={styles.detailBloomBadgePending} testID="detail-bloom-badge-pending">
+            <Text style={styles.detailBloomBadgePendingText}>{t('search_bloom_level_pending')}</Text>
+          </View>
+        )
+      ) : categoryLabel ? (
+        <View style={[styles.detailBloomBadge, { backgroundColor: catColor || '#6b7280' }]}>
+          <Text style={styles.detailBloomBadgeText}>{categoryLabel}</Text>
+        </View>
+      ) : null}
+      {isHolomen && categoryLabel ? (
+        <View style={[styles.detailCategoryChip, { borderColor: catColor || '#6b7280' }]}>
+          <Text style={[styles.detailCategoryChipText, { color: catColor || '#6b7280' }]}>{categoryLabel}</Text>
+        </View>
+      ) : null}
+      {rarityChip}
+    </View>
+  );
+}
+
 function Tag({ text }: { text: string }) {
   return (
     <View style={styles.tag}>
@@ -859,6 +917,15 @@ const styles = StyleSheet.create({
   cardNumber: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '700' },
   rarityBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6, minWidth: 48, alignItems: 'center' },
   rarityText: { fontSize: 12, fontWeight: '800', color: COLORS.text },
+  detailBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  detailBloomBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, minWidth: 50, alignItems: 'center' },
+  detailBloomBadgeText: { fontSize: 12, fontWeight: '800', color: '#ffffff', letterSpacing: 0.3 },
+  detailBloomBadgePending: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderStyle: 'dashed', borderColor: COLORS.border, backgroundColor: 'transparent' },
+  detailBloomBadgePendingText: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary },
+  detailCategoryChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, backgroundColor: 'transparent' },
+  detailCategoryChipText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  detailRarityChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, borderWidth: 1, backgroundColor: 'transparent' },
+  detailRarityChipText: { fontSize: 11, fontWeight: '800' },
   nameJP: { fontSize: 26, fontWeight: 'bold', color: COLORS.text, marginBottom: 3 },
   nameTW: { fontSize: 17, color: COLORS.primary, marginBottom: 3 },
   nameEN: { fontSize: 13, color: COLORS.text + '88', marginBottom: 12, fontStyle: 'italic' },

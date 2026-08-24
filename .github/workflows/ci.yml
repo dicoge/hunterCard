@@ -101,6 +101,9 @@ jobs:
       - name: Verify trend math/UI and subscriber provenance are mutation-sensitive (DIC-1084)
         run: npm run test:card-data-correctness
 
+      - name: Verify Holomen Bloom Level badge never falls back to "Holomen" (DIC-1141)
+        run: npm run test:dic1141-bloom-level
+
       - name: Verify production /api/* is not swallowed by SPA (DIC-886)
         run: npm run test:vercel-routing
 
