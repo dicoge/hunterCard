@@ -397,7 +397,7 @@ function CardIdentityBadges({
   );
 }
 
-function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void }) {
+export function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void }) {
   const { t } = useTranslation();
   const [imgErr, setImgErr] = React.useState(false);
   const id = card.cardNumber || card.id;
@@ -426,8 +426,11 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
         </View>
       )}
       <View style={styles.cardContent}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardNumber} numberOfLines={1}>{id}</Text>
+        <View style={styles.cardHeader} testID="search-card-header">
+          <Text style={styles.cardNumber} numberOfLines={1} testID="search-card-number">{id}</Text>
+        </View>
+
+        <View style={styles.identityBadgeLine} accessible={false} testID="search-card-identity-badges">
           <CardIdentityBadges normalized={card.normalized} rarity={card.rarity} t={t} />
         </View>
 
@@ -493,13 +496,11 @@ const styles = StyleSheet.create({
   cardImageContainer: { padding: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 4, marginRight: 4 },
   rarityStrip: { width: 5, minWidth: 5 },
   cardContent: { flex: 1, padding: 14, paddingRight: 8 },
-  // DIC-1150: keep the card number on a single line even when the badge row
-  // shows both a Bloom Level badge and a category chip. `flex: 1` + `minWidth: 0`
-  // lets the number reclaim room from the badge row before it wraps, and
-  // `numberOfLines={1}` (on the Text) ensures truncation instead of the
-  // `hBP03-` / `010` split screenshot in the ticket.
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },
-  cardNumber: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', flex: 1, minWidth: 0 },
+  // DIC-1150 CR: the identity chips live on their own row. Keeping them inside
+  // this header left only 43-53px for a 69px identifier at real product widths.
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  cardNumber: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', flexShrink: 0, minWidth: 72 },
+  identityBadgeLine: { minHeight: 22, alignItems: 'flex-start', marginBottom: 6 },
   rarityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, minWidth: 45, alignItems: 'center' },
   rarityText: { color: COLORS.text, fontSize: 11, fontWeight: '800' },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
