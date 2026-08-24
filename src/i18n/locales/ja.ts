@@ -180,6 +180,8 @@ export const ja: Record<keyof typeof zh, string> = {
   search_empty_hint: '日本語名、カード番号、シリーズコードで検索してみてください',
   search_results_for: '検索結果：{{query}}',
   search_found_count: '{{count}} 枚見つかりました',
+  // DIC-1141: shown when a Holomen card has no canonical Bloom Level yet.
+  search_bloom_level_pending: 'Bloomレベル未取得',
 
   // Settings details and dialogs
   settings_login_failed: 'ログイン失敗',
@@ -326,6 +328,7 @@ export const ja: Record<keyof typeof zh, string> = {
   card_detail_type_support: 'サポート',
   card_detail_type_energy: 'エール',
   card_detail_type_label: '種類',
+  card_detail_bloom_level_label: 'Bloomレベル',
   card_detail_color_label: '色',
   card_detail_series_label: 'シリーズ',
   card_detail_effects: 'カード効果',

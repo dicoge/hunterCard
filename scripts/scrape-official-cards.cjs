@@ -82,6 +82,9 @@ async function getCardDetail(page, cardId, code) {
       rarity: fields["レアリティ"] || "",
       color: fields["色"] || "",
       life: fields["LIFE"] || "",
+      hp: fields["HP"] || "",
+      // Bloom Level (Debut / 1st / 2nd / Buzz / Spot) — Holomen only (DIC-1141).
+      bloomLevel: fields["Bloomレベル"] || fields["BloomLevel"] || "",
       cardNumber: numEl ? numEl.textContent.trim() : "",
     };
   });
@@ -114,6 +117,8 @@ async function main() {
           rarity: detail ? detail.rarity || basic.rarity : basic.rarity,
           color: detail ? (COLOR_MAP[detail.color] || detail.color) : "",
           life: detail ? detail.life : "",
+          hp: detail ? detail.hp : "",
+          bloomLevel: detail ? detail.bloomLevel : "",
           imageUrl: basic.imageUrl,
         });
         if ((i + 1) % 20 === 0) console.log("  Progress: " + (i + 1) + "/" + basicCards.length);

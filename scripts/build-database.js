@@ -739,6 +739,24 @@ function mergeSkills(cards, prevSkills = new Map()) {
     (preserved ? `, preserved ${preserved} from previous build` : ''));
 }
 
+// Canonical Bloom Level overlay: cardNumber → 'Debut' | '1st' | '2nd' | 'Buzz' | 'Spot'.
+// Written by scripts/scrape-bloom-levels.mjs from the official card pages'
+// <dt>Bloomレベル</dt> field. This is checked in so the field survives even if a
+// re-scrape hasn't populated card.bloomLevel yet (DIC-1141).
+function loadBloomLevelOverlay() {
+  const p = path.join(DATA_DIR, 'bloom-levels.json');
+  if (!fs.existsSync(p)) return {};
+  try {
+    const j = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    const by = j?.byCardNumber || {};
+    console.log(`  [bloom] Loaded ${Object.keys(by).length} canonical bloom levels`);
+    return by;
+  } catch (err) {
+    console.warn(`  [bloom] Failed to read bloom-levels.json: ${err.message}`);
+    return {};
+  }
+}
+
 function loadOfficialData() {
   console.log('\n[database] Loading official card data...');
   const officialCards = {};  // { cardNumber_series: cardData }
@@ -773,6 +791,12 @@ function loadOfficialData() {
             hp: card.hp || '',
             life: card.life || '',
             arts: card.arts || '',
+            // Bloom Level (Debut / 1st / 2nd / Buzz / Spot). Only Holomen cards
+            // carry this; Oshi/Support/Yell/Mascot leave it empty. Reprinted
+            // Holomen may miss the field if the reprint scrape ran before the
+            // official page had a Bloomレベル tag — loadBloomLevelOverlay()
+            // backfills those from data/bloom-levels.json (DIC-1141).
+            bloomLevel: card.bloomLevel || '',
             cardNumber: cardNum,
           };
         }
@@ -780,6 +804,28 @@ function loadOfficialData() {
     } catch (err) {
       console.error(`  [official] Error reading ${file}: ${err.message}`);
     }
+  }
+
+  // Merge canonical Bloom Level overlay: fill missing bloomLevel and normalize
+  // any Holomen entry that lost the field on reprint. Bloom Level is a property
+  // of the character card, not a printing, so the same value applies to every
+  // (cardNumber, series) copy (DIC-1141).
+  const bloomOverlay = loadBloomLevelOverlay();
+  let bloomFilled = 0;
+  let bloomOverridden = 0;
+  for (const info of Object.values(officialCards)) {
+    const canonical = bloomOverlay[info.cardNumber];
+    if (!canonical) continue;
+    if (!info.bloomLevel) {
+      info.bloomLevel = canonical;
+      bloomFilled++;
+    } else if (info.bloomLevel !== canonical) {
+      info.bloomLevel = canonical;
+      bloomOverridden++;
+    }
+  }
+  if (bloomFilled || bloomOverridden) {
+    console.log(`  [bloom] Backfilled ${bloomFilled} cards, overrode ${bloomOverridden} mismatched entries`);
   }
 
   console.log(`  [official] Loaded ${Object.keys(officialCards).length} cards from ${files.length} files`);
@@ -1127,6 +1173,10 @@ async function buildDatabase() {
       hp: official.hp || '',
       life: official.life || '',
       arts: official.arts || '',
+      // Canonical Bloom Level for Holomen (Debut / 1st / 2nd / Buzz / Spot).
+      // Non-holomen cards leave this empty; the UI never renders empty as
+      // "Holomen" (see cardNormalization.ts + DIC-1141).
+      bloomLevel: official.bloomLevel || '',
       timestamp: yuyu ? yuyu.firstTimestamp : '',
     };
   }

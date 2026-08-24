@@ -3622,7 +3622,8 @@
         "2026-08-21": 1700,
         "2026-08-22": 1700,
         "2026-08-23": 1700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-025_ent07": {
       "id": "hBP01-025_ent07",
@@ -4319,7 +4320,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-045_ent07": {
       "id": "hBP01-045_ent07",
@@ -5132,7 +5134,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-049_ent07": {
       "id": "hBP01-049_ent07",
@@ -5889,7 +5892,8 @@
         "2026-07-31": 70,
         "2026-08-01": 70,
         "2026-08-02": 70
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-053_ent07": {
       "id": "hBP01-053_ent07",
@@ -6516,7 +6520,8 @@
         "2026-08-21": 2300,
         "2026-08-22": 2300,
         "2026-08-23": 2300
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-069_ent07": {
       "id": "hBP01-069_ent07",
@@ -7179,7 +7184,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-073_ent07": {
       "id": "hBP01-073_ent07",
@@ -7849,7 +7855,8 @@
         "2026-08-21": 80,
         "2026-08-22": 80,
         "2026-08-23": 80
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-083_ent07": {
       "id": "hBP01-083_ent07",
@@ -8744,7 +8751,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-093_ent07": {
       "id": "hBP01-093_ent07",
@@ -9856,7 +9864,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-015_ent07": {
       "id": "hBP02-015_ent07",
@@ -10269,7 +10278,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP02-017_ent07": {
       "id": "hBP02-017_ent07",
@@ -10665,7 +10675,8 @@
         "2026-07-31": 900,
         "2026-08-01": 900,
         "2026-08-02": 900
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-025_ent07": {
       "id": "hBP02-025_ent07",
@@ -11794,7 +11805,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-066_ent07": {
       "id": "hBP02-066_ent07",
@@ -13233,7 +13245,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-026_ent07": {
       "id": "hBP03-026_ent07",
@@ -14417,7 +14430,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-032_ent07": {
       "id": "hBP03-032_ent07",
@@ -15416,7 +15430,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-068_ent07": {
       "id": "hBP03-068_ent07",
@@ -17012,7 +17027,8 @@
         "2026-08-12": 300,
         "2026-08-13": 300,
         "2026-08-14": 300
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-050_ent07": {
       "id": "hBP04-050_ent07",
@@ -17202,7 +17218,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-051_ent07": {
       "id": "hBP04-051_ent07",
@@ -17373,7 +17390,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-052_ent07": {
       "id": "hBP04-052_ent07",
@@ -17565,7 +17583,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-053_ent07": {
       "id": "hBP04-053_ent07",
@@ -18007,7 +18026,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-055_ent07": {
       "id": "hBP04-055_ent07",
@@ -18199,7 +18219,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-056_ent07": {
       "id": "hBP04-056_ent07",
@@ -18379,7 +18400,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-057_ent07": {
       "id": "hBP04-057_ent07",
@@ -18571,7 +18593,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-058_ent07": {
       "id": "hBP04-058_ent07",
@@ -18759,7 +18782,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-059_ent07": {
       "id": "hBP04-059_ent07",
@@ -18962,7 +18986,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-063_ent07": {
       "id": "hBP04-063_ent07",
@@ -19154,7 +19179,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-064_ent07": {
       "id": "hBP04-064_ent07",
@@ -19336,7 +19362,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-065_ent07": {
       "id": "hBP04-065_ent07",
@@ -19530,7 +19557,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-066_ent07": {
       "id": "hBP04-066_ent07",
@@ -19744,7 +19772,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-079_ent07": {
       "id": "hBP04-079_ent07",
@@ -19936,7 +19965,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-080_ent07": {
       "id": "hBP04-080_ent07",
@@ -20124,7 +20154,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-081_ent07": {
       "id": "hBP04-081_ent07",
@@ -20308,7 +20339,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-082_ent07": {
       "id": "hBP04-082_ent07",
@@ -20522,7 +20554,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-083_ent07": {
       "id": "hBP04-083_ent07",
@@ -20706,7 +20739,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-084_ent07": {
       "id": "hBP04-084_ent07",
@@ -20898,7 +20932,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-085_ent07": {
       "id": "hBP04-085_ent07",
@@ -21116,7 +21151,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-086_ent07": {
       "id": "hBP04-086_ent07",
@@ -21330,7 +21366,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-087_ent07": {
       "id": "hBP04-087_ent07",
@@ -21488,7 +21525,8 @@
         "2026-07-29": 10,
         "2026-07-30": 10,
         "2026-07-31": 10
-      }
+      },
+      "bloomLevel": "Spot"
     },
     "hBP04-088_ent07": {
       "id": "hBP04-088_ent07",
@@ -21658,7 +21696,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "Spot"
     },
     "hBP05-001_ent07": {
       "id": "hBP05-001_ent07",
@@ -23194,7 +23233,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-009_ent07": {
       "id": "hBP05-009_ent07",
@@ -23378,7 +23418,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-010_ent07": {
       "id": "hBP05-010_ent07",
@@ -23566,7 +23607,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-011_ent07": {
       "id": "hBP05-011_ent07",
@@ -23752,7 +23794,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-012_ent07": {
       "id": "hBP05-012_ent07",
@@ -23964,7 +24007,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-018_ent07": {
       "id": "hBP05-018_ent07",
@@ -24131,7 +24175,8 @@
         "2026-08-12": 50,
         "2026-08-13": 50,
         "2026-08-14": 50
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-019_ent07": {
       "id": "hBP05-019_ent07",
@@ -24293,7 +24338,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-020_ent07": {
       "id": "hBP05-020_ent07",
@@ -24455,7 +24501,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-021_ent07": {
       "id": "hBP05-021_ent07",
@@ -24617,7 +24664,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-022_ent07": {
       "id": "hBP05-022_ent07",
@@ -24784,7 +24832,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-023_ent07": {
       "id": "hBP05-023_ent07",
@@ -24964,7 +25013,8 @@
         "2026-08-21": 500,
         "2026-08-22": 500,
         "2026-08-23": 500
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-024_ent07": {
       "id": "hBP05-024_ent07",
@@ -25335,7 +25385,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-031_ent07": {
       "id": "hBP05-031_ent07",
@@ -25475,7 +25526,8 @@
         "2026-07-31": 50,
         "2026-08-01": 50,
         "2026-08-02": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-032_ent07": {
       "id": "hBP05-032_ent07",
@@ -25637,7 +25689,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-033_ent07": {
       "id": "hBP05-033_ent07",
@@ -25804,7 +25857,8 @@
         "2026-08-12": 200,
         "2026-08-13": 200,
         "2026-08-14": 200
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-034_ent07": {
       "id": "hBP05-034_ent07",
@@ -25986,7 +26040,8 @@
         "2026-08-21": 2400,
         "2026-08-22": 2400,
         "2026-08-23": 2400
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-035_ent07": {
       "id": "hBP05-035_ent07",
@@ -26185,7 +26240,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-040_ent07": {
       "id": "hBP05-040_ent07",
@@ -26361,7 +26417,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-041_ent07": {
       "id": "hBP05-041_ent07",
@@ -26489,7 +26546,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-042_ent07": {
       "id": "hBP05-042_ent07",
@@ -26651,7 +26709,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-043_ent07": {
       "id": "hBP05-043_ent07",
@@ -26811,7 +26870,8 @@
         "2026-08-21": 100,
         "2026-08-22": 100,
         "2026-08-23": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-044_ent07": {
       "id": "hBP05-044_ent07",
@@ -26965,7 +27025,8 @@
         "2026-07-31": 100,
         "2026-08-01": 100,
         "2026-08-02": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-045_ent07": {
       "id": "hBP05-045_ent07",
@@ -27159,7 +27220,8 @@
         "2026-08-21": 1600,
         "2026-08-22": 1600,
         "2026-08-23": 1600
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-047_ent07": {
       "id": "hBP05-047_ent07",
@@ -27309,7 +27371,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-048_ent07": {
       "id": "hBP05-048_ent07",
@@ -27449,7 +27512,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-049_ent07": {
       "id": "hBP05-049_ent07",
@@ -27631,7 +27695,8 @@
         "2026-08-21": 600,
         "2026-08-22": 600,
         "2026-08-23": 600
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-052_ent07": {
       "id": "hBP05-052_ent07",
@@ -27825,7 +27890,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-053_ent07": {
       "id": "hBP05-053_ent07",
@@ -28017,7 +28083,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-054_ent07": {
       "id": "hBP05-054_ent07",
@@ -28199,7 +28266,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-055_ent07": {
       "id": "hBP05-055_ent07",
@@ -28398,7 +28466,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-056_ent07": {
       "id": "hBP05-056_ent07",
@@ -28610,7 +28679,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-057_ent07": {
       "id": "hBP05-057_ent07",
@@ -28784,7 +28854,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-058_ent07": {
       "id": "hBP05-058_ent07",
@@ -28978,7 +29049,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-059_ent07": {
       "id": "hBP05-059_ent07",
@@ -29172,7 +29244,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-060_ent07": {
       "id": "hBP05-060_ent07",
@@ -29387,7 +29460,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-061_ent07": {
       "id": "hBP05-061_ent07",
@@ -29599,7 +29673,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-063_ent07": {
       "id": "hBP05-063_ent07",
@@ -29793,7 +29868,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-064_ent07": {
       "id": "hBP05-064_ent07",
@@ -29987,7 +30063,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-065_ent07": {
       "id": "hBP05-065_ent07",
@@ -30181,7 +30258,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-066_ent07": {
       "id": "hBP05-066_ent07",
@@ -30380,7 +30458,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-067_ent07": {
       "id": "hBP05-067_ent07",
@@ -30592,7 +30671,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-072_ent07": {
       "id": "hBP05-072_ent07",
@@ -31603,7 +31683,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-023_ent07": {
       "id": "hBP06-023_ent07",
@@ -31768,7 +31849,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-024_ent07": {
       "id": "hBP06-024_ent07",
@@ -31930,7 +32012,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-025_ent07": {
       "id": "hBP06-025_ent07",
@@ -32101,7 +32184,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-026_ent07": {
       "id": "hBP06-026_ent07",
@@ -32522,7 +32606,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-040_ent07": {
       "id": "hBP06-040_ent07",
@@ -32704,7 +32789,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-041_ent07": {
       "id": "hBP06-041_ent07",
@@ -32869,7 +32955,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-042_ent07": {
       "id": "hBP06-042_ent07",
@@ -33043,7 +33130,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-043_ent07": {
       "id": "hBP06-043_ent07",
@@ -33217,7 +33305,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-044_ent07": {
       "id": "hBP06-044_ent07",
@@ -33416,7 +33505,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-045_ent07": {
       "id": "hBP06-045_ent07",
@@ -33626,7 +33716,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-071_ent07": {
       "id": "hBP06-071_ent07",
@@ -33825,7 +33916,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-072_ent07": {
       "id": "hBP06-072_ent07",
@@ -34025,7 +34117,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-073_ent07": {
       "id": "hBP06-073_ent07",
@@ -34190,7 +34283,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-074_ent07": {
       "id": "hBP06-074_ent07",
@@ -34384,7 +34478,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-075_ent07": {
       "id": "hBP06-075_ent07",
@@ -34558,7 +34653,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-076_ent07": {
       "id": "hBP06-076_ent07",
@@ -34975,7 +35071,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-083_ent07": {
       "id": "hBP06-083_ent07",
@@ -35150,7 +35247,8 @@
         "2026-08-12": 1000,
         "2026-08-13": 1000,
         "2026-08-14": 1000
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-001_ent07": {
       "id": "hBP07-001_ent07",
@@ -36669,7 +36767,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-009_ent07": {
       "id": "hBP07-009_ent07",
@@ -36841,7 +36940,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-010_ent07": {
       "id": "hBP07-010_ent07",
@@ -37035,7 +37135,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-011_ent07": {
       "id": "hBP07-011_ent07",
@@ -37229,7 +37330,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-012_ent07": {
       "id": "hBP07-012_ent07",
@@ -37428,7 +37530,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-013_ent07": {
       "id": "hBP07-013_ent07",
@@ -37612,7 +37715,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-014_ent07": {
       "id": "hBP07-014_ent07",
@@ -37822,7 +37926,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-015_ent07": {
       "id": "hBP07-015_ent07",
@@ -37955,7 +38060,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-016_ent07": {
       "id": "hBP07-016_ent07",
@@ -38107,7 +38213,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-017_ent07": {
       "id": "hBP07-017_ent07",
@@ -38246,7 +38353,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-018_ent07": {
       "id": "hBP07-018_ent07",
@@ -38385,7 +38493,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-019_ent07": {
       "id": "hBP07-019_ent07",
@@ -38560,7 +38669,8 @@
         "2026-08-12": 50,
         "2026-08-13": 50,
         "2026-08-14": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-020_ent07": {
       "id": "hBP07-020_ent07",
@@ -38699,7 +38809,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-021_ent07": {
       "id": "hBP07-021_ent07",
@@ -38877,7 +38988,8 @@
         "2026-08-21": 500,
         "2026-08-22": 500,
         "2026-08-23": 500
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-022_ent07": {
       "id": "hBP07-022_ent07",
@@ -39076,7 +39188,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-023_ent07": {
       "id": "hBP07-023_ent07",
@@ -39209,7 +39322,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-024_ent07": {
       "id": "hBP07-024_ent07",
@@ -39371,7 +39485,8 @@
         "2026-08-21": 100,
         "2026-08-22": 100,
         "2026-08-23": 100
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-025_ent07": {
       "id": "hBP07-025_ent07",
@@ -39523,7 +39638,8 @@
         "2026-07-31": 50,
         "2026-08-01": 50,
         "2026-08-02": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-026_ent07": {
       "id": "hBP07-026_ent07",
@@ -39675,7 +39791,8 @@
         "2026-07-31": 30,
         "2026-08-01": 30,
         "2026-08-02": 30
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-027_ent07": {
       "id": "hBP07-027_ent07",
@@ -39842,7 +39959,8 @@
         "2026-08-12": 300,
         "2026-08-13": 300,
         "2026-08-14": 300
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-028_ent07": {
       "id": "hBP07-028_ent07",
@@ -40000,7 +40118,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 1700
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-029_ent07": {
       "id": "hBP07-029_ent07",
@@ -40178,7 +40297,8 @@
         "2026-08-21": 3000,
         "2026-08-22": 3000,
         "2026-08-23": 3000
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-030_ent07": {
       "id": "hBP07-030_ent07",
@@ -40377,7 +40497,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-031_ent07": {
       "id": "hBP07-031_ent07",
@@ -40672,7 +40793,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-033_ent07": {
       "id": "hBP07-033_ent07",
@@ -40834,7 +40956,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-034_ent07": {
       "id": "hBP07-034_ent07",
@@ -41001,7 +41124,8 @@
         "2026-08-12": 200,
         "2026-08-13": 200,
         "2026-08-14": 200
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-035_ent07": {
       "id": "hBP07-035_ent07",
@@ -41179,7 +41303,8 @@
         "2026-08-21": 3000,
         "2026-08-22": 3000,
         "2026-08-23": 3000
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-036_ent07": {
       "id": "hBP07-036_ent07",
@@ -41344,7 +41469,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-037_ent07": {
       "id": "hBP07-037_ent07",
@@ -41528,7 +41654,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-038_ent07": {
       "id": "hBP07-038_ent07",
@@ -41712,7 +41839,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-039_ent07": {
       "id": "hBP07-039_ent07",
@@ -41906,7 +42034,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-040_ent07": {
       "id": "hBP07-040_ent07",
@@ -42105,7 +42234,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-041_ent07": {
       "id": "hBP07-041_ent07",
@@ -42289,7 +42419,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-042_ent07": {
       "id": "hBP07-042_ent07",
@@ -42499,7 +42630,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-043_ent07": {
       "id": "hBP07-043_ent07",
@@ -42687,7 +42819,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-044_ent07": {
       "id": "hBP07-044_ent07",
@@ -42854,7 +42987,8 @@
         "2026-08-12": 50,
         "2026-08-13": 50,
         "2026-08-14": 50
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-045_ent07": {
       "id": "hBP07-045_ent07",
@@ -43194,7 +43328,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-047_ent07": {
       "id": "hBP07-047_ent07",
@@ -43346,7 +43481,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-048_ent07": {
       "id": "hBP07-048_ent07",
@@ -43699,7 +43835,8 @@
         "2026-08-21": 1000,
         "2026-08-22": 1000,
         "2026-08-23": 1000
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-050_ent07": {
       "id": "hBP07-050_ent07",
@@ -44048,7 +44185,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-052_ent07": {
       "id": "hBP07-052_ent07",
@@ -44219,7 +44357,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-053_ent07": {
       "id": "hBP07-053_ent07",
@@ -44413,7 +44552,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-054_ent07": {
       "id": "hBP07-054_ent07",
@@ -44806,7 +44946,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-056_ent07": {
       "id": "hBP07-056_ent07",
@@ -45016,7 +45157,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-057_ent07": {
       "id": "hBP07-057_ent07",
@@ -45170,7 +45312,8 @@
         "2026-08-02": 50,
         "2026-08-03": 50,
         "2026-08-04": 50
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-058_ent07": {
       "id": "hBP07-058_ent07",
@@ -45337,7 +45480,8 @@
         "2026-08-12": 50,
         "2026-08-13": 50,
         "2026-08-14": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-059_ent07": {
       "id": "hBP07-059_ent07",
@@ -45502,7 +45646,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-060_ent07": {
       "id": "hBP07-060_ent07",
@@ -45676,7 +45821,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-061_ent07": {
       "id": "hBP07-061_ent07",
@@ -45875,7 +46021,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-062_ent07": {
       "id": "hBP07-062_ent07",
@@ -46085,7 +46232,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-063_ent07": {
       "id": "hBP07-063_ent07",
@@ -46250,7 +46398,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-064_ent07": {
       "id": "hBP07-064_ent07",
@@ -46432,7 +46581,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-065_ent07": {
       "id": "hBP07-065_ent07",
@@ -46616,7 +46766,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-066_ent07": {
       "id": "hBP07-066_ent07",
@@ -46806,7 +46957,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-067_ent07": {
       "id": "hBP07-067_ent07",
@@ -47005,7 +47157,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-068_ent07": {
       "id": "hBP07-068_ent07",
@@ -47189,7 +47342,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-069_ent07": {
       "id": "hBP07-069_ent07",
@@ -47399,7 +47553,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-070_ent07": {
       "id": "hBP07-070_ent07",
@@ -47598,7 +47753,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-071_ent07": {
       "id": "hBP07-071_ent07",
@@ -47782,7 +47938,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-072_ent07": {
       "id": "hBP07-072_ent07",
@@ -47976,7 +48133,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-073_ent07": {
       "id": "hBP07-073_ent07",
@@ -48175,7 +48333,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-074_ent07": {
       "id": "hBP07-074_ent07",
@@ -48385,7 +48544,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-075_ent07": {
       "id": "hBP07-075_ent07",
@@ -48571,7 +48731,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-076_ent07": {
       "id": "hBP07-076_ent07",
@@ -48778,7 +48939,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-077_ent07": {
       "id": "hBP07-077_ent07",
@@ -48943,7 +49105,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-078_ent07": {
       "id": "hBP07-078_ent07",
@@ -49127,7 +49290,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-079_ent07": {
       "id": "hBP07-079_ent07",
@@ -49321,7 +49485,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-080_ent07": {
       "id": "hBP07-080_ent07",
@@ -49515,7 +49680,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-081_ent07": {
       "id": "hBP07-081_ent07",
@@ -49714,7 +49880,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-082_ent07": {
       "id": "hBP07-082_ent07",
@@ -49908,7 +50075,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-083_ent07": {
       "id": "hBP07-083_ent07",
@@ -50118,7 +50286,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-084_ent07": {
       "id": "hBP07-084_ent07",
@@ -50304,7 +50473,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-085_ent07": {
       "id": "hBP07-085_ent07",
@@ -50503,7 +50673,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-086_ent07": {
       "id": "hBP07-086_ent07",
@@ -50670,7 +50841,8 @@
         "2026-08-12": 200,
         "2026-08-13": 200,
         "2026-08-14": 200
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-087_ent07": {
       "id": "hBP07-087_ent07",
@@ -50803,7 +50975,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-088_ent07": {
       "id": "hBP07-088_ent07",
@@ -50942,7 +51115,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-089_ent07": {
       "id": "hBP07-089_ent07",
@@ -51109,7 +51283,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-090_ent07": {
       "id": "hBP07-090_ent07",
@@ -51287,7 +51462,8 @@
         "2026-08-21": 800,
         "2026-08-22": 800,
         "2026-08-23": 800
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hSD01-002_ent07": {
       "id": "hSD01-002_ent07",
@@ -52928,7 +53104,8 @@
         "2026-07-31": 4700,
         "2026-08-01": 4700,
         "2026-08-02": 4700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD03-003_ent07": {
       "id": "hSD03-003_ent07",
@@ -54513,7 +54690,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD04-003_ent07": {
       "id": "hSD04-003_ent07",
@@ -57652,7 +57830,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD07-003_ent07": {
       "id": "hSD07-003_ent07",
@@ -58521,7 +58700,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hSD07-008_ent07": {
       "id": "hSD07-008_ent07",
@@ -60193,7 +60373,8 @@
         "2026-07-31": 20,
         "2026-08-01": 20,
         "2026-08-02": 20
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD10-003_ent07": {
       "id": "hSD10-003_ent07",
@@ -83371,7 +83552,8 @@
         "2026-08-21": 1700,
         "2026-08-22": 1700,
         "2026-08-23": 1700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-044_hBP07": {
       "id": "hBP01-044_hBP07",
@@ -83585,7 +83767,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-092_hBP07": {
       "id": "hBP01-092_hBP07",
@@ -83803,7 +83986,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-124_hBP07": {
       "id": "hBP01-124_hBP07",
@@ -84068,7 +84252,8 @@
         "2026-07-31": 900,
         "2026-08-01": 900,
         "2026-08-02": 900
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-101_hBP07": {
       "id": "hBP02-101_hBP07",
@@ -84376,7 +84561,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-067_hBP07": {
       "id": "hBP03-067_hBP07",
@@ -84590,7 +84776,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-112_hBP07": {
       "id": "hBP03-112_hBP07",
@@ -84904,7 +85091,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-054_hBP07": {
       "id": "hBP04-054_hBP07",
@@ -85124,7 +85312,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-083_hBP07": {
       "id": "hBP04-083_hBP07",
@@ -85308,7 +85497,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-001_hBP07": {
       "id": "hBP07-001_hBP07",
@@ -86827,7 +87017,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-009_hBP07": {
       "id": "hBP07-009_hBP07",
@@ -87009,7 +87200,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-010_hBP07": {
       "id": "hBP07-010_hBP07",
@@ -87203,7 +87395,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-011_hBP07": {
       "id": "hBP07-011_hBP07",
@@ -87397,7 +87590,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-012_hBP07": {
       "id": "hBP07-012_hBP07",
@@ -87596,7 +87790,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-013_hBP07": {
       "id": "hBP07-013_hBP07",
@@ -87780,7 +87975,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-014_hBP07": {
       "id": "hBP07-014_hBP07",
@@ -87990,7 +88186,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-015_hBP07": {
       "id": "hBP07-015_hBP07",
@@ -88123,7 +88320,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-016_hBP07": {
       "id": "hBP07-016_hBP07",
@@ -88275,7 +88473,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-017_hBP07": {
       "id": "hBP07-017_hBP07",
@@ -88414,7 +88613,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-018_hBP07": {
       "id": "hBP07-018_hBP07",
@@ -88553,7 +88753,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-019_hBP07": {
       "id": "hBP07-019_hBP07",
@@ -88728,7 +88929,8 @@
         "2026-08-12": 50,
         "2026-08-13": 50,
         "2026-08-14": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-020_hBP07": {
       "id": "hBP07-020_hBP07",
@@ -88867,7 +89069,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-021_hBP07": {
       "id": "hBP07-021_hBP07",
@@ -89045,7 +89248,8 @@
         "2026-08-21": 500,
         "2026-08-22": 500,
         "2026-08-23": 500
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-022_hBP07": {
       "id": "hBP07-022_hBP07",
@@ -89244,7 +89448,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-023_hBP07": {
       "id": "hBP07-023_hBP07",
@@ -89377,7 +89582,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-024_hBP07": {
       "id": "hBP07-024_hBP07",
@@ -89539,7 +89745,8 @@
         "2026-08-21": 100,
         "2026-08-22": 100,
         "2026-08-23": 100
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-025_hBP07": {
       "id": "hBP07-025_hBP07",
@@ -89691,7 +89898,8 @@
         "2026-07-31": 50,
         "2026-08-01": 50,
         "2026-08-02": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-026_hBP07": {
       "id": "hBP07-026_hBP07",
@@ -89843,7 +90051,8 @@
         "2026-07-31": 30,
         "2026-08-01": 30,
         "2026-08-02": 30
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-027_hBP07": {
       "id": "hBP07-027_hBP07",
@@ -90010,7 +90219,8 @@
         "2026-08-12": 300,
         "2026-08-13": 300,
         "2026-08-14": 300
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-028_hBP07": {
       "id": "hBP07-028_hBP07",
@@ -90168,7 +90378,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 1700
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-029_hBP07": {
       "id": "hBP07-029_hBP07",
@@ -90346,7 +90557,8 @@
         "2026-08-21": 3000,
         "2026-08-22": 3000,
         "2026-08-23": 3000
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-030_hBP07": {
       "id": "hBP07-030_hBP07",
@@ -90545,7 +90757,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-031_hBP07": {
       "id": "hBP07-031_hBP07",
@@ -90840,7 +91053,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-033_hBP07": {
       "id": "hBP07-033_hBP07",
@@ -91002,7 +91216,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-034_hBP07": {
       "id": "hBP07-034_hBP07",
@@ -91169,7 +91384,8 @@
         "2026-08-12": 200,
         "2026-08-13": 200,
         "2026-08-14": 200
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-035_hBP07": {
       "id": "hBP07-035_hBP07",
@@ -91347,7 +91563,8 @@
         "2026-08-21": 3000,
         "2026-08-22": 3000,
         "2026-08-23": 3000
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-036_hBP07": {
       "id": "hBP07-036_hBP07",
@@ -91512,7 +91729,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-037_hBP07": {
       "id": "hBP07-037_hBP07",
@@ -91696,7 +91914,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-038_hBP07": {
       "id": "hBP07-038_hBP07",
@@ -91880,7 +92099,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-039_hBP07": {
       "id": "hBP07-039_hBP07",
@@ -92074,7 +92294,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-040_hBP07": {
       "id": "hBP07-040_hBP07",
@@ -92273,7 +92494,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-041_hBP07": {
       "id": "hBP07-041_hBP07",
@@ -92457,7 +92679,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-042_hBP07": {
       "id": "hBP07-042_hBP07",
@@ -92667,7 +92890,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-043_hBP07": {
       "id": "hBP07-043_hBP07",
@@ -92866,7 +93090,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-044_hBP07": {
       "id": "hBP07-044_hBP07",
@@ -93033,7 +93258,8 @@
         "2026-08-12": 50,
         "2026-08-13": 50,
         "2026-08-14": 50
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-045_hBP07": {
       "id": "hBP07-045_hBP07",
@@ -93373,7 +93599,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-047_hBP07": {
       "id": "hBP07-047_hBP07",
@@ -93525,7 +93752,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-048_hBP07": {
       "id": "hBP07-048_hBP07",
@@ -93878,7 +94106,8 @@
         "2026-08-21": 1000,
         "2026-08-22": 1000,
         "2026-08-23": 1000
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-050_hBP07": {
       "id": "hBP07-050_hBP07",
@@ -94227,7 +94456,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-052_hBP07": {
       "id": "hBP07-052_hBP07",
@@ -94398,7 +94628,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-053_hBP07": {
       "id": "hBP07-053_hBP07",
@@ -94592,7 +94823,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-054_hBP07": {
       "id": "hBP07-054_hBP07",
@@ -94985,7 +95217,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-056_hBP07": {
       "id": "hBP07-056_hBP07",
@@ -95195,7 +95428,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-057_hBP07": {
       "id": "hBP07-057_hBP07",
@@ -95349,7 +95583,8 @@
         "2026-08-02": 50,
         "2026-08-03": 50,
         "2026-08-04": 50
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-058_hBP07": {
       "id": "hBP07-058_hBP07",
@@ -95516,7 +95751,8 @@
         "2026-08-12": 50,
         "2026-08-13": 50,
         "2026-08-14": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-059_hBP07": {
       "id": "hBP07-059_hBP07",
@@ -95681,7 +95917,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-060_hBP07": {
       "id": "hBP07-060_hBP07",
@@ -95855,7 +96092,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-061_hBP07": {
       "id": "hBP07-061_hBP07",
@@ -96054,7 +96292,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-062_hBP07": {
       "id": "hBP07-062_hBP07",
@@ -96264,7 +96503,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-063_hBP07": {
       "id": "hBP07-063_hBP07",
@@ -96429,7 +96669,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-064_hBP07": {
       "id": "hBP07-064_hBP07",
@@ -96611,7 +96852,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-065_hBP07": {
       "id": "hBP07-065_hBP07",
@@ -96795,7 +97037,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-066_hBP07": {
       "id": "hBP07-066_hBP07",
@@ -96985,7 +97228,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-067_hBP07": {
       "id": "hBP07-067_hBP07",
@@ -97184,7 +97428,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-068_hBP07": {
       "id": "hBP07-068_hBP07",
@@ -97368,7 +97613,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-069_hBP07": {
       "id": "hBP07-069_hBP07",
@@ -97578,7 +97824,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-070_hBP07": {
       "id": "hBP07-070_hBP07",
@@ -97777,7 +98024,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-071_hBP07": {
       "id": "hBP07-071_hBP07",
@@ -97971,7 +98219,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-072_hBP07": {
       "id": "hBP07-072_hBP07",
@@ -98165,7 +98414,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-073_hBP07": {
       "id": "hBP07-073_hBP07",
@@ -98364,7 +98614,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-074_hBP07": {
       "id": "hBP07-074_hBP07",
@@ -98574,7 +98825,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-075_hBP07": {
       "id": "hBP07-075_hBP07",
@@ -98760,7 +99012,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-076_hBP07": {
       "id": "hBP07-076_hBP07",
@@ -98967,7 +99220,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-077_hBP07": {
       "id": "hBP07-077_hBP07",
@@ -99132,7 +99386,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-078_hBP07": {
       "id": "hBP07-078_hBP07",
@@ -99316,7 +99571,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-079_hBP07": {
       "id": "hBP07-079_hBP07",
@@ -99510,7 +99766,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-080_hBP07": {
       "id": "hBP07-080_hBP07",
@@ -99704,7 +99961,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-081_hBP07": {
       "id": "hBP07-081_hBP07",
@@ -99903,7 +100161,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-082_hBP07": {
       "id": "hBP07-082_hBP07",
@@ -100097,7 +100356,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-083_hBP07": {
       "id": "hBP07-083_hBP07",
@@ -100307,7 +100567,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-084_hBP07": {
       "id": "hBP07-084_hBP07",
@@ -100493,7 +100754,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-085_hBP07": {
       "id": "hBP07-085_hBP07",
@@ -100692,7 +100954,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-086_hBP07": {
       "id": "hBP07-086_hBP07",
@@ -100859,7 +101122,8 @@
         "2026-08-12": 200,
         "2026-08-13": 200,
         "2026-08-14": 200
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-087_hBP07": {
       "id": "hBP07-087_hBP07",
@@ -100992,7 +101256,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-088_hBP07": {
       "id": "hBP07-088_hBP07",
@@ -101131,7 +101396,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-089_hBP07": {
       "id": "hBP07-089_hBP07",
@@ -101298,7 +101564,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP07-090_hBP07": {
       "id": "hBP07-090_hBP07",
@@ -101476,7 +101743,8 @@
         "2026-08-21": 800,
         "2026-08-22": 800,
         "2026-08-23": 800
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hSD10-002_hBP07": {
       "id": "hSD10-002_hBP07",
@@ -101628,7 +101896,8 @@
         "2026-07-31": 20,
         "2026-08-01": 20,
         "2026-08-02": 20
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD10-013_hBP07": {
       "id": "hSD10-013_hBP07",
@@ -102095,7 +102364,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hY01-012_hBP07": {
       "id": "hY01-012_hBP07",
@@ -104026,7 +104296,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-063_hSD12": {
       "id": "hBP04-063_hSD12",
@@ -104218,7 +104489,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-096_hSD12": {
       "id": "hBP04-096_hSD12",
@@ -109981,7 +110253,8 @@
         "2026-07-31": 250,
         "2026-08-01": 250,
         "2026-08-02": 250
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-054_hBP06": {
       "id": "hBP02-054_hBP06",
@@ -110201,7 +110474,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-009_hBP06": {
       "id": "hBP03-009_hBP06",
@@ -110385,7 +110659,8 @@
         "viewCount_daily": 69986,
         "viewCount_weekly": 824952,
         "viewCount_monthly": 2262657
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-057_hBP06": {
       "id": "hBP03-057_hBP06",
@@ -110569,7 +110844,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-061_hBP06": {
       "id": "hBP03-061_hBP06",
@@ -110733,7 +111009,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-016_hBP06": {
       "id": "hBP04-016_hBP06",
@@ -110885,7 +111162,8 @@
         "2026-07-31": 100,
         "2026-08-01": 100,
         "2026-08-02": 100
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-043_hBP06": {
       "id": "hBP04-043_hBP06",
@@ -111099,7 +111377,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-067_hBP06": {
       "id": "hBP04-067_hBP06",
@@ -111325,7 +111604,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-001_hBP06": {
       "id": "hBP06-001_hBP06",
@@ -112405,7 +112685,8 @@
         "2026-07-31": 150,
         "2026-08-01": 150,
         "2026-08-02": 150
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-010_hBP06": {
       "id": "hBP06-010_hBP06",
@@ -112538,7 +112819,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-011_hBP06": {
       "id": "hBP06-011_hBP06",
@@ -112690,7 +112972,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-012_hBP06": {
       "id": "hBP06-012_hBP06",
@@ -112832,7 +113115,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-013_hBP06": {
       "id": "hBP06-013_hBP06",
@@ -113185,7 +113469,8 @@
         "2026-08-21": 1500,
         "2026-08-22": 1500,
         "2026-08-23": 1500
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-015_hBP06": {
       "id": "hBP06-015_hBP06",
@@ -113361,7 +113646,8 @@
         "2026-08-21": 2900,
         "2026-08-22": 2900,
         "2026-08-23": 2900
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-016_hBP06": {
       "id": "hBP06-016_hBP06",
@@ -113494,7 +113780,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-017_hBP06": {
       "id": "hBP06-017_hBP06",
@@ -113636,7 +113923,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-018_hBP06": {
       "id": "hBP06-018_hBP06",
@@ -113798,7 +114086,8 @@
         "2026-08-21": 150,
         "2026-08-22": 150,
         "2026-08-23": 150
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-019_hBP06": {
       "id": "hBP06-019_hBP06",
@@ -113965,7 +114254,8 @@
         "2026-08-12": 400,
         "2026-08-13": 400,
         "2026-08-14": 400
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-020_hBP06": {
       "id": "hBP06-020_hBP06",
@@ -114143,7 +114433,8 @@
         "2026-08-21": 2400,
         "2026-08-22": 2400,
         "2026-08-23": 2400
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-021_hBP06": {
       "id": "hBP06-021_hBP06",
@@ -114342,7 +114633,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-028_hBP06": {
       "id": "hBP06-028_hBP06",
@@ -114504,7 +114796,8 @@
         "viewCount_daily": 69986,
         "viewCount_weekly": 824952,
         "viewCount_monthly": 2262657
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-029_hBP06": {
       "id": "hBP06-029_hBP06",
@@ -114698,7 +114991,8 @@
         "viewCount_daily": 69986,
         "viewCount_weekly": 824952,
         "viewCount_monthly": 2262657
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-030_hBP06": {
       "id": "hBP06-030_hBP06",
@@ -114884,7 +115178,8 @@
         "viewCount_daily": 69986,
         "viewCount_weekly": 824952,
         "viewCount_monthly": 2262657
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-031_hBP06": {
       "id": "hBP06-031_hBP06",
@@ -115094,7 +115389,8 @@
         "viewCount_daily": 69986,
         "viewCount_weekly": 824952,
         "viewCount_monthly": 2262657
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-032_hBP06": {
       "id": "hBP06-032_hBP06",
@@ -115261,7 +115557,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-033_hBP06": {
       "id": "hBP06-033_hBP06",
@@ -115428,7 +115725,8 @@
         "2026-08-12": 300,
         "2026-08-13": 300,
         "2026-08-14": 300
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-034_hBP06": {
       "id": "hBP06-034_hBP06",
@@ -115612,7 +115910,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-035_hBP06": {
       "id": "hBP06-035_hBP06",
@@ -115777,7 +116076,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-036_hBP06": {
       "id": "hBP06-036_hBP06",
@@ -115961,7 +116261,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-037_hBP06": {
       "id": "hBP06-037_hBP06",
@@ -116151,7 +116452,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-038_hBP06": {
       "id": "hBP06-038_hBP06",
@@ -116350,7 +116652,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-039_hBP06": {
       "id": "hBP06-039_hBP06",
@@ -116560,7 +116863,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-046_hBP06": {
       "id": "hBP06-046_hBP06",
@@ -116759,7 +117063,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1100256,
         "viewCount_monthly": 6064540
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-047_hBP06": {
       "id": "hBP06-047_hBP06",
@@ -116958,7 +117263,8 @@
         "viewCount_daily": 155730,
         "viewCount_weekly": 949442,
         "viewCount_monthly": 4424810
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-048_hBP06": {
       "id": "hBP06-048_hBP06",
@@ -117088,7 +117394,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-049_hBP06": {
       "id": "hBP06-049_hBP06",
@@ -117221,7 +117528,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-050_hBP06": {
       "id": "hBP06-050_hBP06",
@@ -117363,7 +117671,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-051_hBP06": {
       "id": "hBP06-051_hBP06",
@@ -117525,7 +117834,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-052_hBP06": {
       "id": "hBP06-052_hBP06",
@@ -117878,7 +118188,8 @@
         "2026-08-21": 600,
         "2026-08-22": 600,
         "2026-08-23": 600
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-054_hBP06": {
       "id": "hBP06-054_hBP06",
@@ -118077,7 +118388,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-055_hBP06": {
       "id": "hBP06-055_hBP06",
@@ -118276,7 +118588,8 @@
         "viewCount_daily": 35160,
         "viewCount_weekly": 234760,
         "viewCount_monthly": 1043403
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-056_hBP06": {
       "id": "hBP06-056_hBP06",
@@ -118475,7 +118788,8 @@
         "viewCount_daily": 35160,
         "viewCount_weekly": 234760,
         "viewCount_monthly": 1043403
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-057_hBP06": {
       "id": "hBP06-057_hBP06",
@@ -118653,7 +118967,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-058_hBP06": {
       "id": "hBP06-058_hBP06",
@@ -118843,7 +119158,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-059_hBP06": {
       "id": "hBP06-059_hBP06",
@@ -119042,7 +119358,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-060_hBP06": {
       "id": "hBP06-060_hBP06",
@@ -119256,7 +119573,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-061_hBP06": {
       "id": "hBP06-061_hBP06",
@@ -119438,7 +119756,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-062_hBP06": {
       "id": "hBP06-062_hBP06",
@@ -119603,7 +119922,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-063_hBP06": {
       "id": "hBP06-063_hBP06",
@@ -119777,7 +120097,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-064_hBP06": {
       "id": "hBP06-064_hBP06",
@@ -119951,7 +120272,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-065_hBP06": {
       "id": "hBP06-065_hBP06",
@@ -120368,7 +120690,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-067_hBP06": {
       "id": "hBP06-067_hBP06",
@@ -120526,7 +120849,8 @@
         "2026-08-17": 50,
         "2026-08-18": 50,
         "2026-08-20": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-068_hBP06": {
       "id": "hBP06-068_hBP06",
@@ -120665,7 +120989,8 @@
         "2026-08-21": 80,
         "2026-08-22": 80,
         "2026-08-23": 80
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-069_hBP06": {
       "id": "hBP06-069_hBP06",
@@ -120832,7 +121157,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-070_hBP06": {
       "id": "hBP06-070_hBP06",
@@ -121014,7 +121340,8 @@
         "2026-08-21": 4000,
         "2026-08-22": 4000,
         "2026-08-23": 4000
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-078_hBP06": {
       "id": "hBP06-078_hBP06",
@@ -121188,7 +121515,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-079_hBP06": {
       "id": "hBP06-079_hBP06",
@@ -121362,7 +121690,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-080_hBP06": {
       "id": "hBP06-080_hBP06",
@@ -121561,7 +121890,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-081_hBP06": {
       "id": "hBP06-081_hBP06",
@@ -121771,7 +122101,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-082_hBP06": {
       "id": "hBP06-082_hBP06",
@@ -121957,7 +122288,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-084_hBP06": {
       "id": "hBP06-084_hBP06",
@@ -122107,7 +122439,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "Spot"
     },
     "hBP06-085_hBP06": {
       "id": "hBP06-085_hBP06",
@@ -124815,7 +125148,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-048_hBP06": {
       "id": "hBP01-048_hBP06",
@@ -125045,7 +125379,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-072_hBP06": {
       "id": "hBP01-072_hBP06",
@@ -125229,7 +125564,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-105_hBP06": {
       "id": "hBP03-105_hBP06",
@@ -125677,7 +126013,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-003_hBP06": {
       "id": "hBP06-003_hBP06",
@@ -126487,7 +126824,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-023_hBP06": {
       "id": "hBP06-023_hBP06",
@@ -126652,7 +126990,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-024_hBP06": {
       "id": "hBP06-024_hBP06",
@@ -126814,7 +127153,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-025_hBP06": {
       "id": "hBP06-025_hBP06",
@@ -126985,7 +127325,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-026_hBP06": {
       "id": "hBP06-026_hBP06",
@@ -127406,7 +127747,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-040_hBP06": {
       "id": "hBP06-040_hBP06",
@@ -127588,7 +127930,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-041_hBP06": {
       "id": "hBP06-041_hBP06",
@@ -127753,7 +128096,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-042_hBP06": {
       "id": "hBP06-042_hBP06",
@@ -127927,7 +128271,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-043_hBP06": {
       "id": "hBP06-043_hBP06",
@@ -128101,7 +128446,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-044_hBP06": {
       "id": "hBP06-044_hBP06",
@@ -128300,7 +128646,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-045_hBP06": {
       "id": "hBP06-045_hBP06",
@@ -128510,7 +128857,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-071_hBP06": {
       "id": "hBP06-071_hBP06",
@@ -128709,7 +129057,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-072_hBP06": {
       "id": "hBP06-072_hBP06",
@@ -128909,7 +129258,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-073_hBP06": {
       "id": "hBP06-073_hBP06",
@@ -129074,7 +129424,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-074_hBP06": {
       "id": "hBP06-074_hBP06",
@@ -129268,7 +129619,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-075_hBP06": {
       "id": "hBP06-075_hBP06",
@@ -129442,7 +129794,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-076_hBP06": {
       "id": "hBP06-076_hBP06",
@@ -129859,7 +130212,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP06-083_hBP06": {
       "id": "hBP06-083_hBP06",
@@ -130034,7 +130388,8 @@
         "2026-08-12": 1000,
         "2026-08-13": 1000,
         "2026-08-14": 1000
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hSD02-014_hBP06": {
       "id": "hSD02-014_hBP06",
@@ -130349,7 +130704,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP02-031_hBP06": {
       "id": "hBP02-031_hBP06",
@@ -130552,7 +130908,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 15781168,
         "viewCount_monthly": 62560640
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP02-016_hBP06": {
       "id": "hBP02-016_hBP06",
@@ -130771,7 +131128,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hSD07-007_hBP06": {
       "id": "hSD07-007_hBP06",
@@ -130966,7 +131324,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hY01-010_hBP06": {
       "id": "hY01-010_hBP06",
@@ -132920,7 +133279,8 @@
         "2026-07-31": 20,
         "2026-08-01": 20,
         "2026-08-02": 20
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD10-003_hSD10": {
       "id": "hSD10-003_hSD10",
@@ -136610,7 +136970,8 @@
         "viewCount_daily": 25943,
         "viewCount_weekly": 324754,
         "viewCount_monthly": 1444746
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-038_hBP05": {
       "id": "hBP01-038_hBP05",
@@ -136794,7 +137155,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-076_hBP05": {
       "id": "hBP01-076_hBP05",
@@ -137006,7 +137368,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 5848942,
         "viewCount_monthly": 19279925
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-008_hBP05": {
       "id": "hBP02-008_hBP05",
@@ -137190,7 +137553,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-013_hBP05": {
       "id": "hBP05-013_hBP05",
@@ -137389,7 +137753,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1289973,
         "viewCount_monthly": 4776467
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-014_hBP05": {
       "id": "hBP05-014_hBP05",
@@ -137569,7 +137934,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-015_hBP05": {
       "id": "hBP05-015_hBP05",
@@ -137763,7 +138129,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-016_hBP05": {
       "id": "hBP05-016_hBP05",
@@ -137999,7 +138366,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-017_hBP05": {
       "id": "hBP05-017_hBP05",
@@ -138392,7 +138760,8 @@
         "viewCount_daily": 25943,
         "viewCount_weekly": 324754,
         "viewCount_monthly": 1444746
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-026_hBP05": {
       "id": "hBP05-026_hBP05",
@@ -138586,7 +138955,8 @@
         "viewCount_daily": 25943,
         "viewCount_weekly": 324754,
         "viewCount_monthly": 1444746
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-027_hBP05": {
       "id": "hBP05-027_hBP05",
@@ -138800,7 +139170,8 @@
         "viewCount_daily": 25943,
         "viewCount_weekly": 324754,
         "viewCount_monthly": 1444746
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-028_hBP05": {
       "id": "hBP05-028_hBP05",
@@ -139374,7 +139745,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 5848942,
         "viewCount_monthly": 19279925
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-037_hBP05": {
       "id": "hBP05-037_hBP05",
@@ -139584,7 +139956,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 5848942,
         "viewCount_monthly": 19279925
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-038_hBP05": {
       "id": "hBP05-038_hBP05",
@@ -139751,7 +140124,8 @@
         "2026-08-12": 250,
         "2026-08-13": 250,
         "2026-08-14": 250
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-039_hBP05": {
       "id": "hBP05-039_hBP05",
@@ -140161,7 +140535,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-050_hBP05": {
       "id": "hBP05-050_hBP05",
@@ -140533,7 +140908,8 @@
         "viewCount_daily": 19989,
         "viewCount_weekly": 116090,
         "viewCount_monthly": 531004
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-062_hBP05": {
       "id": "hBP05-062_hBP05",
@@ -140730,7 +141106,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1668594,
         "viewCount_monthly": 5721925
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-068_hBP05": {
       "id": "hBP05-068_hBP05",
@@ -140918,7 +141295,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-069_hBP05": {
       "id": "hBP05-069_hBP05",
@@ -141106,7 +141484,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-070_hBP05": {
       "id": "hBP05-070_hBP05",
@@ -141318,7 +141697,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-071_hBP05": {
       "id": "hBP05-071_hBP05",
@@ -141485,7 +141865,8 @@
         "2026-08-12": 150,
         "2026-08-13": 150,
         "2026-08-14": 150
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-073_hBP05": {
       "id": "hBP05-073_hBP05",
@@ -141652,7 +142033,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-074_hBP05": {
       "id": "hBP05-074_hBP05",
@@ -143754,7 +144136,8 @@
         "2026-07-31": 70,
         "2026-08-01": 70,
         "2026-08-02": 70
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-068_hBP05": {
       "id": "hBP01-068_hBP05",
@@ -143936,7 +144319,8 @@
         "2026-08-21": 2300,
         "2026-08-22": 2300,
         "2026-08-23": 2300
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-082_hBP05": {
       "id": "hBP01-082_hBP05",
@@ -144075,7 +144459,8 @@
         "2026-08-21": 80,
         "2026-08-22": 80,
         "2026-08-23": 80
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-114_hBP05": {
       "id": "hBP01-114_hBP05",
@@ -144514,7 +144899,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-065_hBP05": {
       "id": "hBP02-065_hBP05",
@@ -144726,7 +145112,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-001_hBP05": {
       "id": "hBP05-001_hBP05",
@@ -146262,7 +146649,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-009_hBP05": {
       "id": "hBP05-009_hBP05",
@@ -146456,7 +146844,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-010_hBP05": {
       "id": "hBP05-010_hBP05",
@@ -146654,7 +147043,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-011_hBP05": {
       "id": "hBP05-011_hBP05",
@@ -146851,7 +147241,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-012_hBP05": {
       "id": "hBP05-012_hBP05",
@@ -147063,7 +147454,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-018_hBP05": {
       "id": "hBP05-018_hBP05",
@@ -147230,7 +147622,8 @@
         "2026-08-12": 50,
         "2026-08-13": 50,
         "2026-08-14": 50
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-019_hBP05": {
       "id": "hBP05-019_hBP05",
@@ -147392,7 +147785,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-020_hBP05": {
       "id": "hBP05-020_hBP05",
@@ -147554,7 +147948,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-021_hBP05": {
       "id": "hBP05-021_hBP05",
@@ -147716,7 +148111,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-022_hBP05": {
       "id": "hBP05-022_hBP05",
@@ -147883,7 +148279,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-023_hBP05": {
       "id": "hBP05-023_hBP05",
@@ -148063,7 +148460,8 @@
         "2026-08-21": 500,
         "2026-08-22": 500,
         "2026-08-23": 500
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-024_hBP05": {
       "id": "hBP05-024_hBP05",
@@ -148434,7 +148832,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-031_hBP05": {
       "id": "hBP05-031_hBP05",
@@ -148584,7 +148983,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-032_hBP05": {
       "id": "hBP05-032_hBP05",
@@ -148746,7 +149146,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-033_hBP05": {
       "id": "hBP05-033_hBP05",
@@ -148913,7 +149314,8 @@
         "2026-08-12": 200,
         "2026-08-13": 200,
         "2026-08-14": 200
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-034_hBP05": {
       "id": "hBP05-034_hBP05",
@@ -149095,7 +149497,8 @@
         "2026-08-21": 2400,
         "2026-08-22": 2400,
         "2026-08-23": 2400
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-035_hBP05": {
       "id": "hBP05-035_hBP05",
@@ -149294,7 +149697,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-040_hBP05": {
       "id": "hBP05-040_hBP05",
@@ -149470,7 +149874,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-041_hBP05": {
       "id": "hBP05-041_hBP05",
@@ -149598,7 +150003,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-042_hBP05": {
       "id": "hBP05-042_hBP05",
@@ -149760,7 +150166,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-043_hBP05": {
       "id": "hBP05-043_hBP05",
@@ -149920,7 +150327,8 @@
         "2026-08-21": 100,
         "2026-08-22": 100,
         "2026-08-23": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-044_hBP05": {
       "id": "hBP05-044_hBP05",
@@ -150085,7 +150493,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-045_hBP05": {
       "id": "hBP05-045_hBP05",
@@ -150279,7 +150688,8 @@
         "2026-08-21": 1600,
         "2026-08-22": 1600,
         "2026-08-23": 1600
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-047_hBP05": {
       "id": "hBP05-047_hBP05",
@@ -150429,7 +150839,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-048_hBP05": {
       "id": "hBP05-048_hBP05",
@@ -150569,7 +150980,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-049_hBP05": {
       "id": "hBP05-049_hBP05",
@@ -150751,7 +151163,8 @@
         "2026-08-21": 600,
         "2026-08-22": 600,
         "2026-08-23": 600
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-052_hBP05": {
       "id": "hBP05-052_hBP05",
@@ -150945,7 +151358,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-053_hBP05": {
       "id": "hBP05-053_hBP05",
@@ -151137,7 +151551,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-054_hBP05": {
       "id": "hBP05-054_hBP05",
@@ -151319,7 +151734,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-055_hBP05": {
       "id": "hBP05-055_hBP05",
@@ -151518,7 +151934,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-056_hBP05": {
       "id": "hBP05-056_hBP05",
@@ -151730,7 +152147,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-057_hBP05": {
       "id": "hBP05-057_hBP05",
@@ -151904,7 +152322,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-058_hBP05": {
       "id": "hBP05-058_hBP05",
@@ -152098,7 +152517,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-059_hBP05": {
       "id": "hBP05-059_hBP05",
@@ -152292,7 +152712,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-060_hBP05": {
       "id": "hBP05-060_hBP05",
@@ -152507,7 +152928,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-061_hBP05": {
       "id": "hBP05-061_hBP05",
@@ -152719,7 +153141,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-063_hBP05": {
       "id": "hBP05-063_hBP05",
@@ -152913,7 +153336,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-064_hBP05": {
       "id": "hBP05-064_hBP05",
@@ -153107,7 +153531,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-065_hBP05": {
       "id": "hBP05-065_hBP05",
@@ -153301,7 +153726,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-066_hBP05": {
       "id": "hBP05-066_hBP05",
@@ -153500,7 +153926,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-067_hBP05": {
       "id": "hBP05-067_hBP05",
@@ -153712,7 +154139,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP05-072_hBP05": {
       "id": "hBP05-072_hBP05",
@@ -154079,7 +154507,8 @@
         "2026-07-31": 4700,
         "2026-08-01": 4700,
         "2026-08-02": 4700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD04-002_hBP05": {
       "id": "hSD04-002_hBP05",
@@ -154269,7 +154698,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD07-002_hBP05": {
       "id": "hSD07-002_hBP05",
@@ -154493,7 +154923,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-085_hBP05": {
       "id": "hBP02-085_hBP05",
@@ -161114,7 +161545,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP03-030_hCS01": {
       "id": "hBP03-030_hCS01",
@@ -161520,7 +161952,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-001_hBP04": {
       "id": "hBP04-001_hBP04",
@@ -162909,7 +163342,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-009_hBP04": {
       "id": "hBP04-009_hBP04",
@@ -163079,7 +163513,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-010_hBP04": {
       "id": "hBP04-010_hBP04",
@@ -163271,7 +163706,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-011_hBP04": {
       "id": "hBP04-011_hBP04",
@@ -163441,7 +163877,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-012_hBP04": {
       "id": "hBP04-012_hBP04",
@@ -163654,7 +164091,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-013_hBP04": {
       "id": "hBP04-013_hBP04",
@@ -163864,7 +164302,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-014_hBP04": {
       "id": "hBP04-014_hBP04",
@@ -164061,7 +164500,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-015_hBP04": {
       "id": "hBP04-015_hBP04",
@@ -164412,7 +164852,8 @@
         "2026-07-31": 100,
         "2026-08-01": 100,
         "2026-08-02": 100
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-017_hBP04": {
       "id": "hBP04-017_hBP04",
@@ -164560,7 +165001,8 @@
         "2026-08-21": 70,
         "2026-08-22": 70,
         "2026-08-23": 70
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-018_hBP04": {
       "id": "hBP04-018_hBP04",
@@ -164720,7 +165162,8 @@
         "2026-08-21": 70,
         "2026-08-22": 70,
         "2026-08-23": 70
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-019_hBP04": {
       "id": "hBP04-019_hBP04",
@@ -164885,7 +165328,8 @@
         "2026-08-12": 150,
         "2026-08-13": 150,
         "2026-08-14": 150
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-020_hBP04": {
       "id": "hBP04-020_hBP04",
@@ -165043,7 +165487,8 @@
         "2026-07-31": 50,
         "2026-08-01": 50,
         "2026-08-02": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-021_hBP04": {
       "id": "hBP04-021_hBP04",
@@ -165193,7 +165638,8 @@
         "2026-07-29": 50,
         "2026-07-30": 50,
         "2026-07-31": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-022_hBP04": {
       "id": "hBP04-022_hBP04",
@@ -165353,7 +165799,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-023_hBP04": {
       "id": "hBP04-023_hBP04",
@@ -165503,7 +165950,8 @@
         "2026-07-29": 1,
         "2026-07-30": 1,
         "2026-07-31": 1
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-024_hBP04": {
       "id": "hBP04-024_hBP04",
@@ -165670,7 +166118,8 @@
         "2026-08-12": 350,
         "2026-08-13": 350,
         "2026-08-14": 350
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-025_hBP04": {
       "id": "hBP04-025_hBP04",
@@ -165850,7 +166299,8 @@
         "2026-08-21": 4000,
         "2026-08-22": 4000,
         "2026-08-23": 4000
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-027_hBP04": {
       "id": "hBP04-027_hBP04",
@@ -166049,7 +166499,8 @@
         "viewCount_daily": 36367,
         "viewCount_weekly": 98859,
         "viewCount_monthly": 387159
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-028_hBP04": {
       "id": "hBP04-028_hBP04",
@@ -166199,7 +166650,8 @@
         "2026-07-31": 1,
         "2026-08-01": 1,
         "2026-08-02": 1
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-029_hBP04": {
       "id": "hBP04-029_hBP04",
@@ -166337,7 +166789,8 @@
         "2026-07-29": 10,
         "2026-07-30": 10,
         "2026-07-31": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-030_hBP04": {
       "id": "hBP04-030_hBP04",
@@ -166497,7 +166950,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-031_hBP04": {
       "id": "hBP04-031_hBP04",
@@ -166664,7 +167118,8 @@
         "2026-08-12": 200,
         "2026-08-13": 200,
         "2026-08-14": 200
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-032_hBP04": {
       "id": "hBP04-032_hBP04",
@@ -166840,7 +167295,8 @@
         "viewCount_daily": 155730,
         "viewCount_weekly": 949442,
         "viewCount_monthly": 4424810
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-033_hBP04": {
       "id": "hBP04-033_hBP04",
@@ -167034,7 +167490,8 @@
         "viewCount_daily": 155730,
         "viewCount_weekly": 949442,
         "viewCount_monthly": 4424810
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-034_hBP04": {
       "id": "hBP04-034_hBP04",
@@ -167228,7 +167685,8 @@
         "viewCount_daily": 155730,
         "viewCount_weekly": 949442,
         "viewCount_monthly": 4424810
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-035_hBP04": {
       "id": "hBP04-035_hBP04",
@@ -167422,7 +167880,8 @@
         "viewCount_daily": 155730,
         "viewCount_weekly": 949442,
         "viewCount_monthly": 4424810
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-036_hBP04": {
       "id": "hBP04-036_hBP04",
@@ -167621,7 +168080,8 @@
         "viewCount_daily": 155730,
         "viewCount_weekly": 949442,
         "viewCount_monthly": 4424810
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-037_hBP04": {
       "id": "hBP04-037_hBP04",
@@ -167831,7 +168291,8 @@
         "viewCount_daily": 155730,
         "viewCount_weekly": 949442,
         "viewCount_monthly": 4424810
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-038_hBP04": {
       "id": "hBP04-038_hBP04",
@@ -168028,7 +168489,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 15781168,
         "viewCount_monthly": 62560640
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-039_hBP04": {
       "id": "hBP04-039_hBP04",
@@ -168161,7 +168623,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-040_hBP04": {
       "id": "hBP04-040_hBP04",
@@ -168321,7 +168784,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-041_hBP04": {
       "id": "hBP04-041_hBP04",
@@ -168483,7 +168947,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-042_hBP04": {
       "id": "hBP04-042_hBP04",
@@ -168867,7 +169332,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-044_hBP04": {
       "id": "hBP04-044_hBP04",
@@ -169061,7 +169527,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-045_hBP04": {
       "id": "hBP04-045_hBP04",
@@ -169245,7 +169712,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-046_hBP04": {
       "id": "hBP04-046_hBP04",
@@ -169427,7 +169895,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-047_hBP04": {
       "id": "hBP04-047_hBP04",
@@ -169642,7 +170111,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-048_hBP04": {
       "id": "hBP04-048_hBP04",
@@ -169856,7 +170326,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-049_hBP04": {
       "id": "hBP04-049_hBP04",
@@ -170023,7 +170494,8 @@
         "2026-08-12": 100,
         "2026-08-13": 100,
         "2026-08-14": 100
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-060_hBP04": {
       "id": "hBP04-060_hBP04",
@@ -170429,7 +170901,8 @@
         "viewCount_daily": 45025,
         "viewCount_weekly": 152646,
         "viewCount_monthly": 687345
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-062_hBP04": {
       "id": "hBP04-062_hBP04",
@@ -170842,7 +171315,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-068_hBP04": {
       "id": "hBP04-068_hBP04",
@@ -171036,7 +171510,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-069_hBP04": {
       "id": "hBP04-069_hBP04",
@@ -171230,7 +171705,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-070_hBP04": {
       "id": "hBP04-070_hBP04",
@@ -171422,7 +171898,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-071_hBP04": {
       "id": "hBP04-071_hBP04",
@@ -171637,7 +172114,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-072_hBP04": {
       "id": "hBP04-072_hBP04",
@@ -171863,7 +172341,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-073_hBP04": {
       "id": "hBP04-073_hBP04",
@@ -172028,7 +172507,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-074_hBP04": {
       "id": "hBP04-074_hBP04",
@@ -172226,7 +172706,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-075_hBP04": {
       "id": "hBP04-075_hBP04",
@@ -172420,7 +172901,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-076_hBP04": {
       "id": "hBP04-076_hBP04",
@@ -172614,7 +173096,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-077_hBP04": {
       "id": "hBP04-077_hBP04",
@@ -172813,7 +173296,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-078_hBP04": {
       "id": "hBP04-078_hBP04",
@@ -173023,7 +173507,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-089_hBP04": {
       "id": "hBP04-089_hBP04",
@@ -175637,7 +176122,8 @@
         "2026-08-12": 300,
         "2026-08-13": 300,
         "2026-08-14": 300
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-050_hBP04": {
       "id": "hBP04-050_hBP04",
@@ -175827,7 +176313,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-051_hBP04": {
       "id": "hBP04-051_hBP04",
@@ -175998,7 +176485,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-052_hBP04": {
       "id": "hBP04-052_hBP04",
@@ -176190,7 +176678,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-053_hBP04": {
       "id": "hBP04-053_hBP04",
@@ -176622,7 +177111,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-055_hBP04": {
       "id": "hBP04-055_hBP04",
@@ -176814,7 +177304,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-056_hBP04": {
       "id": "hBP04-056_hBP04",
@@ -176994,7 +177485,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-057_hBP04": {
       "id": "hBP04-057_hBP04",
@@ -177186,7 +177678,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-058_hBP04": {
       "id": "hBP04-058_hBP04",
@@ -177385,7 +177878,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-059_hBP04": {
       "id": "hBP04-059_hBP04",
@@ -177597,7 +178091,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-063_hBP04": {
       "id": "hBP04-063_hBP04",
@@ -177789,7 +178284,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-064_hBP04": {
       "id": "hBP04-064_hBP04",
@@ -177971,7 +178467,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-065_hBP04": {
       "id": "hBP04-065_hBP04",
@@ -178165,7 +178662,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-066_hBP04": {
       "id": "hBP04-066_hBP04",
@@ -178379,7 +178877,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-079_hBP04": {
       "id": "hBP04-079_hBP04",
@@ -178571,7 +179070,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-080_hBP04": {
       "id": "hBP04-080_hBP04",
@@ -178759,7 +179259,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-081_hBP04": {
       "id": "hBP04-081_hBP04",
@@ -178953,7 +179454,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-082_hBP04": {
       "id": "hBP04-082_hBP04",
@@ -179167,7 +179669,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-083_hBP04": {
       "id": "hBP04-083_hBP04",
@@ -179351,7 +179854,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-084_hBP04": {
       "id": "hBP04-084_hBP04",
@@ -179543,7 +180047,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-085_hBP04": {
       "id": "hBP04-085_hBP04",
@@ -179761,7 +180266,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-086_hBP04": {
       "id": "hBP04-086_hBP04",
@@ -179975,7 +180481,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-087_hBP04": {
       "id": "hBP04-087_hBP04",
@@ -180133,7 +180640,8 @@
         "2026-07-29": 10,
         "2026-07-30": 10,
         "2026-07-31": 10
-      }
+      },
+      "bloomLevel": "Spot"
     },
     "hBP04-088_hBP04": {
       "id": "hBP04-088_hBP04",
@@ -180303,7 +180811,8 @@
         "2026-08-21": 10,
         "2026-08-22": 10,
         "2026-08-23": 10
-      }
+      },
+      "bloomLevel": "Spot"
     },
     "hBP04-096_hBP04": {
       "id": "hBP04-096_hBP04",
@@ -183269,7 +183778,8 @@
         "viewCount_daily": 69986,
         "viewCount_weekly": 824952,
         "viewCount_monthly": 2262657
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-010_hBP03": {
       "id": "hBP03-010_hBP03",
@@ -190092,7 +190602,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-058_hBP03": {
       "id": "hBP03-058_hBP03",
@@ -190861,7 +191372,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-062_hBP03": {
       "id": "hBP03-062_hBP03",
@@ -197613,7 +198125,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-026_hBP03": {
       "id": "hBP03-026_hBP03",
@@ -198806,7 +199319,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-032_hBP03": {
       "id": "hBP03-032_hBP03",
@@ -199785,7 +200299,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-068_hBP03": {
       "id": "hBP03-068_hBP03",
@@ -206609,7 +207124,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-050_hSD06": {
       "id": "hBP01-050_hSD06",
@@ -210351,7 +210867,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD07-003_hSD07": {
       "id": "hSD07-003_hSD07",
@@ -211218,7 +211735,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hSD07-008_hSD07": {
       "id": "hSD07-008_hSD07",
@@ -213708,7 +214226,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-009_hBP02": {
       "id": "hBP02-009_hBP02",
@@ -216272,7 +216791,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 15781168,
         "viewCount_monthly": 62560640
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP02-033_hBP02": {
       "id": "hBP02-033_hBP02",
@@ -220402,7 +220922,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-055_hBP02": {
       "id": "hBP02-055_hBP02",
@@ -226293,7 +226814,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-015_hBP02": {
       "id": "hBP02-015_hBP02",
@@ -226705,7 +227227,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP02-017_hBP02": {
       "id": "hBP02-017_hBP02",
@@ -227101,7 +227624,8 @@
         "2026-07-31": 900,
         "2026-08-01": 900,
         "2026-08-02": 900
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-025_hBP02": {
       "id": "hBP02-025_hBP02",
@@ -228825,7 +229349,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-066_hBP02": {
       "id": "hBP02-066_hBP02",
@@ -231940,7 +232465,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD02-003_hSD02": {
       "id": "hSD02-003_hSD02",
@@ -236119,7 +236645,8 @@
         "2026-07-31": 4700,
         "2026-08-01": 4700,
         "2026-08-02": 4700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD03-003_hSD03": {
       "id": "hSD03-003_hSD03",
@@ -239062,7 +239589,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD04-003_hSD04": {
       "id": "hSD04-003_hSD04",
@@ -248270,7 +248798,8 @@
         "viewCount_daily": 25943,
         "viewCount_weekly": 324754,
         "viewCount_monthly": 1444746
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-033_hBP01": {
       "id": "hBP01-033_hBP01",
@@ -249309,7 +249838,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-039_hBP01": {
       "id": "hBP01-039_hBP01",
@@ -249841,7 +250371,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP01-042_hBP01": {
       "id": "hBP01-042_hBP01",
@@ -252632,7 +253163,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 5848942,
         "viewCount_monthly": 19279925
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-077_hBP01": {
       "id": "hBP01-077_hBP01",
@@ -253725,7 +254257,8 @@
         "2026-07-31": 250,
         "2026-08-01": 250,
         "2026-08-02": 250
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-089_hBP01": {
       "id": "hBP01-089_hBP01",
@@ -257604,7 +258137,8 @@
         "2026-07-31": 1700,
         "2026-08-01": 1700,
         "2026-08-02": 1700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-025_hBP01": {
       "id": "hBP01-025_hBP01",
@@ -258281,7 +258815,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-045_hBP01": {
       "id": "hBP01-045_hBP01",
@@ -259079,7 +259614,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-049_hBP01": {
       "id": "hBP01-049_hBP01",
@@ -259836,7 +260372,8 @@
         "2026-07-31": 70,
         "2026-08-01": 70,
         "2026-08-02": 70
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-053_hBP01": {
       "id": "hBP01-053_hBP01",
@@ -260443,7 +260980,8 @@
         "2026-07-31": 200,
         "2026-08-01": 200,
         "2026-08-02": 200
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-069_hBP01": {
       "id": "hBP01-069_hBP01",
@@ -261106,7 +261644,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-073_hBP01": {
       "id": "hBP01-073_hBP01",
@@ -261776,7 +262315,8 @@
         "2026-08-21": 80,
         "2026-08-22": 80,
         "2026-08-23": 80
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-083_hBP01": {
       "id": "hBP01-083_hBP01",
@@ -262671,7 +263211,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-093_hBP01": {
       "id": "hBP01-093_hBP01",
@@ -277137,7 +277678,8 @@
         "viewCount_daily": 25943,
         "viewCount_weekly": 324754,
         "viewCount_monthly": 1444746
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-035_hPR": {
       "id": "hBP01-035_hPR",
@@ -277846,7 +278388,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-039_hPR": {
       "id": "hBP01-039_hPR",
@@ -278225,7 +278768,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP01-042_hPR": {
       "id": "hBP01-042_hPR",
@@ -279749,7 +280293,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 5848942,
         "viewCount_monthly": 19279925
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-077_hPR": {
       "id": "hBP01-077_hPR",
@@ -280439,7 +280984,8 @@
         "2026-07-31": 250,
         "2026-08-01": 250,
         "2026-08-02": 250
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-090_hPR": {
       "id": "hBP01-090_hPR",
@@ -281654,7 +282200,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-009_hPR": {
       "id": "hBP02-009_hPR",
@@ -284084,7 +284631,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-061_hPR": {
       "id": "hBP02-061_hPR",
@@ -285037,7 +285585,8 @@
         "viewCount_daily": 69986,
         "viewCount_weekly": 824952,
         "viewCount_monthly": 2262657
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-014_hPR": {
       "id": "hBP03-014_hPR",
@@ -286824,7 +287373,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-061_hPR": {
       "id": "hBP03-061_hPR",
@@ -286988,7 +287538,8 @@
         "2026-07-31": 10,
         "2026-08-01": 10,
         "2026-08-02": 10
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-073_hPR": {
       "id": "hBP03-073_hPR",
@@ -288790,7 +289341,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-009_hPR": {
       "id": "hBP04-009_hPR",
@@ -288960,7 +289512,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-013_hPR": {
       "id": "hBP04-013_hPR",
@@ -289152,7 +289705,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-016_hPR": {
       "id": "hBP04-016_hPR",
@@ -289304,7 +289858,8 @@
         "2026-07-31": 100,
         "2026-08-01": 100,
         "2026-08-02": 100
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-020_hPR": {
       "id": "hBP04-020_hPR",
@@ -289462,7 +290017,8 @@
         "2026-07-31": 50,
         "2026-08-01": 50,
         "2026-08-02": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-028_hPR": {
       "id": "hBP04-028_hPR",
@@ -289612,7 +290168,8 @@
         "2026-07-31": 1,
         "2026-08-01": 1,
         "2026-08-02": 1
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-032_hPR": {
       "id": "hBP04-032_hPR",
@@ -289788,7 +290345,8 @@
         "viewCount_daily": 155730,
         "viewCount_weekly": 949442,
         "viewCount_monthly": 4424810
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-039_hPR": {
       "id": "hBP04-039_hPR",
@@ -289921,7 +290479,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-043_hPR": {
       "id": "hBP04-043_hPR",
@@ -290115,7 +290674,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-044_hPR": {
       "id": "hBP04-044_hPR",
@@ -290299,7 +290859,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-048_hPR": {
       "id": "hBP04-048_hPR",
@@ -290504,7 +291065,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-062_hPR": {
       "id": "hBP04-062_hPR",
@@ -290906,7 +291468,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-068_hPR": {
       "id": "hBP04-068_hPR",
@@ -291090,7 +291653,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-072_hPR": {
       "id": "hBP04-072_hPR",
@@ -291307,7 +291871,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP04-073_hPR": {
       "id": "hBP04-073_hPR",
@@ -291472,7 +292037,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-074_hPR": {
       "id": "hBP04-074_hPR",
@@ -291660,7 +292226,8 @@
         "viewCount_daily": 13791,
         "viewCount_weekly": 124905,
         "viewCount_monthly": 716016
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-014_hPR": {
       "id": "hBP05-014_hPR",
@@ -291830,7 +292397,8 @@
         "viewCount_daily": 544532,
         "viewCount_weekly": 3030829,
         "viewCount_monthly": 11731815
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-036_hPR": {
       "id": "hBP05-036_hPR",
@@ -292008,7 +292576,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 5848942,
         "viewCount_monthly": 19279925
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-068_hPR": {
       "id": "hBP05-068_hPR",
@@ -292196,7 +292765,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-074_hPR": {
       "id": "hBP05-074_hPR",
@@ -292902,7 +293472,8 @@
         "2026-07-31": 2900,
         "2026-08-01": 2900,
         "2026-08-02": 2900
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-016_hPR": {
       "id": "hBP06-016_hPR",
@@ -293035,7 +293606,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-033_hPR": {
       "id": "hBP06-033_hPR",
@@ -293191,7 +293763,8 @@
         "2026-07-31": 300,
         "2026-08-01": 300,
         "2026-08-02": 300
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-034_hPR": {
       "id": "hBP06-034_hPR",
@@ -293369,7 +293942,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-035_hPR": {
       "id": "hBP06-035_hPR",
@@ -293534,7 +294108,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-049_hPR": {
       "id": "hBP06-049_hPR",
@@ -293667,7 +294242,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-057_hPR": {
       "id": "hBP06-057_hPR",
@@ -293839,7 +294415,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-062_hPR": {
       "id": "hBP06-062_hPR",
@@ -294004,7 +294581,8 @@
         "viewCount_daily": 169097,
         "viewCount_weekly": 1051748,
         "viewCount_monthly": 4484097
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-067_hPR": {
       "id": "hBP06-067_hPR",
@@ -294156,7 +294734,8 @@
         "2026-07-31": 150,
         "2026-08-01": 150,
         "2026-08-02": 4700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-090_hPR": {
       "id": "hBP06-090_hPR",
@@ -295846,7 +296425,8 @@
         "viewCount_daily": 49360,
         "viewCount_weekly": 353452,
         "viewCount_monthly": 1773804
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD02-007_hPR": {
       "id": "hSD02-007_hPR",
@@ -299061,7 +299641,8 @@
         "2026-07-31": 1700,
         "2026-08-01": 1700,
         "2026-08-02": 1700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-026_hPR": {
       "id": "hBP01-026_hPR",
@@ -299417,7 +299998,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-046_hPR": {
       "id": "hBP01-046_hPR",
@@ -299809,7 +300391,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-050_hPR": {
       "id": "hBP01-050_hPR",
@@ -300163,7 +300746,8 @@
         "2026-07-31": 70,
         "2026-08-01": 70,
         "2026-08-02": 70
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-054_hPR": {
       "id": "hBP01-054_hPR",
@@ -300649,7 +301233,8 @@
         "2026-07-31": 200,
         "2026-08-01": 200,
         "2026-08-02": 200
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-070_hPR": {
       "id": "hBP01-070_hPR",
@@ -300995,7 +301580,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-074_hPR": {
       "id": "hBP01-074_hPR",
@@ -301512,7 +302098,8 @@
         "2026-08-21": 80,
         "2026-08-22": 80,
         "2026-08-23": 80
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-086_hPR": {
       "id": "hBP01-086_hPR",
@@ -302011,7 +302598,8 @@
         "viewCount_daily": 146123,
         "viewCount_weekly": 607266,
         "viewCount_monthly": 2395565
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP01-094_hPR": {
       "id": "hBP01-094_hPR",
@@ -302592,7 +303180,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-024_hPR": {
       "id": "hBP02-024_hPR",
@@ -302750,7 +303339,8 @@
         "2026-07-31": 900,
         "2026-08-01": 900,
         "2026-08-02": 900
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-065_hPR": {
       "id": "hBP02-065_hPR",
@@ -302942,7 +303532,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 646819,
         "viewCount_monthly": 5266640
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP02-067_hPR": {
       "id": "hBP02-067_hPR",
@@ -303341,7 +303932,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-026_hPR": {
       "id": "hBP03-026_hPR",
@@ -303912,7 +304504,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP03-067_hPR": {
       "id": "hBP03-067_hPR",
@@ -304106,7 +304699,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-050_hPR": {
       "id": "hBP04-050_hPR",
@@ -304296,7 +304890,8 @@
         "viewCount_daily": 104520,
         "viewCount_weekly": 918195,
         "viewCount_monthly": 2971814
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-054_hPR": {
       "id": "hBP04-054_hPR",
@@ -304496,7 +305091,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-058_hPR": {
       "id": "hBP04-058_hPR",
@@ -304684,7 +305280,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-063_hPR": {
       "id": "hBP04-063_hPR",
@@ -304876,7 +305473,8 @@
         "viewCount_daily": 62108,
         "viewCount_weekly": 515318,
         "viewCount_monthly": 3032562
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-079_hPR": {
       "id": "hBP04-079_hPR",
@@ -305068,7 +305666,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-081_hPR": {
       "id": "hBP04-081_hPR",
@@ -305252,7 +305851,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-083_hPR": {
       "id": "hBP04-083_hPR",
@@ -305436,7 +306036,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-009_hPR": {
       "id": "hBP05-009_hPR",
@@ -305620,7 +306221,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-010_hPR": {
       "id": "hBP05-010_hPR",
@@ -305808,7 +306410,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-011_hPR": {
       "id": "hBP05-011_hPR",
@@ -305994,7 +306597,8 @@
         "viewCount_daily": 282593,
         "viewCount_weekly": 1300470,
         "viewCount_monthly": 6234034
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-031_hPR": {
       "id": "hBP05-031_hPR",
@@ -306134,7 +306738,8 @@
         "2026-07-31": 50,
         "2026-08-01": 50,
         "2026-08-02": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP05-044_hPR": {
       "id": "hBP05-044_hPR",
@@ -306288,7 +306893,8 @@
         "2026-07-31": 100,
         "2026-08-01": 100,
         "2026-08-02": 100
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-048_hPR": {
       "id": "hBP05-048_hPR",
@@ -306428,7 +307034,8 @@
       },
       "buyPriceHistory": {
         "2026-07-11": 10
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-022_hPR": {
       "id": "hBP06-022_hPR",
@@ -306600,7 +307207,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-023_hPR": {
       "id": "hBP06-023_hPR",
@@ -306765,7 +307373,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-041_hPR": {
       "id": "hBP06-041_hPR",
@@ -306930,7 +307539,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP06-043_hPR": {
       "id": "hBP06-043_hPR",
@@ -307104,7 +307714,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1440269,
         "viewCount_monthly": 6095784
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-073_hPR": {
       "id": "hBP06-073_hPR",
@@ -307269,7 +307880,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-009_hPR": {
       "id": "hBP07-009_hPR",
@@ -307441,7 +308053,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1891052,
         "viewCount_monthly": 9851883
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-032_hPR": {
       "id": "hBP07-032_hPR",
@@ -307574,7 +308187,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-036_hPR": {
       "id": "hBP07-036_hPR",
@@ -307739,7 +308353,8 @@
         "viewCount_daily": 162504,
         "viewCount_weekly": 551800,
         "viewCount_monthly": 1668283
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-043_hPR": {
       "id": "hBP07-043_hPR",
@@ -307927,7 +308542,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2369808,
         "viewCount_monthly": 13787305
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-046_hPR": {
       "id": "hBP07-046_hPR",
@@ -308060,7 +308676,8 @@
         "2026-08-21": 50,
         "2026-08-22": 50,
         "2026-08-23": 50
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-068_hPR": {
       "id": "hBP07-068_hPR",
@@ -308244,7 +308861,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "2nd"
     },
     "hBP07-071_hPR": {
       "id": "hBP07-071_hPR",
@@ -308428,7 +309046,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP07-087_hPR": {
       "id": "hBP07-087_hPR",
@@ -308561,7 +309180,8 @@
         "2026-08-21": 30,
         "2026-08-22": 30,
         "2026-08-23": 30
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hPR-001_hPR": {
       "id": "hPR-001_hPR",
@@ -309527,7 +310147,8 @@
         "2026-07-31": 4700,
         "2026-08-01": 4700,
         "2026-08-02": 4700
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD03-003_hPR": {
       "id": "hSD03-003_hPR",
@@ -310025,7 +310646,8 @@
         "viewCount_daily": 165178,
         "viewCount_weekly": 844730,
         "viewCount_monthly": 3451556
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD04-007_hPR": {
       "id": "hSD04-007_hPR",
@@ -310831,7 +311453,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1006898,
         "viewCount_monthly": 4008963
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD08-007_hPR": {
       "id": "hSD08-007_hPR",
@@ -311538,7 +312161,8 @@
         "2026-07-31": 20,
         "2026-08-01": 20,
         "2026-08-02": 20
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hSD11-002_hPR": {
       "id": "hSD11-002_hPR",
@@ -315736,7 +316360,8 @@
         "2026-07-31": 1,
         "2026-08-01": 1,
         "2026-08-02": 1
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP08-001_hBP08": {
       "id": "hBP08-001_hBP08",
@@ -331473,7 +332098,8 @@
         "2026-07-31": 150,
         "2026-08-01": 150,
         "2026-08-02": 150
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP05-069_hCO01": {
       "id": "hBP05-069_hCO01",
@@ -331661,7 +332287,8 @@
         "viewCount_daily": 360343,
         "viewCount_weekly": 2508737,
         "viewCount_monthly": 10121522
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-058_hCO01": {
       "id": "hBP06-058_hCO01",
@@ -331845,7 +332472,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 929977,
         "viewCount_monthly": 11099471
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP06-090_hCO01": {
       "id": "hBP06-090_hCO01",
@@ -332171,7 +332799,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 1552490,
         "viewCount_monthly": 7645389
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP01-034_hWF01": {
       "id": "hBP01-034_hWF01",
@@ -335268,7 +335897,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 2030416,
         "viewCount_monthly": 12417014
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-045_hWF01": {
       "id": "hBP04-045_hWF01",
@@ -335452,7 +336082,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-046_hWF01": {
       "id": "hBP04-046_hWF01",
@@ -335624,7 +336255,8 @@
         "viewCount_daily": 21139,
         "viewCount_weekly": 137757,
         "viewCount_monthly": 601728
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-055_hWF01": {
       "id": "hBP04-055_hWF01",
@@ -335806,7 +336438,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "Debut"
     },
     "hBP04-056_hWF01": {
       "id": "hBP04-056_hWF01",
@@ -335986,7 +336619,8 @@
         "viewCount_daily": 203633,
         "viewCount_weekly": 1284871,
         "viewCount_monthly": 6616761
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-069_hWF01": {
       "id": "hBP04-069_hWF01",
@@ -336170,7 +336804,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-070_hWF01": {
       "id": "hBP04-070_hWF01",
@@ -336352,7 +336987,8 @@
         "viewCount_daily": 1292019,
         "viewCount_weekly": 3778257,
         "viewCount_monthly": 13260186
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-080_hWF01": {
       "id": "hBP04-080_hWF01",
@@ -336534,7 +337170,8 @@
         "viewCount_daily": 123416,
         "viewCount_weekly": 898657,
         "viewCount_monthly": 5586907
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hBP04-084_hWF01": {
       "id": "hBP04-084_hWF01",
@@ -336716,7 +337353,8 @@
         "viewCount_daily": 0,
         "viewCount_weekly": 472098,
         "viewCount_monthly": 3938307
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hSD01-005_hWF01": {
       "id": "hSD01-005_hWF01",
@@ -338013,7 +338651,8 @@
         "viewCount_daily": 66999,
         "viewCount_weekly": 624184,
         "viewCount_monthly": 3259107
-      }
+      },
+      "bloomLevel": "1st"
     },
     "hEB01-001": {
       "id": "hEB01-001",

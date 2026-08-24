@@ -8,7 +8,16 @@ export interface NormalizedCardIdentity {
   stage: NormalizedHolomenStage | null;
   categoryLabel: string | null;
   stageLabel: string | null;
+  // Primary badge for compact UI slots (search list top-right corner). For
+  // Holomen we prefer Bloom Level (Debut/1st/2nd/Buzz/Spot) because that's what
+  // players actually distinguish — falling back to the "Holomen" category label
+  // is what caused DIC-1141 (every hBP04 card looked identical). When the
+  // canonical Bloom Level is missing, this stays null; the UI shows the
+  // pending-data hint instead of an incorrect label.
   displayBadge: string | null;
+  // True if the card is a Holomen whose Bloom Level we don't yet have. The UI
+  // surfaces this as "Bloom 等級未取得" instead of collapsing to "Holomen".
+  bloomLevelMissing: boolean;
   color: string | null;
   setCode: string | null;
   source: { cardType: string | null; stage: string | null; color: string | null };
@@ -17,6 +26,33 @@ export interface NormalizedCardIdentity {
 const STAGE_LABELS: Record<NormalizedHolomenStage, string> = {
   debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot',
 };
+
+// Distinct palette for Bloom Level badges (DIC-1141). Chosen so the badge color
+// never coincides with the printing rarity palette used elsewhere on the card —
+// mixing the two is what let players think "orange = SR" was a Bloom Level.
+export const BLOOM_LEVEL_COLORS: Record<NormalizedHolomenStage, string> = {
+  debut: '#0ea5e9',
+  '1st': '#22c55e',
+  '2nd': '#a855f7',
+  buzz: '#ef4444',
+  spot: '#64748b',
+};
+
+export const CATEGORY_COLORS: Record<NormalizedCardCategory, string> = {
+  oshi: '#f97316',
+  holomen: '#3b82f6',
+  support: '#14b8a6',
+  mascot: '#eab308',
+  yell: '#a3a3a3',
+};
+
+export function bloomLevelBadgeColor(stage: NormalizedHolomenStage | null): string | null {
+  return stage ? BLOOM_LEVEL_COLORS[stage] : null;
+}
+
+export function categoryBadgeColor(category: NormalizedCardCategory | null): string | null {
+  return category ? CATEGORY_COLORS[category] : null;
+}
 
 function clean(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -71,13 +107,24 @@ export function normalizeCardIdentity(card: any): NormalizedCardIdentity {
           : category === 'yell' ? 'Yell' : null;
   const stageLabel = stage ? STAGE_LABELS[stage] : null;
 
+  // DIC-1141: for Holomen, the primary badge MUST be the Bloom Level. Never
+  // fall back to the category label — that's what caused every hBP04-026~029
+  // card to display "Holomen" and hid Debut / 1st / 2nd from the player. Non-
+  // holomen cards keep the category label as the primary badge since Bloom
+  // Level does not apply to them.
+  const displayBadge = category === 'holomen'
+    ? stageLabel
+    : categoryLabel;
+  const bloomLevelMissing = category === 'holomen' && !stage;
+
   return {
     category,
     zone: category === 'oshi' ? 'oshi' : category === 'yell' ? 'yell' : category ? 'main' : null,
     stage,
     categoryLabel,
     stageLabel,
-    displayBadge: stageLabel ?? categoryLabel,
+    displayBadge,
+    bloomLevelMissing,
     color: sourceColor,
     setCode: cardNumber.includes('-') ? cardNumber.split('-')[0] : null,
     source: { cardType: sourceCardType, stage: sourceStage, color: sourceColor },
