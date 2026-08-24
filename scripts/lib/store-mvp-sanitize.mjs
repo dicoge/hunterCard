@@ -29,6 +29,19 @@ export const FORBIDDEN_CARD_FIELDS = ['buyPrice', 'buyPriceHistory', 'priceHisto
 export const FORBIDDEN_VARIANT_FIELDS = ['buyPrice', 'buyPriceVersion', 'buyPriceSource', 'buyPriceTimestamp'];
 
 /**
+ * Internal audit fields — canonicalisation bookkeeping the source of truth
+ * keeps for provenance, but that MUST never ship to any user-visible payload,
+ * whether Store MVP is on or off (DIC-1140 blocker #1). Adding a field here
+ * makes every export path (native asset, full web copy, Store MVP web copy)
+ * drop it in one edit.
+ *
+ * `_rawPricesArchive` is the pre-canonicalisation prices[] snapshot; every row
+ * that carried `エラッタ前/後` in the source lives on this array. If it leaks,
+ * shipped artifacts contain the very shop-history labels DIC-1139 hides.
+ */
+export const INTERNAL_AUDIT_FIELDS = ['_rawPricesArchive'];
+
+/**
  * Resolve the Store MVP profile for a BUILD context (web export) from env.
  * Fail-closed opt-out is the only path to OFF; explicit opt-in is the only path
  * to ON. A build has no native platform, so anything unresolved preserves full
@@ -45,14 +58,38 @@ export function resolveStoreMvpFromEnv(env = process.env) {
 }
 
 /**
+ * Strip internal audit / bookkeeping fields (DIC-1140). Runs on every export
+ * path — Store MVP or not — because these fields represent source-maintenance
+ * history the shipped product must never expose. Also strips them from each
+ * prices[] entry for symmetry with future per-variant audit additions.
+ */
+export function stripInternalAuditFields(entry) {
+  if (!entry || typeof entry !== 'object') return entry;
+  const out = { ...entry };
+  for (const field of INTERNAL_AUDIT_FIELDS) delete out[field];
+  if (Array.isArray(out.prices)) {
+    out.prices = out.prices.map((p) => {
+      if (p && typeof p === 'object') {
+        const rest = { ...p };
+        for (const field of INTERNAL_AUDIT_FIELDS) delete rest[field];
+        return rest;
+      }
+      return p;
+    });
+  }
+  return out;
+}
+
+/**
  * Return a shallow clone of a single card entry with the forbidden advanced
  * fields removed (card-level buyPrice/priceHistory/ytStats and nested
- * prices[].buyPrice). sellPrice and prices[].sellPrice are always preserved.
- * Fail-closed: keys are deleted, not nulled.
+ * prices[].buyPrice). Internal audit fields are stripped too (unconditional).
+ * sellPrice and prices[].sellPrice are always preserved. Fail-closed: keys are
+ * deleted, not nulled.
  */
 export function stripForbiddenCardFields(entry) {
   if (!entry || typeof entry !== 'object') return entry;
-  const out = { ...entry };
+  const out = stripInternalAuditFields(entry);
   for (const field of FORBIDDEN_CARD_FIELDS) delete out[field];
   if (Array.isArray(out.prices)) {
     out.prices = out.prices.map((p) => {
@@ -70,6 +107,8 @@ export function stripForbiddenCardFields(entry) {
 /**
  * Sanitize a whole `{ cards: { key: entry } }` database object. Returns a new
  * object; the input is not mutated. Non-database shapes pass through untouched.
+ * Applies BOTH the internal-audit strip and the Store MVP forbidden strip so
+ * `sanitizeDatabase` alone is a safe transform for any shipped artifact.
  */
 export function sanitizeDatabase(db) {
   if (!db || typeof db !== 'object' || !db.cards || typeof db.cards !== 'object') {
@@ -83,19 +122,32 @@ export function sanitizeDatabase(db) {
 }
 
 /**
+ * Return a shipped-safe (non-Store-MVP) database: keeps buyPrice / priceHistory
+ * / ytStats etc for full production but ALWAYS strips internal audit fields.
+ * Used by the full web export path so `_rawPricesArchive` cannot ship.
+ */
+export function stripInternalAuditDatabase(db) {
+  if (!db || typeof db !== 'object' || !db.cards || typeof db.cards !== 'object') {
+    return db;
+  }
+  const cards = {};
+  for (const [key, entry] of Object.entries(db.cards)) {
+    cards[key] = stripInternalAuditFields(entry);
+  }
+  return { ...db, cards };
+}
+
+/**
  * Copy `source` database.json to `dest`. When `storeMvp` is true the shipped copy
- * is sanitized (forbidden fields stripped); otherwise the file is copied
- * byte-identically so full web production is preserved exactly. This is the exact
- * code path the web-export post-build script uses, so tests can exercise the real
- * built-artifact boundary without a full `expo export`.
+ * is sanitized (forbidden fields stripped); otherwise only internal audit fields
+ * are stripped so full web production keeps every real market field. This is the
+ * exact code path the web-export post-build script uses, so tests can exercise
+ * the real built-artifact boundary without a full `expo export`.
  */
 export function copyDatabaseFile(source, dest, storeMvp) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  if (!storeMvp) {
-    fs.copyFileSync(source, dest);
-    return { sanitized: false };
-  }
   const db = JSON.parse(fs.readFileSync(source, 'utf-8'));
-  fs.writeFileSync(dest, JSON.stringify(sanitizeDatabase(db)), 'utf-8');
-  return { sanitized: true };
+  const shaped = storeMvp ? sanitizeDatabase(db) : stripInternalAuditDatabase(db);
+  fs.writeFileSync(dest, JSON.stringify(shaped), 'utf-8');
+  return { sanitized: !!storeMvp };
 }

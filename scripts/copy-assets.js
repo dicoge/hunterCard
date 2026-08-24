@@ -1,8 +1,17 @@
 /**
- * copy-assets.js — Build 時複製 database.json 和圖片到 dist/
+ * copy-assets.js — Build 時複製圖片與靜態頁面到 dist/
  *
  * 在 Vercel build 流程中執行，確保靜態資源可以被 App 存取
  * 注意：此專案使用 "type": "module"，必須用 import 語法
+ *
+ * DIC-1140 blocker #3: this script MUST NOT copy `data/database.json` — that
+ * file is the sanitizing writer's exclusive output (scripts/fix-html.js
+ * routes it through `copyDatabaseFile → stripInternalAuditDatabase`, which
+ * removes `_rawPricesArchive` and the DIC-1139 errata history). Copying the
+ * raw canonical source here overwrote the sanitized artifact with the
+ * pre-strip bytes, leaking `_rawPricesArchive` on every card and errata
+ * labels on 28. `series-names.json` and `character-names-zh.json` are still
+ * copied verbatim because they carry no internal-audit fields.
  */
 import fs from 'fs';
 import path from 'path';
@@ -13,19 +22,20 @@ const __dirname = path.dirname(__filename);
 
 const PROJECT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(PROJECT_DIR, 'dist');
+const DB_DEST = path.join(DIST_DIR, 'data', 'database.json');
 
 console.log('[copy-assets] Copying assets to dist/...');
 
-// Copy database.json
-const dbSource = path.join(PROJECT_DIR, 'data', 'database.json');
-const dbDest = path.join(DIST_DIR, 'data', 'database.json');
-
-if (fs.existsSync(dbSource)) {
-  fs.mkdirSync(path.dirname(dbDest), { recursive: true });
-  fs.copyFileSync(dbSource, dbDest);
-  console.log(`  ✅ database.json → dist/data/database.json`);
-} else {
-  console.log(`  ⚠️  database.json not found, skipping`);
+// DIC-1140 belt-and-braces: refuse to run if the sanitizing writer hasn't
+// produced dist/data/database.json yet. A run that would leave the wire
+// without a database is a silent regression; failing fast here forces the
+// operator to fix the ordering rather than ship a broken artifact.
+if (!fs.existsSync(DB_DEST)) {
+  throw new Error(
+    '[copy-assets] Refusing to run: dist/data/database.json is missing. ' +
+      'scripts/fix-html.js must run first to produce the sanitized artifact. ' +
+      'Check vercel.json build sequence.',
+  );
 }
 
 // Copy series-names.json
