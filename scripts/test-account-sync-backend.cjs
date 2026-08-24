@@ -276,6 +276,160 @@ async function testValidationRejectsBadCollection() {
   assert.equal(res.body.error, 'invalid_request');
 }
 
+function validDeckCard(overrides = {}) {
+  return {
+    id: 'card-1',
+    cardNumber: 'hBP01-001',
+    name: 'Test Card',
+    printing: 'BASE',
+    printingLabel: 'BASE',
+    series: 'hBP01',
+    ...overrides,
+  };
+}
+
+function validDeck(overrides = {}) {
+  return {
+    id: 'deck-1',
+    name: 'Deck One',
+    oshi: [{ card: validDeckCard({ id: 'oshi-1', cardNumber: 'hBP01-999' }), qty: 1 }],
+    main: [{ card: validDeckCard(), qty: 4 }],
+    yell: [{ card: validDeckCard({ id: 'yell-1', cardNumber: 'hY01-001' }), qty: 5 }],
+    updatedAt: '2026-08-24T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function validPriceAlert(overrides = {}) {
+  return {
+    cardNumber: 'hBP01-001',
+    printing: 'BASE',
+    printingLabel: 'BASE',
+    name: 'Test Card',
+    currency: 'JPY',
+    lowerPrice: 100,
+    upperPrice: 500,
+    createdAt: '2026-08-24T00:00:00Z',
+    updatedAt: '2026-08-24T00:00:00Z',
+    ...overrides,
+  };
+}
+
+async function assertMalformedRejected(scenario, patch) {
+  resetKv(); configureBackend();
+  const { user, session } = await createSession(scenario);
+  // Seed a real prior snapshot so we can prove the malformed POST changes nothing.
+  const seedIdem = `${scenario}-seed`;
+  const seed = await request('POST', {
+    baseRevision: 0,
+    idempotencyKey: seedIdem,
+    patch: { settings: { preferredCurrency: 'JPY' } },
+  }, session);
+  assert.equal(seed.status, 200, `${scenario}: seed request must succeed`);
+  const beforeSnapshot = kvState.values.get(`account-sync:user:${user.internalId}`);
+  const beforeIdem = kvState.values.get(`account-sync:idempotency:${user.internalId}:${seedIdem}`);
+  const beforeIndex = kvState.sets.get(`account-sync:idempotency-index:${user.internalId}`);
+  const beforeRevision = JSON.parse(beforeSnapshot).revision;
+
+  const attackIdem = `${scenario}-attack`;
+  const res = await request('POST', {
+    baseRevision: beforeRevision,
+    idempotencyKey: attackIdem,
+    patch,
+  }, session);
+  assert.equal(res.status, 400, `${scenario}: malformed payload must be rejected 400`);
+  assert.equal(res.body.error, 'invalid_request', `${scenario}: error must be invalid_request`);
+
+  const afterSnapshot = kvState.values.get(`account-sync:user:${user.internalId}`);
+  const afterIndex = kvState.sets.get(`account-sync:idempotency-index:${user.internalId}`);
+  assert.equal(afterSnapshot, beforeSnapshot, `${scenario}: snapshot must be unchanged`);
+  assert.equal(JSON.parse(afterSnapshot).revision, beforeRevision, `${scenario}: revision must be unchanged`);
+  assert.equal(
+    kvState.values.get(`account-sync:idempotency:${user.internalId}:${seedIdem}`),
+    beforeIdem,
+    `${scenario}: seed idempotency snapshot must be untouched`,
+  );
+  assert.equal(
+    kvState.values.has(`account-sync:idempotency:${user.internalId}:${attackIdem}`),
+    false,
+    `${scenario}: malformed request must not create idempotency key`,
+  );
+  assert.deepEqual(afterIndex, beforeIndex, `${scenario}: idempotency index must be unchanged`);
+}
+
+async function testMalformedDeckRejectedAtRealHandler() {
+  const cases = [
+    ['deck-not-object', { decks: ['not-an-object'] }],
+    ['deck-missing-id', { decks: [validDeck({ id: undefined })] }],
+    ['deck-empty-id', { decks: [validDeck({ id: '   ' })] }],
+    ['deck-missing-oshi', { decks: [validDeck({ oshi: undefined })] }],
+    ['deck-oshi-not-array', { decks: [validDeck({ oshi: {} })] }],
+    ['deck-slot-not-object', { decks: [validDeck({ main: ['bad-slot'] })] }],
+    ['deck-slot-missing-card', { decks: [validDeck({ main: [{ qty: 4 }] })] }],
+    ['deck-slot-qty-not-integer', { decks: [validDeck({ main: [{ card: validDeckCard(), qty: 2.5 }] })] }],
+    ['deck-slot-qty-zero', { decks: [validDeck({ main: [{ card: validDeckCard(), qty: 0 }] })] }],
+    ['deck-slot-qty-negative', { decks: [validDeck({ main: [{ card: validDeckCard(), qty: -1 }] })] }],
+    ['deck-slot-qty-over-max', { decks: [validDeck({ main: [{ card: validDeckCard(), qty: 501 }] })] }],
+    ['deck-card-missing-cardNumber', { decks: [validDeck({ main: [{ card: validDeckCard({ cardNumber: undefined }), qty: 1 }] })] }],
+    ['deck-card-missing-printing', { decks: [validDeck({ main: [{ card: validDeckCard({ printing: undefined }), qty: 1 }] })] }],
+    ['deck-card-printing-not-string', { decks: [validDeck({ main: [{ card: validDeckCard({ printing: 42 }), qty: 1 }] })] }],
+    ['deck-card-boolean-field-not-boolean', { decks: [validDeck({ main: [{ card: validDeckCard({ unresolvedPrinting: 'yes' }), qty: 1 }] })] }],
+    ['deck-missing-updatedAt', { decks: [validDeck({ updatedAt: undefined })] }],
+    ['deck-updatedAt-not-iso', { decks: [validDeck({ updatedAt: 'not-a-timestamp' })] }],
+    ['deck-origin-wrong-kind', { decks: [validDeck({ origin: { kind: 'made-up', eventId: 'e', eventName: 'e', sourceDeckId: 's', decklogCode: null, sourceUrl: 'https://x', importedAt: '2026-08-24T00:00:00Z' } })] }],
+    ['deck-origin-decklogCode-not-string-or-null', { decks: [validDeck({ origin: { kind: 'tournament', eventId: 'e', eventName: 'e', sourceDeckId: 's', decklogCode: 42, sourceUrl: 'https://x', importedAt: '2026-08-24T00:00:00Z' } })] }],
+    ['deck-origin-importedAt-not-iso', { decks: [validDeck({ origin: { kind: 'tournament', eventId: 'e', eventName: 'e', sourceDeckId: 's', decklogCode: null, sourceUrl: 'https://x', importedAt: 'nope' } })] }],
+  ];
+  for (const [scenario, patch] of cases) {
+    await assertMalformedRejected(`deck-user-${scenario}`, patch);
+  }
+}
+
+async function testMalformedPriceAlertRejectedAtRealHandler() {
+  const cases = [
+    ['alert-not-object', { priceAlerts: ['nope'] }],
+    ['alert-missing-cardNumber', { priceAlerts: [validPriceAlert({ cardNumber: undefined })] }],
+    ['alert-empty-printing', { priceAlerts: [validPriceAlert({ printing: '  ' })] }],
+    ['alert-printingLabel-not-string', { priceAlerts: [validPriceAlert({ printingLabel: 42 })] }],
+    ['alert-name-missing', { priceAlerts: [validPriceAlert({ name: undefined })] }],
+    ['alert-currency-invalid-enum', { priceAlerts: [validPriceAlert({ currency: 'EUR' })] }],
+    ['alert-currency-not-string', { priceAlerts: [validPriceAlert({ currency: 123 })] }],
+    ['alert-upperPrice-missing', { priceAlerts: [validPriceAlert({ upperPrice: null })] }],
+    ['alert-upperPrice-not-integer', { priceAlerts: [validPriceAlert({ upperPrice: 500.5 })] }],
+    ['alert-upperPrice-negative', { priceAlerts: [validPriceAlert({ upperPrice: -1 })] }],
+    ['alert-upperPrice-over-max', { priceAlerts: [validPriceAlert({ upperPrice: 200_000_000 })] }],
+    ['alert-lowerPrice-not-integer', { priceAlerts: [validPriceAlert({ lowerPrice: 'cheap' })] }],
+    ['alert-lowerPrice-negative', { priceAlerts: [validPriceAlert({ lowerPrice: -10 })] }],
+    ['alert-lower-above-upper', { priceAlerts: [validPriceAlert({ lowerPrice: 600, upperPrice: 500 })] }],
+    ['alert-createdAt-not-iso', { priceAlerts: [validPriceAlert({ createdAt: 'not-a-timestamp' })] }],
+    ['alert-updatedAt-missing', { priceAlerts: [validPriceAlert({ updatedAt: undefined })] }],
+  ];
+  for (const [scenario, patch] of cases) {
+    await assertMalformedRejected(`alert-user-${scenario}`, patch);
+  }
+}
+
+async function testWellFormedDeckAndAlertAccepted() {
+  resetKv(); configureBackend();
+  const { user, session } = await createSession('sync-user-happy-path');
+  const res = await request('POST', {
+    baseRevision: 0,
+    idempotencyKey: 'idem-happy',
+    patch: {
+      decks: [validDeck()],
+      priceAlerts: [validPriceAlert(), validPriceAlert({ lowerPrice: null, upperPrice: 1000, printing: 'PARALLEL' })],
+    },
+  }, session);
+  assert.equal(res.status, 200, 'well-formed payload must succeed');
+  assert.equal(res.body.snapshot.revision, 1);
+  assert.equal(res.body.snapshot.decks.length, 1);
+  assert.equal(res.body.snapshot.decks[0].main.length, 1);
+  assert.equal(res.body.snapshot.decks[0].main[0].qty, 4);
+  assert.equal(res.body.snapshot.priceAlerts.length, 2);
+  assert.equal(res.body.snapshot.priceAlerts[1].lowerPrice, null);
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), true);
+}
+
 async function testAccountDeleteCascadeHook() {
   resetKv(); configureBackend();
   kvState.values.set('account-sync:user:holo_user_d', JSON.stringify({ revision: 1 }));
@@ -385,6 +539,9 @@ async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
   await testSnapshotRoundTripBySessionUser();
   await testOptimisticConflictAndIdempotentReplay();
   await testValidationRejectsBadCollection();
+  await testMalformedDeckRejectedAtRealHandler();
+  await testMalformedPriceAlertRejectedAtRealHandler();
+  await testWellFormedDeckAndAlertAccepted();
   await testAccountDeleteCascadeHook();
   await testAuthorizedSyncCannotCommitAfterDeletionFence();
   await testDeletedAccountTokenCannotReadWriteOrRecreateSyncData();

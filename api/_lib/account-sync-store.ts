@@ -9,7 +9,12 @@
 import { kv } from '@vercel/kv';
 import type { PriceAlert } from '../../src/utils/priceAlerts';
 import type { CurrencyCode, LanguageCode } from '../../src/store/settingsStore';
-import type { Deck } from '../../src/utils/deckRules';
+import type { Deck, DeckCard, DeckOrigin, DeckSlot, DeckZone } from '../../src/utils/deckRules';
+
+// Defense-in-depth upper bound on a stored alert price. Kept in sync with the
+// client's MAX_ALERT_PRICE (src/utils/priceAlerts.ts) but declared locally so
+// this server module stays a pure Node dependency without pulling any RN code.
+const SERVER_MAX_ALERT_PRICE = 100_000_000;
 
 export const ACCOUNT_SYNC_SCHEMA_VERSION = 1;
 export const MAX_SYNC_PAYLOAD_BYTES = 256_000;
@@ -17,6 +22,11 @@ export const MAX_FAVORITES = 2_000;
 export const MAX_DECKS = 200;
 export const MAX_COLLECTION_ENTRIES = 10_000;
 export const MAX_PRICE_ALERTS = 500;
+export const MAX_DECK_ZONE_SLOTS = 200;
+export const MAX_DECK_SLOT_QTY = 500;
+
+const DECK_CURRENCY_CODES = ['TWD', 'JPY', 'USD'] as const;
+type DeckCurrencyCode = typeof DECK_CURRENCY_CODES[number];
 
 export interface AccountFavorite {
   cardNumber: string;
@@ -201,18 +211,191 @@ function cleanCollection(value: unknown): AccountCollection {
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
 
+function cleanRequiredString(value: unknown, field: string): string {
+  if (value === undefined || value === null) {
+    throw new AccountSyncError('invalid_request', `${field} is required`, 400);
+  }
+  if (typeof value !== 'string') {
+    throw new AccountSyncError('invalid_request', `${field} must be a string`, 400);
+  }
+  return value;
+}
+
+function cleanNonEmptyString(value: unknown, field: string): string {
+  const s = cleanRequiredString(value, field);
+  if (!s.trim()) throw new AccountSyncError('invalid_request', `${field} is required`, 400);
+  return s;
+}
+
+function cleanIntegerInRange(value: unknown, field: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new AccountSyncError('invalid_request', `${field} must be an integer`, 400);
+  }
+  if (value < min || value > max) {
+    throw new AccountSyncError('invalid_request', `${field} must be between ${min} and ${max}`, 400);
+  }
+  return value;
+}
+
+function cleanDeckCard(value: unknown, ctx: string): DeckCard {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
+  }
+  const v = value as Record<string, unknown>;
+  const card: DeckCard = {
+    id: cleanNonEmptyString(v.id, `${ctx}.id`),
+    cardNumber: cleanNonEmptyString(v.cardNumber, `${ctx}.cardNumber`),
+    name: cleanRequiredString(v.name, `${ctx}.name`),
+    printing: cleanNonEmptyString(v.printing, `${ctx}.printing`),
+    printingLabel: cleanRequiredString(v.printingLabel, `${ctx}.printingLabel`),
+    series: cleanRequiredString(v.series, `${ctx}.series`),
+  };
+  if (v.nameZh !== undefined && v.nameZh !== null) card.nameZh = cleanRequiredString(v.nameZh, `${ctx}.nameZh`);
+  if (v.nameJa !== undefined && v.nameJa !== null) card.nameJa = cleanRequiredString(v.nameJa, `${ctx}.nameJa`);
+  if (v.type !== undefined && v.type !== null) card.type = cleanRequiredString(v.type, `${ctx}.type`);
+  if (v.cardTypeJp !== undefined && v.cardTypeJp !== null) card.cardTypeJp = cleanRequiredString(v.cardTypeJp, `${ctx}.cardTypeJp`);
+  if (v.exactImageUrl !== undefined && v.exactImageUrl !== null) card.exactImageUrl = cleanRequiredString(v.exactImageUrl, `${ctx}.exactImageUrl`);
+  if (v.imageUrl !== undefined && v.imageUrl !== null) card.imageUrl = cleanRequiredString(v.imageUrl, `${ctx}.imageUrl`);
+  if (v.unresolvedPrinting !== undefined && v.unresolvedPrinting !== null) {
+    if (typeof v.unresolvedPrinting !== 'boolean') {
+      throw new AccountSyncError('invalid_request', `${ctx}.unresolvedPrinting must be a boolean`, 400);
+    }
+    card.unresolvedPrinting = v.unresolvedPrinting;
+  }
+  if (v.defaultedPrinting !== undefined && v.defaultedPrinting !== null) {
+    if (typeof v.defaultedPrinting !== 'boolean') {
+      throw new AccountSyncError('invalid_request', `${ctx}.defaultedPrinting must be a boolean`, 400);
+    }
+    card.defaultedPrinting = v.defaultedPrinting;
+  }
+  if (v.sourceVersion !== undefined && v.sourceVersion !== null) card.sourceVersion = cleanRequiredString(v.sourceVersion, `${ctx}.sourceVersion`);
+  return card;
+}
+
+function cleanDeckSlot(value: unknown, ctx: string): DeckSlot {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
+  }
+  const v = value as Record<string, unknown>;
+  return {
+    card: cleanDeckCard(v.card, `${ctx}.card`),
+    qty: cleanIntegerInRange(v.qty, `${ctx}.qty`, 1, MAX_DECK_SLOT_QTY),
+  };
+}
+
+function cleanDeckZone(value: unknown, zone: DeckZone, deckCtx: string): DeckSlot[] {
+  if (!Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${deckCtx}.${zone} must be an array`, 400);
+  }
+  if (value.length > MAX_DECK_ZONE_SLOTS) {
+    throw new AccountSyncError('payload_too_large', `${deckCtx}.${zone} has too many slots`, 413);
+  }
+  return value.map((slot, i) => cleanDeckSlot(slot, `${deckCtx}.${zone}[${i}]`));
+}
+
+function cleanDeckOrigin(value: unknown, ctx: string): DeckOrigin {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
+  }
+  const v = value as Record<string, unknown>;
+  if (v.kind !== 'tournament') {
+    throw new AccountSyncError('invalid_request', `${ctx}.kind must be "tournament"`, 400);
+  }
+  let decklogCode: string | null;
+  if (v.decklogCode === null) decklogCode = null;
+  else if (typeof v.decklogCode === 'string') decklogCode = v.decklogCode;
+  else throw new AccountSyncError('invalid_request', `${ctx}.decklogCode must be a string or null`, 400);
+  return {
+    kind: 'tournament',
+    eventId: cleanNonEmptyString(v.eventId, `${ctx}.eventId`),
+    eventName: cleanRequiredString(v.eventName, `${ctx}.eventName`),
+    sourceDeckId: cleanNonEmptyString(v.sourceDeckId, `${ctx}.sourceDeckId`),
+    decklogCode,
+    sourceUrl: cleanNonEmptyString(v.sourceUrl, `${ctx}.sourceUrl`),
+    importedAt: cleanIso(v.importedAt, `${ctx}.importedAt`),
+  };
+}
+
+function cleanDeck(value: unknown, ctx: string): Deck {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
+  }
+  const v = value as Record<string, unknown>;
+  const deck: Deck = {
+    id: cleanNonEmptyString(v.id, `${ctx}.id`),
+    name: cleanRequiredString(v.name, `${ctx}.name`),
+    oshi: cleanDeckZone(v.oshi, 'oshi', ctx),
+    main: cleanDeckZone(v.main, 'main', ctx),
+    yell: cleanDeckZone(v.yell, 'yell', ctx),
+    updatedAt: cleanIso(v.updatedAt, `${ctx}.updatedAt`),
+  };
+  if (v.origin !== undefined && v.origin !== null) {
+    deck.origin = cleanDeckOrigin(v.origin, `${ctx}.origin`);
+  }
+  return deck;
+}
+
 function cleanDecks(value: unknown): Deck[] {
   if (!Array.isArray(value)) throw new AccountSyncError('invalid_request', 'decks must be an array', 400);
   if (value.length > MAX_DECKS) throw new AccountSyncError('payload_too_large', 'too many decks', 413);
   assertPayloadSize(value);
-  return value as Deck[];
+  return value.map((deck, i) => cleanDeck(deck, `decks[${i}]`));
+}
+
+function isDeckCurrency(value: unknown): value is DeckCurrencyCode {
+  return typeof value === 'string' && (DECK_CURRENCY_CODES as readonly string[]).includes(value);
+}
+
+function cleanPriceAlertPriceBound(value: unknown, field: string, allowNull: boolean): number | null {
+  if (value === null) {
+    if (!allowNull) throw new AccountSyncError('invalid_request', `${field} is required`, 400);
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new AccountSyncError('invalid_request', `${field} must be an integer`, 400);
+  }
+  if (value < 0 || value > SERVER_MAX_ALERT_PRICE) {
+    throw new AccountSyncError('invalid_request', `${field} must be between 0 and ${SERVER_MAX_ALERT_PRICE}`, 400);
+  }
+  return value;
+}
+
+function cleanPriceAlert(value: unknown, ctx: string): PriceAlert {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AccountSyncError('invalid_request', `${ctx} must be an object`, 400);
+  }
+  const v = value as Record<string, unknown>;
+  if (!isDeckCurrency(v.currency)) {
+    throw new AccountSyncError('invalid_request', `${ctx}.currency must be TWD, JPY, or USD`, 400);
+  }
+  const upperPrice = cleanPriceAlertPriceBound(v.upperPrice, `${ctx}.upperPrice`, false)!;
+  const lowerRaw = v.lowerPrice === undefined ? null : v.lowerPrice;
+  const lowerPrice = cleanPriceAlertPriceBound(lowerRaw, `${ctx}.lowerPrice`, true);
+  if (lowerPrice !== null && lowerPrice > upperPrice) {
+    throw new AccountSyncError('invalid_request', `${ctx}.lowerPrice must not exceed ${ctx}.upperPrice`, 400);
+  }
+  const alert: PriceAlert = {
+    cardNumber: cleanNonEmptyString(v.cardNumber, `${ctx}.cardNumber`),
+    printing: cleanNonEmptyString(v.printing, `${ctx}.printing`),
+    printingLabel: cleanRequiredString(v.printingLabel, `${ctx}.printingLabel`),
+    name: cleanRequiredString(v.name, `${ctx}.name`),
+    currency: v.currency,
+    lowerPrice,
+    upperPrice,
+    createdAt: cleanIso(v.createdAt, `${ctx}.createdAt`),
+    updatedAt: cleanIso(v.updatedAt, `${ctx}.updatedAt`),
+  };
+  if (v.imageUrl !== undefined && v.imageUrl !== null) {
+    alert.imageUrl = cleanRequiredString(v.imageUrl, `${ctx}.imageUrl`);
+  }
+  return alert;
 }
 
 function cleanPriceAlerts(value: unknown): PriceAlert[] {
   if (!Array.isArray(value)) throw new AccountSyncError('invalid_request', 'priceAlerts must be an array', 400);
   if (value.length > MAX_PRICE_ALERTS) throw new AccountSyncError('payload_too_large', 'too many price alerts', 413);
   assertPayloadSize(value);
-  return value as PriceAlert[];
+  return value.map((alert, i) => cleanPriceAlert(alert, `priceAlerts[${i}]`));
 }
 
 function cleanSettings(value: unknown): Partial<AccountSettings> {
