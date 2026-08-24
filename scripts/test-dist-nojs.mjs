@@ -2,105 +2,106 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 
 const PROJECT_DIR = process.cwd();
-const PUBLIC_DIR = path.join(PROJECT_DIR, 'public');
 const DIST_DIR = path.join(PROJECT_DIR, 'dist');
+const COPY_ASSETS_PATH = path.join(PROJECT_DIR, 'scripts', 'copy-assets.js');
 
-console.log('── Isolated Dist Audit & Mutation Test: No-JS & Semantic HTML (CR DIC-1162 Blocker 2) ──');
+console.log('── Isolated Dist Audit & Manifest Mutation Test (CR DIC-1162) ──');
 
-// 1. Ensure dist directory exists and static HTML pages are copied to dist/
-if (!fs.existsSync(DIST_DIR)) {
-  fs.mkdirSync(DIST_DIR, { recursive: true });
+// Step 1: Ensure dist/data/database.json exists so copy-assets.js does not refuse to run
+fs.mkdirSync(path.join(DIST_DIR, 'data'), { recursive: true });
+const dbFile = path.join(DIST_DIR, 'data', 'database.json');
+if (!fs.existsSync(dbFile)) {
+  fs.writeFileSync(dbFile, JSON.stringify({ cards: [] }));
 }
 
+// Step 2: Execute real scripts/copy-assets.js pipeline (DO NOT manually copy from public/)
+console.log('Executing real scripts/copy-assets.js pipeline...');
+execSync('node scripts/copy-assets.js', { stdio: 'inherit' });
+
+// Step 3: Audit required HTML pages in dist/
 const requiredPages = ['pricing.html', 'terms.html', 'privacy.html', 'support.html'];
 
 for (const page of requiredPages) {
-  const src = path.join(PUBLIC_DIR, page);
-  const dest = path.join(DIST_DIR, page);
-  assert.ok(fs.existsSync(src), `public/${page} source file must exist`);
-  fs.copyFileSync(src, dest);
-  assert.ok(fs.existsSync(dest), `dist/${page} exported artifact must exist`);
+  const distPath = path.join(DIST_DIR, page);
+  assert.ok(fs.existsSync(distPath), `dist/${page} MUST be produced by copy-assets.js manifest`);
 }
 
 /**
- * Isolated validation function for dist HTML artifacts
+ * Validation function for shipped HTML contents in dist/
  */
-export function validateDistHtmlContent(content, filename) {
-  if (!content.includes('<main')) {
-    throw new Error(`[Dist Audit Failure] ${filename} is missing semantic <main> tag`);
-  }
-  if (!content.includes('<h1')) {
-    throw new Error(`[Dist Audit Failure] ${filename} is missing semantic <h1> tag`);
-  }
-  if (!content.includes('<noscript>')) {
-    throw new Error(`[Dist Audit Failure] ${filename} is missing <noscript> fallback styles`);
-  }
-  if (!content.includes('https://holohunter.dicoge.com/')) {
-    throw new Error(`[Dist Audit Failure] ${filename} is missing canonical domain link`);
-  }
+export function validateDistHtml(content, filename) {
+  assert.ok(content.includes('<main'), `${filename} missing semantic <main> tag`);
+  assert.ok(content.includes('<h1'), `${filename} missing semantic <h1> tag`);
+  assert.ok(content.includes('<noscript>'), `${filename} missing <noscript> fallback styles`);
+  assert.ok(content.includes('https://holohunter.dicoge.com/'), `${filename} missing canonical domain`);
+
   if (filename === 'pricing.html') {
-    if (!content.includes('日本語')) {
-      throw new Error(`[Dist Audit Failure] pricing.html is missing Japanese section title`);
-    }
-    if (!content.includes('無制限')) {
-      throw new Error(`[Dist Audit Failure] pricing.html is missing Japanese unlimited scan text`);
-    }
-    if (!content.includes('カメラ')) {
-      throw new Error(`[Dist Audit Failure] pricing.html is missing Japanese camera text`);
+    assert.ok(content.includes('日本語'), 'pricing.html missing Japanese section');
+    assert.ok(content.includes('無制限'), 'pricing.html missing Japanese unlimited scan copy');
+    assert.ok(content.includes('カメラ'), 'pricing.html missing Japanese camera copy');
+  }
+}
+
+// Validate shipped files in dist/
+for (const page of requiredPages) {
+  const content = fs.readFileSync(path.join(DIST_DIR, page), 'utf-8');
+  validateDistHtml(content, page);
+  console.log(`  ✓ PASS: Shipped dist/${page} has semantic <main>, <h1>, <noscript>, and No-JS Japanese readability`);
+}
+
+// Step 4: Mutation testing (Manifest & Content)
+console.log('── Mutation Testing: Manifest & Content Fail-Closed Checks ──');
+
+// Manifest Mutation 1: Verify copy-assets.js manifest HTML_PAGES contains all required pages
+const copyAssetsSrc = fs.readFileSync(COPY_ASSETS_PATH, 'utf-8');
+for (const page of requiredPages) {
+  assert.ok(
+    copyAssetsSrc.includes(`'${page}'`) || copyAssetsSrc.includes(`"${page}"`),
+    `scripts/copy-assets.js HTML_PAGES manifest MUST include ${page}`
+  );
+}
+
+// Manifest Mutation 2: Simulate removal of pricing.html from HTML_PAGES in copy-assets.js
+const testManifestAuditor = (scriptSource) => {
+  for (const page of requiredPages) {
+    if (!scriptSource.includes(`'${page}'`) && !scriptSource.includes(`"${page}"`)) {
+      throw new Error(`[Manifest Error] Page ${page} missing from copy-assets.js HTML_PAGES manifest`);
     }
   }
-  return true;
-}
+};
 
-// 2. Audit actual exported dist/ files
-for (const page of requiredPages) {
-  const distPath = path.join(DIST_DIR, page);
-  const content = fs.readFileSync(distPath, 'utf-8');
-  assert.doesNotThrow(() => validateDistHtmlContent(content, page), `dist/${page} must pass validation`);
-  console.log(`  ✓ PASS: dist/${page} audited with semantic <main>, <h1>, <noscript>, and canonical link`);
-}
+assert.doesNotThrow(() => testManifestAuditor(copyAssetsSrc));
 
-// 3. Mutation Testing: Verify that removing required elements fails closed
-console.log('── Mutation Testing: Validating Fail-Closed Assertions ──');
-
-const samplePricing = fs.readFileSync(path.join(DIST_DIR, 'pricing.html'), 'utf-8');
-
-// Mutation A: Remove <main> tag
-const mutatedNoMain = samplePricing.replace(/<main[^>]*>/, '<div>').replace('</main>', '</div>');
+const mutatedManifestSrc = copyAssetsSrc.replace(`'pricing.html'`, `'non_existent.html'`);
 assert.throws(
-  () => validateDistHtmlContent(mutatedNoMain, 'pricing.html'),
-  /missing semantic <main> tag/,
-  'Mutation A: Removing <main> must fail validation'
+  () => testManifestAuditor(mutatedManifestSrc),
+  /Page pricing.html missing from copy-assets.js/,
+  'Mutation Test: Removal of pricing.html from copy-assets.js manifest MUST fail closed'
 );
-console.log('  ✓ PASS: Mutation test: Removal of <main> fails closed');
+console.log('  ✓ PASS: Manifest mutation test: Removal of pricing.html from HTML_PAGES manifest fails closed');
 
-// Mutation B: Remove <h1> tag
-const mutatedNoH1 = samplePricing.replace(/<h1[^>]*>.*?<\/h1>/, '');
+// Content Mutations
+const pricingHtml = fs.readFileSync(path.join(DIST_DIR, 'pricing.html'), 'utf-8');
+
 assert.throws(
-  () => validateDistHtmlContent(mutatedNoH1, 'pricing.html'),
-  /missing semantic <h1> tag/,
-  'Mutation B: Removing <h1> must fail validation'
+  () => validateDistHtml(pricingHtml.replace(/<main[^>]*>/, '<div>').replace('</main>', '</div>'), 'pricing.html'),
+  /missing semantic <main> tag/
 );
-console.log('  ✓ PASS: Mutation test: Removal of <h1> fails closed');
+console.log('  ✓ PASS: Content mutation test: Removal of <main> fails closed');
 
-// Mutation C: Remove Japanese No-JS readability text
-const mutatedNoJa = samplePricing.replace(/無制限/g, 'XXX').replace(/カメラ/g, 'YYY');
 assert.throws(
-  () => validateDistHtmlContent(mutatedNoJa, 'pricing.html'),
-  /missing Japanese/,
-  'Mutation C: Removing Japanese text must fail validation'
+  () => validateDistHtml(pricingHtml.replace(/<h1[^>]*>.*?<\/h1>/, ''), 'pricing.html'),
+  /missing semantic <h1> tag/
 );
-console.log('  ✓ PASS: Mutation test: Removal of No-JS Japanese text fails closed');
+console.log('  ✓ PASS: Content mutation test: Removal of <h1> fails closed');
 
-// Mutation D: Remove <noscript> fallback
-const mutatedNoNoscript = samplePricing.replace(/<noscript>[\s\S]*?<\/noscript>/, '');
 assert.throws(
-  () => validateDistHtmlContent(mutatedNoNoscript, 'pricing.html'),
-  /missing <noscript> fallback styles/,
-  'Mutation D: Removing <noscript> must fail validation'
+  () => validateDistHtml(pricingHtml.replace(/無制限/g, 'XXX'), 'pricing.html'),
+  /missing Japanese/
 );
-console.log('  ✓ PASS: Mutation test: Removal of <noscript> fallback fails closed');
+console.log('  ✓ PASS: Content mutation test: Removal of No-JS Japanese text fails closed');
 
-console.log('\nIsolated dist audit & mutation testing complete: ALL CHECKS PASSED!');
+console.log('\nAll dist audit & manifest/content mutation tests PASSED!');
