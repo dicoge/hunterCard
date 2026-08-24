@@ -79,6 +79,7 @@ test('every source descriptor is identity-bearing, not just premium markers', ()
   // Known treatments get a stable ASCII token …
   assert.equal(printingFromLabel('白銀ノエル(パラレル)'), 'PARALLEL');
   assert.equal(printingFromLabel('AZKi(パラレル/HR)'), 'PARALLEL/HR');
+  assert.equal(printingFromLabel('白エール(S仕様)'), 'S-SPEC');
   assert.equal(printingFromLabel('AZKi(パラレル/hBP07)'), 'PARALLEL/HBP07');
   // … and an explicit base REPRINT is its own printing, not the plain one.
   // Collapsing it onto BASE made two unambiguous listings look ambiguous and
@@ -94,6 +95,8 @@ test('plain printings are distinguished from premium ones', () => {
   assert.equal(isPlainPrinting('PARALLEL'), false);
   assert.equal(isPlainPrinting('PARALLEL/SIGN'), false);
   assert.equal(isPlainPrinting('PARALLEL/HR'), false);
+  assert.equal(isPlainPrinting('S-SPEC'), false);
+  assert.equal(isPlainPrinting('S仕様'), false);
   assert.equal(isPlainPrinting('FOIL'), false);
 });
 
@@ -237,6 +240,24 @@ test('a card number with no listings at all yields one unpriced BASE printing', 
   const { cards, priceRecords } = adaptCardNumber(rows);
   assert.deepEqual(cards.map((c) => c.printing), ['BASE']);
   assert.deepEqual(priceRecords, []);
+});
+
+test('unpriced ordinary rows keep BASE default when only S仕様 is listed', () => {
+  const rows = [
+    {
+      id: 'hY01-001_hBP01', cardNumber: 'hY01-001', name: '白エール', series: 'hBP01',
+      timestamp: SRC_TS, skillsJp: { cardType: 'エール' }, prices: [],
+    },
+    {
+      id: 'hY01-001', cardNumber: 'hY01-001', name: '白エール(S仕様)', series: '',
+      timestamp: SRC_TS, skillsJp: { cardType: 'エール' },
+      prices: [{ name: '白エール(S仕様)', sellPrice: 120, rarity: '' }],
+    },
+  ];
+  const { cards, priceRecords } = adaptCardNumber(rows);
+  assert.deepEqual(cards.map((c) => c.id), ['hY01-001#BASE', 'hY01-001#S-SPEC']);
+  assert.equal(resolveExactPrice('hY01-001', 'BASE', priceRecords).status, 'NO_EXACT_PRICE');
+  assert.equal(resolveExactPrice('hY01-001', 'S-SPEC', priceRecords).price, 120);
 });
 
 // ── Gap estimate: the screenshot case ───────────────────────────────────────

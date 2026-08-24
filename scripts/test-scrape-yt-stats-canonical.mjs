@@ -18,6 +18,8 @@ assert.equal(
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scrape-yt-stats-test-'));
 const testablePath = path.join(tempDir, 'scrape-yt-stats-testable.mjs');
+fs.mkdirSync(path.join(tempDir, 'lib'));
+fs.copyFileSync(path.resolve('scripts/lib/yt-growth.js'), path.join(tempDir, 'lib/yt-growth.js'));
 fs.writeFileSync(
   testablePath,
   source.replace(/main\(\)\.catch\(\(err\) => \{[\s\S]*?process\.exit\(1\);\n\}\);\s*$/m, 'export { fetchChannelStats };\n')
@@ -55,7 +57,11 @@ const { fetchChannelStats } = await import(pathToFileURL(testablePath));
     subscriberCount: 2000000,
     totalViewCount: 123456,
     canonicalChannelId: 'UC_EXPECTED',
+    source: 'youtube_about_ssr',
+    parser: 'ytInitialData.aboutChannelViewModel/v1',
+    fetchedAt: stats.fetchedAt,
   });
+  assert.ok(Date.parse(stats.fetchedAt), 'stats carry fetchedAt provenance');
   assert.equal(calls.length, 2, 'canonical mismatch on handle should continue to channel fallback');
 }
 
@@ -69,7 +75,11 @@ const { fetchChannelStats } = await import(pathToFileURL(testablePath));
     subscriberCount: 543,
     totalViewCount: 1234,
     canonicalChannelId: 'UC_MATCH',
+    source: 'youtube_about_ssr',
+    parser: 'ytInitialData.aboutChannelViewModel/v1',
+    fetchedAt: stats.fetchedAt,
   });
+  assert.ok(Date.parse(stats.fetchedAt), 'matching handle carries fetchedAt provenance');
   assert.equal(calls.length, 1, 'matching handle should return immediately without changing normal flow');
 }
 
