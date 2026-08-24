@@ -1008,7 +1008,7 @@ function DeckLibraryCard({
   const { t } = useTranslation();
   const stats = deckStats(deck);
   const oshiCard = deck.oshi[0]?.card;
-  const oshiColor = oshiCard?.color || (oshiCard?.cardTypeJp ? '推し' : '');
+  const oshiColor = oshiCard?.color || '';
   const updatedDate = deck.updatedAt ? new Date(deck.updatedAt).toISOString().split('T')[0] : '—';
 
   return (

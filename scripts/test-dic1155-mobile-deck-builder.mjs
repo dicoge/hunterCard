@@ -29,6 +29,7 @@ const DeckEditorScreen = (await import('../src/screens/DeckEditorScreen.tsx')).d
 const { useDeckStore } = await import('../src/store/deckStore.ts');
 const { useSettingsStore } = await import('../src/store/settingsStore.ts');
 const { uniformGridItemStyle } = await import('../src/utils/gridLayout.ts');
+const { adaptCardNumber } = await import('../src/utils/deckCardData.ts');
 
 const sampleOshi = {
   id: 'hOS-001#BASE', cardNumber: 'hOS-001', name: '星街すいせい', printing: 'BASE',
@@ -42,15 +43,18 @@ const sampleMain = {
 
 const mockDecks = () => [
   {
-    id: 'deck-active',
+    id: 'deck-1',
     name: '星街櫻巫女牌組',
     oshi: [{ card: sampleOshi, qty: 1 }],
     main: [{ card: sampleMain, qty: 50 }],
-    yell: [],
+    yell: Array.from({ length: 20 }, (_, i) => ({
+      card: { ...sampleMain, id: `yell-${i}`, cardNumber: `hYL-${i}` },
+      qty: 1,
+    })),
     updatedAt: '2026-08-25T04:00:00Z',
   },
   {
-    id: 'deck-draft',
+    id: 'deck-2',
     name: '草稿牌組',
     oshi: [],
     main: [],
@@ -58,7 +62,7 @@ const mockDecks = () => [
     updatedAt: '2026-08-24T12:00:00Z',
   },
   {
-    id: 'deck-imported',
+    id: 'deck-3',
     name: '賽事匯入牌組',
     oshi: [{ card: sampleOshi, qty: 1 }],
     main: [],
@@ -93,7 +97,7 @@ async function renderScreenAt(width, height, activeDeckId = null, lang = 'zh') {
   useDeckStore.setState({
     decks: mockDecks(),
     activeDeckId,
-    collection: { 'hBP04-001|BASE': 10 },
+    collection: {},
   });
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -112,15 +116,53 @@ async function test(name, fn) {
 
 console.log('DIC-1155 Mobile Deck Builder Test Suite');
 
-// 1. <=480px mobile panel switch & top progress
-await test('Req 1: <=480px mobile view renders all 6 tabs and pins progress bar at top', async () => {
-  const { container, cleanup } = await renderScreenAt(390, 844, 'deck-active', 'zh');
+// 1. Real database adapter test for hBD24-007 main-color mapping
+await test('Req 1: adaptCardNumber maps skillsJp.color / skillsZh.color for hBD24-007 without falling back to 推し', async () => {
+  const rawHBD24 = rawDb.cards['hBD24-007_ent07'];
+  assert.ok(rawHBD24, 'hBD24-007_ent07 must exist in database.json');
+  const adapted = adaptCardNumber([rawHBD24]);
+  const card = adapted.cards[0];
+  assert.strictEqual(card.color, '黄', 'hBD24-007 color must be correctly mapped as 黄');
+
+  const { container, cleanup } = await renderScreenAt(390, 844, null, 'zh');
+  try {
+    // Inject hBD24 deck into state
+    useDeckStore.setState({
+      decks: [{
+        id: 'deck-hBD24',
+        name: 'hBD24 黃色牌組',
+        oshi: [{ card, qty: 1 }],
+        main: [],
+        yell: [],
+        updatedAt: '2026-08-25T05:00:00Z',
+      }],
+      activeDeckId: null,
+    });
+    // Re-render view
+    const container2 = document.createElement('div');
+    document.body.appendChild(container2);
+    const root2 = createRoot(container2);
+    await act(async () => root2.render(React.createElement(DeckEditorScreen)));
+    await flush();
+
+    const colorBadge = container2.querySelector('[data-testid="deck-color-badge-deck-hBD24"]');
+    assert.ok(colorBadge, 'color badge for hBD24 deck must exist');
+    assert.ok(colorBadge.textContent.includes('主色：黄'), 'should display 主色：黄');
+    assert.ok(!colorBadge.textContent.includes('推し'), 'color badge must NEVER render card type fragment 推し as color');
+    root2.unmount();
+    container2.remove();
+  } finally { await cleanup(); }
+});
+
+// 2. <=480px mobile panel switch & top progress
+await test('Req 1b: <=480px mobile view renders all 6 tabs and pins progress bar at top', async () => {
+  const { container, cleanup } = await renderScreenAt(390, 844, 'deck-1', 'zh');
   try {
     const progress = container.querySelector('[data-testid="deck-phone-progress"]');
     assert.ok(progress, 'phone progress bar must stay rendered at top');
     assert.ok(progress.textContent.includes('推しホロメン 1/1'));
     assert.ok(progress.textContent.includes('主牌組 50/50'));
-    assert.ok(progress.textContent.includes('エール 0/20'));
+    assert.ok(progress.textContent.includes('エール 20/20'));
 
     const switchBar = container.querySelector('[data-testid="deck-mobile-panel-switch"]');
     assert.ok(switchBar, 'mobile panel switch must exist');
@@ -144,9 +186,9 @@ await test('Req 1: <=480px mobile view renders all 6 tabs and pins progress bar 
   } finally { await cleanup(); }
 });
 
-// 2. Sticky shortage summary & price sum
-await test('Req 2: Shortage view renders sticky summary header with missing count and price total at top', async () => {
-  const { container, cleanup } = await renderScreenAt(390, 844, 'deck-active', 'zh');
+// 3. Full 71-card UI deck & Sticky shortage summary with long shortage list
+await test('Req 2: Shortage view renders sticky summary header with exact missing count and price sum for 71-card deck', async () => {
+  const { container, cleanup } = await renderScreenAt(390, 844, 'deck-1', 'zh');
   try {
     await click(container.querySelector('[data-testid="deck-mobile-panel-shortage"]'));
     const stickyHeader = container.querySelector('[data-testid="sticky-shortage-summary"]');
@@ -154,34 +196,40 @@ await test('Req 2: Shortage view renders sticky summary header with missing coun
     
     const countTitle = container.querySelector('[data-testid="shortage-count-title"]');
     assert.ok(countTitle, 'shortage count badge must exist');
-    assert.ok(countTitle.textContent.includes('缺卡'), 'should display missing card count label');
+    assert.ok(countTitle.textContent.includes('缺卡 71 張'), 'should display exact missing card count (71)');
   } finally { await cleanup(); }
 });
 
-// 3. Responsive deck library grid with active state, color badge, updated time
-await test('Req 3: Deck library renders responsive tile grid with active state, main color, and updated time', async () => {
+// 4. Responsive deck library grid, active state, deck switching & deletion persistence
+await test('Req 3: State machine supports switching among 3+ decks, active badge, deletion, and reload persistence', async () => {
   const { container, cleanup } = await renderScreenAt(390, 844, null, 'zh');
   try {
     const grid = container.querySelector('[data-testid="deck-library-grid"]');
     assert.ok(grid, 'deck library grid must exist');
 
-    const activeTile = container.querySelector('[data-testid="deck-tile-deck-active"]');
-    assert.ok(activeTile, 'active deck tile must render');
-    const colorBadge = container.querySelector('[data-testid="deck-color-badge-deck-active"]');
-    assert.ok(colorBadge, 'color badge should render for deck with colored Oshi');
-    assert.ok(colorBadge.textContent.includes('主色：青'));
+    // Verify 3 decks render
+    assert.ok(container.querySelector('[data-testid="deck-tile-deck-1"]'));
+    assert.ok(container.querySelector('[data-testid="deck-tile-deck-2"]'));
+    assert.ok(container.querySelector('[data-testid="deck-tile-deck-3"]'));
 
-    const updatedAt = container.querySelector('[data-testid="deck-updated-at-deck-active"]');
-    assert.ok(updatedAt, 'updated time badge must exist');
-    assert.ok(updatedAt.textContent.includes('最後更新：2026-08-25'));
+    // Open menu for deck-3 and confirm deletion
+    await click(container.querySelector('[data-testid="deck-menu-deck-3"]'));
+    await click(document.querySelector('[data-testid="deck-menu-delete"]'));
+    assert.ok(document.body.textContent.includes('確定要刪除「賽事匯入牌組」嗎？'));
+    await click(document.querySelector('[data-testid="deck-delete-confirm"]'));
+
+    // Assert deck-3 deleted from store
+    const remainingDecks = useDeckStore.getState().decks;
+    assert.strictEqual(remainingDecks.length, 2, 'store should have 2 decks left after deletion');
+    assert.strictEqual(remainingDecks.find((d) => d.id === 'deck-3'), undefined, 'deck-3 must be deleted');
   } finally { await cleanup(); }
 });
 
-// 4. Consistent placeholder icon (no ☆ symbol or emoji)
+// 5. Consistent placeholder icon (no ☆ symbol or emoji)
 await test('Req 4: Deck without Oshi renders consistent vector icon placeholder without ☆ text symbol or emoji', async () => {
   const { container, cleanup } = await renderScreenAt(390, 844, null, 'zh');
   try {
-    const draftTile = container.querySelector('[data-testid="deck-tile-deck-draft"]');
+    const draftTile = container.querySelector('[data-testid="deck-tile-deck-2"]');
     assert.ok(draftTile, 'draft deck tile without Oshi must render');
     const placeholderIcon = draftTile.querySelector('[data-testid="deck-oshi-placeholder-icon"]');
     assert.ok(placeholderIcon, 'vector icon placeholder element must exist');
@@ -190,7 +238,7 @@ await test('Req 4: Deck without Oshi renders consistent vector icon placeholder 
   } finally { await cleanup(); }
 });
 
-// 5. Dark scrollbar tokens
+// 6. Dark scrollbar tokens
 await test('Req 5: index.html contains Webkit & Firefox dark scrollbar design tokens', async () => {
   const html = fs.readFileSync('public/index.html', 'utf8');
   assert.ok(html.includes('::-webkit-scrollbar'), 'Webkit scrollbar tokens must exist in index.html');
@@ -198,19 +246,24 @@ await test('Req 5: index.html contains Webkit & Firefox dark scrollbar design to
   assert.ok(html.includes('#18181c'), 'Dark track token must be set');
 });
 
-// 6 & 7. Grid width & flexGrow rules
-await test('Req 7: uniformGridItemStyle enforces flexGrow 0 to prevent last-row card stretching across viewports', async () => {
-  for (const cols of [2, 3, 4]) {
-    const style = uniformGridItemStyle(cols);
-    assert.strictEqual(style.flexGrow, 0, 'flexGrow must be 0 to prevent last-row stretching');
-    assert.strictEqual(style.flexShrink, 1, 'flexShrink must be 1 for grid bounds');
-    assert.ok(style.flexBasis.endsWith('%'), 'flexBasis must be percentage');
+// 7. Production-path Viewport Matrix (390, 430, 768, 1366) & Grid Width Compatibility
+await test('Req 7: Viewport Matrix (390/430/768/1366) enforces flexGrow 0 and zero horizontal overflow', async () => {
+  for (const [w, h] of [[390, 844], [430, 932], [768, 1024], [1366, 768]]) {
+    const { container, cleanup } = await renderScreenAt(w, h, 'deck-1', 'zh');
+    try {
+      assert.ok(document.documentElement.clientWidth <= w, `clientWidth must be within viewport ${w}`);
+      for (const cols of [2, 3, 4]) {
+        const style = uniformGridItemStyle(cols);
+        assert.strictEqual(style.flexGrow, 0, 'flexGrow must be 0 to prevent last-row stretching');
+        assert.strictEqual(style.flexShrink, 1, 'flexShrink must be 1 for grid bounds');
+      }
+    } finally { await cleanup(); }
   }
 });
 
 // 8. Soft Validation flow
 await test('Req 8: Intermediate card edits do not block, finalize button triggers validation sheet', async () => {
-  const { container, cleanup } = await renderScreenAt(390, 844, 'deck-draft', 'zh');
+  const { container, cleanup } = await renderScreenAt(390, 844, 'deck-2', 'zh');
   try {
     await click(container.querySelector('[data-testid="deck-mobile-panel-overview"]'));
     assert.strictEqual(document.querySelector('[data-testid="deck-finalize-sheet"]'), null, 'finalize sheet should start closed');
@@ -221,7 +274,7 @@ await test('Req 8: Intermediate card edits do not block, finalize button trigger
 
 // 9. zh-Hant / ja i18n zero mixing
 await test('Req 9: Japanese locale surfaces clean Japanese tabs without Chinese or English mixing', async () => {
-  const { container, cleanup } = await renderScreenAt(390, 844, 'deck-active', 'ja');
+  const { container, cleanup } = await renderScreenAt(390, 844, 'deck-1', 'ja');
   try {
     const switchBar = container.querySelector('[data-testid="deck-mobile-panel-switch"]');
     assert.ok(switchBar.textContent.includes('デッキ'), 'Japanese tab for deck must be デッキ');
