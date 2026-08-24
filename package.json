@@ -75,6 +75,7 @@
     "test:dic1141-bloom-level": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-dic1141-bloom-level.mjs",
     "test:dic1141-scrape-bloom-safety": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-dic1141-scrape-bloom-safety.mjs",
     "test:official-catalog-sync": "node scripts/test-official-catalog-sync.mjs",
+    "test:yuyu-exact-printing": "node scripts/test-yuyu-exact-printing-sell-match.mjs",
     "audit:card-data": "npm run test:card-data-audit -- --write",
     "test:version-alignment": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/verify-version-alignment.js",
     "test:scan-fail-closed": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-version-fail-closed.mjs",

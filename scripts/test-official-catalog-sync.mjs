@@ -75,8 +75,9 @@ assert.ok(
   'build-database must preserve prior sell data by exact card id when yuyu pricing is unavailable',
 );
 assert.ok(
-  builder.includes('pricingUnavailable ? null : getYuyuForCard(baseCardNum)'),
-  'build-database must not merge partial/outage yuyu rows by cardNumber into every official printing',
+  builder.includes('pricingUnavailable ? null : getYuyuForCard(baseCardNum, official)') &&
+    builder.includes('function yuyuEntryMatchesOfficial'),
+  'build-database must not merge yuyu rows by cardNumber into every official printing',
 );
 
 const scraper = fs.readFileSync(path.join(repo, 'scripts/scrape-official-cards.js'), 'utf8');

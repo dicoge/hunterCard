@@ -17,7 +17,7 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
-import { canonicalVariantKey } from './lib/variant-key.js';
+import { canonicalVariantKey, normalizeRarityCode, isPremiumRarityCode } from './lib/variant-key.js';
 import { isCanonicalCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 import { canonicalizePrices, canonicalYuyuName, canonicalYuyuImage } from './lib/canonical-printings.js';
 
@@ -470,6 +470,12 @@ async function scrapeSeriesPage(browser, url) {
  * 先試 Puppeteer，若失敗或結果不足則降級到 HTTP fetch
  */
 async function scrapeYuyuPrices() {
+  if (process.env.HUNTERCARD_YUYU_FIXTURE_PATH) {
+    const fixturePath = process.env.HUNTERCARD_YUYU_FIXTURE_PATH;
+    console.log(`[database] Loading yuyu fixture: ${fixturePath}`);
+    return JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
+  }
+
   if (process.env.HUNTERCARD_SKIP_YUYU === '1') {
     console.log('[database] HUNTERCARD_SKIP_YUYU=1 — skipping yuyu price scrape');
     return { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
@@ -515,7 +521,7 @@ async function scrapeYuyuPrices() {
     if (browser) {
       // Turn a series' scraped cards into allPrices entries. Returns the unique
       // card count for that series.
-      const accumulateCards = (cards) => {
+      const accumulateCards = (cards, sourceSeries) => {
         const seriesPrices = {};
         for (const card of cards) {
           const key = card.cardNum;
@@ -529,6 +535,7 @@ async function scrapeYuyuPrices() {
             yuyuImage: card.yuyuImage,
             imageVersion: card.imageVersion,
             imageCid: card.imageCid,
+            sourceSeries,
             timestamp: new Date().toISOString(),
           });
         }
@@ -551,7 +558,7 @@ async function scrapeYuyuPrices() {
             await sleep(3000 + Math.random() * 2000);
 
             const cards = await scrapeSeriesPage(browser, url);
-            const count = accumulateCards(cards);
+            const count = accumulateCards(cards, seriesInfo.name);
             console.log(`  → Found ${count} cards with prices`);
             if (count > 0) seriesWithPrices++;
             totalCards += count;
@@ -567,7 +574,7 @@ async function scrapeYuyuPrices() {
               try {
                 browser = await puppeteer.launch(LAUNCH_OPTS);
                 const cards = await scrapeSeriesPage(browser, url);
-                const count = accumulateCards(cards);
+                const count = accumulateCards(cards, seriesInfo.name);
                 console.log(`  → Retry OK: found ${count} cards with prices`);
                 if (count > 0) seriesWithPrices++;
                 totalCards += count;
@@ -593,9 +600,9 @@ async function scrapeYuyuPrices() {
     console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
     const fetchResult = await scrapeAllWithFetch();
     for (const [key, entries] of Object.entries(fetchResult.prices)) {
-            if (!allPrices[key]) allPrices[key] = [];
-            allPrices[key].push(...entries);
-          }
+      if (!allPrices[key]) allPrices[key] = [];
+      allPrices[key].push(...entries);
+    }
     totalCards += fetchResult.fetchedCards;
   }
 
@@ -633,6 +640,7 @@ async function scrapeAllWithFetch() {
           yuyuImage: card.yuyuImage,
           imageVersion: card.imageVersion,
           imageCid: card.imageCid,
+          sourceSeries: seriesInfo.name,
           timestamp: new Date().toISOString(),
         });
       }
@@ -1274,16 +1282,39 @@ async function buildDatabase() {
     });
   }
 
-  // Helper: resolve yuyu price data for a card number
-  function getYuyuForCard(cardNum) {
+  function yuyuEntryMatchesOfficial(entry, official) {
+    if (!entry || !official) return false;
+    const sourceSeries = String(entry.sourceSeries || '').toLowerCase();
+    if (!sourceSeries) return false;
+    const officialSeries = String(official.series || '').toLowerCase();
+    const officialSource = String(official.sourceProduct || '').toLowerCase();
+    const officialRarity = normalizeRarityCode(official.rarity);
+    const entryRarity = normalizeRarityCode(entry.rarity);
+
+    if (sourceSeries === officialSeries || sourceSeries === officialSource) {
+      if (entryRarity && isPremiumRarityCode(entryRarity)) return entryRarity === officialRarity;
+      return !isPremiumRarityCode(officialRarity);
+    }
+
+    const taggedBySeries = String(entry.name || '').toLowerCase().includes(`/${sourceSeries}`);
+    if (taggedBySeries && sourceSeries === officialSource) return true;
+
+    return false;
+  }
+
+  // Helper: resolve yuyu price data for one exact official printing.  Healthy
+  // scrapes may contain same-card-number rows from multiple official printings;
+  // require an explicit sourceSeries/name-tag tie instead of card-number fallback.
+  function getYuyuForCard(cardNum, official) {
     const priceData = prices[cardNum];
     if (!priceData) return null;
-    const rawEntries = Array.isArray(priceData) ? priceData : [priceData];
+    const rawEntries = (Array.isArray(priceData) ? priceData : [priceData]).filter((entry) => yuyuEntryMatchesOfficial(entry, official));
+    if (rawEntries.length === 0) return null;
     const priceEntries = deduplicatePrices(rawEntries);
     let lowestPrice = null;
     let lowestName = '';
     let firstImage = '';
-    let firstTimestamp = new Date().toISOString();
+    let firstTimestamp = '';
     for (const entry of priceEntries) {
       if (!firstImage && entry.yuyuImage) firstImage = entry.yuyuImage;
       if (entry.timestamp) firstTimestamp = entry.timestamp;
@@ -1304,7 +1335,7 @@ async function buildDatabase() {
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
-    const yuyu = pricingUnavailable ? null : getYuyuForCard(baseCardNum);
+    const yuyu = pricingUnavailable ? null : getYuyuForCard(baseCardNum, official);
 
     const rawEntries = yuyu ? yuyu.priceEntries.map(e => ({
       name: e.name || '',
