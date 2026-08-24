@@ -56,6 +56,10 @@ function toDeckCard(rep: RawCard, printing: SourcePrinting): DeckCard {
     id: `${rep.cardNumber}#${printing.printing}`,
     cardNumber: rep.cardNumber,
     name: rep.nameZh || rep.name || rep.cardNumber,
+    // Preserve both localized names verbatim for consumers that render per
+    // preferred language (DIC-1142). Absent when the source did not publish it.
+    nameZh: rep.nameZh || undefined,
+    nameJa: rep.name || undefined,
     printing: printing.printing,
     printingLabel: printing.label,
     series: rep.series || '',

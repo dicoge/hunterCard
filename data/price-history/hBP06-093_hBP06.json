@@ -450,8 +450,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP06-093_hBP06"
+    },
+    {
+      "date": "2026-08-24",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-093_hBP06"
     }
   ],
-  "lastUpdated": "2026-08-23T12:12:54.181Z",
+  "lastUpdated": "2026-08-24T12:11:57.608Z",
   "nameZh": "山田阿爾帝斯54世"
 }

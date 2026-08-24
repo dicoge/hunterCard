@@ -450,8 +450,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-001_hSD01"
+    },
+    {
+      "date": "2026-08-24",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-001_hSD01"
     }
   ],
-  "lastUpdated": "2026-08-23T12:12:54.298Z",
+  "lastUpdated": "2026-08-24T12:11:57.764Z",
   "nameZh": "時乃空"
 }

@@ -13,6 +13,7 @@ import type { DrawerNavigationProp } from '@react-navigation/drawer';
 import { COLORS } from '../constants';
 import { openUrl } from '../utils/openUrl';
 import { useTranslation } from '../i18n';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 import type {
   MonthlyReport,
   TournamentIndex,
@@ -43,10 +44,12 @@ import {
 } from '../utils/tournamentDonut';
 import {
   buildTournamentMonthlySummary,
+  buildEventHighlights,
   filterEventsByColor,
-  type TournamentMonthlySummaryModel,
+  type EventHighlight,
 } from '../utils/tournamentSummary';
 import ObservedShareDonut from '../components/ObservedShareDonut';
+import ObservedShareBar from '../components/ObservedShareBar';
 import { useDeckStore } from '../store/deckStore';
 import { loadCardDatabase } from '../utils/deckCardData';
 import type { DeckCard, PriceRecord } from '../utils/deckRules';
@@ -60,6 +63,44 @@ const DIMENSIONS: Array<{ key: DonutDimension; labelKey: string }> = [
   { key: 'archetype', labelKey: 'search_filter_category' },
   { key: 'oshi', labelKey: 'deck_zone_oshi' },
 ];
+
+type TranslateFn = ReturnType<typeof useTranslation>['t'];
+
+/** Renders the rank badge line for an archetype/oshi chip. Prefers the
+ * verified-only counts required by the CR (冠軍 N / 上位 M); "最佳 N" only
+ * appears when NO ranked deck exists in the top-placement window, so the chip
+ * always ends with concrete counts when they are available. */
+function buildRankTags(
+  item: { championCount: number; topPlacementCount: number; bestRank: number | null },
+  t: TranslateFn,
+): string {
+  const parts: string[] = [];
+  if (item.championCount > 0) parts.push(t('tournament_summary_champion_count', { count: item.championCount }));
+  if (item.topPlacementCount > item.championCount) {
+    parts.push(t('tournament_summary_top_placement_count', { count: item.topPlacementCount }));
+  }
+  if (parts.length === 0 && item.bestRank != null) {
+    parts.push(t('tournament_summary_best_rank_short', { rank: item.bestRank }));
+  }
+  return parts.join(' · ');
+}
+
+/** Localized card name for a `cardNumber`. Falls back through the catalog
+ * fields verbatim, never inferred — for a card the catalog cannot resolve, the
+ * language-specific fallback label is used and the cardNumber shows underneath
+ * as provenance (DIC-1142 CR: cards must not display raw "hBP…" as the label). */
+function pickCardName(
+  cardNumber: string,
+  language: 'zh' | 'ja',
+  catalog: Map<string, DeckCard[]> | null,
+  t: TranslateFn,
+): string {
+  const variants = catalog?.get(cardNumber);
+  const rep = variants && variants.length > 0 ? variants[0] : null;
+  if (!rep) return t('tournament_representative_card_name_fallback');
+  if (language === 'ja') return rep.nameJa || rep.name || t('tournament_representative_card_name_fallback');
+  return rep.nameZh || rep.name || t('tournament_representative_card_name_fallback');
+}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const controller = new AbortController();
@@ -75,6 +116,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export default function TournamentReportScreen() {
   const { t, language } = useTranslation();
+  const { isDesktop } = useBreakpoint();
   const [state, dispatch] = useReducer(tournamentReportReducer, initialTournamentReportState);
   const { index, scope } = state;
   const navigation = useNavigation<DrawerNavigationProp<MainDrawerParamList>>();
@@ -86,6 +128,7 @@ export default function TournamentReportScreen() {
   const [dimension, setDimension] = useState<DonutDimension>('archetype');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const [sourceExpanded, setSourceExpanded] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -175,6 +218,10 @@ export default function TournamentReportScreen() {
   );
 
   const allEvents = useMemo(() => reports.flatMap((r) => r.events), [reports]);
+  const highlightsByEvent = useMemo(
+    () => buildEventHighlights(allEvents),
+    [allEvents],
+  );
   const events = useMemo(() => {
     if (selectedColor) return filterEventsByColor(allEvents, selectedColor);
     return filterEventsBySlice(allEvents, selectedKey, dimension);
@@ -246,6 +293,14 @@ export default function TournamentReportScreen() {
         .join('；')
     : null;
 
+  // `reports[0].source.name` is authored in Chinese today (includes 官方賽果 etc).
+  // In ja mode we swap in the generic disclaimer as the footer summary so no
+  // raw Chinese leaks into the Japanese UI. Kept verbatim in zh mode as the
+  // real source string is the useful reference (DIC-1142 CR §3).
+  const sourceName = language === 'zh'
+    ? reports[0]?.source?.name ?? ''
+    : t('tournament_source_disclaimer_generic');
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -302,7 +357,7 @@ export default function TournamentReportScreen() {
 
         {hasData && (
           <>
-            {/* ── Monthly Summary Block (DIC-1085) ── */}
+            {/* ── Monthly Summary Block ── */}
             <View style={styles.summaryCard} testID="tournament-monthly-summary">
               <Text style={styles.summaryTitle}>{t('tournament_summary_title')}</Text>
               <View style={styles.summaryMetaRow}>
@@ -330,6 +385,7 @@ export default function TournamentReportScreen() {
                   <View style={styles.chipRow}>
                     {summary.topArchetypes.map((item) => {
                       const active = dimension === 'archetype' && selectedKey === item.id;
+                      const tags = buildRankTags(item, t);
                       return (
                         <TouchableOpacity
                           key={item.id ?? 'unknown'}
@@ -343,6 +399,7 @@ export default function TournamentReportScreen() {
                         >
                           <Text style={[styles.summaryChipText, active && styles.summaryChipTextActive]}>
                             {item.label} ({item.count})
+                            {tags ? ` · ${tags}` : ''}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -357,6 +414,7 @@ export default function TournamentReportScreen() {
                   <View style={styles.chipRow}>
                     {summary.topOshi.map((item) => {
                       const active = dimension === 'oshi' && selectedKey === item.id;
+                      const tags = buildRankTags(item, t);
                       return (
                         <TouchableOpacity
                           key={item.id}
@@ -370,6 +428,7 @@ export default function TournamentReportScreen() {
                         >
                           <Text style={[styles.summaryChipText, active && styles.summaryChipTextActive]}>
                             {item.label} ({item.count})
+                            {tags ? ` · ${tags}` : ''}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -411,13 +470,71 @@ export default function TournamentReportScreen() {
                   {summary.notablePlacements.map((p) => (
                     <View key={p.deckId} style={styles.notableRow}>
                       <Text style={styles.notableRank}>{p.rankLabel || t('tournament_rank', { rank: p.rank ?? '—' })}</Text>
-                      <Text style={styles.notableDetails} numberOfLines={1}>
+                      <Text style={styles.notableDetails} numberOfLines={2}>
                         {p.archetypeLabel || p.oshi || t('tournament_featured_deck')} · {language === 'zh' ? (p.eventNameZh || p.eventName) : p.eventName} ({p.playerName || t('tournament_player')})
                       </Text>
                     </View>
                   ))}
                 </View>
               )}
+
+              {/* Representative cards — deduped by cardNumber (DIC-1142) */}
+              <View style={styles.summarySection}>
+                <Text style={styles.summarySectionTitle}>{t('tournament_summary_representative_cards')}</Text>
+                {summary.representativeCards.length === 0 ? (
+                  <Text style={styles.representativeEmpty} testID="representative-empty">
+                    {t('tournament_representative_empty')}
+                  </Text>
+                ) : (
+                  <>
+                    <View style={styles.representativeList}>
+                      {summary.representativeCards.map((card) => {
+                        const ratePct = Math.round(card.adoptionRate * 100);
+                        const zoneKey = card.zone === 'oshi'
+                          ? 'deck_zone_oshi'
+                          : card.zone === 'yell'
+                            ? 'deck_zone_yell'
+                            : 'deck_zone_main';
+                        const cardName = pickCardName(card.cardNumber, language, catalog, t);
+                        return (
+                          <View
+                            key={card.cardNumber}
+                            style={styles.representativeRow}
+                            testID={`representative-${card.cardNumber}`}
+                            accessibilityRole="text"
+                            accessibilityLabel={t('tournament_representative_a11y', {
+                              card: `${cardName}（${card.cardNumber}）`,
+                              count: card.deckCount,
+                              rate: ratePct,
+                            })}
+                          >
+                            <View style={styles.representativeMain}>
+                              <Text style={styles.representativeCardName} numberOfLines={1}>
+                                {cardName}
+                              </Text>
+                              <Text style={styles.representativeCardNumber} numberOfLines={1}>
+                                {card.cardNumber} · {t(zoneKey)}
+                              </Text>
+                            </View>
+                            <View style={styles.representativeStats}>
+                              <Text style={styles.representativeCount}>
+                                {t('tournament_representative_deck_count', {
+                                  count: card.deckCount,
+                                  rate: ratePct,
+                                })}
+                              </Text>
+                              <Text style={styles.representativeCopies}>
+                                {t('tournament_representative_total_copies', { copies: card.totalCopies })}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                    <Text style={styles.representativeNote}>{t('tournament_representative_dedupe_note')}</Text>
+                  </>
+                )}
+              </View>
 
               {summary.smallSample && (
                 <Text style={styles.summaryWarning} testID="summary-small-sample">
@@ -428,27 +545,7 @@ export default function TournamentReportScreen() {
               <Text style={styles.summaryHint}>{t('tournament_summary_filter_hint')}</Text>
             </View>
 
-            {/* Source + honesty disclaimer */}
-            <View style={styles.disclaimer}>
-              <Text style={styles.disclaimerTitle}>{t('tournament_source_coverage')}</Text>
-              <Text style={styles.sourceName}>{reports[0].source.name}</Text>
-              <Text style={styles.disclaimerText}>
-                {language === 'zh' ? reports[0].source.disclaimer : t('tournament_source_disclaimer_generic')}
-              </Text>
-              {reports.map((r) => (
-                <Text key={r.month} style={styles.coverageNote}>
-                  {r.month}：{language === 'zh' ? r.coverage.note : t('tournament_coverage_note_generic')}
-                </Text>
-              ))}
-              <View style={styles.statRow}>
-                <Stat label={t('tournament_summary_events')} value={`${coverage.knownEvents}`} />
-                <Stat label={t('tournament_summary_observed')} value={`${model.observedSize}`} />
-                <Stat label={t('tournament_summary_decks')} value={`${model.sampleSize}`} />
-                <Stat label={t('tournament_ranked')} value={`${coverage.rankedDecks}`} />
-              </View>
-            </View>
-
-            {/* Observed-share donut over the verified sample only */}
+            {/* Observed-share chart: bar on mobile, donut on desktop (DIC-1142) */}
             <Text style={styles.h2}>{t('tournament_distribution', { scope: scopeLabel })}</Text>
             <View style={styles.chartCard}>
               <View style={styles.dimensionRow}>
@@ -473,6 +570,12 @@ export default function TournamentReportScreen() {
                     </TouchableOpacity>
                   );
                 })}
+                <Text
+                  style={styles.chartViewBadge}
+                  testID={isDesktop ? 'chart-view-desktop' : 'chart-view-mobile'}
+                >
+                  {isDesktop ? t('tournament_chart_view_desktop') : t('tournament_chart_view_mobile')}
+                </Text>
               </View>
 
               {model.sampleSize === 0 ? (
@@ -489,11 +592,19 @@ export default function TournamentReportScreen() {
                       {t('tournament_small_sample', { count: model.sampleSize, minimum: SMALL_SAMPLE_MIN })}
                     </Text>
                   ) : null}
-                  <ObservedShareDonut
-                    model={model}
-                    selectedKey={selectedKey}
-                    onSelect={(key) => { setSelectedColor(null); setSelectedKey(key); }}
-                  />
+                  {isDesktop ? (
+                    <ObservedShareDonut
+                      model={model}
+                      selectedKey={selectedKey}
+                      onSelect={(key) => { setSelectedColor(null); setSelectedKey(key); }}
+                    />
+                  ) : (
+                    <ObservedShareBar
+                      model={model}
+                      selectedKey={selectedKey}
+                      onSelect={(key) => { setSelectedColor(null); setSelectedKey(key); }}
+                    />
+                  )}
                   {selectedSlice || selectedColorLabel ? (
                     <TouchableOpacity
                       onPress={() => { setSelectedKey(null); setSelectedColor(null); }}
@@ -515,54 +626,104 @@ export default function TournamentReportScreen() {
               )}
             </View>
 
-            {/* Events + featured decks */}
+            {/* Events + featured decks with per-event highlights */}
             <Text style={styles.h2}>
               {t('tournament_events_decks', { filter: selectedSlice || selectedColorLabel ? `：${selectedSlice?.label || selectedColorLabel}` : '' })}
             </Text>
             {events.length === 0 ? (
               <Text style={styles.emptyText}>{t('tournament_no_filtered_decks')}</Text>
             ) : null}
-            {events.map((e) => (
-              <View key={e.eventId} style={styles.eventCard}>
-                <Text style={styles.eventName}>{e.name}</Text>
-                {language === 'zh' && e.nameZh ? <Text style={styles.eventNameZh}>{e.nameZh}</Text> : null}
-                <View style={styles.metaRow}>
-                  <Meta label={t('tournament_region')} value={e.region ?? t('common_unknown')} />
-                  <Meta label={t('tournament_date')} value={e.date ?? t('common_unavailable')} />
-                  <Meta label={t('tournament_entrants')} value={e.entrants == null ? t('common_unavailable') : `${e.entrants}`} />
-                </View>
-                <Text style={styles.eventCoverage}>{e.coverageNote}</Text>
-
-                {e.decks.map((d) => (
-                  <View key={d.deckId} style={styles.deckRow} testID={`deck-${d.deckId}`}>
-                    <View style={styles.deckHead}>
-                      <Text style={styles.deckArchetype}>
-                        {d.archetypeLabel ?? t('tournament_unknown_deck')}
-                      </Text>
-                      <Text style={styles.deckRank}>{d.rankLabel ?? t('tournament_rank_unavailable')}</Text>
-                    </View>
-                    <Text style={styles.deckPlayer}>
-                      {t('tournament_player_label', { name: d.playerName ?? t('common_unavailable') })}
-                    </Text>
-                    <Text style={styles.deckCards}>
-                      {d.cardsVerified === true
-                        ? t('tournament_cards_count', { count: d.cards.length })
-                        : t('tournament_cards_unavailable')}
-                    </Text>
-                    <ImportAction deck={d} catalog={catalog} onImport={() => onImport(e, d)} />
-                    {d.decklogCode ? (
-                      <TouchableOpacity onPress={() => onOpen(d.sourceUrl)}>
-                        <Text style={styles.link}>{t('tournament_decklog_link', { code: d.decklogCode })}</Text>
-                      </TouchableOpacity>
-                    ) : null}
+            {events.map((e) => {
+              const highlight = highlightsByEvent.get(e.eventId) ?? null;
+              return (
+                <View key={e.eventId} style={styles.eventCard}>
+                  <Text style={styles.eventName}>{e.name}</Text>
+                  {language === 'zh' && e.nameZh ? <Text style={styles.eventNameZh}>{e.nameZh}</Text> : null}
+                  <View style={styles.metaRow}>
+                    <Meta label={t('tournament_region')} value={e.region ?? t('common_unknown')} />
+                    <Meta label={t('tournament_date')} value={e.date ?? t('common_unavailable')} />
+                    <Meta label={t('tournament_entrants')} value={e.entrants == null ? t('common_unavailable') : `${e.entrants}`} />
                   </View>
-                ))}
 
-                <TouchableOpacity onPress={() => onOpen(e.sourceUrl)}>
-                  <Text style={styles.link}>{t('tournament_official_source')}</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+                  {highlight ? (
+                    <EventHighlightBlock
+                      highlight={highlight}
+                      event={e}
+                      onOpen={onOpen}
+                      language={language}
+                    />
+                  ) : null}
+
+                  <Text style={styles.eventCoverage}>
+                    {language === 'zh' ? e.coverageNote : t('tournament_event_coverage_generic')}
+                  </Text>
+
+                  {e.decks.map((d) => (
+                    <View key={d.deckId} style={styles.deckRow} testID={`deck-${d.deckId}`}>
+                      <View style={styles.deckHead}>
+                        <Text style={styles.deckArchetype}>
+                          {d.archetypeLabel ?? t('tournament_unknown_deck')}
+                        </Text>
+                        <Text style={styles.deckRank}>{d.rankLabel ?? t('tournament_rank_unavailable')}</Text>
+                      </View>
+                      <Text style={styles.deckPlayer}>
+                        {t('tournament_player_label', { name: d.playerName ?? t('common_unavailable') })}
+                      </Text>
+                      <Text style={styles.deckCards}>
+                        {d.cardsVerified === true
+                          ? t('tournament_cards_count', { count: d.cards.length })
+                          : t('tournament_cards_unavailable')}
+                      </Text>
+                      <ImportAction deck={d} catalog={catalog} onImport={() => onImport(e, d)} />
+                      {d.decklogCode ? (
+                        <TouchableOpacity onPress={() => onOpen(d.sourceUrl)}>
+                          <Text style={styles.link}>{t('tournament_decklog_link', { code: d.decklogCode })}</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+
+            {/* Source coverage — compact footer disclosure (DIC-1142) */}
+            <View style={styles.disclaimer} testID="tournament-source-footer">
+              <TouchableOpacity
+                onPress={() => setSourceExpanded((v) => !v)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: sourceExpanded }}
+                testID="tournament-source-toggle"
+              >
+                <Text style={styles.disclaimerTitle}>{t('tournament_source_coverage')}</Text>
+                <Text style={styles.disclaimerCompact} numberOfLines={2}>
+                  {t('tournament_source_footer_compact', { source: sourceName })}
+                </Text>
+                <Text style={styles.disclaimerToggle}>
+                  {sourceExpanded ? t('tournament_source_footer_hide') : t('tournament_source_footer_show')}
+                </Text>
+              </TouchableOpacity>
+              {sourceExpanded ? (
+                <View style={styles.disclaimerBody} testID="tournament-source-body">
+                  {language === 'zh' ? (
+                    <Text style={styles.sourceName}>{reports[0].source.name}</Text>
+                  ) : null}
+                  <Text style={styles.disclaimerText}>
+                    {language === 'zh' ? reports[0].source.disclaimer : t('tournament_source_disclaimer_generic')}
+                  </Text>
+                  {reports.map((r) => (
+                    <Text key={r.month} style={styles.coverageNote}>
+                      {r.month}：{language === 'zh' ? r.coverage.note : t('tournament_coverage_note_generic')}
+                    </Text>
+                  ))}
+                  <View style={styles.statRow}>
+                    <Stat label={t('tournament_summary_events')} value={`${coverage.knownEvents}`} />
+                    <Stat label={t('tournament_summary_observed')} value={`${model.observedSize}`} />
+                    <Stat label={t('tournament_summary_decks')} value={`${model.sampleSize}`} />
+                    <Stat label={t('tournament_ranked')} value={`${coverage.rankedDecks}`} />
+                  </View>
+                </View>
+              ) : null}
+            </View>
 
             <Text style={styles.generatedAt}>
               {t('tournament_generated_at', { value: reports.map((r) => `${r.month} ${r.generatedAt}`).join('｜') })}
@@ -571,6 +732,84 @@ export default function TournamentReportScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function EventHighlightBlock({
+  highlight,
+  event,
+  onOpen,
+  language,
+}: {
+  highlight: EventHighlight;
+  event: TournamentEvent;
+  onOpen: (url: string) => void;
+  language: 'zh' | 'ja';
+}) {
+  const { t } = useTranslation();
+  const hasChampion = highlight.championDeckId != null;
+  const championDeckLabel = highlight.championArchetypeLabel
+    || highlight.championOshi
+    || t('tournament_featured_deck');
+  const eventDisplayName = language === 'zh' ? (event.nameZh || event.name) : event.name;
+  const eventDate = event.date;
+  const showcasedLine = `${t('tournament_event_showcased_count', { count: highlight.showcasedDecks })}${
+    highlight.verifiedDecks > 0
+      ? t('tournament_event_verified_count', { count: highlight.verifiedDecks })
+      : ''
+  }`;
+  return (
+    <View style={styles.highlightBlock} testID={`event-highlights-${event.eventId}`}>
+      <Text style={styles.highlightTitle}>{t('tournament_event_highlights')}</Text>
+      {hasChampion ? (
+        <Text style={styles.highlightChampion} numberOfLines={2}>
+          {t('tournament_event_champion', { deck: championDeckLabel })}
+          {highlight.championPlayerName
+            ? t('tournament_event_champion_by', { player: highlight.championPlayerName })
+            : ''}
+        </Text>
+      ) : (
+        <Text style={styles.highlightChampionMissing}>{t('tournament_event_champion_missing')}</Text>
+      )}
+      <Text style={styles.highlightMeta}>{showcasedLine}</Text>
+      {highlight.commonCards.length > 0 ? (
+        <View style={styles.highlightCommonRow}>
+          <Text style={styles.highlightCommonLabel}>{t('tournament_event_common_cards_label')}</Text>
+          <View style={styles.highlightCommonList}>
+            {highlight.commonCards.map((c) => (
+              <View
+                key={c.cardNumber}
+                style={styles.highlightCommonChip}
+                testID={`event-common-${event.eventId}-${c.cardNumber}`}
+              >
+                <Text style={styles.highlightCommonText} numberOfLines={1}>
+                  {c.cardNumber} · {t('common_decks_count', { count: c.deckCount })}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+      <View style={styles.highlightNewsRow}>
+        <Text style={styles.highlightNewsTitle}>{t('tournament_event_news_title')}</Text>
+        {event.sourceUrl ? (
+          <TouchableOpacity
+            onPress={() => onOpen(event.sourceUrl)}
+            accessibilityRole="link"
+            testID={`event-news-${event.eventId}`}
+          >
+            <Text style={styles.highlightNewsLink} numberOfLines={2}>
+              {t('tournament_event_official_result')}
+            </Text>
+            <Text style={styles.highlightNewsMeta} numberOfLines={1}>
+              {eventDate ? `${eventDate} · ` : ''}{eventDisplayName}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.highlightNoNews}>{t('tournament_event_no_news')}</Text>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -761,6 +1000,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flex: 1,
   },
+
+  representativeList: {
+    gap: 6,
+  },
+  representativeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceLight,
+    padding: 8,
+    borderRadius: 6,
+    gap: 8,
+  },
+  representativeMain: { flex: 1, minWidth: 90 },
+  representativeCardName: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  representativeCardNumber: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+    fontVariant: ['tabular-nums'],
+  },
+  representativeStats: { alignItems: 'flex-end' },
+  representativeCount: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  representativeCopies: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  representativeEmpty: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    fontStyle: 'italic',
+  },
+  representativeNote: {
+    color: COLORS.textSecondary + 'aa',
+    fontSize: 11,
+    marginTop: 6,
+    lineHeight: 16,
+  },
+
   summaryWarning: {
     color: COLORS.accent,
     fontSize: 12,
@@ -777,18 +1064,22 @@ const styles = StyleSheet.create({
   disclaimer: {
     backgroundColor: COLORS.surface,
     borderRadius: 12,
-    padding: 14,
-    marginTop: 12,
+    padding: 12,
+    marginTop: 20,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  disclaimerTitle: { color: COLORS.accent, fontSize: 14, fontWeight: 'bold', marginBottom: 6 },
+  disclaimerTitle: { color: COLORS.accent, fontSize: 13, fontWeight: 'bold', marginBottom: 4 },
+  disclaimerCompact: { color: COLORS.textSecondary, fontSize: 11, lineHeight: 16 },
+  disclaimerToggle: { color: COLORS.primary, fontSize: 12, marginTop: 6, fontWeight: '600' },
+  disclaimerBody: { marginTop: 10 },
   sourceName: { color: COLORS.text, fontSize: 13, fontWeight: '600', marginBottom: 6 },
   disclaimerText: { color: COLORS.textSecondary, fontSize: 12, lineHeight: 18 },
   coverageNote: { color: COLORS.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 8 },
-  statRow: { flexDirection: 'row', marginTop: 12, gap: 8 },
+  statRow: { flexDirection: 'row', marginTop: 12, gap: 8, flexWrap: 'wrap' },
   stat: {
     flex: 1,
+    minWidth: 70,
     backgroundColor: COLORS.surfaceLight,
     borderRadius: 8,
     paddingVertical: 8,
@@ -803,7 +1094,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  dimensionRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  dimensionRow: { flexDirection: 'row', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' },
   dimChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -815,6 +1106,11 @@ const styles = StyleSheet.create({
   dimChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.background },
   dimChipText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
   dimChipTextActive: { color: COLORS.primary },
+  chartViewBadge: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginLeft: 'auto',
+  },
   emptyChart: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 19 },
   smallSample: {
     color: COLORS.accent,
@@ -848,6 +1144,96 @@ const styles = StyleSheet.create({
   meta: { color: COLORS.text, fontSize: 12 },
   metaLabel: { color: COLORS.textSecondary },
   eventCoverage: { color: COLORS.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 8 },
+
+  highlightBlock: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: COLORS.surfaceLight,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '33',
+  },
+  highlightTitle: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  highlightChampion: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  highlightChampionMissing: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+  highlightMeta: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  highlightCommonRow: {
+    marginTop: 8,
+    flexDirection: 'column',
+    gap: 4,
+  },
+  highlightCommonLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  highlightCommonList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  highlightCommonChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    maxWidth: '100%',
+  },
+  highlightCommonText: {
+    color: COLORS.text,
+    fontSize: 11,
+  },
+  highlightNewsRow: {
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: 8,
+  },
+  highlightNewsTitle: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  highlightNewsLink: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  highlightNewsMeta: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  highlightNoNews: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+
   deckRow: {
     backgroundColor: COLORS.surfaceLight,
     borderRadius: 8,

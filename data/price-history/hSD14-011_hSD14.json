@@ -429,8 +429,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD14-011_hSD14"
+    },
+    {
+      "date": "2026-08-24",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD14-011_hSD14"
     }
   ],
-  "lastUpdated": "2026-08-23T12:12:54.113Z",
+  "lastUpdated": "2026-08-24T12:11:57.505Z",
   "nameZh": "也可以的鱷魚"
 }
