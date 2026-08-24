@@ -8,7 +8,7 @@ import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
-import { normalizeCardIdentity } from '../utils/cardNormalization';
+import { normalizeCardIdentity, bloomLevelBadgeColor, categoryBadgeColor } from '../utils/cardNormalization';
 
 // ── Server-side search constants ──
 
@@ -330,6 +330,56 @@ export default function SearchResultsScreen({ route, navigation }: any) {
 }
 
 // ──────────────────────────────────────────────
+// Two-badge header: Bloom Level (primary) + card category (secondary) for
+// Holomen, category-only for Oshi/Support/Yell/Mascot. Colors are picked from
+// the Bloom Level / category palette in cardNormalization, never from printing
+// rarity — mixing rarity color with a Bloom Level label was the DIC-1141 bug.
+function CardIdentityBadges({
+  normalized,
+  t,
+}: {
+  normalized: any;
+  rarity?: string;
+  t: (k: any, p?: any) => string;
+}) {
+  if (!normalized) return null;
+  const isHolomen = normalized.category === 'holomen';
+  const stageLabel = normalized.stageLabel;
+  const categoryLabel = normalized.categoryLabel;
+  const bloomColor = bloomLevelBadgeColor(normalized.stage);
+  const catColor = categoryBadgeColor(normalized.category);
+
+  if (isHolomen) {
+    // Bloom Level goes first as the primary badge; category chip trails as
+    // secondary. When Bloom Level is missing, show "Bloom 等級未取得" — never
+    // let the category label ("Holomen") impersonate a Bloom Level.
+    return (
+      <View style={styles.badgeRow}>
+        {stageLabel ? (
+          <View style={[styles.bloomBadge, { backgroundColor: bloomColor || '#6b7280' }]}>
+            <Text style={styles.bloomBadgeText}>{stageLabel}</Text>
+          </View>
+        ) : (
+          <View style={styles.bloomBadgePending} testID="bloom-badge-pending">
+            <Text style={styles.bloomBadgePendingText}>{t('search_bloom_level_pending')}</Text>
+          </View>
+        )}
+        <View style={[styles.categoryChip, { borderColor: catColor || '#6b7280' }]}>
+          <Text style={[styles.categoryChipText, { color: catColor || '#6b7280' }]}>{categoryLabel}</Text>
+        </View>
+      </View>
+    );
+  }
+  if (!categoryLabel) return null;
+  return (
+    <View style={styles.badgeRow}>
+      <View style={[styles.bloomBadge, { backgroundColor: catColor || '#6b7280' }]}>
+        <Text style={styles.bloomBadgeText}>{categoryLabel}</Text>
+      </View>
+    </View>
+  );
+}
+
 function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void }) {
   const { t } = useTranslation();
   const [imgErr, setImgErr] = React.useState(false);
@@ -361,11 +411,7 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
       <View style={styles.cardContent}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardNumber}>{id}</Text>
-          {card.normalized?.displayBadge ? (
-            <View style={[styles.rarityBadge, { backgroundColor: rarityColors[card.rarity] || '#6b7280' }]}>
-              <Text style={styles.rarityText}>{card.normalized.displayBadge}</Text>
-            </View>
-          ) : null}
+          <CardIdentityBadges normalized={card.normalized} rarity={card.rarity} t={t} />
         </View>
 
         <Text style={styles.cardName} numberOfLines={1}>
@@ -428,6 +474,13 @@ const styles = StyleSheet.create({
   cardNumber: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700' },
   rarityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, minWidth: 45, alignItems: 'center' },
   rarityText: { color: COLORS.text, fontSize: 11, fontWeight: '800' },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  bloomBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, minWidth: 48, alignItems: 'center' },
+  bloomBadgeText: { color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
+  bloomBadgePending: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, borderWidth: 1, borderStyle: 'dashed', borderColor: COLORS.border, backgroundColor: 'transparent' },
+  bloomBadgePendingText: { color: COLORS.textSecondary, fontSize: 10, fontWeight: '700' },
+  categoryChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 3, borderWidth: 1, backgroundColor: 'transparent' },
+  categoryChipText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   cardName: { color: COLORS.text, fontSize: 17, fontWeight: '700', marginBottom: 3 },
   cardNameZh: { color: COLORS.primary, fontSize: 13, marginBottom: 3 },
   cardEffect: { color: COLORS.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 4 },
