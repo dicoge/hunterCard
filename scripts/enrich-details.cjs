@@ -33,6 +33,10 @@ async function getDetail(page, cardId, code) {
         life: fields["LIFE"] || "",
         arts: fields["アーツ"] || "",
         hp: fields["HP"] || "",
+        // Bloom Level (Debut / 1st / 2nd / Buzz / Spot) — Holomen only.
+        // Present on the same info dl as HP/color for member cards; empty for
+        // Oshi/Support/Yell/Mascot (DIC-1141).
+        bloomLevel: fields["Bloomレベル"] || fields["BloomLevel"] || "",
         cardNumber: numEl ? numEl.textContent.trim() : "",
       };
     });
@@ -64,6 +68,7 @@ async function main() {
         card.life = detail.life;
         card.arts = detail.arts;
         card.hp = detail.hp;
+        if (detail.bloomLevel) card.bloomLevel = detail.bloomLevel;
         if (detail.cardNumber) card.cardNumber = detail.cardNumber;
       }
       progress.done[key] = true;

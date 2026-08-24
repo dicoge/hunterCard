@@ -178,6 +178,10 @@ export const zh = {
   search_empty_hint: '試試看日文名稱、卡號、或系列代碼',
   search_results_for: '搜尋結果：{{query}}',
   search_found_count: '找到 {{count}} 張卡牌',
+  // DIC-1141: shown when a Holomen card has no canonical Bloom Level yet.
+  // Never fall back to the category label "Holomen" — that's the exact
+  // ambiguity this string exists to break.
+  search_bloom_level_pending: 'Bloom 等級未取得',
 
   // Settings details and dialogs
   settings_login_failed: '登入失敗',
@@ -324,6 +328,7 @@ export const zh = {
   card_detail_type_support: '支援卡',
   card_detail_type_energy: '能量',
   card_detail_type_label: '類型',
+  card_detail_bloom_level_label: 'Bloom 等級',
   card_detail_color_label: '顏色',
   card_detail_series_label: '系列',
   card_detail_effects: '卡牌效果',
