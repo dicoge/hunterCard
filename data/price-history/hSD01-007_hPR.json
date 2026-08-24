@@ -450,8 +450,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD01-007_hPR"
+    },
+    {
+      "date": "2026-08-24",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-007_hPR"
     }
   ],
-  "lastUpdated": "2026-08-23T12:12:54.355Z",
+  "lastUpdated": "2026-08-24T12:11:57.833Z",
   "nameZh": "IRyS"
 }

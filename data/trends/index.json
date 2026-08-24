@@ -1,16 +1,23 @@
 {
-  "lastUpdated": "2026-08-23T12:13:29.658Z",
+  "lastUpdated": "2026-08-24T12:12:26.829Z",
   "totalCards": 2072,
   "summary": {
-    "up": 1,
-    "down": 0,
-    "stable": 2071
+    "up": 2,
+    "down": 5,
+    "stable": 2065
   },
   "topGainers": [
     {
       "cardId": "hY03-002",
       "name": "赤エール",
       "nameZh": "紅色應援",
+      "score": 0.15,
+      "trend": "up"
+    },
+    {
+      "cardId": "hY05-11",
+      "name": "紫エール(綺々羅々ヴィヴィ)",
+      "nameZh": "",
       "score": 0.15,
       "trend": "up"
     },
@@ -139,16 +146,65 @@
       "nameZh": "癒月巧可",
       "score": 0.03,
       "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-024",
-      "name": "ムーナ・ホシノヴァ",
-      "nameZh": "姆娜·霍希諾瓦",
-      "score": 0.03,
-      "trend": "stable"
     }
   ],
   "topLosers": [
+    {
+      "cardId": "hEB01-001",
+      "name": "ときのそら",
+      "nameZh": "時乃空",
+      "score": -0.25,
+      "trend": "down"
+    },
+    {
+      "cardId": "hEB01-003",
+      "name": "博衣こより",
+      "nameZh": "博衣可佑理",
+      "score": -0.21,
+      "trend": "down"
+    },
+    {
+      "cardId": "hEB01-002",
+      "name": "宝鐘マリン",
+      "nameZh": "寶鍾瑪琳",
+      "score": -0.2,
+      "trend": "down"
+    },
+    {
+      "cardId": "hEB01-025",
+      "name": "サマーパソコン",
+      "nameZh": "",
+      "score": -0.18,
+      "trend": "down"
+    },
+    {
+      "cardId": "hEB01-026",
+      "name": "クマリン",
+      "nameZh": "",
+      "score": -0.17,
+      "trend": "down"
+    },
+    {
+      "cardId": "hY01-14",
+      "name": "白エール(IRyS)",
+      "nameZh": "",
+      "score": -0.14,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hY02-12",
+      "name": "緑エール(パヴォリア・レイネ)",
+      "nameZh": "",
+      "score": -0.11,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hY03-16",
+      "name": "赤エール(小鳥遊キアラ)",
+      "nameZh": "",
+      "score": -0.11,
+      "trend": "stable"
+    },
     {
       "cardId": "hBD24-001",
       "name": "パヴォリア・レイネ",
@@ -230,62 +286,6 @@
       "cardId": "hBD24-016",
       "name": "沙花叉クロヱ",
       "nameZh": "",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-018",
-      "name": "アユンダ・リス",
-      "nameZh": "亞菈妲·麗絲",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-020",
-      "name": "フワワ・アビスガード",
-      "nameZh": "雙葉·深淵護衛",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-021",
-      "name": "モココ・アビスガード",
-      "nameZh": "雙子·深淵護衛",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-022",
-      "name": "儒烏風亭らでん",
-      "nameZh": "儒烏風亭螺鈿",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-023",
-      "name": "癒月ちょこ",
-      "nameZh": "癒月巧可",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-023",
-      "name": "癒月ちょこ",
-      "nameZh": "癒月巧可",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-024",
-      "name": "ムーナ・ホシノヴァ",
-      "nameZh": "姆娜·霍希諾瓦",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-025",
-      "name": "アキ・ローゼンタール",
-      "nameZh": "亞綺·羅森塔爾",
       "score": 0.03,
       "trend": "stable"
     }
