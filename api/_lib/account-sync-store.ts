@@ -81,6 +81,7 @@ export class AccountSyncError extends Error {
 
 const SYNC_KEY = (userId: string) => `account-sync:user:${userId}`;
 const IDEMPOTENCY_KEY = (userId: string, key: string) => `account-sync:idempotency:${userId}:${key}`;
+const IDEMPOTENCY_INDEX_KEY = (userId: string) => `account-sync:idempotency-index:${userId}`;
 const IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24;
 
 const SAVE_SNAPSHOT = `-- ACCOUNT_SYNC_SAVE
@@ -99,6 +100,8 @@ if currentRevision ~= tonumber(ARGV[1]) then
 end
 redis.call('SET', KEYS[1], ARGV[2])
 redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+redis.call('SADD', KEYS[3], KEYS[2])
+redis.call('EXPIRE', KEYS[3], ARGV[3])
 return { 'OK', tostring(currentRevision + 1), ARGV[2] }
 `;
 
@@ -316,7 +319,7 @@ export async function saveAccountSyncSnapshot(input: SaveAccountSyncInput): Prom
   assertPayloadSize(next);
   const [status, revisionRaw, bodyRaw] = parseEvalResult(await kv.eval(
     SAVE_SNAPSHOT,
-    [SYNC_KEY(input.userId), IDEMPOTENCY_KEY(input.userId, input.idempotencyKey)],
+    [SYNC_KEY(input.userId), IDEMPOTENCY_KEY(input.userId, input.idempotencyKey), IDEMPOTENCY_INDEX_KEY(input.userId)],
     [String(input.baseRevision), encoded, String(IDEMPOTENCY_TTL_SECONDS)],
   ));
   if (status === 'CONFLICT') {
@@ -329,6 +332,16 @@ export async function saveAccountSyncSnapshot(input: SaveAccountSyncInput): Prom
   throw new Error(`unexpected account sync status: ${status}`);
 }
 
+async function accountSyncIdempotencyKeys(userId: string, indexKey: string): Promise<string[]> {
+  const keys = new Set((await kv.smembers(indexKey)).map(String));
+  for await (const key of kv.scanIterator({ match: `account-sync:idempotency:${userId}:*`, count: 100 })) {
+    keys.add(String(key));
+  }
+  return [...keys];
+}
+
 export async function deleteAccountSyncData(userId: string): Promise<void> {
-  await kv.del(SYNC_KEY(userId));
+  const indexKey = IDEMPOTENCY_INDEX_KEY(userId);
+  const idempotencyKeys = await accountSyncIdempotencyKeys(userId, indexKey);
+  await kv.del(SYNC_KEY(userId), ...idempotencyKeys, indexKey);
 }

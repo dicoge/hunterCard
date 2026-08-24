@@ -29,10 +29,14 @@ const kv = {
     kvState.values.set(key, value);
     return 'OK';
   },
-  async del(key) {
-    kvState.dels.push(key);
-    const had = kvState.values.delete(key) || kvState.sets.delete(key);
-    return had ? 1 : 0;
+  async del(...keys) {
+    let deleted = 0;
+    for (const key of keys) {
+      kvState.dels.push(key);
+      const had = kvState.values.delete(key) || kvState.sets.delete(key);
+      if (had) deleted += 1;
+    }
+    return deleted;
   },
   async sadd(key, ...members) {
     const set = kvState.sets.get(key) ?? new Set();
@@ -47,6 +51,17 @@ const kv = {
   async smembers(key) {
     const set = kvState.sets.get(key);
     return set ? [...set] : [];
+  },
+  async expire() {
+    return 1;
+  },
+  async *scanIterator(options = {}) {
+    const prefix = String(options.match || '').replace(/\*$/, '');
+    for (const key of kvState.values.keys()) {
+      if (!options.match || key.startsWith(prefix)) {
+        yield key;
+      }
+    }
   },
   async eval(script, keys, args) {
     if (script.includes("return 'LOCK_LOST'")) {
@@ -86,7 +101,7 @@ const kv = {
       return 0;
     }
     if (!script.includes('-- ACCOUNT_SYNC_SAVE')) throw new Error(`unexpected eval: ${script}`);
-    const [syncKey, idemKey] = keys;
+    const [syncKey, idemKey, idemIndexKey] = keys;
     const [baseRevisionRaw, nextRaw] = args;
     const currentRaw = kvState.values.get(syncKey);
     const currentRevision = currentRaw ? JSON.parse(currentRaw).revision : 0;
@@ -97,6 +112,7 @@ const kv = {
     }
     kvState.values.set(syncKey, nextRaw);
     kvState.values.set(idemKey, nextRaw);
+    await kv.sadd(idemIndexKey, idemKey);
     return ['OK', String(currentRevision + 1), nextRaw];
   },
 };
@@ -129,11 +145,15 @@ for (const rel of [
   'api/_lib/auth-endpoint.ts',
   'api/_lib/node-adapter.ts',
   'api/_lib/account-sync-store.ts',
+  'api/_lib/apple-auth.ts',
+  'api/_lib/apple-token-store.ts',
   'api/auth/[action].ts',
+  'api/auth/delete-account.ts',
 ]) compileTs(rel);
 
 const { issueSession } = require(path.join(outDir, 'api/_lib/session.js'));
 const nodeHandler = require(path.join(outDir, 'api/auth/[action].js')).default;
+const deleteAccountHandler = require(path.join(outDir, 'api/auth/delete-account.js')).default;
 const syncStore = require(path.join(outDir, 'api/_lib/account-sync-store.js'));
 const identityStore = require(path.join(outDir, 'api/_lib/identity-store.js'));
 
@@ -167,6 +187,22 @@ async function request(method, body, token) {
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
     },
     body,
+  }, res);
+  const text = res._body;
+  return { status: res._status, body: text ? JSON.parse(text) : null };
+}
+
+async function requestDeleteAccount(token) {
+  const res = buildNodeRes();
+  await deleteAccountHandler({
+    method: 'POST',
+    url: '/api/auth/delete-account',
+    headers: {
+      host: 'example.test',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      'content-type': 'application/json',
+    },
+    body: {},
   }, res);
   const text = res._body;
   return { status: res._status, body: text ? JSON.parse(text) : null };
@@ -236,9 +272,22 @@ async function testValidationRejectsBadCollection() {
 async function testAccountDeleteCascadeHook() {
   resetKv(); configureBackend();
   kvState.values.set('account-sync:user:holo_user_d', JSON.stringify({ revision: 1 }));
+  kvState.values.set('account-sync:idempotency:holo_user_d:idem-old-0001', JSON.stringify({ revision: 1, settings: { preferredCurrency: 'JPY' } }));
+  kvState.values.set('account-sync:idempotency:holo_user_d:idem-old-0002', JSON.stringify({ revision: 1, settings: { preferredCurrency: 'USD' } }));
+  kvState.sets.set('account-sync:idempotency-index:holo_user_d', new Set([
+    'account-sync:idempotency:holo_user_d:idem-old-0001',
+  ]));
   await syncStore.deleteAccountSyncData('holo_user_d');
   assert.equal(kvState.values.has('account-sync:user:holo_user_d'), false);
-  assert.deepEqual(kvState.dels, ['account-sync:user:holo_user_d']);
+  assert.equal(kvState.values.has('account-sync:idempotency:holo_user_d:idem-old-0001'), false);
+  assert.equal(kvState.values.has('account-sync:idempotency:holo_user_d:idem-old-0002'), false);
+  assert.equal(kvState.sets.has('account-sync:idempotency-index:holo_user_d'), false);
+  assert.deepEqual(kvState.dels, [
+    'account-sync:user:holo_user_d',
+    'account-sync:idempotency:holo_user_d:idem-old-0001',
+    'account-sync:idempotency:holo_user_d:idem-old-0002',
+    'account-sync:idempotency-index:holo_user_d',
+  ]);
 }
 
 async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
@@ -252,9 +301,17 @@ async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
   }, session);
   assert.equal(res.status, 200);
   assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), true);
+  assert.equal(kvState.values.has(`account-sync:idempotency:${user.internalId}:idem-delete-0001`), true);
+  assert.deepEqual(kvState.sets.get(`account-sync:idempotency-index:${user.internalId}`), new Set([
+    `account-sync:idempotency:${user.internalId}:idem-delete-0001`,
+  ]));
 
-  await syncStore.deleteAccountSyncData(user.internalId);
-  await identityStore.deleteUser(user.internalId);
+  res = await requestDeleteAccount(session);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.deleted, true);
+
+  assert.equal(kvState.values.has(`account-sync:idempotency:${user.internalId}:idem-delete-0001`), false, 'account deletion must remove pre-existing idempotency snapshots');
+  assert.equal(kvState.sets.has(`account-sync:idempotency-index:${user.internalId}`), false, 'account deletion must remove idempotency index');
 
   res = await request('GET', undefined, session);
   assert.equal(res.status, 401);
