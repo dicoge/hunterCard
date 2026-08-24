@@ -48,12 +48,14 @@ jobs:
     env:
       VERCEL_PROJECT_NAME: holocard-hunter
     steps:
-      - name: Confirm target Vercel project
+      - name: Diagnose Vercel token scope and accessible projects
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
+<<<<<<< Updated upstream
           resp=$(curl -sS -w '\n%{http_code}' \
             --oauth2-bearer "${VERCEL_TOKEN}" \
             "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")
@@ -67,6 +69,128 @@ jobs:
           id=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
           echo "Resolved project id: $id"
           echo "PROJECT_ID=$id" >> "$GITHUB_ENV"
+=======
+
+          echo "=== Token identity ==="
+          user_resp=$(curl -sS -w '\n%{http_code}' \
+            "https://api.vercel.com/v2/user" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}")
+          user_code=$(echo "$user_resp" | tail -n1)
+          echo "GET /v2/user -> HTTP $user_code"
+          if [ "$user_code" = "200" ]; then
+            echo "$user_resp" | sed '$d' | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              console.log("  user: " + (d.user||d).username + " (" + (d.user||d).email + ")");
+            ' 2>/dev/null || echo "  (could not parse user info)"
+          else
+            echo "::warning::Token failed /v2/user (HTTP $user_code). Token may be invalid or expired."
+          fi
+
+          echo ""
+          echo "=== Token scope ==="
+          scope_resp=$(curl -sS -w '\n%{http_code}' \
+            "https://api.vercel.com/v2/user/tokens" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}")
+          scope_code=$(echo "$scope_resp" | tail -n1)
+          echo "GET /v2/user/tokens -> HTTP $scope_code"
+          if [ "$scope_code" = "200" ]; then
+            echo "$scope_resp" | sed '$d' | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const tokens = d.tokens || [];
+              for (const t of tokens) {
+                if (t.scopes) {
+                  console.log("  scopes: " + t.scopes.join(", "));
+                }
+              }
+            ' 2>/dev/null || echo "  (could not parse scope info)"
+          fi
+
+          echo ""
+          echo "=== Teams the token can access ==="
+          teams_resp=$(curl -sS -w '\n%{http_code}' \
+            "https://api.vercel.com/v2/teams" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}")
+          teams_code=$(echo "$teams_resp" | tail -n1)
+          echo "GET /v2/teams -> HTTP $teams_code"
+          if [ "$teams_code" = "200" ]; then
+            echo "$teams_resp" | sed '$d' | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const teams = d.teams || [];
+              for (const t of teams) {
+                console.log("  team: " + t.name + " (slug=" + t.slug + ", id=" + t.id + ")");
+              }
+            ' 2>/dev/null || echo "  (could not parse teams)"
+          fi
+
+          echo ""
+          echo "=== Projects accessible with teamId=${VERCEL_ORG_ID} ==="
+          proj_resp=$(curl -sS -w '\n%{http_code}' \
+            "https://api.vercel.com/v9/projects?teamId=${VERCEL_ORG_ID}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}")
+          proj_code=$(echo "$proj_resp" | tail -n1)
+          echo "GET /v9/projects?teamId=... -> HTTP $proj_code"
+          if [ "$proj_code" = "200" ]; then
+            echo "$proj_resp" | sed '$d' | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const projs = d.projects || [];
+              if (projs.length === 0) {
+                console.log("  (no projects found in this team)");
+              }
+              for (const p of projs) {
+                const alias = (p.alias || []).length > 0 ? " alias=" + p.alias[0].domain : "";
+                const links = p.link || {};
+                const repo = links.repo || links.org ? (" repo=" + (links.repo || "?") + "/" + (links.org || "?")) : "";
+                console.log("  project: " + p.name + " (id=" + p.id + ")" + alias + repo);
+              }
+            ' 2>/dev/null || echo "  (could not parse projects)"
+          fi
+
+          echo ""
+          echo "=== Direct lookup of VERCEL_PROJECT_ID ==="
+          proj_lookup=$(curl -sS -w '\n%{http_code}' \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}")
+          lookup_code=$(echo "$proj_lookup" | tail -n1)
+          echo "GET /v9/projects/<id>?teamId=... -> HTTP $lookup_code"
+          if [ "$lookup_code" != "200" ]; then
+            body=$(echo "$proj_lookup" | sed '$d')
+            err_msg=$(echo "$body" | node -pe 'try { JSON.parse(require("fs").readFileSync(0,"utf8")).error.message } catch(e) { "" }' 2>/dev/null || echo "")
+            echo "::warning::Direct project lookup failed (HTTP $lookup_code). Error: ${err_msg:-$body}"
+            echo ""
+            echo "::group::Trying to find project by name (holocard-hunter)..."
+            search_body=$(echo "$proj_resp" | sed '$d')
+            found=$(echo "$search_body" | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const projs = d.projects || [];
+              const match = projs.find(p => p.name === "holocard-hunter");
+              if (match) {
+                console.log(match.id);
+              } else {
+                console.log("");
+              }
+            ' 2>/dev/null || echo "")
+            echo "::endgroup::"
+            if [ -n "$found" ]; then
+              echo "::notice::Found project 'holocard-hunter' with id=$found. The VERCEL_PROJECT_ID secret needs updating."
+              echo "::error::VERCEL_PROJECT_ID is stale. Update the repo secret VERCEL_PROJECT_ID to: $found"
+            else
+              echo "::notice::Could not find a project named 'holocard-hunter' in this team."
+            fi
+            echo ""
+            echo "::error::Diagnosis: check that VERCEL_PROJECT_ID matches one of the project IDs listed above."
+            echo "If no projects appeared above, the VERCEL_ORG_ID may be wrong."
+            echo "If the token cannot list any teams or projects, the VERCEL_TOKEN may lack scope or be expired."
+            exit 1
+          fi
+          direct_body=$(echo "$proj_lookup" | sed '$d')
+          echo "$direct_body" | node -e '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            console.log("  name: " + d.name);
+            console.log("  id:   " + d.id);
+          '
+          echo "$direct_body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).name' > /tmp/vercel_project_name
+          echo "RESOLVED_PROJECT_NAME=$(cat /tmp/vercel_project_name)" >> "$GITHUB_ENV"
+>>>>>>> Stashed changes
 
       - name: Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / GOOGLE_WEB_CLIENT_ID (Production + Preview)
         env:
@@ -80,10 +204,15 @@ jobs:
           set_env_var() {
             key="$1"
             value="$2"
+<<<<<<< Updated upstream
             # Remove any existing entries for this key on production+preview first,
             # so re-runs are idempotent instead of erroring on duplicates.
             existing=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
               "https://api.vercel.com/v9/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
+=======
+            existing=$(curl -sS "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}")
+>>>>>>> Stashed changes
             ids=$(echo "$existing" | node -pe '
               const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
               (d.envs||[]).filter(e => e.key === process.argv[1]).map(e => e.id).join("\n")
@@ -153,7 +282,6 @@ jobs:
             "https://api.vercel.com/v10/projects/${PROJECT_ID}/domains?teamId=${VERCEL_ORG_ID}")
           echo "Add-domain HTTP status: $code"
           cat /tmp/domain_resp.json
-          # 200/201 = added, 409 = already attached to this project — both OK.
           if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "409" ]; then
             echo "::error::Failed to attach domain (status $code)"
             exit 1
@@ -218,6 +346,5 @@ jobs:
             code=$(curl -sS -o /dev/null -w '%{http_code}' -L "$url" || echo "curl_failed")
             echo "$url -> $code"
           done
-          # Also confirm the pre-existing production alias still works.
           code=$(curl -sS -o /dev/null -w '%{http_code}' -L "https://holocard-hunter.vercel.app/" || echo "curl_failed")
           echo "https://holocard-hunter.vercel.app/ -> $code"

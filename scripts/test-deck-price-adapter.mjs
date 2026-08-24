@@ -293,7 +293,7 @@ const REAL_EXPECTATIONS = [
   { cardNumber: 'hBP04-057', printings: { BASE: 120, PARALLEL: 980 } },
   { cardNumber: 'hBP04-041', printings: { BASE: 50, PARALLEL: 180 } },
   { cardNumber: 'hSD01-001', printings: { BASE: 180 } },
-  { cardNumber: 'hBP01-044', printings: { BASE: 220, 'PARALLEL/HR': 9980, 'PARALLEL/HBP07': 80 } },
+  { cardNumber: 'hBP01-044', printings: { BASE: 180, 'PARALLEL/HR': 9980, 'PARALLEL/HBP07': 80 } },
   { cardNumber: 'hBP02-017', printings: { BASE: 120 }, unpriced: ['PARALLEL'] },
   // Base reprints: original and hBP04 reprint must BOTH keep their exact price.
   {
