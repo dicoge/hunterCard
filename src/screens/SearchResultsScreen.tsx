@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, ActivityIndicator, Image } from 'react-native';
+import type { LayoutChangeEvent } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -253,7 +254,20 @@ export default function SearchResultsScreen({ route, navigation }: any) {
   const [error, setError] = useState<string | null>(null);
   const { isDesktop, isWide } = useBreakpoint();
   const numColumns = isWide ? 3 : isDesktop ? 2 : 1;
-  const gridItemStyle = useMemo(() => uniformGridItemStyle(numColumns), [numColumns]);
+  // DIC-1150: measure the row's available width so each card lands on an exact
+  // pixel width (containerWidth - (n-1) * GRID_GAP) / n. Mixing the fixed 12px
+  // `columnWrapper` gap with a guessed percentage gap was the root cause of the
+  // horizontal scrollbar and the unaligned third column on desktop.
+  const [rowWidth, setRowWidth] = useState(0);
+  const onListLayout = useCallback((event: LayoutChangeEvent) => {
+    // padding-left + padding-right of the FlatList's contentContainerStyle.
+    const contentWidth = event.nativeEvent.layout.width - LIST_PADDING_X * 2;
+    setRowWidth((prev) => (prev === contentWidth ? prev : Math.max(0, contentWidth)));
+  }, []);
+  const gridItemStyle = useMemo(
+    () => uniformGridItemStyle({ columns: numColumns, containerWidth: rowWidth, gap: GRID_GAP }),
+    [numColumns, rowWidth]
+  );
 
   useEffect(() => {
     if (!query.trim()) {
@@ -325,6 +339,7 @@ export default function SearchResultsScreen({ route, navigation }: any) {
             </View>
           )}
           contentContainerStyle={styles.list}
+          onLayout={onListLayout}
         />
       </View>
     </View>
@@ -412,7 +427,7 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
       )}
       <View style={styles.cardContent}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardNumber}>{id}</Text>
+          <Text style={styles.cardNumber} numberOfLines={1}>{id}</Text>
           <CardIdentityBadges normalized={card.normalized} rarity={card.rarity} t={t} />
         </View>
 
@@ -451,11 +466,17 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
   );
 }
 
+// DIC-1150: single source of truth for the two numbers the row math depends on
+// — the list's horizontal padding and the gap between columns. Both are read by
+// the layout tests too so the contract stays honest across viewports.
+const LIST_PADDING_X = 16;
+const GRID_GAP = 12;
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   centerWrap: { flex: 1, width: '100%' },
   centerWrapDesktop: { maxWidth: 1100, alignSelf: 'center' },
-  columnWrapper: { gap: 12 },
+  columnWrapper: { gap: GRID_GAP },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
   loadingText: { color: COLORS.text, fontSize: 16, fontWeight: '600', marginTop: 16, textAlign: 'center' },
   loadingSubtext: { color: COLORS.textSecondary, fontSize: 13, marginTop: 6 },
@@ -467,13 +488,18 @@ const styles = StyleSheet.create({
   header: { padding: 16, paddingBottom: 8 },
   queryText: { fontSize: 22, fontWeight: 'bold', marginBottom: 4 },
   resultCount: { fontSize: 13 },
-  list: { padding: 16, paddingTop: 0 },
+  list: { padding: LIST_PADDING_X, paddingTop: 0 },
   card: { flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 12, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, minHeight: 140 },
   cardImageContainer: { padding: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 4, marginRight: 4 },
   rarityStrip: { width: 5, minWidth: 5 },
   cardContent: { flex: 1, padding: 14, paddingRight: 8 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  cardNumber: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700' },
+  // DIC-1150: keep the card number on a single line even when the badge row
+  // shows both a Bloom Level badge and a category chip. `flex: 1` + `minWidth: 0`
+  // lets the number reclaim room from the badge row before it wraps, and
+  // `numberOfLines={1}` (on the Text) ensures truncation instead of the
+  // `hBP03-` / `010` split screenshot in the ticket.
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },
+  cardNumber: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', flex: 1, minWidth: 0 },
   rarityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, minWidth: 45, alignItems: 'center' },
   rarityText: { color: COLORS.text, fontSize: 11, fontWeight: '800' },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
