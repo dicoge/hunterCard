@@ -10,10 +10,11 @@ const ts = require('typescript');
 const ROOT = path.resolve(__dirname, '..');
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'account-sync-tests-'));
 
-const kvState = { values: new Map(), dels: [] };
+const kvState = { values: new Map(), sets: new Map(), dels: [] };
 
 function resetKv() {
   kvState.values.clear();
+  kvState.sets.clear();
   kvState.dels = [];
 }
 
@@ -23,11 +24,67 @@ const kv = {
     if (typeof raw !== 'string') return raw ?? null;
     try { return JSON.parse(raw); } catch { return raw; }
   },
+  async set(key, value, opts) {
+    if (opts && opts.nx && kvState.values.has(key)) return null;
+    kvState.values.set(key, value);
+    return 'OK';
+  },
   async del(key) {
     kvState.dels.push(key);
-    return kvState.values.delete(key) ? 1 : 0;
+    const had = kvState.values.delete(key) || kvState.sets.delete(key);
+    return had ? 1 : 0;
+  },
+  async sadd(key, ...members) {
+    const set = kvState.sets.get(key) ?? new Set();
+    let added = 0;
+    for (const m of members) {
+      if (!set.has(m)) added += 1;
+      set.add(m);
+    }
+    kvState.sets.set(key, set);
+    return added;
+  },
+  async smembers(key) {
+    const set = kvState.sets.get(key);
+    return set ? [...set] : [];
   },
   async eval(script, keys, args) {
+    if (script.includes("return 'LOCK_LOST'")) {
+      if (kvState.values.get(keys[0]) !== args[0]) return 'LOCK_LOST';
+      if (script.includes('-- PUBLISH')) {
+        if (kvState.values.has(keys[1])) return 'EXISTS';
+        kvState.values.set(keys[1], args[1]);
+        return 'OK';
+      }
+      if (script.includes('-- SET')) {
+        kvState.values.set(keys[1], JSON.parse(args[1]));
+        return 'OK';
+      }
+      if (script.includes('-- DELUSER')) {
+        const n = Number(args[2]);
+        for (let i = 0; i < n; i++) {
+          const idxKey = keys[1 + i * 2];
+          const detailKey = keys[2 + i * 2];
+          const owner = args[3 + i];
+          if (kvState.values.get(idxKey) === owner) kvState.values.delete(idxKey);
+          kvState.values.delete(detailKey);
+        }
+        const identitiesKey = keys[1 + n * 2];
+        const userKey = keys[2 + n * 2];
+        kvState.values.delete(identitiesKey);
+        kvState.sets.delete(identitiesKey);
+        kvState.values.delete(userKey);
+        return 'OK';
+      }
+      throw new Error(`unexpected fenced eval: ${script}`);
+    }
+    if (script.includes("redis.call('DEL', KEYS[1])")) {
+      if (kvState.values.get(keys[0]) === args[0]) {
+        kvState.values.delete(keys[0]);
+        return 1;
+      }
+      return 0;
+    }
     if (!script.includes('-- ACCOUNT_SYNC_SAVE')) throw new Error(`unexpected eval: ${script}`);
     const [syncKey, idemKey] = keys;
     const [baseRevisionRaw, nextRaw] = args;
@@ -78,6 +135,7 @@ for (const rel of [
 const { issueSession } = require(path.join(outDir, 'api/_lib/session.js'));
 const nodeHandler = require(path.join(outDir, 'api/auth/[action].js')).default;
 const syncStore = require(path.join(outDir, 'api/_lib/account-sync-store.js'));
+const identityStore = require(path.join(outDir, 'api/_lib/identity-store.js'));
 
 function configureBackend() {
   process.env.KV_REST_API_URL = 'https://kv.example';
@@ -114,6 +172,11 @@ async function request(method, body, token) {
   return { status: res._status, body: text ? JSON.parse(text) : null };
 }
 
+async function createSession(subject) {
+  const { user } = await identityStore.loginOrCreate({ provider: 'google', subject, email: `${subject}@example.test` });
+  return { user, session: issueSession(user.internalId) };
+}
+
 async function testUnauthorizedFailsClosed() {
   resetKv(); configureBackend();
   const res = await request('GET');
@@ -123,7 +186,7 @@ async function testUnauthorizedFailsClosed() {
 
 async function testSnapshotRoundTripBySessionUser() {
   resetKv(); configureBackend();
-  const session = issueSession('holo_user_a');
+  const { user, session } = await createSession('sync-user-a');
   let res = await request('GET', undefined, session);
   assert.equal(res.status, 200);
   assert.equal(res.body.snapshot.revision, 0);
@@ -144,12 +207,12 @@ async function testSnapshotRoundTripBySessionUser() {
   assert.equal(res.body.snapshot.favorites.length, 1);
   assert.equal(res.body.snapshot.collection['hBP01-001|BASE'], 2);
   assert.equal(kvState.values.has('account-sync:user:attacker_ignored'), false, 'client userId must never be used as a KV key');
-  assert.equal(kvState.values.has('account-sync:user:holo_user_a'), true);
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), true);
 }
 
 async function testOptimisticConflictAndIdempotentReplay() {
   resetKv(); configureBackend();
-  const session = issueSession('holo_user_b');
+  const { session } = await createSession('sync-user-b');
   let res = await request('POST', { baseRevision: 0, idempotencyKey: 'idem-0002', patch: { settings: { preferredCurrency: 'USD' } } }, session);
   assert.equal(res.status, 200);
   const first = res.body.snapshot;
@@ -164,7 +227,7 @@ async function testOptimisticConflictAndIdempotentReplay() {
 
 async function testValidationRejectsBadCollection() {
   resetKv(); configureBackend();
-  const session = issueSession('holo_user_c');
+  const { session } = await createSession('sync-user-c');
   const res = await request('POST', { baseRevision: 0, idempotencyKey: 'idem-0004', patch: { collection: { 'bad-key': 1 } } }, session);
   assert.equal(res.status, 400);
   assert.equal(res.body.error, 'invalid_request');
@@ -178,12 +241,44 @@ async function testAccountDeleteCascadeHook() {
   assert.deepEqual(kvState.dels, ['account-sync:user:holo_user_d']);
 }
 
+async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
+  resetKv(); configureBackend();
+  const { user, session } = await createSession('sync-user-deleted');
+
+  let res = await request('POST', {
+    baseRevision: 0,
+    idempotencyKey: 'idem-delete-0001',
+    patch: { settings: { preferredCurrency: 'JPY' } },
+  }, session);
+  assert.equal(res.status, 200);
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), true);
+
+  await syncStore.deleteAccountSyncData(user.internalId);
+  await identityStore.deleteUser(user.internalId);
+
+  res = await request('GET', undefined, session);
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, 'USER_NOT_FOUND');
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), false, 'stale token must not read or recreate sync data on GET');
+
+  res = await request('POST', {
+    baseRevision: 0,
+    idempotencyKey: 'idem-delete-0002',
+    patch: { settings: { preferredCurrency: 'USD' } },
+  }, session);
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, 'USER_NOT_FOUND');
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), false, 'stale token must not write or recreate sync data on POST');
+  assert.equal(kvState.values.has(`account-sync:idempotency:${user.internalId}:idem-delete-0002`), false, 'stale token must not create idempotency data');
+}
+
 (async () => {
   await testUnauthorizedFailsClosed();
   await testSnapshotRoundTripBySessionUser();
   await testOptimisticConflictAndIdempotentReplay();
   await testValidationRejectsBadCollection();
   await testAccountDeleteCascadeHook();
+  await testDeletedAccountTokenCannotReadWriteOrRecreateSyncData();
   console.log('account sync backend tests passed');
 })().catch((err) => {
   console.error(err);

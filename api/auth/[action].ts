@@ -142,6 +142,9 @@ async function handleSync(req: Request): Promise<Response> {
   if (unavailable) return unavailable;
 
   try {
+    const user = await getUser(userId);
+    if (!user) return json({ error: 'USER_NOT_FOUND', reason: 'no_such_user' }, 401);
+
     if (req.method === 'GET') {
       return json({ snapshot: await getAccountSyncSnapshot(userId) }, 200);
     }
