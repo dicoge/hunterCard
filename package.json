@@ -32,6 +32,7 @@
     "test:buy-price": "node scripts/verify-buy-price-alignment.mjs",
     "test:canonical-printings": "node scripts/test-canonical-printings.mjs",
     "test:yt-null-semantics": "node scripts/test-yt-null-semantics.mjs",
+    "test:web-export-artifact": "node scripts/test-web-export-artifact.mjs",
     "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",
     "test:scrape-pipeline": "node scripts/test-scrape-pipeline-failfast.mjs",
     "test:market-fields": "node --experimental-strip-types scripts/test-api-card-mapper.mjs && node scripts/test-dic-361-market-data-fields.mjs",

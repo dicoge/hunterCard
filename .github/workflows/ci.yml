@@ -116,6 +116,9 @@ jobs:
       - name: Verify real Android export is fail-closed (DIC-916)
         run: npm run test:store-mvp-native-export
 
+      - name: Verify configured Vercel web export produces a sanitized artifact end-to-end (DIC-1140)
+        run: npm run test:web-export-artifact
+
       - name: Verify native guest series/card data loads fail-closed (DIC-972)
         run: npm run test:native-guest-data
 
