@@ -41,6 +41,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isCanonicalCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '..');
@@ -99,8 +100,12 @@ export function readOverlayStrict(filePath) {
   }
   const validated = {};
   for (const [k, v] of Object.entries(by)) {
-    if (typeof k !== 'string' || !k) {
-      throw new Error(`overlay has invalid key ${JSON.stringify(k)}`);
+    // DIC-1141 CR#3: a non-empty string is not enough — the key must match the
+    // canonical card-number format so a payload of 300 `bogus-0`..`bogus-299`
+    // cannot silently satisfy the build coverage floor while touching zero
+    // real cards.
+    if (!isCanonicalCardNumber(k)) {
+      throw new Error(`overlay has invalid card-number key ${JSON.stringify(k)} (expected ${CANONICAL_CARD_NUMBER_RE})`);
     }
     if (typeof v !== 'string' || !VALID_LEVEL_SET.has(v)) {
       throw new Error(`overlay entry ${k} has invalid Bloom Level ${JSON.stringify(v)}`);
@@ -151,6 +156,9 @@ export function collectHolomenTargets({
       if (!cn || !id || !exp) continue;
       // Only ホロメン (excluding 推しホロメン, サポート, マスコット, エール).
       if (c.cardType !== 'ホロメン') continue;
+      // DIC-1141 CR#3: same canonical schema as the overlay reader. A garbage
+      // cardNumber in the input JSON must not become a canonical Bloom key.
+      if (!isCanonicalCardNumber(cn)) continue;
       if (!seen.has(cn)) seen.set(cn, { id, expansion: exp });
     }
   }
@@ -176,6 +184,10 @@ export function mergeResults({ existing, inScope, fresh }) {
     if (!inScope.has(cn)) preservedOutOfScope.push(cn);
   }
   for (const cn of inScope) {
+    // DIC-1141 CR#3: even in the merge path, refuse to persist a card number
+    // that does not match the canonical schema. Belt-and-braces after strict
+    // read + strict collect.
+    if (!isCanonicalCardNumber(cn)) continue;
     const result = fresh.get(cn);
     if (!result || result.error || result.level == null || !VALID_LEVEL_SET.has(result.level)) {
       if (existing[cn]) preservedOnFailure.push(cn);

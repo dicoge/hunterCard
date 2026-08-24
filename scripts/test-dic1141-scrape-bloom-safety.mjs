@@ -52,6 +52,11 @@ import {
 } from './scrape-bloom-levels.mjs';
 import { validateBloomOverlay, coerceBloomMinCoverage, VALID_BLOOM_LEVELS } from './build-database.js';
 import {
+  isCanonicalCardNumber,
+  assertCanonicalCardNumber,
+  CANONICAL_CARD_NUMBER_RE,
+} from './lib/card-number.js';
+import {
   BLOOM_LEVEL_COLORS,
   CATEGORY_COLORS,
   PRINTING_RARITY_COLORS,
@@ -404,7 +409,153 @@ assert.equal(parseBloomLevel(null), null, 'non-string → null');
     'CardDetail must not hardcode the rarity palette locally');
 }
 
-// ── 10. Integration: collectHolomenTargets honours --only ───────────────
+// ── 10. Canonical card-number validator: shared, strict, disallows bogus keys ──
+
+{
+  // Positive: the exact shapes canonical Bloom keys already have.
+  for (const cn of ['hBP04-026', 'hBP01-001', 'hSD10-042', 'hBP07-101']) {
+    assert.equal(isCanonicalCardNumber(cn), true, `${cn} should be canonical`);
+  }
+  // Negative: every shape Codex called out (or that would sneak past the old
+  // `typeof k === 'string' && k !== ''` check).
+  const bad = [
+    'bogus-0',       // no 'h' prefix
+    'bogus-000',     // no 'h' prefix
+    '',              // empty
+    ' ',             // whitespace only
+    'hBP04-26',      // suffix too short
+    'hBP04-0026',    // suffix too long
+    'BP04-026',      // missing 'h'
+    'HBP04-026',     // wrong case for the leading 'h'
+    'h-026',         // no set letters between h and dash
+    'hBP04_026',     // wrong separator
+    'hBP04-026 ',    // trailing whitespace
+    ' hBP04-026',    // leading whitespace
+    'hBP04-abc',     // non-digit index
+    123,             // not a string
+    null,
+    undefined,
+  ];
+  for (const key of bad) {
+    assert.equal(isCanonicalCardNumber(key), false, `${JSON.stringify(key)} must NOT be canonical`);
+  }
+  // assertCanonicalCardNumber throws with a helpful message.
+  assert.throws(() => assertCanonicalCardNumber('bogus-0', 'test'), /test.*bogus-0/);
+  assert.doesNotThrow(() => assertCanonicalCardNumber('hBP04-026', 'test'));
+}
+
+// ── 11. 300-bogus-key overlay is rejected on both scraper AND build paths ──
+
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bloom-bogus-'));
+  const p = path.join(dir, 'bloom-levels.json');
+
+  // Build a 300-key payload with an unbroken shape but every key bogus.
+  const bogus = {};
+  for (let i = 0; i < 300; i++) bogus[`bogus-${i}`] = 'Debut';
+  fs.writeFileSync(p, JSON.stringify({
+    totalCards: 300,
+    byCardNumber: bogus,
+  }));
+
+  // Scraper path: readOverlayStrict must throw on the first bogus key so the
+  // CLI aborts without ever calling the atomic writer.
+  assert.throws(() => readOverlayStrict(p), /invalid card-number key/,
+    'readOverlayStrict must reject bogus-N keys');
+
+  // Build path: validateBloomOverlay must reject the payload even though the
+  // count would satisfy the coverage floor.
+  const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const check = validateBloomOverlay(raw, { minCoverage: 300 });
+  assert.equal(check.ok, false, 'validateBloomOverlay must reject 300 bogus keys');
+  assert.match(check.reason, /card-number does not match/,
+    `expected reason to name the canonical schema, got ${check.reason}`);
+
+  // mergeResults is the final defence: even if a bogus card number somehow
+  // reaches the merge step (bypassing collectHolomenTargets and readOverlay
+  // Strict), it MUST be filtered out — the merged map cannot end up carrying
+  // a `bogus-0` key that could then be atomic-written. That's belt-and-braces
+  // for Codex's "no bogus key ever hits disk" invariant.
+  const merge = mergeResults({
+    existing: { 'hBP04-026': '2nd' },
+    inScope: new Set(['bogus-0', 'hBP04-027']),
+    fresh: new Map([
+      ['bogus-0', { level: 'Debut' }],       // bogus key: silently dropped by merge
+      ['hBP04-027', { level: '1st' }],       // valid key: added
+    ]),
+  });
+  assert.equal(merge.merged['bogus-0'], undefined, 'bogus key never enters merged map');
+  assert.deepEqual(
+    Object.keys(merge.merged).sort(),
+    ['hBP04-026', 'hBP04-027'],
+    'only canonically-shaped keys survive the merge',
+  );
+  // And the resulting payload contains only valid keys.
+  const payload = buildPayload(merge.merged);
+  assert.deepEqual(
+    Object.keys(payload.byCardNumber).sort(),
+    ['hBP04-026', 'hBP04-027'],
+    'buildPayload output cannot include bogus keys',
+  );
+
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// ── 12. Single bogus key inside an otherwise valid overlay also throws ──
+
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bloom-one-bogus-'));
+  const p = path.join(dir, 'bloom-levels.json');
+  fs.writeFileSync(p, JSON.stringify({
+    totalCards: 2,
+    byCardNumber: { 'hBP04-026': '2nd', 'bogus-0': 'Debut' },
+  }));
+  assert.throws(() => readOverlayStrict(p), /invalid card-number key.*bogus-0/,
+    'a single bogus key must fail the whole read (no silent drop)');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// ── 13. Whitespace-only BLOOM_MIN_COVERAGE is treated as unset ─────────
+
+{
+  assert.equal(coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: ' ' }, 300), 300,
+    'single space must NOT coerce to 0 — treat as unset');
+  assert.equal(coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: '\t' }, 300), 300);
+  assert.equal(coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: '\n\t ' }, 300), 300);
+  assert.equal(coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: '  250  ' }, 300), 250,
+    'trimmed integer is still coerced correctly');
+  // Non-string, non-number types must fail closed rather than stringify.
+  assert.throws(() => coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: {} }, 300), /non-negative integer/);
+  assert.throws(() => coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: [] }, 300), /non-negative integer/);
+  // Sanity: the whitespace-typo defeat cannot let a wiped overlay pass.
+  const wiped = { byCardNumber: {} };
+  const min = coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: ' ' }, 300);
+  assert.equal(min, 300);
+  assert.equal(validateBloomOverlay(wiped, { minCoverage: min }).ok, false,
+    'whitespace BLOOM_MIN_COVERAGE must not disable the coverage floor');
+}
+
+// ── 14. collectHolomenTargets refuses bogus cardNumber in input JSON ───
+
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bloom-target-bogus-'));
+  fs.writeFileSync(path.join(dir, 'hBP04.json'), JSON.stringify([
+    { cardNumber: 'hBP04-026', id: '888', expansion: 'hBP04', cardType: 'ホロメン' },
+    { cardNumber: 'bogus-0',   id: '999', expansion: 'hBP04', cardType: 'ホロメン' },
+  ]));
+  const targets = collectHolomenTargets({ officialDir: dir });
+  assert.deepEqual([...targets.keys()], ['hBP04-026'],
+    'a bogus cardNumber in official JSON must not become a canonical target');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// Sanity: the canonical regex is what everything shares — one source of truth.
+{
+  assert.ok(CANONICAL_CARD_NUMBER_RE.test('hBP04-026'));
+  assert.ok(!CANONICAL_CARD_NUMBER_RE.test('bogus-0'));
+}
+
+// ── 15. Integration: collectHolomenTargets honours --only ──────────────
 
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bloom-collect-'));

@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
 import { canonicalVariantKey } from './lib/variant-key.js';
+import { isCanonicalCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -764,11 +765,20 @@ const DEFAULT_BLOOM_MIN_COVERAGE = 300;
  * typo like `BLOOM_MIN_COVERAGE=-1` or `BLOOM_MIN_COVERAGE=abc` must never
  * let an empty overlay slip past `validateBloomOverlay` (Codex CR blocker
  * supplement).
+ *
+ * CR#3: whitespace-only (e.g. `' '`, `'\t\n'`) MUST be treated as unset — a
+ * typo like `BLOOM_MIN_COVERAGE=' '` used to coerce to 0 (because `Number(' ')`
+ * is 0) and silently disabled the guard.
  */
 export function coerceBloomMinCoverage(env = process.env, fallback = DEFAULT_BLOOM_MIN_COVERAGE) {
   const raw = env.BLOOM_MIN_COVERAGE;
-  if (raw === undefined || raw === null || raw === '') return fallback;
-  const n = Number(raw);
+  if (raw === undefined || raw === null) return fallback;
+  if (typeof raw !== 'string' && typeof raw !== 'number') {
+    throw new Error(`[bloom] BLOOM_MIN_COVERAGE must be a non-negative integer, got ${JSON.stringify(raw)}. (DIC-1141)`);
+  }
+  const trimmed = typeof raw === 'string' ? raw.trim() : String(raw);
+  if (trimmed === '') return fallback;
+  const n = Number(trimmed);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
     throw new Error(`[bloom] BLOOM_MIN_COVERAGE must be a non-negative integer, got ${JSON.stringify(raw)}. (DIC-1141)`);
   }
@@ -785,7 +795,14 @@ export function validateBloomOverlay(payload, { minCoverage = DEFAULT_BLOOM_MIN_
   }
   const invalid = [];
   for (const [k, v] of Object.entries(by)) {
-    if (typeof k !== 'string' || !k) { invalid.push({ key: k, value: v, reason: 'bad key' }); continue; }
+    // CR#3: reuse the shared canonical card-number validator — a payload of
+    // 300 `bogus-0`..`bogus-299` entries used to satisfy the coverage floor
+    // because non-empty strings passed. Now every key must match the same
+    // ^h[A-Za-z0-9]+-\d{3}$ schema the scraper enforces.
+    if (!isCanonicalCardNumber(k)) {
+      invalid.push({ key: k, value: v, reason: `card-number does not match ${CANONICAL_CARD_NUMBER_RE}` });
+      continue;
+    }
     if (typeof v !== 'string' || !VALID_BLOOM_LEVEL_SET.has(v)) {
       invalid.push({ key: k, value: v, reason: 'invalid level' });
     }
