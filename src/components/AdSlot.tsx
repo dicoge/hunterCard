@@ -83,17 +83,21 @@ export const AdSlotInner: React.FC<AdSlotProps> = ({
     return null;
   }
 
-  // 3. Entitlement Resolution:
-  // Prefer explicit serverValidatedRole over client persisted role to avoid trusting client boolean.
-  const activeRole = serverValidatedRole !== undefined ? serverValidatedRole : storeRole;
-
-  // Pro Subscribers have zero ads (entitlement check)
-  if (activeRole === 'subscriber') {
+  // 3. Entitlement Resolution (DIC-1157 CR Blocker 1):
+  // AdSlot MUST NOT fall back to persisted authStore.role when serverValidatedRole is absent.
+  // Undefined, null, loading, or unverified entitlement MUST fail closed to null.
+  // Only an explicit server-validated non-subscriber result ('free_user' | 'guest') may allow an ad.
+  if (serverValidatedRole === undefined || serverValidatedRole === null) {
     return null;
   }
 
-  // Fail closed if activeRole is unknown, null, or invalid
-  if (activeRole !== 'free_user' && activeRole !== 'guest') {
+  // Pro Subscribers have zero ads (entitlement check)
+  if (serverValidatedRole === 'subscriber') {
+    return null;
+  }
+
+  // Fail closed if serverValidatedRole is not free_user or guest
+  if (serverValidatedRole !== 'free_user' && serverValidatedRole !== 'guest') {
     return null;
   }
 

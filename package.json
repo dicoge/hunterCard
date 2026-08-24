@@ -31,6 +31,8 @@
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",
     "test:buy-price": "node scripts/verify-buy-price-alignment.mjs",
     "test:canonical-printings": "node scripts/test-canonical-printings.mjs",
+    "test:dist-nojs": "node scripts/test-dist-nojs.mjs",
+    "test:adslot-render": "node --import ./scripts/register-web-render.mjs scripts/test-adslot-render.mjs",
     "test:yt-null-semantics": "node scripts/test-yt-null-semantics.mjs",
     "test:web-export-artifact": "node scripts/test-web-export-artifact.mjs",
     "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",

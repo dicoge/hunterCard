@@ -50,38 +50,14 @@ async function test(name, fn) {
   console.log(`  ✓ ${name}`);
 }
 
-console.log('── Real Component Render Test: AdSlot (CR DIC-1162) ──');
+console.log('── Real Component Render Test: AdSlot (CR DIC-1162 Blocker 1) ──');
 
 await test('PRODUCTION_ADS_ENABLED flag default is false', async () => {
   assert.equal(PRODUCTION_ADS_ENABLED, false, 'Production ads flag must default to false');
 });
 
-await test('Default AdSlot (no testProvider, no consent) renders null (fail-closed)', async () => {
+await test('Absent serverValidatedRole renders null fail-closed (does not trust client authStore.role)', async () => {
   useAuthStore.setState({ role: 'free_user', isAuthenticated: true });
-  const { container, cleanup } = await renderComponent(React.createElement(AdSlot));
-  try {
-    assert.equal(container.querySelector('[data-testid^="ad-slot-"]'), null);
-    assert.equal(container.innerHTML, '');
-  } finally {
-    await cleanup();
-  }
-});
-
-await test('Missing CMP consent (hasConsent=false) renders null (fail-closed)', async () => {
-  useAuthStore.setState({ role: 'free_user', isAuthenticated: true });
-  const { container, cleanup } = await renderComponent(
-    React.createElement(AdSlot, { testProvider: true, hasConsent: false })
-  );
-  try {
-    assert.equal(container.querySelector('[data-testid^="ad-slot-"]'), null);
-    assert.equal(container.innerHTML, '');
-  } finally {
-    await cleanup();
-  }
-});
-
-await test('Pro Subscriber role (role=subscriber) renders null (pro entitlement hide)', async () => {
-  useAuthStore.setState({ role: 'subscriber', isAuthenticated: true });
   const { container, cleanup } = await renderComponent(
     React.createElement(AdSlot, { testProvider: true, hasConsent: true })
   );
@@ -93,22 +69,47 @@ await test('Pro Subscriber role (role=subscriber) renders null (pro entitlement 
   }
 });
 
-await test('Server validated subscriber role overrides client state to render null', async () => {
+await test('Null serverValidatedRole renders null fail-closed', async () => {
   useAuthStore.setState({ role: 'free_user', isAuthenticated: true });
+  const { container, cleanup } = await renderComponent(
+    React.createElement(AdSlot, { testProvider: true, hasConsent: true, serverValidatedRole: null })
+  );
+  try {
+    assert.equal(container.querySelector('[data-testid^="ad-slot-"]'), null);
+    assert.equal(container.innerHTML, '');
+  } finally {
+    await cleanup();
+  }
+});
+
+await test('Missing CMP consent (hasConsent=false) renders null (fail-closed)', async () => {
+  useAuthStore.setState({ role: 'free_user', isAuthenticated: true });
+  const { container, cleanup } = await renderComponent(
+    React.createElement(AdSlot, { testProvider: true, hasConsent: false, serverValidatedRole: 'free_user' })
+  );
+  try {
+    assert.equal(container.querySelector('[data-testid^="ad-slot-"]'), null);
+    assert.equal(container.innerHTML, '');
+  } finally {
+    await cleanup();
+  }
+});
+
+await test('Server-validated subscriber role renders null (pro entitlement hide)', async () => {
   const { container, cleanup } = await renderComponent(
     React.createElement(AdSlot, { testProvider: true, hasConsent: true, serverValidatedRole: 'subscriber' })
   );
   try {
     assert.equal(container.querySelector('[data-testid^="ad-slot-"]'), null);
+    assert.equal(container.innerHTML, '');
   } finally {
     await cleanup();
   }
 });
 
-await test('Unknown/invalid role renders null (fail-closed)', async () => {
-  useAuthStore.setState({ role: 'guest', isAuthenticated: false });
+await test('Unknown/invalid serverValidatedRole renders null (fail-closed)', async () => {
   const { container, cleanup } = await renderComponent(
-    React.createElement(AdSlot, { testProvider: true, hasConsent: true, serverValidatedRole: 'unknown_role' })
+    React.createElement(AdSlot, { testProvider: true, hasConsent: true, serverValidatedRole: 'unverified_role' })
   );
   try {
     assert.equal(container.querySelector('[data-testid^="ad-slot-"]'), null);
@@ -117,14 +118,13 @@ await test('Unknown/invalid role renders null (fail-closed)', async () => {
   }
 });
 
-await test('Free user with explicit consent & testProvider renders test ad slot', async () => {
-  useAuthStore.setState({ role: 'free_user', isAuthenticated: true });
+await test('Explicit server-validated free_user with consent & testProvider renders test ad slot', async () => {
   const { container, cleanup } = await renderComponent(
-    React.createElement(AdSlot, { testProvider: true, hasConsent: true, slotId: 'footer_banner' })
+    React.createElement(AdSlot, { testProvider: true, hasConsent: true, serverValidatedRole: 'free_user', slotId: 'footer_banner' })
   );
   try {
     const el = container.querySelector('[data-testid="ad-slot-footer_banner"]');
-    assert.ok(el, 'Test ad container should render for free_user with consent');
+    assert.ok(el, 'Test ad container should render for explicit serverValidatedRole free_user');
     assert.ok(container.textContent.includes('贊助廣告'));
     assert.ok(container.textContent.includes('HoloHunter 低干擾測試廣告版位'));
   } finally {
@@ -137,7 +137,6 @@ await test('AdSlotErrorBoundary catches child component crash and renders null f
     throw new Error('Simulated Component Crash during Ad Render');
   };
   
-  // Suppress expected React error logging during active test
   const originalWarn = console.warn;
   console.warn = () => {};
 
