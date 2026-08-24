@@ -61,7 +61,7 @@ export interface SaveAccountSyncInput {
 }
 
 export class AccountSyncError extends Error {
-  code: 'invalid_request' | 'payload_too_large' | 'revision_conflict';
+  code: 'invalid_request' | 'payload_too_large' | 'revision_conflict' | 'account_deleted';
   status: number;
   extra?: Record<string, unknown>;
 
@@ -82,9 +82,13 @@ export class AccountSyncError extends Error {
 const SYNC_KEY = (userId: string) => `account-sync:user:${userId}`;
 const IDEMPOTENCY_KEY = (userId: string, key: string) => `account-sync:idempotency:${userId}:${key}`;
 const IDEMPOTENCY_INDEX_KEY = (userId: string) => `account-sync:idempotency-index:${userId}`;
+const DELETION_FENCE_KEY = (userId: string) => `account-sync:deleted:${userId}`;
 const IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24;
 
 const SAVE_SNAPSHOT = `-- ACCOUNT_SYNC_SAVE
+if redis.call('EXISTS', KEYS[4]) == 1 then
+  return { 'DELETED', '0', '' }
+end
 local currentRaw = redis.call('GET', KEYS[1])
 local currentRevision = 0
 if currentRaw then
@@ -103,6 +107,11 @@ redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
 redis.call('SADD', KEYS[3], KEYS[2])
 redis.call('EXPIRE', KEYS[3], ARGV[3])
 return { 'OK', tostring(currentRevision + 1), ARGV[2] }
+`;
+
+const START_DELETION = `-- ACCOUNT_SYNC_DELETE_BEGIN
+redis.call('SET', KEYS[1], ARGV[1])
+return 'OK'
 `;
 
 function defaultSnapshot(): AccountSyncSnapshot {
@@ -319,7 +328,12 @@ export async function saveAccountSyncSnapshot(input: SaveAccountSyncInput): Prom
   assertPayloadSize(next);
   const [status, revisionRaw, bodyRaw] = parseEvalResult(await kv.eval(
     SAVE_SNAPSHOT,
-    [SYNC_KEY(input.userId), IDEMPOTENCY_KEY(input.userId, input.idempotencyKey), IDEMPOTENCY_INDEX_KEY(input.userId)],
+    [
+      SYNC_KEY(input.userId),
+      IDEMPOTENCY_KEY(input.userId, input.idempotencyKey),
+      IDEMPOTENCY_INDEX_KEY(input.userId),
+      DELETION_FENCE_KEY(input.userId),
+    ],
     [String(input.baseRevision), encoded, String(IDEMPOTENCY_TTL_SECONDS)],
   ));
   if (status === 'CONFLICT') {
@@ -327,6 +341,9 @@ export async function saveAccountSyncSnapshot(input: SaveAccountSyncInput): Prom
       currentRevision: Number(revisionRaw),
       snapshot: bodyRaw ? decodeSnapshot(bodyRaw) : defaultSnapshot(),
     });
+  }
+  if (status === 'DELETED') {
+    throw new AccountSyncError('account_deleted', 'account deletion is in progress or complete', 410);
   }
   if (status === 'OK' || status === 'IDEMPOTENT') return decodeSnapshot(bodyRaw);
   throw new Error(`unexpected account sync status: ${status}`);
@@ -341,6 +358,7 @@ async function accountSyncIdempotencyKeys(userId: string, indexKey: string): Pro
 }
 
 export async function deleteAccountSyncData(userId: string): Promise<void> {
+  await kv.eval(START_DELETION, [DELETION_FENCE_KEY(userId)], [new Date().toISOString()]);
   const indexKey = IDEMPOTENCY_INDEX_KEY(userId);
   const idempotencyKeys = await accountSyncIdempotencyKeys(userId, indexKey);
   await kv.del(SYNC_KEY(userId), ...idempotencyKeys, indexKey);

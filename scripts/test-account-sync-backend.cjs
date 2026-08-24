@@ -10,12 +10,13 @@ const ts = require('typescript');
 const ROOT = path.resolve(__dirname, '..');
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'account-sync-tests-'));
 
-const kvState = { values: new Map(), sets: new Map(), dels: [] };
+const kvState = { values: new Map(), sets: new Map(), dels: [], beforeSyncSaveEval: null };
 
 function resetKv() {
   kvState.values.clear();
   kvState.sets.clear();
   kvState.dels = [];
+  kvState.beforeSyncSaveEval = null;
 }
 
 const kv = {
@@ -100,9 +101,15 @@ const kv = {
       }
       return 0;
     }
+    if (script.includes('-- ACCOUNT_SYNC_DELETE_BEGIN')) {
+      kvState.values.set(keys[0], args[0]);
+      return 'OK';
+    }
     if (!script.includes('-- ACCOUNT_SYNC_SAVE')) throw new Error(`unexpected eval: ${script}`);
+    if (kvState.beforeSyncSaveEval) await kvState.beforeSyncSaveEval();
     const [syncKey, idemKey, idemIndexKey] = keys;
     const [baseRevisionRaw, nextRaw] = args;
+    if (kvState.values.has(keys[3])) return ['DELETED', '0', ''];
     const currentRaw = kvState.values.get(syncKey);
     const currentRevision = currentRaw ? JSON.parse(currentRaw).revision : 0;
     const idemRaw = kvState.values.get(idemKey);
@@ -278,6 +285,7 @@ async function testAccountDeleteCascadeHook() {
     'account-sync:idempotency:holo_user_d:idem-old-0001',
   ]));
   await syncStore.deleteAccountSyncData('holo_user_d');
+  assert.equal(kvState.values.has('account-sync:deleted:holo_user_d'), true, 'delete must install server-side commit fence first');
   assert.equal(kvState.values.has('account-sync:user:holo_user_d'), false);
   assert.equal(kvState.values.has('account-sync:idempotency:holo_user_d:idem-old-0001'), false);
   assert.equal(kvState.values.has('account-sync:idempotency:holo_user_d:idem-old-0002'), false);
@@ -288,6 +296,49 @@ async function testAccountDeleteCascadeHook() {
     'account-sync:idempotency:holo_user_d:idem-old-0002',
     'account-sync:idempotency-index:holo_user_d',
   ]);
+}
+
+async function testAuthorizedSyncCannotCommitAfterDeletionFence() {
+  resetKv(); configureBackend();
+  const { user, session } = await createSession('sync-delete-race');
+  const { user: otherUser, session: otherSession } = await createSession('sync-delete-race-other');
+
+  let armed = true;
+  kvState.beforeSyncSaveEval = async () => {
+    if (!armed) return;
+    armed = false;
+    const delRes = await requestDeleteAccount(session);
+    assert.equal(delRes.status, 200);
+    assert.equal(delRes.body.deleted, true);
+  };
+
+  let res = await request('POST', {
+    baseRevision: 0,
+    idempotencyKey: 'idem-race-0001',
+    patch: { settings: { preferredCurrency: 'JPY' } },
+  }, session);
+  kvState.beforeSyncSaveEval = null;
+  assert.equal(res.status, 410, 'already-authorized sync commit must fail after deletion fence');
+  assert.equal(res.body.error, 'account_deleted');
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), false, 'deleted user snapshot must not be recreated after delete 200');
+  assert.equal(kvState.values.has(`account-sync:idempotency:${user.internalId}:idem-race-0001`), false, 'blocked commit must not create idempotency snapshot');
+  assert.equal(kvState.sets.has(`account-sync:idempotency-index:${user.internalId}`), false, 'blocked commit must not create idempotency index');
+
+  res = await request('POST', {
+    baseRevision: 0,
+    idempotencyKey: 'idem-race-0001',
+    patch: { settings: { preferredCurrency: 'JPY' } },
+  }, session);
+  assert.equal(res.status, 401, 'retry after account deletion remains fail-closed through active-user check');
+  assert.equal(res.body.error, 'USER_NOT_FOUND');
+
+  res = await request('POST', {
+    baseRevision: 0,
+    idempotencyKey: 'idem-other-0001',
+    patch: { settings: { preferredCurrency: 'USD' } },
+  }, otherSession);
+  assert.equal(res.status, 200, 'another user remains unaffected by deletion fence');
+  assert.equal(kvState.values.has(`account-sync:user:${otherUser.internalId}`), true);
 }
 
 async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
@@ -335,6 +386,7 @@ async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
   await testOptimisticConflictAndIdempotentReplay();
   await testValidationRejectsBadCollection();
   await testAccountDeleteCascadeHook();
+  await testAuthorizedSyncCannotCommitAfterDeletionFence();
   await testDeletedAccountTokenCannotReadWriteOrRecreateSyncData();
   console.log('account sync backend tests passed');
 })().catch((err) => {
