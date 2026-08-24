@@ -124,6 +124,100 @@ export function snapshotValueNDaysAgo(sorted, latestDate, n, field, strictContig
 }
 
 const GROWTH_DAYS = [1, 7, 15, 30];
+const DELTA_FIELDS = [
+  'subscriberGrowth_1d', 'subscriberGrowth_7d', 'subscriberGrowth_15d', 'subscriberGrowth_30d',
+  'viewCount_1d', 'viewCount_7d', 'viewCount_15d', 'viewCount_30d',
+];
+
+function snapshotHasProvenance(snapshot) {
+  return PROVENANCE_FIELDS.every((f) => {
+    const v = snapshot?.[f];
+    return v != null && v !== '';
+  });
+}
+
+function comparableBaseline(sorted, latest, n, field, strictContiguous) {
+  const window = strictContiguous ? 0 : growthWindow(n);
+  let nearest = null;
+  let nearestDiff = Infinity;
+  let comparable = null;
+  let comparableDiff = Infinity;
+  for (const s of sorted) {
+    if (s.date === latest.date || s[field] == null) continue;
+    const gap = daysBetween(s.date, latest.date);
+    if (gap <= 0) continue;
+    const diff = Math.abs(gap - n);
+    if (diff < nearestDiff) {
+      nearestDiff = diff;
+      nearest = s;
+    }
+    if (hasProvenanceMatch(latest, s) && diff < comparableDiff) {
+      comparableDiff = diff;
+      comparable = s;
+    }
+  }
+  const candidate = comparable || nearest;
+  if (!candidate) return { baselineDate: null, comparable: false, reason: 'missing_baseline' };
+  const gap = daysBetween(candidate.date, latest.date);
+  if (!hasProvenanceMatch(latest, candidate)) {
+    return { baselineDate: candidate.date, comparable: false, reason: 'provenance_mismatch', gapDays: gap };
+  }
+  if (Math.abs(gap - n) > window) {
+    return { baselineDate: candidate.date, comparable: false, reason: 'outside_window', gapDays: gap };
+  }
+  return { baselineDate: candidate.date, comparable: true, reason: 'same_provenance_in_window', gapDays: gap };
+}
+
+export function auditRecentSnapshots(history, { limit = 7 } = {}) {
+  if (!Array.isArray(history)) return [];
+  const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
+  const subscriberPrecision = detectFieldPrecision(sorted, 'subscriberCount');
+  return sorted.slice(-limit).map((snapshot, index, recent) => {
+    const prefix = sorted.slice(0, sorted.length - recent.length + index + 1);
+    const computed = computeGrowthDeltas(prefix);
+    const latestHasProvenance = snapshotHasProvenance(snapshot);
+    const decisions = {};
+    for (const n of GROWTH_DAYS) {
+      const strict = n === 1;
+      const sub = comparableBaseline(prefix, snapshot, n, 'subscriberCount', strict);
+      const view = comparableBaseline(prefix, snapshot, n, 'totalViewCount', strict);
+      const subDelta = computed[`subscriberGrowth_${n}d`];
+      const viewDelta = computed[`viewCount_${n}d`];
+      decisions[`subscriberGrowth_${n}d`] = {
+        ...sub,
+        rendered: subDelta != null,
+        delta: subDelta ?? null,
+        reason: !latestHasProvenance ? 'latest_missing_provenance'
+          : sub.comparable && subDelta == null ? 'rounded_or_below_precision'
+            : sub.reason,
+      };
+      decisions[`viewCount_${n}d`] = {
+        ...view,
+        rendered: viewDelta != null,
+        delta: viewDelta ?? null,
+        reason: !latestHasProvenance ? 'latest_missing_provenance'
+          : view.comparable && viewDelta == null ? 'stale_or_zero_view_snapshot'
+            : view.reason,
+      };
+    }
+    const stampedMismatch = DELTA_FIELDS.filter((key) => (snapshot[key] ?? null) !== (computed[key] ?? null));
+    return {
+      date: snapshot.date ?? null,
+      rawTimestamp: snapshot.date ?? null,
+      views: snapshot.totalViewCount ?? null,
+      subscribers: snapshot.subscriberCount ?? null,
+      channelId: snapshot.channelId ?? null,
+      source: snapshot.source ?? null,
+      parser: snapshot.parser ?? null,
+      fetchedAt: snapshot.fetchedAt ?? null,
+      valid: latestHasProvenance && (snapshot.subscriberCount != null || snapshot.totalViewCount != null),
+      subscriberPrecision,
+      stampedDeltaMatchesCurrentAlgorithm: stampedMismatch.length === 0,
+      stampedMismatch,
+      derivedDeltaDecision: decisions,
+    };
+  });
+}
 
 // Compute subscriber/view growth deltas for the LATEST snapshot in `history`.
 // Returns { subscriberGrowth_1d/7d/15d/30d, viewCount_1d/7d/15d/30d } — each
@@ -148,10 +242,7 @@ export function computeGrowthDeltas(history) {
   // Fail closed on latest-snapshot provenance holes — no channelId / source /
   // parser means we cannot verify that today's row was produced by the same
   // pipeline as any past row, so no comparison is provable.
-  const latestHasProvenance = PROVENANCE_FIELDS.every((f) => {
-    const v = latest[f];
-    return v != null && v !== '';
-  });
+  const latestHasProvenance = snapshotHasProvenance(latest);
   if (!latestHasProvenance) return out;
 
   // Source-side precision for the rounded subscriberCount. If the channel's
