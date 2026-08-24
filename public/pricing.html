@@ -3,9 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HoloHunter - Pricing & Plans / 訂閱方案與價格 (工程審核草案)</title>
+  <title>HoloHunter - Pricing & Subscription Framework / 訂閱方案架構草案</title>
   <link rel="canonical" href="https://holohunter.dicoge.com/pricing.html" />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet" />
+  <noscript>
+    <style>
+      .content-section { display: block !important; margin-bottom: 40px; border-bottom: 1px dashed #2d3748; padding-bottom: 24px; }
+      .lang-toggle-container { display: none !important; }
+    </style>
+  </noscript>
   <style>
     :root {
       --bg-color: #0f0f23;
@@ -23,11 +29,7 @@
       --success-color: #10b981;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: 'Outfit', 'Noto Sans TC', 'Noto Sans JP', sans-serif;
@@ -55,7 +57,7 @@
       pointer-events: none;
     }
 
-    .container {
+    main.container {
       max-width: 900px;
       width: 100%;
       background: rgba(26, 26, 46, 0.7);
@@ -67,12 +69,9 @@
       position: relative;
     }
 
-    header {
-      text-align: center;
-      margin-bottom: 25px;
-    }
+    header { text-align: center; margin-bottom: 25px; }
 
-    .logo-glow {
+    h1.logo-glow {
       font-size: 3rem;
       font-weight: 800;
       background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
@@ -81,10 +80,7 @@
       margin-bottom: 8px;
     }
 
-    .subtitle {
-      color: var(--text-secondary);
-      font-size: 1.1rem;
-    }
+    .subtitle { color: var(--text-secondary); font-size: 1.1rem; }
 
     .draft-badge {
       display: inline-block;
@@ -108,11 +104,7 @@
       color: #fef08a;
     }
 
-    .lang-toggle-container {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 35px;
-    }
+    .lang-toggle-container { display: flex; justify-content: center; margin-bottom: 35px; }
 
     .lang-btn {
       background: var(--surface-light);
@@ -208,34 +200,33 @@
     }
 
     .links-footer a { color: var(--primary-color); text-decoration: none; font-size: 0.9rem; font-weight: 600; }
-
     footer { margin-top: 40px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
   </style>
 </head>
 <body>
   <div class="glow-bg"></div>
-  <div class="container">
+  <main class="container">
     <header>
-      <div class="logo-glow">HoloHunter</div>
+      <h1 class="logo-glow">HoloHunter</h1>
       <div class="subtitle">Pricing & Subscription Framework / 訂閱方案架構草案</div>
       <div class="draft-badge">【工程審核草案 / Engineering Review Draft】</div>
     </header>
 
-    <div class="sandbox-banner">
+    <section class="sandbox-banner">
       <strong>⚠️ 沙盒與動態價格說明 (Sandbox & Dynamic Pricing Notice)</strong><br />
       本頁面為工程測試草案。依據專案規範，正式訂閱價格與商品 ID 未經產品負責人確認簽字前嚴禁硬編碼。實際方案金額將於商戶審核通過後，由平台 StoreKit / Google Play / Stripe Product API 動態載入。
-    </div>
+    </section>
 
-    <div class="lang-toggle-container">
+    <nav class="lang-toggle-container">
       <button class="lang-btn active" onclick="switchLang('zh')">繁體中文</button>
       <button class="lang-btn" onclick="switchLang('ja')">日本語</button>
       <button class="lang-btn" onclick="switchLang('en')">English</button>
-    </div>
+    </nav>
 
     <!-- ── 繁體中文版本 ── -->
-    <div id="content-zh" class="content-section active">
+    <section id="content-zh" class="content-section active">
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">繁體中文方案草案</h2>
       <div class="pricing-grid">
-        <!-- Free Plan -->
         <div class="plan-card">
           <div class="plan-name">Free 免費方案</div>
           <div class="plan-desc">適合 hololive OCG 新手與休閒玩家。</div>
@@ -251,12 +242,11 @@
           <a href="https://holohunter.dicoge.com/" class="btn-plan btn-secondary">免費體驗</a>
         </div>
 
-        <!-- Pro Monthly -->
         <div class="plan-card featured">
           <div class="plan-name">Pro 月費方案 (Sandbox)</div>
           <div class="plan-desc">適合專業卡牌玩家與市場關注者。</div>
           <div class="plan-price">待 Store API 動態載入</div>
-          <div class="plan-period">每月自動續訂 (Sandbox ID: <code>pro.monthly.sandbox</code>)</div>
+          <div class="plan-period">每月自動續訂 (測試範例 ID: <code>pro.monthly.sandbox</code>)</div>
           <ul class="feature-list">
             <li class="feature-item"><span class="icon-check">✓</span> 完整卡牌資料庫與手動搜尋</li>
             <li class="feature-item"><span class="icon-check">✓</span> 賽事牌型與組牌分析</li>
@@ -266,66 +256,44 @@
           </ul>
           <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">Sandbox 測試</a>
         </div>
-
-        <!-- Pro Yearly -->
-        <div class="plan-card">
-          <div class="plan-name">Pro 年費方案 (Sandbox)</div>
-          <div class="plan-desc">長期訂閱優惠方案。</div>
-          <div class="plan-price">待 Store API 動態載入</div>
-          <div class="plan-period">每年自動續訂 (Sandbox ID: <code>pro.yearly.sandbox</code>)</div>
-          <ul class="feature-list">
-            <li class="feature-item"><span class="icon-check">✓</span> 包含所有 Pro 月費版高級功能</li>
-            <li class="feature-item"><span class="icon-check">✓</span> 無限次數相機辨識 (OCR) 掃描</li>
-            <li class="feature-item"><span class="icon-check">✓</span> AI 價格趨勢預測與動態分析</li>
-            <li class="feature-item"><span class="icon-check">✓</span> 純淨無廣告體驗 (Pro 權益)</li>
-          </ul>
-          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-secondary">Sandbox 測試</a>
-        </div>
       </div>
-
-      <div class="details-section">
-        <h3>📋 平台條款與測試邊界說明</h3>
-        <ul>
-          <li><strong>金流與平台規範</strong>：iOS App 數位訂閱由 Apple StoreKit 2 處理；Android App 由 Google Play Billing 處理；Web 由 Stripe 處理。App 內嚴禁引導 Web 結帳。</li>
-          <li><strong>自動續訂與取消</strong>：訂閱方案採自動續訂機制，使用者可隨時至 Apple ID / Google Play 訂閱管理或 Web 頁面關閉自動續訂。</li>
-          <li><strong>正式上架門檻</strong>：正式價格、商戶資料與 Production SKU 需待產品負責人確認與法務審核通過後方可開通。</li>
-        </ul>
-      </div>
-    </div>
+    </section>
 
     <!-- ── 日本語版本 ── -->
-    <div id="content-ja" class="content-section">
+    <section id="content-ja" class="content-section">
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">日本語プラン草案 (Japanese Pricing Framework)</h2>
       <div class="pricing-grid">
         <div class="plan-card">
-          <div class="plan-name">Free フリー</div>
+          <div class="plan-name">Free フリープラン</div>
           <div class="plan-desc">hololive OCG カジュアルプレイヤー向け。</div>
           <div class="plan-price">¥ 0</div>
           <div class="plan-period">基本機能無料 / OAuth ログイン必須</div>
           <ul class="feature-list">
             <li class="feature-item"><span class="icon-check">✓</span> カードデータベース＆検索</li>
-            <li class="feature-item"><span class="icon-check">✓</span> 大会分析データ</li>
+            <li class="feature-item"><span class="icon-check">✓</span> 大会分析データ閲覧</li>
             <li class="feature-item"><span class="icon-check">✓</span> 月間 OCR スキャン 100 回</li>
           </ul>
           <a href="https://holohunter.dicoge.com/" class="btn-plan btn-secondary">無料で試す</a>
         </div>
 
         <div class="plan-card featured">
-          <div class="plan-name">Pro 月額 (Sandbox)</div>
-          <div class="plan-desc">ガチプレイヤー向けプラン。</div>
-          <div class="plan-price">Store API より動的取得</div>
-          <div class="plan-period">毎月自動更新 (Sandbox ID: <code>pro.monthly.sandbox</code>)</div>
+          <div class="plan-name">Pro 月額プラン (Sandbox)</div>
+          <div class="plan-desc">ガチプレイヤー＆コレクター向け。</div>
+          <div class="plan-price">Store API より動的取得 (TBD)</div>
+          <div class="plan-period">毎月自動更新 (テスト ID: <code>pro.monthly.sandbox</code>)</div>
           <ul class="feature-list">
-            <li class="feature-item"><span class="icon-check">✓</span> 無制限 OCR スキャン</li>
-            <li class="feature-item"><span class="icon-check">✓</span> AI 価格トレンド予測</li>
-            <li class="feature-item"><span class="icon-check">✓</span> 広告非表示</li>
+            <li class="feature-item"><span class="icon-check">✓</span> <strong>無制限</strong> カメラ認識スキャン</li>
+            <li class="feature-item"><span class="icon-check">✓</span> <strong>AI 価格トレンド予測</strong></li>
+            <li class="feature-item"><span class="icon-check">✓</span> 完全広告非表示</li>
           </ul>
           <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">Sandbox テスト</a>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- ── English Version ── -->
-    <div id="content-en" class="content-section">
+    <section id="content-en" class="content-section">
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">English Pricing Framework</h2>
       <div class="pricing-grid">
         <div class="plan-card">
           <div class="plan-name">Free Tier</div>
@@ -343,7 +311,7 @@
           <div class="plan-name">Pro Tier (Sandbox)</div>
           <div class="plan-desc">For active players & collectors.</div>
           <div class="plan-price">TBD (Loaded via Store API)</div>
-          <div class="plan-period">Billed monthly (Sandbox ID: <code>pro.monthly.sandbox</code>)</div>
+          <div class="plan-period">Billed monthly (Test ID: <code>pro.monthly.sandbox</code>)</div>
           <ul class="feature-list">
             <li class="feature-item"><span class="icon-check">✓</span> Unlimited OCR scans</li>
             <li class="feature-item"><span class="icon-check">✓</span> AI price trend forecasting</li>
@@ -352,14 +320,14 @@
           <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">Test Sandbox</a>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="links-footer">
+    <nav class="links-footer">
       <a href="terms.html">📜 Terms of Service / 服務條款草案</a>
       <a href="privacy.html">🔒 Privacy Policy / 隱私權政策</a>
       <a href="support.html">🛠️ Support & Contact / 技術支援草案</a>
-    </div>
-  </div>
+    </nav>
+  </main>
 
   <footer>
     &copy; 2026 HoloHunter. Unofficial fan tool for hololive OFFICIAL CARD GAME.

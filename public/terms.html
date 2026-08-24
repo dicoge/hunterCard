@@ -6,6 +6,12 @@
   <title>HoloHunter - Terms of Service & Subscription Terms / 服務與訂閱條款 (工程審核草案)</title>
   <link rel="canonical" href="https://holohunter.dicoge.com/terms.html" />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet" />
+  <noscript>
+    <style>
+      .content-section { display: block !important; margin-bottom: 40px; border-bottom: 1px dashed #2d3748; padding-bottom: 24px; }
+      .lang-toggle-container { display: none !important; }
+    </style>
+  </noscript>
   <style>
     :root {
       --bg-color: #0f0f23;
@@ -50,7 +56,7 @@
       pointer-events: none;
     }
 
-    .container {
+    main.container {
       max-width: 850px;
       width: 100%;
       background: rgba(26, 26, 46, 0.75);
@@ -63,7 +69,7 @@
 
     header { text-align: center; margin-bottom: 30px; }
 
-    .logo-glow {
+    h1.logo-glow {
       font-size: 2.8rem;
       font-weight: 800;
       background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
@@ -132,21 +138,21 @@
 </head>
 <body>
   <div class="glow-bg"></div>
-  <div class="container">
+  <main class="container">
     <header>
-      <div class="logo-glow">HoloHunter</div>
+      <h1 class="logo-glow">HoloHunter</h1>
       <div class="subtitle">Terms of Service & Subscription Policy / 服務與訂閱條款</div>
       <div class="draft-badge">【工程審核草案 / Engineering Review Draft】</div>
     </header>
 
-    <div class="lang-toggle-container">
+    <nav class="lang-toggle-container">
       <button class="lang-btn active" onclick="switchLang('zh')">繁體中文</button>
       <button class="lang-btn" onclick="switchLang('ja')">日本語</button>
       <button class="lang-btn" onclick="switchLang('en')">English</button>
-    </div>
+    </nav>
 
     <!-- ── 繁體中文 ── -->
-    <div id="content-zh" class="content-section active">
+    <section id="content-zh" class="content-section active">
       <p><em>工程審核草案更新日期：2026 年 8 月 24 日（需待產品負責人與法務最終確認）</em></p>
       
       <div class="alert-card">
@@ -162,7 +168,7 @@
         <li>使用者可以於同一 Internal User ID 綁定多個第三方驗證管道，以實現跨裝置資料與訂閱權限同步。</li>
       </ul>
 
-      <h2>3. 數位訂閱服務條款 (Subscription Terms)</h2>
+      <h2>3. 數位訂閱服務條款與未來門檻 (Subscription Framework & Launch Gates)</h2>
       <ul>
         <li><strong>服務項目</strong>：HoloHunter Pro 訂閱解鎖「無限次數相機 OCR 掃描」、「AI 價格趨勢預測與動態分析」及「純淨無廣告體驗」。</li>
         <li><strong>金流與支付處理商</strong>：
@@ -172,48 +178,35 @@
             <li>Web 網頁版數位訂閱由 <strong>Stripe Checkout</strong> 處理與扣款。</li>
           </ul>
         </li>
-        <li><strong>自動續訂規範</strong>：所有訂閱方案均採自動續訂模式。系統將於當期計費週期結束前 24 小時內自動扣款續訂。若欲取消續訂，您必須於當期結束前至少 24 小時至 Apple ID 設定、Google Play 訂閱管理或本服務 Web 帳號設定頁面關閉自動續訂。</li>
-        <li><strong>恢復購買 (Restore Purchases)</strong>：若您在換機或重裝 App 後 Pro 權益未自動開啟，可在設定頁面點擊「恢復購買」按鈕，系統將自動向平台對帳驗證憑證。</li>
+        <li><strong>自動續訂規範 (Future Launch Gate)</strong>：所有訂閱方案均採自動續訂模式。系統將於當期計費週期結束前 24 小時內自動扣款續訂。取消續訂需至 Apple ID 設定、Google Play 訂閱管理或 Web 設定頁面辦理。現階段為工程測試草案，預設關閉真實交易。</li>
       </ul>
 
-      <h2>4. 退款政策與取消訂閱 (Refund & Cancellation Policy)</h2>
-      <ul>
-        <li><strong>取消訂閱</strong>：取消續訂後，您仍可享有 Pro 權益至當期已付費用之計費週期結束為止，系統不會針對剩餘天數提供按比例退款。</li>
-        <li><strong>退款申請</strong>：iOS 訂閱退款需直接向 Apple 提出申請（reportaproblem.apple.com）；Android 訂閱退款依據 Google Play 退款政策辦理；Web 版 Stripe 扣款退款可聯繫技術支援信箱處理。</li>
-      </ul>
-
-      <h2>5. 帳號刪除與資料處理 (Account Deletion & Data Handling)</h2>
-      <p>使用者得隨時於 App 設定頁面執行本機資料清理。若需申請徹底刪除雲端帳號及所有相關記錄（包含 OAuth 綁定關聯、收藏資料與使用量紀錄），請參閱 <a href="privacy.html" style="color: var(--primary-color);">隱私權政策</a> 並以登入電子郵件發信至技術支援管道 <code>dicoge.chen@gmail.com</code> 提出申請。</p>
-
-      <h2>6. 服務變更與免責聲明</h2>
-      <p>本服務所提供之市場價格（來源包含游游亭等第三方市場）與 AI 價格預測僅供參考，不構成任何卡牌投資或交易建議。我們不保證第三方數據之絕對即時性與準確性。</p>
-
-      <h2>7. 聯絡技術支援</h2>
-      <p>如有任何條款或訂閱相關疑問，請聯繫技術支援草案信箱：<code>dicoge.chen@gmail.com</code>（開發者：dicoge）。</p>
-    </div>
+      <h2>4. 聯絡技術支援</h2>
+      <p>如有任何條款或訂閱相關疑問，請聯繫技術支援草案管道：<code>dicoge.chen@gmail.com</code>（開發者：dicoge）。</p>
+    </section>
 
     <!-- ── 日本語 ── -->
-    <div id="content-ja" class="content-section">
-      <p><em>エンジニアリングレビュー草案（プロダクトオーナー確認待ち）</em></p>
+    <section id="content-ja" class="content-section">
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">日本語利用規約草案 (Japanese Terms Framework)</h2>
       <div class="alert-card">
-        <p><strong>⚠️ 免責事項・著作権：</strong> HoloHunter はファンによって開發された<strong>非公式</strong>のカード価格検索・分析ツールです。カバー株式会社（Cover Corp.）および hololive OFFICIAL CARD GAME 公式とは一切関係ありません。</p>
+        <p><strong>⚠️ 免責事項・著作権：</strong> HoloHunter はファンによって開発された<strong>非公式</strong>のカード価格検索・分析ツールです。カバー株式会社（Cover Corp.）および hololive OFFICIAL CARD GAME 公式とは一切関係ありません。</p>
       </div>
 
       <h2>1. 利用規約の同意</h2>
       <p>HoloHunter アプリおよびウェブサイト（<code>https://holohunter.dicoge.com/</code>）を利用することにより、本規約に同意したものとみなされます。</p>
 
-      <h2>2. サブスクリプション利用規約</h2>
+      <h2>2. サブスクリプション利用規約 (テスト草案)</h2>
       <ul>
         <li><strong>サービス内容</strong>：Pro プランは「無制限カメラ OCR スキャン」「AI 価格トレンド予測」「広告非表示」を提供します。</li>
         <li><strong>決済事業者</strong>：iOS は Apple StoreKit、Android は Google Play Billing、Web は Stripe 経由で決済が行われます。</li>
       </ul>
       <h2>3. お問い合わせ</h2>
       <p>サポートメール（草案）：<code>dicoge.chen@gmail.com</code>（開発者：dicoge）</p>
-    </div>
+    </section>
 
     <!-- ── English ── -->
-    <div id="content-en" class="content-section">
-      <p><em>Engineering Review Draft (Pending Owner Confirmation)</em></p>
+    <section id="content-en" class="content-section">
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">English Terms Framework</h2>
       <div class="alert-card">
         <p><strong>⚠️ Disclaimer:</strong> HoloHunter is an <strong>unofficial</strong> fan-made application and website for hololive OFFICIAL CARD GAME players. It is not affiliated with, endorsed, or authorized by Cover Corp.</p>
       </div>
@@ -223,14 +216,14 @@
 
       <h2>2. Support Contact</h2>
       <p>Support Email (Draft): <code>dicoge.chen@gmail.com</code> (Developer: dicoge)</p>
-    </div>
+    </section>
 
-    <div class="links-footer">
+    <nav class="links-footer">
       <a href="pricing.html">🏷️ Pricing Plans / 訂閱方案草案</a>
       <a href="privacy.html">🔒 Privacy Policy / 隱私權政策</a>
       <a href="support.html">🛠️ Support & FAQ / 技術支援草案</a>
-    </div>
-  </div>
+    </nav>
+  </main>
 
   <footer>
     &copy; 2026 HoloHunter. Created for hololive PCG players.

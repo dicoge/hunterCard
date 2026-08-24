@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 
 const PROJECT_DIR = process.cwd();
 
-console.log('── Unit Test: DIC-1157 Commercialization & Store Readiness Verification ──');
+console.log('── Unit Test: DIC-1157 Commercialization & Store Readiness Verification (CR Iteration) ──');
 
-// 1. Check HTML files existence & canonical URL
+// 1. Check HTML files existence & canonical URL & semantic structure
 const requiredPages = ['pricing.html', 'terms.html', 'privacy.html', 'support.html'];
 const canonicalDomain = 'https://holohunter.dicoge.com/';
 
@@ -18,7 +18,10 @@ for (const page of requiredPages) {
   assert.ok(content.includes('canonical'), `public/${page} must contain a canonical link tag`);
   assert.ok(content.includes(canonicalDomain), `public/${page} must reference canonical domain ${canonicalDomain}`);
   assert.ok(!content.includes('holocard-hunter.vercel.app'), `public/${page} must NOT use old vercel.app URL`);
-  console.log(`✓ PASS: public/${page} verified with canonical domain and clean URL`);
+  assert.ok(content.includes('<main'), `public/${page} must use semantic <main> tag`);
+  assert.ok(content.includes('<h1'), `public/${page} must use semantic <h1> tag`);
+  assert.ok(content.includes('【工程審核草案'), `public/${page} must display Engineering Review Draft badge`);
+  console.log(`✓ PASS: public/${page} verified with canonical domain, semantic HTML, and draft badge`);
 }
 
 // 2. Check Dynamic Price Loading & No Hardcoded Production Prices
@@ -44,12 +47,13 @@ assert.ok(authScreenContent.includes('https://holohunter.dicoge.com/privacy.html
 assert.ok(!authScreenContent.includes('vercel.app'), 'AuthScreen.tsx must NOT contain vercel.app domain');
 console.log('✓ PASS: AuthScreen.tsx uses canonical domain https://holohunter.dicoge.com/privacy.html');
 
-// 5. Check AdSlot.tsx existence & importability
+// 5. Check AdSlot.tsx existence & safety exports
 const adSlotPath = path.join(PROJECT_DIR, 'src/components/AdSlot.tsx');
 assert.ok(fs.existsSync(adSlotPath), 'src/components/AdSlot.tsx must exist');
 const adSlotContent = fs.readFileSync(adSlotPath, 'utf-8');
-assert.ok(adSlotContent.includes("role === 'subscriber'"), 'AdSlot must check subscriber role to hide ads');
-assert.ok(adSlotContent.includes('testProvider'), 'AdSlot must support testProvider mode');
-console.log('✓ PASS: AdSlot.tsx exists and contains subscriber hide logic & testProvider mode');
+assert.ok(adSlotContent.includes('PRODUCTION_ADS_ENABLED = false'), 'AdSlot must export PRODUCTION_ADS_ENABLED = false');
+assert.ok(adSlotContent.includes('AdSlotErrorBoundary'), 'AdSlot must define class ErrorBoundary component');
+assert.ok(adSlotContent.includes('hasConsent !== true'), 'AdSlot must fail closed when hasConsent is not true');
+console.log('✓ PASS: AdSlot.tsx exists with production-off flag, ErrorBoundary class, and consent fail-closed logic');
 
 console.log('\nAll DIC-1157 commercialization verification checks passed!');

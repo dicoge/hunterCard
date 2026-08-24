@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
+import React, { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking, ViewStyle } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { COLORS } from '../constants';
+import { UserRole } from '../types/auth';
+
+/**
+ * Production Ad Traffic Gate Flag (DIC-1157 CR §1)
+ * Default is FALSE: Production traffic is OFF by default until owner policy review.
+ */
+export const PRODUCTION_ADS_ENABLED = false;
 
 export interface AdSlotProps {
   slotId?: string;
@@ -9,68 +16,121 @@ export interface AdSlotProps {
   testProvider?: boolean;
   style?: ViewStyle;
   hasConsent?: boolean;
+  // Optional explicit entitlement override for server-authoritative verification
+  serverValidatedRole?: UserRole | null;
+}
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
 }
 
 /**
- * AdSlot Component for HoloHunter (DIC-1157 Commercialization Prep)
- * 
- * Invariants & Policies:
- * 1. Pro Entitlement: Automatically hidden when `role === 'subscriber'`.
- * 2. Non-Intrusive Placement: Placed in footer or post-content areas only;
- *    never obscures cards, CTAs, prices, login, or deck editor.
- * 3. Fail-Closed Safety: Error boundary / fallback prevents ad loading errors
- *    from blocking or crashing the application.
- * 4. Privacy & Consent: Respects CMP consent status.
+ * Real Class Error Boundary for AdSlot (DIC-1157 CR §1)
+ * Guarantees that any unexpected rendering or component error fails closed safely by rendering null.
  */
-export const AdSlot: React.FC<AdSlotProps> = ({
+export class AdSlotErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(_: Error): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    // Fail-closed logging seam: log error without surfacing banner or blocking application execution
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.warn('[AdSlot] Fail-closed caught error in AdSlot component:', error, errorInfo);
+    }
+  }
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      return this.props.fallback ?? null;
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Core AdSlot Inner Component (DIC-1157 Commercialization Prep & CR §1)
+ */
+export const AdSlotInner: React.FC<AdSlotProps> = ({
   slotId = 'default_footer_banner',
   format = 'banner',
-  testProvider = true,
+  testProvider = false,
   style,
-  hasConsent = true,
+  hasConsent = false,
+  serverValidatedRole,
 }) => {
-  const role = useAuthStore((s) => s.role);
-  const [hasError, setHasError] = useState(false);
+  const storeRole = useAuthStore((s) => s.role);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  // Pro Subscribers have zero ads
-  if (role === 'subscriber') {
+  // 1. Consent Gate: Unknown / missing CMP consent MUST fail closed (DIC-1157 CR §1)
+  if (hasConsent !== true) {
     return null;
   }
 
-  // If consent is denied or error encountered, fail-closed safely without blocking UI
-  if (!hasConsent || hasError) {
+  // 2. Production Traffic Gate: Production ads are off by default.
+  // Unless explicitly in staging testProvider mode, non-production ads fail closed.
+  if (!PRODUCTION_ADS_ENABLED && testProvider !== true) {
     return null;
   }
 
-  try {
-    return (
-      <View style={[styles.container, style]} testID={`ad-slot-${slotId}`}>
-        <View style={styles.adBadge}>
-          <Text style={styles.adBadgeText}>贊助廣告</Text>
-        </View>
-        
-        {testProvider ? (
-          <TouchableOpacity
-            style={styles.testAdContent}
-            onPress={() => {
-              Linking.openURL('https://holohunter.dicoge.com/pricing.html');
-            }}
-          >
-            <Text style={styles.testAdTitle}>🌸 HoloHunter Pro 方案測試廣告</Text>
-            <Text style={styles.testAdSub}>升級 Pro 解鎖無限次相機掃描與 AI 價格預測（無廣告體驗）</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.placeholderContent}>
-            <Text style={styles.placeholderText}>廣告加載中...</Text>
-          </View>
-        )}
+  // 3. Entitlement Resolution:
+  // Prefer explicit serverValidatedRole over client persisted role to avoid trusting client boolean.
+  const activeRole = serverValidatedRole !== undefined ? serverValidatedRole : storeRole;
+
+  // Pro Subscribers have zero ads (entitlement check)
+  if (activeRole === 'subscriber') {
+    return null;
+  }
+
+  // Fail closed if activeRole is unknown, null, or invalid
+  if (activeRole !== 'free_user' && activeRole !== 'guest') {
+    return null;
+  }
+
+  return (
+    <View style={[styles.container, style]} testID={`ad-slot-${slotId}`}>
+      <View style={styles.adBadge}>
+        <Text style={styles.adBadgeText}>贊助廣告 (測試與沙盒)</Text>
       </View>
-    );
-  } catch (err) {
-    // Fail-closed fallback: log error silently and return null
-    setHasError(true);
-    return null;
-  }
+      
+      {testProvider ? (
+        <TouchableOpacity
+          style={styles.testAdContent}
+          onPress={() => {
+            Linking.openURL('https://holohunter.dicoge.com/pricing.html');
+          }}
+        >
+          <Text style={styles.testAdTitle}>🌸 HoloHunter 低干擾測試廣告版位</Text>
+          <Text style={styles.testAdSub}>正式流量預設關閉．Pro 訂閱帳號享純淨無廣告體驗</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.placeholderContent}>
+          <Text style={styles.placeholderText}>廣告載入中...</Text>
+        </View>
+      )}
+    </View>
+  );
+};
+
+/**
+ * Exported AdSlot Wrapped in Real Error Boundary
+ */
+export const AdSlot: React.FC<AdSlotProps> = (props) => {
+  return (
+    <AdSlotErrorBoundary fallback={null}>
+      <AdSlotInner {...props} />
+    </AdSlotErrorBoundary>
+  );
 };
 
 const styles = StyleSheet.create({
