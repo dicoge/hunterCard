@@ -14,7 +14,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import platformStorage from './storage';
-import { normalizePrinting } from '../utils/printingIdentity';
+import { canonicalPrinting, normalizePrinting } from '../utils/printingIdentity';
 import { dedupePriceAlerts, priceAlertKey, type PriceAlert } from '../utils/priceAlerts';
 import {
   migrateLegacyTracking, pendingKey,
@@ -57,10 +57,17 @@ export const usePriceAlertStore = create<PriceAlertState>()(
 
       upsertAlert: (input) => {
         const cardNumber = (input.cardNumber ?? '').trim();
-        const printing = normalizePrinting(input.printing ?? '');
+        const normalized = normalizePrinting(input.printing ?? '');
         // An alert without a proven printing is not representable — refuse
-        // rather than fall back to a card-number-only match.
-        if (!cardNumber || !printing) return null;
+        // rather than fall back to a card-number-only match. Reject here,
+        // BEFORE canonicalPrinting turns the empty string into 'BASE' — an
+        // empty printing input never proves the base tier, it proves nothing.
+        if (!cardNumber || !normalized) return null;
+        // Route through canonicalPrinting so a legacy ERRATA-* printing input
+        // (from a stored alert built before DIC-1139) is stored under the same
+        // key the current catalog now emits — never as a phantom parallel row.
+        const printing = canonicalPrinting(normalized);
+        if (!printing) return null;
 
         const key = priceAlertKey(cardNumber, printing);
         const now = new Date().toISOString();
@@ -119,13 +126,20 @@ export const usePriceAlertStore = create<PriceAlertState>()(
     }),
     {
       name: 'hunterCard-price-alerts',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => platformStorage),
       partialize: (s) => ({ alerts: s.alerts, pending: s.pending }),
       // v1 keyed some records by an un-normalized printing. v2 also persisted a
       // representative card image as though it belonged to every printing. On
       // upgrade, collapse duplicates and discard those unprovable thumbnails;
       // the current catalog supplies a source-proven exact image when it has one.
+      //
+      // v4 (DIC-1139): the canonical printing no longer carries errata history,
+      // so an alert on `hBP02-003|PARALLEL/SIGN/ERRATA-PRE` is re-keyed to
+      // `hBP02-003|PARALLEL/SIGN` — the same tier the current catalog offers
+      // the user. dedupePriceAlerts already routes through priceAlertKey (which
+      // now canonicalises) so folding is collision-safe: the newest updatedAt
+      // wins when two legacy alerts collapse onto the same canonical printing.
       migrate: (persisted: any, version: number) => {
         const deduped = dedupePriceAlerts(persisted?.alerts ?? {}).alerts;
         const alerts = version < 3

@@ -39,6 +39,12 @@ export function normalizePrinting(value: string): string {
 // Known treatments below get a stable ASCII token; anything else (set codes such
 // as `hBP04`, art descriptors such as `白銀ノエル`) is kept verbatim so the
 // identity never claims more than the label states.
+//
+// エラッタ前 / エラッタ後 are source-maintenance revisions of the SAME tier
+// (DIC-1139) — they do not create a new printing the player can hold, only a
+// bookkeeping row on the shop. They are recognised here so pre-canonicalisation
+// input parses correctly, but `printingFromLabel` folds them out of the token
+// so no user-facing identifier ever carries errata history.
 const MARKER_TOKENS: Record<string, string> = {
   'パラレル': 'PARALLEL',
   'サイン': 'SIGN',
@@ -47,6 +53,8 @@ const MARKER_TOKENS: Record<string, string> = {
   '箔押し': 'FOIL',
 };
 
+const ERRATA_TOKENS = new Set(['ERRATA-PRE', 'ERRATA-POST']);
+
 // A premium treatment. Everything else — BASE, ERRATA-PRE/POST — is a plain
 // printing and is what a budget deck defaults to.
 const PREMIUM_TOKEN_RE = /(^|\/)(PARALLEL|SIGN|FOIL)(\/|$)/;
@@ -54,20 +62,41 @@ const PREMIUM_TOKEN_RE = /(^|\/)(PARALLEL|SIGN|FOIL)(\/|$)/;
 /** Listing label → deterministic printing token. A listing with no parenthetical
  * is the card number's plain printing (BASE); otherwise the token spells out
  * exactly the descriptors the label carries, so `(パラレル/hBP07)`,
- * `(パラレル/HR)` and a bare `(hBP04)` reprint all stay distinct printings. */
+ * `(パラレル/HR)` and a bare `(hBP04)` reprint all stay distinct printings.
+ *
+ * ERRATA-PRE / ERRATA-POST are stripped here so ownership, deck slots and
+ * alert targets never key by errata history (DIC-1139) — a corrected reprint
+ * of a signed card is still the signed card. */
 export function printingFromLabel(label: string): string {
   const norm = (label ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim();
   const groups = Array.from(norm.matchAll(/[(（]([^)）]*)[)）]/g))
     .map((m) => m[1].trim())
     .filter(Boolean);
   if (groups.length === 0) return BASE_PRINTING;
-  const token = groups
+  const parts = groups
     .flatMap((group) => group.split('/'))
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => MARKER_TOKENS[part] ?? part)
-    .join('/');
+    .filter((tok) => !ERRATA_TOKENS.has(tok));
+  if (parts.length === 0) return BASE_PRINTING;
+  const token = parts.join('/');
   return normalizePrinting(token) || BASE_PRINTING;
+}
+
+/**
+ * Strip errata-history tokens from any legacy printing string persisted
+ * before DIC-1139. `PARALLEL/SIGN/ERRATA-PRE` → `PARALLEL/SIGN`; a token that
+ * was ONLY errata history (`ERRATA-POST`) → BASE. This is the single point
+ * every store's migration and every read-side lookup routes through so old
+ * inventory / deck slot / alert keys land on the canonical printing without
+ * duplication. */
+export function canonicalPrinting(printing: string): string {
+  const norm = normalizePrinting(printing);
+  if (!norm) return BASE_PRINTING;
+  const parts = norm.split('/').filter((p) => p && !ERRATA_TOKENS.has(p));
+  if (parts.length === 0) return BASE_PRINTING;
+  return parts.join('/');
 }
 
 export function isPlainPrinting(printing: string): boolean {

@@ -219,7 +219,7 @@ await test('current-version inventory persists and survives reload', async () =>
   const raw = platformStorage.getItem(STORE_KEY);
   assert.ok(raw, 'store must write a persisted payload');
   const parsed = JSON.parse(raw);
-  assert.equal(parsed.version, 1, 'persisted payload must be at schema version 1');
+  assert.equal(parsed.version, 2, 'persisted payload must be at current schema version (v2 after DIC-1139)');
 
   useDeckStore.setState({ decks: [], activeDeckId: null, collection: {} });
   platformStorage.setItem(STORE_KEY, raw);

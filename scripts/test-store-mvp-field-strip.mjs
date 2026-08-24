@@ -19,8 +19,10 @@ import {
   resolveStoreMvpFromEnv,
   sanitizeDatabase,
   stripForbiddenCardFields,
+  stripInternalAuditDatabase,
   copyDatabaseFile,
   FORBIDDEN_CARD_FIELDS,
+  INTERNAL_AUDIT_FIELDS,
 } from './lib/store-mvp-sanitize.mjs';
 import { rankCandidates } from '../api/recognize-card.ts';
 
@@ -189,13 +191,41 @@ const realDb = path.join(__dirname, '..', 'data', 'database.json');
 if (fs.existsSync(realDb)) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'store-mvp-artifact-'));
   try {
-    // Full web export: byte-identical copy (existing web production unchanged).
+    // Full web export: preserves every real market field, but strips
+    // INTERNAL_AUDIT_FIELDS (DIC-1140 blocker #1) so `_rawPricesArchive` cannot
+    // ship to the wire even in full production. The equality bar is now:
+    // exported bytes === stripInternalAuditDatabase(source), not raw byte-copy.
     const fullDest = path.join(tmpDir, 'full', 'database.json');
     copyDatabaseFile(realDb, fullDest, false);
-    assert.ok(
-      fs.readFileSync(fullDest).equals(fs.readFileSync(realDb)),
-      'non-MVP export copies database.json byte-identically',
+    const fullExpected = JSON.stringify(
+      stripInternalAuditDatabase(JSON.parse(fs.readFileSync(realDb, 'utf-8'))),
     );
+    assert.equal(
+      fs.readFileSync(fullDest, 'utf-8'),
+      fullExpected,
+      'non-MVP export equals stripInternalAuditDatabase(source) — internal audit fields dropped, every user field preserved',
+    );
+    // Confirm the stripped fields were actually present in the source, so the
+    // pass proves the strip removed real bytes (not vacuously green).
+    const srcAudit = Object.fromEntries(INTERNAL_AUDIT_FIELDS.map((f) => [f, 0]));
+    for (const entry of Object.values(JSON.parse(fs.readFileSync(realDb, 'utf-8')).cards ?? {})) {
+      for (const field of INTERNAL_AUDIT_FIELDS) if (Object.prototype.hasOwnProperty.call(entry, field)) srcAudit[field]++;
+    }
+    for (const [field, count] of Object.entries(srcAudit)) {
+      assert.ok(count > 0, `source database must carry ${field} for the strip to be meaningful`);
+    }
+    const fullOut = JSON.parse(fs.readFileSync(fullDest, 'utf-8'));
+    for (const entry of Object.values(fullOut.cards ?? {})) {
+      for (const field of INTERNAL_AUDIT_FIELDS) {
+        assert.ok(!Object.prototype.hasOwnProperty.call(entry, field), `full export must NOT carry ${field}`);
+      }
+    }
+    // Non-MVP retains every forbidden Store MVP field (buyPrice / priceHistory / ytStats).
+    let retainedBuyPrice = 0;
+    for (const entry of Object.values(fullOut.cards ?? {})) {
+      if ('buyPrice' in entry) retainedBuyPrice++;
+    }
+    assert.ok(retainedBuyPrice > 0, 'non-MVP export keeps card.buyPrice (proven by real data)');
 
     // Store MVP export: forbidden fields stripped from every real card.
     const mvpDest = path.join(tmpDir, 'mvp', 'database.json');

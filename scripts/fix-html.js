@@ -32,24 +32,27 @@ html = html.replace(
   '<script type="module" src="$1" defer></script>'
 );
 
-// If manifest link already exists (public/index.html has it), skip re-adding
-if (html.includes('manifest')) {
-  console.log('PWA meta tags already present, skipping injection.');
-
-  // Save the HTML (type=module fix applied above)
-  fs.writeFileSync(htmlPath, html, 'utf-8');
-
-  // Also copy database.json (needed by frontend search) — sanitized under Store MVP.
+// DIC-1140 blocker #3: the sanitizing database copy MUST run on every branch.
+// Previously this call lived inside the "manifest already present" branch and
+// wasn't reached when Expo's index.html lacked <manifest>. Even when it did
+// run, scripts/copy-assets.js later byte-copied the RAW data/database.json on
+// top of the sanitized artifact — so `_rawPricesArchive` leaked to every card
+// and 28 cards carried errata labels in the shipped bytes. Hoisting the
+// sanitize call above the branch AND deleting the database copy from
+// copy-assets.js makes fix-html.js the SOLE producer of
+// dist/data/database.json; copy-assets.js now fails closed if that file is
+// missing at run time.
+{
   const dbSource = path.join(__dirname, '..', 'data', 'database.json');
   const dbDest = path.join(distDir, 'data', 'database.json');
   if (fs.existsSync(dbSource)) {
     const { sanitized } = copyDatabaseFile(dbSource, dbDest, STORE_MVP);
-    console.log(`  ✅ database.json → dist/data/database.json${sanitized ? ' (Store MVP sanitized)' : ''}`);
+    console.log(
+      `  ✅ database.json → dist/data/database.json (${sanitized ? 'Store MVP sanitized' : 'internal-audit stripped'})`,
+    );
   } else {
     console.log('  ⚠️ database.json not found, skipping');
   }
-
-  // Also copy series-names.json (needed by series search)
   const seriesDbSource = path.join(__dirname, '..', 'data', 'series-names.json');
   const seriesDbDest = path.join(distDir, 'data', 'series-names.json');
   if (fs.existsSync(seriesDbSource)) {
@@ -59,7 +62,13 @@ if (html.includes('manifest')) {
   } else {
     console.log('  ⚠️ series-names.json not found, skipping');
   }
+}
 
+// If manifest link already exists (public/index.html has it), skip re-adding
+if (html.includes('manifest')) {
+  console.log('PWA meta tags already present, skipping injection.');
+  // Save the HTML (type=module fix applied above)
+  fs.writeFileSync(htmlPath, html, 'utf-8');
   console.log('Script tags fixed (type=module added).');
   process.exit(0);
 }

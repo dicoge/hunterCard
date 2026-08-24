@@ -7,7 +7,7 @@
 // Error/Warning.
 
 import rawRules from '../../data/deck-rules.json';
-import { normalizePrinting } from './printingIdentity';
+import { canonicalPrinting, normalizePrinting } from './printingIdentity';
 
 export type DeckZone = 'oshi' | 'main' | 'yell';
 
@@ -373,8 +373,15 @@ export interface GapSummary {
 // requirement collapse to the SAME key when they mean the same printing
 // (DIC-978 #2). Delegates to the shared printing model so ownership can never
 // drift from the identity the price pipeline emits (DIC-1013 §7).
+//
+// Also strips errata-history tokens (DIC-1139): a v0/v1 collection persisted
+// `hBP02-003|PARALLEL/SIGN/ERRATA-PRE` for the signed printing that is now
+// canonically `hBP02-003|PARALLEL/SIGN`. Routing every lookup through
+// `canonicalPrinting` here folds legacy keys onto the canonical bucket
+// without duplication, so an already-owned card doesn't silently reappear as
+// zero-owned after the errata history is hidden.
 export function normalizeVersion(version: string): string {
-  return normalizePrinting(version);
+  return canonicalPrinting(normalizePrinting(version));
 }
 
 /** ownershipKey = cardNumber|normalizedVersion (DIC-978 #2). cardNumber is
