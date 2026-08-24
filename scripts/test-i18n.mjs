@@ -15,7 +15,8 @@
 import assert from 'node:assert/strict';
 import { t, zh, ja } from '../src/i18n/index.ts';
 import {
-  buildTournamentMonthlySummary, filterEventsByColor, normalizeTournamentColor,
+  buildTournamentMonthlySummary, buildEventHighlights, buildRepresentativeCards,
+  filterEventsByColor, normalizeTournamentColor, REPRESENTATIVE_CARDS_LIMIT,
 } from '../src/utils/tournamentSummary.ts';
 import { verifiedDecks, ALL_SCOPE } from '../src/utils/tournamentDonut.ts';
 import fs from 'node:fs';
@@ -369,6 +370,220 @@ test('summary omits unknown archetypes instead of leaking a fixed-language label
   };
   assert.deepEqual(buildTournamentMonthlySummary([unknownReport], '2026-08', 'zh').topArchetypes, []);
   assert.deepEqual(buildTournamentMonthlySummary([unknownReport], '2026-08', 'ja').topArchetypes, []);
+});
+
+// ── 6. DIC-1142 player-focused analysis ─────────────────────────────────────
+test('summary carries per-archetype best rank from published data', () => {
+  const summary = buildTournamentMonthlySummary([augustReport], '2026-08', 'zh');
+  const withBestRank = summary.topArchetypes.filter((a) => a.bestRank === 1);
+  assert.ok(
+    withBestRank.length > 0,
+    'August fixture has champion decks so at least one archetype must show bestRank=1',
+  );
+  const azkiEntry = summary.topArchetypes.find((a) => a.id === 'azki');
+  if (azkiEntry) {
+    assert.equal(azkiEntry.bestRank, 1, 'AZKi block A champion should propagate bestRank=1');
+    assert.equal(azkiEntry.bestRankLabel, 'champion');
+  }
+});
+
+test('summary carries per-oshi best rank from published data', () => {
+  const summary = buildTournamentMonthlySummary([augustReport], '2026-08', 'zh');
+  assert.ok(summary.topOshi.length > 0);
+  for (const oshi of summary.topOshi) {
+    if (oshi.bestRank != null) {
+      assert.ok(oshi.bestRank >= 1, 'best rank is never zero or negative');
+      assert.ok(typeof oshi.bestRankLabel === 'string' || oshi.bestRankLabel === null);
+    }
+  }
+});
+
+test('summary best rank stays null when the source published no rank', () => {
+  const noRankReport = {
+    ...augustReport,
+    events: [{
+      ...augustReport.events[0],
+      decks: augustReport.events[0].decks.map((d) => ({
+        ...d, rank: null, rankLabel: null, cardsVerified: true,
+      })),
+    }],
+  };
+  const summary = buildTournamentMonthlySummary([noRankReport], '2026-08', 'zh');
+  for (const item of summary.topArchetypes) {
+    assert.equal(item.bestRank, null, `${item.label} bestRank must stay null when unpublished`);
+    assert.equal(item.bestRankLabel, null);
+  }
+});
+
+test('representative cards dedupe by cardNumber across printings/versions', () => {
+  // Build a fixture with the same card at two versions inside one deck. The
+  // dedupe contract is: one deck contains one instance of hBP07-006, no
+  // matter how many printings show up in its card array.
+  const fixture = {
+    deckId: 'deck-1',
+    cardsVerified: true,
+    cards: [
+      { zone: 'oshi', cardNumber: 'hBP07-006', version: 'OSR', count: 1 },
+      { zone: 'oshi', cardNumber: 'hBP07-006', version: 'RR', count: 1 },
+      { zone: 'main', cardNumber: 'hBP01-044', version: 'P', count: 2 },
+    ],
+  };
+  const rows = buildRepresentativeCards([fixture]);
+  const oshiCard = rows.find((r) => r.cardNumber === 'hBP07-006');
+  assert.ok(oshiCard);
+  assert.equal(oshiCard.deckCount, 1, 'same cardNumber across versions counts as one deck');
+  assert.equal(oshiCard.totalCopies, 2, 'copies still sum across printings');
+});
+
+test('representative cards use verified sample as adoption denominator', () => {
+  const rows = buildRepresentativeCards(verifiedDecks(augustReport.events));
+  assert.ok(rows.length > 0, 'August fixture has verified decks so cards must surface');
+  for (const row of rows) {
+    assert.ok(row.adoptionRate > 0 && row.adoptionRate <= 1, 'adoption is a fraction');
+    assert.ok(row.deckCount >= 1);
+    assert.ok(row.deckCount <= 2, `August has 2 verified decks — deckCount cannot exceed that; got ${row.deckCount}`);
+  }
+  assert.ok(rows.length <= REPRESENTATIVE_CARDS_LIMIT);
+});
+
+test('representative cards over an empty verified sample is empty', () => {
+  assert.deepEqual(buildRepresentativeCards([]), []);
+});
+
+test('representative cards ignore unverified decks entirely', () => {
+  const unverified = {
+    deckId: 'unverified-1',
+    cardsVerified: false,
+    cards: [{ zone: 'main', cardNumber: 'hBP08-005', version: 'C', count: 4 }],
+  };
+  // buildRepresentativeCards takes ALREADY-verified decks; upstream summary
+  // uses verifiedDecks(). We assert the aggregator does not add anything for a
+  // caller that hands it an empty verified slice.
+  assert.deepEqual(buildRepresentativeCards([]), []);
+  // Sanity: the summary path drops unverified decks so representativeCards
+  // stays empty when nothing verified survives.
+  const summary = buildTournamentMonthlySummary([{
+    ...augustReport,
+    events: [{ ...augustReport.events[0], decks: [unverified] }],
+  }], '2026-08', 'zh');
+  assert.deepEqual(summary.representativeCards, []);
+});
+
+test('event highlights extract champion, common cards, and dedupe by cardNumber', () => {
+  const highlights = buildEventHighlights(augustReport.events);
+  const event = augustReport.events[0];
+  const h = highlights.get(event.eventId);
+  assert.ok(h, 'every event must have a highlight entry');
+  assert.equal(h.showcasedDecks, 2);
+  assert.equal(h.verifiedDecks, 2);
+  assert.ok(h.championDeckId != null, 'August event has a rank=1 champion');
+  assert.ok(h.hasNotableRank, 'a rank=1 deck counts as notable');
+  // Common cards must appear in >= 2 verified decks and be deduped by cardNumber.
+  for (const c of h.commonCards) {
+    assert.ok(c.deckCount >= 2, `${c.cardNumber} appeared in fewer than 2 decks`);
+    assert.ok(c.cardNumber && typeof c.cardNumber === 'string');
+  }
+});
+
+test('event highlights honestly reports no champion when the source published none', () => {
+  const noChampionReport = {
+    ...augustReport,
+    events: [{
+      ...augustReport.events[0],
+      decks: augustReport.events[0].decks.map((d) => ({ ...d, rank: null, rankLabel: null })),
+    }],
+  };
+  const highlights = buildEventHighlights(noChampionReport.events);
+  const h = highlights.get(noChampionReport.events[0].eventId);
+  assert.equal(h.championDeckId, null, 'no champion → null, never invented');
+  assert.equal(h.championArchetypeLabel, null);
+  assert.equal(h.hasNotableRank, false);
+});
+
+test('event highlights common-cards stays empty when only one verified deck exists', () => {
+  const oneDeckReport = {
+    ...augustReport,
+    events: [{
+      ...augustReport.events[0],
+      decks: [augustReport.events[0].decks[0]],
+    }],
+  };
+  const highlights = buildEventHighlights(oneDeckReport.events);
+  const h = highlights.get(oneDeckReport.events[0].eventId);
+  assert.deepEqual(h.commonCards, [], 'single deck cannot yield "common" cards');
+});
+
+// ── DIC-1142 CR: champion / top-placement counts and ja CN-leak gates ───────
+test('summary champion count uses numeric rank only, never rankLabel', () => {
+  const mixed = {
+    ...augustReport,
+    events: [{
+      ...augustReport.events[0],
+      decks: [
+        // Two AZKi decks: one is source-published rank=1, the other only carries
+        // a "champion" rankLabel with rank=null — the second must NOT count.
+        {
+          ...augustReport.events[0].decks[0],
+          deckId: 'a', decklogCode: 'a', rank: 1, rankLabel: 'champion', cardsVerified: true,
+        },
+        {
+          ...augustReport.events[0].decks[0],
+          deckId: 'b', decklogCode: 'b', rank: null, rankLabel: 'champion', cardsVerified: true,
+        },
+      ],
+    }],
+  };
+  const summary = buildTournamentMonthlySummary([mixed], '2026-08', 'zh');
+  const azki = summary.topArchetypes.find((a) => a.id === 'azki');
+  assert.ok(azki);
+  assert.equal(azki.championCount, 1, 'rankLabel="champion" without numeric rank cannot inflate champion count');
+  assert.equal(azki.topPlacementCount, 1, 'top-placement also requires numeric rank');
+});
+
+test('summary top-placement count spans ranks 1–4 inclusive; > 4 does not qualify', () => {
+  const ranks = {
+    ...augustReport,
+    events: [{
+      ...augustReport.events[0],
+      decks: [
+        { ...augustReport.events[0].decks[0], deckId: '1', decklogCode: '1', rank: 1, cardsVerified: true },
+        { ...augustReport.events[0].decks[0], deckId: '2', decklogCode: '2', rank: 2, cardsVerified: true },
+        { ...augustReport.events[0].decks[0], deckId: '3', decklogCode: '3', rank: 4, cardsVerified: true },
+        { ...augustReport.events[0].decks[0], deckId: '4', decklogCode: '4', rank: 5, cardsVerified: true },
+        { ...augustReport.events[0].decks[0], deckId: '5', decklogCode: '5', rank: 8, cardsVerified: true },
+      ],
+    }],
+  };
+  const summary = buildTournamentMonthlySummary([ranks], '2026-08', 'zh');
+  const azki = summary.topArchetypes.find((a) => a.id === 'azki');
+  assert.ok(azki);
+  assert.equal(azki.championCount, 1, 'only rank=1 counts as champion');
+  assert.equal(azki.topPlacementCount, 3, 'ranks 1, 2, 4 count as top placements; rank 5 and 8 do not');
+});
+
+test('summary champion/top-placement counts on real August fixture', () => {
+  const summary = buildTournamentMonthlySummary([augustReport], '2026-08', 'zh');
+  const azki = summary.topArchetypes.find((a) => a.id === 'azki');
+  const auroChrony = summary.topArchetypes.find((a) => a.id === 'auro-chrony');
+  assert.ok(azki && auroChrony, 'August fixture publishes both A-block and B-block champions');
+  assert.equal(azki.championCount, 1);
+  assert.equal(auroChrony.championCount, 1);
+  assert.equal(azki.topPlacementCount, 1);
+  assert.equal(auroChrony.topPlacementCount, 1);
+});
+
+test('ja summary path does not surface Chinese runtime coverage/source strings', () => {
+  // Assert against the SIGNATURE Chinese fragments that live in the fixture
+  // JSON's source.name / source.disclaimer / coverage.note / event.coverageNote —
+  // none should be reachable via the values buildTournamentMonthlySummary
+  // returns for language: 'ja'. This guards the runtime-JSON leak Codex flagged
+  // in CR §3, which the JSX static gate cannot see.
+  const summary = buildTournamentMonthlySummary([augustReport, julyReport], ALL_SCOPE, 'ja');
+  const CN_MARKERS = ['資料僅來自', '本月僅收錄', '官方於 X 公布', '官方專欄', '牌組卡表已透過'];
+  const materialized = JSON.stringify(summary);
+  for (const marker of CN_MARKERS) {
+    assert.ok(!materialized.includes(marker), `ja summary must not carry CN marker: ${marker}`);
+  }
 });
 
 console.log(`test-i18n: PASS (${passed} checks)`);

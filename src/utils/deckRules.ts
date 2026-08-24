@@ -21,6 +21,11 @@ export interface DeckCard {
   id: string;
   cardNumber: string;
   name: string;
+  /** Source-published localized names, preserved verbatim so views can pick the
+   * player's language instead of the default-picked `name`. Optional so any
+   * consumer that only reads `name` keeps working (DIC-1142). */
+  nameZh?: string;
+  nameJa?: string;
   /** printing/version identity — see src/utils/printingIdentity.ts */
   printing: string;
   /** the source's own listing label for this printing (provenance / display) */
