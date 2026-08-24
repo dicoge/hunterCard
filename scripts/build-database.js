@@ -1105,6 +1105,37 @@ async function buildDatabase() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
+  // Capture the previous build's sell data before we overwrite database.json.
+  // A yuyu outage/403 is allowed to decouple from official catalog ingestion,
+  // but it must not turn a failed/incomplete scrape into a successful write that
+  // erases the last proven sell prices. Preserve by exact database card id only;
+  // never fall back by cardNumber, because reprints/extra-booster printings are
+  // distinct official versions and ambiguous stays null.
+  const prevSellByCardId = new Map();
+  try {
+    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
+    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
+      const saved = {};
+      if (Number.isFinite(card.sellPrice) && card.sellPrice > 0) {
+        saved.sellPrice = card.sellPrice;
+        saved.card = card;
+      }
+      if (Array.isArray(card.prices) && card.prices.length > 0) saved.prices = card.prices;
+      if (card.yuyuName) saved.yuyuName = card.yuyuName;
+      if (card.yuyuImage) saved.yuyuImage = card.yuyuImage;
+      if (card.timestamp) saved.timestamp = card.timestamp;
+      if (Array.isArray(card._rawPricesArchive) && card._rawPricesArchive.length > 0) saved._rawPricesArchive = card._rawPricesArchive;
+      if (Object.keys(saved).length > 0) prevSellByCardId.set(cardId, saved);
+    }
+    if (prevSellByCardId.size > 0) {
+      console.log(`  [sellPrice] Preserving sell prices for ${prevSellByCardId.size} cards from previous build`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.warn(`  [sellPrice] Could not read previous database for sell-price preservation: ${err.message}`);
+    }
+  }
+
   // Capture the previous build's buyPrice / buyPriceHistory before we overwrite
   // database.json. Unlike priceHistory (persisted to per-card files in
   // data/price-history/), buy prices live ONLY inside database.json. A fresh
@@ -1199,9 +1230,10 @@ async function buildDatabase() {
   }
 
   const { prices, totalCards, seriesWithPrices } = yuyuResult;
+  const pricingUnavailable = Boolean(yuyuResult.pricingUnavailable || totalCards < 50);
   console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
-  if (totalCards < 50) {
-    console.warn(`[database] yuyu pricing unavailable or incomplete (totalCards=${totalCards}); official cards will retain null sellPrice/prices`);
+  if (pricingUnavailable) {
+    console.warn(`[database] yuyu pricing unavailable or incomplete (totalCards=${totalCards}); preserving previous exact-card sell prices and leaving new/unknown printings null`);
   }
 
   // Step 2: Download images
@@ -1272,7 +1304,7 @@ async function buildDatabase() {
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
-    const yuyu = getYuyuForCard(baseCardNum);
+    const yuyu = pricingUnavailable ? null : getYuyuForCard(baseCardNum);
 
     const rawEntries = yuyu ? yuyu.priceEntries.map(e => ({
       name: e.name || '',
@@ -1376,6 +1408,27 @@ async function buildDatabase() {
       timestamp: firstTimestamp,
       _rawPricesArchive: archive,
     };
+  }
+
+  if (pricingUnavailable && prevSellByCardId.size > 0) {
+    let restoredSell = 0;
+    for (const [cardId, saved] of prevSellByCardId.entries()) {
+      let card = database.cards[cardId];
+      if (!card && saved.card && saved.sellPrice != null) {
+        database.cards[cardId] = { ...saved.card };
+        restoredSell++;
+        continue;
+      }
+      if (!card) continue;
+      if (saved.sellPrice != null) card.sellPrice = saved.sellPrice;
+      if (saved.prices != null) card.prices = saved.prices;
+      if (saved.yuyuName != null) card.yuyuName = saved.yuyuName;
+      if (saved.yuyuImage != null) card.yuyuImage = saved.yuyuImage;
+      if (saved.timestamp != null) card.timestamp = saved.timestamp;
+      if (saved._rawPricesArchive != null) card._rawPricesArchive = saved._rawPricesArchive;
+      restoredSell++;
+    }
+    console.log(`  [sellPrice] Restored previous sell prices onto ${restoredSell} exact card ids after pricing outage`);
   }
 
   // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,

@@ -258,6 +258,8 @@ function auditExpansion(expansion, cards, expected) {
 }
 
 async function checkProductionLag(meta, productionUrl) {
+  const statePath = path.join(AUDIT_DIR, 'official-production-lag-state.json');
+  const lagThresholdHours = Number(process.env.OFFICIAL_PRODUCTION_LAG_HOURS || 24);
   if (!productionUrl) return [];
   const res = await fetch(productionUrl, { headers: { 'User-Agent': UA } });
   if (!res.ok) throw new Error(`production check failed: HTTP ${res.status} for ${productionUrl}`);
@@ -265,14 +267,42 @@ async function checkProductionLag(meta, productionUrl) {
   const cards = Object.values(db.cards || {});
   const missing = [];
   const now = Date.now();
+  let prior = {};
+  try {
+    prior = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  } catch (err) {
+    if (err.code !== 'ENOENT') console.warn(`[official] could not read production-lag state: ${err.message}`);
+  }
+  const priorMissingSince = prior && typeof prior.missingSince === 'object' && !Array.isArray(prior.missingSince)
+    ? prior.missingSince
+    : {};
+  const nextMissingSince = {};
   for (const s of meta.seriesStats || []) {
     if (!s.lastSuccessfulSync) continue;
-    const ageHours = (now - Date.parse(s.lastSuccessfulSync)) / 36e5;
     const prodCount = cards.filter((c) => c.sourceProduct === s.code || c.expansion === s.code || c.series === s.code).length;
-    if (ageHours >= 24 && prodCount < s.ingestedCount) {
-      missing.push({ code: s.code, officialCount: s.ingestedCount, productionCount: prodCount, ageHours: Number(ageHours.toFixed(1)) });
+    if (prodCount >= s.ingestedCount) continue;
+
+    const priorEntry = priorMissingSince[s.code] || {};
+    const firstMissingAt = priorEntry.firstMissingAt || new Date(now).toISOString();
+    const firstMissingMs = Date.parse(firstMissingAt);
+    const ageHours = Number.isFinite(firstMissingMs) ? (now - firstMissingMs) / 36e5 : 0;
+    nextMissingSince[s.code] = {
+      firstMissingAt,
+      officialCount: s.ingestedCount,
+      productionCount: prodCount,
+      lastObservedAt: new Date(now).toISOString(),
+    };
+    if (ageHours >= lagThresholdHours) {
+      missing.push({
+        code: s.code,
+        officialCount: s.ingestedCount,
+        productionCount: prodCount,
+        firstMissingAt,
+        ageHours: Number(ageHours.toFixed(1)),
+      });
     }
   }
+  fs.writeFileSync(statePath, `${JSON.stringify({ updatedAt: new Date(now).toISOString(), missingSince: nextMissingSince }, null, 2)}\n`, 'utf8');
   return missing;
 }
 

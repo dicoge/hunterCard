@@ -40,7 +40,7 @@ jobs:
       - name: Check data changes
         id: check
         run: |
-          if git diff --stat -- data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json | grep -q .; then
+          if git diff --stat -- data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json | grep -q .; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -51,6 +51,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json
+          git add data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json
           git diff --staged --quiet || git commit -m "chore: sync official catalog $(date +%Y-%m-%d)"
           git push origin HEAD:main

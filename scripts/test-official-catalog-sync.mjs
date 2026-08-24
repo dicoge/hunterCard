@@ -69,4 +69,20 @@ assert.strictEqual(auditHEB01.expectedCount, 214);
 assert.strictEqual(auditHEB01.ingestedCount, 214);
 assert.strictEqual(auditHEB01.missingCount, 0);
 
+const builder = fs.readFileSync(path.join(repo, 'scripts/build-database.js'), 'utf8');
+assert.ok(
+  builder.includes('prevSellByCardId') && builder.includes('pricingUnavailable') && builder.includes('Restored previous sell prices onto'),
+  'build-database must preserve prior sell data by exact card id when yuyu pricing is unavailable',
+);
+assert.ok(
+  builder.includes('pricingUnavailable ? null : getYuyuForCard(baseCardNum)'),
+  'build-database must not merge partial/outage yuyu rows by cardNumber into every official printing',
+);
+
+const scraper = fs.readFileSync(path.join(repo, 'scripts/scrape-official-cards.js'), 'utf8');
+assert.ok(scraper.includes('official-production-lag-state.json') && scraper.includes('firstMissingAt'), 'production lag alert must persist first-missing timestamp');
+
+const workflow = fs.readFileSync(path.join(repo, '.github/workflows/official-catalog-sync.yml'), 'utf8');
+assert.ok(workflow.includes('official-production-lag-state.json'), 'scheduled workflow must commit persistent production-lag state');
+
 console.log('✓ official catalog sync invariants passed');
