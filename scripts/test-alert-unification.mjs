@@ -428,7 +428,7 @@ await test('a v1 payload with duplicate records rehydrates collapsed', async () 
 });
 
 // ── 7. Notification dedupe ──────────────────────────────────────────────────
-await test('one 到價提醒 per entry into the interval, and it says 到價提醒', () => {
+await test('one 價格提醒 per entry into the interval, and it says 價格提醒', () => {
   const alert = alertOf({ lowerPrice: 800, upperPrice: 1200 });
   const recipients = [{ token: TOKEN, alert }];
   const key = armStateKey(TOKEN, alert.cardNumber, alert.printing);
@@ -436,7 +436,7 @@ await test('one 到價提醒 per entry into the interval, and it says 到價提�
 
   const entry = evaluatePriceAlerts(recipients, at(1000), {});
   assert.equal(entry.sends.length, 1);
-  assert.match(buildAlertMessage(entry.sends[0]).title, /到價提醒/);
+  assert.match(buildAlertMessage(entry.sends[0]).title, /價格提醒/);
 
   const disarmed = { [key]: { armed: false, lastNotifiedAt: 1, lastPrice: 1000 } };
   assert.equal(evaluatePriceAlerts(recipients, at(1000), disarmed).sends.length, 0, 'no repeat');
