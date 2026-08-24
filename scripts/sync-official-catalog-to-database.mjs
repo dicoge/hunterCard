@@ -51,24 +51,44 @@ function toDatabaseCard(card, id) {
   };
 }
 
-function main() {
-  const db = readJson(dbPath);
+function preservedExactSellPayload(previous = {}) {
+  const payload = {};
+  if (Number.isFinite(previous.sellPrice) && previous.sellPrice > 0) payload.sellPrice = previous.sellPrice;
+  if (Array.isArray(previous.prices) && previous.prices.length > 0) payload.prices = previous.prices;
+  if (previous.yuyuName) payload.yuyuName = previous.yuyuName;
+  if (previous.yuyuImage) payload.yuyuImage = previous.yuyuImage;
+  if (previous.timestamp) payload.timestamp = previous.timestamp;
+  if (previous.priceHistory && typeof previous.priceHistory === 'object' && Object.keys(previous.priceHistory).length > 0) {
+    payload.priceHistory = previous.priceHistory;
+  }
+  if (Array.isArray(previous._rawPricesArchive) && previous._rawPricesArchive.length > 0) {
+    payload._rawPricesArchive = previous._rawPricesArchive;
+  }
+  return payload;
+}
+
+export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialDirectory = officialDir } = {}) {
+  const db = readJson(databasePath);
   if (!db.cards || typeof db.cards !== 'object') throw new Error('data/database.json missing cards map');
 
-  const officialFiles = fs.readdirSync(officialDir)
+  const officialFiles = fs.readdirSync(officialDirectory)
     .filter((f) => f.endsWith('.json') && !f.startsWith('_') && !f.startsWith('all-') && !f.startsWith('cardList_'));
 
   let upserted = 0;
+  let sellPreserved = 0;
   for (const file of officialFiles) {
-    const cards = readJson(path.join(officialDir, file));
+    const cards = readJson(path.join(officialDirectory, file));
     if (!Array.isArray(cards)) continue;
     for (const card of cards) {
       if (!card?.sourceProduct) continue;
       const id = printingId(card);
       if (!id || !card.cardNumber) continue;
       const previous = db.cards[id] || {};
+      const preservedSell = preservedExactSellPayload(previous);
+      if (Object.keys(preservedSell).length > 0) sellPreserved++;
       db.cards[id] = {
         ...toDatabaseCard(card, id),
+        ...preservedSell,
         skillsJp: previous.skillsJp,
         skillsZh: previous.skillsZh,
         nameZh: previous.nameZh,
@@ -83,8 +103,13 @@ function main() {
 
   db.lastUpdated = new Date().toISOString();
   db.totalCards = Object.keys(db.cards).length;
-  fs.writeFileSync(dbPath, `${JSON.stringify(db, null, 2)}\n`, 'utf8');
-  console.log(`✓ synced ${upserted} official sourceProduct printings into data/database.json (totalCards=${db.totalCards})`);
+  fs.writeFileSync(databasePath, `${JSON.stringify(db, null, 2)}\n`, 'utf8');
+  return { upserted, sellPreserved, totalCards: db.totalCards };
 }
 
-main();
+function main() {
+  const result = syncOfficialCatalogToDatabase();
+  console.log(`✓ synced ${result.upserted} official sourceProduct printings into data/database.json (totalCards=${result.totalCards}; preservedSell=${result.sellPreserved})`);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) main();
