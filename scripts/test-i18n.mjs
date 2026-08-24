@@ -640,19 +640,56 @@ test('DIC-1154 alert-entity naming holds on every reachable editor/watchlist key
   }
 });
 
-test('DIC-1154 no reachable alert copy leaks the pre-unification names', () => {
-  const FORBIDDEN_ZH = ['到價提醒', '入手提醒', '趨勢追蹤'];
-  const FORBIDDEN_JA = ['ほしい物アラート', '価格推移の追跡'];
-  for (const [key, val] of Object.entries(zh)) {
-    for (const bad of FORBIDDEN_ZH) {
-      assert.ok(!val.includes(bad), `zh.${key} still names legacy "${bad}": ${val}`);
+// Locale-INDEPENDENT: every forbidden term is banned in every locale's values.
+// A partitioned check ("zh may not contain zh legacies; ja may not contain ja
+// legacies") lets a Japanese legacy name written by mistake into zh.ts escape
+// — the CR flagged this exact hole. Merging the lists closes it.
+const FORBIDDEN_ALERT_NAMES = [
+  '到價提醒', '入手提醒', '趨勢追蹤',
+  'ほしい物アラート', '価格推移の追跡',
+];
+
+function firstForbiddenHitIn(locale, dict) {
+  for (const [key, val] of Object.entries(dict)) {
+    for (const bad of FORBIDDEN_ALERT_NAMES) {
+      if (val.includes(bad)) return { locale, key, bad, val };
     }
   }
-  for (const [key, val] of Object.entries(ja)) {
-    for (const bad of FORBIDDEN_JA) {
-      assert.ok(!val.includes(bad), `ja.${key} still names legacy "${bad}": ${val}`);
-    }
+  return null;
+}
+
+test('DIC-1154 no reachable alert copy leaks any pre-unification name in any locale', () => {
+  for (const [locale, dict] of [['zh', zh], ['ja', ja]]) {
+    const hit = firstForbiddenHitIn(locale, dict);
+    assert.equal(hit, null,
+      hit && `${hit.locale}.${hit.key} still names legacy "${hit.bad}": ${hit.val}`);
   }
+});
+
+// Mutation-tested proof the guard is genuinely locale-independent. The exact
+// failure mode the CR named — a zh legacy landing in ja.ts, or a ja legacy
+// landing in zh.ts — must be caught, not silently pass because "the wrong
+// list was consulted".
+test('DIC-1154 forbidden-copy guard catches both cross-locale mutations', () => {
+  const mutatedJaWithZhLegacy = { ...ja, nav_watchlist: '到價提醒' };
+  const hit1 = firstForbiddenHitIn('ja', mutatedJaWithZhLegacy);
+  assert.deepEqual(
+    hit1 && { locale: hit1.locale, key: hit1.key, bad: hit1.bad },
+    { locale: 'ja', key: 'nav_watchlist', bad: '到價提醒' },
+    'a zh legacy name written into ja.ts must be caught',
+  );
+
+  const mutatedZhWithJaLegacy = { ...zh, nav_watchlist: 'ほしい物アラート' };
+  const hit2 = firstForbiddenHitIn('zh', mutatedZhWithJaLegacy);
+  assert.deepEqual(
+    hit2 && { locale: hit2.locale, key: hit2.key, bad: hit2.bad },
+    { locale: 'zh', key: 'nav_watchlist', bad: 'ほしい物アラート' },
+    'a ja legacy name written into zh.ts must be caught',
+  );
+
+  // Confirm the same helper reports clean on the real, unmutated dictionaries.
+  assert.equal(firstForbiddenHitIn('zh', zh), null);
+  assert.equal(firstForbiddenHitIn('ja', ja), null);
 });
 
 console.log(`test-i18n: PASS (${passed} checks)`);
