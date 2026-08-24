@@ -92,7 +92,6 @@ export const zh = {
   deck_updated_at: '最後更新：{{date}}',
   deck_active_badge: '使用中',
   deck_color_label: '主色：{{color}}',
-  deck_oshi_unselected: '未選擇推し',
 
   // Tournament Report & Summary
   tournament_title: '🏆 賽事月報',

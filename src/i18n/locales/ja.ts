@@ -94,7 +94,6 @@ export const ja: Record<keyof typeof zh, string> = {
   deck_updated_at: '最終更新：{{date}}',
   deck_active_badge: '使用中',
   deck_color_label: 'メイン色：{{color}}',
-  deck_oshi_unselected: '推し未選択',
 
   // Tournament Report & Summary
   tournament_title: '🏆 大会月報',
