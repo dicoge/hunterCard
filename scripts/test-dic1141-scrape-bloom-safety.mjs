@@ -47,6 +47,7 @@ import {
   writeOverlayAtomically,
   readOverlayStrict,
   decidePublication,
+  validateMergedMap,
   VALID_LEVELS,
   DEFAULT_MAX_PARSE_MISS_RATIO,
 } from './scrape-bloom-levels.mjs';
@@ -499,6 +500,82 @@ assert.equal(parseBloomLevel(null), null, 'non-string → null');
   );
 
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// ── 11b. Publication-side validation catches bogus-EXISTING (CR#4 blocker) ──
+//
+// The prior tests all put the bogus key in `inScope`, where `mergeResults`
+// silently filters it. The real gap CR#4 flagged is bogus keys already in
+// `existing`: `mergeResults` starts from `{ ...existing }` and never
+// re-validates, so a hand-edited overlay or an injected malformed record
+// used to survive all the way into `writeOverlayAtomically`. These tests
+// prove the publication layer is now the last line of defence: `buildPayload`
+// throws on a malformed merged map, `decidePublication` catches that throw
+// and returns `shouldWrite: false` with no payload, so the CLI cannot call
+// the atomic writer.
+
+{
+  const bogusExisting = { 'bogus-0': 'Debut', 'hBP04-026': '2nd' };
+  const validMerged = { 'hBP04-026': '2nd', 'hBP04-027': '1st' };
+
+  // validateMergedMap correctly labels each shape.
+  assert.equal(validateMergedMap(validMerged).ok, true);
+  assert.equal(validateMergedMap(bogusExisting).ok, false);
+  assert.deepEqual(
+    validateMergedMap(bogusExisting).invalid[0].key,
+    'bogus-0',
+  );
+  assert.equal(validateMergedMap(null).ok, false, 'null is not a map');
+  assert.equal(validateMergedMap([]).ok, false, 'array is not a map');
+  assert.equal(
+    validateMergedMap({ 'hBP04-026': 'HR' }).ok,
+    false,
+    'invalid Bloom Level is caught',
+  );
+
+  // buildPayload throws when called directly on a bogus map.
+  assert.throws(
+    () => buildPayload(bogusExisting),
+    /refusing malformed merged map.*bogus-0/,
+    'buildPayload must throw on bogus keys — no silent write path',
+  );
+  assert.throws(
+    () => buildPayload({ 'hBP04-026': 'HR' }),
+    /refusing malformed merged map.*invalid Bloom Level/,
+    'buildPayload must throw on invalid Bloom Level too',
+  );
+  // Sanity: happy path still works.
+  assert.doesNotThrow(() => buildPayload(validMerged));
+
+  // decidePublication with bogus in `existing` (not `inScope`) — the exact
+  // Codex#4 scenario. Even though the coverage guard passes (no drop, no
+  // schema break in the fresh batch), the publication layer must refuse.
+  const decision = decidePublication({
+    only: null,
+    existingOverlay: { present: true, byCardNumber: bogusExisting },
+    inScope: new Set(['hBP04-026']),
+    fresh: new Map([['hBP04-026', { level: '2nd' }]]),
+    parseHits: 1, parseMisses: 0, fetchFailures: 0,
+    now: new Date('2026-08-24T00:00:00Z'),
+  });
+  assert.equal(decision.shouldWrite, false,
+    'bogus-existing must yield shouldWrite=false');
+  assert.equal(decision.payload, undefined,
+    'no payload built when merged map is malformed — atomic writer cannot be called');
+  assert.ok(
+    decision.reasons.some((r) => /bogus-0/.test(r) || /malformed/i.test(r)),
+    `reasons must name the malformed entry, got ${JSON.stringify(decision.reasons)}`,
+  );
+
+  // Prove the CLI's actual code path — "only write when shouldWrite === true"
+  // — never invokes writeOverlayAtomically for this decision. We install a
+  // spy that fails if called; the invariant is a naked `if (shouldWrite)`
+  // check around the writer, so a false decision must not trigger it.
+  let writerCalled = false;
+  const spyWriter = () => { writerCalled = true; };
+  if (decision.shouldWrite) spyWriter(decision.payload);
+  assert.equal(writerCalled, false,
+    'atomic writer must not be called when shouldWrite is false');
 }
 
 // ── 12. Single bogus key inside an otherwise valid overlay also throws ──

@@ -287,8 +287,47 @@ export function evaluateCoverage({
   return { ok: reasons.length === 0, reasons };
 }
 
-/** Build the payload written to disk. Deterministic key order for a clean diff. */
+/**
+ * Validate a merged/publication map with the shared canonical validators.
+ * Returns `{ ok, invalid[] }` — never mutates the input. Used as the last
+ * gate before atomic write so a corrupt entry that survived earlier stages
+ * (e.g. a hand-edited overlay bypassing `readOverlayStrict`, or a mutation in
+ * `mergeResults`) still cannot reach disk (DIC-1141 CR#4).
+ */
+export function validateMergedMap(merged) {
+  const invalid = [];
+  if (!merged || typeof merged !== 'object' || Array.isArray(merged)) {
+    return { ok: false, invalid: [{ key: null, value: merged, reason: 'merged map is not an object' }] };
+  }
+  for (const [k, v] of Object.entries(merged)) {
+    if (!isCanonicalCardNumber(k)) {
+      invalid.push({ key: k, value: v, reason: `card-number does not match ${CANONICAL_CARD_NUMBER_RE}` });
+      continue;
+    }
+    if (typeof v !== 'string' || !VALID_LEVEL_SET.has(v)) {
+      invalid.push({ key: k, value: v, reason: 'invalid Bloom Level' });
+    }
+  }
+  return { ok: invalid.length === 0, invalid };
+}
+
+/**
+ * Build the payload written to disk. Deterministic key order for a clean diff.
+ *
+ * CR#4: buildPayload is the last non-CLI gate before `writeOverlayAtomically`,
+ * so it MUST re-validate every merged entry. If any key isn't a canonical
+ * card-number or any value isn't a valid Bloom Level, it throws rather than
+ * silently normalising — silence would let a corrupt existing entry ride
+ * into `data/bloom-levels.json` and then propagate to `data/database.json`.
+ */
 export function buildPayload(merged, now = new Date()) {
+  const check = validateMergedMap(merged);
+  if (!check.ok) {
+    const first = check.invalid[0];
+    throw new Error(
+      `buildPayload: refusing malformed merged map — ${check.invalid.length} invalid entr${check.invalid.length === 1 ? 'y' : 'ies'} (first: ${JSON.stringify(first)})`,
+    );
+  }
   const sorted = Object.fromEntries(Object.keys(merged).sort().map((k) => [k, merged[k]]));
   return {
     lastUpdated: now.toISOString(),
@@ -358,13 +397,30 @@ export function decidePublication({
   if (!guard.ok) {
     return { shouldWrite: false, reasons: guard.reasons, stats, detail };
   }
-  return {
-    shouldWrite: true,
-    reasons: [],
-    stats,
-    detail,
-    payload: buildPayload(merged, now),
-  };
+  // CR#4: publication-side final validation. `mergeResults` seeds the merged
+  // map from the existing overlay; if the existing overlay were bypassed and
+  // contained a bogus key, that key would ride through unchecked. Validate
+  // the whole merged map now — fail closed rather than silently drop, so a
+  // data-corruption bug is surfaced instead of masked.
+  const mapCheck = validateMergedMap(merged);
+  if (!mapCheck.ok) {
+    return {
+      shouldWrite: false,
+      reasons: mapCheck.invalid.map((entry) => `merged map contains malformed entry: ${JSON.stringify(entry)}`),
+      stats,
+      detail,
+    };
+  }
+  let payload;
+  try {
+    payload = buildPayload(merged, now);
+  } catch (err) {
+    // Defence in depth: even if the validation above missed an edge case,
+    // buildPayload re-validates and throws. Catch here so the CLI can exit
+    // without ever calling writeOverlayAtomically.
+    return { shouldWrite: false, reasons: [err.message], stats, detail };
+  }
+  return { shouldWrite: true, reasons: [], stats, detail, payload };
 }
 
 // ─── CLI: fetch + merge + guard + atomic write ────────────────────────────
