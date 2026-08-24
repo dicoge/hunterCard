@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
 import { canonicalVariantKey } from './lib/variant-key.js';
+import { isCanonicalCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 import { canonicalizePrices, canonicalYuyuName, canonicalYuyuImage } from './lib/canonical-printings.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -744,18 +745,99 @@ function mergeSkills(cards, prevSkills = new Map()) {
 // Written by scripts/scrape-bloom-levels.mjs from the official card pages'
 // <dt>Bloomレベル</dt> field. This is checked in so the field survives even if a
 // re-scrape hasn't populated card.bloomLevel yet (DIC-1141).
+//
+// DIC-1141 CR follow-up — this loader is fail-CLOSED. A missing / malformed /
+// empty overlay used to silently degrade back to "every Holomen is called
+// Holomen"; now the build refuses to run. The overlay ships in the repo, so
+// missing or truncated is a bug, not a graceful case.
+export const VALID_BLOOM_LEVELS = Object.freeze(['Debut', '1st', '2nd', 'Buzz', 'Spot']);
+const VALID_BLOOM_LEVEL_SET = new Set(VALID_BLOOM_LEVELS);
+// Coverage floor. Prior scrapes returned 316 canonical Holomen; new sets can
+// only grow. A regression below this floor almost always means the overlay
+// was wiped by a broken scrape run, so we fail closed rather than publish a
+// database that silently loses badges. Override via BLOOM_MIN_COVERAGE for a
+// legitimate shrink (e.g. official removed cards).
+const DEFAULT_BLOOM_MIN_COVERAGE = 300;
+
+/**
+ * Coerce BLOOM_MIN_COVERAGE from env (or an injected map for tests) to a
+ * finite, non-negative integer. Fail closed on NaN, negative, or non-integer —
+ * a legitimate operator can still set BLOOM_MIN_COVERAGE=0 to bypass, but a
+ * typo like `BLOOM_MIN_COVERAGE=-1` or `BLOOM_MIN_COVERAGE=abc` must never
+ * let an empty overlay slip past `validateBloomOverlay` (Codex CR blocker
+ * supplement).
+ *
+ * CR#3: whitespace-only (e.g. `' '`, `'\t\n'`) MUST be treated as unset — a
+ * typo like `BLOOM_MIN_COVERAGE=' '` used to coerce to 0 (because `Number(' ')`
+ * is 0) and silently disabled the guard.
+ */
+export function coerceBloomMinCoverage(env = process.env, fallback = DEFAULT_BLOOM_MIN_COVERAGE) {
+  const raw = env.BLOOM_MIN_COVERAGE;
+  if (raw === undefined || raw === null) return fallback;
+  if (typeof raw !== 'string' && typeof raw !== 'number') {
+    throw new Error(`[bloom] BLOOM_MIN_COVERAGE must be a non-negative integer, got ${JSON.stringify(raw)}. (DIC-1141)`);
+  }
+  const trimmed = typeof raw === 'string' ? raw.trim() : String(raw);
+  if (trimmed === '') return fallback;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+    throw new Error(`[bloom] BLOOM_MIN_COVERAGE must be a non-negative integer, got ${JSON.stringify(raw)}. (DIC-1141)`);
+  }
+  return n;
+}
+
+export function validateBloomOverlay(payload, { minCoverage = DEFAULT_BLOOM_MIN_COVERAGE } = {}) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { ok: false, reason: 'payload is not an object' };
+  }
+  const by = payload.byCardNumber;
+  if (!by || typeof by !== 'object' || Array.isArray(by)) {
+    return { ok: false, reason: 'byCardNumber is missing or not an object' };
+  }
+  const invalid = [];
+  for (const [k, v] of Object.entries(by)) {
+    // CR#3: reuse the shared canonical card-number validator — a payload of
+    // 300 `bogus-0`..`bogus-299` entries used to satisfy the coverage floor
+    // because non-empty strings passed. Now every key must match the same
+    // ^h[A-Za-z0-9]+-\d{3}$ schema the scraper enforces.
+    if (!isCanonicalCardNumber(k)) {
+      invalid.push({ key: k, value: v, reason: `card-number does not match ${CANONICAL_CARD_NUMBER_RE}` });
+      continue;
+    }
+    if (typeof v !== 'string' || !VALID_BLOOM_LEVEL_SET.has(v)) {
+      invalid.push({ key: k, value: v, reason: 'invalid level' });
+    }
+  }
+  if (invalid.length) {
+    return { ok: false, reason: `${invalid.length} invalid entries (first: ${JSON.stringify(invalid[0])})` };
+  }
+  const count = Object.keys(by).length;
+  if (count < minCoverage) {
+    return { ok: false, reason: `only ${count} canonical entries — below minimum coverage ${minCoverage}. A wiped overlay indicates a broken scrape run; refusing to publish a database that would silently regress DIC-1141.` };
+  }
+  return { ok: true, count };
+}
+
 function loadBloomLevelOverlay() {
   const p = path.join(DATA_DIR, 'bloom-levels.json');
-  if (!fs.existsSync(p)) return {};
-  try {
-    const j = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    const by = j?.byCardNumber || {};
-    console.log(`  [bloom] Loaded ${Object.keys(by).length} canonical bloom levels`);
-    return by;
-  } catch (err) {
-    console.warn(`  [bloom] Failed to read bloom-levels.json: ${err.message}`);
-    return {};
+  if (!fs.existsSync(p)) {
+    throw new Error(`[bloom] canonical overlay missing: ${p} — restore data/bloom-levels.json (run scripts/scrape-bloom-levels.mjs) before rebuilding the database. (DIC-1141)`);
   }
+  let payload;
+  try {
+    payload = JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch (err) {
+    throw new Error(`[bloom] canonical overlay is malformed JSON: ${p}: ${err.message}. (DIC-1141)`);
+  }
+  // coerceBloomMinCoverage throws on NaN / negative / non-integer overrides so
+  // a typo can't downgrade the guard to trivially-passable.
+  const minCoverage = coerceBloomMinCoverage();
+  const check = validateBloomOverlay(payload, { minCoverage });
+  if (!check.ok) {
+    throw new Error(`[bloom] canonical overlay validation failed: ${check.reason}. Fix data/bloom-levels.json or set BLOOM_MIN_COVERAGE=<lower> for an intentional shrink. (DIC-1141)`);
+  }
+  console.log(`  [bloom] Loaded ${check.count} canonical bloom levels (min coverage ${minCoverage})`);
+  return payload.byCardNumber;
 }
 
 function loadOfficialData() {

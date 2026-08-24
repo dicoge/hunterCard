@@ -8,7 +8,7 @@ import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
-import { normalizeCardIdentity, bloomLevelBadgeColor, categoryBadgeColor } from '../utils/cardNormalization';
+import { normalizeCardIdentity, bloomLevelBadgeColor, categoryBadgeColor, PRINTING_RARITY_COLORS } from '../utils/cardNormalization';
 
 // ── Server-side search constants ──
 
@@ -45,9 +45,11 @@ const COLOR_TO_CN: Record<string, string[]> = {
   'colorless': ['無色'],
 };
 
-const rarityColors: Record<string, string> = {
-  N: '#8B4513', C: '#6b7280', U: '#10b981', R: '#3b82f6', SR: '#f59e0b',
-};
+// Printing rarity palette — single source is PRINTING_RARITY_COLORS in
+// cardNormalization.ts. Local const kept as an alias so the rest of the file
+// (and any surviving `rarityColors[...]` lookup) still resolves without a
+// second definition drifting from the palette-collision test (DIC-1141 CR).
+const rarityColors = PRINTING_RARITY_COLORS;
 const gradeLabels: Record<string, string> = {
   debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot',
 };

@@ -27,9 +27,14 @@ const STAGE_LABELS: Record<NormalizedHolomenStage, string> = {
   debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot',
 };
 
-// Distinct palette for Bloom Level badges (DIC-1141). Chosen so the badge color
-// never coincides with the printing rarity palette used elsewhere on the card —
-// mixing the two is what let players think "orange = SR" was a Bloom Level.
+// DIC-1141 CR follow-up: three colour palettes are painted on the card list
+// and detail — Bloom Level, card category, and printing rarity. They MUST be
+// mutually disjoint at the hex level so no colour ever silently means two
+// different things (the original bug was rarity SR orange looking like a
+// Bloom Level; the CR-blocker was category Holomen sharing rarity R blue).
+// All three lists live here so the regression test can import a single source
+// and prove the sets stay disjoint — a copy-paste in a screen file cannot
+// drift them apart without the test flipping red.
 export const BLOOM_LEVEL_COLORS: Record<NormalizedHolomenStage, string> = {
   debut: '#0ea5e9',
   '1st': '#22c55e',
@@ -40,11 +45,53 @@ export const BLOOM_LEVEL_COLORS: Record<NormalizedHolomenStage, string> = {
 
 export const CATEGORY_COLORS: Record<NormalizedCardCategory, string> = {
   oshi: '#f97316',
-  holomen: '#3b82f6',
+  // Was '#3b82f6' — collided with printing rarity R (see PRINTING_RARITY_COLORS
+  // below). Moved to blue-800 so the Holomen category chip stays "Holomen-ish
+  // blue" but is provably distinct from the rarity R palette entry.
+  holomen: '#1e40af',
   support: '#14b8a6',
   mascot: '#eab308',
   yell: '#a3a3a3',
 };
+
+// Printing-rarity palette. Kept as the shared source of truth so the search
+// list, the detail rarity chip and the DIC-1141 regression test all agree on
+// the exact hex values, and any future edit is compared against the other two
+// palettes automatically.
+export const PRINTING_RARITY_COLORS: Record<string, string> = {
+  N: '#8B4513',
+  C: '#6b7280',
+  U: '#10b981',
+  R: '#3b82f6',
+  SR: '#f59e0b',
+};
+
+function normalizeHex(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/**
+ * Assert that the three badge palettes (Bloom Level, category, printing rarity)
+ * are pairwise disjoint by hex value. Called by the DIC-1141 regression test;
+ * kept in this module so the palettes and the invariant travel together.
+ */
+export function findBadgePaletteCollisions(): Array<{ a: string; b: string; hex: string }> {
+  const palettes: Array<{ name: string; values: string[] }> = [
+    { name: 'BLOOM_LEVEL_COLORS', values: Object.values(BLOOM_LEVEL_COLORS).map(normalizeHex) },
+    { name: 'CATEGORY_COLORS', values: Object.values(CATEGORY_COLORS).map(normalizeHex) },
+    { name: 'PRINTING_RARITY_COLORS', values: Object.values(PRINTING_RARITY_COLORS).map(normalizeHex) },
+  ];
+  const collisions: Array<{ a: string; b: string; hex: string }> = [];
+  for (let i = 0; i < palettes.length; i++) {
+    for (let j = i + 1; j < palettes.length; j++) {
+      const setA = new Set(palettes[i].values);
+      for (const hex of palettes[j].values) {
+        if (setA.has(hex)) collisions.push({ a: palettes[i].name, b: palettes[j].name, hex });
+      }
+    }
+  }
+  return collisions;
+}
 
 export function bloomLevelBadgeColor(stage: NormalizedHolomenStage | null): string | null {
   return stage ? BLOOM_LEVEL_COLORS[stage] : null;
@@ -52,6 +99,11 @@ export function bloomLevelBadgeColor(stage: NormalizedHolomenStage | null): stri
 
 export function categoryBadgeColor(category: NormalizedCardCategory | null): string | null {
   return category ? CATEGORY_COLORS[category] : null;
+}
+
+export function printingRarityColor(rarity: string | null | undefined): string | null {
+  if (!rarity) return null;
+  return PRINTING_RARITY_COLORS[rarity.toUpperCase()] ?? null;
 }
 
 function clean(value: unknown): string | null {
