@@ -51,13 +51,14 @@ const MARKER_TOKENS: Record<string, string> = {
   'エラッタ前': 'ERRATA-PRE',
   'エラッタ後': 'ERRATA-POST',
   '箔押し': 'FOIL',
+  'S仕様': 'S-SPEC',
 };
 
 const ERRATA_TOKENS = new Set(['ERRATA-PRE', 'ERRATA-POST']);
 
 // A premium treatment. Everything else — BASE, ERRATA-PRE/POST — is a plain
 // printing and is what a budget deck defaults to.
-const PREMIUM_TOKEN_RE = /(^|\/)(PARALLEL|SIGN|FOIL)(\/|$)/;
+const PREMIUM_TOKEN_RE = /(^|\/)(PARALLEL|SIGN|FOIL|S-SPEC|S仕様)(\/|$)/;
 
 /** Listing label → deterministic printing token. A listing with no parenthetical
  * is the card number's plain printing (BASE); otherwise the token spells out
