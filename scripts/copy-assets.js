@@ -21,7 +21,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PROJECT_DIR = path.resolve(__dirname, '..');
-const DIST_DIR = path.join(PROJECT_DIR, 'dist');
+const DIST_DIR = process.env.DIST_DIR || path.join(PROJECT_DIR, 'dist');
 const DB_DEST = path.join(DIST_DIR, 'data', 'database.json');
 
 console.log('[copy-assets] Copying assets to dist/...');

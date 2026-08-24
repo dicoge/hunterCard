@@ -1,107 +1,116 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 
 const PROJECT_DIR = process.cwd();
-const DIST_DIR = path.join(PROJECT_DIR, 'dist');
 const COPY_ASSETS_PATH = path.join(PROJECT_DIR, 'scripts', 'copy-assets.js');
-
-console.log('── Isolated Dist Audit & Manifest Mutation Test (CR DIC-1162) ──');
-
-// Step 1: Ensure dist/data/database.json exists so copy-assets.js does not refuse to run
-fs.mkdirSync(path.join(DIST_DIR, 'data'), { recursive: true });
-const dbFile = path.join(DIST_DIR, 'data', 'database.json');
-if (!fs.existsSync(dbFile)) {
-  fs.writeFileSync(dbFile, JSON.stringify({ cards: [] }));
-}
-
-// Step 2: Execute real scripts/copy-assets.js pipeline (DO NOT manually copy from public/)
-console.log('Executing real scripts/copy-assets.js pipeline...');
-execSync('node scripts/copy-assets.js', { stdio: 'inherit' });
-
-// Step 3: Audit required HTML pages in dist/
 const requiredPages = ['pricing.html', 'terms.html', 'privacy.html', 'support.html'];
 
-for (const page of requiredPages) {
-  const distPath = path.join(DIST_DIR, page);
-  assert.ok(fs.existsSync(distPath), `dist/${page} MUST be produced by copy-assets.js manifest`);
+console.log('── Isolated Dist Audit & Real Copier Mutation Test (CR DIC-1162) ──');
+
+/**
+ * Helper to run copy-assets.js into a fresh isolated output directory with no pre-existing HTML
+ */
+function runCopyAssetsInTempDir(customScriptPath = COPY_ASSETS_PATH) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-dist-nojs-'));
+  fs.mkdirSync(path.join(tempDir, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'data', 'database.json'), JSON.stringify({ cards: [] }));
+
+  execSync(`node "${customScriptPath}"`, {
+    env: { ...process.env, DIST_DIR: tempDir },
+    stdio: 'pipe',
+  });
+
+  return tempDir;
 }
 
 /**
- * Validation function for shipped HTML contents in dist/
+ * Validates shipped HTML pages in an isolated output directory
  */
-export function validateDistHtml(content, filename) {
-  assert.ok(content.includes('<main'), `${filename} missing semantic <main> tag`);
-  assert.ok(content.includes('<h1'), `${filename} missing semantic <h1> tag`);
-  assert.ok(content.includes('<noscript>'), `${filename} missing <noscript> fallback styles`);
-  assert.ok(content.includes('https://holohunter.dicoge.com/'), `${filename} missing canonical domain`);
-
-  if (filename === 'pricing.html') {
-    assert.ok(content.includes('日本語'), 'pricing.html missing Japanese section');
-    assert.ok(content.includes('無制限'), 'pricing.html missing Japanese unlimited scan copy');
-    assert.ok(content.includes('カメラ'), 'pricing.html missing Japanese camera copy');
-  }
-}
-
-// Validate shipped files in dist/
-for (const page of requiredPages) {
-  const content = fs.readFileSync(path.join(DIST_DIR, page), 'utf-8');
-  validateDistHtml(content, page);
-  console.log(`  ✓ PASS: Shipped dist/${page} has semantic <main>, <h1>, <noscript>, and No-JS Japanese readability`);
-}
-
-// Step 4: Mutation testing (Manifest & Content)
-console.log('── Mutation Testing: Manifest & Content Fail-Closed Checks ──');
-
-// Manifest Mutation 1: Verify copy-assets.js manifest HTML_PAGES contains all required pages
-const copyAssetsSrc = fs.readFileSync(COPY_ASSETS_PATH, 'utf-8');
-for (const page of requiredPages) {
-  assert.ok(
-    copyAssetsSrc.includes(`'${page}'`) || copyAssetsSrc.includes(`"${page}"`),
-    `scripts/copy-assets.js HTML_PAGES manifest MUST include ${page}`
-  );
-}
-
-// Manifest Mutation 2: Simulate removal of pricing.html from HTML_PAGES in copy-assets.js
-const testManifestAuditor = (scriptSource) => {
+function auditDistDirectory(distDir) {
   for (const page of requiredPages) {
-    if (!scriptSource.includes(`'${page}'`) && !scriptSource.includes(`"${page}"`)) {
-      throw new Error(`[Manifest Error] Page ${page} missing from copy-assets.js HTML_PAGES manifest`);
+    const pagePath = path.join(distDir, page);
+    if (!fs.existsSync(pagePath)) {
+      throw new Error(`[Audit Error] Required static page missing from output directory: ${page}`);
+    }
+
+    const content = fs.readFileSync(pagePath, 'utf-8');
+    assert.ok(content.includes('<main'), `${page} missing semantic <main> tag`);
+    assert.ok(content.includes('<h1'), `${page} missing semantic <h1> tag`);
+    assert.ok(content.includes('<noscript>'), `${page} missing <noscript> fallback styles`);
+    assert.ok(content.includes('https://holohunter.dicoge.com/'), `${page} missing canonical domain`);
+
+    if (page === 'pricing.html') {
+      assert.ok(content.includes('日本語'), 'pricing.html missing Japanese section');
+      assert.ok(content.includes('無制限'), 'pricing.html missing Japanese unlimited scan copy');
+      assert.ok(content.includes('カメラ'), 'pricing.html missing Japanese camera copy');
     }
   }
-};
+}
 
-assert.doesNotThrow(() => testManifestAuditor(copyAssetsSrc));
+// 1. Audit real production export/copy into a fresh isolated temp directory
+const cleanTempDir = runCopyAssetsInTempDir();
+try {
+  auditDistDirectory(cleanTempDir);
+  console.log('  ✓ PASS: Fresh isolated build output audited with semantic <main>, <h1>, <noscript>, and No-JS Japanese readability');
+} finally {
+  fs.rmSync(cleanTempDir, { recursive: true, force: true });
+}
 
-const mutatedManifestSrc = copyAssetsSrc.replace(`'pricing.html'`, `'non_existent.html'`);
-assert.throws(
-  () => testManifestAuditor(mutatedManifestSrc),
-  /Page pricing.html missing from copy-assets.js/,
-  'Mutation Test: Removal of pricing.html from copy-assets.js manifest MUST fail closed'
-);
-console.log('  ✓ PASS: Manifest mutation test: Removal of pricing.html from HTML_PAGES manifest fails closed');
+// 2. Real Copier Mutation Testing (Executes mutated real copier in fresh isolated dir)
+console.log('── Mutation Testing: Executing Mutated Real Copier in Isolated Output ──');
 
-// Content Mutations
-const pricingHtml = fs.readFileSync(path.join(DIST_DIR, 'pricing.html'), 'utf-8');
+const copyAssetsSrc = fs.readFileSync(COPY_ASSETS_PATH, 'utf-8');
+const mutatedScriptPath = path.join(os.tmpdir(), `mutated-copy-assets-${Date.now()}.js`);
 
-assert.throws(
-  () => validateDistHtml(pricingHtml.replace(/<main[^>]*>/, '<div>').replace('</main>', '</div>'), 'pricing.html'),
-  /missing semantic <main> tag/
-);
-console.log('  ✓ PASS: Content mutation test: Removal of <main> fails closed');
+// Mutate HTML_PAGES in copy-assets source code by replacing 'pricing.html' with 'pricing-copy.html'
+const mutatedScriptContent = copyAssetsSrc.replace(`'pricing.html'`, `'pricing-copy.html'`);
+fs.writeFileSync(mutatedScriptPath, mutatedScriptContent);
 
-assert.throws(
-  () => validateDistHtml(pricingHtml.replace(/<h1[^>]*>.*?<\/h1>/, ''), 'pricing.html'),
-  /missing semantic <h1> tag/
-);
-console.log('  ✓ PASS: Content mutation test: Removal of <h1> fails closed');
+try {
+  const mutatedTempDir = runCopyAssetsInTempDir(mutatedScriptPath);
+  try {
+    assert.throws(
+      () => auditDistDirectory(mutatedTempDir),
+      /Required static page missing from output directory: pricing.html/,
+      'Mutation Test: Real copier emitting pricing-copy.html instead of pricing.html MUST cause dist audit to fail'
+    );
+    console.log('  ✓ PASS: Real copier mutation test: Changing pricing destination in copy-assets.js causes fresh dist audit to fail closed');
+  } finally {
+    fs.rmSync(mutatedTempDir, { recursive: true, force: true });
+  }
+} finally {
+  if (fs.existsSync(mutatedScriptPath)) {
+    fs.unlinkSync(mutatedScriptPath);
+  }
+}
 
-assert.throws(
-  () => validateDistHtml(pricingHtml.replace(/無制限/g, 'XXX'), 'pricing.html'),
-  /missing Japanese/
-);
-console.log('  ✓ PASS: Content mutation test: Removal of No-JS Japanese text fails closed');
+// 3. Content Mutation Testing (Missing <main>, <h1>, or Japanese text in output HTML)
+const mutatedContentTempDir = runCopyAssetsInTempDir();
+try {
+  const pricingDistPath = path.join(mutatedContentTempDir, 'pricing.html');
+  const rawPricingHtml = fs.readFileSync(pricingDistPath, 'utf-8');
 
-console.log('\nAll dist audit & manifest/content mutation tests PASSED!');
+  // Test missing <main>
+  fs.writeFileSync(pricingDistPath, rawPricingHtml.replace(/<main[^>]*>/, '<div>').replace('</main>', '</div>'));
+  assert.throws(
+    () => auditDistDirectory(mutatedContentTempDir),
+    /pricing.html missing semantic <main> tag/
+  );
+  console.log('  ✓ PASS: Content mutation test: Missing <main> tag in fresh dist output fails closed');
+
+  // Test missing Japanese text
+  fs.writeFileSync(pricingDistPath, rawPricingHtml.replace(/無制限/g, 'XXX'));
+  assert.throws(
+    () => auditDistDirectory(mutatedContentTempDir),
+    /pricing.html missing Japanese unlimited scan copy/
+  );
+  console.log('  ✓ PASS: Content mutation test: Missing No-JS Japanese text in fresh dist output fails closed');
+} finally {
+  fs.rmSync(mutatedContentTempDir, { recursive: true, force: true });
+}
+
+console.log('\nIsolated dist audit & real copier mutation testing complete: ALL CHECKS PASSED!');
