@@ -71,13 +71,29 @@ console.log('── Mutation Testing: Executing Mutated Real Copier in Isolated 
 const copyAssetsSrc = fs.readFileSync(COPY_ASSETS_PATH, 'utf-8');
 const mutatedScriptPath = path.join(PROJECT_DIR, 'scripts', '.test-mutated-copy-assets.js');
 
-// Mutate HTML_PAGES in copy-assets source code by replacing 'pricing.html' with 'pricing-mismapped.html'
-const mutatedScriptContent = copyAssetsSrc.replace(`'pricing.html'`, `'pricing-mismapped.html'`);
+// Mutate only the destination expression. The source remains public/pricing.html;
+// a regression that writes it to the wrong shipped path must fail the fresh dist audit.
+const destinationExpression = `const dest = path.join(DIST_DIR, file);`;
+const mutatedDestinationExpression =
+  `const dest = path.join(DIST_DIR, file === 'pricing.html' ? 'pricing-mismapped.html' : file);`;
+assert.ok(
+  copyAssetsSrc.includes(destinationExpression),
+  'Mutation Test setup: expected copy-assets.js destination expression not found',
+);
+const mutatedScriptContent = copyAssetsSrc.replace(destinationExpression, mutatedDestinationExpression);
 fs.writeFileSync(mutatedScriptPath, mutatedScriptContent);
 
 try {
   const mutatedTempDir = runCopyAssetsInTempDir(mutatedScriptPath);
   try {
+    assert.ok(
+      fs.existsSync(path.join(mutatedTempDir, 'pricing-mismapped.html')),
+      'Mutation Test setup: destination-only mutation must emit pricing-mismapped.html from real public/pricing.html source',
+    );
+    assert.ok(
+      !fs.existsSync(path.join(mutatedTempDir, 'pricing.html')),
+      'Mutation Test setup: destination-only mutation must not emit pricing.html',
+    );
     assert.throws(
       () => auditDistDirectory(mutatedTempDir),
       /Required static page missing from output directory: pricing.html/,
