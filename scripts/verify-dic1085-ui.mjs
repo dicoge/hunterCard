@@ -247,6 +247,36 @@ async function run(label, viewport) {
   check(`${label}: monthly summary uses Japanese chrome`,
     (await hasText('データソースと収録範囲')) && !(await hasText('資料來源與涵蓋率')));
 
+  // DIC-1142: mobile shows a bar chart, desktop shows a donut. Assert the
+  // right one is mounted for this viewport and the wrong one is absent.
+  const chartPresence = await page.evaluate(() => ({
+    bar: !!document.querySelector('[data-testid="observed-share-bar"]'),
+    donut: !!document.querySelector('[data-testid="donut-chart"]'),
+    barBadge: !!document.querySelector('[data-testid="chart-view-mobile"]'),
+    donutBadge: !!document.querySelector('[data-testid="chart-view-desktop"]'),
+  }));
+  if (label === 'mobile') {
+    check(`${label}: distribution renders the mobile bar chart (no donut)`,
+      chartPresence.bar && !chartPresence.donut && chartPresence.barBadge,
+      JSON.stringify(chartPresence));
+  } else {
+    check(`${label}: distribution renders the desktop donut (no bar)`,
+      chartPresence.donut && !chartPresence.bar && chartPresence.donutBadge,
+      JSON.stringify(chartPresence));
+  }
+
+  // DIC-1142: representative cards block is present with a testID row per card.
+  const representativeCardCount = await page.evaluate(() =>
+    document.querySelectorAll('[data-testid^="representative-"]').length);
+  check(`${label}: representative-cards block renders at least one card`,
+    representativeCardCount >= 1, `count=${representativeCardCount}`);
+
+  // DIC-1142: at least one event card has a highlights block.
+  const highlightCount = await page.evaluate(() =>
+    document.querySelectorAll('[data-testid^="event-highlights-"]').length);
+  check(`${label}: at least one event exposes a highlights block`,
+    highlightCount >= 1, `count=${highlightCount}`);
+
   const firstColor = renderedColors[0];
   if (firstColor) {
     await page.click(`[data-testid="summary-color-${firstColor}"]`);
