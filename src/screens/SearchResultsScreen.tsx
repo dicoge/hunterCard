@@ -481,6 +481,23 @@ export const SEARCH_RESULTS_LAYOUT = {
   desktopMaxWidth: 1100,
 } as const;
 
+// DIC-1150 CR: layout tests need to render the real FlatList wrapper against a
+// dataset of exactly N cards so the mutation `<View style={[gridItemStyle,
+// { flexGrow: 1 }]}>` can fail on the last card of a partial row. The production
+// module memoizes the DB / series-names load in the two `let` bindings above;
+// this helper is the ONLY way to overwrite them from a test without shipping a
+// runtime seam. Callers pass `null, null` in `afterEach` to clear the cache so
+// the next render re-fetches the real database.
+export function __seedSearchResultsCacheForTest(
+  db: DatabaseSchema | null,
+  names: Record<string, string> | null,
+): void {
+  cachedDatabase = db;
+  databaseFetchPromise = null;
+  cachedSeriesNames = names;
+  seriesNamesFetchPromise = null;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   centerWrap: { flex: 1, width: '100%' },

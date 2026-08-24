@@ -38,7 +38,12 @@ const React = (await import('react')).default;
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const searchResultsModule = await import('../src/screens/SearchResultsScreen.tsx');
-const { default: SearchResultsScreen, CardListItem, SEARCH_RESULTS_LAYOUT } = searchResultsModule;
+const {
+  default: SearchResultsScreen,
+  CardListItem,
+  SEARCH_RESULTS_LAYOUT,
+  __seedSearchResultsCacheForTest: seedCache,
+} = searchResultsModule;
 
 const LIST_PADDING_X = SEARCH_RESULTS_LAYOUT.listPaddingX;
 const GRID_GAP = SEARCH_RESULTS_LAYOUT.gridGap;
@@ -154,6 +159,69 @@ async function renderScreenAt(viewport, count) {
   return { container, items: items.slice(0, count), cleanup: async () => { await act(async () => root.unmount()); container.remove(); } };
 }
 
+// DIC-1150 CR: `renderScreenAt` above slices `count` from a full production DB,
+// so every rendered item is inside a full row. The `flexGrow: 1` mutation only
+// visibly stretches the LAST card of a partial row, which needs a dataset of
+// exactly `count` cards. We seed the module cache with a hand-rolled dataset
+// so the real screen path — same `useEffect`, `searchCards`, `FlatList`,
+// `onLayout`, and wrapper — renders exactly `count` grid items.
+const SEED_SERIES_NAMES = { hBP03: '測試系列' };
+function seedDatabaseForCount(count) {
+  const cards = {};
+  for (let i = 0; i < count; i += 1) {
+    const suffix = String(i + 10).padStart(3, '0');
+    const id = `hBP03-${suffix}_BASE`;
+    cards[id] = {
+      id,
+      cardNumber: `hBP03-${suffix}`,
+      name: `Test Card ${i + 1}`,
+      nameZh: `測試卡 ${i + 1}`,
+      series: 'hBP03',
+      type: 'holomen',
+      rarity: 'R',
+      color: 'purple',
+      sellPrice: 100 + i,
+      prices: [{ name: 'R', sellPrice: 100 + i, rarity: 'R' }],
+    };
+  }
+  const db = { cards, totalCards: count, lastUpdated: '2026-08-24' };
+  seedCache(db, SEED_SERIES_NAMES);
+}
+
+async function renderScreenWithExactCount(viewport, count) {
+  seedDatabaseForCount(count);
+  setViewport(viewport, viewport === 390 ? 844 : 900);
+  observedLayoutNodes.clear();
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => root.render(React.createElement(SearchResultsScreen, {
+    route: { params: { query: 'hBP03' } },
+    navigation: { navigate() {} },
+  })));
+  await flush();
+  await fireObservedLayouts();
+  await flush();
+  const items = Array.from(container.querySelectorAll('[data-testid="search-result-grid-item"]'));
+  return {
+    container,
+    items,
+    cleanup: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+      // Clear the seeded cache so subsequent tests that call `renderScreenAt`
+      // fall back to the real production database.
+      seedCache(null, null);
+    },
+  };
+}
+
+function computedFlexGrow(node) {
+  const raw = getComputedStyle(node).flexGrow;
+  if (raw === '' || raw == null) return null;
+  return Number.parseFloat(String(raw));
+}
+
 function px(value) {
   const parsed = Number.parseFloat(String(value));
   assert.ok(Number.isFinite(parsed), `expected finite px value, got ${value}`);
@@ -187,6 +255,14 @@ for (const viewport of [1080, 1100, 1366, 1440]) {
       assert.ok(rowTotal <= expected.content, `row ${rowTotal} exceeded content ${expected.content}`);
       assert.ok(expected.content - rowTotal <= expected.columns - 1);
       assert.equal(document.documentElement.scrollWidth, document.documentElement.clientWidth);
+      // DIC-1150 CR: mutation guard. The wrapper style must resolve to
+      // flex-grow: 0 on the rendered DOM node. If the production wrapper is
+      // ever rewritten to `style={[gridItemStyle, { flexGrow: 1 }]}` this
+      // assertion fails immediately, because RN Web serialises the inline
+      // override into the computed style.
+      for (const item of items) {
+        assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+      }
     } finally { await cleanup(); }
   });
 }
@@ -197,6 +273,9 @@ await test('1068px content, 3 columns, 12px gap gives fixed 348px cards via the 
     assert.equal(expectedLayoutForViewport(1366).content, 1068);
     assert.ok(items.every((item) => px(getComputedStyle(item).width) === 348));
     assert.equal(3 * 348 + 2 * GRID_GAP, 1068);
+    for (const item of items) {
+      assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+    }
   } finally { await cleanup(); }
 });
 
@@ -206,6 +285,9 @@ await test('736px content, 2 columns, 12px gap gives fixed 362px cards via the r
     assert.equal(expectedLayoutForViewport(768).content, 736);
     assert.ok(items.every((item) => px(getComputedStyle(item).width) === 362));
     assert.equal(2 * 362 + GRID_GAP, 736);
+    for (const item of items) {
+      assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+    }
   } finally { await cleanup(); }
 });
 
@@ -216,15 +298,62 @@ await test('390px mobile renders single-column full-width cards with no horizont
     assert.equal(expected.columns, 1);
     assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.content));
     assert.equal(document.documentElement.scrollWidth, document.documentElement.clientWidth);
+    for (const item of items) {
+      assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+    }
   } finally { await cleanup(); }
 });
 
+// DIC-1150 CR: exact-N datasets rendered through the real screen so the
+// partial row actually exists in the DOM. At numColumns=3, N=1 leaves a
+// 2-slot gap on the last (only) row; N=2 leaves a 1-slot gap; N=4 puts a
+// single card on row 2; N=5 puts two cards on row 2. In every case the
+// last card must keep its fixed 348px width AND its flex-grow must remain
+// 0. If the wrapper ever regains flex-grow, the partial-row card stretches
+// to fill the empty space — the bug the ticket forbids.
 for (const count of [1, 2, 4, 5]) {
-  await test(`${count} rendered results keep final-row card widths fixed`, async () => {
-    const { items, cleanup } = await renderScreenAt(1366, count);
+  await test(`exact ${count}-card dataset at 1366px keeps the final-row card fixed (no stretch)`, async () => {
+    const { items, cleanup } = await renderScreenWithExactCount(1366, count);
+    try {
+      assert.equal(items.length, count, `seeded dataset must render exactly ${count} grid items`);
+      const widths = items.map((item) => px(getComputedStyle(item).width));
+      assert.ok(
+        widths.every((width) => width === 348),
+        `expected every card 348px, got ${widths.join(', ')}`
+      );
+      // The last card is the one that would stretch under `flexGrow: 1`.
+      const last = items[items.length - 1];
+      assert.equal(px(getComputedStyle(last).width), 348, 'partial-row card must not stretch its width');
+      assert.equal(
+        computedFlexGrow(last),
+        0,
+        'partial-row card wrapper flex-grow must stay 0 — the mutation the CR flagged is `flexGrow: 1`'
+      );
+      // And every wrapper — not just the last one — must stay unstretchable.
+      for (const item of items) {
+        assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+      }
+    } finally { await cleanup(); }
+  });
+}
+
+// DIC-1150 CR: also lock exact-N behavior on the 2-column desktop breakpoint,
+// because the 1-card row is a partial row there too and the same mutation
+// would visibly stretch it.
+for (const count of [1, 3]) {
+  await test(`exact ${count}-card dataset at 900px (2 cols) keeps the final-row card fixed (no stretch)`, async () => {
+    const { items, cleanup } = await renderScreenWithExactCount(900, count);
     try {
       assert.equal(items.length, count);
-      assert.ok(items.every((item) => px(getComputedStyle(item).width) === 348));
+      const expected = expectedLayoutForViewport(900);
+      const widths = items.map((item) => px(getComputedStyle(item).width));
+      assert.ok(
+        widths.every((width) => width === expected.perCard),
+        `expected every card ${expected.perCard}px, got ${widths.join(', ')}`
+      );
+      for (const item of items) {
+        assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+      }
     } finally { await cleanup(); }
   });
 }
