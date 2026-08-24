@@ -18,7 +18,7 @@ import {
 } from '../services/auth';
 import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErrorMessages';
 
-const PRIVACY_POLICY_URL = 'https://holocard-hunter.vercel.app/privacy';
+const PRIVACY_POLICY_URL = 'https://holohunter.dicoge.com/privacy.html';
 
 export default function AuthScreen() {
   const loginWithApple = useAuthStore((s) => s.loginWithApple);

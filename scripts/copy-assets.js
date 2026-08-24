@@ -63,7 +63,7 @@ if (fs.existsSync(zhDbSource)) {
 }
 
 // Copy static HTML pages (privacy / support) so /privacy and /support rewrites resolve
-const HTML_PAGES = ['privacy.html', 'support.html'];
+const HTML_PAGES = ['privacy.html', 'support.html', 'pricing.html', 'terms.html'];
 HTML_PAGES.forEach((file) => {
   const src = path.join(PROJECT_DIR, 'public', file);
   const dest = path.join(DIST_DIR, file);
