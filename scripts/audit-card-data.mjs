@@ -19,6 +19,12 @@ const cards = Object.values(database.cards || {});
 const violations = [];
 const warnings = [];
 
+const subscriberAuditReferenceTime = Math.max(...cards
+  .map((card) => Date.parse(String(card.ytStats?.fetchedAt || '')))
+  .filter(Number.isFinite));
+assert.ok(Number.isFinite(subscriberAuditReferenceTime), 'subscriber audit requires at least one stamped ytStats.fetchedAt');
+const auditGeneratedAt = new Date(subscriberAuditReferenceTime).toISOString();
+
 function add(list, code, card, detail) {
   list.push({ code, id: card?.id ?? null, cardNumber: card?.cardNumber ?? null, detail });
 }
@@ -105,12 +111,19 @@ for (const card of cards) {
   }
   if (card.ytStats) {
     subscriberRows++;
-    if (hasDisplayableSubscriberStats(card.ytStats, Date.parse('2026-08-18T23:59:59Z'))) subscriberDisplayableRows++;
+    if (hasDisplayableSubscriberStats(card.ytStats, subscriberAuditReferenceTime)) subscriberDisplayableRows++;
     if (card.ytStats.subscriberCount === 0 && !hasDisplayableSubscriberStats(card.ytStats)) {
       add(violations, 'UNPROVEN_ZERO_SUBSCRIBERS', card, card.ytStats);
     }
   }
 }
+
+assert.equal(subscriberRows, 1160, 'DIC-1153 full dataset ytStats row count must stay pinned');
+assert.equal(
+  subscriberDisplayableRows,
+  1160,
+  'DIC-1153 full dataset subscriber provenance must be evaluated at the audit snapshot reference time, not a stale wall-clock constant',
+);
 
 const ytRecent7ByChannel = {};
 let ytChannelsAudited = 0;
@@ -153,11 +166,15 @@ assert.deepEqual(Object.keys(database.cards), Object.keys(publicDatabase.cards),
 const report = {
   issue: 'DIC-1084',
   audit: 'DIC-1153-strict-card-and-recent7-youtube-audit',
-  generatedAt: new Date().toISOString(),
+  generatedAt: auditGeneratedAt,
   dataset: { rows: cards.length, canonicalTotalCards: database.totalCards, publicRows: Object.keys(publicDatabase.cards || {}).length },
   before: { badgeCounts: beforeBadges },
   after: { badgeCounts: afterBadges, categoryCounts },
-  subscribers: { rowsWithStats: subscriberRows, displayableWithRequiredProvenance: subscriberDisplayableRows },
+  subscribers: {
+    rowsWithStats: subscriberRows,
+    displayableWithRequiredProvenance: subscriberDisplayableRows,
+    auditReferenceTime: auditGeneratedAt,
+  },
   trends: { rowsWithPriceHistory: priceHistoryRows, rowsWithExactCardPrintingCurrencyProvenance: trendEligibleRows },
   printings: {
     rowsWithAmbiguousSourcePrinting: ambiguousPrintingRows,

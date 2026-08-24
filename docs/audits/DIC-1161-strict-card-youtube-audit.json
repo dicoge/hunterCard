@@ -1,7 +1,7 @@
 {
   "issue": "DIC-1084",
   "audit": "DIC-1153-strict-card-and-recent7-youtube-audit",
-  "generatedAt": "2026-08-24T14:29:55.797Z",
+  "generatedAt": "2026-08-24T12:03:48.704Z",
   "dataset": {
     "rows": 2150,
     "canonicalTotalCards": 2150,
@@ -40,7 +40,8 @@
   },
   "subscribers": {
     "rowsWithStats": 1160,
-    "displayableWithRequiredProvenance": 0
+    "displayableWithRequiredProvenance": 1160,
+    "auditReferenceTime": "2026-08-24T12:03:48.704Z"
   },
   "trends": {
     "rowsWithPriceHistory": 2072,

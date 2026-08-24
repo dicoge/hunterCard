@@ -4,7 +4,7 @@
 - Critical violations: 0
 - Warnings: 882
 - hY regression cards: all normalize to Yell
-- Subscriber rows displayable with complete provenance: 0/1160
+- Subscriber rows displayable with complete provenance: 1160/1160
 - YouTube recent-7 snapshots audited: 372 across 54 channels
 - YouTube stamped delta mismatches: 0
 - Price-history rows eligible for exact-printing trend: 0/2072
