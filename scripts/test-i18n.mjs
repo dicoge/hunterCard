@@ -586,4 +586,73 @@ test('ja summary path does not surface Chinese runtime coverage/source strings',
   }
 });
 
+// ── DIC-1154 Stage 1 CR §regression guard ───────────────────────────────────
+// Every locale value on a reachable PriceAlertEditor / watchlist / card-detail
+// alert surface must name the entity — 價格提醒 in zh, 価格アラート in ja. A
+// bare "提醒" / "アラート" is a CR regression that made it past the earlier
+// grep-only sweep; enumerate the exact keys so a future edit that drops the
+// prefix fails here, not in a screen review.
+test('DIC-1154 alert-entity naming holds on every reachable editor/watchlist key', () => {
+  // Every key whose value is user-visible on the PriceAlertEditor modal, the
+  // WatchlistScreen list, the CardDetailScreen action row, the deck editor
+  // alert row, the settings sync copy, or the notification title. Kept as an
+  // explicit list so removing a surface deletes a line here too.
+  const REACHABLE_ALERT_KEYS = [
+    // PriceAlertEditor
+    'price_alert_save',
+    'price_alert_save_a11y',
+    'price_alert_remove',
+    'price_alert_no_printings',
+    'price_alert_choose_printing_error',
+    'price_alert_unrecognized_printing_error',
+    // WatchlistScreen
+    'watchlist_title',
+    'watchlist_empty',
+    'watchlist_empty_title',
+    'watchlist_remove_alert',
+    'watchlist_remove_alert_confirm',
+    'watchlist_remove_a11y',
+    'watchlist_resolve_a11y',
+    // CardDetailScreen alert row
+    'card_detail_add_watchlist',
+    'card_detail_watchlist_added',
+    'card_detail_watchlist_add',
+    'card_detail_watchlist_added_remove',
+    'card_detail_watchlist_remove_title',
+    'card_detail_watchlist_remove_confirm',
+    'card_detail_alert_one',
+    'card_detail_alert_many',
+    'card_detail_alert_set',
+    'card_detail_alert_a11y',
+    // Deck editor + settings sync copy that name the feature
+    'deck_alert_unavailable',
+    'settings_link_hint_watchlist',
+    'settings_guest_sync_watchlist',
+    // Nav drawer label
+    'nav_watchlist',
+  ];
+
+  for (const key of REACHABLE_ALERT_KEYS) {
+    assert.ok(zh[key].includes('價格提醒'),
+      `zh.${key} must name the entity 價格提醒, got: ${zh[key]}`);
+    assert.ok(ja[key].includes('価格アラート'),
+      `ja.${key} must name the entity 価格アラート, got: ${ja[key]}`);
+  }
+});
+
+test('DIC-1154 no reachable alert copy leaks the pre-unification names', () => {
+  const FORBIDDEN_ZH = ['到價提醒', '入手提醒', '趨勢追蹤'];
+  const FORBIDDEN_JA = ['ほしい物アラート', '価格推移の追跡'];
+  for (const [key, val] of Object.entries(zh)) {
+    for (const bad of FORBIDDEN_ZH) {
+      assert.ok(!val.includes(bad), `zh.${key} still names legacy "${bad}": ${val}`);
+    }
+  }
+  for (const [key, val] of Object.entries(ja)) {
+    for (const bad of FORBIDDEN_JA) {
+      assert.ok(!val.includes(bad), `ja.${key} still names legacy "${bad}": ${val}`);
+    }
+  }
+});
+
 console.log(`test-i18n: PASS (${passed} checks)`);

@@ -71,7 +71,7 @@ export const zh = {
   watchlist_title: '價格提醒',
   watchlist_empty: '尚無價格提醒設定',
   price_alert_target: '目標價格',
-  price_alert_save: '儲存提醒',
+  price_alert_save: '儲存價格提醒',
 
   // Deck Editor
   deck_title: '牌組編輯器',
@@ -634,7 +634,7 @@ export const zh = {
   price_alert_no_printings: '這張卡目前沒有可辨識的版本資料，無法建立價格提醒。',
   price_alert_no_reference_price: '暫無參考售價',
   price_alert_choose_printing_error: '請先選擇版本，價格提醒只比對你選定的那一個版本。',
-  price_alert_unrecognized_printing_error: '無法建立提醒：這張卡沒有可辨識的版本。',
+  price_alert_unrecognized_printing_error: '無法建立價格提醒：這張卡沒有可辨識的版本。',
   price_alert_hint: '僅比對此精確版本的玩家「參考售價」；不採用店家收購價、最高價或跨版本價格。',
   price_alert_lower: '下限（可選）',
   price_alert_upper: '上限（必填）',
@@ -644,8 +644,8 @@ export const zh = {
   price_alert_upper_a11y: '期望入手價上限',
   price_alert_current_setting: '目前設定 {{interval}} · {{status}}',
   price_alert_push_available: '此裝置已取得推播權杖：價格進入區間時會發送推播（同一次進入只通知一次）。',
-  price_alert_push_unavailable: '此裝置沒有推播權杖（Web 或未開啟通知權限），提醒只會在本機顯示狀態，不會有背景推播。',
-  price_alert_remove: '移除提醒',
+  price_alert_push_unavailable: '此裝置沒有推播權杖（Web 或未開啟通知權限），價格提醒只會在本機顯示狀態，不會有背景推播。',
+  price_alert_remove: '移除價格提醒',
   price_alert_save_a11y: '儲存價格提醒',
   price_alert_error_not_integer: '請輸入 0 或以上的整數金額（不接受負數或小數）。',
   price_alert_error_too_large: '金額過大，請輸入有效整數。',
