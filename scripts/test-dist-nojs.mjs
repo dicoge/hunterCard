@@ -12,15 +12,19 @@ const requiredPages = ['pricing.html', 'terms.html', 'privacy.html', 'support.ht
 console.log('── Isolated Dist Audit & Real Copier Mutation Test (CR DIC-1162) ──');
 
 /**
- * Helper to run copy-assets.js into a fresh isolated output directory with no pre-existing HTML
+ * Helper to run a copier script into a fresh isolated output directory with no pre-existing HTML
  */
-function runCopyAssetsInTempDir(customScriptPath = COPY_ASSETS_PATH) {
+function runCopyAssetsInTempDir(scriptPath = COPY_ASSETS_PATH) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-dist-nojs-'));
   fs.mkdirSync(path.join(tempDir, 'data'), { recursive: true });
   fs.writeFileSync(path.join(tempDir, 'data', 'database.json'), JSON.stringify({ cards: [] }));
 
-  execSync(`node "${customScriptPath}"`, {
-    env: { ...process.env, DIST_DIR: tempDir },
+  execSync(`node "${scriptPath}"`, {
+    env: {
+      ...process.env,
+      PROJECT_DIR: PROJECT_DIR,
+      DIST_DIR: tempDir,
+    },
     stdio: 'pipe',
   });
 
@@ -51,23 +55,24 @@ function auditDistDirectory(distDir) {
   }
 }
 
-// 1. Audit real production export/copy into a fresh isolated temp directory
-const cleanTempDir = runCopyAssetsInTempDir();
+// 1. Control Test: Audit real unmodified production export/copy into a fresh isolated temp directory
+console.log('Control Test: Executing unmodified copy-assets.js in fresh temp directory...');
+const controlTempDir = runCopyAssetsInTempDir();
 try {
-  auditDistDirectory(cleanTempDir);
-  console.log('  ✓ PASS: Fresh isolated build output audited with semantic <main>, <h1>, <noscript>, and No-JS Japanese readability');
+  auditDistDirectory(controlTempDir);
+  console.log('  ✓ CONTROL PASS: Unmodified copier produces all required pages with semantic <main>, <h1>, <noscript>, and No-JS Japanese readability');
 } finally {
-  fs.rmSync(cleanTempDir, { recursive: true, force: true });
+  fs.rmSync(controlTempDir, { recursive: true, force: true });
 }
 
-// 2. Real Copier Mutation Testing (Executes mutated real copier in fresh isolated dir)
+// 2. Real Copier Destination Mis-Mapping Mutation Test
 console.log('── Mutation Testing: Executing Mutated Real Copier in Isolated Output ──');
 
 const copyAssetsSrc = fs.readFileSync(COPY_ASSETS_PATH, 'utf-8');
-const mutatedScriptPath = path.join(os.tmpdir(), `mutated-copy-assets-${Date.now()}.js`);
+const mutatedScriptPath = path.join(PROJECT_DIR, 'scripts', '.test-mutated-copy-assets.js');
 
-// Mutate HTML_PAGES in copy-assets source code by replacing 'pricing.html' with 'pricing-copy.html'
-const mutatedScriptContent = copyAssetsSrc.replace(`'pricing.html'`, `'pricing-copy.html'`);
+// Mutate HTML_PAGES in copy-assets source code by replacing 'pricing.html' with 'pricing-mismapped.html'
+const mutatedScriptContent = copyAssetsSrc.replace(`'pricing.html'`, `'pricing-mismapped.html'`);
 fs.writeFileSync(mutatedScriptPath, mutatedScriptContent);
 
 try {
@@ -76,7 +81,7 @@ try {
     assert.throws(
       () => auditDistDirectory(mutatedTempDir),
       /Required static page missing from output directory: pricing.html/,
-      'Mutation Test: Real copier emitting pricing-copy.html instead of pricing.html MUST cause dist audit to fail'
+      'Mutation Test: Real copier emitting pricing-mismapped.html instead of pricing.html MUST cause dist audit to fail'
     );
     console.log('  ✓ PASS: Real copier mutation test: Changing pricing destination in copy-assets.js causes fresh dist audit to fail closed');
   } finally {
