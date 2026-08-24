@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, ActivityIndicator, Image } from 'react-native';
+import type { LayoutChangeEvent } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -253,7 +254,20 @@ export default function SearchResultsScreen({ route, navigation }: any) {
   const [error, setError] = useState<string | null>(null);
   const { isDesktop, isWide } = useBreakpoint();
   const numColumns = isWide ? 3 : isDesktop ? 2 : 1;
-  const gridItemStyle = useMemo(() => uniformGridItemStyle(numColumns), [numColumns]);
+  // DIC-1150: measure the row's available width so each card lands on an exact
+  // pixel width (containerWidth - (n-1) * GRID_GAP) / n. Mixing the fixed 12px
+  // `columnWrapper` gap with a guessed percentage gap was the root cause of the
+  // horizontal scrollbar and the unaligned third column on desktop.
+  const [rowWidth, setRowWidth] = useState(0);
+  const onListLayout = useCallback((event: LayoutChangeEvent) => {
+    // padding-left + padding-right of the FlatList's contentContainerStyle.
+    const contentWidth = event.nativeEvent.layout.width - LIST_PADDING_X * 2;
+    setRowWidth((prev) => (prev === contentWidth ? prev : Math.max(0, contentWidth)));
+  }, []);
+  const gridItemStyle = useMemo(
+    () => uniformGridItemStyle({ columns: numColumns, containerWidth: rowWidth, gap: GRID_GAP }),
+    [numColumns, rowWidth]
+  );
 
   useEffect(() => {
     if (!query.trim()) {
@@ -320,11 +334,12 @@ export default function SearchResultsScreen({ route, navigation }: any) {
           numColumns={numColumns}
           columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           renderItem={({ item }) => (
-            <View style={gridItemStyle}>
+            <View style={gridItemStyle} testID="search-result-grid-item">
               <CardListItem card={item} onPress={() => navigation.navigate('CardDetail', { card: item })} />
             </View>
           )}
           contentContainerStyle={styles.list}
+          onLayout={onListLayout}
         />
       </View>
     </View>
@@ -382,7 +397,7 @@ function CardIdentityBadges({
   );
 }
 
-function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void }) {
+export function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void }) {
   const { t } = useTranslation();
   const [imgErr, setImgErr] = React.useState(false);
   const id = card.cardNumber || card.id;
@@ -411,8 +426,11 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
         </View>
       )}
       <View style={styles.cardContent}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardNumber}>{id}</Text>
+        <View style={styles.cardHeader} testID="search-card-header">
+          <Text style={styles.cardNumber} numberOfLines={1} testID="search-card-number">{id}</Text>
+        </View>
+
+        <View style={styles.identityBadgeLine} accessible={false} testID="search-card-identity-badges">
           <CardIdentityBadges normalized={card.normalized} rarity={card.rarity} t={t} />
         </View>
 
@@ -451,11 +469,40 @@ function CardListItem({ card, onPress }: { card: CardResult; onPress: () => void
   );
 }
 
+// DIC-1150: single source of truth for the two numbers the row math depends on
+// — the list's horizontal padding and the gap between columns. Both are read by
+// the layout tests too so the contract stays honest across viewports.
+const LIST_PADDING_X = 16;
+const GRID_GAP = 12;
+
+export const SEARCH_RESULTS_LAYOUT = {
+  listPaddingX: LIST_PADDING_X,
+  gridGap: GRID_GAP,
+  desktopMaxWidth: 1100,
+} as const;
+
+// DIC-1150 CR: layout tests need to render the real FlatList wrapper against a
+// dataset of exactly N cards so the mutation `<View style={[gridItemStyle,
+// { flexGrow: 1 }]}>` can fail on the last card of a partial row. The production
+// module memoizes the DB / series-names load in the two `let` bindings above;
+// this helper is the ONLY way to overwrite them from a test without shipping a
+// runtime seam. Callers pass `null, null` in `afterEach` to clear the cache so
+// the next render re-fetches the real database.
+export function __seedSearchResultsCacheForTest(
+  db: DatabaseSchema | null,
+  names: Record<string, string> | null,
+): void {
+  cachedDatabase = db;
+  databaseFetchPromise = null;
+  cachedSeriesNames = names;
+  seriesNamesFetchPromise = null;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   centerWrap: { flex: 1, width: '100%' },
-  centerWrapDesktop: { maxWidth: 1100, alignSelf: 'center' },
-  columnWrapper: { gap: 12 },
+  centerWrapDesktop: { maxWidth: SEARCH_RESULTS_LAYOUT.desktopMaxWidth, alignSelf: 'center' },
+  columnWrapper: { gap: GRID_GAP },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
   loadingText: { color: COLORS.text, fontSize: 16, fontWeight: '600', marginTop: 16, textAlign: 'center' },
   loadingSubtext: { color: COLORS.textSecondary, fontSize: 13, marginTop: 6 },
@@ -467,13 +514,16 @@ const styles = StyleSheet.create({
   header: { padding: 16, paddingBottom: 8 },
   queryText: { fontSize: 22, fontWeight: 'bold', marginBottom: 4 },
   resultCount: { fontSize: 13 },
-  list: { padding: 16, paddingTop: 0 },
+  list: { padding: LIST_PADDING_X, paddingTop: 0 },
   card: { flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 12, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, minHeight: 140 },
   cardImageContainer: { padding: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 4, marginRight: 4 },
   rarityStrip: { width: 5, minWidth: 5 },
   cardContent: { flex: 1, padding: 14, paddingRight: 8 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  cardNumber: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700' },
+  // DIC-1150 CR: the identity chips live on their own row. Keeping them inside
+  // this header left only 43-53px for a 69px identifier at real product widths.
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  cardNumber: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', flexShrink: 0, minWidth: 72 },
+  identityBadgeLine: { minHeight: 22, alignItems: 'flex-start', marginBottom: 6 },
   rarityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, minWidth: 45, alignItems: 'center' },
   rarityText: { color: COLORS.text, fontSize: 11, fontWeight: '800' },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
