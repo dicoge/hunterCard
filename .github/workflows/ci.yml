@@ -104,6 +104,9 @@ jobs:
       - name: Verify Holomen Bloom Level badge never falls back to "Holomen" (DIC-1141)
         run: npm run test:dic1141-bloom-level
 
+      - name: Verify Bloom Level scraper preserves canonical + overlay loader fails closed (DIC-1141 CR)
+        run: npm run test:dic1141-scrape-bloom-safety
+
       - name: Verify production /api/* is not swallowed by SPA (DIC-886)
         run: npm run test:vercel-routing
 

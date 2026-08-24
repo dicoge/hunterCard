@@ -14,7 +14,7 @@ import { formatInterval } from '../utils/priceAlerts';
 import type { PrintingOption } from '../utils/alertMigration';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
-import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, bloomLevelBadgeColor, categoryBadgeColor } from '../utils/cardNormalization';
+import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, bloomLevelBadgeColor, categoryBadgeColor, PRINTING_RARITY_COLORS } from '../utils/cardNormalization';
 import { computeValidatedPriceTrend } from '../utils/priceTrend';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -25,7 +25,9 @@ import { ownershipKey } from '../utils/deckRules';
 const { width } = Dimensions.get('window');
 
 const gradeLabels: Record<string, string> = { debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot' };
-const rarityColors: Record<string, string> = { N: '#6b7280', C: '#6b7280', U: '#10b981', R: '#3b82f6', SR: '#f59e0b' };
+// DIC-1141 CR: printing rarity palette imported from the shared source in
+// cardNormalization.ts so the palette-collision regression is authoritative.
+const rarityColors = PRINTING_RARITY_COLORS;
 const japaneseKanaRegex = /[\u3040-\u309F\u30A0-\u30FF]/;
 
 function containsJapaneseKana(value: unknown): boolean {
