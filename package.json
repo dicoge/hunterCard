@@ -10,6 +10,7 @@
     "build": "expo export --platform web && node scripts/fix-html.js && node scripts/generate-assetlinks.mjs",
     "test:push-backend": "node scripts/test-push-backend.cjs",
     "test:auth-backend": "node scripts/test-auth-backend.cjs",
+    "test:account-sync-backend": "node scripts/test-account-sync-backend.cjs",
     "test:auth-contract": "node scripts/test-auth-endpoint-contract.cjs",
     "test:verify-token": "node scripts/test-verify-token.cjs",
     "test:auth-strategy": "node scripts/test-auth-strategy.cjs",
