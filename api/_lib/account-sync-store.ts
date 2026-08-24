@@ -24,6 +24,7 @@ export const MAX_COLLECTION_ENTRIES = 10_000;
 export const MAX_PRICE_ALERTS = 500;
 export const MAX_DECK_ZONE_SLOTS = 200;
 export const MAX_DECK_SLOT_QTY = 500;
+export const MAX_COLLECTION_QTY = 100_000;
 
 const DECK_CURRENCY_CODES = ['TWD', 'JPY', 'USD'] as const;
 type DeckCurrencyCode = typeof DECK_CURRENCY_CODES[number];
@@ -204,9 +205,16 @@ function cleanCollection(value: unknown): AccountCollection {
   for (const [key, rawQty] of entries) {
     const cleanKey = key.trim();
     if (!cleanKey || !cleanKey.includes('|')) throw new AccountSyncError('invalid_request', 'collection keys must be cardNumber|printing', 400);
-    const qty = Math.floor(Number(rawQty));
-    if (!Number.isFinite(qty) || qty < 0) throw new AccountSyncError('invalid_request', 'collection quantities must be non-negative integers', 400);
-    if (qty > 0) out[cleanKey] = qty;
+    // Reject any non-number, fractional, unsafe-magnitude, or negative value
+    // WITHOUT coercing — `Number(x)` would smuggle in `"7"`, `null`, `false`,
+    // `""` (all → 0), and `Math.floor` would silently truncate `1.9` → 1.
+    if (typeof rawQty !== 'number' || !Number.isSafeInteger(rawQty)) {
+      throw new AccountSyncError('invalid_request', `collection[${cleanKey}] quantity must be a safe integer`, 400);
+    }
+    if (rawQty < 0 || rawQty > MAX_COLLECTION_QTY) {
+      throw new AccountSyncError('invalid_request', `collection[${cleanKey}] quantity must be between 0 and ${MAX_COLLECTION_QTY}`, 400);
+    }
+    if (rawQty > 0) out[cleanKey] = rawQty;
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
@@ -228,8 +236,8 @@ function cleanNonEmptyString(value: unknown, field: string): string {
 }
 
 function cleanIntegerInRange(value: unknown, field: string, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isInteger(value)) {
-    throw new AccountSyncError('invalid_request', `${field} must be an integer`, 400);
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new AccountSyncError('invalid_request', `${field} must be a safe integer`, 400);
   }
   if (value < min || value > max) {
     throw new AccountSyncError('invalid_request', `${field} must be between ${min} and ${max}`, 400);
@@ -351,8 +359,8 @@ function cleanPriceAlertPriceBound(value: unknown, field: string, allowNull: boo
     if (!allowNull) throw new AccountSyncError('invalid_request', `${field} is required`, 400);
     return null;
   }
-  if (typeof value !== 'number' || !Number.isInteger(value)) {
-    throw new AccountSyncError('invalid_request', `${field} must be an integer`, 400);
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new AccountSyncError('invalid_request', `${field} must be a safe integer`, 400);
   }
   if (value < 0 || value > SERVER_MAX_ALERT_PRICE) {
     throw new AccountSyncError('invalid_request', `${field} must be between 0 and ${SERVER_MAX_ALERT_PRICE}`, 400);
@@ -435,11 +443,12 @@ export function parseAccountSyncPatch(value: unknown): AccountSyncPatch {
 }
 
 export function parseBaseRevision(value: unknown): number {
-  const n = Number(value);
-  if (!Number.isInteger(n) || n < 0) {
-    throw new AccountSyncError('invalid_request', 'baseRevision must be a non-negative integer', 400);
+  // No coercion — `Number(null|false|"")` all silently become 0 and would let a
+  // caller commit as if baseRevision=0 without ever sending the field.
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new AccountSyncError('invalid_request', 'baseRevision must be a non-negative safe integer', 400);
   }
-  return n;
+  return value;
 }
 
 export function parseIdempotencyKey(value: unknown): string {

@@ -409,6 +409,81 @@ async function testMalformedPriceAlertRejectedAtRealHandler() {
   }
 }
 
+async function testCollectionQtyCoercionRejectedAtRealHandler() {
+  const cases = [
+    ['qty-fractional-truncation', { collection: { 'hBP01-001|BASE': 1.9 } }],
+    ['qty-string-numeric', { collection: { 'hBP01-001|BASE': '7' } }],
+    ['qty-string-empty', { collection: { 'hBP01-001|BASE': '' } }],
+    ['qty-null', { collection: { 'hBP01-001|BASE': null } }],
+    ['qty-bool-false', { collection: { 'hBP01-001|BASE': false } }],
+    ['qty-bool-true', { collection: { 'hBP01-001|BASE': true } }],
+    ['qty-unsafe-magnitude', { collection: { 'hBP01-001|BASE': 1e308 } }],
+    ['qty-nan', { collection: { 'hBP01-001|BASE': Number.NaN } }],
+    ['qty-negative', { collection: { 'hBP01-001|BASE': -5 } }],
+    ['qty-over-max', { collection: { 'hBP01-001|BASE': 100_001 } }],
+  ];
+  for (const [scenario, patch] of cases) {
+    await assertMalformedRejected(`collection-user-${scenario}`, patch);
+  }
+}
+
+async function assertMalformedBaseRevisionRejected(scenario, baseRevisionValue) {
+  resetKv(); configureBackend();
+  const { user, session } = await createSession(`baseRev-user-${scenario}`);
+  const seedIdem = `${scenario}-seed`;
+  const seed = await request('POST', {
+    baseRevision: 0,
+    idempotencyKey: seedIdem,
+    patch: { settings: { preferredCurrency: 'JPY' } },
+  }, session);
+  assert.equal(seed.status, 200, `${scenario}: seed request must succeed`);
+  const beforeSnapshot = kvState.values.get(`account-sync:user:${user.internalId}`);
+  const beforeIndex = kvState.sets.get(`account-sync:idempotency-index:${user.internalId}`);
+  const beforeRevision = JSON.parse(beforeSnapshot).revision;
+  assert.equal(beforeRevision, 1, `${scenario}: seed must land at revision 1`);
+
+  const attackIdem = `${scenario}-attack`;
+  const res = await request('POST', {
+    baseRevision: baseRevisionValue,
+    idempotencyKey: attackIdem,
+    patch: { settings: { preferredCurrency: 'USD' } },
+  }, session);
+  assert.equal(res.status, 400, `${scenario}: coerced baseRevision must be rejected`);
+  assert.equal(res.body.error, 'invalid_request', `${scenario}: error must be invalid_request`);
+
+  const afterSnapshot = kvState.values.get(`account-sync:user:${user.internalId}`);
+  const afterIndex = kvState.sets.get(`account-sync:idempotency-index:${user.internalId}`);
+  assert.equal(afterSnapshot, beforeSnapshot, `${scenario}: snapshot must be unchanged`);
+  assert.equal(JSON.parse(afterSnapshot).revision, beforeRevision, `${scenario}: revision must be unchanged`);
+  assert.equal(
+    kvState.values.has(`account-sync:idempotency:${user.internalId}:${attackIdem}`),
+    false,
+    `${scenario}: malformed baseRevision must not create idempotency key`,
+  );
+  assert.deepEqual(afterIndex, beforeIndex, `${scenario}: idempotency index must be unchanged`);
+}
+
+async function testBaseRevisionCoercionRejectedAtRealHandler() {
+  const cases = [
+    ['null', null],
+    ['bool-false', false],
+    ['bool-true', true],
+    ['string-empty', ''],
+    ['string-numeric', '3'],
+    ['string-non-numeric', 'zero'],
+    ['fractional', 1.5],
+    ['negative', -1],
+    ['unsafe-magnitude', Number.MAX_SAFE_INTEGER + 2],
+    ['nan', Number.NaN],
+    ['infinity', Number.POSITIVE_INFINITY],
+    ['object', { valueOf: () => 0 }],
+    ['array', [0]],
+  ];
+  for (const [scenario, value] of cases) {
+    await assertMalformedBaseRevisionRejected(scenario, value);
+  }
+}
+
 async function testWellFormedDeckAndAlertAccepted() {
   resetKv(); configureBackend();
   const { user, session } = await createSession('sync-user-happy-path');
@@ -541,6 +616,8 @@ async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
   await testValidationRejectsBadCollection();
   await testMalformedDeckRejectedAtRealHandler();
   await testMalformedPriceAlertRejectedAtRealHandler();
+  await testCollectionQtyCoercionRejectedAtRealHandler();
+  await testBaseRevisionCoercionRejectedAtRealHandler();
   await testWellFormedDeckAndAlertAccepted();
   await testAccountDeleteCascadeHook();
   await testAuthorizedSyncCannotCommitAfterDeletionFence();
