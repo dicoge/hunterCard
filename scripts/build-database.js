@@ -757,6 +757,24 @@ const VALID_BLOOM_LEVEL_SET = new Set(VALID_BLOOM_LEVELS);
 // legitimate shrink (e.g. official removed cards).
 const DEFAULT_BLOOM_MIN_COVERAGE = 300;
 
+/**
+ * Coerce BLOOM_MIN_COVERAGE from env (or an injected map for tests) to a
+ * finite, non-negative integer. Fail closed on NaN, negative, or non-integer —
+ * a legitimate operator can still set BLOOM_MIN_COVERAGE=0 to bypass, but a
+ * typo like `BLOOM_MIN_COVERAGE=-1` or `BLOOM_MIN_COVERAGE=abc` must never
+ * let an empty overlay slip past `validateBloomOverlay` (Codex CR blocker
+ * supplement).
+ */
+export function coerceBloomMinCoverage(env = process.env, fallback = DEFAULT_BLOOM_MIN_COVERAGE) {
+  const raw = env.BLOOM_MIN_COVERAGE;
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+    throw new Error(`[bloom] BLOOM_MIN_COVERAGE must be a non-negative integer, got ${JSON.stringify(raw)}. (DIC-1141)`);
+  }
+  return n;
+}
+
 export function validateBloomOverlay(payload, { minCoverage = DEFAULT_BLOOM_MIN_COVERAGE } = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return { ok: false, reason: 'payload is not an object' };
@@ -793,7 +811,9 @@ function loadBloomLevelOverlay() {
   } catch (err) {
     throw new Error(`[bloom] canonical overlay is malformed JSON: ${p}: ${err.message}. (DIC-1141)`);
   }
-  const minCoverage = Number(process.env.BLOOM_MIN_COVERAGE || DEFAULT_BLOOM_MIN_COVERAGE);
+  // coerceBloomMinCoverage throws on NaN / negative / non-integer overrides so
+  // a typo can't downgrade the guard to trivially-passable.
+  const minCoverage = coerceBloomMinCoverage();
   const check = validateBloomOverlay(payload, { minCoverage });
   if (!check.ok) {
     throw new Error(`[bloom] canonical overlay validation failed: ${check.reason}. Fix data/bloom-levels.json or set BLOOM_MIN_COVERAGE=<lower> for an intentional shrink. (DIC-1141)`);

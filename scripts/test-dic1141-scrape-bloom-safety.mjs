@@ -1,27 +1,37 @@
 #!/usr/bin/env node
 // DIC-1141 CR blockers — Bloom Level scraper + overlay-loader safety.
 //
-// The first pass shipped a scrape script that silently deleted the canonical
+// The initial fix shipped a scraper that silently deleted the canonical
 // overlay when either (a) run with `--only=<series> --force`, or (b) run on a
 // bad network day, and a build-database loader that swallowed that empty file
-// and republished the "every Holomen looks the same" bug. These tests lock
-// those failure modes closed:
+// and republished the "every Holomen looks the same" bug. Follow-up CRs then
+// caught two more silent-corruption modes:
+//   * every fetch returned HTTP 200 but the official markup dropped the
+//     Bloomレベル tag → guard counted them as "successes", writer refreshed
+//     `lastUpdated` with prior values (Codex CR blocker #1).
+//   * the existing-overlay reader was lenient — invalid entries got silently
+//     dropped, so a partial `--only + --force` write could delete them
+//     (Codex CR blocker #2).
+//   * `BLOOM_MIN_COVERAGE=NaN` or a negative number sailed past the coverage
+//     guard entirely (Codex CR supplement).
 //
-//   1. mergeResults preserves everything OUT OF SCOPE of a partial run —
-//      `--only=hBP04 --force` cannot touch hBP05.
-//   2. mergeResults preserves entries whose fetch failed — a network glitch
-//      cannot wipe hBP04-026.
-//   3. mergeResults preserves entries whose fetch returned no level — a
-//      one-off official-page render glitch cannot silently strip the record.
-//   4. evaluateCoverage rejects a batch that drops coverage or that failed
-//      most fetches, so the CLI exits non-zero WITHOUT publishing.
-//   5. writeOverlayAtomically writes to a temp path then renames — the final
-//      file is never observed half-written.
-//   6. build-database's loadBloomLevelOverlay is fail-CLOSED: missing file,
-//      malformed JSON, invalid level, or coverage below floor all throw.
-//   7. Palette collision guard: the three badge palettes (Bloom / category /
-//      printing rarity) are pairwise disjoint at the hex level, and each
-//      screen file uses PRINTING_RARITY_COLORS as its single source.
+// These tests lock every one of those failure modes closed:
+//
+//   1. mergeResults preserves OUT-OF-SCOPE and preserves FETCH-FAILED cards.
+//   2. mergeResults preserves cards whose fetch succeeded but returned null.
+//   3. evaluateCoverage refuses zero-hit / high-miss-ratio / high-failure /
+//      coverage-drop batches; `--allow-coverage-drop` opts out only of the
+//      coverage-drop leg.
+//   4. writeOverlayAtomically writes via temp+rename with no residue.
+//   5. readOverlayStrict THROWS on missing `byCardNumber`, non-object shape,
+//      invalid keys / levels, or a totalCards mismatch (no silent drops).
+//   6. decidePublication returns { shouldWrite:false } for every abnormal
+//      batch, proving the atomic writer is never called on failure.
+//   7. build-database.js's loadBloomLevelOverlay is fail-CLOSED (missing,
+//      malformed, invalid, under-covered) and `coerceBloomMinCoverage`
+//      rejects NaN / negative / non-integer BLOOM_MIN_COVERAGE.
+//   8. Palette collision guard: three badge palettes pairwise disjoint at hex
+//      level, each screen uses PRINTING_RARITY_COLORS as its single source.
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -35,10 +45,12 @@ import {
   evaluateCoverage,
   buildPayload,
   writeOverlayAtomically,
-  readOverlay,
+  readOverlayStrict,
+  decidePublication,
   VALID_LEVELS,
+  DEFAULT_MAX_PARSE_MISS_RATIO,
 } from './scrape-bloom-levels.mjs';
-import { validateBloomOverlay, VALID_BLOOM_LEVELS } from './build-database.js';
+import { validateBloomOverlay, coerceBloomMinCoverage, VALID_BLOOM_LEVELS } from './build-database.js';
 import {
   BLOOM_LEVEL_COLORS,
   CATEGORY_COLORS,
@@ -87,8 +99,8 @@ assert.equal(parseBloomLevel(null), null, 'non-string → null');
   const existing = { 'hBP04-026': '2nd', 'hBP04-027': '1st' };
   const inScope = new Set(['hBP04-026', 'hBP04-027']);
   const fresh = new Map([
-    ['hBP04-026', { level: null, error: 'ECONNRESET' }],   // network flake
-    ['hBP04-027', { level: '1st' }],                        // succeeded
+    ['hBP04-026', { level: null, error: 'ECONNRESET' }],
+    ['hBP04-027', { level: '1st' }],
   ]);
   const { merged, stats, detail } = mergeResults({ existing, inScope, fresh });
   assert.equal(merged['hBP04-026'], '2nd', 'fetch failure preserves prior value');
@@ -103,51 +115,87 @@ assert.equal(parseBloomLevel(null), null, 'non-string → null');
 {
   const existing = { 'hBP04-026': '2nd' };
   const inScope = new Set(['hBP04-026']);
-  const fresh = new Map([['hBP04-026', { level: null }]]); // page rendered without the field
+  const fresh = new Map([['hBP04-026', { level: null }]]);
   const { merged, stats } = mergeResults({ existing, inScope, fresh });
   assert.equal(merged['hBP04-026'], '2nd', 'null level does not strip the record');
   assert.equal(stats.preservedOnFailure, 1);
 }
 
-// ── 4. Coverage guard rejects abnormal drops / failure ratios ────────────
+// ── 4. Coverage / parse / failure guards — every mutation-sensitive branch ──
 
 {
-  // Healthy run: no drop, low failure ratio → ok.
-  const ok = evaluateCoverage({
-    priorCount: 316, mergedCount: 316, inScope: 40, freshCount: 40,
-    fetchFailures: 0, fetchSuccesses: 40,
-  });
-  assert.equal(ok.ok, true, 'healthy run passes guard');
+  // Healthy: passes.
+  assert.equal(evaluateCoverage({
+    priorCount: 316, mergedCount: 316,
+    parseHits: 40, parseMisses: 0, fetchFailures: 0,
+  }).ok, true, 'healthy run passes guard');
 
-  // Coverage dropped by 1 without opt-in → refuse.
-  const drop = evaluateCoverage({
-    priorCount: 316, mergedCount: 315, inScope: 40, freshCount: 40,
-    fetchFailures: 0, fetchSuccesses: 40,
+  // 4a. All-HTTP-200 with zero valid parses (schema-break). The prior guard
+  //     summed hits+misses into "successes" and let this slip through — the
+  //     regression that Codex flagged.
+  const zeroHit = evaluateCoverage({
+    priorCount: 316, mergedCount: 316,
+    parseHits: 0, parseMisses: 316, fetchFailures: 0,
   });
-  assert.equal(drop.ok, false, 'coverage drop refused');
-  assert.match(drop.reasons[0], /coverage dropped/, 'reason names the drop');
+  assert.equal(zeroHit.ok, false, 'zero valid parses refused');
+  assert.ok(zeroHit.reasons.some((r) => /zero valid Bloom parses|schema/i.test(r)),
+    `zero-hit reason mentions schema, got ${JSON.stringify(zeroHit.reasons)}`);
 
-  // Same drop, with --allow-coverage-drop → ok.
-  const dropAllowed = evaluateCoverage({
-    priorCount: 316, mergedCount: 315, inScope: 40, freshCount: 40,
-    fetchFailures: 0, fetchSuccesses: 40, allowCoverageDrop: true,
+  // 4b. Excessive parse-miss ratio (partial schema break).
+  const highMiss = evaluateCoverage({
+    priorCount: 316, mergedCount: 316,
+    parseHits: 100, parseMisses: 20, fetchFailures: 0, // 16.7% miss vs default 5%
   });
-  assert.equal(dropAllowed.ok, true, 'coverage drop accepted with opt-in');
+  assert.equal(highMiss.ok, false, 'high miss ratio refused');
+  assert.ok(highMiss.reasons.some((r) => /parse-miss ratio/i.test(r)));
 
-  // High fetch-failure ratio → refuse.
-  const failRatio = evaluateCoverage({
-    priorCount: 316, mergedCount: 316, inScope: 40, freshCount: 40,
-    fetchFailures: 20, fetchSuccesses: 20,
+  // Just below the miss threshold: passes.
+  const belowMiss = evaluateCoverage({
+    priorCount: 316, mergedCount: 316,
+    parseHits: 100, parseMisses: 4, fetchFailures: 0, // 3.8% miss < 5%
   });
-  assert.equal(failRatio.ok, false, 'high failure ratio refused');
-  assert.ok(failRatio.reasons.some((r) => /failure ratio/i.test(r)));
+  assert.equal(belowMiss.ok, true, 'sub-threshold miss ratio passes');
 
-  // Zero successes with failures → refuse (origin outage).
+  // 4c. --allow-coverage-drop opts out only of the coverage-drop leg,
+  //     not of the schema-break / high-miss / high-failure legs.
+  const dropStillBroken = evaluateCoverage({
+    priorCount: 316, mergedCount: 315,
+    parseHits: 0, parseMisses: 40, fetchFailures: 0,
+    allowCoverageDrop: true,
+  });
+  assert.equal(dropStillBroken.ok, false,
+    'coverage-drop opt-in must NOT waive the zero-hit schema-break guard');
+  assert.ok(dropStillBroken.reasons.some((r) => /zero valid Bloom parses/i.test(r)));
+
+  // Coverage drop alone: refuse without opt-in, accept with opt-in.
+  assert.equal(evaluateCoverage({
+    priorCount: 316, mergedCount: 315,
+    parseHits: 40, parseMisses: 0, fetchFailures: 0,
+  }).ok, false, 'coverage drop refused');
+  assert.equal(evaluateCoverage({
+    priorCount: 316, mergedCount: 315,
+    parseHits: 40, parseMisses: 0, fetchFailures: 0,
+    allowCoverageDrop: true,
+  }).ok, true, 'coverage drop accepted with opt-in');
+
+  // 4d. Fetch failure ratio.
+  const highFail = evaluateCoverage({
+    priorCount: 316, mergedCount: 316,
+    parseHits: 20, parseMisses: 0, fetchFailures: 20, // 50% failure vs default 10%
+  });
+  assert.equal(highFail.ok, false, 'high fetch-failure ratio refused');
+  assert.ok(highFail.reasons.some((r) => /fetch failure ratio/i.test(r)));
+
+  // 4e. Origin outage — every attempt failed, no parse attempts at all.
   const outage = evaluateCoverage({
-    priorCount: 316, mergedCount: 316, inScope: 40, freshCount: 40,
-    fetchFailures: 40, fetchSuccesses: 0,
+    priorCount: 316, mergedCount: 316,
+    parseHits: 0, parseMisses: 0, fetchFailures: 40,
   });
-  assert.equal(outage.ok, false, 'zero successes refused');
+  assert.equal(outage.ok, false, 'origin outage refused');
+  assert.ok(outage.reasons.some((r) => /origin outage/i.test(r)));
+
+  // Sanity: the default parse-miss threshold is exported and reasonable.
+  assert.ok(DEFAULT_MAX_PARSE_MISS_RATIO > 0 && DEFAULT_MAX_PARSE_MISS_RATIO < 1);
 }
 
 // ── 5. Atomic write: temp file, then rename ──────────────────────────────
@@ -158,60 +206,187 @@ assert.equal(parseBloomLevel(null), null, 'non-string → null');
   writeOverlayAtomically(target, buildPayload({ 'hBP04-026': '2nd' }));
   const rt = JSON.parse(fs.readFileSync(target, 'utf8'));
   assert.equal(rt.byCardNumber['hBP04-026'], '2nd');
-  assert.ok(rt.totalCards === 1);
-  // No .tmp files left behind.
+  assert.equal(rt.totalCards, 1);
   assert.ok(fs.readdirSync(dir).every((f) => !f.endsWith('.tmp')), 'no temp residue');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-// readOverlay round-trips + drops invalid entries defensively.
+// ── 6. readOverlayStrict — every failure mode THROWS (no silent drops) ──
+
 {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bloom-read-'));
-  const target = path.join(dir, 'bloom-levels.json');
-  fs.writeFileSync(target, JSON.stringify({
-    byCardNumber: { 'hBP04-026': '2nd', 'hBP04-999': 'Weird', 42: '1st' },
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bloom-strict-'));
+  const p = path.join(dir, 'bloom-levels.json');
+
+  // Missing file → present:false (virgin scrape scenario).
+  const virgin = readOverlayStrict(p);
+  assert.equal(virgin.present, false);
+  assert.deepEqual(virgin.byCardNumber, {});
+
+  // Non-object → throws.
+  fs.writeFileSync(p, JSON.stringify([1, 2, 3]));
+  assert.throws(() => readOverlayStrict(p), /top-level.*JSON object/);
+
+  // Missing byCardNumber → throws.
+  fs.writeFileSync(p, JSON.stringify({ totalCards: 1 }));
+  assert.throws(() => readOverlayStrict(p), /byCardNumber/);
+
+  // byCardNumber is a non-object.
+  fs.writeFileSync(p, JSON.stringify({ byCardNumber: 'nope' }));
+  assert.throws(() => readOverlayStrict(p), /non-null object/);
+
+  // Invalid level → throws (never silently dropped).
+  fs.writeFileSync(p, JSON.stringify({
+    byCardNumber: { 'hBP04-026': '2nd', 'hBP05-001': 'HR' },
   }));
-  const round = readOverlay(target);
-  assert.equal(round['hBP04-026'], '2nd');
-  assert.equal(round['hBP04-999'], undefined, 'invalid level dropped');
+  assert.throws(() => readOverlayStrict(p), /invalid Bloom Level/);
+
+  // totalCards mismatch → throws.
+  fs.writeFileSync(p, JSON.stringify({
+    totalCards: 3,
+    byCardNumber: { 'hBP04-026': '2nd', 'hBP04-027': '1st' },
+  }));
+  assert.throws(() => readOverlayStrict(p), /totalCards.*does not match/);
+
+  // totalCards negative → throws (defensive against hand-edits).
+  fs.writeFileSync(p, JSON.stringify({
+    totalCards: -1,
+    byCardNumber: { 'hBP04-026': '2nd' },
+  }));
+  assert.throws(() => readOverlayStrict(p), /totalCards must be a non-negative integer/);
+
+  // Malformed JSON → throws.
+  fs.writeFileSync(p, '{not json');
+  assert.throws(() => readOverlayStrict(p), /JSON parse failed/);
+
+  // Valid payload → returns present:true with the map.
+  fs.writeFileSync(p, JSON.stringify({
+    totalCards: 2,
+    byCardNumber: { 'hBP04-026': '2nd', 'hBP04-028': 'Debut' },
+  }));
+  const ok = readOverlayStrict(p);
+  assert.equal(ok.present, true);
+  assert.deepEqual(ok.byCardNumber, { 'hBP04-026': '2nd', 'hBP04-028': 'Debut' });
+
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-// ── 6. build-database.js overlay validator is fail-closed ───────────────
+// ── 7. decidePublication proves the atomic writer is never called on failure ──
 
 {
-  // Reject non-object payloads.
+  const okExisting = { present: true, byCardNumber: { 'hBP04-026': '2nd', 'hBP04-027': '1st' } };
+
+  // Happy path publishes.
+  const happy = decidePublication({
+    only: null,
+    existingOverlay: okExisting,
+    inScope: new Set(['hBP04-026', 'hBP04-027']),
+    fresh: new Map([
+      ['hBP04-026', { level: '2nd' }],
+      ['hBP04-027', { level: '1st' }],
+    ]),
+    parseHits: 2, parseMisses: 0, fetchFailures: 0,
+    now: new Date('2026-08-24T00:00:00Z'),
+  });
+  assert.equal(happy.shouldWrite, true, 'healthy batch decides shouldWrite=true');
+  assert.equal(happy.payload.byCardNumber['hBP04-026'], '2nd');
+
+  // 7a. All-HTTP-200 zero-hit schema break → no write.
+  const schemaBreak = decidePublication({
+    only: null,
+    existingOverlay: okExisting,
+    inScope: new Set(['hBP04-026', 'hBP04-027']),
+    fresh: new Map([
+      ['hBP04-026', { level: null }],
+      ['hBP04-027', { level: null }],
+    ]),
+    parseHits: 0, parseMisses: 2, fetchFailures: 0,
+  });
+  assert.equal(schemaBreak.shouldWrite, false, 'zero-hit batch refuses to publish');
+  assert.equal(schemaBreak.payload, undefined, 'no payload built when refusing');
+  assert.ok(schemaBreak.reasons.some((r) => /schema/i.test(r)));
+
+  // 7b. High parse-miss ratio → no write.
+  const highMiss = decidePublication({
+    only: null,
+    existingOverlay: okExisting,
+    inScope: new Set(['hBP04-026', 'hBP04-027']),
+    fresh: new Map([
+      ['hBP04-026', { level: '2nd' }],
+      ['hBP04-027', { level: null }],
+    ]),
+    parseHits: 1, parseMisses: 1, fetchFailures: 0, // 50% miss
+  });
+  assert.equal(highMiss.shouldWrite, false, 'high-miss batch refuses to publish');
+  assert.equal(highMiss.payload, undefined);
+
+  // 7c. Partial --only mode with NO existing canonical → refuses.
+  const partialNoBase = decidePublication({
+    only: 'hBP04',
+    existingOverlay: { present: false, byCardNumber: {} },
+    inScope: new Set(['hBP04-026']),
+    fresh: new Map([['hBP04-026', { level: '2nd' }]]),
+    parseHits: 1, parseMisses: 0, fetchFailures: 0,
+  });
+  assert.equal(partialNoBase.shouldWrite, false,
+    '--only without canonical refuses; cannot prove out-of-scope preservation');
+  assert.ok(partialNoBase.reasons.some((r) => /--only/i.test(r) && /canonical/i.test(r)));
+}
+
+// ── 8. build-database.js overlay validator + BLOOM_MIN_COVERAGE validator ──
+
+{
+  // Rejects non-object payloads.
   assert.equal(validateBloomOverlay(null).ok, false);
   assert.equal(validateBloomOverlay([]).ok, false);
   assert.equal(validateBloomOverlay({}).ok, false, 'missing byCardNumber');
-  // Reject invalid levels.
+
+  // Rejects invalid levels.
   const bad = validateBloomOverlay({ byCardNumber: { 'hBP04-026': 'HR' } }, { minCoverage: 1 });
   assert.equal(bad.ok, false);
   assert.match(bad.reason, /invalid/i);
-  // Reject coverage below floor.
+
+  // Rejects coverage below floor.
   const shrunk = validateBloomOverlay({ byCardNumber: { 'hBP04-026': '2nd' } }, { minCoverage: 300 });
   assert.equal(shrunk.ok, false);
   assert.match(shrunk.reason, /coverage/i);
-  // Accept a valid, sufficient payload.
+
+  // Accepts a valid, sufficient payload.
   const big = { byCardNumber: {} };
   for (let i = 0; i < 305; i++) big.byCardNumber[`hBP00-${String(i).padStart(3, '0')}`] = 'Debut';
   const okCheck = validateBloomOverlay(big, { minCoverage: 300 });
   assert.equal(okCheck.ok, true);
   assert.equal(okCheck.count, 305);
-  // The exported constants match between the two modules — no drift.
+
+  // Exported constants agree between scraper and build.
   assert.deepEqual([...VALID_LEVELS], [...VALID_BLOOM_LEVELS]);
+
+  // coerceBloomMinCoverage — the CR-supplement fail-closed cases.
+  assert.equal(coerceBloomMinCoverage({}, 300), 300, 'default applied when unset');
+  assert.equal(coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: '' }, 300), 300, 'empty string uses default');
+  assert.equal(coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: '0' }, 300), 0, 'zero is a legitimate opt-out');
+  assert.equal(coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: '250' }, 300), 250, 'integer string is coerced');
+  assert.throws(() => coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: 'abc' }, 300), /non-negative integer/);
+  assert.throws(() => coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: 'NaN' }, 300), /non-negative integer/);
+  assert.throws(() => coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: '-1' }, 300), /non-negative integer/);
+  assert.throws(() => coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: '1.5' }, 300), /non-negative integer/);
+
+  // Sanity: a wiped overlay + a bogus BLOOM_MIN_COVERAGE cannot conspire to
+  // pass the validator, because coerce throws before validate runs.
+  const wiped = { byCardNumber: { 'hBP04-026': '2nd' } };
+  assert.throws(() => {
+    const min = coerceBloomMinCoverage({ BLOOM_MIN_COVERAGE: 'NaN' }, 300);
+    validateBloomOverlay(wiped, { minCoverage: min });
+  }, /non-negative integer/);
 }
 
-// ── 7. Palette collision guard — three sets, pairwise disjoint ──────────
+// ── 9. Palette collision guard — three sets, pairwise disjoint ──────────
 
 {
   const collisions = findBadgePaletteCollisions();
-  assert.deepEqual(collisions, [], `badge palettes must be pairwise disjoint but got: ${JSON.stringify(collisions)}`);
-  // Explicitly assert the CR-blocker case: Holomen category ≠ printing rarity R.
+  assert.deepEqual(collisions, [],
+    `badge palettes must be pairwise disjoint but got: ${JSON.stringify(collisions)}`);
   assert.notEqual(CATEGORY_COLORS.holomen.toLowerCase(), PRINTING_RARITY_COLORS.R.toLowerCase(),
-    'CATEGORY_COLORS.holomen must not equal PRINTING_RARITY_COLORS.R (Codex-flagged collision)');
-  // No palette drifted below expected size — a sneaky merge that emptied one
-  // trivially satisfies "disjoint" but leaves the UI unpainted.
+    'CATEGORY_COLORS.holomen must not equal PRINTING_RARITY_COLORS.R');
   assert.equal(Object.keys(BLOOM_LEVEL_COLORS).length, 5);
   assert.equal(Object.keys(CATEGORY_COLORS).length, 5);
   assert.equal(Object.keys(PRINTING_RARITY_COLORS).length, 5);
@@ -223,14 +398,13 @@ assert.equal(parseBloomLevel(null), null, 'non-string → null');
   const detailSrc = fs.readFileSync(path.join(REPO, 'src', 'screens', 'CardDetailScreen.tsx'), 'utf8');
   assert.match(searchSrc, /PRINTING_RARITY_COLORS/, 'SearchResults imports PRINTING_RARITY_COLORS');
   assert.match(detailSrc, /PRINTING_RARITY_COLORS/, 'CardDetail imports PRINTING_RARITY_COLORS');
-  // No local hardcoded rarity map with '#3b82f6' can drift the palette back.
   assert.doesNotMatch(searchSrc, /rarityColors\s*:\s*Record<string,\s*string>\s*=\s*\{[^}]*'#3b82f6'/,
     'SearchResults must not hardcode the rarity palette locally');
   assert.doesNotMatch(detailSrc, /rarityColors\s*:\s*Record<string,\s*string>\s*=\s*\{[^}]*'#3b82f6'/,
     'CardDetail must not hardcode the rarity palette locally');
 }
 
-// ── 8. Integration: collectHolomenTargets honours --only ────────────────
+// ── 10. Integration: collectHolomenTargets honours --only ───────────────
 
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bloom-collect-'));
