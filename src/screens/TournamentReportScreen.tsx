@@ -64,6 +64,44 @@ const DIMENSIONS: Array<{ key: DonutDimension; labelKey: string }> = [
   { key: 'oshi', labelKey: 'deck_zone_oshi' },
 ];
 
+type TranslateFn = ReturnType<typeof useTranslation>['t'];
+
+/** Renders the rank badge line for an archetype/oshi chip. Prefers the
+ * verified-only counts required by the CR (冠軍 N / 上位 M); "最佳 N" only
+ * appears when NO ranked deck exists in the top-placement window, so the chip
+ * always ends with concrete counts when they are available. */
+function buildRankTags(
+  item: { championCount: number; topPlacementCount: number; bestRank: number | null },
+  t: TranslateFn,
+): string {
+  const parts: string[] = [];
+  if (item.championCount > 0) parts.push(t('tournament_summary_champion_count', { count: item.championCount }));
+  if (item.topPlacementCount > item.championCount) {
+    parts.push(t('tournament_summary_top_placement_count', { count: item.topPlacementCount }));
+  }
+  if (parts.length === 0 && item.bestRank != null) {
+    parts.push(t('tournament_summary_best_rank_short', { rank: item.bestRank }));
+  }
+  return parts.join(' · ');
+}
+
+/** Localized card name for a `cardNumber`. Falls back through the catalog
+ * fields verbatim, never inferred — for a card the catalog cannot resolve, the
+ * language-specific fallback label is used and the cardNumber shows underneath
+ * as provenance (DIC-1142 CR: cards must not display raw "hBP…" as the label). */
+function pickCardName(
+  cardNumber: string,
+  language: 'zh' | 'ja',
+  catalog: Map<string, DeckCard[]> | null,
+  t: TranslateFn,
+): string {
+  const variants = catalog?.get(cardNumber);
+  const rep = variants && variants.length > 0 ? variants[0] : null;
+  if (!rep) return t('tournament_representative_card_name_fallback');
+  if (language === 'ja') return rep.nameJa || rep.name || t('tournament_representative_card_name_fallback');
+  return rep.nameZh || rep.name || t('tournament_representative_card_name_fallback');
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -255,7 +293,13 @@ export default function TournamentReportScreen() {
         .join('；')
     : null;
 
-  const sourceName = reports[0]?.source?.name ?? '';
+  // `reports[0].source.name` is authored in Chinese today (includes 官方賽果 etc).
+  // In ja mode we swap in the generic disclaimer as the footer summary so no
+  // raw Chinese leaks into the Japanese UI. Kept verbatim in zh mode as the
+  // real source string is the useful reference (DIC-1142 CR §3).
+  const sourceName = language === 'zh'
+    ? reports[0]?.source?.name ?? ''
+    : t('tournament_source_disclaimer_generic');
 
   return (
     <SafeAreaView style={styles.container}>
@@ -341,9 +385,7 @@ export default function TournamentReportScreen() {
                   <View style={styles.chipRow}>
                     {summary.topArchetypes.map((item) => {
                       const active = dimension === 'archetype' && selectedKey === item.id;
-                      const bestRankTag = item.bestRank != null
-                        ? t('tournament_summary_best_rank_short', { rank: item.bestRank })
-                        : null;
+                      const tags = buildRankTags(item, t);
                       return (
                         <TouchableOpacity
                           key={item.id ?? 'unknown'}
@@ -357,7 +399,7 @@ export default function TournamentReportScreen() {
                         >
                           <Text style={[styles.summaryChipText, active && styles.summaryChipTextActive]}>
                             {item.label} ({item.count})
-                            {bestRankTag ? ` · ${bestRankTag}` : ''}
+                            {tags ? ` · ${tags}` : ''}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -372,9 +414,7 @@ export default function TournamentReportScreen() {
                   <View style={styles.chipRow}>
                     {summary.topOshi.map((item) => {
                       const active = dimension === 'oshi' && selectedKey === item.id;
-                      const bestRankTag = item.bestRank != null
-                        ? t('tournament_summary_best_rank_short', { rank: item.bestRank })
-                        : null;
+                      const tags = buildRankTags(item, t);
                       return (
                         <TouchableOpacity
                           key={item.id}
@@ -388,7 +428,7 @@ export default function TournamentReportScreen() {
                         >
                           <Text style={[styles.summaryChipText, active && styles.summaryChipTextActive]}>
                             {item.label} ({item.count})
-                            {bestRankTag ? ` · ${bestRankTag}` : ''}
+                            {tags ? ` · ${tags}` : ''}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -455,6 +495,7 @@ export default function TournamentReportScreen() {
                           : card.zone === 'yell'
                             ? 'deck_zone_yell'
                             : 'deck_zone_main';
+                        const cardName = pickCardName(card.cardNumber, language, catalog, t);
                         return (
                           <View
                             key={card.cardNumber}
@@ -462,16 +503,18 @@ export default function TournamentReportScreen() {
                             testID={`representative-${card.cardNumber}`}
                             accessibilityRole="text"
                             accessibilityLabel={t('tournament_representative_a11y', {
-                              card: card.cardNumber,
+                              card: `${cardName}（${card.cardNumber}）`,
                               count: card.deckCount,
                               rate: ratePct,
                             })}
                           >
                             <View style={styles.representativeMain}>
-                              <Text style={styles.representativeCardNumber} numberOfLines={1}>
-                                {card.cardNumber}
+                              <Text style={styles.representativeCardName} numberOfLines={1}>
+                                {cardName}
                               </Text>
-                              <Text style={styles.representativeZone}>{t(zoneKey)}</Text>
+                              <Text style={styles.representativeCardNumber} numberOfLines={1}>
+                                {card.cardNumber} · {t(zoneKey)}
+                              </Text>
                             </View>
                             <View style={styles.representativeStats}>
                               <Text style={styles.representativeCount}>
@@ -611,7 +654,9 @@ export default function TournamentReportScreen() {
                     />
                   ) : null}
 
-                  <Text style={styles.eventCoverage}>{e.coverageNote}</Text>
+                  <Text style={styles.eventCoverage}>
+                    {language === 'zh' ? e.coverageNote : t('tournament_event_coverage_generic')}
+                  </Text>
 
                   {e.decks.map((d) => (
                     <View key={d.deckId} style={styles.deckRow} testID={`deck-${d.deckId}`}>
@@ -659,7 +704,9 @@ export default function TournamentReportScreen() {
               </TouchableOpacity>
               {sourceExpanded ? (
                 <View style={styles.disclaimerBody} testID="tournament-source-body">
-                  <Text style={styles.sourceName}>{reports[0].source.name}</Text>
+                  {language === 'zh' ? (
+                    <Text style={styles.sourceName}>{reports[0].source.name}</Text>
+                  ) : null}
                   <Text style={styles.disclaimerText}>
                     {language === 'zh' ? reports[0].source.disclaimer : t('tournament_source_disclaimer_generic')}
                   </Text>
@@ -966,15 +1013,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   representativeMain: { flex: 1, minWidth: 90 },
-  representativeCardNumber: {
+  representativeCardName: {
     color: COLORS.text,
     fontSize: 13,
     fontWeight: '600',
   },
-  representativeZone: {
+  representativeCardNumber: {
     color: COLORS.textSecondary,
     fontSize: 11,
     marginTop: 2,
+    fontVariant: ['tabular-nums'],
   },
   representativeStats: { alignItems: 'flex-end' },
   representativeCount: {

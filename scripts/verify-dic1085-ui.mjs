@@ -271,6 +271,43 @@ async function run(label, viewport) {
   check(`${label}: representative-cards block renders at least one card`,
     representativeCardCount >= 1, `count=${representativeCardCount}`);
 
+  // DIC-1142 CR §1: representative cards must display a card name, not just the
+  // raw cardNumber. Every row's first line must be non-empty and different from
+  // the cardNumber pattern (`hBP…-###`).
+  const representativeNames = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid^="representative-"]')].map((row) => {
+      const number = row.getAttribute('data-testid').replace('representative-', '');
+      const texts = [...row.querySelectorAll('div, span')]
+        .map((n) => (n.textContent || '').trim()).filter(Boolean);
+      // The name is the first text that is not the cardNumber and not the raw zone label.
+      const name = texts.find((tx) => tx && !tx.startsWith(number)) || null;
+      return { number, name };
+    }));
+  check(`${label}: every representative-card row shows a real name (not just cardNumber)`,
+    representativeNames.length > 0 && representativeNames.every((r) => r.name && r.name !== r.number),
+    JSON.stringify(representativeNames.slice(0, 3)));
+
+  // DIC-1142 CR §2: at least one 熱門牌型 chip must expose a champion/top-placement
+  // tag once the fixture has published ranks. Chip text should contain the
+  // language-appropriate champion marker or 上位 count.
+  const archetypeChipTexts = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid^="summary-archetype-"]')].map((chip) => chip.textContent.trim()));
+  const jaChampion = /優勝\s*\d+/;
+  const zhChampion = /冠軍\s*\d+/;
+  const topPlace = /上位\s*\d+/;
+  const hasPlacement = archetypeChipTexts.some((tx) => jaChampion.test(tx) || zhChampion.test(tx) || topPlace.test(tx));
+  check(`${label}: at least one archetype chip shows champion or top-placement count`,
+    hasPlacement, JSON.stringify(archetypeChipTexts));
+
+  // DIC-1142 CR §3: ja mode must not carry the CN runtime coverage/source
+  // strings that live in the fixture JSON. This is language-dependent — the
+  // JA block runs before the language switch, and the ZH block runs after.
+  const CN_MARKERS = ['資料僅來自', '本月僅收錄', '官方於 X 公布', '牌組卡表已透過'];
+  const bodyText = await text();
+  const leaked = CN_MARKERS.filter((m) => bodyText.includes(m));
+  check(`${label}: ja Tournament report body carries no CN coverage/source strings`,
+    leaked.length === 0, leaked.join(','));
+
   // DIC-1142: at least one event card has a highlights block.
   const highlightCount = await page.evaluate(() =>
     document.querySelectorAll('[data-testid^="event-highlights-"]').length);

@@ -513,4 +513,77 @@ test('event highlights common-cards stays empty when only one verified deck exis
   assert.deepEqual(h.commonCards, [], 'single deck cannot yield "common" cards');
 });
 
+// ── DIC-1142 CR: champion / top-placement counts and ja CN-leak gates ───────
+test('summary champion count uses numeric rank only, never rankLabel', () => {
+  const mixed = {
+    ...augustReport,
+    events: [{
+      ...augustReport.events[0],
+      decks: [
+        // Two AZKi decks: one is source-published rank=1, the other only carries
+        // a "champion" rankLabel with rank=null — the second must NOT count.
+        {
+          ...augustReport.events[0].decks[0],
+          deckId: 'a', decklogCode: 'a', rank: 1, rankLabel: 'champion', cardsVerified: true,
+        },
+        {
+          ...augustReport.events[0].decks[0],
+          deckId: 'b', decklogCode: 'b', rank: null, rankLabel: 'champion', cardsVerified: true,
+        },
+      ],
+    }],
+  };
+  const summary = buildTournamentMonthlySummary([mixed], '2026-08', 'zh');
+  const azki = summary.topArchetypes.find((a) => a.id === 'azki');
+  assert.ok(azki);
+  assert.equal(azki.championCount, 1, 'rankLabel="champion" without numeric rank cannot inflate champion count');
+  assert.equal(azki.topPlacementCount, 1, 'top-placement also requires numeric rank');
+});
+
+test('summary top-placement count spans ranks 1–4 inclusive; > 4 does not qualify', () => {
+  const ranks = {
+    ...augustReport,
+    events: [{
+      ...augustReport.events[0],
+      decks: [
+        { ...augustReport.events[0].decks[0], deckId: '1', decklogCode: '1', rank: 1, cardsVerified: true },
+        { ...augustReport.events[0].decks[0], deckId: '2', decklogCode: '2', rank: 2, cardsVerified: true },
+        { ...augustReport.events[0].decks[0], deckId: '3', decklogCode: '3', rank: 4, cardsVerified: true },
+        { ...augustReport.events[0].decks[0], deckId: '4', decklogCode: '4', rank: 5, cardsVerified: true },
+        { ...augustReport.events[0].decks[0], deckId: '5', decklogCode: '5', rank: 8, cardsVerified: true },
+      ],
+    }],
+  };
+  const summary = buildTournamentMonthlySummary([ranks], '2026-08', 'zh');
+  const azki = summary.topArchetypes.find((a) => a.id === 'azki');
+  assert.ok(azki);
+  assert.equal(azki.championCount, 1, 'only rank=1 counts as champion');
+  assert.equal(azki.topPlacementCount, 3, 'ranks 1, 2, 4 count as top placements; rank 5 and 8 do not');
+});
+
+test('summary champion/top-placement counts on real August fixture', () => {
+  const summary = buildTournamentMonthlySummary([augustReport], '2026-08', 'zh');
+  const azki = summary.topArchetypes.find((a) => a.id === 'azki');
+  const auroChrony = summary.topArchetypes.find((a) => a.id === 'auro-chrony');
+  assert.ok(azki && auroChrony, 'August fixture publishes both A-block and B-block champions');
+  assert.equal(azki.championCount, 1);
+  assert.equal(auroChrony.championCount, 1);
+  assert.equal(azki.topPlacementCount, 1);
+  assert.equal(auroChrony.topPlacementCount, 1);
+});
+
+test('ja summary path does not surface Chinese runtime coverage/source strings', () => {
+  // Assert against the SIGNATURE Chinese fragments that live in the fixture
+  // JSON's source.name / source.disclaimer / coverage.note / event.coverageNote —
+  // none should be reachable via the values buildTournamentMonthlySummary
+  // returns for language: 'ja'. This guards the runtime-JSON leak Codex flagged
+  // in CR §3, which the JSX static gate cannot see.
+  const summary = buildTournamentMonthlySummary([augustReport, julyReport], ALL_SCOPE, 'ja');
+  const CN_MARKERS = ['資料僅來自', '本月僅收錄', '官方於 X 公布', '官方專欄', '牌組卡表已透過'];
+  const materialized = JSON.stringify(summary);
+  for (const marker of CN_MARKERS) {
+    assert.ok(!materialized.includes(marker), `ja summary must not carry CN marker: ${marker}`);
+  }
+});
+
 console.log(`test-i18n: PASS (${passed} checks)`);

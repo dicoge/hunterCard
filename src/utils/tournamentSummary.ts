@@ -11,6 +11,13 @@ export interface SummaryArchetypeItem {
   bestRank: number | null;
   /** Source-published rank string (e.g. "champion", "1位") for the deck holding bestRank. */
   bestRankLabel: string | null;
+  /** Number of verified decks of this archetype whose source-published `rank`
+   * is exactly 1. Never inferred from `rankLabel` (DIC-1142 CR feedback). */
+  championCount: number;
+  /** Number of verified decks of this archetype whose source-published `rank`
+   * is between 1 and TOP_PLACEMENT_RANK inclusive. `championCount` is a
+   * subset. */
+  topPlacementCount: number;
 }
 
 export interface SummaryOshiItem {
@@ -19,7 +26,13 @@ export interface SummaryOshiItem {
   count: number;
   bestRank: number | null;
   bestRankLabel: string | null;
+  championCount: number;
+  topPlacementCount: number;
 }
+
+/** Threshold for "top placement" counting — decks with `rank` in [1, 4] inclusive
+ * are counted alongside champions. Aligned with `notablePlacements` (top 4). */
+export const TOP_PLACEMENT_RANK = 4;
 
 export interface SummaryColorItem {
   color: string;
@@ -144,24 +157,39 @@ export function buildTournamentMonthlySummary(
   const observedDeckCount = events.reduce((acc, e) => acc + (e.decks?.length || 0), 0);
   const verifiedDeckCount = verified.length;
 
-  // Top Archetypes. Best rank is the lowest source-published `rank` observed
-  // for a deck of this archetype in scope — never fabricated from `rankLabel`.
+  // Top Archetypes. Champion/top-placement counts are computed from the
+  // source-published NUMERIC `rank` only — never inferred from `rankLabel`
+  // (DIC-1142 CR feedback: "champion" as a rankLabel without a numeric rank
+  // must not inflate the champion tally).
   const archetypeCounts = new Map<string, {
     label: string;
     count: number;
     bestRank: number | null;
     bestRankLabel: string | null;
+    championCount: number;
+    topPlacementCount: number;
   }>();
   for (const d of verified) {
     const key = d.archetypeId || d.archetypeLabel;
     if (!key) continue;
     const label = d.archetypeLabel || key;
     const existing = archetypeCounts.get(key)
-      || { label, count: 0, bestRank: null as number | null, bestRankLabel: null as string | null };
+      || {
+        label,
+        count: 0,
+        bestRank: null as number | null,
+        bestRankLabel: null as string | null,
+        championCount: 0,
+        topPlacementCount: 0,
+      };
     existing.count += 1;
-    if (typeof d.rank === 'number' && (existing.bestRank == null || d.rank < existing.bestRank)) {
-      existing.bestRank = d.rank;
-      existing.bestRankLabel = d.rankLabel ?? null;
+    if (typeof d.rank === 'number') {
+      if (existing.bestRank == null || d.rank < existing.bestRank) {
+        existing.bestRank = d.rank;
+        existing.bestRankLabel = d.rankLabel ?? null;
+      }
+      if (d.rank === 1) existing.championCount += 1;
+      if (d.rank >= 1 && d.rank <= TOP_PLACEMENT_RANK) existing.topPlacementCount += 1;
     }
     archetypeCounts.set(key, existing);
   }
@@ -172,8 +200,15 @@ export function buildTournamentMonthlySummary(
       count: item.count,
       bestRank: item.bestRank,
       bestRankLabel: item.bestRankLabel,
+      championCount: item.championCount,
+      topPlacementCount: item.topPlacementCount,
     }))
-    .sort((a, b) => b.count - a.count || (a.bestRank ?? 99) - (b.bestRank ?? 99))
+    .sort((a, b) => (
+      b.count - a.count
+      || b.championCount - a.championCount
+      || b.topPlacementCount - a.topPlacementCount
+      || (a.bestRank ?? 99) - (b.bestRank ?? 99)
+    ))
     .slice(0, 4);
 
   // Top Oshi
@@ -182,15 +217,28 @@ export function buildTournamentMonthlySummary(
     count: number;
     bestRank: number | null;
     bestRankLabel: string | null;
+    championCount: number;
+    topPlacementCount: number;
   }>();
   for (const d of verified) {
     if (d.oshi) {
       const existing = oshiCounts.get(d.oshi)
-        || { label: d.oshi, count: 0, bestRank: null as number | null, bestRankLabel: null as string | null };
+        || {
+          label: d.oshi,
+          count: 0,
+          bestRank: null as number | null,
+          bestRankLabel: null as string | null,
+          championCount: 0,
+          topPlacementCount: 0,
+        };
       existing.count += 1;
-      if (typeof d.rank === 'number' && (existing.bestRank == null || d.rank < existing.bestRank)) {
-        existing.bestRank = d.rank;
-        existing.bestRankLabel = d.rankLabel ?? null;
+      if (typeof d.rank === 'number') {
+        if (existing.bestRank == null || d.rank < existing.bestRank) {
+          existing.bestRank = d.rank;
+          existing.bestRankLabel = d.rankLabel ?? null;
+        }
+        if (d.rank === 1) existing.championCount += 1;
+        if (d.rank >= 1 && d.rank <= TOP_PLACEMENT_RANK) existing.topPlacementCount += 1;
       }
       oshiCounts.set(d.oshi, existing);
     }
@@ -202,8 +250,15 @@ export function buildTournamentMonthlySummary(
       count: item.count,
       bestRank: item.bestRank,
       bestRankLabel: item.bestRankLabel,
+      championCount: item.championCount,
+      topPlacementCount: item.topPlacementCount,
     }))
-    .sort((a, b) => b.count - a.count || (a.bestRank ?? 99) - (b.bestRank ?? 99))
+    .sort((a, b) => (
+      b.count - a.count
+      || b.championCount - a.championCount
+      || b.topPlacementCount - a.topPlacementCount
+      || (a.bestRank ?? 99) - (b.bestRank ?? 99)
+    ))
     .slice(0, 4);
 
   // Top Colors
@@ -248,7 +303,12 @@ export function buildTournamentMonthlySummary(
   notablePlacements.sort((a, b) => (a.rank || 99) - (b.rank || 99));
 
   const smallSample = verifiedDeckCount < SMALL_SAMPLE_MIN;
-  const coverageNote = reports.map((r) => r.coverage?.note).filter(Boolean).join(' ');
+  // The raw `coverage.note` in every month file is Chinese today. Only expose
+  // it verbatim in zh mode; ja/other languages get the localized generic so
+  // no CN string leaks through this field to consumers (DIC-1142 CR §3).
+  const coverageNote = language === 'zh'
+    ? reports.map((r) => r.coverage?.note).filter(Boolean).join(' ')
+    : t('tournament_coverage_note_generic', language);
   const representativeCards = buildRepresentativeCards(verified);
 
   return {
