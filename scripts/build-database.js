@@ -17,7 +17,7 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
-import { canonicalVariantKey, normalizeRarityCode, isPremiumRarityCode } from './lib/variant-key.js';
+import { canonicalVariantKey, normalizeRarityCode } from './lib/variant-key.js';
 import { isCanonicalCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 import { canonicalizePrices, canonicalYuyuName, canonicalYuyuImage } from './lib/canonical-printings.js';
 
@@ -1292,12 +1292,13 @@ async function buildDatabase() {
     const entryRarity = normalizeRarityCode(entry.rarity);
 
     if (sourceSeries === officialSeries || sourceSeries === officialSource) {
-      if (entryRarity && isPremiumRarityCode(entryRarity)) return entryRarity === officialRarity;
-      return !isPremiumRarityCode(officialRarity);
+      return entryRarity !== '' && officialRarity !== '' && entryRarity === officialRarity;
     }
 
     const taggedBySeries = String(entry.name || '').toLowerCase().includes(`/${sourceSeries}`);
-    if (taggedBySeries && sourceSeries === officialSource) return true;
+    if (taggedBySeries && sourceSeries === officialSource) {
+      return entryRarity !== '' && officialRarity !== '' && entryRarity === officialRarity;
+    }
 
     return false;
   }

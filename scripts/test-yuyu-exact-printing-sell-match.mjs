@@ -11,11 +11,13 @@ const publicDbPath = path.join(repo, 'public/data/database.json');
 const scrapeLogPath = path.join(repo, 'data/scrape-log.txt');
 const priceHistoryIndexPath = path.join(repo, 'data/price-history/index.json');
 const fixtureHistoryPath = path.join(repo, 'data/price-history/hBP01-021_hEB01_C_hBP01-021_C_02.json');
+const uFixtureHistoryPath = path.join(repo, 'data/price-history/hBP01-026_hEB01_U_hBP01-026_U_02.json');
 const originalDb = fs.readFileSync(dbPath, 'utf8');
 const originalPublicDb = fs.readFileSync(publicDbPath, 'utf8');
 const originalScrapeLog = fs.existsSync(scrapeLogPath) ? fs.readFileSync(scrapeLogPath, 'utf8') : null;
 const originalPriceHistoryIndex = fs.existsSync(priceHistoryIndexPath) ? fs.readFileSync(priceHistoryIndexPath, 'utf8') : null;
 const originalFixtureHistory = fs.existsSync(fixtureHistoryPath) ? fs.readFileSync(fixtureHistoryPath, 'utf8') : null;
+const originalUFixtureHistory = fs.existsSync(uFixtureHistoryPath) ? fs.readFileSync(uFixtureHistoryPath, 'utf8') : null;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dic1176-yuyu-'));
 const fixture = path.join(tmp, 'yuyu-fixture.json');
 
@@ -24,14 +26,24 @@ try {
   const cards = baseline.cards || {};
   const cId = 'hBP01-021_hEB01_C_hBP01-021_C_02';
   const hrId = 'hBP01-021_hEB01_HR_hBP01-021_HR';
+  const uId = 'hBP01-026_hEB01_U_hBP01-026_U_02';
+  const srId = 'hBP01-026_hEB01_SR_hBP01-026_SR_02';
   assert.ok(cards[cId], `${cId} fixture row must exist`);
   assert.ok(cards[hrId], `${hrId} fixture row must exist`);
+  assert.ok(cards[uId], `${uId} fixture row must exist`);
+  assert.ok(cards[srId], `${srId} fixture row must exist`);
   assert.equal(cards[cId].cardNumber, 'hBP01-021');
   assert.equal(cards[hrId].cardNumber, 'hBP01-021');
+  assert.equal(cards[uId].cardNumber, 'hBP01-026');
+  assert.equal(cards[srId].cardNumber, 'hBP01-026');
   assert.equal(cards[cId].sourceProduct, 'hEB01');
   assert.equal(cards[hrId].sourceProduct, 'hEB01');
+  assert.equal(cards[uId].sourceProduct, 'hEB01');
+  assert.equal(cards[srId].sourceProduct, 'hEB01');
   assert.equal(cards[cId].rarity, 'C');
   assert.equal(cards[hrId].rarity, 'HR');
+  assert.equal(cards[uId].rarity, 'U');
+  assert.equal(cards[srId].rarity, 'SR');
 
   fs.writeFileSync(fixture, JSON.stringify({
     prices: {
@@ -43,6 +55,18 @@ try {
           yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/dic1176-c.jpg',
           imageVersion: 'heb01',
           imageCid: 'dic1176-c',
+          sourceSeries: 'hEB01',
+          timestamp: '2026-08-24T12:00:00.000Z',
+        },
+      ],
+      'hBP01-026': [
+        {
+          sellPrice: 124,
+          rarity: 'U',
+          name: 'ベスティア・ゼータ(hEB01)',
+          yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/dic1176-u.jpg',
+          imageVersion: 'heb01',
+          imageCid: 'dic1176-u',
           sourceSeries: 'hEB01',
           timestamp: '2026-08-24T12:00:00.000Z',
         },
@@ -67,20 +91,34 @@ try {
   const rebuilt = JSON.parse(fs.readFileSync(dbPath, 'utf8')).cards;
   const c = rebuilt[cId];
   const hr = rebuilt[hrId];
+  const u = rebuilt[uId];
+  const sr = rebuilt[srId];
   assert.equal(c.sellPrice, 123, 'exact hEB01 C listing should populate the C official printing');
   assert.equal(c.yuyuName, 'ときのそら(hEB01)', 'C printing should carry the exact yuyu row name');
   assert.equal(c.prices.length, 1, 'C printing should carry the exact listing only');
   assert.equal(c.prices[0].sellPrice, 123);
   assert.equal(c.prices[0].name, 'ときのそら(hEB01)');
 
+  assert.equal(u.sellPrice, 124, 'exact hEB01 U listing should populate the U official printing');
+  assert.equal(u.yuyuName, 'ベスティア・ゼータ(hEB01)', 'U printing should carry the exact yuyu row name');
+  assert.equal(u.prices.length, 1, 'U printing should carry the exact listing only');
+  assert.equal(u.prices[0].sellPrice, 124);
+  assert.equal(u.prices[0].name, 'ベスティア・ゼータ(hEB01)');
+
   assert.equal(hr.sellPrice, null, 'HR printing must not inherit the C listing by card number');
   assert.equal(hr.yuyuName, '', 'HR printing must remain unnamed by yuyu when no exact listing exists');
   assert.deepEqual(hr.prices, [], 'HR printing must keep empty prices[] when no exact listing exists');
 
+  assert.equal(sr.sellPrice, null, 'SR printing must not inherit the U listing by card number');
+  assert.equal(sr.yuyuName, '', 'SR printing must remain unnamed by yuyu when no exact listing exists');
+  assert.deepEqual(sr.prices, [], 'SR printing must keep empty prices[] when no exact listing exists');
+
   const offenders = Object.entries(rebuilt)
-    .filter(([id, card]) => id !== cId && card.cardNumber === 'hBP01-021' && card.sellPrice === 123)
+    .filter(([id, card]) =>
+      (id !== cId && card.cardNumber === 'hBP01-021' && card.sellPrice === 123) ||
+      (id !== uId && card.cardNumber === 'hBP01-026' && card.sellPrice === 124))
     .map(([id]) => id);
-  assert.deepEqual(offenders, [], 'synthetic C listing must not populate any other same-number printing');
+  assert.deepEqual(offenders, [], 'synthetic base-rarity listings must not populate any other same-number printing');
 } finally {
   fs.writeFileSync(dbPath, originalDb);
   fs.writeFileSync(publicDbPath, originalPublicDb);
@@ -90,6 +128,8 @@ try {
   else fs.writeFileSync(priceHistoryIndexPath, originalPriceHistoryIndex);
   if (originalFixtureHistory === null) fs.rmSync(fixtureHistoryPath, { force: true });
   else fs.writeFileSync(fixtureHistoryPath, originalFixtureHistory);
+  if (originalUFixtureHistory === null) fs.rmSync(uFixtureHistoryPath, { force: true });
+  else fs.writeFileSync(uFixtureHistoryPath, originalUFixtureHistory);
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
