@@ -46,7 +46,17 @@ assert.ok(official.some((c) => c.cardNumber === 'hBP01-021' && c.rarity === 'HR'
 const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 const hEB01Cards = Object.values(db.cards || {}).filter((c) => c.sourceProduct === 'hEB01' || c.series === 'hEB01');
 assert.strictEqual(hEB01Cards.length, 214, 'database must contain 214 hEB01 printings');
-assert.ok(hEB01Cards.every((c) => c.sellPrice == null && Array.isArray(c.prices) && c.prices.length === 0), 'hEB01 exact-version prices must remain null/unknown when yuyu has no exact hEB01 source');
+assert.ok(hEB01Cards.every((c) => c.sellPrice == null && Array.isArray(c.prices) && c.prices.length === 0), 'official sync must not invent retail sell prices or variant listings');
+
+const exactBuyExamples = new Map([
+  ['hBP01-051_hEB01_UR_hBP01-051_UR_02', 250],
+  ['hBP02-017_hEB01_UR_hBP02-017_UR_02', 1800],
+]);
+for (const [id, expected] of exactBuyExamples) {
+  assert.strictEqual(db.cards[id]?.buyPrice, expected, `${id} must keep proven exact-version buyPrice`);
+  assert.strictEqual(db.cards[id]?.buyPriceHistory?.['2026-08-24'], expected, `${id} buyPriceHistory must match exact-version buyPrice`);
+}
+assert.strictEqual(db.cards['hBP01-021_hEB01_C_hBP01-021']?.buyPrice ?? null, null, 'unproven hEB01 printings must stay fail-closed null');
 
 const native = JSON.parse(fs.readFileSync(nativePath, 'utf8'));
 const nativeHEB01 = Object.values(native.cards || {}).filter((c) => c.sourceProduct === 'hEB01' || c.series === 'hEB01');

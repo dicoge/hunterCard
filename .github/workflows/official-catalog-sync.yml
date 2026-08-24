@@ -28,6 +28,9 @@ jobs:
       - name: Merge official catalog into database
         run: node scripts/sync-official-catalog-to-database.mjs
 
+      - name: Re-apply exact-version buy price alignment
+        run: node scripts/regen-buy-alignment.mjs
+
       - name: Generate native database asset
         run: node scripts/generate-native-database.mjs
 
