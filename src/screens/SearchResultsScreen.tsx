@@ -334,7 +334,7 @@ export default function SearchResultsScreen({ route, navigation }: any) {
           numColumns={numColumns}
           columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           renderItem={({ item }) => (
-            <View style={gridItemStyle}>
+            <View style={gridItemStyle} testID="search-result-grid-item">
               <CardListItem card={item} onPress={() => navigation.navigate('CardDetail', { card: item })} />
             </View>
           )}
@@ -475,10 +475,16 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
 const LIST_PADDING_X = 16;
 const GRID_GAP = 12;
 
+export const SEARCH_RESULTS_LAYOUT = {
+  listPaddingX: LIST_PADDING_X,
+  gridGap: GRID_GAP,
+  desktopMaxWidth: 1100,
+} as const;
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   centerWrap: { flex: 1, width: '100%' },
-  centerWrapDesktop: { maxWidth: 1100, alignSelf: 'center' },
+  centerWrapDesktop: { maxWidth: SEARCH_RESULTS_LAYOUT.desktopMaxWidth, alignSelf: 'center' },
   columnWrapper: { gap: GRID_GAP },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
   loadingText: { color: COLORS.text, fontSize: 16, fontWeight: '600', marginTop: 16, textAlign: 'center' },

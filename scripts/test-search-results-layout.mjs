@@ -15,23 +15,39 @@ for (const key of Object.getOwnPropertyNames(dom.window)) {
 }
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-class NoopResizeObserver { observe() {} unobserve() {} disconnect() {} }
-globalThis.ResizeObserver = NoopResizeObserver;
-dom.window.ResizeObserver = NoopResizeObserver;
+
+const observedLayoutNodes = new Set();
+class TestResizeObserver {
+  constructor(callback) { this.callback = callback; }
+  observe(node) { observedLayoutNodes.add({ node, callback: this.callback }); }
+  unobserve(node) {
+    for (const entry of Array.from(observedLayoutNodes)) {
+      if (entry.node === node && entry.callback === this.callback) observedLayoutNodes.delete(entry);
+    }
+  }
+  disconnect() {
+    for (const entry of Array.from(observedLayoutNodes)) {
+      if (entry.callback === this.callback) observedLayoutNodes.delete(entry);
+    }
+  }
+}
+globalThis.ResizeObserver = TestResizeObserver;
+dom.window.ResizeObserver = TestResizeObserver;
 
 const React = (await import('react')).default;
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const searchResultsModule = await import('../src/screens/SearchResultsScreen.tsx');
-const { default: SearchResultsScreen, CardListItem } = searchResultsModule;
-const { uniformGridItemStyle } = await import('../src/utils/gridLayout.ts');
+const { default: SearchResultsScreen, CardListItem, SEARCH_RESULTS_LAYOUT } = searchResultsModule;
 
-const LIST_PADDING_X = 16;
-const GRID_GAP = 12;
-const DESKTOP_MAX_WIDTH = 1100;
+const LIST_PADDING_X = SEARCH_RESULTS_LAYOUT.listPaddingX;
+const GRID_GAP = SEARCH_RESULTS_LAYOUT.gridGap;
+const DESKTOP_MAX_WIDTH = SEARCH_RESULTS_LAYOUT.desktopMaxWidth;
 const DESKTOP_BREAKPOINT = 768;
 const WIDE_BREAKPOINT = 1100;
 const CARD_NUMBER_MIN_WIDTH = 72;
+let viewportWidth = 1366;
+let viewportHeight = 900;
 
 function columnsFor(viewport) {
   if (viewport >= WIDE_BREAKPOINT) return 3;
@@ -39,26 +55,46 @@ function columnsFor(viewport) {
   return 1;
 }
 
-function layoutForViewport(viewport) {
+function expectedLayoutForViewport(viewport) {
   const centerWrap = Math.min(viewport, DESKTOP_MAX_WIDTH);
   const content = centerWrap - LIST_PADDING_X * 2;
   const columns = columnsFor(viewport);
-  const style = uniformGridItemStyle({ columns, containerWidth: content, gap: GRID_GAP });
-  const perCard = style.width;
+  const perCard = Math.floor((content - (columns - 1) * GRID_GAP) / columns);
   const rowTotal = columns * perCard + (columns - 1) * GRID_GAP;
-  return { centerWrap, content, columns, perCard, rowTotal, style };
+  return { centerWrap, content, columns, perCard, rowTotal };
 }
 
 function setViewport(width, height = 900) {
+  viewportWidth = width;
+  viewportHeight = height;
   Object.defineProperty(document.documentElement, 'clientWidth', { value: width, configurable: true });
   Object.defineProperty(document.documentElement, 'clientHeight', { value: height, configurable: true });
+  Object.defineProperty(document.documentElement, 'scrollWidth', { value: width, configurable: true });
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true });
   Object.defineProperty(window, 'innerHeight', { value: height, configurable: true });
   window.dispatchEvent(new window.Event('resize'));
 }
 
+Object.defineProperty(dom.window.HTMLElement.prototype, 'offsetWidth', {
+  configurable: true,
+  get() { return Math.min(viewportWidth, DESKTOP_MAX_WIDTH); },
+});
+Object.defineProperty(dom.window.HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() { return viewportHeight; },
+});
+Object.defineProperty(dom.window.HTMLElement.prototype, 'offsetLeft', { configurable: true, get() { return 0; } });
+Object.defineProperty(dom.window.HTMLElement.prototype, 'offsetTop', { configurable: true, get() { return 0; } });
+
 async function flush() {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+}
+
+async function fireObservedLayouts() {
+  await act(async () => {
+    for (const { node, callback } of Array.from(observedLayoutNodes)) callback([{ target: node }]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 const card = {
@@ -100,6 +136,30 @@ async function renderCardAt(viewport) {
   return { container, cleanup: async () => { await act(async () => root.unmount()); container.remove(); } };
 }
 
+async function renderScreenAt(viewport, count) {
+  setViewport(viewport, viewport === 390 ? 844 : 900);
+  observedLayoutNodes.clear();
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => root.render(React.createElement(SearchResultsScreen, {
+    route: { params: { query: 'hBP03' } },
+    navigation: { navigate() {} },
+  })));
+  await flush();
+  await fireObservedLayouts();
+  await flush();
+  const items = Array.from(container.querySelectorAll('[data-testid="search-result-grid-item"]'));
+  assert.ok(items.length >= count, `expected at least ${count} rendered grid items, got ${items.length}`);
+  return { container, items: items.slice(0, count), cleanup: async () => { await act(async () => root.unmount()); container.remove(); } };
+}
+
+function px(value) {
+  const parsed = Number.parseFloat(String(value));
+  assert.ok(Number.isFinite(parsed), `expected finite px value, got ${value}`);
+  return parsed;
+}
+
 let passed = 0;
 async function test(name, fn) {
   await fn();
@@ -107,55 +167,67 @@ async function test(name, fn) {
   console.log(`  ✓ ${name}`);
 }
 
-await test('imports the real SearchResultsScreen module, not a copied helper contract', async () => {
+await test('imports the real SearchResultsScreen module and shared layout constants', async () => {
   assert.equal(typeof SearchResultsScreen, 'function');
   assert.equal(typeof CardListItem, 'function');
+  assert.equal(SEARCH_RESULTS_LAYOUT.gridGap, 12);
+  assert.equal(SEARCH_RESULTS_LAYOUT.listPaddingX, 16);
+  assert.equal(SEARCH_RESULTS_LAYOUT.desktopMaxWidth, 1100);
 });
 
 for (const viewport of [1080, 1100, 1366, 1440]) {
-  await test(`viewport ${viewport}px keeps rows inside the content area (no horizontal scrollbar)`, async () => {
-    const { content, columns, rowTotal, perCard } = layoutForViewport(viewport);
-    assert.ok(rowTotal <= content, `row ${rowTotal} exceeded content ${content}`);
-    const slack = content - rowTotal;
-    assert.ok(
-      slack <= columns - 1,
-      `viewport ${viewport}: rowTotal ${rowTotal} leaves ${slack}px slack on ${content}px content`
-    );
-    assert.ok(rowTotal + LIST_PADDING_X * 2 <= Math.min(viewport, DESKTOP_MAX_WIDTH));
-    assert.ok(perCard > 0, `perCard must be positive, got ${perCard}`);
-    Object.defineProperty(document.documentElement, 'scrollWidth', { value: viewport, configurable: true });
-    Object.defineProperty(document.documentElement, 'clientWidth', { value: viewport, configurable: true });
-    assert.equal(document.documentElement.scrollWidth, document.documentElement.clientWidth);
+  await test(`real SearchResultsScreen grid geometry at ${viewport}px closes without horizontal overflow`, async () => {
+    const expected = expectedLayoutForViewport(viewport);
+    const { items, cleanup } = await renderScreenAt(viewport, expected.columns + 2);
+    try {
+      const widths = items.map((item) => px(getComputedStyle(item).width));
+      assert.ok(widths.every((width) => width === expected.perCard), `got widths ${widths.join(', ')}, expected ${expected.perCard}`);
+      const rowTotal = expected.columns * widths[0] + (expected.columns - 1) * GRID_GAP;
+      assert.equal(rowTotal, expected.rowTotal);
+      assert.ok(rowTotal <= expected.content, `row ${rowTotal} exceeded content ${expected.content}`);
+      assert.ok(expected.content - rowTotal <= expected.columns - 1);
+      assert.equal(document.documentElement.scrollWidth, document.documentElement.clientWidth);
+    } finally { await cleanup(); }
   });
 }
 
-await test('1080px desktop lands on the 2-column layout with the row closing to the content width', async () => {
-  const { columns, perCard, content, rowTotal } = layoutForViewport(1080);
-  assert.equal(columns, 2);
-  assert.equal(perCard, Math.floor((content - GRID_GAP) / 2));
-  assert.ok(rowTotal <= content);
+await test('1068px content, 3 columns, 12px gap gives fixed 348px cards via the rendered screen path', async () => {
+  const { items, cleanup } = await renderScreenAt(1366, 5);
+  try {
+    assert.equal(expectedLayoutForViewport(1366).content, 1068);
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === 348));
+    assert.equal(3 * 348 + 2 * GRID_GAP, 1068);
+  } finally { await cleanup(); }
 });
 
-await test('1366px desktop stays on the 3-column layout at the desktop max width', async () => {
-  const { centerWrap, columns, perCard } = layoutForViewport(1366);
-  assert.equal(columns, 3);
-  assert.equal(centerWrap, DESKTOP_MAX_WIDTH, 'centerWrap must be clamped to the desktop max');
-  assert.equal(perCard, 348);
+await test('736px content, 2 columns, 12px gap gives fixed 362px cards via the rendered screen path', async () => {
+  const { items, cleanup } = await renderScreenAt(768, 4);
+  try {
+    assert.equal(expectedLayoutForViewport(768).content, 736);
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === 362));
+    assert.equal(2 * 362 + GRID_GAP, 736);
+  } finally { await cleanup(); }
 });
 
-await test('390px mobile falls back to a single full-width card with no overflow', async () => {
-  const { columns, perCard, content, rowTotal } = layoutForViewport(390);
-  assert.equal(columns, 1);
-  assert.equal(perCard, content, 'single-column card must own the whole content area');
-  assert.equal(rowTotal, content);
+await test('390px mobile renders single-column full-width cards with no horizontal overflow', async () => {
+  const { items, cleanup } = await renderScreenAt(390, 2);
+  try {
+    const expected = expectedLayoutForViewport(390);
+    assert.equal(expected.columns, 1);
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.content));
+    assert.equal(document.documentElement.scrollWidth, document.documentElement.clientWidth);
+  } finally { await cleanup(); }
 });
 
-await test('768px tablet lands on the 2-column layout', async () => {
-  const { columns, perCard, content, rowTotal } = layoutForViewport(768);
-  assert.equal(columns, 2);
-  assert.equal(perCard, Math.floor((content - GRID_GAP) / 2));
-  assert.ok(rowTotal <= content);
-});
+for (const count of [1, 2, 4, 5]) {
+  await test(`${count} rendered results keep final-row card widths fixed`, async () => {
+    const { items, cleanup } = await renderScreenAt(1366, count);
+    try {
+      assert.equal(items.length, count);
+      assert.ok(items.every((item) => px(getComputedStyle(item).width) === 348));
+    } finally { await cleanup(); }
+  });
+}
 
 for (const viewport of [390, 1100, 1366, 1440]) {
   await test(`real CardListItem keeps hBP03-010 on its own non-overlapping header row at ${viewport}px`, async () => {
@@ -171,7 +243,7 @@ for (const viewport of [390, 1100, 1366, 1440]) {
       assert.ok(number, 'real cardNumber style path renders');
       assert.ok(badgeLine, 'badges render on their own row');
       assert.ok(!header.textContent.includes('1st'), 'badge text must not share the card-number row');
-      const minWidth = Number.parseFloat(getComputedStyle(number).minWidth);
+      const minWidth = px(getComputedStyle(number).minWidth);
       assert.ok(minWidth >= CARD_NUMBER_MIN_WIDTH, `card number min-width ${minWidth}px is below ${CARD_NUMBER_MIN_WIDTH}px`);
       assert.equal(getComputedStyle(number).whiteSpace, 'nowrap');
     } finally { await cleanup(); }
