@@ -1,47 +1,30 @@
+#!/usr/bin/env node
 /**
- * 從官方 hololive 卡牌網站抓取新系列卡片資料
- * 使用 text view（view=text&sort=cardnum）解析卡片列表
+ * scrape-official-cards.js — official hololive card catalog sync.
  *
- * 使用方式：
+ * Dynamic flow:
+ *   1. Discover product expansions from /cardlist/ <select name="expansion_name">.
+ *   2. Exclude legality/selection labels such as selehGS26.
+ *   3. Scrape every requested official expansion page, including lazy pages.
+ *   4. Fail closed on 0 cards, count regressions, missing fields, or expected-count mismatches.
+ *
+ * Usage:
  *   node scripts/scrape-official-cards.js
- *
- * 產出：
- *   data/official/cardList_hBP08.json
- *   data/official/cardList_hWF01.json
- *   data/official/cardList_hCO01.json
+ *   node scripts/scrape-official-cards.js --only=hEB01
+ *   node scripts/scrape-official-cards.js --check-production=https://holohunter.dicoge.com/data/database.json
  */
 
-import puppeteer from 'puppeteer';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(__dirname, '..');
+const OFFICIAL_DIR = path.join(REPO, 'data', 'official');
+const AUDIT_DIR = path.join(REPO, 'docs', 'audits');
+const BASE = 'https://hololive-official-cardgame.com';
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36';
 
-// 要抓取的新系列
-const SERIES = [
-  {
-    code: 'hBP08',
-    name: 'バウンサーバウンド',
-    expected: 121,
-    url: 'https://hololive-official-cardgame.com/cardlist/cardsearch/?expansion=hBP08&view=text&sort=cardnum',
-  },
-  {
-    code: 'hWF01',
-    name: 'ツインウエハース',
-    expected: 34,
-    url: 'https://hololive-official-cardgame.com/cardlist/cardsearch/?expansion=hWF01&view=text&sort=cardnum',
-  },
-  {
-    code: 'hCO01',
-    name: '2025ライブセット',
-    expected: 8,
-    url: 'https://hololive-official-cardgame.com/cardlist/cardsearch/?expansion=hCO01&view=text&sort=cardnum',
-  },
-];
-
-// 顏色對應：type_xxx.png 檔案名 → 英文
 const COLOR_MAP = {
   type_white: 'white',
   type_red: 'red',
@@ -49,9 +32,15 @@ const COLOR_MAP = {
   type_blue: 'blue',
   type_purple: 'purple',
   type_yellow: 'yellow',
+  '白': 'white',
+  '赤': 'red',
+  '緑': 'green',
+  '青': 'blue',
+  '紫': 'purple',
+  '黄': 'yellow',
+  '無': 'colorless',
 };
 
-// 類型對應
 const TYPE_MAP = {
   'ホロメン': 'Holomen',
   '推しホロメン': 'OshiHolomen',
@@ -67,216 +56,309 @@ const TYPE_MAP = {
   'サポート・スタッフ': 'SupportStaff',
 };
 
-/**
- * 從 img src URL 提取顏色名稱
- * e.g. "/wp-content/images/texticon/type_white.png" → "white"
- */
-function extractColor(imgSrc) {
-  if (!imgSrc) return 'colorless';
-  const match = imgSrc.match(/type_(\w+)\.png/);
-  if (match) {
-    const key = `type_${match[1]}`;
-    return COLOR_MAP[key] || match[1];
-  }
-  return 'colorless';
+function argValue(name) {
+  const prefix = `${name}=`;
+  const found = process.argv.find((a) => a.startsWith(prefix));
+  return found ? found.slice(prefix.length) : '';
 }
 
-/**
- * 爬取單一系列
- */
-async function scrapeSeries(browser, series) {
-  console.log(`\n🔍 抓取系列：${series.code} - ${series.name}`);
+function decodeHtml(input = '') {
+  return String(input)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ');
+}
 
-  const page = await browser.newPage();
-  await page.setUserAgent(
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  );
+function stripTags(input = '') {
+  return decodeHtml(String(input)
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, '$1')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' '))
+    .replace(/[ \t\r\f\v]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .trim();
+}
 
-  try {
-    await page.goto(series.url, { waitUntil: 'networkidle2', timeout: 60000 });
+function absUrl(src = '') {
+  if (!src) return '';
+  if (src.startsWith('http')) return src;
+  return `${BASE}${src.startsWith('/') ? '' : '/'}${src}`;
+}
 
-    // 等待 text view 的卡片列表載入
-    await page.waitForSelector('a[href*="/cardlist/?id="]', { timeout: 15000 });
+async function fetchHtml(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+  return await res.text();
+}
 
-    // 滾動視窗觸發 infinite scroll，載入全部卡片
-    // 該頁使用 window scroll event + exload() 函數載入（max_page=9）
-    const maxScrollAttempts = 25;
-    let prevCount = 0;
-    let stableCount = 0;
-    for (let i = 0; i < maxScrollAttempts; i++) {
-      const curCount = await page.evaluate(() =>
-        document.querySelectorAll('a[href*="/cardlist/?id="]').length
-      );
-      if (curCount > 0 && curCount === prevCount) {
-        stableCount++;
-        if (stableCount >= 3) break; // 連續 3 次沒變化代表載入完成
-      } else {
-        stableCount = 0;
-      }
-      prevCount = curCount;
+function parseExpectedCount(html) {
+  const text = stripTags(html);
+  const m = text.match(/検索結果\s*([0-9,]+)\s*件/);
+  return m ? Number.parseInt(m[1].replace(/,/g, ''), 10) : null;
+}
 
-      // 嘗試三種滾動方式確保觸發 lazy load
-      await page.evaluate(() => {
-        // 1. scroll window
-        window.scrollTo(0, document.body.scrollHeight);
-        // 2. scroll .all-wrap 容器
-        const wrap = document.querySelector('.all-wrap');
-        if (wrap) wrap.scrollTop = wrap.scrollHeight;
-        // 3. 直接呼叫 exload（如果可用）
-        if (typeof exload === 'function') exload();
-      });
-      await new Promise((r) => setTimeout(r, 1500));
-    }
+function parseMaxPage(html) {
+  const m = html.match(/var\s+max_page\s*=\s*(\d+)/);
+  return m ? Number.parseInt(m[1], 10) : 1;
+}
 
-    // 提取卡片資料
-    const cards = await page.evaluate((seriesCode, typeMapJson, colorMapJson) => {
-      const TYPE_MAP_LOCAL = JSON.parse(typeMapJson);
-      const COLOR_MAP_LOCAL = JSON.parse(colorMapJson);
-      const items = document.querySelectorAll('a[href*="/cardlist/?id="]');
-      const results = [];
+function isProductExpansion(code) {
+  // The official select also contains legality labels (for example selehGS26).
+  // Product expansions are the sourceProduct values that should become printings.
+  return /^h(?:BP|SD|YS|PR|PC|CS|CO|WF|EB)\d*/i.test(code) || /^ent\d+$/i.test(code);
+}
 
-      items.forEach((item) => {
-        try {
-          // 基本資訊
-          const numberEl = item.querySelector('.number');
-          const nameEl = item.querySelector('.name');
-          if (!numberEl || !nameEl) return;
-
-          const cardNumber = numberEl.textContent.trim();
-          const name = nameEl.textContent.trim();
-
-          // 圖片
-          const imgEl = item.querySelector('.img img');
-          let imageUrl = '';
-          let color = 'colorless';
-          // 顏色從 dl.info_Detail 內的色 icon img 判斷，不從卡片主圖
-          if (imgEl) {
-            imageUrl = imgEl.getAttribute('src') || imgEl.getAttribute('data-src') || '';
-            // 補成完整 URL
-            if (imageUrl && !imageUrl.startsWith('http')) {
-              imageUrl = `https://hololive-official-cardgame.com${imageUrl}`;
-            }
-          }
-
-          // dt/dd 資訊（カードタイプ、タグ、レアリティ、収録商品）
-          const dts = item.querySelectorAll('dl dt');
-          const info = {};
-          dts.forEach((dt) => {
-            const key = dt.textContent.trim();
-            const dd = dt.nextElementSibling;
-            if (dd && dd.tagName === 'DD') {
-              info[key] = dd.textContent.trim();
-            }
-          });
-
-          // 細部資訊（色、HP、Bloomレベル）
-          const detailDts = item.querySelectorAll('dl.info_Detail dt');
-          detailDts.forEach((dt) => {
-            const key = dt.textContent.trim();
-            const dd = dt.nextElementSibling;
-            if (dd && dd.tagName === 'DD') {
-              // 顏色的 dd 是 img
-              if (key === '色') {
-                const colorImg = dd.querySelector('img');
-                if (colorImg) {
-                  color = extractColorLocal(colorImg.getAttribute('src') || '', COLOR_MAP_LOCAL);
-                }
-              } else {
-                info[key] = dd.textContent.trim();
-              }
-            }
-          });
-
-          // 類型
-          const cardTypeJp = info['カードタイプ'] || '';
-          const cardType = TYPE_MAP_LOCAL[cardTypeJp] || cardTypeJp;
-
-          // 稀有度
-          const rarity = info['レアリティ'] || '';
-
-          // HP（只有ホロメン才有）
-          const hp = info['HP'] || '';
-
-          results.push({
-            cardNumber,
-            name,
-            cardType,
-            color,
-            rarity,
-            expansion: seriesCode,
-            series: seriesCode,
-            imageUrl,
-            hp,
-          });
-        } catch (err) {
-          // 跳過格式異常的項目
-        }
-      });
-
-      return results;
-
-      // 內嵌顏色提取函數（從 type_white.png 等提取）
-      function extractColorLocal(src, map) {
-        if (!src) return 'colorless';
-        const m = src.match(/type_(\w+)\.png/);
-        if (m) {
-          const key = 'type_' + m[1];
-          return map[key] || m[1];
-        }
-        return 'colorless';
-      }
-    }, series.code, JSON.stringify(TYPE_MAP), JSON.stringify(COLOR_MAP));
-
-    console.log(`  ✅ 找到 ${cards.length} 張卡牌${series.expected ? ` (預期 ${series.expected})` : ''}`);
-    return cards;
-  } catch (error) {
-    console.error(`  ❌ 抓取失敗：${error.message}`);
-    return [];
-  } finally {
-    await page.close();
+export function discoverExpansionsFromHtml(html) {
+  const selectMatch = html.match(/<select[^>]*name="expansion_name"[^>]*>([\s\S]*?)<\/select>/i);
+  if (!selectMatch) throw new Error('official expansion select not found');
+  const expansions = [];
+  const seen = new Set();
+  const optionRe = /<option[^>]*value="([^"]*)"[^>]*>([\s\S]*?)<\/option>/gi;
+  let m;
+  while ((m = optionRe.exec(selectMatch[1])) !== null) {
+    const code = decodeHtml(m[1]).trim();
+    const name = stripTags(m[2]);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    if (!isProductExpansion(code)) continue;
+    expansions.push({ code, name });
   }
+  if (!expansions.length) throw new Error('official expansion discovery returned 0 product expansions');
+  return expansions;
+}
+
+async function discoverExpansions() {
+  const html = await fetchHtml(`${BASE}/cardlist/`);
+  return discoverExpansionsFromHtml(html);
+}
+
+function parseInfo(block, className = '') {
+  const info = {};
+  const scopeRe = className
+    ? new RegExp(`<dl[^>]*class="[^"]*${className}[^"]*"[^>]*>([\\s\\S]*?)<\\/dl>`, 'i')
+    : /<dl[^>]*>([\s\S]*?)<\/dl>/gi;
+  const scopes = [];
+  if (className) {
+    const m = block.match(scopeRe);
+    if (m) scopes.push(m[1]);
+  } else {
+    let m;
+    while ((m = scopeRe.exec(block)) !== null) scopes.push(m[1]);
+  }
+  for (const scope of scopes) {
+    const pairRe = /<dt>([\s\S]*?)<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/gi;
+    let p;
+    while ((p = pairRe.exec(scope)) !== null) {
+      const key = stripTags(p[1]);
+      const raw = p[2];
+      const icon = raw.match(/type_(\w+)\.png/i);
+      info[key] = icon ? (COLOR_MAP[`type_${icon[1]}`] || icon[1]) : stripTags(raw);
+    }
+  }
+  return info;
+}
+
+function parseSections(block, selectorClass) {
+  const re = new RegExp(`<div[^>]*class="[^"]*${selectorClass}[^"]*"[^>]*>([\\s\\S]*?)<\\/div>`, 'gi');
+  const out = [];
+  let m;
+  while ((m = re.exec(block)) !== null) out.push(stripTags(m[1]));
+  return out.filter(Boolean);
+}
+
+export function parseCardsFromHtml(html, fallbackExpansion) {
+  const cards = [];
+  const liRe = /<li[^>]*>\s*<a\s+href="\/cardlist\/\?id=(\d+)(?:&(?:amp;)?[^="]+=[^&"]*)*&(?:amp;)?expansion=([^&"]+)[^"]*"[\s\S]*?<\/li>/gi;
+  let m;
+  while ((m = liRe.exec(html)) !== null) {
+    const block = m[0];
+    const id = m[1];
+    const expansion = decodeHtml(m[2] || fallbackExpansion);
+    const img = block.match(/<img[^>]+src="([^"]+)"[^>]*>/i);
+    const imageUrl = img ? absUrl(decodeHtml(img[1])) : '';
+    const cardNumber = stripTags(block.match(/<p[^>]*class="number"[^>]*>([\s\S]*?)<\/p>/i)?.[1] || '')
+      || (imageUrl.match(/\/([h][A-Za-z0-9]+-\d{3})(?:_[^/]*)?\.png/i)?.[1] || '');
+    const name = stripTags(block.match(/<p[^>]*class="name"[^>]*>([\s\S]*?)<\/p>/i)?.[1] || '');
+    const info = parseInfo(block);
+    const detail = parseInfo(block, 'info_Detail');
+    const cardTypeJp = info['カードタイプ'] || '';
+    const sourceProductText = info['収録商品'] || '';
+    cards.push({
+      id,
+      cardNumber,
+      name,
+      cardType: TYPE_MAP[cardTypeJp] || cardTypeJp,
+      cardTypeJp,
+      color: detail['色'] || 'colorless',
+      rarity: info['レアリティ'] || '',
+      expansion,
+      series: expansion,
+      sourceProduct: expansion,
+      sourceProductName: sourceProductText.split('\n')[0]?.trim() || '',
+      sourceProductText,
+      imageUrl,
+      hp: detail['HP'] || '',
+      life: detail['LIFE'] || '',
+      bloomLevel: detail['Bloomレベル'] || detail['BloomLevel'] || '',
+      tags: info['タグ'] || '',
+      arts: parseSections(block, 'arts').join('\n'),
+      keywords: parseSections(block, 'keyword').join('\n'),
+      extra: parseSections(block, 'extra').join('\n'),
+    });
+  }
+  return cards;
+}
+
+async function scrapeExpansion(expansion) {
+  const firstUrl = `${BASE}/cardlist/cardsearch/?expansion=${encodeURIComponent(expansion.code)}&view=text&sort=cardnum`;
+  const firstHtml = await fetchHtml(firstUrl);
+  const expected = parseExpectedCount(firstHtml);
+  const maxPage = parseMaxPage(firstHtml);
+  const cards = parseCardsFromHtml(firstHtml, expansion.code);
+  for (let page = 2; page <= maxPage; page++) {
+    const html = await fetchHtml(`${BASE}/cardlist/cardsearch_ex?expansion=${encodeURIComponent(expansion.code)}&view=text&page=${page}&t=${Date.now()}`);
+    cards.push(...parseCardsFromHtml(html, expansion.code));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  const byPrinting = new Map();
+  for (const card of cards) {
+    const imageSuffix = card.imageUrl.match(/\/([^/]+)\.png$/i)?.[1] || '';
+    const key = `${card.cardNumber}|${card.expansion}|${imageSuffix}|${card.id}`;
+    if (!byPrinting.has(key)) byPrinting.set(key, card);
+  }
+  const deduped = [...byPrinting.values()].sort((a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.id.localeCompare(b.id));
+  return { cards: deduped, expected, maxPage };
+}
+
+function auditExpansion(expansion, cards, expected) {
+  const missing = [];
+  const required = ['id', 'cardNumber', 'name', 'cardType', 'rarity', 'imageUrl', 'sourceProduct'];
+  for (const card of cards) {
+    for (const field of required) {
+      if (!card[field]) missing.push({ cardNumber: card.cardNumber || card.id || '(unknown)', id: card.id || '', field });
+    }
+  }
+  if (cards.length === 0) missing.push({ cardNumber: '(series)', id: '', field: 'cards' });
+  if (expected != null && cards.length !== expected) missing.push({ cardNumber: '(series)', id: '', field: `expectedCount ${expected} != ingestedCount ${cards.length}` });
+  return {
+    code: expansion.code,
+    name: expansion.name,
+    expectedCount: expected,
+    ingestedCount: cards.length,
+    missingCount: missing.length,
+    missing,
+    lastSuccessfulSync: missing.length === 0 ? new Date().toISOString() : null,
+  };
+}
+
+async function checkProductionLag(meta, productionUrl) {
+  if (!productionUrl) return [];
+  const res = await fetch(productionUrl, { headers: { 'User-Agent': UA } });
+  if (!res.ok) throw new Error(`production check failed: HTTP ${res.status} for ${productionUrl}`);
+  const db = await res.json();
+  const cards = Object.values(db.cards || {});
+  const missing = [];
+  const now = Date.now();
+  for (const s of meta.seriesStats || []) {
+    if (!s.lastSuccessfulSync) continue;
+    const ageHours = (now - Date.parse(s.lastSuccessfulSync)) / 36e5;
+    const prodCount = cards.filter((c) => c.sourceProduct === s.code || c.expansion === s.code || c.series === s.code).length;
+    if (ageHours >= 24 && prodCount < s.ingestedCount) {
+      missing.push({ code: s.code, officialCount: s.ingestedCount, productionCount: prodCount, ageHours: Number(ageHours.toFixed(1)) });
+    }
+  }
+  return missing;
+}
+
+function readPriorCount(code) {
+  for (const filename of [`${code}.json`, `cardList_${code}.json`]) {
+    const file = path.join(OFFICIAL_DIR, filename);
+    if (!fs.existsSync(file)) continue;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (Array.isArray(parsed)) return parsed.length;
+    } catch {}
+  }
+  return 0;
 }
 
 async function main() {
-  console.log('🚀 開始抓取 hololive 官方新系列卡牌資料...\n');
+  fs.mkdirSync(OFFICIAL_DIR, { recursive: true });
+  fs.mkdirSync(AUDIT_DIR, { recursive: true });
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
+  const onlyArg = argValue('--only');
+  const only = onlyArg ? new Set(onlyArg.split(',').map((s) => s.trim()).filter(Boolean)) : null;
+  const productionUrl = argValue('--check-production');
 
-  const outputDir = path.join(__dirname, '..', 'data', 'official');
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+  const discovered = await discoverExpansions();
+  const expansions = only ? discovered.filter((e) => only.has(e.code)) : discovered;
+  if (only && expansions.length !== only.size) {
+    const found = new Set(expansions.map((e) => e.code));
+    throw new Error(`requested expansion(s) not discovered: ${[...only].filter((c) => !found.has(c)).join(', ')}`);
   }
 
   const allCards = [];
+  const audits = [];
+  let hasFailure = false;
 
-  for (const series of SERIES) {
-    const cards = await scrapeSeries(browser, series);
-    allCards.push(...cards);
-
-    // 儲存該系列的 JSON
-    const filename = `cardList_${series.code}.json`;
-    const filepath = path.join(outputDir, filename);
-    fs.writeFileSync(filepath, JSON.stringify(cards, null, 2), 'utf-8');
-    console.log(`  💾 已儲存：${filename} (${cards.length} 張)`);
-
-    // 禮貌性延遲 2-3 秒
-    if (series !== SERIES[SERIES.length - 1]) {
-      const delay = 2000 + Math.random() * 1000;
-      console.log(`  ⏳ 等待 ${Math.round(delay)}ms...`);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+  for (const expansion of expansions) {
+    console.log(`[official] scraping ${expansion.code} ${expansion.name}`);
+    const priorCount = readPriorCount(expansion.code);
+    const { cards, expected } = await scrapeExpansion(expansion);
+    if (priorCount > 0 && cards.length < priorCount) {
+      throw new Error(`${expansion.code} count regression: prior=${priorCount} current=${cards.length}`);
     }
+    const audit = auditExpansion(expansion, cards, expected);
+    audits.push(audit);
+    if (audit.missingCount > 0) hasFailure = true;
+    fs.writeFileSync(path.join(OFFICIAL_DIR, `${expansion.code}.json`), `${JSON.stringify(cards, null, 2)}\n`, 'utf8');
+    allCards.push(...cards);
+    console.log(`  ${cards.length} cards${expected != null ? ` / expected ${expected}` : ''}`);
   }
 
-  await browser.close();
+  const meta = {
+    updatedAt: new Date().toISOString(),
+    discoveredSeries: discovered.map((e) => e.code),
+    series: expansions.map((e) => e.code),
+    totalCards: allCards.length,
+    seriesStats: audits.map(({ missing, ...rest }) => rest),
+  };
+  if (!only) {
+    fs.writeFileSync(path.join(OFFICIAL_DIR, 'all-cards.json'), `${JSON.stringify(allCards, null, 2)}\n`, 'utf8');
+  }
+  fs.writeFileSync(path.join(OFFICIAL_DIR, '_meta.json'), `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
 
-  console.log(`\n📊 總共抓取：${allCards.length} 張卡牌`);
-  console.log('✅ 全部完成！');
+  const auditReport = {
+    generatedAt: meta.updatedAt,
+    officialToNormalized: audits,
+    summary: {
+      totalExpansions: audits.length,
+      totalCards: allCards.length,
+      totalMissingFields: audits.reduce((sum, a) => sum + a.missingCount, 0),
+    },
+  };
+  const auditPath = path.join(AUDIT_DIR, 'official-catalog-audit.json');
+  fs.writeFileSync(auditPath, `${JSON.stringify(auditReport, null, 2)}\n`, 'utf8');
+
+  const productionMissing = await checkProductionLag(meta, productionUrl);
+  if (productionMissing.length) {
+    fs.writeFileSync(path.join(AUDIT_DIR, 'official-production-lag.json'), `${JSON.stringify({ generatedAt: new Date().toISOString(), missing: productionMissing }, null, 2)}\n`, 'utf8');
+    throw new Error(`official expansion(s) missing from production after 24h: ${productionMissing.map((m) => m.code).join(', ')}`);
+  }
+
+  if (hasFailure) throw new Error(`official catalog audit failed; see ${path.relative(REPO, auditPath)}`);
+  console.log(`[official] complete: ${allCards.length} cards across ${expansions.length} expansions`);
 }
 
-main().catch((err) => {
-  console.error('❌ 執行失敗：', err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(`[official] failed: ${err.message}`);
+    process.exit(1);
+  });
+}

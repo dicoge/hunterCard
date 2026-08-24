@@ -470,6 +470,11 @@ async function scrapeSeriesPage(browser, url) {
  * 先試 Puppeteer，若失敗或結果不足則降級到 HTTP fetch
  */
 async function scrapeYuyuPrices() {
+  if (process.env.HUNTERCARD_SKIP_YUYU === '1') {
+    console.log('[database] HUNTERCARD_SKIP_YUYU=1 — skipping yuyu price scrape');
+    return { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
+  }
+
   let usePuppeteer = true;
   let puppeteer;
 
@@ -862,14 +867,22 @@ function loadOfficialData() {
           const cardNum = card.cardNumber || imageCardNumber;
           if (!cardNum) continue;
           const series = card.expansion || card.series || '';
-          // Use compound key to preserve all series, even reprints
-          const key = series ? `${cardNum}_${series}` : cardNum;
-          officialCards[key] = {
+          const imageSuffix = String(card.imageUrl || '').match(/\/([^/]+)\.png$/i)?.[1] || '';
+          // Use compound keys to preserve all series and all official printings.
+          // hEB01 contains many same-card-number variants inside one expansion;
+          // those must not overwrite one another or inherit a single old price.
+          const baseKey = series ? `${cardNum}_${series}` : cardNum;
+          const mustUsePrintingKey = !!card.sourceProduct;
+          const printingKey = [baseKey, card.rarity || '', imageSuffix || card.id || ''].filter(Boolean).join('_');
+          const makeInfo = () => ({
             name: card.name || '',
             type: card.cardType || card.type || '',
             color: card.color || '',
             rarity: card.rarity || '',
             series: series,
+            sourceProduct: card.sourceProduct || series,
+            sourceProductName: card.sourceProductName || '',
+            sourceProductText: card.sourceProductText || '',
             officialImage: card.imageUrl || '',
             hp: card.hp || '',
             life: card.life || '',
@@ -881,7 +894,19 @@ function loadOfficialData() {
             // backfills those from data/bloom-levels.json (DIC-1141).
             bloomLevel: card.bloomLevel || '',
             cardNumber: cardNum,
-          };
+          });
+          if (mustUsePrintingKey) {
+            officialCards[printingKey] = makeInfo();
+          } else {
+            if (officialCards[baseKey] && officialCards[baseKey].officialImage !== (card.imageUrl || '')) {
+              const prior = officialCards[baseKey];
+              const priorSuffix = String(prior.officialImage || '').match(/\/([^/]+)\.png$/i)?.[1] || '';
+              const priorKey = [baseKey, prior.rarity || '', priorSuffix].filter(Boolean).join('_');
+              officialCards[priorKey] = prior;
+              delete officialCards[baseKey];
+            }
+            officialCards[officialCards[baseKey] ? printingKey : (officialCards[printingKey] ? printingKey : baseKey)] = makeInfo();
+          }
         }
       }
     } catch (err) {
@@ -1160,16 +1185,23 @@ async function buildDatabase() {
     }
   }
 
-  // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch)
+  // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch).
+  // Official catalog ingestion is intentionally decoupled from yuyu pricing: if
+  // yuyu is WAF-blocked/403 and returns 0 cards, new official printings still
+  // build and ship with null/unknown prices instead of blocking the catalog.
   console.log('── Step 1: Scrape yuyu-tei ──');
-  const yuyuResult = await scrapeYuyuPrices();
+  let yuyuResult;
+  try {
+    yuyuResult = await scrapeYuyuPrices();
+  } catch (err) {
+    console.warn(`[database] yuyu scrape failed (${err.message}); continuing official catalog build with null prices`);
+    yuyuResult = { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
+  }
 
   const { prices, totalCards, seriesWithPrices } = yuyuResult;
   console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
-
-  // Safety check
   if (totalCards < 50) {
-    throw new Error(` SAFETY CHECK FAILED: totalCards=${totalCards} < 50. Scraper likely failed.`);
+    console.warn(`[database] yuyu pricing unavailable or incomplete (totalCards=${totalCards}); official cards will retain null sellPrice/prices`);
   }
 
   // Step 2: Download images
@@ -1268,6 +1300,9 @@ async function buildDatabase() {
       color: official.color || '',
       rarity: official.rarity || '',
       series: official.series || '',
+      sourceProduct: official.sourceProduct || official.series || '',
+      sourceProductName: official.sourceProductName || '',
+      sourceProductText: official.sourceProductText || '',
       sellPrice: yuyu ? yuyu.lowestPrice : null,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
