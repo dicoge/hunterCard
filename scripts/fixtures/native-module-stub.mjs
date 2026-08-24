@@ -16,4 +16,7 @@ export const getExpoPushTokenAsync = noop;
 export const getPermissionsAsync = noop;
 export const requestPermissionsAsync = noop;
 export const setNotificationHandler = noop;
+export const maybeCompleteAuthSession = noop;
+export const openAuthSessionAsync = noop;
+export const dismissBrowser = noop;
 export const expoConfig = null;

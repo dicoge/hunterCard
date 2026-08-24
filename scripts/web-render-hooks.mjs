@@ -25,6 +25,8 @@ const NATIVE_MODULE_STUBS = new Set([
   'expo-notifications',
   'expo-constants',
   'expo-device',
+  'expo-auth-session',
+  'expo-crypto',
 ]);
 
 const STUB_URL = new URL('./fixtures/native-module-stub.mjs', import.meta.url).href;
@@ -35,7 +37,7 @@ const STUB_URL = new URL('./fixtures/native-module-stub.mjs', import.meta.url).h
 const SAFE_AREA_STUB_URL = new URL('./fixtures/safe-area-context-stub.mjs', import.meta.url).href;
 
 export async function resolve(specifier, context, next) {
-  if (NATIVE_MODULE_STUBS.has(specifier)) {
+  if (NATIVE_MODULE_STUBS.has(specifier) || (specifier.startsWith('expo-') && specifier !== 'expo-linking')) {
     return { url: STUB_URL, format: 'module', shortCircuit: true };
   }
 
@@ -46,11 +48,13 @@ export async function resolve(specifier, context, next) {
   const aliased = PACKAGE_ALIASES.get(specifier);
   if (aliased) return next(aliased, context);
 
-  const isRelative = specifier.startsWith('./') || specifier.startsWith('../');
-  if (isRelative && extname(specifier) === '' && context.parentURL) {
-    for (const suffix of ['.tsx', '.ts', '/index.tsx', '/index.ts']) {
-      const candidate = new URL(specifier + suffix, context.parentURL);
-      if (existsSync(fileURLToPath(candidate))) return next(candidate.href, context);
+  const isRelative = specifier.startsWith('./') || specifier.startsWith('../') || specifier.startsWith('.');
+  if (extname(specifier) === '' && context.parentURL) {
+    for (const suffix of ['.tsx', '.ts', '.js', '/index.tsx', '/index.ts', '/index.js']) {
+      try {
+        const candidate = new URL(specifier + suffix, context.parentURL);
+        if (existsSync(fileURLToPath(candidate))) return next(candidate.href, context);
+      } catch {}
     }
   }
 

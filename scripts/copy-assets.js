@@ -20,8 +20,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PROJECT_DIR = path.resolve(__dirname, '..');
-const DIST_DIR = path.join(PROJECT_DIR, 'dist');
+const PROJECT_DIR = process.env.PROJECT_DIR || path.resolve(__dirname, '..');
+const DIST_DIR = process.env.DIST_DIR || path.join(PROJECT_DIR, 'dist');
 const DB_DEST = path.join(DIST_DIR, 'data', 'database.json');
 
 console.log('[copy-assets] Copying assets to dist/...');
@@ -63,7 +63,7 @@ if (fs.existsSync(zhDbSource)) {
 }
 
 // Copy static HTML pages (privacy / support) so /privacy and /support rewrites resolve
-const HTML_PAGES = ['privacy.html', 'support.html'];
+const HTML_PAGES = ['privacy.html', 'support.html', 'pricing.html', 'terms.html'];
 HTML_PAGES.forEach((file) => {
   const src = path.join(PROJECT_DIR, 'public', file);
   const dest = path.join(DIST_DIR, file);

@@ -11,6 +11,14 @@
       "destination": "/support.html"
     },
     {
+      "source": "/pricing",
+      "destination": "/pricing.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
       "source": "/account-deletion",
       "destination": "/privacy.html"
     },
