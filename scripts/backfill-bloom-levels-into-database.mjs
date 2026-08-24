@@ -35,6 +35,8 @@ for (const info of Object.values(db.cards)) {
   info.bloomLevel = canonical;
 }
 
-fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+// Trailing newline matches the byte layout that scripts/regen-buy-alignment.mjs
+// commits — the DIC-856 determinism test rejects the file without it.
+fs.writeFileSync(DB_FILE, `${JSON.stringify(db, null, 2)}\n`);
 console.log(`[patch] wrote ${DB_FILE}`);
 console.log(`[patch] added=${touched}, already=${already}, overrode=${overrode}, overlay=${Object.keys(overlay).length}`);
