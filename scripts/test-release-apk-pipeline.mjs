@@ -490,6 +490,32 @@ function testWorkflowStructureCannotBypassGates() {
   }
 }
 
+/**
+ * The gate assertions bind one document, so a build invoked from a DIFFERENT
+ * workflow file would never meet them. Cheap to close while `eas build` appears
+ * in exactly one file: assert it stays that way.
+ */
+function testNoOtherWorkflowBuilds() {
+  const dir = path.join(ROOT, '.github/workflows');
+  const offenders = [];
+  for (const file of fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))) {
+    if (file === 'eas-build.yml') continue;
+    const doc = parseYaml(fs.readFileSync(path.join(dir, file), 'utf8'));
+    for (const [jobName, job] of Object.entries(doc?.jobs ?? {})) {
+      for (const step of job?.steps ?? []) {
+        if (typeof step?.run === 'string' && /^\s*(npx\s+)?eas\s+build\b/m.test(step.run)) {
+          offenders.push(`${file}:${jobName}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `only eas-build.yml may run \`eas build\` — the release gates live in that workflow and cannot police another one (found in: ${offenders.join(', ')})`,
+  );
+}
+
 function testGuardsRunBeforeAnythingIsBuilt() {
   const index = (name) => easBuildSteps.findIndex((s) => s.name === name);
   const lastGuard = Math.max(
@@ -833,6 +859,7 @@ const tests = [
   testWorkflowOffersTheReleaseApkProfile,
   testGateStepsAreEnabledAndInvokeTheirGuards,
   testWorkflowStructureCannotBypassGates,
+  testNoOtherWorkflowBuilds,
   testGuardsRunBeforeAnythingIsBuilt,
   testDebugApkWorkflowIsLabelledDebugOnly,
   testRefGuardBehaviour,
