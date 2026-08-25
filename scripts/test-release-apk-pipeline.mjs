@@ -27,6 +27,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -86,99 +87,43 @@ function flatten(value, prefix = '') {
 }
 
 /**
- * Minimal GitHub-workflow step reader. Substring-matching the raw YAML passes
- * while a guard sits behind `if: false`, is commented out, or has its command
- * body replaced — so steps are read as structures, and each step keeps its own
- * body text for per-step assertions. Anchored at the real step indent so a
- * `- name:` line inside a heredoc cannot forge a step.
+ * Steps are read from the PARSED YAML document, not from the raw text. Earlier
+ * rounds asserted on text and were defeated three times over — first by `if:
+ * false`, then by neutering tokens inside a step body, then by a trailing
+ * comment or a quoted key (`gates:  # split out`, `"defaults":`). Whatever the
+ * spelling, GitHub reads the parsed document, so the assertions read it too.
  */
-function parseSteps(workflow) {
-  const STEP_INDENT = 6;
-  const lines = workflow.split('\n');
-  const steps = [];
-  let current = null;
-  for (const line of lines) {
-    const start = line.match(new RegExp(`^( {${STEP_INDENT}})- name:\\s*(.+?)\\s*$`));
-    if (start) {
-      current = {
-        name: start[2].replace(/^["']|["']$/g, ''),
-        indent: STEP_INDENT,
-        if: null,
-        uses: null,
-        run: false,
-        shell: null,
-        body: '',
-      };
-      steps.push(current);
-      continue;
-    }
-    if (!current) continue;
-    if (/^ {0,6}\S/.test(line) && line.trim() !== '') {
-      current = null; // left the steps list
-      continue;
-    }
-    current.body += `${line}\n`;
-    const key = line.match(/^(\s*)(if|uses|run|shell):\s*(.*)$/);
-    if (!key || key[1].length !== STEP_INDENT + 2) continue;
-    if (key[2] === 'if') current.if = key[3].trim();
-    if (key[2] === 'uses') current.uses = key[3].trim();
-    if (key[2] === 'run') current.run = true;
-    if (key[2] === 'shell') current.shell = key[3].trim();
-  }
-  for (const step of steps) {
-    step.command = stepCommand(step.body);
-    step.env = stepEnv(step.body);
-  }
-  return steps;
+function stepsOf(job) {
+  return (job?.steps ?? []).map((step) => ({
+    name: step.name ?? `<${step.uses ?? 'unnamed'}>`,
+    if: step.if == null ? null : String(step.if).trim(),
+    uses: step.uses ?? null,
+    run: typeof step.run === 'string',
+    shell: step.shell ?? null,
+    command: typeof step.run === 'string' ? step.run.trim() : null,
+    env: step.env ? Object.fromEntries(Object.entries(step.env).map(([k, v]) => [k, String(v).trim()])) : null,
+    raw: step,
+  }));
 }
 
-/**
- * The exact shell a step runs, dedented — inline `run: cmd` and block `run: |`
- * alike. Gate steps are compared against this verbatim: a denylist of neutering
- * tokens is endless (`|| true`, `|| echo x`, `; exit 0`, `set +e`, wrapping the
- * call in `if ! ...; then`), whereas an exact match rejects all of them at once
- * (CR DIC-1193 round 2).
- */
-function stepCommand(body) {
-  const KEY_INDENT = 8;
-  const lines = body.split('\n');
-  for (let i = 0; i < lines.length; i += 1) {
-    const inline = lines[i].match(new RegExp(`^ {${KEY_INDENT}}run:\\s*(.+)$`));
-    if (!inline) continue;
-    if (!/^[|>]-?$/.test(inline[1].trim())) return inline[1].trim();
-    const block = [];
-    for (let j = i + 1; j < lines.length; j += 1) {
-      if (lines[j].trim() === '') {
-        block.push('');
-        continue;
-      }
-      if (!lines[j].startsWith(' '.repeat(KEY_INDENT + 2))) break;
-      block.push(lines[j].slice(KEY_INDENT + 2));
-    }
-    return block.join('\n').trim();
-  }
-  return null;
+function jobsOf(workflow) {
+  const doc = parseYaml(workflow);
+  assert.ok(doc?.jobs, 'workflow must declare jobs');
+  return doc;
 }
 
-/** The step's `env:` mapping — a renamed key silently feeds a guard an empty value. */
-function stepEnv(body) {
-  const KEY_INDENT = 8;
-  const lines = body.split('\n');
-  const start = lines.findIndex((line) => line === `${' '.repeat(KEY_INDENT)}env:`);
-  if (start < 0) return null;
-  const env = {};
-  for (let i = start + 1; i < lines.length; i += 1) {
-    if (lines[i].trim() === '') continue;
-    if (!lines[i].startsWith(' '.repeat(KEY_INDENT + 2))) break;
-    const entry = lines[i].trim().match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-    if (!entry) break;
-    env[entry[1]] = entry[2].trim();
-  }
-  return env;
-}
+const easBuildDoc = jobsOf(easBuildWorkflow);
+const androidDoc = jobsOf(androidWorkflow);
 
-const easBuildSteps = parseSteps(easBuildWorkflow);
-const androidSteps = parseSteps(androidWorkflow);
+// The job that actually produces the artifact is the job the gates must live
+// in; naming it by hand would just move the assumption somewhere else.
+const BUILD_JOB = Object.entries(easBuildDoc.jobs).find(([, job]) =>
+  (job.steps ?? []).some((step) => typeof step.run === 'string' && /\beas build\b/.test(step.run)),
+);
+assert.ok(BUILD_JOB, 'eas-build.yml must contain a job that runs `eas build`');
+
+const easBuildSteps = stepsOf(BUILD_JOB[1]);
+const androidSteps = Object.values(androidDoc.jobs).flatMap((job) => stepsOf(job));
 
 function stepNamed(steps, name, workflowName) {
   const found = steps.filter((s) => s.name === name);
@@ -384,7 +329,7 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
     }
     if (gate.mustInvoke) {
       assert.ok(
-        step.body.includes(gate.mustInvoke),
+        (step.command ?? '').includes(gate.mustInvoke),
         `"${gate.name}" must invoke ${gate.mustInvoke}; its behaviour is asserted by executing that script`,
       );
     }
@@ -418,26 +363,26 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
     // A gate whose failure is swallowed is not a gate.
     if (!gate.mayTolerate) {
       assert.ok(
-        !/\|\|\s*(true|:)\b/.test(step.body),
-        `"${gate.name}" swallows failures with a "||" fallback: ${step.body.trim()}`,
+        !/\|\|\s*(true|:)\b/.test(step.command ?? ''),
+        `"${gate.name}" swallows failures with a "||" fallback: ${step.command}`,
       );
       assert.ok(
-        !/&&\s*false\b/.test(step.body),
-        `"${gate.name}" is short-circuited with "&& false": ${step.body.trim()}`,
+        !/&&\s*false\b/.test(step.command ?? ''),
+        `"${gate.name}" is short-circuited with "&& false": ${step.command}`,
       );
     }
     assert.ok(
-      !/continue-on-error/.test(step.body),
+      step.raw['continue-on-error'] === undefined,
       `"${gate.name}" must not set continue-on-error — a release gate has to be able to fail the run`,
     );
   }
 
   const checkout = stepNamed(easBuildSteps, 'Checkout code', 'eas-build.yml');
   assert.equal(checkout.uses, 'actions/checkout@v4');
-  assert.match(
-    checkout.body,
-    /fetch-depth:\s*0/,
-    'the checkout needs full history for the release-tag containment check',
+  assert.equal(
+    checkout.raw.with?.['fetch-depth'],
+    0,
+    'the checkout needs full history (fetch-depth: 0) for the release-tag containment check',
   );
 
   const buildStep = stepNamed(
@@ -445,9 +390,9 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
     'EAS Build (production APK, wait for artifact)',
     'eas-build.yml',
   );
-  assert.match(buildStep.body, /--wait/, 'the production APK build must wait for the artifact');
+  assert.match(buildStep.command, /--wait/, 'the production APK build must wait for the artifact');
   assert.ok(
-    !buildStep.body.includes('--no-wait'),
+    !buildStep.command.includes('--no-wait'),
     'the production APK build must not use --no-wait — its signature cannot be verified otherwise',
   );
 
@@ -457,7 +402,10 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
     'build-provenance.json',
     'apksigner-verify.txt',
   ]) {
-    assert.ok(upload.body.includes(artifact), `the release artifact must include ${artifact}`);
+    assert.ok(
+      String(upload.raw.with?.path ?? '').includes(artifact),
+      `the release artifact must include ${artifact}`,
+    );
   }
 
   for (const [workflowName, steps] of [
@@ -474,22 +422,53 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
 }
 
 /**
- * Per-step assertions only bind steps that share a job in a fixed order. Two
- * workflow-level edits sidestep them entirely: moving the guards into a sibling
- * job with no `needs:` (the build job then races past them), and overriding the
- * shell so no `run:` exit status is a gate. Both are one line of valid YAML.
+ * Per-step assertions only bind steps whose exit status can stop the build.
+ * Two workflow-level edits sidestep them: moving the guards into a job that the
+ * build job does not wait for, and overriding the shell so no `run:` exit
+ * status gates anything. Both are read off the parsed document, so a trailing
+ * comment or a quoted key cannot hide them.
  */
 function testWorkflowStructureCannotBypassGates() {
-  const jobsSection = easBuildWorkflow.slice(easBuildWorkflow.indexOf('\njobs:'));
-  const jobs = [...jobsSection.matchAll(/^ {2}([A-Za-z_][\w-]*):\s*$/gm)].map((m) => m[1]);
-  assert.deepEqual(
-    jobs,
-    ['build'],
-    `eas-build.yml must declare exactly one job, so every gate is in the same job as the build it guards — got ${jobs.join(', ')}`,
+  const [buildJobName, buildJob] = BUILD_JOB;
+  const gateNames = [
+    'Guard release builds to main or a release tag',
+    'Guard production-apk usage',
+    'Verify signature and record build provenance',
+  ];
+  const jobOf = (stepName) =>
+    Object.entries(easBuildDoc.jobs)
+      .filter(([, job]) => (job.steps ?? []).some((step) => step.name === stepName))
+      .map(([name]) => name);
+  for (const gate of gateNames) {
+    assert.deepEqual(
+      jobOf(gate),
+      [buildJobName],
+      `"${gate}" must live in the "${buildJobName}" job that runs eas build — a gate in another job does not block the build unless that job is awaited`,
+    );
+  }
+
+  // Other jobs may exist (a downstream notifier, say) — what matters is that no
+  // gate lives in one, which the membership check above already enforces. They
+  // still may not carry defaults that would change how a run step is executed.
+  for (const [name, job] of Object.entries(easBuildDoc.jobs)) {
+    if (name === buildJobName) continue;
+    assert.equal(job.defaults, undefined, `job "${name}" must not set defaults`);
+  }
+
+  assert.equal(
+    easBuildDoc.defaults,
+    undefined,
+    'eas-build.yml must not declare workflow-level defaults — defaults.run.shell disables every gate at once',
   );
-  assert.ok(
-    !/^\s*defaults:\s*$/m.test(easBuildWorkflow),
-    'eas-build.yml must not declare `defaults:` — a defaults.run.shell override disables every gate at once',
+  assert.equal(
+    buildJob.defaults,
+    undefined,
+    `job "${buildJobName}" must not declare defaults — defaults.run.shell disables every gate at once`,
+  );
+  assert.equal(
+    buildJob['continue-on-error'],
+    undefined,
+    `job "${buildJobName}" must not set continue-on-error`,
   );
   for (const step of easBuildSteps) {
     assert.equal(
@@ -538,9 +517,9 @@ function testDebugApkWorkflowIsLabelledDebugOnly() {
     'the assembleDebug workflow name must say DEBUG-ONLY',
   );
   const upload = stepNamed(androidSteps, 'Upload APK as artifact', 'build-android.yml');
-  assert.match(
-    upload.body,
-    /name:\s*holohunter-DEBUG-ONLY-apk/,
+  assert.equal(
+    upload.raw.with?.name,
+    'holohunter-DEBUG-ONLY-apk',
     'the assembleDebug artifact name must say DEBUG-ONLY',
   );
   assert.equal(upload.uses, 'actions/upload-artifact@v4');

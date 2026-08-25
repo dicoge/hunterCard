@@ -131,7 +131,8 @@
     "@types/react": "~19.1.0",
     "@vercel/node": "^5.7.11",
     "jsdom": "^30.0.1",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "yaml": "^2.9.0"
   },
   "private": true
 }
