@@ -3,8 +3,11 @@
  *
  * 從 data/character-names-zh.json 讀取日文→中文翻譯對照表，
  * 比對每張卡片的 name 欄位，若找到匹配則寫入 nameZh 欄位。
- * 若無匹配，透過 OpenRouter API (Gemini) 自動翻譯日文名 → 中文名。
- * API 翻譯也失敗時，nameZh 設為空字串。
+ * 若無匹配，nameZh 設為空字串（等待人工補齊）。
+ *
+ * DIC-1185 FinOps repair: 移除 OpenRouter 自動翻譯後援。OpenRouter 為硬性
+ * denylist，任何情況下都不可對 openrouter.ai 發出請求，包含環境中殘留的
+ * OPENROUTER_API_KEY。未匹配到的卡名一律 fail-closed 為空字串。
  *
  * 用法: node scripts/add-zh-names.js [database路徑]
  * 預設: data/database.json
@@ -36,7 +39,7 @@ function loadTranslationMap(filepath) {
 
   for (const [jp, zh] of Object.entries(translations)) {
     // 過濾包含 U+FFFD (replacement character) 的損壞條目
-    if (jp.includes('\uFFFD') || zh.includes('\uFFFD')) {
+    if (jp.includes('�') || zh.includes('�')) {
       filteredCount++;
       continue;
     }
@@ -49,62 +52,6 @@ function loadTranslationMap(filepath) {
 
   console.log(`[add-zh-names] ✅ 載入 ${Object.keys(clean).length} 筆翻譯對照`);
   return clean;
-}
-
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = 'google/gemini-3.1-flash-image';
-
-/**
- * 透過 OpenRouter API 將日文角色名翻譯成繁體中文
- * @param {string} jpName - 日文角色名
- * @returns {Promise<string>} - 中文翻譯，失敗時返回空字串
- */
-async function autoTranslate(jpName) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    console.warn('[add-zh-names] ⚠️ OPENROUTER_API_KEY 未設定，跳過自動翻譯');
-    return '';
-  }
-
-  try {
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: `Translate this Hololive character name from Japanese to Traditional Chinese. Respond with ONLY the translation, no explanation. Name: ${jpName}`,
-          },
-        ],
-        max_tokens: 50,
-        temperature: 0.0,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`[add-zh-names] ⚠️ API 錯誤 (${response.status}): ${await response.text()}`);
-      return '';
-    }
-
-    const data = await response.json();
-    const translation = data.choices?.[0]?.message?.content?.trim();
-
-    if (translation) {
-      console.log(`[add-zh-names] 🤖 Auto-translated: ${jpName} → ${translation}`);
-      return translation;
-    }
-
-    console.warn(`[add-zh-names] ⚠️ API 回傳空內容: ${jpName}`);
-    return '';
-  } catch (err) {
-    console.error(`[add-zh-names] ⚠️ API 呼叫失敗: ${err.message}`);
-    return '';
-  }
 }
 
 /**
@@ -139,7 +86,6 @@ export async function addZhNames(dbPath = DEFAULT_DB_PATH) {
   console.log(`[add-zh-names] 📝 處理 ${cardIds.length} 張卡片...`);
 
   let matchCount = 0;
-  let autoCount = 0;
   let missCount = 0;
 
   for (const cardId of cardIds) {
@@ -150,15 +96,8 @@ export async function addZhNames(dbPath = DEFAULT_DB_PATH) {
       card.nameZh = translationMap[cardName];
       matchCount++;
     } else {
-      const translated = await autoTranslate(cardName);
-      if (translated) {
-        card.nameZh = translated;
-        translationMap[cardName] = translated;
-        autoCount++;
-      } else {
-        card.nameZh = '';
-        missCount++;
-      }
+      card.nameZh = '';
+      missCount++;
     }
   }
 
@@ -167,8 +106,10 @@ export async function addZhNames(dbPath = DEFAULT_DB_PATH) {
 
   console.log(`[add-zh-names] ✅ 完成！`);
   console.log(`[add-zh-names]   靜態匹配: ${matchCount} 張卡片`);
-  console.log(`[add-zh-names]   自動翻譯: ${autoCount} 張卡片`);
-  console.log(`[add-zh-names]   未匹配: ${missCount} 張卡片`);
+  console.log(`[add-zh-names]   未匹配 (nameZh=''): ${missCount} 張卡片`);
+  if (missCount > 0) {
+    console.log(`[add-zh-names]   ℹ️  未匹配的卡名請於 data/character-names-zh.json 手動補齊`);
+  }
   console.log(`[add-zh-names]   輸出: ${dbPath}`);
 }
 

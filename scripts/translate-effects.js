@@ -2,44 +2,32 @@
 /**
  * scripts/translate-effects.js
  *
- * Reads data/effects-jp.json, translates every skill/effect string to
- * Traditional Chinese, and writes data/effects-zh.json (same structure).
+ * Deterministic term-protection / glossary / simplified→traditional helpers for
+ * translating Japanese card effect text into Traditional Chinese.
  *
- * - Deduplicates strings before translating (many effects repeat across cards).
- * - Caches translations in data/_translation-cache.json so runs are resumable.
- * - Batches requests to the OpenRouter chat-completions endpoint.
+ * DIC-1185 FinOps repair: this script previously drove an OpenRouter
+ * chat-completions loop that read a provider key from
+ * ~/.claude-code-router/config.json. OpenRouter is a hard denylist, so the
+ * network path has been removed entirely. The pure helpers below stay exported
+ * for future reuse against a compliant provider; running this file directly
+ * now exits with a fail-closed error instead of spending any inference call.
  *
- * Term protection (P1 fix): reserved game terms (ホロメン, アーツ, エール, コラボ …)
- * are masked with sentinels before the model sees them and restored afterwards,
- * so the model can never translate them. This is deterministic regardless of
- * how the model behaves.
+ * Term protection: reserved game terms are masked with sentinels before any
+ * downstream model sees them and restored afterwards, so the model can never
+ * translate them.
  *
- * Traditional-Chinese normalization (P2 fix): translated strings pass through an
+ * Traditional-Chinese normalization: translated strings pass through an
  * unambiguous simplified→traditional map so stray simplified characters are
  * corrected. Only translated text is normalized — retained Japanese card names
  * are never touched.
- *
- * API key: providers[0].api_key from ~/.claude-code-router/config.json
- * (OpenRouter). Model: deepseek/deepseek-v4-flash (Claude Haiku is not exposed
- * on this key). Override with TRANSLATE_MODEL env var.
  */
 
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const IN_FILE = path.join(DATA_DIR, 'effects-jp.json');
-const OUT_FILE = path.join(DATA_DIR, 'effects-zh.json');
-const CACHE_FILE = path.join(DATA_DIR, '_translation-cache.json');
-
-const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = process.env.TRANSLATE_MODEL || 'deepseek/deepseek-v4-flash';
-const BATCH_SIZE = 20;
-const CONCURRENCY = 6;
-const NL = '⏎'; // newline placeholder for line-based transport
 
 // Reserved terms that MUST stay in their original Latin form. The product
 // requirement (DIC-465) is that every zh field is fully Chinese with no
@@ -85,18 +73,6 @@ function canonicalizeTerms(s) {
   for (const [jp, zh] of GLOSSARY_ZH) out = out.split(jp).join(zh);
   return out.split('・').join('·');
 }
-
-const SYSTEM_PROMPT = `你是專業的桌遊翻譯，將 hololive OFFICIAL CARD GAME 的日文卡牌技能文字翻譯成繁體中文（台灣用語）。規則：
-1. 【最重要】遊戲術語一律翻成下列固定的繁體中文，不可保留日文假名、不可音譯、不可寫成英文：
-   ホロメン→成員、推しスキル→主推技能、SP推しスキル→SP主推技能、アーツ→招式、ホロパワー→能量、エール→應援、コラボ→協力、バトンタッチ→換手、ブルーム→綻放、センター→中央、バック→後方、ギフト→禮物、ダウン→倒下、サポート→支援、アイテム→道具、ツール→工具、マスコット→吉祥物、ファン→粉絲、イベント→事件、アーカイブ→檔案、ポジション→位置。
-   只有純拉丁字母的縮寫保留原文，不要翻譯：Buzz、LIMITED、Debut、Bloom、RUSH。
-   （整段譯文不可出現任何日文平假名或片假名。）
-2. 文字中若出現形如 ⟦0⟧ ⟦1⟧ 的佔位符，請原樣保留、不要翻譯、不要改動、不要增減，位置與原文一致。
-3. 一般遊戲詞彙照此翻譯：デッキ→牌組、手札→手牌、ステージ→場上、ライフ→生命、ダメージ→傷害、相手→對手、自分→自己、選ぶ→選擇、公開→展示、引く→抽。
-4. 保留所有數字、+、-、括號與符號結構，例如 [ターンに1回]→[每回合1次]、[ゲームに1回]→[每場遊戲1次]。
-5. 保留換行符號 ⏎，位置與原文一致。
-6. 只輸出翻譯結果，不要加任何解釋、引號、標題或 Markdown 標記（例如 **翻譯**：）。
-7. 必須使用繁體中文（台灣用語），絕對不可使用簡體字（例如「张」要寫成「張」、「个」要寫成「個」）。`;
 
 // ---- Reserved-term protection ------------------------------------------------
 
@@ -151,86 +127,16 @@ function toTraditional(s) {
   return out;
 }
 
-const SIMPLIFIED_RE = new RegExp('[' + Object.keys(S2T_MAP).join('') + ']');
-
-function getKey() {
-  const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude-code-router', 'config.json'), 'utf8'));
-  const p = (cfg.Providers || cfg.providers)[0];
-  return p.api_key;
-}
-
-async function chat(messages, retries = 4) {
-  const KEY = getKey();
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 45000);
-    try {
-      const r = await fetch(API_URL, {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, messages, temperature: 0 }),
-        signal: ctrl.signal,
-      });
-      if (r.status === 429 || r.status >= 500) throw new Error('HTTP ' + r.status);
-      const j = await r.json();
-      const content = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-      if (!content) throw new Error('empty response: ' + JSON.stringify(j).slice(0, 200));
-      return content;
-    } catch (err) {
-      if (attempt === retries) throw err;
-      await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-}
-
-// Strip a model's optional <think>…</think> preamble.
-function cleanContent(text) {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-}
-
-// Strip stray markdown labels the model sometimes prepends (e.g. "**翻譯**：").
+// Strip stray markdown labels a downstream model sometimes prepends
+// (e.g. "**翻譯**：") — retained as a pure helper for reuse.
 function stripPrefix(s) {
   return s.replace(/^\**\s*(翻譯|翻译|譯文|译文|Translation)\s*\**\s*[:：]?\s*/i, '').trim();
 }
 
 // Restore reserved terms + normalize to Traditional. `map` is the protection map
-// for this specific string.
+// for this specific string. Pure, deterministic, no network.
 function finalize(translated, map) {
   return canonicalizeTerms(toTraditional(restoreString(translated, map)));
-}
-
-async function translateBatch(strings) {
-  const protectedList = strings.map((s) => protectString(s));
-  const numbered = protectedList.map((p, i) => `${i + 1}\t${p.masked.replace(/\n/g, NL)}`).join('\n');
-  const user = `翻譯下列 ${strings.length} 行日文，逐行對應輸出，格式必須是「編號<TAB>譯文」，不可合併、省略或新增行：\n${numbered}`;
-  const content = cleanContent(await chat([
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: user },
-  ]));
-
-  const out = new Array(strings.length).fill(null);
-  for (const line of content.split('\n')) {
-    const m = line.match(/^\s*(\d+)[\t\.\)、:：]\s*(.*)$/);
-    if (!m) continue;
-    const idx = parseInt(m[1], 10) - 1;
-    if (idx >= 0 && idx < strings.length && out[idx] === null) {
-      const restored = m[2].replace(new RegExp(NL, 'g'), '\n').trim();
-      out[idx] = finalize(stripPrefix(restored), protectedList[idx].map);
-    }
-  }
-  return out;
-}
-
-async function translateOne(s) {
-  const { masked, map } = protectString(s);
-  const content = cleanContent(await chat([
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: '翻譯成繁體中文，只輸出譯文：\n' + masked.replace(/\n/g, NL) },
-  ]));
-  const restored = content.replace(new RegExp(NL, 'g'), '\n').trim();
-  return finalize(stripPrefix(restored), map);
 }
 
 function collectStrings(data) {
@@ -248,9 +154,6 @@ function collectStrings(data) {
 
 function reconstruct(data, cache) {
   const tr = (s) => (s && cache[s]) ? cache[s] : s;
-  // Card name/cardType are not part of the LLM translation cache, so translate
-  // them here: name via the curated character-name map, cardType via the term
-  // glossary. Both are canonicalized so no Japanese kana survives (DIC-465).
   let charNames = {};
   try { charNames = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'character-names-zh.json'), 'utf8')); } catch (e) {}
   const trName = (n) => canonicalizeTerms((n && charNames[n]) || n);
@@ -300,71 +203,27 @@ function validate(cache) {
   return clean;
 }
 
-async function main() {
-  const data = JSON.parse(fs.readFileSync(IN_FILE, 'utf8'));
-  let cache = {};
-  try { cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch (e) {}
-
-  const all = collectStrings(data);
-  const todo = all.filter((s) => !(s in cache));
-  console.log(`Unique strings: ${all.length} | cached: ${all.length - todo.length} | to translate: ${todo.length}`);
-
-  // Split into batches, process CONCURRENCY batches in parallel.
-  const batches = [];
-  for (let i = 0; i < todo.length; i += BATCH_SIZE) batches.push(todo.slice(i, i + BATCH_SIZE));
-
-  let done = 0;
-  async function runBatch(batch) {
-    let results;
-    try { results = await translateBatch(batch); }
-    catch (err) { results = new Array(batch.length).fill(null); }
-    const missing = results.filter((r) => !r).length;
-    if (missing >= batch.length / 2) { try { results = await translateBatch(batch); } catch (e) {} }
-    for (let j = 0; j < batch.length; j++) {
-      // Retry in single-string mode when the batch produced nothing or the model
-      // mangled the protection tokens (leftover sentinel fragments).
-      if (!results[j] || TOKEN_ARTIFACT_RE.test(results[j])) {
-        try {
-          const single = await translateOne(batch[j]);
-          if (single && !TOKEN_ARTIFACT_RE.test(single)) results[j] = single;
-          else if (!results[j]) results[j] = single;
-        }
-        catch (e) { console.log(`\n  single failed: ${batch[j].slice(0, 16)}… ${e.message}`); }
-      }
-      if (results[j]) cache[batch[j]] = results[j];
-    }
-    done += batch.length;
-  }
-
-  let next = 0;
-  async function worker() {
-    while (next < batches.length) {
-      const idx = next++;
-      await runBatch(batches[idx]);
-      fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
-      process.stdout.write(`\r  translated ${Math.min(done, todo.length)}/${todo.length}   `);
-    }
-  }
-  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-  console.log('');
-
-  const untranslated = all.filter((s) => !(s in cache));
-  if (untranslated.length) console.log(`WARN: ${untranslated.length} strings still untranslated`);
-
-  console.log('Validating translations…');
-  if (!validate(cache)) {
-    console.error('[translate] ❌ Validation failed — aborting output write');
-    process.exit(1);
-  }
-
-  const zh = reconstruct(data, cache);
-  fs.writeFileSync(OUT_FILE, JSON.stringify(zh, null, 2), 'utf8');
-  console.log(`Wrote ${OUT_FILE} (${Object.keys(zh).length} cards, ${(fs.statSync(OUT_FILE).size / 1024).toFixed(1)} KB)`);
-}
-
-export { protectString, restoreString, toTraditional, finalize, S2T_MAP, validate };
+export {
+  protectString,
+  restoreString,
+  toTraditional,
+  finalize,
+  stripPrefix,
+  canonicalizeTerms,
+  collectStrings,
+  reconstruct,
+  S2T_MAP,
+  validate,
+};
 
 const invokedDirectly = process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]);
 if (invokedDirectly) {
-  main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
+  // DIC-1185 FinOps repair: the OpenRouter translation runner has been removed.
+  // Fail closed rather than silently doing nothing, so anyone reviving this
+  // script is forced to wire a compliant provider — never openrouter.ai — and
+  // update the deterministic helpers below to match.
+  console.error('[translate-effects] ❌ Disabled: OpenRouter route removed (DIC-1185).');
+  console.error('[translate-effects]    No inference call may be made from this script.');
+  console.error('[translate-effects]    Deterministic helpers (protectString, finalize, S2T_MAP, …) are still exported for reuse.');
+  process.exit(1);
 }

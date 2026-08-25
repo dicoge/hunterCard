@@ -1,14 +1,23 @@
 #!/usr/bin/env node
 /**
- * DIC-1019 regression: /api/recognize-card must survive an unprovisioned Google key.
+ * DIC-1185 FinOps repair regression: nothing in this product may reach openrouter.ai.
  *
- * DIC-701 (855a34e70) silently swapped the vision provider from OpenRouter to Google
- * direct. No GEMINI_API_KEY was ever provisioned on Vercel and no OpenRouter fallback
- * was retained, so Production answered every scan with 503 RECOGNITION_UNAVAILABLE.
+ * OpenRouter is a hard denylist. `/api/recognize-card` previously ran a Google → OpenRouter
+ * fallback (DIC-1019); the OpenRouter adapter has been removed. This suite is
+ * mutation-sensitive by construction:
+ *   - a stubbed `fetch` throws the moment openrouter.ai is contacted, so ANY code path
+ *     that reintroduces the host — even under an inherited OPENROUTER_API_KEY — fails
+ *     loudly instead of silently spending FinOps budget.
+ *   - static scans across the runtime source refuse strings like `openrouter.ai`,
+ *     `OPENROUTER_API_KEY`, and `openrouter/`, so a reintroduced constant is caught
+ *     before it can be wired up.
+ *   - the recognition handler is exercised across every environment permutation
+ *     (Google present, Google absent, OpenRouter-key-only, both keys) and every
+ *     failure mode (Google 4xx/5xx/network/hang), and MUST fail closed at 503 the
+ *     moment Google is unavailable — never fall over to another host.
  *
- * These checks drive the REAL edge handler with a stubbed network and assert the
- * provider-selection contract, the exact OpenRouter wire shape, that no key value or
- * upstream body can reach a client, and that ranking output is provider-independent.
+ * Do not "fix" this suite by removing checks: the whole point is that a mutation
+ * to the code that reintroduces OpenRouter cannot pass here.
  *
  * Run: node --experimental-strip-types scripts/test-recognition-provider-fallback.mjs
  */
@@ -24,9 +33,8 @@ import {
 } from '../src/services/recognitionOutcome.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const database = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, '../public/data/database.json'), 'utf8'),
-);
+const repo = (p) => path.resolve(__dirname, '..', p);
+const database = JSON.parse(fs.readFileSync(repo('public/data/database.json'), 'utf8'));
 
 const GOOGLE_HOST = 'generativelanguage.googleapis.com';
 const OPENROUTER_HOST = 'openrouter.ai';
@@ -36,64 +44,56 @@ const OPENROUTER_KEY = 'openrouter-secret-value-must-not-leak';
 
 const REPLY = 'CHARACTER: ラプラス・ダークネス\nHP: NONE\nRARITY: SEC\nBLOOM_LEVEL: NONE\nCARD_NUMBER: hBP04-005\nTITLE: NONE';
 
-// A distinct full-frame image and scan-area crop, exactly as the web scanner sends them.
 const FULL_FRAME = 'data:image/jpeg;base64,ZnVsbC1mcmFtZQ==';
 const CROP = 'data:image/png;base64,Y3JvcC1hcmVh';
 
-// Upstream failure bodies the handler must never forward to a client.
 const UPSTREAM_BODY = 'upstream stack trace: quota project holo-secret-project';
 
 const savedGoogle = process.env.GEMINI_API_KEY;
 const savedOpenRouter = process.env.OPENROUTER_API_KEY;
 
-/**
- * An upstream that never answers, exactly like a hung provider: it only settles when
- * the handler's own AbortSignal fires, so the real per-leg timeout is what ends it.
- *
- * The keepalive is required, not decorative: AbortSignal.timeout() arms an unref'd
- * timer, so without a ref'd handle Node would consider the loop idle and exit before
- * the leg ever times out.
- */
 const hangUntilAborted = (signal) => new Promise((_resolve, reject) => {
   const keepAlive = setInterval(() => {}, 50);
-  const done = () => {
-    clearInterval(keepAlive);
-    reject(new Error('The operation was aborted'));
-  };
+  const done = () => { clearInterval(keepAlive); reject(new Error('The operation was aborted')); };
   if (signal?.aborted) return done();
   signal?.addEventListener('abort', done);
 });
-
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-/** Route both provider legs deterministically and record every outgoing request. */
-function stubNetwork({
-  google = 200, openrouter = 200,
-  googleReply = REPLY, openrouterReply = REPLY,
-  googleDelay = 0, openrouterDelay = 0,
+/**
+ * Stub the network so Google can be driven deterministically, the database load resolves,
+ * and any request to openrouter.ai fails the whole test loudly. This is the mutation
+ * tripwire: a reintroduced OpenRouter adapter would fetch this host and this stub would
+ * turn the fetch into an assertion failure before it can spend a real inference call.
+ */
+function stubNetworkWithOpenRouterDenylist({
+  google = 200,
+  googleReply = REPLY,
+  googleDelay = 0,
 } = {}) {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     const href = String(url);
     if (href.includes('database.json')) return Response.json(database);
 
-    const record = { href, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null };
+    if (href.includes(OPENROUTER_HOST) || /openrouter/i.test(href)) {
+      const violation = new Error(
+        `DIC-1185 denylist violation: outbound fetch reached OpenRouter host (${href}). ` +
+        `OpenRouter routes are removed; no code path may open a connection to openrouter.ai, ` +
+        `even under an inherited OPENROUTER_API_KEY.`,
+      );
+      calls.push({ provider: 'openrouter', href, denylistTripped: true });
+      throw violation;
+    }
 
+    const record = { href, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null };
     if (href.includes(GOOGLE_HOST)) {
       calls.push({ provider: 'gemini', at: Date.now(), ...record });
       if (google === 'hang') return hangUntilAborted(init.signal);
       if (googleDelay) await sleep(googleDelay);
-      if (google === 'network') throw new Error(`connect ECONNREFUSED ${href}?key=${GOOGLE_KEY}`);
+      if (google === 'network') throw new Error(`connect ECONNREFUSED ${href}`);
       if (google !== 200) return new Response(UPSTREAM_BODY, { status: google });
       return Response.json({ candidates: [{ content: { parts: [{ text: googleReply }] } }] });
-    }
-    if (href.includes(OPENROUTER_HOST)) {
-      calls.push({ provider: 'openrouter', at: Date.now(), ...record });
-      if (openrouter === 'hang') return hangUntilAborted(init.signal);
-      if (openrouterDelay) await sleep(openrouterDelay);
-      if (openrouter === 'network') throw new Error(`connect ECONNREFUSED ${href} bearer ${OPENROUTER_KEY}`);
-      if (openrouter !== 200) return new Response(UPSTREAM_BODY, { status: openrouter });
-      return Response.json({ choices: [{ message: { content: openrouterReply } }] });
     }
     throw new Error(`unexpected fetch: ${href}`);
   };
@@ -115,67 +115,79 @@ async function scan(env, network) {
   if (env.openrouter) process.env.OPENROUTER_API_KEY = env.openrouter;
   else delete process.env.OPENROUTER_API_KEY;
 
-  const calls = stubNetwork(network);
+  const calls = stubNetworkWithOpenRouterDenylist(network);
   const res = await post();
   const body = await res.json();
   return { res, body, bytes: JSON.stringify(body), calls };
 }
 
 const results = [];
-const check = (label, fn) => {
-  fn();
-  results.push(label);
-};
+const check = (label, fn) => { fn(); results.push(label); };
 
-// ── 1. Google absent + OpenRouter present → the fallback actually recognises ──
+// ── 1. Static scan: no runtime source may build an OpenRouter request ─────────
+// This is the earliest tripwire. Prose comments that document the DIC-1185
+// removal are allowed to *mention* OpenRouter; what is banned is any construct
+// that would actually issue an outbound call — a URL string, an env read, or
+// the Authorization+model shape OpenRouter's chat-completions API expects.
 {
-  const { res, body, calls } = await scan(
-    { openrouter: OPENROUTER_KEY },
-    {},
-  );
-  check('no Google key falls through to OpenRouter instead of 503', () => {
-    assert.equal(res.status, 200);
-    assert.notEqual(body.code, RECOGNITION_UNAVAILABLE_CODE);
-    assert.deepEqual(calls.map(c => c.provider), ['openrouter']);
-  });
-  check('the OpenRouter leg ranks the scanned card', () => {
-    assert.equal(body.debug.normalizedCardNumber, 'hbp04-005');
-    assert.equal(body.candidates[0].cardNumber, 'hBP04-005');
-    assert.equal(body.debug.provider, 'openrouter');
-    assert.equal(body.debug.model, 'google/gemini-2.5-flash');
-  });
-
-  const [or] = calls;
-  check('OpenRouter is called with the documented chat-completions shape', () => {
-    assert.equal(or.href, 'https://openrouter.ai/api/v1/chat/completions');
-    assert.equal(or.headers.Authorization, `Bearer ${OPENROUTER_KEY}`);
-    assert.equal(or.body.model, 'google/gemini-2.5-flash');
-    assert.equal(or.body.temperature, 0);
-    assert.equal(or.body.max_tokens, 180);
-    assert.equal(or.body.messages.length, 1);
-    assert.equal(or.body.messages[0].role, 'user');
-  });
-  check('OpenRouter carries the prompt plus BOTH full-frame and crop as data URIs', () => {
-    const content = or.body.messages[0].content;
-    assert.equal(content[0].type, 'text');
-    assert.ok(content[0].text.includes('CARD_NUMBER'), 'the real vision prompt must be sent');
-    const images = content.filter(p => p.type === 'image_url').map(p => p.image_url.url);
-    assert.deepEqual(images, [FULL_FRAME, CROP], 'losing the crop loses the tiny card number');
-    for (const url of images) assert.ok(url.startsWith('data:'), url);
-  });
+  const runtimeFiles = [
+    'api/recognize-card.ts',
+    'api/hello.ts',
+    'scripts/add-zh-names.js',
+    'scripts/translate-effects.js',
+  ];
+  // Patterns that indicate ACTIVE code (not documentation). Each would cause a
+  // real request to openrouter.ai if reintroduced.
+  const forbidden = [
+    { pattern: /openrouter\.ai\/api/i, label: 'openrouter.ai/api URL' },
+    { pattern: /openrouter\.ai\/v\d/i, label: 'openrouter.ai/v* URL' },
+    { pattern: /process\.env\.OPENROUTER/, label: 'process.env.OPENROUTER read' },
+    { pattern: /readKey\(['"]OPENROUTER/, label: 'readKey("OPENROUTER…") call' },
+    { pattern: /env\[['"]OPENROUTER/i, label: 'env["OPENROUTER…"] read' },
+    { pattern: /['"]HTTP-Referer['"]\s*:.*holohunter/i, label: 'OpenRouter HTTP-Referer header' },
+    { pattern: /['"]X-Title['"]/, label: 'OpenRouter X-Title header' },
+    { pattern: /google\/gemini-[\d.]+-flash['"]/i, label: 'OpenRouter model slug (google/gemini-*)' },
+  ];
+  for (const relPath of runtimeFiles) {
+    const source = fs.readFileSync(repo(relPath), 'utf8');
+    const lines = source.split('\n');
+    let violations = 0;
+    for (const { pattern, label } of forbidden) {
+      for (let i = 0; i < lines.length; i++) {
+        if (pattern.test(lines[i])) {
+          violations++;
+          check(`${relPath}:${i + 1} must not carry ${label}`, () => {
+            assert.fail(`OpenRouter code reintroduced at ${relPath}:${i + 1}: ${lines[i].trim()}`);
+          });
+        }
+      }
+    }
+    check(`${relPath}: no ACTIVE OpenRouter code path`, () => {
+      assert.equal(violations, 0, `${violations} forbidden pattern(s) found`);
+    });
+  }
 }
 
-// ── 2. Both keys present → Google direct wins, deterministically ──────────────
+// ── 2. Google present + OpenRouter env present: only Google is called ─────────
+// The inherited-key scenario the FinOps patrol flagged. Even with
+// OPENROUTER_API_KEY set on the process, the handler must not touch openrouter.ai.
 {
   const { res, body, calls } = await scan(
     { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY },
     {},
   );
-  check('both keys present: Google direct is used and OpenRouter is never called', () => {
-    assert.equal(res.status, 200);
+  check('inherited OPENROUTER_API_KEY does not cause any OpenRouter fetch', () => {
+    for (const call of calls) {
+      assert.notEqual(call.provider, 'openrouter', `unexpected OpenRouter call: ${JSON.stringify(call)}`);
+      assert.ok(!call.denylistTripped, 'OpenRouter denylist tripped — a fallback fetch was attempted');
+    }
     assert.deepEqual(calls.map(c => c.provider), ['gemini']);
+  });
+  check('Google direct still recognises when both env vars are present', () => {
+    assert.equal(res.status, 200);
     assert.equal(body.debug.provider, 'gemini');
     assert.equal(body.debug.model, 'gemini-2.5-flash');
+    assert.equal(body.candidates[0].cardNumber, 'hBP04-005');
   });
   const [google] = calls;
   check('the Google key travels in a header, never in the request URL', () => {
@@ -183,7 +195,7 @@ const check = (label, fn) => {
     assert.ok(!google.href.includes('key='), 'a ?key= URL leaks the secret into logs');
     assert.equal(google.headers['x-goog-api-key'], GOOGLE_KEY);
   });
-  check('the Google leg still sends both images inline', () => {
+  check('Google leg carries both frame and crop as inline data URIs', () => {
     const parts = google.body.contents[0].parts;
     assert.equal(parts[0].text.includes('CARD_NUMBER'), true);
     const inline = parts.filter(p => p.inline_data);
@@ -193,172 +205,73 @@ const check = (label, fn) => {
   });
 }
 
-// ── 3. Google upstream 5xx with OpenRouter available → documented: fall over ───
-// Trying the second provider strictly widens availability and changes nothing the
-// client can observe: if BOTH legs fail the handler still answers 5xx, so the
-// DIC-1013 "5xx → local OCR" contract is preserved (checked in 3b).
+// ── 3. OpenRouter-key-only environment: 503 fail-closed, no fetch attempted ───
+// This is the exact production risk the FinOps repair addresses: an unprovisioned
+// Google key + a stray OPENROUTER_API_KEY must NEVER "fall over" to OpenRouter.
 {
-  const { res, body, calls } = await scan(
-    { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY },
-    { google: 503 },
-  );
-  check('a Google upstream 5xx falls over to OpenRouter and still recognises', () => {
-    assert.deepEqual(calls.map(c => c.provider), ['gemini', 'openrouter']);
-    assert.equal(res.status, 200);
-    assert.equal(body.debug.provider, 'openrouter');
-    assert.equal(body.candidates[0].cardNumber, 'hBP04-005');
-  });
-}
-{
-  const { res, calls } = await scan(
-    { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY },
-    { google: 'network' },
-  );
-  check('a Google transport failure also falls over to OpenRouter', () => {
-    assert.deepEqual(calls.map(c => c.provider), ['gemini', 'openrouter']);
-    assert.equal(res.status, 200);
-  });
-}
-{
-  // A rejected key is not a valid key: Google 4xx must reach the fallback too,
-  // otherwise a typo'd GEMINI_API_KEY would disable recognition outright.
-  const { res, body, calls } = await scan(
-    { google: 'not-a-real-key', openrouter: OPENROUTER_KEY },
-    { google: 400 },
-  );
-  check('a Google key the upstream rejects falls over to OpenRouter', () => {
-    assert.deepEqual(calls.map(c => c.provider), ['gemini', 'openrouter']);
-    assert.equal(res.status, 200);
-    assert.equal(body.debug.provider, 'openrouter');
-  });
-}
-
-// ── 3b. Both providers down → the 5xx → local OCR contract is preserved ───────
-{
-  const { res, body, calls } = await scan(
-    { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY },
-    { google: 500, openrouter: 500 },
-  );
-  check('both providers down still answers 502, not 503', () => {
-    assert.deepEqual(calls.map(c => c.provider), ['gemini', 'openrouter']);
-    assert.equal(res.status, 502);
-    assert.notEqual(body.code, RECOGNITION_UNAVAILABLE_CODE);
-  });
-  check('both providers down stays an infrastructure failure, so the client runs OCR', () => {
-    assert.equal(isRecognitionInfrastructureFailure(res.status, body), true);
-  });
-}
-
-// ── 4. Neither key → the DIC-1013 503 contract, with no upstream call ─────────
-for (const env of [{}, { google: '   ', openrouter: '' }]) {
-  const { res, body, bytes, calls } = await scan(env, {});
-  const label = Object.keys(env).length ? 'blank' : 'absent';
-  check(`${label} provider keys answer 503 RECOGNITION_UNAVAILABLE`, () => {
+  const { res, body, calls, bytes } = await scan({ openrouter: OPENROUTER_KEY }, {});
+  check('OpenRouter-only env answers 503 RECOGNITION_UNAVAILABLE', () => {
     assert.equal(res.status, 503);
     assert.equal(body.success, false);
     assert.equal(body.code, RECOGNITION_UNAVAILABLE_CODE);
   });
-  check(`${label} provider keys never reach a provider`, () => {
-    assert.deepEqual(calls, []);
+  check('OpenRouter-only env issues no provider fetch at all', () => {
+    for (const call of calls) {
+      assert.notEqual(call.provider, 'openrouter', 'OpenRouter fallback was attempted');
+    }
+    // Only the database load may have run; no provider host may appear.
+    assert.deepEqual(calls, [], 'no provider call is permitted without a Google key');
   });
-  check(`${label} provider keys never name an env var over the wire`, () => {
+  check('OpenRouter-only env never names either env var over the wire', () => {
     assert.ok(!/GEMINI_API_KEY|OPENROUTER_API_KEY/.test(bytes), bytes);
+    assert.ok(!bytes.includes(OPENROUTER_KEY), bytes);
   });
 }
 
-// ── 5. No secret and no upstream body may cross the wire, on any path ─────────
+// ── 4. Google failure modes must not fall over to OpenRouter ─────────────────
+// Under the removed adapter, a Google 5xx / 4xx / transport error / hang used to
+// try OpenRouter next. Every one of these must now surface as a Google-only 502,
+// with the OpenRouter denylist untripped.
 {
-  const cases = [
-    ['both upstreams 500', { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY }, { google: 500, openrouter: 500 }],
-    ['both upstreams 401', { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY }, { google: 401, openrouter: 401 }],
-    ['both transports fail', { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY }, { google: 'network', openrouter: 'network' }],
-    ['OpenRouter-only outage', { openrouter: OPENROUTER_KEY }, { openrouter: 500 }],
-    ['successful scan', { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY }, {}],
+  const failureModes = [
+    ['upstream 500', { google: 500 }, 502],
+    ['upstream 401', { google: 401 }, 502],
+    ['transport failure', { google: 'network' }, 502],
+    ['empty reply', { googleReply: '' }, 502],
   ];
-  for (const [label, env, network] of cases) {
-    const { bytes } = await scan(env, network);
-    check(`${label}: no provider key value reaches the client`, () => {
-      assert.ok(!bytes.includes(GOOGLE_KEY), bytes);
-      assert.ok(!bytes.includes(OPENROUTER_KEY), bytes);
-      assert.ok(!/GEMINI_API_KEY|OPENROUTER_API_KEY|x-goog-api-key|Bearer/i.test(bytes), bytes);
+  for (const [label, network, expectedStatus] of failureModes) {
+    const { res, body, calls, bytes } = await scan(
+      { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY },
+      network,
+    );
+    check(`Google ${label} does not fall over to OpenRouter`, () => {
+      for (const call of calls) {
+        assert.notEqual(call.provider, 'openrouter', `OpenRouter fallback attempted after Google ${label}`);
+      }
+      assert.deepEqual(calls.map(c => c.provider), ['gemini']);
     });
-    check(`${label}: no upstream response body reaches the client`, () => {
+    check(`Google ${label} surfaces as ${expectedStatus}, not 200 via OpenRouter`, () => {
+      assert.equal(res.status, expectedStatus);
+      assert.notEqual(body.code, RECOGNITION_UNAVAILABLE_CODE, 'a real backend failure is not "unprovisioned"');
+    });
+    check(`Google ${label}: no OpenRouter key value leaks into the response`, () => {
+      assert.ok(!bytes.includes(OPENROUTER_KEY), bytes);
+      assert.ok(!bytes.includes(GOOGLE_KEY), bytes);
+      assert.ok(!/x-goog-api-key|Bearer/i.test(bytes), bytes);
       assert.ok(!bytes.includes('holo-secret-project'), bytes);
-      assert.ok(!bytes.includes('stack trace'), bytes);
     });
   }
 }
 
-// ── 6. Ranking output is identical whichever provider served the reply ────────
+// ── 5. A hung Google leg times out cleanly within the caller deadline ────────
+// With the sequential fallback gone, the single-leg budget is the whole vision
+// budget. It still has to land before the 15s client abort (DIC-1020 CR).
 {
-  const viaGoogle = await scan({ google: GOOGLE_KEY }, {});
-  const viaOpenRouter = await scan({ openrouter: OPENROUTER_KEY }, {});
-  const strip = (b) => {
-    const { debug, ...rest } = b;
-    const { provider, model, ...restDebug } = debug;
-    return { ...rest, debug: restDebug };
-  };
-  check('the same model reply ranks identically through either provider', () => {
-    assert.equal(viaGoogle.res.status, viaOpenRouter.res.status);
-    assert.deepEqual(strip(viaOpenRouter.body), strip(viaGoogle.body));
-  });
-  check('only the provider/model stamp differs between the two legs', () => {
-    assert.deepEqual(
-      [viaGoogle.body.debug.provider, viaOpenRouter.body.debug.provider],
-      ['gemini', 'openrouter'],
-    );
-  });
-}
-
-// ── 7. An empty provider reply is still the existing empty-response 502 ───────
-{
-  const { res, body } = await scan({ openrouter: OPENROUTER_KEY }, { openrouterReply: '' });
-  check('an empty OpenRouter reply keeps the existing 502 empty-response contract', () => {
-    assert.equal(res.status, 502);
-    assert.equal(body.success, false);
-    assert.equal(body.debug.provider, 'openrouter');
-  });
-}
-{
-  const { res, body, calls } = await scan(
-    { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY },
-    { googleReply: '' },
-  );
-  check('an empty Google reply retries on OpenRouter before giving up', () => {
-    assert.deepEqual(calls.map(c => c.provider), ['gemini', 'openrouter']);
-    assert.equal(res.status, 200);
-    assert.equal(body.debug.provider, 'openrouter');
-  });
-}
-
-// ── 8. Store MVP field-strip still holds on the fallback leg (DIC-908) ────────
-{
-  if (process.env.GEMINI_API_KEY) delete process.env.GEMINI_API_KEY;
-  process.env.OPENROUTER_API_KEY = OPENROUTER_KEY;
-  stubNetwork({});
-  const res = await post({ images: [FULL_FRAME, CROP], storeMvp: true });
-  const body = await res.json();
-  check('Store MVP fields stay stripped when OpenRouter served the scan', () => {
-    for (const candidate of body.candidates) {
-      assert.ok(!('buyPrice' in candidate), 'buyPrice must not cross the wire');
-      assert.ok(!('priceHistory' in candidate));
-      assert.ok(!('ytStats' in candidate));
-    }
-  });
-}
-
-// ── 9. The fallback has to land before the caller's own deadline (DIC-1020 CR) ─
-//
-// A fallback that only succeeds after ScanScreen has aborted is not a fallback: the
-// original head gave each leg 14s and ran them in sequence, so a hung Google plus a
-// 2s OpenRouter success answered at ~16.1s against a client that gave up at 15.0s.
-{
-  check('the whole provider chain is budgeted inside the caller deadline', () => {
+  check('the single-leg vision budget fits inside the caller deadline', () => {
     assert.ok(
       VISION_TOTAL_BUDGET_MS < RECOGNITION_REQUEST_TIMEOUT_MS,
       `vision budget ${VISION_TOTAL_BUDGET_MS}ms must fit inside the ${RECOGNITION_REQUEST_TIMEOUT_MS}ms client deadline`,
     );
-    // Ranking, the database load and the JSON round trip all happen outside the budget.
     assert.ok(
       RECOGNITION_REQUEST_TIMEOUT_MS - VISION_TOTAL_BUDGET_MS >= 3000,
       'the budget must leave headroom for ranking and the JSON round trip',
@@ -368,41 +281,38 @@ for (const env of [{}, { google: '   ', openrouter: '' }]) {
   const startedAt = Date.now();
   const { res, body, calls } = await scan(
     { google: GOOGLE_KEY, openrouter: OPENROUTER_KEY },
-    { google: 'hang', openrouterDelay: 2000 },
+    { google: 'hang' },
   );
   const elapsed = Date.now() - startedAt;
 
-  check('a hung Google leg times out and OpenRouter still recognises the card', () => {
-    assert.deepEqual(calls.map(c => c.provider), ['gemini', 'openrouter']);
-    assert.equal(res.status, 200);
-    assert.equal(body.debug.provider, 'openrouter');
-    assert.equal(body.candidates[0].cardNumber, 'hBP04-005');
+  check('a hung Google leg surfaces as an infrastructure failure, not an OpenRouter fallback', () => {
+    for (const call of calls) {
+      assert.notEqual(call.provider, 'openrouter', 'OpenRouter fallback attempted after hang');
+    }
+    assert.equal(res.status, 502);
+    assert.equal(isRecognitionInfrastructureFailure(res.status, body), true);
   });
-  check('that fallback answers well before the 15s client abort', () => {
+  check('a hung Google leg still returns well before the 15s client abort', () => {
     assert.ok(
-      elapsed < RECOGNITION_REQUEST_TIMEOUT_MS - 2000,
-      `fallback took ${elapsed}ms, the client aborts at ${RECOGNITION_REQUEST_TIMEOUT_MS}ms`,
+      elapsed < RECOGNITION_REQUEST_TIMEOUT_MS,
+      `hung leg took ${elapsed}ms, client aborts at ${RECOGNITION_REQUEST_TIMEOUT_MS}ms`,
     );
-  });
-  check('the primary leg is capped so it cannot starve the fallback behind it', () => {
-    const handedOverAfter = calls[1].at - calls[0].at;
-    assert.ok(
-      handedOverAfter < VISION_TOTAL_BUDGET_MS,
-      `primary leg held the budget for ${handedOverAfter}ms of ${VISION_TOTAL_BUDGET_MS}ms`,
-    );
-    assert.ok(handedOverAfter >= 1000, 'the primary leg must actually have been attempted');
   });
 }
 
-// A single configured provider is not capped — it may use the whole shared budget.
+// ── 6. Store MVP field strip still holds on the Google-only path (DIC-908) ────
 {
-  const startedAt = Date.now();
-  const { res, body } = await scan({ openrouter: OPENROUTER_KEY }, { openrouterDelay: 2000 });
-  const elapsed = Date.now() - startedAt;
-  check('a lone provider keeps answering normally under the shared budget', () => {
-    assert.equal(res.status, 200);
-    assert.equal(body.debug.provider, 'openrouter');
-    assert.ok(elapsed < RECOGNITION_REQUEST_TIMEOUT_MS - 2000, `took ${elapsed}ms`);
+  process.env.GEMINI_API_KEY = GOOGLE_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  stubNetworkWithOpenRouterDenylist({});
+  const res = await post({ images: [FULL_FRAME, CROP], storeMvp: true });
+  const body = await res.json();
+  check('Store MVP fields stay stripped on the Google-only recognition path', () => {
+    for (const candidate of body.candidates) {
+      assert.ok(!('buyPrice' in candidate), 'buyPrice must not cross the wire');
+      assert.ok(!('priceHistory' in candidate));
+      assert.ok(!('ytStats' in candidate));
+    }
   });
 }
 
@@ -412,4 +322,4 @@ if (savedOpenRouter === undefined) delete process.env.OPENROUTER_API_KEY;
 else process.env.OPENROUTER_API_KEY = savedOpenRouter;
 
 for (const label of results) console.log(`  ✓ ${label}`);
-console.log(`\n✅ recognition-provider-fallback: ${results.length} checks passed`);
+console.log(`\n✅ recognition-provider-fallback (DIC-1185 denylist): ${results.length} checks passed`);
