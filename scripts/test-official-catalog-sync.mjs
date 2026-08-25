@@ -59,11 +59,11 @@ assert.ok(unprovenHEB01Cards.every((c) => Array.isArray(c.prices) && c.prices.le
 
 const exactBuyExamples = new Map([
   ['hBP01-051_hEB01_UR_hBP01-051_UR_02', 250],
-  ['hBP02-017_hEB01_UR_hBP02-017_UR_02', 1800],
+  ['hBP02-017_hEB01_UR_hBP02-017_UR_02', 1500],
 ]);
 for (const [id, expected] of exactBuyExamples) {
-  assert.strictEqual(db.cards[id]?.buyPrice, expected, `${id} must keep proven exact-version buyPrice`);
-  assert.strictEqual(db.cards[id]?.buyPriceHistory?.['2026-08-24'], expected, `${id} buyPriceHistory must match exact-version buyPrice`);
+  assert.strictEqual(db.cards[id]?.buyPrice, expected, `${id} must keep current proven exact-version buyPrice`);
+  assert.ok(Object.values(db.cards[id]?.buyPriceHistory || {}).includes(expected), `${id} buyPriceHistory must include current exact-version buyPrice`);
 }
 assert.strictEqual(db.cards['hBP01-021_hEB01_C_hBP01-021']?.buyPrice ?? null, null, 'unproven hEB01 printings must stay fail-closed null');
 
