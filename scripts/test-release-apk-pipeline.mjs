@@ -120,8 +120,8 @@ const androidDoc = jobsOf(androidWorkflow);
 const BUILD_JOBS = Object.entries(easBuildDoc.jobs).filter(([, job]) =>
   // Command position only (line start, optionally via npx) so a step that merely
   // mentions `eas build` in an echo or a comment is not mistaken for a build.
-  // A build hidden inside `sh -c "…"` would evade this — deliberate obfuscation
-  // is a code-review problem, not something a config assertion can settle.
+  // A build hidden inside `sh -c "…"` would evade this: these assertions bind
+  // this document, and the contents of a shell string are not part of it.
   (job.steps ?? []).some(
     (step) => typeof step.run === 'string' && /^\s*(npx\s+)?eas\s+build\b/m.test(step.run),
   ),
