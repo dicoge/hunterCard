@@ -46,7 +46,16 @@ assert.ok(official.some((c) => c.cardNumber === 'hBP01-021' && c.rarity === 'HR'
 const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 const hEB01Cards = Object.values(db.cards || {}).filter((c) => c.sourceProduct === 'hEB01' || c.series === 'hEB01');
 assert.strictEqual(hEB01Cards.length, 214, 'database must contain 214 hEB01 printings');
-assert.ok(hEB01Cards.every((c) => c.sellPrice == null && Array.isArray(c.prices) && c.prices.length === 0), 'official sync must not invent retail sell prices or variant listings');
+const hEB01WithSellPayload = hEB01Cards.filter((c) => c.sellPrice != null || (Array.isArray(c.prices) && c.prices.length > 0));
+assert.ok(hEB01WithSellPayload.every((c) => (
+  Number.isFinite(c.sellPrice) &&
+  c.sellPrice > 0 &&
+  Array.isArray(c.prices) &&
+  c.prices.length > 0 &&
+  c.prices.every((p) => p && Number.isFinite(p.sellPrice) && p.sellPrice > 0 && p.rarity === c.rarity)
+)), 'hEB01 retail sell payloads are allowed only when preserved as proven exact-print prices');
+const unprovenHEB01Cards = hEB01Cards.filter((c) => c.sellPrice == null);
+assert.ok(unprovenHEB01Cards.every((c) => Array.isArray(c.prices) && c.prices.length === 0), 'unproven hEB01 printings must keep unknown sell prices null/empty');
 
 const exactBuyExamples = new Map([
   ['hBP01-051_hEB01_UR_hBP01-051_UR_02', 250],
