@@ -203,6 +203,12 @@ jobs:
       - name: Verify provider-neutral subscription domain fail-closed (DIC-1149)
         run: npm run test:subscription-domain
 
+      - name: Verify commercialization static HTML No-JS and copy-assets manifest (DIC-1157)
+        run: npm run test:dist-nojs
+
+      - name: Verify AdSlot real component render and fail-closed safety (DIC-1157)
+        run: npm run test:adslot-render
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)

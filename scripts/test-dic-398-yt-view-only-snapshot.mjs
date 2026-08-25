@@ -13,8 +13,8 @@ import { computeYtGrowth } from './build-database.js';
 // snapshot (neither metric wipes the other).
 {
   const history = [
-    { date: '2026-07-01', subscriberCount: 1000, totalViewCount: 500000 },
-    { date: '2026-07-08', subscriberCount: null, totalViewCount: 560000 },
+    { date: '2026-07-01', subscriberCount: 1000, totalViewCount: 500000, channelId: 'UC398aaaaaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1' },
+    { date: '2026-07-08', subscriberCount: null, totalViewCount: 560000, channelId: 'UC398aaaaaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1' },
   ];
   const stats = computeYtGrowth(history);
   assert.equal(stats.totalViewCount, 560000, 'view-only snapshot view count must survive');
@@ -27,8 +27,8 @@ import { computeYtGrowth } from './build-database.js';
 // view growth, with a null subscriberCount.
 {
   const history = [
-    { date: '2026-07-01', subscriberCount: null, totalViewCount: 100 },
-    { date: '2026-07-02', subscriberCount: null, totalViewCount: 150 },
+    { date: '2026-07-01', subscriberCount: null, totalViewCount: 100, channelId: 'UC398aaaaaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1' },
+    { date: '2026-07-02', subscriberCount: null, totalViewCount: 150, channelId: 'UC398aaaaaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1' },
   ];
   const stats = computeYtGrowth(history);
   assert.equal(stats.subscriberCount, null, 'no subscriber data → null');
@@ -39,8 +39,8 @@ import { computeYtGrowth } from './build-database.js';
 // A trailing subscriber-only snapshot must not wipe the last known view count.
 {
   const history = [
-    { date: '2026-07-01', subscriberCount: 1000, totalViewCount: 500000 },
-    { date: '2026-07-08', subscriberCount: 1200, totalViewCount: null },
+    { date: '2026-07-01', subscriberCount: 1000, totalViewCount: 500000, channelId: 'UC398aaaaaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1' },
+    { date: '2026-07-08', subscriberCount: 1200, totalViewCount: null, channelId: 'UC398aaaaaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1' },
   ];
   const stats = computeYtGrowth(history);
   assert.equal(stats.subscriberCount, 1200, 'subscriber-only snapshot sub count must survive');

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HoloHunter - Terms of Service & Subscription Terms / 服務與訂閱條款 (工程審核草案)</title>
+  <link rel="canonical" href="https://holohunter.dicoge.com/terms.html" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet" />
+  <noscript>
+    <style>
+      .content-section { display: block !important; margin-bottom: 40px; border-bottom: 1px dashed #2d3748; padding-bottom: 24px; }
+      .lang-toggle-container { display: none !important; }
+    </style>
+  </noscript>
+  <style>
+    :root {
+      --bg-color: #0f0f23;
+      --surface-color: #1a1a2e;
+      --surface-light: #252542;
+      --primary-color: #ff6b9d;
+      --primary-glow: rgba(255, 107, 157, 0.4);
+      --secondary-color: #6366f1;
+      --secondary-glow: rgba(99, 102, 241, 0.4);
+      --text-color: #ffffff;
+      --text-secondary: #a0aec0;
+      --border-color: #2d3748;
+      --error-color: #ef4444;
+      --accent-color: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Outfit', 'Noto Sans TC', 'Noto Sans JP', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      overflow-x: hidden;
+    }
+
+    .glow-bg {
+      position: absolute;
+      top: -150px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 700px;
+      height: 350px;
+      background: radial-gradient(circle, var(--secondary-glow) 0%, rgba(15,15,35,0) 70%);
+      filter: blur(50px);
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    main.container {
+      max-width: 850px;
+      width: 100%;
+      background: rgba(26, 26, 46, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 40px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    header { text-align: center; margin-bottom: 30px; }
+
+    h1.logo-glow {
+      font-size: 2.8rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    .subtitle { color: var(--text-secondary); font-size: 1.05rem; }
+
+    .draft-badge {
+      display: inline-block;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid var(--secondary-color);
+      color: #a5b4fc;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 12px;
+      margin-top: 8px;
+    }
+
+    .lang-toggle-container { display: flex; justify-content: center; margin-bottom: 30px; }
+
+    .lang-btn {
+      background: var(--surface-light);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 8px 18px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .lang-btn:first-child { border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
+    .lang-btn:last-child { border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
+
+    .lang-btn.active {
+      background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
+      color: var(--text-color);
+      border-color: transparent;
+    }
+
+    .content-section { display: none; }
+    .content-section.active { display: block; }
+
+    h2 { color: var(--text-color); font-size: 1.4rem; margin-top: 30px; margin-bottom: 14px; padding-bottom: 6px; border-bottom: 2px solid var(--border-color); }
+    p, li { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 12px; line-height: 1.7; }
+    ul, ol { margin-left: 20px; margin-bottom: 16px; }
+
+    .alert-card {
+      background: rgba(99, 102, 241, 0.1);
+      border-left: 4px solid var(--secondary-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 20px 0;
+    }
+
+    .alert-card p { color: var(--text-color); margin-bottom: 0; }
+
+    .links-footer { display: flex; justify-content: center; gap: 20px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border-color); }
+    .links-footer a { color: var(--secondary-color); text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+    footer { margin-top: 40px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="glow-bg"></div>
+  <main class="container">
+    <header>
+      <h1 class="logo-glow">HoloHunter</h1>
+      <div class="subtitle">Terms of Service & Subscription Policy / 服務與訂閱條款</div>
+      <div class="draft-badge">【工程審核草案 / Engineering Review Draft】</div>
+    </header>
+
+    <nav class="lang-toggle-container">
+      <button class="lang-btn active" onclick="switchLang('zh')">繁體中文</button>
+      <button class="lang-btn" onclick="switchLang('ja')">日本語</button>
+      <button class="lang-btn" onclick="switchLang('en')">English</button>
+    </nav>
+
+    <!-- ── 繁體中文 ── -->
+    <section id="content-zh" class="content-section active">
+      <p><em>工程審核草案更新日期：2026 年 8 月 24 日（需待產品負責人與法務最終確認）</em></p>
+      
+      <div class="alert-card">
+        <p><strong>⚠️ 免責與著作權聲明：</strong> HoloHunter 為玩家自主開發之<strong>非官方</strong>卡牌價格查詢與賽事分析工具，與 Cover 株式會社 (Cover Corp.) 或 hololive OFFICIAL CARD GAME 官方無任何關聯、授權或代言關係。卡牌名稱與相關圖像著作權均歸 Cover 株式會社所有。</p>
+      </div>
+
+      <h2>1. 服務條款接受 (Acceptance of Terms)</h2>
+      <p>當您下載、安裝或使用 HoloHunter App 及網站（<code>https://holohunter.dicoge.com/</code>，以下簡稱「本服務」），即表示您已閱讀、理解並同意受本服務條款約束。</p>
+
+      <h2>2. 使用者帳號與身分驗證</h2>
+      <ul>
+        <li>本服務採用 Google 帳號與 Sign in with Apple 第三方安全驗證（OAuth）。本服務不提供密碼註冊，亦不儲存任何使用者密碼。</li>
+        <li>使用者可以於同一 Internal User ID 綁定多個第三方驗證管道，以實現跨裝置資料與訂閱權限同步。</li>
+      </ul>
+
+      <h2>3. 數位訂閱服務條款與未來門檻 (Subscription Framework & Launch Gates)</h2>
+      <ul>
+        <li><strong>服務項目</strong>：HoloHunter Pro 訂閱解鎖「無限次數相機 OCR 掃描」、「AI 價格趨勢預測與動態分析」及「純淨無廣告體驗」。</li>
+        <li><strong>金流與支付處理商</strong>：
+          <ul>
+            <li>iOS App 內數位訂閱由 <strong>Apple StoreKit 2</strong> 處理與扣款。</li>
+            <li>Android App 內數位訂閱由 <strong>Google Play Billing</strong> 處理與扣款。</li>
+            <li>Web 網頁版數位訂閱由 <strong>Stripe Checkout</strong> 處理與扣款。</li>
+          </ul>
+        </li>
+        <li><strong>自動續訂規範 (Future Launch Gate)</strong>：所有訂閱方案均採自動續訂模式。系統將於當期計費週期結束前 24 小時內自動扣款續訂。取消續訂需至 Apple ID 設定、Google Play 訂閱管理或 Web 設定頁面辦理。現階段為工程測試草案，預設關閉真實交易。</li>
+      </ul>
+
+      <h2>4. 聯絡技術支援</h2>
+      <p>如有任何條款或訂閱相關疑問，請聯繫技術支援草案管道：<code>dicoge.chen@gmail.com</code>（開發者：dicoge）。</p>
+    </section>
+
+    <!-- ── 日本語 ── -->
+    <section id="content-ja" class="content-section">
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">日本語利用規約草案 (Japanese Terms Framework)</h2>
+      <div class="alert-card">
+        <p><strong>⚠️ 免責事項・著作権：</strong> HoloHunter はファンによって開発された<strong>非公式</strong>のカード価格検索・分析ツールです。カバー株式会社（Cover Corp.）および hololive OFFICIAL CARD GAME 公式とは一切関係ありません。</p>
+      </div>
+
+      <h2>1. 利用規約の同意</h2>
+      <p>HoloHunter アプリおよびウェブサイト（<code>https://holohunter.dicoge.com/</code>）を利用することにより、本規約に同意したものとみなされます。</p>
+
+      <h2>2. サブスクリプション利用規約 (テスト草案)</h2>
+      <ul>
+        <li><strong>サービス内容</strong>：Pro プランは「無制限カメラ OCR スキャン」「AI 価格トレンド予測」「広告非表示」を提供します。</li>
+        <li><strong>決済事業者</strong>：iOS は Apple StoreKit、Android は Google Play Billing、Web は Stripe 経由で決済が行われます。</li>
+      </ul>
+      <h2>3. お問い合わせ</h2>
+      <p>サポートメール（草案）：<code>dicoge.chen@gmail.com</code>（開発者：dicoge）</p>
+    </section>
+
+    <!-- ── English ── -->
+    <section id="content-en" class="content-section">
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">English Terms Framework</h2>
+      <div class="alert-card">
+        <p><strong>⚠️ Disclaimer:</strong> HoloHunter is an <strong>unofficial</strong> fan-made application and website for hololive OFFICIAL CARD GAME players. It is not affiliated with, endorsed, or authorized by Cover Corp.</p>
+      </div>
+
+      <h2>1. Acceptance of Terms</h2>
+      <p>By using the HoloHunter application or website (<code>https://holohunter.dicoge.com/</code>), you agree to be bound by these Terms of Service.</p>
+
+      <h2>2. Support Contact</h2>
+      <p>Support Email (Draft): <code>dicoge.chen@gmail.com</code> (Developer: dicoge)</p>
+    </section>
+
+    <nav class="links-footer">
+      <a href="pricing.html">🏷️ Pricing Plans / 訂閱方案草案</a>
+      <a href="privacy.html">🔒 Privacy Policy / 隱私權政策</a>
+      <a href="support.html">🛠️ Support & FAQ / 技術支援草案</a>
+    </nav>
+  </main>
+
+  <footer>
+    &copy; 2026 HoloHunter. Created for hololive PCG players.
+  </footer>
+
+  <script>
+    function switchLang(lang) {
+      document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
+      if (lang === 'zh') {
+        document.querySelectorAll('.lang-btn')[0].classList.add('active');
+        document.getElementById('content-zh').classList.add('active');
+      } else if (lang === 'ja') {
+        document.querySelectorAll('.lang-btn')[1].classList.add('active');
+        document.getElementById('content-ja').classList.add('active');
+      } else {
+        document.querySelectorAll('.lang-btn')[2].classList.add('active');
+        document.getElementById('content-en').classList.add('active');
+      }
+    }
+  </script>
+</body>
+</html>

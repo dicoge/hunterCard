@@ -33,7 +33,10 @@ function computeYtGrowth(history) {
   const latestStats = withStats.length ? withStats[withStats.length - 1] : null;
   const latestSubs = [...withStats].reverse().find((s) => s.subscriberCount != null) ?? null;
   const latestViews = [...withStats].reverse().find((s) => s.totalViewCount != null) ?? null;
-  const d = computeGrowthDeltas(withStats);
+  // Must mirror build-database.js: compute from the full sorted history so a
+  // trailing blank/parser-failure snapshot remains the latest evidence and
+  // fails closed instead of being filtered away.
+  const d = computeGrowthDeltas(sorted);
   const withNews = sorted.filter((s) => s.newsCount != null);
   const latestNews = withNews.length ? withNews[withNews.length - 1] : null;
 

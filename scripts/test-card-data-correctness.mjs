@@ -4,8 +4,11 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PriceTrend } from '../src/components/PriceTrend.tsx';
 import { hasDisplayableSubscriberStats, isValidatedTrendPrediction } from '../src/utils/cardNormalization.ts';
+import { buildSourcePrintings } from '../src/utils/printingIdentity.ts';
 import { computeValidatedPriceTrend } from '../src/utils/priceTrend.ts';
 import { computeYtGrowth } from './build-database.js';
+import { auditRecentSnapshots, computeGrowthDeltas } from './lib/yt-growth.js';
+import { isCanonicalCardNumber } from './lib/card-number.js';
 
 const identity = { cardNumber: 'hBP01-001', printing: 'BASE', currency: 'JPY' };
 
@@ -96,5 +99,54 @@ const provenZero = {
   fetchedAt: '2026-08-20T01:00:00Z',
 };
 assert.equal(hasDisplayableSubscriberStats(provenZero, Date.parse('2026-08-20T02:00:00Z')), true, 'authoritative fresh zero may display');
+
+assert.equal(isCanonicalCardNumber('hY01-014'), true, 'canonical yell card numbers are zero-padded');
+assert.equal(isCanonicalCardNumber('hY01-14'), false, 'malformed non-padded card numbers fail closed');
+
+const ambiguousPrintings = buildSourcePrintings([
+  { name: '白銀ノエル(パラレル)', sellPrice: 3480 },
+  { name: '白銀ノエル(パラレル)', sellPrice: 500 },
+]);
+assert.equal(ambiguousPrintings[0].ambiguous, true, 'conflicting same-label source printing is marked ambiguous');
+assert.equal(ambiguousPrintings[0].sellPrice, null, 'ambiguous printing price is hidden/unavailable, not guessed');
+
+const ytFixture = [
+  {
+    date: '2026-08-14', subscriberCount: 100000, totalViewCount: 1000,
+    channelId: 'UCFIXTUREaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1',
+    fetchedAt: '2026-08-14T00:00:00Z',
+  },
+  {
+    date: '2026-08-15', subscriberCount: 100000, totalViewCount: 1000,
+    channelId: 'UCFIXTUREaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1',
+    fetchedAt: '2026-08-15T00:00:00Z',
+  },
+  {
+    date: '2026-08-16', subscriberCount: 110000, totalViewCount: 1500,
+    channelId: 'UCOTHERaaaaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1',
+    fetchedAt: '2026-08-16T00:00:00Z',
+  },
+  {
+    date: '2026-08-24', subscriberCount: 120000, totalViewCount: 2500,
+    channelId: 'UCFIXTUREaaaaaaaaaaaaaa', source: 'youtube_about_ssr', parser: 'ytInitialData.aboutChannelViewModel/v1',
+    fetchedAt: '2026-08-24T00:00:00Z',
+  },
+];
+const recentAudit = auditRecentSnapshots(ytFixture, { limit: 4 });
+assert.equal(recentAudit.length, 4, 'recent-7 audit exposes bounded raw snapshot evidence');
+assert.equal(recentAudit.at(-1).views, 2500);
+assert.equal(recentAudit.at(-1).source, 'youtube_about_ssr');
+assert.equal(recentAudit.at(-1).parser, 'ytInitialData.aboutChannelViewModel/v1');
+assert.equal(recentAudit.at(-1).derivedDeltaDecision.viewCount_7d.rendered, true, 'same-provenance 7d view delta is renderable');
+assert.equal(recentAudit.at(-1).derivedDeltaDecision.viewCount_7d.delta, 1500);
+assert.equal(recentAudit[1].derivedDeltaDecision.viewCount_1d.rendered, false, 'stale identical view snapshot is hidden, not 0');
+assert.equal(recentAudit[1].derivedDeltaDecision.subscriberGrowth_1d.reason, 'rounded_or_below_precision');
+assert.equal(recentAudit[2].derivedDeltaDecision.viewCount_1d.reason, 'provenance_mismatch');
+assert.equal(computeGrowthDeltas(ytFixture.slice(0, 2)).viewCount_1d, null, 'true zero/stale daily views stays null');
+
+assert.match(cardDetailSource, /ytStats\?\.growth_1d != null/, 'subscriber daily growth row only renders non-null comparable deltas');
+assert.match(cardDetailSource, /ytStats\?\.viewCount_daily != null/, 'daily views row only renders non-null comparable deltas');
+const youtubeBlockSource = cardDetailSource.slice(cardDetailSource.indexOf('{/* YouTube'), cardDetailSource.indexOf('function InfoRow'));
+assert.doesNotMatch(youtubeBlockSource, /\?\?\s*0/, 'YouTube UI must not coerce missing growth baselines to 0');
 
 console.log('DIC-1084 mutation-sensitive card-data correctness checks passed');

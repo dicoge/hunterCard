@@ -108,11 +108,16 @@ export function adaptCardNumber(rows: RawCard[]): AdaptedCards {
   const rep = pickRepresentative(rows);
   const listings = rows.flatMap((row) => row.prices ?? []);
   const printings = buildSourcePrintings(listings);
+  const hasUnlistedBase = rows.some((row) => (row.prices ?? []).length === 0 && isClassifiable(row));
+  const hasListedBase = printings.some((printing) => printing.printing === BASE_PRINTING);
+  const resolvedPrintings = hasUnlistedBase && !hasListedBase
+    ? [UNLISTED, ...printings]
+    : printings;
   const timestamp = rep.timestamp || '';
 
   const cards: DeckCard[] = [];
   const priceRecords: PriceRecord[] = [];
-  for (const printing of printings.length > 0 ? printings : [UNLISTED]) {
+  for (const printing of resolvedPrintings.length > 0 ? resolvedPrintings : [UNLISTED]) {
     cards.push(toDeckCard(rep, printing));
     if (printing.sellPrice !== null) {
       priceRecords.push({
