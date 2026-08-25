@@ -133,8 +133,10 @@ const androidDoc = jobsOf(androidWorkflow);
  */
 const INVOKES_EAS_BUILD = (value) =>
   // `eas-cli` is the package name and `npx eas-cli build` is a real invocation;
-  // `[\s\\]+` also spans a backslash line-continuation between the two words.
-  typeof value === 'string' && /(^|[^\w.-])eas(-cli)?[\s\\]+build\b/.test(value);
+  // `(@…)?` covers the version-pinned forms (`npx eas-cli@latest build`), which
+  // are what npx documentation actually recommends; `[\s\\]+` also spans a
+  // backslash line-continuation between the two words.
+  typeof value === 'string' && /(^|[^\w.-])eas(-cli)?(@[^\s\\]+)?[\s\\]+build\b/.test(value);
 
 const BUILD_JOBS = Object.entries(easBuildDoc.jobs).filter(([, job]) =>
   (job.steps ?? []).some((step) => INVOKES_EAS_BUILD(step.run)),
@@ -629,6 +631,46 @@ const ALLOWED_BUILD_INVOCATIONS = [
     ].join('\n'),
   },
 ];
+
+/**
+ * The invocation forms the release gate claims to cover, asserted directly, so
+ * the docs and the matcher cannot drift apart again. Each new spelling that gets
+ * past a reviewer belongs in the covered list with a test, not in prose.
+ */
+function testBuildMatcherCoversKnownInvocationForms() {
+  const covered = [
+    'eas build --platform android',
+    'eas-cli build --platform android',
+    'npx eas build',
+    'npx eas-cli build',
+    'npx --yes eas-cli build',
+    'npx eas-cli@latest build --profile production-apk',
+    'npx eas-cli@22.3.0 build',
+    'pnpm dlx eas-cli@latest build',
+    'yarn eas build',
+    './node_modules/.bin/eas build',
+    'sh -c "eas build --platform android"',
+    'eas \\\n  build --platform android',
+  ];
+  const notCovered = [
+    'bash scripts/whatever.sh',
+    '$EAS build',
+    '${EAS_BIN} build',
+    'eas submit --platform android',
+    'releas build',
+    'my-eas build',
+    'eas.build',
+  ];
+  for (const form of covered) {
+    assert.ok(INVOKES_EAS_BUILD(form), `must be recognised as an eas build invocation: ${form}`);
+  }
+  for (const form of notCovered) {
+    assert.ok(
+      !INVOKES_EAS_BUILD(form),
+      `must NOT be treated as an eas build invocation (over-matching): ${form}`,
+    );
+  }
+}
 
 function testBuildInvocationsAreExhaustivelyPinned() {
   const invocations = enumerateBuildInvocations();
@@ -1144,6 +1186,7 @@ const tests = [
   testWorkflowOffersTheReleaseApkProfile,
   testGateStepsAreEnabledAndInvokeTheirGuards,
   testWorkflowStructureCannotBypassGates,
+  testBuildMatcherCoversKnownInvocationForms,
   testBuildInvocationsAreExhaustivelyPinned,
   testEveryBuildInvocationRunsAfterTheGuards,
   testWorkflowInputSchema,
