@@ -135,8 +135,10 @@ const INVOKES_EAS_BUILD = (value) =>
   // `eas-cli` is the package name and `npx eas-cli build` is a real invocation;
   // `(@…)?` covers the version-pinned forms (`npx eas-cli@latest build`), which
   // are what npx documentation actually recommends; `[\s\\]+` also spans a
-  // backslash line-continuation between the two words.
-  typeof value === 'string' && /(^|[^\w.-])eas(-cli)?(@[^\s\\]+)?[\s\\]+build\b/.test(value);
+  // backslash line-continuation between the two words. `(--\s+)?` covers
+  // `npm exec eas-cli -- build`, where the separator is mandatory for npm to
+  // pass flags through, so without it one valid placement would evade.
+  typeof value === 'string' && /(^|[^\w.-])eas(-cli)?(@[^\s\\]+)?[\s\\]+(--[\s\\]+)?build\b/.test(value);
 
 const BUILD_JOBS = Object.entries(easBuildDoc.jobs).filter(([, job]) =>
   (job.steps ?? []).some((step) => INVOKES_EAS_BUILD(step.run)),
@@ -647,6 +649,11 @@ function testBuildMatcherCoversKnownInvocationForms() {
     'npx eas-cli@latest build --profile production-apk',
     'npx eas-cli@22.3.0 build',
     'pnpm dlx eas-cli@latest build',
+    'npm exec eas-cli -- build --platform android',
+    'npm exec -- eas-cli@latest build',
+    'pnpm exec eas-cli -- build',
+    'yarn exec eas-cli -- build',
+    'bunx eas-cli build',
     'yarn eas build',
     './node_modules/.bin/eas build',
     'sh -c "eas build --platform android"',
