@@ -69,25 +69,7 @@ jobs:
         if: ${{ inputs.profile == 'production' || inputs.profile == 'production-apk' }}
         env:
           PROFILE: ${{ inputs.profile }}
-        run: |
-          set -euo pipefail
-          case "$GITHUB_REF" in
-            refs/heads/main)
-              echo "ref OK: main @ $GITHUB_SHA"
-              ;;
-            refs/tags/v*)
-              git fetch --no-tags --quiet origin main:refs/remotes/origin/main
-              if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
-                echo "::error::Release tag ${GITHUB_REF#refs/tags/} ($GITHUB_SHA) is not contained in main. A '$PROFILE' build may only be cut from reviewed, merged code."
-                exit 1
-              fi
-              echo "ref OK: tag ${GITHUB_REF#refs/tags/} @ $GITHUB_SHA (contained in main)"
-              ;;
-            *)
-              echo "::error::Profile '$PROFILE' may only be built from 'main' or a 'v*' release tag contained in main — got '$GITHUB_REF'. Merge to main first, then re-run."
-              exit 1
-              ;;
-          esac
+        run: bash scripts/ci/release-ref-guard.sh
 
       # A production-content APK is a sideload artifact. Google Play accepts an
       # AAB for this app (`production` profile) — never route an APK at a store.
@@ -96,16 +78,7 @@ jobs:
         env:
           PLATFORM: ${{ inputs.platform }}
           SUBMIT: ${{ inputs.submit }}
-        run: |
-          set -euo pipefail
-          if [ "$PLATFORM" != "android" ]; then
-            echo "::error::profile=production-apk is Android-only (got platform='$PLATFORM'). Use profile=production for iOS."
-            exit 1
-          fi
-          if [ "$SUBMIT" = "true" ]; then
-            echo "::error::profile=production-apk cannot be submitted — Play Internal Testing takes the AAB from profile=production. Re-run with submit=false, or use profile=production to submit."
-            exit 1
-          fi
+        run: bash scripts/ci/release-apk-usage-guard.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -157,14 +130,7 @@ jobs:
             --non-interactive \
             --json \
             --wait > eas-build-raw.json
-          # `eas build --json` returns an array; normalise so a single-object
-          # response from a future CLI version cannot silently break `.[0]`.
-          jq 'if type == "array" then .[0] else . end' eas-build-raw.json > eas-build.json
-          STATUS="$(jq -r '.status // empty' eas-build.json)"
-          if [ "$STATUS" != "FINISHED" ]; then
-            echo "::error::EAS build did not finish (status=$STATUS). See https://expo.dev/accounts/dicoge/projects/holohunter/builds"
-            exit 1
-          fi
+          bash scripts/ci/release-apk-build-status.sh eas-build-raw.json eas-build.json
 
       # apksigner is a JVM tool — pin the JDK instead of relying on whatever the
       # runner image happens to ship.
@@ -196,69 +162,7 @@ jobs:
       # exact failure mode DIC-1193 exists to prevent.
       - name: Verify signature and record build provenance
         if: ${{ inputs.profile == 'production-apk' }}
-        run: |
-          set -euo pipefail
-          ARTIFACT_URL="$(jq -r '.artifacts.applicationArchiveUrl // .artifacts.buildUrl // empty' eas-build.json)"
-          if [ -z "$ARTIFACT_URL" ]; then
-            echo "::error::EAS build finished but reported no application archive URL."
-            exit 1
-          fi
-          BUILD_ID="$(jq -r '.id // empty' eas-build.json)"
-          APP_VERSION="$(jq -r '.appVersion // empty' eas-build.json)"
-          VERSION_CODE="$(jq -r '.appBuildVersion // empty' eas-build.json)"
-          # An APK nobody can trace back to a version is not deliverable, so a
-          # missing provenance field fails the run rather than shipping blanks.
-          for field in BUILD_ID APP_VERSION VERSION_CODE; do
-            if [ -z "${!field}" ]; then
-              echo "::error::EAS build JSON carried no $field — refusing to publish an APK without complete provenance. Check the eas build --json schema."
-              exit 1
-            fi
-          done
-
-          curl -fsSL "$ARTIFACT_URL" -o holohunter-production.apk
-          APK_SHA256="$(sha256sum holohunter-production.apk | cut -d' ' -f1)"
-
-          apksigner verify --verbose --print-certs holohunter-production.apk | tee apksigner-verify.txt
-          if grep -qi 'CN=Android Debug' apksigner-verify.txt; then
-            echo "::error::APK is signed with the Android DEBUG certificate — refusing to publish it as a production-content build."
-            exit 1
-          fi
-          SIGNER_DN="$(grep -m1 'certificate DN:' apksigner-verify.txt | sed 's/.*certificate DN: //' || true)"
-          SIGNER_SHA256="$(grep -m1 'certificate SHA-256 digest:' apksigner-verify.txt | sed 's/.*digest: //' || true)"
-          if [ -z "$SIGNER_DN" ] || [ -z "$SIGNER_SHA256" ]; then
-            echo "::error::Could not read the signer certificate out of apksigner output (format drift?). Refusing to publish an APK whose signer was not positively identified — see the apksigner-verify.txt artifact."
-            exit 1
-          fi
-
-          jq -n \
-            --arg profile "production-apk" \
-            --arg ref "$GITHUB_REF" \
-            --arg commit "$GITHUB_SHA" \
-            --arg buildId "$BUILD_ID" \
-            --arg appVersion "$APP_VERSION" \
-            --arg versionCode "$VERSION_CODE" \
-            --arg apkSha256 "$APK_SHA256" \
-            --arg signerDn "$SIGNER_DN" \
-            --arg signerCertSha256 "$SIGNER_SHA256" \
-            --arg artifactUrl "$ARTIFACT_URL" \
-            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            '$ARGS.named' > build-provenance.json
-          cat build-provenance.json
-
-          {
-            echo "### HoloHunter production-content APK (DIC-1193)"
-            echo ""
-            echo "| field | value |"
-            echo "| --- | --- |"
-            echo "| commit | \`$GITHUB_SHA\` |"
-            echo "| ref | \`$GITHUB_REF\` |"
-            echo "| version | \`$APP_VERSION\` (versionCode \`$VERSION_CODE\`) |"
-            echo "| EAS build | \`$BUILD_ID\` |"
-            echo "| APK SHA-256 | \`$APK_SHA256\` |"
-            echo "| signer DN | \`$SIGNER_DN\` |"
-            echo ""
-            echo "Signature verified by apksigner and confirmed NOT the Android debug certificate."
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: bash scripts/ci/release-apk-verify.sh eas-build.json holohunter-production.apk
 
       - name: Upload production APK + provenance
         if: ${{ inputs.profile == 'production-apk' }}
