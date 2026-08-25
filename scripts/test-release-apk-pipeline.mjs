@@ -123,7 +123,56 @@ function parseSteps(workflow) {
     if (key[2] === 'uses') current.uses = key[3].trim();
     if (key[2] === 'run') current.run = true;
   }
+  for (const step of steps) {
+    step.command = stepCommand(step.body);
+    step.env = stepEnv(step.body);
+  }
   return steps;
+}
+
+/**
+ * The exact shell a step runs, dedented — inline `run: cmd` and block `run: |`
+ * alike. Gate steps are compared against this verbatim: a denylist of neutering
+ * tokens is endless (`|| true`, `|| echo x`, `; exit 0`, `set +e`, wrapping the
+ * call in `if ! ...; then`), whereas an exact match rejects all of them at once
+ * (CR DIC-1193 round 2).
+ */
+function stepCommand(body) {
+  const KEY_INDENT = 8;
+  const lines = body.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const inline = lines[i].match(new RegExp(`^ {${KEY_INDENT}}run:\\s*(.+)$`));
+    if (!inline) continue;
+    if (!/^[|>]-?$/.test(inline[1].trim())) return inline[1].trim();
+    const block = [];
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (lines[j].trim() === '') {
+        block.push('');
+        continue;
+      }
+      if (!lines[j].startsWith(' '.repeat(KEY_INDENT + 2))) break;
+      block.push(lines[j].slice(KEY_INDENT + 2));
+    }
+    return block.join('\n').trim();
+  }
+  return null;
+}
+
+/** The step's `env:` mapping — a renamed key silently feeds a guard an empty value. */
+function stepEnv(body) {
+  const KEY_INDENT = 8;
+  const lines = body.split('\n');
+  const start = lines.findIndex((line) => line === `${' '.repeat(KEY_INDENT)}env:`);
+  if (start < 0) return null;
+  const env = {};
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === '') continue;
+    if (!lines[i].startsWith(' '.repeat(KEY_INDENT + 2))) break;
+    const entry = lines[i].trim().match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+    if (!entry) break;
+    env[entry[1]] = entry[2].trim();
+  }
+  return env;
 }
 
 const easBuildSteps = parseSteps(easBuildWorkflow);
@@ -274,21 +323,36 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
       name: 'Guard release builds to main or a release tag',
       if: "${{ inputs.profile == 'production' || inputs.profile == 'production-apk' }}",
       mustInvoke: SCRIPTS.refGuard,
+      command: `bash ${SCRIPTS.refGuard}`,
+      env: { PROFILE: '${{ inputs.profile }}' },
     },
     {
       name: 'Guard production-apk usage',
       if: RELEASE_APK_ONLY,
       mustInvoke: SCRIPTS.usageGuard,
+      command: `bash ${SCRIPTS.usageGuard}`,
+      env: { PLATFORM: '${{ inputs.platform }}', SUBMIT: '${{ inputs.submit }}' },
     },
     {
       name: 'EAS Build (production APK, wait for artifact)',
       if: RELEASE_APK_ONLY,
       mustInvoke: SCRIPTS.buildStatus,
+      command: [
+        'set -euo pipefail',
+        'eas build \\',
+        '  --platform android \\',
+        '  --profile production-apk \\',
+        '  --non-interactive \\',
+        '  --json \\',
+        '  --wait > eas-build-raw.json',
+        `bash ${SCRIPTS.buildStatus} eas-build-raw.json eas-build.json`,
+      ].join('\n'),
     },
     {
       name: 'Verify signature and record build provenance',
       if: RELEASE_APK_ONLY,
       mustInvoke: SCRIPTS.verify,
+      command: `bash ${SCRIPTS.verify} eas-build.json holohunter-production.apk`,
     },
     { name: 'Setup Java', if: RELEASE_APK_ONLY, uses: 'actions/setup-java@v4' },
     // Tool provisioning, not a gate: `sdkmanager --licenses` is allowed its
@@ -320,6 +384,25 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
       assert.ok(
         step.body.includes(gate.mustInvoke),
         `"${gate.name}" must invoke ${gate.mustInvoke}; its behaviour is asserted by executing that script`,
+      );
+    }
+    // Pinned verbatim: the gate scripts are what the behaviour tests execute,
+    // so the step must run exactly them — no `|| echo`, no trailing `exit 0`,
+    // no `set +e`, no `if ! guard; then` inversion.
+    if (gate.command) {
+      assert.equal(
+        step.command,
+        gate.command,
+        `"${gate.name}" must run exactly:\n${gate.command}\n\n…but runs:\n${step.command}`,
+      );
+    }
+    // A renamed env key feeds the guard an empty value while every other
+    // assertion still passes.
+    if (gate.env) {
+      assert.deepEqual(
+        step.env,
+        gate.env,
+        `"${gate.name}" must pass exactly ${JSON.stringify(gate.env)} to its guard script — got ${JSON.stringify(step.env)}`,
       );
     }
     // A gate whose failure is swallowed is not a gate.
