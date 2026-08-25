@@ -64,8 +64,11 @@ function resolveProfile(name, seen = new Set()) {
 function parseSteps(workflow) {
   const steps = [];
   let current = null;
+  // Anchored at the real step indent so a `- name:` line inside a heredoc or
+  // any other block scalar cannot forge a step.
+  const STEP_INDENT = 6;
   for (const line of workflow.split('\n')) {
-    const start = line.match(/^(\s*)- name:\s*(.+?)\s*$/);
+    const start = line.match(new RegExp(`^( {${STEP_INDENT}})- name:\\s*(.+?)\\s*$`));
     if (start) {
       current = { name: start[2], indent: start[1].length, if: null, uses: null, run: false };
       steps.push(current);
@@ -270,7 +273,10 @@ function testDebugApkWorkflowIsLabelledDebugOnly() {
 
 function testReleaseGateStepsAreEnabled() {
   const gates = [
-    ['Guard release builds to main or a release tag', null],
+    [
+      'Guard release builds to main or a release tag',
+      "${{ inputs.profile == 'production' || inputs.profile == 'production-apk' }}",
+    ],
     ['Guard production-apk usage', RELEASE_APK_ONLY],
     ['EAS Build (production APK, wait for artifact)', RELEASE_APK_ONLY],
     ['Setup Java', RELEASE_APK_ONLY],
@@ -333,6 +339,21 @@ function testGuardsRunBeforeAnythingIsBuilt() {
     lastGuard >= 0 && lastGuard < firstBuild,
     'both release guards must run before any EAS setup/build step, so a bad ref fails immediately instead of after a build',
   );
+
+  // apksigner and sdkmanager are JVM tools: the pinned JDK has to land first,
+  // and the signature check has to come after the tool that performs it.
+  const chain = [
+    'Setup Java',
+    'Install Android build-tools (apksigner)',
+    'Verify signature and record build provenance',
+    'Upload production APK + provenance',
+  ];
+  for (let i = 1; i < chain.length; i += 1) {
+    assert.ok(
+      index(chain[i - 1]) >= 0 && index(chain[i - 1]) < index(chain[i]),
+      `eas-build.yml step order is wrong: "${chain[i - 1]}" must come before "${chain[i]}"`,
+    );
+  }
 }
 
 const tests = [
