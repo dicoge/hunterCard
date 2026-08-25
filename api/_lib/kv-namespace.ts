@@ -1,44 +1,76 @@
 // DIC-1189: KV key namespace guard.
 //
 // The staging deployment is required to have its OWN Vercel KV / Upstash
-// instance provisioned by the dic1189 setup workflow (independent resource).
-// This namespace layer is defence-in-depth for the case where the staging KV
-// instance ends up co-tenanted with production (workflow degrade path, manual
-// misconfig, forgotten secret): every write from a staging process is scoped
-// under `staging:` so it can never collide with or overwrite a production key,
-// and every read/write in production is byte-identical to what shipped before
-// (no prefix), so switching this module in has zero effect on the live
-// production data path.
+// instance provisioned by the dic1189 setup workflow. This namespace layer is
+// defence-in-depth for the case where the staging KV instance ever ends up
+// co-tenanted with production: every write from a staging process is scoped
+// under `staging:` so it can never collide with or overwrite a production
+// key. In production nsKey() returns the bare key so wire format is
+// byte-identical to pre-DIC-1189.
 //
-// Fail-closed rule: nsKey() reads APP_ENV via resolveAppEnv() which itself
-// fails closed to production on unknown values, so a corrupted/missing env in
-// a staging Vercel deployment would degrade to production behaviour (bare
-// keys) — the *deployment* is broken at that point (banner/noindex also
-// missing), which is what we want a human to see and fix rather than
-// silently mixing traffic.
+// Rework-blocker #2: nsKey() uses resolveAppEnvStrict() — missing / unknown
+// APP_ENV throws AppEnvUnresolved rather than silently returning a bare
+// production key. On production the Vercel project MUST set
+// APP_ENV=production explicitly for this to succeed; the dic1189 setup
+// workflow's `set-production-app-env` step (guarded, idempotent, no other
+// mutation) makes that true on `holocard-hunter` in the same apply run.
 
-import { resolveAppEnv } from '../../src/config/appEnv';
+import { AppEnvUnresolved, resolveAppEnvStrict } from '../../src/config/appEnv';
+import { PAYMENT_ENV_VARS, assertPaymentEnv } from './env-guard';
 
 export const STAGING_KV_PREFIX = 'staging:';
+
+// DIC-1189 rework-blocker #6: run assertPaymentEnv() at module import so any
+// endpoint that transitively imports kv-namespace (all API paths that touch
+// KV — auth, push, account-sync, apple-exchange, token-replay) has the
+// payment env cross-checked BEFORE it serves its first request. Serverless
+// cold starts import this module once per process, so the check runs once
+// per instance.
+//
+// Silent no-op when APP_ENV is unset AND no payment env vars are present:
+// the check is "the environment is unattributed AND has no payment
+// exposure", which describes local tests / dev — we don't want the boot
+// guard to break every test script whose runner didn't happen to set
+// APP_ENV. But if either the environment is attributed OR any payment
+// secret is set, we enforce the full guard (attribution required plus
+// credential/mode/webhook agreement).
+(function bootGuard() {
+  const hasPaymentEnv = PAYMENT_ENV_VARS.some(({ name }) => {
+    const raw = process.env[name];
+    return typeof raw === 'string' && raw.length > 0;
+  });
+  try {
+    assertPaymentEnv();
+  } catch (err) {
+    if (err instanceof AppEnvUnresolved && !hasPaymentEnv) {
+      // Unattributed environment with no payment exposure — allow. First
+      // nsKey() call will still throw AppEnvUnresolved if this deployment
+      // actually tries to use KV.
+      return;
+    }
+    // Attributed env with a real mismatch, OR unattributed env WITH
+    // payment env exposure — fail closed.
+    throw err;
+  }
+})();
 
 /**
  * Namespace a KV key for the current APP_ENV.
  *
- * - production / unset / unknown → returns `key` unchanged (production data
- *   path is byte-identical to pre-DIC-1189).
- * - staging → returns `staging:${key}` unless the key ALREADY carries the
- *   prefix (idempotent so wrappers can be composed without double-prefixing).
+ * - APP_ENV=production → returns `key` unchanged.
+ * - APP_ENV=staging    → returns `staging:${key}` (idempotent — a key that
+ *   already carries the prefix is returned unchanged).
+ * - anything else      → throws AppEnvUnresolved (fail closed).
  *
- * Bare-key defence: staging callsites must NOT pass an empty key or a key that
- * begins with the raw prefix as a way of "opting out" of the namespace. Empty
- * keys throw; deliberately double-prefixed keys are collapsed to a single
- * prefix (idempotent).
+ * Bare-key defence: empty keys throw; deliberately double-prefixed keys are
+ * collapsed to a single prefix.
  */
 export function nsKey(key: string): string {
   if (typeof key !== 'string' || key.length === 0) {
     throw new Error('nsKey: key must be a non-empty string');
   }
-  if (resolveAppEnv() !== 'staging') return key;
+  const appEnv = resolveAppEnvStrict();
+  if (appEnv !== 'staging') return key;
   if (key.startsWith(STAGING_KV_PREFIX)) return key;
   return `${STAGING_KV_PREFIX}${key}`;
 }
@@ -58,7 +90,7 @@ export function nsKeys(keys: readonly string[]): string[] {
  * mistakes at the boundary instead of after data lands in the wrong lane.
  */
 export function assertNamespaced(key: string): void {
-  if (resolveAppEnv() !== 'staging') return;
+  if (resolveAppEnvStrict() !== 'staging') return;
   if (!key.startsWith(STAGING_KV_PREFIX)) {
     throw new Error(
       `assertNamespaced: staging KV key "${key}" is missing the "${STAGING_KV_PREFIX}" prefix — refuse to write to production namespace.`,

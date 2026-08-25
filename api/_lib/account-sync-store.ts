@@ -10,6 +10,10 @@ import { kv } from '@vercel/kv';
 import type { PriceAlert } from '../../src/utils/priceAlerts';
 import type { CurrencyCode, LanguageCode } from '../../src/store/settingsStore';
 import type { Deck, DeckCard, DeckOrigin, DeckSlot, DeckZone } from '../../src/utils/deckRules';
+// DIC-1189: every KV key here must be namespaced per APP_ENV so a staging
+// account-sync write can never leak into a production user's snapshot.
+// nsKey() throws on missing/unknown APP_ENV — fail closed.
+import { nsKey } from './kv-namespace';
 
 // Defense-in-depth upper bound on a stored alert price. Kept in sync with the
 // client's MAX_ALERT_PRICE (src/utils/priceAlerts.ts) but declared locally so
@@ -90,10 +94,10 @@ export class AccountSyncError extends Error {
   }
 }
 
-const SYNC_KEY = (userId: string) => `account-sync:user:${userId}`;
-const IDEMPOTENCY_KEY = (userId: string, key: string) => `account-sync:idempotency:${userId}:${key}`;
-const IDEMPOTENCY_INDEX_KEY = (userId: string) => `account-sync:idempotency-index:${userId}`;
-const DELETION_FENCE_KEY = (userId: string) => `account-sync:deleted:${userId}`;
+const SYNC_KEY = (userId: string) => nsKey(`account-sync:user:${userId}`);
+const IDEMPOTENCY_KEY = (userId: string, key: string) => nsKey(`account-sync:idempotency:${userId}:${key}`);
+const IDEMPOTENCY_INDEX_KEY = (userId: string) => nsKey(`account-sync:idempotency-index:${userId}`);
+const DELETION_FENCE_KEY = (userId: string) => nsKey(`account-sync:deleted:${userId}`);
 const IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24;
 
 const SAVE_SNAPSHOT = `-- ACCOUNT_SYNC_SAVE

@@ -31,11 +31,44 @@ function readRaw(): string {
   return typeof raw === 'string' ? raw.trim().toLowerCase() : '';
 }
 
+// LENIENT resolver — used by UI / feature-flag code (StagingBanner,
+// STAGING_ONLY) where the fail-closed direction is "do not show staging
+// affordances". Missing / unknown values resolve to production so the client
+// bundle can never leak the staging banner or an experimental surface into
+// an unattributed environment.
 export function resolveAppEnv(): AppEnv {
   const raw = readRaw();
   if (raw === 'staging') return 'staging';
   // production / unset / whitespace / typo / unknown → fail-closed to production.
   return 'production';
+}
+
+// STRICT resolver — used by the KV namespace guard, the payment env guard,
+// and every other data-path where the fail-closed direction is "throw rather
+// than pick a lane" (rework-blocker #2/#6). Only recognises the two explicit
+// sentinel values; anything else throws AppEnvUnresolved so bare production
+// keys / secrets are never returned by silent default. On production Vercel
+// deployments APP_ENV MUST be set to 'production' for the KV / payment paths
+// to succeed — the dic1189 setup workflow's `set-production-app-env` step is
+// what makes that true on `holocard-hunter` (production project).
+export class AppEnvUnresolved extends Error {
+  readonly raw: string;
+  constructor(raw: string) {
+    super(
+      raw
+        ? `APP_ENV / EXPO_PUBLIC_APP_ENV is set to ${JSON.stringify(raw)} which is neither 'production' nor 'staging' — refusing to guess a lane.`
+        : "APP_ENV / EXPO_PUBLIC_APP_ENV is unset — refusing to guess a lane. Set APP_ENV='production' or APP_ENV='staging' on this deployment.",
+    );
+    this.name = 'AppEnvUnresolved';
+    this.raw = raw;
+  }
+}
+
+export function resolveAppEnvStrict(): AppEnv {
+  const raw = readRaw();
+  if (raw === 'staging') return 'staging';
+  if (raw === 'production') return 'production';
+  throw new AppEnvUnresolved(raw);
 }
 
 export const APP_ENV: AppEnv = resolveAppEnv();

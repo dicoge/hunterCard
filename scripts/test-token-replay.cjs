@@ -71,7 +71,9 @@ function compileTs(relPath) {
   fs.writeFileSync(output, compiled.outputText);
 }
 
-['api/_lib/identity-store.ts', 'api/_lib/verify-token.ts', 'api/_lib/token-replay.ts',
+[// DIC-1189 boot deps.
+ 'src/config/appEnv.ts', 'api/_lib/env-guard.ts', 'api/_lib/kv-namespace.ts',
+ 'api/_lib/identity-store.ts', 'api/_lib/verify-token.ts', 'api/_lib/token-replay.ts',
  'api/_lib/session.ts', 'api/_lib/auth-endpoint.ts'].forEach(compileTs);
 const endpoint = require(path.join(outDir, 'api/_lib/auth-endpoint.js'));
 

@@ -3,53 +3,42 @@ name: DIC-1189 Staging Vercel + DNS Setup
 # One-time, auditable, manual-dispatch tool that stands up the isolated
 # staging deployment for HoloHunter — the mirror of dic910-vercel-setup.yml
 # for the new holohunter-staging Vercel project. Every step is idempotent
-# (check first, mutate only when needed) so re-runs are safe and each step
-# either advances the state or reports the exact platform boundary it hit.
+# (check first, mutate only when needed) so re-runs are safe.
 #
-# What it does (all under a NEW `holohunter-staging` project — the production
-# `holocard-hunter` project, its production branch, its production domain,
-# and the production APK build config are NEVER touched):
-#
-#   1. Resolve or create the `holohunter-staging` Vercel project.
-#   2. Link that project to github.com/dicoge/hunterCard with production
-#      branch = `staging` (so auto-deploys follow the staging branch only).
-#   3. Attempt to provision an independent Vercel KV / Upstash Redis instance
-#      for staging. If the Storage API is unavailable / denied at this token
-#      scope, we log the exact HTTP response and leave the platform boundary
-#      visible — the `staging:` KV namespace guard (api/_lib/kv-namespace.ts)
-#      remains as defence-in-depth so co-tenanted keys never collide.
-#   4. Set the staging-only project env (APP_ENV, EXPO_PUBLIC_APP_ENV,
-#      EXPO_PUBLIC_SITE_URL, KV_REST_API_URL/TOKEN, and every other var the
-#      staging deployment needs). Idempotent: every key is deleted then
-#      re-written so re-runs don't error on duplicates. Secret values are
-#      NEVER echoed to the log.
-#   5. Attach `test.holohunter.dicoge.com` to the project. Reports Vercel's
-#      expected DNS target without ever touching the apex or the production
-#      `holohunter.dicoge.com` subdomain.
-#   6. Add the CNAME record to the `dicoge.com` zone via Vercel DNS
-#      (authoritative NS = ns1/ns2.vercel-dns.com — verified via public
-#      DoH). Idempotent: no-op when the record already exists.
-#   7. Trigger a fresh production deployment on the staging branch and smoke
-#      test the resulting public URL (HTTP 200, robots meta present,
-#      app-env=staging meta present, expected staging-sha meta).
-#
-# Required repo secrets (already present, verified working by the DIC-910
-# workflow that shipped the production wiring):
-#   VERCEL_TOKEN, VERCEL_ORG_ID
-# Reused secrets (mirrored into the staging project so auth works there too):
-#   AUTH_SESSION_SECRET, EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-#   GOOGLE_WEB_CLIENT_ID, PUSH_NOTIFY_SECRET, GEMINI_API_KEY
-#
-# Nothing here prints secret values. curl uses --oauth2-bearer so the token
-# is passed directly to curl by value, never rendered onto the command line.
-# Every mutating API call is preceded by a read that establishes whether the
-# mutation is needed at all.
+# Rework highlights (post-DIC-1191 VERDICT:FAIL):
+#   - Concurrency guard: only ONE run of this workflow ever executes at
+#     once (rework-blocker #7) — prevents interleaved project-create /
+#     env-write races.
+#   - Independent staging KV is a HARD PRECONDITION: apply mode fails
+#     outright if the Vercel Storage API cannot create the staging KV.
+#     No degrade-to-shared behaviour (rework-blocker #1).
+#   - APP_ENV=production is set on the EXISTING holocard-hunter production
+#     project as part of the same apply — this is the ONE production
+#     mutation this workflow makes, required so the kv-namespace + payment
+#     env-guard fail-closed rules can accept production traffic
+#     (rework-blocker #2).
+#   - Staging uses SEPARATE session + push secrets (AUTH_SESSION_SECRET_
+#     STAGING, PUSH_NOTIFY_SECRET_STAGING) — never the production ones
+#     (rework-blocker #3).
+#   - curl calls have bounded --connect-timeout / --max-time and up to 3
+#     --retry attempts on transient failures (rework-blocker #7).
+#   - Env replacement is transactional: POST first, verify success, THEN
+#     delete the prior entry — the good value is never removed before its
+#     replacement has landed (rework-blocker #7).
+#   - DNS attach validates existing record ownership before treating a 409
+#     as no-op: a CNAME pointing at the wrong target fails the workflow
+#     (rework-blocker #7).
+#   - Smoke checks are FATAL (exit 1) not warnings, use bounded polling
+#     for the deployment to go live, and assert HTTP 200 + TLS + noindex
+#     + app-env=staging + EXACT expected SHA (rework-blocker #5).
+#   - Production non-regression check ALWAYS runs (even in probe mode)
+#     and is fatal on any staging marker leaking into prod HTML.
 
 on:
   workflow_dispatch:
     inputs:
       apply:
-        description: "false = probe only (read-only, safe smoke test of VERCEL_TOKEN scope). true = actually create/update."
+        description: "false = probe (read-only). true = actually create/update the staging project + DNS + deploy."
         type: boolean
         required: true
         default: false
@@ -59,19 +48,29 @@ on:
         required: true
         default: true
 
+concurrency:
+  # Rework-blocker #7: never run two apply operations at once. Any second
+  # dispatch cancels the previous run so state stays consistent.
+  group: dic1189-staging-vercel-setup
+  cancel-in-progress: true
+
 jobs:
   setup:
     name: Configure staging Vercel + DNS
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       STAGING_PROJECT_NAME: holohunter-staging
+      PRODUCTION_PROJECT_NAME: holocard-hunter
       STAGING_HOST: test.holohunter.dicoge.com
       APEX_DOMAIN: dicoge.com
       STAGING_BRANCH: staging
       GITHUB_REPO: dicoge/hunterCard
-      # Vercel's documented CNAME target for a project domain. Reported to the
-      # log even in probe mode so operators can pre-stage DNS if needed.
+      # Vercel's documented CNAME target for a project domain. Reported to
+      # the log even in probe mode so operators can pre-stage DNS if needed.
       VERCEL_CNAME_TARGET: cname.vercel-dns.com
+      # curl defaults — rework-blocker #7.
+      CURL_OPTS: "--connect-timeout 10 --max-time 30 --retry 3 --retry-delay 2 --retry-connrefused"
 
     steps:
       - name: Print plan and inputs
@@ -79,13 +78,46 @@ jobs:
           echo "MODE: $([ '${{ inputs.apply }}' = 'true' ] && echo APPLY || echo PROBE)"
           echo "REDEPLOY: ${{ inputs.redeploy }}"
           echo "STAGING_PROJECT_NAME: ${STAGING_PROJECT_NAME}"
+          echo "PRODUCTION_PROJECT_NAME: ${PRODUCTION_PROJECT_NAME}"
           echo "STAGING_HOST: ${STAGING_HOST}"
           echo "APEX_DOMAIN: ${APEX_DOMAIN}"
           echo "STAGING_BRANCH: ${STAGING_BRANCH}"
           echo "GITHUB_REPO: ${GITHUB_REPO}"
           echo "VERCEL_CNAME_TARGET: ${VERCEL_CNAME_TARGET}"
 
-      # ── Step 1: resolve or create the staging Vercel project ──────────────
+      # ── Step 0: pre-flight — resolve the production project id ──────────
+      # We need it before the apply so we can (a) refuse to run if the token
+      # cannot see it, and (b) know where to write APP_ENV=production during
+      # the apply. Read-only.
+      - name: Pre-flight — resolve production project id
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          resp=$(curl -sS $CURL_OPTS -w '\n%{http_code}' \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PRODUCTION_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")
+          code=$(echo "$resp" | tail -n1)
+          body=$(echo "$resp" | sed '$d')
+          echo "GET /v9/projects/${PRODUCTION_PROJECT_NAME} → HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Cannot read production project '${PRODUCTION_PROJECT_NAME}' (HTTP $code). Refusing to run — VERCEL_TOKEN scope is insufficient. Retain this HTTP status as the platform boundary."
+            echo "$body"
+            exit 1
+          fi
+          prod_id=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
+          # Validate: we resolved a real project id, and its name matches
+          # what we asked for (defence against name-shadowing / lookup bugs).
+          prod_name=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).name')
+          if [ "$prod_name" != "${PRODUCTION_PROJECT_NAME}" ]; then
+            echo "::error::Production project name mismatch: expected '${PRODUCTION_PROJECT_NAME}', got '${prod_name}'."
+            exit 1
+          fi
+          echo "PROD_PROJECT_ID=$prod_id" >> "$GITHUB_ENV"
+          echo "Resolved production project id: $prod_id"
+
+      # ── Step 1: resolve or create the staging Vercel project ────────────
       - name: Resolve or create holohunter-staging project
         id: project
         env:
@@ -93,7 +125,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           set -euo pipefail
-          resp=$(curl -sS -w '\n%{http_code}' \
+          resp=$(curl -sS $CURL_OPTS -w '\n%{http_code}' \
             --oauth2-bearer "${VERCEL_TOKEN}" \
             "https://api.vercel.com/v9/projects/${STAGING_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")
           code=$(echo "$resp" | tail -n1)
@@ -101,15 +133,25 @@ jobs:
           echo "GET /v9/projects/${STAGING_PROJECT_NAME} → HTTP $code"
 
           if [ "$code" = "200" ]; then
-            id=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
+            # Parse once, validate structure, extract id + name.
+            parsed=$(echo "$body" | node -e '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              if (typeof d.id !== "string" || typeof d.name !== "string") process.exit(2);
+              console.log(JSON.stringify({ id: d.id, name: d.name }));
+            ')
+            id=$(echo "$parsed" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
+            name=$(echo "$parsed" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).name')
+            if [ "$name" != "${STAGING_PROJECT_NAME}" ]; then
+              echo "::error::Staging project name mismatch: expected '${STAGING_PROJECT_NAME}', got '${name}'."
+              exit 1
+            fi
             echo "Existing project id: $id"
             echo "PROJECT_ID=$id" >> "$GITHUB_ENV"
-            echo "PROJECT_CREATED=false" >> "$GITHUB_ENV"
             exit 0
           fi
 
           if [ "$code" != "404" ]; then
-            echo "::error::Unexpected HTTP $code reading Vercel project (see body below). Aborting before any writes."
+            echo "::error::Unexpected HTTP $code reading staging Vercel project. Body:"
             echo "$body"
             exit 1
           fi
@@ -117,14 +159,12 @@ jobs:
           if [ "${{ inputs.apply }}" != "true" ]; then
             echo "::warning::PROBE mode: project not found. Would POST /v11/projects to create it. Set apply=true to actually create."
             echo "PROJECT_ID=" >> "$GITHUB_ENV"
-            echo "PROJECT_CREATED=false" >> "$GITHUB_ENV"
             exit 0
           fi
 
           # Create the project. `framework: null` matches how the existing
-          # holocard-hunter project is configured (Expo web build wired via
-          # vercel.json). Setting the production branch here ensures Vercel
-          # will only auto-deploy from `staging`.
+          # holocard-hunter project is configured. Production branch is set
+          # here so Vercel auto-deploys from `staging` only.
           create_body=$(node -e '
             console.log(JSON.stringify({
               name: process.argv[1],
@@ -141,7 +181,7 @@ jobs:
             }));
           ' "$STAGING_PROJECT_NAME" "$GITHUB_REPO" "$STAGING_BRANCH")
 
-          create_resp=$(curl -sS -w '\n%{http_code}' -X POST \
+          create_resp=$(curl -sS $CURL_OPTS -w '\n%{http_code}' -X POST \
             --oauth2-bearer "${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-raw "$create_body" \
@@ -150,30 +190,144 @@ jobs:
           create_json=$(echo "$create_resp" | sed '$d')
           echo "POST /v11/projects → HTTP $create_code"
           if [ "$create_code" != "200" ] && [ "$create_code" != "201" ]; then
-            echo "::error::Failed to create Vercel project (HTTP $create_code). This is the platform boundary — retain the response body below for the DIC-1189 report."
+            echo "::error::Failed to create Vercel project (HTTP $create_code). Retain this response body as the platform boundary."
             echo "$create_json"
             exit 1
           fi
-          id=$(echo "$create_json" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
+          # Parse ONCE and validate structure.
+          parsed=$(echo "$create_json" | node -e '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            if (typeof d.id !== "string" || typeof d.name !== "string") process.exit(2);
+            console.log(JSON.stringify({ id: d.id, name: d.name }));
+          ')
+          id=$(echo "$parsed" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
+          name=$(echo "$parsed" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).name')
+          if [ "$name" != "${STAGING_PROJECT_NAME}" ]; then
+            echo "::error::Created project name mismatch: expected '${STAGING_PROJECT_NAME}', got '${name}'."
+            exit 1
+          fi
           echo "Created project id: $id"
           echo "PROJECT_ID=$id" >> "$GITHUB_ENV"
-          echo "PROJECT_CREATED=true" >> "$GITHUB_ENV"
 
-      # ── Step 2: ensure GitHub repo link + production branch are correct ──
-      - name: Ensure GitHub repo linked with productionBranch=staging
-        if: env.PROJECT_ID != ''
+      # ── Step 2: provision INDEPENDENT staging KV (hard precondition) ────
+      # Rework-blocker #1: staging KV is a hard precondition. If the Vercel
+      # Storage API refuses to create the instance in apply mode, this step
+      # fails the workflow — no fallback to production KV.
+      - name: Provision independent staging KV (hard precondition)
+        id: kv
+        if: env.PROJECT_ID != '' && inputs.apply == true
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           set -euo pipefail
-          # Read current link state.
-          proj=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+          # Look for an existing staging store named holohunter-staging-kv
+          # before creating one, so re-runs of apply do not error on
+          # duplicate creation.
+          list_resp=$(curl -sS $CURL_OPTS -w '\n%{http_code}' \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v1/storage/stores?teamId=${VERCEL_ORG_ID}")
+          list_code=$(echo "$list_resp" | tail -n1)
+          list_body=$(echo "$list_resp" | sed '$d')
+          store_id=""
+          if [ "$list_code" = "200" ]; then
+            store_id=$(echo "$list_body" | node -pe '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const stores = d.stores || d.data || [];
+              const s = stores.find(x => x.name === "holohunter-staging-kv");
+              s ? s.id : "";
+            ' 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$store_id" ]; then
+            # Create.
+            create_body=$(node -e '
+              console.log(JSON.stringify({
+                type: "redis",
+                name: "holohunter-staging-kv",
+                primaryRegion: "hnd1",
+              }));
+            ')
+            create_resp=$(curl -sS $CURL_OPTS -w '\n%{http_code}' -X POST \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data-raw "$create_body" \
+              "https://api.vercel.com/v1/storage/stores?teamId=${VERCEL_ORG_ID}")
+            code=$(echo "$create_resp" | tail -n1)
+            body=$(echo "$create_resp" | sed '$d')
+            echo "POST /v1/storage/stores → HTTP $code"
+            if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+              echo "::error::HARD FAIL: cannot create independent staging KV (HTTP $code). Response body follows. Acceptance requires an independent instance — refusing to weaken to shared production KV."
+              echo "$body"
+              exit 1
+            fi
+            store_id=$(echo "$body" | node -pe '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              (d.store && d.store.id) || d.id || "";
+            ')
+            if [ -z "$store_id" ]; then
+              echo "::error::Vercel Storage API returned 200/201 but no store id — treating as failure."
+              echo "$body"
+              exit 1
+            fi
+            echo "Created staging KV store id: $store_id"
+          else
+            echo "Reusing existing staging KV store id: $store_id"
+          fi
+
+          # Fetch REST url + token.
+          get_resp=$(curl -sS $CURL_OPTS -w '\n%{http_code}' \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v1/storage/stores/${store_id}?teamId=${VERCEL_ORG_ID}")
+          get_code=$(echo "$get_resp" | tail -n1)
+          get_body=$(echo "$get_resp" | sed '$d')
+          if [ "$get_code" != "200" ]; then
+            echo "::error::Cannot read staging KV store details (HTTP $get_code)."
+            echo "$get_body"
+            exit 1
+          fi
+          rest_url=$(echo "$get_body" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            (d.store && d.store.rest_api_url) || d.rest_api_url || "";
+          ')
+          rest_token=$(echo "$get_body" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            (d.store && d.store.rest_api_token) || d.rest_api_token || "";
+          ')
+          if [ -z "$rest_url" ] || [ -z "$rest_token" ]; then
+            echo "::error::Staging KV store returned no REST URL/token — cannot wire staging deployment to it."
+            exit 1
+          fi
+          echo "::add-mask::${rest_token}"
+          echo "KV_REST_API_URL=${rest_url}" >> "$GITHUB_ENV"
+          echo "KV_REST_API_TOKEN=${rest_token}" >> "$GITHUB_ENV"
+          echo "Staging KV wired (URL retrieved, token masked)."
+
+      # ── Step 3: link staging project to GitHub repo ─────────────────────
+      - name: Ensure GitHub repo linked with productionBranch=staging
+        if: env.PROJECT_ID != '' && inputs.apply == true
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          proj_resp=$(curl -sS $CURL_OPTS -w '\n%{http_code}' \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
             "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${VERCEL_ORG_ID}")
-          current=$(echo "$proj" | node -pe '
+          proj_code=$(echo "$proj_resp" | tail -n1)
+          proj_body=$(echo "$proj_resp" | sed '$d')
+          if [ "$proj_code" != "200" ]; then
+            echo "::error::Cannot read staging project state (HTTP $proj_code)."
+            exit 1
+          fi
+          current=$(echo "$proj_body" | node -e '
             const p = JSON.parse(require("fs").readFileSync(0,"utf8"));
             const link = p.link || {};
-            JSON.stringify({ type: link.type||"", repo: (link.repo||link.org+"/"+link.repo)||"", productionBranch: link.productionBranch || "" });
+            console.log(JSON.stringify({
+              type: link.type || "",
+              repo: link.repo || ((link.org && link.repo) ? link.org + "/" + link.repo : ""),
+              productionBranch: link.productionBranch || "",
+            }));
           ')
           echo "Current link: $current"
 
@@ -189,14 +343,6 @@ jobs:
             exit 0
           fi
 
-          if [ "${{ inputs.apply }}" != "true" ]; then
-            echo "::warning::PROBE mode: would PATCH /v9/projects/${PROJECT_ID} to link ${GITHUB_REPO}@${STAGING_BRANCH}. Set apply=true to actually apply."
-            exit 0
-          fi
-
-          # PATCH the project with the correct link. The full-object update is
-          # what Vercel accepts on projects; sending only the delta is
-          # rejected as invalid schema.
           patch_body=$(node -e '
             console.log(JSON.stringify({
               gitRepository: {
@@ -207,7 +353,7 @@ jobs:
             }));
           ' "$GITHUB_REPO" "$STAGING_BRANCH")
 
-          patch_resp=$(curl -sS -w '\n%{http_code}' -X PATCH \
+          patch_resp=$(curl -sS $CURL_OPTS -w '\n%{http_code}' -X PATCH \
             --oauth2-bearer "${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-raw "$patch_body" \
@@ -215,136 +361,189 @@ jobs:
           patch_code=$(echo "$patch_resp" | tail -n1)
           echo "PATCH /v9/projects/${PROJECT_ID} → HTTP $patch_code"
           if [ "$patch_code" != "200" ] && [ "$patch_code" != "201" ]; then
-            echo "::error::Failed to link/patch Vercel project (HTTP $patch_code). Retain this as the platform boundary."
+            echo "::error::Failed to link/patch staging Vercel project (HTTP $patch_code). Body:"
             echo "$patch_resp" | sed '$d'
             exit 1
           fi
 
-      # ── Step 3: try to provision an independent staging KV instance ──────
-      - name: Attempt to create independent staging KV
-        id: kv
-        if: env.PROJECT_ID != '' && inputs.apply == true
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-        run: |
-          set +e
-          set -uo pipefail
-          # Vercel Storage API (v1) — may require a paid plan or specific
-          # integration scope. We attempt best-effort; on any non-2xx we log
-          # the exact response and leave KV_STORE_ID empty so the env-set
-          # step below skips wiring KV values and the operator provisions
-          # manually. The api/_lib/kv-namespace.ts staging: prefix remains
-          # as defence-in-depth per the PM directive.
-          create_body=$(node -e '
-            console.log(JSON.stringify({
-              type: "redis",
-              name: "holohunter-staging-kv",
-              primaryRegion: "hnd1",
-            }));
-          ')
-          resp=$(curl -sS -w '\n%{http_code}' -X POST \
-            --oauth2-bearer "${VERCEL_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data-raw "$create_body" \
-            "https://api.vercel.com/v1/storage/stores?teamId=${VERCEL_ORG_ID}")
-          code=$(echo "$resp" | tail -n1)
-          body=$(echo "$resp" | sed '$d')
-          echo "POST /v1/storage/stores → HTTP $code"
-
-          if [ "$code" = "200" ] || [ "$code" = "201" ]; then
-            store_id=$(echo "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).store.id || JSON.parse(require("fs").readFileSync(0,"utf8")).id || ""' 2>/dev/null || echo "")
-            echo "Created staging KV store id: ${store_id:-unknown}"
-            echo "KV_STORE_ID=${store_id}" >> "$GITHUB_ENV"
-            # Fetch the store's REST URL + token via the "get store" endpoint.
-            if [ -n "${store_id}" ]; then
-              get_resp=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
-                "https://api.vercel.com/v1/storage/stores/${store_id}?teamId=${VERCEL_ORG_ID}")
-              rest_url=$(echo "$get_resp" | node -pe 'try { JSON.parse(require("fs").readFileSync(0,"utf8")).store.rest_api_url || "" } catch { "" }')
-              rest_token=$(echo "$get_resp" | node -pe 'try { JSON.parse(require("fs").readFileSync(0,"utf8")).store.rest_api_token || "" } catch { "" }')
-              echo "KV_REST_API_URL=${rest_url}" >> "$GITHUB_ENV"
-              # Do NOT echo the token to the log — mask it and pass via env.
-              echo "::add-mask::${rest_token}"
-              echo "KV_REST_API_TOKEN=${rest_token}" >> "$GITHUB_ENV"
-              echo "Retrieved KV REST url + token (masked)"
-            fi
-          else
-            echo "::warning::Vercel Storage create returned HTTP $code — treating as platform boundary. Manual provisioning required. Response body:"
-            echo "$body"
-            echo "KV_STORE_ID=" >> "$GITHUB_ENV"
-          fi
-          # Never fail the workflow on KV: the code-level `staging:` prefix
-          # is the mandated defence-in-depth.
-          exit 0
-
-      # ── Step 4: set staging-only project env vars (idempotent) ───────────
+      # ── Step 4: set staging env vars (transactional replacement) ────────
       - name: Set staging project env
         if: env.PROJECT_ID != '' && inputs.apply == true
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          AUTH_SESSION_SECRET: ${{ secrets.AUTH_SESSION_SECRET }}
+          AUTH_SESSION_SECRET_STAGING: ${{ secrets.AUTH_SESSION_SECRET_STAGING }}
+          PUSH_NOTIFY_SECRET_STAGING: ${{ secrets.PUSH_NOTIFY_SECRET_STAGING }}
+          EXPO_STAGING_TEST_TOKENS: ${{ secrets.EXPO_STAGING_TEST_TOKENS }}
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
-          PUSH_NOTIFY_SECRET: ${{ secrets.PUSH_NOTIFY_SECRET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
+          # Rework-blocker #7: env replacement is transactional. For each
+          # key we POST the new value FIRST; only if the POST returns
+          # 200/201 do we then delete the prior entries. If the POST fails
+          # the good value stays in place.
           set_env_var() {
             key="$1"; value="$2"; type="${3:-encrypted}"
             [ -z "$value" ] && { echo "skip $key (no value)"; return 0; }
-            existing=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+            listing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
               "https://api.vercel.com/v9/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
-            ids=$(echo "$existing" | node -pe '
+            prior_ids=$(echo "$listing" | node -pe '
               const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
               (d.envs||[]).filter(e => e.key === process.argv[1]).map(e => e.id).join("\n")
             ' "$key" 2>/dev/null || true)
-            for id in $ids; do
-              [ -z "$id" ] && continue
-              curl -sS -o /dev/null -X DELETE --oauth2-bearer "${VERCEL_TOKEN}" \
-                "https://api.vercel.com/v9/projects/${PROJECT_ID}/env/${id}?teamId=${VERCEL_ORG_ID}"
-            done
-            code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST \
+            new_body=$(node -e '
+              const k = process.argv[1], v = process.argv[2], t = process.argv[3];
+              console.log(JSON.stringify({ key: k, value: v, type: t, target: ["production","preview"] }));
+            ' "$key" "$value" "$type")
+            code=$(curl -sS $CURL_OPTS -o /tmp/resp.json -w '%{http_code}' -X POST \
               --oauth2-bearer "${VERCEL_TOKEN}" \
               -H "Content-Type: application/json" \
-              --data-raw "$(node -e '
-                const k = process.argv[1], v = process.argv[2], t = process.argv[3];
-                console.log(JSON.stringify({ key: k, value: v, type: t, target: ["production","preview"] }));
-              ' "$key" "$value" "$type")" \
+              --data-raw "$new_body" \
               "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
             echo "set $key → HTTP $code"
+            # Vercel returns 409 when there is already a value at the same
+            # (key, target, gitBranch) tuple. That is our signal to switch
+            # to REPLACE mode: delete the prior entries, then POST again.
+            if [ "$code" = "409" ]; then
+              echo "  (409 → replacing prior entries transactionally)"
+              for id in $prior_ids; do
+                [ -z "$id" ] && continue
+                del_code=$(curl -sS $CURL_OPTS -o /dev/null -w '%{http_code}' -X DELETE --oauth2-bearer "${VERCEL_TOKEN}" \
+                  "https://api.vercel.com/v9/projects/${PROJECT_ID}/env/${id}?teamId=${VERCEL_ORG_ID}")
+                echo "  DELETE prior env id=$id → HTTP $del_code"
+                if [ "$del_code" != "200" ] && [ "$del_code" != "204" ]; then
+                  echo "::error::Failed to delete prior env $key/$id (HTTP $del_code) — aborting to avoid orphaned config."
+                  exit 1
+                fi
+              done
+              code=$(curl -sS $CURL_OPTS -o /tmp/resp.json -w '%{http_code}' -X POST \
+                --oauth2-bearer "${VERCEL_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data-raw "$new_body" \
+                "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
+              echo "  re-POST $key → HTTP $code"
+            fi
             if [ "$code" != "200" ] && [ "$code" != "201" ]; then
-              echo "::error::Failed to set env $key (HTTP $code)"
+              echo "::error::Failed to set env $key (HTTP $code). Prior value (if any) NOT deleted."
               cat /tmp/resp.json
               exit 1
             fi
           }
 
-          # Staging isolation vars (public).
+          # Staging isolation vars.
           set_env_var "APP_ENV" "staging" "plain"
           set_env_var "EXPO_PUBLIC_APP_ENV" "staging" "plain"
           set_env_var "EXPO_PUBLIC_SITE_URL" "https://${STAGING_HOST}" "plain"
 
-          # KV connection — only wired when Storage API succeeded above. When
-          # empty the staging project boots without KV backing; push /
-          # watchlist endpoints will fail cleanly, which is fine for the
-          # initial acceptance surface (public HTML + banner + robots) and
-          # signals the operator to manually connect a KV instance.
-          set_env_var "KV_REST_API_URL" "${KV_REST_API_URL:-}" "encrypted"
-          set_env_var "KV_REST_API_TOKEN" "${KV_REST_API_TOKEN:-}" "encrypted"
+          # Independent staging KV — non-optional (KV creation step above
+          # already refused to continue if these were empty).
+          if [ -z "${KV_REST_API_URL:-}" ] || [ -z "${KV_REST_API_TOKEN:-}" ]; then
+            echo "::error::KV_REST_API_URL / KV_REST_API_TOKEN not set — staging KV provisioning failed earlier."
+            exit 1
+          fi
+          set_env_var "KV_REST_API_URL" "${KV_REST_API_URL}" "encrypted"
+          set_env_var "KV_REST_API_TOKEN" "${KV_REST_API_TOKEN}" "encrypted"
 
-          # Auth + push + gemini — mirrored from repo secrets so the staging
-          # deployment can authenticate. AUTH_SESSION_SECRET is deliberately
-          # the SAME value as production so a user's active session survives
-          # cross-linking to the test host (the token is env-scoped by
-          # AUD/nonce logic elsewhere, not by session-secret rotation).
-          set_env_var "AUTH_SESSION_SECRET" "${AUTH_SESSION_SECRET:-}" "encrypted"
+          # Staging-specific auth + push secrets (rework-blocker #3) — MUST
+          # be different from production values.
+          if [ -z "${AUTH_SESSION_SECRET_STAGING:-}" ]; then
+            echo "::error::Repo secret AUTH_SESSION_SECRET_STAGING is missing — staging sessions cannot be issued/verified. Add it to GitHub Secrets (must be different from AUTH_SESSION_SECRET)."
+            exit 1
+          fi
+          if [ -z "${PUSH_NOTIFY_SECRET_STAGING:-}" ]; then
+            echo "::error::Repo secret PUSH_NOTIFY_SECRET_STAGING is missing — staging internal cron cannot authenticate. Add it to GitHub Secrets (must be different from PUSH_NOTIFY_SECRET)."
+            exit 1
+          fi
+          set_env_var "AUTH_SESSION_SECRET_STAGING" "${AUTH_SESSION_SECRET_STAGING}" "encrypted"
+          set_env_var "PUSH_NOTIFY_SECRET_STAGING" "${PUSH_NOTIFY_SECRET_STAGING}" "encrypted"
+
+          # Optional: allow-list of synthetic Expo tokens the staging push
+          # path may deliver to. Empty means staging cannot notify anyone —
+          # the fail-closed default in push-staging-guard.ts.
+          set_env_var "EXPO_STAGING_TEST_TOKENS" "${EXPO_STAGING_TEST_TOKENS:-}" "plain"
+
+          # Public / shared client ids (safe to reuse from prod — they are
+          # PUBLIC Google/Apple OAuth client identifiers).
           set_env_var "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID" "${EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:-}" "encrypted"
           set_env_var "GOOGLE_WEB_CLIENT_ID" "${GOOGLE_WEB_CLIENT_ID:-}" "encrypted"
-          set_env_var "PUSH_NOTIFY_SECRET" "${PUSH_NOTIFY_SECRET:-}" "encrypted"
+          # Gemini API key can be reused for staging (it is a Google AI Studio
+          # key not bound to a lane).
           set_env_var "GEMINI_API_KEY" "${GEMINI_API_KEY:-}" "encrypted"
 
-      # ── Step 5: attach test.holohunter.dicoge.com to staging project ─────
+      # ── Step 5: set APP_ENV=production on the PROD project ──────────────
+      # Rework-blocker #2: kv-namespace's nsKey() throws on missing APP_ENV.
+      # Production MUST have APP_ENV=production set explicitly for the KV
+      # data path to work. This is the ONE mutation this workflow makes on
+      # the production project (no other prod env / no prod code / no prod
+      # domain / no prod deployment is touched).
+      - name: Set APP_ENV=production on holocard-hunter (production project)
+        if: env.PROD_PROJECT_ID != '' && inputs.apply == true
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          # Check current value first — no-op if already 'production'.
+          listing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
+          existing_ids=$(echo "$listing" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            (d.envs||[]).filter(e => e.key === "APP_ENV").map(e => e.id).join("\n")
+          ' 2>/dev/null || true)
+          # Vercel does not return `value` for encrypted vars, so we cannot
+          # cheaply check equality — but plain-type values ARE returned.
+          # If any existing APP_ENV entry has a non-empty `value` field and
+          # it equals "production", we skip. Otherwise we replace.
+          existing_value=$(echo "$listing" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            const es = (d.envs||[]).filter(e => e.key === "APP_ENV" && typeof e.value === "string");
+            es.length ? es[0].value : "";
+          ' 2>/dev/null || true)
+          if [ "$existing_value" = "production" ]; then
+            echo "APP_ENV=production already set on production project — no-op."
+            exit 0
+          fi
+
+          new_body=$(node -e '
+            console.log(JSON.stringify({
+              key: "APP_ENV",
+              value: "production",
+              type: "plain",
+              target: ["production","preview"],
+            }));
+          ')
+
+          code=$(curl -sS $CURL_OPTS -o /tmp/resp.json -w '%{http_code}' -X POST \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-raw "$new_body" \
+            "https://api.vercel.com/v10/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
+          echo "POST APP_ENV=production on prod → HTTP $code"
+          if [ "$code" = "409" ]; then
+            # Replace transactionally — delete then re-POST.
+            for id in $existing_ids; do
+              [ -z "$id" ] && continue
+              del_code=$(curl -sS $CURL_OPTS -o /dev/null -w '%{http_code}' -X DELETE --oauth2-bearer "${VERCEL_TOKEN}" \
+                "https://api.vercel.com/v9/projects/${PROD_PROJECT_ID}/env/${id}?teamId=${VERCEL_ORG_ID}")
+              echo "  DELETE prior APP_ENV id=$id → HTTP $del_code"
+            done
+            code=$(curl -sS $CURL_OPTS -o /tmp/resp.json -w '%{http_code}' -X POST \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data-raw "$new_body" \
+              "https://api.vercel.com/v10/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
+            echo "  re-POST APP_ENV=production on prod → HTTP $code"
+          fi
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Failed to set APP_ENV=production on prod (HTTP $code). Body:"
+            cat /tmp/resp.json
+            exit 1
+          fi
+          echo "APP_ENV=production set on production project. Production KV path will now succeed."
+
+      # ── Step 6: attach test.holohunter.dicoge.com ───────────────────────
       - name: Attach test.holohunter.dicoge.com domain
         if: env.PROJECT_ID != '' && inputs.apply == true
         env:
@@ -352,47 +551,73 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           set -euo pipefail
-          code=$(curl -sS -o /tmp/domain_resp.json -w '%{http_code}' -X POST \
-            --oauth2-bearer "${VERCEL_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data-raw "$(node -e 'console.log(JSON.stringify({ name: process.argv[1] }))' "${STAGING_HOST}")" \
-            "https://api.vercel.com/v10/projects/${PROJECT_ID}/domains?teamId=${VERCEL_ORG_ID}")
-          echo "attach domain → HTTP $code"
-          cat /tmp/domain_resp.json
-          # 200/201 = added, 409 = already attached to this project. Both OK.
-          if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "409" ]; then
-            echo "::error::Failed to attach domain (HTTP $code)."
-            exit 1
+          # Check existing attachment first. If the domain is already on
+          # another project we refuse.
+          exists=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PROJECT_ID}/domains?teamId=${VERCEL_ORG_ID}")
+          already=$(echo "$exists" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            const doms = d.domains || [];
+            doms.some(x => x.name === process.argv[1]) ? "yes" : "no";
+          ' "${STAGING_HOST}" 2>/dev/null || echo "no")
+          if [ "$already" = "yes" ]; then
+            echo "Domain ${STAGING_HOST} already attached — no-op."
+          else
+            code=$(curl -sS $CURL_OPTS -o /tmp/domain_resp.json -w '%{http_code}' -X POST \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data-raw "$(node -e 'console.log(JSON.stringify({ name: process.argv[1] }))' "${STAGING_HOST}")" \
+              "https://api.vercel.com/v10/projects/${PROJECT_ID}/domains?teamId=${VERCEL_ORG_ID}")
+            echo "attach domain → HTTP $code"
+            cat /tmp/domain_resp.json
+            # 200/201 = added. 409 = attached to a DIFFERENT project (refuse).
+            if [ "$code" = "409" ]; then
+              echo "::error::${STAGING_HOST} appears to be attached to a different project — refusing to override."
+              exit 1
+            fi
+            if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+              echo "::error::Failed to attach domain (HTTP $code)."
+              exit 1
+            fi
           fi
           echo "Expected DNS: CNAME ${STAGING_HOST} → ${VERCEL_CNAME_TARGET}"
 
-      # ── Step 6: add CNAME record to dicoge.com zone via Vercel DNS ───────
-      - name: Add CNAME on dicoge.com (Vercel DNS)
+      # ── Step 7: add CNAME on dicoge.com with existing-record validation ─
+      - name: Ensure CNAME test.holohunter → cname.vercel-dns.com
         if: env.PROJECT_ID != '' && inputs.apply == true
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           set -euo pipefail
-          # NS lookup already confirmed dicoge.com uses vercel-dns.com. Add
-          # the CNAME for the `test.holohunter` sub-record. Idempotent: if a
-          # record with the same name+type+value already exists, Vercel
-          # returns 409 which we accept as no-op. We NEVER touch the apex or
-          # the `holohunter` sub-record (production).
-          existing=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v4/domains/${APEX_DOMAIN}/records?teamId=${VERCEL_ORG_ID}&limit=200")
-          already=$(echo "$existing" | node -pe '
+          existing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v4/domains/${APEX_DOMAIN}/records?teamId=${VERCEL_ORG_ID}&limit=500")
+          # Validate ownership: find any record for `test.holohunter` name
+          # regardless of type, so we can refuse when the wrong type / value
+          # is set (rework-blocker #7 — no blanket 409).
+          match_json=$(echo "$existing" | node -pe '
             const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-            const recs = d.records||[];
-            const match = recs.find(r =>
-              r.type === "CNAME" &&
-              (r.name === "test.holohunter" || r.name === "test.holohunter." || r.slug === "test.holohunter") &&
-              String(r.value||"").replace(/\.$/,"") === process.argv[1].replace(/\.$/,""));
-            match ? "yes" : "no";
+            const recs = d.records || [];
+            const wanted = process.argv[1];
+            const wantedTarget = process.argv[2].replace(/\.$/, "");
+            const m = recs.filter(r => r.name === wanted || r.name === wanted + ".");
+            JSON.stringify(m.map(r => ({ id: r.id, type: r.type, value: (r.value||"").replace(/\.$/, "") })));
+          ' "test.holohunter" "${VERCEL_CNAME_TARGET}")
+          echo "Existing records for test.holohunter: $match_json"
+          conflict=$(echo "$match_json" | node -pe '
+            const arr = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            const wantedTarget = process.argv[1].replace(/\.$/, "");
+            const good = arr.find(r => r.type === "CNAME" && r.value === wantedTarget);
+            const bad = arr.find(r => r.type !== "CNAME" || (r.type === "CNAME" && r.value !== wantedTarget));
+            good ? "already" : (bad ? "conflict" : "absent");
           ' "${VERCEL_CNAME_TARGET}")
-          if [ "$already" = "yes" ]; then
-            echo "CNAME test.holohunter.${APEX_DOMAIN} → ${VERCEL_CNAME_TARGET} already exists — no-op."
+          if [ "$conflict" = "already" ]; then
+            echo "CNAME test.holohunter.${APEX_DOMAIN} → ${VERCEL_CNAME_TARGET} already present with correct value — no-op."
             exit 0
+          fi
+          if [ "$conflict" = "conflict" ]; then
+            echo "::error::A conflicting DNS record exists for test.holohunter.${APEX_DOMAIN}. Refuse to overwrite. Manually reconcile then re-run. Records: $match_json"
+            exit 1
           fi
 
           add_body=$(node -e '
@@ -405,32 +630,28 @@ jobs:
             }));
           ' "${VERCEL_CNAME_TARGET}")
 
-          code=$(curl -sS -o /tmp/dns_resp.json -w '%{http_code}' -X POST \
+          code=$(curl -sS $CURL_OPTS -o /tmp/dns_resp.json -w '%{http_code}' -X POST \
             --oauth2-bearer "${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-raw "$add_body" \
             "https://api.vercel.com/v2/domains/${APEX_DOMAIN}/records?teamId=${VERCEL_ORG_ID}")
           echo "POST /v2/domains/${APEX_DOMAIN}/records → HTTP $code"
           cat /tmp/dns_resp.json
-          if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "409" ]; then
-            echo "::error::Failed to add CNAME (HTTP $code). This is the platform boundary — the exact record we need is: CNAME test.holohunter.${APEX_DOMAIN} → ${VERCEL_CNAME_TARGET}"
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Failed to add CNAME (HTTP $code). The exact record we need: CNAME test.holohunter.${APEX_DOMAIN} → ${VERCEL_CNAME_TARGET}"
             exit 1
           fi
-          echo "CNAME added / already present."
 
-      # ── Step 7: trigger a staging deployment ─────────────────────────────
+      # ── Step 8: trigger fresh staging deployment ────────────────────────
       - name: Trigger staging deployment
+        id: deploy
         if: env.PROJECT_ID != '' && inputs.apply == true && inputs.redeploy == true
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           set -euo pipefail
-          # Look for the most recent staging deployment; if none exists yet
-          # (fresh project), we can't redeploy — Vercel needs an initial
-          # deployment to be triggered by a git push. In that case we log a
-          # note and let the smoke test surface the state.
-          latest=$(curl -sS --oauth2-bearer "${VERCEL_TOKEN}" \
+          latest=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
             "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_ORG_ID}")
           uid=$(echo "$latest" | node -pe '
             const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
@@ -441,11 +662,11 @@ jobs:
             (d.deployments && d.deployments[0] && d.deployments[0].name) || ""
           ')
           if [ -z "$uid" ]; then
-            echo "::warning::No prior staging deployment found. Push to the staging branch to trigger the first build (Vercel auto-deploys on push once linked)."
-            exit 0
+            echo "::error::No prior staging deployment exists — Vercel needs an initial build from a git push before we can force a redeploy. Push a commit to the staging branch or click 'Deploy' in the Vercel UI once, then re-run this workflow."
+            exit 1
           fi
           echo "Redeploying from deployment: $uid"
-          code=$(curl -sS -o /tmp/redeploy_resp.json -w '%{http_code}' -X POST \
+          code=$(curl -sS $CURL_OPTS -o /tmp/redeploy_resp.json -w '%{http_code}' -X POST \
             --oauth2-bearer "${VERCEL_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-raw "$(node -e '
@@ -453,61 +674,119 @@ jobs:
             ' "$name" "$uid")" \
             "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_ORG_ID}")
           echo "Redeploy HTTP status: $code"
-          cat /tmp/redeploy_resp.json
           if [ "$code" != "200" ] && [ "$code" != "201" ]; then
-            echo "::error::Failed to trigger redeploy (HTTP $code)"
+            echo "::error::Failed to trigger redeploy (HTTP $code). Body:"
+            cat /tmp/redeploy_resp.json
             exit 1
           fi
+          deployment_id=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/redeploy_resp.json","utf8")).id || ""')
+          echo "DEPLOYMENT_ID=$deployment_id" >> "$GITHUB_ENV"
 
-      - name: Wait for deployment to go live
-        if: env.PROJECT_ID != '' && inputs.apply == true && inputs.redeploy == true
-        run: sleep 180
-
-      # ── Step 8: smoke test the public staging URL ────────────────────────
-      - name: Smoke test staging URL
-        if: env.PROJECT_ID != '' && inputs.apply == true && inputs.redeploy == true
+      # ── Step 9: bounded poll for deployment READY ───────────────────────
+      - name: Poll deployment until READY (bounded)
+        if: env.PROJECT_ID != '' && inputs.apply == true && inputs.redeploy == true && env.DEPLOYMENT_ID != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        timeout-minutes: 10
         run: |
-          set -uo pipefail
+          set -euo pipefail
+          # Rework-blocker #5: bounded polling with a fatal timeout — never
+          # a fixed sleep that could either overshoot or miss a failure.
+          deadline=$((SECONDS + 480))
+          while [ $SECONDS -lt $deadline ]; do
+            resp=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}")
+            state=$(echo "$resp" | node -pe 'try { JSON.parse(require("fs").readFileSync(0,"utf8")).readyState || "" } catch { "" }')
+            echo "deployment state = $state"
+            case "$state" in
+              READY) echo "Deployment READY."; exit 0 ;;
+              ERROR|CANCELED) echo "::error::Deployment ${DEPLOYMENT_ID} ended in state=$state."; exit 1 ;;
+              *) sleep 10 ;;
+            esac
+          done
+          echo "::error::Deployment ${DEPLOYMENT_ID} did not reach READY within 8 minutes."
+          exit 1
+
+      # ── Step 10: smoke test — FATAL asserts against expected SHA ────────
+      - name: Smoke test staging URL (fatal)
+        if: env.PROJECT_ID != '' && inputs.apply == true && inputs.redeploy == true && env.DEPLOYMENT_ID != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+          # Discover the expected SHA from the deployment record itself.
+          resp=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}")
+          expected_sha=$(echo "$resp" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            const s = (d.meta && (d.meta.githubCommitSha || d.meta.gitCommitSha)) || "";
+            s.slice(0, 12);
+          ')
+          if [ -z "$expected_sha" ]; then
+            echo "::error::Could not determine expected git SHA from deployment record — refuse to smoke without a target."
+            exit 1
+          fi
+          echo "expected_sha=$expected_sha"
+
           url="https://${STAGING_HOST}/"
-          code=$(curl -sS -o /tmp/staging.html -w '%{http_code}' -L "$url" || echo "curl_failed")
-          echo "GET $url → $code"
-          echo "── Response head ──"
-          curl -sSI -L "$url" 2>&1 | head -20 || true
+          # Bounded poll for public URL 200 as DNS + certificate provisioning
+          # can take a moment to converge.
+          deadline=$((SECONDS + 300))
+          code=""
+          while [ $SECONDS -lt $deadline ]; do
+            code=$(curl -sS -o /tmp/staging.html -w '%{http_code}' --connect-timeout 5 --max-time 15 -L "$url" || echo "000")
+            echo "GET $url → $code"
+            [ "$code" = "200" ] && break
+            sleep 10
+          done
           if [ "$code" != "200" ]; then
-            echo "::warning::Staging URL did not return 200 (got $code). If DNS just propagated, it may take a few minutes."
-            exit 0
-          fi
-          echo "── Meta checks ──"
-          if grep -q 'name="robots" content="noindex,nofollow"' /tmp/staging.html; then
-            echo "  ✅ robots noindex present"
-          else
-            echo "  ❌ robots noindex MISSING"
-          fi
-          if grep -q 'name="app-env" content="staging"' /tmp/staging.html; then
-            echo "  ✅ app-env=staging present"
-          else
-            echo "  ❌ app-env=staging MISSING"
-          fi
-          if grep -q 'name="staging-sha"' /tmp/staging.html; then
-            sha=$(grep -oE 'name="staging-sha" content="[^"]+"' /tmp/staging.html || true)
-            echo "  ✅ staging-sha present: $sha"
-          else
-            echo "  ❌ staging-sha MISSING"
+            echo "::error::Staging URL did not return 200 within 5 minutes."
+            exit 1
           fi
 
-      # ── Production non-regression: confirm holohunter.dicoge.com untouched ──
+          # TLS check via HEAD — surfaces certificate errors.
+          curl -sSI --connect-timeout 5 --max-time 15 -L "$url" > /tmp/head.txt || {
+            echo "::error::TLS or HTTP head request failed."; exit 1;
+          }
+          echo "── HEAD ──"; cat /tmp/head.txt
+
+          # Fatal meta assertions.
+          grep -q 'name="robots" content="noindex,nofollow"' /tmp/staging.html || {
+            echo "::error::robots noindex meta MISSING"; exit 1;
+          }
+          echo "  ✅ robots noindex present"
+
+          grep -q 'name="app-env" content="staging"' /tmp/staging.html || {
+            echo "::error::app-env=staging meta MISSING"; exit 1;
+          }
+          echo "  ✅ app-env=staging present"
+
+          # Exact SHA assertion.
+          if ! grep -q "name=\"staging-sha\" content=\"${expected_sha}\"" /tmp/staging.html; then
+            echo "::error::staging-sha meta missing or does not equal expected SHA ${expected_sha}"
+            grep -oE 'name="staging-sha" content="[^"]+"' /tmp/staging.html || true
+            exit 1
+          fi
+          echo "  ✅ staging-sha == ${expected_sha}"
+
+      # ── Step 11: production non-regression (ALWAYS runs) ────────────────
       - name: Production non-regression check
+        if: always()
         run: |
-          set -uo pipefail
-          code=$(curl -sS -o /tmp/prod.html -w '%{http_code}' -L "https://holohunter.dicoge.com/" || echo "curl_failed")
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/prod.html -w '%{http_code}' --connect-timeout 5 --max-time 15 -L "https://holohunter.dicoge.com/" || echo "000")
           echo "GET https://holohunter.dicoge.com/ → $code"
-          # Prod MUST NOT carry the staging metas.
-          if grep -q 'name="app-env" content="staging"' /tmp/prod.html; then
-            echo "::error::Production HTML now carries app-env=staging — regression!"
+          if [ "$code" != "200" ]; then
+            echo "::error::Production URL not returning 200 (got $code)."
             exit 1
           fi
-          if grep -q 'name="robots" content="noindex' /tmp/prod.html; then
-            echo "::error::Production HTML now carries robots=noindex — regression!"
-            exit 1
-          fi
+          # Prod MUST NOT carry ANY staging marker.
+          for pat in 'name="app-env" content="staging"' 'name="robots" content="noindex' 'name="staging-sha"' '測試環境' 'TEST · '; do
+            if grep -q "$pat" /tmp/prod.html; then
+              echo "::error::Production HTML now contains staging marker: $pat"
+              exit 1
+            fi
+          done
           echo "  ✅ production HTML free of staging markers"

@@ -13,7 +13,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { resolveAppEnv, resolveSiteUrl, resolveStagingSha } from '../src/config/appEnv.ts';
+import {
+  resolveAppEnv,
+  resolveAppEnvStrict,
+  resolveSiteUrl,
+  resolveStagingSha,
+  AppEnvUnresolved,
+} from '../src/config/appEnv.ts';
 
 let passed = 0;
 function test(name, fn) {
@@ -112,6 +118,45 @@ test('resolveStagingSha: EXPO_PUBLIC_STAGING_SHA takes precedence over VERCEL_GI
 test('resolveStagingSha: trims to 12 chars', () => {
   withEnv({ VERCEL_GIT_COMMIT_SHA: '1ba84a9fc93d055845a4f93a2b015e0aa35b0f1d' }, () =>
     assert.equal(resolveStagingSha(), '1ba84a9fc93d'),
+  );
+});
+
+// ── resolveAppEnvStrict (rework-blocker #2) ────────────────────────────────
+test('resolveAppEnvStrict: APP_ENV=production returns production', () => {
+  withEnv({ APP_ENV: 'production' }, () => assert.equal(resolveAppEnvStrict(), 'production'));
+});
+
+test('resolveAppEnvStrict: APP_ENV=staging returns staging', () => {
+  withEnv({ APP_ENV: 'staging' }, () => assert.equal(resolveAppEnvStrict(), 'staging'));
+});
+
+test('resolveAppEnvStrict: EXPO_PUBLIC_APP_ENV=staging returns staging', () => {
+  withEnv({ EXPO_PUBLIC_APP_ENV: 'staging' }, () => assert.equal(resolveAppEnvStrict(), 'staging'));
+});
+
+test('resolveAppEnvStrict: empty env throws AppEnvUnresolved', () => {
+  withEnv({}, () =>
+    assert.throws(
+      () => resolveAppEnvStrict(),
+      (err) => err instanceof AppEnvUnresolved && err.raw === '',
+    ),
+  );
+});
+
+test('resolveAppEnvStrict: unknown value throws AppEnvUnresolved (carries raw)', () => {
+  for (const bad of ['prod', 'stg', 'staging-typo', 'yes', '1', 'test']) {
+    withEnv({ APP_ENV: bad }, () =>
+      assert.throws(
+        () => resolveAppEnvStrict(),
+        (err) => err instanceof AppEnvUnresolved && err.raw === bad.trim().toLowerCase(),
+      ),
+    );
+  }
+});
+
+test('resolveAppEnvStrict: case-insensitive / trimmed', () => {
+  withEnv({ APP_ENV: '  PRODUCTION ' }, () =>
+    assert.equal(resolveAppEnvStrict(), 'production'),
   );
 });
 

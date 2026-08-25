@@ -60,16 +60,31 @@ html = html.replace(
 // and let the client-side StagingBanner surface the deployed SHA. Idempotent
 // via the `name="app-env"` fingerprint. Production builds skip this entirely
 // so the emitted HTML is byte-identical to what shipped before.
-if (IS_STAGING_HTML && !html.includes('name="app-env"')) {
-  const stagingHead =
-    '\n    <meta name="robots" content="noindex,nofollow" />' +
-    '\n    <meta name="googlebot" content="noindex,nofollow" />' +
-    '\n    <meta name="app-env" content="staging" />' +
-    `\n    <meta name="staging-sha" content="${STAGING_SHA_HTML || 'unknown'}" />`;
-  html = html.replace('</head>', `${stagingHead}\n  </head>`);
-  console.log(`  ✅ staging <meta> injected (sha=${STAGING_SHA_HTML || 'unknown'})`);
-} else if (IS_STAGING_HTML) {
-  console.log('  ✅ staging <meta> already present, skipping re-injection');
+//
+// Rework-blocker #5: on a staging build the SHA is REQUIRED. A missing
+// EXPO_PUBLIC_STAGING_SHA / VERCEL_GIT_COMMIT_SHA on the staging deployment
+// is a build-pipeline misconfiguration, not something to paper over with
+// 'unknown' — the smoke test asserts the SHA against the deployment's real
+// commit, so shipping HTML with a placeholder would silently pass. Throw
+// here to fail the build loudly.
+if (IS_STAGING_HTML) {
+  if (!STAGING_SHA_HTML) {
+    throw new Error(
+      'DIC-1189: staging build requires EXPO_PUBLIC_STAGING_SHA or VERCEL_GIT_COMMIT_SHA to be set. ' +
+        'Neither was provided in the build environment — refusing to emit HTML with an unknown staging-sha.',
+    );
+  }
+  if (!html.includes('name="app-env"')) {
+    const stagingHead =
+      '\n    <meta name="robots" content="noindex,nofollow" />' +
+      '\n    <meta name="googlebot" content="noindex,nofollow" />' +
+      '\n    <meta name="app-env" content="staging" />' +
+      `\n    <meta name="staging-sha" content="${STAGING_SHA_HTML}" />`;
+    html = html.replace('</head>', `${stagingHead}\n  </head>`);
+    console.log(`  ✅ staging <meta> injected (sha=${STAGING_SHA_HTML})`);
+  } else {
+    console.log('  ✅ staging <meta> already present, skipping re-injection');
+  }
 }
 
 // DIC-1140 blocker #3: the sanitizing database copy MUST run on every branch.

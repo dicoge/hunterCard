@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 /**
- * DIC-1189 tests for api/_lib/env-guard.ts (fail-closed payment env guard).
+ * DIC-1189 tests for api/_lib/env-guard.ts (rework — extended to credential
+ * mode, product mode, webhook livemode, and strict environment attribution).
  *
  * Invariants:
- * - Empty env: guard is a no-op (there is no payment integration to protect).
- * - Staging deployment (APP_ENV=staging): rejects any Stripe / RevenueCat
- *   live-prefixed key AND any unknown prefix.
- * - Production deployment (APP_ENV=production or unset/unknown): rejects any
- *   test-prefixed key AND any unknown prefix.
+ * - Empty env AND APP_ENV set: guard is a no-op (there is no payment
+ *   integration to protect until secrets are set).
+ * - APP_ENV missing / unknown: assertPaymentEnv() throws AppEnvUnresolved
+ *   even with empty payment env — unattributed environment is never OK
+ *   (rework-blocker #6).
+ * - Staging (APP_ENV=staging): rejects any Stripe / RevenueCat live-prefixed
+ *   key, any unknown-prefix key, STRIPE_MODE=live, REVENUECAT_ENVIRONMENT=
+ *   production, STRIPE_WEBHOOK_LIVEMODE=true.
+ * - Production: rejects test-prefixed keys, STRIPE_MODE=test,
+ *   REVENUECAT_ENVIRONMENT=sandbox, STRIPE_WEBHOOK_LIVEMODE=false.
  * - Error message NEVER contains the offending secret value — only var name
  *   and reason code. Secrets do not leak to logs.
  *
@@ -22,12 +28,45 @@ import {
   classifyPaymentSecret,
   PaymentEnvGuardError,
 } from '../api/_lib/env-guard.ts';
+import { AppEnvUnresolved } from '../src/config/appEnv.ts';
 
 let passed = 0;
 function test(name, fn) {
   fn();
   passed += 1;
   console.log(`  ✓ ${name}`);
+}
+
+function withEnv(overrides, fn) {
+  const before = { ...process.env };
+  try {
+    // Wipe every guard-adjacent var. Payment vars start empty by default.
+    for (const k of [
+      'APP_ENV',
+      'EXPO_PUBLIC_APP_ENV',
+      'STRIPE_SECRET_KEY',
+      'STRIPE_RESTRICTED_KEY',
+      'STRIPE_WEBHOOK_SECRET',
+      'EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY',
+      'REVENUECAT_SECRET_KEY',
+      'REVENUECAT_WEBHOOK_AUTH',
+      'EXPO_PUBLIC_REVENUECAT_IOS_KEY',
+      'EXPO_PUBLIC_REVENUECAT_ANDROID_KEY',
+      'STRIPE_MODE',
+      'REVENUECAT_ENVIRONMENT',
+      'STRIPE_WEBHOOK_LIVEMODE',
+    ]) {
+      delete process.env[k];
+    }
+    for (const [k, v] of Object.entries(overrides)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    fn();
+  } finally {
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    for (const [k, v] of Object.entries(before)) process.env[k] = v;
+  }
 }
 
 // ── classifier ─────────────────────────────────────────────────────────────
@@ -112,7 +151,6 @@ test('production: unknown prefix → rejected as unknown_prefix_in_production', 
   assert.equal(issues[0].reason, 'unknown_prefix_in_production');
 });
 
-// ── multiple issues bundled into one error ─────────────────────────────────
 test('production: multiple test keys → all reported', () => {
   const issues = findPaymentEnvIssues('production', {
     STRIPE_SECRET_KEY: 'sk_test_a',
@@ -122,56 +160,106 @@ test('production: multiple test keys → all reported', () => {
   assert.ok(issues.every((i) => i.reason === 'test_key_in_production'));
 });
 
-// ── assertPaymentEnv end-to-end (uses resolveAppEnv() via process.env) ─────
+// ── product mode (rework-blocker #6) ───────────────────────────────────────
+test('staging: STRIPE_MODE=live → mismatch', () => {
+  const issues = findPaymentEnvIssues('staging', { STRIPE_MODE: 'live' });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].varName, 'STRIPE_MODE');
+  assert.equal(issues[0].reason, 'product_mode_mismatch_in_staging');
+});
+test('staging: STRIPE_MODE=test → accepted', () => {
+  assert.deepEqual(findPaymentEnvIssues('staging', { STRIPE_MODE: 'test' }), []);
+});
+test('production: STRIPE_MODE=test → mismatch', () => {
+  const issues = findPaymentEnvIssues('production', { STRIPE_MODE: 'test' });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].reason, 'product_mode_mismatch_in_production');
+});
+test('staging: STRIPE_MODE=garbage → unknown', () => {
+  const issues = findPaymentEnvIssues('staging', { STRIPE_MODE: 'garbage' });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].reason, 'unknown_product_mode_in_staging');
+});
+test('staging: REVENUECAT_ENVIRONMENT=production → mismatch', () => {
+  const issues = findPaymentEnvIssues('staging', { REVENUECAT_ENVIRONMENT: 'production' });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].reason, 'product_mode_mismatch_in_staging');
+});
+test('production: REVENUECAT_ENVIRONMENT=production → accepted', () => {
+  assert.deepEqual(
+    findPaymentEnvIssues('production', { REVENUECAT_ENVIRONMENT: 'production' }),
+    [],
+  );
+});
+
+// ── webhook livemode (rework-blocker #6) ───────────────────────────────────
+test('staging: STRIPE_WEBHOOK_LIVEMODE=true → mismatch', () => {
+  const issues = findPaymentEnvIssues('staging', { STRIPE_WEBHOOK_LIVEMODE: 'true' });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].varName, 'STRIPE_WEBHOOK_LIVEMODE');
+  assert.equal(issues[0].reason, 'webhook_livemode_mismatch_in_staging');
+});
+test('staging: STRIPE_WEBHOOK_LIVEMODE=false → accepted', () => {
+  assert.deepEqual(findPaymentEnvIssues('staging', { STRIPE_WEBHOOK_LIVEMODE: 'false' }), []);
+});
+test('production: STRIPE_WEBHOOK_LIVEMODE=false → mismatch', () => {
+  const issues = findPaymentEnvIssues('production', { STRIPE_WEBHOOK_LIVEMODE: 'false' });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].reason, 'webhook_livemode_mismatch_in_production');
+});
+test('any: STRIPE_WEBHOOK_LIVEMODE=garbage → unknown', () => {
+  const issues = findPaymentEnvIssues('production', { STRIPE_WEBHOOK_LIVEMODE: 'garbage' });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].reason, 'unknown_webhook_livemode');
+});
+
+// ── assertPaymentEnv end-to-end (uses resolveAppEnvStrict() via process.env) ──
 test('assertPaymentEnv: throws on staging + live key, error message hides value', () => {
-  const before = process.env.APP_ENV;
-  process.env.APP_ENV = 'staging';
-  try {
+  withEnv({ APP_ENV: 'staging' }, () => {
     assert.throws(
       () => assertPaymentEnv({ STRIPE_SECRET_KEY: 'sk_live_supersecret_9876' }),
       (err) => {
         assert.ok(err instanceof PaymentEnvGuardError);
         assert.ok(err.message.includes('STRIPE_SECRET_KEY'));
         assert.ok(err.message.includes('live_key_in_staging'));
-        // Secret value MUST NOT appear anywhere in the error message.
         assert.ok(!err.message.includes('supersecret'));
         assert.ok(!err.message.includes('sk_live_'));
         return true;
       },
     );
-  } finally {
-    if (before === undefined) delete process.env.APP_ENV;
-    else process.env.APP_ENV = before;
-  }
+  });
 });
 
 test('assertPaymentEnv: production + test key → throws', () => {
-  const before = process.env.APP_ENV;
-  process.env.APP_ENV = 'production';
-  try {
+  withEnv({ APP_ENV: 'production' }, () => {
     assert.throws(
       () => assertPaymentEnv({ STRIPE_SECRET_KEY: 'sk_test_abcd' }),
       /test_key_in_production/,
     );
-  } finally {
-    if (before === undefined) delete process.env.APP_ENV;
-    else process.env.APP_ENV = before;
-  }
+  });
 });
 
-test('assertPaymentEnv: empty env is a no-op (no payment integration yet)', () => {
-  const before = { APP_ENV: process.env.APP_ENV };
-  try {
-    process.env.APP_ENV = 'staging';
-    assert.doesNotThrow(() => assertPaymentEnv({}));
-    process.env.APP_ENV = 'production';
-    assert.doesNotThrow(() => assertPaymentEnv({}));
-    delete process.env.APP_ENV;
-    assert.doesNotThrow(() => assertPaymentEnv({}));
-  } finally {
-    if (before.APP_ENV === undefined) delete process.env.APP_ENV;
-    else process.env.APP_ENV = before.APP_ENV;
-  }
+test('assertPaymentEnv: empty payment env is a no-op when APP_ENV is set', () => {
+  withEnv({ APP_ENV: 'staging' }, () => assert.doesNotThrow(() => assertPaymentEnv({})));
+  withEnv({ APP_ENV: 'production' }, () => assert.doesNotThrow(() => assertPaymentEnv({})));
+});
+
+test('assertPaymentEnv: missing APP_ENV throws AppEnvUnresolved even with empty payment env', () => {
+  withEnv({}, () =>
+    assert.throws(
+      () => assertPaymentEnv({}),
+      (err) => err instanceof AppEnvUnresolved,
+    ),
+  );
+});
+
+test('assertPaymentEnv: production + webhook livemode=false → throws', () => {
+  withEnv({ APP_ENV: 'production' }, () =>
+    assert.throws(
+      () => assertPaymentEnv({ STRIPE_WEBHOOK_LIVEMODE: 'false' }),
+      /webhook_livemode_mismatch_in_production/,
+    ),
+  );
 });
 
 console.log(`\npayment-env-guard: ${passed} tests passed`);
