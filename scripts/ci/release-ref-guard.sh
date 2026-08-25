@@ -22,6 +22,13 @@ fail() {
   exit 1
 }
 
+# Provenance has to name an immutable commit. A branch ref alone, a short SHA or
+# an empty value would all produce a build nobody can pin down later, so they are
+# refused before any ref matching happens (CR DIC-1193 round 3).
+[ -n "$REF" ] || fail "GITHUB_REF is empty — refusing to cut a release build from an unidentified ref."
+[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "GITHUB_SHA must be a full 40-character commit SHA (got '${SHA}'). A short, blank or ref-only value cannot be recorded as immutable build provenance."
+
 case "$REF" in
   refs/heads/main)
     echo "ref OK: main @ $SHA"

@@ -76,10 +76,12 @@ Actions → **EAS Build (Test Tracks)** → Run workflow：`platform=android`、
 workflow 對這個 profile 是 fail-closed 的，任一條不成立就直接失敗、不會產出可交付的 APK：
 
 1. **來源 ref**：只接受 `main`，或 `v*` tag 且該 commit 必須是 `origin/main` 的祖先（側分支切出來的 tag 會被擋）。
-2. **平台／submit**：`platform` 必須是 `android`；`submit=true` 會被拒（APK 不進 Play，商店軌道請用 `production` 的 AAB）。
+2. **平台／submit**：allowlist——`platform` 必須剛好是 `android`、`submit` 必須剛好是 `false`。空值或任何無法辨識的值一律拒絕，不當成安全值：後面的 submit 步驟用 `if: ${{ inputs.submit }}` 判斷，任何非空字串都是 true，所以「只擋 `true`」等於放行 `yes`／`1`／空值。`submit` input 本身必須維持 `type: boolean`／`required`／`default: false`，這也被測試鎖住。
 3. **等待產物**：這個 profile 不用 `--no-wait`——簽章與 SHA-256 必須在同一個 run 內驗完。
 4. **簽章驗證**：`apksigner verify --verbose --print-certs`；輸出若含 `CN=Android Debug` 立即失敗。
-5. **Provenance**：`build-provenance.json` 記錄 full commit SHA、ref、version／versionCode、EAS build id、APK SHA-256、簽章 DN 與憑證 SHA-256，同時寫進 job summary。任一欄位讀不到（EAS JSON schema 變動、apksigner 輸出格式漂移）就 fail，不會產出「欄位空白」的交付紀錄。
+5. **Provenance**：commit SHA 必須是完整 40 位 hex（空值、短 SHA、只給 ref 一律 hard fail，且在下載 APK 之前就擋下），`GITHUB_REF`／`GITHUB_SERVER_URL`／`GITHUB_REPOSITORY`／`GITHUB_RUN_ID` 缺一不可。`build-provenance.json` 記錄 full commit SHA、ref、version／versionCode、EAS build id、APK SHA-256、簽章 DN 與憑證 SHA-256，同時寫進 job summary。任一欄位讀不到（EAS JSON schema 變動、apksigner 輸出格式漂移）就 fail，不會產出「欄位空白」的交付紀錄。
+
+另外，`.github/**` 底下所有 YAML（含 composite action 的 `action.yml`、其他 workflow）都會被掃描：只有 `eas-build.yml` 的那一個 job 可以出現 `eas build`，不論是直接呼叫、`npx`、還是包在 `sh -c "…"` 裡。
 
 除了第 3 點（等待產物，由 workflow 的 `--wait` 決定）之外，其餘守門邏輯都放在 `scripts/ci/release-ref-guard.sh`、`release-apk-usage-guard.sh`、`release-apk-build-status.sh`、`release-apk-verify.sh`，workflow 只負責呼叫，且呼叫方式被逐字釘住。這樣 `npm run test:release-apk-pipeline` 能直接**執行**它們並斷言 exit status（真 git repo 測 ref 守門；stub `curl`／`apksigner` 測驗簽與 provenance），而不是只在 YAML 上比對字串——後者擋不住在判斷式後面接 `&& false` 或 `|| true`（CR DIC-1193）。
 

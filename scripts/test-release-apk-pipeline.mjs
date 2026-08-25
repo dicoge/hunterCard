@@ -94,7 +94,9 @@ function flatten(value, prefix = '') {
  * spelling, GitHub reads the parsed document, so the assertions read it too.
  */
 function stepsOf(job) {
-  return (job?.steps ?? []).map((step) => ({
+  return (job?.steps ?? []).map((step) => {
+    assert.ok(step && typeof step === 'object', 'every workflow step must be a mapping');
+    return {
     name: step.name ?? `<${step.uses ?? 'unnamed'}>`,
     if: step.if == null ? null : String(step.if).trim(),
     uses: step.uses ?? null,
@@ -103,7 +105,8 @@ function stepsOf(job) {
     command: typeof step.run === 'string' ? step.run.trim() : null,
     env: step.env ? Object.fromEntries(Object.entries(step.env).map(([k, v]) => [k, String(v).trim()])) : null,
     raw: step,
-  }));
+    };
+  });
 }
 
 function jobsOf(workflow) {
@@ -117,14 +120,19 @@ const androidDoc = jobsOf(androidWorkflow);
 
 // The job that actually produces the artifact is the job the gates must live
 // in; naming it by hand would just move the assumption somewhere else.
+/**
+ * Any `eas build` invocation, however it is wrapped. Matching only at line start
+ * left `sh -c "eas build …"` unbound (CR DIC-1193 round 3) — and that string IS
+ * part of the document, so "out of scope" was never a defensible answer for it.
+ * The cost is that a string merely mentioning the command reads as an
+ * invocation; that fails closed and is the right side to err on for a release
+ * gate.
+ */
+const INVOKES_EAS_BUILD = (value) =>
+  typeof value === 'string' && /(^|[^\w.-])eas\s+build\b/.test(value);
+
 const BUILD_JOBS = Object.entries(easBuildDoc.jobs).filter(([, job]) =>
-  // Command position only (line start, optionally via npx) so a step that merely
-  // mentions `eas build` in an echo or a comment is not mistaken for a build.
-  // A build hidden inside `sh -c "…"` would evade this: these assertions bind
-  // this document, and the contents of a shell string are not part of it.
-  (job.steps ?? []).some(
-    (step) => typeof step.run === 'string' && /^\s*(npx\s+)?eas\s+build\b/m.test(step.run),
-  ),
+  (job.steps ?? []).some((step) => INVOKES_EAS_BUILD(step.run)),
 );
 assert.equal(
   BUILD_JOBS.length,
@@ -383,8 +391,8 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
       );
     }
     assert.ok(
-      step.raw['continue-on-error'] === undefined,
-      `"${gate.name}" must not set continue-on-error — a release gate has to be able to fail the run`,
+      step.raw['continue-on-error'] !== true,
+      `"${gate.name}" must not set continue-on-error: true — a release gate has to be able to fail the run`,
     );
   }
 
@@ -491,28 +499,89 @@ function testWorkflowStructureCannotBypassGates() {
 }
 
 /**
- * The gate assertions bind one document, so a build invoked from a DIFFERENT
- * workflow file would never meet them. Cheap to close while `eas build` appears
- * in exactly one file: assert it stays that way.
+ * Every YAML under `.github/` — workflows, composite actions, reusable
+ * workflows — is scanned for an `eas build` invocation in ANY string value, so a
+ * wrapped call (`sh -c "eas build …"`), a composite action whose action.yml does
+ * the build, or a second workflow file cannot produce a production APK outside
+ * the gated job (CR DIC-1193 round 3, PM directive).
  */
-function testNoOtherWorkflowBuilds() {
-  const dir = path.join(ROOT, '.github/workflows');
+function* yamlFilesUnder(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) yield* yamlFilesUnder(full);
+    else if (/\.ya?ml$/.test(entry.name)) yield full;
+  }
+}
+
+function* stringsIn(node) {
+  if (typeof node === 'string') yield node;
+  else if (Array.isArray(node)) for (const item of node) yield* stringsIn(item);
+  else if (node && typeof node === 'object') for (const value of Object.values(node)) yield* stringsIn(value);
+}
+
+function testOnlyTheGatedJobBuilds() {
+  const githubDir = path.join(ROOT, '.github');
+  const gatedFile = path.join(githubDir, 'workflows/eas-build.yml');
   const offenders = [];
-  for (const file of fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))) {
-    if (file === 'eas-build.yml') continue;
-    const doc = parseYaml(fs.readFileSync(path.join(dir, file), 'utf8'));
-    for (const [jobName, job] of Object.entries(doc?.jobs ?? {})) {
-      for (const step of job?.steps ?? []) {
-        if (typeof step?.run === 'string' && /^\s*(npx\s+)?eas\s+build\b/m.test(step.run)) {
-          offenders.push(`${file}:${jobName}`);
-        }
+  for (const file of yamlFilesUnder(githubDir)) {
+    if (file === gatedFile) continue;
+    const doc = parseYaml(fs.readFileSync(file, 'utf8'));
+    for (const value of stringsIn(doc)) {
+      if (INVOKES_EAS_BUILD(value)) {
+        offenders.push(`${path.relative(ROOT, file)}: ${value.trim().slice(0, 60)}`);
+        break;
       }
     }
   }
   assert.deepEqual(
     offenders,
     [],
-    `only eas-build.yml may run \`eas build\` — the release gates live in that workflow and cannot police another one (found in: ${offenders.join(', ')})`,
+    `only .github/workflows/eas-build.yml may invoke \`eas build\` — the release gates live there and cannot police another file (found: ${offenders.join(' | ')})`,
+  );
+
+  // Inside the gated workflow, every build invocation — wrapped or not — must
+  // sit in the one job the gates belong to.
+  const [buildJobName] = BUILD_JOB;
+  for (const [jobName, job] of Object.entries(easBuildDoc.jobs)) {
+    for (const step of job.steps ?? []) {
+      for (const value of stringsIn(step)) {
+        if (!INVOKES_EAS_BUILD(value)) continue;
+        assert.equal(
+          jobName,
+          buildJobName,
+          `job "${jobName}" invokes eas build outside the gated job "${buildJobName}": ${value.trim().slice(0, 60)}`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * The usage guard compares SUBMIT against the exact string GitHub renders for a
+ * boolean input. If the input were redeclared as a free-form string, an operator
+ * could type anything, and `if: ${{ inputs.submit }}` treats every non-empty
+ * string as true — so the input's declared type is part of the gate.
+ */
+function testWorkflowInputSchema() {
+  const dispatch = easBuildDoc.on?.workflow_dispatch ?? easBuildDoc[true]?.workflow_dispatch;
+  assert.ok(dispatch?.inputs, 'eas-build.yml must expose workflow_dispatch inputs');
+  const submit = dispatch.inputs.submit;
+  assert.ok(submit, 'eas-build.yml must declare a `submit` input');
+  assert.equal(submit.type, 'boolean', '`submit` must be a boolean input, not a free-form string');
+  assert.equal(submit.required, true, '`submit` must be required');
+  assert.equal(submit.default, false, '`submit` must default to false');
+  const platform = dispatch.inputs.platform;
+  assert.equal(platform?.type, 'choice', '`platform` must be a choice input');
+  assert.deepEqual(
+    platform.options,
+    ['ios', 'android', 'all'],
+    '`platform` options are part of the usage guard contract',
+  );
+  const profile = dispatch.inputs.profile;
+  assert.equal(profile?.type, 'choice', '`profile` must be a choice input');
+  assert.ok(
+    profile.options.includes(RELEASE_APK_PROFILE),
+    `profile input must offer ${RELEASE_APK_PROFILE}`,
   );
 }
 
@@ -599,6 +668,13 @@ function testRefGuardBehaviour() {
     ['refs/heads/main-hack', mainSha, 1, /may only be built from 'main'/],
     ['refs/tags/v1.0.0', mainSha, 0, /contained in main/],
     ['refs/tags/v9.9.9', sideSha, 1, /is not contained in main/],
+    // Provenance must name an immutable commit even on an allowed ref.
+    ['refs/heads/main', '', 1, /full 40-character commit SHA/],
+    ['refs/heads/main', 'abc123', 1, /full 40-character commit SHA/],
+    ['refs/heads/main', mainSha.slice(0, 12), 1, /full 40-character commit SHA/],
+    ['refs/heads/main', mainSha.toUpperCase(), 1, /full 40-character commit SHA/],
+    ['refs/heads/main', 'refs/heads/main', 1, /full 40-character commit SHA/],
+    ['', mainSha, 1, /GITHUB_REF is empty/],
   ];
   for (const [ref, sha, expected, message] of cases) {
     const result = run(SCRIPTS.refGuard, {
@@ -616,14 +692,26 @@ function testRefGuardBehaviour() {
 }
 
 function testUsageGuardBehaviour() {
+  // Allowlist: only the exact approved pair passes. Empty and unrecognised
+  // values must fail closed — GitHub renders a non-boolean input as a non-empty
+  // string, which the later `if: ${{ inputs.submit }}` step treats as TRUE, so a
+  // guard that only rejected the literal 'true' let a submitting run through.
   const cases = [
     ['android', 'false', 0],
-    ['android', '', 0],
+    ['android', '', 1],
     ['android', 'true', 1],
+    ['android', 'yes', 1],
+    ['android', '1', 1],
+    ['android', '0', 1],
+    ['android', 'no', 1],
+    ['android', 'FALSE', 1],
+    ['android', 'False', 1],
+    ['android', ' false', 1],
     ['ios', 'false', 1],
     ['ios', 'true', 1],
     ['all', 'false', 1],
     ['', 'false', 1],
+    ['Android', 'false', 1],
   ];
   for (const [platform, submit, expected] of cases) {
     const result = run(SCRIPTS.usageGuard, {
@@ -689,6 +777,17 @@ const DEBUG_CERTS = [
 
 const DRIFTED_CERTS = ['Verifies', 'Number of signers: 1', ''].join('\n');
 
+// A real full commit SHA: provenance that cannot name an immutable commit is
+// refused, so the fixtures have to be honest about it too (CR DIC-1193 round 3).
+const FULL_SHA = '81985ef2ba6440e1921a12583d7067b7c6b1d212';
+const GITHUB_ENV_BASE = {
+  GITHUB_REF: 'refs/heads/main',
+  GITHUB_SHA: FULL_SHA,
+  GITHUB_SERVER_URL: 'https://github.com',
+  GITHUB_REPOSITORY: 'dicoge/hunterCard',
+  GITHUB_RUN_ID: '42',
+};
+
 function verifySandbox() {
   const dir = tempDir('verify');
   const bin = path.join(dir, 'bin');
@@ -751,9 +850,58 @@ function testVerifyBehaviour() {
     ],
     ['debug certificate', complete, certFiles.debug, 1, /Android DEBUG certificate/],
     ['apksigner format drift', complete, certFiles.drift, 1, /Could not read the signer/],
+    [
+      'short commit SHA',
+      complete,
+      certFiles.good,
+      1,
+      /full 40-character commit SHA/,
+      { GITHUB_SHA: 'abc123def456' },
+    ],
+    [
+      'blank commit SHA',
+      complete,
+      certFiles.good,
+      1,
+      /full 40-character commit SHA/,
+      { GITHUB_SHA: '' },
+    ],
+    [
+      'uppercase (non-canonical) SHA',
+      complete,
+      certFiles.good,
+      1,
+      /full 40-character commit SHA/,
+      { GITHUB_SHA: FULL_SHA.toUpperCase() },
+    ],
+    [
+      'ref-only, no SHA',
+      complete,
+      certFiles.good,
+      1,
+      /full 40-character commit SHA/,
+      { GITHUB_SHA: 'refs/heads/main' },
+    ],
+    ['blank ref', complete, certFiles.good, 1, /GITHUB_REF is empty/, { GITHUB_REF: '' }],
+    [
+      'blank workflow run id',
+      complete,
+      certFiles.good,
+      1,
+      /GITHUB_RUN_ID is empty/,
+      { GITHUB_RUN_ID: '' },
+    ],
+    [
+      'blank repository',
+      complete,
+      certFiles.good,
+      1,
+      /GITHUB_REPOSITORY is empty/,
+      { GITHUB_REPOSITORY: '' },
+    ],
   ];
 
-  for (const [label, buildJson, certs, expected, message] of cases) {
+  for (const [label, buildJson, certs, expected, message, githubEnv] of cases) {
     const work = fs.mkdtempSync(path.join(dir, 'case-'));
     const jsonPath = path.join(work, 'eas-build.json');
     fs.writeFileSync(jsonPath, JSON.stringify(buildJson));
@@ -767,11 +915,8 @@ function testVerifyBehaviour() {
         FAKE_CERTS: certs,
         PROVENANCE: provenance,
         VERIFY_LOG: path.join(work, 'apksigner-verify.txt'),
-        GITHUB_REF: 'refs/heads/main',
-        GITHUB_SHA: 'abc123def456',
-        GITHUB_SERVER_URL: 'https://github.com',
-        GITHUB_REPOSITORY: 'dicoge/hunterCard',
-        GITHUB_RUN_ID: '42',
+        ...GITHUB_ENV_BASE,
+        ...(githubEnv ?? {}),
         GITHUB_STEP_SUMMARY: summary,
       },
     });
@@ -784,7 +929,7 @@ function testVerifyBehaviour() {
       const record = JSON.parse(fs.readFileSync(provenance, 'utf8'));
       for (const [field, value] of Object.entries({
         profile: 'production-apk',
-        commit: 'abc123def456',
+        commit: FULL_SHA,
         buildId: 'build-1',
         appVersion: '1.4.2',
         versionCode: '57',
@@ -841,7 +986,7 @@ function testVerifyRejectsAFailedApksigner() {
       FAKE_APKSIGNER_EXIT: '1',
       PROVENANCE: provenance,
       VERIFY_LOG: path.join(work, 'apksigner-verify.txt'),
-      GITHUB_SHA: 'abc',
+      ...GITHUB_ENV_BASE,
     },
   });
   assert.equal(
@@ -859,7 +1004,8 @@ const tests = [
   testWorkflowOffersTheReleaseApkProfile,
   testGateStepsAreEnabledAndInvokeTheirGuards,
   testWorkflowStructureCannotBypassGates,
-  testNoOtherWorkflowBuilds,
+  testOnlyTheGatedJobBuilds,
+  testWorkflowInputSchema,
   testGuardsRunBeforeAnythingIsBuilt,
   testDebugApkWorkflowIsLabelledDebugOnly,
   testRefGuardBehaviour,

@@ -34,6 +34,16 @@ sha256_of() {
   fi
 }
 
+# GitHub provenance fields are validated BEFORE the download: a record that
+# cannot name the exact commit and workflow run is not provenance, and an APK
+# without it is not deliverable (CR DIC-1193 round 3).
+[[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "GITHUB_SHA must be a full 40-character commit SHA (got '${GITHUB_SHA:-}'). A short, blank or ref-only value cannot be recorded as immutable build provenance."
+for provenance_field in GITHUB_REF GITHUB_SERVER_URL GITHUB_REPOSITORY GITHUB_RUN_ID; do
+  [ -n "${!provenance_field:-}" ] ||
+    fail "$provenance_field is empty — refusing to publish an APK whose provenance record cannot identify its ref and workflow run."
+done
+
 ARTIFACT_URL="$(jq -r '.artifacts.applicationArchiveUrl // .artifacts.buildUrl // empty' "$BUILD_JSON")"
 [ -n "$ARTIFACT_URL" ] || fail "EAS build finished but reported no application archive URL."
 
@@ -65,8 +75,8 @@ fi
 
 jq -n \
   --arg profile "production-apk" \
-  --arg ref "${GITHUB_REF:-}" \
-  --arg commit "${GITHUB_SHA:-}" \
+  --arg ref "$GITHUB_REF" \
+  --arg commit "$GITHUB_SHA" \
   --arg buildId "$BUILD_ID" \
   --arg appVersion "$APP_VERSION" \
   --arg versionCode "$VERSION_CODE" \
@@ -74,7 +84,7 @@ jq -n \
   --arg signerDn "$SIGNER_DN" \
   --arg signerCertSha256 "$SIGNER_SHA256" \
   --arg artifactUrl "$ARTIFACT_URL" \
-  --arg workflowRun "${GITHUB_SERVER_URL:-}/${GITHUB_REPOSITORY:-}/actions/runs/${GITHUB_RUN_ID:-}" \
+  --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
   '$ARGS.named' > "$PROVENANCE"
 cat "$PROVENANCE"
 
@@ -84,8 +94,8 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo ""
     echo "| field | value |"
     echo "| --- | --- |"
-    echo "| commit | \`${GITHUB_SHA:-}\` |"
-    echo "| ref | \`${GITHUB_REF:-}\` |"
+    echo "| commit | \`$GITHUB_SHA\` |"
+    echo "| ref | \`$GITHUB_REF\` |"
     echo "| version | \`$APP_VERSION\` (versionCode \`$VERSION_CODE\`) |"
     echo "| EAS build | \`$BUILD_ID\` |"
     echo "| APK SHA-256 | \`$APK_SHA256\` |"
