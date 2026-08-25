@@ -117,10 +117,21 @@ const androidDoc = jobsOf(androidWorkflow);
 
 // The job that actually produces the artifact is the job the gates must live
 // in; naming it by hand would just move the assumption somewhere else.
-const BUILD_JOB = Object.entries(easBuildDoc.jobs).find(([, job]) =>
-  (job.steps ?? []).some((step) => typeof step.run === 'string' && /\beas build\b/.test(step.run)),
+const BUILD_JOBS = Object.entries(easBuildDoc.jobs).filter(([, job]) =>
+  // Command position only (line start, optionally via npx) so a step that merely
+  // mentions `eas build` in an echo or a comment is not mistaken for a build.
+  // A build hidden inside `sh -c "…"` would evade this — deliberate obfuscation
+  // is a code-review problem, not something a config assertion can settle.
+  (job.steps ?? []).some(
+    (step) => typeof step.run === 'string' && /^\s*(npx\s+)?eas\s+build\b/m.test(step.run),
+  ),
 );
-assert.ok(BUILD_JOB, 'eas-build.yml must contain a job that runs `eas build`');
+assert.equal(
+  BUILD_JOBS.length,
+  1,
+  `eas-build.yml must contain exactly one job that runs \`eas build\` — a second one would produce artifacts that the gates in the first job never see (found: ${BUILD_JOBS.map(([n]) => n).join(', ') || 'none'})`,
+);
+const BUILD_JOB = BUILD_JOBS[0];
 
 const easBuildSteps = stepsOf(BUILD_JOB[1]);
 const androidSteps = Object.values(androidDoc.jobs).flatMap((job) => stepsOf(job));
