@@ -85,6 +85,7 @@
     "test:native-guest-data": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-native-guest-series-data.mjs",
     "test:vercel-routing": "node scripts/test-vercel-api-routing.mjs",
     "test:node-runtime-adapter": "node scripts/test-node-runtime-adapter.mjs",
+    "test:app-icon-visuals": "node --import ./scripts/register-dic1160-hooks.mjs scripts/test-app-icon-visuals.mjs",
     "test:scan-geometry": "node scripts/benchmarks/scan-geometry.test.cjs",
     "benchmark:scan-recognition": "node scripts/benchmarks/scan-recognition-benchmark.cjs"
   },
@@ -120,6 +121,7 @@
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
+    "react-native-svg": "^15.12.1",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
     "tesseract.js": "^7.0.0",

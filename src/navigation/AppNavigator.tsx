@@ -4,9 +4,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants';
+import { DESIGN_TOKENS } from '../constants/tokens';
 import { FEATURES } from '../config/releaseFlags';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTranslation } from '../i18n';
+import { AppIcon, type AppIconProps } from '../components/common/AppIcon';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -49,6 +51,25 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   );
 }
 
+// DIC-1160: shared drawer-icon renderer. Every entry replaces a per-OS emoji
+// glyph with the same SVG shape, tinted by focus state via DESIGN_TOKENS.
+// Decorative on purpose — the drawer item already announces the localized
+// label (t('nav_home') etc.), so the icon must not double-read to a screen
+// reader.
+function drawerIconFor(name: AppIconProps['name']) {
+  return function DrawerIcon({ focused }: { focused: boolean }) {
+    return (
+      <AppIcon
+        name={name}
+        size="md"
+        color={focused ? DESIGN_TOKENS.colors.primary : DESIGN_TOKENS.colors.textSecondary}
+        style={styles.drawerIconWrapper}
+        testID={`drawer-icon-${name}${focused ? '-focused' : ''}`}
+      />
+    );
+  };
+}
+
 // Main Drawer Navigator
 function MainDrawer() {
   const { isDesktop } = useBreakpoint();
@@ -80,44 +101,36 @@ function MainDrawer() {
         },
       }}
     >
-      <Drawer.Screen 
-        name="Home" 
+      <Drawer.Screen
+        name="Home"
         component={HomeScreen}
-        options={{ 
+        options={{
           title: t('nav_home'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏠</Text>
-          ),
+          drawerIcon: drawerIconFor('home'),
         }}
       />
-      <Drawer.Screen 
-        name="Scan" 
+      <Drawer.Screen
+        name="Scan"
         component={ScanScreen}
-        options={{ 
+        options={{
           title: t('nav_scan'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📷</Text>
-          ),
+          drawerIcon: drawerIconFor('camera'),
         }}
       />
-      <Drawer.Screen 
-        name="Search" 
+      <Drawer.Screen
+        name="Search"
         component={SearchScreen}
-        options={{ 
+        options={{
           title: t('nav_search'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔍</Text>
-          ),
+          drawerIcon: drawerIconFor('search'),
         }}
       />
-      <Drawer.Screen 
+      <Drawer.Screen
         name="Collection"
         component={CollectionScreen}
-        options={{ 
+        options={{
           title: t('nav_favorites'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
-          ),
+          drawerIcon: drawerIconFor('heart'),
         }}
       />
       <Drawer.Screen
@@ -125,9 +138,7 @@ function MainDrawer() {
         component={DeckEditorScreen}
         options={{
           title: t('nav_deck_editor'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🃏</Text>
-          ),
+          drawerIcon: drawerIconFor('layers'),
         }}
       />
       <Drawer.Screen
@@ -135,9 +146,7 @@ function MainDrawer() {
         component={TournamentReportScreen}
         options={{
           title: t('nav_tournament_report'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏆</Text>
-          ),
+          drawerIcon: drawerIconFor('trophy'),
         }}
       />
       {/* 到價提醒 — hidden in Store MVP (DIC-908). Removing the Drawer.Screen
@@ -149,30 +158,24 @@ function MainDrawer() {
           component={WatchlistScreen}
           options={{
             title: t('nav_watchlist'),
-            drawerIcon: ({ focused }) => (
-              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
-            ),
+            drawerIcon: drawerIconFor('bell'),
           }}
         />
       )}
       <Drawer.Screen
         name="Tutorial"
         component={TutorialScreen}
-        options={{ 
+        options={{
           title: t('nav_tutorial'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
-          ),
+          drawerIcon: drawerIconFor('book-open'),
         }}
       />
-      <Drawer.Screen 
-        name="Settings" 
+      <Drawer.Screen
+        name="Settings"
         component={SettingsScreen}
-        options={{ 
+        options={{
           title: t('nav_settings'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>⚙️</Text>
-          ),
+          drawerIcon: drawerIconFor('settings'),
         }}
       />
     </Drawer.Navigator>
@@ -279,23 +282,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 4,
   },
-  drawerIcon: {
-    fontSize: 20,
+  drawerIconWrapper: {
     marginRight: 15,
-    opacity: 0.6,
-  },
-  drawerIconFocused: {
-    opacity: 1,
-  },
-  iconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  icon: {
-    fontSize: 20,
-    opacity: 0.6,
-  },
-  iconFocused: {
-    opacity: 1,
   },
 });
