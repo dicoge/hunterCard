@@ -91,6 +91,7 @@ export default function DeckEditorScreen() {
   const applyLowCostVariants = useDeckStore((s) => s.applyLowCostVariants);
   const migrateLegacyPrintings = useDeckStore((s) => s.migrateLegacyPrintings);
   const migrateTournamentDefaults = useDeckStore((s) => s.migrateTournamentDefaults);
+  const migrateCardColors = useDeckStore((s) => s.migrateCardColors);
 
   const activeDeck = useMemo(
     () => decks.find((d) => d.id === activeDeckId) || null,
@@ -123,18 +124,12 @@ export default function DeckEditorScreen() {
   );
   const lowCostIndex = useMemo(() => buildLowCostIndex(variantGroups), [variantGroups]);
 
-  // Drafts saved before DIC-1013 key their slots off the row-level rarity and
-  // must be moved onto real source printings before any estimate is shown.
-  // Tournament decks imported under DIC-1033 were saved with every printing
-  // unresolved, which priced the whole deck NO_EXACT_PRICE; they are repaired
-  // onto the same ordinary defaults a fresh import now picks, so the player
-  // never has to delete and re-import (DIC-1060). Both passes are idempotent
-  // and return the store unchanged once there is nothing left to move.
   useEffect(() => {
     if (lowCostIndex.size === 0) return;
     migrateLegacyPrintings(lowCostIndex);
     migrateTournamentDefaults(lowCostIndex);
-  }, [lowCostIndex, migrateLegacyPrintings, migrateTournamentDefaults]);
+    migrateCardColors(lowCostIndex);
+  }, [lowCostIndex, migrateLegacyPrintings, migrateTournamentDefaults, migrateCardColors]);
 
   const facets = db?.facets ?? new Map();
   const categoryChoices = ZONE_CATEGORIES[activeZone];
@@ -629,23 +624,26 @@ export default function DeckEditorScreen() {
   );
 
   const totalMissingCount = gap?.rows.reduce((sum, r) => sum + r.missing, 0) ?? 0;
-  const estimatePanel = (
-    <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <View style={styles.stickySummaryHeader} testID="sticky-shortage-summary">
-        <View style={styles.stickySummaryRow}>
-          <Text style={styles.h2}>{t('deck_gap_title')}</Text>
-          <View style={styles.stickySummaryBadges}>
-            <Text style={styles.shortageCountBadge} testID="shortage-count-title">
-              {t('deck_shortage_count', { count: totalMissingCount })}
+  const stickyShortageHeader = (
+    <View style={styles.stickySummaryHeader} testID="sticky-shortage-summary">
+      <View style={styles.stickySummaryRow}>
+        <Text style={styles.h2}>{t('deck_gap_title')}</Text>
+        <View style={styles.stickySummaryBadges}>
+          <Text style={styles.shortageCountBadge} testID="shortage-count-title">
+            {t('deck_shortage_count', { count: totalMissingCount })}
+          </Text>
+          {gap && gap.subtotals.map((s) => (
+            <Text key={s.currency} style={styles.stickyTotalPriceBadge} testID={`sticky-gap-subtotal-${s.currency}`}>
+              {t('deck_gap_subtotal', { currency: s.currency, total: s.total })}
             </Text>
-            {gap && gap.subtotals.map((s) => (
-              <Text key={s.currency} style={styles.stickyTotalPriceBadge} testID={`sticky-gap-subtotal-${s.currency}`}>
-                {t('deck_gap_subtotal', { currency: s.currency, total: s.total })}
-              </Text>
-            ))}
-          </View>
+          ))}
         </View>
       </View>
+    </View>
+  );
+
+  const shortageRows = (
+    <>
       {gap && gap.rows.map((r) => {
         const alert = priceAlerts[priceAlertKey(r.cardNumber, r.version)] ?? null;
         return (
@@ -729,6 +727,13 @@ export default function DeckEditorScreen() {
             )}
           </View>
         ))}
+    </>
+  );
+
+  const estimatePanel = (
+    <View style={[styles.panel, isDesktop && styles.panelCol]}>
+      {stickyShortageHeader}
+      {shortageRows}
     </View>
   );
 
@@ -982,9 +987,20 @@ export default function DeckEditorScreen() {
           </View>
         </ScrollView>
       ) : isPhone ? (
-        <ScrollView contentContainerStyle={styles.pad}>
-          {phonePanel}
-        </ScrollView>
+        mobilePanel === 'shortage' ? (
+          <View style={styles.phoneShortageContainer} testID="phone-shortage-container">
+            {stickyShortageHeader}
+            <ScrollView contentContainerStyle={styles.pad} testID="shortage-scroll-view">
+              <View style={[styles.panel, isDesktop && styles.panelCol]}>
+                {shortageRows}
+              </View>
+            </ScrollView>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.pad}>
+            {phonePanel}
+          </ScrollView>
+        )
       ) : (
         <ScrollView contentContainerStyle={styles.pad}>
           {pickerPanel}
@@ -1270,4 +1286,5 @@ const styles = StyleSheet.create({
   deckUpdatedAt: { color: COLORS.textSecondary, fontSize: 11, marginTop: 2 },
   placeholderIconShape: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.surfaceLight, borderWidth: 2, borderColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   placeholderStarInner: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.primary },
+  phoneShortageContainer: { flex: 1, display: 'flex', flexDirection: 'column' },
 });
