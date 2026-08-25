@@ -125,8 +125,8 @@ const androidDoc = jobsOf(androidWorkflow);
  * left `sh -c "eas build …"` unbound (CR DIC-1193 round 3) — and that string IS
  * part of the document, so "out of scope" was never a defensible answer for it.
  * Still NOT covered, and deliberately so: a build inside a shell script that a
- * step merely calls (`run: bash scripts/whatever.sh`). That is not a string in
- * any document this test parses.
+ * step merely calls (`run: bash scripts/whatever.sh`), and an env indirection
+ * (`run: $EAS build`). Neither is a build command in any document this parses.
  * The cost is that a string merely mentioning the command reads as an
  * invocation; that fails closed and is the right side to err on for a release
  * gate.
@@ -510,7 +510,11 @@ function testWorkflowStructureCannotBypassGates() {
  * the build, or a second workflow file cannot produce a production APK outside
  * the gated job (CR DIC-1193 round 3, PM directive).
  */
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'android', 'ios', 'public', '.expo']);
+// Only skip what can never hold a hand-written composite action. Skipping
+// generated-output NAMES (android, ios, dist, public, .expo) matched by basename
+// at any depth, which hid `.github/actions/android/action.yml` — the name a
+// person would most plausibly pick for an Android build action.
+const SKIP_DIRS = new Set(['node_modules', '.git']);
 
 function* yamlFilesUnder(dir, { onlyActions = false } = {}) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
