@@ -16,6 +16,27 @@ const publicDir = path.join(__dirname, '../public');
 // production (env off/unset) copies the database byte-identically.
 const STORE_MVP = resolveStoreMvpFromEnv();
 
+// DIC-1189: staging-only HTML head injections. Mirrors the fail-closed rule in
+// src/config/appEnv.ts — only APP_ENV / EXPO_PUBLIC_APP_ENV literally equal to
+// 'staging' (case-insensitive, trimmed) enables the injections; anything else
+// (unset, unknown, mistyped, or literally 'production') leaves the HTML
+// byte-identical to what shipped before. `VERCEL_GIT_COMMIT_SHA` is set by
+// Vercel per deployment.
+function resolveAppEnvForHtml() {
+  const raw = String(
+    process.env.APP_ENV || process.env.EXPO_PUBLIC_APP_ENV || '',
+  )
+    .trim()
+    .toLowerCase();
+  return raw === 'staging' ? 'staging' : 'production';
+}
+const IS_STAGING_HTML = resolveAppEnvForHtml() === 'staging';
+const STAGING_SHA_HTML = String(
+  process.env.EXPO_PUBLIC_STAGING_SHA || process.env.VERCEL_GIT_COMMIT_SHA || '',
+)
+  .trim()
+  .slice(0, 12);
+
 // Read the generated index.html
 const htmlPath = path.join(distDir, 'index.html');
 let html = fs.readFileSync(htmlPath, 'utf-8');
@@ -31,6 +52,25 @@ html = html.replace(
   /<script\s+src="(\/_expo\/static\/js\/web\/.*?)"\s+defer><\/script>/g,
   '<script type="module" src="$1" defer></script>'
 );
+
+// DIC-1189: inject staging-only <meta> tags before either the early "manifest
+// already present" exit or the PWA-injection fallthrough. Robots noindex,
+// nofollow keeps the staging URL out of Google/Bing; the app-env and
+// staging-sha metas make the environment auditable via a plain `curl -sI …`
+// and let the client-side StagingBanner surface the deployed SHA. Idempotent
+// via the `name="app-env"` fingerprint. Production builds skip this entirely
+// so the emitted HTML is byte-identical to what shipped before.
+if (IS_STAGING_HTML && !html.includes('name="app-env"')) {
+  const stagingHead =
+    '\n    <meta name="robots" content="noindex,nofollow" />' +
+    '\n    <meta name="googlebot" content="noindex,nofollow" />' +
+    '\n    <meta name="app-env" content="staging" />' +
+    `\n    <meta name="staging-sha" content="${STAGING_SHA_HTML || 'unknown'}" />`;
+  html = html.replace('</head>', `${stagingHead}\n  </head>`);
+  console.log(`  ✅ staging <meta> injected (sha=${STAGING_SHA_HTML || 'unknown'})`);
+} else if (IS_STAGING_HTML) {
+  console.log('  ✅ staging <meta> already present, skipping re-injection');
+}
 
 // DIC-1140 blocker #3: the sanitizing database copy MUST run on every branch.
 // Previously this call lived inside the "manifest already present" branch and

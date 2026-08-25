@@ -3,6 +3,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { initPushNotifications } from './src/services/pushNotificationService';
 import { FEATURES } from './src/config/releaseFlags';
+// DIC-1189: renders only when APP_ENV=staging; a no-op in production.
+import { StagingBanner } from './src/components/StagingBanner';
 
 export default function App() {
   useEffect(() => {
@@ -22,6 +24,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AppNavigator />
+      <StagingBanner />
     </SafeAreaProvider>
   );
 }

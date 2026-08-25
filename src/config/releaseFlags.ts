@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import type { ReleaseCardFlags } from '../utils/cardReleaseFilter';
+import { IS_STAGING } from './appEnv';
 
 // Single source of truth for Store MVP release gating (DIC-908).
 //
@@ -69,4 +70,34 @@ export function releaseCardFlags(): ReleaseCardFlags {
     trendPrediction: FEATURES.trendPrediction,
     ytStats: FEATURES.ytStats,
   };
+}
+
+// DIC-1189: staging-only allowlist. Features under active development that are
+// NOT ready for production (實戰模擬、教學、未驗收支付與其他半成品) are gated
+// through STAGING_ONLY so they light up in the staging deployment (APP_ENV=
+// staging) and stay hidden in production (APP_ENV unset / unknown / literally
+// 'production' — all resolve to !IS_STAGING via the fail-closed rule in
+// src/config/appEnv.ts).
+//
+// Fail-closed rule: default here is FALSE outside staging. Adding a new
+// experimental surface means adding a key with value `IS_STAGING`; forgetting
+// to gate a surface at its callsite means it is on for everyone, so the flag
+// is a defence, not the primary switch. Use isStagingOnlyEnabled(key) at the
+// render / mount boundary.
+export const STAGING_ONLY = {
+  // 實戰模擬 — battle simulator (未實作)
+  battleSimulation: IS_STAGING,
+  // 教學 / 入門引導 — onboarding tutorial (未驗收)
+  tutorial: IS_STAGING,
+  // Stripe / RevenueCat / StoreKit — 未驗收支付整合的 UI 入口。The
+  // api/_lib/env-guard.ts module fails closed on secret prefixes; this flag
+  // hides the client-side affordance in production even if the backend
+  // accidentally exposes an endpoint.
+  paymentPreview: IS_STAGING,
+} as const;
+
+export type StagingOnlyKey = keyof typeof STAGING_ONLY;
+
+export function isStagingOnlyEnabled(key: StagingOnlyKey): boolean {
+  return STAGING_ONLY[key];
 }

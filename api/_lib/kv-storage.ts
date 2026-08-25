@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { kv } from '@vercel/kv';
 import type { PriceAlert, AlertArmState } from '../../src/utils/priceAlerts';
+import { nsKey } from './kv-namespace';
 
 export type Platform = 'ios' | 'android';
 
@@ -13,17 +14,23 @@ export type PushToken = {
 
 export type PushWatchlist = Record<string, string[]>;
 
-const TOKENS_KEY = 'push:tokens';
+// DIC-1189: every KV key here goes through nsKey(). In production APP_ENV is
+// unset, nsKey() returns the key unchanged, and the wire keys are byte-identical
+// to what shipped before. In staging nsKey() prepends `staging:`, so a staging
+// deployment can never overwrite a production key even if it accidentally hits
+// the production KV instance (defence-in-depth for the independent-instance
+// requirement in the setup workflow).
+const TOKENS_KEY = nsKey('push:tokens');
 // Each token's watchlist is its own Redis set (`push:watchlist:<token>`) so
 // add/remove use atomic SADD/SREM instead of read-modify-write on a shared
 // hash field. `WATCHLIST_TOKENS_KEY` is a registry set of every token that has
 // a watchlist, so notify.ts can still enumerate all subscribers (DIC-390 CR).
 const WATCHLIST_PREFIX = 'push:watchlist:';
-const WATCHLIST_TOKENS_KEY = 'push:watchlist-tokens';
-const LAST_ALERT_KEY = 'push:last-alert';
+const WATCHLIST_TOKENS_KEY = nsKey('push:watchlist-tokens');
+const LAST_ALERT_KEY = nsKey('push:last-alert');
 
 function watchlistKey(token: string): string {
-  return `${WATCHLIST_PREFIX}${token}`;
+  return nsKey(`${WATCHLIST_PREFIX}${token}`);
 }
 
 // Each token is stored as its own hash field, so concurrent registrations for
@@ -116,7 +123,7 @@ export async function setLastAlertTimes(keys: string[], timestamp: number): Prom
 // evaluator can enumerate subscribers.
 
 const PRICE_ALERT_PREFIX = 'push:price-alerts:';
-const PRICE_ALERT_TOKENS_KEY = 'push:price-alert-tokens';
+const PRICE_ALERT_TOKENS_KEY = nsKey('push:price-alert-tokens');
 const PRICE_ALERT_EPISODE_PREFIX = 'push:price-alert-episode:';
 // Revisions live in their own hash rather than inside the alert record: the
 // claim script must compare one against the stored config atomically, and a
@@ -132,11 +139,11 @@ const PRICE_ALERT_REV_PREFIX = 'push:price-alert-revs:';
 export const ALERT_CLAIM_LEASE_MS = 5 * 60_000;
 
 function priceAlertsKey(token: string): string {
-  return `${PRICE_ALERT_PREFIX}${token}`;
+  return nsKey(`${PRICE_ALERT_PREFIX}${token}`);
 }
 
 function alertRevsKey(token: string): string {
-  return `${PRICE_ALERT_REV_PREFIX}${token}`;
+  return nsKey(`${PRICE_ALERT_REV_PREFIX}${token}`);
 }
 
 // ── Alert episode state ─────────────────────────────────────────────────────
@@ -172,7 +179,7 @@ function alertRevsKey(token: string): string {
 // completed edit or delete can never be turned into a send (DIC-1025).
 
 function alertEpisodeKey(stateKey: string): string {
-  return `${PRICE_ALERT_EPISODE_PREFIX}${stateKey}`;
+  return nsKey(`${PRICE_ALERT_EPISODE_PREFIX}${stateKey}`);
 }
 
 /** Retire the claim of the episode being replaced. A delivered episode is
