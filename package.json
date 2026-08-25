@@ -27,6 +27,7 @@
     "test:auth-store-error-wiring": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-store-error-wiring.cjs",
     "test:ios-build-guard": "node scripts/test-ios-build-guard.cjs",
     "test:expo-native-compat": "node scripts/test-expo-native-module-compat.mjs",
+    "test:release-apk-pipeline": "node scripts/test-release-apk-pipeline.mjs",
     "test:google-signout": "node scripts/test-google-signout.cjs",
     "test:token-replay": "node scripts/test-token-replay.cjs",
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",

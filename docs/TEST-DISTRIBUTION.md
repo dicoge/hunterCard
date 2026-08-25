@@ -35,10 +35,21 @@
 
 | Profile | 用途 | iOS 產出 | Android 產出 | submit 目的地 |
 | --- | --- | --- | --- | --- |
-| `preview` | 直接安裝測試（ad-hoc） | internal distribution build | APK | （選）Play `internal` track，`draft` |
+| `preview` | 直接安裝測試（ad-hoc，**preview environment**） | internal distribution build | APK | （選）Play `internal` track，`draft` |
 | `production` | 正式測試軌道 | store build → **TestFlight** | AAB | iOS TestFlight／Android Play `internal` track |
+| `production-apk` | **正式內容側載 APK**（DIC-1193） | 不適用（Android only） | release 簽章 APK | 無（APK 不進商店） |
 
 `submit.production.ios` 與 `submit.production.android` 的欄位結構已補齊，目前是 placeholder（見下方「blocked-on-user」）。
+
+`production-apk` 以 `extends: production` 定義，因此 environment／env／版本策略與正式 AAB **完全同源**，只有容器不同（APK 而非 AAB）、distribution 改為 `internal` 以便直接下載安裝。這份對齊由 `npm run test:release-apk-pipeline` 在 CI 上把關；改動 profile 而讓兩者漂移會直接讓 CI 失敗。
+
+### ⚠️ 三種 Android 產物不可混用
+
+| 來源 | 簽章 | 內容 | 可否交給測試員 |
+| --- | --- | --- | --- |
+| `Build Android APK (DEBUG-ONLY)` workflow（`assembleDebug`） | **debug keystore** | debug 變體 | ❌ 絕對不可，artifact 名為 `holohunter-DEBUG-ONLY-apk` 並附 `DEBUG-ONLY.txt` |
+| EAS `preview` profile | EAS release 簽章 | **preview environment** | ⚠️ 只能當 pipeline 煙霧測試，不是正式內容 |
+| EAS `production-apk` profile | EAS release 簽章 | production environment | ✅ 這是唯一的「正式內容測試 APK」 |
 
 ---
 
@@ -56,7 +67,21 @@
 3. 需要的 repo secret：
    - `EXPO_TOKEN`（**必填**）：Expo dashboard → Account → Access Tokens。沒設會 fail-fast。
    - `GOOGLE_SERVICE_ACCOUNT_JSON`（Android `submit=true` 才需要）：Play service account 的 JSON 全文。workflow 在送出時寫成 `./google-service-account.json`（git-ignored），跑完 `always()` 刪除。**不進 git**。
-4. build 進度看 EAS 網站（workflow 用 `--no-wait` 觸發後立即返回）。
+4. build 進度看 EAS 網站（`preview` / `production` 用 `--no-wait` 觸發後立即返回；`production-apk` 例外，會等到產物出來並驗簽，見方式 A-2）。
+
+### 方式 A-2：正式內容側載 APK（`production-apk`，DIC-1193）
+
+Actions → **EAS Build (Test Tracks)** → Run workflow：`platform=android`、`profile=production-apk`、`submit=false`。
+
+workflow 對這個 profile 是 fail-closed 的，任一條不成立就直接失敗、不會產出可交付的 APK：
+
+1. **來源 ref**：只接受 `main`，或 `v*` tag 且該 commit 必須是 `origin/main` 的祖先（側分支切出來的 tag 會被擋）。
+2. **平台／submit**：`platform` 必須是 `android`；`submit=true` 會被拒（APK 不進 Play，商店軌道請用 `production` 的 AAB）。
+3. **等待產物**：這個 profile 不用 `--no-wait`——簽章與 SHA-256 必須在同一個 run 內驗完。
+4. **簽章驗證**：`apksigner verify --verbose --print-certs`；輸出若含 `CN=Android Debug` 立即失敗。
+5. **Provenance**：`build-provenance.json` 記錄 full commit SHA、ref、version／versionCode、EAS build id、APK SHA-256、簽章 DN 與憑證 SHA-256，同時寫進 job summary。
+
+產出的 artifact `holohunter-production-apk` 內含 APK、`build-provenance.json`、`apksigner-verify.txt`（保留 14 天）；EAS build 頁面本身是長期來源。交付時附上 **EAS build 連結 + APK SHA-256 + commit SHA**，讓收件人能自行比對。
 
 ### 方式 B：本機 EAS CLI
 
@@ -68,6 +93,8 @@ npx eas build --platform ios --profile preview
 npx eas build --platform android --profile preview
 # 正式測試軌道
 npx eas build --platform all --profile production
+# 正式內容側載 APK（DIC-1193）
+npx eas build --platform android --profile production-apk
 # 送商店
 npx eas submit --platform ios --profile production --latest       # -> TestFlight
 npx eas submit --platform android --profile production --latest    # -> Play internal
@@ -97,6 +124,29 @@ npx eas submit --platform android --profile production --latest    # -> Play int
 
 - **iOS**：App Store Connect → TestFlight → iOS Builds（每個 build 顯示 version + build number + 上傳時間 + 狀態）。CLI：`npx eas build:list --platform ios --limit 5`。
 - **Android**：Play Console → 測試 → 內部測試 → Releases（每個 release 顯示 versionCode / versionName）。CLI：`npx eas build:list --platform android --limit 5`。
+
+---
+
+## 出「正式內容 APK」前的 Gate（DIC-1193）
+
+CI 只能保證產物是 release 簽章、內容來自 production environment；「這包值不值得給人裝」仍是人為判斷。觸發 `production-apk` 前逐項確認：
+
+1. 所有列為正式內容 blocker 的修正都已合併進 `main`（例：DIC-1192 正式版手機搜尋間距）。
+2. `main` 的 CI 是綠的，且要出的 commit 就是當下最新 `main`——**不得從舊 SHA 補出「正式包」**。
+3. 正式內容清單／隱藏項（Store MVP flags）已與正式站對齊。
+
+安裝後的驗收（QA）：
+
+- `apksigner verify --verbose --print-certs` PASS 且**不是** Android debug 憑證（CI 已擋，交付時重驗一次）。
+- 全新安裝、冷啟動、Google／guest 登入（依 Android 目前支援）、搜尋 `hBP04`、收藏／同步 smoke。
+- 不出現 TEST banner；不連 staging URL／KV／Sandbox payment。
+- feature flag 行為與正式站一致。
+
+交付內容固定三件：**APK 檔**、**EAS build 連結**、**APK SHA-256**（加上 commit SHA / versionCode）。
+
+### Play Internal Testing 的誠實回報
+
+`production` AAB 送 Play 需要 `GOOGLE_SERVICE_ACCOUNT_JSON`。secret 未設時 workflow 會在 submit 步驟 fail 並印出 blocker——此時**只能說「AAB 已產出、尚未上架」並附 blocker**，不得描述成已進 Internal Testing。真的上架後才附 tester opt-in URL。
 
 ---
 
@@ -142,7 +192,7 @@ npx eas submit --platform android --profile production --latest    # -> Play int
 
 1. Play Console 建立 App（package `com.dicoge.holohunter`，固定不可改）。
 2. 填 `EXPO_TOKEN` secret。
-3. Actions 跑 `preview` build（`platform=android`, `submit=false`）驗證 build pipeline OK，先發 APK 給少數測試員直接安裝。
+3. Actions 跑 `preview` build（`platform=android`, `submit=false`）驗證 build pipeline OK——**preview 是 pipeline 煙霧測試，不是正式內容包**；要發給測試員直接安裝的正式內容 APK 走 `production-apk`（方式 A-2）。
 4. 建 Play service account → 填 `GOOGLE_SERVICE_ACCOUNT_JSON` secret。
 5. Actions 跑 `production` build（`platform=android`, `submit=true`）→ 進 Play internal。
 6. 依「測試員怎麼加（Android）」邀人，於「版本紀錄」處確認 build 出現。

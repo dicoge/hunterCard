@@ -1,12 +1,20 @@
 name: EAS Build (Test Tracks)
 
 # Manual, on-demand cloud build via EAS.
-#   iOS      -> TestFlight (submit with the `production` profile)
-#   Android  -> Google Play Internal testing (AAB, `production` profile)
-#   preview  -> internal-distribution build (ad-hoc APK / iOS internal) for direct installs
+#   iOS            -> TestFlight (submit with the `production` profile)
+#   Android        -> Google Play Internal testing (AAB, `production` profile)
+#   preview        -> internal-distribution build (ad-hoc APK / iOS internal) for direct installs
+#   production-apk -> production-content, release-SIGNED APK for direct sideload (DIC-1193).
+#                     Same environment/env as `production`; only the artifact
+#                     container differs (APK instead of AAB). This is the ONLY
+#                     APK that may be handed to a tester as "正式內容測試包" —
+#                     the `Build Android APK` workflow produces a DEBUG-ONLY APK.
 #
 # Run this only after CI on `main` is green. It never runs on push — it is
 # workflow_dispatch only so a build is always a deliberate, human-triggered action.
+# `production` / `production-apk` additionally refuse to run from anything other
+# than `main` or a `v*` release tag that is contained in `main`, so a release
+# artifact can never be cut from an unreviewed branch.
 #
 # Required repo secret:
 #   EXPO_TOKEN  — Expo access token (Expo dashboard -> Account -> Access Tokens).
@@ -36,6 +44,7 @@ on:
         options:
           - preview
           - production
+          - production-apk
       submit:
         description: "Submit to store after build (production -> TestFlight / Play internal)"
         type: boolean
@@ -49,6 +58,54 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Full history so the release-ref guard can prove a tag is contained in main.
+          fetch-depth: 0
+
+      # DIC-1193: a release artifact must be traceable to reviewed code. `main`
+      # is allowed directly; a `v*` tag is allowed only when its commit is an
+      # ancestor of origin/main (a tag cut from a side branch is rejected).
+      - name: Guard release builds to main or a release tag
+        if: ${{ inputs.profile == 'production' || inputs.profile == 'production-apk' }}
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              echo "ref OK: main @ $GITHUB_SHA"
+              ;;
+            refs/tags/v*)
+              git fetch --no-tags --quiet origin main:refs/remotes/origin/main
+              if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+                echo "::error::Release tag ${GITHUB_REF#refs/tags/} ($GITHUB_SHA) is not contained in main. A '$PROFILE' build may only be cut from reviewed, merged code."
+                exit 1
+              fi
+              echo "ref OK: tag ${GITHUB_REF#refs/tags/} @ $GITHUB_SHA (contained in main)"
+              ;;
+            *)
+              echo "::error::Profile '$PROFILE' may only be built from 'main' or a 'v*' release tag contained in main — got '$GITHUB_REF'. Merge to main first, then re-run."
+              exit 1
+              ;;
+          esac
+
+      # A production-content APK is a sideload artifact. Google Play accepts an
+      # AAB for this app (`production` profile) — never route an APK at a store.
+      - name: Guard production-apk usage
+        if: ${{ inputs.profile == 'production-apk' }}
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          SUBMIT: ${{ inputs.submit }}
+        run: |
+          set -euo pipefail
+          if [ "$PLATFORM" != "android" ]; then
+            echo "::error::profile=production-apk is Android-only (got platform='$PLATFORM'). Use profile=production for iOS."
+            exit 1
+          fi
+          if [ "$SUBMIT" = "true" ]; then
+            echo "::error::profile=production-apk cannot be submitted — Play Internal Testing takes the AAB from profile=production. Re-run with submit=false, or use profile=production to submit."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -61,6 +118,9 @@ jobs:
 
       - name: Verify Expo native-module compatibility (DIC-969)
         run: npm run test:expo-native-compat
+
+      - name: Verify release APK pipeline invariants (DIC-1193)
+        run: npm run test:release-apk-pipeline
 
       - name: Setup EAS
         uses: expo/expo-github-action@v8
@@ -76,6 +136,7 @@ jobs:
           fi
 
       - name: EAS Build
+        if: ${{ inputs.profile != 'production-apk' }}
         run: |
           eas build \
             --platform "${{ inputs.platform }}" \
@@ -83,13 +144,116 @@ jobs:
             --non-interactive \
             --no-wait
 
+      # The production APK path waits for the artifact: the acceptance evidence
+      # (signer certificate, SHA-256, versionCode) only exists once the build
+      # finishes, and an unverified APK must never be handed to a tester.
+      - name: EAS Build (production APK, wait for artifact)
+        if: ${{ inputs.profile == 'production-apk' }}
+        run: |
+          set -euo pipefail
+          eas build \
+            --platform android \
+            --profile production-apk \
+            --non-interactive \
+            --json \
+            --wait > eas-build.json
+          STATUS="$(jq -r '.[0].status' eas-build.json)"
+          if [ "$STATUS" != "FINISHED" ]; then
+            echo "::error::EAS build did not finish (status=$STATUS). See https://expo.dev/accounts/dicoge/projects/holohunter/builds"
+            exit 1
+          fi
+
+      - name: Install Android build-tools (apksigner)
+        if: ${{ inputs.profile == 'production-apk' }}
+        run: |
+          set -euo pipefail
+          ANDROID_HOME=$HOME/android-sdk
+          SDK_TOOLS=$ANDROID_HOME/cmdline-tools/latest
+          mkdir -p "$SDK_TOOLS"
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/
+          mv /tmp/cmdline-tools/* "$SDK_TOOLS/"
+          rm -f /tmp/cmdline-tools.zip
+          yes | "$SDK_TOOLS/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$SDK_TOOLS/bin/sdkmanager" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> $GITHUB_PATH
+
+      # Fail-closed release gate: the APK must verify AND must not be signed by
+      # the Android debug certificate. A debug-signed "production" APK is the
+      # exact failure mode DIC-1193 exists to prevent.
+      - name: Verify signature and record build provenance
+        if: ${{ inputs.profile == 'production-apk' }}
+        run: |
+          set -euo pipefail
+          ARTIFACT_URL="$(jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl // empty' eas-build.json)"
+          if [ -z "$ARTIFACT_URL" ]; then
+            echo "::error::EAS build finished but reported no application archive URL."
+            exit 1
+          fi
+          BUILD_ID="$(jq -r '.[0].id' eas-build.json)"
+          APP_VERSION="$(jq -r '.[0].appVersion // empty' eas-build.json)"
+          VERSION_CODE="$(jq -r '.[0].appBuildVersion // empty' eas-build.json)"
+
+          curl -fsSL "$ARTIFACT_URL" -o holohunter-production.apk
+          APK_SHA256="$(sha256sum holohunter-production.apk | cut -d' ' -f1)"
+
+          apksigner verify --verbose --print-certs holohunter-production.apk | tee apksigner-verify.txt
+          if grep -qi 'CN=Android Debug' apksigner-verify.txt; then
+            echo "::error::APK is signed with the Android DEBUG certificate — refusing to publish it as a production-content build."
+            exit 1
+          fi
+          SIGNER_DN="$(grep -m1 'certificate DN:' apksigner-verify.txt | sed 's/.*certificate DN: //')"
+          SIGNER_SHA256="$(grep -m1 'certificate SHA-256 digest:' apksigner-verify.txt | sed 's/.*digest: //')"
+
+          jq -n \
+            --arg profile "production-apk" \
+            --arg ref "$GITHUB_REF" \
+            --arg commit "$GITHUB_SHA" \
+            --arg buildId "$BUILD_ID" \
+            --arg appVersion "$APP_VERSION" \
+            --arg versionCode "$VERSION_CODE" \
+            --arg apkSha256 "$APK_SHA256" \
+            --arg signerDn "$SIGNER_DN" \
+            --arg signerCertSha256 "$SIGNER_SHA256" \
+            --arg artifactUrl "$ARTIFACT_URL" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '$ARGS.named' > build-provenance.json
+          cat build-provenance.json
+
+          {
+            echo "### HoloHunter production-content APK (DIC-1193)"
+            echo ""
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| commit | \`$GITHUB_SHA\` |"
+            echo "| ref | \`$GITHUB_REF\` |"
+            echo "| version | \`$APP_VERSION\` (versionCode \`$VERSION_CODE\`) |"
+            echo "| EAS build | \`$BUILD_ID\` |"
+            echo "| APK SHA-256 | \`$APK_SHA256\` |"
+            echo "| signer DN | \`$SIGNER_DN\` |"
+            echo ""
+            echo "Signature verified by apksigner and confirmed NOT the Android debug certificate."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload production APK + provenance
+        if: ${{ inputs.profile == 'production-apk' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: holohunter-production-apk
+          path: |
+            holohunter-production.apk
+            build-provenance.json
+            apksigner-verify.txt
+          retention-days: 14
+
       - name: Write Google service account (Android submit only)
         if: ${{ inputs.submit && (inputs.platform == 'android' || inputs.platform == 'all') }}
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
           if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
-            echo "::error::submit=true for Android but GOOGLE_SERVICE_ACCOUNT_JSON secret is empty."
+            echo "::error::submit=true for Android but GOOGLE_SERVICE_ACCOUNT_JSON secret is empty. BLOCKER: create a Play Console service account, grant it release permissions, and store its JSON as the GOOGLE_SERVICE_ACCOUNT_JSON repo secret. The build artifact still exists on expo.dev — it is NOT on Play Internal Testing."
             exit 1
           fi
           printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > ./google-service-account.json
