@@ -106,6 +106,7 @@ function parseSteps(workflow) {
         if: null,
         uses: null,
         run: false,
+        shell: null,
         body: '',
       };
       steps.push(current);
@@ -117,11 +118,12 @@ function parseSteps(workflow) {
       continue;
     }
     current.body += `${line}\n`;
-    const key = line.match(/^(\s*)(if|uses|run):\s*(.*)$/);
+    const key = line.match(/^(\s*)(if|uses|run|shell):\s*(.*)$/);
     if (!key || key[1].length !== STEP_INDENT + 2) continue;
     if (key[2] === 'if') current.if = key[3].trim();
     if (key[2] === 'uses') current.uses = key[3].trim();
     if (key[2] === 'run') current.run = true;
+    if (key[2] === 'shell') current.shell = key[3].trim();
   }
   for (const step of steps) {
     step.command = stepCommand(step.body);
@@ -396,6 +398,14 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
         `"${gate.name}" must run exactly:\n${gate.command}\n\n…but runs:\n${step.command}`,
       );
     }
+    // `shell: cat {0}` (or python, or anything else) means the pinned command
+    // is never executed as shell, so its exit status stops mattering — the
+    // gate is disabled without touching a single character of the command.
+    assert.equal(
+      step.shell,
+      null,
+      `"${gate.name}" must not override the shell (got shell: ${step.shell}) — the default bash is what makes its exit status a gate`,
+    );
     // A renamed env key feeds the guard an empty value while every other
     // assertion still passes.
     if (gate.env) {
@@ -460,6 +470,33 @@ function testGateStepsAreEnabledAndInvokeTheirGuards() {
         `${workflowName} step "${step.name}" is switched off with if: ${step.if}`,
       );
     }
+  }
+}
+
+/**
+ * Per-step assertions only bind steps that share a job in a fixed order. Two
+ * workflow-level edits sidestep them entirely: moving the guards into a sibling
+ * job with no `needs:` (the build job then races past them), and overriding the
+ * shell so no `run:` exit status is a gate. Both are one line of valid YAML.
+ */
+function testWorkflowStructureCannotBypassGates() {
+  const jobsSection = easBuildWorkflow.slice(easBuildWorkflow.indexOf('\njobs:'));
+  const jobs = [...jobsSection.matchAll(/^ {2}([A-Za-z_][\w-]*):\s*$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    jobs,
+    ['build'],
+    `eas-build.yml must declare exactly one job, so every gate is in the same job as the build it guards — got ${jobs.join(', ')}`,
+  );
+  assert.ok(
+    !/^\s*defaults:\s*$/m.test(easBuildWorkflow),
+    'eas-build.yml must not declare `defaults:` — a defaults.run.shell override disables every gate at once',
+  );
+  for (const step of easBuildSteps) {
+    assert.equal(
+      step.shell,
+      null,
+      `eas-build.yml step "${step.name}" overrides the shell (shell: ${step.shell}); gates rely on the default bash exit status`,
+    );
   }
 }
 
@@ -805,6 +842,7 @@ const tests = [
   testReleaseApkDiffersFromStoreOnlyInContainer,
   testWorkflowOffersTheReleaseApkProfile,
   testGateStepsAreEnabledAndInvokeTheirGuards,
+  testWorkflowStructureCannotBypassGates,
   testGuardsRunBeforeAnythingIsBuilt,
   testDebugApkWorkflowIsLabelledDebugOnly,
   testRefGuardBehaviour,
