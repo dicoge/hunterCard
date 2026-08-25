@@ -124,12 +124,17 @@ const androidDoc = jobsOf(androidWorkflow);
  * Any `eas build` invocation, however it is wrapped. Matching only at line start
  * left `sh -c "eas build …"` unbound (CR DIC-1193 round 3) — and that string IS
  * part of the document, so "out of scope" was never a defensible answer for it.
+ * Still NOT covered, and deliberately so: a build inside a shell script that a
+ * step merely calls (`run: bash scripts/whatever.sh`). That is not a string in
+ * any document this test parses.
  * The cost is that a string merely mentioning the command reads as an
  * invocation; that fails closed and is the right side to err on for a release
  * gate.
  */
 const INVOKES_EAS_BUILD = (value) =>
-  typeof value === 'string' && /(^|[^\w.-])eas\s+build\b/.test(value);
+  // `eas-cli` is the package name and `npx eas-cli build` is a real invocation;
+  // `[\s\\]+` also spans a backslash line-continuation between the two words.
+  typeof value === 'string' && /(^|[^\w.-])eas(-cli)?[\s\\]+build\b/.test(value);
 
 const BUILD_JOBS = Object.entries(easBuildDoc.jobs).filter(([, job]) =>
   (job.steps ?? []).some((step) => INVOKES_EAS_BUILD(step.run)),
@@ -505,11 +510,16 @@ function testWorkflowStructureCannotBypassGates() {
  * the build, or a second workflow file cannot produce a production APK outside
  * the gated job (CR DIC-1193 round 3, PM directive).
  */
-function* yamlFilesUnder(dir) {
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'android', 'ios', 'public', '.expo']);
+
+function* yamlFilesUnder(dir, { onlyActions = false } = {}) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) yield* yamlFilesUnder(full);
-    else if (/\.ya?ml$/.test(entry.name)) yield full;
+    if (entry.isDirectory()) yield* yamlFilesUnder(full, { onlyActions });
+    else if (onlyActions ? /^action\.ya?ml$/.test(entry.name) : /\.ya?ml$/.test(entry.name)) {
+      yield full;
+    }
   }
 }
 
@@ -523,7 +533,14 @@ function testOnlyTheGatedJobBuilds() {
   const githubDir = path.join(ROOT, '.github');
   const gatedFile = path.join(githubDir, 'workflows/eas-build.yml');
   const offenders = [];
-  for (const file of yamlFilesUnder(githubDir)) {
+  // Everything under .github/, plus every composite action anywhere in the repo:
+  // a `uses: ./tools/build-apk` action.yml is reachable from a workflow no matter
+  // where it lives, so scanning one path prefix is not enough.
+  const scanned = new Set([
+    ...yamlFilesUnder(githubDir),
+    ...yamlFilesUnder(ROOT, { onlyActions: true }),
+  ]);
+  for (const file of scanned) {
     if (file === gatedFile) continue;
     const doc = parseYaml(fs.readFileSync(file, 'utf8'));
     for (const value of stringsIn(doc)) {
