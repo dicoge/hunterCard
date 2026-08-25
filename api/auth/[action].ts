@@ -12,7 +12,9 @@
  *   - unlink         (§5.3) — Bearer session: remove a provider, refusing the last method
  *   - apple-exchange (DIC-960) — public: redeem the one-time Apple web/android
  *                     exchange code (+ PKCE verifier) for its server session
- *   - me            — Bearer session (GET / HEAD / POST): validate the session,
+ *   - sync           — Bearer session: GET account snapshot, POST bounded batch
+ *                     mutation with baseRevision + idempotencyKey (DIC-1156)
+ *   - me             — Bearer session (GET / HEAD / POST): validate the session,
  *                     return the current user. Without a valid session it returns
  *                     structured JSON 401 immediately. The client MUST call this
  *                     before entering authenticated UI so a stale/tampered local
@@ -20,6 +22,15 @@
  *                     auth fail-open).
  */
 import { loginOrCreate, linkIdentity, unlinkIdentity, getUser } from '../_lib/identity-store';
+import {
+  AccountSyncError,
+  getAccountSyncSnapshot,
+  parseAccountSyncPatch,
+  parseBaseRevision,
+  parseDeviceId,
+  parseIdempotencyKey,
+  saveAccountSyncSnapshot,
+} from '../_lib/account-sync-store';
 import { issueSession } from '../_lib/session';
 import {
   backendUnavailable,
@@ -117,6 +128,45 @@ async function handleMe(req: Request): Promise<Response> {
   return json({ user }, 200);
 }
 
+function syncErrorResponse(err: unknown): Response {
+  if (err instanceof AccountSyncError) {
+    return json({ error: err.code, ...(err.extra ?? {}) }, err.status);
+  }
+  return errorResponse(err);
+}
+
+async function handleSync(req: Request): Promise<Response> {
+  const userId = sessionUserId(req);
+  if (!userId) return json({ error: 'INVALID_TOKEN', reason: 'invalid_session' }, 401);
+  const unavailable = backendUnavailable();
+  if (unavailable) return unavailable;
+
+  try {
+    const user = await getUser(userId);
+    if (!user) return json({ error: 'USER_NOT_FOUND', reason: 'no_such_user' }, 401);
+
+    if (req.method === 'GET') {
+      return json({ snapshot: await getAccountSyncSnapshot(userId) }, 200);
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = (await req.json()) as Record<string, unknown>;
+    } catch {
+      return json({ error: 'invalid_json' }, 400);
+    }
+    const snapshot = await saveAccountSyncSnapshot({
+      userId,
+      baseRevision: parseBaseRevision(body.baseRevision),
+      idempotencyKey: parseIdempotencyKey(body.idempotencyKey ?? req.headers.get('idempotency-key')),
+      deviceId: parseDeviceId(body.deviceId),
+      patch: parseAccountSyncPatch(body.patch),
+    });
+    return json({ ok: true, snapshot }, 200);
+  } catch (err) {
+    return syncErrorResponse(err);
+  }
+}
+
 async function webHandler(req: Request): Promise<Response> {
   const action = actionFromUrl(req.url);
 
@@ -133,6 +183,13 @@ async function webHandler(req: Request): Promise<Response> {
     } catch (err) {
       return errorResponse(err);
     }
+  }
+
+  if (action === 'sync') {
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      return json({ error: 'method_not_allowed' }, 405);
+    }
+    return await handleSync(req);
   }
 
   // Mutating actions require POST.

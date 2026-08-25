@@ -76,6 +76,7 @@ for (const rel of [
   'api/_lib/verify-token.ts',
   'api/_lib/token-replay.ts',
   'api/_lib/auth-endpoint.ts',
+  'api/_lib/account-sync-store.ts',
   'api/_lib/apple-web-oauth.ts',
   'api/_lib/apple-exchange-store.ts',
   'api/_lib/node-adapter.ts',
