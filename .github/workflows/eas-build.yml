@@ -156,12 +156,24 @@ jobs:
             --profile production-apk \
             --non-interactive \
             --json \
-            --wait > eas-build.json
-          STATUS="$(jq -r '.[0].status' eas-build.json)"
+            --wait > eas-build-raw.json
+          # `eas build --json` returns an array; normalise so a single-object
+          # response from a future CLI version cannot silently break `.[0]`.
+          jq 'if type == "array" then .[0] else . end' eas-build-raw.json > eas-build.json
+          STATUS="$(jq -r '.status // empty' eas-build.json)"
           if [ "$STATUS" != "FINISHED" ]; then
             echo "::error::EAS build did not finish (status=$STATUS). See https://expo.dev/accounts/dicoge/projects/holohunter/builds"
             exit 1
           fi
+
+      # apksigner is a JVM tool — pin the JDK instead of relying on whatever the
+      # runner image happens to ship.
+      - name: Setup Java
+        if: ${{ inputs.profile == 'production-apk' }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
       - name: Install Android build-tools (apksigner)
         if: ${{ inputs.profile == 'production-apk' }}
@@ -186,14 +198,22 @@ jobs:
         if: ${{ inputs.profile == 'production-apk' }}
         run: |
           set -euo pipefail
-          ARTIFACT_URL="$(jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl // empty' eas-build.json)"
+          ARTIFACT_URL="$(jq -r '.artifacts.applicationArchiveUrl // .artifacts.buildUrl // empty' eas-build.json)"
           if [ -z "$ARTIFACT_URL" ]; then
             echo "::error::EAS build finished but reported no application archive URL."
             exit 1
           fi
-          BUILD_ID="$(jq -r '.[0].id' eas-build.json)"
-          APP_VERSION="$(jq -r '.[0].appVersion // empty' eas-build.json)"
-          VERSION_CODE="$(jq -r '.[0].appBuildVersion // empty' eas-build.json)"
+          BUILD_ID="$(jq -r '.id // empty' eas-build.json)"
+          APP_VERSION="$(jq -r '.appVersion // empty' eas-build.json)"
+          VERSION_CODE="$(jq -r '.appBuildVersion // empty' eas-build.json)"
+          # An APK nobody can trace back to a version is not deliverable, so a
+          # missing provenance field fails the run rather than shipping blanks.
+          for field in BUILD_ID APP_VERSION VERSION_CODE; do
+            if [ -z "${!field}" ]; then
+              echo "::error::EAS build JSON carried no $field — refusing to publish an APK without complete provenance. Check the eas build --json schema."
+              exit 1
+            fi
+          done
 
           curl -fsSL "$ARTIFACT_URL" -o holohunter-production.apk
           APK_SHA256="$(sha256sum holohunter-production.apk | cut -d' ' -f1)"
@@ -203,8 +223,12 @@ jobs:
             echo "::error::APK is signed with the Android DEBUG certificate — refusing to publish it as a production-content build."
             exit 1
           fi
-          SIGNER_DN="$(grep -m1 'certificate DN:' apksigner-verify.txt | sed 's/.*certificate DN: //')"
-          SIGNER_SHA256="$(grep -m1 'certificate SHA-256 digest:' apksigner-verify.txt | sed 's/.*digest: //')"
+          SIGNER_DN="$(grep -m1 'certificate DN:' apksigner-verify.txt | sed 's/.*certificate DN: //' || true)"
+          SIGNER_SHA256="$(grep -m1 'certificate SHA-256 digest:' apksigner-verify.txt | sed 's/.*digest: //' || true)"
+          if [ -z "$SIGNER_DN" ] || [ -z "$SIGNER_SHA256" ]; then
+            echo "::error::Could not read the signer certificate out of apksigner output (format drift?). Refusing to publish an APK whose signer was not positively identified — see the apksigner-verify.txt artifact."
+            exit 1
+          fi
 
           jq -n \
             --arg profile "production-apk" \

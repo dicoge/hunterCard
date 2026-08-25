@@ -57,6 +57,42 @@ function resolveProfile(name, seen = new Set()) {
   return parent ? merge(resolveProfile(parent, seen), rest) : { ...rest };
 }
 
+// Minimal GitHub-workflow step reader. Substring-matching the raw YAML would
+// pass while a guard sits behind `if: false` or is commented out entirely, so
+// the guards are asserted as *enabled steps*, not as text that exists somewhere
+// in the file. Steps are `      - name: X` with their keys indented under them.
+function parseSteps(workflow) {
+  const steps = [];
+  let current = null;
+  for (const line of workflow.split('\n')) {
+    const start = line.match(/^(\s*)- name:\s*(.+?)\s*$/);
+    if (start) {
+      current = { name: start[2], indent: start[1].length, if: null, uses: null, run: false };
+      steps.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const key = line.match(/^(\s*)(if|uses|run):\s*(.*)$/);
+    if (!key) continue;
+    if (key[1].length !== current.indent + 2) continue;
+    if (key[2] === 'if') current.if = key[3].trim();
+    if (key[2] === 'uses') current.uses = key[3].trim();
+    if (key[2] === 'run') current.run = true;
+  }
+  return steps;
+}
+
+const easBuildSteps = parseSteps(easBuildWorkflow);
+const androidSteps = parseSteps(androidWorkflow);
+
+const RELEASE_APK_ONLY = "${{ inputs.profile == 'production-apk' }}";
+
+function stepNamed(steps, name, workflowName) {
+  const found = steps.find((s) => s.name === name);
+  assert.ok(found, `${workflowName} must keep the step "${name}" — it is a release gate, not decoration`);
+  return found;
+}
+
 function testReleaseApkProfileExists() {
   assert.ok(
     easJson.build?.[RELEASE_APK_PROFILE],
@@ -232,6 +268,73 @@ function testDebugApkWorkflowIsLabelledDebugOnly() {
   );
 }
 
+function testReleaseGateStepsAreEnabled() {
+  const gates = [
+    ['Guard release builds to main or a release tag', null],
+    ['Guard production-apk usage', RELEASE_APK_ONLY],
+    ['EAS Build (production APK, wait for artifact)', RELEASE_APK_ONLY],
+    ['Setup Java', RELEASE_APK_ONLY],
+    ['Install Android build-tools (apksigner)', RELEASE_APK_ONLY],
+    ['Verify signature and record build provenance', RELEASE_APK_ONLY],
+    ['Upload production APK + provenance', RELEASE_APK_ONLY],
+  ];
+  for (const [name, expectedIf] of gates) {
+    const step = stepNamed(easBuildSteps, name, 'eas-build.yml');
+    if (expectedIf) {
+      assert.equal(
+        step.if,
+        expectedIf,
+        `"${name}" must run for every production-apk build — its condition is now ${step.if}`,
+      );
+    }
+  }
+  const refGuard = stepNamed(
+    easBuildSteps,
+    'Guard release builds to main or a release tag',
+    'eas-build.yml',
+  );
+  assert.match(
+    refGuard.if ?? '',
+    /production-apk/,
+    'the release-ref guard must apply to production-apk builds',
+  );
+  assert.match(
+    refGuard.if ?? '',
+    /'production'/,
+    'the release-ref guard must also apply to store builds',
+  );
+  stepNamed(androidSteps, 'Label artifact as debug-only', 'build-android.yml');
+
+  for (const [workflowName, steps] of [
+    ['eas-build.yml', easBuildSteps],
+    ['build-android.yml', androidSteps],
+  ]) {
+    for (const step of steps) {
+      assert.ok(
+        !/^\$\{\{\s*false\s*\}\}$|^false$/.test(step.if ?? ''),
+        `${workflowName} step "${step.name}" is switched off with if: ${step.if}`,
+      );
+    }
+  }
+}
+
+function testGuardsRunBeforeAnythingIsBuilt() {
+  const index = (name) => easBuildSteps.findIndex((s) => s.name === name);
+  const lastGuard = Math.max(
+    index('Guard release builds to main or a release tag'),
+    index('Guard production-apk usage'),
+  );
+  const firstBuild = Math.min(
+    ...['Setup EAS', 'EAS Build', 'EAS Build (production APK, wait for artifact)']
+      .map(index)
+      .filter((i) => i >= 0),
+  );
+  assert.ok(
+    lastGuard >= 0 && lastGuard < firstBuild,
+    'both release guards must run before any EAS setup/build step, so a bad ref fails immediately instead of after a build',
+  );
+}
+
 const tests = [
   testReleaseApkProfileExists,
   testReleaseApkShipsProductionContent,
@@ -241,6 +344,8 @@ const tests = [
   testWorkflowGuardsTheReleaseRef,
   testWorkflowNeverSubmitsTheApk,
   testWorkflowVerifiesSignatureAndProvenance,
+  testReleaseGateStepsAreEnabled,
+  testGuardsRunBeforeAnythingIsBuilt,
   testDebugApkWorkflowIsLabelledDebugOnly,
 ];
 

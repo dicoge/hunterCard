@@ -79,7 +79,7 @@ workflow 對這個 profile 是 fail-closed 的，任一條不成立就直接失�
 2. **平台／submit**：`platform` 必須是 `android`；`submit=true` 會被拒（APK 不進 Play，商店軌道請用 `production` 的 AAB）。
 3. **等待產物**：這個 profile 不用 `--no-wait`——簽章與 SHA-256 必須在同一個 run 內驗完。
 4. **簽章驗證**：`apksigner verify --verbose --print-certs`；輸出若含 `CN=Android Debug` 立即失敗。
-5. **Provenance**：`build-provenance.json` 記錄 full commit SHA、ref、version／versionCode、EAS build id、APK SHA-256、簽章 DN 與憑證 SHA-256，同時寫進 job summary。
+5. **Provenance**：`build-provenance.json` 記錄 full commit SHA、ref、version／versionCode、EAS build id、APK SHA-256、簽章 DN 與憑證 SHA-256，同時寫進 job summary。任一欄位讀不到（EAS JSON schema 變動、apksigner 輸出格式漂移）就 fail，不會產出「欄位空白」的交付紀錄。
 
 產出的 artifact `holohunter-production-apk` 內含 APK、`build-provenance.json`、`apksigner-verify.txt`（保留 14 天）；EAS build 頁面本身是長期來源。交付時附上 **EAS build 連結 + APK SHA-256 + commit SHA**，讓收件人能自行比對。
 

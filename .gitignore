@@ -54,6 +54,7 @@ data/push-watchlist.json
 *.aab
 /build-provenance.json
 /eas-build.json
+/eas-build-raw.json
 /apksigner-verify.txt
 
 # generated native folders
