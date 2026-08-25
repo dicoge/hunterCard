@@ -391,6 +391,117 @@ for (const count of [1, 3]) {
   });
 }
 
+// ── DIC-1192 QA rework: 1440 + 390 hBP04 render cannot fail-close on ◇ ──
+//
+// Root cause reproducer: data/database.json ships hBP04-087 / hBP04-088 with
+// `color: '◇'`, and the pre-fix render at SearchResultsScreen.tsx line 450
+// called t(`color_◇`), which throws because the i18n dictionary only carries
+// `color_colorless` (see src/i18n/index.ts line 24 — missing keys throw, on
+// purpose). At 1440×900 the 3-column grid renders enough items on first paint
+// to reach the ◇ card, whiteouting the whole screen; at 390 mobile
+// virtualisation sometimes hides the bug but a data-shape change trivially
+// re-exposes it. Seed a hand-rolled hBP04 dataset containing the ◇ row and
+// prove BOTH viewports:
+//   1. never throw during render,
+//   2. render the ◇ card with the translated `無色` label (not `color_◇` or
+//      the raw diamond, which would mean the normaliser was bypassed).
+const HBP04_SERIES_NAMES = { hBP04: 'ホロライブ ブースターパック 04' };
+function seedHbp04WithDiamondCard() {
+  const cards = {
+    'hBP04-010_hBP04': {
+      id: 'hBP04-010_hBP04',
+      cardNumber: 'hBP04-010',
+      name: 'Ordinary Card',
+      nameZh: '一般卡',
+      series: 'hBP04',
+      type: 'holomen',
+      rarity: 'R',
+      color: 'purple',
+      sellPrice: 100,
+      prices: [{ name: 'R', sellPrice: 100, rarity: 'R' }],
+    },
+    // The DIC-1192 crash row — same shape as data/database.json's real
+    // hBP04-087_hBP04, whittled down to the fields the render touches.
+    'hBP04-087_hBP04': {
+      id: 'hBP04-087_hBP04',
+      cardNumber: 'hBP04-087',
+      name: 'エリザベス・ローズ・ブラッドフレイム',
+      nameZh: '伊麗莎白',
+      series: 'hBP04',
+      type: 'ホロメン',
+      rarity: 'S',
+      color: '◇',
+      sellPrice: 30,
+      prices: [{ name: 'S', sellPrice: 30, rarity: 'S' }],
+    },
+  };
+  seedCache({ cards, totalCards: 2, lastUpdated: '2026-08-25' }, HBP04_SERIES_NAMES);
+}
+
+async function renderHbp04AtViewport(viewport) {
+  seedHbp04WithDiamondCard();
+  setViewport(viewport, viewport === 390 ? 844 : 900);
+  observedLayoutNodes.clear();
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const capturedErrors = [];
+  const originalError = console.error;
+  console.error = (...args) => { capturedErrors.push(args.map(String).join(' ')); };
+  try {
+    await act(async () => root.render(React.createElement(SearchResultsScreen, {
+      route: { params: { query: 'hBP04' } },
+      navigation: { navigate() {} },
+    })));
+    await flush();
+    await fireObservedLayouts();
+    await flush();
+  } finally {
+    console.error = originalError;
+  }
+  const items = Array.from(container.querySelectorAll('[data-testid="search-result-grid-item"]'));
+  return {
+    container,
+    items,
+    capturedErrors,
+    cleanup: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+      seedCache(null, null);
+    },
+  };
+}
+
+for (const viewport of [1440, 390]) {
+  await test(`DIC-1192: hBP04 render at ${viewport}px survives a card whose color field is '◇' (no missing-translation-key crash)`, async () => {
+    const { container, items, capturedErrors, cleanup } = await renderHbp04AtViewport(viewport);
+    try {
+      // 1. Render did not fail-close: both cards materialised as grid items.
+      assert.equal(items.length, 2, `hBP04 dataset must render both cards at ${viewport}px, got ${items.length}`);
+      // 2. No React error boundary swallowed a `Missing translation key` throw.
+      const missingKeyError = capturedErrors.find((msg) => /Missing translation key/i.test(msg));
+      assert.equal(
+        missingKeyError, undefined,
+        `render must not throw \`Missing translation key\` for any color token — saw: ${missingKeyError}`,
+      );
+      // 3. The diamond card renders its normalised colour label. `無色` is
+      // color_colorless in zh (the default locale for tests). If the render
+      // bypassed the normaliser and passed '◇' through as-is, the label
+      // would be the raw diamond glyph — that's the failure signature.
+      const text = container.textContent;
+      assert.ok(text.includes('hBP04-087'), 'crash-row card number must appear in the rendered DOM');
+      assert.ok(
+        text.includes('無色'),
+        'normalised colour label (color_colorless → 無色) must render for the diamond row',
+      );
+      assert.ok(
+        !text.includes('color_◇'),
+        'raw i18n key must never leak into the DOM — that would mean t() ran on an unwhitelisted key',
+      );
+    } finally { await cleanup(); }
+  });
+}
+
 for (const viewport of [390, 1100, 1366, 1440]) {
   await test(`real CardListItem keeps hBP03-010 on its own non-overlapping header row at ${viewport}px`, async () => {
     const { container, cleanup } = await renderCardAt(viewport);
