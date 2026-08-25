@@ -1,5 +1,5 @@
 {
-  "buildCommand": "rm -rf .expo dist node_modules/.cache/metro && expo export --platform web && node scripts/fix-html.js && node scripts/copy-assets.js && node scripts/generate-assetlinks.mjs",
+  "buildCommand": "npx --yes rimraf --glob \".expo\" \"dist\" \"node_modules/.cache\" \"$HOME/.expo\" \"${TMPDIR:-/tmp}/metro-*\" \"${TMPDIR:-/tmp}/haste-map-*\" \"${TMPDIR:-/tmp}/react-native-packager-cache-*\" && expo export --platform web --clear && node scripts/fix-html.js && node scripts/copy-assets.js && node scripts/generate-assetlinks.mjs",
   "outputDirectory": "dist",
   "rewrites": [
     {

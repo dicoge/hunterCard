@@ -547,7 +547,15 @@ export async function saveAccountSyncSnapshot(input: SaveAccountSyncInput): Prom
 
 async function accountSyncIdempotencyKeys(userId: string, indexKey: string): Promise<string[]> {
   const keys = new Set((await kv.smembers(indexKey)).map(String));
-  for await (const key of kv.scanIterator({ match: `account-sync:idempotency:${userId}:*`, count: 100 })) {
+  // DIC-1189 rework 3rd pass — blocker #2: the SCAN pattern MUST route through
+  // nsKey so a staging cleanup can never enumerate/delete production keys, and
+  // a production cleanup can never enumerate/delete staging keys. Pass the
+  // wildcard-suffixed key template through nsKey — production returns identity
+  // (bare pattern), staging prepends the `staging:` prefix. `nsKey` itself
+  // throws AppEnvUnresolved on missing/unknown APP_ENV so a scan can never be
+  // performed in an unattributed environment.
+  const pattern = nsKey(`account-sync:idempotency:${userId}:*`);
+  for await (const key of kv.scanIterator({ match: pattern, count: 100 })) {
     keys.add(String(key));
   }
   return [...keys];

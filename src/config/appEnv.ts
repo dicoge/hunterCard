@@ -15,19 +15,36 @@
 
 export type AppEnv = 'production' | 'staging';
 
+// Server-side detection: Node without a browser window/document is a server
+// runtime (Vercel Function, cron, test harness). Expo web + native bundles
+// synth `window` at least at runtime, so a browser or native pod never
+// enters this branch.
+export function isServerRuntime(): boolean {
+  return (
+    typeof window === 'undefined' &&
+    typeof document === 'undefined' &&
+    typeof process !== 'undefined' &&
+    typeof process.versions === 'object' &&
+    process.versions != null &&
+    typeof process.versions.node === 'string'
+  );
+}
+
 function readRaw(): string {
-  const client =
-    typeof process !== 'undefined' && process.env
-      ? process.env.EXPO_PUBLIC_APP_ENV
-      : undefined;
-  const server =
-    typeof process !== 'undefined' && process.env
-      ? process.env.APP_ENV
-      : undefined;
-  // Server value wins when both are set (server functions never render a client
-  // bundle's stale build-time constant). Client-only contexts fall back to the
-  // baked EXPO_PUBLIC_APP_ENV.
-  const raw = server || client || '';
+  if (typeof process === 'undefined' || !process.env) return '';
+  const client = process.env.EXPO_PUBLIC_APP_ENV;
+  const server = process.env.APP_ENV;
+  // DIC-1189 rework 3rd pass — blocker #2a: on a SERVER runtime (Vercel
+  // Function, cron job, node test harness) EXPO_PUBLIC_APP_ENV alone must
+  // NEVER authorize production keys — only the server-scoped APP_ENV
+  // counts. This closes the bypass where a caller could set
+  // EXPO_PUBLIC_APP_ENV=production on a Vercel Function whose real APP_ENV
+  // is unset and have the KV / payment path silently return bare production
+  // keys / accept production secrets. On CLIENT runtimes (Expo bundle)
+  // EXPO_PUBLIC_APP_ENV is the only value baked in so it is authoritative
+  // there — but the client has no direct KV / secret path, it only decides
+  // TEST banner + staging-only feature visibility.
+  const raw = isServerRuntime() ? server || '' : server || client || '';
   return typeof raw === 'string' ? raw.trim().toLowerCase() : '';
 }
 

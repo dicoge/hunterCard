@@ -19,6 +19,7 @@ import {
   resolveSiteUrl,
   resolveStagingSha,
   AppEnvUnresolved,
+  isServerRuntime,
 } from '../src/config/appEnv.ts';
 
 let passed = 0;
@@ -58,8 +59,14 @@ test('resolveAppEnv: APP_ENV=staging → staging', () => {
   withEnv({ APP_ENV: 'staging' }, () => assert.equal(resolveAppEnv(), 'staging'));
 });
 
-test('resolveAppEnv: EXPO_PUBLIC_APP_ENV=staging → staging', () => {
-  withEnv({ EXPO_PUBLIC_APP_ENV: 'staging' }, () => assert.equal(resolveAppEnv(), 'staging'));
+test('resolveAppEnv on SERVER runtime: EXPO_PUBLIC_APP_ENV=staging ALONE → production (rework 3rd pass — server ignores client-only env)', () => {
+  // Third rework pass — blocker #2a: on a server runtime,
+  // EXPO_PUBLIC_APP_ENV alone must NOT authorize staging (or production).
+  // The lenient resolver falls back to production; the strict resolver
+  // throws (separate test below). Only server APP_ENV counts on server.
+  withEnv({ EXPO_PUBLIC_APP_ENV: 'staging' }, () =>
+    assert.equal(resolveAppEnv(), 'production'),
+  );
 });
 
 test('resolveAppEnv: server APP_ENV wins over client EXPO_PUBLIC_APP_ENV', () => {
@@ -130,8 +137,15 @@ test('resolveAppEnvStrict: APP_ENV=staging returns staging', () => {
   withEnv({ APP_ENV: 'staging' }, () => assert.equal(resolveAppEnvStrict(), 'staging'));
 });
 
-test('resolveAppEnvStrict: EXPO_PUBLIC_APP_ENV=staging returns staging', () => {
-  withEnv({ EXPO_PUBLIC_APP_ENV: 'staging' }, () => assert.equal(resolveAppEnvStrict(), 'staging'));
+test('resolveAppEnvStrict on SERVER: EXPO_PUBLIC_APP_ENV=staging ALONE → throws (client env alone cannot attribute server)', () => {
+  // Rework 3rd pass — blocker #2a: on a server runtime, EXPO_PUBLIC_APP_ENV
+  // must NOT satisfy the strict resolver. Only APP_ENV counts.
+  withEnv({ EXPO_PUBLIC_APP_ENV: 'staging' }, () =>
+    assert.throws(
+      () => resolveAppEnvStrict(),
+      (err) => err instanceof AppEnvUnresolved,
+    ),
+  );
 });
 
 test('resolveAppEnvStrict: empty env throws AppEnvUnresolved', () => {
@@ -157,6 +171,53 @@ test('resolveAppEnvStrict: unknown value throws AppEnvUnresolved (carries raw)',
 test('resolveAppEnvStrict: case-insensitive / trimmed', () => {
   withEnv({ APP_ENV: '  PRODUCTION ' }, () =>
     assert.equal(resolveAppEnvStrict(), 'production'),
+  );
+});
+
+// ── Server-side APP_ENV requirement (rework 3rd pass — blocker #2a) ────────
+// On a server runtime (Node without window/document — where this test runs)
+// EXPO_PUBLIC_APP_ENV alone must NOT authorize production keys. Only the
+// server-scoped APP_ENV counts.
+test('isServerRuntime: true in Node without window/document', () => {
+  assert.equal(isServerRuntime(), true);
+});
+
+test('server: EXPO_PUBLIC_APP_ENV=production without APP_ENV → strict throws (no server auth via client env)', () => {
+  withEnv({ EXPO_PUBLIC_APP_ENV: 'production' }, () =>
+    assert.throws(
+      () => resolveAppEnvStrict(),
+      (err) => err instanceof AppEnvUnresolved,
+    ),
+  );
+});
+
+test('server: EXPO_PUBLIC_APP_ENV=staging without APP_ENV → strict throws (client env alone insufficient)', () => {
+  withEnv({ EXPO_PUBLIC_APP_ENV: 'staging' }, () =>
+    assert.throws(
+      () => resolveAppEnvStrict(),
+      (err) => err instanceof AppEnvUnresolved,
+    ),
+  );
+});
+
+test('server: APP_ENV=production authorizes production (regardless of client env)', () => {
+  withEnv({ APP_ENV: 'production', EXPO_PUBLIC_APP_ENV: 'staging' }, () =>
+    assert.equal(resolveAppEnvStrict(), 'production'),
+  );
+});
+
+test('server: APP_ENV=staging + no client env → strict returns staging', () => {
+  withEnv({ APP_ENV: 'staging' }, () => assert.equal(resolveAppEnvStrict(), 'staging'));
+});
+
+test('server: LENIENT resolver also refuses to be authorized by EXPO_PUBLIC_APP_ENV alone on server', () => {
+  // The lenient (UI) resolver falls back to production on missing/unknown,
+  // but the server-side branch must NOT read EXPO_PUBLIC_APP_ENV even if
+  // set to "staging" — otherwise a leaked/mistaken client env would light
+  // up staging affordances on production functions. Only production is
+  // returned when APP_ENV is unset on a server runtime.
+  withEnv({ EXPO_PUBLIC_APP_ENV: 'staging' }, () =>
+    assert.equal(resolveAppEnv(), 'production'),
   );
 });
 

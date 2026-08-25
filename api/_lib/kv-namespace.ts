@@ -16,7 +16,7 @@
 // mutation) makes that true on `holocard-hunter` in the same apply run.
 
 import { AppEnvUnresolved, resolveAppEnvStrict } from '../../src/config/appEnv';
-import { PAYMENT_ENV_VARS, assertPaymentEnv } from './env-guard';
+import { PAYMENT_ENV_VARS, PRODUCT_MODE_VARS, WEBHOOK_LIVEMODE_VAR, assertPaymentEnv } from './env-guard';
 
 export const STAGING_KV_PREFIX = 'staging:';
 
@@ -27,29 +27,39 @@ export const STAGING_KV_PREFIX = 'staging:';
 // cold starts import this module once per process, so the check runs once
 // per instance.
 //
-// Silent no-op when APP_ENV is unset AND no payment env vars are present:
-// the check is "the environment is unattributed AND has no payment
-// exposure", which describes local tests / dev — we don't want the boot
-// guard to break every test script whose runner didn't happen to set
-// APP_ENV. But if either the environment is attributed OR any payment
-// secret is set, we enforce the full guard (attribution required plus
-// credential/mode/webhook agreement).
+// Silent no-op ONLY when APP_ENV is unset AND no payment-related env is
+// present. Rework 3rd pass — blocker #5: "payment-related" is defined
+// broadly across every dimension of exposure the guard covers:
+//   - payment credentials (STRIPE_SECRET_KEY, RC keys, ...)
+//   - product-mode sentinels (STRIPE_MODE, REVENUECAT_ENVIRONMENT)
+//   - webhook livemode sentinel (STRIPE_WEBHOOK_LIVEMODE)
+// So an unattributed deployment that sets STRIPE_MODE=test (with no
+// credential) is still refused at boot — the sentinel itself is a signal
+// that this deployment expects to service payment traffic, and that is
+// exactly the case that must be laned.
 (function bootGuard() {
-  const hasPaymentEnv = PAYMENT_ENV_VARS.some(({ name }) => {
-    const raw = process.env[name];
-    return typeof raw === 'string' && raw.length > 0;
-  });
+  const hasPaymentExposure =
+    PAYMENT_ENV_VARS.some(({ name }) => {
+      const raw = process.env[name];
+      return typeof raw === 'string' && raw.length > 0;
+    }) ||
+    PRODUCT_MODE_VARS.some(({ name }) => {
+      const raw = process.env[name];
+      return typeof raw === 'string' && raw.length > 0;
+    }) ||
+    (typeof process.env[WEBHOOK_LIVEMODE_VAR] === 'string' &&
+      (process.env[WEBHOOK_LIVEMODE_VAR] as string).length > 0);
   try {
     assertPaymentEnv();
   } catch (err) {
-    if (err instanceof AppEnvUnresolved && !hasPaymentEnv) {
-      // Unattributed environment with no payment exposure — allow. First
-      // nsKey() call will still throw AppEnvUnresolved if this deployment
-      // actually tries to use KV.
+    if (err instanceof AppEnvUnresolved && !hasPaymentExposure) {
+      // Unattributed environment with zero payment exposure — allow (test/
+      // dev). The first nsKey() call still throws AppEnvUnresolved if this
+      // deployment ever tries to use KV, so KV traffic is not affected.
       return;
     }
-    // Attributed env with a real mismatch, OR unattributed env WITH
-    // payment env exposure — fail closed.
+    // Attributed env with a real mismatch, OR unattributed env with ANY
+    // payment-related exposure — fail closed.
     throw err;
   }
 })();
