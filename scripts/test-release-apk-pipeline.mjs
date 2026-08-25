@@ -533,53 +533,157 @@ function* stringsIn(node) {
   else if (node && typeof node === 'object') for (const value of Object.values(node)) yield* stringsIn(value);
 }
 
-function testOnlyTheGatedJobBuilds() {
+/**
+ * Every `eas build` invocation in the repo, located precisely: which file, which
+ * job, which step index, what it runs and under what condition.
+ *
+ * Counting JOBS that contain a build was not enough (CR DIC-1193 round 4): an
+ * extra build step inserted INSIDE the allowed job — before Checkout and before
+ * the guards — kept the job count at one and queued an ungated build with the
+ * suite green. The unit of the invariant is the invocation, not the job.
+ */
+function enumerateBuildInvocations() {
   const githubDir = path.join(ROOT, '.github');
-  const gatedFile = path.join(githubDir, 'workflows/eas-build.yml');
-  const offenders = [];
-  // Everything under .github/, plus every composite action anywhere in the repo:
-  // a `uses: ./tools/build-apk` action.yml is reachable from a workflow no matter
-  // where it lives, so scanning one path prefix is not enough.
-  const scanned = new Set([
+  const found = [];
+  const files = new Set([
     ...yamlFilesUnder(githubDir),
     ...yamlFilesUnder(ROOT, { onlyActions: true }),
   ]);
-  for (const file of scanned) {
-    if (file === gatedFile) continue;
+  for (const file of [...files].sort()) {
+    const relative = path.relative(ROOT, file);
     let doc;
     try {
       doc = parseYaml(fs.readFileSync(file, 'utf8'));
     } catch (error) {
-      // Fail closed, but say which file: an unparseable YAML could be hiding a
-      // build invocation, so it is not skipped.
-      throw new Error(`could not parse ${path.relative(ROOT, file)} while scanning for eas build invocations: ${error.message}`);
+      throw new Error(
+        `could not parse ${relative} while scanning for eas build invocations: ${error.message}`,
+      );
     }
-    for (const value of stringsIn(doc)) {
-      if (INVOKES_EAS_BUILD(value)) {
-        offenders.push(`${path.relative(ROOT, file)}: ${value.trim().slice(0, 60)}`);
-        break;
+    // Workflow jobs, and a composite action's own step list.
+    const stepLists = [
+      ...Object.entries(doc?.jobs ?? {}).map(([job, value]) => [job, value?.steps ?? []]),
+      ...(doc?.runs?.steps ? [['runs', doc.runs.steps]] : []),
+    ];
+    for (const [job, steps] of stepLists) {
+      steps.forEach((step, index) => {
+        for (const value of stringsIn(step)) {
+          if (!INVOKES_EAS_BUILD(value)) continue;
+          found.push({
+            file: relative,
+            job,
+            index,
+            name: step?.name ?? null,
+            if: step?.if == null ? null : String(step.if).trim(),
+            command: typeof step?.run === 'string' ? step.run.trim() : null,
+          });
+          return; // one entry per step
+        }
+      });
+    }
+    // A build hiding outside any step list (top-level string, `with:` input…).
+    if (!found.some((entry) => entry.file === relative)) {
+      for (const value of stringsIn(doc)) {
+        if (INVOKES_EAS_BUILD(value)) {
+          found.push({ file: relative, job: null, index: null, name: null, if: null, command: value.trim() });
+          break;
+        }
       }
     }
   }
-  assert.deepEqual(
-    offenders,
-    [],
-    `only .github/workflows/eas-build.yml may invoke \`eas build\` — the release gates live there and cannot police another file (found: ${offenders.join(' | ')})`,
-  );
+  return found;
+}
 
-  // Inside the gated workflow, every build invocation — wrapped or not — must
-  // sit in the one job the gates belong to.
-  const [buildJobName] = BUILD_JOB;
-  for (const [jobName, job] of Object.entries(easBuildDoc.jobs)) {
-    for (const step of job.steps ?? []) {
-      for (const value of stringsIn(step)) {
-        if (!INVOKES_EAS_BUILD(value)) continue;
-        assert.equal(
-          jobName,
-          buildJobName,
-          `job "${jobName}" invokes eas build outside the gated job "${buildJobName}": ${value.trim().slice(0, 60)}`,
-        );
-      }
+const GATED_WORKFLOW = '.github/workflows/eas-build.yml';
+
+// The complete, exhaustive list of builds this repository is allowed to perform.
+const ALLOWED_BUILD_INVOCATIONS = [
+  {
+    file: GATED_WORKFLOW,
+    job: 'build',
+    index: 9,
+    name: 'EAS Build',
+    if: "${{ inputs.profile != 'production-apk' }}",
+    command: [
+      'eas build \\',
+      '  --platform "${{ inputs.platform }}" \\',
+      '  --profile "${{ inputs.profile }}" \\',
+      '  --non-interactive \\',
+      '  --no-wait',
+    ].join('\n'),
+  },
+  {
+    file: GATED_WORKFLOW,
+    job: 'build',
+    index: 10,
+    name: 'EAS Build (production APK, wait for artifact)',
+    if: "${{ inputs.profile == 'production-apk' }}",
+    command: [
+      'set -euo pipefail',
+      'eas build \\',
+      '  --platform android \\',
+      '  --profile production-apk \\',
+      '  --non-interactive \\',
+      '  --json \\',
+      '  --wait > eas-build-raw.json',
+      `bash ${SCRIPTS.buildStatus} eas-build-raw.json eas-build.json`,
+    ].join('\n'),
+  },
+];
+
+function testBuildInvocationsAreExhaustivelyPinned() {
+  const invocations = enumerateBuildInvocations();
+  const describe = (entry) =>
+    `${entry.file}#${entry.job ?? '<no job>'}[${entry.index ?? '?'}] ${entry.name ?? '<unnamed>'}`;
+
+  assert.equal(
+    invocations.length,
+    ALLOWED_BUILD_INVOCATIONS.length,
+    `this repository may perform exactly ${ALLOWED_BUILD_INVOCATIONS.length} eas build invocations; found ${invocations.length}:\n  ${invocations.map(describe).join('\n  ')}`,
+  );
+  invocations.forEach((actual, i) => {
+    const expected = ALLOWED_BUILD_INVOCATIONS[i];
+    assert.deepEqual(
+      actual,
+      expected,
+      `build invocation #${i + 1} is not the one this repository allows.\n  expected: ${describe(expected)}\n  actual:   ${describe(actual)}\n  full diff above — an added, moved, renamed, re-conditioned or re-worded build step must be reviewed as a release change.`,
+    );
+  });
+}
+
+/**
+ * Guard order asserted against invocation INDEXES, not step names: a build step
+ * the name list does not know about is exactly the mutation that got through.
+ */
+function testEveryBuildInvocationRunsAfterTheGuards() {
+  const [buildJobName, buildJob] = BUILD_JOB;
+  const stepIndex = (name) => (buildJob.steps ?? []).findIndex((step) => step?.name === name);
+  const guards = [
+    'Checkout code',
+    'Guard release builds to main or a release tag',
+    'Guard production-apk usage',
+  ].map((name) => ({ name, index: stepIndex(name) }));
+
+  for (const guard of guards) {
+    assert.ok(guard.index >= 0, `eas-build.yml must keep the step "${guard.name}"`);
+  }
+
+  const invocations = enumerateBuildInvocations();
+  for (const invocation of invocations) {
+    assert.equal(
+      invocation.file,
+      GATED_WORKFLOW,
+      `${invocation.file} invokes eas build — only ${GATED_WORKFLOW} may`,
+    );
+    assert.equal(
+      invocation.job,
+      buildJobName,
+      `${invocation.file}#${invocation.job} invokes eas build outside the gated job "${buildJobName}"`,
+    );
+    for (const guard of guards) {
+      assert.ok(
+        guard.index < invocation.index,
+        `the build at step index ${invocation.index} ("${invocation.name ?? '<unnamed>'}") runs BEFORE the guard "${guard.name}" at index ${guard.index} — it would queue an ungated build`,
+      );
     }
   }
 }
@@ -927,6 +1031,14 @@ function testVerifyBehaviour() {
       /GITHUB_REPOSITORY is empty/,
       { GITHUB_REPOSITORY: '' },
     ],
+    [
+      'blank server url',
+      complete,
+      certFiles.good,
+      1,
+      /GITHUB_SERVER_URL is empty/,
+      { GITHUB_SERVER_URL: '' },
+    ],
   ];
 
   for (const [label, buildJson, certs, expected, message, githubEnv] of cases) {
@@ -1032,7 +1144,8 @@ const tests = [
   testWorkflowOffersTheReleaseApkProfile,
   testGateStepsAreEnabledAndInvokeTheirGuards,
   testWorkflowStructureCannotBypassGates,
-  testOnlyTheGatedJobBuilds,
+  testBuildInvocationsAreExhaustivelyPinned,
+  testEveryBuildInvocationRunsAfterTheGuards,
   testWorkflowInputSchema,
   testGuardsRunBeforeAnythingIsBuilt,
   testDebugApkWorkflowIsLabelledDebugOnly,
