@@ -25,6 +25,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { canonicalizePrices, hasErrataLabel, stripErrataLabel } from './lib/canonical-printings.js';
+import { canonicalizeCardNumber, isCanonicalCardNumber } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -245,6 +246,34 @@ console.log('\n── Regression: hBP02-003 Marine ──');
       `hBP02-003 top-level image is not pre-errata 10008 (actual: ${card.yuyuImage})`,
     );
   }
+}
+
+// ── DIC-1084: canonicalizeCardNumber pads yuyu-tei short suffixes ──
+{
+  const cases = [
+    ['hY01-14', 'hY01-014'],
+    ['hY02-12', 'hY02-012'],
+    ['hY01-01', 'hY01-001'],
+    ['hBP01-091', 'hBP01-091'],  // already canonical
+    ['hPR-001', 'hPR-001'],       // already canonical
+    ['hY06-11', 'hY06-011'],
+  ];
+  for (const [input, expected] of cases) {
+    const result = canonicalizeCardNumber(input);
+    eq(result, expected, `canonicalizeCardNumber(${input}) = ${expected} (got ${result})`);
+    eq(isCanonicalCardNumber(result), true, `${result} is canonical`);
+  }
+  // All 12 previously non-canonical yuyu-only cards in the DB must now be canonical
+  const db = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/database.json'), 'utf-8'));
+  const CANONICAL_RE = /^h[A-Za-z0-9]+-\d{3}$/;
+  for (const [id, c] of Object.entries(db.cards)) {
+    if (c.cardNumber && !CANONICAL_RE.test(c.cardNumber)) {
+      fail(`non-canonical cardNumber in DB: ${id} -> ${c.cardNumber}`);
+    }
+  }
+  // public/database.json must have identical keys
+  const pub = JSON.parse(fs.readFileSync(path.join(__dirname, '../public/data/database.json'), 'utf-8'));
+  eq(Object.keys(db.cards).length, Object.keys(pub.cards).length, 'canonical and public DB row count match');
 }
 
 console.log(failures === 0 ? '\n✅ All canonical-printing assertions pass.' : `\n❌ ${failures} assertion(s) failed.`);
