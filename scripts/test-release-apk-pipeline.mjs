@@ -546,7 +546,14 @@ function testOnlyTheGatedJobBuilds() {
   ]);
   for (const file of scanned) {
     if (file === gatedFile) continue;
-    const doc = parseYaml(fs.readFileSync(file, 'utf8'));
+    let doc;
+    try {
+      doc = parseYaml(fs.readFileSync(file, 'utf8'));
+    } catch (error) {
+      // Fail closed, but say which file: an unparseable YAML could be hiding a
+      // build invocation, so it is not skipped.
+      throw new Error(`could not parse ${path.relative(ROOT, file)} while scanning for eas build invocations: ${error.message}`);
+    }
     for (const value of stringsIn(doc)) {
       if (INVOKES_EAS_BUILD(value)) {
         offenders.push(`${path.relative(ROOT, file)}: ${value.trim().slice(0, 60)}`);
