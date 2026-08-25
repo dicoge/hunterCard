@@ -300,9 +300,42 @@ await test('390px mobile renders single-column full-width cards with no horizont
     assert.equal(document.documentElement.scrollWidth, document.documentElement.clientWidth);
     for (const item of items) {
       assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+      // DIC-1192 mutation guard: the single-column wrapper sits on the
+      // FlatList's vertical main axis, so a numeric flex-basis inflates
+      // the wrapper's *height* (the 358×358 bug). `auto` lets the card
+      // decide row height. If the fix in gridLayout.ts is ever reverted
+      // — e.g. by dropping the `safeColumns === 1` branch — this fails
+      // immediately because RN Web serialises the numeric flex-basis
+      // as `flex-basis: 358px` into the computed style.
+      const flexBasis = getComputedStyle(item).flexBasis;
+      assert.doesNotMatch(
+        String(flexBasis), /^\d+(?:\.\d+)?px$/,
+        `single-column wrapper flex-basis must not be a numeric px value, got ${flexBasis} (DIC-1192)`,
+      );
     }
   } finally { await cleanup(); }
 });
+
+// DIC-1192: an exact-count mobile render is the mutation-safe way to prove
+// the wrapper is not inflated in the first place. renderScreenWithExactCount
+// seeds a hand-rolled dataset so the rendered DOM has *exactly* the cards
+// we asked for, mirroring the desktop mutation-guard tests above.
+for (const count of [1, 2, 4]) {
+  await test(`exact ${count}-card dataset at 390px (1 col) keeps single-column wrapper flex-basis auto (DIC-1192)`, async () => {
+    const { items, cleanup } = await renderScreenWithExactCount(390, count);
+    try {
+      assert.equal(items.length, count, `seeded dataset must render exactly ${count} grid items`);
+      for (const item of items) {
+        assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
+        const flexBasis = getComputedStyle(item).flexBasis;
+        assert.doesNotMatch(
+          String(flexBasis), /^\d+(?:\.\d+)?px$/,
+          `mobile wrapper flex-basis must not be a numeric px value, got ${flexBasis} (DIC-1192)`,
+        );
+      }
+    } finally { await cleanup(); }
+  });
+}
 
 // DIC-1150 CR: exact-N datasets rendered through the real screen so the
 // partial row actually exists in the DOM. At numColumns=3, N=1 leaves a
