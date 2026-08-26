@@ -4,12 +4,12 @@
   "nameZh": "博衣可佑理",
   "trend": "down",
   "score": -0.21,
-  "confidence": 0.5,
+  "confidence": 0.4,
   "components": {
     "priceTrend": -0.41,
     "ytTrend": 0,
     "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-08-24T12:12:26.685Z",
-  "dataPoints": 4
+  "lastUpdated": "2026-08-25T12:12:41.555Z",
+  "dataPoints": 5
 }

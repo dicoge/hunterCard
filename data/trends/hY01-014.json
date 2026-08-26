@@ -1,0 +1,15 @@
+{
+  "cardId": "hY01-14",
+  "name": "白エール(IRyS)",
+  "nameZh": "",
+  "trend": "stable",
+  "score": -0.14,
+  "confidence": 0.4,
+  "components": {
+    "priceTrend": -0.28,
+    "ytTrend": 0,
+    "newsSentiment": 0.16
+  },
+  "lastUpdated": "2026-08-25T12:12:41.569Z",
+  "dataPoints": 4
+}

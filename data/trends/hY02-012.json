@@ -1,0 +1,15 @@
+{
+  "cardId": "hY02-12",
+  "name": "緑エール(パヴォリア・レイネ)",
+  "nameZh": "",
+  "trend": "stable",
+  "score": -0.11,
+  "confidence": 0.4,
+  "components": {
+    "priceTrend": -0.23,
+    "ytTrend": 0,
+    "newsSentiment": 0.16
+  },
+  "lastUpdated": "2026-08-25T12:12:41.569Z",
+  "dataPoints": 4
+}
