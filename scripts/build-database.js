@@ -1084,13 +1084,17 @@ function mergeYtStats(database) {
   }
 
   let merged = 0;
+  const seenCardNumbers = new Set();
   for (const card of Object.values(database.cards)) {
+    const cardNumber = card.cardNumber || '';
+    if (seenCardNumbers.has(cardNumber)) continue;
     const stats =
       (card.name && statsByNameJp[card.name.trim()]) ||
       (card.nameZh && statsByNameZh[card.nameZh.trim()]) ||
       null;
     if (stats) {
       card.ytStats = stats;
+      seenCardNumbers.add(cardNumber);
       merged++;
     }
   }
@@ -1141,61 +1145,6 @@ async function buildDatabase() {
   } catch (err) {
     if (err.code !== 'ENOENT') {
       console.warn(`  [sellPrice] Could not read previous database for sell-price preservation: ${err.message}`);
-    }
-  }
-
-  // Capture the previous build's buyPrice / buyPriceHistory before we overwrite
-  // database.json. Unlike priceHistory (persisted to per-card files in
-  // data/price-history/), buy prices live ONLY inside database.json. A fresh
-  // rebuild wipes them, and merge-buy-prices.js (run afterward) only re-adds
-  // TODAY's value — so without this preservation buyPriceHistory could never
-  // accumulate past one day, and any day merge-buy-prices fails to run would
-  // drop buyPrice from the committed database entirely (DIC-236).
-  const prevBuyByCardId = new Map();
-  try {
-    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
-    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
-      const saved = {};
-      if (Number.isFinite(card.buyPrice) && card.buyPrice > 0) saved.buyPrice = card.buyPrice;
-      if (card.buyPriceHistory && typeof card.buyPriceHistory === 'object' &&
-          Object.keys(card.buyPriceHistory).length > 0) {
-        saved.buyPriceHistory = card.buyPriceHistory;
-      }
-      // Per-version buy prices (DIC-856) also live only in database.json → preserve them
-      // by EXACT canonical variant key (cardNumber|class|token) so a build-only pass (no merge
-      // afterward) keeps version alignment. Keys that collide within a card (e.g. two identical
-      // (パラレル) variants — hBP02-017) are ambiguous, so we drop them rather than let one
-      // variant's price leak onto its twin; merge-buy-prices.js re-derives those from source.
-      // Since DIC-856 follow-up each variant's buy price also carries its provenance
-      // (buyPriceVersion / buyPriceSource / buyPriceTimestamp) so the reading layer never has
-      // to re-guess which version a price belongs to — preserve those fields too.
-      if (Array.isArray(card.prices)) {
-        const variantBuy = {};
-        const seenKey = new Set();
-        const dupKey = new Set();
-        for (const v of card.prices) {
-          if (!v || !Number.isFinite(v.buyPrice) || v.buyPrice <= 0) continue;
-          const key = canonicalVariantKey(card.cardNumber, v.name);
-          if (seenKey.has(key)) { dupKey.add(key); continue; }
-          seenKey.add(key);
-          variantBuy[key] = {
-            price: v.buyPrice,
-            version: v.buyPriceVersion,
-            source: v.buyPriceSource,
-            timestamp: v.buyPriceTimestamp,
-          };
-        }
-        for (const k of dupKey) delete variantBuy[k];
-        if (Object.keys(variantBuy).length > 0) saved.variantBuy = variantBuy;
-      }
-      if (Object.keys(saved).length > 0) prevBuyByCardId.set(cardId, saved);
-    }
-    if (prevBuyByCardId.size > 0) {
-      console.log(`  [buyPrice] Preserving buy prices for ${prevBuyByCardId.size} cards from previous build`);
-    }
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.warn(`  [buyPrice] Could not read previous database for buyPrice preservation: ${err.message}`);
     }
   }
 
@@ -1423,9 +1372,14 @@ async function buildDatabase() {
     const cleanYuyuName = canonicalYuyuName(lowestName);
     const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, firstImage);
 
-    database.cards[cardNum] = {
-      id: cardNum,
-      cardNumber: cardNum,
+    const canonicalCardNum = isCanonicalCardNumber(cardNum)
+      ? cardNum
+      : cardNum.replace(/-(\d{1,2})$/, (_, n) => `-${n.padStart(3, '0')}`);
+    const outCardNum = isCanonicalCardNumber(canonicalCardNum) ? canonicalCardNum : cardNum;
+
+    database.cards[outCardNum] = {
+      id: outCardNum,
+      cardNumber: outCardNum,
       name: lowestName || '',
       type: '',
       color: '',
@@ -1436,7 +1390,7 @@ async function buildDatabase() {
       yuyuImage: cleanYuyuImage,
       prices: canonical,
       officialImage: '',
-      localImage: fs.existsSync(path.join(IMAGES_DIR, `${cardNum}.jpg`)) ? `/images/${cardNum}.jpg` : '',
+      localImage: fs.existsSync(path.join(IMAGES_DIR, `${outCardNum}.jpg`)) ? `/images/${outCardNum}.jpg` : '',
       hp: '',
       life: '',
       arts: '',
@@ -1606,41 +1560,9 @@ async function buildDatabase() {
   }
   console.log(`  [priceHistory] Merged into ${mergedCount} cards`);
 
-  // Step 6b: Restore preserved buyPrice / buyPriceHistory onto the rebuilt cards
-  // so they survive the from-scratch rebuild. merge-buy-prices.js runs after this
-  // in the pipeline and layers today's fresh buy prices on top (DIC-236).
-  let buyRestored = 0;
-  for (const [cardId, saved] of prevBuyByCardId.entries()) {
-    const card = database.cards[cardId];
-    if (!card) continue; // card no longer exists in the rebuilt database
-    if (saved.buyPrice != null) card.buyPrice = saved.buyPrice;
-    if (saved.buyPriceHistory != null) card.buyPriceHistory = saved.buyPriceHistory;
-    if (saved.variantBuy && Array.isArray(card.prices)) {
-      // Only restore onto variants whose canonical key is unique in the rebuilt card, so an
-      // ambiguous (duplicate-key) variant never inherits another version's preserved price.
-      const keyCount = new Map();
-      for (const v of card.prices) {
-        const k = canonicalVariantKey(card.cardNumber, v.name);
-        keyCount.set(k, (keyCount.get(k) || 0) + 1);
-      }
-      for (const v of card.prices) {
-        const k = canonicalVariantKey(card.cardNumber, v.name);
-        if (keyCount.get(k) !== 1) continue;
-        const bp = saved.variantBuy[k];
-        if (bp != null) {
-          v.buyPrice = bp.price;
-          if (bp.version != null) v.buyPriceVersion = bp.version;
-          else delete v.buyPriceVersion;
-          if (bp.source != null) v.buyPriceSource = bp.source;
-          else delete v.buyPriceSource;
-          if (bp.timestamp != null) v.buyPriceTimestamp = bp.timestamp;
-          else delete v.buyPriceTimestamp;
-        }
-      }
-    }
-    buyRestored++;
-  }
-  console.log(`  [buyPrice] Restored buy prices onto ${buyRestored} cards`);
+  // Step 6b: Do not restore stale buy prices from the previous database. Buy prices
+  // are source-listing claims, not history like sell prices; merge-buy-prices.js is
+  // the only writer allowed to attach current exact-print provenance.
 
   // Step 7: Merge VTuber YouTube stats (subscriber/view counts + growth) (DIC-249)
   console.log('\n── Step 7: Merge VTuber YouTube stats ──');
