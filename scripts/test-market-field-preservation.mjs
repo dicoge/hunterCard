@@ -13,9 +13,11 @@
  * requirement: if the fix silently regresses, the test fails.
  */
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fsMod from 'node:fs';
 import os from 'node:os';
 import pathMod from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   applyPreservedMarketFields,
   buildPreservationIndex,
@@ -26,6 +28,10 @@ import {
   preservedMarketPayload,
   seedCanonicalHistoryFiles,
 } from './lib/preserve-market-fields.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = pathMod.dirname(__filename);
+const REPO_ROOT = pathMod.resolve(__dirname, '..');
 
 // ─── Fixtures ────────────────────────────────────────────────────────────
 const provenPayload = {
@@ -433,6 +439,223 @@ function freshCurrentCard(overrides = {}) {
 
   // Cleanup tmpdir
   fsMod.rmSync(tmp, { recursive: true, force: true });
+}
+
+// ─── Structural binding to the real build-database.js call site ─────────
+// Mac-Codex CR on 040802f5f flagged: the helper-level round-trip above
+// still passes if a future refactor deletes / moves / stubs the
+// `seedCanonicalHistoryFiles(...)` call in scripts/build-database.js. If
+// the seed call is removed or moved to run AFTER Step 5 writes the
+// canonical-ID history file, Step 6's unconditional re-read collapses the
+// restored multi-day history back to today's single record and the shipped
+// regression returns — but this test would stay green because it only
+// exercises the helper. The block below reads the production file and
+// binds the test to that exact call site + ordering, so the mutation
+// "delete or move the seed call" fails the test at source-inspection time.
+{
+  const builderPath = pathMod.join(REPO_ROOT, 'scripts/build-database.js');
+  const src = fsMod.readFileSync(builderPath, 'utf8');
+
+  // 1. The helper must be imported by the builder from the shared lib.
+  assert.match(
+    src,
+    /import\s*{[^}]*\bseedCanonicalHistoryFiles\b[^}]*}\s*from\s*['"]\.\/lib\/preserve-market-fields\.js['"]/,
+    'scripts/build-database.js must import seedCanonicalHistoryFiles from ./lib/preserve-market-fields.js',
+  );
+
+  // 2. There must be exactly one call site with the production signature
+  //    passing the live database.cards map + historyDir + real fs adapter.
+  const callMatches = [...src.matchAll(/seedCanonicalHistoryFiles\s*\(/g)];
+  assert.ok(callMatches.length >= 1, 'scripts/build-database.js must call seedCanonicalHistoryFiles');
+  const callIdx = callMatches[0].index;
+  // Match the production call shape so a stubbed no-op call (e.g. with
+  // cards: {} or a dummy fs) does not silently satisfy the assertion.
+  const productionCallShape = /seedCanonicalHistoryFiles\s*\(\s*{\s*cards\s*:\s*database\.cards\s*,\s*historyDir\s*,\s*fsAdapter\s*:\s*{\s*fs\s*,\s*path\s*}\s*,?\s*}\s*\)/;
+  assert.match(
+    src,
+    productionCallShape,
+    'seedCanonicalHistoryFiles in scripts/build-database.js must be called with { cards: database.cards, historyDir, fsAdapter: { fs, path } }',
+  );
+
+  // 3. The call must appear BEFORE the Step 5 history write loop. The
+  //    write loop iterates groupedRecords and re-writes each history file
+  //    — that is the exact write Step 6 then re-reads and overwrites
+  //    card.priceHistory with. A seed call scheduled after this loop
+  //    would be too late and the shipped collapse returns.
+  const stepFiveWriteMatch = src.match(/Object\.entries\(\s*groupedRecords\s*\)/);
+  assert.ok(stepFiveWriteMatch, 'scripts/build-database.js must still perform the Step 5 groupedRecords write loop');
+  const stepFiveIdx = stepFiveWriteMatch.index;
+  assert.ok(
+    callIdx < stepFiveIdx,
+    `seedCanonicalHistoryFiles call (index ${callIdx}) must appear BEFORE the Step 5 groupedRecords write loop (index ${stepFiveIdx}); moving it after Step 5 lets Step 6 re-read collapse the preserved multi-day history`,
+  );
+
+  // 4. The Step 6 re-read must still be present and must appear AFTER the
+  //    seed call — a refactor that removes Step 6's `card.priceHistory =
+  //    sanitizePriceHistory(ph)` line would silently make the seed
+  //    irrelevant, so we bind the seed↔re-read ordering explicitly.
+  const stepSixMatch = src.match(/card\.priceHistory\s*=\s*sanitizePriceHistory\s*\(\s*ph\s*\)/);
+  assert.ok(stepSixMatch, 'scripts/build-database.js must still perform the Step 6 card.priceHistory write-back');
+  assert.ok(
+    callIdx < stepSixMatch.index,
+    'seedCanonicalHistoryFiles call must precede the Step 6 card.priceHistory write-back',
+  );
+
+  // 5. The seed call must sit AFTER applyPreservedMarketFields runs — the
+  //    seed reads `card.priceHistory` which is only populated by the
+  //    preservation step; running it beforehand seeds nothing.
+  const preserveMatch = src.match(/applyPreservedMarketFields\s*\(/);
+  assert.ok(preserveMatch, 'scripts/build-database.js must still call applyPreservedMarketFields');
+  assert.ok(
+    preserveMatch.index < callIdx,
+    'applyPreservedMarketFields must run BEFORE seedCanonicalHistoryFiles so the preserved history is available to seed',
+  );
+}
+
+// ─── Real subprocess exercise of the shipped build ordering ─────────────
+// Additional guard requested by CR: exercise the real scripts/build-database.js
+// process (with HUNTERCARD_YUYU_FIXTURE_PATH set to skip network) and assert
+// that the reviewer's cited renamed printing — `hBP01-028_hBP08_HR_hBP01-028_HR`,
+// which had 66 shipped DB history days but no canonical-ID history file on
+// main — still has multi-day priceHistory in the written data/database.json
+// after a build with no pre-existing canonical-ID history file. This is the
+// ONLY test that actually spawns node scripts/build-database.js and inspects
+// its final on-disk state, so removing the seedCanonicalHistoryFiles call in
+// the production builder makes it fail with a Step 5 → Step 6 collapse.
+{
+  const CANONICAL_ID = 'hBP01-028_hBP08_HR_hBP01-028_HR';
+  const tmp = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'dic1204-e2e-'));
+  const dbPath = pathMod.join(REPO_ROOT, 'data/database.json');
+  const nativePath = pathMod.join(REPO_ROOT, 'public/data/database.json');
+  const historyDir = pathMod.join(REPO_ROOT, 'data/price-history');
+  const scrapeLogPath = pathMod.join(REPO_ROOT, 'data/scrape-log.txt');
+  const canonicalHistoryFile = pathMod.join(
+    historyDir,
+    `${CANONICAL_ID.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`,
+  );
+  const indexFile = pathMod.join(historyDir, 'index.json');
+
+  // Preflight — the fixture card must exist in the current DB and in
+  // official/hBP08.json for the subprocess build to reproduce it.
+  const currentDb = JSON.parse(fsMod.readFileSync(dbPath, 'utf8'));
+  assert.ok(
+    currentDb.cards?.[CANONICAL_ID],
+    `E2E preflight: ${CANONICAL_ID} must exist in shipped data/database.json`,
+  );
+  const preservedHistory = currentDb.cards[CANONICAL_ID].priceHistory || {};
+  assert.ok(
+    Object.keys(preservedHistory).length >= 5,
+    `E2E preflight: ${CANONICAL_ID} must ship with >=5 history days`,
+  );
+
+  // We touch the real data/ tree so snapshot every file the subprocess
+  // build might rewrite (Step 5 appends today's record to any priced card's
+  // history file) and restore in finally. Without this the working tree
+  // would carry today's-record noise on ~2000 rows after each test run.
+  const originalDb = fsMod.readFileSync(dbPath, 'utf8');
+  const originalNative = fsMod.readFileSync(nativePath, 'utf8');
+  const originalScrapeLog = fsMod.existsSync(scrapeLogPath) ? fsMod.readFileSync(scrapeLogPath, 'utf8') : null;
+  const historySnapshot = new Map();
+  for (const file of fsMod.readdirSync(historyDir)) {
+    if (!file.endsWith('.json')) continue;
+    historySnapshot.set(file, fsMod.readFileSync(pathMod.join(historyDir, file), 'utf8'));
+  }
+
+  try {
+    // Yuyu fixture returns pricingUnavailable so the subprocess does not
+    // hit the network — the point of this test is the seed→Step 5→Step 6
+    // ordering, not scraping or price accuracy.
+    const fixtureFile = pathMod.join(tmp, 'yuyu-fixture.json');
+    fsMod.writeFileSync(
+      fixtureFile,
+      JSON.stringify({ prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true }),
+    );
+
+    // Delete the canonical-ID history file so the build has to seed it
+    // from the preserved priceHistory. This is the exact reviewer-cited
+    // shipped state (1,566 rows on main had no canonical-ID file yet).
+    if (fsMod.existsSync(canonicalHistoryFile)) fsMod.unlinkSync(canonicalHistoryFile);
+
+    const result = spawnSync(
+      process.execPath,
+      ['scripts/build-database.js'],
+      {
+        cwd: REPO_ROOT,
+        env: {
+          ...process.env,
+          HUNTERCARD_YUYU_FIXTURE_PATH: fixtureFile,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 240000,
+      },
+    );
+    assert.equal(
+      result.status,
+      0,
+      `scripts/build-database.js subprocess must succeed. stderr:\n${result.stderr?.toString?.().slice(-4000) || ''}`,
+    );
+
+    // After the build, read the written data/database.json and assert
+    // the reviewer-cited renamed printing kept its preserved history.
+    const written = JSON.parse(fsMod.readFileSync(dbPath, 'utf8'));
+    const rebuilt = written.cards[CANONICAL_ID];
+    assert.ok(rebuilt, `${CANONICAL_ID} must survive real subprocess build`);
+    const rebuiltDates = Object.keys(rebuilt.priceHistory || {});
+    assert.ok(
+      rebuiltDates.length >= Object.keys(preservedHistory).length,
+      `real build must ship >=${Object.keys(preservedHistory).length} history days for ${CANONICAL_ID}, got ${rebuiltDates.length}. Without seedCanonicalHistoryFiles this collapses to 1 day.`,
+    );
+    // Every preserved date must survive — the exact mutation the reviewer
+    // asked to be caught (delete/move the seed call would drop these).
+    let survived = 0;
+    for (const [date, price] of Object.entries(preservedHistory)) {
+      if (rebuilt.priceHistory?.[date] === price) survived += 1;
+    }
+    assert.ok(
+      survived >= Object.keys(preservedHistory).length - 1,
+      `every preserved (date, price) in ${CANONICAL_ID} must survive real build; got ${survived}/${Object.keys(preservedHistory).length}. A collapse would drop them all except today.`,
+    );
+
+    // Canonical-ID history file must exist on disk with those preserved
+    // records — Step 5 append would have created a today-only file
+    // otherwise and Step 6 would have collapsed card.priceHistory.
+    assert.ok(
+      fsMod.existsSync(canonicalHistoryFile),
+      `real build must create the canonical-ID history file at ${pathMod.relative(REPO_ROOT, canonicalHistoryFile)}`,
+    );
+    const filedRecords = JSON.parse(fsMod.readFileSync(canonicalHistoryFile, 'utf8'));
+    const filedDates = new Set((filedRecords.records || []).map((r) => r.date));
+    let filedSurvived = 0;
+    for (const date of Object.keys(preservedHistory)) {
+      if (filedDates.has(date)) filedSurvived += 1;
+    }
+    assert.ok(
+      filedSurvived >= Object.keys(preservedHistory).length - 1,
+      `canonical-ID history file must carry the preserved dates (got ${filedSurvived}/${Object.keys(preservedHistory).length})`,
+    );
+  } finally {
+    // Restore every real file we touched so the working tree is clean.
+    fsMod.writeFileSync(dbPath, originalDb);
+    fsMod.writeFileSync(nativePath, originalNative);
+    if (originalScrapeLog === null) {
+      if (fsMod.existsSync(scrapeLogPath)) fsMod.unlinkSync(scrapeLogPath);
+    } else {
+      fsMod.writeFileSync(scrapeLogPath, originalScrapeLog);
+    }
+    // Restore the full price-history snapshot. Delete files that the
+    // subprocess created and did not exist before; rewrite the rest to
+    // their pre-test contents.
+    const currentFiles = new Set(fsMod.readdirSync(historyDir).filter((f) => f.endsWith('.json')));
+    for (const file of currentFiles) {
+      if (!historySnapshot.has(file)) {
+        fsMod.unlinkSync(pathMod.join(historyDir, file));
+      }
+    }
+    for (const [file, contents] of historySnapshot.entries()) {
+      fsMod.writeFileSync(pathMod.join(historyDir, file), contents);
+    }
+    fsMod.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 console.log('DIC-1204 market-field preservation contract checks passed');
