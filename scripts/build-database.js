@@ -20,6 +20,11 @@ import { computeGrowthDeltas } from './lib/yt-growth.js';
 import { canonicalVariantKey, normalizeRarityCode } from './lib/variant-key.js';
 import { isCanonicalCardNumber, canonicalizeCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 import { canonicalizePrices, canonicalYuyuName, canonicalYuyuImage } from './lib/canonical-printings.js';
+import {
+  buildPreservationIndex,
+  findPreservedMatch,
+  applyPreservedMarketFields,
+} from './lib/preserve-market-fields.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1088,18 +1093,22 @@ function mergeYtStats(database) {
     }
   }
 
+  // DIC-1204: broadcast ytStats onto every printing of the same holomen, not
+  // only the first row a given cardNumber lands on. DIC-1084 canonicalization
+  // creates multiple printings per cardNumber (each rarity / product printing
+  // gets its own row), and the audit contract in scripts/audit-card-data.mjs
+  // pins the full-dataset ytStats row count (DIC-1153) — an early-return that
+  // skipped later variants of the same cardNumber silently regressed that
+  // pinned count to the number of unique cardNumbers with a stats-carrying
+  // holomen name.
   let merged = 0;
-  const seenCardNumbers = new Set();
   for (const card of Object.values(database.cards)) {
-    const cardNumber = card.cardNumber || '';
-    if (seenCardNumbers.has(cardNumber)) continue;
     const stats =
       (card.name && statsByNameJp[card.name.trim()]) ||
       (card.nameZh && statsByNameZh[card.nameZh.trim()]) ||
       null;
     if (stats) {
       card.ytStats = stats;
-      seenCardNumbers.add(cardNumber);
       merged++;
     }
   }
@@ -1122,35 +1131,28 @@ async function buildDatabase() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
-  // Capture the previous build's sell data before we overwrite database.json.
+  // Capture the previous build's market payload before we overwrite database.json.
   // A yuyu outage/403 is allowed to decouple from official catalog ingestion,
   // but it must not turn a failed/incomplete scrape into a successful write that
-  // erases the last proven sell prices. Preserve by exact database card id only;
-  // never fall back by cardNumber, because reprints/extra-booster printings are
-  // distinct official versions and ambiguous stays null.
-  const prevSellByCardId = new Map();
+  // erases the last proven sell prices. DIC-1204: the previous exact-id-only
+  // preservation missed rows whose printing IDs got renamed by DIC-1084
+  // canonicalization, wiping their proven sellPrice / priceHistory / ytStats.
+  // Use `preserve-market-fields.js` to (a) preserve by exact id when it still
+  // matches and (b) fall back to a strict cardNumber|sourceProduct|rarity
+  // signature so renamed printings still carry their proven payload; ambiguous
+  // signatures refuse to guess (fail-closed, no cross-printing / cross-rarity
+  // leakage).
+  let prevCards = {};
   try {
-    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
-    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
-      const saved = {};
-      if (Number.isFinite(card.sellPrice) && card.sellPrice > 0) {
-        saved.sellPrice = card.sellPrice;
-        saved.card = card;
-      }
-      if (Array.isArray(card.prices) && card.prices.length > 0) saved.prices = card.prices;
-      if (card.yuyuName) saved.yuyuName = card.yuyuName;
-      if (card.yuyuImage) saved.yuyuImage = card.yuyuImage;
-      if (card.timestamp) saved.timestamp = card.timestamp;
-      if (Array.isArray(card._rawPricesArchive) && card._rawPricesArchive.length > 0) saved._rawPricesArchive = card._rawPricesArchive;
-      if (Object.keys(saved).length > 0) prevSellByCardId.set(cardId, saved);
-    }
-    if (prevSellByCardId.size > 0) {
-      console.log(`  [sellPrice] Preserving sell prices for ${prevSellByCardId.size} cards from previous build`);
-    }
+    prevCards = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8')).cards || {};
   } catch (err) {
     if (err.code !== 'ENOENT') {
-      console.warn(`  [sellPrice] Could not read previous database for sell-price preservation: ${err.message}`);
+      console.warn(`  [sellPrice] Could not read previous database for market-field preservation: ${err.message}`);
     }
+  }
+  const preservationIndex = buildPreservationIndex(prevCards);
+  if (preservationIndex.byId.size > 0) {
+    console.log(`  [sellPrice] Indexed ${preservationIndex.byId.size} previous rows for market-field preservation`);
   }
 
   // Capture the previous build's skillsJp / skillsZh so a rebuild can fall back
@@ -1161,21 +1163,14 @@ async function buildDatabase() {
   // back to Japanese in zh mode (DIC-454). Preserving prior skills stops that
   // regression from silently wiping translations.
   const prevSkillsByCardId = new Map();
-  try {
-    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
-    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
-      const saved = {};
-      if (card.skillsJp && typeof card.skillsJp === 'object') saved.skillsJp = card.skillsJp;
-      if (card.skillsZh && typeof card.skillsZh === 'object') saved.skillsZh = card.skillsZh;
-      if (Object.keys(saved).length > 0) prevSkillsByCardId.set(cardId, saved);
-    }
-    if (prevSkillsByCardId.size > 0) {
-      console.log(`  [skills] Preserving skills for ${prevSkillsByCardId.size} cards from previous build`);
-    }
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.warn(`  [skills] Could not read previous database for skill preservation: ${err.message}`);
-    }
+  for (const [cardId, card] of Object.entries(prevCards)) {
+    const saved = {};
+    if (card.skillsJp && typeof card.skillsJp === 'object') saved.skillsJp = card.skillsJp;
+    if (card.skillsZh && typeof card.skillsZh === 'object') saved.skillsZh = card.skillsZh;
+    if (Object.keys(saved).length > 0) prevSkillsByCardId.set(cardId, saved);
+  }
+  if (prevSkillsByCardId.size > 0) {
+    console.log(`  [skills] Preserving skills for ${prevSkillsByCardId.size} cards from previous build`);
   }
 
   // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch).
@@ -1404,25 +1399,30 @@ async function buildDatabase() {
     };
   }
 
-  if (pricingUnavailable && prevSellByCardId.size > 0) {
+  // DIC-1204: preserve proven market payload onto every current row that maps
+  // to a previous row by exact id or by strict signature. This runs on every
+  // build — not only during a yuyu outage — because the shipped regression was
+  // caused by exact-id lookups missing renamed printings when yuyu still
+  // returned partial (non-outage) results. Freshly proven fields on the
+  // current row are never overwritten; ambiguous signatures fail closed.
+  if (preservationIndex.byId.size > 0) {
     let restoredSell = 0;
-    for (const [cardId, saved] of prevSellByCardId.entries()) {
-      let card = database.cards[cardId];
-      if (!card && saved.card && saved.sellPrice != null) {
-        database.cards[cardId] = { ...saved.card };
-        restoredSell++;
-        continue;
-      }
-      if (!card) continue;
-      if (saved.sellPrice != null) card.sellPrice = saved.sellPrice;
-      if (saved.prices != null) card.prices = saved.prices;
-      if (saved.yuyuName != null) card.yuyuName = saved.yuyuName;
-      if (saved.yuyuImage != null) card.yuyuImage = saved.yuyuImage;
-      if (saved.timestamp != null) card.timestamp = saved.timestamp;
-      if (saved._rawPricesArchive != null) card._rawPricesArchive = saved._rawPricesArchive;
-      restoredSell++;
+    let restoredPriceHistory = 0;
+    let restoredYt = 0;
+    let restoredPrices = 0;
+    for (const [cardId, card] of Object.entries(database.cards)) {
+      const match = findPreservedMatch(preservationIndex, cardId, card);
+      if (!match) continue;
+      const summary = applyPreservedMarketFields(card, match.card, { matchKind: match.matchKind });
+      if (summary.sellPrice) restoredSell++;
+      if (summary.prices) restoredPrices++;
+      if (summary.priceHistory) restoredPriceHistory++;
+      if (summary.ytStats) restoredYt++;
     }
-    console.log(`  [sellPrice] Restored previous sell prices onto ${restoredSell} exact card ids after pricing outage`);
+    console.log(
+      `  [preserve] restored sellPrice=${restoredSell} prices=${restoredPrices} `
+      + `priceHistory=${restoredPriceHistory} ytStats=${restoredYt}`
+    );
   }
 
   // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,
