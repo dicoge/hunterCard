@@ -167,6 +167,100 @@ function isSignedPrinting(card) {
  * history and always safe to preserve — those were the fields the shipped
  * regression was wiping.
  */
+/**
+ * Canonicalize a card id into the sanitized filename that
+ * `src/services/priceHistory.ts::rebuildIndex` (and `scripts/build-database.js`
+ * Step 5/6) uses to name the on-disk history file. Kept in lockstep with the
+ * regex in `scripts/build-database.js`.
+ */
+export function historyFilenameFor(cardId) {
+  return `${String(cardId ?? '').replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
+}
+
+/**
+ * Seed the canonical-ID `data/price-history/<id>.json` file with each card's
+ * in-memory `priceHistory` so `scripts/build-database.js` Step 5 (append
+ * today's record) and Step 6 (unconditionally re-read + overwrite
+ * `card.priceHistory`) do not collapse a preserved multi-day history to
+ * today's single record when the id was renamed by DIC-1084 canonicalization
+ * and no canonical-ID history file exists yet. The reviewer measured 1,566
+ * shipped rows that had preserved multi-day history but no canonical-ID
+ * file — every one of them would have lost that history on the next daily
+ * rebuild without this seed.
+ *
+ * Idempotent and additive:
+ *   - Existing `records[]` entries are preserved verbatim.
+ *   - A preserved `(date, price)` pair is only appended when that date is
+ *     not already in the file — no cross-printing or stale-price leakage.
+ *   - Non-positive / non-finite prices are dropped (fail-closed).
+ *   - Rows with fewer than 2 preserved history days do not seed a file
+ *     (Step 5 covers the today-only case).
+ *
+ * Filesystem is injected so the same function is used by build-database.js
+ * (real fs), the one-shot repair (real fs) and the mutation test (tmpdir).
+ */
+export function seedCanonicalHistoryFiles({
+  cards,
+  historyDir,
+  fsAdapter,
+  now = new Date(),
+} = {}) {
+  if (!cards || typeof cards !== 'object') return { seededFiles: 0, addedRecords: 0 };
+  if (!historyDir || !fsAdapter) {
+    throw new Error('seedCanonicalHistoryFiles requires historyDir and fsAdapter');
+  }
+  const path = fsAdapter.path;
+  const fs = fsAdapter.fs;
+  fs.mkdirSync(historyDir, { recursive: true });
+  const nowIso = now.toISOString();
+  let seededFiles = 0;
+  let addedRecords = 0;
+  for (const [cardId, card] of Object.entries(cards)) {
+    const ph = card?.priceHistory;
+    if (!ph || typeof ph !== 'object') continue;
+    const preservedDates = Object.entries(ph).filter(
+      ([, price]) => Number.isFinite(price) && price > 0,
+    );
+    if (preservedDates.length < 2) continue;
+    const filePath = path.join(historyDir, historyFilenameFor(cardId));
+    let existing = null;
+    try {
+      existing = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch {
+      existing = null;
+    }
+    const records = Array.isArray(existing?.records) ? [...existing.records] : [];
+    const existingDates = new Set(records.map((r) => r.date));
+    let added = 0;
+    for (const [date, price] of preservedDates) {
+      if (existingDates.has(date)) continue;
+      records.push({
+        date,
+        price,
+        source: 'yuyu-tei',
+        currency: 'JPY',
+        cardId,
+      });
+      existingDates.add(date);
+      added += 1;
+    }
+    if (added === 0) continue;
+    records.sort((a, b) => a.date.localeCompare(b.date));
+    const doc = {
+      cardId,
+      cardNumber: existing?.cardNumber || card.cardNumber || '',
+      name: existing?.name || card.name || '',
+      nameZh: existing?.nameZh || card.nameZh || '',
+      records,
+      lastUpdated: nowIso,
+    };
+    fs.writeFileSync(filePath, JSON.stringify(doc, null, 2));
+    seededFiles += 1;
+    addedRecords += added;
+  }
+  return { seededFiles, addedRecords };
+}
+
 export function applyPreservedMarketFields(currentCard, previous, { matchKind = 'exact-id' } = {}) {
   const summary = { sellPrice: false, prices: false, priceHistory: false, ytStats: false, yuyu: false };
   if (!currentCard || !previous) return summary;

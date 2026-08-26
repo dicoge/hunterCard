@@ -24,6 +24,7 @@ import {
   buildPreservationIndex,
   findPreservedMatch,
   applyPreservedMarketFields,
+  seedCanonicalHistoryFiles,
 } from './lib/preserve-market-fields.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1456,6 +1457,27 @@ async function buildDatabase() {
   const today = new Date().toISOString().split('T')[0];
   const historyDir = path.join(DATA_DIR, 'price-history');
   fs.mkdirSync(historyDir, { recursive: true });
+
+  // DIC-1204 Step 4c: Before appending today's record, seed the canonical-ID
+  // history file with the multi-day priceHistory the preservation step above
+  // just carried onto renamed printings. Without this seed, Step 5 would
+  // create a fresh file containing only today's record and Step 6 would
+  // unconditionally overwrite `card.priceHistory` with that single-record
+  // read, collapsing the 66-day history we just restored on a card like
+  // hBP01-028_hBP08_HR_hBP01-028_HR (66 shipped days, no canonical-ID file
+  // yet). Existing records[] entries survive verbatim; only preserved dates
+  // that are not already recorded get appended — no cross-printing or
+  // stale-price leakage.
+  const seedResult = seedCanonicalHistoryFiles({
+    cards: database.cards,
+    historyDir,
+    fsAdapter: { fs, path },
+  });
+  if (seedResult.seededFiles > 0) {
+    console.log(
+      `  [preserve-history] Seeded ${seedResult.seededFiles} canonical-ID history files with ${seedResult.addedRecords} preserved records`
+    );
+  }
 
   // Collect price records from all cards
   const priceRecords = [];

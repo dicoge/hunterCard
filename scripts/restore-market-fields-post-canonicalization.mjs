@@ -31,6 +31,7 @@ import {
   buildPreservationIndex,
   findPreservedMatch,
   applyPreservedMarketFields,
+  seedCanonicalHistoryFiles,
 } from './lib/preserve-market-fields.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -130,11 +131,46 @@ function main() {
   const broadcastCount = broadcastYtStats(targetDb.cards, prevDb.cards || {});
   targetDb.cards = reorderPricedRowsFirst(targetDb.cards);
   fs.writeFileSync(args.target, `${JSON.stringify(targetDb, null, 2)}\n`, 'utf8');
+  // Persist preserved multi-day priceHistory to disk under the canonical-ID
+  // filename so the next daily rebuild's Step 5 append + Step 6 re-read
+  // cannot collapse the restored history back to today's single record.
+  const historyDir = path.join(path.dirname(args.target), 'price-history');
+  const seedResult = seedCanonicalHistoryFiles({
+    cards: targetDb.cards,
+    historyDir,
+    fsAdapter: { fs, path },
+  });
+  // Rebuild data/price-history/index.json against the current file set so
+  // the shipped index reflects the seeded canonical-ID files.
+  rebuildHistoryIndex(historyDir);
   console.log(
     `✓ restored market fields onto ${restored} rows in ${path.relative(repoRoot, args.target)} `
     + `(sellPrice=${counts.sellPrice}, prices=${counts.prices}, priceHistory=${counts.priceHistory}, ytStats=${counts.ytStats}); `
-    + `broadcast ytStats onto ${broadcastCount} additional printings`
+    + `broadcast ytStats onto ${broadcastCount} additional printings; `
+    + `seeded ${seedResult.seededFiles} canonical-ID history files (+${seedResult.addedRecords} records)`
   );
+}
+
+function rebuildHistoryIndex(historyDir) {
+  const cardIds = [];
+  let totalRecords = 0;
+  for (const file of fs.readdirSync(historyDir)) {
+    if (!file.endsWith('.json') || file === 'index.json') continue;
+    cardIds.push(file.replace('.json', ''));
+    try {
+      const hist = JSON.parse(fs.readFileSync(path.join(historyDir, file), 'utf8'));
+      totalRecords += hist.records?.length || 0;
+    } catch {
+      // skip corrupted file
+    }
+  }
+  const index = {
+    lastUpdated: new Date().toISOString(),
+    totalCards: cardIds.length,
+    totalRecords,
+    cardIds,
+  };
+  fs.writeFileSync(path.join(historyDir, 'index.json'), JSON.stringify(index, null, 2));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

@@ -13,13 +13,18 @@
  * requirement: if the fix silently regresses, the test fails.
  */
 import assert from 'node:assert/strict';
+import fsMod from 'node:fs';
+import os from 'node:os';
+import pathMod from 'node:path';
 import {
   applyPreservedMarketFields,
   buildPreservationIndex,
   cardSignature,
   findPreservedMatch,
   findPreservedRow,
+  historyFilenameFor,
   preservedMarketPayload,
+  seedCanonicalHistoryFiles,
 } from './lib/preserve-market-fields.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────
@@ -266,8 +271,7 @@ function freshCurrentCard(overrides = {}) {
 
 // ─── Shipped dataset regression: the fixture DIC-361 relies on ──────────
 {
-  const fs = await import('node:fs');
-  const db = JSON.parse(fs.readFileSync('data/database.json', 'utf8'));
+  const db = JSON.parse(fsMod.readFileSync('data/database.json', 'utf8'));
   const cards = Object.values(db.cards ?? {});
   const marketFixture = cards.find((c) =>
     Number(c.sellPrice) > 0
@@ -281,6 +285,154 @@ function freshCurrentCard(overrides = {}) {
     marketFixture,
     'shipped database.json must still contain at least one card carrying all four DIC-361 market fields',
   );
+}
+
+// ─── Renamed IDs must survive the real Step 5 append + Step 6 re-read ────
+// Reviewer regression (Mac-Codex CR on 7283c521b): applyPreservedMarketFields
+// restored 66-day priceHistory onto renamed printings, but build-database
+// Step 5 wrote today's single-record file under the canonical id and Step 6
+// then unconditionally re-read that file, collapsing the multi-day history.
+// This block exercises the real ordering — preserve → seed → Step-5 append
+// → Step-6 re-read — against a tmpdir fixture and asserts the preserved
+// history survives the write-back.
+{
+  const tmp = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'dic1204-hist-'));
+  const historyDir = pathMod.join(tmp, 'price-history');
+  fsMod.mkdirSync(historyDir, { recursive: true });
+
+  const renamedId = 'hBP01-028_hBP08_HR_hBP01-028_HR';
+  const preservedHistory = {
+    '2026-06-16': 180,
+    '2026-06-17': 180,
+    '2026-06-25': 150,
+    '2026-07-01': 120,
+    '2026-08-25': 50,
+  };
+  const card = {
+    id: renamedId,
+    cardNumber: 'hBP01-028',
+    name: '鷹嶺ルイ',
+    rarity: 'HR',
+    sourceProduct: 'hBP08',
+    sellPrice: 50,
+    prices: [{ name: '鷹嶺ルイ(パラレル/HR)', sellPrice: 50, rarity: 'HR' }],
+    priceHistory: { ...preservedHistory },
+  };
+  const cards = { [renamedId]: card };
+
+  // Sanity: no canonical-ID history file exists yet — this is the exact
+  // renamed-printing situation the reviewer flagged (1,566 shipped rows).
+  const canonicalFile = pathMod.join(historyDir, historyFilenameFor(renamedId));
+  assert.ok(!fsMod.existsSync(canonicalFile), 'canonical-ID history file must NOT exist before the seed step');
+
+  // Step 4c — seed the canonical-ID file with the preserved history.
+  const seedResult = seedCanonicalHistoryFiles({
+    cards,
+    historyDir,
+    fsAdapter: { fs: fsMod, path: pathMod },
+    now: new Date('2026-08-26T00:00:00.000Z'),
+  });
+  assert.equal(seedResult.seededFiles, 1, 'exactly one canonical-ID file gets seeded from the preserved history');
+  assert.equal(seedResult.addedRecords, 5, 'every preserved date must appear as a records[] entry');
+
+  // Simulate build-database.js Step 5: append today's record.
+  const today = '2026-08-26';
+  const todayPrice = 50;
+  const stepFive = JSON.parse(fsMod.readFileSync(canonicalFile, 'utf8'));
+  const seen = new Set(stepFive.records.map((r) => r.date));
+  if (!seen.has(today)) {
+    stepFive.records.push({ date: today, price: todayPrice, source: 'yuyu-tei', currency: 'JPY', cardId: renamedId });
+    stepFive.records.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  fsMod.writeFileSync(canonicalFile, JSON.stringify(stepFive, null, 2));
+
+  // Simulate Step 6: unconditionally re-read the file and overwrite
+  // card.priceHistory. Without the seed above this is the exact write that
+  // collapsed multi-day history to today's single record on shipped main.
+  const readBack = JSON.parse(fsMod.readFileSync(canonicalFile, 'utf8'));
+  const rebuiltHistory = {};
+  for (const r of readBack.records) rebuiltHistory[r.date] = r.price;
+  card.priceHistory = rebuiltHistory;
+
+  // Every preserved date must survive the round-trip AND today's record must
+  // have been appended once. Missing preservation → collapse to 1 entry.
+  const historyKeys = Object.keys(card.priceHistory).sort();
+  assert.equal(historyKeys.length, 6, 'preserved 5 + appended 1 = 6 days must survive Step 5 → Step 6 write-back');
+  for (const date of Object.keys(preservedHistory)) {
+    assert.equal(
+      card.priceHistory[date],
+      preservedHistory[date],
+      `preserved history for ${date} must survive the round-trip (Step 5/6 collapsing regression)`,
+    );
+  }
+  assert.equal(card.priceHistory[today], todayPrice, "today's Step-5 append is present alongside preserved history");
+
+  // Idempotency: seeding again after Step 5/6 must not add duplicate rows.
+  const second = seedCanonicalHistoryFiles({
+    cards,
+    historyDir,
+    fsAdapter: { fs: fsMod, path: pathMod },
+    now: new Date('2026-08-26T00:00:00.000Z'),
+  });
+  assert.equal(second.seededFiles, 0, 'seeding is idempotent — no duplicate rows on re-run');
+
+  // Cross-printing leakage guard: a sibling renamed printing whose preserved
+  // history has different dates + prices must not bleed into another card's
+  // file. Each canonical-ID file stays isolated to its own cardId.
+  const siblingId = 'hBP01-028_hBP08_HR_hBP01-028_HR_02';
+  const siblingHistory = { '2026-07-15': 999, '2026-08-01': 888 };
+  cards[siblingId] = {
+    id: siblingId,
+    cardNumber: 'hBP01-028',
+    name: '鷹嶺ルイ',
+    rarity: 'HR',
+    sourceProduct: 'hBP08',
+    sellPrice: 999,
+    priceHistory: siblingHistory,
+  };
+  seedCanonicalHistoryFiles({
+    cards,
+    historyDir,
+    fsAdapter: { fs: fsMod, path: pathMod },
+    now: new Date('2026-08-26T00:00:00.000Z'),
+  });
+  const siblingDoc = JSON.parse(fsMod.readFileSync(pathMod.join(historyDir, historyFilenameFor(siblingId)), 'utf8'));
+  assert.deepEqual(
+    siblingDoc.records.map((r) => r.date).sort(),
+    Object.keys(siblingHistory).sort(),
+    'sibling canonical-ID file only carries the sibling row\'s own dates — no cross-printing leakage',
+  );
+  const originalDoc = JSON.parse(fsMod.readFileSync(canonicalFile, 'utf8'));
+  assert.equal(
+    originalDoc.records.some((r) => r.price === 999 || r.price === 888),
+    false,
+    'sibling prices/dates never leak into the original canonical-ID file',
+  );
+
+  // Non-positive prices are dropped fail-closed (would otherwise silently
+  // pollute the trend curve with 0/null).
+  const failClosedCard = {
+    id: 'hXX-001_hXX_R_hXX-001_R',
+    cardNumber: 'hXX-001',
+    name: 'test',
+    rarity: 'R',
+    sourceProduct: 'hXX',
+    priceHistory: { '2026-08-20': 0, '2026-08-21': -5, '2026-08-22': null, '2026-08-23': 100, '2026-08-24': 110 },
+  };
+  const failClosedResult = seedCanonicalHistoryFiles({
+    cards: { [failClosedCard.id]: failClosedCard },
+    historyDir,
+    fsAdapter: { fs: fsMod, path: pathMod },
+    now: new Date('2026-08-26T00:00:00.000Z'),
+  });
+  assert.equal(failClosedResult.addedRecords, 2, 'non-positive / null prices are dropped fail-closed');
+  const failClosedDoc = JSON.parse(fsMod.readFileSync(pathMod.join(historyDir, historyFilenameFor(failClosedCard.id)), 'utf8'));
+  for (const r of failClosedDoc.records) {
+    assert.ok(r.price > 0, 'no zero/negative/null price survives the seed step');
+  }
+
+  // Cleanup tmpdir
+  fsMod.rmSync(tmp, { recursive: true, force: true });
 }
 
 console.log('DIC-1204 market-field preservation contract checks passed');
