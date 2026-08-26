@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
 import { canonicalVariantKey, normalizeRarityCode } from './lib/variant-key.js';
-import { isCanonicalCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
+import { isCanonicalCardNumber, canonicalizeCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 import { canonicalizePrices, canonicalYuyuName, canonicalYuyuImage } from './lib/canonical-printings.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1386,7 +1386,10 @@ async function buildDatabase() {
   }
 
   // Also add yuyu-only cards (prices without matching official entry)
-  for (const [cardNum, priceData] of Object.entries(prices)) {
+  for (const [rawCardNum, priceData] of Object.entries(prices)) {
+    // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
+    // schema requires 3 digits (hY01-014).  DIC-1084.
+    const cardNum = canonicalizeCardNumber(rawCardNum);
     const alreadyExists = Object.keys(database.cards).some(k => {
       const info = database.cards[k];
       return info.cardNumber === cardNum;

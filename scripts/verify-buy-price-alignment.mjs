@@ -531,6 +531,11 @@ check('全庫 invariant: card.buyPrice 等於 representativeBuyPrice（本列印
 // 給的、那筆 listing 能不能綁到這一列印次」。
 check('全庫 invariant（獨立於 resolver）: 每個 card.buyPrice 都能綁回一筆可證明的來源 listing', () => {
   // 直接讀原始來源檔（不經 buildBuyIndex）：numKey → { token → 最高報價 }。
+  // 與 buildBuyIndex 一致，套用 18h 新鮮度過濾：來源 timestamp 超過 MAX_SOURCE_AGE_HOURS
+  // 的資料視為過期（避免把昨天殘留檔當今天資料），確保與 DB 中 committed buyPrice 的
+  // 計算基準一致（DIC-1192 CI 修正）。
+  const INDEPENDENT_MAX_SOURCE_AGE_HOURS = 18;
+  const nowForIndependent = latestSourceTs() + 1000;
   const listings = new Map();
   for (const file of ['torecolo-prices.json', 'fullahead-prices.json', 'yuyu-prices.json']) {
     const raw = JSON.parse(fs.readFileSync(path.join(DATA, 'buy-prices', file), 'utf-8'));
@@ -538,6 +543,8 @@ check('全庫 invariant（獨立於 resolver）: 每個 card.buyPrice 都能綁�
       const price = Number(entry && entry.buyPrice);
       const num = normalizeCardNumber(key);
       if (!num || !Number.isFinite(price) || price <= 0) continue;
+      const t = Date.parse(entry && entry.timestamp);
+      if (!Number.isFinite(t) || nowForIndependent - t > INDEPENDENT_MAX_SOURCE_AGE_HOURS * 3600 * 1000) continue;
       const token = normalizeRarity((entry && entry.rarity) || key.slice(num.length).replace(/^[-_\s]+/, ''));
       if (!listings.has(num)) listings.set(num, new Map());
       const perNum = listings.get(num);
