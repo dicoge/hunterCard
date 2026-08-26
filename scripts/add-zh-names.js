@@ -3,8 +3,8 @@
  *
  * 從 data/character-names-zh.json 讀取日文→中文翻譯對照表，
  * 比對每張卡片的 name 欄位，若找到匹配則寫入 nameZh 欄位。
- * 若無匹配，透過 OpenRouter API (Gemini) 自動翻譯日文名 → 中文名。
- * API 翻譯也失敗時，nameZh 設為空字串。
+ * 若無匹配，保留既有 nameZh 或 fail closed；不呼叫未授權翻譯供應商。
+ * 未匹配會讓 pipeline exit non-zero，避免空翻譯被提交。
  *
  * 用法: node scripts/add-zh-names.js [database路徑]
  * 預設: data/database.json
@@ -51,60 +51,13 @@ function loadTranslationMap(filepath) {
   return clean;
 }
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = 'google/gemini-3.1-flash-image';
-
-/**
- * 透過 OpenRouter API 將日文角色名翻譯成繁體中文
- * @param {string} jpName - 日文角色名
- * @returns {Promise<string>} - 中文翻譯，失敗時返回空字串
- */
-async function autoTranslate(jpName) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    console.warn('[add-zh-names] ⚠️ OPENROUTER_API_KEY 未設定，跳過自動翻譯');
-    return '';
-  }
-
-  try {
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: `Translate this Hololive character name from Japanese to Traditional Chinese. Respond with ONLY the translation, no explanation. Name: ${jpName}`,
-          },
-        ],
-        max_tokens: 50,
-        temperature: 0.0,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`[add-zh-names] ⚠️ API 錯誤 (${response.status}): ${await response.text()}`);
-      return '';
-    }
-
-    const data = await response.json();
-    const translation = data.choices?.[0]?.message?.content?.trim();
-
-    if (translation) {
-      console.log(`[add-zh-names] 🤖 Auto-translated: ${jpName} → ${translation}`);
-      return translation;
-    }
-
-    console.warn(`[add-zh-names] ⚠️ API 回傳空內容: ${jpName}`);
-    return '';
-  } catch (err) {
-    console.error(`[add-zh-names] ⚠️ API 呼叫失敗: ${err.message}`);
-    return '';
-  }
+function decodeHtml(input = '') {
+  return String(input)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
 }
 
 /**
@@ -139,26 +92,24 @@ export async function addZhNames(dbPath = DEFAULT_DB_PATH) {
   console.log(`[add-zh-names] 📝 處理 ${cardIds.length} 張卡片...`);
 
   let matchCount = 0;
-  let autoCount = 0;
   let missCount = 0;
+  const missing = [];
 
   for (const cardId of cardIds) {
     const card = database.cards[cardId];
     const cardName = card.name || '';
+    const candidates = [...new Set([cardName, decodeHtml(cardName)].filter(Boolean))];
 
-    if (translationMap[cardName] !== undefined) {
-      card.nameZh = translationMap[cardName];
+    const matchedKey = candidates.find((name) => translationMap[name] !== undefined);
+    if (matchedKey !== undefined) {
+      card.nameZh = translationMap[matchedKey];
+      matchCount++;
+    } else if (card.nameZh && String(card.nameZh).trim()) {
       matchCount++;
     } else {
-      const translated = await autoTranslate(cardName);
-      if (translated) {
-        card.nameZh = translated;
-        translationMap[cardName] = translated;
-        autoCount++;
-      } else {
-        card.nameZh = '';
-        missCount++;
-      }
+      card.nameZh = '';
+      missCount++;
+      missing.push({ id: cardId, name: cardName });
     }
   }
 
@@ -167,9 +118,12 @@ export async function addZhNames(dbPath = DEFAULT_DB_PATH) {
 
   console.log(`[add-zh-names] ✅ 完成！`);
   console.log(`[add-zh-names]   靜態匹配: ${matchCount} 張卡片`);
-  console.log(`[add-zh-names]   自動翻譯: ${autoCount} 張卡片`);
   console.log(`[add-zh-names]   未匹配: ${missCount} 張卡片`);
   console.log(`[add-zh-names]   輸出: ${dbPath}`);
+  if (missing.length > 0) {
+    const sample = missing.slice(0, 10).map((m) => `${m.id}:${m.name}`).join('\n  ');
+    throw new Error(`[add-zh-names] missing Traditional-Chinese names (${missing.length}). Add controlled entries to data/character-names-zh.json; sample:\n  ${sample}`);
+  }
 }
 
 // 獨立執行

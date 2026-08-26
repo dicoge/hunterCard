@@ -110,6 +110,35 @@ jobs:
       - name: Verify Bloom Level scraper preserves canonical + overlay loader fails closed (DIC-1141 CR)
         run: npm run test:dic1141-scrape-bloom-safety
 
+      # DIC-1192 CR add-on: the hBP02-003 signed-row provenance regression + the
+      # DIC-1084 yuyu-tei short-suffix canonicalizer sit inside one suite that
+      # was previously not on the Validate path — a stale $62,000/yuyu assertion
+      # from before the 18h freshness contract went red only when Codex ran it
+      # by hand at PR #153 exact-head. Wiring it into Validate is the guard.
+      - name: Verify canonical-printings + card-number canonicalizer regression (DIC-1139/1140/1084)
+        run: npm run test:canonical-printings
+
+      # DIC-1150 + DIC-1192 mobile/desktop grid + colour token normalisation.
+      # The three suites move together: uniform-card-grid locks the row-math
+      # helper, search-results-layout renders the real screen at 390/1440 to
+      # prove the `flex-basis:auto` single-column fix AND the `◇ → colorless`
+      # normalisation, and dic1192-color-normalization locks the shared
+      # normaliser contract + i18n key parity.
+      - name: Verify uniform grid item row math (DIC-1088 + DIC-1150)
+        run: npm run test:uniform-card-grid
+
+      - name: Verify real SearchResultsScreen grid geometry + colour render (DIC-1150 + DIC-1192)
+        run: npm run test:search-results-layout
+
+      - name: Verify colour token normaliser + KNOWN_COLOR_KEYS ↔ i18n parity (DIC-1192)
+        run: npm run test:dic1192-color-normalization
+
+      # The visual card picker shares uniformGridItemStyle with the search
+      # results grid; a mutation in gridLayout that only breaks CardPicker
+      # would slip past search-results-layout otherwise.
+      - name: Verify visual card picker deck-building surface (DIC-1067)
+        run: npm run test:card-picker
+
       - name: Verify production /api/* is not swallowed by SPA (DIC-886)
         run: npm run test:vercel-routing
 
