@@ -326,68 +326,221 @@ const check = (label, fn) => { fn(); results.push(label); };
   });
 }
 
-// ── 7. AST semantic guard: constant-fold + inspect (DIC-1190 CR) ─────────────
-// Literal-regex checks alone are bypassable by string assembly
-// (`'open' + 'router.ai'`), aliased env access
-// (`const e = process.env; e.OPENROUTER_API_KEY`), or `.join('')`
-// reconstruction. This section parses each runtime file with the TypeScript
-// compiler, constant-folds every statically-resolvable string expression, and
-// walks every property/element access — so an assembled URL, a computed env
-// key, or an aliased property access lands in the same trap as a raw literal.
+// ── 7. AST semantic guard with identifier-binding + decoder folding ──────────
+// (DIC-1190 CR — second iteration)
+//
+// The first AST guard folded direct expressions only. A reviewer bypassed it by
+// declaring `const codes = [111, 112, …]; const host = String.fromCharCode(...codes);`
+// and using `host` in a fetch URL — the fold couldn't cross the identifier binding.
+//
+// This pass extends the folder to:
+//   - Track every `const` binding in the file (flat, safety-first: a name
+//     collision across scopes folds to the last-seen value, which errs on the
+//     side of DETECTING assembly).
+//   - Fold numeric literals into numbers and array literals into arrays.
+//   - Fold `String.fromCharCode(...)` with numeric args OR a spread of a
+//     folded numeric array.
+//   - Fold `arr.map(cb).join(sep)` where `cb` is a single-param arrow function
+//     whose body is itself foldable given the parameter binding.
+//   - Fold `Array.from(str).join(sep)` returning `str.split('').join(sep)`.
+//   - Fold `Buffer.from([nums]).toString('utf8'|'ascii')`.
+//
+// Anything the folder resolves is checked against the denylist string patterns
+// AND — as a second, positive-form assertion — every fetch URL in the
+// recognition handler is required to fold to a host in a fixed allowlist.
+// A fetch URL that the folder cannot resolve is itself a FAIL: "prove it's
+// safe" rather than "detect that it's bad".
 {
-  function constantFold(node) {
+  function collectConstBindings(sf) {
+    const bindings = new Map();
+    function visit(node) {
+      if (
+        ts.isVariableDeclaration(node) &&
+        node.parent &&
+        ts.isVariableDeclarationList(node.parent) &&
+        (node.parent.flags & ts.NodeFlags.Const) !== 0 &&
+        ts.isIdentifier(node.name) &&
+        node.initializer
+      ) {
+        const value = fold(node.initializer, bindings);
+        if (value !== null && value !== undefined) {
+          // First writer wins by preference: a legitimate top-level `const` is
+          // shadowed only by a later declaration in the same file, which we
+          // still want to detect (safety-first: last write wins here so an
+          // attacker's inner rebind is what gets folded).
+          bindings.set(node.name.text, value);
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(sf);
+    return bindings;
+  }
+
+  function fold(node, table) {
     if (!node) return null;
+    if (ts.isParenthesizedExpression(node)) return fold(node.expression, table);
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       return node.text;
+    }
+    if (ts.isNumericLiteral(node)) return Number(node.text);
+    if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
+    if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
+    if (node.kind === ts.SyntaxKind.NullKeyword) return null;
+    if (ts.isIdentifier(node)) {
+      if (table && table.has(node.text)) return table.get(node.text);
+      return null;
+    }
+    if (ts.isArrayLiteralExpression(node)) {
+      const out = [];
+      for (const el of node.elements) {
+        if (ts.isSpreadElement(el)) {
+          const arr = fold(el.expression, table);
+          if (!Array.isArray(arr)) return null;
+          out.push(...arr);
+        } else {
+          const v = fold(el, table);
+          if (v === null && el.kind !== ts.SyntaxKind.NullKeyword) return null;
+          out.push(v);
+        }
+      }
+      return out;
     }
     if (ts.isTemplateExpression(node)) {
       let out = node.head.text;
       for (const span of node.templateSpans) {
-        const v = constantFold(span.expression);
-        if (v === null) return null;
-        out += v;
+        const v = fold(span.expression, table);
+        if (v === null || v === undefined) return null;
+        out += String(v);
         out += span.literal.text;
       }
       return out;
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-      const l = constantFold(node.left);
-      const r = constantFold(node.right);
-      if (l === null || r === null) return null;
+      const l = fold(node.left, table);
+      const r = fold(node.right, table);
+      if (l === null || l === undefined || r === null || r === undefined) return null;
       return l + r;
     }
-    if (ts.isParenthesizedExpression(node)) return constantFold(node.expression);
-    // [...].join(sep) with literal string parts
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === 'join' &&
-      ts.isArrayLiteralExpression(node.expression.expression)
-    ) {
-      const parts = [];
-      for (const el of node.expression.expression.elements) {
-        const v = constantFold(el);
-        if (v === null) return null;
-        parts.push(v);
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+
+      // String.fromCharCode(a, b, ...) or String.fromCharCode(...arr)
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        ts.isIdentifier(callee.expression) &&
+        callee.expression.text === 'String' &&
+        callee.name.text === 'fromCharCode'
+      ) {
+        const codes = [];
+        for (const arg of node.arguments) {
+          if (ts.isSpreadElement(arg)) {
+            const arr = fold(arg.expression, table);
+            if (!Array.isArray(arr)) return null;
+            for (const c of arr) {
+              if (typeof c !== 'number') return null;
+              codes.push(c);
+            }
+          } else {
+            const v = fold(arg, table);
+            if (typeof v !== 'number') return null;
+            codes.push(v);
+          }
+        }
+        return String.fromCharCode(...codes);
       }
-      const sep = node.arguments[0] ? constantFold(node.arguments[0]) : ',';
-      if (sep === null) return null;
-      return parts.join(sep);
-    }
-    // String.fromCharCode(...) reassembly of a denylisted host
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      ts.isIdentifier(node.expression.expression) &&
-      node.expression.expression.text === 'String' &&
-      node.expression.name.text === 'fromCharCode'
-    ) {
-      const codes = [];
-      for (const arg of node.arguments) {
-        if (ts.isNumericLiteral(arg)) codes.push(Number(arg.text));
-        else return null;
+
+      // Buffer.from([nums]).toString('utf8'|'ascii'|'latin1'|undef)
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        callee.name.text === 'toString' &&
+        ts.isCallExpression(callee.expression) &&
+        ts.isPropertyAccessExpression(callee.expression.expression) &&
+        ts.isIdentifier(callee.expression.expression.expression) &&
+        callee.expression.expression.expression.text === 'Buffer' &&
+        callee.expression.expression.name.text === 'from'
+      ) {
+        const src = callee.expression.arguments[0];
+        const arr = fold(src, table);
+        if (Array.isArray(arr) && arr.every((n) => typeof n === 'number')) {
+          const enc = node.arguments[0] ? fold(node.arguments[0], table) : 'utf8';
+          if (typeof enc === 'string' || enc === undefined) {
+            try { return Buffer.from(arr).toString(enc || 'utf8'); } catch { return null; }
+          }
+        }
       }
-      return String.fromCharCode(...codes);
+
+      // Array.from(x).join(sep)
+      // Also plain arr.map(cb).join(sep) / [...].join(sep)
+      if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'join') {
+        const sep = node.arguments[0] ? fold(node.arguments[0], table) : ',';
+        if (typeof sep !== 'string') return null;
+        const receiver = callee.expression;
+
+        // Direct array or identifier-bound array
+        {
+          const arr = fold(receiver, table);
+          if (Array.isArray(arr)) {
+            if (arr.every((v) => typeof v === 'string' || typeof v === 'number')) {
+              return arr.join(sep);
+            }
+          }
+        }
+
+        // arr.map(cb).join(sep)
+        if (
+          ts.isCallExpression(receiver) &&
+          ts.isPropertyAccessExpression(receiver.expression) &&
+          receiver.expression.name.text === 'map'
+        ) {
+          const srcArr = fold(receiver.expression.expression, table);
+          if (Array.isArray(srcArr)) {
+            const cb = receiver.arguments[0];
+            if (
+              cb &&
+              (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb)) &&
+              cb.parameters.length >= 1 &&
+              ts.isIdentifier(cb.parameters[0].name)
+            ) {
+              const paramName = cb.parameters[0].name.text;
+              const body =
+                ts.isBlock(cb.body)
+                  ? cb.body.statements.length === 1 && ts.isReturnStatement(cb.body.statements[0])
+                    ? cb.body.statements[0].expression
+                    : null
+                  : cb.body;
+              if (body) {
+                const out = [];
+                for (const el of srcArr) {
+                  const scoped = new Map(table);
+                  scoped.set(paramName, el);
+                  const v = fold(body, scoped);
+                  if (v === null || v === undefined) return null;
+                  out.push(v);
+                }
+                if (out.every((v) => typeof v === 'string' || typeof v === 'number')) {
+                  return out.join(sep);
+                }
+              }
+            }
+          }
+        }
+
+        // Array.from(x)
+        if (
+          ts.isCallExpression(receiver) &&
+          ts.isPropertyAccessExpression(receiver.expression) &&
+          ts.isIdentifier(receiver.expression.expression) &&
+          receiver.expression.expression.text === 'Array' &&
+          receiver.expression.name.text === 'from'
+        ) {
+          const v = fold(receiver.arguments[0], table);
+          if (typeof v === 'string') return v.split('').join(sep);
+          if (Array.isArray(v) && v.every((e) => typeof e === 'string' || typeof e === 'number')) {
+            return v.join(sep);
+          }
+        }
+      }
     }
     return null;
   }
@@ -405,15 +558,53 @@ const check = (label, fn) => { fn(); results.push(label); };
     { pattern: /OPENROUTER_URL/, label: 'OPENROUTER_URL identifier string' },
   ];
 
-  for (const relPath of runtimeFiles) {
-    const source = fs.readFileSync(repo(relPath), 'utf8');
-    const kind = relPath.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS;
-    const sf = ts.createSourceFile(relPath, source, ts.ScriptTarget.Latest, true, kind);
+  // Files that must not issue ANY outbound fetch — architecturally simpler
+  // than trying to prove every URL is safe. Even a benign new fetch here is
+  // a fail; that is intentional (fail-closed against a fetch reintroduction).
+  const noFetchAllowed = new Set([
+    'api/hello.ts',
+    'scripts/add-zh-names.js',
+    'scripts/translate-effects.js',
+  ]);
+  // For files that legitimately fetch (only api/recognize-card.ts today), every
+  // fetch URL must constant-fold to a URL whose host is in this allowlist.
+  const fetchHostAllowlist = {
+    'api/recognize-card.ts': new Set([
+      'generativelanguage.googleapis.com',
+      'holocard-hunter.vercel.app',
+    ]),
+  };
 
+  function isFetchCall(node) {
+    if (!ts.isCallExpression(node)) return false;
+    const callee = node.expression;
+    if (ts.isIdentifier(callee) && callee.text === 'fetch') return true;
+    if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'fetch') return true;
+    if (
+      ts.isElementAccessExpression(callee) &&
+      typeof (callee.argumentExpression &&
+        (ts.isStringLiteral(callee.argumentExpression)
+          ? callee.argumentExpression.text
+          : null)) === 'string' &&
+      callee.argumentExpression.text === 'fetch'
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  function analyzeSource(displayPath, source, {
+    isNoFetchFile = false,
+    hostAllowlist = null,
+  } = {}) {
+    const kind = displayPath.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+    const sf = ts.createSourceFile(displayPath, source, ts.ScriptTarget.Latest, true, kind);
+    const bindings = collectConstBindings(sf);
     const violations = [];
+
     function visit(node) {
-      const folded = constantFold(node);
-      if (folded !== null && folded.length < 2048) {
+      const folded = fold(node, bindings);
+      if (typeof folded === 'string' && folded.length < 4096) {
         for (const { pattern, label } of denyStringPatterns) {
           if (pattern.test(folded)) {
             const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
@@ -430,12 +621,45 @@ const check = (label, fn) => { fn(); results.push(label); };
         violations.push({ line: line + 1, kind: 'property access to OPENROUTER*', value: node.name.text });
       }
       if (ts.isElementAccessExpression(node)) {
-        const key = constantFold(node.argumentExpression);
+        const key = fold(node.argumentExpression, bindings);
         if (typeof key === 'string' && /OPENROUTER/i.test(key)) {
           const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
           violations.push({ line: line + 1, kind: 'element access to OPENROUTER*', value: key });
         }
       }
+
+      if (isFetchCall(node)) {
+        const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        if (isNoFetchFile) {
+          violations.push({
+            line: line + 1,
+            kind: 'fetch() call in no-fetch-allowed file',
+            value: `${node.getText(sf).slice(0, 80).replace(/\s+/g, ' ')}…`,
+          });
+        } else if (hostAllowlist) {
+          const urlArg = node.arguments[0];
+          const urlValue = fold(urlArg, bindings);
+          let ok = false;
+          let describe = urlValue === null || urlValue === undefined ? '<unresolvable at parse time>' : String(urlValue);
+          if (typeof urlValue === 'string') {
+            try {
+              const u = new URL(urlValue);
+              if (hostAllowlist.has(u.host)) ok = true;
+              describe = `host=${u.host}`;
+            } catch {
+              // Not a valid URL string
+            }
+          }
+          if (!ok) {
+            violations.push({
+              line: line + 1,
+              kind: 'fetch() URL not in host allowlist',
+              value: `${describe}; allowlist: ${[...hostAllowlist].join(', ')}`,
+            });
+          }
+        }
+      }
+
       ts.forEachChild(node, visit);
     }
     visit(sf);
@@ -443,19 +667,138 @@ const check = (label, fn) => { fn(); results.push(label); };
     // Deduplicate: constant folding recurses, so a single assembled `openrouter.ai`
     // fires at every enclosing binary-plus node. Keep the innermost occurrence.
     const seen = new Set();
-    const unique = violations.filter((v) => {
+    return violations.filter((v) => {
       const k = `${v.line}:${v.kind}:${v.value}`;
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
     });
+  }
 
-    check(`${relPath}: AST guard finds no assembled/computed OpenRouter reference`, () => {
+  // 7a. Real runtime files must be clean.
+  for (const relPath of runtimeFiles) {
+    const source = fs.readFileSync(repo(relPath), 'utf8');
+    const unique = analyzeSource(relPath, source, {
+      isNoFetchFile: noFetchAllowed.has(relPath),
+      hostAllowlist: fetchHostAllowlist[relPath] || null,
+    });
+    check(`${relPath}: AST guard finds no assembled/computed OpenRouter reference or non-allowlisted fetch`, () => {
       assert.equal(
         unique.length,
         0,
         `AST guard found ${unique.length} violation(s):\n` +
           unique.map((v) => `  ${relPath}:${v.line} [${v.kind}] ${v.value}`).join('\n'),
+      );
+    });
+  }
+
+  // 7b. Mutation-sensitivity coverage (DIC-1190 CR): pin the guard against the
+  // exact bypass shapes past reviewers have discovered. If a future refactor
+  // ever weakens the folder or the fetch enforcement, these canaries fail
+  // BEFORE the real runtime files get a chance to slip through unnoticed.
+  const mutationCases = [
+    {
+      label: 'reviewer bypass: aliased env + `.join()` assembly of key + `+` assembly of host',
+      // Simulates DIC-1190 CR round 1: aliased process.env + fragment concat.
+      displayPath: 'test-fixture:reviewer-round-1.ts',
+      isNoFetchFile: true,
+      source: `
+        export async function _unreachable() {
+          const envAlias = process.env;
+          const keyName = ['OPEN', 'ROUTER', '_API', '_KEY'].join('');
+          const host = 'open' + 'router' + '.ai';
+          const bearer = envAlias[keyName];
+          if (bearer) {
+            await fetch('https://' + host + '/api/v1/chat/completions', {
+              headers: { Authorization: 'Bearer ' + bearer },
+            });
+          }
+        }
+      `,
+      expectAtLeast: [
+        'OPENROUTER_API_KEY env-key string',
+        'openrouter.ai host string',
+        'element access to OPENROUTER*',
+        'fetch() call in no-fetch-allowed file',
+      ],
+    },
+    {
+      label: 'reviewer bypass: identifier-bound numeric decoders with no literals',
+      // Simulates DIC-1190 CR round 2: uncalled function in api/hello.ts style.
+      displayPath: 'test-fixture:reviewer-round-2.ts',
+      isNoFetchFile: true,
+      source: `
+        const keyCodes = [79, 80, 69, 78, 82, 79, 85, 84, 69, 82, 95, 65, 80, 73, 95, 75, 69, 89];
+        const hostCodes = [111, 112, 101, 110, 114, 111, 117, 116, 101, 114, 46, 97, 105];
+        export async function _unreachable() {
+          const envAlias = process.env;
+          const keyName = keyCodes.map((c) => String.fromCharCode(c)).join('');
+          const host = String.fromCharCode(...hostCodes);
+          const bearer = envAlias[keyName];
+          if (bearer) {
+            await fetch('https://' + host + '/api/v1', {
+              headers: { Authorization: 'Bearer ' + bearer },
+            });
+          }
+        }
+      `,
+      expectAtLeast: [
+        'OPENROUTER_API_KEY env-key string',
+        'openrouter.ai host string',
+        'element access to OPENROUTER*',
+        'fetch() call in no-fetch-allowed file',
+      ],
+    },
+    {
+      label: 'smuggled fetch in fetch-allowed file (recognize-card): non-allowlisted host',
+      displayPath: 'test-fixture:recognize-card-smuggle.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const otherCodes = [111, 112, 101, 110, 114, 111, 117, 116, 101, 114, 46, 97, 105];
+        export async function _unreachableSmuggle() {
+          const otherHost = String.fromCharCode(...otherCodes);
+          await fetch('https://' + otherHost + '/api/v1/metrics');
+        }
+      `,
+      expectAtLeast: [
+        'openrouter.ai host string',
+        'fetch() URL not in host allowlist',
+      ],
+    },
+    {
+      label: 'smuggled fetch in fetch-allowed file: URL unresolvable at parse time',
+      displayPath: 'test-fixture:recognize-card-opaque.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        export async function _opaque(dynamicUrl: string) {
+          // A fetch to a runtime-computed URL that the folder cannot resolve
+          // must still fail — "prove it's safe" not "detect that it's bad".
+          await fetch(dynamicUrl);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+  ];
+
+  for (const mc of mutationCases) {
+    const analyzeOpts = {
+      isNoFetchFile: !!mc.isNoFetchFile,
+      hostAllowlist: mc.hostAllowlist || null,
+    };
+    const found = analyzeSource(mc.displayPath, mc.source, analyzeOpts);
+    const foundKinds = new Set(found.map((v) => v.kind));
+    check(`mutation coverage — ${mc.label}`, () => {
+      const missing = mc.expectAtLeast.filter((k) => !foundKinds.has(k));
+      assert.equal(
+        missing.length,
+        0,
+        `AST guard missed expected violation kind(s): [${missing.join(', ')}]. ` +
+          `Actual violations:\n` +
+          (found.length
+            ? found.map((v) => `  ${mc.displayPath}:${v.line} [${v.kind}] ${v.value}`).join('\n')
+            : '  (none)'),
       );
     });
   }
