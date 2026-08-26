@@ -106,6 +106,52 @@ export function printingRarityColor(rarity: string | null | undefined): string |
   return PRINTING_RARITY_COLORS[rarity.toUpperCase()] ?? null;
 }
 
+// DIC-1192: card records reach the client with legacy or scraped colour
+// tokens that were never added to i18n — the JP scraper writes '◇' for
+// colourless (see cardCatalog.COLOR_TOKENS), and some cross-cost cards land
+// as 'blue_red'. i18n.t() throws on missing keys (DIC-1085 intentionally
+// keeps it strict so drift shows up in dev), so an unnormalised '◇' at
+// SearchResultsScreen line 450 previously fail-closed the entire screen at
+// 1440×900 / hBP04. Normalise here (never in the JSON — the scraper owns
+// that pipeline) so the render only ever asks i18n for a whitelisted key.
+// KNOWN_COLOR_KEYS is the source of truth both callers (searchCards and the
+// defence-in-depth render guard in SearchResultsScreen) test against — the
+// list must stay in sync with `color_*` keys in src/i18n/locales/{zh,ja}.
+export const KNOWN_COLOR_KEYS: ReadonlySet<string> = new Set([
+  'white', 'blue', 'green', 'red', 'purple', 'yellow', 'colorless', 'multicolor',
+]);
+
+// Normalise a raw color field into an array of whitelisted colour tokens.
+// - `''` / null / undefined → `[]`
+// - `'◇'` → `['colorless']`               (JP diamond marker)
+// - `'blue_red'` → `['blue', 'red']`      (composite tokens split on _ / , / /)
+// - `'PURPLE'` → `['purple']`             (case-insensitive)
+// - anything unrecognised → dropped from the returned array AND emitted as a
+//   `console.warn` so a real data-shape drift surfaces loudly instead of being
+//   silently swallowed. PM ask for DIC-1192 QA rework was explicit about not
+//   hiding data errors.
+export function normalizeColorTokens(raw: unknown): string[] {
+  if (typeof raw !== 'string') return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  if (trimmed === '◇') return ['colorless'];
+  const parts = trimmed.toLowerCase().split(/[_\/,\s]+/).filter(Boolean);
+  const known: string[] = [];
+  const unknown: string[] = [];
+  for (const part of parts) {
+    if (part === '◇') { if (!known.includes('colorless')) known.push('colorless'); continue; }
+    if (KNOWN_COLOR_KEYS.has(part)) { if (!known.includes(part)) known.push(part); continue; }
+    unknown.push(part);
+  }
+  if (unknown.length > 0 && typeof console !== 'undefined' && typeof console.warn === 'function') {
+    console.warn(
+      `[DIC-1192] Unknown color token(s) in card data — dropped from render: ${JSON.stringify(unknown)} (raw=${JSON.stringify(raw)}). ` +
+      `Fix in the scraper / data pipeline; the render will not crash on this row.`,
+    );
+  }
+  return known;
+}
+
 function clean(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();

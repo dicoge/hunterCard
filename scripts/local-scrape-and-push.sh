@@ -1,6 +1,6 @@
 #!/bin/bash
-# Local scraper: runs build-database.js on this Mac, then pushes data to GitHub
-# Runs via local cron since CI can't bypass yuyu-tei's Cloudflare
+# Local scraper: optional local full scrape for WAF-sensitive price sources.
+# Official catalog sync runs in GitHub Actions on a schedule and must not depend on yuyu availability.
 
 set -e
 cd "$(dirname "$0")/.."

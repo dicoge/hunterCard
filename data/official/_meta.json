@@ -1,8 +1,10 @@
 {
-  "updatedAt": "2026-04-21T15:46:54.871Z",
-  "totalCards": 3027,
-  "series": [
-    "ent07",
+  "updatedAt": "2026-08-24T18:31:26.185Z",
+  "discoveredSeries": [
+    "hEB01",
+    "hBP08",
+    "hWF01",
+    "hCO01",
     "hSD14",
     "hSD15",
     "hSD16",
@@ -14,25 +16,39 @@
     "hSD13",
     "hBP06",
     "hSD10",
+    "hSD01",
     "hSD11",
-    "hBP05",
-    "hSD08",
-    "hSD09",
-    "hSD2025summer",
-    "hCS01",
-    "hBP04",
-    "hPC01",
-    "hBP03",
-    "hSD05",
-    "hSD06",
-    "hSD07",
+    "hBP01",
+    "hYS01",
+    "hPR",
     "hBP02",
     "hSD02",
     "hSD03",
     "hSD04",
-    "hSD01",
-    "hBP01",
-    "hYS01",
-    "hPR"
+    "hSD05",
+    "hSD06",
+    "hSD07",
+    "hBP03",
+    "hPC01",
+    "hBP04",
+    "hSD08",
+    "hSD09",
+    "hSD2025summer",
+    "hCS01",
+    "hBP05"
+  ],
+  "series": [
+    "hEB01"
+  ],
+  "totalCards": 214,
+  "seriesStats": [
+    {
+      "code": "hEB01",
+      "name": "エクストラブースター サマー・ホログラム",
+      "expectedCount": 214,
+      "ingestedCount": 214,
+      "missingCount": 0,
+      "lastSuccessfulSync": "2026-08-24T18:31:26.183Z"
+    }
   ]
 }

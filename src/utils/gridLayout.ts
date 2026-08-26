@@ -18,6 +18,37 @@ export function uniformGridItemStyle(input: number | UniformGridArgs): ViewStyle
   const args: UniformGridArgs = typeof input === 'number' ? { columns: input } : input;
   const safeColumns = Math.max(1, Math.floor(args.columns));
 
+  // DIC-1192: a single-column FlatList has no `columnWrapperStyle` row —
+  // items sit directly on the list's vertical main axis, so a numeric
+  // `flexBasis` becomes the wrapper's HEIGHT rather than its width. That
+  // is exactly how a 358×card-content wrapper got padded to 358×358 in
+  // production, leaving ≈189px of vertical whitespace between cards.
+  // Force `flexBasis: 'auto'` here so the card content decides the row
+  // height, and keep the width tied to the measured container so the
+  // cross-axis still fills the row. Ignoring 2/3-column callers on
+  // purpose — their `columnWrapperStyle` puts the wrapper on a horizontal
+  // main axis where the numeric `flexBasis` = width contract is correct.
+  if (safeColumns === 1) {
+    const containerWidth = args.containerWidth;
+    if (typeof containerWidth === 'number' && Number.isFinite(containerWidth) && containerWidth > 0) {
+      const width = Math.max(0, Math.floor(containerWidth));
+      return {
+        flexBasis: 'auto',
+        width,
+        maxWidth: width,
+        flexGrow: 0,
+        flexShrink: 0,
+      };
+    }
+    return {
+      flexBasis: 'auto',
+      width: '100%',
+      maxWidth: '100%',
+      flexGrow: 0,
+      flexShrink: 0,
+    };
+  }
+
   const containerWidth = args.containerWidth;
   if (typeof containerWidth === 'number' && Number.isFinite(containerWidth) && containerWidth > 0) {
     const gap = Math.max(0, args.gap ?? 0);

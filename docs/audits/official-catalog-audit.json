@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-08-24T18:31:26.185Z",
+  "officialToNormalized": [
+    {
+      "code": "hEB01",
+      "name": "エクストラブースター サマー・ホログラム",
+      "expectedCount": 214,
+      "ingestedCount": 214,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-24T18:31:26.183Z"
+    }
+  ],
+  "summary": {
+    "totalExpansions": 1,
+    "totalCards": 214,
+    "totalMissingFields": 0
+  }
+}
