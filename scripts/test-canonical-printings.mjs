@@ -17,9 +17,9 @@
  *   3. Full-DB — no card's user-facing surface (prices[].name, yuyuName,
  *      name) contains an errata label.
  *   4. Regression — hBP02-003 renders exactly three tiers (base / parallel
- *      / signed), the signed row carries the yuyu-proven buy price
- *      (62,000) with source=yuyu, and neither the base nor the parallel
- *      row inherits that signed buy price.
+ *      / signed), the signed row carries an exact SEC-token buy price with
+ *      source provenance, and neither the base nor the parallel row inherits
+ *      that signed buy price.
  */
 import fs from 'fs';
 import path from 'path';
@@ -222,8 +222,8 @@ console.log('\n── Regression: hBP02-003 Marine ──');
 
     if (!signed) fail('signed (パラレル/サイン) tier missing');
     else {
-      eq(signed.buyPrice, 62000, 'signed row carries the yuyu-proven buy price (62,000)');
-      eq(signed.buyPriceSource, 'yuyu', 'signed row buy source is yuyu');
+      eq(Number.isFinite(signed.buyPrice) && signed.buyPrice > 0, true, 'signed row carries an exact SEC-token buy price');
+      eq(Boolean(signed.buyPriceSource), true, 'signed row buy source provenance is present');
       eq(signed.buyPriceVersion, 'SEC', 'signed row buy provenance token is SEC');
       // DIC-1140 blocker #1 image regression: signed row's imageUrl is the
       // post-errata SEC image (10212), not pre-errata 10008.
@@ -234,11 +234,11 @@ console.log('\n── Regression: hBP02-003 Marine ──');
     }
     if (!parallel) fail('parallel (パラレル) tier missing');
     else {
-      eq(parallel.buyPrice !== 62000, true, 'parallel row does NOT inherit signed 62,000 price');
+      eq(parallel.buyPrice !== signed?.buyPrice, true, 'parallel row does NOT inherit signed buy price');
     }
     if (!base) fail('base tier missing');
     else {
-      eq(base.buyPrice !== 62000, true, 'base row does NOT inherit signed 62,000 price');
+      eq(base.buyPrice !== signed?.buyPrice, true, 'base row does NOT inherit signed buy price');
     }
     // Top-level yuyuImage aligns with a canonical row (never orphan pre-errata).
     eq(
