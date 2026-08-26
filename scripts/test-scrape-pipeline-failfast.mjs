@@ -185,6 +185,34 @@ exit 0
   return out;
 }
 
+// ── 0. Fail-fast: a failed canonical build must never be masked ──
+{
+  const { status, lines } = runPipeline({ failOn: 'build-database.js' });
+
+  assert.notStrictEqual(
+    status,
+    0,
+    'pipeline must exit non-zero when build-database.js fails required-field/translation validation',
+  );
+  assert.ok(
+    indexOfCall(lines, 'build-database.js') !== -1,
+    'sanity: the pipeline must actually invoke build-database.js',
+  );
+  for (const forbidden of [
+    'scrape-yt-subscribers.js',
+    'trend-analysis.js',
+    'send-push-alerts.js',
+    'merge-buy-prices.js',
+    'generate-native-database.mjs',
+    'git add',
+    'git -c user.name',
+    'commit -m',
+    'git push',
+  ]) {
+    assert.strictEqual(indexOfCall(lines, forbidden), -1, `a failed build must never reach downstream mutation/commit path (found: ${forbidden})`);
+  }
+}
+
 // ── 1. Fail-fast: a failed buy-price merge must never reach the commit path ──
 {
   const { status, lines } = runPipeline({ failOn: 'merge-buy-prices.js' });

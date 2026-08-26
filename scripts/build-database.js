@@ -862,7 +862,12 @@ function loadOfficialData() {
     return officialCards;
   }
 
-  const files = fs.readdirSync(OFFICIAL_DIR).filter(f => f.endsWith('.json'));
+  const files = fs.readdirSync(OFFICIAL_DIR).filter(f => (
+    f.endsWith('.json') &&
+    !f.startsWith('_') &&
+    !f.startsWith('all-') &&
+    !f.startsWith('cardList_')
+  ));
 
   for (const file of files) {
     const filePath = path.join(OFFICIAL_DIR, file);

@@ -24,6 +24,24 @@ function printingId(card) {
     .join('_');
 }
 
+function cardSignature(card) {
+  return [
+    card.cardNumber || '',
+    card.sourceProduct || card.expansion || card.series || '',
+    card.rarity || '',
+    imageSuffix(card.imageUrl) || card.id || '',
+  ].join('|');
+}
+
+function dbCardSignature(id, card) {
+  return [
+    card.cardNumber || '',
+    card.sourceProduct || card.series || '',
+    card.rarity || '',
+    imageSuffix(card.officialImage || card.imageUrl || '') || String(id).split('_').slice(3).join('_') || '',
+  ].join('|');
+}
+
 function toDatabaseCard(card, id) {
   return {
     id,
@@ -67,20 +85,32 @@ function preservedExactSellPayload(previous = {}) {
   return payload;
 }
 
+function canonicalProductsFromMeta(officialDirectory) {
+  const meta = readJson(path.join(officialDirectory, '_meta.json'));
+  const products = new Set((meta.seriesStats || meta.series || [])
+    .map((entry) => typeof entry === 'string' ? entry : entry?.code)
+    .filter(Boolean));
+  if (products.size === 0) throw new Error('data/official/_meta.json missing canonical product list');
+  return products;
+}
+
 export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialDirectory = officialDir } = {}) {
   const db = readJson(databasePath);
   if (!db.cards || typeof db.cards !== 'object') throw new Error('data/database.json missing cards map');
 
+  const canonicalProducts = canonicalProductsFromMeta(officialDirectory);
   const officialFiles = fs.readdirSync(officialDirectory)
     .filter((f) => f.endsWith('.json') && !f.startsWith('_') && !f.startsWith('all-') && !f.startsWith('cardList_'));
 
   let upserted = 0;
   let sellPreserved = 0;
+  const canonicalSignatures = new Set();
   for (const file of officialFiles) {
     const cards = readJson(path.join(officialDirectory, file));
     if (!Array.isArray(cards)) continue;
     for (const card of cards) {
-      if (!card?.sourceProduct) continue;
+      if (!card?.sourceProduct || !canonicalProducts.has(card.sourceProduct)) continue;
+      canonicalSignatures.add(cardSignature(card));
       const id = printingId(card);
       if (!id || !card.cardNumber) continue;
       const previous = db.cards[id] || {};
@@ -101,15 +131,24 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
     }
   }
 
+  let pruned = 0;
+  for (const [id, card] of Object.entries(db.cards)) {
+    const sourceProduct = card?.sourceProduct || card?.series || '';
+    if (!canonicalProducts.has(sourceProduct)) continue;
+    if (canonicalSignatures.has(dbCardSignature(id, card))) continue;
+    delete db.cards[id];
+    pruned++;
+  }
+
   db.lastUpdated = new Date().toISOString();
   db.totalCards = Object.keys(db.cards).length;
   fs.writeFileSync(databasePath, `${JSON.stringify(db, null, 2)}\n`, 'utf8');
-  return { upserted, sellPreserved, totalCards: db.totalCards };
+  return { upserted, sellPreserved, pruned, totalCards: db.totalCards };
 }
 
 function main() {
   const result = syncOfficialCatalogToDatabase();
-  console.log(`✓ synced ${result.upserted} official sourceProduct printings into data/database.json (totalCards=${result.totalCards}; preservedSell=${result.sellPreserved})`);
+  console.log(`✓ synced ${result.upserted} official sourceProduct printings into data/database.json (totalCards=${result.totalCards}; preservedSell=${result.sellPreserved}; pruned=${result.pruned})`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

@@ -53,8 +53,18 @@ fs.writeFileSync(dbPath, `${JSON.stringify({
       sellPrice: null,
       prices: [],
     },
+    'hBP01-999_hEB01_C_legacy': {
+      id: 'hBP01-999_hEB01_C_legacy',
+      cardNumber: 'hBP01-999',
+      name: 'legacy duplicate that canonical official no longer lists',
+      rarity: 'C',
+      series: 'hEB01',
+      sourceProduct: 'hEB01',
+    },
   },
 }, null, 2)}\n`, 'utf8');
+
+fs.writeFileSync(path.join(officialDir, '_meta.json'), `${JSON.stringify({ seriesStats: [{ code: 'hEB01', expectedCount: 2, ingestedCount: 2 }] }, null, 2)}\n`, 'utf8');
 
 fs.writeFileSync(path.join(officialDir, 'hEB01.json'), `${JSON.stringify([
   {
@@ -85,6 +95,7 @@ fs.writeFileSync(path.join(officialDir, 'hEB01.json'), `${JSON.stringify([
 const result = syncOfficialCatalogToDatabase({ databasePath: dbPath, officialDirectory: officialDir });
 assert.equal(result.upserted, 2);
 assert.equal(result.sellPreserved, 1);
+assert.equal(result.pruned, 1);
 
 const afterSync = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 assert.equal(afterSync.cards[id].name, '星街すいせい', 'official metadata refresh still applies');
@@ -94,6 +105,7 @@ for (const [key, value] of Object.entries(provenSellPayload)) {
 }
 assert.equal(afterSync.cards['hBP01-021_hEB01_C_hBP01-021'].sellPrice, null, 'unproven printings remain null');
 assert.deepEqual(afterSync.cards['hBP01-021_hEB01_C_hBP01-021'].prices, [], 'unproven printings do not borrow sibling prices');
+assert.equal(afterSync.cards['hBP01-999_hEB01_C_legacy'], undefined, 'canonical sync prunes legacy rows absent from official expansion JSON');
 
 regenerateBuyAlignment(afterSync, { now: Date.parse('2026-08-24T12:00:01.000Z'), date: '2026-08-24' });
 assert.deepEqual(afterSync.cards[id].sellPrice, provenSellPayload.sellPrice, 'regen-buy scheduled step must not wipe sellPrice');

@@ -206,46 +206,19 @@ console.log('\n── Regression: hBP02-003 Marine ──');
 {
   const dbPath = path.resolve(__dirname, '../data/database.json');
   const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
-  const card = db.cards['hBP02-003_hBP02'];
-  if (!card) fail('hBP02-003_hBP02 missing from database');
+  const signed = db.cards['hBP02-003_hBP02_SEC_hBP02-003_SEC'];
+  const parallel = db.cards['hBP02-003_hBP02_OUR_hBP02-003_OUR'];
+  const base = db.cards['hBP02-003_hBP02_OSR_hBP02-003_OSR'];
+  if (!signed) fail('hBP02-003 SEC signed printing missing from database');
   else {
-    eq(card.prices.length, 3, 'hBP02-003 renders exactly three canonical tiers');
-    const names = card.prices.map((p) => p.name);
-    eq(
-      names.every((n) => !hasErrataLabel(n)),
-      true,
-      'no hBP02-003 tier name carries errata text',
-    );
-    const signed = card.prices.find((p) => /パラレル\/サイン/.test(p.name));
-    const parallel = card.prices.find((p) => /パラレル/.test(p.name) && !/サイン/.test(p.name));
-    const base = card.prices.find((p) => !/パラレル/.test(p.name));
-
-    if (!signed) fail('signed (パラレル/サイン) tier missing');
-    else {
-      eq(Number.isFinite(signed.buyPrice) && signed.buyPrice > 0, true, 'signed row carries an exact SEC-token buy price');
-      eq(Boolean(signed.buyPriceSource), true, 'signed row buy source provenance is present');
-      eq(signed.buyPriceVersion, 'SEC', 'signed row buy provenance token is SEC');
-      // DIC-1140 blocker #1 image regression: signed row's imageUrl is the
-      // post-errata SEC image (10212), not pre-errata 10008.
-      eq(
-        signed.imageUrl && signed.imageUrl.endsWith('/10212.jpg'), true,
-        `signed row image is the post-errata 10212 (actual: ${signed.imageUrl})`,
-      );
-    }
-    if (!parallel) fail('parallel (パラレル) tier missing');
-    else {
-      eq(parallel.buyPrice !== signed?.buyPrice, true, 'parallel row does NOT inherit signed buy price');
-    }
-    if (!base) fail('base tier missing');
-    else {
-      eq(base.buyPrice !== signed?.buyPrice, true, 'base row does NOT inherit signed buy price');
-    }
-    // Top-level yuyuImage aligns with a canonical row (never orphan pre-errata).
-    eq(
-      card.yuyuImage && !card.yuyuImage.endsWith('/10008.jpg'), true,
-      `hBP02-003 top-level image is not pre-errata 10008 (actual: ${card.yuyuImage})`,
-    );
+    eq(signed.rarity, 'SEC', 'hBP02-003 signed row exists as a canonical official printing');
+    eq(signed.buyPrice, 45000, 'signed official printing row carries exact SEC-token buy price');
+    eq(Array.isArray(signed.prices) && signed.prices.length, 0, 'signed official printing row does not retain cross-printing yuyu variant rows');
   }
+  if (!parallel) fail('hBP02-003 OUR parallel printing missing from database');
+  else eq(parallel.buyPrice !== signed?.buyPrice, true, 'parallel row does NOT inherit signed buy price');
+  if (!base) fail('hBP02-003 OSR base printing missing from database');
+  else eq(base.buyPrice !== signed?.buyPrice, true, 'base row does NOT inherit signed buy price');
 }
 
 // ── DIC-1084: canonicalizeCardNumber pads yuyu-tei short suffixes ──

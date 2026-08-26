@@ -47,9 +47,12 @@ cd scripts
 node scrape-news-sentiment.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)" >> "$LOG_FILE"
 cd ..
 
-# 2. Run the scraper (non-fatal: buy crawlers must run even if build-database fails)
+# 2. Run the scraper. Catalog/build validation failures must stop before downstream mutation/commit.
 cd scripts
-node build-database.js >> "$LOG_FILE" 2>&1 || { status=$?; echo "[$(date)] ⚠️ build-database failed (exit $status), continuing..." >> "$LOG_FILE"; }
+if ! node build-database.js >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ build-database FAILED, exiting before downstream mutation/commit" >> "$LOG_FILE"
+  exit 1
+fi
 cd ..
 
 # 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)
@@ -118,11 +121,12 @@ GIT_DIFF_FILES=(
   'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json'
   'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json'
   'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
+  'docs/audits/official-catalog-audit.json' 'docs/audits/official-production-lag-state.json'
 )
 if git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .; then
   echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
   # Only add directories that exist (some are optional and may not be created yet)
-  EXISTING_DATA="data/database.json data/images/ data/official/cardList_*.json data/series-names.json data/price-history/*.json public/data/database.json"
+  EXISTING_DATA="data/database.json data/images/ data/official/ data/series-names.json data/price-history/*.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json"
   [ -f data/yt-stats-history.json ] && EXISTING_DATA="$EXISTING_DATA data/yt-stats-history.json"
   for dir in data/yt-subscribers data/news-sentiment data/trends; do
     [ -d "$dir" ] && EXISTING_DATA="$EXISTING_DATA $dir/*.json"

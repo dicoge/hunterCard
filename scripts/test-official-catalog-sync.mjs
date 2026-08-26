@@ -46,6 +46,8 @@ assert.ok(official.some((c) => c.cardNumber === 'hBP01-021' && c.rarity === 'HR'
 const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 const hEB01Cards = Object.values(db.cards || {}).filter((c) => c.sourceProduct === 'hEB01' || c.series === 'hEB01');
 assert.strictEqual(hEB01Cards.length, 214, 'database must contain 214 hEB01 printings');
+const hBP07Cards = Object.values(db.cards || {}).filter((c) => c.sourceProduct === 'hBP07' || c.series === 'hBP07');
+assert.strictEqual(hBP07Cards.length, 249, 'database must prune legacy cardList_* hBP07 extras and match official 249 rows');
 const hEB01WithSellPayload = hEB01Cards.filter((c) => c.sellPrice != null || (Array.isArray(c.prices) && c.prices.length > 0));
 assert.ok(hEB01WithSellPayload.every((c) => (
   Number.isFinite(c.sellPrice) &&
@@ -77,6 +79,8 @@ assert.ok(auditHEB01, 'audit must include hEB01');
 assert.strictEqual(auditHEB01.expectedCount, 214);
 assert.strictEqual(auditHEB01.ingestedCount, 214);
 assert.strictEqual(auditHEB01.missingCount, 0);
+const missingNameZh = Object.values(db.cards || {}).filter((c) => !c.nameZh);
+assert.deepStrictEqual(missingNameZh.map((c) => `${c.id}:${c.name}`), [], 'database must fail closed instead of shipping empty Traditional-Chinese names');
 
 const builder = fs.readFileSync(path.join(repo, 'scripts/build-database.js'), 'utf8');
 assert.ok(
@@ -87,6 +91,10 @@ assert.ok(
   builder.includes('pricingUnavailable ? null : getYuyuForCard(baseCardNum, official)') &&
     builder.includes('function yuyuEntryMatchesOfficial'),
   'build-database must not merge yuyu rows by cardNumber into every official printing',
+);
+assert.ok(
+  builder.includes("!f.startsWith('cardList_')"),
+  'build-database must ignore legacy cardList_* files once canonical expansion JSON exists',
 );
 
 const scraper = fs.readFileSync(path.join(repo, 'scripts/scrape-official-cards.js'), 'utf8');
