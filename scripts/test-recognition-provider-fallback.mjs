@@ -11,6 +11,14 @@
  *   - static scans across the runtime source refuse strings like `openrouter.ai`,
  *     `OPENROUTER_API_KEY`, and `openrouter/`, so a reintroduced constant is caught
  *     before it can be wired up.
+ *   - an AST semantic guard constant-folds string concatenation, template literals,
+ *     and `[...].join()` reconstructions, and inspects computed property/element
+ *     accesses. `'open' + 'router.ai'` or `e['OPEN' + 'ROUTER_API_KEY']` is treated
+ *     identically to a raw literal (DIC-1190 CR).
+ *   - non-recognition scripts (`add-zh-names.js`, `hello.ts`, `translate-effects.js`)
+ *     are imported and exercised under a Proxy-wrapped `process.env` that logs
+ *     every `OPENROUTER*` access AND a stubbed `fetch` that throws on any
+ *     openrouter.ai contact, however the URL is assembled (DIC-1190 CR).
  *   - the recognition handler is exercised across every environment permutation
  *     (Google present, Google absent, OpenRouter-key-only, both keys) and every
  *     failure mode (Google 4xx/5xx/network/hang), and MUST fail closed at 503 the
@@ -23,8 +31,10 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 import handler, { RECOGNITION_UNAVAILABLE_CODE, VISION_TOTAL_BUDGET_MS } from '../api/recognize-card.ts';
 import {
@@ -314,6 +324,309 @@ const check = (label, fn) => { fn(); results.push(label); };
       assert.ok(!('ytStats' in candidate));
     }
   });
+}
+
+// ── 7. AST semantic guard: constant-fold + inspect (DIC-1190 CR) ─────────────
+// Literal-regex checks alone are bypassable by string assembly
+// (`'open' + 'router.ai'`), aliased env access
+// (`const e = process.env; e.OPENROUTER_API_KEY`), or `.join('')`
+// reconstruction. This section parses each runtime file with the TypeScript
+// compiler, constant-folds every statically-resolvable string expression, and
+// walks every property/element access — so an assembled URL, a computed env
+// key, or an aliased property access lands in the same trap as a raw literal.
+{
+  function constantFold(node) {
+    if (!node) return null;
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      return node.text;
+    }
+    if (ts.isTemplateExpression(node)) {
+      let out = node.head.text;
+      for (const span of node.templateSpans) {
+        const v = constantFold(span.expression);
+        if (v === null) return null;
+        out += v;
+        out += span.literal.text;
+      }
+      return out;
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      const l = constantFold(node.left);
+      const r = constantFold(node.right);
+      if (l === null || r === null) return null;
+      return l + r;
+    }
+    if (ts.isParenthesizedExpression(node)) return constantFold(node.expression);
+    // [...].join(sep) with literal string parts
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'join' &&
+      ts.isArrayLiteralExpression(node.expression.expression)
+    ) {
+      const parts = [];
+      for (const el of node.expression.expression.elements) {
+        const v = constantFold(el);
+        if (v === null) return null;
+        parts.push(v);
+      }
+      const sep = node.arguments[0] ? constantFold(node.arguments[0]) : ',';
+      if (sep === null) return null;
+      return parts.join(sep);
+    }
+    // String.fromCharCode(...) reassembly of a denylisted host
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'String' &&
+      node.expression.name.text === 'fromCharCode'
+    ) {
+      const codes = [];
+      for (const arg of node.arguments) {
+        if (ts.isNumericLiteral(arg)) codes.push(Number(arg.text));
+        else return null;
+      }
+      return String.fromCharCode(...codes);
+    }
+    return null;
+  }
+
+  const runtimeFiles = [
+    'api/recognize-card.ts',
+    'api/hello.ts',
+    'scripts/add-zh-names.js',
+    'scripts/translate-effects.js',
+  ];
+  const denyStringPatterns = [
+    { pattern: /openrouter\.ai/i, label: 'openrouter.ai host string' },
+    { pattern: /openrouter\/[a-z]/i, label: 'openrouter/… model slug' },
+    { pattern: /OPENROUTER_API_KEY/, label: 'OPENROUTER_API_KEY env-key string' },
+    { pattern: /OPENROUTER_URL/, label: 'OPENROUTER_URL identifier string' },
+  ];
+
+  for (const relPath of runtimeFiles) {
+    const source = fs.readFileSync(repo(relPath), 'utf8');
+    const kind = relPath.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+    const sf = ts.createSourceFile(relPath, source, ts.ScriptTarget.Latest, true, kind);
+
+    const violations = [];
+    function visit(node) {
+      const folded = constantFold(node);
+      if (folded !== null && folded.length < 2048) {
+        for (const { pattern, label } of denyStringPatterns) {
+          if (pattern.test(folded)) {
+            const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+            violations.push({
+              line: line + 1,
+              kind: label,
+              value: folded.length > 120 ? folded.slice(0, 120) + '…' : folded,
+            });
+          }
+        }
+      }
+      if (ts.isPropertyAccessExpression(node) && /OPENROUTER/i.test(node.name.text)) {
+        const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        violations.push({ line: line + 1, kind: 'property access to OPENROUTER*', value: node.name.text });
+      }
+      if (ts.isElementAccessExpression(node)) {
+        const key = constantFold(node.argumentExpression);
+        if (typeof key === 'string' && /OPENROUTER/i.test(key)) {
+          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          violations.push({ line: line + 1, kind: 'element access to OPENROUTER*', value: key });
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(sf);
+
+    // Deduplicate: constant folding recurses, so a single assembled `openrouter.ai`
+    // fires at every enclosing binary-plus node. Keep the innermost occurrence.
+    const seen = new Set();
+    const unique = violations.filter((v) => {
+      const k = `${v.line}:${v.kind}:${v.value}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+
+    check(`${relPath}: AST guard finds no assembled/computed OpenRouter reference`, () => {
+      assert.equal(
+        unique.length,
+        0,
+        `AST guard found ${unique.length} violation(s):\n` +
+          unique.map((v) => `  ${relPath}:${v.line} [${v.kind}] ${v.value}`).join('\n'),
+      );
+    });
+  }
+}
+
+// ── 8. Runtime tripwire on non-recognition modules (DIC-1190 CR) ─────────────
+// The AST guard cannot see runtime-generated identifiers. This section imports
+// each non-recognition module and exercises its documented entry points under
+// two independent tripwires:
+//
+//   - a Proxy wrapping `process.env` logs every read whose key contains
+//     `OPENROUTER`, however that key is assembled at runtime;
+//   - `globalThis.fetch` throws the moment `openrouter.ai` appears in the URL,
+//     regardless of how the URL was constructed.
+//
+// A canary `OPENROUTER_API_KEY` is deliberately left in the environment so a
+// mutation that reads the env AND uses it in a Bearer/Authorization header
+// takes its real network branch instead of no-oping on an unset var.
+{
+  const originalEnv = process.env;
+  const originalFetch = globalThis.fetch;
+
+  let readOpenRouterKeys = [];
+  function installEnvTripwire() {
+    readOpenRouterKeys = [];
+    process.env = new Proxy(originalEnv, {
+      get(target, prop) {
+        if (typeof prop === 'string' && /OPENROUTER/i.test(prop)) {
+          readOpenRouterKeys.push(prop);
+        }
+        return target[prop];
+      },
+      set(target, prop, value) { target[prop] = value; return true; },
+      deleteProperty(target, prop) { delete target[prop]; return true; },
+      has(target, prop) { return prop in target; },
+      ownKeys(target) { return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, prop) { return Object.getOwnPropertyDescriptor(target, prop); },
+    });
+  }
+  function restoreEnv() { process.env = originalEnv; }
+
+  function makeFetchTripwire(label) {
+    const outbound = [];
+    globalThis.fetch = async (url, init) => {
+      const href = String(url);
+      outbound.push({ href, hasInit: !!init });
+      if (/openrouter/i.test(href)) {
+        throw new Error(`DIC-1185 denylist violation: ${label} reached ${href}`);
+      }
+      throw new Error(`unexpected fetch from ${label}: ${href}`);
+    };
+    return outbound;
+  }
+
+  const CANARY = 'canary-inherited-openrouter-key-DIC1185';
+  originalEnv.OPENROUTER_API_KEY = CANARY;
+
+  // -- 8a. scripts/add-zh-names.js ------------------------------------------
+  {
+    const outbound = makeFetchTripwire('scripts/add-zh-names.js');
+    installEnvTripwire();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dic1185-addzh-'));
+    const tmpDb = path.join(tmpDir, 'database.json');
+    fs.writeFileSync(tmpDb, JSON.stringify({
+      cards: {
+        c1: { name: 'ラプラス・ダークネス' },
+        c2: { name: 'ThisNameWillNotBeInTheStaticMap' },
+      },
+    }));
+    let addZhError = null;
+    try {
+      const mod = await import(pathToFileURL(repo('scripts/add-zh-names.js')).href);
+      await mod.addZhNames(tmpDb);
+    } catch (e) { addZhError = e; }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    restoreEnv();
+
+    check('add-zh-names.js addZhNames() completes without throwing', () => {
+      assert.equal(addZhError, null, addZhError && addZhError.stack);
+    });
+    check('add-zh-names.js addZhNames() issues zero outbound fetches', () => {
+      assert.deepEqual(outbound, [], `unexpected fetches: ${outbound.map((o) => o.href).join(', ')}`);
+    });
+    check('add-zh-names.js addZhNames() never reads any OPENROUTER* env key', () => {
+      assert.deepEqual(
+        readOpenRouterKeys,
+        [],
+        `unexpected OPENROUTER env reads: ${readOpenRouterKeys.join(', ')}`,
+      );
+    });
+  }
+
+  // -- 8b. scripts/translate-effects.js top-level import + helpers ----------
+  {
+    const outbound = makeFetchTripwire('scripts/translate-effects.js');
+    installEnvTripwire();
+    let helperResult = null;
+    let importError = null;
+    try {
+      // Fresh import each run to defeat ESM caching by appending a cache-buster,
+      // otherwise a rerun would return the previous module without triggering
+      // its top-level side effects again.
+      const mod = await import(
+        pathToFileURL(repo('scripts/translate-effects.js')).href + `?dic1185=${Date.now()}`
+      );
+      helperResult = {
+        finalize: mod.finalize('テスト', []),
+        collected: mod.collectStrings({ c: { arts: [{ name: 'a', effect: 'b' }] } }),
+      };
+    } catch (e) { importError = e; }
+    restoreEnv();
+
+    check('translate-effects.js top-level import + helper calls do not throw', () => {
+      assert.equal(importError, null, importError && importError.stack);
+      assert.ok(helperResult && typeof helperResult.finalize === 'string');
+      assert.ok(helperResult && Array.isArray(helperResult.collected));
+    });
+    check('translate-effects.js import + helpers issue zero outbound fetches', () => {
+      assert.deepEqual(outbound, [], `unexpected fetches: ${outbound.map((o) => o.href).join(', ')}`);
+    });
+    check('translate-effects.js import + helpers never read OPENROUTER* env', () => {
+      assert.deepEqual(
+        readOpenRouterKeys,
+        [],
+        `unexpected OPENROUTER env reads: ${readOpenRouterKeys.join(', ')}`,
+      );
+    });
+  }
+
+  // -- 8c. api/hello.ts: exercise the default handler under stub -----------
+  {
+    const outbound = makeFetchTripwire('api/hello.ts');
+    installEnvTripwire();
+    const helloMod = await import('../api/hello.ts');
+    const nodeHandler = helloMod.default;
+    const req = { url: '/api/hello', method: 'GET', headers: { host: 'localhost' } };
+    const chunks = [];
+    let status = 0;
+    const outHeaders = {};
+    const res = {
+      status(s) { status = s; return this; },
+      setHeader(k, v) { outHeaders[String(k).toLowerCase()] = v; return this; },
+      send(b) { if (b !== undefined && b !== null) chunks.push(b); return this; },
+      end(b) { if (b !== undefined && b !== null) chunks.push(b); return this; },
+      get headersSent() { return status !== 0; },
+    };
+    await nodeHandler(req, res);
+    const bodyText = Buffer.concat(
+      chunks.map((c) => (Buffer.isBuffer(c) ? c : Buffer.from(String(c)))),
+    ).toString('utf8');
+    restoreEnv();
+
+    check('hello.ts default handler issues zero outbound fetches', () => {
+      assert.deepEqual(outbound, [], `unexpected fetches: ${outbound.map((o) => o.href).join(', ')}`);
+    });
+    check('hello.ts default handler never reads any OPENROUTER* env key', () => {
+      assert.deepEqual(
+        readOpenRouterKeys,
+        [],
+        `unexpected OPENROUTER env reads: ${readOpenRouterKeys.join(', ')}`,
+      );
+    });
+    check('hello.ts response body never mentions OpenRouter or the env key', () => {
+      assert.ok(!/openrouter/i.test(bodyText), bodyText);
+      assert.ok(!/OPENROUTER_API_KEY/.test(bodyText), bodyText);
+      assert.ok(!bodyText.includes(CANARY), 'canary key value must not leak into the response');
+    });
+  }
+
+  delete originalEnv.OPENROUTER_API_KEY;
+  globalThis.fetch = originalFetch;
 }
 
 if (savedGoogle === undefined) delete process.env.GEMINI_API_KEY;
