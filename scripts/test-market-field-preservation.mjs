@@ -275,6 +275,44 @@ function freshCurrentCard(overrides = {}) {
   assert.equal(withZero.sellPrice, undefined, 'sellPrice=0 is treated as unproven and dropped');
 }
 
+// ─── DIC-1167: no current yuyu proof means no stale sell payload ─────────
+{
+  const previous = {
+    id: 'hBP04-028_hBP08_C_hBP04-028_C_02',
+    cardNumber: 'hBP04-028',
+    sourceProduct: 'hBP08',
+    rarity: 'C',
+    sellPrice: 30,
+    prices: [{ name: 'セシリア・イマーグリーン', sellPrice: 30, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10058.jpg' }],
+    yuyuName: 'セシリア・イマーグリーン',
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10058.jpg',
+    priceHistory: { '2026-08-25': 30 },
+    timestamp: '2026-08-25T12:00:00.000Z',
+    ytStats: { subscriberCount: 1 },
+  };
+  const current = {
+    id: previous.id,
+    cardNumber: 'hBP04-028',
+    sourceProduct: 'hBP08',
+    rarity: 'C',
+    sellPrice: null,
+    prices: [],
+    yuyuName: '',
+    yuyuImage: '',
+    timestamp: '',
+  };
+  const summary = applyPreservedMarketFields(current, previous, { matchKind: 'exact-id', preserveYuyuPayload: false });
+  assert.equal(current.sellPrice, null, 'unproven hBP08 row stays price-unknown when current scrape has no exact yuyu match');
+  assert.deepEqual(current.prices, [], 'cross-product prices[] must not be resurrected from preservation');
+  assert.equal(current.yuyuImage, '', 'cross-product yuyuImage must not be resurrected from preservation');
+  assert.equal(current.priceHistory, undefined, 'cross-product priceHistory must not be resurrected from preservation');
+  assert.equal(current.timestamp, '', 'cross-product yuyu timestamp must not be resurrected from preservation');
+  assert.equal(current.ytStats.subscriberCount, 1, 'non-yuyu ytStats may still be preserved');
+  assert.equal(summary.sellPrice, false);
+  assert.equal(summary.prices, false);
+  assert.equal(summary.ytStats, true);
+}
+
 // ─── Shipped dataset regression: the fixture DIC-361 relies on ──────────
 {
   const db = JSON.parse(fsMod.readFileSync('data/database.json', 'utf8'));
@@ -301,12 +339,19 @@ function freshCurrentCard(overrides = {}) {
 // This block exercises the real ordering — preserve → seed → Step-5 append
 // → Step-6 re-read — against a tmpdir fixture and asserts the preserved
 // history survives the write-back.
+//
+// DIC-1219 tightening: this fixture uses an ORIGIN-product row (sourceProduct
+// equals the cardNumber's origin prefix). Reprint rows now fail-closed inside
+// `seedCanonicalHistoryFiles` — their preserved priceHistory carries no per-
+// date provenance stamp, so seeding would launder cross-product records onto
+// the reprint's canonical file (see `test:price-history-provenance` for the
+// reprint-side coverage).
 {
   const tmp = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'dic1204-hist-'));
   const historyDir = pathMod.join(tmp, 'price-history');
   fsMod.mkdirSync(historyDir, { recursive: true });
 
-  const renamedId = 'hBP01-028_hBP08_HR_hBP01-028_HR';
+  const renamedId = 'hBP01-028_hBP01_C_hBP01-028_C';
   const preservedHistory = {
     '2026-06-16': 180,
     '2026-06-17': 180,
@@ -318,10 +363,10 @@ function freshCurrentCard(overrides = {}) {
     id: renamedId,
     cardNumber: 'hBP01-028',
     name: '鷹嶺ルイ',
-    rarity: 'HR',
-    sourceProduct: 'hBP08',
+    rarity: 'C',
+    sourceProduct: 'hBP01',
     sellPrice: 50,
-    prices: [{ name: '鷹嶺ルイ(パラレル/HR)', sellPrice: 50, rarity: 'HR' }],
+    prices: [{ name: '鷹嶺ルイ', sellPrice: 50, rarity: 'C' }],
     priceHistory: { ...preservedHistory },
   };
   const cards = { [renamedId]: card };
@@ -384,15 +429,16 @@ function freshCurrentCard(overrides = {}) {
 
   // Cross-printing leakage guard: a sibling renamed printing whose preserved
   // history has different dates + prices must not bleed into another card's
-  // file. Each canonical-ID file stays isolated to its own cardId.
-  const siblingId = 'hBP01-028_hBP08_HR_hBP01-028_HR_02';
+  // file. Each canonical-ID file stays isolated to its own cardId. Keep this
+  // sibling on the origin-product row too — DIC-1219 blocks reprint-row seed.
+  const siblingId = 'hBP01-028_hBP01_C_hBP01-028_C_02';
   const siblingHistory = { '2026-07-15': 999, '2026-08-01': 888 };
   cards[siblingId] = {
     id: siblingId,
     cardNumber: 'hBP01-028',
     name: '鷹嶺ルイ',
-    rarity: 'HR',
-    sourceProduct: 'hBP08',
+    rarity: 'C',
+    sourceProduct: 'hBP01',
     sellPrice: 999,
     priceHistory: siblingHistory,
   };
@@ -515,15 +561,18 @@ function freshCurrentCard(overrides = {}) {
 // ─── Real subprocess exercise of the shipped build ordering ─────────────
 // Additional guard requested by CR: exercise the real scripts/build-database.js
 // process (with HUNTERCARD_YUYU_FIXTURE_PATH set to skip network) and assert
-// that the reviewer's cited renamed printing — `hBP01-028_hBP08_HR_hBP01-028_HR`,
+// that a renamed origin-product printing — `hBP01-028_hBP01_C_hBP01-028_C`,
 // which had 66 shipped DB history days but no canonical-ID history file on
 // main — still has multi-day priceHistory in the written data/database.json
 // after a build with no pre-existing canonical-ID history file. This is the
 // ONLY test that actually spawns node scripts/build-database.js and inspects
 // its final on-disk state, so removing the seedCanonicalHistoryFiles call in
 // the production builder makes it fail with a Step 5 → Step 6 collapse.
+// DIC-1219 note: this test targets an origin-product row on purpose. Reprint
+// rows now fail-closed at seed and merge time (their history rebuilds from
+// stamped Step 5 writes only) — covered by `test:price-history-provenance`.
 {
-  const CANONICAL_ID = 'hBP01-028_hBP08_HR_hBP01-028_HR';
+  const CANONICAL_ID = 'hBP01-028_hBP01_C_hBP01-028_C';
   const tmp = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'dic1204-e2e-'));
   const dbPath = pathMod.join(REPO_ROOT, 'data/database.json');
   const nativePath = pathMod.join(REPO_ROOT, 'public/data/database.json');

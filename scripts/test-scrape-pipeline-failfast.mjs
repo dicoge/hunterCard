@@ -70,7 +70,8 @@ exit 0
     path.join(bin, 'git'),
     `#!/bin/bash
 echo "git $*" >> "$TRACE_FILE"
-if [ "$1" = "diff" ]; then echo " data/database.json | 2 +-"; fi
+if [ "$1" = "diff" ] && [[ "$*" == *"--stat"* ]]; then echo " data/database.json | 2 +-"; fi
+if [ "$1" = "diff" ]; then exit 0; fi
 exit 0
 `,
     { mode: 0o755 },
@@ -157,7 +158,8 @@ function runPipelineWithRealMerge() {
     path.join(bin, 'git'),
     `#!/bin/bash
 echo "git $*" >> "$TRACE_FILE"
-if [ "$1" = "diff" ]; then echo " data/database.json | 2 +-"; fi
+if [ "$1" = "diff" ] && [[ "$*" == *"--stat"* ]]; then echo " data/database.json | 2 +-"; fi
+if [ "$1" = "diff" ]; then exit 0; fi
 exit 0
 `,
     { mode: 0o755 },
@@ -183,6 +185,20 @@ exit 0
   };
   fs.rmSync(dir, { recursive: true, force: true });
   return out;
+}
+
+// ── 0a. Ordering: stale checkout must pull before official mutation ──
+{
+  const { status, lines } = runPipeline();
+  assert.strictEqual(status, 0, 'pipeline must succeed when every step succeeds');
+  const pull = indexOfCall(lines, 'git pull --ff-only origin main');
+  const official = indexOfCall(lines, 'scrape-official-cards.js');
+  assert.ok(pull !== -1, 'pipeline must ff-only pull from main before mutating tracked data');
+  assert.ok(official !== -1, 'sanity: pipeline must still run official scraper');
+  assert.ok(
+    pull < official,
+    'stale durable checkout convergence must happen before scrape-official-cards.js writes data/official artifacts',
+  );
 }
 
 // ── 0. Fail-fast: a failed canonical build must never be masked ──

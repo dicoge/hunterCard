@@ -19,14 +19,38 @@ trap 'rm -rf "$LOCK_FILE"' EXIT
 
 echo "[$(date)] Starting hunterCard local scrape..." >> "$LOG_FILE"
 
-# 0. Check for new official series (fast, ~30s)
+# 0. Converge before mutating tracked artifacts. A stale durable checkout must
+#    pull first; otherwise official scrape writes data/official before git sees
+#    upstream changes and `git pull` aborts on local modifications (DIC-1167).
+#
+#    DIC-1219 CR expansion: `git diff` only sees tracked staged/unstaged edits.
+#    Untracked residue under scraper-managed paths (e.g. a leftover
+#    `data/price-history/hFOO-001_hBAR.json` from a failed manual run) slips
+#    through the check and the later `git add data/price-history/*.json` glob
+#    then bundles that residue into the automated `chore: update database`
+#    commit — publishing history the scheduler never actually scraped this
+#    pass. Use `git status --porcelain` scoped to every path this run will
+#    mutate so tracked, staged AND untracked residue all fail-closed before
+#    pull / scraper mutation / staging.
+SCRAPER_MANAGED_PATHS=(
+  'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json'
+  'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json'
+  'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
+  'docs/audits/official-catalog-audit.json' 'docs/audits/official-production-lag-state.json'
+)
+DIRTY_STATUS=$(git status --porcelain --ignore-submodules -- "${SCRAPER_MANAGED_PATHS[@]}" 2>/dev/null || true)
+if [ -n "$DIRTY_STATUS" ]; then
+  echo "[$(date)] ❌ Worktree has tracked/staged/untracked residue in scraper-managed paths; refusing to pull / mutate / stage" >> "$LOG_FILE"
+  echo "$DIRTY_STATUS" >> "$LOG_FILE"
+  exit 1
+fi
+git pull --ff-only origin main >> "$LOG_FILE" 2>&1
+
+# 1. Check for new official series (fast, ~30s)
 echo "[$(date)] Running official site scraper..." >> "$LOG_FILE"
 cd scripts
 node scrape-official-cards.js >> "$LOG_FILE" 2>&1
 cd ..
-
-# 1. Pull latest from main
-git pull origin main >> "$LOG_FILE" 2>&1
 
 # 1b. Snapshot YT channel stats (subscribers + total views) into
 #     data/yt-stats-history.json. MUST run before build-database.js so the
