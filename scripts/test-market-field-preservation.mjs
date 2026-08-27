@@ -275,6 +275,44 @@ function freshCurrentCard(overrides = {}) {
   assert.equal(withZero.sellPrice, undefined, 'sellPrice=0 is treated as unproven and dropped');
 }
 
+// ─── DIC-1167: no current yuyu proof means no stale sell payload ─────────
+{
+  const previous = {
+    id: 'hBP04-028_hBP08_C_hBP04-028_C_02',
+    cardNumber: 'hBP04-028',
+    sourceProduct: 'hBP08',
+    rarity: 'C',
+    sellPrice: 30,
+    prices: [{ name: 'セシリア・イマーグリーン', sellPrice: 30, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10058.jpg' }],
+    yuyuName: 'セシリア・イマーグリーン',
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10058.jpg',
+    priceHistory: { '2026-08-25': 30 },
+    timestamp: '2026-08-25T12:00:00.000Z',
+    ytStats: { subscriberCount: 1 },
+  };
+  const current = {
+    id: previous.id,
+    cardNumber: 'hBP04-028',
+    sourceProduct: 'hBP08',
+    rarity: 'C',
+    sellPrice: null,
+    prices: [],
+    yuyuName: '',
+    yuyuImage: '',
+    timestamp: '',
+  };
+  const summary = applyPreservedMarketFields(current, previous, { matchKind: 'exact-id', preserveYuyuPayload: false });
+  assert.equal(current.sellPrice, null, 'unproven hBP08 row stays price-unknown when current scrape has no exact yuyu match');
+  assert.deepEqual(current.prices, [], 'cross-product prices[] must not be resurrected from preservation');
+  assert.equal(current.yuyuImage, '', 'cross-product yuyuImage must not be resurrected from preservation');
+  assert.equal(current.priceHistory, undefined, 'cross-product priceHistory must not be resurrected from preservation');
+  assert.equal(current.timestamp, '', 'cross-product yuyu timestamp must not be resurrected from preservation');
+  assert.equal(current.ytStats.subscriberCount, 1, 'non-yuyu ytStats may still be preserved');
+  assert.equal(summary.sellPrice, false);
+  assert.equal(summary.prices, false);
+  assert.equal(summary.ytStats, true);
+}
+
 // ─── Shipped dataset regression: the fixture DIC-361 relies on ──────────
 {
   const db = JSON.parse(fsMod.readFileSync('data/database.json', 'utf8'));

@@ -261,13 +261,13 @@ export function seedCanonicalHistoryFiles({
   return { seededFiles, addedRecords };
 }
 
-export function applyPreservedMarketFields(currentCard, previous, { matchKind = 'exact-id' } = {}) {
+export function applyPreservedMarketFields(currentCard, previous, { matchKind = 'exact-id', preserveYuyuPayload = true } = {}) {
   const summary = { sellPrice: false, prices: false, priceHistory: false, ytStats: false, yuyu: false };
   if (!currentCard || !previous) return summary;
   const payload = preservedMarketPayload(previous);
   if (Object.keys(payload).length === 0) return summary;
-  const preservePrintingArrays = matchKind === 'exact-id' || !isSignedPrinting(currentCard);
-  if (payload.sellPrice != null && !(Number.isFinite(currentCard.sellPrice) && currentCard.sellPrice > 0)) {
+  const preservePrintingArrays = preserveYuyuPayload && (matchKind === 'exact-id' || !isSignedPrinting(currentCard));
+  if (preserveYuyuPayload && payload.sellPrice != null && !(Number.isFinite(currentCard.sellPrice) && currentCard.sellPrice > 0)) {
     currentCard.sellPrice = payload.sellPrice;
     summary.sellPrice = true;
   }
@@ -275,11 +275,11 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
     currentCard.prices = payload.prices;
     summary.prices = true;
   }
-  if (payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
+  if (preserveYuyuPayload && payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
     currentCard.priceHistory = payload.priceHistory;
     summary.priceHistory = true;
   }
-  if (payload.priceHistoryMeta && !currentCard.priceHistoryMeta) {
+  if (preserveYuyuPayload && payload.priceHistoryMeta && !currentCard.priceHistoryMeta) {
     currentCard.priceHistoryMeta = payload.priceHistoryMeta;
   }
   if (payload.ytStats && !currentCard.ytStats) {
@@ -297,7 +297,7 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
     currentCard.yuyuImage = payload.yuyuImage;
     summary.yuyu = true;
   }
-  if (payload.timestamp && !currentCard.timestamp) {
+  if (preserveYuyuPayload && payload.timestamp && !currentCard.timestamp) {
     currentCard.timestamp = payload.timestamp;
   }
   return summary;

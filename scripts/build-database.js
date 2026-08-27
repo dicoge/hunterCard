@@ -875,6 +875,25 @@ function loadOfficialData() {
     !f.startsWith('cardList_')
   ));
 
+  const imageSuffixFor = (url = '') => String(url).match(/\/([^/]+)\.png$/i)?.[1] || '';
+  const officialBackfillByImage = new Map();
+  for (const file of files) {
+    const filePath = path.join(OFFICIAL_DIR, file);
+    try {
+      const cards = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      if (!Array.isArray(cards)) continue;
+      for (const card of cards) {
+        const suffix = imageSuffixFor(card.imageUrl);
+        const type = card.cardType || card.type || '';
+        const color = card.color || '';
+        if (!suffix || (!type && !color)) continue;
+        if (!officialBackfillByImage.has(suffix)) officialBackfillByImage.set(suffix, { type, color });
+      }
+    } catch (err) {
+      console.error(`  [official] Error reading ${file} for metadata backfill: ${err.message}`);
+    }
+  }
+
   for (const file of files) {
     const filePath = path.join(OFFICIAL_DIR, file);
     try {
@@ -886,7 +905,8 @@ function loadOfficialData() {
           const cardNum = card.cardNumber || imageCardNumber;
           if (!cardNum) continue;
           const series = card.expansion || card.series || '';
-          const imageSuffix = String(card.imageUrl || '').match(/\/([^/]+)\.png$/i)?.[1] || '';
+          const imageSuffix = imageSuffixFor(card.imageUrl);
+          const richerOfficial = officialBackfillByImage.get(imageSuffix) || {};
           // Use compound keys to preserve all series and all official printings.
           // hEB01 contains many same-card-number variants inside one expansion;
           // those must not overwrite one another or inherit a single old price.
@@ -895,8 +915,8 @@ function loadOfficialData() {
           const printingKey = [baseKey, card.rarity || '', imageSuffix || card.id || ''].filter(Boolean).join('_');
           const makeInfo = () => ({
             name: card.name || '',
-            type: card.cardType || card.type || '',
-            color: card.color || '',
+            type: card.cardType || card.type || richerOfficial.type || '',
+            color: card.color || richerOfficial.color || '',
             rarity: card.rarity || '',
             series: series,
             sourceProduct: card.sourceProduct || series,
@@ -1401,11 +1421,16 @@ async function buildDatabase() {
   }
 
   // DIC-1204: preserve proven market payload onto every current row that maps
-  // to a previous row by exact id or by strict signature. This runs on every
-  // build — not only during a yuyu outage — because the shipped regression was
-  // caused by exact-id lookups missing renamed printings when yuyu still
-  // returned partial (non-outage) results. Freshly proven fields on the
-  // current row are never overwritten; ambiguous signatures fail closed.
+  // to a previous row by exact id or by strict signature. During a yuyu outage
+  // this keeps previously proven exact-card sell prices. During a healthy /
+  // partial scrape, do not resurrect yuyu sell payload onto a freshly rebuilt
+  // official row that has no current exact yuyu match: that is an unproven
+  // cross-product fallback, not provenance (DIC-1167).
+  const hasCurrentYuyuPayload = (card) => (
+    (Number.isFinite(card?.sellPrice) && card.sellPrice > 0)
+    || (Array.isArray(card?.prices) && card.prices.length > 0)
+    || Boolean(card?.yuyuName || card?.yuyuImage || card?.timestamp)
+  );
   if (preservationIndex.byId.size > 0) {
     let restoredSell = 0;
     let restoredPriceHistory = 0;
@@ -1414,7 +1439,10 @@ async function buildDatabase() {
     for (const [cardId, card] of Object.entries(database.cards)) {
       const match = findPreservedMatch(preservationIndex, cardId, card);
       if (!match) continue;
-      const summary = applyPreservedMarketFields(card, match.card, { matchKind: match.matchKind });
+      const summary = applyPreservedMarketFields(card, match.card, {
+        matchKind: match.matchKind,
+        preserveYuyuPayload: pricingUnavailable || hasCurrentYuyuPayload(card),
+      });
       if (summary.sellPrice) restoredSell++;
       if (summary.prices) restoredPrices++;
       if (summary.priceHistory) restoredPriceHistory++;

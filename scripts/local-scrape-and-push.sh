@@ -19,14 +19,20 @@ trap 'rm -rf "$LOCK_FILE"' EXIT
 
 echo "[$(date)] Starting hunterCard local scrape..." >> "$LOG_FILE"
 
-# 0. Check for new official series (fast, ~30s)
+# 0. Converge before mutating tracked artifacts. A stale durable checkout must
+#    pull first; otherwise official scrape writes data/official before git sees
+#    upstream changes and `git pull` aborts on local modifications (DIC-1167).
+if ! git diff --quiet --ignore-submodules -- || ! git diff --cached --quiet --ignore-submodules --; then
+  echo "[$(date)] ❌ Working tree is dirty before sync; refusing to mutate tracked data" >> "$LOG_FILE"
+  exit 1
+fi
+git pull --ff-only origin main >> "$LOG_FILE" 2>&1
+
+# 1. Check for new official series (fast, ~30s)
 echo "[$(date)] Running official site scraper..." >> "$LOG_FILE"
 cd scripts
 node scrape-official-cards.js >> "$LOG_FILE" 2>&1
 cd ..
-
-# 1. Pull latest from main
-git pull origin main >> "$LOG_FILE" 2>&1
 
 # 1b. Snapshot YT channel stats (subscribers + total views) into
 #     data/yt-stats-history.json. MUST run before build-database.js so the
