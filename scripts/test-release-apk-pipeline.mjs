@@ -797,6 +797,50 @@ function testGuardsRunBeforeAnythingIsBuilt() {
   }
 }
 
+/**
+ * DIC-1213: the guarded production-apk job failed before `eas build` because
+ * `expo/expo-github-action@v8` installed eas-cli 22.6.0 under Node 20.20.2, and
+ * eas-cli's @oclif/plugin-autocomplete refuses to load on Node <22. The runtime
+ * pinned on the release job is therefore part of the release contract — a
+ * revert to Node 20 must fail here, not silently at the next production build.
+ */
+function testSetupNodeUsesNode22OrGreaterForEasCli() {
+  const setupNode = stepNamed(easBuildSteps, 'Setup Node.js', 'eas-build.yml');
+  assert.equal(
+    setupNode.uses,
+    'actions/setup-node@v4',
+    '"Setup Node.js" must use actions/setup-node@v4 so the node-version pin is respected',
+  );
+  const raw = setupNode.raw.with?.['node-version'];
+  assert.ok(
+    raw != null && String(raw).trim() !== '',
+    '"Setup Node.js" must pin an explicit node-version — an unpinned runtime is what shipped Node 20.20.2 to eas-cli 22.6.0 (DIC-1213)',
+  );
+  const versionText = String(raw).trim();
+  const majorMatch = versionText.match(/^(\d+)(?:\.|$)/);
+  assert.ok(
+    majorMatch,
+    `"Setup Node.js" node-version must start with a concrete major version (got ${JSON.stringify(versionText)}) — floating aliases like "lts/*" can resolve to a Node that eas-cli refuses to load on (DIC-1213)`,
+  );
+  const major = Number.parseInt(majorMatch[1], 10);
+  assert.ok(
+    major >= 22,
+    `"Setup Node.js" node-version must be >= 22 (got ${JSON.stringify(versionText)}) — eas-cli's @oclif/plugin-autocomplete refuses to load under Node 20, which is the exact failure DIC-1213 fixes`,
+  );
+  assert.equal(
+    setupNode.raw.with?.cache,
+    'npm',
+    '"Setup Node.js" must keep cache: "npm" so dependency install stays reproducible on the release job',
+  );
+
+  const setupNodeIndex = easBuildSteps.findIndex((s) => s.name === 'Setup Node.js');
+  const setupEasIndex = easBuildSteps.findIndex((s) => s.name === 'Setup EAS');
+  assert.ok(
+    setupNodeIndex >= 0 && setupEasIndex >= 0 && setupNodeIndex < setupEasIndex,
+    '"Setup Node.js" must run before "Setup EAS" so expo/expo-github-action installs eas-cli against the pinned runtime, not the runner default',
+  );
+}
+
 function testDebugApkWorkflowIsLabelledDebugOnly() {
   assert.match(
     androidWorkflow,
@@ -1222,6 +1266,7 @@ const tests = [
   testEveryBuildInvocationRunsAfterTheGuards,
   testWorkflowInputSchema,
   testGuardsRunBeforeAnythingIsBuilt,
+  testSetupNodeUsesNode22OrGreaterForEasCli,
   testDebugApkWorkflowIsLabelledDebugOnly,
   testRefGuardBehaviour,
   testUsageGuardBehaviour,
