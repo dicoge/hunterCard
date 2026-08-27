@@ -584,6 +584,22 @@ const check = (label, fn) => { fn(); results.push(label); };
   // Property names on the global object that expose the fetch primitive.
   const GLOBAL_CONTAINERS = new Set(['globalThis', 'window', 'self', 'global']);
 
+  // Resolve a member-access node (dot OR computed) to `{ receiver, name }`
+  // when the member name folds to a string, else null. Symmetrises dot and
+  // computed access so downstream rules never rely on syntax alone. (DIC-1190
+  // CR round 5 — computed `R['call']` bypass.)
+  function resolveMember(node, bindings) {
+    if (!node) return null;
+    if (ts.isPropertyAccessExpression(node)) {
+      return { receiver: node.expression, name: node.name.text };
+    }
+    if (ts.isElementAccessExpression(node)) {
+      const key = fold(node.argumentExpression, bindings);
+      if (typeof key === 'string') return { receiver: node.expression, name: key };
+    }
+    return null;
+  }
+
   // A node is a "fetch primitive reference" when it evaluates (statically) to
   // the fetch function itself, or to a wrapped/bound version of it. Any such
   // reference in a no-fetch-allowed file is a violation on its own — even
@@ -602,57 +618,56 @@ const check = (label, fn) => { fn(); results.push(label); };
       if (aliases && aliases.has(node.text)) return true;
       return false;
     }
-    // globalThis.fetch, window.fetch, self.fetch, global.fetch
-    if (ts.isPropertyAccessExpression(node)) {
+    // Member access (dot OR computed):
+    //   - globalThis.fetch / globalThis['fetch'] / window.fetch / ...
+    //   - <primitive>.bind / .call / .apply and their computed equivalents
+    //     — these do NOT detach the callable, so the reference is still a
+    //     primitive for the purpose of both the no-fetch-file rule and the
+    //     URL enforcement.
+    const member = resolveMember(node, bindings);
+    if (member) {
       if (
-        ts.isIdentifier(node.expression) &&
-        GLOBAL_CONTAINERS.has(node.expression.text) &&
-        node.name.text === 'fetch'
+        member.name === 'fetch' &&
+        ts.isIdentifier(member.receiver) &&
+        GLOBAL_CONTAINERS.has(member.receiver.text)
       ) return true;
-      // <primitive>.bind(...) / .call / .apply do not detach the callable
-      if (['bind', 'call', 'apply'].includes(node.name.text)) {
-        // A bare `.bind/.call/.apply` reference is a method-ref, not a call.
-        // Only match when this node is itself invoked — handled below in the
-        // CallExpression branch — but treat the referenced form as primitive
-        // for the purpose of the call check.
-        return isFetchPrimitiveRef(node.expression, aliases, bindings);
+      if (['bind', 'call', 'apply'].includes(member.name)) {
+        if (isFetchPrimitiveRef(member.receiver, aliases, bindings)) return true;
+      }
+      // require('undici').fetch / require('undici').default / and their
+      // computed equivalents.
+      if ((member.name === 'fetch' || member.name === 'default') && ts.isCallExpression(member.receiver)) {
+        const inner = member.receiver;
+        if (
+          ts.isIdentifier(inner.expression) &&
+          inner.expression.text === 'require'
+        ) {
+          const mod = fold(inner.arguments[0], bindings);
+          if (typeof mod === 'string' && FETCH_MODULE_NAMES.has(mod)) return true;
+        }
       }
     }
-    // globalThis['fetch'] etc.
-    if (ts.isElementAccessExpression(node)) {
+    // <primitive>.bind(null) / R['call'](url) / R['apply'](null, [url]) —
+    // a call whose callee is a member access on a fetch primitive with a
+    // .bind/.call/.apply name yields (or invokes) a callable equivalent to
+    // fetch. The bare bind form (returns a callable) is treated as primitive.
+    if (ts.isCallExpression(node)) {
+      const calleeMember = resolveMember(node.expression, bindings);
       if (
-        ts.isIdentifier(node.expression) &&
-        GLOBAL_CONTAINERS.has(node.expression.text)
-      ) {
-        const key = fold(node.argumentExpression, bindings);
-        if (typeof key === 'string' && key === 'fetch') return true;
-      }
-    }
-    // <primitive>.bind(null) or fetch.bind(null) — a call that yields a
-    // callable equivalent to fetch.
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      if (
-        ['bind', 'call', 'apply'].includes(node.expression.name.text) &&
-        isFetchPrimitiveRef(node.expression.expression, aliases, bindings)
+        calleeMember &&
+        calleeMember.name === 'bind' &&
+        isFetchPrimitiveRef(calleeMember.receiver, aliases, bindings)
       ) return true;
     }
-    // require('node-fetch') / require('undici').fetch / etc.
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require') {
+    // require('node-fetch') / require('undici') / etc.
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require'
+    ) {
       const arg = node.arguments[0];
       const mod = arg ? fold(arg, bindings) : null;
       if (typeof mod === 'string' && FETCH_MODULE_NAMES.has(mod)) return true;
-    }
-    // require('undici').fetch etc.
-    if (
-      ts.isPropertyAccessExpression(node) &&
-      ts.isCallExpression(node.expression) &&
-      ts.isIdentifier(node.expression.expression) &&
-      node.expression.expression.text === 'require'
-    ) {
-      const mod = fold(node.expression.arguments[0], bindings);
-      if (typeof mod === 'string' && FETCH_MODULE_NAMES.has(mod) && (node.name.text === 'fetch' || node.name.text === 'default')) {
-        return true;
-      }
     }
     return false;
   }
@@ -758,17 +773,22 @@ const check = (label, fn) => { fn(); results.push(label); };
   //     arguments array is a statically-visible literal; otherwise return a
   //     sentinel that the URL check treats as unresolvable (fail-closed).
   const UNRESOLVABLE_URL_ARG = Symbol('unresolvable-url-arg');
+  // Returns { methodName: 'call'|'apply'|null } for the callee's invocation
+  // semantics. Symmetrises dot and computed forms (DIC-1190 CR round 5).
+  function callApplyMethodOf(callee, aliases, bindings) {
+    const member = resolveMember(callee, bindings);
+    if (!member) return null;
+    if (member.name !== 'call' && member.name !== 'apply') return null;
+    if (!isFetchPrimitiveRef(member.receiver, aliases, bindings)) return null;
+    return member.name;
+  }
+
   function extractFetchUrlArg(callNode, aliases, bindings) {
-    const callee = callNode.expression;
-    if (
-      ts.isPropertyAccessExpression(callee) &&
-      (callee.name.text === 'call' || callee.name.text === 'apply') &&
-      isFetchPrimitiveRef(callee.expression, aliases, bindings)
-    ) {
-      if (callee.name.text === 'call') {
-        return callNode.arguments[1] || null;
-      }
-      // .apply(thisArg, argsArray)
+    const methodName = callApplyMethodOf(callNode.expression, aliases, bindings);
+    if (methodName === 'call') {
+      return callNode.arguments[1] || null;
+    }
+    if (methodName === 'apply') {
       const argsArray = callNode.arguments[1];
       if (!argsArray) return null;
       if (ts.isArrayLiteralExpression(argsArray)) {
@@ -879,17 +899,11 @@ const check = (label, fn) => { fn(); results.push(label); };
           });
         } else if (hostAllowlist) {
           // Normalise `.call/.apply` invocation semantics before host check
-          // (DIC-1190 CR round 4). See extractFetchUrlArg above.
+          // (DIC-1190 CR round 4 for dot access; round 5 for computed access).
+          // callApplyMethodOf handles both syntactic forms uniformly.
           const urlSlot = extractFetchUrlArg(node, fetchAliases, bindings);
-          const invocationShape = (() => {
-            const callee = node.expression;
-            if (
-              ts.isPropertyAccessExpression(callee) &&
-              (callee.name.text === 'call' || callee.name.text === 'apply') &&
-              isFetchPrimitiveRef(callee.expression, fetchAliases, bindings)
-            ) return callee.name.text;
-            return 'direct';
-          })();
+          const invocationShape =
+            callApplyMethodOf(node.expression, fetchAliases, bindings) || 'direct';
 
           let urlValue = null;
           if (urlSlot === UNRESOLVABLE_URL_ARG) {
@@ -1171,6 +1185,73 @@ const check = (label, fn) => { fn(); results.push(label); };
         export async function _unreachable() {
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
           await R.call(DATABASE_URL, openrouterUrl);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // DIC-1190 CR round 5: computed-member forms of .call. R['call'](...) is
+      // an ElementAccessExpression whose key folds to 'call'; the URL still
+      // sits at arguments[1]. Dot-only detection missed this.
+      label: "reviewer round-5 bypass: R['call'](allowlistedHost, opaqueOpenRouterUrl)",
+      displayPath: 'test-fixture:reviewer-round-5-computed-call.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        export async function _unreachable() {
+          const R = globalThis.fetch;
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          await R['call'](DATABASE_URL, openrouterUrl, { method: 'POST' });
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // R['apply'](...) — same story as .apply but through a computed key.
+      label: "reviewer round-5 bypass: R['apply'](null, [opaqueOpenRouterUrl])",
+      displayPath: 'test-fixture:reviewer-round-5-computed-apply.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        export async function _unreachable() {
+          const R = globalThis.fetch;
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          await R['apply'](null, [openrouterUrl, { method: 'POST' }]);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // Directly on the fetch identifier, computed form of .call.
+      // Confirms the fold also crosses fetch['call'](...).
+      label: "reviewer round-5 bypass: fetch['call'](allowlistedHost, opaqueOpenRouterUrl)",
+      displayPath: 'test-fixture:reviewer-round-5-direct-computed-call.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        export async function _unreachable() {
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          await fetch['call'](DATABASE_URL, openrouterUrl);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // Method key itself assembled from fragments: R[['c','a','l','l'].join('')].
+      // The folder resolves the key to 'call' → invocation semantics kick in.
+      label: 'reviewer round-5 bypass: computed key assembled from fragments (R[[…].join()])',
+      displayPath: 'test-fixture:reviewer-round-5-assembled-key.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        export async function _unreachable() {
+          const R = globalThis.fetch;
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          const method = ['c', 'a', 'l', 'l'].join('');
+          await R[method](DATABASE_URL, openrouterUrl);
         }
       `,
       expectAtLeast: ['fetch() URL not in host allowlist'],
