@@ -575,22 +575,176 @@ const check = (label, fn) => { fn(); results.push(label); };
     ]),
   };
 
-  function isFetchCall(node) {
-    if (!ts.isCallExpression(node)) return false;
-    const callee = node.expression;
-    if (ts.isIdentifier(callee) && callee.text === 'fetch') return true;
-    if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'fetch') return true;
+  // Modules that ship a fetch primitive. Any import from these is treated as
+  // acquiring the fetch primitive — see collectFetchAliases below.
+  const FETCH_MODULE_NAMES = new Set([
+    'node-fetch', 'undici', 'axios', 'got', 'superagent', 'ky', 'phin', 'wretch',
+    'cross-fetch', 'isomorphic-fetch', 'isomorphic-unfetch', 'unfetch',
+  ]);
+  // Property names on the global object that expose the fetch primitive.
+  const GLOBAL_CONTAINERS = new Set(['globalThis', 'window', 'self', 'global']);
+
+  // A node is a "fetch primitive reference" when it evaluates (statically) to
+  // the fetch function itself, or to a wrapped/bound version of it. Any such
+  // reference in a no-fetch-allowed file is a violation on its own — even
+  // before it is called — because the file has no legitimate reason to obtain
+  // the primitive. (DIC-1190 CR round 3.)
+  function isFetchPrimitiveRef(node, aliases, bindings) {
+    if (!node) return false;
+    if (ts.isParenthesizedExpression(node)) return isFetchPrimitiveRef(node.expression, aliases, bindings);
+    if (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) {
+      return isFetchPrimitiveRef(node.expression, aliases, bindings);
+    }
+    if (ts.isNonNullExpression(node)) return isFetchPrimitiveRef(node.expression, aliases, bindings);
+    // Bare `fetch` identifier or an aliased identifier
+    if (ts.isIdentifier(node)) {
+      if (node.text === 'fetch') return true;
+      if (aliases && aliases.has(node.text)) return true;
+      return false;
+    }
+    // globalThis.fetch, window.fetch, self.fetch, global.fetch
+    if (ts.isPropertyAccessExpression(node)) {
+      if (
+        ts.isIdentifier(node.expression) &&
+        GLOBAL_CONTAINERS.has(node.expression.text) &&
+        node.name.text === 'fetch'
+      ) return true;
+      // <primitive>.bind(...) / .call / .apply do not detach the callable
+      if (['bind', 'call', 'apply'].includes(node.name.text)) {
+        // A bare `.bind/.call/.apply` reference is a method-ref, not a call.
+        // Only match when this node is itself invoked — handled below in the
+        // CallExpression branch — but treat the referenced form as primitive
+        // for the purpose of the call check.
+        return isFetchPrimitiveRef(node.expression, aliases, bindings);
+      }
+    }
+    // globalThis['fetch'] etc.
+    if (ts.isElementAccessExpression(node)) {
+      if (
+        ts.isIdentifier(node.expression) &&
+        GLOBAL_CONTAINERS.has(node.expression.text)
+      ) {
+        const key = fold(node.argumentExpression, bindings);
+        if (typeof key === 'string' && key === 'fetch') return true;
+      }
+    }
+    // <primitive>.bind(null) or fetch.bind(null) — a call that yields a
+    // callable equivalent to fetch.
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      if (
+        ['bind', 'call', 'apply'].includes(node.expression.name.text) &&
+        isFetchPrimitiveRef(node.expression.expression, aliases, bindings)
+      ) return true;
+    }
+    // require('node-fetch') / require('undici').fetch / etc.
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require') {
+      const arg = node.arguments[0];
+      const mod = arg ? fold(arg, bindings) : null;
+      if (typeof mod === 'string' && FETCH_MODULE_NAMES.has(mod)) return true;
+    }
+    // require('undici').fetch etc.
     if (
-      ts.isElementAccessExpression(callee) &&
-      typeof (callee.argumentExpression &&
-        (ts.isStringLiteral(callee.argumentExpression)
-          ? callee.argumentExpression.text
-          : null)) === 'string' &&
-      callee.argumentExpression.text === 'fetch'
+      ts.isPropertyAccessExpression(node) &&
+      ts.isCallExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'require'
     ) {
-      return true;
+      const mod = fold(node.expression.arguments[0], bindings);
+      if (typeof mod === 'string' && FETCH_MODULE_NAMES.has(mod) && (node.name.text === 'fetch' || node.name.text === 'default')) {
+        return true;
+      }
     }
     return false;
+  }
+
+  // Walk the AST and collect every local identifier that is bound (via const,
+  // let, destructuring, or import) to a fetch primitive. Fixed-point iteration
+  // handles chains like `const A = fetch; const B = A`.
+  function collectFetchAliases(sf, bindings) {
+    const aliases = new Set();
+    const gainedAliases = () => aliases.size;
+    let prev = -1;
+    while (prev !== aliases.size) {
+      prev = aliases.size;
+      function visit(node) {
+        // const/let/var X = <fetch primitive>
+        if (
+          ts.isVariableDeclaration(node) &&
+          ts.isIdentifier(node.name) &&
+          node.initializer &&
+          isFetchPrimitiveRef(node.initializer, aliases, bindings)
+        ) {
+          aliases.add(node.name.text);
+        }
+        // const { fetch } = globalThis|window|self|global
+        // const { fetch: X } = globalThis|...
+        if (
+          ts.isVariableDeclaration(node) &&
+          ts.isObjectBindingPattern(node.name) &&
+          node.initializer &&
+          ts.isIdentifier(node.initializer) &&
+          GLOBAL_CONTAINERS.has(node.initializer.text)
+        ) {
+          for (const el of node.name.elements) {
+            if (ts.isBindingElement(el) && ts.isIdentifier(el.name)) {
+              const propName = el.propertyName
+                ? (ts.isIdentifier(el.propertyName)
+                    ? el.propertyName.text
+                    : (ts.isStringLiteral(el.propertyName) ? el.propertyName.text : null))
+                : el.name.text;
+              if (propName === 'fetch') aliases.add(el.name.text);
+            }
+          }
+        }
+        // import default/named from 'node-fetch'|'undici'|...
+        if (
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(node.moduleSpecifier) &&
+          FETCH_MODULE_NAMES.has(node.moduleSpecifier.text)
+        ) {
+          const clause = node.importClause;
+          if (clause) {
+            if (clause.name && ts.isIdentifier(clause.name)) aliases.add(clause.name.text);
+            if (clause.namedBindings) {
+              if (ts.isNamedImports(clause.namedBindings)) {
+                for (const spec of clause.namedBindings.elements) {
+                  if (spec.name && ts.isIdentifier(spec.name)) aliases.add(spec.name.text);
+                }
+              }
+              if (ts.isNamespaceImport(clause.namedBindings)) {
+                // import * as m from 'undici': flag any m.<x>() call heuristically
+                // by treating the namespace binding itself as aliased.
+                aliases.add(clause.namedBindings.name.text);
+              }
+            }
+          }
+        }
+        // Assignment: X = fetch; X = globalThis.fetch. Rare in const-heavy code
+        // but robust to detect.
+        if (
+          ts.isBinaryExpression(node) &&
+          node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+          ts.isIdentifier(node.left) &&
+          isFetchPrimitiveRef(node.right, aliases, bindings)
+        ) {
+          aliases.add(node.left.text);
+        }
+        ts.forEachChild(node, visit);
+      }
+      visit(sf);
+    }
+    // Suppress lint noise about unused helper
+    void gainedAliases;
+    return aliases;
+  }
+
+  // A CallExpression is a "fetch call" if its callee resolves to the fetch
+  // primitive by any of the aliasing pathways above. This is what enforces
+  // both the no-fetch-file rule and the URL allowlist against wrapped fetches.
+  function isFetchCall(node, aliases, bindings) {
+    if (!ts.isCallExpression(node)) return false;
+    const callee = node.expression;
+    return isFetchPrimitiveRef(callee, aliases, bindings);
   }
 
   function analyzeSource(displayPath, source, {
@@ -600,6 +754,7 @@ const check = (label, fn) => { fn(); results.push(label); };
     const kind = displayPath.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS;
     const sf = ts.createSourceFile(displayPath, source, ts.ScriptTarget.Latest, true, kind);
     const bindings = collectConstBindings(sf);
+    const fetchAliases = collectFetchAliases(sf, bindings);
     const violations = [];
 
     function visit(node) {
@@ -628,7 +783,52 @@ const check = (label, fn) => { fn(); results.push(label); };
         }
       }
 
-      if (isFetchCall(node)) {
+      // (DIC-1190 CR round 3) In no-fetch files, forbid ACQUIRING the fetch
+      // primitive at all, not just calling it. The reviewer's wrapper bypass
+      // (`const reviewRequest = globalThis.fetch; reviewRequest(url)`) is
+      // caught here at the RHS of the const declaration — before the aliased
+      // call in the uncalled function ever needs to be reached.
+      if (isNoFetchFile) {
+        // The RHS/initializer of a `const X = <fetch primitive>` acquires the
+        // primitive. Also flag any bare reference to fetch/aliased fetch that
+        // is not itself the LHS of a declaration and not a comment/string.
+        // Restrict to Expression positions to avoid double-counting.
+        const parent = node.parent;
+        const isDeclarationName =
+          parent &&
+          (ts.isVariableDeclaration(parent) ||
+            ts.isBindingElement(parent) ||
+            ts.isParameter(parent) ||
+            ts.isImportSpecifier(parent) ||
+            ts.isImportClause(parent) ||
+            ts.isNamespaceImport(parent) ||
+            ts.isPropertyAssignment(parent) ||
+            ts.isShorthandPropertyAssignment(parent)) &&
+          parent.name === node;
+        if (!isDeclarationName && isFetchPrimitiveRef(node, fetchAliases, bindings)) {
+          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          violations.push({
+            line: line + 1,
+            kind: 'fetch primitive reference in no-fetch-allowed file',
+            value: `${node.getText(sf).slice(0, 80).replace(/\s+/g, ' ')}`,
+          });
+        }
+        // Also flag imports from FETCH_MODULE_NAMES at the module level.
+        if (
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(node.moduleSpecifier) &&
+          FETCH_MODULE_NAMES.has(node.moduleSpecifier.text)
+        ) {
+          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          violations.push({
+            line: line + 1,
+            kind: 'import from fetch-provider module in no-fetch-allowed file',
+            value: node.moduleSpecifier.text,
+          });
+        }
+      }
+
+      if (isFetchCall(node, fetchAliases, bindings)) {
         const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
         if (isNoFetchFile) {
           violations.push({
@@ -776,6 +976,72 @@ const check = (label, fn) => { fn(); results.push(label); };
           // A fetch to a runtime-computed URL that the folder cannot resolve
           // must still fail — "prove it's safe" not "detect that it's bad".
           await fetch(dynamicUrl);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // DIC-1190 CR round 3: alias the fetch primitive itself so a static
+      // `isFetchCall` that only recognises `fetch(...)` and `.fetch(...)`
+      // misses the aliased call.
+      label: 'reviewer round-3 bypass: `const R = globalThis.fetch` + base64 decoders + R(url)',
+      displayPath: 'test-fixture:reviewer-round-3-wrapper.ts',
+      isNoFetchFile: true,
+      source: `
+        const reviewRequest = globalThis.fetch;
+        export async function _unreachable() {
+          const envAlias = process.env;
+          // Base64 decoders the folder does not trace — no plaintext for
+          // the key name or the host anywhere in source.
+          const keyName = Buffer.from('T1BFTlJPVVRFUl9BUElfS0VZ', 'base64').toString('utf8');
+          const host = Buffer.from('b3BlbnJvdXRlci5haQ==', 'base64').toString('utf8');
+          const bearer = envAlias[keyName];
+          if (bearer) {
+            await reviewRequest('https://' + host + '/api/v1', {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + bearer },
+            });
+          }
+        }
+      `,
+      expectAtLeast: [
+        'fetch primitive reference in no-fetch-allowed file',
+        'fetch() call in no-fetch-allowed file',
+      ],
+    },
+    {
+      label: 'wrapper bypass variants: destructuring, bind, and node-fetch import',
+      displayPath: 'test-fixture:reviewer-round-3-variants.ts',
+      isNoFetchFile: true,
+      source: `
+        import wrappedFetch from 'node-fetch';
+        const { fetch: destructuredFetch } = globalThis;
+        const boundFetch = globalThis.fetch.bind(null);
+        const chained = destructuredFetch;
+        export async function _v1() { await wrappedFetch('https://example.test'); }
+        export async function _v2() { await destructuredFetch('https://example.test'); }
+        export async function _v3() { await boundFetch('https://example.test'); }
+        export async function _v4() { await chained('https://example.test'); }
+      `,
+      expectAtLeast: [
+        'import from fetch-provider module in no-fetch-allowed file',
+        'fetch primitive reference in no-fetch-allowed file',
+        'fetch() call in no-fetch-allowed file',
+      ],
+    },
+    {
+      // In fetch-allowed files, an aliased fetch call must ALSO have its URL
+      // resolved against the host allowlist. The wrapper bypass in
+      // recognize-card would otherwise leak past URL enforcement.
+      label: 'aliased fetch in fetch-allowed file: URL still enforced through wrapper',
+      displayPath: 'test-fixture:recognize-card-alias-wrapper.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const R = globalThis.fetch;
+        export async function _smuggle() {
+          const host = Buffer.from('b3BlbnJvdXRlci5haQ==', 'base64').toString('utf8');
+          await R('https://' + host + '/api/v1/metrics');
         }
       `,
       expectAtLeast: ['fetch() URL not in host allowlist'],
