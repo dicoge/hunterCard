@@ -40,6 +40,7 @@
     "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",
     "test:scrape-pipeline": "node scripts/test-scrape-pipeline-failfast.mjs",
     "test:market-fields": "node --experimental-strip-types scripts/test-api-card-mapper.mjs && node scripts/test-dic-361-market-data-fields.mjs",
+    "test:market-field-preservation": "node scripts/test-market-field-preservation.mjs",
     "test:deck-rules": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-rules.mjs",
     "test:tournament-report": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-report.mjs",
     "test:tournament-collector": "node scripts/test-tournament-collector.mjs",
