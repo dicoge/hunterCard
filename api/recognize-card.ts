@@ -1,36 +1,29 @@
 import { normalizeCardIdentity } from '../src/utils/cardNormalization';
 
 /**
- * @version 7
+ * @version 8
  * recognize-card.ts — Gemini Vision + deterministic candidate ranking for Hololive TCG cards.
  *
  * Accepts one or more image data URIs. The web scanner sends both a full-frame image
  * and a scan-area crop so the model can read tiny bottom-edge card numbers without
  * losing whole-card context.
  *
- * The vision call is served by the first working provider adapter: Google direct
- * (GEMINI_API_KEY), then OpenRouter (OPENROUTER_API_KEY), then 503.
+ * The vision call is served exclusively by Google direct (GEMINI_API_KEY). Any other
+ * provider — in particular OpenRouter — is a hard denylist (DIC-1185 FinOps repair):
+ * an unprovisioned or failing Google leg fails closed at 503, never over to another
+ * host. An inherited OPENROUTER_API_KEY in the runtime environment must not open a
+ * connection to openrouter.ai, ever.
  */
 
 export const config = { runtime: 'edge' };
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
-// Same underlying model as the Google-direct leg, reached through OpenRouter, so a
-// fallback scan ranks identically to a primary one (DIC-1019).
-const OPENROUTER_MODEL = 'google/gemini-2.5-flash';
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const VISION_MAX_TOKENS = 180;
 
 // The scanner abandons the request after RECOGNITION_REQUEST_TIMEOUT_MS (15s, see
-// src/services/recognitionOutcome). Every provider leg shares ONE budget sized below
-// that, leaving room for the JSON round trip and ranking — otherwise a sequential
-// fallback "succeeds" server-side after the caller has already aborted, which is a
-// fallback the user can never receive (DIC-1020 CR).
+// src/services/recognitionOutcome). The vision call shares ONE budget sized below
+// that, leaving room for the JSON round trip and ranking (DIC-1020 CR).
 export const VISION_TOTAL_BUDGET_MS = 11000;
-// A leg that still has a fallback behind it may not spend the whole budget: it is
-// capped, and must leave at least VISION_FALLBACK_RESERVE_MS for the next provider.
-const VISION_PRIMARY_CAP_MS = 6500;
-const VISION_FALLBACK_RESERVE_MS = 4500;
 // Below this there is no point opening a connection at all.
 const VISION_MIN_LEG_MS = 1500;
 const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
@@ -340,49 +333,17 @@ const googleAdapter = (apiKey: string): VisionAdapter => ({
     .map((part: any) => part.text || '').join('\n').trim(),
 });
 
-const openRouterAdapter = (apiKey: string): VisionAdapter => ({
-  provider: 'openrouter',
-  model: OPENROUTER_MODEL,
-  request: (images, timeoutMs) => fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://holohunter.dicoge.com',
-      'X-Title': 'HoloHunter',
-    },
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: visionPrompt },
-          ...images.map(url => ({ type: 'image_url', image_url: { url } })),
-        ],
-      }],
-      temperature: 0,
-      max_tokens: VISION_MAX_TOKENS,
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  }),
-  extract: (data) => String(data?.choices?.[0]?.message?.content || '').trim(),
-});
-
 function readKey(name: string): string | null {
   const value = process.env[name];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-// Runtime priority: Google direct, then OpenRouter, then nothing (→ 503). Both keys
-// present is not ambiguous — Google direct always wins, and OpenRouter is only reached
-// when Google is unconfigured or its leg fails.
+// Only Google direct is a permitted vision provider. OPENROUTER_API_KEY is never
+// read: an inherited key in the runtime environment must not open a connection to
+// openrouter.ai (DIC-1185 FinOps repair).
 function resolveAdapters(): VisionAdapter[] {
-  const adapters: VisionAdapter[] = [];
   const geminiKey = readKey('GEMINI_API_KEY');
-  if (geminiKey) adapters.push(googleAdapter(geminiKey));
-  const openRouterKey = readKey('OPENROUTER_API_KEY');
-  if (openRouterKey) adapters.push(openRouterAdapter(openRouterKey));
-  return adapters;
+  return geminiKey ? [googleAdapter(geminiKey)] : [];
 }
 
 async function callVision(images: string[]): Promise<{ reply: string; provider: string; model: string }> {
@@ -390,44 +351,30 @@ async function callVision(images: string[]): Promise<{ reply: string; provider: 
   const adapters = resolveAdapters();
   if (adapters.length === 0) throw new RecognitionUnavailableError('no vision provider key configured');
 
-  const deadline = Date.now() + VISION_TOTAL_BUDGET_MS;
-  let lastError: Error | null = null;
-  for (let i = 0; i < adapters.length; i++) {
-    const adapter = adapters[i];
-    const remaining = deadline - Date.now();
-    // The last leg may use everything that is left; anything before it is capped and has
-    // to hand the reserve on, so its timeout can never starve the fallback behind it.
-    const legBudget = i === adapters.length - 1
-      ? remaining
-      : Math.min(VISION_PRIMARY_CAP_MS, remaining - VISION_FALLBACK_RESERVE_MS);
-    if (legBudget < VISION_MIN_LEG_MS) {
-      lastError = lastError || new Error('vision budget exhausted');
-      console.error(`[recognize-card] provider ${adapter.provider} skipped: vision budget exhausted`);
-      continue;
-    }
+  const adapter = adapters[0];
+  const legBudget = VISION_TOTAL_BUDGET_MS;
+  if (legBudget < VISION_MIN_LEG_MS) {
+    throw new Error(`${adapter.provider} API request failed`);
+  }
 
-    // Upstream bodies and raw transport errors never escape this block: a failing leg is
-    // reduced to provider + HTTP status before it can reach a client response or a log.
-    let reply: string;
-    try {
-      const res = await adapter.request(imageList, legBudget);
-      if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
-      reply = adapter.extract(await res.json());
-    } catch (e: any) {
-      lastError = e instanceof Error && /^\w+ API error \(\d+\)$/.test(e.message)
-        ? e
-        : new Error(`${adapter.provider} API request failed`);
-      console.error(`[recognize-card] provider ${adapter.provider} failed: ${lastError.message}`);
-      continue;
-    }
-    // An empty reply is a failed leg too, but the last provider's empty answer still has
-    // to surface as the existing "empty response" 502 rather than a transport error.
-    if (reply) return { reply, provider: adapter.provider, model: adapter.model };
-    lastError = null;
+  // Upstream bodies and raw transport errors never escape this block: a failing leg is
+  // reduced to provider + HTTP status before it can reach a client response or a log.
+  let reply: string;
+  try {
+    const res = await adapter.request(imageList, legBudget);
+    if (!res.ok) throw new Error(`${adapter.provider} API error (${res.status})`);
+    reply = adapter.extract(await res.json());
+  } catch (e: any) {
+    const safeError = e instanceof Error && /^\w+ API error \(\d+\)$/.test(e.message)
+      ? e
+      : new Error(`${adapter.provider} API request failed`);
+    console.error(`[recognize-card] provider ${adapter.provider} failed: ${safeError.message}`);
+    throw safeError;
+  }
+  if (!reply) {
     console.error(`[recognize-card] provider ${adapter.provider} returned an empty reply`);
   }
-  if (lastError) throw lastError;
-  return { reply: '', provider: adapters[adapters.length - 1].provider, model: adapters[adapters.length - 1].model };
+  return { reply, provider: adapter.provider, model: adapter.model };
 }
 
 export function rankCandidates(cards: Record<string, any>, extracted: any, storeMvp = false) {

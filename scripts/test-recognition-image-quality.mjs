@@ -45,7 +45,7 @@ function pngOfSize(width, height) {
 const LEGIBLE = pngOfSize(1000, 1400);
 
 // Both replies were captured live from the exact-head Preview deployment, through
-// openrouter/google/gemini-2.5-flash, on this same card.
+// Google Gemini 2.5 Flash direct, on this same card.
 const REPLY_FROM_FULL_RESOLUTION = [
   'CHARACTER: 大神ミオ',
   'HP: 200',

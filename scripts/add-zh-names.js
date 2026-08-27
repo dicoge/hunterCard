@@ -6,6 +6,10 @@
  * 若無匹配，保留既有 nameZh 或 fail closed；不呼叫未授權翻譯供應商。
  * 未匹配會讓 pipeline exit non-zero，避免空翻譯被提交。
  *
+ * DIC-1185 FinOps repair: 移除 OpenRouter 自動翻譯後援。OpenRouter 為硬性
+ * denylist，任何情況下都不可對 openrouter.ai 發出請求，包含環境中殘留的
+ * OPENROUTER_API_KEY。
+ *
  * 用法: node scripts/add-zh-names.js [database路徑]
  * 預設: data/database.json
  */

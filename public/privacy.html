@@ -321,7 +321,7 @@
       <p>掃描卡牌時，本 App 會使用相機取得卡牌影像進行辨識。影像僅用於辨識卡牌，不會用於廣告或建立個人檔案：</p>
       <ul>
         <li><strong>手機 App（iOS / Android）</strong>：文字辨識 (OCR) 完全在您的裝置本機進行（expo-ocr-kit），卡牌影像不會離開您的裝置，也不會上傳到我們的伺服器。</li>
-        <li><strong>網頁版</strong>：因瀏覽器無法在本機進行高精度辨識，卡牌影像會傳送到我們的伺服器端點 <code>/api/recognize-card</code>，再由第三方 AI 視覺辨識服務（Google Gemini，透過 OpenRouter 中介）即時判讀卡片內容。影像僅用於當次辨識，辨識完成後不作長期儲存，也不會用於廣告或個人化追蹤。</li>
+        <li><strong>網頁版</strong>：因瀏覽器無法在本機進行高精度辨識，卡牌影像會傳送到我們的伺服器端點 <code>/api/recognize-card</code>，再直接由第三方 AI 視覺辨識服務 Google Gemini（Google AI Studio 的 Generative Language API）即時判讀卡片內容。影像僅用於當次辨識，辨識完成後不作長期儲存，也不會用於廣告或個人化追蹤。</li>
       </ul>
 
       <h2>4. 使用者如何登出</h2>
@@ -354,7 +354,7 @@
           <ul>
             <li>傳輸安全性：本 App 收集的所有資料皆透過安全的加密協定（HTTPS）傳輸，確保傳輸過程不被竊聽。</li>
             <li>不向第三方分享（廣告 / 分析）：我們絕不將您的個人資料（Email、姓名、關注清單、使用紀錄）出售或分享給任何廣告商或分析機構。</li>
-            <li>功能性第三方處理：唯一的例外是為完成卡牌辨識功能，網頁版掃描時會將卡牌影像即時傳送給 AI 視覺辨識服務（Google Gemini，透過 OpenRouter 中介）處理；此僅用於提供辨識功能，非用於廣告、轉售或建立個人檔案。手機 App 的辨識則在裝置端完成、不上傳。</li>
+            <li>功能性第三方處理：唯一的例外是為完成卡牌辨識功能，網頁版掃描時會將卡牌影像即時傳送給 AI 視覺辨識服務 Google Gemini（Google AI Studio 的 Generative Language API，直接呼叫、無中介轉送）處理；此僅用於提供辨識功能，非用於廣告、轉售或建立個人檔案。手機 App 的辨識則在裝置端完成、不上傳。</li>
           </ul>
         </li>
       </ul>
@@ -415,7 +415,7 @@
       <p>When scanning a card, the App uses the camera to capture the card image for recognition. Images are used only to identify the card, never for advertising or profiling:</p>
       <ul>
         <li><strong>Mobile App (iOS / Android)</strong>: Text recognition (OCR) runs entirely on your device (expo-ocr-kit). The card image never leaves your device and is not uploaded to our servers.</li>
-        <li><strong>Web version</strong>: Because browsers cannot perform high-accuracy recognition locally, the card image is sent to our server endpoint <code>/api/recognize-card</code>, which uses a third-party AI vision service (Google Gemini, via OpenRouter) to read the card in real time. The image is used only for that single recognition, is not retained long-term, and is never used for advertising or personalized tracking.</li>
+        <li><strong>Web version</strong>: Because browsers cannot perform high-accuracy recognition locally, the card image is sent to our server endpoint <code>/api/recognize-card</code>, which calls the third-party AI vision service Google Gemini (Google AI Studio's Generative Language API) directly to read the card in real time. The image is used only for that single recognition, is not retained long-term, and is never used for advertising or personalized tracking.</li>
       </ul>
 
       <h2>4. How Users Sign Out</h2>
@@ -448,7 +448,7 @@
           <ul>
             <li>Transit Security: All data collected is transmitted using secure encryption protocols (HTTPS) to prevent interception.</li>
             <li>No Third-Party Sharing (Ads / Analytics): We never sell or share your personal data (email, name, watchlist, scan logs) with any advertisers or analytics platforms.</li>
-            <li>Functional Third-Party Processing: The only exception is card recognition — on the web version, the card image is sent in real time to an AI vision service (Google Gemini, via OpenRouter) for processing. This is solely to provide the recognition feature, never for advertising, resale, or profiling. On the mobile App, recognition runs on-device and images are not uploaded.</li>
+            <li>Functional Third-Party Processing: The only exception is card recognition — on the web version, the card image is sent in real time to the AI vision service Google Gemini (Google AI Studio's Generative Language API, called directly with no intermediary router) for processing. This is solely to provide the recognition feature, never for advertising, resale, or profiling. On the mobile App, recognition runs on-device and images are not uploaded.</li>
           </ul>
         </li>
       </ul>

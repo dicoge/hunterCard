@@ -79,9 +79,9 @@ const check = (label, fn) => {
 };
 
 // ── 1. No key → the exact production failure, now classified ──────────────────
-// "Unprovisioned" now means NO provider key at all: since DIC-1019 an OpenRouter key
-// alone is enough to serve recognition, so this suite must own both names rather than
-// inherit whatever the developer happens to have exported.
+// "Unprovisioned" means no GEMINI_API_KEY. DIC-1185 removed the OpenRouter fallback;
+// an inherited OPENROUTER_API_KEY must NOT rescue this path — the suite scrubs it
+// so a developer's local env cannot mask the true 503 contract.
 const savedKey = process.env.GEMINI_API_KEY;
 const savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
 delete process.env.OPENROUTER_API_KEY;
