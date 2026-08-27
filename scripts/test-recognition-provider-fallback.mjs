@@ -747,6 +747,47 @@ const check = (label, fn) => { fn(); results.push(label); };
     return isFetchPrimitiveRef(callee, aliases, bindings);
   }
 
+  // Given a fetch CallExpression, return the AST node that carries the REAL
+  // request URL. Normalises `Function.prototype.call/apply` invocation
+  // semantics (DIC-1190 CR round 4): reading `arguments[0]` blindly lets a
+  // reviewer smuggle an OpenRouter URL through `fetch.call(<allowlisted URL
+  // as thisArg>, <opaque url>)` — argument 0 is `thisArg`, not the URL.
+  //   - direct call `fetch(url, init)` → arguments[0]
+  //   - `.call(thisArg, url, init)`    → arguments[1]
+  //   - `.apply(thisArg, [url, init])` → arguments[1] element 0, IF the
+  //     arguments array is a statically-visible literal; otherwise return a
+  //     sentinel that the URL check treats as unresolvable (fail-closed).
+  const UNRESOLVABLE_URL_ARG = Symbol('unresolvable-url-arg');
+  function extractFetchUrlArg(callNode, aliases, bindings) {
+    const callee = callNode.expression;
+    if (
+      ts.isPropertyAccessExpression(callee) &&
+      (callee.name.text === 'call' || callee.name.text === 'apply') &&
+      isFetchPrimitiveRef(callee.expression, aliases, bindings)
+    ) {
+      if (callee.name.text === 'call') {
+        return callNode.arguments[1] || null;
+      }
+      // .apply(thisArg, argsArray)
+      const argsArray = callNode.arguments[1];
+      if (!argsArray) return null;
+      if (ts.isArrayLiteralExpression(argsArray)) {
+        const first = argsArray.elements[0];
+        // A leading spread makes the URL position indeterminate — fail-closed.
+        if (first && ts.isSpreadElement(first)) return UNRESOLVABLE_URL_ARG;
+        return first || null;
+      }
+      // Non-literal argsArray (identifier, computed expression, opaque call
+      // result) is not statically resolvable — fail-closed.
+      const folded = fold(argsArray, bindings);
+      if (Array.isArray(folded) && folded.length > 0 && typeof folded[0] === 'string') {
+        return { syntheticFoldedString: folded[0] };
+      }
+      return UNRESOLVABLE_URL_ARG;
+    }
+    return callNode.arguments[0] || null;
+  }
+
   function analyzeSource(displayPath, source, {
     isNoFetchFile = false,
     hostAllowlist = null,
@@ -837,8 +878,28 @@ const check = (label, fn) => { fn(); results.push(label); };
             value: `${node.getText(sf).slice(0, 80).replace(/\s+/g, ' ')}…`,
           });
         } else if (hostAllowlist) {
-          const urlArg = node.arguments[0];
-          const urlValue = fold(urlArg, bindings);
+          // Normalise `.call/.apply` invocation semantics before host check
+          // (DIC-1190 CR round 4). See extractFetchUrlArg above.
+          const urlSlot = extractFetchUrlArg(node, fetchAliases, bindings);
+          const invocationShape = (() => {
+            const callee = node.expression;
+            if (
+              ts.isPropertyAccessExpression(callee) &&
+              (callee.name.text === 'call' || callee.name.text === 'apply') &&
+              isFetchPrimitiveRef(callee.expression, fetchAliases, bindings)
+            ) return callee.name.text;
+            return 'direct';
+          })();
+
+          let urlValue = null;
+          if (urlSlot === UNRESOLVABLE_URL_ARG) {
+            urlValue = null;
+          } else if (urlSlot && typeof urlSlot === 'object' && 'syntheticFoldedString' in urlSlot) {
+            urlValue = urlSlot.syntheticFoldedString;
+          } else if (urlSlot) {
+            urlValue = fold(urlSlot, bindings);
+          }
+
           let ok = false;
           let describe = urlValue === null || urlValue === undefined ? '<unresolvable at parse time>' : String(urlValue);
           if (typeof urlValue === 'string') {
@@ -854,7 +915,7 @@ const check = (label, fn) => { fn(); results.push(label); };
             violations.push({
               line: line + 1,
               kind: 'fetch() URL not in host allowlist',
-              value: `${describe}; allowlist: ${[...hostAllowlist].join(', ')}`,
+              value: `via ${invocationShape}: ${describe}; allowlist: ${[...hostAllowlist].join(', ')}`,
             });
           }
         }
@@ -1042,6 +1103,74 @@ const check = (label, fn) => { fn(); results.push(label); };
         export async function _smuggle() {
           const host = Buffer.from('b3BlbnJvdXRlci5haQ==', 'base64').toString('utf8');
           await R('https://' + host + '/api/v1/metrics');
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // DIC-1190 CR round 4: fetch.call(<allowlistedUrl as thisArg>, <smuggled>)
+      // argument 0 folds to an allowlisted URL; the REAL URL sits at
+      // argument 1 (call semantics). The invocation-shape normaliser must
+      // inspect argument 1, not argument 0.
+      label: 'reviewer round-4 bypass: fetch.call(allowlistedHost, opaqueOpenRouterUrl)',
+      displayPath: 'test-fixture:reviewer-round-4-call.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        export async function _unreachable() {
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          await fetch.call(DATABASE_URL, openrouterUrl, { method: 'POST' });
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // .apply(thisArg, [url, init]): the URL is arguments[1] element 0 when
+      // the arguments array is a literal.
+      label: 'reviewer round-4 bypass: fetch.apply(null, [opaqueOpenRouterUrl])',
+      displayPath: 'test-fixture:reviewer-round-4-apply-literal.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        export async function _unreachable() {
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          await fetch.apply(null, [openrouterUrl, { method: 'POST' }]);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // Opaque .apply arguments-array (non-literal): the URL slot cannot be
+      // resolved statically → must fail closed. A reviewer must not be able
+      // to launder a smuggled URL through an identifier-bound arguments array.
+      label: 'reviewer round-4 bypass: fetch.apply with non-literal args array (fail-closed)',
+      displayPath: 'test-fixture:reviewer-round-4-apply-opaque.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        export async function _opaque(argsArray: unknown[]) {
+          // The arguments array is a runtime value; the folder cannot see
+          // through it. The URL check must fail closed.
+          // @ts-ignore
+          await fetch.apply(null, argsArray);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // fetch.call via a wrapped alias — combines round-3 wrapping with
+      // round-4 semantics. The guard must trace through both layers.
+      label: 'wrapped-alias + .call combined: aliased fetch primitive used with .call semantics',
+      displayPath: 'test-fixture:reviewer-round-4-wrapped-call.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const R = globalThis.fetch;
+        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        export async function _unreachable() {
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          await R.call(DATABASE_URL, openrouterUrl);
         }
       `,
       expectAtLeast: ['fetch() URL not in host allowlist'],
