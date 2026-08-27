@@ -9,7 +9,14 @@ import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
-import { normalizeCardIdentity, bloomLevelBadgeColor, categoryBadgeColor, PRINTING_RARITY_COLORS } from '../utils/cardNormalization';
+import {
+  normalizeCardIdentity,
+  bloomLevelBadgeColor,
+  categoryBadgeColor,
+  PRINTING_RARITY_COLORS,
+  normalizeColorTokens,
+  KNOWN_COLOR_KEYS,
+} from '../utils/cardNormalization';
 
 // ── Server-side search constants ──
 
@@ -185,8 +192,10 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
   return deduped.map((c: CardRecord) => {
     const id = c.id || '';
     const name = c.name || '';
-    const rawColor = (c.color || '').toLowerCase();
-    const colors = rawColor ? [rawColor] : [];
+    // DIC-1192: legacy scraper rows use '◇' (colourless) or composite tokens
+    // like 'blue_red' that never existed in i18n. Route through the shared
+    // normaliser so the render only ever hands t() a whitelisted key.
+    const colors = normalizeColorTokens(c.color);
     const colorNames = colors.map((x: string) => COLOR_MAP[x] || x);
     const series = c.series ? [c.series] : [];
     const seriesNames = series.map((s: string) => nameMap[s] || s);
@@ -447,7 +456,19 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
           {card.seriesNames.map((s, i) => <Text key={i} style={styles.seriesTag}>{s}</Text>)}
           {card.colors.length > 0 && (
             <Text style={styles.colorText}>
-              {card.colors.map((color) => t(`color_${color}` as Parameters<typeof t>[0])).join(' / ')}
+              {card.colors.map((color) => (
+                // DIC-1192 defence-in-depth: card.colors is normalised in
+                // searchCards, but if any future consumer of CardListItem
+                // bypasses that path we must NOT hand a non-whitelisted key
+                // to t() — it throws on missing keys (i18n/index.ts line 24)
+                // and would fail-close the entire SearchResultsScreen the
+                // way `color_◇` did at 1440×900 / hBP04. Fall back to the
+                // raw token so at worst a single card shows an odd label
+                // instead of crashing the whole screen.
+                KNOWN_COLOR_KEYS.has(color)
+                  ? t(`color_${color}` as Parameters<typeof t>[0])
+                  : color
+              )).join(' / ')}
             </Text>
           )}
         </View>

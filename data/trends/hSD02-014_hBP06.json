@@ -4,12 +4,12 @@
   "nameZh": "波余",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.8,
+  "confidence": 0.7,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-08-24T12:12:26.687Z",
-  "dataPoints": 64
+  "lastUpdated": "2026-08-26T12:23:42.028Z",
+  "dataPoints": 65
 }

@@ -1,0 +1,325 @@
+{
+  "generatedAt": "2026-08-26T20:07:12.868Z",
+  "officialToNormalized": [
+    {
+      "code": "hEB01",
+      "name": "エクストラブースター サマー・ホログラム",
+      "expectedCount": 214,
+      "ingestedCount": 214,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:05:53.438Z"
+    },
+    {
+      "code": "hBP08",
+      "name": "ブースターパック バウンサーバウンド",
+      "expectedCount": 251,
+      "ingestedCount": 251,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:00.505Z"
+    },
+    {
+      "code": "hWF01",
+      "name": "hololive OFFICIAL CARD GAME ツインウエハース",
+      "expectedCount": 34,
+      "ingestedCount": 34,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:01.750Z"
+    },
+    {
+      "code": "hCO01",
+      "name": "オフィシャルホロカコレクション-2025ライブセット-",
+      "expectedCount": 8,
+      "ingestedCount": 8,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:02.028Z"
+    },
+    {
+      "code": "hSD14",
+      "name": "ライブスタートデッキ 白上フブキ",
+      "expectedCount": 17,
+      "ingestedCount": 17,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:02.801Z"
+    },
+    {
+      "code": "hSD15",
+      "name": "ライブスタートデッキ 儒烏風亭らでん",
+      "expectedCount": 17,
+      "ingestedCount": 17,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:03.543Z"
+    },
+    {
+      "code": "hSD16",
+      "name": "ライブスタートデッキ さくらみこ",
+      "expectedCount": 17,
+      "ingestedCount": 17,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:04.310Z"
+    },
+    {
+      "code": "hSD17",
+      "name": "ライブスタートデッキ 星街すいせい",
+      "expectedCount": 17,
+      "ingestedCount": 17,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:04.963Z"
+    },
+    {
+      "code": "hSD18",
+      "name": "ライブスタートデッキ 森カリオペ",
+      "expectedCount": 16,
+      "ingestedCount": 16,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:05.716Z"
+    },
+    {
+      "code": "hSD19",
+      "name": "ライブスタートデッキ 大空スバル",
+      "expectedCount": 17,
+      "ingestedCount": 17,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:06.464Z"
+    },
+    {
+      "code": "hBP07",
+      "name": "ブースターパック「ディーヴァフィーバー」",
+      "expectedCount": 249,
+      "ingestedCount": 249,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:13.238Z"
+    },
+    {
+      "code": "hSD12",
+      "name": "スタートデッキ 推し Advent",
+      "expectedCount": 26,
+      "ingestedCount": 26,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:14.091Z"
+    },
+    {
+      "code": "hSD13",
+      "name": "スタートデッキ 推し Justice",
+      "expectedCount": 25,
+      "ingestedCount": 25,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:14.822Z"
+    },
+    {
+      "code": "hBP06",
+      "name": "ブースターパック「アヤカシヴァーミリオン」",
+      "expectedCount": 243,
+      "ingestedCount": 243,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:21.833Z"
+    },
+    {
+      "code": "hSD10",
+      "name": "スタートデッキ FLOW GLOW 推し 輪堂千速",
+      "expectedCount": 19,
+      "ingestedCount": 19,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:22.589Z"
+    },
+    {
+      "code": "hSD01",
+      "name": "スタートデッキ「ときのそら＆AZKi」",
+      "expectedCount": 23,
+      "ingestedCount": 23,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:23.248Z"
+    },
+    {
+      "code": "hSD11",
+      "name": "スタートデッキ FLOW GLOW 推し 虎金妃笑虎",
+      "expectedCount": 19,
+      "ingestedCount": 19,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:23.969Z"
+    },
+    {
+      "code": "hBP01",
+      "name": "ブースターパック「ブルーミングレディアンス」",
+      "expectedCount": 153,
+      "ingestedCount": 153,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:28.451Z"
+    },
+    {
+      "code": "hYS01",
+      "name": "スタートエールセット",
+      "expectedCount": 8,
+      "ingestedCount": 8,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:28.774Z"
+    },
+    {
+      "code": "hPR",
+      "name": "PRカード",
+      "expectedCount": 396,
+      "ingestedCount": 396,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:39.969Z"
+    },
+    {
+      "code": "hBP02",
+      "name": "ブースターパック「クインテットスペクトラム」",
+      "expectedCount": 219,
+      "ingestedCount": 219,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:46.172Z"
+    },
+    {
+      "code": "hSD02",
+      "name": "スタートデッキ 赤 百鬼あやめ",
+      "expectedCount": 20,
+      "ingestedCount": 20,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:47.053Z"
+    },
+    {
+      "code": "hSD03",
+      "name": "スタートデッキ 青 猫又おかゆ",
+      "expectedCount": 20,
+      "ingestedCount": 20,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:47.793Z"
+    },
+    {
+      "code": "hSD04",
+      "name": "スタートデッキ 紫 癒月ちょこ",
+      "expectedCount": 20,
+      "ingestedCount": 20,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:48.474Z"
+    },
+    {
+      "code": "hSD05",
+      "name": "スタートデッキ 白 轟はじめ",
+      "expectedCount": 20,
+      "ingestedCount": 20,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:49.124Z"
+    },
+    {
+      "code": "hSD06",
+      "name": "スタートデッキ 緑 風真いろは",
+      "expectedCount": 20,
+      "ingestedCount": 20,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:49.921Z"
+    },
+    {
+      "code": "hSD07",
+      "name": "スタートデッキ 黄 不知火フレア",
+      "expectedCount": 20,
+      "ingestedCount": 20,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:50.581Z"
+    },
+    {
+      "code": "hBP03",
+      "name": "ブースターパック「エリートスパーク」",
+      "expectedCount": 244,
+      "ingestedCount": 244,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:57.987Z"
+    },
+    {
+      "code": "hPC01",
+      "name": "【イベント物販／hololive production OFFICIAL SHOP限定商品】オフィシャルホロカコレクション-PCセット-",
+      "expectedCount": 5,
+      "ingestedCount": 5,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:06:58.230Z"
+    },
+    {
+      "code": "hBP04",
+      "name": "ブースターパック「キュリアスユニバース」",
+      "expectedCount": 225,
+      "ingestedCount": 225,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:07:04.352Z"
+    },
+    {
+      "code": "hSD08",
+      "name": "スタートデッキ 白 天音かなた",
+      "expectedCount": 17,
+      "ingestedCount": 17,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:07:05.099Z"
+    },
+    {
+      "code": "hSD09",
+      "name": "スタートデッキ 赤 宝鐘マリン",
+      "expectedCount": 17,
+      "ingestedCount": 17,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:07:05.842Z"
+    },
+    {
+      "code": "hSD2025summer",
+      "name": "【イベント物販限定商品】スタートデッキセット-2025 ホロナツパラダイスver.",
+      "expectedCount": 1,
+      "ingestedCount": 1,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:07:06.076Z"
+    },
+    {
+      "code": "hCS01",
+      "name": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
+      "expectedCount": 5,
+      "ingestedCount": 5,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:07:06.412Z"
+    },
+    {
+      "code": "hBP05",
+      "name": "ブースターパック「エンチャントレガリア」",
+      "expectedCount": 217,
+      "ingestedCount": 217,
+      "missingCount": 0,
+      "missing": [],
+      "lastSuccessfulSync": "2026-08-26T20:07:12.867Z"
+    }
+  ],
+  "summary": {
+    "totalExpansions": 35,
+    "totalCards": 2839,
+    "totalMissingFields": 0
+  }
+}

@@ -17,9 +17,15 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
-import { canonicalVariantKey } from './lib/variant-key.js';
-import { isCanonicalCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
+import { canonicalVariantKey, normalizeRarityCode } from './lib/variant-key.js';
+import { isCanonicalCardNumber, canonicalizeCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 import { canonicalizePrices, canonicalYuyuName, canonicalYuyuImage } from './lib/canonical-printings.js';
+import {
+  buildPreservationIndex,
+  findPreservedMatch,
+  applyPreservedMarketFields,
+  seedCanonicalHistoryFiles,
+} from './lib/preserve-market-fields.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -470,6 +476,17 @@ async function scrapeSeriesPage(browser, url) {
  * 先試 Puppeteer，若失敗或結果不足則降級到 HTTP fetch
  */
 async function scrapeYuyuPrices() {
+  if (process.env.HUNTERCARD_YUYU_FIXTURE_PATH) {
+    const fixturePath = process.env.HUNTERCARD_YUYU_FIXTURE_PATH;
+    console.log(`[database] Loading yuyu fixture: ${fixturePath}`);
+    return JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
+  }
+
+  if (process.env.HUNTERCARD_SKIP_YUYU === '1') {
+    console.log('[database] HUNTERCARD_SKIP_YUYU=1 — skipping yuyu price scrape');
+    return { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
+  }
+
   let usePuppeteer = true;
   let puppeteer;
 
@@ -510,7 +527,7 @@ async function scrapeYuyuPrices() {
     if (browser) {
       // Turn a series' scraped cards into allPrices entries. Returns the unique
       // card count for that series.
-      const accumulateCards = (cards) => {
+      const accumulateCards = (cards, sourceSeries) => {
         const seriesPrices = {};
         for (const card of cards) {
           const key = card.cardNum;
@@ -524,6 +541,7 @@ async function scrapeYuyuPrices() {
             yuyuImage: card.yuyuImage,
             imageVersion: card.imageVersion,
             imageCid: card.imageCid,
+            sourceSeries,
             timestamp: new Date().toISOString(),
           });
         }
@@ -546,7 +564,7 @@ async function scrapeYuyuPrices() {
             await sleep(3000 + Math.random() * 2000);
 
             const cards = await scrapeSeriesPage(browser, url);
-            const count = accumulateCards(cards);
+            const count = accumulateCards(cards, seriesInfo.name);
             console.log(`  → Found ${count} cards with prices`);
             if (count > 0) seriesWithPrices++;
             totalCards += count;
@@ -562,7 +580,7 @@ async function scrapeYuyuPrices() {
               try {
                 browser = await puppeteer.launch(LAUNCH_OPTS);
                 const cards = await scrapeSeriesPage(browser, url);
-                const count = accumulateCards(cards);
+                const count = accumulateCards(cards, seriesInfo.name);
                 console.log(`  → Retry OK: found ${count} cards with prices`);
                 if (count > 0) seriesWithPrices++;
                 totalCards += count;
@@ -588,9 +606,9 @@ async function scrapeYuyuPrices() {
     console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
     const fetchResult = await scrapeAllWithFetch();
     for (const [key, entries] of Object.entries(fetchResult.prices)) {
-            if (!allPrices[key]) allPrices[key] = [];
-            allPrices[key].push(...entries);
-          }
+      if (!allPrices[key]) allPrices[key] = [];
+      allPrices[key].push(...entries);
+    }
     totalCards += fetchResult.fetchedCards;
   }
 
@@ -628,6 +646,7 @@ async function scrapeAllWithFetch() {
           yuyuImage: card.yuyuImage,
           imageVersion: card.imageVersion,
           imageCid: card.imageCid,
+          sourceSeries: seriesInfo.name,
           timestamp: new Date().toISOString(),
         });
       }
@@ -849,7 +868,12 @@ function loadOfficialData() {
     return officialCards;
   }
 
-  const files = fs.readdirSync(OFFICIAL_DIR).filter(f => f.endsWith('.json'));
+  const files = fs.readdirSync(OFFICIAL_DIR).filter(f => (
+    f.endsWith('.json') &&
+    !f.startsWith('_') &&
+    !f.startsWith('all-') &&
+    !f.startsWith('cardList_')
+  ));
 
   for (const file of files) {
     const filePath = path.join(OFFICIAL_DIR, file);
@@ -862,14 +886,22 @@ function loadOfficialData() {
           const cardNum = card.cardNumber || imageCardNumber;
           if (!cardNum) continue;
           const series = card.expansion || card.series || '';
-          // Use compound key to preserve all series, even reprints
-          const key = series ? `${cardNum}_${series}` : cardNum;
-          officialCards[key] = {
+          const imageSuffix = String(card.imageUrl || '').match(/\/([^/]+)\.png$/i)?.[1] || '';
+          // Use compound keys to preserve all series and all official printings.
+          // hEB01 contains many same-card-number variants inside one expansion;
+          // those must not overwrite one another or inherit a single old price.
+          const baseKey = series ? `${cardNum}_${series}` : cardNum;
+          const mustUsePrintingKey = !!card.sourceProduct;
+          const printingKey = [baseKey, card.rarity || '', imageSuffix || card.id || ''].filter(Boolean).join('_');
+          const makeInfo = () => ({
             name: card.name || '',
             type: card.cardType || card.type || '',
             color: card.color || '',
             rarity: card.rarity || '',
             series: series,
+            sourceProduct: card.sourceProduct || series,
+            sourceProductName: card.sourceProductName || '',
+            sourceProductText: card.sourceProductText || '',
             officialImage: card.imageUrl || '',
             hp: card.hp || '',
             life: card.life || '',
@@ -881,7 +913,19 @@ function loadOfficialData() {
             // backfills those from data/bloom-levels.json (DIC-1141).
             bloomLevel: card.bloomLevel || '',
             cardNumber: cardNum,
-          };
+          });
+          if (mustUsePrintingKey) {
+            officialCards[printingKey] = makeInfo();
+          } else {
+            if (officialCards[baseKey] && officialCards[baseKey].officialImage !== (card.imageUrl || '')) {
+              const prior = officialCards[baseKey];
+              const priorSuffix = String(prior.officialImage || '').match(/\/([^/]+)\.png$/i)?.[1] || '';
+              const priorKey = [baseKey, prior.rarity || '', priorSuffix].filter(Boolean).join('_');
+              officialCards[priorKey] = prior;
+              delete officialCards[baseKey];
+            }
+            officialCards[officialCards[baseKey] ? printingKey : (officialCards[printingKey] ? printingKey : baseKey)] = makeInfo();
+          }
         }
       }
     } catch (err) {
@@ -1050,6 +1094,14 @@ function mergeYtStats(database) {
     }
   }
 
+  // DIC-1204: broadcast ytStats onto every printing of the same holomen, not
+  // only the first row a given cardNumber lands on. DIC-1084 canonicalization
+  // creates multiple printings per cardNumber (each rarity / product printing
+  // gets its own row), and the audit contract in scripts/audit-card-data.mjs
+  // pins the full-dataset ytStats row count (DIC-1153) — an early-return that
+  // skipped later variants of the same cardNumber silently regressed that
+  // pinned count to the number of unique cardNumbers with a stats-carrying
+  // holomen name.
   let merged = 0;
   for (const card of Object.values(database.cards)) {
     const stats =
@@ -1080,59 +1132,28 @@ async function buildDatabase() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
-  // Capture the previous build's buyPrice / buyPriceHistory before we overwrite
-  // database.json. Unlike priceHistory (persisted to per-card files in
-  // data/price-history/), buy prices live ONLY inside database.json. A fresh
-  // rebuild wipes them, and merge-buy-prices.js (run afterward) only re-adds
-  // TODAY's value — so without this preservation buyPriceHistory could never
-  // accumulate past one day, and any day merge-buy-prices fails to run would
-  // drop buyPrice from the committed database entirely (DIC-236).
-  const prevBuyByCardId = new Map();
+  // Capture the previous build's market payload before we overwrite database.json.
+  // A yuyu outage/403 is allowed to decouple from official catalog ingestion,
+  // but it must not turn a failed/incomplete scrape into a successful write that
+  // erases the last proven sell prices. DIC-1204: the previous exact-id-only
+  // preservation missed rows whose printing IDs got renamed by DIC-1084
+  // canonicalization, wiping their proven sellPrice / priceHistory / ytStats.
+  // Use `preserve-market-fields.js` to (a) preserve by exact id when it still
+  // matches and (b) fall back to a strict cardNumber|sourceProduct|rarity
+  // signature so renamed printings still carry their proven payload; ambiguous
+  // signatures refuse to guess (fail-closed, no cross-printing / cross-rarity
+  // leakage).
+  let prevCards = {};
   try {
-    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
-    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
-      const saved = {};
-      if (Number.isFinite(card.buyPrice) && card.buyPrice > 0) saved.buyPrice = card.buyPrice;
-      if (card.buyPriceHistory && typeof card.buyPriceHistory === 'object' &&
-          Object.keys(card.buyPriceHistory).length > 0) {
-        saved.buyPriceHistory = card.buyPriceHistory;
-      }
-      // Per-version buy prices (DIC-856) also live only in database.json → preserve them
-      // by EXACT canonical variant key (cardNumber|class|token) so a build-only pass (no merge
-      // afterward) keeps version alignment. Keys that collide within a card (e.g. two identical
-      // (パラレル) variants — hBP02-017) are ambiguous, so we drop them rather than let one
-      // variant's price leak onto its twin; merge-buy-prices.js re-derives those from source.
-      // Since DIC-856 follow-up each variant's buy price also carries its provenance
-      // (buyPriceVersion / buyPriceSource / buyPriceTimestamp) so the reading layer never has
-      // to re-guess which version a price belongs to — preserve those fields too.
-      if (Array.isArray(card.prices)) {
-        const variantBuy = {};
-        const seenKey = new Set();
-        const dupKey = new Set();
-        for (const v of card.prices) {
-          if (!v || !Number.isFinite(v.buyPrice) || v.buyPrice <= 0) continue;
-          const key = canonicalVariantKey(card.cardNumber, v.name);
-          if (seenKey.has(key)) { dupKey.add(key); continue; }
-          seenKey.add(key);
-          variantBuy[key] = {
-            price: v.buyPrice,
-            version: v.buyPriceVersion,
-            source: v.buyPriceSource,
-            timestamp: v.buyPriceTimestamp,
-          };
-        }
-        for (const k of dupKey) delete variantBuy[k];
-        if (Object.keys(variantBuy).length > 0) saved.variantBuy = variantBuy;
-      }
-      if (Object.keys(saved).length > 0) prevBuyByCardId.set(cardId, saved);
-    }
-    if (prevBuyByCardId.size > 0) {
-      console.log(`  [buyPrice] Preserving buy prices for ${prevBuyByCardId.size} cards from previous build`);
-    }
+    prevCards = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8')).cards || {};
   } catch (err) {
     if (err.code !== 'ENOENT') {
-      console.warn(`  [buyPrice] Could not read previous database for buyPrice preservation: ${err.message}`);
+      console.warn(`  [sellPrice] Could not read previous database for market-field preservation: ${err.message}`);
     }
+  }
+  const preservationIndex = buildPreservationIndex(prevCards);
+  if (preservationIndex.byId.size > 0) {
+    console.log(`  [sellPrice] Indexed ${preservationIndex.byId.size} previous rows for market-field preservation`);
   }
 
   // Capture the previous build's skillsJp / skillsZh so a rebuild can fall back
@@ -1143,33 +1164,34 @@ async function buildDatabase() {
   // back to Japanese in zh mode (DIC-454). Preserving prior skills stops that
   // regression from silently wiping translations.
   const prevSkillsByCardId = new Map();
-  try {
-    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
-    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
-      const saved = {};
-      if (card.skillsJp && typeof card.skillsJp === 'object') saved.skillsJp = card.skillsJp;
-      if (card.skillsZh && typeof card.skillsZh === 'object') saved.skillsZh = card.skillsZh;
-      if (Object.keys(saved).length > 0) prevSkillsByCardId.set(cardId, saved);
-    }
-    if (prevSkillsByCardId.size > 0) {
-      console.log(`  [skills] Preserving skills for ${prevSkillsByCardId.size} cards from previous build`);
-    }
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.warn(`  [skills] Could not read previous database for skill preservation: ${err.message}`);
-    }
+  for (const [cardId, card] of Object.entries(prevCards)) {
+    const saved = {};
+    if (card.skillsJp && typeof card.skillsJp === 'object') saved.skillsJp = card.skillsJp;
+    if (card.skillsZh && typeof card.skillsZh === 'object') saved.skillsZh = card.skillsZh;
+    if (Object.keys(saved).length > 0) prevSkillsByCardId.set(cardId, saved);
+  }
+  if (prevSkillsByCardId.size > 0) {
+    console.log(`  [skills] Preserving skills for ${prevSkillsByCardId.size} cards from previous build`);
   }
 
-  // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch)
+  // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch).
+  // Official catalog ingestion is intentionally decoupled from yuyu pricing: if
+  // yuyu is WAF-blocked/403 and returns 0 cards, new official printings still
+  // build and ship with null/unknown prices instead of blocking the catalog.
   console.log('── Step 1: Scrape yuyu-tei ──');
-  const yuyuResult = await scrapeYuyuPrices();
+  let yuyuResult;
+  try {
+    yuyuResult = await scrapeYuyuPrices();
+  } catch (err) {
+    console.warn(`[database] yuyu scrape failed (${err.message}); continuing official catalog build with null prices`);
+    yuyuResult = { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
+  }
 
   const { prices, totalCards, seriesWithPrices } = yuyuResult;
+  const pricingUnavailable = Boolean(yuyuResult.pricingUnavailable || totalCards < 50);
   console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
-
-  // Safety check
-  if (totalCards < 50) {
-    throw new Error(` SAFETY CHECK FAILED: totalCards=${totalCards} < 50. Scraper likely failed.`);
+  if (pricingUnavailable) {
+    console.warn(`[database] yuyu pricing unavailable or incomplete (totalCards=${totalCards}); preserving previous exact-card sell prices and leaving new/unknown printings null`);
   }
 
   // Step 2: Download images
@@ -1210,16 +1232,40 @@ async function buildDatabase() {
     });
   }
 
-  // Helper: resolve yuyu price data for a card number
-  function getYuyuForCard(cardNum) {
+  function yuyuEntryMatchesOfficial(entry, official) {
+    if (!entry || !official) return false;
+    const sourceSeries = String(entry.sourceSeries || '').toLowerCase();
+    if (!sourceSeries) return false;
+    const officialSeries = String(official.series || '').toLowerCase();
+    const officialSource = String(official.sourceProduct || '').toLowerCase();
+    const officialRarity = normalizeRarityCode(official.rarity);
+    const entryRarity = normalizeRarityCode(entry.rarity);
+
+    if (sourceSeries === officialSeries || sourceSeries === officialSource) {
+      return entryRarity !== '' && officialRarity !== '' && entryRarity === officialRarity;
+    }
+
+    const taggedBySeries = String(entry.name || '').toLowerCase().includes(`/${sourceSeries}`);
+    if (taggedBySeries && sourceSeries === officialSource) {
+      return entryRarity !== '' && officialRarity !== '' && entryRarity === officialRarity;
+    }
+
+    return false;
+  }
+
+  // Helper: resolve yuyu price data for one exact official printing.  Healthy
+  // scrapes may contain same-card-number rows from multiple official printings;
+  // require an explicit sourceSeries/name-tag tie instead of card-number fallback.
+  function getYuyuForCard(cardNum, official) {
     const priceData = prices[cardNum];
     if (!priceData) return null;
-    const rawEntries = Array.isArray(priceData) ? priceData : [priceData];
+    const rawEntries = (Array.isArray(priceData) ? priceData : [priceData]).filter((entry) => yuyuEntryMatchesOfficial(entry, official));
+    if (rawEntries.length === 0) return null;
     const priceEntries = deduplicatePrices(rawEntries);
     let lowestPrice = null;
     let lowestName = '';
     let firstImage = '';
-    let firstTimestamp = new Date().toISOString();
+    let firstTimestamp = '';
     for (const entry of priceEntries) {
       if (!firstImage && entry.yuyuImage) firstImage = entry.yuyuImage;
       if (entry.timestamp) firstTimestamp = entry.timestamp;
@@ -1240,7 +1286,7 @@ async function buildDatabase() {
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
-    const yuyu = getYuyuForCard(baseCardNum);
+    const yuyu = pricingUnavailable ? null : getYuyuForCard(baseCardNum, official);
 
     const rawEntries = yuyu ? yuyu.priceEntries.map(e => ({
       name: e.name || '',
@@ -1268,6 +1314,9 @@ async function buildDatabase() {
       color: official.color || '',
       rarity: official.rarity || '',
       series: official.series || '',
+      sourceProduct: official.sourceProduct || official.series || '',
+      sourceProductName: official.sourceProductName || '',
+      sourceProductText: official.sourceProductText || '',
       sellPrice: yuyu ? yuyu.lowestPrice : null,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
@@ -1287,7 +1336,10 @@ async function buildDatabase() {
   }
 
   // Also add yuyu-only cards (prices without matching official entry)
-  for (const [cardNum, priceData] of Object.entries(prices)) {
+  for (const [rawCardNum, priceData] of Object.entries(prices)) {
+    // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
+    // schema requires 3 digits (hY01-014).  DIC-1084.
+    const cardNum = canonicalizeCardNumber(rawCardNum);
     const alreadyExists = Object.keys(database.cards).some(k => {
       const info = database.cards[k];
       return info.cardNumber === cardNum;
@@ -1321,9 +1373,14 @@ async function buildDatabase() {
     const cleanYuyuName = canonicalYuyuName(lowestName);
     const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, firstImage);
 
-    database.cards[cardNum] = {
-      id: cardNum,
-      cardNumber: cardNum,
+    const canonicalCardNum = isCanonicalCardNumber(cardNum)
+      ? cardNum
+      : cardNum.replace(/-(\d{1,2})$/, (_, n) => `-${n.padStart(3, '0')}`);
+    const outCardNum = isCanonicalCardNumber(canonicalCardNum) ? canonicalCardNum : cardNum;
+
+    database.cards[outCardNum] = {
+      id: outCardNum,
+      cardNumber: outCardNum,
       name: lowestName || '',
       type: '',
       color: '',
@@ -1334,13 +1391,39 @@ async function buildDatabase() {
       yuyuImage: cleanYuyuImage,
       prices: canonical,
       officialImage: '',
-      localImage: fs.existsSync(path.join(IMAGES_DIR, `${cardNum}.jpg`)) ? `/images/${cardNum}.jpg` : '',
+      localImage: fs.existsSync(path.join(IMAGES_DIR, `${outCardNum}.jpg`)) ? `/images/${outCardNum}.jpg` : '',
       hp: '',
       life: '',
       arts: '',
       timestamp: firstTimestamp,
       _rawPricesArchive: archive,
     };
+  }
+
+  // DIC-1204: preserve proven market payload onto every current row that maps
+  // to a previous row by exact id or by strict signature. This runs on every
+  // build — not only during a yuyu outage — because the shipped regression was
+  // caused by exact-id lookups missing renamed printings when yuyu still
+  // returned partial (non-outage) results. Freshly proven fields on the
+  // current row are never overwritten; ambiguous signatures fail closed.
+  if (preservationIndex.byId.size > 0) {
+    let restoredSell = 0;
+    let restoredPriceHistory = 0;
+    let restoredYt = 0;
+    let restoredPrices = 0;
+    for (const [cardId, card] of Object.entries(database.cards)) {
+      const match = findPreservedMatch(preservationIndex, cardId, card);
+      if (!match) continue;
+      const summary = applyPreservedMarketFields(card, match.card, { matchKind: match.matchKind });
+      if (summary.sellPrice) restoredSell++;
+      if (summary.prices) restoredPrices++;
+      if (summary.priceHistory) restoredPriceHistory++;
+      if (summary.ytStats) restoredYt++;
+    }
+    console.log(
+      `  [preserve] restored sellPrice=${restoredSell} prices=${restoredPrices} `
+      + `priceHistory=${restoredPriceHistory} ytStats=${restoredYt}`
+    );
   }
 
   // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,
@@ -1374,6 +1457,27 @@ async function buildDatabase() {
   const today = new Date().toISOString().split('T')[0];
   const historyDir = path.join(DATA_DIR, 'price-history');
   fs.mkdirSync(historyDir, { recursive: true });
+
+  // DIC-1204 Step 4c: Before appending today's record, seed the canonical-ID
+  // history file with the multi-day priceHistory the preservation step above
+  // just carried onto renamed printings. Without this seed, Step 5 would
+  // create a fresh file containing only today's record and Step 6 would
+  // unconditionally overwrite `card.priceHistory` with that single-record
+  // read, collapsing the 66-day history we just restored on a card like
+  // hBP01-028_hBP08_HR_hBP01-028_HR (66 shipped days, no canonical-ID file
+  // yet). Existing records[] entries survive verbatim; only preserved dates
+  // that are not already recorded get appended — no cross-printing or
+  // stale-price leakage.
+  const seedResult = seedCanonicalHistoryFiles({
+    cards: database.cards,
+    historyDir,
+    fsAdapter: { fs, path },
+  });
+  if (seedResult.seededFiles > 0) {
+    console.log(
+      `  [preserve-history] Seeded ${seedResult.seededFiles} canonical-ID history files with ${seedResult.addedRecords} preserved records`
+    );
+  }
 
   // Collect price records from all cards
   const priceRecords = [];
@@ -1483,41 +1587,9 @@ async function buildDatabase() {
   }
   console.log(`  [priceHistory] Merged into ${mergedCount} cards`);
 
-  // Step 6b: Restore preserved buyPrice / buyPriceHistory onto the rebuilt cards
-  // so they survive the from-scratch rebuild. merge-buy-prices.js runs after this
-  // in the pipeline and layers today's fresh buy prices on top (DIC-236).
-  let buyRestored = 0;
-  for (const [cardId, saved] of prevBuyByCardId.entries()) {
-    const card = database.cards[cardId];
-    if (!card) continue; // card no longer exists in the rebuilt database
-    if (saved.buyPrice != null) card.buyPrice = saved.buyPrice;
-    if (saved.buyPriceHistory != null) card.buyPriceHistory = saved.buyPriceHistory;
-    if (saved.variantBuy && Array.isArray(card.prices)) {
-      // Only restore onto variants whose canonical key is unique in the rebuilt card, so an
-      // ambiguous (duplicate-key) variant never inherits another version's preserved price.
-      const keyCount = new Map();
-      for (const v of card.prices) {
-        const k = canonicalVariantKey(card.cardNumber, v.name);
-        keyCount.set(k, (keyCount.get(k) || 0) + 1);
-      }
-      for (const v of card.prices) {
-        const k = canonicalVariantKey(card.cardNumber, v.name);
-        if (keyCount.get(k) !== 1) continue;
-        const bp = saved.variantBuy[k];
-        if (bp != null) {
-          v.buyPrice = bp.price;
-          if (bp.version != null) v.buyPriceVersion = bp.version;
-          else delete v.buyPriceVersion;
-          if (bp.source != null) v.buyPriceSource = bp.source;
-          else delete v.buyPriceSource;
-          if (bp.timestamp != null) v.buyPriceTimestamp = bp.timestamp;
-          else delete v.buyPriceTimestamp;
-        }
-      }
-    }
-    buyRestored++;
-  }
-  console.log(`  [buyPrice] Restored buy prices onto ${buyRestored} cards`);
+  // Step 6b: Do not restore stale buy prices from the previous database. Buy prices
+  // are source-listing claims, not history like sell prices; merge-buy-prices.js is
+  // the only writer allowed to attach current exact-print provenance.
 
   // Step 7: Merge VTuber YouTube stats (subscriber/view counts + growth) (DIC-249)
   console.log('\n── Step 7: Merge VTuber YouTube stats ──');

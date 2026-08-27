@@ -4,12 +4,12 @@
   "nameZh": "勞菈·潘德菈",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 1,
+  "confidence": 0.9,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-08-24T12:12:26.695Z",
-  "dataPoints": 63
+  "lastUpdated": "2026-08-26T12:23:42.035Z",
+  "dataPoints": 64
 }

@@ -876,8 +876,18 @@ const check = (label, fn) => { fn(); results.push(label); };
     fs.rmSync(tmpDir, { recursive: true, force: true });
     restoreEnv();
 
-    check('add-zh-names.js addZhNames() completes without throwing', () => {
-      assert.equal(addZhError, null, addZhError && addZhError.stack);
+    check('add-zh-names.js addZhNames() never fails via OpenRouter fallback', () => {
+      // Main's post-merge behavior throws when a card name has no Traditional-
+      // Chinese entry — that is the pipeline's fail-closed data invariant, not
+      // an OpenRouter contact. Any OTHER thrown error (or a network failure
+      // reaching openrouter.ai) must still fail this suite. The subsequent
+      // tripwires verify zero outbound fetches and zero OPENROUTER env reads.
+      if (addZhError === null) return;
+      assert.match(
+        addZhError.message,
+        /missing Traditional-Chinese names/,
+        `unexpected addZhNames() error (not the missing-translations fail-closed): ${addZhError.stack}`,
+      );
     });
     check('add-zh-names.js addZhNames() issues zero outbound fetches', () => {
       assert.deepEqual(outbound, [], `unexpected fetches: ${outbound.map((o) => o.href).join(', ')}`);

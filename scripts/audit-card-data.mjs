@@ -118,11 +118,19 @@ for (const card of cards) {
   }
 }
 
-assert.equal(subscriberRows, 1160, 'DIC-1153 full dataset ytStats row count must stay pinned');
+// DIC-1204: DIC-1084 canonicalization creates multiple printings per
+// cardNumber, and DIC-1167 shipped hEB01's 214 official rows, so the full
+// dataset now carries ytStats on 2057 printings. The 1160 that pinned this
+// row before DIC-1084 canonicalization collapsed variants of the same
+// holomen; a repair that dropped back below 2057 would signal a silent
+// regression in mergeYtStats' broadcast-to-all-variants contract (the
+// early-return added on 2026-08-26 was the exact regression this audit is
+// now guarding against).
+assert.equal(subscriberRows, 2057, 'DIC-1153/1204 full dataset ytStats row count must stay pinned');
 assert.equal(
   subscriberDisplayableRows,
-  1160,
-  'DIC-1153 full dataset subscriber provenance must be evaluated at the audit snapshot reference time, not a stale wall-clock constant',
+  2057,
+  'DIC-1153/1204 full dataset subscriber provenance must be evaluated at the audit snapshot reference time, not a stale wall-clock constant',
 );
 
 const ytRecent7ByChannel = {};

@@ -4,12 +4,12 @@
   "nameZh": "",
   "trend": "down",
   "score": -0.17,
-  "confidence": 0.5,
+  "confidence": 0.4,
   "components": {
     "priceTrend": -0.33,
     "ytTrend": 0,
     "newsSentiment": 0.16
   },
-  "lastUpdated": "2026-08-24T12:12:26.685Z",
-  "dataPoints": 4
+  "lastUpdated": "2026-08-26T12:23:42.024Z",
+  "dataPoints": 5
 }

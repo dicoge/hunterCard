@@ -20,6 +20,7 @@
  * 的帳號目前仍會回 501 `apple_deletion_not_implemented`（刻意 fail-closed，不是成功）。
  */
 import { deleteUser, getUser } from '../_lib/identity-store';
+import { deleteAccountSyncData } from '../_lib/account-sync-store';
 import { getAppleConfig, revokeRefreshToken } from '../_lib/apple-auth';
 import {
   getStoredAppleRefreshToken,
@@ -61,6 +62,7 @@ async function webHandler(req: Request): Promise<Response> {
       await deleteStoredAppleRefreshToken(userId);
     }
 
+    await deleteAccountSyncData(userId);
     const result = await deleteUser(userId);
     return json({ deleted: result.deletedInternalUser, revokedApple: hasApple }, 200);
   } catch (err) {

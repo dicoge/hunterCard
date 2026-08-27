@@ -3,11 +3,12 @@
  *
  * 從 data/character-names-zh.json 讀取日文→中文翻譯對照表，
  * 比對每張卡片的 name 欄位，若找到匹配則寫入 nameZh 欄位。
- * 若無匹配，nameZh 設為空字串（等待人工補齊）。
+ * 若無匹配，保留既有 nameZh 或 fail closed；不呼叫未授權翻譯供應商。
+ * 未匹配會讓 pipeline exit non-zero，避免空翻譯被提交。
  *
  * DIC-1185 FinOps repair: 移除 OpenRouter 自動翻譯後援。OpenRouter 為硬性
  * denylist，任何情況下都不可對 openrouter.ai 發出請求，包含環境中殘留的
- * OPENROUTER_API_KEY。未匹配到的卡名一律 fail-closed 為空字串。
+ * OPENROUTER_API_KEY。
  *
  * 用法: node scripts/add-zh-names.js [database路徑]
  * 預設: data/database.json
@@ -39,7 +40,7 @@ function loadTranslationMap(filepath) {
 
   for (const [jp, zh] of Object.entries(translations)) {
     // 過濾包含 U+FFFD (replacement character) 的損壞條目
-    if (jp.includes('�') || zh.includes('�')) {
+    if (jp.includes('\uFFFD') || zh.includes('\uFFFD')) {
       filteredCount++;
       continue;
     }
@@ -52,6 +53,15 @@ function loadTranslationMap(filepath) {
 
   console.log(`[add-zh-names] ✅ 載入 ${Object.keys(clean).length} 筆翻譯對照`);
   return clean;
+}
+
+function decodeHtml(input = '') {
+  return String(input)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
 }
 
 /**
@@ -87,17 +97,23 @@ export async function addZhNames(dbPath = DEFAULT_DB_PATH) {
 
   let matchCount = 0;
   let missCount = 0;
+  const missing = [];
 
   for (const cardId of cardIds) {
     const card = database.cards[cardId];
     const cardName = card.name || '';
+    const candidates = [...new Set([cardName, decodeHtml(cardName)].filter(Boolean))];
 
-    if (translationMap[cardName] !== undefined) {
-      card.nameZh = translationMap[cardName];
+    const matchedKey = candidates.find((name) => translationMap[name] !== undefined);
+    if (matchedKey !== undefined) {
+      card.nameZh = translationMap[matchedKey];
+      matchCount++;
+    } else if (card.nameZh && String(card.nameZh).trim()) {
       matchCount++;
     } else {
       card.nameZh = '';
       missCount++;
+      missing.push({ id: cardId, name: cardName });
     }
   }
 
@@ -106,11 +122,12 @@ export async function addZhNames(dbPath = DEFAULT_DB_PATH) {
 
   console.log(`[add-zh-names] ✅ 完成！`);
   console.log(`[add-zh-names]   靜態匹配: ${matchCount} 張卡片`);
-  console.log(`[add-zh-names]   未匹配 (nameZh=''): ${missCount} 張卡片`);
-  if (missCount > 0) {
-    console.log(`[add-zh-names]   ℹ️  未匹配的卡名請於 data/character-names-zh.json 手動補齊`);
-  }
+  console.log(`[add-zh-names]   未匹配: ${missCount} 張卡片`);
   console.log(`[add-zh-names]   輸出: ${dbPath}`);
+  if (missing.length > 0) {
+    const sample = missing.slice(0, 10).map((m) => `${m.id}:${m.name}`).join('\n  ');
+    throw new Error(`[add-zh-names] missing Traditional-Chinese names (${missing.length}). Add controlled entries to data/character-names-zh.json; sample:\n  ${sample}`);
+  }
 }
 
 // 獨立執行
