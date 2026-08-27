@@ -83,7 +83,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # DIC-1213: eas-cli's @oclif/plugin-autocomplete requires Node >=22.
+          # Under Node 20 `expo/expo-github-action@v8` installs eas-cli 22.6.0
+          # and then the CLI fails to load before `eas build` can start.
+          node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
