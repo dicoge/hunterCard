@@ -828,8 +828,24 @@ function testRefGuardBehaviour() {
   fs.writeFileSync(path.join(origin, 'a.txt'), 'a');
   git(origin, 'add', '.');
   git(origin, 'commit', '-qm', 'first');
-  const mainSha = git(origin, 'rev-parse', 'HEAD');
+  const staleMainSha = git(origin, 'rev-parse', 'HEAD');
   git(origin, 'tag', 'v1.0.0');
+
+  // Clone BEFORE origin/main is extended. The clone's cached
+  // `refs/remotes/origin/main` is therefore staleMainSha until the guard
+  // itself runs a real `git fetch`. That makes the stale-main rejection
+  // test mutation-sensitive: reverting to the old 40-hex-only check, or
+  // swallowing the fetch with `|| true`, both leave the cached ref pointing
+  // at staleMainSha and would silently accept GITHUB_SHA=staleMainSha as
+  // "main" — exactly the CR DIC-1210 bypass.
+  const clone = path.join(dir, 'clone');
+  git(dir, 'clone', '-q', origin, clone);
+
+  // Extend origin/main so its true tip only becomes visible via a fresh fetch.
+  fs.writeFileSync(path.join(origin, 'a.txt'), 'a2');
+  git(origin, 'add', '.');
+  git(origin, 'commit', '-qm', 'main tip');
+  const mainSha = git(origin, 'rev-parse', 'HEAD');
   git(origin, 'checkout', '-q', '-b', 'side');
   fs.writeFileSync(path.join(origin, 'b.txt'), 'b');
   git(origin, 'add', '.');
@@ -838,16 +854,24 @@ function testRefGuardBehaviour() {
   git(origin, 'tag', 'v9.9.9');
   git(origin, 'checkout', '-q', 'main');
 
-  const clone = path.join(dir, 'clone');
-  git(dir, 'clone', '-q', origin, clone);
-
   const cases = [
-    ['refs/heads/main', mainSha, 0, /ref OK: main/],
+    // Happy path: the freshly resolved origin/main tip is accepted. The
+    // matched substring must appear only when the tip check actually ran.
+    ['refs/heads/main', mainSha, 0, /ref OK: main @ [0-9a-f]{40} \(matches origin\/main tip\)/],
+    // CR DIC-1210 bypass: a real ancestor SHA passed the 40-hex regex and
+    // was accepted because the guard never fetched origin/main. Must now
+    // be rejected against the fresh tip.
+    ['refs/heads/main', staleMainSha, 1, /does not match the current origin\/main tip/],
+    // A 40-hex value unrelated to any commit in the repo must also be
+    // rejected — the gate must accept exactly the fresh tip, nothing else.
+    ['refs/heads/main', 'f'.repeat(40), 1, /does not match the current origin\/main tip/],
     ['refs/heads/feature/x', mainSha, 1, /may only be built from 'main'/],
     ['refs/pull/152/merge', mainSha, 1, /may only be built from 'main'/],
     ['refs/heads/mainline', mainSha, 1, /may only be built from 'main'/],
     ['refs/heads/main-hack', mainSha, 1, /may only be built from 'main'/],
-    ['refs/tags/v1.0.0', mainSha, 0, /contained in main/],
+    // v1.0.0 sits at the pre-extension commit, which is an ancestor of the
+    // fresh origin/main tip — release tags are allowed once contained.
+    ['refs/tags/v1.0.0', staleMainSha, 0, /contained in main/],
     ['refs/tags/v9.9.9', sideSha, 1, /is not contained in main/],
     // Provenance must name an immutable commit even on an allowed ref.
     ['refs/heads/main', '', 1, /full 40-character commit SHA/],
