@@ -31,7 +31,10 @@ jobs:
 
       - name: Verify Expo native-module compatibility (DIC-969)
         run: npm run test:expo-native-compat
-      
+
+      - name: Verify release APK pipeline invariants (DIC-1193)
+        run: npm run test:release-apk-pipeline
+
       - name: Check TypeScript types
         run: npx tsc --noEmit
 
