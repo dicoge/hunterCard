@@ -83,9 +83,15 @@ const missingNameZh = Object.values(db.cards || {}).filter((c) => !c.nameZh);
 assert.deepStrictEqual(missingNameZh.map((c) => `${c.id}:${c.name}`), [], 'database must fail closed instead of shipping empty Traditional-Chinese names');
 
 const builder = fs.readFileSync(path.join(repo, 'scripts/build-database.js'), 'utf8');
+// DIC-1204 replaced exact-id-only preservation with the strict-signature
+// preservation contract in `scripts/lib/preserve-market-fields.js`. The
+// original exact-id lookup missed rows whose printing IDs got renamed by
+// DIC-1084 canonicalization, wiping sellPrice / priceHistory / ytStats.
+// The new contract still keeps sell data across a yuyu outage; it also
+// keeps it across a canonicalization rename.
 assert.ok(
-  builder.includes('prevSellByCardId') && builder.includes('pricingUnavailable') && builder.includes('Restored previous sell prices onto'),
-  'build-database must preserve prior sell data by exact card id when yuyu pricing is unavailable',
+  builder.includes('buildPreservationIndex') && builder.includes('findPreservedMatch') && builder.includes('applyPreservedMarketFields'),
+  'build-database must preserve prior sell data via signature-based preservation across a canonical ID rebuild (DIC-1204)',
 );
 assert.ok(
   builder.includes('pricingUnavailable ? null : getYuyuForCard(baseCardNum, official)') &&

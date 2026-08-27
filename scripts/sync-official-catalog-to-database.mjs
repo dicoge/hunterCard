@@ -2,6 +2,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  buildPreservationIndex,
+  findPreservedMatch,
+  preservedMarketPayload,
+} from './lib/preserve-market-fields.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(__dirname, '..');
@@ -69,18 +74,22 @@ function toDatabaseCard(card, id) {
   };
 }
 
-function preservedExactSellPayload(previous = {}) {
-  const payload = {};
-  if (Number.isFinite(previous.sellPrice) && previous.sellPrice > 0) payload.sellPrice = previous.sellPrice;
-  if (Array.isArray(previous.prices) && previous.prices.length > 0) payload.prices = previous.prices;
-  if (previous.yuyuName) payload.yuyuName = previous.yuyuName;
-  if (previous.yuyuImage) payload.yuyuImage = previous.yuyuImage;
-  if (previous.timestamp) payload.timestamp = previous.timestamp;
-  if (previous.priceHistory && typeof previous.priceHistory === 'object' && Object.keys(previous.priceHistory).length > 0) {
-    payload.priceHistory = previous.priceHistory;
-  }
-  if (Array.isArray(previous._rawPricesArchive) && previous._rawPricesArchive.length > 0) {
-    payload._rawPricesArchive = previous._rawPricesArchive;
+// DIC-1204: exact-id lookups miss rows whose printing IDs get renamed by
+// DIC-1084 canonicalization, wiping their proven sellPrice / priceHistory /
+// ytStats. `preservedMarketPayload` on the row returned by `findPreservedMatch`
+// (exact id first, then a strict cardNumber|sourceProduct|rarity signature)
+// carries only proven fields forward; ambiguous signatures refuse to guess.
+// On a signature fallback onto a SEC signed printing we strip prices[] and
+// yuyu descriptors — the DIC-1013/1140 fail-closed contract forbids yuyu
+// variants from leaking onto the signed row.
+function preservedExactSellPayload(previous = {}, matchKind = 'exact-id', targetRarity = '') {
+  const payload = preservedMarketPayload(previous);
+  const signedFallback = matchKind !== 'exact-id' && String(targetRarity || '').trim().toUpperCase() === 'SEC';
+  if (signedFallback) {
+    delete payload.prices;
+    delete payload._rawPricesArchive;
+    delete payload.yuyuName;
+    delete payload.yuyuImage;
   }
   return payload;
 }
@@ -102,6 +111,10 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
   const officialFiles = fs.readdirSync(officialDirectory)
     .filter((f) => f.endsWith('.json') && !f.startsWith('_') && !f.startsWith('all-') && !f.startsWith('cardList_'));
 
+  // DIC-1204: index the previous DB by both exact id AND strict
+  // cardNumber|sourceProduct|rarity signature so a canonical-id rename does
+  // not silently drop that row's proven sellPrice / priceHistory / ytStats.
+  const preservationIndex = buildPreservationIndex(db.cards);
   let upserted = 0;
   let sellPreserved = 0;
   const canonicalSignatures = new Set();
@@ -113,16 +126,19 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
       canonicalSignatures.add(cardSignature(card));
       const id = printingId(card);
       if (!id || !card.cardNumber) continue;
-      const previous = db.cards[id] || {};
-      const preservedSell = preservedExactSellPayload(previous);
+      const preview = toDatabaseCard(card, id);
+      const match = findPreservedMatch(preservationIndex, id, preview);
+      const previous = match?.card || db.cards[id] || {};
+      const matchKind = match?.matchKind || 'exact-id';
+      const preservedSell = preservedExactSellPayload(previous, matchKind, preview.rarity);
       if (Object.keys(preservedSell).length > 0) sellPreserved++;
       db.cards[id] = {
-        ...toDatabaseCard(card, id),
+        ...preview,
         ...preservedSell,
         skillsJp: previous.skillsJp,
         skillsZh: previous.skillsZh,
         nameZh: previous.nameZh,
-        ytStats: previous.ytStats,
+        ytStats: preservedSell.ytStats ?? previous.ytStats,
       };
       for (const key of ['skillsJp', 'skillsZh', 'nameZh', 'ytStats']) {
         if (db.cards[id][key] == null) delete db.cards[id][key];

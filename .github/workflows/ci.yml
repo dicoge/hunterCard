@@ -95,6 +95,9 @@ jobs:
       - name: Verify scan/search market data fields (DIC-361)
         run: npm run test:market-fields
 
+      - name: Verify canonical printing-ID rebuilds preserve market fields (DIC-1204)
+        run: npm run test:market-field-preservation
+
       - name: Audit normalized card labels, subscriber provenance, and exact-printing trends (DIC-1084)
         run: npm run test:card-data-audit
 
