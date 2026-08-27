@@ -753,13 +753,30 @@ const check = (label, fn) => { fn(); results.push(label); };
     return aliases;
   }
 
+  // Detects `<fetchPrimitive>[<opaqueKey>]` — a computed member access on a
+  // known fetch primitive whose key cannot be statically resolved. Since we
+  // cannot prove the key is not `call`/`apply`, we can't trust the URL
+  // position, and since we cannot prove it's not something that just returns
+  // the primitive (`.bind`, prototype indirection), we must treat any
+  // resulting call as a fetch invocation with an unresolvable URL. (DIC-1190
+  // CR round 6 — runtime-decoded computed key bypass.)
+  function isOpaqueMemberOnFetchPrimitive(node, aliases, bindings) {
+    if (!ts.isElementAccessExpression(node)) return false;
+    const key = fold(node.argumentExpression, bindings);
+    if (typeof key === 'string') return false; // resolvable → other rules handle
+    return isFetchPrimitiveRef(node.expression, aliases, bindings);
+  }
+
   // A CallExpression is a "fetch call" if its callee resolves to the fetch
-  // primitive by any of the aliasing pathways above. This is what enforces
-  // both the no-fetch-file rule and the URL allowlist against wrapped fetches.
+  // primitive by any of the aliasing pathways above, OR if it is a call on
+  // an opaque computed member of a fetch primitive (fail-closed for the
+  // URL-allowlist rule).
   function isFetchCall(node, aliases, bindings) {
     if (!ts.isCallExpression(node)) return false;
     const callee = node.expression;
-    return isFetchPrimitiveRef(callee, aliases, bindings);
+    if (isFetchPrimitiveRef(callee, aliases, bindings)) return true;
+    if (isOpaqueMemberOnFetchPrimitive(callee, aliases, bindings)) return true;
+    return false;
   }
 
   // Given a fetch CallExpression, return the AST node that carries the REAL
@@ -784,6 +801,11 @@ const check = (label, fn) => { fn(); results.push(label); };
   }
 
   function extractFetchUrlArg(callNode, aliases, bindings) {
+    // Opaque computed member on a fetch primitive — invocation semantics
+    // unknown, URL position cannot be trusted → fail-closed (round 6).
+    if (isOpaqueMemberOnFetchPrimitive(callNode.expression, aliases, bindings)) {
+      return UNRESOLVABLE_URL_ARG;
+    }
     const methodName = callApplyMethodOf(callNode.expression, aliases, bindings);
     if (methodName === 'call') {
       return callNode.arguments[1] || null;
@@ -899,11 +921,15 @@ const check = (label, fn) => { fn(); results.push(label); };
           });
         } else if (hostAllowlist) {
           // Normalise `.call/.apply` invocation semantics before host check
-          // (DIC-1190 CR round 4 for dot access; round 5 for computed access).
-          // callApplyMethodOf handles both syntactic forms uniformly.
+          // (DIC-1190 CR round 4 for dot access; round 5 for computed access;
+          // round 6 for opaque computed member fail-closed).
           const urlSlot = extractFetchUrlArg(node, fetchAliases, bindings);
-          const invocationShape =
-            callApplyMethodOf(node.expression, fetchAliases, bindings) || 'direct';
+          const invocationShape = (() => {
+            if (isOpaqueMemberOnFetchPrimitive(node.expression, fetchAliases, bindings)) {
+              return 'opaque-member';
+            }
+            return callApplyMethodOf(node.expression, fetchAliases, bindings) || 'direct';
+          })();
 
           let urlValue = null;
           if (urlSlot === UNRESOLVABLE_URL_ARG) {
@@ -1252,6 +1278,59 @@ const check = (label, fn) => { fn(); results.push(label); };
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
           const method = ['c', 'a', 'l', 'l'].join('');
           await R[method](DATABASE_URL, openrouterUrl);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // DIC-1190 CR round 6: the computed key itself is decoded at runtime
+      // (e.g., `atob('Y2FsbA==')` → 'call'). The folder cannot see through
+      // atob, so `resolveMember` returns null — but the receiver is a known
+      // fetch primitive, so we must fail-closed regardless of the key.
+      label: "reviewer round-6 bypass: R[atob('Y2FsbA==')](...) — runtime-decoded 'call' key",
+      displayPath: 'test-fixture:reviewer-round-6-decoded-call.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        export async function _unreachable() {
+          const R = globalThis.fetch;
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          const method = atob('Y2FsbA==');
+          await R[method](DATABASE_URL, openrouterUrl);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      label: "reviewer round-6 bypass: R[atob('YXBwbHk=')](...) — runtime-decoded 'apply' key",
+      displayPath: 'test-fixture:reviewer-round-6-decoded-apply.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        export async function _unreachable() {
+          const R = globalThis.fetch;
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          const method = atob('YXBwbHk=');
+          await R[method](null, [openrouterUrl, { method: 'POST' }]);
+        }
+      `,
+      expectAtLeast: ['fetch() URL not in host allowlist'],
+    },
+    {
+      // Direct opaque access on `fetch` itself (no alias). Even
+      // fetch[runtimeKey](...) must fail-closed because we cannot prove the
+      // key isn't `call`/`apply`.
+      label: 'reviewer round-6 bypass: fetch[runtimeKey](...) directly on the primitive',
+      displayPath: 'test-fixture:reviewer-round-6-direct-decoded.ts',
+      isNoFetchFile: false,
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      source: `
+        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        export async function _unreachable(runtimeKey: string) {
+          const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
+          // @ts-ignore — reading an arbitrary key off fetch, callable at runtime
+          await fetch[runtimeKey](DATABASE_URL, openrouterUrl);
         }
       `,
       expectAtLeast: ['fetch() URL not in host allowlist'],
