@@ -26,6 +26,7 @@ import {
   applyPreservedMarketFields,
   seedCanonicalHistoryFiles,
 } from './lib/preserve-market-fields.js';
+import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1452,6 +1453,21 @@ async function buildDatabase() {
       `  [preserve] restored sellPrice=${restoredSell} prices=${restoredPrices} `
       + `priceHistory=${restoredPriceHistory} ytStats=${restoredYt}`
     );
+  }
+
+  // DIC-1167: keep the CardDetail and deck pipelines resolving to the same
+  // default printing per cardNumber. The daily official scrape iterates
+  // expansion files in filesystem order, so reprint rows (hBP08, hEB01, hPR, …)
+  // can land first and their sourceProduct-tight prices[] then drives
+  // CardDetail to PARALLEL while deck aggregation still resolves to BASE. This
+  // reorders every cardNumber group so the origin-product row is first
+  // (verify-version-alignment.js is the shipped contract behind this).
+  {
+    const { cards: ordered, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards);
+    database.cards = ordered;
+    if (reorderedCardNumbers > 0) {
+      console.log(`  [detail-align] reordered rows within ${reorderedCardNumbers} cardNumber groups`);
+    }
   }
 
   // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,
