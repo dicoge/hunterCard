@@ -25,6 +25,8 @@ import {
   findPreservedMatch,
   applyPreservedMarketFields,
   seedCanonicalHistoryFiles,
+  stampHistoryRecord,
+  filterProvenanceMatchedRecords,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
@@ -1523,17 +1525,22 @@ async function buildDatabase() {
     );
   }
 
-  // Collect price records from all cards
+  // Collect price records from all cards. DIC-1219: stamp each record with the
+  // row's sourceProduct so Step 6 (merge) and future preservation cycles can
+  // reject any cross-product record a seed / restore script may have written
+  // onto this canonical-ID history file. New records emitted here are always
+  // stamped; legacy records without a stamp are grandfathered in only on
+  // origin-product rows (see filterProvenanceMatchedRecords).
   const priceRecords = [];
   for (const [cardId, card] of Object.entries(database.cards)) {
     if (card.sellPrice != null && card.sellPrice > 0) {
-      priceRecords.push({
+      priceRecords.push(stampHistoryRecord({
         date: today,
         price: card.sellPrice,
         source: 'yuyu-tei',
         currency: 'JPY',
         cardId,
-      });
+      }, card));
     }
   }
 
@@ -1610,18 +1617,26 @@ async function buildDatabase() {
 
   console.log(`  [price-history] Saved ${totalSaved} new records; index totals: ${indexCardIds.length} cards / ${indexTotalRecords} records`);
 
-  // Step 6: Merge priceHistory back into database cards
+  // Step 6: Merge priceHistory back into database cards.
+  // DIC-1219: filter out durable records whose provenance does not match the
+  // current row before we build card.priceHistory. Stamped records survive
+  // only when their sourceProduct equals the row's sourceProduct; unstamped
+  // legacy records survive only on origin-product rows. This is what stops
+  // the cross-product history the DIC-1204 seed script left on 813 reprint
+  // rows from re-materialising onto card.priceHistory on every rebuild.
   console.log('\n── Step 6: Merge priceHistory into database ──');
   let mergedCount = 0;
+  let droppedRecords = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     const histFile = path.join(historyDir, `${cardId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
     try {
       const hist = JSON.parse(fs.readFileSync(histFile, 'utf-8'));
       if (hist.records && hist.records.length > 0) {
+        const filtered = filterProvenanceMatchedRecords(hist.records, card);
+        droppedRecords += (hist.records.length - filtered.length);
+        if (filtered.length === 0) continue;
         const ph = {};
-        for (const r of hist.records) {
-          ph[r.date] = r.price;
-        }
+        for (const r of filtered) ph[r.date] = r.price;
         card.priceHistory = sanitizePriceHistory(ph);
         mergedCount++;
       }
@@ -1629,7 +1644,7 @@ async function buildDatabase() {
       // no history file for this card, skip
     }
   }
-  console.log(`  [priceHistory] Merged into ${mergedCount} cards`);
+  console.log(`  [priceHistory] Merged into ${mergedCount} cards${droppedRecords > 0 ? `; dropped ${droppedRecords} cross-provenance records` : ''}`);
 
   // Step 6b: Do not restore stale buy prices from the previous database. Buy prices
   // are source-listing claims, not history like sell prices; merge-buy-prices.js is

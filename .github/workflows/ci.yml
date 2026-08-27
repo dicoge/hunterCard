@@ -226,6 +226,9 @@ jobs:
       - name: Verify per-cardNumber row order keeps CardDetail == deck (DIC-1167)
         run: npm run test:detail-deck-alignment-order
 
+      - name: Verify price-history provenance rejects cross-product records (DIC-1219)
+        run: npm run test:price-history-provenance
+
       - name: Verify scan totals fail closed on unresolved versions (DIC-1013)
         run: npm run test:scan-fail-closed
 

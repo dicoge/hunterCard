@@ -82,6 +82,7 @@
     "audit:card-data": "npm run test:card-data-audit -- --write",
     "test:version-alignment": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/verify-version-alignment.js",
     "test:detail-deck-alignment-order": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-detail-deck-alignment-order.mjs",
+    "test:price-history-provenance": "node scripts/test-price-history-provenance.mjs",
     "test:scan-fail-closed": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-version-fail-closed.mjs",
     "test:recognition-unavailable": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-unavailable.mjs",
     "test:recognition-provider": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-provider-fallback.mjs",

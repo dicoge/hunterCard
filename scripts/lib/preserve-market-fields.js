@@ -39,6 +39,76 @@ function cardSignatureParts(card) {
 }
 
 /**
+ * Origin-product prefix of a cardNumber. `hBP04-028` → `hBP04`,
+ * `hEB01-001` → `hEB01`, `hPR-014` → `hPR`. Returns '' when the input is
+ * unparsable so the caller treats it as "no prefix match" (never wildcard).
+ */
+export function cardNumberOriginPrefix(cardNumber) {
+  const m = String(cardNumber || '').match(/^([A-Za-z]+[0-9A-Za-z]*)-\d+/);
+  return m ? m[1] : '';
+}
+
+/**
+ * A "reprint row" is a printing whose sourceProduct differs from the origin-
+ * product prefix of its cardNumber — hBP04-028 shipped in hBP08 as a reprint,
+ * hBP02-026 shipped in hCO01 as a reprint, etc. Reprint rows are the exact
+ * pool where cross-product price-history contamination surfaced (DIC-1219):
+ * DIC-1204's seed script wrote origin-product records into these rows'
+ * canonical-ID history files and every subsequent build cycle carried them
+ * forward. Unstamped legacy records on a reprint row cannot be proven to
+ * belong to the reprint printing, so we treat them as unverified.
+ */
+export function isReprintRow(card) {
+  const prefix = cardNumberOriginPrefix(card?.cardNumber);
+  const source = String(card?.sourceProduct || card?.series || '');
+  if (!prefix || !source) return false;
+  return prefix !== source;
+}
+
+/**
+ * DIC-1219 provenance stamp for a durable price-history record. Every record
+ * written from `scripts/build-database.js` Step 5 carries this stamp so a
+ * later Step 6 read (or a preservation copy-over) can prove the record was
+ * produced under this exact printing's yuyu listing rather than a cross-
+ * product base's history that a seed script accidentally wrote onto this
+ * canonical-ID file. Existing records without the stamp are treated as
+ * unverified: origin-product rows grandfather them in (their durable files
+ * are structurally clean), reprint rows drop them (their unstamped payload
+ * was seeded from cross-product base data).
+ */
+export function stampHistoryRecord(record, card) {
+  const sp = toStr(card?.sourceProduct || card?.series);
+  if (!record || !sp) return record;
+  return { ...record, sourceProduct: sp };
+}
+
+/**
+ * Provenance filter for durable price-history records. Returns the records
+ * safe to merge onto `card` under the DIC-1219 fail-closed contract:
+ *   - Stamped records survive only when `sourceProduct` equals the card's
+ *     current sourceProduct.
+ *   - Unstamped legacy records survive only on origin-product rows (where
+ *     the row's own sourceProduct equals the cardNumber's origin prefix);
+ *     reprint rows drop them because DIC-1204's seed script wrote origin-
+ *     product base records onto reprint canonical-ID files.
+ * The rule is deliberately structural — it never inspects prices or dates —
+ * so a mutation that flattens either arm (e.g. "always keep unstamped
+ * records" OR "always keep stamped records") is immediately caught by the
+ * DIC-1219 mutation test.
+ */
+export function filterProvenanceMatchedRecords(records, card) {
+  if (!Array.isArray(records)) return [];
+  const currentSource = toStr(card?.sourceProduct || card?.series);
+  const cardIsReprint = isReprintRow(card);
+  return records.filter((record) => {
+    if (!record || typeof record !== 'object') return false;
+    const stamp = toStr(record.sourceProduct);
+    if (stamp) return stamp === currentSource;
+    return !cardIsReprint;
+  });
+}
+
+/**
  * Strict signature used for signature-based fallback. All three tokens must be
  * present. When any token is missing we return null so the row is not indexed
  * — an under-specified signature must never provide a match.
@@ -218,6 +288,14 @@ export function seedCanonicalHistoryFiles({
   for (const [cardId, card] of Object.entries(cards)) {
     const ph = card?.priceHistory;
     if (!ph || typeof ph !== 'object') continue;
+    // DIC-1219 fail-closed: only origin-product rows may re-seed their durable
+    // history file from in-memory priceHistory. Reprint rows land here with an
+    // in-memory priceHistory carried over from a previous build cycle whose
+    // sourceProduct we cannot prove (the map has no per-date stamp), so
+    // seeding would re-write the same cross-product records DIC-1219 just
+    // migrated out. Fresh Step 5 records still land on reprint rows through
+    // the stamped write below — the reprint history rebuilds legitimately.
+    if (isReprintRow(card)) continue;
     const preservedDates = Object.entries(ph).filter(
       ([, price]) => Number.isFinite(price) && price > 0,
     );
@@ -234,13 +312,13 @@ export function seedCanonicalHistoryFiles({
     let added = 0;
     for (const [date, price] of preservedDates) {
       if (existingDates.has(date)) continue;
-      records.push({
+      records.push(stampHistoryRecord({
         date,
         price,
         source: 'yuyu-tei',
         currency: 'JPY',
         cardId,
-      });
+      }, card));
       existingDates.add(date);
       added += 1;
     }
@@ -275,11 +353,20 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
     currentCard.prices = payload.prices;
     summary.prices = true;
   }
-  if (preserveYuyuPayload && payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
+  // DIC-1219: priceHistory carries no per-date stamp so we cannot filter it
+  // per record here. Instead refuse the copy-out whenever we cannot prove the
+  // previous row's provenance equals the current row's — a reprint row must
+  // never inherit an origin row's history, and vice versa. Exact-id match is
+  // provenance-safe by construction (id encodes sourceProduct); signature
+  // match requires `previous.sourceProduct` to equal current.
+  const prevSource = String(previous?.sourceProduct || previous?.series || '');
+  const currentSource = String(currentCard?.sourceProduct || currentCard?.series || '');
+  const historyProvenanceMatches = matchKind === 'exact-id' || (prevSource !== '' && prevSource === currentSource);
+  if (preserveYuyuPayload && historyProvenanceMatches && payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
     currentCard.priceHistory = payload.priceHistory;
     summary.priceHistory = true;
   }
-  if (preserveYuyuPayload && payload.priceHistoryMeta && !currentCard.priceHistoryMeta) {
+  if (preserveYuyuPayload && historyProvenanceMatches && payload.priceHistoryMeta && !currentCard.priceHistoryMeta) {
     currentCard.priceHistoryMeta = payload.priceHistoryMeta;
   }
   if (payload.ytStats && !currentCard.ytStats) {
