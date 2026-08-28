@@ -6,7 +6,9 @@ on:
     paths-ignore:
       - "data/**"
   pull_request:
-    branches: [main]
+    # DIC-1189: `staging` added so PRs into the isolated staging branch get
+    # the same Validate gate as PRs into main. Main-side contract unchanged.
+    branches: [main, staging]
 
 jobs:
   validate:
