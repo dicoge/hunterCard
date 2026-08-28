@@ -266,62 +266,95 @@ jobs:
           # A leak here would mean the same instance backs both, in which
           # case a canary written via one URL+token pair is visible via
           # the other URL+token pair.
+          #
+          # Rework 5th pass — blocker #1: EVERY error path fails closed.
+          # curl HTTP status, JSON parseability, and the presence of a
+          # `result` field are ALL required for each SET/GET/DEL. Any
+          # missing HTTP 2xx, malformed body, missing result, or curl
+          # error → HARD FAIL. Cross-reads must return exactly
+          # `result: null`; undefined / empty / non-JSON is NOT accepted
+          # as isolation. Self-reads must return the exact value we
+          # wrote.
           canary_stg="dic1189:canary:stg:$(node -e 'console.log(require("crypto").randomBytes(12).toString("hex"))')"
           canary_prd="dic1189:canary:prd:$(node -e 'console.log(require("crypto").randomBytes(12).toString("hex"))')"
           value_stg=$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')
           value_prd=$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')
 
+          # kv_cmd emits `<http_status>\n<body>` on stdout. Non-2xx and
+          # curl errors propagate to caller as a non-zero HTTP prefix or
+          # `000`, which the strict node parser hard-fails on.
           kv_cmd() {
-            # $1 = url, $2 = bearer, $3 = command JSON. Returns response body.
-            curl -sS $CURL_OPTS -H "Authorization: Bearer $2" \
+            # $1 = url, $2 = bearer, $3 = command JSON.
+            local url="$1" bearer="$2" body="$3"
+            local out=""
+            out=$(curl -sS $CURL_OPTS -o /tmp/kvbody.$$ -w '%{http_code}' \
+              -H "Authorization: Bearer $bearer" \
               -H "Content-Type: application/json" \
-              --data-raw "$3" "$1" || echo '{"error":"curl_failed"}'
+              --data-raw "$body" "$url" 2>/dev/null || echo "000")
+            printf '%s\n' "$out"
+            cat /tmp/kvbody.$$ 2>/dev/null || true
+            rm -f /tmp/kvbody.$$
           }
 
-          # Write staging canary with TTL, then attempt to read it via prod.
           set_stg=$(kv_cmd "${STAGING_KV_REST_API_URL}" "${STAGING_KV_REST_API_TOKEN}" \
             "$(node -e 'console.log(JSON.stringify(["SET",process.argv[1],process.argv[2],"EX","30"]))' "$canary_stg" "$value_stg")")
           set_prd=$(kv_cmd "${PROD_KV_REST_API_URL_REF}" "${PROD_KV_REST_API_TOKEN_REF}" \
             "$(node -e 'console.log(JSON.stringify(["SET",process.argv[1],process.argv[2],"EX","30"]))' "$canary_prd" "$value_prd")")
-          # Cross-reads: staging canary MUST NOT be visible via prod, and
-          # vice versa. A nil / null / non-string result is what we require.
           read_via_prd=$(kv_cmd "${PROD_KV_REST_API_URL_REF}" "${PROD_KV_REST_API_TOKEN_REF}" \
             "$(node -e 'console.log(JSON.stringify(["GET",process.argv[1]]))' "$canary_stg")")
           read_via_stg=$(kv_cmd "${STAGING_KV_REST_API_URL}" "${STAGING_KV_REST_API_TOKEN}" \
             "$(node -e 'console.log(JSON.stringify(["GET",process.argv[1]]))' "$canary_prd")")
-
-          # Sanity: our own writes must be visible to ourselves (otherwise
-          # the operator's URL/token don't work at all, which would ALSO
-          # hard-fail — we cannot certify an unreachable instance).
           self_stg=$(kv_cmd "${STAGING_KV_REST_API_URL}" "${STAGING_KV_REST_API_TOKEN}" \
             "$(node -e 'console.log(JSON.stringify(["GET",process.argv[1]]))' "$canary_stg")")
           self_prd=$(kv_cmd "${PROD_KV_REST_API_URL_REF}" "${PROD_KV_REST_API_TOKEN_REF}" \
             "$(node -e 'console.log(JSON.stringify(["GET",process.argv[1]]))' "$canary_prd")")
 
-          # Best-effort cleanup regardless of outcome.
+          # Best-effort cleanup (independent of the assertions below).
           kv_cmd "${STAGING_KV_REST_API_URL}" "${STAGING_KV_REST_API_TOKEN}" \
             "$(node -e 'console.log(JSON.stringify(["DEL",process.argv[1]]))' "$canary_stg")" > /dev/null || true
           kv_cmd "${PROD_KV_REST_API_URL_REF}" "${PROD_KV_REST_API_TOKEN_REF}" \
             "$(node -e 'console.log(JSON.stringify(["DEL",process.argv[1]]))' "$canary_prd")" > /dev/null || true
 
-          # Parse + assert. Values passed as CLI args to isolate them from
-          # the process.env dump; never echoed by node.
+          # Strict parse + assert. Every response must be:
+          #   line 1: HTTP status exactly "200"
+          #   remainder: valid JSON with a `result` field of the expected shape
+          # No error / undefined / empty / non-JSON path is accepted as
+          # isolation. Values passed as CLI args, never echoed by node.
           node -e '
             const args = process.argv.slice(1);
-            const [stgExp, prdExp, stgSelfRaw, prdSelfRaw, stgViaPrdRaw, prdViaStgRaw] = args;
-            const parse = (raw) => { try { return JSON.parse(raw).result; } catch { return raw; } };
-            const stgSelf = parse(stgSelfRaw);
-            const prdSelf = parse(prdSelfRaw);
-            const stgViaPrd = parse(stgViaPrdRaw);
-            const prdViaStg = parse(prdViaStgRaw);
-            let ok = true;
-            if (stgSelf !== stgExp) { console.error("::error::HARD FAIL: staging KV self-read did not return the just-written canary. The staging URL/token pair does not authenticate against a writable instance — cannot certify."); ok = false; }
-            if (prdSelf !== prdExp) { console.error("::error::HARD FAIL: production KV self-read did not return the just-written canary. The production reference URL/token pair does not authenticate — cannot certify."); ok = false; }
-            if (stgViaPrd !== null && stgViaPrd !== undefined && stgViaPrd !== "") { console.error("::error::HARD FAIL: production KV read the staging canary — they are the SAME instance. Isolation FAILED."); ok = false; }
-            if (prdViaStg !== null && prdViaStg !== undefined && prdViaStg !== "") { console.error("::error::HARD FAIL: staging KV read the production canary — they are the SAME instance. Isolation FAILED."); ok = false; }
-            if (!ok) process.exit(1);
+            const [stgExp, prdExp, setStgRaw, setPrdRaw, selfStgRaw, selfPrdRaw, viaPrdRaw, viaStgRaw] = args;
+            function parse(kind, raw) {
+              if (typeof raw !== "string") throw new Error(kind + ": empty response");
+              const idx = raw.indexOf("\n");
+              const status = idx === -1 ? raw : raw.slice(0, idx);
+              const body = idx === -1 ? "" : raw.slice(idx + 1);
+              if (status !== "200") throw new Error(kind + ": HTTP " + status + " (need exactly 200)");
+              let parsed;
+              try { parsed = JSON.parse(body); } catch { throw new Error(kind + ": response is not JSON"); }
+              if (!parsed || typeof parsed !== "object") throw new Error(kind + ": response is not a JSON object");
+              if (!Object.prototype.hasOwnProperty.call(parsed, "result")) throw new Error(kind + ": response has no `result` field");
+              return parsed.result;
+            }
+            let hardFail = null;
+            try {
+              const setStg = parse("SET staging", setStgRaw);
+              const setPrd = parse("SET prod", setPrdRaw);
+              if (setStg !== "OK") throw new Error("SET staging returned " + JSON.stringify(setStg) + " (need \"OK\")");
+              if (setPrd !== "OK") throw new Error("SET prod returned " + JSON.stringify(setPrd) + " (need \"OK\")");
+              const selfStg = parse("self-read staging", selfStgRaw);
+              const selfPrd = parse("self-read prod", selfPrdRaw);
+              if (selfStg !== stgExp) throw new Error("staging self-read returned unexpected value (canary mismatch — cannot certify)");
+              if (selfPrd !== prdExp) throw new Error("prod self-read returned unexpected value (canary mismatch — cannot certify)");
+              const viaPrd = parse("cross-read staging via prod", viaPrdRaw);
+              const viaStg = parse("cross-read prod via staging", viaStgRaw);
+              if (viaPrd !== null) throw new Error("production KV returned NON-null for the staging canary (result=" + JSON.stringify(viaPrd) + ") — SAME instance. Isolation FAILED.");
+              if (viaStg !== null) throw new Error("staging KV returned NON-null for the production canary (result=" + JSON.stringify(viaStg) + ") — SAME instance. Isolation FAILED.");
+            } catch (e) {
+              hardFail = e.message;
+            }
+            if (hardFail) { console.error("::error::HARD FAIL: " + hardFail); process.exit(1); }
             console.log("canary isolation proof OK — staging and production KV are provably separate instances.");
-          ' "$value_stg" "$value_prd" "$self_stg" "$self_prd" "$read_via_prd" "$read_via_stg"
+          ' "$value_stg" "$value_prd" "$set_stg" "$set_prd" "$self_stg" "$self_prd" "$read_via_prd" "$read_via_stg"
 
           # Mark the staging URL/token available to the env-set step below.
           echo "KV_REST_API_URL=${STAGING_KV_REST_API_URL}" >> "$GITHUB_ENV"
@@ -435,18 +468,24 @@ jobs:
           set -euo pipefail
           # Rework 4th pass — blocker #2: env writes are BOTH scope-aware AND
           # rollback-safe:
-          #   - reconcile_env <project> <key> <value|""> <type> <targets_json>
+          #   - reconcile_env <project> <key> <value|""> <type> <targets_json> <empty_semantic>
           #   - matches existing entries by (key AND target set AND
           #     gitBranch=null) — never touches an unrelated scoped entry
           #     (e.g. a preview-scoped APP_ENV when we mean production).
-          #   - empty value ⇒ DELETE the matching entry(ies) rather than
-          #     "skip" — clears a stale allowlist (e.g. EXPO_STAGING_TEST_
-          #     TOKENS) instead of leaving it in place.
+          #   - Rework 5th pass — blocker #2: empty-value semantics are
+          #     PER-KEY and default to PRESERVE (skip). ONLY the sixth
+          #     positional arg being literally "clear" turns empty into
+          #     a DELETE. This preserves absent optional staging
+          #     credentials (Google Web client id, GEMINI_API_KEY, etc.)
+          #     while still letting an empty EXPO_STAGING_TEST_TOKENS
+          #     clear the stale allowlist.
           #   - nonempty value ⇒ PATCH-in-place if a matching entry exists,
           #     POST otherwise; prior good value never deleted before its
           #     replacement is confirmed (blocker #6a preserved).
+          #   - EVERY mutation is validated by refetch + readback assertion
+          #     (blocker #2 fail-on-every-mutation-error).
           reconcile_env() {
-            proj="$1"; key="$2"; value="$3"; type="${4:-encrypted}"; targets_json="${5:-[\"production\",\"preview\"]}"
+            proj="$1"; key="$2"; value="$3"; type="${4:-encrypted}"; targets_json="${5:-[\"production\",\"preview\"]}"; empty_semantic="${6:-preserve}"
             listing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
               "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
             # Find matching entries: key + exact target-set + no gitBranch.
@@ -462,8 +501,16 @@ jobs:
             ' "$key" "$targets_json" 2>/dev/null || true)
 
             if [ -z "$value" ]; then
-              # DELETE semantics: remove exactly the matching-scope entries.
-              # Unrelated scopes preserved.
+              if [ "$empty_semantic" != "clear" ]; then
+                # PRESERVE: leave whatever's there alone. Absent optional
+                # staging credentials must NOT be blown away.
+                echo "reconcile env $proj/$key targets=$targets_json → empty value, preserve (no-op)"
+                return 0
+              fi
+              # CLEAR semantics (only EXPO_STAGING_TEST_TOKENS today):
+              # remove exactly the matching-scope entries; unrelated
+              # scopes preserved. Refetch and confirm the matching-scope
+              # entry no longer exists.
               if [ -z "$matching_ids" ]; then
                 echo "reconcile env $proj/$key targets=$targets_json → already absent, no-op"
                 return 0
@@ -479,6 +526,23 @@ jobs:
                   exit 1
                 fi
               done
+              # Readback: matching-scope entry MUST be gone.
+              verify=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+                "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
+              still=$(echo "$verify" | node -pe '
+                const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+                const wantKey = process.argv[1];
+                const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
+                (d.envs||[]).some(e =>
+                  e.key === wantKey &&
+                  JSON.stringify((e.target||[]).slice().sort()) === wantTargets &&
+                  (e.gitBranch == null || e.gitBranch === "")
+                ) ? "present" : "gone";
+              ' "$key" "$targets_json")
+              if [ "$still" != "gone" ]; then
+                echo "::error::Post-DELETE readback: $proj/$key (scope=$targets_json) still present — mutation failed to take effect."
+                exit 1
+              fi
               return 0
             fi
 
@@ -557,6 +621,33 @@ jobs:
               cat /tmp/post_resp.json
               exit 1
             fi
+            # Rework 5th pass — blocker #2: POST readback validation.
+            # Confirm exactly one entry now exists at (key, target, no
+            # gitBranch) and (for plain values) that its value matches.
+            verify=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
+            ok=$(echo "$verify" | node -pe '
+              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const wantKey = process.argv[1];
+              const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
+              const wantType = process.argv[3];
+              const wantValue = process.argv[4];
+              const es = (d.envs||[]).filter(x =>
+                x.key === wantKey &&
+                JSON.stringify((x.target||[]).slice().sort()) === wantTargets &&
+                (x.gitBranch == null || x.gitBranch === "")
+              );
+              if (es.length === 0) { console.log("missing"); process.exit(0); }
+              if (es.length !== 1) { console.log("duplicate_after_post"); process.exit(0); }
+              const e = es[0];
+              if (e.type !== wantType) { console.log("type_mismatch"); process.exit(0); }
+              if (wantType === "plain" && String(e.value||"") !== wantValue) { console.log("value_mismatch"); process.exit(0); }
+              console.log("ok");
+            ' "$key" "$targets_json" "$type" "$value")
+            if [ "$ok" != "ok" ]; then
+              echo "::error::Post-POST readback failed for $proj/$key (scope=$targets_json): $ok"
+              exit 1
+            fi
           }
 
           # Convenience wrapper: reconcile on the staging project. Defaults
@@ -566,6 +657,9 @@ jobs:
           upsert_env() { reconcile_env "${PROJECT_ID}" "$@"; }
 
           # Staging isolation vars.
+          # Args: <key> <value> <type> [<targets_json>] [<empty_semantic>]
+          # empty_semantic defaults to "preserve" — absent optional
+          # credentials are LEFT ALONE, not cleared.
           upsert_env "APP_ENV" "staging" "plain"
           upsert_env "EXPO_PUBLIC_APP_ENV" "staging" "plain"
           upsert_env "EXPO_PUBLIC_SITE_URL" "https://${STAGING_HOST}" "plain"
@@ -573,11 +667,12 @@ jobs:
           upsert_env "KV_REST_API_TOKEN" "${KV_REST_API_TOKEN}" "encrypted"
           upsert_env "AUTH_SESSION_SECRET_STAGING" "${AUTH_SESSION_SECRET_STAGING}" "encrypted"
           upsert_env "PUSH_NOTIFY_SECRET_STAGING" "${PUSH_NOTIFY_SECRET_STAGING}" "encrypted"
-          # EXPO_STAGING_TEST_TOKENS: an EMPTY value now DELETES the stale
-          # allowlist on the staging-scoped entry — a synth-only lane with
-          # no listed tokens sends to nobody, exactly as push-staging-guard
-          # enforces (rework 4th pass — blocker #2b).
-          upsert_env "EXPO_STAGING_TEST_TOKENS" "${EXPO_STAGING_TEST_TOKENS:-}" "plain"
+          # EXPO_STAGING_TEST_TOKENS is the ONLY key with explicit
+          # clear-on-empty semantics — an empty value DELETEs the stale
+          # allowlist so push-staging-guard's fail-closed default (send
+          # to nobody) kicks in. Every other optional secret defaults to
+          # preserve (rework 5th pass — blocker #2).
+          upsert_env "EXPO_STAGING_TEST_TOKENS" "${EXPO_STAGING_TEST_TOKENS:-}" "plain" "[\"production\",\"preview\"]" "clear"
           upsert_env "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID" "${EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:-}" "encrypted"
           upsert_env "GOOGLE_WEB_CLIENT_ID" "${GOOGLE_WEB_CLIENT_ID:-}" "encrypted"
           upsert_env "GEMINI_API_KEY" "${GEMINI_API_KEY:-}" "encrypted"
