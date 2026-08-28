@@ -87,10 +87,47 @@ export function stampHistoryRecord(record, card) {
  * caller can prove the previous row's yuyu payload actually belongs to the
  * current row's `sourceProduct`. Returns the lowercased path segment
  * (e.g. `hbp08`, `heb01`, `promo-hbp10`) or '' when the URL cannot be parsed.
+ *
+ * DIC-1227 CR follow-up hardening (rev.3): fail-closed on lookalike
+ * hostnames like `evil-yuyu-tei.jp`, malformed / opaque URLs, and missing
+ * imageUrl values. Uses the URL parser and asserts host equals exactly
+ * `card.yuyu-tei.jp`, protocol is https/http, and the path matches the
+ * shipped `/hocg/{size}/{product}/{filename}.{ext}` shape (product path
+ * segment is at least one alphanumeric or hyphenated token). Any deviation
+ * returns '' so the caller fails closed.
  */
 export function yuyuImageProductPath(url) {
-  const m = String(url || '').match(/yuyu-tei\.jp\/hocg\/[^/]+\/([^/]+)\//i);
-  return m ? m[1].toLowerCase() : '';
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return '';
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
+  if (parsed.hostname.toLowerCase() !== 'card.yuyu-tei.jp') return '';
+  const m = parsed.pathname.match(/^\/hocg\/[A-Za-z0-9_]+\/([A-Za-z0-9-]+)\/[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/i);
+  if (!m) return '';
+  return m[1].toLowerCase();
+}
+
+/**
+ * DIC-1227 CR follow-up rev.3: the known set of promo pack yuyu-tei subpaths.
+ * `promo-hbp10` etc. are legit (yuyu-tei hosts hPR promo pack images under
+ * these paths). Arbitrary `promo-*` values must fail closed — a URL like
+ * `/promo-foo/…` where `foo` is not a real promo pack is unverified provenance.
+ * The list is derived from the shipped data and PM's evidence; any new promo
+ * pack must be added here explicitly, otherwise the daily scrape will fail
+ * closed and surface it.
+ */
+const KNOWN_PROMO_PATHS = new Set([
+  'promo-hbp10',
+  'promo-hsd10',
+]);
+
+function isKnownPromoPath(urlProd) {
+  return KNOWN_PROMO_PATHS.has(urlProd);
 }
 
 /**
@@ -118,7 +155,7 @@ export function yuyuPayloadMatchesSource(previous, currentSourceProduct) {
   const src = String(currentSourceProduct || '').toLowerCase();
   if (!urlProd || !src) return false;
   if (urlProd === src) return true;
-  if (urlProd.startsWith('promo-') && src === 'hpr') return true;
+  if (isKnownPromoPath(urlProd) && src === 'hpr') return true;
   return false;
 }
 
@@ -166,7 +203,7 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
   const urlProd = yuyuImageProductPath(entry?.imageUrl);
   if (!urlProd) return false;
   if (urlProd === src) return true;
-  if (urlProd.startsWith('promo-') && src === 'hpr') return true;
+  if (isKnownPromoPath(urlProd) && src === 'hpr') return true;
   // Reprint carve-out (non-promo sourceProduct only): allow the entry whose
   // URL matches the cardNumber's origin-product prefix. This keeps a
   // /hbp02/ BASE entry on a `hBP02-084_hBP04_SR` reprint row so deck
@@ -179,6 +216,42 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
     if (originPrefix && urlProd === originPrefix) return true;
   }
   return false;
+}
+
+/**
+ * DIC-1227 CR follow-up rev.3: detect hPR rows that share a yuyu image URL
+ * across DISTINCT hPR printings of the same cardNumber. A single yuyu
+ * listing represents exactly one physical printing; if the DB has two
+ * hPR rows (e.g. `hSD03-002_hPR_P_hSD03-002_P` and
+ * `hSD03-002_hPR_P_hSD03-002_P_2`) both claiming the same
+ * `/promo-hbp10/10020.jpg` URL, we cannot prove either row's provenance —
+ * fail-closed on both.
+ *
+ * Takes a cards map (id → card). Returns a Set of card ids whose top-level
+ * yuyu payload (sellPrice, yuyuName, yuyuImage, timestamp, priceHistory,
+ * priceHistoryMeta, prices[], _rawPricesArchive) must be nulled because
+ * their yuyuImage collides with another hPR row for the same cardNumber.
+ */
+export function findAmbiguousPromoRowIds(cards) {
+  const bad = new Set();
+  if (!cards || typeof cards !== 'object') return bad;
+  const groupedByCardNumberAndUrl = new Map();
+  for (const [id, card] of Object.entries(cards)) {
+    const sp = String(card?.sourceProduct || card?.series || '').toLowerCase();
+    if (sp !== 'hpr') continue;
+    const cardNumber = String(card?.cardNumber || '');
+    const url = String(card?.yuyuImage || '').trim();
+    if (!cardNumber || !url) continue;
+    const key = `${cardNumber}\x00${url}`;
+    if (!groupedByCardNumberAndUrl.has(key)) groupedByCardNumberAndUrl.set(key, []);
+    groupedByCardNumberAndUrl.get(key).push(id);
+  }
+  for (const [, ids] of groupedByCardNumberAndUrl) {
+    if (ids.length > 1) {
+      for (const id of ids) bad.add(id);
+    }
+  }
+  return bad;
 }
 
 /**
@@ -566,7 +639,15 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
   const prevSource = String(previous?.sourceProduct || previous?.series || '');
   const currentSource = String(currentCard?.sourceProduct || currentCard?.series || '');
   const historyProvenanceMatches = matchKind === 'exact-id' || (prevSource !== '' && prevSource === currentSource);
-  const historyProvenanceOk = (useDerived ? anyProvenSurvivor : topLevelPayloadMatches);
+  // DIC-1227 CR follow-up rev.3: priceHistory records reflect the previous
+  // row's TOP-LEVEL yuyu payload snapshot at each date. If the previous
+  // top-level was cross-product (a wrong yuyuImage that our new
+  // deriveTopLevelFromEntries just replaced), the historical record values
+  // came from that WRONG top-level — carrying them into a corrected row
+  // would let a surviving entry vouch for unrelated priceHistory. Refuse
+  // priceHistory preservation whenever the previous top-level payload
+  // itself did not match current sourceProduct.
+  const historyProvenanceOk = topLevelPayloadMatches && (useDerived ? anyStrictSurvivor : true);
   if (preserveYuyuPayload && historyProvenanceOk && historyProvenanceMatches && payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
     currentCard.priceHistory = payload.priceHistory;
     summary.priceHistory = true;

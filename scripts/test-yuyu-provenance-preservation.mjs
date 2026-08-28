@@ -29,25 +29,43 @@ import assert from 'node:assert/strict';
 import {
   yuyuImageProductPath,
   yuyuPayloadMatchesSource,
+  pricesEntryMatchesSource,
   applyPreservedMarketFields,
+  findAmbiguousPromoRowIds,
 } from './lib/preserve-market-fields.js';
 
-// ---- unit: URL product path extraction -------------------------------------
+// ---- unit: URL product path extraction (rev.3 hardened) --------------------
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.jpg'), 'heb01');
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/hbp01/10041.jpg'), 'hbp01');
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg'), 'promo-hbp10');
-assert.equal(yuyuImageProductPath(''), '');
-assert.equal(yuyuImageProductPath(null), '');
-assert.equal(yuyuImageProductPath('not-a-url'), '');
+assert.equal(yuyuImageProductPath(''), '', 'empty string fails closed');
+assert.equal(yuyuImageProductPath(null), '', 'null fails closed');
+assert.equal(yuyuImageProductPath('not-a-url'), '', 'opaque non-URL fails closed');
+// Hostname boundary: lookalike domains must fail closed.
+assert.equal(yuyuImageProductPath('https://evil-yuyu-tei.jp/hocg/100_140/heb01/10100.jpg'), '', 'lookalike host evil-yuyu-tei.jp fails closed');
+assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp.evil.com/hocg/100_140/heb01/10100.jpg'), '', 'subdomain host suffix trick fails closed');
+assert.equal(yuyuImageProductPath('https://yuyu-tei.jp/hocg/100_140/heb01/10100.jpg'), '', 'apex host (missing card subdomain) fails closed');
+// Malformed / opaque URLs must fail closed.
+assert.equal(yuyuImageProductPath('javascript:alert(1)'), '', 'non-http protocol fails closed');
+assert.equal(yuyuImageProductPath('data:image/png;base64,abc'), '', 'data URL fails closed');
+assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/'), '', 'shape mismatch fails closed');
+assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/heb01/'), '', 'missing filename fails closed');
+assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.exe'), '', 'wrong extension fails closed');
 
 // ---- unit: provenance match --------------------------------------------------
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hpr/10200.jpg' }, 'hPR'), true);
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.jpg' }, 'hPR'), false, 'hEB01 -> hPR must NOT match');
-assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hPR'), true, 'promo-* carve-out for hPR');
+assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hPR'), true, 'known promo-hbp10 carve-out for hPR');
+assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg' }, 'hPR'), true, 'known promo-hsd10 carve-out for hPR');
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hBP08'), false, 'promo-* does not carve out non-hPR products');
+// DIC-1227 CR follow-up rev.3: arbitrary promo-* paths must fail closed.
+assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-fake/10051.jpg' }, 'hPR'), false, 'unknown promo-fake fails closed even for hPR');
+assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-random/10051.jpg' }, 'hPR'), false, 'unknown promo-random fails closed');
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: '' }, 'hPR'), false, 'empty yuyuImage fails gate');
 assert.equal(yuyuPayloadMatchesSource({}, 'hPR'), false, 'missing yuyuImage fails gate');
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp08/10240.jpg' }, ''), false, 'empty sourceProduct fails gate');
+// Lookalike hostname must fail closed at the payload level too.
+assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hocg/100_140/hpr/10200.jpg' }, 'hPR'), false, 'lookalike host cannot vouch for hPR');
 
 // ---- Fixture A: Mac-Codex CR shape — hPR promo inheriting hEB01 payload -----
 {
@@ -228,7 +246,12 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hoc
   assert.equal(current.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg', 'yuyuImage must be the surviving promo URL, not the /hbp06/ URL');
   assert.equal(current.yuyuName, '風真いろは(パラレル/ベーシックPRパック vol.1)', 'yuyuName must be the surviving entry name');
   assert.equal(current.timestamp, previous.timestamp, 'timestamp preserved since surviving entries exist');
-  assert.deepEqual(Object.keys(current.priceHistory), ['2026-08-28'], 'priceHistory preserved: at least one surviving entry establishes provenance');
+  // DIC-1227 CR follow-up rev.3: priceHistory records reflect the previous
+  // top-level payload — because previous.yuyuImage was /hbp06/ (cross-product
+  // for hPR), the historical records came from that wrong top-level and
+  // must NOT vouch for the corrected row. Fail-closed on priceHistory.
+  assert.deepEqual(Object.keys(current.priceHistory), [], 'priceHistory must NOT preserve when previous top-level was cross-product (record values would reflect the wrong printing)');
+  assert.equal(summary.priceHistory, false, 'summary.priceHistory must be false when previous top-level was wrong');
   // _rawPricesArchive entry-level filtered too.
   assert.equal(current._rawPricesArchive.length, 1);
   assert.equal(current._rawPricesArchive[0].imageUrl, 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg');
@@ -236,7 +259,6 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hoc
   assert.equal(summary.sellPrice, true);
   assert.equal(summary.prices, true);
   assert.equal(summary.yuyu, true);
-  assert.equal(summary.priceHistory, true);
 }
 
 // ---- Fixture F: prior blocker stays fail-closed under the new filter ------
@@ -277,6 +299,102 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hoc
   assert.equal(summary.prices, false);
   assert.equal(summary.yuyu, false);
   assert.equal(summary.priceHistory, false);
+}
+
+// ---- Fixture G: duplicate-printing yuyu URL assignment (rev.3) -------------
+// Mac-Codex CR flagged: `hSD03-002_hPR_P_hSD03-002_P` and
+// `hSD03-002_hPR_P_hSD03-002_P_2` both carried the same
+// /promo-hsd10/10020.jpg yuyu listing. A single yuyu listing represents ONE
+// physical printing, so both rows claiming it means neither's provenance is
+// provable — fail-closed on both.
+{
+  const cards = {
+    'hSD03-002_hPR_P_hSD03-002_P': {
+      cardNumber: 'hSD03-002', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg',
+    },
+    'hSD03-002_hPR_P_hSD03-002_P_2': {
+      cardNumber: 'hSD03-002', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg',
+    },
+    'hBP01-108_hPR_P_hBP01-108_P': {
+      cardNumber: 'hBP01-108', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10076.jpg',
+    },
+    'hBP01-108_hPR_P_hBP01-108_P_01': {
+      cardNumber: 'hBP01-108', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10076.jpg',
+    },
+    // Legitimate unique-per-cardNumber assignment — must NOT be flagged.
+    'hBP01-048_hPR_P_hBP01-048_P': {
+      cardNumber: 'hBP01-048', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg',
+    },
+    // Non-hPR row sharing a URL with a hPR row — must not affect the hPR
+    // set (different products, different listings expected).
+    'hBP01-108_hBP01_U_hBP01-108_U': {
+      cardNumber: 'hBP01-108', sourceProduct: 'hBP01', rarity: 'U',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10076.jpg',
+    },
+    // hPR row with empty yuyuImage — cannot collide.
+    'hBP01-090_hPR_P_hBP01-090_P_02': {
+      cardNumber: 'hBP01-090', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: '',
+    },
+  };
+  const ambiguous = findAmbiguousPromoRowIds(cards);
+  assert.equal(ambiguous.size, 4, `4 rows (2 pairs) should be flagged; got ${ambiguous.size}`);
+  assert.ok(ambiguous.has('hSD03-002_hPR_P_hSD03-002_P'));
+  assert.ok(ambiguous.has('hSD03-002_hPR_P_hSD03-002_P_2'));
+  assert.ok(ambiguous.has('hBP01-108_hPR_P_hBP01-108_P'));
+  assert.ok(ambiguous.has('hBP01-108_hPR_P_hBP01-108_P_01'));
+  assert.ok(!ambiguous.has('hBP01-048_hPR_P_hBP01-048_P'), 'unique-per-cardNumber assignment must NOT be flagged');
+  assert.ok(!ambiguous.has('hBP01-108_hBP01_U_hBP01-108_U'), 'non-hPR row must NOT be flagged (different product)');
+  assert.ok(!ambiguous.has('hBP01-090_hPR_P_hBP01-090_P_02'), 'empty yuyuImage cannot collide');
+}
+
+// ---- Fixture H: entry-level filter respects hostname + known-promo (rev.3) --
+// Entries with lookalike hostnames or unknown promo-* paths must fail closed
+// at the entry-filter level too — otherwise a spoofed entry could inject into
+// a hPR row's prices[] and vouch for cross-product data.
+{
+  const hprCard = { cardNumber: 'hBP01-048', sourceProduct: 'hPR', rarity: 'P' };
+  // Known promo carve-out matches.
+  assert.equal(
+    pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg' }, 'hPR', 'hBP01-048'),
+    true,
+    'known promo-hbp10 entry matches hPR row',
+  );
+  // Unknown promo fails closed.
+  assert.equal(
+    pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/promo-fake/10013.jpg' }, 'hPR', 'hBP01-048'),
+    false,
+    'unknown promo-fake entry cannot vouch for hPR row',
+  );
+  // Lookalike hostname fails closed.
+  assert.equal(
+    pricesEntryMatchesSource({ imageUrl: 'https://evil-yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg' }, 'hPR', 'hBP01-048'),
+    false,
+    'lookalike host cannot vouch for hPR row',
+  );
+  // Missing imageUrl fails closed.
+  assert.equal(
+    pricesEntryMatchesSource({}, 'hPR', 'hBP01-048'),
+    false,
+    'missing imageUrl cannot vouch',
+  );
+  // hBP04 reprint carve-out: origin-prefix /hbp02/ passes for hBP02-084's hBP04 row.
+  assert.equal(
+    pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10168.jpg' }, 'hBP04', 'hBP02-084'),
+    true,
+    'origin-prefix carve-out for non-promo reprint (hBP04 row of hBP02-084 cardNumber)',
+  );
+  // But NOT for a hPR row — hPR is promo-style, no origin-prefix carve-out.
+  assert.equal(
+    pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10109.jpg' }, 'hPR', 'hBP01-090'),
+    false,
+    'hPR row must NOT get the origin-prefix carve-out',
+  );
 }
 
 console.log('DIC-1227 yuyu-provenance preservation regression checks passed');
