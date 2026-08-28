@@ -6,7 +6,12 @@ on:
     paths-ignore:
       - "data/**"
   pull_request:
-    branches: [main]
+    # DIC-1189: `staging` added so PRs into the isolated staging branch get
+    # the same Validate gate as PRs into `main`. The main-side contract is
+    # unchanged (main is still listed and still the primary production
+    # gate); this only ADDS an equivalent gate for the staging lane so
+    # PR #150-class isolation PRs no longer land without CI.
+    branches: [main, staging]
 
 jobs:
   validate:
@@ -205,6 +210,12 @@ jobs:
 
       - name: Verify AdSlot real component render and fail-closed safety (DIC-1157)
         run: npm run test:adslot-render
+
+      - name: Verify DIC-1189 staging isolation suite (mutation-sensitive)
+        run: npm run test:dic1189-staging-isolation
+
+      - name: Verify real staging→production expo export bundle isolation (DIC-1189)
+        run: npm run test:bundle-cleanness-full
 
       - name: Check for console.log statements
         run: |

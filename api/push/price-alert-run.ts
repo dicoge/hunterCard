@@ -17,6 +17,14 @@ import {
   type AlertRecipient, type AlertSend,
 } from '../../src/utils/priceAlerts';
 import { toNodeHandler } from '../_lib/node-adapter';
+// DIC-1189 rework 3rd pass — blocker #3a: this endpoint is the SECOND Expo
+// sender in the codebase (alongside api/push/notify.ts). On staging every
+// recipient must be filtered through the EXPO_STAGING_TEST_TOKENS allow-list
+// (empty = no send) and every message data payload must carry
+// `environment=staging` so the receiving client can distinguish synthetic
+// from real. Production: allow-list is bypassed, tag is undefined, wire
+// payload byte-identical.
+import { filterPushRecipients, pushEnvironmentTag } from '../_lib/push-staging-guard';
 
 export const config = { runtime: 'nodejs' };
 
@@ -62,18 +70,24 @@ async function webHandler(req: Request) {
     // claim, release, commit, re-arm — is fenced with it, so a configuration
     // the user edits after this read can never be judged by this snapshot.
     const byToken = await getAllPriceAlerts();
-    const recipients: AlertRecipient[] = [];
+    const recipientsRaw: AlertRecipient[] = [];
     const revisions = new Map<string, string>();
     for (const [token, alerts] of Object.entries(byToken)) {
       for (const { rev, ...alert } of alerts) {
-        recipients.push({ token, alert });
+        recipientsRaw.push({ token, alert });
         revisions.set(armStateKey(token, alert.cardNumber, alert.printing), rev);
       }
     }
+    // DIC-1189 rework 3rd pass — blocker #3a: apply the staging synthetic-only
+    // filter here too. On production this is identity; on staging tokens not
+    // on EXPO_STAGING_TEST_TOKENS are dropped BEFORE any claim/send, so their
+    // arm state, revision fences, and claim leases never move.
+    const recipients: AlertRecipient[] = filterPushRecipients(recipientsRaw);
+    const stagingFilteredOut = recipientsRaw.length - recipients.length;
     if (recipients.length === 0) {
       return json({
-        ok: true, sent: 0, errors: 0, skipped: 0, contended: 0, stale: 0,
-        superseded: 0, rearmed: 0, unpriced: 0,
+        ok: true, sent: 0, errors: 0, skipped: stagingFilteredOut,
+        contended: 0, stale: 0, superseded: 0, rearmed: 0, unpriced: 0,
       });
     }
 
@@ -135,16 +149,29 @@ async function webHandler(req: Request) {
       held.delete(send.stateKey);
     };
 
+    // DIC-1189 rework 3rd pass — blocker #3a: on staging, stamp
+    // `environment=staging` into every push message's data payload so the
+    // receiving client (and any downstream analytics) can distinguish
+    // synthetic from real. Undefined on production so the wire is unchanged.
+    const envTag = pushEnvironmentTag();
     for (const batch of chunk(claimed, 100)) {
       const messages = batch.map((send: AlertSend) => ({
         to: send.token,
         ...buildAlertMessage(send),
-        data: {
-          cardNumber: send.alert.cardNumber,
-          printing: send.alert.printing,
-          price: send.price,
-          currency: send.currency,
-        },
+        data: envTag
+          ? {
+              cardNumber: send.alert.cardNumber,
+              printing: send.alert.printing,
+              price: send.price,
+              currency: send.currency,
+              environment: envTag,
+            }
+          : {
+              cardNumber: send.alert.cardNumber,
+              printing: send.alert.printing,
+              price: send.price,
+              currency: send.currency,
+            },
       }));
 
       const res = await fetch(EXPO_PUSH_URL, {
@@ -192,7 +219,7 @@ async function webHandler(req: Request) {
       ok: true,
       sent,
       errors,
-      skipped: evaluation.skipped,
+      skipped: evaluation.skipped + stagingFilteredOut,
       contended,
       stale,
       superseded,

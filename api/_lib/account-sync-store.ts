@@ -10,6 +10,10 @@ import { kv } from '@vercel/kv';
 import type { PriceAlert } from '../../src/utils/priceAlerts';
 import type { CurrencyCode, LanguageCode } from '../../src/store/settingsStore';
 import type { Deck, DeckCard, DeckOrigin, DeckSlot, DeckZone } from '../../src/utils/deckRules';
+// DIC-1189: every KV key here must be namespaced per APP_ENV so a staging
+// account-sync write can never leak into a production user's snapshot.
+// nsKey() throws on missing/unknown APP_ENV — fail closed.
+import { nsKey } from './kv-namespace';
 
 // Defense-in-depth upper bound on a stored alert price. Kept in sync with the
 // client's MAX_ALERT_PRICE (src/utils/priceAlerts.ts) but declared locally so
@@ -90,10 +94,10 @@ export class AccountSyncError extends Error {
   }
 }
 
-const SYNC_KEY = (userId: string) => `account-sync:user:${userId}`;
-const IDEMPOTENCY_KEY = (userId: string, key: string) => `account-sync:idempotency:${userId}:${key}`;
-const IDEMPOTENCY_INDEX_KEY = (userId: string) => `account-sync:idempotency-index:${userId}`;
-const DELETION_FENCE_KEY = (userId: string) => `account-sync:deleted:${userId}`;
+const SYNC_KEY = (userId: string) => nsKey(`account-sync:user:${userId}`);
+const IDEMPOTENCY_KEY = (userId: string, key: string) => nsKey(`account-sync:idempotency:${userId}:${key}`);
+const IDEMPOTENCY_INDEX_KEY = (userId: string) => nsKey(`account-sync:idempotency-index:${userId}`);
+const DELETION_FENCE_KEY = (userId: string) => nsKey(`account-sync:deleted:${userId}`);
 const IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24;
 
 const SAVE_SNAPSHOT = `-- ACCOUNT_SYNC_SAVE
@@ -543,7 +547,15 @@ export async function saveAccountSyncSnapshot(input: SaveAccountSyncInput): Prom
 
 async function accountSyncIdempotencyKeys(userId: string, indexKey: string): Promise<string[]> {
   const keys = new Set((await kv.smembers(indexKey)).map(String));
-  for await (const key of kv.scanIterator({ match: `account-sync:idempotency:${userId}:*`, count: 100 })) {
+  // DIC-1189 rework 3rd pass — blocker #2: the SCAN pattern MUST route through
+  // nsKey so a staging cleanup can never enumerate/delete production keys, and
+  // a production cleanup can never enumerate/delete staging keys. Pass the
+  // wildcard-suffixed key template through nsKey — production returns identity
+  // (bare pattern), staging prepends the `staging:` prefix. `nsKey` itself
+  // throws AppEnvUnresolved on missing/unknown APP_ENV so a scan can never be
+  // performed in an unattributed environment.
+  const pattern = nsKey(`account-sync:idempotency:${userId}:*`);
+  for await (const key of kv.scanIterator({ match: pattern, count: 100 })) {
     keys.add(String(key));
   }
   return [...keys];

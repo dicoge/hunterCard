@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { kv } from '@vercel/kv';
 import type { PriceAlert, AlertArmState } from '../../src/utils/priceAlerts';
+import { nsKey } from './kv-namespace';
 
 export type Platform = 'ios' | 'android';
 
@@ -13,17 +14,24 @@ export type PushToken = {
 
 export type PushWatchlist = Record<string, string[]>;
 
-const TOKENS_KEY = 'push:tokens';
+// DIC-1189: every KV key goes through nsKey(), which is namespaced per
+// APP_ENV via resolveAppEnvStrict(). Key producers are FUNCTIONS (called on
+// each use) rather than module-level consts, so importing this module does
+// not itself throw when APP_ENV is unset (rework-blocker #2). Only actual
+// KV traffic — the operation we want to fail closed — trips the guard.
+// Production keys are byte-identical to pre-DIC-1189 (bare); staging keys
+// carry the `staging:` prefix.
+const TOKENS_KEY = () => nsKey('push:tokens');
 // Each token's watchlist is its own Redis set (`push:watchlist:<token>`) so
 // add/remove use atomic SADD/SREM instead of read-modify-write on a shared
 // hash field. `WATCHLIST_TOKENS_KEY` is a registry set of every token that has
 // a watchlist, so notify.ts can still enumerate all subscribers (DIC-390 CR).
 const WATCHLIST_PREFIX = 'push:watchlist:';
-const WATCHLIST_TOKENS_KEY = 'push:watchlist-tokens';
-const LAST_ALERT_KEY = 'push:last-alert';
+const WATCHLIST_TOKENS_KEY = () => nsKey('push:watchlist-tokens');
+const LAST_ALERT_KEY = () => nsKey('push:last-alert');
 
 function watchlistKey(token: string): string {
-  return `${WATCHLIST_PREFIX}${token}`;
+  return nsKey(`${WATCHLIST_PREFIX}${token}`);
 }
 
 // Each token is stored as its own hash field, so concurrent registrations for
@@ -31,11 +39,11 @@ function watchlistKey(token: string): string {
 // had a read-modify-write race, MUL-DIC-390).
 export async function upsertToken(token: string, platform: Platform): Promise<void> {
   const now = new Date().toISOString();
-  const existing = await kv.hget<PushToken>(TOKENS_KEY, token);
+  const existing = await kv.hget<PushToken>(TOKENS_KEY(), token);
   const entry: PushToken = existing
     ? { ...existing, platform, updatedAt: now }
     : { token, platform, createdAt: now, updatedAt: now };
-  await kv.hset(TOKENS_KEY, { [token]: entry });
+  await kv.hset(TOKENS_KEY(), { [token]: entry });
 }
 
 export async function getWatchlistForToken(token: string): Promise<string[]> {
@@ -47,7 +55,7 @@ export async function getWatchlistForToken(token: string): Promise<string[]> {
 // different cards on the same token no longer clobber each other.
 export async function addWatchlistCard(token: string, cardNumber: string): Promise<string[]> {
   await kv.sadd(watchlistKey(token), cardNumber);
-  await kv.sadd(WATCHLIST_TOKENS_KEY, token);
+  await kv.sadd(WATCHLIST_TOKENS_KEY(), token);
   return getWatchlistForToken(token);
 }
 
@@ -71,7 +79,7 @@ return redis.call('SCARD', KEYS[1])
 `;
 
 export async function removeWatchlistCard(token: string, cardNumber: string): Promise<string[]> {
-  await kv.eval(REMOVE_WATCHLIST_CARD, [watchlistKey(token), WATCHLIST_TOKENS_KEY], [cardNumber, token]);
+  await kv.eval(REMOVE_WATCHLIST_CARD, [watchlistKey(token), WATCHLIST_TOKENS_KEY()], [cardNumber, token]);
   return getWatchlistForToken(token);
 }
 
@@ -82,7 +90,7 @@ export async function removeWatchlistCard(token: string, cardNumber: string): Pr
 // empty (mid add/remove) simply contributes nothing this cycle and is picked up
 // on the next enumeration (DIC-428 read-path race fix).
 export async function getWatchlist(): Promise<PushWatchlist> {
-  const tokens = ((await kv.smembers(WATCHLIST_TOKENS_KEY)) as string[] | null) ?? [];
+  const tokens = ((await kv.smembers(WATCHLIST_TOKENS_KEY())) as string[] | null) ?? [];
   const result: PushWatchlist = {};
   for (const token of tokens) {
     const cards = ((await kv.smembers(watchlistKey(token))) as string[] | null) ?? [];
@@ -95,7 +103,7 @@ export async function getWatchlist(): Promise<PushWatchlist> {
 // composite `<token>|<cardNumber>` strings, not bare card numbers.
 export async function getLastAlertTimes(keys: string[]): Promise<Record<string, number>> {
   if (keys.length === 0) return {};
-  const values = await kv.hmget<Record<string, number>>(LAST_ALERT_KEY, ...keys);
+  const values = await kv.hmget<Record<string, number>>(LAST_ALERT_KEY(), ...keys);
   return values ?? {};
 }
 
@@ -103,7 +111,7 @@ export async function setLastAlertTimes(keys: string[], timestamp: number): Prom
   if (keys.length === 0) return;
   const patch: Record<string, number> = {};
   for (const key of keys) patch[key] = timestamp;
-  await kv.hset(LAST_ALERT_KEY, patch);
+  await kv.hset(LAST_ALERT_KEY(), patch);
 }
 
 // ── Exact-version desired-price alerts (DIC-1023) ───────────────────────────
@@ -116,7 +124,7 @@ export async function setLastAlertTimes(keys: string[], timestamp: number): Prom
 // evaluator can enumerate subscribers.
 
 const PRICE_ALERT_PREFIX = 'push:price-alerts:';
-const PRICE_ALERT_TOKENS_KEY = 'push:price-alert-tokens';
+const PRICE_ALERT_TOKENS_KEY = () => nsKey('push:price-alert-tokens');
 const PRICE_ALERT_EPISODE_PREFIX = 'push:price-alert-episode:';
 // Revisions live in their own hash rather than inside the alert record: the
 // claim script must compare one against the stored config atomically, and a
@@ -132,11 +140,11 @@ const PRICE_ALERT_REV_PREFIX = 'push:price-alert-revs:';
 export const ALERT_CLAIM_LEASE_MS = 5 * 60_000;
 
 function priceAlertsKey(token: string): string {
-  return `${PRICE_ALERT_PREFIX}${token}`;
+  return nsKey(`${PRICE_ALERT_PREFIX}${token}`);
 }
 
 function alertRevsKey(token: string): string {
-  return `${PRICE_ALERT_REV_PREFIX}${token}`;
+  return nsKey(`${PRICE_ALERT_REV_PREFIX}${token}`);
 }
 
 // ── Alert episode state ─────────────────────────────────────────────────────
@@ -172,7 +180,7 @@ function alertRevsKey(token: string): string {
 // completed edit or delete can never be turned into a send (DIC-1025).
 
 function alertEpisodeKey(stateKey: string): string {
-  return `${PRICE_ALERT_EPISODE_PREFIX}${stateKey}`;
+  return nsKey(`${PRICE_ALERT_EPISODE_PREFIX}${stateKey}`);
 }
 
 /** Retire the claim of the episode being replaced. A delivered episode is
@@ -226,7 +234,7 @@ export async function upsertPriceAlert(token: string, key: string, alert: PriceA
   await kv.eval(
     UPSERT_PRICE_ALERT,
     [
-      priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY,
+      priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY(),
       alertEpisodeKey(`${token}|${key}`), alertRevsKey(token),
     ],
     [key, JSON.stringify(alert), token, randomUUID()],
@@ -256,7 +264,7 @@ export async function removePriceAlert(token: string, key: string): Promise<void
   await kv.eval(
     REMOVE_PRICE_ALERT,
     [
-      priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY,
+      priceAlertsKey(token), PRICE_ALERT_TOKENS_KEY(),
       alertEpisodeKey(`${token}|${key}`), alertRevsKey(token),
     ],
     [key, token],
@@ -316,7 +324,7 @@ function parseStoredAlert(value: unknown): PriceAlert | null {
  * that is exactly what the claim rejects. Registry cleanup lives only in
  * removePriceAlert, so enumerating tokens cannot race a concurrent upsert. */
 export async function getAllPriceAlerts(): Promise<Record<string, StoredPriceAlert[]>> {
-  const tokens = ((await kv.smembers(PRICE_ALERT_TOKENS_KEY)) as string[] | null) ?? [];
+  const tokens = ((await kv.smembers(PRICE_ALERT_TOKENS_KEY())) as string[] | null) ?? [];
   const out: Record<string, StoredPriceAlert[]> = {};
   for (const token of tokens) {
     const flat = (await kv.eval(

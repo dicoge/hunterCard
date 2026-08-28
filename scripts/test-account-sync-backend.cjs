@@ -143,6 +143,10 @@ function compileTs(relPath) {
 }
 
 for (const rel of [
+  // DIC-1189 boot deps.
+  'src/config/appEnv.ts',
+  'api/_lib/env-guard.ts',
+  'api/_lib/kv-namespace.ts',
   'api/_lib/session.ts',
   'api/_lib/identity-store.ts',
   'api/_lib/token-replay.ts',

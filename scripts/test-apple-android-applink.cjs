@@ -186,6 +186,10 @@ function fakeKv() {
 
 async function testExchangeReplayAndOwnership() {
   compileTs('api/_lib/apple-web-oauth.ts');
+  // DIC-1189 boot deps: apple-exchange-store now imports kv-namespace.
+  compileTs('src/config/appEnv.ts');
+  compileTs('api/_lib/env-guard.ts');
+  compileTs('api/_lib/kv-namespace.ts');
   const store = require(compileTs('api/_lib/apple-exchange-store.ts'));
   const oauth = require(path.join(outDir, 'api/_lib/apple-web-oauth.js'));
 

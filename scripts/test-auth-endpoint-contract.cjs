@@ -69,8 +69,11 @@ function compileTs(relPath) {
 }
 
 // Compile the handler and its dependency graph (relative requires resolve
-// against the mirrored outDir tree).
+// against the mirrored outDir tree). DIC-1189 boot deps first.
 for (const rel of [
+  'src/config/appEnv.ts',
+  'api/_lib/env-guard.ts',
+  'api/_lib/kv-namespace.ts',
   'api/_lib/identity-store.ts',
   'api/_lib/session.ts',
   'api/_lib/verify-token.ts',

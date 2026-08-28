@@ -1,6 +1,13 @@
 import { getWatchlist, getLastAlertTimes, setLastAlertTimes } from '../_lib/kv-storage';
 import { isInternalRequest } from '../_lib/internal-auth';
 import { toNodeHandler } from '../_lib/node-adapter';
+// DIC-1189 rework-blocker #3c + #6: staging can only send to synthetic
+// allow-listed Expo tokens; every push message is tagged with an
+// `environment` field on staging so the receiving client can distinguish
+// test from real. Payment env guard runs at process boot via
+// api/_lib/kv-namespace's module load (transitively imported by
+// kv-storage above).
+import { filterPushRecipients, pushEnvironmentTag } from '../_lib/push-staging-guard';
 
 export const config = { runtime: 'nodejs' };
 
@@ -14,7 +21,7 @@ type ExpoMessage = {
   to: string;
   title: string;
   body: string;
-  data: { cardNumber: string };
+  data: { cardNumber: string; environment?: 'staging' };
 };
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -74,18 +81,27 @@ async function webHandler(req: Request) {
     // cooldown per recipient. Skipping at the card level (before choosing
     // recipients) would let one watcher's recent delivery suppress the alert for
     // a different watcher who never received it (DIC-390 CR blocker 2).
-    const recipients = alerts.flatMap((alert) =>
+    const recipientsRaw = alerts.flatMap((alert) =>
       Object.entries(watchlist)
         .filter(([, cards]) => Array.isArray(cards) && cards.includes(alert.cardNumber))
         .map(([token]) => ({ token, alert })),
     );
+    // DIC-1189 rework-blocker #3c: on staging keep only synthetic
+    // allow-listed tokens (EXPO_STAGING_TEST_TOKENS). Production returns
+    // the input unchanged.
+    const recipients = filterPushRecipients(recipientsRaw);
+    const stagingFiltered = recipientsRaw.length - recipients.length;
 
     const lastAlertTimes = await getLastAlertTimes(
       [...new Set(recipients.map(({ token, alert }) => cooldownKey(token, alert.cardNumber)))],
     );
 
     const messages: ExpoMessage[] = [];
-    let skipped = 0;
+    let skipped = stagingFiltered;
+    // DIC-1189: stamp `environment=staging` into every message data payload
+    // on staging so the client can distinguish synthetic from real; the
+    // field is absent on production so the wire payload is byte-identical.
+    const envTag = pushEnvironmentTag();
 
     for (const { token, alert } of recipients) {
       const lastSent = Number(lastAlertTimes[cooldownKey(token, alert.cardNumber)] ?? 0);
@@ -97,7 +113,7 @@ async function webHandler(req: Request) {
         to: token,
         title: alert.title,
         body: alert.body,
-        data: { cardNumber: alert.cardNumber },
+        data: envTag ? { cardNumber: alert.cardNumber, environment: envTag } : { cardNumber: alert.cardNumber },
       });
     }
 
