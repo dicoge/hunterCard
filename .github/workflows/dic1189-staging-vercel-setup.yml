@@ -466,39 +466,117 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
-          # Rework 4th pass — blocker #2: env writes are BOTH scope-aware AND
-          # rollback-safe:
-          #   - reconcile_env <project> <key> <value|""> <type> <targets_json> <empty_semantic>
-          #   - matches existing entries by (key AND target set AND
-          #     gitBranch=null) — never touches an unrelated scoped entry
-          #     (e.g. a preview-scoped APP_ENV when we mean production).
-          #   - Rework 5th pass — blocker #2: empty-value semantics are
-          #     PER-KEY and default to PRESERVE (skip). ONLY the sixth
-          #     positional arg being literally "clear" turns empty into
-          #     a DELETE. This preserves absent optional staging
-          #     credentials (Google Web client id, GEMINI_API_KEY, etc.)
-          #     while still letting an empty EXPO_STAGING_TEST_TOKENS
-          #     clear the stale allowlist.
-          #   - nonempty value ⇒ PATCH-in-place if a matching entry exists,
-          #     POST otherwise; prior good value never deleted before its
-          #     replacement is confirmed (blocker #6a preserved).
-          #   - EVERY mutation is validated by refetch + readback assertion
-          #     (blocker #2 fail-on-every-mutation-error).
-          reconcile_env() {
-            proj="$1"; key="$2"; value="$3"; type="${4:-encrypted}"; targets_json="${5:-[\"production\",\"preview\"]}"; empty_semantic="${6:-preserve}"
-            listing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
-              "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
-            # Find matching entries: key + exact target-set + no gitBranch.
-            matching_ids=$(echo "$listing" | node -pe '
-              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+          # Rework 6th pass — blocker (env reconciliation gap): the env-list
+          # request must fail closed on any transport/status/JSON/envs-array
+          # error rather than converting a malformed response into an empty
+          # match set (which used to let a `clear` report "already absent"
+          # while a stale entry actually remained). checked_env_list writes
+          # `<http_status>\n<body>` to a temp file, then a strict node
+          # parser hard-fails unless: status is exactly 200, body is valid
+          # JSON, and body.envs is an array. On success it emits ONLY the
+          # `envs` JSON array to stdout — the caller pipes that straight
+          # into the matching-ID filter.
+          checked_env_list() {
+            local proj="$1" tmp
+            tmp=$(mktemp)
+            local code
+            code=$(curl -sS $CURL_OPTS -o "$tmp" -w '%{http_code}' \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}" \
+              2>/dev/null || echo "000")
+            if [ "$code" != "200" ]; then
+              rm -f "$tmp"
+              echo "::error::checked_env_list($proj): HTTP $code (need 200)" >&2
+              return 1
+            fi
+            # Validate body: valid JSON with envs:array. Never accept a
+            # malformed response as an empty listing.
+            local envs_json
+            envs_json=$(node -e '
+              const fs = require("fs");
+              let raw;
+              try { raw = fs.readFileSync(process.argv[1], "utf8"); } catch (e) { console.error("read_fail:" + e.message); process.exit(2); }
+              let d;
+              try { d = JSON.parse(raw); } catch (e) { console.error("not_json:" + e.message); process.exit(3); }
+              if (!d || typeof d !== "object") { console.error("not_object"); process.exit(4); }
+              if (!Array.isArray(d.envs)) { console.error("envs_not_array"); process.exit(5); }
+              process.stdout.write(JSON.stringify(d.envs));
+            ' "$tmp" 2>&1)
+            local nrc=$?
+            rm -f "$tmp"
+            if [ $nrc -ne 0 ]; then
+              echo "::error::checked_env_list($proj): body validation failed: $envs_json" >&2
+              return 1
+            fi
+            printf '%s' "$envs_json"
+          }
+
+          # Filter envs JSON array for entries matching key + exact target
+          # set + gitBranch=null. Emits one ID per line to stdout.
+          matching_env_ids() {
+            local envs_json="$1" key="$2" targets_json="$3"
+            printf '%s' "$envs_json" | node -pe '
+              const arr = JSON.parse(require("fs").readFileSync(0,"utf8"));
               const wantKey = process.argv[1];
               const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
-              (d.envs||[]).filter(e =>
+              arr.filter(e =>
                 e.key === wantKey &&
                 JSON.stringify((e.target||[]).slice().sort()) === wantTargets &&
                 (e.gitBranch == null || e.gitBranch === "")
               ).map(e => e.id).join("\n");
-            ' "$key" "$targets_json" 2>/dev/null || true)
+            ' "$key" "$targets_json"
+          }
+
+          # Assert exactly N matching-scope entries exist after a mutation.
+          # `exp_count` is the required count (1 for POST/PATCH; 0 for
+          # explicit clear). For POST/PATCH we also check `type` and (for
+          # `plain` values) `value`. Prints "ok" on success or a short
+          # reason on failure.
+          assert_env_count() {
+            local envs_json="$1" key="$2" targets_json="$3" exp_count="$4" want_type="${5:-}" want_value="${6:-}"
+            printf '%s' "$envs_json" | node -pe '
+              const arr = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const wantKey = process.argv[1];
+              const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
+              const expCount = Number(process.argv[3]);
+              const wantType = process.argv[4] || "";
+              const wantValue = process.argv[5] || "";
+              const es = arr.filter(x =>
+                x.key === wantKey &&
+                JSON.stringify((x.target||[]).slice().sort()) === wantTargets &&
+                (x.gitBranch == null || x.gitBranch === "")
+              );
+              if (es.length !== expCount) { console.log("count_mismatch:want=" + expCount + " got=" + es.length); process.exit(0); }
+              if (expCount === 0) { console.log("ok"); process.exit(0); }
+              // For expCount===1 (mutations): check type / value.
+              const e = es[0];
+              if (wantType && e.type !== wantType) { console.log("type_mismatch:want=" + wantType + " got=" + e.type); process.exit(0); }
+              if (wantType === "plain" && String(e.value||"") !== wantValue) { console.log("value_mismatch"); process.exit(0); }
+              console.log("ok");
+            ' "$key" "$targets_json" "$exp_count" "$want_type" "$want_value"
+          }
+
+          # Rework 4th pass — blocker #2: env writes are BOTH scope-aware AND
+          # rollback-safe:
+          #   - reconcile_env <project> <key> <value|""> <type> <targets_json> <empty_semantic>
+          #   - matches existing entries by (key AND target set AND
+          #     gitBranch=null) — never touches an unrelated scoped entry.
+          #   - Rework 5th pass — blocker #2: empty-value semantics are
+          #     PER-KEY and default to PRESERVE (skip). ONLY the sixth
+          #     positional arg being literally "clear" turns empty into
+          #     a DELETE.
+          #   - Rework 6th pass — blocker (env gap): initial + every
+          #     readback listing is fetched via checked_env_list which
+          #     hard-fails on transport/status/JSON/envs-array error.
+          #     Every duplicate DELETE checks its HTTP status. Every
+          #     mutation ends with an assert_env_count on the exact
+          #     scope: 1 for POST/PATCH, 0 for clear.
+          reconcile_env() {
+            proj="$1"; key="$2"; value="$3"; type="${4:-encrypted}"; targets_json="${5:-[\"production\",\"preview\"]}"; empty_semantic="${6:-preserve}"
+            local envs_json
+            envs_json=$(checked_env_list "$proj") || exit 1
+            # Find matching entries: key + exact target-set + no gitBranch.
+            matching_ids=$(matching_env_ids "$envs_json" "$key" "$targets_json")
 
             if [ -z "$value" ]; then
               if [ "$empty_semantic" != "clear" ]; then
@@ -509,9 +587,20 @@ jobs:
               fi
               # CLEAR semantics (only EXPO_STAGING_TEST_TOKENS today):
               # remove exactly the matching-scope entries; unrelated
-              # scopes preserved. Refetch and confirm the matching-scope
-              # entry no longer exists.
+              # scopes preserved. Every DELETE's HTTP status is checked;
+              # a final refetch asserts count=0 at the exact scope.
               if [ -z "$matching_ids" ]; then
+                # Even in the "already absent" fast path, do a checked
+                # refetch + assert_env_count 0 so a malformed initial
+                # listing cannot silently report "no matches" here.
+                local recheck
+                recheck=$(checked_env_list "$proj") || exit 1
+                local r
+                r=$(assert_env_count "$recheck" "$key" "$targets_json" 0)
+                if [ "$r" != "ok" ]; then
+                  echo "::error::Post-clear-fast-path readback for $proj/$key (scope=$targets_json): $r"
+                  exit 1
+                fi
                 echo "reconcile env $proj/$key targets=$targets_json → already absent, no-op"
                 return 0
               fi
@@ -526,21 +615,12 @@ jobs:
                   exit 1
                 fi
               done
-              # Readback: matching-scope entry MUST be gone.
-              verify=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
-                "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
-              still=$(echo "$verify" | node -pe '
-                const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-                const wantKey = process.argv[1];
-                const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
-                (d.envs||[]).some(e =>
-                  e.key === wantKey &&
-                  JSON.stringify((e.target||[]).slice().sort()) === wantTargets &&
-                  (e.gitBranch == null || e.gitBranch === "")
-                ) ? "present" : "gone";
-              ' "$key" "$targets_json")
-              if [ "$still" != "gone" ]; then
-                echo "::error::Post-DELETE readback: $proj/$key (scope=$targets_json) still present — mutation failed to take effect."
+              # Readback: exactly zero matching-scope entries.
+              local recheck r
+              recheck=$(checked_env_list "$proj") || exit 1
+              r=$(assert_env_count "$recheck" "$key" "$targets_json" 0)
+              if [ "$r" != "ok" ]; then
+                echo "::error::Post-DELETE readback for $proj/$key (scope=$targets_json): $r — mutation failed to take effect."
                 exit 1
               fi
               return 0
@@ -565,43 +645,30 @@ jobs:
                 cat /tmp/patch_resp.json
                 exit 1
               fi
-              # Validate the write: refetch and confirm the matching-scope
-              # entry now reports our target-set + (for plain values) our
-              # value. Encrypted-type values are not returned by the API,
-              # so for them we only assert the entry exists in the target
-              # set.
-              verify=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
-                "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
-              ok=$(echo "$verify" | node -pe '
-                const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-                const wantKey = process.argv[1];
-                const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
-                const wantType = process.argv[3];
-                const wantValue = process.argv[4];
-                const e = (d.envs||[]).find(x =>
-                  x.key === wantKey &&
-                  JSON.stringify((x.target||[]).slice().sort()) === wantTargets &&
-                  (x.gitBranch == null || x.gitBranch === "")
-                );
-                if (!e) { console.log("missing"); process.exit(0); }
-                if (e.type !== wantType) { console.log("type_mismatch"); process.exit(0); }
-                if (wantType === "plain" && String(e.value||"") !== wantValue) { console.log("value_mismatch"); process.exit(0); }
-                console.log("ok");
-              ' "$key" "$targets_json" "$type" "$value")
-              if [ "$ok" != "ok" ]; then
-                echo "::error::Post-write validation failed for $proj/$key (scope=$targets_json): $ok"
-                exit 1
-              fi
-              # Clean up duplicate matching-scope entries (should not
-              # normally exist; be defensive).
+              # Clean up any duplicate matching-scope entries FIRST (so
+              # the final readback proves count=1). Every DELETE checks
+              # its HTTP status; a failed cleanup DELETE hard-fails.
               for id in $matching_ids; do
                 [ -z "$id" ] && continue
                 [ "$id" = "$first_id" ] && continue
-                del_code=$(curl -sS $CURL_OPTS -o /dev/null -w '%{http_code}' -X DELETE \
+                dup_del_code=$(curl -sS $CURL_OPTS -o /dev/null -w '%{http_code}' -X DELETE \
                   --oauth2-bearer "${VERCEL_TOKEN}" \
                   "https://api.vercel.com/v9/projects/${proj}/env/${id}?teamId=${VERCEL_ORG_ID}")
-                echo "  cleanup duplicate $proj/$key/$id → HTTP $del_code"
+                echo "  cleanup duplicate DELETE $proj/$key/$id → HTTP $dup_del_code"
+                if [ "$dup_del_code" != "200" ] && [ "$dup_del_code" != "204" ]; then
+                  echo "::error::Failed to DELETE duplicate scoped env $proj/$key/$id (HTTP $dup_del_code)."
+                  exit 1
+                fi
               done
+              # Readback: exactly one matching-scope entry with the
+              # expected type and (for plain values) value.
+              local recheck r
+              recheck=$(checked_env_list "$proj") || exit 1
+              r=$(assert_env_count "$recheck" "$key" "$targets_json" 1 "$type" "$value")
+              if [ "$r" != "ok" ]; then
+                echo "::error::Post-PATCH readback for $proj/$key (scope=$targets_json): $r"
+                exit 1
+              fi
               return 0
             fi
 
@@ -621,31 +688,13 @@ jobs:
               cat /tmp/post_resp.json
               exit 1
             fi
-            # Rework 5th pass — blocker #2: POST readback validation.
-            # Confirm exactly one entry now exists at (key, target, no
-            # gitBranch) and (for plain values) that its value matches.
-            verify=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
-              "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
-            ok=$(echo "$verify" | node -pe '
-              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-              const wantKey = process.argv[1];
-              const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
-              const wantType = process.argv[3];
-              const wantValue = process.argv[4];
-              const es = (d.envs||[]).filter(x =>
-                x.key === wantKey &&
-                JSON.stringify((x.target||[]).slice().sort()) === wantTargets &&
-                (x.gitBranch == null || x.gitBranch === "")
-              );
-              if (es.length === 0) { console.log("missing"); process.exit(0); }
-              if (es.length !== 1) { console.log("duplicate_after_post"); process.exit(0); }
-              const e = es[0];
-              if (e.type !== wantType) { console.log("type_mismatch"); process.exit(0); }
-              if (wantType === "plain" && String(e.value||"") !== wantValue) { console.log("value_mismatch"); process.exit(0); }
-              console.log("ok");
-            ' "$key" "$targets_json" "$type" "$value")
-            if [ "$ok" != "ok" ]; then
-              echo "::error::Post-POST readback failed for $proj/$key (scope=$targets_json): $ok"
+            # Readback: exactly one matching-scope entry with the expected
+            # type and (for plain values) value.
+            local recheck r
+            recheck=$(checked_env_list "$proj") || exit 1
+            r=$(assert_env_count "$recheck" "$key" "$targets_json" 1 "$type" "$value")
+            if [ "$r" != "ok" ]; then
+              echo "::error::Post-POST readback for $proj/$key (scope=$targets_json): $r"
               exit 1
             fi
           }
@@ -695,31 +744,79 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           set -euo pipefail
-          # Inline scope-aware reconcile: find the entry whose target is
-          # exactly ["production"] and gitBranch is null. Do NOT touch a
-          # preview-scoped or branch-scoped APP_ENV.
-          listing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v9/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
-          match=$(echo "$listing" | node -pe '
-            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-            const wantTargets = JSON.stringify(["production"]);
-            const e = (d.envs||[]).find(x =>
-              x.key === "APP_ENV" &&
-              JSON.stringify((x.target||[]).slice().sort()) === wantTargets &&
-              (x.gitBranch == null || x.gitBranch === "")
-            );
-            e ? JSON.stringify({ id: e.id, type: e.type, value: e.value || "" }) : "";
-          ' 2>/dev/null || echo "")
+          # Rework 6th pass: use the same checked_env_list + count-based
+          # assertions as the staging step so a malformed initial listing
+          # cannot silently report "no matches" and so a duplicate exact-
+          # scope entry cannot slip past first-match discovery/readback.
+          checked_env_list() {
+            local proj="$1" tmp
+            tmp=$(mktemp)
+            local code
+            code=$(curl -sS $CURL_OPTS -o "$tmp" -w '%{http_code}' \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}" \
+              2>/dev/null || echo "000")
+            if [ "$code" != "200" ]; then
+              rm -f "$tmp"
+              echo "::error::checked_env_list($proj): HTTP $code (need 200)" >&2
+              return 1
+            fi
+            local envs_json
+            envs_json=$(node -e '
+              const fs = require("fs");
+              let raw;
+              try { raw = fs.readFileSync(process.argv[1], "utf8"); } catch (e) { console.error("read_fail:" + e.message); process.exit(2); }
+              let d;
+              try { d = JSON.parse(raw); } catch (e) { console.error("not_json:" + e.message); process.exit(3); }
+              if (!d || typeof d !== "object") { console.error("not_object"); process.exit(4); }
+              if (!Array.isArray(d.envs)) { console.error("envs_not_array"); process.exit(5); }
+              process.stdout.write(JSON.stringify(d.envs));
+            ' "$tmp" 2>&1)
+            local nrc=$?
+            rm -f "$tmp"
+            if [ $nrc -ne 0 ]; then
+              echo "::error::checked_env_list($proj): body validation failed: $envs_json" >&2
+              return 1
+            fi
+            printf '%s' "$envs_json"
+          }
+          # Emit ALL matching entries (id, type, value) as JSON, not just
+          # the first. Callers use the count to catch pre-existing
+          # duplicates and to enforce a single post-write entry.
+          matching_prod_app_env_entries() {
+            local envs_json="$1"
+            printf '%s' "$envs_json" | node -pe '
+              const arr = JSON.parse(require("fs").readFileSync(0,"utf8"));
+              const wantTargets = JSON.stringify(["production"]);
+              JSON.stringify(arr.filter(x =>
+                x.key === "APP_ENV" &&
+                JSON.stringify((x.target||[]).slice().sort()) === wantTargets &&
+                (x.gitBranch == null || x.gitBranch === "")
+              ).map(e => ({ id: e.id, type: e.type, value: e.value || "" })));
+            '
+          }
 
-          if [ -n "$match" ]; then
-            cur_id=$(echo "$match" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
-            cur_type=$(echo "$match" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).type')
-            cur_val=$(echo "$match" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).value')
+          envs_json=$(checked_env_list "${PROD_PROJECT_ID}") || exit 1
+          matches=$(matching_prod_app_env_entries "$envs_json")
+          count=$(printf '%s' "$matches" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).length')
+
+          # Fail-closed on a pre-existing DUPLICATE exact-scope entry: if
+          # holocard-hunter already has two APP_ENV entries scoped to
+          # ["production"] with no gitBranch, we would otherwise blindly
+          # PATCH the first and leave the shadow behind. Refuse.
+          if [ "$count" -gt 1 ]; then
+            echo "::error::Pre-existing DUPLICATE exact-scope entries for APP_ENV (production, no gitBranch) on ${PROD_PROJECT_ID}: $count found. Refuse to mutate — an operator must manually reconcile the duplicates first."
+            exit 1
+          fi
+
+          if [ "$count" = "1" ]; then
+            cur_id=$(printf '%s' "$matches" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8"))[0].id')
+            cur_type=$(printf '%s' "$matches" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8"))[0].type')
+            cur_val=$(printf '%s' "$matches" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8"))[0].value')
             if [ "$cur_type" = "plain" ] && [ "$cur_val" = "production" ]; then
               echo "APP_ENV=production on production-scoped entry already correct — no-op."
               exit 0
             fi
-            # PATCH the production-scoped entry ONLY.
             patch_body='{"value":"production","type":"plain","target":["production"]}'
             code=$(curl -sS $CURL_OPTS -o /tmp/patch_resp.json -w '%{http_code}' -X PATCH \
               --oauth2-bearer "${VERCEL_TOKEN}" \
@@ -731,9 +828,8 @@ jobs:
               echo "::error::Failed to update prod APP_ENV (HTTP $code). Body:"; cat /tmp/patch_resp.json; exit 1
             fi
           else
-            # No production-scoped entry yet: POST one. Any pre-existing
-            # preview-scoped or branch-scoped APP_ENV entries are LEFT
-            # ALONE (they may be operator-configured for a different lane).
+            # count === 0: no production-scoped entry yet. POST one.
+            # Preview / branch scopes are left alone (not in this filter).
             post_body='{"key":"APP_ENV","value":"production","type":"plain","target":["production"]}'
             code=$(curl -sS $CURL_OPTS -o /tmp/post_resp.json -w '%{http_code}' -X POST \
               --oauth2-bearer "${VERCEL_TOKEN}" \
@@ -746,27 +842,24 @@ jobs:
             fi
           fi
 
-          # Validate: refetch and confirm the production-scoped entry now
-          # reads APP_ENV=production; unrelated scopes preserved.
-          verify=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v9/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
-          ok=$(echo "$verify" | node -pe '
-            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-            const e = (d.envs||[]).find(x =>
-              x.key === "APP_ENV" &&
-              JSON.stringify((x.target||[]).slice().sort()) === JSON.stringify(["production"]) &&
-              (x.gitBranch == null || x.gitBranch === "")
-            );
-            if (!e) { console.log("missing"); process.exit(0); }
-            if (e.type !== "plain") { console.log("type_mismatch"); process.exit(0); }
+          # Readback via checked_env_list; assert exactly one production-
+          # scoped entry with type=plain and value=production. Any missing,
+          # duplicate, type_mismatch, or value_mismatch → HARD FAIL.
+          envs_json_after=$(checked_env_list "${PROD_PROJECT_ID}") || exit 1
+          after=$(matching_prod_app_env_entries "$envs_json_after")
+          verdict=$(printf '%s' "$after" | node -pe '
+            const arr = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            if (arr.length !== 1) { console.log("count_mismatch:want=1 got=" + arr.length); process.exit(0); }
+            const e = arr[0];
+            if (e.type !== "plain") { console.log("type_mismatch:want=plain got=" + e.type); process.exit(0); }
             if (String(e.value||"") !== "production") { console.log("value_mismatch"); process.exit(0); }
             console.log("ok");
           ')
-          if [ "$ok" != "ok" ]; then
-            echo "::error::Post-write validation failed for prod APP_ENV: $ok"
+          if [ "$verdict" != "ok" ]; then
+            echo "::error::Post-write readback failed for prod APP_ENV (production-scoped): $verdict"
             exit 1
           fi
-          echo "APP_ENV=production wired on production target ONLY (preview / branch scopes unchanged)."
+          echo "APP_ENV=production wired on production target ONLY (preview / branch scopes unchanged; exactly one production-scoped entry proven)."
 
       # ── Step 7: attach test.holohunter.dicoge.com ───────────────────────
       - name: Attach test.holohunter.dicoge.com domain
