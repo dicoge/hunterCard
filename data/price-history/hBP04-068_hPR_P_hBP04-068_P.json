@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-068_hPR_P_hBP04-068_P",
+  "cardNumber": "hBP04-068",
+  "name": "大空スバル",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-068_hPR_P_hBP04-068_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.400Z",
+  "nameZh": "大空昴"
+}

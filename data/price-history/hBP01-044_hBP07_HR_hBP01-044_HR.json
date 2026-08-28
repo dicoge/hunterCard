@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-044_hBP07_HR_hBP01-044_HR",
+  "cardNumber": "hBP01-044",
+  "name": "AZKi",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-044_hBP07_HR_hBP01-044_HR",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.258Z",
+  "nameZh": "AZKi"
+}

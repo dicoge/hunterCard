@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD09-004_hPR_P_hSD09-004_P",
+  "cardNumber": "hSD09-004",
+  "name": "宝鐘マリン",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-004_hPR_P_hSD09-004_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.445Z",
+  "nameZh": "寶鍾瑪琳"
+}

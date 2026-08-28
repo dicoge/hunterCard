@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD03-002_hPR_P_hSD03-002_P_2",
+  "cardNumber": "hSD03-002",
+  "name": "猫又おかゆ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD03-002_hPR_P_hSD03-002_P_2",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.272Z",
+  "nameZh": "貓又小粥"
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP05-042_ent07",
+  "cardNumber": "hBP05-042",
+  "name": "猫又おかゆ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-042_ent07",
+      "sourceProduct": "ent07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.316Z",
+  "nameZh": "貓又小粥"
+}

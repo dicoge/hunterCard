@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP06-044_ent07",
+  "cardNumber": "hBP06-044",
+  "name": "ハコス・ベールズ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-044_ent07",
+      "sourceProduct": "ent07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.323Z",
+  "nameZh": "霸子·貝爾茲"
+}

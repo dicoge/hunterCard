@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-104_hPR_P_hBP01-104_P_03",
+  "cardNumber": "hBP01-104",
+  "name": "ふつうのパソコン",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-104_hPR_P_hBP01-104_P_03",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.362Z",
+  "nameZh": "普通電腦"
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD05-002_hPR_P_hSD05-002_P",
+  "cardNumber": "hSD05-002",
+  "name": "轟はじめ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD05-002_hPR_P_hSD05-002_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.444Z",
+  "nameZh": "轟一"
+}

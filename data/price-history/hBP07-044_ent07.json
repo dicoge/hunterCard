@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP07-044_ent07",
+  "cardNumber": "hBP07-044",
+  "name": "尾丸ポルカ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-044_ent07",
+      "sourceProduct": "ent07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.334Z",
+  "nameZh": "尾丸波爾卡"
+}

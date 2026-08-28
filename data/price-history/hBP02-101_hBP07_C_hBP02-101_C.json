@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-101_hBP07_C_hBP02-101_C",
+  "cardNumber": "hBP02-101",
+  "name": "ミオファ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-101_hBP07_C_hBP02-101_C",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.379Z",
+  "nameZh": "澪友"
+}

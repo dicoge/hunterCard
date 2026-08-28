@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-124_hBP07_C_hBP01-124_C",
+  "cardNumber": "hBP01-124",
+  "name": "開拓者",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-124_hBP07_C_hBP01-124_C",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.366Z",
+  "nameZh": "開拓者"
+}

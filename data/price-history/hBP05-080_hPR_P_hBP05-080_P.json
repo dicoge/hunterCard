@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP05-080_hPR_P_hBP05-080_P",
+  "cardNumber": "hBP05-080",
+  "name": "SorAZセレブレーション",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-080_hPR_P_hBP05-080_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.409Z",
+  "nameZh": "SorAZ慶典"
+}

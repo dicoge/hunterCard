@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD12-003_hPR_P_hSD12-003_P",
+  "cardNumber": "hSD12-003",
+  "name": "シオリ・ノヴェラ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD12-003_hPR_P_hSD12-003_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.350Z",
+  "nameZh": "詩織·諾維拉"
+}

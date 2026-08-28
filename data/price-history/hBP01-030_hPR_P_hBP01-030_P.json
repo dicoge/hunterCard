@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-030_hPR_P_hBP01-030_P",
+  "cardNumber": "hBP01-030",
+  "name": "IRyS",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-030_hPR_P_hBP01-030_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.354Z",
+  "nameZh": "IRyS"
+}

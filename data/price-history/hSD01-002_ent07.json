@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD01-002_ent07",
+  "cardNumber": "hSD01-002",
+  "name": "AZKi",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-002_ent07",
+      "sourceProduct": "ent07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.270Z",
+  "nameZh": "AZKi"
+}

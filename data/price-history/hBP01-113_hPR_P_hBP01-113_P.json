@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-113_hPR_P_hBP01-113_P",
+  "cardNumber": "hBP01-113",
+  "name": "Promise",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-113_hPR_P_hBP01-113_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.365Z",
+  "nameZh": "Promise"
+}

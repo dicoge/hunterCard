@@ -1,0 +1,17 @@
+{
+  "cardId": "hY05-005_hBP05_SY_hY05-005_SY",
+  "cardNumber": "hY05-005",
+  "name": "紫エール",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 1480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY05-005_hBP05_SY_hY05-005_SY",
+      "sourceProduct": "hBP05"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.410Z",
+  "nameZh": "紫色應援"
+}

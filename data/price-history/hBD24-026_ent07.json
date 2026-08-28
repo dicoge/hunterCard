@@ -1,0 +1,17 @@
+{
+  "cardId": "hBD24-026_ent07",
+  "cardNumber": "hBD24-026",
+  "name": "猫又おかゆ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 6980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBD24-026_ent07",
+      "sourceProduct": "ent07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.254Z",
+  "nameZh": "貓又小粥"
+}

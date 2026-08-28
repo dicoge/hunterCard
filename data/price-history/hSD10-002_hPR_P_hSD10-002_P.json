@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD10-002_hPR_P_hSD10-002_P",
+  "cardNumber": "hSD10-002",
+  "name": "輪堂千速",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD10-002_hPR_P_hSD10-002_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.288Z",
+  "nameZh": "輪堂千速"
+}

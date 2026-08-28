@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP05-075_hPR_P_hBP05-075_P",
+  "cardNumber": "hBP05-075",
+  "name": "牛丼",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-075_hPR_P_hBP05-075_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.408Z",
+  "nameZh": "牛丼"
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-126_hBP05_C_hBP01-126_C",
+  "cardNumber": "hBP01-126",
+  "name": "座員",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-126_hBP05_C_hBP01-126_C",
+      "sourceProduct": "hBP05"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.366Z",
+  "nameZh": "座員"
+}

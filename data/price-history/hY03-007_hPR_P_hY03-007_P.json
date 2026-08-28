@@ -1,0 +1,17 @@
+{
+  "cardId": "hY03-007_hPR_P_hY03-007_P",
+  "cardNumber": "hY03-007",
+  "name": "赤エール",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 3480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY03-007_hPR_P_hY03-007_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.448Z",
+  "nameZh": "紅色應援"
+}

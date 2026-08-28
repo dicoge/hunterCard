@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-024_ent07",
+  "cardNumber": "hBP01-024",
+  "name": "ベスティア・ゼータ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-024_ent07",
+      "sourceProduct": "ent07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.257Z",
+  "nameZh": "貝絲緹亞·澤塔"
+}

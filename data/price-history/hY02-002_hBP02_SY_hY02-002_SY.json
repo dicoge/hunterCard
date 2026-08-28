@@ -1,0 +1,17 @@
+{
+  "cardId": "hY02-002_hBP02_SY_hY02-002_SY",
+  "cardNumber": "hY02-002",
+  "name": "緑エール",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 2980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY02-002_hBP02_SY_hY02-002_SY",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.379Z",
+  "nameZh": "綠色應援"
+}

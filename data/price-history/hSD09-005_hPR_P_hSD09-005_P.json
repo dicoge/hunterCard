@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD09-005_hPR_P_hSD09-005_P",
+  "cardNumber": "hSD09-005",
+  "name": "白銀ノエル",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD09-005_hPR_P_hSD09-005_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.350Z",
+  "nameZh": "白銀諾艾爾"
+}

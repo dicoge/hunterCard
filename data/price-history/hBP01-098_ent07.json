@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-098_ent07",
+  "cardNumber": "hBP01-098",
+  "name": "白銀ノエル",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-098_ent07",
+      "sourceProduct": "ent07"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.262Z",
+  "nameZh": "白銀諾艾爾"
+}

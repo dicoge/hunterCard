@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD01-013_hPR_P_hSD01-013_P",
+  "cardNumber": "hSD01-013",
+  "name": "SorAZ",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-013_hPR_P_hSD01-013_P",
+      "sourceProduct": "hPR"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.347Z",
+  "nameZh": "SorAZ"
+}

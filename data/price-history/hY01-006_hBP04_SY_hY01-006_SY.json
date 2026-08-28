@@ -1,0 +1,17 @@
+{
+  "cardId": "hY01-006_hBP04_SY_hY01-006_SY",
+  "cardNumber": "hY01-006",
+  "name": "白エール",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 2480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY01-006_hBP04_SY_hY01-006_SY",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.405Z",
+  "nameZh": "白色應援"
+}

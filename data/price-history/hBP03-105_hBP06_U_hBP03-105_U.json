@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-105_hBP06_U_hBP03-105_U",
+  "cardNumber": "hBP03-105",
+  "name": "ルーナイト",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-105_hBP06_U_hBP03-105_U",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.389Z",
+  "nameZh": "月騎士"
+}
