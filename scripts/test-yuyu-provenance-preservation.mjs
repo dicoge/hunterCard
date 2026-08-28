@@ -178,4 +178,105 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hoc
   assert.equal(current.yuyuImage, previous.yuyuImage);
 }
 
+// ---- Fixture E: mixed payload — wrong top-level image + valid nested promo -
+// Mac-Codex CR follow-up on 3be32715 flagged: my first pass rejected the
+// entire previous payload from top-level yuyuImage, erasing the sole official
+// hPR printing hBP01-048_hPR_P_hBP01-048_P's valid ¥980 /promo-hbp10/10013.jpg
+// entry inside prices[] because an unrelated /hbp06/ ¥80 entry had become
+// top-level yuyuImage. The fix must filter prices[] entry-by-entry and
+// derive top-level from surviving entries. This fixture is that exact shape.
+{
+  const previous = {
+    id: 'hBP01-048_hPR_P_hBP01-048_P',
+    cardNumber: 'hBP01-048',
+    sourceProduct: 'hPR',
+    rarity: 'P',
+    sellPrice: 80, // came from the /hbp06/ ¥80 entry
+    yuyuName: '風真いろは(パラレル/hBP06)',
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/10217.jpg',
+    timestamp: '2026-08-25T12:11:18.894Z',
+    prices: [
+      { name: '風真いろは', sellPrice: 120, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10063.jpg' },
+      { name: '風真いろは(パラレル/HR)', sellPrice: 9980, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/10229.jpg' },
+      { name: '風真いろは(パラレル/hBP06)', sellPrice: 80, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/10217.jpg' },
+      { name: '風真いろは(パラレル/hSD06)', sellPrice: 120, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hsd06/10013.jpg' },
+      // The single legit entry — hPR promo-* provenance.
+      { name: '風真いろは(パラレル/ベーシックPRパック vol.1)', sellPrice: 980, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg' },
+    ],
+    priceHistory: { '2026-08-28': 80 },
+    _rawPricesArchive: [
+      { name: 'archive-hBP06-entry', sellPrice: 80, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/10217.jpg' },
+      { name: 'archive-promo-entry', sellPrice: 980, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg' },
+    ],
+  };
+  const current = {
+    id: 'hBP01-048_hPR_P_hBP01-048_P',
+    cardNumber: 'hBP01-048',
+    sourceProduct: 'hPR',
+    rarity: 'P',
+    sellPrice: null,
+    prices: [],
+    priceHistory: {},
+  };
+  const summary = applyPreservedMarketFields(current, previous, { matchKind: 'exact-id', preserveYuyuPayload: true });
+  // The legit /promo-hbp10/ entry MUST survive; the /hbp01/, /hbp06/, /hsd06/ entries MUST be dropped.
+  assert.equal(current.prices.length, 1, `only the /promo-hbp10/ entry must survive; got ${current.prices.length}`);
+  assert.equal(current.prices[0].sellPrice, 980);
+  assert.equal(current.prices[0].imageUrl, 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg');
+  // Top-level fields derived from the surviving entry (NOT from the wrong /hbp06/ ¥80).
+  assert.equal(current.sellPrice, 980, 'top-level sellPrice must derive from the surviving promo entry, not the /hbp06/ ¥80');
+  assert.equal(current.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg', 'yuyuImage must be the surviving promo URL, not the /hbp06/ URL');
+  assert.equal(current.yuyuName, '風真いろは(パラレル/ベーシックPRパック vol.1)', 'yuyuName must be the surviving entry name');
+  assert.equal(current.timestamp, previous.timestamp, 'timestamp preserved since surviving entries exist');
+  assert.deepEqual(Object.keys(current.priceHistory), ['2026-08-28'], 'priceHistory preserved: at least one surviving entry establishes provenance');
+  // _rawPricesArchive entry-level filtered too.
+  assert.equal(current._rawPricesArchive.length, 1);
+  assert.equal(current._rawPricesArchive[0].imageUrl, 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg');
+  // The DIC-1227 CR summary must reflect what was preserved.
+  assert.equal(summary.sellPrice, true);
+  assert.equal(summary.prices, true);
+  assert.equal(summary.yuyu, true);
+  assert.equal(summary.priceHistory, true);
+}
+
+// ---- Fixture F: prior blocker stays fail-closed under the new filter ------
+// hBP01-090_hPR_P_hBP01-090_P_02 has NO /hpr/ or /promo-*/ entry inside
+// prices[]. Entry-level filtering must therefore drop everything and leave
+// the row fully null/empty — the DIC-1227 primary blocker outcome is
+// preserved.
+{
+  const previous = {
+    id: 'hBP01-090_hPR_P_hBP01-090_P_02',
+    cardNumber: 'hBP01-090',
+    sourceProduct: 'hPR',
+    rarity: 'P',
+    sellPrice: 30,
+    yuyuName: 'ムーナ・ホシノヴァ(hEB01)',
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.jpg',
+    prices: [
+      { name: 'ムーナ・ホシノヴァ', sellPrice: 220, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10109.jpg' },
+      { name: 'ムーナ・ホシノヴァ(パラレル/hEB01)', sellPrice: 120, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10101.jpg' },
+      { name: 'ムーナ・ホシノヴァ(hEB01)', sellPrice: 30, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.jpg' },
+    ],
+    priceHistory: { '2026-08-28': 30 },
+  };
+  const current = {
+    id: 'hBP01-090_hPR_P_hBP01-090_P_02',
+    cardNumber: 'hBP01-090',
+    sourceProduct: 'hPR',
+    rarity: 'P',
+    sellPrice: null, prices: [], priceHistory: {},
+  };
+  const summary = applyPreservedMarketFields(current, previous, { matchKind: 'signature', preserveYuyuPayload: true });
+  assert.equal(current.prices.length, 0, 'no /hpr/ or /promo-*/ entry means no survivor');
+  assert.equal(current.sellPrice, null);
+  assert.equal(current.yuyuImage, undefined);
+  assert.equal(current.yuyuName, undefined);
+  assert.equal(Object.keys(current.priceHistory).length, 0);
+  assert.equal(summary.sellPrice, false);
+  assert.equal(summary.prices, false);
+  assert.equal(summary.yuyu, false);
+  assert.equal(summary.priceHistory, false);
+}
+
 console.log('DIC-1227 yuyu-provenance preservation regression checks passed');

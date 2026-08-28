@@ -123,6 +123,115 @@ export function yuyuPayloadMatchesSource(previous, currentSourceProduct) {
 }
 
 /**
+ * DIC-1227 CR follow-up: match a single yuyu prices[] / _rawPricesArchive[]
+ * entry against a target sourceProduct. Same URL-product-path rule and
+ * promo-*-to-hPR carve-out as `yuyuPayloadMatchesSource`, but applied to the
+ * per-entry `imageUrl` so a row with a wrong TOP-LEVEL yuyuImage can still
+ * keep the individual entries whose provenance is provable (Mac-Codex CR
+ * flagged: hBP01-048_hPR_P_hBP01-048_P had a valid ¥980 /promo-hbp10/
+ * entry inside prices[] that my previous top-level-only clean erased).
+ */
+// DIC-1227 CR follow-up carve-out: yuyu-tei classifies some cards under
+// yuyu-scraper aliases (`ent07` = Entry Pack Vol. 7, etc.) that are NOT
+// official product codes. Their yuyuImage URLs point to whatever product
+// path yuyu-tei has for the card (often /hbp04/, /hbp01/, …). We can't
+// prove cross-product on those rows because the sourceProduct itself is
+// the yuyu-scraper's aggregation label. Filter passes any URL for them —
+// the filter still fails-closed on rows whose sourceProduct IS an
+// official product (hBP01…hSD19, hEB01, hPR, hCO01, hWF01, hCS01,
+// hPC01, hSD2025summer, hYS01).
+const NON_OFFICIAL_SOURCE_PRODUCTS = new Set(['ent07']);
+
+// DIC-1227 CR follow-up: hPR is a PROMO product — its rows represent standalone
+// entry-pack/promo listings, not "variant reprints of a base card". A promo
+// row that has no /hpr/ or /promo-*/ listing must fail-closed fully
+// (PM: keep hBP01-090_hPR_P_hBP01-090_P_02 fully null/empty). Non-promo
+// products like hBP04, hBP08 host reprints of an earlier product's card and
+// their prices[] legitimately aggregates the base printing (a /hbp02/ BASE
+// entry inside a hBP04 reprint row shows the base printing that the same
+// cardNumber originated from), so those rows may keep entries whose URL
+// path is the cardNumber's origin prefix in addition to their own
+// sourceProduct.
+const PROMO_STYLE_SOURCE_PRODUCTS = new Set(['hpr']);
+
+function cardNumberOriginPrefixLower(cardNumber) {
+  const m = String(cardNumber || '').match(/^([A-Za-z]+[0-9A-Za-z]*)-\d+/);
+  return m ? m[1].toLowerCase() : '';
+}
+
+export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCardNumber = null) {
+  const src = String(currentSourceProduct || '').toLowerCase();
+  if (!src) return false;
+  if (NON_OFFICIAL_SOURCE_PRODUCTS.has(src)) return true;
+  const urlProd = yuyuImageProductPath(entry?.imageUrl);
+  if (!urlProd) return false;
+  if (urlProd === src) return true;
+  if (urlProd.startsWith('promo-') && src === 'hpr') return true;
+  // Reprint carve-out (non-promo sourceProduct only): allow the entry whose
+  // URL matches the cardNumber's origin-product prefix. This keeps a
+  // /hbp02/ BASE entry on a `hBP02-084_hBP04_SR` reprint row so deck
+  // aggregation still finds the base printing for the cardNumber. Promo
+  // products (hPR) stay strict — they never inherit the base printing's
+  // listing, which is what makes hBP01-090_hPR_P fully null when no
+  // /hpr/ or /promo-*/ entry exists.
+  if (currentCardNumber && !PROMO_STYLE_SOURCE_PRODUCTS.has(src)) {
+    const originPrefix = cardNumberOriginPrefixLower(currentCardNumber);
+    if (originPrefix && urlProd === originPrefix) return true;
+  }
+  return false;
+}
+
+/**
+ * DIC-1227 CR follow-up entry-by-entry filter for prices[] and
+ * _rawPricesArchive[]. Returns the entries whose imageUrl product path
+ * matches the current row's sourceProduct (with the same
+ * promo-*-to-hPR carve-out). A row whose top-level yuyuImage points to a wrong product
+ * can therefore keep its provable per-entry provenance instead of losing
+ * the whole payload.
+ */
+export function filterProvenanceMatchedPriceEntries(entries, currentSourceProduct, currentCardNumber = null) {
+  if (!Array.isArray(entries)) return [];
+  return entries.filter((entry) => pricesEntryMatchesSource(entry, currentSourceProduct, currentCardNumber));
+}
+
+/**
+ * DIC-1227 CR follow-up: derive TOP-LEVEL yuyu fields (sellPrice, yuyuName,
+ * yuyuImage, timestamp) from a set of surviving prices[] entries. Same shape
+ * as build-database.js's fresh-loop derivation so a preserved row that only
+ * keeps a subset of provable entries lands with consistent top-level fields
+ * — never mixing a rejected entry's image with a surviving entry's price.
+ * Callers pass `previousTimestamp` so a surviving-entries payload can
+ * inherit the prior scrape's timestamp for the whole row (the entries
+ * themselves rarely carry per-entry timestamps).
+ */
+export function deriveTopLevelFromEntries(entries, previousTimestamp = '') {
+  const list = Array.isArray(entries) ? entries.filter((e) => e && typeof e === 'object') : [];
+  if (list.length === 0) {
+    return { sellPrice: null, yuyuName: '', yuyuImage: '', timestamp: '' };
+  }
+  let lowestPrice = null;
+  let lowestName = '';
+  for (const entry of list) {
+    const p = Number(entry.sellPrice);
+    if (!Number.isFinite(p) || p <= 0) continue;
+    if (lowestPrice === null || p < lowestPrice) {
+      lowestPrice = p;
+      lowestName = String(entry.name || '');
+    }
+  }
+  // Prefer the image of the row that supplied the lowest price; otherwise
+  // fall back to the first entry with an imageUrl.
+  const cheapest = list.find((e) => Number(e.sellPrice) === lowestPrice && (e.name || '') === lowestName);
+  const derivedImage = String(cheapest?.imageUrl || list.find((e) => e.imageUrl)?.imageUrl || '');
+  return {
+    sellPrice: lowestPrice,
+    yuyuName: lowestName,
+    yuyuImage: derivedImage,
+    timestamp: previousTimestamp || '',
+  };
+}
+
+/**
  * Provenance filter for durable price-history records. Returns the records
  * safe to merge onto `card` under the DIC-1219 fail-closed contract:
  *   - Stamped records survive only when `sourceProduct` equals the card's
@@ -394,48 +503,97 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
   // main 9f4b63bac flagged hBP01-090_hPR_P_hBP01-090_P_02 inheriting a
   // sellPrice/yuyuName/yuyuImage from an hEB01 listing for exactly this
   // reason. ytStats is NOT yuyu-derived and stays subject to its own guard.
-  const yuyuProvenanceMatches = preserveYuyuPayload && yuyuPayloadMatchesSource(previous, currentCard?.sourceProduct);
-  const preservePrintingArrays = yuyuProvenanceMatches && (matchKind === 'exact-id' || !isSignedPrinting(currentCard));
-  if (yuyuProvenanceMatches && payload.sellPrice != null && !(Number.isFinite(currentCard.sellPrice) && currentCard.sellPrice > 0)) {
-    currentCard.sellPrice = payload.sellPrice;
+  //
+  // DIC-1227 CR follow-up: the previous "top-level yuyuImage decides
+  // everything" rule was too coarse — the reviewer showed
+  // hBP01-048_hPR_P_hBP01-048_P had a valid ¥980 /promo-hbp10/ prices[]
+  // entry that survived a fresh scrape but got nulled with the whole
+  // payload because an unrelated /hbp06/ entry had become top-level
+  // yuyuImage. Filter prices[] and _rawPricesArchive[] entry-by-entry,
+  // then derive top-level sellPrice / yuyuName / yuyuImage FROM the
+  // surviving entries so provable payload survives whether or not the
+  // previous row's top-level pointer was correct.
+  const currentSourceProduct = currentCard?.sourceProduct;
+  // DIC-1227 CR follow-up split filter:
+  //   - prices[] and _rawPricesArchive[] use the RELAXED filter (own product +
+  //     promo-*/hpr + origin-prefix on non-promo rows) so a hBP04 reprint
+  //     keeps its /hbp02/ BASE entry for deck aggregation.
+  //   - top-level fields are derived from the STRICT filter (own product +
+  //     promo-*/hpr only) so a hBP04 reprint's TOP-LEVEL sellPrice/yuyuImage
+  //     reflects its own printing, not the base's.
+  const filteredPrices = filterProvenanceMatchedPriceEntries(payload.prices, currentSourceProduct, currentCard?.cardNumber);
+  const filteredArchive = filterProvenanceMatchedPriceEntries(payload._rawPricesArchive, currentSourceProduct, currentCard?.cardNumber);
+  const strictSurvivors = filterProvenanceMatchedPriceEntries(payload.prices, currentSourceProduct);
+  const anyStrictSurvivor = strictSurvivors.length > 0;
+  const anyProvenSurvivor = filteredPrices.length > 0;
+  // Signed printings (DIC-1013/1140) fail-closed strip prices[] on
+  // signature match — their aggregate top-level fields live on the
+  // scalar previous.sellPrice/yuyuImage/yuyuName. Only the payload's
+  // top-level yuyu provenance can vouch for those scalars, and only when
+  // it points to this row's sourceProduct.
+  const preservePrintingArrays = preserveYuyuPayload && anyProvenSurvivor && (matchKind === 'exact-id' || !isSignedPrinting(currentCard));
+  const useDerived = preservePrintingArrays;
+  const topLevelPayloadMatches = preserveYuyuPayload && yuyuPayloadMatchesSource(previous, currentSourceProduct);
+  const derived = useDerived
+    ? deriveTopLevelFromEntries(strictSurvivors, payload.timestamp)
+    : topLevelPayloadMatches
+      ? {
+          sellPrice: payload.sellPrice ?? null,
+          yuyuName: payload.yuyuName || '',
+          yuyuImage: payload.yuyuImage || '',
+          timestamp: payload.timestamp || '',
+        }
+      : { sellPrice: null, yuyuName: '', yuyuImage: '', timestamp: '' };
+
+  const canSetTopLevel = useDerived
+    ? anyStrictSurvivor
+    : topLevelPayloadMatches;
+
+  if (canSetTopLevel && derived.sellPrice != null && !(Number.isFinite(currentCard.sellPrice) && currentCard.sellPrice > 0)) {
+    currentCard.sellPrice = derived.sellPrice;
     summary.sellPrice = true;
   }
-  if (preservePrintingArrays && payload.prices && !(Array.isArray(currentCard.prices) && currentCard.prices.length > 0)) {
-    currentCard.prices = payload.prices;
+  if (preservePrintingArrays && filteredPrices.length > 0 && !(Array.isArray(currentCard.prices) && currentCard.prices.length > 0)) {
+    currentCard.prices = filteredPrices;
     summary.prices = true;
   }
   // DIC-1219 + DIC-1227: priceHistory carries no per-date stamp so we cannot
-  // filter it per record here. Refuse the copy-out unless (a) the previous
-  // row's yuyu provenance still matches current's sourceProduct (DIC-1227)
+  // filter it per record here. Refuse the copy-out unless (a) at least one
+  // prices[] entry survives the DIC-1227 entry-level provenance filter
+  // (proving the row has legit provenance under the current sourceProduct)
   // AND (b) either the match was by exact id (provenance-safe by construction)
   // or the previous row's sourceProduct equals current's (DIC-1219).
   const prevSource = String(previous?.sourceProduct || previous?.series || '');
   const currentSource = String(currentCard?.sourceProduct || currentCard?.series || '');
   const historyProvenanceMatches = matchKind === 'exact-id' || (prevSource !== '' && prevSource === currentSource);
-  if (yuyuProvenanceMatches && historyProvenanceMatches && payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
+  const historyProvenanceOk = (useDerived ? anyProvenSurvivor : topLevelPayloadMatches);
+  if (preserveYuyuPayload && historyProvenanceOk && historyProvenanceMatches && payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
     currentCard.priceHistory = payload.priceHistory;
     summary.priceHistory = true;
   }
-  if (yuyuProvenanceMatches && historyProvenanceMatches && payload.priceHistoryMeta && !currentCard.priceHistoryMeta) {
+  if (preserveYuyuPayload && historyProvenanceOk && historyProvenanceMatches && payload.priceHistoryMeta && !currentCard.priceHistoryMeta) {
     currentCard.priceHistoryMeta = payload.priceHistoryMeta;
   }
   if (payload.ytStats && !currentCard.ytStats) {
     currentCard.ytStats = payload.ytStats;
     summary.ytStats = true;
   }
-  if (preservePrintingArrays && payload._rawPricesArchive && !(Array.isArray(currentCard._rawPricesArchive) && currentCard._rawPricesArchive.length > 0)) {
-    currentCard._rawPricesArchive = payload._rawPricesArchive;
+  if (preservePrintingArrays && filteredArchive.length > 0 && !(Array.isArray(currentCard._rawPricesArchive) && currentCard._rawPricesArchive.length > 0)) {
+    currentCard._rawPricesArchive = filteredArchive;
   }
-  if (preservePrintingArrays && payload.yuyuName && !currentCard.yuyuName) {
-    currentCard.yuyuName = payload.yuyuName;
+  // yuyuName/yuyuImage are the printing's own identifier; when the signed-
+  // printing contract strips prices[] (preservePrintingArrays=false), the
+  // corresponding yuyu identity must also NOT carry across.
+  if (preservePrintingArrays && derived.yuyuName && !currentCard.yuyuName) {
+    currentCard.yuyuName = derived.yuyuName;
     summary.yuyu = true;
   }
-  if (preservePrintingArrays && payload.yuyuImage && !currentCard.yuyuImage) {
-    currentCard.yuyuImage = payload.yuyuImage;
+  if (preservePrintingArrays && derived.yuyuImage && !currentCard.yuyuImage) {
+    currentCard.yuyuImage = derived.yuyuImage;
     summary.yuyu = true;
   }
-  if (yuyuProvenanceMatches && payload.timestamp && !currentCard.timestamp) {
-    currentCard.timestamp = payload.timestamp;
+  if (canSetTopLevel && derived.timestamp && !currentCard.timestamp) {
+    currentCard.timestamp = derived.timestamp;
   }
   return summary;
 }

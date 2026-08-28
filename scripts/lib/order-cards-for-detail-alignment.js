@@ -52,17 +52,40 @@ export function cardNumberOriginPrefix(cardNumber) {
  * Row rank inside its own cardNumber group. Lower rank wins. Structural, not
  * price-value: two rows with the same rank keep their input order.
  */
+// A BASE-printing entry is any prices[] name without a (パラレル/…) or
+// (サイン/…) suffix — i.e. the entry name is only the character name, no
+// parenthesised variant marker. Deck aggregation picks BASE whenever any
+// row's prices[] contains such an entry, so detail must READ from a row
+// whose own prices[] also contains one.
+const BASE_LABEL_RE = /^[^()]+$/;
+function pricesContainsBaseEntry(card) {
+  if (!Array.isArray(card?.prices)) return false;
+  return card.prices.some((entry) => {
+    const name = String(entry?.name || '').trim();
+    return name.length > 0 && BASE_LABEL_RE.test(name);
+  });
+}
+
 export function detailAlignmentRowRank(card) {
   const prefix = cardNumberOriginPrefix(card?.cardNumber);
   const source = String(card?.sourceProduct || card?.series || '');
-  const hasPrices = Array.isArray(card?.prices) && card.prices.length > 0;
-  // Origin-product priority DOMINATES prices-non-empty priority. Under DIC-1227
-  // the origin row may legitimately ship prices=[] once contamination is
-  // stripped; detail still needs to see it first so buildPriceVersions falls
-  // back to a single BASE entry that matches deck aggregation.
+  const pricesLen = Array.isArray(card?.prices) ? card.prices.length : 0;
+  const containsBase = pricesContainsBaseEntry(card);
+  // DIC-1227 CR follow-up: rank rows by
+  //   1. containsBaseEntry first (deck-side aggregation picks BASE whenever
+  //      any row contributes a BASE entry; detail must read from a row that
+  //      also contains one so buildPriceVersions can produce the BASE
+  //      candidate),
+  //   2. prices[] richness (a legacy yuyu-scraper aggregation row like
+  //      `_ent07` may still carry every cardNumber variant even after the
+  //      DIC-1227 clean strips cross-product entries off origin rows —
+  //      putting the richer row first lets detail see the same option set
+  //      deck already sees),
+  //   3. origin-product-match as the final tiebreaker.
   let rank = 0;
-  if (!prefix || source !== prefix) rank += 100;
-  if (!hasPrices) rank += 10;
+  if (!containsBase) rank += 1000;
+  rank -= pricesLen * 100;
+  if (!prefix || source !== prefix) rank += 10;
   return rank;
 }
 

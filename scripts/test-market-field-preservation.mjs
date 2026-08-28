@@ -41,6 +41,9 @@ const provenPayload = {
       name: 'ラプラス・ダークネス',
       sellPrice: 980,
       rarity: 'U',
+      // DIC-1227: production prices[] entries always carry imageUrl (100% in
+      // the shipped DB). The provenance filter reads the URL product path.
+      imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hsd03/10011.jpg',
       buyPrice: 40,
       buyPriceVersion: 'BASE',
       buyPriceSource: 'fullahead',
@@ -50,7 +53,7 @@ const provenPayload = {
   yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hsd03/10011.jpg',
   timestamp: '2026-08-25T12:00:00.000Z',
   priceHistory: { '2026-08-23': 1000, '2026-08-24': 980, '2026-08-25': 980 },
-  _rawPricesArchive: [{ name: 'ラプラス・ダークネス', sellPrice: 980, rarity: '' }],
+  _rawPricesArchive: [{ name: 'ラプラス・ダークネス', sellPrice: 980, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hsd03/10011.jpg' }],
   ytStats: {
     subscriberCount: 1200000,
     totalViewCount: 200000000,
@@ -84,7 +87,7 @@ const prevCards = {
     series: 'hSD03',
     sourceProduct: 'hSD03',
     sellPrice: 9999,
-    prices: [{ name: 'ラプラス・ダークネス', sellPrice: 9999, rarity: 'C' }],
+    prices: [{ name: 'ラプラス・ダークネス', sellPrice: 9999, rarity: 'C', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hsd03/10012.jpg' }],
   },
   // Ambiguous case: two prior rows share the same signature. Must refuse to
   // pick — DIC-1013 fail-closed rule.
@@ -175,10 +178,10 @@ function freshCurrentCard(overrides = {}) {
     series: 'hBP02',
     // pre-DIC-1140 build: SEC row still carried yuyu variants + a signed image
     sellPrice: 420,
-    prices: [{ name: '宝鐘マリン(パラレル/サイン)', sellPrice: 89800, rarity: '' }],
+    prices: [{ name: '宝鐘マリン(パラレル/サイン)', sellPrice: 89800, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg' }],
     yuyuName: '宝鐘マリン(パラレル/サイン)',
     yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg',
-    _rawPricesArchive: [{ name: '宝鐘マリン(パラレル/サイン)', sellPrice: 89800 }],
+    _rawPricesArchive: [{ name: '宝鐘マリン(パラレル/サイン)', sellPrice: 89800, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg' }],
     priceHistory: { '2026-08-23': 420, '2026-08-24': 420 },
     ytStats: null,
   };
@@ -366,7 +369,7 @@ function freshCurrentCard(overrides = {}) {
     rarity: 'C',
     sourceProduct: 'hBP01',
     sellPrice: 50,
-    prices: [{ name: '鷹嶺ルイ', sellPrice: 50, rarity: 'C' }],
+    prices: [{ name: '鷹嶺ルイ', sellPrice: 50, rarity: 'C', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10037.jpg' }],
     priceHistory: { ...preservedHistory },
   };
   const cards = { [renamedId]: card };
