@@ -115,10 +115,43 @@ function bundleJsFiles() {
   return walkFiles(jsDir).filter((p) => p.endsWith('.js'));
 }
 
+// DIC-1189 rework 4th pass — blocker #3c: match not just the RAW banner
+// string but every form Metro / babel-plugin-minify might have emitted:
+//   - the raw UTF-8 string ("TEST · 測試環境")
+//   - the ES-string \uXXXX-escaped form ("TEST · 測試環境")
+//   - fromCharCode-encoded runs (Metro's non-ASCII fallback on some plugins)
+// Each variant is a byte pattern the bundler could plausibly emit; any hit in
+// the production bundle is a DCE regression.
+function needleVariants(needle) {
+  const raw = needle;
+  const escaped = Array.from(needle)
+    .map((ch) => {
+      const code = ch.codePointAt(0);
+      if (code < 0x80) return ch;
+      return '\\u' + code.toString(16).padStart(4, '0');
+    })
+    .join('');
+  const fromCharCode = 'String.fromCharCode(' +
+    Array.from(needle).map((ch) => ch.codePointAt(0)).join(',') +
+    ')';
+  const seen = new Set([raw, escaped, fromCharCode]);
+  return [...seen];
+}
+
 function bundleContains(needle) {
+  const variants = needleVariants(needle);
   for (const f of bundleJsFiles()) {
     const body = fs.readFileSync(f, 'utf8');
-    if (body.includes(needle)) return { file: path.relative(ROOT, f), snippet: body.slice(Math.max(0, body.indexOf(needle) - 40), body.indexOf(needle) + needle.length + 40) };
+    for (const v of variants) {
+      const idx = body.indexOf(v);
+      if (idx !== -1) {
+        return {
+          file: path.relative(ROOT, f),
+          variant: v === needle ? 'raw' : v.startsWith('String.fromCharCode') ? 'fromCharCode' : 'unicode-escape',
+          snippet: body.slice(Math.max(0, idx - 40), idx + v.length + 40),
+        };
+      }
+    }
   }
   return null;
 }

@@ -128,33 +128,6 @@ jobs:
           echo "PROD_PROJECT_ID=$prod_id" >> "$GITHUB_ENV"
           echo "Resolved production project id: $prod_id"
 
-      # ── Pre-flight: pull existing production KV wiring for distinctness ──
-      # Rework-blocker #1: we need to compare the staging KV values against
-      # what production currently uses. Reading is safe (encrypted values are
-      # NOT returned for encrypted-type entries; but the URL is plain — good
-      # enough for a distinctness check on url + short token hash).
-      - name: Pre-flight — read prod KV distinctness reference
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-        run: |
-          set -euo pipefail
-          listing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v9/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
-          prod_kv_url=$(echo "$listing" | node -pe '
-            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-            const e = (d.envs||[]).find(e => e.key === "KV_REST_API_URL" && typeof e.value === "string");
-            e ? e.value : "";
-          ' 2>/dev/null || echo "")
-          # Encrypted token values are NOT returned by the list endpoint, so
-          # we compare tokens via a separate step that uses the operator-
-          # supplied STAGING_KV_REST_API_TOKEN vs the token committed to the
-          # holocard-hunter project. If Vercel ever changes the API to
-          # expose the encrypted token, this becomes a full comparison.
-          echo "PROD_KV_REST_API_URL_VALUE<<EOF" >> "$GITHUB_ENV"
-          echo "$prod_kv_url" >> "$GITHUB_ENV"
-          echo "EOF" >> "$GITHUB_ENV"
-
       # ── Step 1: resolve or create the staging Vercel project ────────────
       - name: Resolve or create holohunter-staging project
         id: project
@@ -230,57 +203,127 @@ jobs:
           echo "Created project id: $id"
           echo "PROJECT_ID=$id" >> "$GITHUB_ENV"
 
-      # ── Step 2: verify STAGING_KV_* is applied AND distinct from prod ──
-      # Rework-blocker #1: no automatic KV provisioning. Operator must have
-      # applied an independent Upstash Redis / Vercel KV via the Vercel
-      # Marketplace UI (or Upstash console) and supplied the resulting
-      # KV_REST_API_URL / KV_REST_API_TOKEN as GitHub secrets prefixed with
-      # STAGING_. This step verifies:
-      #   (a) both STAGING_KV_* secrets are non-empty
-      #   (b) STAGING_KV_REST_API_URL differs from the production KV url
-      #       already installed on holocard-hunter
-      #   (c) STAGING_KV_REST_API_TOKEN differs from any operator-supplied
-      #       PROD_KV_REST_API_TOKEN reference (also a GitHub secret; used
-      #       only for distinctness comparison, never written anywhere)
-      # If any check fails, HARD FAIL — no fallback to shared production KV.
-      - name: Verify independent staging KV (operator-applied proof)
+      # ── Step 2: verify STAGING_KV_* is applied AND provably distinct ────
+      # Rework 4th pass — blocker #1: the previous "distinctness" check
+      # compared the staging URL against a Vercel-API-read value that was
+      # empty for encrypted-only entries, letting any nonempty staging URL
+      # trivially pass. It also compared the staging token only against a
+      # GitHub secret whose contents we could not prove match holocard-
+      # hunter's deployed value. Both were inference-from-empty holes.
+      #
+      # This step now uses an AUTHORITATIVE proof: after byte-comparing the
+      # operator-supplied secrets (all four required, all four must differ
+      # in the same lane), it PINGs both REST endpoints with their supplied
+      # tokens to prove they authenticate against SEPARATE Upstash / Vercel
+      # KV instances via a canary write-and-cross-read:
+      #   1. Write a random nonce K→A to staging KV via its URL+token.
+      #   2. Attempt to read K from production KV via ITS URL+token.
+      #   3. Read MUST be null. If it returns A, the two point at the same
+      #      instance — HARD FAIL. Repeat the other direction with a
+      #      different nonce.
+      # This is a real cross-instance isolation proof; a shared instance
+      # cannot satisfy it. The canary keys are prefixed with
+      # `dic1189:canary:` and TTL 30s so they expire on their own; each
+      # canary is DELETE'd explicitly at the end regardless. Secret values
+      # never leave the runner (never echoed; only Bearer'd into curl).
+      - name: Verify independent staging KV (operator-applied proof + canary isolation)
         if: env.PROJECT_ID != '' && inputs.apply == true
         env:
           STAGING_KV_REST_API_URL: ${{ secrets.STAGING_KV_REST_API_URL }}
           STAGING_KV_REST_API_TOKEN: ${{ secrets.STAGING_KV_REST_API_TOKEN }}
+          PROD_KV_REST_API_URL_REF: ${{ secrets.KV_REST_API_URL }}
           PROD_KV_REST_API_TOKEN_REF: ${{ secrets.KV_REST_API_TOKEN }}
         run: |
           set -euo pipefail
+          # (a) All four secrets must be non-empty. Empty prod references
+          #     are a HARD FAIL — we never infer isolation from missing data.
           if [ -z "${STAGING_KV_REST_API_URL:-}" ] || [ -z "${STAGING_KV_REST_API_TOKEN:-}" ]; then
-            echo "::error::HARD FAIL: STAGING_KV_REST_API_URL / STAGING_KV_REST_API_TOKEN GitHub secrets are missing. Provision an independent Upstash Redis / Vercel KV instance via the Marketplace UI and register its REST url+token as GitHub secrets before re-running. No fallback to shared production KV."
+            echo "::error::HARD FAIL: STAGING_KV_REST_API_URL / STAGING_KV_REST_API_TOKEN GitHub secrets are missing. Provision an independent Upstash Redis / Vercel KV via the Marketplace UI and register its REST url+token as GitHub secrets."
             exit 1
           fi
-          # (b) distinctness on URL.
-          if [ "${STAGING_KV_REST_API_URL}" = "${PROD_KV_REST_API_URL_VALUE:-}" ]; then
-            echo "::error::HARD FAIL: STAGING_KV_REST_API_URL equals production KV URL — staging must use an independent instance."
+          if [ -z "${PROD_KV_REST_API_URL_REF:-}" ] || [ -z "${PROD_KV_REST_API_TOKEN_REF:-}" ]; then
+            echo "::error::HARD FAIL: production reference GitHub secrets KV_REST_API_URL / KV_REST_API_TOKEN are required for the distinctness proof. Register both before re-running. This workflow will NEVER infer separation from an empty/hidden reference."
             exit 1
           fi
-          # (c) distinctness on token, computed in-process without echoing values.
-          # We compare via node so nothing is logged. Any collision (including
-          # a missing reference) is treated as a hard fail — the reference is a
-          # GitHub secret set explicitly for this comparison.
-          if [ -n "${PROD_KV_REST_API_TOKEN_REF:-}" ]; then
-            node -e '
-              const stg = process.env.STAGING_KV_REST_API_TOKEN || "";
-              const prd = process.env.PROD_KV_REST_API_TOKEN_REF || "";
-              if (!stg || !prd) { console.error("::error::empty staging or prod KV token reference"); process.exit(1); }
-              if (stg === prd) { console.error("::error::HARD FAIL: STAGING_KV_REST_API_TOKEN equals production KV token — staging must use an independent instance."); process.exit(1); }
-              console.log("Staging KV token is distinct from production KV token reference.");
-            '
-          else
-            # No reference token available for comparison. This is a workflow
-            # setup gap, not a security bypass: refuse to proceed rather than
-            # accept a possibly-shared token.
-            echo "::error::HARD FAIL: KV_REST_API_TOKEN GitHub secret is required so this workflow can prove STAGING_KV_REST_API_TOKEN is distinct from it. Register KV_REST_API_TOKEN as a repo secret before re-running."
-            exit 1
-          fi
-          # Mask the token so no subsequent step can leak it.
+
+          # (b) Mask both secret values so no downstream step can leak them.
           echo "::add-mask::${STAGING_KV_REST_API_TOKEN}"
+          echo "::add-mask::${PROD_KV_REST_API_TOKEN_REF}"
+
+          # (c) Byte-distinctness comparison, in-process, no values echoed.
+          node -e '
+            const stgUrl = process.env.STAGING_KV_REST_API_URL || "";
+            const stgTok = process.env.STAGING_KV_REST_API_TOKEN || "";
+            const prdUrl = process.env.PROD_KV_REST_API_URL_REF || "";
+            const prdTok = process.env.PROD_KV_REST_API_TOKEN_REF || "";
+            if (stgUrl === prdUrl) { console.error("::error::HARD FAIL: STAGING_KV_REST_API_URL equals production reference URL."); process.exit(1); }
+            if (stgTok === prdTok) { console.error("::error::HARD FAIL: STAGING_KV_REST_API_TOKEN equals production reference token."); process.exit(1); }
+            console.log("byte-distinctness OK (URL + token both differ)");
+          '
+
+          # (d) Canary cross-read: PROVE the two instances are separate.
+          # Upstash Redis REST accepts `POST { command: [...] }` at `/`.
+          # A leak here would mean the same instance backs both, in which
+          # case a canary written via one URL+token pair is visible via
+          # the other URL+token pair.
+          canary_stg="dic1189:canary:stg:$(node -e 'console.log(require("crypto").randomBytes(12).toString("hex"))')"
+          canary_prd="dic1189:canary:prd:$(node -e 'console.log(require("crypto").randomBytes(12).toString("hex"))')"
+          value_stg=$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')
+          value_prd=$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')
+
+          kv_cmd() {
+            # $1 = url, $2 = bearer, $3 = command JSON. Returns response body.
+            curl -sS $CURL_OPTS -H "Authorization: Bearer $2" \
+              -H "Content-Type: application/json" \
+              --data-raw "$3" "$1" || echo '{"error":"curl_failed"}'
+          }
+
+          # Write staging canary with TTL, then attempt to read it via prod.
+          set_stg=$(kv_cmd "${STAGING_KV_REST_API_URL}" "${STAGING_KV_REST_API_TOKEN}" \
+            "$(node -e 'console.log(JSON.stringify(["SET",process.argv[1],process.argv[2],"EX","30"]))' "$canary_stg" "$value_stg")")
+          set_prd=$(kv_cmd "${PROD_KV_REST_API_URL_REF}" "${PROD_KV_REST_API_TOKEN_REF}" \
+            "$(node -e 'console.log(JSON.stringify(["SET",process.argv[1],process.argv[2],"EX","30"]))' "$canary_prd" "$value_prd")")
+          # Cross-reads: staging canary MUST NOT be visible via prod, and
+          # vice versa. A nil / null / non-string result is what we require.
+          read_via_prd=$(kv_cmd "${PROD_KV_REST_API_URL_REF}" "${PROD_KV_REST_API_TOKEN_REF}" \
+            "$(node -e 'console.log(JSON.stringify(["GET",process.argv[1]]))' "$canary_stg")")
+          read_via_stg=$(kv_cmd "${STAGING_KV_REST_API_URL}" "${STAGING_KV_REST_API_TOKEN}" \
+            "$(node -e 'console.log(JSON.stringify(["GET",process.argv[1]]))' "$canary_prd")")
+
+          # Sanity: our own writes must be visible to ourselves (otherwise
+          # the operator's URL/token don't work at all, which would ALSO
+          # hard-fail — we cannot certify an unreachable instance).
+          self_stg=$(kv_cmd "${STAGING_KV_REST_API_URL}" "${STAGING_KV_REST_API_TOKEN}" \
+            "$(node -e 'console.log(JSON.stringify(["GET",process.argv[1]]))' "$canary_stg")")
+          self_prd=$(kv_cmd "${PROD_KV_REST_API_URL_REF}" "${PROD_KV_REST_API_TOKEN_REF}" \
+            "$(node -e 'console.log(JSON.stringify(["GET",process.argv[1]]))' "$canary_prd")")
+
+          # Best-effort cleanup regardless of outcome.
+          kv_cmd "${STAGING_KV_REST_API_URL}" "${STAGING_KV_REST_API_TOKEN}" \
+            "$(node -e 'console.log(JSON.stringify(["DEL",process.argv[1]]))' "$canary_stg")" > /dev/null || true
+          kv_cmd "${PROD_KV_REST_API_URL_REF}" "${PROD_KV_REST_API_TOKEN_REF}" \
+            "$(node -e 'console.log(JSON.stringify(["DEL",process.argv[1]]))' "$canary_prd")" > /dev/null || true
+
+          # Parse + assert. Values passed as CLI args to isolate them from
+          # the process.env dump; never echoed by node.
+          node -e '
+            const args = process.argv.slice(1);
+            const [stgExp, prdExp, stgSelfRaw, prdSelfRaw, stgViaPrdRaw, prdViaStgRaw] = args;
+            const parse = (raw) => { try { return JSON.parse(raw).result; } catch { return raw; } };
+            const stgSelf = parse(stgSelfRaw);
+            const prdSelf = parse(prdSelfRaw);
+            const stgViaPrd = parse(stgViaPrdRaw);
+            const prdViaStg = parse(prdViaStgRaw);
+            let ok = true;
+            if (stgSelf !== stgExp) { console.error("::error::HARD FAIL: staging KV self-read did not return the just-written canary. The staging URL/token pair does not authenticate against a writable instance — cannot certify."); ok = false; }
+            if (prdSelf !== prdExp) { console.error("::error::HARD FAIL: production KV self-read did not return the just-written canary. The production reference URL/token pair does not authenticate — cannot certify."); ok = false; }
+            if (stgViaPrd !== null && stgViaPrd !== undefined && stgViaPrd !== "") { console.error("::error::HARD FAIL: production KV read the staging canary — they are the SAME instance. Isolation FAILED."); ok = false; }
+            if (prdViaStg !== null && prdViaStg !== undefined && prdViaStg !== "") { console.error("::error::HARD FAIL: staging KV read the production canary — they are the SAME instance. Isolation FAILED."); ok = false; }
+            if (!ok) process.exit(1);
+            console.log("canary isolation proof OK — staging and production KV are provably separate instances.");
+          ' "$value_stg" "$value_prd" "$self_stg" "$self_prd" "$read_via_prd" "$read_via_stg"
+
+          # Mark the staging URL/token available to the env-set step below.
           echo "KV_REST_API_URL=${STAGING_KV_REST_API_URL}" >> "$GITHUB_ENV"
           echo "KV_REST_API_TOKEN=${STAGING_KV_REST_API_TOKEN}" >> "$GITHUB_ENV"
 
@@ -390,29 +433,59 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
-          # Rework-blocker #6a: atomic upsert. If the key already exists, we
-          # PATCH the existing entry in-place — the good value is only
-          # replaced when the PATCH succeeds, and no DELETE happens on
-          # failure. If PATCH is unavailable, we POST first, then DELETE
-          # any prior duplicate — again, DELETE only after POST succeeds.
-          upsert_env() {
-            key="$1"; value="$2"; type="${3:-encrypted}"; targets_json="${4:-[\"production\",\"preview\"]}"
-            if [ -z "$value" ]; then echo "skip $key (no value)"; return 0; fi
+          # Rework 4th pass — blocker #2: env writes are BOTH scope-aware AND
+          # rollback-safe:
+          #   - reconcile_env <project> <key> <value|""> <type> <targets_json>
+          #   - matches existing entries by (key AND target set AND
+          #     gitBranch=null) — never touches an unrelated scoped entry
+          #     (e.g. a preview-scoped APP_ENV when we mean production).
+          #   - empty value ⇒ DELETE the matching entry(ies) rather than
+          #     "skip" — clears a stale allowlist (e.g. EXPO_STAGING_TEST_
+          #     TOKENS) instead of leaving it in place.
+          #   - nonempty value ⇒ PATCH-in-place if a matching entry exists,
+          #     POST otherwise; prior good value never deleted before its
+          #     replacement is confirmed (blocker #6a preserved).
+          reconcile_env() {
+            proj="$1"; key="$2"; value="$3"; type="${4:-encrypted}"; targets_json="${5:-[\"production\",\"preview\"]}"
             listing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
-              "https://api.vercel.com/v9/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
-            existing_id=$(echo "$listing" | node -pe '
+              "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
+            # Find matching entries: key + exact target-set + no gitBranch.
+            matching_ids=$(echo "$listing" | node -pe '
               const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-              const es = (d.envs||[]).filter(e => e.key === process.argv[1]);
-              es.length ? es[0].id : "";
-            ' "$key" 2>/dev/null || true)
-            all_ids=$(echo "$listing" | node -pe '
-              const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-              (d.envs||[]).filter(e => e.key === process.argv[1]).map(e => e.id).join("\n")
-            ' "$key" 2>/dev/null || true)
+              const wantKey = process.argv[1];
+              const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
+              (d.envs||[]).filter(e =>
+                e.key === wantKey &&
+                JSON.stringify((e.target||[]).slice().sort()) === wantTargets &&
+                (e.gitBranch == null || e.gitBranch === "")
+              ).map(e => e.id).join("\n");
+            ' "$key" "$targets_json" 2>/dev/null || true)
 
-            if [ -n "$existing_id" ]; then
-              # PATCH in-place. The prior value is only overwritten when the
-              # PATCH succeeds — there is no window where the key is unset.
+            if [ -z "$value" ]; then
+              # DELETE semantics: remove exactly the matching-scope entries.
+              # Unrelated scopes preserved.
+              if [ -z "$matching_ids" ]; then
+                echo "reconcile env $proj/$key targets=$targets_json → already absent, no-op"
+                return 0
+              fi
+              for id in $matching_ids; do
+                [ -z "$id" ] && continue
+                del_code=$(curl -sS $CURL_OPTS -o /dev/null -w '%{http_code}' -X DELETE \
+                  --oauth2-bearer "${VERCEL_TOKEN}" \
+                  "https://api.vercel.com/v9/projects/${proj}/env/${id}?teamId=${VERCEL_ORG_ID}")
+                echo "DELETE env $proj/$key/$id (scope=$targets_json) → HTTP $del_code"
+                if [ "$del_code" != "200" ] && [ "$del_code" != "204" ]; then
+                  echo "::error::Failed to DELETE stale scoped env $proj/$key/$id (HTTP $del_code)."
+                  exit 1
+                fi
+              done
+              return 0
+            fi
+
+            # Nonempty value: PATCH-in-place if a matching-scope entry
+            # exists, POST otherwise.
+            first_id=$(echo "$matching_ids" | head -n1)
+            if [ -n "$first_id" ]; then
               patch_body=$(node -e '
                 const v = process.argv[1], t = process.argv[2], tg = JSON.parse(process.argv[3]);
                 console.log(JSON.stringify({ value: v, type: t, target: tg }));
@@ -421,28 +494,54 @@ jobs:
                 --oauth2-bearer "${VERCEL_TOKEN}" \
                 -H "Content-Type: application/json" \
                 --data-raw "$patch_body" \
-                "https://api.vercel.com/v9/projects/${PROJECT_ID}/env/${existing_id}?teamId=${VERCEL_ORG_ID}")
-              echo "PATCH env $key/$existing_id → HTTP $patch_code"
-              if [ "$patch_code" = "200" ] || [ "$patch_code" = "201" ]; then
-                # Clean up any additional duplicates (shouldn't normally exist).
-                for id in $all_ids; do
-                  if [ -n "$id" ] && [ "$id" != "$existing_id" ]; then
-                    del_code=$(curl -sS $CURL_OPTS -o /dev/null -w '%{http_code}' -X DELETE \
-                      --oauth2-bearer "${VERCEL_TOKEN}" \
-                      "https://api.vercel.com/v9/projects/${PROJECT_ID}/env/${id}?teamId=${VERCEL_ORG_ID}")
-                    echo "  cleanup duplicate env $key/$id → HTTP $del_code"
-                  fi
-                done
-                return 0
+                "https://api.vercel.com/v9/projects/${proj}/env/${first_id}?teamId=${VERCEL_ORG_ID}")
+              echo "PATCH env $proj/$key/$first_id (scope=$targets_json) → HTTP $patch_code"
+              if [ "$patch_code" != "200" ] && [ "$patch_code" != "201" ]; then
+                echo "::error::PATCH env $proj/$key/$first_id failed (HTTP $patch_code). Prior value NOT deleted."
+                cat /tmp/patch_resp.json
+                exit 1
               fi
-              # PATCH failed. DO NOT DELETE the existing value — leave it
-              # in place. Log the failure body and hard fail.
-              echo "::error::PATCH env $key/$existing_id failed (HTTP $patch_code). Prior value NOT deleted."
-              cat /tmp/patch_resp.json
-              exit 1
+              # Validate the write: refetch and confirm the matching-scope
+              # entry now reports our target-set + (for plain values) our
+              # value. Encrypted-type values are not returned by the API,
+              # so for them we only assert the entry exists in the target
+              # set.
+              verify=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+                "https://api.vercel.com/v9/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
+              ok=$(echo "$verify" | node -pe '
+                const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+                const wantKey = process.argv[1];
+                const wantTargets = JSON.stringify(JSON.parse(process.argv[2]).sort());
+                const wantType = process.argv[3];
+                const wantValue = process.argv[4];
+                const e = (d.envs||[]).find(x =>
+                  x.key === wantKey &&
+                  JSON.stringify((x.target||[]).slice().sort()) === wantTargets &&
+                  (x.gitBranch == null || x.gitBranch === "")
+                );
+                if (!e) { console.log("missing"); process.exit(0); }
+                if (e.type !== wantType) { console.log("type_mismatch"); process.exit(0); }
+                if (wantType === "plain" && String(e.value||"") !== wantValue) { console.log("value_mismatch"); process.exit(0); }
+                console.log("ok");
+              ' "$key" "$targets_json" "$type" "$value")
+              if [ "$ok" != "ok" ]; then
+                echo "::error::Post-write validation failed for $proj/$key (scope=$targets_json): $ok"
+                exit 1
+              fi
+              # Clean up duplicate matching-scope entries (should not
+              # normally exist; be defensive).
+              for id in $matching_ids; do
+                [ -z "$id" ] && continue
+                [ "$id" = "$first_id" ] && continue
+                del_code=$(curl -sS $CURL_OPTS -o /dev/null -w '%{http_code}' -X DELETE \
+                  --oauth2-bearer "${VERCEL_TOKEN}" \
+                  "https://api.vercel.com/v9/projects/${proj}/env/${id}?teamId=${VERCEL_ORG_ID}")
+                echo "  cleanup duplicate $proj/$key/$id → HTTP $del_code"
+              done
+              return 0
             fi
 
-            # No existing entry: plain POST.
+            # No matching-scope entry: POST a new one.
             post_body=$(node -e '
               const k = process.argv[1], v = process.argv[2], t = process.argv[3], tg = JSON.parse(process.argv[4]);
               console.log(JSON.stringify({ key: k, value: v, type: t, target: tg }));
@@ -451,14 +550,20 @@ jobs:
               --oauth2-bearer "${VERCEL_TOKEN}" \
               -H "Content-Type: application/json" \
               --data-raw "$post_body" \
-              "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
-            echo "POST env $key → HTTP $post_code"
+              "https://api.vercel.com/v10/projects/${proj}/env?teamId=${VERCEL_ORG_ID}")
+            echo "POST env $proj/$key (scope=$targets_json) → HTTP $post_code"
             if [ "$post_code" != "200" ] && [ "$post_code" != "201" ]; then
-              echo "::error::POST env $key failed (HTTP $post_code)."
+              echo "::error::POST env $proj/$key failed (HTTP $post_code)."
               cat /tmp/post_resp.json
               exit 1
             fi
           }
+
+          # Convenience wrapper: reconcile on the staging project. Defaults
+          # to production+preview scope on the staging project so every
+          # deploy of this project (regardless of branch) gets the same
+          # isolation vars.
+          upsert_env() { reconcile_env "${PROJECT_ID}" "$@"; }
 
           # Staging isolation vars.
           upsert_env "APP_ENV" "staging" "plain"
@@ -468,16 +573,26 @@ jobs:
           upsert_env "KV_REST_API_TOKEN" "${KV_REST_API_TOKEN}" "encrypted"
           upsert_env "AUTH_SESSION_SECRET_STAGING" "${AUTH_SESSION_SECRET_STAGING}" "encrypted"
           upsert_env "PUSH_NOTIFY_SECRET_STAGING" "${PUSH_NOTIFY_SECRET_STAGING}" "encrypted"
+          # EXPO_STAGING_TEST_TOKENS: an EMPTY value now DELETES the stale
+          # allowlist on the staging-scoped entry — a synth-only lane with
+          # no listed tokens sends to nobody, exactly as push-staging-guard
+          # enforces (rework 4th pass — blocker #2b).
           upsert_env "EXPO_STAGING_TEST_TOKENS" "${EXPO_STAGING_TEST_TOKENS:-}" "plain"
           upsert_env "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID" "${EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:-}" "encrypted"
           upsert_env "GOOGLE_WEB_CLIENT_ID" "${GOOGLE_WEB_CLIENT_ID:-}" "encrypted"
           upsert_env "GEMINI_API_KEY" "${GEMINI_API_KEY:-}" "encrypted"
 
       # ── Step 6: set APP_ENV=production on prod project (production only) ─
-      # Rework-blocker #6c: target ["production"] only. Preview deployments
-      # (feature branches, PRs on holocard-hunter) are NOT forced to
-      # APP_ENV=production — they can opt-in per-branch if they need it, or
-      # inherit the fail-closed behavior.
+      # Rework 4th pass — blocker #2c: locate the entry by key AND
+      # target=["production"] AND gitBranch=null so we mutate the actual
+      # production-scoped entry rather than the first APP_ENV key match
+      # (which might be a preview-scoped or branch-scoped entry the
+      # operator added deliberately). Preview deployments (feature
+      # branches, PRs on holocard-hunter) are NOT forced to
+      # APP_ENV=production — they can opt-in per-branch or inherit the
+      # fail-closed behavior. Uses the same scope-aware reconcile_env
+      # helper as the staging project so preview/branch entries are
+      # preserved.
       - name: Set APP_ENV=production on holocard-hunter (production target only)
         if: env.PROD_PROJECT_ID != '' && inputs.apply == true
         env:
@@ -485,49 +600,78 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           set -euo pipefail
+          # Inline scope-aware reconcile: find the entry whose target is
+          # exactly ["production"] and gitBranch is null. Do NOT touch a
+          # preview-scoped or branch-scoped APP_ENV.
           listing=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
             "https://api.vercel.com/v9/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
-          existing=$(echo "$listing" | node -pe '
+          match=$(echo "$listing" | node -pe '
             const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-            const es = (d.envs||[]).filter(e => e.key === "APP_ENV");
-            es.length ? JSON.stringify({ id: es[0].id, value: es[0].value || "", target: es[0].target || [] }) : "";
+            const wantTargets = JSON.stringify(["production"]);
+            const e = (d.envs||[]).find(x =>
+              x.key === "APP_ENV" &&
+              JSON.stringify((x.target||[]).slice().sort()) === wantTargets &&
+              (x.gitBranch == null || x.gitBranch === "")
+            );
+            e ? JSON.stringify({ id: e.id, type: e.type, value: e.value || "" }) : "";
           ' 2>/dev/null || echo "")
-          if [ -n "$existing" ]; then
-            cur_id=$(echo "$existing" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
-            cur_val=$(echo "$existing" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).value')
-            cur_targets=$(echo "$existing" | node -pe 'JSON.stringify(JSON.parse(require("fs").readFileSync(0,"utf8")).target)')
-            if [ "$cur_val" = "production" ] && [ "$cur_targets" = '["production"]' ]; then
-              echo "APP_ENV=production on production target already correct — no-op."
+
+          if [ -n "$match" ]; then
+            cur_id=$(echo "$match" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).id')
+            cur_type=$(echo "$match" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).type')
+            cur_val=$(echo "$match" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).value')
+            if [ "$cur_type" = "plain" ] && [ "$cur_val" = "production" ]; then
+              echo "APP_ENV=production on production-scoped entry already correct — no-op."
               exit 0
             fi
-            # PATCH in-place.
+            # PATCH the production-scoped entry ONLY.
             patch_body='{"value":"production","type":"plain","target":["production"]}'
             code=$(curl -sS $CURL_OPTS -o /tmp/patch_resp.json -w '%{http_code}' -X PATCH \
               --oauth2-bearer "${VERCEL_TOKEN}" \
               -H "Content-Type: application/json" \
               --data-raw "$patch_body" \
               "https://api.vercel.com/v9/projects/${PROD_PROJECT_ID}/env/${cur_id}?teamId=${VERCEL_ORG_ID}")
-            echo "PATCH prod APP_ENV → HTTP $code"
+            echo "PATCH prod APP_ENV (production-scoped entry ${cur_id}) → HTTP $code"
             if [ "$code" != "200" ] && [ "$code" != "201" ]; then
-              echo "::error::Failed to update prod APP_ENV (HTTP $code)."
-              cat /tmp/patch_resp.json
-              exit 1
+              echo "::error::Failed to update prod APP_ENV (HTTP $code). Body:"; cat /tmp/patch_resp.json; exit 1
             fi
           else
+            # No production-scoped entry yet: POST one. Any pre-existing
+            # preview-scoped or branch-scoped APP_ENV entries are LEFT
+            # ALONE (they may be operator-configured for a different lane).
             post_body='{"key":"APP_ENV","value":"production","type":"plain","target":["production"]}'
             code=$(curl -sS $CURL_OPTS -o /tmp/post_resp.json -w '%{http_code}' -X POST \
               --oauth2-bearer "${VERCEL_TOKEN}" \
               -H "Content-Type: application/json" \
               --data-raw "$post_body" \
               "https://api.vercel.com/v10/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
-            echo "POST prod APP_ENV → HTTP $code"
+            echo "POST prod APP_ENV (production-scoped) → HTTP $code"
             if [ "$code" != "200" ] && [ "$code" != "201" ]; then
-              echo "::error::Failed to set prod APP_ENV (HTTP $code)."
-              cat /tmp/post_resp.json
-              exit 1
+              echo "::error::Failed to set prod APP_ENV (HTTP $code). Body:"; cat /tmp/post_resp.json; exit 1
             fi
           fi
-          echo "APP_ENV=production wired on production target only."
+
+          # Validate: refetch and confirm the production-scoped entry now
+          # reads APP_ENV=production; unrelated scopes preserved.
+          verify=$(curl -sS $CURL_OPTS --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${PROD_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}")
+          ok=$(echo "$verify" | node -pe '
+            const d = JSON.parse(require("fs").readFileSync(0,"utf8"));
+            const e = (d.envs||[]).find(x =>
+              x.key === "APP_ENV" &&
+              JSON.stringify((x.target||[]).slice().sort()) === JSON.stringify(["production"]) &&
+              (x.gitBranch == null || x.gitBranch === "")
+            );
+            if (!e) { console.log("missing"); process.exit(0); }
+            if (e.type !== "plain") { console.log("type_mismatch"); process.exit(0); }
+            if (String(e.value||"") !== "production") { console.log("value_mismatch"); process.exit(0); }
+            console.log("ok");
+          ')
+          if [ "$ok" != "ok" ]; then
+            echo "::error::Post-write validation failed for prod APP_ENV: $ok"
+            exit 1
+          fi
+          echo "APP_ENV=production wired on production target ONLY (preview / branch scopes unchanged)."
 
       # ── Step 7: attach test.holohunter.dicoge.com ───────────────────────
       - name: Attach test.holohunter.dicoge.com domain
