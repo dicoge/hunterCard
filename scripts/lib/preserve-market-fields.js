@@ -96,20 +96,66 @@ export function stampHistoryRecord(record, card) {
  * segment is at least one alphanumeric or hyphenated token). Any deviation
  * returns '' so the caller fails closed.
  */
-export function yuyuImageProductPath(url) {
+// DIC-1227 CR rev.5: parse a raw yuyuImage URL into a normalised { product,
+// pathname } record, or `null` when the URL fails any of the hardened
+// checks (host, protocol, path shape, extension). The product path is
+// lowercased; the pathname is preserved case as-shipped so canonical
+// identity keys can distinguish {product}/10008.jpg vs 10009.jpg.
+function parseYuyuImage(url) {
   const raw = String(url || '').trim();
-  if (!raw) return '';
+  if (!raw) return null;
   let parsed;
   try {
     parsed = new URL(raw);
   } catch {
-    return '';
+    return null;
   }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
-  if (parsed.hostname.toLowerCase() !== 'card.yuyu-tei.jp') return '';
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+  if (parsed.hostname.toLowerCase() !== 'card.yuyu-tei.jp') return null;
   const m = parsed.pathname.match(/^\/hocg\/[A-Za-z0-9_]+\/([A-Za-z0-9-]+)\/[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/i);
-  if (!m) return '';
-  return m[1].toLowerCase();
+  if (!m) return null;
+  return { product: m[1].toLowerCase(), pathname: parsed.pathname };
+}
+
+/**
+ * DIC-1227: extract the yuyu-tei product path from a `yuyuImage` URL so the
+ * caller can prove the previous row's yuyu payload actually belongs to the
+ * current row's `sourceProduct`. Returns the lowercased path segment
+ * (e.g. `hbp08`, `heb01`, `promo-hbp10`) or '' when the URL cannot be parsed.
+ *
+ * DIC-1227 CR follow-up hardening (rev.3): fail-closed on lookalike
+ * hostnames like `evil-yuyu-tei.jp`, malformed / opaque URLs, and missing
+ * imageUrl values. Uses the URL parser and asserts host equals exactly
+ * `card.yuyu-tei.jp`, protocol is https/http, and the path matches the
+ * shipped `/hocg/{size}/{product}/{filename}.{ext}` shape (product path
+ * segment is at least one alphanumeric or hyphenated token). Any deviation
+ * returns '' so the caller fails closed.
+ */
+export function yuyuImageProductPath(url) {
+  const parsed = parseYuyuImage(url);
+  return parsed ? parsed.product : '';
+}
+
+/**
+ * DIC-1227 CR rev.5: canonical physical identity for a yuyuImage URL, used
+ * exclusively by `findAmbiguousPromoRowIds` to detect collisions across
+ * distinct hPR rows for the same cardNumber. The validation layer accepts
+ * HTTP/HTTPS, mixed-case host, default ports, query strings, and fragments;
+ * two rows can therefore reference the same physical yuyu-tei image under
+ * different raw yuyuImage strings and evade a naïve string-grouping check.
+ *
+ * Returns a normalised identity of the form `card.yuyu-tei.jp{pathname}`
+ * (scheme dropped, host lowercased to the canonical apex, port dropped,
+ * query and fragment stripped) or '' when the URL fails validation. Any
+ * two URLs pointing at the same physical yuyu-tei image collapse to the
+ * same identity; anything that fails validation returns '' so the caller
+ * treats it as "no identity" (an empty-string identity is skipped by
+ * `findAmbiguousPromoRowIds` — cannot collide with anything).
+ */
+export function canonicalYuyuImageIdentity(url) {
+  const parsed = parseYuyuImage(url);
+  if (!parsed) return '';
+  return `card.yuyu-tei.jp${parsed.pathname}`;
 }
 
 /**
@@ -251,22 +297,33 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
  * yuyu payload (sellPrice, yuyuName, yuyuImage, timestamp, priceHistory,
  * priceHistoryMeta, prices[], _rawPricesArchive) must be nulled because
  * their yuyuImage collides with another hPR row for the same cardNumber.
+ *
+ * DIC-1227 CR rev.5: group collisions by `canonicalYuyuImageIdentity`
+ * (physical identity) rather than the raw yuyuImage string. Two rows can
+ * reference the same physical yuyu-tei image under different raw URL
+ * strings — https vs http, mixed-case host, default port, query string,
+ * fragment — and the previous rev.4 raw-string grouping missed all of
+ * those aliases. Any URL that fails the hardened validator returns ''
+ * from the identity function and is skipped (an empty identity cannot
+ * collide with anything else, so unverifiable URLs never mask a real
+ * collision).
  */
 export function findAmbiguousPromoRowIds(cards) {
   const bad = new Set();
   if (!cards || typeof cards !== 'object') return bad;
-  const groupedByCardNumberAndUrl = new Map();
+  const groupedByCardNumberAndIdentity = new Map();
   for (const [id, card] of Object.entries(cards)) {
     const sp = String(card?.sourceProduct || card?.series || '').toLowerCase();
     if (sp !== 'hpr') continue;
     const cardNumber = String(card?.cardNumber || '');
-    const url = String(card?.yuyuImage || '').trim();
-    if (!cardNumber || !url) continue;
-    const key = `${cardNumber}\x00${url}`;
-    if (!groupedByCardNumberAndUrl.has(key)) groupedByCardNumberAndUrl.set(key, []);
-    groupedByCardNumberAndUrl.get(key).push(id);
+    if (!cardNumber) continue;
+    const identity = canonicalYuyuImageIdentity(card?.yuyuImage);
+    if (!identity) continue;
+    const key = `${cardNumber}\x00${identity}`;
+    if (!groupedByCardNumberAndIdentity.has(key)) groupedByCardNumberAndIdentity.set(key, []);
+    groupedByCardNumberAndIdentity.get(key).push(id);
   }
-  for (const [, ids] of groupedByCardNumberAndUrl) {
+  for (const [, ids] of groupedByCardNumberAndIdentity) {
     if (ids.length > 1) {
       for (const id of ids) bad.add(id);
     }

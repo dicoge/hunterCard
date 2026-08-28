@@ -31,6 +31,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   yuyuImageProductPath,
+  canonicalYuyuImageIdentity,
   yuyuPayloadMatchesSource,
   pricesEntryMatchesSource,
   applyPreservedMarketFields,
@@ -57,6 +58,31 @@ assert.equal(yuyuImageProductPath('data:image/png;base64,abc'), '', 'data URL fa
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/'), '', 'shape mismatch fails closed');
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/heb01/'), '', 'missing filename fails closed');
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.exe'), '', 'wrong extension fails closed');
+
+// ---- unit: canonicalYuyuImageIdentity (rev.5 alias-collapse) ---------------
+// DIC-1227 CR rev.5: two yuyu-tei URLs pointing at the same physical image
+// MUST collapse to the same identity so `findAmbiguousPromoRowIds` cannot be
+// evaded by scheme/host-case/default-port/query/fragment aliases. Any URL
+// that fails the hardened validator returns '' from the identity function.
+const canonBase = 'card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg';
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg'), canonBase);
+assert.equal(canonicalYuyuImageIdentity('http://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg'), canonBase, 'http and https collapse to one identity');
+assert.equal(canonicalYuyuImageIdentity('https://CARD.YUYU-TEI.JP/hocg/100_140/promo-hsd10/10020.jpg'), canonBase, 'uppercase host collapses to one identity');
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp:443/hocg/100_140/promo-hsd10/10020.jpg'), canonBase, 'default https port collapses');
+assert.equal(canonicalYuyuImageIdentity('http://card.yuyu-tei.jp:80/hocg/100_140/promo-hsd10/10020.jpg'), canonBase, 'default http port collapses');
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg?v=1'), canonBase, 'query string does not create a new identity');
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg?cachebust=abc&size=large'), canonBase, 'multi-param query does not create a new identity');
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg#foo'), canonBase, 'fragment does not create a new identity');
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg?v=1#foo'), canonBase, 'query + fragment do not create a new identity');
+// Distinct paths must NOT collapse.
+assert.notEqual(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10021.jpg'), canonBase, 'different filename → distinct identity');
+assert.notEqual(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10020.jpg'), canonBase, 'different product → distinct identity');
+// Validation failures return '' so they never collide with anything.
+assert.equal(canonicalYuyuImageIdentity(''), '', 'empty URL yields no identity');
+assert.equal(canonicalYuyuImageIdentity(null), '', 'null yields no identity');
+assert.equal(canonicalYuyuImageIdentity('https://evil-yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg'), '', 'lookalike host yields no identity');
+assert.equal(canonicalYuyuImageIdentity('javascript:alert(1)'), '', 'non-http protocol yields no identity');
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.exe'), '', 'wrong extension yields no identity');
 
 // ---- unit: provenance match --------------------------------------------------
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hpr/10200.jpg' }, 'hPR'), true);
@@ -362,6 +388,97 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
   assert.ok(!ambiguous.has('hBP01-048_hPR_P_hBP01-048_P'), 'unique-per-cardNumber assignment must NOT be flagged');
   assert.ok(!ambiguous.has('hBP01-108_hBP01_U_hBP01-108_U'), 'non-hPR row must NOT be flagged (different product)');
   assert.ok(!ambiguous.has('hBP01-090_hPR_P_hBP01-090_P_02'), 'empty yuyuImage cannot collide');
+}
+
+// ---- Fixture G-adv: adversarial URL-alias evasion (rev.5) ------------------
+// DIC-1227 CR rev.5: `findAmbiguousPromoRowIds` MUST group by canonical
+// physical identity, not raw yuyuImage string. Two rows for the same
+// cardNumber that reference the same physical image under different URL
+// spellings (https vs http, mixed-case host, default port, query string,
+// fragment) must all be flagged. This is the exact evasion class Mac-Codex
+// flagged: the validator accepts all these variants, so a naïve raw-string
+// grouping missed them.
+{
+  const cards = {
+    // https vs http (same product/filename)
+    'hSD10-999_hPR_P_A': {
+      cardNumber: 'hSD10-999', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/99999.jpg',
+    },
+    'hSD10-999_hPR_P_B': {
+      cardNumber: 'hSD10-999', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'http://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/99999.jpg',
+    },
+    // query string alias
+    'hBD24-777_hPR_P_A': {
+      cardNumber: 'hBD24-777', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/77777.jpg',
+    },
+    'hBD24-777_hPR_P_B': {
+      cardNumber: 'hBD24-777', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/77777.jpg?v=1',
+    },
+    // fragment alias
+    'hBP10-555_hPR_P_A': {
+      cardNumber: 'hBP10-555', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/55555.jpg',
+    },
+    'hBP10-555_hPR_P_B': {
+      cardNumber: 'hBP10-555', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/55555.jpg#foo',
+    },
+    // uppercase-host alias
+    'hBP10-333_hPR_P_A': {
+      cardNumber: 'hBP10-333', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/33333.jpg',
+    },
+    'hBP10-333_hPR_P_B': {
+      cardNumber: 'hBP10-333', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://CARD.YUYU-TEI.JP/hocg/100_140/promo-hbp10/33333.jpg',
+    },
+    // default-port alias
+    'hBP10-111_hPR_P_A': {
+      cardNumber: 'hBP10-111', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/11111.jpg',
+    },
+    'hBP10-111_hPR_P_B': {
+      cardNumber: 'hBP10-111', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp:443/hocg/100_140/promo-hbp10/11111.jpg',
+    },
+    // combined query + fragment + http alias
+    'hBP10-222_hPR_P_A': {
+      cardNumber: 'hBP10-222', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/22222.jpg',
+    },
+    'hBP10-222_hPR_P_B': {
+      cardNumber: 'hBP10-222', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'http://card.yuyu-tei.jp:80/hocg/100_140/promo-hbp10/22222.jpg?cachebust=1&foo=bar#baz',
+    },
+    // Control: distinct filename must NOT collide.
+    'hBP10-444_hPR_P_A': {
+      cardNumber: 'hBP10-444', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/44441.jpg',
+    },
+    'hBP10-444_hPR_P_B': {
+      cardNumber: 'hBP10-444', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/44442.jpg',
+    },
+  };
+  const ambiguous = findAmbiguousPromoRowIds(cards);
+  // 6 pairs (12 rows) should be flagged; the distinct-filename control stays clean.
+  assert.equal(ambiguous.size, 12, `12 rows across 6 adversarial-alias pairs must be flagged; got ${ambiguous.size}`);
+  for (const id of [
+    'hSD10-999_hPR_P_A', 'hSD10-999_hPR_P_B',
+    'hBD24-777_hPR_P_A', 'hBD24-777_hPR_P_B',
+    'hBP10-555_hPR_P_A', 'hBP10-555_hPR_P_B',
+    'hBP10-333_hPR_P_A', 'hBP10-333_hPR_P_B',
+    'hBP10-111_hPR_P_A', 'hBP10-111_hPR_P_B',
+    'hBP10-222_hPR_P_A', 'hBP10-222_hPR_P_B',
+  ]) {
+    assert.ok(ambiguous.has(id), `${id} must be flagged (adversarial alias evasion)`);
+  }
+  assert.ok(!ambiguous.has('hBP10-444_hPR_P_A'), 'distinct filename must NOT be flagged');
+  assert.ok(!ambiguous.has('hBP10-444_hPR_P_B'), 'distinct filename must NOT be flagged');
 }
 
 // ---- Fixture H: entry-level filter respects hostname + known-promo (rev.3) --
