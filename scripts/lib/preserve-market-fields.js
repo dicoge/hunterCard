@@ -83,6 +83,46 @@ export function stampHistoryRecord(record, card) {
 }
 
 /**
+ * DIC-1227: extract the yuyu-tei product path from a `yuyuImage` URL so the
+ * caller can prove the previous row's yuyu payload actually belongs to the
+ * current row's `sourceProduct`. Returns the lowercased path segment
+ * (e.g. `hbp08`, `heb01`, `promo-hbp10`) or '' when the URL cannot be parsed.
+ */
+export function yuyuImageProductPath(url) {
+  const m = String(url || '').match(/yuyu-tei\.jp\/hocg\/[^/]+\/([^/]+)\//i);
+  return m ? m[1].toLowerCase() : '';
+}
+
+/**
+ * DIC-1227 provenance gate for the yuyu-derived preservation payload
+ * (`sellPrice`, `prices`, `yuyuName`, `yuyuImage`, `timestamp`, `priceHistory`,
+ * `priceHistoryMeta`, `_rawPricesArchive`). The previous row's `yuyuImage`
+ * URL product path MUST match the current row's `sourceProduct` before any of
+ * those fields can be carried forward — otherwise the current row is a
+ * different printing than the one that produced the yuyu listing (Mac-Codex CR
+ * flagged `hBP01-090_hPR_P_hBP01-090_P_02` inheriting `sellPrice=30` +
+ * `yuyuName="ムーナ・ホシノヴァ(hEB01)"` + `yuyuImage=/heb01/…` onto an hPR
+ * promo, because the pre-fix scrape had matched cross-product yuyu entries
+ * onto its ancestor row and every subsequent preservation cycle propagated
+ * it forward).
+ *
+ * Special cases:
+ *   - promo-* yuyu-tei product paths legitimately belong to hPR (yuyu-tei
+ *     hosts promo pack images under /promo-{pack}/), so promo-* matches
+ *     sourceProduct === 'hpr'.
+ *   - A missing / unparseable yuyuImage fails the gate: unverified
+ *     provenance can never carry forward yuyu payload.
+ */
+export function yuyuPayloadMatchesSource(previous, currentSourceProduct) {
+  const urlProd = yuyuImageProductPath(previous?.yuyuImage);
+  const src = String(currentSourceProduct || '').toLowerCase();
+  if (!urlProd || !src) return false;
+  if (urlProd === src) return true;
+  if (urlProd.startsWith('promo-') && src === 'hpr') return true;
+  return false;
+}
+
+/**
  * Provenance filter for durable price-history records. Returns the records
  * safe to merge onto `card` under the DIC-1219 fail-closed contract:
  *   - Stamped records survive only when `sourceProduct` equals the card's
@@ -344,8 +384,19 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
   if (!currentCard || !previous) return summary;
   const payload = preservedMarketPayload(previous);
   if (Object.keys(payload).length === 0) return summary;
-  const preservePrintingArrays = preserveYuyuPayload && (matchKind === 'exact-id' || !isSignedPrinting(currentCard));
-  if (preserveYuyuPayload && payload.sellPrice != null && !(Number.isFinite(currentCard.sellPrice) && currentCard.sellPrice > 0)) {
+  // DIC-1227: gate ALL yuyu-derived preservation (sellPrice, prices, yuyuName,
+  // yuyuImage, timestamp, priceHistory, priceHistoryMeta, _rawPricesArchive)
+  // on `yuyuPayloadMatchesSource`. The previous row's yuyuImage URL product
+  // path must equal the current row's sourceProduct (with a `promo-*/hpr`
+  // carve-out) — otherwise the payload came from a different printing whose
+  // yuyu listing legally cannot vouch for this row, and every subsequent
+  // preservation cycle would re-propagate the contamination. Mac-Codex CR on
+  // main 9f4b63bac flagged hBP01-090_hPR_P_hBP01-090_P_02 inheriting a
+  // sellPrice/yuyuName/yuyuImage from an hEB01 listing for exactly this
+  // reason. ytStats is NOT yuyu-derived and stays subject to its own guard.
+  const yuyuProvenanceMatches = preserveYuyuPayload && yuyuPayloadMatchesSource(previous, currentCard?.sourceProduct);
+  const preservePrintingArrays = yuyuProvenanceMatches && (matchKind === 'exact-id' || !isSignedPrinting(currentCard));
+  if (yuyuProvenanceMatches && payload.sellPrice != null && !(Number.isFinite(currentCard.sellPrice) && currentCard.sellPrice > 0)) {
     currentCard.sellPrice = payload.sellPrice;
     summary.sellPrice = true;
   }
@@ -353,20 +404,19 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
     currentCard.prices = payload.prices;
     summary.prices = true;
   }
-  // DIC-1219: priceHistory carries no per-date stamp so we cannot filter it
-  // per record here. Instead refuse the copy-out whenever we cannot prove the
-  // previous row's provenance equals the current row's — a reprint row must
-  // never inherit an origin row's history, and vice versa. Exact-id match is
-  // provenance-safe by construction (id encodes sourceProduct); signature
-  // match requires `previous.sourceProduct` to equal current.
+  // DIC-1219 + DIC-1227: priceHistory carries no per-date stamp so we cannot
+  // filter it per record here. Refuse the copy-out unless (a) the previous
+  // row's yuyu provenance still matches current's sourceProduct (DIC-1227)
+  // AND (b) either the match was by exact id (provenance-safe by construction)
+  // or the previous row's sourceProduct equals current's (DIC-1219).
   const prevSource = String(previous?.sourceProduct || previous?.series || '');
   const currentSource = String(currentCard?.sourceProduct || currentCard?.series || '');
   const historyProvenanceMatches = matchKind === 'exact-id' || (prevSource !== '' && prevSource === currentSource);
-  if (preserveYuyuPayload && historyProvenanceMatches && payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
+  if (yuyuProvenanceMatches && historyProvenanceMatches && payload.priceHistory && !(currentCard.priceHistory && Object.keys(currentCard.priceHistory).length > 0)) {
     currentCard.priceHistory = payload.priceHistory;
     summary.priceHistory = true;
   }
-  if (preserveYuyuPayload && historyProvenanceMatches && payload.priceHistoryMeta && !currentCard.priceHistoryMeta) {
+  if (yuyuProvenanceMatches && historyProvenanceMatches && payload.priceHistoryMeta && !currentCard.priceHistoryMeta) {
     currentCard.priceHistoryMeta = payload.priceHistoryMeta;
   }
   if (payload.ytStats && !currentCard.ytStats) {
@@ -384,7 +434,7 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
     currentCard.yuyuImage = payload.yuyuImage;
     summary.yuyu = true;
   }
-  if (preserveYuyuPayload && payload.timestamp && !currentCard.timestamp) {
+  if (yuyuProvenanceMatches && payload.timestamp && !currentCard.timestamp) {
     currentCard.timestamp = payload.timestamp;
   }
   return summary;

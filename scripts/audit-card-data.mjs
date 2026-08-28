@@ -118,18 +118,55 @@ for (const card of cards) {
   }
 }
 
-// DIC-1204: DIC-1084 canonicalization creates multiple printings per
-// cardNumber, and DIC-1167 shipped hEB01's 214 official rows, so the full
-// dataset now carries ytStats on 2057 printings. The 1160 that pinned this
-// row before DIC-1084 canonicalization collapsed variants of the same
-// holomen; a repair that dropped back below 2057 would signal a silent
-// regression in mergeYtStats' broadcast-to-all-variants contract (the
-// early-return added on 2026-08-26 was the exact regression this audit is
-// now guarding against).
-assert.equal(subscriberRows, 2057, 'DIC-1153/1204 full dataset ytStats row count must stay pinned');
+// DIC-1153 / DIC-1204 / DIC-1227: mergeYtStats broadcasts ytStats onto every
+// printing whose name (or nameZh) matches a tracked holomen's channelId. The
+// count therefore grows when new canonical printings for already-tracked
+// holomen arrive — hPR 396→416 on 2026-08-28 (DIC-1167 daily pool-sync) took
+// the row count from 2057 to 2072 and the DIC-1153 fixed-2057 assertion went
+// red. Replace the stale constant with a stable invariant computed from the
+// shipped semantics: every card whose name maps to a tracked YT channel MUST
+// carry ytStats, and no card without such a name may carry it. The lower
+// bound at 2057 still traps a regression back through the 2026-08-26 early-
+// return that dropped this count to unique-cardNumber count.
+const members = JSON.parse(fs.readFileSync(path.join(root, 'data/yt-members.json'), 'utf8')).members || [];
+const trackedChannels = new Set(
+  Object.entries(ytHistory || {})
+    .filter(([, entry]) => Array.isArray(entry?.history) && entry.history.length > 0)
+    .map(([id]) => id),
+);
+const trackedNamesJp = new Set();
+const trackedNamesZh = new Set();
+for (const m of members) {
+  if (!m?.channelId || !trackedChannels.has(m.channelId)) continue;
+  if (m.nameJp) trackedNamesJp.add(String(m.nameJp).trim());
+  if (m.nameZh) trackedNamesZh.add(String(m.nameZh).trim());
+  for (const alt of Array.isArray(m.altNamesJp) ? m.altNamesJp : []) if (alt) trackedNamesJp.add(String(alt).trim());
+  for (const alt of Array.isArray(m.altNamesZh) ? m.altNamesZh : []) if (alt) trackedNamesZh.add(String(alt).trim());
+}
+let expectedYtStatsRows = 0;
+const rowsWithYtButNoName = [];
+for (const card of cards) {
+  const nameHit = card.name && trackedNamesJp.has(String(card.name).trim());
+  const nameZhHit = card.nameZh && trackedNamesZh.has(String(card.nameZh).trim());
+  const shouldHave = nameHit || nameZhHit;
+  if (shouldHave) expectedYtStatsRows++;
+  if (card.ytStats && !shouldHave) rowsWithYtButNoName.push(card.id || card.cardNumber || '?');
+}
+assert.equal(
+  subscriberRows,
+  expectedYtStatsRows,
+  `DIC-1153/1204 broadcast contract: every card whose name maps to a tracked YT channel must carry ytStats. `
+  + `expected ${expectedYtStatsRows} rows to carry ytStats; got ${subscriberRows}. `
+  + `rows carrying ytStats without a matching tracked name: ${rowsWithYtButNoName.slice(0, 5).join(', ') || '(none)'}`,
+);
+assert.ok(
+  subscriberRows >= 2057,
+  `DIC-1153 regression guard: ytStats row count fell below the DIC-1153 shipped baseline of 2057 (current ${subscriberRows}); `
+  + 'mergeYtStats may have regressed to a first-only match again.',
+);
 assert.equal(
   subscriberDisplayableRows,
-  2057,
+  subscriberRows,
   'DIC-1153/1204 full dataset subscriber provenance must be evaluated at the audit snapshot reference time, not a stale wall-clock constant',
 );
 

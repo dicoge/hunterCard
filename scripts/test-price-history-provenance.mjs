@@ -160,8 +160,12 @@ try {
 }
 {
   // exact-id match is provenance-safe by construction — priceHistory copies.
+  // DIC-1227 additionally requires proven yuyu-image provenance; set the
+  // previous row's yuyuImage to a matching /hbp08/ URL so the new gate does
+  // not fail-close on this legitimate exact-id case.
   const previous = {
     cardNumber: 'hBP04-028', sourceProduct: 'hBP08', rarity: 'C',
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp08/12345.jpg',
     priceHistory: { '2026-08-25': 50, '2026-08-26': 50 },
   };
   const currentReprint = {

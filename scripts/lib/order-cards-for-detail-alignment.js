@@ -16,11 +16,17 @@
  * Fix. Order rows within each cardNumber so the row whose prices[] carries the
  * base printing is first. Ranking is intentionally structural, not price-value
  * dependent:
- *   1. `sourceProduct` equal to the cardNumber's origin-product prefix wins,
- *      because base printings live in the product that introduced the card
- *      number and reprints live in later products (hBP08, hEB01, hPR, …).
- *   2. Rows with non-empty prices[] beat empty-prices reprints, preserving PR
- *      #154's original ordering intent.
+ *   1. `sourceProduct` equal to the cardNumber's origin-product prefix wins
+ *      (dominant rule), because base printings live in the product that
+ *      introduced the card number and reprints live in later products
+ *      (hBP08, hEB01, hPR, …). This is the load-bearing tie-breaker even
+ *      after the DIC-1227 provenance clean-up strips cross-product yuyu
+ *      payloads off origin rows — an empty-prices origin row lets
+ *      buildPriceVersions fall back to a single BASE-printing entry, which
+ *      is exactly what deck aggregation picks for the same cardNumber.
+ *   2. Rows with non-empty prices[] beat empty-prices reprints (secondary),
+ *      preserving PR #154's original ordering intent within each origin-vs-
+ *      reprint bucket.
  *   3. Within each rank stable-sort keeps the caller's input order — new rows
  *      appended by the daily official-catalog scrape stay behind older ones.
  * Cross-cardNumber insertion order is preserved (first appearance of each
@@ -50,9 +56,13 @@ export function detailAlignmentRowRank(card) {
   const prefix = cardNumberOriginPrefix(card?.cardNumber);
   const source = String(card?.sourceProduct || card?.series || '');
   const hasPrices = Array.isArray(card?.prices) && card.prices.length > 0;
+  // Origin-product priority DOMINATES prices-non-empty priority. Under DIC-1227
+  // the origin row may legitimately ship prices=[] once contamination is
+  // stripped; detail still needs to see it first so buildPriceVersions falls
+  // back to a single BASE entry that matches deck aggregation.
   let rank = 0;
-  if (!prefix || source !== prefix) rank += 10;
-  if (!hasPrices) rank += 100;
+  if (!prefix || source !== prefix) rank += 100;
+  if (!hasPrices) rank += 10;
   return rank;
 }
 

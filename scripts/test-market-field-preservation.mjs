@@ -561,7 +561,9 @@ function freshCurrentCard(overrides = {}) {
 // ─── Real subprocess exercise of the shipped build ordering ─────────────
 // Additional guard requested by CR: exercise the real scripts/build-database.js
 // process (with HUNTERCARD_YUYU_FIXTURE_PATH set to skip network) and assert
-// that a renamed origin-product printing — `hBP01-028_hBP01_C_hBP01-028_C`,
+// that a renamed origin-product printing — `hBP01-025_hBP01_C_hBP01-025_C`
+// (retargeted from hBP01-028 which lost its priceHistory under DIC-1227's
+// cross-product cleanup — the previous choice's yuyuImage pointed to /hbp08/),
 // which had 66 shipped DB history days but no canonical-ID history file on
 // main — still has multi-day priceHistory in the written data/database.json
 // after a build with no pre-existing canonical-ID history file. This is the
@@ -572,7 +574,7 @@ function freshCurrentCard(overrides = {}) {
 // rows now fail-closed at seed and merge time (their history rebuilds from
 // stamped Step 5 writes only) — covered by `test:price-history-provenance`.
 {
-  const CANONICAL_ID = 'hBP01-028_hBP01_C_hBP01-028_C';
+  const CANONICAL_ID = 'hBP01-025_hBP01_C_hBP01-025_C';
   const tmp = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'dic1204-e2e-'));
   const dbPath = pathMod.join(REPO_ROOT, 'data/database.json');
   const nativePath = pathMod.join(REPO_ROOT, 'public/data/database.json');
@@ -584,8 +586,8 @@ function freshCurrentCard(overrides = {}) {
   );
   const indexFile = pathMod.join(historyDir, 'index.json');
 
-  // Preflight — the fixture card must exist in the current DB and in
-  // official/hBP08.json for the subprocess build to reproduce it.
+  // Preflight — the fixture card must exist in the current DB and in the
+  // matching official/<sourceProduct>.json for the subprocess build to reproduce it.
   const currentDb = JSON.parse(fsMod.readFileSync(dbPath, 'utf8'));
   assert.ok(
     currentDb.cards?.[CANONICAL_ID],
