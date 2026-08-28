@@ -26,6 +26,9 @@
 // promo carve-out, or letting an empty yuyuImage pass all trip a distinct
 // assertion.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   yuyuImageProductPath,
   yuyuPayloadMatchesSource,
@@ -33,6 +36,9 @@ import {
   applyPreservedMarketFields,
   findAmbiguousPromoRowIds,
 } from './lib/preserve-market-fields.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..');
 
 // ---- unit: URL product path extraction (rev.3 hardened) --------------------
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.jpg'), 'heb01');
@@ -57,6 +63,11 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hoc
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.jpg' }, 'hPR'), false, 'hEB01 -> hPR must NOT match');
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hPR'), true, 'known promo-hbp10 carve-out for hPR');
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg' }, 'hPR'), true, 'known promo-hsd10 carve-out for hPR');
+// DIC-1227 CR follow-up rev.4: promo-hbd20 is the real repository promo
+// path that hosts hBD24–hBD30 hPR listings. Mac-Codex CR flagged 48 unique
+// official hPR rows (incl. hBD24-008_hPR_P_hBD24-008_P) losing their
+// /promo-hbd20/ listing when it was missing from the allow-list.
+assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10008.jpg' }, 'hPR'), true, 'known promo-hbd20 carve-out for hPR (hBD24-008 shape)');
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hBP08'), false, 'promo-* does not carve out non-hPR products');
 // DIC-1227 CR follow-up rev.3: arbitrary promo-* paths must fail closed.
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-fake/10051.jpg' }, 'hPR'), false, 'unknown promo-fake fails closed even for hPR');
@@ -383,6 +394,23 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
     false,
     'missing imageUrl cannot vouch',
   );
+  // DIC-1227 CR follow-up rev.4: even ent07 (non-official yuyu-scraper alias)
+  // must reject an unparseable image URL. The committed hBP01-051_ent07
+  // fixture ships a `https://card.yuyu-tei.jp/noimage_100_140.jpg` entry
+  // (yuyu's no-image placeholder) — that path shape MUST fail closed even
+  // though sourceProduct is `ent07`.
+  assert.equal(
+    pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/noimage_100_140.jpg' }, 'ent07', 'hBP01-051'),
+    false,
+    'ent07 must still reject a no-image / malformed yuyu URL',
+  );
+  // ent07 with a valid /hocg/…/heb01/…jpg URL still passes (its whole point
+  // is the yuyu-scraper aggregation).
+  assert.equal(
+    pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10077.jpg' }, 'ent07', 'hBP01-051'),
+    true,
+    'ent07 with a well-formed yuyu URL passes (regardless of product path)',
+  );
   // hBP04 reprint carve-out: origin-prefix /hbp02/ passes for hBP02-084's hBP04 row.
   assert.equal(
     pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10168.jpg' }, 'hBP04', 'hBP02-084'),
@@ -395,6 +423,66 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
     false,
     'hPR row must NOT get the origin-prefix carve-out',
   );
+}
+
+// ---- Fixture I: build-database.js REALLY invokes the ambiguity pass -------
+// Mac-Codex CR flagged that findAmbiguousPromoRowIds was only defined and
+// helper-tested but never wired into the production build path. A daily
+// scrape could recreate the duplicate hSD03-002/hBP01-108/hBP02-028 pairs
+// without the ambiguity check being applied. Bind this test to the exact
+// call site + ordering in scripts/build-database.js so a mutation that
+// removes / moves / stubs the call fails at source-inspection time.
+{
+  const builderPath = path.join(REPO_ROOT, 'scripts/build-database.js');
+  const src = fs.readFileSync(builderPath, 'utf8');
+
+  // 1. Import from the shared lib.
+  assert.match(
+    src,
+    /import\s*{[^}]*\bfindAmbiguousPromoRowIds\b[^}]*}\s*from\s*['"]\.\/lib\/preserve-market-fields\.js['"]/,
+    'scripts/build-database.js must import findAmbiguousPromoRowIds',
+  );
+
+  // 2. Call site with the production shape — operate on the live
+  //    `database.cards` map (not a stubbed object).
+  const callMatches = [...src.matchAll(/findAmbiguousPromoRowIds\s*\(\s*database\.cards\s*\)/g)];
+  assert.ok(
+    callMatches.length >= 1,
+    'scripts/build-database.js must call findAmbiguousPromoRowIds(database.cards)',
+  );
+  const callIdx = callMatches[0].index;
+
+  // 3. Ambiguity pass must run AFTER preservation restores rows but BEFORE
+  //    the detail-align reorder so the ranker sees the nulled prices[].
+  const preserveMatch = src.match(/applyPreservedMarketFields\s*\(/);
+  assert.ok(preserveMatch, 'scripts/build-database.js must still call applyPreservedMarketFields');
+  const alignMatch = src.match(/orderCardsForDetailAlignment\s*\(\s*database\.cards\s*\)/);
+  assert.ok(alignMatch, 'scripts/build-database.js must still call orderCardsForDetailAlignment(database.cards)');
+  assert.ok(
+    preserveMatch.index < callIdx,
+    `findAmbiguousPromoRowIds must run AFTER applyPreservedMarketFields (preserve idx ${preserveMatch.index}, ambiguity idx ${callIdx})`,
+  );
+  assert.ok(
+    callIdx < alignMatch.index,
+    `findAmbiguousPromoRowIds must run BEFORE orderCardsForDetailAlignment (ambiguity idx ${callIdx}, align idx ${alignMatch.index})`,
+  );
+
+  // 4. The null-out must actually happen — the code between the call and the
+  //    align must reset every row in the returned set to fully null/empty.
+  //    Match the specific fields that the shipped fail-closed contract
+  //    requires the ambiguity pass to reset.
+  const nullBlock = src.slice(callIdx, alignMatch.index);
+  for (const field of [
+    /card\.sellPrice\s*=\s*null/,
+    /card\.prices\s*=\s*\[\]/,
+    /card\.yuyuName\s*=\s*['"]{2}/,
+    /card\.yuyuImage\s*=\s*['"]{2}/,
+    /card\.timestamp\s*=\s*['"]{2}/,
+    /card\.priceHistory\s*=\s*\{\}/,
+    /card\._rawPricesArchive\s*=\s*\[\]/,
+  ]) {
+    assert.match(nullBlock, field, `ambiguity-pass null-out must reset ${field}`);
+  }
 }
 
 console.log('DIC-1227 yuyu-provenance preservation regression checks passed');

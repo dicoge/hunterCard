@@ -122,8 +122,21 @@ export function yuyuImageProductPath(url) {
  * closed and surface it.
  */
 const KNOWN_PROMO_PATHS = new Set([
+  // DIC-1227 CR follow-up rev.4: the known set of promo pack yuyu-tei
+  // subpaths present in the shipped Yuyu catalog. Each corresponds to a
+  // real hPR promo pack that hosts card images at yuyu-tei's
+  // `/hocg/{size}/promo-{code}/` path. Adding a new entry here is
+  // deliberate: an unknown promo path must fail closed so a daily scrape
+  // hitting a new pack surfaces the change rather than silently accepting
+  // arbitrary values.
+  //   - `promo-hbp10` — Basic PR Pack Vol.1 / エントリーPRパック vol.3
+  //   - `promo-hsd10` — hSD10 (Start Deck) PR pack
+  //   - `promo-hbd20` — hBD24–hBD30 (Birthday event PR) — added after
+  //     Mac-Codex CR flagged 48 unique official hPR rows (incl.
+  //     hBD24-008_hPR_P_hBD24-008_P) losing their /promo-hbd20/ listings.
   'promo-hbp10',
   'promo-hsd10',
+  'promo-hbd20',
 ]);
 
 function isKnownPromoPath(urlProd) {
@@ -199,9 +212,16 @@ function cardNumberOriginPrefixLower(cardNumber) {
 export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCardNumber = null) {
   const src = String(currentSourceProduct || '').toLowerCase();
   if (!src) return false;
-  if (NON_OFFICIAL_SOURCE_PRODUCTS.has(src)) return true;
+  // DIC-1227 CR follow-up rev.4: even non-official sourceProduct rows
+  // (`ent07`) MUST have a parseable yuyu-tei image URL. A committed
+  // hBP01-051_ent07 fixture ships an entry with
+  // `https://card.yuyu-tei.jp/noimage_100_140.jpg` (yuyu's placeholder for
+  // no-image-available), which is not a valid /hocg/{size}/{product}/…
+  // image URL. The strict-parse check must fire BEFORE the ent07 pass so
+  // malformed/no-image entries never enter prices[] or _rawPricesArchive.
   const urlProd = yuyuImageProductPath(entry?.imageUrl);
   if (!urlProd) return false;
+  if (NON_OFFICIAL_SOURCE_PRODUCTS.has(src)) return true;
   if (urlProd === src) return true;
   if (isKnownPromoPath(urlProd) && src === 'hpr') return true;
   // Reprint carve-out (non-promo sourceProduct only): allow the entry whose
