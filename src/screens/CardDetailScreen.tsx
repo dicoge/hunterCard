@@ -14,7 +14,7 @@ import { formatInterval } from '../utils/priceAlerts';
 import type { PrintingOption } from '../utils/alertMigration';
 import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
-import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, bloomLevelBadgeColor, categoryBadgeColor, PRINTING_RARITY_COLORS } from '../utils/cardNormalization';
+import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, bloomLevelBadgeColor, categoryBadgeColor, resolveCardColorsWithNestedFallback, PRINTING_RARITY_COLORS } from '../utils/cardNormalization';
 import { computeValidatedPriceTrend } from '../utils/priceTrend';
 import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -128,15 +128,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
     : undefined;
 
   const effects = card.effects || parseEffects(allKW);
-  const colorNames = card.colorNames && card.colorNames.length > 0
-    ? card.colorNames
-    : (card.color ? (Array.isArray(card.color) ? card.color : [card.color]).filter(Boolean).map((c: string) => {
-        const map: Record<string, string> = Object.fromEntries(
-          ['white', 'blue', 'green', 'red', 'purple', 'yellow', 'colorless', 'multicolor']
-            .map((color) => [color, t(`color_${color}` as Parameters<typeof t>[0])]),
-        );
-        return map[c] || c;
-      }) : []);
+  // DIC-1159 + DIC-1192 + CR #1: route every source through the composed
+  // canonical → permissive helper so a non-canonical value (`◇`, `blue_red`
+  // before splitting, `mystery`) can never reach `t(\`color_${color}\`)`
+  // AND the DIC-1192 `◇ → colorless` render still lands. When top-level
+  // `card.color` / `card.colors` produces nothing — which happens on the
+  // real hBP04-087/088 / hBP06-084 winners post-2026-08-28 catalog sync
+  // (top-level rewritten to `"null"`) — the helper falls back to the
+  // authoritative token in `card.skillsJp.color` / `card.skillsZh.color`
+  // so the detail row still says `無色` instead of dropping the label.
+  const canonicalColorIds = resolveCardColorsWithNestedFallback(card);
+  const colorNames = canonicalColorIds.map((c) => t(`color_${c}` as Parameters<typeof t>[0]));
   
   const seriesNames = card.seriesNames || [];
   const tags = card.tags || [];
