@@ -1,39 +1,35 @@
 #!/usr/bin/env node
 /**
- * DIC-1189 rework 3rd pass — blocker #4b: real end-to-end bundle cleanness
- * test.
+ * DIC-1189 real end-to-end bundle cleanness test.
  *
- * Runs the actual build pipeline TWICE:
+ * Runs the actual build pipeline TWICE against the exact Vercel command
+ * path — no out-of-band `rm -rf` on caches, only `expo export --clear`
+ * between builds (rework 5th pass — blocker #3a):
  *   1. `EXPO_PUBLIC_APP_ENV=staging expo export --platform web --clear`
- *      (with buildCommand's cache-cleaning prefix) → dist/ carries the
- *      staging bundle. Snapshots dist/, asserts staging markers ARE present
- *      in the emitted JS bundles.
- *   2. Snapshots + cleans dist/ and every Metro/Expo cache the buildCommand
- *      is expected to purge, then re-runs with
+ *      → dist/ carries the staging bundle. Asserts staging markers ARE
+ *      present in the emitted JS bundles.
+ *   2. Renames dist/ so the production build starts from a fresh
+ *      Vercel-container-shaped tree (dist/ absent, which mirrors what
+ *      Vercel provides on a fresh build), then runs
  *      `EXPO_PUBLIC_APP_ENV=production expo export --platform web --clear`.
- *      Asserts the production dist/ contains NONE of:
- *        - the "TEST · 測試環境" banner label,
- *        - `name="app-env" content="staging"`,
- *        - `name="staging-sha"`,
- *        - `noindex,nofollow`,
- *        - the string `staging` in any emitted JS bundle for the reasons
- *          this test cares about (path/URL substring is fine; the banner
- *          text and env-marker meta names are not).
+ *      `--clear` purges Metro's in-memory transformer state so the
+ *      staging run's inlined `process.env.EXPO_PUBLIC_APP_ENV` cannot
+ *      be reused. Asserts the production dist/ contains NONE of the
+ *      staging markers, in ANY of the plausible bundle encodings
+ *      (rework 5th pass — blocker #3b covers raw UTF-8 + \x hex + \u
+ *      unicode + String.fromCharCode).
  *
- * This test IS EXPENSIVE (each `expo export` takes minutes). It is NOT
- * part of `npm run test:dic1189-staging-isolation` — run it in CI or before
- * a release with `npm run test:bundle-cleanness-full`. The lightweight
- * HTML-only variant (`scripts/test-prod-bundle-cleanness.mjs`) covers the
- * fix-html.js meta injection path without running the bundler.
+ * This test is EXPENSIVE (each `expo export` takes minutes) but wired
+ * into Validate on PR #150 (rework 5th pass — blocker #3c) so a Metro
+ * DCE regression is caught at PR time, not only when a reviewer runs
+ * the opt-in script by hand.
  *
- * Preconditions: node_modules installed, `expo` CLI resolvable, working
- * network for a first-time Metro cache warmup.
+ * Preconditions: node_modules installed, `expo` CLI resolvable.
  *
  * Run: node scripts/test-bundle-cleanness-full.mjs
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -50,32 +46,11 @@ function test(name, fn) {
   console.log(`  ✓ ${name}`);
 }
 
-function purgeCaches() {
-  // Mirror the vercel.json buildCommand's clean step so this test exercises
-  // the exact same cache-clearing surface.
-  const tmp = process.env.TMPDIR || '/tmp';
-  const targets = [
-    path.join(ROOT, '.expo'),
-    path.join(ROOT, 'dist'),
-    path.join(ROOT, 'node_modules', '.cache'),
-    path.join(os.homedir(), '.expo'),
-  ];
-  for (const t of targets) {
-    fs.rmSync(t, { recursive: true, force: true });
-  }
-  for (const entry of fs.readdirSync(tmp, { withFileTypes: true })) {
-    if (
-      entry.name.startsWith('metro-') ||
-      entry.name.startsWith('haste-map-') ||
-      entry.name.startsWith('react-native-packager-cache-')
-    ) {
-      fs.rmSync(path.join(tmp, entry.name), { recursive: true, force: true });
-    }
-  }
-}
-
 function runExport(appEnv, extraEnv = {}) {
   console.log(`\n── expo export APP_ENV=${appEnv} ──`);
+  // Match vercel.json buildCommand exactly: `expo export --platform web
+  // --clear` is the ONLY Metro-cache-clear mechanism; no out-of-band
+  // rm -rf between builds (that was blocker #3a).
   execSync('npx --yes expo export --platform web --clear', {
     cwd: ROOT,
     stdio: 'inherit',
@@ -115,26 +90,38 @@ function bundleJsFiles() {
   return walkFiles(jsDir).filter((p) => p.endsWith('.js'));
 }
 
-// DIC-1189 rework 4th pass — blocker #3c: match not just the RAW banner
-// string but every form Metro / babel-plugin-minify might have emitted:
-//   - the raw UTF-8 string ("TEST · 測試環境")
-//   - the ES-string \uXXXX-escaped form ("TEST · 測試環境")
-//   - fromCharCode-encoded runs (Metro's non-ASCII fallback on some plugins)
-// Each variant is a byte pattern the bundler could plausibly emit; any hit in
-// the production bundle is a DCE regression.
+// Match every form Metro / babel-plugin-minify might have emitted for a
+// non-ASCII banner string (rework 5th pass — blocker #3b):
+//   - raw UTF-8 ("TEST · 測試環境")
+//   - \uXXXX ES-string escape (Unicode escape, per char above 0x7f)
+//   - \xNN ES-string hex escape (per byte of the UTF-8 encoding)
+//   - String.fromCharCode(...) form (Metro's fallback on some minifier
+//     plugins)
+// Any hit in the production bundle is a DCE regression.
 function needleVariants(needle) {
   const raw = needle;
-  const escaped = Array.from(needle)
+  const unicodeEsc = Array.from(needle)
     .map((ch) => {
       const code = ch.codePointAt(0);
       if (code < 0x80) return ch;
       return '\\u' + code.toString(16).padStart(4, '0');
     })
     .join('');
+  // \x hex escape uses the UTF-8 BYTE sequence, not code points, since
+  // \xNN only spans 0x00..0xff.
+  const utf8 = Buffer.from(needle, 'utf8');
+  const hexEsc = Array.from(utf8)
+    .map((b) => {
+      // ASCII printable: leave as raw char so a minifier that
+      // rewrites only high bytes as \x still trips this pattern.
+      if (b >= 0x20 && b < 0x80) return String.fromCharCode(b);
+      return '\\x' + b.toString(16).padStart(2, '0');
+    })
+    .join('');
   const fromCharCode = 'String.fromCharCode(' +
     Array.from(needle).map((ch) => ch.codePointAt(0)).join(',') +
     ')';
-  const seen = new Set([raw, escaped, fromCharCode]);
+  const seen = new Set([raw, unicodeEsc, hexEsc, fromCharCode]);
   return [...seen];
 }
 
@@ -147,7 +134,11 @@ function bundleContains(needle) {
       if (idx !== -1) {
         return {
           file: path.relative(ROOT, f),
-          variant: v === needle ? 'raw' : v.startsWith('String.fromCharCode') ? 'fromCharCode' : 'unicode-escape',
+          variant:
+            v === needle ? 'raw' :
+            v.startsWith('String.fromCharCode') ? 'fromCharCode' :
+            v.includes('\\u') ? 'unicode-escape' :
+            'hex-escape',
           snippet: body.slice(Math.max(0, idx - 40), idx + v.length + 40),
         };
       }
@@ -162,7 +153,6 @@ if (beforeDist) fs.renameSync(DIST, DIST + '.before-dic1189-bundle-test');
 
 try {
   // ── Step 1: staging build ────────────────────────────────────────────────
-  purgeCaches();
   runExport('staging');
   const htmlStaging = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
 
@@ -177,8 +167,11 @@ try {
     assert.ok(hit, 'expected staging bundle to include "TEST · 測試環境" (banner text)');
   });
 
-  // ── Step 2: production build following the staging build ────────────────
-  purgeCaches();
+  // ── Step 2: production build immediately following staging ──────────────
+  // Vercel gives each build a fresh dist/ but reuses the workspace; we
+  // simulate that by renaming dist/ aside (no rm-rf on Metro caches). The
+  // `--clear` flag on `expo export` is the ONLY Metro state purge.
+  fs.renameSync(DIST, DIST + '.staging-run');
   runExport('production');
   const htmlProd = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
 
@@ -191,7 +184,7 @@ try {
   test('production HTML has NO staging-sha meta', () => {
     assert.ok(!htmlProd.includes('staging-sha'));
   });
-  test('production JS bundle DOES NOT contain "TEST · 測試環境" (Metro DCE working)', () => {
+  test('production JS bundle DOES NOT contain "TEST · 測試環境" (Metro DCE working; covers raw + \\u + \\x + fromCharCode)', () => {
     const hit = bundleContains('TEST · 測試環境');
     assert.ok(!hit, `staging banner text found in production bundle: ${JSON.stringify(hit)}`);
   });
@@ -204,6 +197,7 @@ try {
 } finally {
   // Restore original dist.
   fs.rmSync(DIST, { recursive: true, force: true });
+  fs.rmSync(DIST + '.staging-run', { recursive: true, force: true });
   if (beforeDist) fs.renameSync(DIST + '.before-dic1189-bundle-test', DIST);
 }
 
