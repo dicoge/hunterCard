@@ -79,6 +79,7 @@
     "test:official-catalog-sync": "node scripts/test-official-catalog-sync.mjs && node scripts/test-official-catalog-mutation-preserves-sell.mjs",
     "test:yuyu-exact-printing": "node scripts/test-yuyu-exact-printing-sell-match.mjs",
     "test:dic1192-color-normalization": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-dic1192-color-normalization.mjs",
+    "test:dic1159-unknown-color": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1159-unknown-color.mjs",
     "audit:card-data": "npm run test:card-data-audit -- --write",
     "test:version-alignment": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/verify-version-alignment.js",
     "test:detail-deck-alignment-order": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-detail-deck-alignment-order.mjs",

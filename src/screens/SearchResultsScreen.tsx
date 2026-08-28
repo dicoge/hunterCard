@@ -14,8 +14,8 @@ import {
   bloomLevelBadgeColor,
   categoryBadgeColor,
   PRINTING_RARITY_COLORS,
-  normalizeColorTokens,
   KNOWN_COLOR_KEYS,
+  resolveCardColorsWithNestedFallback,
 } from '../utils/cardNormalization';
 
 // ── Server-side search constants ──
@@ -192,10 +192,15 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
   return deduped.map((c: CardRecord) => {
     const id = c.id || '';
     const name = c.name || '';
-    // DIC-1192: legacy scraper rows use '◇' (colourless) or composite tokens
-    // like 'blue_red' that never existed in i18n. Route through the shared
-    // normaliser so the render only ever hands t() a whitelisted key.
-    const colors = normalizeColorTokens(c.color);
+    // DIC-1159 + DIC-1192 + CR #1: strict canonicalCardColors first (so raw
+    // `◇` / `blue_red` cannot reach `t(\`color_${color}\`)`), fall through to
+    // the permissive normaliser so DIC-1192's shipped `◇ → 無色` render still
+    // lands at 1440×900. When the top-level source produces no colors (the
+    // 2026-08-28 catalog sync now writes `"null"` at top level for the real
+    // hBP04-087/088/hBP06-084 winners), fall back to the authoritative
+    // ◇ token in `skillsJp.color` / `skillsZh.color` so those diamond
+    // winners still render as colorless instead of dropping the label.
+    const colors = resolveCardColorsWithNestedFallback(c);
     const colorNames = colors.map((x: string) => COLOR_MAP[x] || x);
     const series = c.series ? [c.series] : [];
     const seriesNames = series.map((s: string) => nameMap[s] || s);

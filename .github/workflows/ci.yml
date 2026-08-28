@@ -144,6 +144,9 @@ jobs:
       - name: Verify visual card picker deck-building surface (DIC-1067)
         run: npm run test:card-picker
 
+      - name: Verify SearchResults/CardDetail color label survives ◇/blue_red source values (DIC-1159)
+        run: npm run test:dic1159-unknown-color
+
       - name: Verify production /api/* is not swallowed by SPA (DIC-886)
         run: npm run test:vercel-routing
 
