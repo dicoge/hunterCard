@@ -93,8 +93,13 @@ function bundleJsFiles() {
 // Match every form Metro / babel-plugin-minify might have emitted for a
 // non-ASCII banner string (rework 5th pass — blocker #3b):
 //   - raw UTF-8 ("TEST · 測試環境")
-//   - \uXXXX ES-string escape (Unicode escape, per char above 0x7f)
-//   - \xNN ES-string hex escape (per byte of the UTF-8 encoding)
+//   - \uXXXX ES-string escape for every non-ASCII char
+//   - \xNN ES-string hex escape per byte of the UTF-8 encoding
+//   - MIXED escape (\xNN for chars in 0x80..0xff, \uXXXX above) — this
+//     is what Metro/terser typically emits: shortest per-char escape.
+//     Observed in dist/_expo/static/js/web/index-*.js: `TEST \xb7
+//     測試環境` — `·` (U+00B7) emitted as `\xb7`
+//     because it fits in one byte, CJK chars stay as `\uXXXX`.
 //   - String.fromCharCode(...) form (Metro's fallback on some minifier
 //     plugins)
 // Any hit in the production bundle is a DCE regression.
@@ -107,21 +112,32 @@ function needleVariants(needle) {
       return '\\u' + code.toString(16).padStart(4, '0');
     })
     .join('');
-  // \x hex escape uses the UTF-8 BYTE sequence, not code points, since
-  // \xNN only spans 0x00..0xff.
+  // \x hex escape uses the UTF-8 BYTE sequence, since \xNN only spans
+  // 0x00..0xff.
   const utf8 = Buffer.from(needle, 'utf8');
   const hexEsc = Array.from(utf8)
     .map((b) => {
-      // ASCII printable: leave as raw char so a minifier that
-      // rewrites only high bytes as \x still trips this pattern.
+      // ASCII printable: leave as raw char so a minifier that rewrites
+      // only high bytes as \x still trips this pattern.
       if (b >= 0x20 && b < 0x80) return String.fromCharCode(b);
       return '\\x' + b.toString(16).padStart(2, '0');
+    })
+    .join('');
+  // MIXED escape: per code point, use \xNN if it fits in one byte
+  // (0x00..0xff), else \uXXXX. Matches Metro/terser's default output
+  // for a string that mixes Latin-1 (·) and CJK ranges.
+  const mixedEsc = Array.from(needle)
+    .map((ch) => {
+      const code = ch.codePointAt(0);
+      if (code >= 0x20 && code < 0x80) return ch;
+      if (code < 0x100) return '\\x' + code.toString(16).padStart(2, '0');
+      return '\\u' + code.toString(16).padStart(4, '0');
     })
     .join('');
   const fromCharCode = 'String.fromCharCode(' +
     Array.from(needle).map((ch) => ch.codePointAt(0)).join(',') +
     ')';
-  const seen = new Set([raw, unicodeEsc, hexEsc, fromCharCode]);
+  const seen = new Set([raw, unicodeEsc, hexEsc, mixedEsc, fromCharCode]);
   return [...seen];
 }
 
@@ -137,6 +153,7 @@ function bundleContains(needle) {
           variant:
             v === needle ? 'raw' :
             v.startsWith('String.fromCharCode') ? 'fromCharCode' :
+            v.includes('\\u') && v.includes('\\x') ? 'mixed-escape' :
             v.includes('\\u') ? 'unicode-escape' :
             'hex-escape',
           snippet: body.slice(Math.max(0, idx - 40), idx + v.length + 40),
