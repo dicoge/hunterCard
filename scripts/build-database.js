@@ -29,6 +29,7 @@ import {
   filterProvenanceMatchedRecords,
   findAmbiguousPromoRowIds,
   hasCurrentPriceProvenance,
+  findUnprovenPriceHistoryViolations,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
@@ -1664,6 +1665,15 @@ async function buildDatabase() {
   // `priceHistory={"2026-08-28":30}` alongside `sellPrice:null`,
   // `prices:[]`, `yuyuImage:""` — the exact shape this gate rules out.
   console.log('\n── Step 6: Merge priceHistory into database ──');
+  // DIC-1229 rev.2: compute the ambiguous-hPR set once so both the Step 6
+  // gate and the post-Step-6 audit see the same non-ambiguity rule that
+  // findAmbiguousPromoRowIds enforces elsewhere in the build. The set is
+  // an input to hasCurrentPriceProvenance below — passing it here (not
+  // deriving inside the predicate) keeps the pure helper testable without
+  // holding the whole cards map.
+  const provenanceGateOptions = {
+    ambiguousIds: findAmbiguousPromoRowIds(database.cards),
+  };
   let mergedCount = 0;
   let droppedRecords = 0;
   let skippedUnproven = 0;
@@ -1678,7 +1688,7 @@ async function buildDatabase() {
     // rows by the pre-DIC-1227 daily scrape). The DIC-1229 post-Step-6
     // hard-fail audit guarantees no unproven row ever ships priceHistory
     // regardless of what survives on disk.
-    if (!hasCurrentPriceProvenance(card)) {
+    if (!hasCurrentPriceProvenance(card, provenanceGateOptions)) {
       skippedUnproven++;
       continue;
     }
@@ -1704,22 +1714,18 @@ async function buildDatabase() {
   // makes the "unproven printing must stay unknown across all price
   // surfaces" invariant a build-time failure rather than a warn-only
   // regression. If any row violates it, throw so the daily scheduler
-  // exits non-zero (the pipeline's fail-fast contract, DIC-1219).
+  // exits non-zero (the pipeline's fail-fast contract, DIC-1219). The
+  // predicate is a pure function (`findUnprovenPriceHistoryViolations`
+  // in preserve-market-fields.js) so the mutation-sensitive test suite
+  // can call it directly with poisoned fixtures — this call is the
+  // production wire.
   {
-    const violations = [];
-    for (const [cardId, card] of Object.entries(database.cards)) {
-      const ph = card?.priceHistory;
-      if (!ph || typeof ph !== 'object') continue;
-      const dayCount = Object.keys(ph).length;
-      if (dayCount === 0) continue;
-      if (!hasCurrentPriceProvenance(card)) {
-        violations.push(`${cardId} (days=${dayCount})`);
-      }
-    }
+    const violations = findUnprovenPriceHistoryViolations(database.cards, provenanceGateOptions);
     if (violations.length > 0) {
+      const rendered = violations.slice(0, 5).map((v) => `${v.id} (days=${v.dayCount})`);
       throw new Error(
         `[DIC-1229] ${violations.length} unproven printing(s) shipped priceHistory: ` +
-        violations.slice(0, 5).join(', ') +
+        rendered.join(', ') +
         (violations.length > 5 ? `, +${violations.length - 5} more` : '') +
         `. hasCurrentPriceProvenance must be true for any row carrying priceHistory (no cross-version / cross-printing fallback).`
       );
