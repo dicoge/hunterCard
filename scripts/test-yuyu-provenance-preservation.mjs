@@ -58,6 +58,17 @@ assert.equal(yuyuImageProductPath('data:image/png;base64,abc'), '', 'data URL fa
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/'), '', 'shape mismatch fails closed');
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/heb01/'), '', 'missing filename fails closed');
 assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.exe'), '', 'wrong extension fails closed');
+// DIC-1227 CR rev.6: non-default and protocol-mismatched ports fail closed
+// BEFORE canonicalYuyuImageIdentity strips the port. A URL like
+// `https://…:444/…` or `http://…:443/…` would otherwise collide with a
+// valid https default-port URL after port normalization.
+assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp:444/hocg/100_140/promo-hbp10/10013.jpg'), '', 'non-default https port (:444) fails closed');
+assert.equal(yuyuImageProductPath('http://card.yuyu-tei.jp:8080/hocg/100_140/promo-hbp10/10013.jpg'), '', 'non-default http port (:8080) fails closed');
+assert.equal(yuyuImageProductPath('http://card.yuyu-tei.jp:443/hocg/100_140/promo-hbp10/10013.jpg'), '', 'protocol-mismatched port (http on :443) fails closed');
+assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp:80/hocg/100_140/promo-hbp10/10013.jpg'), '', 'protocol-mismatched port (https on :80) fails closed');
+// Positive: default ports (either omitted or explicit) still pass.
+assert.equal(yuyuImageProductPath('https://card.yuyu-tei.jp:443/hocg/100_140/promo-hbp10/10013.jpg'), 'promo-hbp10', 'explicit default https port (:443) still passes');
+assert.equal(yuyuImageProductPath('http://card.yuyu-tei.jp:80/hocg/100_140/promo-hbp10/10013.jpg'), 'promo-hbp10', 'explicit default http port (:80) still passes');
 
 // ---- unit: canonicalYuyuImageIdentity (rev.5 alias-collapse) ---------------
 // DIC-1227 CR rev.5: two yuyu-tei URLs pointing at the same physical image
@@ -83,6 +94,16 @@ assert.equal(canonicalYuyuImageIdentity(null), '', 'null yields no identity');
 assert.equal(canonicalYuyuImageIdentity('https://evil-yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg'), '', 'lookalike host yields no identity');
 assert.equal(canonicalYuyuImageIdentity('javascript:alert(1)'), '', 'non-http protocol yields no identity');
 assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.exe'), '', 'wrong extension yields no identity');
+// DIC-1227 CR rev.6: non-default / protocol-mismatched port URLs MUST yield
+// no identity so they cannot collide with the valid default-port URL after
+// canonicalYuyuImageIdentity strips the port.
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp:444/hocg/100_140/promo-hsd10/10020.jpg'), '', 'non-default https port (:444) yields no identity');
+assert.equal(canonicalYuyuImageIdentity('http://card.yuyu-tei.jp:8080/hocg/100_140/promo-hsd10/10020.jpg'), '', 'non-default http port (:8080) yields no identity');
+assert.equal(canonicalYuyuImageIdentity('http://card.yuyu-tei.jp:443/hocg/100_140/promo-hsd10/10020.jpg'), '', 'protocol-mismatched port (http on :443) yields no identity');
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp:80/hocg/100_140/promo-hsd10/10020.jpg'), '', 'protocol-mismatched port (https on :80) yields no identity');
+// Positive: still collapses when default port is explicit.
+assert.equal(canonicalYuyuImageIdentity('https://card.yuyu-tei.jp:443/hocg/100_140/promo-hsd10/10020.jpg'), canonBase, 'default :443 collapses to base identity');
+assert.equal(canonicalYuyuImageIdentity('http://card.yuyu-tei.jp:80/hocg/100_140/promo-hsd10/10020.jpg'), canonBase, 'default :80 collapses to base identity');
 
 // ---- unit: provenance match --------------------------------------------------
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hpr/10200.jpg' }, 'hPR'), true);
@@ -479,6 +500,54 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
   }
   assert.ok(!ambiguous.has('hBP10-444_hPR_P_A'), 'distinct filename must NOT be flagged');
   assert.ok(!ambiguous.has('hBP10-444_hPR_P_B'), 'distinct filename must NOT be flagged');
+}
+
+// ---- Fixture G-port: non-default / protocol-mismatched ports cannot poison
+// DIC-1227 CR rev.6: a URL like https://…:444/… or http://…:443/… must
+// fail validation BEFORE canonicalYuyuImageIdentity strips the port —
+// otherwise it collides with a valid default-port URL and forces a legit
+// hPR row into the ambiguity set. Since parseYuyuImage rejects these URLs
+// altogether, findAmbiguousPromoRowIds skips them (identity=''), so they
+// cannot poison a same-cardNumber sibling.
+{
+  const cards = {
+    // Legit hPR row.
+    'hBP10-666_hPR_P_valid': {
+      cardNumber: 'hBP10-666', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/66666.jpg',
+    },
+    // Bypass attempts — non-default and protocol-mismatched ports.
+    'hBP10-666_hPR_P_bypass_444': {
+      cardNumber: 'hBP10-666', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp:444/hocg/100_140/promo-hbp10/66666.jpg',
+    },
+    'hBP10-666_hPR_P_bypass_8080': {
+      cardNumber: 'hBP10-666', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'http://card.yuyu-tei.jp:8080/hocg/100_140/promo-hbp10/66666.jpg',
+    },
+    'hBP10-666_hPR_P_bypass_http443': {
+      cardNumber: 'hBP10-666', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'http://card.yuyu-tei.jp:443/hocg/100_140/promo-hbp10/66666.jpg',
+    },
+    'hBP10-666_hPR_P_bypass_https80': {
+      cardNumber: 'hBP10-666', sourceProduct: 'hPR', rarity: 'P',
+      yuyuImage: 'https://card.yuyu-tei.jp:80/hocg/100_140/promo-hbp10/66666.jpg',
+    },
+  };
+  const ambiguous = findAmbiguousPromoRowIds(cards);
+  assert.ok(
+    !ambiguous.has('hBP10-666_hPR_P_valid'),
+    'valid hPR row must NOT be poisoned by port-bypass siblings',
+  );
+  for (const id of [
+    'hBP10-666_hPR_P_bypass_444',
+    'hBP10-666_hPR_P_bypass_8080',
+    'hBP10-666_hPR_P_bypass_http443',
+    'hBP10-666_hPR_P_bypass_https80',
+  ]) {
+    assert.ok(!ambiguous.has(id), `${id} produces no identity so cannot collide (fail-closed at parseYuyuImage)`);
+  }
+  assert.equal(ambiguous.size, 0, 'the whole scenario must produce zero ambiguous rows (port-mismatched URLs have no identity to collide with)');
 }
 
 // ---- Fixture H: entry-level filter respects hostname + known-promo (rev.3) --

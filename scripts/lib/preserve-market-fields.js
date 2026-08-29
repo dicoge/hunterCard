@@ -112,6 +112,15 @@ function parseYuyuImage(url) {
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
   if (parsed.hostname.toLowerCase() !== 'card.yuyu-tei.jp') return null;
+  // DIC-1227 CR rev.6: accept ONLY the protocol default port (URL API
+  // normalises https://…:443/… and http://…:80/… to `port === ''`). Any
+  // non-default (`https://…:444/…`, `http://…:8080/…`) or protocol-
+  // mismatched (`http://…:443/…`, `https://…:80/…`) port survives as an
+  // explicit `parsed.port` string — those MUST fail closed before
+  // canonicalYuyuImageIdentity strips the port, otherwise a spoofed URL
+  // collides with and poisons a valid hPR row (Mac-Codex CR flagged this
+  // exact bypass class on rev.5 head 628372a5).
+  if (parsed.port !== '') return null;
   const m = parsed.pathname.match(/^\/hocg\/[A-Za-z0-9_]+\/([A-Za-z0-9-]+)\/[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/i);
   if (!m) return null;
   return { product: m[1].toLowerCase(), pathname: parsed.pathname };
