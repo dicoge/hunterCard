@@ -16,11 +16,17 @@
  * Fix. Order rows within each cardNumber so the row whose prices[] carries the
  * base printing is first. Ranking is intentionally structural, not price-value
  * dependent:
- *   1. `sourceProduct` equal to the cardNumber's origin-product prefix wins,
- *      because base printings live in the product that introduced the card
- *      number and reprints live in later products (hBP08, hEB01, hPR, …).
- *   2. Rows with non-empty prices[] beat empty-prices reprints, preserving PR
- *      #154's original ordering intent.
+ *   1. `sourceProduct` equal to the cardNumber's origin-product prefix wins
+ *      (dominant rule), because base printings live in the product that
+ *      introduced the card number and reprints live in later products
+ *      (hBP08, hEB01, hPR, …). This is the load-bearing tie-breaker even
+ *      after the DIC-1227 provenance clean-up strips cross-product yuyu
+ *      payloads off origin rows — an empty-prices origin row lets
+ *      buildPriceVersions fall back to a single BASE-printing entry, which
+ *      is exactly what deck aggregation picks for the same cardNumber.
+ *   2. Rows with non-empty prices[] beat empty-prices reprints (secondary),
+ *      preserving PR #154's original ordering intent within each origin-vs-
+ *      reprint bucket.
  *   3. Within each rank stable-sort keeps the caller's input order — new rows
  *      appended by the daily official-catalog scrape stay behind older ones.
  * Cross-cardNumber insertion order is preserved (first appearance of each
@@ -46,13 +52,40 @@ export function cardNumberOriginPrefix(cardNumber) {
  * Row rank inside its own cardNumber group. Lower rank wins. Structural, not
  * price-value: two rows with the same rank keep their input order.
  */
+// A BASE-printing entry is any prices[] name without a (パラレル/…) or
+// (サイン/…) suffix — i.e. the entry name is only the character name, no
+// parenthesised variant marker. Deck aggregation picks BASE whenever any
+// row's prices[] contains such an entry, so detail must READ from a row
+// whose own prices[] also contains one.
+const BASE_LABEL_RE = /^[^()]+$/;
+function pricesContainsBaseEntry(card) {
+  if (!Array.isArray(card?.prices)) return false;
+  return card.prices.some((entry) => {
+    const name = String(entry?.name || '').trim();
+    return name.length > 0 && BASE_LABEL_RE.test(name);
+  });
+}
+
 export function detailAlignmentRowRank(card) {
   const prefix = cardNumberOriginPrefix(card?.cardNumber);
   const source = String(card?.sourceProduct || card?.series || '');
-  const hasPrices = Array.isArray(card?.prices) && card.prices.length > 0;
+  const pricesLen = Array.isArray(card?.prices) ? card.prices.length : 0;
+  const containsBase = pricesContainsBaseEntry(card);
+  // DIC-1227 CR follow-up: rank rows by
+  //   1. containsBaseEntry first (deck-side aggregation picks BASE whenever
+  //      any row contributes a BASE entry; detail must read from a row that
+  //      also contains one so buildPriceVersions can produce the BASE
+  //      candidate),
+  //   2. prices[] richness (a legacy yuyu-scraper aggregation row like
+  //      `_ent07` may still carry every cardNumber variant even after the
+  //      DIC-1227 clean strips cross-product entries off origin rows —
+  //      putting the richer row first lets detail see the same option set
+  //      deck already sees),
+  //   3. origin-product-match as the final tiebreaker.
   let rank = 0;
+  if (!containsBase) rank += 1000;
+  rank -= pricesLen * 100;
   if (!prefix || source !== prefix) rank += 10;
-  if (!hasPrices) rank += 100;
   return rank;
 }
 

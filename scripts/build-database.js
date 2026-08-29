@@ -27,6 +27,7 @@ import {
   seedCanonicalHistoryFiles,
   stampHistoryRecord,
   filterProvenanceMatchedRecords,
+  findAmbiguousPromoRowIds,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
@@ -1455,6 +1456,31 @@ async function buildDatabase() {
       `  [preserve] restored sellPrice=${restoredSell} prices=${restoredPrices} `
       + `priceHistory=${restoredPriceHistory} ytStats=${restoredYt}`
     );
+  }
+
+  // DIC-1227 CR follow-up rev.4: fail-closed on ambiguous promo assignment.
+  // If two hPR rows of the same cardNumber both claim the same yuyuImage URL,
+  // a single yuyu listing cannot vouch for both distinct printings — null
+  // every one of them so the daily build path cannot recreate the pairs
+  // Mac-Codex CR flagged (hSD03-002 P/P_2, hBP01-108 P/P_01, hBP02-028 P/P_2).
+  // Runs BEFORE detail-align so the ranker sees the corrected prices[].
+  {
+    const ambiguous = findAmbiguousPromoRowIds(database.cards);
+    if (ambiguous.size > 0) {
+      for (const id of ambiguous) {
+        const card = database.cards[id];
+        if (!card) continue;
+        card.sellPrice = null;
+        card.prices = [];
+        card.yuyuName = '';
+        card.yuyuImage = '';
+        card.timestamp = '';
+        if (card.priceHistory) card.priceHistory = {};
+        if (card.priceHistoryMeta) delete card.priceHistoryMeta;
+        if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
+      }
+      console.log(`  [promo-ambiguity] nulled ${ambiguous.size} hPR rows sharing a yuyuImage across distinct printings`);
+    }
   }
 
   // DIC-1167: keep the CardDetail and deck pipelines resolving to the same

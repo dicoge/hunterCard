@@ -237,6 +237,9 @@ jobs:
       - name: Verify scheduler fails closed on tracked/staged/untracked residue (DIC-1219)
         run: npm run test:scheduler-dirty-precondition
 
+      - name: Verify yuyu-provenance gate blocks cross-product preservation (DIC-1227)
+        run: npm run test:yuyu-provenance-preservation
+
       - name: Verify scan totals fail closed on unresolved versions (DIC-1013)
         run: npm run test:scan-fail-closed
 

@@ -41,6 +41,9 @@ const provenPayload = {
       name: 'ラプラス・ダークネス',
       sellPrice: 980,
       rarity: 'U',
+      // DIC-1227: production prices[] entries always carry imageUrl (100% in
+      // the shipped DB). The provenance filter reads the URL product path.
+      imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hsd03/10011.jpg',
       buyPrice: 40,
       buyPriceVersion: 'BASE',
       buyPriceSource: 'fullahead',
@@ -50,7 +53,7 @@ const provenPayload = {
   yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hsd03/10011.jpg',
   timestamp: '2026-08-25T12:00:00.000Z',
   priceHistory: { '2026-08-23': 1000, '2026-08-24': 980, '2026-08-25': 980 },
-  _rawPricesArchive: [{ name: 'ラプラス・ダークネス', sellPrice: 980, rarity: '' }],
+  _rawPricesArchive: [{ name: 'ラプラス・ダークネス', sellPrice: 980, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hsd03/10011.jpg' }],
   ytStats: {
     subscriberCount: 1200000,
     totalViewCount: 200000000,
@@ -84,7 +87,7 @@ const prevCards = {
     series: 'hSD03',
     sourceProduct: 'hSD03',
     sellPrice: 9999,
-    prices: [{ name: 'ラプラス・ダークネス', sellPrice: 9999, rarity: 'C' }],
+    prices: [{ name: 'ラプラス・ダークネス', sellPrice: 9999, rarity: 'C', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hsd03/10012.jpg' }],
   },
   // Ambiguous case: two prior rows share the same signature. Must refuse to
   // pick — DIC-1013 fail-closed rule.
@@ -175,10 +178,10 @@ function freshCurrentCard(overrides = {}) {
     series: 'hBP02',
     // pre-DIC-1140 build: SEC row still carried yuyu variants + a signed image
     sellPrice: 420,
-    prices: [{ name: '宝鐘マリン(パラレル/サイン)', sellPrice: 89800, rarity: '' }],
+    prices: [{ name: '宝鐘マリン(パラレル/サイン)', sellPrice: 89800, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg' }],
     yuyuName: '宝鐘マリン(パラレル/サイン)',
     yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg',
-    _rawPricesArchive: [{ name: '宝鐘マリン(パラレル/サイン)', sellPrice: 89800 }],
+    _rawPricesArchive: [{ name: '宝鐘マリン(パラレル/サイン)', sellPrice: 89800, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg' }],
     priceHistory: { '2026-08-23': 420, '2026-08-24': 420 },
     ytStats: null,
   };
@@ -366,7 +369,7 @@ function freshCurrentCard(overrides = {}) {
     rarity: 'C',
     sourceProduct: 'hBP01',
     sellPrice: 50,
-    prices: [{ name: '鷹嶺ルイ', sellPrice: 50, rarity: 'C' }],
+    prices: [{ name: '鷹嶺ルイ', sellPrice: 50, rarity: 'C', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10037.jpg' }],
     priceHistory: { ...preservedHistory },
   };
   const cards = { [renamedId]: card };
@@ -561,7 +564,9 @@ function freshCurrentCard(overrides = {}) {
 // ─── Real subprocess exercise of the shipped build ordering ─────────────
 // Additional guard requested by CR: exercise the real scripts/build-database.js
 // process (with HUNTERCARD_YUYU_FIXTURE_PATH set to skip network) and assert
-// that a renamed origin-product printing — `hBP01-028_hBP01_C_hBP01-028_C`,
+// that a renamed origin-product printing — `hBP01-025_hBP01_C_hBP01-025_C`
+// (retargeted from hBP01-028 which lost its priceHistory under DIC-1227's
+// cross-product cleanup — the previous choice's yuyuImage pointed to /hbp08/),
 // which had 66 shipped DB history days but no canonical-ID history file on
 // main — still has multi-day priceHistory in the written data/database.json
 // after a build with no pre-existing canonical-ID history file. This is the
@@ -572,7 +577,7 @@ function freshCurrentCard(overrides = {}) {
 // rows now fail-closed at seed and merge time (their history rebuilds from
 // stamped Step 5 writes only) — covered by `test:price-history-provenance`.
 {
-  const CANONICAL_ID = 'hBP01-028_hBP01_C_hBP01-028_C';
+  const CANONICAL_ID = 'hBP01-025_hBP01_C_hBP01-025_C';
   const tmp = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'dic1204-e2e-'));
   const dbPath = pathMod.join(REPO_ROOT, 'data/database.json');
   const nativePath = pathMod.join(REPO_ROOT, 'public/data/database.json');
@@ -584,8 +589,8 @@ function freshCurrentCard(overrides = {}) {
   );
   const indexFile = pathMod.join(historyDir, 'index.json');
 
-  // Preflight — the fixture card must exist in the current DB and in
-  // official/hBP08.json for the subprocess build to reproduce it.
+  // Preflight — the fixture card must exist in the current DB and in the
+  // matching official/<sourceProduct>.json for the subprocess build to reproduce it.
   const currentDb = JSON.parse(fsMod.readFileSync(dbPath, 'utf8'));
   assert.ok(
     currentDb.cards?.[CANONICAL_ID],
