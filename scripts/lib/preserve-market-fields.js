@@ -341,6 +341,28 @@ export function findAmbiguousPromoRowIds(cards) {
 }
 
 /**
+ * DIC-1229: a row has "current exact-print price provenance" when this
+ * build's fresh scrape (or a signature-safe preservation) landed a proven
+ * yuyu listing on the row — i.e. a positive `sellPrice` or at least one
+ * entry inside `prices[]`. When both are absent the row is an unproven
+ * printing under the DIC-1227 fail-closed contract; a `priceHistory` or
+ * durable history record surviving on such a row is by definition stale
+ * cross-provenance data (the DIC-1229 CR flagged exactly this shape:
+ * `hBP01-090_hPR_P_hBP01-090_P_02` shipped `sellPrice:null`, `prices:[]`,
+ * `yuyuImage:""` yet Production carried `priceHistory={"2026-08-28":30}`
+ * from a poisoned durable record whose stamp `sourceProduct:"hPR"` alone
+ * passed the DIC-1219 record filter). Callers use this helper as the
+ * gate before merging durable history back onto a row.
+ */
+export function hasCurrentPriceProvenance(card) {
+  if (!card || typeof card !== 'object') return false;
+  const sellFinite = Number.isFinite(card.sellPrice) && card.sellPrice > 0;
+  if (sellFinite) return true;
+  if (!Array.isArray(card.prices)) return false;
+  return card.prices.some((entry) => Number.isFinite(entry?.sellPrice) && entry.sellPrice > 0);
+}
+
+/**
  * DIC-1227 CR follow-up entry-by-entry filter for prices[] and
  * _rawPricesArchive[]. Returns the entries whose imageUrl product path
  * matches the current row's sourceProduct (with the same

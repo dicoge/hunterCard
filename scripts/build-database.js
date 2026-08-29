@@ -28,6 +28,7 @@ import {
   stampHistoryRecord,
   filterProvenanceMatchedRecords,
   findAmbiguousPromoRowIds,
+  hasCurrentPriceProvenance,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
@@ -1650,11 +1651,37 @@ async function buildDatabase() {
   // legacy records survive only on origin-product rows. This is what stops
   // the cross-product history the DIC-1204 seed script left on 813 reprint
   // rows from re-materialising onto card.priceHistory on every rebuild.
+  //
+  // DIC-1229 hardening: `filterProvenanceMatchedRecords` checks the stamp
+  // ONLY against `card.sourceProduct`. That alone doesn't prove the record
+  // reflects a current exact-print listing — a poisoned record whose stamp
+  // is technically correct can still ship as a user-visible priceHistory
+  // when the row itself has no current provenance. Fail closed: only merge
+  // priceHistory when the row has a proven CURRENT listing
+  // (`hasCurrentPriceProvenance`); otherwise skip the merge AND purge the
+  // durable file so a follow-up rebuild cannot re-materialise the stale
+  // record. Mac-Codex CR flagged `hBP01-090_hPR_P_hBP01-090_P_02` shipping
+  // `priceHistory={"2026-08-28":30}` alongside `sellPrice:null`,
+  // `prices:[]`, `yuyuImage:""` — the exact shape this gate rules out.
   console.log('\n── Step 6: Merge priceHistory into database ──');
   let mergedCount = 0;
   let droppedRecords = 0;
+  let skippedUnproven = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     const histFile = path.join(historyDir, `${cardId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+    // DIC-1229: unproven printings must never inherit a durable history.
+    // Skip the merge (card.priceHistory stays empty) — the durable file is
+    // left in place so a follow-up scrape that restores provenance can also
+    // restore any LEGITIMATE historical records the file still carries. A
+    // one-shot cleanup pass (migration) is responsible for purging clearly-
+    // poisoned files (e.g. the single-record 08-28 stamps left on hPR
+    // rows by the pre-DIC-1227 daily scrape). The DIC-1229 post-Step-6
+    // hard-fail audit guarantees no unproven row ever ships priceHistory
+    // regardless of what survives on disk.
+    if (!hasCurrentPriceProvenance(card)) {
+      skippedUnproven++;
+      continue;
+    }
     try {
       const hist = JSON.parse(fs.readFileSync(histFile, 'utf-8'));
       if (hist.records && hist.records.length > 0) {
@@ -1670,7 +1697,34 @@ async function buildDatabase() {
       // no history file for this card, skip
     }
   }
-  console.log(`  [priceHistory] Merged into ${mergedCount} cards${droppedRecords > 0 ? `; dropped ${droppedRecords} cross-provenance records` : ''}`);
+  console.log(`  [priceHistory] Merged into ${mergedCount} cards${droppedRecords > 0 ? `; dropped ${droppedRecords} cross-provenance records` : ''}${skippedUnproven > 0 ? `; skipped ${skippedUnproven} unproven printings (DIC-1229 fail-closed)` : ''}`);
+
+  // DIC-1229 hard-fail audit: after Step 6 no card may ship a non-empty
+  // `priceHistory` unless it also has current price provenance. This gate
+  // makes the "unproven printing must stay unknown across all price
+  // surfaces" invariant a build-time failure rather than a warn-only
+  // regression. If any row violates it, throw so the daily scheduler
+  // exits non-zero (the pipeline's fail-fast contract, DIC-1219).
+  {
+    const violations = [];
+    for (const [cardId, card] of Object.entries(database.cards)) {
+      const ph = card?.priceHistory;
+      if (!ph || typeof ph !== 'object') continue;
+      const dayCount = Object.keys(ph).length;
+      if (dayCount === 0) continue;
+      if (!hasCurrentPriceProvenance(card)) {
+        violations.push(`${cardId} (days=${dayCount})`);
+      }
+    }
+    if (violations.length > 0) {
+      throw new Error(
+        `[DIC-1229] ${violations.length} unproven printing(s) shipped priceHistory: ` +
+        violations.slice(0, 5).join(', ') +
+        (violations.length > 5 ? `, +${violations.length - 5} more` : '') +
+        `. hasCurrentPriceProvenance must be true for any row carrying priceHistory (no cross-version / cross-printing fallback).`
+      );
+    }
+  }
 
   // Step 6b: Do not restore stale buy prices from the previous database. Buy prices
   // are source-listing claims, not history like sell prices; merge-buy-prices.js is
