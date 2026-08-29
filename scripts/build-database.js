@@ -1674,6 +1674,30 @@ async function buildDatabase() {
   const provenanceGateOptions = {
     ambiguousIds: findAmbiguousPromoRowIds(database.cards),
   };
+  // DIC-1229 CR rev.3 fault-injection hooks — test-only. The regression
+  // suite spawns build-database.js with EXACTLY ONE of these set at a
+  // time to prove each defence layer catches contamination in isolation:
+  //   - HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 disables the Step 6
+  //     `continue`, leaving only the audit to catch. When contamination
+  //     is present the audit MUST throw — a mutation that removes the
+  //     audit is what this scenario is sensitive to.
+  //   - HUNTERCARD_DIC1229_DISABLE_AUDIT=1 disables the post-Step-6
+  //     throw, leaving only Step 6 to catch. When contamination is
+  //     present Step 6 skip MUST prevent the merge and the row MUST
+  //     ship priceHistory=empty — a mutation that removes the Step 6
+  //     skip is what this scenario is sensitive to.
+  // Under normal daily runs BOTH env vars are unset; both defences run.
+  // The one-time log lines make the fault injection observable in the
+  // scheduler log and force the test suite to fail loudly if either
+  // hook accidentally leaks into a real run.
+  const disableStep6Skip = process.env.HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP === '1';
+  const disableAudit = process.env.HUNTERCARD_DIC1229_DISABLE_AUDIT === '1';
+  if (disableStep6Skip) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 — Step 6 skip DISABLED (test-only fault injection)');
+  }
+  if (disableAudit) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_AUDIT=1 — post-Step-6 audit DISABLED (test-only fault injection)');
+  }
   let mergedCount = 0;
   let droppedRecords = 0;
   let skippedUnproven = 0;
@@ -1690,7 +1714,14 @@ async function buildDatabase() {
     // regardless of what survives on disk.
     if (!hasCurrentPriceProvenance(card, provenanceGateOptions)) {
       skippedUnproven++;
-      continue;
+      if (disableStep6Skip) {
+        // Fault-injection path: fall through to the merge below so the
+        // audit gets to catch the contamination. This is UNREACHABLE
+        // under normal runs — HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP is
+        // test-only.
+      } else {
+        continue;
+      }
     }
     try {
       const hist = JSON.parse(fs.readFileSync(histFile, 'utf-8'));
@@ -1719,7 +1750,7 @@ async function buildDatabase() {
   // in preserve-market-fields.js) so the mutation-sensitive test suite
   // can call it directly with poisoned fixtures — this call is the
   // production wire.
-  {
+  if (!disableAudit) {
     const violations = findUnprovenPriceHistoryViolations(database.cards, provenanceGateOptions);
     if (violations.length > 0) {
       const rendered = violations.slice(0, 5).map((v) => `${v.id} (days=${v.dayCount})`);

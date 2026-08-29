@@ -41,12 +41,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   hasCurrentPriceProvenance,
   findUnprovenPriceHistoryViolations,
+  pricesEntryExactPrintMatchesSource,
   DIC1229_MAX_TIMESTAMP_AGE_MS,
+  DIC1229_MAX_TIMESTAMP_CLOCK_SKEW_MS,
 } from './lib/preserve-market-fields.js';
 import { purgeUnprovenPriceHistory, historyFilenameFor } from './purge-unproven-price-history-DIC-1229.mjs';
 
@@ -59,7 +61,12 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const NOW_MS = Date.parse('2026-08-29T00:00:00.000Z');
 const FRESH_TS = '2026-08-28T12:00:00.000Z';   // ~12h before NOW → fresh
 const STALE_TS = '2026-08-01T00:00:00.000Z';   // 28d before NOW → stale
+const FUTURE_TS_FAR = '2099-01-01T00:00:00.000Z';  // Mac-Codex-flagged far-future
+const FUTURE_TS_HOUR = new Date(NOW_MS + 60 * 60 * 1000).toISOString(); // 1h in future
+const FUTURE_TS_MIN = new Date(NOW_MS + 60 * 1000).toISOString();       // 1min in future (within default 5-min skew)
 const VALID_HBP01_URL = 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10001.jpg';
+const VALID_HBP02_URL = 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10002.jpg';
+const VALID_HBP04_URL = 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10004.jpg';
 const VALID_HEB01_URL = 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10001.jpg';
 const VALID_PROMO_HBP10_URL = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg';
 const EVIL_HOST_URL = 'https://evil-yuyu-tei.jp/hocg/100_140/hbp01/10001.jpg';
@@ -145,6 +152,42 @@ assert.equal(
   'wall-clock default now works for a just-now-stamped row',
 );
 
+// DIC-1229 CR rev.3: bounded future clock skew. A timestamp deep in the
+// future must fail closed even when every other criterion holds.
+assert.equal(DIC1229_MAX_TIMESTAMP_CLOCK_SKEW_MS, 5 * 60 * 1000, 'default clock-skew allowance is 5 minutes');
+assert.equal(
+  hasCurrentPriceProvenance({
+    sourceProduct: 'hBP01', sellPrice: 180, yuyuImage: VALID_HBP01_URL,
+    prices: [], timestamp: FUTURE_TS_FAR,
+  }, gate()),
+  false,
+  'far-future timestamp (2099 under 2026 clock) fails closed — the exact CR rev.3 blocker',
+);
+assert.equal(
+  hasCurrentPriceProvenance({
+    sourceProduct: 'hBP01', sellPrice: 180, yuyuImage: VALID_HBP01_URL,
+    prices: [], timestamp: FUTURE_TS_HOUR,
+  }, gate()),
+  false,
+  '1-hour future timestamp exceeds default 5-min clock-skew allowance',
+);
+assert.equal(
+  hasCurrentPriceProvenance({
+    sourceProduct: 'hBP01', sellPrice: 180, yuyuImage: VALID_HBP01_URL,
+    prices: [], timestamp: FUTURE_TS_MIN,
+  }, gate()),
+  true,
+  '1-minute future timestamp is within default clock-skew allowance (NTP jitter tolerance)',
+);
+assert.equal(
+  hasCurrentPriceProvenance({
+    sourceProduct: 'hBP01', sellPrice: 180, yuyuImage: VALID_HBP01_URL,
+    prices: [], timestamp: FUTURE_TS_FAR,
+  }, gate({ clockSkewMs: 100 * 365 * 24 * 60 * 60 * 1000 })),
+  true,
+  'far-future timestamp passes when caller explicitly widens clockSkewMs — proves the bound is a configurable gate, not disabled',
+);
+
 // URL provenance — evil host, opaque URI, non-default port, no extension
 for (const [badUrl, label] of [
   [EVIL_HOST_URL, 'lookalike host'],
@@ -211,18 +254,21 @@ assert.equal(
   false,
   'entry-level: cross-printing imageUrl (/heb01/ on hBP01 row) fails closed',
 );
-// ent07 aggregation carve-out — sourceProduct=ent07 accepts any valid
-// yuyu-tei image URL (it's the scraper's aggregation label, not an
-// official product code). Well-formed URL passes; noimage placeholder
-// fails.
+// DIC-1229 CR rev.3: the ent07 aggregation carve-out from
+// `pricesEntryMatchesSource` is INTENTIONALLY not applied to the
+// priceHistory gate. `ent07` is the scraper's aggregation label, not an
+// official product code; a URL matching any random product path cannot
+// prove which physical printing the ent07 row represents. History is
+// per-printing evidence, so ent07 rows must have their OWN listing (only
+// possible if urlProd === 'ent07', which no yuyu path is → always false).
 assert.equal(
   hasCurrentPriceProvenance({
     sourceProduct: 'ent07', sellPrice: null, yuyuImage: '',
     prices: [{ sellPrice: 80, imageUrl: VALID_HBP01_URL }],
     timestamp: FRESH_TS,
   }, gate()),
-  true,
-  'ent07 aggregation: any well-formed yuyu URL passes',
+  false,
+  'ent07 aggregation: cross-product yuyu URL fails the exact-print gate (no aggregation carve-out for history)',
 );
 assert.equal(
   hasCurrentPriceProvenance({
@@ -233,6 +279,50 @@ assert.equal(
   false,
   'ent07 aggregation: noimage placeholder still fails URL parse',
 );
+
+// DIC-1229 CR rev.3: the reprint origin-prefix carve-out from
+// `pricesEntryMatchesSource` (deck aggregation) is INTENTIONALLY not
+// applied to the priceHistory gate. A fresh hBP04 reprint whose only
+// prices[] entry points at /hbp02/ (cardNumber's origin prefix but NOT
+// the row's sourceProduct) currently would pass the relaxed deck-
+// aggregation match and, under rev.2, wrongly return true here. The
+// history gate must reject it — the exact FAIL Mac-Codex flagged.
+assert.equal(
+  hasCurrentPriceProvenance({
+    sourceProduct: 'hBP04', sellPrice: null, yuyuImage: '',
+    prices: [{ sellPrice: 180, imageUrl: VALID_HBP02_URL, name: '風真いろは' }],
+    timestamp: FRESH_TS, cardNumber: 'hBP02-084',
+  }, gate()),
+  false,
+  'reprint carve-out rejected: hBP04 reprint with only hBP02-origin entry fails the history gate (Mac-Codex rev.3 blocker)',
+);
+// The SAME row with its OWN /hbp04/ entry passes — the reprint carve-out
+// is what was removed, not the exact-print match.
+assert.equal(
+  hasCurrentPriceProvenance({
+    sourceProduct: 'hBP04', sellPrice: null, yuyuImage: '',
+    prices: [
+      { sellPrice: 180, imageUrl: VALID_HBP02_URL, name: '風真いろは' },
+      { sellPrice: 220, imageUrl: VALID_HBP04_URL, name: '風真いろは(パラレル)' },
+    ],
+    timestamp: FRESH_TS, cardNumber: 'hBP02-084',
+  }, gate()),
+  true,
+  'reprint row passes when it carries its OWN sourceProduct-matched entry',
+);
+
+// DIC-1229 CR rev.3: pure `pricesEntryExactPrintMatchesSource` helper.
+// Directly exercise the shape so weakening it (or removing the strict
+// check inside hasCurrentPriceProvenance's entry loop) fails a unit
+// assertion, not just an integration one.
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_HBP04_URL }, 'hBP04'), true);
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_HBP02_URL }, 'hBP04'), false, 'origin-prefix carve-out NOT applied here');
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_PROMO_HBP10_URL }, 'hPR'), true, 'known promo carve-out preserved for hPR');
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_HBP01_URL }, 'ent07'), false, 'ent07 aggregation carve-out NOT applied here');
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: EVIL_HOST_URL }, 'hBP01'), false, 'evil host fails at URL parse');
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: '' }, 'hBP01'), false, 'empty URL fails');
+assert.equal(pricesEntryExactPrintMatchesSource({}, 'hBP01'), false, 'missing imageUrl fails');
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_HBP04_URL }, ''), false, 'empty sourceProduct fails');
 
 // Non-positive sellPrice — zero, negative, null, NaN, string
 for (const badPrice of [0, -100, null, undefined, NaN, '180']) {
@@ -392,27 +482,30 @@ assert.equal(
 // =============================================================================
 // E2E LAYER — subprocess build under HUNTERCARD_YUYU_FIXTURE_PATH
 // Drive the poisoned printing `hBP01-090_hPR_P_hBP01-090_P_02` through
-// the daily scheduler path (real `scripts/build-database.js` under an
-// empty yuyu fixture) and prove:
-//   1. stdout must carry `skipped N unproven printings (DIC-1229
-//      fail-closed)` with N ≥ 1 — that log line ONLY appears when the
-//      Step 6 skip fires. Removing the skip removes the counter.
-//      Mutation-sensitivity to Step 6 skip removal is enforced here.
-//   2. If the build succeeds it must ship the poisoned row with an
-//      empty priceHistory. If Step 6 skip is removed but the audit
-//      still runs, the audit throws (stderr `[DIC-1229]`) — either
-//      shape proves non-zero on contamination.
-// Audit weakening / removal is enforced independently by:
-//   - the unit-layer findUnprovenPriceHistoryViolations tests above
-//     (mutation-sensitive to the predicate call inside the pure
-//     function),
-//   - the source-inspection layer above (mutation-sensitive to the
-//     production wire in scripts/build-database.js).
-// Preservation itself refuses to copy priceHistory onto an unproven
-// row (`applyPreservedMarketFields` gates on `topLevelPayloadMatches`
-// and per-entry surviving payload), so we cannot construct a real
-// subprocess scenario where the audit is the ONLY line of defence
-// — that's the defence-in-depth story the pure-function tests pin.
+// the real `scripts/build-database.js` with EXACTLY ONE defence disabled
+// at a time via the test-only `HUNTERCARD_DIC1229_DISABLE_*` env hooks.
+// This proves that each defence catches contamination on the SPECIFIC
+// production path Mac-Codex CR rev.3 named — not merely a later
+// catch-all throw:
+//   Scenario A — BOTH defences enabled (baseline). Poisoned durable →
+//                Step 6 skip fires → stdout carries `skipped N unproven
+//                printings`, build exits 0, row.priceHistory empty.
+//   Scenario B — HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 (only the
+//                audit stands). Poisoned durable → merge writes the
+//                priceHistory → audit MUST throw → build exits non-
+//                zero with `[DIC-1229]` on stderr naming the poisoned
+//                card id. A mutation that removes the audit lets the
+//                build succeed with contaminated priceHistory — this
+//                scenario then fails.
+//   Scenario C — HUNTERCARD_DIC1229_DISABLE_AUDIT=1 (only Step 6 skip
+//                stands). Poisoned durable → Step 6 skip prevents the
+//                merge → build exits 0 with row.priceHistory empty. A
+//                mutation that removes the Step 6 skip lets the merge
+//                write priceHistory (audit disabled so nothing throws)
+//                — this scenario then fails on the row assertion.
+// The fault-injection env vars log to stdout on entry so their
+// activation is auditable; they only affect Step 6 behaviour — nothing
+// else in build-database.js reads them.
 // =============================================================================
 {
   const CANONICAL_ID = 'hBP01-090_hPR_P_hBP01-090_P_02';
@@ -428,7 +521,7 @@ assert.equal(
   assert.equal(
     hasCurrentPriceProvenance(preRow, gate()),
     false,
-    'E2E preflight: the flagged row must be unproven going in (under the rev.2 strict predicate)',
+    'E2E preflight: the flagged row must be unproven going in (under the rev.3 strict predicate)',
   );
 
   // Snapshot everything we touch so the test leaves no trace.
@@ -460,16 +553,7 @@ assert.equal(
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  try {
-    // Yuyu fixture returns no cards → build path exercises the DIC-1229
-    // Step 6 gate + audit under the exact "no current provenance" shape.
-    const fixtureFile = path.join(tmp, 'yuyu-fixture.json');
-    fs.writeFileSync(
-      fixtureFile,
-      JSON.stringify({ prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true }),
-    );
-
-    // ─── Scenario A: poisoned durable file ─────────────────────────────
+  function seedPoisonedDurable() {
     fs.writeFileSync(canonicalHistoryFile, JSON.stringify({
       cardId: CANONICAL_ID,
       cardNumber: 'hBP01-090',
@@ -485,41 +569,370 @@ assert.equal(
       lastUpdated: '2026-08-28T13:10:25.361Z',
       nameZh: '姆娜·霍希諾瓦',
     }, null, 2));
+  }
 
-    let result = spawnSync(process.execPath, ['scripts/build-database.js'], {
-      cwd: REPO_ROOT,
-      env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: fixtureFile },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 240000,
-    });
+  function resetShippedState() {
+    fs.writeFileSync(dbPath, originalDb);
+    fs.writeFileSync(nativePath, originalNative);
+    for (const file of fs.readdirSync(historyDir).filter((f) => f.endsWith('.json'))) {
+      if (!historySnapshot.has(file)) fs.unlinkSync(path.join(historyDir, file));
+    }
+    for (const [file, contents] of historySnapshot.entries()) {
+      fs.writeFileSync(path.join(historyDir, file), contents);
+    }
+  }
+
+  try {
+    // Yuyu fixture returns no cards → build path exercises the DIC-1229
+    // Step 6 gate + audit under the exact "no current provenance" shape.
+    const fixtureFile = path.join(tmp, 'yuyu-fixture.json');
+    fs.writeFileSync(
+      fixtureFile,
+      JSON.stringify({ prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true }),
+    );
+
+    function runBuild(extraEnv = {}) {
+      return spawnSync(process.execPath, ['scripts/build-database.js'], {
+        cwd: REPO_ROOT,
+        env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: fixtureFile, ...extraEnv },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 240000,
+      });
+    }
+
+    // ─── Scenario A: baseline (both defences enabled) ─────────────────
+    seedPoisonedDurable();
+    let result = runBuild();
     let stdout = result.stdout?.toString() || '';
     let stderr = result.stderr?.toString() || '';
-
-    // Either exit code shape is acceptable — the important assertion is
-    // the stdout skip counter, which only appears when Step 6 fires the
-    // `if (!hasCurrentPriceProvenance(...)) continue;` branch. Removing
-    // the skip removes the counter from the log.
+    assert.equal(
+      result.status,
+      0,
+      `Scenario A (baseline): build should exit 0 with skip fail-closed. exit=${result.status} stderr tail:\n${stderr.slice(-1500)}`,
+    );
     assert.match(
       stdout,
       /skipped\s+\d+\s+unproven printings \(DIC-1229 fail-closed\)/,
-      `Scenario A: Step 6 skip counter must appear on stdout (mutation-sensitive to skip removal). stdout tail:\n${stdout.slice(-2000)}\nstderr tail:\n${stderr.slice(-2000)}`,
+      `Scenario A (baseline): Step 6 skip counter must appear on stdout. stdout tail:\n${stdout.slice(-2000)}`,
     );
-    const skipMatch = stdout.match(/skipped\s+(\d+)\s+unproven printings/);
+    {
+      const skipMatch = stdout.match(/skipped\s+(\d+)\s+unproven printings/);
+      assert.ok(
+        skipMatch && Number(skipMatch[1]) >= 1,
+        `Scenario A (baseline): skip counter must be ≥ 1 (got "${skipMatch?.[0] || 'no match'}")`,
+      );
+    }
+    {
+      const written = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      const row = written.cards?.[CANONICAL_ID];
+      const phSize = row?.priceHistory ? Object.keys(row.priceHistory).length : 0;
+      assert.equal(phSize, 0, `Scenario A (baseline): row must ship empty priceHistory`);
+    }
+
+    // ─── Scenario B: DISABLE_STEP6_SKIP=1 → audit MUST fire ───────────
+    resetShippedState();
+    seedPoisonedDurable();
+    result = runBuild({ HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP: '1' });
+    stdout = result.stdout?.toString() || '';
+    stderr = result.stderr?.toString() || '';
+    assert.match(
+      stdout,
+      /HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 — Step 6 skip DISABLED/,
+      `Scenario B: fault-injection log line must confirm skip disabled. stdout tail:\n${stdout.slice(-1500)}`,
+    );
+    assert.notEqual(
+      result.status,
+      0,
+      `Scenario B: build MUST exit non-zero when Step 6 skip is disabled (audit is the last line of defence). exit=${result.status} stderr tail:\n${stderr.slice(-1500)}`,
+    );
+    assert.match(
+      stderr,
+      /\[DIC-1229\][^\n]*unproven printing/,
+      `Scenario B: build must fail with the DIC-1229 audit error. stderr tail:\n${stderr.slice(-2000)}`,
+    );
+    // The audit reports N unproven printings — verify N ≥ 1 (the seed
+    // guarantees at least one violation; other unproven-with-durable
+    // rows in the shipped DB may add to the count). This is mutation-
+    // sensitive to audit removal (N would be 0 or the audit wouldn't
+    // fire at all) without pinning to a specific card id, which can
+    // paginate out of the top-5 rendered sample when the shipped DB
+    // has other unproven rows (27 SEC signed printings whose durable
+    // files carry legitimate multi-record history).
+    const violationsMatch = stderr.match(/\[DIC-1229\]\s+(\d+)\s+unproven printing/);
     assert.ok(
-      skipMatch && Number(skipMatch[1]) >= 1,
-      `Scenario A: skip counter must be ≥ 1 (got "${skipMatch?.[0] || 'no match'}") — the poisoned unproven row must count`,
+      violationsMatch && Number(violationsMatch[1]) >= 1,
+      `Scenario B: audit must report ≥ 1 violation (got "${violationsMatch?.[0] || 'no match'}"). stderr tail:\n${stderr.slice(-2000)}`,
     );
-    let written = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    let row = written.cards?.[CANONICAL_ID];
-    if (result.status !== 0) {
-      assert.match(stderr, /DIC-1229/, `Scenario A: build failed but not on DIC-1229 audit — stderr:\n${stderr.slice(-2000)}`);
-    } else {
-      const phSize = row.priceHistory ? Object.keys(row.priceHistory).length : 0;
-      assert.equal(phSize, 0, `Scenario A: ${CANONICAL_ID} must NOT ship priceHistory (got ${JSON.stringify(row.priceHistory)})`);
+
+    // ─── Scenario C: DISABLE_AUDIT=1 → Step 6 skip MUST catch ─────────
+    resetShippedState();
+    seedPoisonedDurable();
+    result = runBuild({ HUNTERCARD_DIC1229_DISABLE_AUDIT: '1' });
+    stdout = result.stdout?.toString() || '';
+    stderr = result.stderr?.toString() || '';
+    assert.match(
+      stdout,
+      /HUNTERCARD_DIC1229_DISABLE_AUDIT=1 — post-Step-6 audit DISABLED/,
+      `Scenario C: fault-injection log line must confirm audit disabled. stdout tail:\n${stdout.slice(-1500)}`,
+    );
+    assert.equal(
+      result.status,
+      0,
+      `Scenario C: build should exit 0 when only skip fail-closes (audit disabled). exit=${result.status} stderr tail:\n${stderr.slice(-1500)}`,
+    );
+    assert.match(
+      stdout,
+      /skipped\s+\d+\s+unproven printings/,
+      `Scenario C: Step 6 skip must still fire under audit-disabled. stdout tail:\n${stdout.slice(-1500)}`,
+    );
+    {
+      const written = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      const row = written.cards?.[CANONICAL_ID];
+      const phSize = row?.priceHistory ? Object.keys(row.priceHistory).length : 0;
+      assert.equal(
+        phSize,
+        0,
+        `Scenario C: row must ship empty priceHistory even under audit disabled (skip is the last line of defence)`,
+      );
     }
 
   } finally {
     restore();
+  }
+}
+
+// =============================================================================
+// SCHEDULER ENTRYPOINT LAYER — drive the poisoned printing through the
+// REAL `scripts/local-scrape-and-push.sh` and prove contamination
+// terminates non-zero at the SHELL boundary, not merely inside the
+// direct-spawn of `scripts/build-database.js`. Mac-Codex CR rev.3
+// explicitly asked for this: "prove contamination exits non-zero rather
+// than only spawning scripts/build-database.js directly."
+//
+// Approach: build a real git repo sandbox with:
+//   - the REAL `scripts/local-scrape-and-push.sh` copied in verbatim so
+//     the pipeline structure (precondition / pull / scrapers / build /
+//     commit / push) matches production byte-for-byte;
+//   - the REAL `scripts/build-database.js` + `scripts/lib/` symlinked
+//     so the DIC-1229 defences run for real, from source;
+//   - `data/` seeded with a minimal but real official catalog subset
+//     (data/official/, data/series-names.json, yt-stats, etc.) and the
+//     shipped `data/database.json` so the fresh-build path assembles
+//     the same cards map production sees;
+//   - a bin/ PATH prefix that shims `git pull`, `git push`, `git
+//     commit`, `npm`, and every non-build node script to trace + exit
+//     0 (production-safe: no network, no commit, no push);
+//   - poisoned durable file for `hBP01-090_hPR_P_hBP01-090_P_02`
+//     COMMITTED into the sandbox git repo so the scheduler's clean-
+//     worktree precondition passes and control reaches build-database.
+//
+// Scenario S (fault-injected contamination): run the scheduler with
+// `HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1` so the audit is the sole
+// defence and MUST fire. Assert:
+//   - shell exits non-zero (the `if ! node build-database.js` guard),
+//   - the trace shows `git commit` and `git push` were NEVER invoked
+//     (the build failure aborts the pipeline before mutation/commit),
+//   - the log carries the `[DIC-1229]` audit error message.
+// =============================================================================
+{
+  const CANONICAL_ID = 'hBP01-090_hPR_P_hBP01-090_P_02';
+  const REAL_GIT = execSync('command -v git', { encoding: 'utf-8' }).trim();
+  const REAL_NODE = process.execPath;
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'dic1229-sched-'));
+  const repo = path.join(sandbox, 'repo');
+  const bin = path.join(sandbox, 'bin');
+  const trace = path.join(sandbox, 'trace.log');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(path.join(repo, 'data'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'data', 'price-history'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'data', 'buy-prices'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'public', 'data'), { recursive: true });
+  fs.writeFileSync(trace, '');
+
+  try {
+    // ── Copy scripts (MUST NOT be a symlink) ────────────────────────────
+    // Node resolves symlinks in `import.meta.url` by default, so a symlinked
+    // scripts/ would make build-database.js's `__dirname` point back at
+    // REPO_ROOT — every fs write would then hit the real repo, not the
+    // sandbox. Copy the directory verbatim so the file identity stays
+    // inside the sandbox and DATA_DIR resolves to sandbox/data.
+    fs.cpSync(path.join(REPO_ROOT, 'scripts'), path.join(repo, 'scripts'), { recursive: true });
+    // node_modules and package.json can safely stay symlinked (they are
+    // read-only from build-database.js's perspective).
+    fs.symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(repo, 'node_modules'));
+    fs.symlinkSync(path.join(REPO_ROOT, 'package.json'), path.join(repo, 'package.json'));
+    if (fs.existsSync(path.join(REPO_ROOT, 'package-lock.json'))) {
+      fs.symlinkSync(path.join(REPO_ROOT, 'package-lock.json'), path.join(repo, 'package-lock.json'));
+    }
+
+    // Data: symlink read-only inputs, copy the two files build-database
+    // will overwrite (data/database.json, public/data/database.json).
+    // Include every file / dir under data/ that build-database.js reads
+    // during a full run — a missing bloom-levels.json, effects-*.json,
+    // character-names-zh.json etc. all cause fail-closed exits that
+    // mask the DIC-1229 audit we're trying to prove fires.
+    for (const entry of [
+      'official', 'images',
+      'series-names.json', 'yt-members.json', 'yt-stats-history.json',
+      'bloom-levels.json', 'effects-jp.json', 'effects-zh.json',
+      'character-names-zh.json', 'deck-rules.json',
+    ]) {
+      const src = path.join(REPO_ROOT, 'data', entry);
+      if (fs.existsSync(src)) {
+        fs.symlinkSync(src, path.join(repo, 'data', entry));
+      }
+    }
+    fs.copyFileSync(
+      path.join(REPO_ROOT, 'data', 'database.json'),
+      path.join(repo, 'data', 'database.json'),
+    );
+    fs.copyFileSync(
+      path.join(REPO_ROOT, 'public', 'data', 'database.json'),
+      path.join(repo, 'public', 'data', 'database.json'),
+    );
+
+    // ── Shim bin/ ───────────────────────────────────────────────────────
+    // node: passes through for scripts/build-database.js only. Every other
+    // script (scrape-*, trend-analysis, send-push-alerts, etc.) is shimmed
+    // to trace + exit 0 so the sandbox is offline. The real build-database
+    // still runs against the sandbox data.
+    fs.writeFileSync(
+      path.join(bin, 'node'),
+      `#!/bin/bash
+case "$1" in
+  scripts/build-database.js|build-database.js)
+    exec "${REAL_NODE}" "$@" ;;
+esac
+echo "[shim node] $*" >> "$TRACE_FILE"
+exit 0
+`,
+      { mode: 0o755 },
+    );
+    // npm: everything traced + no-op.
+    fs.writeFileSync(
+      path.join(bin, 'npm'),
+      `#!/bin/bash
+echo "[shim npm] $*" >> "$TRACE_FILE"
+exit 0
+`,
+      { mode: 0o755 },
+    );
+    // git: intercept only network / commit subcommands; everything else
+    // passes to real git so `git status --porcelain` really classifies.
+    fs.writeFileSync(
+      path.join(bin, 'git'),
+      `#!/bin/bash
+echo "[shim git] $*" >> "$TRACE_FILE"
+case "$1" in
+  pull|push|commit) exit 0 ;;
+esac
+exec ${REAL_GIT} "$@"
+`,
+      { mode: 0o755 },
+    );
+
+    // ── Git init + initial commit ───────────────────────────────────────
+    execSync(`${REAL_GIT} init -q -b main`, { cwd: repo });
+    execSync(`${REAL_GIT} config user.email test@example.com`, { cwd: repo });
+    execSync(`${REAL_GIT} config user.name test`, { cwd: repo });
+    execSync(`${REAL_GIT} -c core.symlinks=true add .`, { cwd: repo });
+    execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m init`, { cwd: repo });
+
+    // ── Seed the poisoned durable file inside the sandbox git repo ──────
+    // Committed BEFORE running the scheduler so the clean-worktree
+    // precondition passes and control reaches build-database.js. This is
+    // exactly the shape Mac-Codex CR flagged: a stamped single-record
+    // durable file for an unproven printing.
+    const canonicalHistoryFile = path.join(repo, 'data', 'price-history', `${CANONICAL_ID.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+    fs.writeFileSync(canonicalHistoryFile, JSON.stringify({
+      cardId: CANONICAL_ID,
+      cardNumber: 'hBP01-090',
+      name: 'ムーナ・ホシノヴァ',
+      records: [{
+        date: '2026-08-28',
+        price: 30,
+        source: 'yuyu-tei',
+        currency: 'JPY',
+        cardId: CANONICAL_ID,
+        sourceProduct: 'hPR',
+      }],
+      lastUpdated: '2026-08-28T13:10:25.361Z',
+      nameZh: '姆娜·霍希諾瓦',
+    }, null, 2));
+    execSync(`${REAL_GIT} add data/price-history/`, { cwd: repo });
+    execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "seed poisoned durable"`, { cwd: repo });
+
+    // ── Yuyu fixture for empty payload ──────────────────────────────────
+    const fixtureFile = path.join(sandbox, 'yuyu-fixture.json');
+    fs.writeFileSync(
+      fixtureFile,
+      JSON.stringify({ prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true }),
+    );
+
+    // ── Run the REAL scheduler shell script with fault injection ────────
+    // HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 leaves ONLY the audit
+    // between the poisoned durable file and the shipped priceHistory.
+    // The scheduler's `if ! node build-database.js` guard turns the
+    // audit throw into shell `exit 1`.
+    const result = spawnSync('bash', [path.join(repo, 'scripts', 'local-scrape-and-push.sh')], {
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        HOME: sandbox,
+        TRACE_FILE: trace,
+        HUNTERCARD_LOCK_FILE: path.join(sandbox, 'scrape.lock'),
+        HUNTERCARD_YUYU_FIXTURE_PATH: fixtureFile,
+        HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP: '1',
+      },
+      encoding: 'utf-8',
+      timeout: 300000,
+    });
+    const traceLines = fs.readFileSync(trace, 'utf-8').split('\n').filter(Boolean);
+    const schedulerLog = fs.readFileSync(path.join(sandbox, '.hermes', 'logs', fs.readdirSync(path.join(sandbox, '.hermes', 'logs'))[0]), 'utf-8');
+
+    assert.notEqual(
+      result.status,
+      0,
+      `Scheduler: local-scrape-and-push.sh MUST exit non-zero when the poisoned durable file reaches the audit path. exit=${result.status}\ntrace:\n${traceLines.join('\n')}\nlog tail:\n${schedulerLog.slice(-3000)}`,
+    );
+    assert.match(
+      schedulerLog,
+      /build-database FAILED, exiting before downstream mutation\/commit/,
+      `Scheduler: log must record the build-database failure guard firing. log tail:\n${schedulerLog.slice(-3000)}`,
+    );
+    assert.match(
+      schedulerLog,
+      /\[DIC-1229\][^\n]*unproven printing/,
+      `Scheduler: log must include the DIC-1229 audit error message. log tail:\n${schedulerLog.slice(-3000)}`,
+    );
+    // Contamination must NOT have been committed or pushed — the
+    // precondition + failure guard together mean commit/push shims
+    // never fire.
+    assert.equal(
+      traceLines.some((l) => l.includes('[shim git] commit')),
+      false,
+      `Scheduler: no commit may fire when build-database aborts (trace):\n${traceLines.join('\n')}`,
+    );
+    assert.equal(
+      traceLines.some((l) => l.includes('[shim git] push')),
+      false,
+      `Scheduler: no push may fire when build-database aborts (trace):\n${traceLines.join('\n')}`,
+    );
+    // The precondition must have PASSED (we committed the poison first)
+    // so control reached build-database.js. Verify via trace / log.
+    assert.match(
+      schedulerLog,
+      /Starting hunterCard local scrape/,
+      `Scheduler: log must show entrypoint executed`,
+    );
+    // sanity: the shim node was actually invoked (proving we reached
+    // step 2 which runs `node build-database.js`).
+    assert.ok(
+      traceLines.some((l) => l.includes('[shim node]')) || schedulerLog.includes('[DIC-1229]'),
+      `Scheduler: build-database must have been reached (either via shim trace or DIC-1229 in log)`,
+    );
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
   }
 }
 
