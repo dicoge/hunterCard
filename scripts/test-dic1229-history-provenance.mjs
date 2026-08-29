@@ -477,6 +477,26 @@ assert.equal(
   );
   assert.match(auditSlice, /throw\s+new\s+Error/, 'audit must throw on violation');
   assert.match(auditSlice, /\[DIC-1229\]/, 'thrown error must be tagged with DIC-1229');
+
+  // DIC-1229 CR rev.4: Step 5 durable write must ALSO gate on
+  // hasCurrentPriceProvenance. Without this, every row with a positive
+  // scalar sellPrice writes a durable record every day — even ent07
+  // aggregation rows whose sellPrice is derived from cross-printing
+  // yuyu entries — so the scheduler's `git add data/price-history/*.
+  // json` republishes contamination the purge just cleaned.
+  const step5Idx = src.indexOf('── Step 5: Save price history');
+  assert.ok(step5Idx > -1, 'Step 5 header must still exist');
+  const step5Slice = src.slice(step5Idx, step5Idx + 4000);
+  assert.match(
+    step5Slice,
+    /step5GateOptions\s*=\s*\{[\s\S]*?ambiguousIds:\s*findAmbiguousPromoRowIds\s*\(\s*database\.cards\s*\)/,
+    'Step 5 must derive step5GateOptions with ambiguousIds = findAmbiguousPromoRowIds(database.cards)',
+  );
+  assert.match(
+    step5Slice,
+    /!\s*hasCurrentPriceProvenance\s*\(\s*card\s*,\s*step5GateOptions\s*\)[\s\S]*?continue/,
+    'Step 5 must skip (`continue`) rows failing hasCurrentPriceProvenance(card, step5GateOptions) before pushing a record',
+  );
 }
 
 // =============================================================================
@@ -693,6 +713,98 @@ assert.equal(
         phSize,
         0,
         `Scenario C: row must ship empty priceHistory even under audit disabled (skip is the last line of defence)`,
+      );
+    }
+
+    // ─── Scenario D: ordinary writer path — Step 5 must not create
+    //     durable files for strict-unproven rows. Mac-Codex CR rev.4
+    //     reproduced: after the purge deletes all ent07 durable files,
+    //     a normal build (both defences on, no fault injection) MUST
+    //     leave those files gone. If Step 5 falls back to the pre-fix
+    //     "any positive scalar sellPrice" rule, exactly the previously
+    //     purged files reappear and the scheduler's `git add
+    //     data/price-history/*.json` republishes them.
+    //
+    //     Setup: snapshot the current price-history dir, DELETE every
+    //     durable file whose card is strict-unproven, run a normal
+    //     empty-fixture build, assert:
+    //       - build exits 0,
+    //       - stdout carries the Step 5 skip counter with N ≥ 1,
+    //       - NO durable file exists for any strict-unproven card
+    //         (the ones we deleted stay gone),
+    //       - card-level priceHistory on strict-unproven rows stays
+    //         empty (Step 6 skip is still doing its job),
+    //       - no new ambient ent07 files appear.
+    //     Removing the Step 5 gate re-creates the purged files → this
+    //     scenario then trips the "unproven durable count == 0"
+    //     assertion.
+    resetShippedState();
+    // Pre-compute the strict-unproven card set + delete their durable
+    // files so we can measure whether the build re-creates them.
+    {
+      const currentDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      const ambig = new Set(); // shipped DB has 0 ambiguous rows per rev.3 detector
+      const strictUnproven = new Set();
+      for (const [id, card] of Object.entries(currentDb.cards || {})) {
+        if (!hasCurrentPriceProvenance(card, gate({ ambiguousIds: ambig, now: Date.now() }))) {
+          strictUnproven.add(id);
+        }
+      }
+      const preDeletedFiles = new Set();
+      for (const id of strictUnproven) {
+        const f = path.join(historyDir, `${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+        if (fs.existsSync(f)) {
+          fs.unlinkSync(f);
+          preDeletedFiles.add(path.basename(f));
+        }
+      }
+
+      result = runBuild();
+      stdout = result.stdout?.toString() || '';
+      stderr = result.stderr?.toString() || '';
+      assert.equal(
+        result.status,
+        0,
+        `Scenario D: ordinary build must exit 0 with Step 5 gate on. exit=${result.status} stderr tail:\n${stderr.slice(-1500)}`,
+      );
+      // Step 5 gate counter must appear on stdout with N ≥ 1.
+      const step5SkipMatch = stdout.match(/Step 5 skipped\s+(\d+)\s+unproven printings/);
+      assert.ok(
+        step5SkipMatch && Number(step5SkipMatch[1]) >= 1,
+        `Scenario D: Step 5 skip counter must appear with N ≥ 1 (got "${step5SkipMatch?.[0] || 'no match'}"). stdout tail:\n${stdout.slice(-2000)}`,
+      );
+      // Post-build: NO durable file may exist for any strict-unproven
+      // card. The ones we deleted must stay deleted.
+      const strictUnprovenRecreated = [];
+      for (const id of strictUnproven) {
+        const f = path.join(historyDir, `${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+        if (fs.existsSync(f)) strictUnprovenRecreated.push(id);
+      }
+      assert.equal(
+        strictUnprovenRecreated.length,
+        0,
+        `Scenario D: Step 5 gate must not create durable files for strict-unproven rows. ${strictUnprovenRecreated.length} recreated (samples: ${strictUnprovenRecreated.slice(0, 5).join(', ')})`,
+      );
+      // ent07 sub-set specifically must stay zero — the exact Mac-Codex
+      // rev.4 reproduction: purge → 0 ent07 files, normal build → still
+      // 0 ent07 files.
+      const ent07Recreated = fs.readdirSync(historyDir).filter((f) => f.includes('_ent07') && f.endsWith('.json'));
+      assert.equal(
+        ent07Recreated.length,
+        0,
+        `Scenario D: no ent07 durable files may exist after a normal build. Found: ${ent07Recreated.slice(0, 5).join(', ')} (${ent07Recreated.length} total)`,
+      );
+      // Card-level priceHistory on strict-unproven rows stays empty.
+      const writtenDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      const shipsPh = [];
+      for (const id of strictUnproven) {
+        const c = writtenDb.cards?.[id];
+        if (c?.priceHistory && Object.keys(c.priceHistory).length > 0) shipsPh.push(id);
+      }
+      assert.equal(
+        shipsPh.length,
+        0,
+        `Scenario D: strict-unproven rows must not ship priceHistory (${shipsPh.length} rows leaked, samples: ${shipsPh.slice(0, 5).join(', ')})`,
       );
     }
 

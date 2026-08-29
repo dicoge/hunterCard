@@ -1559,9 +1559,35 @@ async function buildDatabase() {
   // onto this canonical-ID history file. New records emitted here are always
   // stamped; legacy records without a stamp are grandfathered in only on
   // origin-product rows (see filterProvenanceMatchedRecords).
+  //
+  // DIC-1229 CR rev.4: gate the durable write on `hasCurrentPriceProvenance`
+  // BEFORE emitting a record. Without this, every row with a positive scalar
+  // `sellPrice` (including ent07 aggregation rows whose sellPrice is derived
+  // from cross-printing yuyu entries) writes a single-record durable file
+  // every daily run. The scheduler's broad `git add data/price-history/*.json`
+  // then republishes those files even after `purge-unproven-price-history-
+  // DIC-1229.mjs` has cleaned them. Mac-Codex CR rev.4 flagged the exact
+  // reproduction: 0 files after purge → normal build → 377 recreated. Under
+  // the strict predicate ent07/reprint rows fail the gate, no record is
+  // emitted, and the existing durable file (if any) is left untouched. The
+  // gate options are identical to Step 6 / the audit (ambiguousIds derived
+  // once from the final cards map below) so all three defence points share
+  // the same non-ambiguity / freshness / exact-print contract.
+  const step5GateOptions = {
+    ambiguousIds: findAmbiguousPromoRowIds(database.cards),
+  };
+  const disableStep5Gate = process.env.HUNTERCARD_DIC1229_DISABLE_STEP5_GATE === '1';
+  if (disableStep5Gate) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_STEP5_GATE=1 — Step 5 provenance gate DISABLED (test-only fault injection)');
+  }
   const priceRecords = [];
+  let step5SkippedUnproven = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     if (card.sellPrice != null && card.sellPrice > 0) {
+      if (!disableStep5Gate && !hasCurrentPriceProvenance(card, step5GateOptions)) {
+        step5SkippedUnproven++;
+        continue;
+      }
       priceRecords.push(stampHistoryRecord({
         date: today,
         price: card.sellPrice,
@@ -1570,6 +1596,9 @@ async function buildDatabase() {
         cardId,
       }, card));
     }
+  }
+  if (step5SkippedUnproven > 0) {
+    console.log(`  [DIC-1229] Step 5 skipped ${step5SkippedUnproven} unproven printings — no durable record written (DIC-1229 fail-closed)`);
   }
 
   // Group by cardId and write history files
