@@ -9299,7 +9299,7 @@
       "oshi": "AZKi",
       "rank": 1,
       "rankLabel": "champion",
-      "sourceReportHash": "4bf1bec8abd6a844007d488fde94823f4c8ddbf64fbcd19e57100fa6bb4882ab"
+      "sourceReportHash": "1f16cb87ea3e8b145e61a849fc68b3c8b255bd158de8c93a9db6244feee93e15"
     },
     {
       "archetypeId": "auro-chrony",
@@ -9311,20 +9311,20 @@
       "oshi": "オーロ・クロニー",
       "rank": 1,
       "rankLabel": "champion",
-      "sourceReportHash": "4bf1bec8abd6a844007d488fde94823f4c8ddbf64fbcd19e57100fa6bb4882ab"
+      "sourceReportHash": "1f16cb87ea3e8b145e61a849fc68b3c8b255bd158de8c93a9db6244feee93e15"
     }
   ],
   "excludedIncompleteDecks": [],
-  "generatedAt": "2026-08-17T13:06:46.405Z",
+  "generatedAt": "2026-08-29T11:09:08.560Z",
   "inputDeckIds": [
     "decklog:DUKHN",
     "decklog:2H33J8"
   ],
   "inputReports": [
     {
-      "contentSha256": "4bf1bec8abd6a844007d488fde94823f4c8ddbf64fbcd19e57100fa6bb4882ab",
+      "contentSha256": "1f16cb87ea3e8b145e61a849fc68b3c8b255bd158de8c93a9db6244feee93e15",
       "file": "2026-08.json",
-      "generatedAt": "2026-08-16T12:36:37.696Z",
+      "generatedAt": "2026-08-29T11:09:08.560Z",
       "month": "2026-08"
     }
   ],

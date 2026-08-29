@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "month": "2026-08",
-  "generatedAt": "2026-08-16T12:36:37.696Z",
+  "generatedAt": "2026-08-29T11:09:08.560Z",
   "source": {
-    "name": "hololive OFFICIAL CARD GAME X 官方賽果 — エクストリーマーカップ25-26 エリア予選 東海② + Deck Log 公開牌組",
-    "url": "https://x.com/hololive_OCG/status/2086361278742978976",
-    "disclaimer": "資料僅來自官方 X 賽果與 Deck Log 公開牌組。官方僅公布 A/B block 冠軍的牌組與名次；完整 8 強、參賽人數與其他名次牌組未公開。占比僅反映已觀測樣本，不代表整體 meta。"
+    "name": "hololive OFFICIAL CARD GAME X 官方賽果（WGP 25-26 與エクストリーマーカップ25-26 エリア予選）",
+    "url": "https://x.com/hololive_OCG",
+    "disclaimer": "資料僅來自官方 X 賽果。官方以圖片公布各 block 決勝名次與 deck code；本回填僅收錄可驗證的 event 身分／日期／來源，deck list 標示為未驗證，不猜測牌組。占比僅反映已觀測樣本，不代表整體 meta。"
   },
   "coverage": {
-    "knownEvents": 1,
+    "knownEvents": 6,
     "totalEvents": null,
     "observedDecks": 2,
     "rankedDecks": 2,
-    "note": "本月僅收錄 1 場的公開精選牌組（共 2 副，其中 2 副有公開名次）。賽事總場數未公開，涵蓋率無法計算完整母體。"
+    "note": "本月僅收錄 6 場的公開精選牌組（共 2 副，其中 2 副有公開名次）。賽事總場數未公開，涵蓋率無法計算完整母體。"
   },
   "events": [
     {
@@ -184,7 +184,7 @@
           ],
           "cardsVerified": true,
           "coverage": "ranked",
-          "fetchedAt": "2026-08-16T12:36:37.696Z"
+          "fetchedAt": "2026-08-29T11:09:08.560Z"
         },
         {
           "deckId": "decklog:2H33J8",
@@ -313,10 +313,80 @@
           ],
           "cardsVerified": true,
           "coverage": "ranked",
-          "fetchedAt": "2026-08-16T12:36:37.696Z"
+          "fetchedAt": "2026-08-29T11:09:08.560Z"
         }
       ],
-      "fetchedAt": "2026-08-16T12:36:37.696Z"
+      "fetchedAt": "2026-08-29T11:09:08.560Z"
+    },
+    {
+      "eventId": "wgp-25-26-singapore",
+      "name": "WGP 25-26 シンガポール",
+      "nameZh": "WGP 25-26 Singapore",
+      "date": "2026-08-02",
+      "region": "Singapore",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083881748895555979",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：官方於 X 公布決勝 16 名選手與 deck code（於圖片中）。deck list 未在本回填中驗證（2 副），保留 event、deck list 標示未驗證，後續 --live Deck Log 或人工核圖補齊。",
+      "decks": [],
+      "fetchedAt": "2026-08-29T11:09:08.560Z"
+    },
+    {
+      "eventId": "wgp-25-26-seoul",
+      "name": "WGP 25-26 ソウル",
+      "nameZh": "WGP 25-26 Seoul",
+      "date": "2026-08-22",
+      "region": "Seoul",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2091112390163312848",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：官方於 X 公布決勝 16 名選手與 deck code（於圖片中）。deck list 未在本回填中驗證，保留 event、deck list 標示未驗證。",
+      "decks": [],
+      "fetchedAt": "2026-08-29T11:09:08.560Z"
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-kansai",
+      "name": "エクストリーマーカップ25-26 エリア予選 関西",
+      "nameZh": "Extreamer Cup 25-26 地區預選 關西",
+      "date": "2026-08-01",
+      "region": "関西",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083474499979313598",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：C/D block 官方賽果（同 event，已聚合，避免重複計數）。deck list 未在本回填中驗證，標示未驗證。",
+      "decks": [],
+      "fetchedAt": "2026-08-29T11:09:08.560Z"
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-hokuriku-shinetsu",
+      "name": "エクストリーマーカップ25-26 エリア予選 北陸・信越",
+      "nameZh": "Extreamer Cup 25-26 地區預選 北陸・信越",
+      "date": "2026-08-02",
+      "region": "北陸・信越",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083817575071502549",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：A/B block 官方賽果（同 event，已聚合）。deck list 未在本回填中驗證，標示未驗證。",
+      "decks": [],
+      "fetchedAt": "2026-08-29T11:09:08.560Z"
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-tokai-1",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海①",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海①",
+      "date": "2026-08-08",
+      "region": "東海",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2086003084111872298",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：A/B block 官方賽果（同 event，已聚合）。deck list 未在本回填中驗證，標示未驗證。",
+      "decks": [],
+      "fetchedAt": "2026-08-29T11:09:08.560Z"
     }
   ],
   "archetypeShare": [

@@ -53,6 +53,8 @@
     "test:i18n": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-i18n.mjs",
     "verify:i18n-ui": "node scripts/verify-dic1085-ui.mjs",
     "collect:tournaments": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/collect-tournament-reports.mjs",
+    "discover:tournaments": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/discover-tournament-results.mjs",
+    "test:tournament-discovery": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-discovery.mjs",
     "analyze:tournaments": "node scripts/analyze-tournaments.mjs",
     "test:deck-price-adapter": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-price-adapter.mjs",
     "test:deck-store-rename": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-store-rename.mjs",

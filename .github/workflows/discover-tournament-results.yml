@@ -1,0 +1,74 @@
+name: Discover Tournament Results
+
+# DIC-1232: sustainable official-X result discovery. Runs the discovery/diff
+# against the probe frontier + official news feed, updates the known/new
+# registry and run log, and commits them if changed. Presence of NEW records is
+# NOT an error — it is the signal that a tournament is waiting for backfill.
+# Source/feed failures exit non-zero so the run shows up as an incident without
+# ever clobbering last-known-good.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours (UTC)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (do not write files)'
+        type: boolean
+        default: true
+      fixture:
+        description: 'Optional fixture feed path (testing only)'
+        type: string
+        required: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Discover tournament results
+        id: discover
+        run: |
+          if [ "${{ inputs.dry_run }}" = "false" ] && [ "${{ inputs.fixture }}" = "" ]; then
+            npm run discover:tournaments
+          else
+            EXTRA=""
+            if [ "${{ inputs.fixture }}" != "" ]; then
+              EXTRA="--fixture ${{ inputs.fixture }}"
+            fi
+            npm run discover:tournaments -- --dry-run $EXTRA
+          fi
+
+      - name: Check data changes
+        id: check
+        if: inputs.dry_run == false
+        run: |
+          if git diff --stat -- 'data/tournaments/discovery/' | grep -q .; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push if changed
+        if: inputs.dry_run == false && steps.check.outputs.changed == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/tournaments/discovery/
+          git diff --staged --quiet || git commit -m "chore: update tournament discovery registry $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push origin main
