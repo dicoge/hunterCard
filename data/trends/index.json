@@ -1,10 +1,10 @@
 {
-  "lastUpdated": "2026-08-29T12:25:37.047Z",
-  "totalCards": 3591,
+  "lastUpdated": "2026-08-30T12:26:54.577Z",
+  "totalCards": 2903,
   "summary": {
     "up": 1,
     "down": 0,
-    "stable": 3590
+    "stable": 2902
   },
   "topGainers": [
     {
@@ -64,13 +64,6 @@
       "trend": "stable"
     },
     {
-      "cardId": "hBD24-008",
-      "name": "ベスティア・ゼータ",
-      "nameZh": "貝絲緹亞·澤塔",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
       "cardId": "hBD24-009",
       "name": "セシリア・イマーグリーン",
       "nameZh": "塞西莉亞·伊瑪格林",
@@ -109,20 +102,6 @@
       "cardId": "hBD24-012",
       "name": "白銀ノエル",
       "nameZh": "白銀諾艾爾",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-012",
-      "name": "白銀ノエル",
-      "nameZh": "白銀諾艾爾",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-014",
-      "name": "こぼ・かなえる",
-      "nameZh": "小焰·奏",
       "score": 0.03,
       "trend": "stable"
     },
@@ -144,6 +123,27 @@
       "cardId": "hBD24-016",
       "name": "沙花叉クロヱ",
       "nameZh": "",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-018",
+      "name": "アユンダ・リス",
+      "nameZh": "亞菈妲·麗絲",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-020",
+      "name": "フワワ・アビスガード",
+      "nameZh": "雙葉·深淵護衛",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-021",
+      "name": "モココ・アビスガード",
+      "nameZh": "雙子·深淵護衛",
       "score": 0.03,
       "trend": "stable"
     }
@@ -199,13 +199,6 @@
       "trend": "stable"
     },
     {
-      "cardId": "hBD24-008",
-      "name": "ベスティア・ゼータ",
-      "nameZh": "貝絲緹亞·澤塔",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
       "cardId": "hBD24-009",
       "name": "セシリア・イマーグリーン",
       "nameZh": "塞西莉亞·伊瑪格林",
@@ -244,20 +237,6 @@
       "cardId": "hBD24-012",
       "name": "白銀ノエル",
       "nameZh": "白銀諾艾爾",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-012",
-      "name": "白銀ノエル",
-      "nameZh": "白銀諾艾爾",
-      "score": 0.03,
-      "trend": "stable"
-    },
-    {
-      "cardId": "hBD24-014",
-      "name": "こぼ・かなえる",
-      "nameZh": "小焰·奏",
       "score": 0.03,
       "trend": "stable"
     },
@@ -286,6 +265,27 @@
       "cardId": "hBD24-018",
       "name": "アユンダ・リス",
       "nameZh": "亞菈妲·麗絲",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-020",
+      "name": "フワワ・アビスガード",
+      "nameZh": "雙葉·深淵護衛",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-021",
+      "name": "モココ・アビスガード",
+      "nameZh": "雙子·深淵護衛",
+      "score": 0.03,
+      "trend": "stable"
+    },
+    {
+      "cardId": "hBD24-021",
+      "name": "モココ・アビスガード",
+      "nameZh": "雙子·深淵護衛",
       "score": 0.03,
       "trend": "stable"
     }

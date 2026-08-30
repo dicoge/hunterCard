@@ -11,6 +11,7 @@ import { preprocessCardImage } from './imagePreprocessor';
 import { mapApiCardToCardInfo } from '../utils/apiCardMapper';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
+import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
 import { isRecognitionInfrastructureFailure, RECOGNITION_UNAVAILABLE_MESSAGE } from './recognitionOutcome';
 
 // ── 類型定義 ──
@@ -374,10 +375,13 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     // Preprocess with OpenCV: enhance contrast, sharpen, resize
     const processedImage = await preprocessCardImage(imageUri);
 
-    // Call the API — web uses current origin; native uses the production API host.
+    // Call the API — web uses current origin; native uses the canonical production
+    // API host (DIC-1245). The old holocard-hunter.vercel.app alias must never
+    // reach an executable native bundle: it does not serve the current KV auth /
+    // recognition surfaces, so recognition would silently fail.
     const apiBase = typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : 'https://holocard-hunter.vercel.app';
+      : PRODUCTION_ORIGIN;
     const apiUrl = apiBase + '/api/recognize-card';
     const apiResponse = await fetch(apiUrl, {
       method: 'POST',

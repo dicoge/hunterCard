@@ -10,10 +10,13 @@
  *      data/database.json) exits non-zero, the pipeline must abort BEFORE the
  *      native generator and before any git add/commit/push. Masking it with
  *      `|| echo` let a partial merge be committed as a stale canonical+native pair.
- *   2. Ordering — on the success path the native asset must be regenerated AFTER
- *      the buy-price merge and BEFORE staging, so both files are committed
- *      atomically from the same canonical bytes.
- *   3. Real failure contract (DIC-998) — cases 1/2 drive control flow with a node
+ *   2. Required gate — after all data/native mutations and BEFORE staging,
+ *      the pipeline must run test:market-fields and native --check so a database
+ *      that CI would reject cannot be committed/pushed by the scheduler.
+ *   3. Ordering — on the success path the native asset must be regenerated AFTER
+ *      the buy-price merge and BEFORE the required gate/staging, so both files
+ *      are committed atomically from the same canonical bytes.
+ *   4. Real failure contract (DIC-998) — cases 1/2 drive control flow with a node
  *      shim, which cannot catch merge-buy-prices.js swallowing its own fatal error
  *      and exiting 0. This case runs the REAL merge-buy-prices.js under the REAL
  *      node against malformed canonical JSON and proves the real pipeline stops
@@ -34,7 +37,7 @@ const PIPELINE = path.join(__dirname, 'local-scrape-and-push.sh');
 /**
  * Materialize a sandbox containing the real pipeline script plus `node`/`git`
  * shims that append every invocation to a trace file. `failOn` makes the node
- * shim exit non-zero for the script whose name contains that substring.
+ * or npm shim exit non-zero for the command containing that substring.
  */
 function runPipeline({ failOn = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dic989-pipeline-'));
@@ -58,6 +61,16 @@ function runPipeline({ failOn = null } = {}) {
     path.join(bin, 'node'),
     `#!/bin/bash
 echo "node $*" >> "$TRACE_FILE"
+if [ -n "$FAIL_ON" ] && [[ "$*" == *"$FAIL_ON"* ]]; then exit 1; fi
+exit 0
+`,
+    { mode: 0o755 },
+  );
+
+  fs.writeFileSync(
+    path.join(bin, 'npm'),
+    `#!/bin/bash
+echo "npm $*" >> "$TRACE_FILE"
 if [ -n "$FAIL_ON" ] && [[ "$*" == *"$FAIL_ON"* ]]; then exit 1; fi
 exit 0
 `,
@@ -109,6 +122,7 @@ const PIPELINE_STUBS = [
   'scrape-official-cards.js', 'scrape-yt-stats.js', 'scrape-news-sentiment.js',
   'build-database.js', 'scrape-yt-subscribers.js', 'trend-analysis.js',
   'send-push-alerts.js', 'scrape-torecolo-buy.js', 'scrape-fullahead-buy.js',
+  'generate-native-database.mjs',
 ];
 
 /**
@@ -139,8 +153,12 @@ function runPipelineWithRealMerge() {
     fs.writeFileSync(path.join(repoScripts, stub), 'process.exit(0);\n');
   }
   fs.writeFileSync(
-    path.join(repoScripts, 'generate-native-database.mjs'),
-    `import fs from 'node:fs';\nfs.writeFileSync(process.env.NATIVE_MARKER, 'invoked');\n`,
+    path.join(bin, 'npm'),
+    `#!/bin/bash
+echo "npm $*" >> "$TRACE_FILE"
+exit 0
+`,
+    { mode: 0o755 },
   );
 
   // A fresh buy-price source, otherwise the merger no-ops before ever reading
@@ -256,7 +274,7 @@ exit 0
   }
 }
 
-// ── 2. Ordering: native regen after the final canonical mutation, before staging ──
+// ── 2. Ordering: native regen after the final canonical mutation, before gates/staging ──
 {
   const { status, lines } = runPipeline();
 
@@ -264,11 +282,21 @@ exit 0
 
   const merge = indexOfCall(lines, 'merge-buy-prices.js');
   const native = indexOfCall(lines, 'generate-native-database.mjs');
+  const marketGate = indexOfCall(lines, 'npm run test:market-fields');
+  const nativeCheck = lines.findIndex((l) => l.includes('generate-native-database.mjs --check'));
   const add = indexOfCall(lines, 'git add');
   const commit = indexOfCall(lines, 'commit -m');
   const push = indexOfCall(lines, 'git push');
 
-  for (const [name, idx] of [['merge-buy-prices', merge], ['generate-native-database', native], ['git add', add], ['git commit', commit], ['git push', push]]) {
+  for (const [name, idx] of [
+    ['merge-buy-prices', merge],
+    ['generate-native-database', native],
+    ['test:market-fields gate', marketGate],
+    ['native --check gate', nativeCheck],
+    ['git add', add],
+    ['git commit', commit],
+    ['git push', push],
+  ]) {
     assert.ok(idx !== -1, `sanity: pipeline must invoke ${name}`);
   }
   assert.ok(
@@ -276,9 +304,36 @@ exit 0
     'native asset must be regenerated AFTER merge-buy-prices.js, the final writer of data/database.json (otherwise the committed native asset is stale — DIC-916 --check fails)',
   );
   assert.ok(
-    native < add && add < commit && commit < push,
-    'native regeneration must precede staging so canonical + native are committed atomically in one commit',
+    native < marketGate && marketGate < nativeCheck && nativeCheck < add && add < commit && commit < push,
+    'required data gates must run after final native regeneration and before staging/commit/push',
   );
+}
+
+// ── 2b. Fail-fast: CI market-field failure must never reach the commit path ──
+{
+  const { status, lines } = runPipeline({ failOn: 'test:market-fields' });
+
+  assert.notStrictEqual(
+    status,
+    0,
+    'pipeline must exit non-zero when test:market-fields fails before commit/push',
+  );
+  assert.ok(
+    indexOfCall(lines, 'npm run test:market-fields') !== -1,
+    'sanity: pipeline must actually invoke the market-field gate',
+  );
+  assert.strictEqual(
+    lines.findIndex((l) => l.includes('generate-native-database.mjs --check')),
+    -1,
+    'native --check must not run after a failed market-field gate',
+  );
+  for (const forbidden of ['git add', 'git -c user.name', 'commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(lines, forbidden),
+      -1,
+      `a failed market-field gate must never reach the commit path (found: ${forbidden})`,
+    );
+  }
 }
 
 // ── 3. Real failure contract: the actual merge-buy-prices.js, no node shim ──
@@ -310,5 +365,5 @@ exit 0
 }
 
 console.log(
-  'scrape pipeline OK — failed buy-price merge aborts before native generation and the commit path (proven with both a shim and the REAL merge-buy-prices.js on malformed canonical JSON); native regen runs after the final canonical mutation and before staging.',
+  'scrape pipeline OK — failed build/merge/market gates abort before commit/push (real merge failure covered); native regen and required data gates run before staging.',
 );
