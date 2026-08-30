@@ -4,7 +4,7 @@
 
 > 📎 操作速查（怎麼發測試包給測試員、GitHub Actions 手動觸發 EAS build、blocked-on-user 清單）見 [`docs/TEST-DISTRIBUTION.md`](./TEST-DISTRIBUTION.md)。本文件是完整流程與 blocker / 文案手冊。
 
-> ⛔ **Google Play 送審請改用 [`docs/play/`](./play/README.md)。** 本文件第 0.2 節的權限盤點與第 5 節的 App Privacy / Data safety 建議答案**已過時且部分為錯誤**——它宣稱 native binary 不上傳影像、且 App 無帳號機制，兩者在現行程式碼皆不成立（`src/services/cardRecognition.ts:466-475` 每次掃描都先上傳影像至 `/api/recognize-card` 再轉送 Google Gemini；Google 登入與雲端帳號已實際運作）。依這些段落填寫商店問卷會構成不實申報。逐項更正見 [`docs/play/data-safety.md`](./play/data-safety.md) 文末對照表。本文件其餘的 EAS build、版本號、iOS TestFlight 流程仍然適用。
+> ⛔ **Google Play 送審請改用 [`docs/play/`](./play/README.md)。** 本文件第 0.2 節的權限盤點與第 5 節的 App Privacy / Data safety 建議答案**已過時**：其中「native binary 不上傳影像」的結論仍然正確（`docs/play/data-safety.md` 有完整推導，並補上該行為其實是 `preprocessCardImage` 在 native 無 DOM 而回傳原始 uri 所造成的「意外」，已加上 CI 防護），但「App 無帳號機制」「push token 寫在 GitHub repo」「App access 可選全部功能免登入」皆與現行程式碼不符——Google 登入、雲端帳號、帳號刪除與跨裝置同步都已實際運作，掃描功能需登入。依這些段落填寫商店問卷會構成不實申報。逐項更正見 [`docs/play/data-safety.md`](./play/data-safety.md) 文末對照表。本文件其餘的 EAS build、版本號、iOS TestFlight 流程仍然適用。
 
 ## 目前專案設定確認
 
@@ -530,7 +530,7 @@ Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transpar
 
 ### Google Play Data safety 問卷（依 native binary 行為的建議答案）
 
-> ⛔ **不要使用本節作答，請改用 [`docs/play/data-safety.md`](./play/data-safety.md)。** 下方答案建立在「native 不上傳影像、App 無帳號」之上，兩者皆與現行程式碼不符。
+> ⛔ **不要使用本節作答，請改用 [`docs/play/data-safety.md`](./play/data-safety.md)。** 下方「native 不上傳影像」的部分仍成立，但「App 無帳號」「無雲端資料可刪除」「watchlist 僅本機」皆已過時。
 
 > ⚠️ 下方只填 Android native binary 的實際資料流。Web 版會 POST 影像到 `/api/recognize-card` 再轉送 OpenRouter Gemini Vision，但 native binary 不走這條路——native 用本機 OCR（`expo-ocr-kit` / Tesseract），不上傳影像。
 >

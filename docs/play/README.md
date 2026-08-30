@@ -20,21 +20,26 @@ directory — see the corrections table at the end of `data-safety.md`.
 
 ## Read this first
 
-Two findings change what can honestly be declared.
-
-**1. The Android app uploads scan images off-device.** Every scan — camera capture or
-gallery pick — posts the image to `/api/recognize-card`, which forwards it to Google's
-Gemini vision API. On-device OCR is only the fallback when that call fails
-(`src/services/cardRecognition.ts:466-475`, `api/recognize-card.ts:320`). The previous
-submission document stated the opposite, and the published privacy policy told users their
-card images never leave the device. Filling in Data safety from those sources would have
-been a false declaration. The privacy policy has been corrected and
-`npm run test:privacy-disclosure` now fails the build if the policy and the code disagree
-again, in either direction.
+**1. Card images are not transmitted by the Android app — but only by accident.** Reading
+the call graph says the opposite: `recognizeCardFromImage` posts `{ image }` to
+`/api/recognize-card` on every platform, and the server forwards to Google Gemini. What
+saves it is that `preprocessCardImage` is DOM-only code and React Native defines no global
+`Image` or `document`, so on native it returns the original `file://` path and a path
+string is what gets posted, not pixels. Recognition then fails over to on-device OCR.
+Photos are correctly declared **not collected** — see the full derivation at the top of
+`data-safety.md`. Because the behaviour is incidental rather than designed, adding a native
+image preprocessor or `base64: true` would start uploading real photos silently;
+`npm run test:privacy-disclosure` fails on exactly those changes and is wired into CI.
 
 **2. Build 6 requested three permissions nothing uses.** `SYSTEM_ALERT_WINDOW` (from React
 Native's debug-only manifest), `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE` are now
 blocked in `app.base.json`. Details and evidence in `permissions.md`.
+
+**3. The privacy policy described a system that no longer exists.** It presented the whole
+account system as a "local mock" with no cloud data and nothing to delete, and claimed to
+store subscription transaction identifiers. In reality Google Sign-In writes a real cloud
+identity record, `POST /api/auth/delete-account` performs a real cascade delete, and there
+is no billing integration of any kind. Those sections are corrected in both languages.
 
 ## Blocked
 
@@ -68,7 +73,7 @@ comment** — put credentials and keys straight into Play Console or an EAS secr
 
 | # | Question | Why it matters |
 | --- | --- | --- |
-| 8 | Is the `GEMINI_API_KEY` on Google's **paid** Gemini API tier or the free tier? | The paid tier does not train on submitted content, which supports the service-provider exception and a "not shared" answer for Photos. The free tier does not, and Photos must then be declared as shared. See `data-safety.md` §3. |
+| 8 | Confirm the Android app is the only thing being submitted, and that the **web** build's Gemini image upload is out of scope for this listing | Play asks about the installed binary. The web build does upload card images; the Android build does not. Keep the two straight when answering, and revisit if a WebView or PWA wrapper is ever shipped to Play. |
 | 9 | Is there a service-provider agreement covering Expo Push Service? | Decides the "shared" answer for the push token. Absent one, declare it shared. |
 | 10 | Ship screenshots containing hololive card artwork, or only the two without it? | IP takedown risk on a fan-made listing. See `store-listing.md`. |
 
@@ -86,9 +91,11 @@ content rating all have to be re-answered.
 Each changes user-facing behaviour or adds a public page, so each belongs in its own
 reviewed change rather than being bundled into a submission-prep PR.
 
-1. **First-run consent for the scan upload.** Play expects prominent disclosure before
-   sending a photo to a third-party cloud service. The privacy policy now says it; a
-   one-time in-app sheet on first scan would be the stronger position before Production.
+1. **Remove the doomed recognition round trip on native.** Every native scan posts a
+   `file://` path string to `/api/recognize-card`, waits for it to fail, and only then runs
+   on-device OCR. That is wasted latency on the device and a wasted Gemini call on the
+   server. Making the platform split explicit would also turn today's accidental
+   privacy-safe behaviour into an intentional one.
 2. **A public data-deletion page** at `https://holohunter.dicoge.com/delete-account`. Play
    prefers a web URL over an email address for users who have uninstalled.
 3. **A push-token unregister endpoint.** Today the token survives account deletion and

@@ -73,8 +73,9 @@ any of them outstanding.
 - [ ] News app: No. Financial features: No. Government app: No. Health: No.
 - [ ] Advertising ID: not used.
 - [ ] Data deletion: in-app path plus contact email declared.
-- [ ] Data safety form completed from `data-safety.md`, including the two answers that
-      need an owner decision: the Gemini API tier, and Expo Push Service sharing.
+- [ ] Data safety form completed from `data-safety.md`. Photos = not collected (recognition
+      runs on-device); the one answer needing an owner decision is whether the Expo Push
+      Service transfer counts as service-provider processing.
 
 ## E. Store listing
 

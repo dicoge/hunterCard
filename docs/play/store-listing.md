@@ -41,9 +41,7 @@ Reference prices
 Scan a card with your camera
 - Point your camera at a card, or pick a photo from your library, and HoloHunter
   identifies it for you.
-- Card images are sent to our recognition service and to Google's Gemini vision API to
-  identify the card. They are not stored on our servers and are never used for
-  advertising or profiling. See our privacy policy for details.
+- Recognition runs on your device. The card image is not uploaded to our servers.
 - Scanning requires a free account. Browsing and searching do not.
 
 Collection and decks
@@ -78,8 +76,7 @@ HoloHunter 是為 hololive OFFICIAL CARD GAME 玩家與收藏者製作的非官�
 
 用相機掃描卡牌
 - 用相機對準卡片，或從相簿選取照片，HoloHunter 會為你辨識。
-- 卡牌影像會傳送到我們的辨識服務並轉送 Google Gemini 視覺辨識 API 進行判讀；我們的伺服器
-  不會保存影像，也不會用於廣告或建立個人檔案。詳見隱私權政策。
+- 辨識在您的裝置上完成，卡牌影像不會上傳到我們的伺服器。
 - 掃描功能需要免費帳號；查詢與瀏覽不需要登入。
 
 收藏與牌組
@@ -96,9 +93,10 @@ HoloHunter 並非 COVER Corporation 或 hololive OFFICIAL CARD GAME 官方授權
 應用程式。所有卡片名稱、圖像與商標均屬各自權利人所有。
 ```
 
-The scan paragraph deliberately states where the image goes. Play compares the listing,
-the privacy policy and the Data safety form against each other; saying it here costs
-nothing and removes a discrepancy.
+The scan paragraph states that recognition is on-device. Play compares the listing, the
+privacy policy and the Data safety form against each other, so keep this line consistent
+with `data-safety.md` — if the native path ever starts uploading images, this sentence has
+to change in the same release.
 
 ## Graphics
 

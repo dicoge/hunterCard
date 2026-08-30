@@ -63,7 +63,7 @@ Requested explicitly by the app:
 
 | Permission | Runtime prompt | Feature it serves | Disclosure |
 | --- | --- | --- | --- |
-| `CAMERA` | Yes | Card scanning on the Scan screen (`src/screens/ScanScreen.tsx`) | In-app rationale string `允許 HoloHunter 存取相機以掃描卡牌`; Data safety declares the image upload |
+| `CAMERA` | Yes | Card scanning on the Scan screen (`src/screens/ScanScreen.tsx`) | In-app rationale string `允許 HoloHunter 存取相機以掃描卡牌`. Recognition runs on-device, so Data safety declares Photos as not collected — see `data-safety.md` |
 | `POST_NOTIFICATIONS` | Yes (Android 13+) | Watchlist price-alert notifications | Requested at the point the user enables alerts |
 
 Inherited, normal-level, no runtime prompt, no Play declaration required:

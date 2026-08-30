@@ -32,7 +32,7 @@ is either a known risk from this submission work or a path the store review will
 | 1 | Fresh install, cold launch, no crash | Baseline |
 | 2 | Guest path: tap 以訪客身份進入, browse sets, search, open a card detail, confirm prices load | This is exactly what a reviewer following the App access instructions will do |
 | 3 | Google sign-in with the review test account | If this fails for the reviewer, the release is rejected |
-| 4 | Scan with the camera, confirm a card is recognised | Verifies the recognition upload still works against the new API origin from DIC-1245 |
+| 4 | Scan with the camera, confirm a card is recognised | Recognition on native runs on-device; confirm it still resolves a card after the DIC-1245 API-origin change |
 | 5 | **Pick an image from the gallery and confirm recognition runs** | Directly exercises the `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` removal. Test on an Android 10 or older device or emulator, where the legacy storage path would have mattered |
 | 6 | Grant and deny the notification prompt; confirm neither crashes | `POST_NOTIFICATIONS` is a retained runtime permission |
 | 7 | Settings → 刪除帳號, confirm the account is deleted and the app signs out | Play's data-deletion answer depends on this working |

@@ -79,7 +79,7 @@ Answer as an app, not a game. The intended answers:
 | Shares user location | No |
 | Allows purchases | No — no billing integration exists |
 | Digital purchases / in-app purchases | No |
-| Personal information shared with third parties | Yes — card images are sent to Google's Gemini API for recognition. Answer consistently with Data safety. |
+| Personal information shared with third parties | Yes — the device push token is transmitted to Expo Push Service to deliver price alerts. Card images are **not** shared: recognition runs on-device. Answer consistently with Data safety. |
 
 Expected outcome: Everyone / PEGI 3 / ESRB E. The rating is issued by IARC from the
 answers; do not hand-pick a rating.
