@@ -64,7 +64,24 @@ Requested explicitly by the app:
 | Permission | Runtime prompt | Feature it serves | Disclosure |
 | --- | --- | --- | --- |
 | `CAMERA` | Yes | Card scanning on the Scan screen (`src/screens/ScanScreen.tsx`) | In-app rationale string `允許 HoloHunter 存取相機以掃描卡牌`. Recognition runs on-device, so Data safety declares Photos as not collected — see `data-safety.md` |
-| `POST_NOTIFICATIONS` | Yes (Android 13+) | Watchlist price-alert notifications | Requested at the point the user enables alerts |
+| `POST_NOTIFICATIONS` | Yes (Android 13+) | **Nothing, in the review build** — see below | Never requested at runtime while `STORE_MVP` is on |
+
+> **`POST_NOTIFICATIONS` has no feature behind it in the submitted build.** It is contributed
+> by `expo-notifications`, and the only thing that would use it — watchlist price alerts — is
+> compiled out: `App.tsx:11` gates push registration on `FEATURES.pushAlerts`, which is
+> `!STORE_MVP` (`src/config/releaseFlags.ts:52`), and both store profiles set
+> `EXPO_PUBLIC_STORE_MVP=1`. So the permission ships and is listed on the store page, but the
+> app never prompts for it and never sends a notification.
+>
+> **Recommendation: block it for store builds.** `app.config.js` already applies
+> env-conditional Android config (the Apple App Link intent filter keys off
+> `EXPO_PUBLIC_APPLE_ANDROID_ENABLED`), so the same mechanism can add `POST_NOTIFICATIONS` to
+> `blockedPermissions` when `EXPO_PUBLIC_STORE_MVP` is on. Not done here: DIC-1256 is actively
+> reshaping exactly this store-build surface, and a profile-dependent manifest also means
+> `expected-release-permissions.txt` needs one baseline per profile rather than one file. It
+> belongs with that work, and it should be done before submission — a permission on the store
+> listing that the app never uses is the kind of thing reviewers ask about, and it currently
+> has no honest answer.
 
 Inherited, normal-level, no runtime prompt, no Play declaration required:
 

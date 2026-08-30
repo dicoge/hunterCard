@@ -30,15 +30,15 @@ is either a known risk from this submission work or a path the store review will
 | # | Check | Why it is here |
 | --- | --- | --- |
 | 1 | Fresh install, cold launch, no crash | Baseline |
-| 2 | Guest path: tap 以訪客身份進入, browse sets, search, open a card detail, confirm prices load | This is exactly what a reviewer following the App access instructions will do |
+| 2 | Guest path: tap 以訪客身份進入, browse sets, search, open a card detail | Exactly what a reviewer following the App access instructions will do. After DIC-1256 the card detail must show **no** price or market data, and the drawer no 收藏／入手提醒 |
 | 3 | Google sign-in with the review test account | If this fails for the reviewer, the release is rejected |
 | 4 | Scan with the camera, confirm a card is recognised | Recognition on native runs on-device; confirm it still resolves a card after the DIC-1245 API-origin change |
 | 5 | **Pick an image from the gallery and confirm recognition runs** | Directly exercises the `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` removal. Test on an Android 10 or older device or emulator, where the legacy storage path would have mattered |
-| 6 | Grant and deny the notification prompt; confirm neither crashes | `POST_NOTIFICATIONS` is a retained runtime permission |
+| 6 | Confirm **no** notification prompt ever appears | Push registration is gated on `FEATURES.pushAlerts` (`!STORE_MVP`), so the review build must never ask. A prompt appearing means the store profile lost `EXPO_PUBLIC_STORE_MVP=1`, which would also make the Data safety answers wrong |
 | 7 | Settings → 刪除帳號, confirm the account is deleted and the app signs out | Play's data-deletion answer depends on this working |
 | 8 | Confirm no draw-over-other-apps prompt ever appears | `SYSTEM_ALERT_WINDOW` was removed |
-| 9 | App info → Permissions shows only Camera and Notifications | The user-visible result of the permission work |
-| 10 | Deck editor, collection counts, tournament report, rules tutorial all open | Every feature named in the store listing must exist |
+| 9 | App info → Permissions lists Camera, and Notifications only if `POST_NOTIFICATIONS` has not been blocked for store builds | The user-visible result of the permission work. Nothing in the review build uses notifications — see the recommendation in `permissions.md` |
+| 10 | Deck editor, tournament report and rules tutorial all open; 收藏 and 入手提醒 are gone and their deep links fail closed | Every feature named in the store listing must exist, and every removed one must be unreachable rather than merely hidden (DIC-1256 item 2) |
 | 11 | `scripts/ci/play-artifact-permissions-verify.sh <aab>` passes | Mechanical proof the merged manifest matches the baseline |
 
 Do not invite closed testers until 1–11 pass. A closed tester who hits a crash on day 3

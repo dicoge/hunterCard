@@ -73,8 +73,8 @@ the DOM path works — but the web build is not what Play is asked about.
 | --- | --- | --- | --- | --- |
 | 1 | **Not the image** — a local `file://` path string | Every scan | `POST /api/recognize-card`, forwarded to Gemini as undecodable data | See the derivation above. Contains no user data; it is an app-private cache path. |
 | 2 | Google ID token (email, display name, avatar URL, Google subject ID) | Sign-in with Google | `POST /api/auth/login` → identity record in Vercel KV | `src/services/authService.ts:379-418`, `:822-826`; `api/_lib/identity-store.ts:44-53` |
-| 3 | Expo push token + platform | App launch on native | `POST /api/push/register` → Vercel KV hash `push:tokens` | `src/services/pushNotificationService.ts:40-84`; `api/_lib/kv-storage.ts:32-39` |
-| 4 | Price-alert definitions (card number, printing, thresholds, currency) | User creates or removes a price alert | `POST /api/push/price-alerts` | `src/services/priceAlertSync.ts:18` |
+| 3 | ~~Expo push token + platform~~ — **does not happen in the review build** | Would be app launch, but `App.tsx:11` gates it on `FEATURES.pushAlerts` and `pushAlerts: !STORE_MVP` | — | `App.tsx:11`; `src/config/releaseFlags.ts:52`; `eas.json` sets `EXPO_PUBLIC_STORE_MVP=1` on both store profiles |
+| 4 | ~~Price-alert definitions~~ — **does not happen in the review build** | `watchlist: !STORE_MVP` removes the feature that creates them | — | `src/config/releaseFlags.ts:50` |
 | 5 | Account sync payload (favorites, decks, collection, price alerts, settings) | While signed in | `POST /api/auth/[action=sync]` → Vercel KV | `api/_lib/account-sync-store.ts` |
 | 6 | Session token | Session validation | `POST /api/auth/me` | `src/services/authService.ts:1025` |
 
@@ -135,22 +135,41 @@ A permission is not collection; answer No.
 
 ### Device or other IDs
 
-| Field | Answer | Reason |
-| --- | --- | --- |
-| Collected | **Yes** | The Expo push token, a persistent device identifier, is uploaded at launch and stored (flow 3). |
-| Shared | **Yes** | Delivery goes through Expo Push Service (`exp.host`). Declare the recipient unless the owner can point to a service-provider agreement with Expo. |
-| Processed ephemerally | No | Stored indefinitely in KV. |
-| Required or optional | Optional | Only registered if notification permission is granted. |
-| Purpose | App functionality | Watchlist price-alert delivery. |
+| Field | Answer |
+| --- | --- |
+| Collected | **No — for the Play review build** |
+
+**Corrected 2026-08-30.** An earlier revision of this file declared the Expo push token as
+collected. That is true of a full build and **false of the artifact being submitted**.
+`App.tsx:11` gates `initPushNotifications()` on `FEATURES.pushAlerts`, and
+`pushAlerts: !STORE_MVP` (`src/config/releaseFlags.ts:52`). Both the `production` and
+`production-apk` profiles set `EXPO_PUBLIC_STORE_MVP=1` (`eas.json`), so in the submitted
+build the token is never requested, never uploaded, and `/api/push/register` is never
+called. `watchlist: !STORE_MVP` likewise means `/api/push/price-alerts` never fires.
+
+Over-declaring is a mismatch in the same way under-declaring is, so answer No — and re-check
+this line if `EXPO_PUBLIC_STORE_MVP` is ever changed for a store profile, because the answer
+flips with that one variable.
+
+> If a later release turns push alerts on, this becomes: Collected = Yes, Shared = Yes
+> (delivery via Expo Push Service at `exp.host`), not ephemeral, purpose App functionality —
+> and the deletion gap applies, since there is no unregister endpoint.
 
 ### App activity → Other user-generated content
 
 | Field | Answer | Reason |
 | --- | --- | --- |
-| Collected | **Yes** | Favorites, decks, collection counts, price alerts and settings sync server-side while signed in (flows 4 and 5). |
+| Collected | **Yes** | Account sync writes user content server-side while signed in (flow 5). |
 | Shared | No | Developer's own backend. |
 | Required or optional | Optional | Only while signed in. |
 | Purpose | App functionality | Cross-device sync. |
+
+> **The field list shrinks with DIC-1256 and must be re-derived, not assumed.** Price alerts
+> are already out of the review build (`watchlist: !STORE_MVP`). DIC-1256 removes favorites
+> and the collection UI from the store build as well, which should leave decks and settings.
+> Confirm what the slimmed build actually syncs before answering — the honest answer is
+> whichever fields still reach `/api/auth/[action=sync]`, not whichever fields the store
+> exists to hold.
 
 ### Everything else
 

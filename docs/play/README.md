@@ -21,6 +21,13 @@ directory — see the corrections table at the end of `data-safety.md`.
 
 ## Read this first
 
+**0. The push token is NOT collected by the review build.** An earlier revision of
+`data-safety.md` declared the Expo push token as collected. `App.tsx:11` gates
+`initPushNotifications()` on `FEATURES.pushAlerts`, which is `!STORE_MVP`, and both store
+profiles set `EXPO_PUBLIC_STORE_MVP=1`. The token is never requested or uploaded in the
+submitted artifact, and neither are price alerts. Corrected — over-declaring is a mismatch
+too, and the answer flips on that one environment variable.
+
 **1. Card images are not transmitted by the Android app — but only by accident.** Reading
 the call graph says the opposite: `recognizeCardFromImage` posts `{ image }` to
 `/api/recognize-card` on every platform, and the server forwards to Google Gemini. What
@@ -89,10 +96,24 @@ store builds, the `subscriber` role collapses to `free_user`, and the upgrade bu
 no-op stub. A Play Console product can be prepared now, but the app cannot be reviewed as a
 subscription app until Play Billing is actually implemented.
 
-**The open question that blocks the rest** is sequencing: ship the free app first and add
-the subscription in a later release, or hold the submission until billing exists.
-`subscription.md` sets out both, the Console field list, the permanent product IDs needing
-sign-off, and everything that must be re-answered when billing lands.
+**Sequencing resolved 2026-08-30:** review and Closed Testing proceed independently of
+monetization. The initial AAB is free with no paid UI and does not wait on RevenueCat,
+subscription products, merchant approval or the final price. The slim-down is DIC-1256.
+`subscription.md` holds the Console field list, the permanent product IDs needing sign-off,
+and everything to re-answer when billing eventually lands.
+
+### DIC-1256 changes what this pack can claim
+
+DIC-1256 removes favorites, price alerts and **all** market/price data from the store build.
+That reaches further than the paid UI and invalidates parts of this pack:
+
+- **Store listing copy is rewritten** — the old text sold reference prices, collection
+  tracking and deck cost. See `store-listing.md`.
+- **Three of the four screenshots are invalid** and must be recaptured from the slimmed
+  build; only the home screen survives. Play needs a minimum of two.
+- **Data safety Device IDs is now "not collected"** — see the correction below.
+- **`POST_NOTIFICATIONS` has no feature behind it** in the review build; `permissions.md`
+  recommends blocking it for store profiles.
 
 ### Not required until billing ships
 

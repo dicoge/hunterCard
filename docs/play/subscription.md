@@ -30,6 +30,21 @@ prices must not be hardcoded before owner sign-off, and the plan cards show `NT$
 "Sandbox". Nothing there is a live checkout, so there is no Play Billing steering problem
 today.
 
+## Sequencing — decided 2026-08-30: option A
+
+The owner has ruled that app review and Closed Testing proceed **independently of
+monetization**. The initial Play review AAB is free with **no paid UI**, and must not wait on
+RevenueCat, subscription products, merchant approval, or the final monthly price. The UI
+slim-down that makes that true is tracked in DIC-1256.
+
+So nothing in this file blocks the submission. The monthly product is prepared on its own
+timeline and lands in a later release, at which point everything under "What must be
+re-answered" applies. Note the owner named **RevenueCat** as the intended billing layer;
+whatever wrapper is used, the purchase itself must still go through Google Play Billing on
+Android.
+
+The two options below are kept for context on what option B would have cost.
+
 ## Two ways to sequence this
 
 **A — Ship the free app first, add the subscription in a later release.** Submit the
