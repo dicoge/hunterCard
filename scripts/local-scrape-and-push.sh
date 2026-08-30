@@ -142,9 +142,25 @@ fi
 #     database that fails the same market/native invariants CI enforces. DIC-1167
 #     regression 2026-08-30: the script pushed a database with sellPrice=0 and
 #     priceHistory=0, printed Done, and only CI caught test:market-fields later.
+#     DIC-1249 regression 2026-08-30: the script also pushed 546 rows whose
+#     per-variant buyPriceTimestamp had drifted from the freshly written source
+#     `data/buy-prices/*.json` timestamps (merge-buy-prices.js is the sole writer
+#     of that provenance; if it did not run to completion on this cycle the DB is
+#     silently stale-by-one-day while values / versions / sources still match).
+#     test:buy-price is the CI check that caught it; test:buy-price-regen is the
+#     tight byte-identity guard on `regen(committed) === committed`. Both must run
+#     BEFORE the commit so this class of drift is stopped inside the scheduler.
 echo "[$(date)] Running required pre-push data gate..." >> "$LOG_FILE"
 if ! npm run test:market-fields >> "$LOG_FILE" 2>&1; then
   echo "[$(date)] ❌ test:market-fields FAILED, exiting before commit/push" >> "$LOG_FILE"
+  exit 1
+fi
+if ! npm run test:buy-price >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ test:buy-price FAILED, exiting before commit/push" >> "$LOG_FILE"
+  exit 1
+fi
+if ! npm run test:buy-price-regen >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ test:buy-price-regen FAILED, exiting before commit/push" >> "$LOG_FILE"
   exit 1
 fi
 if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
