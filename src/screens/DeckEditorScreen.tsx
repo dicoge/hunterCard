@@ -25,7 +25,7 @@ import { formatInterval, priceAlertKey } from '../utils/priceAlerts';
 import { useTranslation, type TranslationKey } from '../i18n';
 
 const ZONES: DeckZone[] = ['oshi', 'main', 'yell'];
-type MobilePanel = 'picker' | DeckZone | 'shortage';
+type MobilePanel = 'overview' | 'picker' | DeckZone | 'shortage';
 
 /** The card classes a zone accepts. 主牌組 takes two, so its tab offers a
  * ホロメン／サポート sub-filter; the other zones take exactly one and hide it. */
@@ -91,6 +91,7 @@ export default function DeckEditorScreen() {
   const applyLowCostVariants = useDeckStore((s) => s.applyLowCostVariants);
   const migrateLegacyPrintings = useDeckStore((s) => s.migrateLegacyPrintings);
   const migrateTournamentDefaults = useDeckStore((s) => s.migrateTournamentDefaults);
+  const migrateCardColors = useDeckStore((s) => s.migrateCardColors);
 
   const activeDeck = useMemo(
     () => decks.find((d) => d.id === activeDeckId) || null,
@@ -123,18 +124,12 @@ export default function DeckEditorScreen() {
   );
   const lowCostIndex = useMemo(() => buildLowCostIndex(variantGroups), [variantGroups]);
 
-  // Drafts saved before DIC-1013 key their slots off the row-level rarity and
-  // must be moved onto real source printings before any estimate is shown.
-  // Tournament decks imported under DIC-1033 were saved with every printing
-  // unresolved, which priced the whole deck NO_EXACT_PRICE; they are repaired
-  // onto the same ordinary defaults a fresh import now picks, so the player
-  // never has to delete and re-import (DIC-1060). Both passes are idempotent
-  // and return the store unchanged once there is nothing left to move.
   useEffect(() => {
     if (lowCostIndex.size === 0) return;
     migrateLegacyPrintings(lowCostIndex);
     migrateTournamentDefaults(lowCostIndex);
-  }, [lowCostIndex, migrateLegacyPrintings, migrateTournamentDefaults]);
+    migrateCardColors(lowCostIndex);
+  }, [lowCostIndex, migrateLegacyPrintings, migrateTournamentDefaults, migrateCardColors]);
 
   const facets = db?.facets ?? new Map();
   const categoryChoices = ZONE_CATEGORIES[activeZone];
@@ -397,6 +392,7 @@ export default function DeckEditorScreen() {
                 key={deck.id}
                 deck={deck}
                 desktop={isDesktop}
+                active={deck.id === activeDeckId}
                 onOpen={() => setActiveDeck(deck.id)}
                 onMenu={() => setMenuDeckId(deck.id)}
               />
@@ -627,9 +623,27 @@ export default function DeckEditorScreen() {
     </View>
   );
 
-  const estimatePanel = (
-    <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <Text style={styles.h2}>{t('deck_gap_title')}</Text>
+  const totalMissingCount = gap?.rows.reduce((sum, r) => sum + r.missing, 0) ?? 0;
+  const stickyShortageHeader = (
+    <View style={styles.stickySummaryHeader} testID="sticky-shortage-summary">
+      <View style={styles.stickySummaryRow}>
+        <Text style={styles.h2}>{t('deck_gap_title')}</Text>
+        <View style={styles.stickySummaryBadges}>
+          <Text style={styles.shortageCountBadge} testID="shortage-count-title">
+            {t('deck_shortage_count', { count: totalMissingCount })}
+          </Text>
+          {gap && gap.subtotals.map((s) => (
+            <Text key={s.currency} style={styles.stickyTotalPriceBadge} testID={`sticky-gap-subtotal-${s.currency}`}>
+              {t('deck_gap_subtotal', { currency: s.currency, total: s.total })}
+            </Text>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+
+  const shortageRows = (
+    <>
       {gap && gap.rows.map((r) => {
         const alert = priceAlerts[priceAlertKey(r.cardNumber, r.version)] ?? null;
         return (
@@ -713,6 +727,13 @@ export default function DeckEditorScreen() {
             )}
           </View>
         ))}
+    </>
+  );
+
+  const estimatePanel = (
+    <View style={[styles.panel, isDesktop && styles.panelCol]}>
+      {stickyShortageHeader}
+      {shortageRows}
     </View>
   );
 
@@ -806,6 +827,7 @@ export default function DeckEditorScreen() {
   const phonePanelSwitch = (
     <View style={styles.phonePanelSwitch} testID="deck-mobile-panel-switch">
       {([
+        ['overview', t('deck_mobile_panel_deck')],
         ['picker', t('deck_choose_card')],
         ['oshi', zoneLabels.oshi],
         ['main', zoneLabels.main],
@@ -837,11 +859,110 @@ export default function DeckEditorScreen() {
     </View>
   );
 
-  const phonePanel = mobilePanel === 'picker'
-    ? pickerPanel
-    : mobilePanel === 'shortage'
-      ? estimatePanel
-      : deckPanel;
+  const overviewPanel = (
+    <View style={[styles.panel, isDesktop && styles.panelCol]} testID="deck-overview-panel">
+      {renaming ? (
+        <View style={styles.renameBlock}>
+          <TextInput
+            style={[styles.input, styles.renameInput, renameError && styles.renameInputError]}
+            placeholder={t('deck_name_placeholder')}
+            placeholderTextColor={COLORS.textSecondary}
+            value={renameValue}
+            onChangeText={(t) => { setRenameValue(t); if (renameError) setRenameError(false); }}
+            onSubmitEditing={commitRename}
+            autoFocus
+            testID="deck-rename-input"
+            accessibilityLabel={t('deck_name_placeholder')}
+          />
+          <View style={styles.renameActions}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={commitRename}
+              testID="deck-rename-save"
+              accessibilityRole="button"
+              accessibilityLabel={t('deck_rename_save_a11y')}
+            >
+              <Text style={styles.primaryBtnText}>{t('common_save')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={cancelRename}
+              testID="deck-rename-cancel"
+              accessibilityRole="button"
+              accessibilityLabel={t('deck_rename_cancel_a11y')}
+            >
+              <Text style={styles.link}>{t('common_cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+          {renameError && (
+            <Text style={styles.renameErrorText}>{t('deck_name_empty')}</Text>
+          )}
+        </View>
+      ) : (
+        <View style={styles.deckHeaderRow}>
+          <Text style={[styles.h2, { flexShrink: 1 }]} numberOfLines={1}>{activeDeck.name}</Text>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => setMenuDeckId(activeDeck.id)}
+            testID="deck-editor-menu"
+            accessibilityRole="button"
+            accessibilityLabel={t('deck_actions_a11y', { name: activeDeck.name })}
+          >
+            <Text style={styles.menuButtonText}>•••</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {activeDeck.origin?.kind === 'tournament' && (
+        <View style={styles.originBanner} testID="deck-origin-banner">
+          <Text style={styles.originText}>
+            {t('deck_imported_from', {
+              event: activeDeck.origin.eventName,
+              code: activeDeck.origin.decklogCode ? `（${activeDeck.origin.decklogCode}）` : '',
+            })}
+          </Text>
+        </View>
+      )}
+
+      {stats && (
+        <View style={styles.statsRow}>
+          <Stat label={zoneLabels.oshi} value={stats.oshi} target={stats.oshiTarget} />
+          <Stat label={zoneLabels.main} value={stats.main} target={stats.mainTarget} />
+          <Stat label={zoneLabels.yell} value={stats.yell} target={stats.yellTarget} />
+          <Stat label={t('deck_total')} value={stats.total} target={stats.totalTarget} emphasize />
+        </View>
+      )}
+
+      <View style={styles.finalizeRow}>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={finalizeDeck}
+          testID="deck-finalize-button"
+          accessibilityRole="button"
+          accessibilityLabel={t('deck_finalize_a11y')}
+        >
+          <Text style={styles.primaryBtnText}>{t('deck_finalize')}</Text>
+        </TouchableOpacity>
+        {lowCostDrift > 0 && (
+          <TouchableOpacity
+            onPress={() => applyLowCostVariants(activeDeck.id, lowCostIndex)}
+            testID="deck-apply-low-cost"
+            accessibilityRole="button"
+            accessibilityLabel={t('deck_apply_low_cost_a11y', { count: lowCostDrift })}
+          >
+            <Text style={styles.link}>{t('deck_low_cost_variants')}（{lowCostDrift}）</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+
+  const phonePanel = mobilePanel === 'overview'
+    ? overviewPanel
+    : mobilePanel === 'picker'
+      ? pickerPanel
+      : mobilePanel === 'shortage'
+        ? estimatePanel
+        : deckPanel;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -866,9 +987,20 @@ export default function DeckEditorScreen() {
           </View>
         </ScrollView>
       ) : isPhone ? (
-        <ScrollView contentContainerStyle={styles.pad}>
-          {phonePanel}
-        </ScrollView>
+        mobilePanel === 'shortage' ? (
+          <View style={styles.phoneShortageContainer} testID="phone-shortage-container">
+            {stickyShortageHeader}
+            <ScrollView contentContainerStyle={styles.pad} testID="shortage-scroll-view">
+              <View style={[styles.panel, isDesktop && styles.panelCol]}>
+                {shortageRows}
+              </View>
+            </ScrollView>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.pad}>
+            {phonePanel}
+          </ScrollView>
+        )
       ) : (
         <ScrollView contentContainerStyle={styles.pad}>
           {pickerPanel}
@@ -881,18 +1013,22 @@ export default function DeckEditorScreen() {
 }
 
 function DeckLibraryCard({
-  deck, desktop, onOpen, onMenu,
+  deck, desktop, active, onOpen, onMenu,
 }: {
   deck: Deck;
   desktop: boolean;
+  active?: boolean;
   onOpen: () => void;
   onMenu: () => void;
 }) {
   const { t } = useTranslation();
   const stats = deckStats(deck);
   const oshiCard = deck.oshi[0]?.card;
+  const oshiColor = oshiCard?.color || '';
+  const updatedDate = deck.updatedAt ? new Date(deck.updatedAt).toISOString().split('T')[0] : '—';
+
   return (
-    <View style={[styles.deckTile, desktop && styles.deckTileDesktop]} testID={`deck-tile-${deck.id}`}>
+    <View style={[styles.deckTile, desktop && styles.deckTileDesktop, active && styles.deckTileActive]} testID={`deck-tile-${deck.id}`}>
       <TouchableOpacity
         style={styles.deckTileMain}
         onPress={onOpen}
@@ -904,6 +1040,11 @@ function DeckLibraryCard({
         <View style={styles.deckTileBody}>
           <View style={styles.deckTileHeading}>
             <Text style={styles.deckTileName} numberOfLines={2}>{deck.name}</Text>
+            {active && (
+              <Text style={styles.activeBadge} testID={`deck-active-badge-${deck.id}`}>
+                {t('deck_active_badge')}
+              </Text>
+            )}
             <LegalBadge deck={deck} />
           </View>
           {deck.origin?.kind === 'tournament' && (
@@ -911,6 +1052,14 @@ function DeckLibraryCard({
           )}
           <Text style={styles.oshiName} numberOfLines={2}>
             {oshiCard ? oshiCard.name : t('deck_oshi_unselected')}
+          </Text>
+          {oshiColor ? (
+            <Text style={styles.deckColorLabel} testID={`deck-color-badge-${deck.id}`}>
+              {t('deck_color_label', { color: oshiColor })}
+            </Text>
+          ) : null}
+          <Text style={styles.deckUpdatedAt} testID={`deck-updated-at-${deck.id}`}>
+            {t('deck_updated_at', { date: updatedDate })}
           </Text>
           <View style={styles.compactProgress} accessibilityLabel={t('deck_progress_a11y', {
             oshi: stats.oshi, oshiTarget: stats.oshiTarget,
@@ -954,7 +1103,9 @@ function DeckOshiPreview({ card }: { card?: DeckCard }) {
   if (!card?.imageUrl || failed) {
     return (
       <View style={[styles.deckOshiImage, styles.deckOshiPlaceholder]} testID="deck-oshi-placeholder">
-        <Text style={styles.deckOshiPlaceholderIcon}>☆</Text>
+        <View style={styles.placeholderIconShape} testID="deck-oshi-placeholder-icon">
+          <View style={styles.placeholderStarInner} />
+        </View>
         <Text style={styles.deckOshiPlaceholderText}>{t('deck_oshi_placeholder')}</Text>
       </View>
     );
@@ -1124,4 +1275,16 @@ const styles = StyleSheet.create({
   sheet: { maxHeight: '85%', backgroundColor: COLORS.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, borderTopWidth: 1, borderColor: COLORS.border },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetClose: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
+  stickySummaryHeader: { backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: 10, marginBottom: 12 },
+  stickySummaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
+  stickySummaryBadges: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  shortageCountBadge: { backgroundColor: COLORS.error, color: '#fff', fontSize: 12, fontWeight: 'bold', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  stickyTotalPriceBadge: { backgroundColor: COLORS.surfaceLight, color: COLORS.primaryLight, fontSize: 13, fontWeight: 'bold', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: COLORS.primary },
+  deckTileActive: { borderColor: COLORS.primary, borderWidth: 2 },
+  activeBadge: { backgroundColor: COLORS.primary, color: '#fff', fontSize: 10, fontWeight: 'bold', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  deckColorLabel: { color: COLORS.primaryLight, fontSize: 11, fontWeight: '600', marginTop: 4 },
+  deckUpdatedAt: { color: COLORS.textSecondary, fontSize: 11, marginTop: 2 },
+  placeholderIconShape: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.surfaceLight, borderWidth: 2, borderColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  placeholderStarInner: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.primary },
+  phoneShortageContainer: { flex: 1, display: 'flex', flexDirection: 'column' },
 });

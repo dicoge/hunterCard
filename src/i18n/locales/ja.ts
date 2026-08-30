@@ -89,6 +89,11 @@ export const ja: Record<keyof typeof zh, string> = {
   deck_finalize: 'デッキ完成',
   deck_shortage: '不足カード',
   deck_low_cost_variants: '最安版を適用',
+  deck_mobile_panel_deck: 'デッキ',
+  deck_shortage_count: '不足 {{count}} 枚',
+  deck_updated_at: '最終更新：{{date}}',
+  deck_active_badge: '使用中',
+  deck_color_label: 'メイン色：{{color}}',
 
   // Tournament Report & Summary
   tournament_title: '🏆 大会月報',

@@ -67,6 +67,7 @@ interface DeckState {
    * their lowest ordinary printing (DIC-1060). Idempotent, tournament-only, and
    * never touches a printing the player picked themselves. */
   migrateTournamentDefaults: (index: Map<string, DeckCard>) => void;
+  migrateCardColors: (index: Map<string, DeckCard>) => void;
 
   setOwned: (cardNumber: string, version: string, qty: number) => void;
   /** apply a signed delta to the owned count; clamps at 0 (never negative) */
@@ -197,6 +198,32 @@ export const useDeckStore = create<DeckState>()(
           if (oshi === d.oshi && main === d.main && yell === d.yell) return d;
           changed = true;
           return { ...d, oshi, main, yell };
+        });
+        return changed ? { decks } : {};
+      }),
+
+      migrateCardColors: (index) => set((s) => {
+        let changed = false;
+        const decks = s.decks.map((d) => {
+          let deckChanged = false;
+          const patchSlots = (slots: DeckSlot[]) => slots.map((sl) => {
+            if (!sl.card.color) {
+              const matched = index.get(sl.card.cardNumber) || index.get(sl.card.id);
+              if (matched?.color) {
+                deckChanged = true;
+                return { ...sl, card: { ...sl.card, color: matched.color } };
+              }
+            }
+            return sl;
+          });
+          const oshi = patchSlots(d.oshi);
+          const main = patchSlots(d.main);
+          const yell = patchSlots(d.yell);
+          if (deckChanged) {
+            changed = true;
+            return { ...d, oshi, main, yell };
+          }
+          return d;
         });
         return changed ? { decks } : {};
       }),
