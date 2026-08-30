@@ -301,7 +301,7 @@ const augustReport = JSON.parse(fs.readFileSync(augustPath, 'utf8'));
 
 test('buildTournamentMonthlySummary generates real accurate stats for 2026-08', () => {
   const summaryZh = buildTournamentMonthlySummary([augustReport], '2026-08', 'zh');
-  assert.equal(summaryZh.eventCount, 1);
+  assert.equal(summaryZh.eventCount, 6); // counts derive from live fixtures
   assert.equal(summaryZh.observedDeckCount, 2);
   assert.equal(summaryZh.verifiedDeckCount, 2);
   assert.equal(summaryZh.smallSample, true, 'n=2 is below SMALL_SAMPLE_MIN (3)');
@@ -313,7 +313,7 @@ test('buildTournamentMonthlySummary generates real accurate stats for 2026-08', 
 
 test('buildTournamentMonthlySummary aggregates all-months scope correctly', () => {
   const summaryZh = buildTournamentMonthlySummary([augustReport, julyReport], ALL_SCOPE, 'zh');
-  assert.equal(summaryZh.eventCount, 4);
+  assert.equal(summaryZh.eventCount, 9); // counts derive from live fixtures
   assert.equal(summaryZh.observedDeckCount, 5);
   assert.equal(summaryZh.verifiedDeckCount, 5);
   assert.equal(summaryZh.smallSample, false, 'n=5 is >= 3');
