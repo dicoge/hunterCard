@@ -52,7 +52,13 @@ the DOM path works — but the web build is not what Play is asked about.
 > preprocessor, a `.native.ts` variant of `imagePreprocessor`, `expo-image-manipulator`, or
 > `base64: true` on either capture call would start uploading real photos silently, and the
 > Data safety declaration would become false with nothing failing.
-> `npm run test:privacy-disclosure` fails on each of those, and is wired into CI.
+> Two CI gates cover this. `npm run test:privacy-disclosure` fails on each of those known
+> mechanisms. `npm run test:native-scan-no-upload` is the one that matters more: it runs the
+> real `recognizeCardFromImage` under React-Native-shaped globals with `fetch` intercepted and
+> asserts that the value POSTed as `image` is still the input uri, so it catches any route to
+> real image data — including ones nobody has enumerated. Adversarial review defeated the
+> static checks alone with nothing but RN built-ins (`fetch(uri)` piped through
+> `FileReader.readAsDataURL`); the behavioural gate catches exactly that.
 
 > **Latent bug worth fixing separately.** Every native scan still makes a doomed round trip
 > to `/api/recognize-card` carrying a useless path string, and only then falls back to local
