@@ -396,12 +396,16 @@ check('a permission absent from the blocklist is left intact — the gate is not
 
 process.stdout.write('\nLayer 4 — built-artifact baseline and verifier\n');
 
-check(`${BASELINE_PATH} exists and is a sorted, unique permission list`, () => {
-  const raw = fs.readFileSync(path.join(ROOT, BASELINE_PATH), 'utf8');
-  const lines = raw
+function baselinePermissions() {
+  return fs
+    .readFileSync(path.join(ROOT, BASELINE_PATH), 'utf8')
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
+}
+
+check(`${BASELINE_PATH} exists and is a sorted, unique permission list`, () => {
+  const lines = baselinePermissions();
   assert.ok(lines.length > 0, `${BASELINE_PATH} lists no permissions`);
   assert.deepEqual(
     lines,
@@ -416,6 +420,69 @@ check(`${BASELINE_PATH} exists and is a sorted, unique permission list`, () => {
   }
   for (const permission of ALLOWED) {
     assert.ok(lines.includes(permission), `${permission} is requested but missing from ${BASELINE_PATH}`);
+  }
+});
+
+/**
+ * The baseline is the ONLY control the artifact verifier diffs against, which makes it
+ * the weak point of the whole scheme: quietly adding a line here would let a real
+ * permission through the artifact check unnoticed. So the baseline's own contents are
+ * constrained, not merely its formatting.
+ *
+ * Every platform permission it lists must be one the app requests, one classified `keep`,
+ * or one of the normal-level permissions the notification stack's Maven AARs contribute.
+ * Vendor-namespaced entries (launcher badges, Firebase, the app's own androidx-scoped
+ * receiver permission) are matched by prefix because they are numerous and all
+ * normal-level — `permissions.md` attributes them.
+ */
+const INHERITED_NORMAL = new Set([
+  'android.permission.INTERNET',
+  'android.permission.ACCESS_NETWORK_STATE',
+  'android.permission.WAKE_LOCK',
+  'android.permission.VIBRATE',
+  'android.permission.READ_APP_BADGE',
+  'android.permission.RECEIVE_BOOT_COMPLETED',
+  'android.permission.POST_NOTIFICATIONS',
+]);
+
+const VENDOR_PREFIXES = [
+  'com.google.android.',
+  'com.sec.android.',
+  'com.htc.launcher.',
+  'com.sonyericsson.home.',
+  'com.sonymobile.home.',
+  'com.anddoes.launcher.',
+  'com.majeur.launcher.',
+  'com.huawei.android.launcher.',
+  'com.oppo.launcher.',
+  'me.everything.badger.',
+  'com.dicoge.holohunter.',
+];
+
+check(`${BASELINE_PATH} cannot be padded with an unjustified permission`, () => {
+  for (const permission of baselinePermissions()) {
+    if (ALLOWED.includes(permission)) continue;
+    if (INHERITED_NORMAL.has(permission)) continue;
+    if (CLASSIFICATION[permission]?.decision === 'keep') continue;
+    if (VENDOR_PREFIXES.some((prefix) => permission.startsWith(prefix))) continue;
+    assert.fail(
+      `${BASELINE_PATH} expects ${permission}, which is neither requested by the app, classified ` +
+        'as kept, nor a known normal-level contribution. The baseline is what the artifact ' +
+        'verifier trusts, so adding a line here silently widens what the release may request. ' +
+        'Justify it in CLASSIFICATION or in INHERITED_NORMAL, with the reason, before listing it.',
+    );
+  }
+});
+
+check(`${BASELINE_PATH} never expects a sensitive permission the app does not request`, () => {
+  for (const permission of baselinePermissions()) {
+    if (!SENSITIVE_OR_LEGACY.has(permission)) continue;
+    assert.ok(
+      ALLOWED.includes(permission),
+      `${permission} is sensitive and appears in ${BASELINE_PATH} without being requested in ` +
+        'expo.android.permissions. A sensitive permission must never be tolerated by the ' +
+        'artifact verifier unless the app deliberately asks for it.',
+    );
   }
 });
 
