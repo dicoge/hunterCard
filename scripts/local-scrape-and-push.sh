@@ -137,6 +137,21 @@ if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
   exit 1
 fi
 
+# 2i. Required pre-push gate. The local scheduler is allowed to tolerate yuyu
+#     network/WAF outages during catalog ingestion, but it must never commit a
+#     database that fails the same market/native invariants CI enforces. DIC-1167
+#     regression 2026-08-30: the script pushed a database with sellPrice=0 and
+#     priceHistory=0, printed Done, and only CI caught test:market-fields later.
+echo "[$(date)] Running required pre-push data gate..." >> "$LOG_FILE"
+if ! npm run test:market-fields >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ test:market-fields FAILED, exiting before commit/push" >> "$LOG_FILE"
+  exit 1
+fi
+if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ native database --check FAILED, exiting before commit/push" >> "$LOG_FILE"
+  exit 1
+fi
+
 # 3. Check if data changed
 # NOTE: must be an ARRAY. As a bare `VAR='a' 'b' 'c'` list (DIC-923) bash read this
 # as an assignment prefix followed by the COMMAND `data/images/`, which aborts the
