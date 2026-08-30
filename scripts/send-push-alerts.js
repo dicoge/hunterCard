@@ -9,7 +9,10 @@ const PROJECT_DIR = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_DIR, 'data');
 const DATABASE_PATH = path.join(DATA_DIR, 'database.json');
 const TRENDS_DIR = path.join(DATA_DIR, 'trends');
-const NOTIFY_URL = process.env.PUSH_NOTIFY_URL || process.env.VERCEL_PUSH_NOTIFY_URL || 'https://holocard-hunter.vercel.app/api/push/notify';
+// Canonical production notify endpoint (DIC-1245). Overridable via env for
+// preview / staging cron; the default must never be the old vercel.app alias,
+// which no longer hosts /api/push/notify.
+const NOTIFY_URL = process.env.PUSH_NOTIFY_URL || process.env.VERCEL_PUSH_NOTIFY_URL || 'https://holohunter.dicoge.com/api/push/notify';
 const NOTIFY_SECRET = process.env.PUSH_NOTIFY_SECRET;
 const KV_REST_API_URL = process.env.KV_REST_API_URL;
 const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;

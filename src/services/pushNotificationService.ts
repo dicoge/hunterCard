@@ -11,14 +11,17 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 
-// 後端 base URL：web 用當前 origin，native 用正式部署網址
-const PRODUCTION_API_BASE = 'https://holocard-hunter.vercel.app';
+import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
 
+// 後端 base URL：web 用當前 origin，native 用 canonical production origin
+// (DIC-1245)。舊 holocard-hunter.vercel.app 未部署當前的 push register / notify
+// 端點，native fallback 一定要走 canonical domain，否則到價提醒的 device token
+// 會靜默丟失。
 export function getApiBase(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     return window.location.origin;
   }
-  return PRODUCTION_API_BASE;
+  return PRODUCTION_ORIGIN;
 }
 
 function getProjectId(): string | undefined {

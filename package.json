@@ -17,6 +17,7 @@
     "test:apple-web-oauth": "node scripts/test-apple-web-oauth.cjs",
     "test:apple-android-applink": "node scripts/test-apple-android-applink.cjs",
     "test:api-base": "node scripts/test-api-base.cjs",
+    "test:native-bundle-origin": "node scripts/test-native-bundle-origin.mjs",
     "test:web-redirect": "node scripts/test-web-redirect.cjs",
     "test:web-google-redirect": "node scripts/test-web-google-redirect.cjs",
     "test:web-google-callback": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-web-google-callback.cjs",

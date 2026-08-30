@@ -88,7 +88,7 @@ for (const rel of [
 // bridged through node-adapter.ts).
 const nodeHandler = require(path.join(outDir, 'api/auth/[action].js')).default;
 
-const HOST = 'holocard-hunter.vercel.app';
+const HOST = 'holohunter.dicoge.com';
 
 // A request descriptor, NOT a Web Request: the Node boundary receives a relative
 // url + pre-parsed body, so tests describe intent and `handler()` reconstructs the

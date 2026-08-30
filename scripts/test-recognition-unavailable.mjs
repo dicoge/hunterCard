@@ -65,7 +65,7 @@ globalThis.fetch = async (url) => {
 
 const post = (body) =>
   handler(
-    new Request('https://holocard-hunter.vercel.app/api/recognize-card', {
+    new Request('https://holohunter.dicoge.com/api/recognize-card', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

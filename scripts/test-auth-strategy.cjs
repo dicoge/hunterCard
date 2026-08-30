@@ -32,6 +32,10 @@ function compileTs(relPath) {
   return output;
 }
 
+// authStrategy imports PRODUCTION_ORIGIN from src/config/apiOrigin.ts (DIC-1245),
+// so we have to transpile that module too — otherwise the require fails at the
+// import line with MODULE_NOT_FOUND.
+compileTs('src/config/apiOrigin.ts');
 const strategy = require(compileTs('src/services/authStrategy.ts'));
 
 function testGoogleSurfaces() {
