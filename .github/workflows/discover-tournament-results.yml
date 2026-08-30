@@ -6,6 +6,12 @@ name: Discover Tournament Results
 # NOT an error — it is the signal that a tournament is waiting for backfill.
 # Source/feed failures exit non-zero so the run shows up as an incident without
 # ever clobbering last-known-good.
+#
+# Run-mode rules (fail-closed production by default on schedule):
+#   • schedule   → RUN_MODE=production  → discovery persists + commits + pushes.
+#   • manual w/  dry_run=false → production.
+#   • manual w/  dry_run=true  → dry-run  (non-mutating, default for dispatch).
+#   • any run with a `fixture` input stays dry-run (testing only, non-mutating).
 
 on:
   schedule:
@@ -27,6 +33,12 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+    env:
+      # Schedule events carry no workflow_dispatch inputs, so `inputs.dry_run` is
+      # empty there — we must branch on the event source itself, not the input.
+      # Only an explicitly requested non-dry-run dispatch OR a schedule run is
+      # production; everything else (including the dispatch default) is dry-run.
+      RUN_MODE: ${{ (github.event_name == 'schedule' || inputs.dry_run == false) && 'production' || 'dry-run' }}
 
     steps:
       - name: Checkout
@@ -44,7 +56,7 @@ jobs:
       - name: Discover tournament results
         id: discover
         run: |
-          if [ "${{ inputs.dry_run }}" = "false" ] && [ "${{ inputs.fixture }}" = "" ]; then
+          if [ "${{ env.RUN_MODE }}" = "production" ] && [ "${{ inputs.fixture }}" = "" ]; then
             npm run discover:tournaments
           else
             EXTRA=""
@@ -56,7 +68,7 @@ jobs:
 
       - name: Check data changes
         id: check
-        if: inputs.dry_run == false
+        if: env.RUN_MODE == 'production'
         run: |
           if git diff --stat -- 'data/tournaments/discovery/' | grep -q .; then
             echo "changed=true" >> $GITHUB_OUTPUT
@@ -65,7 +77,7 @@ jobs:
           fi
 
       - name: Commit and push if changed
-        if: inputs.dry_run == false && steps.check.outputs.changed == 'true'
+        if: env.RUN_MODE == 'production' && steps.check.outputs.changed == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
