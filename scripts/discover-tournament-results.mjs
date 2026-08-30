@@ -177,6 +177,13 @@ function upsert(list, rec) {
 // preserved and the environment reports how far discovery got.
 async function fetchCandidateRecords() {
   const out = [];
+  // Source-availability accounting (how much of the live frontier could be
+  // confirmed this run). The fail-closed contract in mainAsync keys off these:
+  // if every candidate-producing source is down, the run must NOT bless or
+  // persist "new" records — it fails closed and preserves last-known-good.
+  let probesAttempted = 0;
+  let probesFailed = 0;
+  let feedFailed = false;
 
   // 1) Probe frontier — the committed watch-route manifest. Each entry carries a
   // verifiable, curated event identity (eventId/name/region/blocks/date) keyed by
@@ -199,6 +206,7 @@ async function fetchCandidateRecords() {
   for (const entry of manifest) {
     const code = String(entry?.code ?? '').trim();
     if (!code) continue;
+    probesAttempted += 1;
     const rec = {
       eventId: (entry.eventId ?? '').trim(),
       name: (entry.name ?? '').trim(),
@@ -230,6 +238,7 @@ async function fetchCandidateRecords() {
         .slice(0, 4);
       rec.resolves = true;
     } catch (err) {
+      probesFailed += 1;
       alert('warn', `Probe ${code} failed (${err.message}); last-known-good preserved.`, {
         tweetCode: code,
       });
@@ -256,13 +265,20 @@ async function fetchCandidateRecords() {
       });
     }
   } catch (err) {
+    feedFailed = true;
     alert('warn', `Official news feed unreachable (${err.message}); last-known-good preserved.`);
   }
 
-  return out;
+  return { records: out, probesAttempted, probesFailed, feedFailed };
 }
 
 async function fetchWithTimeout(url, ms) {
+  // Test/operator seam: force every network source to fail. This lets the
+  // fail-closed regression (and an offline operator) deterministically exercise
+  // the all-sources-unavailable path without hitting the network.
+  if (process.env.DIC1232_FORCE_SOURCE_FAILURE === '1') {
+    throw new Error('forced source failure (DIC1232_FORCE_SOURCE_FAILURE)');
+  }
   const res = await fetch(url, { signal: AbortSignal.timeout(ms) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.text();
@@ -291,11 +307,29 @@ async function mainAsync() {
 
   // ---- discover ----
   let candidates = [];
+  let src = { probesAttempted: 0, probesFailed: 0, feedFailed: false };
   if (FIXTURE) {
     candidates = (JSON.parse(fs.readFileSync(FIXTURE, 'utf8')) ?? []).map(normalizeRecord).filter(Boolean);
   } else {
-    candidates = (await fetchCandidateRecords()).map(normalizeRecord).filter(Boolean);
+    const r = await fetchCandidateRecords();
+    candidates = r.records.map(normalizeRecord).filter(Boolean);
+    src = {
+      probesAttempted: r.probesAttempted,
+      probesFailed: r.probesFailed,
+      feedFailed: r.feedFailed,
+    };
   }
+
+  // ---- fail-closed gate ----
+  // A live run whose candidate-producing sources are ALL unavailable (every X
+  // probe failed to resolve) cannot vouch for the manifest-derived records it
+  // just saw: blessing them as "new" would persist unverified guesswork as a
+  // false-success discovery. Fail closed instead — truthful source-failure
+  // accounting, no new-record promotion/persistence, and last-known-good
+  // registry/diff preserved. Fixture runs are local and controllable, so they
+  // are exempt (a broken fixture already fails independently).
+  const probesResolved = src.probesAttempted - src.probesFailed;
+  const totalSourceOutage = !FIXTURE && src.probesAttempted > 0 && probesResolved === 0;
 
   // ---- diff ----
   const seenKeys = new Set(candidates.map(recordKey));
@@ -314,7 +348,7 @@ async function mainAsync() {
       knownCount += 1;
       continue;
     }
-    if (!newKeys.has(key)) {
+    if (!newKeys.has(key) && !totalSourceOutage) {
       upsert(newQueue.records, rec);
       newRecords.push(rec);
       newCount += 1;
@@ -323,39 +357,41 @@ async function mainAsync() {
   }
 
   // A record that was fully verified in the probe (media present and it was
-  // confirmed by a prior run) can be Promoted to known now.
+  // confirmed by a prior run) can be Promoted to known now. On a total source
+  // outage nothing is verified, so nothing is promoted/persisted.
   const promoted = [];
-  for (const rec of newQueue.records) {
-    if (rec.verified) {
-      if (upsert(known.records, rec)) promoted.push(rec);
+  if (!totalSourceOutage) {
+    for (const rec of newQueue.records) {
+      if (rec.verified) {
+        if (upsert(known.records, rec)) promoted.push(rec);
+      }
+    }
+  }
+
+  // ── truthful failure accounting ────────────────────────────────────────
+  // Source fetch failures were previously warn-only, so `failed` stayed 0 and
+  // the exit code stayed 0 even when every live source was down — a scheduled
+  // run could commit a false-success discovery. On a TOTAL outage the source
+  // failures are elevated to error-level so the reported `failed` count and the
+  // exit status are truthful. On a PARTIAL outage (some sources still up) the
+  // individual failures stay warn — that partial success is preserved, only the
+  // completeness-breaking all-down case fails closed.
+  if (!FIXTURE && totalSourceOutage) {
+    for (let i = 0; i < src.probesFailed; i++) {
+      alert('error', `Live X probe unavailable (${i + 1}/${src.probesFailed}); candidate unverified.`);
+    }
+    if (src.feedFailed) {
+      alert('error', 'Official news feed unavailable.');
     }
   }
 
   // ---- persist ----
   const now = NOW;
   if (!DRY_RUN) {
-    known.updatedAt = now;
-    newQueue.updatedAt = now;
-    fs.writeFileSync(path.join(REGISTRY_DIR, KNOWN_FILE), JSON.stringify(known, null, 2) + '\n');
-    if (knownChanged.length > 0) {
-      fs.writeFileSync(
-        path.join(REGISTRY_DIR, NEW_FILE),
-        JSON.stringify(newQueue, null, 2) + '\n',
-      );
-    }
-    fs.writeFileSync(
-      path.join(REGISTRY_DIR, DIFF_FILE),
-      JSON.stringify(
-        {
-          schemaVersion: 1,
-          generatedAt: now,
-          counts: { discovered, known: knownCount, new: newCount, promoted: promoted.length, failed: alerts.filter((a) => a.level === 'error').length },
-          newRecords,
-        },
-        null,
-        2,
-      ) + '\n',
-    );
+    // In a total source outage, persist ONLY the durable run log + scheduler
+    // manifest (so the incident and next run stay visible), never the registry
+    // or diff: newly observed records must not be blessed, and last-known-good
+    // registry/diff must be preserved unchanged.
     const next = nextRunIso(now, SCHEDULE.cron);
     fs.writeFileSync(
       path.join(REGISTRY_DIR, SCHED_FILE),
@@ -366,11 +402,48 @@ async function mainAsync() {
       JSON.stringify({
         at: now,
         mode: FIXTURE ? 'fixture' : 'live',
-        counts: { discovered, known: knownCount, new: newCount, promoted: promoted.length },
-        newRecords: newRecords.map((r) => ({ eventId: r.eventId, name: r.name, date: r.date })),
+        outage: totalSourceOutage,
+        counts: {
+          discovered,
+          known: knownCount,
+          new: totalSourceOutage ? 0 : newCount,
+          promoted: totalSourceOutage ? 0 : promoted.length,
+          failed: alerts.filter((a) => a.level === 'error').length,
+        },
+        newRecords: totalSourceOutage ? [] : newRecords.map((r) => ({ eventId: r.eventId, name: r.name, date: r.date })),
         alerts: alerts.length,
       }) + '\n',
     );
+    if (!totalSourceOutage) {
+      known.updatedAt = now;
+      newQueue.updatedAt = now;
+      fs.writeFileSync(path.join(REGISTRY_DIR, KNOWN_FILE), JSON.stringify(known, null, 2) + '\n');
+      if (knownChanged.length > 0) {
+        fs.writeFileSync(
+          path.join(REGISTRY_DIR, NEW_FILE),
+          JSON.stringify(newQueue, null, 2) + '\n',
+        );
+      }
+      fs.writeFileSync(
+        path.join(REGISTRY_DIR, DIFF_FILE),
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            generatedAt: now,
+            counts: {
+              discovered,
+              known: knownCount,
+              new: newCount,
+              promoted: promoted.length,
+              failed: alerts.filter((a) => a.level === 'error').length,
+            },
+            newRecords,
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+    }
   }
 
   // ---- report (always printed; also what a scheduler greps) ----
@@ -378,14 +451,14 @@ async function mainAsync() {
     [
       `discovered=${discovered}`,
       `known=${knownCount}`,
-      `new=${newCount}`,
-      `promoted=${promoted.length}`,
+      `new=${totalSourceOutage ? 0 : newCount}`,
+      `promoted=${totalSourceOutage ? 0 : promoted.length}`,
       `failed=${alerts.filter((a) => a.level === 'error').length}`,
       `alerts=${alerts.length}`,
       `next=${DRY_RUN ? 'dry' : nextRunIso(now, SCHEDULE.cron)}`,
     ].join(' '),
   );
-  for (const r of newRecords) {
+  for (const r of totalSourceOutage ? [] : newRecords) {
     console.log(`  NEW ${r.eventId} · ${r.date ?? 'no-date'} · ${r.name} · ${r.sourceUrl ?? 'no-url'}`);
   }
 
