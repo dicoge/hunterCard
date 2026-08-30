@@ -77,12 +77,19 @@ Answer as an app, not a game. The intended answers:
 | Gambling, simulated gambling, real-money contests | **None.** The app shows secondary-market reference prices for physical cards. It sells nothing, holds no balance, and runs no draw, pack-opening or loot mechanic. |
 | User-generated content, sharing, communication between users | **None.** No comments, posts, messaging, profiles or social graph. |
 | Shares user location | No |
-| Allows purchases | No — no billing integration exists |
+| Allows purchases | No — no billing integration exists in this build |
 | Digital purchases / in-app purchases | No |
 | Personal information shared with third parties | Yes — the device push token is transmitted to Expo Push Service to deliver price alerts. Card images are **not** shared: recognition runs on-device. Answer consistently with Data safety. |
 
 Expected outcome: Everyone / PEGI 3 / ESRB E. The rating is issued by IARC from the
 answers; do not hand-pick a rating.
+
+> **A monthly subscription is planned** (owner decision 2026-08-30, see
+> [`subscription.md`](./subscription.md)). Answer the purchase questions **No** for as long
+> as the submitted binary cannot complete a purchase — which is the case today. When billing
+> ships, both purchase answers become Yes and **the content rating questionnaire has to be
+> re-run**, because changing them reissues the IARC rating. Do not answer Yes in advance to
+> save a step: it would declare a capability the artifact does not have.
 
 ## Target audience and content
 

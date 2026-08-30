@@ -96,6 +96,14 @@ Play Billing policy to object to.
 No location, contacts, SMS, call log, health or audio data. `RECORD_AUDIO` is blocked at
 the manifest level.
 
+> **A monthly subscription is planned** (owner decision 2026-08-30 —
+> [`subscription.md`](./subscription.md)). It changes this section the day it ships: Financial
+> info → Purchase history very likely becomes collected, and the deletion answers need a line
+> on what happens to purchase records, which are commonly retained for tax and audit purposes
+> even after an account is deleted. Until the binary can complete a purchase, the answers
+> above stay as written. `npm run test:privacy-disclosure` fails the build if a billing
+> dependency is added without this being revisited.
+
 ## 3. Answers
 
 ### Photos and videos → Photos

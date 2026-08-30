@@ -10,6 +10,7 @@ from the current code rather than from earlier documentation.
 | [`app-content.md`](./app-content.md) | App content declarations, reviewer instructions, content rating, target audience |
 | [`store-listing.md`](./store-listing.md) | Listing copy and graphics |
 | [`testing-plan.md`](./testing-plan.md) | Internal QA and the Closed Test 12-tester / 14-day requirement |
+| [`subscription.md`](./subscription.md) | Monthly-only launch product: Console setup, why it cannot ship with this binary, what must be re-answered |
 | [`submit-checklist.md`](./submit-checklist.md) | Step-by-step submission runbook |
 | [`expected-release-permissions.txt`](./expected-release-permissions.txt) | Baseline the built artifact is verified against |
 | [`store-listing/`](./store-listing/) | Icon, feature graphic, phone screenshots |
@@ -77,11 +78,27 @@ comment** — put credentials and keys straight into Play Console or an EAS secr
 | 9 | Is there a service-provider agreement covering Expo Push Service? | Decides the "shared" answer for the push token. Absent one, declare it shared. |
 | 10 | Ship screenshots containing hololive card artwork, or only the two without it? | IP takedown risk on a fan-made listing. See `store-listing.md`. |
 
-### Not required for this submission
+### Subscription — decided 2026-08-30, see [`subscription.md`](./subscription.md)
 
-Payments profile, tax and banking details, contracts, and final subscription product IDs,
-prices, trial and refund policy. The app has **no billing integration at all** — no Stripe,
-no Play Billing, no IAP library — so no Google Play Billing policy question arises. If
+The owner has chosen a **monthly subscription only** as the launch product, no annual plan
+for the initial review, with price and trial still to be confirmed.
+
+This does not change any answer in the pack yet, because **the shipping binary cannot sell
+anything**: there is no billing library, `EXPO_PUBLIC_STORE_MVP=1` compiles premium out of
+store builds, the `subscriber` role collapses to `free_user`, and the upgrade button is a
+no-op stub. A Play Console product can be prepared now, but the app cannot be reviewed as a
+subscription app until Play Billing is actually implemented.
+
+**The open question that blocks the rest** is sequencing: ship the free app first and add
+the subscription in a later release, or hold the submission until billing exists.
+`subscription.md` sets out both, the Console field list, the permanent product IDs needing
+sign-off, and everything that must be re-answered when billing lands.
+
+### Not required until billing ships
+
+Payments profile, tax and banking details, and contracts. Today the app has **no billing
+integration at all** — no Stripe, no Play Billing, no IAP library — so no Google Play
+Billing policy question arises yet. If
 subscriptions are added later, Android digital subscriptions must go through Google Play
 Billing and must not link out to web checkout, and Data safety, the privacy policy and the
 content rating all have to be re-answered.

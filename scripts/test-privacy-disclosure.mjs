@@ -195,8 +195,14 @@ check('the policy does not claim to store financial data while no billing is int
   assert.deepEqual(
     billing,
     [],
-    `a billing dependency (${billing.join(', ')}) was added. Data safety must now declare purchase ` +
-      'data, and an Android subscription must go through Google Play Billing.',
+    `a billing dependency (${billing.join(', ')}) was added. This is expected eventually — the ` +
+      'owner chose a monthly subscription as the launch product on 2026-08-30 — but it cannot ' +
+      'ship while the published privacy policy still tells users there is no payment mechanism ' +
+      'at all. Before removing this gate, work through docs/play/subscription.md: update the ' +
+      'privacy policy in both languages, switch Data safety Financial info -> Purchase history ' +
+      'to collected, answer what happens to purchase records on account deletion, flip both App ' +
+      'content purchase questions and re-run the content rating questionnaire, and confirm the ' +
+      'purchase flow uses Google Play Billing rather than linking out to web checkout.',
   );
   for (const claim of ['記錄您的交易代碼', 'Logs your transaction identifier']) {
     assert.ok(

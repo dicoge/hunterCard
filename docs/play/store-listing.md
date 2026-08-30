@@ -146,6 +146,7 @@ contains no card artwork.
 | Contact phone | Optional; omit unless the owner wants it public |
 | Privacy policy | `https://holohunter.dicoge.com/privacy` |
 | Countries / regions | **OWNER** |
+| In-app purchases badge | None today. Play adds it automatically once a subscription exists and the app can sell it — see [`subscription.md`](./subscription.md). The description above must not mention a subscription until then. |
 
 ## Closed testing release notes
 
