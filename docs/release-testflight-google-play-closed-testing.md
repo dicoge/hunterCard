@@ -4,6 +4,8 @@
 
 > 📎 操作速查（怎麼發測試包給測試員、GitHub Actions 手動觸發 EAS build、blocked-on-user 清單）見 [`docs/TEST-DISTRIBUTION.md`](./TEST-DISTRIBUTION.md)。本文件是完整流程與 blocker / 文案手冊。
 
+> ⛔ **Google Play 送審請改用 [`docs/play/`](./play/README.md)。** 本文件第 0.2 節的權限盤點與第 5 節的 App Privacy / Data safety 建議答案**已過時且部分為錯誤**——它宣稱 native binary 不上傳影像、且 App 無帳號機制，兩者在現行程式碼皆不成立（`src/services/cardRecognition.ts:466-475` 每次掃描都先上傳影像至 `/api/recognize-card` 再轉送 Google Gemini；Google 登入與雲端帳號已實際運作）。依這些段落填寫商店問卷會構成不實申報。逐項更正見 [`docs/play/data-safety.md`](./play/data-safety.md) 文末對照表。本文件其餘的 EAS build、版本號、iOS TestFlight 流程仍然適用。
+
 ## 目前專案設定確認
 
 - Expo app name：`HoloHunter`
@@ -104,6 +106,8 @@
 - 用此方案時，`eas.json` 不要開 `autoIncrement`，且維持預設的 `appVersionSource: "local"`（不設等同 local）。
 
 ### 0.2 權限與隱私盤點
+
+> ⛔ **本節已被 [`docs/play/permissions.md`](./play/permissions.md) 取代。** 該文件以 build 6 APK 的 `aapt2 dump permissions` 實測 merged manifest，逐項做相依套件歸因，並記錄已移除的 `SYSTEM_ALERT_WINDOW`、`READ_EXTERNAL_STORAGE`、`WRITE_EXTERNAL_STORAGE`。下方保留作為背景說明。
 
 > ⚠️ 送審前必讀。實際權限面比「只有相機」大，隱私問卷（App Privacy / Data safety）漏填會被退件或事後被商店標記不一致。以下依 `app.json` 與相依套件盤點目前的權限來源。
 >
@@ -525,6 +529,8 @@ Tracking：HoloHunter 不做跨 App/網站廣告追蹤 → App Tracking Transpar
 ```
 
 ### Google Play Data safety 問卷（依 native binary 行為的建議答案）
+
+> ⛔ **不要使用本節作答，請改用 [`docs/play/data-safety.md`](./play/data-safety.md)。** 下方答案建立在「native 不上傳影像、App 無帳號」之上，兩者皆與現行程式碼不符。
 
 > ⚠️ 下方只填 Android native binary 的實際資料流。Web 版會 POST 影像到 `/api/recognize-card` 再轉送 OpenRouter Gemini Vision，但 native binary 不走這條路——native 用本機 OCR（`expo-ocr-kit` / Tesseract），不上傳影像。
 >

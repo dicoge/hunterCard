@@ -28,6 +28,8 @@
     "test:ios-build-guard": "node scripts/test-ios-build-guard.cjs",
     "test:expo-native-compat": "node scripts/test-expo-native-module-compat.mjs",
     "test:release-apk-pipeline": "node scripts/test-release-apk-pipeline.mjs",
+    "test:play-manifest": "node scripts/test-play-release-manifest.mjs",
+    "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",
     "test:google-signout": "node scripts/test-google-signout.cjs",
     "test:token-replay": "node scripts/test-token-replay.cjs",
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",

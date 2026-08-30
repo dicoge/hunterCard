@@ -275,13 +275,13 @@
 
     <!-- ── 繁體中文版本 ── -->
     <div id="content-zh" class="content-section active">
-      <p><em>最後更新日期：2026 年 7 月 27 日</em></p>
+      <p><em>最後更新日期：2026 年 8 月 30 日</em></p>
       
       <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。我們非常重視您的個人隱私。本政策說明我們如何處理多方帳號登入、綁定、訂閱狀態與相關個人資料。當您使用本 App 時，即表示您同意本政策。</p>
 
       <div class="danger-card">
-        <p><strong>⚠️ 目前版本狀態（本機模擬 / 示範階段）：</strong> 現階段的 App 中，Google / Apple 登入、帳號綁定、Internal User ID、訂閱狀態與每月掃描配額<strong>全部都是「本機模擬（local mock）」</strong>：登入只會在您的裝置本機寫入一組固定的假帳號資料，尚未串接真實的 Google / Apple OAuth、後端資料庫、雲端同步或 App Store / Google Play / Stripe 金流。因此本階段<strong>不會實際向 Google / Apple 取得您的個人資料，沒有任何雲端帳號、配額或訂閱紀錄，也不會處理任何真實付款或收取費用</strong>。相對地，這也表示<strong>目前並沒有任何儲存在雲端、需要被刪除的個人資料或交易</strong>——App 內的資料只存在您自己的裝置上。</p>
-        <p>以下第 1～3、6 節描述的資料模型、雲端同步、配額與訂閱處理，屬於本 App <strong>未來正式上架、串接真實登入與金流後</strong>的目標設計；在目前的模擬版本中尚未實作。凡標示為「未來正式版」的段落皆為規劃藍圖，並非現況。</p>
+        <p><strong>目前版本狀態：</strong> <strong>Google 帳號登入與雲端帳號已實際運作</strong>：登入會向 Google 取得您的 ID Token，並在我們的後端（Vercel KV）建立一筆雲端帳號紀錄。收藏、牌組、價格提醒與設定會在您登入時同步到該帳號。因此<strong>確實存在儲存於雲端、可被刪除的個人資料</strong>，刪除方式見第 5 節。</p>
+        <p><strong>尚未實作的部分：</strong>本 App <strong>目前沒有任何付費或訂閱機制</strong>——沒有串接 App Store、Google Play Billing 或任何第三方金流，不會處理付款、不會收費，也<strong>不會取得或儲存任何交易代碼與財務資料</strong>。App 內亦<strong>未啟用任何廣告或分析追蹤 SDK</strong>。Android 版的 Apple ID 登入預設為關閉。凡下方標示為「未來正式版」的段落皆為規劃藍圖，並非現況。</p>
       </div>
 
       <h2>1. 我們只支援第三方登入 (OAuth) 與訪客模式</h2>
@@ -307,7 +307,7 @@
         <li><strong>顯示名稱 (Display Name)</strong>：用於在 App 介面上提供個人化的歡迎資訊。</li>
         <li><strong>第三方帳號識別碼 (Provider User ID)</strong>：Google 或 Apple 提供的一串非敏感的唯一識別代碼。</li>
         <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：安全記錄您在當月所進行的卡牌掃描次數，用於實施免費版每月 100 次的額度控管與防竄改機制。</li>
-        <li><strong>付費訂閱狀態 (Subscription Status)</strong>：記錄您的交易代碼 (Transaction ID / App Store 或 Google Play 憑證) 以開啟付費無限次數與進階預測權限。我們<strong>絕不經手且不儲存</strong>您的信用卡號等敏感財務資料。</li>
+        <li><strong>付費訂閱狀態 (Subscription Status)</strong>：<strong>目前未實作。</strong>本 App 尚未串接任何金流，不會取得、傳輸或儲存交易代碼、購買紀錄、信用卡號或任何其他財務資料。此欄位為未來正式版的規劃，屆時將另行更新本政策。</li>
       </ul>
       
       <h3>資料用途說明：</h3>
@@ -320,8 +320,9 @@
       <h3>相機影像與卡牌辨識處理：</h3>
       <p>掃描卡牌時，本 App 會使用相機取得卡牌影像進行辨識。影像僅用於辨識卡牌，不會用於廣告或建立個人檔案：</p>
       <ul>
-        <li><strong>手機 App（iOS / Android）</strong>：文字辨識 (OCR) 完全在您的裝置本機進行（expo-ocr-kit），卡牌影像不會離開您的裝置，也不會上傳到我們的伺服器。</li>
-        <li><strong>網頁版</strong>：因瀏覽器無法在本機進行高精度辨識，卡牌影像會傳送到我們的伺服器端點 <code>/api/recognize-card</code>，再直接由第三方 AI 視覺辨識服務 Google Gemini（Google AI Studio 的 Generative Language API）即時判讀卡片內容。影像僅用於當次辨識，辨識完成後不作長期儲存，也不會用於廣告或個人化追蹤。</li>
+        <li><strong>手機 App（iOS / Android）與網頁版皆會上傳影像</strong>：不論您是用相機拍攝或從相簿選取，卡牌影像都會傳送到我們的伺服器端點 <code>/api/recognize-card</code>，再由第三方 AI 視覺辨識服務 Google Gemini（Google AI Studio 的 Generative Language API，直接呼叫、無中介轉送）即時判讀卡片內容。</li>
+        <li><strong>保存方式</strong>：我們的伺服器<strong>不會儲存</strong>該影像——它只在該次請求的記憶體中處理並轉送，請求結束即不復存在。影像僅用於當次辨識，不會用於廣告、轉售或建立個人檔案。Google 對透過 Generative Language API 傳送之內容的保存與使用，適用 Google 的條款。</li>
+        <li><strong>裝置端 OCR 僅為備援</strong>：當上述伺服器辨識失敗或無法連線時，App 會退回使用裝置本機的文字辨識（expo-ocr-kit）。這是備援路徑，<strong>不是</strong>預設路徑。</li>
       </ul>
 
       <h2>4. 使用者如何登出</h2>
@@ -334,27 +335,29 @@
 
       <h2>5. 帳號與資料刪除方式</h2>
 
-      <h3>目前版本（本機模擬）：</h3>
-      <div class="danger-card">
-        <p><strong>⚠️ 目前並沒有任何雲端帳號或資料需要刪除。</strong> 由於現階段登入與訂閱皆為本機模擬，您的所有資料（模擬帳號、卡牌收藏、掃描計數）都只存在您自己的裝置本機。進入<strong>「設定」</strong>分頁點擊紅色的<strong>「刪除帳號與資料（本機）」</strong>按鈕並確認後，App 會立即清除本機的登入 Session 與卡牌收藏快取並將您登出——這已完整刪除本 App 目前所持有、關於您的全部資料。此為不可逆操作。</p>
-      </div>
-
-      <h3>未來正式版（串接後端與金流後）：</h3>
-      <p>當本 App 正式上架、串接真實的 OAuth 登入、雲端資料庫與金流之後，我們將補上以下刪除機制以符合 Apple App Store 與 Google Play 的合規規範：</p>
+      <h3>App 內刪除帳號（已實作）：</h3>
+      <p>進入<strong>「設定」</strong>分頁，點擊<strong>「刪除帳號與資料」</strong>並確認後，App 會呼叫我們的後端刪除端點，級聯刪除下列雲端資料，並清除本機 Session 與快取後將您登出。此為不可逆操作：</p>
       <ol>
-        <li><strong>本機清除（App 內）</strong>：App 內的刪除按鈕會清除本機 Session 與快取並登出。</li>
-        <li><strong>雲端資料刪除申請（電子郵件）</strong>：屆時如需刪除儲存於雲端的資料（卡牌收藏、掃描配額紀錄、訂閱關聯等），可使用您登入所用的電子郵件，將刪除申請寄至 <code>dicoge.chen@gmail.com</code> 並附上您的 Internal User ID。我們會以後端級聯刪除處理帳號、配額與必要之交易紀錄去識別化，並回信通知您完成。（此雲端刪除管道於目前模擬版本尚未實作，因目前並無雲端資料。）</li>
+        <li>您的雲端帳號紀錄（Internal User ID、顯示名稱、Email、頭像網址、角色）。</li>
+        <li>所有已綁定的第三方身分對應（Google / Apple 的 Provider User ID 與其索引）。</li>
+        <li>雲端同步資料（收藏、牌組、卡牌收藏數量、價格提醒、設定）。</li>
       </ol>
+
+      <h3>需以電子郵件申請刪除的部分：</h3>
+      <div class="danger-card">
+        <p><strong>推播 Token 不會被上述刪除流程移除。</strong> 若您曾允許推播通知，您裝置的推播 Token 會保存在我們的後端，且<strong>目前沒有</strong>自助解除註冊的機制；刪除帳號或移除 App 都不會刪除它。如需刪除，請將刪除申請寄至 <code>dicoge.chen@gmail.com</code>，我們會人工移除並回信通知您。</p>
+      </div>
+      <p>若您在 App 內無法完成刪除（例如已解除安裝），亦可寄信至上述地址並附上您登入所用的 Email 或 Internal User ID，由我們代為執行相同的級聯刪除。</p>
 
       <h2>6. App Store / Google Play 行動商店規範合規（未來正式版）</h2>
       <p>以下商店合規項目適用於本 App 未來串接真實金流與後端之後；目前模擬版本尚未實作真實訂閱與帳號刪除後端。</p>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>：正式版將在「設定」內提供帳號刪除入口，並提供以電子郵件申請刪除雲端資料的管道。訂閱屆時將由 Apple StoreKit 2 與 Google Play Billing 進行，可隨時在您的商店設定中取消訂閱。（目前為本機模擬，尚未串接。）</li>
+        <li><strong>App Store Account Deletion & Subscriptions</strong>：App 內的帳號刪除入口<strong>已在「設定」提供並實際串接後端</strong>（見第 5 節），另有電子郵件管道處理推播 Token 等無法自助刪除的項目。訂閱功能<strong>目前尚未推出</strong>；未來若推出，Android 版將依 Google Play 政策使用 Google Play Billing，屆時可在您的商店帳號設定中取消。</li>
         <li><strong>Google Play Data Safety (資料安全)</strong>：
           <ul>
             <li>傳輸安全性：本 App 收集的所有資料皆透過安全的加密協定（HTTPS）傳輸，確保傳輸過程不被竊聽。</li>
             <li>不向第三方分享（廣告 / 分析）：我們絕不將您的個人資料（Email、姓名、關注清單、使用紀錄）出售或分享給任何廣告商或分析機構。</li>
-            <li>功能性第三方處理：唯一的例外是為完成卡牌辨識功能，網頁版掃描時會將卡牌影像即時傳送給 AI 視覺辨識服務 Google Gemini（Google AI Studio 的 Generative Language API，直接呼叫、無中介轉送）處理；此僅用於提供辨識功能，非用於廣告、轉售或建立個人檔案。手機 App 的辨識則在裝置端完成、不上傳。</li>
+            <li>功能性第三方處理：唯一的例外是為完成卡牌辨識功能，<strong>手機 App 與網頁版</strong>掃描時都會將卡牌影像即時傳送給 AI 視覺辨識服務 Google Gemini（Google AI Studio 的 Generative Language API，直接呼叫、無中介轉送）處理；此僅用於提供辨識功能，非用於廣告、轉售或建立個人檔案。</li>
           </ul>
         </li>
       </ul>
@@ -369,13 +372,13 @@
 
     <!-- ── English Version ── -->
     <div id="content-en" class="content-section">
-      <p><em>Last Updated: July 27, 2026</em></p>
+      <p><em>Last Updated: August 30, 2026</em></p>
       
       <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). We highly value your personal privacy. This policy describes how we handle multi-provider sign-ins, account linking, subscriptions, and related personal data. By using the App, you agree to this policy.</p>
 
       <div class="danger-card">
-        <p><strong>⚠️ Current Build Status (Local Mock / Demo Stage):</strong> In the current build, Google / Apple sign-in, account linking, Internal User ID, subscription status, and the monthly scan quota are <strong>all a "local mock"</strong>: signing in merely writes a fixed fake account onto your own device. Nothing is connected to real Google / Apple OAuth, a backend database, cloud sync, or App Store / Google Play / Stripe billing. As a result, this stage does <strong>not actually collect any personal data from Google / Apple, holds no cloud account, quota, or subscription record, and does not process any real payment or charge you</strong>. Consequently there is <strong>currently no personal data or transaction stored in any cloud that would need to be deleted</strong> — the App's data lives only on your own device.</p>
-        <p>Sections 1–3 and 6 below (the data model, cloud sync, quota, and subscription handling) describe the <strong>future production design once the App ships with real authentication and billing</strong>; they are not implemented in the current mock build. Any paragraph marked "Future production" is a planned blueprint, not the current state.</p>
+        <p><strong>Current Build Status:</strong> <strong>Google Sign-In and cloud accounts are live.</strong> Signing in obtains an ID token from Google and creates a cloud account record in our backend (Vercel KV). Your favorites, decks, price alerts, and settings sync to that account while you are signed in. There <strong>is</strong> therefore personal data stored in the cloud that can be deleted — see Section 5.</p>
+        <p><strong>Not implemented:</strong> the App has <strong>no payment or subscription mechanism at all</strong>. It is not connected to the App Store, Google Play Billing, or any third-party payment processor; it does not process payments, does not charge you, and <strong>does not obtain or store any transaction identifier or financial data</strong>. No advertising or analytics tracking SDK is enabled. Sign in with Apple is disabled by default on Android. Any paragraph below marked "Future production" is a planned blueprint, not the current state.</p>
       </div>
 
       <h2>1. Third-Party Authentication Only (OAuth) & Guest Mode</h2>
@@ -401,7 +404,7 @@
         <li><strong>Display Name</strong>: Used to personalize greetings on the App interface.</li>
         <li><strong>Provider User ID</strong>: A non-sensitive unique ID string provided by Google or Apple.</li>
         <li><strong>Scan Usage & Quota Logs</strong>: Securely logs your monthly scan count to enforce the 100-scan monthly limit for the free tier and prevent local client tampering.</li>
-        <li><strong>Paid Subscription Status</strong>: Logs your transaction identifier (Transaction ID / App Store or Google Play receipt metadata) to activate premium features. We **never process or store** your credit card numbers or sensitive financial data.</li>
+        <li><strong>Paid Subscription Status</strong>: <strong>Not implemented.</strong> The App is not connected to any payment processor and does not obtain, transmit, or store transaction identifiers, purchase history, credit card numbers, or any other financial data. This field describes a future production plan; we will update this policy before any of it takes effect.</li>
       </ul>
       
       <h3>How Data is Used:</h3>
@@ -414,8 +417,9 @@
       <h3>Camera Images & Card Recognition Processing:</h3>
       <p>When scanning a card, the App uses the camera to capture the card image for recognition. Images are used only to identify the card, never for advertising or profiling:</p>
       <ul>
-        <li><strong>Mobile App (iOS / Android)</strong>: Text recognition (OCR) runs entirely on your device (expo-ocr-kit). The card image never leaves your device and is not uploaded to our servers.</li>
-        <li><strong>Web version</strong>: Because browsers cannot perform high-accuracy recognition locally, the card image is sent to our server endpoint <code>/api/recognize-card</code>, which calls the third-party AI vision service Google Gemini (Google AI Studio's Generative Language API) directly to read the card in real time. The image is used only for that single recognition, is not retained long-term, and is never used for advertising or personalized tracking.</li>
+        <li><strong>The image is uploaded on mobile (iOS / Android) as well as on the web</strong>: whether you capture it with the camera or select it from your photo library, the card image is sent to our server endpoint <code>/api/recognize-card</code>, which calls the third-party AI vision service Google Gemini (Google AI Studio's Generative Language API, called directly with no intermediary router) to read the card in real time.</li>
+        <li><strong>Retention</strong>: our server does <strong>not</strong> store the image — it is held only in memory for the duration of that request and forwarded, and does not exist once the request ends. The image is used solely for that single recognition and never for advertising, resale, or profiling. Google's own terms govern its retention and use of content sent to the Generative Language API.</li>
+        <li><strong>On-device OCR is only a fallback</strong>: if the server recognition fails or is unreachable, the App falls back to on-device text recognition (expo-ocr-kit). This is a fallback path, <strong>not</strong> the default one.</li>
       </ul>
 
       <h2>4. How Users Sign Out</h2>
@@ -428,27 +432,29 @@
 
       <h2>5. Account & Data Deletion</h2>
 
-      <h3>Current build (local mock):</h3>
-      <div class="danger-card">
-        <p><strong>⚠️ There is currently no cloud account or data to delete.</strong> Because sign-in and subscriptions are a local mock at this stage, all of your data (the mock account, card collection, scan count) lives only on your own device. Go to the <strong>Settings</strong> tab, tap the red <strong>Delete Account (Local)</strong> button, and confirm — the App immediately clears your local session and card collection cache and signs you out. This fully deletes everything the App currently holds about you. The action is irreversible.</p>
-      </div>
-
-      <h3>Future production (after backend & billing are integrated):</h3>
-      <p>Once the App ships with real OAuth login, a cloud database, and billing, we will add the following deletion mechanisms to comply with Apple App Store and Google Play requirements:</p>
+      <h3>In-app account deletion (implemented):</h3>
+      <p>Open the <strong>Settings</strong> tab, tap <strong>Delete Account</strong> and confirm. The App calls our backend deletion endpoint, which cascade-deletes the cloud data below, then clears your local session and cache and signs you out. The action is irreversible:</p>
       <ol>
-        <li><strong>Local Clear (In-App)</strong>: The in-app delete button clears the local session and cache and signs you out.</li>
-        <li><strong>Cloud Data Deletion Request (Email)</strong>: At that point, to delete data stored in the cloud (card collections, scan quota logs, subscription links), send a request from your registered email to <code>dicoge.chen@gmail.com</code> with your Internal User ID. We will handle account cascade deletion, quota removal, and any required transaction de-identification, and email you once complete. (This cloud deletion channel is not implemented in the current mock build, since no cloud data exists yet.)</li>
+        <li>Your cloud account record (Internal User ID, display name, email, avatar URL, role).</li>
+        <li>Every linked third-party identity mapping (the Google / Apple Provider User IDs and their indexes).</li>
+        <li>Cloud-synced data (favorites, decks, card collection counts, price alerts, settings).</li>
       </ol>
+
+      <h3>What still requires an email request:</h3>
+      <div class="danger-card">
+        <p><strong>The push token is not removed by the deletion flow above.</strong> If you ever allowed push notifications, your device's push token is retained in our backend, and there is <strong>currently no</strong> self-service way to unregister it; neither deleting your account nor uninstalling the App deletes it. To have it removed, email a deletion request to <code>dicoge.chen@gmail.com</code> and we will remove it manually and confirm by reply.</p>
+      </div>
+      <p>If you cannot complete deletion inside the App (for example, you already uninstalled it), email the same address with the email address you signed in with or your Internal User ID, and we will run the same cascade deletion on your behalf.</p>
 
       <h2>6. App Store & Google Play Store Compliance (Future production)</h2>
       <p>The following store-compliance items apply after the App integrates real billing and a backend; the current mock build does not yet implement real subscriptions or a deletion backend.</p>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>: The production version will provide an account deletion entry point in the App's Settings together with an email channel to request deletion of cloud data. Subscriptions will then be verified via StoreKit 2 and Google Play Billing, and can be cancelled anytime in your store account settings. (Currently a local mock, not yet integrated.)</li>
+        <li><strong>App Store Account Deletion & Subscriptions</strong>: the in-app account deletion entry point <strong>is already available in Settings and is wired to the backend</strong> (see Section 5), with an email channel for items that cannot be self-served, such as the push token. Subscriptions <strong>have not shipped</strong>; if they ever do, the Android build will use Google Play Billing in line with Google Play policy and will be cancellable from your store account settings.</li>
         <li><strong>Google Play Data Safety</strong>:
           <ul>
             <li>Transit Security: All data collected is transmitted using secure encryption protocols (HTTPS) to prevent interception.</li>
             <li>No Third-Party Sharing (Ads / Analytics): We never sell or share your personal data (email, name, watchlist, scan logs) with any advertisers or analytics platforms.</li>
-            <li>Functional Third-Party Processing: The only exception is card recognition — on the web version, the card image is sent in real time to the AI vision service Google Gemini (Google AI Studio's Generative Language API, called directly with no intermediary router) for processing. This is solely to provide the recognition feature, never for advertising, resale, or profiling. On the mobile App, recognition runs on-device and images are not uploaded.</li>
+            <li>Functional Third-Party Processing: The only exception is card recognition — on <strong>both the mobile App and the web version</strong>, the card image is sent in real time to the AI vision service Google Gemini (Google AI Studio's Generative Language API, called directly with no intermediary router) for processing. This is solely to provide the recognition feature, never for advertising, resale, or profiling.</li>
           </ul>
         </li>
       </ul>
