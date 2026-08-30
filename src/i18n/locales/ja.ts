@@ -623,6 +623,10 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_rescan: '再スキャン',
   scan_session_count: '{{count}} 枚をスキャン済み',
   scan_session_title: 'スキャン価格一覧',
+  // Store MVP variants: retained scan/session copy without market claims (DIC-1256).
+  scan_session_title_store: 'スキャン一覧',
+  scan_version_select_hint_store: '版を選択（このカードの版を確定するため）',
+  scan_version_pending_hint_store: '版が判別できません —— お手持ちの版を選択してください',
   scan_session_empty: 'スキャンしたカードはありません',
   scan_session_empty_hint: '「スキャン」ボタンでカードを追加してください',
   scan_version_pending: '版を確認してください',

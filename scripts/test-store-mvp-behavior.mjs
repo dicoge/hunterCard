@@ -109,6 +109,27 @@ const GATED_DETAIL_MARKERS = [
   ['到價提醒 bottom button (watchlist)', 'hasWatchlistBtn'],
 ];
 
+// ── Scan surface markers (DIC-1258 CR blocker → DIC-1256 remediation).
+//    Store MVP data intentionally retains sellPrice; Scan UI must fail closed.
+//    Everything here is gated by FEATURES.marketData; retained surfaces
+//    (card name / number / rarity / candidate title / session count / clear)
+//    stay present in both modes. ──
+const GATED_SCAN_RESULT_MARKERS = [
+  ['ScanResultCard prices section', 'hasPricesSection'],
+  ['ScanResultCard variants section', 'hasVariantsSection'],
+  ['ScanResultCard any price-like text (¥/NT$/$)', 'hasPriceLikeText'],
+];
+const GATED_SCAN_CANDIDATE_MARKERS = [
+  ['ScanCandidateSelector meta price-like text', 'hasPriceLikeInMeta'],
+];
+const GATED_SCAN_SESSION_MARKERS = [
+  ['ScanSessionPanel header total price', 'hasHeaderTotalPrice'],
+  ['ScanSessionPanel currency selector row', 'hasCurrencyRow'],
+  ['ScanSessionPanel footer total row', 'hasTotalRow'],
+  ['ScanSessionPanel 複製結果 (copy-export) button', 'hasCopyResultsBtn'],
+  ['ScanSessionPanel any price-like text (¥/NT$/$)', 'hasPriceLikeText'],
+];
+
 // ── Must-retain markers. Card image / name / number / keyword / official
 //    卡表 / external-links header — visible in BOTH modes so cardholders
 //    can still identify a card and open the official gallery. ──
@@ -140,6 +161,32 @@ check(
   on.login.usesStoreDescription === true && on.login.usesFullDescription === false,
   `usesStore=${on.login.usesStoreDescription} usesFull=${on.login.usesFullDescription}`,
 );
+for (const [label, key] of GATED_SCAN_RESULT_MARKERS) {
+  check(`STORE_MVP=1: ScanResultCard hides ${label}`, on.scanResult[key] === false, `got ${JSON.stringify(on.scanResult[key])}`);
+}
+check('STORE_MVP=1: ScanResultCard retains card name', on.scanResult.hasCardName === true);
+check('STORE_MVP=1: ScanResultCard retains card number', on.scanResult.hasCardNumber === true);
+check('STORE_MVP=1: ScanResultCard retains rarity badge', on.scanResult.hasRarityBadge === true);
+for (const [label, key] of GATED_SCAN_CANDIDATE_MARKERS) {
+  check(`STORE_MVP=1: ScanCandidateSelector hides ${label}`, on.scanCandidate[key] === false, `got ${JSON.stringify(on.scanCandidate[key])}`);
+}
+check('STORE_MVP=1: ScanCandidateSelector retains card number', on.scanCandidate.hasCardNumber === true);
+check('STORE_MVP=1: ScanCandidateSelector retains candidate title', on.scanCandidate.hasCandidateTitle === true);
+check('STORE_MVP=1: ScanCandidateSelector retains rescan action', on.scanCandidate.hasRescanAction === true);
+for (const [label, key] of GATED_SCAN_SESSION_MARKERS) {
+  check(`STORE_MVP=1: ScanSessionPanel hides ${label}`, on.scanSession[key] === false, `got ${JSON.stringify(on.scanSession[key])}`);
+}
+check(
+  'STORE_MVP=1: ScanSessionPanel header shows store-only title (no 估值 claim)',
+  on.scanSession.hasStoreTitle === true && on.scanSession.hasEstimateTitle === false,
+  `store=${on.scanSession.hasStoreTitle} estimate=${on.scanSession.hasEstimateTitle}`,
+);
+check(
+  'STORE_MVP=1: ScanSessionPanel version hint uses store variant (no 估價 claim)',
+  on.scanSession.hasStoreVersionHint === true && on.scanSession.hasEstimateVersionHint === false,
+);
+check('STORE_MVP=1: ScanSessionPanel retains session count', on.scanSession.hasSessionCount === true);
+check('STORE_MVP=1: ScanSessionPanel retains clear action', on.scanSession.hasClearAction === true);
 
 console.log('\n── Probe 2: EXPO_PUBLIC_STORE_MVP=0 (staging / development) ──');
 console.log('     → Store MVP OFF → every gated feature must be present unchanged.\n');
@@ -161,6 +208,31 @@ check(
   off.login.usesFullDescription === true && off.login.usesStoreDescription === false,
   `usesStore=${off.login.usesStoreDescription} usesFull=${off.login.usesFullDescription}`,
 );
+for (const [label, key] of GATED_SCAN_RESULT_MARKERS) {
+  check(`STORE_MVP=0: ScanResultCard shows ${label}`, off.scanResult[key] === true, `got ${JSON.stringify(off.scanResult[key])}`);
+}
+check('STORE_MVP=0: ScanResultCard retains card name', off.scanResult.hasCardName === true);
+check('STORE_MVP=0: ScanResultCard retains card number', off.scanResult.hasCardNumber === true);
+check('STORE_MVP=0: ScanResultCard retains rarity badge', off.scanResult.hasRarityBadge === true);
+for (const [label, key] of GATED_SCAN_CANDIDATE_MARKERS) {
+  check(`STORE_MVP=0: ScanCandidateSelector shows ${label}`, off.scanCandidate[key] === true, `got ${JSON.stringify(off.scanCandidate[key])}`);
+}
+check('STORE_MVP=0: ScanCandidateSelector retains card number', off.scanCandidate.hasCardNumber === true);
+check('STORE_MVP=0: ScanCandidateSelector retains candidate title', off.scanCandidate.hasCandidateTitle === true);
+check('STORE_MVP=0: ScanCandidateSelector retains rescan action', off.scanCandidate.hasRescanAction === true);
+for (const [label, key] of GATED_SCAN_SESSION_MARKERS) {
+  check(`STORE_MVP=0: ScanSessionPanel shows ${label}`, off.scanSession[key] === true, `got ${JSON.stringify(off.scanSession[key])}`);
+}
+check(
+  'STORE_MVP=0: ScanSessionPanel header shows the estimate title (with 估值 claim)',
+  off.scanSession.hasEstimateTitle === true && off.scanSession.hasStoreTitle === false,
+);
+check(
+  'STORE_MVP=0: ScanSessionPanel version hint uses the estimate variant (with 估價 claim)',
+  off.scanSession.hasEstimateVersionHint === true && off.scanSession.hasStoreVersionHint === false,
+);
+check('STORE_MVP=0: ScanSessionPanel retains session count', off.scanSession.hasSessionCount === true);
+check('STORE_MVP=0: ScanSessionPanel retains clear action', off.scanSession.hasClearAction === true);
 
 // ── Vacuousness guard: the two probes MUST disagree on every gated marker.
 //    If they don't, the profile isn't actually flipping the render — the
@@ -172,6 +244,34 @@ for (const [label, key] of GATED_DETAIL_MARKERS) {
     on.detail[key] !== off.detail[key],
   );
 }
+for (const [label, key] of GATED_SCAN_RESULT_MARKERS) {
+  check(
+    `STORE_MVP=1 vs =0: ${label} presence differs (${on.scanResult[key]} vs ${off.scanResult[key]})`,
+    on.scanResult[key] !== off.scanResult[key],
+  );
+}
+for (const [label, key] of GATED_SCAN_CANDIDATE_MARKERS) {
+  check(
+    `STORE_MVP=1 vs =0: ${label} presence differs (${on.scanCandidate[key]} vs ${off.scanCandidate[key]})`,
+    on.scanCandidate[key] !== off.scanCandidate[key],
+  );
+}
+for (const [label, key] of GATED_SCAN_SESSION_MARKERS) {
+  check(
+    `STORE_MVP=1 vs =0: ${label} presence differs (${on.scanSession[key]} vs ${off.scanSession[key]})`,
+    on.scanSession[key] !== off.scanSession[key],
+  );
+}
+check(
+  'STORE_MVP=1 vs =0: ScanSessionPanel header title text swaps between store/estimate',
+  on.scanSession.hasStoreTitle !== off.scanSession.hasStoreTitle
+    && on.scanSession.hasEstimateTitle !== off.scanSession.hasEstimateTitle,
+);
+check(
+  'STORE_MVP=1 vs =0: ScanSessionPanel version hint text swaps between store/estimate',
+  on.scanSession.hasStoreVersionHint !== off.scanSession.hasStoreVersionHint
+    && on.scanSession.hasEstimateVersionHint !== off.scanSession.hasEstimateVersionHint,
+);
 for (const flag of GATED_FLAGS) {
   check(
     `STORE_MVP=1 vs =0: FEATURES.${flag} flips (${on.features[flag]} vs ${off.features[flag]})`,

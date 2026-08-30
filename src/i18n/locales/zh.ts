@@ -623,6 +623,10 @@ export const zh = {
   scan_rescan: '重新掃描',
   scan_session_count: '已掃描 {{count}} 張卡牌',
   scan_session_title: '掃描估值清單',
+  // Store MVP variants: retained scan/session copy without market claims (DIC-1256).
+  scan_session_title_store: '掃描清單',
+  scan_version_select_hint_store: '選擇版本（用於辨識這張卡的版本）',
+  scan_version_pending_hint_store: '來源無法辨識版本 —— 請選擇你手上的那一版',
   scan_session_empty: '尚未掃描任何卡牌',
   scan_session_empty_hint: '點擊「掃描」按鈕開始加入卡牌',
   scan_version_pending: '版本待確認',

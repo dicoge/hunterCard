@@ -125,6 +125,65 @@ check(
   /\{FEATURES\.watchlist\s*&&\s*\(\s*<View style=\{styles\.section\}>[\s\S]*?watchlistBtn/s.test(detail),
 );
 
+// ── 3b. Scan surfaces (DIC-1258 CR → DIC-1256): Store MVP data intentionally
+//        retains sellPrice (retail reference); the Scan journey UI must fail
+//        closed on every surface that would otherwise render a price. ──
+const scanResult = read('src/components/ScanResultCard.tsx');
+check(
+  'ScanResultCard: prices section wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<View style=\{styles\.pricesSection\}/s.test(scanResult),
+);
+check(
+  'ScanResultCard: variants section wrapped in {FEATURES.marketData && variants && ...}',
+  /\{FEATURES\.marketData\s*&&\s*variants\s*&&\s*\(\s*<View style=\{styles\.variantsSection\}/s.test(scanResult),
+);
+
+const scanCandidate = read('src/components/ScanCandidateSelector.tsx');
+check(
+  'ScanCandidateSelector: meta price segment gated on FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*`\s+\$\{formatPrice\(card\.sellPrice\)\}`\s*:\s*''/.test(scanCandidate),
+);
+
+const scanSession = read('src/components/ScanSessionPanel.tsx');
+check(
+  'ScanSessionPanel: header total price wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{styles\.totalPrice\}/s.test(scanSession),
+);
+check(
+  'ScanSessionPanel: currency selector row wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<View style=\{styles\.currencyRow\}/s.test(scanSession),
+);
+check(
+  'ScanSessionPanel: footer total row wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<View style=\{styles\.totalRow\}/s.test(scanSession),
+);
+check(
+  'ScanSessionPanel: 複製結果 button wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<TouchableOpacity[\s\S]*?scan_copy_results/s.test(scanSession),
+);
+check(
+  'ScanSessionPanel: header title swaps to store variant under !FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*'scan_session_title'\s*:\s*'scan_session_title_store'/.test(scanSession),
+);
+check(
+  'ScanSessionPanel: version select hint swaps to store variant under !FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*'scan_version_select_hint'\s*:\s*'scan_version_select_hint_store'/.test(scanSession),
+);
+check(
+  'ScanSessionPanel: version chip price segment gated on FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*`\$\{v\.name\}\s*·\s*\$\{formatPrice\(v\.sellPrice\)\}`\s*:\s*v\.name/.test(scanSession),
+);
+
+const scanScreen = read('src/screens/ScanScreen.tsx');
+check(
+  'ScanScreen: last-scanned toast price wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{resultStyles\.toastPrice\}/s.test(scanScreen),
+);
+check(
+  'ScanScreen: search-suggestion price wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{resultStyles\.listItemPrice\}/s.test(scanScreen),
+);
+
 // ── 4. Settings: price sources section only rendered under FEATURES.marketData;
 //        link-hint and guest-sync copy have a store-only branch. ──
 const settings = read('src/screens/SettingsScreen.tsx');
@@ -159,7 +218,14 @@ function extractStoreKey(src, key) {
   const m = src.match(re);
   return m ? m[1] : null;
 }
-for (const key of ['login_description_store', 'settings_link_hint_store', 'settings_guest_sync_store']) {
+for (const key of [
+  'login_description_store',
+  'settings_link_hint_store',
+  'settings_guest_sync_store',
+  'scan_session_title_store',
+  'scan_version_select_hint_store',
+  'scan_version_pending_hint_store',
+]) {
   const zhText = extractStoreKey(zh, key);
   const jaText = extractStoreKey(ja, key);
   check(`zh locale defines ${key}`, !!zhText);

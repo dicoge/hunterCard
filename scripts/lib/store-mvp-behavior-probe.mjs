@@ -1,12 +1,17 @@
 // DIC-1256 render probe.
 //
-// Actually renders CardDetailScreen and LoginScreen through react-native-web
-// under the current process env (EXPO_PUBLIC_STORE_MVP), and prints a JSON
+// Actually renders CardDetailScreen, LoginScreen, ScanResultCard,
+// ScanCandidateSelector and ScanSessionPanel through react-native-web under
+// the current process env (EXPO_PUBLIC_STORE_MVP), and prints a JSON
 // describing FEATURES + which gated surfaces landed in the DOM. The
 // coordinator (test-store-mvp-behavior.mjs) invokes this probe once with
 // EXPO_PUBLIC_STORE_MVP=1 and once with =0 to prove the same source file
 // hides everything on the review build and leaves everything intact on
 // staging/dev. This is the build-time-define proof the owner asked for.
+//
+// The Scan surfaces are here because Store MVP data intentionally retains
+// `sellPrice` (retail reference), so the UI MUST fail closed — the DIC-1258
+// CR caught this leak.
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -60,6 +65,10 @@ trendMod.useTrendStore.setState({
 
 const { default: CardDetailScreen } = await import('../../src/screens/CardDetailScreen.tsx');
 const { default: LoginScreen } = await import('../../src/screens/LoginScreen.tsx');
+const { default: ScanResultCard } = await import('../../src/components/ScanResultCard.tsx');
+const { default: ScanCandidateSelector } = await import('../../src/components/ScanCandidateSelector.tsx');
+const { default: ScanSessionPanel } = await import('../../src/components/ScanSessionPanel.tsx');
+const scanSessionMod = await import('../../src/stores/scanSessionStore.ts');
 const { zh } = await import('../../src/i18n/locales/zh.ts');
 
 // Sample card with just enough shape for CardDetailScreen to render everything
@@ -103,7 +112,7 @@ async function renderElement(element) {
   return container;
 }
 
-let detailContainer, loginContainer;
+let detailContainer, loginContainer, scanResultContainer, scanCandidateContainer, scanSessionContainer;
 try {
   detailContainer = await renderElement(
     React.createElement(CardDetailScreen, { route: mockRoute, navigation: mockNavigation }),
@@ -119,9 +128,142 @@ try {
   process.exit(2);
 }
 
+// ── Scan surfaces ──
+// A scan-result-shaped card (has prices + variants). The gated surfaces are
+// the price rows, variant rows, and the meta price segment.
+const scanCard = {
+  id: 'hBP04-005',
+  cardNumber: 'hBP04-005',
+  name: 'Test Scan Card',
+  nameZh: '掃描測試卡',
+  type: 'Member',
+  rarity: 'R',
+  series: 'hBP04',
+  sellPrice: 1200,
+  yuyuName: 'Test Scan Card',
+  color: 'red',
+  imageUrl: '',
+  prices: [
+    { name: 'ノーマル', sellPrice: 1200, rarity: 'R' },
+    { name: 'サイン', sellPrice: 5000, rarity: 'SR' },
+  ],
+  variants: [
+    { series: 'hBP01', seriesName: '(hBP01)', sellPrice: 800, prices: [{ name: 'ノーマル', sellPrice: 800, rarity: 'R' }] },
+  ],
+};
+
+try {
+  scanResultContainer = await renderElement(
+    React.createElement(ScanResultCard, {
+      card: scanCard,
+      visible: true,
+      confidence: 0.9,
+      onDismiss: () => {},
+      preferredCurrency: 'JPY',
+      preferredLanguage: 'zh',
+    }),
+  );
+} catch (err) {
+  process.stderr.write(`ScanResultCard render failed: ${err?.stack || err}\n`);
+  process.exit(2);
+}
+
+try {
+  scanCandidateContainer = await renderElement(
+    React.createElement(ScanCandidateSelector, {
+      visible: true,
+      tier: 'mid',
+      candidates: [{ card: scanCard, confidence: 0.62 }],
+      onSelect: () => {},
+      onRescan: () => {},
+      onManualSearch: () => {},
+      onDismiss: () => {},
+      preferredCurrency: 'JPY',
+      preferredLanguage: 'zh',
+    }),
+  );
+} catch (err) {
+  process.stderr.write(`ScanCandidateSelector render failed: ${err?.stack || err}\n`);
+  process.exit(2);
+}
+
+// Pre-seed a session so the panel expands and renders totals + version chips.
+const sessionCard = {
+  ...scanCard,
+  instanceId: 'seed-1',
+  scannedAt: '2026-08-30T00:00:00Z',
+  priceVersions: [
+    { name: 'ノーマル', sellPrice: 1200 },
+    { name: 'サイン', sellPrice: 5000 },
+  ],
+  selectedVersion: 0,
+  versionConfident: true,
+};
+scanSessionMod.useScanSessionStore.setState({
+  cards: [sessionCard],
+  totalValue: 1200,
+  cardCount: 1,
+  isSessionActive: true,
+  lastScanKey: null,
+  lastScanAt: null,
+});
+
+try {
+  scanSessionContainer = await renderElement(
+    React.createElement(ScanSessionPanel, { preferredCurrency: 'JPY' }),
+  );
+  // Expand the panel by dispatching a click on the header — the panel exposes
+  // the currency selector / version chips / footer only when expanded, which
+  // is exactly what we need to inspect for gated surfaces. react-native-web
+  // renders testID as data-testid on the Touchable pressable, so this is a
+  // stable selector across profiles.
+  const header = scanSessionContainer.querySelector('[data-testid="scan-session-header"]');
+  if (!header) {
+    process.stderr.write('scan-session-header not found — cannot expand panel\n');
+    process.exit(2);
+  }
+  await act(async () => {
+    header.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    header.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    header.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+} catch (err) {
+  process.stderr.write(`ScanSessionPanel render failed: ${err?.stack || err}\n`);
+  process.exit(2);
+}
+// Snapshot the WITH-CARDS expanded state (currency row / footer / chips are here).
+const scanSessionWithCardsHtml = scanSessionContainer.innerHTML;
+const scanSessionWithCardsText = scanSessionContainer.textContent;
+
+// Then clear the session while the panel is still expanded. The panel keeps
+// its expanded local state and now renders its cardCount===0 branch, which is
+// where the header title (`scan_session_title` vs `_store` variant) lives.
+await act(async () => {
+  scanSessionMod.useScanSessionStore.setState({
+    cards: [], totalValue: 0, cardCount: 0,
+    lastScanKey: null, lastScanAt: null, isSessionActive: false,
+  });
+});
+await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+const scanSessionEmptyText = scanSessionContainer.textContent;
+
 const detailHtml = detailContainer.innerHTML;
 const detailText = detailContainer.textContent;
 const loginText = loginContainer.textContent;
+const scanResultHtml = scanResultContainer.innerHTML;
+const scanResultText = scanResultContainer.textContent;
+const scanCandidateHtml = scanCandidateContainer.innerHTML;
+const scanCandidateText = scanCandidateContainer.textContent;
+const scanSessionHtml = scanSessionWithCardsHtml;
+const scanSessionText = scanSessionWithCardsText;
+
+// The three scan-price markers we care about live inside strings that would
+// only ever land in the DOM when a price render fires. Match ¥ + digits or
+// currency codes (NT$ / $) followed by digits — the retained card identity
+// never emits those.
+const priceLikeRe = /(¥|NT\$|\$)\s?\d/;
+function containsPriceLike(text) { return priceLikeRe.test(text); }
 
 const result = {
   features: FEATURES,
@@ -145,6 +287,43 @@ const result = {
   login: {
     usesStoreDescription: loginText.includes(zh.login_description_store),
     usesFullDescription: loginText.includes(zh.login_description),
+  },
+  // Scan surfaces (DIC-1258 CR blocker → DIC-1256 remediation).
+  scanResult: {
+    // Gated surfaces (absent when STORE_MVP=1)
+    hasPricesSection: scanResultHtml.includes('scan-result-prices'),
+    hasVariantsSection: scanResultHtml.includes('scan-result-variants'),
+    hasPriceLikeText: containsPriceLike(scanResultText),
+    // Retained surfaces (present in BOTH modes)
+    hasCardName: scanResultText.includes(scanCard.nameZh),
+    hasCardNumber: scanResultText.includes(scanCard.cardNumber),
+    hasRarityBadge: scanResultText.includes(scanCard.rarity),
+  },
+  scanCandidate: {
+    hasPriceLikeInMeta: containsPriceLike(scanCandidateText),
+    // Retained: card number + rarity + candidate title + rescan / manual actions.
+    hasCardNumber: scanCandidateText.includes(scanCard.cardNumber),
+    hasCandidateTitle: scanCandidateText.includes(zh.scan_candidate_mid_title),
+    hasRescanAction: scanCandidateText.includes(zh.scan_rescan),
+  },
+  scanSession: {
+    // Header (WITH-CARDS state — shows session count and, under !STORE_MVP,
+    // the running total price)
+    hasHeaderTotalPrice: scanSessionHtml.includes('scan-session-total-price'),
+    // The title text only surfaces in the cardCount===0 branch; snapshot AFTER
+    // clearing the session while expanded is retained.
+    hasStoreTitle: scanSessionEmptyText.includes(zh.scan_session_title_store),
+    hasEstimateTitle: scanSessionEmptyText.includes(zh.scan_session_title),
+    // Expanded body
+    hasCurrencyRow: scanSessionHtml.includes('scan-session-currency-row'),
+    hasTotalRow: scanSessionHtml.includes('scan-session-total-row'),
+    hasCopyResultsBtn: scanSessionHtml.includes('scan-session-copy-results'),
+    hasStoreVersionHint: scanSessionText.includes(zh.scan_version_select_hint_store),
+    hasEstimateVersionHint: scanSessionText.includes(zh.scan_version_select_hint),
+    hasPriceLikeText: containsPriceLike(scanSessionText),
+    // Retained: session count, continue-scanning, clear.
+    hasSessionCount: scanSessionText.includes('1'),
+    hasClearAction: scanSessionText.includes(zh.scan_clear),
   },
 };
 
