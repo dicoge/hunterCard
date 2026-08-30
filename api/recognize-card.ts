@@ -26,7 +26,11 @@ const VISION_MAX_TOKENS = 180;
 export const VISION_TOTAL_BUDGET_MS = 11000;
 // Below this there is no point opening a connection at all.
 const VISION_MIN_LEG_MS = 1500;
-const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+// Canonical production database asset (DIC-1245). Kept as a literal so the
+// recognition-provider AST guard can constant-fold the fetch URL against its
+// host allowlist; the value must stay in lock-step with PRODUCTION_ORIGIN in
+// src/config/apiOrigin.ts and is enforced by scripts/test-native-bundle-origin.
+const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
 const AUTO_ACCEPT_CONFIDENCE = 0.82;
 
 // A card number occupies roughly 3% of a card's height, so a frame shorter than this

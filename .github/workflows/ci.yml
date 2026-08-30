@@ -58,6 +58,9 @@ jobs:
       - name: Verify native/web API base resolution (DIC-922)
         run: npm run test:api-base
 
+      - name: Guard native bundle from old vercel.app origin (DIC-1245)
+        run: npm run test:native-bundle-origin
+
       - name: Verify deterministic web OAuth redirect URI (DIC-922)
         run: npm run test:web-redirect
 

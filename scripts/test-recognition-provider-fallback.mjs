@@ -571,7 +571,7 @@ const check = (label, fn) => { fn(); results.push(label); };
   const fetchHostAllowlist = {
     'api/recognize-card.ts': new Set([
       'generativelanguage.googleapis.com',
-      'holocard-hunter.vercel.app',
+      'holohunter.dicoge.com',
     ]),
   };
 
@@ -1054,7 +1054,7 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'smuggled fetch in fetch-allowed file (recognize-card): non-allowlisted host',
       displayPath: 'test-fixture:recognize-card-smuggle.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
         const otherCodes = [111, 112, 101, 110, 114, 111, 117, 116, 101, 114, 46, 97, 105];
         export async function _unreachableSmuggle() {
@@ -1071,7 +1071,7 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'smuggled fetch in fetch-allowed file: URL unresolvable at parse time',
       displayPath: 'test-fixture:recognize-card-opaque.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
         export async function _opaque(dynamicUrl: string) {
           // A fetch to a runtime-computed URL that the folder cannot resolve
@@ -1137,7 +1137,7 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'aliased fetch in fetch-allowed file: URL still enforced through wrapper',
       displayPath: 'test-fixture:recognize-card-alias-wrapper.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
         const R = globalThis.fetch;
         export async function _smuggle() {
@@ -1155,9 +1155,9 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'reviewer round-4 bypass: fetch.call(allowlistedHost, opaqueOpenRouterUrl)',
       displayPath: 'test-fixture:reviewer-round-4-call.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
-        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
         export async function _unreachable() {
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
           await fetch.call(DATABASE_URL, openrouterUrl, { method: 'POST' });
@@ -1171,7 +1171,7 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'reviewer round-4 bypass: fetch.apply(null, [opaqueOpenRouterUrl])',
       displayPath: 'test-fixture:reviewer-round-4-apply-literal.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
         export async function _unreachable() {
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
@@ -1187,7 +1187,7 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'reviewer round-4 bypass: fetch.apply with non-literal args array (fail-closed)',
       displayPath: 'test-fixture:reviewer-round-4-apply-opaque.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
         export async function _opaque(argsArray: unknown[]) {
           // The arguments array is a runtime value; the folder cannot see
@@ -1204,10 +1204,10 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'wrapped-alias + .call combined: aliased fetch primitive used with .call semantics',
       displayPath: 'test-fixture:reviewer-round-4-wrapped-call.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
         const R = globalThis.fetch;
-        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
         export async function _unreachable() {
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
           await R.call(DATABASE_URL, openrouterUrl);
@@ -1222,9 +1222,9 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: "reviewer round-5 bypass: R['call'](allowlistedHost, opaqueOpenRouterUrl)",
       displayPath: 'test-fixture:reviewer-round-5-computed-call.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
-        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
         export async function _unreachable() {
           const R = globalThis.fetch;
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
@@ -1238,7 +1238,7 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: "reviewer round-5 bypass: R['apply'](null, [opaqueOpenRouterUrl])",
       displayPath: 'test-fixture:reviewer-round-5-computed-apply.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
         export async function _unreachable() {
           const R = globalThis.fetch;
@@ -1254,9 +1254,9 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: "reviewer round-5 bypass: fetch['call'](allowlistedHost, opaqueOpenRouterUrl)",
       displayPath: 'test-fixture:reviewer-round-5-direct-computed-call.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
-        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
         export async function _unreachable() {
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
           await fetch['call'](DATABASE_URL, openrouterUrl);
@@ -1270,9 +1270,9 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'reviewer round-5 bypass: computed key assembled from fragments (R[[…].join()])',
       displayPath: 'test-fixture:reviewer-round-5-assembled-key.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
-        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
         export async function _unreachable() {
           const R = globalThis.fetch;
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
@@ -1290,9 +1290,9 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: "reviewer round-6 bypass: R[atob('Y2FsbA==')](...) — runtime-decoded 'call' key",
       displayPath: 'test-fixture:reviewer-round-6-decoded-call.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
-        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
         export async function _unreachable() {
           const R = globalThis.fetch;
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
@@ -1306,7 +1306,7 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: "reviewer round-6 bypass: R[atob('YXBwbHk=')](...) — runtime-decoded 'apply' key",
       displayPath: 'test-fixture:reviewer-round-6-decoded-apply.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
         export async function _unreachable() {
           const R = globalThis.fetch;
@@ -1324,9 +1324,9 @@ const check = (label, fn) => { fn(); results.push(label); };
       label: 'reviewer round-6 bypass: fetch[runtimeKey](...) directly on the primitive',
       displayPath: 'test-fixture:reviewer-round-6-direct-decoded.ts',
       isNoFetchFile: false,
-      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holocard-hunter.vercel.app']),
+      hostAllowlist: new Set(['generativelanguage.googleapis.com', 'holohunter.dicoge.com']),
       source: `
-        const DATABASE_URL = 'https://holocard-hunter.vercel.app/data/database.json';
+        const DATABASE_URL = 'https://holohunter.dicoge.com/data/database.json';
         export async function _unreachable(runtimeKey: string) {
           const openrouterUrl = Buffer.from('aHR0cHM6Ly9vcGVucm91dGVyLmFpL2FwaS92MQ==', 'base64').toString('utf8');
           // @ts-ignore — reading an arbitrary key off fetch, callable at runtime

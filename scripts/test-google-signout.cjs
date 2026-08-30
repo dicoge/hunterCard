@@ -80,6 +80,10 @@ function compileTs(relPath) {
 }
 
 // authService imports types/auth (type-only, erased) and authStrategy (pure).
+// authStrategy itself now imports PRODUCTION_ORIGIN from src/config/apiOrigin.ts
+// (DIC-1245), so transpile that too — otherwise the require chain fails at the
+// import line with MODULE_NOT_FOUND.
+compileTs('src/config/apiOrigin.ts');
 compileTs('src/services/authStrategy.ts');
 const authService = require(compileTs('src/services/authService.ts'));
 
