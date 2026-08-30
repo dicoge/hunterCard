@@ -137,9 +137,11 @@ export const zh = {
   settings_apple_login: '使用 Apple 帳號登入',
 
   // Login Screen
-  login_tagline: 'hololive TCG 卡牌查價 App',
+  login_tagline: 'hololive TCG 卡牌查詢 App',
   login_welcome: '歡迎使用 HoloHunter',
   login_description: '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢',
+  // Store MVP: no 收藏 / 提醒 / 價格趨勢 promise (DIC-1256).
+  login_description_store: '登入後可掃描卡牌、跨裝置同步牌組與設定',
   login_or: '或',
   login_guest_button: '以訪客身份進入',
   login_guest_hint: '訪客可瀏覽規則與查詢卡片，但無法使用掃描功能',
@@ -206,9 +208,13 @@ export const zh = {
   settings_exchange_rate: '📈 匯率：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
   settings_link_hint: '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
+  // Store MVP: no 收藏 / 提醒 promise (DIC-1256).
+  settings_link_hint_store: '綁定後牌組與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
   settings_delete_note: '註：帳號刪除的伺服器端撤銷仍在建置中，尚未上線。若後端尚未設定，刪除會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
   settings_guest_sync_watchlist: '尚未登入。登入後可跨裝置同步收藏與入手提醒。',
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
+  // Store MVP: no 收藏 / 提醒 promise (DIC-1256).
+  settings_guest_sync_store: '尚未登入。登入後可跨裝置同步牌組與設定。',
   settings_footer: '專為 hololive PCG 玩家打造',
 
   // Tutorial landing

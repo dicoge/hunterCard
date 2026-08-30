@@ -171,13 +171,17 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
-        {/* ── 價格來源資訊 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings_price_sources')}</Text>
-          <Text style={styles.item}>{t('settings_price_yuyu')}</Text>
-          <Text style={styles.item}>{t('settings_price_carousell')}</Text>
-          <Text style={styles.item}>{t('settings_exchange_rate')}</Text>
-        </View>
+        {/* ── 價格來源資訊 ── Store MVP: 隱藏整區 (DIC-1256)。此區只列
+            遊々亭 / Carousell / 匯率，Store MVP 一律不展示市場價格，區塊本身
+            也不再有意義。 */}
+        {FEATURES.marketData && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('settings_price_sources')}</Text>
+            <Text style={styles.item}>{t('settings_price_yuyu')}</Text>
+            <Text style={styles.item}>{t('settings_price_carousell')}</Text>
+            <Text style={styles.item}>{t('settings_exchange_rate')}</Text>
+          </View>
+        )}
 
         {/* ── 帳號 ── */}
         <View style={styles.section}>
@@ -220,9 +224,12 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               ))}
               <Text style={styles.hint}>
+                {/* Store MVP: no 收藏 / 提醒 claim in the link hint (DIC-1256). */}
                 {FEATURES.watchlist
                   ? t('settings_link_hint_watchlist')
-                  : t('settings_link_hint')}
+                  : FEATURES.favorites
+                    ? t('settings_link_hint')
+                    : t('settings_link_hint_store')}
               </Text>
 
               <TouchableOpacity style={styles.accountBtn} onPress={confirmSignOut}>
@@ -239,9 +246,12 @@ export default function SettingsScreen() {
           ) : (
             <>
               <Text style={styles.hint}>
+                {/* Store MVP: no 收藏 / 提醒 claim in the guest hint (DIC-1256). */}
                 {FEATURES.watchlist
                   ? t('settings_guest_sync_watchlist')
-                  : t('settings_guest_sync')}
+                  : FEATURES.favorites
+                    ? t('settings_guest_sync')
+                    : t('settings_guest_sync_store')}
               </Text>
               <TouchableOpacity
                 style={[styles.googleBtn, isLoading && styles.btnDisabled]}

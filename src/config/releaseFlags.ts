@@ -1,10 +1,11 @@
 import { Platform } from 'react-native';
 import type { ReleaseCardFlags } from '../utils/cardReleaseFilter';
 
-// Single source of truth for Store MVP release gating (DIC-908).
+// Single source of truth for Store MVP release gating (DIC-908 → DIC-1256).
 //
 // Store MVP is an allowlist / fail-closed release profile: every advanced
-// surface (buy-back price, price spread/arbitrage, trend & prediction, news
+// surface (favorites/collection browser, market-data section, external price
+// links, buy-back price, price spread/arbitrage, trend & prediction, news
 // sentiment, YouTube stats, watchlist trend alerts, push alerts, subscription /
 // premium) is HIDDEN unless the profile is explicitly turned off. Do not add
 // scattered `if (__DEV__)` / magic booleans elsewhere — read from FEATURES.
@@ -36,6 +37,20 @@ export const STORE_MVP = resolveStoreMvp();
 // Feature allowlist. Everything here is derived from STORE_MVP so the profile is
 // the only switch. When STORE_MVP is on, all advanced surfaces are off.
 export const FEATURES = {
+  // 收藏 / Collection browser drawer entry AND per-card ownership widget on the
+  // card-detail screen (DIC-1256): the browse-by-collection surface disappears
+  // and the +/- ownership adjuster on card detail is hidden. The deck editor
+  // continues to expose its own ownership editing.
+  favorites: !STORE_MVP,
+  // 市場數據 / Market data section on the card-detail screen (DIC-1256):
+  // the top 遊々亭 sale-price block, MarketDataPanel version pills, 買賣差價,
+  // YT stats, and trend charts are all hidden. Cards keep their image, name,
+  // number, type, colors, skills, and keywords.
+  marketData: !STORE_MVP,
+  // 外部價格連結 / External price-lookup links on the card-detail screen
+  // (DIC-1256): 遊々亭 (價格查詢) and Carousell 二手價格 links are hidden.
+  // 官方卡表 stays available regardless.
+  externalPriceLinks: !STORE_MVP,
   // 店家收購價 / buyPrice / 回收價
   buyPrice: !STORE_MVP,
   // 買賣差價 / 套利 / 值差 / 值得買賣 / 入手時機
