@@ -232,9 +232,20 @@ const featureGraphicHtml = `<!doctype html>
 // viewport), so puppeteer already writes a 24-bit RGB PNG. We re-encode
 // through pngjs to strip any alpha channel unconditionally rather than trust
 // browser behaviour to stay this way across chromium upgrades.
-
+//
+// DIC-1259 CR 2 caught a subtle packing bug in the previous revision: the
+// destination buffer was laid out as 4 bytes per pixel (pngjs always
+// allocates `width*height*4`), but the encoder was called with
+// `inputColorType: 2`. pngjs's bitpacker takes a fast path when
+// `inputColorType === colorType` and hands the raw buffer straight to the
+// filter/deflate stages — which then filtered a 4bpp buffer as if it were a
+// 3bpp RGB stream, so every 4th decoded pixel had the alpha byte (255) leak
+// into a colour channel. The decoded result was the "dense RGB stripes"
+// pattern the CR flagged. Fix: keep the 4bpp destination layout (easier to
+// index) but tell the encoder the input is RGBA so it converts to RGB
+// correctly instead of dropping the last channel by accident.
 function stripAlphaToRgb(png) {
-  const dst = new PNG({ width: png.width, height: png.height, colorType: 2, inputColorType: 2 });
+  const dst = new PNG({ width: png.width, height: png.height });
   for (let y = 0; y < png.height; y += 1) {
     for (let x = 0; x < png.width; x += 1) {
       const src = (y * png.width + x) * 4;
@@ -246,6 +257,43 @@ function stripAlphaToRgb(png) {
     }
   }
   return dst;
+}
+
+// Colour-channel conversion is a property of the ENCODER call, not the
+// buffer layout — the sync writer must be told `inputColorType: 6`
+// (RGBA, 4 bytes per pixel) so it packs the destination buffer to
+// `colorType: 2` (RGB, 3 bytes per pixel) by dropping the alpha byte,
+// row by row, with the correct stride. Every caller uses the same
+// options to make the encoder-side contract impossible to get wrong in
+// one place and right in another.
+const RGB_ENCODER_OPTIONS = Object.freeze({
+  colorType: 2,
+  inputColorType: 6,
+  inputHasAlpha: true,
+});
+
+// The RGBA-as-RGB packing bug produced a distinctive signature: for every 4
+// consecutive pixels along a row, exactly one has all three channels intact,
+// and the next three each have one channel pinned to 255 (the alpha byte
+// leaked into R/G/B in turn). We scan a long horizontal run near the top of
+// the image and count those "channel pinned to 255" alternations; a normal
+// photograph or gradient never produces that exact period-4 pattern, so a
+// high hit count is proof of the bug.
+export function looksCorruptedByPreviousStripAlphaBug(decodedPng) {
+  const { width, height, data } = decodedPng;
+  if (width < 200 || height < 20) return false;
+  const y = Math.max(5, Math.floor(height * 0.1));
+  let periodHits = 0;
+  let sampled = 0;
+  for (let x = 4; x < Math.min(width, 400); x += 4) {
+    const rowIdx = (y * width + x) * 4;
+    const r1 = data[rowIdx - 12];
+    const g2 = data[rowIdx - 8 + 1];
+    const b3 = data[rowIdx - 4 + 2];
+    if (r1 === 255 && g2 === 255 && b3 === 255) periodHits += 1;
+    sampled += 1;
+  }
+  return sampled > 0 && periodHits / sampled > 0.5;
 }
 
 async function generateFeatureGraphic() {
@@ -263,7 +311,7 @@ async function generateFeatureGraphic() {
   }
   const decoded = PNG.sync.read(raw);
   const rgb = stripAlphaToRgb(decoded);
-  fs.writeFileSync(target, PNG.sync.write(rgb, { colorType: 2, inputColorType: 2 }));
+  fs.writeFileSync(target, PNG.sync.write(rgb, { ...RGB_ENCODER_OPTIONS }));
   return target;
 }
 
@@ -285,8 +333,20 @@ function recodePhoneScreenshots() {
     .map((name) => path.join(OUT_DIR, name));
   for (const target of targets) {
     const decoded = PNG.sync.read(fs.readFileSync(target));
+    // If the file is already RGB (colorType 2), pngjs still decoded it to a
+    // 4bpp RGBA buffer with alpha=255, so the same path works — but refuse
+    // silently overwriting a file that already got corrupted, since that
+    // would freeze the wrong pixel content in place. The test-play-store-assets
+    // gate is the backstop; this is the guard on the re-encode step itself.
+    if (looksCorruptedByPreviousStripAlphaBug(decoded)) {
+      throw new Error(
+        `${path.relative(ROOT, target)} looks corrupted by the earlier RGBA-as-RGB packing bug (DIC-1259 CR 2): ` +
+          'every 4th pixel has a colour channel pinned to 255. Re-encoding it in-place would freeze that corruption. ' +
+          'Restore the file from the pre-corruption commit (or a fresh capture) before running --recode-screenshots.',
+      );
+    }
     const rgb = stripAlphaToRgb(decoded);
-    fs.writeFileSync(target, PNG.sync.write(rgb, { colorType: 2, inputColorType: 2 }));
+    fs.writeFileSync(target, PNG.sync.write(rgb, { ...RGB_ENCODER_OPTIONS }));
     process.stdout.write(`re-encoded ${path.relative(ROOT, target)} as 24-bit RGB\n`);
   }
   return targets.length;

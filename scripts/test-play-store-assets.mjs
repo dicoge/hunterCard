@@ -2,30 +2,43 @@
 /**
  * Play store-listing asset invariants (DIC-1259).
  *
- * The failure this guards against: uploading a store icon Play rejects at the
- * form level, or screenshots in a channel format Play refuses. DIC-1257 caught
- * exactly this after a dimensions-only check had let a wrong-channel-format
- * PNG through: the committed 512x512 icon was written as 8-bit RGB by macOS
- * `sips` (Play requires 32-bit RGBA), and phone screenshots captured via
- * `adb screencap -p` were 8-bit RGBA (Play requires 24-bit RGB). Dimensions
- * were fine, everyone signed off, and the store submission would have failed
- * at the first upload prompt.
+ * The failures this guards against:
  *
- * A dimensions-only assertion cannot catch a channel-format regression. Read
- * the PNG IHDR chunk directly here and require the exact colour type Play
- * documents for each surface:
+ *   1. Uploading a store icon Play rejects at the form level, or screenshots
+ *      in a channel format Play refuses. DIC-1257 caught exactly this: the
+ *      committed 512x512 icon was written as 8-bit RGB (Play requires 32-bit
+ *      RGBA), and phone screenshots captured via `adb screencap -p` were
+ *      8-bit RGBA (Play requires 24-bit RGB).
+ *
+ *   2. Uploading a technically-correctly-formatted PNG whose pixel content
+ *      is silently corrupted. DIC-1259 CR 2 caught this: the first fix wrote
+ *      IHDR colour type 2 (RGB) but handed the packer a 4-byte-per-pixel
+ *      buffer. pngjs's bitpacker takes a fast path when
+ *      `inputColorType === colorType` and passed the mis-shaped buffer
+ *      through unchanged; every fourth decoded pixel had the alpha byte
+ *      (255) leak into a colour channel, producing the "dense RGB stripes
+ *      with repeated/scrambled rows" the reviewer flagged. IHDR/colour-type
+ *      checks alone will not catch this — the file is a perfectly valid RGB
+ *      PNG, it just decodes to garbage.
+ *
+ * Format checks read the PNG IHDR chunk directly and require the exact
+ * colour type Play documents for each surface:
  *   - 512x512 listing icon        -> 32-bit RGBA (IHDR colour type 6)
  *   - 1024x500 feature graphic    -> 24-bit RGB  (IHDR colour type 2)
  *   - 320..3840 phone screenshots -> 24-bit RGB  (IHDR colour type 2)
  *
- * The IHDR chunk is the only source of truth: some encoders write RGB pixel
- * data into a 4-channel container (and vice versa), so this reader parses the
- * chunk header rather than counting the buffer length.
+ * Content checks decode each file with pngjs and prove the pixel stream is
+ * coherent — for the feature graphic, that sampled positions match the
+ * design palette (dark navy background at known coordinates) and that the
+ * gradient has smooth inter-pixel transitions; for the phone screenshot,
+ * that adjacent horizontal pixels do not alternate in the period-4
+ * "channel-pinned-to-255" pattern that the packing bug produces.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PNG } from 'pngjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = path.join(ROOT, 'docs/play/store-listing');
@@ -83,18 +96,69 @@ function describe(ihdr) {
   return `${ihdr.width}x${ihdr.height} ${COLOR_TYPE_LABEL[ihdr.colorType] ?? `colorType=${ihdr.colorType}`}, bitDepth=${ihdr.bitDepth}`;
 }
 
-function readPng(name) {
+function readAsset(name) {
   const filePath = path.join(OUT_DIR, name);
   assert.ok(fs.existsSync(filePath), `${path.relative(ROOT, filePath)} is missing`);
-  return { ihdr: readIhdr(fs.readFileSync(filePath)), path: filePath };
+  const buffer = fs.readFileSync(filePath);
+  return { ihdr: readIhdr(buffer), decoded: PNG.sync.read(buffer), path: filePath };
+}
+
+function pixel(decoded, x, y) {
+  const idx = (y * decoded.width + x) * 4;
+  return [decoded.data[idx], decoded.data[idx + 1], decoded.data[idx + 2], decoded.data[idx + 3]];
+}
+
+// The corrupted output the first fix produced had a distinctive signature:
+// every 4 consecutive pixels along a row consisted of one correct pixel
+// followed by three whose R, G, and B channels (in turn) were pinned to
+// exactly 255 — the alpha byte from the source RGBA buffer leaking into a
+// colour channel because the filter was told the stream was 3 bytes per
+// pixel but received a 4-bytes-per-pixel buffer. Real photographic /
+// gradient content never hits that exact period-4 pattern on a smooth region,
+// so scanning ~100 sampled offsets and counting how many exhibit it is a
+// deterministic detector.
+function countPeriod4PinnedPixels(decoded, sampleRowY, xStart, xEnd) {
+  let hits = 0;
+  let samples = 0;
+  for (let x = xStart; x + 3 < Math.min(xEnd, decoded.width); x += 4) {
+    const p1 = pixel(decoded, x + 1, sampleRowY);
+    const p2 = pixel(decoded, x + 2, sampleRowY);
+    const p3 = pixel(decoded, x + 3, sampleRowY);
+    // The bug pins exactly ONE channel per pixel to 255 (the leaked alpha);
+    // the other two carry colour values. White text / white background pins
+    // all three to 255 and must not be counted here — otherwise a legitimate
+    // white run reads as corruption.
+    const p1IsAlphaLeak = p1[0] === 255 && p1[1] !== 255 && p1[2] !== 255;
+    const p2IsAlphaLeak = p2[1] === 255 && p2[0] !== 255 && p2[2] !== 255;
+    const p3IsAlphaLeak = p3[2] === 255 && p3[0] !== 255 && p3[1] !== 255;
+    if (p1IsAlphaLeak && p2IsAlphaLeak && p3IsAlphaLeak) hits += 1;
+    samples += 1;
+  }
+  return { hits, samples };
+}
+
+function maxRowChannelDelta(decoded, sampleRowY, xStart, xEnd) {
+  let maxDelta = 0;
+  for (let x = xStart + 1; x < Math.min(xEnd, decoded.width); x += 1) {
+    const cur = pixel(decoded, x, sampleRowY);
+    const prev = pixel(decoded, x - 1, sampleRowY);
+    for (let c = 0; c < 3; c += 1) {
+      const delta = Math.abs(cur[c] - prev[c]);
+      if (delta > maxDelta) maxDelta = delta;
+    }
+  }
+  return maxDelta;
 }
 
 // ------------------------------------------------------------------ asserts
 
-process.stdout.write('\nPlay store-listing assets\n');
+process.stdout.write('\nPlay store-listing assets — IHDR / colour type\n');
+
+const icon = readAsset('icon-512.png');
+const feature = readAsset('feature-graphic-1024x500.png');
 
 check('512x512 listing icon is a 32-bit RGBA PNG', () => {
-  const { ihdr, path: p } = readPng('icon-512.png');
+  const { ihdr, path: p } = icon;
   assert.equal(ihdr.width, 512, `${p} must be 512x512; got ${describe(ihdr)}`);
   assert.equal(ihdr.height, 512, `${p} must be 512x512; got ${describe(ihdr)}`);
   assert.equal(
@@ -106,7 +170,7 @@ check('512x512 listing icon is a 32-bit RGBA PNG', () => {
 });
 
 check('1024x500 feature graphic is a 24-bit RGB PNG', () => {
-  const { ihdr, path: p } = readPng('feature-graphic-1024x500.png');
+  const { ihdr, path: p } = feature;
   assert.equal(ihdr.width, 1024, `${p} must be 1024x500; got ${describe(ihdr)}`);
   assert.equal(ihdr.height, 500, `${p} must be 1024x500; got ${describe(ihdr)}`);
   assert.equal(
@@ -117,7 +181,55 @@ check('1024x500 feature graphic is a 24-bit RGB PNG', () => {
   assert.equal(ihdr.bitDepth, 8, `${p} must be 8 bits per channel; got bitDepth=${ihdr.bitDepth}`);
 });
 
-process.stdout.write('\nPhone screenshots (present-file check — 24-bit RGB required for every one)\n');
+process.stdout.write('\nFeature graphic — pixel content matches the design palette\n');
+
+// The design's background is a linear gradient from #132840 (top-left,
+// R=19 G=40 B=64) through #1E3A5F to #24486F. A pixel sampled from the
+// top-left navy region — well outside the safe area's centered mark and
+// copy — must be dark navy. If the packer bug ships again the sampled
+// values are (255, N, N) / (N, 255, N) / (N, N, 255), not dark navy.
+check('feature-graphic top-left navy region is actually dark navy', () => {
+  const [r, g, b] = pixel(feature.decoded, 30, 30);
+  assert.ok(
+    r < 60 && g < 80 && b < 110,
+    `feature-graphic pixel (30,30) should be in the dark-navy background range (~19,40,64); got (${r},${g},${b}). ` +
+      "If any channel is close to 255 the RGBA-as-RGB packing bug is back; see the DIC-1259 CR note in the generator's stripAlphaToRgb.",
+  );
+});
+
+check('feature-graphic bottom-left navy region is actually dark navy', () => {
+  const [r, g, b] = pixel(feature.decoded, 30, 470);
+  assert.ok(
+    r < 60 && g < 80 && b < 110,
+    `feature-graphic pixel (30,470) should be in the dark-navy background range; got (${r},${g},${b}).`,
+  );
+});
+
+check('feature-graphic gradient row has smooth inter-pixel transitions', () => {
+  // Row 60 is above the safe-area / mark / copy stack and is pure gradient.
+  const maxDelta = maxRowChannelDelta(feature.decoded, 60, 30, 700);
+  assert.ok(
+    maxDelta < 40,
+    `feature-graphic row 60 has a max adjacent-pixel channel delta of ${maxDelta} across 30..700 — a smooth gradient should be under ~40. ` +
+      'The RGBA-as-RGB packing bug alternates dark navy with (255,·,·)/(·,255,·)/(·,·,255) every 4 pixels, giving deltas ~200.',
+  );
+});
+
+check('feature-graphic has no period-4 channel-pinned-to-255 stripes', () => {
+  // Multiple sample rows so a legitimate white pixel here or there does not
+  // hide the pattern. The bug hits EVERY row identically; a real image does
+  // not have 255-pinned channels at that specific offset even in one row.
+  for (const y of [40, 200, 350, 460]) {
+    const { hits, samples } = countPeriod4PinnedPixels(feature.decoded, y, 20, 900);
+    assert.ok(
+      samples >= 20 && hits <= 1,
+      `feature-graphic row ${y}: ${hits}/${samples} 4-pixel windows show the RGBA-as-RGB alpha-leak stripe pattern. ` +
+        "This is the DIC-1259 CR 2 corruption signature — regenerate assets after fixing stripAlphaToRgb / PNG.sync.write.",
+    );
+  }
+});
+
+process.stdout.write('\nPhone screenshots — 24-bit RGB + pixel content is coherent\n');
 
 const phoneFiles = fs
   .readdirSync(OUT_DIR)
@@ -126,8 +238,6 @@ const phoneFiles = fs
 
 check('at least one phone screenshot exists — or the store-listing doc explains it does not', () => {
   if (phoneFiles.length === 0) {
-    // Play requires two before actual submission. The docs must call this out
-    // instead of the test silently passing on an empty directory.
     const storeListing = fs.readFileSync(path.join(ROOT, 'docs/play/store-listing.md'), 'utf8');
     assert.ok(
       /must be captured|recapture|pending/i.test(storeListing),
@@ -138,10 +248,10 @@ check('at least one phone screenshot exists — or the store-listing doc explain
 });
 
 for (const name of phoneFiles) {
+  const asset = readAsset(name);
+
   check(`${name} is a 24-bit RGB PNG at a Play-accepted phone aspect`, () => {
-    const { ihdr, path: p } = readPng(name);
-    // Play's documented range for phone screenshots is 320..3840 on each side
-    // and a 16:9-to-9:16 aspect. Assert the range and either 9:16 or 16:9.
+    const { ihdr, path: p } = asset;
     assert.ok(
       ihdr.width >= 320 && ihdr.width <= 3840 && ihdr.height >= 320 && ihdr.height <= 3840,
       `${path.relative(ROOT, p)} dimensions out of Play's 320..3840 range: got ${describe(ihdr)}`,
@@ -150,14 +260,62 @@ for (const name of phoneFiles) {
     assert.ok(
       (ratio >= 9 / 16 - 0.02 && ratio <= 9 / 16 + 0.02) ||
         (ratio >= 16 / 9 - 0.02 && ratio <= 16 / 9 + 0.02),
-      `${path.relative(ROOT, p)} aspect ratio ${ratio.toFixed(3)} is neither 9:16 nor 16:9 — Play rejects phone screenshots outside that range. Got ${describe(ihdr)}. Reshoot at 1080x1920 or crop to that ratio.`,
+      `${path.relative(ROOT, p)} aspect ratio ${ratio.toFixed(3)} is neither 9:16 nor 16:9. Got ${describe(ihdr)}. Reshoot at 1080x1920 or crop to that ratio.`,
     );
     assert.equal(
       ihdr.colorType,
       2,
-      `${path.relative(ROOT, p)} must be RGB (colour type 2) — Play requires 24-bit PNGs with no alpha for phone screenshots. Got ${describe(ihdr)}. Re-encode with node scripts/generate-play-store-assets.mjs --recode-screenshots.`,
+      `${path.relative(ROOT, p)} must be RGB (colour type 2). Got ${describe(ihdr)}.`,
     );
     assert.equal(ihdr.bitDepth, 8, `${p} must be 8 bits per channel; got bitDepth=${ihdr.bitDepth}`);
+  });
+
+  check(`${name} pixel stream is not corrupted by the RGBA-as-RGB packing bug`, () => {
+    // The bug hits EVERY row identically, so scanning several rows for the
+    // period-4 channel-pinned signature reliably detects it while ignoring
+    // the occasional legitimate white pixel a UI screenshot may contain.
+    const rowsToProbe = [
+      Math.floor(asset.decoded.height * 0.25),
+      Math.floor(asset.decoded.height * 0.5),
+      Math.floor(asset.decoded.height * 0.75),
+    ];
+    let flaggedRows = 0;
+    for (const y of rowsToProbe) {
+      const { hits, samples } = countPeriod4PinnedPixels(
+        asset.decoded,
+        y,
+        20,
+        asset.decoded.width - 20,
+      );
+      if (samples > 0 && hits / samples > 0.5) flaggedRows += 1;
+    }
+    assert.equal(
+      flaggedRows,
+      0,
+      `${name}: ${flaggedRows} of ${rowsToProbe.length} sampled rows show the period-4 alpha-leak pattern (>50% of 4-pixel windows). ` +
+        'This is the DIC-1259 CR 2 corruption signature. Restore the file from the pre-corruption commit or a fresh capture, then re-encode with `node scripts/generate-play-store-assets.mjs --recode-screenshots`.',
+    );
+  });
+
+  check(`${name} decodes to a non-degenerate image (min unique row hashes, no giant flat block)`, () => {
+    // A corrupted or truncated file often reduces to a small handful of
+    // identical rows. A real UI screenshot has thousands of distinct rows.
+    const rowHashes = new Set();
+    for (let y = 0; y < asset.decoded.height; y += 4) {
+      // Cheap 32-bit hash of a mid-row sample so we don't allocate O(w*h).
+      let h = 0;
+      for (let x = 0; x < asset.decoded.width; x += 16) {
+        const [r, g, b] = pixel(asset.decoded, x, y);
+        h = (h * 31 + r) | 0;
+        h = (h * 31 + g) | 0;
+        h = (h * 31 + b) | 0;
+      }
+      rowHashes.add(h);
+    }
+    assert.ok(
+      rowHashes.size >= 30,
+      `${name} decodes to ${rowHashes.size} distinct sampled-row hashes across ${Math.ceil(asset.decoded.height / 4)} sampled rows. That is too flat for a real UI capture — the file may be truncated, single-colour, or corrupted.`,
+    );
   });
 }
 
@@ -175,12 +333,18 @@ check('the generator source still writes each surface with the required colour t
     'the icon generator no longer references colorType 6 — regenerating would silently write the wrong format again.',
   );
   assert.ok(
-    /stripAlphaToRgb|colorType:\s*2/.test(source),
-    'the feature-graphic generator no longer strips the alpha channel — the browser screenshot may drift to RGBA on a chromium upgrade.',
+    /RGB_ENCODER_OPTIONS[\s\S]{0,200}colorType:\s*2[\s\S]{0,200}inputColorType:\s*6[\s\S]{0,200}inputHasAlpha:\s*true/.test(
+      source,
+    ),
+    'the RGB encoder options no longer set inputColorType:6 + inputHasAlpha:true — pngjs will fast-path the 4bpp buffer through the RGB packer and produce the DIC-1259 CR 2 corruption again.',
   );
   assert.ok(
     /--recode-screenshots/.test(source),
     'the generator no longer exposes --recode-screenshots — captured phone screenshots would have to be re-encoded by hand.',
+  );
+  assert.ok(
+    /looksCorruptedByPreviousStripAlphaBug/.test(source),
+    'the generator no longer refuses to re-encode a file that already carries the alpha-leak corruption — running --recode-screenshots on a corrupted file would freeze that corruption in place.',
   );
 });
 
