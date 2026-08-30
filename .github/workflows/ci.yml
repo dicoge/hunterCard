@@ -240,6 +240,9 @@ jobs:
       - name: Verify yuyu-provenance gate blocks cross-product preservation (DIC-1227)
         run: npm run test:yuyu-provenance-preservation
 
+      - name: Verify unproven printings cannot ship priceHistory (DIC-1229)
+        run: npm run test:dic1229-history-provenance
+
       - name: Verify scan totals fail closed on unresolved versions (DIC-1013)
         run: npm run test:scan-fail-closed
 

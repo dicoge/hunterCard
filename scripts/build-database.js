@@ -28,6 +28,8 @@ import {
   stampHistoryRecord,
   filterProvenanceMatchedRecords,
   findAmbiguousPromoRowIds,
+  hasCurrentPriceProvenance,
+  findUnprovenPriceHistoryViolations,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
@@ -1557,9 +1559,35 @@ async function buildDatabase() {
   // onto this canonical-ID history file. New records emitted here are always
   // stamped; legacy records without a stamp are grandfathered in only on
   // origin-product rows (see filterProvenanceMatchedRecords).
+  //
+  // DIC-1229 CR rev.4: gate the durable write on `hasCurrentPriceProvenance`
+  // BEFORE emitting a record. Without this, every row with a positive scalar
+  // `sellPrice` (including ent07 aggregation rows whose sellPrice is derived
+  // from cross-printing yuyu entries) writes a single-record durable file
+  // every daily run. The scheduler's broad `git add data/price-history/*.json`
+  // then republishes those files even after `purge-unproven-price-history-
+  // DIC-1229.mjs` has cleaned them. Mac-Codex CR rev.4 flagged the exact
+  // reproduction: 0 files after purge → normal build → 377 recreated. Under
+  // the strict predicate ent07/reprint rows fail the gate, no record is
+  // emitted, and the existing durable file (if any) is left untouched. The
+  // gate options are identical to Step 6 / the audit (ambiguousIds derived
+  // once from the final cards map below) so all three defence points share
+  // the same non-ambiguity / freshness / exact-print contract.
+  const step5GateOptions = {
+    ambiguousIds: findAmbiguousPromoRowIds(database.cards),
+  };
+  const disableStep5Gate = process.env.HUNTERCARD_DIC1229_DISABLE_STEP5_GATE === '1';
+  if (disableStep5Gate) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_STEP5_GATE=1 — Step 5 provenance gate DISABLED (test-only fault injection)');
+  }
   const priceRecords = [];
+  let step5SkippedUnproven = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     if (card.sellPrice != null && card.sellPrice > 0) {
+      if (!disableStep5Gate && !hasCurrentPriceProvenance(card, step5GateOptions)) {
+        step5SkippedUnproven++;
+        continue;
+      }
       priceRecords.push(stampHistoryRecord({
         date: today,
         price: card.sellPrice,
@@ -1568,6 +1596,9 @@ async function buildDatabase() {
         cardId,
       }, card));
     }
+  }
+  if (step5SkippedUnproven > 0) {
+    console.log(`  [DIC-1229] Step 5 skipped ${step5SkippedUnproven} unproven printings — no durable record written (DIC-1229 fail-closed)`);
   }
 
   // Group by cardId and write history files
@@ -1650,11 +1681,77 @@ async function buildDatabase() {
   // legacy records survive only on origin-product rows. This is what stops
   // the cross-product history the DIC-1204 seed script left on 813 reprint
   // rows from re-materialising onto card.priceHistory on every rebuild.
+  //
+  // DIC-1229 hardening: `filterProvenanceMatchedRecords` checks the stamp
+  // ONLY against `card.sourceProduct`. That alone doesn't prove the record
+  // reflects a current exact-print listing — a poisoned record whose stamp
+  // is technically correct can still ship as a user-visible priceHistory
+  // when the row itself has no current provenance. Fail closed: only merge
+  // priceHistory when the row has a proven CURRENT listing
+  // (`hasCurrentPriceProvenance`); otherwise skip the merge AND purge the
+  // durable file so a follow-up rebuild cannot re-materialise the stale
+  // record. Mac-Codex CR flagged `hBP01-090_hPR_P_hBP01-090_P_02` shipping
+  // `priceHistory={"2026-08-28":30}` alongside `sellPrice:null`,
+  // `prices:[]`, `yuyuImage:""` — the exact shape this gate rules out.
   console.log('\n── Step 6: Merge priceHistory into database ──');
+  // DIC-1229 rev.2: compute the ambiguous-hPR set once so both the Step 6
+  // gate and the post-Step-6 audit see the same non-ambiguity rule that
+  // findAmbiguousPromoRowIds enforces elsewhere in the build. The set is
+  // an input to hasCurrentPriceProvenance below — passing it here (not
+  // deriving inside the predicate) keeps the pure helper testable without
+  // holding the whole cards map.
+  const provenanceGateOptions = {
+    ambiguousIds: findAmbiguousPromoRowIds(database.cards),
+  };
+  // DIC-1229 CR rev.3 fault-injection hooks — test-only. The regression
+  // suite spawns build-database.js with EXACTLY ONE of these set at a
+  // time to prove each defence layer catches contamination in isolation:
+  //   - HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 disables the Step 6
+  //     `continue`, leaving only the audit to catch. When contamination
+  //     is present the audit MUST throw — a mutation that removes the
+  //     audit is what this scenario is sensitive to.
+  //   - HUNTERCARD_DIC1229_DISABLE_AUDIT=1 disables the post-Step-6
+  //     throw, leaving only Step 6 to catch. When contamination is
+  //     present Step 6 skip MUST prevent the merge and the row MUST
+  //     ship priceHistory=empty — a mutation that removes the Step 6
+  //     skip is what this scenario is sensitive to.
+  // Under normal daily runs BOTH env vars are unset; both defences run.
+  // The one-time log lines make the fault injection observable in the
+  // scheduler log and force the test suite to fail loudly if either
+  // hook accidentally leaks into a real run.
+  const disableStep6Skip = process.env.HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP === '1';
+  const disableAudit = process.env.HUNTERCARD_DIC1229_DISABLE_AUDIT === '1';
+  if (disableStep6Skip) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 — Step 6 skip DISABLED (test-only fault injection)');
+  }
+  if (disableAudit) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_AUDIT=1 — post-Step-6 audit DISABLED (test-only fault injection)');
+  }
   let mergedCount = 0;
   let droppedRecords = 0;
+  let skippedUnproven = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     const histFile = path.join(historyDir, `${cardId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+    // DIC-1229: unproven printings must never inherit a durable history.
+    // Skip the merge (card.priceHistory stays empty) — the durable file is
+    // left in place so a follow-up scrape that restores provenance can also
+    // restore any LEGITIMATE historical records the file still carries. A
+    // one-shot cleanup pass (migration) is responsible for purging clearly-
+    // poisoned files (e.g. the single-record 08-28 stamps left on hPR
+    // rows by the pre-DIC-1227 daily scrape). The DIC-1229 post-Step-6
+    // hard-fail audit guarantees no unproven row ever ships priceHistory
+    // regardless of what survives on disk.
+    if (!hasCurrentPriceProvenance(card, provenanceGateOptions)) {
+      skippedUnproven++;
+      if (disableStep6Skip) {
+        // Fault-injection path: fall through to the merge below so the
+        // audit gets to catch the contamination. This is UNREACHABLE
+        // under normal runs — HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP is
+        // test-only.
+      } else {
+        continue;
+      }
+    }
     try {
       const hist = JSON.parse(fs.readFileSync(histFile, 'utf-8'));
       if (hist.records && hist.records.length > 0) {
@@ -1670,7 +1767,30 @@ async function buildDatabase() {
       // no history file for this card, skip
     }
   }
-  console.log(`  [priceHistory] Merged into ${mergedCount} cards${droppedRecords > 0 ? `; dropped ${droppedRecords} cross-provenance records` : ''}`);
+  console.log(`  [priceHistory] Merged into ${mergedCount} cards${droppedRecords > 0 ? `; dropped ${droppedRecords} cross-provenance records` : ''}${skippedUnproven > 0 ? `; skipped ${skippedUnproven} unproven printings (DIC-1229 fail-closed)` : ''}`);
+
+  // DIC-1229 hard-fail audit: after Step 6 no card may ship a non-empty
+  // `priceHistory` unless it also has current price provenance. This gate
+  // makes the "unproven printing must stay unknown across all price
+  // surfaces" invariant a build-time failure rather than a warn-only
+  // regression. If any row violates it, throw so the daily scheduler
+  // exits non-zero (the pipeline's fail-fast contract, DIC-1219). The
+  // predicate is a pure function (`findUnprovenPriceHistoryViolations`
+  // in preserve-market-fields.js) so the mutation-sensitive test suite
+  // can call it directly with poisoned fixtures — this call is the
+  // production wire.
+  if (!disableAudit) {
+    const violations = findUnprovenPriceHistoryViolations(database.cards, provenanceGateOptions);
+    if (violations.length > 0) {
+      const rendered = violations.slice(0, 5).map((v) => `${v.id} (days=${v.dayCount})`);
+      throw new Error(
+        `[DIC-1229] ${violations.length} unproven printing(s) shipped priceHistory: ` +
+        rendered.join(', ') +
+        (violations.length > 5 ? `, +${violations.length - 5} more` : '') +
+        `. hasCurrentPriceProvenance must be true for any row carrying priceHistory (no cross-version / cross-printing fallback).`
+      );
+    }
+  }
 
   // Step 6b: Do not restore stale buy prices from the previous database. Buy prices
   // are source-listing claims, not history like sell prices; merge-buy-prices.js is

@@ -294,6 +294,37 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
 }
 
 /**
+ * DIC-1229 CR rev.3 exact-print entry match — a stricter variant of
+ * `pricesEntryMatchesSource` used specifically as the priceHistory
+ * provenance gate inside `hasCurrentPriceProvenance`. It rejects the two
+ * relaxations `pricesEntryMatchesSource` allows for deck aggregation:
+ *   - the reprint carve-out (URL product path = cardNumber origin prefix
+ *     ≠ sourceProduct) — the reason a fresh hBP04 reprint currently
+ *     ships priceHistory when its only evidence is an hBP02-origin
+ *     entry, i.e. the exact FAIL Mac-Codex flagged;
+ *   - the `NON_OFFICIAL_SOURCE_PRODUCTS` (ent07) pass-any-URL carve-out,
+ *     which lets a scraper-aggregation label vouch for any URL product
+ *     path even though the row's own printing is not identified.
+ * Only two shapes qualify here:
+ *   (i) URL product path equals `sourceProduct` (exact-print match), or
+ *   (ii) URL product path is a KNOWN promo pack AND `sourceProduct` is
+ *        `'hpr'` (the promo carve-out that hBP01-048's /promo-hbp10/
+ *        ¥980 entry needs and that hSD03-002_hPR ambiguity handling
+ *        further gates).
+ * Anything else — cross-printing, ent07-aggregation, evil-host, wrong
+ * port, no-image, missing URL — fails closed.
+ */
+export function pricesEntryExactPrintMatchesSource(entry, currentSourceProduct) {
+  const src = String(currentSourceProduct || '').toLowerCase();
+  if (!src) return false;
+  const urlProd = yuyuImageProductPath(entry?.imageUrl);
+  if (!urlProd) return false;
+  if (urlProd === src) return true;
+  if (isKnownPromoPath(urlProd) && src === 'hpr') return true;
+  return false;
+}
+
+/**
  * DIC-1227 CR follow-up rev.3: detect hPR rows that share a yuyu image URL
  * across DISTINCT hPR printings of the same cardNumber. A single yuyu
  * listing represents exactly one physical printing; if the DB has two
@@ -338,6 +369,131 @@ export function findAmbiguousPromoRowIds(cards) {
     }
   }
   return bad;
+}
+
+/**
+ * DIC-1229 default freshness window for `hasCurrentPriceProvenance` — a row
+ * whose `timestamp` has not been refreshed within this many milliseconds is
+ * treated as unproven. Set to 7 days: the daily yuyu scrape refreshes every
+ * scraped row's timestamp, so a 7-day gap means the pipeline has been down
+ * for a full week and any surviving scalar/entry price on such a row is
+ * "stale" in the CR-flagged sense. Callers can override via
+ * `options.maxAgeMs` (tests use it for deterministic time-travel).
+ */
+export const DIC1229_MAX_TIMESTAMP_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * DIC-1229 CR rev.3 clock-skew allowance for `hasCurrentPriceProvenance` — a
+ * row whose `timestamp` reads MORE than this many milliseconds INTO THE
+ * FUTURE relative to `options.now` is treated as unproven. Set to 5
+ * minutes: covers NTP jitter and legitimate reasonable-clock-skew across
+ * the scrape / build / audit sequence, but rejects `2099-01-01` under a
+ * 2026 clock — the exact FAIL Mac-Codex flagged. Callers can override via
+ * `options.clockSkewMs` (tests widen it to prove the gate is bounded, not
+ * disabled).
+ */
+export const DIC1229_MAX_TIMESTAMP_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * DIC-1229 CR rev.3 — a row has "current exact-print price provenance" only
+ * when every one of the following holds:
+ *   1. **non-ambiguity** — the row is NOT in the caller-supplied ambiguous
+ *      set (`options.ambiguousIds`, produced by `findAmbiguousPromoRowIds`).
+ *      Two hPR rows for one cardNumber sharing a canonical yuyu-tei image
+ *      identity cannot both prove provenance, so the ambiguity contract from
+ *      DIC-1227 rev.3 is inherited here.
+ *   2. **fresh timestamp with bounded future skew** — `card.timestamp` parses
+ *      AND lies within `[now - options.maxAgeMs, now + options.clockSkewMs]`
+ *      (defaults: `Date.now()`, `DIC1229_MAX_TIMESTAMP_AGE_MS` = 7 days
+ *      into the past, `DIC1229_MAX_TIMESTAMP_CLOCK_SKEW_MS` = 5 minutes
+ *      into the future). Missing / unparseable / stale-past / far-future
+ *      timestamps all fail closed. This subsumes both the "stale scalar"
+ *      (rev.2) and "2099-01-01 future timestamp" (rev.3) cases Mac-Codex
+ *      flagged.
+ *   3. **exact-printing + lawful yuyu-tei image + source-product match** —
+ *      either the ROW-level payload (positive `sellPrice` AND top-level
+ *      `yuyuImage` passing `yuyuPayloadMatchesSource`) OR at least one
+ *      `prices[]` entry (positive `entry.sellPrice` AND `entry.imageUrl`
+ *      passing `pricesEntryExactPrintMatchesSource`) proves the row's own
+ *      printing. Any positive scalar whose URL fails `parseYuyuImage`
+ *      (evil host, wrong protocol, non-default port, no
+ *      /hocg/{size}/{product}/ shape) or whose product path doesn't match
+ *      the row's own `sourceProduct` (the "cross-printing /heb01/" case,
+ *      and the DIC-1229 rev.3 "hBP04 reprint with only hBP02-origin
+ *      entry" case) fails closed here. The reprint origin-prefix carve-out
+ *      that `pricesEntryMatchesSource` allows for DECK aggregation is
+ *      intentionally NOT applied to the history gate — history is
+ *      per-printing evidence, not per-cardNumber aggregation.
+ *
+ * When any of (1)–(3) fails the row is unproven — `card.priceHistory` and
+ * any durable record surviving on such a row are stale cross-provenance
+ * data (the shipped shape Mac-Codex flagged: `hBP01-090_hPR_P_hBP01-090_P_02`
+ * with `sellPrice:null`, `prices:[]`, `yuyuImage:""` yet
+ * `priceHistory={"2026-08-28":30}` from a record whose stamp
+ * `sourceProduct:"hPR"` alone passed the DIC-1219 record filter). Callers
+ * use this helper as the gate before merging durable history back onto a
+ * row and as the audit predicate that fails-closes the build if any row
+ * ships priceHistory without it.
+ *
+ * @param {object} card
+ * @param {{
+ *   ambiguousIds?: Set<string>|null,
+ *   now?: number,
+ *   maxAgeMs?: number,
+ *   clockSkewMs?: number,
+ * }} [options]
+ * @returns {boolean}
+ */
+export function hasCurrentPriceProvenance(card, options = {}) {
+  if (!card || typeof card !== 'object') return false;
+
+  const ambiguousIds = options.ambiguousIds || null;
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const maxAgeMs = Number.isFinite(options.maxAgeMs) ? options.maxAgeMs : DIC1229_MAX_TIMESTAMP_AGE_MS;
+  const clockSkewMs = Number.isFinite(options.clockSkewMs) ? options.clockSkewMs : DIC1229_MAX_TIMESTAMP_CLOCK_SKEW_MS;
+
+  // (1) Non-ambiguity — an hPR row that shares a canonical yuyu-tei image
+  // identity with another hPR row for the same cardNumber cannot prove
+  // provenance on either side. Callers pass the set produced by
+  // `findAmbiguousPromoRowIds`; when absent (unit tests / callers that
+  // haven't computed it) we skip this rule rather than fail-open silently.
+  if (ambiguousIds && card.id && ambiguousIds.has(card.id)) return false;
+
+  const sourceProduct = toStr(card.sourceProduct || card.series);
+  if (!sourceProduct) return false;
+
+  // (2) Freshness with bounded future skew — the row's own `timestamp` must
+  // parse AND lie within [now - maxAgeMs, now + clockSkewMs]. Both bounds
+  // fail closed: `Date.parse` returns NaN for missing / malformed strings
+  // (Number.isFinite(NaN) is false); a stale-past timestamp fails the lower
+  // bound; a far-future timestamp (e.g. `2099-01-01` under a 2026 clock)
+  // fails the upper bound. The upper bound is deliberately narrow (default
+  // 5 min) — covers NTP jitter and reasonable clock skew across the
+  // scrape / build / audit sequence, but nothing more.
+  const timestampMs = Date.parse(toStr(card.timestamp));
+  if (!Number.isFinite(timestampMs)) return false;
+  if (now - timestampMs > maxAgeMs) return false;
+  if (timestampMs - now > clockSkewMs) return false;
+
+  // (3) Exact-printing + lawful yuyu image + source-product match. Either
+  // path (top-level or entry-level) is sufficient — the row-level payload
+  // proves the whole row, or at least one prices[] entry proves it. Both
+  // paths reuse the DIC-1227 hardened validators (parseYuyuImage host /
+  // protocol / port / path shape + sourceProduct match + promo carve-out).
+  // Entry-level uses the STRICT exact-print matcher (no reprint / ent07
+  // aggregation carve-out) — history is per-printing evidence, not per-
+  // cardNumber aggregation.
+  if (Number.isFinite(card.sellPrice) && card.sellPrice > 0
+      && yuyuPayloadMatchesSource(card, sourceProduct)) {
+    return true;
+  }
+  if (!Array.isArray(card.prices)) return false;
+  return card.prices.some((entry) => (
+    entry
+    && Number.isFinite(entry.sellPrice)
+    && entry.sellPrice > 0
+    && pricesEntryExactPrintMatchesSource(entry, sourceProduct)
+  ));
 }
 
 /**
@@ -404,6 +560,41 @@ export function deriveTopLevelFromEntries(entries, previousTimestamp = '') {
  * records" OR "always keep stamped records") is immediately caught by the
  * DIC-1219 mutation test.
  */
+/**
+ * DIC-1229 rev.2: pure audit — returns the list of violating card ids
+ * where `card.priceHistory` is non-empty AND `hasCurrentPriceProvenance`
+ * returns false. `build-database.js` and the regression tests both use
+ * this so mutation-sensitivity is enforceable at the unit layer: any
+ * weakening of the predicate (or of the audit itself) shows up on the
+ * returned array. Empty array means the invariant holds. Options are the
+ * SAME shape as `hasCurrentPriceProvenance` (ambiguousIds / now /
+ * maxAgeMs); the audit derives ambiguousIds when the caller omits them
+ * so a bare `findUnprovenPriceHistoryViolations(cards)` call still holds
+ * the full contract.
+ *
+ * @param {Object<string, object>} cards
+ * @param {{ ambiguousIds?: Set<string>|null, now?: number, maxAgeMs?: number }} [options]
+ * @returns {Array<{ id: string, dayCount: number }>}
+ */
+export function findUnprovenPriceHistoryViolations(cards, options = {}) {
+  const violations = [];
+  if (!cards || typeof cards !== 'object') return violations;
+  const gateOptions = {
+    ...options,
+    ambiguousIds: options.ambiguousIds ?? findAmbiguousPromoRowIds(cards),
+  };
+  for (const [id, card] of Object.entries(cards)) {
+    const ph = card?.priceHistory;
+    if (!ph || typeof ph !== 'object') continue;
+    const dayCount = Object.keys(ph).length;
+    if (dayCount === 0) continue;
+    if (!hasCurrentPriceProvenance(card, gateOptions)) {
+      violations.push({ id, dayCount });
+    }
+  }
+  return violations;
+}
+
 export function filterProvenanceMatchedRecords(records, card) {
   if (!Array.isArray(records)) return [];
   const currentSource = toStr(card?.sourceProduct || card?.series);

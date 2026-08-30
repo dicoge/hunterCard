@@ -86,6 +86,7 @@
     "test:price-history-provenance": "node scripts/test-price-history-provenance.mjs",
     "test:scheduler-dirty-precondition": "node scripts/test-scheduler-dirty-precondition.mjs",
     "test:yuyu-provenance-preservation": "node scripts/test-yuyu-provenance-preservation.mjs",
+    "test:dic1229-history-provenance": "node scripts/test-dic1229-history-provenance.mjs",
     "test:scan-fail-closed": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-version-fail-closed.mjs",
     "test:recognition-unavailable": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-unavailable.mjs",
     "test:recognition-provider": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-provider-fallback.mjs",
