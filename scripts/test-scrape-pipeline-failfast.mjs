@@ -283,6 +283,12 @@ exit 0
   const merge = indexOfCall(lines, 'merge-buy-prices.js');
   const native = indexOfCall(lines, 'generate-native-database.mjs');
   const marketGate = indexOfCall(lines, 'npm run test:market-fields');
+  // DIC-1249: buy-price provenance drift (buyPriceTimestamp lagging the source
+  // by a day while values match) was invisible to test:market-fields + native
+  // --check. Both buy-price gates must run inside the pre-push window so the
+  // same class of drift can never be committed by the scheduler again.
+  const buyPriceGate = indexOfCall(lines, 'npm run test:buy-price');
+  const buyPriceRegenGate = indexOfCall(lines, 'npm run test:buy-price-regen');
   const nativeCheck = lines.findIndex((l) => l.includes('generate-native-database.mjs --check'));
   const add = indexOfCall(lines, 'git add');
   const commit = indexOfCall(lines, 'commit -m');
@@ -292,6 +298,8 @@ exit 0
     ['merge-buy-prices', merge],
     ['generate-native-database', native],
     ['test:market-fields gate', marketGate],
+    ['test:buy-price gate', buyPriceGate],
+    ['test:buy-price-regen gate', buyPriceRegenGate],
     ['native --check gate', nativeCheck],
     ['git add', add],
     ['git commit', commit],
@@ -304,7 +312,13 @@ exit 0
     'native asset must be regenerated AFTER merge-buy-prices.js, the final writer of data/database.json (otherwise the committed native asset is stale — DIC-916 --check fails)',
   );
   assert.ok(
-    native < marketGate && marketGate < nativeCheck && nativeCheck < add && add < commit && commit < push,
+    native < marketGate &&
+      marketGate < buyPriceGate &&
+      buyPriceGate < buyPriceRegenGate &&
+      buyPriceRegenGate < nativeCheck &&
+      nativeCheck < add &&
+      add < commit &&
+      commit < push,
     'required data gates must run after final native regeneration and before staging/commit/push',
   );
 }
@@ -332,6 +346,28 @@ exit 0
       indexOfCall(lines, forbidden),
       -1,
       `a failed market-field gate must never reach the commit path (found: ${forbidden})`,
+    );
+  }
+}
+
+// ── 2c. Fail-fast: buy-price gates must abort before commit (DIC-1249) ──
+for (const gate of ['test:buy-price', 'test:buy-price-regen']) {
+  const { status, lines } = runPipeline({ failOn: gate });
+
+  assert.notStrictEqual(
+    status,
+    0,
+    `pipeline must exit non-zero when ${gate} fails before commit/push`,
+  );
+  assert.ok(
+    indexOfCall(lines, `npm run ${gate}`) !== -1,
+    `sanity: pipeline must actually invoke the ${gate} gate`,
+  );
+  for (const forbidden of ['git add', 'git -c user.name', 'commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(lines, forbidden),
+      -1,
+      `a failed ${gate} gate must never reach the commit path (found: ${forbidden})`,
     );
   }
 }
