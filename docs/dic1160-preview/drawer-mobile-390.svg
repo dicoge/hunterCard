@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="780" viewBox="0 0 390 780">
+  <title>DIC-1160 Drawer — Mobile 390px</title>
+  <desc>DIC-1160 Phase 1 preview evidence — migrated AppNavigator drawer icons rendered from iconRegistry + DESIGN_TOKENS. Contains zero OS emoji glyphs.</desc>
+  <rect x="0" y="0" width="390" height="780" fill="#0f0f23"/>
+  <rect x="0" y="0" width="335" height="780" fill="#1a1a2e" stroke="#2d3748"/>
+  <rect x="334" y="0" width="1" height="780" fill="#2d3748"/>
+  <text x="20" y="44" fill="#ff6b9d" font-family="-apple-system, Roboto, sans-serif" font-size="24" font-weight="700">HoloHunter</text>
+  <text x="20" y="68" fill="#a0aec0" font-family="-apple-system, Roboto, sans-serif" font-size="14" font-weight="400">卡牌獵人</text>
+  <rect x="20" y="84" width="295" height="1" fill="#2d3748"/>
+  <rect x="8" y="90" width="319" height="46" fill="transparent" rx="12"/>
+<g transform="translate(20, 104)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z"/></svg></g>
+<text x="56" y="118" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="400">首頁</text>
+  <rect x="8" y="142" width="319" height="46" fill="transparent" rx="12"/>
+<g transform="translate(20, 156)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><path d="M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg></g>
+<text x="56" y="170" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="400">掃描卡牌</text>
+  <rect x="8" y="194" width="319" height="46" fill="rgba(255, 107, 157, 0.15)" rx="12"/>
+<g transform="translate(20, 208)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ff6b9d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 21l-4.35-4.35"/><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/></svg></g>
+<text x="56" y="222" fill="#ff6b9d" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="600">搜尋</text>
+  <rect x="8" y="246" width="319" height="46" fill="transparent" rx="12"/>
+<g transform="translate(20, 260)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></g>
+<text x="56" y="274" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="400">收藏</text>
+  <rect x="8" y="298" width="319" height="46" fill="transparent" rx="12"/>
+<g transform="translate(20, 312)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></g>
+<text x="56" y="326" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="400">牌組編輯器</text>
+  <rect x="8" y="350" width="319" height="46" fill="transparent" rx="12"/>
+<g transform="translate(20, 364)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M17 4h4v3a4 4 0 0 1-4 4"/><path d="M7 4H3v3a4 4 0 0 0 4 4"/><path d="M17 4H7v6a5 5 0 0 0 10 0z"/></svg></g>
+<text x="56" y="378" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="400">賽事月報</text>
+  <rect x="8" y="402" width="319" height="46" fill="transparent" rx="12"/>
+<g transform="translate(20, 416)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></g>
+<text x="56" y="430" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="400">入手提醒</text>
+  <rect x="8" y="454" width="319" height="46" fill="transparent" rx="12"/>
+<g transform="translate(20, 468)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></g>
+<text x="56" y="482" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="400">規則教學</text>
+  <rect x="8" y="506" width="319" height="46" fill="transparent" rx="12"/>
+<g transform="translate(20, 520)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></g>
+<text x="56" y="534" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="16" font-weight="400">設定</text>
+  <text x="359" y="44" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="18" font-weight="600">HoloHunter — Mobile 390px Preview</text>
+  <text x="359" y="68" fill="#a0aec0" font-family="-apple-system, Roboto, sans-serif" font-size="13" font-weight="400">DIC-1160 Phase 1: AppNavigator drawer icons migrated to AppIcon SVG registry (no OS emoji glyphs).</text>
+  <text x="359" y="96" fill="#ff6b9d" font-family="-apple-system, Roboto, sans-serif" font-size="13" font-weight="600">Focused route: 搜尋 (search)</text>
+</svg>

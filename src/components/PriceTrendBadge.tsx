@@ -14,6 +14,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { COLORS } from '../constants';
+import { AppIcon } from './common/AppIcon';
+import type { IconName } from './common/iconRegistry';
 
 interface PriceTrendBadgeProps {
   trend: 'up' | 'down' | 'stable' | null;
@@ -24,16 +26,27 @@ interface PriceTrendBadgeProps {
 
 // ── 樣式輔助 ──
 
-function getTrendStyle(trend: string | null) {
+type TrendStyle = {
+  color: string;
+  bg: string;
+  icon: IconName;
+  label: string;
+};
+
+// DIC-1160: `icon` now names an AppIcon SVG shape instead of an OS emoji.
+// PriceTrendBadge is the highest-frequency shared status surface in the app —
+// it renders inside SearchResultsScreen list rows AND CardDetail — so the
+// migration touches every trend readout in one edit.
+function getTrendStyle(trend: string | null): TrendStyle {
   switch (trend) {
     case 'up':
-      return { color: '#10b981', bg: '#10b98115', icon: '📈', label: '看漲' };
+      return { color: '#10b981', bg: '#10b98115', icon: 'trending-up', label: '看漲' };
     case 'down':
-      return { color: '#ef4444', bg: '#ef444415', icon: '📉', label: '看跌' };
+      return { color: '#ef4444', bg: '#ef444415', icon: 'trending-down', label: '看跌' };
     case 'stable':
-      return { color: '#6b7280', bg: '#6b728015', icon: '➡️', label: '平穩' };
+      return { color: '#6b7280', bg: '#6b728015', icon: 'minus', label: '平穩' };
     default:
-      return { color: '#a0aec0', bg: '#a0aec015', icon: '📊', label: '資料不足' };
+      return { color: '#a0aec0', bg: '#a0aec015', icon: 'bar-chart-2', label: '資料不足' };
   }
 }
 
@@ -63,8 +76,17 @@ export default function PriceTrendBadge({
   if (compact) {
     // 精簡模式（列表用）：只顯示圖示 + 分數
     return (
-      <View style={[styles.compactContainer, { backgroundColor: style.bg, borderColor: style.color + '33' }]}>
-        <Text style={styles.compactIcon}>{style.icon}</Text>
+      <View
+        style={[styles.compactContainer, { backgroundColor: style.bg, borderColor: style.color + '33' }]}
+        testID={`price-trend-badge-compact-${trend}`}
+      >
+        <AppIcon
+          name={style.icon}
+          size={14}
+          color={style.color}
+          style={styles.compactIcon}
+          testID={`price-trend-icon-${trend}`}
+        />
         <Text style={[styles.compactScore, { color: style.color }]}>
           {formatScore(score)}
         </Text>
@@ -74,9 +96,18 @@ export default function PriceTrendBadge({
 
   // 完整模式（詳情用）
   return (
-    <View style={[styles.container, { backgroundColor: style.bg, borderColor: style.color + '33' }]}>
+    <View
+      style={[styles.container, { backgroundColor: style.bg, borderColor: style.color + '33' }]}
+      testID={`price-trend-badge-${trend}`}
+    >
       <View style={styles.headerRow}>
-        <Text style={styles.icon}>{style.icon}</Text>
+        <AppIcon
+          name={style.icon}
+          size={20}
+          color={style.color}
+          style={styles.icon}
+          testID={`price-trend-icon-${trend}`}
+        />
         <Text style={[styles.label, { color: style.color }]}>
           {style.label}
         </Text>
@@ -129,7 +160,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   icon: {
-    fontSize: 18,
     marginRight: 6,
   },
   label: {
@@ -181,7 +211,6 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   compactIcon: {
-    fontSize: 12,
     marginRight: 4,
   },
   compactScore: {

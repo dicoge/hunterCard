@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="340" viewBox="0 0 390 340">
+  <title>DIC-1160 PriceTrendBadge preview</title>
+  <desc>DIC-1160 Phase 1 preview evidence — PriceTrendBadge trend variants rendered through the migrated AppIcon foundation. All four states (up/down/stable/insufficient) use SVG paths from iconRegistry; no OS emoji fallback.</desc>
+  <rect x="0" y="0" width="390" height="340" fill="#0f0f23"/>
+  <text x="32" y="48" fill="#ffffff" font-family="-apple-system, Roboto, sans-serif" font-size="20" font-weight="700">PriceTrendBadge — Mobile 390px Preview</text>
+  <text x="32" y="74" fill="#a0aec0" font-family="-apple-system, Roboto, sans-serif" font-size="13" font-weight="400">Migrated from OS emoji (📈 📉 ➡️ 📊) → AppIcon SVG registry (trending-up / trending-down / minus / bar-chart-2).</text>
+  <text x="32" y="96" fill="#a0aec0" font-family="-apple-system, Roboto, sans-serif" font-size="12" font-weight="400">Each badge preserves its brand colour + soft background from the original design; only the glyph surface changed.</text>
+  <rect x="32" y="120" width="200" height="64" fill="#10b98115" stroke="#10b98133" rx="10"/>
+<g transform="translate(44, 140)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg></g>
+<text x="76" y="146" fill="#10b981" font-family="-apple-system, Roboto, sans-serif" font-size="15" font-weight="700">看漲 +12%</text>
+<text x="76" y="166" fill="#10b981" font-family="-apple-system, Roboto, sans-serif" font-size="11" font-weight="400">Compact + Expanded state</text>
+  <rect x="248" y="120" width="200" height="64" fill="#ef444415" stroke="#ef444433" rx="10"/>
+<g transform="translate(260, 140)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 18l-9.5-9.5-5 5L1 6"/><path d="M17 18h6v-6"/></svg></g>
+<text x="292" y="146" fill="#ef4444" font-family="-apple-system, Roboto, sans-serif" font-size="15" font-weight="700">看跌 -7%</text>
+<text x="292" y="166" fill="#ef4444" font-family="-apple-system, Roboto, sans-serif" font-size="11" font-weight="400">Compact + Expanded state</text>
+  <rect x="32" y="200" width="200" height="64" fill="#6b728015" stroke="#6b728033" rx="10"/>
+<g transform="translate(44, 220)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></g>
+<text x="76" y="226" fill="#6b7280" font-family="-apple-system, Roboto, sans-serif" font-size="15" font-weight="700">平穩 0%</text>
+<text x="76" y="246" fill="#6b7280" font-family="-apple-system, Roboto, sans-serif" font-size="11" font-weight="400">Compact + Expanded state</text>
+  <rect x="248" y="200" width="200" height="64" fill="#a0aec015" stroke="#a0aec033" rx="10"/>
+<g transform="translate(260, 220)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></g>
+<text x="292" y="226" fill="#a0aec0" font-family="-apple-system, Roboto, sans-serif" font-size="15" font-weight="700">資料不足</text>
+<text x="292" y="246" fill="#a0aec0" font-family="-apple-system, Roboto, sans-serif" font-size="11" font-weight="400">Compact + Expanded state</text>
+</svg>

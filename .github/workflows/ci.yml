@@ -267,6 +267,9 @@ jobs:
       - name: Verify AdSlot real component render and fail-closed safety (DIC-1157)
         run: npm run test:adslot-render
 
+      - name: Verify AppIcon foundation replaces OS emoji on migrated surfaces (DIC-1160)
+        run: npm run test:app-icon-visuals
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
