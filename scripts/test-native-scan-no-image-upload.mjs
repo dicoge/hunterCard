@@ -124,6 +124,25 @@ globalThis.FileReader = class {
 };
 
 const captured = [];
+
+// Every outbound transport must be watched, not just the one the current code
+// happens to use. React Native implements fetch on top of XMLHttpRequest and
+// exposes both, so a gate that only wraps fetch can be walked around by calling
+// XHR directly.
+globalThis.XMLHttpRequest = class {
+  open(method, url) {
+    this._url = String(url);
+  }
+  setRequestHeader() {}
+  send(body) {
+    captured.push({ url: this._url, body, transport: 'xhr' });
+    this.status = 0;
+    this.readyState = 4;
+    queueMicrotask(() => this.onerror?.(new Error('probe: network intercepted')));
+  }
+  abort() {}
+};
+
 globalThis.fetch = async (url, init) => {
   const href = String(url);
 
@@ -168,12 +187,34 @@ for (const uri of INPUTS) {
 
     for (const request of captured) {
       assert.ok(
-        typeof request.body === 'string',
+        typeof request.body === 'string' || request.body == null,
         `request to ${request.url} sent a non-string body (${Object.prototype.toString.call(request.body)}). ` +
           'A Blob, FormData or ArrayBuffer body is exactly how image bytes would leave the device.',
       );
 
-      const payload = JSON.parse(request.body);
+      // Look at the ENTIRE request — url and body, whatever the field is named
+      // and whatever endpoint it goes to. Checking only the `image` field of the
+      // recognition call would miss an upload under another key, to another
+      // host, or over another transport.
+      const wire = `${request.url} ${request.body ?? ''}`;
+      assert.ok(
+        !/data:image\//i.test(wire),
+        `a request to ${request.url} carries a data:image payload. Encoded image content is ` +
+          'leaving the device, whatever field or transport it travels in.',
+      );
+      assert.ok(
+        !/[A-Za-z0-9+/]{200,}={0,2}/.test(wire),
+        `a request to ${request.url} carries a long base64 run, which is what encoded image ` +
+          'content looks like on the wire.',
+      );
+
+      if (request.body == null) continue;
+      let payload;
+      try {
+        payload = JSON.parse(request.body);
+      } catch {
+        continue; // non-JSON body already covered by the wire checks above
+      }
       if (!('image' in payload)) continue;
 
       assert.equal(
