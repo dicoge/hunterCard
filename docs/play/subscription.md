@@ -9,9 +9,11 @@ true in the app before that product can go to review at all.
 
 ## Read this before creating anything in Console
 
-**The shipping Android build cannot sell anything today.** Creating the subscription in
-Play Console is harmless and can be done now, but it cannot be part of the initial review
-until the app can actually complete a purchase. Four separate things currently prevent that:
+**The shipping Android build cannot sell anything today, and that is fine — the first
+Closed Test ships free.** Owner sequencing decision (2026-08-30): the initial Play review
+AAB does not wait on billing. Creating the subscription in Play Console is harmless and can
+be done now, but it is prepared for a **later** release, not part of the initial submission.
+Four separate things currently keep the store build free:
 
 | # | Blocker | Evidence |
 | --- | --- | --- |
@@ -30,39 +32,18 @@ prices must not be hardcoded before owner sign-off, and the plan cards show `NT$
 "Sandbox". Nothing there is a live checkout, so there is no Play Billing steering problem
 today.
 
-## Sequencing — decided 2026-08-30: option A
+## Sequencing — decided 2026-08-30
 
 The owner has ruled that app review and Closed Testing proceed **independently of
-monetization**. The initial Play review AAB is free with **no paid UI**, and must not wait on
-RevenueCat, subscription products, merchant approval, or the final monthly price. The UI
+monetization**. The initial Play review AAB is free with **no paid UI**, and does not wait
+on RevenueCat, subscription products, merchant approval, or the final monthly price. The UI
 slim-down that makes that true is tracked in DIC-1256.
 
-So nothing in this file blocks the submission. The monthly product is prepared on its own
+Nothing in this file blocks the submission. The monthly product is prepared on its own
 timeline and lands in a later release, at which point everything under "What must be
 re-answered" applies. Note the owner named **RevenueCat** as the intended billing layer;
 whatever wrapper is used, the purchase itself must still go through Google Play Billing on
 Android.
-
-The two options below are kept for context on what option B would have cost.
-
-## Two ways to sequence this
-
-**A — Ship the free app first, add the subscription in a later release.** Submit the
-current binary with App content purchases = No, get through review and the Closed Test
-window, then add billing in a follow-up release and update Data safety, App content, the
-listing and the privacy policy together. Nothing in the pack has to change now beyond this
-file.
-
-**B — Hold the submission until billing is implemented.** Everything in the checklist below
-has to land first, which is a real feature — a billing library, a purchase flow, server-side
-receipt verification, entitlement granting, restore-purchases, and the account-deletion and
-Data safety consequences that follow.
-
-The owner's decision names the launch product, which reads like B, but it does not say the
-launch is blocked on it. **This needs an explicit call**, because it decides whether the
-Play submission waits on a feature that does not exist yet. Option A gets the app in front
-of testers sooner and keeps the two reviews independent; option B avoids shipping a listing
-that has no product on it.
 
 ## Play Console object model for a monthly-only launch
 
@@ -139,11 +120,10 @@ policy still tells users there is no payment mechanism. Its failure message poin
 
 ## Still needed from the owner
 
-1. **Sequencing** — option A or option B above. This is the one that blocks everything else.
-2. Price, and per-region pricing if not using Play's automatic conversion.
-3. Free trial: yes or no, and if yes the length.
-4. Sign-off on the product ID `holohunter_pro` and base plan ID `monthly` — both permanent.
-5. What the subscription actually unlocks, in user-facing words, for the listing and the
+1. Price, and per-region pricing if not using Play's automatic conversion.
+2. Free trial: yes or no, and if yes the length.
+3. Sign-off on the product ID `holohunter_pro` and base plan ID `monthly` — both permanent.
+4. What the subscription actually unlocks, in user-facing words, for the listing and the
    paywall. All the code models today is an unlimited scan quota for `subscriber`
    (`permissionService.ts:23-27`, `scanQuota: -1` against a 100/month free limit) plus an
    unused `canViewPremium` flag (`:18`). Anything richer — the AI price and trend forecasts

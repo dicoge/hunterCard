@@ -79,17 +79,18 @@ Answer as an app, not a game. The intended answers:
 | Shares user location | No |
 | Allows purchases | No — no billing integration exists in this build |
 | Digital purchases / in-app purchases | No |
-| Personal information shared with third parties | **No** for the review build. Card images are not shared (recognition is on-device), and the push token is never registered because `pushAlerts: !STORE_MVP` disables it. Answer consistently with Data safety. |
+| Personal information shared with third parties | **No** for the review build. Card images are not shared (recognition is on-device), and the push token is never registered because `pushAlerts: !STORE_MVP` disables the code path AND `app.config.js` strips `POST_NOTIFICATIONS` from the store-mvp manifest (DIC-1259). Answer consistently with Data safety. |
 
 Expected outcome: Everyone / PEGI 3 / ESRB E. The rating is issued by IARC from the
 answers; do not hand-pick a rating.
 
-> **A monthly subscription is planned for a LATER release** (owner decisions 2026-08-30: monthly-only product, and review/Closed Test proceeds independently of monetization — see
+> **A monthly subscription is planned for a LATER release** (owner sequencing 2026-08-30:
+> first Closed Test ships free, monetization does not block review — see
 > [`subscription.md`](./subscription.md)). Answer the purchase questions **No** for as long
 > as the submitted binary cannot complete a purchase — which is the case today. When billing
-> eventually ships, both purchase answers become Yes and **the content rating questionnaire has to be
-> re-run**, because changing them reissues the IARC rating. Do not answer Yes in advance to
-> save a step: it would declare a capability the artifact does not have.
+> eventually ships, both purchase answers become Yes and **the content rating questionnaire
+> has to be re-run**, because changing them reissues the IARC rating. Do not answer Yes in
+> advance to save a step: it would declare a capability the artifact does not have.
 
 ## Target audience and content
 

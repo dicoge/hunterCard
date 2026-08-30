@@ -37,9 +37,9 @@ is either a known risk from this submission work or a path the store review will
 | 6 | Confirm **no** notification prompt ever appears | Push registration is gated on `FEATURES.pushAlerts` (`!STORE_MVP`), so the review build must never ask. A prompt appearing means the store profile lost `EXPO_PUBLIC_STORE_MVP=1`, which would also make the Data safety answers wrong |
 | 7 | Settings → 刪除帳號, confirm the account is deleted and the app signs out | Play's data-deletion answer depends on this working |
 | 8 | Confirm no draw-over-other-apps prompt ever appears | `SYSTEM_ALERT_WINDOW` was removed |
-| 9 | App info → Permissions lists Camera, and Notifications only if `POST_NOTIFICATIONS` has not been blocked for store builds | The user-visible result of the permission work. Nothing in the review build uses notifications — see the recommendation in `permissions.md` |
+| 9 | App info → Permissions lists Camera only; Notifications is absent because `POST_NOTIFICATIONS` is blocked for the store-mvp profile at the manifest layer (DIC-1259) | The user-visible result of the permission work. The review build cannot use notifications — no runtime prompt reaches the user |
 | 10 | Deck editor, tournament report and rules tutorial all open; 收藏 and 入手提醒 are gone and their deep links fail closed | Every feature named in the store listing must exist, and every removed one must be unreachable rather than merely hidden (DIC-1256 item 2) |
-| 11 | `scripts/ci/play-artifact-permissions-verify.sh <aab>` passes | Mechanical proof the merged manifest matches the baseline |
+| 11 | `scripts/ci/play-artifact-permissions-verify.sh --profile store-mvp <aab>` passes | Mechanical proof the merged manifest matches the store-mvp baseline (the profile Play sees) |
 
 Do not invite closed testers until 1–11 pass. A closed tester who hits a crash on day 3
 may drop out, and the 14-day clock is only satisfied by testers who stay opted in.

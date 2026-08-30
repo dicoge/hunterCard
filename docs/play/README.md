@@ -12,7 +12,7 @@ from the current code rather than from earlier documentation.
 | [`testing-plan.md`](./testing-plan.md) | Internal QA and the Closed Test 12-tester / 14-day requirement |
 | [`subscription.md`](./subscription.md) | Monthly-only launch product: Console setup, why it cannot ship with this binary, what must be re-answered |
 | [`submit-checklist.md`](./submit-checklist.md) | Step-by-step submission runbook |
-| [`expected-release-permissions.txt`](./expected-release-permissions.txt) | Baseline the built artifact is verified against |
+| [`expected-release-permissions-store-mvp.txt`](./expected-release-permissions-store-mvp.txt) / [`expected-release-permissions-full.txt`](./expected-release-permissions-full.txt) | Profile-specific baselines the built artifact is verified against (`scripts/ci/play-artifact-permissions-verify.sh --profile <store-mvp\|full>`) |
 | [`store-listing/`](./store-listing/) | Icon, feature graphic, phone screenshots |
 
 `docs/release-testflight-google-play-closed-testing.md` remains the general iOS + Android
@@ -51,10 +51,11 @@ is no billing integration of any kind. Those sections are corrected in both lang
 
 ## Blocked
 
-**The release AAB has not been built.** The issue requires it to come from `main` after
-DIC-1245 merges, so that the old `holocard-hunter.vercel.app` API origin that got build 6
-rejected is gone. PR #162 is still open. Once it merges, follow part B of
-`submit-checklist.md`; remote versionCode is 6, so `autoIncrement` produces 7.
+**The release AAB has not been built.** DIC-1245 has merged, so the old
+`holocard-hunter.vercel.app` API origin that got build 6 rejected is out of `main`. What
+remains is the DIC-1256 slim-down of the store surface (still under review as of this pack)
+and recapturing phone screenshots from that slim build. Once the slim build lands, follow
+part B of `submit-checklist.md`; remote versionCode is 6, so `autoIncrement` produces 7.
 
 **Nothing has been submitted to Play.** No Play Console access, owner credentials, verified
 developer identity, or service account key were available. The first submission must be
@@ -85,22 +86,18 @@ comment** — put credentials and keys straight into Play Console or an EAS secr
 | 9 | Is there a service-provider agreement covering Expo Push Service? | Decides the "shared" answer for the push token. Absent one, declare it shared. |
 | 10 | Ship screenshots containing hololive card artwork, or only the two without it? | IP takedown risk on a fan-made listing. See `store-listing.md`. |
 
-### Subscription — decided 2026-08-30, see [`subscription.md`](./subscription.md)
+### Sequencing — the first Closed Test ships free (owner decision 2026-08-30)
 
-The owner has chosen a **monthly subscription only** as the launch product, no annual plan
-for the initial review, with price and trial still to be confirmed.
+The initial Play review AAB is free with no paid UI. It does not wait on RevenueCat,
+subscription products, merchant approval, or the final monthly price. The store binary has
+no billing library at all — `EXPO_PUBLIC_STORE_MVP=1` compiles premium out of store builds,
+the `subscriber` role collapses to `free_user`, and the upgrade button is a no-op stub. That
+is what makes the free-review path honest: the questionnaire answers actually match the
+artifact.
 
-This does not change any answer in the pack yet, because **the shipping binary cannot sell
-anything**: there is no billing library, `EXPO_PUBLIC_STORE_MVP=1` compiles premium out of
-store builds, the `subscriber` role collapses to `free_user`, and the upgrade button is a
-no-op stub. A Play Console product can be prepared now, but the app cannot be reviewed as a
-subscription app until Play Billing is actually implemented.
-
-**Sequencing resolved 2026-08-30:** review and Closed Testing proceed independently of
-monetization. The initial AAB is free with no paid UI and does not wait on RevenueCat,
-subscription products, merchant approval or the final price. The slim-down is DIC-1256.
-`subscription.md` holds the Console field list, the permanent product IDs needing sign-off,
-and everything to re-answer when billing eventually lands.
+Subscription decisions (monthly-only launch product, product IDs still needing owner
+sign-off) live in [`subscription.md`](./subscription.md) and land in a **later** release.
+None of that is a gate for the initial submission.
 
 ### DIC-1256 changes what this pack can claim
 
@@ -109,11 +106,14 @@ That reaches further than the paid UI and invalidates parts of this pack:
 
 - **Store listing copy is rewritten** — the old text sold reference prices, collection
   tracking and deck cost. See `store-listing.md`.
-- **Three of the four screenshots are invalid** and must be recaptured from the slimmed
-  build; only the home screen survives. Play needs a minimum of two.
+- **All committed screenshots must be recaptured from the slim build.** The three that
+  depended on removed features (search prices, market data, favorites drawer) are deleted;
+  the surviving home shot is re-encoded to Play's required 24-bit RGB but must still be
+  reshot on the DIC-1256 build for consistency. Play needs a minimum of two.
 - **Data safety Device IDs is now "not collected"** — see the correction below.
-- **`POST_NOTIFICATIONS` has no feature behind it** in the review build; `permissions.md`
-  recommends blocking it for store profiles.
+- **`POST_NOTIFICATIONS` is blocked at the manifest layer for the store profile**
+  (DIC-1259). `app.config.js` adds it to `blockedPermissions` when `EXPO_PUBLIC_STORE_MVP=1`,
+  and `permissions.md` documents the two-baseline / two-profile split.
 
 ### Not required until billing ships
 

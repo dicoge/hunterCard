@@ -64,26 +64,35 @@ Requested explicitly by the app:
 | Permission | Runtime prompt | Feature it serves | Disclosure |
 | --- | --- | --- | --- |
 | `CAMERA` | Yes | Card scanning on the Scan screen (`src/screens/ScanScreen.tsx`) | In-app rationale string `允許 HoloHunter 存取相機以掃描卡牌`. Recognition runs on-device, so Data safety declares Photos as not collected — see `data-safety.md` |
-| `POST_NOTIFICATIONS` | Yes (Android 13+) | **Nothing, in the review build** — see below | Never requested at runtime while `STORE_MVP` is on |
 
-> **`POST_NOTIFICATIONS` has no feature behind it in the submitted build.** It is contributed
-> by `expo-notifications`, and the only thing that would use it — watchlist price alerts — is
-> compiled out: `App.tsx:11` gates push registration on `FEATURES.pushAlerts`, which is
-> `!STORE_MVP` (`src/config/releaseFlags.ts:52`), and both store profiles set
-> `EXPO_PUBLIC_STORE_MVP=1`. So the permission ships and is listed on the store page, but the
-> app never prompts for it and never sends a notification.
+Inherited from `expo-notifications`, kept only for internal / full-feature builds:
+
+| Permission | Runtime prompt | Store-MVP submission | Internal / full profile |
+| --- | --- | --- | --- |
+| `POST_NOTIFICATIONS` | Yes (Android 13+) | **Stripped** — added to `app.config.js` `blockedPermissions` when `EXPO_PUBLIC_STORE_MVP=1`, so Gradle emits `tools:node="remove"` and the merged manifest does not request it | Retained — the price-alert feature that uses it is compiled in when the store-MVP flag is off |
+
+> **DIC-1259: `POST_NOTIFICATIONS` is blocked at the manifest layer for the Play submission
+> profile.** The push-alerts feature that would consume it is compiled out of the store build:
+> `App.tsx:11` gates push registration on `FEATURES.pushAlerts`, which is `!STORE_MVP`
+> (`src/config/releaseFlags.ts:52`), and both `production` and `production-apk` set
+> `EXPO_PUBLIC_STORE_MVP=1` (`eas.json`). Keeping the permission on the merged manifest would
+> mean the Play listing shows a runtime prompt for a code path that cannot fire, and Data
+> safety / App content would have to over-declare push-token collection against the real
+> artifact.
 >
-> **Recommendation: block it for store builds.** `app.config.js` already applies
-> env-conditional Android config (the Apple App Link intent filter keys off
-> `EXPO_PUBLIC_APPLE_ANDROID_ENABLED`), so the same mechanism can add `POST_NOTIFICATIONS` to
-> `blockedPermissions` when `EXPO_PUBLIC_STORE_MVP` is on. Not done here: DIC-1256 is actively
-> reshaping exactly this store-build surface, and a profile-dependent manifest also means
-> `expected-release-permissions.txt` needs one baseline per profile rather than one file. It
-> belongs with that work, and it should be done before submission — a permission on the store
-> listing that the app never uses is the kind of thing reviewers ask about, and it currently
-> has no honest answer.
+> The block is layered rather than static: `app.base.json` keeps the four always-blocked
+> permissions (never appropriate in any profile), and `app.config.js` reads
+> `EXPO_PUBLIC_STORE_MVP` and adds `POST_NOTIFICATIONS` to `blockedPermissions` only for the
+> store profile. That preserves the internal-build behaviour where testing push alerts still
+> works.
+>
+> Because the merged manifest now differs per profile, `docs/play/expected-release-permissions-store-mvp.txt`
+> and `docs/play/expected-release-permissions-full.txt` are two baselines and
+> `scripts/ci/play-artifact-permissions-verify.sh` requires `--profile store-mvp` or
+> `--profile full` to match the artifact against the right one. Both are asserted by
+> `npm run test:play-manifest`.
 
-Inherited, normal-level, no runtime prompt, no Play declaration required:
+Inherited, normal-level, no runtime prompt, no Play declaration required (both profiles):
 
 | Permission | Source |
 | --- | --- |
@@ -102,25 +111,28 @@ which is a product decision, not a manifest edit.
 ## Regression protection
 
 `npm run test:play-manifest` (`scripts/test-play-release-manifest.mjs`, wired into CI)
-asserts the configuration in four layers: the allowlist and blocklist in `app.base.json`;
-that every permission any installed dependency declares is classified with a written
-reason, so a new dependency dragging in a new permission fails rather than silently
-widening the manifest; that Expo's own `Permissions` plugin emits `tools:node="remove"`
-when run against a manifest seeded with every dependency-declared permission; and that
-the artifact baseline and its verifier exist.
+asserts the configuration in four layers: the always-blocked list in `app.base.json` and
+the store-mvp-only additions in `app.config.js`; that every permission any installed
+dependency declares is classified with a written reason, so a new dependency dragging in a
+new permission fails rather than silently widening the manifest; that Expo's own
+`Permissions` plugin emits `tools:node="remove"` for the store-mvp AND full profile
+independently when run against a manifest seeded with every dependency-declared
+permission; and that both artifact baselines and the profile-aware verifier exist.
 
 It cannot prove the merged manifest, because the Maven AARs are not present locally.
 That is what `scripts/ci/play-artifact-permissions-verify.sh` is for — run it against
-the built artifact before uploading:
+the built artifact before uploading, with the matching profile:
 
 ```
-scripts/ci/play-artifact-permissions-verify.sh path/to/app.aab
+scripts/ci/play-artifact-permissions-verify.sh --profile store-mvp path/to/app.aab
+scripts/ci/play-artifact-permissions-verify.sh --profile full      path/to/internal.apk
 ```
 
-It diffs `aapt2`/`bundletool` output against `docs/play/expected-release-permissions.txt`
-and fails on any unexplained addition or removal. Run against the build 6 APK it reports
-exactly the three permissions removed here, which is how the baseline was confirmed to
-be measuring something real.
+It diffs `aapt2`/`bundletool` output against `docs/play/expected-release-permissions-store-mvp.txt`
+or `docs/play/expected-release-permissions-full.txt` and fails on any unexplained addition
+or removal. Passing the wrong `--profile` is a distinct failure mode, not a false pass: the
+POST_NOTIFICATIONS delta between profiles means the two baselines can never match the same
+artifact.
 
 ## Still to verify on the next build
 

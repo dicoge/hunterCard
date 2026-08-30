@@ -93,53 +93,55 @@ to change in the same release.
 
 ## Graphics
 
-All committed under `docs/play/store-listing/`.
+Committed under `docs/play/store-listing/`. Format contract (asserted by
+`npm run test:play-store-assets`, wired into CI):
 
 | Asset | Play requirement | File | Actual |
 | --- | --- | --- | --- |
-| App icon | 512×512 PNG, 32-bit | `icon-512.png` | 512×512 |
-| Feature graphic | 1024×500 PNG or JPEG | `feature-graphic-1024x500.png` | 1024×500 |
-| Phone screenshot 1 | 16:9–9:16, 320–3840 px | `phone-01-home.png` | 1080×1920 |
-| Phone screenshot 2 | " | `phone-02-search-results.png` | 1080×1920 |
-| Phone screenshot 3 | " | `phone-03-card-detail.png` | 1080×1920 |
-| Phone screenshot 4 | " | `phone-04-features.png` | 1080×1920 |
+| App icon | 512×512 PNG, **32-bit RGBA** (IHDR colour type 6) | `icon-512.png` | 512×512, RGBA |
+| Feature graphic | 1024×500 PNG or JPEG, **24-bit RGB** (colour type 2) | `feature-graphic-1024x500.png` | 1024×500, RGB |
+| Phone screenshot 1 | 16:9–9:16, 320–3840 px, **24-bit RGB** (colour type 2) | `phone-01-home.png` | 1080×1920, RGB |
 
-Play requires a minimum of two phone screenshots; four are supplied.
-
-> **The four committed screenshots are invalidated by DIC-1256 and must be recaptured.**
-> They were taken from the build 6 APK, which still had every feature the review build is
-> losing:
+> **Screenshots are one file short of the Play minimum, on purpose.** Play requires two phone
+> screenshots at submission; only one is committed. `phone-02-search-results.png`,
+> `phone-03-card-detail.png` and `phone-04-features.png` were captured from the build 6 APK
+> and showed features DIC-1256 removes from the review build (secondary-market prices, the
+> 市場數據 section, the 收藏 / 入手提醒 drawer entries). The CR (DIC-1257) requires that
+> invalidated screenshots be replaced from the slim production-profile surface rather than
+> re-cropped or re-encoded from the wrong build, so they are deleted. Capture the missing
+> two — plus a fresh `phone-01-home.png` for consistency — from the DIC-1256 store build
+> before submitting.
 >
-> | File | Shows | Status |
-> | --- | --- | --- |
-> | `phone-01-home.png` | Home screen, set browser | **Still valid** — nothing on it is being removed |
-> | `phone-02-search-results.png` | Search results with `NT$` prices on every row | **Invalid** — prices are removed |
-> | `phone-03-card-detail.png` | Card detail including the whole 市場數據 section | **Invalid** — market data is removed |
-> | `phone-04-features.png` | Navigation drawer listing 收藏 and 掃描卡牌 | **Invalid** — 收藏 and 入手提醒 are removed from the drawer |
+> **Capture recipe** (unchanged): `adb exec-out screencap -p` from the `com.dicoge.holohunter`
+> store-mvp build running on an Android 16 (API 36) emulator at 1080x2400, cropped to
+> 1080x1920 because the raw 9:20 device aspect falls outside Play's 16:9–9:16 range. Good
+> candidates in the slimmed build: home, search results, a card detail page, the deck
+> editor, and the rules tutorial.
 >
-> Play requires a minimum of two phone screenshots, and only one survives. Recapture from the
-> DIC-1256 store build before submitting — the same emulator method works: `adb exec-out
-> screencap -p`, then crop 1080x2400 to 1080x1920, because the raw 9:20 device aspect falls
-> outside Play's accepted range. Good candidates in the slimmed build: home, search results,
-> a card detail page, the deck editor, and the rules tutorial.
+> **Colour format** matters as much as dimensions. `adb screencap -p` writes 8-bit RGBA;
+> Play requires 24-bit RGB for phone screenshots. After capturing, drop each new PNG into
+> `docs/play/store-listing/` and run:
+>
+> ```
+> node scripts/generate-play-store-assets.mjs --recode-screenshots
+> ```
+>
+> That re-encodes every `phone-*.png` in-place, preserving pixel content while stripping the
+> alpha channel. `npm run test:play-store-assets` will fail the build if any surface still
+> carries the wrong IHDR colour type.
 
-**Provenance of the existing screenshots.** Captured with `adb exec-out screencap -p` from the
-`com.dicoge.holohunter` build 6 APK running on an Android 16 (API 36) emulator at 1080x2400,
-then cropped to 1080x1920. They are unretouched captures of real screens showing real card
-data — no mockups, no composited device frames, no invented content. That method is what
-should be reused; only the build they came from is now wrong.
-
-**The feature graphic and icon are unaffected.** Rerun
+**The feature graphic and icon are unaffected by DIC-1256.** Rerun
 `node scripts/generate-play-store-assets.mjs` after any wording or palette change. The graphic
 uses the app icon's navy-and-gold palette, carries a 非官方 · UNOFFICIAL badge, names no
 feature, and deliberately contains no card artwork — so nothing on it is invalidated by the
-slim-down.
+slim-down. The generator is pure Node.js (pngjs + puppeteer) and produces the exact colour
+types this document lists on both macOS and CI Linux.
 
-> **IP risk worth a decision.** Screenshots 2 and 3 contain hololive card artwork, which is
-> COVER Corporation's intellectual property. This is normal and hard to avoid for a card
-> companion app, and the listing is explicit that the app is unofficial — but it is a real
-> takedown vector for fan-made tools. Screenshots 1 and 4 contain no card art. If the owner
-> wants the minimum-risk listing, ship 1 and 4 only; Play's minimum of two is still met.
+> **IP risk worth a decision.** The invalidated screenshots that showed hololive card
+> artwork were `phone-02-search-results.png` and `phone-03-card-detail.png`, which contained
+> COVER Corporation's intellectual property. When recapturing, the minimum-risk listing is
+> two screenshots that contain no card art — e.g. home and a features/drawer view. Play's
+> minimum of two is still met.
 
 ## Other listing fields
 

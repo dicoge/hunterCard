@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Play release manifest permission invariants (DIC-1248).
+ * Play release manifest permission invariants (DIC-1248 / DIC-1259).
  *
  * The failure this guards against: shipping an AAB to Google Play whose merged
  * manifest requests a permission nobody can justify. versionCode 6 did exactly
@@ -13,27 +13,37 @@
  * cross-checks it against the Data safety form, so a vestigial permission is
  * both a review risk and a lie in the questionnaire.
  *
+ * DIC-1259 extends this to POST_NOTIFICATIONS: the Store-MVP Play submission
+ * profile compiles the push-alerts feature out (FEATURES.pushAlerts = !STORE_MVP,
+ * src/config/releaseFlags.ts:52), so the permission has nothing behind it in
+ * the submitted artifact. app.config.js adds it to blockedPermissions when
+ * EXPO_PUBLIC_STORE_MVP=1, and this gate asserts both profiles independently,
+ * with per-profile baseline files rather than one shared file — an unrelated
+ * profile-specific mutation must not silently pass.
+ *
  * A permission cannot be "removed" by deleting a line — it is contributed by a
  * dependency's own AndroidManifest.xml and merged in by Gradle. The only
  * removal mechanism is `expo.android.blockedPermissions`, which emits
  * `tools:node="remove"`. So the invariant asserted here is a contract between
  * three things that drift apart independently:
  *
- *   1. Configuration — app.base.json declares the allowlist and the blocklist.
+ *   1. Configuration — app.base.json declares the base allowlist and the
+ *      always-blocked list; app.config.js layers the store-mvp-only additions
+ *      on top when the profile env var is set.
  *   2. Attribution — every permission any installed dependency can contribute
  *      is CLASSIFIED below with the reason it is kept or blocked. A new
  *      dependency that drags in an unclassified permission fails the gate
  *      rather than silently widening the manifest.
  *   3. Behaviour — Expo's own Permissions plugin is executed against a
- *      synthetic manifest seeded with every dependency-declared permission, and
- *      the emitted document is asserted. Text assertions on app.base.json
- *      cannot see a change in Expo's removal semantics; this layer can.
+ *      synthetic manifest seeded with every dependency-declared permission,
+ *      once per profile, and the emitted document is asserted.
  *
  * What this gate CANNOT do: prove the final merged manifest. That is produced
  * by Gradle during the EAS build from Maven AARs (firebase-messaging,
  * ShortcutBadger, androidx) which are not present in node_modules. The merged
- * result is verified against the checked-in baseline by
- * scripts/ci/play-artifact-permissions-verify.sh, run on the built artifact.
+ * result is verified against the profile-matched baseline by
+ * scripts/ci/play-artifact-permissions-verify.sh --profile <store-mvp|full>,
+ * run on the built artifact.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -55,11 +65,21 @@ function check(label, fn) {
 
 const ALLOWED = ['android.permission.CAMERA'];
 
-const BLOCKED = [
+// Permissions blocked in every profile — inherent problems (unused legacy
+// storage / a debug-only overlay) that no build should ever ship.
+const ALWAYS_BLOCKED = [
   'android.permission.RECORD_AUDIO',
   'android.permission.SYSTEM_ALERT_WINDOW',
   'android.permission.READ_EXTERNAL_STORAGE',
   'android.permission.WRITE_EXTERNAL_STORAGE',
+];
+
+// Permissions blocked ONLY in the store-mvp Play submission profile. These
+// are kept for internal/dev builds where the feature behind them is compiled
+// in, but stripped for the artifact Play sees so the merged manifest matches
+// the shipping surface.
+const STORE_MVP_ONLY_BLOCKED = [
+  'android.permission.POST_NOTIFICATIONS',
 ];
 
 /**
@@ -78,8 +98,9 @@ const CLASSIFICATION = {
     reason: 'Card search, price data and auth all call the HTTPS API.',
   },
   'android.permission.POST_NOTIFICATIONS': {
-    decision: 'keep',
-    reason: 'Android 13+ runtime prompt for watchlist price-alert notifications.',
+    decision: 'store-mvp-blocked',
+    reason:
+      'Android 13+ runtime prompt for watchlist price-alert notifications. Kept in the FULL profile where the feature is compiled in; blocked in STORE-MVP where FEATURES.pushAlerts=!STORE_MVP disables push and the permission would be a runtime prompt for a code path that cannot fire.',
   },
   'android.permission.RECEIVE_BOOT_COMPLETED': {
     decision: 'keep',
@@ -154,7 +175,8 @@ const SCAN_ANCHORS = [
   'react-native',
 ];
 
-const BASELINE_PATH = 'docs/play/expected-release-permissions.txt';
+const BASELINE_PATH_STORE_MVP = 'docs/play/expected-release-permissions-store-mvp.txt';
+const BASELINE_PATH_FULL = 'docs/play/expected-release-permissions-full.txt';
 const ARTIFACT_VERIFIER = 'scripts/ci/play-artifact-permissions-verify.sh';
 
 // ------------------------------------------------------------------- helpers
@@ -195,10 +217,30 @@ function declaredPermissions(manifestSource) {
 
 // ------------------------------------------------- layer 1: app configuration
 
-process.stdout.write('\nLayer 1 — app.base.json permission contract\n');
+process.stdout.write('\nLayer 1 — app.base.json + app.config.js permission contract\n');
 
 const appBase = readJson('app.base.json');
 const android = appBase.expo.android;
+
+// app.config.js decides the store-mvp additions from process.env. Reload it
+// twice with the env var pinned so the profile-conditional path is exercised
+// deterministically here rather than depending on the shell it was invoked in.
+function resolveAppConfigForProfile(storeMvp) {
+  const previous = process.env.EXPO_PUBLIC_STORE_MVP;
+  process.env.EXPO_PUBLIC_STORE_MVP = storeMvp ? '1' : '0';
+  delete require.cache[require.resolve(path.join(ROOT, 'app.config.js'))];
+  try {
+    const mod = require(path.join(ROOT, 'app.config.js'));
+    const config = mod();
+    return { config, module: mod };
+  } finally {
+    if (previous === undefined) delete process.env.EXPO_PUBLIC_STORE_MVP;
+    else process.env.EXPO_PUBLIC_STORE_MVP = previous;
+  }
+}
+
+const storeMvpProfile = resolveAppConfigForProfile(true);
+const fullProfile = resolveAppConfigForProfile(false);
 
 check('android.permissions is exactly the justified allowlist', () => {
   assert.deepEqual(
@@ -208,22 +250,83 @@ check('android.permissions is exactly the justified allowlist', () => {
   );
 });
 
-check('android.blockedPermissions removes every permission marked blocked', () => {
+check('app.base.json blockedPermissions covers every always-blocked entry', () => {
   const blockedInConfig = new Set(android.blockedPermissions ?? []);
-  for (const permission of BLOCKED) {
+  for (const permission of ALWAYS_BLOCKED) {
     assert.ok(
       blockedInConfig.has(permission),
-      `${permission} is classified blocked but is missing from expo.android.blockedPermissions — it will merge into the release manifest`,
+      `${permission} is classified always-blocked but is missing from app.base.json expo.android.blockedPermissions — it will merge into every profile's release manifest`,
     );
   }
 });
 
+check('app.base.json blockedPermissions does not contain store-mvp-only entries', () => {
+  const blockedInConfig = new Set(android.blockedPermissions ?? []);
+  for (const permission of STORE_MVP_ONLY_BLOCKED) {
+    assert.ok(
+      !blockedInConfig.has(permission),
+      `${permission} is store-mvp-only and must live in app.config.js, not app.base.json — otherwise it would also be blocked for full/internal builds where the feature is compiled in`,
+    );
+  }
+});
+
+check('app.config.js store-mvp profile blocks every store-mvp-only permission on top of app.base.json', () => {
+  const merged = new Set(storeMvpProfile.config.expo.android.blockedPermissions ?? []);
+  for (const permission of ALWAYS_BLOCKED) {
+    assert.ok(
+      merged.has(permission),
+      `${permission} is always-blocked but missing from the resolved store-mvp android.blockedPermissions`,
+    );
+  }
+  for (const permission of STORE_MVP_ONLY_BLOCKED) {
+    assert.ok(
+      merged.has(permission),
+      `${permission} is store-mvp-only but was not added by app.config.js — the profile-conditional block is broken`,
+    );
+  }
+});
+
+check('app.config.js full profile blocks only always-blocked permissions', () => {
+  const merged = new Set(fullProfile.config.expo.android.blockedPermissions ?? []);
+  for (const permission of ALWAYS_BLOCKED) {
+    assert.ok(
+      merged.has(permission),
+      `${permission} is always-blocked but missing from the resolved full-profile android.blockedPermissions`,
+    );
+  }
+  for (const permission of STORE_MVP_ONLY_BLOCKED) {
+    assert.ok(
+      !merged.has(permission),
+      `${permission} is store-mvp-only and must not appear in the full profile — that would strip the permission from internal builds where the feature is compiled in`,
+    );
+  }
+});
+
+check('app.config.js declares its store-mvp addition set explicitly', () => {
+  assert.deepEqual(
+    [...(storeMvpProfile.module.STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS ?? [])].sort(),
+    [...STORE_MVP_ONLY_BLOCKED].sort(),
+    'app.config.js STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS must match this test\'s STORE_MVP_ONLY_BLOCKED — divergence means the test and the config disagree about what the profile ships',
+  );
+});
+
 check('every blocked permission is classified, and no permission is both allowed and blocked', () => {
-  for (const permission of BLOCKED) {
+  for (const permission of ALWAYS_BLOCKED) {
     assert.equal(
       CLASSIFICATION[permission]?.decision,
       'blocked',
-      `${permission} is in BLOCKED but not classified as blocked`,
+      `${permission} is in ALWAYS_BLOCKED but not classified as blocked`,
+    );
+    assert.ok(
+      !ALLOWED.includes(permission),
+      `${permission} cannot be both requested and blocked`,
+    );
+  }
+  for (const permission of STORE_MVP_ONLY_BLOCKED) {
+    assert.equal(
+      CLASSIFICATION[permission]?.decision,
+      'store-mvp-blocked',
+      `${permission} is in STORE_MVP_ONLY_BLOCKED but not classified as store-mvp-blocked`,
     );
     assert.ok(
       !ALLOWED.includes(permission),
@@ -235,7 +338,7 @@ check('every blocked permission is classified, and no permission is both allowed
 check('every classification carries a reason', () => {
   for (const [permission, entry] of Object.entries(CLASSIFICATION)) {
     assert.ok(
-      ['keep', 'blocked'].includes(entry.decision),
+      ['keep', 'blocked', 'store-mvp-blocked'].includes(entry.decision),
       `${permission} has an unknown decision "${entry.decision}"`,
     );
     assert.ok(
@@ -308,7 +411,7 @@ check('no sensitive or legacy permission is silently inherited', () => {
         (android.blockedPermissions ?? []).includes(permission),
         `${permission} is sensitive and classified blocked but not in blockedPermissions`,
       );
-    } else {
+    } else if (entry.decision === 'keep') {
       assert.ok(
         (android.permissions ?? []).includes(permission),
         `${permission} is sensitive and kept, so it must be declared explicitly in expo.android.permissions ` +
@@ -332,108 +435,121 @@ check('SYSTEM_ALERT_WINDOW is still only a debug-manifest contribution', () => {
 
 // -------------------------------------------------- layer 3: Expo behaviour
 
-process.stdout.write('\nLayer 3 — Expo removal behaviour on a seeded manifest\n');
+process.stdout.write('\nLayer 3 — Expo removal behaviour on a seeded manifest (per profile)\n');
 
 const { AndroidConfig } = require('@expo/config-plugins');
 const { Permissions } = AndroidConfig;
 
-// Seed with everything any dependency can contribute, so the assertions below
-// describe what Gradle would be handed — not a manifest we curated to pass.
-const seeded = {
-  manifest: {
-    'uses-permission': [...contributedBy.keys()].map((name) => ({
-      $: { 'android:name': name },
-    })),
-  },
-};
+function runExpoPermissionsForProfile(profileName, resolvedAndroid) {
+  // Seed with everything any dependency can contribute, so the assertions
+  // describe what Gradle would be handed — not a manifest we curated to pass.
+  const seeded = {
+    manifest: {
+      'uses-permission': [...contributedBy.keys()].map((name) => ({
+        $: { 'android:name': name },
+      })),
+    },
+  };
 
-Permissions.setAndroidPermissions({ android: { permissions: android.permissions } }, seeded);
-Permissions.addBlockedPermissions(seeded, android.blockedPermissions);
-
-const emitted = new Map(
-  seeded.manifest['uses-permission'].map((entry) => [entry.$['android:name'], entry.$]),
-);
-
-check('Expo emits tools:node="remove" for every blocked permission', () => {
-  for (const permission of BLOCKED) {
-    const attributes = emitted.get(permission);
-    assert.ok(attributes, `${permission} disappeared from the manifest instead of being marked for removal`);
-    assert.equal(
-      attributes['tools:node'],
-      'remove',
-      `${permission} must carry tools:node="remove"; without it Gradle merges the dependency declaration back in`,
-    );
-  }
-});
-
-check('kept permissions survive the transformation unmarked', () => {
-  for (const permission of ALLOWED) {
-    const attributes = emitted.get(permission);
-    assert.ok(attributes, `${permission} must be present in the emitted manifest`);
-    assert.notEqual(
-      attributes['tools:node'],
-      'remove',
-      `${permission} is required by the scan feature and must not be removed`,
-    );
-  }
-});
-
-check('a permission absent from the blocklist is left intact — the gate is not removing everything', () => {
-  const kept = [...contributedBy.keys()].filter(
-    (permission) => CLASSIFICATION[permission].decision === 'keep',
+  Permissions.setAndroidPermissions(
+    { android: { permissions: resolvedAndroid.permissions } },
+    seeded,
   );
-  assert.ok(kept.length > 0, 'expected at least one kept dependency permission to assert against');
-  for (const permission of kept) {
-    assert.notEqual(
-      emitted.get(permission)?.['tools:node'],
-      'remove',
-      `${permission} is classified keep but was marked for removal`,
-    );
-  }
-});
+  Permissions.addBlockedPermissions(seeded, resolvedAndroid.blockedPermissions);
+
+  const emitted = new Map(
+    seeded.manifest['uses-permission'].map((entry) => [entry.$['android:name'], entry.$]),
+  );
+
+  const expectedBlocked =
+    profileName === 'store-mvp'
+      ? [...ALWAYS_BLOCKED, ...STORE_MVP_ONLY_BLOCKED]
+      : [...ALWAYS_BLOCKED];
+
+  check(`[${profileName}] Expo emits tools:node="remove" for every blocked permission`, () => {
+    for (const permission of expectedBlocked) {
+      const attributes = emitted.get(permission);
+      assert.ok(
+        attributes,
+        `${permission} disappeared from the manifest instead of being marked for removal`,
+      );
+      assert.equal(
+        attributes['tools:node'],
+        'remove',
+        `${permission} must carry tools:node="remove"; without it Gradle merges the dependency declaration back in`,
+      );
+    }
+  });
+
+  check(`[${profileName}] kept permissions survive the transformation unmarked`, () => {
+    for (const permission of ALLOWED) {
+      const attributes = emitted.get(permission);
+      assert.ok(attributes, `${permission} must be present in the emitted manifest`);
+      assert.notEqual(
+        attributes['tools:node'],
+        'remove',
+        `${permission} is required by the scan feature and must not be removed`,
+      );
+    }
+    if (profileName === 'full') {
+      // POST_NOTIFICATIONS is a dependency-contributed permission that is only
+      // blocked in store-mvp — in full it should reach the manifest untouched.
+      for (const permission of STORE_MVP_ONLY_BLOCKED) {
+        const attributes = emitted.get(permission);
+        assert.ok(
+          attributes,
+          `${permission} disappeared from the full-profile manifest — it must survive since it is only stripped for store-mvp`,
+        );
+        assert.notEqual(
+          attributes['tools:node'],
+          'remove',
+          `${permission} is kept in the full profile and must not be marked for removal`,
+        );
+      }
+    }
+  });
+
+  check(`[${profileName}] a permission absent from the blocklist is left intact — the gate is not removing everything`, () => {
+    const blockedSet = new Set(expectedBlocked);
+    const kept = [...contributedBy.keys()].filter((permission) => !blockedSet.has(permission));
+    assert.ok(kept.length > 0, 'expected at least one kept dependency permission to assert against');
+    for (const permission of kept) {
+      assert.notEqual(
+        emitted.get(permission)?.['tools:node'],
+        'remove',
+        `${permission} is not in the profile blocklist but was marked for removal`,
+      );
+    }
+  });
+}
+
+runExpoPermissionsForProfile('store-mvp', storeMvpProfile.config.expo.android);
+runExpoPermissionsForProfile('full', fullProfile.config.expo.android);
 
 // ------------------------------------------------ layer 4: artifact baseline
 
-process.stdout.write('\nLayer 4 — built-artifact baseline and verifier\n');
+process.stdout.write('\nLayer 4 — built-artifact baselines and verifier (per profile)\n');
 
-function baselinePermissions() {
+function readBaseline(relPath) {
   return fs
-    .readFileSync(path.join(ROOT, BASELINE_PATH), 'utf8')
+    .readFileSync(path.join(ROOT, relPath), 'utf8')
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
 }
 
-check(`${BASELINE_PATH} exists and is a sorted, unique permission list`, () => {
-  const lines = baselinePermissions();
-  assert.ok(lines.length > 0, `${BASELINE_PATH} lists no permissions`);
-  assert.deepEqual(
-    lines,
-    [...new Set(lines)].sort(),
-    `${BASELINE_PATH} must be sorted and free of duplicates so a diff against aapt2 output is readable`,
-  );
-  for (const permission of BLOCKED) {
-    assert.ok(
-      !lines.includes(permission),
-      `${permission} is blocked in app.base.json but still expected in ${BASELINE_PATH}`,
-    );
-  }
-  for (const permission of ALLOWED) {
-    assert.ok(lines.includes(permission), `${permission} is requested but missing from ${BASELINE_PATH}`);
-  }
-});
-
 /**
- * The baseline is the ONLY control the artifact verifier diffs against, which makes it
- * the weak point of the whole scheme: quietly adding a line here would let a real
- * permission through the artifact check unnoticed. So the baseline's own contents are
- * constrained, not merely its formatting.
+ * The baselines are the ONLY control the artifact verifier diffs against, which
+ * makes them the weak point of the whole scheme: quietly adding a line here
+ * would let a real permission through the artifact check unnoticed. So the
+ * baseline's own contents are constrained, not merely its formatting.
  *
- * Every platform permission it lists must be one the app requests, one classified `keep`,
- * or one of the normal-level permissions the notification stack's Maven AARs contribute.
- * Vendor-namespaced entries (launcher badges, Firebase, the app's own androidx-scoped
- * receiver permission) are matched by prefix because they are numerous and all
- * normal-level — `permissions.md` attributes them.
+ * Every platform permission a baseline lists must be one the app requests, one
+ * classified `keep` (or `store-mvp-blocked` when checking the full baseline),
+ * or one of the normal-level permissions the notification stack's Maven AARs
+ * contribute. Vendor-namespaced entries (launcher badges, Firebase, the app's
+ * own androidx-scoped receiver permission) are matched by prefix because they
+ * are numerous and all normal-level — `permissions.md` attributes them.
  */
 const INHERITED_NORMAL = new Set([
   'android.permission.INTERNET',
@@ -442,7 +558,6 @@ const INHERITED_NORMAL = new Set([
   'android.permission.VIBRATE',
   'android.permission.READ_APP_BADGE',
   'android.permission.RECEIVE_BOOT_COMPLETED',
-  'android.permission.POST_NOTIFICATIONS',
 ]);
 
 const VENDOR_PREFIXES = [
@@ -459,34 +574,78 @@ const VENDOR_PREFIXES = [
   'com.dicoge.holohunter.',
 ];
 
-check(`${BASELINE_PATH} cannot be padded with an unjustified permission`, () => {
-  for (const permission of baselinePermissions()) {
-    if (ALLOWED.includes(permission)) continue;
-    if (INHERITED_NORMAL.has(permission)) continue;
-    if (CLASSIFICATION[permission]?.decision === 'keep') continue;
-    if (VENDOR_PREFIXES.some((prefix) => permission.startsWith(prefix))) continue;
-    assert.fail(
-      `${BASELINE_PATH} expects ${permission}, which is neither requested by the app, classified ` +
-        'as kept, nor a known normal-level contribution. The baseline is what the artifact ' +
-        'verifier trusts, so adding a line here silently widens what the release may request. ' +
-        'Justify it in CLASSIFICATION or in INHERITED_NORMAL, with the reason, before listing it.',
-    );
-  }
-});
+function assertBaseline(profileName, baselinePath) {
+  const relevantAlwaysBlocked = new Set(ALWAYS_BLOCKED);
+  const relevantStoreMvpBlocked = new Set(STORE_MVP_ONLY_BLOCKED);
+  const lines = readBaseline(baselinePath);
 
-check(`${BASELINE_PATH} never expects a sensitive permission the app does not request`, () => {
-  for (const permission of baselinePermissions()) {
-    if (!SENSITIVE_OR_LEGACY.has(permission)) continue;
-    assert.ok(
-      ALLOWED.includes(permission),
-      `${permission} is sensitive and appears in ${BASELINE_PATH} without being requested in ` +
-        'expo.android.permissions. A sensitive permission must never be tolerated by the ' +
-        'artifact verifier unless the app deliberately asks for it.',
+  check(`${baselinePath} exists and is a sorted, unique permission list`, () => {
+    assert.ok(lines.length > 0, `${baselinePath} lists no permissions`);
+    assert.deepEqual(
+      lines,
+      [...new Set(lines)].sort(),
+      `${baselinePath} must be sorted and free of duplicates so a diff against aapt2 output is readable`,
     );
-  }
-});
+    for (const permission of relevantAlwaysBlocked) {
+      assert.ok(
+        !lines.includes(permission),
+        `${permission} is blocked in every profile but still expected in ${baselinePath}`,
+      );
+    }
+    if (profileName === 'store-mvp') {
+      for (const permission of relevantStoreMvpBlocked) {
+        assert.ok(
+          !lines.includes(permission),
+          `${permission} is blocked for the store-mvp profile but still expected in ${baselinePath}`,
+        );
+      }
+    } else {
+      for (const permission of relevantStoreMvpBlocked) {
+        assert.ok(
+          lines.includes(permission),
+          `${permission} is retained for the full profile but missing from ${baselinePath}`,
+        );
+      }
+    }
+    for (const permission of ALLOWED) {
+      assert.ok(lines.includes(permission), `${permission} is requested but missing from ${baselinePath}`);
+    }
+  });
 
-check(`${ARTIFACT_VERIFIER} exists, is executable and reads the baseline`, () => {
+  check(`${baselinePath} cannot be padded with an unjustified permission`, () => {
+    for (const permission of lines) {
+      if (ALLOWED.includes(permission)) continue;
+      if (INHERITED_NORMAL.has(permission)) continue;
+      const classification = CLASSIFICATION[permission];
+      if (classification?.decision === 'keep') continue;
+      if (classification?.decision === 'store-mvp-blocked' && profileName === 'full') continue;
+      if (VENDOR_PREFIXES.some((prefix) => permission.startsWith(prefix))) continue;
+      assert.fail(
+        `${baselinePath} expects ${permission}, which is neither requested by the app, classified ` +
+          'as kept, retained for this profile, nor a known normal-level contribution. The baseline is what ' +
+          'the artifact verifier trusts, so adding a line here silently widens what the release may request. ' +
+          'Justify it in CLASSIFICATION or in INHERITED_NORMAL, with the reason, before listing it.',
+      );
+    }
+  });
+
+  check(`${baselinePath} never expects a sensitive permission the app does not request`, () => {
+    for (const permission of lines) {
+      if (!SENSITIVE_OR_LEGACY.has(permission)) continue;
+      assert.ok(
+        ALLOWED.includes(permission),
+        `${permission} is sensitive and appears in ${baselinePath} without being requested in ` +
+          'expo.android.permissions. A sensitive permission must never be tolerated by the ' +
+          'artifact verifier unless the app deliberately asks for it.',
+      );
+    }
+  });
+}
+
+assertBaseline('store-mvp', BASELINE_PATH_STORE_MVP);
+assertBaseline('full', BASELINE_PATH_FULL);
+
+check(`${ARTIFACT_VERIFIER} exists, is executable, requires a profile, and reads both baselines`, () => {
   const full = path.join(ROOT, ARTIFACT_VERIFIER);
   const source = fs.readFileSync(full, 'utf8');
   assert.ok(
@@ -494,8 +653,16 @@ check(`${ARTIFACT_VERIFIER} exists, is executable and reads the baseline`, () =>
     `${ARTIFACT_VERIFIER} must be executable or CI cannot invoke it`,
   );
   assert.ok(
-    source.includes(BASELINE_PATH.split('/').pop()),
-    `${ARTIFACT_VERIFIER} must compare against ${BASELINE_PATH}`,
+    source.includes(BASELINE_PATH_STORE_MVP.split('/').pop()),
+    `${ARTIFACT_VERIFIER} must reference ${BASELINE_PATH_STORE_MVP}`,
+  );
+  assert.ok(
+    source.includes(BASELINE_PATH_FULL.split('/').pop()),
+    `${ARTIFACT_VERIFIER} must reference ${BASELINE_PATH_FULL}`,
+  );
+  assert.ok(
+    /--profile/.test(source),
+    `${ARTIFACT_VERIFIER} must accept a --profile argument so the caller cannot compare against the wrong baseline by accident`,
   );
   assert.ok(
     source.includes('aapt2'),

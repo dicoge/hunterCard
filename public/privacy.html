@@ -265,7 +265,6 @@
     <header>
       <h1 class="logo-glow">HoloHunter</h1>
       <div class="subtitle">Privacy Policy / 隱私權政策</div>
-      <div style="display:inline-block; background:rgba(99,102,241,0.2); border:1px solid #6366f1; color:#a5b4fc; font-size:0.8rem; font-weight:700; padding:4px 12px; border-radius:12px; margin-top:8px;">【工程審核草案 / Engineering Review Draft】</div>
     </header>
 
     <div class="lang-toggle-container">
@@ -281,7 +280,7 @@
 
       <div class="danger-card">
         <p><strong>目前版本狀態：</strong> <strong>Google 帳號登入與雲端帳號已實際運作</strong>：登入會向 Google 取得您的 ID Token，並在我們的後端（Vercel KV）建立一筆雲端帳號紀錄。收藏、牌組、價格提醒與設定會在您登入時同步到該帳號。因此<strong>確實存在儲存於雲端、可被刪除的個人資料</strong>，刪除方式見第 5 節。</p>
-        <p><strong>尚未實作的部分：</strong>本 App <strong>目前沒有任何付費或訂閱機制</strong>——沒有串接 App Store、Google Play Billing 或任何第三方金流，不會處理付款、不會收費，也<strong>不會取得或儲存任何交易代碼與財務資料</strong>。App 內亦<strong>未啟用任何廣告或分析追蹤 SDK</strong>。Android 版的 Apple ID 登入預設為關閉。凡下方標示為「未來正式版」的段落皆為規劃藍圖，並非現況。</p>
+        <p><strong>尚未實作的部分：</strong>本 App <strong>目前沒有任何付費或訂閱機制</strong>——沒有串接 App Store、Google Play Billing 或任何第三方金流，不會處理付款、不會收費，也<strong>不會取得或儲存任何交易代碼與財務資料</strong>。App 內亦<strong>未啟用任何廣告或分析追蹤 SDK</strong>。Android 版的 Apple ID 登入預設為關閉。凡下方標示為未來版本規劃的段落皆為藍圖，並非現況；若日後有變更，將在實裝前先更新本政策。</p>
       </div>
 
       <h2>1. 我們只支援第三方登入 (OAuth) 與訪客模式</h2>
@@ -307,7 +306,7 @@
         <li><strong>顯示名稱 (Display Name)</strong>：用於在 App 介面上提供個人化的歡迎資訊。</li>
         <li><strong>第三方帳號識別碼 (Provider User ID)</strong>：Google 或 Apple 提供的一串非敏感的唯一識別代碼。</li>
         <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：安全記錄您在當月所進行的卡牌掃描次數，用於實施免費版每月 100 次的額度控管與防竄改機制。</li>
-        <li><strong>付費訂閱狀態 (Subscription Status)</strong>：<strong>目前未實作。</strong>本 App 尚未串接任何金流，不會取得、傳輸或儲存交易代碼、購買紀錄、信用卡號或任何其他財務資料。此欄位為未來正式版的規劃，屆時將另行更新本政策。</li>
+        <li><strong>付費訂閱狀態 (Subscription Status)</strong>：<strong>目前未實作。</strong>本 App 尚未串接任何金流，不會取得、傳輸或儲存交易代碼、購買紀錄、信用卡號或任何其他財務資料。此欄位為未來版本規劃，屆時將先更新本政策再實裝。</li>
       </ul>
       
       <h3>資料用途說明：</h3>
@@ -349,10 +348,11 @@
       </div>
       <p>若您在 App 內無法完成刪除（例如已解除安裝），亦可寄信至上述地址並附上您登入所用的 Email 或 Internal User ID，由我們代為執行相同的級聯刪除。</p>
 
-      <h2>6. App Store / Google Play 行動商店規範合規（未來正式版）</h2>
-      <p>以下商店合規項目適用於本 App 未來串接真實金流與後端之後；目前模擬版本尚未實作真實訂閱與帳號刪除後端。</p>
+      <h2>6. App Store / Google Play 行動商店規範合規</h2>
+      <p>本節說明本 App 目前對應行動商店規範的實際情況。目前版本<strong>無任何金流或訂閱機制</strong>；帳號刪除後端<strong>已實作並上線</strong>（詳見第 5 節）。若未來新增訂閱功能，將於推出前先更新本政策再實裝。</p>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>：App 內的帳號刪除入口<strong>已在「設定」提供並實際串接後端</strong>（見第 5 節），另有電子郵件管道處理推播 Token 等無法自助刪除的項目。訂閱功能<strong>目前尚未推出</strong>；未來若推出，Android 版將依 Google Play 政策使用 Google Play Billing，屆時可在您的商店帳號設定中取消。</li>
+        <li><strong>App Store / Google Play 帳號刪除</strong>：App 內的帳號刪除入口<strong>已在「設定」提供並實際串接後端</strong>（見第 5 節），另有電子郵件管道處理推播 Token 等無法自助刪除的項目。</li>
+        <li><strong>訂閱與付費</strong>：目前<strong>沒有任何付費或訂閱機制</strong>——未串接 Google Play Billing、Apple StoreKit 或任何第三方金流，也不會展示任何 App 內購買 UI。未來若推出訂閱，Android 版將依 Google Play 政策使用 Google Play Billing（不會導向網頁付款頁），並在您的商店帳號設定中可自行取消；屆時會同步更新本政策、App 內揭露與 Google Play Data safety 表單。</li>
         <li><strong>Google Play Data Safety (資料安全)</strong>：
           <ul>
             <li>傳輸安全性：本 App 收集的所有資料皆透過安全的加密協定（HTTPS）傳輸，確保傳輸過程不被竊聽。</li>
@@ -378,7 +378,7 @@
 
       <div class="danger-card">
         <p><strong>Current Build Status:</strong> <strong>Google Sign-In and cloud accounts are live.</strong> Signing in obtains an ID token from Google and creates a cloud account record in our backend (Vercel KV). Your favorites, decks, price alerts, and settings sync to that account while you are signed in. There <strong>is</strong> therefore personal data stored in the cloud that can be deleted — see Section 5.</p>
-        <p><strong>Not implemented:</strong> the App has <strong>no payment or subscription mechanism at all</strong>. It is not connected to the App Store, Google Play Billing, or any third-party payment processor; it does not process payments, does not charge you, and <strong>does not obtain or store any transaction identifier or financial data</strong>. No advertising or analytics tracking SDK is enabled. Sign in with Apple is disabled by default on Android. Any paragraph below marked "Future production" is a planned blueprint, not the current state.</p>
+        <p><strong>Not implemented:</strong> the App has <strong>no payment or subscription mechanism at all</strong>. It is not connected to the App Store, Google Play Billing, or any third-party payment processor; it does not process payments, does not charge you, and <strong>does not obtain or store any transaction identifier or financial data</strong>. No advertising or analytics tracking SDK is enabled. Sign in with Apple is disabled by default on Android. Any paragraph below marked as a future plan is a blueprint, not the current state; if it changes, this policy is updated before the change ships.</p>
       </div>
 
       <h2>1. Third-Party Authentication Only (OAuth) & Guest Mode</h2>
@@ -404,7 +404,7 @@
         <li><strong>Display Name</strong>: Used to personalize greetings on the App interface.</li>
         <li><strong>Provider User ID</strong>: A non-sensitive unique ID string provided by Google or Apple.</li>
         <li><strong>Scan Usage & Quota Logs</strong>: Securely logs your monthly scan count to enforce the 100-scan monthly limit for the free tier and prevent local client tampering.</li>
-        <li><strong>Paid Subscription Status</strong>: <strong>Not implemented.</strong> The App is not connected to any payment processor and does not obtain, transmit, or store transaction identifiers, purchase history, credit card numbers, or any other financial data. This field describes a future production plan; we will update this policy before any of it takes effect.</li>
+        <li><strong>Paid Subscription Status</strong>: <strong>Not implemented.</strong> The App is not connected to any payment processor and does not obtain, transmit, or store transaction identifiers, purchase history, credit card numbers, or any other financial data. This field describes a future plan; we will update this policy before any of it takes effect.</li>
       </ul>
       
       <h3>How Data is Used:</h3>
@@ -446,10 +446,11 @@
       </div>
       <p>If you cannot complete deletion inside the App (for example, you already uninstalled it), email the same address with the email address you signed in with or your Internal User ID, and we will run the same cascade deletion on your behalf.</p>
 
-      <h2>6. App Store & Google Play Store Compliance (Future production)</h2>
-      <p>The following store-compliance items apply after the App integrates real billing and a backend; the current mock build does not yet implement real subscriptions or a deletion backend.</p>
+      <h2>6. App Store & Google Play Store Compliance</h2>
+      <p>This section describes the App's actual current alignment with app store policies. The current build has <strong>no payment or subscription mechanism of any kind</strong>; the account deletion backend <strong>is implemented and live</strong> (see Section 5). If subscriptions are ever added in a future release, this policy will be updated <strong>before</strong> the change ships.</p>
       <ul>
-        <li><strong>App Store Account Deletion & Subscriptions</strong>: the in-app account deletion entry point <strong>is already available in Settings and is wired to the backend</strong> (see Section 5), with an email channel for items that cannot be self-served, such as the push token. Subscriptions <strong>have not shipped</strong>; if they ever do, the Android build will use Google Play Billing in line with Google Play policy and will be cancellable from your store account settings.</li>
+        <li><strong>App Store / Google Play account deletion</strong>: the in-app account deletion entry point <strong>is available in Settings and is wired to the backend</strong> (see Section 5), with an email channel for items that cannot be self-served, such as the push token.</li>
+        <li><strong>Subscriptions and payments</strong>: the App has <strong>no payment or subscription mechanism of any kind</strong> today — it does not integrate Google Play Billing, Apple StoreKit or any third-party payment processor, and shows no in-app purchase UI. If subscriptions ship later, the Android build will use Google Play Billing per Google Play policy (never redirecting to a web checkout) and will be cancellable from your store account settings; this policy, the in-app disclosures and the Google Play Data safety form will be updated together at that point.</li>
         <li><strong>Google Play Data Safety</strong>:
           <ul>
             <li>Transit Security: All data collected is transmitted using secure encryption protocols (HTTPS) to prevent interception.</li>

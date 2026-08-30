@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 #
-# Verify the permissions a built release artifact actually requests (DIC-1248).
+# Verify the permissions a built release artifact actually requests
+# (DIC-1248 / DIC-1259).
 #
 # scripts/test-play-release-manifest.mjs asserts the *configuration* that should
 # produce a minimal manifest. It cannot assert the merged result: Gradle merges
 # Maven AARs that never appear in node_modules. This script closes that gap by
 # reading the merged manifest out of the artifact Play will receive and diffing
-# it against docs/play/expected-release-permissions.txt.
+# it against the profile-specific baseline in docs/play/.
 #
-# Run it on every release artifact before uploading to Play. An unexplained
-# addition means the manifest widened; an unexplained removal means a feature
-# lost its permission.
+# Two profiles produce two different merged manifests. The store-mvp Play
+# submission profile (`production` / `production-apk`, EXPO_PUBLIC_STORE_MVP=1)
+# blocks POST_NOTIFICATIONS at the app manifest layer because push alerts are
+# compiled out via FEATURES.pushAlerts. Everything else — internal/dev builds —
+# keeps it. The verifier must be run against the matching baseline, so profile
+# selection is required rather than assumed.
 #
 # Usage:
-#   scripts/ci/play-artifact-permissions-verify.sh path/to/app.aab
-#   scripts/ci/play-artifact-permissions-verify.sh path/to/app.apk
+#   scripts/ci/play-artifact-permissions-verify.sh --profile store-mvp path/to/app.aab
+#   scripts/ci/play-artifact-permissions-verify.sh --profile full     path/to/app.apk
 #
 # Requirements:
 #   .apk  -> aapt2 from the Android SDK build-tools
@@ -22,16 +26,56 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BASELINE="${ROOT}/docs/play/expected-release-permissions.txt"
 
 fail() {
   echo "FAIL: $*" >&2
   exit 1
 }
 
-ARTIFACT="${1:-}"
-[ -n "${ARTIFACT}" ] || fail "usage: $(basename "$0") <path-to-artifact.aab|.apk>"
+PROFILE=""
+ARTIFACT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profile)
+      PROFILE="${2:-}"
+      shift 2
+      ;;
+    --profile=*)
+      PROFILE="${1#--profile=}"
+      shift
+      ;;
+    -h|--help)
+      sed -n '2,25p' "$0" >&2
+      exit 0
+      ;;
+    -*)
+      fail "unknown flag: $1"
+      ;;
+    *)
+      [ -z "${ARTIFACT}" ] || fail "unexpected extra argument: $1"
+      ARTIFACT="$1"
+      shift
+      ;;
+  esac
+done
+
+[ -n "${PROFILE}" ] \
+  || fail "usage: $(basename "$0") --profile <store-mvp|full> <path-to-artifact.aab|.apk>"
+[ -n "${ARTIFACT}" ] \
+  || fail "usage: $(basename "$0") --profile <store-mvp|full> <path-to-artifact.aab|.apk>"
 [ -f "${ARTIFACT}" ] || fail "artifact not found: ${ARTIFACT}"
+
+case "${PROFILE}" in
+  store-mvp)
+    BASELINE="${ROOT}/docs/play/expected-release-permissions-store-mvp.txt"
+    ;;
+  full)
+    BASELINE="${ROOT}/docs/play/expected-release-permissions-full.txt"
+    ;;
+  *)
+    fail "unknown profile: ${PROFILE} (expected: store-mvp, full)"
+    ;;
+esac
 [ -f "${BASELINE}" ] || fail "baseline not found: ${BASELINE}"
 
 # Resolve aapt2: explicit override, PATH, then the newest installed build-tools.
@@ -84,6 +128,8 @@ actual_permissions | sort -u > "${WORK}/actual.txt"
 UNEXPECTED="$(comm -13 "${WORK}/expected.txt" "${WORK}/actual.txt")"
 MISSING="$(comm -23 "${WORK}/expected.txt" "${WORK}/actual.txt")"
 
+BASELINE_REL="${BASELINE#${ROOT}/}"
+
 if [ -n "${UNEXPECTED}" ]; then
   echo "Permissions present in the artifact but not in the baseline:" >&2
   echo "${UNEXPECTED}" | sed 's/^/  + /' >&2
@@ -94,7 +140,7 @@ if [ -n "${MISSING}" ]; then
 fi
 
 if [ -n "${UNEXPECTED}" ] || [ -n "${MISSING}" ]; then
-  fail "merged manifest does not match docs/play/expected-release-permissions.txt. Re-audit the change, then update the baseline in the same commit that explains it."
+  fail "merged manifest does not match ${BASELINE_REL} for profile '${PROFILE}'. Re-audit the change, then update the baseline in the same commit that explains it."
 fi
 
-echo "OK: $(wc -l < "${WORK}/actual.txt" | tr -d ' ') permissions match docs/play/expected-release-permissions.txt"
+echo "OK: $(wc -l < "${WORK}/actual.txt" | tr -d ' ') permissions match ${BASELINE_REL} (profile: ${PROFILE})"

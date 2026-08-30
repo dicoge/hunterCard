@@ -30,6 +30,7 @@
     "test:expo-native-compat": "node scripts/test-expo-native-module-compat.mjs",
     "test:release-apk-pipeline": "node scripts/test-release-apk-pipeline.mjs",
     "test:play-manifest": "node scripts/test-play-release-manifest.mjs",
+    "test:play-store-assets": "node scripts/test-play-store-assets.mjs",
     "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",
     "test:native-scan-no-upload": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-native-scan-no-image-upload.mjs",
     "test:google-signout": "node scripts/test-google-signout.cjs",

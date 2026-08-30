@@ -73,7 +73,7 @@ the DOM path works — but the web build is not what Play is asked about.
 | --- | --- | --- | --- | --- |
 | 1 | **Not the image** — a local `file://` path string | Every scan | `POST /api/recognize-card`, forwarded to Gemini as undecodable data | See the derivation above. Contains no user data; it is an app-private cache path. |
 | 2 | Google ID token (email, display name, avatar URL, Google subject ID) | Sign-in with Google | `POST /api/auth/login` → identity record in Vercel KV | `src/services/authService.ts:379-418`, `:822-826`; `api/_lib/identity-store.ts:44-53` |
-| 3 | ~~Expo push token + platform~~ — **does not happen in the review build** | Would be app launch, but `App.tsx:11` gates it on `FEATURES.pushAlerts` and `pushAlerts: !STORE_MVP` | — | `App.tsx:11`; `src/config/releaseFlags.ts:52`; `eas.json` sets `EXPO_PUBLIC_STORE_MVP=1` on both store profiles |
+| 3 | ~~Expo push token + platform~~ — **does not happen in the review build** | Would be app launch, but `App.tsx:11` gates it on `FEATURES.pushAlerts` and `pushAlerts: !STORE_MVP`; the manifest also strips `POST_NOTIFICATIONS` for this profile (DIC-1259) so the runtime prompt is gone | — | `App.tsx:11`; `src/config/releaseFlags.ts:52`; `eas.json` sets `EXPO_PUBLIC_STORE_MVP=1` on both store profiles; `app.config.js` adds `POST_NOTIFICATIONS` to `blockedPermissions` under that flag |
 | 4 | ~~Price-alert definitions~~ — **does not happen in the review build** | `watchlist: !STORE_MVP` removes the feature that creates them | — | `src/config/releaseFlags.ts:50` |
 | 5 | Account sync payload (favorites, decks, collection, price alerts, settings) | While signed in | `POST /api/auth/[action=sync]` → Vercel KV | `api/_lib/account-sync-store.ts` |
 | 6 | Session token | Session validation | `POST /api/auth/me` | `src/services/authService.ts:1025` |
@@ -139,13 +139,22 @@ A permission is not collection; answer No.
 | --- | --- |
 | Collected | **No — for the Play review build** |
 
-**Corrected 2026-08-30.** An earlier revision of this file declared the Expo push token as
-collected. That is true of a full build and **false of the artifact being submitted**.
-`App.tsx:11` gates `initPushNotifications()` on `FEATURES.pushAlerts`, and
-`pushAlerts: !STORE_MVP` (`src/config/releaseFlags.ts:52`). Both the `production` and
-`production-apk` profiles set `EXPO_PUBLIC_STORE_MVP=1` (`eas.json`), so in the submitted
-build the token is never requested, never uploaded, and `/api/push/register` is never
-called. `watchlist: !STORE_MVP` likewise means `/api/push/price-alerts` never fires.
+**Corrected 2026-08-30, reinforced by DIC-1259.** An earlier revision of this file declared
+the Expo push token as collected. That is true of a full build and **false of the artifact
+being submitted**. Two independent gates keep it false:
+
+1. **Code compiled out.** `App.tsx:11` gates `initPushNotifications()` on
+   `FEATURES.pushAlerts`, and `pushAlerts: !STORE_MVP` (`src/config/releaseFlags.ts:52`).
+   Both the `production` and `production-apk` profiles set `EXPO_PUBLIC_STORE_MVP=1`
+   (`eas.json`), so in the submitted build the token is never requested, never uploaded,
+   and `/api/push/register` is never called. `watchlist: !STORE_MVP` likewise means
+   `/api/push/price-alerts` never fires.
+2. **Permission stripped at the manifest layer.** `app.config.js` adds
+   `POST_NOTIFICATIONS` to `expo.android.blockedPermissions` when
+   `EXPO_PUBLIC_STORE_MVP=1`, so Gradle emits `tools:node="remove"` and the merged
+   manifest for the submitted artifact does not request it. The Play listing therefore
+   does not show a runtime prompt for a code path that cannot fire, and this Device IDs
+   answer stays consistent with what the shipping APK actually declares.
 
 Over-declaring is a mismatch in the same way under-declaring is, so answer No — and re-check
 this line if `EXPO_PUBLIC_STORE_MVP` is ever changed for a store profile, because the answer

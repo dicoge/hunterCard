@@ -47,8 +47,9 @@ issue requires.
 
 Static verification, all runnable locally:
 
-- [ ] `scripts/ci/play-artifact-permissions-verify.sh path/to/app.aab` passes.
-      Requires `bundletool` for an `.aab` (`brew install bundletool`).
+- [ ] `scripts/ci/play-artifact-permissions-verify.sh --profile store-mvp path/to/app.aab`
+      passes. Requires `bundletool` for an `.aab` (`brew install bundletool`). The Play AAB
+      is the store-mvp profile; the same script accepts `--profile full` for internal APKs.
 - [ ] Package name is `com.dicoge.holohunter`.
 - [ ] versionCode ≥ 7, versionName `1.0.0`.
 - [ ] targetSdk 36, minSdk 24.
