@@ -73,6 +73,7 @@
     "test:deck-collection": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-collection.mjs",
     "test:dic1086-ui": "node scripts/test-dic1086-collection-ui.mjs",
     "test:dic1155": "node --import ./scripts/register-web-render.mjs scripts/test-dic1155-mobile-deck-builder.mjs",
+    "test:dic1155-store-mvp": "EXPO_PUBLIC_STORE_MVP=1 node --import ./scripts/register-web-render.mjs scripts/test-dic1155-store-mvp-render.mjs && EXPO_PUBLIC_STORE_MVP=0 node --import ./scripts/register-web-render.mjs scripts/test-dic1155-store-mvp-render.mjs",
     "e2e:dic1086": "node scripts/verify-dic1086-production-e2e.mjs",
     "e2e:dic1117": "node scripts/verify-dic1117-production-e2e.mjs",
     "test:price-alerts": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-price-alerts.mjs",

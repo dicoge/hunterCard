@@ -229,9 +229,22 @@ check(
   /\{FEATURES\.marketData\s*&&\s*gap\s*&&\s*gap\.subtotals\.map/s.test(deckEditor)
     && /styles\.stickyTotalPriceBadge/.test(deckEditor),
 );
+// This one asserts an ABSENCE, so it cannot be written as "the element is still
+// there" — wrapping the badge in {FEATURES.marketData && ...} leaves that
+// substring intact and the check would stay green while Store MVP lost its
+// shortage count. It reads the badge container and requires no gate between the
+// container and the badge. test:dic1155-store-mvp renders the real screen under
+// both profiles and is the primary guard; this is the cheap static backstop.
+const stickyBadgeBlock = deckEditor.slice(
+  deckEditor.indexOf('<View style={styles.stickySummaryBadges}>'),
+  deckEditor.indexOf('styles.shortageCountBadge'),
+);
 check(
   'DeckEditorScreen: sticky shortage-count badge is NOT gated (retained in Store MVP)',
-  /<Text style=\{styles\.shortageCountBadge\} testID="shortage-count-title">/.test(deckEditor),
+  /<Text style=\{styles\.shortageCountBadge\} testID="shortage-count-title">/.test(deckEditor)
+    && deckEditor.includes('<View style={styles.stickySummaryBadges}>')
+    && !stickyBadgeBlock.includes('FEATURES.'),
+  'the shortage-count badge must not sit behind a FEATURES gate',
 );
 
 // ── 4. Settings: price sources section only rendered under FEATURES.marketData;
