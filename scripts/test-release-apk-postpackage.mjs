@@ -60,6 +60,53 @@ function which(bin) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
+// The GitHub Actions `android-actions/setup-android` action installs the
+// SDK but does NOT put `build-tools/<version>/aapt` on PATH; searching
+// `$ANDROID_HOME/build-tools/*/aapt` covers that case AND matches the
+// EAS build image layout.
+function findAapt() {
+  const onPath = which('aapt2') || which('aapt');
+  if (onPath) return onPath;
+  const roots = [
+    process.env.ANDROID_HOME,
+    process.env.ANDROID_SDK_ROOT,
+    process.env.HOME ? `${process.env.HOME}/Library/Android/sdk` : null,
+  ].filter(Boolean);
+  for (const root of roots) {
+    const buildTools = path.join(root, 'build-tools');
+    if (!fs.existsSync(buildTools)) continue;
+    const versions = fs
+      .readdirSync(buildTools)
+      .filter((d) => /^\d/.test(d))
+      .sort()
+      .reverse(); // newest first
+    for (const v of versions) {
+      for (const bin of ['aapt2', 'aapt']) {
+        const p = path.join(buildTools, v, bin);
+        if (fs.existsSync(p)) return p;
+      }
+    }
+  }
+  return null;
+}
+
+// Binary AndroidManifest.xml stores strings in a UTF-16LE stringpool
+// (interleaved zero bytes between ASCII characters), while
+// classes*.dex stores identifiers in modified-UTF-8 (ASCII bytes as-is).
+// A release APK carries `com.dicoge.holohunter` in at least one of the
+// two encodings, so the byte-scan fallback checks both and only reports
+// "unknown" when neither is present.
+function apkContainsPackageString(apkBuffer, packageName) {
+  if (apkBuffer.includes(Buffer.from(packageName, 'utf8'))) return true;
+  const utf16 = Buffer.alloc(packageName.length * 2);
+  for (let i = 0; i < packageName.length; i += 1) {
+    utf16[i * 2] = packageName.charCodeAt(i);
+    utf16[i * 2 + 1] = 0;
+  }
+  if (apkBuffer.includes(utf16)) return true;
+  return false;
+}
+
 if (!fs.existsSync(apkPath)) {
   fail(`APK not found at ${apkPath}. Run \`expo prebuild --platform android --clean\` and \`./gradlew app:assembleRelease\` first, or pass the path as argv[1] / HUNTER_APK_PATH.`);
 }
@@ -124,39 +171,55 @@ if (abiDirs.size !== 1 || !abiDirs.has('arm64-v8a')) {
 
 // --------- 3. Package identity --------------------------------------------
 
-const aapt = which('aapt') || which('aapt2');
+const aapt = findAapt();
 let packageName = null;
+let aaptBadging = null;
 if (aapt) {
   const badge = spawnSync(aapt, ['dump', 'badging', apkPath], { encoding: 'utf8' });
   if (badge.status === 0) {
+    aaptBadging = badge.stdout;
     const m = badge.stdout.match(/package: name='([^']+)'/);
     if (m) packageName = m[1];
   }
 }
 if (!packageName) {
-  // Fallback: scan raw APK bytes for the applicationId string. Every
-  // release APK carries it verbatim in the resources.arsc / manifest.
+  // Fallback #1: extract the binary AndroidManifest.xml from the APK
+  // (uncompressed in the zip in every Android build) and search its
+  // string pool for the package name in both UTF-8 and UTF-16LE
+  // encodings. This works even when aapt/aapt2 are unavailable.
+  const manifestResult = spawnSync('unzip', ['-p', apkPath, 'AndroidManifest.xml'], {
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  if (manifestResult.status === 0 && manifestResult.stdout && manifestResult.stdout.length > 0) {
+    if (apkContainsPackageString(manifestResult.stdout, 'com.dicoge.holohunter')) {
+      packageName = 'com.dicoge.holohunter';
+    }
+  }
+}
+if (!packageName) {
+  // Fallback #2: full-APK byte scan. Weak because compressed entries
+  // hide their content, but the applicationId also lives in each
+  // classes.dex (usually stored deflated) — so the check is imperfect
+  // but not useless.
   const buf = fs.readFileSync(apkPath);
-  if (buf.includes(Buffer.from('com.dicoge.holohunter'))) {
+  if (apkContainsPackageString(buf, 'com.dicoge.holohunter')) {
     packageName = 'com.dicoge.holohunter';
   }
 }
 if (packageName !== 'com.dicoge.holohunter') {
   fail(
     `APK package identity is not com.dicoge.holohunter (detected: ${packageName ?? 'unknown'}). ` +
-      `Refusing to deliver an artifact whose applicationId drifted from the DIC-1265 QA baseline.`,
+      `Refusing to deliver an artifact whose applicationId drifted from the DIC-1265 QA baseline. ` +
+      `aapt=${aapt ?? '<not found>'} — pass HUNTER_APK_PATH to point at a different APK if this is a test.`,
   );
 }
 
 // --------- 4. Non-debuggable check via aapt (best-effort) -----------------
 
-if (aapt) {
-  const badge = spawnSync(aapt, ['dump', 'badging', apkPath], { encoding: 'utf8' });
-  if (badge.status === 0 && /application-debuggable/.test(badge.stdout)) {
-    fail(
-      'APK is marked application-debuggable. The production-apk release artifact must not ship a debug manifest.',
-    );
-  }
+if (aaptBadging && /application-debuggable/.test(aaptBadging)) {
+  fail(
+    'APK is marked application-debuggable. The production-apk release artifact must not ship a debug manifest.',
+  );
 }
 
 // --------- 5. Report ------------------------------------------------------
