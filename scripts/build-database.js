@@ -1743,6 +1743,17 @@ async function buildDatabase() {
     // regardless of what survives on disk.
     if (!hasCurrentPriceProvenance(card, provenanceGateOptions)) {
       skippedUnproven++;
+      // DIC-1229 rev.5: `applyPreservedMarketFields` can copy priceHistory
+      // forward when its structural checks pass; those checks don't include
+      // the freshness dimension the rev.3 predicate added. Fail-closed the
+      // same rule at Step 6 by also clearing any preserved priceHistory on
+      // the unproven row so the audit invariant holds regardless of arrival
+      // path. Audit stays live as the mutation-sensitive guard.
+      if (card.priceHistory && typeof card.priceHistory === 'object'
+          && Object.keys(card.priceHistory).length > 0) {
+        card.priceHistory = {};
+      }
+      if (card.priceHistoryMeta) delete card.priceHistoryMeta;
       if (disableStep6Skip) {
         // Fault-injection path: fall through to the merge below so the
         // audit gets to catch the contamination. This is UNREACHABLE

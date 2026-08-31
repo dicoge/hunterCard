@@ -102,17 +102,28 @@ assert.ok(
 // ---- integration: seedCanonicalHistoryFiles refuses reprint-row seed -------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dic-1219-'));
 try {
+  // DIC-1229 rev.5: seed now also gates on `hasCurrentPriceProvenance`, so
+  // both fixtures need a fresh timestamp + matching yuyuImage + positive
+  // sellPrice for the origin row to reach the seed body (the DIC-1219 filter
+  // rejects the reprint row regardless — that's what this test asserts).
+  const freshTs = new Date().toISOString();
   const cardsForSeed = {
     // reprint row: even a valid in-memory priceHistory must NOT seed the file
     // because the preserved map has no per-date provenance and would just re-
     // stamp the same cross-product records DIC-1219 migrated out.
     'hBP04-028_hBP08_C_hBP04-028_C_02': {
       cardNumber: 'hBP04-028', sourceProduct: 'hBP08', rarity: 'C',
+      sellPrice: 50, timestamp: freshTs,
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp08/12345.jpg',
+      prices: [{ sellPrice: 50, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp08/12345.jpg' }],
       priceHistory: { '2026-08-25': 50, '2026-08-26': 50, '2026-08-27': 50 },
     },
     // origin row: same shape must seed normally (control).
     'hBP04-028_hBP04_C_hBP04-028_C': {
       cardNumber: 'hBP04-028', sourceProduct: 'hBP04', rarity: 'C',
+      sellPrice: 30, timestamp: freshTs,
+      yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/12345.jpg',
+      prices: [{ sellPrice: 30, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/12345.jpg' }],
       priceHistory: { '2026-08-25': 30, '2026-08-26': 30, '2026-08-27': 30 },
     },
   };

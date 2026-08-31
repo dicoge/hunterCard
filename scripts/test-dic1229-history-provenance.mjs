@@ -449,7 +449,10 @@ assert.equal(
   // Step 6 gate: skip and pass provenanceGateOptions with the ambiguous set.
   const step6Idx = src.indexOf('── Step 6: Merge priceHistory');
   assert.ok(step6Idx > -1, 'Step 6 header must still exist');
-  const step6Slice = src.slice(step6Idx, step6Idx + 4000);
+  // Slice grows with real changes (rev.5 added the priceHistory-clear branch);
+  // keep it wide enough that a legitimate expansion never bumps the `continue`
+  // marker past the window — the regex itself proves the ordering.
+  const step6Slice = src.slice(step6Idx, step6Idx + 8000);
   assert.match(
     step6Slice,
     /provenanceGateOptions\s*=\s*\{[\s\S]*?ambiguousIds:\s*findAmbiguousPromoRowIds\s*\(\s*database\.cards\s*\)/,
@@ -464,6 +467,19 @@ assert.equal(
     step6Slice,
     /!\s*hasCurrentPriceProvenance\s*\([\s\S]*?\)[\s\S]*?continue/,
     'the gate must `continue` (skip merge) for unproven rows',
+  );
+  // DIC-1229 rev.5: fail-closed cleanup — the Step 6 skip path must clear any
+  // preserved `card.priceHistory` on unproven rows so the audit invariant
+  // holds regardless of how the payload arrived (preservation vs merge).
+  assert.match(
+    step6Slice,
+    /!\s*hasCurrentPriceProvenance\s*\([\s\S]*?\)[\s\S]*?card\.priceHistory\s*=\s*\{\s*\}/,
+    'Step 6 skip must clear card.priceHistory on unproven rows (rev.5 fail-closed cleanup)',
+  );
+  assert.match(
+    step6Slice,
+    /!\s*hasCurrentPriceProvenance\s*\([\s\S]*?\)[\s\S]*?delete\s+card\.priceHistoryMeta/,
+    'Step 6 skip must also delete card.priceHistoryMeta on unproven rows (rev.5 fail-closed cleanup)',
   );
 
   // Post-Step-6 hard-fail audit.
@@ -805,6 +821,95 @@ assert.equal(
         shipsPh.length,
         0,
         `Scenario D: strict-unproven rows must not ship priceHistory (${shipsPh.length} rows leaked, samples: ${shipsPh.slice(0, 5).join(', ')})`,
+      );
+    }
+
+    // ─── Scenario E: preservation copies priceHistory forward onto an
+    //     unproven row — Step 6 skip MUST clear it (rev.5 fail-closed
+    //     cleanup). Reproduces the exact 2026-08-31 CI regression on revert
+    //     commit `7c5c8056f`: `applyPreservedMarketFields` copies the
+    //     previous row's `priceHistory` onto the fresh row whenever the
+    //     structural provenance checks (sourceProduct match +
+    //     topLevelPayloadMatches + surviving entries) pass, WITHOUT
+    //     re-checking the freshness dimension added in rev.3. Under
+    //     `pricingUnavailable=true` this happens for every reprint row
+    //     whose stored `timestamp` is older than 7 days — 529 rows on the
+    //     reverted DB. Step 6 skipping the merge is not enough; without
+    //     the rev.5 clear the audit throws and the build exits non-zero.
+    //
+    //     Setup: pick a shipped strict-unproven row that carries
+    //     non-empty `priceHistory` (any one of the 529 rows). Force its
+    //     `timestamp` back by 8 days so freshness ALWAYS fails on this
+    //     run regardless of wall-clock drift; DELETE every durable file
+    //     so Step 6 has nothing to merge from disk; run a normal
+    //     empty-fixture build (both defences ON, no fault injection).
+    //     Assert:
+    //       - build exits 0 (proves the clear is what lets the audit
+    //         pass, not that the audit was disabled);
+    //       - the target row still exists in the written DB;
+    //       - the row's `priceHistory` is empty (rev.5 Step 6 clear
+    //         wiped what preservation carried forward);
+    //       - the row's `priceHistoryMeta` is absent for the same reason.
+    //     Under a mutation that removes the rev.5 clear, `priceHistory`
+    //     would still be populated after Step 6 and the audit would
+    //     throw with a non-zero exit — this scenario fails loudly on
+    //     that exact regression class.
+    {
+      resetShippedState();
+      const preDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      const ambig = new Set();
+      let targetId = null;
+      for (const [id, card] of Object.entries(preDb.cards || {})) {
+        if (!card?.priceHistory || Object.keys(card.priceHistory).length === 0) continue;
+        if (!hasCurrentPriceProvenance(card, gate({ ambiguousIds: ambig, now: Date.now() }))) {
+          targetId = id;
+          break;
+        }
+      }
+      assert.ok(
+        targetId,
+        'Scenario E precondition: shipped DB must carry at least one strict-unproven row with priceHistory to test the preservation-forward path',
+      );
+      const preRow = preDb.cards[targetId];
+      const preHistoryDays = Object.keys(preRow.priceHistory).length;
+      assert.ok(
+        preHistoryDays >= 1,
+        `Scenario E precondition: ${targetId} must ship with >=1 priceHistory day (got ${preHistoryDays})`,
+      );
+      // Force timestamp 8 days back so hasCurrentPriceProvenance freshness
+      // ALWAYS fails on this run regardless of when the test runs. Without
+      // this the shipped timestamp could drift into the 7-day window over
+      // time and mask the regression.
+      preRow.timestamp = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+      fs.writeFileSync(dbPath, JSON.stringify(preDb, null, 2) + '\n');
+      // Remove every durable file so Step 6 has nothing to merge — the
+      // only priceHistory a row can carry is what preservation copied
+      // forward from the previous DB row.
+      for (const file of fs.readdirSync(historyDir)) {
+        if (file === 'index.json') continue;
+        if (file.endsWith('.json')) fs.unlinkSync(path.join(historyDir, file));
+      }
+
+      const result = runBuild();
+      const stdout = result.stdout?.toString() || '';
+      const stderr = result.stderr?.toString() || '';
+      assert.equal(
+        result.status,
+        0,
+        `Scenario E: build MUST exit 0 with the rev.5 clear in place. exit=${result.status} stderr tail:\n${stderr.slice(-1500)}\nstdout tail:\n${stdout.slice(-1500)}`,
+      );
+      const writtenDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      const written = writtenDb.cards?.[targetId];
+      assert.ok(written, `Scenario E: ${targetId} must survive the build`);
+      const postDays = written.priceHistory ? Object.keys(written.priceHistory).length : 0;
+      assert.equal(
+        postDays,
+        0,
+        `Scenario E: ${targetId}.priceHistory MUST be empty after rev.5 clear (got ${postDays} days; before clear: ${preHistoryDays}). A non-zero count proves preservation-forward priceHistory leaked past Step 6 — the exact 2026-08-31 CI regression class.`,
+      );
+      assert.ok(
+        !written.priceHistoryMeta,
+        `Scenario E: ${targetId}.priceHistoryMeta MUST be absent after rev.5 clear (got ${JSON.stringify(written.priceHistoryMeta)})`,
       );
     }
 

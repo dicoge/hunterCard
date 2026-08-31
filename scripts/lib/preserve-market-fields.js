@@ -773,6 +773,7 @@ export function seedCanonicalHistoryFiles({
   historyDir,
   fsAdapter,
   now = new Date(),
+  provenanceGateOptions = null,
 } = {}) {
   if (!cards || typeof cards !== 'object') return { seededFiles: 0, addedRecords: 0 };
   if (!historyDir || !fsAdapter) {
@@ -782,11 +783,24 @@ export function seedCanonicalHistoryFiles({
   const fs = fsAdapter.fs;
   fs.mkdirSync(historyDir, { recursive: true });
   const nowIso = now.toISOString();
+  const gateOptions = provenanceGateOptions ?? { ambiguousIds: findAmbiguousPromoRowIds(cards) };
   let seededFiles = 0;
   let addedRecords = 0;
   for (const [cardId, card] of Object.entries(cards)) {
     const ph = card?.priceHistory;
     if (!ph || typeof ph !== 'object') continue;
+    // DIC-1229 rev.5 (Mac-Claude follow-up 2026-08-31): the seed writes a
+    // durable file from a row's in-memory priceHistory, which
+    // `applyPreservedMarketFields` can copy forward from the previous DB row
+    // when structural provenance checks pass — those checks don't include
+    // the freshness dimension `hasCurrentPriceProvenance` added in rev.3. If
+    // the row itself is strict-unproven (stale timestamp, missing yuyu
+    // payload match, or ambiguous hPR) the seed would republish stale
+    // priceHistory records to disk and the scheduler's next `git add
+    // data/price-history/*.json` would ship them. Fail-closed at the same
+    // gate Step 5 / Step 6 / audit already use: skip the seed for any
+    // strict-unproven row so downstream Step 5 has no residue to include.
+    if (!hasCurrentPriceProvenance(card, gateOptions)) continue;
     // DIC-1219 fail-closed: only origin-product rows may re-seed their durable
     // history file from in-memory priceHistory. Reprint rows land here with an
     // in-memory priceHistory carried over from a previous build cycle whose
