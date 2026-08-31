@@ -1061,14 +1061,18 @@ export default function ScanScreen({ navigation }: any) {
                 <Text style={resultStyles.toastName} numberOfLines={1}>
                   {lastScannedCard.name}
                 </Text>
-                <Text style={resultStyles.toastPrice}>
-                  {(() => {
-                    if (lastScannedCard.sellPrice == null) return '—';
-                    if (preferredCurrency === 'JPY') return `¥${lastScannedCard.sellPrice.toLocaleString()}`;
-                    const { value, symbol } = convertPrice(lastScannedCard.sellPrice, preferredCurrency);
-                    return `${symbol}${value?.toLocaleString() || '—'}`;
-                  })()}
-                </Text>
+                {/* Store MVP 隱藏「最後掃描」toast 的估價欄 (DIC-1256)；
+                    仍顯示卡名與「再加入一張」按鈕以維持 session flow。 */}
+                {FEATURES.marketData && (
+                  <Text style={resultStyles.toastPrice} testID="scan-toast-price">
+                    {(() => {
+                      if (lastScannedCard.sellPrice == null) return '—';
+                      if (preferredCurrency === 'JPY') return `¥${lastScannedCard.sellPrice.toLocaleString()}`;
+                      const { value, symbol } = convertPrice(lastScannedCard.sellPrice, preferredCurrency);
+                      return `${symbol}${value?.toLocaleString() || '—'}`;
+                    })()}
+                  </Text>
+                )}
               </View>
             </View>
             <TouchableOpacity
@@ -1193,9 +1197,13 @@ export default function ScanScreen({ navigation }: any) {
               >
                 <Text style={resultStyles.listItemName}>{card.name}</Text>
                 <Text style={resultStyles.listItemMeta}>{card.cardNumber} · {card.rarity} · {card.series}</Text>
-                <Text style={resultStyles.listItemPrice}>
-                  ¥{card.sellPrice?.toLocaleString() || t('scan_no_trade')}
-                </Text>
+                {/* Store MVP 隱藏搜尋建議列表的估價 (DIC-1256)；卡名／編號／
+                    稀有度／系列仍在，供辨識選擇。 */}
+                {FEATURES.marketData && (
+                  <Text style={resultStyles.listItemPrice} testID="scan-search-suggestion-price">
+                    ¥{card.sellPrice?.toLocaleString() || t('scan_no_trade')}
+                  </Text>
+                )}
               </TouchableOpacity>
             ))}
           </ScrollView>

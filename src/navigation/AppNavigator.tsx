@@ -110,16 +110,22 @@ function MainDrawer() {
           ),
         }}
       />
-      <Drawer.Screen 
-        name="Collection"
-        component={CollectionScreen}
-        options={{ 
-          title: t('nav_favorites'),
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
-          ),
-        }}
-      />
+      {/* 收藏 (browse-by-collection) — hidden in Store MVP (DIC-1256).
+          Same pattern as Watchlist: dropping Drawer.Screen unregisters the
+          route so `navigation.navigate('Collection')` and deep links both
+          fail closed. Deck editor keeps its own ownership editing. */}
+      {FEATURES.favorites && (
+        <Drawer.Screen
+          name="Collection"
+          component={CollectionScreen}
+          options={{
+            title: t('nav_favorites'),
+            drawerIcon: ({ focused }) => (
+              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
+            ),
+          }}
+        />
+      )}
       <Drawer.Screen
         name="DeckEditor"
         component={DeckEditorScreen}

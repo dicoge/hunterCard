@@ -139,9 +139,11 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_apple_login: 'Appleアカウントでログイン',
 
   // Login Screen
-  login_tagline: 'hololive TCG カード検索・価格比較アプリ',
+  login_tagline: 'hololive TCG カード検索アプリ',
   login_welcome: 'HoloHunterへようこそ',
   login_description: 'ログインするとお気に入り保存、スキャン、価格推移チェックが可能です',
+  // Store MVP: no favorites / alerts / price-trend promise (DIC-1256).
+  login_description_store: 'ログインするとカードスキャンとデッキ・設定の端末間同期が利用できます',
   login_or: 'または',
   login_guest_button: 'ゲストとして利用',
   login_guest_hint: 'ゲストはルール閲覧と検索が可能ですが、スキャン機能は利用できません',
@@ -206,9 +208,13 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_exchange_rate: '📈 為替：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '連携後、お気に入り、設定、アラート、通知は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
   settings_link_hint: '連携後、お気に入りと設定は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
+  // Store MVP: no favorites / alerts promise (DIC-1256).
+  settings_link_hint_store: '連携後、デッキと設定は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
   settings_delete_note: '注：サーバー側のアカウント削除・認証取消機能は準備中です。未設定の場合は「未完了」と表示し、ログイン状態を維持します。',
   settings_guest_sync_watchlist: 'ログインしていません。ログインするとお気に入りとアラートを端末間で同期できます。',
   settings_guest_sync: 'ログインしていません。ログインするとお気に入りを端末間で同期できます。',
+  // Store MVP: no favorites / alerts promise (DIC-1256).
+  settings_guest_sync_store: 'ログインしていません。ログインするとデッキと設定を端末間で同期できます。',
   settings_footer: 'hololive PCGプレイヤーのために',
 
   // Tutorial landing
@@ -468,6 +474,8 @@ export const ja: Record<keyof typeof zh, string> = {
   collection_view_a11y: '{{name}} {{version}} を表示',
   collection_image_a11y: '{{name}} {{version}} のカード画像',
   deck_gap_title: '不足カード見積もり（参考販売価格）',
+  // Store MVP: same 不足カード panel without 参考販売価格 claim (DIC-1256).
+  deck_gap_title_store: '不足カード',
   deck_required: '必要 {{count}}',
   deck_owned: '所持 {{count}}',
   deck_missing: '不足 {{count}}',
@@ -617,6 +625,10 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_rescan: '再スキャン',
   scan_session_count: '{{count}} 枚をスキャン済み',
   scan_session_title: 'スキャン価格一覧',
+  // Store MVP variants: retained scan/session copy without market claims (DIC-1256).
+  scan_session_title_store: 'スキャン一覧',
+  scan_version_select_hint_store: '版を選択（このカードの版を確定するため）',
+  scan_version_pending_hint_store: '版が判別できません —— お手持ちの版を選択してください',
   scan_session_empty: 'スキャンしたカードはありません',
   scan_session_empty_hint: '「スキャン」ボタンでカードを追加してください',
   scan_version_pending: '版を確認してください',

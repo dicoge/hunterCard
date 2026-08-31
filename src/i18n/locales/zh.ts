@@ -137,9 +137,11 @@ export const zh = {
   settings_apple_login: '使用 Apple 帳號登入',
 
   // Login Screen
-  login_tagline: 'hololive TCG 卡牌查價 App',
+  login_tagline: 'hololive TCG 卡牌查詢 App',
   login_welcome: '歡迎使用 HoloHunter',
   login_description: '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢',
+  // Store MVP: no 收藏 / 提醒 / 價格趨勢 promise (DIC-1256).
+  login_description_store: '登入後可掃描卡牌、跨裝置同步牌組與設定',
   login_or: '或',
   login_guest_button: '以訪客身份進入',
   login_guest_hint: '訪客可瀏覽規則與查詢卡片，但無法使用掃描功能',
@@ -206,9 +208,13 @@ export const zh = {
   settings_exchange_rate: '📈 匯率：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
   settings_link_hint: '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
+  // Store MVP: no 收藏 / 提醒 promise (DIC-1256).
+  settings_link_hint_store: '綁定後牌組與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
   settings_delete_note: '註：帳號刪除的伺服器端撤銷仍在建置中，尚未上線。若後端尚未設定，刪除會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
   settings_guest_sync_watchlist: '尚未登入。登入後可跨裝置同步收藏與入手提醒。',
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
+  // Store MVP: no 收藏 / 提醒 promise (DIC-1256).
+  settings_guest_sync_store: '尚未登入。登入後可跨裝置同步牌組與設定。',
   settings_footer: '專為 hololive PCG 玩家打造',
 
   // Tutorial landing
@@ -468,6 +474,8 @@ export const zh = {
   collection_view_a11y: '查看 {{name}} {{version}}',
   collection_image_a11y: '{{name}} {{version}} 卡圖',
   deck_gap_title: '缺卡預估（參考售價）',
+  // Store MVP: same 缺卡預估 panel without 參考售價 claim (DIC-1256).
+  deck_gap_title_store: '缺卡預估',
   deck_required: '需 {{count}}',
   deck_owned: '有 {{count}}',
   deck_missing: '缺 {{count}}',
@@ -617,6 +625,10 @@ export const zh = {
   scan_rescan: '重新掃描',
   scan_session_count: '已掃描 {{count}} 張卡牌',
   scan_session_title: '掃描估值清單',
+  // Store MVP variants: retained scan/session copy without market claims (DIC-1256).
+  scan_session_title_store: '掃描清單',
+  scan_version_select_hint_store: '選擇版本（用於辨識這張卡的版本）',
+  scan_version_pending_hint_store: '來源無法辨識版本 —— 請選擇你手上的那一版',
   scan_session_empty: '尚未掃描任何卡牌',
   scan_session_empty_hint: '點擊「掃描」按鈕開始加入卡牌',
   scan_version_pending: '版本待確認',

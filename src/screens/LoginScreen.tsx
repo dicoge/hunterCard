@@ -8,7 +8,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { COLORS, APP_NAME } from '../constants';
-import { FEATURES } from '../config/releaseFlags';
+import { FEATURES, STORE_MVP } from '../config/releaseFlags';
 import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { useTranslation } from '../i18n';
@@ -46,7 +46,11 @@ export default function LoginScreen() {
 
         <View style={styles.card}>
           <Text style={styles.welcome}>{t('login_welcome')}</Text>
-          <Text style={styles.description}>{t('login_description')}</Text>
+          {/* Store MVP: don't promise favorites / price trend / cross-device
+              alerts on the login screen (DIC-1256). */}
+          <Text style={styles.description}>
+            {t(STORE_MVP ? 'login_description_store' : 'login_description')}
+          </Text>
 
           {error && (
             <View style={styles.errorBox}>

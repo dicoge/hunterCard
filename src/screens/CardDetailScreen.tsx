@@ -269,7 +269,11 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
       <View style={isDesktop ? styles.rightCol : undefined}>
 
-      {collectionVersion && (
+      {/* 收藏 (per-card ownership +/- widget) — hidden in Store MVP (DIC-1256).
+          The deck editor keeps its own ownership editing; this card-detail
+          shortcut is a favorites/collection surface and disappears with the
+          drawer entry. */}
+      {FEATURES.favorites && collectionVersion && (
         <View style={styles.collectionCard} testID="card-detail-collection">
           <View style={styles.collectionCopy}>
             <Text style={styles.collectionTitle}>{t('deck_collection_title')}</Text>
@@ -329,51 +333,57 @@ export default function CardDetailScreen({ route, navigation }: any) {
       )}
 
       {/* ====== PRICE SECTION ====== */}
-      <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]}>
-        <View style={styles.priceHeader}>
-          <Text style={styles.priceSourceName}>🏪 遊々亭</Text>
-          <Text style={styles.priceBadge}>
-            {hasActualPrice ? t('card_detail_actual_price') : t('card_detail_no_data')}
-          </Text>
-        </View>
-        {hasActualPrice && hasMultipleVariants ? (
-          <View style={styles.variantList}>
-            {[...priceVariants].sort((a, b) => (a.sellPrice || 0) - (b.sellPrice || 0)).filter((p: any) => p.sellPrice != null && p.sellPrice > 0).map((v: any, i: number) => {
-              const converted = convertPrice(v.sellPrice, preferredCurrency);
-              return (
-              <View key={i} style={styles.variantRow}>
-                <Text style={styles.variantName} numberOfLines={1}>{v.rarity ? `[${v.rarity}] ` : ''}{v.name}</Text>
-                <Text style={styles.variantPrice}>{converted.symbol}{converted.value?.toLocaleString()}</Text>
-              </View>
-              );
-            })}
-            <Text style={styles.variantHint}>
-              {FEATURES.priceSpread
-                ? t('card_detail_variant_hint_spread')
-                : t('card_detail_variant_hint')}
+      {/* 售價 / 版本價格 pills / 價格提示 / 漲跌 — Store MVP 隱藏 (DIC-1256).
+          Everything price-shaped on the card detail is gated under
+          FEATURES.marketData; scope covers this top block, the MarketDataPanel
+          below, and the 遊々亭 external live-price CTA that lives inside it. */}
+      {FEATURES.marketData && (
+        <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]} testID="card-detail-price-section">
+          <View style={styles.priceHeader}>
+            <Text style={styles.priceSourceName}>🏪 遊々亭</Text>
+            <Text style={styles.priceBadge}>
+              {hasActualPrice ? t('card_detail_actual_price') : t('card_detail_no_data')}
             </Text>
           </View>
-        ) : hasActualPrice ? (
-          <><View style={styles.priceRow}>
-          <Text style={styles.priceValue}>¥{actualPrice.toLocaleString()}</Text>
+          {hasActualPrice && hasMultipleVariants ? (
+            <View style={styles.variantList}>
+              {[...priceVariants].sort((a, b) => (a.sellPrice || 0) - (b.sellPrice || 0)).filter((p: any) => p.sellPrice != null && p.sellPrice > 0).map((v: any, i: number) => {
+                const converted = convertPrice(v.sellPrice, preferredCurrency);
+                return (
+                <View key={i} style={styles.variantRow}>
+                  <Text style={styles.variantName} numberOfLines={1}>{v.rarity ? `[${v.rarity}] ` : ''}{v.name}</Text>
+                  <Text style={styles.variantPrice}>{converted.symbol}{converted.value?.toLocaleString()}</Text>
+                </View>
+                );
+              })}
+              <Text style={styles.variantHint}>
+                {FEATURES.priceSpread
+                  ? t('card_detail_variant_hint_spread')
+                  : t('card_detail_variant_hint')}
+              </Text>
+            </View>
+          ) : hasActualPrice ? (
+            <><View style={styles.priceRow}>
+            <Text style={styles.priceValue}>¥{actualPrice.toLocaleString()}</Text>
+          </View>
+          {(() => {
+            const converted = convertPrice(actualPrice, preferredCurrency);
+            return (
+              <Text style={styles.priceNote}>{t('card_detail_approx_price', { price: `${converted.symbol}${converted.value?.toLocaleString()}`, currency: preferredCurrency })}</Text>
+            );
+          })()}
+          {priceName ? (
+            <Text style={styles.priceNote}>📋 {priceName}</Text>
+          ) : null}</>
+          ) : (
+            <Text style={styles.noPriceText}>{t('card_detail_no_data')}</Text>
+          )}
+          {FEATURES.trendPrediction ? <PriceTrend trend={detailPriceTrend} /> : null}
+          <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
+            <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
+          </TouchableOpacity>
         </View>
-        {(() => {
-          const converted = convertPrice(actualPrice, preferredCurrency);
-          return (
-            <Text style={styles.priceNote}>{t('card_detail_approx_price', { price: `${converted.symbol}${converted.value?.toLocaleString()}`, currency: preferredCurrency })}</Text>
-          );
-        })()}
-        {priceName ? (
-          <Text style={styles.priceNote}>📋 {priceName}</Text>
-        ) : null}</>
-        ) : (
-          <Text style={styles.noPriceText}>{t('card_detail_no_data')}</Text>
-        )}
-        {FEATURES.trendPrediction ? <PriceTrend trend={detailPriceTrend} /> : null}
-        <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
-          <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
-        </TouchableOpacity>
-      </View>
+      )}
 
       {/* ====== TREND PREDICTION ====== */}
       {/* 趨勢預測基於卡號層級歷史（單一版本序列）。多版本卡無法歸屬到特定版本 → 隱藏，
@@ -478,7 +488,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
       <SkillsPanel skills={displaySkills} fallbackNote={skillsFallbackNote} />
 
       {/* ====== MARKET DATA ====== */}
-      <MarketDataPanel card={card} />
+      {/* 市場數據區塊 — Store MVP 隱藏 (DIC-1256): 版本 pills、賣價、店家收購、
+          買賣差價、YT 訂閱、漲跌預測全部不展示。 */}
+      {FEATURES.marketData && <MarketDataPanel card={card} />}
 
       {/* ====== EFFECT TEXTS ====== */}
       {(effects.length > 0 || card.type === 'Oshi') && (
@@ -507,11 +519,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
 
       {/* ====== EXTERNAL LINKS ====== */}
+      {/* 官方卡表永遠保留；遊々亭 / Carousell 兩個價格查詢外連 Store MVP 隱藏
+          (DIC-1256)。這區還會有官方卡表所以永遠 render。 */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t('card_detail_external_links')}</Text>
         <LinkButton icon="🏛️" text={t('card_detail_official_list')} url={officialUrl} />
-        <LinkButton icon="🏪" text={t('card_detail_yuyu_link')} url={yuyuUrl} />
-        <LinkButton icon="🔄" text={t('card_detail_carousell_link')} url={`https://www.carousell.com.tw/search/?q=${encodeURIComponent(id)}`} />
+        {FEATURES.externalPriceLinks && (
+          <>
+            <LinkButton icon="🏪" text={t('card_detail_yuyu_link')} url={yuyuUrl} />
+            <LinkButton icon="🔄" text={t('card_detail_carousell_link')} url={`https://www.carousell.com.tw/search/?q=${encodeURIComponent(id)}`} />
+          </>
+        )}
       </View>
 
       {/* ====== 到價提醒 BUTTON ====== */}

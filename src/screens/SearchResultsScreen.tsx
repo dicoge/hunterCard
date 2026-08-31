@@ -4,7 +4,7 @@ import type { LayoutChangeEvent } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { releaseCardFlags } from '../config/releaseFlags';
+import { FEATURES, releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
@@ -478,15 +478,20 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
           )}
         </View>
 
-        {card.yuyuPrice != null && card.yuyuPrice > 0 ? (
-          <View style={styles.priceRowList}>
-            <Text style={styles.priceBadgeList}>{formatPrice(card.yuyuPrice)}</Text>
-            {card.prices && card.prices.length > 1 && (
-              <Text style={styles.variantBadge}>+{card.prices.length - 1}</Text>
-            )}
-          </View>
-        ) : (
-          <Text style={styles.noPriceBadgeList}>{t('scan_no_trade')}</Text>
+        {/* Store MVP 隱藏搜尋結果卡片上的價格與無交易 badge (DIC-1256)。
+            資料層仍保留 sellPrice，這裡只封住 UI；卡名、卡號、系列、顏色、
+            稀有度、效果預覽全部留下供辨識使用。 */}
+        {FEATURES.marketData && (
+          card.yuyuPrice != null && card.yuyuPrice > 0 ? (
+            <View style={styles.priceRowList} testID="search-result-price-row">
+              <Text style={styles.priceBadgeList}>{formatPrice(card.yuyuPrice)}</Text>
+              {card.prices && card.prices.length > 1 && (
+                <Text style={styles.variantBadge}>+{card.prices.length - 1}</Text>
+              )}
+            </View>
+          ) : (
+            <Text style={styles.noPriceBadgeList} testID="search-result-no-trade">{t('scan_no_trade')}</Text>
+          )
         )}
 
 
