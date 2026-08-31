@@ -1,10 +1,10 @@
 {
-  "lastUpdated": "2026-08-31T12:13:24.623Z",
+  "lastUpdated": "2026-08-30T12:26:54.577Z",
   "totalCards": 2903,
   "summary": {
-    "up": 0,
+    "up": 1,
     "down": 0,
-    "stable": 2903
+    "stable": 2902
   },
   "topGainers": [
     {
@@ -12,7 +12,7 @@
       "name": "赤エール",
       "nameZh": "紅色應援",
       "score": 0.15,
-      "trend": "stable"
+      "trend": "up"
     },
     {
       "cardId": "hBD24-001",
