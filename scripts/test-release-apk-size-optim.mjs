@@ -298,6 +298,65 @@ check('plugin ignores triple-quoted-string-hidden `defaultConfig` — DIC-1269 C
   );
 });
 
+check('plugin selects the TOP-LEVEL android closure, never a nested unused android — DIC-1269 CR round-4 blocker 2', () => {
+  const plugin = require_(path.join(ROOT, 'plugins', 'withReleaseApkSizeOptim.js'));
+  const { transformGradle, findExecutableAbiFilterCalls, locateRealDefaultConfigBounds } = plugin.__internal;
+  // The exact CR round-4 attacker mutation: a valid Groovy closure
+  // `def unused = { android { defaultConfig { } } }` that is never
+  // invoked. The previous selector picked the first textual `android {`
+  // at any nesting depth, so it landed the arm64 marker inside the
+  // unused closure. The real top-level `android { defaultConfig { … } }`
+  // stayed unfiltered — the release APK would silently retain all four
+  // ABIs. The selector now requires `android` to sit at projection
+  // brace depth 0 (top-level) and `defaultConfig` to be its direct
+  // executable child.
+  const attackerSource = `def unused = {
+  android {
+    defaultConfig { }
+  }
+}
+android {
+  defaultConfig { applicationId 'com.dicoge.holohunter' }
+}
+`;
+  const bounds = locateRealDefaultConfigBounds(attackerSource);
+  assert.ok(bounds, 'the plugin must find the REAL top-level android > defaultConfig, ignoring a nested unused closure');
+  const openContext = attackerSource.slice(Math.max(0, bounds.openOriginal - 30), bounds.openOriginal + 1);
+  assert.match(
+    openContext,
+    /\}\s*\}\s*android\s*\{\s*defaultConfig\s*\{$/,
+    `open brace must belong to the SECOND (top-level) android { block. Got context: ${JSON.stringify(openContext)}`,
+  );
+  const out = transformGradle(attackerSource);
+  const calls = findExecutableAbiFilterCalls(out);
+  assert.equal(calls.length, 1, `exactly one executable abiFilters call must exist. Found ${calls.length}:\n${calls.map((c) => '  ' + c.originalLine.trim()).join('\n')}`);
+  const markerOffset = out.indexOf('// DIC-1266:abiFilter=arm64-v8a');
+  const realAndroidIdx = out.lastIndexOf('android {');
+  assert.ok(
+    markerOffset > realAndroidIdx,
+    `the arm64 marker offset (${markerOffset}) must come AFTER the real top-level android { offset (${realAndroidIdx}). ` +
+      'Landing the marker in the nested unused closure is the exact bypass this test forbids.',
+  );
+});
+
+check('findBlockAtDepth ignores nested and rejects too-shallow / too-deep blocks', () => {
+  const plugin = require_(path.join(ROOT, 'plugins', 'withReleaseApkSizeOptim.js'));
+  const { findBlockAtDepth } = plugin.__internal;
+  const src = `outer { android { inner { } } }\nandroid { top { } }`;
+  const topAndroid = findBlockAtDepth(src, 'android', 0);
+  assert.ok(topAndroid, 'a top-level android block MUST be found');
+  assert.equal(src[topAndroid.openIdx], '{');
+  assert.equal(src[topAndroid.closeIdx], '}');
+  // The top-level match must be the SECOND `android {`, not the one
+  // nested inside `outer { … }`.
+  const startCtx = src.slice(topAndroid.openIdx - 8, topAndroid.openIdx + 1);
+  assert.equal(startCtx, 'android {', `top-level android bounds must sit at the second occurrence. Got context: ${JSON.stringify(startCtx)}`);
+  // Depth-1 lookup finds the nested android instead.
+  const nestedAndroid = findBlockAtDepth(src, 'android', 1);
+  assert.ok(nestedAndroid, 'a depth-1 android block MUST be found');
+  assert.ok(nestedAndroid.openIdx < topAndroid.openIdx, 'the depth-1 android must sit before the top-level one');
+});
+
 check('plugin idempotency is not fooled by an `abiFilters "arm64-v8a"` inside a Groovy string literal', () => {
   const plugin = require_(path.join(ROOT, 'plugins', 'withReleaseApkSizeOptim.js'));
   const { abiFilterActiveInRealDefaultConfig } = plugin.__internal;
@@ -442,14 +501,6 @@ check('scanForOpenRouter reports fragmented composition — DIC-1269 CR round-2 
 
 check('scanForOpenRouter catches ARRAY-BOUND fragmentation — DIC-1269 CR round-3 blocker 1', async () => {
   const { scanForOpenRouter } = await loadScanner();
-  // The exact CR round-3 mutation body: the previous grep bypass caught
-  // `[...].join('')` immediately, but moving the literal array into a
-  // `const IDENT = [...]` binding and then calling `IDENT.join('')`
-  // returned zero offenders because the scanner dropped array bindings
-  // at VariableDeclarator storage. The scanner now preserves both string
-  // AND array folds through lexical bindings and reports the array's
-  // empty-join value itself as an offender, so every branch below —
-  // host, env-var, and dynamic import — fails closed.
   const arrayBound = `
     const hostParts = ['open', 'router.ai'];
     const keyParts = ['OPEN', 'ROUTER_API_KEY'];
@@ -468,6 +519,113 @@ check('scanForOpenRouter catches ARRAY-BOUND fragmentation — DIC-1269 CR round
   assert.ok(/openrouter\.ai/i.test(flat), `folded host \`openrouter.ai\` must be caught. Offenders:\n${flat}`);
   assert.ok(/OPENROUTER_API_KEY/.test(flat), `folded env-var \`OPENROUTER_API_KEY\` must be caught. Offenders:\n${flat}`);
   assert.ok(/@openrouter\/sdk/i.test(flat), `folded module spec \`@openrouter/sdk\` must be caught. Offenders:\n${flat}`);
+  // DIC-1269 CR round-4: the array-binding fix must be REACHABLE through
+  // the fold that resolves through the binding, not only through the
+  // `ArrayExpression(empty-join)` visitor. Removing array persistence
+  // (e.g., reverting VariableDeclarator to string-only storage) leaves
+  // the empty-join visitor still reporting the literal arrays, which
+  // would silently pass this regression. Require joined `CallExpression`
+  // offenders AND the final composed URL from `BinaryExpression` folding
+  // to prove the identifier→array→join→string chain actually works.
+  const callExprOffenders = offenders.filter((o) => o.kind === 'CallExpression');
+  assert.ok(
+    callExprOffenders.some((o) => /openrouter\.ai$/i.test(o.value)),
+    `at least one CallExpression offender must resolve through the array binding to \`openrouter.ai\` (identifier→array→join). Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    callExprOffenders.some((o) => /^OPENROUTER_API_KEY$/.test(o.value)),
+    `at least one CallExpression offender must resolve through the array binding to \`OPENROUTER_API_KEY\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    callExprOffenders.some((o) => /^@openrouter\/sdk$/i.test(o.value)),
+    `at least one CallExpression offender must resolve through the array binding to \`@openrouter/sdk\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  const composedUrl = offenders.find(
+    (o) => o.kind === 'BinaryExpression' && /^https:\/\/openrouter\.ai\/api\/v1\/chat\/completions$/i.test(o.value),
+  );
+  assert.ok(
+    composedUrl,
+    `the final composed URL \`https://openrouter.ai/api/v1/chat/completions\` must be reported as a BinaryExpression fold. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+});
+
+check('scanForOpenRouter respects LEXICAL SCOPE — an inner dead block cannot poison outer bindings (DIC-1269 CR round-4 blocker 1)', async () => {
+  const { scanForOpenRouter } = await loadScanner();
+  // The exact CR round-4 mutation. Previously the file-global env map
+  // let the inner block's `const hostPrefix = "google"` overwrite the
+  // outer `const hostPrefix = "open"`, so the downstream
+  // `[hostPrefix, "router.ai"].join('')` folded to `"googlerouter.ai"` —
+  // no match for "openrouter". The scanner now uses a Babel lexical-
+  // scope stack: inner bindings are popped when the block ends, so the
+  // outer prefix is what the fold resolves to.
+  const lexicalShadow = `
+    const hostPrefix = "open";
+    const keyPrefix = "OPEN";
+    const modulePrefix = "@open";
+    {
+      const hostPrefix = "google";
+      const keyPrefix = "GEMINI";
+      const modulePrefix = "@google";
+    }
+    const host = [hostPrefix, "router.ai"].join("");
+    const key = [keyPrefix, "ROUTER_API_KEY"].join("");
+    const moduleName = [modulePrefix, "router/sdk"].join("");
+    void import(moduleName);
+    void fetch("https://" + host + "/api/v1/chat/completions", {
+      headers: { Authorization: process.env[key] },
+    });
+  `;
+  const offenders = scanForOpenRouter(lexicalShadow, '<inline-lex-shadow>');
+  assert.ok(
+    offenders.length > 0,
+    `the scanner MUST report offenders for the CR round-4 lexical-shadow mutation. Got 0.`,
+  );
+  const callOffenders = offenders.filter((o) => o.kind === 'CallExpression');
+  assert.ok(
+    callOffenders.some((o) => /^openrouter\.ai$/i.test(o.value)),
+    `a CallExpression fold through the outer-scope hostPrefix must produce \`openrouter.ai\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    callOffenders.some((o) => /^OPENROUTER_API_KEY$/.test(o.value)),
+    `a CallExpression fold through the outer-scope keyPrefix must produce \`OPENROUTER_API_KEY\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    callOffenders.some((o) => /^@openrouter\/sdk$/i.test(o.value)),
+    `a CallExpression fold through the outer-scope modulePrefix must produce \`@openrouter/sdk\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    offenders.some((o) => o.kind === 'BinaryExpression' && /^https:\/\/openrouter\.ai\/api\/v1\/chat\/completions$/i.test(o.value)),
+    `the final composed URL must fold to \`https://openrouter.ai/api/v1/chat/completions\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+});
+
+check('scanForOpenRouter — inner-scope binding stays inside its block (Google prefix in dead block must NOT leak out)', async () => {
+  const { scanForOpenRouter } = await loadScanner();
+  // Sanity: the inner scope's `googlerouter.ai` folding should be
+  // reported as an offender INSIDE the block (any string containing
+  // `openrouter` … wait, `googlerouter.ai` also contains `router` but
+  // not `openrouter`). Actually more useful: the outer scope must not
+  // see the inner `google` binding. Here we verify no offender's value
+  // starts with `googlerouter` — the outer fold must NOT accidentally
+  // pick up the inner shadow value.
+  const src = `
+    const prefix = "open";
+    {
+      const prefix = "google";
+      const inner = [prefix, "router-inner"].join("");  // "googlerouter-inner"
+    }
+    const outer = [prefix, "router-outer"].join("");    // MUST fold with "open" not "google"
+  `;
+  const offenders = scanForOpenRouter(src, '<inline-scope-isolation>');
+  const outerOffenders = offenders.filter((o) => /router-outer$/.test(o.value));
+  assert.ok(
+    outerOffenders.some((o) => /^openrouter-outer$/.test(o.value)),
+    `the outer fold must resolve \`prefix\` to \`"open"\`, yielding \`openrouter-outer\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    !outerOffenders.some((o) => /^googlerouter-outer$/.test(o.value)),
+    `the outer fold must NOT see the inner shadow value \`"google"\` (that would mean bindings escape their block). Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
 });
 
 check('scanForOpenRouter catches classic contiguous forms as well', async () => {

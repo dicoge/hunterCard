@@ -67,12 +67,43 @@ function parseSource(src, filename) {
   });
 }
 
+// A lexical-scope environment stack (DIC-1269 CR round-4 blocker 1). One
+// `Map` per scope. `lookup(name)` walks the stack top-down so an inner
+// binding shadows an outer one WHILE the inner scope is live; once we
+// leave the inner scope (`popScope`), lookups again see the outer
+// binding. `bindInCurrentScope(name, value)` writes to the topmost scope.
+// This prevents a completed inner block from poisoning outer bindings —
+// the exact bypass the CR reproduced against a file-global `Map`.
+function createScopeStack() {
+  const stack = [new Map()];
+  return {
+    pushScope() {
+      stack.push(new Map());
+    },
+    popScope() {
+      if (stack.length > 1) stack.pop();
+    },
+    depth() {
+      return stack.length;
+    },
+    bindInCurrentScope(name, value) {
+      stack[stack.length - 1].set(name, value);
+    },
+    lookup(name) {
+      for (let i = stack.length - 1; i >= 0; i -= 1) {
+        if (stack[i].has(name)) return stack[i].get(name);
+      }
+      return undefined;
+    },
+  };
+}
+
 // Static folder: returns a string when `node` provably resolves to one at
 // build time, or `null` when it cannot be resolved without runtime state.
-// `env` holds the fold values of visible `const/let/var IDENT = <expr>`
-// declarations from the same file. Arrays are represented as
-// `{ __array: [...] }` so `.join(sep)` can consume them; strings and
-// arrays are the only two shapes it tracks.
+// `env` is a scope stack (see `createScopeStack`) that exposes
+// `lookup(name)` walking outward through enclosing scopes. Arrays are
+// represented as `{ __array: [...] }` so `.join(sep)` can consume them;
+// strings and arrays are the only two shapes it tracks.
 function evalStatic(node, env) {
   if (!node) return null;
   switch (node.type) {
@@ -98,13 +129,14 @@ function evalStatic(node, env) {
       return l + r;
     }
     case 'Identifier': {
-      // Return whatever the env stores — either a folded string or an
-      // `{ __array: [...] }` shape from a `const IDENT = [<literals>]`
-      // binding. Callers that require a string still guard with
-      // `typeof v === 'string'`; the `.join()` handler below deliberately
-      // accepts the array shape so `const parts = ['a','b']; parts.join('')`
-      // folds through the binding.
-      const v = env.get(node.name);
+      // Return whatever the innermost live scope stores — either a folded
+      // string or an `{ __array: [...] }` shape from a
+      // `const IDENT = [<literals>]` binding. Callers that require a
+      // string still guard with `typeof v === 'string'`; the `.join()`
+      // handler below deliberately accepts the array shape so
+      // `const parts = ['a','b']; parts.join('')` folds through the
+      // binding.
+      const v = env.lookup(node.name);
       return v ?? null;
     }
     case 'ArrayExpression': {
@@ -200,7 +232,32 @@ export function scanForOpenRouter(source, relativePath = '<inline>') {
     ];
   }
   const offenders = [];
-  const env = new Map();
+  const env = createScopeStack();
+
+  // AST node types that open a new lexical scope. We do not distinguish
+  // `let/const` (block-scoped) from `var` (function-scoped) — treating
+  // every binding as block-scoped is stricter than JS actually requires,
+  // but that is the correct side of the tradeoff for a permanent
+  // denylist: a false positive fires CI, a false negative ships an
+  // executable OpenRouter route.
+  const SCOPE_OPENING_TYPES = new Set([
+    'BlockStatement',
+    'FunctionDeclaration',
+    'FunctionExpression',
+    'ArrowFunctionExpression',
+    'ObjectMethod',
+    'ClassMethod',
+    'ClassPrivateMethod',
+    'CatchClause',
+    'ForStatement',
+    'ForInStatement',
+    'ForOfStatement',
+    'SwitchStatement',
+    'StaticBlock',
+    'ClassBody',
+    'ClassDeclaration',
+    'ClassExpression',
+  ]);
 
   function forbid(kind, node, value) {
     for (const { pattern, label } of FORBIDDEN_SUBSTRINGS) {
@@ -219,6 +276,16 @@ export function scanForOpenRouter(source, relativePath = '<inline>') {
   function visit(node, parent) {
     if (!node || typeof node !== 'object' || !node.type) return;
 
+    const opensScope = SCOPE_OPENING_TYPES.has(node.type);
+    if (opensScope) env.pushScope();
+    try {
+      visitInner(node, parent);
+    } finally {
+      if (opensScope) env.popScope();
+    }
+  }
+
+  function visitInner(node, parent) {
     // First pass on declarations — populate env before we walk expressions
     // that might reference them below the declaration point. We do this
     // eagerly at each VariableDeclarator so forward references inside the
@@ -226,12 +293,14 @@ export function scanForOpenRouter(source, relativePath = '<inline>') {
     // `{ __array: [...] }` array folds are stored — a downstream
     // `parts.join('')` (DIC-1269 CR round-3 blocker 1) resolves the
     // identifier back to the array shape and produces its concatenation.
+    // Bindings go to the CURRENT scope; a completed inner block cannot
+    // poison outer bindings (DIC-1269 CR round-4 blocker 1).
     if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier') {
       const folded = evalStatic(node.init, env);
       if (typeof folded === 'string') {
-        env.set(node.id.name, folded);
+        env.bindInCurrentScope(node.id.name, folded);
       } else if (folded && typeof folded === 'object' && Array.isArray(folded.__array)) {
-        env.set(node.id.name, folded);
+        env.bindInCurrentScope(node.id.name, folded);
       }
     }
 

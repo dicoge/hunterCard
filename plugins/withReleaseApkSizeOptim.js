@@ -185,74 +185,82 @@ function stripGroovyComments(src, { maskStrings = true } = {}) {
   return { code: out.join(''), map };
 }
 
+// Find the first block named `name` that opens at brace depth == `atDepth`
+// in `code` (a masked/stripped Gradle projection). Returns
+// `{ openIdx, closeIdx }` — offsets of the `{` and its matched `}` — or
+// null when no such block exists. `atDepth === 0` is the "top-level"
+// case; used to reject an `android { }` invocation nested inside a
+// closure like `def unused = { android { … } }` (DIC-1269 CR round-4
+// blocker 2), which Gradle never executes.
+function findBlockAtDepth(code, name, atDepth) {
+  const pattern = new RegExp(`\\b${name}\\s*\\{`, 'g');
+  let m;
+  while ((m = pattern.exec(code)) !== null) {
+    const braceIdx = m.index + m[0].length - 1;
+    // Compute the brace depth immediately BEFORE this `{`.
+    let depth = 0;
+    for (let i = 0; i < braceIdx; i += 1) {
+      const ch = code[i];
+      if (ch === '{') depth += 1;
+      else if (ch === '}') depth -= 1;
+    }
+    if (depth !== atDepth) continue;
+    // Balanced-scan for the matching `}`.
+    let d = 1;
+    for (let j = braceIdx + 1; j < code.length; j += 1) {
+      const ch = code[j];
+      if (ch === '{') d += 1;
+      else if (ch === '}') {
+        d -= 1;
+        if (d === 0) return { openIdx: braceIdx, closeIdx: j };
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
 // Locate the REAL `defaultConfig { ... }` block on the comment-stripped
-// AND string-body-masked projection, structurally anchored INSIDE the
-// executable top-level `android { ... }` closure (DIC-1269 CR round-3
-// blocker 2). Returns the ORIGINAL-source offsets of its opening `{` and
-// matched closing `}`. Returns null when no real Android DSL block or no
-// `defaultConfig` child of it exists — the caller is expected to fail
-// closed rather than guess.
+// AND string-body-masked projection, structurally anchored as a direct
+// executable child of the TOP-LEVEL `android { ... }` closure (DIC-1269
+// CR round-4 blocker 2). Returns the ORIGINAL-source offsets of its
+// opening `{` and matched closing `}`. Returns null when no real
+// top-level Android DSL block or no direct `defaultConfig` child of it
+// exists — the caller is expected to fail closed rather than guess.
 //
 // The search happens in three stages:
-//   1. Locate `android\s*{` on the masked/stripped source. String and
-//      comment bodies have been erased to spaces, so a Groovy heredoc
-//      `def docs = """android { defaultConfig { } """` cannot masquerade
-//      as the DSL block.
-//   2. Brace-balanced scan from that `{` to the matching `}` gives the
-//      bounds of the executable android closure.
-//   3. Locate `defaultConfig\s*{` ONLY inside those bounds, then
-//      brace-balance again to find its close. This structurally enforces
-//      the parent/child relationship — a `defaultConfig` at file scope or
-//      inside an unrelated block cannot satisfy the search.
+//   1. Locate an `android\s*{` block whose opening `{` is at projection
+//      brace depth ZERO. That excludes:
+//        - a Groovy string body (masked to spaces, so `android {` is
+//          erased there);
+//        - a Groovy line/block comment (stripped);
+//        - a nested closure like `def unused = { android { … } }`
+//          (opening brace at depth 1, not 0), which Gradle never runs.
+//   2. Locate `defaultConfig\s*{` as a DIRECT child of the android body
+//      (depth 0 relative to that body). That excludes a `defaultConfig`
+//      nested inside `productFlavors { flavor { defaultConfig { } } }`
+//      or `buildTypes { release { defaultConfig { } } }`.
+//   3. Both positions are mapped back to the ORIGINAL source via the
+//      offset map so the caller can splice the insertion in place.
 function locateRealDefaultConfigBounds(src) {
   const { code, map } = stripGroovyComments(src);
-  const androidMatch = code.search(/\bandroid\s*\{/);
-  if (androidMatch < 0) return null;
-  const androidOpen = code.indexOf('{', androidMatch);
-  if (androidOpen < 0) return null;
-  let depth = 0;
-  let androidClose = -1;
-  for (let i = androidOpen; i < code.length; i += 1) {
-    const ch = code[i];
-    if (ch === '{') depth += 1;
-    else if (ch === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        androidClose = i;
-        break;
-      }
-    }
-  }
-  if (androidClose < 0) return null;
-  // Search for defaultConfig inside the android closure only.
-  const inside = code.slice(androidOpen, androidClose);
-  const dcRel = inside.search(/\bdefaultConfig\s*\{/);
-  if (dcRel < 0) return null;
-  const dcAbs = androidOpen + dcRel;
-  const openBrace = code.indexOf('{', dcAbs);
-  if (openBrace < 0 || openBrace >= androidClose) return null;
-  depth = 0;
-  let closeBrace = -1;
-  for (let i = openBrace; i < androidClose; i += 1) {
-    const ch = code[i];
-    if (ch === '{') depth += 1;
-    else if (ch === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        closeBrace = i;
-        break;
-      }
-    }
-  }
-  if (closeBrace < 0) return null;
+  const androidBlock = findBlockAtDepth(code, 'android', 0);
+  if (!androidBlock) return null;
+  const bodyStart = androidBlock.openIdx + 1;
+  const bodyEnd = androidBlock.closeIdx;
+  const bodySlice = code.slice(bodyStart, bodyEnd);
+  const dcInBody = findBlockAtDepth(bodySlice, 'defaultConfig', 0);
+  if (!dcInBody) return null;
+  const openBrace = bodyStart + dcInBody.openIdx;
+  const closeBrace = bodyStart + dcInBody.closeIdx;
   return {
     openOriginal: map[openBrace],
     closeOriginal: map[closeBrace],
     openStripped: openBrace,
     closeStripped: closeBrace,
     strippedCode: code,
-    androidOpenStripped: androidOpen,
-    androidCloseStripped: androidClose,
+    androidOpenStripped: androidBlock.openIdx,
+    androidCloseStripped: androidBlock.closeIdx,
   };
 }
 
@@ -281,51 +289,31 @@ function findExecutableAbiFilterCalls(gradle) {
   return calls;
 }
 
-// Return the original-source substring of the FIRST executable
-// `splits { abi { … } }` block's abi body, or null when no such block
-// exists. Structural anchoring: the splits/abi search runs against the
-// masked-stripped view so a Groovy string containing the same text
-// cannot masquerade as a DSL block.
+// Return the original-source substring of the executable `splits { abi
+// { … } }` block's abi body, or null when no such executable block
+// exists. Structurally anchored: the `splits` block must sit inside the
+// top-level `android { ... }` closure (depth 0), and `abi` must be a
+// direct child of splits — so a Groovy string, a comment, or a nested
+// unused closure cannot masquerade.
 function findExecutableSplitsAbiBody(gradle) {
   const { code: masked, map } = stripGroovyComments(gradle);
-  const splitsMatch = masked.match(/\bsplits\s*\{/);
-  if (!splitsMatch) return null;
-  const splitsOpen = masked.indexOf('{', splitsMatch.index);
-  let depth = 0;
-  let splitsClose = -1;
-  for (let i = splitsOpen; i < masked.length; i += 1) {
-    if (masked[i] === '{') depth += 1;
-    else if (masked[i] === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        splitsClose = i;
-        break;
-      }
-    }
-  }
-  if (splitsClose < 0) return null;
-  const splitsInside = masked.slice(splitsOpen, splitsClose);
-  const abiRel = splitsInside.search(/\babi\s*\{/);
-  if (abiRel < 0) return null;
-  const abiAbs = splitsOpen + abiRel;
-  const abiOpen = masked.indexOf('{', abiAbs);
-  if (abiOpen < 0 || abiOpen >= splitsClose) return null;
-  depth = 0;
-  let abiClose = -1;
-  for (let i = abiOpen; i < splitsClose; i += 1) {
-    if (masked[i] === '{') depth += 1;
-    else if (masked[i] === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        abiClose = i;
-        break;
-      }
-    }
-  }
-  if (abiClose < 0) return null;
-  const originalStart = map[abiOpen];
-  const originalEnd = map[abiClose];
-  return gradle.slice(originalStart, originalEnd);
+  const androidBlock = findBlockAtDepth(masked, 'android', 0);
+  if (!androidBlock) return null;
+  const androidBodyStart = androidBlock.openIdx + 1;
+  const androidBodyEnd = androidBlock.closeIdx;
+  const androidBody = masked.slice(androidBodyStart, androidBodyEnd);
+  const splitsBlock = findBlockAtDepth(androidBody, 'splits', 0);
+  if (!splitsBlock) return null;
+  const splitsBodyStart = splitsBlock.openIdx + 1;
+  const splitsBodyEnd = splitsBlock.closeIdx;
+  const splitsBody = androidBody.slice(splitsBodyStart, splitsBodyEnd);
+  const abiInSplits = findBlockAtDepth(splitsBody, 'abi', 0);
+  if (!abiInSplits) return null;
+  const abiOpenStripped =
+    androidBodyStart + splitsBodyStart + abiInSplits.openIdx;
+  const abiCloseStripped =
+    androidBodyStart + splitsBodyStart + abiInSplits.closeIdx;
+  return gradle.slice(map[abiOpenStripped], map[abiCloseStripped]);
 }
 
 // True if the real `defaultConfig` block (structurally anchored inside
@@ -473,4 +461,5 @@ module.exports.__internal = {
   stripGroovyComments,
   findExecutableAbiFilterCalls,
   findExecutableSplitsAbiBody,
+  findBlockAtDepth,
 };
