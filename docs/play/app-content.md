@@ -45,8 +45,8 @@ scan feature.
 ```
 Most of the app is usable without any account. On the first screen, tap
 "以訪客身份進入" (the second button, "Continue as guest") to enter. As a guest you can
-browse card sets, search cards, open card details with reference prices, read the rules
-tutorial, and view tournament reports.
+browse card sets, search cards, open card details (card artwork, card number, type, colour,
+rarity, skills and effects), read the rules tutorial, and view tournament reports.
 
 Card scanning requires a signed-in account. To review that feature, tap the first button
 ("Sign in with Google") and use the test account below. After signing in, open the menu
@@ -74,7 +74,7 @@ Answer as an app, not a game. The intended answers:
 | --- | --- |
 | Category | Reference / Utility |
 | Violence, sexuality, profanity, controlled substances, horror | None |
-| Gambling, simulated gambling, real-money contests | **None.** The app shows secondary-market reference prices for physical cards. It sells nothing, holds no balance, and runs no draw, pack-opening or loot mechanic. |
+| Gambling, simulated gambling, real-money contests | **None.** The Store-MVP build shows no secondary-market prices; it lists cards, their metadata and skills. It sells nothing, holds no balance, and runs no draw, pack-opening or loot mechanic. |
 | User-generated content, sharing, communication between users | **None.** No comments, posts, messaging, profiles or social graph. |
 | Shares user location | No |
 | Allows purchases | No — no billing integration exists in this build |
@@ -100,15 +100,15 @@ answers; do not hand-pick a rating.
 | Appeals to children? | No |
 | Designed for Families / Teacher Approved? | No — do not opt in |
 
-Rationale: this is a collector and player utility centred on secondary-market pricing. It
-is not designed for children, and the store listing, icon and feature graphic contain no
-child-directed themes. Including under-13 would pull the app into the Families policy
-programme, which requires a certified ads SDK, additional disclosures and a stricter
-review — for no benefit here.
+Rationale: this is a player utility for card lookup, camera scanning and deck building
+around a specific TCG. It is not designed for children, and the store listing, icon and
+feature graphic contain no child-directed themes. Including under-13 would pull the app
+into the Families policy programme, which requires a certified ads SDK, additional
+disclosures and a stricter review — for no benefit here.
 
 The hololive property has broad appeal, so be prepared for Play to ask whether the app
-appeals to children. The honest answer is no: the app's function is price lookup and
-collection tracking for people who buy cards.
+appeals to children. The honest answer is no: the app's function is card lookup, camera
+scanning and deck building for people who already play the game.
 
 ## News app
 

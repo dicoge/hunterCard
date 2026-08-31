@@ -104,12 +104,15 @@ None of that is a gate for the initial submission.
 DIC-1256 removes favorites, price alerts and **all** market/price data from the store build.
 That reaches further than the paid UI and invalidates parts of this pack:
 
-- **Store listing copy is rewritten** — the old text sold reference prices, collection
-  tracking and deck cost. See `store-listing.md`.
-- **All committed screenshots must be recaptured from the slim build.** The three that
-  depended on removed features (search prices, market data, favorites drawer) are deleted;
-  the surviving home shot is re-encoded to Play's required 24-bit RGB but must still be
-  reshot on the DIC-1256 build for consistency. Play needs a minimum of two.
+- **Store listing copy is rewritten** — the old text advertised features (secondary-market
+  pricing, market data, favorites, deck cost) that DIC-1256 removes. See `store-listing.md`.
+- **Screenshots come from the Store-MVP surface, not the old build.** Four build-6 shots
+  were removed for depending on removed features (search prices, market data, favorites
+  drawer); the phone screenshots committed under `docs/play/store-listing/` render the
+  Store-MVP surface (browse, card detail without prices, deck editor, rules tutorial) at
+  Play's required 24-bit RGB / 1080×1920 (9:16). `test:play-store-assets` fails the build
+  if fewer than two are present or if any of them contains stale market UI markers
+  (`市場數據`, `NT$`, `收藏`, `入手提醒`).
 - **Data safety Device IDs is now "not collected"** — see the correction below.
 - **`POST_NOTIFICATIONS` is blocked at the manifest layer for the store profile**
   (DIC-1259). `app.config.js` adds it to `blockedPermissions` when `EXPO_PUBLIC_STORE_MVP=1`,

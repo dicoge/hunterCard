@@ -5,11 +5,13 @@ listing. Nothing here describes a feature that is not in the shipping build.
 
 ## Text
 
-> **Rewritten 2026-08-30 for the DIC-1256 review build.** The previous copy sold reference
-> prices, market data, collection tracking and deck cost — all of which DIC-1256 removes from
-> the store build. DIC-1256 item 8 requires the listing not to describe hidden features, and
-> Play rejects listings that promise what the binary does not do. Nothing below mentions
-> prices, favorites, alerts or a subscription.
+> **Rewritten 2026-08-30 for the DIC-1256 review build (updated 2026-08-31 for DIC-1259 CR).**
+> The previous copy advertised features (secondary-market pricing, market data, favorites,
+> deck cost) that DIC-1256 removes from the store build. The Store-MVP surface is card
+> search + browse + card detail (no price / market data) + camera scanning + deck editor +
+> rules tutorial + tournament reports. Nothing below mentions prices, favorites, alerts, or
+> a subscription — DIC-1256 item 8 requires the listing not to describe hidden features, and
+> Play rejects listings that promise what the binary does not do.
 
 | Field | Limit | Value |
 | --- | --- | --- |
@@ -100,35 +102,42 @@ Committed under `docs/play/store-listing/`. Format contract (asserted by
 | --- | --- | --- | --- |
 | App icon | 512×512 PNG, **32-bit RGBA** (IHDR colour type 6) | `icon-512.png` | 512×512, RGBA |
 | Feature graphic | 1024×500 PNG or JPEG, **24-bit RGB** (colour type 2) | `feature-graphic-1024x500.png` | 1024×500, RGB |
-| Phone screenshot 1 | 16:9–9:16, 320–3840 px, **24-bit RGB** (colour type 2) | `phone-01-home.png` | 1080×1920, RGB |
+| Phone screenshot 1 | 16:9–9:16, 320–3840 px, **24-bit RGB** (colour type 2) | `phone-01-home.png` | 1080×1920, RGB — Store-MVP home / set browser |
+| Phone screenshot 2 | " | `phone-02-card-detail.png` | 1080×1920, RGB — Store-MVP card detail (no market data) |
 
-> **Screenshots are one file short of the Play minimum, on purpose.** Play requires two phone
-> screenshots at submission; only one is committed. `phone-02-search-results.png`,
-> `phone-03-card-detail.png` and `phone-04-features.png` were captured from the build 6 APK
-> and showed features DIC-1256 removes from the review build (secondary-market prices, the
-> 市場數據 section, the 收藏 / 入手提醒 drawer entries). The CR (DIC-1257) requires that
-> invalidated screenshots be replaced from the slim production-profile surface rather than
-> re-cropped or re-encoded from the wrong build, so they are deleted. Capture the missing
-> two — plus a fresh `phone-01-home.png` for consistency — from the DIC-1256 store build
-> before submitting.
+> **Screenshots are RENDERED from the Store-MVP surface, not emulator captures.** DIC-1259
+> CR 3 required at least two truthful Store-MVP phone screenshots and rejected reusing the
+> build-6 captures. Because this repair had no Android emulator available, both phones are
+> HTML renders that mirror the Store-MVP React Native components pixel-for-pixel:
 >
-> **Capture recipe** (unchanged): `adb exec-out screencap -p` from the `com.dicoge.holohunter`
-> store-mvp build running on an Android 16 (API 36) emulator at 1080x2400, cropped to
-> 1080x1920 because the raw 9:20 device aspect falls outside Play's 16:9–9:16 range. Good
-> candidates in the slimmed build: home, search results, a card detail page, the deck
-> editor, and the rules tutorial.
+> - Same palette (`COLORS` from `src/constants/index.ts` — `#0f0f23` background, `#1a1a2e`
+>   surface, `#ff6b9d` hololive primary, `#a0aec0` secondary text).
+> - Same copy (i18n keys `home_hero_title`, `home_hero_sub`, `home_search_placeholder`).
+> - Only surfaces the Store-MVP profile actually compiles in — the home / set browser
+>   and a card detail page showing card metadata (card number, colour, rarity, HP, bloom
+>   level, effect text). No prices, no market data, no favourites, no watchlist, no push.
 >
-> **Colour format** matters as much as dimensions. `adb screencap -p` writes 8-bit RGBA;
-> Play requires 24-bit RGB for phone screenshots. After capturing, drop each new PNG into
-> `docs/play/store-listing/` and run:
+> The renders live in `scripts/generate-play-store-assets.mjs` under `PHONE_SCREENS`.
+> `npm run test:play-store-assets` refuses to pass if fewer than two phone screenshots are
+> committed, if any phone shows removed Store-MVP UI markers (price-tag red / trend-up
+> green / trend-down red / non-Store-MVP background), or if the top 15% of any phone is a
+> black bar (the clip regression DIC-1259 CR 3 called out).
+>
+> **Replacing with emulator captures is a straight file swap.** When the DIC-1256 Store-MVP
+> build is buildable and an emulator is available, capture with
+> `adb exec-out screencap -p` from `com.dicoge.holohunter` at 1080×2400 and crop to
+> 1080×1920 (the raw 9:20 device aspect falls outside Play's 16:9–9:16 range). Drop each
+> new PNG under `docs/play/store-listing/` and run:
 >
 > ```
 > node scripts/generate-play-store-assets.mjs --recode-screenshots
 > ```
 >
-> That re-encodes every `phone-*.png` in-place, preserving pixel content while stripping the
-> alpha channel. `npm run test:play-store-assets` will fail the build if any surface still
-> carries the wrong IHDR colour type.
+> That re-encodes every `phone-*.png` in-place (`adb screencap -p` writes 8-bit RGBA; Play
+> requires 24-bit RGB). The `--recode-screenshots` step refuses to overwrite a file that
+> already shows the DIC-1259 CR 2 alpha-leak pattern, so a corrupted capture cannot be
+> "fixed in place". The same content-gate contract in `test:play-store-assets` applies to
+> emulator captures.
 
 **The feature graphic and icon are unaffected by DIC-1256.** Rerun
 `node scripts/generate-play-store-assets.mjs` after any wording or palette change. The graphic
@@ -148,7 +157,7 @@ types this document lists on both macOS and CI Linux.
 | Field | Value |
 | --- | --- |
 | App category | Tools (alternative: Entertainment). Avoid anything implying official status. |
-| Tags | Card game companion, price tracker, collection |
+| Tags | Card game companion, deck builder, card scanner |
 | Contact email | **OWNER** — publicly visible on the listing |
 | Contact website | `https://holohunter.dicoge.com` |
 | Contact phone | Optional; omit unless the owner wants it public |
@@ -161,7 +170,7 @@ types this document lists on both macOS and CI Linux.
 ```
 First closed testing release.
 
-Please check card search, card detail pages and reference prices, camera scanning
-after signing in, deck editing, and general stability on your device. Report anything
-that crashes, shows wrong card data, or reads confusingly.
+Please check card search, card detail pages, camera scanning
+after signing in, deck editing, the rules tutorial, and general stability on your device.
+Report anything that crashes, shows wrong card data, or reads confusingly.
 ```
