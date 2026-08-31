@@ -369,6 +369,13 @@ function freshCurrentCard(overrides = {}) {
     rarity: 'C',
     sourceProduct: 'hBP01',
     sellPrice: 50,
+    // DIC-1229 rev.5: seed now gates on `hasCurrentPriceProvenance` — the
+    // origin-product row must carry a fresh timestamp (default 7-day window)
+    // for the seed to fire. This fixture rebuilds a row that just came out
+    // of a successful preservation cycle, so use `now` to stay proven
+    // regardless of when the test runs.
+    timestamp: new Date().toISOString(),
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10037.jpg',
     prices: [{ name: '鷹嶺ルイ', sellPrice: 50, rarity: 'C', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10037.jpg' }],
     priceHistory: { ...preservedHistory },
   };
@@ -443,6 +450,13 @@ function freshCurrentCard(overrides = {}) {
     rarity: 'C',
     sourceProduct: 'hBP01',
     sellPrice: 999,
+    // DIC-1229 rev.5: seed also gates on `hasCurrentPriceProvenance` for
+    // this sibling; give it a fresh timestamp + matching yuyuImage so the
+    // seed keeps firing and the cross-printing leakage guard still tests
+    // what it was designed to test.
+    timestamp: new Date().toISOString(),
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10038.jpg',
+    prices: [{ name: '鷹嶺ルイ', sellPrice: 999, rarity: 'C', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10038.jpg' }],
     priceHistory: siblingHistory,
   };
   seedCanonicalHistoryFiles({
@@ -472,6 +486,12 @@ function freshCurrentCard(overrides = {}) {
     name: 'test',
     rarity: 'R',
     sourceProduct: 'hXX',
+    sellPrice: 100,
+    // DIC-1229 rev.5: same seed gate applies — fresh timestamp + matching
+    // yuyuImage keep the fail-closed-price test focused on price sanitising.
+    timestamp: new Date().toISOString(),
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hxx/10001.jpg',
+    prices: [{ name: 'test', sellPrice: 100, rarity: 'R', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hxx/10001.jpg' }],
     priceHistory: { '2026-08-20': 0, '2026-08-21': -5, '2026-08-22': null, '2026-08-23': 100, '2026-08-24': 110 },
   };
   const failClosedResult = seedCanonicalHistoryFiles({
