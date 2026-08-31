@@ -37,6 +37,9 @@ jobs:
       - name: Verify release APK pipeline invariants (DIC-1193)
         run: npm run test:release-apk-pipeline
 
+      - name: Verify release APK size + content guards (DIC-1266)
+        run: npm run test:release-apk-size-optim
+
       - name: Check TypeScript types
         run: npx tsc --noEmit
 

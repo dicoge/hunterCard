@@ -98,6 +98,9 @@ jobs:
       - name: Verify release APK pipeline invariants (DIC-1193)
         run: npm run test:release-apk-pipeline
 
+      - name: Verify release APK size + content guards (DIC-1266)
+        run: npm run test:release-apk-size-optim
+
       - name: Setup EAS
         uses: expo/expo-github-action@v8
         with:
