@@ -129,6 +129,18 @@ const GATED_SCAN_SESSION_MARKERS = [
   ['ScanSessionPanel 複製結果 (copy-export) button', 'hasCopyResultsBtn'],
   ['ScanSessionPanel any price-like text (¥/NT$/$)', 'hasPriceLikeText'],
 ];
+const GATED_SEARCH_RESULT_MARKERS = [
+  ['SearchResults card price badge row', 'hasPriceBadgeRow'],
+  ['SearchResults card no-trade badge', 'hasNoTradeBadge'],
+  ['SearchResults card any price-like text (¥/NT$/$)', 'hasPriceLikeText'],
+];
+const GATED_DECK_EDITOR_MARKERS = [
+  ['DeckEditor gap-price (marketData)', 'hasGapPrice'],
+  ['DeckEditor deck-gap-totals block (marketData)', 'hasGapTotals'],
+  ['DeckEditor gap-subtotal-JPY (marketData)', 'hasGapSubtotalJPY'],
+  ['DeckEditor price-alert CTA (watchlist)', 'hasAlertOpen'],
+  ['DeckEditor "yuyu-tei.jp" source copy (marketData)', 'hasGapSourceCopy'],
+];
 
 // ── Must-retain markers. Card image / name / number / keyword / official
 //    卡表 / external-links header — visible in BOTH modes so cardholders
@@ -187,6 +199,20 @@ check(
 );
 check('STORE_MVP=1: ScanSessionPanel retains session count', on.scanSession.hasSessionCount === true);
 check('STORE_MVP=1: ScanSessionPanel retains clear action', on.scanSession.hasClearAction === true);
+for (const [label, key] of GATED_SEARCH_RESULT_MARKERS) {
+  check(`STORE_MVP=1: SearchResults hides ${label}`, on.searchResult[key] === false, `got ${JSON.stringify(on.searchResult[key])}`);
+}
+check('STORE_MVP=1: SearchResults retains card name', on.searchResult.hasCardName === true);
+check('STORE_MVP=1: SearchResults retains card number', on.searchResult.hasCardNumber === true);
+for (const [label, key] of GATED_DECK_EDITOR_MARKERS) {
+  check(`STORE_MVP=1: DeckEditor hides ${label}`, on.deckEditor[key] === false, `got ${JSON.stringify(on.deckEditor[key])}`);
+}
+check(
+  'STORE_MVP=1: DeckEditor gap panel uses store title (no 參考售價 claim)',
+  on.deckEditor.hasStoreTitle === true && on.deckEditor.hasEstimateTitle === false,
+  `store=${on.deckEditor.hasStoreTitle} estimate=${on.deckEditor.hasEstimateTitle}`,
+);
+check('STORE_MVP=1: DeckEditor retains missing-card number for deck-editing help', on.deckEditor.hasCardNumber === true);
 
 console.log('\n── Probe 2: EXPO_PUBLIC_STORE_MVP=0 (staging / development) ──');
 console.log('     → Store MVP OFF → every gated feature must be present unchanged.\n');
@@ -233,6 +259,19 @@ check(
 );
 check('STORE_MVP=0: ScanSessionPanel retains session count', off.scanSession.hasSessionCount === true);
 check('STORE_MVP=0: ScanSessionPanel retains clear action', off.scanSession.hasClearAction === true);
+for (const [label, key] of GATED_SEARCH_RESULT_MARKERS) {
+  check(`STORE_MVP=0: SearchResults shows ${label}`, off.searchResult[key] === true, `got ${JSON.stringify(off.searchResult[key])}`);
+}
+check('STORE_MVP=0: SearchResults retains card name', off.searchResult.hasCardName === true);
+check('STORE_MVP=0: SearchResults retains card number', off.searchResult.hasCardNumber === true);
+for (const [label, key] of GATED_DECK_EDITOR_MARKERS) {
+  check(`STORE_MVP=0: DeckEditor shows ${label}`, off.deckEditor[key] === true, `got ${JSON.stringify(off.deckEditor[key])}`);
+}
+check(
+  'STORE_MVP=0: DeckEditor gap panel uses estimate title (with 參考售價 claim)',
+  off.deckEditor.hasEstimateTitle === true && off.deckEditor.hasStoreTitle === false,
+);
+check('STORE_MVP=0: DeckEditor retains missing-card number', off.deckEditor.hasCardNumber === true);
 
 // ── Vacuousness guard: the two probes MUST disagree on every gated marker.
 //    If they don't, the profile isn't actually flipping the render — the
@@ -262,6 +301,23 @@ for (const [label, key] of GATED_SCAN_SESSION_MARKERS) {
     on.scanSession[key] !== off.scanSession[key],
   );
 }
+for (const [label, key] of GATED_SEARCH_RESULT_MARKERS) {
+  check(
+    `STORE_MVP=1 vs =0: ${label} presence differs (${on.searchResult[key]} vs ${off.searchResult[key]})`,
+    on.searchResult[key] !== off.searchResult[key],
+  );
+}
+for (const [label, key] of GATED_DECK_EDITOR_MARKERS) {
+  check(
+    `STORE_MVP=1 vs =0: ${label} presence differs (${on.deckEditor[key]} vs ${off.deckEditor[key]})`,
+    on.deckEditor[key] !== off.deckEditor[key],
+  );
+}
+check(
+  'STORE_MVP=1 vs =0: DeckEditor gap-panel title text swaps between store/estimate',
+  on.deckEditor.hasStoreTitle !== off.deckEditor.hasStoreTitle
+    && on.deckEditor.hasEstimateTitle !== off.deckEditor.hasEstimateTitle,
+);
 check(
   'STORE_MVP=1 vs =0: ScanSessionPanel header title text swaps between store/estimate',
   on.scanSession.hasStoreTitle !== off.scanSession.hasStoreTitle

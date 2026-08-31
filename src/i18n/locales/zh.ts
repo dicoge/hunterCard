@@ -474,6 +474,8 @@ export const zh = {
   collection_view_a11y: '查看 {{name}} {{version}}',
   collection_image_a11y: '{{name}} {{version}} 卡圖',
   deck_gap_title: '缺卡預估（參考售價）',
+  // Store MVP: same 缺卡預估 panel without 參考售價 claim (DIC-1256).
+  deck_gap_title_store: '缺卡預估',
   deck_required: '需 {{count}}',
   deck_owned: '有 {{count}}',
   deck_missing: '缺 {{count}}',

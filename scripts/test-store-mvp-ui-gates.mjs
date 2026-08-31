@@ -184,6 +184,43 @@ check(
   /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{resultStyles\.listItemPrice\}/s.test(scanScreen),
 );
 
+// ── 3c. SearchResults + DeckEditor (DIC-1262 CR → DIC-1256 remediation) ──
+// Both are retained routes; only their price / market / watchlist surfaces
+// are gated. Static-source pins live alongside the render probe below.
+const searchResults = read('src/screens/SearchResultsScreen.tsx');
+check(
+  'SearchResultsScreen: card price/no-trade branch wrapped in {FEATURES.marketData && (...)}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*card\.yuyuPrice/s.test(searchResults),
+);
+check(
+  'SearchResultsScreen: imports FEATURES from releaseFlags',
+  /from '\.\.\/config\/releaseFlags'/.test(searchResults)
+    && /import\s*\{[^}]*FEATURES[^}]*\}\s*from\s*'\.\.\/config\/releaseFlags'/.test(searchResults),
+);
+
+const deckEditor = read('src/screens/DeckEditorScreen.tsx');
+check(
+  'DeckEditorScreen: imports FEATURES from releaseFlags',
+  /import\s*\{\s*FEATURES\s*\}\s*from\s*'\.\.\/config\/releaseFlags'/.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: gap panel header title uses store variant under !FEATURES.marketData',
+  /FEATURES\.marketData\s*\?\s*'deck_gap_title'\s*:\s*'deck_gap_title_store'/.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: per-row gap price wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{styles\.gapPrice\}/s.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: gap-totals card wrapped under FEATURES.marketData',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{styles\.gapPrice\}/s.test(deckEditor)
+    && /FEATURES\.marketData\s*\?\s*\(\s*<View style=\{styles\.totalCard\}/s.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: price-alert row/editor gated by FEATURES.watchlist',
+  /\{FEATURES\.watchlist\s*&&\s*r\.missing\s*>\s*0\s*&&\s*\(/.test(deckEditor),
+);
+
 // ── 4. Settings: price sources section only rendered under FEATURES.marketData;
 //        link-hint and guest-sync copy have a store-only branch. ──
 const settings = read('src/screens/SettingsScreen.tsx');
@@ -225,6 +262,7 @@ for (const key of [
   'scan_session_title_store',
   'scan_version_select_hint_store',
   'scan_version_pending_hint_store',
+  'deck_gap_title_store',
 ]) {
   const zhText = extractStoreKey(zh, key);
   const jaText = extractStoreKey(ja, key);

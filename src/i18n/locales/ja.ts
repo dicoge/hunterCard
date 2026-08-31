@@ -474,6 +474,8 @@ export const ja: Record<keyof typeof zh, string> = {
   collection_view_a11y: '{{name}} {{version}} を表示',
   collection_image_a11y: '{{name}} {{version}} のカード画像',
   deck_gap_title: '不足カード見積もり（参考販売価格）',
+  // Store MVP: same 不足カード panel without 参考販売価格 claim (DIC-1256).
+  deck_gap_title_store: '不足カード',
   deck_required: '必要 {{count}}',
   deck_owned: '所持 {{count}}',
   deck_missing: '不足 {{count}}',
