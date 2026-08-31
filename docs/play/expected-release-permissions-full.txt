@@ -1,0 +1,53 @@
+# Expected merged-manifest permissions for the HoloHunter Android release
+# artifact in the FULL profile — internal/dev builds where EXPO_PUBLIC_STORE_MVP
+# is not set to '1'/'true', so watchlist and push-alert code paths are compiled
+# in and POST_NOTIFICATIONS is retained.
+#
+# Provenance: derived from `aapt2 dump permissions` on the EAS build 6 APK
+# (build d842d312-79f5-41aa-bacf-bda080baf518, versionCode 6,
+# sha256 59b3f71842a9222fcc3a262e4dee73bbd7bfe950b9ae97522f51ba15536459f4),
+# minus the three permissions blocked at the app-manifest layer for every
+# profile (SYSTEM_ALERT_WINDOW, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE).
+# POST_NOTIFICATIONS stays because internal builds keep the price-alert feature
+# behind it.
+#
+# The remaining entries are contributed by Maven AARs pulled in through
+# expo-notifications and are not visible in node_modules:
+#   firebase-messaging 24.0.1 -> c2dm.RECEIVE, WAKE_LOCK, ACCESS_NETWORK_STATE,
+#                                VIBRATE, BIND_GET_INSTALL_REFERRER_SERVICE
+#   me.leolin:ShortcutBadger 1.1.22 -> every launcher badge permission and READ_APP_BADGE
+#   androidx.core -> ${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+# All are normal-level: they are granted at install with no runtime prompt and
+# Play does not require a sensitive-permission declaration for them.
+#
+# Verify a built APK against this profile:
+#   scripts/ci/play-artifact-permissions-verify.sh --profile full <path-to.aab|apk>
+#
+# Update this baseline only together with a dependency change that explains the
+# difference. An unexplained diff means the release manifest widened.
+android.permission.ACCESS_NETWORK_STATE
+android.permission.CAMERA
+android.permission.INTERNET
+android.permission.POST_NOTIFICATIONS
+android.permission.READ_APP_BADGE
+android.permission.RECEIVE_BOOT_COMPLETED
+android.permission.VIBRATE
+android.permission.WAKE_LOCK
+com.anddoes.launcher.permission.UPDATE_COUNT
+com.dicoge.holohunter.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+com.google.android.c2dm.permission.RECEIVE
+com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE
+com.htc.launcher.permission.READ_SETTINGS
+com.htc.launcher.permission.UPDATE_SHORTCUT
+com.huawei.android.launcher.permission.CHANGE_BADGE
+com.huawei.android.launcher.permission.READ_SETTINGS
+com.huawei.android.launcher.permission.WRITE_SETTINGS
+com.majeur.launcher.permission.UPDATE_BADGE
+com.oppo.launcher.permission.READ_SETTINGS
+com.oppo.launcher.permission.WRITE_SETTINGS
+com.sec.android.provider.badge.permission.READ
+com.sec.android.provider.badge.permission.WRITE
+com.sonyericsson.home.permission.BROADCAST_BADGE
+com.sonymobile.home.permission.PROVIDER_INSERT_BADGE
+me.everything.badger.permission.BADGE_COUNT_READ
+me.everything.badger.permission.BADGE_COUNT_WRITE

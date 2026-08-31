@@ -267,6 +267,18 @@ jobs:
       - name: Verify AdSlot real component render and fail-closed safety (DIC-1157)
         run: npm run test:adslot-render
 
+      - name: Verify the Play release manifest requests no unjustified permission (DIC-1248 / DIC-1259)
+        run: npm run test:play-manifest
+
+      - name: Verify Play store-listing assets are dimensioned AND in the right PNG colour type (DIC-1259)
+        run: npm run test:play-store-assets
+
+      - name: Verify the privacy policy matches what the code actually sends off-device (DIC-1248)
+        run: npm run test:privacy-disclosure
+
+      - name: Verify a native scan transmits no image bytes (DIC-1248)
+        run: npm run test:native-scan-no-upload
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
