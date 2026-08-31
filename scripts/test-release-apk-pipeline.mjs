@@ -600,18 +600,18 @@ function enumerateBuildInvocations() {
 const GATED_WORKFLOW = '.github/workflows/eas-build.yml';
 
 // The complete, exhaustive list of builds this repository is allowed to perform.
-// Indexes shifted +1 in DIC-1266: the new size/content guard step
-// "Verify release APK size + content guards (DIC-1266)" was inserted before
-// the build invocations in .github/workflows/eas-build.yml (right after the
-// DIC-1193 pipeline preflight), pushing both invocations one slot deeper. The
-// invocations themselves — file, job, name, if, and command — are unchanged;
-// only the position moved, and the position is intentional. Any additional
-// build step or any change to name/if/command still fails this assertion.
+// Indexes shifted +1 (again) in DIC-1266 CR round 2: the DIC-1269 CR added a
+// second preflight step ("Verify effective generated Gradle from real prebuild
+// (DIC-1266 CR blocker 1/2)") immediately after the first size-optim guard,
+// pushing each invocation one slot deeper — 10→11 and 11→12. The invocations
+// themselves — file, job, name, if, and command — are unchanged; only the
+// position moved, and the position is intentional. Any additional build step
+// or any change to name/if/command still fails this assertion.
 const ALLOWED_BUILD_INVOCATIONS = [
   {
     file: GATED_WORKFLOW,
     job: 'build',
-    index: 10,
+    index: 11,
     name: 'EAS Build',
     if: "${{ inputs.profile != 'production-apk' }}",
     command: [
@@ -625,7 +625,7 @@ const ALLOWED_BUILD_INVOCATIONS = [
   {
     file: GATED_WORKFLOW,
     job: 'build',
-    index: 11,
+    index: 12,
     name: 'EAS Build (production APK, wait for artifact)',
     if: "${{ inputs.profile == 'production-apk' }}",
     command: [

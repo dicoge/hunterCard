@@ -40,6 +40,9 @@ jobs:
       - name: Verify release APK size + content guards (DIC-1266)
         run: npm run test:release-apk-size-optim
 
+      - name: Verify effective generated Gradle from real prebuild (DIC-1266 CR blocker 1/2)
+        run: npm run test:release-apk-prebuild-effective
+
       - name: Check TypeScript types
         run: npx tsc --noEmit
 

@@ -30,6 +30,7 @@
     "test:expo-native-compat": "node scripts/test-expo-native-module-compat.mjs",
     "test:release-apk-pipeline": "node scripts/test-release-apk-pipeline.mjs",
     "test:release-apk-size-optim": "node scripts/test-release-apk-size-optim.mjs",
+    "test:release-apk-prebuild-effective": "node scripts/test-release-apk-prebuild-effective.mjs",
     "test:play-manifest": "node scripts/test-play-release-manifest.mjs",
     "test:play-store-assets": "node scripts/test-play-store-assets.mjs",
     "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",

@@ -6,69 +6,114 @@
 // the two dominant, safe-to-drop contributors to that size WITHOUT changing
 // product content:
 //
-//   1. `ndk.abiFilters = ["arm64-v8a"]` — the current APK ships four native
-//      ABI directories (x86 24 MB + x86_64 23 MB + armeabi-v7a 22 MB +
-//      arm64-v8a 22 MB stored). Google Play has required arm64-v8a since
-//      August 2019, every device Google Play distributes to today is 64-bit
-//      ARM, and the DIC-1265 QA device (Apple Silicon emulator) is arm64-v8a.
-//      Dropping the other three ABIs removes ~68 MB of duplicate native code
-//      the sideload delivery is never going to run.
+//   1. `defaultConfig.ndk.abiFilters "arm64-v8a"` — the DIC-1264 APK ships
+//      four native ABI directories (x86 24 MB + x86_64 23 MB + armeabi-v7a
+//      22 MB + arm64-v8a 22 MB stored). Every Android device Google Play
+//      distributes to today ships arm64-v8a, and the DIC-1265 QA device (an
+//      Apple Silicon emulator) is arm64-v8a. Dropping the other three ABIs
+//      removes ~68 MB of duplicate native code the sideload delivery is
+//      never going to run.
 //
-//   2. `packagingOptions.jniLibs.useLegacyPackaging = true` — RN 0.71+ /
-//      AGP 3.6+ default to storing native libs UNCOMPRESSED so the OS can
-//      mmap them directly from the APK. That saves disk after install at the
-//      cost of the delivered APK carrying every .so byte-for-byte. Flipping
-//      useLegacyPackaging back to `true` compresses the .so entries inside
-//      the APK (~50% ratio on arm64-v8a libs) at the cost of one extraction
-//      pass at install time. For a sideload / QA delivery this is the correct
-//      side of the tradeoff.
+//   2. `expo.useLegacyPackaging=true` — RN 0.71+ / AGP 3.6+ default this to
+//      `false` so native libs are stored uncompressed for OS mmap. That
+//      saves disk after install at the cost of the delivered APK carrying
+//      every .so byte-for-byte. Flipping it back to `true` compresses the
+//      `.so` entries inside the APK (~50% ratio on arm64-v8a libs) at the
+//      cost of one extraction pass at install time. For a sideload / QA
+//      delivery this is the correct side of the tradeoff.
 //
-// Applied together, a locally repackaged arm64-v8a-only, compressed-lib
+//      The property MUST be set via `android/gradle.properties`, not by
+//      inserting a `packagingOptions.jniLibs.useLegacyPackaging = true`
+//      block into `android/app/build.gradle`. The Expo template already
+//      emits a later `packagingOptions { jniLibs { def enableLegacyPackaging
+//      = findProperty('expo.useLegacyPackaging') ?: 'false';
+//      useLegacyPackaging enableLegacyPackaging.toBoolean() } }` block which
+//      overrides any earlier assignment on the same DSL — so a raw
+//      build.gradle insertion is silently reverted at build time (the CR
+//      blocker in DIC-1269 that this file exists to fix). Writing to
+//      `expo.useLegacyPackaging` is the Expo-supported path that the
+//      existing template block reads.
+//
+// Applied together, a locally repackaged arm64-v8a-only + compressed-lib
 // version of the DIC-1264 APK measures ~33 MB (from 151 MB) — well under
 // the 50 MB Telegram Bot API media cap AND under any smaller comment
 // attachment ceiling the Multica server may enforce.
 //
-// Scope gate: the modifications ONLY take effect for
-// `EAS_BUILD_PROFILE in ("production", "production-apk")` (or when the
-// explicit `HUNTER_APK_SIZE_OPTIM=1` override is set — used by the guard
-// test). Locally-run `npx expo prebuild` and preview/development EAS builds
-// are unchanged, so the CI emulator on any host and the dev workflow keep
-// working. `production` and `production-apk` are treated identically because
-// `scripts/test-release-apk-pipeline.mjs`
-// (testReleaseApkDiffersFromStoreOnlyInContainer) requires the two resolved
-// EAS profiles to be the same app modulo container; branching here between
-// them would silently break that invariant.
+// Scope gate: `production-apk` ONLY (with `HUNTER_APK_SIZE_OPTIM=1` as the
+// explicit override the guard test uses). `production` (AAB → Play Store)
+// is deliberately NOT modified — DIC-1269 CR blocker 2 requires the store
+// bundle to keep all four native ABIs. `preview`, `development`, and local
+// `npx expo prebuild` invocations without the env var are unchanged, so
+// the CI emulator on any host and the dev workflow keep working.
 //
-// Idempotency: each injected block carries a tag comment; a re-run of the
-// plugin (Expo rewrites gradle on every prebuild) checks for its own tag and
-// skips insertion if already present. That keeps the plugin safe against
-// double-application and against future manual edits to
-// `android/app/build.gradle` that leave the tag intact.
+// Bypass resistance (DIC-1269 CR blocker 3):
+//   - Idempotency for the ABI insertion checks that the tag comment lives
+//     INSIDE `defaultConfig` (not merely present somewhere in the file), so
+//     relocating the marker cannot make the insertion no-op.
+//   - After ABI insertion, the transform greps the output for any OTHER
+//     `abiFilters` occurrence and throws — a later `ndk { abiFilters "x86",
+//     ... }` block that would restore non-arm64 targets stops the build
+//     instead of silently shipping a bigger APK.
+//   - The gradle-property write via `withGradleProperties` sets a value the
+//     downstream Expo template consumes, so the effective outcome is
+//     provable against the real `expo prebuild` output (see
+//     `scripts/test-release-apk-prebuild-effective.mjs`), not just against
+//     an isolated string transform.
 
-// @expo/config-plugins is loaded lazily inside the exported plugin function so
-// static analysis (`scripts/test-release-apk-size-optim.mjs`) can require this
-// module in a minimal checkout that has not yet run `npm install`.
 const ABI_TAG = '// DIC-1266:abiFilter=arm64-v8a';
-const JNI_TAG = '// DIC-1266:jniLibs.useLegacyPackaging=true';
-
+const LEGACY_PACKAGING_PROPERTY_KEY = 'expo.useLegacyPackaging';
+const LEGACY_PACKAGING_PROPERTY_VALUE = 'true';
 const REQUIRED_ABI = 'arm64-v8a';
+const SCOPED_PROFILES = new Set(['production-apk']);
 
 function shouldApply() {
   if (process.env.HUNTER_APK_SIZE_OPTIM === '1') return true;
   const profile = process.env.EAS_BUILD_PROFILE;
-  return profile === 'production' || profile === 'production-apk';
+  return typeof profile === 'string' && SCOPED_PROFILES.has(profile);
+}
+
+// True if AT LEAST ONE occurrence of `marker` sits inside the
+// `defaultConfig { ... }` block of a Groovy `android { }` DSL. Uses a
+// bracket-balanced scan so a preceding mention of `defaultConfig` in a
+// comment or another block does not shift the match, and iterates every
+// occurrence of `marker` so a stray copy relocated elsewhere in the file
+// does not fool the check into thinking the real insertion already
+// happened (DIC-1269 CR blocker 3).
+function markerLivesInsideDefaultConfig(gradle, marker) {
+  const anchor = gradle.search(/defaultConfig\s*\{/);
+  if (anchor < 0) return false;
+  const openBrace = gradle.indexOf('{', anchor);
+  if (openBrace < 0) return false;
+  let depth = 0;
+  let closeBrace = -1;
+  for (let i = openBrace; i < gradle.length; i += 1) {
+    const ch = gradle[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        closeBrace = i;
+        break;
+      }
+    }
+  }
+  if (closeBrace < 0) return false;
+  let searchFrom = 0;
+  while (searchFrom < gradle.length) {
+    const idx = gradle.indexOf(marker, searchFrom);
+    if (idx < 0) return false;
+    if (idx > openBrace && idx < closeBrace) return true;
+    searchFrom = idx + marker.length;
+  }
+  return false;
 }
 
 function insertIntoDefaultConfig(gradle) {
-  if (gradle.includes(ABI_TAG)) return gradle;
+  if (markerLivesInsideDefaultConfig(gradle, ABI_TAG)) return gradle;
   const insertion =
     `\n        ndk {\n` +
     `            abiFilters "${REQUIRED_ABI}"  ${ABI_TAG}\n` +
     `        }\n`;
-  // The RN 0.81 template writes `defaultConfig {` on its own line inside the
-  // `android { ... }` block. We insert the ndk block as the FIRST child of
-  // defaultConfig; the existing children (applicationId, min/target/etc.)
-  // still parse.
   const marker = /defaultConfig\s*\{\s*\n/;
   if (!marker.test(gradle)) {
     throw new Error(
@@ -80,38 +125,64 @@ function insertIntoDefaultConfig(gradle) {
   return gradle.replace(marker, (m) => m + insertion);
 }
 
-function insertPackagingOptions(gradle) {
-  if (gradle.includes(JNI_TAG)) return gradle;
-  const insertion =
-    `\n    packagingOptions {\n` +
-    `        jniLibs {\n` +
-    `            useLegacyPackaging = true  ${JNI_TAG}\n` +
-    `        }\n` +
-    `    }\n`;
-  // Append inside the top-level `android { ... }` block. We anchor on the
-  // FIRST line after `android {` so re-running Expo prebuild (which may
-  // regenerate the file) still finds the anchor.
-  const marker = /android\s*\{\s*\n/;
-  if (!marker.test(gradle)) {
+// After the ABI insertion runs we scan the whole file for `abiFilters`
+// occurrences that could restore non-arm64 targets. Exactly ONE occurrence
+// is allowed — ours — and it must reference only `arm64-v8a`. Anything
+// else (an existing later `ndk { abiFilters "x86", ... }`, a second call
+// site, a `splits { abi { include ... } }` block a future author adds) is
+// treated as a failure the release cannot silently absorb.
+function assertNoAbiRestoration(gradle) {
+  const abiFilterOccurrences = gradle.match(/abiFilters\b[^\n]*/g) ?? [];
+  if (abiFilterOccurrences.length !== 1) {
     throw new Error(
-      'withReleaseApkSizeOptim: could not locate `android {` in android/app/build.gradle. ' +
-        'Refusing to skip the jniLibs compression that keeps the APK under the Multica ' +
-        'attachment cap.',
+      `withReleaseApkSizeOptim: expected exactly one \`abiFilters\` statement in android/app/build.gradle, found ${abiFilterOccurrences.length}:\n` +
+        `${abiFilterOccurrences.map((s) => `  ${s.trim()}`).join('\n')}\n` +
+        'A second `abiFilters` (later in the file, in a splits block, or in a variant) restores the ABIs the size-optim plugin dropped — refusing to ship the resulting oversized APK.',
     );
   }
-  return gradle.replace(marker, (m) => m + insertion);
+  const nonArm64 = /\b(x86|x86_64|armeabi|armeabi-v7a|mips|mips64)\b/;
+  if (nonArm64.test(abiFilterOccurrences[0])) {
+    throw new Error(
+      `withReleaseApkSizeOptim: the sole \`abiFilters\` statement references a non-arm64 ABI: ${abiFilterOccurrences[0].trim()}\n` +
+        'Refusing to reintroduce the ABIs the size-optim plugin exists to drop.',
+    );
+  }
+  // Also refuse any `splits { abi { ... include "x86" } }` construct that
+  // would output additional per-ABI APK slices — those bypass abiFilters.
+  const splitsBlock = gradle.match(/splits\s*\{[\s\S]*?abi\s*\{[\s\S]*?\}[\s\S]*?\}/);
+  if (splitsBlock && /\b(x86|x86_64|armeabi|armeabi-v7a|mips|mips64)\b/.test(splitsBlock[0])) {
+    throw new Error(
+      'withReleaseApkSizeOptim: an android { splits { abi { ... } } } block references a non-arm64 ABI. ' +
+        'Split APKs would carry the ABIs the size-optim plugin dropped — refusing to build.',
+    );
+  }
 }
 
 function transformGradle(gradle) {
-  let out = gradle;
-  out = insertIntoDefaultConfig(out);
-  out = insertPackagingOptions(out);
+  const out = insertIntoDefaultConfig(gradle);
+  assertNoAbiRestoration(out);
   return out;
 }
 
+function setUseLegacyPackagingProperty(properties) {
+  const existing = properties.find(
+    (item) => item?.type === 'property' && item.key === LEGACY_PACKAGING_PROPERTY_KEY,
+  );
+  if (existing) {
+    existing.value = LEGACY_PACKAGING_PROPERTY_VALUE;
+  } else {
+    properties.push({
+      type: 'property',
+      key: LEGACY_PACKAGING_PROPERTY_KEY,
+      value: LEGACY_PACKAGING_PROPERTY_VALUE,
+    });
+  }
+  return properties;
+}
+
 function withReleaseApkSizeOptim(config) {
-  const { withAppBuildGradle } = require('@expo/config-plugins');
-  return withAppBuildGradle(config, (mod) => {
+  const { withAppBuildGradle, withGradleProperties } = require('@expo/config-plugins');
+  let out = withAppBuildGradle(config, (mod) => {
     if (!shouldApply()) return mod;
     if (mod.modResults.language !== 'groovy') {
       throw new Error(
@@ -122,6 +193,12 @@ function withReleaseApkSizeOptim(config) {
     mod.modResults.contents = transformGradle(mod.modResults.contents);
     return mod;
   });
+  out = withGradleProperties(out, (mod) => {
+    if (!shouldApply()) return mod;
+    mod.modResults = setUseLegacyPackagingProperty(mod.modResults);
+    return mod;
+  });
+  return out;
 }
 
 module.exports = withReleaseApkSizeOptim;
@@ -129,10 +206,14 @@ module.exports = withReleaseApkSizeOptim;
 // verify the plugin's behavior without spinning up a full Expo prebuild.
 module.exports.__internal = {
   ABI_TAG,
-  JNI_TAG,
+  LEGACY_PACKAGING_PROPERTY_KEY,
+  LEGACY_PACKAGING_PROPERTY_VALUE,
   REQUIRED_ABI,
+  SCOPED_PROFILES,
   shouldApply,
   transformGradle,
   insertIntoDefaultConfig,
-  insertPackagingOptions,
+  assertNoAbiRestoration,
+  setUseLegacyPackagingProperty,
+  markerLivesInsideDefaultConfig,
 };
