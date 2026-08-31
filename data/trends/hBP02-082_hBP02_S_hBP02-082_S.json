@@ -4,12 +4,12 @@
   "nameZh": "hololive Gamers",
   "trend": "stable",
   "score": 0.03,
-  "confidence": 0.9,
+  "confidence": 0.8,
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-08-30T12:26:54.317Z",
+  "lastUpdated": "2026-08-31T12:13:24.042Z",
   "dataPoints": 67
 }
