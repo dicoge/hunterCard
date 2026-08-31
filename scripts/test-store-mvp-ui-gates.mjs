@@ -220,6 +220,19 @@ check(
   'DeckEditorScreen: price-alert row/editor gated by FEATURES.watchlist',
   /\{FEATURES\.watchlist\s*&&\s*r\.missing\s*>\s*0\s*&&\s*\(/.test(deckEditor),
 );
+// DIC-1155 added a sticky shortage summary that carries its own per-currency
+// total badge — a SECOND price surface the four checks above do not reach. The
+// shortage COUNT badge stays in Store MVP (it is deck-editing information, not
+// market data); only the money badge is gated.
+check(
+  'DeckEditorScreen: sticky summary total-price badge wrapped in {FEATURES.marketData && ...}',
+  /\{FEATURES\.marketData\s*&&\s*gap\s*&&\s*gap\.subtotals\.map/s.test(deckEditor)
+    && /styles\.stickyTotalPriceBadge/.test(deckEditor),
+);
+check(
+  'DeckEditorScreen: sticky shortage-count badge is NOT gated (retained in Store MVP)',
+  /<Text style=\{styles\.shortageCountBadge\} testID="shortage-count-title">/.test(deckEditor),
+);
 
 // ── 4. Settings: price sources section only rendered under FEATURES.marketData;
 //        link-hint and guest-sync copy have a store-only branch. ──

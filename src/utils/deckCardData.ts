@@ -24,6 +24,7 @@ export interface RawCard {
   name?: string;
   nameZh?: string;
   type?: string;
+  color?: string;
   rarity?: string;
   series?: string;
   sellPrice?: number | null;
@@ -60,6 +61,7 @@ function toDeckCard(rep: RawCard, printing: SourcePrinting): DeckCard {
     // preferred language (DIC-1142). Absent when the source did not publish it.
     nameZh: rep.nameZh || undefined,
     nameJa: rep.name || undefined,
+    color: rep.skillsJp?.color || rep.skillsZh?.color || rep.color || undefined,
     printing: printing.printing,
     printingLabel: printing.label,
     series: rep.series || '',

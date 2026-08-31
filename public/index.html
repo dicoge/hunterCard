@@ -11,9 +11,29 @@
     <meta name="apple-mobile-web-app-title" content="HoloHunter" />
     <link rel="apple-touch-icon" href="/favicon.ico" />
     <style>
-      html, body { height: 100%; margin: 0; }
+      html, body { height: 100%; margin: 0; background-color: #0f0f12; color: #f0f0f5; }
       body { overflow: hidden; }
       #root { display: flex; height: 100%; }
+
+      /* Dark Scrollbar Design Tokens (Webkit & Firefox) */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #18181c;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #383842;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #505060;
+      }
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #383842 #18181c;
+      }
     </style>
   </head>
   <body>
