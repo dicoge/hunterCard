@@ -108,6 +108,29 @@ check('production-apk prebuild sets expo.useLegacyPackaging=true exactly once', 
   assert.equal(value, 'true', `expo.useLegacyPackaging must be "true". Got "${value}".`);
 });
 
+check('production-apk prebuild sets reactNativeArchitectures=arm64-v8a (DIC-1277 QA blocker)', async () => {
+  // The RN gradle plugin's NdkConfiguratorUtils.kt line 61-65:
+  //   ext.defaultConfig.ndk.abiFilters.addAll(architectures)
+  // means whatever `reactNativeArchitectures` lists gets UNIONED onto
+  // the DSL abiFilters. If we leave the property multi-ABI, the real
+  // packaged APK ships all four ABIs even when the DSL text carries
+  // `abiFilters "arm64-v8a"`. Pin it to arm64-v8a so the union is a
+  // no-op with respect to the required set.
+  const gradleProps = readIfExists('android/gradle.properties');
+  const matches = gradleProps.match(/^\s*reactNativeArchitectures\s*=\s*(\S+)\s*$/gm) ?? [];
+  assert.equal(
+    matches.length,
+    1,
+    `android/gradle.properties must define reactNativeArchitectures exactly once. Found ${matches.length}:\n${matches.join('\n')}`,
+  );
+  const value = matches[0].split('=')[1].trim();
+  assert.equal(
+    value,
+    'arm64-v8a',
+    `reactNativeArchitectures must be "arm64-v8a" (comma-list with anything else lets the RN gradle plugin re-add other ABIs). Got "${value}".`,
+  );
+});
+
 check('production-apk build.gradle carries exactly one EXECUTABLE arm64-v8a abiFilters, inside the REAL defaultConfig (comment-aware + string-aware)', async () => {
   const plugin = await loadPlugin();
   const { locateRealDefaultConfigBounds, findExecutableAbiFilterCalls, findExecutableSplitsAbiBody } = plugin;
@@ -154,7 +177,7 @@ check('production-apk generated Gradle keeps applicationId com.dicoge.holohunter
   );
 });
 
-check('production (AAB) prebuild must NOT set expo.useLegacyPackaging=true and must keep all four ABIs (DIC-1269 CR round-1 blocker 2)', async () => {
+check('production (AAB) prebuild must NOT set expo.useLegacyPackaging=true, must keep all four ABIs, and must NOT narrow reactNativeArchitectures (DIC-1269 CR round-1 blocker 2 + DIC-1277)', async () => {
   const plugin = await loadPlugin();
   const { findExecutableAbiFilterCalls } = plugin;
   cleanAndroid();
@@ -168,6 +191,15 @@ check('production (AAB) prebuild must NOT set expo.useLegacyPackaging=true and m
     'false',
     'the production AAB must keep the Expo default expo.useLegacyPackaging=false — DIC-1269 CR round-1 blocker 2 forbids narrowing the store bundle',
   );
+  const archs = gradleProps.match(/^\s*reactNativeArchitectures\s*=\s*(\S+)\s*$/m);
+  assert.ok(archs, 'gradle.properties must define reactNativeArchitectures');
+  const archList = archs[1].trim().split(',');
+  for (const abi of ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']) {
+    assert.ok(
+      archList.includes(abi),
+      `the production AAB must keep ${abi} in reactNativeArchitectures. Got: ${archs[1].trim()}`,
+    );
+  }
   const buildGradle = readIfExists('android/app/build.gradle');
   const calls = findExecutableAbiFilterCalls(buildGradle);
   assert.equal(

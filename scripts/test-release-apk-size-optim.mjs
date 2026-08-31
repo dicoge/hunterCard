@@ -506,6 +506,46 @@ check('plugin sets expo.useLegacyPackaging=true (Expo-supported property path)',
   }
 });
 
+check('plugin pins reactNativeArchitectures=arm64-v8a — otherwise the RN gradle plugin re-adds every ABI (DIC-1277 QA blocker)', () => {
+  const plugin = require_(path.join(ROOT, 'plugins', 'withReleaseApkSizeOptim.js'));
+  const {
+    setReactNativeArchitecturesProperty,
+    RN_ARCHITECTURES_PROPERTY_KEY,
+    RN_ARCHITECTURES_PROPERTY_VALUE,
+  } = plugin.__internal;
+  // The Expo template's android/gradle.properties writes
+  // `reactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64`. The RN
+  // gradle plugin (@react-native/gradle-plugin
+  // NdkConfiguratorUtils.kt L61-65) reads that list and calls
+  // `ext.defaultConfig.ndk.abiFilters.addAll(architectures)`. If we
+  // leave the property multi-ABI, the union with our arm64 filter
+  // becomes all four ABIs — the exact DIC-1277 QA reproduction.
+  assert.equal(
+    RN_ARCHITECTURES_PROPERTY_KEY,
+    'reactNativeArchitectures',
+    'the property name MUST be `reactNativeArchitectures` — the RN plugin reads exactly this key',
+  );
+  assert.equal(
+    RN_ARCHITECTURES_PROPERTY_VALUE,
+    'arm64-v8a',
+    'the property value MUST be `arm64-v8a` — a comma-list with any other ABI defeats the arm64-only invariant',
+  );
+  const before = [
+    { type: 'property', key: 'org.gradle.jvmargs', value: '-Xmx2g' },
+    { type: 'property', key: RN_ARCHITECTURES_PROPERTY_KEY, value: 'armeabi-v7a,arm64-v8a,x86,x86_64' },
+  ];
+  const overridden = setReactNativeArchitecturesProperty(structuredClone(before));
+  const found = overridden.find((item) => item.key === RN_ARCHITECTURES_PROPERTY_KEY);
+  assert.equal(found?.value, 'arm64-v8a', 'existing multi-ABI value must be overwritten to arm64-v8a');
+  const missing = setReactNativeArchitecturesProperty([{ type: 'property', key: 'other', value: 'x' }]);
+  const appended = missing.find((item) => item.key === RN_ARCHITECTURES_PROPERTY_KEY);
+  assert.equal(appended?.value, 'arm64-v8a', 'missing property must be appended with arm64-v8a');
+  for (const list of [overridden, missing]) {
+    const matching = list.filter((item) => item.key === RN_ARCHITECTURES_PROPERTY_KEY);
+    assert.equal(matching.length, 1, `${RN_ARCHITECTURES_PROPERTY_KEY} must appear exactly once`);
+  }
+});
+
 // ---------- 4. hEB01 content coverage -----------------------------------------
 
 check('data/database.json ships hEB01 214 with nameZh 214/214 and skillsZh 214/214', () => {

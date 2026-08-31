@@ -73,6 +73,17 @@ const ABI_INLINE_COMMENT = `// ${ABI_TAG_LABEL}`;
 const REQUIRED_ABI = 'arm64-v8a';
 const LEGACY_PACKAGING_PROPERTY_KEY = 'expo.useLegacyPackaging';
 const LEGACY_PACKAGING_PROPERTY_VALUE = 'true';
+// The React Native gradle plugin reads `reactNativeArchitectures` from
+// android/gradle.properties and calls
+// `ext.defaultConfig.ndk.abiFilters.addAll(architectures)`. If we only
+// insert `abiFilters "arm64-v8a"` into build.gradle but leave the RN
+// property as `armeabi-v7a,arm64-v8a,x86,x86_64`, the plugin unions the
+// two lists and the packaged APK ships all four ABIs — exactly the
+// DIC-1277 QA blocker. Setting the RN property to arm64-only makes the
+// plugin's addAll a no-op with respect to the required set, so the
+// final packaged ABI set stays `{arm64-v8a}`.
+const RN_ARCHITECTURES_PROPERTY_KEY = 'reactNativeArchitectures';
+const RN_ARCHITECTURES_PROPERTY_VALUE = 'arm64-v8a';
 const SCOPED_PROFILES = new Set(['production-apk']);
 
 function shouldApply() {
@@ -421,20 +432,32 @@ function transformGradle(gradle) {
   return out;
 }
 
-function setUseLegacyPackagingProperty(properties) {
+function upsertGradleProperty(properties, key, value) {
   const existing = properties.find(
-    (item) => item?.type === 'property' && item.key === LEGACY_PACKAGING_PROPERTY_KEY,
+    (item) => item?.type === 'property' && item.key === key,
   );
   if (existing) {
-    existing.value = LEGACY_PACKAGING_PROPERTY_VALUE;
+    existing.value = value;
   } else {
-    properties.push({
-      type: 'property',
-      key: LEGACY_PACKAGING_PROPERTY_KEY,
-      value: LEGACY_PACKAGING_PROPERTY_VALUE,
-    });
+    properties.push({ type: 'property', key, value });
   }
   return properties;
+}
+
+function setUseLegacyPackagingProperty(properties) {
+  return upsertGradleProperty(
+    properties,
+    LEGACY_PACKAGING_PROPERTY_KEY,
+    LEGACY_PACKAGING_PROPERTY_VALUE,
+  );
+}
+
+function setReactNativeArchitecturesProperty(properties) {
+  return upsertGradleProperty(
+    properties,
+    RN_ARCHITECTURES_PROPERTY_KEY,
+    RN_ARCHITECTURES_PROPERTY_VALUE,
+  );
 }
 
 function withReleaseApkSizeOptim(config) {
@@ -453,6 +476,15 @@ function withReleaseApkSizeOptim(config) {
   out = withGradleProperties(out, (mod) => {
     if (!shouldApply()) return mod;
     mod.modResults = setUseLegacyPackagingProperty(mod.modResults);
+    // Also pin reactNativeArchitectures to arm64-v8a so the RN gradle
+    // plugin's NdkConfiguratorUtils.kt line 61-65
+    //   ext.defaultConfig.ndk.abiFilters.addAll(architectures)
+    // unions arm64-v8a with the already-set arm64-v8a rather than
+    // unioning all four ABIs on top of our filter. Without this, the
+    // real assembleRelease APK ships four ABIs even though the DSL
+    // text contains `abiFilters "arm64-v8a"` — the exact DIC-1277 QA
+    // blocker.
+    mod.modResults = setReactNativeArchitecturesProperty(mod.modResults);
     return mod;
   });
   return out;
@@ -466,6 +498,8 @@ module.exports.__internal = {
   ABI_INLINE_COMMENT,
   LEGACY_PACKAGING_PROPERTY_KEY,
   LEGACY_PACKAGING_PROPERTY_VALUE,
+  RN_ARCHITECTURES_PROPERTY_KEY,
+  RN_ARCHITECTURES_PROPERTY_VALUE,
   REQUIRED_ABI,
   SCOPED_PROFILES,
   shouldApply,
@@ -473,6 +507,7 @@ module.exports.__internal = {
   insertIntoDefaultConfig,
   assertNoAbiRestoration,
   setUseLegacyPackagingProperty,
+  setReactNativeArchitecturesProperty,
   abiFilterActiveInRealDefaultConfig,
   locateRealDefaultConfigBounds,
   stripGroovyComments,
