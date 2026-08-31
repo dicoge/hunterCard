@@ -108,40 +108,41 @@ check('production-apk prebuild sets expo.useLegacyPackaging=true exactly once', 
   assert.equal(value, 'true', `expo.useLegacyPackaging must be "true". Got "${value}".`);
 });
 
-check('production-apk build.gradle carries exactly one EXECUTABLE arm64-v8a abiFilters, inside the REAL defaultConfig (comment-aware)', async () => {
+check('production-apk build.gradle carries exactly one EXECUTABLE arm64-v8a abiFilters, inside the REAL defaultConfig (comment-aware + string-aware)', async () => {
   const plugin = await loadPlugin();
-  const { stripGroovyComments, locateRealDefaultConfigBounds } = plugin;
+  const { locateRealDefaultConfigBounds, findExecutableAbiFilterCalls, findExecutableSplitsAbiBody } = plugin;
   const buildGradle = readIfExists('android/app/build.gradle');
   assert.ok(buildGradle, 'expo prebuild must produce android/app/build.gradle');
-  const { code: stripped } = stripGroovyComments(buildGradle);
-  const abiFilterOccurrences = stripped.match(/\babiFilters\b[^\n]*/g) ?? [];
+  const calls = findExecutableAbiFilterCalls(buildGradle);
   assert.equal(
-    abiFilterOccurrences.length,
+    calls.length,
     1,
-    `comment-stripped build.gradle must carry exactly one executable abiFilters statement. Found ${abiFilterOccurrences.length}:\n${abiFilterOccurrences.join('\n')}`,
+    `build.gradle must carry exactly one executable abiFilters statement. Found ${calls.length}:\n${calls.map((c) => '  ' + c.originalLine.trim()).join('\n')}`,
   );
-  assert.match(abiFilterOccurrences[0], /"arm64-v8a"/, `the sole abiFilters must include "arm64-v8a". Got: ${abiFilterOccurrences[0].trim()}`);
+  assert.match(
+    calls[0].originalLine,
+    /"arm64-v8a"/,
+    `the sole abiFilters must include "arm64-v8a". Got: ${calls[0].originalLine.trim()}`,
+  );
   assert.ok(
-    !/\b(x86|x86_64|armeabi|armeabi-v7a|mips|mips64)\b/.test(abiFilterOccurrences[0]),
-    `abiFilters must not reintroduce non-arm64 ABIs. Got: ${abiFilterOccurrences[0].trim()}`,
+    !/\b(x86|x86_64|armeabi|armeabi-v7a|mips|mips64)\b/.test(calls[0].originalLine),
+    `abiFilters must not reintroduce non-arm64 ABIs. Got: ${calls[0].originalLine.trim()}`,
   );
-  const splitsBlock = stripped.match(/\bsplits\s*\{[\s\S]*?\babi\s*\{[\s\S]*?\}[\s\S]*?\}/);
-  if (splitsBlock) {
+  const splitsBody = findExecutableSplitsAbiBody(buildGradle);
+  if (splitsBody) {
     assert.ok(
-      !/\b(x86|x86_64|armeabi|armeabi-v7a|mips|mips64)\b/.test(splitsBlock[0]),
-      `splits.abi block references a non-arm64 ABI:\n${splitsBlock[0]}`,
+      !/\b(x86|x86_64|armeabi|armeabi-v7a|mips|mips64)\b/.test(splitsBody),
+      `splits.abi block references a non-arm64 ABI:\n${splitsBody}`,
     );
   }
-  // The abiFilters call must live inside the REAL defaultConfig — proven
-  // by locating the block on the comment-stripped source and checking the
-  // abiFilters offset falls inside its brace-balanced bounds.
+  // Structural anchor: the executable call must sit inside the real
+  // defaultConfig block located under the executable android { } closure.
   const bounds = locateRealDefaultConfigBounds(buildGradle);
-  assert.ok(bounds, 'the real defaultConfig block must be locatable');
-  const abiMatch = stripped.search(/\babiFilters\s+["']arm64-v8a["']/);
+  assert.ok(bounds, 'the real defaultConfig block must be locatable inside the android { } closure');
   assert.ok(
-    abiMatch > bounds.openStripped && abiMatch < bounds.closeStripped,
+    calls[0].strippedStart > bounds.openStripped && calls[0].strippedStart < bounds.closeStripped,
     `arm64-v8a abiFilters must sit inside the real defaultConfig block ` +
-      `(bounds stripped=${bounds.openStripped}..${bounds.closeStripped}, abi=${abiMatch})`,
+      `(bounds stripped=${bounds.openStripped}..${bounds.closeStripped}, call=${calls[0].strippedStart})`,
   );
 });
 
@@ -155,7 +156,7 @@ check('production-apk generated Gradle keeps applicationId com.dicoge.holohunter
 
 check('production (AAB) prebuild must NOT set expo.useLegacyPackaging=true and must keep all four ABIs (DIC-1269 CR round-1 blocker 2)', async () => {
   const plugin = await loadPlugin();
-  const { stripGroovyComments } = plugin;
+  const { findExecutableAbiFilterCalls } = plugin;
   cleanAndroid();
   runPrebuild({ EAS_BUILD_PROFILE: 'production' });
   const gradleProps = readIfExists('android/gradle.properties');
@@ -168,12 +169,11 @@ check('production (AAB) prebuild must NOT set expo.useLegacyPackaging=true and m
     'the production AAB must keep the Expo default expo.useLegacyPackaging=false — DIC-1269 CR round-1 blocker 2 forbids narrowing the store bundle',
   );
   const buildGradle = readIfExists('android/app/build.gradle');
-  const { code: stripped } = stripGroovyComments(buildGradle);
-  const abi = stripped.match(/\babiFilters\b[^\n]*/g) ?? [];
+  const calls = findExecutableAbiFilterCalls(buildGradle);
   assert.equal(
-    abi.length,
+    calls.length,
     0,
-    `the production AAB must have zero executable abiFilters statements. Found: ${abi.join('\n')}`,
+    `the production AAB must have zero executable abiFilters statements. Found:\n${calls.map((c) => '  ' + c.originalLine.trim()).join('\n')}`,
   );
 });
 

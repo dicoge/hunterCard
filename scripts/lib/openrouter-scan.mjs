@@ -98,9 +98,14 @@ function evalStatic(node, env) {
       return l + r;
     }
     case 'Identifier': {
+      // Return whatever the env stores — either a folded string or an
+      // `{ __array: [...] }` shape from a `const IDENT = [<literals>]`
+      // binding. Callers that require a string still guard with
+      // `typeof v === 'string'`; the `.join()` handler below deliberately
+      // accepts the array shape so `const parts = ['a','b']; parts.join('')`
+      // folds through the binding.
       const v = env.get(node.name);
-      if (typeof v === 'string') return v;
-      return null;
+      return v ?? null;
     }
     case 'ArrayExpression': {
       const parts = [];
@@ -217,10 +222,17 @@ export function scanForOpenRouter(source, relativePath = '<inline>') {
     // First pass on declarations — populate env before we walk expressions
     // that might reference them below the declaration point. We do this
     // eagerly at each VariableDeclarator so forward references inside the
-    // same declaration list still resolve.
+    // same declaration list still resolve. Both string folds AND
+    // `{ __array: [...] }` array folds are stored — a downstream
+    // `parts.join('')` (DIC-1269 CR round-3 blocker 1) resolves the
+    // identifier back to the array shape and produces its concatenation.
     if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier') {
       const folded = evalStatic(node.init, env);
-      if (typeof folded === 'string') env.set(node.id.name, folded);
+      if (typeof folded === 'string') {
+        env.set(node.id.name, folded);
+      } else if (folded && typeof folded === 'object' && Array.isArray(folded.__array)) {
+        env.set(node.id.name, folded);
+      }
     }
 
     // Report standalone string folds.
@@ -246,6 +258,20 @@ export function scanForOpenRouter(source, relativePath = '<inline>') {
       case 'CallExpression': {
         const folded = evalStatic(node, env);
         if (typeof folded === 'string') forbid(node.type, node, folded);
+        break;
+      }
+      case 'ArrayExpression': {
+        // A literal-only array whose empty-join yields a forbidden token
+        // is reported here too — that catches the fragmentation source
+        // (`const parts = ['open', 'router.ai']`) even before any
+        // `.join()` call is authored (DIC-1269 CR round-3 blocker 1).
+        const folded = evalStatic(node, env);
+        if (folded && typeof folded === 'object' && Array.isArray(folded.__array)) {
+          const flat = folded.__array.join('');
+          if (typeof flat === 'string' && flat.length > 0) {
+            forbid('ArrayExpression(empty-join)', node, flat);
+          }
+        }
         break;
       }
       case 'Identifier': {

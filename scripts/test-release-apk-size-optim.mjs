@@ -227,17 +227,98 @@ android {
   );
   // The transform must succeed and land the ABI block inside the REAL DSL.
   const out = transformGradle(attackerSource);
-  const { code: stripped } = stripGroovyComments(out);
-  const strippedAbiCount = (stripped.match(/\babiFilters\s+["']arm64-v8a["']/g) ?? []).length;
+  const { findExecutableAbiFilterCalls } = plugin.__internal;
+  const executableCalls = findExecutableAbiFilterCalls(out);
   assert.equal(
-    strippedAbiCount,
+    executableCalls.length,
     1,
-    `after transform, the stripped Gradle must contain exactly one executable arm64-v8a abiFilters call. Found ${strippedAbiCount}.`,
+    `after transform, exactly one executable abiFilters call must exist. Found ${executableCalls.length}:\n${executableCalls.map((c) => '  ' + c.originalLine.trim()).join('\n')}`,
+  );
+  assert.match(
+    executableCalls[0].originalLine,
+    /"arm64-v8a"/,
+    `the sole executable abiFilters call must include "arm64-v8a". Got: ${executableCalls[0].originalLine.trim()}`,
+  );
+  // Verify the executable call sits INSIDE the real android > defaultConfig
+  // structural anchor, not in the comment.
+  const boundsAfter = plugin.__internal.locateRealDefaultConfigBounds(out);
+  assert.ok(boundsAfter, 'the real defaultConfig block must remain locatable after transform');
+  assert.ok(
+    executableCalls[0].strippedStart > boundsAfter.openStripped &&
+      executableCalls[0].strippedStart < boundsAfter.closeStripped,
+    'the executable abiFilters call must live inside the real defaultConfig block',
   );
   // Also idempotent under repeat: running transformGradle a second time
   // sees the abiFilters call in the real block and skips.
   const out2 = transformGradle(out);
   assert.equal(out, out2, 'transformGradle idempotency holds when a comment-hidden fake block precedes the real one');
+  // stripGroovyComments export exists (used by the paired prebuild suite).
+  assert.equal(typeof stripGroovyComments, 'function');
+});
+
+check('plugin ignores triple-quoted-string-hidden `defaultConfig` — DIC-1269 CR round-3 blocker 2', () => {
+  const plugin = require_(path.join(ROOT, 'plugins', 'withReleaseApkSizeOptim.js'));
+  const { transformGradle, locateRealDefaultConfigBounds, findExecutableAbiFilterCalls } = plugin.__internal;
+  // The exact CR round-3 mutation: a Groovy triple-quoted string whose
+  // body contains a fake `defaultConfig { }` block. The previous
+  // stripGroovyComments PRESERVED string bodies, so the search matched
+  // inside the string; the ABI block landed there and never affected the
+  // real android { defaultConfig { … } }.
+  const attackerSource = 'def docs = """\ndefaultConfig {\n}\n"""\nandroid {\n    defaultConfig { applicationId "com.dicoge.holohunter" }\n}\n';
+  const bounds = locateRealDefaultConfigBounds(attackerSource);
+  assert.ok(bounds, 'the plugin must find the REAL defaultConfig even with a triple-quoted-string fake before it');
+  // The bounds must be inside the executable android { block, not the
+  // string body.
+  const openContext = attackerSource.slice(Math.max(0, bounds.openOriginal - 30), bounds.openOriginal + 1);
+  assert.ok(
+    /android\s*\{/.test(openContext),
+    `open brace must belong to the real android { block. Got context: ${JSON.stringify(openContext)}`,
+  );
+  const out = transformGradle(attackerSource);
+  // The triple-quoted string body must survive unchanged — verified by
+  // slicing between its opening and closing `"""`.
+  const openStr = out.indexOf('"""');
+  const closeStr = out.indexOf('"""', openStr + 3);
+  const stringBody = out.slice(openStr, closeStr + 3);
+  assert.equal(
+    stringBody,
+    '"""\ndefaultConfig {\n}\n"""',
+    `the triple-quoted string body must survive unchanged; got: ${JSON.stringify(stringBody)}`,
+  );
+  const executableCalls = findExecutableAbiFilterCalls(out);
+  assert.equal(
+    executableCalls.length,
+    1,
+    `exactly one executable abiFilters call must exist. Found ${executableCalls.length}:\n${executableCalls.map((c) => '  ' + c.originalLine.trim()).join('\n')}`,
+  );
+  assert.match(
+    executableCalls[0].originalLine,
+    /"arm64-v8a"/,
+    `the sole executable call must include "arm64-v8a". Got: ${executableCalls[0].originalLine.trim()}`,
+  );
+});
+
+check('plugin idempotency is not fooled by an `abiFilters "arm64-v8a"` inside a Groovy string literal', () => {
+  const plugin = require_(path.join(ROOT, 'plugins', 'withReleaseApkSizeOptim.js'));
+  const { abiFilterActiveInRealDefaultConfig } = plugin.__internal;
+  // A raw string containing the literal text `abiFilters "arm64-v8a"`
+  // is NOT executable Groovy — Gradle never runs it. The idempotency
+  // check must refuse to accept it as prior application; otherwise a
+  // hostile edit that appended such a string would skip the real
+  // insertion.
+  const withStringLiteralAbi = `
+android {
+    defaultConfig {
+        def fakeDoc = "abiFilters \\"arm64-v8a\\" — this is data, not a call"
+        applicationId 'com.dicoge.holohunter'
+    }
+}
+`;
+  assert.equal(
+    abiFilterActiveInRealDefaultConfig(withStringLiteralAbi),
+    false,
+    'a string literal containing the abiFilters text must NOT satisfy the executable-idempotency check',
+  );
 });
 
 check('plugin refuses when a later abiFilters block would restore non-arm64 ABIs', () => {
@@ -357,6 +438,36 @@ check('scanForOpenRouter reports fragmented composition — DIC-1269 CR round-2 
     /@openrouter\/sdk/i.test(flatValues),
     `the folded package specifier \`@openrouter/sdk\` must be caught. Offenders:\n${flatValues}`,
   );
+});
+
+check('scanForOpenRouter catches ARRAY-BOUND fragmentation — DIC-1269 CR round-3 blocker 1', async () => {
+  const { scanForOpenRouter } = await loadScanner();
+  // The exact CR round-3 mutation body: the previous grep bypass caught
+  // `[...].join('')` immediately, but moving the literal array into a
+  // `const IDENT = [...]` binding and then calling `IDENT.join('')`
+  // returned zero offenders because the scanner dropped array bindings
+  // at VariableDeclarator storage. The scanner now preserves both string
+  // AND array folds through lexical bindings and reports the array's
+  // empty-join value itself as an offender, so every branch below —
+  // host, env-var, and dynamic import — fails closed.
+  const arrayBound = `
+    const hostParts = ['open', 'router.ai'];
+    const keyParts = ['OPEN', 'ROUTER_API_KEY'];
+    const moduleParts = ['@open', 'router/sdk'];
+    const h = hostParts.join('');
+    const k = keyParts.join('');
+    const m = moduleParts.join('');
+    void import(m);
+    void fetch('https://' + h + '/api/v1/chat/completions', {
+      headers: { Authorization: process.env[k] },
+    });
+  `;
+  const offenders = scanForOpenRouter(arrayBound, '<inline-array-bound>');
+  const flat = offenders.map((o) => o.value).join('\n');
+  assert.ok(offenders.length > 0, `the scanner MUST report offenders for the CR round-3 mutation. Got 0.`);
+  assert.ok(/openrouter\.ai/i.test(flat), `folded host \`openrouter.ai\` must be caught. Offenders:\n${flat}`);
+  assert.ok(/OPENROUTER_API_KEY/.test(flat), `folded env-var \`OPENROUTER_API_KEY\` must be caught. Offenders:\n${flat}`);
+  assert.ok(/@openrouter\/sdk/i.test(flat), `folded module spec \`@openrouter/sdk\` must be caught. Offenders:\n${flat}`);
 });
 
 check('scanForOpenRouter catches classic contiguous forms as well', async () => {

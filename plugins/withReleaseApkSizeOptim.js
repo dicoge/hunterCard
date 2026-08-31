@@ -83,11 +83,25 @@ function shouldApply() {
 
 // Strip Groovy `//` line comments and `/* ... */` block comments while
 // preserving single-quoted, double-quoted, and triple-quoted strings.
-// Returns `{ code, map }` where `code[i]` is a real (non-comment) source
-// character and `map[i]` is its offset in the ORIGINAL source string. The
-// map is used to splice modifications back into the original at the
-// correct place (comments in the original are preserved verbatim).
-function stripGroovyComments(src) {
+// Returns `{ code, map }` where `code[i]` is a source character to search
+// over and `map[i]` is its offset in the ORIGINAL source string. The map
+// is used to splice modifications back into the original at the correct
+// place (comments in the original are preserved verbatim).
+//
+// `maskStrings` (default true here — every caller wants it for DSL
+// selection) additionally replaces the CONTENTS of every string literal
+// with spaces of the same length. The opening and closing quote
+// characters are preserved so brace-balance around the string does not
+// go negative, but every character between them (including newlines,
+// braces, and DSL-looking tokens like `defaultConfig {`) becomes a
+// space. This prevents (DIC-1269 CR round-3 blocker 2) a triple-quoted
+// Groovy string like `def docs = """defaultConfig { } """` from being
+// selected as the DSL block: the search pattern can no longer see
+// `defaultConfig {` inside the masked body. Newlines inside the string
+// body are also masked to a space; that keeps the offset map monotonic
+// and does not affect any downstream regex whose anchors are line-
+// insensitive.
+function stripGroovyComments(src, { maskStrings = true } = {}) {
   const out = [];
   const map = [];
   const n = src.length;
@@ -98,35 +112,45 @@ function stripGroovyComments(src) {
     const ch = src[i];
     const next = src[i + 1];
     const third = src[i + 2];
-    // Triple-quoted string body: everything is verbatim until the closing triple quote.
+    // Triple-quoted string body: preserve or mask until the closing triple quote.
     if (tripleQuote) {
-      out.push(ch);
-      map.push(i);
       if (ch === tripleQuote[0] && next === tripleQuote[0] && third === tripleQuote[0]) {
-        out.push(next, third);
-        map.push(i + 1, i + 2);
+        out.push(ch, next, third);
+        map.push(i, i + 1, i + 2);
         i += 3;
         tripleQuote = null;
         continue;
       }
+      out.push(maskStrings ? ' ' : ch);
+      map.push(i);
       i += 1;
       continue;
     }
-    // Single/double-quoted string body: preserve, respect backslash-escapes.
+    // Single/double-quoted string body: preserve or mask, respect backslash-escapes.
     if (quote) {
-      out.push(ch);
-      map.push(i);
       if (ch === '\\' && i + 1 < n) {
-        out.push(src[i + 1]);
+        // Escape sequence — mask both characters so a `\"` inside a
+        // string does not accidentally end the mask early.
+        out.push(maskStrings ? ' ' : ch);
+        map.push(i);
+        out.push(maskStrings ? ' ' : src[i + 1]);
         map.push(i + 1);
         i += 2;
         continue;
       }
-      if (ch === quote) quote = null;
+      if (ch === quote) {
+        out.push(ch);
+        map.push(i);
+        quote = null;
+        i += 1;
+        continue;
+      }
+      out.push(maskStrings ? ' ' : ch);
+      map.push(i);
       i += 1;
       continue;
     }
-    // Enter a triple-quoted string.
+    // Enter a triple-quoted string — preserve the opening triple.
     if ((ch === '"' || ch === "'") && next === ch && third === ch) {
       tripleQuote = ch + ch + ch;
       out.push(ch, next, third);
@@ -134,7 +158,7 @@ function stripGroovyComments(src) {
       i += 3;
       continue;
     }
-    // Enter a normal string.
+    // Enter a normal string — preserve the opening quote.
     if (ch === '"' || ch === "'") {
       quote = ch;
       out.push(ch);
@@ -161,19 +185,55 @@ function stripGroovyComments(src) {
   return { code: out.join(''), map };
 }
 
-// Locate the REAL `defaultConfig { ... }` block in the comment-stripped
-// projection and return the ORIGINAL-source offsets of its opening `{`
-// and matched closing `}`. Returns null when no real `defaultConfig` DSL
-// call exists — the caller is expected to fail closed rather than guess.
+// Locate the REAL `defaultConfig { ... }` block on the comment-stripped
+// AND string-body-masked projection, structurally anchored INSIDE the
+// executable top-level `android { ... }` closure (DIC-1269 CR round-3
+// blocker 2). Returns the ORIGINAL-source offsets of its opening `{` and
+// matched closing `}`. Returns null when no real Android DSL block or no
+// `defaultConfig` child of it exists — the caller is expected to fail
+// closed rather than guess.
+//
+// The search happens in three stages:
+//   1. Locate `android\s*{` on the masked/stripped source. String and
+//      comment bodies have been erased to spaces, so a Groovy heredoc
+//      `def docs = """android { defaultConfig { } """` cannot masquerade
+//      as the DSL block.
+//   2. Brace-balanced scan from that `{` to the matching `}` gives the
+//      bounds of the executable android closure.
+//   3. Locate `defaultConfig\s*{` ONLY inside those bounds, then
+//      brace-balance again to find its close. This structurally enforces
+//      the parent/child relationship — a `defaultConfig` at file scope or
+//      inside an unrelated block cannot satisfy the search.
 function locateRealDefaultConfigBounds(src) {
   const { code, map } = stripGroovyComments(src);
-  const anchor = code.search(/\bdefaultConfig\s*\{/);
-  if (anchor < 0) return null;
-  const openBrace = code.indexOf('{', anchor);
-  if (openBrace < 0) return null;
+  const androidMatch = code.search(/\bandroid\s*\{/);
+  if (androidMatch < 0) return null;
+  const androidOpen = code.indexOf('{', androidMatch);
+  if (androidOpen < 0) return null;
   let depth = 0;
+  let androidClose = -1;
+  for (let i = androidOpen; i < code.length; i += 1) {
+    const ch = code[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        androidClose = i;
+        break;
+      }
+    }
+  }
+  if (androidClose < 0) return null;
+  // Search for defaultConfig inside the android closure only.
+  const inside = code.slice(androidOpen, androidClose);
+  const dcRel = inside.search(/\bdefaultConfig\s*\{/);
+  if (dcRel < 0) return null;
+  const dcAbs = androidOpen + dcRel;
+  const openBrace = code.indexOf('{', dcAbs);
+  if (openBrace < 0 || openBrace >= androidClose) return null;
+  depth = 0;
   let closeBrace = -1;
-  for (let i = openBrace; i < code.length; i += 1) {
+  for (let i = openBrace; i < androidClose; i += 1) {
     const ch = code[i];
     if (ch === '{') depth += 1;
     else if (ch === '}') {
@@ -191,18 +251,98 @@ function locateRealDefaultConfigBounds(src) {
     openStripped: openBrace,
     closeStripped: closeBrace,
     strippedCode: code,
+    androidOpenStripped: androidOpen,
+    androidCloseStripped: androidClose,
   };
 }
 
-// True if the real `defaultConfig` block ALREADY carries an
-// `abiFilters "arm64-v8a"` statement (arm64-v8a required; other ABIs
-// present in the same call are rejected downstream). Comment-aware so a
-// `// abiFilters "arm64-v8a"` line does not falsely satisfy idempotency.
+// Return every EXECUTABLE `abiFilters` DSL call in the source: the
+// position in the stripped view, the offset in the ORIGINAL source, and
+// the original line the call sits on (so downstream checks can inspect
+// the ACTUAL ABI argument strings even though the masked view has
+// replaced their contents with spaces). A `// abiFilters …` line is
+// skipped because comments are stripped; a `def foo = "abiFilters …"`
+// literal is skipped because the masked view spaces out its body.
+function findExecutableAbiFilterCalls(gradle) {
+  const { code: masked, map } = stripGroovyComments(gradle);
+  const calls = [];
+  const re = /\babiFilters\b/g;
+  let m;
+  while ((m = re.exec(masked)) !== null) {
+    const originalStart = map[m.index];
+    let end = originalStart;
+    while (end < gradle.length && gradle[end] !== '\n') end += 1;
+    calls.push({
+      strippedStart: m.index,
+      originalStart,
+      originalLine: gradle.slice(originalStart, end),
+    });
+  }
+  return calls;
+}
+
+// Return the original-source substring of the FIRST executable
+// `splits { abi { … } }` block's abi body, or null when no such block
+// exists. Structural anchoring: the splits/abi search runs against the
+// masked-stripped view so a Groovy string containing the same text
+// cannot masquerade as a DSL block.
+function findExecutableSplitsAbiBody(gradle) {
+  const { code: masked, map } = stripGroovyComments(gradle);
+  const splitsMatch = masked.match(/\bsplits\s*\{/);
+  if (!splitsMatch) return null;
+  const splitsOpen = masked.indexOf('{', splitsMatch.index);
+  let depth = 0;
+  let splitsClose = -1;
+  for (let i = splitsOpen; i < masked.length; i += 1) {
+    if (masked[i] === '{') depth += 1;
+    else if (masked[i] === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        splitsClose = i;
+        break;
+      }
+    }
+  }
+  if (splitsClose < 0) return null;
+  const splitsInside = masked.slice(splitsOpen, splitsClose);
+  const abiRel = splitsInside.search(/\babi\s*\{/);
+  if (abiRel < 0) return null;
+  const abiAbs = splitsOpen + abiRel;
+  const abiOpen = masked.indexOf('{', abiAbs);
+  if (abiOpen < 0 || abiOpen >= splitsClose) return null;
+  depth = 0;
+  let abiClose = -1;
+  for (let i = abiOpen; i < splitsClose; i += 1) {
+    if (masked[i] === '{') depth += 1;
+    else if (masked[i] === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        abiClose = i;
+        break;
+      }
+    }
+  }
+  if (abiClose < 0) return null;
+  const originalStart = map[abiOpen];
+  const originalEnd = map[abiClose];
+  return gradle.slice(originalStart, originalEnd);
+}
+
+// True if the real `defaultConfig` block (structurally anchored inside
+// `android { }`) ALREADY carries an executable `abiFilters "arm64-v8a"`
+// statement. Comment-aware so a `// abiFilters "arm64-v8a"` line does
+// not falsely satisfy idempotency; string-masking-aware so a
+// `def foo = 'abiFilters "arm64-v8a"'` literal does not either.
 function abiFilterActiveInRealDefaultConfig(src) {
   const bounds = locateRealDefaultConfigBounds(src);
   if (!bounds) return false;
-  const inside = bounds.strippedCode.slice(bounds.openStripped, bounds.closeStripped);
-  return /\babiFilters\s+["']arm64-v8a["']/.test(inside);
+  const calls = findExecutableAbiFilterCalls(src);
+  return calls.some(
+    (call) =>
+      call.strippedStart > bounds.openStripped &&
+      call.strippedStart < bounds.closeStripped &&
+      /\barm64-v8a\b/.test(call.originalLine),
+  );
 }
 
 function insertIntoDefaultConfig(gradle) {
@@ -216,44 +356,53 @@ function insertIntoDefaultConfig(gradle) {
         'un-restricted 151 MB APK.',
     );
   }
-  // Insert immediately AFTER the opening `{` and its following newline (if
-  // any), so the ndk block is the first child of defaultConfig.
-  let insertionPoint = bounds.openOriginal + 1;
-  if (gradle[insertionPoint] === '\n') insertionPoint += 1;
+  // Insert immediately AFTER the opening `{`. Always emit a leading and
+  // trailing newline so the ndk block reads cleanly regardless of whether
+  // the original `defaultConfig {` was followed by content on the same
+  // line (that shape is not what the RN template emits, but the plugin
+  // stays legible against attacker mutations that squash the DSL).
+  const insertionPoint = bounds.openOriginal + 1;
   const block =
-    `        ndk {\n` +
+    `\n        ndk {\n` +
     `            abiFilters "${REQUIRED_ABI}"  ${ABI_INLINE_COMMENT}\n` +
     `        }\n`;
   return gradle.slice(0, insertionPoint) + block + gradle.slice(insertionPoint);
 }
 
-// After the ABI insertion runs we scan the comment-STRIPPED source for
-// `abiFilters` occurrences that could restore non-arm64 targets. Exactly
-// ONE occurrence is allowed — ours — and it must reference only
-// `arm64-v8a`. Anything else (an existing later `ndk { abiFilters "x86",
-// ... }`, a second call site, a `splits { abi { include ... } }` block
-// a future author adds) is treated as a failure the release cannot
-// silently absorb. A commented-out `// abiFilters "x86"` does NOT count
-// because Gradle never executes it.
+// After the ABI insertion runs we scan the source for EXECUTABLE
+// `abiFilters` calls that could restore non-arm64 targets. Exactly ONE
+// is allowed — ours — and it must reference only `arm64-v8a`. Anything
+// else (an existing later `ndk { abiFilters "x86", ... }`, a second call
+// site, a `splits { abi { include ... } }` block a future author adds)
+// is treated as a failure the release cannot silently absorb. A
+// commented-out `// abiFilters "x86"` does NOT count (comment stripping)
+// and a `def foo = 'abiFilters "x86"'` string literal does NOT count
+// either (string-body masking + `findExecutableAbiFilterCalls` reads the
+// ORIGINAL line via the offset map).
 function assertNoAbiRestoration(gradle) {
-  const { code: stripped } = stripGroovyComments(gradle);
-  const abiFilterOccurrences = stripped.match(/\babiFilters\b[^\n]*/g) ?? [];
-  if (abiFilterOccurrences.length !== 1) {
+  const calls = findExecutableAbiFilterCalls(gradle);
+  if (calls.length !== 1) {
     throw new Error(
-      `withReleaseApkSizeOptim: expected exactly one executable \`abiFilters\` statement in android/app/build.gradle, found ${abiFilterOccurrences.length}:\n` +
-        `${abiFilterOccurrences.map((s) => `  ${s.trim()}`).join('\n')}\n` +
+      `withReleaseApkSizeOptim: expected exactly one executable \`abiFilters\` statement in android/app/build.gradle, found ${calls.length}:\n` +
+        `${calls.map((c) => `  ${c.originalLine.trim()}`).join('\n')}\n` +
         'A second `abiFilters` (later in the file, in a splits block, or in a variant) restores the ABIs the size-optim plugin dropped — refusing to ship the resulting oversized APK.',
     );
   }
   const nonArm64 = /\b(x86|x86_64|armeabi|armeabi-v7a|mips|mips64)\b/;
-  if (nonArm64.test(abiFilterOccurrences[0])) {
+  if (nonArm64.test(calls[0].originalLine)) {
     throw new Error(
-      `withReleaseApkSizeOptim: the sole \`abiFilters\` statement references a non-arm64 ABI: ${abiFilterOccurrences[0].trim()}\n` +
+      `withReleaseApkSizeOptim: the sole \`abiFilters\` statement references a non-arm64 ABI: ${calls[0].originalLine.trim()}\n` +
         'Refusing to reintroduce the ABIs the size-optim plugin exists to drop.',
     );
   }
-  const splitsBlock = stripped.match(/\bsplits\s*\{[\s\S]*?\babi\s*\{[\s\S]*?\}[\s\S]*?\}/);
-  if (splitsBlock && /\b(x86|x86_64|armeabi|armeabi-v7a|mips|mips64)\b/.test(splitsBlock[0])) {
+  if (!/\barm64-v8a\b/.test(calls[0].originalLine)) {
+    throw new Error(
+      `withReleaseApkSizeOptim: the sole \`abiFilters\` statement is missing arm64-v8a: ${calls[0].originalLine.trim()}\n` +
+        'Refusing to ship an APK with no required ABI.',
+    );
+  }
+  const splitsBody = findExecutableSplitsAbiBody(gradle);
+  if (splitsBody && nonArm64.test(splitsBody)) {
     throw new Error(
       'withReleaseApkSizeOptim: an android { splits { abi { ... } } } block references a non-arm64 ABI. ' +
         'Split APKs would carry the ABIs the size-optim plugin dropped — refusing to build.',
@@ -322,4 +471,6 @@ module.exports.__internal = {
   abiFilterActiveInRealDefaultConfig,
   locateRealDefaultConfigBounds,
   stripGroovyComments,
+  findExecutableAbiFilterCalls,
+  findExecutableSplitsAbiBody,
 };
