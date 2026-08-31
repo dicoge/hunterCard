@@ -67,18 +67,35 @@ function parseSource(src, filename) {
   });
 }
 
-// A lexical-scope environment stack (DIC-1269 CR round-4 blocker 1). One
-// `Map` per scope. `lookup(name)` walks the stack top-down so an inner
-// binding shadows an outer one WHILE the inner scope is live; once we
-// leave the inner scope (`popScope`), lookups again see the outer
-// binding. `bindInCurrentScope(name, value)` writes to the topmost scope.
-// This prevents a completed inner block from poisoning outer bindings —
-// the exact bypass the CR reproduced against a file-global `Map`.
+// A JavaScript-scope environment stack (DIC-1269 CR round-4 blocker 1
+// + CR round-5 blocker 1). Each stack frame is `{ kind, map }`; `kind`
+// is `'function'` for Program / FunctionDeclaration /
+// FunctionExpression / ArrowFunctionExpression bodies (and ObjectMethod
+// / ClassMethod bodies), and `'block'` for every other scope-opening
+// construct (BlockStatement, ForStatement / ForInStatement /
+// ForOfStatement, CatchClause, SwitchStatement, StaticBlock, ClassBody).
+//
+// `bindLexical(name, value)` — writes to the topmost scope (`let`,
+// `const`, `using`, `await using`, class declarations, function
+// parameters).
+//
+// `bindVar(name, value)` — walks up to the nearest 'function' scope and
+// writes there. JavaScript hoists `var` to the enclosing function or
+// program scope; treating `var` as block-scoped (the round-4 fix's
+// mistake) meant popping a completed block dropped its `var`
+// declarations and restored a stale outer binding. That is the exact
+// bypass CR round-5 blocker 1 reproduced.
+//
+// `lookup(name)` walks the stack top-down so an inner binding shadows
+// an outer one WHILE the inner scope is live; once we leave that inner
+// scope (`popScope`), lookups again see the outer binding — which is
+// correct for `let`/`const` and, thanks to `bindVar` writing at
+// function scope, also correct for `var`.
 function createScopeStack() {
-  const stack = [new Map()];
+  const stack = [{ kind: 'function', map: new Map() }];
   return {
-    pushScope() {
-      stack.push(new Map());
+    pushScope(kind) {
+      stack.push({ kind, map: new Map() });
     },
     popScope() {
       if (stack.length > 1) stack.pop();
@@ -86,12 +103,23 @@ function createScopeStack() {
     depth() {
       return stack.length;
     },
-    bindInCurrentScope(name, value) {
-      stack[stack.length - 1].set(name, value);
+    bindLexical(name, value) {
+      stack[stack.length - 1].map.set(name, value);
+    },
+    bindVar(name, value) {
+      for (let i = stack.length - 1; i >= 0; i -= 1) {
+        if (stack[i].kind === 'function') {
+          stack[i].map.set(name, value);
+          return;
+        }
+      }
+      // Fallback: bind at program scope (index 0) if no 'function'
+      // scope is found (should never happen — program is 'function').
+      stack[0].map.set(name, value);
     },
     lookup(name) {
       for (let i = stack.length - 1; i >= 0; i -= 1) {
-        if (stack[i].has(name)) return stack[i].get(name);
+        if (stack[i].map.has(name)) return stack[i].map.get(name);
       }
       return undefined;
     },
@@ -234,29 +262,30 @@ export function scanForOpenRouter(source, relativePath = '<inline>') {
   const offenders = [];
   const env = createScopeStack();
 
-  // AST node types that open a new lexical scope. We do not distinguish
-  // `let/const` (block-scoped) from `var` (function-scoped) — treating
-  // every binding as block-scoped is stricter than JS actually requires,
-  // but that is the correct side of the tradeoff for a permanent
-  // denylist: a false positive fires CI, a false negative ships an
-  // executable OpenRouter route.
-  const SCOPE_OPENING_TYPES = new Set([
-    'BlockStatement',
-    'FunctionDeclaration',
-    'FunctionExpression',
-    'ArrowFunctionExpression',
-    'ObjectMethod',
-    'ClassMethod',
-    'ClassPrivateMethod',
-    'CatchClause',
-    'ForStatement',
-    'ForInStatement',
-    'ForOfStatement',
-    'SwitchStatement',
-    'StaticBlock',
-    'ClassBody',
-    'ClassDeclaration',
-    'ClassExpression',
+  // AST node types that open a new scope, tagged by scope KIND so
+  // `var` bindings can hoist to the nearest 'function' scope while
+  // `let`/`const` bindings stay in the current 'block'. The wrong tag
+  // here is the entire cause of DIC-1269 CR round-5 blocker 1: a `var`
+  // written to a 'block' scope disappears when the block ends, so an
+  // outer stale value is restored and the fold no longer sees the
+  // hoisted binding.
+  const SCOPE_KIND_BY_TYPE = new Map([
+    ['FunctionDeclaration', 'function'],
+    ['FunctionExpression', 'function'],
+    ['ArrowFunctionExpression', 'function'],
+    ['ObjectMethod', 'function'],
+    ['ClassMethod', 'function'],
+    ['ClassPrivateMethod', 'function'],
+    ['BlockStatement', 'block'],
+    ['CatchClause', 'block'],
+    ['ForStatement', 'block'],
+    ['ForInStatement', 'block'],
+    ['ForOfStatement', 'block'],
+    ['SwitchStatement', 'block'],
+    ['StaticBlock', 'block'],
+    ['ClassBody', 'block'],
+    ['ClassDeclaration', 'block'],
+    ['ClassExpression', 'block'],
   ]);
 
   function forbid(kind, node, value) {
@@ -276,12 +305,12 @@ export function scanForOpenRouter(source, relativePath = '<inline>') {
   function visit(node, parent) {
     if (!node || typeof node !== 'object' || !node.type) return;
 
-    const opensScope = SCOPE_OPENING_TYPES.has(node.type);
-    if (opensScope) env.pushScope();
+    const scopeKind = SCOPE_KIND_BY_TYPE.get(node.type);
+    if (scopeKind) env.pushScope(scopeKind);
     try {
       visitInner(node, parent);
     } finally {
-      if (opensScope) env.popScope();
+      if (scopeKind) env.popScope();
     }
   }
 
@@ -293,14 +322,26 @@ export function scanForOpenRouter(source, relativePath = '<inline>') {
     // `{ __array: [...] }` array folds are stored — a downstream
     // `parts.join('')` (DIC-1269 CR round-3 blocker 1) resolves the
     // identifier back to the array shape and produces its concatenation.
-    // Bindings go to the CURRENT scope; a completed inner block cannot
-    // poison outer bindings (DIC-1269 CR round-4 blocker 1).
+    //
+    // Declaration kind (`var` vs `let`/`const`) decides which scope the
+    // binding goes into: `var` hoists to the nearest function/program
+    // scope, `let`/`const`/`using` stay in the current lexical scope.
+    // The enclosing `VariableDeclaration` node carries `.kind`; a
+    // declarator inside a `for (var i …)` header still uses the
+    // enclosing VariableDeclaration's kind, so parent-lookup is
+    // sufficient (DIC-1269 CR round-5 blocker 1).
     if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier') {
       const folded = evalStatic(node.init, env);
-      if (typeof folded === 'string') {
-        env.bindInCurrentScope(node.id.name, folded);
-      } else if (folded && typeof folded === 'object' && Array.isArray(folded.__array)) {
-        env.bindInCurrentScope(node.id.name, folded);
+      const isBindable =
+        typeof folded === 'string' ||
+        (folded && typeof folded === 'object' && Array.isArray(folded.__array));
+      if (isBindable) {
+        const declKind = parent?.type === 'VariableDeclaration' ? parent.kind : 'let';
+        if (declKind === 'var') {
+          env.bindVar(node.id.name, folded);
+        } else {
+          env.bindLexical(node.id.name, folded);
+        }
       }
     }
 

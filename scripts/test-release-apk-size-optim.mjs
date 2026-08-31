@@ -347,14 +347,77 @@ check('findBlockAtDepth ignores nested and rejects too-shallow / too-deep blocks
   assert.ok(topAndroid, 'a top-level android block MUST be found');
   assert.equal(src[topAndroid.openIdx], '{');
   assert.equal(src[topAndroid.closeIdx], '}');
-  // The top-level match must be the SECOND `android {`, not the one
-  // nested inside `outer { … }`.
   const startCtx = src.slice(topAndroid.openIdx - 8, topAndroid.openIdx + 1);
   assert.equal(startCtx, 'android {', `top-level android bounds must sit at the second occurrence. Got context: ${JSON.stringify(startCtx)}`);
-  // Depth-1 lookup finds the nested android instead.
   const nestedAndroid = findBlockAtDepth(src, 'android', 1);
   assert.ok(nestedAndroid, 'a depth-1 android block MUST be found');
   assert.ok(nestedAndroid.openIdx < topAndroid.openIdx, 'the depth-1 android must sit before the top-level one');
+});
+
+check('findBlockAtDepth REJECTS qualified `foo.defaultConfig {` — only unqualified DSL invocations count', () => {
+  const plugin = require_(path.join(ROOT, 'plugins', 'withReleaseApkSizeOptim.js'));
+  const { findBlockAtDepth } = plugin.__internal;
+  const qualified = 'unused.defaultConfig { }\ndefaultConfig { foo }';
+  const hit = findBlockAtDepth(qualified, 'defaultConfig', 0);
+  assert.ok(hit, 'unqualified defaultConfig must be found');
+  const ctx = qualified.slice(hit.openIdx - 14, hit.openIdx + 1);
+  assert.equal(
+    ctx,
+    'defaultConfig {',
+    `found bounds must correspond to the UNQUALIFIED defaultConfig. Got context: ${JSON.stringify(ctx)}`,
+  );
+  // Only qualified occurrences → no hit.
+  assert.equal(findBlockAtDepth('unused.defaultConfig { }', 'defaultConfig', 0), null);
+  assert.equal(findBlockAtDepth('project?.defaultConfig { }', 'defaultConfig', 0), null);
+  assert.equal(findBlockAtDepth('mydefaultConfig { }', 'defaultConfig', 0), null); // identifier suffix
+  assert.equal(findBlockAtDepth('$defaultConfig { }', 'defaultConfig', 0), null); // gstring interp
+});
+
+check('plugin REJECTS a qualified `unused.defaultConfig { }` inside the real android block — DIC-1269 CR round-5 blocker 2', () => {
+  const plugin = require_(path.join(ROOT, 'plugins', 'withReleaseApkSizeOptim.js'));
+  const { transformGradle, findExecutableAbiFilterCalls, locateRealDefaultConfigBounds } = plugin.__internal;
+  // The exact CR round-5 mutation: an unrelated object exposes a
+  // `defaultConfig(Closure)` method, and the real `android { }` block
+  // invokes it via qualified member access. Gradle never dispatches it
+  // to the Android plugin's project DSL. The previous depth-only
+  // selector accepted this qualified call as the direct DSL child and
+  // landed the arm64 marker there, leaving the real `defaultConfig
+  // { applicationId … }` unfiltered.
+  const attackerSource = `class Noop {
+  void defaultConfig(Closure ignored) { }
+}
+def unused = new Noop()
+android {
+  unused.defaultConfig { }
+  defaultConfig { applicationId "com.dicoge.holohunter" }
+}
+`;
+  const bounds = locateRealDefaultConfigBounds(attackerSource);
+  assert.ok(bounds, 'the REAL unqualified defaultConfig must be locatable, ignoring the qualified Noop call');
+  const openCtx = attackerSource.slice(Math.max(0, bounds.openOriginal - 30), bounds.openOriginal + 1);
+  assert.match(
+    openCtx,
+    /\}\s*defaultConfig\s*\{$/,
+    `open brace must belong to the UNQUALIFIED project DSL defaultConfig. Got context: ${JSON.stringify(openCtx)}`,
+  );
+  const out = transformGradle(attackerSource);
+  const calls = findExecutableAbiFilterCalls(out);
+  assert.equal(
+    calls.length,
+    1,
+    `exactly one executable abiFilters call must exist. Found ${calls.length}:\n${calls.map((c) => '  ' + c.originalLine.trim()).join('\n')}`,
+  );
+  // The arm64 marker must sit in the REAL project defaultConfig — the
+  // one that also carries `applicationId "com.dicoge.holohunter"`.
+  const markerIdx = out.indexOf('// DIC-1266:abiFilter=arm64-v8a');
+  const realDsl = out.indexOf('applicationId');
+  const qualifiedCall = out.indexOf('unused.defaultConfig {');
+  // Marker must be BEFORE applicationId but AFTER the qualified call's
+  // closing brace — i.e., inside the block that also holds applicationId.
+  assert.ok(
+    qualifiedCall < markerIdx && markerIdx < realDsl,
+    `marker must land between the qualified Noop.defaultConfig {} (at ${qualifiedCall}) and the applicationId (at ${realDsl}); got marker at ${markerIdx}`,
+  );
 });
 
 check('plugin idempotency is not fooled by an `abiFilters "arm64-v8a"` inside a Groovy string literal', () => {
@@ -596,6 +659,81 @@ check('scanForOpenRouter respects LEXICAL SCOPE — an inner dead block cannot p
   assert.ok(
     offenders.some((o) => o.kind === 'BinaryExpression' && /^https:\/\/openrouter\.ai\/api\/v1\/chat\/completions$/i.test(o.value)),
     `the final composed URL must fold to \`https://openrouter.ai/api/v1/chat/completions\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+});
+
+check('scanForOpenRouter tracks var HOISTING to function/program scope — DIC-1269 CR round-5 blocker 1', async () => {
+  const { scanForOpenRouter } = await loadScanner();
+  // The exact CR round-5 mutation. `var` inside a block belongs to the
+  // enclosing function/program scope, so the second `var hostPrefix
+  // = "open"` REASSIGNS the outer binding. Runtime folds `host` to
+  // `"openrouter.ai"`. Previous rounds treated every declaration as
+  // block-scoped and lost the `var` on scope pop, restoring the safe
+  // outer "google" — silently hid an executable OpenRouter route.
+  const varHoisted = `
+    var hostPrefix = "google";
+    var keyPrefix = "GEMINI";
+    var modulePrefix = "@google";
+    {
+      var hostPrefix = "open";
+      var keyPrefix = "OPEN";
+      var modulePrefix = "@open";
+    }
+    const host = [hostPrefix, "router.ai"].join("");
+    const key = [keyPrefix, "ROUTER_API_KEY"].join("");
+    const moduleName = [modulePrefix, "router/sdk"].join("");
+    void import(moduleName);
+    void fetch("https://" + host + "/api/v1/chat/completions", {
+      headers: { Authorization: process.env[key] },
+    });
+  `;
+  const offenders = scanForOpenRouter(varHoisted, '<inline-var-hoist>');
+  assert.ok(offenders.length > 0, `the scanner MUST report offenders for the CR round-5 var-hoisting mutation. Got 0.`);
+  const callOffenders = offenders.filter((o) => o.kind === 'CallExpression');
+  assert.ok(
+    callOffenders.some((o) => /^openrouter\.ai$/i.test(o.value)),
+    `a CallExpression fold through the hoisted \`var hostPrefix\` must produce \`openrouter.ai\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    callOffenders.some((o) => /^OPENROUTER_API_KEY$/.test(o.value)),
+    `a CallExpression fold through the hoisted \`var keyPrefix\` must produce \`OPENROUTER_API_KEY\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    callOffenders.some((o) => /^@openrouter\/sdk$/i.test(o.value)),
+    `a CallExpression fold through the hoisted \`var modulePrefix\` must produce \`@openrouter/sdk\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+  assert.ok(
+    offenders.some((o) => o.kind === 'BinaryExpression' && /^https:\/\/openrouter\.ai\/api\/v1\/chat\/completions$/i.test(o.value)),
+    `the final composed URL must fold to \`https://openrouter.ai/api/v1/chat/completions\`. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
+  );
+});
+
+check('scanForOpenRouter — let/const bindings STAY block-scoped even when a sibling `var` hoists', async () => {
+  const { scanForOpenRouter } = await loadScanner();
+  // Sanity: `let` and `const` MUST remain block-scoped. If a fix
+  // accidentally routes every declaration through `bindVar` (hoist
+  // everything), an inner `let prefix = "google"` would leak into the
+  // outer program scope and taint the outer `[prefix, "router-outer"]
+  // .join("")` fold.
+  const mixed = `
+    let prefix = "open";                          // outer, block-scope of program
+    {
+      let prefix = "google";                      // block-scope of {}
+      const inner = [prefix, "router-inner"].join("");
+    }
+    const outer = [prefix, "router-outer"].join(""); // must fold with "open"
+  `;
+  const offenders = scanForOpenRouter(mixed, '<inline-mixed-let>');
+  const outer = offenders.find((o) => /router-outer$/.test(o.value));
+  assert.ok(outer, 'the outer fold must appear');
+  assert.match(
+    outer.value,
+    /^openrouter-outer$/,
+    `outer let \`prefix\` must resolve to "open", yielding \`openrouter-outer\`. Got: ${outer.value}`,
+  );
+  assert.ok(
+    !offenders.some((o) => /^googlerouter-outer$/.test(o.value)),
+    `an inner \`let prefix = "google"\` must NOT leak into an outer sibling fold. Offenders:\n${JSON.stringify(offenders, null, 2)}`,
   );
 });
 

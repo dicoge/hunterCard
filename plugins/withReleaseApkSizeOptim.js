@@ -185,15 +185,32 @@ function stripGroovyComments(src, { maskStrings = true } = {}) {
   return { code: out.join(''), map };
 }
 
-// Find the first block named `name` that opens at brace depth == `atDepth`
-// in `code` (a masked/stripped Gradle projection). Returns
-// `{ openIdx, closeIdx }` — offsets of the `{` and its matched `}` — or
-// null when no such block exists. `atDepth === 0` is the "top-level"
-// case; used to reject an `android { }` invocation nested inside a
-// closure like `def unused = { android { … } }` (DIC-1269 CR round-4
-// blocker 2), which Gradle never executes.
+// Find the first UNQUALIFIED block-open named `name` that opens at
+// brace depth == `atDepth` in `code` (a masked/stripped Gradle
+// projection). Returns `{ openIdx, closeIdx }` — offsets of the `{`
+// and its matched `}` — or null when no such block exists.
+//
+// "Unqualified" (DIC-1269 CR round-5 blocker 2): a Groovy project-DSL
+// call looks like `defaultConfig { … }` or `android { … }`, invoked on
+// the implicit project delegate. A qualified member call like
+// `unused.defaultConfig { }` invokes `Noop.defaultConfig(Closure)` on
+// an unrelated object — Gradle NEVER dispatches it to the Android
+// plugin's DSL. The lookbehind here rejects any candidate preceded by
+// `.` (member access), `?.` (safe navigation) — via the `.` filter —
+// or a word/`$` character (which would make the token part of a
+// different identifier like `myandroid`). Only `defaultConfig` at the
+// start of a statement or after whitespace / a closing brace can
+// satisfy the guard.
+//
+// `atDepth === 0` is the "top-level" case; used to reject an
+// `android { }` invocation nested inside a closure like
+// `def unused = { android { … } }` (DIC-1269 CR round-4 blocker 2),
+// which Gradle never executes.
 function findBlockAtDepth(code, name, atDepth) {
-  const pattern = new RegExp(`\\b${name}\\s*\\{`, 'g');
+  // Negative lookbehind: reject `.name`, `?.name`, and `\wname` /
+  // `$name` (identifier concatenation). ES2018 lookbehinds are
+  // available in every Node version this repo targets (>=22).
+  const pattern = new RegExp(`(?<![.\\w$])${name}\\s*\\{`, 'g');
   let m;
   while ((m = pattern.exec(code)) !== null) {
     const braceIdx = m.index + m[0].length - 1;
