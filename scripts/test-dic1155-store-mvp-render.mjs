@@ -145,15 +145,10 @@ for (const [w, h] of [[390, 844], [430, 932], [768, 1024], [1366, 768]]) {
   });
 }
 
-if (!FEATURES.watchlist) {
-  await test('Store MVP: no price-alert editor anywhere in the deck editor', async () => {
-    const { container, cleanup } = await renderShortagePanel(390, 844);
-    try {
-      assert.strictEqual(n(container, '[data-testid="price-alert-editor"]'), 0, 'Store MVP must not render the alert editor');
-    } finally {
-      await cleanup();
-    }
-  });
-}
+// Deliberately NOT asserted here: that `price-alert-editor` is absent. That
+// modal only mounts once alertTarget is set by a CTA click, so with no click it
+// is absent in EVERY profile — the assertion would read as alert-gating cover
+// while being unfalsifiable. The alert CTA count above is the real, and
+// mutation-sensitive, guard.
 
 console.log(`DIC-1155 Store-MVP render gate PASSED (${passed} checks, STORE_MVP=${STORE_MVP})`);
