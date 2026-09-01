@@ -201,6 +201,9 @@ jobs:
       - name: Verify the deck editor renders no explanatory copy (DIC-1064)
         run: npm run test:deck-editor-copy
 
+      - name: Verify the native deck editor renders its card picker grid (DIC-1287)
+        run: npm run test:native-deck-editor-grid
+
       - name: Verify strict card-number series filter + numeric ordering (DIC-1117)
         run: npm run test:series-filter
 
