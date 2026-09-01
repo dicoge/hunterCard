@@ -572,6 +572,7 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_permission_title: 'カメラ権限が必要です',
   scan_permission_web_body: 'カードをスキャンするにはカメラを使用します。下のボタンからカメラへのアクセスを許可してください。',
   scan_permission_native_body: 'カードをスキャンするにはカメラへのアクセスを許可してください。',
+  scan_permission_native_body_permanent: 'カメラ権限が完全に拒否されているため、アプリから再度確認できません。下のボタンから設定を開き、カメラ権限を手動で有効にしてからアプリに戻ってください。',
   scan_permission_allow: 'カメラを許可',
   scan_open_settings: '設定を開く',
   scan_camera_open_failed: 'カメラを開けません',

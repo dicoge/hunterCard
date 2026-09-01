@@ -572,6 +572,7 @@ export const zh = {
   scan_permission_title: '需要相機權限',
   scan_permission_web_body: '掃描卡牌需要使用相機功能，請點擊下方按鈕以允許存取相機。',
   scan_permission_native_body: '掃描卡牌需要使用相機功能，請允許存取相機以使用此功能。',
+  scan_permission_native_body_permanent: '相機權限已被永久拒絕，無法從應用程式內再次詢問。請點擊下方按鈕開啟系統設定，手動允許相機權限後回到 App 即可使用掃描功能。',
   scan_permission_allow: '允許相機權限',
   scan_open_settings: '打開設定',
   scan_camera_open_failed: '無法開啟相機',
