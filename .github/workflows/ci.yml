@@ -43,6 +43,9 @@ jobs:
       - name: Verify effective generated Gradle from real prebuild (DIC-1266 CR blocker 1/2)
         run: npm run test:release-apk-prebuild-effective
 
+      - name: Verify post-package APK guard fails closed on size/manifest mutations (DIC-1266 CR round-6)
+        run: npm run test:release-apk-postpackage-mutations
+
       - name: Check TypeScript types
         run: npx tsc --noEmit
 

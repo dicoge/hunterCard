@@ -32,6 +32,7 @@
     "test:release-apk-size-optim": "node scripts/test-release-apk-size-optim.mjs",
     "test:release-apk-prebuild-effective": "node scripts/test-release-apk-prebuild-effective.mjs",
     "test:release-apk-postpackage": "node scripts/test-release-apk-postpackage.mjs",
+    "test:release-apk-postpackage-mutations": "node scripts/test-release-apk-postpackage-mutations.mjs",
     "test:play-manifest": "node scripts/test-play-release-manifest.mjs",
     "test:play-store-assets": "node scripts/test-play-store-assets.mjs",
     "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",

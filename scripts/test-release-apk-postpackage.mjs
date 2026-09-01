@@ -90,22 +90,11 @@ function findAapt() {
   return null;
 }
 
-// Binary AndroidManifest.xml stores strings in a UTF-16LE stringpool
-// (interleaved zero bytes between ASCII characters), while
-// classes*.dex stores identifiers in modified-UTF-8 (ASCII bytes as-is).
-// A release APK carries `com.dicoge.holohunter` in at least one of the
-// two encodings, so the byte-scan fallback checks both and only reports
-// "unknown" when neither is present.
-function apkContainsPackageString(apkBuffer, packageName) {
-  if (apkBuffer.includes(Buffer.from(packageName, 'utf8'))) return true;
-  const utf16 = Buffer.alloc(packageName.length * 2);
-  for (let i = 0; i < packageName.length; i += 1) {
-    utf16[i * 2] = packageName.charCodeAt(i);
-    utf16[i * 2 + 1] = 0;
-  }
-  if (apkBuffer.includes(utf16)) return true;
-  return false;
-}
+// DIC-1269 CR round 6 blocker 2 removed the byte-scan and manifest-
+// stringpool fallbacks — package identity now requires aapt/aapt2 as
+// an authoritative source. The classes*.dex string pool can carry the
+// applicationId string even when AndroidManifest.xml declares a
+// different package, so any byte-scan is fail-open by construction.
 
 if (!fs.existsSync(apkPath)) {
   fail(`APK not found at ${apkPath}. Run \`expo prebuild --platform android --clean\` and \`./gradlew app:assembleRelease\` first, or pass the path as argv[1] / HUNTER_APK_PATH.`);
@@ -118,11 +107,15 @@ if (!stat.isFile() || stat.size === 0) {
 
 // --------- 1. Total byte size ---------------------------------------------
 
-if (stat.size > sizeLimit) {
+// Strict `< limit` — an APK exactly AT the limit still fails. DIC-1269 CR
+// round 6 blocker 1 flagged the `>` boundary as fail-open: an artifact
+// exactly at the Telegram cap would exit 0 even though the contract
+// requires strictly below.
+if (stat.size >= sizeLimit) {
   fail(
-    `APK size ${stat.size} bytes (${(stat.size / (1024 * 1024)).toFixed(2)} MiB) exceeds the ` +
-      `Multica/Telegram attachment cap of ${sizeLimit} bytes (${(sizeLimit / (1024 * 1024)).toFixed(2)} MiB). ` +
-      `Set HUNTER_APK_SIZE_LIMIT_BYTES to override for a test.`,
+    `APK size ${stat.size} bytes (${(stat.size / (1024 * 1024)).toFixed(2)} MiB) meets or exceeds the ` +
+      `Multica/Telegram attachment cap of ${sizeLimit} bytes (${(sizeLimit / (1024 * 1024)).toFixed(2)} MiB) — ` +
+      `contract is strict < limit, not <=. Set HUNTER_APK_SIZE_LIMIT_BYTES to override for a test.`,
   );
 }
 
@@ -169,54 +162,56 @@ if (abiDirs.size !== 1 || !abiDirs.has('arm64-v8a')) {
   );
 }
 
-// --------- 3. Package identity --------------------------------------------
+// --------- 3. Package identity (authoritative manifest parsing) ----------
 
+// DIC-1269 CR round 6 blocker 2: the previous byte-scan fallback searched
+// the WHOLE APK (including compressed classes.dex) for the package name
+// string. An attacker (or drift) could ship an AndroidManifest.xml
+// declaring a wrong package and still pass the guard because the string
+// `com.dicoge.holohunter` happens to appear inside a dex string pool.
+// Fix: require an authoritative manifest source — `aapt dump badging`
+// or `aapt2 dump badging` — whose output MUST include a
+// `package: name='<applicationId>'` line. If aapt is unavailable, or
+// its output cannot be parsed, we fail CLOSED. No byte-scan fallback.
 const aapt = findAapt();
-let packageName = null;
-let aaptBadging = null;
-if (aapt) {
-  const badge = spawnSync(aapt, ['dump', 'badging', apkPath], { encoding: 'utf8' });
-  if (badge.status === 0) {
-    aaptBadging = badge.stdout;
-    const m = badge.stdout.match(/package: name='([^']+)'/);
-    if (m) packageName = m[1];
-  }
+if (!aapt) {
+  fail(
+    'aapt / aapt2 is required to authoritatively read the APK manifest and was not found on PATH ' +
+      'nor under $ANDROID_HOME/build-tools/ / $ANDROID_SDK_ROOT/build-tools/. ' +
+      'Install Android SDK build-tools (setup-android GitHub Action or Android Studio locally). ' +
+      'The guard refuses to fall back to a full-APK byte scan because dex string pools can carry ' +
+      'the applicationId string even when AndroidManifest.xml declares a DIFFERENT package.',
+  );
 }
-if (!packageName) {
-  // Fallback #1: extract the binary AndroidManifest.xml from the APK
-  // (uncompressed in the zip in every Android build) and search its
-  // string pool for the package name in both UTF-8 and UTF-16LE
-  // encodings. This works even when aapt/aapt2 are unavailable.
-  const manifestResult = spawnSync('unzip', ['-p', apkPath, 'AndroidManifest.xml'], {
-    maxBuffer: 8 * 1024 * 1024,
-  });
-  if (manifestResult.status === 0 && manifestResult.stdout && manifestResult.stdout.length > 0) {
-    if (apkContainsPackageString(manifestResult.stdout, 'com.dicoge.holohunter')) {
-      packageName = 'com.dicoge.holohunter';
-    }
-  }
+const badge = spawnSync(aapt, ['dump', 'badging', apkPath], { encoding: 'utf8' });
+if (badge.status !== 0) {
+  fail(
+    `${path.basename(aapt)} dump badging exited ${badge.status} — cannot authoritatively parse APK manifest.\n` +
+      `stderr: ${badge.stderr || '(empty)'}\n` +
+      `Refusing to fall back to byte-scan; fix the input APK or install a working build-tools version.`,
+  );
 }
-if (!packageName) {
-  // Fallback #2: full-APK byte scan. Weak because compressed entries
-  // hide their content, but the applicationId also lives in each
-  // classes.dex (usually stored deflated) — so the check is imperfect
-  // but not useless.
-  const buf = fs.readFileSync(apkPath);
-  if (apkContainsPackageString(buf, 'com.dicoge.holohunter')) {
-    packageName = 'com.dicoge.holohunter';
-  }
+const aaptBadging = badge.stdout;
+const packageMatch = aaptBadging.match(/^package:\s+name='([^']+)'/m);
+if (!packageMatch) {
+  fail(
+    `${path.basename(aapt)} dump badging did not report a \`package: name='...'\` line. ` +
+      `Refusing to accept an APK whose manifest cannot be parsed authoritatively.\n` +
+      `First 400 bytes of badging output: ${aaptBadging.slice(0, 400)}`,
+  );
 }
+const packageName = packageMatch[1];
 if (packageName !== 'com.dicoge.holohunter') {
   fail(
-    `APK package identity is not com.dicoge.holohunter (detected: ${packageName ?? 'unknown'}). ` +
-      `Refusing to deliver an artifact whose applicationId drifted from the DIC-1265 QA baseline. ` +
-      `aapt=${aapt ?? '<not found>'} — pass HUNTER_APK_PATH to point at a different APK if this is a test.`,
+    `AndroidManifest.xml declares package name '${packageName}', not 'com.dicoge.holohunter'. ` +
+      `Refusing to deliver an artifact whose applicationId drifted from the DIC-1265 QA baseline.`,
   );
 }
 
-// --------- 4. Non-debuggable check via aapt (best-effort) -----------------
+// --------- 4. Non-debuggable check via aapt -------------------------------
 
-if (aaptBadging && /application-debuggable/.test(aaptBadging)) {
+// Now that aapt is a hard requirement, this check is authoritative too.
+if (/application-debuggable/.test(aaptBadging)) {
   fail(
     'APK is marked application-debuggable. The production-apk release artifact must not ship a debug manifest.',
   );
@@ -232,6 +227,7 @@ const output = {
   sizeLimitMiB: Number((sizeLimit / (1024 * 1024)).toFixed(2)),
   packagedAbis: [...abiDirs],
   packageName,
+  packageSource: `${path.basename(aapt)} dump badging`,
   requiredAbis: [...REQUIRED_ABIS],
   forbiddenAbis: [...FORBIDDEN_ABIS],
 };
