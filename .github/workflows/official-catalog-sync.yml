@@ -5,23 +5,62 @@ on:
   schedule:
     - cron: '17 18 * * *'
 
+# DIC-1291: bounded scopes for the pull-request handoff. The old design
+# pushed the catalog snapshot straight at protected main and blew up with
+# GH006 on run 33558958119; the workflow now opens a PR against main
+# instead, so it needs only enough token authority to update its own
+# bot-owned sync branch and to open/refresh the sync PR. The old
+# direct-push design's `issues: write` scope is intentionally dropped.
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # Deterministic sync branch — reused across runs so retries never fan out
+  # into a PR storm. Force-pushes are scoped strictly to this branch; main
+  # is protected and never touched from this workflow.
+  SYNC_BRANCH: bot/official-catalog-sync
+  BASE_BRANCH: main
+  # Everything the pipeline is allowed to stage. Kept in one place so both
+  # the change check and the commit stage the exact same set — no path can
+  # sneak in via `git add -A` and no path can silently be dropped.
+  SYNC_PATHS: >-
+    data/official/
+    data/database.json
+    public/data/database.json
+    docs/audits/official-catalog-audit.json
+    docs/audits/official-production-lag-state.json
+
 jobs:
   official-catalog:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: write
-      issues: write
+    # Serialize scheduled + manual dispatches so two runs cannot race to
+    # refresh the same sync branch or open duplicate PRs.
+    concurrency:
+      group: official-catalog-sync
+      cancel-in-progress: false
 
     steps:
-      - name: Checkout
+      - name: Checkout base branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          # Full history so we can rebuild the sync branch from origin/main
+          # every run and diff against arbitrary PR-head commits without a
+          # secondary fetch failing on shallow history.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # DIC-1167 pipeline preserved end-to-end: dynamic expansion discovery,
+      # official catalog ingestion (independent of price-source failures),
+      # exact printing identity, buy-price fail-closed alignment, canonical /
+      # native database assets, hEB01 exact-214 + translation audits, and the
+      # production-lag state + alerts.
       - name: Sync official catalog
         run: node scripts/scrape-official-cards.js --check-production=https://holohunter.dicoge.com/data/database.json
 
@@ -40,17 +79,77 @@ jobs:
       - name: Check data changes
         id: check
         run: |
-          if git diff --stat -- data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json | grep -q .; then
+          if git diff --stat -- $SYNC_PATHS | grep -q .; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit and push catalog changes
+      # A run that produced no diff is a success — protected main stays
+      # untouched, no branch is pushed, no PR is opened.
+      - name: No-op success (no changes)
+        if: steps.check.outputs.changed == 'false'
+        run: echo "No official-catalog changes to sync; exiting successfully."
+
+      # Pull-request handoff. Never pushes to `main`, never bypasses branch
+      # protection, and dedupes by the deterministic sync branch + an open-PR
+      # content check so retries cannot create PR storms.
+      #
+      #   * Open PR exists from the sync branch AND its head already carries
+      #     this snapshot → no-op success (the pending PR is already the
+      #     right one; do not re-push).
+      #   * Open PR exists but content diverges → refresh the sync branch on
+      #     top of origin/main and force-push to the sync branch ONLY. The
+      #     existing PR picks the new head up automatically.
+      #   * No open PR → create a fresh sync branch off origin/main and open
+      #     a new PR via `gh pr create`. Branch protection then requires the
+      #     Validate + Release-APK guard checks to pass on the PR head before
+      #     a human can merge — no bypass, no --admin, no direct push.
+      - name: Open or refresh sync PR
         if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+
           git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json
-          git diff --staged --quiet || git commit -m "chore: sync official catalog $(date +%Y-%m-%d)"
-          git push origin HEAD:main
+          git config --local user.name  "GitHub Action"
+
+          COMMIT_MSG="chore: sync official catalog $(date -u +%Y-%m-%d)"
+
+          EXISTING_PR=$(gh pr list \
+            --state open \
+            --head "$SYNC_BRANCH" \
+            --base "$BASE_BRANCH" \
+            --json number,headRefOid \
+            --jq '.[0] // empty')
+
+          if [ -n "$EXISTING_PR" ]; then
+            EXISTING_HEAD=$(echo "$EXISTING_PR" | jq -r '.headRefOid')
+            EXISTING_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number')
+            git fetch --no-tags origin "$EXISTING_HEAD"
+            if git diff --quiet "$EXISTING_HEAD" -- $SYNC_PATHS; then
+              echo "Open PR #$EXISTING_NUMBER already carries this snapshot; leaving it untouched."
+              exit 0
+            fi
+          fi
+
+          # Rebuild the sync branch on top of origin/main every run so old
+          # bot commits never accumulate on the branch. Force-with-lease so
+          # a concurrent writer (there should be none, thanks to the
+          # concurrency group above) fails loud instead of being overwritten.
+          git switch --force-create "$SYNC_BRANCH" "origin/$BASE_BRANCH"
+          git add -- $SYNC_PATHS
+          git diff --staged --quiet && { echo "staged tree unexpectedly empty after rebase; aborting"; exit 1; }
+          git commit -m "$COMMIT_MSG"
+          git push --force-with-lease origin "$SYNC_BRANCH:$SYNC_BRANCH"
+
+          if [ -z "$EXISTING_PR" ]; then
+            gh pr create \
+              --base "$BASE_BRANCH" \
+              --head "$SYNC_BRANCH" \
+              --title "$COMMIT_MSG" \
+              --body $'Automated official-catalog snapshot from the scheduled `official-catalog-sync` workflow.\n\nBranch protection on `main` runs the required checks (Validate + Release-APK post-package guard) against this PR; merge is human-gated. Never merge with `--admin` / branch-protection bypass — the whole point of this handoff is that the same gates apply to bot changes as to human PRs.'
+          else
+            echo "Refreshed existing PR #$EXISTING_NUMBER with new snapshot."
+          fi

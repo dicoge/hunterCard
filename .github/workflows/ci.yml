@@ -115,6 +115,9 @@ jobs:
       - name: Verify deployment data cannot ship catalog-only regression (DIC-1167)
         run: npm run test:deployment-data
 
+      - name: Verify official-catalog-sync workflow hands off through a PR (DIC-1291)
+        run: npm run test:official-catalog-sync-workflow
+
       - name: Verify canonical printing-ID rebuilds preserve market fields (DIC-1204)
         run: npm run test:market-field-preservation
 
