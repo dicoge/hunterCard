@@ -37,6 +37,15 @@ jobs:
       - name: Verify release APK pipeline invariants (DIC-1193)
         run: npm run test:release-apk-pipeline
 
+      - name: Verify release APK size + content guards (DIC-1266)
+        run: npm run test:release-apk-size-optim
+
+      - name: Verify effective generated Gradle from real prebuild (DIC-1266 CR blocker 1/2)
+        run: npm run test:release-apk-prebuild-effective
+
+      - name: Verify post-package APK guard fails closed on size/manifest mutations (DIC-1266 CR round-6)
+        run: npm run test:release-apk-postpackage-mutations
+
       - name: Check TypeScript types
         run: npx tsc --noEmit
 
@@ -286,3 +295,68 @@ jobs:
             echo "Warning: Found console.log statements:"
             echo "$CONSOLE_LOGS"
           fi
+
+  release-apk-postpackage-guard:
+    # DIC-1266 CR round 7 / DIC-1277 QA blocker: generated Gradle text
+    # can pass the fast static suite while the packaged APK still ships
+    # every ABI, because the RN gradle plugin's
+    # NdkConfiguratorUtils.kt calls
+    # `abiFilters.addAll(reactNativeArchitectures)` — unioning the
+    # gradle.properties list onto the DSL filter. The ONLY check that
+    # is not fooled by that is a real `./gradlew app:assembleRelease`
+    # against the plugin, followed by a byte-level inspection of the
+    # produced APK's lib/<abi>/ directories and total size. Runs in
+    # parallel with Validate.
+    name: Release-APK post-package guard (DIC-1266 / DIC-1277)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup Java 17 (Temurin — matches EAS build image)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prebuild for production-apk profile
+        env:
+          EAS_BUILD_PROFILE: production-apk
+          EAS_BUILD_PLATFORM: android
+          # Placeholder — the plugin's Android build assertion in
+          # app.config.js needs the env set; the value is never read at
+          # release time by the guard itself.
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: dic1266-postpackage-guard-placeholder
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Assemble release APK
+        env:
+          # Set on the JVM so gradle daemons never leak between jobs.
+          _JAVA_OPTIONS: "-Xmx4g -Dfile.encoding=UTF-8"
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew app:assembleRelease --no-daemon --console=plain --stacktrace
+
+      - name: Verify packaged ABI set + size (DIC-1277 blocker)
+        run: npm run test:release-apk-postpackage
+
+      - name: Upload built APK for provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-apk-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn

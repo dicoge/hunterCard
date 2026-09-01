@@ -75,7 +75,8 @@
         }
       ],
       "expo-notifications",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "./plugins/withReleaseApkSizeOptim"
     ],
     "extra": {
       "eas": {
