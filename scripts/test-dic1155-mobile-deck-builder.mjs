@@ -318,6 +318,29 @@ await test('Req 3c: The active tile menu offers no editor-only actions while in 
   } finally { await cleanup(); }
 });
 
+// The library also renders when deckView is 'editor' but NO deck is active —
+// `deckView === 'library' || !activeDeck`. That is the first-launch default
+// (activeDeckId: null, deckView: 'editor') and a legacy v2 rehydrate with no
+// active deck, so it is the most common state there is, not a corner. Gating
+// the editor-only actions on the view ALONE would resurface the bug here; the
+// identity half of the condition is what prevents it (DIC-1272).
+await test('Req 3d: A fresh install (no active deck, editor view) offers no editor-only tile actions', async () => {
+  const { container, cleanup } = await renderScreenAt(390, 844, null, 'zh');
+  try {
+    await act(async () => useDeckStore.setState({ activeDeckId: null, deckView: 'editor' }));
+    await flush();
+    assert.ok(container.querySelector('[data-testid="deck-library-grid"]'),
+      'the library grid renders with no active deck even while deckView is editor');
+
+    await click(container.querySelector('[data-testid="deck-menu-deck-2"]'));
+    assert.strictEqual(document.querySelectorAll('[data-testid="deck-menu-rename"]').length, 0,
+      'Rename must not be offered when no deck is open in the editor');
+    assert.strictEqual(document.querySelectorAll('[data-testid="deck-menu-library"]').length, 0,
+      '“back to library” must not be offered when no deck is open in the editor');
+    assert.ok(document.querySelector('[data-testid="deck-menu-open"]'), 'Open must stay available');
+  } finally { await cleanup(); }
+});
+
 // 4. Placeholder icon (no ☆ text symbol or emoji)
 await test('Req 4: Deck without Oshi renders consistent vector icon placeholder without ☆ text symbol or emoji', async () => {
   const { container, cleanup } = await renderScreenAt(390, 844, null, 'zh');
