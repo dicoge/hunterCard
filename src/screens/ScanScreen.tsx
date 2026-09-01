@@ -368,15 +368,38 @@ export default function ScanScreen({ navigation }: any) {
     scanAreaViewportRef.current = { x, y, width, height };
   };
 
-  // Web 版無法使用 expo-ocr-kit，用 Tesseract.js 兜底
+  // Web 版無法使用 expo-ocr-kit，用 Tesseract.js 兜底。
+  // DIC-1286: guard the native `require('expo-ocr-kit')` — if the native
+  // module is missing/broken (as the Android Closed Test APK crash suggests
+  // was true for camera-adjacent native modules), a bare `require` would
+  // throw synchronously from an event handler and bubble as an unhandled
+  // promise rejection. Return an empty OCR string instead so the recognition
+  // pipeline falls through to the manual-search branch already handled by
+  // scanRecognitionFlow, and let the ScanScreenErrorBoundary catch anything
+  // more severe. The Vision recognition path (recognizeCardFromImage) does
+  // not depend on this fallback.
   const performOcr = async (uri: string): Promise<string> => {
     if (isWeb) {
       const result = await recognizeTextWeb(uri);
       return typeof result?.text === 'string' ? result.text : '';
-    } else {
-      const { recognizeText } = require('expo-ocr-kit');
-      const ocrResult = await recognizeText(uri);
+    }
+    let ocrMod: any;
+    try {
+      ocrMod = require('expo-ocr-kit');
+    } catch (loadErr) {
+      console.warn('[ScanScreen] expo-ocr-kit unavailable; falling back to empty OCR', loadErr);
+      return '';
+    }
+    if (!ocrMod || typeof ocrMod.recognizeText !== 'function') {
+      console.warn('[ScanScreen] expo-ocr-kit missing recognizeText export; empty OCR fallback');
+      return '';
+    }
+    try {
+      const ocrResult = await ocrMod.recognizeText(uri);
       return typeof ocrResult?.text === 'string' ? ocrResult.text : '';
+    } catch (runErr) {
+      console.warn('[ScanScreen] expo-ocr-kit runtime failure; empty OCR fallback', runErr);
+      return '';
     }
   };
 

@@ -109,6 +109,7 @@
     "test:vercel-routing": "node scripts/test-vercel-api-routing.mjs",
     "test:node-runtime-adapter": "node scripts/test-node-runtime-adapter.mjs",
     "test:scan-geometry": "node scripts/benchmarks/scan-geometry.test.cjs",
+    "test:scan-screen-fail-safe": "node --import ./scripts/register-web-render.mjs scripts/test-scan-screen-fail-safe.mjs",
     "benchmark:scan-recognition": "node scripts/benchmarks/scan-recognition-benchmark.cjs"
   },
   "dependencies": {

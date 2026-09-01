@@ -288,6 +288,9 @@ jobs:
       - name: Verify a native scan transmits no image bytes (DIC-1248)
         run: npm run test:native-scan-no-upload
 
+      - name: Verify Scan screen fails safe on native crashes (DIC-1286)
+        run: npm run test:scan-screen-fail-safe
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
