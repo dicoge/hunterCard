@@ -101,6 +101,12 @@ export default function DeckEditorScreen() {
     [decks, activeDeckId],
   );
   const menuDeck = decks.find((deck) => deck.id === menuDeckId) || null;
+  // Rename and “back to library” act on the deck OPEN IN THE EDITOR, so matching
+  // identity is not enough on its own: activeDeckId now survives into the
+  // library (DIC-1272), where the rename input does not exist and “back to
+  // library” is already where you are. Both must also require the editor view.
+  const menuDeckIsOpenInEditor = deckView === 'editor'
+    && !!menuDeck && menuDeck.id === activeDeck?.id;
   const deleteCandidate = decks.find((deck) => deck.id === deleteDeckId) || null;
 
   useEffect(() => {
@@ -271,7 +277,7 @@ export default function DeckEditorScreen() {
             >
               <Text style={styles.actionMenuText}>{t('deck_open_edit')}</Text>
             </TouchableOpacity>
-            {menuDeck?.id === activeDeck?.id && (
+            {menuDeckIsOpenInEditor && (
               <TouchableOpacity
                 style={styles.actionMenuItem}
                 onPress={() => {
@@ -285,7 +291,7 @@ export default function DeckEditorScreen() {
                 <Text style={styles.actionMenuText}>{t('deck_rename')}</Text>
               </TouchableOpacity>
             )}
-            {menuDeck?.id === activeDeck?.id && (
+            {menuDeckIsOpenInEditor && (
               <TouchableOpacity
                 style={styles.actionMenuItem}
                 onPress={() => {

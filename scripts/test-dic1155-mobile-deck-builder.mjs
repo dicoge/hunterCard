@@ -278,6 +278,46 @@ await test('Req 3b: Returning to the library keeps the deck active and still sho
   } finally { await cleanup(); }
 });
 
+// Making activeDeckId survive into the library (Req 3b) had a side effect: the
+// tile menu gates Rename and “back to library” on identity alone, so in the
+// returned-library state they appeared for the active tile. Rename was a dead
+// end there — the rename input only exists past the library early return, so
+// the menu just closed. These act on the deck OPEN IN THE EDITOR (DIC-1272).
+await test('Req 3c: The active tile menu offers no editor-only actions while in library view', async () => {
+  const { container, cleanup } = await renderScreenAt(390, 844, null, 'zh');
+  try {
+    // Hydrate the exact returned-library state: a deck is active, view is library.
+    await act(async () => useDeckStore.setState({ activeDeckId: 'deck-2', deckView: 'library' }));
+    await flush();
+    assert.ok(container.querySelector('[data-testid="deck-library-grid"]'), 'must be in library view');
+    assert.ok(container.querySelector('[data-testid="deck-active-badge-deck-2"]'), 'deck-2 must be the active tile');
+
+    await click(container.querySelector('[data-testid="deck-menu-deck-2"]'));
+
+    // Editor-only actions must be absent on the ACTIVE tile while in the library.
+    assert.strictEqual(document.querySelectorAll('[data-testid="deck-menu-rename"]').length, 0,
+      'Rename must not be offered in library view — the rename input does not exist there');
+    assert.strictEqual(document.querySelectorAll('[data-testid="deck-menu-library"]').length, 0,
+      '“back to library” must not be offered while already in the library');
+
+    // The actions that DO make sense in the library are still there.
+    assert.ok(document.querySelector('[data-testid="deck-menu-open"]'), 'Open must stay available');
+    assert.ok(document.querySelector('[data-testid="deck-menu-delete"]'), 'Delete must stay available');
+    assert.ok(document.querySelector('[data-testid="deck-menu-cancel"]'), 'Cancel must stay available');
+
+    // And Rename must still be REACHABLE where it belongs: open the deck, and
+    // from the editor the same action now yields a real rename input.
+    await click(document.querySelector('[data-testid="deck-menu-open"]'));
+    await click(container.querySelector('[data-testid="deck-mobile-panel-overview"]'));
+    await click(container.querySelector('[data-testid="deck-editor-menu"]'));
+    const renameInEditor = document.querySelector('[data-testid="deck-menu-rename"]');
+    assert.ok(renameInEditor, 'Rename must be offered in the editor');
+    await click(renameInEditor);
+    assert.ok(container.querySelector('[data-testid="deck-rename-input"]'),
+      'Rename from the editor must actually open the rename input');
+  } finally { await cleanup(); }
+});
+
 // 4. Placeholder icon (no ☆ text symbol or emoji)
 await test('Req 4: Deck without Oshi renders consistent vector icon placeholder without ☆ text symbol or emoji', async () => {
   const { container, cleanup } = await renderScreenAt(390, 844, null, 'zh');
