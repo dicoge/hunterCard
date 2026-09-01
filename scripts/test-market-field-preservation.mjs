@@ -650,6 +650,22 @@ function freshCurrentCard(overrides = {}) {
     // shipped state (1,566 rows on main had no canonical-ID file yet).
     if (fsMod.existsSync(canonicalHistoryFile)) fsMod.unlinkSync(canonicalHistoryFile);
 
+    // DIC-1229 rev.5: seed + Step 6 both gate on `hasCurrentPriceProvenance`,
+    // which requires the row's `timestamp` to be within 7 days. The shipped
+    // DB's timestamp on this fixture card ages out relative to CI wall-clock
+    // over time and would silently reduce this scenario to "row is unproven,
+    // history correctly cleared" — which is the fail-closed contract, not
+    // what this DIC-1204 test measures. Refresh the timestamp on the target
+    // row (and the target row only) so the preservation-then-round-trip path
+    // is what actually runs. Restore-in-finally puts the original back.
+    {
+      const stub = JSON.parse(fsMod.readFileSync(dbPath, 'utf8'));
+      if (stub.cards?.[CANONICAL_ID]) {
+        stub.cards[CANONICAL_ID].timestamp = new Date().toISOString();
+        fsMod.writeFileSync(dbPath, JSON.stringify(stub, null, 2) + '\n');
+      }
+    }
+
     const result = spawnSync(
       process.execPath,
       ['scripts/build-database.js'],

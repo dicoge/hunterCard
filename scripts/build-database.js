@@ -30,6 +30,7 @@ import {
   findAmbiguousPromoRowIds,
   hasCurrentPriceProvenance,
   findUnprovenPriceHistoryViolations,
+  pricesEntryExactPrintMatchesSource,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
@@ -1258,7 +1259,7 @@ async function buildDatabase() {
     });
   }
 
-  function yuyuEntryMatchesOfficial(entry, official) {
+  function yuyuEntryMatchesOfficial(entry, official, candidateCount = 1) {
     if (!entry || !official) return false;
     const sourceSeries = String(entry.sourceSeries || '').toLowerCase();
     if (!sourceSeries) return false;
@@ -1267,13 +1268,27 @@ async function buildDatabase() {
     const officialRarity = normalizeRarityCode(official.rarity);
     const entryRarity = normalizeRarityCode(entry.rarity);
 
-    if (sourceSeries === officialSeries || sourceSeries === officialSource) {
-      return entryRarity !== '' && officialRarity !== '' && entryRarity === officialRarity;
+    if (entryRarity !== '' && officialRarity !== '') {
+      if (sourceSeries === officialSeries || sourceSeries === officialSource) {
+        return entryRarity === officialRarity;
+      }
+
+      const taggedBySeries = String(entry.name || '').toLowerCase().includes(`/${sourceSeries}`);
+      if (taggedBySeries && sourceSeries === officialSource) {
+        return entryRarity === officialRarity;
+      }
     }
 
-    const taggedBySeries = String(entry.name || '').toLowerCase().includes(`/${sourceSeries}`);
-    if (taggedBySeries && sourceSeries === officialSource) {
-      return entryRarity !== '' && officialRarity !== '' && entryRarity === officialRarity;
+    // Live yuyu pages usually do not expose an explicit rarity token; the
+    // image URL and sourceSeries still prove the source product. Accept that
+    // empty-rarity shape only when there is exactly one official printing for
+    // this cardNumber+sourceProduct, otherwise fail closed instead of guessing
+    // between C/SR/HR siblings.
+    if (entryRarity === '' && sourceSeries === officialSource && candidateCount === 1) {
+      return pricesEntryExactPrintMatchesSource(
+        { sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage },
+        official.sourceProduct || official.series || '',
+      );
     }
 
     return false;
@@ -1285,7 +1300,14 @@ async function buildDatabase() {
   function getYuyuForCard(cardNum, official) {
     const priceData = prices[cardNum];
     if (!priceData) return null;
-    const rawEntries = (Array.isArray(priceData) ? priceData : [priceData]).filter((entry) => yuyuEntryMatchesOfficial(entry, official));
+    const candidateCount = (officialByCardNum[cardNum] || [])
+      .filter((candidate) => {
+        const candidateSource = String(candidate.sourceProduct || candidate.series || '').toLowerCase();
+        const officialSource = String(official.sourceProduct || official.series || '').toLowerCase();
+        return candidateSource && candidateSource === officialSource;
+      })
+      .length;
+    const rawEntries = (Array.isArray(priceData) ? priceData : [priceData]).filter((entry) => yuyuEntryMatchesOfficial(entry, official, candidateCount));
     if (rawEntries.length === 0) return null;
     const priceEntries = deduplicatePrices(rawEntries);
     let lowestPrice = null;
