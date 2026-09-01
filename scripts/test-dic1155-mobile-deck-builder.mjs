@@ -102,15 +102,26 @@ async function renderScreenAt(width, height, activeDeckId = null, lang = 'zh') {
   useDeckStore.setState({
     decks: mockDecks(),
     activeDeckId,
+    // deckView is navigation and is persisted, so it must be set explicitly or
+    // a previous test's navigation would leak into this one (DIC-1272).
+    deckView: activeDeckId ? 'editor' : 'library',
     collection: {},
   });
+  return mountScreen();
+}
+
+/** Mount the screen against WHATEVER is already in the store. Used to simulate a
+ * relaunch: the store is reloaded from its persisted slice and re-rendered. */
+function mountScreen() {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  await act(async () => root.render(React.createElement(DeckEditorScreen)));
-  await flush();
-  await flush();
-  return { container, cleanup: async () => { await act(async () => root.unmount()); container.remove(); } };
+  return (async () => {
+    await act(async () => root.render(React.createElement(DeckEditorScreen)));
+    await flush();
+    await flush();
+    return { container, cleanup: async () => { await act(async () => root.unmount()); container.remove(); } };
+  })();
 }
 
 let passed = 0;
@@ -208,6 +219,62 @@ await test('Req 3: Active deck state machine, switching 3+ decks, deletion persi
 
     const rehydratedCard = useDeckStore.getState().decks[0].oshi[0].card;
     assert.strictEqual(rehydratedCard.color, '黄', 'pre-fix snapshot missing color must be rehydrated from index');
+  } finally { await cleanup(); }
+});
+
+// Req 3 above only ever inspected store state, which is how a completely
+// unreachable UI shipped: the library used to render only when activeDeckId was
+// null, so `active={deck.id === activeDeckId}` could never be true and the
+// active badge was dead code. This drives the real controls instead — open,
+// return, relaunch — and asserts what the player actually sees (DIC-1272).
+await test('Req 3b: Returning to the library keeps the deck active and still shows its badge after a relaunch', async () => {
+  let { container, cleanup } = await renderScreenAt(390, 844, null, 'zh');
+  try {
+    assert.ok(container.querySelector('[data-testid="deck-library-grid"]'), 'library must render first');
+    assert.ok(!container.querySelector('[data-testid="deck-active-badge-deck-2"]'), 'nothing is active yet');
+
+    // 1. Open deck-2 through the real tile control.
+    await click(container.querySelector('[data-testid="deck-open-deck-2"]'));
+    assert.ok(container.querySelector('[data-testid="deck-mobile-panel-switch"]'), 'editor must open');
+    assert.strictEqual(useDeckStore.getState().activeDeckId, 'deck-2', 'opening must set the active deck');
+
+    // 2. Return to the library through the real menu action. The editor opens on
+    //    the card-picker tab, so switch to the deck tab where the menu lives.
+    await click(container.querySelector('[data-testid="deck-mobile-panel-overview"]'));
+    await click(container.querySelector('[data-testid="deck-editor-menu"]'));
+    // The action menu is a Modal, which react-native-web renders into a
+    // document-level portal rather than inside our container.
+    await click(document.querySelector('[data-testid="deck-menu-library"]'));
+    assert.ok(container.querySelector('[data-testid="deck-library-grid"]'), 'library must render after returning');
+
+    // The regression itself: returning is navigation, not a change of identity.
+    assert.strictEqual(useDeckStore.getState().activeDeckId, 'deck-2',
+      'returning to the library must NOT clear the persisted active deck');
+
+    // 3. The player can see which deck they will go back to — and only that one.
+    assert.ok(container.querySelector('[data-testid="deck-active-badge-deck-2"]'),
+      'the active deck tile must be marked in the library');
+    assert.ok(!container.querySelector('[data-testid="deck-active-badge-deck-1"]'), 'deck-1 must not be marked');
+    assert.ok(!container.querySelector('[data-testid="deck-active-badge-deck-3"]'), 'deck-3 must not be marked');
+
+    // 4. Relaunch. The slice comes from the store's OWN partialize, not a
+    //    hand-written pick — otherwise the test would prove that a field I
+    //    copied myself survives, while the field silently dropping out of the
+    //    persisted slice would go unnoticed. State is reset to defaults first,
+    //    so anything partialize omits is genuinely lost, as on a real relaunch.
+    const persisted = JSON.parse(JSON.stringify(
+      useDeckStore.persist.getOptions().partialize(useDeckStore.getState()),
+    ));
+    await cleanup();
+    useDeckStore.setState({ decks: [], activeDeckId: null, deckView: 'editor', collection: {} });
+    useDeckStore.setState(persisted);
+    ({ container, cleanup } = await mountScreen());
+
+    assert.strictEqual(useDeckStore.getState().activeDeckId, 'deck-2', 'active deck must survive a relaunch');
+    assert.ok(container.querySelector('[data-testid="deck-library-grid"]'),
+      'a player who backed out to the library must come back to the library');
+    assert.ok(container.querySelector('[data-testid="deck-active-badge-deck-2"]'),
+      'the active badge must still be visible after a relaunch');
   } finally { await cleanup(); }
 });
 

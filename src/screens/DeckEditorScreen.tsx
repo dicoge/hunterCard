@@ -86,7 +86,9 @@ export default function DeckEditorScreen() {
   const createDeck = useDeckStore((s) => s.createDeck);
   const renameDeck = useDeckStore((s) => s.renameDeck);
   const deleteDeck = useDeckStore((s) => s.deleteDeck);
-  const setActiveDeck = useDeckStore((s) => s.setActiveDeck);
+  const deckView = useDeckStore((s) => s.deckView);
+  const openDeck = useDeckStore((s) => s.openDeck);
+  const showDeckLibrary = useDeckStore((s) => s.showDeckLibrary);
   const changeCard = useDeckStore((s) => s.changeCard);
   const removeCard = useDeckStore((s) => s.removeCard);
   const applyLowCostVariants = useDeckStore((s) => s.applyLowCostVariants);
@@ -260,7 +262,7 @@ export default function DeckEditorScreen() {
               style={styles.actionMenuItem}
               onPress={() => {
                 if (!menuDeck) return;
-                setActiveDeck(menuDeck.id);
+                openDeck(menuDeck.id);
                 setMenuDeckId(null);
               }}
               testID="deck-menu-open"
@@ -287,7 +289,7 @@ export default function DeckEditorScreen() {
               <TouchableOpacity
                 style={styles.actionMenuItem}
                 onPress={() => {
-                  setActiveDeck(null);
+                  showDeckLibrary();
                   setMenuDeckId(null);
                 }}
                 testID="deck-menu-library"
@@ -370,8 +372,11 @@ export default function DeckEditorScreen() {
     );
   }
 
-  // ── No active deck → deck picker / creator ──
-  if (!activeDeck) {
+  // ── Library view, or no active deck at all → deck picker / creator ──
+  // deckView is what decides this now. It used to be `!activeDeck`, which meant
+  // the library only rendered once activeDeckId had been cleared and the active
+  // tile could never be marked (DIC-1272).
+  if (deckView === 'library' || !activeDeck) {
     return (
       <SafeAreaView style={styles.container}>
         {deckOverlays}
@@ -403,7 +408,7 @@ export default function DeckEditorScreen() {
                 deck={deck}
                 desktop={isDesktop}
                 active={deck.id === activeDeckId}
-                onOpen={() => setActiveDeck(deck.id)}
+                onOpen={() => openDeck(deck.id)}
                 onMenu={() => setMenuDeckId(deck.id)}
               />
             ))}
