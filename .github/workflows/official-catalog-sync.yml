@@ -91,65 +91,21 @@ jobs:
         if: steps.check.outputs.changed == 'false'
         run: echo "No official-catalog changes to sync; exiting successfully."
 
-      # Pull-request handoff. Never pushes to `main`, never bypasses branch
-      # protection, and dedupes by the deterministic sync branch + an open-PR
-      # content check so retries cannot create PR storms.
-      #
-      #   * Open PR exists from the sync branch AND its head already carries
-      #     this snapshot → no-op success (the pending PR is already the
-      #     right one; do not re-push).
-      #   * Open PR exists but content diverges → refresh the sync branch on
-      #     top of origin/main and force-push to the sync branch ONLY. The
-      #     existing PR picks the new head up automatically.
-      #   * No open PR → create a fresh sync branch off origin/main and open
-      #     a new PR via `gh pr create`. Branch protection then requires the
-      #     Validate + Release-APK guard checks to pass on the PR head before
-      #     a human can merge — no bypass, no --admin, no direct push.
+      # Pull-request handoff — see .github/scripts/official-catalog-sync-handoff.mjs.
+      # Never pushes to the base branch, never bypasses branch protection,
+      # dedupes by the deterministic sync branch + an open-PR content check,
+      # and proves ownership of the sync branch's remote tip before any
+      # --force-with-lease, binding the lease to that validated SHA. The
+      # handoff logic lives in the Node module so the mutation-sensitive
+      # test in scripts/test-official-catalog-sync-workflow.mjs can drive
+      # the real no-change / existing-PR / refresh / hostile-owner shell
+      # paths with mock `git` and `gh` — DIC-1292 CR blockers #1 + #2.
       - name: Open or refresh sync PR
         if: steps.check.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-
           git config --local user.email "action@github.com"
           git config --local user.name  "GitHub Action"
-
-          COMMIT_MSG="chore: sync official catalog $(date -u +%Y-%m-%d)"
-
-          EXISTING_PR=$(gh pr list \
-            --state open \
-            --head "$SYNC_BRANCH" \
-            --base "$BASE_BRANCH" \
-            --json number,headRefOid \
-            --jq '.[0] // empty')
-
-          if [ -n "$EXISTING_PR" ]; then
-            EXISTING_HEAD=$(echo "$EXISTING_PR" | jq -r '.headRefOid')
-            EXISTING_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number')
-            git fetch --no-tags origin "$EXISTING_HEAD"
-            if git diff --quiet "$EXISTING_HEAD" -- $SYNC_PATHS; then
-              echo "Open PR #$EXISTING_NUMBER already carries this snapshot; leaving it untouched."
-              exit 0
-            fi
-          fi
-
-          # Rebuild the sync branch on top of origin/main every run so old
-          # bot commits never accumulate on the branch. Force-with-lease so
-          # a concurrent writer (there should be none, thanks to the
-          # concurrency group above) fails loud instead of being overwritten.
-          git switch --force-create "$SYNC_BRANCH" "origin/$BASE_BRANCH"
-          git add -- $SYNC_PATHS
-          git diff --staged --quiet && { echo "staged tree unexpectedly empty after rebase; aborting"; exit 1; }
-          git commit -m "$COMMIT_MSG"
-          git push --force-with-lease origin "$SYNC_BRANCH:$SYNC_BRANCH"
-
-          if [ -z "$EXISTING_PR" ]; then
-            gh pr create \
-              --base "$BASE_BRANCH" \
-              --head "$SYNC_BRANCH" \
-              --title "$COMMIT_MSG" \
-              --body $'Automated official-catalog snapshot from the scheduled `official-catalog-sync` workflow.\n\nBranch protection on `main` runs the required checks (Validate + Release-APK post-package guard) against this PR; merge is human-gated. Never merge with `--admin` / branch-protection bypass — the whole point of this handoff is that the same gates apply to bot changes as to human PRs.'
-          else
-            echo "Refreshed existing PR #$EXISTING_NUMBER with new snapshot."
-          fi
+          node .github/scripts/official-catalog-sync-handoff.mjs
