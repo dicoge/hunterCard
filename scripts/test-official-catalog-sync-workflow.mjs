@@ -43,13 +43,21 @@
  *      the exact sequence of push / gh-pr / gh-api calls the handoff
  *      makes.
  *   4. Mutation — deliberately-broken copies of the workflow AND the
- *      handoff module (including re-adding the forgeable committer-
- *      email / subject ownership check) are re-run through the earlier
- *      layers. Each mutation MUST be rejected, proving the earlier
- *      layers still bite instead of having rotted into no-ops.
+ *      handoff module are re-run through the earlier layers AND, for
+ *      handoff mutations, executed through cache-busted fresh imports
+ *      against the same hostile scenarios the real code sees. DIC-1292
+ *      CR round 3 rejected static-only mutation checks: a logical
+ *      bypass such as `if (true || (pr.headRef === SYNC_BRANCH && …))`
+ *      preserves every regex-required string but disables the check at
+ *      runtime. Every handoff mutation now has to survive the hostile
+ *      behavioural scenarios; a mutation that all scenarios still
+ *      accept as safe is treated as a rot in the safety net, and the
+ *      test fails naming the mutation.
  */
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
@@ -775,12 +783,85 @@ for (const { name, mutate } of HANDOFF_MUTATIONS) {
     handoffText,
     `handoff mutation "${name}" did not actually change the file — the regex/replacement drifted from the source`,
   );
-  const rejected = detectHandoffPolicyViolation(mutated);
   assert.ok(
-    rejected,
+    detectHandoffPolicyViolation(mutated),
     `handoff mutation "${name}" must be rejected by the static checks; the safety net has rotted`,
   );
+  // DIC-1292 CR round 3: static string presence is insufficient. Every
+  // mutation must ALSO fail behaviourally when run against the hostile
+  // scenarios below, so a future logical-bypass mutation that keeps every
+  // required string cannot slip past both layers.
+  await verifyMutationBehaviourallyCaught({ name, mutatedText: mutated });
+  console.log(`  ✓ handoff mutation "${name}" caught statically + behaviourally`);
 }
+
+// DIC-1292 CR round 3: mutations that keep every regex-required string
+// but disable the gate at runtime (`if (true || …)`, `if (false && …)`,
+// early-return before the loop). These are undetectable by any string
+// check by construction — they exist SPECIFICALLY to prove the
+// behavioural harness works. If any of these ever slip past every
+// hostile scenario, the whole safety net is a fiction.
+const HANDOFF_MUTATIONS_BEHAVIORAL_ONLY = [
+  {
+    name: 'logical bypass: `if (true || (pr.headRef === SYNC_BRANCH && …))` (the CR round-3 exemplar)',
+    mutate: (text) =>
+      text.replace(
+        /if \(pr\.headRef === SYNC_BRANCH && AUTOMATION_LOGINS\.includes\(pr\.login \?\? ''\)\)/,
+        "if (true || (pr.headRef === SYNC_BRANCH && AUTOMATION_LOGINS.includes(pr.login ?? '')))",
+      ),
+  },
+  {
+    name: 'logical bypass: outer provenance gate short-circuited (`if (false && !provenance.ok)`)',
+    mutate: (text) => text.replace(/if \(!provenance\.ok\)/, 'if (false && !provenance.ok)'),
+  },
+  {
+    name: 'logical bypass: PR-author gate short-circuited (`if (false && !AUTOMATION_LOGINS.includes(login))`)',
+    mutate: (text) =>
+      text.replace(/if \(!AUTOMATION_LOGINS\.includes\(login\)\)/, 'if (false && !AUTOMATION_LOGINS.includes(login))'),
+  },
+  {
+    name: 'logical bypass: early ok-return before the provenance loop',
+    mutate: (text) =>
+      text.replace(
+        /for \(const pr of summarised\) \{/,
+        "return { ok: true, via: 'debug' };\n  for (const pr of summarised) {",
+      ),
+  },
+  {
+    name: 'logical bypass: force-with-lease built from a stale local (`_hijacked`) SHA instead of the validated remote',
+    mutate: (text) =>
+      text.replace(
+        /`--force-with-lease=refs\/heads\/\$\{SYNC_BRANCH\}:\$\{remoteSha\}`/,
+        '`--force-with-lease=refs/heads/${SYNC_BRANCH}:${remoteSha.replace(/./g, "0")}`',
+      ),
+  },
+];
+
+for (const { name, mutate } of HANDOFF_MUTATIONS_BEHAVIORAL_ONLY) {
+  const mutated = mutate(handoffText);
+  assert.notStrictEqual(
+    mutated,
+    handoffText,
+    `handoff behavioural-only mutation "${name}" did not actually change the file — the regex/replacement drifted from the source`,
+  );
+  await verifyMutationBehaviourallyCaught({ name, mutatedText: mutated });
+  console.log(`  ✓ behavioural-only mutation "${name}" caught by hostile-scenario harness`);
+}
+
+// A meta-check: an IDENTITY mutation (mutated text === original text is
+// disallowed above, so we test a semantically-equivalent no-op) MUST NOT
+// be flagged as behaviourally caught — otherwise the harness would flag
+// legitimate refactors as regressions. This proves the harness has real
+// signal-to-noise and isn't just "everything fails".
+await (async () => {
+  const noop = handoffText.replace(/`Refreshed existing PR #\$\{existingPR\.number\} with new snapshot\.`/, "`Refreshed existing PR #${existingPR.number} with new snapshot.` /* noop */");
+  const caught = await mutationBehaviourResult({ mutatedText: noop });
+  assert.strictEqual(
+    caught,
+    null,
+    `harness identity check failed: a semantically-identical mutation was reported as behaviourally caught by "${caught}" — the hostile scenarios are producing false positives.`,
+  );
+})();
 
 console.log('✓ DIC-1291 / DIC-1292 official-catalog-sync workflow + handoff safety invariants passed');
 
@@ -802,25 +883,36 @@ async function scenario(name, body) {
  * `startsWith` fallbacks for the "diffStat" / "ghPrList" convenience keys.
  * The mock records every call so scenarios can assert exact sequences.
  */
-async function drive({ on = {}, expectThrow = null } = {}) {
+async function drive({ on = {}, expectThrow = null, runHandoffFn = runHandoff } = {}) {
+  const outcome = await driveScenario({ mocks: on, runHandoffFn });
+  if (outcome.threw) {
+    if (!expectThrow) throw outcome.threw;
+    expectThrow(outcome.threw);
+  }
+  return { result: outcome.result, calls: outcome.calls, stdoutLog: outcome.stdoutLog };
+}
+
+/**
+ * Run a hostile scenario against `runHandoffFn` (either the real handoff
+ * or a cache-busted mutated copy). Never throws — catches every error and
+ * returns it as `threw` so verifiers can assert on both branches.
+ */
+async function driveScenario({ mocks, runHandoffFn }) {
   const calls = [];
   const stdoutLog = [];
   const exec = (cmd, args, opts = {}) => {
     const key = `${cmd} ${args.join(' ')}`;
     calls.push({ cmd, args: [...args], opts });
 
-    // Convenience aliases keep scenario setup compact.
-    if (cmd === 'git' && args[0] === 'diff' && args[1] === '--stat' && on.diffStat) {
-      return normalizeResponse(on.diffStat(args));
+    if (cmd === 'git' && args[0] === 'diff' && args[1] === '--stat' && mocks.diffStat) {
+      return normalizeResponse(mocks.diffStat(args));
     }
-    if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list' && on.ghPrList) {
-      return normalizeResponse(on.ghPrList(args));
+    if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list' && mocks.ghPrList) {
+      return normalizeResponse(mocks.ghPrList(args));
     }
-    if (on[key]) return normalizeResponse(on[key](args));
+    if (mocks[key]) return normalizeResponse(mocks[key](args));
 
-    // Prefix match — lets a handler like `gh pr create` match the full
-    // invocation without repeating its long argument list.
-    for (const [handlerKey, handler] of Object.entries(on)) {
+    for (const [handlerKey, handler] of Object.entries(mocks)) {
       if (handlerKey === 'diffStat' || handlerKey === 'ghPrList') continue;
       if (key.startsWith(handlerKey)) return normalizeResponse(handler(args));
     }
@@ -828,20 +920,246 @@ async function drive({ on = {}, expectThrow = null } = {}) {
     if (opts.allowFail) return { stdout: '', status: 1 };
     throw new Error(`mock exec: no handler for \`${key}\``);
   };
-  const env = {
-    SYNC_BRANCH,
-    BASE_BRANCH,
-    GH_TOKEN: 'mock-token',
-  };
+  const env = { SYNC_BRANCH, BASE_BRANCH, GH_TOKEN: 'mock-token' };
 
   let result;
+  let threw;
   try {
-    result = await runHandoff({ env, exec, log: (line) => stdoutLog.push(line), now: NOW });
+    result = await runHandoffFn({ env, exec, log: (line) => stdoutLog.push(line), now: NOW });
   } catch (err) {
-    if (!expectThrow) throw err;
-    expectThrow(err);
+    threw = err;
   }
-  return { result, calls, stdoutLog };
+  return { result, calls, stdoutLog, threw };
+}
+
+// --- Behavioural mutation harness (DIC-1292 CR round 3) ------------
+
+/**
+ * Hostile scenarios exercised against every handoff mutation. Each
+ * scenario provides mocks that let BOTH the correct handoff AND every
+ * mutation execute to completion (forgeable-metadata mocks are always
+ * present, so a mutation that re-adds `git log --format=%ce` reads a
+ * spoofed value and continues into the push path rather than throwing
+ * "no handler"). `verifySafe` returns `null` for the correct handoff
+ * and a string describing the observed violation for a mutation that
+ * slipped past the ownership gate. If ALL scenarios return null for a
+ * mutation, the mutation is behaviourally invisible and the harness
+ * fails naming it.
+ *
+ * Wrapped in a function so the whole thing hoists (function
+ * declarations do, `const` array literals don't) — the mutation loops
+ * at the top of the file call this indirectly before its position in
+ * source order is reached at run-time.
+ */
+function buildHostileScenarios() {
+  const SPOOFED_ONLY_SHA = 'ccccccccccccccccccccccccccccccccccccccc0';
+  const ATTACKER_PR_SHA = 'ccccccccccccccccccccccccccccccccccccccc1';
+  const HUMAN_PR_HEAD_SHA = 'dddddddddddddddddddddddddddddddddddddddd';
+  const HISTORICAL_BOT_SHA = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+  // Mocks a mutated handoff may reach for even though the correct one does
+  // not. Providing them lets a bypass execute the push path so the
+  // scenario's verifier catches it via `calls`, rather than being masked
+  // by a "no handler" throw at the very moment it takes the wrong branch.
+  const forgeableMetadataMocksFor = (sha) => ({
+    [`git log -1 --format=%ce ${sha}`]: () => ({ stdout: 'action@github.com\n' }),
+    [`git log -1 --format=%s ${sha}`]: () => ({ stdout: 'chore: sync official catalog 2026-09-02\n' }),
+  });
+
+  // Also provide permissive push / create / api handlers so a mutation
+  // that goes all the way through the push path completes, and its args
+  // end up in `calls` for the verifier to inspect.
+  const permissivePushMocks = () => ({
+    'git push ': () => ({ stdout: '' }),
+    'gh pr create': () => ({ stdout: 'https://github.com/dicoge/hunterCard/pull/9999\n' }),
+  });
+
+  return [
+  {
+    name: 'sanity: correct handoff on no-change is a silent success',
+    mocks: { diffStat: () => ({ stdout: '' }) },
+    verifySafe: ({ result, calls, threw }) => {
+      if (threw) return `unexpected throw: ${threw.message}`;
+      if (result?.outcome !== 'no-op-no-changes') return `expected no-op-no-changes, got ${JSON.stringify(result)}`;
+      const push = calls.find((c) => c.cmd === 'git' && c.args[0] === 'push');
+      if (push) return `unexpected push on no-change path: ${JSON.stringify(push.args)}`;
+      return null;
+    },
+  },
+  {
+    name: 'hostile: remote tip with SPOOFED committer/subject + empty PR association MUST throw and MUST NOT push',
+    mocks: {
+      diffStat: () => ({ stdout: ' data/database.json | 1 +' }),
+      ghPrList: () => ({ stdout: '[]' }),
+      [`git switch --force-create ${SYNC_BRANCH} origin/${BASE_BRANCH}`]: () => ({ stdout: '' }),
+      'git add --': () => ({ stdout: '' }),
+      'git diff --staged --quiet': () => ({ stdout: '', status: 1 }),
+      [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
+      [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
+      [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${SPOOFED_ONLY_SHA}\n`, status: 0 }),
+      ...forgeableMetadataMocksFor(SPOOFED_ONLY_SHA),
+      [`gh api /repos/{owner}/{repo}/commits/${SPOOFED_ONLY_SHA}/pulls`]: () => ({ stdout: '[]' }),
+      ...permissivePushMocks(),
+    },
+    verifySafe: ({ threw, calls }) => {
+      if (!threw) return 'correct handoff must throw on spoofed-metadata + empty association';
+      const push = calls.find((c) => c.cmd === 'git' && c.args[0] === 'push');
+      if (push) return `MUST NOT push: ${JSON.stringify(push.args)}`;
+      const created = calls.find((c) => c.cmd === 'gh' && c.args[0] === 'pr' && c.args[1] === 'create');
+      if (created) return 'MUST NOT open a PR';
+      return null;
+    },
+  },
+  {
+    name: 'hostile: remote tip associated with an ATTACKER PR (non-bot login, non-sync head) MUST throw',
+    mocks: {
+      diffStat: () => ({ stdout: ' data/database.json | 1 +' }),
+      ghPrList: () => ({ stdout: '[]' }),
+      [`git switch --force-create ${SYNC_BRANCH} origin/${BASE_BRANCH}`]: () => ({ stdout: '' }),
+      'git add --': () => ({ stdout: '' }),
+      'git diff --staged --quiet': () => ({ stdout: '', status: 1 }),
+      [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
+      [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
+      [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${ATTACKER_PR_SHA}\n`, status: 0 }),
+      ...forgeableMetadataMocksFor(ATTACKER_PR_SHA),
+      [`gh api /repos/{owner}/{repo}/commits/${ATTACKER_PR_SHA}/pulls`]: () => ({
+        stdout: JSON.stringify([
+          {
+            number: 999,
+            state: 'open',
+            head: { ref: 'attacker/pwn' },
+            base: { ref: BASE_BRANCH },
+            user: { login: 'someone-else' },
+          },
+        ]),
+      }),
+      ...permissivePushMocks(),
+    },
+    verifySafe: ({ threw, calls }) => {
+      if (!threw) return 'correct handoff must throw on non-bot PR association';
+      const push = calls.find((c) => c.cmd === 'git' && c.args[0] === 'push');
+      if (push) return `MUST NOT push on attacker-associated SHA: ${JSON.stringify(push.args)}`;
+      return null;
+    },
+  },
+  {
+    name: 'hostile: open PR on the sync branch authored by a HUMAN MUST throw at the lookup gate',
+    mocks: {
+      diffStat: () => ({ stdout: ' data/database.json | 1 +' }),
+      ghPrList: () => ({
+        stdout: JSON.stringify([{ number: 555, headRefOid: HUMAN_PR_HEAD_SHA, author: { login: 'someone-else' } }]),
+      }),
+      // Handlers the mutation might reach if it drops the login gate.
+      [`git fetch --no-tags origin ${HUMAN_PR_HEAD_SHA}`]: () => ({ stdout: '' }),
+      [`git diff --quiet ${HUMAN_PR_HEAD_SHA} --`]: () => ({ stdout: '', status: 1 }),
+      [`git switch --force-create ${SYNC_BRANCH} origin/${BASE_BRANCH}`]: () => ({ stdout: '' }),
+      'git add --': () => ({ stdout: '' }),
+      'git diff --staged --quiet': () => ({ stdout: '', status: 1 }),
+      [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
+      [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
+      [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${HUMAN_PR_HEAD_SHA}\n`, status: 0 }),
+      ...forgeableMetadataMocksFor(HUMAN_PR_HEAD_SHA),
+      // If a bypass reaches the gh api call, still return empty so the
+      // bypass MUST take a different code path to push — which then the
+      // verifier catches via `calls`.
+      [`gh api /repos/{owner}/{repo}/commits/${HUMAN_PR_HEAD_SHA}/pulls`]: () => ({ stdout: '[]' }),
+      ...permissivePushMocks(),
+    },
+    verifySafe: ({ threw, calls }) => {
+      if (!threw) return 'correct handoff must throw when the open PR on the sync branch is human-authored';
+      const push = calls.find((c) => c.cmd === 'git' && c.args[0] === 'push');
+      if (push) return `MUST NOT push while a human owns the open PR: ${JSON.stringify(push.args)}`;
+      return null;
+    },
+  },
+  {
+    name: 'happy: refresh via historical-bot-PR provenance MUST push lease-bound to sync branch, never main',
+    mocks: {
+      diffStat: () => ({ stdout: ' data/database.json | 1 +' }),
+      ghPrList: () => ({ stdout: '[]' }),
+      [`git switch --force-create ${SYNC_BRANCH} origin/${BASE_BRANCH}`]: () => ({ stdout: '' }),
+      'git add --': () => ({ stdout: '' }),
+      'git diff --staged --quiet': () => ({ stdout: '', status: 1 }),
+      [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
+      [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
+      [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${HISTORICAL_BOT_SHA}\n`, status: 0 }),
+      ...forgeableMetadataMocksFor(HISTORICAL_BOT_SHA),
+      [`gh api /repos/{owner}/{repo}/commits/${HISTORICAL_BOT_SHA}/pulls`]: () => ({
+        stdout: JSON.stringify([
+          {
+            number: 170,
+            state: 'closed',
+            head: { ref: SYNC_BRANCH },
+            base: { ref: BASE_BRANCH },
+            user: { login: 'github-actions[bot]' },
+          },
+        ]),
+      }),
+      ...permissivePushMocks(),
+    },
+    verifySafe: ({ threw, calls }) => {
+      if (threw) return `correct handoff must succeed on historical-bot-PR provenance, threw: ${threw.message}`;
+      const push = calls.find((c) => c.cmd === 'git' && c.args[0] === 'push');
+      if (!push) return 'must push';
+      if (push.args.some((a) => /(^|[/=:'"` ])main($|[/'"` ])/.test(a))) {
+        return `push must not mention the base branch: ${JSON.stringify(push.args)}`;
+      }
+      const expectedLease = `--force-with-lease=refs/heads/${SYNC_BRANCH}:${HISTORICAL_BOT_SHA}`;
+      if (!push.args.some((a) => a === expectedLease)) {
+        return `lease must be bound to the validated remote SHA (${expectedLease}); got ${JSON.stringify(push.args)}`;
+      }
+      return null;
+    },
+  },
+  ];
+}
+
+async function importFreshHandoff(mutatedText) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `handoff-mut-${crypto.randomBytes(4).toString('hex')}-`));
+  const file = path.join(dir, `handoff-${crypto.randomBytes(4).toString('hex')}.mjs`);
+  fs.writeFileSync(file, mutatedText);
+  try {
+    const mod = await import(pathToFileURL(file).href);
+    return {
+      runHandoff: mod.runHandoff,
+      cleanup: () => {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+      },
+    };
+  } catch (err) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    return { syntaxError: err };
+  }
+}
+
+/**
+ * Runs every hostile scenario against the mutated module. Returns the
+ * name of the first scenario whose safety verifier flagged a violation,
+ * or `null` if all scenarios still passed (i.e. mutation is invisible).
+ */
+async function mutationBehaviourResult({ mutatedText }) {
+  const imported = await importFreshHandoff(mutatedText);
+  if (imported.syntaxError) {
+    return `syntax error at import: ${imported.syntaxError.message}`;
+  }
+  try {
+    for (const scen of buildHostileScenarios()) {
+      const outcome = await driveScenario({ mocks: scen.mocks, runHandoffFn: imported.runHandoff });
+      const violation = scen.verifySafe(outcome);
+      if (violation !== null) return `${scen.name} → ${violation}`;
+    }
+    return null;
+  } finally {
+    imported.cleanup();
+  }
+}
+
+async function verifyMutationBehaviourallyCaught({ name, mutatedText }) {
+  const caught = await mutationBehaviourResult({ mutatedText });
+  assert.ok(
+    caught !== null,
+    `mutation "${name}" was NOT caught behaviourally — every hostile scenario still saw safe behaviour from the mutated handoff module. Static string presence is insufficient (DIC-1292 CR round 3); add coverage that exercises the code path this mutation altered.`,
+  );
 }
 
 function normalizeResponse(res) {
