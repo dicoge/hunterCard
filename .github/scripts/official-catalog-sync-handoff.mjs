@@ -2,20 +2,37 @@
 /**
  * DIC-1291 handoff — one commit / one PR onto protected main.
  *
- * Extracted from the workflow YAML so DIC-1292 CR blocker #1 can exercise
- * the real no-change / existing-PR / refresh shell paths with mock `git`
- * and `gh`, instead of relying on static string checks of the YAML.
+ * Extracted from the workflow YAML so the DIC-1292 mutation-sensitive test
+ * can exercise the real no-change / existing-PR / refresh / hostile-remote
+ * shell paths with mock `git` and `gh`, instead of relying on static
+ * string checks of the YAML.
  *
- * Ownership contract for DIC-1292 CR blocker #2: before `--force-with-
- * lease` ever touches `bot/official-catalog-sync`, the current remote tip
- * must prove ownership through ONE of two independent signals — being the
- * head of an open PR that github-actions[bot] itself opened, or having a
- * commit signature that only this workflow produces (committer email +
- * subject prefix). Anything else — a manual push, a stale unowned ref, a
- * different bot's branch that happens to share the name — fails closed.
- * The lease is bound to the exact validated SHA so a race between the
- * ownership check and the push still refuses. `main` and every other
- * branch are unreachable from this script by construction.
+ * Ownership contract for DIC-1292 CR round 2: before `--force-with-lease`
+ * ever touches `bot/official-catalog-sync`, the current remote tip must
+ * prove ownership through NON-FORGEABLE server-side provenance. The
+ * previous round trusted `git log --format=%ce`/`%s` on the remote tip,
+ * but a malicious pusher can fabricate both — `git commit --author='X
+ * <action@github.com>' -m 'chore: sync official catalog 2026-09-02'`
+ * takes seconds. The only signals we now accept are:
+ *
+ *   1. The remote tip SHA equals the head of the current open sync PR AND
+ *      that PR was authored by github-actions[bot]. Both facts come from
+ *      the GitHub API (`gh pr list … --json author`), which a pusher
+ *      cannot forge — a random human pushing to bot/… does not become
+ *      github-actions[bot] to the API.
+ *   2. The GitHub API (`gh api /repos/{owner}/{repo}/commits/<sha>/pulls`)
+ *      reports at least one prior PR from the sync branch, authored by
+ *      github-actions[bot], that contains this exact commit SHA. GitHub
+ *      builds those associations from the commit graph + PR history it
+ *      itself recorded; a spoofed remote commit has a new SHA that no
+ *      such PR contains, so this check refuses.
+ *
+ * Anything else — a manual push, a stale unowned ref, a different bot's
+ * branch that happens to share the name, a spoofed committer identity —
+ * fails closed. The lease is bound to the exact validated SHA so a race
+ * between the ownership check and the push still refuses instead of
+ * clobbering. `main` and every other branch are unreachable from this
+ * script by construction.
  */
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
@@ -34,15 +51,16 @@ export const SYNC_PATHS = Object.freeze([
   'docs/audits/official-production-lag-state.json',
 ]);
 
-// Committer identity every commit this workflow makes uses. It is one of
-// the two ownership signals we accept for the sync branch — see the
-// `resolveOwnership` gate below.
-export const AUTOMATION_COMMITTER_EMAIL = 'action@github.com';
+// Subject prefix every commit this workflow writes uses. This is the
+// commit message the handoff produces — NOT an ownership signal (a pusher
+// can trivially spell the same subject on their own commits).
 export const COMMIT_MSG_PREFIX = 'chore: sync official catalog';
 
 // The GitHub login that opens PRs when this workflow uses the built-in
 // GITHUB_TOKEN. `github-actions` covers older Actions runners, the
-// `[bot]` suffix is what the modern GraphQL surface returns.
+// `[bot]` suffix is what the modern GraphQL / REST surface returns.
+// Used to authenticate PR ownership via the GitHub API — never via
+// forgeable committer metadata on the branch itself.
 export const AUTOMATION_LOGINS = Object.freeze(['github-actions', 'github-actions[bot]']);
 
 // --- Public entry -----------------------------------------------------
@@ -114,15 +132,15 @@ export async function runHandoff({
     // Fresh branch — regular create, no force needed.
     exec('git', ['push', 'origin', `HEAD:refs/heads/${SYNC_BRANCH}`]);
   } else {
-    const ownership = resolveOwnership({ exec, SYNC_BRANCH, remoteSha, existingPR });
-    if (!ownership.ok) {
+    const provenance = resolveRemoteProvenance({ exec, SYNC_BRANCH, remoteSha, existingPR });
+    if (!provenance.ok) {
       throw new Error(
-        `Remote ${SYNC_BRANCH} tip ${remoteSha} has unrecognized ownership ` +
-          `(committer=${ownership.details.committerEmail}, subject=${JSON.stringify(ownership.details.subject)}, ` +
-          `openPR=${existingPR ? '#' + existingPR.number + ' by ' + (existingPR.author?.login ?? '?') : 'none'}). ` +
-          `Refusing to overwrite. Investigate manually before rerunning.`,
+        `Remote ${SYNC_BRANCH} tip ${remoteSha} has unrecognized ownership: ${provenance.reason}. ` +
+          `Refusing to force-push over a ref this workflow cannot prove it produced. ` +
+          `Investigate manually (delete or rename the branch if it is legitimate manual work) before rerunning.`,
       );
     }
+    log(`Sync branch tip ${remoteSha} is bot-owned via ${provenance.via}; refreshing.`);
     // Bind the lease to the exact validated SHA. Between our fetch and
     // this push a concurrent writer could still have moved the ref;
     // --force-with-lease=<ref>:<expect> refuses in that case instead of
@@ -203,9 +221,10 @@ function lookupExistingSyncPR({ exec, SYNC_BRANCH, BASE_BRANCH }) {
   const pr = Array.isArray(parsed) ? parsed[0] : null;
   if (!pr) return null;
 
-  // Ownership signal #1: only trust an open PR from this branch if it was
-  // opened by github-actions[bot]. A human PR from someone who happens to
-  // have pushed to `bot/…` must not shortcut the ownership gate below.
+  // Server-side author gate: only trust an open PR from this branch if
+  // it was opened by github-actions[bot]. A pusher can push whatever
+  // commit metadata they want to bot/…, but they cannot fake being
+  // github-actions[bot] on the API surface.
   const login = pr.author?.login ?? '';
   if (!AUTOMATION_LOGINS.includes(login)) {
     throw new Error(
@@ -216,17 +235,63 @@ function lookupExistingSyncPR({ exec, SYNC_BRANCH, BASE_BRANCH }) {
   return pr;
 }
 
-function resolveOwnership({ exec, SYNC_BRANCH, remoteSha, existingPR }) {
-  const committerEmail = exec('git', ['log', '-1', '--format=%ce', remoteSha]).stdout.trim();
-  const subject = exec('git', ['log', '-1', '--format=%s', remoteSha]).stdout.trim();
+/**
+ * Prove that `remoteSha` is a commit this workflow itself produced, using
+ * only NON-FORGEABLE server-side data. Two acceptable signals:
+ *
+ *   1. It's the current head of the open sync PR (author already
+ *      verified as github-actions[bot] by lookupExistingSyncPR).
+ *   2. GitHub reports that ≥1 prior PR from the sync branch, authored by
+ *      github-actions[bot], contains this exact SHA. GitHub builds those
+ *      associations from the commit graph it stores server-side; a
+ *      spoofed remote commit has a new SHA that no such PR contains.
+ *
+ * Committer email + subject on the commit itself are IGNORED: they are
+ * trivially forgeable with `git commit --author=… -m …`. Any earlier
+ * design that trusted them was insecure.
+ */
+function resolveRemoteProvenance({ exec, SYNC_BRANCH, remoteSha, existingPR }) {
+  if (existingPR && existingPR.headRefOid === remoteSha) {
+    return { ok: true, via: `open PR #${existingPR.number} (author=${existingPR.author?.login})` };
+  }
 
-  const ownedByOpenPR = Boolean(existingPR && existingPR.headRefOid === remoteSha);
-  const ownedByAutomationSignature =
-    committerEmail === AUTOMATION_COMMITTER_EMAIL && subject.startsWith(COMMIT_MSG_PREFIX);
+  const raw = exec('gh', [
+    'api',
+    `/repos/{owner}/{repo}/commits/${remoteSha}/pulls`,
+    '-H',
+    'Accept: application/vnd.github+json',
+  ]).stdout.trim();
+  let pulls;
+  try {
+    pulls = raw ? JSON.parse(raw) : [];
+  } catch {
+    return { ok: false, reason: `gh api commits/${remoteSha}/pulls returned non-JSON (${raw.slice(0, 200)})` };
+  }
+  if (!Array.isArray(pulls)) {
+    return { ok: false, reason: `gh api commits/${remoteSha}/pulls returned a non-array response (${raw.slice(0, 200)})` };
+  }
+
+  const summarised = pulls.map((pr) => ({
+    number: pr?.number,
+    state: pr?.state,
+    headRef: pr?.head?.ref,
+    baseRef: pr?.base?.ref,
+    login: pr?.user?.login,
+  }));
+
+  for (const pr of summarised) {
+    if (pr.headRef === SYNC_BRANCH && AUTOMATION_LOGINS.includes(pr.login ?? '')) {
+      return { ok: true, via: `historical bot PR #${pr.number} (state=${pr.state}, author=${pr.login})` };
+    }
+  }
 
   return {
-    ok: ownedByOpenPR || ownedByAutomationSignature,
-    details: { committerEmail, subject, ownedByOpenPR, ownedByAutomationSignature },
+    ok: false,
+    reason:
+      pulls.length === 0
+        ? `no PR in this repo contains commit ${remoteSha} — the remote tip is not traceable to any prior bot run`
+        : `commit ${remoteSha} is only associated with ${JSON.stringify(summarised)}; none is a github-actions[bot] PR from ${SYNC_BRANCH}`,
+    associatedPRs: summarised,
   };
 }
 

@@ -11,33 +11,42 @@
  * two checks. A "fix" that quietly reintroduces that push — or that gets
  * around the block with `--force`, `--admin`, a PAT with bypass rights, a
  * variable-form refspec that expands to main, or a stealth overwrite of a
- * manually-pushed sync branch — must be caught here mechanically instead
- * of on the next 21:04 UTC schedule tick.
+ * manually-pushed sync branch whose committer email was forged to match
+ * automation — must be caught here mechanically instead of on the next
+ * 21:04 UTC schedule tick.
  *
  * Four layers, because static string checks alone are easy to lie past
- * (DIC-1292 CR blocker #1 was that the earlier version relied on them):
+ * (DIC-1292 CR blocker #1 was that the earlier version relied on them,
+ * and CR round 2 caught that even our first ownership gate trusted
+ * forgeable `git log --format=%ce`/`%s` metadata):
  *
- *   1. Static — the workflow file AND the extracted handoff module cannot
- *      contain any push target that resolves to protected main, in any
- *      literal or variable form (`main`, `$BASE_BRANCH`, `${BASE_BRANCH}`,
- *      quoted, force-lease variants, `refs/heads/main`, …). No
- *      branch-protection bypass, no user-supplied secret, no scope wider
- *      than the handoff needs.
+ *   1. Static — the workflow file AND the extracted handoff module
+ *      cannot contain any push target that resolves to protected main,
+ *      in any literal or variable form (`main`, `$BASE_BRANCH`,
+ *      `${BASE_BRANCH}`, quoted, force-lease variants,
+ *      `refs/heads/main`, …). No branch-protection bypass, no
+ *      user-supplied secret, no scope wider than the handoff needs, and
+ *      no `git log --format=%ce`/`%s` reads on a remote SHA that would
+ *      re-open the forgeable-metadata gap.
  *   2. Structural — the DIC-1167 pipeline is preserved end-to-end, the
  *      change-check step still emits `changed=false`, the handoff step
  *      is gated on it and only calls the extracted module, third-party
- *      actions are version- / SHA-pinned.
+ *      actions are version- / SHA-pinned, and the ownership check calls
+ *      `gh api /repos/{owner}/{repo}/commits/<sha>/pulls` (server-side
+ *      provenance) instead of trusting local committer metadata.
  *   3. Behavioural — the extracted handoff module is driven end-to-end
- *      with mock `git` / `gh` implementations across six real scenarios:
- *      no-change, existing-PR-same, existing-PR-different, no-PR-fresh-
- *      branch, no-PR-owned-remote, and no-PR-HOSTILE-remote. Each
- *      scenario asserts the exact sequence of push / gh-pr / rev-parse
- *      calls the handoff makes. This is the layer DIC-1292 blocker #1
- *      required: real shell paths, not just YAML text.
- *   4. Mutation — a dozen deliberately-broken copies of the workflow AND
- *      the handoff module are re-run through the same static + structural
- *      + behavioural checks. Each mutation MUST be rejected, proving the
- *      earlier layers still bite instead of having rotted into no-ops.
+ *      with mock `git` / `gh` implementations across the real
+ *      scenarios: no-change, existing-PR-same, existing-PR-different,
+ *      no-PR-fresh-branch, no-PR-remote-owned-via-historical-bot-PR,
+ *      no-PR-remote-with-SPOOFED-committer-metadata (must throw), and
+ *      open-PR-authored-by-a-human (must throw). Each scenario asserts
+ *      the exact sequence of push / gh-pr / gh-api calls the handoff
+ *      makes.
+ *   4. Mutation — deliberately-broken copies of the workflow AND the
+ *      handoff module (including re-adding the forgeable committer-
+ *      email / subject ownership check) are re-run through the earlier
+ *      layers. Each mutation MUST be rejected, proving the earlier
+ *      layers still bite instead of having rotted into no-ops.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -48,7 +57,6 @@ import { parse as parseYaml } from 'yaml';
 import {
   runHandoff,
   SYNC_PATHS as HANDOFF_SYNC_PATHS,
-  AUTOMATION_COMMITTER_EMAIL,
   AUTOMATION_LOGINS,
   COMMIT_MSG_PREFIX,
 } from '../.github/scripts/official-catalog-sync-handoff.mjs';
@@ -305,17 +313,42 @@ for (const uses of stepUses) {
 // overwrite a stale remote that changed after our fetch.
 assert.ok(
   /--force-with-lease=refs\/heads\/\$\{SYNC_BRANCH\}:\$\{remoteSha\}/.test(handoffText),
-  'handoff module must bind --force-with-lease to the validated remote SHA (DIC-1292 blocker #2)',
+  'handoff module must bind --force-with-lease to the validated remote SHA (DIC-1292 CR round 1)',
+);
+
+// DIC-1292 CR round 2: the ownership check must call the server-side
+// GitHub API — never trust local `git log --format=%ce` / `--format=%s`
+// on the remote SHA (both are trivially forgeable via `git commit
+// --author=… -m …`). Two rules pinned here:
+assert.ok(
+  /resolveRemoteProvenance\s*\(/.test(handoffText),
+  'handoff module must gate the force-push on a resolveRemoteProvenance() call',
 );
 assert.ok(
-  /resolveOwnership\s*\(/.test(handoffText) && /--format=%ce/.test(handoffText) && /startsWith\(COMMIT_MSG_PREFIX\)/.test(handoffText),
-  'handoff module must gate the force-push on committer-email + subject-prefix ownership (DIC-1292 blocker #2)',
+  /gh['"\s,\[\]]+api['"\s,\[\]]+`?\/?repos\/\{owner\}\/\{repo\}\/commits\/\$\{remoteSha\}\/pulls/.test(handoffText),
+  'handoff module must call `gh api /repos/{owner}/{repo}/commits/<sha>/pulls` — non-forgeable server-side provenance (DIC-1292 CR round 2)',
+);
+// Match the quoted-arg form only, so the docstring can still reference
+// the historical `--format=%ce`/`%s` gap by name for context. A real
+// call would appear as `'--format=%ce'` / `"--format=%ce"` inside an
+// exec(git, [...]) array; that form is what we ban.
+assert.ok(
+  !/['"]--format=%ce['"]/.test(handoffText),
+  'handoff module must NOT read the remote SHA committer email — that is forgeable and CR round 2 rejected trusting it',
 );
 assert.ok(
-  /AUTOMATION_LOGINS\.includes\(login\)/.test(handoffText),
+  !/['"]--format=%s['"]/.test(handoffText),
+  'handoff module must NOT read the remote SHA commit subject — that is forgeable and CR round 2 rejected trusting it',
+);
+assert.ok(
+  !/AUTOMATION_COMMITTER_EMAIL/.test(handoffText),
+  'handoff module must no longer export or use AUTOMATION_COMMITTER_EMAIL — the forgeable committer-email ownership signal was removed in CR round 2',
+);
+
+assert.ok(
+  /AUTOMATION_LOGINS\.includes\(/.test(handoffText),
   'handoff module must reject open PRs on the sync branch that were opened by non-automation users',
 );
-assert.strictEqual(AUTOMATION_COMMITTER_EMAIL, 'action@github.com');
 assert.deepStrictEqual([...AUTOMATION_LOGINS], ['github-actions', 'github-actions[bot]']);
 assert.strictEqual(COMMIT_MSG_PREFIX, 'chore: sync official catalog');
 
@@ -359,9 +392,9 @@ await scenario('existing PR whose head already carries this snapshot is left unt
   assert.ok(!calls.some((c) => c.cmd === 'git' && c.args[0] === 'switch'), 'must not rebuild the sync branch when the PR already matches');
 });
 
-await scenario('existing PR whose head differs refreshes with lease bound to validated remote SHA', async () => {
+await scenario('existing PR whose head differs refreshes with lease bound to validated remote SHA (open-PR provenance)', async () => {
   const existingHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-  const remoteSha = existingHead; // remote tip = current PR head, owned via signal #1
+  const remoteSha = existingHead; // remote tip = current PR head, owned via open-PR provenance
   const { result, calls } = await drive({
     on: {
       diffStat: () => ({ stdout: ' data/database.json | 1 +' }),
@@ -376,11 +409,9 @@ await scenario('existing PR whose head differs refreshes with lease bound to val
       [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
       [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
       [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${remoteSha}\n`, status: 0 }),
-      // Ownership signal #1 fires (remote SHA == PR head, PR author is
-      // github-actions[bot]), so committer / subject queries still happen
-      // as part of the resolveOwnership call but the ok=true path wins.
-      [`git log -1 --format=%ce ${remoteSha}`]: () => ({ stdout: 'action@github.com\n' }),
-      [`git log -1 --format=%s ${remoteSha}`]: () => ({ stdout: `${COMMIT_MSG_PREFIX} 2026-09-01\n` }),
+      // Open-PR provenance fires (remote SHA == open PR head, PR author
+      // verified as github-actions[bot] via `gh pr list --json author`).
+      // No `gh api …/commits/<sha>/pulls` call is needed for this branch.
       [`git push --force-with-lease=refs/heads/${SYNC_BRANCH}:${remoteSha} origin HEAD:refs/heads/${SYNC_BRANCH}`]: () => ({ stdout: '' }),
     },
   });
@@ -393,6 +424,8 @@ await scenario('existing PR whose head differs refreshes with lease bound to val
   );
   assert.ok(!pushCall.args.some((a) => a === 'main' || a === BASE_BRANCH || /main\b/.test(a)), 'push must never mention the base branch');
   assert.ok(!calls.some((c) => c.cmd === 'gh' && c.args[0] === 'pr' && c.args[1] === 'create'), 'refresh must not open a new PR');
+  // Forgeable local-metadata reads MUST NOT happen on any path.
+  assert.ok(!calls.some((c) => c.cmd === 'git' && c.args[0] === 'log' && c.args.some((a) => a === '--format=%ce' || a === '--format=%s')), 'must NOT read forgeable committer email/subject on any code path (DIC-1292 CR round 2)');
 });
 
 await scenario('no existing PR, no remote branch: plain push (no force) + gh pr create', async () => {
@@ -421,7 +454,7 @@ await scenario('no existing PR, no remote branch: plain push (no force) + gh pr 
   assert.ok(prCreate.args.includes(SYNC_BRANCH), 'PR head must be the sync branch');
 });
 
-await scenario('no existing PR, remote sync branch owned by automation signature: force-with-lease bound + gh pr create', async () => {
+await scenario('no existing PR, remote sync branch traceable to a historical bot PR: lease bound + gh pr create', async () => {
   const remoteSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   const { result, calls } = await drive({
     on: {
@@ -433,10 +466,22 @@ await scenario('no existing PR, remote sync branch owned by automation signature
       [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
       [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
       [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${remoteSha}\n`, status: 0 }),
-      // Ownership signal #2 fires: committer + subject prefix match the
-      // automation identity even though there is no open PR to consult.
-      [`git log -1 --format=%ce ${remoteSha}`]: () => ({ stdout: 'action@github.com\n' }),
-      [`git log -1 --format=%s ${remoteSha}`]: () => ({ stdout: 'chore: sync official catalog 2026-09-01\n' }),
+      // Server-side provenance: GitHub reports this SHA is the head of a
+      // prior (closed / merged) PR from the sync branch, authored by
+      // github-actions[bot]. This association is built from the commit
+      // graph GitHub itself recorded — a spoofed remote commit has a new
+      // SHA that no such PR contains, so this path cannot be forged.
+      [`gh api /repos/{owner}/{repo}/commits/${remoteSha}/pulls`]: () => ({
+        stdout: JSON.stringify([
+          {
+            number: 170,
+            state: 'closed',
+            head: { ref: SYNC_BRANCH },
+            base: { ref: BASE_BRANCH },
+            user: { login: 'github-actions[bot]' },
+          },
+        ]),
+      }),
       [`git push --force-with-lease=refs/heads/${SYNC_BRANCH}:${remoteSha} origin HEAD:refs/heads/${SYNC_BRANCH}`]: () => ({ stdout: '' }),
       'gh pr create': () => ({ stdout: 'https://github.com/dicoge/hunterCard/pull/1000\n' }),
     },
@@ -445,12 +490,23 @@ await scenario('no existing PR, remote sync branch owned by automation signature
   const pushCall = calls.find((c) => c.cmd === 'git' && c.args[0] === 'push');
   assert.ok(
     pushCall.args.some((a) => a === `--force-with-lease=refs/heads/${SYNC_BRANCH}:${remoteSha}`),
-    'lease must be bound to the validated remote SHA even on the "no open PR" path',
+    'lease must be bound to the validated remote SHA on the "no open PR, historical bot PR" path',
   );
+  // The gh api commit-pulls call must have actually happened — that's
+  // the whole point of DIC-1292 CR round 2.
+  const apiCall = calls.find((c) => c.cmd === 'gh' && c.args[0] === 'api' && c.args[1].includes(`commits/${remoteSha}/pulls`));
+  assert.ok(apiCall, 'must call `gh api /repos/{owner}/{repo}/commits/<sha>/pulls` for server-side provenance');
+  assert.ok(!calls.some((c) => c.cmd === 'git' && c.args[0] === 'log' && c.args.some((a) => a === '--format=%ce' || a === '--format=%s')), 'must NOT read forgeable committer email/subject on any code path (DIC-1292 CR round 2)');
 });
 
-await scenario('no existing PR, remote sync branch owned by a HUMAN: fails closed without pushing', async () => {
-  const remoteSha = 'cccccccccccccccccccccccccccccccccccccccc';
+await scenario('HOSTILE REGRESSION: remote tip with SPOOFED committer=action@github.com and subject "chore: sync official catalog …" fails closed', async () => {
+  // The DIC-1292 CR round 2 attack: an outsider force-pushes to
+  // bot/official-catalog-sync a commit crafted with
+  //   git commit --author='X <action@github.com>' -m 'chore: sync official catalog 2026-09-02'
+  // and hopes the handoff trusts committer email + subject prefix. It
+  // must not. Only server-side PR association is trusted, and GitHub
+  // reports no bot PR contains this SHA.
+  const remoteSha = 'ccccccccccccccccccccccccccccccccccccccc0';
   let threw = null;
   const { calls } = await drive({
     expectThrow: (err) => (threw = err),
@@ -463,10 +519,13 @@ await scenario('no existing PR, remote sync branch owned by a HUMAN: fails close
       [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
       [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
       [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${remoteSha}\n`, status: 0 }),
-      // A human-committed tip on the sync branch — neither ownership signal
-      // fires. The handoff MUST refuse to force-push.
-      [`git log -1 --format=%ce ${remoteSha}`]: () => ({ stdout: 'malicious@example.com\n' }),
-      [`git log -1 --format=%s ${remoteSha}`]: () => ({ stdout: 'wat: pretending to be automation\n' }),
+      // Server-side provenance: GitHub has NEVER seen this SHA inside a
+      // bot-authored PR from bot/…, so the check refuses. The spoofed
+      // committer / subject the attacker set locally are never read —
+      // if the handoff still reads them, the `drive` mock throws
+      // "no handler for git log --format=…" and the scenario fails,
+      // which is exactly the safety net we want.
+      [`gh api /repos/{owner}/{repo}/commits/${remoteSha}/pulls`]: () => ({ stdout: '[]' }),
     },
   });
   assert.ok(threw, 'hostile-remote scenario must throw');
@@ -476,6 +535,45 @@ await scenario('no existing PR, remote sync branch owned by a HUMAN: fails close
   assert.strictEqual(pushCall, undefined, 'hostile-remote scenario MUST NOT push');
   const prCreate = calls.find((c) => c.cmd === 'gh' && c.args[0] === 'pr' && c.args[1] === 'create');
   assert.strictEqual(prCreate, undefined, 'hostile-remote scenario MUST NOT open a PR');
+  assert.ok(!calls.some((c) => c.cmd === 'git' && c.args[0] === 'log' && c.args.some((a) => a === '--format=%ce' || a === '--format=%s')), 'MUST NOT read forgeable committer email/subject — that is the whole class of vulnerability CR round 2 rejected');
+});
+
+await scenario('HOSTILE REGRESSION 2: SHA associated only with a non-bot PR (e.g. attacker opened their own PR containing the SHA) fails closed', async () => {
+  // An attacker could open their OWN PR whose branch contains a
+  // malicious commit; that commit's SHA would show up in the
+  // commits/<sha>/pulls API. But since the PR wasn't opened from the
+  // bot's sync branch AND wasn't authored by github-actions[bot], the
+  // provenance check must still refuse.
+  const remoteSha = 'ccccccccccccccccccccccccccccccccccccccc1';
+  let threw = null;
+  const { calls } = await drive({
+    expectThrow: (err) => (threw = err),
+    on: {
+      diffStat: () => ({ stdout: ' data/database.json | 1 +' }),
+      ghPrList: () => ({ stdout: '[]' }),
+      [`git switch --force-create ${SYNC_BRANCH} origin/${BASE_BRANCH}`]: () => ({ stdout: '' }),
+      'git add --': () => ({ stdout: '' }),
+      'git diff --staged --quiet': () => ({ stdout: '', status: 1 }),
+      [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
+      [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
+      [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${remoteSha}\n`, status: 0 }),
+      [`gh api /repos/{owner}/{repo}/commits/${remoteSha}/pulls`]: () => ({
+        stdout: JSON.stringify([
+          {
+            number: 999,
+            state: 'open',
+            head: { ref: 'attacker/pwn' },
+            base: { ref: BASE_BRANCH },
+            user: { login: 'someone-else' },
+          },
+        ]),
+      }),
+    },
+  });
+  assert.ok(threw, 'non-bot-PR association must not be accepted as ownership');
+  assert.match(threw.message, /unrecognized ownership/, 'error must name the ownership gate');
+  const pushCall = calls.find((c) => c.cmd === 'git' && c.args[0] === 'push');
+  assert.strictEqual(pushCall, undefined, 'non-bot-PR scenario MUST NOT push');
 });
 
 await scenario('open PR authored by a random human on the sync branch: fails closed without pushing', async () => {
@@ -627,12 +725,46 @@ const HANDOFF_MUTATIONS = [
       text.replace(/`--force-with-lease=refs\/heads\/\$\{SYNC_BRANCH\}:\$\{remoteSha\}`/, "'--force-with-lease'"),
   },
   {
-    name: 'handoff drops the ownership gate',
-    mutate: (text) => text.replace(/if \(!ownership\.ok\) \{[\s\S]*?\}\n/, ''),
+    name: 'handoff drops the server-side provenance gate',
+    mutate: (text) => text.replace(/if \(!provenance\.ok\) \{[\s\S]*?\}\n/, ''),
   },
   {
     name: 'handoff drops the automation-login PR-author gate',
     mutate: (text) => text.replace(/if \(!AUTOMATION_LOGINS\.includes\(login\)\) \{[\s\S]*?\}\n/, ''),
+  },
+  {
+    name: 'handoff re-introduces forgeable committer-email ownership signal (CR round 2 regression)',
+    mutate: (text) =>
+      text.replace(
+        /const raw = exec\('gh', \[\n {4}'api',/,
+        [
+          "const committerEmail = exec('git', ['log', '-1', '--format=%ce', remoteSha]).stdout.trim();",
+          "if (committerEmail === 'action@github.com') { return { ok: true, via: 'committer signature (INSECURE)' }; }",
+          "const raw = exec('gh', [",
+          "    'api',",
+        ].join('\n  '),
+      ),
+  },
+  {
+    name: 'handoff re-introduces forgeable subject-prefix ownership signal (CR round 2 regression)',
+    mutate: (text) =>
+      text.replace(
+        /const raw = exec\('gh', \[\n {4}'api',/,
+        [
+          "const subject = exec('git', ['log', '-1', '--format=%s', remoteSha]).stdout.trim();",
+          "if (subject.startsWith(COMMIT_MSG_PREFIX)) { return { ok: true, via: 'subject prefix (INSECURE)' }; }",
+          "const raw = exec('gh', [",
+          "    'api',",
+        ].join('\n  '),
+      ),
+  },
+  {
+    name: 'handoff drops the historical-bot-PR head/author check (accepts ANY PR association)',
+    mutate: (text) =>
+      text.replace(
+        /if \(pr\.headRef === SYNC_BRANCH && AUTOMATION_LOGINS\.includes\(pr\.login \?\? ''\)\) \{[\s\S]*?\}\n/,
+        'return { ok: true, via: `association #${pr.number}` };\n',
+      ),
   },
 ];
 
@@ -760,10 +892,22 @@ function detectWorkflowPolicyViolation(text) {
 function detectHandoffPolicyViolation(text) {
   for (const { re } of FORBIDDEN_TARGET_PATTERNS) if (re.test(text)) return true;
   for (const { re } of FORBIDDEN_BYPASS_PATTERNS) if (re.test(text)) return true;
-  // The bound lease + ownership gate must remain intact.
+  // The bound lease must remain intact.
   if (!/--force-with-lease=refs\/heads\/\$\{SYNC_BRANCH\}:\$\{remoteSha\}/.test(text)) return true;
-  if (!/resolveOwnership\s*\(/.test(text)) return true;
-  if (!/if \(!ownership\.ok\)/.test(text)) return true;
+  // The server-side provenance gate must remain intact — and it must not
+  // be joined by a forgeable committer-email / subject-prefix shortcut
+  // (DIC-1292 CR round 2). Any `git log --format=%ce`/`%s` read on the
+  // remote SHA reopens the whole class of vulnerability.
+  if (!/resolveRemoteProvenance\s*\(/.test(text)) return true;
+  if (!/if \(!provenance\.ok\)/.test(text)) return true;
+  if (!/\/repos\/\{owner\}\/\{repo\}\/commits\/\$\{remoteSha\}\/pulls/.test(text)) return true;
+  if (/['"]--format=%ce['"]/.test(text)) return true;
+  if (/['"]--format=%s['"]/.test(text)) return true;
+  if (/AUTOMATION_COMMITTER_EMAIL/.test(text)) return true;
+  // Historical PR association must still require the head branch to be
+  // the sync branch AND the author to be automation. Dropping either
+  // half accepts a random attacker PR as ownership.
+  if (!/pr\.headRef === SYNC_BRANCH && AUTOMATION_LOGINS\.includes\(pr\.login \?\? ''\)/.test(text)) return true;
   if (!/AUTOMATION_LOGINS\.includes\(login\)/.test(text)) return true;
   return false;
 }
