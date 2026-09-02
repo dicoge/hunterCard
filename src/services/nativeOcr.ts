@@ -45,14 +45,22 @@ interface OcrModuleLike {
   recognizeText?: (uri: string) => Promise<{ text?: unknown } | null | undefined>;
 }
 
-const DEFAULT_REQUIRE: RequireImpl = (moduleName) => {
+const DEFAULT_REQUIRE: RequireImpl = () => {
   // The lint rule allowing `require` here is intentional: this is the
   // fail-safe fallback around a native module whose JS entry point can
   // itself throw at require time. Using a static `import` would defeat the
   // whole guard, because ESM binds run at load time — before ScanScreen
   // could ever wrap them in try/catch.
+  //
+  // The module name is intentionally a static string literal (not the
+  // `moduleName` argument) because Metro's static analysis for Android/iOS
+  // bundling rejects `require(<variable>)` — it can only resolve literal
+  // require strings at bundle time. `nativeOcrRecognize` only ever loads
+  // `expo-ocr-kit` in production; tests inject a `requireImpl` stub to
+  // exercise every other module/error scenario, so this default never needs
+  // to resolve any other module name.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require(moduleName);
+  return require('expo-ocr-kit');
 };
 
 const DEFAULT_LOGGER = (message: string, cause?: unknown): void => {
