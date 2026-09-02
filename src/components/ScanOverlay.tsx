@@ -93,7 +93,18 @@ export default function ScanOverlay({
         </View>
       )}
 
-      {/* Overlay with scan area */}
+      {/* Overlay with scan area — DIC-1286 (DIC-1294 QA crash fix):
+          the outer Animated.View animates borderColor via `borderAnim`,
+          which is a JS-driven animation (colors cannot be native-driven).
+          The inner Animated.View animates scale via `pulseAnim`, which is
+          native-driven (useNativeDriver: true in ScanScreen). Combining
+          both on ONE node made RN's animation manager attempt to run a
+          JS-driven update on a node that had already been moved to
+          native — the exact `Attempting to run JS driven animation on
+          animated node that has been moved to "native"` FATAL EXCEPTION
+          mqt_v_native the shipped APK crashed with. Splitting the two
+          drivers across two Animated.View nodes keeps each node purely
+          on its own driver and matches the crash-free layout QA needs. */}
       <View style={styles.overlay}>
         <View style={styles.overlayTop} />
         <View style={styles.scanAreaContainer}>
@@ -102,7 +113,6 @@ export default function ScanOverlay({
             style={[
               styles.scanArea,
               {
-                transform: [{ scale: pulseAnim }],
                 borderColor: borderAnim.interpolate({
                   inputRange: [0, 1],
                   outputRange: [COLORS.primary, COLORS.primaryLight],
@@ -113,34 +123,42 @@ export default function ScanOverlay({
           >
             <Animated.View
               style={[
-                styles.scanLine,
-                {
-                  transform: [{
-                    translateY: scanLineAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, SCAN_AREA_SIZE - 4],
-                    }),
-                  }],
-                  opacity: scanLineAnim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0, 1, 0],
-                  }),
-                },
+                styles.scanAreaPulse,
+                { transform: [{ scale: pulseAnim }] },
               ]}
-            />
-            <View style={[styles.corner, styles.topLeft]} />
-            <View style={[styles.corner, styles.topRight]} />
-            <View style={[styles.corner, styles.bottomLeft]} />
-            <View style={[styles.corner, styles.bottomRight]} />
-            {isScanning && (
-              <View style={styles.scanningIndicator}>
-                <Animated.Text
-                  style={[styles.scanningText, { transform: [{ scale: pulseAnim }] }]}
-                >
-                  {t('scan_recognizing')}
-                </Animated.Text>
-              </View>
-            )}
+              pointerEvents="box-none"
+            >
+              <Animated.View
+                style={[
+                  styles.scanLine,
+                  {
+                    transform: [{
+                      translateY: scanLineAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, SCAN_AREA_SIZE - 4],
+                      }),
+                    }],
+                    opacity: scanLineAnim.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [0, 1, 0],
+                    }),
+                  },
+                ]}
+              />
+              <View style={[styles.corner, styles.topLeft]} />
+              <View style={[styles.corner, styles.topRight]} />
+              <View style={[styles.corner, styles.bottomLeft]} />
+              <View style={[styles.corner, styles.bottomRight]} />
+              {isScanning && (
+                <View style={styles.scanningIndicator}>
+                  <Animated.Text
+                    style={[styles.scanningText, { transform: [{ scale: pulseAnim }] }]}
+                  >
+                    {t('scan_recognizing')}
+                  </Animated.Text>
+                </View>
+              )}
+            </Animated.View>
           </Animated.View>
           <View style={styles.overlaySide} />
         </View>
@@ -263,6 +281,14 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     borderRadius: 8,
     overflow: 'hidden',
+  },
+  // Inner pulse layer (DIC-1294): fills the scanArea and receives the
+  // native-driven `scale` transform. Kept separate from the outer node so
+  // JS-driven `borderColor` and native-driven `transform` never share a
+  // single Animated.View — that combination is the exact crash pattern
+  // from the API-36 emulator logcat.
+  scanAreaPulse: {
+    ...StyleSheet.absoluteFillObject,
   },
   scanLine: {
     position: 'absolute',
