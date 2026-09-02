@@ -88,6 +88,7 @@
     "test:dic1141-bloom-level": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-dic1141-bloom-level.mjs",
     "test:dic1141-scrape-bloom-safety": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-dic1141-scrape-bloom-safety.mjs",
     "test:official-catalog-sync": "node scripts/test-official-catalog-sync.mjs && node scripts/test-official-catalog-mutation-preserves-sell.mjs",
+    "test:official-catalog-sync-workflow": "node scripts/test-official-catalog-sync-workflow.mjs",
     "test:yuyu-exact-printing": "node scripts/test-yuyu-exact-printing-sell-match.mjs",
     "test:dic1192-color-normalization": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-dic1192-color-normalization.mjs",
     "test:dic1159-unknown-color": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1159-unknown-color.mjs",
