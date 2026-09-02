@@ -30,7 +30,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.dicoge.holohunter",
-      "versionCode": 1,
+      "versionCode": 21,
       "permissions": [
         "android.permission.CAMERA"
       ],
