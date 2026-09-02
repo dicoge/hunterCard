@@ -19,8 +19,16 @@
 // behavioural test (jsdom + react-dom + real Linking mock) can drive it
 // without spinning up the whole scan render tree.
 
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Linking,
+  AppState,
+  type AppStateStatus,
+} from 'react-native';
 import { COLORS } from '../constants';
 import { useTranslation } from '../i18n';
 
@@ -36,6 +44,17 @@ export interface CameraPermissionShape {
   canAskAgain?: boolean;
 }
 
+/**
+ * Subscription seam for AppState 'change' events. Default in production
+ * wraps React Native's AppState. Tests replace it with a manual trigger
+ * so lifecycle assertions do not depend on the platform bridge.
+ *
+ * Contract: call `onActive` ONLY when the app transitions FROM a non-
+ * `active` state TO `active`. Return an unsubscribe function that MUST
+ * remove the underlying listener (so unmount is safe).
+ */
+export type SubscribeAppActive = (onActive: () => void) => () => void;
+
 export interface CameraPermissionDeniedViewProps {
   permission: CameraPermissionShape | null | undefined;
   onRequestPermission: () => void;
@@ -45,7 +64,64 @@ export interface CameraPermissionDeniedViewProps {
    * the default implementation is invoked and the seam is invisible.
    */
   openSettingsImpl?: () => void | Promise<void>;
+  /**
+   * DIC-1301 CR fix: when the user has opened system settings (or the
+   * app was backgrounded for any reason) and returns to us, this getter
+   * is called to re-query the current OS permission WITHOUT prompting.
+   * Wired to expo-camera's useCameraPermissions() silent getter in
+   * ScanScreen; when present, the underlying permission-state hook
+   * refreshes and the parent re-renders — the denied view then unmounts
+   * on its own once permission is granted. When absent, no AppState
+   * listener is attached (this preserves the pre-DIC-1301 render tree
+   * for tests that do not care about the refresh path).
+   */
+  refreshPermission?: () => Promise<unknown> | unknown;
+  /**
+   * Optional AppState subscription seam. Tests inject a manual trigger.
+   */
+  subscribeAppActive?: SubscribeAppActive;
 }
+
+/**
+ * AppState-like shape needed by the default subscribe factory. Exported
+ * for tests that need to inject a fake bridge.
+ */
+export interface AppStateLike {
+  currentState: AppStateStatus;
+  addEventListener: (
+    event: 'change',
+    handler: (state: AppStateStatus) => void,
+  ) => { remove: () => void };
+}
+
+/**
+ * Factory for the default AppState-active subscribe. Fires `onActive`
+ * ONLY when the app transitions FROM a non-`active` state TO `active`.
+ * Guards against duplicate fires when RN emits `active` twice in a row
+ * (e.g. already-active seed events on mount).
+ *
+ * Exported so scripts/test-scan-screen-fail-safe.mjs can drive the exact
+ * production guard logic against a fake AppState — a mutation that
+ * removes the transition guard (fires on every 'change') is then caught
+ * by an assertion on the real implementation, not on an inline copy.
+ */
+export function createDefaultAppActiveSubscribe(
+  appState: AppStateLike = AppState as AppStateLike,
+): SubscribeAppActive {
+  return (onActive) => {
+    let last: AppStateStatus = appState.currentState;
+    const sub = appState.addEventListener('change', (next) => {
+      const prev = last;
+      last = next;
+      if (next === 'active' && prev !== 'active') {
+        onActive();
+      }
+    });
+    return () => sub.remove();
+  };
+}
+
+const DEFAULT_SUBSCRIBE_APP_ACTIVE: SubscribeAppActive = createDefaultAppActiveSubscribe();
 
 const DEFAULT_OPEN_SETTINGS = (): void => {
   // Linking.openSettings() is available on both iOS and Android since
@@ -68,6 +144,8 @@ export function CameraPermissionDeniedView({
   permission,
   onRequestPermission,
   openSettingsImpl,
+  refreshPermission,
+  subscribeAppActive,
 }: CameraPermissionDeniedViewProps): React.ReactElement {
   const { t } = useTranslation();
   const canAskAgain = permission?.canAskAgain !== false;
@@ -75,6 +153,47 @@ export function CameraPermissionDeniedView({
   const bodyKey = canAskAgain
     ? 'scan_permission_native_body'
     : 'scan_permission_native_body_permanent';
+
+  // DIC-1301 fix: when refreshPermission is wired in, subscribe to
+  // AppState 'active' transitions and re-query the OS permission silently.
+  // If the user granted CAMERA in system settings and returns, expo-camera's
+  // internal permission-state hook flips to granted → ScanScreen re-renders
+  // → this component unmounts (cleanup below removes the listener).
+  //
+  // Guardrails to prevent regressions:
+  //  • DEFAULT_SUBSCRIBE_APP_ACTIVE only calls onActive on transitions
+  //    INTO 'active' — a duplicate 'active' event is a no-op, so no
+  //    request storm.
+  //  • The subscription is captured by ref so the cleanup fn matches
+  //    the exact `unsubscribe` returned by `subscribeAppActive(...)` —
+  //    no ghost listener survives unmount.
+  //  • `refreshPermission()` is a silent getter (no OS prompt). It cannot
+  //    cause a duplicate permission dialog even if fired repeatedly.
+  //  • The effect depends ONLY on the stable refresh/subscribe references,
+  //    so it does NOT re-subscribe on every render.
+  const refreshRef = useRef(refreshPermission);
+  refreshRef.current = refreshPermission;
+  useEffect(() => {
+    if (!refreshPermission) return undefined;
+    const subscribe = subscribeAppActive ?? DEFAULT_SUBSCRIBE_APP_ACTIVE;
+    const onActive = () => {
+      const impl = refreshRef.current;
+      if (!impl) return;
+      try {
+        const maybe = impl();
+        if (maybe && typeof (maybe as Promise<unknown>).catch === 'function') {
+          (maybe as Promise<unknown>).catch((err) => {
+            console.warn('[CameraPermissionDeniedView] refreshPermission rejected', err);
+          });
+        }
+      } catch (err) {
+        console.warn('[CameraPermissionDeniedView] refreshPermission threw', err);
+      }
+    };
+    const unsubscribe = subscribe(onActive);
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subscribeAppActive, !!refreshPermission]);
 
   return (
     <View style={styles.container} testID="camera-permission-denied">

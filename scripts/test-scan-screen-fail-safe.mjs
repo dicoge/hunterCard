@@ -445,6 +445,211 @@ await test('CameraPermissionDeniedView: allow press fires onRequestPermission wh
 });
 
 // -----------------------------------------------------------------------------
+// 3b. DIC-1301 lifecycle: AppState 'active' after external CAMERA grant.
+//
+// After the user opens system settings via openSettings, grants CAMERA,
+// and returns to HoloHunter, the Scan screen must re-query the permission
+// silently (no OS prompt) so the denied UI can flip to the camera view
+// without requiring a force-stop / cold start. The refresh path in
+// CameraPermissionDeniedView subscribes to AppState 'change' events via
+// an injectable seam so lifecycle assertions can drive it deterministically.
+//
+// Each test uses a manual `subscribeAppActive` seam that captures the
+// registered callback, so we can trigger 'active' transitions on demand
+// and assert cleanup after unmount.
+// -----------------------------------------------------------------------------
+
+/**
+ * Build a fresh AppState-active subscription seam for a single test.
+ * Returns:
+ *   subscribeAppActive — pass this as the prop.
+ *   fireActive()       — invoke every currently-registered callback.
+ *   subscribedCount()  — number of currently-registered callbacks.
+ *   subscribeCount / unsubscribeCount — cumulative call counters.
+ */
+function createAppActiveSeam() {
+  const active = new Set();
+  let subscribeCount = 0;
+  let unsubscribeCount = 0;
+  const subscribeAppActive = (cb) => {
+    subscribeCount += 1;
+    active.add(cb);
+    return () => {
+      unsubscribeCount += 1;
+      active.delete(cb);
+    };
+  };
+  return {
+    subscribeAppActive,
+    fireActive: () => { for (const cb of active) cb(); },
+    subscribedCount: () => active.size,
+    subscribeCount: () => subscribeCount,
+    unsubscribeCount: () => unsubscribeCount,
+  };
+}
+
+await test('DIC-1301 lifecycle: AppState active after openSettings re-queries permission silently', async () => {
+  const seam = createAppActiveSeam();
+  let refreshCalls = 0;
+  let requestCalls = 0;
+  let settingsCalls = 0;
+  const { container, cleanup } = await renderInto(
+    React.createElement(CameraPermissionDeniedView, {
+      permission: { granted: false, canAskAgain: false },
+      onRequestPermission: () => { requestCalls += 1; },
+      openSettingsImpl: () => { settingsCalls += 1; },
+      refreshPermission: () => { refreshCalls += 1; },
+      subscribeAppActive: seam.subscribeAppActive,
+    }),
+  );
+  try {
+    // Subscription MUST be registered eagerly on mount so an 'active'
+    // event during the settings round-trip is caught.
+    assert.equal(seam.subscribedCount(), 1, 'AppState-active listener must be attached on mount');
+    assert.equal(refreshCalls, 0, 'refreshPermission MUST NOT run at mount — only on transition');
+
+    // Simulate the user opening system settings via the in-app button.
+    const settingsBtn = container.querySelector('[data-testid="camera-permission-open-settings"]');
+    assert.ok(settingsBtn);
+    await act(async () => { settingsBtn.click(); });
+    await flush();
+    assert.equal(settingsCalls, 1, 'openSettings must be invoked exactly once');
+    assert.equal(refreshCalls, 0, 'pressing openSettings alone MUST NOT refresh — refresh only on AppState active');
+    assert.equal(requestCalls, 0, 'pressing openSettings MUST NOT surface an OS prompt via onRequestPermission');
+
+    // User returns to app: AppState transitions to active.
+    await act(async () => { seam.fireActive(); });
+    await flush();
+    assert.equal(refreshCalls, 1, 'AppState active MUST trigger exactly one refreshPermission call');
+  } finally {
+    await cleanup();
+  }
+});
+
+await test('DIC-1301 lifecycle: multiple AppState active events do not create a request storm', async () => {
+  const seam = createAppActiveSeam();
+  let refreshCalls = 0;
+  const { cleanup } = await renderInto(
+    React.createElement(CameraPermissionDeniedView, {
+      permission: { granted: false, canAskAgain: false },
+      onRequestPermission: () => {},
+      openSettingsImpl: () => {},
+      refreshPermission: () => { refreshCalls += 1; },
+      subscribeAppActive: seam.subscribeAppActive,
+    }),
+  );
+  try {
+    // Each fireActive() through the seam == one legitimate transition.
+    // The component must call refreshPermission exactly once per
+    // transition, not spin, not batch multiple upstream calls into a
+    // synthetic amplification loop.
+    await act(async () => { seam.fireActive(); });
+    await act(async () => { seam.fireActive(); });
+    await act(async () => { seam.fireActive(); });
+    await flush();
+    assert.equal(refreshCalls, 3, '3 transitions must produce exactly 3 refresh calls (1 per transition, no amplification)');
+    assert.equal(
+      seam.subscribeCount(),
+      1,
+      'the useEffect must NOT re-subscribe on every render — expected exactly 1 subscribe call',
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
+await test('DIC-1301 lifecycle: unmount removes the AppState listener (safe cleanup)', async () => {
+  const seam = createAppActiveSeam();
+  let refreshCalls = 0;
+  const { cleanup } = await renderInto(
+    React.createElement(CameraPermissionDeniedView, {
+      permission: { granted: false, canAskAgain: false },
+      onRequestPermission: () => {},
+      openSettingsImpl: () => {},
+      refreshPermission: () => { refreshCalls += 1; },
+      subscribeAppActive: seam.subscribeAppActive,
+    }),
+  );
+  assert.equal(seam.subscribedCount(), 1);
+  await cleanup();
+  assert.equal(seam.unsubscribeCount(), 1, 'unmount must unsubscribe the listener exactly once');
+  assert.equal(seam.subscribedCount(), 0, 'no ghost listener may survive unmount');
+
+  // Firing after unmount must not touch the component.
+  seam.fireActive();
+  assert.equal(refreshCalls, 0, 'no refresh call may reach the unmounted component');
+});
+
+await test('DIC-1301 lifecycle: refreshPermission absent → no listener attached (opt-in seam)', async () => {
+  const seam = createAppActiveSeam();
+  const { cleanup } = await renderInto(
+    React.createElement(CameraPermissionDeniedView, {
+      permission: { granted: false, canAskAgain: false },
+      onRequestPermission: () => {},
+      openSettingsImpl: () => {},
+      // no refreshPermission
+      subscribeAppActive: seam.subscribeAppActive,
+    }),
+  );
+  try {
+    assert.equal(
+      seam.subscribedCount(),
+      0,
+      'without refreshPermission, the component MUST NOT attach any AppState listener',
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
+await test('DIC-1301 lifecycle: default AppState seam only fires on transitions INTO active (no duplicate active-active fires)', async () => {
+  // Exercise the REAL production factory `createDefaultAppActiveSubscribe`
+  // against a stand-alone fake AppState — so a mutation that removes the
+  // transition guard (fires on every 'change') fails this assertion,
+  // not just an inline copy of the logic.
+  const {
+    createDefaultAppActiveSubscribe,
+  } = await import('../src/components/CameraPermissionDeniedView.tsx');
+  assert.equal(
+    typeof createDefaultAppActiveSubscribe,
+    'function',
+    'CameraPermissionDeniedView must export createDefaultAppActiveSubscribe for lifecycle regression testing',
+  );
+
+  let handler = null;
+  let removeCalls = 0;
+  const fakeAppState = {
+    currentState: 'active',
+    addEventListener(_event, h) {
+      handler = h;
+      return { remove: () => { removeCalls += 1; handler = null; } };
+    },
+  };
+  const subscribe = createDefaultAppActiveSubscribe(fakeAppState);
+  const events = [];
+  const unsub = subscribe(() => events.push('active-fire'));
+  assert.equal(typeof handler, 'function', 'factory must register a change handler on the AppState bridge');
+
+  handler('active');       // active → active: NO fire (transition guard)
+  handler('background');   // active → background: NO fire
+  handler('inactive');     // background → inactive: NO fire (still not active)
+  handler('active');       // inactive → active: FIRE once
+  handler('active');       // active → active: NO fire
+  handler('active');       // active → active: NO fire
+  handler('background');   // active → background: NO fire
+  handler('active');       // background → active: FIRE once
+  assert.deepEqual(
+    events,
+    ['active-fire', 'active-fire'],
+    'default subscribe must fire once per non-active → active transition, never on active → active or on going-to-background events',
+  );
+
+  unsub();
+  assert.equal(removeCalls, 1, 'unsubscribe must call the AppState subscription remove() exactly once');
+  assert.equal(handler, null, 'the change handler must be detached after unsubscribe');
+});
+
+// -----------------------------------------------------------------------------
 // 4. Real ScanScreen wiring — assert the screen delegates OCR + denied-UI to
 //    the two extracted modules so the behavioural tests above actually cover
 //    what runs in production. Static wiring check because rendering the full
@@ -488,11 +693,27 @@ await test('ScanScreen delegates native OCR to nativeOcrRecognize (no inline req
   );
 });
 
-await test('ScanScreen delegates denied-permission UI to CameraPermissionDeniedView', () => {
+await test('ScanScreen delegates denied-permission UI to CameraPermissionDeniedView (with refreshPermission)', () => {
   assert.match(
     scanSource,
-    /<CameraPermissionDeniedView[\s\S]*permission=\{permission\}[\s\S]*onRequestPermission=\{requestPermission\}[\s\S]*openSettingsImpl=\{openSettings\}/,
-    'ScanScreen must render CameraPermissionDeniedView with permission/request/open-settings props',
+    /<CameraPermissionDeniedView[\s\S]*permission=\{permission\}[\s\S]*onRequestPermission=\{requestPermission\}[\s\S]*openSettingsImpl=\{openSettings\}[\s\S]*refreshPermission=\{getCameraPermissions\}/,
+    'ScanScreen must pass refreshPermission={getCameraPermissions} to CameraPermissionDeniedView so the denied UI can re-query CAMERA on AppState active (DIC-1301 QA fix)',
+  );
+});
+
+await test('ScanScreen destructures the silent getter (3rd element) from useCameraPermissions (DIC-1301)', () => {
+  // expo-camera v17's useCameraPermissions returns
+  // [permission, requestPermission, getCameraPermissions]. The 3rd
+  // element is a get-without-prompting refresher. A mutation that drops
+  // it (or fails to route it into the denied view) reintroduces the
+  // "return from settings still shows denied" QA blocker.
+  const executable = scanSource
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/(^|[^\\])\/\/[^\n]*/g, (m, prefix) => prefix + ' '.repeat(m.length - prefix.length));
+  assert.match(
+    executable,
+    /const\s*\[\s*permission\s*,\s*requestPermission\s*,\s*getCameraPermissions\s*\]\s*=\s*isWeb[\s\S]*useCameraPermissions\(\)/,
+    'ScanScreen must destructure the 3rd element (silent getter) of useCameraPermissions so refreshPermission has a real source',
   );
 });
 

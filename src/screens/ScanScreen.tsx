@@ -65,7 +65,14 @@ const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 export default function ScanScreen({ navigation }: any) {
   const { t } = useTranslation();
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
-  const [permission, requestPermission] = isWeb ? [null, null] as any : useCameraPermissions();
+  // DIC-1301 CR fix: also destructure the third element — expo-camera's
+  // silent GETTER (get-without-prompting). Passed to
+  // CameraPermissionDeniedView so it can re-query CAMERA on AppState
+  // 'active' transitions after the user grants CAMERA in system settings,
+  // without ever surfacing a duplicate OS prompt.
+  const [permission, requestPermission, getCameraPermissions] = isWeb
+    ? [null, null, null] as any
+    : useCameraPermissions();
   const [webCameraStarted, setWebCameraStarted] = useState(false);
   // Web 相簿上傳模式：相機無法使用（權限卡住/裝置無鏡頭）時的 fallback，不掛載 WebCamera
   const [webGalleryMode, setWebGalleryMode] = useState(false);
@@ -918,6 +925,7 @@ export default function ScanScreen({ navigation }: any) {
             permission={permission}
             onRequestPermission={requestPermission}
             openSettingsImpl={openSettings}
+            refreshPermission={getCameraPermissions}
           />
         </View>
       );
