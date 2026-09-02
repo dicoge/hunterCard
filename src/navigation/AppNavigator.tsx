@@ -12,6 +12,7 @@ import { useTranslation } from '../i18n';
 import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ScanScreen from '../screens/ScanScreen';
+import ScanScreenErrorBoundary from '../components/ScanScreenErrorBoundary';
 import CollectionScreen from '../screens/CollectionScreen';
 import DeckEditorScreen from '../screens/DeckEditorScreen';
 import TournamentReportScreen from '../screens/TournamentReportScreen';
@@ -46,6 +47,22 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       </View>
       <DrawerItemList {...props} />
     </DrawerContentScrollView>
+  );
+}
+
+// DIC-1286: the shipped Android APK hard-crashes when opening the Scan screen.
+// Wrap ScanScreen in a class ErrorBoundary so any synchronous render/mount
+// error in the camera subtree renders a recoverable fallback UI instead of
+// taking down the entire app. Keeping the wrapper module-scoped preserves
+// react-navigation's `component={...}` identity so the Drawer route does not
+// re-mount on every drawer render (which would reset the boundary).
+function ScanScreenSafe(props: any) {
+  return (
+    <ScanScreenErrorBoundary
+      onGoHome={() => props?.navigation?.navigate?.('Home')}
+    >
+      <ScanScreen {...props} />
+    </ScanScreenErrorBoundary>
   );
 }
 
@@ -90,10 +107,10 @@ function MainDrawer() {
           ),
         }}
       />
-      <Drawer.Screen 
-        name="Scan" 
-        component={ScanScreen}
-        options={{ 
+      <Drawer.Screen
+        name="Scan"
+        component={ScanScreenSafe}
+        options={{
           title: t('nav_scan'),
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📷</Text>

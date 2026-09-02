@@ -17,7 +17,9 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import WebCamera, { WebCameraHandle } from '../components/WebCamera';
+import CameraPermissionDeniedView from '../components/CameraPermissionDeniedView';
 import ScanSessionPanel from '../components/ScanSessionPanel';
+import { nativeOcrRecognize } from '../services/nativeOcr';
 import { useScanSessionStore } from '../stores/scanSessionStore';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, convertPrice } from '../constants';
@@ -63,7 +65,14 @@ const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 export default function ScanScreen({ navigation }: any) {
   const { t } = useTranslation();
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
-  const [permission, requestPermission] = isWeb ? [null, null] as any : useCameraPermissions();
+  // DIC-1301 CR fix: also destructure the third element — expo-camera's
+  // silent GETTER (get-without-prompting). Passed to
+  // CameraPermissionDeniedView so it can re-query CAMERA on AppState
+  // 'active' transitions after the user grants CAMERA in system settings,
+  // without ever surfacing a duplicate OS prompt.
+  const [permission, requestPermission, getCameraPermissions] = isWeb
+    ? [null, null, null] as any
+    : useCameraPermissions();
   const [webCameraStarted, setWebCameraStarted] = useState(false);
   // Web 相簿上傳模式：相機無法使用（權限卡住/裝置無鏡頭）時的 fallback，不掛載 WebCamera
   const [webGalleryMode, setWebGalleryMode] = useState(false);
@@ -368,16 +377,20 @@ export default function ScanScreen({ navigation }: any) {
     scanAreaViewportRef.current = { x, y, width, height };
   };
 
-  // Web 版無法使用 expo-ocr-kit，用 Tesseract.js 兜底
+  // Web 版無法使用 expo-ocr-kit，用 Tesseract.js 兜底。
+  // Native branch delegates to nativeOcrRecognize (src/services/nativeOcr.ts)
+  // so the require-throw / missing-export / recognizeText-throws /
+  // recognizeText-rejects failure modes each resolve to '' from ONE tested
+  // choke point. DIC-1289 CR called out that inline try/catch shape here
+  // was not mutation-sensitive; the extracted module is covered by
+  // behavioural tests in scripts/test-scan-screen-fail-safe.mjs that
+  // invoke every branch through injected requireImpl mocks.
   const performOcr = async (uri: string): Promise<string> => {
     if (isWeb) {
       const result = await recognizeTextWeb(uri);
       return typeof result?.text === 'string' ? result.text : '';
-    } else {
-      const { recognizeText } = require('expo-ocr-kit');
-      const ocrResult = await recognizeText(uri);
-      return typeof ocrResult?.text === 'string' ? ocrResult.text : '';
     }
+    return nativeOcrRecognize(uri);
   };
 
   const captureWebRecognitionImages = async (photoUri: string): Promise<string[]> => {
@@ -810,9 +823,28 @@ export default function ScanScreen({ navigation }: any) {
     setScanComplete(false);
   };
 
+  // DIC-1286 CR fix: use RN's cross-platform Linking.openSettings() so the
+  // "打開設定 / 設定を開く" button really opens the app settings screen on
+  // Android too (Linking.openURL('app-settings:') is an iOS-only URL
+  // scheme, and did nothing on Android — leaving users with
+  // canAskAgain === false unable to recover). Wrapped in try/catch so a
+  // rare native throw from a broken Linking module never bubbles out of
+  // an event handler. Non-Android/iOS platforms (web) still fall through
+  // via the iOS scheme for backwards compatibility.
   const openSettings = () => {
-    if (Platform.OS === 'ios') {
+    try {
+      if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        const maybe = Linking.openSettings();
+        if (maybe && typeof (maybe as Promise<void>).catch === 'function') {
+          (maybe as Promise<void>).catch((err) => {
+            console.warn('[ScanScreen] Linking.openSettings rejected', err);
+          });
+        }
+        return;
+      }
       Linking.openURL('app-settings:');
+    } catch (err) {
+      console.warn('[ScanScreen] openSettings failed', err);
     }
   };
 
@@ -882,29 +914,19 @@ export default function ScanScreen({ navigation }: any) {
       );
     }
 
-    // 权限被拒绝
+    // 权限被拒绝 — DIC-1286 CR: delegate to CameraPermissionDeniedView so
+    // Android permanent denial (canAskAgain === false) really has a working
+    // recovery path (opens system settings) and the retry button is only
+    // shown when it can actually reopen the OS prompt.
     if (!permission.granted) {
       return (
         <View style={styles.container}>
-          <View style={styles.permissionContainer}>
-            <Text style={styles.permissionIcon}>📷</Text>
-            <Text style={styles.permissionTitle}>{t('scan_permission_title')}</Text>
-            <Text style={styles.permissionText}>{t('scan_permission_native_body')}</Text>
-            <TouchableOpacity 
-              style={styles.permissionButton}
-              onPress={requestPermission}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.permissionButtonText}>{t('scan_permission_allow')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.settingsButton}
-              onPress={openSettings}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.settingsButtonText}>{t('scan_open_settings')}</Text>
-            </TouchableOpacity>
-          </View>
+          <CameraPermissionDeniedView
+            permission={permission}
+            onRequestPermission={requestPermission}
+            openSettingsImpl={openSettings}
+            refreshPermission={getCameraPermissions}
+          />
         </View>
       );
     }
