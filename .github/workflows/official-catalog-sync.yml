@@ -5,23 +5,62 @@ on:
   schedule:
     - cron: '17 18 * * *'
 
+# DIC-1291: bounded scopes for the pull-request handoff. The old design
+# pushed the catalog snapshot straight at protected main and blew up with
+# GH006 on run 33558958119; the workflow now opens a PR against main
+# instead, so it needs only enough token authority to update its own
+# bot-owned sync branch and to open/refresh the sync PR. The old
+# direct-push design's `issues: write` scope is intentionally dropped.
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # Deterministic sync branch — reused across runs so retries never fan out
+  # into a PR storm. Force-pushes are scoped strictly to this branch; main
+  # is protected and never touched from this workflow.
+  SYNC_BRANCH: bot/official-catalog-sync
+  BASE_BRANCH: main
+  # Everything the pipeline is allowed to stage. Kept in one place so both
+  # the change check and the commit stage the exact same set — no path can
+  # sneak in via `git add -A` and no path can silently be dropped.
+  SYNC_PATHS: >-
+    data/official/
+    data/database.json
+    public/data/database.json
+    docs/audits/official-catalog-audit.json
+    docs/audits/official-production-lag-state.json
+
 jobs:
   official-catalog:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: write
-      issues: write
+    # Serialize scheduled + manual dispatches so two runs cannot race to
+    # refresh the same sync branch or open duplicate PRs.
+    concurrency:
+      group: official-catalog-sync
+      cancel-in-progress: false
 
     steps:
-      - name: Checkout
+      - name: Checkout base branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          # Full history so we can rebuild the sync branch from origin/main
+          # every run and diff against arbitrary PR-head commits without a
+          # secondary fetch failing on shallow history.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # DIC-1167 pipeline preserved end-to-end: dynamic expansion discovery,
+      # official catalog ingestion (independent of price-source failures),
+      # exact printing identity, buy-price fail-closed alignment, canonical /
+      # native database assets, hEB01 exact-214 + translation audits, and the
+      # production-lag state + alerts.
       - name: Sync official catalog
         run: node scripts/scrape-official-cards.js --check-production=https://holohunter.dicoge.com/data/database.json
 
@@ -40,17 +79,33 @@ jobs:
       - name: Check data changes
         id: check
         run: |
-          if git diff --stat -- data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json | grep -q .; then
+          if git diff --stat -- $SYNC_PATHS | grep -q .; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit and push catalog changes
+      # A run that produced no diff is a success — protected main stays
+      # untouched, no branch is pushed, no PR is opened.
+      - name: No-op success (no changes)
+        if: steps.check.outputs.changed == 'false'
+        run: echo "No official-catalog changes to sync; exiting successfully."
+
+      # Pull-request handoff — see .github/scripts/official-catalog-sync-handoff.mjs.
+      # Never pushes to the base branch, never bypasses branch protection,
+      # dedupes by the deterministic sync branch + an open-PR content check,
+      # and proves ownership of the sync branch's remote tip before any
+      # --force-with-lease, binding the lease to that validated SHA. The
+      # handoff logic lives in the Node module so the mutation-sensitive
+      # test in scripts/test-official-catalog-sync-workflow.mjs can drive
+      # the real no-change / existing-PR / refresh / hostile-owner shell
+      # paths with mock `git` and `gh` — DIC-1292 CR blockers #1 + #2.
+      - name: Open or refresh sync PR
         if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json
-          git diff --staged --quiet || git commit -m "chore: sync official catalog $(date +%Y-%m-%d)"
-          git push origin HEAD:main
+          git config --local user.name  "GitHub Action"
+          node .github/scripts/official-catalog-sync-handoff.mjs
