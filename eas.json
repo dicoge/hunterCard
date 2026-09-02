@@ -52,6 +52,14 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "production-release": {
+      "extends": "production",
+      "autoIncrement": false
+    },
+    "production-apk-release": {
+      "extends": "production-apk",
+      "autoIncrement": false
     }
   },
   "submit": {
