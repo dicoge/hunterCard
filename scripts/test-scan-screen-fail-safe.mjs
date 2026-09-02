@@ -635,6 +635,113 @@ await test('ScanOverlay: no Animated.View mixes native-driver-only and JS-driver
   );
 });
 
+await test('ScanOverlay: pulse transform wraps the border/clipping frame (DIC-1296 UX invariant)', () => {
+  // DIC-1296 CR round-2 flagged that the original split moved the pulse
+  // INSIDE the border-styled scanArea node, so the border and
+  // `overflow: hidden` clipping boundary no longer participated in the
+  // pulse — only the absolute-fill child scaled against a stationary
+  // clip. The visible frame must scale as one, so this assertion
+  // structurally enforces that the `pulseAnim` transform lives on an
+  // ANCESTOR JSX node of the border/clip node (styles.scanArea), and
+  // that the border-color animation and the corners still live inside
+  // the pulsed subtree.
+  const executable = scanOverlaySource
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/(^|[^\\])\/\/[^\n]*/g, (m, prefix) => prefix + ' '.repeat(m.length - prefix.length));
+
+  // Find the Animated.View whose style expression contains
+  // `transform: [{ scale: pulseAnim }]` — that is the pulse wrapper.
+  const openTag = /<Animated\.View\b/g;
+  const closeTag = /<\/Animated\.View>/g;
+  const wrapperCandidates = [];
+  let m;
+  while ((m = openTag.exec(executable)) !== null) {
+    // Walk forward to close of THIS opening tag.
+    let i = m.index + m[0].length;
+    let braceDepth = 0;
+    while (i < executable.length) {
+      const ch = executable[i];
+      if (ch === '{') braceDepth += 1;
+      else if (ch === '}') braceDepth -= 1;
+      else if (ch === '>' && braceDepth === 0) break;
+      i += 1;
+    }
+    const openingTagText = executable.slice(m.index, i);
+    if (/transform\s*:\s*\[\s*\{\s*scale\s*:\s*pulseAnim/.test(openingTagText)) {
+      wrapperCandidates.push({ openStart: m.index, openEnd: i });
+    }
+  }
+  assert.ok(
+    wrapperCandidates.length >= 1,
+    'expected at least one Animated.View with transform: [{ scale: pulseAnim }] in ScanOverlay',
+  );
+
+  // For every pulse-transform wrapper, walk forward from its opening `>`
+  // counting Animated.View opens/closes until depth returns to zero: that
+  // is the exact closing </Animated.View> of THIS pulse wrapper. The
+  // enclosed subtree must contain the border-styled node.
+  let borderNodeInsideAnyPulse = false;
+  let cornerInsideAnyPulse = false;
+  let borderAnimInsideAnyPulse = false;
+  for (const { openEnd } of wrapperCandidates) {
+    let depth = 1;
+    let j = openEnd + 1;
+    while (j < executable.length && depth > 0) {
+      openTag.lastIndex = j;
+      closeTag.lastIndex = j;
+      const nextOpen = openTag.exec(executable);
+      const nextClose = closeTag.exec(executable);
+      if (!nextClose) break;
+      if (nextOpen && nextOpen.index < nextClose.index) {
+        depth += 1;
+        j = nextOpen.index + nextOpen[0].length;
+      } else {
+        depth -= 1;
+        j = nextClose.index + nextClose[0].length;
+      }
+    }
+    const subtree = executable.slice(openEnd, j);
+    if (/styles\.scanArea\b/.test(subtree)) borderNodeInsideAnyPulse = true;
+    if (/styles\.corner\b/.test(subtree)) cornerInsideAnyPulse = true;
+    if (/borderColor\s*:\s*borderAnim\.interpolate/.test(subtree)) borderAnimInsideAnyPulse = true;
+  }
+
+  assert.ok(
+    borderNodeInsideAnyPulse,
+    'DIC-1296 UX regression: the scanArea (border + overflow: hidden clip) must be a JSX DESCENDANT of the pulseAnim transform wrapper so it participates in the pulse',
+  );
+  assert.ok(
+    borderAnimInsideAnyPulse,
+    'DIC-1296 UX regression: the borderColor animation must live inside the pulseAnim wrapper so the pulsing frame keeps its animated colour',
+  );
+  assert.ok(
+    cornerInsideAnyPulse,
+    'DIC-1296 UX regression: the scan-frame corners must live inside the pulseAnim wrapper so they scale with the border',
+  );
+});
+
+await test('ScanOverlay: pulse wrapper has real layout dimensions (not collapsed to zero)', () => {
+  // The wrapper carrying `transform: [{ scale: pulseAnim }]` becomes the
+  // scanArea's flex row child, so it needs an explicit layout box or the
+  // whole scan-frame collapses to 0×0. `styles.scanAreaPulse` must define
+  // width AND height — a mutation that reverts scanAreaPulse to
+  // `StyleSheet.absoluteFillObject` (or removes the sizing) would leave
+  // the scan-frame invisible on native.
+  const scanAreaPulseIdx = scanOverlaySource.indexOf('scanAreaPulse:');
+  assert.notEqual(scanAreaPulseIdx, -1, 'scanAreaPulse style must exist');
+  const block = scanOverlaySource.slice(scanAreaPulseIdx, scanAreaPulseIdx + 400);
+  assert.match(
+    block,
+    /width\s*:\s*SCAN_AREA_SIZE\b/,
+    'scanAreaPulse must set width: SCAN_AREA_SIZE so the pulse wrapper owns the scan frame layout',
+  );
+  assert.match(
+    block,
+    /height\s*:\s*SCAN_AREA_SIZE\s*\*\s*0\.63\b/,
+    'scanAreaPulse must set height: SCAN_AREA_SIZE * 0.63 to match the original scan-frame aspect ratio',
+  );
+});
+
 await test('ScanOverlay: renders end-to-end through jsdom + react-native-web with real animation values (no throw)', async () => {
   // Real ScanOverlay import through the web-render hook (react-native →
   // react-native-web alias). This exercises the same JSX / style tree the

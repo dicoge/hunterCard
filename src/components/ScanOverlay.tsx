@@ -93,40 +93,50 @@ export default function ScanOverlay({
         </View>
       )}
 
-      {/* Overlay with scan area — DIC-1286 (DIC-1294 QA crash fix):
-          the outer Animated.View animates borderColor via `borderAnim`,
-          which is a JS-driven animation (colors cannot be native-driven).
-          The inner Animated.View animates scale via `pulseAnim`, which is
-          native-driven (useNativeDriver: true in ScanScreen). Combining
-          both on ONE node made RN's animation manager attempt to run a
-          JS-driven update on a node that had already been moved to
-          native — the exact `Attempting to run JS driven animation on
-          animated node that has been moved to "native"` FATAL EXCEPTION
-          mqt_v_native the shipped APK crashed with. Splitting the two
-          drivers across two Animated.View nodes keeps each node purely
-          on its own driver and matches the crash-free layout QA needs. */}
+      {/* Overlay with scan area — DIC-1286 (DIC-1294 QA crash fix +
+          DIC-1296 CR round-2 UX fix).
+          Two nested Animated.View nodes so JS-driver and native-driver
+          animations never share a single node:
+            • outer node (`scanAreaPulse`) carries the native-driven
+              `transform: [{ scale: pulseAnim }]` and NO JS-driven props.
+              Because the transform is applied at the parent, the entire
+              visible frame — border, `overflow: hidden` clip, corners,
+              scan line — scales together as it did before the split.
+            • inner node (`styles.scanArea`) carries the JS-driven
+              `borderColor: borderAnim.interpolate(...)` and NO native
+              props. width / height / borderWidth / borderRadius / overflow
+              are STATIC on this node, so they are safe on either driver.
+              onLayout stays here so `scanAreaViewportRef` measures the
+              same layout-space rect as before (transform is visual-only,
+              never affects onLayout measurements).
+          Mixing `transform` (native) with `borderColor` (JS-only) on the
+          SAME Animated.View triggered
+          `Attempting to run JS driven animation on animated node that has
+          been moved to "native"` FATAL EXCEPTION mqt_v_native — reproduced
+          by DIC-1294 on API-36 emulator. Two-node split preserves the
+          full pulse UX AND fixes the crash. */}
       <View style={styles.overlay}>
         <View style={styles.overlayTop} />
         <View style={styles.scanAreaContainer}>
           <View style={styles.overlaySide} />
           <Animated.View
             style={[
-              styles.scanArea,
-              {
-                borderColor: borderAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [COLORS.primary, COLORS.primaryLight],
-                }),
-              },
+              styles.scanAreaPulse,
+              { transform: [{ scale: pulseAnim }] },
             ]}
-            onLayout={onScanAreaLayout}
+            pointerEvents="box-none"
           >
             <Animated.View
               style={[
-                styles.scanAreaPulse,
-                { transform: [{ scale: pulseAnim }] },
+                styles.scanArea,
+                {
+                  borderColor: borderAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [COLORS.primary, COLORS.primaryLight],
+                  }),
+                },
               ]}
-              pointerEvents="box-none"
+              onLayout={onScanAreaLayout}
             >
               <Animated.View
                 style={[
@@ -282,13 +292,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
   },
-  // Inner pulse layer (DIC-1294): fills the scanArea and receives the
-  // native-driven `scale` transform. Kept separate from the outer node so
-  // JS-driven `borderColor` and native-driven `transform` never share a
-  // single Animated.View — that combination is the exact crash pattern
-  // from the API-36 emulator logcat.
+  // Outer pulse wrapper (DIC-1294 + DIC-1296 CR round-2): owns the layout
+  // box (width / height match the scanArea) and receives the native-driven
+  // `scale` transform. Because the transform is applied here — the parent
+  // of the border-styled scanArea — the border, the `overflow: hidden`
+  // clipping boundary, the corners and the scan line ALL scale together,
+  // preserving the original visible pulse UX. Kept separate from the
+  // borderColor-animated child so JS-driven `borderColor` and native-driven
+  // `transform` never share a single Animated.View — the crash pattern from
+  // the API-36 emulator logcat.
   scanAreaPulse: {
-    ...StyleSheet.absoluteFillObject,
+    width: SCAN_AREA_SIZE,
+    height: SCAN_AREA_SIZE * 0.63,
   },
   scanLine: {
     position: 'absolute',
