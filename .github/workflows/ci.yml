@@ -204,6 +204,25 @@ jobs:
       - name: Verify the deck editor renders no explanatory copy (DIC-1064)
         run: npm run test:deck-editor-copy
 
+      # DIC-1155 (recovered in DIC-1272): the phone deck-builder suite renders
+      # the real screen at 390/430/768/1366 and locks the tab switch, the sticky
+      # shortage summary, active-deck persistence and zh-Hant/ja tab copy.
+      - name: Verify phone deck-builder tabs, sticky summary and viewport matrix (DIC-1155)
+        run: npm run test:dic1155
+
+      # The sticky summary added by DIC-1155 carries its own price badge, so the
+      # Store-MVP render gates must be enforced on the Validate path — the
+      # field-strip test only proves the DATA artifact, not the render surface.
+      - name: Verify Store MVP render gates on retained surfaces (DIC-1256)
+        run: npm run test:store-mvp-ui-gates
+
+      # The gate above is source-text only, so it cannot tell "not gated" from
+      # "gated the other way". This renders the deck editor under
+      # EXPO_PUBLIC_STORE_MVP=1 and =0 — nothing else in Validate renders any
+      # screen under the store profile.
+      - name: Verify deck-editor shortage summary renders correctly under both Store-MVP profiles (DIC-1155 / DIC-1256)
+        run: npm run test:dic1155-store-mvp
+
       - name: Verify strict card-number series filter + numeric ordering (DIC-1117)
         run: npm run test:series-filter
 

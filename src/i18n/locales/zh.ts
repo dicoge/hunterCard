@@ -87,6 +87,11 @@ export const zh = {
   deck_finalize: '完成組牌',
   deck_shortage: '缺少卡牌',
   deck_low_cost_variants: '套用低價版本',
+  deck_mobile_panel_deck: '牌組',
+  deck_shortage_count: '缺卡 {{count}} 張',
+  deck_updated_at: '最後更新：{{date}}',
+  deck_active_badge: '使用中',
+  deck_color_label: '主色：{{color}}',
 
   // Tournament Report & Summary
   tournament_title: '🏆 賽事月報',

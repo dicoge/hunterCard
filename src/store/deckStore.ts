@@ -40,7 +40,15 @@ function upsertSlot(slots: DeckSlot[], card: DeckCard, delta: number): DeckSlot[
 
 interface DeckState {
   decks: Deck[];
+  /** WHICH deck the player is working on. Identity, not navigation: backing out
+   * to the library does not clear it, so the library can mark the deck the
+   * player will return to. Only deleting that deck clears it (DIC-1272). */
   activeDeckId: string | null;
+  /** WHERE the player is. Deliberately separate from activeDeckId — folding the
+   * two together made the library reachable only once the active deck had been
+   * cleared, so the active tile could never be marked. Persisted, so a player
+   * who backed out to the library comes back to the library. */
+  deckView: 'library' | 'editor';
   /** ownershipKey -> owned quantity */
   collection: Record<string, number>;
 
@@ -52,6 +60,10 @@ interface DeckState {
   renameDeck: (deckId: string, name: string) => void;
   deleteDeck: (deckId: string) => void;
   setActiveDeck: (deckId: string | null) => void;
+  /** Open a deck for editing: sets identity AND navigation together. */
+  openDeck: (deckId: string) => void;
+  /** Back out to the library WITHOUT forgetting which deck is active. */
+  showDeckLibrary: () => void;
   getActiveDeck: () => Deck | null;
 
   /** add `delta` copies of a card to a zone (negative removes; removes slot at 0) */
@@ -67,6 +79,7 @@ interface DeckState {
    * their lowest ordinary printing (DIC-1060). Idempotent, tournament-only, and
    * never touches a printing the player picked themselves. */
   migrateTournamentDefaults: (index: Map<string, DeckCard>) => void;
+  migrateCardColors: (index: Map<string, DeckCard>) => void;
 
   setOwned: (cardNumber: string, version: string, qty: number) => void;
   /** apply a signed delta to the owned count; clamps at 0 (never negative) */
@@ -107,11 +120,12 @@ export const useDeckStore = create<DeckState>()(
     (set, get) => ({
       decks: [],
       activeDeckId: null,
+      deckView: 'editor',
       collection: {},
 
       createDeck: (name) => {
         const deck = emptyDeck(name.trim() || '新牌組');
-        set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id }));
+        set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id, deckView: 'editor' }));
         return deck.id;
       },
       importDeck: (draft) => {
@@ -124,7 +138,7 @@ export const useDeckStore = create<DeckState>()(
           origin: draft.origin,
           updatedAt: new Date().toISOString(),
         };
-        set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id }));
+        set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id, deckView: 'editor' }));
         return deck.id;
       },
       renameDeck: (deckId, name) => set((s) => ({
@@ -132,11 +146,17 @@ export const useDeckStore = create<DeckState>()(
           ? { ...d, name: name.trim() || d.name, updatedAt: new Date().toISOString() }
           : d),
       })),
+      // Deleting the active deck is the one case where the identity really is
+      // gone, so it clears activeDeckId and drops the player back to the
+      // library — there is nothing left to return to.
       deleteDeck: (deckId) => set((s) => ({
         decks: s.decks.filter((d) => d.id !== deckId),
         activeDeckId: s.activeDeckId === deckId ? null : s.activeDeckId,
+        deckView: s.activeDeckId === deckId ? 'library' : s.deckView,
       })),
       setActiveDeck: (deckId) => set({ activeDeckId: deckId }),
+      openDeck: (deckId) => set({ activeDeckId: deckId, deckView: 'editor' }),
+      showDeckLibrary: () => set({ deckView: 'library' }),
       getActiveDeck: () => {
         const { decks, activeDeckId } = get();
         return decks.find((d) => d.id === activeDeckId) || null;
@@ -201,6 +221,32 @@ export const useDeckStore = create<DeckState>()(
         return changed ? { decks } : {};
       }),
 
+      migrateCardColors: (index) => set((s) => {
+        let changed = false;
+        const decks = s.decks.map((d) => {
+          let deckChanged = false;
+          const patchSlots = (slots: DeckSlot[]) => slots.map((sl) => {
+            if (!sl.card.color) {
+              const matched = index.get(sl.card.cardNumber) || index.get(sl.card.id);
+              if (matched?.color) {
+                deckChanged = true;
+                return { ...sl, card: { ...sl.card, color: matched.color } };
+              }
+            }
+            return sl;
+          });
+          const oshi = patchSlots(d.oshi);
+          const main = patchSlots(d.main);
+          const yell = patchSlots(d.yell);
+          if (deckChanged) {
+            changed = true;
+            return { ...d, oshi, main, yell };
+          }
+          return d;
+        });
+        return changed ? { decks } : {};
+      }),
+
       setOwned: (cardNumber, version, qty) => set((s) => {
         const key = ownershipKey(cardNumber, version);
         const next = { ...s.collection };
@@ -240,7 +286,9 @@ export const useDeckStore = create<DeckState>()(
       // history, so folded entries add up rather than being dropped.
       version: 2,
       storage: createJSONStorage(() => platformStorage),
-      partialize: (s) => ({ decks: s.decks, activeDeckId: s.activeDeckId, collection: s.collection }),
+      partialize: (s) => ({
+        decks: s.decks, activeDeckId: s.activeDeckId, deckView: s.deckView, collection: s.collection,
+      }),
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<DeckState>;
         if (version < 2) {

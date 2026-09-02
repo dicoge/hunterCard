@@ -39,6 +39,19 @@ test('zh and ja locale dictionaries have exact key parity', () => {
   assert.ok(zhKeys.length > 50, 'Dictionary should contain complete UI key set');
 });
 
+test('locale source files contain no duplicate key definitions', () => {
+  for (const file of ['src/i18n/locales/zh.ts', 'src/i18n/locales/ja.ts']) {
+    const content = fs.readFileSync(file, 'utf8');
+    const keyMatches = content.match(/^\s*([a-z0-9_]+):/gm) || [];
+    const keys = keyMatches.map((m) => m.trim().replace(':', ''));
+    const seen = new Set();
+    for (const k of keys) {
+      assert.ok(!seen.has(k), `Duplicate key '${k}' found in ${file}`);
+      seen.add(k);
+    }
+  }
+});
+
 test('no translation key resolves to empty or undefined value', () => {
   for (const [key, val] of Object.entries(zh)) {
     assert.ok(val && val.trim().length > 0, `zh key ${key} must not be empty`);
