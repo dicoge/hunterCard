@@ -635,89 +635,227 @@ await test('ScanOverlay: no Animated.View mixes native-driver-only and JS-driver
   );
 });
 
-await test('ScanOverlay: pulse transform wraps the border/clipping frame (DIC-1296 UX invariant)', () => {
-  // DIC-1296 CR round-2 flagged that the original split moved the pulse
-  // INSIDE the border-styled scanArea node, so the border and
-  // `overflow: hidden` clipping boundary no longer participated in the
-  // pulse — only the absolute-fill child scaled against a stationary
-  // clip. The visible frame must scale as one, so this assertion
-  // structurally enforces that the `pulseAnim` transform lives on an
-  // ANCESTOR JSX node of the border/clip node (styles.scanArea), and
-  // that the border-color animation and the corners still live inside
-  // the pulsed subtree.
-  const executable = scanOverlaySource
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
-    .replace(/(^|[^\\])\/\/[^\n]*/g, (m, prefix) => prefix + ' '.repeat(m.length - prefix.length));
+// -----------------------------------------------------------------------------
+// AST-based JSX ancestry parser (DIC-1298 CR fix).
+//
+// The previous depth-counted regex parser accepted a self-closing
+// `<Animated.View ... />` as an "opener" and walked into following-sibling
+// nodes, so a mutation that turned the pulse wrapper into a self-closing
+// element with the border-styled scanArea as its next sibling still passed
+// every descendant check. This block uses the TypeScript compiler API to
+// parse the real .tsx source into an AST — self-closing elements have an
+// EMPTY children set by construction, and true JSX descendants are the
+// only nodes reachable via `element.children`.
+// -----------------------------------------------------------------------------
 
-  // Find the Animated.View whose style expression contains
-  // `transform: [{ scale: pulseAnim }]` — that is the pulse wrapper.
-  const openTag = /<Animated\.View\b/g;
-  const closeTag = /<\/Animated\.View>/g;
-  const wrapperCandidates = [];
-  let m;
-  while ((m = openTag.exec(executable)) !== null) {
-    // Walk forward to close of THIS opening tag.
-    let i = m.index + m[0].length;
-    let braceDepth = 0;
-    while (i < executable.length) {
-      const ch = executable[i];
-      if (ch === '{') braceDepth += 1;
-      else if (ch === '}') braceDepth -= 1;
-      else if (ch === '>' && braceDepth === 0) break;
-      i += 1;
-    }
-    const openingTagText = executable.slice(m.index, i);
-    if (/transform\s*:\s*\[\s*\{\s*scale\s*:\s*pulseAnim/.test(openingTagText)) {
-      wrapperCandidates.push({ openStart: m.index, openEnd: i });
-    }
-  }
-  assert.ok(
-    wrapperCandidates.length >= 1,
-    'expected at least one Animated.View with transform: [{ scale: pulseAnim }] in ScanOverlay',
-  );
+const { default: ts } = await import('typescript');
 
-  // For every pulse-transform wrapper, walk forward from its opening `>`
-  // counting Animated.View opens/closes until depth returns to zero: that
-  // is the exact closing </Animated.View> of THIS pulse wrapper. The
-  // enclosed subtree must contain the border-styled node.
-  let borderNodeInsideAnyPulse = false;
-  let cornerInsideAnyPulse = false;
-  let borderAnimInsideAnyPulse = false;
-  for (const { openEnd } of wrapperCandidates) {
-    let depth = 1;
-    let j = openEnd + 1;
-    while (j < executable.length && depth > 0) {
-      openTag.lastIndex = j;
-      closeTag.lastIndex = j;
-      const nextOpen = openTag.exec(executable);
-      const nextClose = closeTag.exec(executable);
-      if (!nextClose) break;
-      if (nextOpen && nextOpen.index < nextClose.index) {
-        depth += 1;
-        j = nextOpen.index + nextOpen[0].length;
-      } else {
-        depth -= 1;
-        j = nextClose.index + nextClose[0].length;
+/**
+ * Analyse a TSX source string and return the set of pulse-wrapper JSX
+ * elements found (opened as either JsxElement or JsxSelfClosingElement),
+ * along with the concrete descendants each one contains. This is the
+ * single source of truth the DIC-1296 UX invariant test asserts against,
+ * AND the fixture reused by the DIC-1298 self-closing negative test.
+ *
+ * Returns:
+ *   pulseWrappers: Array<{
+ *     selfClosing: boolean,
+ *     descendantHasScanArea: boolean,
+ *     descendantHasBorderAnim: boolean,
+ *     descendantHasCorner: boolean,
+ *   }>
+ */
+function analysePulseWrappers(source, filename = 'test.tsx') {
+  const sf = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+
+  const isAnimatedViewName = (node) => {
+    if (!node) return false;
+    // JSX opening/self-closing element uses tagName which for `Animated.View`
+    // parses as a PropertyAccessExpression: `Animated`.`View`.
+    if (ts.isPropertyAccessExpression(node)) {
+      return node.expression.getText(sf) === 'Animated' && node.name.getText(sf) === 'View';
+    }
+    return false;
+  };
+
+  const openingContainsPulseTransform = (opening) => {
+    // The style attribute of the pulse wrapper contains
+    // `transform: [{ scale: pulseAnim }]`. Walking the attribute AST is
+    // stricter than string-matching: `getText()` limits us to the JSX
+    // attribute range only, so a mention of `pulseAnim` in a sibling or
+    // parent cannot spoof a match.
+    for (const attr of opening.attributes.properties) {
+      if (!ts.isJsxAttribute(attr)) continue;
+      if (attr.name.getText(sf) !== 'style') continue;
+      const initializer = attr.initializer;
+      if (!initializer) continue;
+      const text = initializer.getText(sf);
+      if (/transform\s*:\s*\[\s*\{\s*scale\s*:\s*pulseAnim\b/.test(text)) return true;
+    }
+    return false;
+  };
+
+  const collectDescendantSummary = (node) => {
+    let hasScanArea = false;
+    let hasBorderAnim = false;
+    let hasCorner = false;
+
+    const visit = (n) => {
+      // `styles.scanArea` reference — the border+clip node.
+      if (ts.isPropertyAccessExpression(n)) {
+        const parts = n.getText(sf);
+        if (parts === 'styles.scanArea') hasScanArea = true;
+        if (parts === 'styles.corner') hasCorner = true;
       }
-    }
-    const subtree = executable.slice(openEnd, j);
-    if (/styles\.scanArea\b/.test(subtree)) borderNodeInsideAnyPulse = true;
-    if (/styles\.corner\b/.test(subtree)) cornerInsideAnyPulse = true;
-    if (/borderColor\s*:\s*borderAnim\.interpolate/.test(subtree)) borderAnimInsideAnyPulse = true;
-  }
+      // `borderColor: borderAnim.interpolate(...)` — the JS-driven color
+      // animation attached to the border-styled node.
+      if (ts.isPropertyAssignment(n) && n.name.getText(sf) === 'borderColor') {
+        const init = n.initializer;
+        if (init && /borderAnim\.interpolate\b/.test(init.getText(sf))) {
+          hasBorderAnim = true;
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
 
+    // For a self-closing element, `node.children` doesn't exist — visitors
+    // iterate zero descendants and every "has*" stays false. That is the
+    // exact protection the DIC-1298 mutation flagged.
+    if (ts.isJsxSelfClosingElement(node)) {
+      return { hasScanArea: false, hasBorderAnim: false, hasCorner: false };
+    }
+    for (const child of node.children ?? []) visit(child);
+    return { hasScanArea, hasBorderAnim, hasCorner };
+  };
+
+  const pulseWrappers = [];
+  const walk = (node) => {
+    let opening = null;
+    let selfClosing = false;
+    if (ts.isJsxElement(node)) {
+      opening = node.openingElement;
+    } else if (ts.isJsxSelfClosingElement(node)) {
+      opening = node;
+      selfClosing = true;
+    }
+    if (opening && isAnimatedViewName(opening.tagName) && openingContainsPulseTransform(opening)) {
+      const summary = collectDescendantSummary(node);
+      pulseWrappers.push({
+        selfClosing,
+        descendantHasScanArea: summary.hasScanArea,
+        descendantHasBorderAnim: summary.hasBorderAnim,
+        descendantHasCorner: summary.hasCorner,
+      });
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(sf);
+  return { pulseWrappers };
+}
+
+await test('ScanOverlay: pulse transform wraps the border/clipping frame (DIC-1296 UX invariant, AST-based)', () => {
+  // Real-source assertion. DIC-1298 CR flagged that the previous parser
+  // was regex-based and misread self-closing / sibling JSX as descendants;
+  // this version uses the TypeScript compiler API so `element.children`
+  // is the ground truth for JSX ancestry.
+  const { pulseWrappers } = analysePulseWrappers(scanOverlaySource, 'ScanOverlay.tsx');
   assert.ok(
-    borderNodeInsideAnyPulse,
-    'DIC-1296 UX regression: the scanArea (border + overflow: hidden clip) must be a JSX DESCENDANT of the pulseAnim transform wrapper so it participates in the pulse',
+    pulseWrappers.length >= 1,
+    'expected at least one <Animated.View> with transform: [{ scale: pulseAnim }] in ScanOverlay',
+  );
+  const anyWraps = pulseWrappers.some(
+    (w) => !w.selfClosing && w.descendantHasScanArea && w.descendantHasBorderAnim && w.descendantHasCorner,
   );
   assert.ok(
-    borderAnimInsideAnyPulse,
-    'DIC-1296 UX regression: the borderColor animation must live inside the pulseAnim wrapper so the pulsing frame keeps its animated colour',
+    anyWraps,
+    'DIC-1296 UX regression: at least one pulseAnim-transform <Animated.View> must be a non-self-closing JSX element whose true descendants include styles.scanArea, borderColor: borderAnim.interpolate(...), and styles.corner — so the border, borderColor animation, and corners all scale together',
   );
-  assert.ok(
-    cornerInsideAnyPulse,
-    'DIC-1296 UX regression: the scan-frame corners must live inside the pulseAnim wrapper so they scale with the border',
+});
+
+await test('AST parser rejects the DIC-1298 self-closing / sibling mutation fixture', () => {
+  // Negative fixture — exactly the mutation the CR broke on: the outer
+  // pulseAnim wrapper is switched to a self-closing element, and the
+  // border/clip node lives as its following SIBLING (not descendant).
+  // The previous regex parser accepted this as a descendant tree; the
+  // AST parser must not.
+  const fixture = `
+    import { Animated, View, StyleSheet } from 'react-native';
+    const pulseAnim = new Animated.Value(1);
+    const borderAnim = new Animated.Value(0);
+    const styles = StyleSheet.create({
+      scanArea: {},
+      corner: {},
+      pulseWrapper: {},
+    });
+    export default function Bad() {
+      return (
+        <View>
+          <Animated.View
+            style={[styles.pulseWrapper, { transform: [{ scale: pulseAnim }] }]}
+          />
+          <Animated.View
+            style={[styles.scanArea, { borderColor: borderAnim.interpolate({ inputRange: [0, 1], outputRange: ['#fff', '#000'] }) }]}
+          >
+            <View style={styles.corner} />
+          </Animated.View>
+        </View>
+      );
+    }
+  `;
+  const { pulseWrappers } = analysePulseWrappers(fixture, 'BadFixture.tsx');
+  assert.equal(pulseWrappers.length, 1, 'fixture must contain exactly one pulseAnim-transform wrapper');
+  const [wrapper] = pulseWrappers;
+  assert.equal(wrapper.selfClosing, true, 'fixture wrapper must be recognised as self-closing');
+  assert.equal(
+    wrapper.descendantHasScanArea, false,
+    'AST parser must NOT count following-sibling scanArea as a descendant',
   );
+  assert.equal(
+    wrapper.descendantHasBorderAnim, false,
+    'AST parser must NOT count following-sibling borderColor animation as a descendant',
+  );
+  assert.equal(
+    wrapper.descendantHasCorner, false,
+    'AST parser must NOT count following-sibling corner as a descendant',
+  );
+});
+
+await test('AST parser accepts a valid nested pulse-wrapper fixture (positive control)', () => {
+  // Positive control — confirms the AST parser correctly counts REAL
+  // descendants inside a non-self-closing wrapper. This keeps the
+  // "wrapper wraps border" invariant from being trivially satisfiable by
+  // just always returning "not wrapped" — a mutation that neutered the
+  // descendant-collection logic would also fail this.
+  const fixture = `
+    import { Animated, View, StyleSheet } from 'react-native';
+    const pulseAnim = new Animated.Value(1);
+    const borderAnim = new Animated.Value(0);
+    const styles = StyleSheet.create({
+      scanArea: {},
+      corner: {},
+      pulseWrapper: {},
+    });
+    export default function Good() {
+      return (
+        <Animated.View
+          style={[styles.pulseWrapper, { transform: [{ scale: pulseAnim }] }]}
+        >
+          <Animated.View
+            style={[styles.scanArea, { borderColor: borderAnim.interpolate({ inputRange: [0, 1], outputRange: ['#fff', '#000'] }) }]}
+          >
+            <View style={styles.corner} />
+          </Animated.View>
+        </Animated.View>
+      );
+    }
+  `;
+  const { pulseWrappers } = analysePulseWrappers(fixture, 'GoodFixture.tsx');
+  assert.equal(pulseWrappers.length, 1);
+  const [wrapper] = pulseWrappers;
+  assert.equal(wrapper.selfClosing, false);
+  assert.equal(wrapper.descendantHasScanArea, true);
+  assert.equal(wrapper.descendantHasBorderAnim, true);
+  assert.equal(wrapper.descendantHasCorner, true);
 });
 
 await test('ScanOverlay: pulse wrapper has real layout dimensions (not collapsed to zero)', () => {
