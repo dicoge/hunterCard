@@ -102,12 +102,24 @@ priceCoverageOk() {
   return 0
 }
 
-# runPipeline <workdir> [ <commit-message> ]: executes steps 1–3 (scrape → build
-# → gates → commit/push) inside the given repository working directory. Returns
-# non-zero on any failure up to and including the coverage gates.
+# runPipeline <workdir> [ <commit-message> ] [ <push-mode> ]: executes steps 1–3
+# (scrape → build → gates → commit → push) inside the given repository working
+# directory. Returns non-zero on any failure up to and including the coverage
+# gates.
+#
+#   <push-mode> = inplace (default) | isolated.
+#   - inplace  — the resident checkout IS the working main cron path: commit then
+#     push HEAD:main, exactly as before.
+#   - isolated — the caller runs a throwaway worktree for a dirty-tree handoff.
+#     This mode NEVER pushes HEAD:main under any circumstance (mutating main
+#     from isolation is forbidden — a dirty resident tree's artifact must go
+#     only to an explicit auditable handoff ref). It only COMMITS the artifact;
+#     the caller performs the explicit bot/scrape/<date> push and is
+#     responsible for failing closed on handoff failure.
 runPipeline() {
   local dir="$1"
   local commit_msg="$2"
+  local push_mode="${3:-inplace}"
   local prev_priced
   prev_priced=$(node -e "
     const d = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
@@ -200,8 +212,17 @@ runPipeline() {
       git add data/buy-prices/*.json 2>/dev/null || true
       git -c user.name="hunterCard Scraper" -c user.email="bot@huntercard.app" \
         commit -m "$commit_msg" >> "$LOG_FILE" 2>&1
-      git push origin HEAD:main >> "$LOG_FILE" 2>&1 || git push origin HEAD >> "$LOG_FILE" 2>&1
-      echo "[$(date)] ✅ Pushed to GitHub" >> "$LOG_FILE"
+      # DIC-1321 (Mac-Codex CR DIC-1326): on the ISOLATED path the gathered
+      # commit must never be pushed to main from the throwaway worktree. Only an
+      # inplace (clean resident) run pushes HEAD:main. The isolated caller
+      # performs the explicit auditable bot/scrape/<date> handoff push AFTER this
+      # function returns and fails closed if that handoff push fails.
+      if [ "$push_mode" = "isolated" ]; then
+        echo "[$(date)] (isolated) artifact committed in worktree; push deferred to explicit $ISOLATED_BRANCH_PREFIX/<date> handoff (never HEAD:main)" >> "$LOG_FILE"
+      else
+        git push origin HEAD:main >> "$LOG_FILE" 2>&1 || git push origin HEAD >> "$LOG_FILE" 2>&1
+        echo "[$(date)] ✅ Pushed to GitHub" >> "$LOG_FILE"
+      fi
     else
       echo "[$(date)] No data changes, skipping push" >> "$LOG_FILE"
     fi
@@ -237,24 +258,29 @@ if [ -n "$DIRTY_STATUS" ]; then
   fi
   trap 'git worktree remove --force "$ISOLATED_DIR" >> "$LOG_FILE" 2>&1 || true; rm -rf "$LOCK_FILE"' EXIT
 
-  if ! runPipeline "$ISOLATED_DIR" "chore: update database $(date +%Y-%m-%d) (isolated)"; then
+  if ! runPipeline "$ISOLATED_DIR" "chore: update database $(date +%Y-%m-%d) (isolated)" isolated; then
     echo "[$(date)] ❌ isolated pipeline failed — sending alert, cron reports failure" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
 
-  # Push the isolated artifact to a dedicated branch (never main) as the
-  # handoff; the user keeps their dirty files. A separate reviewer/PR path
-  # merges it after checks. The isolated worktree commits on a detached HEAD,
-  # so push that HEAD to the dated branch.
+  # Push the isolated artifact to a dedicated auditable branch (never main) as
+  # the handoff; the user keeps their dirty files. A separate reviewer/PR path
+  # merges it after checks. The isolated worktree commits on a detached HEAD.
+  # DIC-1321 (Mac-Codex CR DIC-1326): this handoff must FAIL CLOSED — a push or
+  # a missing artifact commit must never end in "Done"/exit 0.
   ISOLATED_BRANCH="${ISOLATED_BRANCH_PREFIX}/$(date +%Y-%m-%d)"
-  if git -C "$ISOLATED_DIR" log --oneline -1 >/dev/null 2>&1; then
-    if git -C "$ISOLATED_DIR" push origin "HEAD:$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ✅ Isolated artifact pushed to $ISOLATED_BRANCH (dirty worktree preserved)" >> "$LOG_FILE"
-    else
-      echo "[$(date)] ⚠️ isolated artifact push to $ISOLATED_BRANCH failed (branch not updated)" >> "$LOG_FILE"
-    fi
+  if ! git -C "$ISOLATED_DIR" rev-parse --verify "HEAD^{commit}" >/dev/null 2>&1; then
+    echo "[$(date)] ❌ isolated handoff: no artifact commit in worktree HEAD; cron fails" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
   fi
+  if ! git -C "$ISOLATED_DIR" push origin "HEAD:$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
+    echo "[$(date)] ❌ isolated artifact handoff push to $ISOLATED_BRANCH FAILED; cron fails (never success on failed handoff)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  echo "[$(date)] ✅ Isolated artifact pushed to $ISOLATED_BRANCH (dirty worktree preserved)" >> "$LOG_FILE"
   echo "[$(date)] ✅ Done (isolated handoff)" >> "$LOG_FILE"
   exit 0
 fi

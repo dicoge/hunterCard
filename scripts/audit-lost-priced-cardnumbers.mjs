@@ -24,6 +24,12 @@ import {
   yuyuPayloadMatchesSource,
   yuyuImageProductPath,
 } from './lib/preserve-market-fields.js';
+// DIC-1321 (Mac-Codex CR DIC-1326): the audit MUST build fresh-card ids with
+// the SAME production printing-identity builder the official-sync writer uses.
+// A simplified cardNumber_sourceProduct id would let sibling OSR/OUR/SEC/promo
+// printings collide onto a legacy SEC aggregate row and falsely classify them
+// recoverable.
+import { printingId } from './lib/printing-identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.join(__dirname, '..');
@@ -62,20 +68,28 @@ const results = [];
 for (const cn of lost) {
   const fresh = freshOfficialByCN.get(cn) || [];
   const rowDetails = fresh.map((o) => {
+    // Exact production printing identity (cardNumber_sourceProduct_rarity_imageSuffix) —
+    // this is the id the official-sync writer itself indexes by.
+    const freshId = printingId(o);
+    // Mirror the production fresh card: it carries the official image so the
+    // signature lookup (cardNumber|sourceProduct|rarity|imageSuffix) matches
+    // the real printing, exactly as build-database / official-sync see it.
     const freshCard = {
-      id: `${cn}_${o.sourceProduct}`,
-      cardNumber: cn,
-      rarity: o.rarity,
-      sourceProduct: o.sourceProduct,
-      series: o.series,
+      id: freshId,
+      cardNumber: o.cardNumber || '',
+      rarity: o.rarity || '',
+      sourceProduct: o.sourceProduct || '',
+      series: o.series || o.expansion || '',
+      imageUrl: o.imageUrl || '',
     };
-    const match = findPreservedMatch(index, freshCard.id, freshCard);
-    const prev = match?.card || e8322.cards[freshCard.id];
+    const match = findPreservedMatch(index, freshId, freshCard);
+    const prev = match?.card || e8322.cards[freshId];
     const freshSrc = String(o.sourceProduct || '').toLowerCase();
     const provablyMatches = prev ? yuyuPayloadMatchesSource(prev, o.sourceProduct || o.series || '') : false;
     const prevPriced = prev ? priced(prev) : false;
     const recoverable = Boolean(prev) && prevPriced && provablyMatches;
     return {
+      id: freshId,
       rarity: o.rarity,
       sourceProduct: freshSrc,
       freshImage: o.imageUrl || '',

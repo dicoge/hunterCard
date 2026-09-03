@@ -132,14 +132,20 @@ echo "npm $*" >> "$TRACE_FILE"
 exit 0
 `);
 
-  // git wrapper: intercept commit/push (trace, no-op), but let `worktree`, `pull`
-  // and every other subcommand hit the REAL git so the dirty / isolated-worktree
-  // logic runs its real classifiers over the sandbox tree and the isolated
-  // worktree is genuinely materialised.
+  // git wrapper: intercept every push (with or without a `-C <dir>` prefix),
+  // trace and no-op it so NO real push ever hits a remote — pushes must be
+  // asserted by their exact refspec, never executed. `FAIL_PUSH` lets a test
+  // force a specific refspec to fail so we can prove fail-closed handoff.
+  // `worktree` and everything else hit the REAL git so the dirty / isolated
+  // classifiers run over the sandbox tree and the isolated worktree is
+  // genuinely materialised.
   writeShim(bin, 'git', `#!/bin/bash
 echo "git $*" >> "$TRACE_FILE"
+if [[ "$*" == *" push "* ]] || [[ "$*" == "push "* ]]; then
+  [ -n "$FAIL_PUSH" ] && [[ "$*" == *"$FAIL_PUSH"* ]] && exit 1
+  exit 0
+fi
 case "$1" in
-  push)          exit 0 ;;
   commit)        exit 0 ;;
   worktree)      shift; exec ${REAL_GIT} worktree "$@" ;;
 esac
@@ -204,9 +210,17 @@ const someTraced = (lines, needle) => lines.some((l) => l.includes(needle));
     // Resident checkout must NOT be mutated: pull must not run in the resident
     // repo, and no node scraper may run in the resident tree.
     assert.equal(someTraced(lines, 'git pull'), false, 'dirty resident must not run git pull');
-    // The isolated path calls git worktree add (traced) and pushes a branch.
+    // The isolated path calls git worktree add (traced) and pushes ONLY the
+    // auditable bot/scrape/<date> artifact branch — it must never push HEAD:main
+    // from dirty-tree isolation (Mac-Codex CR DIC-1326: exact refspec, not a
+    // generic "some push occurred").
     assert.ok(someTraced(lines, 'git worktree'), 'dirty path must create an isolated worktree');
-    assert.ok(someTraced(lines, 'git push'), 'isolated handoff must push the artifact branch');
+    assert.ok(someTraced(lines, 'HEAD:bot/scrape'), 'isolated handoff must push the bot/scrape artifact branch');
+    assert.equal(
+      someTraced(lines, 'HEAD:main'),
+      false,
+      'dirty-tree isolated path must NEVER push HEAD:main',
+    );
     // The residue file must still exist untouched.
     assert.ok(fs.existsSync(residue), 'residue file must remain untouched on-disk');
     const stillUntracked = execSync(`${REAL_GIT} status --porcelain -- data/price-history`, { cwd: sandbox.repo, encoding: 'utf-8' });
@@ -265,6 +279,34 @@ exit 0
     // 2 priced -> 0 priced is a 100% collapse: the coverage/change-budget gate
     // must fail the scheduler so the cron reports failure (non-zero exit).
     assert.equal(status, 1, `coverage collapse must fail the scheduler; got ${status}`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case E: red-before-green (Mac-Codex CR DIC-1326): a failed isolated
+//        artifact-branch handoff push must FAIL CLOSED — never "Done"/exit 0 ──
+{
+  const sandbox = makeSandbox();
+  const residue = path.join(sandbox.repo, 'data', 'price-history', 'hFOO-002_hBAR_C.json');
+  fs.mkdirSync(path.dirname(residue), { recursive: true });
+  fs.writeFileSync(residue, '{}');
+  try {
+    const { status, lines } = runSandbox(sandbox, { FAIL_PUSH: 'HEAD:bot/scrape' });
+    assert.equal(
+      status,
+      1,
+      `a failed isolated handoff push must fail the scheduler (fail-closed), not exit 0; got ${status}`,
+    );
+    assert.equal(
+      someTraced(lines, 'HEAD:main'),
+      false,
+      'isolated path must never fall back to pushing HEAD:main even when the handoff fails',
+    );
+    assert.ok(
+      someTraced(lines, 'HEAD:bot/scrape'),
+      'sanity: the isolated handoff push must actually be attempted so we can prove it fails closed',
+    );
   } finally {
     cleanup(sandbox);
   }

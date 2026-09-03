@@ -1,20 +1,20 @@
 {
-  "generated_at": "2026-09-03T08:17:51.748Z",
+  "generated_at": "2026-09-03T09:21:35.115Z",
   "source_baseline": "e8322c8003",
   "fresh_official_catalog": "data/official/all-cards.json",
   "e8322_priced_unique_cardnumbers": 1179,
   "head_priced_unique_cardnumbers": 1124,
   "lost_count": 55,
   "verdicts": {
-    "recoverable": 13,
-    "mixed": 4,
-    "unavailable": 38,
+    "recoverable": 0,
+    "mixed": 12,
+    "unavailable": 43,
     "no_fresh_printing": 0
   },
-  "recoverable_cardnumbers": [
-    "hBD24-018",
+  "recoverable_cardnumbers": [],
+  "mixed_cardnumbers": [
     "hBP01-006",
-    "hBP01-123",
+    "hBP01-007",
     "hBP02-001",
     "hBP02-003",
     "hBP02-004",
@@ -26,16 +26,15 @@
     "hBP06-001",
     "hBP06-004"
   ],
-  "mixed_cardnumbers": [
-    "hBP01-007",
-    "hBP01-013",
-    "hSD01-019",
-    "hSD10-013"
-  ],
   "unavailable_cardnumbers": [
+    "hBD24-018",
+    "hBP01-013",
     "hBP01-081",
+    "hBP01-123",
     "hBP05-016",
     "hBP05-080",
+    "hSD01-019",
+    "hSD10-013",
     "hY01-005",
     "hY01-006",
     "hY01-009",
@@ -77,55 +76,59 @@
     {
       "cardNumber": "hBD24-018",
       "fresh_printings": 1,
-      "recoverable_printings": 1,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 0,
+      "unproven_printings": 1,
+      "verdict": "unavailable",
       "printings": [
         {
+          "id": "hBD24-018_hPR_P_hBD24-018_P_02",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-018_P_02.png",
-          "prev_id": "hBD24-018_hPR",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         }
       ]
     },
     {
       "cardNumber": "hBP01-006",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP01-006_hBP01_OSR_hBP01-006_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-006_OSR.png",
-          "prev_id": "hBP01-006_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP01-006_hBP01_OUR_hBP01-006_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-006_OUR.png",
-          "prev_id": "hBP01-006_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP01-006_hBP01_SEC_hBP01-006_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-006_SEC.png",
           "prev_id": "hBP01-006_hBP01",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
@@ -135,77 +138,84 @@
     {
       "cardNumber": "hBP01-007",
       "fresh_printings": 7,
-      "recoverable_printings": 3,
-      "unproven_printings": 4,
+      "recoverable_printings": 1,
+      "unproven_printings": 6,
       "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP01-007_hBP01_OSR_hBP01-007_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-007_OSR.png",
-          "prev_id": "hBP01-007_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP01-007_hBP01_OUR_hBP01-007_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-007_OUR.png",
-          "prev_id": "hBP01-007_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP01-007_hBP01_SEC_hBP01-007_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-007_SEC.png",
           "prev_id": "hBP01-007_hBP01",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
         },
         {
+          "id": "hBP01-007_hPR_P_hBP01-007_P_01",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-007_P_01.png",
-          "prev_id": "hBP01-007_hPR",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-007_hPR_P_hBP01-007_P_02",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-007_P_02.png",
-          "prev_id": "hBP01-007_hPR",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-007_hPR_P_hBP01-007_P_03",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-007_P_03.png",
-          "prev_id": "hBP01-007_hPR",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-007_hPR_P_hBP01-007_P_04",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-007_P_04.png",
-          "prev_id": "hBP01-007_hPR",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         }
@@ -214,47 +224,51 @@
     {
       "cardNumber": "hBP01-013",
       "fresh_printings": 4,
-      "recoverable_printings": 1,
-      "unproven_printings": 3,
-      "verdict": "mixed",
+      "recoverable_printings": 0,
+      "unproven_printings": 4,
+      "verdict": "unavailable",
       "printings": [
         {
+          "id": "hBP01-013_hBP01_R_hBP01-013_R_02",
           "rarity": "R",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD08/hBP01-013_R_02.png",
-          "prev_id": "hBP01-013_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP01-013_hPR_P_hBP01-013_P_02",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-013_P_02.png",
-          "prev_id": "hBP01-013_hPR",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-013_hPR_P_hBP01-013_P_03",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-013_P_03.png",
-          "prev_id": "hBP01-013_hPR",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-013_hSD08_R_hBP01-013_R_02",
           "rarity": "R",
           "sourceProduct": "hsd08",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD08/hBP01-013_R_02.png",
-          "prev_id": "hBP01-013_hSD08",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         }
@@ -268,62 +282,68 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hBP01-081_hEB01_RR_hBP01-081_RR_02",
           "rarity": "RR",
           "sourceProduct": "heb01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hEB01/hBP01-081_RR_02.png",
           "prev_id": "hBP01-081_hEB01_RR_hBP01-081_RR_02",
-          "exact_match": "signature",
+          "exact_match": "exact-id",
           "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-081_hEB01_UR_hBP01-081_UR_02",
           "rarity": "UR",
           "sourceProduct": "heb01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hEB01/hBP01-081_UR_02.png",
           "prev_id": "hBP01-081_hEB01_UR_hBP01-081_UR_02",
-          "exact_match": "signature",
+          "exact_match": "exact-id",
           "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-081_hEB01_SR_hBP01-081_SR_02",
           "rarity": "SR",
           "sourceProduct": "heb01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hEB01/hBP01-081_SR_02.png",
           "prev_id": "hBP01-081_hEB01_SR_hBP01-081_SR_02",
-          "exact_match": "signature",
+          "exact_match": "exact-id",
           "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-081_hBP01_RR_hBP01-081_RR_02",
           "rarity": "RR",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-081_RR_02.png",
-          "prev_id": "hBP01-081_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-081_hBP01_UR_hBP01-081_UR_02",
           "rarity": "UR",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-081_UR_02.png",
-          "prev_id": "hBP01-081_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP01-081_hCS01_SR_hBP01-081_02_SR",
           "rarity": "SR",
           "sourceProduct": "hcs01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP01-081_02_SR.png",
-          "prev_id": "hBP01-081_hCS01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         }
@@ -332,55 +352,59 @@
     {
       "cardNumber": "hBP01-123",
       "fresh_printings": 1,
-      "recoverable_printings": 1,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 0,
+      "unproven_printings": 1,
+      "verdict": "unavailable",
       "printings": [
         {
+          "id": "hBP01-123_hBP01_C_hBP01-123_C_02",
           "rarity": "C",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-123_C_02.png",
-          "prev_id": "hBP01-123_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         }
       ]
     },
     {
       "cardNumber": "hBP02-001",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP02-001_hBP02_OSR_hBP02-001_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-001_OSR.png",
-          "prev_id": "hBP02-001_hBP02",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP02-001_hBP02_OUR_hBP02-001_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-001_OUR.png",
-          "prev_id": "hBP02-001_hBP02",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP02-001_hBP02_SEC_hBP02-001_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-001_SEC.png",
           "prev_id": "hBP02-001_hBP02",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
@@ -390,36 +414,39 @@
     {
       "cardNumber": "hBP02-003",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP02-003_hBP02_OSR_hBP02-003_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-003_OSR.png",
-          "prev_id": "hBP02-003_hBP02",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP02-003_hBP02_OUR_hBP02-003_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-003_OUR.png",
-          "prev_id": "hBP02-003_hBP02",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP02-003_hBP02_SEC_hBP02-003_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-003_SEC.png",
           "prev_id": "hBP02-003_hBP02",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
@@ -429,36 +456,39 @@
     {
       "cardNumber": "hBP02-004",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP02-004_hBP02_OSR_hBP02-004_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-004_OSR.png",
-          "prev_id": "hBP02-004_hBP02",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP02-004_hBP02_OUR_hBP02-004_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-004_OUR.png",
-          "prev_id": "hBP02-004_hBP02",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP02-004_hBP02_SEC_hBP02-004_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-004_SEC.png",
           "prev_id": "hBP02-004_hBP02",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
@@ -468,36 +498,39 @@
     {
       "cardNumber": "hBP03-002",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP03-002_hBP03_OSR_hBP03-002_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-002_OSR.png",
-          "prev_id": "hBP03-002_hBP03",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP03-002_hBP03_OUR_hBP03-002_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-002_OUR.png",
-          "prev_id": "hBP03-002_hBP03",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP03-002_hBP03_SEC_hBP03-002_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-002_SEC.png",
           "prev_id": "hBP03-002_hBP03",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
@@ -507,36 +540,39 @@
     {
       "cardNumber": "hBP03-005",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP03-005_hBP03_OSR_hBP03-005_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-005_OSR.png",
-          "prev_id": "hBP03-005_hBP03",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP03-005_hBP03_OUR_hBP03-005_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-005_OUR.png",
-          "prev_id": "hBP03-005_hBP03",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP03-005_hBP03_SEC_hBP03-005_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-005_SEC.png",
           "prev_id": "hBP03-005_hBP03",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
@@ -546,117 +582,126 @@
     {
       "cardNumber": "hBP04-001",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP04-001_hBP04_SEC_hBP04-001_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-001_SEC.png",
           "prev_id": "hBP04-001_hBP04",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
         },
         {
+          "id": "hBP04-001_hBP04_OSR_hBP04-001_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-001_OSR.png",
-          "prev_id": "hBP04-001_hBP04",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP04-001_hBP04_OUR_hBP04-001_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-001_OUR.png",
-          "prev_id": "hBP04-001_hBP04",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         }
       ]
     },
     {
       "cardNumber": "hBP04-004",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP04-004_hBP04_SEC_hBP04-004_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_SEC.png",
           "prev_id": "hBP04-004_hBP04",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
         },
         {
+          "id": "hBP04-004_hBP04_OSR_hBP04-004_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_OSR.png",
-          "prev_id": "hBP04-004_hBP04",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP04-004_hBP04_OUR_hBP04-004_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_OUR.png",
-          "prev_id": "hBP04-004_hBP04",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         }
       ]
     },
     {
       "cardNumber": "hBP04-006",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP04-006_hBP04_SEC_hBP04-006_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-006_SEC.png",
           "prev_id": "hBP04-006_hBP04",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
         },
         {
+          "id": "hBP04-006_hBP04_OSR_hBP04-006_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-006_OSR.png",
-          "prev_id": "hBP04-006_hBP04",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-006_OUR.png",
-          "prev_id": "hBP04-006_hBP04",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         }
       ]
     },
@@ -668,71 +713,78 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
           "rarity": "RR",
           "sourceProduct": "heb01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hEB01/hBP05-016_RR_02.png",
           "prev_id": "hBP05-016_hEB01_RR_hBP05-016_RR_02",
-          "exact_match": "signature",
+          "exact_match": "exact-id",
           "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-016_hEB01_UR_hBP05-016_UR_02",
           "rarity": "UR",
           "sourceProduct": "heb01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hEB01/hBP05-016_UR_02.png",
           "prev_id": "hBP05-016_hEB01_UR_hBP05-016_UR_02",
-          "exact_match": "signature",
+          "exact_match": "exact-id",
           "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-016_hEB01_SR_hBP05-016_SR_02",
           "rarity": "SR",
           "sourceProduct": "heb01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hEB01/hBP05-016_SR_02.png",
           "prev_id": "hBP05-016_hEB01_SR_hBP05-016_SR_02",
-          "exact_match": "signature",
+          "exact_match": "exact-id",
           "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-016_hBP05_RR_hBP05-016_RR",
           "rarity": "RR",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-016_RR.png",
-          "prev_id": "hBP05-016_hBP05",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-016_hBP05_SR_hBP05-016_SR",
           "rarity": "SR",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-016_SR.png",
-          "prev_id": "hBP05-016_hBP05",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-016_hBP05_UR_hBP05-016_UR",
           "rarity": "UR",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-016_UR.png",
-          "prev_id": "hBP05-016_hBP05",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-016_hBP05_SEC_hBP05-016_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-016_SEC.png",
           "prev_id": "hBP05-016_hBP05",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -747,61 +799,67 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hBP05-080_hEB01_U_hBP05-080_U_t02",
           "rarity": "U",
           "sourceProduct": "heb01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hEB01/hBP05-080_U_t02.png",
           "prev_id": "hBP05-080_hEB01_U_hBP05-080_U_t02",
-          "exact_match": "signature",
+          "exact_match": "exact-id",
           "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-080_hEB01_SR_hBP05-080_SR_02",
           "rarity": "SR",
           "sourceProduct": "heb01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hEB01/hBP05-080_SR_02.png",
           "prev_id": "hBP05-080_hEB01_SR_hBP05-080_SR_02",
-          "exact_match": "signature",
+          "exact_match": "exact-id",
           "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-080_hPR_P_hBP05-080_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP05-080_P.png",
           "prev_id": "hBP05-080_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-080_hBP05_U_hBP05-080_U",
           "rarity": "U",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-080_U.png",
-          "prev_id": "hBP05-080_hBP05",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-080_hBP05_SR_hBP05-080_SR",
           "rarity": "SR",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-080_SR.png",
-          "prev_id": "hBP05-080_hBP05",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hBP05-080_hBP05_SEC_hBP05-080_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-080_SEC.png",
           "prev_id": "hBP05-080_hBP05",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -811,36 +869,39 @@
     {
       "cardNumber": "hBP06-001",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP06-001_hBP06_OSR_hBP06-001_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp06",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-001_OSR.png",
-          "prev_id": "hBP06-001_hBP06",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP06-001_hBP06_OUR_hBP06-001_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp06",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-001_OUR.png",
-          "prev_id": "hBP06-001_hBP06",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP06-001_hBP06_SEC_hBP06-001_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp06",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-001_SEC.png",
           "prev_id": "hBP06-001_hBP06",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
@@ -850,36 +911,39 @@
     {
       "cardNumber": "hBP06-004",
       "fresh_printings": 3,
-      "recoverable_printings": 3,
-      "unproven_printings": 0,
-      "verdict": "recoverable",
+      "recoverable_printings": 1,
+      "unproven_printings": 2,
+      "verdict": "mixed",
       "printings": [
         {
+          "id": "hBP06-004_hBP06_OSR_hBP06-004_OSR",
           "rarity": "OSR",
           "sourceProduct": "hbp06",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-004_OSR.png",
-          "prev_id": "hBP06-004_hBP06",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP06-004_hBP06_OUR_hBP06-004_OUR",
           "rarity": "OUR",
           "sourceProduct": "hbp06",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-004_OUR.png",
-          "prev_id": "hBP06-004_hBP06",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hBP06-004_hBP06_SEC_hBP06-004_SEC",
           "rarity": "SEC",
           "sourceProduct": "hbp06",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-004_SEC.png",
           "prev_id": "hBP06-004_hBP06",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": true,
           "recoverable": true
@@ -889,126 +953,138 @@
     {
       "cardNumber": "hSD01-019",
       "fresh_printings": 12,
-      "recoverable_printings": 1,
-      "unproven_printings": 11,
-      "verdict": "mixed",
+      "recoverable_printings": 0,
+      "unproven_printings": 12,
+      "verdict": "unavailable",
       "printings": [
         {
+          "id": "hSD01-019_hSD14_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd14",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD14",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD15_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd15",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD15",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD16_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd16",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD16",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD17_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd17",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD17",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD19_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd19",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD19",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD13_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd13",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD13",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD01_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD11_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd11",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD11",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hBP01_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hbp01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hBP01",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD03_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD03",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hSD04_C_hSD01-019_C_02",
           "rarity": "C",
           "sourceProduct": "hsd04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD01/hSD01-019_C_02.png",
-          "prev_id": "hSD01-019_hSD04",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD01-019_hPC01_SR_hSD01-019_SR",
           "rarity": "SR",
           "sourceProduct": "hpc01",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hSD01-019_SR.png",
           "prev_id": "hSD01-019_hPC01",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1018,37 +1094,40 @@
     {
       "cardNumber": "hSD10-013",
       "fresh_printings": 3,
-      "recoverable_printings": 1,
-      "unproven_printings": 2,
-      "verdict": "mixed",
+      "recoverable_printings": 0,
+      "unproven_printings": 3,
+      "verdict": "unavailable",
       "printings": [
         {
+          "id": "hSD10-013_hBP07_C_hSD10-013_02_C",
           "rarity": "C",
           "sourceProduct": "hbp07",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hSD10-013_02_C.png",
-          "prev_id": "hSD10-013_hBP07",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         },
         {
+          "id": "hSD10-013_hSD10_C_hSD10-013_02_C",
           "rarity": "C",
           "sourceProduct": "hsd10",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hSD10-013_02_C.png",
-          "prev_id": "hSD10-013_hSD10",
-          "exact_match": "exact-id",
-          "prev_priced": true,
-          "provablyMatchesSource": true,
-          "recoverable": true
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
+          "provablyMatchesSource": false,
+          "recoverable": false
         },
         {
+          "id": "hSD10-013_hSD11_C_hSD10-013_02_C",
           "rarity": "C",
           "sourceProduct": "hsd11",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hSD10-013_02_C.png",
-          "prev_id": "hSD10-013_hSD11",
-          "exact_match": "exact-id",
-          "prev_priced": true,
+          "prev_id": null,
+          "exact_match": null,
+          "prev_priced": false,
           "provablyMatchesSource": false,
           "recoverable": false
         }
@@ -1062,11 +1141,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY01-005_hPR_P_hY01-005_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY01-005_P.png",
           "prev_id": "hY01-005_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1081,11 +1161,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY01-006_hBP04_SY_hY01-006_SY",
           "rarity": "SY",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hY01-006_SY.png",
           "prev_id": "hY01-006_hBP04",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1100,11 +1181,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY01-009_hPR_P_hY01-009_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY01-009_P.png",
           "prev_id": "hY01-009_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1119,11 +1201,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY01-012_hBP07_SY_hY01-012_SY",
           "rarity": "SY",
           "sourceProduct": "hbp07",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hY01-012_SY.png",
           "prev_id": "hY01-012_hBP07",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1138,11 +1221,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY02-002_hBP02_SY_hY02-002_SY",
           "rarity": "SY",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hY02-002_SY.png",
           "prev_id": "hY02-002_hBP02",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1157,11 +1241,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY02-003_hBP03_SY_hY02-003_SY",
           "rarity": "SY",
           "sourceProduct": "hbp03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hY02-003_SY.png",
           "prev_id": "hY02-003_hBP03",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1176,11 +1261,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY02-004_hPR_P_hY02-004_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY02-004_P.png",
           "prev_id": "hY02-004_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1195,11 +1281,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY02-007_hPR_P_hY02-007_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY02-007_P.png",
           "prev_id": "hY02-007_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1214,11 +1301,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY02-010_hBP07_SY_hY02-010_SY",
           "rarity": "SY",
           "sourceProduct": "hbp07",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hY02-010_SY.png",
           "prev_id": "hY02-010_hBP07",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1233,11 +1321,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-004_hBP04_SY_hY03-004_SY",
           "rarity": "SY",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hY03-004_SY.png",
           "prev_id": "hY03-004_hBP04",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1252,11 +1341,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-005_hPR_P_hY03-005_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY03-005_P.png",
           "prev_id": "hY03-005_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1271,11 +1361,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-006_hPR_P_hY03-006_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY03-006_P.png",
           "prev_id": "hY03-006_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1290,11 +1381,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-007_hPR_P_hY03-007_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY03-007_P.png",
           "prev_id": "hY03-007_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1309,11 +1401,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-008_hPR_P_hY03-008_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY03-008_P.png",
           "prev_id": "hY03-008_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1328,11 +1421,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-011_hPR_P_hY03-011_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY03-011_P.png",
           "prev_id": "hY03-011_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1347,11 +1441,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-012_hPR_P_hY03-012_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY03-012_P.png",
           "prev_id": "hY03-012_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1366,11 +1461,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-014_hBP07_SY_hY03-014_SY",
           "rarity": "SY",
           "sourceProduct": "hbp07",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hY03-014_SY.png",
           "prev_id": "hY03-014_hBP07",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1385,11 +1481,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY03-015_hBP08_SY_hY03-015_SY",
           "rarity": "SY",
           "sourceProduct": "hbp08",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY03-015_SY.png",
           "prev_id": "hY03-015_hBP08",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1404,11 +1501,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY04-004_hPR_P_hY04-004_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY04-004_P.png",
           "prev_id": "hY04-004_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1423,11 +1521,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY04-005_hBP04_SY_hY04-005_SY",
           "rarity": "SY",
           "sourceProduct": "hbp04",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hY04-005_SY.png",
           "prev_id": "hY04-005_hBP04",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1442,11 +1541,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY04-007_hSD2025summer_S_hY04-007_S",
           "rarity": "S",
           "sourceProduct": "hsd2025summer",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD2025summer/hY04-007_S.png",
           "prev_id": "hY04-007_hSD2025summer",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1461,11 +1561,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY04-009_hPR_P_hY04-009_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY04-009_P.png",
           "prev_id": "hY04-009_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1480,11 +1581,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY04-010_hBP06_SY_hY04-010_SY",
           "rarity": "SY",
           "sourceProduct": "hbp06",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hY04-010_SY.png",
           "prev_id": "hY04-010_hBP06",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1499,11 +1601,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY04-011_hBP07_SY_hY04-011_SY",
           "rarity": "SY",
           "sourceProduct": "hbp07",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hY04-011_SY.png",
           "prev_id": "hY04-011_hBP07",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1518,11 +1621,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY05-002_hBP02_SY_hY05-002_SY",
           "rarity": "SY",
           "sourceProduct": "hbp02",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hY05-002_SY.png",
           "prev_id": "hY05-002_hBP02",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1537,11 +1641,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY05-005_hBP05_SY_hY05-005_SY",
           "rarity": "SY",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hY05-005_SY.png",
           "prev_id": "hY05-005_hBP05",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1556,11 +1661,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY05-007_hPR_P_hY05-007_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY05-007_P.png",
           "prev_id": "hY05-007_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1575,11 +1681,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY05-009_hBP07_SY_hY05-009_SY",
           "rarity": "SY",
           "sourceProduct": "hbp07",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hY05-009_SY.png",
           "prev_id": "hY05-009_hBP07",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1594,11 +1701,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY05-010_hBP08_SY_hY05-010_SY",
           "rarity": "SY",
           "sourceProduct": "hbp08",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY05-010_SY.png",
           "prev_id": "hY05-010_hBP08",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1613,11 +1721,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY06-002_hBP03_SY_hY06-002_SY",
           "rarity": "SY",
           "sourceProduct": "hbp03",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hY06-002_SY.png",
           "prev_id": "hY06-002_hBP03",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1632,11 +1741,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY06-003_hPR_P_hY06-003_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY06-003_P.png",
           "prev_id": "hY06-003_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1651,11 +1761,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY06-005_hBP05_SY_hY06-005_SY",
           "rarity": "SY",
           "sourceProduct": "hbp05",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hY06-005_SY.png",
           "prev_id": "hY06-005_hBP05",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1670,11 +1781,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY06-006_hPR_P_hY06-006_P",
           "rarity": "P",
           "sourceProduct": "hpr",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hY06-006_P.png",
           "prev_id": "hY06-006_hPR",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1689,11 +1801,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY06-009_hBP07_SY_hY06-009_SY",
           "rarity": "SY",
           "sourceProduct": "hbp07",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hY06-009_SY.png",
           "prev_id": "hY06-009_hBP07",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false
@@ -1708,11 +1821,12 @@
       "verdict": "unavailable",
       "printings": [
         {
+          "id": "hY06-010_hBP08_SY_hY06-010_SY",
           "rarity": "SY",
           "sourceProduct": "hbp08",
           "freshImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hY06-010_SY.png",
           "prev_id": "hY06-010_hBP08",
-          "exact_match": "exact-id",
+          "exact_match": "signature",
           "prev_priced": true,
           "provablyMatchesSource": false,
           "recoverable": false

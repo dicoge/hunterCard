@@ -7,6 +7,7 @@ import {
   findPreservedMatch,
   applyPreservedMarketFields,
 } from './lib/preserve-market-fields.js';
+import { printingId, imageSuffix } from './lib/printing-identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(__dirname, '..');
@@ -15,18 +16,6 @@ const dbPath = path.join(repo, 'data', 'database.json');
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
-
-function imageSuffix(url = '') {
-  return String(url).match(/\/([^/]+)\.png$/i)?.[1] || '';
-}
-
-function printingId(card) {
-  const cardNumber = card.cardNumber || imageSuffix(card.imageUrl).match(/^(h[A-Za-z0-9]+-\d{3})/)?.[1] || '';
-  const sourceProduct = card.sourceProduct || card.expansion || card.series || '';
-  return [cardNumber, sourceProduct, card.rarity || '', imageSuffix(card.imageUrl) || card.id || '']
-    .filter(Boolean)
-    .join('_');
 }
 
 function cardSignature(card) {
