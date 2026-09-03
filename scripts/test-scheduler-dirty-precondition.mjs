@@ -120,7 +120,14 @@ function makeSandbox() {
   for (const rel of managedPlaceholders) {
     const abs = path.join(repo, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, '{}');
+    // DIC-1334: public/data/database.json is the native asset whose
+    // priced-cardNumber set must exactly match data/database.json (the
+    // canonical/native parity gate added on this PR). A generic `{}`
+    // placeholder here would always MISMATCH the canonical baseline (which
+    // has 2 priced cardNumbers), tripping the parity gate even on the
+    // untouched happy path. Seed it as a mirror of the canonical baseline so
+    // the committed starting state already satisfies parity.
+    fs.writeFileSync(abs, rel === 'public/data/database.json' ? `${JSON.stringify(baseline)}\n` : '{}');
   }
   execSync(`${REAL_GIT} add -A`, { cwd: repo });
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m baseline`, { cwd: repo });
@@ -132,8 +139,15 @@ function makeSandbox() {
   // the REAL node helper so the gate reads the real priced-cardNumber count
   // from the db file. The build-database invocation rewrites the resident db to
   // a HEALTHY 2-priced snapshot (baseline had 2 priced -> coverage holds).
+  // DIC-1334's canonical/native parityOk() gate also runs an inline `node -e`
+  // script (marker `MISMATCH`) that must execute for real — otherwise the
+  // shim swallows it, stdout is empty, and parityOk always fails closed even
+  // when the committed public/data/database.json genuinely mirrors canonical.
   writeShim(bin, 'node', `#!/bin/bash
 echo "node $*" >> "$TRACE_FILE"
+if [[ " $* " == *"MISMATCH"* ]]; then
+  exec ${REAL_NODE} "$@"
+fi
 if [[ " $* " == *"console.log(s.size)"* ]]; then
   # Coverage gate / prev-count call: first positional arg after -e is the db path.
   dbPath=""
@@ -297,6 +311,9 @@ const someTraced = (lines, needle) => lines.some((l) => l.includes(needle));
   // (a full collapse), while the coverage-gate count still reads the real db.
   writeShim(sandbox.bin, 'node', `#!/bin/bash
 echo "node $*" >> "$TRACE_FILE"
+if [[ " $* " == *"MISMATCH"* ]]; then
+  exec ${REAL_NODE} "$@"
+fi
 if [[ " $* " == *"console.log(s.size)"* ]]; then
   dbPath=""
   for a in "$@"; do
@@ -364,6 +381,9 @@ exit 0
   // the committed baseline — no diff, no commit, no artifact change.
   writeShim(sandbox.bin, 'node', `#!/bin/bash
 echo "node $*" >> "$TRACE_FILE"
+if [[ " $* " == *"MISMATCH"* ]]; then
+  exec ${REAL_NODE} "$@"
+fi
 if [[ " $* " == *"console.log(s.size)"* ]]; then
   dbPath=""
   for a in "$@"; do
@@ -411,4 +431,51 @@ exit 0
   }
 }
 
-console.log('DIC-1219/DIC-1321 scheduler dirty-precondition + coverage-gate + no-op regression checks passed');
+// ─── Case G: clean worktree but DIVERGENT native asset — DIC-1334 gate ──────
+// (mutation-sensitive regression: this must fail before the CI-harness fix in
+// this PR — the parityOk() `node -e` invocation was silently swallowed by the
+// node shim, so the gate never really ran real parity checks under test — and
+// must pass after it, proving the harness now genuinely exercises parityOk().)
+// Seed a committed public/data/database.json that has already gone stale
+// relative to the canonical baseline (missing one previously-priced
+// cardNumber), then let build-database rebuild the SAME 2-priced canonical as
+// every other happy-path case. The canonical/native parity gate must detect
+// the divergence and fail closed — never push a divergent pair.
+{
+  const sandbox = makeSandbox();
+  const staleNative = {
+    lastUpdated: '2026-01-01T00:00:00.000Z',
+    totalCards: 3,
+    cards: {
+      'hSMP-001_hSMP_C': { id: 'hSMP-001_hSMP_C', cardNumber: 'hSMP-001', sourceProduct: 'hSMP', rarity: 'C', sellPrice: 500 },
+      // hSMP-002 (priced 600 in canonical) is missing here — a stale/drifted
+      // native export that never picked up the second priced card.
+      'hSMP-003_hSMP_C': { id: 'hSMP-003_hSMP_C', cardNumber: 'hSMP-003', sourceProduct: 'hSMP', rarity: 'C', sellPrice: null },
+    },
+  };
+  fs.writeFileSync(path.join(sandbox.repo, 'public', 'data', 'database.json'), `${JSON.stringify(staleNative)}\n`);
+  // Commit the drift so the worktree stays clean (in-place dispatch path) —
+  // this case targets the parity gate, not the dirty-worktree handoff.
+  execSync(`${REAL_GIT} add public/data/database.json`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "stale native drift"`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+  try {
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(
+      status,
+      1,
+      `divergent canonical/native parity must fail the scheduler (fail-closed), not exit 0; got ${status}`,
+    );
+    assert.match(
+      log,
+      /canonical\/native parity gate FAILED/,
+      'divergent parity must record the parity-gate FAILED reason in the scheduler log',
+    );
+    assert.equal(someTraced(lines, 'HEAD:main'), false, 'divergent parity must never push HEAD:main');
+    assert.equal(someTraced(lines, 'HEAD:bot/scrape'), false, 'divergent parity must never push an isolated artifact branch either');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321/DIC-1334 scheduler dirty-precondition + coverage-gate + no-op + parity regression checks passed');
