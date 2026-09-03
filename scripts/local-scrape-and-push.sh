@@ -258,6 +258,11 @@ if [ -n "$DIRTY_STATUS" ]; then
   fi
   trap 'git worktree remove --force "$ISOLATED_DIR" >> "$LOG_FILE" 2>&1 || true; rm -rf "$LOCK_FILE"' EXIT
 
+  # DIC-1321 (Mac-Codex CR DIC-1328): record the starting SHA so we can detect
+  # a no-op pipeline that created no new artifact commit. Pushing the unchanged
+  # origin/main baseline to bot/scrape/<date> is NOT a valid handoff.
+  ISOLATED_START_SHA=$(git -C "$ISOLATED_DIR" rev-parse HEAD)
+
   if ! runPipeline "$ISOLATED_DIR" "chore: update database $(date +%Y-%m-%d) (isolated)" isolated; then
     echo "[$(date)] ❌ isolated pipeline failed — sending alert, cron reports failure" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
@@ -270,8 +275,14 @@ if [ -n "$DIRTY_STATUS" ]; then
   # DIC-1321 (Mac-Codex CR DIC-1326): this handoff must FAIL CLOSED — a push or
   # a missing artifact commit must never end in "Done"/exit 0.
   ISOLATED_BRANCH="${ISOLATED_BRANCH_PREFIX}/$(date +%Y-%m-%d)"
-  if ! git -C "$ISOLATED_DIR" rev-parse --verify "HEAD^{commit}" >/dev/null 2>&1; then
-    echo "[$(date)] ❌ isolated handoff: no artifact commit in worktree HEAD; cron fails" >> "$LOG_FILE"
+  ISOLATED_END_SHA=$(git -C "$ISOLATED_DIR" rev-parse HEAD 2>/dev/null || true)
+  if [ -z "$ISOLATED_END_SHA" ]; then
+    echo "[$(date)] ❌ isolated handoff: no commit at all in worktree HEAD; cron fails" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if [ "$ISOLATED_START_SHA" = "$ISOLATED_END_SHA" ]; then
+    echo "[$(date)] ❌ isolated handoff: pipeline was a no-op (HEAD unchanged at $ISOLATED_END_SHA); cron fails — must never push unchanged baseline" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi

@@ -95,6 +95,33 @@ function makeSandbox() {
   fs.writeFileSync(path.join(repo, 'data', 'database.json'), `${JSON.stringify(baseline)}\n`);
   fs.writeFileSync(path.join(repo, 'scripts', 'local-scrape-and-push.sh'), fs.readFileSync(REAL_PIPELINE));
   fs.chmodSync(path.join(repo, 'scripts', 'local-scrape-and-push.sh'), 0o755);
+  // Commit placeholder files for every scraper-managed path so the isolated
+  // pipeline's `git add $EXISTING_DATA` (which references data/images/,
+  // data/official/, public/data/database.json, docs/audits/..., etc.) NEVER
+  // fails on a missing pathspec. In production all these paths exist in the
+  // repo; the sandbox baseline must mirror that, or git add is atomic-fail and
+  // no real artifact commit is ever created — which is exactly the no-op
+  // condition Case F guards against, but which must NOT be the state of the
+  // happy-path cases B/C.
+  const managedPlaceholders = [
+    'data/images/.gitkeep',
+    'data/official/.gitkeep',
+    'data/price-history/placeholder.json',
+    'data/yt-subscribers/placeholder.json',
+    'data/news-sentiment/placeholder.json',
+    'data/trends/placeholder.json',
+    'data/buy-prices/placeholder.json',
+    'data/series-names.json',
+    'data/yt-stats-history.json',
+    'public/data/database.json',
+    'docs/audits/official-catalog-audit.json',
+    'docs/audits/official-production-lag-state.json',
+  ];
+  for (const rel of managedPlaceholders) {
+    const abs = path.join(repo, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, '{}');
+  }
   execSync(`${REAL_GIT} add -A`, { cwd: repo });
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m baseline`, { cwd: repo });
   execSync(`${REAL_GIT} remote add origin ${remote}`, { cwd: repo });
@@ -312,4 +339,57 @@ exit 0
   }
 }
 
-console.log('DIC-1219/DIC-1321 scheduler dirty-precondition + coverage-gate regression checks passed');
+// ─── Case F: red-before-green no-op (Mac-Codex CR DIC-1328): dirty worktree
+//        where the pipeline produces IDENTICAL data to the baseline (no data
+//        change → runPipeline skips commit → isolated worktree HEAD is unchanged
+//        from the starting SHA). The scheduler MUST exit 1, report FAILED, and
+//        NEVER push the unchanged origin/main baseline to bot/scrape/<date>.
+{
+  const sandbox = makeSandbox();
+  const residue = path.join(sandbox.repo, 'data', 'price-history', 'hFOO-003_hBAR_C.json');
+  fs.mkdirSync(path.dirname(residue), { recursive: true });
+  fs.writeFileSync(residue, '{}');
+  // Override the node shim so build-database produces EXACTLY the same data as
+  // the committed baseline — no diff, no commit, no artifact change.
+  writeShim(sandbox.bin, 'node', `#!/bin/bash
+echo "node $*" >> "$TRACE_FILE"
+if [[ " $* " == *"console.log(s.size)"* ]]; then
+  dbPath=""
+  for a in "$@"; do
+    if [[ "$a" == *.json ]]; then dbPath="$a"; break; fi
+  done
+  [ -n "$dbPath" ] && [ -f "$dbPath" ] && ${REAL_NODE} "$COUNT_HELPER_PATH" "$dbPath"
+  exit 0
+fi
+if [[ " $* " == *"build-database.js"* ]]; then
+  cat > "$(pwd)/data/database.json" <<'EOF'
+{"lastUpdated":"2026-01-01T00:00:00.000Z","totalCards":3,"cards":{"hSMP-001_hSMP_C":{"id":"hSMP-001_hSMP_C","cardNumber":"hSMP-001","sourceProduct":"hSMP","rarity":"C","sellPrice":500},"hSMP-002_hSMP_C":{"id":"hSMP-002_hSMP_C","cardNumber":"hSMP-002","sourceProduct":"hSMP","rarity":"C","sellPrice":600},"hSMP-003_hSMP_C":{"id":"hSMP-003_hSMP_C","cardNumber":"hSMP-003","sourceProduct":"hSMP","rarity":"C","sellPrice":null}}}
+EOF
+fi
+exit 0
+`);
+  try {
+    const { status, lines } = runSandbox(sandbox);
+    // Pipeline was a no-op: identical data → no commit → scheduler must fail.
+    assert.equal(
+      status,
+      1,
+      `no-op dirty-worktree pipeline must fail (exit 1) — must never push unchanged baseline; got ${status}`,
+    );
+    // Must NEVER push to bot/scrape or HEAD:main when there is no artifact.
+    assert.equal(
+      someTraced(lines, 'HEAD:bot/scrape'),
+      false,
+      'no-op pipeline must not push an unchanged baseline to bot/scrape',
+    );
+    assert.equal(
+      someTraced(lines, 'HEAD:main'),
+      false,
+      'no-op pipeline must never push HEAD:main',
+    );
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321 scheduler dirty-precondition + coverage-gate + no-op regression checks passed');
