@@ -182,6 +182,15 @@ exec ${REAL_GIT} "$@"
   return { dir, bin, remote, repo, trace };
 }
 
+// The scheduler writes its log to $HOME/.hermes/logs/huntercard-scrape-<date>.log.
+// HOME is pinned to the sandbox dir, so the log lands there. The script computes
+// the date itself with `date +%Y%m%d`; we resolve the same path so consumers can
+// assert on the exact cron log (not just the shell exit code / push trace).
+function schedulerLogPath(sandbox) {
+  const ymd = execSync('date +%Y%m%d', { encoding: 'utf-8' }).trim();
+  return path.join(sandbox.dir, '.hermes', 'logs', `huntercard-scrape-${ymd}.log`);
+}
+
 function runSandbox(sandbox, extraEnv = {}) {
   const { bin, repo, trace, dir } = sandbox;
   const result = spawnSync('bash', [path.join(repo, 'scripts', 'local-scrape-and-push.sh')], {
@@ -198,7 +207,9 @@ function runSandbox(sandbox, extraEnv = {}) {
     encoding: 'utf-8',
   });
   const lines = fs.readFileSync(trace, 'utf-8').split('\n').filter(Boolean);
-  return { status: result.status, lines };
+  const logPath = schedulerLogPath(sandbox);
+  const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8') : '';
+  return { status: result.status, lines, log };
 }
 
 function cleanup(sandbox) {
@@ -369,12 +380,20 @@ fi
 exit 0
 `);
   try {
-    const { status, lines } = runSandbox(sandbox);
+    const { status, lines, log } = runSandbox(sandbox);
     // Pipeline was a no-op: identical data → no commit → scheduler must fail.
     assert.equal(
       status,
       1,
       `no-op dirty-worktree pipeline must fail (exit 1) — must never push unchanged baseline; got ${status}`,
+    );
+    // The cron must observe the exact FAILED marker in the scheduler's own log,
+    // not just a non-zero shell exit. A mutation that drops the marker (or
+    // flips the script to "Done") must fail this case (Mac-Codex CR DIC-1329).
+    assert.match(
+      log,
+      /HUNTERCARD_SCRAPE_STATUS=FAILED/,
+      'no-op dirty-worktree pipeline must record HUNTERCARD_SCRAPE_STATUS=FAILED in the scheduler log, not report success',
     );
     // Must NEVER push to bot/scrape or HEAD:main when there is no artifact.
     assert.equal(
