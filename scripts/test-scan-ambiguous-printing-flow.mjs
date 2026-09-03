@@ -34,14 +34,19 @@ const ROOT = path.resolve(__dirname, '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const shippedDb = JSON.parse(read('public/data/database.json'));
+// Swappable per case so the gallery section can drive the real recognition
+// endpoint into its cardNumber-only response.
+let apiResponse = null;
 globalThis.fetch = async (url) => {
   if (String(url).includes('/data/database.json')) {
     return { ok: true, status: 200, json: async () => shippedDb };
   }
+  if (apiResponse) return { ok: true, status: 200, json: async () => apiResponse };
   return { ok: false, status: 500, json: async () => ({ success: false }) };
 };
 
-const { recognizeCardFromOcr, loadAllCards } = await import('../src/services/cardRecognition.ts');
+const { recognizeCardFromOcr, recognizeCardFromImage, loadAllCards } =
+  await import('../src/services/cardRecognition.ts');
 const { runNativeCameraScan, runWebCameraScan, isAmbiguousPrinting } =
   await import('../src/services/scanRecognitionFlow.ts');
 
@@ -155,6 +160,86 @@ check('found a single-printing control with a price', !!uniqueRow);
     committed[0]?.args[0]?.sellPrice === uniqueRow.sellPrice,
     `got ${committed[0]?.args[0]?.sellPrice}, own ${uniqueRow.sellPrice}`);
   check('control: does NOT divert to the candidate picker', ui.pickerShown().length === 0);
+}
+
+// ── 3b. Gallery path: the branch that bypassed every guard ──────────────────
+// pickFromGallery ran `galleryVisionResult.success && card` -> commitCard ahead
+// of its own lowConfidence check, so it auto-added the placeholder even after
+// the camera flows were fixed. It now routes through handleRecognized.
+//
+// The branch lives in a React closure this harness cannot invoke, so it is
+// covered in two executable-plus-structural halves: the real
+// recognizeCardFromImage call that feeds it, and an invariant over every
+// commitCard site in the screen.
+{
+  apiResponse = { success: true, cardNumber: AMBIGUOUS };
+  const galleryVisionResult = await recognizeCardFromImage('data:image/png;base64,iVBORw0KGgo=');
+  apiResponse = null;
+
+  check('gallery: recognizeCardFromImage really returns the ambiguous result',
+    galleryVisionResult.success === true && !!galleryVisionResult.card);
+  check('gallery: that result is classified as an unresolved printing',
+    isAmbiguousPrinting(galleryVisionResult) === true);
+  check('gallery: the placeholder it would have committed carries no price',
+    galleryVisionResult.card?.sellPrice == null, `got ${galleryVisionResult.card?.sellPrice}`);
+  check('gallery: it offers every compound printing id as a candidate',
+    (galleryVisionResult.candidates?.length ?? 0) === rows.length
+      && new Set(galleryVisionResult.candidates.map((c) => c.card.id)).size === rows.length,
+    `got ${galleryVisionResult.candidates?.length}`);
+  check('gallery: its confidence WOULD have satisfied the old success branch',
+    galleryVisionResult.success === true,
+    'if this stops being success-shaped the bypass no longer reproduces');
+
+  const screen = read('src/screens/ScanScreen.tsx');
+  const code = screen.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const branch = code.slice(code.indexOf('galleryVisionResult.success'), code.indexOf('galleryVisionResult.lowConfidence'));
+  check('gallery: the success branch no longer calls commitCard directly',
+    !branch.includes('commitCard('), branch.trim().slice(0, 160));
+  check('gallery: the success branch routes through handleRecognized',
+    /handleRecognized\(/.test(branch));
+  check('gallery: and classifies the result on the way',
+    /isAmbiguousPrinting\(galleryVisionResult\)/.test(branch));
+}
+
+// ── 3c. Class invariant: no unclassified commit site can be added back ──────
+// Three separate bypasses of the same shape have now been reported. Rather than
+// pin a fourth instance, pin the rule: a card may only be committed from the
+// single decision point, or from a handler where the USER already chose.
+{
+  const screen = read('src/screens/ScanScreen.tsx');
+  const code = screen.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const lines = code.split('\n');
+  const commitLines = lines
+    .map((l, i) => ({ l, i }))
+    .filter(({ l }) => /commitCard\(/.test(l) && !/const commitCard/.test(l));
+
+  // Which enclosing function each commit belongs to, by scanning upward for the
+  // nearest declaration.
+  const owners = commitLines.map(({ i }) => {
+    for (let j = i; j >= 0; j--) {
+      const m = lines[j].match(/(?:const|function)\s+([A-Za-z0-9_]+)\s*[=(]/);
+      if (m) return m[1];
+      if (/onVisionRecognized:/.test(lines[j])) return 'onVisionRecognized';
+    }
+    return '<unknown>';
+  });
+
+  // handleRecognized  — the single decision point, guarded above the auto-add.
+  // handleConfirmCandidate / handleSelectSuggestion — the user already picked.
+  // onVisionRecognized — flow adapter; the flow classifies before calling it.
+  const ALLOWED = new Set([
+    'handleRecognized',
+    'handleConfirmCandidate',
+    'handleSelectSuggestion',
+    'onVisionRecognized',
+  ]);
+  const rogue = owners.filter((o) => !ALLOWED.has(o));
+  check(
+    `every commitCard site sits in a decision point or an explicit user choice (${owners.length} sites)`,
+    rogue.length === 0,
+    `unaccounted: ${JSON.stringify(rogue)} — a new commit path must go through handleRecognized`,
+  );
+  console.log(`  … commitCard owners: ${JSON.stringify(owners)}`);
 }
 
 // ── 4. The SEC protection reviewed earlier is still in force ────────────────

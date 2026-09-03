@@ -643,18 +643,18 @@ export default function ScanScreen({ navigation }: any) {
         if (galleryVisionResult.success && galleryVisionResult.card) {
           setIsProcessingOCR(false);
           setIsScanning(false);
-          if (commitCard(galleryVisionResult.card)) {
-            setResultCard({
-              visible: true,
-              card: galleryVisionResult.card,
-              confidence: galleryVisionResult.confidence ?? 0.9,
-            });
-            setSearchResults([]);
-            setSearchError(null);
-            setSuggestions([]);
-            setCapturedPhotoUri(null);
-            resetAutoScan();
-          }
+          // Route through handleRecognized rather than committing here. This
+          // branch used to call commitCard directly, ahead of its own
+          // lowConfidence check below, so an unresolved printing was auto-added
+          // before anything could offer the picker (DIC-1325). handleRecognized
+          // is the single place that decides commit-vs-confirm, and it already
+          // clears the search/suggestion state this block used to reset by hand.
+          handleRecognized(
+            galleryVisionResult.card,
+            galleryVisionResult.confidence ?? 0.9,
+            galleryVisionResult.candidates,
+            isAmbiguousPrinting(galleryVisionResult),
+          );
           return;
         }
         if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
