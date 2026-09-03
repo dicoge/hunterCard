@@ -66,11 +66,44 @@ console.log(
   `  … catalog: ${cards.length} cards, ${withSellPrice.length} with sellPrice, ${withPrices.length} with prices[]`,
 );
 
-// A floor, not the exact number: the catalog is resynced by a bot, so pinning
-// an exact count would make routine price movement fail CI. The floor is far
-// below current coverage (~1.5k of ~3.6k) and far above zero, so it catches a
-// collapse without churning on normal drift.
-const COVERAGE_FLOOR = 500;
+// ── Erosion ratchet, not a loose floor ───────────────────────────────────────
+//
+// The first version of this test used a floor of 500, chosen only to be "far
+// above zero". PM's evidence (DIC-1319 thread) showed that is useless: price
+// coverage has been eroding steadily and a floor of 500 sails straight through
+// it. Measured from the committed catalog:
+//
+//   e8322c8003  2026-08-26   2,011 priced rows / 2,318 cards   1,179 priced cardNumbers
+//   fbe0a13821  2026-08-29   1,885 priced rows / 3,622 cards   1,171 priced cardNumbers
+//   f156bb7cf   2026-09-02   1,547 priced rows / 3,622 cards   1,124 priced cardNumbers  ← v21 shipped this
+//   HEAD        2026-09-03   1,547 priced rows / 3,622 cards   1,124 priced cardNumbers
+//
+// 55 cardNumbers that were priced on 08-26 are now entirely unpriced. Part of
+// that is deliberate (DIC-1227 gated price preservation on yuyu-provenance
+// match, filtering unproven rows); part is a stalled scrape. Recovering it is
+// DIC-1321's job, not this test's. This test's job is to stop the SHIPPED
+// artifact degrading further while that recovery is in flight.
+//
+// So these are STATIC baselines pinned to today's known-degraded state, not a
+// moving average — a moving baseline would re-bless each day's erosion. They
+// are a ceiling on damage, NOT a statement that this coverage is healthy: it is
+// not. When DIC-1321 lands a recovered artifact, RAISE these deliberately in
+// the same PR. Coverage going UP never fails.
+//
+// The small tolerance absorbs genuine churn — a listing selling out legitimately
+// drops a row — without absorbing a purge.
+const PRICED_ROWS_BASELINE = 1547;
+const PRICED_CARDNUMBERS_BASELINE = 1124;
+const EROSION_TOLERANCE = 0.02; // 2%
+const rowsFloor = Math.floor(PRICED_ROWS_BASELINE * (1 - EROSION_TOLERANCE));
+const numbersFloor = Math.floor(PRICED_CARDNUMBERS_BASELINE * (1 - EROSION_TOLERANCE));
+
+// A cardNumber is the identity a player reads off the card in hand. Counting
+// distinct priced cardNumbers — not just rows — is what catches "this card has
+// no price at all any more", which is the failure a scanning user actually hits.
+const pricedCardNumbers = new Set(withSellPrice.map((c) => c.cardNumber).filter(Boolean));
+
+console.log(`  … priced cardNumbers: ${pricedCardNumbers.size} (baseline ${PRICED_CARDNUMBERS_BASELINE}, floor ${numbersFloor})`);
 
 check(
   'the shipped catalog is not empty',
@@ -78,14 +111,19 @@ check(
   `got ${cards.length} cards`,
 );
 check(
-  `at least ${COVERAGE_FLOOR} cards carry a positive sellPrice (v21 shipped-blank guard)`,
-  withSellPrice.length >= COVERAGE_FLOOR,
-  `got ${withSellPrice.length}`,
+  `priced rows have not eroded below ${rowsFloor} (baseline ${PRICED_ROWS_BASELINE})`,
+  withSellPrice.length >= rowsFloor,
+  `got ${withSellPrice.length} — coverage dropped; do not raise the baseline to make this pass, find what removed the prices`,
 );
 check(
-  `at least ${COVERAGE_FLOOR} cards carry a non-empty prices[] (per-printing rows)`,
-  withPrices.length >= COVERAGE_FLOOR,
+  `cards with a non-empty prices[] have not eroded below ${rowsFloor}`,
+  withPrices.length >= rowsFloor,
   `got ${withPrices.length}`,
+);
+check(
+  `distinct priced cardNumbers have not eroded below ${numbersFloor} (baseline ${PRICED_CARDNUMBERS_BASELINE})`,
+  pricedCardNumbers.size >= numbersFloor,
+  `got ${pricedCardNumbers.size} — some card numbers lost every priced printing`,
 );
 
 // ── Per-printing integrity ───────────────────────────────────────────────────
@@ -104,7 +142,7 @@ check(
   const pricedRows = rows.filter(({ p }) => typeof p.sellPrice === 'number' && p.sellPrice > 0);
   check(
     'priced printing rows exist in bulk, not as a handful of stragglers',
-    pricedRows.length >= COVERAGE_FLOOR,
+    pricedRows.length >= rowsFloor,
     `got ${pricedRows.length}`,
   );
 
@@ -146,7 +184,33 @@ check(
   const blankedPriced = blanked.filter((c) => typeof c.sellPrice === 'number' && c.sellPrice > 0);
   check(
     'mutation: a price-blanked catalog would fail the sellPrice coverage floor',
-    blankedPriced.length < COVERAGE_FLOOR && blanked.length === cards.length,
+    blankedPriced.length < rowsFloor && blanked.length === cards.length,
+  );
+
+  // The defect the ratchet exists for is NOT a total blanking — it is quiet
+  // erosion. Replay the real 08-29 → 09-02 drop (1,885 → 1,547 priced rows,
+  // an 18% loss) against today's catalog and prove the ratchet trips on it.
+  // The old floor of 500 passed this, which is exactly why it was replaced.
+  const erodedRows = Math.round(withSellPrice.length * (1547 / 1885));
+  check(
+    'mutation: replaying the observed 08-29 → 09-02 erosion (-18% priced rows) trips the ratchet',
+    erodedRows < rowsFloor,
+    `eroded to ${erodedRows}, floor ${rowsFloor}`,
+  );
+  check(
+    'mutation: the retired floor of 500 would NOT have caught that erosion',
+    erodedRows >= 500,
+    `eroded to ${erodedRows}`,
+  );
+
+  // Losing every priced printing for a set of cardNumbers — the 55-cardNumber
+  // regression PM measured — must trip the cardNumber ratchet too.
+  const doomed = new Set([...pricedCardNumbers].slice(0, 60));
+  const survivors = new Set([...pricedCardNumbers].filter((n) => !doomed.has(n)));
+  check(
+    'mutation: dropping 60 priced cardNumbers trips the cardNumber ratchet',
+    survivors.size < numbersFloor,
+    `survivors ${survivors.size}, floor ${numbersFloor}`,
   );
 
   // And the naive-iteration trap that reports zero on a healthy catalog: keys,
