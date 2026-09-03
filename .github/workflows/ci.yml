@@ -97,6 +97,9 @@ jobs:
       - name: Verify native Google Sign-In logout / account switch (DIC-665)
         run: npm run test:google-signout
 
+      - name: Verify native Android Google Sign-In error-code mapping (DIC-1318)
+        run: npm run test:google-native-android
+
       - name: Verify server-side ID-token single-use replay protection (DIC-665)
         run: npm run test:token-replay
 

@@ -45,6 +45,24 @@ Client ID 已由 PM 存於 GitHub secrets（Google Cloud project `holohunter-505
 
 只有在後端 `/api/auth/login` 回 2xx 時，`authStore` 才會標記為已登入。
 
+### 診斷代碼（DIC-1318）
+
+`v21 Closed Test` 真機回報「Google 帳號登入無法完成」時，先前的 handler 把每一種非取消的 `signIn()` 失敗都收斂成同一個 `google_failed` banner，Play App Signing SHA-1 未授權（release 特有症狀）與網路瞬斷在畫面上長得一樣。現在每一種 SDK 狀態都會保留為一個獨立、可截圖回報的 machine code，`friendlyAuthErrorMessage` 也各給不同文案。回歸鎖在 `scripts/test-google-native-android.cjs` + `scripts/test-auth-error-map.cjs`。
+
+| SDK code（v16 classic） | AuthError.code | 使用者文案（節錄） | 常見成因 |
+|-------------------------|----------------|--------------------|----------|
+| `DEVELOPER_ERROR` / `10` | `google_developer_error` | 「Google 登入失敗（google_developer_error）：此版本簽章可能未在登入服務授權。」 | **本卡最可能的成因**：Play App Signing 憑證 SHA-1 尚未登入 Google Cloud Console 的 Android OAuth client（下節「SHA-1 / Play App Signing」）；package name 與 client 不符；或 client 被停用。 |
+| `NETWORK_ERROR` | `network_error` | 「網路連線異常，請檢查網路後再試。」 | 網路瞬斷 / Play services 不可及。 |
+| `IN_PROGRESS` | `google_in_progress` | 「目前已有 Google 登入進行中，請稍候或關閉重試。」 | UI 連點兩下、或前一次 `signIn()` 未結束就再次點擊。 |
+| `INTERNAL_ERROR` / `8` | `google_internal_error` | 「Google 登入服務暫時異常（google_internal_error），請稍後再試。」 | Google Play services 內部錯誤，通常重試即可。 |
+| `SIGN_IN_REQUIRED` / `4` | `google_sign_in_required` | 「Google 登入尚未就緒，請再點一次登入按鈕。」 | 帳號未就緒 / 需要互動流程。 |
+| `PLAY_SERVICES_NOT_AVAILABLE` | `play_services_unavailable` | 「此裝置的 Google Play 服務不可用或需更新，無法使用 Google 登入。」 | Play services 缺失或版本過舊。 |
+| 其他（未列舉） | `google_failed` | 「Google 登入失敗，請再試一次。」 | 通用 fallback，維持先前行為。 |
+
+使用者截圖回報時看到 `google_developer_error`，優先檢查 **Play App Signing SHA-1** 是否已登入 `com.dicoge.holohunter` 的 Android OAuth client；`google_internal_error` 幾乎都是重試即可解決；`network_error` 交給使用者自行檢查網路。
+
+**機密安全**：AuthError.code 是編譯期字串常量，`authErrorMessages.ts` 只 whitelist 這些 code 對應到固定文案，`friendlyAuthErrorMessage` 從不回顯 raw provider message，因此帳號 email / id_token 不會流到畫面。`scripts/test-auth-error-map.cjs::testNeverEchoesRawMessage` 鎖這條線。
+
 ## 建置時注入 Web client id（DIC-920 blocker 1）
 
 runtime 的 `client_id_missing` 之所以會發生，是因為 build 沒把 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`（`EXPO_PUBLIC_*` 於打包時 inline）帶進 App。修正：

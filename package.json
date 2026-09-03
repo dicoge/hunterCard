@@ -38,6 +38,7 @@
     "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",
     "test:native-scan-no-upload": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-native-scan-no-image-upload.mjs",
     "test:google-signout": "node scripts/test-google-signout.cjs",
+    "test:google-native-android": "node scripts/test-google-native-android.cjs",
     "test:token-replay": "node scripts/test-token-replay.cjs",
     "test:scan-dedup": "node --experimental-strip-types scripts/verify-scan-dedup.mjs",
     "test:buy-price": "node scripts/verify-buy-price-alignment.mjs",
