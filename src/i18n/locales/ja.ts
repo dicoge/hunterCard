@@ -356,6 +356,8 @@ export const ja: Record<keyof typeof zh, string> = {
   card_detail_no_data: 'データなし',
   card_detail_variant_hint_spread: '👇 下の「市場データ」で版を選ぶと、価格差と推移も切り替わります',
   card_detail_variant_hint: '👇 下の「市場データ」で版を選ぶと、販売価格も切り替わります',
+  // Store MVP 版：隠されている「市場データ」を指してはいけない (DIC-1319)。
+  card_detail_variant_hint_store: 'このカードの各版の販売価格です。お手元の版名とレアリティで見比べてください',
   card_detail_approx_price: '💰 約 {{price}}（{{currency}}）',
   card_detail_live_price: '🔍 遊々亭の最新価格を見る →',
   card_detail_type_oshi: '推しホロメン',

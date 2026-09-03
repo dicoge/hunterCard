@@ -205,8 +205,12 @@ export default function ScanResultCard({
         </View>
 
         {/* 掃到的這張卡自己的售價 — Store MVP 也顯示 (DIC-1319)。掃描→看價是
-            產品主路徑；這裡只列 card.prices（同一張卡的各版本標價）或單一
-            sellPrice，不做跨系列比價。 */}
+            產品主路徑。這裡列的是這筆 catalog entry 自己的 card.prices，不會去
+            抓別筆 entry 的價格；但要注意 prices[] 是 yuyu-tei 對同一張卡號的
+            掛牌列表，實務上可能同時含普卡／パラレル／箔押し，甚至跨收錄系列，
+            價差可以到三個數量級。也就是說這一段沒有「跨版本借價」，卻也還沒告訴
+            使用者哪一列才是手上那一版——版本確認仍由候選選擇器與 session 的版本
+            chip 負責 (見 DIC-1319 交付說明的待決事項)。 */}
         {FEATURES.sellPrice && (
           <View style={styles.pricesSection} testID="scan-result-prices">
             {uniquePrices ? (

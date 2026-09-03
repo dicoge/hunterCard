@@ -356,10 +356,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
                 </View>
                 );
               })}
-              <Text style={styles.variantHint}>
-                {FEATURES.priceSpread
-                  ? t('card_detail_variant_hint_spread')
-                  : t('card_detail_variant_hint')}
+              {/* Both non-store hints tell the user to pick a version down in
+                  「市場數據」, but MarketDataPanel is gated on FEATURES.marketData.
+                  Since DIC-1319 un-gated this list, the store build would render
+                  an instruction pointing at a section that is not there — so the
+                  hint that names a gated section is itself gated. */}
+              <Text style={styles.variantHint} testID="card-detail-variant-hint">
+                {!FEATURES.marketData
+                  ? t('card_detail_variant_hint_store')
+                  : FEATURES.priceSpread
+                    ? t('card_detail_variant_hint_spread')
+                    : t('card_detail_variant_hint')}
               </Text>
             </View>
           ) : hasActualPrice ? (

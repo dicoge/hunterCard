@@ -119,6 +119,16 @@ check(
   /\{FEATURES\.externalPriceLinks\s*&&\s*\(\s*<TouchableOpacity[^>]*styles\.checkPriceBtn/s.test(detail),
 );
 check(
+  'CardDetailScreen: multi-printing hint uses the store variant when marketData is off (DIC-1319 CR)',
+  /!FEATURES\.marketData\s*\?\s*t\('card_detail_variant_hint_store'\)/.test(detail),
+);
+check(
+  'CardDetailScreen: neither market-data-worded hint can render without FEATURES.marketData',
+  // Both original hints tell the user to pick a version in 「市場數據」, which is
+  // gated. They may only be reached from the FEATURES.marketData branch.
+  /!FEATURES\.marketData[\s\S]{0,220}?card_detail_variant_hint_spread[\s\S]{0,120}?card_detail_variant_hint'/.test(detail),
+);
+check(
   'CardDetailScreen: MarketDataPanel invocation wrapped in {FEATURES.marketData && ...}',
   /\{FEATURES\.marketData\s*&&\s*<MarketDataPanel/.test(detail),
 );
@@ -308,6 +318,28 @@ for (const key of [
     check(
       `ja ${key} does not claim お気に入り / アラート / 価格 / 推移 (store build compliance)`,
       !/お気に入り|アラート|価格|推移/.test(jaText),
+      `ja text = "${jaText}"`,
+    );
+  }
+}
+
+{
+  const key = 'card_detail_variant_hint_store';
+  const zhText = extractStoreKey(zh, key);
+  const jaText = extractStoreKey(ja, key);
+  check(`zh locale defines ${key}`, !!zhText);
+  check(`ja locale defines ${key}`, !!jaText);
+  if (zhText) {
+    check(
+      `zh ${key} does not claim 收藏 / 提醒 / 趨勢 / 差價, nor name the gated 市場數據 section`,
+      !/收藏|提醒|趨勢|差價|市場數據/.test(zhText),
+      `zh text = "${zhText}"`,
+    );
+  }
+  if (jaText) {
+    check(
+      `ja ${key} does not claim お気に入り / アラート / 推移 / 価格差, nor name the gated 市場データ section`,
+      !/お気に入り|アラート|推移|価格差|市場データ/.test(jaText),
       `ja text = "${jaText}"`,
     );
   }

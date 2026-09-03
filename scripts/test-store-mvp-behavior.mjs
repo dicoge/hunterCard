@@ -214,6 +214,27 @@ check(
 );
 check('STORE_MVP=1: DeckEditor retains missing-card number for deck-editing help', on.deckEditor.hasCardNumber === true);
 
+// DIC-1319 CR: a store build must never instruct the user to use a section it
+// hides. The multi-printing price list renders under FEATURES.sellPrice, but
+// both of its original hints say "pick a version below in 「市場數據」" — and
+// MarketDataPanel is gated on FEATURES.marketData. The probe fixture carries two
+// priced printings specifically so this branch is exercised.
+check(
+  'STORE_MVP=1: multi-printing price list renders its hint',
+  on.detail.hasVariantHint === true,
+  `got ${JSON.stringify(on.detail.hasVariantHint)}`,
+);
+check(
+  'STORE_MVP=1: the hint uses the store variant, which names no gated section',
+  on.detail.hasStoreVariantHint === true && on.detail.hasMarketDataVariantHint === false,
+  `store=${on.detail.hasStoreVariantHint} marketData=${on.detail.hasMarketDataVariantHint}`,
+);
+check(
+  'STORE_MVP=1: the rendered card detail never mentions 市場數據 at all',
+  on.detail.namesMarketDataSection === false,
+  `got ${JSON.stringify(on.detail.namesMarketDataSection)}`,
+);
+
 // DIC-1319: the store build MUST show the sale price of the printing in hand.
 // These are the assertions that would have caught the v21 closed-test defect.
 for (const [surface, label, key] of SELL_PRICE_MARKERS) {
@@ -277,6 +298,16 @@ check(
 );
 check('STORE_MVP=0: DeckEditor retains missing-card number', off.deckEditor.hasCardNumber === true);
 
+check(
+  'STORE_MVP=0: the hint keeps its market-data wording, because that section is there',
+  off.detail.hasMarketDataVariantHint === true && off.detail.hasStoreVariantHint === false,
+  `store=${off.detail.hasStoreVariantHint} marketData=${off.detail.hasMarketDataVariantHint}`,
+);
+check(
+  'STORE_MVP=0: the multi-printing price list still renders its hint',
+  off.detail.hasVariantHint === true,
+);
+
 // The same sale-price surfaces stay visible on staging/dev — FEATURES.sellPrice
 // is profile-independent, so both probes must agree here.
 for (const [surface, label, key] of SELL_PRICE_MARKERS) {
@@ -339,6 +370,11 @@ for (const [surface, label, key] of SELL_PRICE_MARKERS) {
     on[surface][key] === true && off[surface][key] === true,
   );
 }
+check(
+  'STORE_MVP=1 vs =0: the variant hint wording swaps between store/market-data',
+  on.detail.hasStoreVariantHint !== off.detail.hasStoreVariantHint
+    && on.detail.hasMarketDataVariantHint !== off.detail.hasMarketDataVariantHint,
+);
 check(
   'STORE_MVP=1 vs =0: FEATURES.sellPrice does not flip with the profile',
   on.features.sellPrice === true && off.features.sellPrice === true,

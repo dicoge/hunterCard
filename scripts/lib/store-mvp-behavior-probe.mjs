@@ -131,6 +131,29 @@ try {
   process.stderr.write(`CardDetailScreen render failed: ${err?.stack || err}\n`);
   process.exit(2);
 }
+let multiPrintingDetailContainer;
+try {
+  const multiPrintingCard = {
+    ...sampleCard,
+    id: 'hBP04-009',
+    cardNumber: 'hBP04-009',
+    nameZh: '多版本測試卡',
+    prices: [
+      { name: 'ノーマル', sellPrice: 1200, rarity: 'R' },
+      { name: 'パラレル', sellPrice: 8800, rarity: 'SR' },
+    ],
+  };
+  multiPrintingDetailContainer = await renderElement(
+    React.createElement(CardDetailScreen, {
+      route: { params: { card: multiPrintingCard } },
+      navigation: mockNavigation,
+    }),
+  );
+} catch (err) {
+  process.stderr.write(`CardDetailScreen (multi-printing) render failed: ${err?.stack || err}\n`);
+  process.exit(2);
+}
+
 try {
   loginContainer = await renderElement(React.createElement(LoginScreen));
 } catch (err) {
@@ -397,6 +420,8 @@ try {
 const deckEditorHtml = deckEditorContainer.innerHTML;
 const deckEditorText = deckEditorContainer.textContent;
 
+const multiPrintingHtml = multiPrintingDetailContainer.innerHTML;
+const multiPrintingText = multiPrintingDetailContainer.textContent;
 const detailHtml = detailContainer.innerHTML;
 const detailText = detailContainer.textContent;
 const loginText = loginContainer.textContent;
@@ -429,6 +454,13 @@ const result = {
     // Retained surfaces (must be present in BOTH modes — regression guard)
     hasPriceSection: detailHtml.includes('card-detail-price-section'),                   // FEATURES.sellPrice (DIC-1319)
     hasPriceLikeText: containsPriceLike(detailText),                                     // FEATURES.sellPrice (DIC-1319)
+    // Multi-printing hint (DIC-1319). The list must render, and the copy must
+    // not point at 「市場數據」 unless that section is actually there.
+    hasVariantHint: multiPrintingHtml.includes('card-detail-variant-hint'),
+    hasStoreVariantHint: multiPrintingText.includes(zh.card_detail_variant_hint_store),
+    hasMarketDataVariantHint: multiPrintingText.includes(zh.card_detail_variant_hint)
+      || multiPrintingText.includes(zh.card_detail_variant_hint_spread),
+    namesMarketDataSection: multiPrintingText.includes(zh.card_detail_market_data),
     hasOfficialLink: detailText.includes(zh.card_detail_official_list),
     hasCardName: detailText.includes(sampleCard.nameZh),
     hasCardNumber: detailText.includes(sampleCard.cardNumber),
