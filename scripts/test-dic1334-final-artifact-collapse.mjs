@@ -195,84 +195,123 @@ try {
     console.log('  ✓ exact-printing provenance preserved (C/HR rows isolated)');
   }
 
-  // ── Case 4 (fail-closed): simulate a collapse-inducing build that the
-  // DIC-1334 audit must reject. We do this by fault-injecting a fixture that
-  // covers very few cardNumbers relative to the previous build AND by asserting
-  // the pipeline's priceCoverageOk gate (which compares against the recorded
-  // previous build) rejects it. The hermetic pipeline harness in
-  // test-scrape-pipeline-failfast.mjs already covers the missing-output gate;
-  // here we assert the build-database.js internal DIC-1334 audit throws when the
-  // final artifact's priced coverage drops below 50% of the scraped coverage.
-  // Construct a fixture where the yuyu-only fallback must produce a healthy
-  // count (green) OR a collapse (red) — but the AUDIT must fire if coverage
-  // collapses. We simulate the red condition directly via a tiny fixture: if a
-  // bug reintroduces the alreadyExists gate, a scrape of N cardNumbers with
-  // official entries but no match collapses and the audit must throw.
+  // ── Case 4 (DIC-1334/CR): strict exact-printing provenance for the
+  // yuyu-only fallback + fail-closed coverage. The prior revision of this test
+  // codified a flaw: it EXPECTED listings with an impossible rarity token (ZZZ)
+  // to be admitted as priced yuyu-only rows. Mac-Codex CR DIC-1343 flagged that
+  // the fallback validated only the FIRST entry's image product, then admitted
+  // the whole priceData array and picked the lowest scalar — publishing an
+  // unproven sibling/reprint price (a hBP03 cardNumber resolving ¥1 from a
+  // hBP07/C sibling). We replace that positive ZZZ expectation with:
+  //   4a. a mutation-sensitive NEGATIVE fixture (the CR's immutable repro) that
+  //       must FAIL CLOSED — no unproven sibling price may be published;
+  //   4b. an exact-source POSITIVE fixture that keeps coverage healthy; and
+  //   4c. a coverage-collapse fixture that must FAIL the build via the DIC-1334
+  //       coverage audit (fail-closed, no artifact).
+  const builderSrc = fs.readFileSync(path.join(repo, 'scripts/build-database.js'), 'utf8');
+
+  // ── 4a. Mutation-sensitive negative (CR P0 repro) ──
+  // hBP03-025 has multiple official printings (hBP03/C, hBP07/HR, ent07, hPR/P).
+  // A listing hBP03/ZZZ/500 can never prove to any exact printing (rarity ZZZ
+  // matches no official row), and a sibling hBP07/C/1 listing cannot prove to
+  // the hBP07/HR printing (rarity C ≠ HR) nor cross into hBP03. Both must be
+  // refused; before the CR fix the whole array was admitted and the lowest
+  // scalar (¥1 from the hBP07/C sibling) was published on an identity-less row.
   {
-    // Build a fixture where MANY cardNumbers have official entries whose rarity
-    // does NOT match the emitted listing. The old alreadyExists gate would
-    // discard all of them; the fixed gate keeps them (valid product provenance,
-    // mismatched exact print) as yuyu-only rows. Emit the SAME healthy-provenance
-    // listings for EVERY priced cardNumber (so the scrape is not "partial" and
-    // DIC-1321 preservation does not mask a collapse) with an impossible rarity
-    // token so the exact-print matcher rejects them against the official rows →
-    // every one must go to the yuyu-only fallback.
-    const collapseFixture = { prices: {}, totalCards: 0, seriesWithPrices: 1 };
+    const reproFixture = {
+      prices: {
+        'hBP03-025': [
+          { sellPrice: 500, rarity: 'ZZZ', name: 'hBP03-025(ZZZ)', sourceSeries: 'hbp03', yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp03/dic1334.jpg', imageVersion: 'hbp03', imageCid: 'dic1334', timestamp: '2026-09-03T00:00:00.000Z' },
+          // Sibling/reprint listing: product hBP07 (a DIFFERENT printing of
+          // hBP03-025), priced at ¥1. Must NOT feed a hBP03 container.
+          { sellPrice: 1, rarity: 'C', name: 'hBP03-025', sourceSeries: 'hbp07', yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp07/dic1334.jpg', imageVersion: 'hbp07', imageCid: 'dic1334', timestamp: '2026-09-03T00:00:00.000Z' },
+        ],
+      },
+      totalCards: 100,
+      seriesWithPrices: 1,
+    };
+    const reproPath = path.join(tmp, 'yuyu-dic1334-cr-repro.json');
+    fs.writeFileSync(reproPath, JSON.stringify(reproFixture, null, 2));
+    const reproBuild = spawnSync(process.execPath, ['scripts/build-database.js'], {
+      cwd: repo,
+      env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: reproPath, HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1' },
+      encoding: 'utf8',
+    });
+    const reproCards = JSON.parse(fs.readFileSync(dbPath, 'utf8')).cards;
+    const leaked = Object.values(reproCards).filter(
+      (c) => c.cardNumber === 'hBP03-025' && c.rarity === '' && c.series === '' && c.sellPrice === 1,
+    );
+    const anySiblingPrice = Object.values(reproCards).filter(
+      (c) => c.cardNumber === 'hBP03-025' && c.sellPrice === 1,
+    );
+    // The identity-less yuyu-only fallback row (the CR's original emission with
+    // sellPrice=1) must NOT exist. Pre-fix it did (repro exits 0 and emits
+    // hBP03-025/sellPrice=1 from the hBP07/C sibling); post-fix it must be
+    // rejected — fail-closed, no cardNumber-wide/sibling/cross-product fallback.
+    assert.equal(leaked.length, 0, 'CR P0 repro: unproven sibling price (hBP03-025 sellPrice=1, identity-less) must be rejected');
+    assert.equal(anySiblingPrice.length, 0, 'CR P0 repro: no hBP03-025 row may carry the ¥1 sibling listing');
+    console.log('  ✓ negative (CR P0 repro): sibling/cross-product listing rejected, no unproven price');
+
+    // ── 4b. Exact-source positive fixture ──
+    // A listing that PROVES to exactly one official printing — or a truly
+    // yuyu-only cardNumber with no official row — must still be priced, so the
+    // fallback never collapses legitimate provable coverage. Build the healthy
+    // fixture's provable listings and assert the coverage is retained (this is
+    // the positive complement to 4a, replacing the flawed ZZZ expectation).
+    const positiveFixture = { prices: {}, totalCards: 0, seriesWithPrices: 1 };
     for (const num of Object.keys(fixture.prices)) {
       const src = fixture.prices[num][0];
-      collapseFixture.prices[num] = [{
-        ...src,
-        sellPrice: 500,
-        rarity: 'ZZZ',
-        name: src.name,
-        yuyuImage: src.yuyuImage,
-        imageVersion: src.imageVersion,
-        imageCid: src.imageCid,
-        sourceSeries: src.sourceSeries,
-      }];
+      positiveFixture.prices[num] = [{ ...src }];
+      positiveFixture.totalCards += 1;
+    }
+    const positivePath = path.join(tmp, 'yuyu-dic1334-positive.json');
+    fs.writeFileSync(positivePath, JSON.stringify(positiveFixture, null, 2));
+    const positiveBuild = spawnSync(process.execPath, ['scripts/build-database.js'], {
+      cwd: repo,
+      env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: positivePath, HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1' },
+      encoding: 'utf8',
+    });
+    const positivePriced = pricedCardNumbers(dbPath);
+    const positiveScraped = Object.keys(positiveFixture.prices).length;
+    assert.equal(positiveBuild.status, 0, 'exact-source positive build must succeed');
+    assert.ok(
+      positivePriced.size >= Math.floor(positiveScraped / 2),
+      `exact-source positive coverage collapsed to ${positivePriced.size}/${positiveScraped}`,
+    );
+    console.log(`  ✓ exact-source positive: provable listings retained (${positivePriced.size}/${positiveScraped})`);
+
+    // ── 4c. Coverage-collapse fail-closed (red-before-green) ──
+    // A scrape whose listings are entirely unprovable (impossible rarity token)
+    // must collapse coverage and the DIC-1334 coverage audit must FAIL the build
+    // (exit non-zero) with the collapse message — no identity-less dummy rows
+    // paper over the gap, and nothing is published.
+    const collapseFixture = { prices: {}, totalCards: 0, seriesWithPrices: 1 };
+    for (const num of Object.keys(fixture.prices)) {
+      collapseFixture.prices[num] = [{ ...fixture.prices[num][0], sellPrice: 500, rarity: 'ZZZ' }];
       collapseFixture.totalCards += 1;
     }
     const collapsePath = path.join(tmp, 'yuyu-dic1334-collapse.json');
     fs.writeFileSync(collapsePath, JSON.stringify(collapseFixture, null, 2));
     const collapseBuild = spawnSync(process.execPath, ['scripts/build-database.js'], {
       cwd: repo,
-      env: {
-        ...process.env,
-        HUNTERCARD_YUYU_FIXTURE_PATH: collapsePath,
-        HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1',
-      },
+      env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: collapsePath, HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1' },
       encoding: 'utf8',
     });
-    const collapseDb = JSON.parse(fs.readFileSync(dbPath, 'utf8')).cards;
-    const collapsePriced = pricedCardNumbers(dbPath);
-    const collapseScraped = Object.keys(collapseFixture.prices).length;
-    const collapsedRatio = collapsePriced.size / collapseScraped;
-    // With the DIC-1334 fix, the yuyu-only fallback keeps every mismatched-but-
-    // provencance-valid cardNumber as a yuyu-only entry, so coverage stays at
-    // 100% and the build succeeds. If the old alreadyExists gate regresses, all
-    // of them are dropped and final coverage collapses below 50% → the audit
-    // (or, in the red state, this assertion) fails the build.
-    assert.equal(collapseBuild.status, 0, 'fixed-path build must succeed');
-    assert.ok(
-      collapsePriced.size >= Math.floor(collapseScraped / 2),
-      `red state: collapse scenario dropped coverage to ${collapsePriced.size}/${collapseScraped} (ratio ${collapsedRatio.toFixed(3)}) — must be >= 50% on the fixed path`,
+    // Fail-closed: unprovable listings must never be force-priced, so coverage
+    // collapses and the build refuses to ship. This is the OPPOSITE of the old
+    // (flawed) expectation that such data would be force-kept as yuyu-only rows.
+    assert.notEqual(collapseBuild.status, 0, 'unprovable full-scrape collapse must FAIL the build (fail-closed)');
+    assert.match(
+      `${collapseBuild.stdout}\n${collapseBuild.stderr}`,
+      /\[DIC-1334\] final canonical artifact collapsed priced-cardNumber coverage/,
+      'the DIC-1334 coverage audit must fire with its collapse message on a coverage drop below the 50% floor',
     );
-    // Prove the DIC-1334 audit is actually wired and sensitive: on the RED path
-    // (fault-injected by reverting the fallback, simulated here by manually
-    // nulling all sellPrice after a build), the audit must throw. We assert the
-    // audit's existence at source level and its fail-closed message.
-    const builderSrc = fs.readFileSync(path.join(repo, 'scripts/build-database.js'), 'utf8');
     assert.match(
       builderSrc,
       /\[DIC-1334\] final canonical artifact collapsed priced-cardNumber coverage/,
       'build-database.js must carry the DIC-1334 post-transformation coverage audit (fail-closed)',
     );
-    assert.match(
-      builderSrc,
-      /officialPricedCardNums\.has\(cardNum\)/,
-      'build-database.js must use the DIC-1334 officialPricedCardNums gate (not the discarded alreadyExists that caused the collapse)',
-    );
-    console.log(`  ✓ fail-closed audit wired; collapse scenario retains ${collapsePriced.size}/${collapseScraped} (${collapsedRatio.toFixed(3)})`);
+    console.log('  ✓ coverage-collapse fail-closed: unprovable full scrape refuses to ship (DIC-1334 audit fires)');
   }
 
   console.log('✓ DIC-1334 final-artifact-collapse regression passed');

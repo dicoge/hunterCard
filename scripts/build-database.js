@@ -1442,28 +1442,68 @@ async function buildDatabase() {
     const officialRows = officialByCardNum[cardNum] || [];
     const officialAlreadyPriced = officialPricedCardNums.has(cardNum);
     if (officialAlreadyPriced) continue;
-    // DIC-1334 + DIC-1176: provenance must survive. When official rows exist but
-    // are unpriced, only admit the yuyu listing if its image product path matches
-    // at least one official sourceProduct — a cross-product listing (hEB01-032's
-    // cross-product URL) must keep failing closed, never falling back into
-    // sellPrice by card number. Truly yuyu-only cardNumbers (no official row at
-    // all) were never blocked before and remain unchanged here.
+    // DIC-1334 + DIC-1343/CR: strict exact-printing provenance for the
+    // yuyu-only fallback. When official rows exist for this cardNumber, we
+    // must prove EACH accepted listing against an exact official printing
+    // (series+rarity) before any scalar selection or publication — never a
+    // cardNumber-wide, sibling/reprint, rarity-guess, buyPrice, or
+    // cross-product fallback. The old gate only checked the FIRST entry's
+    // image product, then admitted the whole priceData array and picked the
+    // lowest scalar across siblings — which could publish an unproven
+    // sibling/reprint price (e.g. a hBP03 cardNumber resolving ¥1 from a
+    // hBP07/C sibling listing). Truly yuyu-only cardNumbers (no official row
+    // at all) have no official identity to conflict with and keep the
+    // original behavior.
+    let priceEntries;
+    let outSeries = '';
+    let outRarity = '';
+    let outSourceProduct = '';
+    let outType = '';
+    let outColor = '';
+    let outHp = '';
+    let outLife = '';
+    let outArts = '';
+    let outBloomLevel = '';
     if (officialRows.length > 0) {
-      const primary = Array.isArray(priceData) ? priceData[0] : priceData;
-      const matchesAnyOfficial = officialRows.some((official) => {
-        const sourceProduct = String(official.sourceProduct || official.series || '').toLowerCase();
-        return sourceProduct && pricesEntryExactPrintMatchesSource(
-          { imageUrl: primary?.yuyuImage },
-          sourceProduct,
-        );
-      });
-      if (!matchesAnyOfficial) {
-        console.log(`  [DIC-1334] yuyu-only fallback skipped for officially-known unpriced cardNumber ${cardNum}: listing image product does not match any official sourceProduct (fail-closed, no cross-product fallback)`);
+      // Proven printings: map each listing to the exact official printing(s)
+      // it matches. A listing that proves to a printing other than its own, or
+      // that cannot be resolved to a single printing, is refused.
+      const allEntries = Array.isArray(priceData) ? priceData : [priceData];
+      const provenPrintings = new Map(); // key: `sourceProduct|rarity` → proven entries
+      for (const entry of allEntries) {
+        for (const official of officialRows) {
+          const candidateCount = officialRows
+            .filter((c) => String(c.sourceProduct || c.series || '').toLowerCase() === String(official.sourceProduct || official.series || '').toLowerCase())
+            .length;
+          if (yuyuEntryMatchesOfficial(entry, official, candidateCount)) {
+            const key = `${String(official.sourceProduct || official.series || '').toLowerCase()}|${normalizeRarityCode(official.rarity) || ''}`;
+            if (!provenPrintings.has(key)) provenPrintings.set(key, []);
+            provenPrintings.get(key).push(entry);
+            break;
+          }
+        }
+      }
+      if (provenPrintings.size !== 1) {
+        console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber ${cardNum}: ${provenPrintings.size === 0 ? 'no listing proves to an exact official printing' : `${provenPrintings.size} distinct official printings proven (ambiguous sibling/reprint)`} — fail-closed, no cardNumber-wide fallback`);
         continue;
       }
+      const [[printKey, proven]] = provenPrintings;
+      const provenOfficial = officialRows.find((official) => `${String(official.sourceProduct || official.series || '').toLowerCase()}|${normalizeRarityCode(official.rarity) || ''}` === printKey);
+      priceEntries = deduplicatePrices(proven);
+      if (provenOfficial) {
+        outSeries = provenOfficial.series || '';
+        outRarity = provenOfficial.rarity || '';
+        outSourceProduct = provenOfficial.sourceProduct || provenOfficial.series || '';
+        outType = provenOfficial.type || '';
+        outColor = provenOfficial.color || '';
+        outHp = provenOfficial.hp || '';
+        outLife = provenOfficial.life || '';
+        outArts = provenOfficial.arts || '';
+        outBloomLevel = provenOfficial.bloomLevel || '';
+      }
+    } else {
+      priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
     }
-
-    const priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
     let lowestPrice = null;
     let lowestName = '';
     let firstImage = '';
@@ -1499,19 +1539,21 @@ async function buildDatabase() {
       id: outCardNum,
       cardNumber: outCardNum,
       name: lowestName || '',
-      type: '',
-      color: '',
-      rarity: '',
-      series: '',
+      type: outType,
+      color: outColor,
+      rarity: outRarity,
+      series: outSeries,
+      sourceProduct: outSourceProduct || undefined,
       sellPrice: lowestPrice,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
       prices: canonical,
       officialImage: '',
       localImage: fs.existsSync(path.join(IMAGES_DIR, `${outCardNum}.jpg`)) ? `/images/${outCardNum}.jpg` : '',
-      hp: '',
-      life: '',
-      arts: '',
+      hp: outHp,
+      life: outLife,
+      arts: outArts,
+      bloomLevel: outBloomLevel,
       timestamp: firstTimestamp,
       _rawPricesArchive: archive,
     };
