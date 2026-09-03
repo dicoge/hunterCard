@@ -197,11 +197,27 @@ async function testDeveloperErrorMapsToDistinctCode() {
 }
 
 async function testNetworkErrorMapsToNetworkCode() {
+  // The locked library serialises ApiException.statusCode as the numeric
+  // string (ErrorDto.kt:14–31), so a real Android NETWORK_ERROR arrives with
+  // .code === '7'. That is the shape the mapper MUST recognise; the
+  // constant-name spelling is a defensive alias for future library builds.
+  // DIC-1322 CR blocker: the earlier suite only asserted 'NETWORK_ERROR' and
+  // let real '7' collapse to google_failed on production devices.
+  assert.equal(await drivenFailureCode({ code: '7', message: 'raw' }),
+    'network_error');
   assert.equal(await drivenFailureCode({ code: 'NETWORK_ERROR', message: 'raw' }),
     'network_error');
 }
 
 async function testInProgressMapsToOwnCode() {
+  // PromiseWrapper.java:11,74 rejects with the literal string
+  // 'ASYNC_OP_IN_PROGRESS' when a second signIn() lands mid-flight; that is
+  // what the JS side actually receives on Android. RNGoogleSigninModule.java:89
+  // also maps the exported constant name 'IN_PROGRESS' to the same string.
+  // DIC-1322 CR blocker: the earlier suite only asserted 'IN_PROGRESS' and
+  // let real 'ASYNC_OP_IN_PROGRESS' collapse to google_failed on device.
+  assert.equal(await drivenFailureCode({ code: 'ASYNC_OP_IN_PROGRESS', message: 'raw' }),
+    'google_in_progress');
   assert.equal(await drivenFailureCode({ code: 'IN_PROGRESS', message: 'raw' }),
     'google_in_progress');
 }
@@ -237,14 +253,17 @@ async function testAllMappedCodesArePairwiseDistinct() {
   // If a future refactor collapses any branch, this Set size shrinks and the
   // assertion fails — the DIC-1318 anti-regression: the whole point of this
   // work is that these SDK conditions are NOT the same banner anymore.
+  // The values MIRROR the real locked-library runtime codes (see docs and
+  // ErrorDto.kt / PromiseWrapper.java references above) so this stays honest
+  // about what a v16.1.4 device actually emits.
   const sdkCodes = [
     'DEVELOPER_ERROR',
-    'NETWORK_ERROR',
-    'IN_PROGRESS',
+    '7',                       // real NETWORK_ERROR (numeric-string form)
+    'ASYNC_OP_IN_PROGRESS',    // real IN_PROGRESS (literal-string form)
     'INTERNAL_ERROR',
     'SIGN_IN_REQUIRED',
     'PLAY_SERVICES_NOT_AVAILABLE',
-    'SOME_UNKNOWN_CODE', // → google_failed (generic fallback bucket, distinct)
+    'SOME_UNKNOWN_CODE',       // → google_failed (generic fallback, distinct)
   ];
   const authCodes = new Set();
   for (const code of sdkCodes) {
@@ -311,7 +330,43 @@ async function testMissingWebClientIdMaps() {
   }
 }
 
-// ─── 8. Pure helper mapping is exported and stable ──────────────────────────
+// ─── 8. Runtime-code fidelity guard against the locked library source ──────
+function testMapperCoversTheLockedLibraryRuntimeCodes() {
+  // The CR blocker (DIC-1322) landed because the earlier mapper only knew the
+  // constant-name spellings and the locked library actually throws different
+  // runtime shapes. Read the real library source and assert that (a) the
+  // known runtime codes we saw at write-time still appear there, and (b) the
+  // mapper handles each one non-generically. If a future library upgrade
+  // changes what's thrown, one or both halves fail loudly instead of the
+  // fix silently regressing at runtime again.
+  const wrapperSrc = fs.readFileSync(
+    path.join(ROOT,
+      'node_modules/@react-native-google-signin/google-signin/android/src/main/java/com/reactnativegooglesignin/PromiseWrapper.java'),
+    'utf8');
+  const errorDtoSrc = fs.readFileSync(
+    path.join(ROOT,
+      'node_modules/@react-native-google-signin/google-signin/android/src/main/java/com/reactnativegooglesignin/ErrorDto.kt'),
+    'utf8');
+  // The literal string the concurrent-call guard rejects with (PromiseWrapper.java).
+  assert.ok(
+    wrapperSrc.includes('"ASYNC_OP_IN_PROGRESS"'),
+    'locked library must still expose ASYNC_OP_IN_PROGRESS; re-audit the mapper if this fails',
+  );
+  // ErrorDto still stringifies the numeric status code (`codeInt.toString()`).
+  assert.ok(
+    /codeInt\.toString\(\)/.test(errorDtoSrc),
+    'locked library must still serialise statusCode as numeric string; re-audit the mapper if this fails',
+  );
+  // And the mapper handles both real shapes non-generically — the direct
+  // runtime-code assertion tied to the source read above.
+  const map = authService.mapNativeAndroidGoogleError;
+  assert.notEqual(map({ code: 'ASYNC_OP_IN_PROGRESS' }).code, 'google_failed');
+  assert.notEqual(map({ code: '7' }).code, 'google_failed');
+  assert.equal(map({ code: 'ASYNC_OP_IN_PROGRESS' }).code, 'google_in_progress');
+  assert.equal(map({ code: '7' }).code, 'network_error');
+}
+
+// ─── 9. Pure helper mapping is exported and stable ──────────────────────────
 function testMapHelperIsExportedAndStable() {
   const map = authService.mapNativeAndroidGoogleError;
   assert.equal(typeof map, 'function', 'mapNativeAndroidGoogleError must be exported');
@@ -344,7 +399,10 @@ const asyncTests = [
   testMissingIdTokenMaps,
   testMissingWebClientIdMaps,
 ];
-const syncTests = [testMapHelperIsExportedAndStable];
+const syncTests = [
+  testMapperCoversTheLockedLibraryRuntimeCodes,
+  testMapHelperIsExportedAndStable,
+];
 
 (async () => {
   try {
