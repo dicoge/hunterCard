@@ -136,7 +136,13 @@ export async function loadAllCards(): Promise<CardInfo[]> {
       // This preserves correct series/category filtering unlike grouped-by-cardNumber
       const cardFlags = releaseCardFlags();
       const result: CardInfo[] = Object.values(cards).map(entry => stripDisabledCardFields({
-        id: (entry as any).cardNumber || entry.id || '',
+        // The compound catalog key (hBP01-024_hBP01_C_hBP01-024_C) IS the
+        // printing's identity. This used to be flattened to the bare cardNumber,
+        // which made `id` non-unique across the 8 rows that share hBP01-024 and
+        // turned every `find(c => c.id === cardNumber)` below into "whichever
+        // printing happens to be first" — see resolvePrintingByCardNumber
+        // (DIC-1325).
+        id: entry.id || (entry as any).cardNumber || '',
         name: entry.name || '',
         nameZh: (entry as any).nameZh || '',
         cardNumber: (entry as any).cardNumber || entry.id || '',
@@ -163,6 +169,94 @@ export async function loadAllCards(): Promise<CardInfo[]> {
   })();
 
   return dbFetchPromise;
+}
+
+// ── 卡號 → 版本解析（DIC-1325 exact-printing 界線）──
+
+/**
+ * Resolve a cardNumber to ONE printing, or refuse.
+ *
+ * A cardNumber is not an identity: hBP01-024 has 8 catalog rows, and their sale
+ * prices genuinely disagree (ent07/HR JPY 50, hBP01/C JPY 120, hPR/P unproven).
+ * The recovery paths used to answer this with `find(c => c.id === cardNumber)`,
+ * which returned whichever row the catalog happened to list first and presented
+ * its price as the scanned card's exact price at confidence 0.9.
+ *
+ * When the evidence names only a cardNumber and several printings carry it,
+ * there is no basis for choosing one, so this returns `ambiguous` and the caller
+ * must surface the card WITHOUT a price and let the user pick the printing.
+ * Quoting a sibling's number would be the cross-printing fallback the product
+ * forbids (DIC-856 / DIC-1319).
+ */
+export type PrintingResolution =
+  | { status: 'unique'; card: CardInfo }
+  | { status: 'ambiguous'; cardNumber: string; printings: CardInfo[] }
+  | { status: 'none' };
+
+const flatten = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+export function resolvePrintingByCardNumber(
+  allCards: CardInfo[],
+  query: string,
+  { fuzzy = false }: { fuzzy?: boolean } = {},
+): PrintingResolution {
+  const q = flatten(query || '');
+  if (!q) return { status: 'none' };
+
+  let matches = allCards.filter(c => flatten(c.cardNumber) === q);
+
+  if (matches.length === 0 && fuzzy) {
+    // Same tolerance the previous fuzzy pass used, but applied to cardNumber —
+    // the printing suffix must never be what makes a query "match".
+    matches = allCards.filter(c => {
+      const n = flatten(c.cardNumber);
+      return n === q || n.includes(q) || q.includes(n);
+    });
+    // A fuzzy pass that spans several DIFFERENT card numbers is not evidence of
+    // any one card; treat it as no match rather than guessing.
+    if (new Set(matches.map(c => flatten(c.cardNumber))).size > 1) {
+      return { status: 'none' };
+    }
+  }
+
+  if (matches.length === 0) return { status: 'none' };
+  if (matches.length === 1) return { status: 'unique', card: matches[0] };
+  return { status: 'ambiguous', cardNumber: matches[0].cardNumber, printings: matches };
+}
+
+/**
+ * The card to show when only the cardNumber is known: shared identity, and
+ * deliberately NO price. `sellPrice: null` is the same "no proven price" state
+ * the UI already renders as 尚無交易, so this needs no new UI branch.
+ */
+export function ambiguousPrintingCard(printings: CardInfo[]): CardInfo {
+  const base = printings[0];
+  return {
+    ...base,
+    // Identity of the NUMBER, not of any one printing.
+    id: base.cardNumber,
+    series: '',
+    rarity: '',
+    sellPrice: null,
+    prices: [],
+    buyPrice: null,
+    priceHistory: {},
+  };
+}
+
+/**
+ * Build the printing chooser. Each candidate is a real printing showing its OWN
+ * price, which is what makes this a resolution step rather than a guess. Equal
+ * confidence, because nothing in the evidence prefers one printing.
+ */
+export function ambiguousPrintingResult(res: { cardNumber: string; printings: CardInfo[] }): RecognitionResult {
+  return {
+    success: true,
+    card: ambiguousPrintingCard(res.printings),
+    lowConfidence: true,
+    reason: 'ambiguous-printing',
+    candidates: res.printings.map(card => ({ card, confidence: 1 / res.printings.length })),
+  };
 }
 
 // ── 文字相似度 ──
@@ -433,25 +527,16 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const allCards = await loadAllCards();
     const cardNumber = data.cardNumber.toLowerCase().replace(/[^a-z0-9-]/g, '');
 
-    // Try exact match
-    const match = allCards.find(c => c.id.toLowerCase() === cardNumber);
-    if (match) {
-      console.log(`[cardRecognition] API recognized: ${cardNumber} → ${match.name}`);
-      return { success: true, card: match };
+    // The API gave us a NUMBER, not a printing. Resolve it or refuse — never
+    // take the first sibling (DIC-1325).
+    const resolved = resolvePrintingByCardNumber(allCards, cardNumber, { fuzzy: true });
+    if (resolved.status === 'unique') {
+      console.log(`[cardRecognition] API recognized: ${cardNumber} → ${resolved.card.name}`);
+      return { success: true, card: resolved.card };
     }
-
-    // Try fuzzy match (strip non-alphanumeric)
-    const fuzzyMatch = allCards.find(c => {
-      const normalizedId = c.id.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const normalizedQuery = cardNumber.replace(/[^a-z0-9]/g, '');
-      return normalizedId === normalizedQuery ||
-             normalizedId.includes(normalizedQuery) ||
-             normalizedQuery.includes(normalizedId);
-    });
-
-    if (fuzzyMatch) {
-      console.log(`[cardRecognition] API fuzzy match: ${cardNumber} → ${fuzzyMatch.name}`);
-      return { success: true, card: fuzzyMatch };
+    if (resolved.status === 'ambiguous') {
+      console.log(`[cardRecognition] API gave only ${cardNumber}; ${resolved.printings.length} printings — asking the user`);
+      return ambiguousPrintingResult(resolved);
     }
 
     console.warn(`[cardRecognition] API found cardNumber ${cardNumber} but no DB match`);
@@ -498,22 +583,23 @@ export async function recognizeCardFromImage(imageUri: string): Promise<Recognit
     return { success: false, error: '資料庫載入失敗' };
   }
 
-  // 精確匹配卡號
-  const match = allCards.find(c => c.id.toLowerCase() === cardId);
-  if (match) {
-    return { success: true, card: match, confidence: 0.95 };
+  // OCR read a card NUMBER off the photo. That identifies a printing only when
+  // the number has one; otherwise the user picks (DIC-1325).
+  const exact = resolvePrintingByCardNumber(allCards, cardId);
+  if (exact.status === 'unique') {
+    return { success: true, card: exact.card, confidence: 0.95 };
+  }
+  if (exact.status === 'ambiguous') {
+    return { ...ambiguousPrintingResult(exact), confidence: 0.95 };
   }
 
   // 模糊匹配（如 NP04 → hBP04 已在 extractCardId 處理，但仍可能有數位誤判）
-  const fuzzyMatch = allCards.find(c => {
-    const normalizedId = c.id.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normalizedQuery = cardId.replace(/[^a-z0-9]/g, '');
-    return normalizedId === normalizedQuery ||
-           normalizedId.includes(normalizedQuery) ||
-           normalizedQuery.includes(normalizedId);
-  });
-  if (fuzzyMatch) {
-    return { success: true, card: fuzzyMatch, confidence: 0.72 };
+  const fuzzy = resolvePrintingByCardNumber(allCards, cardId, { fuzzy: true });
+  if (fuzzy.status === 'unique') {
+    return { success: true, card: fuzzy.card, confidence: 0.72 };
+  }
+  if (fuzzy.status === 'ambiguous') {
+    return { ...ambiguousPrintingResult(fuzzy), confidence: 0.72 };
   }
 
   return { success: false, error: `找到卡號 ${cardId} 但資料庫無匹配，請確認卡牌版本` };
@@ -536,22 +622,21 @@ export async function recognizeCardFromOcr(rawText: string): Promise<Recognition
   const extractedIds = extractCardIds(rawText);
   if (extractedIds.length > 0) {
     for (const cardId of extractedIds) {
-      // Try lowercase match
-      const match = allCards.find(c => c.id.toLowerCase() === cardId);
-      if (match) {
-        return { success: true, card: match, confidence: 0.9 };
+      const exact = resolvePrintingByCardNumber(allCards, cardId);
+      if (exact.status === 'unique') {
+        return { success: true, card: exact.card, confidence: 0.9 };
+      }
+      if (exact.status === 'ambiguous') {
+        return { ...ambiguousPrintingResult(exact), confidence: 0.9 };
       }
       // Try prefix match (e.g. "NP04" matches "hBP04-xxx" → not reliable, skip)
       // Try fuzzy card number (e.g. "hBPO4" → "hBP04")
-      const fuzzyMatch = allCards.find(c => {
-        const normalizedId = c.id.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const normalizedQuery = cardId.replace(/[^a-z0-9]/g, '');
-        return normalizedId === normalizedQuery ||
-               normalizedId.includes(normalizedQuery) ||
-               normalizedQuery.includes(normalizedId);
-      });
-      if (fuzzyMatch) {
-        return { success: true, card: fuzzyMatch, confidence: 0.68 };
+      const fuzzy = resolvePrintingByCardNumber(allCards, cardId, { fuzzy: true });
+      if (fuzzy.status === 'unique') {
+        return { success: true, card: fuzzy.card, confidence: 0.68 };
+      }
+      if (fuzzy.status === 'ambiguous') {
+        return { ...ambiguousPrintingResult(fuzzy), confidence: 0.68 };
       }
     }
   }
@@ -562,8 +647,13 @@ export async function recognizeCardFromOcr(rawText: string): Promise<Recognition
     const lineIds = extractCardIds(line);
     if (lineIds.length > 0) {
       for (const id of lineIds) {
-        const match = allCards.find(c => c.id.toLowerCase() === id);
-        if (match) return { success: true, card: match, confidence: 0.85 };
+        const perLine = resolvePrintingByCardNumber(allCards, id);
+        if (perLine.status === 'unique') {
+          return { success: true, card: perLine.card, confidence: 0.85 };
+        }
+        if (perLine.status === 'ambiguous') {
+          return { ...ambiguousPrintingResult(perLine), confidence: 0.85 };
+        }
       }
     }
     // Only try name match if the text contains Japanese characters (kana/kanji)
@@ -628,6 +718,16 @@ export async function recognizeCard(searchText: string): Promise<RecognitionResu
     return { success: true, card: idPrefixMatch[0] };
   }
   if (idPrefixMatch.length > 1) {
+    // Reached from the OCR path (Step 2 below calls recognizeCard per line), so
+    // it is part of the scan recovery path. When every prefix hit is the SAME
+    // cardNumber the query resolved to a number, not a printing — hand back the
+    // chooser with no price instead of the first sibling and its price.
+    // A prefix spanning several card numbers is an ordinary series search
+    // ("hBP04"), which keeps its existing behaviour (DIC-1325).
+    const numbers = new Set(idPrefixMatch.map(c => flatten(c.cardNumber)));
+    if (numbers.size === 1) {
+      return ambiguousPrintingResult({ cardNumber: idPrefixMatch[0].cardNumber, printings: idPrefixMatch });
+    }
     return {
       success: true,
       card: idPrefixMatch[0],
