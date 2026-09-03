@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildPreservationIndex,
   findPreservedMatch,
-  preservedMarketPayload,
+  applyPreservedMarketFields,
 } from './lib/preserve-market-fields.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,25 +74,15 @@ function toDatabaseCard(card, id) {
   };
 }
 
-// DIC-1204: exact-id lookups miss rows whose printing IDs get renamed by
+// DIC-1204/1321: exact-id lookups miss rows whose printing IDs get renamed by
 // DIC-1084 canonicalization, wiping their proven sellPrice / priceHistory /
-// ytStats. `preservedMarketPayload` on the row returned by `findPreservedMatch`
-// (exact id first, then a strict cardNumber|sourceProduct|rarity signature)
-// carries only proven fields forward; ambiguous signatures refuse to guess.
-// On a signature fallback onto a SEC signed printing we strip prices[] and
-// yuyu descriptors — the DIC-1013/1140 fail-closed contract forbids yuyu
-// variants from leaking onto the signed row.
-function preservedExactSellPayload(previous = {}, matchKind = 'exact-id', targetRarity = '') {
-  const payload = preservedMarketPayload(previous);
-  const signedFallback = matchKind !== 'exact-id' && String(targetRarity || '').trim().toUpperCase() === 'SEC';
-  if (signedFallback) {
-    delete payload.prices;
-    delete payload._rawPricesArchive;
-    delete payload.yuyuName;
-    delete payload.yuyuImage;
-  }
-  return payload;
-}
+// ytStats. Preservation now routes through `applyPreservedMarketFields`
+// (matching build-database.js): exact id first, then a strict
+// cardNumber|sourceProduct|rarity signature; ambiguous signatures refuse to
+// guess; and yuyu-derived fields only carry forward when the previous
+// yuyuImage URL provably matches the current sourceProduct (DIC-1227), with a
+// signature fallback onto a SEC signed printing stripping prices[] and yuyu
+// descriptors (DIC-1013/1140 fail-closed).
 
 function canonicalProductsFromMeta(officialDirectory) {
   const meta = readJson(path.join(officialDirectory, '_meta.json'));
@@ -130,15 +120,30 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
       const match = findPreservedMatch(preservationIndex, id, preview);
       const previous = match?.card || db.cards[id] || {};
       const matchKind = match?.matchKind || 'exact-id';
-      const preservedSell = preservedExactSellPayload(previous, matchKind, preview.rarity);
-      if (Object.keys(preservedSell).length > 0) sellPreserved++;
+      // DIC-1321: route preservation through `applyPreservedMarketFields`
+      // (the same path build-database.js uses) instead of the ungated
+      // `preservedMarketPayload` spread. The old path flattened the previous
+      // row's prices[] / sellPrice / priceHistory onto the fresh row without
+      // the `yuyuPayloadMatchesSource` gate, so an official-sync running on a
+      // 0-priced snapshot would blindly re-inflate every row — the 0↔1547
+      // oscillation (local scheduler writes 0; official-sync ungated-restores
+      // 1547; repeat). The gated path keeps printing/product isolation:
+      // sellPrice / prices[] / priceHistory only carry forward when the
+      // previous yuyuImage URL provably matches this row's sourceProduct, and
+      // prices[] survives only entry-by-entry on provable matches. Fresh
+      // non-null fields still win. ytStats/skills stay preserved as before.
+      // applyPreservedMarketFields mutates `preview` in place with the gated
+      // payload, so preview is the final row.
+      const summary = applyPreservedMarketFields(preview, previous, {
+        matchKind,
+        preserveYuyuPayload: true,
+      });
+      if (summary.sellPrice || summary.prices || summary.priceHistory || summary.ytStats || summary.yuyu) sellPreserved++;
       db.cards[id] = {
         ...preview,
-        ...preservedSell,
         skillsJp: previous.skillsJp,
         skillsZh: previous.skillsZh,
         nameZh: previous.nameZh,
-        ytStats: preservedSell.ytStats ?? previous.ytStats,
       };
       for (const key of ['skillsJp', 'skillsZh', 'nameZh', 'ytStats']) {
         if (db.cards[id][key] == null) delete db.cards[id][key];
