@@ -378,11 +378,20 @@ function isCancelledError(err: unknown): boolean {
 type MappedNativeGoogleError = { code: string; message: string };
 export function mapNativeAndroidGoogleError(err: unknown): MappedNativeGoogleError {
   const raw = String((err as { code?: unknown })?.code ?? '');
-  // Normalise: some library builds throw string codes ('DEVELOPER_ERROR'),
-  // others surface the underlying GoogleSignInStatusCodes numeric ('10'). We
-  // key on the string form first and only fall back to numerics we can map
-  // unambiguously — 7 is used by BOTH IN_PROGRESS and (in some builds)
-  // NETWORK_ERROR, so a bare '7' stays generic rather than misattributing.
+  // The locked library (@react-native-google-signin/google-signin@16.1.4) is
+  // the source of truth for the exact `.code` string the caller will see:
+  //   - ApiException.statusCode is stringified as the numeric GoogleSignInStatusCodes
+  //     value (ErrorDto.kt:14–31), so `NETWORK_ERROR` arrives as '7',
+  //     `INTERNAL_ERROR` as '8', `DEVELOPER_ERROR` as '10',
+  //     `SIGN_IN_REQUIRED` as '4', `SIGN_IN_CANCELLED` as '12501'.
+  //   - The concurrent-call guard rejects with the string literal
+  //     `ASYNC_OP_IN_PROGRESS` (PromiseWrapper.java:11,74; also what the
+  //     RNGoogleSigninModule getConstants() exposes as `IN_PROGRESS`
+  //     on Android, RNGoogleSigninModule.java:89).
+  // We match those exact runtime shapes; the "string constant" spellings
+  // (`DEVELOPER_ERROR`, `NETWORK_ERROR`, `IN_PROGRESS`, `INTERNAL_ERROR`,
+  // `SIGN_IN_REQUIRED`) are kept as defensive aliases so a library upgrade
+  // that switches to constant names does not silently regress diagnostics.
   switch (raw) {
     case 'DEVELOPER_ERROR':
     case '10':
@@ -396,11 +405,21 @@ export function mapNativeAndroidGoogleError(err: unknown): MappedNativeGoogleErr
         message: 'Google 登入失敗（google_developer_error），可能為此版本簽章尚未在 Google Cloud Console 授權。請截圖此畫面並回報。',
       };
     case 'NETWORK_ERROR':
+    case '7':
+      // GoogleSignInStatusCodes.NETWORK_ERROR = 7, serialised as the string
+      // '7' by ErrorDto.kt. This is what a real device sees when Play Services
+      // cannot reach Google — the whole reason a separate `network_error`
+      // banner exists.
       return {
         code: 'network_error',
         message: '網路連線異常，請檢查網路後再試。',
       };
+    case 'ASYNC_OP_IN_PROGRESS':
     case 'IN_PROGRESS':
+      // PromiseWrapper.java rejects the previous promise with the literal
+      // `ASYNC_OP_IN_PROGRESS` when a second signIn() lands mid-flight;
+      // that is the exact string the JS side receives on Android. The
+      // constant-name alias handles builds that surface `IN_PROGRESS`.
       return {
         code: 'google_in_progress',
         message: '目前已有 Google 登入進行中，請稍候或關閉重試。',
