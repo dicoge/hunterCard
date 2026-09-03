@@ -114,7 +114,8 @@
     "test:scan-screen-fail-safe": "node --import ./scripts/register-web-render.mjs scripts/test-scan-screen-fail-safe.mjs",
     "benchmark:scan-recognition": "node scripts/benchmarks/scan-recognition-benchmark.cjs",
     "test:scan-primary-path": "node --import ./scripts/register-web-render.mjs scripts/test-scan-primary-path.mjs",
-    "test:native-price-artifact": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-native-price-artifact.mjs"
+    "test:native-price-artifact": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-native-price-artifact.mjs",
+    "test:scan-printing-isolation": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-printing-isolation.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

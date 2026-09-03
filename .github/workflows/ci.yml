@@ -300,6 +300,9 @@ jobs:
       - name: Verify the scan viewfinder stays a focused primary path (DIC-1319)
         run: npm run test:scan-primary-path
 
+      - name: Verify recognition quotes the recognized printing's own price (DIC-1325)
+        run: npm run test:scan-printing-isolation
+
       - name: Verify the native bundled catalog ships real sale prices (DIC-1319)
         run: npm run test:native-price-artifact
 
