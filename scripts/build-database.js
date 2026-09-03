@@ -1216,9 +1216,36 @@ async function buildDatabase() {
 
   const { prices, totalCards, seriesWithPrices } = yuyuResult;
   const pricingUnavailable = Boolean(yuyuResult.pricingUnavailable || totalCards < 50);
+  // DIC-1321: a "partial scrape" is a scrape that returned far fewer priced
+  // cardNumbers than the previous build — the WAF-throttle shape. The old
+  // binary (fully-available OR fully-unavailable) treated a partial scrape as
+  // fully-available, so every cardNumber the partial scrape did not touch was
+  // rebuilt as sellPrice:null AND NOT preserved (`hasCurrentYuyuPayload` was
+  // false), permanently dropping the previously-proven price. That is the
+  // degradation 1,885 → 1,547 and the local 0-priced snapshots. Detect it by
+  // comparing the unique scraped cardNumbers against the previous build's
+  // priced card-number coverage, and preserve the previous proven price for
+  // rows that were NOT freshly scraped (still subject to the existing
+  // `yuyuPayloadMatchesSource` printing-isolation gate in
+  // applyPreservedMarketFields — no cross-product / cross-printing restore).
+  const scrapedCardNumbers = new Set(Object.keys(prices || {}));
+  const prevPricedCardNumbers = new Set(
+    Object.values(prevCards)
+      .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+      .map((c) => c.cardNumber),
+  );
+  const coverageFloorRatio = 0.9;
+  const previousCoverage = prevPricedCardNumbers.size;
+  const currentCoverage = scrapedCardNumbers.size;
+  const partialScrape = !pricingUnavailable
+    && previousCoverage > 0
+    && currentCoverage < previousCoverage * coverageFloorRatio;
   console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
+  console.log(`  [DIC-1321] scrape coverage: ${currentCoverage} priced cardNumbers vs previous ${previousCoverage}; partial=${partialScrape}`);
   if (pricingUnavailable) {
     console.warn(`[database] yuyu pricing unavailable or incomplete (totalCards=${totalCards}); preserving previous exact-card sell prices and leaving new/unknown printings null`);
+  } else if (partialScrape) {
+    console.warn(`[database] yuyu scrape is PARTIAL (${currentCoverage}/${previousCoverage} priced cardNumbers < ${coverageFloorRatio * 100}%); preserving previous proven prices for rows not freshly scraped (DIC-1321)`);
   }
 
   // Step 2: Download images
@@ -1469,7 +1496,15 @@ async function buildDatabase() {
       if (!match) continue;
       const summary = applyPreservedMarketFields(card, match.card, {
         matchKind: match.matchKind,
-        preserveYuyuPayload: pricingUnavailable || hasCurrentYuyuPayload(card),
+        // DIC-1321: preserve previous proven yuyu payload not only on a full
+        // outage (pricingUnavailable) but also on a PARTIAL scrape for rows the
+        // partial scrape did not touch. Without this a WAF-throttled partial
+        // scrape permanently drops every row it missed (hasCurrentYuyuPayload
+        // false → nothing preserved). The applyPreservedMarketFields gate still
+        // enforces `yuyuPayloadMatchesSource`, so a partial restore never
+        // crosses printings / products — only provably-matched rows keep their
+        // price.
+        preserveYuyuPayload: pricingUnavailable || partialScrape || hasCurrentYuyuPayload(card),
       });
       if (summary.sellPrice) restoredSell++;
       if (summary.prices) restoredPrices++;

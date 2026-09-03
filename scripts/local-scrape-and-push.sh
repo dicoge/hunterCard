@@ -1,6 +1,21 @@
 #!/bin/bash
 # Local scraper: optional local full scrape for WAF-sensitive price sources.
 # Official catalog sync runs in GitHub Actions on a schedule and must not depend on yuyu availability.
+#
+# DIC-1321: this scheduler must never deadlock on a dirty personal worktree and
+# must never report success while its price coverage collapsed (the 0↔1547
+# oscillation / 1,885→1,547 shrinking-count class). Two behaviours were added:
+#   1. A dirty in-place worktree no longer permanently aborts. If the resident
+#      checkout has residue in scraper-managed paths, the pipeline re-runs the
+#      SAME build in an isolated throwaway git worktree pinned to origin/main
+#      and pushes the artifact to a dedicated `bot/scrape/<YYYY-MM-DD>` branch
+#      — it never touches, deletes or overwrites the user's dirty local files.
+#   2. After the build, hard coverage / change-budget floors are enforced. If
+#      the priced-cardNumber coverage collapses below a floor relative to the
+#      previous build, or the priced coverage drops by more than the change
+#      budget, the script exits non-zero so the cron never reports success on a
+#      skip/failed scrape (DIC-1167 regression 2026-08-30: sellPrice=0 pushed and
+#      printed "Done").
 
 set -e
 cd "$(dirname "$0")/.."
@@ -19,184 +34,274 @@ trap 'rm -rf "$LOCK_FILE"' EXIT
 
 echo "[$(date)] Starting hunterCard local scrape..." >> "$LOG_FILE"
 
-# 0. Converge before mutating tracked artifacts. A stale durable checkout must
-#    pull first; otherwise official scrape writes data/official before git sees
-#    upstream changes and `git pull` aborts on local modifications (DIC-1167).
-#
-#    DIC-1219 CR expansion: `git diff` only sees tracked staged/unstaged edits.
-#    Untracked residue under scraper-managed paths (e.g. a leftover
-#    `data/price-history/hFOO-001_hBAR.json` from a failed manual run) slips
-#    through the check and the later `git add data/price-history/*.json` glob
-#    then bundles that residue into the automated `chore: update database`
-#    commit — publishing history the scheduler never actually scraped this
-#    pass. Use `git status --porcelain` scoped to every path this run will
-#    mutate so tracked, staged AND untracked residue all fail-closed before
-#    pull / scraper mutation / staging.
+# Every path this run will mutate (kept in one place so the dirty check, the
+# change check and the staging glob all agree).
 SCRAPER_MANAGED_PATHS=(
   'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json'
   'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json'
   'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
   'docs/audits/official-catalog-audit.json' 'docs/audits/official-production-lag-state.json'
 )
+
+# DIC-1321 coverage / change-budget floors. A healthy build must keep essentially
+# all previously-priced cardNumbers; a draconian drop (yuyu WAF total-collapse,
+# or a bug that nulls prices) must FAIL the scheduler so the cron reports
+# failure instead of pushing a 0-priced snapshot and printing Done.
+#   COVERAGE_FLOOR_RATIO — current priced cardNumbers must be >= this fraction
+#     of the previous build's priced cardNumbers, else fail.
+#   CHANGE_BUDGET_RATIO — the allowed one-cycle proportional drop in priced
+#     cardNumbers. Deliberately generous (>=20%) so genuine market/listing
+#     churn never trips it, while a full 0-priced collapse always does.
+COVERAGE_FLOOR_RATIO="${HUNTERCARD_COVERAGE_FLOOR_RATIO:-0.50}"
+CHANGE_BUDGET_RATIO="${HUNTERCARD_CHANGE_BUDGET_RATIO:-0.20}"
+ISOLATED_BRANCH_PREFIX="bot/scrape"
+
+# pricedCardNumberCount <db-file>: count unique priced cardNumbers.
+pricedCardNumberCount() {
+  node -e "const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const s=new Set();for(const c of Object.values(d.cards||{}))if(Number.isFinite(c.sellPrice)&&c.sellPrice>0)s.add(c.cardNumber);console.log(s.size);" "$1"
+}
+
+# priceCoverageOk <repo-dir>: count priced cardNumbers in the freshly built
+# data/database.json and compare against the previous build's priced count
+# (recorded by runPipeline into <dir>/data/database.json.prev-priced.txt).
+# Returns 0 when the build did not clearly collapse coverage, non-zero otherwise.
+priceCoverageOk() {
+  local dir="$1"
+  local db="$dir/data/database.json"
+  # The pipeline only reaches the gate after build-database.js "succeeded", so a
+  # missing output here means the build produced nothing (a no-op / wrote
+  # elsewhere / exited 0 without emitting the db). Treating that as success would
+  # let the cron report "Done" on a skipped/empty scrape — DIC-1321 forbids it.
+  # Missing output MUST fail, never skip.
+  [ -f "$db" ] || { echo "[$(date)] ❌ coverage gate FAILED: build succeeded but produced no data/database.json — missing output must not be treated as success. Not pushing; cron must fail." >> "$LOG_FILE"; return 1; }
+  local current prev
+  current=$(pricedCardNumberCount "$db")
+  prev=$(cat "$dir/data/database.json.prev-priced.txt" 2>/dev/null)
+  # If the previous count is unavailable (first run / no prior snapshot) assume ok.
+  if ! echo "$prev" | grep -qE '^[0-9]+$'; then
+    echo "[$(date)] coverage gate: no previous priced snapshot, skipping (current=$current)" >> "$LOG_FILE"
+    return 0
+  fi
+  if ! echo "$current" | grep -qE '^[0-9]+$'; then
+    echo "[$(date)] ❌ coverage gate: could not read current priced count" >> "$LOG_FILE"
+    return 1
+  fi
+  local floor budget floor_bound budget_bound
+  floor=$(echo "$prev $COVERAGE_FLOOR_RATIO" | awk '{printf "%.0f", $1*$2}')
+  budget=$(echo "$prev $CHANGE_BUDGET_RATIO" | awk '{printf "%.0f", $1*$2}')
+  floor_bound=$((prev - budget))
+  echo "[$(date)] coverage gate: priced cardNumbers current=$current prev=$prev (floor=$floor, budget-fold=$floor_bound)" >> "$LOG_FILE"
+  if [ "$current" -lt "$floor" ]; then
+    echo "[$(date)] ❌ coverage gate FAILED: priced cardNumbers dropped to $current (< floor $floor from prev $prev). Not pushing; cron must fail." >> "$LOG_FILE"
+    return 1
+  fi
+  if [ "$current" -lt "$floor_bound" ]; then
+    echo "[$(date)] ❌ change-budget gate FAILED: priced cardNumbers dropped $((prev-current)) (> budget $budget). Not pushing; cron must fail." >> "$LOG_FILE"
+    return 1
+  fi
+  return 0
+}
+
+# runPipeline <workdir> [ <commit-message> ] [ <push-mode> ]: executes steps 1–3
+# (scrape → build → gates → commit → push) inside the given repository working
+# directory. Returns non-zero on any failure up to and including the coverage
+# gates.
+#
+#   <push-mode> = inplace (default) | isolated.
+#   - inplace  — the resident checkout IS the working main cron path: commit then
+#     push HEAD:main, exactly as before.
+#   - isolated — the caller runs a throwaway worktree for a dirty-tree handoff.
+#     This mode NEVER pushes HEAD:main under any circumstance (mutating main
+#     from isolation is forbidden — a dirty resident tree's artifact must go
+#     only to an explicit auditable handoff ref). It only COMMITS the artifact;
+#     the caller performs the explicit bot/scrape/<date> push and is
+#     responsible for failing closed on handoff failure.
+runPipeline() {
+  local dir="$1"
+  local commit_msg="$2"
+  local push_mode="${3:-inplace}"
+  local prev_priced
+  prev_priced=$(node -e "
+    const d = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+    const s = new Set();
+    for (const c of Object.values(d.cards || {})) if (Number.isFinite(c.sellPrice) && c.sellPrice > 0) s.add(c.cardNumber);
+    console.log(s.size);
+  " "$dir/data/database.json" 2>/dev/null || echo "none")
+  echo "$prev_priced" > "$dir/data/database.json.prev-priced.txt"
+
+  ( cd "$dir"
+    # 1. Check for new official series (fast, ~30s)
+    echo "[$(date)] Running official site scraper..." >> "$LOG_FILE"
+    node scripts/scrape-official-cards.js >> "$LOG_FILE" 2>&1
+
+    echo "[$(date)] Running YT stats snapshot..." >> "$LOG_FILE"
+    node scripts/scrape-yt-stats.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT stats snapshot failed (non-fatal)" >> "$LOG_FILE"
+
+    echo "[$(date)] Running news sentiment analysis..." >> "$LOG_FILE"
+    node scripts/scrape-news-sentiment.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)" >> "$LOG_FILE"
+
+    echo "[$(date)] Running build-database..." >> "$LOG_FILE"
+    if ! node scripts/build-database.js >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ build-database FAILED, exiting before downstream mutation/commit" >> "$LOG_FILE"
+      return 1
+    fi
+
+    echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
+    node scripts/scrape-yt-subscribers.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT subscriber tracker failed (non-fatal)" >> "$LOG_FILE"
+
+    echo "[$(date)] Running trend analysis..." >> "$LOG_FILE"
+    node scripts/trend-analysis.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Trend analysis failed (non-fatal)" >> "$LOG_FILE"
+
+    echo "[$(date)] 📣 Sending push alerts..." >> "$LOG_FILE"
+    node scripts/send-push-alerts.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Push alerts failed (non-fatal)" >> "$LOG_FILE"
+
+    echo "[$(date)] 🎯 Evaluating desired-price alerts..." >> "$LOG_FILE"
+    npm run --silent send:price-alerts >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Price alerts failed (non-fatal)" >> "$LOG_FILE"
+
+    echo "[$(date)] Scraping buy prices into database.json (torecolo + fullahead + merge)..." >> "$LOG_FILE"
+    node scripts/scrape-torecolo-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Torecolo buy scrape failed (non-fatal)" >> "$LOG_FILE"
+    node scripts/scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fullahead buy scrape failed (non-fatal)" >> "$LOG_FILE"
+    if ! node scripts/merge-buy-prices.js >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ merge-buy-prices FAILED, exiting before native generation/commit" >> "$LOG_FILE"
+      return 1
+    fi
+
+    echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
+    if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
+      return 1
+    fi
+
+    # 2i. Required pre-push gate — see original script for DIC-1167 / DIC-1249 context.
+    echo "[$(date)] Running required pre-push data gate..." >> "$LOG_FILE"
+    if ! npm run test:market-fields >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ test:market-fields FAILED, exiting before commit/push" >> "$LOG_FILE"
+      return 1
+    fi
+    if ! npm run test:buy-price >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ test:buy-price FAILED, exiting before commit/push" >> "$LOG_FILE"
+      return 1
+    fi
+    if ! npm run test:buy-price-regen >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ test:buy-price-regen FAILED, exiting before commit/push" >> "$LOG_FILE"
+      return 1
+    fi
+    if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ native database --check FAILED, exiting before commit/push" >> "$LOG_FILE"
+      return 1
+    fi
+
+    # DIC-1321 hard coverage / change-budget floors. Fail (do not push) if the
+    # build collapsed priced coverage below the floors — never ship a 0-priced
+    # snapshot or a >budget one-cycle drop.
+    if ! priceCoverageOk "$dir"; then
+      return 1
+    fi
+
+    # 3. Check if data changed
+    GIT_DIFF_FILES=("${SCRAPER_MANAGED_PATHS[@]}")
+    if git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .; then
+      echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
+      EXISTING_DATA="data/database.json data/images/ data/official/ data/series-names.json data/price-history/*.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json"
+      [ -f data/yt-stats-history.json ] && EXISTING_DATA="$EXISTING_DATA data/yt-stats-history.json"
+      for dd in data/yt-subscribers data/news-sentiment data/trends; do
+        [ -d "$dd" ] && EXISTING_DATA="$EXISTING_DATA $dd/*.json"
+      done
+      # shellcheck disable=SC2086
+      git add $EXISTING_DATA
+      git add data/buy-prices/*.json 2>/dev/null || true
+      git -c user.name="hunterCard Scraper" -c user.email="bot@huntercard.app" \
+        commit -m "$commit_msg" >> "$LOG_FILE" 2>&1
+      # DIC-1321 (Mac-Codex CR DIC-1326): on the ISOLATED path the gathered
+      # commit must never be pushed to main from the throwaway worktree. Only an
+      # inplace (clean resident) run pushes HEAD:main. The isolated caller
+      # performs the explicit auditable bot/scrape/<date> handoff push AFTER this
+      # function returns and fails closed if that handoff push fails.
+      if [ "$push_mode" = "isolated" ]; then
+        echo "[$(date)] (isolated) artifact committed in worktree; push deferred to explicit $ISOLATED_BRANCH_PREFIX/<date> handoff (never HEAD:main)" >> "$LOG_FILE"
+      else
+        git push origin HEAD:main >> "$LOG_FILE" 2>&1 || git push origin HEAD >> "$LOG_FILE" 2>&1
+        echo "[$(date)] ✅ Pushed to GitHub" >> "$LOG_FILE"
+      fi
+    else
+      echo "[$(date)] No data changes, skipping push" >> "$LOG_FILE"
+    fi
+  )
+}
+
+# ─── Main dispatch ─────────────────────────────────────────────────────────
+# Verify we can reach origin before mutating anything.
+REMOTE_HEAD=$(git rev-parse --verify "${HUNTERCARD_REMOTE_REF:-origin/main}" 2>/dev/null || true)
+
+# 0. Dirty-worktree check (in-place). When the resident checkout is dirty in a
+#    scraper-managed path we NO LONGER permanently deadlock: we route to an
+#    isolated throwaway worktree pinned to origin/main and keep the user's
+#    dirty files untouched. DIC-1219's fail-closed intent is preserved for the
+#    in-place path (we never pull/mutate/stage over residue).
 DIRTY_STATUS=$(git status --porcelain --ignore-submodules -- "${SCRAPER_MANAGED_PATHS[@]}" 2>/dev/null || true)
 if [ -n "$DIRTY_STATUS" ]; then
-  echo "[$(date)] ❌ Worktree has tracked/staged/untracked residue in scraper-managed paths; refusing to pull / mutate / stage" >> "$LOG_FILE"
+  echo "[$(date)] ⚠️ Worktree has residue in scraper-managed paths; switching to isolated clean-worktree handoff (DIC-1321)." >> "$LOG_FILE"
   echo "$DIRTY_STATUS" >> "$LOG_FILE"
-  exit 1
-fi
-git pull --ff-only origin main >> "$LOG_FILE" 2>&1
 
-# 1. Check for new official series (fast, ~30s)
-echo "[$(date)] Running official site scraper..." >> "$LOG_FILE"
-cd scripts
-node scrape-official-cards.js >> "$LOG_FILE" 2>&1
-cd ..
+  ISOLATED_DIR="${HUNTERCARD_ISOLATED_DIR:-/tmp/huntercard-scrape-worktree}"
+  rm -rf "$ISOLATED_DIR"
+  # A throwaway worktree pinned to the current remote HEAD gives a clean,
+  # committed baseline the scheduler is allowed to mutate. Never touches the
+  # resident checkout.
+  if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
+    echo "[$(date)] ❌ could not create isolated worktree; abandoning (cron fails)" >> "$LOG_FILE"
+    exit 1
+  fi
+  # Ensure node_modules available in the isolated tree (scripts need deps).
+  if [ ! -d "$ISOLATED_DIR/node_modules" ] && [ -d "$(pwd)/node_modules" ]; then
+    ln -s "$(pwd)/node_modules" "$ISOLATED_DIR/node_modules" 2>/dev/null || true
+  fi
+  trap 'git worktree remove --force "$ISOLATED_DIR" >> "$LOG_FILE" 2>&1 || true; rm -rf "$LOCK_FILE"' EXIT
 
-# 1b. Snapshot YT channel stats (subscribers + total views) into
-#     data/yt-stats-history.json. MUST run before build-database.js so the
-#     latter can read growth_1d/7d/15d/30d and view deltas from the fresh
-#     snapshot. Non-blocking (DIC-273).
-echo "[$(date)] Running YT stats snapshot..." >> "$LOG_FILE"
-cd scripts
-node scrape-yt-stats.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT stats snapshot failed (non-fatal)" >> "$LOG_FILE"
-cd ..
+  # DIC-1321 (Mac-Codex CR DIC-1328): record the starting SHA so we can detect
+  # a no-op pipeline that created no new artifact commit. Pushing the unchanged
+  # origin/main baseline to bot/scrape/<date> is NOT a valid handoff.
+  ISOLATED_START_SHA=$(git -C "$ISOLATED_DIR" rev-parse HEAD)
 
-# 1c. News sentiment: writes per-member newsCount/newsPositive/newsNegative into
-#     TODAY's snapshot in data/yt-stats-history.json (plus the global
-#     news-sentiment/{date}.json). MUST run after scrape-yt-stats.js (so today's
-#     snapshot exists) and before build-database.js (so the merge picks up the
-#     news fields same-day). Non-blocking (DIC-372).
-echo "[$(date)] Running news sentiment analysis..." >> "$LOG_FILE"
-cd scripts
-node scrape-news-sentiment.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)" >> "$LOG_FILE"
-cd ..
+  if ! runPipeline "$ISOLATED_DIR" "chore: update database $(date +%Y-%m-%d) (isolated)" isolated; then
+    echo "[$(date)] ❌ isolated pipeline failed — sending alert, cron reports failure" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
 
-# 2. Run the scraper. Catalog/build validation failures must stop before downstream mutation/commit.
-cd scripts
-if ! node build-database.js >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ build-database FAILED, exiting before downstream mutation/commit" >> "$LOG_FILE"
-  exit 1
-fi
-cd ..
-
-# 2b. Optional: Run YT subscriber tracker (non-blocking, won't fail pipeline)
-echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
-cd scripts
-node scrape-yt-subscribers.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT subscriber tracker failed (non-fatal)" >> "$LOG_FILE"
-cd ..
-
-# 2d. Run trend analysis (requires price history data)
-echo "[$(date)] Running trend analysis..." >> "$LOG_FILE"
-cd scripts
-node trend-analysis.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Trend analysis failed (non-fatal)" >> "$LOG_FILE"
-cd ..
-
-# 2e. Send Expo push alerts for watched cards with strong upward signals.
-echo "[$(date)] 📣 Sending push alerts..." >> "$LOG_FILE"
-node scripts/send-push-alerts.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Push alerts failed (non-fatal)" >> "$LOG_FILE"
-
-# 2e2. Evaluate exact-version desired-price alerts (DIC-1023). Feeds only the
-#      reference SELL price of the printings that actually have alerts; the
-#      serverless evaluator decides who to notify and records the arm state.
-echo "[$(date)] 🎯 Evaluating desired-price alerts..." >> "$LOG_FILE"
-npm run --silent send:price-alerts >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Price alerts failed (non-fatal)" >> "$LOG_FILE"
-
-# 2f. (removed, DIC-187) scrape-buy-prices.js used to scrape fullahead + torecolo
-#     into data/buy-price-history.json. It scraped the SAME two sites as step 2f
-#     in the same cron pass — double traffic and a risk of inconsistent results
-#     if one pass succeeded and the other failed. Its output was consumed by
-#     nothing, so the duplicate scrape was dropped and 2f is the single source.
-
-# 2g. Scrape buy prices (torecolo + fullahead) into data/buy-prices/ and merge
-#     into database.json (buyPrice + buyPriceHistory).
-#     The two SCRAPERS stay non-blocking (DIC-155) — they are network-dependent and
-#     the merge runs on whatever fresh snapshots exist. The MERGE itself must NOT be
-#     masked: it is the final writer of data/database.json, so a failed or partial
-#     merge would otherwise flow into native generation (2h) and be committed as a
-#     stale/inconsistent canonical+native pair. Fail fast before 2h and the commit
-#     path (DIC-989).
-echo "[$(date)] Scraping buy prices into database.json (torecolo + fullahead + merge)..." >> "$LOG_FILE"
-cd scripts
-node scrape-torecolo-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Torecolo buy scrape failed (non-fatal)" >> "$LOG_FILE"
-node scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fullahead buy scrape failed (non-fatal)" >> "$LOG_FILE"
-if ! node merge-buy-prices.js >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ merge-buy-prices FAILED, exiting before native generation/commit" >> "$LOG_FILE"
-  exit 1
-fi
-cd ..
-
-# 2h. Regenerate public/data/database.json (native asset) from data/database.json.
-#     MUST be the LAST mutation-consuming step: it must run after merge-buy-prices.js
-#     (step 2g), the final writer of data/database.json, so the native asset is
-#     generated from the FINAL canonical bytes and committed atomically in the same
-#     commit below. Regenerating it earlier (before buy-price merge) leaves it stale
-#     and fails the DIC-916 --check gate (DIC-989). Fail if the generator fails (DIC-923).
-echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
-if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
-  exit 1
+  # Push the isolated artifact to a dedicated auditable branch (never main) as
+  # the handoff; the user keeps their dirty files. A separate reviewer/PR path
+  # merges it after checks. The isolated worktree commits on a detached HEAD.
+  # DIC-1321 (Mac-Codex CR DIC-1326): this handoff must FAIL CLOSED — a push or
+  # a missing artifact commit must never end in "Done"/exit 0.
+  ISOLATED_BRANCH="${ISOLATED_BRANCH_PREFIX}/$(date +%Y-%m-%d)"
+  ISOLATED_END_SHA=$(git -C "$ISOLATED_DIR" rev-parse HEAD 2>/dev/null || true)
+  if [ -z "$ISOLATED_END_SHA" ]; then
+    echo "[$(date)] ❌ isolated handoff: no commit at all in worktree HEAD; cron fails" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if [ "$ISOLATED_START_SHA" = "$ISOLATED_END_SHA" ]; then
+    echo "[$(date)] ❌ isolated handoff: pipeline was a no-op (HEAD unchanged at $ISOLATED_END_SHA); cron fails — must never push unchanged baseline" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  if ! git -C "$ISOLATED_DIR" push origin "HEAD:$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
+    echo "[$(date)] ❌ isolated artifact handoff push to $ISOLATED_BRANCH FAILED; cron fails (never success on failed handoff)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  echo "[$(date)] ✅ Isolated artifact pushed to $ISOLATED_BRANCH (dirty worktree preserved)" >> "$LOG_FILE"
+  echo "[$(date)] ✅ Done (isolated handoff)" >> "$LOG_FILE"
+  exit 0
 fi
 
-# 2i. Required pre-push gate. The local scheduler is allowed to tolerate yuyu
-#     network/WAF outages during catalog ingestion, but it must never commit a
-#     database that fails the same market/native invariants CI enforces. DIC-1167
-#     regression 2026-08-30: the script pushed a database with sellPrice=0 and
-#     priceHistory=0, printed Done, and only CI caught test:market-fields later.
-#     DIC-1249 regression 2026-08-30: the script also pushed 546 rows whose
-#     per-variant buyPriceTimestamp had drifted from the freshly written source
-#     `data/buy-prices/*.json` timestamps (merge-buy-prices.js is the sole writer
-#     of that provenance; if it did not run to completion on this cycle the DB is
-#     silently stale-by-one-day while values / versions / sources still match).
-#     test:buy-price is the CI check that caught it; test:buy-price-regen is the
-#     tight byte-identity guard on `regen(committed) === committed`. Both must run
-#     BEFORE the commit so this class of drift is stopped inside the scheduler.
-echo "[$(date)] Running required pre-push data gate..." >> "$LOG_FILE"
-if ! npm run test:market-fields >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ test:market-fields FAILED, exiting before commit/push" >> "$LOG_FILE"
+# In-place clean path.
+git pull --ff-only origin main >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ git pull failed (non-fatal); continuing with current HEAD" >> "$LOG_FILE"
+if ! runPipeline "$(pwd)" "chore: update database $(date +%Y-%m-%d)"; then
+  echo "[$(date)] ❌ pipeline failed — cron reports failure" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
   exit 1
-fi
-if ! npm run test:buy-price >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ test:buy-price FAILED, exiting before commit/push" >> "$LOG_FILE"
-  exit 1
-fi
-if ! npm run test:buy-price-regen >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ test:buy-price-regen FAILED, exiting before commit/push" >> "$LOG_FILE"
-  exit 1
-fi
-if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
-  echo "[$(date)] ❌ native database --check FAILED, exiting before commit/push" >> "$LOG_FILE"
-  exit 1
-fi
-
-# 3. Check if data changed
-# NOTE: must be an ARRAY. As a bare `VAR='a' 'b' 'c'` list (DIC-923) bash read this
-# as an assignment prefix followed by the COMMAND `data/images/`, which aborts the
-# run with exit 126 under `set -e` — before anything was ever committed (DIC-989).
-GIT_DIFF_FILES=(
-  'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json'
-  'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json'
-  'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
-  'docs/audits/official-catalog-audit.json' 'docs/audits/official-production-lag-state.json'
-)
-if git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .; then
-  echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
-  # Only add directories that exist (some are optional and may not be created yet)
-  EXISTING_DATA="data/database.json data/images/ data/official/ data/series-names.json data/price-history/*.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json"
-  [ -f data/yt-stats-history.json ] && EXISTING_DATA="$EXISTING_DATA data/yt-stats-history.json"
-  for dir in data/yt-subscribers data/news-sentiment data/trends; do
-    [ -d "$dir" ] && EXISTING_DATA="$EXISTING_DATA $dir/*.json"
-  done
-  # shellcheck disable=SC2086
-  git add $EXISTING_DATA
-  git add data/buy-prices/*.json 2>/dev/null || true
-  git -c user.name="hunterCard Scraper" -c user.email="bot@huntercard.app" \
-    commit -m "chore: update database $(date +%Y-%m-%d)" >> "$LOG_FILE" 2>&1
-  git push origin main >> "$LOG_FILE" 2>&1
-  echo "[$(date)] ✅ Pushed to GitHub" >> "$LOG_FILE"
-
-  # 4. Auto-deploy via GitHub push (holocard-hunter linked to main branch)
-else
-  echo "[$(date)] No data changes, skipping push" >> "$LOG_FILE"
 fi
 
 echo "[$(date)] ✅ Done" >> "$LOG_FILE"

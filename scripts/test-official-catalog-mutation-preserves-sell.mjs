@@ -14,14 +14,21 @@ const officialDir = path.join(tmp, 'official');
 fs.mkdirSync(officialDir, { recursive: true });
 
 const id = 'hBP01-081_hEB01_RR_hBP01-081_RR_02';
+// DIC-1321: the previous yuyu payload must carry a yuyuImage whose URL product
+// path matches the row's sourceProduct (hEB01) for the DIC-1227 provenance
+// gate to let it survive an official-sync mutation. The old fixture used a
+// `test` product path that never matched, which the previous ungated
+// `preservedMarketPayload` spread preserved anyway — that cross-product
+// restore is exactly the 0↔1547 oscillation / printing-isolation bug being
+// fixed here.
 const provenSellPayload = {
   sellPrice: 980,
   yuyuName: '星街すいせい(サマー・ホログラム)',
-  yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/test/2525.jpg',
-  prices: [{ name: '星街すいせい(サマー・ホログラム)', sellPrice: 980, rarity: 'RR', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/test/2525.jpg' }],
+  yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/2525.jpg',
+  prices: [{ name: '星街すいせい(サマー・ホログラム)', sellPrice: 980, rarity: 'RR', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/2525.jpg' }],
   timestamp: '2026-08-24T12:00:00.000Z',
   priceHistory: { '2026-08-24': 980 },
-  _rawPricesArchive: [{ name: '星街すいせい(サマー・ホログラム)', sellPrice: 980 }],
+  _rawPricesArchive: [{ name: '星街すいせい(サマー・ホログラム)', sellPrice: 980, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/2525.jpg' }],
 };
 
 fs.writeFileSync(dbPath, `${JSON.stringify({
