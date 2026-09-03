@@ -29,6 +29,7 @@ import {
   runWebCameraScan,
   runNativeCameraScan,
   isAmbiguousPrinting,
+  decideRecognizedOutcome,
   type ScanFlowIo,
   type ScanFlowUi,
 } from '../services/scanRecognitionFlow';
@@ -176,6 +177,19 @@ export default function ScanScreen({ navigation }: any) {
   };
 
   // Route a recognition result through the confidence tiers.
+  //
+  // The classification itself lives in `decideRecognizedOutcome` so a Node
+  // harness can drive the SAME rules end-to-end without booting the screen
+  // (DIC-1339). This wrapper handles the setState side effects only.
+  //
+  // Rules:
+  //  - Unresolved printing → picker, never commit at ANY confidence (DIC-1325).
+  //    The confidence describes how sure we are of the CARD; when a cardNumber
+  //    carries several printings it says nothing about which one is in hand,
+  //    and the result deliberately has no price. Auto-adding here is what put
+  //    a priceless placeholder into the session instead of showing the chooser.
+  //  - High confidence → auto-add and show the floating result card.
+  //  - Mid/low → require explicit confirmation via the candidate picker.
   const handleRecognized = (
     card: CardInfo,
     confidence: number,
@@ -189,39 +203,22 @@ export default function ScanScreen({ navigation }: any) {
     setCapturedPhotoUri(null);
     resetAutoScan();
 
-    // An unresolved printing never auto-adds, at ANY confidence (DIC-1325).
-    // The confidence describes how sure we are of the CARD; when a cardNumber
-    // carries several printings it says nothing about which one is in hand, and
-    // the result deliberately has no price. Auto-adding here is what put a
-    // priceless placeholder into the session instead of showing the chooser.
-    // This sits inside handleRecognized rather than at each call site so every
-    // entry point — scan flow, gallery import, OCR fallback — is covered by one
-    // decision.
-    if (ambiguousPrinting) {
-      setCandidateSelector({
-        visible: true,
-        tier: 'mid',
-        candidates: (candidates && candidates.length > 0 ? candidates : [{ card, confidence }]).slice(0, 5),
-      });
-      return;
-    }
+    const decision = decideRecognizedOutcome(card, confidence, candidates, ambiguousPrinting, {
+      autoAdd: CONFIDENCE_AUTO_ADD,
+      minCandidate: CONFIDENCE_MIN_CANDIDATE,
+    });
 
-    // High confidence → auto-add and show the floating result card.
-    if (confidence >= CONFIDENCE_AUTO_ADD) {
-      if (commitCard(card)) {
-        setResultCard({ visible: true, card, confidence });
+    if (decision.action === 'commit') {
+      if (commitCard(decision.card)) {
+        setResultCard({ visible: true, card: decision.card, confidence: decision.confidence });
       }
       return;
     }
 
-    // Mid/low → require explicit confirmation via the candidate picker.
-    const list = candidates && candidates.length > 0
-      ? candidates
-      : [{ card, confidence }];
     setCandidateSelector({
       visible: true,
-      tier: confidence >= CONFIDENCE_MIN_CANDIDATE ? 'mid' : 'low',
-      candidates: list.slice(0, 5),
+      tier: decision.action === 'ambiguous-picker' ? 'mid' : decision.tier,
+      candidates: decision.candidates,
     });
   };
 
@@ -660,6 +657,26 @@ export default function ScanScreen({ navigation }: any) {
         if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
           setIsProcessingOCR(false);
           setIsScanning(false);
+          // Route through handleRecognized so the exact-printing picker opens
+          // and commitCard stays at zero until the user picks — same decision
+          // point the success branch above uses (DIC-1325 / DIC-1339). The
+          // typed candidates carry their own compound printing ids so
+          // whichever the user picks resolves to an exact printing at commit.
+          const typedCandidates = galleryVisionResult.candidates;
+          if (typedCandidates && typedCandidates.length > 0) {
+            const first = typedCandidates[0];
+            handleRecognized(
+              first.card,
+              galleryVisionResult.confidence ?? first.confidence ?? 0,
+              typedCandidates,
+              isAmbiguousPrinting(galleryVisionResult),
+            );
+            return;
+          }
+          // The API always populates candidates alongside `lowConfidence`, so
+          // this fallback only fires for legacy shapes (local-OCR suggestions
+          // without a typed candidate list). Still no commit — surface the
+          // suggestions in the search panel for manual selection.
           const candidateCards = galleryVisionResult.suggestions || [];
           setSearchResults(candidateCards);
           setSuggestions(candidateCards);

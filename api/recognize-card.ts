@@ -172,6 +172,14 @@ function fmt(entry: any, storeMvp = false) {
   const price = entry.sellPrice;
   const normalized = normalizeCardIdentity(entry);
   const base = {
+    // Compound printing identity (e.g. hBP01-024_hBP01_C_hBP01-024_C).
+    // The database keys entries by this compound id, and cardRecognition
+    // rehydrates it as `CardInfo.id`; dropping it on the wire collapses the
+    // eight hBP01-024 printings into one at the client boundary — session /
+    // duplicate identity then no longer reflects the printing the user chose
+    // (DIC-1325 / DIC-1339). Fall back to cardNumber only when a legacy
+    // catalog row genuinely has no `id`.
+    id: entry.id || entry.cardNumber,
     cardNumber: entry.cardNumber,
     name: entry.name,
     sellPrice: price,

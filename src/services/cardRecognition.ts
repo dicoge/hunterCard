@@ -496,10 +496,19 @@ async function recognizeViaApi(imageUri: string): Promise<RecognitionResult> {
     const data = await apiResponse.json();
 
     if (!data.success) {
+      // The handler's low-confidence shape is
+      //   { success:false, lowConfidence:true, candidates:[...] }
+      // where each candidate carries its own compound id + own price. Mapping
+      // that to `suggestions: CardInfo[]` alone dropped the per-candidate
+      // confidence AND the typed `candidates` field the gallery decision path
+      // reads, so the gallery low-confidence branch had nothing to hand the
+      // exact-printing picker (DIC-1339). Preserve BOTH shapes: typed
+      // candidates for the decision path, suggestions for legacy consumers.
       return {
         success: false,
         error: data.error || '',
         suggestions: Array.isArray(data.candidates) ? data.candidates.map(mapApiCard) : undefined,
+        candidates: mapApiCandidates(data.candidates),
         confidence: data.confidence,
         reason: data.reason,
         raw: data.raw,

@@ -65,6 +65,59 @@ export function isAmbiguousPrinting(result: RecognitionResult): boolean {
     && (result.candidates?.length ?? 0) > 1;
 }
 
+/**
+ * Pure decision extracted from ScanScreen.handleRecognized so the gallery /
+ * scan / OCR paths all share ONE tested classifier, and a Node harness can
+ * drive it end-to-end without booting the camera screen (DIC-1339 regression).
+ *
+ * The rules:
+ *   - `ambiguous-picker`: the printing is not resolved — open the picker,
+ *     never commit at any confidence.
+ *   - `commit`: confidence at or above auto-add — commit the identified card.
+ *   - `picker`: mid/low confidence — open the picker with the candidate list
+ *     so the user picks explicitly.
+ */
+export type HandleRecognizedDecision =
+  | { action: 'ambiguous-picker'; candidates: RecognizedCandidate[] }
+  | { action: 'commit'; card: CardInfo; confidence: number }
+  | { action: 'picker'; tier: 'mid' | 'low'; candidates: RecognizedCandidate[] };
+
+export interface RecognizedThresholds {
+  /** ≥ this → auto-commit. */
+  autoAdd: number;
+  /** ≥ this (and below autoAdd) → picker at `mid` tier; below → `low`. */
+  minCandidate: number;
+}
+
+export const DEFAULT_RECOGNIZED_THRESHOLDS: RecognizedThresholds = {
+  autoAdd: 0.85,
+  minCandidate: 0.55,
+};
+
+export function decideRecognizedOutcome(
+  card: CardInfo,
+  confidence: number,
+  candidates: RecognizedCandidate[] | undefined,
+  ambiguousPrinting: boolean,
+  thresholds: RecognizedThresholds = DEFAULT_RECOGNIZED_THRESHOLDS,
+): HandleRecognizedDecision {
+  if (ambiguousPrinting) {
+    return {
+      action: 'ambiguous-picker',
+      candidates: (candidates && candidates.length > 0 ? candidates : [{ card, confidence }]).slice(0, 5),
+    };
+  }
+  if (confidence >= thresholds.autoAdd) {
+    return { action: 'commit', card, confidence };
+  }
+  const list = candidates && candidates.length > 0 ? candidates : [{ card, confidence }];
+  return {
+    action: 'picker',
+    tier: confidence >= thresholds.minCandidate ? 'mid' : 'low',
+    candidates: list.slice(0, 5),
+  };
+}
+
 function routeAmbiguousPrinting(result: RecognitionResult, ui: ScanFlowUi): boolean {
   if (!isAmbiguousPrinting(result)) return false;
   ui.setBusy(false);

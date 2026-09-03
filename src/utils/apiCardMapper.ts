@@ -19,7 +19,13 @@ import type { CardInfo } from '../services/cardRecognition';
  */
 export function mapApiCardToCardInfo(raw: any): CardInfo {
   return {
-    id: raw.cardNumber,
+    // Prefer the compound printing id the API now serializes (DIC-1339). The
+    // cardNumber fallback covers legacy fixtures that predate the wire change;
+    // in production the API always sends `id`. Collapsing to cardNumber here
+    // was what turned every hBP01-024 candidate into the same id at the client
+    // boundary — session/duplicate identity then no longer matched the exact
+    // printing the user picked.
+    id: raw.id || raw.cardNumber,
     name: raw.name || '',
     cardNumber: raw.cardNumber,
     type: raw.type || '',
