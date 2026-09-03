@@ -112,9 +112,9 @@ export default function ScanCandidateSelector({
                   <Text style={styles.itemMeta} numberOfLines={1} testID="scan-candidate-meta">
                     #{card.cardNumber || card.id}
                     {card.rarity ? ` · ${card.rarity}` : ''}
-                    {/* Store MVP 隱藏候選卡的價格 (DIC-1256)；仍保留卡號 + 稀有度
-                        以便使用者辨認正確的卡片。 */}
-                    {FEATURES.marketData ? `  ${formatPrice(card.sellPrice)}` : ''}
+                    {/* 候選卡的售價 — Store MVP 也顯示 (DIC-1319)：價格常常就是
+                        使用者分辨哪張才是手上那一版的依據。 */}
+                    {FEATURES.sellPrice ? `  ${formatPrice(card.sellPrice)}` : ''}
                   </Text>
                   <View style={styles.confidenceTrack}>
                     <View

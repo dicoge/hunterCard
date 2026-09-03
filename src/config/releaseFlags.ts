@@ -42,10 +42,24 @@ export const FEATURES = {
   // and the +/- ownership adjuster on card detail is hidden. The deck editor
   // continues to expose its own ownership editing.
   favorites: !STORE_MVP,
+  // 售價 / plain sale price of the ONE printing the player is holding. ALWAYS
+  // ON, Store MVP included (DIC-1319). Scanning a card and immediately seeing
+  // what that exact printing sells for is the product's primary path, not an
+  // advanced market surface — DIC-1256 folded it into `marketData`, and that is
+  // why the v21 closed test shipped with every price blank.
+  //
+  // Scope is deliberately narrow: the sale price of a single printing on the
+  // surfaces that already identify that printing (scan result, scan candidate
+  // meta, search-result row, card-detail price block). Buy-back price, 買賣差價,
+  // cross-printing comparison, trend/prediction, session & deck valuation
+  // totals, external price links and price alerts all stay behind their own
+  // flags below and remain hidden under Store MVP.
+  sellPrice: true,
   // 市場數據 / Market data section on the card-detail screen (DIC-1256):
-  // the top 遊々亭 sale-price block, MarketDataPanel version pills, 買賣差價,
-  // YT stats, and trend charts are all hidden. Cards keep their image, name,
-  // number, type, colors, skills, and keywords.
+  // MarketDataPanel version pills, 買賣差價, YT stats, trend charts, and the
+  // cross-printing 其他版本 comparisons are hidden. Cards keep their image,
+  // name, number, type, colors, skills, keywords — and, since DIC-1319, the
+  // sale price of their own printing (see `sellPrice`).
   marketData: !STORE_MVP,
   // 外部價格連結 / External price-lookup links on the card-detail screen
   // (DIC-1256): 遊々亭 (價格查詢) and Carousell 二手價格 links are hidden.

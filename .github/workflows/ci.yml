@@ -297,6 +297,18 @@ jobs:
       - name: Verify Scan screen fails safe on native crashes (DIC-1286)
         run: npm run test:scan-screen-fail-safe
 
+      - name: Verify the scan viewfinder stays a focused primary path (DIC-1319)
+        run: npm run test:scan-primary-path
+
+      - name: Verify the native bundled catalog ships real sale prices (DIC-1319)
+        run: npm run test:native-price-artifact
+
+      - name: Verify Store MVP UI gates stay on every surface (DIC-1256 / DIC-1319)
+        run: npm run test:store-mvp-ui-gates
+
+      - name: Verify Store MVP render behavior across both build profiles (DIC-1256 / DIC-1319)
+        run: npm run test:store-mvp-behavior
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)

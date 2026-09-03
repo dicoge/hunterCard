@@ -7,9 +7,17 @@
  * Contains:
  * - Scan area with animated scan line
  * - Corner decorations
- * - Camera controls (flash, scan button, flip)
- * - Auto-scan mode toggle
- * - Gallery button
+ * - The primary scan action, plus a torch toggle for framing in low light
+ *
+ * DIC-1319: the normal flow is deliberately one action. Gallery import, camera
+ * flip, manual search and the auto-scan mode toggle used to sit under the
+ * viewfinder and were what the v21 tester read as "many unnecessary buttons".
+ * None of them were the primary path, and the auto-scan toggle was inert on
+ * Android to begin with (the auto-scan loop is web-only). They are gone from
+ * here; manual search stays reachable from the scan-failure and low-confidence
+ * recovery panels, and gallery import stays on the permission-denied and
+ * web-camera-unavailable fallbacks in ScanScreen — so removing them does not
+ * weaken permission or error recovery.
  */
 
 import React from 'react';
@@ -37,17 +45,16 @@ export interface ScanOverlayProps {
   // Scan state
   isScanning: boolean;
   flash: boolean;
-  autoScanEnabled: boolean;
+  // Whether the frame-stability auto-scan loop is actually running. ScanScreen
+  // only runs it on web, so this is false on Android/iOS and the hint text
+  // stops promising an automatic capture the platform never performs.
+  autoScanActive: boolean;
   isCameraReady: boolean;
   cameraError: string | null;
 
   // Callbacks
   onFlash: () => void;
   onScan: () => void;
-  onFlip: () => void;
-  onGallery: () => void;
-  onManualSearch: () => void;
-  onToggleAutoScan: () => void;
   onRetry: () => void;
   onScanAreaLayout?: (event: LayoutChangeEvent) => void;
 }
@@ -58,15 +65,11 @@ export default function ScanOverlay({
   borderAnim,
   isScanning,
   flash,
-  autoScanEnabled,
+  autoScanActive,
   isCameraReady,
   cameraError,
   onFlash,
   onScan,
-  onFlip,
-  onGallery,
-  onManualSearch,
-  onToggleAutoScan,
   onRetry,
   onScanAreaLayout,
 }: ScanOverlayProps) {
@@ -174,79 +177,42 @@ export default function ScanOverlay({
         </View>
         <View style={styles.overlayBottom}>
           <Text style={styles.hintText}>
-            {autoScanEnabled ? t('scan_frame_auto') : t('scan_frame_manual')}
+            {autoScanActive ? t('scan_frame_auto') : t('scan_frame_manual')}
           </Text>
-          <View style={styles.controls}>
-            {/* Flash toggle */}
+          <View style={styles.controls} testID="scan-primary-controls">
+            {/* Torch — a framing aid for the card in hand, not a second flow.
+                Icon-only so the primary action stays the one labelled control. */}
             <TouchableOpacity
               style={[styles.controlBtn, flash && styles.controlBtnActive]}
               onPress={onFlash}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={flash ? t('scan_flash_on') : t('scan_flash')}
+              testID="scan-flash-toggle"
             >
               <Text style={styles.controlIcon}>{flash ? '🔦' : '💡'}</Text>
-              <Text style={styles.controlLabel}>{flash ? t('scan_flash_on') : t('scan_flash')}</Text>
             </TouchableOpacity>
 
-            {/* Gallery button */}
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={onGallery}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.controlIcon}>🖼️</Text>
-              <Text style={styles.controlLabel}>{t('scan_gallery')}</Text>
-            </TouchableOpacity>
-
-            {/* Scan button */}
+            {/* The single scan action. */}
             <TouchableOpacity
               style={[styles.scanButton, isScanning && styles.scanButtonDisabled]}
               onPress={onScan}
               disabled={isScanning}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              testID="scan-primary-action"
             >
               <View style={styles.scanButtonInner}>
                 <Text style={styles.scanButtonIcon}>{isScanning ? '⏳' : '📷'}</Text>
               </View>
               <Text style={styles.scanButtonLabel}>
-                {isScanning ? t('scan_recognizing') : autoScanEnabled ? t('scan_manual') : t('scan_scan_action')}
+                {isScanning ? t('scan_recognizing') : autoScanActive ? t('scan_manual') : t('scan_scan_action')}
               </Text>
             </TouchableOpacity>
 
-            {/* Flip camera */}
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={onFlip}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.controlIcon}>🔄</Text>
-              <Text style={styles.controlLabel}>{t('scan_flip')}</Text>
-            </TouchableOpacity>
-
-            {/* Manual search */}
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={onManualSearch}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.controlIcon}>🔤</Text>
-              <Text style={styles.controlLabel}>{t('common_search')}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Auto-scan toggle */}
-          <View style={styles.autoScanToggleContainer}>
-            <TouchableOpacity
-              style={[
-                styles.autoScanToggle,
-                autoScanEnabled && styles.autoScanToggleActive,
-              ]}
-              onPress={onToggleAutoScan}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.autoScanToggleText, autoScanEnabled && styles.autoScanToggleTextActive]}>
-                {autoScanEnabled ? t('scan_auto_mode') : t('scan_manual_mode')}
-              </Text>
-            </TouchableOpacity>
+            {/* Spacer keeps the scan button optically centred against the
+                torch control on the other side. */}
+            <View style={styles.controlBtnSpacer} />
           </View>
         </View>
       </View>
@@ -390,18 +356,20 @@ const styles = StyleSheet.create({
   },
   controlBtn: {
     alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+    height: 48,
     padding: 8,
   },
   controlBtnActive: {
     opacity: 1,
   },
+  controlBtnSpacer: {
+    width: 48,
+    height: 48,
+  },
   controlIcon: {
     fontSize: 26,
-    marginBottom: 4,
-  },
-  controlLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
   },
   scanButton: {
     alignItems: 'center',
@@ -432,30 +400,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 6,
-  },
-  autoScanToggleContainer: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  autoScanToggle: {
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  autoScanToggleActive: {
-    backgroundColor: 'rgba(255, 107, 157, 0.2)',
-    borderColor: COLORS.primary,
-  },
-  autoScanToggleText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  autoScanToggleTextActive: {
-    color: COLORS.primary,
   },
 });
 

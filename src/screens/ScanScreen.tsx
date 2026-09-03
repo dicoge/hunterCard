@@ -76,7 +76,9 @@ export default function ScanScreen({ navigation }: any) {
   const [webCameraStarted, setWebCameraStarted] = useState(false);
   // Web 相簿上傳模式：相機無法使用（權限卡住/裝置無鏡頭）時的 fallback，不掛載 WebCamera
   const [webGalleryMode, setWebGalleryMode] = useState(false);
-  const [facing, setFacing] = useState<CameraType>('back');
+  // Card scanning always uses the rear camera; the flip control was removed from
+  // the focused scan flow (DIC-1319), so this is a constant rather than state.
+  const facing: CameraType = 'back';
   const cameraRef = useRef<CameraView>(null);
   const webCameraRef = useRef<WebCameraHandle>(null);
   const scanAreaViewportRef = useRef<Rect | null>(null);
@@ -121,8 +123,11 @@ export default function ScanScreen({ navigation }: any) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const borderAnim = useRef(new Animated.Value(0)).current;
 
-	// Auto-scan state & refs
-  const [autoScanEnabled, setAutoScanEnabled] = useState<boolean>(true);
+	// Auto-scan refs. Auto-scan is a web-only frame-stability loop, so whether it
+  // runs is decided by the platform, not by a user-facing mode switch — the
+  // toggle that used to sit under the viewfinder did nothing on Android
+  // (DIC-1319).
+  const autoScanActive = isWeb;
   const autoScanRef = useRef<number | null>(null);
   const lastScanTimeRef = useRef<number>(0);
 
@@ -304,8 +309,8 @@ export default function ScanScreen({ navigation }: any) {
   // Auto-scan rAF loop (web only) — detects card in frame and auto-triggers OCR
   useEffect(() => {
     // Auto-scan only works on web; native keeps manual scan
-    if (!isWeb) return;
-    if (!isCameraReady || !autoScanEnabled) return;
+    if (!autoScanActive) return;
+    if (!isCameraReady) return;
     if (isScanning || isProcessingOCR) return;
     if (candidateSelector.visible || resultCard.visible) return;
 
@@ -344,20 +349,10 @@ export default function ScanScreen({ navigation }: any) {
         cancelAnimationFrame(autoScanRef.current);
       }
     };
-  }, [isCameraReady, autoScanEnabled, isScanning, isProcessingOCR, facing, candidateSelector.visible, resultCard.visible]);
-
-  const toggleCameraFacing = () => {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
-    resetAutoScan();
-  };
+  }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible]);
 
   const toggleFlash = () => {
     setFlash(current => !current);
-  };
-
-  const toggleAutoScan = () => {
-    setAutoScanEnabled(prev => !prev);
-    resetAutoScan();
   };
 
   const handleScanAreaLayout = (event: LayoutChangeEvent) => {
@@ -1000,15 +995,11 @@ export default function ScanScreen({ navigation }: any) {
             borderAnim={borderAnim}
             isScanning={isScanning}
             flash={flash}
-            autoScanEnabled={autoScanEnabled}
+            autoScanActive={autoScanActive}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
             onFlash={toggleFlash}
             onScan={handleScan}
-            onFlip={toggleCameraFacing}
-            onGallery={pickFromGallery}
-            onManualSearch={() => setShowSearch(true)}
-            onToggleAutoScan={toggleAutoScan}
             onScanAreaLayout={handleScanAreaLayout}
             onRetry={() => {
               setCameraError(null);
@@ -1032,15 +1023,11 @@ export default function ScanScreen({ navigation }: any) {
             borderAnim={borderAnim}
             isScanning={isScanning}
             flash={flash}
-            autoScanEnabled={autoScanEnabled}
+            autoScanActive={autoScanActive}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
             onFlash={toggleFlash}
             onScan={handleScan}
-            onFlip={toggleCameraFacing}
-            onGallery={pickFromGallery}
-            onManualSearch={() => setShowSearch(true)}
-            onToggleAutoScan={toggleAutoScan}
             onRetry={() => {
               setCameraError(null);
               if (webCameraRef.current) webCameraRef.current.retry();
@@ -1083,9 +1070,9 @@ export default function ScanScreen({ navigation }: any) {
                 <Text style={resultStyles.toastName} numberOfLines={1}>
                   {lastScannedCard.name}
                 </Text>
-                {/* Store MVP 隱藏「最後掃描」toast 的估價欄 (DIC-1256)；
-                    仍顯示卡名與「再加入一張」按鈕以維持 session flow。 */}
-                {FEATURES.marketData && (
+                {/* 「最後掃描」toast 的售價 — Store MVP 也顯示 (DIC-1319)：這是
+                    剛掃到那張卡自己的售價，掃描→查價的主路徑回饋。 */}
+                {FEATURES.sellPrice && (
                   <Text style={resultStyles.toastPrice} testID="scan-toast-price">
                     {(() => {
                       if (lastScannedCard.sellPrice == null) return '—';
@@ -1219,9 +1206,9 @@ export default function ScanScreen({ navigation }: any) {
               >
                 <Text style={resultStyles.listItemName}>{card.name}</Text>
                 <Text style={resultStyles.listItemMeta}>{card.cardNumber} · {card.rarity} · {card.series}</Text>
-                {/* Store MVP 隱藏搜尋建議列表的估價 (DIC-1256)；卡名／編號／
-                    稀有度／系列仍在，供辨識選擇。 */}
-                {FEATURES.marketData && (
+                {/* 手動搜尋建議列的售價 — Store MVP 也顯示 (DIC-1319)，與掃描
+                    結果同一種單卡售價。 */}
+                {FEATURES.sellPrice && (
                   <Text style={resultStyles.listItemPrice} testID="scan-search-suggestion-price">
                     ¥{card.sellPrice?.toLocaleString() || t('scan_no_trade')}
                   </Text>

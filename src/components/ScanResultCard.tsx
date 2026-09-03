@@ -204,10 +204,10 @@ export default function ScanResultCard({
           </Text>
         </View>
 
-        {/* All price rows — Store MVP 隱藏 (DIC-1256): 掃描結果卡的所有價格
-            資訊都屬於 market-data；review build 只留卡片名稱／編號／稀有度／
-            信心度來確認辨識結果。 */}
-        {FEATURES.marketData && (
+        {/* 掃到的這張卡自己的售價 — Store MVP 也顯示 (DIC-1319)。掃描→看價是
+            產品主路徑；這裡只列 card.prices（同一張卡的各版本標價）或單一
+            sellPrice，不做跨系列比價。 */}
+        {FEATURES.sellPrice && (
           <View style={styles.pricesSection} testID="scan-result-prices">
             {uniquePrices ? (
               uniquePrices.map((p, i) => (
@@ -235,8 +235,10 @@ export default function ScanResultCard({
           </View>
         )}
 
-        {/* Series reprint variants — same gate: variants only surface price
-            comparisons across printings, so Store MVP drops the section. */}
+        {/* Series reprint variants — stays on FEATURES.marketData: this section
+            compares OTHER printings' prices against the one in hand, which is
+            the cross-printing surface DIC-1319 must keep out of the store
+            build. The price above is this printing's own. */}
         {FEATURES.marketData && variants && (
           <View style={styles.variantsSection} testID="scan-result-variants">
             <Text style={styles.variantsHeader}>{t('scan_other_versions')}</Text>
