@@ -28,6 +28,7 @@ import { RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
 import {
   runWebCameraScan,
   runNativeCameraScan,
+  isAmbiguousPrinting,
   type ScanFlowIo,
   type ScanFlowUi,
 } from '../services/scanRecognitionFlow';
@@ -179,6 +180,7 @@ export default function ScanScreen({ navigation }: any) {
     card: CardInfo,
     confidence: number,
     candidates?: RecognizedCandidate[],
+    ambiguousPrinting = false,
   ) => {
     setSearchResults([]);
     setSearchError(null);
@@ -186,6 +188,23 @@ export default function ScanScreen({ navigation }: any) {
     setScanError(null);
     setCapturedPhotoUri(null);
     resetAutoScan();
+
+    // An unresolved printing never auto-adds, at ANY confidence (DIC-1325).
+    // The confidence describes how sure we are of the CARD; when a cardNumber
+    // carries several printings it says nothing about which one is in hand, and
+    // the result deliberately has no price. Auto-adding here is what put a
+    // priceless placeholder into the session instead of showing the chooser.
+    // This sits inside handleRecognized rather than at each call site so every
+    // entry point — scan flow, gallery import, OCR fallback — is covered by one
+    // decision.
+    if (ambiguousPrinting) {
+      setCandidateSelector({
+        visible: true,
+        tier: 'mid',
+        candidates: (candidates && candidates.length > 0 ? candidates : [{ card, confidence }]).slice(0, 5),
+      });
+      return;
+    }
 
     // High confidence → auto-add and show the floating result card.
     if (confidence >= CONFIDENCE_AUTO_ADD) {
@@ -667,7 +686,7 @@ export default function ScanScreen({ navigation }: any) {
           setIsScanning(false);
 
           if (cardResult.success && cardResult.card) {
-            handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
+            handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates, isAmbiguousPrinting(cardResult));
           } else {
             // Fallback 到全圖 OCR
             const recognizedText = await recognizeTextWeb(result.assets[0].uri);
@@ -677,7 +696,7 @@ export default function ScanScreen({ navigation }: any) {
             if (trimmedText.length > 0) {
               const fallbackResult = await recognizeCardFromOcr(trimmedText);
               if (fallbackResult.success && fallbackResult.card) {
-                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
+                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates, isAmbiguousPrinting(fallbackResult));
                 return;
               }
               setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
@@ -698,7 +717,7 @@ export default function ScanScreen({ navigation }: any) {
           if (trimmedText.length > 0) {
             const cardResult = await recognizeCardFromOcr(trimmedText);
             if (cardResult.success && cardResult.card) {
-              handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
+              handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates, isAmbiguousPrinting(cardResult));
             } else {
               setSearchError(localizedError(cardResult.error, 'scan_no_match'));
               const searchResult = await searchCards(trimmedText, 10);

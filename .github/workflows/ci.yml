@@ -306,6 +306,9 @@ jobs:
       - name: Verify scan recovery never quotes a sibling printing's price (DIC-1325)
         run: npm run test:scan-exact-printing-identity
 
+      - name: Verify an unresolved printing reaches the picker and commits nothing (DIC-1325)
+        run: npm run test:scan-ambiguous-printing-flow
+
       - name: Verify the native bundled catalog ships real sale prices (DIC-1319)
         run: npm run test:native-price-artifact
 

@@ -116,7 +116,8 @@
     "test:scan-primary-path": "node --import ./scripts/register-web-render.mjs scripts/test-scan-primary-path.mjs",
     "test:native-price-artifact": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-native-price-artifact.mjs",
     "test:scan-printing-isolation": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-scan-printing-isolation.mjs",
-    "test:scan-exact-printing-identity": "node --import ./scripts/register-web-render.mjs scripts/test-scan-exact-printing-identity.mjs"
+    "test:scan-exact-printing-identity": "node --import ./scripts/register-web-render.mjs scripts/test-scan-exact-printing-identity.mjs",
+    "test:scan-ambiguous-printing-flow": "node --import ./scripts/register-web-render.mjs scripts/test-scan-ambiguous-printing-flow.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
