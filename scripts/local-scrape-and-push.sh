@@ -61,6 +61,30 @@ pricedCardNumberCount() {
   node -e "const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const s=new Set();for(const c of Object.values(d.cards||{}))if(Number.isFinite(c.sellPrice)&&c.sellPrice>0)s.add(c.cardNumber);console.log(s.size);" "$1"
 }
 
+# DIC-1334: canonical/public/native fixed-point parity. The native asset is
+# derived from the canonical by stripping forbidden fields; it must keep the
+# SAME set of priced cardNumbers. When a stale or collapsed native artifact
+# diverges from canonical, fail closed instead of shipping a divergent pair.
+parityOk() {
+  local dir="$1"
+  local canonical_native_public
+  canonical_native_public=$(node -e "
+    const fs=require('fs');
+    function load(p){return JSON.parse(fs.readFileSync(p,'utf8'));}
+    function priced(d){const s=new Set();for(const c of Object.values(d.cards||{}))if(Number.isFinite(c.sellPrice)&&c.sellPrice>0)s.add(c.cardNumber);return s;}
+    const canon=load(process.argv[1]); const pub=load(process.argv[2]);
+    const a=priced(canon), b=priced(pub);
+    const missing=[...a].filter((n)=>!b.has(n));
+    if(a.size!==b.size||missing.length>0){process.stdout.write('MISMATCH');process.exit(1);}
+    process.stdout.write('OK');process.exit(0);
+  " "$dir/data/database.json" "$dir/public/data/database.json" 2>/dev/null)
+  if [ "$canonical_native_public" != "OK" ]; then
+    echo "[$(date)] ❌ canonical/native parity gate FAILED: priced-cardNumber set diverged between data/database.json and public/data/database.json. Not pushing; cron must fail." >> "$LOG_FILE"
+    return 1
+  fi
+  return 0
+}
+
 # priceCoverageOk <repo-dir>: count priced cardNumbers in the freshly built
 # data/database.json and compare against the previous build's priced count
 # (recorded by runPipeline into <dir>/data/database.json.prev-priced.txt).
@@ -195,6 +219,13 @@ runPipeline() {
     # build collapsed priced coverage below the floors — never ship a 0-priced
     # snapshot or a >budget one-cycle drop.
     if ! priceCoverageOk "$dir"; then
+      return 1
+    fi
+
+    # DIC-1334: canonical/public/native fixed-point parity. The native asset
+    # must carry the EXACT same priced-cardNumber set as the canonical — a
+    # collapse or divergence in either must fail closed.
+    if ! parityOk "$dir"; then
       return 1
     fi
 

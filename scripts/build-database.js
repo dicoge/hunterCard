@@ -1358,6 +1358,16 @@ async function buildDatabase() {
     };
   }
 
+  // DIC-1334: track which cardNumbers received a sellPrice from official+yuyu
+  // matching. The yuyu-only fallback below must only create a yuyu-only entry
+  // when NO official entry for that cardNumber got priced — otherwise the
+  // existing official entry (sellPrice:null) blocks the fallback via
+  // alreadyExists, permanently discarding the yuyu price data. This is the
+  // root cause of the 1,214→424 collapse: yuyu data is irrecoverably lost
+  // when the official catalog has entries but none match the yuyu listing's
+  // exact series+rarity combination.
+  const officialPricedCardNums = new Set();
+
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
@@ -1408,6 +1418,13 @@ async function buildDatabase() {
       timestamp: yuyu ? yuyu.firstTimestamp : '',
       _rawPricesArchive: archive,
     };
+    // DIC-1334: record that this cardNumber received a sellPrice from
+    // official+yuyu matching so the yuyu-only fallback below does not
+    // discard the yuyu price data for OTHER unmatched printings of this
+    // cardNumber.
+    if (yuyu && yuyu.lowestPrice != null && yuyu.lowestPrice > 0) {
+      officialPricedCardNums.add(baseCardNum);
+    }
   }
 
   // Also add yuyu-only cards (prices without matching official entry)
@@ -1415,11 +1432,36 @@ async function buildDatabase() {
     // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
     // schema requires 3 digits (hY01-014).  DIC-1084.
     const cardNum = canonicalizeCardNumber(rawCardNum);
-    const alreadyExists = Object.keys(database.cards).some(k => {
-      const info = database.cards[k];
-      return info.cardNumber === cardNum;
-    });
-    if (alreadyExists) continue;
+    // DIC-1334: replace the old `alreadyExists` gate (which dropped yuyu price
+    // data whenever ANY official entry existed, even when every official entry
+    // had sellPrice:null — the 1,214→424 collapse). Now we only block the
+    // fallback when at least one official entry for this cardNumber actually
+    // received a sellPrice from official+yuyu matching. When official entries
+    // exist but ALL are unpriced, we ADD the yuyu listing as yuyu-only instead
+    // of silently discarding it.
+    const officialRows = officialByCardNum[cardNum] || [];
+    const officialAlreadyPriced = officialPricedCardNums.has(cardNum);
+    if (officialAlreadyPriced) continue;
+    // DIC-1334 + DIC-1176: provenance must survive. When official rows exist but
+    // are unpriced, only admit the yuyu listing if its image product path matches
+    // at least one official sourceProduct — a cross-product listing (hEB01-032's
+    // cross-product URL) must keep failing closed, never falling back into
+    // sellPrice by card number. Truly yuyu-only cardNumbers (no official row at
+    // all) were never blocked before and remain unchanged here.
+    if (officialRows.length > 0) {
+      const primary = Array.isArray(priceData) ? priceData[0] : priceData;
+      const matchesAnyOfficial = officialRows.some((official) => {
+        const sourceProduct = String(official.sourceProduct || official.series || '').toLowerCase();
+        return sourceProduct && pricesEntryExactPrintMatchesSource(
+          { imageUrl: primary?.yuyuImage },
+          sourceProduct,
+        );
+      });
+      if (!matchesAnyOfficial) {
+        console.log(`  [DIC-1334] yuyu-only fallback skipped for officially-known unpriced cardNumber ${cardNum}: listing image product does not match any official sourceProduct (fail-closed, no cross-product fallback)`);
+        continue;
+      }
+    }
 
     const priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
     let lowestPrice = null;
@@ -1560,6 +1602,44 @@ async function buildDatabase() {
   // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,
   // preserving any skills from the previous build the effects files no longer supply.
   mergeSkills(database.cards, prevSkillsByCardId);
+
+  // DIC-1334: post-transformation coverage audit. After every destructive
+  // transformation (official matching, yuyu-only fallback, ambiguous-promo
+  // nullification, detail-align reorder, skills merge), verify the FINAL
+  // canonical artifact's priced-cardNumber coverage against the fresh yuyu
+  // scrape. Scenario r5 of the surgery spec: a healthy pre-stage coverage
+  // followed by a final-artifact collapse must FAIL the build (exit non-zero,
+  // HUNTERCARD_SCRAPE_STATUS=FAILED, no commit). We compare the final
+  // priced-cardNumber set against the freshly scraped yuyu set: the gap must
+  // stay small, otherwise a transformation discarded yuyu price data.
+  if (!pricingUnavailable) {
+    const finalPricedCardNums = new Set(
+      Object.values(database.cards)
+        .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+        .map((c) => c.cardNumber),
+    );
+    // DIC-1334: with the wrong alreadyExists gate a scrape of N priced
+    // cardNumbers can collapse to a small fraction of N. Enforce a hard
+    // floor: the final priced-cardNumber coverage must exceed 50% of the
+    // freshly scraped yuyu coverage. A healthy run matches nearly all of
+    // them (yuyu only lists pricing for cards that exist in the catalog),
+    // so 50% is a deliberately generous fail-closed floor that still
+    // catches a 1214→424 collapse (35%).
+    const finalCoverage = finalPricedCardNums.size;
+    const scrapedCoverage = scrapedCardNumbers.size;
+    const gapFloor = Math.floor(scrapedCoverage / 2);
+    if (scrapedCoverage > 0 && finalCoverage < gapFloor) {
+      throw new Error(
+        `[DIC-1334] final canonical artifact collapsed priced-cardNumber coverage: ` +
+        `scraped ${scrapedCoverage} priced cardNumbers but final artifact only has ${finalCoverage} ` +
+        `(< 50% floor ${gapFloor}). A transformation discarded yuyu price data; refusing to ship.`,
+      );
+    }
+    const lostCardNums = [...scrapedCardNumbers].filter((n) => !finalPricedCardNums.has(n));
+    if (lostCardNums.length > 0) {
+      console.log(`  [DIC-1334] final artifact keeps ${finalCoverage}/${scrapedCoverage} priced cardNumbers; ${lostCardNums.length} not priced in final artifact (examined sample: ${lostCardNums.slice(0, 5).join(', ')})`);
+    }
+  }
 
   // Fix totalCards to reflect actual unique cards
   database.totalCards = Object.keys(database.cards).length;

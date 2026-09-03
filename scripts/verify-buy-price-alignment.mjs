@@ -197,25 +197,66 @@ check('representativeBuyPrice：來源同時有 bare 與本列代碼 → 歧義 
   assert.equal(representativeBuyPrice(ROW('hSD04-009', 'RR', 'hSD04'), buy), 1);
 });
 
-console.log('── Regression: hBP03-025（DIC-1008 CR：02_HR 曾拿到 bare ¥10）──');
-check('production-shaped hBP03-025：只有原印 C 列拿 ¥10，HR ¥4200 不外溢', () => {
-  // 來源（fullahead）實際只有兩筆：無標記 ¥10、-HR ¥4200。
-  const buy = [E(null, 10), E('HR', 4200)];
-  // database 的四列印次，rarity 依 committed 資料原樣（含 02_HR 別名）。
-  const rows = [
-    ROW('hBP03-025', 'C', 'hBP03'), // 原印列
-    ROW('hBP03-025', 'HR', 'hBP07'), // HR 再刷
-    ROW('hBP03-025', '02_HR', 'ent07'), // HR 再刷（別名寫法）
-    ROW('hBP03-025', 'P', 'hPR'), // 促銷列，來源無 P listing
+console.log('── Regression: hBP03-025（DIC-1008 / DIC-1334：02_HR 曾拿到 bare ¥10）──');
+// DIC-1334: this regression must be a MUTATION-SENSITIVE identity/alignment
+// contract driven by exact source fixtures, NOT a pin on a specific live
+// market price (the prior end-to-end acceptance hard-coded ¥10 / ¥4200, which
+// went stale the moment the market moved to HR=¥3,600). The invariant here is
+// RELATIONAL: the C printing receives only the bare C listing; every HR
+// printing receives only the exact HR listing, whatever its current value;
+// the bare listing never leaks onto a premium printing and the HR listing
+// never leaks onto the base printing. Run the same contract against SEVERAL
+// fresh source fixtures (different lawful market values) and assert the
+// identity mapping holds for each — proving alignment without pinning the
+// price.
+check('production-shaped hBP03-025：identity/alignment contract, no stale live-price pin', () => {
+  // DIC-1334: exact source fixtures with DIFFERENT lawful market values —
+  // including the current live HR=¥3,600 and the old HR=¥4,200 — must all
+  // resolve the same way: base→bare, HR→HR, never cross-filled.
+  const fixtures = [
+    { bare: 10, hr: 4200 },      // historical values
+    { bare: 10, hr: 3600 },      // current live HR listing
+    { bare: 15, hr: 4000 },      // genuine market shift
+    { bare: 1, hr: 250 },        // low-price end
   ];
-  const out = rows.map((r) => representativeBuyPrice(r, buy));
-  assert.deepEqual(out, [10, 4200, 4200, null]);
-  // bare ¥10 只能出現在原印列；任何 premium 印次拿到 10 就是本次 CR 的洩漏
-  assert.deepEqual(out.map((p) => p === 10), [true, false, false, false]);
-  // 版本相互隔離：base 不吃 HR、HR 不吃 base
-  assert.notEqual(out[1], out[0]);
-  const variants = [{ name: 'さくらみこ' }, { name: 'さくらみこ(パラレル/HR)(エラッタ前)' }];
-  assert.deepEqual(assignVariantBuyPrices(variants, buy), [10, 4200]);
+  for (const { bare, hr } of fixtures) {
+    const buy = [E(null, bare), E('HR', hr)];
+    // database 的四列印次，rarity 依 committed 資料原樣（含 02_HR 別名）。
+    const rows = [
+      ROW('hBP03-025', 'C', 'hBP03'), // 原印列
+      ROW('hBP03-025', 'HR', 'hBP07'), // HR 再刷
+      ROW('hBP03-025', '02_HR', 'ent07'), // HR 再刷（別名寫法）
+      ROW('hBP03-025', 'P', 'hPR'), // 促銷列，來源無 P listing
+    ];
+    const out = rows.map((r) => representativeBuyPrice(r, buy));
+    assert.deepEqual(out, [bare, hr, hr, null], `fixture bare=${bare} hr=${hr}`);
+    // bare listing must ONLY land on the original-printing C row
+    assert.deepEqual(out.map((p) => p === bare), [true, false, false, false], `bare must only reach C for bare=${bare}`);
+    // version isolation: base ≠ HR, HR ≠ base
+    assert.notEqual(out[1], out[0]);
+    // variants resolve by identity, not by price
+    const variants = [{ name: 'さくらみこ' }, { name: 'さくらみこ(パラレル/HR)(エラッタ前)' }];
+    assert.deepEqual(assignVariantBuyPrices(variants, buy), [bare, hr], `variant identity for bare=${bare} hr=${hr}`);
+  }
+  // Mutation sensitivity: swap the source tokens (put HR price on the bare
+  // listing) — the identity mapping MUST break (C would receive the HR price,
+  // which the contract forbids).
+  const swappedBuy = [E(null, 4200), E('HR', 10)];
+  const swapOut = [
+    ROW('hBP03-025', 'C', 'hBP03'),
+    ROW('hBP03-025', 'HR', 'hBP07'),
+    ROW('hBP03-025', '02_HR', 'ent07'),
+    ROW('hBP03-025', 'P', 'hPR'),
+  ].map((r) => representativeBuyPrice(r, swappedBuy));
+  // bare=¥4200 would ONLY hit the C row; HR would only receive ¥10 — this is
+  // still identity-correct (each printing gets its own token's value). To make
+  // a TRUE swap-detection, assert the HR printing receives exactly the HR
+  // listing value and the C printing exactly the bare value regardless of
+  // magnitude — this is exactly what a swap would break if mis-wired.
+  assert.equal(swapOut[0], 4200, 'C row consumes the bare listing value');
+  assert.equal(swapOut[1], 10, 'HR row consumes the HR listing value');
+  assert.equal(swapOut[2], 10, '02_HR alias consumes the HR listing value');
+  assert.equal(swapOut[3], null, 'P printing still fails closed (no P listing)');
 });
 
 console.log('── Unit: 帶標籤替代平行版精確對齊 ──');
@@ -570,16 +611,62 @@ check('全庫 invariant（獨立於 resolver）: 每個 card.buyPrice 都能綁�
   console.log(`      （${priced} 張帶價卡列全部可綁回來源 listing：原印 bare ${ownSetBase} 張、來源明確標記 ${priced - ownSetBase} 張）`);
 });
 
-check('acceptance: hBP03-025 官方印次 —— 只有原印 C 列帶 bare ¥10（DIC-1008 CR 具體案例）', () => {
+check('acceptance: hBP03-025 官方印次 —— 各印次只吃自己的精確列表（DIC-1008 / DIC-1334）', () => {
   const rows = Object.entries(db).filter(([, c]) => c.cardNumber === 'hBP03-025');
   assert.ok(rows.length >= 4, `hBP03-025 應保留多個官方印次，實得 ${rows.length}`);
   const priced = rows.filter(([, c]) => c.buyPrice != null);
   const byId = Object.fromEntries(rows.map(([id, c]) => [id, c.buyPrice ?? null]));
-  assert.equal(byId['hBP03-025_hBP03_C_hBP03-025_C'], 10, '原印 C 列應為 bare ¥10');
-  assert.equal(byId['hBP03-025_hBP07_HR_hBP03-025_02_HR'], 4200, 'HR 列應為精確 HR ¥4200');
-  assert.equal(byId['hBP03-025_ent07'], 4200, '02_HR 別名列應正規化成 HR ¥4200，絕不是 bare ¥10');
-  assert.equal(byId['hBP03-025_hPR_P_hBP03-025_P'], null, '來源無 P listing，促銷列須 fail closed');
-  assert.equal(priced.filter(([, c]) => c.buyPrice === 10).length, 1, '¥10 只能出現在原印列');
+  // DIC-1334: do NOT pin a stale live price. Instead assert the identity/
+  // alignment relationship against the committed source listings and the
+  // exact-token resolver:
+  //   - The original C row consumes the bare (unmarked) listing value.
+  //   - The HR rows (both hBP07 and ent07/02_HR alias) consume the -HR value.
+  //   - The P promo row fails closed (no P listing).
+  //   - No premium printing carries the bare value and no base printing the
+  //     HR value (no cross-fill).
+  const srcNum = normalizeCardNumber('hBP03-025');
+  const entries = buyEntriesFor(srcNum);
+  const bareEntry = entries.find((e) => e.token === '');
+  const hrEntry = entries.find((e) => e.token === 'HR');
+  const cRow = rows.find(([, c]) => c.rarity === 'C' && c.series === 'hBP03');
+  const hrRows = rows.filter(([, c]) => (c.rarity === 'HR' || c.rarity === '02_HR'));
+  const pRow = rows.find(([, c]) => c.rarity === 'P' && c.series === 'hPR');
+
+  const cVal = cRow ? (cRow[1].buyPrice ?? null) : null;
+  const bareVal = bareEntry ? bareEntry.price : null;
+  const hrVal = hrEntry ? hrEntry.price : null;
+
+  if (bareEntry) {
+    assert.equal(cVal, bareVal, `C row must consume the bare listing value ${bareVal}, got ${cVal}`);
+    // No premium printing may carry the bare value.
+    for (const [, c] of rows) {
+      if (c.rarity === 'C') continue;
+      assert.notEqual(c.buyPrice, bareVal, `${c.rarity} printing must NOT carry the bare value ${bareVal}`);
+    }
+  } else {
+    // No bare listing → C row must be null (fail closed), never a borrowed value.
+    assert.equal(cVal, null, 'C row must fail closed when no bare listing exists');
+  }
+
+  if (hrEntry) {
+    for (const [, hrC] of hrRows) {
+      assert.equal(hrC.buyPrice ?? null, hrVal, `HR row must consume the exact HR value ${hrVal}, got ${hrC.buyPrice ?? null}`);
+    }
+  } else {
+    for (const [, hrC] of hrRows) {
+      assert.equal(hrC.buyPrice ?? null, null, 'HR row must fail closed when no HR listing exists');
+    }
+  }
+
+  // P promo row: no P listing → fail closed (never a bare/HR borrow).
+  if (pRow) assert.equal(pRow[1].buyPrice ?? null, null, 'P promo row must fail closed (no P listing)');
+  assert.ok(priced.length >= 1, 'hBP03-025 should have at least one priced printing');
+  // Every priced value must trace back to a real source listing.
+  for (const [, c] of rows) {
+    if (c.buyPrice == null) continue;
+    const matched = entries.some((e) => e.price === c.buyPrice);
+    assert.ok(matched, `hBP03-025 ${c.rarity} buyPrice ${c.buyPrice} must match a real source listing`);
+  }
 });
 
 check('全庫 invariant: 多版本卡不得多個版本共用同一來源 listing（provenance 相等，非數值相等）', () => {
