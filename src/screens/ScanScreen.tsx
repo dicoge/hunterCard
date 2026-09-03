@@ -940,6 +940,7 @@ export default function ScanScreen({ navigation }: any) {
             onRequestPermission={requestPermission}
             openSettingsImpl={openSettings}
             refreshPermission={getCameraPermissions}
+            onPickGallery={pickFromGallery}
           />
         </View>
       );
@@ -1019,6 +1020,7 @@ export default function ScanScreen({ navigation }: any) {
             cameraError={cameraError}
             onFlash={toggleFlash}
             onScan={handleScan}
+            onGallery={pickFromGallery}
             onScanAreaLayout={handleScanAreaLayout}
             onRetry={() => {
               setCameraError(null);
@@ -1047,6 +1049,7 @@ export default function ScanScreen({ navigation }: any) {
             cameraError={cameraError}
             onFlash={toggleFlash}
             onScan={handleScan}
+            onGallery={pickFromGallery}
             onRetry={() => {
               setCameraError(null);
               if (webCameraRef.current) webCameraRef.current.retry();

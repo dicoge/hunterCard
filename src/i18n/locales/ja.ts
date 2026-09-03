@@ -608,6 +608,7 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_flash: 'フラッシュ',
   scan_manual: '手動',
   scan_scan_action: 'スキャン',
+  scan_gallery_action: '写真から読み取る',
   scan_camera_starting: 'カメラを起動中...',
   scan_estimate: '参考価格',
   scan_other_versions: 'ほかのシリーズ・版',

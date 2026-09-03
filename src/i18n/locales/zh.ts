@@ -608,6 +608,7 @@ export const zh = {
   scan_flash: '閃光燈',
   scan_manual: '手動',
   scan_scan_action: '掃描',
+  scan_gallery_action: '從相簿掃描',
   scan_camera_starting: '相機啟動中...',
   scan_estimate: '估值',
   scan_other_versions: '其他系列版本',

@@ -7,17 +7,26 @@
  * Contains:
  * - Scan area with animated scan line
  * - Corner decorations
- * - The primary scan action, plus a torch toggle for framing in low light
+ * - The primary scan action, plus a torch toggle for framing in low light and
+ *   a gallery entry point so a card that cannot be pointed at (e.g. a photo the
+ *   user already has) still has a scan path on native.
  *
- * DIC-1319: the normal flow is deliberately one action. Gallery import, camera
- * flip, manual search and the auto-scan mode toggle used to sit under the
- * viewfinder and were what the v21 tester read as "many unnecessary buttons".
- * None of them were the primary path, and the auto-scan toggle was inert on
- * Android to begin with (the auto-scan loop is web-only). They are gone from
- * here; manual search stays reachable from the scan-failure and low-confidence
- * recovery panels, and gallery import stays on the permission-denied and
- * web-camera-unavailable fallbacks in ScanScreen — so removing them does not
- * weaken permission or error recovery.
+ * DIC-1319: the normal flow is one primary action. Camera flip, manual search
+ * and the auto-scan mode toggle used to sit under the viewfinder and were what
+ * the v21 tester read as "many unnecessary buttons"; the auto-scan toggle was
+ * inert on Android to begin with (the auto-scan loop is web-only). Those are
+ * gone; manual search stays reachable from the scan-failure and low-confidence
+ * recovery panels.
+ *
+ * DIC-1336: the gallery entry is back, but this time it is here for a reason.
+ * The release-like Android QA (DIC-1332) found that the shipped APK had no
+ * reachable gallery path — both `pickFromGallery` invocation sites in
+ * ScanScreen were gated by `isWeb`, so on native there was no way to scan a
+ * card from a photo the user already had. It is rendered here as an icon-only
+ * secondary control (mirroring the torch) so it does not compete with the
+ * primary scan action, and it is ALSO exposed on the camera-permission-denied
+ * surface (CameraPermissionDeniedView) so gallery scanning remains a real
+ * recovery path when the camera is unavailable.
  */
 
 import React from 'react';
@@ -56,6 +65,12 @@ export interface ScanOverlayProps {
   onFlash: () => void;
   onScan: () => void;
   onRetry: () => void;
+  // Gallery entry — mounted unconditionally (no `isWeb` gate) so the shipped
+  // Android APK exposes a native gallery scan path. ScanScreen wires this to
+  // its own `pickFromGallery`; if the platform later cannot fulfil the pick
+  // (no photo library permission, no picker), the handler itself is
+  // responsible for surfacing that error — never this overlay.
+  onGallery: () => void;
   onScanAreaLayout?: (event: LayoutChangeEvent) => void;
 }
 
@@ -71,6 +86,7 @@ export default function ScanOverlay({
   onFlash,
   onScan,
   onRetry,
+  onGallery,
   onScanAreaLayout,
 }: ScanOverlayProps) {
   const { t } = useTranslation();
@@ -210,9 +226,24 @@ export default function ScanOverlay({
               </Text>
             </TouchableOpacity>
 
-            {/* Spacer keeps the scan button optically centred against the
-                torch control on the other side. */}
-            <View style={styles.controlBtnSpacer} />
+            {/* Gallery — icon-only secondary control mirroring the torch on
+                the other side. Rendered unconditionally so the Android APK
+                has a reachable gallery scan path (DIC-1336); the previous
+                `isWeb`-gated call sites left the shipped Android build with
+                no way to scan a photo the user already had. Any inability
+                to fulfil the picker (permissions, missing native module) is
+                the handler's problem, not the overlay's — the button stays
+                present so the flow starts. */}
+            <TouchableOpacity
+              style={styles.controlBtn}
+              onPress={onGallery}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('scan_gallery_action')}
+              testID="scan-gallery-action"
+            >
+              <Text style={styles.controlIcon}>🖼️</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -363,10 +394,6 @@ const styles = StyleSheet.create({
   },
   controlBtnActive: {
     opacity: 1,
-  },
-  controlBtnSpacer: {
-    width: 48,
-    height: 48,
   },
   controlIcon: {
     fontSize: 26,
