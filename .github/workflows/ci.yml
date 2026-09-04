@@ -109,6 +109,9 @@ jobs:
       - name: Verify scrape pipeline fail-fast + atomic commit ordering (DIC-989)
         run: npm run test:scrape-pipeline
 
+      - name: Verify HTTP fallback carries trustworthy exact-print provenance (DIC-1349)
+        run: npm run test:dic1349-fallback-provenance
+
       - name: Verify scan/search market data fields (DIC-361)
         run: npm run test:market-fields
 

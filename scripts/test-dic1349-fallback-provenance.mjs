@@ -180,6 +180,48 @@ function wrapPage(blocks) {
   assert.equal(bp002[0].yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/20001.jpg', 'case 2: sibling hBP04-002 must carry its own image');
 }
 
+/**
+ * DIC-1349 CR round-2 additional helpers.
+ *
+ * `makeCardBlockRaw` builds a block from a caller-supplied product-image
+ * tag string, cart_ver / cart_cid tag strings, and quote style for the
+ * container class. Used exclusively by the CR round-2 cases below to
+ * drive attribute-quoting, present-but-invalid-image, and foreign-field
+ * leakage repros that the vanilla `makeCardBlock` helper cannot express.
+ */
+function makeCardBlockRaw({
+  cardNum = 'hBP04-001',
+  rarity = 'SEC',
+  name = '博衣こより(パラレル/サイン)',
+  price = '99,800',
+  cartVer = 'hbp04',
+  cartCid = '10003',
+  productImgTag,   // full '<img …>' string (or '' to omit)
+  cartVerTag,      // full '<input …>' string (or '' to omit)
+  cartCidTag,      // full '<input …>' string (or '' to omit)
+  containerQuote = '"',
+  extraInsideBlock = '',
+} = {}) {
+  const q = containerQuote;
+  return `
+<div class=${q}card-product position-relative mt-4  ${q}><div class="starbtn" onclick="location.href='https://yuyu-tei.jp/member/login'">
+<em class="d-block position-absolute z-index top-0 start-0"></em>
+<img src="https://cdn.yuyu-tei.jp/images/common/btn-icon/star.svg" alt="Star" class="star star1 position-absolute z-index"></div>
+<a href="https://yuyu-tei.jp/sell/hocg/card/${cartVer}/${cartCid}"><div class="position-relative product-img">
+${productImgTag}</div>
+</a>
+<span class="d-block border border-dark p-1 w-100 text-center my-2">${cardNum}</span>
+<a href="https://yuyu-tei.jp/sell/hocg/card/${cartVer}/${cartCid}"><h4 class="text-primary fw-bold">${name}</h4>
+</a>
+<strong class="d-block text-end ">
+${price} 円
+</strong>
+${cartVerTag ?? ''}
+${cartCidTag ?? ''}
+${extraInsideBlock}
+</div>`;
+}
+
 // ── Case 3: fail-closed on missing / mismatched / off-host provenance ──
 {
   const html = wrapPage([
@@ -219,6 +261,195 @@ function wrapPage(blocks) {
     'https://card.yuyu-tei.jp/hocg/100_140/hbp04/30001.jpg',
     'case 3: cart_ver+cart_cid fallback must synthesise the canonical yuyu-tei URL shape',
   );
+}
+
+// ── Case 3b (CR round 2, blocker #1): a PRESENT-but-invalid product image
+//     with cart_ver + cart_cid still present must NOT be laundered into a
+//     synthesised trusted URL. The pre-round-2 rewrite ignored an off-host
+//     / wrong-path / bogus-scheme <img> and then fell through to the cart-
+//     inputs synth, which turned `<img src="https://evil.example/…">
+//     <input class="cart_ver" value="hbp04"> <input class="cart_cid"
+//     value="99999">` into
+//     `https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg` — the exact
+//     "empty-rarity unique-source-product" fallback at
+//     `scripts/build-database.js:~1420-1429` would then bind that URL onto
+//     the official row. Every negative case here keeps a normal-shaped
+//     cart_ver / cart_cid pair to match the production-realistic bypass
+//     the CR flagged. ──
+{
+  const html = wrapPage([
+    // Baseline good block so the drops below cannot be blamed on a global
+    // parse failure.
+    makeCardBlock({ cardNum: 'hBP04-001', rarity: 'SEC', imgSrc: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg', cartVer: 'hbp04', cartCid: '10003', price: '99,800' }),
+    // Off-host image, cart inputs still present.
+    makeCardBlock({ cardNum: 'hBP04-200', rarity: 'C', imgSrc: 'https://evil.example.com/hocg/100_140/hbp04/99999.jpg', cartVer: 'hbp04', cartCid: '99999', price: '100' }),
+    // Wrong-path image (no /hocg/), cart inputs still present.
+    makeCardBlock({ cardNum: 'hBP04-201', rarity: 'C', imgSrc: 'https://card.yuyu-tei.jp/wrong-path/hbp04/99999.jpg', cartVer: 'hbp04', cartCid: '99999', price: '200' }),
+    // Missing extension / not an image URL, cart inputs still present.
+    makeCardBlock({ cardNum: 'hBP04-202', rarity: 'C', imgSrc: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999', cartVer: 'hbp04', cartCid: '99999', price: '300' }),
+    // Non-http scheme, cart inputs still present.
+    makeCardBlock({ cardNum: 'hBP04-203', rarity: 'C', imgSrc: 'javascript:alert(1)', cartVer: 'hbp04', cartCid: '99999', price: '400' }),
+    // Valid host but non-default port (rev.6 rejects), cart inputs still present.
+    makeCardBlock({ cardNum: 'hBP04-204', rarity: 'C', imgSrc: 'https://card.yuyu-tei.jp:444/hocg/100_140/hbp04/99999.jpg', cartVer: 'hbp04', cartCid: '99999', price: '500' }),
+    // Host case-collision (`Card.YUYU-tei.jp`) via a lookalike wrong path — must fail closed.
+    makeCardBlock({ cardNum: 'hBP04-205', rarity: 'C', imgSrc: 'https://card.yuyu-tei.jp.evil.example/hocg/100_140/hbp04/99999.jpg', cartVer: 'hbp04', cartCid: '99999', price: '600' }),
+  ]);
+
+  const cards = parseCardHtml(html);
+  const seen = new Set(cards.map((c) => c.cardNum));
+  assert.ok(seen.has('hBP04-001'), 'case 3b: the good baseline block must still parse');
+  for (const dropped of ['hBP04-200', 'hBP04-201', 'hBP04-202', 'hBP04-203', 'hBP04-204', 'hBP04-205']) {
+    assert.ok(
+      !seen.has(dropped),
+      `case 3b (CR#1 fix): a present-but-invalid product image with cart_ver/cart_cid present must DROP the block (${dropped}); it must NOT be laundered via cart-inputs synth into a trusted /hocg/100_140/hbp04/99999.jpg URL`,
+    );
+  }
+  // And prove the laundering shape the CR flagged is not produced anywhere
+  // in the parser output — no admitted row should carry the synthesised
+  // /99999.jpg URL that the CR called out by example.
+  for (const c of cards) {
+    assert.notEqual(
+      c.yuyuImage,
+      'https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg',
+      `case 3b (CR#1 fix): the synthesised /hbp04/99999.jpg URL must not appear on any admitted row (row ${c.cardNum})`,
+    );
+  }
+}
+
+// ── Case 3c (CR round 2, blocker #2): after-closing-tag leakage. A block
+//     that has NO product image and NO cart inputs must never absorb
+//     valid-looking `cart_ver` / `cart_cid` (or product img) that live
+//     OUTSIDE its own `</div>` — either in the sibling that follows, or
+//     in trailing page footer content. The pre-round-2 rewrite ended each
+//     slice at the NEXT card-product opening (or `html.length`), so the
+//     LAST card on the page consumed everything after it. Repro: a final
+//     unprovable card followed by footer `<input class="cart_ver"
+//     value="hbp04"> <input class="cart_cid" value="99999">` used to emit
+//     `/hbp04/99999.jpg`. Now that the parser walks the matching
+//     `</div>`, the trailing footer stays outside the block and the row
+//     is DROPPED. ──
+{
+  const goodBlock = makeCardBlock({ cardNum: 'hBP04-001', rarity: 'SEC', imgSrc: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg', cartVer: 'hbp04', cartCid: '10003', price: '99,800' });
+  // Final card-product block deliberately has no image tag and no cart inputs.
+  const truncatedFinalBlock = makeCardBlock({ cardNum: 'hBP04-300', rarity: 'C', includeImg: false, includeCartInputs: false, price: '999' });
+
+  // (1) The `truncatedFinalBlock` is the LAST card-product on the page, and
+  // is followed by page footer HTML that contains a valid-looking cart_ver
+  // / cart_cid pair, another product <img>, and an <h4>. If the parser
+  // extended the slice past the block's `</div>`, it would attach any of
+  // those footer fields to `hBP04-300` and emit a synthesised
+  // `/hbp04/99999.jpg` URL.
+  const footer = `
+<footer class="page-footer">
+<a href="https://yuyu-tei.jp/sell/hocg/card/hbp04/99999"><div class="position-relative product-img">
+<img src="https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg" alt="hBP04-300 C 別カード">
+</div></a>
+<h4>予告カード</h4>
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+</footer>`;
+
+  const html = `<!DOCTYPE html><html><body><div class="row row-cols-md-4">${goodBlock}\n${truncatedFinalBlock}</div>${footer}</body></html>`;
+  const cards = parseCardHtml(html);
+  const seen = new Set(cards.map((c) => c.cardNum));
+  assert.ok(seen.has('hBP04-001'), 'case 3c: the good baseline block must still parse');
+  assert.ok(
+    !seen.has('hBP04-300'),
+    'case 3c (CR#2 fix): the final unprovable block must be DROPPED, not absorb footer cart_ver/cart_cid or a footer <img> and emit /hbp04/99999.jpg',
+  );
+  for (const c of cards) {
+    assert.notEqual(
+      c.yuyuImage,
+      'https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg',
+      `case 3c (CR#2 fix): no admitted row may carry the footer's /hbp04/99999.jpg (row ${c.cardNum})`,
+    );
+  }
+
+  // (2) Non-final variant: sibling-leakage guard. A truncated middle block
+  // whose neighbour has cart_ver / cart_cid must not absorb them either.
+  const html2 = wrapPage([
+    goodBlock,
+    truncatedFinalBlock,
+    makeCardBlock({ cardNum: 'hBP04-004', rarity: 'OUR', imgSrc: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/20001.jpg', cartVer: 'hbp04', cartCid: '20001', price: '580' }),
+  ]);
+  const cards2 = parseCardHtml(html2);
+  const seen2 = new Set(cards2.map((c) => c.cardNum));
+  assert.ok(seen2.has('hBP04-001'), 'case 3c sibling: baseline still parses');
+  assert.ok(seen2.has('hBP04-004'), 'case 3c sibling: the trailing valid block still parses');
+  assert.ok(
+    !seen2.has('hBP04-300'),
+    'case 3c sibling (CR#2 fix): the truncated middle block must be DROPPED, not absorb the next sibling block\'s cart inputs or image',
+  );
+}
+
+// ── Case 3d (CR round 2, blocker #3): valid HTML attribute variants must
+//     not cause silent data loss. yuyu-tei's live markup uses double
+//     quotes today but the HTTP fallback is a boundary the pre-round-2
+//     rewrite left brittle: single-quoted `class`/`src`/`alt`/`value`,
+//     reordered attributes, and entity-encoded values (e.g. `&amp;` in
+//     the name) all silently produced ZERO rows. The parser must handle
+//     each of these without loss. ──
+{
+  const cardNum = 'hBP04-001';
+  const rarity = 'SEC';
+  const name = '博衣こより'; // exercise decodeHtmlEntities via &amp; below
+
+  // (1) Single-quoted container class, single-quoted product img
+  //     attributes, single-quoted cart inputs.
+  const singleQuotedProductImg = "<img src='https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg' alt='hBP04-001 SEC 博衣こより' class='card img-fluid'>";
+  const singleQuotedCartVer = "<input type='hidden' value='hbp04' class='cart_ver'>";
+  const singleQuotedCartCid = "<input type='hidden' value='10003' class='cart_cid'>";
+  const singleQuotedBlock = makeCardBlockRaw({
+    cardNum, rarity, name,
+    cartVer: 'hbp04', cartCid: '10003',
+    productImgTag: singleQuotedProductImg,
+    cartVerTag: singleQuotedCartVer,
+    cartCidTag: singleQuotedCartCid,
+    containerQuote: "'",
+  });
+
+  // (2) Reordered attributes on the product img and cart inputs (class before
+  //     src, value after class), still double-quoted.
+  const reorderedProductImg = '<img class="card img-fluid" alt="hBP04-004 OUR 雪花ラミィ" src="https://card.yuyu-tei.jp/hocg/100_140/hbp04/20001.jpg">';
+  const reorderedCartVer = '<input class="cart_ver" value="hbp04" type="hidden">';
+  const reorderedCartCid = '<input class="cart_cid" value="20001" type="hidden">';
+  const reorderedBlock = makeCardBlockRaw({
+    cardNum: 'hBP04-004', rarity: 'OUR', name: '雪花ラミィ',
+    cartVer: 'hbp04', cartCid: '20001',
+    productImgTag: reorderedProductImg,
+    cartVerTag: reorderedCartVer,
+    cartCidTag: reorderedCartCid,
+  });
+
+  // (3) Entity-encoded name in the block's <h4> (&amp; and &quot; both
+  //     appear in yuyu-tei's real listing pages). Must be decoded, not
+  //     dropped, and the row must still be admitted.
+  const entityBlock = makeCardBlockRaw({
+    cardNum: 'hBP04-005', rarity: 'C', name: 'Test &amp; Card', price: '30',
+    cartVer: 'hbp04', cartCid: '30001',
+    productImgTag: '<img src="https://card.yuyu-tei.jp/hocg/100_140/hbp04/30001.jpg" alt="hBP04-005 C Test &amp; Card" class="card img-fluid">',
+    cartVerTag: '<input type="hidden" value="hbp04" class="cart_ver">',
+    cartCidTag: '<input type="hidden" value="30001" class="cart_cid">',
+  });
+
+  const html = wrapPage([singleQuotedBlock, reorderedBlock, entityBlock]);
+  const cards = parseCardHtml(html);
+  const byNum = new Map(cards.map((c) => [c.cardNum, c]));
+  assert.ok(byNum.get('hBP04-001'), 'case 3d/1 (CR#3 fix): single-quoted container + attributes must parse');
+  assert.ok(byNum.get('hBP04-004'), 'case 3d/2 (CR#3 fix): reordered attributes must parse');
+  assert.ok(byNum.get('hBP04-005'), 'case 3d/3 (CR#3 fix): entity-encoded name must parse (not dropped)');
+
+  assert.equal(byNum.get('hBP04-001').yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg', 'case 3d/1: single-quoted src is extracted intact');
+  assert.equal(byNum.get('hBP04-001').rarity, 'SEC', 'case 3d/1: single-quoted alt still yields rarity');
+  assert.equal(byNum.get('hBP04-001').imageVersion, 'hbp04', 'case 3d/1: single-quoted cart_ver still yields version');
+  assert.equal(byNum.get('hBP04-001').imageCid, '10003', 'case 3d/1: single-quoted cart_cid still yields cid');
+
+  assert.equal(byNum.get('hBP04-004').yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/20001.jpg', 'case 3d/2: reordered src is extracted intact');
+  assert.equal(byNum.get('hBP04-004').rarity, 'OUR', 'case 3d/2: reordered alt still yields rarity');
+  assert.equal(byNum.get('hBP04-004').imageVersion, 'hbp04', 'case 3d/2: reordered cart_ver still yields version');
+  assert.equal(byNum.get('hBP04-004').imageCid, '20001', 'case 3d/2: reordered cart_cid still yields cid');
+
+  assert.equal(byNum.get('hBP04-005').name, 'Test & Card', 'case 3d/3: &amp; must decode to & in the name');
 }
 
 // ── Case 4: end-to-end binding through build-database.js ──

@@ -31,6 +31,7 @@ import {
   hasCurrentPriceProvenance,
   findUnprovenPriceHistoryViolations,
   pricesEntryExactPrintMatchesSource,
+  yuyuImageProductPath,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
@@ -188,62 +189,162 @@ function sanitizePriceHistory(priceHistory) {
 }
 
 /**
- * DIC-1349: parse a single `<div class="card-product ...">…</div>` block's
- * inner HTML into a structured listing. The old text-only implementation
- * (pre-DIC-1349) stripped every HTML tag before parsing and then tried to
- * find the `<img>` URL in the raw HTML using text-position offsets that do
- * not correspond to HTML positions — so `yuyuImage` was almost always
- * absent or wrong. Every fallback listing then failed
- * `pricesEntryExactPrintMatchesSource` on the DIC-1334 gate and no priced
- * cardNumber could be admitted to the final artifact (the reported
- * fresh-root-install collapse: 0 / 1,196).
+ * DIC-1349 CR-hardening helpers — used only by the HTTP fetch fallback
+ * parser (`parseCardHtml`) below. Extracted so the same quote-agnostic
+ * attribute rules and entity decoding apply to every field the parser
+ * reads.
+ */
+function decodeHtmlEntities(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    // '&amp;' MUST be last so already-encoded entities like `&amp;quot;`
+    // do not double-decode into an unintended character.
+    .replace(/&amp;/g, '&');
+}
+
+/**
+ * Read a single HTML attribute out of an opening tag string, supporting
+ * the three real HTML forms the CR round-1 review flagged:
+ *   - `attr="value"` (double-quoted)
+ *   - `attr='value'` (single-quoted)
+ *   - `attr=value`  (unquoted / bareword — legal HTML5)
+ * and any attribute order within the tag. Returns the decoded value or
+ * '' when the attribute is absent. Case-insensitive on the attribute name;
+ * value is returned as-shipped (case + whitespace preserved) after entity
+ * decoding.
+ */
+function getTagAttr(tag, name) {
+  if (typeof tag !== 'string' || !tag) return '';
+  const re = new RegExp(
+    `\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>=\`]+))`,
+    'i',
+  );
+  const m = tag.match(re);
+  if (!m) return '';
+  return decodeHtmlEntities(m[1] ?? m[2] ?? m[3] ?? '');
+}
+
+/**
+ * Walk `<div>` open/close tags starting from `startIndex` (which MUST be
+ * the position immediately after the opening `<div …>`'s `>`) and return
+ * the index just past the matching `</div>`. The parser is fed HTML with
+ * `<script>` / `<style>` bodies stripped up-front, so the only `<div>` /
+ * `</div>` tags it sees are the real structural boundaries — counting is
+ * depth-safe for the well-formed yuyu-tei markup.
  *
- * The parser is block-scoped (positions live inside the block) and pulls
- * each field from its own HTML anchor:
- *   - image URL: <img src="https://card.yuyu-tei.jp/hocg/...">
- *   - card number and rarity: image `alt` (`hBP04-001 SEC 博衣こより…`)
- *     with a `<span>hXXX-nnn</span>` fallback
- *   - card name: <h4 …>NAME</h4>
- *   - price: `\d,\d\s?円`
- *   - imageVersion / imageCid: hidden `cart_ver` / `cart_cid` inputs
+ * Returns `-1` when the input runs out before depth returns to zero; the
+ * caller drops the block rather than admit a listing whose boundary can't
+ * be proven. That is the CR round-1 fix for the "final slice extends to
+ * html.length and consumes footer / sibling image / cart / name / price
+ * fields after the card closes" bypass — a card-product with a missing
+ * `</div>` no longer swallows the rest of the page.
+ */
+function findMatchingDivClose(html, startIndex) {
+  const re = /<(\/?)div\b[^>]*>/gi;
+  re.lastIndex = startIndex;
+  let depth = 1;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    if (m[1] === '/') {
+      depth -= 1;
+      if (depth === 0) return re.lastIndex;
+    } else {
+      depth += 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * DIC-1349 (CR round 2 hardening): parse a single `<div class="card-product
+ * …">…</div>` block's HTML into a structured listing. The original
+ * (pre-DIC-1349) implementation stripped every HTML tag before parsing and
+ * then tried to look up `<img>` URLs in the raw HTML using text-position
+ * offsets that do not correspond to HTML positions — every fallback
+ * listing landed with an empty / wrong `yuyuImage`, and the DIC-1334
+ * exact-print gate rejected all of them.
  *
- * When the block has cart_ver+cart_cid but no direct image URL, the
- * canonical `/hocg/100_140/{ver}/{cid}.jpg` shape is synthesised — the
- * same fallback the Puppeteer path uses on the equivalent DOM read
- * (`scrapeSeriesPage`). When neither a valid image URL nor the version /
- * cid pair is available, the block is dropped rather than admitted with an
- * empty `yuyuImage` — the exact-printing matcher requires provable
- * provenance, so silently emitting unprovable rows would just recreate the
- * fail-closed collapse this fix is repairing.
+ * The first CR round of this fix (dc987ef09) hardened the parser to be
+ * block-scoped but still had four review blockers: it (1) laundered a
+ * present-but-invalid `<img>` into a synthesised URL whenever
+ * `cart_ver`/`cart_cid` were also present, (2) sliced from card-product
+ * opening to next opening rather than matching `</div>`, so footer fields
+ * leaked into the last block, (3) only supported double-quoted attributes,
+ * and (4) was not wired into `package.json` or the Validate workflow.
+ *
+ * Contract (each field extracted from its own HTML anchor, quote-agnostic):
+ *   - image URL: any product `<img>` (i.e. not the starbtn asset on the
+ *     `cdn.yuyu-tei.jp` CDN) MUST have `src` that parses via
+ *     `yuyuImageProductPath` — an OFF-HOST / WRONG-PATH / MALFORMED src on
+ *     a present product `<img>` drops the block. Absent product `<img>` is
+ *     distinct from present-but-invalid: only absent-and-cart-inputs-
+ *     present falls back to the canonical `/hocg/100_140/{ver}/{cid}.jpg`
+ *     synth (same shape the Puppeteer path uses on the equivalent DOM
+ *     read).
+ *   - card number + rarity: product image `alt` (`hXXX-nnn RARITY name`)
+ *     with `<span>hXXX-nnn</span>` fallback for the number.
+ *   - card name: `<h4>` inner text.
+ *   - price: first `[\d,]+ 円` in the block.
+ *   - `imageVersion` / `imageCid`: hidden `cart_ver` / `cart_cid` inputs.
+ *
+ * The final synthesised or extracted URL is re-run through
+ * `yuyuImageProductPath` before the block is admitted, so the parser can
+ * never emit a row the downstream exact-print gate would reject.
  */
 function parseCardProductBlock(blockHtml) {
-  // 1) Image URL — the block's own <img> tag on card.yuyu-tei.jp/hocg/… is
-  //    the authoritative source. yuyu-tei's card-product block also embeds
-  //    a decorative `<img alt="Star" …>` before the product image (the
-  //    starred-favourites icon), so we scan for the img whose `src` points
-  //    at the product image host, ignore its position, and later reuse the
-  //    whole matched tag to pull the sibling `alt` attribute. Matching a
-  //    generic `<img …>` would land on the starbtn icon and lose both the
-  //    product URL and the card-number+rarity encoded in the product img
-  //    alt.
+  // 1) Enumerate every <img …> in the block. yuyu-tei's card-product block
+  //    always ships a decorative starbtn image before the product image,
+  //    hosted on the CDN (`https://cdn.yuyu-tei.jp/images/common/btn-icon/
+  //    star.svg`). Anything that is NOT that CDN icon is a PRODUCT IMAGE
+  //    CANDIDATE — and product image candidates must have a canonical
+  //    yuyu-tei product URL as their `src`. Skipping this check would let a
+  //    block with `<img src="https://evil.example/…">`, `<input class="cart_ver">`
+  //    and `<input class="cart_cid">` be laundered into
+  //    `https://card.yuyu-tei.jp/hocg/100_140/{ver}/{cid}.jpg` — the CR#1
+  //    bypass this rewrite closes.
+  const imgTags = [];
+  {
+    const re = /<img\b[^>]*>/gi;
+    let m;
+    while ((m = re.exec(blockHtml)) !== null) imgTags.push(m[0]);
+  }
+  const productImgs = imgTags.filter((tag) => {
+    const src = getTagAttr(tag, 'src');
+    // The starbtn asset is hosted on the CDN; any other host counts as a
+    // product-image candidate (whether valid or not). This is asymmetric on
+    // purpose: an unknown host must NOT be silently discarded — it needs to
+    // enter the block-level validation so the block can be rejected.
+    if (src.toLowerCase().startsWith('https://cdn.yuyu-tei.jp/')) return false;
+    if (src.toLowerCase().startsWith('http://cdn.yuyu-tei.jp/')) return false;
+    return true;
+  });
+
   let productImgTag = '';
   let rawImageUrl = '';
-  const productImgAttr = blockHtml.match(
-    /<img\b[^>]*\bsrc="(https?:\/\/card\.yuyu-tei\.jp\/hocg\/[^"]+)"[^>]*>/i,
-  );
-  if (productImgAttr) {
-    productImgTag = productImgAttr[0];
-    rawImageUrl = productImgAttr[1];
+  if (productImgs.length > 0) {
+    // A present product image candidate MUST parse via yuyuImageProductPath.
+    // Any invalid one (off-host, wrong path shape, javascript:, missing
+    // extension) fails the block. This is the CR#1 fix — do not silently
+    // ignore an invalid image just because cart inputs are present.
+    for (const tag of productImgs) {
+      const src = getTagAttr(tag, 'src');
+      if (!yuyuImageProductPath(src)) return null;
+    }
+    productImgTag = productImgs[0];
+    rawImageUrl = getTagAttr(productImgTag, 'src');
   }
 
-  // 2) Card number + rarity — the product image alt attribute has the
-  //    canonical "hXXX-nnn RARITY NAME" shape
-  //    ("hBP04-001 SEC 博衣こより(パラレル/サイン)"). Read it from the
-  //    product image tag only (never the starbtn <img alt="Star" …>) and
-  //    fall back to the standalone `<span>hXXX-nnn</span>` which also
-  //    appears in every block.
-  const altAttr = productImgTag.match(/\balt="([^"]*)"/i);
-  const alt = altAttr ? altAttr[1] : '';
+  // 2) Card number + rarity — read from the product image alt (canonical
+  //    "hXXX-nnn RARITY NAME" shape) with a standalone
+  //    `<span>hXXX-nnn</span>` fallback for the number.
+  const alt = getTagAttr(productImgTag, 'alt');
   const altNumMatch = alt.match(/(h[A-Z]{1,3}\d+-\d{2,3})/i);
   const spanNumMatch = blockHtml.match(
     /<span\b[^>]*>\s*(h[A-Z]{1,3}\d+-\d{2,3})\s*<\/span>/i,
@@ -251,26 +352,24 @@ function parseCardProductBlock(blockHtml) {
   const cardNum = (altNumMatch && altNumMatch[1]) || (spanNumMatch && spanNumMatch[1]) || '';
   if (!cardNum) return null;
 
-  const altRarityMatch = alt.match(
-    /h[A-Z]{1,3}\d+-\d{2,3}\s+([A-Z]{1,4})\b/i,
-  );
+  const altRarityMatch = alt.match(/h[A-Z]{1,3}\d+-\d{2,3}\s+([A-Z]{1,4})\b/i);
   const rarity = altRarityMatch ? altRarityMatch[1] : '';
 
   // 3) Price — first `[\d,]+ 円` in the block's own text. Card blocks always
-  //    contain exactly one selling price (in-stock or sold-out), so a single
-  //    match is safe within a block scope.
+  //    contain exactly one selling price (in-stock or sold-out).
   const priceMatch = blockHtml.match(/([\d,]+)\s*円/);
   if (!priceMatch) return null;
   const price = parseInt(priceMatch[1].replace(/,/g, ''), 10);
   if (!Number.isFinite(price) || price <= 0) return null;
 
-  // 4) Card name — the block's <h4> holds the Japanese name shown to the
-  //    user. When absent (e.g. yuyu-tei's placeholder rows), fall back to
-  //    the trailing text of the image alt with the rarity token stripped.
+  // 4) Card name — inner text of <h4>, HTML-decoded. Falls back to the alt
+  //    with the number+rarity tokens stripped when the block ships no <h4>.
   let name = '';
   const h4Match = blockHtml.match(/<h4\b[^>]*>\s*([\s\S]*?)\s*<\/h4>/i);
   if (h4Match) {
-    name = h4Match[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    name = decodeHtmlEntities(h4Match[1].replace(/<[^>]+>/g, ''))
+      .replace(/\s+/g, ' ')
+      .trim();
   }
   if (!name && alt) {
     const nameFromAlt = alt
@@ -279,32 +378,48 @@ function parseCardProductBlock(blockHtml) {
     if (nameFromAlt) name = nameFromAlt;
   }
 
-  // 5) Hidden cart_ver / cart_cid — the yuyu-tei cart form embeds the
-  //    product (version) and card id for this exact listing. Used both as
-  //    a backup image URL when the <img> tag is absent, and as structured
-  //    provenance the downstream binding logic re-reads.
-  const versionMatch = blockHtml.match(
-    /<input\b[^>]*\bvalue="([^"]*)"[^>]*\bclass="[^"]*\bcart_ver\b[^"]*"[^>]*>|<input\b[^>]*\bclass="[^"]*\bcart_ver\b[^"]*"[^>]*\bvalue="([^"]*)"[^>]*>/i,
-  );
-  const cidMatch = blockHtml.match(
-    /<input\b[^>]*\bvalue="([^"]*)"[^>]*\bclass="[^"]*\bcart_cid\b[^"]*"[^>]*>|<input\b[^>]*\bclass="[^"]*\bcart_cid\b[^"]*"[^>]*\bvalue="([^"]*)"[^>]*>/i,
-  );
-  const imageVersion = versionMatch ? (versionMatch[1] || versionMatch[2] || '') : '';
-  const imageCid = cidMatch ? (cidMatch[1] || cidMatch[2] || '') : '';
+  // 5) Hidden cart_ver / cart_cid inputs — quote-agnostic, attribute-order-
+  //    agnostic extraction. `cart_ver` is the yuyu-tei product path segment
+  //    (e.g. `hbp04`) and `cart_cid` is the card id (e.g. `10003`); both
+  //    survive into the fallback URL synthesis below. Class match uses
+  //    whole tokens so `cart_verify` cannot masquerade as `cart_ver`.
+  const inputTags = [];
+  {
+    const re = /<input\b[^>]*>/gi;
+    let m;
+    while ((m = re.exec(blockHtml)) !== null) inputTags.push(m[0]);
+  }
+  const readCart = (className) => {
+    for (const tag of inputTags) {
+      const cls = getTagAttr(tag, 'class');
+      const tokens = cls.split(/\s+/).filter(Boolean);
+      if (tokens.includes(className)) return getTagAttr(tag, 'value');
+    }
+    return '';
+  };
+  const imageVersion = readCart('cart_ver');
+  const imageCid = readCart('cart_cid');
 
-  // 6) Fail-closed on missing provenance. `pricesEntryExactPrintMatchesSource`
-  //    requires `entry.imageUrl` to parse via `parseYuyuImage` — a value that
-  //    is empty, off-host, or wrong path shape kills the entire binding chain
-  //    for this listing. Prefer the block's own <img>; otherwise synthesise
-  //    the canonical `/hocg/100_140/{ver}/{cid}.jpg` URL that yuyu-tei ships
-  //    (same shape the Puppeteer path uses on the equivalent DOM read); if
-  //    neither is available, drop the row rather than admit a row with no
-  //    provable provenance.
-  const yuyuImage = rawImageUrl
-    || (imageVersion && imageCid
-      ? `https://card.yuyu-tei.jp/hocg/100_140/${imageVersion}/${imageCid}.jpg`
-      : '');
+  // 6) Final `yuyuImage`. Two lawful shapes:
+  //      (i) the product `<img src>` verified in step (1), or
+  //     (ii) the canonical `/hocg/100_140/{ver}/{cid}.jpg` synth when the
+  //          block has NO product image and BOTH cart_ver + cart_cid.
+  //    Either way, run the resulting URL through `yuyuImageProductPath`
+  //    before admitting the row — the parser must never emit a row the
+  //    downstream `pricesEntryExactPrintMatchesSource` gate would reject.
+  let yuyuImage = rawImageUrl;
+  if (!yuyuImage && imageVersion && imageCid) {
+    // Values sourced from HTML attributes must not contain path or query
+    // separators — refuse to synth if they do, so the fallback URL can't
+    // be pointed off-path (`../`, another product, an evil host).
+    const safeVer = /^[A-Za-z0-9-]+$/.test(imageVersion) ? imageVersion : '';
+    const safeCid = /^[A-Za-z0-9-]+$/.test(imageCid) ? imageCid : '';
+    if (safeVer && safeCid) {
+      yuyuImage = `https://card.yuyu-tei.jp/hocg/100_140/${safeVer}/${safeCid}.jpg`;
+    }
+  }
   if (!yuyuImage) return null;
+  if (!yuyuImageProductPath(yuyuImage)) return null;
 
   return {
     cardNum,
@@ -318,31 +433,51 @@ function parseCardProductBlock(blockHtml) {
 }
 
 /**
- * DIC-1349: split the raw HTML into `<div class="card-product …">` blocks
- * and parse each one in isolation. Uses opening-tag boundaries so a block
- * ends where the next one begins (or at the container close for the last
- * block). The old text-only implementation stripped all tags first and
- * lost the per-block boundary, which is why `yuyuImage` extraction landed
- * on positions inside neighbouring blocks or nowhere at all.
+ * DIC-1349 (CR round 2 hardening): split the raw HTML into
+ * `<div class="card-product …">…</div>` blocks using matching `</div>`
+ * boundaries (depth-tracked), NOT the previous "up to next opening or
+ * html.length" heuristic. Depth tracking is safe here because `<script>`
+ * and `<style>` bodies are stripped before the boundary walk.
+ *
+ * A card-product opening whose matching `</div>` cannot be found is
+ * dropped, so a truncated or malformed final block does not swallow
+ * every downstream field on the page — the CR#2 fix.
+ *
+ * Attribute quoting for the card-product class match itself is
+ * quote-agnostic (`"…"` / `'…'`) so a single-quoted opening tag no
+ * longer silently produces zero rows — the CR#3 fix at the container
+ * level.
  */
 export function parseCardHtml(html) {
   const results = [];
   if (typeof html !== 'string' || html.length === 0) return results;
 
-  const openTagRegex = /<div\b[^>]*\bclass="[^"]*\bcard-product\b[^"]*"[^>]*>/gi;
-  const openings = [];
-  let m;
-  while ((m = openTagRegex.exec(html)) !== null) {
-    openings.push(m.index);
-  }
-  if (openings.length === 0) return results;
+  // Strip <script> and <style> bodies so their (arbitrary) contents can't
+  // affect the `<div>` depth count that findMatchingDivClose walks below.
+  // Comments (`<!-- … -->`) are left in place; they don't contain <div>
+  // tokens in the shipped yuyu-tei markup.
+  const cleaned = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ');
 
-  for (let i = 0; i < openings.length; i += 1) {
-    const start = openings[i];
-    const end = i + 1 < openings.length ? openings[i + 1] : html.length;
-    const block = html.slice(start, end);
+  // Opening tag: `<div … class="card-product …" …>` — attribute-order
+  // agnostic, quote-agnostic, whole-token class match.
+  const openRegex = /<div\b[^>]*\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/gi;
+  let m;
+  while ((m = openRegex.exec(cleaned)) !== null) {
+    const classVal = m[1] ?? m[2] ?? '';
+    const tokens = classVal.split(/\s+/).filter(Boolean);
+    if (!tokens.includes('card-product')) continue;
+
+    const openEnd = openRegex.lastIndex;
+    const closeEnd = findMatchingDivClose(cleaned, openEnd);
+    if (closeEnd < 0) continue;
+    const block = cleaned.slice(m.index, closeEnd);
     const parsed = parseCardProductBlock(block);
     if (parsed) results.push(parsed);
+    // Continue scanning after the matched close so we don't re-enter
+    // nested content; also cheaper than restarting at m.index+1.
+    openRegex.lastIndex = closeEnd;
   }
 
   return results;
