@@ -75,8 +75,17 @@ function makeCardBlock(overrides = {}) {
   const productImg = includeImg
     ? `<img src="${imgSrc}" alt="${alt}" class="card img-fluid">`
     : '';
+  // Real yuyu-tei markup wraps every cart_ver / cart_cid input inside a
+  // `<div class="d-flex counter text-center">` container. The parser's
+  // source-boundary invariant (CR round-4 fix) scopes cart-input lookups
+  // to that container, so fixture blocks must ship the same wrapper —
+  // otherwise the "well-formed baseline" cases here would also fail
+  // the invariant and mask real regressions.
   const cartInputs = includeCartInputs
-    ? `<input type="hidden" value="${cartVer}" class="cart_ver">\n<input type="hidden" value="${cartCid}" class="cart_cid">`
+    ? `<div class="d-flex counter text-center">
+<input type="hidden" value="${cartVer}" class="cart_ver">
+<input type="hidden" value="${cartCid}" class="cart_cid">
+</div>`
     : '';
 
   return `
@@ -196,13 +205,24 @@ function makeCardBlockRaw({
   price = '99,800',
   cartVer = 'hbp04',
   cartCid = '10003',
-  productImgTag,   // full '<img …>' string (or '' to omit)
-  cartVerTag,      // full '<input …>' string (or '' to omit)
-  cartCidTag,      // full '<input …>' string (or '' to omit)
+  productImgTag,           // full '<img …>' string (or '' to omit)
+  cartVerTag,              // full '<input …>' string (or '' to omit)
+  cartCidTag,              // full '<input …>' string (or '' to omit)
   containerQuote = '"',
+  counterQuote = '"',      // container-quote for the .counter wrapper
+  omitCounterWrapper = false, // set true for red-before-green cases that need
+                             // the CR round-4 "cart inputs outside .counter"
+                             // shape (footer-only mutation).
   extraInsideBlock = '',
 } = {}) {
   const q = containerQuote;
+  const cq = counterQuote;
+  const inputs = [cartVerTag ?? '', cartCidTag ?? ''].filter(Boolean).join('\n');
+  const cartSection = inputs
+    ? (omitCounterWrapper
+        ? inputs
+        : `<div class=${cq}d-flex counter text-center${cq}>\n${inputs}\n</div>`)
+    : '';
   return `
 <div class=${q}card-product position-relative mt-4  ${q}><div class="starbtn" onclick="location.href='https://yuyu-tei.jp/member/login'">
 <em class="d-block position-absolute z-index top-0 start-0"></em>
@@ -216,8 +236,7 @@ ${productImgTag}</div>
 <strong class="d-block text-end ">
 ${price} 円
 </strong>
-${cartVerTag ?? ''}
-${cartCidTag ?? ''}
+${cartSection}
 ${extraInsideBlock}
 </div>`;
 }
@@ -569,6 +588,10 @@ ${unclosedFragment}
 //     so a bare `<div class=card-product>` produced zero rows. A real
 //     HTML parser handles bare quoting natively; the regression pins it. ──
 {
+  // Bare `class=card-product` container + bare-quoted product-img +
+  // bare-quoted cart inputs wrapped in a bare-quoted `.counter` div
+  // (the CR round-4 source-boundary invariant requires cart inputs to
+  // live inside a `.counter` container regardless of quoting style).
   const html = `<!DOCTYPE html><html><body>
 <div class=card-product>
 <a href=https://yuyu-tei.jp/x><div class=product-img>
@@ -577,8 +600,10 @@ ${unclosedFragment}
 <span class=d-block>hBP04-001</span>
 <h4 class=text-primary>博衣こより</h4>
 <strong class=text-end>99,800 円</strong>
+<div class=counter>
 <input type=hidden value=hbp04 class=cart_ver>
 <input type=hidden value=10003 class=cart_cid>
+</div>
 </div>
 </body></html>`;
 
@@ -589,8 +614,8 @@ ${unclosedFragment}
   assert.equal(c.rarity, 'SEC', 'case 3g: rarity extracted');
   assert.equal(c.sellPrice, 99800, 'case 3g: price extracted');
   assert.equal(c.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg', 'case 3g: yuyuImage extracted from bare `class=card` <img>');
-  assert.equal(c.imageVersion, 'hbp04', 'case 3g: imageVersion extracted from bare `class=cart_ver` input');
-  assert.equal(c.imageCid, '10003', 'case 3g: imageCid extracted from bare `class=cart_cid` input');
+  assert.equal(c.imageVersion, 'hbp04', 'case 3g: imageVersion extracted from bare `class=cart_ver` input inside bare `class=counter`');
+  assert.equal(c.imageCid, '10003', 'case 3g: imageCid extracted from bare `class=cart_cid` input inside bare `class=counter`');
 }
 
 // ── Case 3h (CR round 3, primary blocker): production-shaped
@@ -623,8 +648,10 @@ ${unclosedFragment}
 <span class="d-block">hBP04-001</span>
 <h4 class="text-primary">博衣こより(パラレル/サイン)</h4>
 <strong class="text-end">99,800 円</strong>
+<div class="d-flex counter text-center">
 <input type="hidden" value="hbp04" class="cart_ver">
 <input type="hidden" value="10003" class="cart_cid">
+</div>
 </div>
 
 </div>
@@ -674,8 +701,10 @@ ${unclosedFragment}
 <span class="d-block">hBP04-004</span>
 <h4>other</h4>
 <strong>500 円</strong>
+<div class="d-flex counter text-center">
 <input type="hidden" value="hbp04" class="cart_ver">
 <input type="hidden" value="20001" class="cart_cid">
+</div>
 </div>
 
 </div>
@@ -687,6 +716,100 @@ ${unclosedFragment}
   const sibling2 = cards2.find((c) => c.cardNum === 'hBP04-004');
   assert.equal(sibling2.sellPrice, 500, 'case 3h/2: sibling price preserved');
   assert.equal(sibling2.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/20001.jpg', 'case 3h/2: sibling URL preserved');
+}
+
+// ── Case 3i (CR round 4, sole blocker): production-shaped unclosed
+//     outer .card-product with its own name/price and an EMPTY product-img
+//     container, followed by FOOTER cart_ver / cart_cid inputs (NO valid
+//     later sibling, NO other card-product). The nested-card guard from
+//     round 4 does not fire because there is no descendant card-product;
+//     HTML5's no-implicit-close rule for `<div>` still folds the footer
+//     inputs into the unclosed card, and an unrestricted descendant
+//     lookup (`$el.find('input.cart_ver')`) would synth
+//     `https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg` from those
+//     folded footer values (¥1 laundered row — exactly the CR-flagged
+//     `hBP04-099` shape).
+//
+//     Source-boundary invariant (CR round-4 fix): yuyu-tei's real
+//     card-product wraps cart inputs inside a `<div class="d-flex counter
+//     text-center">` container. Scoping the cart-input lookup to that
+//     container means FOOTER inputs (which live at the card-product's
+//     root level, not inside .counter) return empty — no synth URL is
+//     produced — and the card drops via the no-image + no-cart-inputs
+//     fallthrough. The valid baseline card in the same page still parses
+//     because its cart inputs ARE inside .counter. ──
+{
+  const goodBlock = makeCardBlock({
+    cardNum: 'hBP04-001', rarity: 'SEC',
+    imgSrc: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg',
+    cartVer: 'hbp04', cartCid: '10003', price: '99,800',
+  });
+
+  // CR round-4 mutation: unclosed outer, empty product-img, footer
+  // cart_ver/cart_cid inputs OUTSIDE any .counter container. The outer
+  // has NO nested card-product (so the round-3/round-4 nested guard does
+  // NOT fire). Only the source-boundary invariant closes this bypass.
+  const html = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+
+${goodBlock}
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-099</span>
+<h4>fake pre-empt</h4>
+<strong>1 円</strong>
+<!-- MISSING own </div> — the CR round-4 primary mutation.
+     Footer cart inputs follow WITHOUT any .counter wrapper. -->
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+
+</div>
+</body></html>`;
+
+  const cards = parseCardHtml(html);
+  const seen = new Set(cards.map((c) => c.cardNum));
+
+  assert.ok(seen.has('hBP04-001'), 'case 3i: the good baseline card must still parse');
+  assert.ok(
+    !seen.has('hBP04-099'),
+    'case 3i (CR round-4 sole blocker fix): the unclosed outer whose only cart inputs are FOOTER (outside .counter) must be DROPPED, not admitted via laundered cart-inputs synth into /hbp04/99999.jpg',
+  );
+  for (const c of cards) {
+    assert.notEqual(
+      c.yuyuImage,
+      'https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg',
+      `case 3i (CR round-4 sole blocker fix): the CR-flagged laundered /hbp04/99999.jpg URL must not appear on any admitted row (row ${JSON.stringify(c)})`,
+    );
+    assert.notEqual(
+      c.sellPrice,
+      1,
+      `case 3i (CR round-4 sole blocker fix): the outer's ¥1 must not win lowest-price selection anywhere (row ${JSON.stringify(c)})`,
+    );
+  }
+
+  // Prove same principle when the outer has NO baseline sibling to
+  // shield against a global "0 rows means broken parser" false green:
+  // this variant should emit ZERO rows, not one laundered row.
+  const htmlSolo = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-099</span>
+<h4>fake pre-empt</h4>
+<strong>1 円</strong>
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+
+</div>
+</body></html>`;
+  const cardsSolo = parseCardHtml(htmlSolo);
+  assert.equal(
+    cardsSolo.length,
+    0,
+    `case 3i/solo (CR round-4 sole blocker fix): a lone unclosed card with only footer cart inputs must emit ZERO rows, not one laundered row — got ${JSON.stringify(cardsSolo)}`,
+  );
 }
 
 // ── Case 4: end-to-end binding through build-database.js ──

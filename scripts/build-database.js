@@ -350,12 +350,30 @@ function parseCardProductElement($, el) {
     if (nameFromAlt) name = nameFromAlt;
   }
 
-  // 5) cart_ver / cart_cid inputs — cheerio's class-selector matches whole
-  //    tokens by DOM contract, so `cart_verify` cannot masquerade as
-  //    `cart_ver` and `data-class="cart_ver"` is not a `class` attribute
-  //    at all.
-  const imageVersion = String($el.find('input.cart_ver').first().attr('value') || '');
-  const imageCid = String($el.find('input.cart_cid').first().attr('value') || '');
+  // 5) cart_ver / cart_cid inputs — CR round-4 source-boundary invariant:
+  //    yuyu-tei's real card-product wraps every cart_ver / cart_cid input
+  //    inside a `<div class="d-flex counter text-center">` container.
+  //    Scoping the lookup to that container prevents an unclosed
+  //    card-product from borrowing FOOTER cart inputs that HTML5 parsing
+  //    folds into the card as unrestricted descendants (there is no
+  //    implicit-close rule for `<div>`, so a card missing its own
+  //    `</div>` extends until an ancestor closes and everything between
+  //    becomes a descendant in cheerio's DOM). Footer inputs in the
+  //    CR-flagged mutation live at the card-product's ROOT level, not
+  //    inside a `.counter` — the scoped lookup returns empty, no
+  //    synthesised URL is produced, and the card drops via the
+  //    no-image + no-cart-inputs fallthrough.
+  //
+  //    Cheerio's class selector matches whole tokens by DOM contract,
+  //    so `cart_verify` cannot masquerade as `cart_ver` and
+  //    `data-class="cart_ver"` is never treated as a `class` attribute.
+  const $counter = $el.find('div.counter').first();
+  const imageVersion = $counter.length
+    ? String($counter.find('input.cart_ver').first().attr('value') || '')
+    : '';
+  const imageCid = $counter.length
+    ? String($counter.find('input.cart_cid').first().attr('value') || '')
+    : '';
 
   // 6) Final `yuyuImage`:
   //      (i) the product `<img src>` verified in step (1), or
