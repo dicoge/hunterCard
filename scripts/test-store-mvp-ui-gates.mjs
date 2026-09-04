@@ -51,6 +51,18 @@ check(
   'releaseFlags: FEATURES.marketData is derived from !STORE_MVP',
   /marketData:\s*!STORE_MVP/.test(flags),
 );
+// DIC-1319: the plain sale price of the printing in hand is the product's
+// primary path, so it is the ONE price flag that is unconditionally on. If it
+// ever becomes STORE_MVP-derived again, the store build ships blank prices —
+// exactly the v21 closed-test defect.
+check(
+  'releaseFlags: FEATURES.sellPrice is unconditionally true (DIC-1319)',
+  /sellPrice:\s*true\s*,/.test(flags),
+);
+check(
+  'releaseFlags: FEATURES.sellPrice is NOT derived from STORE_MVP',
+  !/sellPrice:\s*!?STORE_MVP/.test(flags),
+);
 check(
   'releaseFlags: FEATURES.externalPriceLinks is derived from !STORE_MVP',
   /externalPriceLinks:\s*!STORE_MVP/.test(flags),
@@ -99,8 +111,22 @@ check(
   /\{FEATURES\.favorites\s*&&\s*collectionVersion/.test(detail),
 );
 check(
-  'CardDetailScreen: top price section wrapped in {FEATURES.marketData && ...}',
-  /\{FEATURES\.marketData\s*&&\s*\(\s*<View[^>]*styles\.priceSection/s.test(detail),
+  'CardDetailScreen: top price section wrapped in {FEATURES.sellPrice && ...} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*<View[^>]*styles\.priceSection/s.test(detail),
+);
+check(
+  'CardDetailScreen: 查即時價 CTA inside the price section is gated on FEATURES.externalPriceLinks (DIC-1319)',
+  /\{FEATURES\.externalPriceLinks\s*&&\s*\(\s*<TouchableOpacity[^>]*styles\.checkPriceBtn/s.test(detail),
+);
+check(
+  'CardDetailScreen: multi-printing hint uses the store variant when marketData is off (DIC-1319 CR)',
+  /!FEATURES\.marketData\s*\?\s*t\('card_detail_variant_hint_store'\)/.test(detail),
+);
+check(
+  'CardDetailScreen: neither market-data-worded hint can render without FEATURES.marketData',
+  // Both original hints tell the user to pick a version in 「市場數據」, which is
+  // gated. They may only be reached from the FEATURES.marketData branch.
+  /!FEATURES\.marketData[\s\S]{0,220}?card_detail_variant_hint_spread[\s\S]{0,120}?card_detail_variant_hint'/.test(detail),
 );
 check(
   'CardDetailScreen: MarketDataPanel invocation wrapped in {FEATURES.marketData && ...}',
@@ -110,12 +136,23 @@ check(
   'CardDetailScreen: yuyu-tei and Carousell external links wrapped in {FEATURES.externalPriceLinks && ...}',
   /\{FEATURES\.externalPriceLinks\s*&&[\s\S]*?card_detail_yuyu_link[\s\S]*?card_detail_carousell_link/.test(detail),
 );
-check(
-  'CardDetailScreen: 官方卡表 external link is NOT gated (must retain)',
-  /<LinkButton[^/]*text=\{t\('card_detail_official_list'\)\}[^/]*\/>/.test(detail)
-    // and the official-list line should NOT be inside the FEATURES.externalPriceLinks branch:
-    && !/\{FEATURES\.externalPriceLinks\s*&&[\s\S]*?card_detail_official_list[\s\S]*?card_detail_yuyu_link/.test(detail),
-);
+{
+  // Scope the official-list assertion to the EXTERNAL LINKS section. Checking
+  // "no FEATURES.externalPriceLinks gate appears anywhere before it" was
+  // over-broad: DIC-1319 added a second externalPriceLinks gate higher up (the
+  // 查即時價 CTA), which made the old regex match across unrelated blocks and
+  // report a retained link as gated.
+  const sectionStart = detail.indexOf("card_detail_external_links");
+  const sectionEnd = detail.indexOf('{FEATURES.watchlist', sectionStart);
+  const externalSection = detail.slice(sectionStart, sectionEnd === -1 ? undefined : sectionEnd);
+  const officialIdx = externalSection.indexOf('card_detail_official_list');
+  const gateIdx = externalSection.indexOf('{FEATURES.externalPriceLinks');
+  check(
+    'CardDetailScreen: 官方卡表 external link is NOT gated (must retain)',
+    /<LinkButton[^/]*text=\{t\('card_detail_official_list'\)\}[^/]*\/>/.test(externalSection)
+      && officialIdx !== -1 && gateIdx !== -1 && officialIdx < gateIdx,
+  );
+}
 check(
   'CardDetailScreen: 到價提醒 top chip still wrapped in {FEATURES.watchlist && ...} (regression)',
   /\{FEATURES\.watchlist\s*&&\s*\(\s*<View style=\{styles\.topActionRow\}/s.test(detail),
@@ -125,23 +162,24 @@ check(
   /\{FEATURES\.watchlist\s*&&\s*\(\s*<View style=\{styles\.section\}>[\s\S]*?watchlistBtn/s.test(detail),
 );
 
-// ── 3b. Scan surfaces (DIC-1258 CR → DIC-1256): Store MVP data intentionally
-//        retains sellPrice (retail reference); the Scan journey UI must fail
-//        closed on every surface that would otherwise render a price. ──
+// ── 3b. Scan surfaces (DIC-1258 CR → DIC-1256 → DIC-1319).
+//        The scanned printing's OWN sale price is the primary path and rides on
+//        FEATURES.sellPrice, so it survives the store build. Cross-printing
+//        comparison stays on FEATURES.marketData and stays hidden. ──
 const scanResult = read('src/components/ScanResultCard.tsx');
 check(
-  'ScanResultCard: prices section wrapped in {FEATURES.marketData && ...}',
-  /\{FEATURES\.marketData\s*&&\s*\(\s*<View style=\{styles\.pricesSection\}/s.test(scanResult),
+  'ScanResultCard: prices section wrapped in {FEATURES.sellPrice && ...} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*<View style=\{styles\.pricesSection\}/s.test(scanResult),
 );
 check(
-  'ScanResultCard: variants section wrapped in {FEATURES.marketData && variants && ...}',
+  'ScanResultCard: cross-printing variants section still wrapped in {FEATURES.marketData && variants && ...}',
   /\{FEATURES\.marketData\s*&&\s*variants\s*&&\s*\(\s*<View style=\{styles\.variantsSection\}/s.test(scanResult),
 );
 
 const scanCandidate = read('src/components/ScanCandidateSelector.tsx');
 check(
-  'ScanCandidateSelector: meta price segment gated on FEATURES.marketData',
-  /FEATURES\.marketData\s*\?\s*`\s+\$\{formatPrice\(card\.sellPrice\)\}`\s*:\s*''/.test(scanCandidate),
+  'ScanCandidateSelector: meta price segment gated on FEATURES.sellPrice (DIC-1319)',
+  /FEATURES\.sellPrice\s*\?\s*`\s+\$\{formatPrice\(card\.sellPrice\)\}`\s*:\s*''/.test(scanCandidate),
 );
 
 const scanSession = read('src/components/ScanSessionPanel.tsx');
@@ -176,12 +214,12 @@ check(
 
 const scanScreen = read('src/screens/ScanScreen.tsx');
 check(
-  'ScanScreen: last-scanned toast price wrapped in {FEATURES.marketData && ...}',
-  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{resultStyles\.toastPrice\}/s.test(scanScreen),
+  'ScanScreen: last-scanned toast price wrapped in {FEATURES.sellPrice && ...} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*<Text style=\{resultStyles\.toastPrice\}/s.test(scanScreen),
 );
 check(
-  'ScanScreen: search-suggestion price wrapped in {FEATURES.marketData && ...}',
-  /\{FEATURES\.marketData\s*&&\s*\(\s*<Text style=\{resultStyles\.listItemPrice\}/s.test(scanScreen),
+  'ScanScreen: search-suggestion price wrapped in {FEATURES.sellPrice && ...} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*<Text style=\{resultStyles\.listItemPrice\}/s.test(scanScreen),
 );
 
 // ── 3c. SearchResults + DeckEditor (DIC-1262 CR → DIC-1256 remediation) ──
@@ -189,8 +227,8 @@ check(
 // are gated. Static-source pins live alongside the render probe below.
 const searchResults = read('src/screens/SearchResultsScreen.tsx');
 check(
-  'SearchResultsScreen: card price/no-trade branch wrapped in {FEATURES.marketData && (...)}',
-  /\{FEATURES\.marketData\s*&&\s*\(\s*card\.yuyuPrice/s.test(searchResults),
+  'SearchResultsScreen: card price/no-trade branch wrapped in {FEATURES.sellPrice && (...)} (DIC-1319)',
+  /\{FEATURES\.sellPrice\s*&&\s*\(\s*card\.yuyuPrice/s.test(searchResults),
 );
 check(
   'SearchResultsScreen: imports FEATURES from releaseFlags',
@@ -285,6 +323,28 @@ for (const key of [
   }
 }
 
+{
+  const key = 'card_detail_variant_hint_store';
+  const zhText = extractStoreKey(zh, key);
+  const jaText = extractStoreKey(ja, key);
+  check(`zh locale defines ${key}`, !!zhText);
+  check(`ja locale defines ${key}`, !!jaText);
+  if (zhText) {
+    check(
+      `zh ${key} does not claim 收藏 / 提醒 / 趨勢 / 差價, nor name the gated 市場數據 section`,
+      !/收藏|提醒|趨勢|差價|市場數據/.test(zhText),
+      `zh text = "${zhText}"`,
+    );
+  }
+  if (jaText) {
+    check(
+      `ja ${key} does not claim お気に入り / アラート / 推移 / 価格差, nor name the gated 市場データ section`,
+      !/お気に入り|アラート|推移|価格差|市場データ/.test(jaText),
+      `ja text = "${jaText}"`,
+    );
+  }
+}
+
 // ── 7. eas.json: production / production-apk / preview all set STORE_MVP=1
 //        so the review build resolves fail-closed. ──
 const easRaw = JSON.parse(read('eas.json'));
@@ -315,6 +375,28 @@ check(
   check(
     'mutation: removing the MarketDataPanel gate in-memory would flip the assertion',
     mutationBroke,
+  );
+}
+// DIC-1319 mutation: regressing the scan-result price gate back onto
+// FEATURES.marketData is the exact edit that blanked v21's prices. Prove the
+// assertion above actually catches it rather than matching either spelling.
+{
+  const regressed = scanResult.replace(
+    /\{FEATURES\.sellPrice\s*&&\s*\(\s*<View style=\{styles\.pricesSection\}/,
+    '{FEATURES.marketData && (\n          <View style={styles.pricesSection}',
+  );
+  check(
+    'mutation: re-gating the scan-result price on FEATURES.marketData would flip the assertion',
+    !/\{FEATURES\.sellPrice\s*&&\s*\(\s*<View style=\{styles\.pricesSection\}/s.test(regressed),
+  );
+}
+// DIC-1319 mutation: making sellPrice STORE_MVP-derived is the other way to
+// reintroduce the defect.
+{
+  const regressed = flags.replace(/sellPrice:\s*true\s*,/, 'sellPrice: !STORE_MVP,');
+  check(
+    'mutation: making FEATURES.sellPrice STORE_MVP-derived would flip both sellPrice assertions',
+    !/sellPrice:\s*true\s*,/.test(regressed) && /sellPrice:\s*!?STORE_MVP/.test(regressed),
   );
 }
 

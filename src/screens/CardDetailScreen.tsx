@@ -333,11 +333,11 @@ export default function CardDetailScreen({ route, navigation }: any) {
       )}
 
       {/* ====== PRICE SECTION ====== */}
-      {/* 售價 / 版本價格 pills / 價格提示 / 漲跌 — Store MVP 隱藏 (DIC-1256).
-          Everything price-shaped on the card detail is gated under
-          FEATURES.marketData; scope covers this top block, the MarketDataPanel
-          below, and the 遊々亭 external live-price CTA that lives inside it. */}
-      {FEATURES.marketData && (
+      {/* 售價 / 版本價格 pills — Store MVP 也顯示 (DIC-1319)：這是這張卡自己的
+          掛牌售價，屬於基本查價。漲跌走勢仍由 FEATURES.trendPrediction 擋著，
+          「查即時價」外連仍由 FEATURES.externalPriceLinks 擋著，買賣差價與
+          MarketDataPanel 仍由 FEATURES.marketData 擋著。 */}
+      {FEATURES.sellPrice && (
         <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]} testID="card-detail-price-section">
           <View style={styles.priceHeader}>
             <Text style={styles.priceSourceName}>🏪 遊々亭</Text>
@@ -356,10 +356,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
                 </View>
                 );
               })}
-              <Text style={styles.variantHint}>
-                {FEATURES.priceSpread
-                  ? t('card_detail_variant_hint_spread')
-                  : t('card_detail_variant_hint')}
+              {/* Both non-store hints tell the user to pick a version down in
+                  「市場數據」, but MarketDataPanel is gated on FEATURES.marketData.
+                  Since DIC-1319 un-gated this list, the store build would render
+                  an instruction pointing at a section that is not there — so the
+                  hint that names a gated section is itself gated. */}
+              <Text style={styles.variantHint} testID="card-detail-variant-hint">
+                {!FEATURES.marketData
+                  ? t('card_detail_variant_hint_store')
+                  : FEATURES.priceSpread
+                    ? t('card_detail_variant_hint_spread')
+                    : t('card_detail_variant_hint')}
               </Text>
             </View>
           ) : hasActualPrice ? (
@@ -379,9 +386,13 @@ export default function CardDetailScreen({ route, navigation }: any) {
             <Text style={styles.noPriceText}>{t('card_detail_no_data')}</Text>
           )}
           {FEATURES.trendPrediction ? <PriceTrend trend={detailPriceTrend} /> : null}
-          <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
-            <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
-          </TouchableOpacity>
+          {/* 「查即時價」把使用者送到遊々亭 — 外部價格連結，維持 Store MVP 隱藏
+              (DIC-1256)；DIC-1319 只放行卡片自己的售價數字，不放行外連。 */}
+          {FEATURES.externalPriceLinks && (
+            <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
+              <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 

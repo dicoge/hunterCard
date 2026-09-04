@@ -157,12 +157,29 @@ function stripStoreMvpFields<T extends Record<string, any>>(card: T): T {
 }
 
 function fmt(entry: any, storeMvp = false) {
-  let price = entry.sellPrice;
-  if (entry.rarity === 'SEC' && entry.prices?.length > 0) {
-    price = Math.max(...entry.prices.map((p: any) => p.sellPrice || 0));
-  }
+  // sellPrice is the recognized printing's OWN canonical price, passed through
+  // untouched. There used to be a `rarity === 'SEC'` branch here that replaced
+  // it with Math.max over entry.prices[] — the same cross-printing Math.max the
+  // buyPrice comment below has forbidden since DIC-856, and it was serving a
+  // sibling printing's number for every one of the 12 SEC entries that have
+  // printings: hBP03-003 canonically sells for JPY 1,280 and was emitted as
+  // JPY 128,000, the パラレル/サイン printing's price (DIC-1325 CR).
+  //
+  // Reaching for the most expensive sibling is never right here. The scan path
+  // identifies ONE printing, and quoting a different printing's price is exactly
+  // the cross-printing fallback the product forbids — latent while prices were
+  // hidden, user-visible now that the scan surfaces them (DIC-1319).
+  const price = entry.sellPrice;
   const normalized = normalizeCardIdentity(entry);
   const base = {
+    // Compound printing identity (e.g. hBP01-024_hBP01_C_hBP01-024_C).
+    // The database keys entries by this compound id, and cardRecognition
+    // rehydrates it as `CardInfo.id`; dropping it on the wire collapses the
+    // eight hBP01-024 printings into one at the client boundary — session /
+    // duplicate identity then no longer reflects the printing the user chose
+    // (DIC-1325 / DIC-1339). Fall back to cardNumber only when a legacy
+    // catalog row genuinely has no `id`.
+    id: entry.id || entry.cardNumber,
     cardNumber: entry.cardNumber,
     name: entry.name,
     sellPrice: price,

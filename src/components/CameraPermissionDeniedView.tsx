@@ -59,6 +59,14 @@ export interface CameraPermissionDeniedViewProps {
   permission: CameraPermissionShape | null | undefined;
   onRequestPermission: () => void;
   /**
+   * DIC-1336: gallery-scan fallback. When present, the denied view renders a
+   * "scan from gallery" button so a user whose CAMERA permission is denied
+   * (temporary or permanent) still has a working scan path — the shipped
+   * Android APK previously had none. Kept optional so tests that only care
+   * about the DIC-1289 recovery paths do not have to wire it.
+   */
+  onPickGallery?: () => void;
+  /**
    * Overridable seam so the CR-required jsdom test can assert that the
    * settings button really calls `Linking.openSettings()`. In production
    * the default implementation is invoked and the seam is invisible.
@@ -143,6 +151,7 @@ const DEFAULT_OPEN_SETTINGS = (): void => {
 export function CameraPermissionDeniedView({
   permission,
   onRequestPermission,
+  onPickGallery,
   openSettingsImpl,
   refreshPermission,
   subscribeAppActive,
@@ -222,6 +231,21 @@ export function CameraPermissionDeniedView({
           {t('scan_open_settings')}
         </Text>
       </TouchableOpacity>
+      {/* DIC-1336: gallery scan fallback. Rendered whenever the wiring is
+          present so a user whose CAMERA is unavailable still has a working
+          scan path — no `isWeb` gate, no `canAskAgain` gate. ScanScreen wires
+          this to its own `pickFromGallery`; a missing wire is what the tests
+          catch, not runtime UI. */}
+      {onPickGallery ? (
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={onPickGallery}
+          activeOpacity={0.7}
+          testID="camera-permission-pick-gallery"
+        >
+          <Text style={styles.settingsButtonText}>{t('scan_use_gallery')}</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }

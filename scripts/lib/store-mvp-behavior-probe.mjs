@@ -10,8 +10,11 @@
 // staging/dev. This is the build-time-define proof the owner asked for.
 //
 // The Scan surfaces are here because Store MVP data intentionally retains
-// `sellPrice` (retail reference), so the UI MUST fail closed — the DIC-1258
-// CR caught this leak.
+// `sellPrice` (retail reference). DIC-1256/DIC-1258 hid every price-shaped
+// pixel behind FEATURES.marketData; DIC-1319 reversed that for the ONE price
+// the product exists to show — the scanned printing's own sale price — so the
+// probe now reports those markers as retained-in-both-modes while keeping the
+// cross-printing, spread, valuation-total and external-link markers gated.
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -128,6 +131,29 @@ try {
   process.stderr.write(`CardDetailScreen render failed: ${err?.stack || err}\n`);
   process.exit(2);
 }
+let multiPrintingDetailContainer;
+try {
+  const multiPrintingCard = {
+    ...sampleCard,
+    id: 'hBP04-009',
+    cardNumber: 'hBP04-009',
+    nameZh: '多版本測試卡',
+    prices: [
+      { name: 'ノーマル', sellPrice: 1200, rarity: 'R' },
+      { name: 'パラレル', sellPrice: 8800, rarity: 'SR' },
+    ],
+  };
+  multiPrintingDetailContainer = await renderElement(
+    React.createElement(CardDetailScreen, {
+      route: { params: { card: multiPrintingCard } },
+      navigation: mockNavigation,
+    }),
+  );
+} catch (err) {
+  process.stderr.write(`CardDetailScreen (multi-printing) render failed: ${err?.stack || err}\n`);
+  process.exit(2);
+}
+
 try {
   loginContainer = await renderElement(React.createElement(LoginScreen));
 } catch (err) {
@@ -394,6 +420,8 @@ try {
 const deckEditorHtml = deckEditorContainer.innerHTML;
 const deckEditorText = deckEditorContainer.textContent;
 
+const multiPrintingHtml = multiPrintingDetailContainer.innerHTML;
+const multiPrintingText = multiPrintingDetailContainer.textContent;
 const detailHtml = detailContainer.innerHTML;
 const detailText = detailContainer.textContent;
 const loginText = loginContainer.textContent;
@@ -417,13 +445,22 @@ const result = {
   detail: {
     // Gated surfaces (must be absent when STORE_MVP=1, present when =0)
     hasCollectionCard: detailHtml.includes('card-detail-collection'),                    // FEATURES.favorites
-    hasPriceSection: detailHtml.includes('card-detail-price-section'),                   // FEATURES.marketData
     hasMarketDataTitle: detailText.includes(zh.card_detail_market_data),                 // FEATURES.marketData
+    hasLivePriceCta: detailText.includes(zh.card_detail_live_price),                     // FEATURES.externalPriceLinks
     hasYuyuLink: detailText.includes(zh.card_detail_yuyu_link),                          // FEATURES.externalPriceLinks
     hasCarousellLink: detailText.includes(zh.card_detail_carousell_link),                // FEATURES.externalPriceLinks
     hasWatchlistChip: detailHtml.includes('card-price-alert-chip'),                      // FEATURES.watchlist
     hasWatchlistBtn: detailHtml.includes('card-price-alert-button'),                     // FEATURES.watchlist
     // Retained surfaces (must be present in BOTH modes — regression guard)
+    hasPriceSection: detailHtml.includes('card-detail-price-section'),                   // FEATURES.sellPrice (DIC-1319)
+    hasPriceLikeText: containsPriceLike(detailText),                                     // FEATURES.sellPrice (DIC-1319)
+    // Multi-printing hint (DIC-1319). The list must render, and the copy must
+    // not point at 「市場數據」 unless that section is actually there.
+    hasVariantHint: multiPrintingHtml.includes('card-detail-variant-hint'),
+    hasStoreVariantHint: multiPrintingText.includes(zh.card_detail_variant_hint_store),
+    hasMarketDataVariantHint: multiPrintingText.includes(zh.card_detail_variant_hint)
+      || multiPrintingText.includes(zh.card_detail_variant_hint_spread),
+    namesMarketDataSection: multiPrintingText.includes(zh.card_detail_market_data),
     hasOfficialLink: detailText.includes(zh.card_detail_official_list),
     hasCardName: detailText.includes(sampleCard.nameZh),
     hasCardNumber: detailText.includes(sampleCard.cardNumber),
@@ -434,30 +471,32 @@ const result = {
     usesStoreDescription: loginText.includes(zh.login_description_store),
     usesFullDescription: loginText.includes(zh.login_description),
   },
-  // Scan surfaces (DIC-1258 CR blocker → DIC-1256 remediation).
+  // Scan surfaces (DIC-1258 CR blocker → DIC-1256 → DIC-1319).
   scanResult: {
-    // Gated surfaces (absent when STORE_MVP=1)
-    hasPricesSection: scanResultHtml.includes('scan-result-prices'),
+    // Gated (absent when STORE_MVP=1): cross-printing comparison only.
     hasVariantsSection: scanResultHtml.includes('scan-result-variants'),
+    // Retained (present in BOTH modes). The scanned printing's own sale price
+    // rides on FEATURES.sellPrice since DIC-1319 — a blank here is the v21
+    // closed-test defect.
+    hasPricesSection: scanResultHtml.includes('scan-result-prices'),
     hasPriceLikeText: containsPriceLike(scanResultText),
-    // Retained surfaces (present in BOTH modes)
     hasCardName: scanResultText.includes(scanCard.nameZh),
     hasCardNumber: scanResultText.includes(scanCard.cardNumber),
     hasRarityBadge: scanResultText.includes(scanCard.rarity),
   },
   scanCandidate: {
+    // Retained in BOTH modes since DIC-1319: the price is often what tells the
+    // user which candidate is the printing in their hand.
     hasPriceLikeInMeta: containsPriceLike(scanCandidateText),
-    // Retained: card number + rarity + candidate title + rescan / manual actions.
     hasCardNumber: scanCandidateText.includes(scanCard.cardNumber),
     hasCandidateTitle: scanCandidateText.includes(zh.scan_candidate_mid_title),
     hasRescanAction: scanCandidateText.includes(zh.scan_rescan),
   },
   searchResult: {
-    // Gated (absent when STORE_MVP=1)
+    // Retained in BOTH modes since DIC-1319 (per-card sale price / no-trade).
     hasPriceBadgeRow: searchResultCardHtml.includes('search-result-price-row'),
     hasNoTradeBadge: searchResultCardHtml.includes('search-result-no-trade'),
     hasPriceLikeText: containsPriceLike(searchResultCardText),
-    // Retained (present in BOTH modes)
     hasCardName: searchResultCardText.includes(searchResultCard.nameZh),
     hasCardNumber: searchResultCardText.includes(searchResultCard.cardNumber),
   },

@@ -478,10 +478,9 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
           )}
         </View>
 
-        {/* Store MVP 隱藏搜尋結果卡片上的價格與無交易 badge (DIC-1256)。
-            資料層仍保留 sellPrice，這裡只封住 UI；卡名、卡號、系列、顏色、
-            稀有度、效果預覽全部留下供辨識使用。 */}
-        {FEATURES.marketData && (
+        {/* 搜尋結果列上的單卡售價／無交易 badge — Store MVP 也顯示 (DIC-1319)。
+            這是該卡自己掛牌價的單一數字，不是行情比較，也不含買賣差價。 */}
+        {FEATURES.sellPrice && (
           card.yuyuPrice != null && card.yuyuPrice > 0 ? (
             <View style={styles.priceRowList} testID="search-result-price-row">
               <Text style={styles.priceBadgeList}>{formatPrice(card.yuyuPrice)}</Text>

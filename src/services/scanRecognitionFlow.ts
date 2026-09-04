@@ -43,6 +43,92 @@ export interface ScanFlowUi {
   onVisionRecognized(card: CardInfo, confidence: number): void;
 }
 
+/**
+ * An ambiguous-printing result LOOKS like success — `success: true` with a card
+ * — because the card identity is genuinely known. Only the printing is not, so
+ * the result deliberately carries no price and lists every printing as a
+ * candidate (DIC-1325, cardRecognition.resolvePrintingByCardNumber).
+ *
+ * Every branch below used to test `success && card` first, which committed that
+ * priceless placeholder before anything looked at `lowConfidence`. On native it
+ * went straight to onVisionRecognized; on web/local the >= 0.85 auto-add caught
+ * it. Either way the user got a card with no price added to their session
+ * instead of the printing chooser.
+ *
+ * So this runs BEFORE every success branch: if the printing is unresolved, hand
+ * the candidates to the picker and commit nothing.
+ */
+export function isAmbiguousPrinting(result: RecognitionResult): boolean {
+  return result?.success === true
+    && !!result.card
+    && result.lowConfidence === true
+    && (result.candidates?.length ?? 0) > 1;
+}
+
+/**
+ * Pure decision extracted from ScanScreen.handleRecognized so the gallery /
+ * scan / OCR paths all share ONE tested classifier, and a Node harness can
+ * drive it end-to-end without booting the camera screen (DIC-1339 regression).
+ *
+ * The rules:
+ *   - `ambiguous-picker`: the printing is not resolved — open the picker,
+ *     never commit at any confidence.
+ *   - `commit`: confidence at or above auto-add — commit the identified card.
+ *   - `picker`: mid/low confidence — open the picker with the candidate list
+ *     so the user picks explicitly.
+ */
+export type HandleRecognizedDecision =
+  | { action: 'ambiguous-picker'; candidates: RecognizedCandidate[] }
+  | { action: 'commit'; card: CardInfo; confidence: number }
+  | { action: 'picker'; tier: 'mid' | 'low'; candidates: RecognizedCandidate[] };
+
+export interface RecognizedThresholds {
+  /** ≥ this → auto-commit. */
+  autoAdd: number;
+  /** ≥ this (and below autoAdd) → picker at `mid` tier; below → `low`. */
+  minCandidate: number;
+}
+
+export const DEFAULT_RECOGNIZED_THRESHOLDS: RecognizedThresholds = {
+  autoAdd: 0.85,
+  minCandidate: 0.55,
+};
+
+export function decideRecognizedOutcome(
+  card: CardInfo,
+  confidence: number,
+  candidates: RecognizedCandidate[] | undefined,
+  ambiguousPrinting: boolean,
+  thresholds: RecognizedThresholds = DEFAULT_RECOGNIZED_THRESHOLDS,
+): HandleRecognizedDecision {
+  if (ambiguousPrinting) {
+    return {
+      action: 'ambiguous-picker',
+      candidates: (candidates && candidates.length > 0 ? candidates : [{ card, confidence }]).slice(0, 5),
+    };
+  }
+  if (confidence >= thresholds.autoAdd) {
+    return { action: 'commit', card, confidence };
+  }
+  const list = candidates && candidates.length > 0 ? candidates : [{ card, confidence }];
+  return {
+    action: 'picker',
+    tier: confidence >= thresholds.minCandidate ? 'mid' : 'low',
+    candidates: list.slice(0, 5),
+  };
+}
+
+function routeAmbiguousPrinting(result: RecognitionResult, ui: ScanFlowUi): boolean {
+  if (!isAmbiguousPrinting(result)) return false;
+  ui.setBusy(false);
+  ui.setStatus('請選擇版本', 4);
+  ui.setCandidateReason('同一張卡號有多個版本，售價不同，請選擇手上的版本');
+  // Candidates keep their own compound printing ids and their own prices, so
+  // whichever the user picks resolves to an exact printing.
+  ui.showLowConfidenceCandidates(result.candidates!);
+  return true;
+}
+
 export async function runWebCameraScan(imageUri: string, io: ScanFlowIo, ui: ScanFlowUi): Promise<void> {
   ui.setStatus('🤖 AI 辨識中…', 3);
 
@@ -104,6 +190,8 @@ async function runWebLocalFallback(
   const result = await io.recognizeFromImage(imageUri);
   ui.setBusy(false);
 
+  if (routeAmbiguousPrinting(result, ui)) return;
+
   if (result.success && result.card) {
     ui.onRecognized(result.card, result.confidence ?? 0.85, result.candidates);
     return;
@@ -114,6 +202,7 @@ async function runWebLocalFallback(
 
   if (trimmedText.length > 0) {
     const fallbackResult = await io.recognizeFromOcr(trimmedText);
+    if (routeAmbiguousPrinting(fallbackResult, ui)) return;
     if (fallbackResult.success && fallbackResult.card) {
       ui.onRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
       return;
@@ -130,6 +219,8 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
   ui.setStatus('🤖 AI 辨識中…', 3);
 
   const vision = await io.recognizeFromImage(imageUri);
+  if (routeAmbiguousPrinting(vision, ui)) return;
+
   if (vision.success && vision.card) {
     ui.setBusy(false);
     ui.setStatus('✅ 辨識完成', 4);
@@ -156,6 +247,7 @@ export async function runNativeCameraScan(imageUri: string, io: ScanFlowIo, ui: 
 
   if (trimmedText.length > 0) {
     const result = await io.recognizeFromOcr(trimmedText);
+    if (routeAmbiguousPrinting(result, ui)) return;
     if (result.success && result.card) {
       ui.setStatus('✅ 辨識完成', 4);
       ui.onRecognized(result.card, result.confidence ?? 0.85, result.candidates);
