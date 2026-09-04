@@ -1267,11 +1267,19 @@ async function buildDatabase() {
 
   // Build a reverse lookup: cardNum → array of official entries (for merging)
   const officialByCardNum = {};
+  // DIC-1343/CR rev.2: the compound key IS the official printing identity
+  // (`cardNumber_series_rarity_imageSuffix`). It is the only value that keeps
+  // genuinely distinct rows such as ent07 `C` and ent07 `02_C` apart — those
+  // collapse onto one another under normalizeRarityCode. Keep a row → key map
+  // so the yuyu-only fallback can count DISTINCT printings and bind a proven
+  // price onto the official row itself instead of a bare cardNumber duplicate.
+  const officialKeyByRow = new Map();
   for (const [key, info] of Object.entries(officialCards)) {
     const base = info.cardNumber || '';
     if (base) {
       if (!officialByCardNum[base]) officialByCardNum[base] = [];
       officialByCardNum[base].push(info);
+      officialKeyByRow.set(info, key);
     }
   }
 
@@ -1358,6 +1366,16 @@ async function buildDatabase() {
     };
   }
 
+  // DIC-1334: track which cardNumbers received a sellPrice from official+yuyu
+  // matching. The yuyu-only fallback below must only create a yuyu-only entry
+  // when NO official entry for that cardNumber got priced — otherwise the
+  // existing official entry (sellPrice:null) blocks the fallback via
+  // alreadyExists, permanently discarding the yuyu price data. This is the
+  // root cause of the 1,214→424 collapse: yuyu data is irrecoverably lost
+  // when the official catalog has entries but none match the yuyu listing's
+  // exact series+rarity combination.
+  const officialPricedCardNums = new Set();
+
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
@@ -1408,6 +1426,13 @@ async function buildDatabase() {
       timestamp: yuyu ? yuyu.firstTimestamp : '',
       _rawPricesArchive: archive,
     };
+    // DIC-1334: record that this cardNumber received a sellPrice from
+    // official+yuyu matching so the yuyu-only fallback below does not
+    // discard the yuyu price data for OTHER unmatched printings of this
+    // cardNumber.
+    if (yuyu && yuyu.lowestPrice != null && yuyu.lowestPrice > 0) {
+      officialPricedCardNums.add(baseCardNum);
+    }
   }
 
   // Also add yuyu-only cards (prices without matching official entry)
@@ -1415,13 +1440,74 @@ async function buildDatabase() {
     // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
     // schema requires 3 digits (hY01-014).  DIC-1084.
     const cardNum = canonicalizeCardNumber(rawCardNum);
-    const alreadyExists = Object.keys(database.cards).some(k => {
-      const info = database.cards[k];
-      return info.cardNumber === cardNum;
-    });
-    if (alreadyExists) continue;
-
-    const priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
+    // DIC-1334: replace the old `alreadyExists` gate (which dropped yuyu price
+    // data whenever ANY official entry existed, even when every official entry
+    // had sellPrice:null — the 1,214→424 collapse). Now we only block the
+    // fallback when at least one official entry for this cardNumber actually
+    // received a sellPrice from official+yuyu matching. When official entries
+    // exist but ALL are unpriced, we ADD the yuyu listing as yuyu-only instead
+    // of silently discarding it.
+    const officialRows = officialByCardNum[cardNum] || [];
+    const officialAlreadyPriced = officialPricedCardNums.has(cardNum);
+    if (officialAlreadyPriced) continue;
+    // DIC-1334 + DIC-1343/CR: strict exact-printing provenance for the
+    // yuyu-only fallback. When official rows exist for this cardNumber, we
+    // must resolve EACH accepted listing to exactly one distinct official
+    // compound printing identity before any scalar selection or publication —
+    // never a cardNumber-wide, sibling/reprint, rarity-guess, buyPrice, or
+    // cross-product fallback. The old gate only checked the FIRST entry's
+    // image product, then admitted the whole priceData array and picked the
+    // lowest scalar across siblings — which could publish an unproven
+    // sibling/reprint price (e.g. a hBP03 cardNumber resolving ¥1 from a
+    // hBP07/C sibling listing). Truly yuyu-only cardNumbers (no official row
+    // at all) have no official identity to conflict with and keep the
+    // original behavior.
+    let priceEntries;
+    // Compound key of the single official printing this listing set proved to.
+    // Non-null means the price must be bound onto that already-emitted official
+    // row; null means this is a truly yuyu-only cardNumber.
+    let boundPrintingKey = null;
+    if (officialRows.length > 0) {
+      // Proven printings: map each listing to EVERY exact official printing it
+      // matches, identified by the official compound key. Two things this must
+      // not do, both of which the previous revision did: (1) key by
+      // `sourceProduct|normalizeRarityCode(rarity)`, which merges the distinct
+      // ent07 `C` and `02_C` rows into one bucket and reports a collision as a
+      // unique match; (2) stop at the first matching official row, which hides
+      // the very ambiguity this gate exists to catch. Zero proven printings
+      // (unprovable / rarity-guess) and more than one distinct proven printing
+      // (ambiguous sibling / reprint / C-vs-02_C) both fail closed.
+      const allEntries = Array.isArray(priceData) ? priceData : [priceData];
+      const provenPrintings = new Map(); // official compound key → proven entries
+      for (const entry of allEntries) {
+        for (const official of officialRows) {
+          const candidateCount = officialRows
+            .filter((c) => String(c.sourceProduct || c.series || '').toLowerCase() === String(official.sourceProduct || official.series || '').toLowerCase())
+            .length;
+          if (!yuyuEntryMatchesOfficial(entry, official, candidateCount)) continue;
+          const printKey = officialKeyByRow.get(official);
+          if (!printKey) continue;
+          if (!provenPrintings.has(printKey)) provenPrintings.set(printKey, []);
+          provenPrintings.get(printKey).push(entry);
+        }
+      }
+      if (provenPrintings.size !== 1) {
+        console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber ${cardNum}: ${provenPrintings.size === 0 ? 'no listing proves to an exact official printing' : `${provenPrintings.size} distinct official printings proven (ambiguous sibling/reprint)`} — fail-closed, no cardNumber-wide fallback`);
+        continue;
+      }
+      const [[printKey, proven]] = provenPrintings;
+      // The proven printing must be an official row that already exists in the
+      // artifact — binding is the only lawful outcome here. If it somehow does
+      // not, fail closed rather than publish an identity-less duplicate.
+      if (!database.cards[printKey]) {
+        console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for ${cardNum}: proven printing ${printKey} has no official row to bind (fail-closed)`);
+        continue;
+      }
+      boundPrintingKey = printKey;
+      priceEntries = deduplicatePrices(proven);
+    } else {
+      priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
+    }
     let lowestPrice = null;
     let lowestName = '';
     let firstImage = '';
@@ -1447,6 +1533,25 @@ async function buildDatabase() {
     const { canonical, archive } = canonicalizePrices(rawEntries);
     const cleanYuyuName = canonicalYuyuName(lowestName);
     const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, firstImage);
+
+    // DIC-1343/CR rev.2: when the listing set proved to exactly one official
+    // printing, write the price ONTO that printing's existing row. Emitting a
+    // second, bare-cardNumber row instead published an identity-less duplicate
+    // (no rarity / series / official image) while the printing it claimed to
+    // have proven stayed unpriced — the artifact then carried both a null
+    // official row and a rogue priced row for the same card.
+    if (boundPrintingKey) {
+      const bound = database.cards[boundPrintingKey];
+      bound.sellPrice = lowestPrice;
+      bound.yuyuName = cleanYuyuName;
+      bound.yuyuImage = cleanYuyuImage;
+      bound.prices = canonical;
+      bound.timestamp = firstTimestamp;
+      bound._rawPricesArchive = archive;
+      if (!bound.name) bound.name = lowestName || '';
+      console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${lowestPrice})`);
+      continue;
+    }
 
     const canonicalCardNum = isCanonicalCardNumber(cardNum)
       ? cardNum
@@ -1560,6 +1665,44 @@ async function buildDatabase() {
   // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,
   // preserving any skills from the previous build the effects files no longer supply.
   mergeSkills(database.cards, prevSkillsByCardId);
+
+  // DIC-1334: post-transformation coverage audit. After every destructive
+  // transformation (official matching, yuyu-only fallback, ambiguous-promo
+  // nullification, detail-align reorder, skills merge), verify the FINAL
+  // canonical artifact's priced-cardNumber coverage against the fresh yuyu
+  // scrape. Scenario r5 of the surgery spec: a healthy pre-stage coverage
+  // followed by a final-artifact collapse must FAIL the build (exit non-zero,
+  // HUNTERCARD_SCRAPE_STATUS=FAILED, no commit). We compare the final
+  // priced-cardNumber set against the freshly scraped yuyu set: the gap must
+  // stay small, otherwise a transformation discarded yuyu price data.
+  if (!pricingUnavailable) {
+    const finalPricedCardNums = new Set(
+      Object.values(database.cards)
+        .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+        .map((c) => c.cardNumber),
+    );
+    // DIC-1334: with the wrong alreadyExists gate a scrape of N priced
+    // cardNumbers can collapse to a small fraction of N. Enforce a hard
+    // floor: the final priced-cardNumber coverage must exceed 50% of the
+    // freshly scraped yuyu coverage. A healthy run matches nearly all of
+    // them (yuyu only lists pricing for cards that exist in the catalog),
+    // so 50% is a deliberately generous fail-closed floor that still
+    // catches a 1214→424 collapse (35%).
+    const finalCoverage = finalPricedCardNums.size;
+    const scrapedCoverage = scrapedCardNumbers.size;
+    const gapFloor = Math.floor(scrapedCoverage / 2);
+    if (scrapedCoverage > 0 && finalCoverage < gapFloor) {
+      throw new Error(
+        `[DIC-1334] final canonical artifact collapsed priced-cardNumber coverage: ` +
+        `scraped ${scrapedCoverage} priced cardNumbers but final artifact only has ${finalCoverage} ` +
+        `(< 50% floor ${gapFloor}). A transformation discarded yuyu price data; refusing to ship.`,
+      );
+    }
+    const lostCardNums = [...scrapedCardNumbers].filter((n) => !finalPricedCardNums.has(n));
+    if (lostCardNums.length > 0) {
+      console.log(`  [DIC-1334] final artifact keeps ${finalCoverage}/${scrapedCoverage} priced cardNumbers; ${lostCardNums.length} not priced in final artifact (examined sample: ${lostCardNums.slice(0, 5).join(', ')})`);
+    }
+  }
 
   // Fix totalCards to reflect actual unique cards
   database.totalCards = Object.keys(database.cards).length;

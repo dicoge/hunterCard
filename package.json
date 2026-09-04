@@ -48,6 +48,7 @@
     "test:web-export-artifact": "node scripts/test-web-export-artifact.mjs",
     "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",
     "test:scrape-pipeline": "node scripts/test-scrape-pipeline-failfast.mjs",
+    "test:dic1334-final-artifact-collapse": "node scripts/test-dic1334-final-artifact-collapse.mjs",
     "test:market-fields": "node --experimental-strip-types scripts/test-api-card-mapper.mjs && node scripts/test-dic-361-market-data-fields.mjs",
     "test:deployment-data": "node scripts/verify-deployment-data.mjs",
     "test:market-field-preservation": "node scripts/test-market-field-preservation.mjs",
