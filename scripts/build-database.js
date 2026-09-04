@@ -350,30 +350,64 @@ function parseCardProductElement($, el) {
     if (nameFromAlt) name = nameFromAlt;
   }
 
-  // 5) cart_ver / cart_cid inputs — CR round-4 source-boundary invariant:
-  //    yuyu-tei's real card-product wraps every cart_ver / cart_cid input
-  //    inside a `<div class="d-flex counter text-center">` container.
-  //    Scoping the lookup to that container prevents an unclosed
-  //    card-product from borrowing FOOTER cart inputs that HTML5 parsing
-  //    folds into the card as unrestricted descendants (there is no
-  //    implicit-close rule for `<div>`, so a card missing its own
-  //    `</div>` extends until an ancestor closes and everything between
-  //    becomes a descendant in cheerio's DOM). Footer inputs in the
-  //    CR-flagged mutation live at the card-product's ROOT level, not
-  //    inside a `.counter` — the scoped lookup returns empty, no
-  //    synthesised URL is produced, and the card drops via the
-  //    no-image + no-cart-inputs fallthrough.
+  // 5) cart_ver / cart_cid inputs — CR round-5 source-boundary invariant:
+  //    yuyu-tei's real card-product always has BOTH a direct-child
+  //    `<div class="… counter …">` (holding cart_ver / cart_cid /
+  //    cart_gid / … inputs) AND a direct-child `<a class="cart_sell_in">`
+  //    (the "カートへ" cart button), and `cart_sell_in` appears AFTER
+  //    `.counter` in source order — it is the LAST direct child in
+  //    real markup. This is the yuyu-tei structural signature.
   //
-  //    Cheerio's class selector matches whole tokens by DOM contract,
-  //    so `cart_verify` cannot masquerade as `cart_ver` and
-  //    `data-class="cart_ver"` is never treated as a `class` attribute.
-  const $counter = $el.find('div.counter').first();
-  const imageVersion = $counter.length
-    ? String($counter.find('input.cart_ver').first().attr('value') || '')
-    : '';
-  const imageCid = $counter.length
-    ? String($counter.find('input.cart_cid').first().attr('value') || '')
-    : '';
+  //    The earlier CR-round-4 fix used `$el.find('div.counter')` — an
+  //    UNRESTRICTED descendant lookup. HTML5 parsing has no implicit-
+  //    close rule for `<div>`, so an unclosed card-product absorbs any
+  //    following HTML (footer / next sibling) until an ancestor closes,
+  //    and a footer that ships its OWN `<div class="counter">` with
+  //    cart_ver / cart_cid gets folded into the unclosed card as a
+  //    descendant. Unrestricted `.find` picks that folded `.counter`
+  //    up and the parser synthesises a laundered `/hbp04/99999.jpg`
+  //    URL. That is the CR-round-5-reported bypass.
+  //
+  //    The invariant enforced here proves the card was EXPLICITLY closed
+  //    with its own contents inside via three cross-checks that a folded
+  //    footer would collectively fail:
+  //      (a) `.counter` is a DIRECT child of the card (not a nested
+  //          descendant that could belong to a folded structure);
+  //      (b) `a.cart_sell_in` is also a direct child, source-ordered
+  //          AFTER `.counter` — real yuyu-tei always has this button
+  //          as the LAST direct child, and it lives INSIDE the card's
+  //          own scope;
+  //      (c) the card's parse5 `endTag.startOffset` is >= the
+  //          cart_sell_in's `endOffset` — proves the card's `</div>`
+  //          closes AFTER its own cart_sell_in in the raw HTML, i.e.
+  //          the explicit close is real rather than an ancestor's
+  //          `</div>` that happens to satisfy depth counting.
+  //
+  //    A folded footer that ships a `.counter` cannot pass all three:
+  //    it either does not include a `cart_sell_in` (round-4 / round-5
+  //    plain / counter-only mutations), includes one but in the wrong
+  //    source order, or the outer card's endTag falls before the folded
+  //    button's endOffset. In every failure mode the card drops via the
+  //    no-cart-inputs fallthrough.
+  const $counter = $el.children('div.counter').first();
+  const $sellIn = $el.children('a.cart_sell_in').first();
+  const cardEndTag = $el[0]?.sourceCodeLocation?.endTag;
+  let imageVersion = '';
+  let imageCid = '';
+  if ($counter.length && $sellIn.length && cardEndTag) {
+    const counterEnd = $counter[0]?.sourceCodeLocation?.endOffset ?? -1;
+    const sellInStart = $sellIn[0]?.sourceCodeLocation?.startOffset ?? -1;
+    const sellInEnd = $sellIn[0]?.sourceCodeLocation?.endOffset ?? -1;
+    const cardEndStart = cardEndTag.startOffset ?? -1;
+    const wellFormed =
+      counterEnd >= 0 && sellInStart >= 0 && sellInEnd >= 0 && cardEndStart >= 0
+      && counterEnd <= sellInStart
+      && sellInEnd <= cardEndStart;
+    if (wellFormed) {
+      imageVersion = String($counter.find('input.cart_ver').first().attr('value') || '');
+      imageCid = String($counter.find('input.cart_cid').first().attr('value') || '');
+    }
+  }
 
   // 6) Final `yuyuImage`:
   //      (i) the product `<img src>` verified in step (1), or
@@ -406,14 +440,13 @@ function parseCardProductElement($, el) {
 export function parseCardHtml(html) {
   const results = [];
   if (typeof html !== 'string' || html.length === 0) return results;
-  // parse5 (via cheerio) auto-closes unclosed elements at their natural
-  // parent boundary, so a `<div class="card-product">` whose own `</div>`
-  // is missing gets closed at the enclosing `<div class="row">`'s close.
-  // Descendant `<input>` tags physically located AFTER the missing card's
-  // scope end up as siblings of the auto-closed card, not children — the
-  // real fix for the CR-round-2 "unclosed card absorbs footer cart fields"
-  // bypass.
-  const $ = cheerio.load(html);
+  // `sourceCodeLocationInfo: true` is required so parseCardProductElement's
+  // CR-round-5 source-boundary invariant can consult parse5's per-node
+  // source ranges (raw-HTML startOffset / endOffset / endTag) to prove
+  // that `.counter` and `a.cart_sell_in` are OWNED by the current
+  // explicitly-closed card wrapper — not folded in from footer HTML that
+  // HTML5 parsing absorbed into an unclosed card.
+  const $ = cheerio.load(html, { sourceCodeLocationInfo: true });
   $('div.card-product').each((_, el) => {
     const parsed = parseCardProductElement($, el);
     if (parsed) results.push(parsed);

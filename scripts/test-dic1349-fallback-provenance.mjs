@@ -76,16 +76,22 @@ function makeCardBlock(overrides = {}) {
     ? `<img src="${imgSrc}" alt="${alt}" class="card img-fluid">`
     : '';
   // Real yuyu-tei markup wraps every cart_ver / cart_cid input inside a
-  // `<div class="d-flex counter text-center">` container. The parser's
-  // source-boundary invariant (CR round-4 fix) scopes cart-input lookups
-  // to that container, so fixture blocks must ship the same wrapper —
-  // otherwise the "well-formed baseline" cases here would also fail
-  // the invariant and mask real regressions.
+  // `<div class="d-flex counter text-center">` container AND follows it
+  // with a `<a class="cart_sell_in">` cart button as the last direct
+  // child. The parser's CR-round-5 source-boundary invariant requires
+  // BOTH structural landmarks (direct-child .counter + direct-child
+  // a.cart_sell_in in the correct source order, plus explicit endTag
+  // closing after the button). Fixture blocks must ship the same
+  // structure — otherwise the "well-formed baseline" cases here would
+  // also fail the invariant and mask real regressions.
   const cartInputs = includeCartInputs
     ? `<div class="d-flex counter text-center">
 <input type="hidden" value="${cartVer}" class="cart_ver">
 <input type="hidden" value="${cartCid}" class="cart_cid">
-</div>`
+</div>
+<a href="javascript:;" class="btn btn-primary cart_sell_in w-100 main-btn fw-bold mt-2">
+カートへ
+</a>`
     : '';
 
   return `
@@ -213,6 +219,9 @@ function makeCardBlockRaw({
   omitCounterWrapper = false, // set true for red-before-green cases that need
                              // the CR round-4 "cart inputs outside .counter"
                              // shape (footer-only mutation).
+  omitCartSellIn = false,  // set true for red-before-green cases that need
+                           // the CR round-5 shape (folded footer .counter
+                           // with no cart_sell_in inside the card).
   extraInsideBlock = '',
 } = {}) {
   const q = containerQuote;
@@ -223,6 +232,11 @@ function makeCardBlockRaw({
         ? inputs
         : `<div class=${cq}d-flex counter text-center${cq}>\n${inputs}\n</div>`)
     : '';
+  const cartSellIn = omitCartSellIn
+    ? ''
+    : `<a href="javascript:;" class="btn btn-primary cart_sell_in w-100 main-btn fw-bold mt-2">
+カートへ
+</a>`;
   return `
 <div class=${q}card-product position-relative mt-4  ${q}><div class="starbtn" onclick="location.href='https://yuyu-tei.jp/member/login'">
 <em class="d-block position-absolute z-index top-0 start-0"></em>
@@ -237,6 +251,7 @@ ${productImgTag}</div>
 ${price} 円
 </strong>
 ${cartSection}
+${cartSellIn}
 ${extraInsideBlock}
 </div>`;
 }
@@ -604,6 +619,7 @@ ${unclosedFragment}
 <input type=hidden value=hbp04 class=cart_ver>
 <input type=hidden value=10003 class=cart_cid>
 </div>
+<a class=cart_sell_in>カートへ</a>
 </div>
 </body></html>`;
 
@@ -652,6 +668,7 @@ ${unclosedFragment}
 <input type="hidden" value="hbp04" class="cart_ver">
 <input type="hidden" value="10003" class="cart_cid">
 </div>
+<a class="cart_sell_in">カートへ</a>
 </div>
 
 </div>
@@ -705,6 +722,7 @@ ${unclosedFragment}
 <input type="hidden" value="hbp04" class="cart_ver">
 <input type="hidden" value="20001" class="cart_cid">
 </div>
+<a class="cart_sell_in">カートへ</a>
 </div>
 
 </div>
@@ -809,6 +827,133 @@ ${goodBlock}
     cardsSolo.length,
     0,
     `case 3i/solo (CR round-4 sole blocker fix): a lone unclosed card with only footer cart inputs must emit ZERO rows, not one laundered row — got ${JSON.stringify(cardsSolo)}`,
+  );
+}
+
+// ── Case 3j (CR round 5, sole blocker): production-shaped unclosed
+//     outer .card-product whose FOOTER content ships a `<div class="…
+//     counter …">` container containing cart_ver / cart_cid inputs. The
+//     round-4 nested-card guard doesn't fire (no nested card-product);
+//     the round-2 empty-product-img guard doesn't fire (outer HAS a
+//     product-img div, just no inner <img>); and the round-4 scoped
+//     `.counter` cart lookup (which the previous round-5 head used with
+//     `$el.find('div.counter')`) STILL matches because the folded
+//     footer counter becomes an unrestricted descendant of the outer
+//     card in cheerio's DOM (HTML5 has no implicit-close rule for
+//     `<div>`, so the footer counter is folded into the unclosed
+//     card). The parser would then synthesise `/hbp04/99999.jpg` from
+//     the folded footer's cart_ver / cart_cid — exactly the CR-flagged
+//     round-5 bypass.
+//
+//     Source-boundary invariant (CR round-5 fix): the parser now
+//     requires (a) `.counter` as a DIRECT child of the card-product,
+//     (b) `<a class="cart_sell_in">` as a DIRECT child in source order
+//     AFTER the .counter, and (c) the card's parse5 endTag.startOffset
+//     to close AFTER the cart_sell_in. The mutation folds a `.counter`
+//     into the outer (so `.children('div.counter')` might match), but
+//     it does NOT fold in a matching `<a class="cart_sell_in">`
+//     ordered after that counter — cart_sell_in in real yuyu-tei
+//     markup is a POST-counter direct child of the card's OWN scope,
+//     which the mutation cannot fabricate without also being a
+//     well-formed card. The outer therefore fails the invariant and
+//     drops via the no-cart-inputs fallthrough. ──
+{
+  const goodBlock = makeCardBlock({
+    cardNum: 'hBP04-001', rarity: 'SEC',
+    imgSrc: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg',
+    cartVer: 'hbp04', cartCid: '10003', price: '99,800',
+  });
+
+  // The mutation: unclosed outer card-product whose ONLY structural cart
+  // content is a footer `<div class="d-flex counter">` (with cart_ver /
+  // cart_cid inputs inside) — no `<a class="cart_sell_in">` inside the
+  // outer's own scope.
+  const html = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+
+${goodBlock}
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-099</span>
+<h4>fake pre-empt</h4>
+<strong>1 円</strong>
+<!-- MISSING own /div — footer .counter follows with cart inputs -->
+<div class="d-flex counter text-center">
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+</div>
+
+</div>
+</body></html>`;
+
+  const cards = parseCardHtml(html);
+  const seen = new Set(cards.map((c) => c.cardNum));
+
+  assert.ok(seen.has('hBP04-001'), 'case 3j: the good baseline card (real yuyu-tei shape, includes .counter + cart_sell_in) must still parse');
+  assert.ok(
+    !seen.has('hBP04-099'),
+    'case 3j (CR round-5 sole blocker fix): the unclosed outer whose only cart inputs live inside a folded FOOTER `.counter` (with no cart_sell_in in source order after it) must be DROPPED, not admitted via laundered cart-inputs synth into /hbp04/99999.jpg',
+  );
+  for (const c of cards) {
+    assert.notEqual(
+      c.yuyuImage,
+      'https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg',
+      `case 3j (CR round-5 sole blocker fix): the CR-flagged laundered /hbp04/99999.jpg URL must not appear on any admitted row (row ${JSON.stringify(c)})`,
+    );
+    assert.notEqual(
+      c.sellPrice,
+      1,
+      `case 3j (CR round-5 sole blocker fix): the outer's ¥1 must not win lowest-price selection anywhere (row ${JSON.stringify(c)})`,
+    );
+  }
+
+  // Solo variant (no baseline sibling) so a global "0 rows means broken
+  // parser" false green cannot mask the bypass.
+  const htmlSolo = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-099</span>
+<h4>fake pre-empt</h4>
+<strong>1 円</strong>
+<div class="d-flex counter text-center">
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+</div>
+
+</div>
+</body></html>`;
+  const cardsSolo = parseCardHtml(htmlSolo);
+  assert.equal(
+    cardsSolo.length,
+    0,
+    `case 3j/solo (CR round-5 sole blocker fix): a lone unclosed card with only footer .counter + cart inputs (no post-counter cart_sell_in) must emit ZERO rows — got ${JSON.stringify(cardsSolo)}`,
+  );
+
+  // Adversarial variant: what if the footer also ships an <a class="cart_sell_in">
+  // BEFORE the counter? Source order violates the invariant (counter must
+  // precede cart_sell_in), so the card still fails-closed.
+  const htmlAdversarialOrder = `<!DOCTYPE html><html><body>
+<div class="row">
+<div class="card-product">
+<a href="/x"><div class="product-img"></div></a>
+<span>hBP04-099</span>
+<h4>fake</h4>
+<strong>1 円</strong>
+<a class="cart_sell_in">カートへ</a>
+<div class="d-flex counter text-center">
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+</div>
+</div>
+</body></html>`;
+  const cardsAdv = parseCardHtml(htmlAdversarialOrder);
+  assert.equal(
+    cardsAdv.length,
+    0,
+    `case 3j/adversarial-order (CR round-5 defence-in-depth): a card where cart_sell_in precedes .counter in source order violates the yuyu-tei structural signature and must be DROPPED — got ${JSON.stringify(cardsAdv)}`,
   );
 }
 
