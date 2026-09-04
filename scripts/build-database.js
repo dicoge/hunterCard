@@ -187,59 +187,162 @@ function sanitizePriceHistory(priceHistory) {
   return cleaned;
 }
 
-/** 從 HTML 字串中解出卡片資料（使用純文字分析，與 page.evaluate 相同邏輯） */
-function parseCardHtml(html) {
+/**
+ * DIC-1349: parse a single `<div class="card-product ...">…</div>` block's
+ * inner HTML into a structured listing. The old text-only implementation
+ * (pre-DIC-1349) stripped every HTML tag before parsing and then tried to
+ * find the `<img>` URL in the raw HTML using text-position offsets that do
+ * not correspond to HTML positions — so `yuyuImage` was almost always
+ * absent or wrong. Every fallback listing then failed
+ * `pricesEntryExactPrintMatchesSource` on the DIC-1334 gate and no priced
+ * cardNumber could be admitted to the final artifact (the reported
+ * fresh-root-install collapse: 0 / 1,196).
+ *
+ * The parser is block-scoped (positions live inside the block) and pulls
+ * each field from its own HTML anchor:
+ *   - image URL: <img src="https://card.yuyu-tei.jp/hocg/...">
+ *   - card number and rarity: image `alt` (`hBP04-001 SEC 博衣こより…`)
+ *     with a `<span>hXXX-nnn</span>` fallback
+ *   - card name: <h4 …>NAME</h4>
+ *   - price: `\d,\d\s?円`
+ *   - imageVersion / imageCid: hidden `cart_ver` / `cart_cid` inputs
+ *
+ * When the block has cart_ver+cart_cid but no direct image URL, the
+ * canonical `/hocg/100_140/{ver}/{cid}.jpg` shape is synthesised — the
+ * same fallback the Puppeteer path uses on the equivalent DOM read
+ * (`scrapeSeriesPage`). When neither a valid image URL nor the version /
+ * cid pair is available, the block is dropped rather than admitted with an
+ * empty `yuyuImage` — the exact-printing matcher requires provable
+ * provenance, so silently emitting unprovable rows would just recreate the
+ * fail-closed collapse this fix is repairing.
+ */
+function parseCardProductBlock(blockHtml) {
+  // 1) Image URL — the block's own <img> tag on card.yuyu-tei.jp/hocg/… is
+  //    the authoritative source. yuyu-tei's card-product block also embeds
+  //    a decorative `<img alt="Star" …>` before the product image (the
+  //    starred-favourites icon), so we scan for the img whose `src` points
+  //    at the product image host, ignore its position, and later reuse the
+  //    whole matched tag to pull the sibling `alt` attribute. Matching a
+  //    generic `<img …>` would land on the starbtn icon and lose both the
+  //    product URL and the card-number+rarity encoded in the product img
+  //    alt.
+  let productImgTag = '';
+  let rawImageUrl = '';
+  const productImgAttr = blockHtml.match(
+    /<img\b[^>]*\bsrc="(https?:\/\/card\.yuyu-tei\.jp\/hocg\/[^"]+)"[^>]*>/i,
+  );
+  if (productImgAttr) {
+    productImgTag = productImgAttr[0];
+    rawImageUrl = productImgAttr[1];
+  }
+
+  // 2) Card number + rarity — the product image alt attribute has the
+  //    canonical "hXXX-nnn RARITY NAME" shape
+  //    ("hBP04-001 SEC 博衣こより(パラレル/サイン)"). Read it from the
+  //    product image tag only (never the starbtn <img alt="Star" …>) and
+  //    fall back to the standalone `<span>hXXX-nnn</span>` which also
+  //    appears in every block.
+  const altAttr = productImgTag.match(/\balt="([^"]*)"/i);
+  const alt = altAttr ? altAttr[1] : '';
+  const altNumMatch = alt.match(/(h[A-Z]{1,3}\d+-\d{2,3})/i);
+  const spanNumMatch = blockHtml.match(
+    /<span\b[^>]*>\s*(h[A-Z]{1,3}\d+-\d{2,3})\s*<\/span>/i,
+  );
+  const cardNum = (altNumMatch && altNumMatch[1]) || (spanNumMatch && spanNumMatch[1]) || '';
+  if (!cardNum) return null;
+
+  const altRarityMatch = alt.match(
+    /h[A-Z]{1,3}\d+-\d{2,3}\s+([A-Z]{1,4})\b/i,
+  );
+  const rarity = altRarityMatch ? altRarityMatch[1] : '';
+
+  // 3) Price — first `[\d,]+ 円` in the block's own text. Card blocks always
+  //    contain exactly one selling price (in-stock or sold-out), so a single
+  //    match is safe within a block scope.
+  const priceMatch = blockHtml.match(/([\d,]+)\s*円/);
+  if (!priceMatch) return null;
+  const price = parseInt(priceMatch[1].replace(/,/g, ''), 10);
+  if (!Number.isFinite(price) || price <= 0) return null;
+
+  // 4) Card name — the block's <h4> holds the Japanese name shown to the
+  //    user. When absent (e.g. yuyu-tei's placeholder rows), fall back to
+  //    the trailing text of the image alt with the rarity token stripped.
+  let name = '';
+  const h4Match = blockHtml.match(/<h4\b[^>]*>\s*([\s\S]*?)\s*<\/h4>/i);
+  if (h4Match) {
+    name = h4Match[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  if (!name && alt) {
+    const nameFromAlt = alt
+      .replace(/^h[A-Z]{1,3}\d+-\d{2,3}\s*[A-Z]{1,4}?\s*/i, '')
+      .trim();
+    if (nameFromAlt) name = nameFromAlt;
+  }
+
+  // 5) Hidden cart_ver / cart_cid — the yuyu-tei cart form embeds the
+  //    product (version) and card id for this exact listing. Used both as
+  //    a backup image URL when the <img> tag is absent, and as structured
+  //    provenance the downstream binding logic re-reads.
+  const versionMatch = blockHtml.match(
+    /<input\b[^>]*\bvalue="([^"]*)"[^>]*\bclass="[^"]*\bcart_ver\b[^"]*"[^>]*>|<input\b[^>]*\bclass="[^"]*\bcart_ver\b[^"]*"[^>]*\bvalue="([^"]*)"[^>]*>/i,
+  );
+  const cidMatch = blockHtml.match(
+    /<input\b[^>]*\bvalue="([^"]*)"[^>]*\bclass="[^"]*\bcart_cid\b[^"]*"[^>]*>|<input\b[^>]*\bclass="[^"]*\bcart_cid\b[^"]*"[^>]*\bvalue="([^"]*)"[^>]*>/i,
+  );
+  const imageVersion = versionMatch ? (versionMatch[1] || versionMatch[2] || '') : '';
+  const imageCid = cidMatch ? (cidMatch[1] || cidMatch[2] || '') : '';
+
+  // 6) Fail-closed on missing provenance. `pricesEntryExactPrintMatchesSource`
+  //    requires `entry.imageUrl` to parse via `parseYuyuImage` — a value that
+  //    is empty, off-host, or wrong path shape kills the entire binding chain
+  //    for this listing. Prefer the block's own <img>; otherwise synthesise
+  //    the canonical `/hocg/100_140/{ver}/{cid}.jpg` URL that yuyu-tei ships
+  //    (same shape the Puppeteer path uses on the equivalent DOM read); if
+  //    neither is available, drop the row rather than admit a row with no
+  //    provable provenance.
+  const yuyuImage = rawImageUrl
+    || (imageVersion && imageCid
+      ? `https://card.yuyu-tei.jp/hocg/100_140/${imageVersion}/${imageCid}.jpg`
+      : '');
+  if (!yuyuImage) return null;
+
+  return {
+    cardNum,
+    sellPrice: price,
+    rarity,
+    name,
+    yuyuImage,
+    imageVersion,
+    imageCid,
+  };
+}
+
+/**
+ * DIC-1349: split the raw HTML into `<div class="card-product …">` blocks
+ * and parse each one in isolation. Uses opening-tag boundaries so a block
+ * ends where the next one begins (or at the container close for the last
+ * block). The old text-only implementation stripped all tags first and
+ * lost the per-block boundary, which is why `yuyuImage` extraction landed
+ * on positions inside neighbouring blocks or nowhere at all.
+ */
+export function parseCardHtml(html) {
   const results = [];
+  if (typeof html !== 'string' || html.length === 0) return results;
 
-  // Strip HTML tags to get text content
-  const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
-                   .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-                   .replace(/<[^>]+>/g, ' ')
-                   .replace(/&nbsp;/g, ' ')
-                   .replace(/&amp;/g, '&')
-                   .replace(/\s+/g, ' ')
-                   .trim();
+  const openTagRegex = /<div\b[^>]*\bclass="[^"]*\bcard-product\b[^"]*"[^>]*>/gi;
+  const openings = [];
+  let m;
+  while ((m = openTagRegex.exec(html)) !== null) {
+    openings.push(m.index);
+  }
+  if (openings.length === 0) return results;
 
-  // Find all card-product sections by looking for card number patterns
-  const cardNumRegex = /(h[A-Z]{1,3}\d+-\d{2,3})/gi;
-  let match;
-  while ((match = cardNumRegex.exec(text)) !== null) {
-    const cardNum = match[1];
-    const matchStart = match.index;
-    const contextStart = Math.max(0, matchStart - 100);
-    const contextEnd = Math.min(text.length, matchStart + 300);
-    const context = text.slice(contextStart, contextEnd);
-
-    // Find price within this card's context
-    const priceMatch = context.match(/([\d,]+)\s*円/);
-    if (!priceMatch) continue;
-    const price = parseInt(priceMatch[1].replace(/,/g, ''));
-    if (isNaN(price) || price <= 0) continue;
-
-    // Try to find card name between card number and price
-    let name = '';
-    const afterNum = text.slice(matchStart + cardNum.length, matchStart + 200);
-    // Name is usually the text line right after the card number
-    const lines = afterNum.split(/\s+/).filter(s => s.length > 0);
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      if (!lines[i].match(/[\d,]+\s*円/) && !lines[i].includes('在庫') && !lines[i].includes('カート') && !lines[i].match(/^\d+$/) && lines[i].length > 1) {
-        name = lines[i];
-        break;
-      }
-    }
-
-    // Find image URL near this card number
-    const imgMatch = html.slice(contextStart, contextEnd + 100).match(/<img[^>]*src="([^"]*card\.yuyu-tei\.jp[^"]*)"[^>]*>/i);
-    const imageUrl = imgMatch ? imgMatch[1] : '';
-
-    results.push({
-      cardNum,
-      sellPrice: price,
-      name,
-      yuyuImage: imageUrl,
-      imageVersion: '',
-      imageCid: '',
-    });
+  for (let i = 0; i < openings.length; i += 1) {
+    const start = openings[i];
+    const end = i + 1 < openings.length ? openings[i + 1] : html.length;
+    const block = html.slice(start, end);
+    const parsed = parseCardProductBlock(block);
+    if (parsed) results.push(parsed);
   }
 
   return results;
