@@ -42,24 +42,33 @@ const PROJECT_DIR = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_DIR, 'data');
 const LOG_PATH = path.join(DATA_DIR, 'scrape-log.txt');
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// DIC-1349 (CR round 3, hermeticity fix): only initialise data/scrape-log.txt
+// and rewire console.log/console.error to tee into it when this module is
+// invoked as the main script. Importing `parseCardHtml` from a test file
+// otherwise overwrites the tracked log at ES-module-import time — earlier
+// than any snapshot the test can take — which was the CR-flagged "test
+// leaves data/scrape-log.txt dirty" hermeticity blocker.
+const IS_MAIN_MODULE = process.argv[1]?.includes('build-database');
+if (IS_MAIN_MODULE) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// Write initial log
-fs.writeFileSync(LOG_PATH, `=== Scrape Log ${new Date().toISOString()} ===\n`, 'utf-8');
+  // Write initial log
+  fs.writeFileSync(LOG_PATH, `=== Scrape Log ${new Date().toISOString()} ===\n`, 'utf-8');
 
-// Tee: capture console.log AND console.error to log file
-const origLog = console.log;
-const origError = console.error;
-console.log = function(...args) {
-  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-  fs.appendFileSync(LOG_PATH, msg + '\n', 'utf-8');
-  origLog.apply(console, args);
-};
-console.error = function(...args) {
-  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-  fs.appendFileSync(LOG_PATH, '[ERROR] ' + msg + '\n', 'utf-8');
-  origError.apply(console, args);
-};
+  // Tee: capture console.log AND console.error to log file
+  const origLog = console.log;
+  const origError = console.error;
+  console.log = function(...args) {
+    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    fs.appendFileSync(LOG_PATH, msg + '\n', 'utf-8');
+    origLog.apply(console, args);
+  };
+  console.error = function(...args) {
+    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    fs.appendFileSync(LOG_PATH, '[ERROR] ' + msg + '\n', 'utf-8');
+    origError.apply(console, args);
+  };
+}
 // ─── End Tee ───
 
 // Catch unhandled promise rejections for better diagnostics
@@ -258,19 +267,31 @@ function decodeHtmlEntities(str) {
 function parseCardProductElement($, el) {
   const $el = $(el);
 
-  // 0) Structural invariant: a real yuyu-tei card-product always contains
+  // 0a) Source-element boundary (CR round-3 fix): a well-formed
+  //    card-product NEVER contains another card-product as a descendant
+  //    — they are siblings, not nested. If cheerio sees one nested,
+  //    it means an outer card-product's own `</div>` was missing and
+  //    HTML5 parsing folded what would be its sibling INTO it (there is
+  //    no implicit-close rule for `<div>`). Dropping the outer prevents
+  //    the classic "unclosed outer with empty product-img borrows the
+  //    later sibling's trusted image / cart provenance and emits its own
+  //    laundered price" bypass the CR round-3 mutation flagged. The
+  //    nested card-product is still enumerated separately by parseCardHtml
+  //    and processed independently.
+  if ($el.find('div.card-product').length > 0) return null;
+
+  // 0b) Structural invariant: a real yuyu-tei card-product always contains
   //    a `<div class="… product-img …">` container (which wraps the
   //    product image). A card-product with no such container is either a
-  //    UI shell or the CR round-2 "genuinely unclosed" bypass shape —
-  //    HTML5 parsing keeps footer inputs as children of an unclosed
-  //    `<div>` (there is no implicit-close rule for `<div>`), so parse5
-  //    cannot on its own tell an unclosed card apart from a well-formed
-  //    one whose image tag happens to be absent. Requiring the yuyu-tei
-  //    structural signature is the guard: the malformed shape the CR
-  //    flagged ("only span, h4, strong, and footer cart inputs") has no
-  //    product-img container, so it fails closed here. Every real
-  //    yuyu-tei card-product ships with this container, and the
-  //    regression fixture ships it even when the inner `<img>` is
+  //    UI shell or the CR round-2 "genuinely unclosed with no product-img"
+  //    bypass shape — HTML5 parsing keeps footer inputs as children of an
+  //    unclosed `<div>`, so parse5 cannot on its own tell an unclosed card
+  //    apart from a well-formed one whose image tag happens to be absent.
+  //    Requiring the yuyu-tei structural signature is the guard: the
+  //    malformed shape the CR flagged ("only span, h4, strong, and footer
+  //    cart inputs") has no product-img container, so it fails closed
+  //    here. Every real yuyu-tei card-product ships with this container,
+  //    and the regression fixture ships it even when the inner `<img>` is
   //    intentionally omitted.
   if ($el.find('div.product-img').length < 1) return null;
 

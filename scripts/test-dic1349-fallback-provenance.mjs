@@ -593,6 +593,102 @@ ${unclosedFragment}
   assert.equal(c.imageCid, '10003', 'case 3g: imageCid extracted from bare `class=cart_cid` input');
 }
 
+// ── Case 3h (CR round 3, primary blocker): production-shaped
+//     unclosed outer .card-product with its own name/price and an EMPTY
+//     product-img container, followed by a valid sibling. The prior
+//     round-3 head passed the empty-product-img check (the outer has a
+//     product-img div, just no inner <img>), and HTML5's no-implicit-
+//     close rule for `<div>` made cheerio fold the later sibling INTO the
+//     outer. The outer then borrowed the sibling's trusted image and
+//     cart_ver/cart_cid, emitted its own ¥1 with the sibling's
+//     /hbp04/10003.jpg URL, and produced a duplicate `hBP04-001 SEC`
+//     entry that would win lowest-price selection downstream.
+//
+//     Requirement: the outer must be DROPPED, the valid sibling must be
+//     preserved verbatim, and no admitted row may carry the outer's ¥1
+//     with the sibling's URL. ──
+{
+  const html = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-001</span>
+<h4 class="text-primary">fake pre-empt</h4>
+<strong class="text-end">1 円</strong>
+<!-- MISSING own </div> — the CR-round-3 primary mutation -->
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"><img src="https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg" alt="hBP04-001 SEC 博衣こより(パラレル/サイン)" class="card img-fluid"></div></a>
+<span class="d-block">hBP04-001</span>
+<h4 class="text-primary">博衣こより(パラレル/サイン)</h4>
+<strong class="text-end">99,800 円</strong>
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="10003" class="cart_cid">
+</div>
+
+</div>
+</body></html>`;
+
+  const cards = parseCardHtml(html);
+
+  // Exactly ONE admitted row — the valid sibling. The unclosed outer must
+  // be dropped fully, not admitted as a duplicate.
+  assert.equal(
+    cards.length,
+    1,
+    `case 3h (CR round-3 primary fix): the unclosed outer must be DROPPED so exactly one admitted row (the valid sibling) remains — got ${cards.length}: ${JSON.stringify(cards)}`,
+  );
+  const sibling = cards[0];
+  assert.equal(sibling.cardNum, 'hBP04-001', 'case 3h: sibling cardNum preserved');
+  assert.equal(sibling.rarity, 'SEC', 'case 3h: sibling rarity preserved');
+  assert.equal(sibling.sellPrice, 99800, 'case 3h: sibling price preserved — the outer\'s ¥1 must NOT win');
+  assert.equal(sibling.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg', 'case 3h: sibling yuyuImage preserved');
+  assert.equal(sibling.imageVersion, 'hbp04', 'case 3h: sibling imageVersion preserved');
+  assert.equal(sibling.imageCid, '10003', 'case 3h: sibling imageCid preserved');
+
+  // No admitted row anywhere may carry the outer's ¥1 laundered with the
+  // sibling's URL — the CR flagged exactly this shape as the false ¥1 row.
+  for (const c of cards) {
+    assert.ok(
+      !(c.sellPrice === 1 && c.yuyuImage === 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg'),
+      `case 3h (CR round-3 primary fix): the ¥1 outer paired with the sibling's /hbp04/10003.jpg URL must never be admitted (row ${JSON.stringify(c)})`,
+    );
+  }
+
+  // Prove same principle when the "later sibling" is instead a footer
+  // with just cart inputs and no valid image — the outer's absorbed
+  // footer must also not synth a laundered URL.
+  const html2 = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-099</span>
+<h4>fake pre-empt</h4>
+<strong>1 円</strong>
+<!-- MISSING own </div> -->
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"><img src="https://card.yuyu-tei.jp/hocg/100_140/hbp04/20001.jpg" alt="hBP04-004 SEC other"></div></a>
+<span class="d-block">hBP04-004</span>
+<h4>other</h4>
+<strong>500 円</strong>
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="20001" class="cart_cid">
+</div>
+
+</div>
+</body></html>`;
+  const cards2 = parseCardHtml(html2);
+  const seen2 = new Set(cards2.map((c) => c.cardNum));
+  assert.ok(!seen2.has('hBP04-099'), 'case 3h/2 (CR round-3 primary fix): the unclosed outer that would have inherited the sibling\'s /hbp04/20001.jpg URL under a different card number must be DROPPED');
+  assert.ok(seen2.has('hBP04-004'), 'case 3h/2: the valid sibling must still be admitted');
+  const sibling2 = cards2.find((c) => c.cardNum === 'hBP04-004');
+  assert.equal(sibling2.sellPrice, 500, 'case 3h/2: sibling price preserved');
+  assert.equal(sibling2.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/20001.jpg', 'case 3h/2: sibling URL preserved');
+}
+
 // ── Case 4: end-to-end binding through build-database.js ──
 // The parseCardHtml fix is worthless if the downstream binding logic still
 // discards the listing. Feed a synthetic yuyu fixture whose entries have
