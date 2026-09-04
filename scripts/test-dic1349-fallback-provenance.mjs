@@ -452,6 +452,147 @@ ${extraInsideBlock}
   assert.equal(byNum.get('hBP04-005').name, 'Test & Card', 'case 3d/3: &amp; must decode to & in the name');
 }
 
+// ── Case 3e (CR round 3, blocker #1): genuinely unclosed card-product.
+//     The prior div-depth counter would consume an ancestor `</div>` and
+//     then admit the "card" with laundered synthesised provenance from
+//     `<input class="cart_ver">` / `<input class="cart_cid">` that
+//     structurally live OUTSIDE the card but that HTML5 parsing keeps as
+//     children (no implicit-close rule for `<div>`). Real yuyu-tei
+//     card-products always contain a `<div class="… product-img …">`
+//     container; when it is absent, the extracted "card" is malformed
+//     and must be dropped, even though cheerio's DOM read would
+//     otherwise find valid-looking cart inputs inside. ──
+{
+  const goodBlock = makeCardBlock({
+    cardNum: 'hBP04-001', rarity: 'SEC',
+    imgSrc: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg',
+    cartVer: 'hbp04', cartCid: '10003', price: '99,800',
+  });
+  // Genuinely missing the card-product's OWN `</div>`, followed by footer
+  // cart inputs and only then the row's close. The card-product has NO
+  // product-img container — exactly the CR-round-3 mutation the review
+  // called out.
+  const unclosedFragment = `
+<div class="card-product">
+<span class="d-block">hBP04-099</span>
+<h4>予告カード</h4>
+<strong>500 円</strong>
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+`;
+  const html = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+${goodBlock}
+${unclosedFragment}
+</div>
+</body></html>`;
+
+  const cards = parseCardHtml(html);
+  const seen = new Set(cards.map((c) => c.cardNum));
+  assert.ok(seen.has('hBP04-001'), 'case 3e: the good baseline card must still parse');
+  assert.ok(
+    !seen.has('hBP04-099'),
+    'case 3e (CR#round3-1 fix): a genuinely unclosed card-product with no product-img container must be DROPPED, not admitted via laundered cart_ver/cart_cid synth',
+  );
+  for (const c of cards) {
+    assert.notEqual(
+      c.yuyuImage,
+      'https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg',
+      `case 3e (CR#round3-1 fix): the CR-flagged laundered /hbp04/99999.jpg URL must not appear on any admitted row (row ${c.cardNum})`,
+    );
+  }
+}
+
+// ── Case 3f (CR round 3, blocker #2): prefixed alias attributes such as
+//     `data-class="card-product"`, `data-class="cart_ver"`, and
+//     `data-class="cart_cid"` must NEVER be treated as real
+//     `class`/`cart_ver`/`cart_cid` structural attributes. The prior
+//     regex-based `getTagAttr` used `\b${name}`, and the word boundary
+//     in the `-` between `data-` and the attribute name meant these
+//     prefixed aliases matched. A real DOM parser (cheerio / parse5)
+//     addresses this by construction — attribute names are token-scoped
+//     — but the regression pins the invariant so future refactors cannot
+//     re-introduce the bypass. ──
+{
+  // A whole card whose ONLY structural attributes are `data-class`
+  // aliases. If any of them were accepted, the parser would emit the
+  // laundered `/hbp04/99999.jpg` URL.
+  const html = `<!DOCTYPE html><html><body>
+<div data-class="card-product">
+<a href="https://yuyu-tei.jp/x"><div data-class="product-img">
+<img src="https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg" alt="hBP04-050 C fake" data-class="card img-fluid">
+</div></a>
+<span data-class="d-block">hBP04-050</span>
+<h4>fake</h4>
+<strong>500 円</strong>
+<input type="hidden" value="hbp04" data-class="cart_ver">
+<input type="hidden" value="99999" data-class="cart_cid">
+</div>
+</body></html>`;
+
+  const cards = parseCardHtml(html);
+  assert.equal(
+    cards.length,
+    0,
+    'case 3f (CR#round3-2 fix): a card whose only structural attributes are `data-class` aliases must produce ZERO rows',
+  );
+
+  // Additionally: a well-formed card MUST NOT admit `data-class="cart_ver"`
+  // / `data-class="cart_cid"` on its inputs and use them for URL synth.
+  // Baseline good card has product-img+img (valid provenance from the
+  // <img>), but its cart inputs are `data-class` aliases only. The card
+  // must still emit — the URL from the valid `<img>` wins — and the
+  // extracted imageVersion / imageCid must NOT come from the aliased
+  // inputs (they must be empty).
+  const html2 = `<!DOCTYPE html><html><body>
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img">
+<img src="https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg" alt="hBP04-001 SEC 博衣こより" class="card img-fluid">
+</div></a>
+<span class="d-block">hBP04-001</span>
+<h4>博衣こより</h4>
+<strong>99,800 円</strong>
+<input type="hidden" value="hbp04" data-class="cart_ver">
+<input type="hidden" value="10003" data-class="cart_cid">
+</div>
+</body></html>`;
+  const cards2 = parseCardHtml(html2);
+  assert.equal(cards2.length, 1, 'case 3f/aliased-inputs: the well-formed card with a valid product <img> still parses');
+  assert.equal(cards2[0].imageVersion, '', 'case 3f (CR#round3-2 fix): `data-class="cart_ver"` must NOT populate imageVersion');
+  assert.equal(cards2[0].imageCid, '', 'case 3f (CR#round3-2 fix): `data-class="cart_cid"` must NOT populate imageCid');
+  assert.equal(cards2[0].yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg', 'case 3f/aliased-inputs: yuyuImage comes from the valid <img>, not the aliased inputs');
+}
+
+// ── Case 3g (CR round 3, blocker #3): bare (unquoted) `class=card-product`
+//     is a valid HTML5 attribute form and the container matcher must
+//     accept it. The prior container regex only allowed `"…"` / `'…'`,
+//     so a bare `<div class=card-product>` produced zero rows. A real
+//     HTML parser handles bare quoting natively; the regression pins it. ──
+{
+  const html = `<!DOCTYPE html><html><body>
+<div class=card-product>
+<a href=https://yuyu-tei.jp/x><div class=product-img>
+<img src="https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg" alt="hBP04-001 SEC 博衣こより" class=card>
+</div></a>
+<span class=d-block>hBP04-001</span>
+<h4 class=text-primary>博衣こより</h4>
+<strong class=text-end>99,800 円</strong>
+<input type=hidden value=hbp04 class=cart_ver>
+<input type=hidden value=10003 class=cart_cid>
+</div>
+</body></html>`;
+
+  const cards = parseCardHtml(html);
+  assert.equal(cards.length, 1, 'case 3g (CR#round3-3 fix): bare-quoted `<div class=card-product>` must parse');
+  const c = cards[0];
+  assert.equal(c.cardNum, 'hBP04-001', 'case 3g: card number extracted');
+  assert.equal(c.rarity, 'SEC', 'case 3g: rarity extracted');
+  assert.equal(c.sellPrice, 99800, 'case 3g: price extracted');
+  assert.equal(c.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg', 'case 3g: yuyuImage extracted from bare `class=card` <img>');
+  assert.equal(c.imageVersion, 'hbp04', 'case 3g: imageVersion extracted from bare `class=cart_ver` input');
+  assert.equal(c.imageCid, '10003', 'case 3g: imageCid extracted from bare `class=cart_cid` input');
+}
+
 // ── Case 4: end-to-end binding through build-database.js ──
 // The parseCardHtml fix is worthless if the downstream binding logic still
 // discards the listing. Feed a synthetic yuyu fixture whose entries have
