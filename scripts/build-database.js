@@ -1267,11 +1267,19 @@ async function buildDatabase() {
 
   // Build a reverse lookup: cardNum → array of official entries (for merging)
   const officialByCardNum = {};
+  // DIC-1343/CR rev.2: the compound key IS the official printing identity
+  // (`cardNumber_series_rarity_imageSuffix`). It is the only value that keeps
+  // genuinely distinct rows such as ent07 `C` and ent07 `02_C` apart — those
+  // collapse onto one another under normalizeRarityCode. Keep a row → key map
+  // so the yuyu-only fallback can count DISTINCT printings and bind a proven
+  // price onto the official row itself instead of a bare cardNumber duplicate.
+  const officialKeyByRow = new Map();
   for (const [key, info] of Object.entries(officialCards)) {
     const base = info.cardNumber || '';
     if (base) {
       if (!officialByCardNum[base]) officialByCardNum[base] = [];
       officialByCardNum[base].push(info);
+      officialKeyByRow.set(info, key);
     }
   }
 
@@ -1444,9 +1452,9 @@ async function buildDatabase() {
     if (officialAlreadyPriced) continue;
     // DIC-1334 + DIC-1343/CR: strict exact-printing provenance for the
     // yuyu-only fallback. When official rows exist for this cardNumber, we
-    // must prove EACH accepted listing against an exact official printing
-    // (series+rarity) before any scalar selection or publication — never a
-    // cardNumber-wide, sibling/reprint, rarity-guess, buyPrice, or
+    // must resolve EACH accepted listing to exactly one distinct official
+    // compound printing identity before any scalar selection or publication —
+    // never a cardNumber-wide, sibling/reprint, rarity-guess, buyPrice, or
     // cross-product fallback. The old gate only checked the FIRST entry's
     // image product, then admitted the whole priceData array and picked the
     // lowest scalar across siblings — which could publish an unproven
@@ -1455,32 +1463,32 @@ async function buildDatabase() {
     // at all) have no official identity to conflict with and keep the
     // original behavior.
     let priceEntries;
-    let outSeries = '';
-    let outRarity = '';
-    let outSourceProduct = '';
-    let outType = '';
-    let outColor = '';
-    let outHp = '';
-    let outLife = '';
-    let outArts = '';
-    let outBloomLevel = '';
+    // Compound key of the single official printing this listing set proved to.
+    // Non-null means the price must be bound onto that already-emitted official
+    // row; null means this is a truly yuyu-only cardNumber.
+    let boundPrintingKey = null;
     if (officialRows.length > 0) {
-      // Proven printings: map each listing to the exact official printing(s)
-      // it matches. A listing that proves to a printing other than its own, or
-      // that cannot be resolved to a single printing, is refused.
+      // Proven printings: map each listing to EVERY exact official printing it
+      // matches, identified by the official compound key. Two things this must
+      // not do, both of which the previous revision did: (1) key by
+      // `sourceProduct|normalizeRarityCode(rarity)`, which merges the distinct
+      // ent07 `C` and `02_C` rows into one bucket and reports a collision as a
+      // unique match; (2) stop at the first matching official row, which hides
+      // the very ambiguity this gate exists to catch. Zero proven printings
+      // (unprovable / rarity-guess) and more than one distinct proven printing
+      // (ambiguous sibling / reprint / C-vs-02_C) both fail closed.
       const allEntries = Array.isArray(priceData) ? priceData : [priceData];
-      const provenPrintings = new Map(); // key: `sourceProduct|rarity` → proven entries
+      const provenPrintings = new Map(); // official compound key → proven entries
       for (const entry of allEntries) {
         for (const official of officialRows) {
           const candidateCount = officialRows
             .filter((c) => String(c.sourceProduct || c.series || '').toLowerCase() === String(official.sourceProduct || official.series || '').toLowerCase())
             .length;
-          if (yuyuEntryMatchesOfficial(entry, official, candidateCount)) {
-            const key = `${String(official.sourceProduct || official.series || '').toLowerCase()}|${normalizeRarityCode(official.rarity) || ''}`;
-            if (!provenPrintings.has(key)) provenPrintings.set(key, []);
-            provenPrintings.get(key).push(entry);
-            break;
-          }
+          if (!yuyuEntryMatchesOfficial(entry, official, candidateCount)) continue;
+          const printKey = officialKeyByRow.get(official);
+          if (!printKey) continue;
+          if (!provenPrintings.has(printKey)) provenPrintings.set(printKey, []);
+          provenPrintings.get(printKey).push(entry);
         }
       }
       if (provenPrintings.size !== 1) {
@@ -1488,19 +1496,15 @@ async function buildDatabase() {
         continue;
       }
       const [[printKey, proven]] = provenPrintings;
-      const provenOfficial = officialRows.find((official) => `${String(official.sourceProduct || official.series || '').toLowerCase()}|${normalizeRarityCode(official.rarity) || ''}` === printKey);
-      priceEntries = deduplicatePrices(proven);
-      if (provenOfficial) {
-        outSeries = provenOfficial.series || '';
-        outRarity = provenOfficial.rarity || '';
-        outSourceProduct = provenOfficial.sourceProduct || provenOfficial.series || '';
-        outType = provenOfficial.type || '';
-        outColor = provenOfficial.color || '';
-        outHp = provenOfficial.hp || '';
-        outLife = provenOfficial.life || '';
-        outArts = provenOfficial.arts || '';
-        outBloomLevel = provenOfficial.bloomLevel || '';
+      // The proven printing must be an official row that already exists in the
+      // artifact — binding is the only lawful outcome here. If it somehow does
+      // not, fail closed rather than publish an identity-less duplicate.
+      if (!database.cards[printKey]) {
+        console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for ${cardNum}: proven printing ${printKey} has no official row to bind (fail-closed)`);
+        continue;
       }
+      boundPrintingKey = printKey;
+      priceEntries = deduplicatePrices(proven);
     } else {
       priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
     }
@@ -1530,6 +1534,25 @@ async function buildDatabase() {
     const cleanYuyuName = canonicalYuyuName(lowestName);
     const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, firstImage);
 
+    // DIC-1343/CR rev.2: when the listing set proved to exactly one official
+    // printing, write the price ONTO that printing's existing row. Emitting a
+    // second, bare-cardNumber row instead published an identity-less duplicate
+    // (no rarity / series / official image) while the printing it claimed to
+    // have proven stayed unpriced — the artifact then carried both a null
+    // official row and a rogue priced row for the same card.
+    if (boundPrintingKey) {
+      const bound = database.cards[boundPrintingKey];
+      bound.sellPrice = lowestPrice;
+      bound.yuyuName = cleanYuyuName;
+      bound.yuyuImage = cleanYuyuImage;
+      bound.prices = canonical;
+      bound.timestamp = firstTimestamp;
+      bound._rawPricesArchive = archive;
+      if (!bound.name) bound.name = lowestName || '';
+      console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${lowestPrice})`);
+      continue;
+    }
+
     const canonicalCardNum = isCanonicalCardNumber(cardNum)
       ? cardNum
       : cardNum.replace(/-(\d{1,2})$/, (_, n) => `-${n.padStart(3, '0')}`);
@@ -1539,21 +1562,19 @@ async function buildDatabase() {
       id: outCardNum,
       cardNumber: outCardNum,
       name: lowestName || '',
-      type: outType,
-      color: outColor,
-      rarity: outRarity,
-      series: outSeries,
-      sourceProduct: outSourceProduct || undefined,
+      type: '',
+      color: '',
+      rarity: '',
+      series: '',
       sellPrice: lowestPrice,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
       prices: canonical,
       officialImage: '',
       localImage: fs.existsSync(path.join(IMAGES_DIR, `${outCardNum}.jpg`)) ? `/images/${outCardNum}.jpg` : '',
-      hp: outHp,
-      life: outLife,
-      arts: outArts,
-      bloomLevel: outBloomLevel,
+      hp: '',
+      life: '',
+      arts: '',
       timestamp: firstTimestamp,
       _rawPricesArchive: archive,
     };

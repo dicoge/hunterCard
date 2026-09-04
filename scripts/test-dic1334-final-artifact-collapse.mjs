@@ -97,13 +97,22 @@ function makeYuyuFixture(cards) {
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dic1334-collapse-'));
 const fixturePath = path.join(tmp, 'yuyu-dic1334.json');
+let passed = false;
 
-// The real build-database.js run writes durable price-history files under
-// data/price-history (ent07-series rows). Capture the pre-run set so we can
-// restore the tree to exactly what we found (a regression test must not leave
-// untracked churn that could trip the pipeline's dirty-worktree detection).
+// The real build-database.js run REWRITES durable price-history files under
+// data/price-history (appending today's record to files that already exist) and
+// rewrites data/scrape-log.txt. Capture the pre-run BYTES — not just the file
+// list — so the tree is restored to exactly what we found. Restoring only the
+// listing left every pre-existing tracked history file modified, which is churn
+// the pipeline's dirty-worktree detection would trip over.
 const historyDir = path.join(repo, 'data/price-history');
-const preRunHistory = fs.readdirSync(historyDir).sort();
+const scrapeLogPath = path.join(repo, 'data/scrape-log.txt');
+const preRunBytes = new Map();
+for (const f of fs.readdirSync(historyDir)) {
+  const p = path.join(historyDir, f);
+  if (fs.statSync(p).isFile()) preRunBytes.set(p, fs.readFileSync(p));
+}
+if (fs.existsSync(scrapeLogPath)) preRunBytes.set(scrapeLogPath, fs.readFileSync(scrapeLogPath));
 
 try {
   const baseline = JSON.parse(originalDb);
@@ -314,15 +323,141 @@ try {
     console.log('  ✓ coverage-collapse fail-closed: unprovable full scrape refuses to ship (DIC-1334 audit fires)');
   }
 
+  // ── Case 5 (DIC-1343/CR rev.2): compound printing identity ──
+  // The previous revision keyed proven printings by `sourceProduct|normalized
+  // rarity`, which collapses genuinely distinct official rows (ent07 `C` and
+  // ent07 `02_C` both normalize to `C`), reported that collision as a UNIQUE
+  // match, picked the first official row arbitrarily, and then published a bare
+  // cardNumber row while the official compound row it claimed to have proven
+  // stayed unpriced. Both halves are covered here.
+  {
+    // ── 5a. Noncanonical cardNumber, one unique official compound printing ──
+    // hY01-14 (yuyu's short suffix) canonicalizes to hY01-014, whose only
+    // official row is the compound key hY01-014_hEB01_SY_hY01-014_SY. A
+    // hEB01/SY listing proves to exactly that printing, so its price must be
+    // BOUND to that compound row — never published as a second, identity-less
+    // hY01-014 row that leaves the proven printing null.
+    const boundKey = 'hY01-014_hEB01_SY_hY01-014_SY';
+    const uniqueFixture = {
+      prices: {
+        'hY01-14': [{
+          sellPrice: 777,
+          rarity: 'SY',
+          name: '白エール',
+          sourceSeries: 'heb01',
+          yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/dic1334.jpg',
+          imageVersion: 'heb01',
+          imageCid: 'dic1334',
+          timestamp: '2026-09-04T00:00:00.000Z',
+        }],
+      },
+      totalCards: 100,
+      seriesWithPrices: 1,
+    };
+    const uniquePath = path.join(tmp, 'yuyu-dic1334-compound-unique.json');
+    fs.writeFileSync(uniquePath, JSON.stringify(uniqueFixture, null, 2));
+    const uniqueBuild = spawnSync(process.execPath, ['scripts/build-database.js'], {
+      cwd: repo,
+      env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: uniquePath, HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1' },
+      encoding: 'utf8',
+    });
+    assert.equal(uniqueBuild.status, 0, `unique-compound-binding build must succeed\nSTDOUT:\n${uniqueBuild.stdout}\nSTDERR:\n${uniqueBuild.stderr}`);
+    const uniqueCards = JSON.parse(fs.readFileSync(dbPath, 'utf8')).cards;
+    const bareDuplicate = uniqueCards['hY01-014'];
+    assert.equal(
+      bareDuplicate,
+      undefined,
+      'CR rev.2: the fallback must not emit a bare hY01-014 row alongside the official compound printing',
+    );
+    const bound = uniqueCards[boundKey];
+    assert.ok(bound, `official compound row ${boundKey} must exist`);
+    assert.equal(bound.sellPrice, 777, `the proven price must be written onto the official compound row ${boundKey}, not a bare duplicate`);
+    assert.equal(bound.rarity, 'SY', 'binding must not alter the official printing identity');
+    assert.equal(bound.sourceProduct, 'hEB01', 'binding must not alter the official printing identity');
+    const hy01Rows = Object.values(uniqueCards).filter((c) => c.cardNumber === 'hY01-014');
+    assert.equal(hy01Rows.length, 1, 'hY01-014 must keep exactly one row (the official compound printing)');
+    console.log(`  ✓ compound binding: hY01-14 listing bound to ${boundKey} (no bare duplicate)`);
+
+    // ── 5b. C vs 02_C ambiguity must fail closed ──
+    // hBP01-024 carries TWO distinct official ent07 printings, `C` and `02_C`.
+    // A ent07/C listing matches both once rarity is normalized, so it resolves
+    // to more than one official compound identity and must be refused outright:
+    // no bare row, and neither ent07 printing may be filled.
+    const ambiguousFixture = {
+      prices: {
+        'hBP01-24': [{
+          sellPrice: 888,
+          rarity: 'C',
+          name: 'ベスティア・ゼータ',
+          sourceSeries: 'ent07',
+          yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/ent07/dic1334.jpg',
+          imageVersion: 'ent07',
+          imageCid: 'dic1334',
+          timestamp: '2026-09-04T00:00:00.000Z',
+        }],
+      },
+      totalCards: 100,
+      seriesWithPrices: 1,
+    };
+    const ambiguousPath = path.join(tmp, 'yuyu-dic1334-compound-ambiguous.json');
+    fs.writeFileSync(ambiguousPath, JSON.stringify(ambiguousFixture, null, 2));
+    const ambiguousBuild = spawnSync(process.execPath, ['scripts/build-database.js'], {
+      cwd: repo,
+      env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: ambiguousPath, HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1' },
+      encoding: 'utf8',
+    });
+    assert.equal(ambiguousBuild.status, 0, `ambiguity fixture build must complete\nSTDOUT:\n${ambiguousBuild.stdout}\nSTDERR:\n${ambiguousBuild.stderr}`);
+    const ambiguousCards = JSON.parse(fs.readFileSync(dbPath, 'utf8')).cards;
+    assert.equal(
+      ambiguousCards['hBP01-024'],
+      undefined,
+      'CR rev.2: an ambiguous C/02_C listing must not publish a bare hBP01-024 row',
+    );
+    const carrying888 = Object.entries(ambiguousCards)
+      .filter(([, c]) => c.cardNumber === 'hBP01-024' && c.sellPrice === 888)
+      .map(([k]) => k);
+    assert.deepEqual(
+      carrying888,
+      [],
+      `CR rev.2: the ¥888 ent07 listing is ambiguous across C and 02_C and must fail closed; it leaked onto ${carrying888.join(', ')}`,
+    );
+    assert.match(
+      `${ambiguousBuild.stdout}\n${ambiguousBuild.stderr}`,
+      /distinct official printings proven \(ambiguous/,
+      'the fallback must report the ambiguous-printing fail-closed reason',
+    );
+    console.log('  ✓ compound ambiguity: ent07 C vs 02_C listing failed closed (no bare row, no cross-fill)');
+  }
+
   console.log('✓ DIC-1334 final-artifact-collapse regression passed');
+  passed = true;
 } finally {
   fs.writeFileSync(dbPath, originalDb);
   fs.writeFileSync(publicDbPath, originalPublicDb);
-  // Remove any price-history files the build runs created so the tree is left
-  // exactly as the test found it.
-  const now = fs.readdirSync(historyDir).sort();
-  for (const f of now) {
-    if (!preRunHistory.includes(f)) fs.rmSync(path.join(historyDir, f), { force: true });
+  // Delete every file the build runs created, then restore the pre-run bytes of
+  // every file that already existed, so the worktree is byte-identical to what
+  // the test found.
+  for (const f of fs.readdirSync(historyDir)) {
+    const p = path.join(historyDir, f);
+    if (!preRunBytes.has(p)) fs.rmSync(p, { recursive: true, force: true });
   }
+  for (const [p, bytes] of preRunBytes) fs.writeFileSync(p, bytes);
   fs.rmSync(tmp, { recursive: true, force: true });
+
+  // Self-proving hermeticity: only assert once the test body itself passed, so a
+  // real assertion failure is never masked by this check.
+  if (passed) {
+    const dirty = [];
+    if (fs.readFileSync(dbPath, 'utf8') !== originalDb) dirty.push(dbPath);
+    if (fs.readFileSync(publicDbPath, 'utf8') !== originalPublicDb) dirty.push(publicDbPath);
+    for (const f of fs.readdirSync(historyDir)) {
+      const p = path.join(historyDir, f);
+      if (!preRunBytes.has(p)) dirty.push(`${p} (new)`);
+    }
+    for (const [p, bytes] of preRunBytes) {
+      if (!fs.existsSync(p) || !fs.readFileSync(p).equals(bytes)) dirty.push(p);
+    }
+    assert.deepEqual(dirty, [], `regression must be worktree-hermetic; still differing: ${dirty.join(', ')}`);
+    console.log('  ✓ worktree-hermetic: every touched tracked file restored byte-for-byte');
+  }
 }
