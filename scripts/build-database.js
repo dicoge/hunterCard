@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import { fileURLToPath } from 'url';
+import * as cheerio from 'cheerio';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
 import { canonicalVariantKey, normalizeRarityCode } from './lib/variant-key.js';
@@ -31,6 +32,7 @@ import {
   hasCurrentPriceProvenance,
   findUnprovenPriceHistoryViolations,
   pricesEntryExactPrintMatchesSource,
+  yuyuImageProductPath,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
@@ -40,24 +42,33 @@ const PROJECT_DIR = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_DIR, 'data');
 const LOG_PATH = path.join(DATA_DIR, 'scrape-log.txt');
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// DIC-1349 (CR round 3, hermeticity fix): only initialise data/scrape-log.txt
+// and rewire console.log/console.error to tee into it when this module is
+// invoked as the main script. Importing `parseCardHtml` from a test file
+// otherwise overwrites the tracked log at ES-module-import time — earlier
+// than any snapshot the test can take — which was the CR-flagged "test
+// leaves data/scrape-log.txt dirty" hermeticity blocker.
+const IS_MAIN_MODULE = process.argv[1]?.includes('build-database');
+if (IS_MAIN_MODULE) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// Write initial log
-fs.writeFileSync(LOG_PATH, `=== Scrape Log ${new Date().toISOString()} ===\n`, 'utf-8');
+  // Write initial log
+  fs.writeFileSync(LOG_PATH, `=== Scrape Log ${new Date().toISOString()} ===\n`, 'utf-8');
 
-// Tee: capture console.log AND console.error to log file
-const origLog = console.log;
-const origError = console.error;
-console.log = function(...args) {
-  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-  fs.appendFileSync(LOG_PATH, msg + '\n', 'utf-8');
-  origLog.apply(console, args);
-};
-console.error = function(...args) {
-  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-  fs.appendFileSync(LOG_PATH, '[ERROR] ' + msg + '\n', 'utf-8');
-  origError.apply(console, args);
-};
+  // Tee: capture console.log AND console.error to log file
+  const origLog = console.log;
+  const origError = console.error;
+  console.log = function(...args) {
+    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    fs.appendFileSync(LOG_PATH, msg + '\n', 'utf-8');
+    origLog.apply(console, args);
+  };
+  console.error = function(...args) {
+    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    fs.appendFileSync(LOG_PATH, '[ERROR] ' + msg + '\n', 'utf-8');
+    origError.apply(console, args);
+  };
+}
 // ─── End Tee ───
 
 // Catch unhandled promise rejections for better diagnostics
@@ -187,61 +198,317 @@ function sanitizePriceHistory(priceHistory) {
   return cleaned;
 }
 
-/** 從 HTML 字串中解出卡片資料（使用純文字分析，與 page.evaluate 相同邏輯） */
-function parseCardHtml(html) {
-  const results = [];
+/**
+ * DIC-1349 (CR round 3): parse the yuyu-tei HTTP-fallback HTML into
+ * per-listing rows using a real HTML parser (cheerio / parse5) instead
+ * of hand-rolled regex + depth counting.
+ *
+ * History. The pre-DIC-1349 implementation stripped every HTML tag
+ * before parsing and looked up `<img>` URLs from raw HTML using
+ * text-position offsets that did not correspond to HTML positions —
+ * every fallback listing landed with an empty / wrong `yuyuImage` and
+ * the DIC-1334 exact-print gate rejected all of them (0 / 1,196 in
+ * DIC-1348 QA). Two rounds of regex hardening (dc987ef09 → 1871f8c55)
+ * closed several bypasses but the CR flagged three more that a regex-
+ * based parser cannot address soundly:
+ *
+ *   1. A genuinely-unclosed `<div class="card-product">` whose own
+ *      `</div>` was missing was still admitted, because a div-depth
+ *      counter cannot tell an ancestor `</div>` apart from the card's
+ *      own — both bring depth back to zero.
+ *   2. `getTagAttr` used `\b${name}`, so `data-class="card-product"` and
+ *      `data-class="cart_ver"` matched the same regex as real `class`
+ *      attributes (word boundary between `data-` and the attribute
+ *      name).
+ *   3. The container regex only accepted `class="…"` / `class='…'`, so
+ *      the valid bare `<div class=card-product>` shape produced zero
+ *      rows.
+ *
+ * A real HTML5 parser fixes each of these by construction: parse5
+ * auto-closes unclosed elements at their natural parent boundary,
+ * attribute names are token-scoped (never prefixed), and bareword /
+ * quoted / single-quoted / entity-encoded attributes all round-trip
+ * identically. Cheerio is already a `dependencies` entry (used by other
+ * scripts) so no new package is added.
+ *
+ * Contract (per parsed card-product element, all reads via cheerio DOM):
+ *   - product image: any descendant `<img>` whose `src` is NOT the
+ *     starbtn asset on the `cdn.yuyu-tei.jp` CDN is a product-image
+ *     candidate. Every product-image candidate's `src` MUST parse via
+ *     `yuyuImageProductPath` — a present-but-invalid image drops the
+ *     card. Only an absent product image (no non-CDN `<img>` at all)
+ *     falls back to synthesising the canonical
+ *     `/hocg/100_140/{cart_ver}/{cart_cid}.jpg` URL from the block's
+ *     own `<input class="cart_ver">` / `<input class="cart_cid">`, and
+ *     that synthesised URL is itself validated via
+ *     `yuyuImageProductPath` before admission.
+ *   - card number + rarity: product image `alt` (`hXXX-nnn RARITY name`),
+ *     falling back to the standalone `<span>hXXX-nnn</span>`.
+ *   - card name: `<h4>` inner text (entity-decoded).
+ *   - price: first `[\d,]+ 円` in the element's own text.
+ *   - `imageVersion` / `imageCid`: `<input class="cart_ver">` /
+ *     `<input class="cart_cid">` within the card. Class tokens are
+ *     matched by cheerio's class-selector, so no prefix ambiguity.
+ */
+function decodeHtmlEntities(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    // '&amp;' MUST be last so `&amp;quot;` does not double-decode into `"`.
+    .replace(/&amp;/g, '&');
+}
 
-  // Strip HTML tags to get text content
-  const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
-                   .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-                   .replace(/<[^>]+>/g, ' ')
-                   .replace(/&nbsp;/g, ' ')
-                   .replace(/&amp;/g, '&')
-                   .replace(/\s+/g, ' ')
-                   .trim();
+function parseCardProductElement($, el) {
+  const $el = $(el);
 
-  // Find all card-product sections by looking for card number patterns
-  const cardNumRegex = /(h[A-Z]{1,3}\d+-\d{2,3})/gi;
-  let match;
-  while ((match = cardNumRegex.exec(text)) !== null) {
-    const cardNum = match[1];
-    const matchStart = match.index;
-    const contextStart = Math.max(0, matchStart - 100);
-    const contextEnd = Math.min(text.length, matchStart + 300);
-    const context = text.slice(contextStart, contextEnd);
+  // 0a) Source-element boundary (CR round-3 fix): a well-formed
+  //    card-product NEVER contains another card-product as a descendant
+  //    — they are siblings, not nested. If cheerio sees one nested,
+  //    it means an outer card-product's own `</div>` was missing and
+  //    HTML5 parsing folded what would be its sibling INTO it (there is
+  //    no implicit-close rule for `<div>`). Dropping the outer prevents
+  //    the classic "unclosed outer with empty product-img borrows the
+  //    later sibling's trusted image / cart provenance and emits its own
+  //    laundered price" bypass the CR round-3 mutation flagged. The
+  //    nested card-product is still enumerated separately by parseCardHtml
+  //    and processed independently.
+  if ($el.find('div.card-product').length > 0) return null;
 
-    // Find price within this card's context
-    const priceMatch = context.match(/([\d,]+)\s*円/);
-    if (!priceMatch) continue;
-    const price = parseInt(priceMatch[1].replace(/,/g, ''));
-    if (isNaN(price) || price <= 0) continue;
-
-    // Try to find card name between card number and price
-    let name = '';
-    const afterNum = text.slice(matchStart + cardNum.length, matchStart + 200);
-    // Name is usually the text line right after the card number
-    const lines = afterNum.split(/\s+/).filter(s => s.length > 0);
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      if (!lines[i].match(/[\d,]+\s*円/) && !lines[i].includes('在庫') && !lines[i].includes('カート') && !lines[i].match(/^\d+$/) && lines[i].length > 1) {
-        name = lines[i];
-        break;
+  // 0a2) Enclosing wrapper closure chain (CR round-6 fix): walk the card's
+  //    ancestor chain (div / section / article / main) up to <body> and
+  //    verify every ancestor was EXPLICITLY closed in the source (parse5
+  //    exposes `sourceCodeLocation.endTag` only when it saw a real
+  //    closing tag). An unclosed ancestor is a signal that this card
+  //    may have absorbed the ancestor's `</div>` via HTML5's no-
+  //    implicit-close rule for `<div>` — the CR round-6 mutation where
+  //    a folded footer counter + cart_sell_in appear inside an outer
+  //    whose OWN `</div>` was missing, so parse5 attributed the row's
+  //    close to the card and left the row unclosed.
+  //
+  //    The check must not reject a well-formed card whose LATER sibling
+  //    caused the ancestor unclosure. Exception rule: for each unclosed
+  //    ancestor along the chain, check whether the subtree we are
+  //    walking up from has any FOLLOWING SIBLING with its own explicit
+  //    `endTag`. If yes, some sibling AFTER our subtree extends into
+  //    the ancestor's would-be close space — our own bounds remain
+  //    trustworthy. If no following sibling has an explicit `endTag`,
+  //    our card is at the tail of the unclosed ancestor and its own
+  //    close was very likely the ancestor's absorbed `</div>`. Drop
+  //    fail-closed.
+  //
+  //    Real yuyu-tei markup wraps every card in `<div class="col-md">`
+  //    inside `<div class="row …">` inside `<div class="container">`
+  //    inside `<main>`, and every wrapper is explicitly closed — the
+  //    whole ancestor chain passes on real input. The CR round-6
+  //    mutation has one card as the only child of an unclosed row; no
+  //    following sibling has an endTag → drop.
+  {
+    let $child = $el;
+    let $ancestor = $child.parent();
+    while ($ancestor.length) {
+      const anc = $ancestor[0];
+      const tag = String(anc?.tagName || '').toLowerCase();
+      if (!tag || tag === 'body' || tag === 'html' || tag === '#document') break;
+      // Stop if we hit a card-product ancestor — nested card-products
+      // are structurally impossible in real markup and can only appear
+      // when an outer card was unclosed and cheerio folded us in as a
+      // descendant. Our own wrapper lives inside that outer; the outer
+      // is dropped separately by the round-3 nested-card guard (0a).
+      // We must not blame the sibling for the outer's unclosure.
+      const ancClass = String(anc.attribs?.class || '');
+      if (ancClass.split(/\s+/).includes('card-product')) break;
+      if (!anc.sourceCodeLocation?.endTag) {
+        // Parent is unclosed. If our subtree at this level has any
+        // following sibling, we cannot be the absorber (the absorber
+        // is whatever content sits at the tail of the unclosed
+        // ancestor). Following sibling can itself be malformed —
+        // that's a separate card-product's problem, not ours; a
+        // sibling that is a nested-card-product weirdness is caught
+        // by the round-3 guard (0a) on that card independently.
+        if ($child.next().length === 0) return null;
       }
+      $child = $ancestor;
+      $ancestor = $ancestor.parent();
     }
-
-    // Find image URL near this card number
-    const imgMatch = html.slice(contextStart, contextEnd + 100).match(/<img[^>]*src="([^"]*card\.yuyu-tei\.jp[^"]*)"[^>]*>/i);
-    const imageUrl = imgMatch ? imgMatch[1] : '';
-
-    results.push({
-      cardNum,
-      sellPrice: price,
-      name,
-      yuyuImage: imageUrl,
-      imageVersion: '',
-      imageCid: '',
-    });
   }
 
+  // 0b) Structural invariant: a real yuyu-tei card-product always contains
+  //    a `<div class="… product-img …">` container (which wraps the
+  //    product image). A card-product with no such container is either a
+  //    UI shell or the CR round-2 "genuinely unclosed with no product-img"
+  //    bypass shape — HTML5 parsing keeps footer inputs as children of an
+  //    unclosed `<div>`, so parse5 cannot on its own tell an unclosed card
+  //    apart from a well-formed one whose image tag happens to be absent.
+  //    Requiring the yuyu-tei structural signature is the guard: the
+  //    malformed shape the CR flagged ("only span, h4, strong, and footer
+  //    cart inputs") has no product-img container, so it fails closed
+  //    here. Every real yuyu-tei card-product ships with this container,
+  //    and the regression fixture ships it even when the inner `<img>` is
+  //    intentionally omitted.
+  if ($el.find('div.product-img').length < 1) return null;
+
+  // 1) Product image candidates — every descendant <img> that is NOT the
+  //    starbtn asset on the CDN. A present-but-invalid one drops the card.
+  const productImgs = $el.find('img').toArray().filter((img) => {
+    const src = String($(img).attr('src') || '').toLowerCase();
+    if (src.startsWith('https://cdn.yuyu-tei.jp/')) return false;
+    if (src.startsWith('http://cdn.yuyu-tei.jp/')) return false;
+    return true;
+  });
+  let productImg = null;
+  let rawImageUrl = '';
+  if (productImgs.length > 0) {
+    for (const img of productImgs) {
+      const src = String($(img).attr('src') || '');
+      if (!yuyuImageProductPath(src)) return null;
+    }
+    productImg = productImgs[0];
+    rawImageUrl = String($(productImg).attr('src') || '');
+  }
+
+  // 2) Card number + rarity — product image alt, with <span>hXXX-nnn</span> fallback.
+  const alt = productImg ? String($(productImg).attr('alt') || '') : '';
+  const altNumMatch = alt.match(/(h[A-Z]{1,3}\d+-\d{2,3})/i);
+  let cardNum = altNumMatch ? altNumMatch[1] : '';
+  if (!cardNum) {
+    // First <span> whose text is exactly a canonical card number.
+    $el.find('span').each((_, span) => {
+      if (cardNum) return;
+      const txt = ($(span).text() || '').trim();
+      const m = txt.match(/^(h[A-Z]{1,3}\d+-\d{2,3})$/i);
+      if (m) cardNum = m[1];
+    });
+  }
+  if (!cardNum) return null;
+
+  const altRarityMatch = alt.match(/h[A-Z]{1,3}\d+-\d{2,3}\s+([A-Z]{1,4})\b/i);
+  const rarity = altRarityMatch ? altRarityMatch[1] : '';
+
+  // 3) Price — first `[\d,]+ 円` in the element's own text. Cheerio's
+  //    .text() returns the concatenated descendant text, which is exactly
+  //    what the original regex-based parser walked.
+  const cardText = $el.text() || '';
+  const priceMatch = cardText.match(/([\d,]+)\s*円/);
+  if (!priceMatch) return null;
+  const price = parseInt(priceMatch[1].replace(/,/g, ''), 10);
+  if (!Number.isFinite(price) || price <= 0) return null;
+
+  // 4) Card name — <h4> inner text, entity-decoded. Fall back to the alt
+  //    with the cardNum + rarity tokens stripped when no <h4> is present.
+  const $h4 = $el.find('h4').first();
+  let name = $h4.length ? decodeHtmlEntities(($h4.text() || '')).replace(/\s+/g, ' ').trim() : '';
+  if (!name && alt) {
+    const nameFromAlt = alt.replace(/^h[A-Z]{1,3}\d+-\d{2,3}\s*[A-Z]{1,4}?\s*/i, '').trim();
+    if (nameFromAlt) name = nameFromAlt;
+  }
+
+  // 5) cart_ver / cart_cid inputs — CR round-5 source-boundary invariant:
+  //    yuyu-tei's real card-product always has BOTH a direct-child
+  //    `<div class="… counter …">` (holding cart_ver / cart_cid /
+  //    cart_gid / … inputs) AND a direct-child `<a class="cart_sell_in">`
+  //    (the "カートへ" cart button), and `cart_sell_in` appears AFTER
+  //    `.counter` in source order — it is the LAST direct child in
+  //    real markup. This is the yuyu-tei structural signature.
+  //
+  //    The earlier CR-round-4 fix used `$el.find('div.counter')` — an
+  //    UNRESTRICTED descendant lookup. HTML5 parsing has no implicit-
+  //    close rule for `<div>`, so an unclosed card-product absorbs any
+  //    following HTML (footer / next sibling) until an ancestor closes,
+  //    and a footer that ships its OWN `<div class="counter">` with
+  //    cart_ver / cart_cid gets folded into the unclosed card as a
+  //    descendant. Unrestricted `.find` picks that folded `.counter`
+  //    up and the parser synthesises a laundered `/hbp04/99999.jpg`
+  //    URL. That is the CR-round-5-reported bypass.
+  //
+  //    The invariant enforced here proves the card was EXPLICITLY closed
+  //    with its own contents inside via three cross-checks that a folded
+  //    footer would collectively fail:
+  //      (a) `.counter` is a DIRECT child of the card (not a nested
+  //          descendant that could belong to a folded structure);
+  //      (b) `a.cart_sell_in` is also a direct child, source-ordered
+  //          AFTER `.counter` — real yuyu-tei always has this button
+  //          as the LAST direct child, and it lives INSIDE the card's
+  //          own scope;
+  //      (c) the card's parse5 `endTag.startOffset` is >= the
+  //          cart_sell_in's `endOffset` — proves the card's `</div>`
+  //          closes AFTER its own cart_sell_in in the raw HTML, i.e.
+  //          the explicit close is real rather than an ancestor's
+  //          `</div>` that happens to satisfy depth counting.
+  //
+  //    A folded footer that ships a `.counter` cannot pass all three:
+  //    it either does not include a `cart_sell_in` (round-4 / round-5
+  //    plain / counter-only mutations), includes one but in the wrong
+  //    source order, or the outer card's endTag falls before the folded
+  //    button's endOffset. In every failure mode the card drops via the
+  //    no-cart-inputs fallthrough.
+  const $counter = $el.children('div.counter').first();
+  const $sellIn = $el.children('a.cart_sell_in').first();
+  const cardEndTag = $el[0]?.sourceCodeLocation?.endTag;
+  let imageVersion = '';
+  let imageCid = '';
+  if ($counter.length && $sellIn.length && cardEndTag) {
+    const counterEnd = $counter[0]?.sourceCodeLocation?.endOffset ?? -1;
+    const sellInStart = $sellIn[0]?.sourceCodeLocation?.startOffset ?? -1;
+    const sellInEnd = $sellIn[0]?.sourceCodeLocation?.endOffset ?? -1;
+    const cardEndStart = cardEndTag.startOffset ?? -1;
+    const wellFormed =
+      counterEnd >= 0 && sellInStart >= 0 && sellInEnd >= 0 && cardEndStart >= 0
+      && counterEnd <= sellInStart
+      && sellInEnd <= cardEndStart;
+    if (wellFormed) {
+      imageVersion = String($counter.find('input.cart_ver').first().attr('value') || '');
+      imageCid = String($counter.find('input.cart_cid').first().attr('value') || '');
+    }
+  }
+
+  // 6) Final `yuyuImage`:
+  //      (i) the product `<img src>` verified in step (1), or
+  //     (ii) the canonical `/hocg/100_140/{ver}/{cid}.jpg` synth when the
+  //          block has NO product image and BOTH cart_ver + cart_cid.
+  //    Either way, the resulting URL is re-run through
+  //    `yuyuImageProductPath` before admission.
+  let yuyuImage = rawImageUrl;
+  if (!yuyuImage && imageVersion && imageCid) {
+    const safeVer = /^[A-Za-z0-9-]+$/.test(imageVersion) ? imageVersion : '';
+    const safeCid = /^[A-Za-z0-9-]+$/.test(imageCid) ? imageCid : '';
+    if (safeVer && safeCid) {
+      yuyuImage = `https://card.yuyu-tei.jp/hocg/100_140/${safeVer}/${safeCid}.jpg`;
+    }
+  }
+  if (!yuyuImage) return null;
+  if (!yuyuImageProductPath(yuyuImage)) return null;
+
+  return {
+    cardNum,
+    sellPrice: price,
+    rarity,
+    name,
+    yuyuImage,
+    imageVersion,
+    imageCid,
+  };
+}
+
+export function parseCardHtml(html) {
+  const results = [];
+  if (typeof html !== 'string' || html.length === 0) return results;
+  // `sourceCodeLocationInfo: true` is required so parseCardProductElement's
+  // CR-round-5 source-boundary invariant can consult parse5's per-node
+  // source ranges (raw-HTML startOffset / endOffset / endTag) to prove
+  // that `.counter` and `a.cart_sell_in` are OWNED by the current
+  // explicitly-closed card wrapper — not folded in from footer HTML that
+  // HTML5 parsing absorbed into an unclosed card.
+  const $ = cheerio.load(html, { sourceCodeLocationInfo: true });
+  $('div.card-product').each((_, el) => {
+    const parsed = parseCardProductElement($, el);
+    if (parsed) results.push(parsed);
+  });
   return results;
 }
 
