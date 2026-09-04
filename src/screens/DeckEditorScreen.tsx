@@ -455,8 +455,15 @@ export default function DeckEditorScreen() {
     />
   );
 
-  const pickerPanel = (
-    <View style={[styles.panel, isDesktop && styles.panelGrid]}>
+  // ── Card picker (DIC-1320) ────────────────────────────────────────────────
+  // The grid is a VirtualizedList, and a VirtualizedList must be the ONLY
+  // vertical scroller on its route. Android leaves nested scrolling OFF, so a
+  // parent ScrollView wins the drag outright: the grid never moves, `onEndReached`
+  // never fires, and the cards past the first page of 60 cannot be reached at
+  // all. Every branch below therefore hands the grid a BOUNDED, NON-SCROLLING
+  // parent and lets it own the gesture.
+  const pickerChrome = (
+    <>
       <Text style={styles.h2}>{t('deck_choose_card')}</Text>
       {!isDesktop && (
         <View style={styles.mobileFilterRow}>
@@ -474,20 +481,30 @@ export default function DeckEditorScreen() {
           </Text>
         </View>
       )}
-      <CardPickerGrid
-        groups={results}
-        numColumns={numColumns}
-        height={isDesktop ? 620 : 460}
-        qtyOf={(cardNumber) => qtyByCardNumber.get(cardNumber) ?? 0}
-        onAdd={addToDeck}
-        emptyLabel={t('deck_no_results')}
-      />
+    </>
+  );
+
+  const pickerGridProps = {
+    groups: results,
+    numColumns,
+    qtyOf: (cardNumber: string) => qtyByCardNumber.get(cardNumber) ?? 0,
+    onAdd: addToDeck,
+    emptyLabel: t('deck_no_results'),
+  };
+
+  // Chrome pinned, grid fills the rest of the panel and scrolls on its own.
+  const pickerPanel = (
+    <View style={[styles.panel, styles.panelFill, isDesktop && styles.panelGrid]}>
+      {pickerChrome}
+      <CardPickerGrid {...pickerGridProps} />
     </View>
   );
 
   const selectedSlots = activeDeck[activeZone];
+  // On desktop these two ride inside their own scrolling column, so they size to
+  // their content rather than stretching (DIC-1320).
   const deckPanel = (
-    <View style={[styles.panel, isDesktop && styles.panelCol]}>
+    <View style={styles.panel}>
       {renaming ? (
         <View style={styles.renameBlock}>
           <TextInput
@@ -629,7 +646,7 @@ export default function DeckEditorScreen() {
   );
 
   const estimatePanel = (
-    <View style={[styles.panel, isDesktop && styles.panelCol]}>
+    <View style={styles.panel}>
       {/* Deck gap panel — Store MVP 保留（缺卡數量對編輯有用），但拿掉
           參考售價相關文案、每列估價、店家總計、以及到價提醒 CTA / editor。
           FEATURES.marketData 管價格、FEATURES.watchlist 管提醒 (DIC-1256)。 */}
@@ -858,29 +875,47 @@ export default function DeckEditorScreen() {
       {isPhone ? phoneProgress : zoneTabs}
       {isPhone && phonePanelSwitch}
       {isDesktop ? (
-        <ScrollView contentContainerStyle={styles.desktopWrap}>
+        // Three columns that scroll INDEPENDENTLY. The page itself does not
+        // scroll, so the picker column's grid is the only vertical scroller
+        // over the cards and keeps the drag (DIC-1320).
+        <View style={styles.desktopWrap}>
           <View style={styles.desktopCols}>
-            <View style={[styles.panel, styles.panelCol]}>
-              <Text style={styles.h2}>{t('deck_search_and_filter')}</Text>
-              {filterPanel}
-            </View>
+            <ScrollView style={styles.desktopCol}>
+              <View style={styles.panel}>
+                <Text style={styles.h2}>{t('deck_search_and_filter')}</Text>
+                {filterPanel}
+              </View>
+            </ScrollView>
             {pickerPanel}
-            <View style={styles.desktopStackCol}>
+            <ScrollView style={styles.desktopCol}>
               {deckPanel}
               {estimatePanel}
-            </View>
+            </ScrollView>
           </View>
-        </ScrollView>
+        </View>
       ) : isPhone ? (
-        <ScrollView contentContainerStyle={styles.pad}>
-          {phonePanel}
-        </ScrollView>
+        mobilePanel === 'picker' ? (
+          // No page ScrollView at all: a finger that starts on a card scrolls
+          // the cards, and there is no outer scroller left to steal it or to
+          // hand the overscroll to.
+          <View style={[styles.pad, styles.fill]}>{pickerPanel}</View>
+        ) : (
+          // 主牌組 / 缺卡 hold no VirtualizedList, so the page scrolls as before.
+          <ScrollView contentContainerStyle={styles.pad}>
+            {phonePanel}
+          </ScrollView>
+        )
       ) : (
-        <ScrollView contentContainerStyle={styles.pad}>
-          {pickerPanel}
-          {deckPanel}
-          {estimatePanel}
-        </ScrollView>
+        // Stacked layout: the grid IS the page scroller and the surrounding
+        // panels ride in its header/footer, so the page has exactly one.
+        <View style={styles.fill}>
+          <CardPickerGrid
+            {...pickerGridProps}
+            contentContainerStyle={styles.pad}
+            header={<View style={styles.panel}>{pickerChrome}</View>}
+            footer={<View style={styles.stackedFooter}>{deckPanel}{estimatePanel}</View>}
+          />
+        </View>
       )}
     </SafeAreaView>
   );
@@ -1008,10 +1043,16 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   pad: { padding: 16 },
-  desktopWrap: { padding: 16 },
-  desktopCols: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  // `minHeight: 0` keeps these boxes able to SHRINK. Without it a flex child is
+  // floored at its content height, the overflow escapes to an ancestor, and the
+  // grid stops being the element that scrolls (DIC-1320).
+  fill: { flex: 1, minHeight: 0 },
+  desktopWrap: { flex: 1, padding: 16 },
+  desktopCols: { flex: 1, minHeight: 0, flexDirection: 'row', gap: 16, alignItems: 'stretch' },
+  desktopCol: { flex: 1 },
+  stackedFooter: { marginTop: 16 },
   panel: { backgroundColor: COLORS.surface, borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border },
-  panelCol: { flex: 1, marginBottom: 0 },
+  panelFill: { flex: 1, minHeight: 0 },
   panelGrid: { flex: 1.6, marginBottom: 0 },
   h1: { fontSize: 22, fontWeight: 'bold', color: COLORS.primary, marginBottom: 6 },
   h2: { fontSize: 17, fontWeight: 'bold', color: COLORS.text, marginBottom: 8 },
@@ -1095,7 +1136,6 @@ const styles = StyleSheet.create({
   qtyBtnText: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' },
   qtyValue: { color: COLORS.text, fontSize: 15, fontWeight: 'bold', minWidth: 28, textAlign: 'center' },
   removeBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
-  desktopStackCol: { flex: 1, gap: 16 },
   issue: { borderRadius: 8, padding: 10, marginTop: 8, flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   issueError: { backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: 1, borderColor: COLORS.error },
   issueWarn: { backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: COLORS.warning },
