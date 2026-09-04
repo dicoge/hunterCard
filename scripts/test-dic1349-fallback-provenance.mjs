@@ -957,6 +957,144 @@ ${goodBlock}
   );
 }
 
+// ── Case 3k (CR round 6, sole blocker): production-shaped unclosed
+//     outer .card-product whose folded footer ships BOTH `<div class="…
+//     counter …">` (with cart_ver / cart_cid inputs) AND
+//     `<a class="cart_sell_in">` in the accepted source order (counter
+//     BEFORE cart_sell_in). Every check the round-5 fix relied on
+//     passes: direct-child counter and direct-child cart_sell_in are
+//     both present in accepted order; the card's parse5 `endTag`
+//     satisfies `sellIn.endOffset <= card.endTag.startOffset` (because
+//     parse5 attributes the row's `</div>` to the unclosed card, and
+//     the button is inside that attributed range). The parser would
+//     then synthesise `/hbp04/99999.jpg` from the folded footer cart
+//     inputs and emit `hBP04-099` @ ¥1 — exactly the CR round-6-flagged
+//     shape.
+//
+//     Fix (build-database.js parseCardProductElement): enclosing
+//     wrapper closure chain invariant. Walk the card's ancestor chain
+//     (div / section / article / main, stopping at any card-product
+//     ancestor and at body/html) and verify each was EXPLICITLY closed
+//     in the source (`sourceCodeLocation.endTag` defined). An unclosed
+//     ancestor is a signal that the card absorbed the ancestor's
+//     `</div>` via HTML5's no-implicit-close rule. Exception: if the
+//     subtree at that level has a following sibling with its own
+//     explicit `endTag`, the sibling — not us — extends into the
+//     unclosed range, and our own bounds remain trustworthy.
+//
+//     For CR round-6 mutation: the outer card is the only child of an
+//     unclosed row (row endTag undefined, no following sibling). Drops
+//     via the chain invariant. Real yuyu-tei markup has every wrapper
+//     explicitly closed, so real cards pass. Case 3e (good baseline
+//     card + separate unclosed sibling) also passes: the good card has
+//     the malformed sibling as a following sibling with its own
+//     endTag, satisfying the exception. ──
+{
+  const goodBlock = makeCardBlock({
+    cardNum: 'hBP04-001', rarity: 'SEC',
+    imgSrc: 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg',
+    cartVer: 'hbp04', cartCid: '10003', price: '99,800',
+  });
+
+  // The mutation: an unclosed outer card-product (own `</div>` missing)
+  // followed by folded footer that includes a `.counter` (with cart
+  // inputs) and `<a class="cart_sell_in">` in the accepted source
+  // order, then the ROW's `</div>` — parse5 attributes that row
+  // `</div>` to the unclosed card (leaves row unclosed). Every offset
+  // check the round-5 fix relied on passes.
+  const html = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+
+${goodBlock}
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-099</span>
+<h4>fake pre-empt</h4>
+<strong>1 円</strong>
+<div class="d-flex counter text-center">
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+</div>
+<a class="cart_sell_in">カートへ</a>
+</div>
+</body></html>`;
+
+  const cards = parseCardHtml(html);
+  const seen = new Set(cards.map((c) => c.cardNum));
+
+  assert.ok(seen.has('hBP04-001'), 'case 3k: the good baseline card (parent row still closes after its </div>) must still parse');
+  assert.ok(
+    !seen.has('hBP04-099'),
+    'case 3k (CR round-6 sole blocker fix): the unclosed outer whose folded footer ships .counter + cart_sell_in in accepted order must be DROPPED via the enclosing-wrapper closure-chain invariant',
+  );
+  for (const c of cards) {
+    assert.notEqual(
+      c.yuyuImage,
+      'https://card.yuyu-tei.jp/hocg/100_140/hbp04/99999.jpg',
+      `case 3k (CR round-6 sole blocker fix): the CR-flagged laundered /hbp04/99999.jpg URL must not appear on any admitted row (row ${JSON.stringify(c)})`,
+    );
+    assert.notEqual(
+      c.sellPrice,
+      1,
+      `case 3k (CR round-6 sole blocker fix): the outer's ¥1 must not win lowest-price selection anywhere (row ${JSON.stringify(c)})`,
+    );
+  }
+
+  // Solo variant: unclosed outer + folded footer with full structure
+  // (counter + cart_sell_in in accepted order) + ROW's `</div>`
+  // (which parse5 attributes to the unclosed card). No baseline
+  // sibling — parent row must remain unclosed and no admitted row.
+  const htmlSolo = `<!DOCTYPE html><html><body>
+<div class="row row-cols-md-4">
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-099</span>
+<h4>fake pre-empt</h4>
+<strong>1 円</strong>
+<div class="d-flex counter text-center">
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+</div>
+<a class="cart_sell_in">カートへ</a>
+</div>
+</body></html>`;
+  const cardsSolo = parseCardHtml(htmlSolo);
+  assert.equal(
+    cardsSolo.length,
+    0,
+    `case 3k/solo (CR round-6 sole blocker fix): a lone unclosed card with folded footer .counter + cart_sell_in in accepted order (parent row therefore unclosed) must emit ZERO rows — got ${JSON.stringify(cardsSolo)}`,
+  );
+
+  // Multi-level ancestor unclosure variant: the row's parent
+  // container is ALSO unclosed. Chain walk must catch this at the
+  // grandparent level even when the immediate parent (row) also has
+  // no explicit close.
+  const htmlDeep = `<!DOCTYPE html><html><body>
+<div class="container pb-5 pt-md-5">
+<div class="row row-cols-md-4">
+
+<div class="card-product">
+<a href="https://yuyu-tei.jp/x"><div class="product-img"></div></a>
+<span class="d-block">hBP04-099</span>
+<h4>fake pre-empt</h4>
+<strong>1 円</strong>
+<div class="d-flex counter text-center">
+<input type="hidden" value="hbp04" class="cart_ver">
+<input type="hidden" value="99999" class="cart_cid">
+</div>
+<a class="cart_sell_in">カートへ</a>
+</div>
+</body></html>`;
+  const cardsDeep = parseCardHtml(htmlDeep);
+  assert.equal(
+    cardsDeep.length,
+    0,
+    `case 3k/deep-ancestor (CR round-6 chain walk defence-in-depth): unclosure at grandparent level (row + container both unclosed) must also cause the card to drop — got ${JSON.stringify(cardsDeep)}`,
+  );
+}
+
 // ── Case 4: end-to-end binding through build-database.js ──
 // The parseCardHtml fix is worthless if the downstream binding logic still
 // discards the listing. Feed a synthetic yuyu fixture whose entries have

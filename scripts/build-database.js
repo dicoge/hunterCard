@@ -280,6 +280,64 @@ function parseCardProductElement($, el) {
   //    and processed independently.
   if ($el.find('div.card-product').length > 0) return null;
 
+  // 0a2) Enclosing wrapper closure chain (CR round-6 fix): walk the card's
+  //    ancestor chain (div / section / article / main) up to <body> and
+  //    verify every ancestor was EXPLICITLY closed in the source (parse5
+  //    exposes `sourceCodeLocation.endTag` only when it saw a real
+  //    closing tag). An unclosed ancestor is a signal that this card
+  //    may have absorbed the ancestor's `</div>` via HTML5's no-
+  //    implicit-close rule for `<div>` — the CR round-6 mutation where
+  //    a folded footer counter + cart_sell_in appear inside an outer
+  //    whose OWN `</div>` was missing, so parse5 attributed the row's
+  //    close to the card and left the row unclosed.
+  //
+  //    The check must not reject a well-formed card whose LATER sibling
+  //    caused the ancestor unclosure. Exception rule: for each unclosed
+  //    ancestor along the chain, check whether the subtree we are
+  //    walking up from has any FOLLOWING SIBLING with its own explicit
+  //    `endTag`. If yes, some sibling AFTER our subtree extends into
+  //    the ancestor's would-be close space — our own bounds remain
+  //    trustworthy. If no following sibling has an explicit `endTag`,
+  //    our card is at the tail of the unclosed ancestor and its own
+  //    close was very likely the ancestor's absorbed `</div>`. Drop
+  //    fail-closed.
+  //
+  //    Real yuyu-tei markup wraps every card in `<div class="col-md">`
+  //    inside `<div class="row …">` inside `<div class="container">`
+  //    inside `<main>`, and every wrapper is explicitly closed — the
+  //    whole ancestor chain passes on real input. The CR round-6
+  //    mutation has one card as the only child of an unclosed row; no
+  //    following sibling has an endTag → drop.
+  {
+    let $child = $el;
+    let $ancestor = $child.parent();
+    while ($ancestor.length) {
+      const anc = $ancestor[0];
+      const tag = String(anc?.tagName || '').toLowerCase();
+      if (!tag || tag === 'body' || tag === 'html' || tag === '#document') break;
+      // Stop if we hit a card-product ancestor — nested card-products
+      // are structurally impossible in real markup and can only appear
+      // when an outer card was unclosed and cheerio folded us in as a
+      // descendant. Our own wrapper lives inside that outer; the outer
+      // is dropped separately by the round-3 nested-card guard (0a).
+      // We must not blame the sibling for the outer's unclosure.
+      const ancClass = String(anc.attribs?.class || '');
+      if (ancClass.split(/\s+/).includes('card-product')) break;
+      if (!anc.sourceCodeLocation?.endTag) {
+        // Parent is unclosed. If our subtree at this level has any
+        // following sibling, we cannot be the absorber (the absorber
+        // is whatever content sits at the tail of the unclosed
+        // ancestor). Following sibling can itself be malformed —
+        // that's a separate card-product's problem, not ours; a
+        // sibling that is a nested-card-product weirdness is caught
+        // by the round-3 guard (0a) on that card independently.
+        if ($child.next().length === 0) return null;
+      }
+      $child = $ancestor;
+      $ancestor = $ancestor.parent();
+    }
+  }
+
   // 0b) Structural invariant: a real yuyu-tei card-product always contains
   //    a `<div class="… product-img …">` container (which wraps the
   //    product image). A card-product with no such container is either a
