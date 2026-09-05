@@ -382,7 +382,7 @@ export function formatInterval(alert: Pick<PriceAlert, 'lowerPrice' | 'upperPric
 export function buildAlertMessage(send: AlertSend): { title: string; body: string } {
   const label = send.alert.printingLabel?.trim() || send.alert.printing;
   return {
-    title: `到價提醒：${send.alert.name}`,
+    title: `價格提醒：${send.alert.name}`,
     body: `${send.alert.cardNumber}・${label} 參考售價 ${formatAlertAmount(send.price, send.currency)}，已進入你的期望區間 ${formatInterval(send.alert)}。`,
   };
 }

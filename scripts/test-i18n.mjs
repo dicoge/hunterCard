@@ -587,4 +587,110 @@ test('ja summary path does not surface Chinese runtime coverage/source strings',
   }
 });
 
+// ── DIC-1154 Stage 1 CR §regression guard ───────────────────────────────────
+// Every locale value on a reachable PriceAlertEditor / watchlist / card-detail
+// alert surface must name the entity — 價格提醒 in zh, 価格アラート in ja. A
+// bare "提醒" / "アラート" is a CR regression that made it past the earlier
+// grep-only sweep; enumerate the exact keys so a future edit that drops the
+// prefix fails here, not in a screen review.
+test('DIC-1154 alert-entity naming holds on every reachable editor/watchlist key', () => {
+  // Every key whose value is user-visible on the PriceAlertEditor modal, the
+  // WatchlistScreen list, the CardDetailScreen action row, the deck editor
+  // alert row, the settings sync copy, or the notification title. Kept as an
+  // explicit list so removing a surface deletes a line here too.
+  const REACHABLE_ALERT_KEYS = [
+    // PriceAlertEditor
+    'price_alert_save',
+    'price_alert_save_a11y',
+    'price_alert_remove',
+    'price_alert_no_printings',
+    'price_alert_choose_printing_error',
+    'price_alert_unrecognized_printing_error',
+    // WatchlistScreen
+    'watchlist_title',
+    'watchlist_empty',
+    'watchlist_empty_title',
+    'watchlist_remove_alert',
+    'watchlist_remove_alert_confirm',
+    'watchlist_remove_a11y',
+    'watchlist_resolve_a11y',
+    // CardDetailScreen alert row
+    'card_detail_add_watchlist',
+    'card_detail_watchlist_added',
+    'card_detail_watchlist_add',
+    'card_detail_watchlist_added_remove',
+    'card_detail_watchlist_remove_title',
+    'card_detail_watchlist_remove_confirm',
+    'card_detail_alert_one',
+    'card_detail_alert_many',
+    'card_detail_alert_set',
+    'card_detail_alert_a11y',
+    // Deck editor + settings sync copy that name the feature
+    'deck_alert_unavailable',
+    'settings_link_hint_watchlist',
+    'settings_guest_sync_watchlist',
+    // Nav drawer label
+    'nav_watchlist',
+  ];
+
+  for (const key of REACHABLE_ALERT_KEYS) {
+    assert.ok(zh[key].includes('價格提醒'),
+      `zh.${key} must name the entity 價格提醒, got: ${zh[key]}`);
+    assert.ok(ja[key].includes('価格アラート'),
+      `ja.${key} must name the entity 価格アラート, got: ${ja[key]}`);
+  }
+});
+
+// Locale-INDEPENDENT: every forbidden term is banned in every locale's values.
+// A partitioned check ("zh may not contain zh legacies; ja may not contain ja
+// legacies") lets a Japanese legacy name written by mistake into zh.ts escape
+// — the CR flagged this exact hole. Merging the lists closes it.
+const FORBIDDEN_ALERT_NAMES = [
+  '到價提醒', '入手提醒', '趨勢追蹤',
+  'ほしい物アラート', '価格推移の追跡',
+];
+
+function firstForbiddenHitIn(locale, dict) {
+  for (const [key, val] of Object.entries(dict)) {
+    for (const bad of FORBIDDEN_ALERT_NAMES) {
+      if (val.includes(bad)) return { locale, key, bad, val };
+    }
+  }
+  return null;
+}
+
+test('DIC-1154 no reachable alert copy leaks any pre-unification name in any locale', () => {
+  for (const [locale, dict] of [['zh', zh], ['ja', ja]]) {
+    const hit = firstForbiddenHitIn(locale, dict);
+    assert.equal(hit, null,
+      hit && `${hit.locale}.${hit.key} still names legacy "${hit.bad}": ${hit.val}`);
+  }
+});
+
+// Mutation-tested proof the guard is genuinely locale-independent. The exact
+// failure mode the CR named — a zh legacy landing in ja.ts, or a ja legacy
+// landing in zh.ts — must be caught, not silently pass because "the wrong
+// list was consulted".
+test('DIC-1154 forbidden-copy guard catches both cross-locale mutations', () => {
+  const mutatedJaWithZhLegacy = { ...ja, nav_watchlist: '到價提醒' };
+  const hit1 = firstForbiddenHitIn('ja', mutatedJaWithZhLegacy);
+  assert.deepEqual(
+    hit1 && { locale: hit1.locale, key: hit1.key, bad: hit1.bad },
+    { locale: 'ja', key: 'nav_watchlist', bad: '到價提醒' },
+    'a zh legacy name written into ja.ts must be caught',
+  );
+
+  const mutatedZhWithJaLegacy = { ...zh, nav_watchlist: 'ほしい物アラート' };
+  const hit2 = firstForbiddenHitIn('zh', mutatedZhWithJaLegacy);
+  assert.deepEqual(
+    hit2 && { locale: hit2.locale, key: hit2.key, bad: hit2.bad },
+    { locale: 'zh', key: 'nav_watchlist', bad: 'ほしい物アラート' },
+    'a ja legacy name written into zh.ts must be caught',
+  );
+
+  // Confirm the same helper reports clean on the real, unmutated dictionaries.
+  assert.equal(firstForbiddenHitIn('zh', zh), null);
+  assert.equal(firstForbiddenHitIn('ja', ja), null);
+});
+
 console.log(`test-i18n: PASS (${passed} checks)`);

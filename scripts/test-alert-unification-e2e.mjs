@@ -76,7 +76,7 @@ const TOKEN = 'ExponentPushToken[aaaaaaaaaaaaaaaaaaaaaa]';
  * the app, so deleting a constant cannot quietly empty this list — a re-added
  * section is caught by its words, wherever they come from.
  */
-const FORBIDDEN_COPY = ['趨勢追蹤', '追蹤清單', '加入追蹤', '目標價格提醒'];
+const FORBIDDEN_COPY = ['趨勢追蹤', '追蹤清單', '加入追蹤', '目標價格提醒', '入手提醒', '到價提醒', 'ほしい物アラート'];
 
 // The real card the two features disagreed about: one card number, three
 // printings, ¥980 / ¥9,980 / ¥69,800. Guessing any of them for the user would be
@@ -164,7 +164,7 @@ function assertSingleAlertsFeature() {
     sections.length + empty.length, 1,
     `exactly one alerts section must exist, found ${sections.length} lists and ${empty.length} empty states`,
   );
-  assert.ok(text.includes('到價提醒'), 'the one feature must be named on screen');
+  assert.ok(text.includes('價格提醒'), 'the one feature must be named on screen');
   for (const phrase of FORBIDDEN_COPY) {
     assert.ok(!text.includes(phrase), `the page must no longer say "${phrase}"`);
   }
@@ -183,12 +183,12 @@ function reset() {
 }
 
 // ── 1. Empty ────────────────────────────────────────────────────────────────
-await test('an empty page offers one feature and names it 到價提醒', async () => {
+await test('an empty page offers one feature and names it 價格提醒', async () => {
   reset();
   const { container, cleanup } = await render();
   try {
     assert.ok(byTestId('price-alert-empty'), 'the empty state renders');
-    assert.ok(container.textContent.includes('還沒有到價提醒'));
+    assert.ok(container.textContent.includes('還沒有價格提醒'));
     assertSingleAlertsFeature();
   } finally {
     await cleanup();
@@ -378,7 +378,7 @@ await test('the alert fires once when the exact version enters the interval', as
   const first = evaluatePriceAlerts(recipients, priceOf, {});
   assert.equal(first.sends.length, 1, 'entering the interval notifies');
   const { title, body } = buildAlertMessage(first.sends[0]);
-  assert.ok(title.startsWith('到價提醒：'), `the push says 到價提醒, got: ${title}`);
+  assert.ok(title.startsWith('價格提醒：'), `the push says 價格提醒, got: ${title}`);
   assert.ok(body.includes(CHOSEN_LABEL), 'and names the exact printing');
   for (const phrase of FORBIDDEN_COPY) {
     assert.ok(!`${title}${body}`.includes(phrase), `the push must not say "${phrase}"`);
@@ -451,7 +451,7 @@ await test('removing the alert empties the one section', async () => {
   try {
     await press(`price-alert-delete-${CARD_NUMBER}|${CHOSEN_PRINTING}`);
     assert.equal(confirms.length, 1, 'removal is confirmed first');
-    assert.ok(confirms[0].includes('移除到價提醒'));
+    assert.ok(confirms[0].includes('移除價格提醒'));
     assert.deepEqual(alertState().alerts, {}, 'the alert is gone');
     assert.ok(byTestId('price-alert-empty'), 'the page falls back to the empty state');
     assertSingleAlertsFeature();
