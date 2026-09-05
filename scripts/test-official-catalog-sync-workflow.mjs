@@ -357,7 +357,7 @@ assert.ok(
   /AUTOMATION_LOGINS\.includes\(/.test(handoffText),
   'handoff module must reject open PRs on the sync branch that were opened by non-automation users',
 );
-assert.deepStrictEqual([...AUTOMATION_LOGINS], ['github-actions', 'github-actions[bot]']);
+assert.deepStrictEqual([...AUTOMATION_LOGINS], ['github-actions', 'github-actions[bot]', 'app/github-actions']);
 assert.strictEqual(COMMIT_MSG_PREFIX, 'chore: sync official catalog');
 
 // ------------------------------------------------------------------- layer 3
@@ -598,6 +598,38 @@ await scenario('open PR authored by a random human on the sync branch: fails clo
   assert.ok(threw, 'human-authored PR scenario must throw');
   assert.match(threw.message, /not github-actions\[bot\]/, 'error must name the PR-author gate');
   assert.strictEqual(calls.find((c) => c.cmd === 'git' && c.args[0] === 'push'), undefined, 'must not push');
+});
+
+// DIC-1353 regression: run 33917974246 failed because `gh pr list --json
+// author` on gh CLI >=2.x reports the built-in-token PR's author login as
+// `app/github-actions` (gh's own JSON formatting prefixes `app/` to a
+// GraphQL Bot-typed author with no databaseId — see cli/cli
+// api/queries_issue.go), not `github-actions[bot]`/`github-actions`. That
+// is the SAME automation identity, not a human takeover, so the refresh
+// must proceed instead of fail closed.
+await scenario('existing PR authored by "app/github-actions" (gh CLI\'s Bot-author JSON format) refreshes normally', async () => {
+  const existingHead = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const remoteSha = existingHead;
+  const { result, calls } = await drive({
+    on: {
+      diffStat: () => ({ stdout: ' data/database.json | 1 +' }),
+      ghPrList: () => ({
+        stdout: JSON.stringify([{ number: 181, headRefOid: existingHead, author: { login: 'app/github-actions' } }]),
+      }),
+      [`git fetch --no-tags origin ${existingHead}`]: () => ({ stdout: '' }),
+      [`git diff --quiet ${existingHead} --`]: () => ({ stdout: '', status: 1 }),
+      [`git switch --force-create ${SYNC_BRANCH} origin/${BASE_BRANCH}`]: () => ({ stdout: '' }),
+      'git add --': () => ({ stdout: '' }),
+      'git diff --staged --quiet': () => ({ stdout: '', status: 1 }),
+      [`git commit -m ${COMMIT_MSG}`]: () => ({ stdout: '' }),
+      [`git fetch --no-tags origin ${SYNC_BRANCH}`]: () => ({ stdout: '' }),
+      [`git rev-parse --verify --quiet refs/remotes/origin/${SYNC_BRANCH}`]: () => ({ stdout: `${remoteSha}\n`, status: 0 }),
+      [`git push --force-with-lease=refs/heads/${SYNC_BRANCH}:${remoteSha} origin HEAD:refs/heads/${SYNC_BRANCH}`]: () => ({ stdout: '' }),
+    },
+  });
+  assert.deepStrictEqual(result, { outcome: 'refreshed-pr', prNumber: 181 });
+  const pushCall = calls.find((c) => c.cmd === 'git' && c.args[0] === 'push');
+  assert.ok(pushCall, '"app/github-actions"-authored PR must still refresh (same automation identity, different gh CLI JSON format)');
 });
 
 // ------------------------------------------------------------------- layer 4
