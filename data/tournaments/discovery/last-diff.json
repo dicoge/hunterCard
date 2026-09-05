@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-29T11:08:15.105Z",
+  "counts": {
+    "discovered": 10,
+    "known": 0,
+    "new": 10,
+    "promoted": 0,
+    "failed": 0
+  },
+  "newRecords": [
+    {
+      "eventId": "wgp-25-26-singapore",
+      "name": "WGP 25-26 シンガポール",
+      "nameZh": "WGP 25-26 Singapore",
+      "date": "2026-08-02",
+      "region": "Singapore",
+      "block": "-",
+      "sourceType": "official-x-result",
+      "tweetCode": "2083881748895555979",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083881748895555979",
+      "media": [
+        "https://pbs.twimg.com/media/HOtqy4VaIAAYFZq.jpg?name=orig",
+        "https://pbs.twimg.com/media/HOtq0ivbwAAMLEl.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "-"
+      ]
+    },
+    {
+      "eventId": "wgp-25-26-seoul",
+      "name": "WGP 25-26 ソウル",
+      "nameZh": "WGP 25-26 Seoul",
+      "date": "2026-08-22",
+      "region": "Seoul",
+      "block": "-",
+      "sourceType": "official-x-result",
+      "tweetCode": "2091112390163312848",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2091112390163312848",
+      "media": [
+        "https://pbs.twimg.com/media/HQUfoVya8AAxDo_.jpg?name=orig",
+        "https://pbs.twimg.com/media/HQUfoVybMAARtp5.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "-"
+      ]
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-kansai",
+      "name": "エクストリーマーカップ25-26 エリア予選 関西",
+      "nameZh": "Extreamer Cup 25-26 地區預選 關西",
+      "date": "2026-08-01",
+      "region": "関西",
+      "block": "C",
+      "sourceType": "official-x-result",
+      "tweetCode": "2083474499979313598",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083474499979313598",
+      "media": [
+        "https://pbs.twimg.com/media/HOn8_XeboAAfGuA.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "C"
+      ]
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-kansai",
+      "name": "エクストリーマーカップ25-26 エリア予選 関西",
+      "nameZh": "Extreamer Cup 25-26 地區預選 關西",
+      "date": "2026-08-01",
+      "region": "関西",
+      "block": "D",
+      "sourceType": "official-x-result",
+      "tweetCode": "2083474749733421379",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083474749733421379",
+      "media": [
+        "https://pbs.twimg.com/media/HOn9MbkbYAA10I4.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "D"
+      ]
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-hokuriku-shinetsu",
+      "name": "エクストリーマーカップ25-26 エリア予選 北陸・信越",
+      "nameZh": "Extreamer Cup 25-26 地區預選 北陸・信越",
+      "date": "2026-08-02",
+      "region": "北陸・信越",
+      "block": "A",
+      "sourceType": "official-x-result",
+      "tweetCode": "2083817575071502549",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083817575071502549",
+      "media": [
+        "https://pbs.twimg.com/media/HOs0_C4bYAA0G19.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "A"
+      ]
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-hokuriku-shinetsu",
+      "name": "エクストリーマーカップ25-26 エリア予選 北陸・信越",
+      "nameZh": "Extreamer Cup 25-26 地區預選 北陸・信越",
+      "date": "2026-08-02",
+      "region": "北陸・信越",
+      "block": "B",
+      "sourceType": "official-x-result",
+      "tweetCode": "2083817624983703992",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083817624983703992",
+      "media": [
+        "https://pbs.twimg.com/media/HOs1FFfaAAAJ8FH.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "B"
+      ]
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-tokai-1",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海①",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海①",
+      "date": "2026-08-08",
+      "region": "東海",
+      "block": "A",
+      "sourceType": "official-x-result",
+      "tweetCode": "2086003084111872298",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2086003084111872298",
+      "media": [
+        "https://pbs.twimg.com/media/HPL4vmWbsAAa2fv.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "A"
+      ]
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-tokai-1",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海①",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海①",
+      "date": "2026-08-08",
+      "region": "東海",
+      "block": "B",
+      "sourceType": "official-x-result",
+      "tweetCode": "2086003138113438166",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2086003138113438166",
+      "media": [
+        "https://pbs.twimg.com/media/HPL4ysCaAAAbej3.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "B"
+      ]
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-tokai-2",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海②",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海②",
+      "date": "2026-08-09",
+      "region": "東海",
+      "block": "A",
+      "sourceType": "official-x-result",
+      "tweetCode": "2086358733987410177",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2086358733987410177",
+      "media": [
+        "https://pbs.twimg.com/media/HPQ8NSda0AAGteg.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "A"
+      ]
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-tokai-2",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海②",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海②",
+      "date": "2026-08-09",
+      "region": "東海",
+      "block": "B",
+      "sourceType": "official-x-result",
+      "tweetCode": "2086358800811139291",
+      "sourceUrl": "https://x.com/hololive_OCG/status/2086358800811139291",
+      "media": [
+        "https://pbs.twimg.com/media/HPQ8RGsa0AAe20G.jpg?name=orig"
+      ],
+      "verified": false,
+      "resolves": true,
+      "blocks": [
+        "B"
+      ]
+    }
+  ]
+}

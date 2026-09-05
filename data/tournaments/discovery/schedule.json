@@ -1,0 +1,7 @@
+{
+  "cron": "0 */6 * * *",
+  "timezone": "UTC",
+  "note": "官方 X 賽果與官方 news feed 的例行探測；結果寫入 known-results registry 與 run-log，不直接改動月報。",
+  "generatedAt": "2026-08-29T11:08:15.105Z",
+  "nextRunIso": "2026-08-29T12:00:00.000Z"
+}

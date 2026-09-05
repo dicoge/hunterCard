@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "month": "2026-08",
+  "publishedDate": "2026-08-22",
+  "liveDecklog": true,
+  "provenance": "DIC-1232 backfill from official X result announcements (fxtwitter-resolved status payloads, 2026-08-29). Each event aggregates its published A/B/C/D blocks into ONE event so the same tournament is not double-counted. Event identity, region, date and official source URL are verifiable from the tweet text + timestamps. Official deck codes ARE published (in the announcement images) but were not extracted in this run; per DIC-1232 req-2 the events are kept with an explicit unverified deck list rather than guessed or dropped. A later --live Deck Log pass (or a human verifying the images) fills verified cards.",
+  "source": {
+    "name": "hololive OFFICIAL CARD GAME X 官方賽果（WGP 25-26 與エクストリーマーカップ25-26 エリア予選）",
+    "url": "https://x.com/hololive_OCG",
+    "disclaimer": "資料僅來自官方 X 賽果。官方以圖片公布各 block 決勝名次與 deck code；本回填僅收錄可驗證的 event 身分／日期／來源，deck list 標示為未驗證，不猜測牌組。占比僅反映已觀測樣本，不代表整體 meta。"
+  },
+  "resultTweets": [
+    {
+      "code": "2083881748895555979",
+      "url": "https://x.com/hololive_OCG/status/2083881748895555979",
+      "role": "WGP 25-26 Singapore 大會結果 (2026-08-02)"
+    },
+    {
+      "code": "2091112390163312848",
+      "url": "https://x.com/hololive_OCG/status/2091112390163312848",
+      "role": "WGP 25-26 Seoul 大會結果 (2026-08-22)"
+    },
+    {
+      "code": "2083474499979313598",
+      "url": "https://x.com/hololive_OCG/status/2083474499979313598",
+      "role": "エクストリーマーカップ25-26 エリア予選 関西 Cブロック (2026-08-01)"
+    },
+    {
+      "code": "2083474749733421379",
+      "url": "https://x.com/hololive_OCG/status/2083474749733421379",
+      "role": "エクストリーマーカップ25-26 エリア予選 関西 Dブロック (2026-08-01)"
+    },
+    {
+      "code": "2083817575071502549",
+      "url": "https://x.com/hololive_OCG/status/2083817575071502549",
+      "role": "エクストリーマーカップ25-26 エリア予選 北陸・信越 Aブロック (2026-08-02)"
+    },
+    {
+      "code": "2083817624983703992",
+      "url": "https://x.com/hololive_OCG/status/2083817624983703992",
+      "role": "エクストリーマーカップ25-26 エリア予選 北陸・信越 Bブロック (2026-08-02)"
+    },
+    {
+      "code": "2086003084111872298",
+      "url": "https://x.com/hololive_OCG/status/2086003084111872298",
+      "role": "エクストリーマーカップ25-26 エリア予選 東海① Aブロック (2026-08-08)"
+    },
+    {
+      "code": "2086003138113438166",
+      "url": "https://x.com/hololive_OCG/status/2086003138113438166",
+      "role": "エクストリーマーカップ25-26 エリア予選 東海① Bブロック (2026-08-08)"
+    }
+  ],
+  "events": [
+    {
+      "eventId": "wgp-25-26-singapore",
+      "name": "WGP 25-26 シンガポール",
+      "nameZh": "WGP 25-26 Singapore",
+      "date": "2026-08-02",
+      "region": "Singapore",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083881748895555979",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：官方於 X 公布決勝 16 名選手與 deck code（於圖片中）。deck list 未在本回填中驗證（2 副），保留 event、deck list 標示未驗證，後續 --live Deck Log 或人工核圖補齊。",
+      "decks": []
+    },
+    {
+      "eventId": "wgp-25-26-seoul",
+      "name": "WGP 25-26 ソウル",
+      "nameZh": "WGP 25-26 Seoul",
+      "date": "2026-08-22",
+      "region": "Seoul",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2091112390163312848",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：官方於 X 公布決勝 16 名選手與 deck code（於圖片中）。deck list 未在本回填中驗證，保留 event、deck list 標示未驗證。",
+      "decks": []
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-kansai",
+      "name": "エクストリーマーカップ25-26 エリア予選 関西",
+      "nameZh": "Extreamer Cup 25-26 地區預選 關西",
+      "date": "2026-08-01",
+      "region": "関西",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083474499979313598",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：C/D block 官方賽果（同 event，已聚合，避免重複計數）。deck list 未在本回填中驗證，標示未驗證。",
+      "decks": []
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-hokuriku-shinetsu",
+      "name": "エクストリーマーカップ25-26 エリア予選 北陸・信越",
+      "nameZh": "Extreamer Cup 25-26 地區預選 北陸・信越",
+      "date": "2026-08-02",
+      "region": "北陸・信越",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2083817575071502549",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：A/B block 官方賽果（同 event，已聚合）。deck list 未在本回填中驗證，標示未驗證。",
+      "decks": []
+    },
+    {
+      "eventId": "extreamer-cup-25-26-area-tokai-1",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海①",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海①",
+      "date": "2026-08-08",
+      "region": "東海",
+      "format": null,
+      "entrants": null,
+      "sourceUrl": "https://x.com/hololive_OCG/status/2086003084111872298",
+      "sourceType": "official-x-result",
+      "coverageNote": "DIC-1232 回填：A/B block 官方賽果（同 event，已聚合）。deck list 未在本回填中驗證，標示未驗證。",
+      "decks": []
+    }
+  ]
+}

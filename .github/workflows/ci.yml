@@ -219,6 +219,19 @@ jobs:
       - name: Verify deterministic tournament deck analytics (DIC-1032)
         run: npm run test:tournament-analytics
 
+      # DIC-1232: discovery/diff must stay mutation-sensitive — scheduled
+      # production discovery must persist (and commit) verified results yet fail
+      # closed (non-zero exit, no new-record persistence, last-known-good
+      # preserved) when every live source is unavailable; the run-mode gating in
+      # the workflow must keep both paths honest.
+      - name: Verify tournament discovery/diff (DIC-1232)
+        run: npm run test:tournament-discovery
+      - name: Verify tournament discovery run-mode workflow gating (DIC-1232)
+        run: npm run test:tournament-discovery-workflow
+      - name: Verify tournament discovery fails closed on total source outage (DIC-1232 CR)
+        run: npm run test:tournament-discovery-failclosed
+
+
       - name: Verify observed-share donut model, geometry and filtering (DIC-1066)
         run: npm run test:tournament-donut
 

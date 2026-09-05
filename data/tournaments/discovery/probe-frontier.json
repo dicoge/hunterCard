@@ -1,0 +1,105 @@
+{
+  "comment": "Official X result-announcement status codes we probe each discovery run. Each entry carries the verifiable, curated event identity (eventId/name/region/blocks/date). This is a lightweight watch-route manifest — NOT a source JSON (it holds no deck lists) — so discovery stays sustainable: the script probes each code, records its live date, diffs against the known registry, and never re-adds what is already known. New tournaments are surfaced by adding their announcement code here. Deck codes live in the announcement images, so deck-list extraction stays a separate, human-verified backfill step.",
+  "records": [
+    {
+      "code": "2083881748895555979",
+      "eventId": "wgp-25-26-singapore",
+      "name": "WGP 25-26 シンガポール",
+      "nameZh": "WGP 25-26 Singapore",
+      "region": "Singapore",
+      "blocks": ["-" ],
+      "date": "2026-08-02",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2091112390163312848",
+      "eventId": "wgp-25-26-seoul",
+      "name": "WGP 25-26 ソウル",
+      "nameZh": "WGP 25-26 Seoul",
+      "region": "Seoul",
+      "blocks": ["-" ],
+      "date": "2026-08-22",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2083474499979313598",
+      "eventId": "extreamer-cup-25-26-area-kansai",
+      "name": "エクストリーマーカップ25-26 エリア予選 関西",
+      "nameZh": "Extreamer Cup 25-26 地區預選 關西",
+      "region": "関西",
+      "blocks": ["C"],
+      "date": "2026-08-01",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2083474749733421379",
+      "eventId": "extreamer-cup-25-26-area-kansai",
+      "name": "エクストリーマーカップ25-26 エリア予選 関西",
+      "nameZh": "Extreamer Cup 25-26 地區預選 關西",
+      "region": "関西",
+      "blocks": ["D"],
+      "date": "2026-08-01",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2083817575071502549",
+      "eventId": "extreamer-cup-25-26-area-hokuriku-shinetsu",
+      "name": "エクストリーマーカップ25-26 エリア予選 北陸・信越",
+      "nameZh": "Extreamer Cup 25-26 地區預選 北陸・信越",
+      "region": "北陸・信越",
+      "blocks": ["A"],
+      "date": "2026-08-02",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2083817624983703992",
+      "eventId": "extreamer-cup-25-26-area-hokuriku-shinetsu",
+      "name": "エクストリーマーカップ25-26 エリア予選 北陸・信越",
+      "nameZh": "Extreamer Cup 25-26 地區預選 北陸・信越",
+      "region": "北陸・信越",
+      "blocks": ["B"],
+      "date": "2026-08-02",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2086003084111872298",
+      "eventId": "extreamer-cup-25-26-area-tokai-1",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海①",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海①",
+      "region": "東海",
+      "blocks": ["A"],
+      "date": "2026-08-08",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2086003138113438166",
+      "eventId": "extreamer-cup-25-26-area-tokai-1",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海①",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海①",
+      "region": "東海",
+      "blocks": ["B"],
+      "date": "2026-08-08",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2086358733987410177",
+      "eventId": "extreamer-cup-25-26-area-tokai-2",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海②",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海②",
+      "region": "東海",
+      "blocks": ["A"],
+      "date": "2026-08-09",
+      "sourceType": "official-x-result"
+    },
+    {
+      "code": "2086358800811139291",
+      "eventId": "extreamer-cup-25-26-area-tokai-2",
+      "name": "エクストリーマーカップ25-26 エリア予選 東海②",
+      "nameZh": "Extreamer Cup 25-26 地區預選 東海②",
+      "region": "東海",
+      "blocks": ["B"],
+      "date": "2026-08-09",
+      "sourceType": "official-x-result"
+    }
+  ]
+}
