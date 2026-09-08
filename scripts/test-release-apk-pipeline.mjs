@@ -604,6 +604,10 @@ const GATED_WORKFLOW = '.github/workflows/eas-build.yml';
 //   round 2 (DIC-1266): 9/10 → 10/11 (release-apk-size-optim inserted)
 //   round 3 (DIC-1266 CR blocker 1/2): 10/11 → 11/12 (prebuild-effective inserted)
 //   round 7 (DIC-1266 CR round-6):     11/12 → 12/13 (postpackage-mutations inserted)
+//   DIC-1401 AAB provenance (record + upload steps inserted between the two
+//   build steps): production-apk build 13 → 15; the non-APK build also gained
+//   `--json` / `> eas-build-raw.json` so its provenance (EAS build id + source
+//   SHA) is captured the same way as the APK path.
 // The invocations themselves — file, job, name, if, and command — are unchanged;
 // only the position moved, and the position is intentional. Any additional
 // build step or any change to name/if/command still fails this assertion.
@@ -619,13 +623,14 @@ const ALLOWED_BUILD_INVOCATIONS = [
       '  --platform "${{ inputs.platform }}" \\',
       '  --profile "${{ inputs.profile }}" \\',
       '  --non-interactive \\',
-      '  --no-wait',
+      '  --json \\',
+      '  --no-wait > eas-build-raw.json',
     ].join('\n'),
   },
   {
     file: GATED_WORKFLOW,
     job: 'build',
-    index: 13,
+    index: 15,
     name: 'EAS Build (production APK, wait for artifact)',
     if: "${{ inputs.profile == 'production-apk' }}",
     command: [

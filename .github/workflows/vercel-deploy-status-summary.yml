@@ -1,6 +1,6 @@
 name: Vercel deploy status summary
 
-# DIC-1401 CR round 2: Vercel's preview/production failures have no public
+# DIC-1401 CR round 2/3: Vercel's preview/production failures have no public
 # failure line of their own — the check just goes red. This workflow mirrors
 # deployment_status onto the PR (and, for refs with no open PR such as
 # post-merge main, onto the deployed commit) so anyone reading the exact-head
@@ -8,22 +8,34 @@ name: Vercel deploy status summary
 # immutable commit deployed.
 #
 # It is a PUBLIC mirror of what Vercel already knows, not a replacement for
-# the Vercel checks (those keep their PR gate role). Its companion guard in
-# Validate (test:vercel-function-count-guard) makes the most common failure —
-# exceeding the Hobby 12-serverless-function cap — fail visibly in GitHub CI
-# BEFORE Vercel even accepts the deployment.
+# the Vercel checks (those keep their PR gate role). Its companions in
+# Validate (test:vercel-function-count-guard, test:vercel-preview-build) make
+# the common failures — exceeding the Hobby 12-function cap, or the configured
+# buildCommand breaking — fail visibly in GitHub CI BEFORE Vercel accepts the
+# deployment.
 #
 # Vercel reports a failed deployment with status state `error` (not
 # `failure`), so both states are treated as failures here. Success summaries
 # are posted only for Production (post-merge main), so day-to-day preview
 # success does not spam the PR thread. Comments are de-duplicated on
 # deployment id.
+#
+# Permission notes (round 3 CR):
+#   - `contents: write` is required to post a commit comment (the no-PR /
+#     post-merge production path). With only `contents: read` that fallback
+#     failed with "Resource not accessible by integration (HTTP 403)" while
+#     the PR path silently did nothing visible. `pull-requests: write` covers
+#     the PR comment path.
+#   - The posting steps are deliberately `continue-on-error: true`: this job
+#     is a diagnostic mirror, not a gate. If posting fails it must never add a
+#     SECOND red check on top of the underlying deployment failure — the
+#     deployment itself is already reported by the Vercel checks.
 
 on:
   deployment_status:
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
@@ -42,15 +54,25 @@ jobs:
             *) echo "verdict=ignore" >> "$GITHUB_OUTPUT" ;;
           esac
 
-      - name: Resolve PR for this deployment ref
+      # PR resolution is by the deployed commit SHA first (commits/{sha}/pulls
+      # works for PRs whose head ref differs from deployment.ref, and for merge
+      # commits), then by the deployment ref name as a fallback. An empty
+      # result means the commit is not on any open PR (post-merge main /
+      # pushes without a PR) and the summary lands as a commit comment.
+      - name: Resolve PR for this deployment commit
         id: pr
         if: ${{ steps.classify.outputs.verdict != 'ignore' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          SHA="${{ github.event.deployment.sha }}"
           REF="${{ github.event.deployment.ref }}"
-          PR_NUM="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$REF" --json number --jq '.[0].number // empty')"
+          PR_NUM="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" --jq '.[] | select(.state == "open") | .number' | sort -n | head -1 || true)"
+          if [ -z "$PR_NUM" ] && [ -n "$REF" ]; then
+            PR_NUM="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$REF" --json number --jq '.[0].number // empty')"
+          fi
           echo "number=${PR_NUM:-}" >> "$GITHUB_OUTPUT"
+          echo "resolved=${PR_NUM:-<none: commit comment path>}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Confirm deployment has not already been summarized
         id: already
@@ -59,9 +81,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           DEPLOY_ID="${{ github.event.deployment_status.id }}"
+          SHA="${{ github.event.deployment.sha }}"
           SURFACE="${{ steps.pr.outputs.number }}"
           if [ -z "$SURFACE" ]; then
-            SURFACE="commit:${{ github.event.deployment.sha }}"
+            SURFACE="commit:$SHA"
           fi
           ALREADY=no
           if [[ "$SURFACE" == commit:* ]]; then
@@ -90,20 +113,21 @@ jobs:
             echo "- Deployment id: \`${{ github.event.deployment_status.id }}\`"
             echo "- Logs: ${{ github.event.deployment_status.log_url }}"
             echo ""
-            echo "See the \`Validate\` job for the static function-count / routing diagnostic (test:vercel-function-count-guard)."
+            echo "See the \`Validate\` job for the static function-count / build-reproduction diagnostics (test:vercel-function-count-guard, test:vercel-preview-build)."
           } > /tmp/vercel-failure-summary.md
 
       - name: Post failure summary
         if: ${{ steps.classify.outputs.verdict == 'failure' && steps.already.outputs.already == 'no' }}
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           PR_NUM="${{ steps.pr.outputs.number }}"
+          jq -n --rawfile body /tmp/vercel-failure-summary.md '{ body: $body }' > /tmp/vercel-failure-summary.json
           if [ -n "$PR_NUM" ]; then
             gh pr comment "$PR_NUM" --repo "$GITHUB_REPOSITORY" --body-file /tmp/vercel-failure-summary.md
           else
-            gh api "repos/$GITHUB_REPOSITORY/commits/${{ github.event.deployment.sha }}/comments" \
-              --field body="$(cat /tmp/vercel-failure-summary.md)"
+            gh api "repos/$GITHUB_REPOSITORY/commits/${{ github.event.deployment.sha }}/comments" --input /tmp/vercel-failure-summary.json
           fi
 
       - name: Compose production success summary
@@ -123,8 +147,9 @@ jobs:
 
       - name: Post production success summary on the deployed commit
         if: ${{ steps.classify.outputs.verdict == 'success' && github.event.deployment_status.environment == 'Production' && steps.already.outputs.already == 'no' }}
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/commits/${{ github.event.deployment.sha }}/comments" \
-            --field body="$(cat /tmp/vercel-production-success.md)"
+          jq -n --rawfile body /tmp/vercel-production-success.md '{ body: $body }' > /tmp/vercel-production-success.json
+          gh api "repos/$GITHUB_REPOSITORY/commits/${{ github.event.deployment.sha }}/comments" --input /tmp/vercel-production-success.json
