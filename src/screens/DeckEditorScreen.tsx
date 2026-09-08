@@ -24,6 +24,8 @@ import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAler
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { formatInterval, priceAlertKey } from '../utils/priceAlerts';
 import { useTranslation, type TranslationKey } from '../i18n';
+import { useSettingsStore } from '../store/settingsStore';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 
 const ZONES: DeckZone[] = ['oshi', 'main', 'yell'];
 type MobilePanel = 'picker' | DeckZone | 'shortage';
@@ -79,6 +81,13 @@ export default function DeckEditorScreen() {
   const [menuDeckId, setMenuDeckId] = useState<string | null>(null);
   const [deleteDeckId, setDeleteDeckId] = useState<string | null>(null);
   const priceAlerts = usePriceAlertStore((s) => s.alerts);
+  // DIC-1380 W4 CR: route every card-name render through the shared resolver
+  // so DeckEditor shows the same primary + subtitle as SearchResults /
+  // CardDetail / ScanResultCard / ScanCandidateSelector under the current
+  // language preference. Without this hook the deck editor rendered
+  // `slot.card.name` verbatim regardless of `preferredLanguage`, which was
+  // the naming-inconsistency case the W4 handback called out.
+  const preferredLanguage = useSettingsStore((s) => s.preferredLanguage);
 
   const decks = useDeckStore((s) => s.decks);
   const activeDeckId = useDeckStore((s) => s.activeDeckId);
@@ -584,10 +593,15 @@ export default function DeckEditorScreen() {
       <View style={styles.zoneBlock}>
         <Text style={styles.zoneTitle}>{t('deck_selected_zone', { zone: zoneLabels[activeZone] })}</Text>
         {selectedSlots.length === 0 && <Text style={styles.muted}>{t('deck_no_cards')}</Text>}
-        {selectedSlots.map((slot) => (
+        {selectedSlots.map((slot) => {
+          const displayName = resolveCardDisplayName(slot.card, preferredLanguage);
+          return (
           <View key={slot.card.id} style={styles.slotRow} testID={`deck-slot-${slot.card.cardNumber}`}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.cardName}>{slot.card.name}</Text>
+              <Text style={styles.cardName}>{displayName.primary || slot.card.name}</Text>
+              {displayName.secondary ? (
+                <Text style={styles.cardMetaZh} numberOfLines={1}>{displayName.secondary}</Text>
+              ) : null}
               <Text style={styles.cardMeta}>
                 {slot.card.cardNumber} · {printingLabelOf(slot.card, t)}
               </Text>
@@ -623,7 +637,8 @@ export default function DeckEditorScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        ))}
+          );
+        })}
       </View>
     </View>
   );
@@ -636,11 +651,18 @@ export default function DeckEditorScreen() {
       <Text style={styles.h2}>{t(FEATURES.marketData ? 'deck_gap_title' : 'deck_gap_title_store')}</Text>
       {gap && gap.rows.map((r) => {
         const alert = priceAlerts[priceAlertKey(r.cardNumber, r.version)] ?? null;
+        const displayName = resolveCardDisplayName(
+          { name: r.name, nameZh: r.nameZh },
+          preferredLanguage,
+        );
         return (
           <View key={`${r.cardNumber}|${r.version}`} style={styles.gapBlock}>
             <View style={styles.gapRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardName}>{r.name}</Text>
+                <Text style={styles.cardName}>{displayName.primary || r.name}</Text>
+                {displayName.secondary ? (
+                  <Text style={styles.cardMetaZh} numberOfLines={1}>{displayName.secondary}</Text>
+                ) : null}
                 <Text style={styles.cardMeta}>
                   {r.cardNumber} · {r.versionLabel || r.version}
                 </Text>
@@ -1089,6 +1111,7 @@ const styles = StyleSheet.create({
   zoneTitle: { color: COLORS.primaryLight, fontSize: 14, fontWeight: 'bold', marginBottom: 4 },
   slotRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
   cardName: { color: COLORS.text, fontSize: 14 },
+  cardMetaZh: { color: COLORS.textSecondary, fontSize: 12, marginTop: 1 },
   cardMeta: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   qtyControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   qtyBtn: { width: 44, height: 44, borderRadius: 6, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
