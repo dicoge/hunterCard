@@ -249,6 +249,15 @@ jobs:
       - name: Verify push notification backend (DIC-390)
         run: npm run test:push-backend
 
+      - name: Verify account remote-sync backend (DIC-1156)
+        run: npm run test:account-sync-backend
+
+      - name: Verify account remote-sync client boundary (DIC-1380)
+        run: npm run test:account-sync-client
+
+      - name: Verify shared card name resolver (DIC-1380 naming consistency)
+        run: npm run test:card-display-name
+
       - name: Verify card-lookup version alignment is source-proven (DIC-1013)
         run: npm run test:version-alignment
 
@@ -293,6 +302,9 @@ jobs:
 
       - name: Verify the privacy policy matches what the code actually sends off-device (DIC-1248)
         run: npm run test:privacy-disclosure
+
+      - name: Verify legal / pricing / terms / support pages stay consistent (DIC-1380)
+        run: npm run test:legal-pages-consistency
 
       - name: Verify a native scan transmits no image bytes (DIC-1248)
         run: npm run test:native-scan-no-upload
