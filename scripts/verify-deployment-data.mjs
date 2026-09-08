@@ -23,6 +23,16 @@ const MIN_PRICE_HISTORY_COVERAGE = 500;
 const MIN_BUY_PRICE_COVERAGE = 500;
 const MIN_YT_STATS_COVERAGE = 1000;
 
+// DIC-1380 data-update contract: Production deploys (Vercel Production +
+// Store MVP native builds) must ship a `database.json` refreshed by the daily
+// catalog / yuyu / official-sync workflows. A `lastUpdated` older than the
+// window below signals the refresh chain broke somewhere — CI/deploy fails
+// closed so the shipped bytes stay truthful. The check runs only when the
+// caller pins the Production profile (`EXPO_PUBLIC_STORE_MVP=1`) so unrelated
+// PR CI, local runs, and Web Develop / Staging never trip the gate for a
+// stale local copy. Overridable via `DATABASE_MAX_AGE_DAYS` for ops.
+const DEFAULT_MAX_AGE_DAYS = 7;
+
 function loadJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -85,6 +95,33 @@ if (canonicalAudit.coverage.lastUpdated !== publicAudit.coverage.lastUpdated) {
 }
 if (canonicalAudit.coverage.total !== publicAudit.coverage.total) {
   failures.push(`native total ${publicAudit.coverage.total} != canonical ${canonicalAudit.coverage.total}`);
+}
+
+// DIC-1380: max-age gate runs only under the Production profile so unrelated
+// PRs never break on a stale local checkout. Vercel Production and every EAS
+// Production/preview/production-apk profile already pin `EXPO_PUBLIC_STORE_MVP=1`,
+// so this catches the exact deploys where "shipped data must be fresh" is a
+// contract.
+const rawEnv = typeof process.env.EXPO_PUBLIC_STORE_MVP === 'string'
+  ? process.env.EXPO_PUBLIC_STORE_MVP.trim().toLowerCase()
+  : '';
+const productionProfile = rawEnv === '1' || rawEnv === 'true';
+if (productionProfile) {
+  const maxAgeDays = Number(process.env.DATABASE_MAX_AGE_DAYS) > 0
+    ? Number(process.env.DATABASE_MAX_AGE_DAYS)
+    : DEFAULT_MAX_AGE_DAYS;
+  const lastUpdated = canonicalAudit.coverage.lastUpdated;
+  const stamp = lastUpdated ? Date.parse(lastUpdated) : NaN;
+  const nowMs = Date.parse(process.env.DATABASE_NOW_ISO || new Date().toISOString());
+  if (!Number.isFinite(stamp)) {
+    failures.push(`Production profile: canonical database.json has no valid lastUpdated (got ${JSON.stringify(lastUpdated)})`);
+  } else {
+    const ageMs = nowMs - stamp;
+    const ageDays = ageMs / (24 * 60 * 60 * 1000);
+    if (ageMs > maxAgeDays * 24 * 60 * 60 * 1000) {
+      failures.push(`Production profile: canonical lastUpdated ${lastUpdated} is ${ageDays.toFixed(1)}d old — exceeds DATABASE_MAX_AGE_DAYS=${maxAgeDays}. The daily catalog/scrape/official-sync chain has stopped refreshing the shipped bytes.`);
+    }
+  }
 }
 
 console.log(JSON.stringify({
