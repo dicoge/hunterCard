@@ -94,7 +94,7 @@
       margin-top: 8px;
     }
 
-    .sandbox-banner {
+    .availability-banner {
       background: rgba(245, 158, 11, 0.12);
       border: 1px solid var(--accent-color);
       border-radius: 12px;
@@ -211,9 +211,9 @@
       <div class="subtitle">Pricing & Subscription Framework / 訂閱方案架構</div>
     </header>
 
-    <section class="sandbox-banner">
-      <strong>⚠️ 沙盒與動態價格說明 (Sandbox & Dynamic Pricing Notice)</strong><br />
-      本頁面為工程測試草案。依據專案規範，正式訂閱價格與商品 ID 未經產品負責人確認簽字前嚴禁硬編碼。實際方案金額將於商戶審核通過後，由平台 StoreKit / Google Play / Stripe Product API 動態載入。
+    <section class="availability-banner">
+      <strong>目前僅提供免費方案 (Free tier only right now)</strong><br />
+      HoloHunter 目前僅提供免費方案；付費訂閱方案尚未上線。當付費方案上線時，實際金額將於此頁揭露，並由平台 StoreKit / Google Play / Stripe Product API 動態載入，絕不硬編碼於前端。
     </section>
 
     <nav class="lang-toggle-container">
@@ -224,107 +224,68 @@
 
     <!-- ── 繁體中文版本 ── -->
     <section id="content-zh" class="content-section active">
-      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">繁體中文方案草案</h2>
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">繁體中文方案</h2>
       <div class="pricing-grid">
         <div class="plan-card">
           <div class="plan-name">Free 免費方案</div>
-          <div class="plan-desc">適合 hololive OCG 新手與休閒玩家。</div>
+          <div class="plan-desc">目前 HoloHunter 上線的唯一方案；所有玩家皆免費使用。</div>
           <div class="plan-price">NT$ 0</div>
-          <div class="plan-period">免費基礎功能 / 需 OAuth 登入</div>
+          <div class="plan-period">全部功能免費 / 需 OAuth 登入</div>
           <ul class="feature-list">
             <li class="feature-item"><span class="icon-check">✓</span> 完整卡牌資料庫與手動搜尋</li>
             <li class="feature-item"><span class="icon-check">✓</span> 賽事牌型與組牌分析</li>
             <li class="feature-item"><span class="icon-check">✓</span> 每月相機辨識 (OCR) 配額 100 次</li>
-            <li class="feature-item disabled"><span class="icon-cross">✕</span> 無限制相機辨識掃描</li>
-            <li class="feature-item disabled"><span class="icon-cross">✕</span> AI 價格預測與動態分析</li>
           </ul>
-          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-secondary">免費體驗</a>
-        </div>
-
-        <div class="plan-card featured">
-          <div class="plan-name">Pro 月費方案 (Sandbox)</div>
-          <div class="plan-desc">適合專業卡牌玩家與市場關注者。</div>
-          <div class="plan-price">待 Store API 動態載入</div>
-          <div class="plan-period">每月自動續訂 (測試範例 ID: <code>pro.monthly.sandbox</code>)</div>
-          <ul class="feature-list">
-            <li class="feature-item"><span class="icon-check">✓</span> 完整卡牌資料庫與手動搜尋</li>
-            <li class="feature-item"><span class="icon-check">✓</span> 賽事牌型與組牌分析</li>
-            <li class="feature-item"><span class="icon-check">✓</span> 無限次數相機辨識 (OCR) 掃描</li>
-            <li class="feature-item"><span class="icon-check">✓</span> AI 價格趨勢預測與動態分析</li>
-            <li class="feature-item"><span class="icon-check">✓</span> 純淨無廣告體驗 (Pro 權益)</li>
-          </ul>
-          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">Sandbox 測試</a>
+          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">免費使用</a>
         </div>
       </div>
+      <p style="margin-top:20px; color: var(--text-secondary); font-size:0.9rem;">付費訂閱方案 (Pro) 尚未上線。當上線時，方案內容、金額與商品 ID 會於本頁揭露，並由平台 StoreKit / Google Play / Stripe Product API 動態載入；價格不會硬編碼於此頁面。</p>
     </section>
 
     <!-- ── 日本語版本 ── -->
     <section id="content-ja" class="content-section">
-      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">日本語プラン草案 (Japanese Pricing Framework)</h2>
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">日本語プラン</h2>
       <div class="pricing-grid">
         <div class="plan-card">
           <div class="plan-name">Free フリープラン</div>
-          <div class="plan-desc">hololive OCG カジュアルプレイヤー向け。</div>
+          <div class="plan-desc">現在提供している唯一のプラン。すべての機能を無料でご利用いただけます。</div>
           <div class="plan-price">¥ 0</div>
-          <div class="plan-period">基本機能無料 / OAuth ログイン必須</div>
+          <div class="plan-period">全機能無料 / OAuth ログイン必須</div>
           <ul class="feature-list">
             <li class="feature-item"><span class="icon-check">✓</span> カードデータベース＆検索</li>
             <li class="feature-item"><span class="icon-check">✓</span> 大会分析データ閲覧</li>
             <li class="feature-item"><span class="icon-check">✓</span> 月間 OCR スキャン 100 回</li>
           </ul>
-          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-secondary">無料で試す</a>
-        </div>
-
-        <div class="plan-card featured">
-          <div class="plan-name">Pro 月額プラン (Sandbox)</div>
-          <div class="plan-desc">ガチプレイヤー＆コレクター向け。</div>
-          <div class="plan-price">Store API より動的取得 (TBD)</div>
-          <div class="plan-period">毎月自動更新 (テスト ID: <code>pro.monthly.sandbox</code>)</div>
-          <ul class="feature-list">
-            <li class="feature-item"><span class="icon-check">✓</span> <strong>無制限</strong> カメラ認識スキャン</li>
-            <li class="feature-item"><span class="icon-check">✓</span> <strong>AI 価格トレンド予測</strong></li>
-            <li class="feature-item"><span class="icon-check">✓</span> 完全広告非表示</li>
-          </ul>
-          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">Sandbox テスト</a>
+          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">無料で使う</a>
         </div>
       </div>
+      <p style="margin-top:20px; color: var(--text-secondary); font-size:0.9rem;">有料の Pro プランは未提供です。開始時には内容・金額・商品 ID を本ページで公開し、Store API から動的に配信します。フロントエンドに価格をハードコードすることはありません。</p>
     </section>
 
     <!-- ── English Version ── -->
     <section id="content-en" class="content-section">
-      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">English Pricing Framework</h2>
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">English Plans</h2>
       <div class="pricing-grid">
         <div class="plan-card">
           <div class="plan-name">Free Tier</div>
-          <div class="plan-desc">Basic tools for casual players.</div>
+          <div class="plan-desc">The only tier available right now — every feature is free.</div>
           <div class="plan-price">$0</div>
           <div class="plan-period">Free / OAuth login required</div>
           <ul class="feature-list">
-            <li class="feature-item"><span class="icon-check">✓</span> Card database & manual search</li>
+            <li class="feature-item"><span class="icon-check">✓</span> Full card database and manual search</li>
+            <li class="feature-item"><span class="icon-check">✓</span> Tournament decks and deck-building analysis</li>
             <li class="feature-item"><span class="icon-check">✓</span> 100 OCR scans per month</li>
           </ul>
-          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-secondary">Try Free</a>
-        </div>
-
-        <div class="plan-card featured">
-          <div class="plan-name">Pro Tier (Sandbox)</div>
-          <div class="plan-desc">For active players & collectors.</div>
-          <div class="plan-price">TBD (Loaded via Store API)</div>
-          <div class="plan-period">Billed monthly (Test ID: <code>pro.monthly.sandbox</code>)</div>
-          <ul class="feature-list">
-            <li class="feature-item"><span class="icon-check">✓</span> Unlimited OCR scans</li>
-            <li class="feature-item"><span class="icon-check">✓</span> AI price trend forecasting</li>
-            <li class="feature-item"><span class="icon-check">✓</span> Ad-free experience</li>
-          </ul>
-          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">Test Sandbox</a>
+          <a href="https://holohunter.dicoge.com/" class="btn-plan btn-primary">Use it free</a>
         </div>
       </div>
+      <p style="margin-top:20px; color: var(--text-secondary); font-size:0.9rem;">A paid Pro plan is not yet available. When it launches, the plan contents, price, and product IDs will be published on this page and loaded dynamically through the platform Store APIs — prices are never hard-coded on the front-end.</p>
     </section>
 
     <nav class="links-footer">
-      <a href="terms.html">📜 Terms of Service / 服務條款草案</a>
+      <a href="terms.html">📜 Terms of Service / 服務條款</a>
       <a href="privacy.html">🔒 Privacy Policy / 隱私權政策</a>
-      <a href="support.html">🛠️ Support & Contact / 技術支援草案</a>
+      <a href="support.html">🛠️ Support & Contact / 技術支援</a>
     </nav>
   </main>
 

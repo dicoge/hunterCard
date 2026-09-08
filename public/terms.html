@@ -152,8 +152,8 @@
 
     <!-- ── 繁體中文 ── -->
     <section id="content-zh" class="content-section active">
-      <p><em>工程審核草案更新日期：2026 年 8 月 24 日（需待產品負責人與法務最終確認）</em></p>
-      
+      <p><em>最後更新日期：2026 年 9 月 8 日</em></p>
+
       <div class="alert-card">
         <p><strong>⚠️ 免責與著作權聲明：</strong> HoloHunter 為玩家自主開發之<strong>非官方</strong>卡牌價格查詢與賽事分析工具，與 Cover 株式會社 (Cover Corp.) 或 hololive OFFICIAL CARD GAME 官方無任何關聯、授權或代言關係。卡牌名稱與相關圖像著作權均歸 Cover 株式會社所有。</p>
       </div>
@@ -164,29 +164,24 @@
       <h2>2. 使用者帳號與身分驗證</h2>
       <ul>
         <li>本服務採用 Google 帳號與 Sign in with Apple 第三方安全驗證（OAuth）。本服務不提供密碼註冊，亦不儲存任何使用者密碼。</li>
-        <li>使用者可以於同一 Internal User ID 綁定多個第三方驗證管道，以實現跨裝置資料與訂閱權限同步。</li>
+        <li>使用者可以於同一 Internal User ID 綁定多個第三方驗證管道，以實現跨裝置資料同步。</li>
       </ul>
 
-      <h2>3. 數位訂閱服務條款與未來門檻 (Subscription Framework & Launch Gates)</h2>
+      <h2>3. 訂閱服務</h2>
+      <p>本服務目前僅提供免費方案。付費訂閱方案 (Pro) 尚未上線。當付費方案上線後，本節將更新以載入以下項目：</p>
       <ul>
-        <li><strong>服務項目</strong>：HoloHunter Pro 訂閱解鎖「無限次數相機 OCR 掃描」、「AI 價格趨勢預測與動態分析」及「純淨無廣告體驗」。</li>
-        <li><strong>金流與支付處理商</strong>：
-          <ul>
-            <li>iOS App 內數位訂閱由 <strong>Apple StoreKit 2</strong> 處理與扣款。</li>
-            <li>Android App 內數位訂閱由 <strong>Google Play Billing</strong> 處理與扣款。</li>
-            <li>Web 網頁版數位訂閱由 <strong>Stripe Checkout</strong> 處理與扣款。</li>
-          </ul>
-        </li>
-        <li><strong>自動續訂規範 (Future Launch Gate)</strong>：所有訂閱方案均採自動續訂模式。系統將於當期計費週期結束前 24 小時內自動扣款續訂。取消續訂需至 Apple ID 設定、Google Play 訂閱管理或 Web 設定頁面辦理。現階段為工程測試草案，預設關閉真實交易。</li>
+        <li>服務項目：完整方案內容與權益。</li>
+        <li>金流事業者：iOS 使用 Apple StoreKit 2、Android 使用 Google Play Billing、Web 使用 Stripe Checkout。實際金額由平台 Store API 動態載入，絕不由本頁面硬編碼。</li>
+        <li>自動續訂：所有付費方案將採自動續訂，並於當期結束前依平台規範公告扣款規則、取消方法與退款政策。</li>
       </ul>
 
       <h2>4. 聯絡技術支援</h2>
-      <p>如有任何條款或訂閱相關疑問，請聯繫技術支援草案管道：<code>dicoge.chen@gmail.com</code>（開發者：dicoge）。</p>
+      <p>如有任何條款相關疑問，請聯繫：<code>dicoge.chen@gmail.com</code>（開發者：dicoge）。</p>
     </section>
 
     <!-- ── 日本語 ── -->
     <section id="content-ja" class="content-section">
-      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">日本語利用規約草案 (Japanese Terms Framework)</h2>
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">日本語利用規約</h2>
       <div class="alert-card">
         <p><strong>⚠️ 免責事項・著作権：</strong> HoloHunter はファンによって開発された<strong>非公式</strong>のカード価格検索・分析ツールです。カバー株式会社（Cover Corp.）および hololive OFFICIAL CARD GAME 公式とは一切関係ありません。</p>
       </div>
@@ -194,18 +189,16 @@
       <h2>1. 利用規約の同意</h2>
       <p>HoloHunter アプリおよびウェブサイト（<code>https://holohunter.dicoge.com/</code>）を利用することにより、本規約に同意したものとみなされます。</p>
 
-      <h2>2. サブスクリプション利用規約 (テスト草案)</h2>
-      <ul>
-        <li><strong>サービス内容</strong>：Pro プランは「無制限カメラ OCR スキャン」「AI 価格トレンド予測」「広告非表示」を提供します。</li>
-        <li><strong>決済事業者</strong>：iOS は Apple StoreKit、Android は Google Play Billing、Web は Stripe 経由で決済が行われます。</li>
-      </ul>
+      <h2>2. サブスクリプション</h2>
+      <p>現在は無料プランのみを提供しています。有料 Pro プランは未提供です。開始時には決済事業者（Apple StoreKit / Google Play Billing / Stripe）と自動更新・解約ポリシーを本節に反映し、金額は Store API から動的に配信します。</p>
+
       <h2>3. お問い合わせ</h2>
-      <p>サポートメール（草案）：<code>dicoge.chen@gmail.com</code>（開発者：dicoge）</p>
+      <p>サポートメール：<code>dicoge.chen@gmail.com</code>（開発者：dicoge）</p>
     </section>
 
     <!-- ── English ── -->
     <section id="content-en" class="content-section">
-      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">English Terms Framework</h2>
+      <h2 style="font-size:1.2rem; color: var(--primary-color); margin-bottom:16px;">English Terms</h2>
       <div class="alert-card">
         <p><strong>⚠️ Disclaimer:</strong> HoloHunter is an <strong>unofficial</strong> fan-made application and website for hololive OFFICIAL CARD GAME players. It is not affiliated with, endorsed, or authorized by Cover Corp.</p>
       </div>
@@ -213,14 +206,17 @@
       <h2>1. Acceptance of Terms</h2>
       <p>By using the HoloHunter application or website (<code>https://holohunter.dicoge.com/</code>), you agree to be bound by these Terms of Service.</p>
 
-      <h2>2. Support Contact</h2>
-      <p>Support Email (Draft): <code>dicoge.chen@gmail.com</code> (Developer: dicoge)</p>
+      <h2>2. Subscriptions</h2>
+      <p>Only the free tier is offered today. A paid Pro subscription is not yet available. When it launches, this section will be updated with the payment processor (Apple StoreKit, Google Play Billing, or Stripe Checkout), the auto-renewal and cancellation policy, and the plan contents. Prices are always loaded dynamically through the platform Store APIs — never hard-coded here.</p>
+
+      <h2>3. Support Contact</h2>
+      <p>Support email: <code>dicoge.chen@gmail.com</code> (Developer: dicoge)</p>
     </section>
 
     <nav class="links-footer">
-      <a href="pricing.html">🏷️ Pricing Plans / 訂閱方案草案</a>
+      <a href="pricing.html">🏷️ Pricing Plans / 訂閱方案</a>
       <a href="privacy.html">🔒 Privacy Policy / 隱私權政策</a>
-      <a href="support.html">🛠️ Support & FAQ / 技術支援草案</a>
+      <a href="support.html">🛠️ Support & FAQ / 技術支援</a>
     </nav>
   </main>
 

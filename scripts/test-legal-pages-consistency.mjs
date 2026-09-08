@@ -39,6 +39,27 @@ const PAGES = [
 const ORIGIN = 'https://holohunter.dicoge.com';
 const DRAFT_MARKER = '【工程審核草案 / Engineering Review Draft】';
 
+// DIC-1380 W4 CR: the parity test now also rejects residual draft / sandbox
+// / TBD copy in the page BODIES. Every entry below is a substring the pages
+// carried in earlier revisions and which the W4 handback explicitly asked
+// us to remove or truthfully replace. A page that re-introduces any of
+// these markers fails closed — a fresh regression tightens this list
+// rather than silently accepting new draft copy.
+const FORBIDDEN_BODY_SUBSTRINGS = [
+  '草案',
+  '草稿',
+  'Draft',
+  'draft',
+  'Sandbox',
+  'sandbox',
+  '沙盒',
+  'TBD',
+  '工程審核',
+  '工程測試',
+  'テスト草案',
+  '(Sandbox)',
+];
+
 let passed = 0;
 function check(label, cond, detail) {
   if (cond) {
@@ -80,6 +101,29 @@ check(
   distinct.size <= 1,
   `got ${JSON.stringify(Object.fromEntries(draftPresence))} — mix of drafted and non-drafted pages`,
 );
+
+// DIC-1380 W4: reject residual draft / sandbox / TBD copy on every page.
+// The DRAFT_MARKER check above is the strong "badge visible on screen" test;
+// this loop is the wider net that catches the same idea leaking back into a
+// body paragraph, a card label, or a footer link.
+for (const p of PAGES) {
+  const body = bodies.get(p.file) ?? '';
+  // `draft-badge` is the CSS class STYLE name (kept even though no page uses
+  // it now); allow it while forbidding a rendered word. Anything else on the
+  // list is straight-substring rejected.
+  for (const needle of FORBIDDEN_BODY_SUBSTRINGS) {
+    if (needle === 'draft' && body.includes('draft-badge {') && !new RegExp(String.raw`\bdraft\b(?!-badge)`, 'i').test(body.replace(/draft-badge/g, ''))) {
+      passed += 1;
+      console.log(`  ✓ ${p.file} has no residual "${needle}" body copy (draft-badge CSS class allowed)`);
+      continue;
+    }
+    check(
+      `${p.file} has no residual "${needle}" body copy`,
+      !body.includes(needle),
+      `page still carries the "${needle}" marker`,
+    );
+  }
+}
 
 // Privacy disclosure invariants — the DIC-1248 sections must survive any
 // consistency edit. Full mutation-sensitivity lives in test:privacy-disclosure.
