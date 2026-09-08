@@ -21,6 +21,7 @@ import { COLORS, convertPrice, CURRENCIES } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { CardInfo } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -184,21 +185,21 @@ export default function ScanResultCard({
           </TouchableOpacity>
         </View>
 
-        {/* Card name + number */}
+        {/* Card name + number — resolved through the DIC-1380 shared helper so
+            every surface (Search, Scan, CardDetail, DeckEditor) picks the
+            same primary + subtitle for the current language preference. */}
         <View style={styles.infoContainer}>
-          {preferredLanguage === 'zh' && card.nameZh ? (
-            <>
-              <Text style={styles.cardName} numberOfLines={2}>{card.nameZh}</Text>
-              <Text style={styles.cardNameZh}>{card.name}</Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.cardName} numberOfLines={2}>{card.name}</Text>
-              {card.nameZh && preferredLanguage !== 'ja' ? (
-                <Text style={styles.cardNameZh}>{card.nameZh}</Text>
-              ) : null}
-            </>
-          )}
+          {(() => {
+            const { primary, secondary } = resolveCardDisplayName(card, preferredLanguage);
+            return (
+              <>
+                <Text style={styles.cardName} numberOfLines={2}>{primary}</Text>
+                {secondary ? (
+                  <Text style={styles.cardNameZh}>{secondary}</Text>
+                ) : null}
+              </>
+            );
+          })()}
           <Text style={styles.cardId}>
             #{card.cardNumber || card.id}
           </Text>

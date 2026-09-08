@@ -21,6 +21,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
 import { useTranslation } from '../i18n';
 import { ownershipKey } from '../utils/deckRules';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 
 const { width } = Dimensions.get('window');
 
@@ -111,8 +112,12 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const nameJP = allKW[0] || card.name || '';
   const nameZH = card.nameZh || allKW[1] || '';
   const nameEN = allKW[2] || '';
-  const displayName = preferredLanguage === 'zh' && nameZH ? nameZH : nameJP;
-  const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
+  // DIC-1380: route the primary/subtitle choice through the shared helper so
+  // CardDetail, SearchResults, ScanResultCard and DeckEditor stay in lock-step.
+  const { primary: displayName, secondary: displayNameSub } = resolveCardDisplayName(
+    { name: nameJP, nameZh: nameZH },
+    preferredLanguage,
+  );
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
   const typeLabels: Record<string, string> = {
     Oshi: t('card_detail_type_oshi'), Member: t('card_detail_type_member'),
