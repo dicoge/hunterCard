@@ -50,6 +50,7 @@ function main() {
     stdio: 'inherit',
     env: {
       ...process.env,
+      ...(config.build?.env || {}),
       VERCEL_ENV: 'preview',
       VERCEL_GIT_COMMIT_SHA: sha || '',
       VERCEL_GIT_COMMIT_REF: ref || '',
