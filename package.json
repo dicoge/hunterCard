@@ -120,6 +120,8 @@
     "test:vercel-branch-guard": "node scripts/test-vercel-branch-guard.mjs",
     "test:release-parity-check": "node scripts/test-release-parity-check.mjs",
     "test:release-flags-parity": "node scripts/test-release-flags-parity.mjs",
+    "test:vercel-function-count-guard": "node scripts/test-vercel-function-count-guard.mjs",
+    "test:eas-build-provenance": "node scripts/test-eas-build-provenance.mjs",
     "release-parity-check": "node scripts/ci/release-parity.mjs"
   },
   "dependencies": {

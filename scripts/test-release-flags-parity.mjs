@@ -4,15 +4,25 @@
  *
  * Reads release-parity/flags.json (the single source of truth for which
  * release flags must be identical between Web Production and mobile
- * Production) and cross-checks it against the LIVE eas.json values so the
- * ledger can never silently drift out of date with the actual mobile build
- * config.
+ * Production) and cross-checks it against the LIVE eas.json AND vercel.json
+ * values so the ledger can never silently drift out of date with the actual
+ * build config of either side.
  *
  * Invariants:
  * - Every flag's `mobileProductionEasValue` must equal what eas.json's
  *   `build.production.env` (or an inherited `extends` chain) actually sets
  *   today. A mismatch means the ledger is stale — fail loudly rather than
  *   silently reporting a status that no longer reflects the real config.
+ * - The repo's vercel.json is branch-aware (EXPECTED_VERCEL_BRANCH bound to
+ *   the branch-guard invocation, and EXPO_PUBLIC_STORE_MVP bound to expo
+ *   export — see scripts/ci/store-mvp-define-guard.mjs):
+ *   - When it self-declares `main` (Web Production lane), the
+ *     EXPO_PUBLIC_STORE_MVP it bakes MUST equal the ledger's
+ *     `webProductionVercelValue`.
+ *   - When it self-declares `staging` (Web Develop lane, allowed to be
+ *     AHEAD), the develop file is expected to bake `0`; the ledger's Web
+ *     PRODUCTION value cannot be read from that file, so it is validated by
+ *     self-consistency instead (web must equal mobile when parity=synced).
  * - `parity: "synced"` requires webProductionVercelValue to literally equal
  *   mobileProductionEasValue — anything else is a lie about being synced.
  * - `parity: "documented-exception"` requires non-empty reason/
@@ -25,6 +35,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveEasProfileEnv } from './ci/eas-profile-env.mjs';
+import { evaluateVercelBuildCommand, extractBranchGuardAssignment } from './ci/store-mvp-define-guard.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -40,6 +51,9 @@ const flagsManifest = JSON.parse(
 );
 
 const productionEnv = resolveEasProfileEnv(ROOT, 'production');
+const vercelJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
+const vercelEval = evaluateVercelBuildCommand(vercelJson.buildCommand);
+const webDeclaredBranch = extractBranchGuardAssignment(vercelJson.buildCommand);
 
 const flags = flagsManifest.flags || {};
 assert.ok(Object.keys(flags).length > 0, 'release-parity/flags.json must list at least one flag');
@@ -53,6 +67,32 @@ for (const [flagName, entry] of Object.entries(flags)) {
       `flags.json says mobileProductionEasValue=${JSON.stringify(entry.mobileProductionEasValue)} but eas.json build.production.env resolves ${flagName}=${JSON.stringify(liveValue)} — update the ledger to match reality.`,
     );
   });
+
+  test(`${flagName}: vercel.json self-declares a known lane (main or staging)`, () => {
+    assert.ok(
+      ['main', 'staging'].includes(webDeclaredBranch),
+      `vercel.json must bind EXPECTED_VERCEL_BRANCH=${JSON.stringify(webDeclaredBranch)} to the branch-guard invocation; this branch's file is neither the Web Production nor the Web Develop lane.`,
+    );
+  });
+
+  if (webDeclaredBranch === 'main') {
+    test(`${flagName}: Web Production lane — vercel.json's actual expo-export define matches the ledger`, () => {
+      const bakedValue = vercelEval.value;
+      assert.equal(
+        bakedValue,
+        entry.webProductionVercelValue,
+        `vercel.json (declared main) bakes ${flagName}=${JSON.stringify(bakedValue)} on \`expo export\`, but the ledger records webProductionVercelValue=${JSON.stringify(entry.webProductionVercelValue)} — the ledger is out of date with the Web Production build command.`,
+      );
+    });
+  } else {
+    test(`${flagName}: Web Develop lane (staging) must be AHEAD (bake 0), not silently equal to production`, () => {
+      assert.equal(
+        vercelEval.value,
+        '0',
+        `vercel.json declares the staging/develop lane and must bake ${flagName}=0 to preview ahead-of-main features; got ${JSON.stringify(vercelEval.value)}.`,
+      );
+    });
+  }
 
   test(`${flagName}: parity field is a recognised state`, () => {
     assert.ok(

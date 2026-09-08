@@ -20,19 +20,40 @@
  * drift apart.
  */
 
-// Extracts `NAME=value` set as a literal shell-env prefix anywhere in a
-// buildCommand string (e.g. "FOO=bar npm run x && BAZ=1 expo export ...").
-// Returns null if the var is not assigned a literal value at all (missing).
-// NOTE: this is intentionally position-agnostic and is only safe to use for
-// vars whose scope this guard does not need to bind to a specific command
-// (currently EXPECTED_VERCEL_BRANCH, which only needs to exist once and is
-// cross-checked against the branch-guard-script invocation by a human/CR
-// reading the buildCommand, not by this guard). Do NOT use this for
-// EXPO_PUBLIC_STORE_MVP — see extractStoreMvpBoundToExpoExport below.
-function extractShellEnvAssignment(buildCommand, varName) {
+// Extracts EXPECTED_VERCEL_BRANCH ONLY if it is bound as a literal shell
+// env-prefix directly attached to the `vercel-branch-guard.sh` invocation
+// itself, e.g. `EXPECTED_VERCEL_BRANCH=main bash scripts/ci/vercel-branch-guard.sh`.
+// POSIX shell scopes a leading `VAR=val` assignment to the single command it
+// prefixes, so an assignment anywhere else in the `&&`-chained buildCommand
+// (a preceding unrelated value, or one in a later link) never reaches the
+// branch-guard script and therefore never gates the deploy. Returns null if
+// the branch is missing OR not actually bound to the guard invocation.
+//
+// Regression coverage (DIC-1401 CR round 2, Mac-Codex): the previous
+// position-agnostic extraction returned a false "ok: true" for:
+//   - "EXPECTED_VERCEL_BRANCH=main true && EXPECTED_VERCEL_BRANCH=staging
+//      bash scripts/ci/vercel-branch-guard.sh && EXPO_PUBLIC_STORE_MVP=1
+//      expo export --platform web"
+// The earlier `main` assignment never reaches the guard's environment (it is
+// scoped to `true`), so the runtime deploys under the staging policy while
+// the static guard claimed `main` — the exact "main 才能部署 Web Production"
+// contract violation this binding now makes fail closed.
+export function extractBranchGuardAssignment(buildCommand) {
   if (typeof buildCommand !== 'string') return null;
-  const match = buildCommand.match(new RegExp(`(?:^|[\\s&;])${varName}=(\\S+)`));
-  return match ? match[1] : null;
+  const segments = buildCommand.split('&&').map((segment) => segment.trim());
+  const guardSegment = segments.find((segment) => /\bvercel-branch-guard\.sh(?:\s|$)/.test(segment));
+  if (!guardSegment) return null;
+
+  // The only place the branch assignment can legally appear is a contiguous
+  // run of `NAME=value` tokens at the very start of this segment, immediately
+  // followed by the `bash|sh|./ scripts/.../vercel-branch-guard.sh` command.
+  const prefixMatch = guardSegment.match(
+    /^((?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*(?:bash|sh)\s+.*\bvercel-branch-guard\.sh\b)/,
+  );
+  if (!prefixMatch) return null;
+
+  const branchMatch = prefixMatch[1].match(/(?:^|\s)EXPECTED_VERCEL_BRANCH=(\S+)/);
+  return branchMatch ? branchMatch[1] : null;
 }
 
 // Extracts EXPO_PUBLIC_STORE_MVP's value ONLY if it is bound as a literal
@@ -87,7 +108,7 @@ export const BRANCH_STORE_MVP_POLICY = {
  */
 export function evaluateVercelBuildCommand(buildCommand) {
   const value = extractStoreMvpBoundToExpoExport(buildCommand);
-  const declaredBranch = extractShellEnvAssignment(buildCommand, 'EXPECTED_VERCEL_BRANCH');
+  const declaredBranch = extractBranchGuardAssignment(buildCommand);
 
   if (!VALID_STORE_MVP_VALUES.has(value)) {
     return {

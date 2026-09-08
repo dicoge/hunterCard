@@ -1,6 +1,17 @@
 {
-  "buildCommand": "EXPECTED_VERCEL_BRANCH=main bash scripts/ci/vercel-branch-guard.sh && npm run test:deployment-data && EXPO_PUBLIC_STORE_MVP=1 expo export --platform web && node scripts/fix-html.js && node scripts/copy-assets.js && node scripts/generate-assetlinks.mjs",
+  "buildCommand": "EXPECTED_VERCEL_BRANCH=main bash scripts/ci/vercel-branch-guard.sh && npm run test:deployment-data && EXPO_PUBLIC_STORE_MVP=1 expo export --platform web && node scripts/ci/write-build-version.mjs && node scripts/fix-html.js && node scripts/copy-assets.js && node scripts/generate-assetlinks.mjs",
   "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/version.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate, max-age=0"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/privacy",

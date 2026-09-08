@@ -65,14 +65,21 @@ function normalizeSha(sha) {
 }
 
 /**
- * Fetches `${webUrl}/api/version` and extracts the deployed SHA.
+ * Fetches `${webUrl}/version.json` and extracts the deployed SHA.
+ * The file is a STATIC build-time artifact (scripts/ci/write-build-version.mjs
+ * writes dist/version.json during the Vercel build) — a deliberate
+ * non-function replacement for an a-api-route proof, because the 13th
+ * serverless function exceeded the Hobby per-deployment cap (see
+ * scripts/ci/vercel-function-count-guard.mjs). vercel.json pins
+ * Cache-Control: no-store on /version.json so this read is never a stale
+ * CDN answer.
  * Never throws on network/parse failure — returns null so the caller reports
  * `unknown`, not a crash mistaken for "synced".
  * @param {string} webUrl
  */
 export async function fetchWebSha(webUrl) {
   try {
-    const res = await fetch(`${webUrl.replace(/\/$/, '')}/api/version`, {
+    const res = await fetch(`${webUrl.replace(/\/$/, '')}/version.json`, {
       // Evidence must be live, never a cached/stale answer.
       cache: 'no-store',
     });
