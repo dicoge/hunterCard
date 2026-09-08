@@ -43,10 +43,14 @@ export const INTERNAL_AUDIT_FIELDS = ['_rawPricesArchive'];
 
 /**
  * Resolve the Store MVP profile for a BUILD context (web export) from env.
- * Fail-closed opt-out is the only path to OFF; explicit opt-in is the only path
- * to ON. A build has no native platform, so anything unresolved preserves full
- * web production (matches releaseFlags.ts web branch). Native store builds do not
- * run this script (they use EAS), so their gating lives in releaseFlags.ts.
+ * DIC-1380 user correction: Web Production must ship the same allowlist as
+ * mobile Production, so unresolved / blank / malformed env values fail closed
+ * (unsanitized dataset shipping to Production is the exact leak the release
+ * train blocks). Explicit `0` / `false` is the only path to OFF and is
+ * reserved for local `expo start --web` / Vercel Preview / Vercel Develop.
+ * The runtime resolver in `src/config/releaseFlags.ts` uses the identical
+ * fail-closed default so the shipped JS and shipped database.json stay in
+ * lock-step.
  */
 export function resolveStoreMvpFromEnv(env = process.env) {
   const raw = typeof env.EXPO_PUBLIC_STORE_MVP === 'string'
@@ -54,7 +58,7 @@ export function resolveStoreMvpFromEnv(env = process.env) {
     : '';
   if (raw === '0' || raw === 'false') return false;
   if (raw === '1' || raw === 'true') return true;
-  return false;
+  return true;
 }
 
 /**
