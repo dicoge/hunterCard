@@ -16,9 +16,15 @@ name: Vercel deploy status summary
 #
 # Vercel reports a failed deployment with status state `error` (not
 # `failure`), so both states are treated as failures here. Success summaries
-# are posted only for Production (post-merge main), so day-to-day preview
-# success does not spam the PR thread. Comments are de-duplicated on
-# deployment id.
+# are posted only for Production, so day-to-day preview success does not
+# spam the PR thread. Vercel emits `environment` as
+# `Production – <project-name>` / `Preview – <project-name>` (U+2013
+# en-dash) for the two projects on this repo, so the Production /
+# Preview classification is done in scripts/ci/deploy-status-classify.sh
+# and gated on its `env_kind` output rather than a raw string equality —
+# a raw comparison to the literal `"Production"` never matched Vercel's
+# real events and quietly dropped every Production success summary
+# (DIC-1401 CR round 6). Comments are de-duplicated on deployment id.
 #
 # Permission notes (round 3 CR):
 #   - `contents: write` is required to post a commit comment (the no-PR /
@@ -43,16 +49,23 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.deployment_status.state == 'success' || github.event.deployment_status.state == 'error' || github.event.deployment_status.state == 'failure' }}
     steps:
+      # The classifier lives in-repo (scripts/ci/deploy-status-classify.sh)
+      # so its Production / Preview / Development mapping is directly
+      # exercised by scripts/test-deploy-status-classify.mjs. Check out the
+      # commit that was deployed (not the workflow's default HEAD of the
+      # default branch) so the classifier that runs matches the code that
+      # was actually shipped.
+      - name: Check out deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+
       - name: Classify the deployment status
         id: classify
         env:
           STATE: ${{ github.event.deployment_status.state }}
-        run: |
-          case "$STATE" in
-            success) echo "verdict=success" >> "$GITHUB_OUTPUT" ;;
-            error|failure) echo "verdict=failure" >> "$GITHUB_OUTPUT" ;;
-            *) echo "verdict=ignore" >> "$GITHUB_OUTPUT" ;;
-          esac
+          ENVIRONMENT: ${{ github.event.deployment_status.environment }}
+        run: bash scripts/ci/deploy-status-classify.sh
 
       # PR resolution is by the deployed commit SHA first (commits/{sha}/pulls
       # works for PRs whose head ref differs from deployment.ref, and for merge
@@ -132,7 +145,7 @@ jobs:
 
       - name: Compose production success summary
         id: success-body
-        if: ${{ steps.classify.outputs.verdict == 'success' && github.event.deployment_status.environment == 'Production' }}
+        if: ${{ steps.classify.outputs.verdict == 'success' && steps.classify.outputs.env_kind == 'production' }}
         run: |
           {
             echo "✅ **Production deployment succeeded** (DIC-1401 deploy-status mirror)"
@@ -146,7 +159,7 @@ jobs:
           } > /tmp/vercel-production-success.md
 
       - name: Post production success summary on the deployed commit
-        if: ${{ steps.classify.outputs.verdict == 'success' && github.event.deployment_status.environment == 'Production' && steps.already.outputs.already == 'no' }}
+        if: ${{ steps.classify.outputs.verdict == 'success' && steps.classify.outputs.env_kind == 'production' && steps.already.outputs.already == 'no' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

@@ -320,6 +320,17 @@ jobs:
       - name: Verify serverless API function count stays under Vercel Hobby cap (DIC-1401)
         run: npm run test:vercel-function-count-guard
 
+      # DIC-1401 CR round 6: the deploy-status mirror was silently dropping
+      # every Production success because it compared the raw
+      # `deployment_status.environment` to the literal "Production" while
+      # Vercel actually emits "Production – <project>" (U+2013 en-dash).
+      # This suite spawns the extracted classifier with the real Vercel-
+      # emitted event strings for both projects plus their Preview mirror-
+      # image mutations, and locks the workflow shape so a revert cannot
+      # silently reopen the bug.
+      - name: Verify Vercel deploy-status environment classifier admits real Production strings (DIC-1401)
+        run: npm run test:deploy-status-classify
+
       - name: Verify EAS production build provenance contract (DIC-1401)
         run: npm run test:eas-build-provenance
 
