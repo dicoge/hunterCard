@@ -15,8 +15,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   evaluateVercelBuildCommand,
+  evaluateVercelConfig,
   evaluateEasProductionProfile,
   BRANCH_STORE_MVP_POLICY,
+  CONTROLLED_ENTRYPOINT_CMD,
 } from './ci/store-mvp-define-guard.mjs';
 import { resolveEasProfileEnv } from './ci/eas-profile-env.mjs';
 
@@ -161,12 +163,101 @@ test('evaluateEasProductionProfile: "0" (wrong value for a production profile) f
   assert.equal(r.ok, false);
 });
 
+// --- round-4 entrypoint config (DIC-1401): values in build.env, wired via
+// vercel-build.sh, mutation-sensitive in both directions. ---
+
+function config(buildCommand, buildEnv, entrypointSource) {
+  return evaluateVercelConfig({ buildCommand, build: { env: buildEnv } }, entrypointSource);
+}
+
+const HEALTHY_ENTRYPOINT = `
+set -euo pipefail
+[ -n "\${EXPECTED_VERCEL_BRANCH:-}" ] || exit 1
+[ -n "\${EXPO_PUBLIC_STORE_MVP:-}" ] || exit 1
+bash scripts/ci/vercel-branch-guard.sh
+EXPO_PUBLIC_STORE_MVP="\${EXPO_PUBLIC_STORE_MVP}" expo export --platform web
+node scripts/ci/write-build-version.mjs
+node scripts/fix-html.js
+`;
+
+test('round-4: healthy build.env + entrypoint passes', () => {
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'main', EXPO_PUBLIC_STORE_MVP: '1' }, HEALTHY_ENTRYPOINT);
+  assert.equal(r.ok, true, r.reason);
+});
+
+test('round-4: buildCommand not pointing at the controlled entrypoint fails', () => {
+  const r = config('expo export --platform web', { EXPECTED_VERCEL_BRANCH: 'main', EXPO_PUBLIC_STORE_MVP: '1' }, HEALTHY_ENTRYPOINT);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /controlled entrypoint/);
+});
+
+test('round-4: STORE_MVP missing from build.env fails closed', () => {
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'main' }, HEALTHY_ENTRYPOINT);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /missing or blank/);
+});
+
+test('round-4: blank STORE_MVP fails closed (not the web-fail-open default)', () => {
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'main', EXPO_PUBLIC_STORE_MVP: '' }, HEALTHY_ENTRYPOINT);
+  assert.equal(r.ok, false);
+});
+
+test('round-4: invalid STORE_MVP value fails closed', () => {
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'main', EXPO_PUBLIC_STORE_MVP: 'true' }, HEALTHY_ENTRYPOINT);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /neither "0" nor "1"/);
+});
+
+test('round-4: main lane requires STORE_MVP=1 — a 0 fails', () => {
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'main', EXPO_PUBLIC_STORE_MVP: '0' }, HEALTHY_ENTRYPOINT);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /requires EXPO_PUBLIC_STORE_MVP=1/);
+});
+
+test('round-4: staging lane requires STORE_MVP=0 — a 1 fails', () => {
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'staging', EXPO_PUBLIC_STORE_MVP: '1' }, HEALTHY_ENTRYPOINT);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /requires EXPO_PUBLIC_STORE_MVP=0/);
+});
+
+test('round-4: EXPECTED_VERCEL_BRANCH missing from build.env fails', () => {
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPO_PUBLIC_STORE_MVP: '0' }, HEALTHY_ENTRYPOINT);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /EXPECTED_VERCEL_BRANCH is missing or blank/);
+});
+
+test('round-4: STORE_MVP not bound to expo export in the entrypoint fails (mutation)', () => {
+  // Remove the EXPO_PUBLIC_STORE_MVP=…  prefix from the `expo export` line so
+  // the define is never inlined into the bundle — must fail closed.
+  const broken = HEALTHY_ENTRYPOINT.replace(/EXPO_PUBLIC_STORE_MVP=\S+\s+expo\s+export/, 'expo export');
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'main', EXPO_PUBLIC_STORE_MVP: '1' }, broken);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /expo export STORE_MVP prefix=false/);
+});
+
+test('round-4: branch guard not wired in the entrypoint fails (mutation)', () => {
+  const broken = HEALTHY_ENTRYPOINT.replace('bash scripts/ci/vercel-branch-guard.sh', 'bash scripts/ci/other.sh');
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'main', EXPO_PUBLIC_STORE_MVP: '1' }, broken);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /branch guard wiring=false/);
+});
+
+test('round-4: fail-closed env checks removed from the entrypoint fail (mutation)', () => {
+  const broken = HEALTHY_ENTRYPOINT
+    .replace(/\[ -n "\$\{?EXPECTED_VERCEL_BRANCH:-?\}?"? \] \|\| exit 1\n/g, '')
+    .replace(/\[ -n "\$\{?EXPO_PUBLIC_STORE_MVP:-?\}?"? \] \|\| exit 1\n/g, '');
+  const r = config(CONTROLLED_ENTRYPOINT_CMD, { EXPECTED_VERCEL_BRANCH: 'main', EXPO_PUBLIC_STORE_MVP: '1' }, broken);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /fail-closed env checks=false/);
+});
+
 // --------------------------------------------------------- real-config assertions
 
 const vercelJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
 
-test('THIS REPO: committed vercel.json buildCommand explicitly injects a valid, policy-consistent EXPO_PUBLIC_STORE_MVP', () => {
-  const r = evaluateVercelBuildCommand(vercelJson.buildCommand);
+test('THIS REPO: committed vercel.json buildCommand points at the controlled entrypoint, build.env carries a valid STORE_MVP, and vercel-build.sh wires it to expo export', () => {
+  const entrypointSource = fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'vercel-build.sh'), 'utf-8');
+  const r = evaluateVercelConfig(vercelJson, entrypointSource);
   assert.equal(r.ok, true, r.reason);
 });
 

@@ -152,3 +152,125 @@ export function evaluateEasProductionProfile(resolvedEnv, profileName) {
   }
   return { ok: true, value, reason: 'explicit and correct' };
 }
+
+// ---------------------------------------------------------------------------
+// Round-4 (DIC-1401) entrypoint-based config.
+//
+// Vercel's schema caps `buildCommand` at 256 chars, so the inline lane pipeline
+// (branch guard + deployment-data gate + expo export + write-build-version +
+// fix-html + copy-assets + assetlinks) was moved into the controlled entrypoint
+// scripts/ci/vercel-build.sh. The lane values that used to be shell-env
+// prefixes in buildCommand now live in vercel.json `build.env`, which Vercel
+// injects into the install+build step:
+//   EXPECTED_VERCEL_BRANCH  — branch this project/lane must serve as Production
+//   EXPO_PUBLIC_STORE_MVP   — store/MVP switch inlined into the web bundle
+//   EXPO_EXPORT_CLEAR       — "1" clears the expo export cache (staging lane)
+// These functions validate (a) the entrypoint is what buildCommand points at,
+// (b) build.env carries an explicit, policy-consistent STORE_MVP define, and
+// (c) the entrypoint actually routes EXPECTED_VERCEL_BRANCH into the
+// vercel-branch-guard.sh invocation and EXPO_PUBLIC_STORE_MVP into the
+// `expo export` invocation (mutation-sensitive, like the inline path), and
+// fail-closes if either lane env var is unset.
+// ---------------------------------------------------------------------------
+
+// The literal command vercel.json's buildCommand must carry to reach the
+// controlled entrypoint. Keep in sync with scripts/ci/vercel-build.sh.
+export const CONTROLLED_ENTRYPOINT_CMD = 'bash scripts/ci/vercel-build.sh';
+
+/**
+ * Extract the STORE_MVP value from `vercel.json.build.env` (the round-4
+ * canonical location Vercel injects into the build step). Returns null if it
+ * is missing or blank — a caller must treat null as fail-closed.
+ * @param {object} vercelJson
+ * @returns {{ expectedBranch: string|null, storeMvp: string|null }}
+ */
+export function readVercelBuildEnv(vercelJson) {
+  const env = vercelJson?.build?.env || {};
+  const expectedBranch = typeof env.EXPECTED_VERCEL_BRANCH === 'string' && env.EXPECTED_VERCEL_BRANCH !== ''
+    ? env.EXPECTED_VERCEL_BRANCH
+    : null;
+  const storeMvp = typeof env.EXPO_PUBLIC_STORE_MVP === 'string' && env.EXPO_PUBLIC_STORE_MVP !== ''
+    ? env.EXPO_PUBLIC_STORE_MVP
+    : null;
+  return { expectedBranch, storeMvp };
+}
+
+/**
+ * Confirm the entrypoint source routes the lane env vars to the right step:
+ *   - EXPECTED_VERCEL_BRANCH must be referenced by the vercel-branch-guard.sh
+ *     invocation (the guard reads it from its environment).
+ *   - EXPO_PUBLIC_STORE_MVP must be bound as a shell-env prefix on the
+ *     `expo export` command itself (POSIX: `VAR=val expo export ...`), so the
+ *     value is actually inlined into the web bundle.
+ *   - Both must have an explicit fail-closed check that rejects an unset var
+ *     before the build runs.
+ * @param {string} entrypointSource
+ * @returns {{ branchGuardWired: boolean, exportShiftWired: boolean, failClosedEnv: boolean }}
+ */
+export function inspectEntrypoint(entrypointSource) {
+  // The branch guard (scripts/ci/vercel-branch-guard.sh) reads
+  // EXPECTED_VERCEL_BRANCH from its own environment, which Vercel injects from
+  // vercel.json build.env into the install+build step. So the invariant is
+  // that the entrypoint (a) invokes the guard and (b) references the lane
+  // branch var — the fail-closed check does this, guarding the unset case.
+  const branchGuardWired =
+    /\bvercel-branch-guard\.sh\b/.test(entrypointSource) &&
+    /EXPECTED_VERCEL_BRANCH/.test(entrypointSource);
+  // EXPO_PUBLIC_STORE_MVP must be bound as a POSIX shell-env prefix on the
+  // `expo export` command itself so it is actually inlined into the web
+  // bundle.
+  const exportShiftWired =
+    /EXPO_PUBLIC_STORE_MVP=/.test(entrypointSource) &&
+    /\bEXPO_PUBLIC_STORE_MVP=\S+\s+expo\s+export\b/.test(entrypointSource);
+  const failClosedEnv =
+    /\$\{?EXPECTED_VERCEL_BRANCH:-/.test(entrypointSource) &&
+    /\$\{?EXPO_PUBLIC_STORE_MVP:-/.test(entrypointSource);
+  return { branchGuardWired, exportShiftWired, failClosedEnv };
+}
+
+/**
+ * Evaluate the FULL vercel.json + entrypoint config (round-4 shape).
+ * @param {object} vercelJson committed vercel.json
+ * @param {string} entrypointSource contents of scripts/ci/vercel-build.sh
+ * @returns {{ ok: boolean, value: string|null, declaredBranch: string|null, reason: string }}
+ */
+export function evaluateVercelConfig(vercelJson, entrypointSource) {
+  const buildCommand = typeof vercelJson?.buildCommand === 'string' ? vercelJson.buildCommand.trim() : '';
+  const { expectedBranch, storeMvp } = readVercelBuildEnv(vercelJson);
+  const entry = inspectEntrypoint(entrypointSource);
+
+  const fail = (reason) => ({ ok: false, value: storeMvp, declaredBranch: expectedBranch, reason });
+
+  if (buildCommand !== CONTROLLED_ENTRYPOINT_CMD) {
+    return fail(`vercel.json buildCommand must point at the controlled entrypoint (${JSON.stringify(CONTROLLED_ENTRYPOINT_CMD)}) so it stays within Vercel's 256-char schema limit; found ${JSON.stringify(buildCommand)}.`);
+  }
+
+  if (!VALID_STORE_MVP_VALUES.has(storeMvp)) {
+    return fail(
+      storeMvp === null
+        ? 'EXPO_PUBLIC_STORE_MVP is missing or blank in vercel.json build.env — the round-4 lane value is not explicitly injected, so the define is not set on `expo export`. This must fail closed, not fall through to the web-fail-open runtime default.'
+        : `EXPO_PUBLIC_STORE_MVP is set to ${JSON.stringify(storeMvp)}, which is neither "0" nor "1".`,
+    );
+  }
+
+  if (expectedBranch) {
+    const required = Object.prototype.hasOwnProperty.call(BRANCH_STORE_MVP_POLICY, expectedBranch)
+      ? BRANCH_STORE_MVP_POLICY[expectedBranch]
+      : null;
+    if (required !== null && storeMvp !== required) {
+      return fail(`This vercel.json build.env declares EXPECTED_VERCEL_BRANCH=${expectedBranch}, which requires EXPO_PUBLIC_STORE_MVP=${required}, but found ${JSON.stringify(storeMvp)}.`);
+    }
+  } else {
+    return fail('EXPECTED_VERCEL_BRANCH is missing or blank in vercel.json build.env — the round-4 lane branch is not pinned, so the branch guard cannot gate Production deploys.');
+  }
+
+  if (!entry.exportShiftWired || !entry.branchGuardWired || !entry.failClosedEnv) {
+    return fail(
+      `scripts/ci/vercel-build.sh is not wired to consume build.env correctly: ` +
+        `branch guard wiring=${entry.branchGuardWired}, expo export STORE_MVP prefix=${entry.exportShiftWired}, fail-closed env checks=${entry.failClosedEnv}. ` +
+        'The entrypoint must route EXPECTED_VERCEL_BRANCH into vercel-branch-guard.sh, bind EXPO_PUBLIC_STORE_MVP as a shell-env prefix on `expo export`, and reject an unset lane env var.',
+    );
+  }
+
+  return { ok: true, value: storeMvp, declaredBranch: expectedBranch, reason: 'explicit, policy-consistent, and wired into the controlled entrypoint' };
+}
