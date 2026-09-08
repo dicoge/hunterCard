@@ -24,6 +24,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveEasProfileEnv } from './ci/eas-profile-env.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -37,20 +38,8 @@ function test(name, fn) {
 const flagsManifest = JSON.parse(
   fs.readFileSync(path.join(ROOT, 'release-parity/flags.json'), 'utf8'),
 );
-const easJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'eas.json'), 'utf8'));
 
-// Resolve eas.json's `production` build profile env, following `extends`
-// chains (as EAS itself does) so an inherited value is still seen.
-function resolveEasProfileEnv(profileName, seen = new Set()) {
-  if (seen.has(profileName)) return {};
-  seen.add(profileName);
-  const profile = easJson.build?.[profileName];
-  if (!profile) return {};
-  const inherited = profile.extends ? resolveEasProfileEnv(profile.extends, seen) : {};
-  return { ...inherited, ...(profile.env || {}) };
-}
-
-const productionEnv = resolveEasProfileEnv('production');
+const productionEnv = resolveEasProfileEnv(ROOT, 'production');
 
 const flags = flagsManifest.flags || {};
 assert.ok(Object.keys(flags).length > 0, 'release-parity/flags.json must list at least one flag');

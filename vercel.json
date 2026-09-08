@@ -1,5 +1,5 @@
 {
-  "buildCommand": "EXPECTED_VERCEL_BRANCH=staging bash scripts/ci/vercel-branch-guard.sh && npm run test:deployment-data && expo export --platform web --clear && node scripts/fix-html.js && node scripts/copy-assets.js && node scripts/generate-assetlinks.mjs",
+  "buildCommand": "EXPECTED_VERCEL_BRANCH=staging bash scripts/ci/vercel-branch-guard.sh && npm run test:deployment-data && EXPO_PUBLIC_STORE_MVP=0 expo export --platform web --clear && node scripts/fix-html.js && node scripts/copy-assets.js && node scripts/generate-assetlinks.mjs",
   "outputDirectory": "dist",
   "rewrites": [
     {

@@ -30,12 +30,38 @@ evidence instead of a claim.
     `eas.json`) literally equals `webProductionVercelValue`. Any drift fails
     CI.
   - `"documented-exception"` — the flag is currently NOT the same across
-    lanes, by a recorded product decision. `reason`, `trackingIssue`, and
-    `followUp` must all be non-empty. The test still pins the current
-    mobile-side value (via `eas.json`) so any FUTURE undocumented change is
-    caught, but does not claim the flag is currently synced.
+    lanes, with a recorded reason/trackingIssue/followUp. The test still
+    pins the current mobile-side value (via `eas.json`) so any FUTURE
+    undocumented change is caught, but does not claim the flag is currently
+    synced.
 - This is deliberately conservative: DIC-1401 is CI/CD-and-branch scope only
   and must not silently change product feature behaviour to force a flag
-  into sync. Where a real mismatch exists today (`EXPO_PUBLIC_STORE_MVP`,
-  see the entry in `flags.json`), it stays visible here until a product
-  owner decides which side moves.
+  into sync. `EXPO_PUBLIC_STORE_MVP` is currently a documented exception —
+  see `flags.json` for the exact current state and the two pending fixes
+  (a not-yet-merged Web Production `vercel.json` define change, and a
+  DEV-gate code fix to `src/config/releaseFlags.ts`'s fallback) that must
+  both land before it can be marked `synced`.
+
+## Per-deploy-profile define injection guard (`scripts/ci/store-mvp-define-guard.mjs`)
+
+DIC-1401 user correction: `EXPO_PUBLIC_STORE_MVP` must be **explicitly**
+injected by every deploy profile that ships to a real audience — never left
+to `src/config/releaseFlags.ts`'s runtime fallback, which (pre-fix) resolves
+an unset/blank/invalid value asymmetrically (`Platform.OS !== 'web'`,
+fail-closed on native but fail-OPEN on web). `scripts/test-store-mvp-define-guard.mjs`
+statically asserts, directly against the committed config (no live
+dashboard/network calls, no secrets):
+
+- `vercel.json`'s `buildCommand` sets `EXPO_PUBLIC_STORE_MVP` to a literal
+  `"0"` or `"1"` immediately before the `expo export` invocation — never
+  missing/blank.
+- Where `vercel.json` also declares `EXPECTED_VERCEL_BRANCH` (the
+  per-project branch guard, see above), the declared `EXPO_PUBLIC_STORE_MVP`
+  value must match this repo's policy: `staging` → `"0"`, `main` → `"1"`.
+- `eas.json`'s `production` and `production-apk` build profiles (following
+  `extends` chains) resolve `EXPO_PUBLIC_STORE_MVP` to exactly `"1"`.
+
+This guard cannot fix the runtime fallback itself (product code, DEV-gate
+scope) — it only guarantees that every profile it covers never actually
+*reaches* that fallback in the first place, by construction.
+
