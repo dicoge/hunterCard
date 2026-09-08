@@ -300,6 +300,15 @@ jobs:
       - name: Verify Scan screen fails safe on native crashes (DIC-1286)
         run: npm run test:scan-screen-fail-safe
 
+      - name: Verify Vercel per-project branch guard fails closed (DIC-1401)
+        run: npm run test:vercel-branch-guard
+
+      - name: Verify release-parity SHA contract fails closed (DIC-1401)
+        run: npm run test:release-parity-check
+
+      - name: Verify release flag parity ledger matches eas.json (DIC-1401)
+        run: npm run test:release-flags-parity
+
       - name: Verify EXPO_PUBLIC_STORE_MVP is explicit on every deploy profile (DIC-1401 correction)
         run: npm run test:store-mvp-define-guard
 
