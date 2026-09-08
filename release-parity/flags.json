@@ -1,0 +1,14 @@
+{
+  "flags": {
+    "EXPO_PUBLIC_STORE_MVP": {
+      "mobileProductionEasValue": "1",
+      "mobileProductionMeaning": "STORE_MVP=ON — advanced surfaces (buyPrice, priceSpread, trendPrediction, newsSentiment, ytStats, watchlist, pushAlerts, premium) are HIDDEN on the mobile production (AAB/APK) build.",
+      "webProductionVercelValue": null,
+      "webProductionMeaning": "EXPO_PUBLIC_STORE_MVP is not set on the Web Production Vercel project. src/config/releaseFlags.ts resolves an unset value to STORE_MVP=OFF on web (Platform.OS === 'web'), i.e. the full feature set is shown.",
+      "parity": "documented-exception",
+      "reason": "Pre-existing, pre-DIC-1401 product decision (DIC-908): the code comment in src/config/releaseFlags.ts explicitly states the Store MVP profile is fail-closed to ON on native (so a missing/garbled env never leaks an unreviewed store-restricted feature into a store build) and fail-open to OFF on web (so the existing web production site keeps its full feature set). DIC-1401 is CI/CD-and-branch scope only and must not change product feature behaviour, so this asymmetry is NOT resolved here.",
+      "trackingIssue": "DIC-1401",
+      "followUp": "Requires a product-owner decision on whether mobile Production should ship the full feature set to match Web (remove/flip the EXPO_PUBLIC_STORE_MVP=1 env from eas.json's production profile), or whether Web Production should adopt the Store MVP restriction (set EXPO_PUBLIC_STORE_MVP=1 in the Web Production Vercel project) to match mobile. Either resolution is a product-feature change and out of this ticket's scope; recorded here so the release-parity CI check fails loudly instead of silently claiming synced flags."
+    }
+  }
+}

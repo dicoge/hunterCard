@@ -309,6 +309,15 @@ jobs:
       - name: Verify real staging→production expo export bundle isolation (DIC-1189)
         run: npm run test:bundle-cleanness-full
 
+      - name: Verify Vercel per-project branch guard fails closed (DIC-1401)
+        run: npm run test:vercel-branch-guard
+
+      - name: Verify release-parity SHA contract fails closed (DIC-1401)
+        run: npm run test:release-parity-check
+
+      - name: Verify release flag parity ledger matches eas.json (DIC-1401)
+        run: npm run test:release-flags-parity
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
