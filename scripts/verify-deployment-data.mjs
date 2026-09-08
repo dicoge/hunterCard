@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveStoreMvpFromEnv } from './lib/store-mvp-sanitize.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..');
@@ -97,15 +98,16 @@ if (canonicalAudit.coverage.total !== publicAudit.coverage.total) {
   failures.push(`native total ${publicAudit.coverage.total} != canonical ${canonicalAudit.coverage.total}`);
 }
 
-// DIC-1380: max-age gate runs only under the Production profile so unrelated
-// PRs never break on a stale local checkout. Vercel Production and every EAS
-// Production/preview/production-apk profile already pin `EXPO_PUBLIC_STORE_MVP=1`,
-// so this catches the exact deploys where "shipped data must be fresh" is a
-// contract.
-const rawEnv = typeof process.env.EXPO_PUBLIC_STORE_MVP === 'string'
-  ? process.env.EXPO_PUBLIC_STORE_MVP.trim().toLowerCase()
-  : '';
-const productionProfile = rawEnv === '1' || rawEnv === 'true';
+// DIC-1380 W4 CR: the deployment freshness gate now shares the exact same
+// fail-closed resolver as `releaseFlags.ts` and the web-export sanitizer.
+// Unset / blank / whitespace / malformed EXPO_PUBLIC_STORE_MVP resolves to
+// Production ON, matching what Web Production and every native store build
+// actually see when the deploy profile is missing or garbled. Only an
+// explicit `EXPO_PUBLIC_STORE_MVP=0`/`false` (the value Web Develop /
+// Staging / local `expo start --web` pin) opts a build out of the age
+// check. The single-resolver rule means a runtime feature can no longer
+// disagree with the deployment gate on what "Production" means.
+const productionProfile = resolveStoreMvpFromEnv();
 if (productionProfile) {
   const maxAgeDays = Number(process.env.DATABASE_MAX_AGE_DAYS) > 0
     ? Number(process.env.DATABASE_MAX_AGE_DAYS)
