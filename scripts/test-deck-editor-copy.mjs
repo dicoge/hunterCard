@@ -35,6 +35,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
+// DIC-1380: `src/config/releaseFlags.ts` now fails closed on unset — the
+// deck-editor render this suite exercises depends on FEATURES.marketData
+// (the gap-subtotal-JPY / deck-gap-totals surface anchored below) and
+// FEATURES.watchlist, so this test must run in the Web Develop / Staging
+// profile just like local `expo start --web`. Pinning the env before any
+// dynamic import of releaseFlags keeps the resolver deterministic and the
+// child leg (DECK_EDITOR_LIVE_DB=1) inherits it through `...process.env`.
+process.env.EXPO_PUBLIC_STORE_MVP = '0';
+
 // ── The DOM must exist before react-native-web is imported: its StyleSheet
 //    installs a real style element at module-evaluation time. ────────────────
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
