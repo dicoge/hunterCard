@@ -118,6 +118,9 @@ jobs:
       - name: Verify deployment data cannot ship catalog-only regression (DIC-1167)
         run: npm run test:deployment-data
 
+      - name: Verify deployment freshness gate exercises Production branch across every flag value (DIC-1380 W4)
+        run: npm run test:deployment-freshness-gate
+
       - name: Verify official-catalog-sync workflow hands off through a PR (DIC-1291)
         run: npm run test:official-catalog-sync-workflow
 
@@ -255,8 +258,17 @@ jobs:
       - name: Verify account remote-sync client boundary (DIC-1380)
         run: npm run test:account-sync-client
 
+      - name: Verify account remote-sync orchestrator hydrate/push/conflict (DIC-1380 W4)
+        run: npm run test:account-sync-orchestrator
+
+      - name: Verify account remote-sync store binding (DIC-1380 W4)
+        run: npm run test:account-sync-binding
+
       - name: Verify shared card name resolver (DIC-1380 naming consistency)
         run: npm run test:card-display-name
+
+      - name: Verify DeckEditor routes card names through the shared resolver + Pen mobile UI (DIC-1380 W4)
+        run: npm run test:deck-editor-name-resolver
 
       - name: Verify card-lookup version alignment is source-proven (DIC-1013)
         run: npm run test:version-alignment
