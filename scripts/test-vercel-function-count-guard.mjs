@@ -110,17 +110,31 @@ test('ci.yml: the function-count guard is not neutered on the Validate path', ()
   assert.ok(!/\|\| true|&& false|continue-on-error/.test(ciWorkflow.split('test:vercel-function-count-guard')[0].slice(-400)));
 });
 
-const deployStatusMirror = fs.readFileSync(
+// DIC-1401 Round 9 split the deploy-status mirror into two workflows:
+//   producer .github/workflows/vercel-deploy-status-summary.yml
+//     (on: deployment_status, read-only, emits event artifact)
+//   consumer .github/workflows/vercel-deploy-status-post.yml
+//     (on: workflow_run, trusted default-branch, holds write scope,
+//      downloads artifact and posts the failure/success summary)
+// The failure-summary body — which cites test:vercel-function-count-guard
+// as the diagnostic mirror to check — now lives in the consumer.
+const deployStatusProducer = fs.readFileSync(
   path.join(ROOT, '.github/workflows/vercel-deploy-status-summary.yml'),
   'utf8',
 );
+const deployStatusConsumer = fs.readFileSync(
+  path.join(ROOT, '.github/workflows/vercel-deploy-status-post.yml'),
+  'utf8',
+);
 
-test('deploy-status mirror workflow exists and is wired to deployment_status', () => {
-  const mirror = deployStatusMirror;
-  assert.match(mirror, /on:\n\s+deployment_status:/);
-  assert.match(mirror, /deployment_status\.state == 'failure'/);
-  assert.match(mirror, /vercel-function-count-guard/);
-  assert.match(mirror, /log_url/);
+test('deploy-status mirror producer is wired to deployment_status and gates on the failure state', () => {
+  assert.match(deployStatusProducer, /on:\n\s+deployment_status:/);
+  assert.match(deployStatusProducer, /deployment_status\.state == 'failure'/);
+});
+
+test('deploy-status mirror consumer surfaces the failure body with the function-count-guard diagnostic + log_url', () => {
+  assert.match(deployStatusConsumer, /vercel-function-count-guard/);
+  assert.match(deployStatusConsumer, /log_url/i);
 });
 
 console.log(`\nvercel-function-count-guard: ${passed} tests passed`);

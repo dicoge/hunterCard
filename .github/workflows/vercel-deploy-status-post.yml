@@ -1,0 +1,277 @@
+name: Vercel deploy status post
+
+# DIC-1401 Round-9 CONSUMER (trusted default-branch writer).
+#
+# TRUST BOUNDARY — WHY THIS FILE IS SAFE TO HOLD WRITE SCOPE
+# ---------------------------------------------------------------------
+# GitHub Actions loads `workflow_run` workflow definitions from the
+# DEFAULT branch of the repository — this is documented contract:
+# https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_run
+# ("This event will only trigger a workflow run if the workflow file
+# is on the default branch"). A PR author cannot supply a modified
+# copy of THIS file by rewriting it in a PR branch; only what merges
+# to the default branch executes with this workflow's write token.
+# The provenance-log step below prints `github.workflow_ref` so
+# audit-readers can visually confirm the executing ref.
+#
+# What runs from a PR-controlled ref is the PRODUCER
+# (.github/workflows/vercel-deploy-status-summary.yml). That producer
+# holds ONLY `contents: read` and does nothing with a write token —
+# it just marshals `deployment_status` event data into an artifact.
+# This consumer picks that artifact up via `workflow_run`, re-verifies
+# it (SHA format check, cross-check with GitHub-recorded
+# `workflow_run.head_sha`, whitespace/format guards) and treats every
+# field as opaque string data before composing the summary comment.
+#
+# BOUNDARY CHECKS ENFORCED BY scripts/test-deploy-status-classify.mjs
+# ---------------------------------------------------------------------
+#  1. No `actions/checkout` in either producer or consumer.
+#  2. No `ref:` anywhere referencing `github.event.*`.
+#  3. No `bash|sh|node scripts/...` invocation in either file.
+#  4. No `persist-credentials: true` anywhere.
+#  5. Producer permissions restricted to `contents: read` only; NO
+#     write scopes reintroduced.
+#  6. Consumer uses `on: workflow_run` bound to the producer's exact
+#     name so the trusted-consumer <- untrusted-producer edge stays
+#     explicit.
+#  7. Consumer's write-token step body reads all fields from the
+#     downloaded artifact (via jq); NO `${{ github.event.deployment* }}`
+#     interpolation into a bash body.
+#  8. Consumer logs `github.workflow_ref` for auditable provenance.
+#  9. Consumer cross-checks producer's GitHub-recorded head_sha with
+#     the artifact's deploy_sha and fails closed on mismatch.
+
+on:
+  workflow_run:
+    workflows: ["Vercel deploy status summary"]
+    types: [completed]
+
+# The consumer's `permissions:` block is applied to the token in this
+# workflow_run job. `contents: write` posts commit comments on the
+# deployed SHA (the DIC-1401 post-merge Production path);
+# `pull-requests: write` posts PR comments when the deploy is on an
+# open PR; `actions: read` allows downloading the producer's artifact.
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    # Only proceed if the producer completed successfully AND the
+    # producer was itself triggered by a `deployment_status` event
+    # (defense in depth against a hypothetical rename/repoint).
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'deployment_status'
+      }}
+    steps:
+      - name: Provenance log (trusted default-branch consumer)
+        env:
+          # `github.workflow_ref` is a GitHub-set variable formatted as
+          # `<owner>/<repo>/<workflow-path>@<ref>` and identifies WHICH
+          # workflow definition is executing. For `workflow_run` this
+          # ref should always be the repository's default branch.
+          CONSUMER_WORKFLOW_REF: ${{ github.workflow_ref }}
+          CONSUMER_RUN_ID: ${{ github.run_id }}
+          CONSUMER_JOB_REPO_REF: ${{ github.repository }}
+          PRODUCER_WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          PRODUCER_WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          PRODUCER_RUN_ID: ${{ github.event.workflow_run.id }}
+          PRODUCER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PRODUCER_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PRODUCER_EVENT: ${{ github.event.workflow_run.event }}
+          PRODUCER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          # Log the executing ref of THIS consumer so an auditor can
+          # confirm from the run's own output that the write-token
+          # workflow was loaded from the default branch.
+          echo "Consumer workflow_ref: $CONSUMER_WORKFLOW_REF"
+          echo "Consumer run: $CONSUMER_RUN_ID  repo: $CONSUMER_JOB_REPO_REF"
+          echo "Producer workflow: '$PRODUCER_WORKFLOW_NAME' (id=$PRODUCER_WORKFLOW_ID)"
+          echo "Producer run id: $PRODUCER_RUN_ID"
+          echo "Producer head ref: $PRODUCER_HEAD_BRANCH @ $PRODUCER_HEAD_SHA"
+          echo "Producer event: $PRODUCER_EVENT"
+          echo "Producer conclusion: $PRODUCER_CONCLUSION"
+
+      - name: Download event artifact from producer run
+        uses: actions/download-artifact@v4
+        with:
+          name: vercel-deploy-status-event
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/deploy-status-event
+
+      - name: Classify + validate + post
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_JSON: ${{ runner.temp }}/deploy-status-event/event.json
+          # PRODUCER_HEAD_SHA comes from GitHub-set workflow_run
+          # metadata (NOT from the producer's artifact), so it is the
+          # trusted record of the SHA the producer actually ran at.
+          PRODUCER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$EVENT_JSON" ]; then
+            echo "::error::producer artifact missing at $EVENT_JSON"
+            exit 1
+          fi
+
+          # Pull each producer-supplied field into a shell variable via
+          # jq (raw, so no JSON escaping surprises). All values are
+          # treated as OPAQUE STRING DATA — never re-parsed as shell.
+          STATE="$(jq -r '.state // ""'            "$EVENT_JSON")"
+          ENVIRONMENT="$(jq -r '.environment // ""' "$EVENT_JSON")"
+          DESCRIPTION="$(jq -r '.description // ""' "$EVENT_JSON")"
+          DEPLOY_REF="$(jq -r '.deploy_ref // ""'   "$EVENT_JSON")"
+          DEPLOY_SHA="$(jq -r '.deploy_sha // ""'   "$EVENT_JSON")"
+          DEPLOY_STATUS_ID="$(jq -r '.deploy_status_id // ""' "$EVENT_JSON")"
+          LOG_URL="$(jq -r '.log_url // ""'         "$EVENT_JSON")"
+          TARGET_URL="$(jq -r '.target_url // ""'   "$EVENT_JSON")"
+
+          # ---- Producer-input validation (fail closed) ----
+          # deploy_sha must be a 40-char git SHA. Used in `gh api
+          # commits/{sha}/comments` paths and comment bodies; a
+          # producer that tampers with this value must not be able to
+          # steer the write token at arbitrary commits or inject URL
+          # metacharacters.
+          if [[ ! "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::producer artifact carries an invalid deploy_sha ($DEPLOY_SHA); refusing to post"
+            exit 1
+          fi
+          # deploy_status_id must be numeric — used verbatim in the
+          # de-dup grep and comment body.
+          if [[ ! "$DEPLOY_STATUS_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::producer artifact carries an invalid deploy_status_id ($DEPLOY_STATUS_ID); refusing to post"
+            exit 1
+          fi
+          # Cross-check: the producer's ARTIFACT-declared deploy_sha
+          # MUST match GitHub's own record of the producer run's
+          # head_sha. A PR that rewrites the producer to lie about
+          # deploy_sha cannot forge the workflow_run.head_sha, so this
+          # binds the summary to the actually-deployed commit.
+          if [ "$DEPLOY_SHA" != "$PRODUCER_HEAD_SHA" ]; then
+            echo "::error::producer artifact deploy_sha=$DEPLOY_SHA does not match GitHub-recorded workflow_run.head_sha=$PRODUCER_HEAD_SHA; refusing to post"
+            exit 1
+          fi
+
+          # ---- BEGIN INLINE CLASSIFIER (DIC-1401 Round-9 consumer classifier) ----
+          # Reads:  STATE, ENVIRONMENT (env or shell vars)
+          # Writes: verdict, env_kind to GITHUB_OUTPUT (if set) and stdout
+          # This block is byte-for-byte extracted by
+          # scripts/test-deploy-status-classify.mjs and exercised with
+          # every Vercel-emitted environment string this repo has seen,
+          # plus mutation cases for the Preview / lookalike forms.
+          STATE="${STATE:-}"
+          ENVIRONMENT="${ENVIRONMENT:-}"
+          case "$STATE" in
+            success)          VERDICT=success ;;
+            error|failure)    VERDICT=failure ;;
+            *)                VERDICT=ignore ;;
+          esac
+          ENV_PREFIX="${ENVIRONMENT%% – *}"
+          if [ "$ENV_PREFIX" = "$ENVIRONMENT" ]; then
+            ENV_PREFIX="${ENVIRONMENT%% - *}"
+          fi
+          ENV_PREFIX="${ENV_PREFIX%"${ENV_PREFIX##*[![:space:]]}"}"
+          case "$ENV_PREFIX" in
+            Production)   ENV_KIND=production ;;
+            Preview)      ENV_KIND=preview ;;
+            Development)  ENV_KIND=development ;;
+            "")           ENV_KIND=unknown ;;
+            *)            ENV_KIND=unknown ;;
+          esac
+          if [ -n "${GITHUB_OUTPUT:-}" ]; then
+            echo "verdict=$VERDICT"   >> "$GITHUB_OUTPUT"
+            echo "env_kind=$ENV_KIND" >> "$GITHUB_OUTPUT"
+          fi
+          echo "verdict=$VERDICT"
+          echo "env_kind=$ENV_KIND"
+          # ---- END INLINE CLASSIFIER (DIC-1401 Round-9 consumer classifier) ----
+
+          if [ "$VERDICT" = "ignore" ]; then
+            echo "no-op: state=$STATE — nothing to post"
+            exit 0
+          fi
+
+          # Resolve the PR (if any) by deployed SHA first, then by ref
+          # name. Absent PR context, comment on the commit itself.
+          PR_NUMBER="$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOY_SHA/pulls" \
+            --jq '.[] | select(.state == "open") | .number' \
+            | sort -n | head -1 || true)"
+          if [ -z "$PR_NUMBER" ] && [ -n "$DEPLOY_REF" ]; then
+            PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" \
+              --state open --head "$DEPLOY_REF" \
+              --json number --jq '.[0].number // empty')"
+          fi
+
+          # De-dup on deployment_status.id so re-runs / retries do not
+          # produce duplicate summaries on the same surface.
+          if [ -n "$PR_NUMBER" ]; then
+            SURFACE="$PR_NUMBER"
+          else
+            SURFACE="commit:$DEPLOY_SHA"
+          fi
+          ALREADY=no
+          if [[ "$SURFACE" == commit:* ]]; then
+            LOOKUP_SHA="${SURFACE#commit:}"
+            if gh api "repos/$GITHUB_REPOSITORY/commits/$LOOKUP_SHA/comments" \
+                 --jq '.[].body' 2>/dev/null \
+                 | grep -qF "Deployment id: \`$DEPLOY_STATUS_ID\`"; then
+              ALREADY=yes
+            fi
+          else
+            if gh pr view "$SURFACE" --repo "$GITHUB_REPOSITORY" --json comments \
+                 --jq '.comments[].body' 2>/dev/null \
+                 | grep -qF "Deployment id: \`$DEPLOY_STATUS_ID\`"; then
+              ALREADY=yes
+            fi
+          fi
+          if [ "$ALREADY" = "yes" ]; then
+            echo "already summarized deploy_status_id=$DEPLOY_STATUS_ID on surface=$SURFACE"
+            exit 0
+          fi
+
+          # Compose. Failure summaries fire on every kind (preview and
+          # production). Success summaries fire ONLY for env_kind=production
+          # so day-to-day preview success doesn't spam.
+          BODY_FILE="$RUNNER_TEMP/summary.md"
+          if [ "$VERDICT" = "failure" ]; then
+            {
+              echo "⚠️ **Vercel preview/production deployment FAILED** (DIC-1401 deploy-status mirror)"
+              echo ""
+              echo "- Environment: \`$ENVIRONMENT\`"
+              echo "- Description: \`$DESCRIPTION\`"
+              echo "- Deployed ref: \`$DEPLOY_REF\`"
+              echo "- Commit: \`$DEPLOY_SHA\`"
+              echo "- Deployment id: \`$DEPLOY_STATUS_ID\`"
+              echo "- Logs: $LOG_URL"
+              echo ""
+              echo "See the \`Validate\` job for the static function-count / build-reproduction diagnostics (test:vercel-function-count-guard, test:vercel-preview-build)."
+            } > "$BODY_FILE"
+          elif [ "$VERDICT" = "success" ] && [ "$ENV_KIND" = "production" ]; then
+            {
+              echo "✅ **Production deployment succeeded** (DIC-1401 deploy-status mirror)"
+              echo ""
+              echo "- Environment: \`$ENVIRONMENT\`"
+              echo "- URL: $TARGET_URL"
+              echo "- Commit: \`$DEPLOY_SHA\`"
+              echo "- Deployment id: \`$DEPLOY_STATUS_ID\`"
+              echo ""
+              echo "Release-parity check compares this commit against the mobile production build's provenance (\`/version.json\` → mobile \`build-provenance.json\`)."
+            } > "$BODY_FILE"
+          else
+            echo "no summary emitted for verdict=$VERDICT env_kind=$ENV_KIND (e.g. non-production success)"
+            exit 0
+          fi
+
+          BODY_JSON="$RUNNER_TEMP/summary.json"
+          jq -n --rawfile body "$BODY_FILE" '{body: $body}' > "$BODY_JSON"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOY_SHA/comments" --input "$BODY_JSON"
+          fi
