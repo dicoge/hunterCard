@@ -6,9 +6,14 @@ evidence instead of a claim.
 
 ## SHA parity (`scripts/ci/release-parity.mjs`)
 
-- `api/version.ts` is deployed on every Web build (Production and staging)
-  and reports the exact commit SHA (`VERCEL_GIT_COMMIT_SHA`) currently
-  serving that deployment.
+- Every Web build (Production and staging) writes a STATIC
+  `dist/version.json` (`scripts/ci/write-build-version.mjs`, invoked from
+  `vercel.json`'s buildCommand) reporting the exact commit SHA
+  (`VERCEL_GIT_COMMIT_SHA`) currently serving that deployment. It is served
+  as a plain static file from the output directory — deliberately NOT an
+  `api/*` serverless function — because api routes count against Vercel's
+  per-deployment function cap (12 on Hobby), and adding one as a 13th broke
+  both deployments (see `scripts/ci/vercel-function-count-guard.mjs`).
 - `scripts/ci/release-parity.mjs` compares that SHA against a mobile
   production build's source SHA (from EAS build provenance) and reports one
   of three statuses — never guessed:

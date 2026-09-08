@@ -105,6 +105,36 @@ test('MUTATION: a non-prefix assignment on the SAME line as expo export (after t
   assert.equal(r.value, null);
 });
 
+// --- branch/flag integration mutation (DIC-1401 CR round 2, Mac-Codex) ---
+// The branch policy cross-check must bind EXPECTED_VERCEL_BRANCH to the
+// vercel-branch-guard.sh invocation itself. A decoy `main` assignment that is
+// POSIX-scoped to an unrelated earlier command must not satisfy the guard —
+// otherwise the runtime deploys under `staging` policy while the static guard
+// believes `main`, breaking the "only main may deploy Web Production" contract.
+
+test('MUTATION: decoy EXPECTED_VERCEL_BRANCH=main on an unrelated earlier command cannot override the branch-guard binding', () => {
+  const r = evaluateVercelBuildCommand(
+    'EXPECTED_VERCEL_BRANCH=main true && ' +
+      'EXPECTED_VERCEL_BRANCH=staging bash scripts/ci/vercel-branch-guard.sh && ' +
+      'EXPO_PUBLIC_STORE_MVP=1 expo export --platform web',
+  );
+  // The guard sees the REAL binding (staging) on the branch-guard invocation,
+  // so the define/1 vs branch/staging mismatch must fail closed — and the
+  // declaredBranch reported must be 'staging', not the decoy 'main'.
+  assert.equal(r.ok, false);
+  assert.equal(r.declaredBranch, 'staging');
+  assert.equal(r.value, '1');
+});
+
+test('MUTATION: a stray earlier EXPECTED_VERCEL_BRANCH with no later binding reports no declared branch', () => {
+  const r = evaluateVercelBuildCommand(
+    'EXPECTED_VERCEL_BRANCH=main npm run unrelated && EXPO_PUBLIC_STORE_MVP=0 expo export --platform web',
+  );
+  // No vercel-branch-guard.sh invocation exists at all: no binding, so no
+  // policy cross-check can pass — treat the buildCommand as branch-unguarded.
+  assert.equal(r.declaredBranch, null);
+});
+
 test('a branch with no defined policy only requires a valid literal, not a specific value', () => {
   const r = evaluateVercelBuildCommand(
     'EXPECTED_VERCEL_BRANCH=some-feature-branch bash scripts/ci/vercel-branch-guard.sh && EXPO_PUBLIC_STORE_MVP=1 expo export --platform web',

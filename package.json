@@ -80,6 +80,8 @@
     "test:release-parity-check": "node scripts/test-release-parity-check.mjs",
     "test:release-flags-parity": "node scripts/test-release-flags-parity.mjs",
     "test:store-mvp-define-guard": "node scripts/test-store-mvp-define-guard.mjs",
+    "test:vercel-function-count-guard": "node scripts/test-vercel-function-count-guard.mjs",
+    "test:eas-build-provenance": "node scripts/test-eas-build-provenance.mjs",
     "release-parity-check": "node scripts/ci/release-parity.mjs",
     "typecheck": "tsc --noEmit -p .",
     "verify:i18n-ui": "node scripts/verify-dic1085-ui.mjs",

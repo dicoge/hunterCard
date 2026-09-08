@@ -12,22 +12,28 @@ name: Release Parity Check (Web Production vs Mobile Production)
 #     (nothing to check on a PR that hasn't shipped),
 #   - it needs the mobile build's source SHA as an input, which only exists
 #     once an EAS production build has actually run (see eas-build.yml /
-#     scripts/ci/release-apk-build-status.sh, which records `build-provenance.json`
-#     — its `.gitCommitHash` is the value to pass here).
+#     scripts/ci, which records `build-provenance.json` with an immutable
+#     `commit` — the 40-char source SHA — plus a `gitCommitHash` alias).
 #
 # The job FAILS (non-zero exit) unless the two SHAs are proven byte-identical.
 # An unresolved SHA on either side is reported as `unknown`, not treated as a
 # pass — this workflow must never claim parity it cannot prove.
+#
+# Web SHA source: `https://<web_url>/version.json`, a build-time STATIC file
+# (scripts/ci/write-build-version.mjs writes dist/version.json during the
+# build). It is deliberately NOT an api/* route: counting a 13th serverless
+# function pushed both Vercel Hobby deployments over the per-deployment cap
+# (see scripts/ci/vercel-function-count-guard.mjs).
 
 on:
   workflow_dispatch:
     inputs:
       mobile_source_sha:
-        description: "Mobile production build's source commit SHA (from build-provenance.json .gitCommitHash)"
+        description: "Mobile production build's source commit SHA (from build-provenance.json .commit / .gitCommitHash)"
         type: string
         required: true
       web_url:
-        description: "Web Production URL to query /api/version on"
+        description: "Web Production URL to query /version.json on"
         type: string
         required: false
         default: "https://holohunter.dicoge.com"

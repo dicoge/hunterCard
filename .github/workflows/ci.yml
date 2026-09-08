@@ -321,6 +321,17 @@ jobs:
       - name: Verify EXPO_PUBLIC_STORE_MVP is explicit on every deploy profile (DIC-1401 correction)
         run: npm run test:store-mvp-define-guard
 
+      # DIC-1401 CR round 2: Vercel's own preview checks keep failing against
+      # the Hobby 12-serverless-function cap, and those failures have no public
+      # log line. This static route-count guard runs in GitHub Validate so the
+      # exact failing condition is visible in CI before Vercel ever sees the
+      # deployment — a public diagnostic mirror, not a Vercel replacement.
+      - name: Verify serverless API function count stays under Vercel Hobby cap (DIC-1401)
+        run: npm run test:vercel-function-count-guard
+
+      - name: Verify EAS production build provenance contract (DIC-1401)
+        run: npm run test:eas-build-provenance
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
