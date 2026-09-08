@@ -60,9 +60,13 @@ dashboard/network calls, no secrets):
 - `vercel.json`'s `buildCommand` sets `EXPO_PUBLIC_STORE_MVP` to a literal
   `"0"` or `"1"` immediately before the `expo export` invocation — never
   missing/blank.
-- Where `vercel.json` also declares `EXPECTED_VERCEL_BRANCH` (the
-  per-project branch guard, see above), the declared `EXPO_PUBLIC_STORE_MVP`
-  value must match this repo's policy: `staging` → `"0"`, `main` → `"1"`.
+- Where `vercel.json` also declares `EXPECTED_VERCEL_BRANCH` (each branch's
+  own lane self-declaration; the runtime "wrong project ships wrong branch"
+  gate is `scripts/ci/vercel-branch-guard.sh` bound to the trusted
+  `VERCEL_PROJECT_ID` / `VERCEL_PROJECT_PRODUCTION_URL` via
+  `scripts/ci/vercel-project-registry.tsv`), the declared
+  `EXPO_PUBLIC_STORE_MVP` value must match this repo's policy: `staging`
+  → `"0"`, `main` → `"1"`.
 - `eas.json`'s `production` and `production-apk` build profiles (following
   `extends` chains) resolve `EXPO_PUBLIC_STORE_MVP` to exactly `"1"`.
 
