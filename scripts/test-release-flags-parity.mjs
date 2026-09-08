@@ -35,7 +35,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveEasProfileEnv } from './ci/eas-profile-env.mjs';
-import { evaluateVercelBuildCommand, extractBranchGuardAssignment } from './ci/store-mvp-define-guard.mjs';
+import { evaluateVercelConfig, readVercelBuildEnv } from './ci/store-mvp-define-guard.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -52,8 +52,13 @@ const flagsManifest = JSON.parse(
 
 const productionEnv = resolveEasProfileEnv(ROOT, 'production');
 const vercelJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
-const vercelEval = evaluateVercelBuildCommand(vercelJson.buildCommand);
-const webDeclaredBranch = extractBranchGuardAssignment(vercelJson.buildCommand);
+const entrypointSource = fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'vercel-build.sh'), 'utf8');
+// Round-4 moved the lane values into vercel.json build.env (injected into the
+// install+build step). The Web Production / Web Develop lane and the STORE_MVP
+// value it bakes come from there, so we evaluate the full config and read the
+// declared lane, and validate the entrypoint is wired correctly.
+const vercelEval = evaluateVercelConfig(vercelJson, entrypointSource);
+const webDeclaredBranch = readVercelBuildEnv(vercelJson).expectedBranch;
 
 const flags = flagsManifest.flags || {};
 assert.ok(Object.keys(flags).length > 0, 'release-parity/flags.json must list at least one flag');
@@ -71,8 +76,12 @@ for (const [flagName, entry] of Object.entries(flags)) {
   test(`${flagName}: vercel.json self-declares a known lane (main or staging)`, () => {
     assert.ok(
       ['main', 'staging'].includes(webDeclaredBranch),
-      `vercel.json must bind EXPECTED_VERCEL_BRANCH=${JSON.stringify(webDeclaredBranch)} to the branch-guard invocation; this branch's file is neither the Web Production nor the Web Develop lane.`,
+      `vercel.json build.env must bind EXPECTED_VERCEL_BRANCH=${JSON.stringify(webDeclaredBranch)} (main or staging); this branch's file is neither the Web Production nor the Web Develop lane.`,
     );
+  });
+
+  test(`${flagName}: vercel.json config is valid and wired to the controlled entrypoint`, () => {
+    assert.equal(vercelEval.ok, true, vercelEval.reason);
   });
 
   if (webDeclaredBranch === 'main') {
@@ -81,7 +90,7 @@ for (const [flagName, entry] of Object.entries(flags)) {
       assert.equal(
         bakedValue,
         entry.webProductionVercelValue,
-        `vercel.json (declared main) bakes ${flagName}=${JSON.stringify(bakedValue)} on \`expo export\`, but the ledger records webProductionVercelValue=${JSON.stringify(entry.webProductionVercelValue)} — the ledger is out of date with the Web Production build command.`,
+        `vercel.json (declared main) bakes ${flagName}=${JSON.stringify(bakedValue)} on \`expo export\` (via build.env + vercel-build.sh), but the ledger records webProductionVercelValue=${JSON.stringify(entry.webProductionVercelValue)} — the ledger is out of date with the Web Production build config.`,
       );
     });
   } else {
