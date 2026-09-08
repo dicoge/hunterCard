@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useScanSessionStore, SessionCard, getEffectivePrice } from '../stores/scanSessionStore';
 import { COLORS, convertPrice, CURRENCIES } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../i18n';
 
@@ -51,21 +52,26 @@ export default function ScanSessionPanel({
         style={styles.header}
         onPress={() => setExpanded(!expanded)}
         activeOpacity={0.7}
+        testID="scan-session-header"
       >
         <View style={styles.headerLeft}>
           <Text style={styles.headerIcon}>📋</Text>
           <Text style={styles.headerText}>
             {cardCount > 0
               ? t('scan_session_count', { count: cardCount })
-              : t('scan_session_title')}
+              /* Store MVP 隱藏「估值」字樣 (DIC-1256)。 */
+              : t(FEATURES.marketData ? 'scan_session_title' : 'scan_session_title_store')}
           </Text>
         </View>
         <View style={styles.headerRight}>
           {cardCount > 0 && (
             <>
-              <Text style={styles.totalPrice}>
-                {totalValue > 0 ? formatPrice(totalValue) : '——'}
-              </Text>
+              {/* Store MVP 隱藏 session 累計價值 (DIC-1256)。 */}
+              {FEATURES.marketData && (
+                <Text style={styles.totalPrice} testID="scan-session-total-price">
+                  {totalValue > 0 ? formatPrice(totalValue) : '——'}
+                </Text>
+              )}
               <Text style={styles.expandArrow}>{expanded ? '▼' : '▲'}</Text>
             </>
           )}
@@ -75,28 +81,31 @@ export default function ScanSessionPanel({
       {/* Expanded List */}
       {expanded && (
         <View style={styles.expandedBody}>
-          {/* Currency selector row */}
-          <View style={styles.currencyRow}>
-            {CURRENCIES.map((c) => (
-              <TouchableOpacity
-                key={c.code}
-                style={[
-                  styles.currencyBtn,
-                  preferredCurrency === c.code && styles.currencyBtnActive,
-                ]}
-                onPress={() => { setCurrency(c.code as 'TWD' | 'JPY' | 'USD'); }}
-              >
-                <Text
+          {/* Currency selector — Store MVP 隱藏 (DIC-1256)：session 沒有價格
+              可以換算幣別，這排就沒意義了。 */}
+          {FEATURES.marketData && (
+            <View style={styles.currencyRow} testID="scan-session-currency-row">
+              {CURRENCIES.map((c) => (
+                <TouchableOpacity
+                  key={c.code}
                   style={[
-                    styles.currencyBtnText,
-                    preferredCurrency === c.code && styles.currencyBtnTextActive,
+                    styles.currencyBtn,
+                    preferredCurrency === c.code && styles.currencyBtnActive,
                   ]}
+                  onPress={() => { setCurrency(c.code as 'TWD' | 'JPY' | 'USD'); }}
                 >
-                  {c.symbol} {c.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                  <Text
+                    style={[
+                      styles.currencyBtnText,
+                      preferredCurrency === c.code && styles.currencyBtnTextActive,
+                    ]}
+                  >
+                    {c.symbol} {c.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           {cardCount === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>{t('scan_session_empty')}</Text>
@@ -119,16 +128,26 @@ export default function ScanSessionPanel({
                             {card.name}
                           </Text>
                           <Text style={styles.cardMeta}>
-                            {card.id}{card.rarity ? ` · ${card.rarity}` : ''} ·{' '}
-                            {pending ? t('scan_version_pending') : formatPrice(getEffectivePrice(card))}
+                            {/* Store MVP 隱藏每張卡的估價字段 (DIC-1256)。
+                                版本待確認狀態仍顯示，因為它與辨識識別／版本
+                                選擇有關，不是市場資訊。 */}
+                            {card.id}{card.rarity ? ` · ${card.rarity}` : ''}
+                            {pending
+                              ? ` · ${t('scan_version_pending')}`
+                              : FEATURES.marketData
+                                ? ` · ${formatPrice(getEffectivePrice(card))}`
+                                : ''}
                           </Text>
                         </TouchableOpacity>
                         {hasVersions ? (
                           <>
                             <Text style={styles.versionHint}>
+                              {/* Store MVP 使用去掉「估價／總計」字樣的變體
+                                  hint (DIC-1256)。版本選擇本身仍保留，只是
+                                  文案不再提市場資訊。 */}
                               {pending
-                                ? t('scan_version_pending_hint')
-                                : t('scan_version_select_hint')}
+                                ? t(FEATURES.marketData ? 'scan_version_pending_hint' : 'scan_version_pending_hint_store')
+                                : t(FEATURES.marketData ? 'scan_version_select_hint' : 'scan_version_select_hint_store')}
                             </Text>
                             <View style={styles.versionRow}>
                               {card.priceVersions.map((v, vi) => {
@@ -143,7 +162,9 @@ export default function ScanSessionPanel({
                                     style={[styles.versionChipText, active && styles.versionChipTextActive]}
                                     numberOfLines={1}
                                   >
-                                    {v.name} · {formatPrice(v.sellPrice)}
+                                    {/* Store MVP 隱藏 chip 上的價格 (DIC-1256)；
+                                        chip 仍可點選來確定卡片版本。 */}
+                                    {FEATURES.marketData ? `${v.name} · ${formatPrice(v.sellPrice)}` : v.name}
                                   </Text>
                                 </TouchableOpacity>
                                 );
@@ -168,14 +189,19 @@ export default function ScanSessionPanel({
 
               {/* Total + Actions */}
               <View style={styles.footer}>
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>{t('scan_total')}</Text>
-                  <Text style={styles.totalValue}>
-                    {formatPrice(totalValue)}
-                  </Text>
-                </View>
-                {pendingCount > 0 && (
-                  <Text style={styles.pendingNote}>
+                {/* Store MVP 隱藏總計、待計入提示、複製結果 CTA (DIC-1256)：
+                    這幾項全都圍繞著 session 估值；review build 不做估值。
+                    「繼續掃描」「清空」保留供 session 管理。 */}
+                {FEATURES.marketData && (
+                  <View style={styles.totalRow} testID="scan-session-total-row">
+                    <Text style={styles.totalLabel}>{t('scan_total')}</Text>
+                    <Text style={styles.totalValue}>
+                      {formatPrice(totalValue)}
+                    </Text>
+                  </View>
+                )}
+                {FEATURES.marketData && pendingCount > 0 && (
+                  <Text style={styles.pendingNote} testID="scan-session-pending-note">
                     {t('scan_pending_count', { count: pendingCount })}
                   </Text>
                 )}
@@ -190,29 +216,32 @@ export default function ScanSessionPanel({
                           <Text style={styles.actionBtnText}>{t('scan_continue')}</Text>
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.shareBtn]}
-                        onPress={() => {
-                          // Share/export — build text summary
-                          const summary = cards.map((c, i) => {
-                            if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — ${t('scan_export_pending')}`;
-                            const v = c.priceVersions?.[c.selectedVersion];
-                            const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
-                              ? ` [${v.name}]`
-                              : '';
-                            return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
-                          }).join('\n');
-                          const pendingNote = pendingCount > 0 ? `\n（${t('scan_pending_count', { count: pendingCount })}）` : '';
-                          const full = `${t('scan_export_title')}\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n${t('scan_export_total', { total: formatPrice(totalValue) })}${pendingNote}`;
-                          // Trigger native share
-                          if (Platform.OS === 'web') {
-                            navigator.clipboard?.writeText(full);
-                            alert(t('scan_copied'));
-                          }
-                        }}
-                      >
-                        <Text style={styles.shareBtnText}>{t('scan_copy_results')}</Text>
-                      </TouchableOpacity>
+                      {FEATURES.marketData && (
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.shareBtn]}
+                          testID="scan-session-copy-results"
+                          onPress={() => {
+                            // Share/export — build text summary
+                            const summary = cards.map((c, i) => {
+                              if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — ${t('scan_export_pending')}`;
+                              const v = c.priceVersions?.[c.selectedVersion];
+                              const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
+                                ? ` [${v.name}]`
+                                : '';
+                              return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
+                            }).join('\n');
+                            const pendingNote = pendingCount > 0 ? `\n（${t('scan_pending_count', { count: pendingCount })}）` : '';
+                            const full = `${t('scan_export_title')}\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n${t('scan_export_total', { total: formatPrice(totalValue) })}${pendingNote}`;
+                            // Trigger native share
+                            if (Platform.OS === 'web') {
+                              navigator.clipboard?.writeText(full);
+                              alert(t('scan_copied'));
+                            }
+                          }}
+                        >
+                          <Text style={styles.shareBtnText}>{t('scan_copy_results')}</Text>
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity
                         style={[styles.actionBtn, styles.clearBtn]}
                         onPress={clearSession}

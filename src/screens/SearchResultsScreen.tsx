@@ -4,12 +4,19 @@ import type { LayoutChangeEvent } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { releaseCardFlags } from '../config/releaseFlags';
+import { FEATURES, releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
-import { normalizeCardIdentity, bloomLevelBadgeColor, categoryBadgeColor, PRINTING_RARITY_COLORS } from '../utils/cardNormalization';
+import {
+  normalizeCardIdentity,
+  bloomLevelBadgeColor,
+  categoryBadgeColor,
+  PRINTING_RARITY_COLORS,
+  KNOWN_COLOR_KEYS,
+  resolveCardColorsWithNestedFallback,
+} from '../utils/cardNormalization';
 
 // ── Server-side search constants ──
 
@@ -185,8 +192,15 @@ function searchCards(database: DatabaseSchema, query: string, nameMap: Record<st
   return deduped.map((c: CardRecord) => {
     const id = c.id || '';
     const name = c.name || '';
-    const rawColor = (c.color || '').toLowerCase();
-    const colors = rawColor ? [rawColor] : [];
+    // DIC-1159 + DIC-1192 + CR #1: strict canonicalCardColors first (so raw
+    // `◇` / `blue_red` cannot reach `t(\`color_${color}\`)`), fall through to
+    // the permissive normaliser so DIC-1192's shipped `◇ → 無色` render still
+    // lands at 1440×900. When the top-level source produces no colors (the
+    // 2026-08-28 catalog sync now writes `"null"` at top level for the real
+    // hBP04-087/088/hBP06-084 winners), fall back to the authoritative
+    // ◇ token in `skillsJp.color` / `skillsZh.color` so those diamond
+    // winners still render as colorless instead of dropping the label.
+    const colors = resolveCardColorsWithNestedFallback(c);
     const colorNames = colors.map((x: string) => COLOR_MAP[x] || x);
     const series = c.series ? [c.series] : [];
     const seriesNames = series.map((s: string) => nameMap[s] || s);
@@ -447,20 +461,37 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
           {card.seriesNames.map((s, i) => <Text key={i} style={styles.seriesTag}>{s}</Text>)}
           {card.colors.length > 0 && (
             <Text style={styles.colorText}>
-              {card.colors.map((color) => t(`color_${color}` as Parameters<typeof t>[0])).join(' / ')}
+              {card.colors.map((color) => (
+                // DIC-1192 defence-in-depth: card.colors is normalised in
+                // searchCards, but if any future consumer of CardListItem
+                // bypasses that path we must NOT hand a non-whitelisted key
+                // to t() — it throws on missing keys (i18n/index.ts line 24)
+                // and would fail-close the entire SearchResultsScreen the
+                // way `color_◇` did at 1440×900 / hBP04. Fall back to the
+                // raw token so at worst a single card shows an odd label
+                // instead of crashing the whole screen.
+                KNOWN_COLOR_KEYS.has(color)
+                  ? t(`color_${color}` as Parameters<typeof t>[0])
+                  : color
+              )).join(' / ')}
             </Text>
           )}
         </View>
 
-        {card.yuyuPrice != null && card.yuyuPrice > 0 ? (
-          <View style={styles.priceRowList}>
-            <Text style={styles.priceBadgeList}>{formatPrice(card.yuyuPrice)}</Text>
-            {card.prices && card.prices.length > 1 && (
-              <Text style={styles.variantBadge}>+{card.prices.length - 1}</Text>
-            )}
-          </View>
-        ) : (
-          <Text style={styles.noPriceBadgeList}>{t('scan_no_trade')}</Text>
+        {/* Store MVP 隱藏搜尋結果卡片上的價格與無交易 badge (DIC-1256)。
+            資料層仍保留 sellPrice，這裡只封住 UI；卡名、卡號、系列、顏色、
+            稀有度、效果預覽全部留下供辨識使用。 */}
+        {FEATURES.marketData && (
+          card.yuyuPrice != null && card.yuyuPrice > 0 ? (
+            <View style={styles.priceRowList} testID="search-result-price-row">
+              <Text style={styles.priceBadgeList}>{formatPrice(card.yuyuPrice)}</Text>
+              {card.prices && card.prices.length > 1 && (
+                <Text style={styles.variantBadge}>+{card.prices.length - 1}</Text>
+              )}
+            </View>
+          ) : (
+            <Text style={styles.noPriceBadgeList} testID="search-result-no-trade">{t('scan_no_trade')}</Text>
+          )
         )}
 
 

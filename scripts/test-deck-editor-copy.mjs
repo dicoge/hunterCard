@@ -87,14 +87,21 @@ const frozenDb = frozenDatabase(liveDb);
  * render path is the real one.
  */
 const LIVE_MODE = process.env.DECK_EDITOR_LIVE_DB === '1';
-let servedDb = LIVE_MODE ? liveDb : frozenDb;
 
-// The screen loads its catalog over fetch(); serve the shipped file instead of
-// the network so the render path itself is unchanged.
+// The screen loads its catalog through src/utils/staticData, which on native —
+// and in Node, which resolves that same base variant — returns the committed
+// public/data/database.json inlined into the bundle rather than fetched
+// (DIC-1287). The frozen leg pins its dataset by re-pointing that shared JSON
+// module before the first render; it used to re-point a fetch stub. The live leg
+// leaves the shipped bytes alone.
+const bundledDb = (await import('../public/data/database.json')).default;
+if (!LIVE_MODE) bundledDb.cards = frozenDb.cards;
+
+// Nothing in this render may reach the network: a relative fetch is exactly the
+// DIC-1287 defect that emptied the packaged Android picker.
 globalThis.fetch = async (input) => {
   const url = typeof input === 'string' ? input : String(input?.url ?? input);
-  assert.equal(url, '/data/database.json', `unexpected fetch during render: ${url}`);
-  return { ok: true, json: async () => servedDb };
+  assert.fail(`the deck editor must not fetch during render: ${url}`);
 };
 
 const React = (await import('react')).default;

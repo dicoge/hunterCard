@@ -30,12 +30,15 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.dicoge.holohunter",
-      "versionCode": 1,
+      "versionCode": 21,
       "permissions": [
         "android.permission.CAMERA"
       ],
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "privacyPolicyUrl": "https://holohunter.dicoge.com/privacy",
@@ -72,7 +75,8 @@
         }
       ],
       "expo-notifications",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "./plugins/withReleaseApkSizeOptim"
     ],
     "extra": {
       "eas": {

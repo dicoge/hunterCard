@@ -443,8 +443,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hSD04-003_hSD04"
+    },
+    {
+      "date": "2026-08-25",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD04-003_hSD04"
     }
   ],
-  "lastUpdated": "2026-08-24T12:11:57.762Z",
+  "lastUpdated": "2026-08-25T12:12:05.266Z",
   "nameZh": "癒月巧可"
 }

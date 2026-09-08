@@ -4,6 +4,7 @@ import {
   SafeAreaView, ActivityIndicator, Modal, Image,
 } from 'react-native';
 import { COLORS } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useDeckStore } from '../store/deckStore';
 import {
@@ -629,7 +630,10 @@ export default function DeckEditorScreen() {
 
   const estimatePanel = (
     <View style={[styles.panel, isDesktop && styles.panelCol]}>
-      <Text style={styles.h2}>{t('deck_gap_title')}</Text>
+      {/* Deck gap panel — Store MVP 保留（缺卡數量對編輯有用），但拿掉
+          參考售價相關文案、每列估價、店家總計、以及到價提醒 CTA / editor。
+          FEATURES.marketData 管價格、FEATURES.watchlist 管提醒 (DIC-1256)。 */}
+      <Text style={styles.h2}>{t(FEATURES.marketData ? 'deck_gap_title' : 'deck_gap_title_store')}</Text>
       {gap && gap.rows.map((r) => {
         const alert = priceAlerts[priceAlertKey(r.cardNumber, r.version)] ?? null;
         return (
@@ -644,16 +648,18 @@ export default function DeckEditorScreen() {
               <View style={styles.gapNumbers}>
                 <Text style={styles.gapNeed}>{t('deck_required', { count: r.required })}</Text>
                 <Text style={[styles.gapMissing, r.missing > 0 && { color: COLORS.error }]}>{t('deck_missing', { count: r.missing })}</Text>
-                <Text style={styles.gapPrice}>
-                  {r.missing === 0
-                    ? '—'
-                    : r.price.status === 'ok'
-                      ? `${r.subtotal} ${r.price.currency}`
-                      : t('deck_no_exact_price')}
-                </Text>
+                {FEATURES.marketData && (
+                  <Text style={styles.gapPrice} testID={`gap-price-${r.cardNumber}|${r.version}`}>
+                    {r.missing === 0
+                      ? '—'
+                      : r.price.status === 'ok'
+                        ? `${r.subtotal} ${r.price.currency}`
+                        : t('deck_no_exact_price')}
+                  </Text>
+                )}
               </View>
             </View>
-            {r.missing > 0 && (
+            {FEATURES.watchlist && r.missing > 0 && (
               r.price.status === 'ok' ? (
                 <TouchableOpacity
                   style={styles.alertRow}
@@ -684,8 +690,8 @@ export default function DeckEditorScreen() {
       })}
       {gap && (gap.rows.length === 0
         ? <Text style={styles.muted}>{t('deck_empty_gap')}</Text>
-        : (
-          <View style={styles.totalCard}>
+        : FEATURES.marketData ? (
+          <View style={styles.totalCard} testID="deck-gap-totals">
             {gap.subtotals.length === 0 ? (
               <Text style={styles.totalText}>{t('deck_gap_total_unavailable')}</Text>
             ) : (
@@ -712,7 +718,7 @@ export default function DeckEditorScreen() {
               </Text>
             )}
           </View>
-        ))}
+        ) : null)}
     </View>
   );
 

@@ -1,0 +1,225 @@
+# Data safety — source inventory and answers
+
+Scope: the **Android native release binary** only. Play's Data safety form asks about the
+app users install, not the website. Where web and native differ — and for card images they
+differ completely — the native behaviour is what is recorded here.
+
+Play's definition of "collected" is **data transmitted off the device**. A manifest
+permission is not collection; on-device processing is not collection.
+
+Every row below is derived from code, with the file and line that proves it.
+
+---
+
+## The card image question, answered properly
+
+This is the single answer most likely to be got wrong, in either direction, so the whole
+derivation is written out.
+
+**Reading the call graph suggests every scan uploads a photo. It does not.**
+
+`recognizeCardFromImage()` calls `recognizeViaApi()` as step 0 on every platform
+(`src/services/cardRecognition.ts:466-475`), and `recognizeViaApi()` POSTs `{ image }` to
+`/api/recognize-card` (`:372-386`), which forwards to Google Gemini
+(`api/recognize-card.ts:320`). Taken at face value that means native uploads card photos.
+
+What it actually sends depends on `preprocessCardImage()`
+(`src/services/imagePreprocessor.ts:10`):
+
+- The module is written entirely against the DOM — `new Image()`,
+  `document.createElement('canvas')`, `canvas.toDataURL(...)`.
+- React Native polyfills `fetch`, `Blob`, `File`, `FileReader`, `URL`, `FormData` and
+  friends (`node_modules/react-native/Libraries/Core/setUpXHR.js`) but defines **no global
+  `Image` and no `document`**. Expo's winter runtime adds `FormData`, `TextDecoder` and
+  fetch, not `Image`.
+- So on native `new Image()` throws inside the promise executor, the outer `catch` returns
+  the **original uri unchanged** (`imagePreprocessor.ts:13-16`), and that uri is a
+  `file:///...` path.
+- Nothing upstream turns it into image data: `takePictureAsync({ quality: 0.8 })`
+  (`src/screens/ScanScreen.tsx:559`) and `launchImageLibraryAsync({ quality: 0.8 })`
+  (`:602`) are both called without `base64: true`.
+
+So what leaves an Android device is a **local file path string**, not pixels. The server
+wraps the unrecognised string as `data:image/jpeg;base64,file:///...`
+(`api/recognize-card.ts:350`), Gemini cannot decode it, the call fails, and
+`recognizeCardFromImage` falls through to the on-device OCR path (`expo-ocr-kit`).
+
+**Conclusion: no card image content is transmitted off-device by the Android binary.**
+Photos are therefore **not collected**. The web build genuinely does upload, because there
+the DOM path works — but the web build is not what Play is asked about.
+
+> **This is true by accident, not by design, and it is fragile.** Adding a native image
+> preprocessor, a `.native.ts` variant of `imagePreprocessor`, `expo-image-manipulator`, or
+> `base64: true` on either capture call would start uploading real photos silently, and the
+> Data safety declaration would become false with nothing failing.
+> Two CI gates cover this. `npm run test:privacy-disclosure` fails on each of those known
+> mechanisms. `npm run test:native-scan-no-upload` is the one that matters more: it runs the
+> real `recognizeCardFromImage` under React-Native-shaped globals with `fetch` intercepted and
+> asserts that the value POSTed as `image` is still the input uri, so it catches any route to
+> real image data — including ones nobody has enumerated. Adversarial review defeated the
+> static checks alone with nothing but RN built-ins (`fetch(uri)` piped through
+> `FileReader.readAsDataURL`); the behavioural gate catches exactly that.
+
+> **Latent bug worth fixing separately.** Every native scan still makes a doomed round trip
+> to `/api/recognize-card` carrying a useless path string, and only then falls back to local
+> OCR. That is wasted latency and a wasted Gemini call on the server. It is out of scope for
+> the submission and is listed as a follow-up in `README.md`.
+
+---
+
+## 1. Off-device data flows in the Android binary
+
+| # | Data | Trigger | Destination | Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | **Not the image** — a local `file://` path string | Every scan | `POST /api/recognize-card`, forwarded to Gemini as undecodable data | See the derivation above. Contains no user data; it is an app-private cache path. |
+| 2 | Google ID token (email, display name, avatar URL, Google subject ID) | Sign-in with Google | `POST /api/auth/login` → identity record in Vercel KV | `src/services/authService.ts:379-418`, `:822-826`; `api/_lib/identity-store.ts:44-53` |
+| 3 | ~~Expo push token + platform~~ — **does not happen in the review build** | Would be app launch, but `App.tsx:11` gates it on `FEATURES.pushAlerts` and `pushAlerts: !STORE_MVP`; the manifest also strips `POST_NOTIFICATIONS` for this profile (DIC-1259) so the runtime prompt is gone | — | `App.tsx:11`; `src/config/releaseFlags.ts:52`; `eas.json` sets `EXPO_PUBLIC_STORE_MVP=1` on both store profiles; `app.config.js` adds `POST_NOTIFICATIONS` to `blockedPermissions` under that flag |
+| 4 | ~~Price-alert definitions~~ — **does not happen in the review build** | `watchlist: !STORE_MVP` removes the feature that creates them | — | `src/config/releaseFlags.ts:50` |
+| 5 | Account sync payload (favorites, decks, collection, price alerts, settings) | While signed in | `POST /api/auth/[action=sync]` → Vercel KV | `api/_lib/account-sync-store.ts` |
+| 6 | Session token | Session validation | `POST /api/auth/me` | `src/services/authService.ts:1025` |
+
+Read-only fetches (`/data/database.json`, card images, tournament data) send no user data.
+
+## 2. What the app does NOT do
+
+No analytics SDK, no crash reporting SDK, no advertising SDK, no tracking library — absent
+from `package.json` and from all imports. `AdSlot` exists but is hard-disabled
+(`src/components/AdSlot.tsx:11`, `PRODUCTION_ADS_ENABLED = false`).
+
+No payment integration: no Stripe, RevenueCat, `react-native-iap` or
+`expo-in-app-purchases`. The `subscriber` role exists in the data model
+(`api/_lib/identity-store.ts:48`) but no code grants it, and `effectiveRole()` collapses it
+to `free_user` while premium is off (`src/services/permissionService.ts:10-13`). **No
+purchase or financial data is collected**, and there is no external payment flow for Google
+Play Billing policy to object to.
+
+No location, contacts, SMS, call log, health or audio data. `RECORD_AUDIO` is blocked at
+the manifest level.
+
+> **A monthly subscription is planned** (owner decision 2026-08-30 —
+> [`subscription.md`](./subscription.md)). It changes this section the day it ships: Financial
+> info → Purchase history very likely becomes collected, and the deletion answers need a line
+> on what happens to purchase records, which are commonly retained for tax and audit purposes
+> even after an account is deleted. Until the binary can complete a purchase, the answers
+> above stay as written. `npm run test:privacy-disclosure` fails the build if a billing
+> dependency is added without this being revisited.
+
+## 3. Answers
+
+### Photos and videos → Photos
+
+| Field | Answer |
+| --- | --- |
+| Collected | **No** |
+
+Justification: recognition runs on-device via `expo-ocr-kit`; no image bytes are
+transmitted. See the derivation above. Camera captures are written to the app's private
+cache directory by `takePictureAsync` and are not cleared by the app, but on-device storage
+is not collection.
+
+Because Collected = No, the follow-up questions (shared, ephemeral, purpose) are not asked.
+Do **not** tick "ephemeral processing" — that option only applies to data you collect.
+
+Play may still surface Photos as a suggested data type because of the camera permission.
+A permission is not collection; answer No.
+
+### Personal info → Name, Email address, User IDs
+
+| Field | Answer | Reason |
+| --- | --- | --- |
+| Collected | **Yes** | Google ID token contents are persisted server-side: `displayName`, `primaryEmail`, `photoUrl`, provider subject ID and an internal user ID (`api/_lib/identity-store.ts:44-53`, `:617-627`). |
+| Shared | No | Stored in the developer's own Vercel KV; no onward transfer. |
+| Processed ephemerally | No | Persisted until the account is deleted. |
+| Required or optional | **Optional** | Guest mode exists (`src/screens/LoginScreen.tsx:95-102`); browsing and search need no account, scanning does. |
+| Purpose | App functionality, Account management | Sign-in and cross-device sync. |
+
+### Device or other IDs
+
+| Field | Answer |
+| --- | --- |
+| Collected | **No — for the Play review build** |
+
+**Corrected 2026-08-30, reinforced by DIC-1259.** An earlier revision of this file declared
+the Expo push token as collected. That is true of a full build and **false of the artifact
+being submitted**. Two independent gates keep it false:
+
+1. **Code compiled out.** `App.tsx:11` gates `initPushNotifications()` on
+   `FEATURES.pushAlerts`, and `pushAlerts: !STORE_MVP` (`src/config/releaseFlags.ts:52`).
+   Both the `production` and `production-apk` profiles set `EXPO_PUBLIC_STORE_MVP=1`
+   (`eas.json`), so in the submitted build the token is never requested, never uploaded,
+   and `/api/push/register` is never called. `watchlist: !STORE_MVP` likewise means
+   `/api/push/price-alerts` never fires.
+2. **Permission stripped at the manifest layer.** `app.config.js` adds
+   `POST_NOTIFICATIONS` to `expo.android.blockedPermissions` when
+   `EXPO_PUBLIC_STORE_MVP=1`, so Gradle emits `tools:node="remove"` and the merged
+   manifest for the submitted artifact does not request it. The Play listing therefore
+   does not show a runtime prompt for a code path that cannot fire, and this Device IDs
+   answer stays consistent with what the shipping APK actually declares.
+
+Over-declaring is a mismatch in the same way under-declaring is, so answer No — and re-check
+this line if `EXPO_PUBLIC_STORE_MVP` is ever changed for a store profile, because the answer
+flips with that one variable.
+
+> If a later release turns push alerts on, this becomes: Collected = Yes, Shared = Yes
+> (delivery via Expo Push Service at `exp.host`), not ephemeral, purpose App functionality —
+> and the deletion gap applies, since there is no unregister endpoint.
+
+### App activity → Other user-generated content
+
+| Field | Answer | Reason |
+| --- | --- | --- |
+| Collected | **Yes** | Account sync writes user content server-side while signed in (flow 5). |
+| Shared | No | Developer's own backend. |
+| Required or optional | Optional | Only while signed in. |
+| Purpose | App functionality | Cross-device sync. |
+
+> **The field list shrinks with DIC-1256 and must be re-derived, not assumed.** Price alerts
+> are already out of the review build (`watchlist: !STORE_MVP`). DIC-1256 removes favorites
+> and the collection UI from the store build as well, which should leave decks and settings.
+> Confirm what the slimmed build actually syncs before answering — the honest answer is
+> whichever fields still reach `/api/auth/[action=sync]`, not whichever fields the store
+> exists to hold.
+
+### Everything else
+
+Location, Financial info, Health and fitness, Messages, Contacts, Calendar, Audio, Files
+and docs, Web browsing history, Installed apps: **not collected**. See section 2.
+
+## 4. Security and deletion declarations
+
+| Question | Answer | Basis |
+| --- | --- | --- |
+| Is all data encrypted in transit? | **Yes** | Every endpoint is HTTPS. |
+| Do you provide a way for users to request that their data be deleted? | **Yes** | Settings → 刪除帳號 calls `POST /api/auth/delete-account`, which cascade-deletes the user record, every linked identity, its indexes, and the account-sync snapshot (`api/auth/delete-account.ts:35-74`; `api/_lib/identity-store.ts:852-870`; `api/_lib/account-sync-store.ts:552-557`). The client clears the local session only when the server returns `deleted: true` (`src/services/authService.ts:1012-1018`), and the UI is wired to it through `src/store/authStore.ts:235-242` from `src/screens/SettingsScreen.tsx:105`. |
+| Data deletion contact | `dicoge.chen@gmail.com` | For the two cases the in-app flow does not cover. |
+
+> **Two known gaps in deletion — declare them, do not paper over them.**
+>
+> 1. **The push token is not deleted by account deletion**, and there is no unregister
+>    endpoint. Uninstalling does not remove it either. The privacy policy says so
+>    explicitly and gives the email channel.
+> 2. **Apple-linked accounts cannot self-delete.** `api/auth/delete-account.ts:50-58`
+>    returns HTTP 501 when an Apple identity has no stored refresh token, deliberately
+>    fail-closed. Apple sign-in is disabled by default on Android
+>    (`src/services/authStrategy.ts:37-46`), so this does not affect the Android
+>    submission — but it must not be enabled for Android before the deletion path works.
+
+## 5. Prominent disclosure
+
+Not required for the card image, because on Android no image is transmitted. The privacy
+policy states the split plainly: on-device on mobile, uploaded to Gemini on web
+(`public/privacy.html`, sections 3 and 6, both languages). Keep that split accurate — if
+the native path ever starts uploading, Play expects an in-app disclosure before the first
+upload, not just a policy line.
+
+## 6. Corrections to `docs/release-testflight-google-play-closed-testing.md`
+
+That document's conclusion about images was right; several of its other claims are not.
+
+| Claim in that document | Reality |
+| --- | --- |
+| "native binary 完全不傳送影像 off-device" | **Correct**, and confirmed here by a fuller derivation — though the mechanism is accidental and now guarded by `test:privacy-disclosure`. |
+| "無帳號機制" / "無帳號" | **False.** Google Sign-In, a cloud identity store, account linking, deletion and cross-device sync are all live. |
+| Push tokens written to `data/push-tokens.json` in the GitHub repo | **Stale.** They are in Vercel KV under `push:tokens` (`api/_lib/kv-storage.ts:32-39`). |
+| "App access：若不需要登入選全部功能免登入" | **Wrong for this app.** Scanning requires an account (`src/services/permissionService.ts:17`), so reviewer instructions and credentials are required. |
+| Watchlist is local-only and nothing syncs server-side | **Stale.** Price alerts sync via `/api/push/price-alerts`, and account sync stores favorites, decks, collection and settings server-side while signed in. |

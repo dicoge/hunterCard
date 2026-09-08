@@ -443,8 +443,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-102_hBP01"
+    },
+    {
+      "date": "2026-08-25",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-102_hBP01"
     }
   ],
-  "lastUpdated": "2026-08-24T12:11:57.778Z",
+  "lastUpdated": "2026-08-25T12:12:05.281Z",
   "nameZh": "偶像麥克風"
 }

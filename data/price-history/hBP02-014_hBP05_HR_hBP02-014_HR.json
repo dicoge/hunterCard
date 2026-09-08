@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-014_hBP05_HR_hBP02-014_HR",
+  "cardNumber": "hBP02-014",
+  "name": "白銀ノエル",
+  "records": [
+    {
+      "date": "2026-08-28",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-014_hBP05_HR_hBP02-014_HR",
+      "sourceProduct": "hBP05"
+    }
+  ],
+  "lastUpdated": "2026-08-28T13:10:25.262Z",
+  "nameZh": "白銀諾艾爾"
+}

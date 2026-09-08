@@ -6,6 +6,8 @@
 // consumes these to dispatch; identity is always resolved server-side regardless
 // of which surface produced the provider ID token.
 
+import { PRODUCTION_ORIGIN } from '../config/apiOrigin';
+
 export type GoogleLoginSurface = 'native-ios' | 'native-android' | 'web';
 export type AppleLoginSurface = 'native-ios' | 'web' | 'android-web' | 'disabled';
 
@@ -59,7 +61,7 @@ export function appleLoginSurface(
 // https://staging.example.com/api); then web same-origin; then the canonical
 // production base for native. We never return a relative path here. Pure (no
 // react-native/expo imports) so it is unit-testable.
-const DEFAULT_NATIVE_API_BASE = 'https://holohunter.dicoge.com/api';
+const DEFAULT_NATIVE_API_BASE = `${PRODUCTION_ORIGIN}/api`;
 
 // An EXPO_PUBLIC_API_BASE_URL override is only trustworthy if it is an ABSOLUTE
 // http(s) URL with a valid host (DIC-928 blocker 4, DIC-934 CR fixes). A

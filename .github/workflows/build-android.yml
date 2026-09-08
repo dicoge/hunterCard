@@ -1,4 +1,12 @@
-name: Build Android APK
+name: Build Android APK (DEBUG-ONLY)
+
+# ⚠️ DEBUG-ONLY. This workflow runs `assembleDebug`: the APK it produces is
+# signed with the Android **debug** keystore and is a smoke-test artifact for
+# CI only. It is NOT a release build and must never be handed to a tester or
+# described as a 正式內容測試包 (DIC-1193).
+#
+# The production-content, release-signed APK comes from the `EAS Build (Test
+# Tracks)` workflow with profile `production-apk` — see docs/TEST-DISTRIBUTION.md.
 
 on:
   push:
@@ -9,7 +17,7 @@ on:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build Android APK (DEBUG-ONLY)
     runs-on: ubuntu-latest
 
     steps:
@@ -76,9 +84,30 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
+      - name: Label artifact as debug-only
+        run: |
+          set -euo pipefail
+          cat > android/app/build/outputs/apk/debug/DEBUG-ONLY.txt <<EOF
+          DEBUG-ONLY — NOT A RELEASE BUILD (DIC-1193)
+
+          This APK was produced by \`./gradlew assembleDebug\` and is signed with the
+          Android debug keystore. It exists to prove the native Android project still
+          compiles. Do not install it as a 正式內容測試包, do not send it to testers,
+          and do not describe it as "the production APK".
+
+          The production-content, release-signed APK comes from the
+          "EAS Build (Test Tracks)" workflow with profile \`production-apk\`.
+
+          commit: ${GITHUB_SHA}
+          run:    ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          echo "::warning::This APK is DEBUG-ONLY (debug keystore). Use the production-apk EAS profile for tester builds."
+
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: holohunter-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: holohunter-DEBUG-ONLY-apk
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/debug/DEBUG-ONLY.txt
           retention-days: 7

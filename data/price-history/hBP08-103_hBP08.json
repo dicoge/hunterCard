@@ -415,8 +415,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP08-103_hBP08"
+    },
+    {
+      "date": "2026-08-25",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-103_hBP08"
     }
   ],
-  "lastUpdated": "2026-08-24T12:11:57.877Z",
+  "lastUpdated": "2026-08-25T12:12:05.359Z",
   "nameZh": "Hololive斗篷"
 }

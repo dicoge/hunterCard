@@ -457,8 +457,15 @@
       "source": "yuyu-tei",
       "currency": "JPY",
       "cardId": "hBP01-115_hPR"
+    },
+    {
+      "date": "2026-08-25",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-115_hPR"
     }
   ],
-  "lastUpdated": "2026-08-24T12:11:57.806Z",
+  "lastUpdated": "2026-08-25T12:12:05.307Z",
   "nameZh": "星街彗星的麥克風"
 }

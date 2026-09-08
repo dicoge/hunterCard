@@ -18,6 +18,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { COLORS, convertPrice, CURRENCIES } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { CardInfo } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
 
@@ -203,36 +204,41 @@ export default function ScanResultCard({
           </Text>
         </View>
 
-        {/* All price rows — always visible */}
-        <View style={styles.pricesSection}>
-          {uniquePrices ? (
-            uniquePrices.map((p, i) => (
-              <View key={`p-${p.name}-${p.sellPrice}-${i}`} style={styles.priceRow}>
-                <Text style={styles.priceLabel} numberOfLines={1}>{p.name}</Text>
+        {/* All price rows — Store MVP 隱藏 (DIC-1256): 掃描結果卡的所有價格
+            資訊都屬於 market-data；review build 只留卡片名稱／編號／稀有度／
+            信心度來確認辨識結果。 */}
+        {FEATURES.marketData && (
+          <View style={styles.pricesSection} testID="scan-result-prices">
+            {uniquePrices ? (
+              uniquePrices.map((p, i) => (
+                <View key={`p-${p.name}-${p.sellPrice}-${i}`} style={styles.priceRow}>
+                  <Text style={styles.priceLabel} numberOfLines={1}>{p.name}</Text>
+                  <Text style={[
+                    styles.priceValue,
+                    p.sellPrice != null ? styles.priceValuePositive : styles.priceValueNull,
+                  ]}>
+                    {formatPrice(p.sellPrice)}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>{card.series || t('scan_estimate')}</Text>
                 <Text style={[
                   styles.priceValue,
-                  p.sellPrice != null ? styles.priceValuePositive : styles.priceValueNull,
+                  sellPriceNull ? styles.priceValueNull : styles.priceValuePositive,
                 ]}>
-                  {formatPrice(p.sellPrice)}
+                  {formatPrice(card.sellPrice)}
                 </Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>{card.series || t('scan_estimate')}</Text>
-              <Text style={[
-                styles.priceValue,
-                sellPriceNull ? styles.priceValueNull : styles.priceValuePositive,
-              ]}>
-                {formatPrice(card.sellPrice)}
-              </Text>
-            </View>
-          )}
-        </View>
+            )}
+          </View>
+        )}
 
-        {/* Series reprint variants */}
-        {variants && (
-          <View style={styles.variantsSection}>
+        {/* Series reprint variants — same gate: variants only surface price
+            comparisons across printings, so Store MVP drops the section. */}
+        {FEATURES.marketData && variants && (
+          <View style={styles.variantsSection} testID="scan-result-variants">
             <Text style={styles.variantsHeader}>{t('scan_other_versions')}</Text>
             {variants.map((v, i) => {
               const vPrices = v.prices && v.prices.length > 0 ? v.prices : null;

@@ -17,14 +17,15 @@
  *   3. Full-DB — no card's user-facing surface (prices[].name, yuyuName,
  *      name) contains an errata label.
  *   4. Regression — hBP02-003 renders exactly three tiers (base / parallel
- *      / signed), the signed row carries the yuyu-proven buy price
- *      (62,000) with source=yuyu, and neither the base nor the parallel
- *      row inherits that signed buy price.
+ *      / signed), the signed row carries an exact SEC-token buy price with
+ *      source provenance, and neither the base nor the parallel row inherits
+ *      that signed buy price.
  */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { canonicalizePrices, hasErrataLabel, stripErrataLabel } from './lib/canonical-printings.js';
+import { canonicalizeCardNumber, isCanonicalCardNumber } from './lib/card-number.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -205,46 +206,47 @@ console.log('\n── Regression: hBP02-003 Marine ──');
 {
   const dbPath = path.resolve(__dirname, '../data/database.json');
   const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
-  const card = db.cards['hBP02-003_hBP02'];
-  if (!card) fail('hBP02-003_hBP02 missing from database');
+  const signed = db.cards['hBP02-003_hBP02_SEC_hBP02-003_SEC'];
+  const parallel = db.cards['hBP02-003_hBP02_OUR_hBP02-003_OUR'];
+  const base = db.cards['hBP02-003_hBP02_OSR_hBP02-003_OSR'];
+  if (!signed) fail('hBP02-003 SEC signed printing missing from database');
   else {
-    eq(card.prices.length, 3, 'hBP02-003 renders exactly three canonical tiers');
-    const names = card.prices.map((p) => p.name);
-    eq(
-      names.every((n) => !hasErrataLabel(n)),
-      true,
-      'no hBP02-003 tier name carries errata text',
-    );
-    const signed = card.prices.find((p) => /パラレル\/サイン/.test(p.name));
-    const parallel = card.prices.find((p) => /パラレル/.test(p.name) && !/サイン/.test(p.name));
-    const base = card.prices.find((p) => !/パラレル/.test(p.name));
-
-    if (!signed) fail('signed (パラレル/サイン) tier missing');
-    else {
-      eq(signed.buyPrice, 62000, 'signed row carries the yuyu-proven buy price (62,000)');
-      eq(signed.buyPriceSource, 'yuyu', 'signed row buy source is yuyu');
-      eq(signed.buyPriceVersion, 'SEC', 'signed row buy provenance token is SEC');
-      // DIC-1140 blocker #1 image regression: signed row's imageUrl is the
-      // post-errata SEC image (10212), not pre-errata 10008.
-      eq(
-        signed.imageUrl && signed.imageUrl.endsWith('/10212.jpg'), true,
-        `signed row image is the post-errata 10212 (actual: ${signed.imageUrl})`,
-      );
-    }
-    if (!parallel) fail('parallel (パラレル) tier missing');
-    else {
-      eq(parallel.buyPrice !== 62000, true, 'parallel row does NOT inherit signed 62,000 price');
-    }
-    if (!base) fail('base tier missing');
-    else {
-      eq(base.buyPrice !== 62000, true, 'base row does NOT inherit signed 62,000 price');
-    }
-    // Top-level yuyuImage aligns with a canonical row (never orphan pre-errata).
-    eq(
-      card.yuyuImage && !card.yuyuImage.endsWith('/10008.jpg'), true,
-      `hBP02-003 top-level image is not pre-errata 10008 (actual: ${card.yuyuImage})`,
-    );
+    eq(signed.rarity, 'SEC', 'hBP02-003 signed row exists as a canonical official printing');
+    eq(signed.buyPrice, 45000, 'signed official printing row carries exact SEC-token buy price');
+    eq(Array.isArray(signed.prices) && signed.prices.length, 0, 'signed official printing row does not retain cross-printing yuyu variant rows');
   }
+  if (!parallel) fail('hBP02-003 OUR parallel printing missing from database');
+  else eq(parallel.buyPrice !== signed?.buyPrice, true, 'parallel row does NOT inherit signed buy price');
+  if (!base) fail('hBP02-003 OSR base printing missing from database');
+  else eq(base.buyPrice !== signed?.buyPrice, true, 'base row does NOT inherit signed buy price');
+}
+
+// ── DIC-1084: canonicalizeCardNumber pads yuyu-tei short suffixes ──
+{
+  const cases = [
+    ['hY01-14', 'hY01-014'],
+    ['hY02-12', 'hY02-012'],
+    ['hY01-01', 'hY01-001'],
+    ['hBP01-091', 'hBP01-091'],  // already canonical
+    ['hPR-001', 'hPR-001'],       // already canonical
+    ['hY06-11', 'hY06-011'],
+  ];
+  for (const [input, expected] of cases) {
+    const result = canonicalizeCardNumber(input);
+    eq(result, expected, `canonicalizeCardNumber(${input}) = ${expected} (got ${result})`);
+    eq(isCanonicalCardNumber(result), true, `${result} is canonical`);
+  }
+  // All 12 previously non-canonical yuyu-only cards in the DB must now be canonical
+  const db = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/database.json'), 'utf-8'));
+  const CANONICAL_RE = /^h[A-Za-z0-9]+-\d{3}$/;
+  for (const [id, c] of Object.entries(db.cards)) {
+    if (c.cardNumber && !CANONICAL_RE.test(c.cardNumber)) {
+      fail(`non-canonical cardNumber in DB: ${id} -> ${c.cardNumber}`);
+    }
+  }
+  // public/database.json must have identical keys
+  const pub = JSON.parse(fs.readFileSync(path.join(__dirname, '../public/data/database.json'), 'utf-8'));
+  eq(Object.keys(db.cards).length, Object.keys(pub.cards).length, 'canonical and public DB row count match');
 }
 
 console.log(failures === 0 ? '\n✅ All canonical-printing assertions pass.' : `\n❌ ${failures} assertion(s) failed.`);

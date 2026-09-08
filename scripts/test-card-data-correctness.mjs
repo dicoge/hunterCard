@@ -149,4 +149,8 @@ assert.match(cardDetailSource, /ytStats\?\.viewCount_daily != null/, 'daily view
 const youtubeBlockSource = cardDetailSource.slice(cardDetailSource.indexOf('{/* YouTube'), cardDetailSource.indexOf('function InfoRow'));
 assert.doesNotMatch(youtubeBlockSource, /\?\?\s*0/, 'YouTube UI must not coerce missing growth baselines to 0');
 
+const realDb = JSON.parse(fs.readFileSync('data/database.json', 'utf8'));
+assert.equal(realDb.cards['hBD24-008_ent07']?.type, 'OshiHolomen', 'sparse ent07 promo rows backfill type from matching richer official image');
+assert.equal(realDb.cards['hBD24-008_ent07']?.color, 'colorless', 'sparse ent07 promo rows backfill color from matching richer official image');
+
 console.log('DIC-1084 mutation-sensitive card-data correctness checks passed');
