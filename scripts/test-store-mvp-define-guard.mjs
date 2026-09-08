@@ -83,6 +83,28 @@ test('main branch declaration with "0" (wrong direction) fails', () => {
   assert.equal(r.ok, false);
 });
 
+// --- mutation-sensitivity regression (DIC-1401 exact-head CR, Mac-Codex) ---
+// The guard must bind EXPO_PUBLIC_STORE_MVP to the `expo export` command
+// itself, not just find the literal somewhere in the buildCommand string.
+
+test('MUTATION: define set AFTER expo export (in a later &&-link) fails — never reaches the web bundle', () => {
+  const r = evaluateVercelBuildCommand('expo export --platform web && EXPO_PUBLIC_STORE_MVP=1 true');
+  assert.equal(r.ok, false);
+  assert.equal(r.value, null);
+});
+
+test('MUTATION: define set on an unrelated earlier command fails — POSIX scopes it to that command only', () => {
+  const r = evaluateVercelBuildCommand('EXPO_PUBLIC_STORE_MVP=1 npm run unrelated && expo export --platform web');
+  assert.equal(r.ok, false);
+  assert.equal(r.value, null);
+});
+
+test('MUTATION: a non-prefix assignment on the SAME line as expo export (after the command name) still fails', () => {
+  const r = evaluateVercelBuildCommand('expo export --platform web EXPO_PUBLIC_STORE_MVP=1');
+  assert.equal(r.ok, false);
+  assert.equal(r.value, null);
+});
+
 test('a branch with no defined policy only requires a valid literal, not a specific value', () => {
   const r = evaluateVercelBuildCommand(
     'EXPECTED_VERCEL_BRANCH=some-feature-branch bash scripts/ci/vercel-branch-guard.sh && EXPO_PUBLIC_STORE_MVP=1 expo export --platform web',

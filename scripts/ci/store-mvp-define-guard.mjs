@@ -23,10 +23,50 @@
 // Extracts `NAME=value` set as a literal shell-env prefix anywhere in a
 // buildCommand string (e.g. "FOO=bar npm run x && BAZ=1 expo export ...").
 // Returns null if the var is not assigned a literal value at all (missing).
+// NOTE: this is intentionally position-agnostic and is only safe to use for
+// vars whose scope this guard does not need to bind to a specific command
+// (currently EXPECTED_VERCEL_BRANCH, which only needs to exist once and is
+// cross-checked against the branch-guard-script invocation by a human/CR
+// reading the buildCommand, not by this guard). Do NOT use this for
+// EXPO_PUBLIC_STORE_MVP — see extractStoreMvpBoundToExpoExport below.
 function extractShellEnvAssignment(buildCommand, varName) {
   if (typeof buildCommand !== 'string') return null;
   const match = buildCommand.match(new RegExp(`(?:^|[\\s&;])${varName}=(\\S+)`));
   return match ? match[1] : null;
+}
+
+// Extracts EXPO_PUBLIC_STORE_MVP's value ONLY if it is bound as a literal
+// shell env-prefix directly attached to the `expo export` invocation itself,
+// i.e. `VAR=val [VAR2=val2 ...] expo export ...`. POSIX shell scopes a
+// leading `VAR=val` assignment to the single command it prefixes — an
+// assignment anywhere else in the `&&`-chained buildCommand (before an
+// unrelated command, or after `expo export` already ran) never reaches the
+// `expo export` process's environment and therefore never reaches the
+// bundled web output. Returns null if the define is missing OR present but
+// not actually bound to `expo export` (both must fail closed identically —
+// a config author cannot satisfy this guard by placing the assignment
+// anywhere convenient in the command chain).
+//
+// Regression coverage (DIC-1401 exact-head CR, Mac-Codex): this function
+// exists because the previous position-agnostic extraction returned a false
+// "ok: true" for both:
+//   - "expo export --platform web && EXPO_PUBLIC_STORE_MVP=1 true"
+//   - "EXPO_PUBLIC_STORE_MVP=1 npm run unrelated && expo export --platform web"
+// Neither actually injects the define into the web bundle.
+function extractStoreMvpBoundToExpoExport(buildCommand) {
+  if (typeof buildCommand !== 'string') return null;
+  const segments = buildCommand.split('&&').map((segment) => segment.trim());
+  const exportSegment = segments.find((segment) => /(?:^|\s)expo\s+export(?:\s|$)/.test(segment));
+  if (!exportSegment) return null;
+
+  // The only place a shell env-prefix can legally appear is a contiguous run
+  // of `NAME=value` tokens at the very start of this segment, immediately
+  // followed by the `expo export` command itself.
+  const prefixMatch = exportSegment.match(/^((?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*)expo\s+export\b/);
+  if (!prefixMatch) return null;
+
+  const varMatch = prefixMatch[1].match(/(?:^|\s)EXPO_PUBLIC_STORE_MVP=(\S+)/);
+  return varMatch ? varMatch[1] : null;
 }
 
 const VALID_STORE_MVP_VALUES = new Set(['0', '1']);
@@ -46,7 +86,7 @@ export const BRANCH_STORE_MVP_POLICY = {
  * @returns {{ ok: boolean, value: string|null, declaredBranch: string|null, reason: string }}
  */
 export function evaluateVercelBuildCommand(buildCommand) {
-  const value = extractShellEnvAssignment(buildCommand, 'EXPO_PUBLIC_STORE_MVP');
+  const value = extractStoreMvpBoundToExpoExport(buildCommand);
   const declaredBranch = extractShellEnvAssignment(buildCommand, 'EXPECTED_VERCEL_BRANCH');
 
   if (!VALID_STORE_MVP_VALUES.has(value)) {
@@ -55,7 +95,7 @@ export function evaluateVercelBuildCommand(buildCommand) {
       value,
       declaredBranch,
       reason: value === null
-        ? 'EXPO_PUBLIC_STORE_MVP is not explicitly set in buildCommand — this is exactly the "missing define" case that must fail closed, not fall through to the web-fail-open runtime default.'
+        ? 'EXPO_PUBLIC_STORE_MVP is not explicitly set as a shell-env prefix directly attached to the `expo export` invocation — either it is entirely missing, or it is assigned elsewhere in the buildCommand chain where POSIX shell scoping means it never reaches `expo export`\'s environment. This is exactly the "missing define" case that must fail closed, not fall through to the web-fail-open runtime default.'
         : `EXPO_PUBLIC_STORE_MVP is set to ${JSON.stringify(value)}, which is neither "0" nor "1".`,
     };
   }
