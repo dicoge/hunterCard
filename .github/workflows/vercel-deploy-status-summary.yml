@@ -19,12 +19,42 @@ name: Vercel deploy status summary
 # are posted only for Production, so day-to-day preview success does not
 # spam the PR thread. Vercel emits `environment` as
 # `Production – <project-name>` / `Preview – <project-name>` (U+2013
-# en-dash) for the two projects on this repo, so the Production /
-# Preview classification is done in scripts/ci/deploy-status-classify.sh
-# and gated on its `env_kind` output rather than a raw string equality —
-# a raw comparison to the literal `"Production"` never matched Vercel's
-# real events and quietly dropped every Production success summary
-# (DIC-1401 CR round 6). Comments are de-duplicated on deployment id.
+# en-dash) for the two projects on this repo, so Production / Preview
+# classification is done via the INLINE classifier below and gated on its
+# `env_kind` output rather than a raw string equality — a raw comparison
+# to the literal `"Production"` never matched Vercel's real events and
+# quietly dropped every Production success summary (DIC-1401 CR round 6).
+# Comments are de-duplicated on deployment id.
+#
+# TRUST BOUNDARY (DIC-1401 CR round 8):
+#   deployment_status is a privileged event: GitHub loads this workflow
+#   definition from the default branch, so the YAML itself is trusted, but
+#   `github.event.deployment.sha` is the deployed PR commit and its tree
+#   is attacker-controlled for a public repo. The job below runs with
+#   `contents: write` and `pull-requests: write`, so it MUST NOT check out
+#   the deployed tree and MUST NOT execute anything (script, action from a
+#   PR-controlled path, `bash scripts/...`) that could have been mutated
+#   by the PR author — that would hand the write token to the PR author.
+#
+#   Round 7's `actions/checkout@v4 ref=deployment.sha` + `bash
+#   scripts/ci/deploy-status-classify.sh` combination did exactly that
+#   (Mac-Codex Round-7 CR). Round 8's repair:
+#     - No `actions/checkout` step anywhere in this job.
+#     - The environment classifier lives inline between the
+#       `# BEGIN INLINE CLASSIFIER` / `# END INLINE CLASSIFIER` markers
+#       below, so `scripts/test-deploy-status-classify.mjs` can extract
+#       and behavioural-test the exact code CI runs while the repo tree
+#       never enters the runner. No `scripts/` invocation exists in this
+#       job.
+#     - All event-supplied data (state, environment, sha, ref, ids,
+#       urls, description) is passed to bash exclusively via step-level
+#       `env:` blocks and referenced with double-quoted `"$VAR"`
+#       expansion — never `${{ github.event... }}` interpolated directly
+#       into a `run:` heredoc, which would let Vercel/GitHub-supplied
+#       strings containing shell metacharacters escape into command
+#       execution.
+#     - The permissions block stays scoped to the two writes the job
+#       actually needs to post the summary; no additional scopes.
 #
 # Permission notes (round 3 CR):
 #   - `contents: write` is required to post a commit comment (the no-PR /
@@ -49,23 +79,52 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.deployment_status.state == 'success' || github.event.deployment_status.state == 'error' || github.event.deployment_status.state == 'failure' }}
     steps:
-      # The classifier lives in-repo (scripts/ci/deploy-status-classify.sh)
-      # so its Production / Preview / Development mapping is directly
-      # exercised by scripts/test-deploy-status-classify.mjs. Check out the
-      # commit that was deployed (not the workflow's default HEAD of the
-      # default branch) so the classifier that runs matches the code that
-      # was actually shipped.
-      - name: Check out deployed commit
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.deployment.sha }}
-
       - name: Classify the deployment status
         id: classify
         env:
           STATE: ${{ github.event.deployment_status.state }}
           ENVIRONMENT: ${{ github.event.deployment_status.environment }}
-        run: bash scripts/ci/deploy-status-classify.sh
+        run: |
+          # BEGIN INLINE CLASSIFIER (DIC-1401 CR round 8 — must remain inline)
+          # This entire block MUST stay inline. Do not refactor it into a
+          # script under scripts/ or any other repo-tree file — anything
+          # this job executes from the repo tree is by definition
+          # PR-controlled, and this job has write token scope. See the
+          # TRUST BOUNDARY comment at the top of this file. The security
+          # contract in scripts/test-deploy-status-classify.mjs enforces
+          # this invariant.
+          set -euo pipefail
+          STATE_INPUT="${STATE:-}"
+          ENV_INPUT="${ENVIRONMENT:-}"
+          case "$STATE_INPUT" in
+            success)         VERDICT=success ;;
+            error|failure)   VERDICT=failure ;;
+            *)               VERDICT=ignore ;;
+          esac
+          # Strip Vercel's " – " (U+2013 en-dash surrounded by spaces)
+          # project qualifier; defensively also accept " - " (ASCII
+          # hyphen) so a Vercel side-string change never silently
+          # reclassifies Preview as Production.
+          ENV_PREFIX="${ENV_INPUT%% – *}"
+          if [ "$ENV_PREFIX" = "$ENV_INPUT" ]; then
+            ENV_PREFIX="${ENV_INPUT%% - *}"
+          fi
+          # Trim trailing whitespace defensively.
+          ENV_PREFIX="${ENV_PREFIX%"${ENV_PREFIX##*[![:space:]]}"}"
+          case "$ENV_PREFIX" in
+            Production)   ENV_KIND=production ;;
+            Preview)      ENV_KIND=preview ;;
+            Development)  ENV_KIND=development ;;
+            "")           ENV_KIND=unknown ;;
+            *)            ENV_KIND=unknown ;;
+          esac
+          if [ -n "${GITHUB_OUTPUT:-}" ]; then
+            echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+            echo "env_kind=$ENV_KIND" >> "$GITHUB_OUTPUT"
+          fi
+          echo "verdict=$VERDICT"
+          echo "env_kind=$ENV_KIND"
+          # END INLINE CLASSIFIER (DIC-1401 CR round 8 — must remain inline)
 
       # PR resolution is by the deployed commit SHA first (commits/{sha}/pulls
       # works for PRs whose head ref differs from deployment.ref, and for merge
@@ -77,12 +136,17 @@ jobs:
         if: ${{ steps.classify.outputs.verdict != 'ignore' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          # Event-supplied data comes in via env vars, never as
+          # ${{ ... }} interpolation into the shell body — the value
+          # is then just a bash string and shell metacharacters in
+          # `deployment.ref` (an attacker-influenced value for public
+          # forks) can never escape into command execution.
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          DEPLOY_REF: ${{ github.event.deployment.ref }}
         run: |
-          SHA="${{ github.event.deployment.sha }}"
-          REF="${{ github.event.deployment.ref }}"
-          PR_NUM="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" --jq '.[] | select(.state == "open") | .number' | sort -n | head -1 || true)"
-          if [ -z "$PR_NUM" ] && [ -n "$REF" ]; then
-            PR_NUM="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$REF" --json number --jq '.[0].number // empty')"
+          PR_NUM="$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOY_SHA/pulls" --jq '.[] | select(.state == "open") | .number' | sort -n | head -1 || true)"
+          if [ -z "$PR_NUM" ] && [ -n "$DEPLOY_REF" ]; then
+            PR_NUM="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$DEPLOY_REF" --json number --jq '.[0].number // empty')"
           fi
           echo "number=${PR_NUM:-}" >> "$GITHUB_OUTPUT"
           echo "resolved=${PR_NUM:-<none: commit comment path>}" >> "$GITHUB_STEP_SUMMARY"
@@ -92,21 +156,23 @@ jobs:
         if: ${{ steps.classify.outputs.verdict != 'ignore' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          DEPLOY_ID: ${{ github.event.deployment_status.id }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
-          DEPLOY_ID="${{ github.event.deployment_status.id }}"
-          SHA="${{ github.event.deployment.sha }}"
-          SURFACE="${{ steps.pr.outputs.number }}"
-          if [ -z "$SURFACE" ]; then
-            SURFACE="commit:$SHA"
+          if [ -n "$PR_NUMBER" ]; then
+            SURFACE="$PR_NUMBER"
+          else
+            SURFACE="commit:$DEPLOY_SHA"
           fi
           ALREADY=no
           if [[ "$SURFACE" == commit:* ]]; then
-            SHA="${SURFACE#commit:}"
-            if gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/comments" --jq '.[].body' 2>/dev/null | grep -q "Deployment id: \`$DEPLOY_ID\`"; then
+            LOOKUP_SHA="${SURFACE#commit:}"
+            if gh api "repos/$GITHUB_REPOSITORY/commits/$LOOKUP_SHA/comments" --jq '.[].body' 2>/dev/null | grep -qF "Deployment id: \`$DEPLOY_ID\`"; then
               ALREADY=yes
             fi
           else
-            if gh pr view "$SURFACE" --repo "$GITHUB_REPOSITORY" --json comments --jq '.comments[].body' 2>/dev/null | grep -q "Deployment id: \`$DEPLOY_ID\`"; then
+            if gh pr view "$SURFACE" --repo "$GITHUB_REPOSITORY" --json comments --jq '.comments[].body' 2>/dev/null | grep -qF "Deployment id: \`$DEPLOY_ID\`"; then
               ALREADY=yes
             fi
           fi
@@ -115,16 +181,23 @@ jobs:
       - name: Compose public failure summary
         id: failure-body
         if: ${{ steps.classify.outputs.verdict == 'failure' && steps.already.outputs.already == 'no' }}
+        env:
+          ENVIRONMENT: ${{ github.event.deployment_status.environment }}
+          DESCRIPTION: ${{ github.event.deployment_status.description }}
+          DEPLOY_REF: ${{ github.event.deployment.ref }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          DEPLOY_ID: ${{ github.event.deployment_status.id }}
+          LOG_URL: ${{ github.event.deployment_status.log_url }}
         run: |
           {
             echo "⚠️ **Vercel preview/production deployment FAILED** (DIC-1401 deploy-status mirror)"
             echo ""
-            echo "- Environment: \`${{ github.event.deployment_status.environment }}\`"
-            echo "- Description: \`${{ github.event.deployment_status.description }}\`"
-            echo "- Deployed ref: \`${{ github.event.deployment.ref }}\`"
-            echo "- Commit: \`${{ github.event.deployment.sha }}\`"
-            echo "- Deployment id: \`${{ github.event.deployment_status.id }}\`"
-            echo "- Logs: ${{ github.event.deployment_status.log_url }}"
+            echo "- Environment: \`$ENVIRONMENT\`"
+            echo "- Description: \`$DESCRIPTION\`"
+            echo "- Deployed ref: \`$DEPLOY_REF\`"
+            echo "- Commit: \`$DEPLOY_SHA\`"
+            echo "- Deployment id: \`$DEPLOY_ID\`"
+            echo "- Logs: $LOG_URL"
             echo ""
             echo "See the \`Validate\` job for the static function-count / build-reproduction diagnostics (test:vercel-function-count-guard, test:vercel-preview-build)."
           } > /tmp/vercel-failure-summary.md
@@ -134,26 +207,32 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
         run: |
-          PR_NUM="${{ steps.pr.outputs.number }}"
           jq -n --rawfile body /tmp/vercel-failure-summary.md '{ body: $body }' > /tmp/vercel-failure-summary.json
-          if [ -n "$PR_NUM" ]; then
-            gh pr comment "$PR_NUM" --repo "$GITHUB_REPOSITORY" --body-file /tmp/vercel-failure-summary.md
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/vercel-failure-summary.md
           else
-            gh api "repos/$GITHUB_REPOSITORY/commits/${{ github.event.deployment.sha }}/comments" --input /tmp/vercel-failure-summary.json
+            gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOY_SHA/comments" --input /tmp/vercel-failure-summary.json
           fi
 
       - name: Compose production success summary
         id: success-body
         if: ${{ steps.classify.outputs.verdict == 'success' && steps.classify.outputs.env_kind == 'production' }}
+        env:
+          ENVIRONMENT: ${{ github.event.deployment_status.environment }}
+          TARGET_URL: ${{ github.event.deployment_status.target_url }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          DEPLOY_ID: ${{ github.event.deployment_status.id }}
         run: |
           {
             echo "✅ **Production deployment succeeded** (DIC-1401 deploy-status mirror)"
             echo ""
-            echo "- Environment: \`${{ github.event.deployment_status.environment }}\`"
-            echo "- URL: ${{ github.event.deployment_status.target_url }}"
-            echo "- Commit: \`${{ github.event.deployment.sha }}\`"
-            echo "- Deployment id: \`${{ github.event.deployment_status.id }}\`"
+            echo "- Environment: \`$ENVIRONMENT\`"
+            echo "- URL: $TARGET_URL"
+            echo "- Commit: \`$DEPLOY_SHA\`"
+            echo "- Deployment id: \`$DEPLOY_ID\`"
             echo ""
             echo "Release-parity check compares this commit against the mobile production build's provenance (\`/version.json\` → mobile \`build-provenance.json\`)."
           } > /tmp/vercel-production-success.md
@@ -163,6 +242,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
         run: |
           jq -n --rawfile body /tmp/vercel-production-success.md '{ body: $body }' > /tmp/vercel-production-success.json
-          gh api "repos/$GITHUB_REPOSITORY/commits/${{ github.event.deployment.sha }}/comments" --input /tmp/vercel-production-success.json
+          gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOY_SHA/comments" --input /tmp/vercel-production-success.json
