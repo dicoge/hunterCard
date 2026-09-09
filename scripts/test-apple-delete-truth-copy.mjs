@@ -127,57 +127,141 @@ ok(
 );
 
 // ── Public copy must NAME the truthful per-provider outcome ──────────
+//
+// DIC-1381 W14 CR — bilingual public pages carry two independent
+// language sections (`<div id="content-zh">` and `<div id="content-en">`).
+// The previous CR flagged that running each predicate against the
+// concatenated HTML let one locale mask a regression in the other:
+// deleting every Google-only / both-501 / Google+Apple sentence from
+// content-zh in memory still passed as long as content-en carried the
+// facts. Split by id per file, run every W13 assertion against each
+// section independently, and add mutation probes that strip the
+// section-scoped anchors from one locale at a time.
+
+function extractLocaleSection(raw, id) {
+  // Find `<div id="{id}"` and consume until the matching closing </div>
+  // at the SAME depth. The published bilingual pages nest a couple of
+  // levels of block content inside each section (danger-card, faq-item,
+  // ol/ul/li, etc.), so track div nesting rather than "the next </div>".
+  const startIdx = raw.indexOf(`id="${id}"`);
+  if (startIdx < 0) throw new Error(`section id="${id}" not found`);
+  // Walk backwards to the enclosing <div ... `id="{id}"` open tag start
+  // (there is only one `<div` before the id attribute), then scan
+  // forward with a depth counter.
+  const openTagStart = raw.lastIndexOf('<div', startIdx);
+  if (openTagStart < 0) throw new Error(`no opening <div for id="${id}"`);
+  let depth = 0;
+  let i = openTagStart;
+  const openRe = /<div\b[^>]*>/gi;
+  const closeRe = /<\/div\s*>/gi;
+  while (i < raw.length) {
+    openRe.lastIndex = i;
+    closeRe.lastIndex = i;
+    const nextOpen = openRe.exec(raw);
+    const nextClose = closeRe.exec(raw);
+    if (!nextClose) throw new Error(`no matching </div> for id="${id}"`);
+    if (nextOpen && nextOpen.index < nextClose.index) {
+      depth += 1;
+      i = nextOpen.index + nextOpen[0].length;
+      continue;
+    }
+    // consume the close
+    depth -= 1;
+    if (depth === 0) {
+      return raw.slice(openTagStart, nextClose.index + nextClose[0].length);
+    }
+    i = nextClose.index + nextClose[0].length;
+  }
+  throw new Error(`unbalanced <div> for id="${id}"`);
+}
+
+// One shared bundle of predicates so every (page, locale) runs the
+// exact same rules; a mutation probe just calls it on a mutated copy
+// and asserts at least one predicate fails.
+function evaluateLocaleDeletionCopy(section) {
+  const results = {};
+  results.appleNotAvailable = /(apple_deletion_not_implemented|apple_revocation_not_configured|Apple 綁定的帳號目前 App 內尚未提供|Apple-linked accounts must use the email channel|Apple-linked accounts \(in-app deletion NOT available|Apple 綁定的帳號因 Apple refresh_token|Apple 綁定帳號目前需透過電子郵件管道|Any account linked with Apple|Any account with Apple linked|綁定 Apple 的帳號|any account with Apple linked)/i.test(section);
+  results.appleToEmail = /(Apple[\s\S]{0,300}dicoge\.chen@gmail\.com|dicoge\.chen@gmail\.com[\s\S]{0,300}Apple)/i.test(section);
+  results.noUnqualifiedCascade = !/cascade-?deletes?[\s\S]{0,40}(Google \/ Apple|Google and Apple)/i.test(section)
+    && !/級聯刪除[\s\S]{0,40}Google \/ Apple/i.test(section);
+  results.googleNotRevoked = /(does NOT revoke your Google refresh_token|後端不會撤銷[\s\S]{0,20}Google refresh_token|不會伺服器端撤銷您的 Google refresh_token|後端目前不會撤銷 Google refresh_token|The backend does not revoke your Google refresh_token)/i.test(section);
+  results.googleOnlyScope = /(僅綁定 Google[^<。]{0,80}未同時綁定 Apple|Google-only[^<.]{0,120}no Apple identity linked|no Apple identity linked[^<.]{0,80}self|未同時綁定 Apple[^<。]{0,120}(自助|In-app|in-app))/i.test(section);
+  results.bothReasons = /apple_deletion_not_implemented/i.test(section) && /apple_revocation_not_configured/i.test(section);
+  results.dualLinked = /(Google\+Apple|Google \+ Apple|Google[^<。.]{0,10}與 Apple[^<。]{0,20}同時綁定|Apple-only or Google\+Apple|Google\+Apple combined|Google\s*\+\s*Apple 同時綁定|Google 與 Apple 同時綁定|Apple[^<。]{0,20}including Google\+Apple|Apple-only or Google\+Apple combined)/i.test(section);
+  return results;
+}
+
+const LOCALE_PREDICATES = [
+  ['appleNotAvailable', 'states Apple-linked in-app deletion is NOT available yet'],
+  ['appleToEmail', 'routes Apple-linked users to the support email'],
+  ['noUnqualifiedCascade', 'does NOT claim unqualified Google / Apple cascade deletion'],
+  ['googleNotRevoked', 'explicitly states Google refresh_token is NOT revoked server-side'],
+  ['googleOnlyScope', 'qualifies the Google-self-delete claim as "Google-only / no Apple linked" (DIC-1381 W14 CR — dual-linked truth)'],
+  ['bothReasons', 'names BOTH 501 reasons — apple_deletion_not_implemented AND apple_revocation_not_configured (DIC-1381 W14 CR)'],
+  ['dualLinked', 'explicitly names the Google+Apple dual-linked case going through the Apple fail-closed path (DIC-1381 W14 CR)'],
+];
+
+const pageSections = [];
 for (const [page, raw] of [['public/privacy.html', privacyRaw], ['public/support.html', supportRaw]]) {
-  // Apple-linked deletion is NOT in-app self-service today
-  ok(
-    `${page} states Apple-linked in-app deletion is NOT available yet`,
-    /(apple_deletion_not_implemented|Apple 綁定的帳號目前 App 內尚未提供|Apple-linked accounts must use the email channel|Apple-linked accounts \(in-app deletion NOT available|Apple 綁定的帳號因 Apple refresh_token|Apple 綁定帳號目前需透過電子郵件管道|Any account linked with Apple|Any account with Apple linked|綁定 Apple 的帳號)/i.test(raw),
-    'page must state Apple-linked in-app deletion is not self-service today',
-  );
-  // Explicit fallback: email channel for Apple users
-  ok(
-    `${page} routes Apple-linked users to the support email`,
-    /(Apple[\s\S]{0,220}dicoge\.chen@gmail\.com|dicoge\.chen@gmail\.com[\s\S]{0,220}Apple)/i.test(raw),
-    'Apple-linked users must be told to email support',
-  );
-  // Must NOT claim "cascade-deletes Google / Apple" without qualification
-  ok(
-    `${page} does NOT claim unqualified Google / Apple cascade deletion`,
-    !/cascade-?deletes?[\s\S]{0,40}(Google \/ Apple|Google and Apple)/i.test(raw)
-      && !/級聯刪除[\s\S]{0,40}Google \/ Apple/i.test(raw),
-    'the unqualified "cascade-deletes Google/Apple identities" wording contradicts the Apple 501 branch',
-  );
-  // Must state the truthful Google side: on-device sign-out only,
-  // NOT server-side revocation of the Google refresh_token.
-  ok(
-    `${page} explicitly states Google refresh_token is NOT revoked server-side`,
-    /(does NOT revoke your Google refresh_token|後端不會撤銷[\s\S]{0,20}Google refresh_token|不會伺服器端撤銷您的 Google refresh_token|後端目前不會撤銷 Google refresh_token)/i.test(raw),
-    'copy must not claim server-side Google token revocation, since delete-account.ts does not do it',
-  );
-  // DIC-1381 W13 CR — the Google-branch clause MUST qualify the
-  // self-delete claim with a "no Apple linked" scope. Otherwise a
-  // Google+Apple dual-linked user reading the page thinks self-delete
-  // is available and finds a 501 at runtime.
-  ok(
-    `${page} qualifies the Google-self-delete claim as "Google-only / no Apple linked" (DIC-1381 W13 CR — dual-linked truth)`,
-    /(僅綁定 Google[^<。]{0,80}未同時綁定 Apple|Google-only[^<.]{0,80}no Apple identity linked|no Apple identity linked[^<.]{0,80}self|未同時綁定 Apple[^<。]{0,120}(自助|In-app|in-app))/i.test(raw),
-    'without a "Google-only / no Apple linked" qualifier, a dual-linked (Google+Apple) reader is misled',
-  );
-  // DIC-1381 W13 CR — the copy MUST cover both 501 branches the
-  // handler can emit, since a dual-linked user can hit either one
-  // depending on server env.
-  ok(
-    `${page} names BOTH 501 reasons — apple_deletion_not_implemented AND apple_revocation_not_configured (DIC-1381 W13 CR)`,
-    /apple_deletion_not_implemented/i.test(raw) && /apple_revocation_not_configured/i.test(raw),
-    'delete-account.ts returns apple_revocation_not_configured when APPLE_* is unset; copy must mention it explicitly',
-  );
-  // DIC-1381 W13 CR — mention that a Google+Apple dual-linked account
-  // takes the Apple fail-closed path (matches handler `hasApple` check).
-  ok(
-    `${page} explicitly names the Google+Apple dual-linked case going through the Apple fail-closed path (DIC-1381 W13 CR)`,
-    /(Google\+Apple|Google \+ Apple|Google[^<。.]{0,10}與 Apple[^<。]{0,20}同時綁定|Apple-only or Google\+Apple|Google\+Apple combined|Google\s*\+\s*Apple 同時綁定|Google 與 Apple 同時綁定|Apple[^<。]{0,20}including Google\+Apple)/i.test(raw),
-    'copy must acknowledge that Google+Apple dual-linked = same fail-closed path as Apple-only',
-  );
+  const zh = extractLocaleSection(raw, 'content-zh');
+  const en = extractLocaleSection(raw, 'content-en');
+  pageSections.push({ page, raw, zh, en });
+  for (const [locale, section] of [['zh', zh], ['en', en]]) {
+    const results = evaluateLocaleDeletionCopy(section);
+    for (const [key, label] of LOCALE_PREDICATES) {
+      ok(
+        `${page} :: content-${locale} ${label}`,
+        results[key] === true,
+        `locale-isolated predicate ${key} failed on ${page} content-${locale}`,
+      );
+    }
+  }
+}
+
+// DIC-1381 W14 CR — mutation probes: for each bilingual page, strip
+// the section-scoped anchors from ONE locale at a time and prove
+// evaluateLocaleDeletionCopy() flips at least one predicate on that
+// mutated section (masking the other locale must not rescue it).
+function stripAnchors(section) {
+  return section
+    // Google-only scope (zh + en variants).
+    .replace(/僅綁定 Google[^<。]{0,120}未同時綁定 Apple[^<。]*/gi, '')
+    .replace(/Google-only[^<.]{0,120}no Apple identity linked[^<.]*/gi, '')
+    .replace(/no Apple identity linked/gi, '')
+    .replace(/未同時綁定 Apple/gi, '')
+    .replace(/Google-only/gi, '')
+    // Both 501 reason codes.
+    .replace(/apple_deletion_not_implemented/gi, '')
+    .replace(/apple_revocation_not_configured/gi, '')
+    // Google+Apple dual-linked anchors.
+    .replace(/Google\+Apple[^<]*/gi, '')
+    .replace(/Google \+ Apple[^<]*/gi, '')
+    .replace(/Google[^<。.]{0,10}與 Apple[^<。]{0,20}同時綁定/gi, '')
+    .replace(/Apple-only or Google\+Apple[^<]*/gi, '')
+    .replace(/Google\+Apple combined/gi, '');
+}
+
+for (const { page, zh, en } of pageSections) {
+  {
+    const mutated = stripAnchors(zh);
+    const results = evaluateLocaleDeletionCopy(mutated);
+    const flipped = LOCALE_PREDICATES.filter(([k]) => results[k] === false).map(([, l]) => l);
+    ok(
+      `mutation probe: stripping W14 anchors from ${page} content-zh flips at least one predicate (locale isolation intact)`,
+      flipped.length > 0,
+      flipped.length ? '' : 'zh mutant passed every predicate — locale isolation is not enforced',
+    );
+  }
+  {
+    const mutated = stripAnchors(en);
+    const results = evaluateLocaleDeletionCopy(mutated);
+    const flipped = LOCALE_PREDICATES.filter(([k]) => results[k] === false).map(([, l]) => l);
+    ok(
+      `mutation probe: stripping W14 anchors from ${page} content-en flips at least one predicate (locale isolation intact)`,
+      flipped.length > 0,
+      flipped.length ? '' : 'en mutant passed every predicate — locale isolation is not enforced',
+    );
+  }
 }
 
 // ── settings_delete_note (zh + ja) must describe per-provider truth ──
