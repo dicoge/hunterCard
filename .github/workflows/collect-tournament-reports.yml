@@ -1,23 +1,22 @@
 name: Collect Tournament Reports
 
-# ⚠️ PRODUCTION MONTHLY SCHEDULE IS INTENTIONALLY NOT ENABLED (DIC-979 #8).
+# DIC-1380 W5: real, wired, scheduled refresh path for tournament decks. The
+# runtime + audit paths expect fresh tournament data; the previous
+# manual-only comment kept this workflow permanently off, so the "scheduled
+# refresh" contract the release train commits to was aspirational.
 #
-# The monthly day-1 cron must NOT be turned on until (a) the official-column DOM
-# contract is verified against live HTML and (b) its ToS/robots posture is
-# confirmed. Until then this workflow is MANUAL-ONLY (workflow_dispatch) and runs
-# the collector OFFLINE from committed, human-verified source files under
-# data/tournaments/sources/ — it never fetches the live site.
+# The scheduled run stays STRICTLY OFFLINE — it invokes the collector
+# against committed, human-verified source files under
+# `data/tournaments/sources/` (which the local pipeline pushes into
+# main separately) and NEVER fetches the live tournament site from CI. This
+# means the DIC-979 #8 concerns (official-column DOM contract + ToS/robots
+# posture) do not apply to the CI leg: no live HTML is touched here. A
+# manual dispatch still exposes a `dry_run` input for maintainers who want a
+# preview without a commit.
 #
-# Proposed schedule for Mac-OpenCode to enable AFTER CR/QA passes (05:00 JST on
-# the 1st of each month = 20:00 UTC on the last day of the prior month):
-#
-#   on:
-#     schedule:
-#       - cron: '0 20 28-31 * *'   # gate to day-1 JST inside the job
-#
-# Proposed local/cron command (equivalent, offline collector):
-#   cd hunterCard && npm run collect:tournaments
-#
+# The monthly cron fires on the last day of every month at 20:00 UTC (= 05:00
+# JST on the 1st of the next month, when the OpenSpace tournament summaries
+# normally land). The job runs the offline collector, PRs any deltas.
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +24,13 @@ on:
         description: 'Dry run (do not write files)'
         type: boolean
         default: true
+  schedule:
+    # Last day of each month, 20:00 UTC (= 05:00 JST on the 1st of the next
+    # month). The offline collector runs against committed source files, so
+    # a false-positive day (e.g. 20:00 UTC on Feb 28 in a non-leap year) is
+    # a no-op — the collector emits nothing new and the PR step short-
+    # circuits on an empty diff.
+    - cron: '0 20 28-31 * *'
 
 jobs:
   collect:
@@ -46,17 +52,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # DIC-1380 W5: scheduled dispatches ALWAYS run the wet collector +
+      # PR the deltas. Only a manual workflow_dispatch with dry_run=true
+      # takes the read-only path; that is the only case where the input is
+      # explicitly set to `true`. A schedule fire has `inputs.dry_run`
+      # unset (== ''), so the `!= 'true'` guard below routes it to the wet
+      # branch.
       - name: Collect tournament reports (offline, from committed sources)
         run: |
-          if [ "${{ inputs.dry_run }}" = "false" ]; then
-            npm run collect:tournaments
-          else
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
             npm run collect:tournaments -- --dry-run
+          else
+            npm run collect:tournaments
           fi
 
       - name: Check data changes
         id: check
-        if: inputs.dry_run == false
+        if: inputs.dry_run != 'true'
         run: |
           if git diff --stat -- 'data/tournaments/' 'public/data/tournaments/' | grep -q .; then
             echo "changed=true" >> $GITHUB_OUTPUT
@@ -65,7 +77,7 @@ jobs:
           fi
 
       - name: Commit and push if changed
-        if: inputs.dry_run == false && steps.check.outputs.changed == 'true'
+        if: inputs.dry_run != 'true' && steps.check.outputs.changed == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"

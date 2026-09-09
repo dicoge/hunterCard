@@ -1,0 +1,101 @@
+name: Refresh YT Stats
+
+# DIC-1380 W5: real, wired, scheduled refresh path for the YouTube subscriber
+# / view stats block in `data/database.json`. The runtime freshness gate
+# (`hasDisplayableSubscriberStats`, DIC-1380 daily 24 h window) fails closed
+# when the ytStats block goes stale — this workflow is what keeps it fresh.
+#
+# `scripts/refresh-yt-stats.mjs` recomputes every card's `ytStats` block from
+# the committed `data/yt-stats-history.json` and the committed
+# `data/yt-members.json`. It performs NO live network fetches (the raw
+# snapshots are refreshed by a separate local-cron pipeline that has real
+# access to the YouTube data API), so this workflow is safe to run in CI on a
+# schedule without ToS/rate-limit risk.
+#
+# The output is committed to a bot-owned sync branch and opened as a PR
+# against main (same pattern as `official-catalog-sync.yml`) — main stays
+# protected and never receives a direct push from this workflow.
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:23 UTC daily — off the on-the-hour surge, matches the runtime
+    # 24-hour freshness contract by producing a refresh at least once per
+    # day so the Production build's freshness gate cannot go red.
+    - cron: '23 3 * * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  SYNC_BRANCH: bot/refresh-yt-stats
+  BASE_BRANCH: main
+  # The exact paths this workflow is allowed to stage. Nothing else may
+  # sneak in via `git add -A`.
+  SYNC_PATHS: >-
+    data/database.json
+    public/data/database.json
+
+jobs:
+  refresh-yt-stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Serialise scheduled + manual dispatches so two runs cannot race to
+    # refresh the same sync branch or open duplicate PRs.
+    concurrency:
+      group: refresh-yt-stats
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Recompute ytStats from committed history + members files
+        run: npm run refresh:yt-stats
+
+      - name: Regenerate the native / Store-safe database mirror
+        # public/data/database.json is what native + Store MVP web ship;
+        # keep it in lock-step with the canonical bytes we just refreshed.
+        run: node scripts/generate-native-database.mjs
+
+      - name: Detect changes
+        id: detect
+        run: |
+          if git status --porcelain -- $SYNC_PATHS | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open / refresh the sync PR
+        if: steps.detect.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git checkout -B "$SYNC_BRANCH"
+          git add $SYNC_PATHS
+          git commit -m "chore: refresh YT stats $(date -u +%Y-%m-%d)"
+          git push --force-with-lease origin "$SYNC_BRANCH"
+          if gh pr view "$SYNC_BRANCH" --json state --jq '.state' 2>/dev/null | grep -q OPEN; then
+            echo "refresh PR already open — force-push updates it in place"
+          else
+            gh pr create \
+              --base "$BASE_BRANCH" \
+              --head "$SYNC_BRANCH" \
+              --title "chore: refresh YT stats $(date -u +%Y-%m-%d)" \
+              --body "DIC-1380 W5 scheduled YT stats refresh. Recomputed ytStats from committed history + members files. No live YouTube API calls made in CI."
+          fi
