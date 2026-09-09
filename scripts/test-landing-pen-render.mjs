@@ -273,72 +273,222 @@ await test('desktop 1440: Pen three-card Hero composition mounts (DIC-1380 W7 CR
   } finally { await cleanup(); }
 });
 
-// ── DIC-1380 W8 CR: three CARD-ART hero (not text price cards) ─────
-await test('desktop 1440: Pen three CARD-ART hero — each tile has a card-art strip + rarity badge (DIC-1380 W8 CR)', async () => {
-  const { container, cleanup } = await renderLanding(DESKTOP);
-  try {
-    // Every hero tile carries a `landing-hero-cardart-*-art` anchor for
-    // the stylised card-art strip. Text-only price cards would not have
-    // this anchor.
-    for (const which of ['primary', 'secondary', 'tertiary']) {
-      const art = byTestId(container, `landing-hero-cardart-${which}-art`);
-      assert.ok(art, `hero ${which} tile carries a card-art strip anchor (Pen 3 card-art hero)`);
-      const parent = byTestId(container, `landing-hero-card-${which}`);
-      assert.ok(parent.contains(art), `card-art strip lives inside the ${which} hero card tile`);
-    }
-    // Each tile must expose a card NUMBER (hSD01-016 / hBP01-042 /
-    // hBP02-088) — the tile is a card, not a bare price row.
-    const hero = byTestId(container, 'landing-hero-visual');
-    for (const num of ['hSD01-016', 'hBP01-042', 'hBP02-088']) {
-      assert.ok(hero.textContent.includes(num), `hero tile shows card number ${num}`);
-    }
-    // Rarity badges land: UR / SR / C. Anchor via each tile's own
-    // textContent so we do not accidentally match a "C" that appears
-    // elsewhere on the page.
-    const primaryTile = byTestId(container, 'landing-hero-card-primary');
-    const secondaryTile = byTestId(container, 'landing-hero-card-secondary');
-    const tertiary = byTestId(container, 'landing-hero-card-tertiary');
-    assert.ok(primaryTile.textContent.includes('UR'), 'primary tile shows UR rarity');
-    assert.ok(secondaryTile.textContent.includes('SR'), 'secondary tile shows SR rarity');
-    assert.ok(tertiary.textContent.includes('C'), 'tertiary tile shows C rarity');
-  } finally { await cleanup(); }
-});
+// ── DIC-1381 W9 CR: hero images + section order DERIVED FROM THE
+//    ACCEPTED PEN FILE, not from self-authored anchors. `data/pen/
+//    holohunter-landing-v2.pen` is the on-disk copy of the same artifact
+//    PM attached to DIC-1380; parsing it here means a re-accepted Pen
+//    (different image URL, reordered section list) fails these checks
+//    unless production is updated to match. If the Pen file is missing
+//    or unparseable, the tests fail closed — a passing green cannot
+//    happen without the artifact.
+const fs = await import('node:fs');
+const pathMod = await import('node:path');
+const PEN_PATH = pathMod.resolve('data/pen/holohunter-landing-v2.pen');
+if (!fs.existsSync(PEN_PATH)) {
+  throw new Error(`Pen artifact fixture not found at ${PEN_PATH}. The Landing Pen conformance regression cannot run without it.`);
+}
+const pen = JSON.parse(fs.readFileSync(PEN_PATH, 'utf8'));
 
-// ── DIC-1380 W8 CR: Landing section ORDER ─────────────────────────
-await test('desktop 1440: Landing section order matches Pen composition (DIC-1380 W8 CR — Nav→Hero→Stats→Features→How→Collection→Price→Plans→FAQ→FinalCTA→Footer)', async () => {
+// Pen files store the tree as nested `children` arrays of full node
+// objects (id / name / type / …). Walk the tree to locate the frame by
+// id, then read its direct `children` one level down. Follow the two
+// Landing frames (`XwzSU` desktop / `D2SGVB` mobile) to recover the
+// top-level section order the Pen anchors.
+function findPenNode(id) {
+  const stack = Array.isArray(pen.children) ? [...pen.children] : [];
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n || typeof n !== 'object') continue;
+    if (n.id === id) return n;
+    if (Array.isArray(n.children)) for (const c of n.children) stack.push(c);
+  }
+  return null;
+}
+function penChildrenOf(rootId) {
+  const node = findPenNode(rootId);
+  if (!node) throw new Error(`Pen node ${rootId} not found`);
+  const children = Array.isArray(node.children) ? node.children : [];
+  return children.map((c) => ({ id: c.id, name: String(c.name ?? ''), type: String(c.type ?? '') }));
+}
+
+// Section-name → production testID mapping. Pen names are human-readable
+// design labels; production carries stable testIDs. A section that lands
+// in the Pen but has no mapped testID here is a Pen-composition surface
+// we haven't wired yet — the test fails so it can't be silently skipped.
+const PEN_TO_TESTID = new Map([
+  ['Nav', 'landing-nav'],
+  ['Hero', 'landing-hero'],
+  ['Stats Bar', 'landing-stats-bar'],
+  ['Features', 'landing-features'],
+  ['Price Section', 'landing-price'],
+  ['Collection Section', 'landing-collection-preview'],
+  // Mobile Pen renames the Collection section to "Deck Section"; both
+  // land in the same Landing surface (`landing-collection-preview`).
+  ['Deck Section', 'landing-collection-preview'],
+  ['How It Works', 'landing-how-it-works'],
+  ['Plans', 'landing-plans'],
+  ['FAQ Section', 'landing-faq'],
+  ['FAQ', 'landing-faq'],
+  ['Final CTA', 'landing-final-cta'],
+  ['Footer', 'landing-footer'],
+]);
+
+function penSectionOrderAsTestIds(rootId) {
+  return penChildrenOf(rootId).map(({ name }) => {
+    const id = PEN_TO_TESTID.get(name);
+    if (!id) throw new Error(`Pen section "${name}" under ${rootId} has no production testID mapping — wire it or update PEN_TO_TESTID`);
+    return id;
+  });
+}
+
+const DESKTOP_ORDER = penSectionOrderAsTestIds('XwzSU');
+const MOBILE_ORDER = penSectionOrderAsTestIds('D2SGVB');
+
+for (const [label, viewport, expectedOrder, rootPenId] of [
+  ['desktop 1440', DESKTOP, DESKTOP_ORDER, 'XwzSU'],
+  ['mobile 390', MOBILE, MOBILE_ORDER, 'D2SGVB'],
+]) {
+  await test(`${label}: Landing section order matches accepted Pen frame ${rootPenId} (DIC-1381 W9 CR — derived from data/pen/holohunter-landing-v2.pen)`, async () => {
+    const { container, cleanup } = await renderLanding(viewport);
+    try {
+      const positions = expectedOrder.map((id) => {
+        const el = byTestId(container, id);
+        assert.ok(el, `Pen section testID '${id}' (derived from ${rootPenId}) must mount at ${label}`);
+        return el;
+      });
+      for (let i = 0; i < positions.length - 1; i++) {
+        const a = positions[i];
+        const b = positions[i + 1];
+        const rel = a.compareDocumentPosition(b);
+        assert.ok(
+          rel & 0x04, // DOCUMENT_POSITION_FOLLOWING
+          `${label}: section ${expectedOrder[i]} must precede ${expectedOrder[i + 1]} — Pen ${rootPenId} order is ${expectedOrder.join(' → ')}`,
+        );
+      }
+    } finally { await cleanup(); }
+  });
+}
+
+// ── DIC-1381 W9 CR: three image-card hero — derived from Pen `z5AkG` ──
+// The accepted Pen anchors an image fill on `Card Left` / `Card Right` /
+// `Card Center` (frame `z5AkG`); we recover the image URLs from the Pen
+// file and assert that production renders a real <img> at the same three
+// filenames. A coloured <View> stand-in fails because the DOM node
+// carries no `src` attribute pointing at those specific catalog card art
+// files.
+function penHeroCardFills() {
+  const hero = findPenNode('z5AkG');
+  if (!hero) throw new Error('Pen hero frame z5AkG not found');
+  const found = {};
+  for (const child of hero.children ?? []) {
+    if (!child || typeof child !== 'object') continue;
+    const name = String(child.name ?? '');
+    if (!/^Card /.test(name)) continue;
+    const fill = child.fill;
+    const url = (fill && typeof fill === 'object' && fill.type === 'image' && typeof fill.url === 'string') ? fill.url : null;
+    if (!url) throw new Error(`Pen hero card frame "${name}" (${child.id}) has no image fill — the accepted Pen anchor requires an image fill on every Card frame`);
+    const filenameMatch = url.match(/([^\/]+?)(\.png|\.jpg|\.jpeg)$/i);
+    const key = name.replace(/^Card\s+/i, '').toLowerCase();
+    found[key] = { penUrl: url, penFilename: filenameMatch ? filenameMatch[1] : url };
+  }
+  if (!found.left || !found.right || !found.center) throw new Error(`Pen hero frame z5AkG must carry Card Left / Card Right / Card Center — got ${JSON.stringify(Object.keys(found))}`);
+  return found;
+}
+
+const HERO_FILLS = penHeroCardFills();
+
+// Pen Card Left / Center / Right map onto production primary /
+// secondary / tertiary in the Landing composition (Left = primary
+// biggest tile with sparkline; Center = middle; Right = right).
+const PEN_TO_PROD = { left: 'primary', center: 'secondary', right: 'tertiary' };
+
+await test(
+  'desktop 1440: hero three image-card tiles render <Image> with the Pen-anchored card artwork (DIC-1381 W9 CR — derived from Pen z5AkG image fills)',
+  async () => {
+    const { container, cleanup } = await renderLanding(DESKTOP);
+    try {
+      for (const [penKey, prodKey] of Object.entries(PEN_TO_PROD)) {
+        const anchor = byTestId(container, `landing-hero-cardart-${prodKey}-art`);
+        assert.ok(anchor, `hero ${prodKey} tile carries a card-art anchor mapped to Pen "Card ${penKey}"`);
+        // react-native-web renders <Image> as `<div role="img">` carrying
+        // an inner background-image + a fallback <img>. Either surface
+        // must carry the specific Pen catalog filename — a plain colour
+        // <div> would carry neither.
+        assert.equal(
+          anchor.getAttribute('role'), 'img',
+          `hero ${prodKey} anchor must render as an image (Pen "Card ${penKey}" carries an image fill); react-native-web sets role="img"`,
+        );
+        const innerImg = anchor.querySelector('img');
+        const innerBg = anchor.querySelector('[style*="background-image"]');
+        const penFilename = HERO_FILLS[penKey].penFilename;
+        const imgSrc = innerImg?.getAttribute('src') || '';
+        const bgStyle = innerBg?.getAttribute('style') || '';
+        assert.ok(
+          imgSrc.includes(penFilename) || bgStyle.includes(penFilename),
+          `hero ${prodKey} tile must reference Pen filename "${penFilename}" (from ${HERO_FILLS[penKey].penUrl}) in either <img src> or background-image; got img.src="${imgSrc}" bg.style="${bgStyle}"`,
+        );
+      }
+      const hero = byTestId(container, 'landing-hero-visual');
+      // Each Pen card artwork is a specific catalog printing — assert
+      // production tiles show the same catalog card numbers rather than
+      // arbitrary substitutes.
+      for (const pf of Object.values(HERO_FILLS)) {
+        const number = pf.penFilename.replace(/_[A-Z]+$/i, '');
+        assert.ok(hero.textContent.includes(number), `hero tile shows Pen-anchored card number ${number}`);
+      }
+    } finally { await cleanup(); }
+  },
+);
+
+// ── DIC-1381 W9 CR: Landing sync copy must not contradict the Store MVP
+//    binding gate. `installAccountSyncBinding()` is gated on
+//    `FEATURES.favorites || FEATURES.watchlist || FEATURES.premium`, and
+//    all three are derived from `!STORE_MVP` — so under Store MVP those
+//    fields don't sync. Any sentence on the Landing that claims
+//    favorites/decks/priceAlerts/settings sync must either omit the
+//    unconditional claim or explicitly gate it on non-Store-MVP builds.
+await test('desktop 1440: Landing has no unqualified sync claim (DIC-1381 W9 CR — derived from App.tsx binding gate)', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  // Truth check: App.tsx really does gate the binding on all three flags,
+  // and all three flags are STORE_MVP-off under releaseFlags.ts. Fail
+  // closed if the wiring assumption stops holding.
+  const appSrc = fs.readFileSync(path.resolve('App.tsx'), 'utf8');
+  assert.ok(
+    /installAccountSyncBinding\(\)/.test(appSrc)
+      && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(appSrc),
+    'App.tsx must gate installAccountSyncBinding() on FEATURES.favorites || .watchlist || .premium — the assumption this test rides on',
+  );
+  const flagsSrc = fs.readFileSync(path.resolve('src/config/releaseFlags.ts'), 'utf8');
+  for (const key of ['favorites', 'watchlist', 'premium']) {
+    assert.ok(
+      new RegExp(`${key}:\\s*!STORE_MVP`).test(flagsSrc),
+      `releaseFlags.ts must derive FEATURES.${key} from !STORE_MVP so the Store MVP build disables the sync binding`,
+    );
+  }
+
   const { container, cleanup } = await renderLanding(DESKTOP);
   try {
-    const expectedOrder = [
-      'landing-nav',
-      'landing-hero',
-      'landing-stats-bar',
-      'landing-features',
-      'landing-how-it-works',
-      'landing-collection-preview',
-      'landing-price',
-      'landing-plans',
-      'landing-faq',
-      'landing-final-cta',
-      'landing-footer',
-    ];
-    const positions = expectedOrder.map((id) => {
-      const el = byTestId(container, id);
-      assert.ok(el, `section ${id} mounts`);
-      // Use DOM traversal position — a simple ordered index via
-      // getBoundingClientRect().top is not available in jsdom; use the
-      // order of appearance via a treewalker.
-      return el;
-    });
-    // Every section must come BEFORE its successor in document order.
-    for (let i = 0; i < positions.length - 1; i++) {
-      const a = positions[i];
-      const b = positions[i + 1];
-      const rel = a.compareDocumentPosition(b);
-      assert.ok(
-        rel & 0x04, // DOCUMENT_POSITION_FOLLOWING
-        `section ${expectedOrder[i]} must precede section ${expectedOrder[i + 1]} in document order (Pen composition order — DIC-1380 W8 CR)`,
-      );
+    const text = container.textContent || '';
+    // The Landing is user-visible copy; SYNC_FIELD_WORDS covers the
+    // sync-payload fields in ordinary language on both zh and en. A
+    // sentence that combines a sync verb with several of these fields
+    // and NO Store-MVP qualifier is the exact false claim the CR named.
+    const SYNC_FIELD_WORDS = ['收藏', '牌組', '價格提醒', '到價提醒', '設定', 'favorites', 'decks', 'price alerts', 'settings'];
+    const SYNC_VERB = /(同步到|會同步|sync to|are synced|are sync|同步至|同步(?![^。]{0,20}僅))/i;
+    const QUALIFIER = /(Store MVP|feature flag|installAccountSyncBinding|Web Develop|Web Staging|不會|does not|does NOT|not currently|not sent|only sync|僅在啟用|尚未|本機儲存|裝置本機|local storage|per-device|for now)/i;
+    // Split into sentence-ish spans; punctuation covers zh + en.
+    const spans = text.split(/[。.!?]|(?<=；)\s+/g);
+    const bad = [];
+    for (const s of spans) {
+      if (!s || s.length < 15) continue;
+      const fields = SYNC_FIELD_WORDS.filter((w) => s.includes(w));
+      if (fields.length < 2) continue;
+      if (!SYNC_VERB.test(s)) continue;
+      if (QUALIFIER.test(s)) continue;
+      bad.push(s.trim().slice(0, 220));
     }
+    assert.equal(bad.length, 0, `Landing sync copy contradicts Store MVP binding gate. Offending spans:\n    - ${bad.join('\n    - ')}`);
   } finally { await cleanup(); }
 });
 

@@ -279,7 +279,7 @@
       <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。我們非常重視您的個人隱私。本政策說明我們如何處理多方帳號登入、綁定、訂閱狀態與相關個人資料。當您使用本 App 時，即表示您同意本政策。</p>
 
       <div class="danger-card">
-        <p><strong>目前版本狀態：</strong> <strong>Google 帳號登入與雲端帳號已實際運作</strong>：登入會向 Google 取得您的 ID Token，並在我們的後端（Vercel KV）建立一筆雲端帳號紀錄。收藏、牌組、價格提醒與設定會在您登入時同步到該帳號。因此<strong>確實存在儲存於雲端、可被刪除的個人資料</strong>，刪除方式見第 5 節。</p>
+        <p><strong>目前版本狀態：</strong> <strong>Google 帳號登入與雲端帳號已實際運作</strong>：登入會向 Google 取得您的 ID Token，並在我們的後端（Vercel KV）建立一筆雲端帳號紀錄。<strong>目前 Store MVP 上架版本不會啟動雲端同步 binding</strong>（App 內 <code>installAccountSyncBinding()</code> 由 <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code> 控管，Store MVP 下三個 flag 全部為 false），因此收藏、牌組、價格提醒與設定<strong>不會</strong>在 Production 版本上被送往 <code>/api/auth/sync</code>；此欄位僅在 Web Develop／Staging 或未來 feature flag 打開的建構中同步。無論如何，帳號基本資料（Internal User ID、Email、顯示名稱、Provider 綁定）仍然是儲存於雲端、可被刪除的個人資料，刪除方式見第 5 節。</p>
         <p><strong>尚未實作的部分：</strong>本 App <strong>目前沒有任何付費或訂閱機制</strong>——沒有串接 App Store、Google Play Billing 或任何第三方金流，不會處理付款、不會收費，也<strong>不會取得或儲存任何交易代碼與財務資料</strong>。App 內亦<strong>未啟用任何廣告或分析追蹤 SDK</strong>。Android 版的 Apple ID 登入預設為關閉。凡下方標示為未來版本規劃的段落皆為藍圖，並非現況；若日後有變更，將在實裝前先更新本政策。</p>
       </div>
 
@@ -377,7 +377,7 @@
       <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). We highly value your personal privacy. This policy describes how we handle multi-provider sign-ins, account linking, subscriptions, and related personal data. By using the App, you agree to this policy.</p>
 
       <div class="danger-card">
-        <p><strong>Current Build Status:</strong> <strong>Google Sign-In and cloud accounts are live.</strong> Signing in obtains an ID token from Google and creates a cloud account record in our backend (Vercel KV). Your favorites, decks, price alerts, and settings sync to that account while you are signed in. There <strong>is</strong> therefore personal data stored in the cloud that can be deleted — see Section 5.</p>
+        <p><strong>Current Build Status:</strong> <strong>Google Sign-In and cloud accounts are live.</strong> Signing in obtains an ID token from Google and creates a cloud account record in our backend (Vercel KV). <strong>The Store MVP build does NOT install the account-sync binding</strong> — <code>installAccountSyncBinding()</code> is gated on <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code>, and all three flags are false under Store MVP, so favorites, decks, price alerts, and settings on the Production build are <strong>not</strong> sent to <code>/api/auth/sync</code>; those fields only sync under Web Develop / Staging or a future build that flips these feature flags on. Either way, your basic account record (Internal User ID, email, display name, linked providers) is personal data stored in the cloud that can be deleted — see Section 5.</p>
         <p><strong>Not implemented:</strong> the App has <strong>no payment or subscription mechanism at all</strong>. It is not connected to the App Store, Google Play Billing, or any third-party payment processor; it does not process payments, does not charge you, and <strong>does not obtain or store any transaction identifier or financial data</strong>. No advertising or analytics tracking SDK is enabled. Sign in with Apple is disabled by default on Android. Any paragraph below marked as a future plan is a blueprint, not the current state; if it changes, this policy is updated before the change ships.</p>
       </div>
 

@@ -33,8 +33,41 @@ import {
   ScrollView,
   SafeAreaView,
   Linking,
+  Image,
   Platform,
 } from 'react-native';
+
+// Pen `holohunter-landing-v2.pen` accepted hero card artwork (frame `z5AkG`).
+// The three card frames — `Card Left` / `Card Right` / `Card Center` —
+// carry image fills anchored to specific catalog printings, so the hero
+// visually reads as a card row rather than three coloured strips (the
+// DIC-1381 W9 CR named this exact regression). Assets are bundled into the
+// app (Metro/Webpack resolves the ESM import to a hashed URL) so no
+// external image request is fired from the Landing — the privacy-policy
+// "no external images on Landing" contract stays intact. Filenames mirror
+// the Pen `images/<cardNumber>_<rarity>.png` anchor so a rename in one
+// place is caught in the other.
+// Pen frame layout, left → center → right:
+//   Card Left   (uR7Wd) → images/hBP01-023_UR.png
+//   Card Center (ntKk3) → images/hBP01-081_UR.png
+//   Card Right  (LFnFH) → images/hBP02-013_UR.png
+// Production tiles render primary (biggest tile with sparkline) → secondary
+// → tertiary in the same left-to-right order, so primary=Card Left,
+// secondary=Card Center, tertiary=Card Right. The regression derives this
+// mapping directly from the Pen so a swap on either side fails.
+import HeroCardPrimary from '../../assets/landing-cards/hBP01-023_UR.jpg';
+import HeroCardSecondary from '../../assets/landing-cards/hBP01-081_UR.jpg';
+import HeroCardTertiary from '../../assets/landing-cards/hBP02-013_UR.jpg';
+const HERO_CARD_ART = {
+  primary: HeroCardPrimary,
+  secondary: HeroCardSecondary,
+  tertiary: HeroCardTertiary,
+} as const;
+export const HERO_CARD_ART_PEN_FILENAMES = {
+  primary: 'hBP01-023_UR',
+  secondary: 'hBP01-081_UR',
+  tertiary: 'hBP02-013_UR',
+} as const;
 import { useAuthStore } from '../store/authStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTranslation } from '../i18n';
@@ -141,7 +174,7 @@ const FAQ = [
   },
   {
     q: '沒有帳號可以先試用嗎？',
-    a: '可以。以訪客身份直接進入即可使用卡表檢索、規則教學、模擬對局與牌組編輯器；拍照掃描與跨裝置同步需登入 Google 或 Apple 帳號。',
+    a: '可以。以訪客身份直接進入即可使用卡表檢索、規則教學、模擬對局與牌組編輯器；拍照掃描需登入 Google 或 Apple 帳號。收藏、牌組與到價提醒目前在 Store MVP 版本上為本機儲存，不會發出 /api/auth/sync 請求；未來啟用同步功能的建構會在登入後把上述資料同步到雲端。',
   },
   {
     q: '卡牌影像會被上傳到伺服器嗎？',
@@ -149,7 +182,7 @@ const FAQ = [
   },
   {
     q: 'iOS / Android / 網頁版功能一致嗎？',
-    a: '介面與資料一致；掃描辨識的實作因平台不同（手機用裝置端 OCR、網頁用 AI 視覺辨識）。跨裝置同步以帳號雲端後端為準。',
+    a: '介面與資料一致；掃描辨識的實作因平台不同（手機用裝置端 OCR、網頁用 AI 視覺辨識）。跨裝置同步僅在啟用 /api/auth/sync binding 的建構（Web Develop／Staging 或未來 feature flag 打開）上運作；Store MVP 上架版本目前為裝置本機儲存。',
   },
 ];
 
@@ -287,8 +320,8 @@ export default function LandingScreen() {
     : 'hOCG · 非官方查詢工具 · 支援中日文';
 
   const noteText = isDesktop
-    ? '訪客可查卡與看規則 · 掃描與收藏需登入（Google 登入即將推出）'
-    : '訪客可查卡與看規則 · 掃描與收藏需登入（Google／Apple 登入與跨裝置同步陸續推出）';
+    ? '訪客可查卡與看規則 · 掃描與本機收藏需登入（Google 登入即將推出；跨裝置同步僅限啟用同步的建構）'
+    : '訪客可查卡與看規則 · 掃描與本機收藏需登入（Google／Apple 登入即將推出；跨裝置同步僅限啟用同步的建構）';
 
   return (
     <SafeAreaView style={styles.container} testID="landing-screen">
@@ -414,24 +447,33 @@ export default function LandingScreen() {
           </View>
           {isDesktop && (
             <View style={styles.heroVisual} testID="landing-hero-visual">
-              {/* DIC-1380 W8 CR — Pen three CARD-ART hero (not text price
-                  cards). The accepted Pen anchors three card-shaped
-                  tiles that preview the catalog visually: rarity color
-                  strip, card name, card number, rarity badge, and a
-                  compact price ribbon (retains the market-data teaser
-                  from W7). Sparkline stays on the primary tile. Real
-                  card artwork is not fetched from the Landing to
-                  preserve the privacy-policy "no external images on
-                  Landing" contract; the tile visually reads as a card
-                  with a stylised gradient art panel. */}
+              {/* DIC-1381 W9 CR — accepted Pen three IMAGE-CARD hero
+                  (`z5AkG`). Card Left / Card Right / Card Center each
+                  carry an `image` fill in the Pen artifact anchored to
+                  `hBP01-023_UR`, `hBP02-013_UR`, `hBP01-081_UR`. The
+                  previous colour-strip stand-in was a Pen-conformance
+                  regression. Assets are bundled into the app (`assets/
+                  landing-cards/*.jpg`) so no external image request is
+                  fired from the Landing — the privacy-policy "no
+                  external images on Landing" contract stays intact.
+                  Rarity badges reflect the actual catalog rarity of each
+                  card and the price ribbon retains the market-data
+                  teaser DIC-1380 W7 wired. */}
               <View style={styles.heroCardArt} testID="landing-hero-card-primary">
-                <View style={styles.heroCardArtStripUR} testID="landing-hero-cardart-primary-art" />
+                <Image
+                  source={HERO_CARD_ART.primary}
+                  resizeMode="cover"
+                  style={styles.heroCardArtImagePrimary}
+                  accessibilityRole="image"
+                  accessibilityLabel="hBP01-023 UR ときのそら"
+                  testID="landing-hero-cardart-primary-art"
+                />
                 <View style={styles.heroCardArtBody}>
                   <View style={styles.heroCardArtHeader}>
-                    <Text style={styles.heroCardArtName} numberOfLines={1}>星街すいせい</Text>
+                    <Text style={styles.heroCardArtName} numberOfLines={1}>ときのそら</Text>
                     <View style={styles.heroCardArtRarityUR}><Text style={styles.heroCardArtRarityText}>UR</Text></View>
                   </View>
-                  <Text style={styles.heroCardArtNumber}>hSD01-016</Text>
+                  <Text style={styles.heroCardArtNumber}>hBP01-023</Text>
                   <View style={styles.heroVisualPriceRow}>
                     <Text style={styles.heroVisualPriceCompact}>NT$ 3,600</Text>
                     <View style={styles.heroVisualDelta}>
@@ -446,25 +488,39 @@ export default function LandingScreen() {
                 </View>
               </View>
               <View style={styles.heroCardArtSecondary} testID="landing-hero-card-secondary">
-                <View style={styles.heroCardArtStripSR} testID="landing-hero-cardart-secondary-art" />
+                <Image
+                  source={HERO_CARD_ART.secondary}
+                  resizeMode="cover"
+                  style={styles.heroCardArtImageSecondary}
+                  accessibilityRole="image"
+                  accessibilityLabel="hBP01-081 UR 星街すいせい"
+                  testID="landing-hero-cardart-secondary-art"
+                />
                 <View style={styles.heroCardArtBodySmall}>
                   <View style={styles.heroCardArtHeader}>
-                    <Text style={styles.heroCardArtName} numberOfLines={1}>兎田ぺこら</Text>
-                    <View style={styles.heroCardArtRaritySR}><Text style={styles.heroCardArtRarityText}>SR</Text></View>
+                    <Text style={styles.heroCardArtName} numberOfLines={1}>星街すいせい</Text>
+                    <View style={styles.heroCardArtRarityUR}><Text style={styles.heroCardArtRarityText}>UR</Text></View>
                   </View>
-                  <Text style={styles.heroCardArtNumber}>hBP01-042</Text>
+                  <Text style={styles.heroCardArtNumber}>hBP01-081</Text>
                   <Text style={styles.heroVisualPriceSmall}>NT$ 1,180  ·  +0.6%</Text>
                 </View>
               </View>
               <View style={styles.heroCardArtSecondary} testID="landing-hero-card-tertiary">
-                <View style={styles.heroCardArtStripC} testID="landing-hero-cardart-tertiary-art" />
+                <Image
+                  source={HERO_CARD_ART.tertiary}
+                  resizeMode="cover"
+                  style={styles.heroCardArtImageSecondary}
+                  accessibilityRole="image"
+                  accessibilityLabel="hBP02-013 UR 白上フブキ"
+                  testID="landing-hero-cardart-tertiary-art"
+                />
                 <View style={styles.heroCardArtBodySmall}>
                   <View style={styles.heroCardArtHeader}>
-                    <Text style={styles.heroCardArtName} numberOfLines={1}>ラプラス・ダークネス</Text>
-                    <View style={styles.heroCardArtRarityC}><Text style={styles.heroCardArtRarityText}>C</Text></View>
+                    <Text style={styles.heroCardArtName} numberOfLines={1}>白上フブキ</Text>
+                    <View style={styles.heroCardArtRarityUR}><Text style={styles.heroCardArtRarityText}>UR</Text></View>
                   </View>
-                  <Text style={styles.heroCardArtNumber}>hBP02-088</Text>
-                  <Text style={styles.heroVisualPriceSmall}>NT$ 40  ·  −1.2%</Text>
+                  <Text style={styles.heroCardArtNumber}>hBP02-013</Text>
+                  <Text style={styles.heroVisualPriceSmall}>NT$ 320  ·  +0.4%</Text>
                 </View>
               </View>
             </View>
@@ -490,38 +546,11 @@ export default function LandingScreen() {
           </View>
         </View>
 
-        {/* HOW IT WORKS — Pen additional section (DIC-1380 W6 CR full parity) */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-how-it-works">
-          <Text style={styles.eyebrowLabel}>操作流程</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            三步驟開始使用
-          </Text>
-          <View style={[styles.howGrid, isDesktop && styles.howGridDesktop]}>
-            {HOW_IT_WORKS.map((s) => <HowStep key={s.step} step={s.step} title={s.title} body={s.body} />)}
-          </View>
-        </View>
-
-        {/* COLLECTION PREVIEW — Pen additional section (DIC-1380 W6 CR full parity) */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-collection-preview">
-          <Text style={styles.eyebrowLabel}>資料範圍</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            從卡表到市價，一次到位
-          </Text>
-          <Text style={styles.sectionSubhead}>
-            官方卡表、市價、規則教學、賽事月報都由同一個資料庫供應，跨裝置同步以帳號後端為準。
-          </Text>
-          <View style={[styles.collectionGrid, isDesktop && styles.collectionGridDesktop]}>
-            {COLLECTION_HIGHLIGHTS.map((c) => <CollectionCard key={c.title} title={c.title} body={c.body} />)}
-          </View>
-        </View>
-
-        {/* PRICE — Pen standalone price section (DIC-1380 W7 CR added, W8
-            CR moved to sit immediately BEFORE Plans in the Pen section
-            order: Nav → Hero → Stats → Features → How-It-Works →
-            Collection Preview → Price → Plans → FAQ → Final CTA →
-            Footer). Price is a Plans-adjacent surface (what you get for
-            free) so the composition flows into the paid-tier framing
-            below. */}
+        {/* PRICE — Pen `k6Plv` desktop / `izpcw` mobile.
+            Accepted Pen composition anchors Price DIRECTLY after Features
+            (Nav → Hero → Stats → Features → PRICE → Collection/Deck →
+            How-It-Works → Plans → FAQ → Final CTA → Footer). Any deviation
+            here is a Pen-conformance regression the DIC-1381 W9 CR named. */}
         <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-price">
           <Text style={styles.eyebrowLabel}>市場價格</Text>
           <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
@@ -536,6 +565,33 @@ export default function LandingScreen() {
           <Text style={styles.priceListNote}>
             資料來源：遊々亭 · 固定匯率換算 · Store MVP 版本 UI 直接使用免費會員範圍
           </Text>
+        </View>
+
+        {/* COLLECTION / DECK — Pen `KXeLu` desktop / `a7oRL` mobile.
+            Sits after Price and before How-It-Works. */}
+        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-collection-preview">
+          <Text style={styles.eyebrowLabel}>資料範圍</Text>
+          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+            從卡表到市價，一次到位
+          </Text>
+          <Text style={styles.sectionSubhead}>
+            官方卡表、市價、規則教學、賽事月報都由同一個資料庫供應。跨裝置同步僅在啟用同步功能的建構中生效。
+          </Text>
+          <View style={[styles.collectionGrid, isDesktop && styles.collectionGridDesktop]}>
+            {COLLECTION_HIGHLIGHTS.map((c) => <CollectionCard key={c.title} title={c.title} body={c.body} />)}
+          </View>
+        </View>
+
+        {/* HOW IT WORKS — Pen `ZpbU9` desktop / `D9WZMO` mobile.
+            Sits after Collection/Deck and before Plans. */}
+        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-how-it-works">
+          <Text style={styles.eyebrowLabel}>操作流程</Text>
+          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+            三步驟開始使用
+          </Text>
+          <View style={[styles.howGrid, isDesktop && styles.howGridDesktop]}>
+            {HOW_IT_WORKS.map((s) => <HowStep key={s.step} step={s.step} title={s.title} body={s.body} />)}
+          </View>
         </View>
 
         {/* PLANS — Pen `mcRLH` desktop / `MPyoM` mobile */}
@@ -623,7 +679,7 @@ export default function LandingScreen() {
             開始查卡與組牌
           </Text>
           <Text style={styles.sectionSubhead}>
-            訪客可查卡與看規則，登入後可掃描、收藏、跨裝置同步；付費訂閱尚未開放。
+            訪客可查卡與看規則，登入後可掃描並在本機收藏；跨裝置同步僅在啟用同步功能的建構中運作，Store MVP 上架版本為本機儲存。付費訂閱尚未開放。
           </Text>
           <View style={[styles.ctaRow, isDesktop && styles.ctaRowDesktop]}>
             <TouchableOpacity
@@ -885,6 +941,13 @@ const styles = StyleSheet.create({
   heroCardArtStripUR: { width: 96, backgroundColor: TOKENS.accent, opacity: 0.85 },
   heroCardArtStripSR: { width: 72, backgroundColor: TOKENS.accent3, opacity: 0.7 },
   heroCardArtStripC: { width: 72, backgroundColor: TOKENS.accent2, opacity: 0.55 },
+  // DIC-1381 W9 CR — the Pen `Card Left/Right/Center` frames carry an
+  // `image` fill, not a coloured background. These widths match the Pen
+  // primary/secondary tile geometry so the card artwork retains a
+  // vertically-oriented 100:140 aspect ratio at the accepted 1440 desktop
+  // Landing composition.
+  heroCardArtImagePrimary: { width: 116, height: '100%', backgroundColor: TOKENS.surface2 },
+  heroCardArtImageSecondary: { width: 84, height: '100%', backgroundColor: TOKENS.surface2 },
   heroCardArtHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   heroCardArtName: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '700', flexShrink: 1 },
   heroCardArtNumber: { color: TOKENS.textMuted, fontSize: 11, fontFamily: 'monospace' },

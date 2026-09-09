@@ -137,7 +137,7 @@ for (const [page, raw] of [['support.html', supportRaw], ['privacy.html', privac
   // installed under Store MVP" explicitly.
   ok(
     `${page} discloses that the sync binding is NOT installed under Store MVP (DIC-1380 W8 CR)`,
-    /(installAccountSyncBinding|不會安裝 sync binding|不會發出任何|does NOT install the sync binding|does not currently issue any|does not install the sync binding)/i.test(raw),
+    /(installAccountSyncBinding|不會安裝 sync binding|不會啟動雲端同步|不會發出任何|does NOT install the sync binding|does not currently issue any|does not install the sync binding|does NOT install the account-sync binding)/i.test(raw),
     'page must state that Store MVP does not activate the account-sync binding',
   );
   // No page may claim sync is ACTIVELY happening for the four data
@@ -161,6 +161,48 @@ for (const [page, raw] of [['support.html', supportRaw], ['privacy.html', privac
     `${page} does NOT claim subscription state is shared today (subscription is not implemented)`,
     !/(共享.{0,20}訂閱權限|sharing the same.{0,10}(monthly quotas, and )?subscription state)/i.test(raw),
     'subscription state cannot be part of shared Internal User ID state until FEATURES.premium is on',
+  );
+}
+
+// ── DIC-1381 W9 CR: ordinary-language sync claims must not contradict
+// the actual binding gate. The narrow "sync binding is active" pattern
+// the W8 test caught is one shape of the contradiction; the CR named a
+// broader one — plain sentences that say "favorites, decks, price alerts,
+// and settings sync to that account while you are signed in" or its zh
+// equivalent. Under STORE_MVP those fields do NOT sync (App.tsx gates
+// installAccountSyncBinding() on FEATURES that are all false), so those
+// sentences are false without a Store-MVP-not-applied qualifier.
+//
+// Detection strategy: find sentences that list at least three of the
+// per-user sync fields together with a syncs-to-account verb, and reject
+// any such sentence that does NOT carry a Store-MVP / feature-flag /
+// Web-Develop qualifier. Any such sentence discovered must be re-worded
+// or explicitly gated.
+const SYNC_FIELD_WORDS = [
+  '收藏', '牌組', '價格提醒', '到價提醒', '設定',
+  'favorites', 'decks', 'price alerts', 'settings', 'collection',
+];
+const SYNC_VERB_PATTERN = /(同步到|sync to that account|are synced|會同步|sync to your account|sync\s+(back\s+)?to|同步至)/i;
+const QUALIFIER_PATTERN = /(Store MVP|feature flag|FEATURES\.(favorites|watchlist|premium)|installAccountSyncBinding|Web Develop|Web Staging|不會|does not|不會安裝|does NOT|not currently|not part of|do not currently|do not sync|do NOT sync|only sync|僅在啟用|尚未|not\s+sent|不會發出)/i;
+
+for (const [page, raw] of [['privacy.html', privacyRaw]]) {
+  // Split by sentence-ish delimiters (period, 。, </p>, <br>) and scan.
+  // Tag stripping is deliberate here — we're checking user-visible copy.
+  const stripped = raw.replace(/<[^>]+>/g, ' ');
+  const sentences = stripped.split(/(?<=[。.!?])\s+|<\/?p[^>]*>|<br\s*\/?>/i);
+  const contradictions = [];
+  for (const s of sentences) {
+    if (!s || s.length < 20) continue;
+    const fieldsPresent = SYNC_FIELD_WORDS.filter((w) => s.includes(w));
+    if (fieldsPresent.length < 3) continue;
+    if (!SYNC_VERB_PATTERN.test(s)) continue;
+    if (QUALIFIER_PATTERN.test(s)) continue;
+    contradictions.push(s.trim().slice(0, 220));
+  }
+  ok(
+    `${page} has no ordinary-language sentence claiming favorites/decks/priceAlerts/settings sync without a Store MVP qualifier (DIC-1381 W9 CR)`,
+    contradictions.length === 0,
+    contradictions.length ? `Offending sentences:\n    - ${contradictions.join('\n    - ')}` : '',
   );
 }
 
