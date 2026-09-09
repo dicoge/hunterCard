@@ -1,68 +1,50 @@
 #!/usr/bin/env node
 /**
- * DIC-1401 Round-9 producer/consumer trust-boundary + inline classifier
- * behaviour tests.
+ * DIC-1401 Round-10 trusted-consumer + no-PR-controlled-trigger tests.
  *
- * WHY THE SPLIT
- * -------------
- * `deployment_status` events cause GitHub Actions to load the workflow
- * YAML from the DEPLOYMENT'S ref (which is the PR head SHA for Vercel
- * preview deployments), NOT from the repository's default branch.
- * Mac-Codex Round-8 CR proved this empirically: main did not contain
- * the deploy-status workflow file at round-8, yet the round-8 file
- * executed at PR-head SHAs with write scope on runs 34273723734 and
- * 34273978980. This means any single-file `deployment_status` handler
- * with write permissions is trivially pwn'd: a PR author simply
- * rewrites the file in their branch.
+ * WHY THIS SUITE EXISTS
+ * ---------------------
+ * Rounds 6–9 iterated on making a `deployment_status`-triggered
+ * workflow safe. Mac-Codex's CR proved each iteration wrong in turn:
+ *  - Round 6/7: a raw string comparison against `"Production"` never
+ *    matched Vercel's real `Production – <project>` events.
+ *  - Round 8: inlining the classifier did not help — GitHub loads
+ *    `deployment_status` workflow definitions from the DEPLOYED ref,
+ *    so the entire workflow YAML is PR-controlled and can request
+ *    write scope.
+ *  - Round 9: splitting into producer + consumer via `workflow_run`
+ *    put the CONSUMER on the default branch (trusted), but the
+ *    PRODUCER was still `on: deployment_status` — so a PR could
+ *    rewrite the producer to grant itself `permissions:
+ *    contents: write` and post directly, bypassing the consumer.
+ *    Additionally, the consumer trusted the producer's artifact
+ *    values (SHA-format-checked but not authenticated), so a PR
+ *    could supply its real head SHA with attacker-chosen
+ *    state/environment/URL.
  *
- * Round-9 splits this into:
- *  - Producer (.github/workflows/vercel-deploy-status-summary.yml):
- *      contents:read ONLY, no write scope, marshals event fields into
- *      an artifact. PR-controlled (loaded from deployed ref) but
- *      cannot alter the repo or post comments.
- *  - Consumer (.github/workflows/vercel-deploy-status-post.yml):
- *      on: workflow_run (types: [completed]) bound to the producer
- *      by name. `workflow_run` workflows are loaded from the DEFAULT
- *      BRANCH by GitHub Actions contract, so this YAML cannot be
- *      supplied by a PR before it merges. Holds contents:write +
- *      pull-requests:write. Downloads the producer's artifact,
- *      cross-checks the artifact's deploy_sha against GitHub's own
- *      `workflow_run.head_sha`, re-classifies the environment, and
- *      posts the summary.
- *
- * The consumer logs `github.workflow_ref` on every run so an auditor
- * can visually confirm from the run's own output that the executing
- * write workflow was loaded from the default branch.
+ * ROUND 10 REMOVES ALL PR-CONTROLLED TRIGGER SURFACES FOR THIS
+ * FEATURE. There is NO `deployment_status` workflow anywhere in
+ * `.github/workflows/`. The consumer runs on `schedule` +
+ * `workflow_dispatch` — both loaded from the DEFAULT branch by
+ * GitHub Actions contract. The consumer polls GitHub's Deployments
+ * API for its facts, filters by `creator.login == "vercel[bot]"`
+ * for both the deployment AND its status, and resolves PRs by SHA
+ * only (no `--head <ref>` fallback). Producer YAML is deleted.
  *
  * WHAT THIS SUITE COVERS
  * ----------------------
- * 1. BEHAVIOUR — the consumer's inline classifier maps every real
- *    Vercel-emitted `environment` string (as recorded in the
+ * 1. BEHAVIOUR — the consumer's inline classifier maps every
+ *    real Vercel-emitted `environment` string (as recorded in the
  *    Deployments API for this repo — deployment 6279247698 /
  *    holocard-hunter and deployment 6279257364 / holohunter-staging)
  *    to `env_kind=production`, while Preview / Development / empty /
  *    lookalike / ASCII-hyphen variants classify away from production.
  *    Extracts the exact bash between `BEGIN INLINE CLASSIFIER` /
- *    `END INLINE CLASSIFIER` markers in the consumer YAML and runs
- *    it in a fresh bash, so there is no drift channel between the
- *    tested classifier and the shipped one.
- * 2. SECURITY — nine assertions that fail CI on any regression of the
- *    round-9 trust boundary:
- *      producer permissions restricted to contents:read only,
- *      consumer uses workflow_run bound to producer's exact name,
- *      neither workflow uses actions/checkout,
- *      no `ref:` position anywhere references github.event.*,
- *      no `bash|sh|node scripts/...` invocation in either workflow,
- *      no `persist-credentials: true` anywhere,
- *      consumer never interpolates `${{ github.event.deployment* }}`
- *        into a run: body (all deployment data flows through the
- *        artifact and is validated),
- *      consumer emits provenance log referencing github.workflow_ref,
- *      consumer cross-checks producer head_sha against artifact
- *        deploy_sha (writes fail closed on mismatch),
- *      consumer validates deploy_sha format (40-char hex),
- *      artifact-name bridge between producer/consumer stays consistent,
- *      the deleted round-7 script stays deleted.
+ *    `END INLINE CLASSIFIER` markers in the consumer YAML, so there
+ *    is no drift channel between the tested and shipped classifier.
+ * 2. TRUST BOUNDARY — the repo-wide invariant + consumer-shape
+ *    contract that makes it impossible for a PR to receive
+ *    Vercel's `deployment_status` events with a write token.
  *
  * Run: node scripts/test-deploy-status-classify.mjs
  */
@@ -74,18 +56,12 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PRODUCER_PATH = path.join(
-  ROOT,
-  '.github/workflows/vercel-deploy-status-summary.yml',
-);
 const CONSUMER_PATH = path.join(
   ROOT,
   '.github/workflows/vercel-deploy-status-post.yml',
 );
-const PRODUCER_TEXT = fs.readFileSync(PRODUCER_PATH, 'utf8');
 const CONSUMER_TEXT = fs.readFileSync(CONSUMER_PATH, 'utf8');
-const PRODUCER_NAME = 'Vercel deploy status summary';
-const ARTIFACT_NAME = 'vercel-deploy-status-event';
+const WORKFLOWS_DIR = path.join(ROOT, '.github/workflows');
 
 let passed = 0;
 function test(name, fn) {
@@ -95,28 +71,22 @@ function test(name, fn) {
 }
 
 /**
- * Extract the inline classifier from the consumer YAML between BEGIN
- * and END marker comments, and strip the uniform YAML indentation so
- * the result is executable bash. Includes the marker comments (bash
- * treats them as comments).
+ * Extract the inline classifier from the consumer YAML between the
+ * BEGIN INLINE CLASSIFIER / END INLINE CLASSIFIER marker comments,
+ * and strip the uniform YAML indentation so the result is
+ * executable bash.
  */
-function extractInlineClassifier(workflowText, label) {
+function extractInlineClassifier(workflowText) {
   const startRE = /^[ \t]*#[- ]*BEGIN INLINE CLASSIFIER\b.*$/m;
   const endRE = /^[ \t]*#[- ]*END INLINE CLASSIFIER\b.*$/m;
-  const startMatch = startRE.exec(workflowText);
-  const endMatch = endRE.exec(workflowText);
+  const s = startRE.exec(workflowText);
+  const e = endRE.exec(workflowText);
+  assert.ok(s, 'consumer: BEGIN INLINE CLASSIFIER marker missing');
   assert.ok(
-    startMatch,
-    `${label}: BEGIN INLINE CLASSIFIER marker missing — the consumer classifier must remain inline for this suite to extract`,
+    e && e.index > s.index,
+    'consumer: END INLINE CLASSIFIER marker missing or before start',
   );
-  assert.ok(
-    endMatch && endMatch.index > startMatch.index,
-    `${label}: END INLINE CLASSIFIER marker missing or before start`,
-  );
-  const block = workflowText.slice(
-    startMatch.index,
-    endMatch.index + endMatch[0].length,
-  );
+  const block = workflowText.slice(s.index, e.index + e[0].length);
   const lines = block.split('\n');
   const dataLines = lines.filter((l) => l.trim().length > 0);
   const minIndent = Math.min(
@@ -125,7 +95,7 @@ function extractInlineClassifier(workflowText, label) {
   return lines.map((l) => l.slice(minIndent)).join('\n');
 }
 
-const INLINE_CLASSIFIER = extractInlineClassifier(CONSUMER_TEXT, 'consumer');
+const INLINE_CLASSIFIER = extractInlineClassifier(CONSUMER_TEXT);
 
 function runClassifier(env) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsc-'));
@@ -144,9 +114,9 @@ function runClassifier(env) {
       },
       encoding: 'utf8',
     });
-    const outputFile = fs.readFileSync(ghOutput, 'utf8');
     const parsed = Object.fromEntries(
-      outputFile
+      fs
+        .readFileSync(ghOutput, 'utf8')
         .split('\n')
         .filter(Boolean)
         .map((line) => {
@@ -165,40 +135,51 @@ function runClassifier(env) {
   }
 }
 
+// The consumer's classifier reads ENVIRONMENT from a shell variable
+// derived from DEPLOYMENT_ENV (jq'd out of the API response). The
+// classifier block itself does `ENVIRONMENT="${DEPLOYMENT_ENV:-}"`,
+// so tests need to set DEPLOYMENT_ENV as the env-var-side input.
+function runClassifierEnv({ state, environment }) {
+  return runClassifier({
+    STATE: state ?? '',
+    DEPLOYMENT_ENV: environment ?? '',
+  });
+}
+
 // -------------------------------------------------------------------
 // BEHAVIOUR — the consumer's inline classifier
 // -------------------------------------------------------------------
 
 test('state=success → verdict=success', () => {
-  const r = runClassifier({
-    STATE: 'success',
-    ENVIRONMENT: 'Production – holocard-hunter',
+  const r = runClassifierEnv({
+    state: 'success',
+    environment: 'Production – holocard-hunter',
   });
   assert.equal(r.code, 0);
   assert.equal(r.out.verdict, 'success');
 });
 
 test('state=failure → verdict=failure', () => {
-  const r = runClassifier({
-    STATE: 'failure',
-    ENVIRONMENT: 'Preview – holocard-hunter',
+  const r = runClassifierEnv({
+    state: 'failure',
+    environment: 'Preview – holocard-hunter',
   });
   assert.equal(r.out.verdict, 'failure');
 });
 
 test('state=error → verdict=failure (Vercel emits `error`, not `failure`, for build failures)', () => {
-  const r = runClassifier({
-    STATE: 'error',
-    ENVIRONMENT: 'Preview – holohunter-staging',
+  const r = runClassifierEnv({
+    state: 'error',
+    environment: 'Preview – holohunter-staging',
   });
   assert.equal(r.out.verdict, 'failure');
 });
 
 test('state=in_progress / queued / pending / empty → verdict=ignore', () => {
   for (const s of ['in_progress', 'queued', 'pending', '']) {
-    const r = runClassifier({
-      STATE: s,
-      ENVIRONMENT: 'Production – holocard-hunter',
+    const r = runClassifierEnv({
+      state: s,
+      environment: 'Production – holocard-hunter',
     });
     assert.equal(
       r.out.verdict,
@@ -209,59 +190,58 @@ test('state=in_progress / queued / pending / empty → verdict=ignore', () => {
 });
 
 test('THE ROUND-6 BLOCKER: Vercel emits `Production – holocard-hunter` → env_kind=production', () => {
-  const r = runClassifier({
-    STATE: 'success',
-    ENVIRONMENT: 'Production – holocard-hunter',
+  const r = runClassifierEnv({
+    state: 'success',
+    environment: 'Production – holocard-hunter',
   });
   assert.equal(r.out.env_kind, 'production');
   assert.equal(r.out.verdict, 'success');
 });
 
 test('THE ROUND-6 BLOCKER: Vercel emits `Production – holohunter-staging` → env_kind=production', () => {
-  const r = runClassifier({
-    STATE: 'success',
-    ENVIRONMENT: 'Production – holohunter-staging',
+  const r = runClassifierEnv({
+    state: 'success',
+    environment: 'Production – holohunter-staging',
   });
   assert.equal(r.out.env_kind, 'production');
 });
 
 test('MUTATION: `Preview – holocard-hunter` (state=success) → env_kind=preview, NOT production', () => {
-  const r = runClassifier({
-    STATE: 'success',
-    ENVIRONMENT: 'Preview – holocard-hunter',
+  const r = runClassifierEnv({
+    state: 'success',
+    environment: 'Preview – holocard-hunter',
   });
   assert.equal(r.out.env_kind, 'preview');
-  assert.notEqual(r.out.env_kind, 'production');
 });
 
 test('MUTATION: `Preview – holohunter-staging` (state=success) → env_kind=preview, NOT production', () => {
-  const r = runClassifier({
-    STATE: 'success',
-    ENVIRONMENT: 'Preview – holohunter-staging',
+  const r = runClassifierEnv({
+    state: 'success',
+    environment: 'Preview – holohunter-staging',
   });
   assert.equal(r.out.env_kind, 'preview');
 });
 
 test('MUTATION: `Development – <project>` classified as development, NOT production', () => {
-  const r = runClassifier({
-    STATE: 'success',
-    ENVIRONMENT: 'Development – holocard-hunter',
+  const r = runClassifierEnv({
+    state: 'success',
+    environment: 'Development – holocard-hunter',
   });
   assert.equal(r.out.env_kind, 'development');
 });
 
 test('plain `Production` (no project qualifier) → env_kind=production (defensive fallback)', () => {
-  const r = runClassifier({ STATE: 'success', ENVIRONMENT: 'Production' });
+  const r = runClassifierEnv({ state: 'success', environment: 'Production' });
   assert.equal(r.out.env_kind, 'production');
 });
 
 test('plain `Preview` (no project qualifier) → env_kind=preview, NOT production', () => {
-  const r = runClassifier({ STATE: 'success', ENVIRONMENT: 'Preview' });
+  const r = runClassifierEnv({ state: 'success', environment: 'Preview' });
   assert.equal(r.out.env_kind, 'preview');
 });
 
 test('empty environment → env_kind=unknown (never production)', () => {
-  const r = runClassifier({ STATE: 'success', ENVIRONMENT: '' });
+  const r = runClassifierEnv({ state: 'success', environment: '' });
   assert.equal(r.out.env_kind, 'unknown');
 });
 
@@ -274,7 +254,7 @@ test('MUTATION: lookalike environments never resolve to production', () => {
     'Production-holocard-hunter',
     'Something Else',
   ]) {
-    const r = runClassifier({ STATE: 'success', ENVIRONMENT: env });
+    const r = runClassifierEnv({ state: 'success', environment: env });
     assert.notEqual(
       r.out.env_kind,
       'production',
@@ -284,139 +264,223 @@ test('MUTATION: lookalike environments never resolve to production', () => {
 });
 
 test('ASCII hyphen separator (` - `) is accepted defensively — same as en-dash', () => {
-  const r = runClassifier({
-    STATE: 'success',
-    ENVIRONMENT: 'Production - holocard-hunter',
+  const r = runClassifierEnv({
+    state: 'success',
+    environment: 'Production - holocard-hunter',
   });
   assert.equal(r.out.env_kind, 'production');
 });
 
 test('failure event on a Production project → verdict=failure with env_kind=production', () => {
-  const r = runClassifier({
-    STATE: 'error',
-    ENVIRONMENT: 'Production – holocard-hunter',
+  const r = runClassifierEnv({
+    state: 'error',
+    environment: 'Production – holocard-hunter',
   });
   assert.equal(r.out.verdict, 'failure');
   assert.equal(r.out.env_kind, 'production');
 });
 
 // -------------------------------------------------------------------
-// SECURITY / TRUST BOUNDARY (DIC-1401 CR round 9)
+// TRUST BOUNDARY — repo-wide + consumer shape
 // -------------------------------------------------------------------
 
-test('SECURITY: PRODUCER `permissions:` is contents:read only (no write scopes)', () => {
-  // The producer is loaded from the DEPLOYED ref (PR head on preview
-  // deploys), so it is PR-controlled. Any write scope on this file
-  // would hand the write token to the PR author on every
-  // deployment_status event. The only safe posture is read-only.
-  const permsBlock = extractYamlBlock(PRODUCER_TEXT, /^permissions:\s*$/m);
-  assert.ok(
-    permsBlock,
-    'producer must declare an explicit `permissions:` block (defaults are too broad)',
-  );
-  const permLines = permsBlock
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith('#'));
-  // Only `contents: read` allowed. Any other key, or `contents: write`,
-  // is forbidden.
-  for (const line of permLines) {
-    const [key, value] = line.split(':').map((s) => s.trim());
-    if (key === 'contents') {
-      assert.equal(
-        value,
-        'read',
-        `producer permissions.contents must be "read"; got ${JSON.stringify(value)}`,
-      );
-    } else {
-      // Any other permission key at all is a red flag for a
-      // PR-controlled producer.
-      assert.fail(
-        `producer must not declare permission ${JSON.stringify(key)} (only contents:read is allowed) — a PR author would inherit this scope`,
-      );
+test('REPO INVARIANT: no `.github/workflows/*.yml` file triggers on `deployment_status`', () => {
+  // This is the round-10 core: for our feature (and by extension for
+  // this repo's public trust posture) there must be NO workflow file
+  // that receives Vercel's `deployment_status` events. Because
+  // `deployment_status` workflows are loaded from the DEPLOYED ref
+  // (PR head on preview deploys), any such workflow would give the
+  // PR author the ability to grant themselves `contents: write` /
+  // `pull-requests: write` in their own PR YAML.
+  //
+  // The check parses every workflow file's `on:` block and asserts
+  // `deployment_status` is not listed. Comments are stripped so a
+  // rationale mention doesn't false-positive.
+  const files = fs
+    .readdirSync(WORKFLOWS_DIR)
+    .filter((f) => /\.ya?ml$/i.test(f));
+  for (const file of files) {
+    const text = fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8');
+    const uncommented = stripYamlComments(text);
+    const onBlock = extractYamlBlock(uncommented, /^on:\s*[^\n]*$/m);
+    if (onBlock === null) continue;
+    // `on:` may be either a bare list (`on: [deployment_status]`),
+    // a scalar (`on: deployment_status`), or a block-style dict
+    // (each trigger on its own indented line). Check all forms.
+    const triggerSet = new Set();
+    // scalar/bare-list case: same line as `on:`
+    const inlineOn = /^on:\s*(.+)$/m.exec(uncommented);
+    if (inlineOn) {
+      // strip `[` `]` and split on commas
+      inlineOn[1]
+        .replace(/^\[|\]$/g, '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((t) => triggerSet.add(t));
     }
+    // block-mapping case: children of `on:` at deeper indent
+    onBlock
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+      .forEach((l) => {
+        const key = l.replace(/:.*$/, '').trim();
+        if (key) triggerSet.add(key);
+      });
+    assert.ok(
+      !triggerSet.has('deployment_status'),
+      `${file} triggers on 'deployment_status' — this is the round-8/9 vulnerability: workflow YAML for deployment_status events is loaded from the DEPLOYED ref (PR head for previews), so a PR could grant its own workflow write scope. Move deploy-status mirroring to schedule+API instead.`,
+    );
   }
 });
 
-test('SECURITY: CONSUMER uses on: workflow_run bound to the producer name (trusted default-branch dispatch)', () => {
-  // workflow_run is the trust primitive: GitHub loads workflow_run
-  // workflow definitions from the DEFAULT branch, so this consumer's
-  // YAML cannot be supplied by a PR. The binding to the producer name
-  // must be exact so a rename of the producer breaks the chain
-  // (dead-service, not privilege escalation).
-  assert.match(
-    CONSUMER_TEXT,
-    /on:\s*\n\s+workflow_run:\s*\n\s+workflows:\s*\[\s*"Vercel deploy status summary"\s*\]/,
-    'consumer must trigger on `workflow_run` for workflows: ["Vercel deploy status summary"]',
+test('CONSUMER TRIGGER: on: schedule + workflow_dispatch only', () => {
+  const uncommented = stripYamlComments(CONSUMER_TEXT);
+  const onBlock = extractYamlBlock(uncommented, /^on:\s*$/m);
+  assert.ok(onBlock, 'consumer must have an explicit `on:` block');
+  // Only take top-level trigger keys — the first non-blank line's
+  // indent is the trigger indent; deeper lines are nested config
+  // (e.g. the `- cron:` sub-item under `schedule:`).
+  const onLines = onBlock.split('\n').filter((l) => l.trim().length > 0);
+  const topIndent = onLines.length ? (onLines[0].match(/^ */) || [''])[0].length : 0;
+  const triggers = new Set(
+    onLines
+      .filter((l) => (l.match(/^ */) || [''])[0].length === topIndent)
+      .map((l) => l.trim().replace(/:.*$/, '').trim()),
   );
+  assert.ok(
+    triggers.has('schedule'),
+    'consumer must trigger on `schedule` (loaded from default branch, cannot be supplied by a PR)',
+  );
+  assert.ok(
+    triggers.has('workflow_dispatch'),
+    'consumer must also allow `workflow_dispatch` for manual runs',
+  );
+  for (const t of triggers) {
+    assert.ok(
+      ['schedule', 'workflow_dispatch'].includes(t),
+      `consumer trigger "${t}" is not in the allowed set {schedule, workflow_dispatch}`,
+    );
+  }
+  // Cron must be present and be a valid-looking 5-field expression.
   assert.match(
     CONSUMER_TEXT,
-    /types:\s*\[\s*completed\s*\]/,
-    'consumer must subscribe to types: [completed]',
+    /-\s*cron:\s*['"][0-9\*\/,\-\s]+['"]/,
+    'consumer must declare an explicit cron schedule string',
   );
 });
 
-test('SECURITY: CONSUMER holds contents:write, pull-requests:write, actions:read (and only those)', () => {
-  const permsBlock = extractYamlBlock(CONSUMER_TEXT, /^permissions:\s*$/m);
+test('CONSUMER PERMISSIONS: contents:write, pull-requests:write, and no additional scopes', () => {
+  const permsBlock = extractYamlBlock(
+    stripYamlComments(CONSUMER_TEXT),
+    /^permissions:\s*$/m,
+  );
   assert.ok(permsBlock, 'consumer must declare an explicit `permissions:` block');
   const parsed = Object.fromEntries(
     permsBlock
       .split('\n')
       .map((l) => l.trim())
-      .filter((l) => l.length > 0 && !l.startsWith('#'))
+      .filter((l) => l.length > 0)
       .map((l) => {
         const [k, v] = l.split(':').map((s) => s.trim());
         return [k, v];
       }),
   );
-  assert.equal(parsed['contents'], 'write', 'consumer must have contents: write');
-  assert.equal(parsed['pull-requests'], 'write', 'consumer must have pull-requests: write');
-  assert.equal(parsed['actions'], 'read', 'consumer must have actions: read (needed to download the producer artifact from a different workflow run)');
-  // No id-token, no packages, no unnecessary elevation.
-  const allowed = new Set(['contents', 'pull-requests', 'actions']);
+  assert.equal(parsed['contents'], 'write', 'consumer needs contents: write');
+  assert.equal(
+    parsed['pull-requests'],
+    'write',
+    'consumer needs pull-requests: write',
+  );
+  const allowed = new Set(['contents', 'pull-requests']);
   for (const key of Object.keys(parsed)) {
     assert.ok(
       allowed.has(key),
-      `consumer permission ${JSON.stringify(key)} is not on the allowed set (contents,pull-requests,actions)`,
+      `consumer permission ${JSON.stringify(key)} is not in the allowed set {contents, pull-requests}`,
     );
   }
 });
 
-test('SECURITY: neither workflow uses actions/checkout', () => {
-  for (const [label, text] of [
-    ['producer', PRODUCER_TEXT],
-    ['consumer', CONSUMER_TEXT],
-  ]) {
-    assert.ok(
-      !/\buses:\s*actions\/checkout\b/m.test(text),
-      `${label} contains an actions/checkout step — the deploy-status trust boundary must never bring the deployed tree onto the runner`,
-    );
-  }
+test('DATA AUTHORITY: consumer fetches deployments + statuses from GitHub API (not from any producer artifact or event payload)', () => {
+  // Round-10 has no producer, no artifact. Consumer must issue the
+  // Deployments API calls itself so the data is authoritative.
+  assert.match(
+    CONSUMER_TEXT,
+    /gh api "repos\/\$GITHUB_REPOSITORY\/deployments\?/,
+    'consumer must call `gh api repos/$GITHUB_REPOSITORY/deployments?...` to enumerate deployments',
+  );
+  assert.match(
+    CONSUMER_TEXT,
+    /gh api "repos\/\$GITHUB_REPOSITORY\/deployments\/\$DEPLOYMENT_ID\/statuses\?/,
+    'consumer must call `gh api repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses?...` for each deployment',
+  );
 });
 
-test('SECURITY: no `ref:` position in either workflow references github.event.*', () => {
-  const forbidden = [
-    /\bref:\s*\$\{\{\s*github\.event\.deployment\.sha\s*\}\}/,
-    /\bref:\s*\$\{\{\s*github\.event\.deployment\.ref\s*\}\}/,
-    /\bref:\s*\$\{\{\s*github\.event\.deployment_status\./,
-    /\bref:\s*\$\{\{\s*github\.event\.pull_request\./,
-    /\bref:\s*\$\{\{\s*github\.head_ref\s*\}\}/,
-  ];
-  for (const [label, text] of [
-    ['producer', PRODUCER_TEXT],
-    ['consumer', CONSUMER_TEXT],
-  ]) {
-    for (const pattern of forbidden) {
-      assert.ok(
-        !pattern.test(text),
-        `${label} uses forbidden ref binding: ${pattern}`,
-      );
-    }
-  }
+test('CREATOR GATE: consumer skips any deployment/status NOT authored by "vercel[bot]" (creator.type "Bot")', () => {
+  // Reject anything the trusted Vercel bot did not author. Prevents
+  // a rogue collaborator with `deployment_status:write` from
+  // steering summaries by posting handmade statuses.
+  const runBlocks = extractRunBlocks(CONSUMER_TEXT);
+  const bodyText = runBlocks.map((b) => b.body).join('\n');
+  // The VERCEL_APP_LOGIN constant is piped into the step via `env:`
+  // (looked for anywhere in the workflow YAML) and then referenced
+  // inside the run: body for the creator-login guard.
+  assert.match(
+    CONSUMER_TEXT,
+    /VERCEL_APP_LOGIN:\s*['"]vercel\[bot\]['"]/,
+    'consumer must define `env: VERCEL_APP_LOGIN: "vercel[bot]"` on the polling step',
+  );
+  assert.match(
+    bodyText,
+    /\$CREATOR_LOGIN["']?\s*!=\s*["']?\$VERCEL_APP_LOGIN/,
+    'consumer must skip deployments whose creator.login is not $VERCEL_APP_LOGIN',
+  );
+  assert.match(
+    bodyText,
+    /\$CREATOR_TYPE["']?\s*!=\s*["']?["']?Bot/,
+    'consumer must skip deployments whose creator.type is not "Bot"',
+  );
+  assert.match(
+    bodyText,
+    /select\(\.creator\.login == \$vlogin\)/,
+    'consumer must further filter statuses to those authored by the Vercel bot before treating state/URL as authoritative',
+  );
 });
 
-test('SECURITY: no `bash|sh|node|source|npm scripts/…` invocation inside any run: step', () => {
-  const forbidden = [
+test('NO REF FALLBACK: PR resolution is by deployed SHA only; no `gh pr list --head` fallback (Round-9 CR)', () => {
+  // Untrusted refs can select an unrelated open PR. Only
+  // `commits/{sha}/pulls` — a SHA-anchored lookup — is allowed.
+  const runBlocks = extractRunBlocks(CONSUMER_TEXT);
+  const bodyText = runBlocks.map((b) => b.body).join('\n');
+  assert.match(
+    bodyText,
+    /gh api "repos\/\$GITHUB_REPOSITORY\/commits\/\$DEPLOYMENT_SHA\/pulls"/,
+    'consumer must resolve PRs via `commits/{sha}/pulls`',
+  );
+  assert.ok(
+    !/gh pr list[^\n]*--head/.test(bodyText),
+    'consumer must NOT use `gh pr list --head <ref>` — an untrusted ref could select a different open PR',
+  );
+});
+
+test('SHA VALIDATION: consumer refuses any deployment whose api-reported sha is not a 40-char git SHA', () => {
+  const runBlocks = extractRunBlocks(CONSUMER_TEXT);
+  const bodyText = runBlocks.map((b) => b.body).join('\n');
+  assert.match(
+    bodyText,
+    /\bDEPLOYMENT_SHA\b.*=~.*\^\[0-9a-f\]\{40\}\$/s,
+    'consumer must gate on `[[ "$DEPLOYMENT_SHA" =~ ^[0-9a-f]{40}$ ]]`',
+  );
+});
+
+test('CONSUMER SHAPE: no actions/checkout; no bash|sh|node scripts/…; no persist-credentials: true; no ref: github.event.*', () => {
+  const uncommented = stripYamlComments(CONSUMER_TEXT);
+  assert.ok(
+    !/\buses:\s*actions\/checkout\b/m.test(uncommented),
+    'consumer must not use actions/checkout',
+  );
+  const forbiddenExec = [
     /\bbash\s+scripts\//,
     /\bsh\s+scripts\//,
     /\bnode\s+scripts\//,
@@ -424,183 +488,63 @@ test('SECURITY: no `bash|sh|node|source|npm scripts/…` invocation inside any r
     /(?<!\S)\.\s+scripts\//,
     /\bnpm\s+run\s+/,
   ];
-  for (const [label, text] of [
-    ['producer', PRODUCER_TEXT],
-    ['consumer', CONSUMER_TEXT],
-  ]) {
-    const runBlocks = extractRunBlocks(text);
-    for (const { name, body } of runBlocks) {
-      for (const pattern of forbidden) {
-        assert.ok(
-          !pattern.test(body),
-          `${label} step "${name}" invokes a repo-tree executable matching ${pattern}. Body:\n${body}`,
-        );
-      }
+  const runBlocks = extractRunBlocks(CONSUMER_TEXT);
+  for (const { name, body } of runBlocks) {
+    for (const pattern of forbiddenExec) {
+      assert.ok(
+        !pattern.test(body),
+        `consumer step "${name}" invokes a repo-tree executable matching ${pattern}`,
+      );
     }
   }
-});
-
-test('SECURITY: no `persist-credentials: true` anywhere in either workflow (excluding comments)', () => {
-  // Strip full-line and trailing YAML comments before searching so an
-  // explanatory comment like "No `persist-credentials: true` anywhere"
-  // in the trust-boundary preamble does not trip this check.
-  for (const [label, text] of [
-    ['producer', PRODUCER_TEXT],
-    ['consumer', CONSUMER_TEXT],
-  ]) {
-    const stripped = text
-      .split('\n')
-      .map((line) => {
-        // Drop full-line comments.
-        if (/^\s*#/.test(line)) return '';
-        // Drop trailing comments (naive but adequate for our YAML —
-        // no `#` inside quoted strings in these workflow files).
-        const hashIdx = line.indexOf('#');
-        return hashIdx === -1 ? line : line.slice(0, hashIdx);
-      })
-      .join('\n');
+  assert.ok(
+    !/persist-credentials:\s*true/i.test(uncommented),
+    'consumer must not enable persist-credentials',
+  );
+  const forbiddenRefs = [
+    /\bref:\s*\$\{\{\s*github\.event\./,
+    /\bref:\s*\$\{\{\s*github\.head_ref\s*\}\}/,
+  ];
+  for (const pattern of forbiddenRefs) {
     assert.ok(
-      !/persist-credentials:\s*true/i.test(stripped),
-      `${label} sets persist-credentials: true — must not`,
+      !pattern.test(uncommented),
+      `consumer uses forbidden ref binding: ${pattern}`,
     );
   }
 });
 
-test('SECURITY: consumer never interpolates github.event.deployment* into a run: body', () => {
-  // The consumer receives every deployment field via the artifact and
-  // re-validates them (SHA format + head_sha cross-check). It must
-  // NEVER read github.event.deployment.* directly in a run: body,
-  // both because those are producer-supplied and because bypassing
-  // the artifact skips validation.
-  //
-  // Allowed interpolations: `github.event.workflow_run.*` (populated
-  // by GitHub, describes the producer run — includes the trusted
-  // head_sha we cross-check against). `github.token`, `github.run_id`,
-  // `github.workflow_ref`, `github.repository`, `runner.temp`, and
-  // `steps.*.outputs.*` are all also fine.
-  const runBlocks = extractRunBlocks(CONSUMER_TEXT);
-  const forbiddenInBody = /\$\{\{\s*github\.event\.deployment[^}]*\}\}/;
-  for (const { name, body } of runBlocks) {
-    assert.ok(
-      !forbiddenInBody.test(body),
-      `consumer step "${name}" interpolates github.event.deployment* directly into a run: body — the consumer MUST read those fields from the producer's artifact after re-validation, not from event context. Body:\n${body}`,
-    );
-  }
-});
-
-test('PROVENANCE: consumer references github.workflow_ref so an auditor can confirm the write-workflow ref from run output', () => {
-  // github.workflow_ref is set by GitHub and formatted as
-  // `<owner>/<repo>/<workflow-path>@<ref>`. Printing it during the
-  // run gives an audit-trail entry proving this consumer's YAML was
-  // loaded from the default branch (workflow_run contract).
+test('PROVENANCE: consumer echoes github.workflow_ref so an auditor can confirm the write-workflow ref from run output', () => {
   assert.match(
     CONSUMER_TEXT,
     /\$\{\{\s*github\.workflow_ref\s*\}\}/,
     'consumer must include github.workflow_ref in a step-level env: for provenance logging',
   );
-  // And the value should actually be printed (echo/printf) in a
-  // run: body — searching for the env var name in run: bodies.
   const runBlocks = extractRunBlocks(CONSUMER_TEXT);
   const printsProvenance = runBlocks.some((b) =>
     /\bCONSUMER_WORKFLOW_REF\b/.test(b.body),
   );
   assert.ok(
     printsProvenance,
-    'consumer must reference CONSUMER_WORKFLOW_REF inside a run: step (echoing github.workflow_ref) so the provenance is visible in the run log',
+    'consumer must reference CONSUMER_WORKFLOW_REF inside a run: step so the provenance is visible in the run log',
   );
 });
 
-test('SECURITY: consumer cross-checks producer head_sha with artifact deploy_sha (fails closed on mismatch)', () => {
-  // A PR that rewrites the producer to lie about deploy_sha in the
-  // artifact cannot forge github.event.workflow_run.head_sha (that
-  // value is set by GitHub, not the producer YAML). Cross-checking
-  // binds the write-action to the actually-deployed commit.
-  const runBlocks = extractRunBlocks(CONSUMER_TEXT);
-  const hasCrossCheck = runBlocks.some(
-    (b) =>
-      /PRODUCER_HEAD_SHA/.test(b.body) &&
-      /DEPLOY_SHA/.test(b.body) &&
-      /!=\s*"?\$PRODUCER_HEAD_SHA"?/.test(b.body),
+test('PRODUCER REMOVED: `.github/workflows/vercel-deploy-status-summary.yml` no longer exists', () => {
+  const producer = path.join(
+    ROOT,
+    '.github/workflows/vercel-deploy-status-summary.yml',
   );
   assert.ok(
-    hasCrossCheck,
-    'consumer must include a `[ "$DEPLOY_SHA" != "$PRODUCER_HEAD_SHA" ]` guard that exits non-zero on mismatch',
+    !fs.existsSync(producer),
+    `${producer} still exists — round-10 deletes the producer entirely to remove all PR-controlled deployment_status trigger surfaces`,
   );
 });
 
-test('SECURITY: consumer validates deploy_sha format (must be a 40-char git SHA)', () => {
-  // DEPLOY_SHA is used verbatim in `gh api repos/.../commits/{sha}`
-  // and in the comment body. Format-validating it prevents both
-  // URL/shell metacharacter injection and pointing the write action
-  // at arbitrary strings.
-  const runBlocks = extractRunBlocks(CONSUMER_TEXT);
-  const validates = runBlocks.some((b) =>
-    /\bDEPLOY_SHA\b.*=~.*\^\[0-9a-f\]\{40\}\$/s.test(b.body),
-  );
+test('ROUND-7 SCRIPT REMOVED: `scripts/ci/deploy-status-classify.sh` stays deleted', () => {
+  const roundSeven = path.join(ROOT, 'scripts/ci/deploy-status-classify.sh');
   assert.ok(
-    validates,
-    'consumer must gate write actions on `[[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]` (or an equivalent regex check)',
-  );
-});
-
-test('SECURITY: artifact-name bridge is consistent between producer and consumer', () => {
-  // If the two workflows disagree on the artifact name, the consumer
-  // silently downloads nothing and the summary path stays inert. Not
-  // a security issue on its own but pin the invariant.
-  assert.match(
-    PRODUCER_TEXT,
-    new RegExp(`name:\\s*${ARTIFACT_NAME}\\b`),
-    `producer must upload artifact named "${ARTIFACT_NAME}"`,
-  );
-  assert.match(
-    CONSUMER_TEXT,
-    new RegExp(`name:\\s*${ARTIFACT_NAME}\\b`),
-    `consumer must download artifact named "${ARTIFACT_NAME}"`,
-  );
-  // Consumer must use the producer's run id (workflow_run.id) when
-  // downloading — otherwise it would only see its own run's
-  // artifacts (which are empty).
-  assert.match(
-    CONSUMER_TEXT,
-    /run-id:\s*\$\{\{\s*github\.event\.workflow_run\.id\s*\}\}/,
-    'consumer must download from run-id: ${{ github.event.workflow_run.id }} (producer run)',
-  );
-});
-
-test('SECURITY: producer name (the workflow_run trigger key) matches the producer file', () => {
-  // The consumer's `on: workflow_run` looks up the producer by
-  // top-level `name:` field. If the producer's name changes, the
-  // consumer stops firing. Pin the name.
-  assert.match(
-    PRODUCER_TEXT,
-    new RegExp(`^name:\\s*${PRODUCER_NAME}\\s*$`, 'm'),
-    `producer top-level name must be exactly "${PRODUCER_NAME}"`,
-  );
-});
-
-test('SECURITY: no `scripts/ci/deploy-status-classify.sh` file exists on disk', () => {
-  const roundSevenScript = path.join(ROOT, 'scripts/ci/deploy-status-classify.sh');
-  assert.ok(
-    !fs.existsSync(roundSevenScript),
-    `${roundSevenScript} still exists — round-7 script must stay deleted`,
-  );
-});
-
-test('SECURITY: producer uses ONLY on: deployment_status (no other triggers)', () => {
-  // A future maintainer could easily add `pull_request:` or `push:`
-  // to the producer's `on:` block, which would leak state. Pin the
-  // trigger.
-  const onBlock = extractYamlBlock(PRODUCER_TEXT, /^on:\s*$/m);
-  assert.ok(onBlock, 'producer must have an explicit `on:` block');
-  const triggers = onBlock
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith('#'))
-    .map((l) => l.replace(/:.*$/, ''));
-  assert.deepEqual(
-    triggers,
-    ['deployment_status'],
-    `producer must only trigger on deployment_status; got ${JSON.stringify(triggers)}`,
+    !fs.existsSync(roundSeven),
+    `${roundSeven} still exists — the round-7 dead script must stay deleted`,
   );
 });
 
@@ -610,22 +554,22 @@ test('SECURITY: producer uses ONLY on: deployment_status (no other triggers)', (
 
 /**
  * Extract the body of a top-level YAML block whose header matches
- * `headerRE` (e.g. /^permissions:\s*$/m or /^on:\s*$/m). Returns
- * everything up to the next top-level line (line beginning with a
- * non-space character), or null if the header wasn't found.
+ * `headerRE` (e.g. /^permissions:\s*$/m). Returns everything up to
+ * the next top-level line (line beginning with a non-space
+ * character), or null if the header wasn't found.
  */
 function extractYamlBlock(text, headerRE) {
   const match = headerRE.exec(text);
   if (!match) return null;
   const lines = text.split('\n');
   let startLine = -1;
-  let searchIdx = 0;
+  let idx = 0;
   for (let i = 0; i < lines.length; i += 1) {
-    if (searchIdx + lines[i].length + 1 > match.index && startLine === -1) {
+    if (idx + lines[i].length + 1 > match.index && startLine === -1) {
       startLine = i;
       break;
     }
-    searchIdx += lines[i].length + 1;
+    idx += lines[i].length + 1;
   }
   if (startLine === -1) return null;
   const body = [];
@@ -643,9 +587,9 @@ function extractYamlBlock(text, headerRE) {
 }
 
 /**
- * Small YAML-aware extractor: returns every `run: |` step body under
- * `- name:` entries, so security assertions can inspect just the
- * shell code without being fooled by YAML comments or metadata.
+ * Extract every `run: |` step body under `- name:` entries. Strips
+ * the common leading indentation so security patterns match the raw
+ * shell text.
  */
 function extractRunBlocks(text) {
   const lines = text.split('\n');
@@ -676,6 +620,22 @@ function extractRunBlocks(text) {
     blocks.push({ name: currentName || '<unnamed>', body: body.join('\n') });
   }
   return blocks;
+}
+
+/**
+ * Strip YAML comments (full-line and trailing) so a security
+ * assertion doesn't false-positive on rationale text in the
+ * trust-boundary header comment blocks.
+ */
+function stripYamlComments(text) {
+  return text
+    .split('\n')
+    .map((line) => {
+      if (/^\s*#/.test(line)) return '';
+      const idx = line.indexOf('#');
+      return idx === -1 ? line : line.slice(0, idx);
+    })
+    .join('\n');
 }
 
 console.log(`\ndeploy-status-classify: ${passed} tests passed`);
