@@ -329,13 +329,23 @@ jobs:
       - name: Verify serverless API function count stays under Vercel Hobby cap (DIC-1401)
         run: npm run test:vercel-function-count-guard
 
-      # DIC-1401 CR round 12: the public deploy-status mirror deliverable is
-      # deferred until DIC-1399 unblocks Vercel-side dashboard access + the
-      # VERCEL_TOKEN secret. See release-parity/deploy-status-mirror-blocked.md
-      # for the platform-limitation analysis (public non-Enterprise GitHub
-      # cannot cap workflow-declared permissions on PR-head deployment_status
-      # workflows) and the two paths to close the residual vulnerability
-      # class. No workflow in this repo triggers on deployment_status.
+      # DIC-1401 CR round 6-13: the deploy-status mirror publishes public
+      # summaries for Production/failure Vercel deployments. Round 6-7 shipped
+      # a raw-string classifier that missed Vercel's real `Production – <project>`
+      # events; round 8 inlined the classifier; rounds 9-11 iterated on the
+      # trust boundary of the write-token path. Round 10 landed the safe
+      # posture (schedule-triggered consumer polling the Deployments API,
+      # loaded from the default branch, filtering by vercel[bot] creator);
+      # round 11 added the required `deployments: read` permission and
+      # runtime tests. Round 12 deleted the mirror entirely under a wrong
+      # interpretation of the trust-boundary CR; round 13 restores it.
+      #
+      # The residual class (a future PR adds its own on: deployment_status
+      # workflow with write scope) is external to this repo and belongs to
+      # DIC-1399 (disable Vercel's GitHub Deployments integration). See
+      # release-parity/deploy-status-mirror-blocked.md.
+      - name: Verify Vercel deploy-status environment classifier admits real Production strings + Deployments API scope (DIC-1401)
+        run: npm run test:deploy-status-classify
 
       - name: Verify EAS production build provenance contract (DIC-1401)
         run: npm run test:eas-build-provenance

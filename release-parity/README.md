@@ -74,21 +74,25 @@ This guard cannot fix the runtime fallback itself (product code, DEV-gate
 scope) — it only guarantees that every profile it covers never actually
 *reaches* that fallback in the first place, by construction.
 
-## Public deploy-status mirror — deferred pending DIC-1399
+## Public deploy-status mirror (`.github/workflows/vercel-deploy-status-post.yml`)
 
 The "post a Production-success / preview-failure comment when Vercel
-finishes a deployment" deliverable is not implemented in this repository.
-For public non-Enterprise GitHub repos there is no platform knob that
-prevents a PR from adding a `deployment_status`-triggered workflow that
-grants itself `contents: write`. Closing this class from OUTSIDE
-PR-controlled workflow YAML requires either disabling Vercel's GitHub
-Deployments integration (needs Vercel dashboard access + `VERCEL_TOKEN`
-= DIC-1399) or GitHub Enterprise workflow-permissions policy (not this
-repo's tier).
+finishes a deployment" deliverable ships as a schedule-triggered
+consumer (`on: schedule` every 5 min + `workflow_dispatch`) loaded
+from the default branch by GitHub Actions contract. It polls GitHub's
+Deployments API for Vercel-authored deployments, extracts the latest
+Vercel-authored terminal status, classifies the environment, and posts
+the DIC-1401-required summary comment. Behavioural, trust-boundary,
+Deployments-API permission (`deployments: read`), runtime-stub, and
+Vercel-creator-gate coverage is in
+`scripts/test-deploy-status-classify.mjs` (29 tests).
 
-Full analysis, the six previous CR rounds that each failed to close it
-from within this repo, and the two unblock paths are in
-`release-parity/deploy-status-mirror-blocked.md`. DIC-1401's parent
-card explicitly permits deferring deploy-related items when DIC-1399
-blocks them (rule 6).
+The residual `deployment_status` PR-YAML vulnerability class (a future
+PR adds its own `on: deployment_status` workflow with explicit
+`contents: write`) is external to this repo — the closing mechanism
+(disable Vercel's GitHub Deployments integration in the Vercel
+dashboard) is owned by DIC-1399, per DIC-1401 parent card rule 6.
+Full history of the six previous CR rounds, the platform-limitation
+analysis, and the two unblock paths are in
+`release-parity/deploy-status-mirror-blocked.md`.
 

@@ -77,6 +77,7 @@
     "test:bundle-cleanness-full": "node scripts/test-bundle-cleanness-full.mjs",
     "test:dic1189-staging-isolation": "npm run test:app-env && npm run test:kv-namespace && npm run test:payment-env-guard && npm run test:session-env-bind && npm run test:push-staging-guard && npm run test:prod-bundle-cleanness && npm run test:boot-guard-exposure && npm run test:account-sync-scan-namespace && npm run test:expo-sender-coverage",
     "test:vercel-branch-guard": "node scripts/test-vercel-branch-guard.mjs",
+    "test:deploy-status-classify": "node scripts/test-deploy-status-classify.mjs",
     "test:release-parity-check": "node scripts/test-release-parity-check.mjs",
     "test:release-flags-parity": "node scripts/test-release-flags-parity.mjs",
     "test:store-mvp-define-guard": "node scripts/test-store-mvp-define-guard.mjs",

@@ -1,0 +1,293 @@
+name: Vercel deploy status post
+
+# DIC-1401 Round-10 CONSUMER — schedule-triggered, no PR-controlled trigger anywhere in the repo.
+#
+# TRUST BOUNDARY
+# ---------------------------------------------------------------------
+# Round 8 tried to make a single `on: deployment_status` workflow safe
+# by inlining its classifier. Mac-Codex proved that wrong empirically:
+# `deployment_status` workflows are loaded from the DEPLOYED ref, so
+# PR authors can rewrite the entire YAML — including the `permissions:`
+# block — and get whatever token scope they request.
+#
+# Round 9 split into producer + consumer via `workflow_run`. The
+# consumer's YAML was safe (workflow_run loads from the default
+# branch), but the PRODUCER's YAML was still PR-controlled, so a PR
+# could rewrite that producer to grant itself `contents: write` and
+# post fake summaries directly, bypassing the consumer. `permissions:
+# contents: read` in the producer YAML was not an enforced ceiling —
+# GitHub's `default_workflow_permissions=read` sets defaults but does
+# not cap what workflow YAML can explicitly request. Mac-Codex's
+# Round-9 CR: "the producer YAML itself is PR-controlled and can
+# change its own permissions and steps."
+#
+# Round 10 removes ALL PR-controlled trigger surfaces for this
+# feature. There is no producer workflow. This consumer runs on
+# `schedule` (and `workflow_dispatch` for manual runs) — both loaded
+# by GitHub Actions from the DEFAULT branch of the repository. A PR
+# cannot supply this YAML, cannot add a new `on: deployment_status`
+# workflow that would receive Vercel's events with a write token
+# (scripts/test-deploy-status-classify.mjs asserts the whole
+# .github/workflows/ tree contains no `on: deployment_status`
+# workflow), and cannot influence what this consumer posts.
+#
+# Round 11 (CR): the Deployments API endpoint this consumer polls is
+# gated by the `deployments` scope, so the `permissions:` block below
+# must declare `deployments: read` alongside the write scopes needed
+# to post the mirror (contents/pull-requests). WITHOUT it the very
+# first `gh api .../deployments` call returns 403 and the scheduled
+# consumer silently never posts — scripts/test-deploy-status-
+# classify.mjs asserts this scope and failures on its removal.
+#
+# DATA MODEL
+# ---------------------------------------------------------------------
+# All facts come from GitHub's Deployments API, queried with this
+# workflow's own trusted token:
+#   GET /repos/{owner}/{repo}/deployments?per_page=100
+#     → deployment.sha, deployment.ref, deployment.environment,
+#       deployment.creator.login, deployment.creator.type
+#   GET /repos/{owner}/{repo}/deployments/{id}/statuses?per_page=100
+#     → status.id, status.state, status.log_url, status.target_url,
+#       status.description, status.creator.login
+#
+# Only deployments where deployment.creator.login == "vercel[bot]"
+# AND creator.type == "Bot" are considered — this binds the summary
+# to a real Vercel-created deployment, so a PR that manages to
+# create a fake deployment (which they can't without deployment API
+# access anyway) or supplies attacker-selected URLs in an artifact
+# (which we don't read) cannot forge a Production success.
+#
+# Statuses are further filtered to those authored by the same Vercel
+# bot, so a rogue collaborator with `deployment_status:write` (the
+# specific fine-grained scope that lets a token post a deployment
+# status) cannot pretend to be Vercel finishing a deployment.
+#
+# PR resolution is by DEPLOYED SHA ONLY via `commits/{sha}/pulls`.
+# There is NO `--head <ref>` fallback (Mac-Codex Round-9 CR removed
+# the untrusted-ref PR selection).
+#
+# The provenance step at the top logs `github.workflow_ref` on every
+# run so an auditor can visually confirm from the run's own log that
+# this write-token workflow was loaded from the default branch.
+
+on:
+  schedule:
+    # Every 5 minutes. Trade a few minutes of latency for the
+    # elimination of any PR-controlled trigger for this feature.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  # Round-11 CR: `deployments: read` is REQUIRED — the consumer's
+  # facts come from the GitHub Deployments API
+  # (`/repos/{owner}/{repo}/deployments` and
+  # `/repos/{owner}/{repo}/deployments/{id}/statuses`), whose scope
+  # is `deployments`. Without it every poll 403s and the mirror
+  # silently posts nothing (mutation-tested).
+  deployments: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  # Don't stack overlapping polls; keep the newest scheduled run.
+  group: vercel-deploy-status-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Provenance log (trusted default-branch consumer)
+        env:
+          CONSUMER_WORKFLOW_REF: ${{ github.workflow_ref }}
+          CONSUMER_RUN_ID: ${{ github.run_id }}
+          CONSUMER_EVENT: ${{ github.event_name }}
+        run: |
+          # github.workflow_ref is set by GitHub and formatted as
+          #   <owner>/<repo>/<workflow-path>@<ref>
+          # For schedule and workflow_dispatch triggers this ref will
+          # be the default branch, proving this write-token workflow
+          # was not loaded from any PR-controlled ref.
+          echo "Consumer workflow_ref: $CONSUMER_WORKFLOW_REF"
+          echo "Consumer run: $CONSUMER_RUN_ID (event=$CONSUMER_EVENT)"
+
+      - name: Poll GitHub Deployments API and post any un-summarized Vercel deployment statuses
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Trusted GitHub App identity. Only deployments AND statuses
+          # authored by this login are considered. If Vercel ever
+          # renames its bot, update this constant here in main (the
+          # trusted, reviewed default-branch YAML).
+          VERCEL_APP_LOGIN: 'vercel[bot]'
+          # Cap how many recent deployments to scan per run. 100 is
+          # more than enough for our repo; the dedup mechanism (grep
+          # existing comments for the Deployment id) prevents
+          # duplicates across runs.
+          MAX_DEPLOYMENTS: '100'
+          MAX_STATUSES_PER_DEPLOYMENT: '100'
+        run: |
+          set -euo pipefail
+
+          echo "Consumer identity: $(gh api /user --jq '.login // "<workflow token>"' 2>/dev/null || echo '<workflow token>')"
+
+          DEPLOYMENTS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/deployments?per_page=$MAX_DEPLOYMENTS")"
+          DEPLOYMENT_COUNT="$(jq 'length' <<<"$DEPLOYMENTS_JSON")"
+          echo "Scanning $DEPLOYMENT_COUNT most-recent deployments"
+
+          # Iterate. Newest first (API default).
+          for DEPLOYMENT_ID in $(jq -r '.[].id' <<<"$DEPLOYMENTS_JSON"); do
+            DEPLOYMENT_JSON="$(jq --argjson id "$DEPLOYMENT_ID" 'map(select(.id == $id)) | .[0]' <<<"$DEPLOYMENTS_JSON")"
+            CREATOR_LOGIN="$(jq -r '.creator.login // ""' <<<"$DEPLOYMENT_JSON")"
+            CREATOR_TYPE="$(jq -r  '.creator.type  // ""' <<<"$DEPLOYMENT_JSON")"
+            DEPLOYMENT_SHA="$(jq -r '.sha // ""' <<<"$DEPLOYMENT_JSON")"
+            DEPLOYMENT_ENV="$(jq -r '.environment // ""' <<<"$DEPLOYMENT_JSON")"
+            DEPLOYMENT_REF="$(jq -r '.ref // ""' <<<"$DEPLOYMENT_JSON")"
+
+            # BOUNDARY: only Vercel-authored deployments are release
+            # evidence for this workflow. Anything else (manual gh
+            # api, other integrations) is skipped.
+            if [ "$CREATOR_LOGIN" != "$VERCEL_APP_LOGIN" ] || [ "$CREATOR_TYPE" != "Bot" ]; then
+              continue
+            fi
+
+            # Defense in depth: reject any deployment whose SHA is
+            # not a 40-char git SHA (the value is used verbatim in
+            # `gh api commits/{sha}` paths and comment bodies).
+            if [[ ! "$DEPLOYMENT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "skip deployment $DEPLOYMENT_ID: api-reported sha=$DEPLOYMENT_SHA is not a 40-char git SHA"
+              continue
+            fi
+
+            STATUSES_JSON="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses?per_page=$MAX_STATUSES_PER_DEPLOYMENT")"
+            # Take the latest Vercel-authored terminal status.
+            LATEST_STATUS="$(jq --arg vlogin "$VERCEL_APP_LOGIN" '
+              [ .[]
+                | select(.creator.login == $vlogin)
+                | select(.state == "success" or .state == "failure" or .state == "error")
+              ]
+              | sort_by(.created_at)
+              | last // empty
+            ' <<<"$STATUSES_JSON")"
+            if [ -z "$LATEST_STATUS" ] || [ "$LATEST_STATUS" = "null" ]; then
+              continue
+            fi
+            STATE="$(jq -r '.state // ""'          <<<"$LATEST_STATUS")"
+            STATUS_ID="$(jq -r '.id // ""'         <<<"$LATEST_STATUS")"
+            DESCRIPTION="$(jq -r '.description // ""' <<<"$LATEST_STATUS")"
+            LOG_URL="$(jq -r '.log_url // ""'       <<<"$LATEST_STATUS")"
+            TARGET_URL="$(jq -r '.target_url // ""' <<<"$LATEST_STATUS")"
+
+            # Sanity: status.id must be numeric.
+            if [[ ! "$STATUS_ID" =~ ^[0-9]+$ ]]; then
+              echo "skip deployment $DEPLOYMENT_ID: latest status id=$STATUS_ID is not numeric"
+              continue
+            fi
+
+            # ---- BEGIN INLINE CLASSIFIER (DIC-1401 Round-10 trusted consumer classifier) ----
+            # Reads:  STATE, ENVIRONMENT env / shell vars.
+            # Writes: verdict / env_kind to GITHUB_OUTPUT (if set) and stdout.
+            # Extracted verbatim by scripts/test-deploy-status-classify.mjs.
+            STATE="${STATE:-}"
+            ENVIRONMENT="${DEPLOYMENT_ENV:-}"
+            case "$STATE" in
+              success)          VERDICT=success ;;
+              error|failure)    VERDICT=failure ;;
+              *)                VERDICT=ignore ;;
+            esac
+            ENV_PREFIX="${ENVIRONMENT%% – *}"
+            if [ "$ENV_PREFIX" = "$ENVIRONMENT" ]; then
+              ENV_PREFIX="${ENVIRONMENT%% - *}"
+            fi
+            ENV_PREFIX="${ENV_PREFIX%"${ENV_PREFIX##*[![:space:]]}"}"
+            case "$ENV_PREFIX" in
+              Production)   ENV_KIND=production ;;
+              Preview)      ENV_KIND=preview ;;
+              Development)  ENV_KIND=development ;;
+              "")           ENV_KIND=unknown ;;
+              *)            ENV_KIND=unknown ;;
+            esac
+            if [ -n "${GITHUB_OUTPUT:-}" ]; then
+              echo "verdict=$VERDICT"   >> "$GITHUB_OUTPUT"
+              echo "env_kind=$ENV_KIND" >> "$GITHUB_OUTPUT"
+            fi
+            echo "verdict=$VERDICT"
+            echo "env_kind=$ENV_KIND"
+            # ---- END INLINE CLASSIFIER (DIC-1401 Round-10 trusted consumer classifier) ----
+
+            if [ "$VERDICT" = "ignore" ]; then
+              continue
+            fi
+
+            # PR resolution by deployed SHA ONLY. No producer-supplied
+            # ref fallback — Round-9 CR demanded removing that (an
+            # untrusted `--head <ref>` selection could pick a
+            # different open PR).
+            PR_NUMBER="$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOYMENT_SHA/pulls" \
+              --jq '.[] | select(.state == "open") | .number' \
+              | sort -n | head -1 || true)"
+
+            if [ -n "$PR_NUMBER" ]; then
+              SURFACE="$PR_NUMBER"
+            else
+              SURFACE="commit:$DEPLOYMENT_SHA"
+            fi
+
+            # Dedup on the specific status.id in existing comments —
+            # every summary body ends with `Deployment id: \`<id>\``.
+            ALREADY=no
+            if [[ "$SURFACE" == commit:* ]]; then
+              if gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOYMENT_SHA/comments" \
+                   --jq '.[].body' 2>/dev/null \
+                   | grep -qF "Deployment id: \`$STATUS_ID\`"; then
+                ALREADY=yes
+              fi
+            else
+              if gh pr view "$SURFACE" --repo "$GITHUB_REPOSITORY" --json comments \
+                   --jq '.comments[].body' 2>/dev/null \
+                   | grep -qF "Deployment id: \`$STATUS_ID\`"; then
+                ALREADY=yes
+              fi
+            fi
+            if [ "$ALREADY" = "yes" ]; then
+              continue
+            fi
+
+            BODY_FILE="$RUNNER_TEMP/summary-$STATUS_ID.md"
+            if [ "$VERDICT" = "failure" ]; then
+              {
+                echo "⚠️ **Vercel preview/production deployment FAILED** (DIC-1401 deploy-status mirror)"
+                echo ""
+                echo "- Environment: \`$DEPLOYMENT_ENV\`"
+                echo "- Description: \`$DESCRIPTION\`"
+                echo "- Deployed ref: \`$DEPLOYMENT_REF\`"
+                echo "- Commit: \`$DEPLOYMENT_SHA\`"
+                echo "- Deployment id: \`$STATUS_ID\`"
+                echo "- Logs: $LOG_URL"
+                echo ""
+                echo "See the \`Validate\` job for the static function-count / build-reproduction diagnostics (test:vercel-function-count-guard, test:vercel-preview-build)."
+              } > "$BODY_FILE"
+            elif [ "$VERDICT" = "success" ] && [ "$ENV_KIND" = "production" ]; then
+              {
+                echo "✅ **Production deployment succeeded** (DIC-1401 deploy-status mirror)"
+                echo ""
+                echo "- Environment: \`$DEPLOYMENT_ENV\`"
+                echo "- URL: $TARGET_URL"
+                echo "- Commit: \`$DEPLOYMENT_SHA\`"
+                echo "- Deployment id: \`$STATUS_ID\`"
+                echo ""
+                echo "Release-parity check compares this commit against the mobile production build's provenance (\`/version.json\` → mobile \`build-provenance.json\`)."
+              } > "$BODY_FILE"
+            else
+              # Non-production success is intentionally not
+              # summarized to avoid spam on preview deploys.
+              continue
+            fi
+
+            BODY_JSON="$RUNNER_TEMP/summary-$STATUS_ID.json"
+            jq -n --rawfile body "$BODY_FILE" '{body: $body}' > "$BODY_JSON"
+            if [ -n "$PR_NUMBER" ]; then
+              gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
+            else
+              gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOYMENT_SHA/comments" --input "$BODY_JSON"
+            fi
+          done

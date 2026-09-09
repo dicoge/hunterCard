@@ -1,119 +1,127 @@
-# DIC-1401 public deploy-status mirror — deferred pending DIC-1399
+# DIC-1401 public deploy-status mirror — what ships, what remains for DIC-1399
 
-This document records why the DIC-1401 public deploy-status mirror
-(the "post a Production-success / preview-failure comment when Vercel
-finishes a deployment" deliverable) is **not implemented in this
-repository** and what has to change upstream before it can be.
+This document records the full history of the DIC-1401 public
+deploy-status mirror (the "post a Production-success / preview-failure
+comment when Vercel finishes a deployment" deliverable) and separates
+what is delivered in this repository from what depends on the DIC-1399
+upstream unblock.
 
-## What was tried, and why each round failed
+## What ships in this repository (round 13)
 
-| Round | Approach | Blocker |
-|-------|----------|---------|
-| 5 → 6 | Single `on: deployment_status` workflow with `permissions: contents: write`, `pull-requests: write`. Inline classifier. | Vercel emits `Production – <project>` (U+2013 en-dash); the raw `== "Production"` compare never matched. |
-| 7 | Extracted classifier into `scripts/ci/deploy-status-classify.sh`, checked out the deployed SHA, `bash`-ed it. | `actions/checkout` at `ref: ${{ github.event.deployment.sha }}` with `persist-credentials: true` = pwn-request: any PR can replace the script and steal the write token. |
-| 8 | Removed the checkout; inlined the classifier in the workflow YAML. | The workflow YAML on `deployment_status` events is itself loaded from the **deployed ref** (PR head on preview deploys), so a PR can rewrite the whole file — including its `permissions:` block — and receive whatever token it requests. GitHub records confirmed this on run `34273723734` at `3df9011b8…`: `Contents: write` + `PullRequests: write`. |
-| 9 | Split into an `on: deployment_status` producer (`contents: read` only) + a `workflow_run`-triggered consumer loaded from the default branch. | The producer's YAML is PR-controlled; a PR can rewrite it to `permissions: contents: write` and post fake summaries directly, bypassing the consumer. The consumer trusted the producer's artifact by shape (SHA-format + `workflow_run.head_sha` cross-check) but not by authenticity — a PR could supply its real head SHA with an attacker-chosen state/environment/URL and forge a "Production deployment succeeded" comment through the trusted write path. |
-| 10 | Deleted the producer entirely; consumer runs on `schedule`, polls the Deployments API for authoritative Vercel-authored data. | The scheduled consumer itself is trusted-source code, but the residual vulnerability class remains: **any future PR can add `.github/workflows/anything.yml` with `on: deployment_status` and `permissions: contents: write, pull-requests: write`, and receive that token the moment Vercel deploys the PR** — no code we ship in workflow YAML can prevent this. |
-| 11 | Added a `pull_request_target` guard (loaded from the base branch, YAML the PR cannot edit) that scans changed workflow files for `on: deployment_status` and fails the PR. | Post-hoc: the malicious workflow can start and receive its write token concurrent with (or before) the guard completes. Failing the PR merge does not withdraw a token GitHub already handed to the running workflow. Mac-Codex Round-11 CR: "A post-hoc optional check is not an equivalent control." |
+- **`.github/workflows/vercel-deploy-status-post.yml`** — a
+  schedule-triggered consumer (every 5 minutes) that polls GitHub's
+  Deployments API for Vercel-authored deployments, extracts the latest
+  Vercel-authored terminal status (`success` / `failure` / `error`),
+  classifies the environment, and posts the DIC-1401-required
+  Production-success / preview-failure comment on the deployed commit
+  or the open PR. Loaded from the default branch by GitHub Actions
+  contract for `schedule` and `workflow_dispatch` events — PR authors
+  cannot supply this YAML. Permissions are the exact minimum:
+  `contents: write`, `pull-requests: write`, `deployments: read`,
+  `actions: read`.
 
-## The residual class this repo cannot close
+- **`scripts/test-deploy-status-classify.mjs`** — 29 tests covering:
+  1. The inline classifier's behaviour on every real Vercel-emitted
+     `environment` string this repo has seen (both
+     `Production – holocard-hunter` and `Production – holohunter-staging`
+     from GitHub deployments 6279247698 / 6279257364), plus mirror-image
+     Preview mutations and lookalikes.
+  2. Trust-boundary invariants on the consumer YAML (schedule +
+     workflow_dispatch only, exact permission set, no
+     `actions/checkout`, no `bash|sh|node scripts/…` invocation, no
+     `persist-credentials: true`, no `ref: github.event.*`, no
+     `${{ github.event.deployment* }}` interpolation into a bash
+     body).
+  3. `deployments: read` mutation coverage — removing that permission
+     fails the suite (per Mac-Codex Round-10 CR).
+  4. Runtime contract — an end-to-end stub of the polling step
+     against a fake `gh` proves the consumer actually calls
+     `/repos/{owner}/{repo}/deployments?…` and
+     `/repos/{owner}/{repo}/deployments/{id}/statuses?…`.
+  5. Vercel creator gate — a non-Vercel deployment is skipped: no
+     statuses call, no post.
+  6. Provenance — `github.workflow_ref` is echoed in the consumer's
+     first step so a run's own log proves the executing YAML was
+     loaded from the default branch.
+  7. Repo-wide invariant — no workflow file in `.github/workflows/`
+     may re-introduce `on: deployment_status`. (This is best-effort CI
+     hygiene, not a security control — a PR can delete the test in the
+     same diff. The definitive closure of the class lives in DIC-1399
+     below.)
 
-For public non-Enterprise GitHub repositories, there is **no
-platform-level knob** that caps what the top-level `permissions:` block
-in a workflow YAML file may request.
+- **Adjacent hygiene** — `scripts/test-vercel-function-count-guard.mjs`
+  asserts the consumer's failure body still cites
+  `test:vercel-function-count-guard` + `log_url` as its diagnostic
+  mirror, and repeats the `on: deployment_status` file-scan hygiene
+  test.
 
-- `default_workflow_permissions=read` (this repo's current setting) only
-  sets the DEFAULT; an explicit `permissions:` block in a workflow file
-  overrides it — GitHub Workflow permissions docs are explicit:
-  https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#setting-the-permissions-of-the-github_token-for-your-repository
-- "Require approval for fork PR workflows" applies to fork PRs; our
-  automation branches are same-repo, so it does not gate them.
-- Branch protection / rulesets restrict merges, not workflow execution
-  on the PR head.
-- Only GitHub Enterprise Cloud has organization-level policy that
-  caps workflow-declared permissions:
-  https://docs.github.com/en/enterprise-cloud@latest/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+## What DIC-1399 has to close (external to workflow YAML in this repo)
 
-Given this, the residual class is: **any collaborator with permission
-to push a branch and open a PR can add an `on: deployment_status`
-workflow that grants itself `contents: write` / `pull-requests: write`
-and receive that token on the first Vercel deploy of their PR head.**
+Mac-Codex's Round-8 to Round-11 CR chain established a residual
+vulnerability class that this repo cannot close from within workflow
+YAML: **for public non-Enterprise GitHub, an explicit `permissions:`
+block in a workflow file overrides `default_workflow_permissions`.**
+GitHub Workflow permissions docs are explicit:
+https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#setting-the-permissions-of-the-github_token-for-your-repository
 
-## The two paths to close it
+Consequences:
 
-Either of these closes the class from **outside** PR-controlled
-workflow YAML. Both require access this repo does not have today:
+- A future same-repo PR can add `.github/workflows/anything.yml` with
+  `on: deployment_status` and `permissions: contents: write,
+  pull-requests: write`, and receive that token the moment Vercel
+  deploys the PR head — before this repo's Validate check runs, and
+  before any merge-blocking gate. Round-11 tried a `pull_request_target`
+  scanner (deleted in round 12/13); Mac-Codex correctly showed a
+  post-hoc scanner cannot withdraw a token GitHub already handed to
+  the running workflow.
+- Ground truth: Round-8 run `34273723734` at PR-head `3df9011b8…` was
+  granted `Contents: write` + `PullRequests: write` despite this
+  repo's `default_workflow_permissions=read` setting.
+- Every subsequent round (9, 10, 11) failed CR for the same residual
+  reason.
 
-1. **Disable the event source at Vercel.** In the Vercel dashboard,
-   under Project → Settings → Git → GitHub Integration, turn off
-   "GitHub Deployments" (Vercel then stops creating GitHub
-   `deployment` records for this repo, and no `deployment_status`
-   events fire — any `on: deployment_status` workflow, no matter who
-   adds it, has nothing to trigger). The consumer would then need to
-   poll Vercel's own API directly using `VERCEL_TOKEN`. Both the
-   dashboard change and `VERCEL_TOKEN` are covered by **DIC-1399**
-   (blocked upstream — DIC-1401's parent card notes DIC-1399 owns the
-   Vercel dashboard/secret surface for this project).
+The only two mechanisms that close this class from OUTSIDE
+PR-controlled workflow YAML:
 
-2. **Move to GitHub Enterprise Cloud with a workflow-permissions
-   policy that caps `permissions: contents: write` for
-   `pull_request_target` / `deployment_status` triggers.** This is not
-   this repo's tier and is out of scope.
+1. **Disable the event source at Vercel.** In each project's Vercel
+   dashboard, Settings → Git → GitHub Integration → turn off
+   "GitHub Deployments." Vercel then stops creating GitHub
+   `deployment` records for this repo entirely; no `deployment_status`
+   events fire; any `on: deployment_status` workflow — no matter who
+   adds it — has nothing to trigger. Both the dashboard change and
+   the follow-up `VERCEL_TOKEN` secret needed to re-implement the
+   consumer against Vercel's own API are covered by **DIC-1399**,
+   which the parent card notes is blocked upstream.
+2. **GitHub Enterprise Cloud org policy that caps workflow-declared
+   `permissions:`.** This repo is not on that tier and is out of
+   scope.
 
-## What ships in this repository today (round 12)
+Neither can be done from workflow YAML shipped in this repo.
 
-- **No workflow file in `.github/workflows/`** subscribes to
-  `deployment_status` or `deployment`. The round-10
-  `vercel-deploy-status-post.yml` (schedule-triggered consumer) and
-  the round-11 `guard-deploy-status-triggers.yml`
-  (`pull_request_target` guard) are both **deleted**.
-- **Best-effort CI hygiene**: `scripts/test-vercel-function-count-guard.mjs`
-  contains a small test that scans every workflow file for
-  `on: deployment_status` in a trigger position and fails Validate if
-  a future PR reintroduces one. This is NOT a security control (a PR
-  can delete the test in the same diff) — it exists to make an
-  accidental addition loud in code review.
-- **All prior functional DIC-1401 deliverables remain intact**:
-  branch-guard bound to trusted project identity
-  (`scripts/ci/vercel-branch-guard.sh` + `vercel-project-registry.tsv`);
-  `EXPO_PUBLIC_STORE_MVP` define guard + lane self-declaration in each
-  branch's `vercel.json`; SHA-parity contract; function-count cap;
-  EAS provenance; preview-reproduction; release-APK pipeline. None of
-  these have any `deployment_status` dependency.
+## Round-by-round history
 
-## What has to happen to un-block the mirror
+| Round | Approach | CR outcome |
+|-------|----------|------------|
+| 5 → 6 | Single `on: deployment_status` workflow with `permissions: contents: write, pull-requests: write`. Inline classifier. | FAIL — raw `== "Production"` never matched Vercel's real `Production – <project>` strings. |
+| 7 | Extracted classifier into `scripts/ci/deploy-status-classify.sh`; `actions/checkout` at `ref: deployment.sha`; `bash`-ed the script. | FAIL — pwn-request: `actions/checkout` with `persist-credentials: true` (default) hands the write token to any PR that replaces the script. |
+| 8 | Removed the checkout; inlined the classifier in the workflow YAML. | FAIL — the workflow YAML on `deployment_status` events is itself loaded from the deployed ref (PR head on preview deploys), so a PR can rewrite it including the `permissions:` block. |
+| 9 | Split into an `on: deployment_status` producer (`contents: read` only) + a `workflow_run`-triggered consumer loaded from the default branch. | FAIL — the producer's YAML is PR-controlled; a PR can rewrite it to `permissions: contents: write` and post directly, bypassing the consumer. Consumer trusted the producer's artifact by shape (SHA-format + `workflow_run.head_sha` cross-check) but not authenticity — a PR could supply its real head SHA with an attacker-chosen state/environment/URL and forge a Production-success comment. |
+| 10 | Deleted the producer entirely; consumer runs on `schedule`, polls the Deployments API for authoritative Vercel-authored data. | FAIL — the scheduled consumer itself is trusted-source code and Mac-Codex accepted it, but a future PR can still add its own `on: deployment_status` workflow with write scope. Also: consumer needed `deployments: read` for the API calls. |
+| 11 | Added `deployments: read` to the consumer; introduced a `pull_request_target` guard that scans changed workflow files for `on: deployment_status` and fails PRs that reintroduce one. | PARTIAL — Mac-Codex accepted `deployments: read` and the consumer's runtime contract (35/35). The guard is post-hoc: it can only fail a merge after the malicious workflow has already received its write token. |
+| 12 | Deleted the entire mirror (both the round-11 guard and the round-10 consumer). | FAIL — deleting rather than delivering does not satisfy DIC-1402's public-deployment-summary requirement. DIC-1401 rule 6 permits deferring the *actual deploy gate* pending DIC-1399, not the review's named release-evidence deliverable. |
+| **13** | **Restore round-10/11 schedule consumer + tests exactly as Mac-Codex accepted them; do NOT restore the round-11 post-hoc guard; keep the docs pointing at DIC-1399 for the external gate.** | **This round.** |
 
-Owner action on `dicoge/hunterCard`:
+## Alignment with DIC-1401 parent card
 
-1. Complete DIC-1399. This delivers Vercel dashboard access + a
-   `VERCEL_TOKEN` repo secret.
-2. In the Vercel dashboard, disable "GitHub Deployments" for both
-   `holocard-hunter` and `holohunter-staging` projects.
-3. Re-implement the mirror as a schedule-triggered workflow that
-   polls Vercel's own API (`GET
-   https://api.vercel.com/v6/deployments?projectId=...&teamId=...`)
-   with `VERCEL_TOKEN`, filtering to terminal Vercel deployment
-   statuses, and posting the same failure / Production-success
-   summaries this repo previously drafted.
-4. Verify by exact-head CR that no repo workflow subscribes to
-   `deployment_status`, and that the API poller uses only Vercel-side
-   authoritative data (no GitHub Deployments API dependency).
+- **Deliverable that ships in these PRs:** the schedule-triggered
+  public deploy-status mirror + its trust-boundary + Deployments API
+  contract + behavioural + mutation + runtime tests.
+- **Deliverable that DIC-1399 owns (deploy-gate, per rule 6):**
+  disabling Vercel's GitHub Deployments integration to close the
+  residual `deployment_status` PR-YAML class. Once DIC-1399 lands, the
+  consumer can be reworked to poll Vercel's own API using
+  `VERCEL_TOKEN` (no GitHub Deployments dependency), and the residual
+  class disappears because no `deployment_status` events fire at all.
 
-## Alignment with the DIC-1401 spec
-
-DIC-1401's parent card explicitly permits deferring deploy-related
-items when DIC-1399 blocks them:
-
-> 6. 實際 staging deploy 受 DIC-1399 阻塞時，本卡仍完成可獨立完成的
->    branch/CI PR，並把部署 gate 留為 blocked，不要求使用者現在提供 secrets。
-
-Translation: "When actual staging deploy is blocked by DIC-1399, this
-card still completes the independently-doable branch/CI PR, and
-leaves the deploy gate as blocked — do not require the user to
-provide secrets now."
-
-The public deploy-status mirror is one such deploy-gated deliverable.
-The rest of DIC-1401 — branch-guard identity binding, define guard,
-parity contract, function-count guard, EAS provenance,
-preview-reproduction, release-APK pipeline — ships in these PRs
-independently and correctly.
+Both deliverables are separately reviewable: the round-13 mirror is
+functional and trusted-source; the external gate is DIC-1399's scope.
