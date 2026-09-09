@@ -47,11 +47,13 @@ const {
   installAccountSyncBinding,
   __resetAccountSyncBindingForTesting,
   __getAccountSyncBindingPendingPushMs,
+  __getAccountSyncBindingQueuedPushSession,
 } = await import('../src/services/accountSyncBinding.ts');
 const { useAuthStore } = await import('../src/store/authStore.ts');
 const { useDeckStore } = await import('../src/store/deckStore.ts');
 const { usePriceAlertStore } = await import('../src/stores/priceAlertStore.ts');
 const { useSettingsStore } = await import('../src/store/settingsStore.ts');
+const { useFavoritesStore } = await import('../src/store/favoritesStore.ts');
 const { resetLastKnownRevision, getLastKnownRevision } = await import('../src/services/accountSyncOrchestrator.ts');
 
 function jsonResponse(status, body) {
@@ -74,6 +76,7 @@ async function test(label, fn) {
   useDeckStore.setState((s) => ({ ...s, decks: [], collection: {}, activeDeckId: null }));
   usePriceAlertStore.setState((s) => ({ ...s, alerts: {}, pending: {} }));
   useSettingsStore.setState((s) => ({ ...s, preferredCurrency: 'TWD', preferredLanguage: 'zh' }));
+  useFavoritesStore.getState().clearAll();
   resetLastKnownRevision();
   try {
     await fn();
@@ -229,6 +232,110 @@ await test('installAccountSyncBinding is a no-op on the second call (hot-reload 
   await new Promise((r) => setImmediate(r));
   const posts = fetchCalls.filter((c) => c.method === 'POST');
   assert.equal(posts.length, 1, 'exactly one POST for the mutation (no duplicate subscription)');
+});
+
+// ── Favorites store change triggers a push ──────────────────────────────
+await test('favorites change under an active session triggers a debounced push', async () => {
+  useAuthStore.setState((s) => ({ ...s, session: SESSION_A, isAuthenticated: true }));
+  responseQueue = [
+    jsonResponse(200, { snapshot: BASE_SNAPSHOT }),
+    jsonResponse(200, { ok: true, snapshot: { ...BASE_SNAPSHOT, revision: 4 } }),
+  ];
+  installAccountSyncBinding();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  useFavoritesStore.getState().addFavorite({
+    cardNumber: 'wishlist',
+    printing: 'PARALLEL',
+    now: '2026-09-08T00:00:00Z',
+  });
+  await waitForPush();
+  await new Promise((r) => setImmediate(r));
+  const posts = fetchCalls.filter((c) => c.method === 'POST');
+  assert.ok(posts.length >= 1, 'favorites push fired');
+  const patch = posts[posts.length - 1].body.patch;
+  assert.equal(patch.favorites.length, 1);
+  assert.equal(patch.favorites[0].cardNumber, 'wishlist');
+  assert.equal(patch.favorites[0].printing, 'PARALLEL');
+});
+
+// ── DIC-1380 W5: logout MUST cancel a queued push AND clear account state ──
+await test('logout: cancels the pending debounced push before it can fire', async () => {
+  useAuthStore.setState((s) => ({ ...s, session: SESSION_A, isAuthenticated: true }));
+  responseQueue = [jsonResponse(200, { snapshot: BASE_SNAPSHOT })];
+  installAccountSyncBinding();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  // Queue a push and IMMEDIATELY log out.
+  useDeckStore.setState((s) => ({ ...s, collection: { 'about-to-be-cancelled|BASE': 1 } }));
+  assert.equal(
+    __getAccountSyncBindingQueuedPushSession(),
+    SESSION_A,
+    'binding shows a push queued for session A',
+  );
+  useAuthStore.setState((s) => ({ ...s, session: null, isAuthenticated: false }));
+  assert.equal(
+    __getAccountSyncBindingQueuedPushSession(),
+    null,
+    'logout must clear the queued-push session marker',
+  );
+  await waitForPush();
+  await new Promise((r) => setImmediate(r));
+  const posts = fetchCalls.filter((c) => c.method === 'POST');
+  assert.equal(posts.length, 0, 'the queued push must not fire after logout');
+});
+
+await test('logout: clears account-scoped stores (decks / collection / alerts / favorites)', async () => {
+  useAuthStore.setState((s) => ({ ...s, session: SESSION_A, isAuthenticated: true }));
+  responseQueue = [jsonResponse(200, { snapshot: BASE_SNAPSHOT })];
+  installAccountSyncBinding();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  useDeckStore.setState((s) => ({ ...s, decks: [{ id: 'stay-away', name: 'A', oshi: [], main: [], yell: [], updatedAt: 'z' }], collection: { 'a|BASE': 1 } }));
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'a', printing: 'BASE' });
+  useAuthStore.setState((s) => ({ ...s, session: null, isAuthenticated: false }));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(useDeckStore.getState().decks, [], 'decks cleared on logout');
+  assert.deepEqual(useDeckStore.getState().collection, {}, 'collection cleared on logout');
+  assert.deepEqual(useFavoritesStore.getState().favorites, [], 'favorites cleared on logout');
+  assert.equal(useSettingsStore.getState().preferredCurrency, 'TWD', 'settings survive logout (UI preference)');
+});
+
+// ── Account switch A → B: same guard as logout applies ──────────────────
+await test('account switch: queued push for A does not fire against B, and A\'s stores are cleared', async () => {
+  useAuthStore.setState((s) => ({ ...s, session: SESSION_A, isAuthenticated: true }));
+  responseQueue = [
+    jsonResponse(200, { snapshot: BASE_SNAPSHOT }),
+    jsonResponse(200, { snapshot: { ...BASE_SNAPSHOT, revision: 5, collection: { 'account-b|BASE': 7 } } }),
+  ];
+  installAccountSyncBinding();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  useDeckStore.setState((s) => ({ ...s, collection: { 'account-a-secret|BASE': 3 } }));
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'account-a-fav', printing: 'BASE' });
+  useAuthStore.setState((s) => ({ ...s, session: SESSION_B, isAuthenticated: true }));
+  await waitForPush();
+  await new Promise((r) => setImmediate(r));
+  // Only the hydrate GETs should have fired (one per session); no POST that
+  // could have leaked account-A state into account B.
+  const posts = fetchCalls.filter((c) => c.method === 'POST');
+  assert.equal(posts.length, 0, 'the queued push for account A must not fire after switching to B');
+  const gets = fetchCalls.filter((c) => c.method === 'GET');
+  assert.equal(gets.length, 2, 'both sessions hydrated (one GET each)');
+  assert.equal(gets[1].headers.Authorization, `Bearer ${SESSION_B}`, 'the second hydrate is for account B');
+  // Account A's stores were cleared before the account-B hydrate applied.
+  assert.equal(
+    useDeckStore.getState().collection['account-a-secret|BASE'],
+    undefined,
+    'account A collection cleared before account B hydrates',
+  );
+  assert.deepEqual(
+    useFavoritesStore.getState().favorites.filter((f) => f.cardNumber === 'account-a-fav'),
+    [],
+    'account A favorites cleared',
+  );
+  // Account B's hydrate DID apply.
+  assert.equal(useDeckStore.getState().collection['account-b|BASE'], 7, 'account B collection hydrated');
 });
 
 if ((process.exitCode ?? 0) === 0) {

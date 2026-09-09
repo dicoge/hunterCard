@@ -53,10 +53,13 @@ const {
   applyServerSnapshotToStores,
   getLastKnownRevision,
   resetLastKnownRevision,
+  mergeLocalOntoServer,
+  clearAccountScopedStores,
 } = await import('../src/services/accountSyncOrchestrator.ts');
 const { useDeckStore } = await import('../src/store/deckStore.ts');
 const { usePriceAlertStore } = await import('../src/stores/priceAlertStore.ts');
 const { useSettingsStore } = await import('../src/store/settingsStore.ts');
+const { useFavoritesStore } = await import('../src/store/favoritesStore.ts');
 
 let passed = 0;
 async function test(label, fn) {
@@ -65,6 +68,7 @@ async function test(label, fn) {
   useDeckStore.setState((s) => ({ ...s, decks: [], collection: {}, activeDeckId: null }));
   usePriceAlertStore.setState((s) => ({ ...s, alerts: {}, pending: {} }));
   useSettingsStore.setState((s) => ({ ...s, preferredCurrency: 'TWD', preferredLanguage: 'zh' }));
+  useFavoritesStore.getState().clearAll();
   resetLastKnownRevision();
   try {
     await fn();
@@ -180,10 +184,9 @@ await test('push: patch reflects the current deck / collection / alerts / settin
   assert.equal(patch.priceAlerts[0].cardNumber, 'hBP04-999');
   assert.equal(patch.settings.preferredCurrency, 'USD');
   assert.equal(patch.settings.preferredLanguage, 'zh');
-  // Derived favorites map to collection entries so the server sees ownership.
-  assert.equal(patch.favorites.length, 1);
-  assert.equal(patch.favorites[0].cardNumber, 'hBP04-999');
-  assert.equal(patch.favorites[0].printing, 'BASE');
+  // Favorites are their own independent store — nothing was bookmarked
+  // in this test case, so the pushed favorites list is empty.
+  assert.equal(patch.favorites.length, 0);
   assert.equal(getLastKnownRevision(), 8, 'lastKnownRevision advances after successful push');
 });
 
@@ -202,10 +205,17 @@ await test('push: consecutive pushes advance baseRevision to the last server-con
   assert.equal(fetchCalls[1].body.baseRevision, 12, 'second push uses first push\'s confirmed revision');
 });
 
-// ── 409 recovery: pull the server, hydrate stores, retry ONCE ───────────
-await test('conflict: 409 triggers pull + hydrate + retry with the fresh baseRevision', async () => {
-  useDeckStore.setState((s) => ({ ...s, collection: { 'client-side|BASE': 1 } }));
-  const serverAfterConflict = { ...SNAPSHOT_V7, revision: 42, collection: { 'server-side|BASE': 9 } };
+// ── 409 recovery: MERGE local on top of server + retry ONCE ─────────────
+// DIC-1380 W5 handback repair: the retry must NEVER silently discard the
+// local pre-conflict edits. The recovery merges union / MAX / newer-wins
+// per field so both sides survive.
+await test('conflict: 409 MERGES local ontop of server (union / MAX per key) — no local loss', async () => {
+  useDeckStore.setState((s) => ({ ...s, collection: { 'client-side|BASE': 3, 'shared|BASE': 4 } }));
+  const serverAfterConflict = {
+    ...SNAPSHOT_V7,
+    revision: 42,
+    collection: { 'server-side|BASE': 9, 'shared|BASE': 1 },
+  };
   responseQueue = [
     jsonResponse(409, {
       error: 'revision_conflict',
@@ -221,12 +231,17 @@ await test('conflict: 409 triggers pull + hydrate + retry with the fresh baseRev
   assert.equal(fetchCalls[1].method, 'POST');
   assert.equal(fetchCalls[1].body.baseRevision, 42, 'retry uses the server-reported revision');
   const collection = useDeckStore.getState().collection;
-  assert.deepEqual(collection, { 'server-side|BASE': 9 }, 'store hydrated to server-side after 409');
-  // The retry ships the merged view (post-hydrate), so favorites derived from
-  // collection reflect the server-owned key, not the pre-conflict local one.
+  assert.deepEqual(
+    collection,
+    { 'client-side|BASE': 3, 'server-side|BASE': 9, 'shared|BASE': 4 },
+    'store carries the union; MAX wins for `shared|BASE` (4 > 1)',
+  );
   const retryPatch = fetchCalls[1].body.patch;
-  assert.deepEqual(retryPatch.collection, { 'server-side|BASE': 9 }, 'retry payload is post-hydrate');
-  assert.equal(retryPatch.favorites[0].cardNumber, 'server-side');
+  assert.deepEqual(
+    retryPatch.collection,
+    { 'client-side|BASE': 3, 'server-side|BASE': 9, 'shared|BASE': 4 },
+    'retry ships the merged collection, never a bare server-only overwrite',
+  );
   assert.equal(getLastKnownRevision(), 43, 'lastKnownRevision advances after successful retry');
 });
 
@@ -284,6 +299,118 @@ await test('snapshotFromLocalStores does not touch the network or mutate stores'
   assert.equal(useSettingsStore.getState().preferredCurrency, dataBefore.settings.preferredCurrency);
   assert.equal(useSettingsStore.getState().preferredLanguage, dataBefore.settings.preferredLanguage);
   assert.equal(patch.decks[0].id, 'deck-x');
+});
+
+// ── Favorites are independently round-tripped ──────────────────────────
+await test('favorites: pushed independently of collection (no derivation from ownership)', async () => {
+  useDeckStore.setState((s) => ({ ...s, collection: { 'owned|BASE': 1 } }));
+  useFavoritesStore.getState().addFavorite({
+    cardNumber: 'wishlist',
+    printing: 'PARALLEL',
+    now: '2026-09-08T00:00:00.000Z',
+  });
+  responseQueue = [jsonResponse(200, { ok: true, snapshot: { ...SNAPSHOT_V7, revision: 20 } })];
+  await pushAccountSyncFromStores(SESSION);
+  const patch = fetchCalls[0].body.patch;
+  const favKeys = patch.favorites.map((f) => `${f.cardNumber}|${f.printing}`).sort();
+  assert.deepEqual(favKeys, ['wishlist|PARALLEL'], 'favorites is the exact wishlist entry, not derived from collection');
+  assert.deepEqual(patch.collection, { 'owned|BASE': 1 }, 'collection is independent of favorites');
+});
+
+await test('favorites: server hydrate replaces the local favorites list (no leak from previous user)', async () => {
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'stale', printing: 'BASE', now: '2026-09-01T00:00:00.000Z' });
+  const snap = {
+    ...SNAPSHOT_V7,
+    favorites: [
+      { cardNumber: 'server-a', printing: 'BASE', addedAt: '2026-09-05T00:00:00.000Z' },
+      { cardNumber: 'server-b', printing: 'PARALLEL', addedAt: '2026-09-06T00:00:00.000Z' },
+    ],
+  };
+  responseQueue = [jsonResponse(200, { snapshot: snap })];
+  await hydrateAccountSyncFromServer(SESSION);
+  const favs = useFavoritesStore.getState().favorites.map((f) => `${f.cardNumber}|${f.printing}`).sort();
+  assert.deepEqual(favs, ['server-a|BASE', 'server-b|PARALLEL'], 'local favorites replaced by server hydrate');
+});
+
+// ── mergeLocalOntoServer is unit-verifiable and mutation-sensitive ──────
+await test('merge: favorites union preserves both sides, earliest addedAt wins', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, favorites: [
+      { cardNumber: 'A', printing: 'BASE', addedAt: '2026-01-01T00:00:00Z' },
+      { cardNumber: 'B', printing: 'BASE', addedAt: '2026-05-01T00:00:00Z' },
+    ] },
+    { favorites: [
+      { cardNumber: 'A', printing: 'BASE', addedAt: '2025-01-01T00:00:00Z' },
+      { cardNumber: 'C', printing: 'PARALLEL', addedAt: '2026-08-01T00:00:00Z' },
+    ] },
+  );
+  const keys = merged.favorites.map((f) => `${f.cardNumber}|${f.printing}`);
+  assert.deepEqual(keys, ['A|BASE', 'B|BASE', 'C|PARALLEL'], 'union of both sides');
+  const a = merged.favorites.find((f) => f.cardNumber === 'A');
+  assert.equal(a.addedAt, '2025-01-01T00:00:00Z', 'earliest addedAt wins for A');
+});
+
+await test('merge: collection uses MAX per key (never lose ownership)', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: { 'a|BASE': 1, 'b|BASE': 5 } },
+    { collection: { 'a|BASE': 3, 'c|BASE': 2 } },
+  );
+  assert.deepEqual(merged.collection, { 'a|BASE': 3, 'b|BASE': 5, 'c|BASE': 2 });
+});
+
+await test('merge: decks newer updatedAt wins; local wins on tie', () => {
+  const serverDeck = { id: 'x', name: 'server', updatedAt: '2026-09-01T00:00:00Z', oshi: [], main: [], yell: [] };
+  const localDeckOlder = { id: 'x', name: 'local-older', updatedAt: '2026-08-01T00:00:00Z', oshi: [], main: [], yell: [] };
+  const localDeckSame = { id: 'x', name: 'local-tie', updatedAt: '2026-09-01T00:00:00Z', oshi: [], main: [], yell: [] };
+  const localDeckNewer = { id: 'x', name: 'local-newer', updatedAt: '2026-09-08T00:00:00Z', oshi: [], main: [], yell: [] };
+
+  const olderMerge = mergeLocalOntoServer({ ...SNAPSHOT_V7, decks: [serverDeck] }, { decks: [localDeckOlder] });
+  assert.equal(olderMerge.decks[0].name, 'server', 'server wins when local is older');
+
+  const tieMerge = mergeLocalOntoServer({ ...SNAPSHOT_V7, decks: [serverDeck] }, { decks: [localDeckSame] });
+  assert.equal(tieMerge.decks[0].name, 'local-tie', 'local wins on tie');
+
+  const newerMerge = mergeLocalOntoServer({ ...SNAPSHOT_V7, decks: [serverDeck] }, { decks: [localDeckNewer] });
+  assert.equal(newerMerge.decks[0].name, 'local-newer', 'local newer wins');
+});
+
+await test('merge: priceAlerts newer updatedAt wins; keys union', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, priceAlerts: [
+      { cardNumber: 'p1', printing: 'BASE', upperPrice: 10, updatedAt: '2026-09-01T00:00:00Z' },
+    ] },
+    { priceAlerts: [
+      { cardNumber: 'p1', printing: 'BASE', upperPrice: 20, updatedAt: '2026-09-08T00:00:00Z' },
+      { cardNumber: 'p2', printing: 'BASE', upperPrice: 5, updatedAt: '2026-09-05T00:00:00Z' },
+    ] },
+  );
+  const keys = merged.priceAlerts.map((a) => `${a.cardNumber}|${a.printing}`).sort();
+  assert.deepEqual(keys, ['p1|BASE', 'p2|BASE']);
+  const p1 = merged.priceAlerts.find((a) => a.cardNumber === 'p1');
+  assert.equal(p1.upperPrice, 20, 'newer local wins for p1');
+});
+
+await test('merge: settings local wins (the client is the authority for currency/language)', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, settings: { preferredCurrency: 'USD', preferredLanguage: 'ja' } },
+    { settings: { preferredCurrency: 'TWD', preferredLanguage: 'zh' } },
+  );
+  assert.deepEqual(merged.settings, { preferredCurrency: 'TWD', preferredLanguage: 'zh' });
+});
+
+await test('clearAccountScopedStores wipes favorites / decks / collection / alerts (settings survive)', () => {
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'a', printing: 'BASE' });
+  useDeckStore.setState((s) => ({ ...s, decks: [{ id: 'd', name: 'x', oshi: [], main: [], yell: [], updatedAt: 'z' }], collection: { 'x|BASE': 1 } }));
+  usePriceAlertStore.setState((s) => ({ ...s, alerts: { 'x|BASE': { cardNumber: 'x', printing: 'BASE', upperPrice: 1, updatedAt: 'z' } } }));
+  useSettingsStore.setState((s) => ({ ...s, preferredCurrency: 'USD', preferredLanguage: 'ja' }));
+  clearAccountScopedStores();
+  assert.deepEqual(useFavoritesStore.getState().favorites, [], 'favorites cleared');
+  assert.deepEqual(useDeckStore.getState().decks, [], 'decks cleared');
+  assert.deepEqual(useDeckStore.getState().collection, {}, 'collection cleared');
+  assert.deepEqual(usePriceAlertStore.getState().alerts, {}, 'alerts cleared');
+  assert.equal(useSettingsStore.getState().preferredCurrency, 'USD', 'settings survive logout (UI preference)');
+  assert.equal(useSettingsStore.getState().preferredLanguage, 'ja', 'settings survive logout');
+  assert.equal(getLastKnownRevision(), 0, 'lastKnownRevision reset');
 });
 
 if ((process.exitCode ?? 0) === 0) {
