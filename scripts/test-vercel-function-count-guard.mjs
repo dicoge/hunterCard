@@ -110,31 +110,35 @@ test('ci.yml: the function-count guard is not neutered on the Validate path', ()
   assert.ok(!/\|\| true|&& false|continue-on-error/.test(ciWorkflow.split('test:vercel-function-count-guard')[0].slice(-400)));
 });
 
-// DIC-1401 CR round 12 removed the public deploy-status mirror
-// deliverable entirely (both the round-11 pull_request_target guard
-// and the round-10 schedule-triggered consumer). Mac-Codex Round-11
-// CR confirmed the residual `deployment_status` PR-YAML vulnerability
-// class cannot be closed from within workflow YAML on public
-// non-Enterprise GitHub — closing it requires either disabling
-// Vercel's GitHub Deployments integration (needs DIC-1399 dashboard
-// access) or an Enterprise permissions policy the repo does not have.
-// The mirror deliverable is deferred to that upstream unblock; see
-// release-parity/deploy-status-mirror-blocked.md.
-//
-// The invariant this file enforces here is narrow and file-scoped:
-// no workflow in `.github/workflows/` may re-introduce
-// `on: deployment_status` (which is the class Mac-Codex flagged). It
-// is best-effort CI hygiene — a future PR can still delete this
-// test, but it makes accidental additions loud in review. It is NOT
-// claimed as a security control.
-test('DIC-1401 mirror block: no .github/workflows/*.yml re-introduces on: deployment_status (best-effort CI hygiene)', () => {
+// DIC-1401 Round 10-13 shipped the deploy-status mirror as a
+// schedule-triggered consumer that polls the GitHub Deployments API
+// (round 10), added `deployments: read` and runtime tests (round 11),
+// was mistakenly deleted (round 12), and restored (round 13). The
+// consumer's failure body still cites test:vercel-function-count-guard
+// as the diagnostic mirror.
+const deployStatusConsumer = fs.readFileSync(
+  path.join(ROOT, '.github/workflows/vercel-deploy-status-post.yml'),
+  'utf8',
+);
+
+test('deploy-status mirror consumer surfaces the failure body with the function-count-guard diagnostic + log_url', () => {
+  assert.match(deployStatusConsumer, /vercel-function-count-guard/);
+  assert.match(deployStatusConsumer, /log_url/i);
+});
+
+// Belt-and-suspenders (best-effort CI hygiene): fail Validate if a
+// future PR re-introduces `on: deployment_status` in ANY workflow
+// file. Not a security control — a PR can delete this test in the
+// same diff — but it makes accidental additions loud in code review.
+// The definitive closure of the deployment_status class lives outside
+// this repo (see release-parity/deploy-status-mirror-blocked.md and
+// DIC-1399: disable Vercel's GitHub Deployments integration so the
+// event source stops firing entirely).
+test('DIC-1401: no .github/workflows/*.yml re-introduces on: deployment_status (best-effort CI hygiene)', () => {
   const workflowsDir = path.join(ROOT, '.github/workflows');
   const files = fs.readdirSync(workflowsDir).filter((f) => /\.ya?ml$/i.test(f));
   for (const file of files) {
     const text = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
-    // Strip full-line + trailing YAML comments so the trust-boundary
-    // rationale in release-parity/... referenced from any workflow
-    // header doesn't false-positive.
     const uncommented = text
       .split('\n')
       .map((line) => (/^\s*#/.test(line) ? '' : line.replace(/#.*$/, '')))
@@ -143,7 +147,7 @@ test('DIC-1401 mirror block: no .github/workflows/*.yml re-introduces on: deploy
       !/^\s*deployment_status\s*:/m.test(uncommented) &&
         !/^on:\s*deployment_status\s*$/m.test(uncommented) &&
         !/^on:\s*\[[^\]]*\bdeployment_status\b[^\]]*\]/m.test(uncommented),
-      `${file} references \`deployment_status\` in a trigger position — DIC-1401 CR round-12: this class is blocked pending DIC-1399. See release-parity/deploy-status-mirror-blocked.md.`,
+      `${file} references \`deployment_status\` in a trigger position — DIC-1401: the class must be closed via DIC-1399 (Vercel-side integration disable), not by adding an in-repo consumer. See release-parity/deploy-status-mirror-blocked.md.`,
     );
   }
 });
