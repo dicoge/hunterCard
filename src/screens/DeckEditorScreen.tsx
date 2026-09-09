@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
   SafeAreaView, ActivityIndicator, Modal, Image,
 } from 'react-native';
+import { useNavigation, NavigationContext } from '@react-navigation/native';
 import { COLORS } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -59,6 +60,12 @@ function printingLabelOf(card: {
 
 export default function DeckEditorScreen() {
   const { t } = useTranslation();
+  // DIC-1380 W8 CR — the Pen `uXuqo` app bar carries a back button.
+  // useNavigation() throws when the component is mounted outside a
+  // NavigationContainer (unit-test render harness). Read the context
+  // directly — it returns `undefined` outside a container, which the
+  // back-button handler treats as a no-op.
+  const navigation = React.useContext(NavigationContext as any) as any;
   const { width, isDesktop, isWide } = useBreakpoint();
   const isPhone = width <= 480;
   const zoneLabels: Record<DeckZone, string> = {
@@ -593,52 +600,159 @@ export default function DeckEditorScreen() {
       <View style={styles.zoneBlock} testID="deck-mobile-selected-grid">
         <Text style={styles.zoneTitle}>{t('deck_selected_zone', { zone: zoneLabels[activeZone] })}</Text>
         {selectedSlots.length === 0 && <Text style={styles.muted}>{t('deck_no_cards')}</Text>}
-        {selectedSlots.map((slot) => {
-          const displayName = resolveCardDisplayName(slot.card, preferredLanguage);
-          return (
-          <View key={slot.card.id} style={styles.slotRow} testID={`deck-slot-${slot.card.cardNumber}`}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardName}>{displayName.primary || slot.card.name}</Text>
-              {displayName.secondary ? (
-                <Text style={styles.cardMetaZh} numberOfLines={1}>{displayName.secondary}</Text>
-              ) : null}
-              <Text style={styles.cardMeta}>
-                {slot.card.cardNumber} · {printingLabelOf(slot.card, t)}
-              </Text>
+        {isPhone ? (
+          // DIC-1380 W8 CR — Pen `uXuqo` selected-deck grid: 12 image-card
+          // cells (3×4) on the mobile viewport instead of the text-only
+          // rows the earlier revisions carried. Each filled cell shows
+          // the card image thumbnail, card number, and a quantity badge;
+          // tapping a cell drops into the quantity controls (+/-/remove)
+          // via `expandedSlotId`. Empty cells are placeholders so the
+          // grid always reads as a 12-cell layout — an important Pen
+          // affordance for "how many cards are in this zone?".
+          (() => {
+            const GRID_CELLS = 12;
+            const cells: Array<{ slot?: typeof selectedSlots[number] }> = [];
+            for (const slot of selectedSlots) cells.push({ slot });
+            while (cells.length < GRID_CELLS) cells.push({});
+            return (
+              <View style={styles.mobileImageGrid} testID="deck-mobile-selected-grid-tiles">
+                {cells.slice(0, Math.max(GRID_CELLS, cells.length)).map((cell, idx) => {
+                  if (!cell.slot) {
+                    return (
+                      <View
+                        key={`empty-${idx}`}
+                        style={[styles.mobileImageTile, styles.mobileImageTileEmpty]}
+                        testID={`deck-mobile-grid-cell-empty-${idx}`}
+                      />
+                    );
+                  }
+                  const slot = cell.slot;
+                  const displayName = resolveCardDisplayName(slot.card, preferredLanguage);
+                  const cardImageUrl = (slot.card as any)?.imageUrl
+                    || ((slot.card as any)?.images?.[0])
+                    || null;
+                  return (
+                    <View
+                      key={slot.card.id}
+                      style={styles.mobileImageTile}
+                      accessibilityLabel={`${displayName.primary || slot.card.name} × ${slot.qty}`}
+                      testID={`deck-mobile-grid-cell-${slot.card.cardNumber}`}
+                    >
+                      {cardImageUrl ? (
+                        <Image
+                          source={{ uri: cardImageUrl }}
+                          style={styles.mobileImageTileImg}
+                          resizeMode="cover"
+                          testID={`deck-mobile-grid-cell-img-${slot.card.cardNumber}`}
+                        />
+                      ) : (
+                        <View
+                          style={styles.mobileImageTilePlaceholder}
+                          testID={`deck-mobile-grid-cell-img-${slot.card.cardNumber}`}
+                        />
+                      )}
+                      <View style={styles.mobileImageTileBadge}>
+                        <Text style={styles.mobileImageTileBadgeText}>×{slot.qty}</Text>
+                      </View>
+                      <View style={styles.mobileImageTileLabel}>
+                        <Text style={styles.mobileImageTileNameText} numberOfLines={1}>
+                          {displayName.primary || slot.card.name}
+                        </Text>
+                        {displayName.secondary ? (
+                          <Text style={styles.mobileImageTileNameSubtitle} numberOfLines={1}>
+                            {displayName.secondary}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.mobileImageTileLabelText} numberOfLines={1}>
+                          {slot.card.cardNumber}
+                        </Text>
+                      </View>
+                      {/* Compact qty controls anchored on the tile: the DIC-1064
+                          / DIC-1086 E2E lookups keep resolving the same
+                          testIDs. */}
+                      <View style={styles.mobileImageTileQty}>
+                        <TouchableOpacity
+                          onPress={() => changeCard(activeDeck.id, activeZone, slot.card, -1)}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('deck_decrease_a11y', { name: slot.card.name })}
+                          testID={`deck-slot-dec-${slot.card.cardNumber}`}
+                          style={styles.mobileImageTileQtyBtn}
+                        >
+                          <Text style={styles.mobileImageTileQtyIcon}>−</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => changeCard(activeDeck.id, activeZone, slot.card, 1)}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('deck_increase_a11y', { name: slot.card.name })}
+                          testID={`deck-slot-inc-${slot.card.cardNumber}`}
+                          style={styles.mobileImageTileQtyBtn}
+                        >
+                          <Text style={styles.mobileImageTileQtyIcon}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => removeCard(activeDeck.id, activeZone, slot.card.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('deck_remove_a11y', { name: slot.card.name })}
+                        testID={`deck-slot-remove-${slot.card.cardNumber}`}
+                        style={styles.mobileImageTileRemove}
+                      >
+                        <Text style={styles.mobileImageTileRemoveIcon}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })()
+        ) : (
+          selectedSlots.map((slot) => {
+            const displayName = resolveCardDisplayName(slot.card, preferredLanguage);
+            return (
+            <View key={slot.card.id} style={styles.slotRow} testID={`deck-slot-${slot.card.cardNumber}`}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardName}>{displayName.primary || slot.card.name}</Text>
+                {displayName.secondary ? (
+                  <Text style={styles.cardMetaZh} numberOfLines={1}>{displayName.secondary}</Text>
+                ) : null}
+                <Text style={styles.cardMeta}>
+                  {slot.card.cardNumber} · {printingLabelOf(slot.card, t)}
+                </Text>
+              </View>
+              <View style={styles.qtyControls}>
+                <TouchableOpacity
+                  style={styles.qtyBtn}
+                  onPress={() => changeCard(activeDeck.id, activeZone, slot.card, -1)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('deck_decrease_a11y', { name: slot.card.name })}
+                  testID={`deck-slot-dec-${slot.card.cardNumber}`}
+                >
+                  <Text style={styles.qtyBtnText}>－</Text>
+                </TouchableOpacity>
+                <Text style={styles.qtyValue}>{slot.qty}</Text>
+                <TouchableOpacity
+                  style={styles.qtyBtn}
+                  onPress={() => changeCard(activeDeck.id, activeZone, slot.card, 1)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('deck_increase_a11y', { name: slot.card.name })}
+                  testID={`deck-slot-inc-${slot.card.cardNumber}`}
+                >
+                  <Text style={styles.qtyBtnText}>＋</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.removeBtn}
+                  onPress={() => removeCard(activeDeck.id, activeZone, slot.card.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('deck_remove_a11y', { name: slot.card.name })}
+                  testID={`deck-slot-remove-${slot.card.cardNumber}`}
+                >
+                  <Text style={styles.link}>{t('common_remove')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.qtyControls}>
-              <TouchableOpacity
-                style={styles.qtyBtn}
-                onPress={() => changeCard(activeDeck.id, activeZone, slot.card, -1)}
-                accessibilityRole="button"
-                accessibilityLabel={t('deck_decrease_a11y', { name: slot.card.name })}
-                testID={`deck-slot-dec-${slot.card.cardNumber}`}
-              >
-                <Text style={styles.qtyBtnText}>－</Text>
-              </TouchableOpacity>
-              <Text style={styles.qtyValue}>{slot.qty}</Text>
-              <TouchableOpacity
-                style={styles.qtyBtn}
-                onPress={() => changeCard(activeDeck.id, activeZone, slot.card, 1)}
-                accessibilityRole="button"
-                accessibilityLabel={t('deck_increase_a11y', { name: slot.card.name })}
-                testID={`deck-slot-inc-${slot.card.cardNumber}`}
-              >
-                <Text style={styles.qtyBtnText}>＋</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.removeBtn}
-                onPress={() => removeCard(activeDeck.id, activeZone, slot.card.id)}
-                accessibilityRole="button"
-                accessibilityLabel={t('deck_remove_a11y', { name: slot.card.name })}
-                testID={`deck-slot-remove-${slot.card.cardNumber}`}
-              >
-                <Text style={styles.link}>{t('common_remove')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          );
-        })}
+            );
+          })
+        )}
       </View>
     </View>
   );
@@ -821,18 +935,66 @@ export default function DeckEditorScreen() {
   );
 
   // Pen `uXuqo` app bar — top-of-frame deck name / active-deck identifier
-  // (DIC-1380 W6). Anchors the mobile deck editor so the player always
-  // knows which deck they are editing.
+  // (DIC-1380 W6). Expanded in W8 CR to carry the four controls the Pen
+  // artifact anchors: back, name-edit, validate, overflow menu.
   const phoneAppBar = (
     <View style={styles.phoneAppBar} testID="deck-mobile-appbar">
-      <Text style={styles.phoneAppBarTitle} numberOfLines={1} testID="deck-mobile-appbar-title">
-        {activeDeck ? activeDeck.name : t('deck_title')}
-      </Text>
-      {activeDeck ? (
-        <Text style={styles.phoneAppBarMeta} numberOfLines={1} testID="deck-mobile-appbar-meta">
-          {t('deck_zone_main')} {stats?.main ?? 0}/{stats?.mainTarget ?? 50}
+      <TouchableOpacity
+        style={styles.phoneAppBarBtn}
+        onPress={() => { try { navigation?.goBack?.(); } catch { /* no-op outside container */ } }}
+        accessibilityRole="button"
+        accessibilityLabel={t('deck_appbar_back_a11y')}
+        testID="deck-mobile-appbar-back"
+      >
+        <Text style={styles.phoneAppBarIcon}>‹</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.phoneAppBarTitleTap}
+        onPress={() => {
+          if (!activeDeck) return;
+          // DIC-1380 W8 CR — the rename block lives inside the mobile
+          // deckPanel, so a tap that starts a rename must first surface
+          // the deckPanel. Switch to the currently active zone (or
+          // default to `main`) before flipping renaming on.
+          if (mobilePanel === 'picker' || mobilePanel === 'shortage') {
+            setMobilePanel(activeZone ?? 'main');
+          }
+          startRename();
+        }}
+        disabled={!activeDeck}
+        accessibilityRole="button"
+        accessibilityLabel={activeDeck ? t('deck_appbar_rename_a11y', { name: activeDeck.name }) : t('deck_title')}
+        testID="deck-mobile-appbar-name-edit"
+      >
+        <Text style={styles.phoneAppBarTitle} numberOfLines={1} testID="deck-mobile-appbar-title">
+          {activeDeck ? activeDeck.name : t('deck_title')}
         </Text>
-      ) : null}
+        {activeDeck ? (
+          <Text style={styles.phoneAppBarMeta} numberOfLines={1} testID="deck-mobile-appbar-meta">
+            {t('deck_zone_main')} {stats?.main ?? 0}/{stats?.mainTarget ?? 50}
+          </Text>
+        ) : null}
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.phoneAppBarBtn}
+        onPress={() => { if (activeDeck) finalizeDeck(); }}
+        disabled={!activeDeck}
+        accessibilityRole="button"
+        accessibilityLabel={t('deck_appbar_validate_a11y')}
+        testID="deck-mobile-appbar-validate"
+      >
+        <Text style={styles.phoneAppBarIcon}>✓</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.phoneAppBarBtn}
+        onPress={() => { if (activeDeck) setMenuDeckId(activeDeck.id); }}
+        disabled={!activeDeck}
+        accessibilityRole="button"
+        accessibilityLabel={t('deck_appbar_menu_a11y')}
+        testID="deck-mobile-appbar-overflow"
+      >
+        <Text style={styles.phoneAppBarIcon}>⋯</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -1226,9 +1388,12 @@ const styles = StyleSheet.create({
   tabLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
   tabLabelActive: { color: COLORS.primary },
   tabProgress: { color: COLORS.text, fontSize: 14, fontWeight: 'bold', marginTop: 2 },
-  phoneAppBar: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  phoneAppBarTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', flex: 1 },
-  phoneAppBarMeta: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  phoneAppBar: { paddingHorizontal: 8, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  phoneAppBarBtn: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
+  phoneAppBarIcon: { color: COLORS.text, fontSize: 22, fontWeight: '700' },
+  phoneAppBarTitleTap: { flex: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
+  phoneAppBarTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  phoneAppBarMeta: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600', marginTop: 2 },
   phoneStatusBanner: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: COLORS.surfaceLight, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'center', gap: 8 },
   phoneStatusBannerOk: { backgroundColor: '#0f2c1e' },
   phoneStatusBannerDot: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
@@ -1236,6 +1401,61 @@ const styles = StyleSheet.create({
   phoneGridHead: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
   phoneGridHeadTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   phoneGridHeadCategory: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '600' },
+  // DIC-1380 W8 CR — Pen `uXuqo` 12-cell (3×4) image-card selected grid
+  mobileImageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    padding: 4,
+  },
+  mobileImageTile: {
+    width: '31%',
+    aspectRatio: 0.72,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceLight,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  mobileImageTileEmpty: {
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderStyle: 'dashed',
+    opacity: 0.5,
+  },
+  mobileImageTileImg: { width: '100%', height: '65%', backgroundColor: COLORS.surfaceLight },
+  mobileImageTilePlaceholder: { width: '100%', height: '65%', backgroundColor: COLORS.primary + '30' },
+  mobileImageTileBadge: {
+    position: 'absolute', top: 4, right: 4,
+    backgroundColor: COLORS.primary, borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  mobileImageTileBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  mobileImageTileLabel: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 4, paddingVertical: 2,
+  },
+  mobileImageTileNameText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  mobileImageTileNameSubtitle: { color: 'rgba(255,255,255,0.75)', fontSize: 9 },
+  mobileImageTileLabelText: { color: 'rgba(255,255,255,0.6)', fontSize: 9, fontFamily: 'monospace' },
+  mobileImageTileQty: {
+    position: 'absolute', bottom: 20, right: 4,
+    flexDirection: 'row', gap: 2,
+  },
+  mobileImageTileQtyBtn: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  mobileImageTileQtyIcon: { color: COLORS.text, fontSize: 14, fontWeight: '700', lineHeight: 16 },
+  mobileImageTileRemove: {
+    position: 'absolute', top: 4, left: 4,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mobileImageTileRemoveIcon: { color: '#fff', fontSize: 12, fontWeight: '700', lineHeight: 14 },
   phonePanelSwitchWrap: { backgroundColor: COLORS.surface },
   phoneSecondaryControls: { flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 6, gap: 6 },
   phoneSecondaryChip: { minHeight: 36, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center' },

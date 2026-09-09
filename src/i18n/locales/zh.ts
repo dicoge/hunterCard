@@ -84,6 +84,11 @@ export const zh = {
   card_category_holomen: 'ホロメン',
   card_category_support: 'サポート',
   card_category_yell: 'エール',
+  // DIC-1380 W8 CR — Pen `uXuqo` mobile app-bar controls
+  deck_appbar_back_a11y: '返回',
+  deck_appbar_rename_a11y: '重新命名牌組：{{name}}',
+  deck_appbar_validate_a11y: '驗證牌組',
+  deck_appbar_menu_a11y: '牌組更多動作',
   watchlist_title: '到價提醒',
   watchlist_empty: '尚無提醒設定',
   price_alert_target: '目標價格',

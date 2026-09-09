@@ -40,6 +40,7 @@ const permissionSrc = fs.readFileSync(path.join(repoRoot, 'src/services/permissi
 const releaseFlagsSrc = fs.readFileSync(path.join(repoRoot, 'src/config/releaseFlags.ts'), 'utf8');
 const orchestratorSrc = fs.readFileSync(path.join(repoRoot, 'src/services/accountSyncOrchestrator.ts'), 'utf8');
 const clientSrc = fs.readFileSync(path.join(repoRoot, 'src/services/accountSyncClient.ts'), 'utf8');
+const appSrc = fs.readFileSync(path.join(repoRoot, 'App.tsx'), 'utf8');
 const supportRaw = fs.readFileSync(path.join(publicDir, 'support.html'), 'utf8');
 const privacyRaw = fs.readFileSync(path.join(publicDir, 'privacy.html'), 'utf8');
 
@@ -122,6 +123,46 @@ ok('privacy.html states the sync payload does NOT currently carry scan-quota pro
   /(掃描剩餘額度|scan quota progress).{0,60}(未列入|NOT part of)/i.test(privacyRaw)
     || /(未列入 sync payload)/i.test(privacyRaw)
     || /(NOT part of the current sync payload)/i.test(privacyRaw));
+
+// ── DIC-1380 W8 CR: sync binding gate — Store MVP does NOT install the
+// binding, so any legal-copy claim that sync is "active" for
+// favorites/decks/alerts/settings is false. Truth source: App.tsx.
+const bindingGate = /installAccountSyncBinding\(\)/.test(appSrc)
+  && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(appSrc);
+ok('code sanity: App.tsx gates installAccountSyncBinding() on FEATURES.favorites || .watchlist || .premium', bindingGate);
+
+for (const [page, raw] of [['support.html', supportRaw], ['privacy.html', privacyRaw]]) {
+  // Every page must name the binding-install gate — either by naming
+  // `installAccountSyncBinding` or by stating "sync binding is not
+  // installed under Store MVP" explicitly.
+  ok(
+    `${page} discloses that the sync binding is NOT installed under Store MVP (DIC-1380 W8 CR)`,
+    /(installAccountSyncBinding|不會安裝 sync binding|不會發出任何|does NOT install the sync binding|does not currently issue any|does not install the sync binding)/i.test(raw),
+    'page must state that Store MVP does not activate the account-sync binding',
+  );
+  // No page may claim sync is ACTIVELY happening for the four data
+  // stores today, because it is not under Store MVP.
+  ok(
+    `${page} does NOT claim the sync binding is ACTIVELY running for favorites/decks/alerts today under Store MVP`,
+    !/(sync binding is (installed|running|active) under Store MVP|Store MVP.{0,80}sync binding.{0,40}(已安裝|已啟用|已運作))/i.test(raw),
+    'page must not contradict App.tsx by asserting sync is active in Store MVP',
+  );
+  // No page may claim monthly quota is aggregated / shared across
+  // devices via Internal User ID today — permissionService's local
+  // MONTHLY_SCAN_LIMIT is device-scoped.
+  ok(
+    `${page} does NOT claim monthly scan quota is shared across devices via Internal User ID today`,
+    !/(共享.{0,20}使用量配額|sharing the same.{0,20}monthly quota|shared.{0,20}monthly quota)/i.test(raw),
+    'monthly quota is a per-device counter today; per Internal User ID sharing is future',
+  );
+  // No page may claim subscription is included in Internal User ID
+  // sharing today, since subscription is not implemented.
+  ok(
+    `${page} does NOT claim subscription state is shared today (subscription is not implemented)`,
+    !/(共享.{0,20}訂閱權限|sharing the same.{0,10}(monthly quotas, and )?subscription state)/i.test(raw),
+    'subscription state cannot be part of shared Internal User ID state until FEATURES.premium is on',
+  );
+}
 
 if ((process.exitCode ?? 0) === 0) {
   console.log(`\n✅ DIC-1380 W7 legal-copy vs behavior: ${passed} checks passed`);

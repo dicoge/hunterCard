@@ -159,6 +159,37 @@ function isValidCron(expr) {
     /npm run collect:tournaments -- --live/.test(wf.raw),
     'the scheduled fire must exercise the DIC-1024 live Deck Log fetch, not just the offline reprocess',
   );
+  // DIC-1380 W8 CR — the Collect step MUST `continue-on-error: true`
+  // so a non-zero exit from the fail-closed collector does not skip
+  // the subsequent commit/PR step. The stub the collector just wrote
+  // has to survive into the sync PR.
+  check(
+    `${file} Collect step is continue-on-error (DIC-1380 W8 CR — stub must survive collector fail-closed exit)`,
+    /continue-on-error:\s*true/.test(wf.raw),
+    'the collector step must not short-circuit the workflow — the stub write happens BEFORE exit(1)',
+  );
+  // DIC-1380 W8 CR — a final step must re-emit the collector's exit
+  // code so the scheduled workflow is still fail-closed overall.
+  check(
+    `${file} re-emits the collector exit code at the end so scheduled runs are fail-closed overall (DIC-1380 W8 CR)`,
+    /Enforce collector exit code|steps\.collect\.outputs\.collector_exit/.test(wf.raw),
+    'a final step must exit ${{ steps.collect.outputs.collector_exit }} so the workflow reports the collector failure',
+  );
+  // DIC-1380 W8 CR — the discovery stub lives under
+  // data/tournaments/sources/, so SYNC_PATHS must include that
+  // directory (or its parent). Otherwise the stub never gets committed.
+  check(
+    `${file} stages data/tournaments/sources/ (or its parent) so discovery stubs survive into the PR (DIC-1380 W8 CR)`,
+    /SYNC_PATHS:[\s\S]*?data\/tournaments\/(?!sources\/)/.test(wf.raw)
+      || /SYNC_PATHS:[\s\S]*?data\/tournaments\/sources\//.test(wf.raw),
+    'the sync whitelist must include the tournament source directory that carries the discovery stub',
+  );
+  // DIC-1380 W8 CR — the workflow now opens a PR (like refresh-yt-stats)
+  // rather than direct-pushing to main. Assert the sync branch pattern.
+  check(
+    `${file} PRs into main via a bot-owned sync branch (never direct-push, DIC-1380 W8 CR)`,
+    /bot\/tournament-reports|SYNC_BRANCH:\s*bot\//.test(wf.raw),
+  );
 }
 
 // ── The npm scripts the workflows depend on actually exist ───────────────

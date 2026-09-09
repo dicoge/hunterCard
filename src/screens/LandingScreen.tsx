@@ -414,43 +414,57 @@ export default function LandingScreen() {
           </View>
           {isDesktop && (
             <View style={styles.heroVisual} testID="landing-hero-visual">
-              {/* DIC-1380 W7 CR — Pen three-card hero composition. The
-                  previous single-card visual was the minimum; the accepted
-                  Pen frame stacks three price cards (main highlight + two
-                  supporting rows) so the hero visually previews the
-                  market-data breadth. Sparkline stays on the primary
-                  card for the price-trend teaser. */}
-              <View style={styles.heroVisualCard} testID="landing-hero-card-primary">
-                <Text style={styles.heroVisualTitle}>星街すいせい UR · 近 7 日均價</Text>
-                <View style={styles.heroVisualPriceRow}>
-                  <Text style={styles.heroVisualPrice}>NT$ 3,600</Text>
-                  <View style={styles.heroVisualDelta}>
-                    <Text style={styles.heroVisualDeltaText}>+2.4%</Text>
+              {/* DIC-1380 W8 CR — Pen three CARD-ART hero (not text price
+                  cards). The accepted Pen anchors three card-shaped
+                  tiles that preview the catalog visually: rarity color
+                  strip, card name, card number, rarity badge, and a
+                  compact price ribbon (retains the market-data teaser
+                  from W7). Sparkline stays on the primary tile. Real
+                  card artwork is not fetched from the Landing to
+                  preserve the privacy-policy "no external images on
+                  Landing" contract; the tile visually reads as a card
+                  with a stylised gradient art panel. */}
+              <View style={styles.heroCardArt} testID="landing-hero-card-primary">
+                <View style={styles.heroCardArtStripUR} testID="landing-hero-cardart-primary-art" />
+                <View style={styles.heroCardArtBody}>
+                  <View style={styles.heroCardArtHeader}>
+                    <Text style={styles.heroCardArtName} numberOfLines={1}>星街すいせい</Text>
+                    <View style={styles.heroCardArtRarityUR}><Text style={styles.heroCardArtRarityText}>UR</Text></View>
+                  </View>
+                  <Text style={styles.heroCardArtNumber}>hSD01-016</Text>
+                  <View style={styles.heroVisualPriceRow}>
+                    <Text style={styles.heroVisualPriceCompact}>NT$ 3,600</Text>
+                    <View style={styles.heroVisualDelta}>
+                      <Text style={styles.heroVisualDeltaText}>+2.4%</Text>
+                    </View>
+                  </View>
+                  <View style={styles.heroVisualSparkline} testID="landing-hero-sparkline">
+                    {[8, 12, 10, 14, 18, 16, 22, 20, 26, 24, 30, 28, 32, 34].map((h, i) => (
+                      <View key={i} style={[styles.heroVisualBar, { height: h }]} />
+                    ))}
                   </View>
                 </View>
-                <View style={styles.heroVisualSparkline} testID="landing-hero-sparkline">
-                  {[8, 12, 10, 14, 18, 16, 22, 20, 26, 24, 30, 28, 32, 34].map((h, i) => (
-                    <View key={i} style={[styles.heroVisualBar, { height: h }]} />
-                  ))}
-                </View>
-                <Text style={styles.heroVisualSource}>資料來源：遊々亭 · 固定匯率換算</Text>
               </View>
-              <View style={styles.heroVisualCardSecondary} testID="landing-hero-card-secondary">
-                <Text style={styles.heroVisualTitleSmall}>ときのそら SR · 近 7 日均價</Text>
-                <View style={styles.heroVisualPriceRowSmall}>
-                  <Text style={styles.heroVisualPriceSmall}>NT$ 1,180</Text>
-                  <View style={styles.heroVisualDelta}>
-                    <Text style={styles.heroVisualDeltaText}>+0.8%</Text>
+              <View style={styles.heroCardArtSecondary} testID="landing-hero-card-secondary">
+                <View style={styles.heroCardArtStripSR} testID="landing-hero-cardart-secondary-art" />
+                <View style={styles.heroCardArtBodySmall}>
+                  <View style={styles.heroCardArtHeader}>
+                    <Text style={styles.heroCardArtName} numberOfLines={1}>兎田ぺこら</Text>
+                    <View style={styles.heroCardArtRaritySR}><Text style={styles.heroCardArtRarityText}>SR</Text></View>
                   </View>
+                  <Text style={styles.heroCardArtNumber}>hBP01-042</Text>
+                  <Text style={styles.heroVisualPriceSmall}>NT$ 1,180  ·  +0.6%</Text>
                 </View>
               </View>
-              <View style={styles.heroVisualCardSecondary} testID="landing-hero-card-tertiary">
-                <Text style={styles.heroVisualTitleSmall}>ラプラス・ダークネス C · 近 7 日均價</Text>
-                <View style={styles.heroVisualPriceRowSmall}>
-                  <Text style={styles.heroVisualPriceSmall}>NT$ 40</Text>
-                  <View style={[styles.heroVisualDelta, styles.heroVisualDeltaDown]}>
-                    <Text style={styles.heroVisualDeltaText}>-1.2%</Text>
+              <View style={styles.heroCardArtSecondary} testID="landing-hero-card-tertiary">
+                <View style={styles.heroCardArtStripC} testID="landing-hero-cardart-tertiary-art" />
+                <View style={styles.heroCardArtBodySmall}>
+                  <View style={styles.heroCardArtHeader}>
+                    <Text style={styles.heroCardArtName} numberOfLines={1}>ラプラス・ダークネス</Text>
+                    <View style={styles.heroCardArtRarityC}><Text style={styles.heroCardArtRarityText}>C</Text></View>
                   </View>
+                  <Text style={styles.heroCardArtNumber}>hBP02-088</Text>
+                  <Text style={styles.heroVisualPriceSmall}>NT$ 40  ·  −1.2%</Text>
                 </View>
               </View>
             </View>
@@ -460,26 +474,6 @@ export default function LandingScreen() {
         {/* STATS BAR — Pen `vfBpS` desktop / `ufjjN` mobile */}
         <View style={[styles.section, styles.statsBar, isDesktop && styles.statsBarDesktop]} testID="landing-stats-bar">
           {STATS.map((s) => <StatCard key={s.label} value={s.value} label={s.label} mobile={!isDesktop} />)}
-        </View>
-
-        {/* PRICE — DIC-1380 W7 CR: standalone price section. The Pen
-            artifact anchors a dedicated market-data preview (multi-currency
-            + trend) below the stats bar; the Hero visual is a teaser, not
-            the whole story. */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-price">
-          <Text style={styles.eyebrowLabel}>市場價格</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            NT$ · ¥ · $ 三幣別同時看
-          </Text>
-          <Text style={styles.sectionSubhead}>
-            遊々亭參考行情每日刷新；每張卡同時列出台幣、日圓與美元換算，並附近 7 日的漲跌方向。
-          </Text>
-          <View style={[styles.priceList, isDesktop && styles.priceListDesktop]}>
-            {PRICE_ROWS.map((row) => <PriceRow key={row.number} {...row} />)}
-          </View>
-          <Text style={styles.priceListNote}>
-            資料來源：遊々亭 · 固定匯率換算 · 上線後可跨裝置同步收藏與到價提醒（規劃中）
-          </Text>
         </View>
 
         {/* FEATURES — Pen `GAolm` desktop / `r41z2` mobile */}
@@ -519,6 +513,29 @@ export default function LandingScreen() {
           <View style={[styles.collectionGrid, isDesktop && styles.collectionGridDesktop]}>
             {COLLECTION_HIGHLIGHTS.map((c) => <CollectionCard key={c.title} title={c.title} body={c.body} />)}
           </View>
+        </View>
+
+        {/* PRICE — Pen standalone price section (DIC-1380 W7 CR added, W8
+            CR moved to sit immediately BEFORE Plans in the Pen section
+            order: Nav → Hero → Stats → Features → How-It-Works →
+            Collection Preview → Price → Plans → FAQ → Final CTA →
+            Footer). Price is a Plans-adjacent surface (what you get for
+            free) so the composition flows into the paid-tier framing
+            below. */}
+        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-price">
+          <Text style={styles.eyebrowLabel}>市場價格</Text>
+          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+            NT$ · ¥ · $ 三幣別同時看
+          </Text>
+          <Text style={styles.sectionSubhead}>
+            遊々亭參考行情每日刷新；每張卡同時列出台幣、日圓與美元換算，並附近 7 日的漲跌方向。
+          </Text>
+          <View style={[styles.priceList, isDesktop && styles.priceListDesktop]}>
+            {PRICE_ROWS.map((row) => <PriceRow key={row.number} {...row} />)}
+          </View>
+          <Text style={styles.priceListNote}>
+            資料來源：遊々亭 · 固定匯率換算 · Store MVP 版本 UI 直接使用免費會員範圍
+          </Text>
         </View>
 
         {/* PLANS — Pen `mcRLH` desktop / `MPyoM` mobile */}
@@ -826,10 +843,55 @@ const styles = StyleSheet.create({
   },
   heroVisualTitleSmall: { color: TOKENS.textSecondary, fontSize: 12, fontWeight: '600' },
   heroVisualPriceRowSmall: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
-  heroVisualPriceSmall: { color: TOKENS.textPrimary, fontSize: 18, fontWeight: '700' },
+  heroVisualPriceSmall: { color: TOKENS.textPrimary, fontSize: 14, fontWeight: '700' },
+  heroVisualPriceCompact: { color: TOKENS.textPrimary, fontSize: 22, fontWeight: '800' },
   heroVisualDeltaDown: {
     backgroundColor: 'rgba(248,113,113,0.15)',
   },
+
+  // ── DIC-1380 W8 CR: three CARD-ART tiles (not text price cards) ──
+  // Card-shaped tiles with a stylised gradient art panel, rarity badge,
+  // card name + number, and a compact price ribbon. No external image
+  // fetch on the Landing (preserves the "Landing does not load external
+  // card images" privacy contract).
+  heroCardArt: {
+    width: '100%',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+    backgroundColor: TOKENS.surface,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  heroCardArtBody: {
+    flex: 1,
+    padding: 16,
+    gap: 8,
+  },
+  heroCardArtSecondary: {
+    width: '100%',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+    backgroundColor: TOKENS.surface2,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  heroCardArtBodySmall: {
+    flex: 1,
+    padding: 12,
+    gap: 4,
+  },
+  heroCardArtStripUR: { width: 96, backgroundColor: TOKENS.accent, opacity: 0.85 },
+  heroCardArtStripSR: { width: 72, backgroundColor: TOKENS.accent3, opacity: 0.7 },
+  heroCardArtStripC: { width: 72, backgroundColor: TOKENS.accent2, opacity: 0.55 },
+  heroCardArtHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  heroCardArtName: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  heroCardArtNumber: { color: TOKENS.textMuted, fontSize: 11, fontFamily: 'monospace' },
+  heroCardArtRarityUR: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: '#FF4D9D' },
+  heroCardArtRaritySR: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: '#8B5CF6' },
+  heroCardArtRarityC: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: '#6B7280' },
+  heroCardArtRarityText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   heroVisualCard: {
     width: '100%',
     backgroundColor: TOKENS.surface,

@@ -501,9 +501,21 @@ async function liveCollectDecklogCards(catalogNumbers) {
 // scheduled workflow surfaces the missing curation rather than silently
 // retaining old data.
 async function discoverFreshness() {
+  // DIC-1380 W8 CR: `knownNewest` must reject discovery stubs and
+  // zero-event source files — otherwise a stub written by the LAST live
+  // run counts as "known" and the NEXT live run happily says "no newer
+  // column found" while its events[] is still empty. Real curation is
+  // proven by a source file that carries `events[]` with at least one
+  // event AND does not carry the `_stub` marker. Everything else is
+  // considered UNCURATED for the purposes of `knownNewest`, so it does
+  // not accept its own discovery as canon.
   const knownDates = listSourceFiles()
     .map((f) => readJsonSafe(path.join(SOURCES_DIR, f)))
-    .filter((r) => r.ok && r.data?.publishedDate)
+    .filter((r) => r.ok
+      && r.data?.publishedDate
+      && !r.data?._stub
+      && Array.isArray(r.data?.events)
+      && r.data.events.length > 0)
     .map((r) => String(r.data.publishedDate).trim())
     .sort();
   const knownNewest = knownDates[knownDates.length - 1] ?? null;

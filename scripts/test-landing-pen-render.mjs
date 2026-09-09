@@ -273,6 +273,75 @@ await test('desktop 1440: Pen three-card Hero composition mounts (DIC-1380 W7 CR
   } finally { await cleanup(); }
 });
 
+// ── DIC-1380 W8 CR: three CARD-ART hero (not text price cards) ─────
+await test('desktop 1440: Pen three CARD-ART hero — each tile has a card-art strip + rarity badge (DIC-1380 W8 CR)', async () => {
+  const { container, cleanup } = await renderLanding(DESKTOP);
+  try {
+    // Every hero tile carries a `landing-hero-cardart-*-art` anchor for
+    // the stylised card-art strip. Text-only price cards would not have
+    // this anchor.
+    for (const which of ['primary', 'secondary', 'tertiary']) {
+      const art = byTestId(container, `landing-hero-cardart-${which}-art`);
+      assert.ok(art, `hero ${which} tile carries a card-art strip anchor (Pen 3 card-art hero)`);
+      const parent = byTestId(container, `landing-hero-card-${which}`);
+      assert.ok(parent.contains(art), `card-art strip lives inside the ${which} hero card tile`);
+    }
+    // Each tile must expose a card NUMBER (hSD01-016 / hBP01-042 /
+    // hBP02-088) — the tile is a card, not a bare price row.
+    const hero = byTestId(container, 'landing-hero-visual');
+    for (const num of ['hSD01-016', 'hBP01-042', 'hBP02-088']) {
+      assert.ok(hero.textContent.includes(num), `hero tile shows card number ${num}`);
+    }
+    // Rarity badges land: UR / SR / C. Anchor via each tile's own
+    // textContent so we do not accidentally match a "C" that appears
+    // elsewhere on the page.
+    const primaryTile = byTestId(container, 'landing-hero-card-primary');
+    const secondaryTile = byTestId(container, 'landing-hero-card-secondary');
+    const tertiary = byTestId(container, 'landing-hero-card-tertiary');
+    assert.ok(primaryTile.textContent.includes('UR'), 'primary tile shows UR rarity');
+    assert.ok(secondaryTile.textContent.includes('SR'), 'secondary tile shows SR rarity');
+    assert.ok(tertiary.textContent.includes('C'), 'tertiary tile shows C rarity');
+  } finally { await cleanup(); }
+});
+
+// ── DIC-1380 W8 CR: Landing section ORDER ─────────────────────────
+await test('desktop 1440: Landing section order matches Pen composition (DIC-1380 W8 CR — Nav→Hero→Stats→Features→How→Collection→Price→Plans→FAQ→FinalCTA→Footer)', async () => {
+  const { container, cleanup } = await renderLanding(DESKTOP);
+  try {
+    const expectedOrder = [
+      'landing-nav',
+      'landing-hero',
+      'landing-stats-bar',
+      'landing-features',
+      'landing-how-it-works',
+      'landing-collection-preview',
+      'landing-price',
+      'landing-plans',
+      'landing-faq',
+      'landing-final-cta',
+      'landing-footer',
+    ];
+    const positions = expectedOrder.map((id) => {
+      const el = byTestId(container, id);
+      assert.ok(el, `section ${id} mounts`);
+      // Use DOM traversal position — a simple ordered index via
+      // getBoundingClientRect().top is not available in jsdom; use the
+      // order of appearance via a treewalker.
+      return el;
+    });
+    // Every section must come BEFORE its successor in document order.
+    for (let i = 0; i < positions.length - 1; i++) {
+      const a = positions[i];
+      const b = positions[i + 1];
+      const rel = a.compareDocumentPosition(b);
+      assert.ok(
+        rel & 0x04, // DOCUMENT_POSITION_FOLLOWING
+        `section ${expectedOrder[i]} must precede section ${expectedOrder[i + 1]} in document order (Pen composition order — DIC-1380 W8 CR)`,
+      );
+    }
+  } finally { await cleanup(); }
+});
+
 // ── AppNavigator routes an unauthenticated visitor to LandingScreen ─────
 await test('AppNavigator: unauthenticated + non-guest visitor is routed to LandingScreen (not the bare LoginScreen)', async () => {
   const fs = await import('node:fs');

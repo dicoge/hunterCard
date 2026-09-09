@@ -204,6 +204,116 @@ async function importCollector() {
   );
 }
 
+// ── DIC-1380 W8 CR: second-run fail-closed — stub does NOT count as
+//    knownNewest, so re-running the collector without human curation
+//    surfaces the SAME "newer than everything committed" error again.
+{
+  const { sources, outDir } = makeFixture();
+  // Pre-seed the fixture with the stub the first run would have written.
+  // The stub carries publishedDate === '2026-09-04T18:00:00' AND
+  // events: [] AND _stub marker.
+  fs.writeFileSync(path.join(sources, 'discovered-2026-09-04.json'), JSON.stringify({
+    month: '2026-09',
+    publishedDate: '2026-09-04T18:00:00',
+    liveDecklog: false,
+    events: [],
+    _stub: 'placeholder written by discoverFreshness on the previous run',
+  }, null, 2));
+
+  const wrapperPath = path.join(sources, '..', 'run-wrapper.mjs');
+  fs.writeFileSync(wrapperPath, `
+    globalThis.fetch = async (url) => {
+      const u = String(url);
+      if (u.includes('/wp-json/wp/v2/post_news')) {
+        return new Response(JSON.stringify([
+          { date: '2026-09-04T18:00:00', link: 'https://hololive-official-cardgame.com/news/9999/', title: { rendered: 'still not curated' } },
+        ]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response('{}', { status: 500 });
+    };
+    globalThis.__COLLECT_TOURNAMENT_REPORTS_RUN_MAIN__ = true;
+    await import(${JSON.stringify(pathToFileURL(collectorPath).href)});
+  `);
+  const argv = [
+    wrapperPath,
+    '--live',
+    '--sources-dir', sources,
+    '--out-dir', outDir,
+    '--now', '2026-09-05T00:00:00Z',
+  ];
+  const res = spawnSync(
+    process.execPath,
+    ['--experimental-strip-types', '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--import', path.join(repoRoot, 'scripts', 'register-ts.mjs'), ...argv],
+    { encoding: 'utf8', timeout: 60_000 },
+  );
+  const combined = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
+  ok(
+    'second run with a stub already on disk STILL exits non-zero (stub is NOT counted as knownNewest, DIC-1380 W8 CR)',
+    res.status !== 0,
+    `exit=${res.status}\n${combined.slice(0, 500)}`,
+  );
+  ok(
+    'second run explicitly mentions the same newer publication (stub is not treated as canon)',
+    /A newer official deck-showcase column was published.*2026-09-04/i.test(combined),
+    combined.slice(0, 500),
+  );
+  ok(
+    'second run reports the pre-existing stub as already-present rather than overwriting it',
+    /stub already present at.*discovered-2026-09-04\.json/i.test(combined),
+    combined.slice(0, 500),
+  );
+}
+
+// A source file WITH real events (real curation) IS accepted as
+// knownNewest — the fail-closed only triggers for uncurated (stub /
+// zero-event) sources.
+{
+  const { sources, outDir } = makeFixture();
+  // Overwrite the July fixture with a source that actually has events
+  // and a publishedDate matching the "newest" the WP feed will return.
+  fs.writeFileSync(path.join(sources, '2026-09-full.json'), JSON.stringify({
+    month: '2026-09',
+    publishedDate: '2026-09-04T18:00:00',
+    liveDecklog: false,
+    events: [
+      { eventId: 'ev-1', name: 'Sample', date: '2026-09-04', decks: [] },
+    ],
+  }, null, 2));
+
+  const wrapperPath = path.join(sources, '..', 'run-wrapper.mjs');
+  fs.writeFileSync(wrapperPath, `
+    globalThis.fetch = async (url) => {
+      const u = String(url);
+      if (u.includes('/wp-json/wp/v2/post_news')) {
+        return new Response(JSON.stringify([
+          { date: '2026-09-04T18:00:00', link: 'https://hololive-official-cardgame.com/news/9999/', title: { rendered: 'curated' } },
+        ]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response('{}', { status: 500 });
+    };
+    globalThis.__COLLECT_TOURNAMENT_REPORTS_RUN_MAIN__ = true;
+    await import(${JSON.stringify(pathToFileURL(collectorPath).href)});
+  `);
+  const argv = [
+    wrapperPath,
+    '--live',
+    '--sources-dir', sources,
+    '--out-dir', outDir,
+    '--now', '2026-09-05T00:00:00Z',
+  ];
+  const res = spawnSync(
+    process.execPath,
+    ['--experimental-strip-types', '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--import', path.join(repoRoot, 'scripts', 'register-ts.mjs'), ...argv],
+    { encoding: 'utf8', timeout: 60_000 },
+  );
+  const combined = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
+  ok(
+    'curated source (events[] non-empty, no _stub) IS accepted as knownNewest — no discovery-error alert',
+    !/A newer official deck-showcase column was published/i.test(combined),
+    combined.slice(0, 500),
+  );
+}
+
 if ((process.exitCode ?? 0) === 0) {
   console.log(`\n✅ DIC-1380 W7 tournament discovery + acquisition: ${passed} checks passed`);
 } else {

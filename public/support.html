@@ -291,7 +291,7 @@
       <p style="margin-bottom: 24px;">若您在使用 HoloHunter 時遇到問題，或有任何功能改進建議，歡迎透過以下方式與我們聯絡：</p>
 
       <div style="border: 1px solid #ef4444; background: rgba(239,68,68,0.08); border-radius: 12px; padding: 16px 18px; margin-bottom: 24px; line-height: 1.7;">
-        <strong>ℹ️ 目前版本狀態（Store MVP 初上架階段）：</strong> Google / Apple 登入 <strong>已串接真實的 OAuth 與後端伺服器</strong>（<code>api/auth/*</code>）；帳號綁定、Internal User ID、卡牌收藏與牌組雲端同步（<code>api/auth/sync</code>）也<strong>已實作並在後端運作</strong>。本 Store MVP 上架版本為聚焦體驗，將收藏 / 到價提醒 / AI 預測 / 訂閱等進階介面預設隱藏；後端資料庫、雲端同步端點與 OAuth 均為真實服務。<strong>訂閱與 App 內購（StoreKit / Google Play Billing / Stripe）尚未開放</strong>——上架後付費方案上線前，App 不會處理任何真實付款或收取費用。每月掃描配額目前為裝置端計數（清除快取或重裝會重置），伺服器端配額控管將於後續版本上線。
+        <strong>ℹ️ 目前版本狀態（Store MVP 初上架階段）：</strong> Google / Apple 登入 <strong>已串接真實的 OAuth 與後端伺服器</strong>（<code>api/auth/*</code>）。帳號同步伺服器端點 <code>api/auth/sync</code> 已部署並運作，但 <strong>Store MVP 上架版本不會安裝 sync binding</strong>：App 內 <code>installAccountSyncBinding()</code> 由 <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code> 控管，Store MVP 下三個 flag 全部為 false，因此 <strong>Production 版本現階段不會發出任何 <code>/api/auth/sync</code> 請求</strong>；當 feature flag 打開（或 Web Develop / Staging 已預設打開）後，binding 才會安裝並開始同步收藏 / 牌組 / 到價提醒 / 卡牌收藏數量 / UI 偏好。<strong>訂閱與 App 內購（StoreKit / Google Play Billing / Stripe）尚未開放</strong>——上架後付費方案上線前，App 不會處理任何真實付款或收取費用。每月掃描配額目前為裝置端計數（清除快取或重裝會重置），伺服器端配額控管與帳號跨裝置合計將於後續版本上線。
       </div>
       
       <div class="info-grid">
@@ -325,7 +325,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: 免費版會員的每月掃描配額 (Quota) 是多少？</div>
         <div class="faq-answer">
-          凡是登入但未付費訂閱的免費版會員，每個月會提供 <strong>100 次的卡牌相機掃描額度</strong>。當月額度使用完畢後，相機將自動鎖定，直到次月 1 號 (UTC) 自動重置；未來訂閱方案上線後，付費會員可立即解除次數限制。<br><br><strong>目前版本：</strong>掃描計數目前為裝置本機計數（清除快取或重裝 App 會重置）。伺服器端的每月額度控管將於後續版本上線；同一段時間，Google / Apple 登入本身以及帳號雲端同步已在後端運作。
+          凡是登入但未付費訂閱的免費版會員，每個月會提供 <strong>100 次的卡牌相機掃描額度</strong>。當月額度使用完畢後，相機將自動鎖定，直到次月 1 號 (UTC) 自動重置；未來訂閱方案上線後，付費會員可立即解除次數限制。<br><br><strong>目前版本：</strong>掃描計數目前為裝置本機計數（清除快取或重裝 App 會重置）。伺服器端的每月額度控管將於後續版本上線；Google / Apple 登入本身已在後端運作，帳號 sync binding 目前於 Store MVP 版本並未安裝，僅在 feature flag 打開的建置（例如 Web Develop / Staging）才會啟用。
         </div>
       </div>
 
@@ -341,7 +341,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: 可以同時綁定 Google 與 Apple 帳號嗎？</div>
         <div class="faq-answer">
-          HoloHunter 支援「共通帳號」機制。您可以先用 Google 登入，然後在<strong>「設定 (Settings)」</strong>頁面中點擊<strong>「綁定 Apple」</strong>完成連結；或是使用 Apple 登入後綁定 Google。綁定後兩者將共享相同的 Internal User ID、雲端收藏與（未來上線的）訂閱狀態。<br><br>目前版本狀態：Google / Apple OAuth 與帳號後端已在運作；帳號綁定端點（<code>api/auth/link</code>）與雲端同步端點（<code>api/auth/sync</code>）皆為真實伺服器路徑。Store MVP 上架版本中，收藏 / 到價提醒等進階介面預設隱藏，因此雲端同步的相關 UI 未直接曝露；付費訂閱狀態尚未開放。
+          HoloHunter 支援「共通帳號」機制。您可以先用 Google 登入，然後在<strong>「設定 (Settings)」</strong>頁面中點擊<strong>「綁定 Apple」</strong>完成連結；或是使用 Apple 登入後綁定 Google。綁定後兩者將共享相同的 Internal User ID；掃描配額與付費訂閱狀態並未包含在 Internal User ID 目前實際共享的範圍內（見上方 banner）。<br><br>目前版本狀態：Google / Apple OAuth 與帳號後端已在運作；帳號綁定端點（<code>api/auth/link</code>）與雲端同步端點（<code>api/auth/sync</code>）皆為真實伺服器路徑。Store MVP 上架版本中，sync binding 未安裝，因此不會有實際的 sync 請求；付費訂閱狀態尚未開放。
         </div>
       </div>
 
@@ -357,7 +357,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: 刪除帳號會連同我的掃描紀錄跟訂閱一併刪除嗎？</div>
         <div class="faq-answer">
-          <strong>目前版本：</strong>App 內「刪除帳號與資料」會呼叫後端刪除端點，級聯清除您的 Internal User ID、第三方登入關聯（Google / Apple identity）、雲端收藏 / 牌組 / 到價提醒等已由 <code>api/auth/sync</code> 儲存的資料，並清除本機 Session 與快取後將您登出。付費訂閱與 App 內購目前尚未開放，因此暫無交易記錄需要去識別化；付費方案上線後，會一併把交易紀錄依平台既有規範處理。刪除操作為不可逆。<br><br>
+          <strong>目前版本：</strong>App 內「刪除帳號與資料」會呼叫後端刪除端點，級聯清除您的 Internal User ID、第三方登入關聯（Google / Apple identity）以及任何已由 <code>api/auth/sync</code> 儲存的資料，並清除本機 Session 與快取後將您登出。Store MVP 上架版本因未安裝 sync binding，實務上尚未產生 sync 資料需要級聯清除；此欄位對應的是 feature flag 打開或 Web Develop / Staging 已寫入的資料。付費訂閱與 App 內購目前尚未開放，因此暫無交易記錄需要去識別化；付費方案上線後，會一併把交易紀錄依平台既有規範處理。刪除操作為不可逆。<br><br>
           若您無法登入 App 進行刪除，可透過支援信箱 <code>dicoge.chen@gmail.com</code> 附上 Internal User ID 提交申請，由後端手動級聯刪除處理並回信通知。
         </div>
       </div>
@@ -385,7 +385,7 @@
       <p style="margin-bottom: 24px;">If you experience any issues with HoloHunter or have feedback/suggestions, feel free to contact us:</p>
 
       <div style="border: 1px solid #ef4444; background: rgba(239,68,68,0.08); border-radius: 12px; padding: 16px 18px; margin-bottom: 24px; line-height: 1.7;">
-        <strong>ℹ️ Current Build Status (Store MVP launch):</strong> Google / Apple sign-in <strong>is wired to real OAuth and a real backend</strong> (<code>api/auth/*</code>); account linking, Internal User ID, and cloud sync of card collections / decks (<code>api/auth/sync</code>) <strong>are implemented and run on the backend</strong>. To keep the initial store launch focused, this Store MVP build HIDES the advanced surfaces (favorites, watchlist alerts, AI predictions, subscriptions) by default — the backend database, cloud-sync endpoints, and OAuth are real services. <strong>Paid subscriptions and in-app purchase (StoreKit / Google Play Billing / Stripe) are not open yet</strong> — before a paid plan launches, the app does not process any real payment or charge you. The monthly scan quota is currently a per-device counter (reset by clearing cache or reinstalling); a server-side quota enforcement path will land in a subsequent build.
+        <strong>ℹ️ Current Build Status (Store MVP launch):</strong> Google / Apple sign-in <strong>is wired to real OAuth and a real backend</strong> (<code>api/auth/*</code>). The account sync endpoint <code>api/auth/sync</code> is deployed and runs on the backend, but <strong>the Store MVP launch build does NOT install the sync binding</strong>: the in-app <code>installAccountSyncBinding()</code> call is gated on <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code>, and under Store MVP all three flags are false, so <strong>the Production build does not currently issue any <code>/api/auth/sync</code> request</strong>. Once those flags flip (or under Web Develop / Staging where they already are), the binding installs and starts syncing favorites / decks / price alerts / card ownership / UI preferences. <strong>Paid subscriptions and in-app purchase (StoreKit / Google Play Billing / Stripe) are not open yet</strong> — before a paid plan launches, the app does not process any real payment or charge you. The monthly scan quota is currently a per-device counter (reset by clearing cache or reinstalling); server-side quota enforcement + cross-device aggregation on the Internal User ID will land in a subsequent build.
       </div>
       
       <div class="info-grid">
@@ -419,7 +419,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: What is the monthly scan quota for Free Users?</div>
         <div class="faq-answer">
-          Registered free tier users receive <strong>100 card scans per month</strong>. Once you exhaust this quota, the scanning capability locks until the 1st of the next month (UTC), when it resets. When a paid subscription launches, subscribers will be able to unlock the cap.<br><br><strong>Current build:</strong> the scan count is currently a per-device local counter (clearing cache or reinstalling resets it). Server-side monthly quota enforcement will land in a subsequent build; the Google / Apple sign-in and cloud sync themselves already run on the real backend.
+          Registered free tier users receive <strong>100 card scans per month</strong>. Once you exhaust this quota, the scanning capability locks until the 1st of the next month (UTC), when it resets. When a paid subscription launches, subscribers will be able to unlock the cap.<br><br><strong>Current build:</strong> the scan count is currently a per-device counter (clearing cache or reinstalling resets it). Server-side monthly quota enforcement will land in a subsequent build; Google / Apple sign-in itself already runs on the real backend, but the account sync binding is NOT installed under Store MVP — only feature-flag-enabled builds (e.g. Web Develop / Staging) install it today.
         </div>
       </div>
 
@@ -435,7 +435,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: Can I link both my Google and Apple accounts?</div>
         <div class="faq-answer">
-          HoloHunter supports a "Common Account" mechanism. You can log in with Google first, then go to the <strong>Settings</strong> page and tap <strong>Link Apple</strong>, or vice versa. Both methods will share the same Internal User ID and cloud card collections.<br><br>Current build status: Google / Apple OAuth and the account backend are already live; the linking endpoint (<code>api/auth/link</code>) and the cloud-sync endpoint (<code>api/auth/sync</code>) are real server routes. The Store MVP launch build hides the advanced surfaces (favorites, alerts, subscriptions) by default, so the cloud-sync UI is not directly exposed; paid subscription state is not open yet.
+          HoloHunter supports a "Common Account" mechanism. You can log in with Google first, then go to the <strong>Settings</strong> page and tap <strong>Link Apple</strong>, or vice versa. Both methods will share the same Internal User ID; scan quota and paid subscription state are NOT part of what the Internal User ID currently shares (see the banner above).<br><br>Current build status: Google / Apple OAuth and the account backend are already live; the linking endpoint (<code>api/auth/link</code>) and the cloud-sync endpoint (<code>api/auth/sync</code>) are real server routes. Store MVP does not install the sync binding, so no actual sync request fires; paid subscription state is not open yet.
         </div>
       </div>
 
@@ -451,7 +451,7 @@
       <div class="faq-item">
         <div class="faq-question">Q: Does account deletion wipe my scan logs and subscriptions?</div>
         <div class="faq-answer">
-          <strong>Current build:</strong> "Delete Account" calls the backend delete endpoint, which cascades removal of your Internal User ID, linked OAuth identities (Google / Apple), and any cloud-stored card collections / decks / price alerts held by <code>api/auth/sync</code>, then clears your local session + caches and signs you out. Paid subscriptions and in-app purchases are not open yet, so there are no transaction records to de-identify at this stage; once paid plans launch, transaction records will be handled per each platform's existing regulations. This action is irreversible.<br><br>
+          <strong>Current build:</strong> "Delete Account" calls the backend delete endpoint, which cascades removal of your Internal User ID, linked OAuth identities (Google / Apple), and any cloud-stored data that <code>api/auth/sync</code> holds; it then clears your local session + caches and signs you out. Since the Store MVP build does not install the sync binding, in practice no sync data has been written for this build, so the cascade only covers Internal User ID + OAuth identities today; the sync-data cascade branch matters once the feature flags flip (or under Web Develop / Staging). Paid subscriptions and in-app purchases are not open yet, so there are no transaction records to de-identify; once paid plans launch, transaction records will be handled per each platform's existing regulations. This action is irreversible.<br><br>
           If you cannot sign in to the App to perform the deletion yourself, you can submit a request via our support email <code>dicoge.chen@gmail.com</code> with your Internal User ID; the backend will run the same cascade deletion and reply to confirm.
         </div>
       </div>

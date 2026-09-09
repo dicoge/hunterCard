@@ -294,7 +294,7 @@
       <p>為了讓您可以在不同裝置及平台上無縫管理您的卡牌資料與訂閱狀態，我們設計了共通帳號系統：</p>
       <ul>
         <li><strong>多方綁定</strong>：您可以用 Google 登入後再綁定 Apple 帳號，或是用 Apple 登入後再綁定 Google 帳號。</li>
-        <li><strong>同一識別碼</strong>：綁定後，該 Google 與 Apple 帳號將共同對應到同一個內部使用者識別碼 (Internal User ID)，共享相同的卡牌收藏、使用量配額與訂閱權限。</li>
+        <li><strong>同一識別碼</strong>：綁定後，該 Google 與 Apple 帳號將共同對應到同一個內部使用者識別碼 (Internal User ID)。每月掃描配額目前為裝置端計數（同一 Internal User ID 不會跨裝置合計），付費訂閱權限目前尚未實作；兩者會隨伺服器端 quota 與 App 內購上線時再納入 Internal User ID 的共享範圍。</li>
         <li><strong>權限模型</strong>：目前 App 只提供訪客 (guest) 與免費會員 (free_user) 兩種角色。免費會員可使用卡牌掃描，每月上限 <strong>100 次</strong>（與 App 內 <code>MONTHLY_SCAN_LIMIT</code> 一致）；訪客模式不支援掃描與價格預測功能。付費訂閱會員 (subscriber) 為未來版本規劃，需等 App 內購與金流上線後才會啟用；在啟用之前，App 內部會把任何 subscriber 角色狀態強制回退為 free_user，因此不會出現任何裝置端偽造解鎖的路徑。</li>
         <li><strong>身分識別原則</strong>：我們<strong>不使用 Email 作為唯一身分依據</strong>（以防 Apple Private Relay 隱藏真實 Email，或不同平台的 Email 不一致）。身分綁定完全基於第三方 Provider 提供的非敏感帳號唯一識別碼。</li>
       </ul>
@@ -312,7 +312,7 @@
       <h3>資料用途說明：</h3>
       <ol>
         <li><strong>使用者身分驗證與登入</strong>：確保您的帳號安全。</li>
-        <li><strong>雲端同步服務</strong>：`api/auth/sync` 端點目前同步您的牌組 (decks)、卡牌收藏數量 (collection)、書籤收藏清單 (favorites)、到價提醒 (priceAlerts) 與 UI 偏好（幣別 / 語言）。<strong>每月掃描剩餘額度、付費訂閱狀態</strong>目前未列入 sync payload —— 掃描配額仍為裝置端計數，付費訂閱狀態未實作，這兩項會隨 App 內購上線時再加入 sync 範圍。</li>
+        <li><strong>雲端同步服務</strong>：伺服器端點 `api/auth/sync` 已部署，其協議支援同步牌組 (decks)、卡牌收藏數量 (collection)、書籤收藏清單 (favorites)、到價提醒 (priceAlerts) 與 UI 偏好（幣別 / 語言）。但目前 <strong>Store MVP</strong> 上架版本不會安裝 sync binding —— App 內 <code>installAccountSyncBinding()</code> 由 <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code> 控管，Store MVP 下三個 flag 全部為 false，因此 <strong>Production 版本現階段不會發出任何 <code>/api/auth/sync</code> 請求</strong>；當 App 未來把上述 feature flag 打開（或 Web Develop / Staging 已預設打開），sync binding 才會啟動並開始同步上述欄位。<strong>每月掃描剩餘額度、付費訂閱狀態</strong>不在 sync payload 之列；掃描配額為裝置端計數，付費訂閱未實作，這兩項會隨 App 內購上線時再加入 sync 範圍。</li>
         <li><strong>推播通知 (Push Notifications)</strong>：若您啟用了卡牌價格提醒功能，我們會使用您的推播 Token（由 Expo Push Service 產生並管理）來發送降價或波動通知。此 Token 僅用於發送通知，不做他用。</li>
       </ol>
 
@@ -339,7 +339,7 @@
       <ol>
         <li>您的雲端帳號紀錄（Internal User ID、顯示名稱、Email、頭像網址、角色）。</li>
         <li>所有已綁定的第三方身分對應（Google / Apple 的 Provider User ID 與其索引）。</li>
-        <li>雲端同步資料（收藏、牌組、卡牌收藏數量、價格提醒、設定）。</li>
+        <li>雲端同步資料，若已寫入（<code>/api/auth/sync</code> 上的收藏、牌組、卡牌收藏數量、價格提醒、設定）。目前 Store MVP 版本不會安裝 sync binding，因此 Production 版本現階段不會有這類雲端資料需要級聯刪除；本項對應的是未來 feature flag 打開或 Web Develop / Staging 已寫入的資料。</li>
       </ol>
 
       <h3>需以電子郵件申請刪除的部分：</h3>
@@ -392,7 +392,7 @@
       <p>To let you manage card data and subscription states seamlessly across platforms, we use a unified account system:</p>
       <ul>
         <li><strong>Account Linking</strong>: You can log in with Google and then link your Apple account, or log in with Apple and link your Google account.</li>
-        <li><strong>Single Identity ID</strong>: Once linked, both Google and Apple identities point to a single Internal User ID, sharing the same card collections, monthly quotas, and subscription state.</li>
+        <li><strong>Single Identity ID</strong>: Once linked, both Google and Apple identities point to a single Internal User ID. Monthly scan quota is currently a per-device counter (the same Internal User ID does not aggregate across devices), and paid subscription state is not yet implemented; both will be folded into what the Internal User ID actually shares once server-side quota and app in-app purchase ship.</li>
         <li><strong>Permission Model</strong>: The current build only ships two active roles — guest and free_user. Free users can scan cards up to <strong>100 times per month</strong> (matches the app's <code>MONTHLY_SCAN_LIMIT</code> constant); guest mode does not support scanning or price forecasts. The paid subscriber role is a future plan that becomes active once app in-app purchase / billing ships; until then, any subscriber state is forcibly collapsed back to free_user inside the app, so there is no "local demo unlock" path.</li>
         <li><strong>Identification Principle</strong>: We **do NOT use Email as the primary unique key** (to prevent issues with Apple's Private Relay email hiding, or mismatching emails between providers). All linking is tied to the unique provider account ID.</li>
       </ul>
@@ -410,7 +410,7 @@
       <h3>How Data is Used:</h3>
       <ol>
         <li><strong>User Authentication</strong>: To secure your account and access.</li>
-        <li><strong>Cloud Syncing</strong>: The `api/auth/sync` endpoint currently syncs your decks, card ownership (collection), favorites (bookmarks), price alerts, and UI preferences (currency / language). <strong>Monthly scan quota progress and paid subscription state are NOT part of the current sync payload</strong> — scan quota remains a per-device counter and paid subscription is not implemented; both will be folded into sync when app in-app purchase ships.</li>
+        <li><strong>Cloud Syncing</strong>: The `api/auth/sync` server endpoint is deployed; its protocol supports syncing decks, card ownership (collection), favorites (bookmarks), price alerts, and UI preferences (currency / language). However, the current <strong>Store MVP</strong> launch build does not install the sync binding — the in-app <code>installAccountSyncBinding()</code> call is gated on <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code>, and under Store MVP all three flags are false, so <strong>the Production build does not currently issue any <code>/api/auth/sync</code> request</strong>. Once those feature flags flip on (or under Web Develop / Staging where they already are), the binding installs and the fields above start syncing. <strong>Monthly scan quota progress and paid subscription state are NOT part of the sync payload</strong> — scan quota is a per-device counter and paid subscription is not implemented; both will be folded into sync when app in-app purchase ships.</li>
         <li><strong>Push Notifications</strong>: If you enable card price alerts, we use your device push token (generated and managed by Expo Push Service) to deliver notifications. This token is used solely for sending alerts.</li>
       </ol>
 
