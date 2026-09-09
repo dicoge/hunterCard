@@ -21,6 +21,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CardDetailScreen from '../screens/CardDetailScreen';
 import SearchResultsScreen from '../screens/SearchResultsScreen';
 import LoginScreen from '../screens/LoginScreen';
+import LandingScreen from '../screens/LandingScreen';
 
 import TutorialScreen from '../screens/TutorialScreen';
 import TutorialDetailScreen from '../screens/TutorialDetailScreen';
@@ -263,13 +264,21 @@ export default function AppNavigator() {
     );
   }
 
+  // DIC-1380 W5b: unauthenticated visitors now land on the Pen artifact's
+  // accepted marketing Landing (LandingScreen) at `/`, not on the bare
+  // LoginScreen auth card that shipped before. LoginScreen is retained as
+  // an internal seam kept out of the visible surface (kept referenced so
+  // the bundler and the future settings-linked login flow keep it live).
+  const LoginScreenRef = LoginScreen;
+  void LoginScreenRef;
+
   return (
     <NavigationContainer>
       <AuthStack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated || isGuest ? (
           <AuthStack.Screen name="Main" component={StackNavigator} />
         ) : (
-          <AuthStack.Screen name="Login" component={LoginScreen} />
+          <AuthStack.Screen name="Login" component={LandingScreen} />
         )}
       </AuthStack.Navigator>
     </NavigationContainer>

@@ -273,6 +273,9 @@ jobs:
       - name: Verify mobile DeckEditor matches accepted Pen frame uXuqo at 390px (DIC-1380 W5)
         run: npm run test:deck-editor-pen-mobile-layout
 
+      - name: Verify LandingScreen renders the accepted Pen landing at 390 and 1440 (DIC-1380 W5b)
+        run: npm run test:landing-pen-render
+
       - name: Verify YT + tournament scheduled refresh workflows stay wired (DIC-1380 W5)
         run: npm run test:scheduled-refresh-workflows
 
