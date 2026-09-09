@@ -110,27 +110,17 @@ test('ci.yml: the function-count guard is not neutered on the Validate path', ()
   assert.ok(!/\|\| true|&& false|continue-on-error/.test(ciWorkflow.split('test:vercel-function-count-guard')[0].slice(-400)));
 });
 
-// DIC-1401 Round 9 split the deploy-status mirror into two workflows:
-//   producer .github/workflows/vercel-deploy-status-summary.yml
-//     (on: deployment_status, read-only, emits event artifact)
-//   consumer .github/workflows/vercel-deploy-status-post.yml
-//     (on: workflow_run, trusted default-branch, holds write scope,
-//      downloads artifact and posts the failure/success summary)
-// The failure-summary body — which cites test:vercel-function-count-guard
-// as the diagnostic mirror to check — now lives in the consumer.
-const deployStatusProducer = fs.readFileSync(
-  path.join(ROOT, '.github/workflows/vercel-deploy-status-summary.yml'),
-  'utf8',
-);
+// DIC-1401 Round 10 removed the `on: deployment_status` producer
+// entirely (it was PR-controlled and Mac-Codex's Round-9 CR showed
+// the producer YAML could grant itself write, bypassing the trusted
+// consumer). The single remaining workflow is a schedule-triggered
+// trusted-default-branch consumer that polls GitHub's Deployments API
+// and posts the failure / Production-success summary — still citing
+// test:vercel-function-count-guard as the diagnostic mirror.
 const deployStatusConsumer = fs.readFileSync(
   path.join(ROOT, '.github/workflows/vercel-deploy-status-post.yml'),
   'utf8',
 );
-
-test('deploy-status mirror producer is wired to deployment_status and gates on the failure state', () => {
-  assert.match(deployStatusProducer, /on:\n\s+deployment_status:/);
-  assert.match(deployStatusProducer, /deployment_status\.state == 'failure'/);
-});
 
 test('deploy-status mirror consumer surfaces the failure body with the function-count-guard diagnostic + log_url', () => {
   assert.match(deployStatusConsumer, /vercel-function-count-guard/);
