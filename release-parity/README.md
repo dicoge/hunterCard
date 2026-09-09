@@ -74,3 +74,21 @@ This guard cannot fix the runtime fallback itself (product code, DEV-gate
 scope) — it only guarantees that every profile it covers never actually
 *reaches* that fallback in the first place, by construction.
 
+## Public deploy-status mirror — deferred pending DIC-1399
+
+The "post a Production-success / preview-failure comment when Vercel
+finishes a deployment" deliverable is not implemented in this repository.
+For public non-Enterprise GitHub repos there is no platform knob that
+prevents a PR from adding a `deployment_status`-triggered workflow that
+grants itself `contents: write`. Closing this class from OUTSIDE
+PR-controlled workflow YAML requires either disabling Vercel's GitHub
+Deployments integration (needs Vercel dashboard access + `VERCEL_TOKEN`
+= DIC-1399) or GitHub Enterprise workflow-permissions policy (not this
+repo's tier).
+
+Full analysis, the six previous CR rounds that each failed to close it
+from within this repo, and the two unblock paths are in
+`release-parity/deploy-status-mirror-blocked.md`. DIC-1401's parent
+card explicitly permits deferring deploy-related items when DIC-1399
+blocks them (rule 6).
+
