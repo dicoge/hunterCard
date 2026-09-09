@@ -78,6 +78,22 @@ function isValidCron(expr) {
   check(`${file} runs the refresh:yt-stats npm script`, wf.raw.includes('npm run refresh:yt-stats'));
   check(`${file} regenerates the native / Store MVP mirror after refresh`, wf.raw.includes('generate-native-database.mjs'));
   check(`${file} PRs into main via a bot-owned sync branch (never direct-push)`, wf.raw.includes('bot/refresh-yt-stats'));
+  // DIC-1380 W6: the workflow must ACTUALLY fetch fresh upstream YT data;
+  // reprocessing already-committed inputs is not a refresh. The scheduled
+  // path invokes scrape-yt-subscribers.js (live YouTube fetch) before the
+  // recompute step. A `skip_live_fetch` manual escape hatch is fine (it
+  // requires an explicit `true` input); the DEFAULT scheduled fire is
+  // live.
+  check(
+    `${file} performs a live upstream fetch before recompute (DIC-1380 W6)`,
+    wf.raw.includes('scrape-yt-subscribers.js'),
+    'schedule must fetch from YouTube, not just reprocess committed history',
+  );
+  check(
+    `${file} stages data/yt-stats-history.json in SYNC_PATHS so the live snapshot survives`,
+    /SYNC_PATHS:[\s\S]*yt-stats-history\.json/.test(wf.raw),
+    'the fresh snapshot the scraper wrote must be in the sync whitelist',
+  );
   // Ignore comment lines when scanning for a bare `git add -A` — comments
   // legitimately reference the anti-pattern to explain why we avoid it.
   const activeAddAllLines = wf.raw
@@ -106,10 +122,14 @@ function isValidCron(expr) {
     !/SCHEDULE IS INTENTIONALLY NOT ENABLED/i.test(wf.raw),
     'the DIC-979 #8 gate comment must be gone once W5 enables the schedule',
   );
+  // DIC-1380 W6: the scheduled fire must invoke the LIVE collector
+  // (`--live`) so fresh Deck Log source data is actually fetched. Manual
+  // dispatches can still opt out via `skip_live` or `dry_run`, but the
+  // default schedule flow lands on `-- --live`.
   check(
-    `${file} keeps the offline collector guarantee (never fetches live tournament HTML in CI)`,
-    /offline/i.test(wf.raw),
-    'the schedule stays offline; live scraping is gated to the local pipeline',
+    `${file} scheduled path invokes the live collector (--live) — real upstream fetch (DIC-1380 W6)`,
+    /npm run collect:tournaments -- --live/.test(wf.raw),
+    'the scheduled fire must exercise the DIC-1024 live Deck Log fetch, not just the offline reprocess',
   );
 }
 

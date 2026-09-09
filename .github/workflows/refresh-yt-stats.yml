@@ -1,22 +1,30 @@
 name: Refresh YT Stats
 
-# DIC-1380 W5: real, wired, scheduled refresh path for the YouTube subscriber
-# / view stats block in `data/database.json`. The runtime freshness gate
-# (`hasDisplayableSubscriberStats`, DIC-1380 daily 24 h window) fails closed
-# when the ytStats block goes stale — this workflow is what keeps it fresh.
+# DIC-1380 W6: the scheduled refresh path MUST acquire genuinely fresh
+# upstream YouTube data — reprocessing already-committed inputs is not
+# a refresh. The daily job now runs `scripts/scrape-yt-stats.js` against
+# the live public YouTube channel About pages (fetch of the SSR HTML,
+# ytInitialData → aboutChannelViewModel — no auth, no API key required)
+# to append a fresh snapshot into `data/yt-stats-history.json`, THEN
+# reprocesses through `scripts/refresh-yt-stats.mjs` so every card's
+# `ytStats` block reflects the new snapshot. Fail-closed on the live
+# fetch: if the scraper errors out, the workflow fails and NO stale PR
+# is opened.
 #
-# `scripts/refresh-yt-stats.mjs` recomputes every card's `ytStats` block from
-# the committed `data/yt-stats-history.json` and the committed
-# `data/yt-members.json`. It performs NO live network fetches (the raw
-# snapshots are refreshed by a separate local-cron pipeline that has real
-# access to the YouTube data API), so this workflow is safe to run in CI on a
-# schedule without ToS/rate-limit risk.
+# The runtime freshness gate (`hasDisplayableSubscriberStats`,
+# DIC-1380 daily 24h window) fails closed when the ytStats block goes
+# stale — this workflow is what keeps it fresh.
 #
 # The output is committed to a bot-owned sync branch and opened as a PR
 # against main (same pattern as `official-catalog-sync.yml`) — main stays
 # protected and never receives a direct push from this workflow.
 on:
   workflow_dispatch:
+    inputs:
+      skip_live_fetch:
+        description: 'Skip the live YouTube fetch (recompute only from committed history — emergency use)'
+        required: false
+        default: 'false'
   schedule:
     # 03:23 UTC daily — off the on-the-hour surge, matches the runtime
     # 24-hour freshness contract by producing a refresh at least once per
@@ -34,12 +42,13 @@ env:
   # sneak in via `git add -A`.
   SYNC_PATHS: >-
     data/database.json
+    data/yt-stats-history.json
     public/data/database.json
 
 jobs:
   refresh-yt-stats:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     # Serialise scheduled + manual dispatches so two runs cannot race to
     # refresh the same sync branch or open duplicate PRs.
     concurrency:
@@ -62,7 +71,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Recompute ytStats from committed history + members files
+      - name: Scrape live YouTube channel stats (real upstream fetch)
+        # DIC-1380 W6: this is the LIVE fetch the release train commits
+        # to. The scraper reads the members list, fetches each channel's
+        # About page over HTTPS, parses ytInitialData, and appends the
+        # snapshot to data/yt-stats-history.json. YT_API_KEY is used
+        # when the secret is configured (batch API); otherwise the
+        # scraper falls through to the SSR-HTML path.
+        if: github.event.inputs.skip_live_fetch != 'true'
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+        run: node scripts/scrape-yt-subscribers.js
+
+      - name: Recompute ytStats from refreshed history + members files
         run: npm run refresh:yt-stats
 
       - name: Regenerate the native / Store-safe database mirror
@@ -97,5 +118,5 @@ jobs:
               --base "$BASE_BRANCH" \
               --head "$SYNC_BRANCH" \
               --title "chore: refresh YT stats $(date -u +%Y-%m-%d)" \
-              --body "DIC-1380 W5 scheduled YT stats refresh. Recomputed ytStats from committed history + members files. No live YouTube API calls made in CI."
+              --body "DIC-1380 W6 scheduled YT stats refresh. Live YouTube channel stats scraped, ytStats reprocessed, native/Store mirror regenerated."
           fi

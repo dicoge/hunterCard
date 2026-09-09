@@ -1,22 +1,19 @@
 name: Collect Tournament Reports
 
-# DIC-1380 W5: real, wired, scheduled refresh path for tournament decks. The
-# runtime + audit paths expect fresh tournament data; the previous
-# manual-only comment kept this workflow permanently off, so the "scheduled
-# refresh" contract the release train commits to was aspirational.
+# DIC-1380 W6: the scheduled refresh path MUST acquire genuinely fresh
+# upstream tournament data — running the offline collector over already-
+# committed source files is not a refresh. The monthly scheduled fire
+# now runs the collector in `--live` mode (DIC-1024): the collector
+# fetches the public Deck Log view API for opt-in source files (one
+# request per deck, sequential, ≥500ms spacing, bounded retries) and
+# writes back the fetched-and-validated cards to the committed source
+# files, then produces the per-month normalized reports. A manual
+# `workflow_dispatch` still exposes `dry_run` and `skip_live` for
+# maintainers who want a preview or a fallback offline run.
 #
-# The scheduled run stays STRICTLY OFFLINE — it invokes the collector
-# against committed, human-verified source files under
-# `data/tournaments/sources/` (which the local pipeline pushes into
-# main separately) and NEVER fetches the live tournament site from CI. This
-# means the DIC-979 #8 concerns (official-column DOM contract + ToS/robots
-# posture) do not apply to the CI leg: no live HTML is touched here. A
-# manual dispatch still exposes a `dry_run` input for maintainers who want a
-# preview without a commit.
-#
-# The monthly cron fires on the last day of every month at 20:00 UTC (= 05:00
-# JST on the 1st of the next month, when the OpenSpace tournament summaries
-# normally land). The job runs the offline collector, PRs any deltas.
+# The monthly cron fires on the last day of every month at 20:00 UTC
+# (= 05:00 JST on the 1st of the next month, when the OpenSpace tournament
+# summaries normally land).
 on:
   workflow_dispatch:
     inputs:
@@ -24,18 +21,22 @@ on:
         description: 'Dry run (do not write files)'
         type: boolean
         default: true
+      skip_live:
+        description: 'Skip the --live upstream fetch (offline only)'
+        type: boolean
+        default: false
   schedule:
     # Last day of each month, 20:00 UTC (= 05:00 JST on the 1st of the next
-    # month). The offline collector runs against committed source files, so
-    # a false-positive day (e.g. 20:00 UTC on Feb 28 in a non-leap year) is
-    # a no-op — the collector emits nothing new and the PR step short-
-    # circuits on an empty diff.
+    # month). The scheduled run is LIVE — it fetches fresh source data
+    # from the tournament site. A false-positive day (e.g. 20:00 UTC on
+    # Feb 28 in a non-leap year) is a no-op — the collector emits nothing
+    # new and the PR step short-circuits on an empty diff.
     - cron: '0 20 28-31 * *'
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
 
@@ -52,18 +53,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # DIC-1380 W5: scheduled dispatches ALWAYS run the wet collector +
-      # PR the deltas. Only a manual workflow_dispatch with dry_run=true
-      # takes the read-only path; that is the only case where the input is
-      # explicitly set to `true`. A schedule fire has `inputs.dry_run`
-      # unset (== ''), so the `!= 'true'` guard below routes it to the wet
+      # DIC-1380 W6: scheduled dispatches ALWAYS run the LIVE collector +
+      # PR the deltas. A manual workflow_dispatch with dry_run=true takes
+      # the read-only path; skip_live=true drops back to the offline
+      # collector for maintainers who want a rebuild without live fetch.
+      # A schedule fire has `inputs.dry_run`/`inputs.skip_live` unset
+      # (== ''), so both `!= 'true'` guards route it to the live wet
       # branch.
-      - name: Collect tournament reports (offline, from committed sources)
+      - name: Collect tournament reports
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             npm run collect:tournaments -- --dry-run
-          else
+          elif [ "${{ inputs.skip_live }}" = "true" ]; then
             npm run collect:tournaments
+          else
+            npm run collect:tournaments -- --live
           fi
 
       - name: Check data changes
