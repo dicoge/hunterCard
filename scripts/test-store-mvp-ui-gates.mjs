@@ -20,7 +20,9 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import * as pathMod from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -284,6 +286,110 @@ for (const key of [
     );
   }
 }
+
+// ── DIC-1381 W10 CR — Store MVP user-facing copy MUST NOT promise sync.
+//    App.tsx gates installAccountSyncBinding() on FEATURES.favorites |
+//    .watchlist | .premium, all of which resolve to !STORE_MVP, so no
+//    sync request is issued on the shipping build. Any string that
+//    promises cross-device sync / account-binding of decks / settings /
+//    favorites / alerts on a `_store` variant is a false claim.
+//
+//    Truth-source binding: fail closed if App.tsx and releaseFlags stop
+//    agreeing with this assumption, since then the copy would need to
+//    change too.
+const appSrcForSync = read('App.tsx');
+const flagsSrcForSync = read('src/config/releaseFlags.ts');
+check(
+  'code sanity: App.tsx gates installAccountSyncBinding on FEATURES.favorites | .watchlist | .premium',
+  /installAccountSyncBinding\(\)/.test(appSrcForSync)
+    && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(appSrcForSync),
+);
+for (const flag of ['favorites', 'watchlist', 'premium']) {
+  check(
+    `code sanity: releaseFlags derives FEATURES.${flag} from !STORE_MVP (Store MVP disables it)`,
+    new RegExp(`${flag}:\\s*!STORE_MVP`).test(flagsSrcForSync),
+  );
+}
+// The `_store` locale variants are the exact strings shipped in the
+// Store MVP build. Reject any sync verb + account-binding claim in
+// them. This catches the "跨裝置同步牌組與設定" / "デッキ・設定の
+// 端末間同期" wording DIC-1381 W9 CR flagged.
+const SYNC_VERB_ZH = /(同步|跨裝置|同一個帳號|帳號同步)/;
+const SYNC_VERB_JA = /(同期|端末間|端末間で|同じアカウント|アカウント同期)/;
+const STORE_MVP_ONLY_KEYS = [
+  'login_description_store',
+  'settings_link_hint_store',
+  'settings_guest_sync_store',
+];
+for (const key of STORE_MVP_ONLY_KEYS) {
+  const zhText = extractStoreKey(zh, key) || '';
+  const jaText = extractStoreKey(ja, key) || '';
+  // Allow sync words only when qualified with "本機儲存" (on-device)
+  // or the equivalent — otherwise it is a bare promise.
+  const zhQualified = /(本機儲存|裝置本機|裝置內|不會同步|不進行同步|裝置端|不會跨裝置)/.test(zhText);
+  const jaQualified = /(端末内|端末に保存|端末のみ|同期しません|同期されません|オフライン|ローカルに保存)/.test(jaText);
+  check(
+    `zh ${key} does not promise cross-device sync / account-binding (DIC-1381 W10 CR)`,
+    !SYNC_VERB_ZH.test(zhText) || zhQualified,
+    `zh text = "${zhText}"`,
+  );
+  check(
+    `ja ${key} does not promise cross-device sync / account-binding (DIC-1381 W10 CR)`,
+    !SYNC_VERB_JA.test(jaText) || jaQualified,
+    `ja text = "${jaText}"`,
+  );
+}
+
+// ── DIC-1381 W10 CR — settings_delete_note must NOT tell the user that
+//    the deletion backend is still under construction / not live.
+//    Ground truth: src/services/auth/index.ts.requestAccountDeletion
+//    calls `POST /api/auth/delete-account` (api/auth/delete-account.ts,
+//    which exists on disk), and public/privacy.html §5 / §6 correctly
+//    state the deletion feature is implemented and live. A stale
+//    "尚未上線 / under construction / 準備中" note contradicts both.
+const authService = read('src/services/auth/index.ts');
+const deleteEndpointFile = 'api/auth/delete-account.ts';
+check(
+  'code sanity: requestAccountDeletion posts to /api/auth/delete-account',
+  /requestAccountDeletion[\s\S]*?fetch\(`\$\{getApiBase\(\)\}\/api\/auth\/delete-account/.test(authService),
+);
+check(
+  `code sanity: ${deleteEndpointFile} exists on disk (deletion backend implemented)`,
+  existsSync(path.join(repoRoot, deleteEndpointFile)),
+);
+const zhDeleteNote = extractStoreKey(zh, 'settings_delete_note') || '';
+const jaDeleteNote = extractStoreKey(ja, 'settings_delete_note') || '';
+check(
+  'zh settings_delete_note does not claim deletion backend is unbuilt / offline (DIC-1381 W10 CR)',
+  !/(仍在建置|建置中|尚未上線|尚未實作|尚未就緒|尚未建置)/.test(zhDeleteNote),
+  `zh text = "${zhDeleteNote}"`,
+);
+check(
+  'ja settings_delete_note does not claim deletion backend is unbuilt / offline (DIC-1381 W10 CR)',
+  !/(準備中|未実装|未対応|未リリース|建設中|開発中)/.test(jaDeleteNote),
+  `ja text = "${jaDeleteNote}"`,
+);
+// Positive: the note should still describe the fail-closed behavior
+// when a specific attempt fails — that is legitimate and matches the
+// settings_delete_pending / _pending_body strings and the runtime.
+check(
+  'zh settings_delete_note describes the fail-closed "未完成 / 尚未完成" behavior (fail-closed intact)',
+  /(未完成|尚未完成|不會誤示|維持登入狀態)/.test(zhDeleteNote),
+);
+check(
+  'ja settings_delete_note describes the fail-closed "未完了" behavior (fail-closed intact)',
+  /(未完了|ログイン状態を維持|誤って削除済みと表示することはありません)/.test(jaDeleteNote),
+);
+
+// Cross-page parity: privacy.html says deletion is live; the App-side
+// note must not contradict that or a user reading both surfaces sees
+// two different truths.
+const privacyRaw = read('public/privacy.html');
+check(
+  'privacy.html states the deletion backend is implemented and live',
+  /(帳號刪除的[^<]*已實作|已實作並上線|deletion backend[\s\S]*?(is implemented|is live)|Account deletion[\s\S]*?(is implemented|is live)|deletion endpoint[\s\S]*?is deployed)/i.test(privacyRaw),
+  'privacy.html must state deletion is live (matches src/services/auth/index.ts.requestAccountDeletion)',
+);
 
 // ── 7. eas.json: production / production-apk / preview all set STORE_MVP=1
 //        so the review build resolves fail-closed. ──

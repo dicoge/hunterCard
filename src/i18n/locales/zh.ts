@@ -162,7 +162,12 @@ export const zh = {
   login_welcome: '歡迎使用 HoloHunter',
   login_description: '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢',
   // Store MVP: no 收藏 / 提醒 / 價格趨勢 promise (DIC-1256).
-  login_description_store: '登入後可掃描卡牌、跨裝置同步牌組與設定',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync binding
+  // (App.tsx gates installAccountSyncBinding on FEATURES.favorites |
+  // .watchlist | .premium, all false under STORE_MVP), so favorites /
+  // decks / price alerts / settings live on-device only. Do not promise
+  // cross-device sync here.
+  login_description_store: '登入後可掃描卡牌並使用帳號功能。此版本的牌組與設定為裝置本機儲存。',
   login_or: '或',
   login_guest_button: '以訪客身份進入',
   login_guest_hint: '訪客可瀏覽規則與查詢卡片，但無法使用掃描功能',
@@ -229,13 +234,22 @@ export const zh = {
   settings_exchange_rate: '📈 匯率：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
   settings_link_hint: '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
-  // Store MVP: no 收藏 / 提醒 promise (DIC-1256).
-  settings_link_hint_store: '綁定後牌組與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
-  settings_delete_note: '註：帳號刪除的伺服器端撤銷仍在建置中，尚未上線。若後端尚未設定，刪除會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
+  // binding; do not promise decks/settings become account-bound. Link
+  // hint here only describes the multi-provider login binding.
+  settings_link_hint_store: '綁定多種登入方式後仍以同一個帳號登入，方便未來更換裝置或補充驗證。此版本的牌組與設定為裝置本機儲存。至少需保留一種登入方式，無法解除最後一個。',
+  // DIC-1381 W10 CR — the delete-account backend IS implemented and
+  // live (api/auth/delete-account.ts; requestAccountDeletion in
+  // src/services/auth/index.ts); this note describes the fail-closed
+  // behavior when a specific attempt fails, not that the whole feature
+  // is under construction (that stale "尚未上線" phrasing contradicted
+  // public/privacy.html §5 / §6 which correctly say deletion is live).
+  settings_delete_note: '註：刪除會呼叫後端刪除端點，成功後撤銷 provider token 並清除本機 session。若某次刪除失敗（網路錯誤或後端暫時無法回應），App 會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
   settings_guest_sync_watchlist: '尚未登入。登入後可跨裝置同步收藏與入手提醒。',
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
-  // Store MVP: no 收藏 / 提醒 promise (DIC-1256).
-  settings_guest_sync_store: '尚未登入。登入後可跨裝置同步牌組與設定。',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
+  // binding, so decks/settings do not sync. State this truthfully.
+  settings_guest_sync_store: '尚未登入。登入後可使用卡牌掃描。此版本的牌組與設定為裝置本機儲存。',
   settings_footer: '專為 hololive PCG 玩家打造',
 
   // Tutorial landing

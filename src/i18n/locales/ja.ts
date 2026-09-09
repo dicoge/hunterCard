@@ -162,7 +162,11 @@ export const ja: Record<keyof typeof zh, string> = {
   login_welcome: 'HoloHunterへようこそ',
   login_description: 'ログインするとお気に入り保存、スキャン、価格推移チェックが可能です',
   // Store MVP: no favorites / alerts / price-trend promise (DIC-1256).
-  login_description_store: 'ログインするとカードスキャンとデッキ・設定の端末間同期が利用できます',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
+  // binding (App.tsx gates it on FEATURES.favorites | .watchlist |
+  // .premium, all false under STORE_MVP), so decks / settings /
+  // favorites / price alerts live on-device only.
+  login_description_store: 'ログインするとカードスキャンとアカウント機能が利用できます。このバージョンではデッキと設定は端末内に保存されます。',
   login_or: 'または',
   login_guest_button: 'ゲストとして利用',
   login_guest_hint: 'ゲストはルール閲覧と検索が可能ですが、スキャン機能は利用できません',
@@ -227,13 +231,22 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_exchange_rate: '📈 為替：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '連携後、お気に入り、設定、アラート、通知は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
   settings_link_hint: '連携後、お気に入りと設定は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
-  // Store MVP: no favorites / alerts promise (DIC-1256).
-  settings_link_hint_store: '連携後、デッキと設定は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
-  settings_delete_note: '注：サーバー側のアカウント削除・認証取消機能は準備中です。未設定の場合は「未完了」と表示し、ログイン状態を維持します。',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
+  // binding; do not promise decks/settings become account-bound. The
+  // link hint here only describes the multi-provider login binding.
+  settings_link_hint_store: '複数のログイン方法を連携しても同一アカウントとしてログインでき、機種変更や身分確認の追加に便利です。このバージョンではデッキと設定は端末内に保存されます。ログイン方法は1つ以上残してください。',
+  // DIC-1381 W10 CR — the delete-account backend IS implemented and
+  // live (api/auth/delete-account.ts + requestAccountDeletion in
+  // src/services/auth/index.ts). This note describes the fail-closed
+  // behavior when a specific attempt fails, not that the whole
+  // feature is under construction (that stale "準備中" phrasing
+  // contradicted public/privacy.html §5 / §6).
+  settings_delete_note: '注：削除はバックエンドの削除エンドポイントを呼び出し、成功後にプロバイダートークンを取り消してローカルセッションを削除します。ネットワークエラー等で削除に失敗した場合、アプリは「未完了」と表示してログイン状態を維持します（誤って削除済みと表示することはありません）。',
   settings_guest_sync_watchlist: 'ログインしていません。ログインするとお気に入りとアラートを端末間で同期できます。',
   settings_guest_sync: 'ログインしていません。ログインするとお気に入りを端末間で同期できます。',
-  // Store MVP: no favorites / alerts promise (DIC-1256).
-  settings_guest_sync_store: 'ログインしていません。ログインするとデッキと設定を端末間で同期できます。',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
+  // binding, so decks/settings do not sync. State this truthfully.
+  settings_guest_sync_store: 'ログインしていません。ログインするとカードスキャンが利用できます。このバージョンではデッキと設定は端末内に保存されます。',
   settings_footer: 'hololive PCGプレイヤーのために',
 
   // Tutorial landing
