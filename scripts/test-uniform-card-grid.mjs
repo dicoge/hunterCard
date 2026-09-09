@@ -19,14 +19,22 @@ for (const itemCount of [1, 2, 3, 4, 5]) {
   });
 }
 
-test('one-column mobile cards remain full width', () => {
+// DIC-1192: single-column FlatLists have no `columnWrapperStyle` row, so the
+// wrapper sits on the list's *vertical* main axis. A numeric flexBasis there
+// becomes the wrapper's height — that is exactly how mobile card wrappers
+// were padded to 358×358 with ≈189px of vertical whitespace between cards.
+// The one-column return value must therefore never carry a numeric flexBasis;
+// `'auto'` lets the card content decide the row height.
+test('DIC-1192: one-column mobile cards return an auto flex-basis (no vertical inflation)', () => {
   assert.deepEqual(uniformGridItemStyle(1), {
-    flexBasis: '100%', maxWidth: '100%', flexGrow: 0, flexShrink: 1,
+    flexBasis: 'auto', width: '100%', maxWidth: '100%', flexGrow: 0, flexShrink: 0,
   });
 });
 
-test('invalid column counts safely fall back to one column', () => {
-  assert.equal(uniformGridItemStyle(0).maxWidth, '100%');
+test('invalid column counts safely fall back to one column with auto flex-basis (DIC-1192)', () => {
+  const style = uniformGridItemStyle(0);
+  assert.equal(style.maxWidth, '100%');
+  assert.equal(style.flexBasis, 'auto');
 });
 
 // ── DIC-1150: pixel-mode contract ──
@@ -57,11 +65,16 @@ test('DIC-1150: 2 columns at 736px with gap 12 → 362px per card', () => {
   assert.ok(Math.abs(rowTotal - 736) <= 1, `row math must close within 1px, got ${rowTotal}`);
 });
 
-test('DIC-1150: 1 column at 390px keeps the full container width', () => {
+test('DIC-1192: 1 column at 390px keeps the full container width but auto flex-basis', () => {
   const style = uniformGridItemStyle({ columns: 1, containerWidth: 390, gap: 12 });
   assert.equal(style.width, 390);
-  assert.equal(style.flexBasis, 390);
   assert.equal(style.maxWidth, 390);
+  // A numeric flexBasis here would be interpreted as *height* along the
+  // single-column FlatList's vertical main axis — the 358×358 wrapper bug.
+  assert.equal(style.flexBasis, 'auto');
+  assert.notEqual(typeof style.flexBasis, 'number');
+  assert.equal(style.flexGrow, 0);
+  assert.equal(style.flexShrink, 0);
 });
 
 test('DIC-1150: pixel-mode rows must never overflow their container', () => {
@@ -85,6 +98,15 @@ test('DIC-1150: pixel-mode rows must never overflow their container', () => {
       containerWidth - rowTotal <= (columns - 1) + 1,
       `columns=${columns} container=${containerWidth} left too much slack: ${containerWidth - rowTotal}`
     );
+    if (columns === 1) {
+      // DIC-1192: single-column wrappers must never carry a numeric flex-basis;
+      // otherwise the FlatList vertical main axis reads it as HEIGHT and pads
+      // each card to a 358-style square with ~189px of trailing whitespace.
+      assert.equal(
+        style.flexBasis, 'auto',
+        `columns=1 container=${containerWidth} must have flex-basis:auto, got ${style.flexBasis}`,
+      );
+    }
   }
 });
 

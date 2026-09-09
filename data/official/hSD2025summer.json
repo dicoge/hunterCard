@@ -1,10 +1,24 @@
 [
   {
     "id": "1165",
-    "expansion": "hSD2025summer",
-    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD2025summer/hY04-007_S.png",
-    "name": "青エール",
     "cardNumber": "hY04-007",
-    "rarity": "S"
+    "name": "青エール",
+    "cardType": "Yell",
+    "cardTypeJp": "エール",
+    "color": "colorless",
+    "rarity": "S",
+    "expansion": "hSD2025summer",
+    "series": "hSD2025summer",
+    "sourceProduct": "hSD2025summer",
+    "sourceProductName": "【イベント物販限定商品】スタートデッキセット-2025 ホロナツパラダイスver.",
+    "sourceProductText": "【イベント物販限定商品】スタートデッキセット-2025 ホロナツパラダイスver.",
+    "imageUrl": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hSD2025summer/hY04-007_S.png",
+    "hp": "",
+    "life": "",
+    "bloomLevel": "",
+    "tags": "",
+    "arts": "",
+    "keywords": "",
+    "extra": ""
   }
 ]

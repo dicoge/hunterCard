@@ -49,6 +49,14 @@ data/push-watchlist.json
 # google play service account (do not commit)
 /google-service-account.json
 
+# downloaded build artifacts / provenance (DIC-1193 — never commit binaries)
+*.apk
+*.aab
+/build-provenance.json
+/eas-build.json
+/eas-build-raw.json
+/apksigner-verify.txt
+
 # generated native folders
 /ios
 /android

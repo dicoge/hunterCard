@@ -23,8 +23,11 @@ import { priceAlertKey } from '../src/utils/priceAlerts.ts';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATABASE_PATH = path.join(path.resolve(__dirname, '..'), 'data', 'database.json');
 
+// Canonical production price-alert-run endpoint (DIC-1245). Overridable via env
+// for preview / staging cron; the default must never be the old vercel.app
+// alias, which no longer hosts /api/push/price-alert-run.
 const RUN_URL = process.env.PUSH_PRICE_ALERT_URL
-  || 'https://holocard-hunter.vercel.app/api/push/price-alert-run';
+  || 'https://holohunter.dicoge.com/api/push/price-alert-run';
 const NOTIFY_SECRET = process.env.PUSH_NOTIFY_SECRET;
 const KV_REST_API_URL = process.env.KV_REST_API_URL;
 const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;

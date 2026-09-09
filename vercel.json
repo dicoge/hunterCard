@@ -1,6 +1,24 @@
 {
-  "buildCommand": "expo export --platform web --clear && node scripts/fix-html.js && node scripts/copy-assets.js && node scripts/generate-assetlinks.mjs",
+  "build": {
+    "env": {
+      "EXPECTED_VERCEL_BRANCH": "staging",
+      "EXPO_PUBLIC_STORE_MVP": "0",
+      "EXPO_EXPORT_CLEAR": "1"
+    }
+  },
+  "buildCommand": "bash scripts/ci/vercel-build.sh",
   "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/version.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate, max-age=0"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/privacy",

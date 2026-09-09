@@ -1,9 +1,11 @@
 // Loads the card database for the deck editor and adapts it to the editor's
-// DeckCard / PriceRecord shapes. Mirrors the fetch('/data/database.json')
-// pattern already used by HomeScreen (web serves data from public/). Kept out of
+// DeckCard / PriceRecord shapes. Reads through the platform-split staticData
+// loader HomeScreen uses (DIC-972): web fetches /data/database.json same-origin,
+// native reads the pre-sanitized copy it ships in its own bundle. Kept out of
 // the screen component so it can be reused and reasoned about independently.
 
 import type { DeckCard, PriceRecord } from './deckRules';
+import { loadDatabaseJson } from './staticData';
 import { eligibleZone } from './deckRules';
 import {
   BASE_PRINTING, buildSourcePrintings, type SourceListing, type SourcePrinting,
@@ -171,23 +173,19 @@ export function adaptDatabase(rawCards: RawCard[]): CardDatabase {
   };
 }
 
+// A root-relative fetch('/data/database.json') here is what left the packaged
+// Android picker empty (DIC-1287): React Native has no page origin to resolve it
+// against, so the request rejected and the editor fell back to an empty catalog.
+// The loader is platform-split instead — see src/utils/staticData.ts.
 export async function loadCardDatabase(): Promise<CardDatabase> {
   if (cache) return cache;
   if (inflight) return inflight;
 
   inflight = (async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-      const res = await fetch('/data/database.json', { signal: controller.signal });
-      if (!res.ok) throw new Error('Failed to load card database');
-      const db = await res.json();
-      const rawCards = Object.values(db.cards || {}) as RawCard[];
-      cache = adaptDatabase(rawCards);
-      return cache;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const db = await loadDatabaseJson();
+    const rawCards = Object.values(db.cards || {}) as RawCard[];
+    cache = adaptDatabase(rawCards);
+    return cache;
   })();
 
   return inflight;

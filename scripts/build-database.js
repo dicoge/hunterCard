@@ -15,11 +15,26 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import { fileURLToPath } from 'url';
+import * as cheerio from 'cheerio';
 import { addZhNames } from './add-zh-names.js';
 import { computeGrowthDeltas } from './lib/yt-growth.js';
-import { canonicalVariantKey } from './lib/variant-key.js';
-import { isCanonicalCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
+import { canonicalVariantKey, normalizeRarityCode } from './lib/variant-key.js';
+import { isCanonicalCardNumber, canonicalizeCardNumber, CANONICAL_CARD_NUMBER_RE } from './lib/card-number.js';
 import { canonicalizePrices, canonicalYuyuName, canonicalYuyuImage } from './lib/canonical-printings.js';
+import {
+  buildPreservationIndex,
+  findPreservedMatch,
+  applyPreservedMarketFields,
+  seedCanonicalHistoryFiles,
+  stampHistoryRecord,
+  filterProvenanceMatchedRecords,
+  findAmbiguousPromoRowIds,
+  hasCurrentPriceProvenance,
+  findUnprovenPriceHistoryViolations,
+  pricesEntryExactPrintMatchesSource,
+  yuyuImageProductPath,
+} from './lib/preserve-market-fields.js';
+import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,24 +42,33 @@ const PROJECT_DIR = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_DIR, 'data');
 const LOG_PATH = path.join(DATA_DIR, 'scrape-log.txt');
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// DIC-1349 (CR round 3, hermeticity fix): only initialise data/scrape-log.txt
+// and rewire console.log/console.error to tee into it when this module is
+// invoked as the main script. Importing `parseCardHtml` from a test file
+// otherwise overwrites the tracked log at ES-module-import time — earlier
+// than any snapshot the test can take — which was the CR-flagged "test
+// leaves data/scrape-log.txt dirty" hermeticity blocker.
+const IS_MAIN_MODULE = process.argv[1]?.includes('build-database');
+if (IS_MAIN_MODULE) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// Write initial log
-fs.writeFileSync(LOG_PATH, `=== Scrape Log ${new Date().toISOString()} ===\n`, 'utf-8');
+  // Write initial log
+  fs.writeFileSync(LOG_PATH, `=== Scrape Log ${new Date().toISOString()} ===\n`, 'utf-8');
 
-// Tee: capture console.log AND console.error to log file
-const origLog = console.log;
-const origError = console.error;
-console.log = function(...args) {
-  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-  fs.appendFileSync(LOG_PATH, msg + '\n', 'utf-8');
-  origLog.apply(console, args);
-};
-console.error = function(...args) {
-  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-  fs.appendFileSync(LOG_PATH, '[ERROR] ' + msg + '\n', 'utf-8');
-  origError.apply(console, args);
-};
+  // Tee: capture console.log AND console.error to log file
+  const origLog = console.log;
+  const origError = console.error;
+  console.log = function(...args) {
+    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    fs.appendFileSync(LOG_PATH, msg + '\n', 'utf-8');
+    origLog.apply(console, args);
+  };
+  console.error = function(...args) {
+    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    fs.appendFileSync(LOG_PATH, '[ERROR] ' + msg + '\n', 'utf-8');
+    origError.apply(console, args);
+  };
+}
 // ─── End Tee ───
 
 // Catch unhandled promise rejections for better diagnostics
@@ -174,61 +198,317 @@ function sanitizePriceHistory(priceHistory) {
   return cleaned;
 }
 
-/** 從 HTML 字串中解出卡片資料（使用純文字分析，與 page.evaluate 相同邏輯） */
-function parseCardHtml(html) {
-  const results = [];
+/**
+ * DIC-1349 (CR round 3): parse the yuyu-tei HTTP-fallback HTML into
+ * per-listing rows using a real HTML parser (cheerio / parse5) instead
+ * of hand-rolled regex + depth counting.
+ *
+ * History. The pre-DIC-1349 implementation stripped every HTML tag
+ * before parsing and looked up `<img>` URLs from raw HTML using
+ * text-position offsets that did not correspond to HTML positions —
+ * every fallback listing landed with an empty / wrong `yuyuImage` and
+ * the DIC-1334 exact-print gate rejected all of them (0 / 1,196 in
+ * DIC-1348 QA). Two rounds of regex hardening (dc987ef09 → 1871f8c55)
+ * closed several bypasses but the CR flagged three more that a regex-
+ * based parser cannot address soundly:
+ *
+ *   1. A genuinely-unclosed `<div class="card-product">` whose own
+ *      `</div>` was missing was still admitted, because a div-depth
+ *      counter cannot tell an ancestor `</div>` apart from the card's
+ *      own — both bring depth back to zero.
+ *   2. `getTagAttr` used `\b${name}`, so `data-class="card-product"` and
+ *      `data-class="cart_ver"` matched the same regex as real `class`
+ *      attributes (word boundary between `data-` and the attribute
+ *      name).
+ *   3. The container regex only accepted `class="…"` / `class='…'`, so
+ *      the valid bare `<div class=card-product>` shape produced zero
+ *      rows.
+ *
+ * A real HTML5 parser fixes each of these by construction: parse5
+ * auto-closes unclosed elements at their natural parent boundary,
+ * attribute names are token-scoped (never prefixed), and bareword /
+ * quoted / single-quoted / entity-encoded attributes all round-trip
+ * identically. Cheerio is already a `dependencies` entry (used by other
+ * scripts) so no new package is added.
+ *
+ * Contract (per parsed card-product element, all reads via cheerio DOM):
+ *   - product image: any descendant `<img>` whose `src` is NOT the
+ *     starbtn asset on the `cdn.yuyu-tei.jp` CDN is a product-image
+ *     candidate. Every product-image candidate's `src` MUST parse via
+ *     `yuyuImageProductPath` — a present-but-invalid image drops the
+ *     card. Only an absent product image (no non-CDN `<img>` at all)
+ *     falls back to synthesising the canonical
+ *     `/hocg/100_140/{cart_ver}/{cart_cid}.jpg` URL from the block's
+ *     own `<input class="cart_ver">` / `<input class="cart_cid">`, and
+ *     that synthesised URL is itself validated via
+ *     `yuyuImageProductPath` before admission.
+ *   - card number + rarity: product image `alt` (`hXXX-nnn RARITY name`),
+ *     falling back to the standalone `<span>hXXX-nnn</span>`.
+ *   - card name: `<h4>` inner text (entity-decoded).
+ *   - price: first `[\d,]+ 円` in the element's own text.
+ *   - `imageVersion` / `imageCid`: `<input class="cart_ver">` /
+ *     `<input class="cart_cid">` within the card. Class tokens are
+ *     matched by cheerio's class-selector, so no prefix ambiguity.
+ */
+function decodeHtmlEntities(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    // '&amp;' MUST be last so `&amp;quot;` does not double-decode into `"`.
+    .replace(/&amp;/g, '&');
+}
 
-  // Strip HTML tags to get text content
-  const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
-                   .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-                   .replace(/<[^>]+>/g, ' ')
-                   .replace(/&nbsp;/g, ' ')
-                   .replace(/&amp;/g, '&')
-                   .replace(/\s+/g, ' ')
-                   .trim();
+function parseCardProductElement($, el) {
+  const $el = $(el);
 
-  // Find all card-product sections by looking for card number patterns
-  const cardNumRegex = /(h[A-Z]{1,3}\d+-\d{2,3})/gi;
-  let match;
-  while ((match = cardNumRegex.exec(text)) !== null) {
-    const cardNum = match[1];
-    const matchStart = match.index;
-    const contextStart = Math.max(0, matchStart - 100);
-    const contextEnd = Math.min(text.length, matchStart + 300);
-    const context = text.slice(contextStart, contextEnd);
+  // 0a) Source-element boundary (CR round-3 fix): a well-formed
+  //    card-product NEVER contains another card-product as a descendant
+  //    — they are siblings, not nested. If cheerio sees one nested,
+  //    it means an outer card-product's own `</div>` was missing and
+  //    HTML5 parsing folded what would be its sibling INTO it (there is
+  //    no implicit-close rule for `<div>`). Dropping the outer prevents
+  //    the classic "unclosed outer with empty product-img borrows the
+  //    later sibling's trusted image / cart provenance and emits its own
+  //    laundered price" bypass the CR round-3 mutation flagged. The
+  //    nested card-product is still enumerated separately by parseCardHtml
+  //    and processed independently.
+  if ($el.find('div.card-product').length > 0) return null;
 
-    // Find price within this card's context
-    const priceMatch = context.match(/([\d,]+)\s*円/);
-    if (!priceMatch) continue;
-    const price = parseInt(priceMatch[1].replace(/,/g, ''));
-    if (isNaN(price) || price <= 0) continue;
-
-    // Try to find card name between card number and price
-    let name = '';
-    const afterNum = text.slice(matchStart + cardNum.length, matchStart + 200);
-    // Name is usually the text line right after the card number
-    const lines = afterNum.split(/\s+/).filter(s => s.length > 0);
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      if (!lines[i].match(/[\d,]+\s*円/) && !lines[i].includes('在庫') && !lines[i].includes('カート') && !lines[i].match(/^\d+$/) && lines[i].length > 1) {
-        name = lines[i];
-        break;
+  // 0a2) Enclosing wrapper closure chain (CR round-6 fix): walk the card's
+  //    ancestor chain (div / section / article / main) up to <body> and
+  //    verify every ancestor was EXPLICITLY closed in the source (parse5
+  //    exposes `sourceCodeLocation.endTag` only when it saw a real
+  //    closing tag). An unclosed ancestor is a signal that this card
+  //    may have absorbed the ancestor's `</div>` via HTML5's no-
+  //    implicit-close rule for `<div>` — the CR round-6 mutation where
+  //    a folded footer counter + cart_sell_in appear inside an outer
+  //    whose OWN `</div>` was missing, so parse5 attributed the row's
+  //    close to the card and left the row unclosed.
+  //
+  //    The check must not reject a well-formed card whose LATER sibling
+  //    caused the ancestor unclosure. Exception rule: for each unclosed
+  //    ancestor along the chain, check whether the subtree we are
+  //    walking up from has any FOLLOWING SIBLING with its own explicit
+  //    `endTag`. If yes, some sibling AFTER our subtree extends into
+  //    the ancestor's would-be close space — our own bounds remain
+  //    trustworthy. If no following sibling has an explicit `endTag`,
+  //    our card is at the tail of the unclosed ancestor and its own
+  //    close was very likely the ancestor's absorbed `</div>`. Drop
+  //    fail-closed.
+  //
+  //    Real yuyu-tei markup wraps every card in `<div class="col-md">`
+  //    inside `<div class="row …">` inside `<div class="container">`
+  //    inside `<main>`, and every wrapper is explicitly closed — the
+  //    whole ancestor chain passes on real input. The CR round-6
+  //    mutation has one card as the only child of an unclosed row; no
+  //    following sibling has an endTag → drop.
+  {
+    let $child = $el;
+    let $ancestor = $child.parent();
+    while ($ancestor.length) {
+      const anc = $ancestor[0];
+      const tag = String(anc?.tagName || '').toLowerCase();
+      if (!tag || tag === 'body' || tag === 'html' || tag === '#document') break;
+      // Stop if we hit a card-product ancestor — nested card-products
+      // are structurally impossible in real markup and can only appear
+      // when an outer card was unclosed and cheerio folded us in as a
+      // descendant. Our own wrapper lives inside that outer; the outer
+      // is dropped separately by the round-3 nested-card guard (0a).
+      // We must not blame the sibling for the outer's unclosure.
+      const ancClass = String(anc.attribs?.class || '');
+      if (ancClass.split(/\s+/).includes('card-product')) break;
+      if (!anc.sourceCodeLocation?.endTag) {
+        // Parent is unclosed. If our subtree at this level has any
+        // following sibling, we cannot be the absorber (the absorber
+        // is whatever content sits at the tail of the unclosed
+        // ancestor). Following sibling can itself be malformed —
+        // that's a separate card-product's problem, not ours; a
+        // sibling that is a nested-card-product weirdness is caught
+        // by the round-3 guard (0a) on that card independently.
+        if ($child.next().length === 0) return null;
       }
+      $child = $ancestor;
+      $ancestor = $ancestor.parent();
     }
-
-    // Find image URL near this card number
-    const imgMatch = html.slice(contextStart, contextEnd + 100).match(/<img[^>]*src="([^"]*card\.yuyu-tei\.jp[^"]*)"[^>]*>/i);
-    const imageUrl = imgMatch ? imgMatch[1] : '';
-
-    results.push({
-      cardNum,
-      sellPrice: price,
-      name,
-      yuyuImage: imageUrl,
-      imageVersion: '',
-      imageCid: '',
-    });
   }
 
+  // 0b) Structural invariant: a real yuyu-tei card-product always contains
+  //    a `<div class="… product-img …">` container (which wraps the
+  //    product image). A card-product with no such container is either a
+  //    UI shell or the CR round-2 "genuinely unclosed with no product-img"
+  //    bypass shape — HTML5 parsing keeps footer inputs as children of an
+  //    unclosed `<div>`, so parse5 cannot on its own tell an unclosed card
+  //    apart from a well-formed one whose image tag happens to be absent.
+  //    Requiring the yuyu-tei structural signature is the guard: the
+  //    malformed shape the CR flagged ("only span, h4, strong, and footer
+  //    cart inputs") has no product-img container, so it fails closed
+  //    here. Every real yuyu-tei card-product ships with this container,
+  //    and the regression fixture ships it even when the inner `<img>` is
+  //    intentionally omitted.
+  if ($el.find('div.product-img').length < 1) return null;
+
+  // 1) Product image candidates — every descendant <img> that is NOT the
+  //    starbtn asset on the CDN. A present-but-invalid one drops the card.
+  const productImgs = $el.find('img').toArray().filter((img) => {
+    const src = String($(img).attr('src') || '').toLowerCase();
+    if (src.startsWith('https://cdn.yuyu-tei.jp/')) return false;
+    if (src.startsWith('http://cdn.yuyu-tei.jp/')) return false;
+    return true;
+  });
+  let productImg = null;
+  let rawImageUrl = '';
+  if (productImgs.length > 0) {
+    for (const img of productImgs) {
+      const src = String($(img).attr('src') || '');
+      if (!yuyuImageProductPath(src)) return null;
+    }
+    productImg = productImgs[0];
+    rawImageUrl = String($(productImg).attr('src') || '');
+  }
+
+  // 2) Card number + rarity — product image alt, with <span>hXXX-nnn</span> fallback.
+  const alt = productImg ? String($(productImg).attr('alt') || '') : '';
+  const altNumMatch = alt.match(/(h[A-Z]{1,3}\d+-\d{2,3})/i);
+  let cardNum = altNumMatch ? altNumMatch[1] : '';
+  if (!cardNum) {
+    // First <span> whose text is exactly a canonical card number.
+    $el.find('span').each((_, span) => {
+      if (cardNum) return;
+      const txt = ($(span).text() || '').trim();
+      const m = txt.match(/^(h[A-Z]{1,3}\d+-\d{2,3})$/i);
+      if (m) cardNum = m[1];
+    });
+  }
+  if (!cardNum) return null;
+
+  const altRarityMatch = alt.match(/h[A-Z]{1,3}\d+-\d{2,3}\s+([A-Z]{1,4})\b/i);
+  const rarity = altRarityMatch ? altRarityMatch[1] : '';
+
+  // 3) Price — first `[\d,]+ 円` in the element's own text. Cheerio's
+  //    .text() returns the concatenated descendant text, which is exactly
+  //    what the original regex-based parser walked.
+  const cardText = $el.text() || '';
+  const priceMatch = cardText.match(/([\d,]+)\s*円/);
+  if (!priceMatch) return null;
+  const price = parseInt(priceMatch[1].replace(/,/g, ''), 10);
+  if (!Number.isFinite(price) || price <= 0) return null;
+
+  // 4) Card name — <h4> inner text, entity-decoded. Fall back to the alt
+  //    with the cardNum + rarity tokens stripped when no <h4> is present.
+  const $h4 = $el.find('h4').first();
+  let name = $h4.length ? decodeHtmlEntities(($h4.text() || '')).replace(/\s+/g, ' ').trim() : '';
+  if (!name && alt) {
+    const nameFromAlt = alt.replace(/^h[A-Z]{1,3}\d+-\d{2,3}\s*[A-Z]{1,4}?\s*/i, '').trim();
+    if (nameFromAlt) name = nameFromAlt;
+  }
+
+  // 5) cart_ver / cart_cid inputs — CR round-5 source-boundary invariant:
+  //    yuyu-tei's real card-product always has BOTH a direct-child
+  //    `<div class="… counter …">` (holding cart_ver / cart_cid /
+  //    cart_gid / … inputs) AND a direct-child `<a class="cart_sell_in">`
+  //    (the "カートへ" cart button), and `cart_sell_in` appears AFTER
+  //    `.counter` in source order — it is the LAST direct child in
+  //    real markup. This is the yuyu-tei structural signature.
+  //
+  //    The earlier CR-round-4 fix used `$el.find('div.counter')` — an
+  //    UNRESTRICTED descendant lookup. HTML5 parsing has no implicit-
+  //    close rule for `<div>`, so an unclosed card-product absorbs any
+  //    following HTML (footer / next sibling) until an ancestor closes,
+  //    and a footer that ships its OWN `<div class="counter">` with
+  //    cart_ver / cart_cid gets folded into the unclosed card as a
+  //    descendant. Unrestricted `.find` picks that folded `.counter`
+  //    up and the parser synthesises a laundered `/hbp04/99999.jpg`
+  //    URL. That is the CR-round-5-reported bypass.
+  //
+  //    The invariant enforced here proves the card was EXPLICITLY closed
+  //    with its own contents inside via three cross-checks that a folded
+  //    footer would collectively fail:
+  //      (a) `.counter` is a DIRECT child of the card (not a nested
+  //          descendant that could belong to a folded structure);
+  //      (b) `a.cart_sell_in` is also a direct child, source-ordered
+  //          AFTER `.counter` — real yuyu-tei always has this button
+  //          as the LAST direct child, and it lives INSIDE the card's
+  //          own scope;
+  //      (c) the card's parse5 `endTag.startOffset` is >= the
+  //          cart_sell_in's `endOffset` — proves the card's `</div>`
+  //          closes AFTER its own cart_sell_in in the raw HTML, i.e.
+  //          the explicit close is real rather than an ancestor's
+  //          `</div>` that happens to satisfy depth counting.
+  //
+  //    A folded footer that ships a `.counter` cannot pass all three:
+  //    it either does not include a `cart_sell_in` (round-4 / round-5
+  //    plain / counter-only mutations), includes one but in the wrong
+  //    source order, or the outer card's endTag falls before the folded
+  //    button's endOffset. In every failure mode the card drops via the
+  //    no-cart-inputs fallthrough.
+  const $counter = $el.children('div.counter').first();
+  const $sellIn = $el.children('a.cart_sell_in').first();
+  const cardEndTag = $el[0]?.sourceCodeLocation?.endTag;
+  let imageVersion = '';
+  let imageCid = '';
+  if ($counter.length && $sellIn.length && cardEndTag) {
+    const counterEnd = $counter[0]?.sourceCodeLocation?.endOffset ?? -1;
+    const sellInStart = $sellIn[0]?.sourceCodeLocation?.startOffset ?? -1;
+    const sellInEnd = $sellIn[0]?.sourceCodeLocation?.endOffset ?? -1;
+    const cardEndStart = cardEndTag.startOffset ?? -1;
+    const wellFormed =
+      counterEnd >= 0 && sellInStart >= 0 && sellInEnd >= 0 && cardEndStart >= 0
+      && counterEnd <= sellInStart
+      && sellInEnd <= cardEndStart;
+    if (wellFormed) {
+      imageVersion = String($counter.find('input.cart_ver').first().attr('value') || '');
+      imageCid = String($counter.find('input.cart_cid').first().attr('value') || '');
+    }
+  }
+
+  // 6) Final `yuyuImage`:
+  //      (i) the product `<img src>` verified in step (1), or
+  //     (ii) the canonical `/hocg/100_140/{ver}/{cid}.jpg` synth when the
+  //          block has NO product image and BOTH cart_ver + cart_cid.
+  //    Either way, the resulting URL is re-run through
+  //    `yuyuImageProductPath` before admission.
+  let yuyuImage = rawImageUrl;
+  if (!yuyuImage && imageVersion && imageCid) {
+    const safeVer = /^[A-Za-z0-9-]+$/.test(imageVersion) ? imageVersion : '';
+    const safeCid = /^[A-Za-z0-9-]+$/.test(imageCid) ? imageCid : '';
+    if (safeVer && safeCid) {
+      yuyuImage = `https://card.yuyu-tei.jp/hocg/100_140/${safeVer}/${safeCid}.jpg`;
+    }
+  }
+  if (!yuyuImage) return null;
+  if (!yuyuImageProductPath(yuyuImage)) return null;
+
+  return {
+    cardNum,
+    sellPrice: price,
+    rarity,
+    name,
+    yuyuImage,
+    imageVersion,
+    imageCid,
+  };
+}
+
+export function parseCardHtml(html) {
+  const results = [];
+  if (typeof html !== 'string' || html.length === 0) return results;
+  // `sourceCodeLocationInfo: true` is required so parseCardProductElement's
+  // CR-round-5 source-boundary invariant can consult parse5's per-node
+  // source ranges (raw-HTML startOffset / endOffset / endTag) to prove
+  // that `.counter` and `a.cart_sell_in` are OWNED by the current
+  // explicitly-closed card wrapper — not folded in from footer HTML that
+  // HTML5 parsing absorbed into an unclosed card.
+  const $ = cheerio.load(html, { sourceCodeLocationInfo: true });
+  $('div.card-product').each((_, el) => {
+    const parsed = parseCardProductElement($, el);
+    if (parsed) results.push(parsed);
+  });
   return results;
 }
 
@@ -470,6 +750,17 @@ async function scrapeSeriesPage(browser, url) {
  * 先試 Puppeteer，若失敗或結果不足則降級到 HTTP fetch
  */
 async function scrapeYuyuPrices() {
+  if (process.env.HUNTERCARD_YUYU_FIXTURE_PATH) {
+    const fixturePath = process.env.HUNTERCARD_YUYU_FIXTURE_PATH;
+    console.log(`[database] Loading yuyu fixture: ${fixturePath}`);
+    return JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
+  }
+
+  if (process.env.HUNTERCARD_SKIP_YUYU === '1') {
+    console.log('[database] HUNTERCARD_SKIP_YUYU=1 — skipping yuyu price scrape');
+    return { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
+  }
+
   let usePuppeteer = true;
   let puppeteer;
 
@@ -510,7 +801,7 @@ async function scrapeYuyuPrices() {
     if (browser) {
       // Turn a series' scraped cards into allPrices entries. Returns the unique
       // card count for that series.
-      const accumulateCards = (cards) => {
+      const accumulateCards = (cards, sourceSeries) => {
         const seriesPrices = {};
         for (const card of cards) {
           const key = card.cardNum;
@@ -524,6 +815,7 @@ async function scrapeYuyuPrices() {
             yuyuImage: card.yuyuImage,
             imageVersion: card.imageVersion,
             imageCid: card.imageCid,
+            sourceSeries,
             timestamp: new Date().toISOString(),
           });
         }
@@ -546,7 +838,7 @@ async function scrapeYuyuPrices() {
             await sleep(3000 + Math.random() * 2000);
 
             const cards = await scrapeSeriesPage(browser, url);
-            const count = accumulateCards(cards);
+            const count = accumulateCards(cards, seriesInfo.name);
             console.log(`  → Found ${count} cards with prices`);
             if (count > 0) seriesWithPrices++;
             totalCards += count;
@@ -562,7 +854,7 @@ async function scrapeYuyuPrices() {
               try {
                 browser = await puppeteer.launch(LAUNCH_OPTS);
                 const cards = await scrapeSeriesPage(browser, url);
-                const count = accumulateCards(cards);
+                const count = accumulateCards(cards, seriesInfo.name);
                 console.log(`  → Retry OK: found ${count} cards with prices`);
                 if (count > 0) seriesWithPrices++;
                 totalCards += count;
@@ -588,9 +880,9 @@ async function scrapeYuyuPrices() {
     console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
     const fetchResult = await scrapeAllWithFetch();
     for (const [key, entries] of Object.entries(fetchResult.prices)) {
-            if (!allPrices[key]) allPrices[key] = [];
-            allPrices[key].push(...entries);
-          }
+      if (!allPrices[key]) allPrices[key] = [];
+      allPrices[key].push(...entries);
+    }
     totalCards += fetchResult.fetchedCards;
   }
 
@@ -628,6 +920,7 @@ async function scrapeAllWithFetch() {
           yuyuImage: card.yuyuImage,
           imageVersion: card.imageVersion,
           imageCid: card.imageCid,
+          sourceSeries: seriesInfo.name,
           timestamp: new Date().toISOString(),
         });
       }
@@ -849,7 +1142,31 @@ function loadOfficialData() {
     return officialCards;
   }
 
-  const files = fs.readdirSync(OFFICIAL_DIR).filter(f => f.endsWith('.json'));
+  const files = fs.readdirSync(OFFICIAL_DIR).filter(f => (
+    f.endsWith('.json') &&
+    !f.startsWith('_') &&
+    !f.startsWith('all-') &&
+    !f.startsWith('cardList_')
+  ));
+
+  const imageSuffixFor = (url = '') => String(url).match(/\/([^/]+)\.png$/i)?.[1] || '';
+  const officialBackfillByImage = new Map();
+  for (const file of files) {
+    const filePath = path.join(OFFICIAL_DIR, file);
+    try {
+      const cards = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      if (!Array.isArray(cards)) continue;
+      for (const card of cards) {
+        const suffix = imageSuffixFor(card.imageUrl);
+        const type = card.cardType || card.type || '';
+        const color = card.color || '';
+        if (!suffix || (!type && !color)) continue;
+        if (!officialBackfillByImage.has(suffix)) officialBackfillByImage.set(suffix, { type, color });
+      }
+    } catch (err) {
+      console.error(`  [official] Error reading ${file} for metadata backfill: ${err.message}`);
+    }
+  }
 
   for (const file of files) {
     const filePath = path.join(OFFICIAL_DIR, file);
@@ -862,14 +1179,23 @@ function loadOfficialData() {
           const cardNum = card.cardNumber || imageCardNumber;
           if (!cardNum) continue;
           const series = card.expansion || card.series || '';
-          // Use compound key to preserve all series, even reprints
-          const key = series ? `${cardNum}_${series}` : cardNum;
-          officialCards[key] = {
+          const imageSuffix = imageSuffixFor(card.imageUrl);
+          const richerOfficial = officialBackfillByImage.get(imageSuffix) || {};
+          // Use compound keys to preserve all series and all official printings.
+          // hEB01 contains many same-card-number variants inside one expansion;
+          // those must not overwrite one another or inherit a single old price.
+          const baseKey = series ? `${cardNum}_${series}` : cardNum;
+          const mustUsePrintingKey = !!card.sourceProduct;
+          const printingKey = [baseKey, card.rarity || '', imageSuffix || card.id || ''].filter(Boolean).join('_');
+          const makeInfo = () => ({
             name: card.name || '',
-            type: card.cardType || card.type || '',
-            color: card.color || '',
+            type: card.cardType || card.type || richerOfficial.type || '',
+            color: card.color || richerOfficial.color || '',
             rarity: card.rarity || '',
             series: series,
+            sourceProduct: card.sourceProduct || series,
+            sourceProductName: card.sourceProductName || '',
+            sourceProductText: card.sourceProductText || '',
             officialImage: card.imageUrl || '',
             hp: card.hp || '',
             life: card.life || '',
@@ -881,7 +1207,19 @@ function loadOfficialData() {
             // backfills those from data/bloom-levels.json (DIC-1141).
             bloomLevel: card.bloomLevel || '',
             cardNumber: cardNum,
-          };
+          });
+          if (mustUsePrintingKey) {
+            officialCards[printingKey] = makeInfo();
+          } else {
+            if (officialCards[baseKey] && officialCards[baseKey].officialImage !== (card.imageUrl || '')) {
+              const prior = officialCards[baseKey];
+              const priorSuffix = String(prior.officialImage || '').match(/\/([^/]+)\.png$/i)?.[1] || '';
+              const priorKey = [baseKey, prior.rarity || '', priorSuffix].filter(Boolean).join('_');
+              officialCards[priorKey] = prior;
+              delete officialCards[baseKey];
+            }
+            officialCards[officialCards[baseKey] ? printingKey : (officialCards[printingKey] ? printingKey : baseKey)] = makeInfo();
+          }
         }
       }
     } catch (err) {
@@ -1050,6 +1388,14 @@ function mergeYtStats(database) {
     }
   }
 
+  // DIC-1204: broadcast ytStats onto every printing of the same holomen, not
+  // only the first row a given cardNumber lands on. DIC-1084 canonicalization
+  // creates multiple printings per cardNumber (each rarity / product printing
+  // gets its own row), and the audit contract in scripts/audit-card-data.mjs
+  // pins the full-dataset ytStats row count (DIC-1153) — an early-return that
+  // skipped later variants of the same cardNumber silently regressed that
+  // pinned count to the number of unique cardNumbers with a stats-carrying
+  // holomen name.
   let merged = 0;
   for (const card of Object.values(database.cards)) {
     const stats =
@@ -1080,59 +1426,28 @@ async function buildDatabase() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
-  // Capture the previous build's buyPrice / buyPriceHistory before we overwrite
-  // database.json. Unlike priceHistory (persisted to per-card files in
-  // data/price-history/), buy prices live ONLY inside database.json. A fresh
-  // rebuild wipes them, and merge-buy-prices.js (run afterward) only re-adds
-  // TODAY's value — so without this preservation buyPriceHistory could never
-  // accumulate past one day, and any day merge-buy-prices fails to run would
-  // drop buyPrice from the committed database entirely (DIC-236).
-  const prevBuyByCardId = new Map();
+  // Capture the previous build's market payload before we overwrite database.json.
+  // A yuyu outage/403 is allowed to decouple from official catalog ingestion,
+  // but it must not turn a failed/incomplete scrape into a successful write that
+  // erases the last proven sell prices. DIC-1204: the previous exact-id-only
+  // preservation missed rows whose printing IDs got renamed by DIC-1084
+  // canonicalization, wiping their proven sellPrice / priceHistory / ytStats.
+  // Use `preserve-market-fields.js` to (a) preserve by exact id when it still
+  // matches and (b) fall back to a strict cardNumber|sourceProduct|rarity
+  // signature so renamed printings still carry their proven payload; ambiguous
+  // signatures refuse to guess (fail-closed, no cross-printing / cross-rarity
+  // leakage).
+  let prevCards = {};
   try {
-    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
-    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
-      const saved = {};
-      if (Number.isFinite(card.buyPrice) && card.buyPrice > 0) saved.buyPrice = card.buyPrice;
-      if (card.buyPriceHistory && typeof card.buyPriceHistory === 'object' &&
-          Object.keys(card.buyPriceHistory).length > 0) {
-        saved.buyPriceHistory = card.buyPriceHistory;
-      }
-      // Per-version buy prices (DIC-856) also live only in database.json → preserve them
-      // by EXACT canonical variant key (cardNumber|class|token) so a build-only pass (no merge
-      // afterward) keeps version alignment. Keys that collide within a card (e.g. two identical
-      // (パラレル) variants — hBP02-017) are ambiguous, so we drop them rather than let one
-      // variant's price leak onto its twin; merge-buy-prices.js re-derives those from source.
-      // Since DIC-856 follow-up each variant's buy price also carries its provenance
-      // (buyPriceVersion / buyPriceSource / buyPriceTimestamp) so the reading layer never has
-      // to re-guess which version a price belongs to — preserve those fields too.
-      if (Array.isArray(card.prices)) {
-        const variantBuy = {};
-        const seenKey = new Set();
-        const dupKey = new Set();
-        for (const v of card.prices) {
-          if (!v || !Number.isFinite(v.buyPrice) || v.buyPrice <= 0) continue;
-          const key = canonicalVariantKey(card.cardNumber, v.name);
-          if (seenKey.has(key)) { dupKey.add(key); continue; }
-          seenKey.add(key);
-          variantBuy[key] = {
-            price: v.buyPrice,
-            version: v.buyPriceVersion,
-            source: v.buyPriceSource,
-            timestamp: v.buyPriceTimestamp,
-          };
-        }
-        for (const k of dupKey) delete variantBuy[k];
-        if (Object.keys(variantBuy).length > 0) saved.variantBuy = variantBuy;
-      }
-      if (Object.keys(saved).length > 0) prevBuyByCardId.set(cardId, saved);
-    }
-    if (prevBuyByCardId.size > 0) {
-      console.log(`  [buyPrice] Preserving buy prices for ${prevBuyByCardId.size} cards from previous build`);
-    }
+    prevCards = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8')).cards || {};
   } catch (err) {
     if (err.code !== 'ENOENT') {
-      console.warn(`  [buyPrice] Could not read previous database for buyPrice preservation: ${err.message}`);
+      console.warn(`  [sellPrice] Could not read previous database for market-field preservation: ${err.message}`);
     }
+  }
+  const preservationIndex = buildPreservationIndex(prevCards);
+  if (preservationIndex.byId.size > 0) {
+    console.log(`  [sellPrice] Indexed ${preservationIndex.byId.size} previous rows for market-field preservation`);
   }
 
   // Capture the previous build's skillsJp / skillsZh so a rebuild can fall back
@@ -1143,33 +1458,61 @@ async function buildDatabase() {
   // back to Japanese in zh mode (DIC-454). Preserving prior skills stops that
   // regression from silently wiping translations.
   const prevSkillsByCardId = new Map();
-  try {
-    const prevDb = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
-    for (const [cardId, card] of Object.entries(prevDb.cards || {})) {
-      const saved = {};
-      if (card.skillsJp && typeof card.skillsJp === 'object') saved.skillsJp = card.skillsJp;
-      if (card.skillsZh && typeof card.skillsZh === 'object') saved.skillsZh = card.skillsZh;
-      if (Object.keys(saved).length > 0) prevSkillsByCardId.set(cardId, saved);
-    }
-    if (prevSkillsByCardId.size > 0) {
-      console.log(`  [skills] Preserving skills for ${prevSkillsByCardId.size} cards from previous build`);
-    }
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.warn(`  [skills] Could not read previous database for skill preservation: ${err.message}`);
-    }
+  for (const [cardId, card] of Object.entries(prevCards)) {
+    const saved = {};
+    if (card.skillsJp && typeof card.skillsJp === 'object') saved.skillsJp = card.skillsJp;
+    if (card.skillsZh && typeof card.skillsZh === 'object') saved.skillsZh = card.skillsZh;
+    if (Object.keys(saved).length > 0) prevSkillsByCardId.set(cardId, saved);
+  }
+  if (prevSkillsByCardId.size > 0) {
+    console.log(`  [skills] Preserving skills for ${prevSkillsByCardId.size} cards from previous build`);
   }
 
-  // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch)
+  // Step 1: Scrape yuyu-tei with Puppeteer + anti-detection (fallback to HTTP fetch).
+  // Official catalog ingestion is intentionally decoupled from yuyu pricing: if
+  // yuyu is WAF-blocked/403 and returns 0 cards, new official printings still
+  // build and ship with null/unknown prices instead of blocking the catalog.
   console.log('── Step 1: Scrape yuyu-tei ──');
-  const yuyuResult = await scrapeYuyuPrices();
+  let yuyuResult;
+  try {
+    yuyuResult = await scrapeYuyuPrices();
+  } catch (err) {
+    console.warn(`[database] yuyu scrape failed (${err.message}); continuing official catalog build with null prices`);
+    yuyuResult = { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
+  }
 
   const { prices, totalCards, seriesWithPrices } = yuyuResult;
+  const pricingUnavailable = Boolean(yuyuResult.pricingUnavailable || totalCards < 50);
+  // DIC-1321: a "partial scrape" is a scrape that returned far fewer priced
+  // cardNumbers than the previous build — the WAF-throttle shape. The old
+  // binary (fully-available OR fully-unavailable) treated a partial scrape as
+  // fully-available, so every cardNumber the partial scrape did not touch was
+  // rebuilt as sellPrice:null AND NOT preserved (`hasCurrentYuyuPayload` was
+  // false), permanently dropping the previously-proven price. That is the
+  // degradation 1,885 → 1,547 and the local 0-priced snapshots. Detect it by
+  // comparing the unique scraped cardNumbers against the previous build's
+  // priced card-number coverage, and preserve the previous proven price for
+  // rows that were NOT freshly scraped (still subject to the existing
+  // `yuyuPayloadMatchesSource` printing-isolation gate in
+  // applyPreservedMarketFields — no cross-product / cross-printing restore).
+  const scrapedCardNumbers = new Set(Object.keys(prices || {}));
+  const prevPricedCardNumbers = new Set(
+    Object.values(prevCards)
+      .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+      .map((c) => c.cardNumber),
+  );
+  const coverageFloorRatio = 0.9;
+  const previousCoverage = prevPricedCardNumbers.size;
+  const currentCoverage = scrapedCardNumbers.size;
+  const partialScrape = !pricingUnavailable
+    && previousCoverage > 0
+    && currentCoverage < previousCoverage * coverageFloorRatio;
   console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
-
-  // Safety check
-  if (totalCards < 50) {
-    throw new Error(` SAFETY CHECK FAILED: totalCards=${totalCards} < 50. Scraper likely failed.`);
+  console.log(`  [DIC-1321] scrape coverage: ${currentCoverage} priced cardNumbers vs previous ${previousCoverage}; partial=${partialScrape}`);
+  if (pricingUnavailable) {
+    console.warn(`[database] yuyu pricing unavailable or incomplete (totalCards=${totalCards}); preserving previous exact-card sell prices and leaving new/unknown printings null`);
+  } else if (partialScrape) {
+    console.warn(`[database] yuyu scrape is PARTIAL (${currentCoverage}/${previousCoverage} priced cardNumbers < ${coverageFloorRatio * 100}%); preserving previous proven prices for rows not freshly scraped (DIC-1321)`);
   }
 
   // Step 2: Download images
@@ -1191,11 +1534,19 @@ async function buildDatabase() {
 
   // Build a reverse lookup: cardNum → array of official entries (for merging)
   const officialByCardNum = {};
+  // DIC-1343/CR rev.2: the compound key IS the official printing identity
+  // (`cardNumber_series_rarity_imageSuffix`). It is the only value that keeps
+  // genuinely distinct rows such as ent07 `C` and ent07 `02_C` apart — those
+  // collapse onto one another under normalizeRarityCode. Keep a row → key map
+  // so the yuyu-only fallback can count DISTINCT printings and bind a proven
+  // price onto the official row itself instead of a bare cardNumber duplicate.
+  const officialKeyByRow = new Map();
   for (const [key, info] of Object.entries(officialCards)) {
     const base = info.cardNumber || '';
     if (base) {
       if (!officialByCardNum[base]) officialByCardNum[base] = [];
       officialByCardNum[base].push(info);
+      officialKeyByRow.set(info, key);
     }
   }
 
@@ -1210,16 +1561,61 @@ async function buildDatabase() {
     });
   }
 
-  // Helper: resolve yuyu price data for a card number
-  function getYuyuForCard(cardNum) {
+  function yuyuEntryMatchesOfficial(entry, official, candidateCount = 1) {
+    if (!entry || !official) return false;
+    const sourceSeries = String(entry.sourceSeries || '').toLowerCase();
+    if (!sourceSeries) return false;
+    const officialSeries = String(official.series || '').toLowerCase();
+    const officialSource = String(official.sourceProduct || '').toLowerCase();
+    const officialRarity = normalizeRarityCode(official.rarity);
+    const entryRarity = normalizeRarityCode(entry.rarity);
+
+    if (entryRarity !== '' && officialRarity !== '') {
+      if (sourceSeries === officialSeries || sourceSeries === officialSource) {
+        return entryRarity === officialRarity;
+      }
+
+      const taggedBySeries = String(entry.name || '').toLowerCase().includes(`/${sourceSeries}`);
+      if (taggedBySeries && sourceSeries === officialSource) {
+        return entryRarity === officialRarity;
+      }
+    }
+
+    // Live yuyu pages usually do not expose an explicit rarity token; the
+    // image URL and sourceSeries still prove the source product. Accept that
+    // empty-rarity shape only when there is exactly one official printing for
+    // this cardNumber+sourceProduct, otherwise fail closed instead of guessing
+    // between C/SR/HR siblings.
+    if (entryRarity === '' && sourceSeries === officialSource && candidateCount === 1) {
+      return pricesEntryExactPrintMatchesSource(
+        { sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage },
+        official.sourceProduct || official.series || '',
+      );
+    }
+
+    return false;
+  }
+
+  // Helper: resolve yuyu price data for one exact official printing.  Healthy
+  // scrapes may contain same-card-number rows from multiple official printings;
+  // require an explicit sourceSeries/name-tag tie instead of card-number fallback.
+  function getYuyuForCard(cardNum, official) {
     const priceData = prices[cardNum];
     if (!priceData) return null;
-    const rawEntries = Array.isArray(priceData) ? priceData : [priceData];
+    const candidateCount = (officialByCardNum[cardNum] || [])
+      .filter((candidate) => {
+        const candidateSource = String(candidate.sourceProduct || candidate.series || '').toLowerCase();
+        const officialSource = String(official.sourceProduct || official.series || '').toLowerCase();
+        return candidateSource && candidateSource === officialSource;
+      })
+      .length;
+    const rawEntries = (Array.isArray(priceData) ? priceData : [priceData]).filter((entry) => yuyuEntryMatchesOfficial(entry, official, candidateCount));
+    if (rawEntries.length === 0) return null;
     const priceEntries = deduplicatePrices(rawEntries);
     let lowestPrice = null;
     let lowestName = '';
     let firstImage = '';
-    let firstTimestamp = new Date().toISOString();
+    let firstTimestamp = '';
     for (const entry of priceEntries) {
       if (!firstImage && entry.yuyuImage) firstImage = entry.yuyuImage;
       if (entry.timestamp) firstTimestamp = entry.timestamp;
@@ -1237,10 +1633,20 @@ async function buildDatabase() {
     };
   }
 
+  // DIC-1334: track which cardNumbers received a sellPrice from official+yuyu
+  // matching. The yuyu-only fallback below must only create a yuyu-only entry
+  // when NO official entry for that cardNumber got priced — otherwise the
+  // existing official entry (sellPrice:null) blocks the fallback via
+  // alreadyExists, permanently discarding the yuyu price data. This is the
+  // root cause of the 1,214→424 collapse: yuyu data is irrecoverably lost
+  // when the official catalog has entries but none match the yuyu listing's
+  // exact series+rarity combination.
+  const officialPricedCardNums = new Set();
+
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
-    const yuyu = getYuyuForCard(baseCardNum);
+    const yuyu = pricingUnavailable ? null : getYuyuForCard(baseCardNum, official);
 
     const rawEntries = yuyu ? yuyu.priceEntries.map(e => ({
       name: e.name || '',
@@ -1268,6 +1674,9 @@ async function buildDatabase() {
       color: official.color || '',
       rarity: official.rarity || '',
       series: official.series || '',
+      sourceProduct: official.sourceProduct || official.series || '',
+      sourceProductName: official.sourceProductName || '',
+      sourceProductText: official.sourceProductText || '',
       sellPrice: yuyu ? yuyu.lowestPrice : null,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
@@ -1284,17 +1693,88 @@ async function buildDatabase() {
       timestamp: yuyu ? yuyu.firstTimestamp : '',
       _rawPricesArchive: archive,
     };
+    // DIC-1334: record that this cardNumber received a sellPrice from
+    // official+yuyu matching so the yuyu-only fallback below does not
+    // discard the yuyu price data for OTHER unmatched printings of this
+    // cardNumber.
+    if (yuyu && yuyu.lowestPrice != null && yuyu.lowestPrice > 0) {
+      officialPricedCardNums.add(baseCardNum);
+    }
   }
 
   // Also add yuyu-only cards (prices without matching official entry)
-  for (const [cardNum, priceData] of Object.entries(prices)) {
-    const alreadyExists = Object.keys(database.cards).some(k => {
-      const info = database.cards[k];
-      return info.cardNumber === cardNum;
-    });
-    if (alreadyExists) continue;
-
-    const priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
+  for (const [rawCardNum, priceData] of Object.entries(prices)) {
+    // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
+    // schema requires 3 digits (hY01-014).  DIC-1084.
+    const cardNum = canonicalizeCardNumber(rawCardNum);
+    // DIC-1334: replace the old `alreadyExists` gate (which dropped yuyu price
+    // data whenever ANY official entry existed, even when every official entry
+    // had sellPrice:null — the 1,214→424 collapse). Now we only block the
+    // fallback when at least one official entry for this cardNumber actually
+    // received a sellPrice from official+yuyu matching. When official entries
+    // exist but ALL are unpriced, we ADD the yuyu listing as yuyu-only instead
+    // of silently discarding it.
+    const officialRows = officialByCardNum[cardNum] || [];
+    const officialAlreadyPriced = officialPricedCardNums.has(cardNum);
+    if (officialAlreadyPriced) continue;
+    // DIC-1334 + DIC-1343/CR: strict exact-printing provenance for the
+    // yuyu-only fallback. When official rows exist for this cardNumber, we
+    // must resolve EACH accepted listing to exactly one distinct official
+    // compound printing identity before any scalar selection or publication —
+    // never a cardNumber-wide, sibling/reprint, rarity-guess, buyPrice, or
+    // cross-product fallback. The old gate only checked the FIRST entry's
+    // image product, then admitted the whole priceData array and picked the
+    // lowest scalar across siblings — which could publish an unproven
+    // sibling/reprint price (e.g. a hBP03 cardNumber resolving ¥1 from a
+    // hBP07/C sibling listing). Truly yuyu-only cardNumbers (no official row
+    // at all) have no official identity to conflict with and keep the
+    // original behavior.
+    let priceEntries;
+    // Compound key of the single official printing this listing set proved to.
+    // Non-null means the price must be bound onto that already-emitted official
+    // row; null means this is a truly yuyu-only cardNumber.
+    let boundPrintingKey = null;
+    if (officialRows.length > 0) {
+      // Proven printings: map each listing to EVERY exact official printing it
+      // matches, identified by the official compound key. Two things this must
+      // not do, both of which the previous revision did: (1) key by
+      // `sourceProduct|normalizeRarityCode(rarity)`, which merges the distinct
+      // ent07 `C` and `02_C` rows into one bucket and reports a collision as a
+      // unique match; (2) stop at the first matching official row, which hides
+      // the very ambiguity this gate exists to catch. Zero proven printings
+      // (unprovable / rarity-guess) and more than one distinct proven printing
+      // (ambiguous sibling / reprint / C-vs-02_C) both fail closed.
+      const allEntries = Array.isArray(priceData) ? priceData : [priceData];
+      const provenPrintings = new Map(); // official compound key → proven entries
+      for (const entry of allEntries) {
+        for (const official of officialRows) {
+          const candidateCount = officialRows
+            .filter((c) => String(c.sourceProduct || c.series || '').toLowerCase() === String(official.sourceProduct || official.series || '').toLowerCase())
+            .length;
+          if (!yuyuEntryMatchesOfficial(entry, official, candidateCount)) continue;
+          const printKey = officialKeyByRow.get(official);
+          if (!printKey) continue;
+          if (!provenPrintings.has(printKey)) provenPrintings.set(printKey, []);
+          provenPrintings.get(printKey).push(entry);
+        }
+      }
+      if (provenPrintings.size !== 1) {
+        console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber ${cardNum}: ${provenPrintings.size === 0 ? 'no listing proves to an exact official printing' : `${provenPrintings.size} distinct official printings proven (ambiguous sibling/reprint)`} — fail-closed, no cardNumber-wide fallback`);
+        continue;
+      }
+      const [[printKey, proven]] = provenPrintings;
+      // The proven printing must be an official row that already exists in the
+      // artifact — binding is the only lawful outcome here. If it somehow does
+      // not, fail closed rather than publish an identity-less duplicate.
+      if (!database.cards[printKey]) {
+        console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for ${cardNum}: proven printing ${printKey} has no official row to bind (fail-closed)`);
+        continue;
+      }
+      boundPrintingKey = printKey;
+      priceEntries = deduplicatePrices(proven);
+    } else {
+      priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
+    }
     let lowestPrice = null;
     let lowestName = '';
     let firstImage = '';
@@ -1321,9 +1801,33 @@ async function buildDatabase() {
     const cleanYuyuName = canonicalYuyuName(lowestName);
     const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, firstImage);
 
-    database.cards[cardNum] = {
-      id: cardNum,
-      cardNumber: cardNum,
+    // DIC-1343/CR rev.2: when the listing set proved to exactly one official
+    // printing, write the price ONTO that printing's existing row. Emitting a
+    // second, bare-cardNumber row instead published an identity-less duplicate
+    // (no rarity / series / official image) while the printing it claimed to
+    // have proven stayed unpriced — the artifact then carried both a null
+    // official row and a rogue priced row for the same card.
+    if (boundPrintingKey) {
+      const bound = database.cards[boundPrintingKey];
+      bound.sellPrice = lowestPrice;
+      bound.yuyuName = cleanYuyuName;
+      bound.yuyuImage = cleanYuyuImage;
+      bound.prices = canonical;
+      bound.timestamp = firstTimestamp;
+      bound._rawPricesArchive = archive;
+      if (!bound.name) bound.name = lowestName || '';
+      console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${lowestPrice})`);
+      continue;
+    }
+
+    const canonicalCardNum = isCanonicalCardNumber(cardNum)
+      ? cardNum
+      : cardNum.replace(/-(\d{1,2})$/, (_, n) => `-${n.padStart(3, '0')}`);
+    const outCardNum = isCanonicalCardNumber(canonicalCardNum) ? canonicalCardNum : cardNum;
+
+    database.cards[outCardNum] = {
+      id: outCardNum,
+      cardNumber: outCardNum,
       name: lowestName || '',
       type: '',
       color: '',
@@ -1334,7 +1838,7 @@ async function buildDatabase() {
       yuyuImage: cleanYuyuImage,
       prices: canonical,
       officialImage: '',
-      localImage: fs.existsSync(path.join(IMAGES_DIR, `${cardNum}.jpg`)) ? `/images/${cardNum}.jpg` : '',
+      localImage: fs.existsSync(path.join(IMAGES_DIR, `${outCardNum}.jpg`)) ? `/images/${outCardNum}.jpg` : '',
       hp: '',
       life: '',
       arts: '',
@@ -1343,9 +1847,129 @@ async function buildDatabase() {
     };
   }
 
+  // DIC-1204: preserve proven market payload onto every current row that maps
+  // to a previous row by exact id or by strict signature. During a yuyu outage
+  // this keeps previously proven exact-card sell prices. During a healthy /
+  // partial scrape, do not resurrect yuyu sell payload onto a freshly rebuilt
+  // official row that has no current exact yuyu match: that is an unproven
+  // cross-product fallback, not provenance (DIC-1167).
+  const hasCurrentYuyuPayload = (card) => (
+    (Number.isFinite(card?.sellPrice) && card.sellPrice > 0)
+    || (Array.isArray(card?.prices) && card.prices.length > 0)
+    || Boolean(card?.yuyuName || card?.yuyuImage || card?.timestamp)
+  );
+  if (preservationIndex.byId.size > 0) {
+    let restoredSell = 0;
+    let restoredPriceHistory = 0;
+    let restoredYt = 0;
+    let restoredPrices = 0;
+    for (const [cardId, card] of Object.entries(database.cards)) {
+      const match = findPreservedMatch(preservationIndex, cardId, card);
+      if (!match) continue;
+      const summary = applyPreservedMarketFields(card, match.card, {
+        matchKind: match.matchKind,
+        // DIC-1321: preserve previous proven yuyu payload not only on a full
+        // outage (pricingUnavailable) but also on a PARTIAL scrape for rows the
+        // partial scrape did not touch. Without this a WAF-throttled partial
+        // scrape permanently drops every row it missed (hasCurrentYuyuPayload
+        // false → nothing preserved). The applyPreservedMarketFields gate still
+        // enforces `yuyuPayloadMatchesSource`, so a partial restore never
+        // crosses printings / products — only provably-matched rows keep their
+        // price.
+        preserveYuyuPayload: pricingUnavailable || partialScrape || hasCurrentYuyuPayload(card),
+      });
+      if (summary.sellPrice) restoredSell++;
+      if (summary.prices) restoredPrices++;
+      if (summary.priceHistory) restoredPriceHistory++;
+      if (summary.ytStats) restoredYt++;
+    }
+    console.log(
+      `  [preserve] restored sellPrice=${restoredSell} prices=${restoredPrices} `
+      + `priceHistory=${restoredPriceHistory} ytStats=${restoredYt}`
+    );
+  }
+
+  // DIC-1227 CR follow-up rev.4: fail-closed on ambiguous promo assignment.
+  // If two hPR rows of the same cardNumber both claim the same yuyuImage URL,
+  // a single yuyu listing cannot vouch for both distinct printings — null
+  // every one of them so the daily build path cannot recreate the pairs
+  // Mac-Codex CR flagged (hSD03-002 P/P_2, hBP01-108 P/P_01, hBP02-028 P/P_2).
+  // Runs BEFORE detail-align so the ranker sees the corrected prices[].
+  {
+    const ambiguous = findAmbiguousPromoRowIds(database.cards);
+    if (ambiguous.size > 0) {
+      for (const id of ambiguous) {
+        const card = database.cards[id];
+        if (!card) continue;
+        card.sellPrice = null;
+        card.prices = [];
+        card.yuyuName = '';
+        card.yuyuImage = '';
+        card.timestamp = '';
+        if (card.priceHistory) card.priceHistory = {};
+        if (card.priceHistoryMeta) delete card.priceHistoryMeta;
+        if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
+      }
+      console.log(`  [promo-ambiguity] nulled ${ambiguous.size} hPR rows sharing a yuyuImage across distinct printings`);
+    }
+  }
+
+  // DIC-1167: keep the CardDetail and deck pipelines resolving to the same
+  // default printing per cardNumber. The daily official scrape iterates
+  // expansion files in filesystem order, so reprint rows (hBP08, hEB01, hPR, …)
+  // can land first and their sourceProduct-tight prices[] then drives
+  // CardDetail to PARALLEL while deck aggregation still resolves to BASE. This
+  // reorders every cardNumber group so the origin-product row is first
+  // (verify-version-alignment.js is the shipped contract behind this).
+  {
+    const { cards: ordered, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards);
+    database.cards = ordered;
+    if (reorderedCardNumbers > 0) {
+      console.log(`  [detail-align] reordered rows within ${reorderedCardNumbers} cardNumber groups`);
+    }
+  }
+
   // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,
   // preserving any skills from the previous build the effects files no longer supply.
   mergeSkills(database.cards, prevSkillsByCardId);
+
+  // DIC-1334: post-transformation coverage audit. After every destructive
+  // transformation (official matching, yuyu-only fallback, ambiguous-promo
+  // nullification, detail-align reorder, skills merge), verify the FINAL
+  // canonical artifact's priced-cardNumber coverage against the fresh yuyu
+  // scrape. Scenario r5 of the surgery spec: a healthy pre-stage coverage
+  // followed by a final-artifact collapse must FAIL the build (exit non-zero,
+  // HUNTERCARD_SCRAPE_STATUS=FAILED, no commit). We compare the final
+  // priced-cardNumber set against the freshly scraped yuyu set: the gap must
+  // stay small, otherwise a transformation discarded yuyu price data.
+  if (!pricingUnavailable) {
+    const finalPricedCardNums = new Set(
+      Object.values(database.cards)
+        .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+        .map((c) => c.cardNumber),
+    );
+    // DIC-1334: with the wrong alreadyExists gate a scrape of N priced
+    // cardNumbers can collapse to a small fraction of N. Enforce a hard
+    // floor: the final priced-cardNumber coverage must exceed 50% of the
+    // freshly scraped yuyu coverage. A healthy run matches nearly all of
+    // them (yuyu only lists pricing for cards that exist in the catalog),
+    // so 50% is a deliberately generous fail-closed floor that still
+    // catches a 1214→424 collapse (35%).
+    const finalCoverage = finalPricedCardNums.size;
+    const scrapedCoverage = scrapedCardNumbers.size;
+    const gapFloor = Math.floor(scrapedCoverage / 2);
+    if (scrapedCoverage > 0 && finalCoverage < gapFloor) {
+      throw new Error(
+        `[DIC-1334] final canonical artifact collapsed priced-cardNumber coverage: ` +
+        `scraped ${scrapedCoverage} priced cardNumbers but final artifact only has ${finalCoverage} ` +
+        `(< 50% floor ${gapFloor}). A transformation discarded yuyu price data; refusing to ship.`,
+      );
+    }
+    const lostCardNums = [...scrapedCardNumbers].filter((n) => !finalPricedCardNums.has(n));
+    if (lostCardNums.length > 0) {
+      console.log(`  [DIC-1334] final artifact keeps ${finalCoverage}/${scrapedCoverage} priced cardNumbers; ${lostCardNums.length} not priced in final artifact (examined sample: ${lostCardNums.slice(0, 5).join(', ')})`);
+    }
+  }
 
   // Fix totalCards to reflect actual unique cards
   database.totalCards = Object.keys(database.cards).length;
@@ -1375,18 +1999,73 @@ async function buildDatabase() {
   const historyDir = path.join(DATA_DIR, 'price-history');
   fs.mkdirSync(historyDir, { recursive: true });
 
-  // Collect price records from all cards
+  // DIC-1204 Step 4c: Before appending today's record, seed the canonical-ID
+  // history file with the multi-day priceHistory the preservation step above
+  // just carried onto renamed printings. Without this seed, Step 5 would
+  // create a fresh file containing only today's record and Step 6 would
+  // unconditionally overwrite `card.priceHistory` with that single-record
+  // read, collapsing the 66-day history we just restored on a card like
+  // hBP01-028_hBP08_HR_hBP01-028_HR (66 shipped days, no canonical-ID file
+  // yet). Existing records[] entries survive verbatim; only preserved dates
+  // that are not already recorded get appended — no cross-printing or
+  // stale-price leakage.
+  const seedResult = seedCanonicalHistoryFiles({
+    cards: database.cards,
+    historyDir,
+    fsAdapter: { fs, path },
+  });
+  if (seedResult.seededFiles > 0) {
+    console.log(
+      `  [preserve-history] Seeded ${seedResult.seededFiles} canonical-ID history files with ${seedResult.addedRecords} preserved records`
+    );
+  }
+
+  // Collect price records from all cards. DIC-1219: stamp each record with the
+  // row's sourceProduct so Step 6 (merge) and future preservation cycles can
+  // reject any cross-product record a seed / restore script may have written
+  // onto this canonical-ID history file. New records emitted here are always
+  // stamped; legacy records without a stamp are grandfathered in only on
+  // origin-product rows (see filterProvenanceMatchedRecords).
+  //
+  // DIC-1229 CR rev.4: gate the durable write on `hasCurrentPriceProvenance`
+  // BEFORE emitting a record. Without this, every row with a positive scalar
+  // `sellPrice` (including ent07 aggregation rows whose sellPrice is derived
+  // from cross-printing yuyu entries) writes a single-record durable file
+  // every daily run. The scheduler's broad `git add data/price-history/*.json`
+  // then republishes those files even after `purge-unproven-price-history-
+  // DIC-1229.mjs` has cleaned them. Mac-Codex CR rev.4 flagged the exact
+  // reproduction: 0 files after purge → normal build → 377 recreated. Under
+  // the strict predicate ent07/reprint rows fail the gate, no record is
+  // emitted, and the existing durable file (if any) is left untouched. The
+  // gate options are identical to Step 6 / the audit (ambiguousIds derived
+  // once from the final cards map below) so all three defence points share
+  // the same non-ambiguity / freshness / exact-print contract.
+  const step5GateOptions = {
+    ambiguousIds: findAmbiguousPromoRowIds(database.cards),
+  };
+  const disableStep5Gate = process.env.HUNTERCARD_DIC1229_DISABLE_STEP5_GATE === '1';
+  if (disableStep5Gate) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_STEP5_GATE=1 — Step 5 provenance gate DISABLED (test-only fault injection)');
+  }
   const priceRecords = [];
+  let step5SkippedUnproven = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     if (card.sellPrice != null && card.sellPrice > 0) {
-      priceRecords.push({
+      if (!disableStep5Gate && !hasCurrentPriceProvenance(card, step5GateOptions)) {
+        step5SkippedUnproven++;
+        continue;
+      }
+      priceRecords.push(stampHistoryRecord({
         date: today,
         price: card.sellPrice,
         source: 'yuyu-tei',
         currency: 'JPY',
         cardId,
-      });
+      }, card));
     }
+  }
+  if (step5SkippedUnproven > 0) {
+    console.log(`  [DIC-1229] Step 5 skipped ${step5SkippedUnproven} unproven printings — no durable record written (DIC-1229 fail-closed)`);
   }
 
   // Group by cardId and write history files
@@ -1462,18 +2141,103 @@ async function buildDatabase() {
 
   console.log(`  [price-history] Saved ${totalSaved} new records; index totals: ${indexCardIds.length} cards / ${indexTotalRecords} records`);
 
-  // Step 6: Merge priceHistory back into database cards
+  // Step 6: Merge priceHistory back into database cards.
+  // DIC-1219: filter out durable records whose provenance does not match the
+  // current row before we build card.priceHistory. Stamped records survive
+  // only when their sourceProduct equals the row's sourceProduct; unstamped
+  // legacy records survive only on origin-product rows. This is what stops
+  // the cross-product history the DIC-1204 seed script left on 813 reprint
+  // rows from re-materialising onto card.priceHistory on every rebuild.
+  //
+  // DIC-1229 hardening: `filterProvenanceMatchedRecords` checks the stamp
+  // ONLY against `card.sourceProduct`. That alone doesn't prove the record
+  // reflects a current exact-print listing — a poisoned record whose stamp
+  // is technically correct can still ship as a user-visible priceHistory
+  // when the row itself has no current provenance. Fail closed: only merge
+  // priceHistory when the row has a proven CURRENT listing
+  // (`hasCurrentPriceProvenance`); otherwise skip the merge AND purge the
+  // durable file so a follow-up rebuild cannot re-materialise the stale
+  // record. Mac-Codex CR flagged `hBP01-090_hPR_P_hBP01-090_P_02` shipping
+  // `priceHistory={"2026-08-28":30}` alongside `sellPrice:null`,
+  // `prices:[]`, `yuyuImage:""` — the exact shape this gate rules out.
   console.log('\n── Step 6: Merge priceHistory into database ──');
+  // DIC-1229 rev.2: compute the ambiguous-hPR set once so both the Step 6
+  // gate and the post-Step-6 audit see the same non-ambiguity rule that
+  // findAmbiguousPromoRowIds enforces elsewhere in the build. The set is
+  // an input to hasCurrentPriceProvenance below — passing it here (not
+  // deriving inside the predicate) keeps the pure helper testable without
+  // holding the whole cards map.
+  const provenanceGateOptions = {
+    ambiguousIds: findAmbiguousPromoRowIds(database.cards),
+  };
+  // DIC-1229 CR rev.3 fault-injection hooks — test-only. The regression
+  // suite spawns build-database.js with EXACTLY ONE of these set at a
+  // time to prove each defence layer catches contamination in isolation:
+  //   - HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 disables the Step 6
+  //     `continue`, leaving only the audit to catch. When contamination
+  //     is present the audit MUST throw — a mutation that removes the
+  //     audit is what this scenario is sensitive to.
+  //   - HUNTERCARD_DIC1229_DISABLE_AUDIT=1 disables the post-Step-6
+  //     throw, leaving only Step 6 to catch. When contamination is
+  //     present Step 6 skip MUST prevent the merge and the row MUST
+  //     ship priceHistory=empty — a mutation that removes the Step 6
+  //     skip is what this scenario is sensitive to.
+  // Under normal daily runs BOTH env vars are unset; both defences run.
+  // The one-time log lines make the fault injection observable in the
+  // scheduler log and force the test suite to fail loudly if either
+  // hook accidentally leaks into a real run.
+  const disableStep6Skip = process.env.HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP === '1';
+  const disableAudit = process.env.HUNTERCARD_DIC1229_DISABLE_AUDIT === '1';
+  if (disableStep6Skip) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP=1 — Step 6 skip DISABLED (test-only fault injection)');
+  }
+  if (disableAudit) {
+    console.log('  [DIC-1229] ⚠️ HUNTERCARD_DIC1229_DISABLE_AUDIT=1 — post-Step-6 audit DISABLED (test-only fault injection)');
+  }
   let mergedCount = 0;
+  let droppedRecords = 0;
+  let skippedUnproven = 0;
   for (const [cardId, card] of Object.entries(database.cards)) {
     const histFile = path.join(historyDir, `${cardId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+    // DIC-1229: unproven printings must never inherit a durable history.
+    // Skip the merge (card.priceHistory stays empty) — the durable file is
+    // left in place so a follow-up scrape that restores provenance can also
+    // restore any LEGITIMATE historical records the file still carries. A
+    // one-shot cleanup pass (migration) is responsible for purging clearly-
+    // poisoned files (e.g. the single-record 08-28 stamps left on hPR
+    // rows by the pre-DIC-1227 daily scrape). The DIC-1229 post-Step-6
+    // hard-fail audit guarantees no unproven row ever ships priceHistory
+    // regardless of what survives on disk.
+    if (!hasCurrentPriceProvenance(card, provenanceGateOptions)) {
+      skippedUnproven++;
+      // DIC-1229 rev.5: `applyPreservedMarketFields` can copy priceHistory
+      // forward when its structural checks pass; those checks don't include
+      // the freshness dimension the rev.3 predicate added. Fail-closed the
+      // same rule at Step 6 by also clearing any preserved priceHistory on
+      // the unproven row so the audit invariant holds regardless of arrival
+      // path. Audit stays live as the mutation-sensitive guard.
+      if (card.priceHistory && typeof card.priceHistory === 'object'
+          && Object.keys(card.priceHistory).length > 0) {
+        card.priceHistory = {};
+      }
+      if (card.priceHistoryMeta) delete card.priceHistoryMeta;
+      if (disableStep6Skip) {
+        // Fault-injection path: fall through to the merge below so the
+        // audit gets to catch the contamination. This is UNREACHABLE
+        // under normal runs — HUNTERCARD_DIC1229_DISABLE_STEP6_SKIP is
+        // test-only.
+      } else {
+        continue;
+      }
+    }
     try {
       const hist = JSON.parse(fs.readFileSync(histFile, 'utf-8'));
       if (hist.records && hist.records.length > 0) {
+        const filtered = filterProvenanceMatchedRecords(hist.records, card);
+        droppedRecords += (hist.records.length - filtered.length);
+        if (filtered.length === 0) continue;
         const ph = {};
-        for (const r of hist.records) {
-          ph[r.date] = r.price;
-        }
+        for (const r of filtered) ph[r.date] = r.price;
         card.priceHistory = sanitizePriceHistory(ph);
         mergedCount++;
       }
@@ -1481,43 +2245,34 @@ async function buildDatabase() {
       // no history file for this card, skip
     }
   }
-  console.log(`  [priceHistory] Merged into ${mergedCount} cards`);
+  console.log(`  [priceHistory] Merged into ${mergedCount} cards${droppedRecords > 0 ? `; dropped ${droppedRecords} cross-provenance records` : ''}${skippedUnproven > 0 ? `; skipped ${skippedUnproven} unproven printings (DIC-1229 fail-closed)` : ''}`);
 
-  // Step 6b: Restore preserved buyPrice / buyPriceHistory onto the rebuilt cards
-  // so they survive the from-scratch rebuild. merge-buy-prices.js runs after this
-  // in the pipeline and layers today's fresh buy prices on top (DIC-236).
-  let buyRestored = 0;
-  for (const [cardId, saved] of prevBuyByCardId.entries()) {
-    const card = database.cards[cardId];
-    if (!card) continue; // card no longer exists in the rebuilt database
-    if (saved.buyPrice != null) card.buyPrice = saved.buyPrice;
-    if (saved.buyPriceHistory != null) card.buyPriceHistory = saved.buyPriceHistory;
-    if (saved.variantBuy && Array.isArray(card.prices)) {
-      // Only restore onto variants whose canonical key is unique in the rebuilt card, so an
-      // ambiguous (duplicate-key) variant never inherits another version's preserved price.
-      const keyCount = new Map();
-      for (const v of card.prices) {
-        const k = canonicalVariantKey(card.cardNumber, v.name);
-        keyCount.set(k, (keyCount.get(k) || 0) + 1);
-      }
-      for (const v of card.prices) {
-        const k = canonicalVariantKey(card.cardNumber, v.name);
-        if (keyCount.get(k) !== 1) continue;
-        const bp = saved.variantBuy[k];
-        if (bp != null) {
-          v.buyPrice = bp.price;
-          if (bp.version != null) v.buyPriceVersion = bp.version;
-          else delete v.buyPriceVersion;
-          if (bp.source != null) v.buyPriceSource = bp.source;
-          else delete v.buyPriceSource;
-          if (bp.timestamp != null) v.buyPriceTimestamp = bp.timestamp;
-          else delete v.buyPriceTimestamp;
-        }
-      }
+  // DIC-1229 hard-fail audit: after Step 6 no card may ship a non-empty
+  // `priceHistory` unless it also has current price provenance. This gate
+  // makes the "unproven printing must stay unknown across all price
+  // surfaces" invariant a build-time failure rather than a warn-only
+  // regression. If any row violates it, throw so the daily scheduler
+  // exits non-zero (the pipeline's fail-fast contract, DIC-1219). The
+  // predicate is a pure function (`findUnprovenPriceHistoryViolations`
+  // in preserve-market-fields.js) so the mutation-sensitive test suite
+  // can call it directly with poisoned fixtures — this call is the
+  // production wire.
+  if (!disableAudit) {
+    const violations = findUnprovenPriceHistoryViolations(database.cards, provenanceGateOptions);
+    if (violations.length > 0) {
+      const rendered = violations.slice(0, 5).map((v) => `${v.id} (days=${v.dayCount})`);
+      throw new Error(
+        `[DIC-1229] ${violations.length} unproven printing(s) shipped priceHistory: ` +
+        rendered.join(', ') +
+        (violations.length > 5 ? `, +${violations.length - 5} more` : '') +
+        `. hasCurrentPriceProvenance must be true for any row carrying priceHistory (no cross-version / cross-printing fallback).`
+      );
     }
-    buyRestored++;
   }
-  console.log(`  [buyPrice] Restored buy prices onto ${buyRestored} cards`);
+
+  // Step 6b: Do not restore stale buy prices from the previous database. Buy prices
+  // are source-listing claims, not history like sell prices; merge-buy-prices.js is
+  // the only writer allowed to attach current exact-print provenance.
 
   // Step 7: Merge VTuber YouTube stats (subscriber/view counts + growth) (DIC-249)
   console.log('\n── Step 7: Merge VTuber YouTube stats ──');

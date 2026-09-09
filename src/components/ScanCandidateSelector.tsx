@@ -18,6 +18,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
+import { FEATURES } from '../config/releaseFlags';
 import { CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
 
@@ -108,10 +109,12 @@ export default function ScanCandidateSelector({
                     {displayName}
                     {isBest ? <Text style={styles.bestTag}>  {t('scan_best_match')}</Text> : null}
                   </Text>
-                  <Text style={styles.itemMeta} numberOfLines={1}>
+                  <Text style={styles.itemMeta} numberOfLines={1} testID="scan-candidate-meta">
                     #{card.cardNumber || card.id}
                     {card.rarity ? ` · ${card.rarity}` : ''}
-                    {`  ${formatPrice(card.sellPrice)}`}
+                    {/* Store MVP 隱藏候選卡的價格 (DIC-1256)；仍保留卡號 + 稀有度
+                        以便使用者辨認正確的卡片。 */}
+                    {FEATURES.marketData ? `  ${formatPrice(card.sellPrice)}` : ''}
                   </Text>
                   <View style={styles.confidenceTrack}>
                     <View

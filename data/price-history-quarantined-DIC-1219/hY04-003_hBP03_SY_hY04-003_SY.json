@@ -1,0 +1,51 @@
+{
+  "cardId": "hY04-003_hBP03_SY_hY04-003_SY",
+  "cardNumber": "hY04-003",
+  "name": "青エール",
+  "nameZh": "藍色應援",
+  "records": [
+    {
+      "date": "2026-07-11",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY04-003_hBP03_SY_hY04-003_SY"
+    },
+    {
+      "date": "2026-07-14",
+      "price": 1980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY04-003_hBP03_SY_hY04-003_SY"
+    },
+    {
+      "date": "2026-07-15",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY04-003_hBP03_SY_hY04-003_SY"
+    },
+    {
+      "date": "2026-07-18",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY04-003_hBP03_SY_hY04-003_SY"
+    },
+    {
+      "date": "2026-07-19",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY04-003_hBP03_SY_hY04-003_SY"
+    },
+    {
+      "date": "2026-07-20",
+      "price": 3980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hY04-003_hBP03_SY_hY04-003_SY"
+    }
+  ],
+  "lastUpdated": "2026-08-26T18:06:25.673Z"
+}

@@ -1,0 +1,35 @@
+# Vercel per-project registry (DIC-1401).
+#
+# Maps each Vercel project's TRUSTED runtime identity (project id or
+# production URL — both are per-PROJECT properties Vercel injects at build
+# time, NOT values that travel with the branch being built) to the branch
+# that project is contracted to serve as its Production deployment.
+#
+# Why this file exists: the previous round bound the guard to
+# EXPECTED_VERCEL_BRANCH which was declared inside each branch's own
+# vercel.json. That declaration travels with the branch, so if a Vercel
+# project is misconfigured (or a dashboard setting drifts) to build the wrong
+# branch, the branch's own vercel.json says "expected=<that same branch>"
+# and the guard trivially matches. This registry defeats that: the identity
+# used for lookup (VERCEL_PROJECT_ID or VERCEL_PROJECT_PRODUCTION_URL) is a
+# per-project property that stays with the PROJECT, whichever branch is
+# checked out. The registry file is committed to every branch, so its
+# contents are identical regardless of which branch is being built.
+#
+# Adding an entry: prefer project_id (immutable UUID assigned by Vercel).
+# production_url is accepted as a fallback for projects whose id has not
+# been populated yet (DIC-1399 unblocked the project ids upstream but the
+# workspace secret was previously stale). Both fallback and canonical
+# domains for each project should be listed, since Vercel returns whichever
+# domain the dashboard has marked as the primary Production domain.
+#
+# Format: identity_kind<TAB>identity_value<TAB>allowed_branch<TAB>label
+#
+#   identity_kind ∈ { project_id, production_url }
+#   identity_value ∈ literal string compared with the corresponding env var
+#   allowed_branch ∈ branch this project is allowed to build as Production
+#   label ∈ human-readable Vercel project name / note
+production_url	holohunter.dicoge.com	main	holocard-hunter (canonical custom domain)
+production_url	holocard-hunter.vercel.app	main	holocard-hunter (default vercel.app fallback)
+production_url	test.holohunter.dicoge.com	staging	holohunter-staging (canonical custom domain)
+production_url	holohunter-staging.vercel.app	staging	holohunter-staging (default vercel.app fallback)

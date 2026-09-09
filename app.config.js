@@ -120,15 +120,54 @@ function appleAndroidAppLinkIntentFilter() {
   };
 }
 
+// Store-MVP Play submission profile (DIC-1259). Both `production` and
+// `production-apk` in eas.json set EXPO_PUBLIC_STORE_MVP=1, and the app compiles
+// push alerts out via FEATURES.pushAlerts (src/config/releaseFlags.ts:52). The
+// feature that would need POST_NOTIFICATIONS is therefore absent from the
+// submitted artifact; keeping the permission on the merged manifest would list a
+// runtime prompt on the Play page for a code path that cannot fire, and force
+// Data safety / App content to over-declare Device IDs and push-token collection
+// against the real artifact. Strip it at the app-manifest layer so Gradle emits
+// tools:node="remove" for the expo-notifications contribution.
+//
+// Resolution mirrors src/config/releaseFlags.ts to keep one truth for the
+// profile: explicit '0'/'false' is off, '1'/'true' is on, anything else is
+// treated as full (no store-mvp additions) — the Expo build gate is the wrong
+// place to fail-closed for an unset env, since native builds already fail-close
+// on the release flag in the app runtime.
+const STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS = [
+  'android.permission.POST_NOTIFICATIONS',
+];
+
+function isStoreMvpBuild() {
+  const raw = typeof process.env.EXPO_PUBLIC_STORE_MVP === 'string'
+    ? process.env.EXPO_PUBLIC_STORE_MVP.trim().toLowerCase()
+    : '';
+  return raw === '1' || raw === 'true';
+}
+
+function mergedAndroidBlockedPermissions(baseBlocked) {
+  const startingSet = new Set(Array.isArray(baseBlocked) ? baseBlocked : []);
+  if (isStoreMvpBuild()) {
+    for (const permission of STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS) {
+      startingSet.add(permission);
+    }
+  }
+  return [...startingSet];
+}
+
 module.exports = () => {
   assertAndroidGoogleClientConfigured();
   assertIosGoogleClientConfigured();
   const expo = { ...base.expo };
   const scheme = reversedGoogleIosScheme();
 
+  const android = { ...(expo.android || {}) };
+  android.blockedPermissions = mergedAndroidBlockedPermissions(android.blockedPermissions);
+  expo.android = android;
+
   const appleIntentFilter = appleAndroidAppLinkIntentFilter();
   if (appleIntentFilter) {
-    const android = { ...(expo.android || {}) };
     const existingFilters = Array.isArray(android.intentFilters) ? android.intentFilters : [];
     const alreadyRegistered = existingFilters.some(
       (f) =>
@@ -168,3 +207,11 @@ module.exports = () => {
 
   return { expo };
 };
+
+// Exported for the DIC-1248/DIC-1259 permission-manifest gate, which needs to
+// evaluate both the store-mvp and non-store-mvp profiles independently of
+// process.env in this shell.
+module.exports.isStoreMvpBuild = isStoreMvpBuild;
+module.exports.mergedAndroidBlockedPermissions = mergedAndroidBlockedPermissions;
+module.exports.STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS =
+  STORE_MVP_ADDITIONAL_BLOCKED_ANDROID_PERMISSIONS;

@@ -7,6 +7,7 @@
 import { Platform } from 'react-native';
 
 import type { AuthSession } from '../../types/auth';
+import { PRODUCTION_ORIGIN } from '../../config/apiOrigin';
 
 export {
   isAppleAuthAvailable,
@@ -21,13 +22,15 @@ export {
   GoogleAuthNotConfiguredError,
 } from './googleAuth';
 
-const PRODUCTION_API_BASE = 'https://holocard-hunter.vercel.app';
-
+// Native falls back to the canonical production origin (DIC-1245). The old
+// holocard-hunter.vercel.app alias does not host the current Apple register /
+// delete-account endpoints, so an APK that fell back to it would silently drop
+// every provider-token revocation.
 function getApiBase(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     return window.location.origin;
   }
-  return PRODUCTION_API_BASE;
+  return PRODUCTION_ORIGIN;
 }
 
 /**

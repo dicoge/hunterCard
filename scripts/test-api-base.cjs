@@ -33,6 +33,10 @@ function compileTs(relPath) {
   return output;
 }
 
+// authStrategy imports PRODUCTION_ORIGIN from src/config/apiOrigin.ts (DIC-1245),
+// so we have to transpile that module too — otherwise the require fails at the
+// import line and every case below dies with MODULE_NOT_FOUND.
+compileTs('src/config/apiOrigin.ts');
 const { resolveApiBase } = require(compileTs('src/services/authStrategy.ts'));
 
 const PROD = 'https://holohunter.dicoge.com/api';

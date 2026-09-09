@@ -106,6 +106,158 @@ export function printingRarityColor(rarity: string | null | undefined): string |
   return PRINTING_RARITY_COLORS[rarity.toUpperCase()] ?? null;
 }
 
+// DIC-1192: card records reach the client with legacy or scraped colour
+// tokens that were never added to i18n — the JP scraper writes '◇' for
+// colourless (see cardCatalog.COLOR_TOKENS), and some cross-cost cards land
+// as 'blue_red'. i18n.t() throws on missing keys (DIC-1085 intentionally
+// keeps it strict so drift shows up in dev), so an unnormalised '◇' at
+// SearchResultsScreen line 450 previously fail-closed the entire screen at
+// 1440×900 / hBP04. Normalise here (never in the JSON — the scraper owns
+// that pipeline) so the render only ever asks i18n for a whitelisted key.
+// KNOWN_COLOR_KEYS is the source of truth both callers (searchCards and the
+// defence-in-depth render guard in SearchResultsScreen) test against — the
+// list must stay in sync with `color_*` keys in src/i18n/locales/{zh,ja}.
+export const KNOWN_COLOR_KEYS: ReadonlySet<string> = new Set([
+  'white', 'blue', 'green', 'red', 'purple', 'yellow', 'colorless', 'multicolor',
+]);
+
+// Normalise a raw color field into an array of whitelisted colour tokens.
+// - `''` / null / undefined → `[]`
+// - `'◇'` → `['colorless']`               (JP diamond marker)
+// - `'blue_red'` → `['blue', 'red']`      (composite tokens split on _ / , / /)
+// - `'PURPLE'` → `['purple']`             (case-insensitive)
+// - anything unrecognised → dropped from the returned array AND emitted as a
+//   `console.warn` so a real data-shape drift surfaces loudly instead of being
+//   silently swallowed. PM ask for DIC-1192 QA rework was explicit about not
+//   hiding data errors.
+export function normalizeColorTokens(raw: unknown): string[] {
+  if (typeof raw !== 'string') return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  if (trimmed === '◇') return ['colorless'];
+  const parts = trimmed.toLowerCase().split(/[_\/,\s]+/).filter(Boolean);
+  const known: string[] = [];
+  const unknown: string[] = [];
+  for (const part of parts) {
+    if (part === '◇') { if (!known.includes('colorless')) known.push('colorless'); continue; }
+    if (KNOWN_COLOR_KEYS.has(part)) { if (!known.includes(part)) known.push(part); continue; }
+    unknown.push(part);
+  }
+  if (unknown.length > 0 && typeof console !== 'undefined' && typeof console.warn === 'function') {
+    console.warn(
+      `[DIC-1192] Unknown color token(s) in card data — dropped from render: ${JSON.stringify(unknown)} (raw=${JSON.stringify(raw)}). ` +
+      `Fix in the scraper / data pipeline; the render will not crash on this row.`,
+    );
+  }
+  return known;
+}
+
+// DIC-1159: canonical color IDs that match the `color_<id>` translation keys
+// shipped in src/i18n/locales/{zh,ja}.ts. Anything outside this set has no
+// translation and MUST NOT be handed to `t()` — that's what threw
+// "Missing translation key: color_◇ (zh)" and blanked out desktop hBP04.
+// CANONICAL_COLOR_IDS mirrors KNOWN_COLOR_KEYS on purpose — DIC-1192 owns the
+// permissive scraper-token normaliser (`◇` → colorless) while DIC-1159 owns
+// the strict canonicalizer used on the CardDetail label path.
+export const CANONICAL_COLOR_IDS = [
+  'white', 'blue', 'green', 'red', 'purple', 'yellow', 'colorless', 'multicolor',
+] as const;
+export type CanonicalColorId = typeof CANONICAL_COLOR_IDS[number];
+const CANONICAL_COLOR_SET: Set<string> = new Set(CANONICAL_COLOR_IDS);
+
+/**
+ * Canonicalize a raw card color string (source field `card.color` /
+ * `card.skillsJp.color` / `card.skillsZh.color`) into the canonical ID set
+ * matched by `color_<id>` translation keys.
+ *
+ * DIC-1159 rules (SearchResultsScreen + CardDetailScreen color-label path):
+ *   - Whole-string canonical (`white`, `blue`, …) passes through.
+ *   - Dual-color tokens split on `_` or `/` when BOTH sides are canonical
+ *     (`blue_red` → ['blue', 'red']) — this is the only shape with
+ *     authoritative dual-color semantics; anything else stays unknown.
+ *   - Anything else (`◇` wildcard printings, `mystery`, empty string) yields
+ *     an empty color array so the UI hides the label instead of feeding a
+ *     broken key to `t()` and crashing the whole search page.
+ * `hasUnknownColor` is true only when the source carried something the
+ * canonical rules could not accept, so the caller can distinguish "no color
+ * data" from "raw color data we deliberately dropped". Callers that WANT
+ * the permissive `◇ → colorless` behaviour DIC-1192 established (i.e. the
+ * search-results list render) should fall through to `normalizeColorTokens`
+ * when `hasUnknownColor` is true.
+ */
+export function canonicalCardColors(rawColor: unknown): {
+  colors: CanonicalColorId[];
+  hasUnknownColor: boolean;
+} {
+  if (typeof rawColor !== 'string') return { colors: [], hasUnknownColor: false };
+  const trimmed = rawColor.trim().toLowerCase();
+  if (!trimmed) return { colors: [], hasUnknownColor: false };
+  if (CANONICAL_COLOR_SET.has(trimmed)) {
+    return { colors: [trimmed as CanonicalColorId], hasUnknownColor: false };
+  }
+  const parts = trimmed.split(/[_/]/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length > 1 && parts.every((p) => CANONICAL_COLOR_SET.has(p))) {
+    return { colors: parts as CanonicalColorId[], hasUnknownColor: false };
+  }
+  return { colors: [], hasUnknownColor: true };
+}
+
+// DIC-1159 CR blocker #1 (post-catalog-sync 2026-08-28): the official catalog
+// sync rewrites top-level `color` on hBP04-087 / hBP04-088 / hBP06-084 to the
+// string "null"; the authoritative ◇ token is now only in the nested
+// `skillsJp.color` / `skillsZh.color`. Reading only top-level lands those
+// winners with NO color instead of the DIC-1192 colourless label. This helper
+// canonicalizes a source string through the strict path first, then falls
+// through to the permissive scraper normaliser for legacy tokens (`◇`,
+// composite `blue_red`) so a caller only asks it once and gets the DIC-1192
+// behaviour without leaking raw tokens to `t()`.
+export function resolveCardColorLabels(
+  rawSources: ReadonlyArray<unknown>,
+): string[] {
+  const out: string[] = [];
+  for (const raw of rawSources) {
+    const canonical = canonicalCardColors(raw);
+    const resolved = canonical.hasUnknownColor
+      ? normalizeColorTokens(raw)
+      : canonical.colors;
+    for (const id of resolved) {
+      if (!out.includes(id)) out.push(id);
+    }
+  }
+  return out;
+}
+
+// Resolve the effective source-color signal for a card, tolerant of the
+// 2026-08-28 catalog-sync shape where top-level `color` may be the string
+// "null" and the authoritative token lives in `skillsJp.color` / `skillsZh.color`.
+// Order: top-level sources are tried first; only if they produced nothing does
+// the nested authoritative source get a turn, so a card that genuinely has
+// `color: "blue"` never gets its label diluted by a stale nested value.
+export function resolveCardColorsWithNestedFallback(card: {
+  color?: unknown;
+  colors?: unknown;
+  skillsJp?: { color?: unknown } | null;
+  skillsZh?: { color?: unknown } | null;
+} | null | undefined): string[] {
+  if (!card || typeof card !== 'object') return [];
+  const topLevelSources: unknown[] = [];
+  if (Array.isArray((card as any).color)) topLevelSources.push(...(card as any).color);
+  else if ((card as any).color !== undefined && (card as any).color !== null) {
+    topLevelSources.push((card as any).color);
+  }
+  if (Array.isArray((card as any).colors)) topLevelSources.push(...(card as any).colors);
+  const fromTop = resolveCardColorLabels(topLevelSources);
+  if (fromTop.length > 0) return fromTop;
+  const nestedSources: unknown[] = [];
+  if (card.skillsJp && typeof card.skillsJp === 'object' && (card.skillsJp as any).color) {
+    nestedSources.push((card.skillsJp as any).color);
+  }
+  if (card.skillsZh && typeof card.skillsZh === 'object' && (card.skillsZh as any).color) {
+    nestedSources.push((card.skillsZh as any).color);
+  }
+  return resolveCardColorLabels(nestedSources);
+}
+
 function clean(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
