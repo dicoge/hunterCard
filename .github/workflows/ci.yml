@@ -288,6 +288,9 @@ jobs:
       - name: Verify legal-page claims match actual STORE_MVP behavior (DIC-1380 W7 CR)
         run: npm run test:legal-copy-vs-behavior
 
+      - name: Verify Store MVP UI gates + Login/Settings sync copy + deletion parity (DIC-1381 W11 CR)
+        run: npm run test:store-mvp-ui-gates
+
       - name: Verify YT + tournament scheduled refresh workflows stay wired (DIC-1380 W5)
         run: npm run test:scheduled-refresh-workflows
 

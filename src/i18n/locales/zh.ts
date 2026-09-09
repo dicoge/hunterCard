@@ -234,10 +234,12 @@ export const zh = {
   settings_exchange_rate: '📈 匯率：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
   settings_link_hint: '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
-  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
-  // binding; do not promise decks/settings become account-bound. Link
-  // hint here only describes the multi-provider login binding.
-  settings_link_hint_store: '綁定多種登入方式後仍以同一個帳號登入，方便未來更換裝置或補充驗證。此版本的牌組與設定為裝置本機儲存。至少需保留一種登入方式，無法解除最後一個。',
+  // DIC-1381 W10 / W11 CR — Store MVP does NOT install the account-sync
+  // binding; do not promise decks/settings become account-bound.
+  // Multi-provider login binding is described without "同一個帳號 /
+  // 帳號同步" phrasing so the shipping-copy predicate does not confuse
+  // login-binding with data-sync. Data-storage clause states the fact.
+  settings_link_hint_store: '綁定多種登入方式方便未來更換裝置或補充驗證。牌組與設定在此版本為裝置本機儲存，不會跨裝置同步。至少需保留一種登入方式，無法解除最後一個。',
   // DIC-1381 W10 CR — the delete-account backend IS implemented and
   // live (api/auth/delete-account.ts; requestAccountDeletion in
   // src/services/auth/index.ts); this note describes the fail-closed

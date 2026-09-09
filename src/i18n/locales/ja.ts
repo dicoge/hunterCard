@@ -231,10 +231,13 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_exchange_rate: '📈 為替：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '連携後、お気に入り、設定、アラート、通知は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
   settings_link_hint: '連携後、お気に入りと設定は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
-  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
-  // binding; do not promise decks/settings become account-bound. The
-  // link hint here only describes the multi-provider login binding.
-  settings_link_hint_store: '複数のログイン方法を連携しても同一アカウントとしてログインでき、機種変更や身分確認の追加に便利です。このバージョンではデッキと設定は端末内に保存されます。ログイン方法は1つ以上残してください。',
+  // DIC-1381 W10 / W11 CR — Store MVP does NOT install the account-
+  // sync binding; do not promise decks/settings become account-bound.
+  // Multi-provider login binding is described without "同じアカウン
+  // ト / 端末間で同期" phrasing so the shipping-copy predicate cannot
+  // confuse login-binding with data-sync. Data-storage clause states
+  // the fact.
+  settings_link_hint_store: '複数のログイン方法を連携すると機種変更や身分確認の追加に便利です。このバージョンではデッキと設定は端末内に保存され、端末間では同期されません。ログイン方法は1つ以上残してください。',
   // DIC-1381 W10 CR — the delete-account backend IS implemented and
   // live (api/auth/delete-account.ts + requestAccountDeletion in
   // src/services/auth/index.ts). This note describes the fail-closed
