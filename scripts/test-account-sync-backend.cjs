@@ -92,6 +92,33 @@ const kv = {
         kvState.values.delete(userKey);
         return 'OK';
       }
+      if (script.includes('-- STAGE')) {
+        // KEYS = [lock, detail, identities]; ARGV = [token, ttl, detailJson, member]
+        // stage a link: SET detail + SADD member
+        kvState.values.set(keys[1], JSON.parse(args[2]));
+        const set = kvState.sets.get(keys[2]) ?? new Set();
+        set.add(args[3]);
+        kvState.sets.set(keys[2], set);
+        return 'OK';
+      }
+      if (script.includes('-- ROLLBACK')) {
+        // KEYS = [lock, idx, detail, identities]; ARGV = [token, ttl, idxOwner, member]
+        if (kvState.values.get(keys[1]) === args[2]) kvState.values.delete(keys[1]);
+        kvState.values.delete(keys[2]);
+        const setR = kvState.sets.get(keys[3]);
+        if (setR) setR.delete(args[3]);
+        return 'OK';
+      }
+      if (script.includes('-- UNLINK')) {
+        // KEYS = [lock, idx, detail, identities, user]
+        // ARGV = [token, ttl, idxOwner, member, userJson]
+        if (kvState.values.get(keys[1]) === args[2]) kvState.values.delete(keys[1]);
+        kvState.values.delete(keys[2]);
+        const setU = kvState.sets.get(keys[3]);
+        if (setU) setU.delete(args[3]);
+        kvState.values.set(keys[4], args[4]);
+        return 'OK';
+      }
       throw new Error(`unexpected fenced eval: ${script}`);
     }
     if (script.includes("redis.call('DEL', KEYS[1])")) {
@@ -687,6 +714,92 @@ async function testGoogleLinkedDeleteStillSucceedsAfterAppleFail() {
   assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), false, 'Google delete still cascades');
 }
 
+// DIC-1381 W13 CR — a Google+Apple dual-linked account MUST take the
+// same fail-closed 501 path as an Apple-only account. The delete handler
+// checks `user.linkedProviders.some(p => p.provider === 'apple')`, so
+// ANY apple identity — even a secondary one linked on top of Google —
+// blocks self-service deletion. If the copy claims "Google-linked can
+// self-delete" (and does not qualify with "Google-only, no Apple"), a
+// Google+Apple user reading it is misled. This test proves both 501
+// branches trigger for that account shape, and no data is deleted.
+async function testDualLinkedGoogleApple501WithoutConfig() {
+  resetKv(); configureBackend();
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_CLIENT_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
+  // Create a Google-first account.
+  const { user, session } = await createSession('dual-link-a');
+  // Then link an Apple identity on top of it.
+  const linked = await identityStore.linkIdentity(user.internalId, {
+    provider: 'apple',
+    subject: 'apple-linked-on-google',
+    email: 'apple-on-google-a@example.test',
+  });
+  assert.equal(linked.alreadyLinked, false);
+  assert.ok(
+    linked.user.linkedProviders.some((p) => p.provider === 'apple'),
+    'dual-linked user must have an Apple identity in linkedProviders',
+  );
+  assert.ok(
+    linked.user.linkedProviders.some((p) => p.provider === 'google'),
+    'dual-linked user must still carry the original Google identity',
+  );
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 501, 'Google+Apple account MUST fail closed like Apple-only');
+  assert.equal(res.body.reason, 'apple_revocation_not_configured', 'without APPLE_* config, dual-linked delete lands on apple_revocation_not_configured');
+  assert.equal(res.body.deleted, false);
+  assert.equal(
+    kvState.values.has(`account-sync:user:${user.internalId}`),
+    true,
+    'dual-linked user sync data must NOT be cascade-deleted when Apple revocation cannot run',
+  );
+  const stillThere = await identityStore.getUser(user.internalId);
+  assert.ok(stillThere, 'dual-linked identity mapping must survive after fail-closed 501');
+  assert.equal(
+    stillThere.linkedProviders.some((p) => p.provider === 'apple'),
+    true,
+    'the Apple identity must still be linked after fail-closed 501',
+  );
+  assert.equal(
+    stillThere.linkedProviders.some((p) => p.provider === 'google'),
+    true,
+    'the Google identity must still be linked after fail-closed 501',
+  );
+}
+
+async function testDualLinkedGoogleApple501WithConfigButNoStoredToken() {
+  resetKv(); configureBackend();
+  process.env.APPLE_TEAM_ID = 'TEAM123';
+  process.env.APPLE_CLIENT_ID = 'com.example.holohunter';
+  process.env.APPLE_KEY_ID = 'KEY123';
+  process.env.APPLE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----';
+  const { user, session } = await createSession('dual-link-b');
+  const linked = await identityStore.linkIdentity(user.internalId, {
+    provider: 'apple',
+    subject: 'apple-linked-on-google-b',
+    email: 'apple-on-google-b@example.test',
+  });
+  assert.equal(linked.alreadyLinked, false);
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 501, 'Google+Apple with APPLE_* configured but no stored token must be 501');
+  assert.equal(res.body.reason, 'apple_deletion_not_implemented', 'second-tier 501 reason: apple_deletion_not_implemented');
+  assert.equal(res.body.deleted, false);
+  assert.equal(
+    kvState.values.has(`account-sync:user:${user.internalId}`),
+    true,
+    'dual-linked user sync data must NOT be cascade-deleted when Apple refresh_token is unavailable',
+  );
+  const stillThere = await identityStore.getUser(user.internalId);
+  assert.ok(stillThere, 'dual-linked identity mapping must survive after fail-closed 501 (stub token store)');
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_CLIENT_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
+}
+
 (async () => {
   await testUnauthorizedFailsClosed();
   await testSnapshotRoundTripBySessionUser();
@@ -703,6 +816,8 @@ async function testGoogleLinkedDeleteStillSucceedsAfterAppleFail() {
   await testAppleLinkedDeleteReturns501NoConfig();
   await testAppleLinkedDeleteReturns501WithConfigButNoStoredToken();
   await testGoogleLinkedDeleteStillSucceedsAfterAppleFail();
+  await testDualLinkedGoogleApple501WithoutConfig();
+  await testDualLinkedGoogleApple501WithConfigButNoStoredToken();
   console.log('account sync backend tests passed');
 })().catch((err) => {
   console.error(err);

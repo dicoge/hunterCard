@@ -336,14 +336,19 @@
 
       <h3>App 內刪除帳號 — 依登入方式而定：</h3>
 
-      <p><strong>使用 Google 綁定的帳號（App 內自助可用）：</strong>進入<strong>「設定」</strong>分頁，點擊<strong>「刪除帳號與資料」</strong>並確認後，App 會呼叫我們的後端刪除端點（<code>POST /api/auth/delete-account</code>），級聯刪除下列雲端資料，並清除本機 Session 與快取後將您登出。此為不可逆操作。刪除成功後，App 在 Android 版會呼叫 <code>GoogleSignin.signOut()</code> 清除本機 Google SDK 快取；<strong>本流程不會伺服器端撤銷您的 Google refresh_token</strong>（Google 帳號本身不因此被吊銷，只是我們不再持有您的 identity mapping）。iOS / 網頁版目前沒有對應的 SDK-side 清除，且該平台原本也不會保留 Google 本機 SDK session。</p>
+      <p><strong>僅綁定 Google（未同時綁定 Apple）的帳號 — App 內自助可用：</strong>進入<strong>「設定」</strong>分頁，點擊<strong>「刪除帳號與資料」</strong>並確認後，App 會呼叫我們的後端刪除端點（<code>POST /api/auth/delete-account</code>），級聯刪除下列雲端資料，並清除本機 Session 與快取後將您登出。此為不可逆操作。刪除成功後，App 在 Android 版會呼叫 <code>GoogleSignin.signOut()</code> 清除本機 Google SDK 快取；<strong>本流程不會伺服器端撤銷您的 Google refresh_token</strong>（Google 帳號本身不因此被吊銷，只是我們不再持有您的 identity mapping）。iOS / 網頁版目前沒有對應的 SDK-side 清除，且該平台原本也不會保留 Google 本機 SDK session。<br><br><strong>提醒：</strong>如果您<strong>同時</strong>綁定了 Google 與 Apple，本 App 會把您視為 Apple 綁定帳號（下一段），因為刪除必須先撤銷 Apple refresh_token；請走下一段的電子郵件流程。</p>
       <ol>
         <li>您的雲端帳號紀錄（Internal User ID、顯示名稱、Email、頭像網址、角色）。</li>
         <li>所有已綁定的第三方身分對應（Google 的 Provider User ID 與其索引）。</li>
         <li>雲端同步資料，若已寫入（<code>/api/auth/sync</code> 上的收藏、牌組、卡牌收藏數量、價格提醒、設定）。目前 Store MVP 版本不會安裝 sync binding，因此 Production 版本現階段不會有這類雲端資料需要級聯刪除；本項對應的是未來 feature flag 打開或 Web Develop / Staging 已寫入的資料。</li>
       </ol>
 
-      <p><strong>使用 Apple 綁定的帳號（App 內刪除目前尚未提供 — 需來信）：</strong>Apple 平台的帳號刪除要求後端撤銷登入當下取得的 <em>refresh_token</em>。這需要 refresh_token 加密儲存於後端伺服器；目前 <code>api/_lib/apple-token-store.ts</code> 為 non-shipping stub，`persistAppleRefreshToken` 會直接丟例外、`getStoredAppleRefreshToken` 一律回 null。因此 <code>POST /api/auth/delete-account</code> 目前對 Apple 綁定帳號會 fail-closed 回 <code>501 apple_deletion_not_implemented</code>，不會刪除任何資料（避免留下無法撤銷的 Apple 身分對應）。<strong>Apple 綁定的使用者請寄信到 <code>dicoge.chen@gmail.com</code>，附上您登入所用的 Email 或 Internal User ID，我們會以下述電子郵件流程手動處理相同的級聯刪除。</strong>此差異將在 Apple refresh_token 的加密後端儲存上線時同步更新本政策與 App 內刪除入口。</p>
+      <p><strong>綁定 Apple 的帳號（包含 Apple-only 與 Google+Apple 同時綁定） — App 內刪除目前尚未提供，需來信：</strong>Apple 平台的帳號刪除要求後端撤銷登入當下取得的 <em>refresh_token</em>。這需要 refresh_token 加密儲存於後端伺服器；目前 <code>api/_lib/apple-token-store.ts</code> 為 non-shipping stub，`persistAppleRefreshToken` 會直接丟例外、`getStoredAppleRefreshToken` 一律回 null。因此，只要帳號的 linkedProviders 內有任何 Apple identity（不論是 Apple-only 或已再綁定 Google），<code>POST /api/auth/delete-account</code> 都會 fail-closed 且不刪除任何資料，回應分兩種：
+      <ul>
+        <li><code>501 apple_revocation_not_configured</code> — 伺服器端 <code>APPLE_TEAM_ID / APPLE_CLIENT_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY</code> 未設定，<code>getAppleConfig()</code> 回 null。</li>
+        <li><code>501 apple_deletion_not_implemented</code> — Apple 設定完備但 apple-token-store stub 沒有可撤銷的 refresh_token。</li>
+      </ul>
+      無論是哪一種 501，都不會刪除任何資料（避免留下無法撤銷的 Apple 身分對應）。<strong>綁定 Apple 的使用者（含 Google+Apple）請寄信到 <code>dicoge.chen@gmail.com</code>，附上您登入所用的 Email 或 Internal User ID，我們會以下述電子郵件流程手動處理相同的級聯刪除。</strong>此差異將在 Apple refresh_token 的加密後端儲存上線時同步更新本政策與 App 內刪除入口。</p>
 
       <h3>其他需以電子郵件申請刪除的部分：</h3>
       <div class="danger-card">
@@ -352,9 +357,9 @@
       <p>若您在 App 內無法完成刪除（例如已解除安裝、或您以 Apple 綁定），亦可寄信至上述地址並附上您登入所用的 Email 或 Internal User ID，由我們代為執行相同的級聯刪除。</p>
 
       <h2>6. App Store / Google Play 行動商店規範合規</h2>
-      <p>本節說明本 App 目前對應行動商店規範的實際情況。目前版本<strong>無任何金流或訂閱機制</strong>；帳號刪除後端已上線並對 <strong>Google 綁定帳號</strong>自助可用，Apple 綁定帳號目前需透過電子郵件管道（詳見第 5 節）。若未來新增訂閱功能，將於推出前先更新本政策再實裝。</p>
+      <p>本節說明本 App 目前對應行動商店規範的實際情況。目前版本<strong>無任何金流或訂閱機制</strong>；帳號刪除後端已上線，並對<strong>僅綁定 Google（未同時綁定 Apple）</strong>的帳號自助可用；<strong>任何綁定 Apple 的帳號（含 Apple-only 與 Google+Apple 同時綁定）</strong>目前需透過電子郵件管道（詳見第 5 節）。若未來新增訂閱功能，將於推出前先更新本政策再實裝。</p>
       <ul>
-        <li><strong>App Store / Google Play 帳號刪除</strong>：Google 綁定的帳號可在 App 內「設定 → 刪除帳號」自助完成；Apple 綁定的帳號因 Apple refresh_token 加密後端儲存尚未上線，目前必須以電子郵件方式提交，我們會人工執行同一份級聯刪除（見第 5 節）。</li>
+        <li><strong>App Store / Google Play 帳號刪除</strong>：僅綁定 Google 的帳號可在 App 內「設定 → 刪除帳號」自助完成；任何綁定 Apple 的帳號（包含 Google+Apple 同時綁定）因 Apple refresh_token 加密後端儲存尚未上線，目前必須以電子郵件方式提交，我們會人工執行同一份級聯刪除（見第 5 節）。</li>
         <li><strong>訂閱與付費</strong>：目前<strong>沒有任何付費或訂閱機制</strong>——未串接 Google Play Billing、Apple StoreKit 或任何第三方金流，也不會展示任何 App 內購買 UI。未來若推出訂閱，Android 版將依 Google Play 政策使用 Google Play Billing（不會導向網頁付款頁），並在您的商店帳號設定中可自行取消；屆時會同步更新本政策、App 內揭露與 Google Play Data safety 表單。</li>
         <li><strong>Google Play Data Safety (資料安全)</strong>：
           <ul>
@@ -437,14 +442,19 @@
 
       <h3>In-app account deletion — depends on how you signed in:</h3>
 
-      <p><strong>Accounts linked with Google (in-app self-service is available):</strong> open the <strong>Settings</strong> tab, tap <strong>Delete Account</strong> and confirm. The App calls our backend deletion endpoint (<code>POST /api/auth/delete-account</code>), which cascade-deletes the cloud data below, then clears your local session and cache and signs you out. The action is irreversible. On a successful delete, the App calls <code>GoogleSignin.signOut()</code> on Android to clear the local Google SDK cache; <strong>this does NOT revoke your Google refresh_token server-side</strong> (your Google account itself is not revoked — we simply no longer hold your identity mapping). iOS / web currently have no analogous SDK-side clear, and those platforms do not retain a Google SDK session to begin with.</p>
+      <p><strong>Accounts linked with Google ONLY (no Apple identity linked) — in-app self-service is available:</strong> open the <strong>Settings</strong> tab, tap <strong>Delete Account</strong> and confirm. The App calls our backend deletion endpoint (<code>POST /api/auth/delete-account</code>), which cascade-deletes the cloud data below, then clears your local session and cache and signs you out. The action is irreversible. On a successful delete, the App calls <code>GoogleSignin.signOut()</code> on Android to clear the local Google SDK cache; <strong>this does NOT revoke your Google refresh_token server-side</strong> (your Google account itself is not revoked — we simply no longer hold your identity mapping). iOS / web currently have no analogous SDK-side clear, and those platforms do not retain a Google SDK session to begin with.<br><br><strong>Note:</strong> if you linked <strong>both</strong> Google and Apple, this app treats you as an Apple-linked account (next paragraph) because deletion must revoke the Apple refresh_token first — please use the email channel described there.</p>
       <ol>
         <li>Your cloud account record (Internal User ID, display name, email, avatar URL, role).</li>
         <li>Every linked Google identity mapping (Google Provider User IDs and their indexes).</li>
         <li>Cloud-synced data if any was written (favorites, decks, card collection counts, price alerts, settings on <code>/api/auth/sync</code>). The Store MVP build does not install the sync binding, so Production currently has no such data to cascade-delete; this item covers data written by feature-flag-enabled builds (Web Develop / Staging).</li>
       </ol>
 
-      <p><strong>Accounts linked with Apple (in-app deletion is NOT available yet — email required):</strong> Apple's platform-deletion contract requires the backend to revoke the <em>refresh_token</em> issued at sign-in. That requires encrypted server-side storage of the refresh_token; today <code>api/_lib/apple-token-store.ts</code> is a non-shipping stub — <code>persistAppleRefreshToken</code> throws and <code>getStoredAppleRefreshToken</code> always returns <code>null</code>. Consequently <code>POST /api/auth/delete-account</code> fails closed with <code>501 apple_deletion_not_implemented</code> for Apple-linked accounts and does not delete anything (so we never leave an Apple identity mapping we cannot revoke). <strong>Apple-linked users: please email <code>dicoge.chen@gmail.com</code> with the email you signed in with or your Internal User ID, and we will run the same cascade deletion by hand via the email channel described below.</strong> This policy and the in-app deletion entry point will be updated together when encrypted Apple refresh_token storage ships.</p>
+      <p><strong>Any account linked with Apple (Apple-only or Google+Apple combined) — in-app deletion is NOT available yet, email required:</strong> Apple's platform-deletion contract requires the backend to revoke the <em>refresh_token</em> issued at sign-in. That requires encrypted server-side storage of the refresh_token; today <code>api/_lib/apple-token-store.ts</code> is a non-shipping stub — <code>persistAppleRefreshToken</code> throws and <code>getStoredAppleRefreshToken</code> always returns <code>null</code>. Consequently, whenever an account's <code>linkedProviders</code> contains any Apple identity (whether Apple-only or additionally linked to Google), <code>POST /api/auth/delete-account</code> fails closed and does not delete anything. The exact response is one of:
+      <ul>
+        <li><code>501 apple_revocation_not_configured</code> — server-side <code>APPLE_TEAM_ID / APPLE_CLIENT_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY</code> are unset, so <code>getAppleConfig()</code> returns null.</li>
+        <li><code>501 apple_deletion_not_implemented</code> — Apple config is present but the apple-token-store stub holds no refresh_token to revoke.</li>
+      </ul>
+      Either 501 means nothing is deleted (so we never leave an Apple identity mapping we cannot revoke). <strong>Apple-linked users (including Google+Apple): please email <code>dicoge.chen@gmail.com</code> with the email you signed in with or your Internal User ID, and we will run the same cascade deletion by hand via the email channel described below.</strong> This policy and the in-app deletion entry point will be updated together when encrypted Apple refresh_token storage ships.</p>
 
       <h3>What still requires an email request:</h3>
       <div class="danger-card">
@@ -453,9 +463,9 @@
       <p>If you cannot complete deletion inside the App (for example, you already uninstalled it, or you signed in with Apple), email the same address with the email address you signed in with or your Internal User ID, and we will run the same cascade deletion on your behalf.</p>
 
       <h2>6. App Store & Google Play Store Compliance</h2>
-      <p>This section describes the App's actual current alignment with app store policies. The current build has <strong>no payment or subscription mechanism of any kind</strong>; the account deletion backend is deployed and self-service works for <strong>Google-linked</strong> accounts, while <strong>Apple-linked</strong> accounts currently go through the email channel (see Section 5). If subscriptions are ever added in a future release, this policy will be updated <strong>before</strong> the change ships.</p>
+      <p>This section describes the App's actual current alignment with app store policies. The current build has <strong>no payment or subscription mechanism of any kind</strong>; the account deletion backend is deployed and self-service works for <strong>Google-only</strong> accounts (linkedProviders contains no Apple identity), while <strong>any account with an Apple identity linked (Apple-only or Google+Apple)</strong> currently goes through the email channel (see Section 5). If subscriptions are ever added in a future release, this policy will be updated <strong>before</strong> the change ships.</p>
       <ul>
-        <li><strong>App Store / Google Play account deletion</strong>: Google-linked accounts can self-serve deletion via the in-app <strong>Settings → Delete Account</strong> entry point; Apple-linked accounts must use the email channel until encrypted server-side storage of the Apple refresh_token ships (see Section 5).</li>
+        <li><strong>App Store / Google Play account deletion</strong>: Google-only accounts (no Apple identity linked) can self-serve deletion via the in-app <strong>Settings → Delete Account</strong> entry point; any account linked to Apple (including Google+Apple combined) must use the email channel until encrypted server-side storage of the Apple refresh_token ships (see Section 5).</li>
         <li><strong>Subscriptions and payments</strong>: the App has <strong>no payment or subscription mechanism of any kind</strong> today — it does not integrate Google Play Billing, Apple StoreKit or any third-party payment processor, and shows no in-app purchase UI. If subscriptions ship later, the Android build will use Google Play Billing per Google Play policy (never redirecting to a web checkout) and will be cancellable from your store account settings; this policy, the in-app disclosures and the Google Play Data safety form will be updated together at that point.</li>
         <li><strong>Google Play Data Safety</strong>:
           <ul>

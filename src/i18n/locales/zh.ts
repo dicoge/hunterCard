@@ -251,7 +251,7 @@ export const zh = {
   // are routed to support email. Any generic "撤銷 provider token"
   // wording contradicts these facts and is banned by
   // test:apple-delete-truth-copy.
-  settings_delete_note: '註：Google 綁定的帳號可在此自助刪除 — 後端會級聯清除您的帳號紀錄與雲端資料，App 在 Android 版另會執行 GoogleSignin.signOut() 清除本機 SDK 快取（不代表撤銷 Google refresh_token）。Apple 綁定的帳號目前 App 內尚未提供刪除，端點會回 501 apple_deletion_not_implemented，請寄信到 dicoge.chen@gmail.com 由我們手動處理。若刪除失敗（網路錯誤或後端暫時無法回應），App 會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
+  settings_delete_note: '註：僅綁定 Google（未同時綁定 Apple）的帳號可在此自助刪除 — 後端會級聯清除您的帳號紀錄與雲端資料，App 在 Android 版另會執行 GoogleSignin.signOut() 清除本機 SDK 快取（不代表撤銷 Google refresh_token）。任何綁定 Apple 的帳號（Apple-only 或 Google+Apple）目前 App 內尚未提供刪除；handler 只要偵測到 linkedProviders 內有 Apple identity 就 fail-closed，端點回 501 apple_revocation_not_configured（伺服器端 APPLE_* 未設定）或 501 apple_deletion_not_implemented（Apple 設定完備但 stub token store 沒有可撤銷的 refresh_token），任一情況都不會刪除任何資料。請寄信到 dicoge.chen@gmail.com 由我們手動處理。若刪除失敗（網路錯誤或後端暫時無法回應），App 會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
   settings_guest_sync_watchlist: '尚未登入。登入後可跨裝置同步收藏與入手提醒。',
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync

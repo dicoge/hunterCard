@@ -248,7 +248,7 @@ export const ja: Record<keyof typeof zh, string> = {
   // is deleted. Apple users are routed to support email. Generic
   // "provider token を取り消し" wording contradicts these facts and
   // is banned by test:apple-delete-truth-copy.
-  settings_delete_note: '注：Google 連携アカウントはここから自助削除できます — バックエンドがアカウントとクラウドデータをカスケード削除し、Android 版では GoogleSignin.signOut() を実行してローカル SDK キャッシュをクリアします（Google refresh_token をサーバー側で失効させるわけではありません）。Apple 連携アカウントは現時点でアプリ内削除に対応しておらず、エンドポイントは 501 apple_deletion_not_implemented を返します。dicoge.chen@gmail.com までメールでご連絡いただければ手動で処理します。削除に失敗した場合（ネットワークエラー等）、アプリは「未完了」と表示してログイン状態を維持します。',
+  settings_delete_note: '注：Google のみ連携（Apple を連携していない）アカウントはここから自助削除できます — バックエンドがアカウントとクラウドデータをカスケード削除し、Android 版では GoogleSignin.signOut() を実行してローカル SDK キャッシュをクリアします（Google refresh_token をサーバー側で失効させるわけではありません）。Apple を連携しているアカウント（Apple-only または Google+Apple 同時連携）は現時点でアプリ内削除に対応しておらず、handler は linkedProviders に Apple identity が含まれる時点で fail-closed となり、エンドポイントは 501 apple_revocation_not_configured（サーバー側の APPLE_* 環境変数が未設定）または 501 apple_deletion_not_implemented（Apple 設定は完了しているが stub token store に取り消し可能な refresh_token が無い）を返します。いずれの 501 でも何も削除されません。dicoge.chen@gmail.com までメールでご連絡いただければ手動で処理します。削除に失敗した場合（ネットワークエラー等）、アプリは「未完了」と表示してログイン状態を維持します。',
   settings_guest_sync_watchlist: 'ログインしていません。ログインするとお気に入りとアラートを端末間で同期できます。',
   settings_guest_sync: 'ログインしていません。ログインするとお気に入りを端末間で同期できます。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
