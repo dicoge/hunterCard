@@ -288,6 +288,9 @@ jobs:
       - name: Verify legal-page claims match actual STORE_MVP behavior (DIC-1380 W7 CR)
         run: npm run test:legal-copy-vs-behavior
 
+      - name: Verify Apple-linked delete + copy match the shipping stub (DIC-1380 W12 CR)
+        run: npm run test:apple-delete-truth-copy
+
       - name: Verify Store MVP UI gates + Login/Settings sync copy + deletion parity (DIC-1381 W11 CR)
         run: npm run test:store-mvp-ui-gates
 

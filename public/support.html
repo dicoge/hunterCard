@@ -357,8 +357,9 @@
       <div class="faq-item">
         <div class="faq-question">Q: 刪除帳號會連同我的掃描紀錄跟訂閱一併刪除嗎？</div>
         <div class="faq-answer">
-          <strong>目前版本：</strong>App 內「刪除帳號與資料」會呼叫後端刪除端點，級聯清除您的 Internal User ID、第三方登入關聯（Google / Apple identity）以及任何已由 <code>api/auth/sync</code> 儲存的資料，並清除本機 Session 與快取後將您登出。Store MVP 上架版本因未安裝 sync binding，實務上尚未產生 sync 資料需要級聯清除；此欄位對應的是 feature flag 打開或 Web Develop / Staging 已寫入的資料。付費訂閱與 App 內購目前尚未開放，因此暫無交易記錄需要去識別化；付費方案上線後，會一併把交易紀錄依平台既有規範處理。刪除操作為不可逆。<br><br>
-          若您無法登入 App 進行刪除，可透過支援信箱 <code>dicoge.chen@gmail.com</code> 附上 Internal User ID 提交申請，由後端手動級聯刪除處理並回信通知。
+          <strong>Google 綁定帳號（App 內自助可用）：</strong>「刪除帳號與資料」會呼叫後端刪除端點（<code>POST /api/auth/delete-account</code>），級聯清除您的 Internal User ID、Google identity 對應以及任何已由 <code>api/auth/sync</code> 儲存的資料，並清除本機 Session 與快取後將您登出。<strong>後端不會撤銷您的 Google refresh_token</strong>；App 在 Android 版會執行 <code>GoogleSignin.signOut()</code> 清除本機 SDK 快取，其他平台為 no-op。Store MVP 上架版本因未安裝 sync binding，實務上尚未產生 sync 資料需要級聯清除。付費訂閱與 App 內購目前尚未開放，因此暫無交易記錄需要去識別化；付費方案上線後，會一併把交易紀錄依平台既有規範處理。刪除操作為不可逆。<br><br>
+          <strong>Apple 綁定帳號（App 內尚未提供）：</strong>Apple 平台的帳號刪除要求後端撤銷登入當下取得的 refresh_token，這需要 refresh_token 加密儲存於後端；目前 <code>api/_lib/apple-token-store.ts</code> 為 non-shipping stub，端點會 fail-closed 回 <code>501 apple_deletion_not_implemented</code>，不會刪除任何資料。<strong>Apple 綁定的使用者請寄信到 <code>dicoge.chen@gmail.com</code>，附上您登入所用的 Email 或 Internal User ID，我們會人工執行相同的級聯刪除並回信通知。</strong><br><br>
+          若您無法登入 App 進行刪除（例如已解除安裝），亦可透過同一支援信箱提交申請。
         </div>
       </div>
 
@@ -451,8 +452,9 @@
       <div class="faq-item">
         <div class="faq-question">Q: Does account deletion wipe my scan logs and subscriptions?</div>
         <div class="faq-answer">
-          <strong>Current build:</strong> "Delete Account" calls the backend delete endpoint, which cascades removal of your Internal User ID, linked OAuth identities (Google / Apple), and any cloud-stored data that <code>api/auth/sync</code> holds; it then clears your local session + caches and signs you out. Since the Store MVP build does not install the sync binding, in practice no sync data has been written for this build, so the cascade only covers Internal User ID + OAuth identities today; the sync-data cascade branch matters once the feature flags flip (or under Web Develop / Staging). Paid subscriptions and in-app purchases are not open yet, so there are no transaction records to de-identify; once paid plans launch, transaction records will be handled per each platform's existing regulations. This action is irreversible.<br><br>
-          If you cannot sign in to the App to perform the deletion yourself, you can submit a request via our support email <code>dicoge.chen@gmail.com</code> with your Internal User ID; the backend will run the same cascade deletion and reply to confirm.
+          <strong>Google-linked accounts (in-app self-service):</strong> "Delete Account" calls the backend delete endpoint (<code>POST /api/auth/delete-account</code>), which cascades removal of your Internal User ID, Google identity mapping, and any cloud-stored data <code>api/auth/sync</code> holds; it then clears your local session + caches and signs you out. <strong>The backend does not revoke your Google refresh_token</strong>; on Android the App calls <code>GoogleSignin.signOut()</code> to clear the local SDK cache, and other platforms are no-ops. Store MVP does not install the sync binding, so in practice no sync data has been written. Paid subscriptions and in-app purchases are not open yet, so there are no transaction records to de-identify; once paid plans launch, transaction records will be handled per each platform's existing regulations. This action is irreversible.<br><br>
+          <strong>Apple-linked accounts (in-app deletion NOT available yet):</strong> Apple's platform-deletion contract requires the backend to revoke the sign-in refresh_token, which requires encrypted server-side token storage; today <code>api/_lib/apple-token-store.ts</code> is a non-shipping stub, so the endpoint fails closed with <code>501 apple_deletion_not_implemented</code> for Apple-linked accounts and does not delete anything. <strong>Apple-linked users: please email <code>dicoge.chen@gmail.com</code> with the email you signed in with or your Internal User ID; we will run the same cascade deletion by hand and reply to confirm.</strong><br><br>
+          If you cannot sign in to the App to perform the deletion (for example, you already uninstalled), you can submit a request via the same support email.
         </div>
       </div>
 

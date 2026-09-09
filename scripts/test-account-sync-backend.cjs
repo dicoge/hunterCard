@@ -609,6 +609,84 @@ async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
   assert.equal(kvState.values.has(`account-sync:idempotency:${user.internalId}:idem-delete-0002`), false, 'stale token must not create idempotency data');
 }
 
+// ── DIC-1380 W12 CR: Apple-linked deletion is NOT in-app self-service.
+// `api/_lib/apple-token-store.ts` is a non-shipping stub —
+// `getStoredAppleRefreshToken` always returns null. Consequently
+// `POST /api/auth/delete-account` MUST return 501 for an Apple-linked
+// account, whether or not APPLE_* env vars are configured, and MUST
+// NOT delete anything. Mac-Codex W12 evidence: the previous green
+// suite only exercised Google identities and never proved this.
+async function testAppleLinkedDeleteReturns501NoConfig() {
+  resetKv(); configureBackend();
+  // Ensure APPLE_* env vars are UNSET so getAppleConfig() returns null.
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_CLIENT_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
+  const { user } = await identityStore.loginOrCreate({
+    provider: 'apple',
+    subject: 'apple-sub-delete-a',
+    email: 'apple-a@example.test',
+  });
+  const session = issueSession(user.internalId);
+  // Prime an account-sync record so we can assert it is NOT deleted.
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 501, 'Apple-linked delete without APPLE_* config must be 501');
+  assert.equal(res.body.reason, 'apple_revocation_not_configured');
+  assert.equal(res.body.deleted, false);
+  // Nothing was actually deleted.
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), true, 'user sync data must NOT be cascade-deleted when Apple revocation cannot run');
+  // Identity still resolves.
+  const stillThere = await identityStore.getUser(user.internalId);
+  assert.ok(stillThere, 'Apple identity mapping must still resolve after fail-closed 501');
+}
+
+async function testAppleLinkedDeleteReturns501WithConfigButNoStoredToken() {
+  resetKv(); configureBackend();
+  // Configure APPLE_* env vars so getAppleConfig() returns non-null.
+  process.env.APPLE_TEAM_ID = 'TEAM123';
+  process.env.APPLE_CLIENT_ID = 'com.example.holohunter';
+  process.env.APPLE_KEY_ID = 'KEY123';
+  process.env.APPLE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----';
+  const { user } = await identityStore.loginOrCreate({
+    provider: 'apple',
+    subject: 'apple-sub-delete-b',
+    email: 'apple-b@example.test',
+  });
+  const session = issueSession(user.internalId);
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 501, 'Apple-linked delete with config but no stored token must be 501');
+  // With APPLE_* configured but the token store still a stub, the
+  // second-tier reason must be `apple_deletion_not_implemented` (this
+  // is precisely the state Mac-Codex flagged in W12).
+  assert.equal(res.body.reason, 'apple_deletion_not_implemented');
+  assert.equal(res.body.deleted, false);
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), true, 'user sync data must NOT be cascade-deleted when apple refresh_token is unavailable');
+  const stillThere = await identityStore.getUser(user.internalId);
+  assert.ok(stillThere, 'Apple identity mapping must still resolve after fail-closed 501 (stub token store)');
+  // Cleanup env for the next test.
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_CLIENT_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
+}
+
+async function testGoogleLinkedDeleteStillSucceedsAfterAppleFail() {
+  // Sanity: the fail-closed Apple branch must NOT regress the working
+  // Google branch. A Google-linked account still deletes cleanly.
+  resetKv(); configureBackend();
+  delete process.env.APPLE_TEAM_ID;
+  const { user, session } = await createSession('google-after-apple');
+  kvState.values.set(`account-sync:user:${user.internalId}`, JSON.stringify({ revision: 1 }));
+  const res = await requestDeleteAccount(session);
+  assert.equal(res.status, 200, 'Google-linked deletion still works after Apple fail-closed patch');
+  assert.equal(res.body.deleted, true);
+  assert.equal(res.body.revokedApple, false);
+  assert.equal(kvState.values.has(`account-sync:user:${user.internalId}`), false, 'Google delete still cascades');
+}
+
 (async () => {
   await testUnauthorizedFailsClosed();
   await testSnapshotRoundTripBySessionUser();
@@ -622,6 +700,9 @@ async function testDeletedAccountTokenCannotReadWriteOrRecreateSyncData() {
   await testAccountDeleteCascadeHook();
   await testAuthorizedSyncCannotCommitAfterDeletionFence();
   await testDeletedAccountTokenCannotReadWriteOrRecreateSyncData();
+  await testAppleLinkedDeleteReturns501NoConfig();
+  await testAppleLinkedDeleteReturns501WithConfigButNoStoredToken();
+  await testGoogleLinkedDeleteStillSucceedsAfterAppleFail();
   console.log('account sync backend tests passed');
 })().catch((err) => {
   console.error(err);

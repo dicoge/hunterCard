@@ -238,13 +238,17 @@ export const ja: Record<keyof typeof zh, string> = {
   // confuse login-binding with data-sync. Data-storage clause states
   // the fact.
   settings_link_hint_store: '複数のログイン方法を連携すると機種変更や身分確認の追加に便利です。このバージョンではデッキと設定は端末内に保存され、端末間では同期されません。ログイン方法は1つ以上残してください。',
-  // DIC-1381 W10 CR — the delete-account backend IS implemented and
-  // live (api/auth/delete-account.ts + requestAccountDeletion in
-  // src/services/auth/index.ts). This note describes the fail-closed
-  // behavior when a specific attempt fails, not that the whole
-  // feature is under construction (that stale "準備中" phrasing
-  // contradicted public/privacy.html §5 / §6).
-  settings_delete_note: '注：削除はバックエンドの削除エンドポイントを呼び出し、成功後にプロバイダートークンを取り消してローカルセッションを削除します。ネットワークエラー等で削除に失敗した場合、アプリは「未完了」と表示してログイン状態を維持します（誤って削除済みと表示することはありません）。',
+  // DIC-1380 W12 CR — describe the ACTUAL per-provider deletion path.
+  // Google: backend cascade delete works; App clears local session
+  // and calls GoogleSignin.signOut() on Android only (local SDK cache
+  // clear — the Google refresh_token is NOT revoked server-side by
+  // the current build). Apple: in-app deletion is NOT available today
+  // because api/_lib/apple-token-store.ts is a non-shipping stub; the
+  // endpoint returns 501 apple_deletion_not_implemented and nothing
+  // is deleted. Apple users are routed to support email. Generic
+  // "provider token を取り消し" wording contradicts these facts and
+  // is banned by test:apple-delete-truth-copy.
+  settings_delete_note: '注：Google 連携アカウントはここから自助削除できます — バックエンドがアカウントとクラウドデータをカスケード削除し、Android 版では GoogleSignin.signOut() を実行してローカル SDK キャッシュをクリアします（Google refresh_token をサーバー側で失効させるわけではありません）。Apple 連携アカウントは現時点でアプリ内削除に対応しておらず、エンドポイントは 501 apple_deletion_not_implemented を返します。dicoge.chen@gmail.com までメールでご連絡いただければ手動で処理します。削除に失敗した場合（ネットワークエラー等）、アプリは「未完了」と表示してログイン状態を維持します。',
   settings_guest_sync_watchlist: 'ログインしていません。ログインするとお気に入りとアラートを端末間で同期できます。',
   settings_guest_sync: 'ログインしていません。ログインするとお気に入りを端末間で同期できます。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync

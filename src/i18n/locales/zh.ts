@@ -240,13 +240,18 @@ export const zh = {
   // 帳號同步" phrasing so the shipping-copy predicate does not confuse
   // login-binding with data-sync. Data-storage clause states the fact.
   settings_link_hint_store: '綁定多種登入方式方便未來更換裝置或補充驗證。牌組與設定在此版本為裝置本機儲存，不會跨裝置同步。至少需保留一種登入方式，無法解除最後一個。',
-  // DIC-1381 W10 CR — the delete-account backend IS implemented and
-  // live (api/auth/delete-account.ts; requestAccountDeletion in
-  // src/services/auth/index.ts); this note describes the fail-closed
-  // behavior when a specific attempt fails, not that the whole feature
-  // is under construction (that stale "尚未上線" phrasing contradicted
-  // public/privacy.html §5 / §6 which correctly say deletion is live).
-  settings_delete_note: '註：刪除會呼叫後端刪除端點，成功後撤銷 provider token 並清除本機 session。若某次刪除失敗（網路錯誤或後端暫時無法回應），App 會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
+  // DIC-1380 W12 CR — describe the ACTUAL per-provider deletion path.
+  // Google-linked: backend cascade delete works; App clears local
+  // session + calls GoogleSignin.signOut() on Android (best-effort
+  // local SDK cache clear only — Google refresh_token is NOT revoked
+  // server-side by the current build). Apple-linked: in-app deletion
+  // is NOT available today because api/_lib/apple-token-store.ts is a
+  // non-shipping stub; the endpoint returns 501
+  // apple_deletion_not_implemented and NO data is deleted. Apple users
+  // are routed to support email. Any generic "撤銷 provider token"
+  // wording contradicts these facts and is banned by
+  // test:apple-delete-truth-copy.
+  settings_delete_note: '註：Google 綁定的帳號可在此自助刪除 — 後端會級聯清除您的帳號紀錄與雲端資料，App 在 Android 版另會執行 GoogleSignin.signOut() 清除本機 SDK 快取（不代表撤銷 Google refresh_token）。Apple 綁定的帳號目前 App 內尚未提供刪除，端點會回 501 apple_deletion_not_implemented，請寄信到 dicoge.chen@gmail.com 由我們手動處理。若刪除失敗（網路錯誤或後端暫時無法回應），App 會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
   settings_guest_sync_watchlist: '尚未登入。登入後可跨裝置同步收藏與入手提醒。',
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
