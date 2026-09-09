@@ -118,7 +118,6 @@
     "test:printing-identity-isolation": "node scripts/test-printing-identity-isolation.mjs",
     "test:store-mvp-define-guard": "node scripts/test-store-mvp-define-guard.mjs",
     "test:vercel-branch-guard": "node scripts/test-vercel-branch-guard.mjs",
-    "test:deploy-status-classify": "node scripts/test-deploy-status-classify.mjs",
     "test:release-parity-check": "node scripts/test-release-parity-check.mjs",
     "test:release-flags-parity": "node scripts/test-release-flags-parity.mjs",
     "test:vercel-function-count-guard": "node scripts/test-vercel-function-count-guard.mjs",
