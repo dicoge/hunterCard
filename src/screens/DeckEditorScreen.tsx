@@ -831,6 +831,20 @@ export default function DeckEditorScreen() {
     </View>
   );
 
+  // DIC-1380 W5: mobile panel switch matches Pen frame `uXuqo` — the zone
+  // tabs (`AMhtu` in the artifact) carry an inline `count/target` sub-label
+  // so the player sees "主牌組 43/50" the way the Pen artifact anchors it.
+  // The picker + shortage entries are preserved as tabs for now (an
+  // existing DIC-1064 render regression pins them) and complemented by
+  // the persistent Missing Bar (Pen `QUFqI`) below the tab strip.
+  const zoneCount = (zone: DeckZone): { value: number; target: number } | null => {
+    if (!stats) return null;
+    if (zone === 'oshi') return { value: stats.oshi, target: stats.oshiTarget };
+    if (zone === 'main') return { value: stats.main, target: stats.mainTarget };
+    if (zone === 'yell') return { value: stats.yell, target: stats.yellTarget };
+    return null;
+  };
+
   const phonePanelSwitch = (
     <View style={styles.phonePanelSwitch} testID="deck-mobile-panel-switch">
       {([
@@ -841,6 +855,7 @@ export default function DeckEditorScreen() {
         ['shortage', t('deck_shortage')],
       ] as Array<[MobilePanel, string]>).map(([panel, label]) => {
         const active = mobilePanel === panel;
+        const count = zoneCount(panel as DeckZone);
         return (
           <TouchableOpacity
             key={panel}
@@ -854,16 +869,70 @@ export default function DeckEditorScreen() {
             }}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
+            accessibilityLabel={count ? `${label} ${count.value}/${count.target}` : label}
             testID={`deck-mobile-panel-${panel}`}
           >
             <Text style={[styles.phonePanelLabel, active && styles.phonePanelLabelActive]} numberOfLines={1}>
               {label}
             </Text>
+            {count ? (
+              <Text
+                style={[styles.phonePanelCount, active && styles.phonePanelCountActive]}
+                testID={`deck-mobile-panel-${panel}-count`}
+                numberOfLines={1}
+              >
+                {count.value}/{count.target}
+              </Text>
+            ) : null}
           </TouchableOpacity>
         );
       })}
     </View>
   );
+
+  // Pen `QUFqI` Missing Bar — persistent bottom summary of the shortage +
+  // an "apply low-cost variants" action. Rendered on phones only; tapping
+  // the summary jumps into the shortage panel, and the button applies the
+  // low-cost printings to every zone in the active deck through the same
+  // path the desktop `applyLowCostVariants` uses. Hidden under Store MVP
+  // because `FEATURES.marketData=false` strips gap pricing everywhere.
+  const missingCount = gap
+    ? gap.rows.reduce((sum, r) => sum + Math.max(0, r.missing), 0)
+    : 0;
+  const missingSubtotal = gap && gap.subtotals.length > 0
+    ? gap.subtotals[0]
+    : null;
+  const mobileMissingBar = FEATURES.marketData && activeDeck ? (
+    <View style={styles.missingBar} testID="deck-mobile-missing-bar">
+      <TouchableOpacity
+        style={styles.missingBarSummary}
+        accessibilityRole="button"
+        accessibilityLabel={t('deck_shortage')}
+        testID="deck-mobile-missing-bar-summary"
+        onPress={() => setMobilePanel('shortage')}
+      >
+        <Text style={styles.missingBarLabel} numberOfLines={1}>
+          {t('deck_shortage')} · {missingCount}
+        </Text>
+        {missingSubtotal ? (
+          <Text style={styles.missingBarValue} numberOfLines={1} testID="deck-mobile-missing-bar-total">
+            {missingSubtotal.currency} {missingSubtotal.total.toLocaleString()}
+          </Text>
+        ) : null}
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.missingBarButton}
+        accessibilityRole="button"
+        accessibilityLabel={t('deck_low_cost_variants')}
+        testID="deck-mobile-apply-low-cost"
+        onPress={() => applyLowCostVariants(activeDeck.id, lowCostIndex)}
+      >
+        <Text style={styles.missingBarButtonLabel} numberOfLines={1}>
+          {t('deck_low_cost_variants')}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  ) : null;
 
   const phonePanel = mobilePanel === 'picker'
     ? pickerPanel
@@ -894,9 +963,12 @@ export default function DeckEditorScreen() {
           </View>
         </ScrollView>
       ) : isPhone ? (
-        <ScrollView contentContainerStyle={styles.pad}>
-          {phonePanel}
-        </ScrollView>
+        <>
+          <ScrollView contentContainerStyle={styles.pad} style={{ flex: 1 }}>
+            {phonePanel}
+          </ScrollView>
+          {mobileMissingBar}
+        </>
       ) : (
         <ScrollView contentContainerStyle={styles.pad}>
           {pickerPanel}
@@ -1061,6 +1133,33 @@ const styles = StyleSheet.create({
   phonePanelTabActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   phonePanelLabel: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '700' },
   phonePanelLabelActive: { color: '#fff' },
+  phonePanelCount: { color: COLORS.textSecondary, fontSize: 10, marginTop: 2 },
+  phonePanelCountActive: { color: '#fff' },
+  // Pen frame `QUFqI` — persistent bottom Missing Bar.
+  missingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+    minHeight: 68,
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  missingBarSummary: { flex: 1, minHeight: 44, justifyContent: 'center' },
+  missingBarLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700' },
+  missingBarValue: { color: COLORS.text, fontSize: 18, fontWeight: 'bold', marginTop: 2 },
+  missingBarButton: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  missingBarButtonLabel: { color: '#fff', fontSize: 13, fontWeight: 'bold' },
   mobileFilterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   filterBtn: { minHeight: 44, paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary, backgroundColor: COLORS.surfaceLight },
   filterBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold' },
