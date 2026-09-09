@@ -58,6 +58,15 @@ const FORBIDDEN_BODY_SUBSTRINGS = [
   '工程測試',
   'テスト草案',
   '(Sandbox)',
+  // DIC-1380 W6 CR: the earlier "local mock / no backend" copy in
+  // support.html falsely claimed the auth / backend / cloud-sync surfaces
+  // did not exist. Ban the phrases so a future edit cannot silently
+  // reintroduce the falsehood.
+  '本機模擬',
+  'local mock',
+  'Local Mock',
+  '未來正式版',
+  'Future production',
 ];
 
 let passed = 0;

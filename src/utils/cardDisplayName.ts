@@ -45,15 +45,23 @@ function trimOrEmpty(value: string | null | undefined): string {
  * Resolve the primary + secondary display name for a card given the user's
  * preferred UI language.
  *
- * Rules — pinned by `test-card-display-name.mjs`:
+ * Rules — pinned by `test-card-display-name.mjs`. DIC-1380 W6 CR fix:
+ * the zh-only and non-zh legs are now SYMMETRIC — each preference falls
+ * back to the OTHER language for the primary slot when the preferred-
+ * language field is blank, so an empty primary never leaves the user
+ * with a bare subtitle.
  *
- *   • `preferredLanguage === 'zh'` and `nameZh` is a non-blank string:
- *     primary = nameZh, secondary = name (only when name differs).
- *   • `preferredLanguage === 'zh'` with a blank / missing nameZh: primary
- *     = name (fallback), secondary = '' (no misleading duplicate line).
- *   • Any non-Chinese preference: primary = name, secondary = nameZh only
- *     when nameZh differs from name (avoid duplicate rows).
- *   • Both fields blank: primary = '' and secondary = ''. Callers decide
+ *   • `preferredLanguage === 'zh'`:
+ *       - `nameZh` non-blank → primary=nameZh, secondary=name (only when
+ *         `name` differs from `nameZh`).
+ *       - `nameZh` blank    → primary=name (fallback), secondary='' (no
+ *         misleading duplicate line).
+ *   • any non-Chinese preference (ja / en / …):
+ *       - `name` non-blank  → primary=name, secondary=nameZh (only when
+ *         `nameZh` differs from `name`).
+ *       - `name` blank      → primary=nameZh (fallback — SYMMETRIC with
+ *         the zh path above; DIC-1380 W6), secondary=''.
+ *   • Both fields blank: primary='' and secondary=''. Callers decide
  *     the placeholder (usually the card number).
  */
 export function resolveCardDisplayName(
@@ -63,15 +71,27 @@ export function resolveCardDisplayName(
   const name = trimOrEmpty(card?.name);
   const nameZh = trimOrEmpty(card?.nameZh);
 
-  if (preferredLanguage === 'zh' && nameZh.length > 0) {
-    return {
-      primary: nameZh,
-      secondary: name && name !== nameZh ? name : '',
-    };
+  if (preferredLanguage === 'zh') {
+    if (nameZh.length > 0) {
+      return {
+        primary: nameZh,
+        secondary: name && name !== nameZh ? name : '',
+      };
+    }
+    // Blank Chinese name → fall back to the Japanese name as primary; no
+    // secondary because there is no meaningful alternate.
+    return { primary: name, secondary: '' };
   }
 
-  return {
-    primary: name,
-    secondary: nameZh && nameZh !== name ? nameZh : '',
-  };
+  if (name.length > 0) {
+    return {
+      primary: name,
+      secondary: nameZh && nameZh !== name ? nameZh : '',
+    };
+  }
+  // DIC-1380 W6 CR: non-zh preference with a blank primary MUST fall back
+  // to nameZh in the PRIMARY slot — the previous code left the primary
+  // empty and pushed nameZh into secondary, contradicting the zh-side
+  // fallback behavior. Symmetric fallback fixes the resolver contradiction.
+  return { primary: nameZh, secondary: '' };
 }

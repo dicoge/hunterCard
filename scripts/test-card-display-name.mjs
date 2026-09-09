@@ -67,8 +67,13 @@ test('ja preference: both names present → primary=jp, secondary=zh (unified wi
 test('ja preference: only jp present → no subtitle', () => {
   assert.deepEqual(resolveCardDisplayName(jpOnly, 'ja'), { primary: '沙花叉クロヱ', secondary: '' });
 });
-test('ja preference: only zh present → primary=zh (last resort), no subtitle', () => {
-  assert.deepEqual(resolveCardDisplayName(zhOnly, 'ja'), { primary: '', secondary: '沙花叉黑' });
+// DIC-1380 W6 CR resolver-contradiction fix: the ja path now fills the
+// PRIMARY slot with nameZh when the JP name is blank — SYMMETRIC with the
+// zh path which fills primary=name when nameZh is blank. Previously the
+// resolver returned `{ primary: '', secondary: nameZh }` here, leaving
+// the user with a bare subtitle line.
+test('ja preference: only zh present → primary=zh (fallback), no subtitle (DIC-1380 W6)', () => {
+  assert.deepEqual(resolveCardDisplayName(zhOnly, 'ja'), { primary: '沙花叉黑', secondary: '' });
 });
 
 // ── en (and every other non-zh) preference behaves identically to ja ──
