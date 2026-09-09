@@ -95,14 +95,23 @@ assert.ok(!('buyPriceHistory' in noBuy), 'buyPrice-off strips buyPriceHistory');
 assert.ok('priceHistory' in noBuy, 'buyPrice-off keeps priceHistory');
 assert.ok('ytStats' in noBuy, 'buyPrice-off keeps ytStats');
 
-// ── Build-context profile resolution (fail-closed opt-out, explicit opt-in) ──
+// ── Build-context profile resolution — DIC-1380 fail-closed on ALL unresolved
+//    values (Web Production must ship the same allowlist as mobile Production).
 assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: '1' }), true, "env '1' → Store MVP on");
 assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: 'true' }), true, "env 'true' → on");
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: 'TRUE' }), true, "env 'TRUE' (case-insensitive) → on");
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: ' 1 ' }), true, "env ' 1 ' (whitespace) → on");
 assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: '0' }), false, "env '0' → off");
 assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: 'false' }), false, "env 'false' → off");
-assert.equal(resolveStoreMvpFromEnv({}), false, 'unset → full web export preserved');
-assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: 'yes' }), false, "malformed 'yes' → off (web build has no native platform)");
-assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: '  ' }), false, 'whitespace → off');
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: 'FALSE' }), false, "env 'FALSE' (case-insensitive) → off");
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: ' 0 ' }), false, "env ' 0 ' (whitespace) → off");
+assert.equal(resolveStoreMvpFromEnv({}), true, 'unset → fail-closed (DIC-1380: Web Production defaults hidden)');
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: 'yes' }), true, "malformed 'yes' → fail-closed");
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: 'on' }), true, "malformed 'on' → fail-closed");
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: 'off' }), true, "malformed 'off' → fail-closed (not the same as explicit 'false')");
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: '  ' }), true, 'whitespace-only → fail-closed');
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: '' }), true, 'blank string → fail-closed');
+assert.equal(resolveStoreMvpFromEnv({ EXPO_PUBLIC_STORE_MVP: '01' }), true, "malformed '01' → fail-closed");
 
 // ── Shared DB sanitizer parity with the in-app mapping choke point ──
 // The two independent code paths (data-asset sanitizer vs mapping filter) MUST

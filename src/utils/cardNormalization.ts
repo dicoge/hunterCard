@@ -335,6 +335,14 @@ export function normalizeCardIdentity(card: any): NormalizedCardIdentity {
   };
 }
 
+// DIC-1380 daily freshness (owner spec): YouTube subscriber counts must be
+// stamped within the last 24 hours to display, not the previous 72-hour window.
+// A subscriber row proven three days ago has already missed the daily-refresh
+// contract that the release train commits to, so it fails closed here rather
+// than leaking a stale count into the CardDetail YT panel and downstream
+// trend-prediction factors.
+export const YT_SUBSCRIBER_FRESHNESS_MS = 24 * 60 * 60 * 1000;
+
 export function hasDisplayableSubscriberStats(ytStats: any, now = Date.now()): boolean {
   if (!ytStats || typeof ytStats !== 'object') return false;
   if (!Number.isInteger(ytStats.subscriberCount) || ytStats.subscriberCount < 0) return false;
@@ -343,7 +351,7 @@ export function hasDisplayableSubscriberStats(ytStats: any, now = Date.now()): b
   if (ytStats.parser !== 'ytInitialData.aboutChannelViewModel/v1') return false;
   const fetchedAt = Date.parse(String(ytStats.fetchedAt || ''));
   if (!Number.isFinite(fetchedAt)) return false;
-  return now - fetchedAt <= 72 * 60 * 60 * 1000 && fetchedAt <= now + 5 * 60 * 1000;
+  return now - fetchedAt <= YT_SUBSCRIBER_FRESHNESS_MS && fetchedAt <= now + 5 * 60 * 1000;
 }
 
 export function isValidatedTrendPrediction(trend: any, card: any): boolean {

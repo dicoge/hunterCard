@@ -6,6 +6,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { FEATURES, releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
@@ -448,12 +449,17 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
           <CardIdentityBadges normalized={card.normalized} rarity={card.rarity} t={t} />
         </View>
 
-        <Text style={styles.cardName} numberOfLines={1}>
-          {preferredLanguage === 'zh' && card.nameZh ? card.nameZh : card.name}
-        </Text>
-        {preferredLanguage === 'zh' && card.nameZh ? (
-          <Text style={styles.cardNameZh} numberOfLines={1}>{card.name}</Text>
-        ) : null}
+        {(() => {
+          const { primary, secondary } = resolveCardDisplayName(card, preferredLanguage);
+          return (
+            <>
+              <Text style={styles.cardName} numberOfLines={1}>{primary}</Text>
+              {secondary ? (
+                <Text style={styles.cardNameZh} numberOfLines={1}>{secondary}</Text>
+              ) : null}
+            </>
+          );
+        })()}
 
         {effects && <Text style={styles.cardEffect} numberOfLines={2}>{effects}</Text>}
 

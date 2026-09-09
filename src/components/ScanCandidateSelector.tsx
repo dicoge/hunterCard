@@ -21,6 +21,7 @@ import { COLORS, convertPrice } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { CardInfo, RecognizedCandidate } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 
 export interface ScanCandidateSelectorProps {
   visible: boolean;
@@ -92,8 +93,7 @@ export default function ScanCandidateSelector({
             const card = cand.card;
             const pct = Math.round(cand.confidence * 100);
             const isBest = i === 0;
-            const displayName =
-              preferredLanguage === 'zh' && card.nameZh ? card.nameZh : card.name;
+            const { primary: displayName } = resolveCardDisplayName(card, preferredLanguage);
             return (
               <TouchableOpacity
                 key={`${card.cardNumber || card.id}-${i}`}

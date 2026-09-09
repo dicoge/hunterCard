@@ -6,6 +6,7 @@ import { FEATURES } from '../config/releaseFlags';
 import { openUrl } from '../utils/openUrl';
 import { useSettingsStore } from '../store/settingsStore';
 import { useDeckStore } from '../store/deckStore';
+import { useFavoritesStore } from '../store/favoritesStore';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { buildSourcePrintings } from '../utils/printingIdentity';
@@ -21,6 +22,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
 import { useTranslation } from '../i18n';
 import { ownershipKey } from '../utils/deckRules';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 
 const { width } = Dimensions.get('window');
 
@@ -87,6 +89,11 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const collection = useDeckStore((state) => state.collection);
   const adjustOwned = useDeckStore((state) => state.adjustOwned);
   const setOwned = useDeckStore((state) => state.setOwned);
+  // DIC-1380 W6: wire the independent favorites store into the card
+  // detail so the store actually round-trips per user action (a static
+  // FavoritesScreen placeholder is not "favorites round-trip").
+  const favorites = useFavoritesStore((state) => state.favorites);
+  const toggleFavorite = useFavoritesStore((state) => state.toggleFavorite);
 
   if (!card) {
     return (
@@ -111,8 +118,12 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const nameJP = allKW[0] || card.name || '';
   const nameZH = card.nameZh || allKW[1] || '';
   const nameEN = allKW[2] || '';
-  const displayName = preferredLanguage === 'zh' && nameZH ? nameZH : nameJP;
-  const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
+  // DIC-1380: route the primary/subtitle choice through the shared helper so
+  // CardDetail, SearchResults, ScanResultCard and DeckEditor stay in lock-step.
+  const { primary: displayName, secondary: displayNameSub } = resolveCardDisplayName(
+    { name: nameJP, nameZh: nameZH },
+    preferredLanguage,
+  );
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
   const typeLabels: Record<string, string> = {
     Oshi: t('card_detail_type_oshi'), Member: t('card_detail_type_member'),
@@ -268,6 +279,49 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
       </View>
       <View style={isDesktop ? styles.rightCol : undefined}>
+
+      {/* 收藏標記 (favorites toggle — DIC-1380 W6). Independent of the
+          ownership widget below: bookmarking is not owning. Under Store
+          MVP this row is hidden along with the rest of the favorites
+          surface. Writes go through `useFavoritesStore.toggleFavorite`
+          which stamps a removal tombstone on unfavorite so the sync
+          orchestrator's 409 merge can honor the delete. */}
+      {FEATURES.favorites && collectionVersion && (
+        (() => {
+          const cardIsFav = favorites.some(
+            (f) => f.cardNumber === id && f.printing === collectionVersion.printing,
+          );
+          return (
+            <View style={styles.favoriteRow} testID="card-detail-favorite">
+              <TouchableOpacity
+                style={[
+                  styles.favoriteChip,
+                  cardIsFav ? styles.favoriteChipActive : null,
+                ]}
+                onPress={() => toggleFavorite({
+                  cardNumber: id,
+                  printing: collectionVersion.printing,
+                  cardId: card?.id,
+                })}
+                accessibilityRole="button"
+                accessibilityState={{ selected: cardIsFav }}
+                accessibilityLabel={cardIsFav
+                  ? t('favorites_remove_a11y', { name: displayName })
+                  : t('favorites_add_a11y', { name: displayName })}
+                testID={cardIsFav ? 'card-detail-favorite-remove' : 'card-detail-favorite-add'}
+                activeOpacity={0.85}
+              >
+                <Text style={[
+                  styles.favoriteChipText,
+                  cardIsFav ? styles.favoriteChipTextActive : null,
+                ]}>
+                  {cardIsFav ? `❤️  ${t('favorites_saved')}` : `♡  ${t('favorites_save')}`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })()
+      )}
 
       {/* 收藏 (per-card ownership +/- widget) — hidden in Store MVP (DIC-1256).
           The deck editor keeps its own ownership editing; this card-detail
@@ -905,6 +959,11 @@ const styles = StyleSheet.create({
   fallbackHint: { fontSize: 13, color: COLORS.primary },
 
   // Price section
+  favoriteRow: { marginHorizontal: 20, marginTop: 14, flexDirection: 'row' },
+  favoriteChip: { minHeight: 44, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center' },
+  favoriteChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '22' },
+  favoriteChipText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  favoriteChipTextActive: { color: COLORS.primary },
   collectionCard: { marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, flexDirection: 'row', alignItems: 'center', gap: 12 },
   collectionCopy: { flex: 1, minWidth: 0 },
   collectionTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },

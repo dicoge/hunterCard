@@ -14,6 +14,7 @@ import SearchScreen from '../screens/SearchScreen';
 import ScanScreen from '../screens/ScanScreen';
 import ScanScreenErrorBoundary from '../components/ScanScreenErrorBoundary';
 import CollectionScreen from '../screens/CollectionScreen';
+import FavoritesScreen from '../screens/FavoritesScreen';
 import DeckEditorScreen from '../screens/DeckEditorScreen';
 import TournamentReportScreen from '../screens/TournamentReportScreen';
 import WatchlistScreen from '../screens/WatchlistScreen';
@@ -21,6 +22,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CardDetailScreen from '../screens/CardDetailScreen';
 import SearchResultsScreen from '../screens/SearchResultsScreen';
 import LoginScreen from '../screens/LoginScreen';
+import LandingScreen from '../screens/LandingScreen';
 
 import TutorialScreen from '../screens/TutorialScreen';
 import TutorialDetailScreen from '../screens/TutorialDetailScreen';
@@ -127,18 +129,36 @@ function MainDrawer() {
           ),
         }}
       />
-      {/* 收藏 (browse-by-collection) — hidden in Store MVP (DIC-1256).
-          Same pattern as Watchlist: dropping Drawer.Screen unregisters the
-          route so `navigation.navigate('Collection')` and deep links both
-          fail closed. Deck editor keeps its own ownership editing. */}
+      {/* 收藏 (bookmarks — the independent useFavoritesStore).
+          DIC-1380 W7 CR fix: `nav_favorites` now actually routes to
+          FavoritesScreen, which reads the store, lists bookmarks, and
+          calls removeFavorite (stamping the sync tombstone). Previously
+          the label 我的收藏 opened CollectionScreen — an unrelated
+          ownership browser. Hidden in Store MVP by the same
+          FEATURES.favorites gate. */}
+      {FEATURES.favorites && (
+        <Drawer.Screen
+          name="Favorites"
+          component={FavoritesScreen}
+          options={{
+            title: t('nav_favorites'),
+            drawerIcon: ({ focused }) => (
+              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
+            ),
+          }}
+        />
+      )}
+      {/* Card Collection ownership browser (browse-by-owned) — hidden in
+          Store MVP (DIC-1256). Kept as its own drawer entry so it can be
+          exposed independently of the bookmarks screen above. */}
       {FEATURES.favorites && (
         <Drawer.Screen
           name="Collection"
           component={CollectionScreen}
           options={{
-            title: t('nav_favorites'),
+            title: t('nav_collection'),
             drawerIcon: ({ focused }) => (
-              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
+              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
             ),
           }}
         />
@@ -263,13 +283,21 @@ export default function AppNavigator() {
     );
   }
 
+  // DIC-1380 W5b: unauthenticated visitors now land on the Pen artifact's
+  // accepted marketing Landing (LandingScreen) at `/`, not on the bare
+  // LoginScreen auth card that shipped before. LoginScreen is retained as
+  // an internal seam kept out of the visible surface (kept referenced so
+  // the bundler and the future settings-linked login flow keep it live).
+  const LoginScreenRef = LoginScreen;
+  void LoginScreenRef;
+
   return (
     <NavigationContainer>
       <AuthStack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated || isGuest ? (
           <AuthStack.Screen name="Main" component={StackNavigator} />
         ) : (
-          <AuthStack.Screen name="Login" component={LoginScreen} />
+          <AuthStack.Screen name="Login" component={LandingScreen} />
         )}
       </AuthStack.Navigator>
     </NavigationContainer>

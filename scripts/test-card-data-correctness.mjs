@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PriceTrend } from '../src/components/PriceTrend.tsx';
-import { hasDisplayableSubscriberStats, isValidatedTrendPrediction } from '../src/utils/cardNormalization.ts';
+import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, YT_SUBSCRIBER_FRESHNESS_MS } from '../src/utils/cardNormalization.ts';
 import { buildSourcePrintings } from '../src/utils/printingIdentity.ts';
 import { computeValidatedPriceTrend } from '../src/utils/priceTrend.ts';
 import { computeYtGrowth } from './build-database.js';
@@ -99,6 +99,31 @@ const provenZero = {
   fetchedAt: '2026-08-20T01:00:00Z',
 };
 assert.equal(hasDisplayableSubscriberStats(provenZero, Date.parse('2026-08-20T02:00:00Z')), true, 'authoritative fresh zero may display');
+
+// DIC-1380 daily freshness contract: the subscriber row must be stamped within
+// the last 24 hours (down from the previous 72-hour window). A row 23h 55m old
+// still qualifies; one 24h 5m old must fail closed even though its provenance
+// and channel-id are otherwise valid.
+assert.equal(YT_SUBSCRIBER_FRESHNESS_MS, 24 * 60 * 60 * 1000, 'DIC-1380 daily freshness window is 24h');
+const dailyReference = Date.parse('2026-08-20T12:00:00Z');
+const almostDayOld = {
+  subscriberCount: 500000,
+  channelId: 'UCdic1380dailyfreshxxxx',
+  source: 'youtube_about_ssr',
+  parser: 'ytInitialData.aboutChannelViewModel/v1',
+  fetchedAt: new Date(dailyReference - (24 * 60 * 60 * 1000 - 5 * 60 * 1000)).toISOString(),
+};
+assert.equal(hasDisplayableSubscriberStats(almostDayOld, dailyReference), true, 'a stat 23h 55m old still qualifies under DIC-1380 daily freshness');
+const dayAndFive = {
+  ...almostDayOld,
+  fetchedAt: new Date(dailyReference - (24 * 60 * 60 * 1000 + 5 * 60 * 1000)).toISOString(),
+};
+assert.equal(hasDisplayableSubscriberStats(dayAndFive, dailyReference), false, 'a stat 24h 5m old must fail closed under DIC-1380 daily freshness');
+const twoDayOld = {
+  ...almostDayOld,
+  fetchedAt: new Date(dailyReference - 2 * 24 * 60 * 60 * 1000).toISOString(),
+};
+assert.equal(hasDisplayableSubscriberStats(twoDayOld, dailyReference), false, 'the pre-DIC-1380 72h window no longer opens the daily gate');
 
 assert.equal(isCanonicalCardNumber('hY01-014'), true, 'canonical yell card numbers are zero-padded');
 assert.equal(isCanonicalCardNumber('hY01-14'), false, 'malformed non-padded card numbers fail closed');

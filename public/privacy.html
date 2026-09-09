@@ -279,7 +279,7 @@
       <p>歡迎使用 <strong>HoloHunter</strong>（以下簡稱「本 App」或「我們」）。我們非常重視您的個人隱私。本政策說明我們如何處理多方帳號登入、綁定、訂閱狀態與相關個人資料。當您使用本 App 時，即表示您同意本政策。</p>
 
       <div class="danger-card">
-        <p><strong>目前版本狀態：</strong> <strong>Google 帳號登入與雲端帳號已實際運作</strong>：登入會向 Google 取得您的 ID Token，並在我們的後端（Vercel KV）建立一筆雲端帳號紀錄。收藏、牌組、價格提醒與設定會在您登入時同步到該帳號。因此<strong>確實存在儲存於雲端、可被刪除的個人資料</strong>，刪除方式見第 5 節。</p>
+        <p><strong>目前版本狀態：</strong> <strong>Google 帳號登入與雲端帳號已實際運作</strong>：登入會向 Google 取得您的 ID Token，並在我們的後端（Vercel KV）建立一筆雲端帳號紀錄。<strong>目前 Store MVP 上架版本不會啟動雲端同步 binding</strong>（App 內 <code>installAccountSyncBinding()</code> 由 <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code> 控管，Store MVP 下三個 flag 全部為 false），因此收藏、牌組、價格提醒與設定<strong>不會</strong>在 Production 版本上被送往 <code>/api/auth/sync</code>；此欄位僅在 Web Develop／Staging 或未來 feature flag 打開的建構中同步。無論如何，帳號基本資料（Internal User ID、Email、顯示名稱、Provider 綁定）仍然是儲存於雲端、可被刪除的個人資料，刪除方式見第 5 節。</p>
         <p><strong>尚未實作的部分：</strong>本 App <strong>目前沒有任何付費或訂閱機制</strong>——沒有串接 App Store、Google Play Billing 或任何第三方金流，不會處理付款、不會收費，也<strong>不會取得或儲存任何交易代碼與財務資料</strong>。App 內亦<strong>未啟用任何廣告或分析追蹤 SDK</strong>。Android 版的 Apple ID 登入預設為關閉。凡下方標示為未來版本規劃的段落皆為藍圖，並非現況；若日後有變更，將在實裝前先更新本政策。</p>
       </div>
 
@@ -294,8 +294,8 @@
       <p>為了讓您可以在不同裝置及平台上無縫管理您的卡牌資料與訂閱狀態，我們設計了共通帳號系統：</p>
       <ul>
         <li><strong>多方綁定</strong>：您可以用 Google 登入後再綁定 Apple 帳號，或是用 Apple 登入後再綁定 Google 帳號。</li>
-        <li><strong>同一識別碼</strong>：綁定後，該 Google 與 Apple 帳號將共同對應到同一個內部使用者識別碼 (Internal User ID)，共享相同的卡牌收藏、使用量配額與訂閱權限。</li>
-        <li><strong>權限模型</strong>：我們區分為訪客 (guest)、免費會員 (free_user) 以及付費訂閱會員 (subscriber) 三種角色。免費會員可使用卡牌掃描，但每月上限 100 次；付費訂閱會員享無限掃描，並可解鎖 AI 價格與趨勢預測。訪客模式不支援掃描與價格預測功能。</li>
+        <li><strong>同一識別碼</strong>：綁定後，該 Google 與 Apple 帳號將共同對應到同一個內部使用者識別碼 (Internal User ID)。每月掃描配額目前為裝置端計數（同一 Internal User ID 不會跨裝置合計），付費訂閱權限目前尚未實作；兩者會隨伺服器端 quota 與 App 內購上線時再納入 Internal User ID 的共享範圍。</li>
+        <li><strong>權限模型</strong>：目前 App 只提供訪客 (guest) 與免費會員 (free_user) 兩種角色。免費會員可使用卡牌掃描，每月上限 <strong>100 次</strong>（與 App 內 <code>MONTHLY_SCAN_LIMIT</code> 一致）；訪客模式不支援掃描與價格預測功能。付費訂閱會員 (subscriber) 為未來版本規劃，需等 App 內購與金流上線後才會啟用；在啟用之前，App 內部會把任何 subscriber 角色狀態強制回退為 free_user，因此不會出現任何裝置端偽造解鎖的路徑。</li>
         <li><strong>身分識別原則</strong>：我們<strong>不使用 Email 作為唯一身分依據</strong>（以防 Apple Private Relay 隱藏真實 Email，或不同平台的 Email 不一致）。身分綁定完全基於第三方 Provider 提供的非敏感帳號唯一識別碼。</li>
       </ul>
 
@@ -305,14 +305,14 @@
         <li><strong>電子郵件地址 (Email)</strong>：用於帳號聯絡、客服驗證與通知；不作為唯一登入或帳號合併依據，實際身分綁定以 Google/Apple Provider User ID 為準。</li>
         <li><strong>顯示名稱 (Display Name)</strong>：用於在 App 介面上提供個人化的歡迎資訊。</li>
         <li><strong>第三方帳號識別碼 (Provider User ID)</strong>：Google 或 Apple 提供的一串非敏感的唯一識別代碼。</li>
-        <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：安全記錄您在當月所進行的卡牌掃描次數，用於實施免費版每月 100 次的額度控管與防竄改機制。</li>
+        <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：目前掃描次數為裝置端計數（每月 100 次上限；清除快取或重裝會重置），用於實施免費版每月 100 次的裝置端額度控管。伺服器端配額同步與防竄改機制為未來版本規劃，屆時會與付費訂閱同時上線。</li>
         <li><strong>付費訂閱狀態 (Subscription Status)</strong>：<strong>目前未實作。</strong>本 App 尚未串接任何金流，不會取得、傳輸或儲存交易代碼、購買紀錄、信用卡號或任何其他財務資料。此欄位為未來版本規劃，屆時將先更新本政策再實裝。</li>
       </ul>
       
       <h3>資料用途說明：</h3>
       <ol>
         <li><strong>使用者身分驗證與登入</strong>：確保您的帳號安全。</li>
-        <li><strong>雲端同步服務與訂閱管理</strong>：同步您的關注清單、收藏卡牌、每月掃描剩餘額度以及付費訂閱狀態。</li>
+        <li><strong>雲端同步服務</strong>：伺服器端點 `api/auth/sync` 已部署，其協議支援同步牌組 (decks)、卡牌收藏數量 (collection)、書籤收藏清單 (favorites)、到價提醒 (priceAlerts) 與 UI 偏好（幣別 / 語言）。但目前 <strong>Store MVP</strong> 上架版本不會安裝 sync binding —— App 內 <code>installAccountSyncBinding()</code> 由 <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code> 控管，Store MVP 下三個 flag 全部為 false，因此 <strong>Production 版本現階段不會發出任何 <code>/api/auth/sync</code> 請求</strong>；當 App 未來把上述 feature flag 打開（或 Web Develop / Staging 已預設打開），sync binding 才會啟動並開始同步上述欄位。<strong>每月掃描剩餘額度、付費訂閱狀態</strong>不在 sync payload 之列；掃描配額為裝置端計數，付費訂閱未實作，這兩項會隨 App 內購上線時再加入 sync 範圍。</li>
         <li><strong>推播通知 (Push Notifications)</strong>：若您啟用了卡牌價格提醒功能，我們會使用您的推播 Token（由 Expo Push Service 產生並管理）來發送降價或波動通知。此 Token 僅用於發送通知，不做他用。</li>
       </ol>
 
@@ -334,24 +334,32 @@
 
       <h2>5. 帳號與資料刪除方式</h2>
 
-      <h3>App 內刪除帳號（已實作）：</h3>
-      <p>進入<strong>「設定」</strong>分頁，點擊<strong>「刪除帳號與資料」</strong>並確認後，App 會呼叫我們的後端刪除端點，級聯刪除下列雲端資料，並清除本機 Session 與快取後將您登出。此為不可逆操作：</p>
+      <h3>App 內刪除帳號 — 依登入方式而定：</h3>
+
+      <p><strong>僅綁定 Google（未同時綁定 Apple）的帳號 — App 內自助可用：</strong>進入<strong>「設定」</strong>分頁，點擊<strong>「刪除帳號與資料」</strong>並確認後，App 會呼叫我們的後端刪除端點（<code>POST /api/auth/delete-account</code>），級聯刪除下列雲端資料，並清除本機 Session 與快取後將您登出。此為不可逆操作。刪除成功後，App 在 Android 版會呼叫 <code>GoogleSignin.signOut()</code> 清除本機 Google SDK 快取；<strong>本流程不會伺服器端撤銷您的 Google refresh_token</strong>（Google 帳號本身不因此被吊銷，只是我們不再持有您的 identity mapping）。iOS / 網頁版目前沒有對應的 SDK-side 清除，且該平台原本也不會保留 Google 本機 SDK session。<br><br><strong>提醒：</strong>如果您<strong>同時</strong>綁定了 Google 與 Apple，本 App 會把您視為 Apple 綁定帳號（下一段），因為刪除必須先撤銷 Apple refresh_token；請走下一段的電子郵件流程。</p>
       <ol>
         <li>您的雲端帳號紀錄（Internal User ID、顯示名稱、Email、頭像網址、角色）。</li>
-        <li>所有已綁定的第三方身分對應（Google / Apple 的 Provider User ID 與其索引）。</li>
-        <li>雲端同步資料（收藏、牌組、卡牌收藏數量、價格提醒、設定）。</li>
+        <li>所有已綁定的第三方身分對應（Google 的 Provider User ID 與其索引）。</li>
+        <li>雲端同步資料，若已寫入（<code>/api/auth/sync</code> 上的收藏、牌組、卡牌收藏數量、價格提醒、設定）。目前 Store MVP 版本不會安裝 sync binding，因此 Production 版本現階段不會有這類雲端資料需要級聯刪除；本項對應的是未來 feature flag 打開或 Web Develop / Staging 已寫入的資料。</li>
       </ol>
 
-      <h3>需以電子郵件申請刪除的部分：</h3>
+      <p><strong>綁定 Apple 的帳號（包含 Apple-only 與 Google+Apple 同時綁定） — App 內刪除目前尚未提供，需來信：</strong>Apple 平台的帳號刪除要求後端撤銷登入當下取得的 <em>refresh_token</em>。這需要 refresh_token 加密儲存於後端伺服器；目前 <code>api/_lib/apple-token-store.ts</code> 為 non-shipping stub，`persistAppleRefreshToken` 會直接丟例外、`getStoredAppleRefreshToken` 一律回 null。因此，只要帳號的 linkedProviders 內有任何 Apple identity（不論是 Apple-only 或已再綁定 Google），<code>POST /api/auth/delete-account</code> 都會 fail-closed 且不刪除任何資料，回應分兩種：
+      <ul>
+        <li><code>501 apple_revocation_not_configured</code> — 伺服器端 <code>APPLE_TEAM_ID / APPLE_CLIENT_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY</code> 未設定，<code>getAppleConfig()</code> 回 null。</li>
+        <li><code>501 apple_deletion_not_implemented</code> — Apple 設定完備但 apple-token-store stub 沒有可撤銷的 refresh_token。</li>
+      </ul>
+      無論是哪一種 501，都不會刪除任何資料（避免留下無法撤銷的 Apple 身分對應）。<strong>綁定 Apple 的使用者（含 Google+Apple）請寄信到 <code>dicoge.chen@gmail.com</code>，附上您登入所用的 Email 或 Internal User ID，我們會以下述電子郵件流程手動處理相同的級聯刪除。</strong>此差異將在 Apple refresh_token 的加密後端儲存上線時同步更新本政策與 App 內刪除入口。</p>
+
+      <h3>其他需以電子郵件申請刪除的部分：</h3>
       <div class="danger-card">
         <p><strong>推播 Token 不會被上述刪除流程移除。</strong> 若您曾允許推播通知，您裝置的推播 Token 會保存在我們的後端，且<strong>目前沒有</strong>自助解除註冊的機制；刪除帳號或移除 App 都不會刪除它。如需刪除，請將刪除申請寄至 <code>dicoge.chen@gmail.com</code>，我們會人工移除並回信通知您。</p>
       </div>
-      <p>若您在 App 內無法完成刪除（例如已解除安裝），亦可寄信至上述地址並附上您登入所用的 Email 或 Internal User ID，由我們代為執行相同的級聯刪除。</p>
+      <p>若您在 App 內無法完成刪除（例如已解除安裝、或您以 Apple 綁定），亦可寄信至上述地址並附上您登入所用的 Email 或 Internal User ID，由我們代為執行相同的級聯刪除。</p>
 
       <h2>6. App Store / Google Play 行動商店規範合規</h2>
-      <p>本節說明本 App 目前對應行動商店規範的實際情況。目前版本<strong>無任何金流或訂閱機制</strong>；帳號刪除後端<strong>已實作並上線</strong>（詳見第 5 節）。若未來新增訂閱功能，將於推出前先更新本政策再實裝。</p>
+      <p>本節說明本 App 目前對應行動商店規範的實際情況。目前版本<strong>無任何金流或訂閱機制</strong>；帳號刪除後端已上線，並對<strong>僅綁定 Google（未同時綁定 Apple）</strong>的帳號自助可用；<strong>任何綁定 Apple 的帳號（含 Apple-only 與 Google+Apple 同時綁定）</strong>目前需透過電子郵件管道（詳見第 5 節）。若未來新增訂閱功能，將於推出前先更新本政策再實裝。</p>
       <ul>
-        <li><strong>App Store / Google Play 帳號刪除</strong>：App 內的帳號刪除入口<strong>已在「設定」提供並實際串接後端</strong>（見第 5 節），另有電子郵件管道處理推播 Token 等無法自助刪除的項目。</li>
+        <li><strong>App Store / Google Play 帳號刪除</strong>：僅綁定 Google 的帳號可在 App 內「設定 → 刪除帳號」自助完成；任何綁定 Apple 的帳號（包含 Google+Apple 同時綁定）因 Apple refresh_token 加密後端儲存尚未上線，目前必須以電子郵件方式提交，我們會人工執行同一份級聯刪除（見第 5 節）。</li>
         <li><strong>訂閱與付費</strong>：目前<strong>沒有任何付費或訂閱機制</strong>——未串接 Google Play Billing、Apple StoreKit 或任何第三方金流，也不會展示任何 App 內購買 UI。未來若推出訂閱，Android 版將依 Google Play 政策使用 Google Play Billing（不會導向網頁付款頁），並在您的商店帳號設定中可自行取消；屆時會同步更新本政策、App 內揭露與 Google Play Data safety 表單。</li>
         <li><strong>Google Play Data Safety (資料安全)</strong>：
           <ul>
@@ -377,7 +385,7 @@
       <p>Welcome to <strong>HoloHunter</strong> ("the App" or "we"). We highly value your personal privacy. This policy describes how we handle multi-provider sign-ins, account linking, subscriptions, and related personal data. By using the App, you agree to this policy.</p>
 
       <div class="danger-card">
-        <p><strong>Current Build Status:</strong> <strong>Google Sign-In and cloud accounts are live.</strong> Signing in obtains an ID token from Google and creates a cloud account record in our backend (Vercel KV). Your favorites, decks, price alerts, and settings sync to that account while you are signed in. There <strong>is</strong> therefore personal data stored in the cloud that can be deleted — see Section 5.</p>
+        <p><strong>Current Build Status:</strong> <strong>Google Sign-In and cloud accounts are live.</strong> Signing in obtains an ID token from Google and creates a cloud account record in our backend (Vercel KV). <strong>The Store MVP build does NOT install the account-sync binding</strong> — <code>installAccountSyncBinding()</code> is gated on <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code>, and all three flags are false under Store MVP, so favorites, decks, price alerts, and settings on the Production build are <strong>not</strong> sent to <code>/api/auth/sync</code>; those fields only sync under Web Develop / Staging or a future build that flips these feature flags on. Either way, your basic account record (Internal User ID, email, display name, linked providers) is personal data stored in the cloud that can be deleted — see Section 5.</p>
         <p><strong>Not implemented:</strong> the App has <strong>no payment or subscription mechanism at all</strong>. It is not connected to the App Store, Google Play Billing, or any third-party payment processor; it does not process payments, does not charge you, and <strong>does not obtain or store any transaction identifier or financial data</strong>. No advertising or analytics tracking SDK is enabled. Sign in with Apple is disabled by default on Android. Any paragraph below marked as a future plan is a blueprint, not the current state; if it changes, this policy is updated before the change ships.</p>
       </div>
 
@@ -392,8 +400,8 @@
       <p>To let you manage card data and subscription states seamlessly across platforms, we use a unified account system:</p>
       <ul>
         <li><strong>Account Linking</strong>: You can log in with Google and then link your Apple account, or log in with Apple and link your Google account.</li>
-        <li><strong>Single Identity ID</strong>: Once linked, both Google and Apple identities point to a single Internal User ID, sharing the same card collections, monthly quotas, and subscription state.</li>
-        <li><strong>Permission Model</strong>: Users are categorized as guest, free_user, or subscriber. Free users can scan cards up to 100 times per month. Paid subscribers enjoy unlimited scans and access to AI price trend forecasts. Guest mode does not support scanning or forecasts.</li>
+        <li><strong>Single Identity ID</strong>: Once linked, both Google and Apple identities point to a single Internal User ID. Monthly scan quota is currently a per-device counter (the same Internal User ID does not aggregate across devices), and paid subscription state is not yet implemented; both will be folded into what the Internal User ID actually shares once server-side quota and app in-app purchase ship.</li>
+        <li><strong>Permission Model</strong>: The current build only ships two active roles — guest and free_user. Free users can scan cards up to <strong>100 times per month</strong> (matches the app's <code>MONTHLY_SCAN_LIMIT</code> constant); guest mode does not support scanning or price forecasts. The paid subscriber role is a future plan that becomes active once app in-app purchase / billing ships; until then, any subscriber state is forcibly collapsed back to free_user inside the app, so there is no "local demo unlock" path.</li>
         <li><strong>Identification Principle</strong>: We **do NOT use Email as the primary unique key** (to prevent issues with Apple's Private Relay email hiding, or mismatching emails between providers). All linking is tied to the unique provider account ID.</li>
       </ul>
 
@@ -403,14 +411,14 @@
         <li><strong>Email Address</strong>: Used for account contact, support verification, and notifications. It is not used as the unique login or account-linking key; Google/Apple Provider User ID is the source of truth.</li>
         <li><strong>Display Name</strong>: Used to personalize greetings on the App interface.</li>
         <li><strong>Provider User ID</strong>: A non-sensitive unique ID string provided by Google or Apple.</li>
-        <li><strong>Scan Usage & Quota Logs</strong>: Securely logs your monthly scan count to enforce the 100-scan monthly limit for the free tier and prevent local client tampering.</li>
+        <li><strong>Scan Usage & Quota Logs</strong>: Scan count is currently kept as a per-device counter (100/month cap; clearing cache or reinstalling resets it), used to enforce the free-tier monthly limit on-device. Server-side quota sync and tamper prevention are future plans; they will ship together with paid subscriptions.</li>
         <li><strong>Paid Subscription Status</strong>: <strong>Not implemented.</strong> The App is not connected to any payment processor and does not obtain, transmit, or store transaction identifiers, purchase history, credit card numbers, or any other financial data. This field describes a future plan; we will update this policy before any of it takes effect.</li>
       </ul>
       
       <h3>How Data is Used:</h3>
       <ol>
         <li><strong>User Authentication</strong>: To secure your account and access.</li>
-        <li><strong>Cloud Syncing & Subscription Management</strong>: To sync your watchlists, card collections, monthly quota progress, and premium subscription state.</li>
+        <li><strong>Cloud Syncing</strong>: The `api/auth/sync` server endpoint is deployed; its protocol supports syncing decks, card ownership (collection), favorites (bookmarks), price alerts, and UI preferences (currency / language). However, the current <strong>Store MVP</strong> launch build does not install the sync binding — the in-app <code>installAccountSyncBinding()</code> call is gated on <code>FEATURES.favorites || FEATURES.watchlist || FEATURES.premium</code>, and under Store MVP all three flags are false, so <strong>the Production build does not currently issue any <code>/api/auth/sync</code> request</strong>. Once those feature flags flip on (or under Web Develop / Staging where they already are), the binding installs and the fields above start syncing. <strong>Monthly scan quota progress and paid subscription state are NOT part of the sync payload</strong> — scan quota is a per-device counter and paid subscription is not implemented; both will be folded into sync when app in-app purchase ships.</li>
         <li><strong>Push Notifications</strong>: If you enable card price alerts, we use your device push token (generated and managed by Expo Push Service) to deliver notifications. This token is used solely for sending alerts.</li>
       </ol>
 
@@ -432,24 +440,32 @@
 
       <h2>5. Account & Data Deletion</h2>
 
-      <h3>In-app account deletion (implemented):</h3>
-      <p>Open the <strong>Settings</strong> tab, tap <strong>Delete Account</strong> and confirm. The App calls our backend deletion endpoint, which cascade-deletes the cloud data below, then clears your local session and cache and signs you out. The action is irreversible:</p>
+      <h3>In-app account deletion — depends on how you signed in:</h3>
+
+      <p><strong>Accounts linked with Google ONLY (no Apple identity linked) — in-app self-service is available:</strong> open the <strong>Settings</strong> tab, tap <strong>Delete Account</strong> and confirm. The App calls our backend deletion endpoint (<code>POST /api/auth/delete-account</code>), which cascade-deletes the cloud data below, then clears your local session and cache and signs you out. The action is irreversible. On a successful delete, the App calls <code>GoogleSignin.signOut()</code> on Android to clear the local Google SDK cache; <strong>this does NOT revoke your Google refresh_token server-side</strong> (your Google account itself is not revoked — we simply no longer hold your identity mapping). iOS / web currently have no analogous SDK-side clear, and those platforms do not retain a Google SDK session to begin with.<br><br><strong>Note:</strong> if you linked <strong>both</strong> Google and Apple, this app treats you as an Apple-linked account (next paragraph) because deletion must revoke the Apple refresh_token first — please use the email channel described there.</p>
       <ol>
         <li>Your cloud account record (Internal User ID, display name, email, avatar URL, role).</li>
-        <li>Every linked third-party identity mapping (the Google / Apple Provider User IDs and their indexes).</li>
-        <li>Cloud-synced data (favorites, decks, card collection counts, price alerts, settings).</li>
+        <li>Every linked Google identity mapping (Google Provider User IDs and their indexes).</li>
+        <li>Cloud-synced data if any was written (favorites, decks, card collection counts, price alerts, settings on <code>/api/auth/sync</code>). The Store MVP build does not install the sync binding, so Production currently has no such data to cascade-delete; this item covers data written by feature-flag-enabled builds (Web Develop / Staging).</li>
       </ol>
+
+      <p><strong>Any account linked with Apple (Apple-only or Google+Apple combined) — in-app deletion is NOT available yet, email required:</strong> Apple's platform-deletion contract requires the backend to revoke the <em>refresh_token</em> issued at sign-in. That requires encrypted server-side storage of the refresh_token; today <code>api/_lib/apple-token-store.ts</code> is a non-shipping stub — <code>persistAppleRefreshToken</code> throws and <code>getStoredAppleRefreshToken</code> always returns <code>null</code>. Consequently, whenever an account's <code>linkedProviders</code> contains any Apple identity (whether Apple-only or additionally linked to Google), <code>POST /api/auth/delete-account</code> fails closed and does not delete anything. The exact response is one of:
+      <ul>
+        <li><code>501 apple_revocation_not_configured</code> — server-side <code>APPLE_TEAM_ID / APPLE_CLIENT_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY</code> are unset, so <code>getAppleConfig()</code> returns null.</li>
+        <li><code>501 apple_deletion_not_implemented</code> — Apple config is present but the apple-token-store stub holds no refresh_token to revoke.</li>
+      </ul>
+      Either 501 means nothing is deleted (so we never leave an Apple identity mapping we cannot revoke). <strong>Apple-linked users (including Google+Apple): please email <code>dicoge.chen@gmail.com</code> with the email you signed in with or your Internal User ID, and we will run the same cascade deletion by hand via the email channel described below.</strong> This policy and the in-app deletion entry point will be updated together when encrypted Apple refresh_token storage ships.</p>
 
       <h3>What still requires an email request:</h3>
       <div class="danger-card">
         <p><strong>The push token is not removed by the deletion flow above.</strong> If you ever allowed push notifications, your device's push token is retained in our backend, and there is <strong>currently no</strong> self-service way to unregister it; neither deleting your account nor uninstalling the App deletes it. To have it removed, email a deletion request to <code>dicoge.chen@gmail.com</code> and we will remove it manually and confirm by reply.</p>
       </div>
-      <p>If you cannot complete deletion inside the App (for example, you already uninstalled it), email the same address with the email address you signed in with or your Internal User ID, and we will run the same cascade deletion on your behalf.</p>
+      <p>If you cannot complete deletion inside the App (for example, you already uninstalled it, or you signed in with Apple), email the same address with the email address you signed in with or your Internal User ID, and we will run the same cascade deletion on your behalf.</p>
 
       <h2>6. App Store & Google Play Store Compliance</h2>
-      <p>This section describes the App's actual current alignment with app store policies. The current build has <strong>no payment or subscription mechanism of any kind</strong>; the account deletion backend <strong>is implemented and live</strong> (see Section 5). If subscriptions are ever added in a future release, this policy will be updated <strong>before</strong> the change ships.</p>
+      <p>This section describes the App's actual current alignment with app store policies. The current build has <strong>no payment or subscription mechanism of any kind</strong>; the account deletion backend is deployed and self-service works for <strong>Google-only</strong> accounts (linkedProviders contains no Apple identity), while <strong>any account with an Apple identity linked (Apple-only or Google+Apple)</strong> currently goes through the email channel (see Section 5). If subscriptions are ever added in a future release, this policy will be updated <strong>before</strong> the change ships.</p>
       <ul>
-        <li><strong>App Store / Google Play account deletion</strong>: the in-app account deletion entry point <strong>is available in Settings and is wired to the backend</strong> (see Section 5), with an email channel for items that cannot be self-served, such as the push token.</li>
+        <li><strong>App Store / Google Play account deletion</strong>: Google-only accounts (no Apple identity linked) can self-serve deletion via the in-app <strong>Settings → Delete Account</strong> entry point; any account linked to Apple (including Google+Apple combined) must use the email channel until encrypted server-side storage of the Apple refresh_token ships (see Section 5).</li>
         <li><strong>Subscriptions and payments</strong>: the App has <strong>no payment or subscription mechanism of any kind</strong> today — it does not integrate Google Play Billing, Apple StoreKit or any third-party payment processor, and shows no in-app purchase UI. If subscriptions ship later, the Android build will use Google Play Billing per Google Play policy (never redirecting to a web checkout) and will be cancellable from your store account settings; this policy, the in-app disclosures and the Google Play Data safety form will be updated together at that point.</li>
         <li><strong>Google Play Data Safety</strong>:
           <ul>

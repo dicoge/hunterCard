@@ -118,6 +118,9 @@ jobs:
       - name: Verify deployment data cannot ship catalog-only regression (DIC-1167)
         run: npm run test:deployment-data
 
+      - name: Verify deployment freshness gate exercises Production branch across every flag value (DIC-1380 W4)
+        run: npm run test:deployment-freshness-gate
+
       - name: Verify official-catalog-sync workflow hands off through a PR (DIC-1291)
         run: npm run test:official-catalog-sync-workflow
 
@@ -249,6 +252,51 @@ jobs:
       - name: Verify push notification backend (DIC-390)
         run: npm run test:push-backend
 
+      - name: Verify account remote-sync backend (DIC-1156)
+        run: npm run test:account-sync-backend
+
+      - name: Verify account remote-sync client boundary (DIC-1380)
+        run: npm run test:account-sync-client
+
+      - name: Verify account remote-sync orchestrator hydrate/push/conflict (DIC-1380 W4)
+        run: npm run test:account-sync-orchestrator
+
+      - name: Verify account remote-sync store binding (DIC-1380 W4)
+        run: npm run test:account-sync-binding
+
+      - name: Verify shared card name resolver (DIC-1380 naming consistency)
+        run: npm run test:card-display-name
+
+      - name: Verify DeckEditor routes card names through the shared resolver + Pen mobile UI (DIC-1380 W4)
+        run: npm run test:deck-editor-name-resolver
+
+      - name: Verify mobile DeckEditor matches accepted Pen frame uXuqo at 390px (DIC-1380 W5)
+        run: npm run test:deck-editor-pen-mobile-layout
+
+      - name: Verify LandingScreen renders the accepted Pen landing at 390 and 1440 (DIC-1380 W5b)
+        run: npm run test:landing-pen-render
+
+      - name: Verify favorites store is wired into real product UI (DIC-1380 W6)
+        run: npm run test:favorites-ui-wiring
+
+      - name: Verify nav_favorites routes to FavoritesScreen (DIC-1380 W7 CR)
+        run: npm run test:favorites-nav-route
+
+      - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
+        run: npm run test:tournament-discovery-acquisition
+
+      - name: Verify legal-page claims match actual STORE_MVP behavior (DIC-1380 W7 CR)
+        run: npm run test:legal-copy-vs-behavior
+
+      - name: Verify Apple-linked delete + copy match the shipping stub (DIC-1380 W12 CR)
+        run: npm run test:apple-delete-truth-copy
+
+      - name: Verify Store MVP UI gates + Login/Settings sync copy + deletion parity (DIC-1381 W11 CR)
+        run: npm run test:store-mvp-ui-gates
+
+      - name: Verify YT + tournament scheduled refresh workflows stay wired (DIC-1380 W5)
+        run: npm run test:scheduled-refresh-workflows
+
       - name: Verify card-lookup version alignment is source-proven (DIC-1013)
         run: npm run test:version-alignment
 
@@ -293,6 +341,9 @@ jobs:
 
       - name: Verify the privacy policy matches what the code actually sends off-device (DIC-1248)
         run: npm run test:privacy-disclosure
+
+      - name: Verify legal / pricing / terms / support pages stay consistent (DIC-1380)
+        run: npm run test:legal-pages-consistency
 
       - name: Verify a native scan transmits no image bytes (DIC-1248)
         run: npm run test:native-scan-no-upload

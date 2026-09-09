@@ -37,9 +37,13 @@ interface PriceAlertState {
   alerts: Record<string, PriceAlert>;
   /** cardNumber -> migrated row still waiting for a printing and/or a range */
   pending: Record<string, PendingAlert>;
+  /** priceAlertKey -> removedAt ISO. Tombstones for the 409 merge so a
+   *  local removal is not resurrected by a concurrent server add
+   *  (DIC-1380 W6). Cleared on hydrate + after a successful push. */
+  removals: Record<string, string>;
 
   upsertAlert: (input: PriceAlertInput) => PriceAlert | null;
-  removeAlert: (cardNumber: string, printing: string) => void;
+  removeAlert: (cardNumber: string, printing: string, now?: string) => void;
   getAlert: (cardNumber: string, printing: string) => PriceAlert | null;
   importLegacyTracking: (
     legacy: readonly LegacyTrackedCard[],
@@ -47,6 +51,9 @@ interface PriceAlertState {
     now?: string,
   ) => LegacyMigration;
   dismissPending: (cardNumber: string) => void;
+  /** Consumed after a successful push — the server now knows about our
+   *  removals, so the tombstones can be dropped. */
+  clearRemovals: () => void;
 }
 
 export const usePriceAlertStore = create<PriceAlertState>()(
@@ -54,6 +61,7 @@ export const usePriceAlertStore = create<PriceAlertState>()(
     (set, get) => ({
       alerts: {},
       pending: {},
+      removals: {},
 
       upsertAlert: (input) => {
         const cardNumber = (input.cardNumber ?? '').trim();
@@ -88,15 +96,21 @@ export const usePriceAlertStore = create<PriceAlertState>()(
           // Configuring the alert is what the pending row was asking for.
           const pending = { ...s.pending };
           delete pending[pendingKey(cardNumber)];
-          return { alerts: { ...s.alerts, [key]: alert }, pending };
+          // Upsert wins over an older tombstone for the same key — the
+          // user just re-added the alert.
+          const removals = { ...s.removals };
+          delete removals[key];
+          return { alerts: { ...s.alerts, [key]: alert }, pending, removals };
         });
         return alert;
       },
 
-      removeAlert: (cardNumber, printing) => set((s) => {
+      removeAlert: (cardNumber, printing, now) => set((s) => {
+        const key = priceAlertKey(cardNumber, printing);
+        if (!s.alerts[key]) return {};
         const next = { ...s.alerts };
-        delete next[priceAlertKey(cardNumber, printing)];
-        return { alerts: next };
+        delete next[key];
+        return { alerts: next, removals: { ...s.removals, [key]: now || new Date().toISOString() } };
       }),
 
       getAlert: (cardNumber, printing) => get().alerts[priceAlertKey(cardNumber, printing)] ?? null,
@@ -123,12 +137,14 @@ export const usePriceAlertStore = create<PriceAlertState>()(
         delete pending[pendingKey(cardNumber)];
         return { pending };
       }),
+
+      clearRemovals: () => set({ removals: {} }),
     }),
     {
       name: 'hunterCard-price-alerts',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => platformStorage),
-      partialize: (s) => ({ alerts: s.alerts, pending: s.pending }),
+      partialize: (s) => ({ alerts: s.alerts, pending: s.pending, removals: s.removals }),
       // v1 keyed some records by an un-normalized printing. v2 also persisted a
       // representative card image as though it belonged to every printing. On
       // upgrade, collapse duplicates and discard those unprovable thumbnails;
@@ -147,7 +163,10 @@ export const usePriceAlertStore = create<PriceAlertState>()(
               key, { ...alert, imageUrl: undefined },
             ]))
           : deduped;
-        return { alerts, pending: persisted?.pending ?? {} };
+        const removals = version < 5 || !persisted?.removals || typeof persisted.removals !== 'object'
+          ? {}
+          : persisted.removals;
+        return { alerts, pending: persisted?.pending ?? {}, removals };
       },
     }
   )
