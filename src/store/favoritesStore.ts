@@ -49,6 +49,12 @@ interface FavoritesState {
    *  Also clears `removals` because the server snapshot is the new
    *  authoritative baseline. */
   replaceAll: (favorites: FavoriteEntry[]) => void;
+  /** DIC-1380 W7 CR: wholesale replacement that PRESERVES the removals
+   *  tombstone map. Used by the 409 merge apply path in the sync
+   *  orchestrator — a subsequent 409 during the same push cycle must
+   *  still be able to honor the local unfavorite; only a server-ACKed
+   *  push (or a fresh hydrate) is allowed to drop the tombstones. */
+  replaceAllPreservingTombstones: (favorites: FavoriteEntry[]) => void;
   clearAll: () => void;
   /** Consumed after a successful push — the server now knows about our
    *  removals, so the tombstones can be dropped. */
@@ -57,6 +63,23 @@ interface FavoritesState {
 
 function favKey(cardNumber: string, printing: string): string {
   return `${cardNumber}|${printing}`;
+}
+
+function normalizeFavoritesList(favorites: FavoriteEntry[] | unknown[] | undefined | null): FavoriteEntry[] {
+  const seen = new Set<string>();
+  const cleaned: FavoriteEntry[] = [];
+  for (const raw of favorites || []) {
+    const norm = normalizeFavorite(raw);
+    if (!norm) continue;
+    const key = favKey(norm.cardNumber, norm.printing);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(norm);
+  }
+  cleaned.sort((a, b) =>
+    a.cardNumber.localeCompare(b.cardNumber) || a.printing.localeCompare(b.printing),
+  );
+  return cleaned;
 }
 
 function normalizeFavorite(fav: unknown): FavoriteEntry | null {
@@ -130,22 +153,19 @@ export const useFavoritesStore = create<FavoritesState>()(
         return get().favorites.some((f) => f.cardNumber === cardNumber && f.printing === printing);
       },
       replaceAll: (favorites) => {
-        const seen = new Set<string>();
-        const cleaned: FavoriteEntry[] = [];
-        for (const raw of favorites || []) {
-          const norm = normalizeFavorite(raw);
-          if (!norm) continue;
-          const key = favKey(norm.cardNumber, norm.printing);
-          if (seen.has(key)) continue;
-          seen.add(key);
-          cleaned.push(norm);
-        }
-        cleaned.sort((a, b) =>
-          a.cardNumber.localeCompare(b.cardNumber) || a.printing.localeCompare(b.printing),
-        );
+        const cleaned = normalizeFavoritesList(favorites);
         // Server snapshot is now the baseline — every prior removal has
         // either been reflected server-side or was overwritten by the pull.
         set({ favorites: cleaned, removals: {} });
+      },
+      replaceAllPreservingTombstones: (favorites) => {
+        // DIC-1380 W7 CR fix: used from the sync orchestrator's 409 merge
+        // apply path. A subsequent 409 during the same push cycle
+        // (or a resumed push after a rethrow → binding re-schedule) must
+        // still honor the local unfavorite — only a server-ACKed push
+        // (or a fresh hydrate) is allowed to drop the tombstones.
+        const cleaned = normalizeFavoritesList(favorites);
+        set((s) => ({ ...s, favorites: cleaned }));
       },
       clearAll: () => set({ favorites: [], removals: {} }),
       clearRemovals: () => set({ removals: {} }),

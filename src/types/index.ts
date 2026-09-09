@@ -61,6 +61,12 @@ export type MainDrawerParamList = {
   Home: undefined;
   Scan: undefined;
   Search: undefined;
+  // DIC-1380 W7: `Favorites` is the bookmark list (the independent
+  // useFavoritesStore); `Collection` is the ownership browser (Card
+  // Collection). Previously `nav_favorites` was mislabelled onto the
+  // Collection route — the drawer entry showed 我的收藏 but opened
+  // CollectionScreen.
+  Favorites: undefined;
   Collection: undefined;
   DeckEditor: undefined;
   TournamentReport: undefined;

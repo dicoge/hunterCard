@@ -4,6 +4,7 @@ export const zh = {
   nav_scan: '掃描卡牌',
   nav_search: '搜尋',
   nav_favorites: '收藏',
+  nav_collection: '卡牌收藏',
   nav_deck_editor: '牌組編輯器',
   nav_tournament_report: '賽事月報',
   nav_watchlist: '入手提醒',

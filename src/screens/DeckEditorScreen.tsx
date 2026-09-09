@@ -590,7 +590,7 @@ export default function DeckEditorScreen() {
         )}
       </View>
 
-      <View style={styles.zoneBlock}>
+      <View style={styles.zoneBlock} testID="deck-mobile-selected-grid">
         <Text style={styles.zoneTitle}>{t('deck_selected_zone', { zone: zoneLabels[activeZone] })}</Text>
         {selectedSlots.length === 0 && <Text style={styles.muted}>{t('deck_no_cards')}</Text>}
         {selectedSlots.map((slot) => {
@@ -904,48 +904,87 @@ export default function DeckEditorScreen() {
     return null;
   };
 
+  // DIC-1380 W7 CR — mobile primary panel switch now matches accepted Pen
+  // frame `uXuqo`: THREE zone tabs (Main / Yell / Oshi) as the primary
+  // hierarchy. Picker + shortage are moved out of the primary tab strip
+  // into a secondary control row below, so the player never has to scan
+  // five tabs to find the zone they wanted. Each zone tab still carries
+  // the Pen `AMhtu` inline `count/target` sub-label.
+  //
+  // The Pen visual order is Main / Yell / Oshi (main deck first because
+  // that is what the player is building), and the secondary row exposes
+  // `選卡` (picker) and `缺卡` (shortage) as compact chips. The
+  // `deck-mobile-panel-{picker,shortage}` testIDs remain on the
+  // secondary chips so DIC-1064 render regressions + the DIC-1086 E2E
+  // still resolve the same controls.
+  const primaryZones: Array<[DeckZone, string]> = [
+    ['main', zoneLabels.main],
+    ['yell', zoneLabels.yell],
+    ['oshi', zoneLabels.oshi],
+  ];
+
   const phonePanelSwitch = (
-    <View style={styles.phonePanelSwitch} testID="deck-mobile-panel-switch">
-      {([
-        ['picker', t('deck_choose_card')],
-        ['oshi', zoneLabels.oshi],
-        ['main', zoneLabels.main],
-        ['yell', zoneLabels.yell],
-        ['shortage', t('deck_shortage')],
-      ] as Array<[MobilePanel, string]>).map(([panel, label]) => {
-        const active = mobilePanel === panel;
-        const count = zoneCount(panel as DeckZone);
-        return (
-          <TouchableOpacity
-            key={panel}
-            style={[styles.phonePanelTab, active && styles.phonePanelTabActive]}
-            onPress={() => {
-              setMobilePanel(panel);
-              if (panel === 'oshi' || panel === 'main' || panel === 'yell') {
-                setActiveZone(panel);
+    <View style={styles.phonePanelSwitchWrap} testID="deck-mobile-primary-tabs">
+      <View style={styles.phonePanelSwitch} testID="deck-mobile-panel-switch">
+        {primaryZones.map(([zone, label]) => {
+          const active = mobilePanel === zone;
+          const count = zoneCount(zone);
+          return (
+            <TouchableOpacity
+              key={zone}
+              style={[styles.phonePanelTab, active && styles.phonePanelTabActive]}
+              onPress={() => {
+                setMobilePanel(zone);
+                setActiveZone(zone);
                 setCriteria(EMPTY_CRITERIA);
-              }
-            }}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={count ? `${label} ${count.value}/${count.target}` : label}
-            testID={`deck-mobile-panel-${panel}`}
-          >
-            <Text style={[styles.phonePanelLabel, active && styles.phonePanelLabelActive]} numberOfLines={1}>
-              {label}
-            </Text>
-            {count ? (
-              <Text
-                style={[styles.phonePanelCount, active && styles.phonePanelCountActive]}
-                testID={`deck-mobile-panel-${panel}-count`}
-                numberOfLines={1}
-              >
-                {count.value}/{count.target}
+              }}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={count ? `${label} ${count.value}/${count.target}` : label}
+              testID={`deck-mobile-panel-${zone}`}
+            >
+              <Text style={[styles.phonePanelLabel, active && styles.phonePanelLabelActive]} numberOfLines={1}>
+                {label}
               </Text>
-            ) : null}
-          </TouchableOpacity>
-        );
-      })}
+              {count ? (
+                <Text
+                  style={[styles.phonePanelCount, active && styles.phonePanelCountActive]}
+                  testID={`deck-mobile-panel-${zone}-count`}
+                  numberOfLines={1}
+                >
+                  {count.value}/{count.target}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {/* Secondary control row — picker + shortage as compact chips.
+          Not in the primary tab strip (Pen `uXuqo` hierarchy) but still
+          reachable in one tap. */}
+      <View style={styles.phoneSecondaryControls} testID="deck-mobile-secondary-controls">
+        <TouchableOpacity
+          style={[styles.phoneSecondaryChip, mobilePanel === 'picker' && styles.phoneSecondaryChipActive]}
+          onPress={() => {
+            setMobilePanel('picker');
+            setCriteria(EMPTY_CRITERIA);
+          }}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mobilePanel === 'picker' }}
+          testID="deck-mobile-panel-picker"
+        >
+          <Text style={styles.phoneSecondaryChipLabel} numberOfLines={1}>{t('deck_choose_card')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.phoneSecondaryChip, mobilePanel === 'shortage' && styles.phoneSecondaryChipActive]}
+          onPress={() => setMobilePanel('shortage')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mobilePanel === 'shortage' }}
+          testID="deck-mobile-panel-shortage"
+        >
+          <Text style={styles.phoneSecondaryChipLabel} numberOfLines={1}>{t('deck_shortage')}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -1197,6 +1236,11 @@ const styles = StyleSheet.create({
   phoneGridHead: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
   phoneGridHeadTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   phoneGridHeadCategory: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '600' },
+  phonePanelSwitchWrap: { backgroundColor: COLORS.surface },
+  phoneSecondaryControls: { flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 6, gap: 6 },
+  phoneSecondaryChip: { minHeight: 36, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surfaceLight, alignItems: 'center', justifyContent: 'center' },
+  phoneSecondaryChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '22' },
+  phoneSecondaryChipLabel: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
   phoneProgress: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 6, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   phoneProgressText: { flex: 1, color: COLORS.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' },
   phoneProgressTotal: { color: COLORS.primaryLight },

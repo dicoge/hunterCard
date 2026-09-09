@@ -62,7 +62,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   normalizeEvent,
   normalizeCards,
@@ -343,6 +343,60 @@ function listSourceFiles() {
     .sort();
 }
 
+// DIC-1380 W7 CR: discovery-stub writer for `discoverFreshness`. When the
+// live discovery leg finds a NEWER official column than anything committed
+// under SOURCES_DIR, we materialise a stub source file that captures the
+// discovery (publishedDate / official link / official title) with an
+// empty `events[]` array. A human maintainer fills in the events and
+// re-runs the collector; the next --live discovery no longer flags this
+// column as newer than everything committed, so the scheduled workflow
+// stops failing on the same discovery over and over.
+//
+// The stub file is idempotent — a second discovery of the same column
+// leaves the existing stub alone (whether the maintainer filled it in or
+// not). --dry-run skips the write. Exposed so the regression test can
+// exercise the exact same path.
+export function ensureDiscoveryStub({
+  publishedDate,
+  knownNewest,
+  officialLink,
+  officialTitle,
+}) {
+  const month = String(publishedDate ?? '').slice(0, 7);
+  const dateSlug = String(publishedDate ?? '').slice(0, 10).replace(/[^0-9-]/g, '');
+  if (!month || !dateSlug) {
+    return { wrote: false, relativePath: '(no valid publishedDate to slug)', absolutePath: null };
+  }
+  const fileName = `discovered-${dateSlug}.json`;
+  const abs = path.join(SOURCES_DIR, fileName);
+  const rel = path.relative(ROOT, abs);
+  if (fs.existsSync(abs)) {
+    return { wrote: false, relativePath: rel, absolutePath: abs };
+  }
+  if (DRY_RUN) {
+    return { wrote: false, relativePath: rel, absolutePath: abs };
+  }
+  const stub = {
+    month,
+    publishedDate,
+    liveDecklog: false,
+    discoveredAt: NOW,
+    discoveredFromKnownNewest: knownNewest ?? null,
+    officialSource: {
+      link: officialLink ?? null,
+      title: officialTitle ?? null,
+    },
+    events: [],
+    resultTweets: [],
+    _stub: 'Discovery stub written by scripts/collect-tournament-reports.mjs --live. ' +
+      'Fill in `events[]` from the official column, set liveDecklog=true if you want the ' +
+      'Deck Log fetch leg to run, and re-execute the collector to acquire cards.',
+  };
+  if (!fs.existsSync(SOURCES_DIR)) fs.mkdirSync(SOURCES_DIR, { recursive: true });
+  fs.writeFileSync(abs, JSON.stringify(stub, null, 2));
+  return { wrote: true, relativePath: rel, absolutePath: abs };
+}
+
 // Fetch + validate + persist card data for every opt-in deck that has a
 // decklogCode and no card list that currently passes verification. Writes back
 // into the source files (the last-known-good store) when data changed.
@@ -437,9 +491,15 @@ async function liveCollectDecklogCards(catalogNumbers) {
   return changedAny;
 }
 
-// Freshness discovery (issue requirement 6). Newest official publication found
-// vs newest committed source publication; an unavailable source just warns and
-// preserves last-known-good.
+// Freshness discovery (issue requirement 6; DIC-1380 W7 acquisition fix).
+// Newest official publication found vs newest committed source publication.
+// An unavailable source just warns and preserves last-known-good — but the
+// happy path now DOES SOMETHING with the finding rather than exiting 0 on
+// discovery: it (a) writes a discovery-stub source file so the human
+// maintainer can fill in the events (sustainable ingestion), and (b) raises
+// the alert to `error` level so the collector exits non-zero and the
+// scheduled workflow surfaces the missing curation rather than silently
+// retaining old data.
 async function discoverFreshness() {
   const knownDates = listSourceFiles()
     .map((f) => readJsonSafe(path.join(SOURCES_DIR, f)))
@@ -458,13 +518,40 @@ async function discoverFreshness() {
     const newest = Array.isArray(posts)
       ? posts.map((p) => String(p.date ?? '').trim()).filter(Boolean).sort().pop() ?? null
       : null;
+    const newestPost = Array.isArray(posts)
+      ? posts.filter((p) => String(p?.date ?? '').trim() === newest)[0] ?? null
+      : null;
     const verdict = classifyFreshness(newest, knownNewest);
     if (verdict === 'newer') {
+      // DIC-1380 W7 CR fix: discovery of a NEWER official column now
+      // does two sustainable things.
+      //   1. It writes a discovery-stub source file to SOURCES_DIR so
+      //      the acquisition is persisted — a human maintainer can fill
+      //      the empty `events[]` and re-run the collector, and the
+      //      next --live discovery leg no longer flags THIS column as
+      //      "newer than everything committed".
+      //   2. It raises the alert to ERROR so the collector exits
+      //      non-zero, so a scheduled workflow that finds a new column
+      //      but cannot ingest it surfaces the miss instead of exiting
+      //      0 and pretending everything is fine (Mac-Codex W7 evidence).
+      const discovered = ensureDiscoveryStub({
+        publishedDate: newest,
+        knownNewest,
+        officialLink: typeof newestPost?.link === 'string' ? newestPost.link : null,
+        officialTitle: newestPost?.title?.rendered ?? newestPost?.title ?? null,
+      });
       alert(
-        'warn',
-        `A newer official deck-showcase column was published (${newest}); it has not ` +
-          'been parsed yet — last-known-good is preserved.',
-        { discovered: newest, known: knownNewest },
+        'error',
+        `A newer official deck-showcase column was published (${newest}); ` +
+          (discovered.wrote
+            ? `discovery stub written to ${discovered.relativePath} — fill in the events[] array and re-run.`
+            : `stub already present at ${discovered.relativePath} — fill in the events[] array before the next run.`),
+        {
+          discovered: newest,
+          known: knownNewest,
+          stub: discovered.relativePath,
+          stubWrote: discovered.wrote,
+        },
       );
     } else {
       alert('info', `Official column freshness: ${verdict} (newest ${newest ?? 'n/a'})`, {
@@ -718,4 +805,20 @@ function finish(code) {
   process.exit(code);
 }
 
-main();
+// DIC-1380 W7: only invoke main() when this file is the process entry
+// point OR when a wrapper explicitly opts in. Test suites
+// (test-tournament-discovery-acquisition.mjs) import the module for its
+// named exports (`ensureDiscoveryStub` etc.) and MUST NOT accidentally
+// kick off a real collector run that then calls `process.exit(1)` at
+// the end of the parent test. When a wrapper needs main() to fire, it
+// sets `globalThis.__COLLECT_TOURNAMENT_REPORTS_RUN_MAIN__ = true`
+// before importing this module.
+const invokedAsScript = (() => {
+  try {
+    if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) return true;
+  } catch { /* fallthrough */ }
+  return globalThis.__COLLECT_TOURNAMENT_REPORTS_RUN_MAIN__ === true;
+})();
+
+export function runMain() { main(); }
+if (invokedAsScript) main();

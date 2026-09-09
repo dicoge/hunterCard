@@ -295,7 +295,7 @@
       <ul>
         <li><strong>多方綁定</strong>：您可以用 Google 登入後再綁定 Apple 帳號，或是用 Apple 登入後再綁定 Google 帳號。</li>
         <li><strong>同一識別碼</strong>：綁定後，該 Google 與 Apple 帳號將共同對應到同一個內部使用者識別碼 (Internal User ID)，共享相同的卡牌收藏、使用量配額與訂閱權限。</li>
-        <li><strong>權限模型</strong>：我們區分為訪客 (guest)、免費會員 (free_user) 以及付費訂閱會員 (subscriber) 三種角色。免費會員可使用卡牌掃描，但每月上限 100 次；付費訂閱會員享無限掃描，並可解鎖 AI 價格與趨勢預測。訪客模式不支援掃描與價格預測功能。</li>
+        <li><strong>權限模型</strong>：目前 App 只提供訪客 (guest) 與免費會員 (free_user) 兩種角色。免費會員可使用卡牌掃描，每月上限 <strong>100 次</strong>（與 App 內 <code>MONTHLY_SCAN_LIMIT</code> 一致）；訪客模式不支援掃描與價格預測功能。付費訂閱會員 (subscriber) 為未來版本規劃，需等 App 內購與金流上線後才會啟用；在啟用之前，App 內部會把任何 subscriber 角色狀態強制回退為 free_user，因此不會出現任何裝置端偽造解鎖的路徑。</li>
         <li><strong>身分識別原則</strong>：我們<strong>不使用 Email 作為唯一身分依據</strong>（以防 Apple Private Relay 隱藏真實 Email，或不同平台的 Email 不一致）。身分綁定完全基於第三方 Provider 提供的非敏感帳號唯一識別碼。</li>
       </ul>
 
@@ -305,14 +305,14 @@
         <li><strong>電子郵件地址 (Email)</strong>：用於帳號聯絡、客服驗證與通知；不作為唯一登入或帳號合併依據，實際身分綁定以 Google/Apple Provider User ID 為準。</li>
         <li><strong>顯示名稱 (Display Name)</strong>：用於在 App 介面上提供個人化的歡迎資訊。</li>
         <li><strong>第三方帳號識別碼 (Provider User ID)</strong>：Google 或 Apple 提供的一串非敏感的唯一識別代碼。</li>
-        <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：安全記錄您在當月所進行的卡牌掃描次數，用於實施免費版每月 100 次的額度控管與防竄改機制。</li>
+        <li><strong>使用量與配額紀錄 (Scan Quota Logs)</strong>：目前掃描次數為裝置端計數（每月 100 次上限；清除快取或重裝會重置），用於實施免費版每月 100 次的裝置端額度控管。伺服器端配額同步與防竄改機制為未來版本規劃，屆時會與付費訂閱同時上線。</li>
         <li><strong>付費訂閱狀態 (Subscription Status)</strong>：<strong>目前未實作。</strong>本 App 尚未串接任何金流，不會取得、傳輸或儲存交易代碼、購買紀錄、信用卡號或任何其他財務資料。此欄位為未來版本規劃，屆時將先更新本政策再實裝。</li>
       </ul>
       
       <h3>資料用途說明：</h3>
       <ol>
         <li><strong>使用者身分驗證與登入</strong>：確保您的帳號安全。</li>
-        <li><strong>雲端同步服務與訂閱管理</strong>：同步您的關注清單、收藏卡牌、每月掃描剩餘額度以及付費訂閱狀態。</li>
+        <li><strong>雲端同步服務</strong>：`api/auth/sync` 端點目前同步您的牌組 (decks)、卡牌收藏數量 (collection)、書籤收藏清單 (favorites)、到價提醒 (priceAlerts) 與 UI 偏好（幣別 / 語言）。<strong>每月掃描剩餘額度、付費訂閱狀態</strong>目前未列入 sync payload —— 掃描配額仍為裝置端計數，付費訂閱狀態未實作，這兩項會隨 App 內購上線時再加入 sync 範圍。</li>
         <li><strong>推播通知 (Push Notifications)</strong>：若您啟用了卡牌價格提醒功能，我們會使用您的推播 Token（由 Expo Push Service 產生並管理）來發送降價或波動通知。此 Token 僅用於發送通知，不做他用。</li>
       </ol>
 
@@ -393,7 +393,7 @@
       <ul>
         <li><strong>Account Linking</strong>: You can log in with Google and then link your Apple account, or log in with Apple and link your Google account.</li>
         <li><strong>Single Identity ID</strong>: Once linked, both Google and Apple identities point to a single Internal User ID, sharing the same card collections, monthly quotas, and subscription state.</li>
-        <li><strong>Permission Model</strong>: Users are categorized as guest, free_user, or subscriber. Free users can scan cards up to 100 times per month. Paid subscribers enjoy unlimited scans and access to AI price trend forecasts. Guest mode does not support scanning or forecasts.</li>
+        <li><strong>Permission Model</strong>: The current build only ships two active roles — guest and free_user. Free users can scan cards up to <strong>100 times per month</strong> (matches the app's <code>MONTHLY_SCAN_LIMIT</code> constant); guest mode does not support scanning or price forecasts. The paid subscriber role is a future plan that becomes active once app in-app purchase / billing ships; until then, any subscriber state is forcibly collapsed back to free_user inside the app, so there is no "local demo unlock" path.</li>
         <li><strong>Identification Principle</strong>: We **do NOT use Email as the primary unique key** (to prevent issues with Apple's Private Relay email hiding, or mismatching emails between providers). All linking is tied to the unique provider account ID.</li>
       </ul>
 
@@ -403,14 +403,14 @@
         <li><strong>Email Address</strong>: Used for account contact, support verification, and notifications. It is not used as the unique login or account-linking key; Google/Apple Provider User ID is the source of truth.</li>
         <li><strong>Display Name</strong>: Used to personalize greetings on the App interface.</li>
         <li><strong>Provider User ID</strong>: A non-sensitive unique ID string provided by Google or Apple.</li>
-        <li><strong>Scan Usage & Quota Logs</strong>: Securely logs your monthly scan count to enforce the 100-scan monthly limit for the free tier and prevent local client tampering.</li>
+        <li><strong>Scan Usage & Quota Logs</strong>: Scan count is currently kept as a per-device counter (100/month cap; clearing cache or reinstalling resets it), used to enforce the free-tier monthly limit on-device. Server-side quota sync and tamper prevention are future plans; they will ship together with paid subscriptions.</li>
         <li><strong>Paid Subscription Status</strong>: <strong>Not implemented.</strong> The App is not connected to any payment processor and does not obtain, transmit, or store transaction identifiers, purchase history, credit card numbers, or any other financial data. This field describes a future plan; we will update this policy before any of it takes effect.</li>
       </ul>
       
       <h3>How Data is Used:</h3>
       <ol>
         <li><strong>User Authentication</strong>: To secure your account and access.</li>
-        <li><strong>Cloud Syncing & Subscription Management</strong>: To sync your watchlists, card collections, monthly quota progress, and premium subscription state.</li>
+        <li><strong>Cloud Syncing</strong>: The `api/auth/sync` endpoint currently syncs your decks, card ownership (collection), favorites (bookmarks), price alerts, and UI preferences (currency / language). <strong>Monthly scan quota progress and paid subscription state are NOT part of the current sync payload</strong> — scan quota remains a per-device counter and paid subscription is not implemented; both will be folded into sync when app in-app purchase ships.</li>
         <li><strong>Push Notifications</strong>: If you enable card price alerts, we use your device push token (generated and managed by Expo Push Service) to deliver notifications. This token is used solely for sending alerts.</li>
       </ol>
 

@@ -244,6 +244,35 @@ for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTO
   });
 }
 
+// ── DIC-1380 W7 CR: standalone Price section + three-card Hero composition
+for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTOP]]) {
+  await test(`${label}: Pen standalone Price section mounts with three price rows (DIC-1380 W7 CR)`, async () => {
+    const { container, cleanup } = await renderLanding(viewport);
+    try {
+      const price = byTestId(container, 'landing-price');
+      assert.ok(price, 'standalone Price section mounts (DIC-1380 W7 CR)');
+      assert.ok(byTestId(container, 'landing-price-row-hSD01-016'), 'price row 1 (star primary) mounts');
+      assert.ok(byTestId(container, 'landing-price-row-hBP01-042'), 'price row 2 mounts');
+      assert.ok(byTestId(container, 'landing-price-row-hBP02-088'), 'price row 3 (down-trend) mounts');
+      assert.ok(/NT\$ · ¥ · \$/.test(price.textContent), 'price section states the three-currency framing');
+    } finally { await cleanup(); }
+  });
+}
+
+await test('desktop 1440: Pen three-card Hero composition mounts (DIC-1380 W7 CR)', async () => {
+  const { container, cleanup } = await renderLanding(DESKTOP);
+  try {
+    // Hero visual carries THREE card anchors: primary + secondary + tertiary
+    assert.ok(byTestId(container, 'landing-hero-card-primary'), 'hero primary card (with sparkline) mounts');
+    assert.ok(byTestId(container, 'landing-hero-card-secondary'), 'hero secondary card mounts');
+    assert.ok(byTestId(container, 'landing-hero-card-tertiary'), 'hero tertiary card mounts');
+    // Sparkline still sits on the primary card, not the compact secondaries.
+    const primary = byTestId(container, 'landing-hero-card-primary');
+    const sparkline = byTestId(container, 'landing-hero-sparkline');
+    assert.ok(primary && sparkline && primary.contains(sparkline), 'sparkline lives inside the primary card');
+  } finally { await cleanup(); }
+});
+
 // ── AppNavigator routes an unauthenticated visitor to LandingScreen ─────
 await test('AppNavigator: unauthenticated + non-guest visitor is routed to LandingScreen (not the bare LoginScreen)', async () => {
   const fs = await import('node:fs');

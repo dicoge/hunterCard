@@ -78,22 +78,50 @@ function isValidCron(expr) {
   check(`${file} runs the refresh:yt-stats npm script`, wf.raw.includes('npm run refresh:yt-stats'));
   check(`${file} regenerates the native / Store MVP mirror after refresh`, wf.raw.includes('generate-native-database.mjs'));
   check(`${file} PRs into main via a bot-owned sync branch (never direct-push)`, wf.raw.includes('bot/refresh-yt-stats'));
-  // DIC-1380 W6: the workflow must ACTUALLY fetch fresh upstream YT data;
-  // reprocessing already-committed inputs is not a refresh. The scheduled
-  // path invokes scrape-yt-subscribers.js (live YouTube fetch) before the
-  // recompute step. A `skip_live_fetch` manual escape hatch is fine (it
-  // requires an explicit `true` input); the DEFAULT scheduled fire is
-  // live.
-  check(
-    `${file} performs a live upstream fetch before recompute (DIC-1380 W6)`,
-    wf.raw.includes('scrape-yt-subscribers.js'),
-    'schedule must fetch from YouTube, not just reprocess committed history',
-  );
+  // DIC-1380 W6/W7: the workflow must ACTUALLY fetch fresh upstream YT
+  // data AND feed it into the APP-CONSUMED artifact.
+  //
+  // W6 initially wired scrape-yt-subscribers.js — that scraper writes to
+  // data/yt-subscribers/*, which is NOT the artifact the app or
+  // refresh:yt-stats read; the sync-branch diff was therefore always
+  // empty and the "live refresh" was silently a no-op (Mac-Codex W7).
+  //
+  // W7 CR fix: the scheduled path must invoke scrape-yt-stats.js —
+  // which writes to data/yt-stats-history.json, the exact file
+  // refresh:yt-stats + verify-deployment-data + build-database read.
+  // Reject the sibling-file scraper explicitly so a future edit cannot
+  // regress back into the writes-to-nothing state.
+  {
+    // Strip comment lines when checking for the wrong-scraper reference —
+    // the workflow explains why the sibling scraper is banned; the ban
+    // is on EXECUTABLE lines.
+    const activeLines = wf.raw
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .join('\n');
+    check(
+      `${file} performs a live upstream fetch of the APP-CONSUMED artifact (DIC-1380 W7 CR — data/yt-stats-history.json)`,
+      activeLines.includes('scripts/scrape-yt-stats.js') && !activeLines.includes('scrape-yt-subscribers.js'),
+      'schedule must invoke scrape-yt-stats.js (writes yt-stats-history.json); scrape-yt-subscribers.js only writes data/yt-subscribers/* and never feeds the app',
+    );
+  }
   check(
     `${file} stages data/yt-stats-history.json in SYNC_PATHS so the live snapshot survives`,
     /SYNC_PATHS:[\s\S]*yt-stats-history\.json/.test(wf.raw),
     'the fresh snapshot the scraper wrote must be in the sync whitelist',
   );
+  // W7 CR extra guard: assert the scraper we call ACTUALLY writes to the
+  // consumed artifact. This closes the loop end-to-end: reading the
+  // scraper source proves it targets HISTORY_PATH.
+  {
+    const scraperRaw = fs.readFileSync(path.join(repoRoot, 'scripts', 'scrape-yt-stats.js'), 'utf8');
+    check(
+      `scripts/scrape-yt-stats.js writes to the app-consumed data/yt-stats-history.json`,
+      /HISTORY_PATH\s*=\s*path\.join\(DATA_DIR,\s*['"]yt-stats-history\.json['"]\)/.test(scraperRaw)
+        && scraperRaw.includes('fs.writeFileSync(HISTORY_PATH'),
+      'scrape-yt-stats.js must resolve HISTORY_PATH to yt-stats-history.json AND actually writeFileSync to it',
+    );
+  }
   // Ignore comment lines when scanning for a bare `git add -A` — comments
   // legitimately reference the anti-pattern to explain why we avoid it.
   const activeAddAllLines = wf.raw

@@ -153,6 +153,56 @@ const FAQ = [
   },
 ];
 
+// DIC-1380 W7 CR — standalone Price section. The previous Landing only
+// carried price data as a Hero-visual teaser; the accepted Pen composition
+// pins a dedicated section that previews the market-data breadth (multi-
+// currency, multi-timeframe, gap-estimate). Copy is consistent with what
+// the price surfaces actually deliver today.
+const PRICE_ROWS = [
+  {
+    name: '星街すいせい UR',
+    number: 'hSD01-016',
+    price: 'NT$ 3,600',
+    currencySecondary: '¥ 17,600',
+    delta: '+2.4%',
+    trend: 'up',
+  },
+  {
+    name: '兎田ぺこら SR',
+    number: 'hBP01-042',
+    price: 'NT$ 1,860',
+    currencySecondary: '¥ 9,100',
+    delta: '+0.6%',
+    trend: 'up',
+  },
+  {
+    name: 'ラプラス・ダークネス C',
+    number: 'hBP02-088',
+    price: 'NT$ 40',
+    currencySecondary: '¥ 200',
+    delta: '-1.2%',
+    trend: 'down',
+  },
+] as const;
+
+function PriceRow({ name, number, price, currencySecondary, delta, trend }: typeof PRICE_ROWS[number]) {
+  return (
+    <View style={styles.priceRow} testID={`landing-price-row-${number}`}>
+      <View style={styles.priceRowCopy}>
+        <Text style={styles.priceRowName} numberOfLines={1}>{name}</Text>
+        <Text style={styles.priceRowNumber} numberOfLines={1}>{number}</Text>
+      </View>
+      <View style={styles.priceRowValues}>
+        <Text style={styles.priceRowPrice}>{price}</Text>
+        <Text style={styles.priceRowCurrencySecondary}>{currencySecondary}</Text>
+      </View>
+      <View style={[styles.priceRowDelta, trend === 'down' && styles.priceRowDeltaDown]}>
+        <Text style={styles.priceRowDeltaText}>{delta}</Text>
+      </View>
+    </View>
+  );
+}
+
 function HowStep({ step, title, body }: { step: string; title: string; body: string }) {
   return (
     <View style={styles.howStep} testID={`landing-how-${step}`}>
@@ -364,7 +414,13 @@ export default function LandingScreen() {
           </View>
           {isDesktop && (
             <View style={styles.heroVisual} testID="landing-hero-visual">
-              <View style={styles.heroVisualCard}>
+              {/* DIC-1380 W7 CR — Pen three-card hero composition. The
+                  previous single-card visual was the minimum; the accepted
+                  Pen frame stacks three price cards (main highlight + two
+                  supporting rows) so the hero visually previews the
+                  market-data breadth. Sparkline stays on the primary
+                  card for the price-trend teaser. */}
+              <View style={styles.heroVisualCard} testID="landing-hero-card-primary">
                 <Text style={styles.heroVisualTitle}>星街すいせい UR · 近 7 日均價</Text>
                 <View style={styles.heroVisualPriceRow}>
                   <Text style={styles.heroVisualPrice}>NT$ 3,600</Text>
@@ -379,6 +435,24 @@ export default function LandingScreen() {
                 </View>
                 <Text style={styles.heroVisualSource}>資料來源：遊々亭 · 固定匯率換算</Text>
               </View>
+              <View style={styles.heroVisualCardSecondary} testID="landing-hero-card-secondary">
+                <Text style={styles.heroVisualTitleSmall}>ときのそら SR · 近 7 日均價</Text>
+                <View style={styles.heroVisualPriceRowSmall}>
+                  <Text style={styles.heroVisualPriceSmall}>NT$ 1,180</Text>
+                  <View style={styles.heroVisualDelta}>
+                    <Text style={styles.heroVisualDeltaText}>+0.8%</Text>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.heroVisualCardSecondary} testID="landing-hero-card-tertiary">
+                <Text style={styles.heroVisualTitleSmall}>ラプラス・ダークネス C · 近 7 日均價</Text>
+                <View style={styles.heroVisualPriceRowSmall}>
+                  <Text style={styles.heroVisualPriceSmall}>NT$ 40</Text>
+                  <View style={[styles.heroVisualDelta, styles.heroVisualDeltaDown]}>
+                    <Text style={styles.heroVisualDeltaText}>-1.2%</Text>
+                  </View>
+                </View>
+              </View>
             </View>
           )}
         </View>
@@ -386,6 +460,26 @@ export default function LandingScreen() {
         {/* STATS BAR — Pen `vfBpS` desktop / `ufjjN` mobile */}
         <View style={[styles.section, styles.statsBar, isDesktop && styles.statsBarDesktop]} testID="landing-stats-bar">
           {STATS.map((s) => <StatCard key={s.label} value={s.value} label={s.label} mobile={!isDesktop} />)}
+        </View>
+
+        {/* PRICE — DIC-1380 W7 CR: standalone price section. The Pen
+            artifact anchors a dedicated market-data preview (multi-currency
+            + trend) below the stats bar; the Hero visual is a teaser, not
+            the whole story. */}
+        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-price">
+          <Text style={styles.eyebrowLabel}>市場價格</Text>
+          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+            NT$ · ¥ · $ 三幣別同時看
+          </Text>
+          <Text style={styles.sectionSubhead}>
+            遊々亭參考行情每日刷新；每張卡同時列出台幣、日圓與美元換算，並附近 7 日的漲跌方向。
+          </Text>
+          <View style={[styles.priceList, isDesktop && styles.priceListDesktop]}>
+            {PRICE_ROWS.map((row) => <PriceRow key={row.number} {...row} />)}
+          </View>
+          <Text style={styles.priceListNote}>
+            資料來源：遊々亭 · 固定匯率換算 · 上線後可跨裝置同步收藏與到價提醒（規劃中）
+          </Text>
         </View>
 
         {/* FEATURES — Pen `GAolm` desktop / `r41z2` mobile */}
@@ -717,8 +811,24 @@ const styles = StyleSheet.create({
   heroVisual: {
     width: 420,
     maxWidth: '45%',
-    alignItems: 'center',
+    alignItems: 'stretch',
     justifyContent: 'center',
+    gap: 12,
+  },
+  heroVisualCardSecondary: {
+    width: '100%',
+    backgroundColor: TOKENS.surface2,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+    gap: 6,
+  },
+  heroVisualTitleSmall: { color: TOKENS.textSecondary, fontSize: 12, fontWeight: '600' },
+  heroVisualPriceRowSmall: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
+  heroVisualPriceSmall: { color: TOKENS.textPrimary, fontSize: 18, fontWeight: '700' },
+  heroVisualDeltaDown: {
+    backgroundColor: 'rgba(248,113,113,0.15)',
   },
   heroVisualCard: {
     width: '100%',
@@ -841,6 +951,30 @@ const styles = StyleSheet.create({
   featureDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: TOKENS.accent2, marginBottom: 4 },
   featureTitle: { color: TOKENS.textPrimary, fontSize: 16, fontWeight: '700' },
   featureBody: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
+
+  // ── PRICE (DIC-1380 W7 CR — standalone Pen section) ───────────────
+  priceList: { flexDirection: 'column', gap: 8, marginTop: 24, alignSelf: 'stretch', maxWidth: 820, width: '100%' },
+  priceListDesktop: { alignSelf: 'center' },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: TOKENS.surface,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+  },
+  priceRowCopy: { flex: 1, minWidth: 0 },
+  priceRowName: { color: TOKENS.textPrimary, fontSize: 14, fontWeight: '700' },
+  priceRowNumber: { color: TOKENS.textMuted, fontSize: 11, marginTop: 2 },
+  priceRowValues: { alignItems: 'flex-end', marginRight: 8 },
+  priceRowPrice: { color: TOKENS.textPrimary, fontSize: 16, fontWeight: '700' },
+  priceRowCurrencySecondary: { color: TOKENS.textSecondary, fontSize: 11, marginTop: 2 },
+  priceRowDelta: { backgroundColor: 'rgba(52,211,153,0.15)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  priceRowDeltaDown: { backgroundColor: 'rgba(248,113,113,0.15)' },
+  priceRowDeltaText: { color: '#34D399', fontSize: 12, fontWeight: '700' },
+  priceListNote: { color: TOKENS.textMuted, fontSize: 11, marginTop: 12, textAlign: 'center' },
 
   // ── HOW IT WORKS (DIC-1380 W6 CR — full Pen composition) ──────────
   howGrid: { flexDirection: 'column', gap: 16, marginTop: 24, alignSelf: 'stretch' },

@@ -224,22 +224,47 @@ await test('390x844: Pen `uXuqo` grid head mounts on the picker panel (DIC-1380 
   } finally { await cleanup(); }
 });
 
-// ── Pen `uXuqo` viewport pin: content flows within 390px width ───────────
-await test('390x844: no element in the mobile deck editor overflows the 390px viewport width', async () => {
+// ── DIC-1380 W7 CR: Pen `uXuqo` three-tab hierarchy is the primary ─
+await test('390x844: primary tab strip is THREE zones only (Main/Yell/Oshi), NOT the five-tab legacy switch (DIC-1380 W7 CR)', async () => {
   seedDeck({ oshiQty: 1, mainQty: 43, yellQty: 20 });
   const { container, cleanup } = await renderMobileEditor();
   try {
     const panelSwitch = byTestId(container, 'deck-mobile-panel-switch');
-    assert.ok(panelSwitch, 'panel switch mounts');
-    // Every tab must be under the panel-switch parent, i.e. clipped by 390px
-    // horizontally. jsdom does not implement full layout, so we assert the
-    // parent-child relationship the Pen requires (5 tabs sit inside the strip)
-    // rather than pixel-measure widths.
-    for (const tab of ['picker', 'oshi', 'main', 'yell', 'shortage']) {
-      const el = byTestId(container, `deck-mobile-panel-${tab}`);
-      assert.ok(el, `${tab} tab mounts`);
-      assert.ok(panelSwitch.contains(el), `${tab} tab is a child of the panel switch`);
+    assert.ok(panelSwitch, 'primary panel switch mounts');
+    // The three zone tabs are the PRIMARY hierarchy — direct children
+    // of `deck-mobile-panel-switch`.
+    for (const zone of ['main', 'yell', 'oshi']) {
+      const tab = byTestId(container, `deck-mobile-panel-${zone}`);
+      assert.ok(tab, `zone ${zone} tab mounts`);
+      assert.ok(panelSwitch.contains(tab), `zone ${zone} tab is a DIRECT child of the primary panel switch`);
     }
+    // Picker + shortage are still reachable (compat with DIC-1064 /
+    // DIC-1086 E2E) but they are NOT inside the primary tab strip. They
+    // live in the secondary control row.
+    const picker = byTestId(container, 'deck-mobile-panel-picker');
+    const shortage = byTestId(container, 'deck-mobile-panel-shortage');
+    assert.ok(picker, 'picker control still exists (secondary chip)');
+    assert.ok(shortage, 'shortage control still exists (secondary chip)');
+    assert.ok(!panelSwitch.contains(picker), 'picker is NOT inside the primary three-tab strip anymore (Pen uXuqo hierarchy)');
+    assert.ok(!panelSwitch.contains(shortage), 'shortage is NOT inside the primary three-tab strip anymore (Pen uXuqo hierarchy)');
+    const secondary = byTestId(container, 'deck-mobile-secondary-controls');
+    assert.ok(secondary, 'secondary control row mounts');
+    assert.ok(secondary.contains(picker) && secondary.contains(shortage), 'picker + shortage live under deck-mobile-secondary-controls');
+  } finally { await cleanup(); }
+});
+
+await test('390x844: selected-deck grid mounts on a zone tab (Pen uXuqo — DIC-1380 W7 CR)', async () => {
+  seedDeck({ oshiQty: 1, mainQty: 12, yellQty: 4 });
+  const { container, cleanup } = await renderMobileEditor();
+  try {
+    // Switch into the Main zone tab and assert the selected-deck grid
+    // renders. The Pen `uXuqo` centers the deck experience on the
+    // selected-deck grid, not the picker.
+    const mainTab = byTestId(container, 'deck-mobile-panel-main');
+    await act(async () => mainTab.click());
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    const grid = byTestId(container, 'deck-mobile-selected-grid');
+    assert.ok(grid, 'selected-deck grid mounts when a zone tab is active');
   } finally { await cleanup(); }
 });
 

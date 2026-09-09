@@ -423,7 +423,13 @@ function applyMergedPatchToStores(patch: AccountSyncPatch): void {
 
 function _applyMergedPatchToStoresInner(patch: AccountSyncPatch): void {
   if (Array.isArray(patch.favorites)) {
-    useFavoritesStore.getState().replaceAll(patch.favorites as FavoriteEntry[]);
+    // DIC-1380 W7 CR: MUST preserve tombstones across the 409 merge apply.
+    // A subsequent 409 during the same push cycle — or a caller re-
+    // scheduling after a rethrow — needs the tombstones to be intact so
+    // the retry still honors the local unfavorite. Only a server-ACKed
+    // push (attemptPush success branch) or a fresh hydrate is allowed to
+    // drop the tombstones.
+    useFavoritesStore.getState().replaceAllPreservingTombstones(patch.favorites as FavoriteEntry[]);
   }
   if (Array.isArray(patch.decks)) {
     useDeckStore.setState((s) => ({ ...s, decks: patch.decks as Deck[] }));

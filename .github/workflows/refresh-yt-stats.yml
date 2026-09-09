@@ -72,16 +72,17 @@ jobs:
         run: npm ci
 
       - name: Scrape live YouTube channel stats (real upstream fetch)
-        # DIC-1380 W6: this is the LIVE fetch the release train commits
-        # to. The scraper reads the members list, fetches each channel's
-        # About page over HTTPS, parses ytInitialData, and appends the
-        # snapshot to data/yt-stats-history.json. YT_API_KEY is used
-        # when the secret is configured (batch API); otherwise the
-        # scraper falls through to the SSR-HTML path.
+        # DIC-1380 W7 CR fix: the scraper MUST write to the artifact the
+        # app + refresh:yt-stats consume (`data/yt-stats-history.json`),
+        # not a sibling file. `scrape-yt-stats.js` appends to
+        # `yt-stats-history.json` (one snapshot per member, per date)
+        # via the same growth-delta path build-database.js uses; the
+        # previous W6 workflow called `scrape-yt-subscribers.js` which
+        # writes only to `data/yt-subscribers/*` and never reached the
+        # committed history, so the SYNC_PATHS diff was always empty and
+        # the "live refresh" was silently a no-op (Mac-Codex W7).
         if: github.event.inputs.skip_live_fetch != 'true'
-        env:
-          YT_API_KEY: ${{ secrets.YT_API_KEY }}
-        run: node scripts/scrape-yt-subscribers.js
+        run: node scripts/scrape-yt-stats.js
 
       - name: Recompute ytStats from refreshed history + members files
         run: npm run refresh:yt-stats

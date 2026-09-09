@@ -599,6 +599,100 @@ await test('W6 race: push whose session changed mid-conflict does NOT reapply me
   assert.equal(fetchCalls.length, 1, 'no retry after session change — the whole operation bailed');
 });
 
+// ── DIC-1380 W7: tombstones survive REPEATED 409 retries ──────────────
+// Mac-Codex W7 evidence: `replaceAll()` on the merge-apply path was
+// clearing the removals tombstone map. That worked when the retry
+// succeeded on the first attempt, but if the caller re-scheduled after a
+// rethrow (or the merge itself produced a second 409) the retry patch
+// went out WITHOUT the tombstone → the deleted favorite resurrected.
+// The fix routes the merge-apply through `replaceAllPreservingTombstones`
+// and only clears the tombstones after a server-ACKed push. This test
+// pins the whole cycle.
+await test('W7 push: tombstones SURVIVE a mid-cycle 409 merge apply so a subsequent push retry still honors the delete', async () => {
+  // Local user unfavorited `gone`; `kept` stays.
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'kept', printing: 'BASE', now: '2026-09-08T00:00:00Z' });
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'gone', printing: 'BASE', now: '2026-09-08T00:00:00Z' });
+  useFavoritesStore.getState().removeFavorite('gone', 'BASE', '2026-09-09T00:00:00Z');
+  assert.ok(useFavoritesStore.getState().removals['gone|BASE'], 'precondition: tombstone stamped');
+  const serverSnap = {
+    ...SNAPSHOT_V7, revision: 500,
+    favorites: [
+      { cardNumber: 'gone', printing: 'BASE', addedAt: '2026-09-01T00:00:00Z' },
+      { cardNumber: 'kept', printing: 'BASE', addedAt: '2026-09-01T00:00:00Z' },
+    ],
+  };
+  // First push: 409 (conflict); merge apply lands; second push: 409 again;
+  // rethrow. After the rethrow, we assert the tombstone STILL EXISTS in
+  // the store so the caller's follow-up push (or a fresh binding-driven
+  // schedule) will still honor the delete.
+  responseQueue = [
+    jsonResponse(409, { error: 'revision_conflict', serverRevision: 500, snapshot: serverSnap }),
+    jsonResponse(409, { error: 'revision_conflict', serverRevision: 501, snapshot: { ...serverSnap, revision: 501 } }),
+  ];
+  await assert.rejects(
+    () => pushAccountSyncFromStores(SESSION),
+    (err) => err?.name === 'AccountSyncConflictError' && err.status === 409,
+  );
+  // The bug pre-W7: replaceAll cleared removals during the merge apply,
+  // so after the rethrow the tombstone was gone. The fix: the merge
+  // apply preserves tombstones.
+  assert.ok(
+    useFavoritesStore.getState().removals['gone|BASE'],
+    'W7 CR: tombstone SURVIVES the mid-cycle 409 merge apply so a future retry still honors the delete',
+  );
+  // Also: local favorites should NOT contain `gone` (the app never sees
+  // the deletion reversed on-screen either).
+  const favKeys = useFavoritesStore.getState().favorites.map((f) => f.cardNumber).sort();
+  assert.deepEqual(favKeys, ['kept'], 'local favorites list still excludes the tombstoned entry after the merge apply');
+});
+
+await test('W7 push: on server-ACKed success (following 409 recovery) tombstones ARE cleared exactly once', async () => {
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'gone', printing: 'BASE', now: '2026-09-08T00:00:00Z' });
+  useFavoritesStore.getState().removeFavorite('gone', 'BASE', '2026-09-09T00:00:00Z');
+  const serverSnap = {
+    ...SNAPSHOT_V7, revision: 600,
+    favorites: [{ cardNumber: 'gone', printing: 'BASE', addedAt: '2026-09-01T00:00:00Z' }],
+  };
+  responseQueue = [
+    jsonResponse(409, { error: 'revision_conflict', serverRevision: 600, snapshot: serverSnap }),
+    jsonResponse(200, { ok: true, snapshot: { ...serverSnap, revision: 601, favorites: [] } }),
+  ];
+  const confirmed = await pushAccountSyncFromStores(SESSION);
+  assert.equal(confirmed?.revision, 601);
+  assert.deepEqual(useFavoritesStore.getState().removals, {}, 'tombstones cleared after the server ACK, not before');
+});
+
+// A second push that follows a rethrown 409 (binding re-schedule) must
+// send a patch WITHOUT `gone` — because the tombstone survived the first
+// cycle. This is the end-to-end proof for the CR item.
+await test('W7 push: re-scheduled push after 409 rethrow STILL drops the tombstoned key from the outgoing patch', async () => {
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'gone', printing: 'BASE', now: '2026-09-08T00:00:00Z' });
+  useFavoritesStore.getState().removeFavorite('gone', 'BASE', '2026-09-09T00:00:00Z');
+  const serverSnap = {
+    ...SNAPSHOT_V7, revision: 700,
+    favorites: [{ cardNumber: 'gone', printing: 'BASE', addedAt: '2026-09-01T00:00:00Z' }],
+  };
+  // Cycle 1: 409, merge apply, 409, rethrow.
+  responseQueue = [
+    jsonResponse(409, { error: 'revision_conflict', serverRevision: 700, snapshot: serverSnap }),
+    jsonResponse(409, { error: 'revision_conflict', serverRevision: 701, snapshot: { ...serverSnap, revision: 701 } }),
+  ];
+  await assert.rejects(() => pushAccountSyncFromStores(SESSION));
+  const cycle1Calls = fetchCalls.length;
+  // Cycle 2: caller re-schedules a push. The tombstone should still be
+  // honored; the outgoing patch should NOT include `gone`.
+  fetchCalls.length = 0;
+  responseQueue = [
+    jsonResponse(409, { error: 'revision_conflict', serverRevision: 702, snapshot: { ...serverSnap, revision: 702 } }),
+    jsonResponse(200, { ok: true, snapshot: { ...serverSnap, revision: 703, favorites: [] } }),
+  ];
+  const confirmed = await pushAccountSyncFromStores(SESSION);
+  assert.equal(confirmed?.revision, 703);
+  const cycle2Retry = fetchCalls[1];
+  const retryFavs = (cycle2Retry.body.patch.favorites ?? []).map((f) => `${f.cardNumber}|${f.printing}`).sort();
+  assert.deepEqual(retryFavs, [], 'W7: re-scheduled push retry patch drops the tombstoned key — the delete survived the whole cycle');
+});
+
 if ((process.exitCode ?? 0) === 0) {
   console.log(`\n✅ account remote-sync orchestrator: ${passed} checks passed`);
 } else {

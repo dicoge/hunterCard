@@ -279,6 +279,15 @@ jobs:
       - name: Verify favorites store is wired into real product UI (DIC-1380 W6)
         run: npm run test:favorites-ui-wiring
 
+      - name: Verify nav_favorites routes to FavoritesScreen (DIC-1380 W7 CR)
+        run: npm run test:favorites-nav-route
+
+      - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
+        run: npm run test:tournament-discovery-acquisition
+
+      - name: Verify legal-page claims match actual STORE_MVP behavior (DIC-1380 W7 CR)
+        run: npm run test:legal-copy-vs-behavior
+
       - name: Verify YT + tournament scheduled refresh workflows stay wired (DIC-1380 W5)
         run: npm run test:scheduled-refresh-workflows
 

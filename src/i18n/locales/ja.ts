@@ -6,6 +6,7 @@ export const ja: Record<keyof typeof zh, string> = {
   nav_scan: 'カードスキャン',
   nav_search: '検索',
   nav_favorites: 'お気に入り',
+  nav_collection: 'カード所持',
   nav_deck_editor: 'デッキエディタ',
   nav_tournament_report: '大会月報',
   nav_watchlist: 'ほしい物アラート',
