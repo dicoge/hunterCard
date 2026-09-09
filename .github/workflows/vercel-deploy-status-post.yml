@@ -31,6 +31,14 @@ name: Vercel deploy status post
 # .github/workflows/ tree contains no `on: deployment_status`
 # workflow), and cannot influence what this consumer posts.
 #
+# Round 11 (CR): the Deployments API endpoint this consumer polls is
+# gated by the `deployments` scope, so the `permissions:` block below
+# must declare `deployments: read` alongside the write scopes needed
+# to post the mirror (contents/pull-requests). WITHOUT it the very
+# first `gh api .../deployments` call returns 403 and the scheduled
+# consumer silently never posts — scripts/test-deploy-status-
+# classify.mjs asserts this scope and failures on its removal.
+#
 # DATA MODEL
 # ---------------------------------------------------------------------
 # All facts come from GitHub's Deployments API, queried with this
@@ -70,6 +78,13 @@ on:
   workflow_dispatch:
 
 permissions:
+  # Round-11 CR: `deployments: read` is REQUIRED — the consumer's
+  # facts come from the GitHub Deployments API
+  # (`/repos/{owner}/{repo}/deployments` and
+  # `/repos/{owner}/{repo}/deployments/{id}/statuses`), whose scope
+  # is `deployments`. Without it every poll 403s and the mirror
+  # silently posts nothing (mutation-tested).
+  deployments: read
   contents: write
   pull-requests: write
 

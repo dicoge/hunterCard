@@ -45,6 +45,18 @@
  * 2. TRUST BOUNDARY — the repo-wide invariant + consumer-shape
  *    contract that makes it impossible for a PR to receive
  *    Vercel's `deployment_status` events with a write token.
+ * 3. ROUND-11 CR 1 — the default-branch-loaded `pull_request_target`
+ *    guard (`guard-deploy-status-triggers.yml`) plus its runtime
+ *    scan: a PR that re-introduces an `on: deployment_status` /
+ *    `on: deployment` workflow FAILS the merge gate from YAML the PR
+ *    author cannot edit (the boundary is moved OUTSIDE PR-controlled
+ *    YAML).
+ * 4. ROUND-11 CR 2 — `permissions: deployments: read` is required
+ *    because the consumer's facts come from the GitHub Deployments
+ *    API; removing it fails (mutation) and the polling step is
+ *    exercised end-to-end against a stubbed `gh` (runtime contract)
+ *    to prove it actually calls the /deployments + /statuses
+ *    endpoints it needs that scope for.
  *
  * Run: node scripts/test-deploy-status-classify.mjs
  */
@@ -284,18 +296,21 @@ test('failure event on a Production project → verdict=failure with env_kind=pr
 // TRUST BOUNDARY — repo-wide + consumer shape
 // -------------------------------------------------------------------
 
-test('REPO INVARIANT: no `.github/workflows/*.yml` file triggers on `deployment_status`', () => {
+test('REPO INVARIANT: no `.github/workflows/*.yml` file triggers on `deployment_status` or `deployment`', () => {
   // This is the round-10 core: for our feature (and by extension for
   // this repo's public trust posture) there must be NO workflow file
   // that receives Vercel's `deployment_status` events. Because
   // `deployment_status` workflows are loaded from the DEPLOYED ref
   // (PR head on preview deploys), any such workflow would give the
   // PR author the ability to grant themselves `contents: write` /
-  // `pull-requests: write` in their own PR YAML.
+  // `pull-requests: write` in their own PR YAML. Round-11 extends
+  // the ban to bare `deployment` — the broader event class that
+  // carries exactly the same DEPLOYED-ref loading and write-token
+  // property.
   //
   // The check parses every workflow file's `on:` block and asserts
-  // `deployment_status` is not listed. Comments are stripped so a
-  // rationale mention doesn't false-positive.
+  // neither trigger is listed. Comments are stripped so a rationale
+  // mention doesn't false-positive.
   const files = fs
     .readdirSync(WORKFLOWS_DIR)
     .filter((f) => /\.ya?ml$/i.test(f));
@@ -331,6 +346,10 @@ test('REPO INVARIANT: no `.github/workflows/*.yml` file triggers on `deployment_
     assert.ok(
       !triggerSet.has('deployment_status'),
       `${file} triggers on 'deployment_status' — this is the round-8/9 vulnerability: workflow YAML for deployment_status events is loaded from the DEPLOYED ref (PR head for previews), so a PR could grant its own workflow write scope. Move deploy-status mirroring to schedule+API instead.`,
+    );
+    assert.ok(
+      !triggerSet.has('deployment'),
+      `${file} triggers on 'deployment' — the bare deployment event class loads workflow YAML from the DEPLOYED ref just like deployment_status and shares the same write-token privilege. It is banned repo-wide (DIC-1401 round-11).`,
     );
   }
 });
@@ -371,7 +390,7 @@ test('CONSUMER TRIGGER: on: schedule + workflow_dispatch only', () => {
   );
 });
 
-test('CONSUMER PERMISSIONS: contents:write, pull-requests:write, and no additional scopes', () => {
+test('CONSUMER PERMISSIONS: deployments:read (Deployments API) + contents:write + pull-requests:write, nothing else', () => {
   const permsBlock = extractYamlBlock(
     stripYamlComments(CONSUMER_TEXT),
     /^permissions:\s*$/m,
@@ -393,13 +412,48 @@ test('CONSUMER PERMISSIONS: contents:write, pull-requests:write, and no addition
     'write',
     'consumer needs pull-requests: write',
   );
-  const allowed = new Set(['contents', 'pull-requests']);
+  assert.equal(
+    parsed['deployments'],
+    'read',
+    'consumer needs deployments: read — its facts come from the GitHub Deployments API (`repos/{owner}/{repo}/deployments` + `.../deployments/{id}/statuses`), whose scope is `deployments`. Without it the first poll 403s and the mirror silently posts nothing (Round-11 CR).',
+  );
+  const allowed = new Set(['contents', 'pull-requests', 'deployments']);
   for (const key of Object.keys(parsed)) {
     assert.ok(
       allowed.has(key),
-      `consumer permission ${JSON.stringify(key)} is not in the allowed set {contents, pull-requests}`,
+      `consumer permission ${JSON.stringify(key)} is not in the allowed set {contents, pull-requests, deployments}`,
     );
   }
+});
+
+test('ROUND-11 CR MUTATION: removing `deployments: read` from the consumer breaks the permission contract', () => {
+  // Source-style mutation sensitivity: if a future edit drops the
+  // `deployments` scope, the same parse used by the passing test
+  // above must FAIL to satisfy the contract.
+  const permsBlock = extractYamlBlock(
+    stripYamlComments(CONSUMER_TEXT),
+    /^permissions:\s*$/m,
+  );
+  assert.ok(permsBlock, 'consumer permissions block present');
+  const mutated = permsBlock
+    .split('\n')
+    .filter((l) => !/^\s*deployments\s*:/.test(l))
+    .join('\n');
+  const parsed = Object.fromEntries(
+    mutated
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+      .map((l) => {
+        const [k, v] = l.split(':').map((s) => s.trim());
+        return [k, v];
+      }),
+  );
+  assert.notEqual(
+    parsed['deployments'],
+    'read',
+    'the mutation (deleting deployments: read) must not satisfy the contract, otherwise the scope could silently disappear',
+  );
 });
 
 test('DATA AUTHORITY: consumer fetches deployments + statuses from GitHub API (not from any producer artifact or event payload)', () => {
@@ -549,6 +603,341 @@ test('ROUND-7 SCRIPT REMOVED: `scripts/ci/deploy-status-classify.sh` stays delet
 });
 
 // -------------------------------------------------------------------
+// ROUND-11 CR 2 — Deployments-API permissions runtime contract
+// -------------------------------------------------------------------
+
+const CONSUMER_POLL_STEP = findRunBlock(
+  CONSUMER_TEXT,
+  /^Poll GitHub Deployments API and post any un-summarized Vercel deployment statuses$/,
+);
+
+const CONSUMER_GH =
+  '#!/bin/bash\n' +
+  'printf "%s\\n" "$*" >> "$FAKE_GH_LOG"\n' +
+  'args="$*"\n' +
+  'if [[ "$args" == *"--input"* ]]; then\n' +
+  '  printf "%s\\n" \'{"html_url":"https://example.invalid/commit/comment/1"}\'\n' +
+  '  exit 0\n' +
+  'fi\n' +
+  'if [[ "$args" == *"--jq"* ]]; then\n' +
+  '  exit 0\n' +
+  'fi\n' +
+  'if [[ "$args" == *"/deployments?per_page="* ]]; then\n' +
+  '  cat "$FAKE_GH_DEPLOYMENTS"\n' +
+  'elif [[ "$args" == *"/deployments/"*"/statuses?per_page="* ]]; then\n' +
+  '  cat "$FAKE_GH_STATUSES"\n' +
+  'else\n' +
+  '  printf "%s\\n" "{}"\n' +
+  'fi\n' +
+  'exit 0\n';
+
+/**
+ * Run the consumer's actual polling run: block against a stubbed
+ * `gh` that records every invocation and serves canned Deployments
+ * API responses from env-pointed files. This is the runtime contract
+ * for `permissions: deployments: read`: it proves the step really
+ * issues the /deployments and /deployments/{id}/statuses calls that
+ * scope covers (and would 403 without).
+ */
+function runConsumerPoll({ deployments, statuses, pulls, comments }) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsc-rt-'));
+  try {
+    const scriptFile = path.join(tmp, 'poll.sh');
+    fs.writeFileSync(scriptFile, CONSUMER_POLL_STEP);
+    fs.writeFileSync(path.join(tmp, 'gh'), CONSUMER_GH);
+    fs.chmodSync(path.join(tmp, 'gh'), 0o755);
+    fs.writeFileSync(path.join(tmp, 'deployments.json'), deployments);
+    fs.writeFileSync(path.join(tmp, 'statuses.json'), statuses);
+    fs.writeFileSync(path.join(tmp, 'pulls.json'), pulls);
+    fs.writeFileSync(path.join(tmp, 'comments.txt'), comments);
+    fs.writeFileSync(path.join(tmp, 'gh.log'), '');
+    const result = spawnSync('bash', [scriptFile], {
+      env: {
+        PATH: `${tmp}:${process.env.PATH}`,
+        GITHUB_REPOSITORY: 'dicoge/hunterCard',
+        RUNNER_TEMP: tmp,
+        GH_TOKEN: 'fake-token',
+        VERCEL_APP_LOGIN: 'vercel[bot]',
+        MAX_DEPLOYMENTS: '100',
+        MAX_STATUSES_PER_DEPLOYMENT: '100',
+        FAKE_GH_DEPLOYMENTS: path.join(tmp, 'deployments.json'),
+        FAKE_GH_STATUSES: path.join(tmp, 'statuses.json'),
+        FAKE_GH_PULLS: path.join(tmp, 'pulls.json'),
+        FAKE_GH_COMMENTS: path.join(tmp, 'comments.txt'),
+        FAKE_GH_LOG: path.join(tmp, 'gh.log'),
+      },
+      encoding: 'utf8',
+    });
+    const log = fs.readFileSync(path.join(tmp, 'gh.log'), 'utf8');
+    return {
+      code: result.status,
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      log,
+    };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+const FAKE_SHA = 'a'.repeat(40);
+
+test('ROUND-11 CR RUNTIME: consumer enumerates the Deployments API and posts a Production success for a vercel[bot] deployment', () => {
+  const r = runConsumerPoll({
+    deployments: JSON.stringify([
+      {
+        id: 999,
+        sha: FAKE_SHA,
+        ref: 'refs/heads/ci/x',
+        environment: 'Production – holocard-hunter',
+        creator: { login: 'vercel[bot]', type: 'Bot' },
+      },
+    ]),
+    statuses: JSON.stringify([
+      {
+        id: 555,
+        state: 'success',
+        creator: { login: 'vercel[bot]' },
+        created_at: '2026-01-01T00:00:00Z',
+        description: 'Deployment completed',
+        log_url: 'https://example.invalid/log',
+        target_url: 'https://holohunter.dicoge.com',
+      },
+    ]),
+    pulls: '[]',
+    comments: '',
+  });
+  assert.equal(r.code, 0, `consumer runtime failed: ${r.stderr}`);
+  // The two calls the `deployments: read` scope must cover — this is
+  // the runtime contract behind the Round-11 permissions fix.
+  assert.match(
+    r.log,
+    /repos\/dicoge\/hunterCard\/deployments\?per_page=/,
+    'consumer must call GET /repos/{o}/{r}/deployments at runtime',
+  );
+  assert.match(
+    r.log,
+    /repos\/dicoge\/hunterCard\/deployments\/999\/statuses\?per_page=/,
+    'consumer must call GET /repos/{o}/{r}/deployments/{id}/statuses at runtime',
+  );
+  assert.match(r.stdout, /verdict=success/, 'classifier ran in-runtime');
+  assert.match(r.stdout, /env_kind=production/, 'environment classified production in-runtime');
+  assert.match(r.log, /--input/, 'consumer posted the summary body');
+});
+
+test('ROUND-11 CR RUNTIME NEGATIVE: non-vercel deployment is skipped — no statuses call, no post', () => {
+  const r = runConsumerPoll({
+    deployments: JSON.stringify([
+      {
+        id: 998,
+        sha: FAKE_SHA,
+        ref: 'refs/heads/main',
+        environment: 'Production – holocard-hunter',
+        creator: { login: 'someone-else', type: 'User' },
+      },
+    ]),
+    statuses: '[]',
+    pulls: '[]',
+    comments: '',
+  });
+  assert.equal(r.code, 0, `consumer runtime failed: ${r.stderr}`);
+  assert.match(
+    r.log,
+    /repos\/dicoge\/hunterCard\/deployments\?per_page=/,
+    'consumer enumerated deployments',
+  );
+  assert.ok(
+    !/\/deployments\/\d+\/statuses\?per_page=/.test(r.log),
+    'consumer must NOT query statuses for a deployment not authored by vercel[bot]',
+  );
+  assert.ok(!/--input/.test(r.log), 'consumer must NOT post when the creator gate rejects the deployment');
+});
+
+// -------------------------------------------------------------------
+// ROUND-11 CR 1 — default-branch guard for deployment-class triggers
+// -------------------------------------------------------------------
+
+const GUARD_PATH = path.join(
+  ROOT,
+  '.github/workflows/guard-deploy-status-triggers.yml',
+);
+const GUARD_TEXT = fs.readFileSync(GUARD_PATH, 'utf8');
+const GUARD_SCAN_STEP = findRunBlock(
+  GUARD_TEXT,
+  /^Fail PRs that add an event-triggered deployment workflow$/,
+);
+
+const GUARD_GH =
+  '#!/bin/bash\n' +
+  'printf "%s\\n" "$*" >> "$FAKE_GH_LOG"\n' +
+  'args="$*"\n' +
+  'if [[ "$args" == *"/pulls/"*"/files"* ]]; then\n' +
+  '  cat "$FAKE_GH_FILES"\n' +
+  'elif [[ "$args" == *"/contents/"*"ref="* ]]; then\n' +
+  '  url=""\n' +
+  '  for a in "$@"; do\n' +
+  '    case "$a" in repos/*) url="$a";; esac\n' +
+  '  done\n' +
+  '  name="$(printf "%s" "$url" | cut -d? -f1)"\n' +
+  '  name="${name##*/contents/}"\n' +
+  '  name="${name##*/}"\n' +
+  '  base64 < "$FAKE_GH_WF_DIR/$name"\n' +
+  'else\n' +
+  '  printf "%s\\n" "{}"\n' +
+  'fi\n' +
+  'exit 0\n';
+
+function runGuardScan({ files, workflowContents }) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsc-grd-'));
+  try {
+    const scriptFile = path.join(tmp, 'guard.sh');
+    fs.writeFileSync(scriptFile, GUARD_SCAN_STEP);
+    fs.writeFileSync(path.join(tmp, 'gh'), GUARD_GH);
+    fs.chmodSync(path.join(tmp, 'gh'), 0o755);
+    fs.writeFileSync(path.join(tmp, 'files.txt'), `${files.join('\n')}\n`);
+    fs.writeFileSync(path.join(tmp, 'gh.log'), '');
+    const wfDir = path.join(tmp, 'wf');
+    fs.mkdirSync(wfDir);
+    for (const [name, content] of Object.entries(workflowContents)) {
+      fs.writeFileSync(path.join(wfDir, path.basename(name)), content);
+    }
+    const result = spawnSync('bash', [scriptFile], {
+      env: {
+        PATH: `${tmp}:${process.env.PATH}`,
+        GH_TOKEN: 'fake-token',
+        GUARD_REPO: 'dicoge/hunterCard',
+        GUARD_PR: '999',
+        GUARD_HEAD_SHA: FAKE_SHA,
+        FAKE_GH_FILES: path.join(tmp, 'files.txt'),
+        FAKE_GH_WF_DIR: wfDir,
+        FAKE_GH_LOG: path.join(tmp, 'gh.log'),
+      },
+      encoding: 'utf8',
+    });
+    return {
+      code: result.status,
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+    };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+const SAFE_WF = 'name: Safe\non:\n  push:\n    branches: [main]\n';
+const EVIL_BLOCK = [
+  'name: Evil',
+  'on:',
+  '  deployment_status:',
+  '    types: [success]',
+  'permissions:',
+  '  contents: write',
+  '',
+].join('\n');
+const EVIL_INLINE = 'name: Evil2\non: deployment_status\npermissions:\n  contents: write\n';
+const EVIL_LIST = 'name: Evil3\non: [push, deployment_status]\npermissions:\n  contents: write\n';
+const EVIL_BARE_DEPLOYMENT = 'name: Evil4\non: deployment\npermissions:\n  contents: write\n';
+const JOB_NAMED_DEPLOYMENT = [
+  'name: Safe2',
+  'on:',
+  '  push:',
+  '    branches: [main]',
+  'jobs:',
+  '  deployment:',
+  '    runs-on: ubuntu-latest',
+  '    steps:',
+  '      - run: echo hi',
+  '',
+].join('\n');
+
+test('ROUND-11 GUARD: loaded from the base branch (pull_request_target), read-only permissions, no checkout', () => {
+  const uncommented = stripYamlComments(GUARD_TEXT);
+  assert.match(
+    uncommented,
+    /on:\n\s+pull_request_target:/,
+    'guard must trigger on pull_request_target so its YAML is resolved from the BASE branch the PR targets (staging/main), never from the PR head',
+  );
+  const onBlock = extractYamlBlock(uncommented, /^on:\s*$/m);
+  assert.match(onBlock, /pull_request_target:/, 'pull_request_target is the guard trigger');
+  assert.match(
+    GUARD_TEXT,
+    /types:\s*\[opened,\s*synchronize,\s*reopened\]/,
+    'guard must run on opened/synchronize/reopened (rechecked as the PR head moves)',
+  );
+  const perms = extractYamlBlock(uncommented, /^permissions:\s*$/m);
+  assert.match(perms, /contents:\s*read/, 'guard needs contents: read (fetch workflow content at head sha)');
+  assert.match(perms, /pull-requests:\s*read/, 'guard needs pull-requests: read (list PR files)');
+  assert.ok(!/write/.test(perms), 'guard must carry NO write scope');
+  assert.ok(
+    !/\buses:\s*actions\/checkout\b/m.test(uncommented),
+    'guard must NOT use actions/checkout — executing the PR tree would be a pwn-request',
+  );
+  const bodyText = extractRunBlocks(GUARD_TEXT)
+    .map((b) => b.body)
+    .join('\n');
+  assert.match(
+    bodyText,
+    /gh api "repos\/\$GUARD_REPO\/pulls\/\$GUARD_PR\/files"/,
+    'guard must read the PR file list via the REST API',
+  );
+  assert.match(
+    bodyText,
+    /gh api "repos\/\$GUARD_REPO\/contents\/\$fname\?ref=\$GUARD_HEAD_SHA"/,
+    'guard must fetch each changed workflow at the PR head sha via the REST API (never from a checkout)',
+  );
+  assert.match(
+    GUARD_TEXT,
+    /\$\{\{\s*github\.workflow_ref\s*\}\}/,
+    'guard must echo github.workflow_ref so auditors can confirm the YAML ref',
+  );
+});
+
+test('ROUND-11 GUARD REJECT: block-map `on: deployment_status` fails the guard at runtime', () => {
+  const r = runGuardScan({
+    files: ['.github/workflows/evil.yml'],
+    workflowContents: { '.github/workflows/evil.yml': EVIL_BLOCK },
+  });
+  assert.notEqual(r.code, 0, `guard must fail on deployment_status block-map; stdout=${r.stdout}`);
+  assert.match(r.stdout, /banned deployment-class event trigger/, 'guard reports the offending workflow');
+});
+
+test('ROUND-11 GUARD REJECT: inline `on: deployment_status` scalar fails the guard at runtime', () => {
+  const r = runGuardScan({
+    files: ['.github/workflows/evil.yml'],
+    workflowContents: { '.github/workflows/evil.yml': EVIL_INLINE },
+  });
+  assert.notEqual(r.code, 0, `guard must fail on inline deployment_status; stdout=${r.stdout}`);
+});
+
+test('ROUND-11 GUARD REJECT: inline list `on: [push, deployment_status]` fails the guard at runtime', () => {
+  const r = runGuardScan({
+    files: ['.github/workflows/evil.yml'],
+    workflowContents: { '.github/workflows/evil.yml': EVIL_LIST },
+  });
+  assert.notEqual(r.code, 0, `guard must fail on list-form deployment_status; stdout=${r.stdout}`);
+});
+
+test('ROUND-11 GUARD REJECT: bare `on: deployment` fails the guard (same dangerous event class)', () => {
+  const r = runGuardScan({
+    files: ['.github/workflows/evil.yml'],
+    workflowContents: { '.github/workflows/evil.yml': EVIL_BARE_DEPLOYMENT },
+  });
+  assert.notEqual(r.code, 0, `guard must fail on bare deployment; stdout=${r.stdout}`);
+});
+
+test('ROUND-11 GUARD PASS: safe workflow + a job merely named "deployment" does NOT fail the guard', () => {
+  const r = runGuardScan({
+    files: ['.github/workflows/safe.yml', '.github/workflows/vercel-deploy-status-post.yml'],
+    workflowContents: {
+      '.github/workflows/safe.yml': JOB_NAMED_DEPLOYMENT,
+      '.github/workflows/vercel-deploy-status-post.yml': CONSUMER_TEXT,
+    },
+  });
+  assert.equal(r.code, 0, `guard must pass a safe PR; stdout=${r.stdout}`);
+  assert.match(r.stdout, /Guard OK/, 'guard reports a clean scan');
+});
+
+// -------------------------------------------------------------------
 // Helpers
 // -------------------------------------------------------------------
 
@@ -584,6 +973,17 @@ function extractYamlBlock(text, headerRE) {
     body.push(l);
   }
   return body.join('\n');
+}
+
+/**
+ * Find a `run: |` step body by its `- name:` (regex), throwing when
+ * no step matches — so a renamed/removed step fails loudly.
+ */
+function findRunBlock(text, nameRE) {
+  const blocks = extractRunBlocks(text);
+  const found = blocks.find((b) => nameRE.test(b.name));
+  assert.ok(found, `no run: step matching ${nameRE} in workflow`);
+  return found.body;
 }
 
 /**
