@@ -115,6 +115,75 @@ const COMING_SOON_FEATURES = [
   '上線時會在此揭露方案內容',
 ];
 
+// Pen `holohunter-landing-v2.pen` additional composition sections
+// (DIC-1380 W6 CR — full Landing parity). The previous P0 subset only
+// carried Nav / Hero / Stats Bar / Features / Plans / Footer; the CR
+// explicitly asks for the full composition. These sections land the
+// remaining Pen anchors: HOW_IT_WORKS (三步驟), COLLECTION_PREVIEW
+// (卡表 / 收藏 / 牌組展示), FAQ (常見問題) and FINAL_CTA (最終行動列).
+
+const HOW_IT_WORKS = [
+  { step: '01', title: '查詢卡表', body: '中日文名稱、卡號、效果與收錄彈數全文搜尋，六種篩選一起疊。' },
+  { step: '02', title: '拍照估值', body: '拍一張卡片就辨識卡號與版本，掃完一盒直接看到整份估值清單。' },
+  { step: '03', title: '組牌出門', body: '50 + 20 + 1 邊組邊檢查，缺卡自動列出來，賽事牌組一鍵匯入。' },
+];
+
+const COLLECTION_HIGHLIGHTS = [
+  { title: '36 個收錄系列', body: 'hOCG 從 hSD01 一路到最新彈都在，官方卡表同步更新。' },
+  { title: '每日行情更新', body: '遊々亭參考行情每日刷新，同時看漲跌與 7 / 30 / 90 日走勢。' },
+  { title: '缺卡預估總額', body: '牌組編輯器算出缺哪幾張，並用當前市價估算補齊所需金額。' },
+];
+
+const FAQ = [
+  {
+    q: '需要付費才能使用嗎？',
+    a: 'HoloHunter 目前所有查詢、收藏、組牌、賽事月報與規則教學都是免費。每月 100 次卡片辨識掃描亦包含在免費會員內。訂閱與 App 內購尚未開放；未來付費方案上線時會透過 App Store / Google Play / Stripe 的既有金流處理，金額透過 Store API 動態載入。',
+  },
+  {
+    q: '沒有帳號可以先試用嗎？',
+    a: '可以。以訪客身份直接進入即可使用卡表檢索、規則教學、模擬對局與牌組編輯器；拍照掃描與跨裝置同步需登入 Google 或 Apple 帳號。',
+  },
+  {
+    q: '卡牌影像會被上傳到伺服器嗎？',
+    a: '手機 App：文字辨識在本機完成，卡牌影像不會離開您的裝置。網頁版：影像會傳送到伺服器端點，交由 Google Gemini 即時辨識，辨識後不作長期儲存。詳見隱私權政策。',
+  },
+  {
+    q: 'iOS / Android / 網頁版功能一致嗎？',
+    a: '介面與資料一致；掃描辨識的實作因平台不同（手機用裝置端 OCR、網頁用 AI 視覺辨識）。跨裝置同步以帳號雲端後端為準。',
+  },
+];
+
+function HowStep({ step, title, body }: { step: string; title: string; body: string }) {
+  return (
+    <View style={styles.howStep} testID={`landing-how-${step}`}>
+      <View style={styles.howStepNumberWrap}>
+        <Text style={styles.howStepNumber}>{step}</Text>
+      </View>
+      <Text style={styles.howStepTitle}>{title}</Text>
+      <Text style={styles.howStepBody}>{body}</Text>
+    </View>
+  );
+}
+
+function CollectionCard({ title, body }: { title: string; body: string }) {
+  return (
+    <View style={styles.collectionCard} testID={`landing-collection-${title}`}>
+      <View style={styles.collectionDot} />
+      <Text style={styles.collectionTitle}>{title}</Text>
+      <Text style={styles.collectionBody}>{body}</Text>
+    </View>
+  );
+}
+
+function FaqItem({ q, a }: { q: string; a: string }) {
+  return (
+    <View style={styles.faqItem} testID={`landing-faq-${q}`}>
+      <Text style={styles.faqQuestion}>Q. {q}</Text>
+      <Text style={styles.faqAnswer}>{a}</Text>
+    </View>
+  );
+}
+
 function ComingSoonPill({ text }: { text: string }) {
   return (
     <View style={styles.comingSoonPill} accessibilityRole="text">
@@ -333,6 +402,31 @@ export default function LandingScreen() {
           </View>
         </View>
 
+        {/* HOW IT WORKS — Pen additional section (DIC-1380 W6 CR full parity) */}
+        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-how-it-works">
+          <Text style={styles.eyebrowLabel}>操作流程</Text>
+          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+            三步驟開始使用
+          </Text>
+          <View style={[styles.howGrid, isDesktop && styles.howGridDesktop]}>
+            {HOW_IT_WORKS.map((s) => <HowStep key={s.step} step={s.step} title={s.title} body={s.body} />)}
+          </View>
+        </View>
+
+        {/* COLLECTION PREVIEW — Pen additional section (DIC-1380 W6 CR full parity) */}
+        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-collection-preview">
+          <Text style={styles.eyebrowLabel}>資料範圍</Text>
+          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+            從卡表到市價，一次到位
+          </Text>
+          <Text style={styles.sectionSubhead}>
+            官方卡表、市價、規則教學、賽事月報都由同一個資料庫供應，跨裝置同步以帳號後端為準。
+          </Text>
+          <View style={[styles.collectionGrid, isDesktop && styles.collectionGridDesktop]}>
+            {COLLECTION_HIGHLIGHTS.map((c) => <CollectionCard key={c.title} title={c.title} body={c.body} />)}
+          </View>
+        </View>
+
         {/* PLANS — Pen `mcRLH` desktop / `MPyoM` mobile */}
         <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-plans">
           <Text style={styles.eyebrowLabel}>方案</Text>
@@ -399,6 +493,52 @@ export default function LandingScreen() {
           <Text style={styles.plansFineprint}>
             目前所有功能均為免費會員範圍；訂閱與 App 內購尚未開放。
           </Text>
+        </View>
+
+        {/* FAQ — Pen additional section (DIC-1380 W6 CR full parity) */}
+        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-faq">
+          <Text style={styles.eyebrowLabel}>常見問題</Text>
+          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+            上線前你可能會想問的
+          </Text>
+          <View style={styles.faqGrid}>
+            {FAQ.map((f) => <FaqItem key={f.q} q={f.q} a={f.a} />)}
+          </View>
+        </View>
+
+        {/* FINAL CTA — Pen additional closing section (DIC-1380 W6 CR full parity) */}
+        <View style={[styles.section, styles.finalCta, isDesktop && styles.sectionDesktop]} testID="landing-final-cta">
+          <Text style={[styles.sectionHeadline, styles.finalCtaHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+            開始查卡與組牌
+          </Text>
+          <Text style={styles.sectionSubhead}>
+            訪客可查卡與看規則，登入後可掃描、收藏、跨裝置同步；付費訂閱尚未開放。
+          </Text>
+          <View style={[styles.ctaRow, isDesktop && styles.ctaRowDesktop]}>
+            <TouchableOpacity
+              style={[styles.ctaPrimary, isLoading && styles.ctaDisabled]}
+              onPress={handleGuest}
+              disabled={isLoading}
+              accessibilityRole="button"
+              testID="landing-final-cta-guest"
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.ctaPrimaryText}>以訪客登入</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.ctaGoogle}
+              onPress={handleGoogle}
+              disabled={isLoading}
+              accessibilityRole="button"
+              testID="landing-final-cta-google"
+            >
+              <ComingSoonPill text="即將推出" />
+              <Text style={styles.ctaGoogleText}>使用 Google 帳號</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* FOOTER — Pen `TldCK` desktop / `r86yeO` mobile */}
@@ -701,6 +841,33 @@ const styles = StyleSheet.create({
   featureDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: TOKENS.accent2, marginBottom: 4 },
   featureTitle: { color: TOKENS.textPrimary, fontSize: 16, fontWeight: '700' },
   featureBody: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
+
+  // ── HOW IT WORKS (DIC-1380 W6 CR — full Pen composition) ──────────
+  howGrid: { flexDirection: 'column', gap: 16, marginTop: 24, alignSelf: 'stretch' },
+  howGridDesktop: { flexDirection: 'row', gap: 20, maxWidth: TOKENS.contentDesktop, width: '100%', alignSelf: 'center' },
+  howStep: { padding: 20, borderRadius: 12, backgroundColor: TOKENS.surface, borderWidth: 1, borderColor: TOKENS.border, gap: 8, flex: 1, minWidth: 220 },
+  howStepNumberWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: TOKENS.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  howStepNumber: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  howStepTitle: { color: TOKENS.textPrimary, fontSize: 16, fontWeight: '700' },
+  howStepBody: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
+
+  // ── COLLECTION PREVIEW ────────────────────────────────────────────
+  collectionGrid: { flexDirection: 'column', gap: 12, marginTop: 24, alignSelf: 'stretch' },
+  collectionGridDesktop: { flexDirection: 'row', gap: 20, maxWidth: TOKENS.contentDesktop, width: '100%', alignSelf: 'center' },
+  collectionCard: { padding: 20, borderRadius: 12, backgroundColor: TOKENS.surface2, borderWidth: 1, borderColor: TOKENS.border, gap: 8, flex: 1, minWidth: 220 },
+  collectionDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: TOKENS.accent3, marginBottom: 6 },
+  collectionTitle: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '700' },
+  collectionBody: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
+
+  // ── FAQ ───────────────────────────────────────────────────────────
+  faqGrid: { flexDirection: 'column', gap: 12, marginTop: 24, alignSelf: 'stretch', maxWidth: 820, width: '100%' },
+  faqItem: { padding: 18, borderRadius: 12, backgroundColor: TOKENS.surface, borderWidth: 1, borderColor: TOKENS.border, gap: 8 },
+  faqQuestion: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '700' },
+  faqAnswer: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
+
+  // ── FINAL CTA ─────────────────────────────────────────────────────
+  finalCta: { paddingVertical: 48, alignItems: 'center' },
+  finalCtaHeadline: { textAlign: 'center' },
 
   // ── PLANS ─────────────────────────────────────────────────────────
   plansGrid: {

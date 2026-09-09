@@ -188,6 +188,42 @@ await test('390x844: tapping the Missing Bar summary opens the shortage panel', 
   } finally { await cleanup(); }
 });
 
+// ── DIC-1380 W6 CR: full Pen `uXuqo` structure — app bar + status banner + grid head ─
+await test('390x844: Pen `uXuqo` app bar mounts with the active deck name (DIC-1380 W6 CR)', async () => {
+  seedDeck({ oshiQty: 1, mainQty: 43, yellQty: 20 });
+  const { container, cleanup } = await renderMobileEditor();
+  try {
+    const appBar = byTestId(container, 'deck-mobile-appbar');
+    assert.ok(appBar, 'Pen uXuqo app bar mounts on 390 px viewport');
+    const title = byTestId(container, 'deck-mobile-appbar-title');
+    assert.ok(title, 'app bar carries a title anchor');
+    assert.ok(title.textContent.includes('Pen uXuqo Deck'), 'app bar title reflects the active deck name');
+    assert.ok(byTestId(container, 'deck-mobile-appbar-meta'), 'app bar carries a main-count meta line (Pen uXuqo)');
+  } finally { await cleanup(); }
+});
+
+await test('390x844: Pen `uXuqo` status banner mounts with the deck legality state (DIC-1380 W6 CR)', async () => {
+  seedDeck({ oshiQty: 1, mainQty: 12, yellQty: 4 });
+  const { container, cleanup } = await renderMobileEditor();
+  try {
+    const banner = byTestId(container, 'deck-mobile-status-banner');
+    assert.ok(banner, 'Pen uXuqo status banner mounts on 390 px viewport');
+    // Under 1/12/4 the deck is not legal; the banner should indicate that.
+    assert.ok(/尚未完成|未完成|尚未加入/.test(banner.textContent), 'status banner reflects the incomplete deck state');
+    assert.ok(/17\/71/.test(banner.textContent) || /總計/.test(banner.textContent) || /合計/.test(banner.textContent) || /\d+\/\d+/.test(banner.textContent), 'status banner shows a total count');
+  } finally { await cleanup(); }
+});
+
+await test('390x844: Pen `uXuqo` grid head mounts on the picker panel (DIC-1380 W6 CR)', async () => {
+  seedDeck({ oshiQty: 1, mainQty: 12, yellQty: 4 });
+  const { container, cleanup } = await renderMobileEditor();
+  try {
+    // Picker is the default panel — grid head should be visible.
+    const gridHead = byTestId(container, 'deck-mobile-grid-head');
+    assert.ok(gridHead, 'Pen uXuqo grid head mounts on the picker panel by default');
+  } finally { await cleanup(); }
+});
+
 // ── Pen `uXuqo` viewport pin: content flows within 390px width ───────────
 await test('390x844: no element in the mobile deck editor overflows the 390px viewport width', async () => {
   seedDeck({ oshiQty: 1, mainQty: 43, yellQty: 20 });

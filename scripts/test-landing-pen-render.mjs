@@ -200,6 +200,50 @@ await test('mobile 390: burger menu is present + expands (Pen `bDwDO`.`aaIVQ`)',
   } finally { await cleanup(); }
 });
 
+// ── DIC-1380 W6 CR: full Pen composition — every additional section mounts
+for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTOP]]) {
+  await test(`${label}: Pen How-It-Works three-step section mounts (DIC-1380 W6 CR full parity)`, async () => {
+    const { container, cleanup } = await renderLanding(viewport);
+    try {
+      assert.ok(byTestId(container, 'landing-how-it-works'), 'how-it-works section mounts');
+      assert.ok(byTestId(container, 'landing-how-01'), 'step 01 mounts');
+      assert.ok(byTestId(container, 'landing-how-02'), 'step 02 mounts');
+      assert.ok(byTestId(container, 'landing-how-03'), 'step 03 mounts');
+    } finally { await cleanup(); }
+  });
+
+  await test(`${label}: Pen Collection Preview section mounts with three cards (DIC-1380 W6 CR full parity)`, async () => {
+    const { container, cleanup } = await renderLanding(viewport);
+    try {
+      const preview = byTestId(container, 'landing-collection-preview');
+      assert.ok(preview, 'collection preview section mounts');
+      assert.ok(/36 個收錄系列/.test(preview.textContent), 'collection card 1 (36 系列) mounts');
+      assert.ok(/每日行情/.test(preview.textContent), 'collection card 2 (每日行情) mounts');
+      assert.ok(/缺卡預估總額/.test(preview.textContent), 'collection card 3 (缺卡預估) mounts');
+    } finally { await cleanup(); }
+  });
+
+  await test(`${label}: Pen FAQ section mounts with the four questions (DIC-1380 W6 CR full parity)`, async () => {
+    const { container, cleanup } = await renderLanding(viewport);
+    try {
+      const faq = byTestId(container, 'landing-faq');
+      assert.ok(faq, 'FAQ section mounts');
+      assert.ok(/需要付費才能使用嗎/.test(faq.textContent), 'FAQ Q1 (付費) mounts');
+      assert.ok(/沒有帳號可以先試用嗎/.test(faq.textContent), 'FAQ Q2 (試用) mounts');
+      assert.ok(/卡牌影像會被上傳到伺服器嗎/.test(faq.textContent), 'FAQ Q3 (影像上傳) mounts');
+    } finally { await cleanup(); }
+  });
+
+  await test(`${label}: Pen Final CTA section mounts with both guest + Google CTAs (DIC-1380 W6 CR full parity)`, async () => {
+    const { container, cleanup } = await renderLanding(viewport);
+    try {
+      assert.ok(byTestId(container, 'landing-final-cta'), 'final CTA section mounts');
+      assert.ok(byTestId(container, 'landing-final-cta-guest'), 'final CTA guest button mounts');
+      assert.ok(byTestId(container, 'landing-final-cta-google'), 'final CTA Google button mounts');
+    } finally { await cleanup(); }
+  });
+}
+
 // ── AppNavigator routes an unauthenticated visitor to LandingScreen ─────
 await test('AppNavigator: unauthenticated + non-guest visitor is routed to LandingScreen (not the bare LoginScreen)', async () => {
   const fs = await import('node:fs');

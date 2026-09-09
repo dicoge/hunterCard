@@ -820,6 +820,49 @@ export default function DeckEditorScreen() {
     </Modal>
   );
 
+  // Pen `uXuqo` app bar — top-of-frame deck name / active-deck identifier
+  // (DIC-1380 W6). Anchors the mobile deck editor so the player always
+  // knows which deck they are editing.
+  const phoneAppBar = (
+    <View style={styles.phoneAppBar} testID="deck-mobile-appbar">
+      <Text style={styles.phoneAppBarTitle} numberOfLines={1} testID="deck-mobile-appbar-title">
+        {activeDeck ? activeDeck.name : t('deck_title')}
+      </Text>
+      {activeDeck ? (
+        <Text style={styles.phoneAppBarMeta} numberOfLines={1} testID="deck-mobile-appbar-meta">
+          {t('deck_zone_main')} {stats?.main ?? 0}/{stats?.mainTarget ?? 50}
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  // Pen `uXuqo` status banner — persistent one-line legality state so the
+  // player sees "is this deck ready to enter a tournament?" at every step.
+  // Reads deck legal status from `isDeckLegal`; renders green when legal,
+  // amber when close, red when not (DIC-1380 W6).
+  const phoneStatusBanner = activeDeck && stats ? (() => {
+    const legal = isDeckLegal(activeDeck);
+    const label = legal
+      ? t('deck_status_legal')
+      : stats.total === 0
+        ? t('deck_status_empty')
+        : t('deck_status_incomplete');
+    return (
+      <View
+        style={[
+          styles.phoneStatusBanner,
+          legal && styles.phoneStatusBannerOk,
+        ]}
+        testID="deck-mobile-status-banner"
+      >
+        <Text style={styles.phoneStatusBannerDot}>{legal ? '●' : '○'}</Text>
+        <Text style={styles.phoneStatusBannerText} numberOfLines={1}>
+          {label} · {t('deck_total')} {stats.total}/{stats.totalTarget}
+        </Text>
+      </View>
+    );
+  })() : null;
+
   const phoneProgress = stats && (
     <View style={styles.phoneProgress} testID="deck-phone-progress">
       <Text style={styles.phoneProgressText}>{zoneLabels.oshi} {stats.oshi}/{stats.oshiTarget}</Text>
@@ -830,6 +873,22 @@ export default function DeckEditorScreen() {
       </Text>
     </View>
   );
+
+  // Pen `uXuqo` grid head — a small header above the picker's card grid
+  // that names the current category + shows the visible-count summary.
+  // Only meaningful on the picker panel (DIC-1380 W6).
+  const phoneGridHead = mobilePanel === 'picker' ? (
+    <View style={styles.phoneGridHead} testID="deck-mobile-grid-head">
+      <Text style={styles.phoneGridHeadTitle} numberOfLines={1}>
+        {activeZone === 'oshi' ? zoneLabels.oshi
+          : activeZone === 'main' ? zoneLabels.main
+          : zoneLabels.yell}
+      </Text>
+      <Text style={styles.phoneGridHeadCategory} numberOfLines={1}>
+        {ZONE_CATEGORIES[activeZone].map((c) => t(`card_category_${c}` as TranslationKey)).join(' · ')}
+      </Text>
+    </View>
+  ) : null;
 
   // DIC-1380 W5: mobile panel switch matches Pen frame `uXuqo` — the zone
   // tabs (`AMhtu` in the artifact) carry an inline `count/target` sub-label
@@ -946,8 +1005,11 @@ export default function DeckEditorScreen() {
       {finalizeSheet}
       {filterSheet}
       <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
+      {isPhone && phoneAppBar}
+      {isPhone && phoneStatusBanner}
       {isPhone ? phoneProgress : zoneTabs}
       {isPhone && phonePanelSwitch}
+      {isPhone && phoneGridHead}
       {isDesktop ? (
         <ScrollView contentContainerStyle={styles.desktopWrap}>
           <View style={styles.desktopCols}>
@@ -1125,6 +1187,16 @@ const styles = StyleSheet.create({
   tabLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
   tabLabelActive: { color: COLORS.primary },
   tabProgress: { color: COLORS.text, fontSize: 14, fontWeight: 'bold', marginTop: 2 },
+  phoneAppBar: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  phoneAppBarTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', flex: 1 },
+  phoneAppBarMeta: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  phoneStatusBanner: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: COLORS.surfaceLight, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  phoneStatusBannerOk: { backgroundColor: '#0f2c1e' },
+  phoneStatusBannerDot: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
+  phoneStatusBannerText: { color: COLORS.text, fontSize: 12, fontWeight: '600', flex: 1 },
+  phoneGridHead: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
+  phoneGridHeadTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  phoneGridHeadCategory: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '600' },
   phoneProgress: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 6, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   phoneProgressText: { flex: 1, color: COLORS.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' },
   phoneProgressTotal: { color: COLORS.primaryLight },
