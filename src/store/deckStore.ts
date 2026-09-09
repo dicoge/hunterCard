@@ -43,6 +43,16 @@ interface DeckState {
   activeDeckId: string | null;
   /** ownershipKey -> owned quantity */
   collection: Record<string, number>;
+  /** deck.id -> deletedAt ISO. Tombstone for the 409 merge so a genuine
+   *  local delete cannot be resurrected by a concurrent server add
+   *  (DIC-1380 W6). Cleared on hydrate + after a successful push. */
+  deletedDeckIds: Record<string, string>;
+  /** ownershipKey -> updatedAt ISO. Records that this key was written
+   *  locally after the last hydrate. The 409 merge uses it to prefer the
+   *  LOCAL value (which may be smaller, including 0) over MAX when the
+   *  local write is newer than the server snapshot's own updatedAt —
+   *  ownership can legitimately decrease (DIC-1380 W6). */
+  collectionChangedKeys: Record<string, string>;
 
   createDeck: (name: string) => string;
   /** Add a NEW independent deck from a tournament import draft (DIC-1033) and
@@ -72,6 +82,12 @@ interface DeckState {
   /** apply a signed delta to the owned count; clamps at 0 (never negative) */
   adjustOwned: (cardNumber: string, version: string, delta: number) => void;
   getOwned: (cardNumber: string, version: string) => number;
+
+  /** Consumed after a successful push — the server now knows about our
+   *  local deletions / decreases (DIC-1380 W6), so tombstones + local-
+   *  change stamps can be dropped. Also invoked on hydrate because the
+   *  server snapshot becomes the new baseline. */
+  clearSyncTombstones: () => void;
 }
 
 // Sanitize a raw owned quantity into a non-negative integer. Guards the global
@@ -108,10 +124,16 @@ export const useDeckStore = create<DeckState>()(
       decks: [],
       activeDeckId: null,
       collection: {},
+      deletedDeckIds: {},
+      collectionChangedKeys: {},
 
       createDeck: (name) => {
         const deck = emptyDeck(name.trim() || '新牌組');
-        set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id }));
+        set((s) => {
+          const deletedDeckIds = { ...s.deletedDeckIds };
+          delete deletedDeckIds[deck.id];
+          return { decks: [...s.decks, deck], activeDeckId: deck.id, deletedDeckIds };
+        });
         return deck.id;
       },
       importDeck: (draft) => {
@@ -124,7 +146,11 @@ export const useDeckStore = create<DeckState>()(
           origin: draft.origin,
           updatedAt: new Date().toISOString(),
         };
-        set((s) => ({ decks: [...s.decks, deck], activeDeckId: deck.id }));
+        set((s) => {
+          const deletedDeckIds = { ...s.deletedDeckIds };
+          delete deletedDeckIds[deck.id];
+          return { decks: [...s.decks, deck], activeDeckId: deck.id, deletedDeckIds };
+        });
         return deck.id;
       },
       renameDeck: (deckId, name) => set((s) => ({
@@ -132,10 +158,14 @@ export const useDeckStore = create<DeckState>()(
           ? { ...d, name: name.trim() || d.name, updatedAt: new Date().toISOString() }
           : d),
       })),
-      deleteDeck: (deckId) => set((s) => ({
-        decks: s.decks.filter((d) => d.id !== deckId),
-        activeDeckId: s.activeDeckId === deckId ? null : s.activeDeckId,
-      })),
+      deleteDeck: (deckId) => set((s) => {
+        if (!s.decks.some((d) => d.id === deckId)) return {};
+        return {
+          decks: s.decks.filter((d) => d.id !== deckId),
+          activeDeckId: s.activeDeckId === deckId ? null : s.activeDeckId,
+          deletedDeckIds: { ...s.deletedDeckIds, [deckId]: new Date().toISOString() },
+        };
+      }),
       setActiveDeck: (deckId) => set({ activeDeckId: deckId }),
       getActiveDeck: () => {
         const { decks, activeDeckId } = get();
@@ -207,7 +237,10 @@ export const useDeckStore = create<DeckState>()(
         const clean = sanitizeQty(qty);
         if (clean <= 0) delete next[key];
         else next[key] = clean;
-        return { collection: next };
+        return {
+          collection: next,
+          collectionChangedKeys: { ...s.collectionChangedKeys, [key]: new Date().toISOString() },
+        };
       }),
       adjustOwned: (cardNumber, version, delta) => set((s) => {
         const key = ownershipKey(cardNumber, version);
@@ -215,9 +248,14 @@ export const useDeckStore = create<DeckState>()(
         const clean = sanitizeQty((next[key] || 0) + delta);
         if (clean <= 0) delete next[key];
         else next[key] = clean;
-        return { collection: next };
+        return {
+          collection: next,
+          collectionChangedKeys: { ...s.collectionChangedKeys, [key]: new Date().toISOString() },
+        };
       }),
       getOwned: (cardNumber, version) => get().collection[ownershipKey(cardNumber, version)] || 0,
+
+      clearSyncTombstones: () => set({ deletedDeckIds: {}, collectionChangedKeys: {} }),
     }),
     {
       name: 'hunterCard-decks',
@@ -238,15 +276,35 @@ export const useDeckStore = create<DeckState>()(
       // legacy inventory through the new normalizer, summing quantities that
       // collapse together — the player owned the tier, not the shop's audit
       // history, so folded entries add up rather than being dropped.
-      version: 2,
+      // v3 (DIC-1380 W6): persist per-key deletion / change tombstones so
+      // the account-sync 409 merge can honor local deletions and inventory
+      // decreases across a reload — the tracker is worthless if it evaporates
+      // on the very restart that separates the local write from the sync.
+      version: 3,
       storage: createJSONStorage(() => platformStorage),
-      partialize: (s) => ({ decks: s.decks, activeDeckId: s.activeDeckId, collection: s.collection }),
+      partialize: (s) => ({
+        decks: s.decks,
+        activeDeckId: s.activeDeckId,
+        collection: s.collection,
+        deletedDeckIds: s.deletedDeckIds,
+        collectionChangedKeys: s.collectionChangedKeys,
+      }),
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<DeckState>;
         if (version < 2) {
           state.collection = normalizeCollection(
             (state.collection as Record<string, unknown>) || {},
           );
+        }
+        if (version < 3) {
+          state.deletedDeckIds = {};
+          state.collectionChangedKeys = {};
+        }
+        if (!state.deletedDeckIds || typeof state.deletedDeckIds !== 'object') {
+          state.deletedDeckIds = {};
+        }
+        if (!state.collectionChangedKeys || typeof state.collectionChangedKeys !== 'object') {
+          state.collectionChangedKeys = {};
         }
         return state as DeckState;
       },

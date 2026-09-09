@@ -56,19 +56,30 @@ const {
   mergeLocalOntoServer,
   clearAccountScopedStores,
 } = await import('../src/services/accountSyncOrchestrator.ts');
+const { useAuthStore } = await import('../src/store/authStore.ts');
 const { useDeckStore } = await import('../src/store/deckStore.ts');
 const { usePriceAlertStore } = await import('../src/stores/priceAlertStore.ts');
 const { useSettingsStore } = await import('../src/store/settingsStore.ts');
 const { useFavoritesStore } = await import('../src/store/favoritesStore.ts');
 
+const SESSION = 'session-abc';
+
 let passed = 0;
 async function test(label, fn) {
   fetchCalls.length = 0;
   responseQueue = [];
-  useDeckStore.setState((s) => ({ ...s, decks: [], collection: {}, activeDeckId: null }));
-  usePriceAlertStore.setState((s) => ({ ...s, alerts: {}, pending: {} }));
+  useDeckStore.setState((s) => ({
+    ...s, decks: [], collection: {}, activeDeckId: null,
+    deletedDeckIds: {}, collectionChangedKeys: {},
+  }));
+  usePriceAlertStore.setState((s) => ({ ...s, alerts: {}, pending: {}, removals: {} }));
   useSettingsStore.setState((s) => ({ ...s, preferredCurrency: 'TWD', preferredLanguage: 'zh' }));
   useFavoritesStore.getState().clearAll();
+  // DIC-1380 W6: the orchestrator now reads the auth session through
+  // useAuthStore to guard against a stale in-flight response. Default the
+  // session to the test-fixture bearer; individual tests override to
+  // simulate an account switch or logout mid-flight.
+  useAuthStore.setState((s) => ({ ...s, session: SESSION }));
   resetLastKnownRevision();
   try {
     await fn();
@@ -80,8 +91,6 @@ async function test(label, fn) {
     process.exitCode = 1;
   }
 }
-
-const SESSION = 'session-abc';
 
 function jsonResponse(status, body) {
   return () => new Response(JSON.stringify(body), {
@@ -411,6 +420,183 @@ await test('clearAccountScopedStores wipes favorites / decks / collection / aler
   assert.equal(useSettingsStore.getState().preferredCurrency, 'USD', 'settings survive logout (UI preference)');
   assert.equal(useSettingsStore.getState().preferredLanguage, 'ja', 'settings survive logout');
   assert.equal(getLastKnownRevision(), 0, 'lastKnownRevision reset');
+});
+
+// ── DIC-1380 W6: tombstones — the 409 merge preserves LOCAL deletions ──
+await test('W6 merge: favorites — local removal tombstone drops the server add', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, favorites: [
+      { cardNumber: 'gone', printing: 'BASE', addedAt: '2026-09-05T00:00:00Z' },
+      { cardNumber: 'keep', printing: 'BASE', addedAt: '2026-09-05T00:00:00Z' },
+    ] },
+    { favorites: [
+      // local unfavorited `gone` — it is absent from the local list;
+      // the tombstone (below) is what carries the delete signal.
+      { cardNumber: 'keep', printing: 'BASE', addedAt: '2026-09-05T00:00:00Z' },
+    ] },
+    { favoritesRemovedAt: { 'gone|BASE': '2026-09-08T00:00:00Z' } },
+  );
+  const keys = merged.favorites.map((f) => `${f.cardNumber}|${f.printing}`).sort();
+  assert.deepEqual(keys, ['keep|BASE'], 'local removal tombstone drops the server add');
+});
+
+await test('W6 merge: favorites — server add newer than tombstone wins (re-add wins over stale delete)', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, favorites: [
+      { cardNumber: 'x', printing: 'BASE', addedAt: '2026-09-10T00:00:00Z' },
+    ] },
+    { favorites: [] },
+    { favoritesRemovedAt: { 'x|BASE': '2026-09-05T00:00:00Z' } },
+  );
+  const keys = merged.favorites.map((f) => `${f.cardNumber}|${f.printing}`);
+  assert.deepEqual(keys, ['x|BASE'], 'server add stamped AFTER local removal survives');
+});
+
+await test('W6 merge: collection — local decrease survives (ownership can go down)', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: { 'a|BASE': 5, 'b|BASE': 3 } },
+    { collection: { 'a|BASE': 1, 'b|BASE': 3 } },
+    { collectionChangedKeys: { 'a|BASE': '2026-09-08T00:00:00Z' } },
+  );
+  assert.equal(merged.collection['a|BASE'], 1, 'local decrease respected because local WROTE the key');
+  assert.equal(merged.collection['b|BASE'], 3, 'untouched key falls back to MAX');
+});
+
+await test('W6 merge: collection — local delete (missing key) survives when the local device wrote it', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: { 'a|BASE': 5 } },
+    { collection: {} },
+    { collectionChangedKeys: { 'a|BASE': '2026-09-08T00:00:00Z' } },
+  );
+  assert.equal(merged.collection['a|BASE'], undefined, 'local delete (setOwned to 0) survives the merge');
+});
+
+await test('W6 merge: collection — untouched key still MAX-wins (never regresses silently)', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, collection: { 'a|BASE': 5 } },
+    { collection: { 'a|BASE': 1 } },
+    { collectionChangedKeys: {} },
+  );
+  assert.equal(merged.collection['a|BASE'], 5, 'local never touched the key — MAX(5,1)=5');
+});
+
+await test('W6 merge: decks — local delete tombstone drops the server deck', () => {
+  const serverDeck = { id: 'd', name: 'server', updatedAt: '2026-09-05T00:00:00Z', oshi: [], main: [], yell: [] };
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, decks: [serverDeck] },
+    { decks: [] },
+    { deletedDeckIds: { d: '2026-09-08T00:00:00Z' } },
+  );
+  assert.equal(merged.decks.length, 0, 'local delete tombstone drops server deck');
+});
+
+await test('W6 merge: decks — server update newer than delete wins (recreate beats stale delete)', () => {
+  const serverDeck = { id: 'd', name: 'server-fresh', updatedAt: '2026-09-10T00:00:00Z', oshi: [], main: [], yell: [] };
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, decks: [serverDeck] },
+    { decks: [] },
+    { deletedDeckIds: { d: '2026-09-05T00:00:00Z' } },
+  );
+  assert.equal(merged.decks.length, 1, 'server update AFTER local delete wins');
+  assert.equal(merged.decks[0].name, 'server-fresh');
+});
+
+await test('W6 merge: priceAlerts — local removal tombstone drops the server alert', () => {
+  const merged = mergeLocalOntoServer(
+    { ...SNAPSHOT_V7, priceAlerts: [
+      { cardNumber: 'p1', printing: 'BASE', upperPrice: 10, updatedAt: '2026-09-05T00:00:00Z' },
+      { cardNumber: 'p2', printing: 'BASE', upperPrice: 20, updatedAt: '2026-09-05T00:00:00Z' },
+    ] },
+    { priceAlerts: [
+      { cardNumber: 'p2', printing: 'BASE', upperPrice: 20, updatedAt: '2026-09-05T00:00:00Z' },
+    ] },
+    { priceAlertsRemovedAt: { 'p1|BASE': '2026-09-08T00:00:00Z' } },
+  );
+  const keys = merged.priceAlerts.map((a) => `${a.cardNumber}|${a.printing}`).sort();
+  assert.deepEqual(keys, ['p2|BASE'], 'local removal drops server alert');
+});
+
+await test('W6 push: 409 recovery honors favorites tombstone end-to-end (retry patch does not include the deleted key)', async () => {
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'kept', printing: 'BASE', now: '2026-09-08T00:00:00.000Z' });
+  // Locally the user unfavorited `gone` — the tombstone records that.
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'gone', printing: 'BASE', now: '2026-09-08T00:00:00.000Z' });
+  useFavoritesStore.getState().removeFavorite('gone', 'BASE', '2026-09-09T00:00:00.000Z');
+  const serverSnap = {
+    ...SNAPSHOT_V7,
+    revision: 100,
+    favorites: [
+      { cardNumber: 'gone', printing: 'BASE', addedAt: '2026-09-01T00:00:00Z' },
+      { cardNumber: 'kept', printing: 'BASE', addedAt: '2026-09-01T00:00:00Z' },
+    ],
+  };
+  responseQueue = [
+    jsonResponse(409, { error: 'revision_conflict', serverRevision: 100, snapshot: serverSnap }),
+    jsonResponse(200, { ok: true, snapshot: { ...serverSnap, revision: 101 } }),
+  ];
+  const confirmed = await pushAccountSyncFromStores(SESSION);
+  assert.equal(confirmed?.revision, 101);
+  const retryFavs = fetchCalls[1].body.patch.favorites.map((f) => `${f.cardNumber}|${f.printing}`).sort();
+  assert.deepEqual(retryFavs, ['kept|BASE'], 'retry patch drops the tombstoned key — server union does NOT resurrect it');
+});
+
+await test('W6 push: successful push CLEARS favorites/decks/alerts tombstones', async () => {
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'x', printing: 'BASE' });
+  useFavoritesStore.getState().removeFavorite('x', 'BASE');
+  useDeckStore.setState((s) => ({ ...s, decks: [{ id: 'd', name: 'x', oshi: [], main: [], yell: [], updatedAt: 'z' }] }));
+  useDeckStore.getState().deleteDeck('d');
+  usePriceAlertStore.setState((s) => ({ ...s, alerts: { 'a|BASE': { cardNumber: 'a', printing: 'BASE', upperPrice: 1, updatedAt: 'z' } } }));
+  usePriceAlertStore.getState().removeAlert('a', 'BASE');
+  assert.notDeepEqual(useFavoritesStore.getState().removals, {}, 'precondition: favorites tombstone exists');
+  responseQueue = [jsonResponse(200, { ok: true, snapshot: { ...SNAPSHOT_V7, revision: 200 } })];
+  await pushAccountSyncFromStores(SESSION);
+  assert.deepEqual(useFavoritesStore.getState().removals, {}, 'favorites tombstones cleared post-push');
+  assert.deepEqual(useDeckStore.getState().deletedDeckIds, {}, 'deck delete tombstones cleared post-push');
+  assert.deepEqual(useDeckStore.getState().collectionChangedKeys, {}, 'collection-change stamps cleared post-push');
+  assert.deepEqual(usePriceAlertStore.getState().removals, {}, 'alert tombstones cleared post-push');
+});
+
+// ── DIC-1380 W6: stale-response race — session change during network wait ─
+await test('W6 race: hydrate whose session changed mid-flight does NOT apply', async () => {
+  useDeckStore.setState((s) => ({ ...s, collection: { 'account-B|BASE': 42 } }));
+  // Response resolves only AFTER we flip the auth session away.
+  responseQueue = [() => {
+    // Simulate an account switch that landed while the network was
+    // in flight (typical: logout → the fetch resolves a moment later).
+    useAuthStore.setState((s) => ({ ...s, session: 'session-B-different' }));
+    return new Response(JSON.stringify({ snapshot: SNAPSHOT_V7 }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  }];
+  const applied = await hydrateAccountSyncFromServer(SESSION);
+  assert.equal(applied, null, 'stale hydrate returns null');
+  assert.deepEqual(
+    useDeckStore.getState().collection,
+    { 'account-B|BASE': 42 },
+    'account B stores were NOT overwritten by account A snapshot',
+  );
+});
+
+await test('W6 race: push whose session changed mid-conflict does NOT reapply merged patch', async () => {
+  useFavoritesStore.getState().addFavorite({ cardNumber: 'A-only', printing: 'BASE', now: '2026-09-08T00:00:00Z' });
+  const serverSnap = {
+    ...SNAPSHOT_V7, revision: 300,
+    favorites: [{ cardNumber: 'server-only', printing: 'BASE', addedAt: '2026-09-05T00:00:00Z' }],
+  };
+  responseQueue = [() => {
+    // 409 first; we swap the session before the retry can fire.
+    useAuthStore.setState((s) => ({ ...s, session: 'session-B-different' }));
+    return new Response(JSON.stringify({ error: 'revision_conflict', serverRevision: 300, snapshot: serverSnap }), {
+      status: 409, headers: { 'Content-Type': 'application/json' },
+    });
+  }];
+  const result = await pushAccountSyncFromStores(SESSION);
+  assert.equal(result, null, 'stale conflict returns null instead of applying account A merge onto account B');
+  // Local favorites (account A's queue) untouched by the stale conflict
+  // — the switch to account B will trigger its own clearAccountScopedStores
+  // through the binding, not through this stale response.
+  const favKeys = useFavoritesStore.getState().favorites.map((f) => f.cardNumber).sort();
+  assert.deepEqual(favKeys, ['A-only'], 'account A local state left alone; the stale response did NOT merge server data onto it');
+  assert.equal(fetchCalls.length, 1, 'no retry after session change — the whole operation bailed');
 });
 
 if ((process.exitCode ?? 0) === 0) {

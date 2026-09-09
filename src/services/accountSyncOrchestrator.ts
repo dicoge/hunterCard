@@ -1,30 +1,39 @@
 /**
- * Account remote-sync orchestrator (DIC-1380 W4 CR — store wiring).
+ * Account remote-sync orchestrator (DIC-1380 W4 CR — store wiring;
+ * W5 — favorites/logout; W6 CR — tombstones + session-race guard).
  *
  * The client boundary in `accountSyncClient.ts` exposes pull / push; this
- * module glues those calls to the three stores that own the state
+ * module glues those calls to the four stores that own the state
  * `AccountSyncSnapshot` describes: `deckStore` (decks + collection),
- * `priceAlertStore` (alerts), and `settingsStore` (preferredCurrency +
- * preferredLanguage). Wiring here — not inside each store — keeps every store
- * free of a network dependency and lets the orchestrator serialize the read
- * / hydrate / write cycle so two concurrent triggers cannot interleave.
+ * `priceAlertStore` (alerts), `settingsStore` (preferredCurrency +
+ * preferredLanguage), and `favoritesStore` (bookmarks — independent of
+ * ownership). Wiring here — not inside each store — keeps every store
+ * free of a network dependency and lets the orchestrator serialize the
+ * read / hydrate / write cycle so two concurrent triggers cannot
+ * interleave.
  *
  * Contract:
  *   • `hydrateAccountSyncFromServer(session)` — GET the snapshot and apply it
- *     to the three stores IN PLACE (Zustand setState, not persist rehydrate)
- *     so already-mounted screens see the server-authoritative state on the
- *     next render. Returns the applied snapshot, or `null` when there is
- *     nothing to pull (empty session, 401, 404, account_deleted).
- *   • `pushAccountSyncFromStores(session, opts)` — snapshot the three stores,
- *     build the patch, POST it. On 409 pull the server, hydrate stores
- *     server-first, and retry the push ONCE with the fresh baseRevision so a
- *     concurrent write from another device never trips a permanent conflict.
- *     Returns the confirmed server snapshot on success, or `null` when the
- *     session has nothing to sync against.
- *   • `snapshotFromLocalStores()` — pure function that reads the three
- *     stores' current state and returns the client's view of an
- *     `AccountSyncSnapshot` `patch`. Exposed so the test suite can pin what
- *     "the client would push right now" without triggering a request.
+ *     to the stores IN PLACE (Zustand setState, not persist rehydrate) so
+ *     already-mounted screens see the server-authoritative state on the
+ *     next render. Before applying, re-checks that the current auth session
+ *     still matches the one this hydrate was scheduled for — a logout /
+ *     account-switch that lands during the network wait must NOT reapply
+ *     account A's snapshot on top of account B's clean slate (DIC-1380 W6
+ *     handback). Returns the applied snapshot, or `null` when there is
+ *     nothing to pull (empty session, 401, 404, account_deleted, or the
+ *     session already switched away).
+ *   • `pushAccountSyncFromStores(session, opts)` — snapshot the four stores,
+ *     build the patch, POST it. On 409 pull the server, MERGE the local
+ *     patch on top honoring tombstones (DIC-1380 W6), apply the merged
+ *     view back into the stores, and retry the push ONCE with the fresh
+ *     baseRevision. The same session-race guard runs before each store
+ *     write. Returns the confirmed server snapshot on success, or `null`
+ *     when the session has nothing to sync against.
+ *   • `snapshotFromLocalStores()` — pure function that reads the stores'
+ *     current state and returns the client's view of an
+ *     `AccountSyncSnapshot` `patch`. Exposed so the test suite can pin
+ *     what "the client would push right now" without triggering a request.
  *
  * A single in-module mutex serialises pull / push so overlapping triggers
  * (login handoff firing while a store change already queued a push) resolve
@@ -42,6 +51,7 @@ import {
   type AccountSyncPatch,
   type AccountSyncFavorite,
 } from './accountSyncClient';
+import { useAuthStore } from '../store/authStore';
 import { useDeckStore } from '../store/deckStore';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { useSettingsStore, type CurrencyCode, type LanguageCode } from '../store/settingsStore';
@@ -49,7 +59,7 @@ import { useFavoritesStore, type FavoriteEntry } from '../store/favoritesStore';
 import type { Deck } from '../utils/deckRules';
 import type { PriceAlert } from '../utils/priceAlerts';
 
-export const ACCOUNT_SYNC_ORCHESTRATOR_VERSION = 1;
+export const ACCOUNT_SYNC_ORCHESTRATOR_VERSION = 2;
 
 // Server tracks the last-observed revision per user; we cache the value the
 // server returned so the next push uses it as `baseRevision`. Zero is the
@@ -81,6 +91,23 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = Promise.resolve(syncLock).then(fn);
   syncLock = run.catch(() => {});
   return run;
+}
+
+/** Read the current auth session from the store. Test suites replace
+ *  `useAuthStore` via a mock, so keep this indirection cheap. */
+function currentSession(): string | null {
+  const s = useAuthStore.getState().session;
+  return typeof s === 'string' && s.length > 0 ? s : null;
+}
+
+/** DIC-1380 W6: guard every store-mutation path against a stale in-flight
+ *  response. The `session` we were scheduled for must still be the current
+ *  bearer AT THE MOMENT of the write; a logout / account-switch during the
+ *  network wait invalidates the response. */
+function sessionStillCurrent(scheduledSession: string | null | undefined): boolean {
+  const cur = currentSession();
+  if (!cur) return false;
+  return cur === scheduledSession;
 }
 
 function priceAlertList(): PriceAlert[] {
@@ -125,15 +152,23 @@ export function snapshotFromLocalStores(): AccountSyncPatch {
 }
 
 /**
- * Apply a server snapshot to the three stores. Everything the server
+ * Apply a server snapshot to the four stores. Everything the server
  * authoritatively holds overwrites the local state; anything the server does
  * not include is left alone. This is called from both `hydrateAccountSyncFromServer`
- * and the 409-conflict recovery path in `pushAccountSyncFromStores`.
+ * and (via `applyMergedPatchToStores`) the 409-conflict recovery path in
+ * `pushAccountSyncFromStores`.
  */
 export function applyServerSnapshotToStores(snapshot: AccountSyncSnapshot): void {
   applyingServerState = true;
   try {
     _applyServerSnapshotToStoresInner(snapshot);
+    // Server snapshot is the new baseline — every prior local
+    // deletion/decrease has either been reflected by the pull or was
+    // overwritten by it. Drop the tombstones so a stale local write
+    // does not later mask a legitimate server value.
+    useFavoritesStore.getState().clearRemovals();
+    useDeckStore.getState().clearSyncTombstones();
+    usePriceAlertStore.getState().clearRemovals();
   } finally {
     applyingServerState = false;
   }
@@ -183,10 +218,10 @@ export interface HydrateOptions {
 }
 
 /**
- * Pull the server snapshot and apply it to the three stores. Returns the
- * applied snapshot, or `null` when there is nothing to hydrate. Idempotent:
- * calling twice with the same session applies the same snapshot twice
- * (last write wins on the store setState).
+ * Pull the server snapshot and apply it to the four stores. Returns the
+ * applied snapshot, or `null` when there is nothing to hydrate (empty
+ * session, tombstone response, or the auth session already changed while
+ * we were awaiting the network — the DIC-1380 W6 stale-hydrate race).
  */
 export async function hydrateAccountSyncFromServer(
   session: string | null | undefined,
@@ -194,6 +229,12 @@ export async function hydrateAccountSyncFromServer(
   return withLock(async () => {
     const snapshot = await pullAccountSnapshot(session);
     if (!snapshot) return null;
+    // DIC-1380 W6 handback: an account-switch or logout that happened
+    // during the network wait means this snapshot belongs to a previous
+    // account. Applying it now would leak account A's state into account
+    // B's stores. Drop the response silently — the next hydrate for the
+    // new session will get the right snapshot.
+    if (!sessionStillCurrent(session)) return null;
     applyServerSnapshotToStores(snapshot);
     return snapshot;
   });
@@ -207,30 +248,50 @@ export interface PushOptions extends HydrateOptions {
 
 /**
  * Merge a pre-conflict local patch on top of the server snapshot the 409
- * carried. The DIC-1380 W5 handback failed the previous overwrite behaviour
- * — the retry must never silently discard the local edits the user was
- * already pushing. Rules, per field:
+ * carried, honoring tombstones so a genuine local deletion is preserved
+ * against a concurrent server add (DIC-1380 W6 handback). Rules, per field:
  *
- *   • favorites    — UNION by (cardNumber, printing). Nothing on either
- *                    side is dropped. addedAt keeps the earliest stamp so
- *                    the client history stays truthful.
- *   • collection   — per key `cardNumber|printing`, keep MAX(server, local).
- *                    Ownership is never decreased silently — even if the
- *                    server row is smaller, the local device just proved a
- *                    larger inventory and that stays.
- *   • decks        — union by `deck.id`. When both sides have the same id,
- *                    keep the one with the newer `updatedAt` (local wins
- *                    on tie so the pending edit that triggered this push
- *                    survives).
- *   • priceAlerts  — union by `cardNumber|printing`, newer `updatedAt`
- *                    wins (local wins on tie for the same reason).
+ *   • favorites    — UNION by (cardNumber, printing) MINUS the local
+ *                    removal tombstones. A server entry whose key has a
+ *                    local `removedAt` at or after its `addedAt` is
+ *                    dropped: the client-side unfavorite happened after
+ *                    the server's copy so the removal wins on the retry.
+ *   • collection   — per key `cardNumber|printing`:
+ *                       - if the local store WROTE the key after the last
+ *                         hydrate (`collectionChangedKeys[key]` present)
+ *                         the local value wins, INCLUDING a decrease or a
+ *                         missing entry (deletion). Local writes are the
+ *                         user's most recent evidence of ownership.
+ *                       - otherwise MAX(server, local), so a value the
+ *                         local device never touched cannot silently
+ *                         reduce the server view.
+ *   • decks        — server entries whose id is in
+ *                    `deletedDeckIds` with a `deletedAt` >= the server
+ *                    `updatedAt` are DROPPED (local delete beat the
+ *                    server add). The rest merges by id, newer
+ *                    `updatedAt` winning (local wins on tie).
+ *   • priceAlerts  — server entries with a matching local removal
+ *                    tombstone (removedAt >= server `updatedAt`) are
+ *                    DROPPED. The rest merges by `cardNumber|printing`,
+ *                    newer `updatedAt` winning (local wins on tie).
  *   • settings     — the local pre-conflict value wins; the client is the
  *                    authority on the user's chosen currency + language.
  */
 function mergeLocalOntoServer(
   server: AccountSyncSnapshot | null,
   local: AccountSyncPatch,
+  tombstones?: {
+    favoritesRemovedAt?: Record<string, string>;
+    priceAlertsRemovedAt?: Record<string, string>;
+    deletedDeckIds?: Record<string, string>;
+    collectionChangedKeys?: Record<string, string>;
+  },
 ): AccountSyncPatch {
+  const favoritesRemovedAt = tombstones?.favoritesRemovedAt || {};
+  const priceAlertsRemovedAt = tombstones?.priceAlertsRemovedAt || {};
+  const deletedDeckIds = tombstones?.deletedDeckIds || {};
+  const collectionChangedKeys = tombstones?.collectionChangedKeys || {};
+
   const merged: AccountSyncPatch = {
     favorites: [],
     decks: [],
@@ -239,72 +300,114 @@ function mergeLocalOntoServer(
     settings: local.settings ?? server?.settings ?? undefined,
   };
 
-  // favorites: union keyed by cardNumber|printing, earliest addedAt wins.
+  // favorites: union keyed by cardNumber|printing, earliest addedAt wins,
+  // MINUS keys whose local removal tombstone is >= the server's addedAt.
   const favMap = new Map<string, AccountSyncFavorite>();
-  const rememberFav = (fav: AccountSyncFavorite) => {
+  const rememberFav = (fav: AccountSyncFavorite, side: 'server' | 'local') => {
     if (!fav?.cardNumber || !fav?.printing) return;
     const key = `${fav.cardNumber}|${fav.printing}`;
+    if (side === 'server') {
+      // Local unfavorite that happened at-or-after the server's add wins.
+      const removedAt = favoritesRemovedAt[key];
+      if (removedAt) {
+        const removedMs = Date.parse(removedAt) || 0;
+        const addedMs = Date.parse(fav.addedAt || '') || 0;
+        if (removedMs >= addedMs) return;
+      }
+    }
     const prev = favMap.get(key);
     if (!prev) { favMap.set(key, { ...fav }); return; }
     const prevMs = Date.parse(prev.addedAt || '') || Number.POSITIVE_INFINITY;
     const nextMs = Date.parse(fav.addedAt || '') || Number.POSITIVE_INFINITY;
     if (nextMs < prevMs) favMap.set(key, { ...fav });
   };
-  for (const fav of server?.favorites ?? []) rememberFav(fav);
-  for (const fav of local.favorites ?? []) rememberFav(fav);
+  for (const fav of server?.favorites ?? []) rememberFav(fav, 'server');
+  for (const fav of local.favorites ?? []) rememberFav(fav, 'local');
   merged.favorites = [...favMap.values()].sort(
     (a, b) => a.cardNumber.localeCompare(b.cardNumber) || a.printing.localeCompare(b.printing),
   );
 
-  // collection: MAX per key so ownership never regresses silently.
+  // collection: per-key merge. If the local device WROTE the key after
+  // the last hydrate the local value wins outright (including 0 → the
+  // absence in the local map is the value); otherwise MAX(server, local)
+  // so a key nobody touched cannot silently regress.
   const collection: Record<string, number> = {};
   const serverCollection = (server?.collection as Record<string, number> | undefined) ?? {};
-  for (const [k, v] of Object.entries(serverCollection)) {
-    if (typeof v === 'number' && v > 0) collection[k] = Math.floor(v);
-  }
-  for (const [k, v] of Object.entries(local.collection ?? {})) {
-    const n = typeof v === 'number' && v > 0 ? Math.floor(v) : 0;
-    if (n <= 0) continue;
-    collection[k] = collection[k] ? Math.max(collection[k], n) : n;
+  const localCollection = local.collection ?? {};
+  const allKeys = new Set<string>([
+    ...Object.keys(serverCollection),
+    ...Object.keys(localCollection),
+    ...Object.keys(collectionChangedKeys),
+  ]);
+  for (const key of allKeys) {
+    const localWroteIt = Object.prototype.hasOwnProperty.call(collectionChangedKeys, key);
+    if (localWroteIt) {
+      const localVal = typeof localCollection[key] === 'number' ? Math.floor(localCollection[key]) : 0;
+      if (localVal > 0) collection[key] = localVal;
+      continue;
+    }
+    const serverVal = typeof serverCollection[key] === 'number' ? Math.floor(serverCollection[key]) : 0;
+    const localVal = typeof localCollection[key] === 'number' ? Math.floor(localCollection[key]) : 0;
+    const chosen = Math.max(serverVal, localVal);
+    if (chosen > 0) collection[key] = chosen;
   }
   merged.collection = collection;
 
-  // decks: union by id, newer updatedAt wins; local wins on tie.
+  // decks: union by id, newer updatedAt wins; local wins on tie; drop server
+  // entries whose id has a local delete tombstone >= the server updatedAt.
   const deckMap = new Map<string, any>();
-  const rememberDeck = (deck: any, localSide: boolean) => {
+  const rememberDeck = (deck: any, side: 'server' | 'local') => {
     if (!deck?.id) return;
+    if (side === 'server') {
+      const deletedAt = deletedDeckIds[deck.id];
+      if (deletedAt) {
+        const deletedMs = Date.parse(deletedAt) || 0;
+        const updatedMs = Date.parse(deck.updatedAt || '') || 0;
+        if (deletedMs >= updatedMs) return;
+      }
+    }
     const prev = deckMap.get(deck.id);
     if (!prev) { deckMap.set(deck.id, deck); return; }
     const prevMs = Date.parse(prev.updatedAt || '') || 0;
     const nextMs = Date.parse(deck.updatedAt || '') || 0;
     if (nextMs > prevMs) { deckMap.set(deck.id, deck); return; }
-    if (nextMs === prevMs && localSide) deckMap.set(deck.id, deck);
+    if (nextMs === prevMs && side === 'local') deckMap.set(deck.id, deck);
   };
-  for (const deck of (server?.decks as any[] | undefined) ?? []) rememberDeck(deck, false);
-  for (const deck of (local.decks as any[] | undefined) ?? []) rememberDeck(deck, true);
+  for (const deck of (server?.decks as any[] | undefined) ?? []) rememberDeck(deck, 'server');
+  for (const deck of (local.decks as any[] | undefined) ?? []) rememberDeck(deck, 'local');
   merged.decks = [...deckMap.values()];
 
-  // priceAlerts: union by cardNumber|printing, newer updatedAt wins.
+  // priceAlerts: union by cardNumber|printing, newer updatedAt wins; drop
+  // server entries whose key has a local removal tombstone >= server
+  // updatedAt.
   const alertMap = new Map<string, any>();
-  const rememberAlert = (alert: any, localSide: boolean) => {
+  const rememberAlert = (alert: any, side: 'server' | 'local') => {
     if (!alert?.cardNumber || !alert?.printing) return;
     const key = `${alert.cardNumber}|${alert.printing}`;
+    if (side === 'server') {
+      const removedAt = priceAlertsRemovedAt[key];
+      if (removedAt) {
+        const removedMs = Date.parse(removedAt) || 0;
+        const updatedMs = Date.parse(alert.updatedAt || '') || 0;
+        if (removedMs >= updatedMs) return;
+      }
+    }
     const prev = alertMap.get(key);
     if (!prev) { alertMap.set(key, alert); return; }
     const prevMs = Date.parse(prev.updatedAt || '') || 0;
     const nextMs = Date.parse(alert.updatedAt || '') || 0;
     if (nextMs > prevMs) { alertMap.set(key, alert); return; }
-    if (nextMs === prevMs && localSide) alertMap.set(key, alert);
+    if (nextMs === prevMs && side === 'local') alertMap.set(key, alert);
   };
-  for (const a of (server?.priceAlerts as any[] | undefined) ?? []) rememberAlert(a, false);
-  for (const a of (local.priceAlerts as any[] | undefined) ?? []) rememberAlert(a, true);
+  for (const a of (server?.priceAlerts as any[] | undefined) ?? []) rememberAlert(a, 'server');
+  for (const a of (local.priceAlerts as any[] | undefined) ?? []) rememberAlert(a, 'local');
   merged.priceAlerts = [...alertMap.values()];
 
   return merged;
 }
 
 /**
- * Apply a merged patch back into the three stores in place. Used after the
+ * Apply a merged patch back into the four stores in place. Used after the
  * 409 merge so the retry's `snapshotFromLocalStores()` picks the merged
  * view straight from the stores — the app sees the merged state on the
  * next render.
@@ -348,14 +451,20 @@ function _applyMergedPatchToStoresInner(patch: AccountSyncPatch): void {
 }
 
 /**
- * Snapshot the three stores and push the patch. On 409 the recovery path
+ * Snapshot the four stores and push the patch. On 409 the recovery path
  * MERGES the local pre-conflict patch on top of the server snapshot per
- * the rules in `mergeLocalOntoServer` above — union for favorites,
- * MAX-quantity for collection, newer-wins for decks/alerts, local-wins
- * for settings — and retries the push ONCE with the merged view. Local
- * edits are never silently discarded by the 409 recovery path
- * (DIC-1380 W5 handback). Any subsequent 409 surfaces to the caller so
- * the wiring can decide whether to back off.
+ * the tombstone-aware rules in `mergeLocalOntoServer` — union with
+ * removal-wins for favorites, per-key local-wins-if-changed for
+ * collection (including decreases), tombstone-aware newer-wins for
+ * decks/alerts, local-wins for settings — and retries the push ONCE with
+ * the merged view. Local edits and deletions are never silently discarded
+ * (DIC-1380 W5 + W6 handbacks). Any subsequent 409 surfaces to the caller
+ * so the wiring can decide whether to back off.
+ *
+ * The retry's server response is only applied to the stores if the auth
+ * session is STILL the one this push was scheduled for — an account switch
+ * during the retry must not leak account A's confirmed revision counter
+ * onto account B (DIC-1380 W6 stale-response guard).
  */
 export async function pushAccountSyncFromStores(
   session: string | null | undefined,
@@ -363,6 +472,11 @@ export async function pushAccountSyncFromStores(
 ): Promise<AccountSyncSnapshot | null> {
   return withLock(async () => {
     const localPatch = snapshotFromLocalStores();
+    const favTombstones = { ...useFavoritesStore.getState().removals };
+    const alertTombstones = { ...usePriceAlertStore.getState().removals };
+    const deckTombstones = { ...useDeckStore.getState().deletedDeckIds };
+    const collectionChanges = { ...useDeckStore.getState().collectionChangedKeys };
+
     const attemptPush = async (
       patch: AccountSyncPatch,
       baseRevision: number,
@@ -375,7 +489,17 @@ export async function pushAccountSyncFromStores(
         patch,
       });
       if (confirmed) {
+        // DIC-1380 W6: only trust the response if the session bearer is
+        // still the one this push was scheduled for. An account switch
+        // during the push must not advance the NEW account's revision
+        // counter with the OLD account's server reply.
+        if (!sessionStillCurrent(session)) return null;
         lastKnownRevision = typeof confirmed.revision === 'number' ? confirmed.revision : baseRevision;
+        // Server has our removals + decreases — drop the tombstones so
+        // the next push does not carry them again.
+        useFavoritesStore.getState().clearRemovals();
+        useDeckStore.getState().clearSyncTombstones();
+        usePriceAlertStore.getState().clearRemovals();
       }
       return confirmed;
     };
@@ -386,9 +510,19 @@ export async function pushAccountSyncFromStores(
       if (!(err instanceof AccountSyncConflictError)) throw err;
       const serverSnapshot = err.serverSnapshot;
       lastKnownRevision = err.serverRevision;
-      // MERGE local on top of server, then apply the merged view back to
-      // the stores so the app + the retry both see the same merged state.
-      const merged = mergeLocalOntoServer(serverSnapshot, localPatch);
+      // DIC-1380 W6: an account switch that landed during the first
+      // push means the retry would apply account A's conflict payload
+      // to account B's stores. Bail out silently.
+      if (!sessionStillCurrent(session)) return null;
+      // MERGE local on top of server (honoring tombstones), then apply
+      // the merged view back to the stores so the app + the retry both
+      // see the same merged state.
+      const merged = mergeLocalOntoServer(serverSnapshot, localPatch, {
+        favoritesRemovedAt: favTombstones,
+        priceAlertsRemovedAt: alertTombstones,
+        deletedDeckIds: deckTombstones,
+        collectionChangedKeys: collectionChanges,
+      });
       applyMergedPatchToStores(merged);
       return await attemptPush(merged, lastKnownRevision, opts.idempotencyKey ?? newIdempotencyKey());
     }
@@ -399,14 +533,23 @@ export async function pushAccountSyncFromStores(
  * Wipe every account-scoped data store back to its empty state. Called on
  * logout / account switch so account A's local decks / favorites /
  * priceAlerts / collection / settings cannot bleed into account B's next
- * hydrate (DIC-1380 W5 handback).
+ * hydrate (DIC-1380 W5 handback). Also clears the sync tombstones — they
+ * belong to account A's history and must not attach to account B's
+ * fresh state.
  */
 export function clearAccountScopedStores(): void {
   applyingServerState = true;
   try {
     useFavoritesStore.getState().clearAll();
-    useDeckStore.setState((s) => ({ ...s, decks: [], collection: {}, activeDeckId: null }));
-    usePriceAlertStore.setState((s) => ({ ...s, alerts: {}, pending: {} }));
+    useDeckStore.setState((s) => ({
+      ...s,
+      decks: [],
+      collection: {},
+      activeDeckId: null,
+      deletedDeckIds: {},
+      collectionChangedKeys: {},
+    }));
+    usePriceAlertStore.setState((s) => ({ ...s, alerts: {}, pending: {}, removals: {} }));
     // settings (preferredCurrency / preferredLanguage) intentionally survives a
     // logout: it is a UI preference, not account-owned data.
     lastKnownRevision = 0;
