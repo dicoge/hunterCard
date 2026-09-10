@@ -150,6 +150,7 @@ export const ja: Record<keyof typeof zh, string> = {
   login_terms_footer: 'ログインすることでプライバシーポリシーと利用規約に同意したとみなされます',
 
   // Common actions and states
+  common_back: '戻る',
   common_cancel: 'キャンセル',
   common_remove: '削除',
   common_save: '保存',

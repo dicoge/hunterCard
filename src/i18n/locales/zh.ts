@@ -148,6 +148,7 @@ export const zh = {
   login_terms_footer: '登入即表示同意隱私權政策與服務條款',
 
   // Common actions and states
+  common_back: '返回',
   common_cancel: '取消',
   common_remove: '移除',
   common_save: '儲存',

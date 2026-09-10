@@ -97,11 +97,16 @@ function MainDrawer() {
         },
       }}
     >
-      <Drawer.Screen 
-        name="Home" 
+      <Drawer.Screen
+        name="Home"
         component={HomeScreen}
-        options={{ 
+        options={{
           title: t('nav_home'),
+          // DIC-1409 Phase 3: Home renders the shared Pen v2 AppShell
+          // (status bar + app bar + bottom tab bar), so the drawer header is
+          // redundant chrome. The drawer itself stays reachable through the
+          // shell's brand mark (`onLeadingPress` → openDrawer).
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏠</Text>
           ),
@@ -229,12 +234,14 @@ function StackNavigator() {
       <Stack.Screen
         name="CardDetail"
         component={CardDetailScreen}
-        options={{ title: t('nav_card_detail') }}
+        // DIC-1409 Phase 3: these two routes render the shared Pen v2 shell
+        // with their own back-arrow app bar, so the stack header is hidden.
+        options={{ title: t('nav_card_detail'), headerShown: false }}
       />
       <Stack.Screen
         name="SearchResults"
         component={SearchResultsScreen}
-        options={{ title: t('nav_search_results') }}
+        options={{ title: t('nav_search_results'), headerShown: false }}
       />
       <Stack.Screen
         name="TutorialDetail"

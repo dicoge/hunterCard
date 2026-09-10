@@ -18,6 +18,8 @@ export interface SeriesCardProps {
   onPress?: () => void;
   testID?: string;
   width?: number;
+  /** Fill the parent cell instead of the fixed Pen 175px width (grid layouts). */
+  fluid?: boolean;
 }
 
 /**
@@ -32,6 +34,7 @@ export function SeriesCard({
   onPress,
   testID = 'series-card',
   width = LAYOUT.seriesCard.width,
+  fluid = false,
 }: SeriesCardProps) {
   const Container = onPress ? TouchableOpacity : View;
   const containerProps = onPress
@@ -47,7 +50,12 @@ export function SeriesCard({
     Container,
     {
       ...containerProps,
-      style: [styles.root, { width, height: LAYOUT.seriesCard.height }, SHADOWS.sm],
+      style: [
+        styles.root,
+        fluid ? { width: '100%' as const } : { width },
+        { height: LAYOUT.seriesCard.height },
+        SHADOWS.sm,
+      ],
       testID,
     },
     <>
