@@ -12,6 +12,13 @@
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
+// DIC-1380 made STORE_MVP fail-closed on EVERY platform when the env is unset,
+// so this suite pins the full profile explicitly (same pattern as
+// test-store-mvp-behavior): the assertions below exercise watchlist/marketData
+// surfaces that only exist with the profile off. Must be set before any
+// dynamic import so releaseFlags resolves it at module load.
+process.env.EXPO_PUBLIC_STORE_MVP = '0';
+
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   url: 'https://holohunter.dicoge.com/',
   pretendToBeVisual: true,
@@ -136,7 +143,7 @@ await test('Home quick actions dispatch Scan / TournamentReport / Tutorial / Wat
   try {
     for (const key of ['scan', 'tournament', 'tutorial', 'watchlist']) {
       const tile = container.querySelector(`[data-testid="home-quick-${key}"]`);
-      assert.ok(tile, `quick tile ${key} renders (web profile keeps watchlist on)`);
+      assert.ok(tile, `quick tile ${key} renders (full profile: EXPO_PUBLIC_STORE_MVP=0)`);
       const style = dom.window.getComputedStyle(tile);
       assert.equal(style.backgroundColor, hexToRgb(PALETTE.appSurface), 'Pen $app-surface tile');
       await act(async () => tile.click());
@@ -306,11 +313,11 @@ await test('CardDetail back arrow dispatches goBack and the official-list action
   } finally { await cleanup(); }
 });
 
-await test('CardDetail price value carries Pen 30/700 $text-primary styling (web full profile)', async () => {
+await test('CardDetail price value carries Pen 30/700 $text-primary styling (full profile EXPO_PUBLIC_STORE_MVP=0)', async () => {
   const { container, cleanup } = await renderDetail({ navigate() {}, goBack() {} });
   try {
     const priceSection = container.querySelector('[data-testid="card-detail-price-section"]');
-    assert.ok(priceSection, 'price section renders on the web full profile');
+    assert.ok(priceSection, 'price section renders on the full profile EXPO_PUBLIC_STORE_MVP=0');
     assert.ok(container.textContent.includes('¥3,600'), 'real price renders');
     const nodes = Array.from(priceSection.querySelectorAll('*'));
     const priceNode = nodes.find((n) => n.textContent === '¥3,600' && n.children.length === 0);
