@@ -116,8 +116,12 @@ function runConfiguredSequence({ storeMvp }) {
   prepareDist(distDir);
 
   const env = { ...process.env };
-  if (storeMvp) env.EXPO_PUBLIC_STORE_MVP = '1';
-  else delete env.EXPO_PUBLIC_STORE_MVP;
+  // DIC-1380: unset EXPO_PUBLIC_STORE_MVP now resolves fail-closed on Web
+  // Production too, so the "full mode" audit must set the explicit opt-out
+  // ('0') that Web Develop / Staging / local `expo start --web` use to keep
+  // advanced surfaces visible. Never leave it unset here — that would test the
+  // Store MVP artifact under the "full" label.
+  env.EXPO_PUBLIC_STORE_MVP = storeMvp ? '1' : '0';
 
   const scripts = readVercelPostExpoScripts();
   // We only exercise scripts that touch dist/data. In today's config that's
@@ -212,7 +216,10 @@ console.log('\n── Mutation sensitivity: reinstating the deleted copy in copy
   fs.rmSync(distDir, { recursive: true, force: true });
   prepareDist(distDir);
   const env = { ...process.env };
-  delete env.EXPO_PUBLIC_STORE_MVP;
+  // Same DIC-1380 note as runConfiguredSequence: `full mode` uses the explicit
+  // opt-out. Leaving it unset would run fix-html.js under the Store MVP
+  // profile and the mutation harness would collapse to the wrong baseline.
+  env.EXPO_PUBLIC_STORE_MVP = '0';
   execFileSync('node', [path.join(repoRoot, 'scripts/fix-html.js')], { cwd: repoRoot, env, stdio: 'pipe' });
   // Simulate the regression: overwrite with raw canonical bytes.
   fs.copyFileSync(CANONICAL_DB, path.join(distDir, 'data', 'database.json'));
@@ -231,7 +238,9 @@ console.log('\n── Mutation sensitivity: reinstating the deleted copy in copy
   fs.rmSync(distDir, { recursive: true, force: true });
   prepareDist(distDir);
   const env = { ...process.env };
-  delete env.EXPO_PUBLIC_STORE_MVP;
+  // DIC-1380 fail-closed default: pin the explicit opt-out so the cleanup
+  // rebuild leaves the caller with the full-fields artifact it expects.
+  env.EXPO_PUBLIC_STORE_MVP = '0';
   execFileSync('node', [path.join(repoRoot, 'scripts/fix-html.js')], { cwd: repoRoot, env, stdio: 'pipe' });
   execFileSync('node', [path.join(repoRoot, 'scripts/copy-assets.js')], { cwd: repoRoot, env, stdio: 'pipe' });
 }
