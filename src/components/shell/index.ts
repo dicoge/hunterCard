@@ -1,4 +1,6 @@
 export { AppShell, default as default } from './AppShell';
+export { RouteShell } from './RouteShell';
+export type { RouteShellProps, RouteShellNavigation } from './RouteShell';
 export { AppBar } from './AppBar';
 export { AppStatusBar } from './StatusBar';
 export { BottomTabBar } from './BottomTabBar';

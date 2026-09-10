@@ -17,6 +17,7 @@ import { usePriceAlertStore, sortedAlerts, sortedPending } from '../stores/price
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTranslation } from '../i18n';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
+import { RouteShell } from '../components/shell';
 import { syncAlertRemove } from '../services/priceAlertSync';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
 import {
@@ -268,8 +269,15 @@ export default function WatchlistScreen({ navigation }: any) {
 
   const editor = <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />;
 
+  // DIC-1409 Phase 5 — Pen `App / 11 到價提醒` (frame VyzfW) shared shell.
+  const wrapInShell = (children: React.ReactNode) => (
+    <RouteShell navigation={navigation} routeName="Watchlist" title={t('watchlist_title')} testID="watchlist-shell">
+      {children}
+    </RouteShell>
+  );
+
   if (rows.length === 0) {
-    return (
+    return wrapInShell(
       <SafeAreaView style={styles.emptyContainer} edges={['bottom']} testID="price-alert-empty">
         {editor}
         <Text style={styles.emptyIcon}>🔔</Text>
@@ -287,7 +295,7 @@ export default function WatchlistScreen({ navigation }: any) {
     );
   }
 
-  return (
+  return wrapInShell(
     <SafeAreaView style={styles.container} edges={['bottom']}>
       {editor}
       <FlatList

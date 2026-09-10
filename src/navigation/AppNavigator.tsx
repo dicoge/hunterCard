@@ -147,6 +147,8 @@ function MainDrawer() {
           component={FavoritesScreen}
           options={{
             title: t('nav_favorites'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
             ),
@@ -162,6 +164,8 @@ function MainDrawer() {
           component={CollectionScreen}
           options={{
             title: t('nav_collection'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
             ),
@@ -186,6 +190,8 @@ function MainDrawer() {
         component={TournamentReportScreen}
         options={{
           title: t('nav_tournament_report'),
+          // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏆</Text>
           ),
@@ -200,6 +206,8 @@ function MainDrawer() {
           component={WatchlistScreen}
           options={{
             title: t('nav_watchlist'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
             ),
@@ -211,6 +219,8 @@ function MainDrawer() {
         component={TutorialScreen}
         options={{ 
           title: t('nav_tutorial'),
+          // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
           ),
