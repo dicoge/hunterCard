@@ -21,6 +21,7 @@ import {
 } from '../utils/cardCatalog';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
 import { CardFilterPanel, CardPickerGrid } from '../components/CardPicker';
+import { AppShell, buildShellTabs } from '../components/shell';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { formatInterval, priceAlertKey } from '../utils/priceAlerts';
@@ -68,6 +69,25 @@ export default function DeckEditorScreen() {
   const navigation = React.useContext(NavigationContext as any) as any;
   const { width, isDesktop, isWide } = useBreakpoint();
   const isPhone = width <= 480;
+  // DIC-1409 Phase 4 — Pen `App / 06 牌組編輯器` (frame uXuqo) shared shell:
+  // status bar + bottom tab bar with 牌組 active around the existing (already
+  // Pen-conformant, DIC-1380) editor internals. The editor keeps its own Pen
+  // app bar, so the shared AppBar is disabled here.
+  const shellTabs = useMemo(
+    () => buildShellTabs({ navigation: navigation ?? { navigate: () => {} } }),
+    [navigation],
+  );
+  const wrapInShell = (children: React.ReactNode) => (
+    <AppShell
+      appBar={false}
+      bottomTabBar={{ items: shellTabs, activeKey: 'deck' }}
+      scrollable={false}
+      contentPadding={false}
+      testID="deck-shell"
+    >
+      {children}
+    </AppShell>
+  );
   const zoneLabels: Record<DeckZone, string> = {
     oshi: t('deck_zone_oshi'), main: t('deck_zone_main'), yell: t('deck_zone_yell'),
   };
@@ -372,7 +392,7 @@ export default function DeckEditorScreen() {
   );
 
   if (loading) {
-    return (
+    return wrapInShell(
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.primary} size="large" />
@@ -384,7 +404,7 @@ export default function DeckEditorScreen() {
 
   // ── No active deck → deck picker / creator ──
   if (!activeDeck) {
-    return (
+    return wrapInShell(
       <SafeAreaView style={styles.container}>
         {deckOverlays}
         <ScrollView contentContainerStyle={[styles.pad, isDesktop && styles.libraryDesktop]}>
@@ -1200,7 +1220,7 @@ export default function DeckEditorScreen() {
       ? estimatePanel
       : deckPanel;
 
-  return (
+  return wrapInShell(
     <SafeAreaView style={styles.container}>
       {deckOverlays}
       {finalizeSheet}

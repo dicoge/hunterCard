@@ -175,6 +175,10 @@ export const zh = {
 
   // Common actions and states
   common_back: '返回',
+  me_stat_collection: '收藏張數',
+  me_stat_alerts: '到價提醒',
+  me_guest_name: '訪客',
+  me_provider_linked: '{{provider}} 已綁定',
   common_cancel: '取消',
   common_remove: '移除',
   common_save: '儲存',

@@ -159,10 +159,10 @@ jobs:
       - name: Verify real SearchResultsScreen grid geometry + colour render (DIC-1150 + DIC-1192)
         run: npm run test:search-results-layout
 
-      # DIC-1409 Phase 2+3: Pen v2 tokens/shell parity and the App 01–03
+      # DIC-1409 Phase 2+3+4: Pen v2 tokens/shell parity and the App 01–07
       # screens rendering the shared shell with real data + navigation wiring.
-      - name: Verify Pen v2 shell tokens + App 01–03 shell parity (DIC-1409)
-        run: npm run test:shell-tokens && npm run test:app-shell
+      - name: Verify Pen v2 shell tokens + App 01–07 shell parity (DIC-1409)
+        run: npm run test:shell-tokens && npm run test:app-shell && npm run test:app47-shell
 
       - name: Verify colour token normaliser + KNOWN_COLOR_KEYS ↔ i18n parity (DIC-1192)
         run: npm run test:dic1192-color-normalization

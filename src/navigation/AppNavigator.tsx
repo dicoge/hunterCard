@@ -173,6 +173,9 @@ function MainDrawer() {
         component={DeckEditorScreen}
         options={{
           title: t('nav_deck_editor'),
+          // DIC-1409 Phase 4: DeckEditor renders the shared Pen v2 shell
+          // (status bar + its own Pen app bar + bottom tab bar).
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🃏</Text>
           ),
@@ -218,6 +221,8 @@ function MainDrawer() {
         component={SettingsScreen}
         options={{ 
           title: t('nav_settings'),
+          // DIC-1409 Phase 4: 我的 renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>⚙️</Text>
           ),

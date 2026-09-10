@@ -23,10 +23,16 @@ import {
   LayoutChangeEvent,
 } from 'react-native';
 import { COLORS } from '../constants';
+import { PALETTE } from '../theme/tokensV2';
 import { useTranslation } from '../i18n';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
+// DIC-1409 Phase 4 — Pen `App / 04 掃描卡牌` (frame eurld) scan frame is a
+// PORTRAIT card window (node Aj73G, 250×350 at 390 ≈ 0.64 screen width,
+// 1.4 aspect). The crop pipeline measures the frame via onLayout, so the
+// aspect change flows through recognition without any constant duplication.
+const SCAN_AREA_SIZE = Math.min(SCREEN_WIDTH * 0.64, 280);
+const SCAN_AREA_HEIGHT = SCAN_AREA_SIZE * 1.4;
 
 export interface ScanOverlayProps {
   // Animation values
@@ -145,7 +151,7 @@ export default function ScanOverlay({
                     transform: [{
                       translateY: scanLineAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0, SCAN_AREA_SIZE - 4],
+                        outputRange: [0, SCAN_AREA_HEIGHT - 4],
                       }),
                     }],
                     opacity: scanLineAnim.interpolate({
@@ -176,6 +182,12 @@ export default function ScanOverlay({
           <Text style={styles.hintText}>
             {autoScanEnabled ? t('scan_frame_auto') : t('scan_frame_manual')}
           </Text>
+          {/* Pen Tips row (node Cc84X): three pill chips */}
+          <View style={styles.tipsRow} testID="scan-tips-row">
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_number')}</Text></View>
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_glare')}</Text></View>
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_flat')}</Text></View>
+          </View>
           <View style={styles.controls}>
             {/* Flash toggle */}
             <TouchableOpacity
@@ -233,20 +245,39 @@ export default function ScanOverlay({
             </TouchableOpacity>
           </View>
 
-          {/* Auto-scan toggle */}
+          {/* Auto-scan toggle — Pen Mode Switch (node Cys7V): segmented
+              自動掃描 / 手動 pill. Both segments dispatch the same
+              onToggleAutoScan contract; tapping the already-active segment
+              is a no-op. */}
           <View style={styles.autoScanToggleContainer}>
-            <TouchableOpacity
-              style={[
-                styles.autoScanToggle,
-                autoScanEnabled && styles.autoScanToggleActive,
-              ]}
-              onPress={onToggleAutoScan}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.autoScanToggleText, autoScanEnabled && styles.autoScanToggleTextActive]}>
-                {autoScanEnabled ? t('scan_auto_mode') : t('scan_manual_mode')}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.modeSwitch} testID="scan-mode-switch">
+              <TouchableOpacity
+                style={[styles.modeSegment, autoScanEnabled && styles.modeSegmentActive]}
+                onPress={() => { if (!autoScanEnabled) onToggleAutoScan(); }}
+                activeOpacity={0.7}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: autoScanEnabled }}
+                {...{ 'aria-selected': autoScanEnabled }}
+                testID="scan-mode-auto"
+              >
+                <Text style={[styles.modeSegmentText, autoScanEnabled && styles.modeSegmentTextActive]}>
+                  {t('scan_auto_mode')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeSegment, !autoScanEnabled && styles.modeSegmentActive]}
+                onPress={() => { if (autoScanEnabled) onToggleAutoScan(); }}
+                activeOpacity={0.7}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: !autoScanEnabled }}
+                {...{ 'aria-selected': !autoScanEnabled }}
+                testID="scan-mode-manual"
+              >
+                <Text style={[styles.modeSegmentText, !autoScanEnabled && styles.modeSegmentTextActive]}>
+                  {t('scan_manual_mode')}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -283,13 +314,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
+  // Pen scan frame (node Aj73G): portrait card window, #FFFFFF08 fill, r16.
   scanArea: {
     width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_SIZE * 0.63,
+    height: SCAN_AREA_HEIGHT,
     position: 'relative',
     borderWidth: 2,
     borderColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF08',
     overflow: 'hidden',
   },
   // Outer pulse wrapper (DIC-1294 + DIC-1296 CR round-2): owns the layout
@@ -303,7 +336,7 @@ const styles = StyleSheet.create({
   // the API-36 emulator logcat.
   scanAreaPulse: {
     width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_SIZE * 0.63,
+    height: SCAN_AREA_HEIGHT,
   },
   scanLine: {
     position: 'absolute',
@@ -317,39 +350,40 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 4,
   },
+  // Pen corner brackets (nodes K3Ja4K…): white, 32px, r10.
   corner: {
     position: 'absolute',
-    width: 24,
-    height: 24,
-    borderColor: COLORS.primary,
+    width: 32,
+    height: 32,
+    borderColor: '#FFFFFF',
   },
   topLeft: {
     top: -1,
     left: -1,
     borderTopWidth: 4,
     borderLeftWidth: 4,
-    borderTopLeftRadius: 8,
+    borderTopLeftRadius: 10,
   },
   topRight: {
     top: -1,
     right: -1,
     borderTopWidth: 4,
     borderRightWidth: 4,
-    borderTopRightRadius: 8,
+    borderTopRightRadius: 10,
   },
   bottomLeft: {
     bottom: -1,
     left: -1,
     borderBottomWidth: 4,
     borderLeftWidth: 4,
-    borderBottomLeftRadius: 8,
+    borderBottomLeftRadius: 10,
   },
   bottomRight: {
     bottom: -1,
     right: -1,
     borderBottomWidth: 4,
     borderRightWidth: 4,
-    borderBottomRightRadius: 8,
+    borderBottomRightRadius: 10,
   },
   scanningIndicator: {
     position: 'absolute',
@@ -373,13 +407,31 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     alignItems: 'center',
   },
+  // Pen Hint title (node RrYjs): 14/600 white.
   hintText: {
-    color: COLORS.text,
-    fontSize: 16,
-    marginBottom: 20,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 10,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  // Pen Tips chips (node Cc84X): #FFFFFF0F pills, 11 muted text.
+  tipsRow: {
+    flexDirection: 'row',
+    gap: 7,
+    marginBottom: 16,
+  },
+  tipChip: {
+    backgroundColor: '#FFFFFF0F',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  tipChipText: {
+    color: '#C6C6DE',
+    fontSize: 11,
   },
   controls: {
     flexDirection: 'row',
@@ -388,9 +440,13 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 12,
   },
+  // Pen side controls (相簿 node TOYLP): #FFFFFF14 boxes, r14.
   controlBtn: {
     alignItems: 'center',
     padding: 8,
+    backgroundColor: '#FFFFFF14',
+    borderRadius: 14,
+    minWidth: 52,
   },
   controlBtnActive: {
     opacity: 1,
@@ -409,15 +465,14 @@ const styles = StyleSheet.create({
   scanButtonDisabled: {
     opacity: 0.6,
   },
+  // Pen Shutter (node TbHVE): 72px accent circle with glow, no white ring.
   scanButtonInner: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: COLORS.primary,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: PALETTE.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#fff',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
@@ -437,25 +492,30 @@ const styles = StyleSheet.create({
     marginTop: 12,
     alignItems: 'center',
   },
-  autoScanToggle: {
-    paddingHorizontal: 20,
+  // Pen Mode Switch (node Cys7V): #00000080 pill, active segment #FFFFFF1F.
+  modeSwitch: {
+    flexDirection: 'row',
+    backgroundColor: '#00000080',
+    borderRadius: 999,
+    padding: 3,
+    gap: 2,
+  },
+  modeSegment: {
+    borderRadius: 999,
+    paddingHorizontal: 13,
     paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  autoScanToggleActive: {
-    backgroundColor: 'rgba(255, 107, 157, 0.2)',
-    borderColor: COLORS.primary,
+  modeSegmentActive: {
+    backgroundColor: '#FFFFFF1F',
   },
-  autoScanToggleText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
+  modeSegmentText: {
+    color: '#9A9AB8',
+    fontSize: 11.5,
     fontWeight: '500',
   },
-  autoScanToggleTextActive: {
-    color: COLORS.primary,
+  modeSegmentTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
 });
 
