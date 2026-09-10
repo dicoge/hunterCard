@@ -88,31 +88,37 @@ export const SCREEN_OPTIONS = {
   },
 };
 
-// hololive 主題色 - 粉紅 + 深藍
+// v2 palette — sourced from `docs/pen-v2/holohunter-landing-v2-updated.pen`
+// (DIC-1409 Phase 2). Legacy `COLORS` stays exported so existing screens keep
+// compiling, but every value routes through the v2 tokens in
+// `src/theme/tokensV2.ts`. New code should import from `src/theme` directly.
+import { PALETTE as V2, SEMANTIC as V2S, CATEGORY_COLORS as V2C } from '../theme/tokensV2';
+
 export const COLORS = {
-  primary: '#ff6b9d',      // hololive 粉紅
-  primaryLight: '#ff8fb3',
-  primaryDark: '#e0558a',
-  secondary: '#6366f1',    // 藍紫色
-  accent: '#f59e0b',       // 金色（SSR）
-  success: '#10b981',
-  warning: '#f59e0b',
-  error: '#ef4444',
-  background: '#0f0f23',   // 深藍黑
-  surface: '#1a1a2e',      // 深藍
-  surfaceLight: '#252542',
-  text: '#ffffff',
-  textSecondary: '#a0aec0',
-  border: '#2d3748',
-  // hololive 成員代表色（常用）
-  hololive: '#ff6b9d',
-  holostars: '#4ecdc4',
-  inukomis: '#f59e0b',
-  // 稀有度顏色（官方）
-  rarityC: '#6b7280',
-  rarityU: '#10b981',
-  rarityR: '#3b82f6',
-  raritySR: '#8b5cf6',
-  rarityUC: '#f59e0b',
-  rarityCP: '#ef4444',
+  primary: V2.accent,           // v1 hololive 粉紅 -> v2 $accent #FF4D9D
+  primaryLight: '#FF80B8',      // hover tone for v2 accent
+  primaryDark: '#D93B84',       // pressed tone for v2 accent
+  secondary: V2.accent3,        // v1 藍紫色 -> v2 $accent-3 #8B5CF6
+  accent: V2.cYellow,           // v1 金色 -> v2 $c-yellow #FBBF24
+  success: V2S.success,
+  warning: V2S.warning,
+  error: V2S.error,
+  background: V2.appBg,         // v1 深藍黑 -> v2 $app-bg #0A0A13
+  surface: V2.appSurface,       // v1 深藍 -> v2 $app-surface #14141F
+  surfaceLight: V2.appElev,     // v2 $app-elev #1C1C2B
+  text: V2.textPrimary,         // v2 $text-primary #F6F6FB
+  textSecondary: V2.textSecondary,
+  border: V2.border,
+  hololive: V2.accent,
+  holostars: V2.accent2,
+  inukomis: V2.cYellow,
+  rarityC: V2.textMuted,
+  rarityU: V2.cGreen,
+  rarityR: V2.cBlue,
+  raritySR: V2.accent3,
+  rarityUC: V2.cYellow,
+  rarityCP: V2.cRed,
 };
+
+// Re-export the raw v2 palette/semantic tokens for gradual migration.
+export { V2 as PALETTE_V2, V2S as SEMANTIC_V2, V2C as CATEGORY_V2 };
