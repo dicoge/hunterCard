@@ -299,8 +299,11 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 16,
   },
+  // DIC-1409 CR fix: the overlay chrome sits ABSOLUTELY over the camera
+  // element instead of flowing after the 100%-height <video> as a flex
+  // sibling — normal flow pushed the whole scan UI below the fold.
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
   },
   overlayTop: {
     flex: 1,

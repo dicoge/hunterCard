@@ -16,6 +16,11 @@ const CAPTURES = [
   { key: 'search', width: 768, height: 1024, label: 'tablet-768' },
   { key: 'search', width: 1440, height: 900, label: 'desktop-1440' },
   { key: 'scan-precamera', width: 390, height: 844, label: 'mobile-390' },
+  // Camera-ready through the REAL shipped route (deterministic
+  // getUserMedia seam) at all three required viewports.
+  { key: 'scan-camera-ready', width: 390, height: 844, label: 'mobile-390' },
+  { key: 'scan-camera-ready', width: 768, height: 1024, label: 'tablet-768' },
+  { key: 'scan-camera-ready', width: 1440, height: 900, label: 'desktop-1440' },
 ];
 
 const browser = await puppeteer.launch({

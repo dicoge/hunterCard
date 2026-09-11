@@ -29,8 +29,8 @@ import {
   AppState,
   type AppStateStatus,
 } from 'react-native';
-import { COLORS } from '../constants';
 import { useTranslation } from '../i18n';
+import { PALETTE, SEMANTIC, LAYOUT } from '../theme/tokensV2';
 
 export interface CameraPermissionShape {
   granted?: boolean;
@@ -226,36 +226,43 @@ export function CameraPermissionDeniedView({
   );
 }
 
+// DIC-1409 CR fix — the denied surface renders on the Pen v2 tokens
+// (matching the scan route's dark chrome), not the legacy COLORS palette.
+// Behavior (canAskAgain gating, settings recovery, testIDs) unchanged.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
+    backgroundColor: PALETTE.appBg,
   },
   icon: {
-    fontSize: 64,
+    fontSize: 56,
     marginBottom: 20,
   },
   title: {
-    color: COLORS.text,
+    color: SEMANTIC.onBg,
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   body: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 30,
+    maxWidth: 320,
   },
   primaryButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: PALETTE.accent,
     paddingVertical: 14,
     paddingHorizontal: 40,
-    borderRadius: 25,
+    borderRadius: 26,
     marginBottom: 12,
+    minHeight: LAYOUT.minTouch,
+    justifyContent: 'center',
   },
   primaryButtonText: {
     color: '#fff',
@@ -265,9 +272,11 @@ const styles = StyleSheet.create({
   settingsButton: {
     paddingVertical: 12,
     paddingHorizontal: 30,
+    minHeight: LAYOUT.minTouch,
+    justifyContent: 'center',
   },
   settingsButtonText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
   },
 });

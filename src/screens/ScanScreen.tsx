@@ -63,6 +63,49 @@ const CONFIDENCE_MIN_CANDIDATE = 0.55;
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 
+/**
+ * DIC-1409 CR fix — the EXACT native pre-camera surface ScanScreen ships
+ * on Android/iOS, exported so the regression suite can render it directly
+ * (react-native-web pins Platform.OS to 'web', so the platform branch
+ * itself cannot be flipped in the harness). Both states carry the Pen
+ * App/04 top action row (`x7iIL`): close works, flash is inert until the
+ * camera is up. `permission === null` → loading; otherwise the denied
+ * recovery surface (DIC-1286 contract preserved via
+ * CameraPermissionDeniedView).
+ */
+export function ScanNativePermissionGate({
+  permission,
+  onClose,
+  onRequestPermission,
+  openSettingsImpl,
+  refreshPermission,
+}: {
+  permission: { granted: boolean; canAskAgain?: boolean } | null;
+  onClose: () => void;
+  onRequestPermission: () => void;
+  openSettingsImpl: () => void;
+  refreshPermission?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.container} testID="scan-native-gate">
+      <ScanTopBar onClose={onClose} flashDisabled />
+      {!permission ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>{t('scan_camera_loading')}</Text>
+        </View>
+      ) : (
+        <CameraPermissionDeniedView
+          permission={permission}
+          onRequestPermission={onRequestPermission}
+          openSettingsImpl={openSettingsImpl}
+          refreshPermission={refreshPermission}
+        />
+      )}
+    </View>
+  );
+}
+
 export default function ScanScreen({ navigation }: any) {
   const { t } = useTranslation();
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
@@ -867,6 +910,7 @@ export default function ScanScreen({ navigation }: any) {
           <Text style={styles.permissionText}>{t('scan_permission_web_body')}</Text>
           <TouchableOpacity 
             style={styles.permissionButton}
+            testID="scan-permission-allow"
             onPress={async () => {
               // iOS Safari 的 getUserMedia 必須在點擊事件手勢鏈中直接呼叫
               // 先等 stream 拿到再 mount WebCamera，避免 timing 競爭
@@ -912,31 +956,18 @@ export default function ScanScreen({ navigation }: any) {
 
   // === Native 版：用 expo-camera 權限系統 ===
   if (!isWeb) {
-    // 权限请求中
-    if (!permission) {
+    // DIC-1409 CR fix: both native pre-camera states render through the
+    // exported ScanNativePermissionGate (Pen top bar + v2 chrome) so the
+    // exact shipped surface is directly regression-testable.
+    if (!permission || !permission.granted) {
       return (
-        <View style={styles.container}>
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>{t('scan_camera_loading')}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    // 权限被拒绝 — DIC-1286 CR: delegate to CameraPermissionDeniedView so
-    // Android permanent denial (canAskAgain === false) really has a working
-    // recovery path (opens system settings) and the retry button is only
-    // shown when it can actually reopen the OS prompt.
-    if (!permission.granted) {
-      return (
-        <View style={styles.container}>
-          <CameraPermissionDeniedView
-            permission={permission}
-            onRequestPermission={requestPermission}
-            openSettingsImpl={openSettings}
-            refreshPermission={getCameraPermissions}
-          />
-        </View>
+        <ScanNativePermissionGate
+          permission={permission}
+          onClose={handleClose}
+          onRequestPermission={requestPermission}
+          openSettingsImpl={openSettings}
+          refreshPermission={getCameraPermissions}
+        />
       );
     }
   }

@@ -67,3 +67,49 @@ favorites-nav-route 11 · store-mvp-fail-closed 216 · store-mvp-behavior
 149 · store-mvp-ui-gates 104 · apple-delete-truth-copy 56 ·
 legal-copy-vs-behavior 29 · auth-strategy 6 · auth-error-map 8.
 `npx tsc --noEmit`: 0 errors.
+
+---
+
+# Round 2 · re-review FAIL blockers at `3d1b872df…`
+
+## [P1] Native pre-camera states on the Pen shell
+
+Both native branches now render through the exported
+`ScanNativePermissionGate` (the EXACT shipped surface): Pen `x7iIL` top
+bar (working close, real quota pill, inert flash) over v2 chrome for
+permission-loading AND permission-denied. `CameraPermissionDeniedView`
+restyled from legacy COLORS to v2 tokens with the DIC-1286 recovery
+contract byte-preserved (canAskAgain gating, settings recovery,
+testIDs). Regression: two new native-state checks render the gate
+directly (react-native-web pins Platform.OS, so the platform conditional
+itself cannot flip in the harness) asserting Pen top bar presence,
+$app-bg chrome, close dispatch, hidden re-ask on permanent denial, and
+the real openSettings invocation.
+
+## [P1] Camera-ready evidence through the shipped route
+
+`render:scan-search` now mounts `NavigationContainer` + the real
+`StackNavigator`, navigates to the shipped Scan route, performs the
+route's REAL permission-button gesture, and reaches camera-ready via a
+deterministic `navigator.mediaDevices.getUserMedia` seam (fake
+MediaStream at the web-platform API boundary — the app's only camera
+acquisition path). Captures: `scan-camera-ready-render-{mobile-390,
+tablet-768,desktop-1440}.png` (+ fixtures). The suite adds a matching
+route-level regression (navigate → real gesture → camera-ready chrome
+asserted, `getCurrentRoute() === 'Scan'`). Fixing this surfaced a real
+stacking bug: the overlay chrome flowed AFTER the 100%-height <video>
+instead of over it — `ScanOverlay`'s root is now absolutely positioned
+over the camera.
+
+## i18n
+
+`ScanTopBar` accessibility labels now use the zh/ja translation
+contract: new symmetric `scan_close_a11y` key pair + existing
+`scan_flash`/`scan_flash_on`.
+
+## Integration
+
+`origin/main` merged (catalog sync 2026-09-10 — data only; PR #189 was
+behind).
+
+Full battery re-run green (scan-search-shell now 7); `tsc --noEmit` 0.

@@ -1,12 +1,16 @@
 #!/usr/bin/env node
-// DIC-1409 CR fix render evidence — the REAL shipped SearchScreen (390 /
-// 768 / 1440) and the REAL shipped ScanScreen route in its web
-// pre-camera state (390), dumped to `docs/pen-v2/phase8/`. No synthetic
-// composition: both captures mount the actual route components exactly
-// as navigation ships them (headerShown:false — the screens own their
-// chrome). The scan capture is the route's true jsdom-reachable state
-// (no camera hardware in the harness); the live-camera overlay chrome is
-// covered behaviourally by `test:scan-search-shell`.
+// DIC-1409 CR fix render evidence — REAL shipped routes only:
+//
+//   • SearchScreen at 390 / 768 / 1440.
+//   • Scan pre-camera permission gate at 390 (the route's true state
+//     before any camera exists).
+//   • Scan CAMERA-READY at 390 / 768 / 1440 — driven through the REAL
+//     `StackNavigator` (NavigationContainer → MainDrawer → Scan, exactly
+//     as navigation ships it), reaching camera-ready via a deterministic
+//     `navigator.mediaDevices.getUserMedia` seam: the harness installs a
+//     fake MediaStream at the web-platform API boundary, then performs
+//     the route's REAL permission-button gesture. No synthetic
+//     ScanOverlay mount and no stubbed navigation.
 
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve as pathResolve } from 'node:path';
@@ -60,35 +64,55 @@ for (const { width, height, label } of WIDTHS) {
   class NoopResizeObserver { observe() {} unobserve() {} disconnect() {} }
   globalThis.ResizeObserver = NoopResizeObserver;
   dom.window.ResizeObserver = NoopResizeObserver;
+  if (!dom.window.matchMedia) {
+    dom.window.matchMedia = () => ({
+      matches: false,
+      addListener() {}, removeListener() {},
+      addEventListener() {}, removeEventListener() {},
+    });
+    globalThis.matchMedia = dom.window.matchMedia;
+  }
+
+  // ── Deterministic camera seam (web-platform API boundary) ──────────
+  const makeFakeTrack = () => ({ kind: 'video', stop() {}, addEventListener() {}, removeEventListener() {} });
+  const makeFakeStream = () => {
+    const track = makeFakeTrack();
+    return {
+      getTracks: () => [track],
+      getVideoTracks: () => [track],
+      getAudioTracks: () => [],
+      addEventListener() {}, removeEventListener() {},
+    };
+  };
+  Object.defineProperty(dom.window.navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: async () => makeFakeStream() },
+  });
+  // jsdom media elements: make play()/srcObject deterministic no-ops.
+  dom.window.HTMLMediaElement.prototype.play = function play() { return Promise.resolve(); };
+  Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'srcObject', {
+    configurable: true,
+    get() { return this.__srcObject ?? null; },
+    set(v) { this.__srcObject = v; },
+  });
 
   const React = (await import('react')).default;
   const { act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const { StyleSheet } = await import('react-native-web');
   const { PALETTE, FONTS } = await import('../src/theme/tokensV2.ts');
+  const { NavigationContainer, createNavigationContainerRef } = await import('@react-navigation/native');
+  const { StackNavigator } = await import('../src/navigation/AppNavigator.tsx');
   const { default: SearchScreen } = await import('../src/screens/SearchScreen.tsx');
   const { default: ScanScreen } = await import('../src/screens/ScanScreen.tsx');
 
-  const navigation = { navigate: () => {}, goBack: () => {}, openDrawer: () => {} };
-  const SCREENS = [
-    { key: 'search', element: React.createElement(SearchScreen, { navigation }) },
-    // Scan only at the Pen frame's 390 viewport (full-bleed mobile flow).
-    ...(width === 390 ? [{ key: 'scan-precamera', element: React.createElement(ScanScreen, { navigation }) }] : []),
-  ];
-
-  for (const { key, element } of SCREENS) {
-    const container = document.createElement('div');
-    container.setAttribute('id', 'root');
-    document.body.appendChild(container);
-
-    const root = createRoot(container);
-    await act(async () => root.render(element));
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+  const settle = async () => {
+    await act(async () => { await new Promise((r) => setTimeout(r, 60)); });
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  };
 
+  const writeFixture = (key, dumpedHtml) => {
     const sheet = StyleSheet.getSheet();
-    const dumpedHtml = container.outerHTML;
-
     const doc = `<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -103,6 +127,7 @@ for (const { width, height, label } of WIDTHS) {
     #frame { width: ${width}px; height: ${height}px; box-shadow: 0 0 0 1px ${PALETTE.border}; overflow: hidden; display: flex; flex-direction: column; }
     #frame > #root { flex: 1; display: flex; flex-direction: column; min-height: 0; }
     #frame > #root > * { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    video { background: #000; }
   </style>
   <style>${sheet.textContent}</style>
 </head>
@@ -110,11 +135,58 @@ for (const { width, height, label } of WIDTHS) {
   <div id="frame">${dumpedHtml}</div>
 </body>
 </html>`;
-
     const outPath = pathResolve(OUT_DIR, `${key}-preview-${label}.html`);
     writeFileSync(outPath, doc);
     console.log(`wrote ${outPath} (${doc.length} bytes)`);
+  };
 
+  const renderScreen = async (key, element) => {
+    const container = document.createElement('div');
+    container.setAttribute('id', 'root');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(element));
+    await settle();
+    writeFixture(key, container.outerHTML);
+    await act(async () => root.unmount());
+    container.remove();
+  };
+
+  const navigation = { navigate: () => {}, goBack: () => {}, openDrawer: () => {} };
+  await renderScreen('search', React.createElement(SearchScreen, { navigation }));
+  if (width === 390) {
+    await renderScreen('scan-precamera', React.createElement(ScanScreen, { navigation }));
+  }
+
+  // ── Scan CAMERA-READY through the REAL shipped route ───────────────
+  {
+    const navRef = createNavigationContainerRef();
+    const container = document.createElement('div');
+    container.setAttribute('id', 'root');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        React.createElement(NavigationContainer, { ref: navRef }, React.createElement(StackNavigator)),
+      );
+    });
+    await settle();
+    await act(async () => { navRef.navigate('MainDrawer', { screen: 'Scan' }); });
+    await settle();
+    const routeName = navRef.getCurrentRoute()?.name;
+    if (routeName !== 'Scan') throw new Error(`expected the shipped Scan route, got ${routeName}`);
+    const allow = container.querySelector('[data-testid="scan-permission-allow"]');
+    if (!allow) throw new Error('Scan permission gate did not render its allow button');
+    await act(async () => {
+      allow.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    await settle();
+    await settle();
+    if (!container.querySelector('[data-testid="scan-mode-switch"]')) {
+      throw new Error('Scan route did not reach camera-ready (mode switch absent)');
+    }
+    writeFixture('scan-camera-ready', container.outerHTML);
     await act(async () => root.unmount());
     container.remove();
   }

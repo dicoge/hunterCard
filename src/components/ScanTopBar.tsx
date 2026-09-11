@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import ScanQuotaBanner from './ScanQuotaBanner';
+import { useTranslation } from '../i18n';
 import { PALETTE, SEMANTIC, LAYOUT } from '../theme/tokensV2';
 
 export interface ScanTopBarProps {
@@ -26,6 +27,7 @@ export default function ScanTopBar({
   flashDisabled = false,
   testID = 'scan-top-bar',
 }: ScanTopBarProps) {
+  const { t } = useTranslation();
   return (
     <View style={styles.row} testID={testID}>
       <TouchableOpacity
@@ -33,7 +35,7 @@ export default function ScanTopBar({
         onPress={onClose}
         disabled={!onClose}
         accessibilityRole="button"
-        accessibilityLabel="關閉掃描"
+        accessibilityLabel={t('scan_close_a11y')}
         testID={`${testID}-close`}
       >
         <Text style={styles.roundBtnGlyph}>✕</Text>
@@ -44,7 +46,7 @@ export default function ScanTopBar({
         onPress={onFlash}
         disabled={flashDisabled || !onFlash}
         accessibilityRole="button"
-        accessibilityLabel="閃光燈"
+        accessibilityLabel={flashOn ? t('scan_flash_on') : t('scan_flash')}
         accessibilityState={{ selected: flashOn, disabled: flashDisabled }}
         testID={`${testID}-flash`}
       >
