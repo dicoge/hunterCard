@@ -212,14 +212,13 @@ for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTO
     } finally { await cleanup(); }
   });
 
-  await test(`${label}: Pen Collection Preview section mounts with three cards (DIC-1380 W6 CR full parity)`, async () => {
+  await test(`${label}: Pen Deck/Collection section mounts (DIC-1409 Phase 7 — Pen KXeLu/a7oRL)`, async () => {
     const { container, cleanup } = await renderLanding(viewport);
     try {
       const preview = byTestId(container, 'landing-collection-preview');
-      assert.ok(preview, 'collection preview section mounts');
-      assert.ok(/36 個收錄系列/.test(preview.textContent), 'collection card 1 (36 系列) mounts');
-      assert.ok(/每日行情/.test(preview.textContent), 'collection card 2 (每日行情) mounts');
-      assert.ok(/缺卡預估總額/.test(preview.textContent), 'collection card 3 (缺卡預估) mounts');
+      assert.ok(preview, 'deck/collection section mounts');
+      assert.ok(/缺卡預估總額/.test(preview.textContent), 'deck panel 缺卡預估總額 mounts');
+      assert.ok(/牌組編輯器/.test(preview.textContent), 'section pill names the Pen 牌組編輯器 anchor');
     } finally { await cleanup(); }
   });
 
@@ -244,32 +243,151 @@ for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTO
   });
 }
 
-// ── DIC-1380 W7 CR: standalone Price section + three-card Hero composition
+// ── DIC-1409 Phase 7: Pen `N8ds5T`/`PPAfW` price CHART CARD (the text
+//    price rows were the exact "價格視覺" regression the issue named).
 for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTOP]]) {
-  await test(`${label}: Pen standalone Price section mounts with three price rows (DIC-1380 W7 CR)`, async () => {
+  await test(`${label}: Pen Price section mounts the chart card (DIC-1409 Phase 7 — Pen N8ds5T)`, async () => {
     const { container, cleanup } = await renderLanding(viewport);
     try {
       const price = byTestId(container, 'landing-price');
-      assert.ok(price, 'standalone Price section mounts (DIC-1380 W7 CR)');
-      assert.ok(byTestId(container, 'landing-price-row-hSD01-016'), 'price row 1 (star primary) mounts');
-      assert.ok(byTestId(container, 'landing-price-row-hBP01-042'), 'price row 2 mounts');
-      assert.ok(byTestId(container, 'landing-price-row-hBP02-088'), 'price row 3 (down-trend) mounts');
-      assert.ok(/NT\$ · ¥ · \$/.test(price.textContent), 'price section states the three-currency framing');
+      assert.ok(price, 'Price section mounts');
+      const chart = byTestId(container, 'landing-price-chart');
+      assert.ok(chart, 'Pen price chart card mounts (not text price rows)');
+      assert.ok(/星街すいせい \/ UR/.test(chart.textContent), 'chart header names the Pen-anchored printing');
+      assert.ok(/hBP01-081/.test(chart.textContent), 'chart header carries the Pen catalog number');
+      assert.ok(/NT\$ 3,600/.test(chart.textContent), 'chart shows the Pen price value');
+      assert.ok(/\+12\.4%/.test(chart.textContent), 'chart shows the Pen 7-day delta');
+      const timeframes = byTestId(container, 'landing-price-timeframes');
+      assert.ok(timeframes, 'timeframe segmented control mounts');
+      for (const tf of ['7D', '30D', '90D']) {
+        assert.ok(timeframes.textContent.includes(tf), `timeframe segment ${tf} present`);
+      }
+      for (const xl of ['6/09', '7/07']) {
+        assert.ok(chart.textContent.includes(xl), `chart x-axis label ${xl} present`);
+      }
+      // Truthful coming-soon cells: 店家收購 + trend forecast never render a
+      // fabricated value.
+      const buyback = byTestId(container, 'landing-price-coming-buyback');
+      assert.ok(buyback, '店家收購 cell mounts');
+      assert.ok(/即將推出/.test(buyback.textContent), '店家收購 stays 即將推出');
+      const forecast = byTestId(container, 'landing-price-coming-forecast');
+      assert.ok(forecast, '價格趨勢預測 cell mounts');
+      assert.ok(/即將推出/.test(forecast.textContent), '價格趨勢預測 stays 即將推出');
+      assert.ok(/遊々亭/.test(price.textContent), 'price section credits the 遊々亭 source');
     } finally { await cleanup(); }
   });
 }
 
-await test('desktop 1440: Pen three-card Hero composition mounts (DIC-1380 W7 CR)', async () => {
+// ── DIC-1409 Phase 7: Pen `voo0h`/`RzGa0` deck-builder PANEL (the exact
+//    "牌組面板" regression the issue named).
+for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTOP]]) {
+  await test(`${label}: Pen Deck section mounts the deck-builder panel (DIC-1409 Phase 7 — Pen voo0h)`, async () => {
+    const { container, cleanup } = await renderLanding(viewport);
+    try {
+      const section = byTestId(container, 'landing-collection-preview');
+      assert.ok(section, 'Deck/Collection section mounts');
+      const panel = byTestId(container, 'landing-deck-panel');
+      assert.ok(panel, 'Pen deck-builder panel mounts (not generic collection cards)');
+      assert.ok(/白上フブキ Buzz/.test(panel.textContent), 'panel names the Pen deck draft');
+      assert.ok(/NT\$ 2,140/.test(panel.textContent), 'panel shows the Pen 缺卡預估總額 value');
+      assert.ok(/還缺的 7 張/.test(panel.textContent), 'panel shows the Pen missing-count row');
+      assert.ok(/套用低價版本/.test(panel.textContent), 'panel shows the Pen cheap-version action');
+      for (const row of ['hBP02-012', 'hBP02-013', 'hBP01-021', 'ブルームエール']) {
+        assert.ok(panel.textContent.includes(row), `deck progress row ${row} mounts`);
+      }
+      assert.ok(/有 2 \/ 需 4/.test(panel.textContent), 'progress rows carry the Pen 有/需 counts');
+      assert.ok(/組完牌，順便/.test(section.textContent), 'section headline follows Pen 牌組編輯器 copy');
+    } finally { await cleanup(); }
+  });
+}
+
+// ── DIC-1409 Phase 7: Pen `hUcaS` bento search mockup (the exact
+//    "搜尋 mockup" regression the issue named).
+for (const [label, viewport] of [['mobile 390', MOBILE], ['desktop 1440', DESKTOP]]) {
+  await test(`${label}: Pen Features bento search mockup mounts (DIC-1409 Phase 7 — Pen hUcaS)`, async () => {
+    const { container, cleanup } = await renderLanding(viewport);
+    try {
+      const mockup = byTestId(container, 'landing-feature-search-mockup');
+      assert.ok(mockup, 'search mockup card mounts');
+      assert.ok(/八個條件疊加的卡牌檢索/.test(mockup.textContent), 'search card carries the Pen title');
+      assert.ok(/すいせい/.test(mockup.textContent), 'search input mockup carries the Pen query');
+      for (const chip of ['藍', 'Holomen', 'hBP04', '有平行版', 'SR 以上']) {
+        assert.ok(mockup.textContent.includes(chip), `filter chip ${chip} mounts`);
+      }
+      // Icon-tile feature cards from the Pen bento
+      for (const title of ['拍照辨識，順便估值', '牌組編輯器', '賽事月報', '規則教學與模擬戰']) {
+        assert.ok(byTestId(container, `landing-feature-${title}`), `feature card ${title} mounts`);
+      }
+    } finally { await cleanup(); }
+  });
+}
+
+await test('desktop 1440: Pen three-card Hero composition + floating chips mount (DIC-1409 Phase 7 — Pen z5AkG)', async () => {
   const { container, cleanup } = await renderLanding(DESKTOP);
   try {
     // Hero visual carries THREE card anchors: primary + secondary + tertiary
-    assert.ok(byTestId(container, 'landing-hero-card-primary'), 'hero primary card (with sparkline) mounts');
+    assert.ok(byTestId(container, 'landing-hero-card-primary'), 'hero primary card mounts');
     assert.ok(byTestId(container, 'landing-hero-card-secondary'), 'hero secondary card mounts');
     assert.ok(byTestId(container, 'landing-hero-card-tertiary'), 'hero tertiary card mounts');
-    // Sparkline still sits on the primary card, not the compact secondaries.
-    const primary = byTestId(container, 'landing-hero-card-primary');
+    // Pen floating chips: deck-legality (donut) + price w/ sparkline.
+    const legality = byTestId(container, 'landing-hero-legality');
+    assert.ok(legality, 'Pen legality chip mounts over the hero cards');
+    assert.ok(/主牌組合法性/.test(legality.textContent), 'legality chip carries the Pen label');
+    assert.ok(/43 \/ 50/.test(legality.textContent), 'legality chip carries the Pen 43/50 value');
+    const priceChip = byTestId(container, 'landing-hero-price-chip');
     const sparkline = byTestId(container, 'landing-hero-sparkline');
-    assert.ok(primary && sparkline && primary.contains(sparkline), 'sparkline lives inside the primary card');
+    assert.ok(priceChip && sparkline && priceChip.contains(sparkline), 'sparkline lives inside the Pen price chip');
+    assert.ok(/星街すいせい UR/.test(priceChip.textContent), 'price chip names the Pen printing');
+    assert.ok(/NT\$ 3,600/.test(priceChip.textContent), 'price chip shows the Pen price');
+    const visual = byTestId(container, 'landing-hero-visual');
+    assert.ok(visual.contains(legality) && visual.contains(priceChip), 'chips float inside the hero visual');
+  } finally { await cleanup(); }
+});
+
+await test('mobile 390: Pen hero price card mounts with sparkline (DIC-1409 Phase 7 — Pen T43dEj)', async () => {
+  const { container, cleanup } = await renderLanding(MOBILE);
+  try {
+    const priceChip = byTestId(container, 'landing-hero-price-chip');
+    assert.ok(priceChip, 'mobile hero price card mounts');
+    const sparkline = byTestId(container, 'landing-hero-sparkline');
+    assert.ok(priceChip.contains(sparkline), 'mobile price card carries the sparkline');
+    assert.ok(/資料來源：遊々亭/.test(priceChip.textContent), 'mobile price card credits the source');
+  } finally { await cleanup(); }
+});
+
+// ── DIC-1409 Phase 7: Pen `VfmUx` FAQ accordion — REAL expand/collapse
+//    state, not a static list. Desktop opens item 0 only; toggling a
+//    closed item must reveal its reviewed answer.
+await test('desktop 1440: FAQ accordion expands/collapses with real state (DIC-1409 Phase 7 — Pen VfmUx)', async () => {
+  const { container, cleanup } = await renderLanding(DESKTOP);
+  try {
+    const item0 = byTestId(container, 'landing-faq-item-0');
+    const item1 = byTestId(container, 'landing-faq-item-1');
+    assert.ok(item0 && item1, 'FAQ accordion items mount');
+    assert.ok(/App Store \/ Google Play \/ Stripe/.test(item0.textContent), 'first FAQ answer is open by default (desktop)');
+    assert.ok(!/拍照掃描需登入 Google 或 Apple 帳號/.test(item1.textContent), 'second FAQ answer starts collapsed on desktop');
+    const toggle1 = byTestId(container, 'landing-faq-toggle-1');
+    await act(async () => {
+      toggle1.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    const item1After = byTestId(container, 'landing-faq-item-1');
+    assert.ok(/拍照掃描需登入 Google 或 Apple 帳號/.test(item1After.textContent), 'toggling reveals the reviewed answer (real state)');
+  } finally { await cleanup(); }
+});
+
+// ── DIC-1409 Phase 7: Pen `TldCK` footer columns + `QumbV` CTA card copy
+await test('desktop 1440: Pen footer columns + final CTA card copy (DIC-1409 Phase 7)', async () => {
+  const { container, cleanup } = await renderLanding(DESKTOP);
+  try {
+    const footer = byTestId(container, 'landing-footer');
+    for (const col of ['產品', '資源', '關於']) {
+      assert.ok(footer.textContent.includes(col), `footer column ${col} mounts`);
+    }
+    assert.ok(/與官方無隸屬關係/.test(footer.textContent), 'footer carries the Pen brand disclaimer');
+    const finalCta = byTestId(container, 'landing-final-cta');
+    assert.ok(/先從查一張卡開始/.test(finalCta.textContent), 'final CTA carries the Pen headline');
+    assert.ok(/非官方工具 · 卡牌圖像與名稱版權屬於原公司/.test(finalCta.textContent), 'final CTA carries the Pen attribution note');
   } finally { await cleanup(); }
 });
 
@@ -476,7 +594,7 @@ await test('desktop 1440: Landing has no unqualified sync claim (DIC-1381 W9 CR 
     // and NO Store-MVP qualifier is the exact false claim the CR named.
     const SYNC_FIELD_WORDS = ['收藏', '牌組', '價格提醒', '到價提醒', '設定', 'favorites', 'decks', 'price alerts', 'settings'];
     const SYNC_VERB = /(同步到|會同步|sync to|are synced|are sync|同步至|同步(?![^。]{0,20}僅))/i;
-    const QUALIFIER = /(Store MVP|feature flag|installAccountSyncBinding|Web Develop|Web Staging|不會|does not|does NOT|not currently|not sent|only sync|僅在啟用|尚未|本機儲存|裝置本機|local storage|per-device|for now)/i;
+    const QUALIFIER = /(Store MVP|feature flag|installAccountSyncBinding|Web Develop|Web Staging|不會|does not|does NOT|not currently|not sent|only sync|僅在啟用|僅限啟用|尚未|本機儲存|裝置本機|local storage|per-device|for now)/i;
     // Split into sentence-ish spans; punctuation covers zh + en.
     const spans = text.split(/[。.!?]|(?<=；)\s+/g);
     const bad = [];
