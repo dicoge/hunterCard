@@ -162,7 +162,7 @@ jobs:
       # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
       # screens rendering the shared shell with real data + navigation wiring.
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)
-        run: npm run test:shell-tokens && npm run test:app-shell && npm run test:app47-shell && npm run test:app812-shell && npm run test:app1316-shell
+        run: npm run test:shell-tokens && npm run test:app-shell && npm run test:app47-shell && npm run test:app812-shell && npm run test:app1316-shell && npm run test:shell-tab-navigation && npm run test:scan-search-shell
 
       - name: Verify colour token normaliser + KNOWN_COLOR_KEYS ↔ i18n parity (DIC-1192)
         run: npm run test:dic1192-color-normalization

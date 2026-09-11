@@ -33,6 +33,8 @@ import {
 } from '../services/scanRecognitionFlow';
 import { recognizeTextWeb } from '../services/webOcr';
 import ScanOverlay from '../components/ScanOverlay';
+import ScanTopBar from '../components/ScanTopBar';
+import { PALETTE, SEMANTIC, LAYOUT } from '../theme/tokensV2';
 import ScanResultCard from '../components/ScanResultCard';
 import ScanCandidateSelector from '../components/ScanCandidateSelector';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
@@ -43,7 +45,6 @@ import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
 import { effectiveRole } from '../services/permissionService';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
-import ScanQuotaBanner from '../components/ScanQuotaBanner';
 import { FEATURES, releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 import { useTranslation, type TranslationKey } from '../i18n';
 
@@ -848,10 +849,18 @@ export default function ScanScreen({ navigation }: any) {
     }
   };
 
+  // Pen `x7iIL` Close — dismisses the scan flow back to Home. Nested form
+  // so it resolves regardless of which navigator owns the current screen.
+  const handleClose = () => {
+    navigation.navigate('MainDrawer', { screen: 'Home' });
+  };
+
   // === Web 版：不用 expo-camera 權限，直接讓 WebCamera 處理 getUserMedia ===
   if (isWeb && !webCameraStarted) {
     return (
       <View style={styles.container}>
+        {/* Pen App/04 top action row — present on the pre-camera state too */}
+        <ScanTopBar onClose={handleClose} flashDisabled />
         <View style={styles.permissionContainer}>
           <Text style={styles.permissionIcon}>📷</Text>
           <Text style={styles.permissionTitle}>{t('scan_permission_title')}</Text>
@@ -934,7 +943,8 @@ export default function ScanScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <ScanQuotaBanner />
+      {/* Quota now rides the Pen top bar: inside ScanOverlay when the
+          camera is up, and on the gallery surface's own top bar below. */}
       {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
       {!isCameraReady && !webGalleryMode && (
         <View style={styles.loadingOverlay}>
@@ -963,6 +973,8 @@ export default function ScanScreen({ navigation }: any) {
       )}
       {/* 相机预览 — 一定會 mount，不會被初始化中判斷擋住 */}
 {isWeb && webGalleryMode ? (
+        <View style={styles.camera}>
+        <ScanTopBar onClose={handleClose} flashDisabled />
         <View style={[styles.camera, styles.galleryModeContainer]}>
           <Text style={styles.galleryModeIcon}>🖼️</Text>
           <Text style={styles.galleryModeTitle}>{t('scan_gallery_title')}</Text>
@@ -984,6 +996,7 @@ export default function ScanScreen({ navigation }: any) {
           >
             <Text style={styles.settingsButtonText}>{t('scan_back_to_camera')}</Text>
           </TouchableOpacity>
+        </View>
         </View>
       ) : isWeb ? (
         <WebCamera
@@ -1008,6 +1021,7 @@ export default function ScanScreen({ navigation }: any) {
             onFlip={toggleCameraFacing}
             onGallery={pickFromGallery}
             onManualSearch={() => setShowSearch(true)}
+            onClose={handleClose}
             onToggleAutoScan={toggleAutoScan}
             onScanAreaLayout={handleScanAreaLayout}
             onRetry={() => {
@@ -1040,6 +1054,7 @@ export default function ScanScreen({ navigation }: any) {
             onFlip={toggleCameraFacing}
             onGallery={pickFromGallery}
             onManualSearch={() => setShowSearch(true)}
+            onClose={handleClose}
             onToggleAutoScan={toggleAutoScan}
             onRetry={() => {
               setCameraError(null);
@@ -1284,10 +1299,13 @@ export default function ScanScreen({ navigation }: any) {
   );
 }
 
+// DIC-1409 CR fix — the pre-camera surfaces (permission gate, gallery
+// mode, loading) render on the Pen v2 tokens, matching the App/04 frame's
+// dark full-bleed chrome instead of the legacy COLORS palette.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   camera: {
     flex: 1,
@@ -1296,29 +1314,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   galleryModeIcon: {
-    fontSize: 64,
+    fontSize: 56,
     marginBottom: 20,
   },
   galleryModeTitle: {
-    color: COLORS.text,
+    color: SEMANTIC.onBg,
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   galleryModeText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 30,
+    maxWidth: 320,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   loadingContainer: {
     flex: 1,
@@ -1326,7 +1345,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 16,
   },
   permissionContainer: {
@@ -1336,28 +1355,31 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   permissionIcon: {
-    fontSize: 64,
+    fontSize: 56,
     marginBottom: 20,
   },
   permissionTitle: {
-    color: COLORS.text,
+    color: SEMANTIC.onBg,
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   permissionText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 30,
+    maxWidth: 320,
   },
   permissionButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: PALETTE.accent,
     paddingVertical: 14,
     paddingHorizontal: 40,
-    borderRadius: 25,
+    borderRadius: 26,
     marginBottom: 12,
+    minHeight: LAYOUT.minTouch,
+    justifyContent: 'center',
   },
   permissionButtonText: {
     color: '#fff',
@@ -1367,9 +1389,11 @@ const styles = StyleSheet.create({
   settingsButton: {
     paddingVertical: 12,
     paddingHorizontal: 30,
+    minHeight: LAYOUT.minTouch,
+    justifyContent: 'center',
   },
   settingsButtonText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
   },
   overlay: {

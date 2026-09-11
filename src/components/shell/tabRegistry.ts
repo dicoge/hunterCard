@@ -50,7 +50,14 @@ export function buildShellTabs({ navigation, features = {} }: BuildShellTabsInpu
     label: SHELL_TAB_LABELS[key],
     glyph: SHELL_TAB_GLYPHS[key],
     destinationRoute: SHELL_TAB_ROUTE_MAP[key],
-    onPress: () => navigation.navigate(SHELL_TAB_ROUTE_MAP[key]),
+    // All five tab destinations are children of the nested `MainDrawer`
+    // navigator, but RouteShell also mounts on root-stack screens
+    // (SearchResults / TutorialDetail / TutorialSimulation) whose
+    // navigation object cannot resolve drawer-child names directly. The
+    // nested-navigator form resolves from BOTH contexts: React Navigation
+    // walks up to the root stack, finds `MainDrawer`, and applies the
+    // nested `screen` param (popping the stack back to the drawer).
+    onPress: () => navigation.navigate('MainDrawer', { screen: SHELL_TAB_ROUTE_MAP[key] }),
   })).filter((item) => {
     if (item.key === 'me' && features.favorites === false) return true;
     return true;

@@ -39,29 +39,14 @@ export function CardTile({
   width = LAYOUT.cardTile.width,
 }: CardTileProps) {
   const artHeight = Math.round((LAYOUT.cardTile.artHeight / LAYOUT.cardTile.width) * width);
-  const container = onPress ? TouchableOpacity : View;
-  const containerProps = onPress
-    ? {
-        onPress,
-        disabled,
-        activeOpacity: 0.85,
-        accessibilityRole: 'button' as const,
-        accessibilityLabel: name,
-      }
-    : {};
+  const containerStyle = [
+    styles.root,
+    { width },
+    disabled && styles.disabled,
+    SHADOWS.sm,
+  ];
 
-  return React.createElement(
-    container,
-    {
-      ...containerProps,
-      style: [
-        styles.root,
-        { width },
-        disabled && styles.disabled,
-        SHADOWS.sm,
-      ],
-      testID,
-    },
+  const body = (
     <>
       <View style={[styles.art, { width, height: artHeight }]} testID={`${testID}-art`}>
         {imageUrl ? (
@@ -95,7 +80,28 @@ export function CardTile({
       <Text style={styles.name} numberOfLines={1} testID={`${testID}-name`}>
         {name}
       </Text>
-    </>,
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        disabled={disabled}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={name}
+        style={containerStyle}
+        testID={testID}
+      >
+        {body}
+      </TouchableOpacity>
+    );
+  }
+  return (
+    <View style={containerStyle} testID={testID}>
+      {body}
+    </View>
   );
 }
 

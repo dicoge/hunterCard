@@ -25,6 +25,7 @@ import {
 import { COLORS } from '../constants';
 import { PALETTE } from '../theme/tokensV2';
 import { useTranslation } from '../i18n';
+import ScanTopBar from './ScanTopBar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // DIC-1409 Phase 4 — Pen `App / 04 掃描卡牌` (frame eurld) scan frame is a
@@ -56,6 +57,8 @@ export interface ScanOverlayProps {
   onToggleAutoScan: () => void;
   onRetry: () => void;
   onScanAreaLayout?: (event: LayoutChangeEvent) => void;
+  /** Pen `x7iIL` top-bar close — dismisses the scan flow (back to Home). */
+  onClose?: () => void;
 }
 
 export default function ScanOverlay({
@@ -75,6 +78,7 @@ export default function ScanOverlay({
   onToggleAutoScan,
   onRetry,
   onScanAreaLayout,
+  onClose,
 }: ScanOverlayProps) {
   const { t } = useTranslation();
   return (
@@ -122,7 +126,12 @@ export default function ScanOverlay({
           by DIC-1294 on API-36 emulator. Two-node split preserves the
           full pulse UX AND fixes the crash. */}
       <View style={styles.overlay}>
-        <View style={styles.overlayTop} />
+        <View style={styles.overlayTop}>
+          {/* Pen `x7iIL` Top Bar — Close / quota pill / Flash. The flash
+              control moved here from the bottom controls row per the Pen
+              composition; same real onFlash contract. */}
+          <ScanTopBar onClose={onClose} onFlash={onFlash} flashOn={flash} />
+        </View>
         <View style={styles.scanAreaContainer}>
           <View style={styles.overlaySide} />
           <Animated.View
@@ -189,16 +198,6 @@ export default function ScanOverlay({
             <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_flat')}</Text></View>
           </View>
           <View style={styles.controls}>
-            {/* Flash toggle */}
-            <TouchableOpacity
-              style={[styles.controlBtn, flash && styles.controlBtnActive]}
-              onPress={onFlash}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.controlIcon}>{flash ? '🔦' : '💡'}</Text>
-              <Text style={styles.controlLabel}>{flash ? t('scan_flash_on') : t('scan_flash')}</Text>
-            </TouchableOpacity>
-
             {/* Gallery button */}
             <TouchableOpacity
               style={styles.controlBtn}

@@ -176,14 +176,22 @@ await test('activeTabForRoute honors every registered destination', () => {
   }
 });
 
-await test('buildShellTabs emits five ordered items and stable onPress destinations', () => {
+await test('buildShellTabs emits five ordered items and nested MainDrawer onPress destinations', () => {
+  // DIC-1409 CR fix: tab presses must use the nested-navigator form so
+  // they resolve from root-stack screens (SearchResults / TutorialDetail /
+  // TutorialSimulation) too — a bare drawer-child name is unhandled there.
+  // The integrated proof lives in test:shell-tab-navigation.
   const calls = [];
   const items = shell.buildShellTabs({
-    navigation: { navigate: (route) => calls.push(route) },
+    navigation: { navigate: (route, params) => calls.push([route, params]) },
   });
   assert.deepEqual(items.map((it) => it.key), ['home', 'search', 'scan', 'deck', 'me']);
+  assert.deepEqual(items.map((it) => it.destinationRoute), ['Home', 'Search', 'Scan', 'DeckEditor', 'Settings']);
   items.forEach((item) => item.onPress?.());
-  assert.deepEqual(calls, ['Home', 'Search', 'Scan', 'DeckEditor', 'Settings']);
+  assert.deepEqual(
+    calls,
+    ['Home', 'Search', 'Scan', 'DeckEditor', 'Settings'].map((screen) => ['MainDrawer', { screen }]),
+  );
 });
 
 //
@@ -214,10 +222,10 @@ await test('AppShell renders StatusBar/AppBar/content/BottomTabBar landmarks', a
   }
 });
 
-await test('BottomTabBar dispatches onPress with destination route for every tab', async () => {
+await test('BottomTabBar dispatches onPress with the nested MainDrawer destination for every tab', async () => {
   const fired = [];
   const items = shell.buildShellTabs({
-    navigation: { navigate: (route) => fired.push(route) },
+    navigation: { navigate: (route, params) => fired.push(params?.screen ?? route) },
   });
   const { container, cleanup } = await renderComponent(
     React.createElement(shell.BottomTabBar, {

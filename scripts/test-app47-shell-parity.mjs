@@ -225,9 +225,11 @@ await test('我的 keeps the full existing settings surface (language / currency
   } finally { await cleanup(); }
 });
 
-await test('我的 bottom tab dispatches every shell destination', async () => {
+await test('我的 bottom tab dispatches every shell destination (nested MainDrawer form)', async () => {
+  // DIC-1409 CR fix: presses use navigate('MainDrawer', { screen }) so
+  // they also resolve from root-stack screens.
   const calls = [];
-  const { container, cleanup } = await renderSettings((route) => calls.push(route));
+  const { container, cleanup } = await renderSettings((route, params) => calls.push(params?.screen ?? route));
   try {
     for (const key of ['home', 'search', 'deck']) {
       await act(async () => container.querySelector(`[data-testid="shell-bottom-tab-${key}"]`).click());

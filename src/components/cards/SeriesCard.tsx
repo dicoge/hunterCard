@@ -36,28 +36,14 @@ export function SeriesCard({
   width = LAYOUT.seriesCard.width,
   fluid = false,
 }: SeriesCardProps) {
-  const Container = onPress ? TouchableOpacity : View;
-  const containerProps = onPress
-    ? {
-        onPress,
-        activeOpacity: 0.85,
-        accessibilityRole: 'button' as const,
-        accessibilityLabel: title,
-      }
-    : {};
+  const containerStyle = [
+    styles.root,
+    fluid ? { width: '100%' as const } : { width },
+    { height: LAYOUT.seriesCard.height },
+    SHADOWS.sm,
+  ];
 
-  return React.createElement(
-    Container,
-    {
-      ...containerProps,
-      style: [
-        styles.root,
-        fluid ? { width: '100%' as const } : { width },
-        { height: LAYOUT.seriesCard.height },
-        SHADOWS.sm,
-      ],
-      testID,
-    },
+  const body = (
     <>
       <View style={styles.thumb} testID={`${testID}-thumb`}>
         {thumbUrl ? (
@@ -76,7 +62,27 @@ export function SeriesCard({
           {title}
         </Text>
       </View>
-    </>,
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        style={containerStyle}
+        testID={testID}
+      >
+        {body}
+      </TouchableOpacity>
+    );
+  }
+  return (
+    <View style={containerStyle} testID={testID}>
+      {body}
+    </View>
   );
 }
 

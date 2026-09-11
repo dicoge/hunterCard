@@ -119,16 +119,22 @@ function MainDrawer() {
         component={ScanScreenSafe}
         options={{
           title: t('nav_scan'),
+          // DIC-1409 CR fix: the scan flow carries the Pen App/04 top
+          // action row (close / quota / flash) itself — the legacy drawer
+          // header was double chrome over a full-bleed camera surface.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📷</Text>
           ),
         }}
       />
-      <Drawer.Screen 
-        name="Search" 
+      <Drawer.Screen
+        name="Search"
         component={SearchScreen}
-        options={{ 
+        options={{
           title: t('nav_search'),
+          // DIC-1409 CR fix: Search renders the shared Pen v2 RouteShell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔍</Text>
           ),
@@ -243,7 +249,10 @@ function MainDrawer() {
 }
 
 // Stack Navigator for screens that need navigation (CardDetail, SearchResults)
-function StackNavigator() {
+// Exported for the DIC-1409 shell-tab navigation regression, which mounts
+// the REAL nested stack+drawer tree (not a stub) to prove bottom-tab
+// presses resolve from both drawer children and root-stack screens.
+export function StackNavigator() {
   const { t } = useTranslation();
 
   return (
