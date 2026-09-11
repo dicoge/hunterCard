@@ -441,17 +441,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 30,
   },
+  // DIC-1409 Phase 6 — Pen `App / 15 設定` (frame x44r8t): each section is a
+  // $app-surface r14 group card (nodes Qpkox/Vp4g7/phxwj) headed by an 11/700
+  // muted label (nodes U2n8Jp/sed7I/Ld7b7).
   section: {
-    marginBottom: 28,
+    marginBottom: 16,
+    backgroundColor: PALETTE.appSurface,
+    borderRadius: 14,
+    padding: 14,
   },
   sectionTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    color: SEMANTIC.onBgDim,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginBottom: 10,
   },
   optionRow: {
     flexDirection: 'row',

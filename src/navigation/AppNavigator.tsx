@@ -281,12 +281,14 @@ function StackNavigator() {
       <Stack.Screen
         name="TutorialDetail"
         component={TutorialDetailScreen}
-        options={{ title: t('nav_tutorial_detail') }}
+        // DIC-1409 Phase 6: route renders the shared Pen v2 shell.
+        options={{ title: t('nav_tutorial_detail'), headerShown: false }}
       />
       <Stack.Screen
         name="TutorialSimulation"
         component={TutorialSimulationScreen}
-        options={{ title: t('nav_tutorial_simulation') }}
+        // DIC-1409 Phase 6: route renders the shared Pen v2 shell.
+        options={{ title: t('nav_tutorial_simulation'), headerShown: false }}
       />
     </Stack.Navigator>
   );
