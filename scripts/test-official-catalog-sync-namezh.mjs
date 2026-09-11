@@ -173,5 +173,68 @@ assert.ok(missingNameZh.some((c) => c.id === untranslated.id), 'fail-closed gate
 // 3. Preservation non-regression: the pre-existing hEB01 row keeps its nameZh.
 assert.equal(afterSync.cards[existingId].nameZh, '星街菫', 'preserved row must keep its existing nameZh');
 
+// 4. Prototype-poisoning fail-closed regression (DIC-1416/DIC-1417). A plain
+//    `{}` translation map leaks Object.prototype through `translationMap[nameKey]`:
+//    an untranslated official name such as `__proto__` resolved to the inherited
+//    Object.prototype object — truthy and non-string — so it bypassed the
+//    `!card.nameZh` Validate gate and shipped as `nameZh: {}` (serialized).
+//    Resolution must be own-property-only and require a non-empty string.
+const poisonTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'huntercard-official-sync-poison-'));
+const poisonDb = path.join(poisonTmp, 'database.json');
+const poisonOfficial = path.join(poisonTmp, 'official');
+const poisonTranslation = path.join(poisonTmp, 'character-names-zh.json');
+const poisonTranslationWithKey = path.join(poisonTmp, 'character-names-zh-with-proto.json');
+fs.mkdirSync(poisonOfficial, { recursive: true });
+const poisonCards = ['__proto__', 'constructor', 'toString', 'hasOwnProperty'].map((name, i) => ({
+  cardNumber: `hBP09-7${String(i).padStart(2, '0')}`,
+  name,
+  cardType: 'Holomen',
+  color: 'white',
+  rarity: 'C',
+  expansion: 'hBP09',
+  sourceProduct: 'hBP09',
+  sourceProductName: 'ブースターパック「ボリュームヴォルテックス」',
+  imageUrl: `https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-7${String(i).padStart(2, '0')}.png`,
+}));
+fs.writeFileSync(path.join(poisonOfficial, '_meta.json'), `${JSON.stringify({ seriesStats: [{ code: 'hBP09', expectedCount: 4, ingestedCount: 4 }] }, null, 2)}\n`, 'utf8');
+fs.writeFileSync(path.join(poisonOfficial, 'hBP09.json'), `${JSON.stringify(poisonCards, null, 2)}\n`, 'utf8');
+
+// 4a. Empty controlled map — the exact DIC-1416 evidence: every prototype-property
+//     key must stay nameZh-less and fail closed, never resolving to an inherited
+//     truthy object.
+fs.writeFileSync(poisonDb, `${JSON.stringify({ lastUpdated: 'x', totalCards: 0, cards: {} }, null, 2)}\n`, 'utf8');
+fs.writeFileSync(poisonTranslation, `${JSON.stringify({}, null, 2)}\n`, 'utf8');
+syncOfficialCatalogToDatabase({ databasePath: poisonDb, officialDirectory: poisonOfficial, translationPath: poisonTranslation });
+const poisonAfter = JSON.parse(fs.readFileSync(poisonDb, 'utf8'));
+for (const poison of poisonCards) {
+  const row = Object.values(poisonAfter.cards).find((c) => c.cardNumber === poison.cardNumber);
+  assert.ok(row, `prototype-poisoning row ${poison.cardNumber} (${poison.name}) must be upserted`);
+  assert.ok(!row.nameZh, `untranslated ${poison.name} must NOT resolve to an inherited prototype value (got ${JSON.stringify(row.nameZh)}/${typeof row.nameZh})`);
+  assert.ok(typeof row.nameZh !== 'object' && typeof row.nameZh !== 'function', `${poison.name} must never populate nameZh from Object.prototype`);
+}
+
+// 4b. A controlled map that literally owns a `__proto__` key must resolve it as a
+//     real own-property entry (a plain `{}` would alias the prototype instead),
+//     while unlisted prototype-property keys stay fail-closed.
+const poisonMap2 = {};
+// computed-key assignment so `__proto__` lands as an own entry, not a prototype set
+Object.defineProperty(poisonMap2, '__proto__', { value: '原型污染測試', enumerable: true, writable: true, configurable: true });
+fs.writeFileSync(poisonTranslationWithKey, `${JSON.stringify(poisonMap2, null, 2)}\n`, 'utf8');
+const poisonDb2 = path.join(poisonTmp, 'database2.json');
+fs.writeFileSync(poisonDb2, `${JSON.stringify({ lastUpdated: 'x', totalCards: 0, cards: {} }, null, 2)}\n`, 'utf8');
+syncOfficialCatalogToDatabase({ databasePath: poisonDb2, officialDirectory: poisonOfficial, translationPath: poisonTranslationWithKey });
+const poisonAfter2 = JSON.parse(fs.readFileSync(poisonDb2, 'utf8'));
+for (const poison of poisonCards) {
+  const row = Object.values(poisonAfter2.cards).find((c) => c.cardNumber === poison.cardNumber);
+  assert.ok(row, `provably-owned-map row ${poison.cardNumber} (${poison.name}) must be upserted`);
+  if (poison.name === '__proto__') {
+    assert.equal(row.nameZh, '原型污染測試', 'a controlled own `__proto__` translation must resolve to the controlled string');
+    assert.equal(typeof row.nameZh, 'string', 'resolved `__proto__` translation must be a string');
+  } else {
+    assert.ok(!row.nameZh, `unlisted ${poison.name} must stay fail-closed even when the map literally owns a prototype-key entry`);
+  }
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
+fs.rmSync(poisonTmp, { recursive: true, force: true });
 console.log('✓ official catalog sync enriches new printings with controlled Traditional-Chinese names (and fails closed without one)');

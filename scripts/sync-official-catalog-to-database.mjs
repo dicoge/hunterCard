@@ -36,7 +36,13 @@ function loadTranslationMap(filepath) {
     throw new Error(`${filepath} missing; cannot enrich new printings with Traditional-Chinese names`);
   }
   const raw = readJson(filepath);
-  const clean = {};
+  // DIC-1417: a plain `{}` leaks Object.prototype through `translationMap[key]`
+  // lookups — an untranslated official name such as `__proto__` resolves to the
+  // inherited Object.prototype object (truthy, non-string) and sails past the
+  // `!card.nameZh` fail-closed gate as `nameZh: {}`. A null-prototype object
+  // keeps resolution own-property-only AND stores literal keys like `__proto__`
+  // or `constructor` as real own entries instead of aliasing the prototype.
+  const clean = Object.create(null);
   for (const [jp, zh] of Object.entries(raw)) {
     // Match add-zh-names.js: drop entries corrupted with U+FFFD replacement
     // characters so poisoning cannot leak into the database.
@@ -56,9 +62,17 @@ function decodeNameZhCandidate(input = '') {
 }
 
 function resolveNameZh(name, previousNameZh, translationMap) {
-  if (previousNameZh && String(previousNameZh).trim()) return previousNameZh;
+  // Own-property-only, non-empty-string resolution (DIC-1417): a preserved or
+  // translated nameZh must be a real string — never an inherited prototype
+  // object — so untranslated rows stay fail-closed (`''` trips `!nameZh`).
+  if (typeof previousNameZh === 'string' && previousNameZh.trim()) return previousNameZh;
   const nameKey = String(name || '');
-  return translationMap[nameKey] || translationMap[decodeNameZhCandidate(nameKey)] || '';
+  for (const candidate of [nameKey, decodeNameZhCandidate(nameKey)]) {
+    if (!Object.hasOwn(translationMap, candidate)) continue;
+    const zh = translationMap[candidate];
+    if (typeof zh === 'string' && zh.trim()) return zh;
+  }
+  return '';
 }
 
 function cardSignature(card) {
