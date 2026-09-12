@@ -12,6 +12,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Image, ScrollView,
+  type StyleProp, type ViewStyle,
 } from 'react-native';
 import { COLORS } from '../constants';
 import { uniformGridItemStyle } from '../utils/gridLayout';
@@ -226,17 +227,34 @@ function CardThumb({ card }: { card: DeckCard }) {
 interface GridProps {
   groups: VariantGroup[];
   numColumns: number;
-  height: number;
+  /**
+   * Fixed pixel height. OMIT IT in app layouts: the grid then fills its parent
+   * box (`flex: 1`) and is the only vertical scroller on the route, which is
+   * what lets a finger that lands on a card actually scroll the cards
+   * (DIC-1320). A number is still accepted for isolated/bounded renders.
+   */
+  height?: number;
   /** copies of this card number already in the deck, for the quantity badge */
   qtyOf: (cardNumber: string) => number;
   onAdd: (card: DeckCard) => void;
   emptyLabel: string;
+  /**
+   * Content that scrolls ABOVE the cards. The stacked layout hands the picker
+   * chrome here so the whole page is this ONE list rather than a list nested in
+   * a page ScrollView — the nesting Android refuses to scroll (DIC-1320).
+   */
+  header?: React.ReactNode;
+  /** Content that scrolls BELOW the cards, for the same single-scroller reason. */
+  footer?: React.ReactNode;
+  /** Padding for the scrolled content when the grid is the page scroller. */
+  contentContainerStyle?: StyleProp<ViewStyle>;
 }
 
 const PAGE_SIZE = 60;
 
 export function CardPickerGrid({
   groups, numColumns, height, qtyOf, onAdd, emptyLabel,
+  header, footer, contentContainerStyle,
 }: GridProps) {
   const { t } = useTranslation();
   // The catalog holds ~2,100 card numbers; rendering them all would stall the
@@ -253,6 +271,10 @@ export function CardPickerGrid({
     setVisible(PAGE_SIZE);
   }
 
+  const loadMoreHint = page.length < groups.length
+    ? <Text style={styles.muted}>{t('picker_load_more', { visible: page.length, total: groups.length })}</Text>
+    : null;
+
   return (
     <FlatList
       // FlatList cannot change numColumns on an existing list instance.
@@ -261,14 +283,25 @@ export function CardPickerGrid({
       data={page}
       numColumns={numColumns}
       keyExtractor={(g) => g.cardNumber}
-      style={[styles.grid, { height }]}
+      // Without an explicit height the grid FILLS its parent box. Every deck
+      // editor layout uses that shape so no ancestor is a vertical scroller
+      // competing for the same drag (DIC-1320).
+      style={[styles.grid, height === undefined ? styles.gridFill : { height }]}
+      contentContainerStyle={contentContainerStyle}
       columnWrapperStyle={numColumns > 1 ? styles.gridRow : undefined}
+      // Android turns nested scrolling OFF by default, so a grid that ever ends
+      // up inside another scroller would be frozen. The layouts keep it
+      // un-nested; this is the belt-and-braces if one ever regresses.
+      nestedScrollEnabled
+      // Dragging the cards puts the search keyboard away instead of fighting it,
+      // while a TAP still lands on the card underneath.
+      keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       initialNumToRender={numColumns * 4}
       windowSize={5}
       removeClippedSubviews={false}
       onEndReachedThreshold={0.4}
-      onEndReached={() => setVisible((n) => (n < groups.length ? n + PAGE_SIZE : n))}
+      onEndReached={() => setVisible((n) => (n < groups.length ? Math.min(n + PAGE_SIZE, groups.length) : n))}
       renderItem={({ item }) => {
         const qty = qtyOf(item.cardNumber);
         return (
@@ -300,10 +333,9 @@ export function CardPickerGrid({
         );
       }}
       ListEmptyComponent={<Text style={styles.muted}>{emptyLabel}</Text>}
+      ListHeaderComponent={header ? <>{header}</> : null}
       ListFooterComponent={
-        page.length < groups.length
-          ? <Text style={styles.muted}>{t('picker_load_more', { visible: page.length, total: groups.length })}</Text>
-          : null
+        loadMoreHint || footer ? <>{loadMoreHint}{footer}</> : null
       }
     />
   );
@@ -336,6 +368,10 @@ const styles = StyleSheet.create({
   link: { color: COLORS.primary, fontSize: 14 },
   muted: { color: COLORS.textSecondary, fontSize: 13, marginTop: 8 },
   grid: { marginTop: 10 },
+  // `minHeight: 0` lets the list actually shrink inside a flex column instead of
+  // being pushed to its content height, which would hand the overflow — and the
+  // scroll gesture with it — back to an ancestor.
+  gridFill: { flex: 1, minHeight: 0 },
   gridRow: { gap: 8 },
   cell: {
     minHeight: CELL_MIN_HEIGHT, marginBottom: 8, padding: 6,
