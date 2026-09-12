@@ -7,9 +7,26 @@
  * Contains:
  * - Scan area with animated scan line
  * - Corner decorations
- * - Camera controls (flash, scan button, flip)
- * - Auto-scan mode toggle
- * - Gallery button
+ * - The primary scan action plus a gallery entry point so a card that cannot
+ *   be pointed at (e.g. a photo the user already has) still has a scan path
+ *   on native. The flash toggle rides the Pen `x7iIL` top bar (DIC-1409).
+ *
+ * DIC-1319: the normal flow is one primary action. Camera flip, manual search
+ * and the auto-scan mode toggle used to sit under the viewfinder and were what
+ * the v21 tester read as "many unnecessary buttons"; the auto-scan toggle was
+ * inert on Android to begin with (the auto-scan loop is web-only). Those are
+ * gone; manual search stays reachable from the scan-failure and low-confidence
+ * recovery panels.
+ *
+ * DIC-1336: the gallery entry is back, but this time it is here for a reason.
+ * The release-like Android QA (DIC-1332) found that the shipped APK had no
+ * reachable gallery path — both `pickFromGallery` invocation sites in
+ * ScanScreen were gated by `isWeb`, so on native there was no way to scan a
+ * card from a photo the user already had. It is rendered here as an icon-only
+ * secondary control beside the shutter so it does not compete with the
+ * primary scan action, and it is ALSO exposed on the camera-permission-denied
+ * surface (CameraPermissionDeniedView) so gallery scanning remains a real
+ * recovery path when the camera is unavailable.
  */
 
 import React from 'react';
@@ -23,10 +40,17 @@ import {
   LayoutChangeEvent,
 } from 'react-native';
 import { COLORS } from '../constants';
+import { PALETTE } from '../theme/tokensV2';
 import { useTranslation } from '../i18n';
+import ScanTopBar from './ScanTopBar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
+// DIC-1409 Phase 4 — Pen `App / 04 掃描卡牌` (frame eurld) scan frame is a
+// PORTRAIT card window (node Aj73G, 250×350 at 390 ≈ 0.64 screen width,
+// 1.4 aspect). The crop pipeline measures the frame via onLayout, so the
+// aspect change flows through recognition without any constant duplication.
+const SCAN_AREA_SIZE = Math.min(SCREEN_WIDTH * 0.64, 280);
+const SCAN_AREA_HEIGHT = SCAN_AREA_SIZE * 1.4;
 
 export interface ScanOverlayProps {
   // Animation values
@@ -37,19 +61,26 @@ export interface ScanOverlayProps {
   // Scan state
   isScanning: boolean;
   flash: boolean;
-  autoScanEnabled: boolean;
+  // Whether the frame-stability auto-scan loop is actually running. ScanScreen
+  // only runs it on web, so this is false on Android/iOS and the hint text
+  // stops promising an automatic capture the platform never performs.
+  autoScanActive: boolean;
   isCameraReady: boolean;
   cameraError: string | null;
 
   // Callbacks
   onFlash: () => void;
   onScan: () => void;
-  onFlip: () => void;
-  onGallery: () => void;
-  onManualSearch: () => void;
-  onToggleAutoScan: () => void;
   onRetry: () => void;
+  // Gallery entry — mounted unconditionally (no `isWeb` gate) so the shipped
+  // Android APK exposes a native gallery scan path. ScanScreen wires this to
+  // its own `pickFromGallery`; if the platform later cannot fulfil the pick
+  // (no photo library permission, no picker), the handler itself is
+  // responsible for surfacing that error — never this overlay.
+  onGallery: () => void;
   onScanAreaLayout?: (event: LayoutChangeEvent) => void;
+  /** Pen `x7iIL` top-bar close — dismisses the scan flow (back to Home). */
+  onClose?: () => void;
 }
 
 export default function ScanOverlay({
@@ -58,17 +89,15 @@ export default function ScanOverlay({
   borderAnim,
   isScanning,
   flash,
-  autoScanEnabled,
+  autoScanActive,
   isCameraReady,
   cameraError,
   onFlash,
   onScan,
-  onFlip,
-  onGallery,
-  onManualSearch,
-  onToggleAutoScan,
   onRetry,
+  onGallery,
   onScanAreaLayout,
+  onClose,
 }: ScanOverlayProps) {
   const { t } = useTranslation();
   return (
@@ -116,7 +145,12 @@ export default function ScanOverlay({
           by DIC-1294 on API-36 emulator. Two-node split preserves the
           full pulse UX AND fixes the crash. */}
       <View style={styles.overlay}>
-        <View style={styles.overlayTop} />
+        <View style={styles.overlayTop}>
+          {/* Pen `x7iIL` Top Bar — Close / quota pill / Flash. The flash
+              control moved here from the bottom controls row per the Pen
+              composition; same real onFlash contract. */}
+          <ScanTopBar onClose={onClose} onFlash={onFlash} flashOn={flash} />
+        </View>
         <View style={styles.scanAreaContainer}>
           <View style={styles.overlaySide} />
           <Animated.View
@@ -145,7 +179,7 @@ export default function ScanOverlay({
                     transform: [{
                       translateY: scanLineAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0, SCAN_AREA_SIZE - 4],
+                        outputRange: [0, SCAN_AREA_HEIGHT - 4],
                       }),
                     }],
                     opacity: scanLineAnim.interpolate({
@@ -174,78 +208,56 @@ export default function ScanOverlay({
         </View>
         <View style={styles.overlayBottom}>
           <Text style={styles.hintText}>
-            {autoScanEnabled ? t('scan_frame_auto') : t('scan_frame_manual')}
+            {autoScanActive ? t('scan_frame_auto') : t('scan_frame_manual')}
           </Text>
-          <View style={styles.controls}>
-            {/* Flash toggle */}
-            <TouchableOpacity
-              style={[styles.controlBtn, flash && styles.controlBtnActive]}
-              onPress={onFlash}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.controlIcon}>{flash ? '🔦' : '💡'}</Text>
-              <Text style={styles.controlLabel}>{flash ? t('scan_flash_on') : t('scan_flash')}</Text>
-            </TouchableOpacity>
-
-            {/* Gallery button */}
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={onGallery}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.controlIcon}>🖼️</Text>
-              <Text style={styles.controlLabel}>{t('scan_gallery')}</Text>
-            </TouchableOpacity>
-
-            {/* Scan button */}
+          {/* Pen Tips row (node Cc84X): three pill chips */}
+          <View style={styles.tipsRow} testID="scan-tips-row">
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_number')}</Text></View>
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_glare')}</Text></View>
+            <View style={styles.tipChip}><Text style={styles.tipChipText}>{t('scan_tip_flat')}</Text></View>
+          </View>
+          {/* DIC-1319 × DIC-1409: one primary action. Camera flip, manual
+              search and the auto-scan mode switch stay out of the viewfinder
+              (the auto-scan loop is web-only, so the switch was inert on
+              Android; manual search remains reachable from the scan-failure
+              and low-confidence recovery panels). The flash control rides the
+              Pen `x7iIL` top bar, so this row is the scan action plus the
+              gallery entry only. */}
+          <View style={styles.controls} testID="scan-primary-controls">
+            {/* The single scan action. */}
             <TouchableOpacity
               style={[styles.scanButton, isScanning && styles.scanButtonDisabled]}
               onPress={onScan}
               disabled={isScanning}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              testID="scan-primary-action"
             >
               <View style={styles.scanButtonInner}>
                 <Text style={styles.scanButtonIcon}>{isScanning ? '⏳' : '📷'}</Text>
               </View>
               <Text style={styles.scanButtonLabel}>
-                {isScanning ? t('scan_recognizing') : autoScanEnabled ? t('scan_manual') : t('scan_scan_action')}
+                {isScanning ? t('scan_recognizing') : autoScanActive ? t('scan_manual') : t('scan_scan_action')}
               </Text>
             </TouchableOpacity>
 
-            {/* Flip camera */}
+            {/* Gallery — icon-only secondary control beside the shutter.
+                Rendered unconditionally so the Android APK
+                has a reachable gallery scan path (DIC-1336); the previous
+                `isWeb`-gated call sites left the shipped Android build with
+                no way to scan a photo the user already had. Any inability
+                to fulfil the picker (permissions, missing native module) is
+                the handler's problem, not the overlay's — the button stays
+                present so the flow starts. */}
             <TouchableOpacity
               style={styles.controlBtn}
-              onPress={onFlip}
+              onPress={onGallery}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('scan_gallery_action')}
+              testID="scan-gallery-action"
             >
-              <Text style={styles.controlIcon}>🔄</Text>
-              <Text style={styles.controlLabel}>{t('scan_flip')}</Text>
-            </TouchableOpacity>
-
-            {/* Manual search */}
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={onManualSearch}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.controlIcon}>🔤</Text>
-              <Text style={styles.controlLabel}>{t('common_search')}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Auto-scan toggle */}
-          <View style={styles.autoScanToggleContainer}>
-            <TouchableOpacity
-              style={[
-                styles.autoScanToggle,
-                autoScanEnabled && styles.autoScanToggleActive,
-              ]}
-              onPress={onToggleAutoScan}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.autoScanToggleText, autoScanEnabled && styles.autoScanToggleTextActive]}>
-                {autoScanEnabled ? t('scan_auto_mode') : t('scan_manual_mode')}
-              </Text>
+              <Text style={styles.controlIcon}>🖼️</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -269,8 +281,11 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 16,
   },
+  // DIC-1409 CR fix: the overlay chrome sits ABSOLUTELY over the camera
+  // element instead of flowing after the 100%-height <video> as a flex
+  // sibling — normal flow pushed the whole scan UI below the fold.
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
   },
   overlayTop: {
     flex: 1,
@@ -283,13 +298,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
+  // Pen scan frame (node Aj73G): portrait card window, #FFFFFF08 fill, r16.
   scanArea: {
     width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_SIZE * 0.63,
+    height: SCAN_AREA_HEIGHT,
     position: 'relative',
     borderWidth: 2,
     borderColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF08',
     overflow: 'hidden',
   },
   // Outer pulse wrapper (DIC-1294 + DIC-1296 CR round-2): owns the layout
@@ -303,7 +320,7 @@ const styles = StyleSheet.create({
   // the API-36 emulator logcat.
   scanAreaPulse: {
     width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_SIZE * 0.63,
+    height: SCAN_AREA_HEIGHT,
   },
   scanLine: {
     position: 'absolute',
@@ -317,39 +334,40 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 4,
   },
+  // Pen corner brackets (nodes K3Ja4K…): white, 32px, r10.
   corner: {
     position: 'absolute',
-    width: 24,
-    height: 24,
-    borderColor: COLORS.primary,
+    width: 32,
+    height: 32,
+    borderColor: '#FFFFFF',
   },
   topLeft: {
     top: -1,
     left: -1,
     borderTopWidth: 4,
     borderLeftWidth: 4,
-    borderTopLeftRadius: 8,
+    borderTopLeftRadius: 10,
   },
   topRight: {
     top: -1,
     right: -1,
     borderTopWidth: 4,
     borderRightWidth: 4,
-    borderTopRightRadius: 8,
+    borderTopRightRadius: 10,
   },
   bottomLeft: {
     bottom: -1,
     left: -1,
     borderBottomWidth: 4,
     borderLeftWidth: 4,
-    borderBottomLeftRadius: 8,
+    borderBottomLeftRadius: 10,
   },
   bottomRight: {
     bottom: -1,
     right: -1,
     borderBottomWidth: 4,
     borderRightWidth: 4,
-    borderBottomRightRadius: 8,
+    borderBottomRightRadius: 10,
   },
   scanningIndicator: {
     position: 'absolute',
@@ -373,13 +391,31 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     alignItems: 'center',
   },
+  // Pen Hint title (node RrYjs): 14/600 white.
   hintText: {
-    color: COLORS.text,
-    fontSize: 16,
-    marginBottom: 20,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 10,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  // Pen Tips chips (node Cc84X): #FFFFFF0F pills, 11 muted text.
+  tipsRow: {
+    flexDirection: 'row',
+    gap: 7,
+    marginBottom: 16,
+  },
+  tipChip: {
+    backgroundColor: '#FFFFFF0F',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  tipChipText: {
+    color: '#C6C6DE',
+    fontSize: 11,
   },
   controls: {
     flexDirection: 'row',
@@ -388,20 +424,22 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 12,
   },
+  // Pen side controls (相簿 node TOYLP): #FFFFFF14 boxes, r14.
   controlBtn: {
     alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+    height: 48,
     padding: 8,
+    backgroundColor: '#FFFFFF14',
+    borderRadius: 14,
+    minWidth: 52,
   },
   controlBtnActive: {
     opacity: 1,
   },
   controlIcon: {
     fontSize: 26,
-    marginBottom: 4,
-  },
-  controlLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
   },
   scanButton: {
     alignItems: 'center',
@@ -409,15 +447,14 @@ const styles = StyleSheet.create({
   scanButtonDisabled: {
     opacity: 0.6,
   },
+  // Pen Shutter (node TbHVE): 72px accent circle with glow, no white ring.
   scanButtonInner: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: COLORS.primary,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: PALETTE.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#fff',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
@@ -432,30 +469,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 6,
-  },
-  autoScanToggleContainer: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  autoScanToggle: {
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  autoScanToggleActive: {
-    backgroundColor: 'rgba(255, 107, 157, 0.2)',
-    borderColor: COLORS.primary,
-  },
-  autoScanToggleText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  autoScanToggleTextActive: {
-    color: COLORS.primary,
   },
 });
 

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image, Platform } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
+import { AppShell } from '../components/shell';
+import { PALETTE, SEMANTIC, FONTS } from '../theme/tokensV2';
 import { FEATURES } from '../config/releaseFlags';
 import { openUrl } from '../utils/openUrl';
 import { useSettingsStore } from '../store/settingsStore';
 import { useDeckStore } from '../store/deckStore';
+import { useFavoritesStore } from '../store/favoritesStore';
 import { usePriceAlertStore } from '../stores/priceAlertStore';
 import PriceAlertEditor, { type PriceAlertTarget } from '../components/PriceAlertEditor';
 import { buildSourcePrintings } from '../utils/printingIdentity';
@@ -21,6 +23,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
 import { useTranslation } from '../i18n';
 import { ownershipKey } from '../utils/deckRules';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 
 const { width } = Dimensions.get('window');
 
@@ -80,13 +83,17 @@ function buildImageUrl(cardNumber: string, seriesCode: string, versions: string[
 export default function CardDetailScreen({ route, navigation }: any) {
   const { card } = route.params || {};
   const [imageError, setImageError] = useState(false);
-  const insets = useSafeAreaInsets();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
   const { isDesktop } = useBreakpoint();
   const { t } = useTranslation();
   const collection = useDeckStore((state) => state.collection);
   const adjustOwned = useDeckStore((state) => state.adjustOwned);
   const setOwned = useDeckStore((state) => state.setOwned);
+  // DIC-1380 W6: wire the independent favorites store into the card
+  // detail so the store actually round-trips per user action (a static
+  // FavoritesScreen placeholder is not "favorites round-trip").
+  const favorites = useFavoritesStore((state) => state.favorites);
+  const toggleFavorite = useFavoritesStore((state) => state.toggleFavorite);
 
   if (!card) {
     return (
@@ -111,8 +118,12 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const nameJP = allKW[0] || card.name || '';
   const nameZH = card.nameZh || allKW[1] || '';
   const nameEN = allKW[2] || '';
-  const displayName = preferredLanguage === 'zh' && nameZH ? nameZH : nameJP;
-  const displayNameSub = preferredLanguage === 'zh' ? '' : nameZH;
+  // DIC-1380: route the primary/subtitle choice through the shared helper so
+  // CardDetail, SearchResults, ScanResultCard and DeckEditor stay in lock-step.
+  const { primary: displayName, secondary: displayNameSub } = resolveCardDisplayName(
+    { name: nameJP, nameZh: nameZH },
+    preferredLanguage,
+  );
   const rarityKey = card.rarity || (card.grade === 'buzz' ? 'SR' : card.grade === 'debut' ? 'C' : card.grade === '1st' ? 'U' : 'R');
   const typeLabels: Record<string, string> = {
     Oshi: t('card_detail_type_oshi'), Member: t('card_detail_type_member'),
@@ -237,8 +248,39 @@ export default function CardDetailScreen({ route, navigation }: any) {
       ? t('card_detail_alert_many', { count: cardAlerts.length })
       : t('card_detail_alert_set');
 
+  // DIC-1409 Phase 3: Pen `App / 03 卡牌詳情` (frame o7WO3r) shell — back
+  // arrow + card number in the app bar, no bottom tab bar on the detail route.
+  // The inner ScrollView stays the scroll container so the desktop two-column
+  // layout and every gated section keep their exact structure.
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingBottom: insets.bottom }}>
+    <AppShell
+      appBar={{
+        showBrand: false,
+        title: id,
+        leading: (
+          <TouchableOpacity
+            onPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate?.('Home'))}
+            accessibilityRole="button"
+            accessibilityLabel={t('common_back')}
+            style={styles.shellBackButton}
+            testID="card-detail-back"
+          >
+            <Text style={styles.shellBackGlyph}>‹</Text>
+          </TouchableOpacity>
+        ),
+        actions: [
+          {
+            key: 'official',
+            label: t('card_detail_official_list'),
+            icon: <Text style={styles.shellActionGlyph}>↗</Text>,
+            onPress: () => openUrl(officialUrl),
+          },
+        ],
+      }}
+      scrollable={false}
+      contentPadding={false}
+      testID="card-detail-shell"
+    >
       <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
       <ScrollView style={styles.container} contentContainerStyle={isDesktop ? styles.scrollDesktop : undefined}>
       <View style={isDesktop ? styles.twoCol : styles.oneCol}>
@@ -268,6 +310,49 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
       </View>
       <View style={isDesktop ? styles.rightCol : undefined}>
+
+      {/* 收藏標記 (favorites toggle — DIC-1380 W6). Independent of the
+          ownership widget below: bookmarking is not owning. Under Store
+          MVP this row is hidden along with the rest of the favorites
+          surface. Writes go through `useFavoritesStore.toggleFavorite`
+          which stamps a removal tombstone on unfavorite so the sync
+          orchestrator's 409 merge can honor the delete. */}
+      {FEATURES.favorites && collectionVersion && (
+        (() => {
+          const cardIsFav = favorites.some(
+            (f) => f.cardNumber === id && f.printing === collectionVersion.printing,
+          );
+          return (
+            <View style={styles.favoriteRow} testID="card-detail-favorite">
+              <TouchableOpacity
+                style={[
+                  styles.favoriteChip,
+                  cardIsFav ? styles.favoriteChipActive : null,
+                ]}
+                onPress={() => toggleFavorite({
+                  cardNumber: id,
+                  printing: collectionVersion.printing,
+                  cardId: card?.id,
+                })}
+                accessibilityRole="button"
+                accessibilityState={{ selected: cardIsFav }}
+                accessibilityLabel={cardIsFav
+                  ? t('favorites_remove_a11y', { name: displayName })
+                  : t('favorites_add_a11y', { name: displayName })}
+                testID={cardIsFav ? 'card-detail-favorite-remove' : 'card-detail-favorite-add'}
+                activeOpacity={0.85}
+              >
+                <Text style={[
+                  styles.favoriteChipText,
+                  cardIsFav ? styles.favoriteChipTextActive : null,
+                ]}>
+                  {cardIsFav ? `❤️  ${t('favorites_saved')}` : `♡  ${t('favorites_save')}`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })()
+      )}
 
       {/* 收藏 (per-card ownership +/- widget) — hidden in Store MVP (DIC-1256).
           The deck editor keeps its own ownership editing; this card-detail
@@ -333,11 +418,11 @@ export default function CardDetailScreen({ route, navigation }: any) {
       )}
 
       {/* ====== PRICE SECTION ====== */}
-      {/* 售價 / 版本價格 pills / 價格提示 / 漲跌 — Store MVP 隱藏 (DIC-1256).
-          Everything price-shaped on the card detail is gated under
-          FEATURES.marketData; scope covers this top block, the MarketDataPanel
-          below, and the 遊々亭 external live-price CTA that lives inside it. */}
-      {FEATURES.marketData && (
+      {/* 售價 / 版本價格 pills — Store MVP 也顯示 (DIC-1319)：這是這張卡自己的
+          掛牌售價，屬於基本查價。漲跌走勢仍由 FEATURES.trendPrediction 擋著，
+          「查即時價」外連仍由 FEATURES.externalPriceLinks 擋著，買賣差價與
+          MarketDataPanel 仍由 FEATURES.marketData 擋著。 */}
+      {FEATURES.sellPrice && (
         <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]} testID="card-detail-price-section">
           <View style={styles.priceHeader}>
             <Text style={styles.priceSourceName}>🏪 遊々亭</Text>
@@ -356,10 +441,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
                 </View>
                 );
               })}
-              <Text style={styles.variantHint}>
-                {FEATURES.priceSpread
-                  ? t('card_detail_variant_hint_spread')
-                  : t('card_detail_variant_hint')}
+              {/* Both non-store hints tell the user to pick a version down in
+                  「市場數據」, but MarketDataPanel is gated on FEATURES.marketData.
+                  Since DIC-1319 un-gated this list, the store build would render
+                  an instruction pointing at a section that is not there — so the
+                  hint that names a gated section is itself gated. */}
+              <Text style={styles.variantHint} testID="card-detail-variant-hint">
+                {!FEATURES.marketData
+                  ? t('card_detail_variant_hint_store')
+                  : FEATURES.priceSpread
+                    ? t('card_detail_variant_hint_spread')
+                    : t('card_detail_variant_hint')}
               </Text>
             </View>
           ) : hasActualPrice ? (
@@ -379,9 +471,13 @@ export default function CardDetailScreen({ route, navigation }: any) {
             <Text style={styles.noPriceText}>{t('card_detail_no_data')}</Text>
           )}
           {FEATURES.trendPrediction ? <PriceTrend trend={detailPriceTrend} /> : null}
-          <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
-            <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
-          </TouchableOpacity>
+          {/* 「查即時價」把使用者送到遊々亭 — 外部價格連結，維持 Store MVP 隱藏
+              (DIC-1256)；DIC-1319 只放行卡片自己的售價數字，不放行外連。 */}
+          {FEATURES.externalPriceLinks && (
+            <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
+              <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -554,7 +650,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
       </View>
     </ScrollView>
-    </SafeAreaView>
+    </AppShell>
   );
 }
 
@@ -885,8 +981,13 @@ function LinkButton({ icon, text, url }: { icon: string; text: string; url: stri
 // ─── Styles ────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
+  container: { flex: 1, backgroundColor: PALETTE.appBg },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PALETTE.appBg, padding: 20 },
+
+  // Pen App/03 shell chrome (back arrow t2SEv, external-link CE6L7)
+  shellBackButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginLeft: -6 },
+  shellBackGlyph: { fontFamily: Platform.OS === 'web' ? FONTS.display : undefined, fontSize: 26, lineHeight: 28, color: SEMANTIC.onBgMuted },
+  shellActionGlyph: { fontSize: 18, lineHeight: 20, color: SEMANTIC.onBgMuted },
 
   // Desktop two-column layout
   scrollDesktop: { alignItems: 'center' },
@@ -905,6 +1006,11 @@ const styles = StyleSheet.create({
   fallbackHint: { fontSize: 13, color: COLORS.primary },
 
   // Price section
+  favoriteRow: { marginHorizontal: 20, marginTop: 14, flexDirection: 'row' },
+  favoriteChip: { minHeight: 44, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center' },
+  favoriteChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '22' },
+  favoriteChipText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  favoriteChipTextActive: { color: COLORS.primary },
   collectionCard: { marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, flexDirection: 'row', alignItems: 'center', gap: 12 },
   collectionCopy: { flex: 1, minWidth: 0 },
   collectionTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
@@ -915,12 +1021,16 @@ const styles = StyleSheet.create({
   collectionButtonDisabled: { color: COLORS.border },
   collectionQuantity: { minWidth: 24, color: COLORS.text, fontSize: 15, fontWeight: '800', textAlign: 'center' },
   collectionRemove: { color: COLORS.error, fontSize: 12, fontWeight: '700' },
-  priceSection: { paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' },
+  // Pen Price Card (node qJqlm): $app-surface, r16, 16px padding card — no
+  // full-bleed divider band any more.
+  priceSection: { marginHorizontal: 16, marginTop: 16, padding: 16, borderRadius: 16, backgroundColor: PALETTE.appSurface },
   priceHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   priceSourceName: { fontSize: 17, fontWeight: '700', color: COLORS.text },
   priceBadge: { marginLeft: 10, backgroundColor: COLORS.surfaceLight, color: COLORS.textSecondary, fontSize: 11, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
-  priceValue: { fontSize: 28, fontWeight: 'bold', color: '#10b981' },
+  // Pen Value Row (node x0c32A): 30/700 Outfit on $text-primary — the mint
+  // green price was one of the flagged Pen→Preview regressions.
+  priceValue: { fontFamily: Platform.OS === 'web' ? FONTS.display : undefined, fontSize: 30, fontWeight: '700', color: SEMANTIC.onBg },
   priceRange: { fontSize: 13, color: COLORS.textSecondary, marginLeft: 6 },
   priceNote: { fontSize: 11, color: COLORS.textSecondary + 'bb', marginBottom: 12 },
   checkPriceBtn: { backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
@@ -948,7 +1058,8 @@ const styles = StyleSheet.create({
   detailCategoryChipText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   detailRarityChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, borderWidth: 1, backgroundColor: 'transparent' },
   detailRarityChipText: { fontSize: 11, fontWeight: '800' },
-  nameJP: { fontSize: 26, fontWeight: 'bold', color: COLORS.text, marginBottom: 3 },
+  // Pen Card Info name (node HMarO): 21/800 body face on $text-primary.
+  nameJP: { fontFamily: Platform.OS === 'web' ? FONTS.body : undefined, fontSize: 21, fontWeight: '800', color: SEMANTIC.onBg, marginBottom: 3 },
   nameTW: { fontSize: 17, color: COLORS.primary, marginBottom: 3 },
   nameEN: { fontSize: 13, color: COLORS.text + '88', marginBottom: 12, fontStyle: 'italic' },
   infoRow: { flexDirection: 'row', marginBottom: 5 },

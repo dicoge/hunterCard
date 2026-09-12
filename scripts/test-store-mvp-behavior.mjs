@@ -95,32 +95,43 @@ const GATED_FLAGS = [
   'premium',
 ];
 
-// ── The card-detail render markers. Each corresponds to one of the four
-//    gates on CardDetailScreen: favorites (ownership widget), marketData
-//    (top price section AND MarketDataPanel), externalPriceLinks (yuyu +
-//    Carousell), and watchlist (top chip + bottom button). ──
+// ── The card-detail render markers. Each corresponds to one of the gates on
+//    CardDetailScreen: favorites (ownership widget), marketData
+//    (MarketDataPanel), externalPriceLinks (查即時價 CTA + yuyu + Carousell),
+//    and watchlist (top chip + bottom button). The top price section moved to
+//    SELL_PRICE_MARKERS in DIC-1319. ──
 const GATED_DETAIL_MARKERS = [
   ['collectionCard (favorites)', 'hasCollectionCard'],
-  ['top priceSection (marketData)', 'hasPriceSection'],
   ['市場數據 section title (marketData)', 'hasMarketDataTitle'],
+  ['查即時價 CTA (externalPriceLinks)', 'hasLivePriceCta'],
   ['遊々亭 external link (externalPriceLinks)', 'hasYuyuLink'],
   ['Carousell external link (externalPriceLinks)', 'hasCarousellLink'],
   ['到價提醒 chip (watchlist)', 'hasWatchlistChip'],
   ['到價提醒 bottom button (watchlist)', 'hasWatchlistBtn'],
 ];
 
-// ── Scan surface markers (DIC-1258 CR blocker → DIC-1256 remediation).
-//    Store MVP data intentionally retains sellPrice; Scan UI must fail closed.
-//    Everything here is gated by FEATURES.marketData; retained surfaces
-//    (card name / number / rarity / candidate title / session count / clear)
-//    stay present in both modes. ──
-const GATED_SCAN_RESULT_MARKERS = [
-  ['ScanResultCard prices section', 'hasPricesSection'],
-  ['ScanResultCard variants section', 'hasVariantsSection'],
-  ['ScanResultCard any price-like text (¥/NT$/$)', 'hasPriceLikeText'],
+// ── DIC-1319 sale-price markers: the surfaces the v21 closed test shipped
+//    blank. They ride on FEATURES.sellPrice, which is unconditionally true, so
+//    each must be PRESENT under STORE_MVP=1 as well as =0. They are
+//    deliberately excluded from the "presence must differ" cross-check further
+//    down — not differing is the whole point of the flag. ──
+const SELL_PRICE_MARKERS = [
+  ['detail', 'card-detail price section', 'hasPriceSection'],
+  ['detail', 'card-detail price-like text (¥/NT$/$)', 'hasPriceLikeText'],
+  ['scanResult', 'ScanResultCard prices section', 'hasPricesSection'],
+  ['scanResult', 'ScanResultCard price-like text (¥/NT$/$)', 'hasPriceLikeText'],
+  ['scanCandidate', 'ScanCandidateSelector meta price-like text', 'hasPriceLikeInMeta'],
+  ['searchResult', 'SearchResults card price badge row', 'hasPriceBadgeRow'],
+  ['searchResult', 'SearchResults card no-trade badge', 'hasNoTradeBadge'],
+  ['searchResult', 'SearchResults card price-like text (¥/NT$/$)', 'hasPriceLikeText'],
 ];
-const GATED_SCAN_CANDIDATE_MARKERS = [
-  ['ScanCandidateSelector meta price-like text', 'hasPriceLikeInMeta'],
+
+// ── Scan surface markers that stay gated (DIC-1258 CR blocker → DIC-1256).
+//    Cross-printing comparison and session valuation totals remain hidden;
+//    retained surfaces (card name / number / rarity / candidate title /
+//    session count / clear) stay present in both modes. ──
+const GATED_SCAN_RESULT_MARKERS = [
+  ['ScanResultCard cross-printing variants section', 'hasVariantsSection'],
 ];
 const GATED_SCAN_SESSION_MARKERS = [
   ['ScanSessionPanel header total price', 'hasHeaderTotalPrice'],
@@ -128,11 +139,6 @@ const GATED_SCAN_SESSION_MARKERS = [
   ['ScanSessionPanel footer total row', 'hasTotalRow'],
   ['ScanSessionPanel 複製結果 (copy-export) button', 'hasCopyResultsBtn'],
   ['ScanSessionPanel any price-like text (¥/NT$/$)', 'hasPriceLikeText'],
-];
-const GATED_SEARCH_RESULT_MARKERS = [
-  ['SearchResults card price badge row', 'hasPriceBadgeRow'],
-  ['SearchResults card no-trade badge', 'hasNoTradeBadge'],
-  ['SearchResults card any price-like text (¥/NT$/$)', 'hasPriceLikeText'],
 ];
 const GATED_DECK_EDITOR_MARKERS = [
   ['DeckEditor gap-price (marketData)', 'hasGapPrice'],
@@ -179,9 +185,6 @@ for (const [label, key] of GATED_SCAN_RESULT_MARKERS) {
 check('STORE_MVP=1: ScanResultCard retains card name', on.scanResult.hasCardName === true);
 check('STORE_MVP=1: ScanResultCard retains card number', on.scanResult.hasCardNumber === true);
 check('STORE_MVP=1: ScanResultCard retains rarity badge', on.scanResult.hasRarityBadge === true);
-for (const [label, key] of GATED_SCAN_CANDIDATE_MARKERS) {
-  check(`STORE_MVP=1: ScanCandidateSelector hides ${label}`, on.scanCandidate[key] === false, `got ${JSON.stringify(on.scanCandidate[key])}`);
-}
 check('STORE_MVP=1: ScanCandidateSelector retains card number', on.scanCandidate.hasCardNumber === true);
 check('STORE_MVP=1: ScanCandidateSelector retains candidate title', on.scanCandidate.hasCandidateTitle === true);
 check('STORE_MVP=1: ScanCandidateSelector retains rescan action', on.scanCandidate.hasRescanAction === true);
@@ -199,9 +202,6 @@ check(
 );
 check('STORE_MVP=1: ScanSessionPanel retains session count', on.scanSession.hasSessionCount === true);
 check('STORE_MVP=1: ScanSessionPanel retains clear action', on.scanSession.hasClearAction === true);
-for (const [label, key] of GATED_SEARCH_RESULT_MARKERS) {
-  check(`STORE_MVP=1: SearchResults hides ${label}`, on.searchResult[key] === false, `got ${JSON.stringify(on.searchResult[key])}`);
-}
 check('STORE_MVP=1: SearchResults retains card name', on.searchResult.hasCardName === true);
 check('STORE_MVP=1: SearchResults retains card number', on.searchResult.hasCardNumber === true);
 for (const [label, key] of GATED_DECK_EDITOR_MARKERS) {
@@ -213,6 +213,37 @@ check(
   `store=${on.deckEditor.hasStoreTitle} estimate=${on.deckEditor.hasEstimateTitle}`,
 );
 check('STORE_MVP=1: DeckEditor retains missing-card number for deck-editing help', on.deckEditor.hasCardNumber === true);
+
+// DIC-1319 CR: a store build must never instruct the user to use a section it
+// hides. The multi-printing price list renders under FEATURES.sellPrice, but
+// both of its original hints say "pick a version below in 「市場數據」" — and
+// MarketDataPanel is gated on FEATURES.marketData. The probe fixture carries two
+// priced printings specifically so this branch is exercised.
+check(
+  'STORE_MVP=1: multi-printing price list renders its hint',
+  on.detail.hasVariantHint === true,
+  `got ${JSON.stringify(on.detail.hasVariantHint)}`,
+);
+check(
+  'STORE_MVP=1: the hint uses the store variant, which names no gated section',
+  on.detail.hasStoreVariantHint === true && on.detail.hasMarketDataVariantHint === false,
+  `store=${on.detail.hasStoreVariantHint} marketData=${on.detail.hasMarketDataVariantHint}`,
+);
+check(
+  'STORE_MVP=1: the rendered card detail never mentions 市場數據 at all',
+  on.detail.namesMarketDataSection === false,
+  `got ${JSON.stringify(on.detail.namesMarketDataSection)}`,
+);
+
+// DIC-1319: the store build MUST show the sale price of the printing in hand.
+// These are the assertions that would have caught the v21 closed-test defect.
+for (const [surface, label, key] of SELL_PRICE_MARKERS) {
+  check(
+    `STORE_MVP=1: ${label} is SHOWN (FEATURES.sellPrice)`,
+    on[surface][key] === true,
+    `got ${JSON.stringify(on[surface][key])}`,
+  );
+}
 
 console.log('\n── Probe 2: EXPO_PUBLIC_STORE_MVP=0 (staging / development) ──');
 console.log('     → Store MVP OFF → every gated feature must be present unchanged.\n');
@@ -240,9 +271,6 @@ for (const [label, key] of GATED_SCAN_RESULT_MARKERS) {
 check('STORE_MVP=0: ScanResultCard retains card name', off.scanResult.hasCardName === true);
 check('STORE_MVP=0: ScanResultCard retains card number', off.scanResult.hasCardNumber === true);
 check('STORE_MVP=0: ScanResultCard retains rarity badge', off.scanResult.hasRarityBadge === true);
-for (const [label, key] of GATED_SCAN_CANDIDATE_MARKERS) {
-  check(`STORE_MVP=0: ScanCandidateSelector shows ${label}`, off.scanCandidate[key] === true, `got ${JSON.stringify(off.scanCandidate[key])}`);
-}
 check('STORE_MVP=0: ScanCandidateSelector retains card number', off.scanCandidate.hasCardNumber === true);
 check('STORE_MVP=0: ScanCandidateSelector retains candidate title', off.scanCandidate.hasCandidateTitle === true);
 check('STORE_MVP=0: ScanCandidateSelector retains rescan action', off.scanCandidate.hasRescanAction === true);
@@ -259,9 +287,6 @@ check(
 );
 check('STORE_MVP=0: ScanSessionPanel retains session count', off.scanSession.hasSessionCount === true);
 check('STORE_MVP=0: ScanSessionPanel retains clear action', off.scanSession.hasClearAction === true);
-for (const [label, key] of GATED_SEARCH_RESULT_MARKERS) {
-  check(`STORE_MVP=0: SearchResults shows ${label}`, off.searchResult[key] === true, `got ${JSON.stringify(off.searchResult[key])}`);
-}
 check('STORE_MVP=0: SearchResults retains card name', off.searchResult.hasCardName === true);
 check('STORE_MVP=0: SearchResults retains card number', off.searchResult.hasCardNumber === true);
 for (const [label, key] of GATED_DECK_EDITOR_MARKERS) {
@@ -272,6 +297,26 @@ check(
   off.deckEditor.hasEstimateTitle === true && off.deckEditor.hasStoreTitle === false,
 );
 check('STORE_MVP=0: DeckEditor retains missing-card number', off.deckEditor.hasCardNumber === true);
+
+check(
+  'STORE_MVP=0: the hint keeps its market-data wording, because that section is there',
+  off.detail.hasMarketDataVariantHint === true && off.detail.hasStoreVariantHint === false,
+  `store=${off.detail.hasStoreVariantHint} marketData=${off.detail.hasMarketDataVariantHint}`,
+);
+check(
+  'STORE_MVP=0: the multi-printing price list still renders its hint',
+  off.detail.hasVariantHint === true,
+);
+
+// The same sale-price surfaces stay visible on staging/dev — FEATURES.sellPrice
+// is profile-independent, so both probes must agree here.
+for (const [surface, label, key] of SELL_PRICE_MARKERS) {
+  check(
+    `STORE_MVP=0: ${label} is SHOWN (FEATURES.sellPrice)`,
+    off[surface][key] === true,
+    `got ${JSON.stringify(off[surface][key])}`,
+  );
+}
 
 // ── Vacuousness guard: the two probes MUST disagree on every gated marker.
 //    If they don't, the profile isn't actually flipping the render — the
@@ -289,22 +334,10 @@ for (const [label, key] of GATED_SCAN_RESULT_MARKERS) {
     on.scanResult[key] !== off.scanResult[key],
   );
 }
-for (const [label, key] of GATED_SCAN_CANDIDATE_MARKERS) {
-  check(
-    `STORE_MVP=1 vs =0: ${label} presence differs (${on.scanCandidate[key]} vs ${off.scanCandidate[key]})`,
-    on.scanCandidate[key] !== off.scanCandidate[key],
-  );
-}
 for (const [label, key] of GATED_SCAN_SESSION_MARKERS) {
   check(
     `STORE_MVP=1 vs =0: ${label} presence differs (${on.scanSession[key]} vs ${off.scanSession[key]})`,
     on.scanSession[key] !== off.scanSession[key],
-  );
-}
-for (const [label, key] of GATED_SEARCH_RESULT_MARKERS) {
-  check(
-    `STORE_MVP=1 vs =0: ${label} presence differs (${on.searchResult[key]} vs ${off.searchResult[key]})`,
-    on.searchResult[key] !== off.searchResult[key],
   );
 }
 for (const [label, key] of GATED_DECK_EDITOR_MARKERS) {
@@ -327,6 +360,24 @@ check(
   'STORE_MVP=1 vs =0: ScanSessionPanel version hint text swaps between store/estimate',
   on.scanSession.hasStoreVersionHint !== off.scanSession.hasStoreVersionHint
     && on.scanSession.hasEstimateVersionHint !== off.scanSession.hasEstimateVersionHint,
+);
+// DIC-1319 inverse cross-check: the sale-price surfaces must NOT differ. If a
+// future change re-gates one of them on the profile, this flips red even
+// though the "hidden under STORE_MVP=1" style of assertion would look fine.
+for (const [surface, label, key] of SELL_PRICE_MARKERS) {
+  check(
+    `STORE_MVP=1 vs =0: ${label} is present in BOTH profiles (${on[surface][key]} vs ${off[surface][key]})`,
+    on[surface][key] === true && off[surface][key] === true,
+  );
+}
+check(
+  'STORE_MVP=1 vs =0: the variant hint wording swaps between store/market-data',
+  on.detail.hasStoreVariantHint !== off.detail.hasStoreVariantHint
+    && on.detail.hasMarketDataVariantHint !== off.detail.hasMarketDataVariantHint,
+);
+check(
+  'STORE_MVP=1 vs =0: FEATURES.sellPrice does not flip with the profile',
+  on.features.sellPrice === true && off.features.sellPrice === true,
 );
 for (const flag of GATED_FLAGS) {
   check(

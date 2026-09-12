@@ -88,7 +88,10 @@ const SOURCE_COVERAGE = {
   'src/components/ObservedShareDonut.tsx': 4,
   'src/components/CardPicker.tsx': 18,
   'src/components/PriceAlertEditor.tsx': 18,
-  'src/components/ScanOverlay.tsx': 12,
+  // DIC-1319 removed the gallery / flip / manual-search controls and the
+  // auto-scan mode toggle from the scan viewfinder, taking their t() keys with
+  // them. The floor tracks the surviving copy.
+  'src/components/ScanOverlay.tsx': 10,
   'src/components/ScanCandidateSelector.tsx': 10,
   'src/components/ScanQuotaBanner.tsx': 5,
   'src/components/ScanResultCard.tsx': 4,

@@ -165,20 +165,27 @@ const liveMock = globalThis.__authStoreWiringMock;
   }
 
   // Source-level wiring guard: the safe string is only meaningful if the gate
-  // actually renders the store `error`. Assert LoginScreen reads `error` from
-  // the store and renders it, does NOT map/echo a raw message itself, and that
-  // AppNavigator mounts LoginScreen as the unauthenticated gate. Plain string
-  // checks — deliberately no RegExp.
+  // actually renders the store `error`. DIC-1380 W5b routes the unauthenticated
+  // visitor to `LandingScreen` (the accepted Pen artifact); the DIC-928
+  // contract survives that restructure because LandingScreen owns the same
+  // error-rendering pattern LoginScreen used to. Assert whichever screen
+  // AppNavigator now mounts reads `error` from the store, renders it, and
+  // does NOT map/echo a raw message itself. Plain string checks — no RegExp.
   function testGateWiringAtSource() {
-    const login = fs.readFileSync(path.join(ROOT, 'src/screens/LoginScreen.tsx'), 'utf8');
-    assert.ok(login.includes('useAuthStore()'), 'LoginScreen must consume useAuthStore');
-    assert.ok(login.includes('error') && login.includes('{error}'),
-      'LoginScreen must render the store error');
-    assert.ok(!login.includes('err.message') && !login.includes('friendlyAuthErrorMessage'),
-      'LoginScreen must NOT map/echo errors itself — the store owns safe mapping');
     const nav = fs.readFileSync(path.join(ROOT, 'src/navigation/AppNavigator.tsx'), 'utf8');
-    assert.ok(nav.includes('component={LoginScreen}'),
-      'AppNavigator must mount LoginScreen as the unauthenticated gate');
+    const mounts = ['LandingScreen', 'LoginScreen'].filter(
+      (name) => nav.includes(`component={${name}}`),
+    );
+    assert.ok(mounts.length > 0,
+      'AppNavigator must mount an unauthenticated gate (LandingScreen or LoginScreen)');
+    for (const name of mounts) {
+      const src = fs.readFileSync(path.join(ROOT, `src/screens/${name}.tsx`), 'utf8');
+      assert.ok(src.includes('useAuthStore()'), `${name} must consume useAuthStore`);
+      assert.ok(src.includes('error') && src.includes('{error}'),
+        `${name} must render the store error`);
+      assert.ok(!src.includes('err.message') && !src.includes('friendlyAuthErrorMessage'),
+        `${name} must NOT map/echo errors itself — the store owns safe mapping`);
+    }
   }
 
   const asyncTests = [

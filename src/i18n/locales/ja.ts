@@ -6,6 +6,7 @@ export const ja: Record<keyof typeof zh, string> = {
   nav_scan: 'カードスキャン',
   nav_search: '検索',
   nav_favorites: 'お気に入り',
+  nav_collection: 'カード所持',
   nav_deck_editor: 'デッキエディタ',
   nav_tournament_report: '大会月報',
   nav_watchlist: 'ほしい物アラート',
@@ -70,6 +71,24 @@ export const ja: Record<keyof typeof zh, string> = {
   // Favorites & Watchlist
   favorites_title: 'お気に入り',
   favorites_empty: 'お気に入りカードはありません',
+  favorites_save: 'お気に入り追加',
+  favorites_saved: 'お気に入り済み',
+  favorites_add_a11y: 'お気に入りに追加：{{name}}',
+  favorites_remove_a11y: 'お気に入りから削除：{{name}}',
+  favorites_count: 'お気に入り {{count}} 枚',
+  favorites_remove_button: '削除',
+  favorites_open_card: 'カードを見る',
+  deck_status_legal: 'デッキ有効',
+  deck_status_incomplete: '未完成',
+  deck_status_empty: 'カード未登録',
+  card_category_oshi: '推し',
+  card_category_holomen: 'ホロメン',
+  card_category_support: 'サポート',
+  card_category_yell: 'エール',
+  deck_appbar_back_a11y: '戻る',
+  deck_appbar_rename_a11y: 'デッキ名を編集：{{name}}',
+  deck_appbar_validate_a11y: 'デッキを検証',
+  deck_appbar_menu_a11y: 'デッキその他の操作',
   watchlist_title: 'ほしい物アラート',
   watchlist_empty: 'アラート設定はありません',
   price_alert_target: '目標価格',
@@ -143,13 +162,22 @@ export const ja: Record<keyof typeof zh, string> = {
   login_welcome: 'HoloHunterへようこそ',
   login_description: 'ログインするとお気に入り保存、スキャン、価格推移チェックが可能です',
   // Store MVP: no favorites / alerts / price-trend promise (DIC-1256).
-  login_description_store: 'ログインするとカードスキャンとデッキ・設定の端末間同期が利用できます',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
+  // binding (App.tsx gates it on FEATURES.favorites | .watchlist |
+  // .premium, all false under STORE_MVP), so decks / settings /
+  // favorites / price alerts live on-device only.
+  login_description_store: 'ログインするとカードスキャンとアカウント機能が利用できます。このバージョンではデッキと設定は端末内に保存されます。',
   login_or: 'または',
   login_guest_button: 'ゲストとして利用',
   login_guest_hint: 'ゲストはルール閲覧と検索が可能ですが、スキャン機能は利用できません',
   login_terms_footer: 'ログインすることでプライバシーポリシーと利用規約に同意したとみなされます',
 
   // Common actions and states
+  common_back: '戻る',
+  me_stat_collection: '所持枚数',
+  me_stat_alerts: '価格アラート',
+  me_guest_name: 'ゲスト',
+  me_provider_linked: '{{provider}} 連携済み',
   common_cancel: 'キャンセル',
   common_remove: '削除',
   common_save: '保存',
@@ -208,13 +236,29 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_exchange_rate: '📈 為替：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '連携後、お気に入り、設定、アラート、通知は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
   settings_link_hint: '連携後、お気に入りと設定は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
-  // Store MVP: no favorites / alerts promise (DIC-1256).
-  settings_link_hint_store: '連携後、デッキと設定は同じアカウントに保存されます。ログイン方法は1つ以上残してください。',
-  settings_delete_note: '注：サーバー側のアカウント削除・認証取消機能は準備中です。未設定の場合は「未完了」と表示し、ログイン状態を維持します。',
+  // DIC-1381 W10 / W11 CR — Store MVP does NOT install the account-
+  // sync binding; do not promise decks/settings become account-bound.
+  // Multi-provider login binding is described without "同じアカウン
+  // ト / 端末間で同期" phrasing so the shipping-copy predicate cannot
+  // confuse login-binding with data-sync. Data-storage clause states
+  // the fact.
+  settings_link_hint_store: '複数のログイン方法を連携すると機種変更や身分確認の追加に便利です。このバージョンではデッキと設定は端末内に保存され、端末間では同期されません。ログイン方法は1つ以上残してください。',
+  // DIC-1380 W12 CR — describe the ACTUAL per-provider deletion path.
+  // Google: backend cascade delete works; App clears local session
+  // and calls GoogleSignin.signOut() on Android only (local SDK cache
+  // clear — the Google refresh_token is NOT revoked server-side by
+  // the current build). Apple: in-app deletion is NOT available today
+  // because api/_lib/apple-token-store.ts is a non-shipping stub; the
+  // endpoint returns 501 apple_deletion_not_implemented and nothing
+  // is deleted. Apple users are routed to support email. Generic
+  // "provider token を取り消し" wording contradicts these facts and
+  // is banned by test:apple-delete-truth-copy.
+  settings_delete_note: '注：Google のみ連携（Apple を連携していない）アカウントはここから自助削除できます — バックエンドがアカウントとクラウドデータをカスケード削除し、Android 版では GoogleSignin.signOut() を実行してローカル SDK キャッシュをクリアします（Google refresh_token をサーバー側で失効させるわけではありません）。Apple を連携しているアカウント（Apple-only または Google+Apple 同時連携）は現時点でアプリ内削除に対応しておらず、handler は linkedProviders に Apple identity が含まれる時点で fail-closed となり、エンドポイントは 501 apple_revocation_not_configured（サーバー側の APPLE_* 環境変数が未設定）または 501 apple_deletion_not_implemented（Apple 設定は完了しているが stub token store に取り消し可能な refresh_token が無い）を返します。いずれの 501 でも何も削除されません。dicoge.chen@gmail.com までメールでご連絡いただければ手動で処理します。削除に失敗した場合（ネットワークエラー等）、アプリは「未完了」と表示してログイン状態を維持します。',
   settings_guest_sync_watchlist: 'ログインしていません。ログインするとお気に入りとアラートを端末間で同期できます。',
   settings_guest_sync: 'ログインしていません。ログインするとお気に入りを端末間で同期できます。',
-  // Store MVP: no favorites / alerts promise (DIC-1256).
-  settings_guest_sync_store: 'ログインしていません。ログインするとデッキと設定を端末間で同期できます。',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
+  // binding, so decks/settings do not sync. State this truthfully.
+  settings_guest_sync_store: 'ログインしていません。ログインするとカードスキャンが利用できます。このバージョンではデッキと設定は端末内に保存されます。',
   settings_footer: 'hololive PCGプレイヤーのために',
 
   // Tutorial landing
@@ -356,6 +400,8 @@ export const ja: Record<keyof typeof zh, string> = {
   card_detail_no_data: 'データなし',
   card_detail_variant_hint_spread: '👇 下の「市場データ」で版を選ぶと、価格差と推移も切り替わります',
   card_detail_variant_hint: '👇 下の「市場データ」で版を選ぶと、販売価格も切り替わります',
+  // Store MVP 版：隠されている「市場データ」を指してはいけない (DIC-1319)。
+  card_detail_variant_hint_store: 'このカードの各版の販売価格です。お手元の版名とレアリティで見比べてください',
   card_detail_approx_price: '💰 約 {{price}}（{{currency}}）',
   card_detail_live_price: '🔍 遊々亭の最新価格を見る →',
   card_detail_type_oshi: '推しホロメン',
@@ -602,14 +648,12 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_recognizing: '認識中…',
   scan_frame_auto: 'カードをスキャン枠に合わせてください',
   scan_frame_manual: 'スキャンボタンでカードを撮影してください',
+  scan_close_a11y: 'スキャンを閉じる',
   scan_flash_on: 'フラッシュON',
   scan_flash: 'フラッシュ',
-  scan_gallery: '写真',
   scan_manual: '手動',
   scan_scan_action: 'スキャン',
-  scan_flip: '反転',
-  scan_auto_mode: '⚡ 自動スキャン',
-  scan_manual_mode: '⏸️ 手動モード',
+  scan_gallery_action: '写真から読み取る',
   scan_camera_starting: 'カメラを起動中...',
   scan_estimate: '参考価格',
   scan_other_versions: 'ほかのシリーズ・版',

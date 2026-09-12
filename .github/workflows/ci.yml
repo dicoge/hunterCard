@@ -97,6 +97,9 @@ jobs:
       - name: Verify native Google Sign-In logout / account switch (DIC-665)
         run: npm run test:google-signout
 
+      - name: Verify native Android Google Sign-In error-code mapping (DIC-1318)
+        run: npm run test:google-native-android
+
       - name: Verify server-side ID-token single-use replay protection (DIC-665)
         run: npm run test:token-replay
 
@@ -109,14 +112,23 @@ jobs:
       - name: Verify scrape pipeline fail-fast + atomic commit ordering (DIC-989)
         run: npm run test:scrape-pipeline
 
+      - name: Verify HTTP fallback carries trustworthy exact-print provenance (DIC-1349)
+        run: npm run test:dic1349-fallback-provenance
+
       - name: Verify scan/search market data fields (DIC-361)
         run: npm run test:market-fields
 
       - name: Verify deployment data cannot ship catalog-only regression (DIC-1167)
         run: npm run test:deployment-data
 
+      - name: Verify deployment freshness gate exercises Production branch across every flag value (DIC-1380 W4)
+        run: npm run test:deployment-freshness-gate
+
       - name: Verify official-catalog-sync workflow hands off through a PR (DIC-1291)
         run: npm run test:official-catalog-sync-workflow
+
+      - name: Verify official-catalog-sync ingestion, sell preservation, and Traditional-Chinese name enrichment (DIC-1167/DIC-1204/DIC-1415)
+        run: npm run test:official-catalog-sync
 
       - name: Verify canonical printing-ID rebuilds preserve market fields (DIC-1204)
         run: npm run test:market-field-preservation
@@ -152,6 +164,11 @@ jobs:
 
       - name: Verify real SearchResultsScreen grid geometry + colour render (DIC-1150 + DIC-1192)
         run: npm run test:search-results-layout
+
+      # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
+      # screens rendering the shared shell with real data + navigation wiring.
+      - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)
+        run: npm run test:shell-tokens && npm run test:app-shell && npm run test:app47-shell && npm run test:app812-shell && npm run test:app1316-shell && npm run test:shell-tab-navigation && npm run test:scan-search-shell
 
       - name: Verify colour token normaliser + KNOWN_COLOR_KEYS ↔ i18n parity (DIC-1192)
         run: npm run test:dic1192-color-normalization
@@ -246,6 +263,51 @@ jobs:
       - name: Verify push notification backend (DIC-390)
         run: npm run test:push-backend
 
+      - name: Verify account remote-sync backend (DIC-1156)
+        run: npm run test:account-sync-backend
+
+      - name: Verify account remote-sync client boundary (DIC-1380)
+        run: npm run test:account-sync-client
+
+      - name: Verify account remote-sync orchestrator hydrate/push/conflict (DIC-1380 W4)
+        run: npm run test:account-sync-orchestrator
+
+      - name: Verify account remote-sync store binding (DIC-1380 W4)
+        run: npm run test:account-sync-binding
+
+      - name: Verify shared card name resolver (DIC-1380 naming consistency)
+        run: npm run test:card-display-name
+
+      - name: Verify DeckEditor routes card names through the shared resolver + Pen mobile UI (DIC-1380 W4)
+        run: npm run test:deck-editor-name-resolver
+
+      - name: Verify mobile DeckEditor matches accepted Pen frame uXuqo at 390px (DIC-1380 W5)
+        run: npm run test:deck-editor-pen-mobile-layout
+
+      - name: Verify LandingScreen renders the accepted Pen landing at 390 and 1440 (DIC-1380 W5b)
+        run: npm run test:landing-pen-render
+
+      - name: Verify favorites store is wired into real product UI (DIC-1380 W6)
+        run: npm run test:favorites-ui-wiring
+
+      - name: Verify nav_favorites routes to FavoritesScreen (DIC-1380 W7 CR)
+        run: npm run test:favorites-nav-route
+
+      - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
+        run: npm run test:tournament-discovery-acquisition
+
+      - name: Verify legal-page claims match actual STORE_MVP behavior (DIC-1380 W7 CR)
+        run: npm run test:legal-copy-vs-behavior
+
+      - name: Verify Apple-linked delete + copy match the shipping stub (DIC-1380 W12 CR)
+        run: npm run test:apple-delete-truth-copy
+
+      - name: Verify Store MVP UI gates + Login/Settings sync copy + deletion parity (DIC-1381 W11 CR)
+        run: npm run test:store-mvp-ui-gates
+
+      - name: Verify YT + tournament scheduled refresh workflows stay wired (DIC-1380 W5)
+        run: npm run test:scheduled-refresh-workflows
+
       - name: Verify card-lookup version alignment is source-proven (DIC-1013)
         run: npm run test:version-alignment
 
@@ -291,11 +353,35 @@ jobs:
       - name: Verify the privacy policy matches what the code actually sends off-device (DIC-1248)
         run: npm run test:privacy-disclosure
 
+      - name: Verify legal / pricing / terms / support pages stay consistent (DIC-1380)
+        run: npm run test:legal-pages-consistency
+
       - name: Verify a native scan transmits no image bytes (DIC-1248)
         run: npm run test:native-scan-no-upload
 
       - name: Verify Scan screen fails safe on native crashes (DIC-1286)
         run: npm run test:scan-screen-fail-safe
+
+      - name: Verify the scan viewfinder stays a focused primary path (DIC-1319)
+        run: npm run test:scan-primary-path
+
+      - name: Verify recognition quotes the recognized printing's own price (DIC-1325)
+        run: npm run test:scan-printing-isolation
+
+      - name: Verify scan recovery never quotes a sibling printing's price (DIC-1325)
+        run: npm run test:scan-exact-printing-identity
+
+      - name: Verify an unresolved printing reaches the picker and commits nothing (DIC-1325)
+        run: npm run test:scan-ambiguous-printing-flow
+
+      - name: Verify the native bundled catalog ships real sale prices (DIC-1319)
+        run: npm run test:native-price-artifact
+
+      - name: Verify Store MVP UI gates stay on every surface (DIC-1256 / DIC-1319)
+        run: npm run test:store-mvp-ui-gates
+
+      - name: Verify Store MVP render behavior across both build profiles (DIC-1256 / DIC-1319)
+        run: npm run test:store-mvp-behavior
 
       - name: Check for console.log statements
         run: |

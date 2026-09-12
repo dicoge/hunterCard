@@ -39,7 +39,7 @@ const PIPELINE = path.join(__dirname, 'local-scrape-and-push.sh');
  * shims that append every invocation to a trace file. `failOn` makes the node
  * or npm shim exit non-zero for the command containing that substring.
  */
-function runPipeline({ failOn = null } = {}) {
+function runPipeline({ failOn = null, env = {} } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dic989-pipeline-'));
   const bin = path.join(dir, 'bin');
   const repo = path.join(dir, 'repo');
@@ -57,15 +57,35 @@ function runPipeline({ failOn = null } = {}) {
   fs.copyFileSync(PIPELINE, path.join(repo, 'scripts', 'local-scrape-and-push.sh'));
 
   // node shim: trace the invocation, optionally fail for one target script.
+  // DIC-1321: a "successful" build must actually emit data/database.json,
+  // otherwise the missing-output coverage gate (which must FAIL, never skip)
+  // would trip the success path. Write a minimal healthy db on success; the
+  // FAIL_ON case exits 1 first so it still models a build that never produced
+  // output.
   fs.writeFileSync(
     path.join(bin, 'node'),
     `#!/bin/bash
 echo "node $*" >> "$TRACE_FILE"
 if [ -n "$FAIL_ON" ] && [[ "$*" == *"$FAIL_ON"* ]]; then exit 1; fi
+if [[ "$*" == *"canonical_native_public"* ]] || [[ "$*" == *"MISMATCH"* ]]; then
+  touch "$NATIVE_PARITY_MARKER"
+  if [ -n "$FAIL_PARITY" ]; then exit 1; fi
+  echo OK
+  exit 0
+fi
+if [[ "$*" == *"build-database.js"* ]] && [ -z "$SKIP_DB_WRITE" ]; then
+  cat > "$(pwd)/data/database.json" <<'EOF'
+{"lastUpdated":"t","totalCards":0,"cards":{}}
+EOF
+fi
 exit 0
 `,
     { mode: 0o755 },
   );
+
+  // public/data/database.json must exist for the parity gate to parse it.
+  fs.mkdirSync(path.join(repo, 'public', 'data'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'public', 'data', 'database.json'), '{"lastUpdated":"t","totalCards":0,"cards":{}}\n');
 
   fs.writeFileSync(
     path.join(bin, 'npm'),
@@ -97,6 +117,11 @@ exit 0
       HOME: dir,
       TRACE_FILE: trace,
       FAIL_ON: failOn ?? '',
+      NATIVE_PARITY_MARKER: path.join(dir, 'native-parity-invoked'),
+      FAIL_PARITY: env.FAIL_PARITY ?? '',
+      // DIC-1321: allow the red-before-green missing-output gate test to tell
+      // the build-database shim to emit NO output.
+      SKIP_DB_WRITE: env.SKIP_DB_WRITE ?? '',
       // Never touch the real cron lock at /tmp/huntercard-scrape.lock.
       HUNTERCARD_LOCK_FILE: path.join(dir, 'scrape.lock'),
     },
@@ -247,6 +272,33 @@ exit 0
   }
 }
 
+// ── 0b. Red-before-green (DIC-1321): a build that "succeeds" but emits NO
+//        data/database.json must FAIL the coverage gate, never report success ──
+{
+  const { status, lines } = runPipeline({ env: { SKIP_DB_WRITE: '1' } });
+
+  assert.notStrictEqual(
+    status,
+    0,
+    'pipeline must exit non-zero when build-database.js succeeds but produces NO data/database.json — missing output must not be treated as success',
+  );
+  assert.ok(
+    indexOfCall(lines, 'build-database.js') !== -1,
+    'sanity: the pipeline must actually invoke build-database.js',
+  );
+  // The coverage gate's own message lands in the cron LOG_FILE (not the shim
+  // TRACE_FILE), so gate-reach is proven by status != 0 plus the downstream
+  // commit steps never being traced: the missing-output refusal happened before
+  // staging. Commit steps must never be reached.
+  for (const forbidden of ['git add', 'commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(lines, forbidden),
+      -1,
+      `missing-output failure must never reach downstream mutation/commit path (found: ${forbidden})`,
+    );
+  }
+}
+
 // ── 1. Fail-fast: a failed buy-price merge must never reach the commit path ──
 {
   const { status, lines } = runPipeline({ failOn: 'merge-buy-prices.js' });
@@ -321,6 +373,37 @@ exit 0
       commit < push,
     'required data gates must run after final native regeneration and before staging/commit/push',
   );
+}
+
+// ── 2d. DIC-1334: canonical/public/native parity gate must run inside the
+//       pre-push window, and a parity divergence must fail the pipeline before
+//       any commit ──
+{
+  // Success path: parity gate is reached and does not block.
+  const success = runPipeline();
+  assert.strictEqual(success.status, 0, 'pipeline must succeed when parity matches');
+  // The marker path is inside the sandbox dir which runPipeline cleans up; the
+  // important observable is that the parity gate did not abort the success path
+  // (status 0) and that the node shim received a parity invocation.
+  assert.ok(
+    success.lines.some((l) => l.includes('MISMATCH')),
+    'sanity: parity-gate node invocation must be traced',
+  );
+
+  // Fail path: parity divergence forces non-zero exit before commit/push.
+  const fail = runPipeline({ env: { FAIL_PARITY: '1' } });
+  assert.notStrictEqual(
+    fail.status,
+    0,
+    'pipeline must exit non-zero when canonical/native parity diverges (DIC-1334)',
+  );
+  for (const forbidden of ['git add', 'git -c user.name', 'commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(fail.lines, forbidden),
+      -1,
+      `a parity failure must never reach the commit path (found: ${forbidden})`,
+    );
+  }
 }
 
 // ── 2b. Fail-fast: CI market-field failure must never reach the commit path ──

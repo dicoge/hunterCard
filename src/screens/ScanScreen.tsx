@@ -28,11 +28,15 @@ import { RECOGNITION_REQUEST_TIMEOUT_MS } from '../services/recognitionOutcome';
 import {
   runWebCameraScan,
   runNativeCameraScan,
+  isAmbiguousPrinting,
+  decideRecognizedOutcome,
   type ScanFlowIo,
   type ScanFlowUi,
 } from '../services/scanRecognitionFlow';
 import { recognizeTextWeb } from '../services/webOcr';
 import ScanOverlay from '../components/ScanOverlay';
+import ScanTopBar from '../components/ScanTopBar';
+import { PALETTE, SEMANTIC, LAYOUT } from '../theme/tokensV2';
 import ScanResultCard from '../components/ScanResultCard';
 import ScanCandidateSelector from '../components/ScanCandidateSelector';
 import { analyzeFrameWithStability, resetAutoScan } from '../services/autoScanService';
@@ -43,7 +47,6 @@ import { useAuthStore } from '../store/authStore';
 import { useScanQuotaStore } from '../store/scanQuotaStore';
 import { effectiveRole } from '../services/permissionService';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
-import ScanQuotaBanner from '../components/ScanQuotaBanner';
 import { FEATURES, releaseCardFlags, STORE_MVP } from '../config/releaseFlags';
 import { useTranslation, type TranslationKey } from '../i18n';
 
@@ -62,6 +65,54 @@ const CONFIDENCE_MIN_CANDIDATE = 0.55;
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_AREA_SIZE = SCREEN_WIDTH * 0.75;
 
+/**
+ * DIC-1409 CR fix — the EXACT native pre-camera surface ScanScreen ships
+ * on Android/iOS, exported so the regression suite can render it directly
+ * (react-native-web pins Platform.OS to 'web', so the platform branch
+ * itself cannot be flipped in the harness). Both states carry the Pen
+ * App/04 top action row (`x7iIL`): close works, flash is inert until the
+ * camera is up. `permission === null` → loading; otherwise the denied
+ * recovery surface (DIC-1286 contract preserved via
+ * CameraPermissionDeniedView).
+ */
+export function ScanNativePermissionGate({
+  permission,
+  onClose,
+  onRequestPermission,
+  openSettingsImpl,
+  refreshPermission,
+  onPickGallery,
+}: {
+  permission: { granted: boolean; canAskAgain?: boolean } | null;
+  onClose: () => void;
+  onRequestPermission: () => void;
+  openSettingsImpl: () => void;
+  refreshPermission?: () => void;
+  /** DIC-1336: denial must not become a dead end — the gallery scan path
+      stays reachable from the denied surface. */
+  onPickGallery?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.container} testID="scan-native-gate">
+      <ScanTopBar onClose={onClose} flashDisabled />
+      {!permission ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>{t('scan_camera_loading')}</Text>
+        </View>
+      ) : (
+        <CameraPermissionDeniedView
+          permission={permission}
+          onRequestPermission={onRequestPermission}
+          openSettingsImpl={openSettingsImpl}
+          refreshPermission={refreshPermission}
+          onPickGallery={onPickGallery}
+        />
+      )}
+    </View>
+  );
+}
+
 export default function ScanScreen({ navigation }: any) {
   const { t } = useTranslation();
   // iOS web 不用 expo-camera 權限系統（避免 getUserMedia 手勢鏈中斷）
@@ -76,7 +127,9 @@ export default function ScanScreen({ navigation }: any) {
   const [webCameraStarted, setWebCameraStarted] = useState(false);
   // Web 相簿上傳模式：相機無法使用（權限卡住/裝置無鏡頭）時的 fallback，不掛載 WebCamera
   const [webGalleryMode, setWebGalleryMode] = useState(false);
-  const [facing, setFacing] = useState<CameraType>('back');
+  // Card scanning always uses the rear camera; the flip control was removed from
+  // the focused scan flow (DIC-1319), so this is a constant rather than state.
+  const facing: CameraType = 'back';
   const cameraRef = useRef<CameraView>(null);
   const webCameraRef = useRef<WebCameraHandle>(null);
   const scanAreaViewportRef = useRef<Rect | null>(null);
@@ -121,8 +174,11 @@ export default function ScanScreen({ navigation }: any) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const borderAnim = useRef(new Animated.Value(0)).current;
 
-	// Auto-scan state & refs
-  const [autoScanEnabled, setAutoScanEnabled] = useState<boolean>(true);
+	// Auto-scan refs. Auto-scan is a web-only frame-stability loop, so whether it
+  // runs is decided by the platform, not by a user-facing mode switch — the
+  // toggle that used to sit under the viewfinder did nothing on Android
+  // (DIC-1319).
+  const autoScanActive = isWeb;
   const autoScanRef = useRef<number | null>(null);
   const lastScanTimeRef = useRef<number>(0);
 
@@ -170,10 +226,24 @@ export default function ScanScreen({ navigation }: any) {
   };
 
   // Route a recognition result through the confidence tiers.
+  //
+  // The classification itself lives in `decideRecognizedOutcome` so a Node
+  // harness can drive the SAME rules end-to-end without booting the screen
+  // (DIC-1339). This wrapper handles the setState side effects only.
+  //
+  // Rules:
+  //  - Unresolved printing → picker, never commit at ANY confidence (DIC-1325).
+  //    The confidence describes how sure we are of the CARD; when a cardNumber
+  //    carries several printings it says nothing about which one is in hand,
+  //    and the result deliberately has no price. Auto-adding here is what put
+  //    a priceless placeholder into the session instead of showing the chooser.
+  //  - High confidence → auto-add and show the floating result card.
+  //  - Mid/low → require explicit confirmation via the candidate picker.
   const handleRecognized = (
     card: CardInfo,
     confidence: number,
     candidates?: RecognizedCandidate[],
+    ambiguousPrinting = false,
   ) => {
     setSearchResults([]);
     setSearchError(null);
@@ -182,22 +252,22 @@ export default function ScanScreen({ navigation }: any) {
     setCapturedPhotoUri(null);
     resetAutoScan();
 
-    // High confidence → auto-add and show the floating result card.
-    if (confidence >= CONFIDENCE_AUTO_ADD) {
-      if (commitCard(card)) {
-        setResultCard({ visible: true, card, confidence });
+    const decision = decideRecognizedOutcome(card, confidence, candidates, ambiguousPrinting, {
+      autoAdd: CONFIDENCE_AUTO_ADD,
+      minCandidate: CONFIDENCE_MIN_CANDIDATE,
+    });
+
+    if (decision.action === 'commit') {
+      if (commitCard(decision.card)) {
+        setResultCard({ visible: true, card: decision.card, confidence: decision.confidence });
       }
       return;
     }
 
-    // Mid/low → require explicit confirmation via the candidate picker.
-    const list = candidates && candidates.length > 0
-      ? candidates
-      : [{ card, confidence }];
     setCandidateSelector({
       visible: true,
-      tier: confidence >= CONFIDENCE_MIN_CANDIDATE ? 'mid' : 'low',
-      candidates: list.slice(0, 5),
+      tier: decision.action === 'ambiguous-picker' ? 'mid' : decision.tier,
+      candidates: decision.candidates,
     });
   };
 
@@ -304,8 +374,8 @@ export default function ScanScreen({ navigation }: any) {
   // Auto-scan rAF loop (web only) — detects card in frame and auto-triggers OCR
   useEffect(() => {
     // Auto-scan only works on web; native keeps manual scan
-    if (!isWeb) return;
-    if (!isCameraReady || !autoScanEnabled) return;
+    if (!autoScanActive) return;
+    if (!isCameraReady) return;
     if (isScanning || isProcessingOCR) return;
     if (candidateSelector.visible || resultCard.visible) return;
 
@@ -344,20 +414,10 @@ export default function ScanScreen({ navigation }: any) {
         cancelAnimationFrame(autoScanRef.current);
       }
     };
-  }, [isCameraReady, autoScanEnabled, isScanning, isProcessingOCR, facing, candidateSelector.visible, resultCard.visible]);
-
-  const toggleCameraFacing = () => {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
-    resetAutoScan();
-  };
+  }, [isCameraReady, autoScanActive, isScanning, isProcessingOCR, candidateSelector.visible, resultCard.visible]);
 
   const toggleFlash = () => {
     setFlash(current => !current);
-  };
-
-  const toggleAutoScan = () => {
-    setAutoScanEnabled(prev => !prev);
-    resetAutoScan();
   };
 
   const handleScanAreaLayout = (event: LayoutChangeEvent) => {
@@ -629,23 +689,43 @@ export default function ScanScreen({ navigation }: any) {
         if (galleryVisionResult.success && galleryVisionResult.card) {
           setIsProcessingOCR(false);
           setIsScanning(false);
-          if (commitCard(galleryVisionResult.card)) {
-            setResultCard({
-              visible: true,
-              card: galleryVisionResult.card,
-              confidence: galleryVisionResult.confidence ?? 0.9,
-            });
-            setSearchResults([]);
-            setSearchError(null);
-            setSuggestions([]);
-            setCapturedPhotoUri(null);
-            resetAutoScan();
-          }
+          // Route through handleRecognized rather than committing here. This
+          // branch used to call commitCard directly, ahead of its own
+          // lowConfidence check below, so an unresolved printing was auto-added
+          // before anything could offer the picker (DIC-1325). handleRecognized
+          // is the single place that decides commit-vs-confirm, and it already
+          // clears the search/suggestion state this block used to reset by hand.
+          handleRecognized(
+            galleryVisionResult.card,
+            galleryVisionResult.confidence ?? 0.9,
+            galleryVisionResult.candidates,
+            isAmbiguousPrinting(galleryVisionResult),
+          );
           return;
         }
         if (galleryVisionResult.lowConfidence || galleryVisionResult.suggestions?.length) {
           setIsProcessingOCR(false);
           setIsScanning(false);
+          // Route through handleRecognized so the exact-printing picker opens
+          // and commitCard stays at zero until the user picks — same decision
+          // point the success branch above uses (DIC-1325 / DIC-1339). The
+          // typed candidates carry their own compound printing ids so
+          // whichever the user picks resolves to an exact printing at commit.
+          const typedCandidates = galleryVisionResult.candidates;
+          if (typedCandidates && typedCandidates.length > 0) {
+            const first = typedCandidates[0];
+            handleRecognized(
+              first.card,
+              galleryVisionResult.confidence ?? first.confidence ?? 0,
+              typedCandidates,
+              isAmbiguousPrinting(galleryVisionResult),
+            );
+            return;
+          }
+          // The API always populates candidates alongside `lowConfidence`, so
+          // this fallback only fires for legacy shapes (local-OCR suggestions
+          // without a typed candidate list). Still no commit — surface the
+          // suggestions in the search panel for manual selection.
           const candidateCards = galleryVisionResult.suggestions || [];
           setSearchResults(candidateCards);
           setSuggestions(candidateCards);
@@ -672,7 +752,7 @@ export default function ScanScreen({ navigation }: any) {
           setIsScanning(false);
 
           if (cardResult.success && cardResult.card) {
-            handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
+            handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates, isAmbiguousPrinting(cardResult));
           } else {
             // Fallback 到全圖 OCR
             const recognizedText = await recognizeTextWeb(result.assets[0].uri);
@@ -682,7 +762,7 @@ export default function ScanScreen({ navigation }: any) {
             if (trimmedText.length > 0) {
               const fallbackResult = await recognizeCardFromOcr(trimmedText);
               if (fallbackResult.success && fallbackResult.card) {
-                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates);
+                handleRecognized(fallbackResult.card, fallbackResult.confidence ?? 0.85, fallbackResult.candidates, isAmbiguousPrinting(fallbackResult));
                 return;
               }
               setSearchError(localizedError(fallbackResult.error, 'scan_no_match'));
@@ -703,7 +783,7 @@ export default function ScanScreen({ navigation }: any) {
           if (trimmedText.length > 0) {
             const cardResult = await recognizeCardFromOcr(trimmedText);
             if (cardResult.success && cardResult.card) {
-              handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates);
+              handleRecognized(cardResult.card, cardResult.confidence ?? 0.85, cardResult.candidates, isAmbiguousPrinting(cardResult));
             } else {
               setSearchError(localizedError(cardResult.error, 'scan_no_match'));
               const searchResult = await searchCards(trimmedText, 10);
@@ -848,16 +928,25 @@ export default function ScanScreen({ navigation }: any) {
     }
   };
 
+  // Pen `x7iIL` Close — dismisses the scan flow back to Home. Nested form
+  // so it resolves regardless of which navigator owns the current screen.
+  const handleClose = () => {
+    navigation.navigate('MainDrawer', { screen: 'Home' });
+  };
+
   // === Web 版：不用 expo-camera 權限，直接讓 WebCamera 處理 getUserMedia ===
   if (isWeb && !webCameraStarted) {
     return (
       <View style={styles.container}>
+        {/* Pen App/04 top action row — present on the pre-camera state too */}
+        <ScanTopBar onClose={handleClose} flashDisabled />
         <View style={styles.permissionContainer}>
           <Text style={styles.permissionIcon}>📷</Text>
           <Text style={styles.permissionTitle}>{t('scan_permission_title')}</Text>
           <Text style={styles.permissionText}>{t('scan_permission_web_body')}</Text>
           <TouchableOpacity 
             style={styles.permissionButton}
+            testID="scan-permission-allow"
             onPress={async () => {
               // iOS Safari 的 getUserMedia 必須在點擊事件手勢鏈中直接呼叫
               // 先等 stream 拿到再 mount WebCamera，避免 timing 競爭
@@ -903,38 +992,27 @@ export default function ScanScreen({ navigation }: any) {
 
   // === Native 版：用 expo-camera 權限系統 ===
   if (!isWeb) {
-    // 权限请求中
-    if (!permission) {
+    // DIC-1409 CR fix: both native pre-camera states render through the
+    // exported ScanNativePermissionGate (Pen top bar + v2 chrome) so the
+    // exact shipped surface is directly regression-testable.
+    if (!permission || !permission.granted) {
       return (
-        <View style={styles.container}>
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>{t('scan_camera_loading')}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    // 权限被拒绝 — DIC-1286 CR: delegate to CameraPermissionDeniedView so
-    // Android permanent denial (canAskAgain === false) really has a working
-    // recovery path (opens system settings) and the retry button is only
-    // shown when it can actually reopen the OS prompt.
-    if (!permission.granted) {
-      return (
-        <View style={styles.container}>
-          <CameraPermissionDeniedView
-            permission={permission}
-            onRequestPermission={requestPermission}
-            openSettingsImpl={openSettings}
-            refreshPermission={getCameraPermissions}
-          />
-        </View>
+        <ScanNativePermissionGate
+          permission={permission}
+          onClose={handleClose}
+          onRequestPermission={requestPermission}
+          openSettingsImpl={openSettings}
+          refreshPermission={getCameraPermissions}
+          onPickGallery={pickFromGallery}
+        />
       );
     }
   }
 
   return (
     <View style={styles.container}>
-      <ScanQuotaBanner />
+      {/* Quota now rides the Pen top bar: inside ScanOverlay when the
+          camera is up, and on the gallery surface's own top bar below. */}
       {/* 初始化中遮罩 — 相機在下面照常 mount，讓 getUserMedia 有機會啟動 */}
       {!isCameraReady && !webGalleryMode && (
         <View style={styles.loadingOverlay}>
@@ -963,6 +1041,8 @@ export default function ScanScreen({ navigation }: any) {
       )}
       {/* 相机预览 — 一定會 mount，不會被初始化中判斷擋住 */}
 {isWeb && webGalleryMode ? (
+        <View style={styles.camera}>
+        <ScanTopBar onClose={handleClose} flashDisabled />
         <View style={[styles.camera, styles.galleryModeContainer]}>
           <Text style={styles.galleryModeIcon}>🖼️</Text>
           <Text style={styles.galleryModeTitle}>{t('scan_gallery_title')}</Text>
@@ -985,6 +1065,7 @@ export default function ScanScreen({ navigation }: any) {
             <Text style={styles.settingsButtonText}>{t('scan_back_to_camera')}</Text>
           </TouchableOpacity>
         </View>
+        </View>
       ) : isWeb ? (
         <WebCamera
           ref={webCameraRef}
@@ -1000,15 +1081,13 @@ export default function ScanScreen({ navigation }: any) {
             borderAnim={borderAnim}
             isScanning={isScanning}
             flash={flash}
-            autoScanEnabled={autoScanEnabled}
+            autoScanActive={autoScanActive}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
             onFlash={toggleFlash}
             onScan={handleScan}
-            onFlip={toggleCameraFacing}
             onGallery={pickFromGallery}
-            onManualSearch={() => setShowSearch(true)}
-            onToggleAutoScan={toggleAutoScan}
+            onClose={handleClose}
             onScanAreaLayout={handleScanAreaLayout}
             onRetry={() => {
               setCameraError(null);
@@ -1032,15 +1111,13 @@ export default function ScanScreen({ navigation }: any) {
             borderAnim={borderAnim}
             isScanning={isScanning}
             flash={flash}
-            autoScanEnabled={autoScanEnabled}
+            autoScanActive={autoScanActive}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
             onFlash={toggleFlash}
             onScan={handleScan}
-            onFlip={toggleCameraFacing}
             onGallery={pickFromGallery}
-            onManualSearch={() => setShowSearch(true)}
-            onToggleAutoScan={toggleAutoScan}
+            onClose={handleClose}
             onRetry={() => {
               setCameraError(null);
               if (webCameraRef.current) webCameraRef.current.retry();
@@ -1083,9 +1160,9 @@ export default function ScanScreen({ navigation }: any) {
                 <Text style={resultStyles.toastName} numberOfLines={1}>
                   {lastScannedCard.name}
                 </Text>
-                {/* Store MVP 隱藏「最後掃描」toast 的估價欄 (DIC-1256)；
-                    仍顯示卡名與「再加入一張」按鈕以維持 session flow。 */}
-                {FEATURES.marketData && (
+                {/* 「最後掃描」toast 的售價 — Store MVP 也顯示 (DIC-1319)：這是
+                    剛掃到那張卡自己的售價，掃描→查價的主路徑回饋。 */}
+                {FEATURES.sellPrice && (
                   <Text style={resultStyles.toastPrice} testID="scan-toast-price">
                     {(() => {
                       if (lastScannedCard.sellPrice == null) return '—';
@@ -1219,9 +1296,9 @@ export default function ScanScreen({ navigation }: any) {
               >
                 <Text style={resultStyles.listItemName}>{card.name}</Text>
                 <Text style={resultStyles.listItemMeta}>{card.cardNumber} · {card.rarity} · {card.series}</Text>
-                {/* Store MVP 隱藏搜尋建議列表的估價 (DIC-1256)；卡名／編號／
-                    稀有度／系列仍在，供辨識選擇。 */}
-                {FEATURES.marketData && (
+                {/* 手動搜尋建議列的售價 — Store MVP 也顯示 (DIC-1319)，與掃描
+                    結果同一種單卡售價。 */}
+                {FEATURES.sellPrice && (
                   <Text style={resultStyles.listItemPrice} testID="scan-search-suggestion-price">
                     ¥{card.sellPrice?.toLocaleString() || t('scan_no_trade')}
                   </Text>
@@ -1284,10 +1361,13 @@ export default function ScanScreen({ navigation }: any) {
   );
 }
 
+// DIC-1409 CR fix — the pre-camera surfaces (permission gate, gallery
+// mode, loading) render on the Pen v2 tokens, matching the App/04 frame's
+// dark full-bleed chrome instead of the legacy COLORS palette.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   camera: {
     flex: 1,
@@ -1296,29 +1376,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   galleryModeIcon: {
-    fontSize: 64,
+    fontSize: 56,
     marginBottom: 20,
   },
   galleryModeTitle: {
-    color: COLORS.text,
+    color: SEMANTIC.onBg,
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   galleryModeText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 30,
+    maxWidth: 320,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
-    backgroundColor: COLORS.background,
+    backgroundColor: PALETTE.appBg,
   },
   loadingContainer: {
     flex: 1,
@@ -1326,7 +1407,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 16,
   },
   permissionContainer: {
@@ -1336,28 +1417,31 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   permissionIcon: {
-    fontSize: 64,
+    fontSize: 56,
     marginBottom: 20,
   },
   permissionTitle: {
-    color: COLORS.text,
+    color: SEMANTIC.onBg,
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   permissionText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 30,
+    maxWidth: 320,
   },
   permissionButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: PALETTE.accent,
     paddingVertical: 14,
     paddingHorizontal: 40,
-    borderRadius: 25,
+    borderRadius: 26,
     marginBottom: 12,
+    minHeight: LAYOUT.minTouch,
+    justifyContent: 'center',
   },
   permissionButtonText: {
     color: '#fff',
@@ -1367,9 +1451,11 @@ const styles = StyleSheet.create({
   settingsButton: {
     paddingVertical: 12,
     paddingHorizontal: 30,
+    minHeight: LAYOUT.minTouch,
+    justifyContent: 'center',
   },
   settingsButtonText: {
-    color: COLORS.textSecondary,
+    color: SEMANTIC.onBgMuted,
     fontSize: 14,
   },
   overlay: {

@@ -6,6 +6,7 @@ import { getSimulationPhases } from '../data/tutorialSimulationData';
 import SimulationBoard from '../components/tutorial/SimulationBoard';
 import SimulationStepCard from '../components/tutorial/SimulationStepCard';
 import { useTranslation } from '../i18n';
+import { RouteShell } from '../components/shell';
 
 const MOBILE_BREAKPOINT = 480;
 
@@ -63,7 +64,9 @@ export default function TutorialSimulationScreen({ navigation }: any) {
     ? Math.min(screenHeight * 0.28, 200)
     : Math.min(screenHeight * 0.4, 320);
 
+  // DIC-1409 Phase 6 — Pen `App / 14 教學模擬` (frame I6WwjY) shared shell.
   return (
+    <RouteShell navigation={navigation} routeName="TutorialSimulation" title={t('nav_tutorial_simulation')} testID="tutorial-simulation-shell">
     <SafeAreaView
       style={styles.safeArea}
       edges={['top', 'bottom']}
@@ -128,6 +131,7 @@ export default function TutorialSimulationScreen({ navigation }: any) {
         </View>
       </ScrollView>
     </SafeAreaView>
+    </RouteShell>
   );
 }
 

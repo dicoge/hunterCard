@@ -21,6 +21,7 @@ import { COLORS, convertPrice, CURRENCIES } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { CardInfo } from '../services/cardRecognition';
 import { useTranslation } from '../i18n';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -184,30 +185,34 @@ export default function ScanResultCard({
           </TouchableOpacity>
         </View>
 
-        {/* Card name + number */}
+        {/* Card name + number — resolved through the DIC-1380 shared helper so
+            every surface (Search, Scan, CardDetail, DeckEditor) picks the
+            same primary + subtitle for the current language preference. */}
         <View style={styles.infoContainer}>
-          {preferredLanguage === 'zh' && card.nameZh ? (
-            <>
-              <Text style={styles.cardName} numberOfLines={2}>{card.nameZh}</Text>
-              <Text style={styles.cardNameZh}>{card.name}</Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.cardName} numberOfLines={2}>{card.name}</Text>
-              {card.nameZh && preferredLanguage !== 'ja' ? (
-                <Text style={styles.cardNameZh}>{card.nameZh}</Text>
-              ) : null}
-            </>
-          )}
+          {(() => {
+            const { primary, secondary } = resolveCardDisplayName(card, preferredLanguage);
+            return (
+              <>
+                <Text style={styles.cardName} numberOfLines={2}>{primary}</Text>
+                {secondary ? (
+                  <Text style={styles.cardNameZh}>{secondary}</Text>
+                ) : null}
+              </>
+            );
+          })()}
           <Text style={styles.cardId}>
             #{card.cardNumber || card.id}
           </Text>
         </View>
 
-        {/* All price rows — Store MVP 隱藏 (DIC-1256): 掃描結果卡的所有價格
-            資訊都屬於 market-data；review build 只留卡片名稱／編號／稀有度／
-            信心度來確認辨識結果。 */}
-        {FEATURES.marketData && (
+        {/* 掃到的這張卡自己的售價 — Store MVP 也顯示 (DIC-1319)。掃描→看價是
+            產品主路徑。這裡列的是這筆 catalog entry 自己的 card.prices，不會去
+            抓別筆 entry 的價格；但要注意 prices[] 是 yuyu-tei 對同一張卡號的
+            掛牌列表，實務上可能同時含普卡／パラレル／箔押し，甚至跨收錄系列，
+            價差可以到三個數量級。也就是說這一段沒有「跨版本借價」，卻也還沒告訴
+            使用者哪一列才是手上那一版——版本確認仍由候選選擇器與 session 的版本
+            chip 負責 (見 DIC-1319 交付說明的待決事項)。 */}
+        {FEATURES.sellPrice && (
           <View style={styles.pricesSection} testID="scan-result-prices">
             {uniquePrices ? (
               uniquePrices.map((p, i) => (
@@ -235,8 +240,10 @@ export default function ScanResultCard({
           </View>
         )}
 
-        {/* Series reprint variants — same gate: variants only surface price
-            comparisons across printings, so Store MVP drops the section. */}
+        {/* Series reprint variants — stays on FEATURES.marketData: this section
+            compares OTHER printings' prices against the one in hand, which is
+            the cross-printing surface DIC-1319 must keep out of the store
+            build. The price above is this printing's own. */}
         {FEATURES.marketData && variants && (
           <View style={styles.variantsSection} testID="scan-result-variants">
             <Text style={styles.variantsHeader}>{t('scan_other_versions')}</Text>
