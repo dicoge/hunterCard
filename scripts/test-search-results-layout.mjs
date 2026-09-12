@@ -47,6 +47,10 @@ const {
 
 const LIST_PADDING_X = SEARCH_RESULTS_LAYOUT.listPaddingX;
 const GRID_GAP = SEARCH_RESULTS_LAYOUT.gridGap;
+// DIC-1427: below 768 the screen renders the Pen Z6jlE 3-column Card Tile
+// grid with the Pen 9px gap (tiles land on the exact 113px Pen width at 390).
+const MOBILE_COLUMNS = SEARCH_RESULTS_LAYOUT.mobileColumns;
+const MOBILE_GAP = SEARCH_RESULTS_LAYOUT.mobileGridGap;
 const DESKTOP_MAX_WIDTH = SEARCH_RESULTS_LAYOUT.desktopMaxWidth;
 const DESKTOP_BREAKPOINT = 768;
 const WIDE_BREAKPOINT = 1100;
@@ -57,16 +61,21 @@ let viewportHeight = 900;
 function columnsFor(viewport) {
   if (viewport >= WIDE_BREAKPOINT) return 3;
   if (viewport >= DESKTOP_BREAKPOINT) return 2;
-  return 1;
+  return MOBILE_COLUMNS;
+}
+
+function gapFor(viewport) {
+  return viewport >= DESKTOP_BREAKPOINT ? GRID_GAP : MOBILE_GAP;
 }
 
 function expectedLayoutForViewport(viewport) {
   const centerWrap = Math.min(viewport, DESKTOP_MAX_WIDTH);
   const content = centerWrap - LIST_PADDING_X * 2;
   const columns = columnsFor(viewport);
-  const perCard = Math.floor((content - (columns - 1) * GRID_GAP) / columns);
-  const rowTotal = columns * perCard + (columns - 1) * GRID_GAP;
-  return { centerWrap, content, columns, perCard, rowTotal };
+  const gap = gapFor(viewport);
+  const perCard = Math.floor((content - (columns - 1) * gap) / columns);
+  const rowTotal = columns * perCard + (columns - 1) * gap;
+  return { centerWrap, content, columns, gap, perCard, rowTotal };
 }
 
 function setViewport(width, height = 900) {
@@ -291,47 +300,39 @@ await test('736px content, 2 columns, 12px gap gives fixed 362px cards via the r
   } finally { await cleanup(); }
 });
 
-await test('390px mobile renders single-column full-width cards with no horizontal overflow', async () => {
-  const { items, cleanup } = await renderScreenAt(390, 2);
+await test('390px mobile renders the Pen Z6jlE 3-column tile grid (113px tiles) with no horizontal overflow (DIC-1427)', async () => {
+  const { items, cleanup } = await renderScreenAt(390, 3);
   try {
     const expected = expectedLayoutForViewport(390);
-    assert.equal(expected.columns, 1);
-    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.content));
+    assert.equal(expected.columns, 3);
+    assert.equal(expected.perCard, 113, 'the Pen tile width at 390 is 113px (frame Z6jlE grid refs)');
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.perCard));
+    assert.ok(expected.rowTotal <= expected.content, `row ${expected.rowTotal} exceeded content ${expected.content}`);
     assert.equal(document.documentElement.scrollWidth, document.documentElement.clientWidth);
     for (const item of items) {
       assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
-      // DIC-1192 mutation guard: the single-column wrapper sits on the
-      // FlatList's vertical main axis, so a numeric flex-basis inflates
-      // the wrapper's *height* (the 358×358 bug). `auto` lets the card
-      // decide row height. If the fix in gridLayout.ts is ever reverted
-      // — e.g. by dropping the `safeColumns === 1` branch — this fails
-      // immediately because RN Web serialises the numeric flex-basis
-      // as `flex-basis: 358px` into the computed style.
-      const flexBasis = getComputedStyle(item).flexBasis;
-      assert.doesNotMatch(
-        String(flexBasis), /^\d+(?:\.\d+)?px$/,
-        `single-column wrapper flex-basis must not be a numeric px value, got ${flexBasis} (DIC-1192)`,
-      );
     }
   } finally { await cleanup(); }
 });
 
-// DIC-1192: an exact-count mobile render is the mutation-safe way to prove
-// the wrapper is not inflated in the first place. renderScreenWithExactCount
-// seeds a hand-rolled dataset so the rendered DOM has *exactly* the cards
-// we asked for, mirroring the desktop mutation-guard tests above.
+// DIC-1192 heritage / DIC-1427: exact-count mobile renders prove the wrapper
+// is never inflated. On the 3-column grid the wrapper rides a horizontal
+// columnWrapper row, so a numeric flex-basis must equal the tile WIDTH —
+// the 358×358 height-inflation bug cannot come back as long as the basis
+// stays pinned to the 113px tile and flex-grow stays 0 on partial rows.
 for (const count of [1, 2, 4]) {
-  await test(`exact ${count}-card dataset at 390px (1 col) keeps single-column wrapper flex-basis auto (DIC-1192)`, async () => {
+  await test(`exact ${count}-card dataset at 390px (3-col tiles) keeps 113px non-stretching wrappers (DIC-1427)`, async () => {
     const { items, cleanup } = await renderScreenWithExactCount(390, count);
     try {
       assert.equal(items.length, count, `seeded dataset must render exactly ${count} grid items`);
+      const expected = expectedLayoutForViewport(390);
       for (const item of items) {
+        assert.equal(px(getComputedStyle(item).width), expected.perCard, 'tile wrapper must stay at the Pen width');
         assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
         const flexBasis = getComputedStyle(item).flexBasis;
-        assert.doesNotMatch(
-          String(flexBasis), /^\d+(?:\.\d+)?px$/,
-          `mobile wrapper flex-basis must not be a numeric px value, got ${flexBasis} (DIC-1192)`,
-        );
+        if (/^\d+(?:\.\d+)?px$/.test(String(flexBasis))) {
+          assert.equal(px(flexBasis), expected.perCard, `numeric flex-basis must equal the tile width, got ${flexBasis}`);
+        }
       }
     } finally { await cleanup(); }
   });
@@ -484,19 +485,33 @@ for (const viewport of [1440, 390]) {
         missingKeyError, undefined,
         `render must not throw \`Missing translation key\` for any color token — saw: ${missingKeyError}`,
       );
-      // 3. The diamond card renders its normalised colour label. `無色` is
+      // 3. The diamond card renders through the normaliser. `無色` is
       // color_colorless in zh (the default locale for tests). If the render
       // bypassed the normaliser and passed '◇' through as-is, the label
       // would be the raw diamond glyph — that's the failure signature.
+      // DIC-1427: at 390 the route renders the Pen Z6jlE Card Tile grid,
+      // which carries name + price only (no card-number / colour label rows),
+      // so the label assertions only apply to the CardListItem layout ≥768.
       const text = container.textContent;
-      assert.ok(text.includes('hBP04-087'), 'crash-row card number must appear in the rendered DOM');
-      assert.ok(
-        text.includes('無色'),
-        'normalised colour label (color_colorless → 無色) must render for the diamond row',
-      );
+      if (viewport >= 768) {
+        assert.ok(text.includes('hBP04-087'), 'crash-row card number must appear in the rendered DOM');
+        assert.ok(
+          text.includes('無色'),
+          'normalised colour label (color_colorless → 無色) must render for the diamond row',
+        );
+      } else {
+        assert.ok(
+          text.includes('エリザベス・ローズ・ブラッドフレイム') || text.includes('伊麗莎白'),
+          'crash-row card display name (ja source or zh resolved) must appear on its Pen tile at 390',
+        );
+      }
       assert.ok(
         !text.includes('color_◇'),
         'raw i18n key must never leak into the DOM — that would mean t() ran on an unwhitelisted key',
+      );
+      assert.ok(
+        !text.includes('◇'),
+        'the raw diamond token must not leak into the rendered DOM at any viewport',
       );
     } finally { await cleanup(); }
   });

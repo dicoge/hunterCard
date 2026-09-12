@@ -210,6 +210,13 @@ export const ja: Record<keyof typeof zh, string> = {
   search_empty_hint: '日本語名、カード番号、シリーズコードで検索してみてください',
   search_results_for: '検索結果：{{query}}',
   search_found_count: '{{count}} 枚見つかりました',
+  // DIC-1427: Pen App/02 検索結果 — sort control (zkTTM) + filter sheet.
+  search_sort_relevance: '関連順',
+  search_sort_price_desc: '価格高→低',
+  search_sort_price_asc: '価格低→高',
+  search_filter_open: '絞り込み',
+  search_filter_sr_plus: 'SR 以上',
+  search_filter_done: '完了',
   // DIC-1141: shown when a Holomen card has no canonical Bloom Level yet.
   search_bloom_level_pending: 'Bloomレベル未取得',
 

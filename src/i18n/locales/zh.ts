@@ -211,6 +211,13 @@ export const zh = {
   search_empty_hint: '試試看日文名稱、卡號、或系列代碼',
   search_results_for: '搜尋結果：{{query}}',
   search_found_count: '找到 {{count}} 張卡牌',
+  // DIC-1427: Pen App/02 搜尋結果 — sort control (zkTTM) + filter sheet.
+  search_sort_relevance: '綜合排序',
+  search_sort_price_desc: '價格高→低',
+  search_sort_price_asc: '價格低→高',
+  search_filter_open: '篩選',
+  search_filter_sr_plus: 'SR 以上',
+  search_filter_done: '完成',
   // DIC-1141: shown when a Holomen card has no canonical Bloom Level yet.
   // Never fall back to the category label "Holomen" — that's the exact
   // ambiguity this string exists to break.
