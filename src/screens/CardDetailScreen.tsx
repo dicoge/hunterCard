@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image, Platform } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
+import { AppShell } from '../components/shell';
+import { PALETTE, SEMANTIC, FONTS } from '../theme/tokensV2';
 import { FEATURES } from '../config/releaseFlags';
 import { openUrl } from '../utils/openUrl';
 import { useSettingsStore } from '../store/settingsStore';
@@ -82,7 +83,6 @@ function buildImageUrl(cardNumber: string, seriesCode: string, versions: string[
 export default function CardDetailScreen({ route, navigation }: any) {
   const { card } = route.params || {};
   const [imageError, setImageError] = useState(false);
-  const insets = useSafeAreaInsets();
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
   const { isDesktop } = useBreakpoint();
   const { t } = useTranslation();
@@ -248,8 +248,39 @@ export default function CardDetailScreen({ route, navigation }: any) {
       ? t('card_detail_alert_many', { count: cardAlerts.length })
       : t('card_detail_alert_set');
 
+  // DIC-1409 Phase 3: Pen `App / 03 卡牌詳情` (frame o7WO3r) shell — back
+  // arrow + card number in the app bar, no bottom tab bar on the detail route.
+  // The inner ScrollView stays the scroll container so the desktop two-column
+  // layout and every gated section keep their exact structure.
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background, paddingBottom: insets.bottom }}>
+    <AppShell
+      appBar={{
+        showBrand: false,
+        title: id,
+        leading: (
+          <TouchableOpacity
+            onPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate?.('Home'))}
+            accessibilityRole="button"
+            accessibilityLabel={t('common_back')}
+            style={styles.shellBackButton}
+            testID="card-detail-back"
+          >
+            <Text style={styles.shellBackGlyph}>‹</Text>
+          </TouchableOpacity>
+        ),
+        actions: [
+          {
+            key: 'official',
+            label: t('card_detail_official_list'),
+            icon: <Text style={styles.shellActionGlyph}>↗</Text>,
+            onPress: () => openUrl(officialUrl),
+          },
+        ],
+      }}
+      scrollable={false}
+      contentPadding={false}
+      testID="card-detail-shell"
+    >
       <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
       <ScrollView style={styles.container} contentContainerStyle={isDesktop ? styles.scrollDesktop : undefined}>
       <View style={isDesktop ? styles.twoCol : styles.oneCol}>
@@ -608,7 +639,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
       </View>
       </View>
     </ScrollView>
-    </SafeAreaView>
+    </AppShell>
   );
 }
 
@@ -939,8 +970,13 @@ function LinkButton({ icon, text, url }: { icon: string; text: string; url: stri
 // ─── Styles ────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
+  container: { flex: 1, backgroundColor: PALETTE.appBg },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PALETTE.appBg, padding: 20 },
+
+  // Pen App/03 shell chrome (back arrow t2SEv, external-link CE6L7)
+  shellBackButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginLeft: -6 },
+  shellBackGlyph: { fontFamily: Platform.OS === 'web' ? FONTS.display : undefined, fontSize: 26, lineHeight: 28, color: SEMANTIC.onBgMuted },
+  shellActionGlyph: { fontSize: 18, lineHeight: 20, color: SEMANTIC.onBgMuted },
 
   // Desktop two-column layout
   scrollDesktop: { alignItems: 'center' },
@@ -974,12 +1010,16 @@ const styles = StyleSheet.create({
   collectionButtonDisabled: { color: COLORS.border },
   collectionQuantity: { minWidth: 24, color: COLORS.text, fontSize: 15, fontWeight: '800', textAlign: 'center' },
   collectionRemove: { color: COLORS.error, fontSize: 12, fontWeight: '700' },
-  priceSection: { paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' },
+  // Pen Price Card (node qJqlm): $app-surface, r16, 16px padding card — no
+  // full-bleed divider band any more.
+  priceSection: { marginHorizontal: 16, marginTop: 16, padding: 16, borderRadius: 16, backgroundColor: PALETTE.appSurface },
   priceHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   priceSourceName: { fontSize: 17, fontWeight: '700', color: COLORS.text },
   priceBadge: { marginLeft: 10, backgroundColor: COLORS.surfaceLight, color: COLORS.textSecondary, fontSize: 11, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
-  priceValue: { fontSize: 28, fontWeight: 'bold', color: '#10b981' },
+  // Pen Value Row (node x0c32A): 30/700 Outfit on $text-primary — the mint
+  // green price was one of the flagged Pen→Preview regressions.
+  priceValue: { fontFamily: Platform.OS === 'web' ? FONTS.display : undefined, fontSize: 30, fontWeight: '700', color: SEMANTIC.onBg },
   priceRange: { fontSize: 13, color: COLORS.textSecondary, marginLeft: 6 },
   priceNote: { fontSize: 11, color: COLORS.textSecondary + 'bb', marginBottom: 12 },
   checkPriceBtn: { backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
@@ -1007,7 +1047,8 @@ const styles = StyleSheet.create({
   detailCategoryChipText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   detailRarityChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, borderWidth: 1, backgroundColor: 'transparent' },
   detailRarityChipText: { fontSize: 11, fontWeight: '800' },
-  nameJP: { fontSize: 26, fontWeight: 'bold', color: COLORS.text, marginBottom: 3 },
+  // Pen Card Info name (node HMarO): 21/800 body face on $text-primary.
+  nameJP: { fontFamily: Platform.OS === 'web' ? FONTS.body : undefined, fontSize: 21, fontWeight: '800', color: SEMANTIC.onBg, marginBottom: 3 },
   nameTW: { fontSize: 17, color: COLORS.primary, marginBottom: 3 },
   nameEN: { fontSize: 13, color: COLORS.text + '88', marginBottom: 12, fontStyle: 'italic' },
   infoRow: { flexDirection: 'row', marginBottom: 5 },

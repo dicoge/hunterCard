@@ -1,27 +1,25 @@
 /**
- * LandingScreen — Pen artifact `holohunter-landing-v2.pen` production impl
- * (DIC-1380 W5b: PM correction "accepted Pen design is not deployed").
+ * LandingScreen — Pen artifact `holohunter-landing-v2.pen` production impl.
  *
- * The previous `LoginScreen` shipped a bare auth card at `/`. The accepted
- * Pen Landing artifact anchors a rich responsive marketing landing at
- * Desktop 1440 (frame `XwzSU`'s sections `avS3j` Nav, `Rlx6E` Hero,
- * `vfBpS` Stats Bar, `GAolm` Features, `mcRLH` Plans, `TldCK` Footer) and
- * Mobile 390 (`bDwDO` Nav, `LX2IZ` Hero, `ufjjN` Stats Bar, `r41z2`
- * Features, `MPyoM` Plans, `r86yeO` Footer). This file implements the
- * P0 subset of both: Nav + Hero + Stats Bar + Features + Plans + Footer
- * with the Pen artifact's truthful copy (guest CTA primary; Google login
- * marked "即將推出"; free-tier only; scan quota 100/month; no paid tier
- * yet). Secondary Pen sections (Price / Collection / How It Works / FAQ
- * / Final CTA) are deliberately scoped out of this pass so the
- * user-visible Landing lands here rather than being blocked on scope.
+ * DIC-1409 Phase 7 restores full visual parity with the canonical Pen
+ * frames `XwzSU` (Desktop Landing 1440) and `D2SGVB` (Mobile Landing 390)
+ * from `docs/pen-v2/holohunter-landing-v2-updated.pen`, fixing the exact
+ * regressions the issue names: Hero composition (tilted card trio +
+ * radial glow + floating legality/price chips, Pen `z5AkG`), depth/glow,
+ * price visuals (chart card `N8ds5T`, not text rows), search mockup
+ * (bento `hUcaS`), deck panel (`voo0h`), CTA treatment (gradient pill +
+ * dark Google pill), type scale and section whitespace.
  *
- * Responsive rules follow the Pen viewports: <768 px renders the mobile
- * `bDwDO`-style layout with the burger menu closed by default; ≥768 px
- * renders the desktop `avS3j` nav + two-column Hero. All touch targets
- * respect the Pen `min-touch: 44` token; all colors read from Pen tokens
- * (bg #08080F, surface #12121D, accent #FF4D9D, coming-soon-bg #3D2547,
- * coming-soon-fg #FFB4D9). No horizontal overflow at 320 / 390 / 768 /
- * 1440 — the Hero visual card and Stats Bar wrap on narrow viewports.
+ * All auth wiring is real: guest + Google CTAs drive `useAuthStore`
+ * (loading / error states included), legal links open the shipped
+ * static pages. Copy follows the reviewed truthful strings where the Pen
+ * artifact's marketing copy would overclaim (sync qualifiers, free-plan
+ * feature list, FAQ answers) — the same precedent Phase 6 set for Login.
+ *
+ * Tokens come from the shared `tokensV2` system (Pen variables). Web
+ * builds add CSS gradients via react-native-web's `backgroundImage`
+ * pass-through; native falls back to the gradient's dominant colour, the
+ * same pattern the shell uses for `GRADIENTS`.
  */
 import React, { useCallback, useState } from 'react';
 import {
@@ -37,27 +35,17 @@ import {
   Platform,
 } from 'react-native';
 
-// Pen `holohunter-landing-v2.pen` accepted hero card artwork (frame `z5AkG`).
-// The three card frames — `Card Left` / `Card Right` / `Card Center` —
-// carry image fills anchored to specific catalog printings, so the hero
-// visually reads as a card row rather than three coloured strips (the
-// DIC-1381 W9 CR named this exact regression). Assets are bundled into the
-// app (Metro/Webpack resolves the ESM import to a hashed URL) so no
-// external image request is fired from the Landing — the privacy-policy
-// "no external images on Landing" contract stays intact. Filenames mirror
-// the Pen `images/<cardNumber>_<rarity>.png` anchor so a rename in one
-// place is caught in the other.
-// Pen frame layout, left → center → right:
-//   Card Left   (uR7Wd) → images/hBP01-023_UR.png
-//   Card Center (ntKk3) → images/hBP01-081_UR.png
-//   Card Right  (LFnFH) → images/hBP02-013_UR.png
-// Production tiles render primary (biggest tile with sparkline) → secondary
-// → tertiary in the same left-to-right order, so primary=Card Left,
-// secondary=Card Center, tertiary=Card Right. The regression derives this
-// mapping directly from the Pen so a swap on either side fails.
+// Pen `z5AkG` hero card trio — image fills anchored to specific catalog
+// printings (Card Left `uR7Wd` → hBP01-023, Card Center `ntKk3` →
+// hBP01-081, Card Right `LFnFH` → hBP02-013). Bundled so the Landing
+// fires no external image request (privacy-policy contract).
 import HeroCardPrimary from '../../assets/landing-cards/hBP01-023_UR.jpg';
 import HeroCardSecondary from '../../assets/landing-cards/hBP01-081_UR.jpg';
 import HeroCardTertiary from '../../assets/landing-cards/hBP02-013_UR.jpg';
+import { useAuthStore } from '../store/authStore';
+import { useBreakpoint } from '../hooks/useBreakpoint';
+import { PALETTE, FONTS, LAYOUT } from '../theme/tokensV2';
+
 const HERO_CARD_ART = {
   primary: HeroCardPrimary,
   secondary: HeroCardSecondary,
@@ -68,72 +56,144 @@ export const HERO_CARD_ART_PEN_FILENAMES = {
   secondary: 'hBP01-081_UR',
   tertiary: 'hBP02-013_UR',
 } as const;
-import { useAuthStore } from '../store/authStore';
-import { useBreakpoint } from '../hooks/useBreakpoint';
-import { useTranslation } from '../i18n';
 
-// Pen `holohunter-landing-v2.pen` variables — single source of truth for
-// the Landing surface. Any drift from these tokens is a Pen-conformance
-// regression the DIC-1380 W5b handback specifically named.
-const TOKENS = {
-  bg: '#08080F',
-  surface: '#12121D',
-  surface2: '#1A1A2A',
-  border: '#282838',
-  textPrimary: '#F6F6FB',
-  textSecondary: '#9494B0',
-  textMuted: '#6A6A85',
-  accent: '#FF4D9D',
-  accent2: '#3DE0FF',
-  accent3: '#8B5CF6',
-  comingSoonBg: '#3D2547',
-  comingSoonFg: '#FFB4D9',
-  minTouch: 44,
-  safeMobile: 20,
-  contentDesktop: 1328,
-};
+const T = PALETTE;
+const displayFont = Platform.OS === 'web' ? FONTS.display : undefined;
+const bodyFont = Platform.OS === 'web' ? FONTS.body : undefined;
+
+// react-native-web passes `backgroundImage` through to CSS; native gets
+// the gradient's dominant colour (shell `GRADIENTS` precedent).
+const webGradient = (css: string, fallback: string) =>
+  Platform.OS === 'web'
+    ? ({ backgroundColor: fallback, backgroundImage: css } as const)
+    : ({ backgroundColor: fallback } as const);
+
+const GRAD = {
+  ctaPill: webGradient(`linear-gradient(90deg, ${T.accent} 0%, #C36BFF 100%)`, T.accent),
+  brandTile: webGradient(`linear-gradient(135deg, ${T.accent} 0%, ${T.accent3} 100%)`, T.accent),
+  heroGlow: webGradient(
+    `radial-gradient(42% 46% at 74% 42%, rgba(61,224,255,0.14) 0%, rgba(61,224,255,0) 100%),` +
+      `radial-gradient(40% 42% at 12% 78%, rgba(255,77,157,0.16) 0%, rgba(255,77,157,0) 100%),` +
+      `radial-gradient(36% 40% at 88% 82%, rgba(139,92,246,0.14) 0%, rgba(139,92,246,0) 100%)`,
+    T.bg,
+  ),
+  chartBarHot: webGradient(`linear-gradient(180deg, #FF8AC2 0%, ${T.accent} 100%)`, T.accent),
+  finalCta: webGradient(
+    `radial-gradient(60% 90% at 8% 12%, rgba(61,224,255,0.22) 0%, rgba(61,224,255,0) 100%),` +
+      `radial-gradient(70% 110% at 92% 18%, rgba(139,92,246,0.35) 0%, rgba(139,92,246,0) 100%),` +
+      `radial-gradient(85% 120% at 55% 118%, rgba(255,77,157,0.42) 0%, rgba(255,77,157,0) 100%)`,
+    T.surface,
+  ),
+  subCardTint: webGradient(
+    `radial-gradient(80% 80% at 88% 0%, rgba(255,77,157,0.14) 0%, rgba(255,77,157,0) 100%)`,
+    T.surface,
+  ),
+  bentoCyanTint: webGradient(
+    `radial-gradient(90% 90% at 88% 10%, rgba(61,224,255,0.10) 0%, rgba(61,224,255,0) 100%)`,
+    T.surface,
+  ),
+  bentoPurpleTint: webGradient(
+    `radial-gradient(90% 90% at 88% 10%, rgba(139,92,246,0.12) 0%, rgba(139,92,246,0) 100%)`,
+    T.surface,
+  ),
+} as const;
 
 const NAV_LINKS = ['卡牌查詢', '掃描估值', '牌組編輯器', '賽事月報', '規則教學'];
 
-// Pen `vfBpS` (desktop) + `ufjjN` (mobile) Stats Bar values, kept as
-// tuples so we render them identically on both viewports.
+// Pen `vfBpS` (desktop) / `ufjjN` (mobile) Stats Bar — flat columns, no
+// card chrome (the bordered stat cards were a Pen-conformance regression).
 const STATS = [
-  { value: '36', label: '個收錄系列' },
-  { value: '中 / 日', label: '介面與卡名雙語' },
-  { value: 'NT$ · ¥ · $', label: '三種幣別固定匯率換算' },
-  { value: '8 章', label: '規則教學 + 模擬實戰' },
+  { value: '36', label: '個收錄系列', mobileLabel: '個收錄系列' },
+  { value: '中 / 日', label: '介面與卡名雙語', mobileLabel: '雙語卡名' },
+  { value: 'NT$ · ¥ · $', label: '三種幣別固定匯率換算', mobileLabel: '三幣別(固定)' },
+  { value: '8 章', label: '規則教學 + 模擬實戰', mobileLabel: '規則教學' },
 ];
 
-// Pen `GAolm` / `r41z2` Features. Order matches the Pen artifact.
+// Pen `GAolm` bento (desktop) / `p7scMD` list (mobile). The search card
+// (`hUcaS` first cell) renders the Pen search mockup; the other five map
+// to Pen's icon-tile cards. Glyph-in-tinted-tile follows the shell's
+// established icon treatment (HomeScreen quick actions).
 const FEATURES = [
   {
-    title: '卡表檢索與篩選',
-    body: '卡名、卡號、效果內文全文檢索，再疊加卡牌種類、顏色、稀有度、收錄彈數。中日文卡名都能搜。',
-  },
-  {
-    title: '拍照估值掃描',
+    key: 'scan',
+    glyph: '⌖',
+    tint: T.accent2,
+    gradient: GRAD.bentoCyanTint,
+    title: '拍照辨識，順便估值',
     body: '對著卡片拍一張就辨識卡號與版本，連續掃完一盒後直接給你整份估值清單與總計。',
   },
   {
-    title: '到價提醒（正在推出）',
+    key: 'watchlist',
+    glyph: '◔',
+    tint: T.accent3,
+    gradient: GRAD.bentoPurpleTint,
+    title: '只比對你指定的那一版',
     body: '到價提醒鎖定精確版本與價格區間，價格進區間時推播一次。',
   },
   {
-    title: '牌組編輯器與缺卡預估',
-    body: '邊組邊檢查 50 張主牌組與同名張數限制，未達標會列出缺哪幾張，並算出缺卡預估總額。',
+    key: 'deck',
+    glyph: '❖',
+    tint: T.accent,
+    gradient: null,
+    title: '牌組編輯器',
+    body: '邊組邊檢查 50 張主牌組與同名張數限制，未達標會列出缺哪幾張，並直接算出缺卡預估總額。',
   },
   {
+    key: 'tournament',
+    glyph: '◍',
+    tint: T.accent2,
+    gradient: null,
     title: '賽事月報',
-    body: '彙整已公開的精選賽事牌組，看上眼的牌組可一鍵匯入編輯器。',
+    body: '彙整已公開的精選賽事牌組，統計熱門牌型與顏色分布，看上眼的牌組可一鍵匯入編輯器。',
   },
   {
-    title: '規則教學 · 模擬對局',
-    body: '8 章教學從遊戲簡介講到比賽流程，並跟著 step-by-step 引導打一場簡化對局。',
+    key: 'tutorial',
+    glyph: '✦',
+    tint: T.accent3,
+    gradient: null,
+    title: '規則教學與模擬戰',
+    body: '8 章教學從遊戲簡介講到比賽流程，再跟著 step-by-step 引導打一場簡化對局。',
   },
+] as const;
+
+const SEARCH_MOCK_CHIPS: ReadonlyArray<{ label: string; active?: boolean; outlined?: boolean }> = [
+  { label: '藍', active: true },
+  { label: 'Holomen', outlined: true },
+  { label: 'hBP04' },
+  { label: '有平行版' },
+  { label: 'SR 以上' },
 ];
 
-// Pen `MPyoM` free-plan feature list. Copy is verbatim from the accepted
-// artifact so a rewording in Pen has to be brought here explicitly.
+// Pen `N8ds5T` price chart card — 13 bars, the newest highlighted with
+// the value label. Static marketing content straight from the Pen frame
+// (the Landing renders before any API session exists).
+const CHART_BARS = [0.42, 0.5, 0.45, 0.55, 0.52, 0.63, 0.66, 0.6, 0.72, 0.68, 0.8, 0.76, 1] as const;
+const CHART_X_LABELS = ['6/09', '6/16', '6/23', '6/30', '7/07'] as const;
+const SPARK_BARS = [10, 14, 12, 16, 15, 19, 18, 22, 21, 26, 24, 29, 27, 31] as const;
+
+// Pen `voo0h` deck-builder panel rows (colour tokens `$accent` /
+// `$accent-3` / `$accent-2` / `$c-yellow` per the Pen progress bars).
+const DECK_ROWS = [
+  { name: '白上フブキ hBP02-012 / SR', have: 2, need: 4, color: T.accent },
+  { name: '白上フブキ hBP02-013 / RR', have: 1, need: 2, color: T.accent3 },
+  { name: 'ときのそら hBP01-021 / C', have: 3, need: 4, color: T.accent2 },
+  { name: 'ブルームエール ×20', have: 18, need: 20, color: T.cYellow },
+] as const;
+
+const DECK_BULLETS = [
+  '主牌組 / エール 張數與同名限制檢查',
+  '缺卡預估總額，可切換幣別',
+  '從賽事月報一鍵匯入牌組',
+] as const;
+
+const PRICE_BULLETS = [
+  '前 7 日 vs 近 7 日均價比較',
+  '買入成本 · 賣出可得（買賣差價即將推出）',
+  '多版本分開計價，不混版',
+] as const;
+
+// Reviewed truthful free-plan list (the Pen desktop list would overclaim
+// 買賣差價/趨勢預測, both 即將推出) — kept per the Phase 6 copy precedent.
 const FREE_FEATURES = [
   '全部卡表檢索與篩選',
   '市場價格與 7D/30D/90D 歷史',
@@ -144,29 +204,18 @@ const FREE_FEATURES = [
 
 const COMING_SOON_FEATURES = [
   '免費會員的全部功能',
-  '無限卡片掃描（規劃中，計費地區待定）',
-  '上線時會在此揭露方案內容',
+  '訂閱與 App 內購（即將推出）',
+  '上線時會在此揭露方案內容與計費地區',
 ];
-
-// Pen `holohunter-landing-v2.pen` additional composition sections
-// (DIC-1380 W6 CR — full Landing parity). The previous P0 subset only
-// carried Nav / Hero / Stats Bar / Features / Plans / Footer; the CR
-// explicitly asks for the full composition. These sections land the
-// remaining Pen anchors: HOW_IT_WORKS (三步驟), COLLECTION_PREVIEW
-// (卡表 / 收藏 / 牌組展示), FAQ (常見問題) and FINAL_CTA (最終行動列).
 
 const HOW_IT_WORKS = [
-  { step: '01', title: '查詢卡表', body: '中日文名稱、卡號、效果與收錄彈數全文搜尋，六種篩選一起疊。' },
-  { step: '02', title: '拍照估值', body: '拍一張卡片就辨識卡號與版本，掃完一盒直接看到整份估值清單。' },
-  { step: '03', title: '組牌出門', body: '50 + 20 + 1 邊組邊檢查，缺卡自動列出來，賽事牌組一鍵匯入。' },
-];
+  { step: '01', tint: T.accent, title: '先逛或先登入', body: '訪客就能查卡、讀規則與跑模擬戰。登入後才開放掃描與收藏；跨裝置同步為即將推出。' },
+  { step: '02', tint: T.accent3, title: '掃描或搜尋建卡表', body: '對著卡片拍照就辨識卡號與版本，也可以直接搜卡名或卡號。連續掃完一盒會給你整份估值清單與總計。' },
+  { step: '03', tint: T.accent2, title: '組牌並盯價', body: '在編輯器組牌、看缺卡預估總額，再對想補的卡指定版本與價格區間，價格進區間時推播通知你。' },
+] as const;
 
-const COLLECTION_HIGHLIGHTS = [
-  { title: '36 個收錄系列', body: 'hOCG 從 hSD01 一路到最新彈都在，官方卡表同步更新。' },
-  { title: '每日行情更新', body: '遊々亭參考行情每日刷新，同時看漲跌與 7 / 30 / 90 日走勢。' },
-  { title: '缺卡預估總額', body: '牌組編輯器算出缺哪幾張，並用當前市價估算補齊所需金額。' },
-];
-
+// Reviewed truthful FAQ copy (unchanged from the accepted DIC-1380 W6
+// pass) presented in the Pen accordion composition.
 const FAQ = [
   {
     q: '需要付費才能使用嗎？',
@@ -186,83 +235,19 @@ const FAQ = [
   },
 ];
 
-// DIC-1380 W7 CR — standalone Price section. The previous Landing only
-// carried price data as a Hero-visual teaser; the accepted Pen composition
-// pins a dedicated section that previews the market-data breadth (multi-
-// currency, multi-timeframe, gap-estimate). Copy is consistent with what
-// the price surfaces actually deliver today.
-const PRICE_ROWS = [
-  {
-    name: '星街すいせい UR',
-    number: 'hSD01-016',
-    price: 'NT$ 3,600',
-    currencySecondary: '¥ 17,600',
-    delta: '+2.4%',
-    trend: 'up',
-  },
-  {
-    name: '兎田ぺこら SR',
-    number: 'hBP01-042',
-    price: 'NT$ 1,860',
-    currencySecondary: '¥ 9,100',
-    delta: '+0.6%',
-    trend: 'up',
-  },
-  {
-    name: 'ラプラス・ダークネス C',
-    number: 'hBP02-088',
-    price: 'NT$ 40',
-    currencySecondary: '¥ 200',
-    delta: '-1.2%',
-    trend: 'down',
-  },
-] as const;
+const LEGAL = {
+  terms: 'https://holohunter.dicoge.com/terms.html',
+  privacy: 'https://holohunter.dicoge.com/privacy.html',
+  pricing: 'https://holohunter.dicoge.com/pricing.html',
+  support: 'https://holohunter.dicoge.com/support.html',
+} as const;
 
-function PriceRow({ name, number, price, currencySecondary, delta, trend }: typeof PRICE_ROWS[number]) {
-  return (
-    <View style={styles.priceRow} testID={`landing-price-row-${number}`}>
-      <View style={styles.priceRowCopy}>
-        <Text style={styles.priceRowName} numberOfLines={1}>{name}</Text>
-        <Text style={styles.priceRowNumber} numberOfLines={1}>{number}</Text>
-      </View>
-      <View style={styles.priceRowValues}>
-        <Text style={styles.priceRowPrice}>{price}</Text>
-        <Text style={styles.priceRowCurrencySecondary}>{currencySecondary}</Text>
-      </View>
-      <View style={[styles.priceRowDelta, trend === 'down' && styles.priceRowDeltaDown]}>
-        <Text style={styles.priceRowDeltaText}>{delta}</Text>
-      </View>
-    </View>
-  );
-}
+const openUrl = (url: string) => Linking.openURL(url).catch(() => {});
 
-function HowStep({ step, title, body }: { step: string; title: string; body: string }) {
+function SectionPill({ text, tint }: { text: string; tint: string }) {
   return (
-    <View style={styles.howStep} testID={`landing-how-${step}`}>
-      <View style={styles.howStepNumberWrap}>
-        <Text style={styles.howStepNumber}>{step}</Text>
-      </View>
-      <Text style={styles.howStepTitle}>{title}</Text>
-      <Text style={styles.howStepBody}>{body}</Text>
-    </View>
-  );
-}
-
-function CollectionCard({ title, body }: { title: string; body: string }) {
-  return (
-    <View style={styles.collectionCard} testID={`landing-collection-${title}`}>
-      <View style={styles.collectionDot} />
-      <Text style={styles.collectionTitle}>{title}</Text>
-      <Text style={styles.collectionBody}>{body}</Text>
-    </View>
-  );
-}
-
-function FaqItem({ q, a }: { q: string; a: string }) {
-  return (
-    <View style={styles.faqItem} testID={`landing-faq-${q}`}>
-      <Text style={styles.faqQuestion}>Q. {q}</Text>
-      <Text style={styles.faqAnswer}>{a}</Text>
+    <View style={[styles.sectionPill, { borderColor: `${tint}59`, backgroundColor: `${tint}1F` }]}>
+      <Text style={[styles.sectionPillText, { color: tint }]}>{text}</Text>
     </View>
   );
 }
@@ -275,42 +260,218 @@ function ComingSoonPill({ text }: { text: string }) {
   );
 }
 
-function StatCard({ value, label, mobile }: { value: string; label: string; mobile: boolean }) {
+function CheckRow({ text, tint }: { text: string; tint: string }) {
   return (
-    <View style={[styles.statCard, mobile && styles.statCardMobile]} testID={`landing-stat-${label}`}>
-      <Text style={[styles.statValue, mobile && styles.statValueMobile]} numberOfLines={1}>{value}</Text>
-      <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
+    <View style={styles.checkRow}>
+      <View style={[styles.checkDot, { borderColor: `${tint}66` }]}>
+        <Text style={[styles.checkGlyph, { color: tint }]}>✓</Text>
+      </View>
+      <Text style={styles.checkText}>{text}</Text>
     </View>
   );
 }
 
-function FeatureCard({ title, body }: { title: string; body: string }) {
+function Sparkline({ compact }: { compact?: boolean }) {
   return (
-    <View style={styles.featureCard} testID={`landing-feature-${title}`}>
-      <View style={styles.featureDot} />
-      <Text style={styles.featureTitle}>{title}</Text>
-      <Text style={styles.featureBody}>{body}</Text>
+    <View style={[styles.sparkline, compact && styles.sparklineCompact]} testID="landing-hero-sparkline">
+      {SPARK_BARS.map((h, i) => (
+        <View key={i} style={[styles.sparkBar, { height: compact ? h * 0.8 : h }]} />
+      ))}
+    </View>
+  );
+}
+
+// Pen floating hero chip `星街すいせい UR · 近 7 日均價` — shared between the
+// desktop hero overlay and the mobile hero card.
+function HeroPriceChip({ mobile }: { mobile?: boolean }) {
+  return (
+    <View
+      style={[styles.heroPriceChip, mobile ? styles.heroPriceChipMobile : styles.heroPriceChipFloating]}
+      testID="landing-hero-price-chip"
+    >
+      <Text style={styles.heroChipLabel}>星街すいせい UR · 近 7 日均價</Text>
+      <View style={styles.heroPriceRow}>
+        <Text style={styles.heroPriceValue}>NT$ 3,600</Text>
+        <View style={styles.deltaChip}>
+          <Text style={styles.deltaChipText}>↗ 12.4%</Text>
+        </View>
+        {!mobile && <Sparkline compact />}
+      </View>
+      {mobile && <Sparkline />}
+      {mobile && <Text style={styles.heroChipSource}>資料來源：遊々亭 · 固定匯率換算</Text>}
+    </View>
+  );
+}
+
+function PriceChartCard({ desktop }: { desktop: boolean }) {
+  const chartHeight = desktop ? 180 : 120;
+  return (
+    <View style={[styles.chartCard, desktop && styles.chartCardDesktop]} testID="landing-price-chart">
+      <View style={styles.chartHeader}>
+        <Image
+          source={HERO_CARD_ART.secondary}
+          resizeMode="cover"
+          style={styles.chartThumb}
+          accessibilityRole="image"
+          accessibilityLabel="hBP01-081 UR 星街すいせい"
+        />
+        <View style={styles.chartHeaderCopy}>
+          <Text style={styles.chartTitle} numberOfLines={1}>星街すいせい / UR</Text>
+          <Text style={styles.chartSubtitle} numberOfLines={1}>hBP01-081 · 遊々亭 參考售價</Text>
+        </View>
+        <View style={styles.timeframes} testID="landing-price-timeframes">
+          {(['7D', '30D', '90D'] as const).map((tf) => {
+            const active = desktop ? tf === '30D' : tf === '7D';
+            return (
+              <View key={tf} style={[styles.timeframe, active && styles.timeframeActive]}>
+                <Text style={[styles.timeframeText, active && styles.timeframeTextActive]}>{tf}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+      <View style={styles.chartPriceRow}>
+        <Text style={[styles.chartPrice, desktop && styles.chartPriceDesktop]}>NT$ 3,600</Text>
+        <View style={styles.deltaChip}>
+          <Text style={styles.deltaChipText}>↗ +12.4% 對比前 7 日</Text>
+        </View>
+      </View>
+      <View style={[styles.chartBars, { height: chartHeight + 22 }]}>
+        {CHART_BARS.map((ratio, i) => {
+          const hot = i === CHART_BARS.length - 1;
+          return (
+            <View key={i} style={styles.chartBarSlot}>
+              {hot && <Text style={styles.chartBarValue}>3,600</Text>}
+              <View
+                style={[
+                  styles.chartBar,
+                  { height: Math.round(ratio * chartHeight) },
+                  hot ? GRAD.chartBarHot : null,
+                ]}
+              />
+            </View>
+          );
+        })}
+      </View>
+      <View style={styles.chartXAxis}>
+        {CHART_X_LABELS.map((l) => (
+          <Text key={l} style={styles.chartXLabel}>{l}</Text>
+        ))}
+      </View>
+      {desktop ? (
+        <View style={styles.chartCells}>
+          <View style={styles.chartCell}>
+            <Text style={styles.chartCellLabel}>買入成本</Text>
+            <Text style={styles.chartCellValue}>NT$ 3,600</Text>
+          </View>
+          <View style={[styles.chartCell, styles.chartCellComing]} testID="landing-price-coming-buyback">
+            <Text style={styles.chartCellLabelComing}>店家收購</Text>
+            <Text style={styles.chartCellComingValue}>即將推出</Text>
+          </View>
+          <View style={[styles.chartCell, styles.chartCellComing]} testID="landing-price-coming-spread">
+            <Text style={styles.chartCellLabelComing}>買賣差價</Text>
+            <Text style={styles.chartCellComingValue}>即將推出</Text>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.chartCellsMobile}>
+          <View style={styles.chartRowMobile}>
+            <Text style={styles.chartCellLabel}>買入成本（遊々亭參考售價）</Text>
+            <Text style={styles.chartCellValue}>NT$ 3,600</Text>
+          </View>
+          <View style={[styles.chartRowMobile, styles.chartRowMobileComing]} testID="landing-price-coming-buyback">
+            <Text style={styles.chartCellLabelComing}>店家收購</Text>
+            <Text style={styles.chartCellComingValue}>即將推出</Text>
+          </View>
+          <View style={[styles.chartRowMobile, styles.chartRowMobileComing]} testID="landing-price-coming-forecast">
+            <Text style={styles.chartCellLabelComing}>價格趨勢預測</Text>
+            <Text style={styles.chartCellComingValue}>即將推出</Text>
+          </View>
+        </View>
+      )}
+      {desktop && (
+        <View style={styles.chartFootnote} testID="landing-price-coming-forecast">
+          <Text style={styles.chartFootnoteTitle}>價格趨勢預測（即將推出）</Text>
+          <Text style={styles.chartFootnoteBody} numberOfLines={2}>
+            上線後將依公開因子與資料範圍，不會用未上線的預測值取代實際成交價。
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function DeckPanel({ desktop }: { desktop: boolean }) {
+  return (
+    <View style={[styles.deckPanel, desktop && styles.deckPanelDesktop]} testID="landing-deck-panel">
+      <View style={styles.deckHeader}>
+        <View style={styles.deckHeaderCopy}>
+          <Text style={styles.deckTitle}>白上フブキ Buzz</Text>
+          <View style={styles.deckDraftRow}>
+            <View style={styles.deckDraftPill}><Text style={styles.deckDraftPillText}>草稿</Text></View>
+            <Text style={styles.deckSubtitle}>尚未完成，還有 2 項需要調整</Text>
+          </View>
+        </View>
+        <View style={styles.deckEstimate}>
+          <Text style={styles.deckEstimateLabel}>缺卡預估總額</Text>
+          <Text style={styles.deckEstimateValue}>NT$ 2,140</Text>
+        </View>
+      </View>
+      <View style={styles.deckRows}>
+        {DECK_ROWS.map((row) => (
+          <View key={row.name} style={styles.deckRow} testID={`landing-deck-row-${row.name}`}>
+            <View style={styles.deckRowTop}>
+              <Text style={styles.deckRowName} numberOfLines={1}>{row.name}</Text>
+              <Text style={styles.deckRowCount}>有 {row.have} / 需 {row.need}</Text>
+            </View>
+            <View style={styles.deckTrack}>
+              <View
+                style={[
+                  styles.deckFill,
+                  { width: `${Math.round((row.have / row.need) * 100)}%`, backgroundColor: row.color },
+                ]}
+              />
+            </View>
+          </View>
+        ))}
+      </View>
+      <View style={styles.deckDivider} />
+      <View style={styles.deckMissingRow}>
+        <Text style={styles.deckMissingTitle}>還缺的 7 張</Text>
+        <Text style={styles.deckCheapLink}>套用低價版本 ⚒</Text>
+      </View>
+      <View style={styles.deckTiles}>
+        {Array.from({ length: desktop ? 9 : 4 }).map((_, i) => (
+          <View key={i} style={styles.deckTile}><Text style={styles.deckTilePlus}>＋</Text></View>
+        ))}
+      </View>
     </View>
   );
 }
 
 export default function LandingScreen() {
-  const { t } = useTranslation();
-  const { width } = useBreakpoint();
+  const { width, isWide } = useBreakpoint();
   const isDesktop = width >= 768;
+  // Pen `z5AkG` lays the tilted trio on a fixed 640×560 canvas; scale it
+  // down proportionally between 768 and 1440 so nothing clips.
+  const heroVisualScale = Math.min(1, Math.max(0.52, (width * 0.46) / 640));
   const { continueAsGuest, loginWithGoogle, isLoading, error, clearError } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Pen FAQ accordion — desktop opens the first item (frame `VfmUx`),
+  // mobile shows every answer (frame `QNfNX`). Real expand/collapse state.
+  const [faqOpen, setFaqOpen] = useState<boolean[]>(() => FAQ.map((_, i) => (width >= 768 ? i === 0 : true)));
+  const toggleFaq = useCallback((i: number) => {
+    setFaqOpen((prev) => prev.map((open, j) => (j === i ? !open : open)));
+  }, []);
 
   const handleGuest = useCallback(async () => {
     try { await continueAsGuest(); } catch {}
   }, [continueAsGuest]);
 
-  // Google login is gated by the same fail-closed OAuth-provisioning flow
-  // the rest of the app uses. Under the Pen's truthful "coming soon"
-  // framing, we still call `loginWithGoogle()` when the CTA is tapped: if
-  // the provider is provisioned it works, and if it is not the auth
-  // store surfaces a friendly error the "coming soon" pill already warns
-  // the user about.
+  // Google login rides the same fail-closed OAuth-provisioning flow as
+  // the rest of the app: tapping the "coming soon" CTA still calls
+  // `loginWithGoogle()` — provisioned providers work, unprovisioned ones
+  // surface the auth store's friendly error.
   const handleGoogle = useCallback(async () => {
     try { await loginWithGoogle(); } catch {}
   }, [loginWithGoogle]);
@@ -323,6 +484,8 @@ export default function LandingScreen() {
     ? '訪客可查卡與看規則 · 掃描與本機收藏需登入（Google 登入即將推出；跨裝置同步僅限啟用同步的建構）'
     : '訪客可查卡與看規則 · 掃描與本機收藏需登入（Google／Apple 登入即將推出；跨裝置同步僅限啟用同步的建構）';
 
+  const googleCtaLabel = isDesktop ? '使用 Google 帳號開始（即將推出）' : '⧖  使用 Google 帳號（即將推出）';
+
   return (
     <SafeAreaView style={styles.container} testID="landing-screen">
       <ScrollView
@@ -331,23 +494,24 @@ export default function LandingScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* NAV — Pen `avS3j` desktop / `bDwDO` mobile */}
-        <View
-          style={[styles.nav, isDesktop && styles.navDesktop]}
-          testID="landing-nav"
-        >
+        <View style={[styles.nav, isDesktop && styles.navDesktop]} testID="landing-nav">
           <View style={styles.navBrand}>
-            <View style={styles.brandMark} />
+            <View style={[styles.brandMark, GRAD.brandTile]}>
+              <Text style={styles.brandMarkGlyph}>✦</Text>
+            </View>
             <Text style={styles.brandText}>HoloHunter</Text>
           </View>
           {isDesktop ? (
             <>
-              <View style={styles.navLinks} testID="landing-nav-links">
-                {NAV_LINKS.map((link) => (
-                  <TouchableOpacity key={link} style={styles.navLinkTap} accessibilityRole="link" onPress={handleGuest}>
-                    <Text style={styles.navLink}>{link}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {isWide && (
+                <View style={styles.navLinks} testID="landing-nav-links">
+                  {NAV_LINKS.map((link) => (
+                    <TouchableOpacity key={link} style={styles.navLinkTap} accessibilityRole="link" onPress={handleGuest}>
+                      <Text style={styles.navLink}>{link}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
               <View style={styles.navActions}>
                 <TouchableOpacity
                   style={styles.navGuestLink}
@@ -366,7 +530,7 @@ export default function LandingScreen() {
                   testID="landing-nav-cta"
                 >
                   {isLoading ? (
-                    <ActivityIndicator color="#fff" size="small" />
+                    <ActivityIndicator color={T.bg} size="small" />
                   ) : (
                     <Text style={styles.navCtaText}>登入</Text>
                   )}
@@ -396,11 +560,16 @@ export default function LandingScreen() {
           </View>
         )}
 
-        {/* HERO — Pen `Rlx6E` desktop / `LX2IZ` mobile */}
-        <View style={[styles.section, styles.hero, isDesktop && styles.heroDesktop]} testID="landing-hero">
+        {/* HERO — Pen `Rlx6E` desktop / `LX2IZ` mobile, radial glow backdrop */}
+        <View
+          style={[styles.section, styles.hero, GRAD.heroGlow, isDesktop && styles.heroDesktop]}
+          testID="landing-hero"
+        >
           <View style={styles.heroCopy}>
             <View style={styles.eyebrowPill}>
-              <View style={styles.pillBadge} />
+              <View style={[styles.eyebrowBadge, GRAD.ctaPill]}>
+                <Text style={styles.eyebrowBadgeText}>hOCG</Text>
+              </View>
               <Text style={styles.pillText} numberOfLines={2}>{eyebrow}</Text>
             </View>
             <Text style={[styles.headline, isDesktop && styles.headlineDesktop]} testID="landing-headline">
@@ -411,7 +580,7 @@ export default function LandingScreen() {
             </Text>
             <View style={[styles.ctaRow, isDesktop && styles.ctaRowDesktop]} testID="landing-cta-row">
               <TouchableOpacity
-                style={[styles.ctaPrimary, isLoading && styles.ctaDisabled]}
+                style={[styles.ctaPrimary, GRAD.ctaPill, isLoading && styles.ctaDisabled]}
                 onPress={handleGuest}
                 disabled={isLoading}
                 accessibilityRole="button"
@@ -420,7 +589,7 @@ export default function LandingScreen() {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.ctaPrimaryText}>以訪客登入</Text>
+                  <Text style={styles.ctaPrimaryText}>以訪客登入{isDesktop ? '  →' : ''}</Text>
                 )}
               </TouchableOpacity>
               <TouchableOpacity
@@ -430,8 +599,10 @@ export default function LandingScreen() {
                 accessibilityRole="button"
                 testID="landing-cta-google"
               >
-                <ComingSoonPill text="即將推出" />
-                <Text style={styles.ctaGoogleText}>使用 Google 帳號</Text>
+                {isDesktop && (
+                  <View style={styles.googleBadge}><Text style={styles.googleBadgeText}>G</Text></View>
+                )}
+                <Text style={styles.ctaGoogleText}>{googleCtaLabel}</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.ctaNote} testID="landing-cta-note">
@@ -445,182 +616,267 @@ export default function LandingScreen() {
               </View>
             )}
           </View>
-          {isDesktop && (
-            <View style={styles.heroVisual} testID="landing-hero-visual">
-              {/* DIC-1381 W9 CR — accepted Pen three IMAGE-CARD hero
-                  (`z5AkG`). Card Left / Card Right / Card Center each
-                  carry an `image` fill in the Pen artifact anchored to
-                  `hBP01-023_UR`, `hBP02-013_UR`, `hBP01-081_UR`. The
-                  previous colour-strip stand-in was a Pen-conformance
-                  regression. Assets are bundled into the app (`assets/
-                  landing-cards/*.jpg`) so no external image request is
-                  fired from the Landing — the privacy-policy "no
-                  external images on Landing" contract stays intact.
-                  Rarity badges reflect the actual catalog rarity of each
-                  card and the price ribbon retains the market-data
-                  teaser DIC-1380 W7 wired. */}
-              <View style={styles.heroCardArt} testID="landing-hero-card-primary">
+          {isDesktop ? (
+            <View
+              style={[styles.heroVisual, { width: 640 * heroVisualScale, height: 560 * heroVisualScale }]}
+              testID="landing-hero-visual"
+            >
+              <View style={[styles.heroVisualCanvas, { transform: [{ scale: heroVisualScale }] }]}>
+              {/* Pen `z5AkG` — three tilted image cards over a glow bed,
+                  with the floating legality + price chips. Card Left /
+                  Center / Right carry the Pen-anchored image fills. */}
+              <View style={[styles.heroCard, styles.heroCardLeft]} testID="landing-hero-card-primary">
                 <Image
                   source={HERO_CARD_ART.primary}
                   resizeMode="cover"
-                  style={styles.heroCardArtImagePrimary}
+                  style={styles.heroCardImg}
                   accessibilityRole="image"
                   accessibilityLabel="hBP01-023 UR ときのそら"
                   testID="landing-hero-cardart-primary-art"
                 />
-                <View style={styles.heroCardArtBody}>
-                  <View style={styles.heroCardArtHeader}>
-                    <Text style={styles.heroCardArtName} numberOfLines={1}>ときのそら</Text>
-                    <View style={styles.heroCardArtRarityUR}><Text style={styles.heroCardArtRarityText}>UR</Text></View>
-                  </View>
-                  <Text style={styles.heroCardArtNumber}>hBP01-023</Text>
-                  <View style={styles.heroVisualPriceRow}>
-                    <Text style={styles.heroVisualPriceCompact}>NT$ 3,600</Text>
-                    <View style={styles.heroVisualDelta}>
-                      <Text style={styles.heroVisualDeltaText}>+2.4%</Text>
-                    </View>
-                  </View>
-                  <View style={styles.heroVisualSparkline} testID="landing-hero-sparkline">
-                    {[8, 12, 10, 14, 18, 16, 22, 20, 26, 24, 30, 28, 32, 34].map((h, i) => (
-                      <View key={i} style={[styles.heroVisualBar, { height: h }]} />
-                    ))}
-                  </View>
+                <View style={styles.heroCardMeta}>
+                  <Text style={styles.heroCardNumber}>hBP01-023</Text>
+                  <View style={styles.rarityBadge}><Text style={styles.rarityBadgeText}>UR</Text></View>
                 </View>
               </View>
-              <View style={styles.heroCardArtSecondary} testID="landing-hero-card-secondary">
+              <View style={[styles.heroCard, styles.heroCardCenter]} testID="landing-hero-card-secondary">
                 <Image
                   source={HERO_CARD_ART.secondary}
                   resizeMode="cover"
-                  style={styles.heroCardArtImageSecondary}
+                  style={styles.heroCardImg}
                   accessibilityRole="image"
                   accessibilityLabel="hBP01-081 UR 星街すいせい"
                   testID="landing-hero-cardart-secondary-art"
                 />
-                <View style={styles.heroCardArtBodySmall}>
-                  <View style={styles.heroCardArtHeader}>
-                    <Text style={styles.heroCardArtName} numberOfLines={1}>星街すいせい</Text>
-                    <View style={styles.heroCardArtRarityUR}><Text style={styles.heroCardArtRarityText}>UR</Text></View>
-                  </View>
-                  <Text style={styles.heroCardArtNumber}>hBP01-081</Text>
-                  <Text style={styles.heroVisualPriceSmall}>NT$ 1,180  ·  +0.6%</Text>
+                <View style={styles.heroCardMeta}>
+                  <Text style={styles.heroCardNumber}>hBP01-081</Text>
+                  <View style={styles.rarityBadge}><Text style={styles.rarityBadgeText}>UR</Text></View>
                 </View>
               </View>
-              <View style={styles.heroCardArtSecondary} testID="landing-hero-card-tertiary">
+              <View style={[styles.heroCard, styles.heroCardRight]} testID="landing-hero-card-tertiary">
                 <Image
                   source={HERO_CARD_ART.tertiary}
                   resizeMode="cover"
-                  style={styles.heroCardArtImageSecondary}
+                  style={styles.heroCardImg}
                   accessibilityRole="image"
                   accessibilityLabel="hBP02-013 UR 白上フブキ"
                   testID="landing-hero-cardart-tertiary-art"
                 />
-                <View style={styles.heroCardArtBodySmall}>
-                  <View style={styles.heroCardArtHeader}>
-                    <Text style={styles.heroCardArtName} numberOfLines={1}>白上フブキ</Text>
-                    <View style={styles.heroCardArtRarityUR}><Text style={styles.heroCardArtRarityText}>UR</Text></View>
-                  </View>
-                  <Text style={styles.heroCardArtNumber}>hBP02-013</Text>
-                  <Text style={styles.heroVisualPriceSmall}>NT$ 320  ·  +0.4%</Text>
+                <View style={styles.heroCardMeta}>
+                  <Text style={styles.heroCardNumber}>hBP02-013</Text>
+                  <View style={styles.rarityBadge}><Text style={styles.rarityBadgeText}>UR</Text></View>
                 </View>
               </View>
+              <View style={styles.legalityChip} testID="landing-hero-legality">
+                <View style={styles.legalityRing} />
+                <View>
+                  <Text style={styles.heroChipLabel}>主牌組合法性</Text>
+                  <Text style={styles.legalityValue}>43 / 50 · 還缺 7 張</Text>
+                </View>
+              </View>
+              <HeroPriceChip />
+              </View>
             </View>
+          ) : (
+            <HeroPriceChip mobile />
           )}
         </View>
 
-        {/* STATS BAR — Pen `vfBpS` desktop / `ufjjN` mobile */}
-        <View style={[styles.section, styles.statsBar, isDesktop && styles.statsBarDesktop]} testID="landing-stats-bar">
-          {STATS.map((s) => <StatCard key={s.label} value={s.value} label={s.label} mobile={!isDesktop} />)}
+        {/* STATS BAR — Pen `vfBpS` / `ufjjN`: flat columns, no card chrome */}
+        <View style={[styles.statsBar, isDesktop && styles.statsBarDesktop]} testID="landing-stats-bar">
+          {STATS.map((s) => (
+            <View key={s.label} style={styles.statCol} testID={`landing-stat-${s.label}`}>
+              <Text style={[styles.statValue, isDesktop && styles.statValueDesktop]} numberOfLines={1}>{s.value}</Text>
+              <Text style={styles.statLabel} numberOfLines={2}>{isDesktop ? s.label : s.mobileLabel}</Text>
+            </View>
+          ))}
         </View>
 
-        {/* FEATURES — Pen `GAolm` desktop / `r41z2` mobile */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-features">
-          <Text style={styles.eyebrowLabel}>App 功能</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            從查一張卡，{isDesktop ? '\n' : ''}到帶一副牌組出門
-          </Text>
-          <Text style={styles.sectionSubhead}>
-            HoloHunter 把卡表、行情、掃描、組牌與賽事資料接成一條動線，不用在拍賣網站、官方卡表和自己的試算表之間來回切換。
-          </Text>
-          <View style={[styles.featureGrid, isDesktop && styles.featureGridDesktop]}>
-            {FEATURES.map((f) => <FeatureCard key={f.title} title={f.title} body={f.body} />)}
+        {/* FEATURES — Pen `GAolm` bento / `r41z2` mobile list */}
+        <View style={[styles.sectionBlock, isDesktop && styles.sectionBlockDesktop]} testID="landing-features">
+          <View style={[styles.sectionHeader, isDesktop && styles.sectionHeaderLeft]}>
+            <SectionPill text="App 功能" tint={T.accent} />
+            <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+              從查一張卡，{'\n'}到帶一副牌組出門
+            </Text>
+            <Text style={styles.sectionSubhead}>
+              HoloHunter 把卡表、行情、掃描、組牌與賽事資料接成一條動線，不用在拍賣網站、官方卡表和自己的試算表之間來回切換。
+            </Text>
+          </View>
+          <View style={[styles.bento, isDesktop && styles.bentoDesktop]}>
+            <View style={[styles.bentoRow, isDesktop && styles.bentoRowDesktop]}>
+              {/* Search mockup card — Pen `hUcaS` first cell */}
+              <View
+                style={[styles.bentoCard, styles.searchCard, isDesktop && styles.searchCardDesktop]}
+                testID="landing-feature-search-mockup"
+              >
+                <Text style={styles.bentoTitle}>八個條件疊加的卡牌檢索</Text>
+                <Text style={styles.bentoBody}>
+                  卡名、卡號、效果內文全文檢索，再疊加卡牌種類、顏色、稀有度、收錄彈數與異圖／平行篩選。中日文卡名都能搜。
+                </Text>
+                <View style={styles.searchMockBox}>
+                  <Text style={styles.searchMockGlyph}>⌕</Text>
+                  <Text style={styles.searchMockQuery}>すいせい</Text>
+                  <Text style={styles.searchMockCaret}>|</Text>
+                </View>
+                <View style={styles.searchMockChips}>
+                  {SEARCH_MOCK_CHIPS.map((chip) => (
+                    <View
+                      key={chip.label}
+                      style={[
+                        styles.searchChip,
+                        chip.active && styles.searchChipActive,
+                        chip.outlined && styles.searchChipOutlined,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.searchChipText,
+                          chip.active && styles.searchChipTextActive,
+                          chip.outlined && styles.searchChipTextOutlined,
+                        ]}
+                      >
+                        {chip.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.searchMockGrid}>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <View key={i} style={styles.searchMockTile} />
+                  ))}
+                </View>
+              </View>
+              {isDesktop && (
+                <View style={styles.bentoSide}>
+                  {FEATURES.slice(0, 2).map((f) => (
+                    <View
+                      key={f.key}
+                      style={[styles.bentoCard, styles.bentoSideCard, f.gradient]}
+                      testID={`landing-feature-${f.title}`}
+                    >
+                      <View style={[styles.featureIconTile, { backgroundColor: `${f.tint}1F`, borderColor: `${f.tint}4D` }]}>
+                        <Text style={[styles.featureIconGlyph, { color: f.tint }]}>{f.glyph}</Text>
+                      </View>
+                      <Text style={styles.bentoTitle}>{f.title}</Text>
+                      <Text style={styles.bentoBody}>{f.body}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+            <View style={[styles.bentoRow, isDesktop && styles.bentoRowDesktop]}>
+              {(isDesktop ? FEATURES.slice(2) : FEATURES).map((f) => (
+                <View
+                  key={f.key}
+                  style={[styles.bentoCard, isDesktop ? styles.bentoThird : styles.bentoMobileCard, !isDesktop && f.gradient]}
+                  testID={`landing-feature-${f.title}`}
+                >
+                  <View style={[styles.featureIconTile, { backgroundColor: `${f.tint}1F`, borderColor: `${f.tint}4D` }]}>
+                    <Text style={[styles.featureIconGlyph, { color: f.tint }]}>{f.glyph}</Text>
+                  </View>
+                  <Text style={styles.bentoTitle}>{f.title}</Text>
+                  <Text style={styles.bentoBody}>{f.body}</Text>
+                </View>
+              ))}
+            </View>
           </View>
         </View>
 
-        {/* PRICE — Pen `k6Plv` desktop / `izpcw` mobile.
-            Accepted Pen composition anchors Price DIRECTLY after Features
-            (Nav → Hero → Stats → Features → PRICE → Collection/Deck →
-            How-It-Works → Plans → FAQ → Final CTA → Footer). Any deviation
-            here is a Pen-conformance regression the DIC-1381 W9 CR named. */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-price">
-          <Text style={styles.eyebrowLabel}>市場價格</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            NT$ · ¥ · $ 三幣別同時看
-          </Text>
-          <Text style={styles.sectionSubhead}>
-            遊々亭參考行情每日刷新；每張卡同時列出台幣、日圓與美元換算，並附近 7 日的漲跌方向。
-          </Text>
-          <View style={[styles.priceList, isDesktop && styles.priceListDesktop]}>
-            {PRICE_ROWS.map((row) => <PriceRow key={row.number} {...row} />)}
-          </View>
-          <Text style={styles.priceListNote}>
-            資料來源：遊々亭 · 固定匯率換算 · Store MVP 版本 UI 直接使用免費會員範圍
-          </Text>
-        </View>
-
-        {/* COLLECTION / DECK — Pen `KXeLu` desktop / `a7oRL` mobile.
-            Sits after Price and before How-It-Works. */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-collection-preview">
-          <Text style={styles.eyebrowLabel}>資料範圍</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            從卡表到市價，一次到位
-          </Text>
-          <Text style={styles.sectionSubhead}>
-            官方卡表、市價、規則教學、賽事月報都由同一個資料庫供應。跨裝置同步僅在啟用同步功能的建構中生效。
-          </Text>
-          <View style={[styles.collectionGrid, isDesktop && styles.collectionGridDesktop]}>
-            {COLLECTION_HIGHLIGHTS.map((c) => <CollectionCard key={c.title} title={c.title} body={c.body} />)}
+        {/* PRICE — Pen `k6Plv` desktop split / `izpcw` mobile stack */}
+        <View style={[styles.sectionBlock, isDesktop && styles.sectionBlockDesktop]} testID="landing-price">
+          <View style={[styles.splitRow, isDesktop && styles.splitRowDesktop]}>
+            <View style={[styles.splitCopy, isDesktop && styles.splitCopyDesktop]}>
+              <SectionPill text="市場價格" tint={T.accent2} />
+              <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+                這張現在該買，{isDesktop ? '\n' : ''}還是再等一下
+              </Text>
+              <Text style={styles.sectionSubhead}>
+                接遊々亭的實際售價，並拿前 7 日與近 7 日均價相比。價格可切換新台幣、日圓或美元（固定匯率）顯示。買賣差價與趨勢預測會逐步推出。
+              </Text>
+              {isDesktop && (
+                <View style={styles.bulletList}>
+                  {PRICE_BULLETS.map((b) => <CheckRow key={b} text={b} tint={T.accent2} />)}
+                </View>
+              )}
+            </View>
+            <PriceChartCard desktop={isDesktop} />
           </View>
         </View>
 
-        {/* HOW IT WORKS — Pen `ZpbU9` desktop / `D9WZMO` mobile.
-            Sits after Collection/Deck and before Plans. */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-how-it-works">
-          <Text style={styles.eyebrowLabel}>操作流程</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            三步驟開始使用
-          </Text>
+        {/* DECK — Pen `KXeLu` desktop split / `a7oRL` mobile stack */}
+        <View style={[styles.sectionBlock, isDesktop && styles.sectionBlockDesktop]} testID="landing-collection-preview">
+          <View style={[styles.splitRow, isDesktop && styles.splitRowDesktopReverse]}>
+            <View style={[styles.splitCopy, isDesktop && styles.splitCopyDesktop]}>
+              <SectionPill text="牌組編輯器" tint={T.accent3} />
+              <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+                組完牌，順便{'\n'}知道還要再花多少
+              </Text>
+              <Text style={styles.sectionSubhead}>
+                邊組邊檢查主牌組 50 張與同名張數上限，不合規的地方會直接列出來。缺的卡自動整理成清單，用遊々亭售價估出總額，還能一鍵套用較便宜的版本。
+              </Text>
+              {isDesktop && (
+                <View style={styles.bulletList}>
+                  {DECK_BULLETS.map((b) => <CheckRow key={b} text={b} tint={T.accent3} />)}
+                </View>
+              )}
+            </View>
+            <DeckPanel desktop={isDesktop} />
+          </View>
+        </View>
+
+        {/* HOW IT WORKS — Pen `ZpbU9` / `D9WZMO` */}
+        <View style={[styles.sectionBlock, styles.sectionCentered, isDesktop && styles.sectionBlockDesktop]} testID="landing-how-it-works">
+          <View style={[styles.sectionHeader, isDesktop && styles.sectionHeaderCentered]}>
+            <SectionPill text="開始使用" tint={T.accent} />
+            <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop, isDesktop && styles.textCenter]}>
+              三個步驟，從查卡到出賽
+            </Text>
+            <Text style={[styles.sectionSubhead, isDesktop && styles.textCenter]}>
+              瀏覽器打開就能用，不用安裝。想先看看的話，訪客模式一樣能查卡、讀規則教學與跑模擬戰。
+            </Text>
+          </View>
           <View style={[styles.howGrid, isDesktop && styles.howGridDesktop]}>
-            {HOW_IT_WORKS.map((s) => <HowStep key={s.step} step={s.step} title={s.title} body={s.body} />)}
+            {HOW_IT_WORKS.map((s) => (
+              <View key={s.step} style={styles.howStep} testID={`landing-how-${s.step}`}>
+                <View style={styles.howStepHeader}>
+                  <View style={[styles.howStepChip, { backgroundColor: `${s.tint}26`, borderColor: `${s.tint}59` }]}>
+                    <Text style={[styles.howStepNumber, { color: s.tint }]}>{s.step}</Text>
+                  </View>
+                  <Text style={styles.howStepTitle}>{s.title}</Text>
+                </View>
+                <Text style={styles.howStepBody}>{s.body}</Text>
+              </View>
+            ))}
           </View>
         </View>
 
-        {/* PLANS — Pen `mcRLH` desktop / `MPyoM` mobile */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-plans">
-          <Text style={styles.eyebrowLabel}>方案</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            只有掃描有額度，其他都免費
-          </Text>
-          <Text style={styles.sectionSubhead}>
-            查詢、收藏、組牌、賽事月報與規則教學都不收費。卡片辨識掃描每月 100 次。訂閱付費暫未開放。
-          </Text>
+        {/* PLANS — Pen `mcRLH` / `MPyoM` */}
+        <View style={[styles.sectionBlock, styles.sectionCentered, isDesktop && styles.sectionBlockDesktop]} testID="landing-plans">
+          <View style={[styles.sectionHeader, isDesktop && styles.sectionHeaderCentered]}>
+            <SectionPill text="方案" tint={T.accent2} />
+            <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop, isDesktop && styles.textCenter]}>
+              只有掃描有額度，其他都免費
+            </Text>
+            <Text style={[styles.sectionSubhead, isDesktop && styles.textCenter]}>
+              查詢、收藏、組牌、賽事月報與規則教學都不收費。卡片辨識掃描每月 100 次。訂閱付費暫未開放。
+            </Text>
+          </View>
           <View style={[styles.plansGrid, isDesktop && styles.plansGridDesktop]}>
             <View style={styles.planCard} testID="landing-plan-free">
-              <Text style={styles.planTitle}>免費會員</Text>
-              <Text style={styles.planTagline}>不用付費，登入即可使用</Text>
-              <View style={styles.planPriceRow}>
-                <Text style={styles.planPrice}>NT$ 0</Text>
-                <Text style={styles.planPricePeriod}>/ 月</Text>
+              <View style={styles.planHeaderRow}>
+                <Text style={styles.planTitle}>免費會員</Text>
+                {!isDesktop && (
+                  <View style={styles.planOnlyPill}><Text style={styles.planOnlyPillText}>目前唯一方案</Text></View>
+                )}
               </View>
+              <Text style={styles.planTagline}>不用付費，登入即可使用</Text>
+              <View style={styles.planDivider} />
               <View style={styles.planFeatureList}>
-                {FREE_FEATURES.map((f) => (
-                  <View key={f} style={styles.planFeatureRow}>
-                    <Text style={styles.planFeatureCheck}>✓</Text>
-                    <Text style={styles.planFeatureText}>{f}</Text>
-                  </View>
-                ))}
+                {FREE_FEATURES.map((f) => <CheckRow key={f} text={f} tint={T.accent2} />)}
               </View>
               <TouchableOpacity
-                style={[styles.ctaPrimary, styles.planCta, isLoading && styles.ctaDisabled]}
+                style={[styles.ctaPrimary, GRAD.ctaPill, styles.planCta, isLoading && styles.ctaDisabled]}
                 onPress={handleGuest}
                 disabled={isLoading}
                 accessibilityRole="button"
@@ -629,27 +885,26 @@ export default function LandingScreen() {
                 <Text style={styles.ctaPrimaryText}>以訪客登入</Text>
               </TouchableOpacity>
             </View>
-            <View style={[styles.planCard, styles.planCardComingSoon]} testID="landing-plan-pro">
+            <View style={[styles.planCard, styles.planCardComingSoon, GRAD.subCardTint]} testID="landing-plan-pro">
               <View style={styles.planHeaderRow}>
-                <Text style={styles.planTitle}>Pro（規劃中）</Text>
+                <Text style={styles.planTitle}>訂閱會員</Text>
                 <ComingSoonPill text="即將推出" />
               </View>
               <Text style={styles.planTagline}>訂閱與付費升級尚未開放；目前所有功能均為免費會員範圍。</Text>
-              <View style={styles.planPriceRow}>
-                <Text style={styles.planPriceComing}>金額待訂</Text>
-                <Text style={styles.planPricePeriod}>Store API 動態載入</Text>
-              </View>
+              <View style={styles.planDivider} />
               <View style={styles.planFeatureList}>
                 {COMING_SOON_FEATURES.map((f) => (
-                  <View key={f} style={styles.planFeatureRow}>
-                    <Text style={[styles.planFeatureCheck, styles.planFeatureCheckComing]}>○</Text>
-                    <Text style={styles.planFeatureText}>{f}</Text>
+                  <View key={f} style={styles.checkRow}>
+                    <View style={[styles.checkDot, styles.checkDotComing]}>
+                      <Text style={[styles.checkGlyph, { color: T.comingSoonFg }]}>✓</Text>
+                    </View>
+                    <Text style={[styles.checkText, styles.checkTextComing]}>{f}</Text>
                   </View>
                 ))}
               </View>
               <TouchableOpacity
                 style={[styles.planCta, styles.planCtaSecondary]}
-                onPress={() => Linking.openURL('https://holohunter.dicoge.com/pricing.html').catch(() => {})}
+                onPress={() => openUrl(LEGAL.pricing)}
                 accessibilityRole="button"
                 testID="landing-plan-pro-cta"
               >
@@ -662,74 +917,153 @@ export default function LandingScreen() {
           </Text>
         </View>
 
-        {/* FAQ — Pen additional section (DIC-1380 W6 CR full parity) */}
-        <View style={[styles.section, isDesktop && styles.sectionDesktop]} testID="landing-faq">
-          <Text style={styles.eyebrowLabel}>常見問題</Text>
-          <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            上線前你可能會想問的
-          </Text>
-          <View style={styles.faqGrid}>
-            {FAQ.map((f) => <FaqItem key={f.q} q={f.q} a={f.a} />)}
+        {/* FAQ — Pen `e2W4Rq` split accordion / `QNfNX` mobile cards */}
+        <View style={[styles.sectionBlock, isDesktop && styles.sectionBlockDesktop]} testID="landing-faq">
+          <View style={[styles.splitRow, isDesktop && styles.splitRowDesktop]}>
+            <View style={[styles.splitCopy, isDesktop && styles.faqCopyDesktop]}>
+              <SectionPill text="常見問題" tint={T.accent} />
+              <Text style={[styles.sectionHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
+                開始之前{'\n'}你可能想問
+              </Text>
+              <Text style={styles.sectionSubhead}>還有其他問題，可以從 App 的設定頁聯絡我們。</Text>
+              <TouchableOpacity
+                style={styles.faqContactLink}
+                onPress={() => openUrl(LEGAL.support)}
+                accessibilityRole="link"
+                testID="landing-faq-contact"
+              >
+                <Text style={styles.faqContactText}>◌ 設定 → 聯絡我們</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.faqList, isDesktop && styles.faqListDesktop]}>
+              {FAQ.map((f, i) => (
+                <View
+                  key={f.q}
+                  style={[styles.faqItem, !isDesktop && styles.faqItemMobile, isDesktop && i > 0 && styles.faqItemDivided]}
+                  testID={`landing-faq-item-${i}`}
+                >
+                  <TouchableOpacity
+                    style={styles.faqQuestionRow}
+                    onPress={() => toggleFaq(i)}
+                    accessibilityRole="button"
+                    testID={`landing-faq-toggle-${i}`}
+                  >
+                    <Text style={styles.faqQuestion}>{f.q}</Text>
+                    <Text style={styles.faqToggleGlyph}>{faqOpen[i] ? (isDesktop ? '−' : '⌃') : (isDesktop ? '＋' : '⌄')}</Text>
+                  </TouchableOpacity>
+                  {faqOpen[i] && <Text style={styles.faqAnswer}>{f.a}</Text>}
+                </View>
+              ))}
+            </View>
           </View>
         </View>
 
-        {/* FINAL CTA — Pen additional closing section (DIC-1380 W6 CR full parity) */}
-        <View style={[styles.section, styles.finalCta, isDesktop && styles.sectionDesktop]} testID="landing-final-cta">
-          <Text style={[styles.sectionHeadline, styles.finalCtaHeadline, isDesktop && styles.sectionHeadlineDesktop]}>
-            開始查卡與組牌
-          </Text>
-          <Text style={styles.sectionSubhead}>
-            訪客可查卡與看規則，登入後可掃描並在本機收藏；跨裝置同步僅在啟用同步功能的建構中運作，Store MVP 上架版本為本機儲存。付費訂閱尚未開放。
-          </Text>
-          <View style={[styles.ctaRow, isDesktop && styles.ctaRowDesktop]}>
-            <TouchableOpacity
-              style={[styles.ctaPrimary, isLoading && styles.ctaDisabled]}
-              onPress={handleGuest}
-              disabled={isLoading}
-              accessibilityRole="button"
-              testID="landing-final-cta-guest"
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.ctaPrimaryText}>以訪客登入</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.ctaGoogle}
-              onPress={handleGoogle}
-              disabled={isLoading}
-              accessibilityRole="button"
-              testID="landing-final-cta-google"
-            >
-              <ComingSoonPill text="即將推出" />
-              <Text style={styles.ctaGoogleText}>使用 Google 帳號</Text>
-            </TouchableOpacity>
+        {/* FINAL CTA — Pen `P8bPbJ` gradient card */}
+        <View style={[styles.sectionBlock, isDesktop && styles.sectionBlockDesktop]} testID="landing-final-cta">
+          <View style={[styles.finalCtaCard, GRAD.finalCta, isDesktop && styles.finalCtaCardDesktop]}>
+            <View style={[styles.finalCtaShape, styles.finalCtaShapeLeft]} />
+            <View style={[styles.finalCtaShape, styles.finalCtaShapeRight]} />
+            <Text style={[styles.sectionHeadline, styles.textCenter, isDesktop && styles.sectionHeadlineDesktop]}>
+              先從查一張卡開始
+            </Text>
+            <Text style={[styles.sectionSubhead, styles.textCenter, styles.finalCtaSub]}>
+              免費使用。目前僅開放訪客進入；Google／Apple 登入與跨裝置同步正在陸續推出。
+            </Text>
+            <View style={[styles.ctaRow, styles.finalCtaRow, isDesktop && styles.ctaRowDesktop]}>
+              <TouchableOpacity
+                style={[styles.ctaPrimary, GRAD.ctaPill, isLoading && styles.ctaDisabled]}
+                onPress={handleGuest}
+                disabled={isLoading}
+                accessibilityRole="button"
+                testID="landing-final-cta-guest"
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.ctaPrimaryText}>以訪客登入</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.ctaGoogle, styles.ctaGoogleOnGradient]}
+                onPress={handleGoogle}
+                disabled={isLoading}
+                accessibilityRole="button"
+                testID="landing-final-cta-google"
+              >
+                <Text style={styles.ctaGoogleText}>使用 Google 帳號（即將推出）{isDesktop ? '  →' : ''}</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.finalCtaNote}>非官方工具 · 卡牌圖像與名稱版權屬於原公司</Text>
           </View>
         </View>
 
-        {/* FOOTER — Pen `TldCK` desktop / `r86yeO` mobile */}
-        <View style={[styles.section, styles.footer, isDesktop && styles.footerDesktop]} testID="landing-footer">
-          <View style={styles.footerLinksRow}>
-            <TouchableOpacity onPress={() => Linking.openURL('https://holohunter.dicoge.com/terms.html').catch(() => {})} testID="landing-footer-terms">
-              <Text style={styles.footerLink}>服務條款</Text>
-            </TouchableOpacity>
-            <Text style={styles.footerSep}>·</Text>
-            <TouchableOpacity onPress={() => Linking.openURL('https://holohunter.dicoge.com/privacy.html').catch(() => {})} testID="landing-footer-privacy">
-              <Text style={styles.footerLink}>隱私權政策</Text>
-            </TouchableOpacity>
-            <Text style={styles.footerSep}>·</Text>
-            <TouchableOpacity onPress={() => Linking.openURL('https://holohunter.dicoge.com/pricing.html').catch(() => {})} testID="landing-footer-pricing">
-              <Text style={styles.footerLink}>訂閱方案</Text>
-            </TouchableOpacity>
-            <Text style={styles.footerSep}>·</Text>
-            <TouchableOpacity onPress={() => Linking.openURL('https://holohunter.dicoge.com/support.html').catch(() => {})} testID="landing-footer-support">
-              <Text style={styles.footerLink}>技術支援</Text>
-            </TouchableOpacity>
+        {/* FOOTER — Pen `TldCK` desktop columns / `r86yeO` mobile stack */}
+        <View style={[styles.footer, isDesktop && styles.footerDesktop]} testID="landing-footer">
+          <View style={[styles.footerTop, isDesktop && styles.footerTopDesktop]}>
+            <View style={styles.footerBrandBlock}>
+              <View style={styles.navBrand}>
+                <View style={[styles.brandMark, GRAD.brandTile]}>
+                  <Text style={styles.brandMarkGlyph}>✦</Text>
+                </View>
+                <Text style={styles.brandText}>HoloHunter</Text>
+              </View>
+              <Text style={styles.footerDesc}>
+                hololive OFFICIAL CARD GAME 的非官方查詢工具。卡表檢索、市場行情、掃描估值、牌組構築與賽事月報。與官方無隸屬關係。
+              </Text>
+            </View>
+            <View style={[styles.footerCols, isDesktop && styles.footerColsDesktop]}>
+              <View style={styles.footerCol}>
+                <Text style={styles.footerColTitle}>產品</Text>
+                {NAV_LINKS.slice(0, 4).map((label) => (
+                  <TouchableOpacity key={label} style={styles.footerItemTap} onPress={handleGuest} accessibilityRole="link">
+                    <Text style={styles.footerLink}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.footerCol}>
+                <Text style={styles.footerColTitle}>資源</Text>
+                <TouchableOpacity style={styles.footerItemTap} onPress={handleGuest} accessibilityRole="link">
+                  <Text style={styles.footerLink}>規則教學</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.footerItemTap} onPress={handleGuest} accessibilityRole="link">
+                  <Text style={styles.footerLink}>模擬實戰</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.footerItemTap} onPress={() => openUrl(LEGAL.pricing)} testID="landing-footer-pricing">
+                  <Text style={styles.footerLink}>訂閱方案</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.footerItemTap} onPress={() => openUrl(LEGAL.support)} testID="landing-footer-support">
+                  <Text style={styles.footerLink}>技術支援</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.footerCol}>
+                <Text style={styles.footerColTitle}>關於</Text>
+                <TouchableOpacity style={styles.footerItemTap} onPress={() => openUrl(LEGAL.support)}>
+                  <Text style={styles.footerLink}>聯絡我們</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.footerItemTap} onPress={() => openUrl(LEGAL.privacy)} testID="landing-footer-privacy">
+                  <Text style={styles.footerLink}>隱私權政策</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.footerItemTap} onPress={() => openUrl(LEGAL.terms)} testID="landing-footer-terms">
+                  <Text style={styles.footerLink}>服務條款</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-          <Text style={styles.footerCopy}>
-            © 2026 HoloHunter · 非官方工具，卡牌圖像與名稱版權屬於原公司
-          </Text>
+          <View style={[styles.footerBottom, isDesktop && styles.footerBottomDesktop]}>
+            <Text style={styles.footerCopy}>
+              © 2026 HoloHunter · 非官方工具，卡牌圖像與名稱版權屬於原公司
+            </Text>
+            {isDesktop && (
+              <View style={styles.footerBottomLinks}>
+                <TouchableOpacity onPress={() => openUrl(LEGAL.privacy)}>
+                  <Text style={styles.footerLink}>隱私權政策</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => openUrl(LEGAL.terms)}>
+                  <Text style={styles.footerLink}>服務條款</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -737,474 +1071,758 @@ export default function LandingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: TOKENS.bg },
+  container: { flex: 1, backgroundColor: T.bg },
   scroll: { flex: 1 },
-  scrollContent: { paddingBottom: TOKENS.safeMobile * 2 },
-  section: { paddingHorizontal: TOKENS.safeMobile, paddingVertical: 32, alignSelf: 'stretch' },
-  sectionDesktop: { paddingHorizontal: 40, alignItems: 'center' },
+  scrollContent: { paddingBottom: 0 },
+  section: { paddingHorizontal: LAYOUT.safeMobile, alignSelf: 'stretch' },
+  sectionBlock: { paddingHorizontal: LAYOUT.safeMobile, paddingVertical: 48, alignSelf: 'stretch' },
+  sectionBlockDesktop: {
+    paddingHorizontal: 56,
+    paddingVertical: 96,
+    maxWidth: LAYOUT.contentDesktop + 112,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  sectionCentered: {},
+  sectionHeader: { gap: 12, marginBottom: 28, alignItems: 'flex-start' },
+  sectionHeaderLeft: { maxWidth: 640 },
+  sectionHeaderCentered: { alignItems: 'center', alignSelf: 'center', maxWidth: 720 },
+  textCenter: { textAlign: 'center' },
 
   // ── NAV ─────────────────────────────────────────────────────────────
   nav: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: TOKENS.safeMobile,
+    paddingHorizontal: LAYOUT.safeMobile,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: TOKENS.border,
-    backgroundColor: TOKENS.bg,
+    borderBottomColor: T.border,
+    backgroundColor: T.bg,
   },
-  navDesktop: {
-    paddingHorizontal: 40,
-    minHeight: 76,
-  },
+  navDesktop: { paddingHorizontal: 56, minHeight: 76 },
   navBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brandMark: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: TOKENS.accent,
-  },
-  brandText: {
-    color: TOKENS.textPrimary,
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  navLinks: { flexDirection: 'row', alignItems: 'center', gap: 24, flex: 1, justifyContent: 'center' },
-  navLinkTap: { minHeight: TOKENS.minTouch, justifyContent: 'center', paddingHorizontal: 4 },
-  navLink: { color: TOKENS.textSecondary, fontSize: 14, fontWeight: '600' },
-  navActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  navGuestLink: { minHeight: TOKENS.minTouch, justifyContent: 'center', paddingHorizontal: 4 },
-  navGuestLinkText: { color: TOKENS.textSecondary, fontSize: 14, fontWeight: '600' },
-  navCta: {
-    minHeight: TOKENS.minTouch,
-    paddingHorizontal: 20,
-    borderRadius: 22,
-    backgroundColor: TOKENS.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navCtaText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  mobileMenuBtn: {
-    width: TOKENS.minTouch,
-    height: TOKENS.minTouch,
+    width: 28,
+    height: 28,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: TOKENS.surface,
+  },
+  brandMarkGlyph: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  brandText: {
+    color: T.textPrimary,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    fontFamily: displayFont,
+  },
+  navLinks: { flexDirection: 'row', alignItems: 'center', gap: 24, flex: 1, justifyContent: 'center' },
+  navLinkTap: { minHeight: LAYOUT.minTouch, justifyContent: 'center', paddingHorizontal: 4 },
+  navLink: { color: T.textSecondary, fontSize: 14, fontWeight: '600', fontFamily: bodyFont },
+  navActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  navGuestLink: { minHeight: LAYOUT.minTouch, justifyContent: 'center', paddingHorizontal: 4 },
+  navGuestLinkText: { color: T.textSecondary, fontSize: 14, fontWeight: '600', fontFamily: bodyFont },
+  // Pen `xFOCN` 登入 — white pill, dark label.
+  navCta: {
+    minHeight: LAYOUT.minTouch,
+    paddingHorizontal: 22,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navCtaText: { color: T.bg, fontSize: 14, fontWeight: '700', fontFamily: bodyFont },
+  mobileMenuBtn: {
+    width: LAYOUT.minTouch,
+    height: LAYOUT.minTouch,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: TOKENS.border,
+    borderColor: T.border,
   },
-  mobileMenuIcon: { color: TOKENS.textPrimary, fontSize: 22, fontWeight: '700' },
-  mobileMenu: {
-    borderBottomWidth: 1,
-    borderBottomColor: TOKENS.border,
-    backgroundColor: TOKENS.surface,
-  },
-  mobileMenuItem: { paddingHorizontal: TOKENS.safeMobile, minHeight: TOKENS.minTouch, justifyContent: 'center' },
-  mobileMenuItemText: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '600' },
+  mobileMenuIcon: { color: T.textPrimary, fontSize: 22, fontWeight: '700' },
+  mobileMenu: { borderBottomWidth: 1, borderBottomColor: T.border, backgroundColor: T.surface },
+  mobileMenuItem: { paddingHorizontal: LAYOUT.safeMobile, minHeight: LAYOUT.minTouch, justifyContent: 'center' },
+  mobileMenuItemText: { color: T.textPrimary, fontSize: 15, fontWeight: '600', fontFamily: bodyFont },
 
   // ── HERO ────────────────────────────────────────────────────────────
-  hero: { paddingVertical: 40, gap: 32 },
+  hero: { paddingVertical: 24, gap: 36, paddingBottom: 56 },
   heroDesktop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 48,
-    paddingVertical: 80,
-    maxWidth: TOKENS.contentDesktop,
-    alignSelf: 'center',
-    width: '100%',
+    paddingVertical: 72,
+    paddingHorizontal: 56,
   },
-  heroCopy: { flex: 1, gap: 20 },
+  heroCopy: { flex: 1, gap: 22, maxWidth: 640 },
   eyebrowPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: TOKENS.surface,
+    gap: 10,
+    paddingLeft: 6,
+    paddingRight: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: TOKENS.border,
+    borderColor: T.border,
     maxWidth: '100%',
   },
-  pillBadge: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: TOKENS.accent,
-  },
-  pillText: { color: TOKENS.textSecondary, fontSize: 12, fontWeight: '600', flexShrink: 1 },
+  eyebrowBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
+  eyebrowBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.6, fontFamily: displayFont },
+  pillText: { color: T.textSecondary, fontSize: 12, fontWeight: '600', flexShrink: 1, fontFamily: bodyFont },
   headline: {
-    color: TOKENS.textPrimary,
+    color: T.textPrimary,
     fontSize: 32,
-    lineHeight: 40,
+    lineHeight: 41,
     fontWeight: '800',
     letterSpacing: -0.4,
+    fontFamily: displayFont,
   },
-  headlineDesktop: { fontSize: 56, lineHeight: 64 },
+  headlineDesktop: { fontSize: 56, lineHeight: 68 },
   subhead: {
-    color: TOKENS.textSecondary,
+    color: T.textSecondary,
     fontSize: 15,
-    lineHeight: 24,
+    lineHeight: 25,
     fontWeight: '400',
+    fontFamily: bodyFont,
+    maxWidth: 560,
   },
-  ctaRow: { flexDirection: 'column', gap: 12, marginTop: 8 },
-  ctaRowDesktop: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
+  ctaRow: { flexDirection: 'column', gap: 12, marginTop: 8, alignSelf: 'stretch' },
+  ctaRowDesktop: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignSelf: 'flex-start' },
   ctaPrimary: {
-    minHeight: TOKENS.minTouch + 8,
-    paddingHorizontal: 24,
+    minHeight: LAYOUT.minTouch + 8,
+    paddingHorizontal: 28,
     borderRadius: 26,
-    backgroundColor: TOKENS.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: T.accent,
+    shadowOpacity: 0.4,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
-  ctaPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  ctaPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '700', fontFamily: bodyFont },
   ctaDisabled: { opacity: 0.6 },
   ctaGoogle: {
-    minHeight: TOKENS.minTouch + 8,
-    paddingHorizontal: 20,
+    minHeight: LAYOUT.minTouch + 8,
+    paddingHorizontal: 22,
     borderRadius: 26,
-    backgroundColor: TOKENS.surface,
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: TOKENS.border,
+    borderColor: T.border,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 10,
   },
-  ctaGoogleText: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '600' },
+  ctaGoogleOnGradient: { backgroundColor: 'rgba(8,8,15,0.6)', borderColor: 'rgba(246,246,251,0.22)' },
+  googleBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleBadgeText: { color: T.textPrimary, fontSize: 12, fontWeight: '800', fontFamily: displayFont },
+  ctaGoogleText: { color: T.textPrimary, fontSize: 15, fontWeight: '600', fontFamily: bodyFont },
   ctaNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 4 },
   ctaNoteIcon: { fontSize: 14, marginTop: 2 },
-  ctaNoteText: { color: TOKENS.textMuted, fontSize: 12, lineHeight: 18, flex: 1 },
+  ctaNoteText: { color: T.textMuted, fontSize: 12, lineHeight: 18, flex: 1, fontFamily: bodyFont },
 
-  heroVisual: {
-    width: 420,
-    maxWidth: '45%',
-    alignItems: 'stretch',
-    justifyContent: 'center',
-    gap: 12,
+  // Pen `z5AkG` hero visual — tilted trio + floating chips on a fixed
+  // 640×560 canvas, scaled to the viewport by the wrapper.
+  heroVisual: { position: 'relative', flexShrink: 0 },
+  heroVisualCanvas: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 640,
+    height: 560,
+    transformOrigin: 'top left',
   },
-  heroVisualCardSecondary: {
-    width: '100%',
-    backgroundColor: TOKENS.surface2,
-    borderRadius: 12,
-    padding: 14,
+  heroCard: {
+    position: 'absolute',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: TOKENS.border,
-    gap: 6,
-  },
-  heroVisualTitleSmall: { color: TOKENS.textSecondary, fontSize: 12, fontWeight: '600' },
-  heroVisualPriceRowSmall: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
-  heroVisualPriceSmall: { color: TOKENS.textPrimary, fontSize: 14, fontWeight: '700' },
-  heroVisualPriceCompact: { color: TOKENS.textPrimary, fontSize: 22, fontWeight: '800' },
-  heroVisualDeltaDown: {
-    backgroundColor: 'rgba(248,113,113,0.15)',
-  },
-
-  // ── DIC-1380 W8 CR: three CARD-ART tiles (not text price cards) ──
-  // Card-shaped tiles with a stylised gradient art panel, rarity badge,
-  // card name + number, and a compact price ribbon. No external image
-  // fetch on the Landing (preserves the "Landing does not load external
-  // card images" privacy contract).
-  heroCardArt: {
-    width: '100%',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: TOKENS.border,
-    backgroundColor: TOKENS.surface,
+    borderColor: 'rgba(246,246,251,0.16)',
+    backgroundColor: T.surface2,
     overflow: 'hidden',
-    flexDirection: 'row',
+    shadowColor: '#000000',
+    shadowOpacity: 0.55,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 12,
   },
-  heroCardArtBody: {
-    flex: 1,
+  heroCardLeft: {
+    width: 190,
+    height: 268,
+    left: 10,
+    top: 140,
+    transform: [{ rotate: '-9deg' }],
+  },
+  heroCardCenter: {
+    width: 240,
+    height: 338,
+    left: 195,
+    top: 52,
+    zIndex: 2,
+    shadowColor: T.accent2,
+    shadowOpacity: 0.35,
+    shadowRadius: 36,
+    shadowOffset: { width: 0, height: 12 },
+    transform: [{ rotate: '2deg' }],
+  },
+  heroCardRight: {
+    width: 200,
+    height: 282,
+    left: 428,
+    top: 110,
+    shadowColor: T.accent,
+    shadowOpacity: 0.28,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 12 },
+    transform: [{ rotate: '9deg' }],
+  },
+  heroCardImg: { width: '100%', flex: 1, backgroundColor: T.surface2 },
+  heroCardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(8,8,15,0.82)',
+  },
+  heroCardNumber: { color: T.textSecondary, fontSize: 11, fontFamily: Platform.OS === 'web' ? 'monospace' : undefined },
+  rarityBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: T.accent },
+  rarityBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+
+  legalityChip: {
+    position: 'absolute',
+    right: 0,
+    top: 6,
+    zIndex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(20,20,31,0.94)',
+    borderWidth: 1,
+    borderColor: T.border,
+    shadowColor: '#000000',
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  legalityRing: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 4,
+    borderColor: T.accent2,
+    borderBottomColor: 'rgba(61,224,255,0.2)',
+    borderLeftColor: 'rgba(61,224,255,0.2)',
+  },
+  legalityValue: { color: T.textPrimary, fontSize: 14, fontWeight: '700', marginTop: 2, fontFamily: bodyFont },
+
+  heroPriceChip: {
+    borderRadius: 16,
+    backgroundColor: 'rgba(20,20,31,0.94)',
+    borderWidth: 1,
+    borderColor: T.border,
     padding: 16,
     gap: 8,
   },
-  heroCardArtSecondary: {
-    width: '100%',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: TOKENS.border,
-    backgroundColor: TOKENS.surface2,
-    overflow: 'hidden',
-    flexDirection: 'row',
+  heroPriceChipFloating: {
+    position: 'absolute',
+    left: 0,
+    bottom: 6,
+    zIndex: 3,
+    shadowColor: '#000000',
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
   },
-  heroCardArtBodySmall: {
-    flex: 1,
-    padding: 12,
-    gap: 4,
-  },
-  heroCardArtStripUR: { width: 96, backgroundColor: TOKENS.accent, opacity: 0.85 },
-  heroCardArtStripSR: { width: 72, backgroundColor: TOKENS.accent3, opacity: 0.7 },
-  heroCardArtStripC: { width: 72, backgroundColor: TOKENS.accent2, opacity: 0.55 },
-  // DIC-1381 W9 CR — the Pen `Card Left/Right/Center` frames carry an
-  // `image` fill, not a coloured background. These widths match the Pen
-  // primary/secondary tile geometry so the card artwork retains a
-  // vertically-oriented 100:140 aspect ratio at the accepted 1440 desktop
-  // Landing composition.
-  heroCardArtImagePrimary: { width: 116, height: '100%', backgroundColor: TOKENS.surface2 },
-  heroCardArtImageSecondary: { width: 84, height: '100%', backgroundColor: TOKENS.surface2 },
-  heroCardArtHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  heroCardArtName: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '700', flexShrink: 1 },
-  heroCardArtNumber: { color: TOKENS.textMuted, fontSize: 11, fontFamily: 'monospace' },
-  heroCardArtRarityUR: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: '#FF4D9D' },
-  heroCardArtRaritySR: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: '#8B5CF6' },
-  heroCardArtRarityC: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: '#6B7280' },
-  heroCardArtRarityText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  heroVisualCard: {
-    width: '100%',
-    backgroundColor: TOKENS.surface,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: TOKENS.border,
-    gap: 14,
-  },
-  heroVisualTitle: { color: TOKENS.textPrimary, fontSize: 14, fontWeight: '600' },
-  heroVisualPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 12 },
-  heroVisualPrice: { color: TOKENS.textPrimary, fontSize: 32, fontWeight: '800' },
-  heroVisualDelta: {
-    backgroundColor: 'rgba(52,211,153,0.15)',
+  heroPriceChipMobile: { alignSelf: 'stretch', padding: 18, backgroundColor: T.surface },
+  heroChipLabel: { color: T.textSecondary, fontSize: 11, fontWeight: '600', fontFamily: bodyFont },
+  heroChipSource: { color: T.textMuted, fontSize: 11, marginTop: 2, fontFamily: bodyFont },
+  heroPriceRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  heroPriceValue: { color: T.textPrimary, fontSize: 24, fontWeight: '800', fontFamily: displayFont },
+  deltaChip: {
+    backgroundColor: 'rgba(52,211,153,0.14)',
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  heroVisualDeltaText: { color: '#34D399', fontSize: 12, fontWeight: '700' },
-  heroVisualSparkline: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 4,
-    height: 40,
-  },
-  heroVisualBar: {
-    flex: 1,
-    minWidth: 8,
-    borderRadius: 2,
-    backgroundColor: TOKENS.accent,
-    opacity: 0.85,
-  },
-  heroVisualSource: { color: TOKENS.textMuted, fontSize: 11 },
+  deltaChipText: { color: T.cGreen, fontSize: 12, fontWeight: '700', fontFamily: bodyFont },
+  sparkline: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 34, marginTop: 4 },
+  sparklineCompact: { height: 28, marginTop: 0, marginLeft: 6 },
+  sparkBar: { width: 5, borderRadius: 2, backgroundColor: T.accent, opacity: 0.9 },
 
-  // ── STATS BAR ──────────────────────────────────────────────────────
+  // ── STATS BAR — flat columns per Pen `vfBpS` / `ufjjN` ─────────────
   statsBar: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    paddingVertical: 24,
-  },
-  statsBarDesktop: {
+    alignItems: 'center',
     justifyContent: 'space-between',
-    maxWidth: TOKENS.contentDesktop,
-    alignSelf: 'center',
-    width: '100%',
-    flexWrap: 'nowrap',
-  },
-  statCard: {
-    flexGrow: 1,
-    flexBasis: '45%',
-    minWidth: 120,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: TOKENS.surface,
-    borderWidth: 1,
-    borderColor: TOKENS.border,
-    gap: 4,
-  },
-  statCardMobile: {
-    flexBasis: '48%',
-    padding: 12,
-  },
-  statValue: { color: TOKENS.textPrimary, fontSize: 22, fontWeight: '800' },
-  statValueMobile: { fontSize: 18 },
-  statLabel: { color: TOKENS.textSecondary, fontSize: 12, fontWeight: '500' },
-
-  // ── SECTION LABELS ────────────────────────────────────────────────
-  eyebrowLabel: {
-    color: TOKENS.accent,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    textTransform: 'uppercase',
-  },
-  sectionHeadline: {
-    color: TOKENS.textPrimary,
-    fontSize: 24,
-    lineHeight: 32,
-    fontWeight: '800',
-    marginTop: 8,
-    letterSpacing: -0.2,
-  },
-  sectionHeadlineDesktop: { fontSize: 40, lineHeight: 48, textAlign: 'center' },
-  sectionSubhead: {
-    color: TOKENS.textSecondary,
-    fontSize: 14,
-    lineHeight: 22,
-    marginTop: 8,
-    maxWidth: 760,
-  },
-
-  // ── FEATURES ──────────────────────────────────────────────────────
-  featureGrid: {
-    flexDirection: 'column',
-    gap: 12,
-    marginTop: 24,
-    alignSelf: 'stretch',
-  },
-  featureGridDesktop: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 20,
-    maxWidth: TOKENS.contentDesktop,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  featureCard: {
-    padding: 20,
-    borderRadius: 12,
-    backgroundColor: TOKENS.surface,
-    borderWidth: 1,
-    borderColor: TOKENS.border,
+    paddingHorizontal: LAYOUT.safeMobile,
+    paddingVertical: 18,
+    backgroundColor: '#0D0D16',
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
     gap: 8,
-    flexBasis: '30%',
-    flexGrow: 1,
-    minWidth: 240,
   },
-  featureDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: TOKENS.accent2, marginBottom: 4 },
-  featureTitle: { color: TOKENS.textPrimary, fontSize: 16, fontWeight: '700' },
-  featureBody: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
+  statsBarDesktop: { paddingHorizontal: 56, paddingVertical: 32, justifyContent: 'space-around' },
+  statCol: { alignItems: 'center', gap: 4, flexShrink: 1 },
+  statValue: { color: T.textPrimary, fontSize: 17, fontWeight: '800', fontFamily: displayFont },
+  statValueDesktop: { fontSize: 28 },
+  statLabel: { color: T.textSecondary, fontSize: 11, fontWeight: '500', textAlign: 'center', fontFamily: bodyFont },
 
-  // ── PRICE (DIC-1380 W7 CR — standalone Pen section) ───────────────
-  priceList: { flexDirection: 'column', gap: 8, marginTop: 24, alignSelf: 'stretch', maxWidth: 820, width: '100%' },
-  priceListDesktop: { alignSelf: 'center' },
-  priceRow: {
+  // ── SECTION HEADERS ───────────────────────────────────────────────
+  sectionPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  sectionPillText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4, fontFamily: bodyFont },
+  sectionHeadline: {
+    color: T.textPrimary,
+    fontSize: 26,
+    lineHeight: 35,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    fontFamily: displayFont,
+  },
+  sectionHeadlineDesktop: { fontSize: 42, lineHeight: 54 },
+  sectionSubhead: {
+    color: T.textSecondary,
+    fontSize: 14,
+    lineHeight: 23,
+    maxWidth: 720,
+    fontFamily: bodyFont,
+  },
+
+  // ── FEATURES BENTO ────────────────────────────────────────────────
+  bento: { gap: 16, marginTop: 4 },
+  bentoDesktop: { gap: 24 },
+  bentoRow: { flexDirection: 'column', gap: 16 },
+  bentoRowDesktop: { flexDirection: 'row', gap: 24, alignItems: 'stretch' },
+  bentoCard: {
+    padding: 22,
+    borderRadius: 20,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    gap: 10,
+  },
+  bentoMobileCard: {},
+  bentoSide: { flex: 1, gap: 24 },
+  bentoSideCard: { flex: 1, padding: 26 },
+  bentoThird: { flex: 1, padding: 26 },
+  bentoTitle: { color: T.textPrimary, fontSize: 17, fontWeight: '700', fontFamily: bodyFont },
+  bentoBody: { color: T.textSecondary, fontSize: 13, lineHeight: 21, fontFamily: bodyFont },
+  featureIconTile: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  featureIconGlyph: { fontSize: 19, fontWeight: '700' },
+
+  searchCard: { overflow: 'hidden' },
+  searchCardDesktop: { flex: 2, padding: 32, maxHeight: 420 },
+  searchMockBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 14,
+    gap: 10,
+    minHeight: 46,
     borderRadius: 12,
-    backgroundColor: TOKENS.surface,
+    backgroundColor: T.surface2,
     borderWidth: 1,
-    borderColor: TOKENS.border,
+    borderColor: T.border,
+    paddingHorizontal: 14,
+    marginTop: 8,
   },
-  priceRowCopy: { flex: 1, minWidth: 0 },
-  priceRowName: { color: TOKENS.textPrimary, fontSize: 14, fontWeight: '700' },
-  priceRowNumber: { color: TOKENS.textMuted, fontSize: 11, marginTop: 2 },
-  priceRowValues: { alignItems: 'flex-end', marginRight: 8 },
-  priceRowPrice: { color: TOKENS.textPrimary, fontSize: 16, fontWeight: '700' },
-  priceRowCurrencySecondary: { color: TOKENS.textSecondary, fontSize: 11, marginTop: 2 },
-  priceRowDelta: { backgroundColor: 'rgba(52,211,153,0.15)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-  priceRowDeltaDown: { backgroundColor: 'rgba(248,113,113,0.15)' },
-  priceRowDeltaText: { color: '#34D399', fontSize: 12, fontWeight: '700' },
-  priceListNote: { color: TOKENS.textMuted, fontSize: 11, marginTop: 12, textAlign: 'center' },
+  searchMockGlyph: { color: T.textMuted, fontSize: 16, fontWeight: '700' },
+  searchMockQuery: { color: T.textPrimary, fontSize: 14, fontWeight: '600', fontFamily: bodyFont },
+  searchMockCaret: { color: T.accent, fontSize: 15, fontWeight: '400', marginLeft: -6 },
+  searchMockChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  searchChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  searchChipActive: { backgroundColor: T.accent, borderColor: T.accent },
+  searchChipOutlined: { backgroundColor: 'rgba(255,77,157,0.12)', borderColor: 'rgba(255,77,157,0.5)' },
+  searchChipText: { color: T.textSecondary, fontSize: 12, fontWeight: '600', fontFamily: bodyFont },
+  searchChipTextActive: { color: '#fff' },
+  searchChipTextOutlined: { color: T.comingSoonFg },
+  searchMockGrid: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  searchMockTile: {
+    flex: 1,
+    aspectRatio: 0.72,
+    borderRadius: 8,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
 
-  // ── HOW IT WORKS (DIC-1380 W6 CR — full Pen composition) ──────────
-  howGrid: { flexDirection: 'column', gap: 16, marginTop: 24, alignSelf: 'stretch' },
-  howGridDesktop: { flexDirection: 'row', gap: 20, maxWidth: TOKENS.contentDesktop, width: '100%', alignSelf: 'center' },
-  howStep: { padding: 20, borderRadius: 12, backgroundColor: TOKENS.surface, borderWidth: 1, borderColor: TOKENS.border, gap: 8, flex: 1, minWidth: 220 },
-  howStepNumberWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: TOKENS.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  howStepNumber: { color: '#fff', fontSize: 14, fontWeight: '800' },
-  howStepTitle: { color: TOKENS.textPrimary, fontSize: 16, fontWeight: '700' },
-  howStepBody: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
+  // ── SPLIT SECTIONS (price / deck / faq) ───────────────────────────
+  splitRow: { flexDirection: 'column', gap: 28 },
+  splitRowDesktop: { flexDirection: 'row', gap: 72, alignItems: 'center' },
+  splitRowDesktopReverse: { flexDirection: 'row-reverse', gap: 72, alignItems: 'center' },
+  splitCopy: { gap: 14 },
+  splitCopyDesktop: { flex: 1, maxWidth: 452, gap: 16 },
+  bulletList: { gap: 12, marginTop: 8 },
+  checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  checkDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkDotComing: { borderColor: 'rgba(255,180,217,0.4)' },
+  checkGlyph: { fontSize: 11, fontWeight: '800' },
+  checkText: { color: T.textSecondary, fontSize: 13, lineHeight: 20, flex: 1, fontFamily: bodyFont },
+  checkTextComing: { color: T.textMuted },
 
-  // ── COLLECTION PREVIEW ────────────────────────────────────────────
-  collectionGrid: { flexDirection: 'column', gap: 12, marginTop: 24, alignSelf: 'stretch' },
-  collectionGridDesktop: { flexDirection: 'row', gap: 20, maxWidth: TOKENS.contentDesktop, width: '100%', alignSelf: 'center' },
-  collectionCard: { padding: 20, borderRadius: 12, backgroundColor: TOKENS.surface2, borderWidth: 1, borderColor: TOKENS.border, gap: 8, flex: 1, minWidth: 220 },
-  collectionDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: TOKENS.accent3, marginBottom: 6 },
-  collectionTitle: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '700' },
-  collectionBody: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
-
-  // ── FAQ ───────────────────────────────────────────────────────────
-  faqGrid: { flexDirection: 'column', gap: 12, marginTop: 24, alignSelf: 'stretch', maxWidth: 820, width: '100%' },
-  faqItem: { padding: 18, borderRadius: 12, backgroundColor: TOKENS.surface, borderWidth: 1, borderColor: TOKENS.border, gap: 8 },
-  faqQuestion: { color: TOKENS.textPrimary, fontSize: 15, fontWeight: '700' },
-  faqAnswer: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20 },
-
-  // ── FINAL CTA ─────────────────────────────────────────────────────
-  finalCta: { paddingVertical: 48, alignItems: 'center' },
-  finalCtaHeadline: { textAlign: 'center' },
-
-  // ── PLANS ─────────────────────────────────────────────────────────
-  plansGrid: {
-    flexDirection: 'column',
-    gap: 16,
-    marginTop: 24,
+  // ── PRICE CHART CARD — Pen `N8ds5T` ───────────────────────────────
+  chartCard: {
+    borderRadius: 20,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    padding: 20,
+    gap: 14,
     alignSelf: 'stretch',
   },
+  chartCardDesktop: { flex: 1.4, padding: 28 },
+  chartHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  chartThumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: T.surface2 },
+  chartHeaderCopy: { flex: 1, minWidth: 0, gap: 2 },
+  chartTitle: { color: T.textPrimary, fontSize: 16, fontWeight: '700', fontFamily: bodyFont },
+  chartSubtitle: { color: T.textMuted, fontSize: 11, fontFamily: bodyFont },
+  timeframes: {
+    flexDirection: 'row',
+    backgroundColor: T.surface2,
+    borderRadius: 10,
+    padding: 3,
+    gap: 2,
+  },
+  timeframe: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  timeframeActive: { backgroundColor: T.accent },
+  timeframeText: { color: T.textMuted, fontSize: 11, fontWeight: '700', fontFamily: bodyFont },
+  timeframeTextActive: { color: '#fff' },
+  chartPriceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  chartPrice: { color: T.textPrimary, fontSize: 28, fontWeight: '800', fontFamily: displayFont },
+  chartPriceDesktop: { fontSize: 34 },
+  chartBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  chartBarSlot: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  chartBar: {
+    alignSelf: 'stretch',
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    backgroundColor: '#B23A76',
+  },
+  chartBarValue: { color: T.accent, fontSize: 12, fontWeight: '800', fontFamily: displayFont },
+  chartXAxis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -4 },
+  chartXLabel: { color: T.textMuted, fontSize: 11, fontFamily: bodyFont },
+  chartCells: { flexDirection: 'row', gap: 12, marginTop: 6 },
+  chartCell: {
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    padding: 14,
+    gap: 4,
+  },
+  chartCellComing: { backgroundColor: 'rgba(61,37,71,0.55)', borderColor: 'rgba(255,180,217,0.25)' },
+  chartCellLabel: { color: T.textSecondary, fontSize: 12, fontFamily: bodyFont },
+  chartCellLabelComing: { color: 'rgba(255,180,217,0.75)', fontSize: 12, fontFamily: bodyFont },
+  chartCellValue: { color: T.textPrimary, fontSize: 16, fontWeight: '700', fontFamily: bodyFont },
+  chartCellComingValue: { color: T.comingSoonFg, fontSize: 15, fontWeight: '700', fontFamily: bodyFont },
+  chartCellsMobile: { gap: 8, marginTop: 6 },
+  chartRowMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 10,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  chartRowMobileComing: { backgroundColor: 'rgba(61,37,71,0.55)', borderColor: 'rgba(255,180,217,0.25)' },
+  chartFootnote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    borderRadius: 10,
+    backgroundColor: 'rgba(61,37,71,0.4)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  chartFootnoteTitle: { color: T.comingSoonFg, fontSize: 12, fontWeight: '700', fontFamily: bodyFont },
+  chartFootnoteBody: { color: T.textMuted, fontSize: 11, flex: 1, textAlign: 'right', fontFamily: bodyFont },
+
+  // ── DECK PANEL — Pen `voo0h` ──────────────────────────────────────
+  deckPanel: {
+    borderRadius: 20,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    padding: 20,
+    gap: 16,
+    alignSelf: 'stretch',
+  },
+  deckPanelDesktop: { flex: 1.4, padding: 28 },
+  deckHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  deckHeaderCopy: { flex: 1, minWidth: 0, gap: 6 },
+  deckTitle: { color: T.textPrimary, fontSize: 18, fontWeight: '800', fontFamily: bodyFont },
+  deckDraftRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  deckDraftPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(52,211,153,0.14)',
+  },
+  deckDraftPillText: { color: T.cGreen, fontSize: 11, fontWeight: '700', fontFamily: bodyFont },
+  deckSubtitle: { color: T.textMuted, fontSize: 12, fontFamily: bodyFont },
+  deckEstimate: { alignItems: 'flex-end', gap: 2 },
+  deckEstimateLabel: { color: T.textMuted, fontSize: 11, fontFamily: bodyFont },
+  deckEstimateValue: { color: T.accent, fontSize: 22, fontWeight: '800', fontFamily: displayFont },
+  deckRows: { gap: 14 },
+  deckRow: { gap: 7 },
+  deckRowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  deckRowName: { color: T.textPrimary, fontSize: 13, fontWeight: '600', flexShrink: 1, fontFamily: bodyFont },
+  deckRowCount: { color: T.textMuted, fontSize: 12, fontFamily: bodyFont },
+  deckTrack: { height: 6, borderRadius: 3, backgroundColor: T.surface2, overflow: 'hidden' },
+  deckFill: { height: 6, borderRadius: 3 },
+  deckDivider: { height: 1, backgroundColor: T.border },
+  deckMissingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  deckMissingTitle: { color: T.textPrimary, fontSize: 14, fontWeight: '700', fontFamily: bodyFont },
+  deckCheapLink: { color: T.accent, fontSize: 13, fontWeight: '700', fontFamily: bodyFont },
+  deckTiles: { flexDirection: 'row', gap: 10 },
+  deckTile: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 10,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deckTilePlus: { color: T.textMuted, fontSize: 16, fontWeight: '600' },
+
+  // ── HOW IT WORKS ──────────────────────────────────────────────────
+  howGrid: { flexDirection: 'column', gap: 16, marginTop: 8, alignSelf: 'stretch' },
+  howGridDesktop: { flexDirection: 'row', gap: 24, marginTop: 24 },
+  howStep: {
+    padding: 22,
+    borderRadius: 16,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    gap: 12,
+    flex: 1,
+    minWidth: 220,
+  },
+  howStepHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  howStepChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  howStepNumber: { fontSize: 13, fontWeight: '800', fontFamily: displayFont },
+  howStepTitle: { color: T.textPrimary, fontSize: 16, fontWeight: '700', flexShrink: 1, fontFamily: bodyFont },
+  howStepBody: { color: T.textSecondary, fontSize: 13, lineHeight: 21, fontFamily: bodyFont },
+
+  // ── PLANS ─────────────────────────────────────────────────────────
+  plansGrid: { flexDirection: 'column', gap: 16, marginTop: 8, alignSelf: 'stretch' },
   plansGridDesktop: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 24,
-    maxWidth: TOKENS.contentDesktop,
+    gap: 28,
+    marginTop: 24,
+    maxWidth: 940,
     width: '100%',
     alignSelf: 'center',
   },
   planCard: {
     flex: 1,
     minWidth: 260,
-    padding: 24,
-    borderRadius: 16,
-    backgroundColor: TOKENS.surface,
+    padding: 26,
+    borderRadius: 20,
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: TOKENS.border,
+    borderColor: T.border,
     gap: 12,
   },
-  planCardComingSoon: {
-    backgroundColor: TOKENS.surface2,
-    borderColor: TOKENS.comingSoonBg,
-  },
+  planCardComingSoon: { borderColor: 'rgba(255,77,157,0.45)' },
   planHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
-  planTitle: { color: TOKENS.textPrimary, fontSize: 18, fontWeight: '800' },
-  planTagline: { color: TOKENS.textSecondary, fontSize: 12, lineHeight: 18 },
-  planPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 },
-  planPrice: { color: TOKENS.textPrimary, fontSize: 28, fontWeight: '800' },
-  planPriceComing: { color: TOKENS.comingSoonFg, fontSize: 20, fontWeight: '700' },
-  planPricePeriod: { color: TOKENS.textMuted, fontSize: 12 },
-  planFeatureList: { gap: 8, marginTop: 6 },
-  planFeatureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  planFeatureCheck: { color: TOKENS.accent2, fontSize: 14, fontWeight: '700', width: 16 },
-  planFeatureCheckComing: { color: TOKENS.comingSoonFg },
-  planFeatureText: { color: TOKENS.textSecondary, fontSize: 13, lineHeight: 20, flex: 1 },
-  planCta: { marginTop: 12 },
+  planTitle: { color: T.textPrimary, fontSize: 19, fontWeight: '800', fontFamily: bodyFont },
+  planOnlyPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: T.comingSoonBg,
+  },
+  planOnlyPillText: { color: T.comingSoonFg, fontSize: 11, fontWeight: '700', fontFamily: bodyFont },
+  planTagline: { color: T.textSecondary, fontSize: 13, lineHeight: 19, fontFamily: bodyFont },
+  planDivider: { height: 1, backgroundColor: T.border, marginVertical: 4 },
+  planFeatureList: { gap: 12, marginTop: 2 },
+  planCta: { marginTop: 14 },
   planCtaSecondary: {
-    minHeight: TOKENS.minTouch + 4,
+    minHeight: LAYOUT.minTouch + 4,
     paddingHorizontal: 20,
-    borderRadius: 22,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: TOKENS.comingSoonBg,
-    backgroundColor: 'transparent',
+    borderColor: T.border,
+    backgroundColor: T.surface2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  planCtaSecondaryText: { color: TOKENS.comingSoonFg, fontSize: 14, fontWeight: '700' },
-  plansFineprint: { color: TOKENS.textMuted, fontSize: 12, marginTop: 16, textAlign: 'center' },
+  planCtaSecondaryText: { color: T.textPrimary, fontSize: 14, fontWeight: '700', fontFamily: bodyFont },
+  plansFineprint: { color: T.textMuted, fontSize: 12, marginTop: 24, textAlign: 'center', alignSelf: 'center', fontFamily: bodyFont },
 
-  // ── FOOTER ────────────────────────────────────────────────────────
+  // ── FAQ ───────────────────────────────────────────────────────────
+  faqCopyDesktop: { flex: 1, maxWidth: 400, alignSelf: 'flex-start', gap: 16 },
+  faqList: { gap: 12 },
+  faqListDesktop: { flex: 1.6, gap: 0, alignSelf: 'flex-start' },
+  faqItem: { gap: 10 },
+  faqItemMobile: {
+    padding: 18,
+    borderRadius: 12,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  faqItemDivided: { borderTopWidth: 1, borderTopColor: T.border },
+  faqQuestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    minHeight: LAYOUT.minTouch,
+    paddingVertical: 8,
+  },
+  faqQuestion: { color: T.textPrimary, fontSize: 15, fontWeight: '700', flex: 1, fontFamily: bodyFont },
+  faqToggleGlyph: { color: T.textMuted, fontSize: 16, fontWeight: '600' },
+  faqAnswer: { color: T.textSecondary, fontSize: 13, lineHeight: 21, paddingBottom: 14, fontFamily: bodyFont },
+  faqContactLink: { minHeight: LAYOUT.minTouch, justifyContent: 'center', alignSelf: 'flex-start' },
+  faqContactText: { color: T.accent, fontSize: 13, fontWeight: '700', fontFamily: bodyFont },
+
+  // ── FINAL CTA — Pen `P8bPbJ` gradient card ────────────────────────
+  finalCtaCard: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    paddingHorizontal: 24,
+    paddingVertical: 48,
+    alignItems: 'center',
+    gap: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(246,246,251,0.08)',
+  },
+  finalCtaCardDesktop: { paddingVertical: 88, paddingHorizontal: 56 },
+  finalCtaShape: {
+    position: 'absolute',
+    width: 150,
+    height: 210,
+    borderRadius: 22,
+    opacity: 0.5,
+  },
+  finalCtaShapeLeft: {
+    left: -36,
+    bottom: -60,
+    backgroundColor: 'rgba(76,141,255,0.35)',
+    transform: [{ rotate: '18deg' }],
+  },
+  finalCtaShapeRight: {
+    right: -30,
+    top: -70,
+    backgroundColor: 'rgba(139,92,246,0.4)',
+    transform: [{ rotate: '-16deg' }],
+  },
+  finalCtaSub: { maxWidth: 560 },
+  finalCtaRow: { marginTop: 8, alignItems: 'center', justifyContent: 'center' },
+  finalCtaNote: { color: 'rgba(246,246,251,0.55)', fontSize: 11, marginTop: 8, textAlign: 'center', fontFamily: bodyFont },
+
+  // ── FOOTER — Pen `TldCK` / `r86yeO` ───────────────────────────────
   footer: {
     borderTopWidth: 1,
-    borderTopColor: TOKENS.border,
-    paddingVertical: 24,
-    alignItems: 'center',
-    gap: 12,
+    borderTopColor: T.border,
+    paddingHorizontal: LAYOUT.safeMobile,
+    paddingTop: 40,
+    paddingBottom: 24,
+    gap: 32,
   },
-  footerDesktop: { paddingHorizontal: 40 },
-  footerLinksRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
-  footerLink: { color: TOKENS.textSecondary, fontSize: 13, fontWeight: '600', minHeight: TOKENS.minTouch, paddingVertical: 12 },
-  footerSep: { color: TOKENS.textMuted, fontSize: 13, paddingHorizontal: 4 },
-  footerCopy: { color: TOKENS.textMuted, fontSize: 12, textAlign: 'center', lineHeight: 18 },
+  footerDesktop: {
+    paddingHorizontal: 56,
+    paddingTop: 56,
+    maxWidth: LAYOUT.contentDesktop + 112,
+    width: '100%',
+    alignSelf: 'center',
+    borderTopWidth: 1,
+  },
+  footerTop: { gap: 28 },
+  footerTopDesktop: { flexDirection: 'row', justifyContent: 'space-between', gap: 48 },
+  footerBrandBlock: { gap: 14, maxWidth: 340 },
+  footerDesc: { color: T.textMuted, fontSize: 13, lineHeight: 20, fontFamily: bodyFont },
+  footerCols: { flexDirection: 'column', gap: 24 },
+  footerColsDesktop: { flexDirection: 'row', gap: 72 },
+  footerCol: { gap: 4, minWidth: 96 },
+  footerColTitle: { color: T.textPrimary, fontSize: 13, fontWeight: '700', marginBottom: 6, fontFamily: bodyFont },
+  footerItemTap: { minHeight: 36, justifyContent: 'center' },
+  footerLink: { color: T.textSecondary, fontSize: 13, fontWeight: '500', fontFamily: bodyFont },
+  footerBottom: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 18,
+    gap: 10,
+  },
+  footerBottomDesktop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  footerBottomLinks: { flexDirection: 'row', gap: 24 },
+  footerCopy: { color: T.textMuted, fontSize: 12, lineHeight: 18, fontFamily: bodyFont },
 
-  // ── ERROR + PILL ──────────────────────────────────────────────────
+  // ── PILLS + ERROR ─────────────────────────────────────────────────
   comingSoonPill: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 10,
-    backgroundColor: TOKENS.comingSoonBg,
+    borderRadius: 999,
+    backgroundColor: T.comingSoonBg,
   },
-  comingSoonPillText: { color: TOKENS.comingSoonFg, fontSize: 11, fontWeight: '700' },
+  comingSoonPillText: { color: T.comingSoonFg, fontSize: 11, fontWeight: '700', fontFamily: bodyFont },
   errorBox: {
     marginTop: 12,
     backgroundColor: 'rgba(248,113,113,0.12)',
@@ -1215,6 +1833,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
-  errorText: { color: '#F87171', fontSize: 13, flex: 1 },
-  errorDismiss: { color: '#F87171', fontSize: 16, paddingLeft: 12, fontWeight: '700' },
+  errorText: { color: T.cRed, fontSize: 13, flex: 1, fontFamily: bodyFont },
+  errorDismiss: { color: T.cRed, fontSize: 16, paddingLeft: 12, fontWeight: '700' },
 });

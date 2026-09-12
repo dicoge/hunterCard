@@ -174,6 +174,11 @@ export const zh = {
   login_terms_footer: '登入即表示同意隱私權政策與服務條款',
 
   // Common actions and states
+  common_back: '返回',
+  me_stat_collection: '收藏張數',
+  me_stat_alerts: '到價提醒',
+  me_guest_name: '訪客',
+  me_provider_linked: '{{provider}} 已綁定',
   common_cancel: '取消',
   common_remove: '移除',
   common_save: '儲存',
@@ -644,6 +649,7 @@ export const zh = {
   scan_recognizing: '識別中…',
   scan_frame_auto: '將卡牌置於掃描框內',
   scan_frame_manual: '點擊掃描按鈕拍攝卡牌',
+  scan_close_a11y: '關閉掃描',
   scan_flash_on: '閃光燈開',
   scan_flash: '閃光燈',
   scan_gallery: '相簿',

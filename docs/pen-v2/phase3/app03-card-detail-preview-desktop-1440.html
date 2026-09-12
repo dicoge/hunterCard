@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HoloHunter app03-card-detail · desktop-1440</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Noto+Sans+TC:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #0A0A13; color: #F6F6FB; height: 100%; }
+    body { font-family: "Noto Sans TC", "Outfit", system-ui, -apple-system, sans-serif; display: flex; align-items: flex-start; justify-content: center; }
+    #frame { width: 1440px; height: 900px; box-shadow: 0 0 0 1px #282838; overflow: hidden; display: flex; flex-direction: column; }
+    #frame > #root { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    #frame > #root > * { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    [stylesheet-group="0"]{}
+body{margin:0;}
+button::-moz-focus-inner,input::-moz-focus-inner{border:0;padding:0;}
+html{-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:rgba(0,0,0,0);}
+input::-webkit-search-cancel-button,input::-webkit-search-decoration,input::-webkit-search-results-button,input::-webkit-search-results-decoration{display:none;}
+[stylesheet-group="1"]{}
+.css-accessibilityImage-9pa8cd{bottom:0px;height:100%;left:0px;opacity:0;position:absolute;right:0px;top:0px;width:100%;z-index:-1;}
+.css-text-146c3p1{background-color:rgba(0,0,0,0.00);border:0 solid black;box-sizing:border-box;color:rgba(0,0,0,1.00);display:inline;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;list-style:none;margin:0px;padding:0px;position:relative;text-align:start;text-decoration:none;white-space:pre-wrap;word-wrap:break-word;}
+.css-textHasAncestor-1jxf684{background-color:rgba(0,0,0,0.00);border:0 solid black;box-sizing:border-box;color:inherit;display:inline;font:inherit;list-style:none;margin:0px;padding:0px;position:relative;text-align:inherit;text-decoration:none;white-space:inherit;word-wrap:break-word;}
+.css-textinput-11aywtz{-moz-appearance:textfield;-webkit-appearance:none;background-color:rgba(0,0,0,0.00);border-bottom-left-radius:0px;border-bottom-right-radius:0px;border-top-left-radius:0px;border-top-right-radius:0px;border:0 solid black;box-sizing:border-box;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0px;padding:0px;resize:none;}
+.css-view-g5y9jx{align-content:flex-start;align-items:stretch;background-color:rgba(0,0,0,0.00);border:0 solid black;box-sizing:border-box;display:flex;flex-basis:auto;flex-direction:column;flex-shrink:0;list-style:none;margin:0px;min-height:0px;min-width:0px;padding:0px;position:relative;text-decoration:none;z-index:0;}
+[stylesheet-group="2"]{}
+.r-borderColor-1awa8pu{border-bottom-color:rgba(101,119,134,1.00);border-left-color:rgba(101,119,134,1.00);border-right-color:rgba(101,119,134,1.00);border-top-color:rgba(101,119,134,1.00);}
+.r-borderColor-1bxer1j{border-bottom-color:rgba(40,40,56,0.40);border-left-color:rgba(40,40,56,0.40);border-right-color:rgba(40,40,56,0.40);border-top-color:rgba(40,40,56,0.40);}
+.r-borderColor-1d4xg89{border-bottom-color:rgba(170,184,194,1.00);border-left-color:rgba(170,184,194,1.00);border-right-color:rgba(170,184,194,1.00);border-top-color:rgba(170,184,194,1.00);}
+.r-borderColor-1goys08{border-bottom-color:rgba(10,10,19,1.00);border-left-color:rgba(10,10,19,1.00);border-right-color:rgba(10,10,19,1.00);border-top-color:rgba(10,10,19,1.00);}
+.r-borderColor-1jyn79y{border-bottom-color:rgba(0,150,136,1.00);border-left-color:rgba(0,150,136,1.00);border-right-color:rgba(0,150,136,1.00);border-top-color:rgba(0,150,136,1.00);}
+.r-borderColor-1n6pof6{border-bottom-color:rgba(255,77,157,1.00);border-left-color:rgba(255,77,157,1.00);border-right-color:rgba(255,77,157,1.00);border-top-color:rgba(255,77,157,1.00);}
+.r-borderColor-1rc37qc{border-bottom-color:rgba(40,40,56,0.53);border-left-color:rgba(40,40,56,0.53);border-right-color:rgba(40,40,56,0.53);border-top-color:rgba(40,40,56,0.53);}
+.r-borderColor-1ulf27d{border-bottom-color:rgba(255,255,255,0.15);border-left-color:rgba(255,255,255,0.15);border-right-color:rgba(255,255,255,0.15);border-top-color:rgba(255,255,255,0.15);}
+.r-borderColor-4a18lf{border-bottom-color:rgba(255,0,0,1.00);border-left-color:rgba(255,0,0,1.00);border-right-color:rgba(255,0,0,1.00);border-top-color:rgba(255,0,0,1.00);}
+.r-borderColor-60ke3l{border-bottom-color:rgba(0,128,0,1.00);border-left-color:rgba(0,128,0,1.00);border-right-color:rgba(0,128,0,1.00);border-top-color:rgba(0,128,0,1.00);}
+.r-borderColor-9x6qib{border-bottom-color:rgba(204,214,221,1.00);border-left-color:rgba(204,214,221,1.00);border-right-color:rgba(204,214,221,1.00);border-top-color:rgba(204,214,221,1.00);}
+.r-borderColor-fx7oqy{border-bottom-color:rgba(0,0,255,1.00);border-left-color:rgba(0,0,255,1.00);border-right-color:rgba(0,0,255,1.00);border-top-color:rgba(0,0,255,1.00);}
+.r-borderColor-k6p565{border-bottom-color:rgba(245,158,11,0.27);border-left-color:rgba(245,158,11,0.27);border-right-color:rgba(245,158,11,0.27);border-top-color:rgba(245,158,11,0.27);}
+.r-borderColor-xz9a7w{border-bottom-color:rgba(40,40,56,1.00);border-left-color:rgba(40,40,56,1.00);border-right-color:rgba(40,40,56,1.00);border-top-color:rgba(40,40,56,1.00);}
+.r-borderRadius-1867qdf{border-bottom-left-radius:16px;border-bottom-right-radius:16px;border-top-left-radius:16px;border-top-right-radius:16px;}
+.r-borderRadius-1dzdj1l{border-bottom-left-radius:10px;border-bottom-right-radius:10px;border-top-left-radius:10px;border-top-right-radius:10px;}
+.r-borderRadius-1f0042m{border-bottom-left-radius:5px;border-bottom-right-radius:5px;border-top-left-radius:5px;border-top-right-radius:5px;}
+.r-borderRadius-1j16mh1{border-bottom-left-radius:100%;border-bottom-right-radius:100%;border-top-left-radius:100%;border-top-right-radius:100%;}
+.r-borderRadius-1jkafct{border-bottom-left-radius:2px;border-bottom-right-radius:2px;border-top-left-radius:2px;border-top-right-radius:2px;}
+.r-borderRadius-1q9bdsx{border-bottom-left-radius:12px;border-bottom-right-radius:12px;border-top-left-radius:12px;border-top-right-radius:12px;}
+.r-borderRadius-1xfd6ze{border-bottom-left-radius:8px;border-bottom-right-radius:8px;border-top-left-radius:8px;border-top-right-radius:8px;}
+.r-borderRadius-cdmcib{border-bottom-left-radius:3px;border-bottom-right-radius:3px;border-top-left-radius:3px;border-top-right-radius:3px;}
+.r-borderRadius-cpet4d{border-bottom-left-radius:999px;border-bottom-right-radius:999px;border-top-left-radius:999px;border-top-right-radius:999px;}
+.r-borderRadius-kdyh1x{border-bottom-left-radius:6px;border-bottom-right-radius:6px;border-top-left-radius:6px;border-top-right-radius:6px;}
+.r-borderRadius-nsiyw1{border-bottom-left-radius:32px;border-bottom-right-radius:32px;border-top-left-radius:32px;border-top-right-radius:32px;}
+.r-borderRadius-t23y2h{border-bottom-left-radius:14px;border-bottom-right-radius:14px;border-top-left-radius:14px;border-top-right-radius:14px;}
+.r-borderRadius-y47klf{border-bottom-left-radius:20px;border-bottom-right-radius:20px;border-top-left-radius:20px;border-top-right-radius:20px;}
+.r-borderRadius-z2wwpe{border-bottom-left-radius:4px;border-bottom-right-radius:4px;border-top-left-radius:4px;border-top-right-radius:4px;}
+.r-borderStyle-1phboty{border-bottom-style:solid;border-left-style:solid;border-right-style:solid;border-top-style:solid;}
+.r-borderStyle-eg6o18{border-bottom-style:dashed;border-left-style:dashed;border-right-style:dashed;border-top-style:dashed;}
+.r-borderWidth-d045u9{border-bottom-width:2px;border-left-width:2px;border-right-width:2px;border-top-width:2px;}
+.r-borderWidth-rs99b7{border-bottom-width:1px;border-left-width:1px;border-right-width:1px;border-top-width:1px;}
+.r-borderWidth-v4qui7{border-bottom-width:1.4px;border-left-width:1.4px;border-right-width:1.4px;border-top-width:1.4px;}
+.r-display-krxsd3{display:-webkit-box;}
+.r-display-xoduu5{display:inline-flex;}
+.r-flex-13awgt0{flex:1;}
+.r-margin-crgep1{margin:0px;}
+.r-margin-ywje51{margin:auto;}
+.r-overflow-1qsk4np{overflow-x:clip;overflow-y:clip;}
+.r-overflow-1udh08x{overflow-x:hidden;overflow-y:hidden;}
+.r-padding-1pcd2l5{padding:20px;}
+.r-padding-1slz7xr{padding:14px;}
+.r-padding-494qqr{padding:32px;}
+.r-padding-edyy15{padding:8px;}
+.r-padding-nsbfu8{padding:16px;}
+.r-padding-t60dpp{padding:0px;}
+.r-padding-xyw6el{padding:12px;}
+[stylesheet-group="2.1"]{}
+.r-marginBlock-l00any{margin-bottom:4px;margin-top:4px;}
+.r-marginInline-1xpp3t0{margin-left:16px;margin-right:16px;}
+.r-marginInline-8dgmk1{margin-left:8px;margin-right:8px;}
+.r-marginInline-bhtmuz{margin-left:20px;margin-right:20px;}
+.r-paddingBlock-11f147o{padding-bottom:8px;padding-top:8px;}
+.r-paddingBlock-1559e4e{padding-bottom:2px;padding-top:2px;}
+.r-paddingBlock-1d7mnkm{padding-bottom:15px;padding-top:15px;}
+.r-paddingBlock-1la3zjv{padding-bottom:18px;padding-top:18px;}
+.r-paddingBlock-1ml3abn{padding-bottom:14px;padding-top:14px;}
+.r-paddingBlock-1mmae3n{padding-bottom:12px;padding-top:12px;}
+.r-paddingBlock-cnw61z{padding-bottom:4px;padding-top:4px;}
+.r-paddingBlock-dp7rxi{padding-bottom:40px;padding-top:40px;}
+.r-paddingBlock-rehuqn{padding-bottom:5px;padding-top:5px;}
+.r-paddingBlock-vuvdlw{padding-bottom:6px;padding-top:6px;}
+.r-paddingBlock-w7s2jr{padding-bottom:16px;padding-top:16px;}
+.r-paddingBlock-xjggfu{padding-bottom:3px;padding-top:3px;}
+.r-paddingBlock-ytbthy{padding-bottom:10px;padding-top:10px;}
+.r-paddingBlock-ywh0we{padding-bottom:13px;padding-top:13px;}
+.r-paddingInline-18c5d7m{padding-left:6px;padding-right:6px;}
+.r-paddingInline-1ubuhtd{padding-left:10px;padding-right:10px;}
+.r-paddingInline-3o4zer{padding-left:12px;padding-right:12px;}
+.r-paddingInline-3pj75a{padding-left:16px;padding-right:16px;}
+.r-paddingInline-gu64tb{padding-left:14px;padding-right:14px;}
+.r-paddingInline-is05cd{padding-left:8px;padding-right:8px;}
+.r-paddingInline-n7gxbd{padding-left:4px;padding-right:4px;}
+.r-paddingInline-u9wvl5{padding-left:20px;padding-right:20px;}
+[stylesheet-group="2.2"]{}
+.r-insetInlineStart-10s2tm5{left:0%;}
+.r-insetInlineStart-16o8guy{right:100%;}
+.r-insetInlineStart-dqe1q{right:0%;}
+.r-insetInlineStart-rci37q{left:100%;}
+[stylesheet-group="3"]{}
+.r-WebkitBoxOrient-8akbws{-webkit-box-orient:vertical;}
+.r-WebkitOverflowScrolling-150rngu{-webkit-overflow-scrolling:touch;}
+.r-alignItems-1awozwy{align-items:center;}
+.r-alignItems-1d09ksm{align-items:baseline;}
+.r-alignItems-1habvwh{align-items:flex-start;}
+.r-alignSelf-173mn98{align-self:flex-end;}
+.r-alignSelf-1kihuf0{align-self:center;}
+.r-alignSelf-k200y{align-self:flex-start;}
+.r-animationDuration-17bb2tj{animation-duration:0.75s;}
+.r-animationDuration-1ay1djp{animation-duration:1s;}
+.r-animationDuration-9daxd3{animation-duration:250ms;}
+.r-animationIterationCount-1muvv40{animation-iteration-count:infinite;}
+.r-animationKeyframes-13aq9py{animation-name:r-animation-1iq689l;}
+.r-animationKeyframes-1qulhi1{animation-name:r-animation-1pzkwqh;}
+.r-animationKeyframes-1yef0xd{animation-name:r-animation-11cv4x;}
+.r-animationKeyframes-ebwn4k{animation-name:r-animation-q67da2;}
+.r-animationKeyframes-g3mlsw{animation-name:r-animation-t2lo5v;}
+.r-animationKeyframes-xx3c9p{animation-name:r-animation-imtty0;}
+.r-animationPlayState-1abnn5w{animation-play-state:paused;}
+.r-animationTimingFunction-1ldzwu0{animation-timing-function:linear;}
+.r-animationTimingFunction-leqjx2{animation-timing-function:cubic-bezier(0.215, 0.61, 0.355, 1);}
+.r-animationTimingFunction-s62m2j{animation-timing-function:cubic-bezier(0.47, 0, 0.745, 0.715);}
+.r-appearance-30o5oe{-moz-appearance:none;-ms-appearance:none;-webkit-appearance:none;appearance:none;}
+.r-backgroundColor-11mpjr4{background-color:rgba(223,223,223,1.00);}
+.r-backgroundColor-11udlyb{background-color:rgba(0,150,136,1.00);}
+.r-backgroundColor-12bw5kf{background-color:rgba(10,10,19,1.00);}
+.r-backgroundColor-14lw9ot{background-color:rgba(255,255,255,1.00);}
+.r-backgroundColor-14sbq61{background-color:rgba(33,150,243,1.00);}
+.r-backgroundColor-1eovk8k{background-color:rgba(0,0,0,0.35);}
+.r-backgroundColor-1niwhzg{background-color:rgba(0,0,0,0.00);}
+.r-backgroundColor-1pg26ma{background-color:rgba(28,28,43,1.00);}
+.r-backgroundColor-1pse7ww{background-color:rgba(40,40,56,1.00);}
+.r-backgroundColor-1q1sk3v{background-color:rgba(20,20,31,1.00);}
+.r-backgroundColor-1y1h92r{background-color:rgba(28,28,43,0.33);}
+.r-backgroundColor-2tavb8{background-color:rgba(0,0,0,0.60);}
+.r-backgroundColor-30ph5o{background-color:rgba(255,77,157,1.00);}
+.r-backgroundColor-bwi0c8{background-color:rgba(255,77,157,0.10);}
+.r-backgroundColor-dkge59{background-color:rgba(170,184,194,1.00);}
+.r-backgroundColor-i90rgf{background-color:rgba(28,28,43,0.80);}
+.r-backgroundColor-iinozl{background-color:rgba(18,18,29,0.95);}
+.r-backgroundColor-s5ibt8{background-color:rgba(255,77,157,0.13);}
+.r-backgroundColor-u92y06{background-color:rgba(255,165,0,1.00);}
+.r-backgroundImage-rs94m5{background-image:url("data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjxzdmcKICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIgogICB4bWxuczpjYz0iaHR0cDovL2NyZWF0aXZlY29tbW9ucy5vcmcvbnMjIgogICB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiCiAgIHhtbG5zOnN2Zz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICAgdmVyc2lvbj0iMS4xIgogICB2aWV3Qm94PSIwIDAgMSAxIgogICBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWluWU1pbiBtZWV0Ij4KICA8cGF0aAogICAgIGQ9Ik0gMC4wNDAzODA1OSwwLjYyNjc3NjcgMC4xNDY0NDY2MSwwLjUyMDcxMDY4IDAuNDI5Mjg5MzIsMC44MDM1NTMzOSAwLjMyMzIyMzMsMC45MDk2MTk0MSB6IE0gMC4yMTcxNTcyOSwwLjgwMzU1MzM5IDAuODUzNTUzMzksMC4xNjcxNTcyOSAwLjk1OTYxOTQxLDAuMjczMjIzMyAwLjMyMzIyMzMsMC45MDk2MTk0MSB6IgogICAgIGlkPSJyZWN0Mzc4MCIKICAgICBzdHlsZT0iZmlsbDojZmZmZmZmO2ZpbGwtb3BhY2l0eToxO3N0cm9rZTpub25lIiAvPgo8L3N2Zz4K");}
+.r-backgroundPosition-1mrlafo{background-position:0;}
+.r-backgroundPosition-vvn4in{background-position:center;}
+.r-backgroundRepeat-17leim2{background-repeat:repeat;}
+.r-backgroundRepeat-u6sd8q{background-repeat:no-repeat;}
+.r-backgroundSize-1sxrcry{background-size:auto;}
+.r-backgroundSize-4gszlv{background-size:cover;}
+.r-backgroundSize-ehq7j7{background-size:contain;}
+.r-backgroundSize-x3cy2q{background-size:100% 100%;}
+.r-borderBottomColor-g15gg3{border-bottom-color:rgba(40,40,56,0.27);}
+.r-borderBottomWidth-qklmqi{border-bottom-width:1px;}
+.r-borderLeftColor-1ysqofm{border-left-color:rgba(255,77,157,1.00);}
+.r-borderLeftWidth-ms8t9i{border-left-width:3px;}
+.r-borderTopColor-17rf72e{border-top-color:rgba(40,40,56,0.27);}
+.r-borderTopWidth-5kkj8d{border-top-width:1px;}
+.r-bottom-1p0dtai{bottom:0px;}
+.r-boxShadow-1ewcgjf{box-shadow:0px 1px 3px rgba(0,0,0,0.5);}
+.r-boxShadow-2rq2rx{box-shadow:0px 2px 8px rgba(255,77,157,0.40);}
+.r-caretColor-van48c{caret-color:transparent;}
+.r-color-14von57{color:rgba(245,158,11,1.00);}
+.r-color-17wuna5{color:rgba(148,148,176,0.60);}
+.r-color-1bjbyxb{color:rgba(52,211,153,1.00);}
+.r-color-1cq2s9n{color:rgba(148,148,176,0.73);}
+.r-color-1dnhun9{color:rgba(90,90,117,1.00);}
+.r-color-1l05lt3{color:rgba(185,185,206,1.00);}
+.r-color-1m0eepg{color:rgba(148,148,176,0.67);}
+.r-color-1mj8t0m{color:rgba(246,246,251,0.53);}
+.r-color-1mqf24q{color:rgba(255,128,184,1.00);}
+.r-color-1qlf9fi{color:rgba(255,77,157,1.00);}
+.r-color-83p8s2{color:rgba(148,148,176,1.00);}
+.r-color-bw4rb6{color:rgba(40,40,56,1.00);}
+.r-color-c68hjy{color:rgba(161,161,161,1.00);}
+.r-color-cfz4sc{color:rgba(61,224,255,1.00);}
+.r-color-g5isv6{color:rgba(246,246,251,0.80);}
+.r-color-ga7ya0{color:rgba(246,246,251,1.00);}
+.r-color-gzm14d{color:rgba(148,148,176,0.53);}
+.r-color-jwli3a{color:rgba(255,255,255,1.00);}
+.r-color-o8f2u9{color:rgba(246,246,251,0.60);}
+.r-color-wgkp8p{color:rgba(106,106,133,1.00);}
+.r-color-z31cq{color:rgba(248,113,113,1.00);}
+.r-cursor-1ei5mc7{cursor:inherit;}
+.r-cursor-1loqt21{cursor:pointer;}
+.r-cursor-7q8q6z{cursor:default;}
+.r-flexBasis-1mlwlqe{flex-basis:auto;}
+.r-flexDirection-18u37iz{flex-direction:row;}
+.r-flexDirection-1d5kdc7{flex-direction:column-reverse;}
+.r-flexDirection-1euycsn{flex-direction:row-reverse;}
+.r-flexDirection-eqz5dr{flex-direction:column;}
+.r-flexGrow-16y2uox{flex-grow:1;}
+.r-flexShrink-1q142lx{flex-shrink:0;}
+.r-flexShrink-1wbh5a2{flex-shrink:1;}
+.r-flexWrap-1w6e6rj{flex-wrap:wrap;}
+.r-fontFamily-1460ry7{font-family:"Outfit", "Noto Sans TC", system-ui, -apple-system, sans-serif;}
+.r-fontFamily-1j6mtpx{font-family:"Noto Sans TC", "Outfit", system-ui, -apple-system, sans-serif;}
+.r-fontFamily-1qd0xha{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.r-fontSize-10x49cs{font-size:10px;}
+.r-fontSize-1b43r93{font-size:14px;}
+.r-fontSize-1enofrn{font-size:12px;}
+.r-fontSize-1gkfh8e{font-size:11px;}
+.r-fontSize-1grwqd5{font-size:12.5px;}
+.r-fontSize-1i10wst{font-size:18px;}
+.r-fontSize-1inkyih{font-size:17px;}
+.r-fontSize-1ra0lkn{font-size:30px;}
+.r-fontSize-7cikom{font-size:inherit;}
+.r-fontSize-a023e6{font-size:15px;}
+.r-fontSize-adyw6z{font-size:20px;}
+.r-fontSize-cv4lhi{font-size:21px;}
+.r-fontSize-evnaw{font-size:22px;}
+.r-fontSize-n6v787{font-size:13px;}
+.r-fontSize-qqjak8{font-size:9px;}
+.r-fontSize-s67bdx{font-size:48px;}
+.r-fontSize-ubezar{font-size:16px;}
+.r-fontSize-vbi3md{font-size:13.5px;}
+.r-fontSize-yy2aun{font-size:26px;}
+.r-fontSize-zz5t5d{font-size:28px;}
+.r-fontStyle-36ujnk{font-style:italic;}
+.r-fontWeight-1kfrs79{font-weight:600;}
+.r-fontWeight-1vr29t4{font-weight:800;}
+.r-fontWeight-b88u0q{font-weight:700;}
+.r-fontWeight-majxgm{font-weight:500;}
+.r-fontWeight-vw2c0b{font-weight:bold;}
+.r-forcedColorAdjust-1c6unfx{forced-color-adjust:none;}
+.r-gap-1cmwbt1{gap:8px;}
+.r-gap-1ey881g{gap:7px;}
+.r-gap-1ssbvtb{gap:12px;}
+.r-gap-9aw3ui{gap:4px;}
+.r-gap-f4gmv6{gap:16px;}
+.r-gap-ojf8lh{gap:6px;}
+.r-gap-uaa2di{gap:10px;}
+.r-gap-z5qs1h{gap:2px;}
+.r-height-10ptun7{height:16px;}
+.r-height-1472mwg{height:24px;}
+.r-height-18yzcnr{height:22px;}
+.r-height-195d4m8{height:46px;}
+.r-height-1a8msfu{height:38px;}
+.r-height-1dernwh{height:70%;}
+.r-height-1mwlp6a{height:56px;}
+.r-height-1njcn02{height:96px;}
+.r-height-1pi2tsx{height:100%;}
+.r-height-1r8g8re{height:36px;}
+.r-height-1s5nyi{height:84px;}
+.r-height-1sn7ly2{height:54px;}
+.r-height-1xbve24{height:6px;}
+.r-height-1ygb39h{height:47px;}
+.r-height-4v7adb{height:5px;}
+.r-height-hdaws3{height:4px;}
+.r-height-k5y9r7{height:9px;}
+.r-height-mabqd8{height:32px;}
+.r-height-sga3zk{height:64px;}
+.r-height-tbmifm{height:12px;}
+.r-height-ur6pnr{height:42px;}
+.r-height-z80fyv{height:20px;}
+.r-height-zx9znk{height:34px;}
+.r-justifyContent-1777fci{justify-content:center;}
+.r-justifyContent-17s6mgv{justify-content:flex-end;}
+.r-justifyContent-1h0z5md{justify-content:flex-start;}
+.r-justifyContent-1wtj0ep{justify-content:space-between;}
+.r-justifyContent-a2tzq0{justify-content:space-around;}
+.r-left-1d2f490{left:0px;}
+.r-letterSpacing-1byouvs{letter-spacing:0.4px;}
+.r-letterSpacing-1dpkw9{letter-spacing:0.3px;}
+.r-letterSpacing-1ikidpy{letter-spacing:0.5px;}
+.r-letterSpacing-3b040n{letter-spacing:0.6px;}
+.r-lineHeight-10yl4k{line-height:21px;}
+.r-lineHeight-14yzgew{line-height:18px;}
+.r-lineHeight-1cwl3u0{line-height:16px;}
+.r-lineHeight-fxxt2n{line-height:15px;}
+.r-lineHeight-hbpseb{line-height:22px;}
+.r-lineHeight-rjixqe{line-height:20px;}
+.r-lineHeight-vrz42v{line-height:28px;}
+.r-marginBottom-15d164r{margin-bottom:10px;}
+.r-marginBottom-15zivkp{margin-bottom:4px;}
+.r-marginBottom-5oul0u{margin-bottom:8px;}
+.r-marginBottom-6gpygo{margin-bottom:12px;}
+.r-marginBottom-d0pm55{margin-bottom:5px;}
+.r-marginBottom-f1odvy{margin-bottom:6px;}
+.r-marginBottom-wr9vkk{margin-bottom:3px;}
+.r-marginLeft-12ubb6f{margin-left:-6px;}
+.r-marginLeft-1jj8364{margin-left:auto;}
+.r-marginLeft-1n0xq6e{margin-left:10px;}
+.r-marginLeft-1rngwi6{margin-left:6px;}
+.r-marginRight-1d4mawv{margin-right:4px;}
+.r-marginRight-1kb76zh{margin-right:8px;}
+.r-marginRight-1pcdyqj{margin-right:6px;}
+.r-marginTop-1444osr{margin-top:18px;}
+.r-marginTop-14gqq1x{margin-top:4px;}
+.r-marginTop-19qrga8{margin-top:3px;}
+.r-marginTop-1bymd8e{margin-top:2px;}
+.r-marginTop-1d7gupr{margin-top:22px;}
+.r-marginTop-1s2bzr4{margin-top:12px;}
+.r-marginTop-1t01tom{margin-top:auto;}
+.r-marginTop-1wzrnnt{margin-top:16px;}
+.r-marginTop-kc8jnq{margin-top:6px;}
+.r-marginTop-knv0ih{margin-top:8px;}
+.r-marginTop-l71dzp{margin-top:14px;}
+.r-maxHeight-9stuvb{max-height:168px;}
+.r-maxWidth-1eey0nk{max-width:1100px;}
+.r-maxWidth-1rkdych{max-width:1040px;}
+.r-maxWidth-1vt0xo1{max-width:1328px;}
+.r-maxWidth-3lpwum{max-width:440px;}
+.r-maxWidth-dnmrzs{max-width:100%;}
+.r-minHeight-12sks89{min-height:22px;}
+.r-minHeight-1xqozp3{min-height:71px;}
+.r-minHeight-eiusa0{min-height:140px;}
+.r-minHeight-peo1c{min-height:44px;}
+.r-minWidth-1baxesd{min-width:50px;}
+.r-minWidth-1c8i11{min-width:60px;}
+.r-minWidth-1i1dynu{min-width:45px;}
+.r-minWidth-1p21wfh{min-width:5px;}
+.r-minWidth-1v6e3re{min-width:48px;}
+.r-minWidth-bcqeeo{min-width:0px;}
+.r-minWidth-lp5zef{min-width:24px;}
+.r-minWidth-t4w6jl{min-width:72px;}
+.r-minWidth-vkv6oe{min-width:40px;}
+.r-opacity-12c3ph5{opacity:0.4;}
+.r-opacity-6dt33c{opacity:1;}
+.r-opacity-icoktb{opacity:0.5;}
+.r-opacity-icxjq6{opacity:0.85;}
+.r-opacity-orgf3d{opacity:0;}
+.r-opacity-sgbo92{opacity:0.9;}
+.r-outlineStyle-1ny4l3l{outline-style:none;}
+.r-overflowX-11yh6sk{overflow-x:hidden;}
+.r-overflowX-lltvgl{overflow-x:auto;}
+.r-overflowY-1rnoaur{overflow-y:auto;}
+.r-overflowY-buy8e9{overflow-y:hidden;}
+.r-paddingBottom-97e31f{padding-bottom:env(safe-area-inset-bottom);}
+.r-paddingBottom-k8qxaj{padding-bottom:20px;}
+.r-paddingBottom-xd6kpl{padding-bottom:8px;}
+.r-paddingLeft-bv2aro{padding-left:env(safe-area-inset-left);}
+.r-paddingRight-1pyaxff{padding-right:8px;}
+.r-paddingRight-hxflta{padding-right:env(safe-area-inset-right);}
+.r-paddingTop-10xqauy{padding-top:env(safe-area-inset-top);}
+.r-paddingTop-95jzfe{padding-top:16px;}
+.r-paddingTop-tskmnb{padding-top:8px;}
+.r-paddingTop-ttdzmv{padding-top:12px;}
+.r-paddingTop-wk8lta{padding-top:0px;}
+.r-placeholderTextColor-6taxm2:-ms-input-placeholder{color:var(--placeholderTextColor);opacity:1;}
+.r-placeholderTextColor-6taxm2::-moz-placeholder{color:var(--placeholderTextColor);opacity:1;}
+.r-placeholderTextColor-6taxm2::-webkit-input-placeholder{color:var(--placeholderTextColor);opacity:1;}
+.r-placeholderTextColor-6taxm2::placeholder{color:var(--placeholderTextColor);opacity:1;}
+.r-pointerEvents-105ug2t{pointer-events:auto!important;}
+.r-pointerEvents-12vffkv>* {pointer-events:auto;}
+.r-pointerEvents-12vffkv{pointer-events:none!important;}
+.r-pointerEvents-633pao>* {pointer-events:none;}
+.r-pointerEvents-633pao{pointer-events:none!important;}
+.r-pointerEvents-ah5dr5>* {pointer-events:none;}
+.r-pointerEvents-ah5dr5{pointer-events:auto!important;}
+.r-position-1xcajam{position:fixed;}
+.r-position-gtdqiz{position:-webkit-sticky;position:sticky;}
+.r-position-u8s1d{position:absolute;}
+.r-right-zchlnj{right:0px;}
+.r-scrollSnapAlign-cpa5s6{scroll-snap-align:start;}
+.r-scrollSnapType-1ocf4r9{scroll-snap-type:y mandatory;}
+.r-scrollSnapType-mfh4gg{scroll-snap-type:x mandatory;}
+.r-scrollbarWidth-2eszeu::-webkit-scrollbar{display:none}
+.r-scrollbarWidth-2eszeu{scrollbar-width:none;}
+.r-textAlign-1ff274t{text-align:right;}
+.r-textAlign-fdjqy7{text-align:left;}
+.r-textAlign-q4m81j{text-align:center;}
+.r-textOverflow-1udbk01{text-overflow:ellipsis;}
+.r-textTransform-tsynxw{text-transform:uppercase;}
+.r-top-ipm5af{top:0px;}
+.r-touchAction-19z077z{touch-action:none;}
+.r-touchAction-1otgn73{touch-action:manipulation;}
+.r-transform-10v3vxq{transform:scaleX(-1);}
+.r-transform-173mzie{transform:scaleY(-1);}
+.r-transform-agouwx{transform:translateZ(0);}
+.r-transform-bi4vy9{transform:translateY(100%);}
+.r-transform-ghxds0{transform:translateY(0%);}
+.r-transitionDuration-13tjlyg{transition-duration:0.1s;}
+.r-transitionDuration-eafdt9{transition-duration:0.15s;}
+.r-transitionProperty-1i6wzkk{-moz-transition-property:opacity;-webkit-transition-property:opacity;transition-property:opacity;}
+.r-userSelect-1xnzce8{-moz-user-select:text;-webkit-user-select:text;user-select:text;}
+.r-userSelect-lrvibr{-moz-user-select:none;-webkit-user-select:none;user-select:none;}
+.r-visibility-11j9u27{visibility:hidden;}
+.r-whiteSpace-3s2u2q{white-space:nowrap;}
+.r-width-131xog0{width:38px;}
+.r-width-13qz1uu{width:100%;}
+.r-width-16eto9q{width:12px;}
+.r-width-19wmn03{width:20px;}
+.r-width-1acpoxo{width:36px;}
+.r-width-1janqcz{width:16px;}
+.r-width-1t7zxhp{width:9px;}
+.r-width-1yvhtrz{width:32px;}
+.r-width-2tyz2o{width:45px;}
+.r-width-5orghg{width:34px;}
+.r-width-7a29px{width:64px;}
+.r-width-ge9izo{width:130px;}
+.r-width-iv112m{width:78px;}
+.r-width-lif3th{width:420px;}
+.r-width-lrsllp{width:24px;}
+.r-width-yc9v9c{width:22px;}
+.r-width-z2qzgk{width:5px;}
+.r-wordWrap-1iln25a{word-wrap:normal;}
+.r-zIndex-136ojw6{z-index:2;}
+.r-zIndex-1g40b8q{z-index:3;}
+.r-zIndex-1wyyakw{z-index:-1;}
+.r-zIndex-417010{z-index:0;}
+.r-zIndex-mhe3cw{z-index:10;}
+.r-zIndex-sfbmgh{z-index:9999;}
+@-webkit-keyframes r-animation-11cv4x{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+@-webkit-keyframes r-animation-1iq689l{0%{transform:translateY(0%);}100%{transform:translateY(100%);}}
+@-webkit-keyframes r-animation-1pzkwqh{0%{transform:translateY(100%);}100%{transform:translateY(0%);}}
+@-webkit-keyframes r-animation-imtty0{0%{opacity:0;}100%{opacity:1;}}
+@-webkit-keyframes r-animation-q67da2{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}
+@-webkit-keyframes r-animation-t2lo5v{0%{opacity:1;}100%{opacity:0;}}
+@keyframes r-animation-11cv4x{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+@keyframes r-animation-1iq689l{0%{transform:translateY(0%);}100%{transform:translateY(100%);}}
+@keyframes r-animation-1pzkwqh{0%{transform:translateY(100%);}100%{transform:translateY(0%);}}
+@keyframes r-animation-imtty0{0%{opacity:0;}100%{opacity:1;}}
+@keyframes r-animation-q67da2{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}
+@keyframes r-animation-t2lo5v{0%{opacity:1;}100%{opacity:0;}}
+  </style>
+</head>
+<body>
+  <div id="frame"><div id="root"><div class="css-view-g5y9jx r-backgroundColor-12bw5kf r-flex-13awgt0" data-testid="card-detail-shell"><div class="css-view-g5y9jx r-backgroundColor-12bw5kf r-width-13qz1uu r-zIndex-136ojw6" style="padding-top: 0px;" data-testid="card-detail-shell-top"><h1 role="heading" class="css-view-g5y9jx r-alignItems-1awozwy r-backgroundColor-1niwhzg r-flexDirection-18u37iz r-height-1sn7ly2 r-justifyContent-1wtj0ep r-paddingInline-u9wvl5 r-width-13qz1uu" data-testid="shell-status-bar"><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-minWidth-vkv6oe"><div dir="auto" aria-label="time 9:41" class="css-text-146c3p1 r-fontFamily-1460ry7 r-fontSize-a023e6 r-fontWeight-1kfrs79 r-letterSpacing-1byouvs" style="color: rgb(246, 246, 251);" data-testid="shell-status-bar-time">9:41</div></div><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-gap-ojf8lh r-justifyContent-17s6mgv r-minWidth-1c8i11" data-testid="shell-status-bar-indicators"><div aria-label="signal" class="css-view-g5y9jx r-borderRadius-cdmcib r-borderWidth-v4qui7 r-height-10ptun7 r-opacity-icxjq6 r-width-1janqcz" style="border-top-color: rgb(246, 246, 251); border-right-color: rgb(246, 246, 251); border-bottom-color: rgb(246, 246, 251); border-left-color: rgb(246, 246, 251);" data-testid="shell-status-bar-signal"></div><div aria-label="wifi" class="css-view-g5y9jx r-borderRadius-cdmcib r-borderWidth-v4qui7 r-height-10ptun7 r-opacity-icxjq6 r-width-1janqcz" style="border-top-color: rgb(246, 246, 251); border-right-color: rgb(246, 246, 251); border-bottom-color: rgb(246, 246, 251); border-left-color: rgb(246, 246, 251);" data-testid="shell-status-bar-wifi"></div><div aria-label="battery" class="css-view-g5y9jx r-borderRadius-cdmcib r-borderWidth-v4qui7 r-height-10ptun7 r-opacity-icxjq6 r-width-1janqcz" style="border-top-color: rgb(246, 246, 251); border-right-color: rgb(246, 246, 251); border-bottom-color: rgb(246, 246, 251); border-left-color: rgb(246, 246, 251);" data-testid="shell-status-bar-battery"></div></div></h1><div class="css-view-g5y9jx r-alignItems-1awozwy r-backgroundColor-1niwhzg r-flexDirection-18u37iz r-height-1mwlp6a r-justifyContent-1wtj0ep r-paddingInline-u9wvl5 r-width-13qz1uu" data-testid="shell-app-bar"><h1 role="heading" class="css-view-g5y9jx r-alignItems-1awozwy r-flex-13awgt0 r-flexDirection-18u37iz r-gap-1ssbvtb r-minWidth-bcqeeo"><button aria-label="返回" role="button" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-alignItems-1awozwy r-height-mabqd8 r-justifyContent-1777fci r-marginLeft-12ubb6f r-width-1yvhtrz" style="transition-duration: 0s;" data-testid="card-detail-back" type="button"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontFamily-1460ry7 r-fontSize-yy2aun r-lineHeight-vrz42v">‹</div></button><div class="css-view-g5y9jx r-flexShrink-1wbh5a2 r-minWidth-bcqeeo"><div dir="auto" class="css-text-146c3p1 r-maxWidth-dnmrzs r-overflow-1udh08x r-textOverflow-1udbk01 r-whiteSpace-3s2u2q r-wordWrap-1iln25a r-color-ga7ya0 r-fontFamily-1460ry7 r-fontSize-adyw6z r-fontWeight-b88u0q r-lineHeight-vrz42v" data-testid="shell-app-bar-title">hBP01-081</div></div></h1><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-gap-1ssbvtb r-justifyContent-17s6mgv r-minWidth-1c8i11" data-testid="shell-app-bar-actions"><button aria-label="官方卡表" role="button" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-alignItems-1awozwy r-borderRadius-cpet4d r-height-18yzcnr r-justifyContent-1777fci r-width-yc9v9c" style="transition-duration: 0s;" data-testid="shell-app-bar-action-official" type="button"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1i10wst r-lineHeight-rjixqe">↗</div></button></div></div></div><div class="css-view-g5y9jx r-flex-13awgt0 r-alignSelf-1kihuf0 r-maxWidth-1vt0xo1 r-paddingTop-95jzfe r-width-13qz1uu" style="padding-bottom: 24px;" data-testid="shell-content"><div class="css-view-g5y9jx r-WebkitOverflowScrolling-150rngu r-flexDirection-eqz5dr r-flexGrow-16y2uox r-flexShrink-1wbh5a2 r-overflowX-11yh6sk r-overflowY-1rnoaur r-transform-agouwx r-backgroundColor-12bw5kf r-flex-13awgt0"><div class="css-view-g5y9jx r-alignItems-1awozwy"><div class="css-view-g5y9jx r-alignItems-1habvwh r-flexDirection-18u37iz r-maxWidth-1rkdych r-width-13qz1uu"><div class="css-view-g5y9jx r-width-lif3th"><div class="css-view-g5y9jx r-alignItems-1awozwy r-borderBottomColor-g15gg3 r-borderBottomWidth-qklmqi r-paddingBlock-w7s2jr r-paddingInline-3o4zer r-width-13qz1uu"><div class="css-view-g5y9jx r-alignItems-1awozwy r-width-13qz1uu"><div class="css-view-g5y9jx r-flexBasis-1mlwlqe r-overflow-1udh08x r-zIndex-417010" style="width: 400px; height: 559px; border-top-left-radius: 12px; border-top-right-radius: 12px; border-bottom-right-radius: 12px; border-bottom-left-radius: 12px; margin: 12px;"><div class="css-view-g5y9jx r-backgroundColor-1niwhzg r-backgroundPosition-vvn4in r-backgroundRepeat-u6sd8q r-bottom-1p0dtai r-height-1pi2tsx r-left-1d2f490 r-position-u8s1d r-right-zchlnj r-top-ipm5af r-width-13qz1uu r-zIndex-1wyyakw r-backgroundSize-ehq7j7" style="background-image: url(&quot;https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-081_RR_02.png&quot;);"></div><img alt="" draggable="false" class="css-accessibilityImage-9pa8cd" src="https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-081_RR_02.png"></div></div></div></div><div class="css-view-g5y9jx r-flex-13awgt0"><div class="css-view-g5y9jx r-alignItems-1awozwy r-backgroundColor-1q1sk3v r-borderColor-xz9a7w r-borderRadius-1dzdj1l r-borderWidth-rs99b7 r-flexDirection-18u37iz r-gap-1ssbvtb r-marginInline-bhtmuz r-marginTop-l71dzp r-padding-xyw6el" data-testid="card-detail-collection"><div class="css-view-g5y9jx r-flex-13awgt0 r-minWidth-bcqeeo"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-a023e6 r-fontWeight-b88u0q">收藏擁有數量</div><div dir="auto" class="css-text-146c3p1 r-WebkitBoxOrient-8akbws r-display-krxsd3 r-maxWidth-dnmrzs r-overflow-1qsk4np r-textOverflow-1udbk01 r-color-83p8s2 r-fontSize-1gkfh8e r-marginTop-19qrga8" style="-webkit-line-clamp: 2;">hBP01</div></div><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-gap-1ey881g"><button aria-disabled="true" disabled="" aria-label="收藏 -1 星街彗星" role="button" tabindex="-1" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-alignItems-1awozwy r-backgroundColor-1pg26ma r-borderColor-xz9a7w r-borderRadius-1xfd6ze r-borderWidth-rs99b7 r-height-1a8msfu r-justifyContent-1777fci r-width-131xog0 r-pointerEvents-12vffkv" style="transition-duration: 0s;" data-testid="card-detail-collection-dec" type="button"><div dir="auto" class="css-text-146c3p1 r-fontSize-1i10wst r-fontWeight-1vr29t4 r-color-bw4rb6">－</div></button><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-a023e6 r-fontWeight-1vr29t4 r-minWidth-lp5zef r-textAlign-q4m81j" data-testid="card-detail-collection-qty">0</div><button aria-label="收藏 +1 星街彗星" role="button" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-alignItems-1awozwy r-backgroundColor-1pg26ma r-borderColor-xz9a7w r-borderRadius-1xfd6ze r-borderWidth-rs99b7 r-height-1a8msfu r-justifyContent-1777fci r-width-131xog0" style="transition-duration: 0s;" data-testid="card-detail-collection-inc" type="button"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-1i10wst r-fontWeight-1vr29t4">＋</div></button></div></div><div class="css-view-g5y9jx r-flexDirection-18u37iz r-justifyContent-17s6mgv r-paddingInline-u9wvl5 r-paddingTop-ttdzmv"><button aria-label="設定到價提醒" role="button" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-backgroundColor-30ph5o r-borderRadius-y47klf r-paddingBlock-ytbthy r-paddingInline-3pj75a" style="transition-duration: 0s;" data-testid="card-price-alert-chip" type="button"><div dir="auto" class="css-text-146c3p1 r-color-jwli3a r-fontSize-1b43r93 r-fontWeight-1kfrs79">🔕 設定到價提醒</div></button></div><div class="css-view-g5y9jx r-borderRadius-1867qdf r-marginInline-1xpp3t0 r-marginTop-1wzrnnt r-padding-nsbfu8" style="background-color: rgb(20, 20, 31);" data-testid="card-detail-price-section"><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-marginBottom-f1odvy"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-1inkyih r-fontWeight-b88u0q">🏪 遊々亭</div><div dir="auto" class="css-text-146c3p1 r-backgroundColor-1pg26ma r-borderRadius-z2wwpe r-color-83p8s2 r-fontSize-1gkfh8e r-marginLeft-1n0xq6e r-paddingBlock-xjggfu r-paddingInline-is05cd">暫無資料</div></div><div dir="auto" class="css-text-146c3p1 r-color-17wuna5 r-fontSize-adyw6z r-fontWeight-1kfrs79 r-paddingBlock-11f147o">暫無資料</div><div tabindex="0" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-alignItems-1awozwy r-backgroundColor-30ph5o r-borderRadius-1dzdj1l r-paddingBlock-1mmae3n" style="transition-duration: 0s;"><div dir="auto" class="css-text-146c3p1 r-color-jwli3a r-fontSize-1b43r93 r-fontWeight-b88u0q">🔍 查看遊々亭即時價格 →</div></div></div><div class="css-view-g5y9jx r-borderBottomColor-g15gg3 r-borderBottomWidth-qklmqi r-paddingBlock-1la3zjv r-paddingInline-u9wvl5"><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-justifyContent-1wtj0ep r-marginBottom-5oul0u"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1b43r93 r-fontWeight-b88u0q">hBP01-081</div><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-gap-ojf8lh"><div class="css-view-g5y9jx r-alignItems-1awozwy r-borderRadius-kdyh1x r-minWidth-1baxesd r-paddingBlock-cnw61z r-paddingInline-1ubuhtd" style="background-color: rgb(168, 85, 247);" data-testid="detail-bloom-badge"><div dir="auto" class="css-text-146c3p1 r-color-jwli3a r-fontSize-1enofrn r-fontWeight-1vr29t4 r-letterSpacing-1dpkw9">2nd</div></div><div class="css-view-g5y9jx r-backgroundColor-1niwhzg r-borderRadius-z2wwpe r-borderWidth-rs99b7 r-paddingBlock-1559e4e r-paddingInline-18c5d7m" style="border-top-color: rgb(30, 64, 175); border-right-color: rgb(30, 64, 175); border-bottom-color: rgb(30, 64, 175); border-left-color: rgb(30, 64, 175);"><div dir="auto" class="css-text-146c3p1 r-fontSize-10x49cs r-fontWeight-b88u0q r-letterSpacing-1ikidpy" style="color: rgb(30, 64, 175);">Holomen</div></div><div class="css-view-g5y9jx r-backgroundColor-1niwhzg r-borderRadius-z2wwpe r-borderWidth-rs99b7 r-paddingBlock-1559e4e r-paddingInline-is05cd" style="border-top-color: rgb(107, 114, 128); border-right-color: rgb(107, 114, 128); border-bottom-color: rgb(107, 114, 128); border-left-color: rgb(107, 114, 128);" data-testid="detail-rarity-chip"><div dir="auto" class="css-text-146c3p1 r-fontSize-1gkfh8e r-fontWeight-1vr29t4" style="color: rgb(107, 114, 128);">RR</div></div></div></div><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontFamily-1j6mtpx r-fontSize-cv4lhi r-fontWeight-1vr29t4 r-marginBottom-wr9vkk">星街彗星</div><div class="css-view-g5y9jx r-flexDirection-18u37iz r-marginBottom-d0pm55"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1b43r93 r-marginRight-1pcdyqj">類型：</div><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-flex-13awgt0 r-fontSize-1b43r93">Holomen</div></div><div class="css-view-g5y9jx r-flexDirection-18u37iz r-marginBottom-d0pm55"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1b43r93 r-marginRight-1pcdyqj">Bloom 等級：</div><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-flex-13awgt0 r-fontSize-1b43r93">2nd</div></div><div class="css-view-g5y9jx r-flexDirection-18u37iz r-marginBottom-d0pm55"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1b43r93 r-marginRight-1pcdyqj">顏色：</div><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-flex-13awgt0 r-fontSize-1b43r93">藍</div></div><div class="css-view-g5y9jx r-flexDirection-18u37iz r-marginBottom-d0pm55"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1b43r93 r-marginRight-1pcdyqj">系列：</div><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-flex-13awgt0 r-fontSize-1b43r93">ブルーミングレディアンス</div></div></div><div class="css-view-g5y9jx r-borderBottomColor-g15gg3 r-borderBottomWidth-qklmqi r-paddingBlock-1la3zjv r-paddingInline-u9wvl5"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-ubezar r-fontWeight-b88u0q r-marginBottom-6gpygo">🎯 技能說明</div><div class="css-view-g5y9jx r-backgroundColor-1y1h92r r-borderColor-1ulf27d r-borderRadius-1dzdj1l r-borderWidth-rs99b7 r-marginBottom-15d164r r-padding-xyw6el"><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-flexWrap-1w6e6rj r-marginBottom-f1odvy"><div dir="auto" class="css-text-146c3p1 r-borderRadius-1f0042m r-borderWidth-rs99b7 r-fontSize-1enofrn r-fontWeight-b88u0q r-marginRight-1kb76zh r-overflow-1udh08x r-paddingBlock-1559e4e r-paddingInline-is05cd" style="color: rgb(59, 130, 246); border-top-color: rgba(59, 130, 246, 0.4); border-right-color: rgba(59, 130, 246, 0.4); border-bottom-color: rgba(59, 130, 246, 0.4); border-left-color: rgba(59, 130, 246, 0.4);">アーツ</div><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1enofrn r-fontWeight-1kfrs79">青青青◇赤+50　傷害 60+</div></div><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-a023e6 r-fontWeight-vw2c0b r-marginBottom-15zivkp">閃耀的彗星</div><div dir="auto" class="css-text-146c3p1 r-color-g5isv6 r-fontSize-n6v787 r-lineHeight-10yl4k">可以將此成員的藍應援2張歸檔：每有1張重疊在此成員上的成員，此招式+60（此招式也可以指定對手的後排成員）。</div></div><div class="css-view-g5y9jx r-backgroundColor-1y1h92r r-borderColor-1ulf27d r-borderRadius-1dzdj1l r-borderWidth-rs99b7 r-marginBottom-15d164r r-padding-xyw6el"><div class="css-view-g5y9jx r-alignItems-1awozwy r-flexDirection-18u37iz r-flexWrap-1w6e6rj r-marginBottom-f1odvy"><div dir="auto" class="css-text-146c3p1 r-borderColor-1rc37qc r-borderRadius-1f0042m r-borderWidth-rs99b7 r-color-83p8s2 r-fontSize-1enofrn r-fontWeight-b88u0q r-marginRight-1kb76zh r-overflow-1udh08x r-paddingBlock-1559e4e r-paddingInline-is05cd">關鍵字</div></div><div dir="auto" class="css-text-146c3p1 r-color-g5isv6 r-fontSize-n6v787 r-lineHeight-10yl4k">劃過天空的光
+從自己的應援牌組上方將1張送到自己的藍成員。</div></div></div><div class="css-view-g5y9jx r-borderBottomColor-g15gg3 r-borderBottomWidth-qklmqi r-paddingBlock-1la3zjv r-paddingInline-u9wvl5"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-ubezar r-fontWeight-b88u0q r-marginBottom-6gpygo">📊 市場數據</div><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1enofrn r-fontWeight-1kfrs79 r-marginBottom-5oul0u">價格對應版本：hBP01</div></div><div class="css-view-g5y9jx r-borderBottomColor-g15gg3 r-borderBottomWidth-qklmqi r-paddingBlock-1la3zjv r-paddingInline-u9wvl5"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-ubezar r-fontWeight-b88u0q r-marginBottom-6gpygo">搜尋關鍵字</div><div class="css-view-g5y9jx r-flexDirection-18u37iz r-flexWrap-1w6e6rj r-gap-1cmwbt1"><div class="css-view-g5y9jx r-backgroundColor-1pg26ma r-borderRadius-kdyh1x r-paddingBlock-cnw61z r-paddingInline-1ubuhtd"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1enofrn">星街すいせい</div></div><div class="css-view-g5y9jx r-backgroundColor-1pg26ma r-borderRadius-kdyh1x r-paddingBlock-cnw61z r-paddingInline-1ubuhtd"><div dir="auto" class="css-text-146c3p1 r-color-83p8s2 r-fontSize-1enofrn">星街彗星</div></div></div></div><div class="css-view-g5y9jx r-borderBottomColor-g15gg3 r-borderBottomWidth-qklmqi r-paddingBlock-1la3zjv r-paddingInline-u9wvl5"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-ubezar r-fontWeight-b88u0q r-marginBottom-6gpygo">外部連結</div><div tabindex="0" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-backgroundColor-1pg26ma r-borderColor-1rc37qc r-borderRadius-1dzdj1l r-borderWidth-rs99b7 r-marginBottom-5oul0u r-paddingBlock-1ml3abn r-paddingInline-3pj75a" style="transition-duration: 0s;"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-a023e6 r-fontWeight-1kfrs79">🏛️ 官方卡表</div></div><div tabindex="0" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-backgroundColor-1pg26ma r-borderColor-1rc37qc r-borderRadius-1dzdj1l r-borderWidth-rs99b7 r-marginBottom-5oul0u r-paddingBlock-1ml3abn r-paddingInline-3pj75a" style="transition-duration: 0s;"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-a023e6 r-fontWeight-1kfrs79">🏪 遊々亭（價格查詢）</div></div><div tabindex="0" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-backgroundColor-1pg26ma r-borderColor-1rc37qc r-borderRadius-1dzdj1l r-borderWidth-rs99b7 r-marginBottom-5oul0u r-paddingBlock-1ml3abn r-paddingInline-3pj75a" style="transition-duration: 0s;"><div dir="auto" class="css-text-146c3p1 r-color-ga7ya0 r-fontSize-a023e6 r-fontWeight-1kfrs79">🔄 Carousell 二手價格</div></div></div><div class="css-view-g5y9jx r-borderBottomColor-g15gg3 r-borderBottomWidth-qklmqi r-paddingBlock-1la3zjv r-paddingInline-u9wvl5"><button aria-label="設定到價提醒" role="button" class="css-view-g5y9jx r-transitionProperty-1i6wzkk r-userSelect-lrvibr r-cursor-1loqt21 r-touchAction-1otgn73 r-alignItems-1awozwy r-backgroundColor-30ph5o r-borderRadius-1q9bdsx r-paddingBlock-1d7mnkm" style="transition-duration: 0s;" data-testid="card-price-alert-button" type="button"><div dir="auto" class="css-text-146c3p1 r-color-jwli3a r-fontSize-ubezar r-fontWeight-1vr29t4">🔕 設定到價提醒</div></button></div><div class="css-view-g5y9jx" style="height: 20px;"></div></div></div></div></div></div></div></div></div>
+</body>
+</html>

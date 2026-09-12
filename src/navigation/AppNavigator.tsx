@@ -99,11 +99,16 @@ function MainDrawer() {
         },
       }}
     >
-      <Drawer.Screen 
-        name="Home" 
+      <Drawer.Screen
+        name="Home"
         component={HomeScreen}
-        options={{ 
+        options={{
           title: t('nav_home'),
+          // DIC-1409 Phase 3: Home renders the shared Pen v2 AppShell
+          // (status bar + app bar + bottom tab bar), so the drawer header is
+          // redundant chrome. The drawer itself stays reachable through the
+          // shell's brand mark (`onLeadingPress` → openDrawer).
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏠</Text>
           ),
@@ -114,16 +119,22 @@ function MainDrawer() {
         component={ScanScreenSafe}
         options={{
           title: t('nav_scan'),
+          // DIC-1409 CR fix: the scan flow carries the Pen App/04 top
+          // action row (close / quota / flash) itself — the legacy drawer
+          // header was double chrome over a full-bleed camera surface.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📷</Text>
           ),
         }}
       />
-      <Drawer.Screen 
-        name="Search" 
+      <Drawer.Screen
+        name="Search"
         component={SearchScreen}
-        options={{ 
+        options={{
           title: t('nav_search'),
+          // DIC-1409 CR fix: Search renders the shared Pen v2 RouteShell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔍</Text>
           ),
@@ -142,6 +153,8 @@ function MainDrawer() {
           component={FavoritesScreen}
           options={{
             title: t('nav_favorites'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>❤️</Text>
             ),
@@ -157,6 +170,8 @@ function MainDrawer() {
           component={CollectionScreen}
           options={{
             title: t('nav_collection'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
             ),
@@ -168,6 +183,9 @@ function MainDrawer() {
         component={DeckEditorScreen}
         options={{
           title: t('nav_deck_editor'),
+          // DIC-1409 Phase 4: DeckEditor renders the shared Pen v2 shell
+          // (status bar + its own Pen app bar + bottom tab bar).
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🃏</Text>
           ),
@@ -178,6 +196,8 @@ function MainDrawer() {
         component={TournamentReportScreen}
         options={{
           title: t('nav_tournament_report'),
+          // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🏆</Text>
           ),
@@ -192,6 +212,8 @@ function MainDrawer() {
           component={WatchlistScreen}
           options={{
             title: t('nav_watchlist'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
             drawerIcon: ({ focused }) => (
               <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>🔔</Text>
             ),
@@ -203,6 +225,8 @@ function MainDrawer() {
         component={TutorialScreen}
         options={{ 
           title: t('nav_tutorial'),
+          // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
           ),
@@ -213,6 +237,8 @@ function MainDrawer() {
         component={SettingsScreen}
         options={{ 
           title: t('nav_settings'),
+          // DIC-1409 Phase 4: 我的 renders the shared Pen v2 shell.
+          headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>⚙️</Text>
           ),
@@ -223,7 +249,10 @@ function MainDrawer() {
 }
 
 // Stack Navigator for screens that need navigation (CardDetail, SearchResults)
-function StackNavigator() {
+// Exported for the DIC-1409 shell-tab navigation regression, which mounts
+// the REAL nested stack+drawer tree (not a stub) to prove bottom-tab
+// presses resolve from both drawer children and root-stack screens.
+export function StackNavigator() {
   const { t } = useTranslation();
 
   return (
@@ -249,22 +278,26 @@ function StackNavigator() {
       <Stack.Screen
         name="CardDetail"
         component={CardDetailScreen}
-        options={{ title: t('nav_card_detail') }}
+        // DIC-1409 Phase 3: these two routes render the shared Pen v2 shell
+        // with their own back-arrow app bar, so the stack header is hidden.
+        options={{ title: t('nav_card_detail'), headerShown: false }}
       />
       <Stack.Screen
         name="SearchResults"
         component={SearchResultsScreen}
-        options={{ title: t('nav_search_results') }}
+        options={{ title: t('nav_search_results'), headerShown: false }}
       />
       <Stack.Screen
         name="TutorialDetail"
         component={TutorialDetailScreen}
-        options={{ title: t('nav_tutorial_detail') }}
+        // DIC-1409 Phase 6: route renders the shared Pen v2 shell.
+        options={{ title: t('nav_tutorial_detail'), headerShown: false }}
       />
       <Stack.Screen
         name="TutorialSimulation"
         component={TutorialSimulationScreen}
-        options={{ title: t('nav_tutorial_simulation') }}
+        // DIC-1409 Phase 6: route renders the shared Pen v2 shell.
+        options={{ title: t('nav_tutorial_simulation'), headerShown: false }}
       />
     </Stack.Navigator>
   );

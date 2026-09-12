@@ -173,6 +173,11 @@ export const ja: Record<keyof typeof zh, string> = {
   login_terms_footer: 'ログインすることでプライバシーポリシーと利用規約に同意したとみなされます',
 
   // Common actions and states
+  common_back: '戻る',
+  me_stat_collection: '所持枚数',
+  me_stat_alerts: '価格アラート',
+  me_guest_name: 'ゲスト',
+  me_provider_linked: '{{provider}} 連携済み',
   common_cancel: 'キャンセル',
   common_remove: '削除',
   common_save: '保存',
@@ -641,6 +646,7 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_recognizing: '認識中…',
   scan_frame_auto: 'カードをスキャン枠に合わせてください',
   scan_frame_manual: 'スキャンボタンでカードを撮影してください',
+  scan_close_a11y: 'スキャンを閉じる',
   scan_flash_on: 'フラッシュON',
   scan_flash: 'フラッシュ',
   scan_gallery: '写真',

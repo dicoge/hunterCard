@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ListRenderItemInfo 
 import { COLORS } from '../constants';
 import { useTranslation } from '../i18n';
 import { useFavoritesStore, type FavoriteEntry } from '../store/favoritesStore';
+import { RouteShell } from '../components/shell';
 
 /**
  * FavoritesScreen — DIC-1380 W6: real listing of the independent
@@ -11,7 +12,7 @@ import { useFavoritesStore, type FavoriteEntry } from '../store/favoritesStore';
  * a remove action that stamps the store's removal tombstone so the sync
  * 409 merge preserves the delete against a concurrent server add.
  */
-export default function FavoritesScreen() {
+export default function FavoritesScreen({ navigation }: any) {
   const { t } = useTranslation();
   const favorites = useFavoritesStore((s) => s.favorites);
   const removeFavorite = useFavoritesStore((s) => s.removeFavorite);
@@ -42,8 +43,15 @@ export default function FavoritesScreen() {
     );
   }, [remove, t]);
 
+  // DIC-1409 Phase 5 — Pen `App / 09 我的最愛` (frame sSDxQ) shared shell.
+  const wrapInShell = (children: React.ReactNode) => (
+    <RouteShell navigation={navigation} routeName="Favorites" title={t('favorites_title')} testID="favorites-shell">
+      {children}
+    </RouteShell>
+  );
+
   if (favorites.length === 0) {
-    return (
+    return wrapInShell(
       <View style={styles.container} testID="favorites-empty">
         <Text style={styles.text}>❤️ {t('favorites_title')}</Text>
         <Text style={styles.subtitle}>{t('favorites_empty')}</Text>
@@ -51,7 +59,7 @@ export default function FavoritesScreen() {
     );
   }
 
-  return (
+  return wrapInShell(
     <View style={styles.listContainer} testID="favorites-list">
       <View style={styles.header}>
         <Text style={styles.text}>❤️ {t('favorites_title')}</Text>

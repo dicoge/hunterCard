@@ -16,6 +16,7 @@ import { useTranslation, type TranslationKey } from '../i18n';
 import { useDeckStore } from '../store/deckStore';
 import { loadCardDatabase } from '../utils/deckCardData';
 import { eligibleZone, ownershipKey, type DeckCard, type DeckZone } from '../utils/deckRules';
+import { RouteShell } from '../components/shell';
 
 type CollectionFilter = 'all' | 'owned' | DeckZone;
 
@@ -93,8 +94,15 @@ export default function CollectionScreen({ navigation }: any) {
     [collection],
   );
 
+  // DIC-1409 Phase 5 — Pen `App / 08 收藏` (frame ej9RF) shared shell.
+  const wrapInShell = (children: React.ReactNode) => (
+    <RouteShell navigation={navigation} routeName="Collection" title={t('collection_title')} testID="collection-shell">
+      {children}
+    </RouteShell>
+  );
+
   if (loading) {
-    return (
+    return wrapInShell(
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.primary} size="large" />
@@ -104,7 +112,7 @@ export default function CollectionScreen({ navigation }: any) {
     );
   }
 
-  return (
+  return wrapInShell(
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
