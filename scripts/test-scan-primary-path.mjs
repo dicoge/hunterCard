@@ -22,10 +22,11 @@
  *
  * What this test now pins BEHAVIOURALLY, in a real DOM render:
  *
- *   1. Viewfinder exposes exactly ONE primary scan action, exactly ONE torch
- *      (framing aid), and exactly ONE gallery entry (DIC-1336). No
- *      developer/session controls (flip, auto-scan toggle, manual search)
- *      may re-appear in the viewfinder.
+ *   1. Viewfinder exposes exactly ONE primary scan action, exactly ONE flash
+ *      toggle (framing aid — riding the Pen `x7iIL` top bar since DIC-1409),
+ *      and exactly ONE gallery entry (DIC-1336). No developer/session
+ *      controls (flip, auto-scan toggle, manual search) may re-appear in the
+ *      viewfinder.
  *
  *   2. The gallery button is wired: rendering ScanOverlay with an `onGallery`
  *      spy and clicking `data-testid="scan-gallery-action"` fires it exactly
@@ -171,17 +172,17 @@ function pressablesIn(node) {
       assert.equal(primaries.length, 1, `expected 1 primary scan action, got ${primaries.length}`);
     });
 
-    await test('viewfinder control row holds exactly three pressables (torch + scan + gallery)', () => {
+    await test('viewfinder control row holds exactly two pressables (scan + gallery)', () => {
       const buttons = pressablesIn(row);
       assert.equal(
         buttons.length,
-        3,
-        `expected torch + scan + gallery only, got ${buttons.length}: ${buttons.map((b) => b.textContent).join(' | ')}`,
+        2,
+        `expected scan + gallery only (flash rides the top bar), got ${buttons.length}: ${buttons.map((b) => b.textContent).join(' | ')}`,
       );
     });
 
-    await test('the torch is present as a framing aid', () => {
-      assert.equal(container.querySelectorAll('[data-testid="scan-flash-toggle"]').length, 1);
+    await test('the flash toggle is present as a framing aid (Pen top bar, DIC-1409)', () => {
+      assert.equal(container.querySelectorAll('[data-testid="scan-top-bar-flash"]').length, 1);
     });
 
     await test('the gallery entry is present in the viewfinder (DIC-1336 native reachability)', () => {
@@ -544,15 +545,13 @@ await test('mutation: a permission-denied view missing pick-gallery fails the re
   }
 });
 
-// A regressed overlay with an extra fourth control fails the three-pressable
+// A regressed overlay with an extra third control fails the two-pressable
 // assertion — protects against re-adding removed developer/session controls.
-await test('mutation: an overlay with a fourth control fails the three-pressable assertion', async () => {
+await test('mutation: an overlay with a third row control fails the two-pressable assertion', async () => {
   function RegressedOverlay() {
     return React.createElement(
       View,
       { 'data-testid': 'scan-primary-controls', testID: 'scan-primary-controls' },
-      React.createElement(TouchableOpacity, { testID: 'scan-flash-toggle', accessibilityRole: 'button' },
-        React.createElement(Text, null, '💡')),
       React.createElement(TouchableOpacity, { testID: 'scan-primary-action', accessibilityRole: 'button' },
         React.createElement(Text, null, '📷')),
       React.createElement(TouchableOpacity, { testID: 'scan-gallery-action', accessibilityRole: 'button' },
@@ -566,10 +565,10 @@ await test('mutation: an overlay with a fourth control fails the three-pressable
   const { container, cleanup } = await renderInto(React.createElement(RegressedOverlay));
   try {
     const buttons = pressablesIn(controlRow(container));
-    assert.equal(buttons.length, 4, 'positive control must really render four pressables');
+    assert.equal(buttons.length, 3, 'positive control must really render three pressables');
     assert.throws(
-      () => assert.equal(buttons.length, 3),
-      'the three-pressable assertion must reject the regressed overlay',
+      () => assert.equal(buttons.length, 2),
+      'the two-pressable assertion must reject the regressed overlay',
     );
   } finally {
     await cleanup();

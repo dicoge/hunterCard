@@ -20,7 +20,9 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import * as pathMod from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -344,6 +346,252 @@ for (const key of [
     );
   }
 }
+
+// ── DIC-1381 W10 / W11 CR — Store MVP user-facing copy MUST NOT
+//    promise sync. App.tsx gates installAccountSyncBinding() on
+//    FEATURES.favorites | .watchlist | .premium, all of which resolve
+//    to !STORE_MVP, so no sync request is issued on the shipping
+//    build. Any clause that promises cross-device sync / account-
+//    binding of decks / settings / favorites / alerts on a `_store`
+//    variant is a false claim.
+//
+//    Truth-source binding: fail closed if App.tsx or releaseFlags stop
+//    agreeing with this assumption — the copy would need to change
+//    too.
+const appSrcForSync = read('App.tsx');
+const flagsSrcForSync = read('src/config/releaseFlags.ts');
+check(
+  'code sanity: App.tsx gates installAccountSyncBinding on FEATURES.favorites | .watchlist | .premium',
+  /installAccountSyncBinding\(\)/.test(appSrcForSync)
+    && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(appSrcForSync),
+);
+for (const flag of ['favorites', 'watchlist', 'premium']) {
+  check(
+    `code sanity: releaseFlags derives FEATURES.${flag} from !STORE_MVP (Store MVP disables it)`,
+    new RegExp(`${flag}:\\s*!STORE_MVP`).test(flagsSrcForSync),
+  );
+}
+
+// DIC-1381 W11 CR — MUTATION SENSITIVE: reject any additional binding
+// call outside the FEATURES-gate. Counts every `installAccountSyncBinding(`
+// invocation (excluding declaration/import lines) in App.tsx and asserts
+// there is exactly one; then verifies THAT one line is inside a block
+// that starts with the three-flag guard. An extra unconditional call
+// added anywhere else in App.tsx fails this check even when the guarded
+// call is left in place.
+const bindingCallLines = appSrcForSync
+  .split('\n')
+  .map((line, idx) => ({ line, idx: idx + 1 }))
+  .filter(({ line }) => /installAccountSyncBinding\s*\(/.test(line))
+  .filter(({ line }) => !/^\s*(import|export)\s/.test(line))
+  .filter(({ line }) => !/^\s*(\/\/|\*|\/\*)/.test(line));
+check(
+  'code sanity: App.tsx calls installAccountSyncBinding() exactly ONCE (no additional unguarded call)',
+  bindingCallLines.length === 1,
+  `got ${bindingCallLines.length} call sites: ${bindingCallLines.map(({ idx, line }) => `L${idx}: ${line.trim()}`).join(' | ')}`,
+);
+if (bindingCallLines.length === 1) {
+  // Walk backwards from the call line to prove the enclosing `if` is
+  // the three-flag guard. Reject a truthful-looking prefix like
+  // `if (true) { installAccountSyncBinding(); }` or a plain
+  // top-level call.
+  const linesArr = appSrcForSync.split('\n');
+  const callLineIdx = bindingCallLines[0].idx - 1;
+  let guardLineIdx = -1;
+  for (let i = callLineIdx - 1; i >= 0; i -= 1) {
+    if (/^\s*if\s*\(/.test(linesArr[i])) { guardLineIdx = i; break; }
+    if (/^\s*\}\s*$/.test(linesArr[i])) { break; } // walked out of a block first
+  }
+  check(
+    'code sanity: the single installAccountSyncBinding() call sits inside an `if (FEATURES.favorites || FEATURES.watchlist || FEATURES.premium)` guard',
+    guardLineIdx >= 0 && /FEATURES\.favorites\s*\|\|\s*FEATURES\.watchlist\s*\|\|\s*FEATURES\.premium/.test(linesArr[guardLineIdx]),
+    guardLineIdx >= 0 ? `enclosing if at L${guardLineIdx + 1}: ${linesArr[guardLineIdx].trim()}` : 'no enclosing if(...) found',
+  );
+}
+
+// DIC-1381 W11 CR — MUTATION SENSITIVE sync-copy predicate.
+// Splits each _store locale variant into clause-sized spans (Chinese
+// and Japanese sentence terminators + semicolons + full-width
+// counterparts). Each clause is evaluated independently: a clause that
+// carries a sync verb MUST also carry an on-device qualifier IN THE
+// SAME CLAUSE — a qualifier elsewhere in the string does not rescue
+// it. Catches both mutants Mac-Codex named:
+//   zh mutant: 此版本的牌組可跨裝置同步；設定為裝置本機儲存。
+//   ja mutant: このバージョンではデッキを端末間で同期できます。設定は端末内に保存されます。
+const SYNC_VERB_ZH = /(同步|跨裝置|同一個帳號|帳號同步)/;
+const SYNC_VERB_JA = /(同期|端末間|端末間で|同じアカウント|アカウント同期)/;
+const ONDEVICE_QUALIFIER_ZH = /(本機儲存|裝置本機|裝置內|不會同步|不進行同步|裝置端|不會跨裝置|不同步|本機保存|裝置本地)/;
+const ONDEVICE_QUALIFIER_JA = /(端末内|端末に保存|端末のみ|同期しません|同期されません|オフライン|ローカルに保存|端末に保存されます|同期しない)/;
+
+function splitClausesZh(s) {
+  return s.split(/[。！？；;.!?]|,\s|，/).map((c) => c.trim()).filter(Boolean);
+}
+function splitClausesJa(s) {
+  return s.split(/[。！？；;.!?]|,\s|、/).map((c) => c.trim()).filter(Boolean);
+}
+function badSyncClauses(text, verbRe, qualifierRe, splitFn) {
+  return splitFn(text).filter((c) => verbRe.test(c) && !qualifierRe.test(c));
+}
+
+const STORE_MVP_ONLY_KEYS = [
+  'login_description_store',
+  'settings_link_hint_store',
+  'settings_guest_sync_store',
+];
+for (const key of STORE_MVP_ONLY_KEYS) {
+  const zhText = extractStoreKey(zh, key) || '';
+  const jaText = extractStoreKey(ja, key) || '';
+  const zhBad = badSyncClauses(zhText, SYNC_VERB_ZH, ONDEVICE_QUALIFIER_ZH, splitClausesZh);
+  const jaBad = badSyncClauses(jaText, SYNC_VERB_JA, ONDEVICE_QUALIFIER_JA, splitClausesJa);
+  check(
+    `zh ${key} has NO clause promising sync without an in-clause on-device qualifier (DIC-1381 W11 CR)`,
+    zhBad.length === 0,
+    zhBad.length ? `offending clauses: ${JSON.stringify(zhBad)} in "${zhText}"` : '',
+  );
+  check(
+    `ja ${key} has NO clause promising sync without an in-clause on-device qualifier (DIC-1381 W11 CR)`,
+    jaBad.length === 0,
+    jaBad.length ? `offending clauses: ${JSON.stringify(jaBad)} in "${jaText}"` : '',
+  );
+}
+
+// DIC-1381 W11 CR — mutation probes. Inject the exact mutants Mac-Codex
+// demonstrated against the predicate and prove the predicate REJECTS
+// them. If a future refactor of `badSyncClauses` accidentally weakens
+// it back to "qualifier anywhere in the string", this probe fails.
+{
+  const zhMutant = '此版本的牌組可跨裝置同步；設定為裝置本機儲存。';
+  const jaMutant = 'このバージョンではデッキを端末間で同期できます。設定は端末内に保存されます。';
+  const zhBad = badSyncClauses(zhMutant, SYNC_VERB_ZH, ONDEVICE_QUALIFIER_ZH, splitClausesZh);
+  const jaBad = badSyncClauses(jaMutant, SYNC_VERB_JA, ONDEVICE_QUALIFIER_JA, splitClausesJa);
+  check(
+    'mutation probe: zh sync-in-one-clause + qualifier-in-another mutant IS rejected by the predicate',
+    zhBad.length > 0,
+    `predicate must flag "${zhMutant}" but produced no offending clauses`,
+  );
+  check(
+    'mutation probe: ja sync-in-one-clause + qualifier-in-another mutant IS rejected by the predicate',
+    jaBad.length > 0,
+    `predicate must flag "${jaMutant}" but produced no offending clauses`,
+  );
+}
+
+// ── DIC-1381 W10 / W11 CR — settings_delete_note must NOT tell the
+//    user that the deletion backend is still under construction / not
+//    live.
+//
+//    Ground truth is the SHIPPING chain the SettingsScreen actually
+//    uses (Mac-Codex W11 CR):
+//      src/screens/SettingsScreen.tsx
+//        └─ useAuthStore from `../store/authStore` (singular)
+//           └─ src/store/authStore.ts.deleteUserAccount
+//              └─ deleteAccount from `../services/authService`
+//                 └─ src/services/authService.ts.deleteAccount
+//                    └─ apiPost('/auth/delete-account', ...)
+//                       └─ api/auth/delete-account.ts
+//    A stale "尚未上線 / under construction / 準備中" note contradicts
+//    this live chain and public/privacy.html §5 / §6 which agree.
+const settingsScreenSrc = read('src/screens/SettingsScreen.tsx');
+const shippingAuthStoreSrc = read('src/store/authStore.ts');
+const shippingAuthServiceSrc = read('src/services/authService.ts');
+const deleteEndpointFile = 'api/auth/delete-account.ts';
+
+check(
+  'shipping chain: SettingsScreen imports useAuthStore from ../store/authStore (the shipping store)',
+  /import\s*\{[^}]*useAuthStore[^}]*\}\s*from\s*['"]\.\.\/store\/authStore['"]/.test(settingsScreenSrc),
+);
+check(
+  'shipping chain: SettingsScreen invokes s.deleteUserAccount() (the store method)',
+  /useAuthStore\(\(s\)\s*=>\s*s\.deleteUserAccount\)/.test(settingsScreenSrc),
+);
+check(
+  'shipping chain: store/authStore imports deleteAccount from ../services/authService (not services/auth)',
+  /import\s*\{[^}]*deleteAccount[^}]*\}\s*from\s*['"]\.\.\/services\/authService['"]/.test(shippingAuthStoreSrc),
+);
+check(
+  'shipping chain: store/authStore.deleteUserAccount awaits deleteAccount(session) inside a try/catch that keeps the session on failure',
+  /deleteUserAccount:[\s\S]*?await\s+deleteAccount\(session\)[\s\S]*?catch[\s\S]*?set\(\{[\s\S]*?isLoading:\s*false[\s\S]*?error:[\s\S]*?throw\s+err/.test(shippingAuthStoreSrc),
+);
+// Fail-closed: authService.deleteAccount must only resolve when the
+// response is ok AND body.deleted === true; ANY other case throws.
+// Mutation probe below verifies this predicate rejects a weakened
+// (no-throw) mutant.
+const svcDeleteMatch = shippingAuthServiceSrc.match(/export async function deleteAccount\(session:[^)]*\):\s*Promise<[^>]*>\s*\{([\s\S]*?)\n\}/);
+check(
+  'shipping chain: authService.deleteAccount posts to /auth/delete-account',
+  svcDeleteMatch && /apiPost\(\s*['"]\/auth\/delete-account['"]/.test(svcDeleteMatch[1]),
+);
+check(
+  'fail-closed: authService.deleteAccount throws unless res.ok AND data.deleted === true (DIC-1381 W11 CR)',
+  svcDeleteMatch
+    && /if\s*\(\s*!res\.ok\s*\|\|\s*data\??\.deleted\s*!==\s*true\s*\)\s*\{\s*throw\s+/.test(svcDeleteMatch[1]),
+  svcDeleteMatch ? `deleteAccount body: ${svcDeleteMatch[1].trim().slice(0, 200)}` : 'no deleteAccount definition matched',
+);
+check(
+  `code sanity: ${deleteEndpointFile} exists on disk (deletion backend implemented)`,
+  existsSync(path.join(repoRoot, deleteEndpointFile)),
+);
+
+// DIC-1381 W11 CR — mutation probe: the exact predicate must reject a
+// weakened `deleteAccount` that resolves normally regardless of status.
+{
+  const weakened = `export async function deleteAccount(session: string): Promise<void> {\n  const res = await apiPost('/auth/delete-account', {}, session);\n  const data = await readJson(res);\n  return;\n}`;
+  const m = weakened.match(/export async function deleteAccount\(session:[^)]*\):\s*Promise<[^>]*>\s*\{([\s\S]*?)\n\}/);
+  const rejectsWeakened = !(
+    m && /if\s*\(\s*!res\.ok\s*\|\|\s*data\??\.deleted\s*!==\s*true\s*\)\s*\{\s*throw\s+/.test(m[1])
+  );
+  check(
+    'mutation probe: a weakened deleteAccount that never throws IS rejected by the fail-closed predicate',
+    rejectsWeakened,
+  );
+}
+
+// DIC-1381 W11 CR — mutation probe: renaming the shipping route away
+// from `/auth/delete-account` fails the shipping-chain predicate. The
+// weakened source uses `/auth/wipe-account` instead.
+{
+  const renamed = `export async function deleteAccount(session: string): Promise<void> {\n  const res = await apiPost('/auth/wipe-account', {}, session);\n  const data = await readJson(res);\n  if (!res.ok || data?.deleted !== true) {\n    throw toAuthError(data, res.status);\n  }\n}`;
+  const m = renamed.match(/export async function deleteAccount\(session:[^)]*\):\s*Promise<[^>]*>\s*\{([\s\S]*?)\n\}/);
+  const routePasses = m && /apiPost\(\s*['"]\/auth\/delete-account['"]/.test(m[1]);
+  check(
+    'mutation probe: renaming the delete route away from /auth/delete-account IS rejected by the route predicate',
+    !routePasses,
+  );
+}
+
+const zhDeleteNote = extractStoreKey(zh, 'settings_delete_note') || '';
+const jaDeleteNote = extractStoreKey(ja, 'settings_delete_note') || '';
+check(
+  'zh settings_delete_note does not claim deletion backend is unbuilt / offline (DIC-1381 W10 CR)',
+  !/(仍在建置|建置中|尚未上線|尚未實作|尚未就緒|尚未建置)/.test(zhDeleteNote),
+  `zh text = "${zhDeleteNote}"`,
+);
+check(
+  'ja settings_delete_note does not claim deletion backend is unbuilt / offline (DIC-1381 W10 CR)',
+  !/(準備中|未実装|未対応|未リリース|建設中|開発中)/.test(jaDeleteNote),
+  `ja text = "${jaDeleteNote}"`,
+);
+// Positive: the note should still describe the fail-closed behavior
+// when a specific attempt fails — that is legitimate and matches the
+// settings_delete_pending / _pending_body strings and the runtime.
+check(
+  'zh settings_delete_note describes the fail-closed "未完成 / 尚未完成" behavior (fail-closed intact)',
+  /(未完成|尚未完成|不會誤示|維持登入狀態)/.test(zhDeleteNote),
+);
+check(
+  'ja settings_delete_note describes the fail-closed "未完了" behavior (fail-closed intact)',
+  /(未完了|ログイン状態を維持|誤って削除済みと表示することはありません)/.test(jaDeleteNote),
+);
+
+// Cross-page parity: privacy.html says deletion is live; the App-side
+// note must not contradict that or a user reading both surfaces sees
+// two different truths.
+const privacyRaw = read('public/privacy.html');
+check(
+  'privacy.html states the deletion backend is implemented and live',
+  /(帳號刪除的[^<]*已實作|已實作並上線|deletion backend[\s\S]*?(is implemented|is live)|Account deletion[\s\S]*?(is implemented|is live)|deletion endpoint[\s\S]*?is deployed)/i.test(privacyRaw),
+  'privacy.html must state deletion is live (matches src/services/authService.ts.deleteAccount)',
+);
 
 // ── 7. eas.json: production / production-apk / preview all set STORE_MVP=1
 //        so the review build resolves fail-closed. ──

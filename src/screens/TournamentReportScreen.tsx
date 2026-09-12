@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { NavigationContext } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
 import { COLORS } from '../constants';
 import { openUrl } from '../utils/openUrl';
@@ -51,6 +51,7 @@ import {
 import ObservedShareDonut from '../components/ObservedShareDonut';
 import ObservedShareBar from '../components/ObservedShareBar';
 import { useDeckStore } from '../store/deckStore';
+import { RouteShell } from '../components/shell';
 import { loadCardDatabase } from '../utils/deckCardData';
 import type { DeckCard, PriceRecord } from '../utils/deckRules';
 import {
@@ -119,7 +120,11 @@ export default function TournamentReportScreen() {
   const { isDesktop } = useBreakpoint();
   const [state, dispatch] = useReducer(tournamentReportReducer, initialTournamentReportState);
   const { index, scope } = state;
-  const navigation = useNavigation<DrawerNavigationProp<MainDrawerParamList>>();
+  // DIC-1409 Phase 5 — same pattern as DeckEditorScreen (DIC-1380 W8 CR):
+  // useNavigation() throws outside a NavigationContainer (render harness /
+  // evidence renders); the context read returns undefined there, and every
+  // consumer already guards through optional call sites.
+  const navigation = React.useContext(NavigationContext as any) as DrawerNavigationProp<MainDrawerParamList>;
   const importDeck = useDeckStore((s) => s.importDeck);
 
   const [catalog, setCatalog] = useState<Map<string, DeckCard[]> | null>(null);
@@ -258,8 +263,15 @@ export default function TournamentReportScreen() {
     [reports],
   );
 
+  // DIC-1409 Phase 5 — Pen `App / 10 賽事月報` (frame wRgD8) shared shell.
+  const wrapInShell = (children: React.ReactNode) => (
+    <RouteShell navigation={navigation} routeName="TournamentReport" title={t('nav_tournament_report')} testID="tournament-shell">
+      {children}
+    </RouteShell>
+  );
+
   if (state.loading && !index) {
-    return (
+    return wrapInShell(
       <View style={styles.center}>
         <ActivityIndicator color={COLORS.primary} size="large" />
       </View>
@@ -267,7 +279,7 @@ export default function TournamentReportScreen() {
   }
 
   if (!index) {
-    return (
+    return wrapInShell(
       <View style={styles.center}>
         <Text style={styles.emptyTitle}>{t('tournament_title')}</Text>
         <Text style={styles.emptyText}>{state.error ?? t('tournament_no_data')}</Text>
@@ -301,7 +313,7 @@ export default function TournamentReportScreen() {
     ? reports[0]?.source?.name ?? ''
     : t('tournament_source_disclaimer_generic');
 
-  return (
+  return wrapInShell(
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.h1}>{t('tournament_title')}</Text>

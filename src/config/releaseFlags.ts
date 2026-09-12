@@ -1,7 +1,6 @@
-import { Platform } from 'react-native';
 import type { ReleaseCardFlags } from '../utils/cardReleaseFilter';
 
-// Single source of truth for Store MVP release gating (DIC-908 → DIC-1256).
+// Single source of truth for Store MVP release gating (DIC-908 → DIC-1380).
 //
 // Store MVP is an allowlist / fail-closed release profile: every advanced
 // surface (favorites/collection browser, market-data section, external price
@@ -10,26 +9,31 @@ import type { ReleaseCardFlags } from '../utils/cardReleaseFilter';
 // premium) is HIDDEN unless the profile is explicitly turned off. Do not add
 // scattered `if (__DEV__)` / magic booleans elsewhere — read from FEATURES.
 //
-// Resolution of STORE_MVP (fail-closed — CR DIC-913 #1):
+// Resolution of STORE_MVP (fail-closed — DIC-1380 user correction):
 //   EXPO_PUBLIC_STORE_MVP = '0' | 'false' → Store MVP OFF (full app). This is
 //       the ONLY way to disable the profile; nothing else opens the gate.
 //   EXPO_PUBLIC_STORE_MVP = '1' | 'true'  → Store MVP ON  (hide advanced)
 //   unset / whitespace / malformed / unknown:
-//     • native (iOS / Android store builds) → ON  (fail-closed: a missing or
-//       garbled env must never leak a disabled feature into a store build)
-//     • web                                  → OFF (the existing web production
-//       site keeps its full feature set; the release flag must not break it)
+//     ALL platforms (native AND web) → ON (fail-closed). A missing or garbled
+//     env must never leak a disabled feature into any Production surface, and
+//     Web Production must ship the same allowlist as native Production. The
+//     previous per-platform default (`Platform.OS !== 'web'`) is removed
+//     because it kept Web Production full whenever the deploy profile forgot
+//     to inject the define — the exact regression the release train blocks.
+//
+//     Web Develop/Staging and local `expo start --web` must set
+//     `EXPO_PUBLIC_STORE_MVP=0` in their env (see `.env.example`) to keep
+//     seeing advanced surfaces during development. Web Production, mobile
+//     Production, and production-apk profiles must inject
+//     `EXPO_PUBLIC_STORE_MVP=1` (see `eas.json` / deploy profiles owned by
+//     Mac-Copilot).
 function resolveStoreMvp(): boolean {
   const raw = typeof process.env.EXPO_PUBLIC_STORE_MVP === 'string'
     ? process.env.EXPO_PUBLIC_STORE_MVP.trim().toLowerCase()
     : '';
-  // Explicit opt-out is the only path to OFF.
   if (raw === '0' || raw === 'false') return false;
-  // Explicit opt-in.
   if (raw === '1' || raw === 'true') return true;
-  // Anything else (unset / whitespace / typo like 'yes' / '01' / 'off') is
-  // treated as unresolved → fail-closed on native, preserve full web prod.
-  return Platform.OS !== 'web';
+  return true;
 }
 
 export const STORE_MVP = resolveStoreMvp();

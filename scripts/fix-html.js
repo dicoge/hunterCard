@@ -12,9 +12,15 @@ const distDir = path.join(__dirname, '../dist');
 const publicDir = path.join(__dirname, '../public');
 
 // Store MVP web exports must fail closed: the shipped database.json is sanitized
-// so forbidden advanced fields never reach the client (CR DIC-913 #1). Full web
-// production (env off/unset) copies the database byte-identically.
+// so forbidden advanced fields never reach the client (CR DIC-913 #1). Under
+// DIC-1380 the fail-closed rule extends to Web Production — unset / blank /
+// malformed EXPO_PUBLIC_STORE_MVP now resolves to ON so a deploy profile that
+// forgets the define ships the sanitized dataset instead of leaking advanced
+// fields. This matches the runtime resolver in `src/config/releaseFlags.ts`.
+// Web Develop / Staging / local `expo start --web` must set
+// `EXPO_PUBLIC_STORE_MVP=0` explicitly to keep the full dataset.
 const STORE_MVP = resolveStoreMvpFromEnv();
+console.log(`[fix-html] Store MVP: ${STORE_MVP ? 'ON (sanitized)' : 'OFF (full dataset)'} — EXPO_PUBLIC_STORE_MVP=${JSON.stringify(process.env.EXPO_PUBLIC_STORE_MVP ?? null)}`);
 
 // Read the generated index.html
 const htmlPath = path.join(distDir, 'index.html');

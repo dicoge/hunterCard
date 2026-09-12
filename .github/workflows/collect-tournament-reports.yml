@@ -1,23 +1,20 @@
 name: Collect Tournament Reports
 
-# ⚠️ PRODUCTION MONTHLY SCHEDULE IS INTENTIONALLY NOT ENABLED (DIC-979 #8).
+# DIC-1380 W6 → W8: the scheduled refresh path MUST (a) acquire genuinely
+# fresh upstream tournament data, (b) persist a discovery-stub source
+# file when a newer official column is published, and (c) still exit
+# non-zero on discovery so the release train can see the missing
+# curation. Prior W7 wired the collector fail-closed, but the workflow
+# stopped at the failing step and never committed the stub — Mac-Codex
+# W8 flagged that the stub was discovered but discarded on every run.
 #
-# The monthly day-1 cron must NOT be turned on until (a) the official-column DOM
-# contract is verified against live HTML and (b) its ToS/robots posture is
-# confirmed. Until then this workflow is MANUAL-ONLY (workflow_dispatch) and runs
-# the collector OFFLINE from committed, human-verified source files under
-# data/tournaments/sources/ — it never fetches the live site.
-#
-# Proposed schedule for Mac-OpenCode to enable AFTER CR/QA passes (05:00 JST on
-# the 1st of each month = 20:00 UTC on the last day of the prior month):
-#
-#   on:
-#     schedule:
-#       - cron: '0 20 28-31 * *'   # gate to day-1 JST inside the job
-#
-# Proposed local/cron command (equivalent, offline collector):
-#   cd hunterCard && npm run collect:tournaments
-#
+# W8 CR fix: `Collect` uses `continue-on-error: true` and captures the
+# collector's exit code. The next steps still commit any discovery-stub
+# / data changes and open a PR on a bot-owned sync branch (mirroring
+# refresh-yt-stats.yml so main stays protected). A final `Enforce
+# collector exit code` step re-emits the collector's status so the
+# scheduled workflow overall is fail-closed even though the sync PR was
+# opened.
 on:
   workflow_dispatch:
     inputs:
@@ -25,17 +22,47 @@ on:
         description: 'Dry run (do not write files)'
         type: boolean
         default: true
+      skip_live:
+        description: 'Skip the --live upstream fetch (offline only)'
+        type: boolean
+        default: false
+  schedule:
+    # Last day of each month, 20:00 UTC (= 05:00 JST on the 1st of the next
+    # month). The scheduled run is LIVE — it fetches fresh source data
+    # from the tournament site. A false-positive day (e.g. 20:00 UTC on
+    # Feb 28 in a non-leap year) is a no-op — the collector emits nothing
+    # new and the PR step short-circuits on an empty diff.
+    - cron: '0 20 28-31 * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  SYNC_BRANCH: bot/tournament-reports
+  BASE_BRANCH: main
+  # DIC-1380 W8 CR — the whitelist of paths the sync PR is allowed to
+  # stage. This must include the discovery-stub directory
+  # (data/tournaments/sources/) so a stub written by the failing
+  # collector run survives into the sync PR.
+  SYNC_PATHS: >-
+    data/tournaments/
+    public/data/tournaments/
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
+    timeout-minutes: 20
+    concurrency:
+      group: collect-tournament-reports
+      cancel-in-progress: false
 
     steps:
-      - name: Checkout
+      - name: Checkout base branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -46,29 +73,74 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Collect tournament reports (offline, from committed sources)
+      # DIC-1380 W6/W7/W8: scheduled dispatches ALWAYS run the LIVE
+      # collector. A manual workflow_dispatch with dry_run=true takes
+      # the read-only path; skip_live=true drops back to the offline
+      # collector for maintainers who want a rebuild without live
+      # fetch. A schedule fire has `inputs.dry_run`/`inputs.skip_live`
+      # unset (== ''), so both `!= 'true'` guards route it to the live
+      # wet branch.
+      #
+      # `continue-on-error: true` (DIC-1380 W8 CR) — the collector
+      # exits 1 when discovery finds a newer official column than
+      # anything committed. Prior behaviour: the workflow died at this
+      # step and the discovery-stub the collector had just written to
+      # disk was discarded. Now the step is allowed to fail; the
+      # subsequent commit/PR path picks up the stub, and the final
+      # step re-emits the failure so scheduled runs are still
+      # fail-closed overall.
+      - name: Collect tournament reports
+        id: collect
+        continue-on-error: true
         run: |
-          if [ "${{ inputs.dry_run }}" = "false" ]; then
+          set +e
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm run collect:tournaments -- --dry-run
+          elif [ "${{ inputs.skip_live }}" = "true" ]; then
             npm run collect:tournaments
           else
-            npm run collect:tournaments -- --dry-run
+            npm run collect:tournaments -- --live
           fi
+          collector_exit=$?
+          echo "collector_exit=${collector_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
 
-      - name: Check data changes
-        id: check
-        if: inputs.dry_run == false
+      - name: Detect changes (includes discovery stubs)
+        id: detect
+        if: inputs.dry_run != 'true'
         run: |
-          if git diff --stat -- 'data/tournaments/' 'public/data/tournaments/' | grep -q .; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+          if git status --porcelain -- $SYNC_PATHS | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit and push if changed
-        if: inputs.dry_run == false && steps.check.outputs.changed == 'true'
+      - name: Open / refresh the sync PR
+        if: inputs.dry_run != 'true' && steps.detect.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/tournaments/ public/data/tournaments/
-          git diff --staged --quiet || git commit -m "chore: update tournament reports $(date +%Y-%m-%d)"
-          git push origin main
+          git checkout -B "$SYNC_BRANCH"
+          git add $SYNC_PATHS
+          git commit -m "chore: tournament collector output $(date -u +%Y-%m-%d)"
+          git push --force-with-lease origin "$SYNC_BRANCH"
+          if gh pr view "$SYNC_BRANCH" --json state --jq '.state' 2>/dev/null | grep -q OPEN; then
+            echo "tournament sync PR already open — force-push updates it in place"
+          else
+            gh pr create \
+              --base "$BASE_BRANCH" \
+              --head "$SYNC_BRANCH" \
+              --title "chore: tournament collector output $(date -u +%Y-%m-%d)" \
+              --body "DIC-1380 W8 scheduled tournament collector output — includes discovery stubs written when the collector fail-closed on a newer official publication."
+          fi
+
+      # DIC-1380 W8 CR — re-emit the collector's exit code so the
+      # scheduled run is still fail-closed overall. This is what tells
+      # the release train that a newer official column was discovered
+      # and needs human curation; the sync PR above is only the
+      # persistence half of the response.
+      - name: Enforce collector exit code
+        run: |
+          exit ${{ steps.collect.outputs.collector_exit }}

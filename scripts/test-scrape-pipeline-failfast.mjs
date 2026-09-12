@@ -67,6 +67,12 @@ function runPipeline({ failOn = null, env = {} } = {}) {
     `#!/bin/bash
 echo "node $*" >> "$TRACE_FILE"
 if [ -n "$FAIL_ON" ] && [[ "$*" == *"$FAIL_ON"* ]]; then exit 1; fi
+if [[ "$*" == *"canonical_native_public"* ]] || [[ "$*" == *"MISMATCH"* ]]; then
+  touch "$NATIVE_PARITY_MARKER"
+  if [ -n "$FAIL_PARITY" ]; then exit 1; fi
+  echo OK
+  exit 0
+fi
 if [[ "$*" == *"build-database.js"* ]] && [ -z "$SKIP_DB_WRITE" ]; then
   cat > "$(pwd)/data/database.json" <<'EOF'
 {"lastUpdated":"t","totalCards":0,"cards":{}}
@@ -76,6 +82,10 @@ exit 0
 `,
     { mode: 0o755 },
   );
+
+  // public/data/database.json must exist for the parity gate to parse it.
+  fs.mkdirSync(path.join(repo, 'public', 'data'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'public', 'data', 'database.json'), '{"lastUpdated":"t","totalCards":0,"cards":{}}\n');
 
   fs.writeFileSync(
     path.join(bin, 'npm'),
@@ -107,6 +117,8 @@ exit 0
       HOME: dir,
       TRACE_FILE: trace,
       FAIL_ON: failOn ?? '',
+      NATIVE_PARITY_MARKER: path.join(dir, 'native-parity-invoked'),
+      FAIL_PARITY: env.FAIL_PARITY ?? '',
       // DIC-1321: allow the red-before-green missing-output gate test to tell
       // the build-database shim to emit NO output.
       SKIP_DB_WRITE: env.SKIP_DB_WRITE ?? '',
@@ -361,6 +373,37 @@ exit 0
       commit < push,
     'required data gates must run after final native regeneration and before staging/commit/push',
   );
+}
+
+// ── 2d. DIC-1334: canonical/public/native parity gate must run inside the
+//       pre-push window, and a parity divergence must fail the pipeline before
+//       any commit ──
+{
+  // Success path: parity gate is reached and does not block.
+  const success = runPipeline();
+  assert.strictEqual(success.status, 0, 'pipeline must succeed when parity matches');
+  // The marker path is inside the sandbox dir which runPipeline cleans up; the
+  // important observable is that the parity gate did not abort the success path
+  // (status 0) and that the node shim received a parity invocation.
+  assert.ok(
+    success.lines.some((l) => l.includes('MISMATCH')),
+    'sanity: parity-gate node invocation must be traced',
+  );
+
+  // Fail path: parity divergence forces non-zero exit before commit/push.
+  const fail = runPipeline({ env: { FAIL_PARITY: '1' } });
+  assert.notStrictEqual(
+    fail.status,
+    0,
+    'pipeline must exit non-zero when canonical/native parity diverges (DIC-1334)',
+  );
+  for (const forbidden of ['git add', 'git -c user.name', 'commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(fail.lines, forbidden),
+      -1,
+      `a parity failure must never reach the commit path (found: ${forbidden})`,
+    );
+  }
 }
 
 // ── 2b. Fail-fast: CI market-field failure must never reach the commit path ──

@@ -20,3 +20,9 @@ export const maybeCompleteAuthSession = noop;
 export const openAuthSessionAsync = noop;
 export const dismissBrowser = noop;
 export const expoConfig = null;
+// expo-camera named exports (DIC-1409 Phase 4 render evidence): the web render
+// path never mounts CameraView (ScanScreen uses WebCamera on web), but the ESM
+// named-import validation still requires the symbols to exist at load time.
+export const CameraView = () => null;
+export const useCameraPermissions = () => [null, noop, noop];
+export const CameraType = {};

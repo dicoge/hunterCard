@@ -363,6 +363,94 @@ function isCancelledError(err: unknown): boolean {
   return code === 'SIGN_IN_CANCELLED' || code === '12501' || code === '-5';
 }
 
+// Maps a classic play-services-auth GoogleSignin failure to a distinct,
+// diagnostic-safe AuthError code (DIC-1318). v21 real-user Closed Test hit
+// "Google login cannot complete" and the previous handler collapsed EVERY
+// non-cancel signIn() failure to the generic `google_failed`, so a Play App
+// Signing SHA-1 that isn't registered in Google Cloud Console (the classic
+// "dev build works, release build fails" symptom) looks identical to a flaky
+// network to whoever reads the on-screen banner. Preserving the SDK code turns
+// that opaque failure into an actionable one WITHOUT echoing any raw provider
+// message — the returned code is a short machine label the UI + support can
+// safely quote (never a token / email). Pure so a mutation test can drive it
+// without importing the native module. Kept module-local because it is only
+// meaningful for the Android native path.
+type MappedNativeGoogleError = { code: string; message: string };
+export function mapNativeAndroidGoogleError(err: unknown): MappedNativeGoogleError {
+  const raw = String((err as { code?: unknown })?.code ?? '');
+  // The locked library (@react-native-google-signin/google-signin@16.1.4) is
+  // the source of truth for the exact `.code` string the caller will see:
+  //   - ApiException.statusCode is stringified as the numeric GoogleSignInStatusCodes
+  //     value (ErrorDto.kt:14–31), so `NETWORK_ERROR` arrives as '7',
+  //     `INTERNAL_ERROR` as '8', `DEVELOPER_ERROR` as '10',
+  //     `SIGN_IN_REQUIRED` as '4', `SIGN_IN_CANCELLED` as '12501'.
+  //   - The concurrent-call guard rejects with the string literal
+  //     `ASYNC_OP_IN_PROGRESS` (PromiseWrapper.java:11,74; also what the
+  //     RNGoogleSigninModule getConstants() exposes as `IN_PROGRESS`
+  //     on Android, RNGoogleSigninModule.java:89).
+  // We match those exact runtime shapes; the "string constant" spellings
+  // (`DEVELOPER_ERROR`, `NETWORK_ERROR`, `IN_PROGRESS`, `INTERNAL_ERROR`,
+  // `SIGN_IN_REQUIRED`) are kept as defensive aliases so a library upgrade
+  // that switches to constant names does not silently regress diagnostics.
+  switch (raw) {
+    case 'DEVELOPER_ERROR':
+    case '10':
+      // Package name + signing-cert SHA-1 mismatch against the Android OAuth
+      // client in Google Cloud Console. On a Play Store build this is almost
+      // always: the Play App Signing key SHA-1 is not registered for the
+      // Android client (docs/Android-Google-Native-Login.md "SHA-1 / Play App
+      // Signing"). Different code so the banner points at config, not the user.
+      return {
+        code: 'google_developer_error',
+        message: 'Google 登入失敗（google_developer_error），可能為此版本簽章尚未在 Google Cloud Console 授權。請截圖此畫面並回報。',
+      };
+    case 'NETWORK_ERROR':
+    case '7':
+      // GoogleSignInStatusCodes.NETWORK_ERROR = 7, serialised as the string
+      // '7' by ErrorDto.kt. This is what a real device sees when Play Services
+      // cannot reach Google — the whole reason a separate `network_error`
+      // banner exists.
+      return {
+        code: 'network_error',
+        message: '網路連線異常，請檢查網路後再試。',
+      };
+    case 'ASYNC_OP_IN_PROGRESS':
+    case 'IN_PROGRESS':
+      // PromiseWrapper.java rejects the previous promise with the literal
+      // `ASYNC_OP_IN_PROGRESS` when a second signIn() lands mid-flight;
+      // that is the exact string the JS side receives on Android. The
+      // constant-name alias handles builds that surface `IN_PROGRESS`.
+      return {
+        code: 'google_in_progress',
+        message: '目前已有 Google 登入進行中，請稍候或關閉重試。',
+      };
+    case 'INTERNAL_ERROR':
+    case '8':
+      return {
+        code: 'google_internal_error',
+        message: 'Google 登入服務暫時異常（google_internal_error），請稍後再試。',
+      };
+    case 'SIGN_IN_REQUIRED':
+    case '4':
+      return {
+        code: 'google_sign_in_required',
+        message: 'Google 登入尚未就緒，請再點一次登入按鈕。',
+      };
+    case 'PLAY_SERVICES_NOT_AVAILABLE':
+      return {
+        code: 'play_services_unavailable',
+        message: '此裝置的 Google Play 服務不可用或需更新，無法使用 Google 登入。',
+      };
+    default:
+      // Generic fallback keeps the existing safe copy so no ordinary failure
+      // regresses; the code stays 'google_failed' for tests that assert it.
+      return {
+        code: 'google_failed',
+        message: 'Google 登入失敗，請再試一次。',
+      };
+  }
+}
+
 // Native Android Google (DIC-665): classic play-services-auth Google Sign-In
 // (@react-native-google-signin/google-signin v16 `GoogleSignin`; NOT Credential
 // Manager — that API is not exported by this library version, and this classic
@@ -405,7 +493,12 @@ async function obtainGoogleNativeIdTokenAndroid(): Promise<{ idToken: string; no
     response = await GoogleSignin.signIn();
   } catch (err) {
     if (isCancelledError(err)) throw new AuthError('已取消登入', 400, 'cancel');
-    throw new AuthError('Google 登入失敗，請再試一次。', 400, 'google_failed');
+    // DIC-1318: preserve the SDK error code so a real-user Closed Test failure
+    // is distinguishable (Play App Signing SHA-1 not registered vs. network vs.
+    // internal SDK error) rather than collapsing every failure to the same
+    // generic banner. The mapped message still carries no raw provider detail.
+    const mapped = mapNativeAndroidGoogleError(err);
+    throw new AuthError(mapped.message, 400, mapped.code);
   }
 
   // v13+ signals cancellation as a value, not a throw.

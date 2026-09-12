@@ -7,6 +7,7 @@ import { useTranslation } from '../i18n';
 import TutorialCard from '../components/tutorial/TutorialCard';
 import TutorialPhaseCard from '../components/tutorial/TutorialPhaseCard';
 import TutorialImageView from '../components/tutorial/TutorialImageView';
+import { RouteShell } from '../components/shell';
 
 const MOBILE_BREAKPOINT = 480;
 
@@ -22,7 +23,10 @@ export default function TutorialDetailScreen({ route, navigation }: TutorialDeta
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < MOBILE_BREAKPOINT;
 
+  // DIC-1409 Phase 6 — Pen `App / 13 教學詳情` (frame rV4Za) shared shell:
+  // real chapter title in the app bar (Pen node DEchs), 首頁 tab fold.
   return (
+    <RouteShell navigation={navigation} routeName="TutorialDetail" title={section.title} testID="tutorial-detail-shell">
     <SafeAreaView style={styles.safeArea}>
       <ScrollView 
         style={styles.container}
@@ -148,6 +152,7 @@ export default function TutorialDetailScreen({ route, navigation }: TutorialDeta
         </View>
       </ScrollView>
     </SafeAreaView>
+    </RouteShell>
   );
 }
 

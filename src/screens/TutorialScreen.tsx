@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
 import { useTranslation } from '../i18n';
 import { getTutorialData } from '../data/tutorialData';
+import { RouteShell } from '../components/shell';
 
 const MOBILE_BREAKPOINT = 480;
 
@@ -13,7 +14,9 @@ export default function TutorialScreen({ navigation }: any) {
   const isMobile = screenWidth < MOBILE_BREAKPOINT;
   const tutorialData = useMemo(() => getTutorialData(language), [language]);
 
+  // DIC-1409 Phase 5 — Pen `App / 12 規則教學` (frame DAQIq) shared shell.
   return (
+    <RouteShell navigation={navigation} routeName="Tutorial" title={t('tutorial_title')} testID="tutorial-shell">
     <SafeAreaView style={styles.safeArea}>
       <ScrollView 
         style={styles.container}
@@ -111,6 +114,7 @@ export default function TutorialScreen({ navigation }: any) {
         </View>
       </ScrollView>
     </SafeAreaView>
+    </RouteShell>
   );
 }
 

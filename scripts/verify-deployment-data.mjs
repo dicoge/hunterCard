@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveStoreMvpFromEnv } from './lib/store-mvp-sanitize.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..');
@@ -22,6 +23,16 @@ const MIN_SELL_PRICE_COVERAGE = 1000;
 const MIN_PRICE_HISTORY_COVERAGE = 500;
 const MIN_BUY_PRICE_COVERAGE = 500;
 const MIN_YT_STATS_COVERAGE = 1000;
+
+// DIC-1380 data-update contract: Production deploys (Vercel Production +
+// Store MVP native builds) must ship a `database.json` refreshed by the daily
+// catalog / yuyu / official-sync workflows. A `lastUpdated` older than the
+// window below signals the refresh chain broke somewhere — CI/deploy fails
+// closed so the shipped bytes stay truthful. The check runs only when the
+// caller pins the Production profile (`EXPO_PUBLIC_STORE_MVP=1`) so unrelated
+// PR CI, local runs, and Web Develop / Staging never trip the gate for a
+// stale local copy. Overridable via `DATABASE_MAX_AGE_DAYS` for ops.
+const DEFAULT_MAX_AGE_DAYS = 7;
 
 function loadJson(file) {
   try {
@@ -85,6 +96,34 @@ if (canonicalAudit.coverage.lastUpdated !== publicAudit.coverage.lastUpdated) {
 }
 if (canonicalAudit.coverage.total !== publicAudit.coverage.total) {
   failures.push(`native total ${publicAudit.coverage.total} != canonical ${canonicalAudit.coverage.total}`);
+}
+
+// DIC-1380 W4 CR: the deployment freshness gate now shares the exact same
+// fail-closed resolver as `releaseFlags.ts` and the web-export sanitizer.
+// Unset / blank / whitespace / malformed EXPO_PUBLIC_STORE_MVP resolves to
+// Production ON, matching what Web Production and every native store build
+// actually see when the deploy profile is missing or garbled. Only an
+// explicit `EXPO_PUBLIC_STORE_MVP=0`/`false` (the value Web Develop /
+// Staging / local `expo start --web` pin) opts a build out of the age
+// check. The single-resolver rule means a runtime feature can no longer
+// disagree with the deployment gate on what "Production" means.
+const productionProfile = resolveStoreMvpFromEnv();
+if (productionProfile) {
+  const maxAgeDays = Number(process.env.DATABASE_MAX_AGE_DAYS) > 0
+    ? Number(process.env.DATABASE_MAX_AGE_DAYS)
+    : DEFAULT_MAX_AGE_DAYS;
+  const lastUpdated = canonicalAudit.coverage.lastUpdated;
+  const stamp = lastUpdated ? Date.parse(lastUpdated) : NaN;
+  const nowMs = Date.parse(process.env.DATABASE_NOW_ISO || new Date().toISOString());
+  if (!Number.isFinite(stamp)) {
+    failures.push(`Production profile: canonical database.json has no valid lastUpdated (got ${JSON.stringify(lastUpdated)})`);
+  } else {
+    const ageMs = nowMs - stamp;
+    const ageDays = ageMs / (24 * 60 * 60 * 1000);
+    if (ageMs > maxAgeDays * 24 * 60 * 60 * 1000) {
+      failures.push(`Production profile: canonical lastUpdated ${lastUpdated} is ${ageDays.toFixed(1)}d old — exceeds DATABASE_MAX_AGE_DAYS=${maxAgeDays}. The daily catalog/scrape/official-sync chain has stopped refreshing the shipped bytes.`);
+    }
+  }
 }
 
 console.log(JSON.stringify({

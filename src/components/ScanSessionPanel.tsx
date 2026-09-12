@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useScanSessionStore, SessionCard, getEffectivePrice } from '../stores/scanSessionStore';
 import { COLORS, convertPrice, CURRENCIES } from '../constants';
+import { PALETTE } from '../theme/tokensV2';
 import { FEATURES } from '../config/releaseFlags';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../i18n';
@@ -269,7 +270,8 @@ const styles = StyleSheet.create({
     zIndex: 20,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    backgroundColor: 'rgba(20, 20, 40, 0.95)',
+    // Pen App/05 掃描估值清單 (frame wC1cO): $app-surface at F2 opacity.
+    backgroundColor: '#12121DF2',
     overflow: 'hidden',
   },
   header: {
@@ -299,8 +301,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  // Pen summary value (node ekhnv): display face on $accent-2 for prices.
   totalPrice: {
-    color: '#00C853',
+    color: PALETTE.accent2,
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -365,8 +368,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 6,
   },
+  // Pen Warning line (node yo1XN): #D6B25A on amber.
   pendingNote: {
-    color: 'rgba(255,255,255,0.55)',
+    color: '#D6B25A',
     fontSize: 11,
     marginTop: 4,
     textAlign: 'right',
@@ -387,8 +391,8 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   versionChipActive: {
-    backgroundColor: 'rgba(0, 200, 83, 0.18)',
-    borderColor: '#00C853',
+    backgroundColor: PALETTE.accent + '24',
+    borderColor: PALETTE.accent,
   },
   versionChipText: {
     color: 'rgba(255,255,255,0.6)',
@@ -396,7 +400,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   versionChipTextActive: {
-    color: '#00C853',
+    color: PALETTE.accent,
   },
   versionSingle: {
     color: 'rgba(255,255,255,0.45)',
@@ -432,8 +436,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  // Pen 本次掃描總計 value (node ekhnv): 30/700 $text-primary.
   totalValue: {
-    color: '#00C853',
+    color: PALETTE.textPrimary,
     fontSize: 24,
     fontWeight: 'bold',
   },

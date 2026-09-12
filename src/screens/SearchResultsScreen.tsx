@@ -6,9 +6,13 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { FEATURES, releaseCardFlags } from '../config/releaseFlags';
 import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
+import { resolveCardDisplayName } from '../utils/cardDisplayName';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
+import { AppShell, buildShellTabs } from '../components/shell';
+import { PALETTE, SEMANTIC, FONTS, TYPE_SCALE } from '../theme/tokensV2';
+import { Platform } from 'react-native';
 import {
   normalizeCardIdentity,
   bloomLevelBadgeColor,
@@ -119,7 +123,10 @@ async function fetchDatabase(): Promise<DatabaseSchema> {
 
 // ── Search & mapping logic (ported from api/search.ts) ──
 
-function searchCards(database: DatabaseSchema, query: string, nameMap: Record<string, string>): CardResult[] {
+// Exported for the DIC-1409 Phase 3 render-evidence scripts: CardDetail
+// previews are produced from the exact card objects this production mapper
+// emits over the real bundled database — never from hand-written fixtures.
+export function searchCards(database: DatabaseSchema, query: string, nameMap: Record<string, string>): CardResult[] {
   const searchQ = query.toLowerCase().trim();
   const cards = database.cards || {};
 
@@ -283,6 +290,37 @@ export default function SearchResultsScreen({ route, navigation }: any) {
     [numColumns, rowWidth]
   );
 
+  // DIC-1409 Phase 3: every branch renders inside the shared Pen v2 shell —
+  // back arrow + query in the app bar (Pen `App / 02 搜尋結果` node CXGih),
+  // bottom tab bar with 搜尋 active. The FlatList stays the scroll container,
+  // so the DIC-1150 grid geometry contract is untouched.
+  const shellTabs = useMemo(() => buildShellTabs({ navigation }), [navigation]);
+  const wrapInShell = (children: React.ReactNode) => (
+    <AppShell
+      appBar={{
+        showBrand: false,
+        title: query || t('nav_search_results' as Parameters<typeof t>[0]),
+        leading: (
+          <TouchableOpacity
+            onPress={() => (navigation.goBack ? navigation.goBack() : navigation.navigate('Home'))}
+            accessibilityRole="button"
+            accessibilityLabel={t('common_back' as Parameters<typeof t>[0])}
+            style={shellStyles.backButton}
+            testID="search-results-back"
+          >
+            <Text style={shellStyles.backGlyph}>‹</Text>
+          </TouchableOpacity>
+        ),
+      }}
+      bottomTabBar={{ items: shellTabs, activeKey: 'search' }}
+      scrollable={false}
+      contentPadding={false}
+      testID="search-results-shell"
+    >
+      {children}
+    </AppShell>
+  );
+
   useEffect(() => {
     if (!query.trim()) {
       setError(t('search_missing_query'));
@@ -310,21 +348,21 @@ export default function SearchResultsScreen({ route, navigation }: any) {
     run();
   }, [query, language]);
 
-  if (loading) return (
+  if (loading) return wrapInShell(
     <View style={styles.centerContainer}>
       <ActivityIndicator size="large" color={COLORS.primary} />
       <Text style={styles.loadingText}>{t('search_database_loading')}</Text>
     </View>
   );
 
-  if (error) return (
+  if (error) return wrapInShell(
     <View style={styles.centerContainer}>
       <Text style={styles.errorIcon}>⚠️</Text>
       <Text style={styles.errorText}>{error}</Text>
     </View>
   );
 
-  if (!results || results.length === 0) return (
+  if (!results || results.length === 0) return wrapInShell(
     <View style={styles.centerContainer}>
       <Text style={styles.emptyIcon}>🔍</Text>
       <Text style={styles.emptyText}>{t('search_empty_query', { query })}</Text>
@@ -334,7 +372,7 @@ export default function SearchResultsScreen({ route, navigation }: any) {
 
   const openUrl = (url: string) => Linking.openURL(url);
 
-  return (
+  return wrapInShell(
     <View style={styles.container}>
       <View style={[styles.centerWrap, isDesktop && styles.centerWrapDesktop]}>
         <View style={styles.header}>
@@ -448,12 +486,17 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
           <CardIdentityBadges normalized={card.normalized} rarity={card.rarity} t={t} />
         </View>
 
-        <Text style={styles.cardName} numberOfLines={1}>
-          {preferredLanguage === 'zh' && card.nameZh ? card.nameZh : card.name}
-        </Text>
-        {preferredLanguage === 'zh' && card.nameZh ? (
-          <Text style={styles.cardNameZh} numberOfLines={1}>{card.name}</Text>
-        ) : null}
+        {(() => {
+          const { primary, secondary } = resolveCardDisplayName(card, preferredLanguage);
+          return (
+            <>
+              <Text style={styles.cardName} numberOfLines={1}>{primary}</Text>
+              {secondary ? (
+                <Text style={styles.cardNameZh} numberOfLines={1}>{secondary}</Text>
+              ) : null}
+            </>
+          );
+        })()}
 
         {effects && <Text style={styles.cardEffect} numberOfLines={2}>{effects}</Text>}
 
@@ -528,8 +571,25 @@ export function __seedSearchResultsCacheForTest(
   seriesNamesFetchPromise = null;
 }
 
+// Pen `App / 02 搜尋結果` shell chrome (back arrow node A2SWo).
+const shellStyles = StyleSheet.create({
+  backButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -6,
+  },
+  backGlyph: {
+    fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
+    fontSize: 26,
+    lineHeight: 28,
+    color: SEMANTIC.onBgMuted,
+  },
+});
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: PALETTE.appBg },
   centerWrap: { flex: 1, width: '100%' },
   centerWrapDesktop: { maxWidth: SEARCH_RESULTS_LAYOUT.desktopMaxWidth, alignSelf: 'center' },
   columnWrapper: { gap: GRID_GAP },
@@ -541,9 +601,10 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 48, marginBottom: 12 },
   emptyText: { color: COLORS.text, fontSize: 18, fontWeight: '600', marginBottom: 6 },
   emptyHint: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center' },
+  // Pen node xKkbE (Result Count row): 15/700 title line + 13/600 count.
   header: { padding: 16, paddingBottom: 8 },
-  queryText: { fontSize: 22, fontWeight: 'bold', marginBottom: 4 },
-  resultCount: { fontSize: 13 },
+  queryText: { fontSize: 15, fontWeight: '700', marginBottom: 4, fontFamily: Platform.OS === 'web' ? FONTS.body : undefined },
+  resultCount: { fontSize: 13, fontWeight: '600', fontFamily: Platform.OS === 'web' ? FONTS.body : undefined },
   list: { padding: LIST_PADDING_X, paddingTop: 0 },
   card: { flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 12, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, minHeight: 140 },
   cardImageContainer: { padding: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 4, marginRight: 4 },

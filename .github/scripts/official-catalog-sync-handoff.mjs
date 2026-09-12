@@ -57,11 +57,23 @@ export const SYNC_PATHS = Object.freeze([
 export const COMMIT_MSG_PREFIX = 'chore: sync official catalog';
 
 // The GitHub login that opens PRs when this workflow uses the built-in
-// GITHUB_TOKEN. `github-actions` covers older Actions runners, the
-// `[bot]` suffix is what the modern GraphQL / REST surface returns.
+// GITHUB_TOKEN. Three forms are recognized because different API
+// surfaces this file talks to format the same actor differently:
+//   - `github-actions[bot]` — the REST API's `login` field
+//     (`gh api /repos/{owner}/{repo}/commits/<sha>/pulls`, `.user.login`).
+//   - `github-actions`      — the raw GraphQL `author.login` field.
+//   - `app/github-actions`  — `gh` CLI >=2.x's own JSON formatting of a
+//     GraphQL `Bot`-typed author with no databaseId (`--json author`,
+//     used by `gh pr list`/`gh pr view`): gh prefixes `app/` to the login
+//     so an App-backed bot login can never collide with a same-named
+//     human account (see cli/cli `api/queries_issue.go`). DIC-1353: run
+//     33917974246 failed because `gh pr list --json author` on gh 2.96
+//     reports `app/github-actions` for this exact built-in-token PR, but
+//     the whitelist only recognized the other two forms — a false
+//     positive "human-owned PR" rejection, not an actual identity change.
 // Used to authenticate PR ownership via the GitHub API — never via
 // forgeable committer metadata on the branch itself.
-export const AUTOMATION_LOGINS = Object.freeze(['github-actions', 'github-actions[bot]']);
+export const AUTOMATION_LOGINS = Object.freeze(['github-actions', 'github-actions[bot]', 'app/github-actions']);
 
 // --- Public entry -----------------------------------------------------
 

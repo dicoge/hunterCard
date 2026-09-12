@@ -4,6 +4,7 @@ export const zh = {
   nav_scan: '掃描卡牌',
   nav_search: '搜尋',
   nav_favorites: '收藏',
+  nav_collection: '卡牌收藏',
   nav_deck_editor: '牌組編輯器',
   nav_tournament_report: '賽事月報',
   nav_watchlist: '入手提醒',
@@ -68,6 +69,26 @@ export const zh = {
   // Favorites & Watchlist
   favorites_title: '我的收藏',
   favorites_empty: '尚無收藏卡牌',
+  favorites_save: '加入收藏',
+  favorites_saved: '已收藏',
+  favorites_add_a11y: '加入收藏：{{name}}',
+  favorites_remove_a11y: '移除收藏：{{name}}',
+  favorites_count: '{{count}} 張收藏',
+  favorites_remove_button: '移除',
+  favorites_open_card: '查看卡牌',
+  // Deck status banner + card category labels (Pen uXuqo — DIC-1380 W6)
+  deck_status_legal: '牌組合法',
+  deck_status_incomplete: '尚未完成',
+  deck_status_empty: '尚未加入卡片',
+  card_category_oshi: '推し',
+  card_category_holomen: 'ホロメン',
+  card_category_support: 'サポート',
+  card_category_yell: 'エール',
+  // DIC-1380 W8 CR — Pen `uXuqo` mobile app-bar controls
+  deck_appbar_back_a11y: '返回',
+  deck_appbar_rename_a11y: '重新命名牌組：{{name}}',
+  deck_appbar_validate_a11y: '驗證牌組',
+  deck_appbar_menu_a11y: '牌組更多動作',
   watchlist_title: '到價提醒',
   watchlist_empty: '尚無提醒設定',
   price_alert_target: '目標價格',
@@ -141,13 +162,23 @@ export const zh = {
   login_welcome: '歡迎使用 HoloHunter',
   login_description: '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢',
   // Store MVP: no 收藏 / 提醒 / 價格趨勢 promise (DIC-1256).
-  login_description_store: '登入後可掃描卡牌、跨裝置同步牌組與設定',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync binding
+  // (App.tsx gates installAccountSyncBinding on FEATURES.favorites |
+  // .watchlist | .premium, all false under STORE_MVP), so favorites /
+  // decks / price alerts / settings live on-device only. Do not promise
+  // cross-device sync here.
+  login_description_store: '登入後可掃描卡牌並使用帳號功能。此版本的牌組與設定為裝置本機儲存。',
   login_or: '或',
   login_guest_button: '以訪客身份進入',
   login_guest_hint: '訪客可瀏覽規則與查詢卡片，但無法使用掃描功能',
   login_terms_footer: '登入即表示同意隱私權政策與服務條款',
 
   // Common actions and states
+  common_back: '返回',
+  me_stat_collection: '收藏張數',
+  me_stat_alerts: '到價提醒',
+  me_guest_name: '訪客',
+  me_provider_linked: '{{provider}} 已綁定',
   common_cancel: '取消',
   common_remove: '移除',
   common_save: '儲存',
@@ -208,13 +239,29 @@ export const zh = {
   settings_exchange_rate: '📈 匯率：JP¥1 = NT$0.22 = $0.0067',
   settings_link_hint_watchlist: '綁定後收藏、設定、入手提醒與推播都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
   settings_link_hint: '綁定後收藏與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
-  // Store MVP: no 收藏 / 提醒 promise (DIC-1256).
-  settings_link_hint_store: '綁定後牌組與設定都歸同一個帳號。至少需保留一種登入方式，無法解除最後一個。',
-  settings_delete_note: '註：帳號刪除的伺服器端撤銷仍在建置中，尚未上線。若後端尚未設定，刪除會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
+  // DIC-1381 W10 / W11 CR — Store MVP does NOT install the account-sync
+  // binding; do not promise decks/settings become account-bound.
+  // Multi-provider login binding is described without "同一個帳號 /
+  // 帳號同步" phrasing so the shipping-copy predicate does not confuse
+  // login-binding with data-sync. Data-storage clause states the fact.
+  settings_link_hint_store: '綁定多種登入方式方便未來更換裝置或補充驗證。牌組與設定在此版本為裝置本機儲存，不會跨裝置同步。至少需保留一種登入方式，無法解除最後一個。',
+  // DIC-1380 W12 CR — describe the ACTUAL per-provider deletion path.
+  // Google-linked: backend cascade delete works; App clears local
+  // session + calls GoogleSignin.signOut() on Android (best-effort
+  // local SDK cache clear only — Google refresh_token is NOT revoked
+  // server-side by the current build). Apple-linked: in-app deletion
+  // is NOT available today because api/_lib/apple-token-store.ts is a
+  // non-shipping stub; the endpoint returns 501
+  // apple_deletion_not_implemented and NO data is deleted. Apple users
+  // are routed to support email. Any generic "撤銷 provider token"
+  // wording contradicts these facts and is banned by
+  // test:apple-delete-truth-copy.
+  settings_delete_note: '註：僅綁定 Google（未同時綁定 Apple）的帳號可在此自助刪除 — 後端會級聯清除您的帳號紀錄與雲端資料，App 在 Android 版另會執行 GoogleSignin.signOut() 清除本機 SDK 快取（不代表撤銷 Google refresh_token）。任何綁定 Apple 的帳號（Apple-only 或 Google+Apple）目前 App 內尚未提供刪除；handler 只要偵測到 linkedProviders 內有 Apple identity 就 fail-closed，端點回 501 apple_revocation_not_configured（伺服器端 APPLE_* 未設定）或 501 apple_deletion_not_implemented（Apple 設定完備但 stub token store 沒有可撤銷的 refresh_token），任一情況都不會刪除任何資料。請寄信到 dicoge.chen@gmail.com 由我們手動處理。若刪除失敗（網路錯誤或後端暫時無法回應），App 會顯示「尚未完成」並維持登入狀態，不會誤示為已刪除。',
   settings_guest_sync_watchlist: '尚未登入。登入後可跨裝置同步收藏與入手提醒。',
   settings_guest_sync: '尚未登入。登入後可跨裝置同步收藏。',
-  // Store MVP: no 收藏 / 提醒 promise (DIC-1256).
-  settings_guest_sync_store: '尚未登入。登入後可跨裝置同步牌組與設定。',
+  // DIC-1381 W10 CR — Store MVP does NOT install the account-sync
+  // binding, so decks/settings do not sync. State this truthfully.
+  settings_guest_sync_store: '尚未登入。登入後可使用卡牌掃描。此版本的牌組與設定為裝置本機儲存。',
   settings_footer: '專為 hololive PCG 玩家打造',
 
   // Tutorial landing
@@ -604,6 +651,7 @@ export const zh = {
   scan_recognizing: '識別中…',
   scan_frame_auto: '將卡牌置於掃描框內',
   scan_frame_manual: '點擊掃描按鈕拍攝卡牌',
+  scan_close_a11y: '關閉掃描',
   scan_flash_on: '閃光燈開',
   scan_flash: '閃光燈',
   scan_manual: '手動',

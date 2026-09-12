@@ -1,19 +1,23 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
+import { useDeckStore } from '../store/deckStore';
+import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErrorMessages';
 import { showAlert } from '../utils/platformAlert';
 import { useTranslation } from '../i18n';
 import type { AuthProvider } from '../types/auth';
+import { AppShell, buildShellTabs, SHELL_TAB_LABELS } from '../components/shell';
+import { PALETTE, SEMANTIC, FONTS, GRADIENTS } from '../theme/tokensV2';
 
 const PROVIDER_LABEL: Record<AuthProvider, string> = { apple: 'Apple', google: 'Google' };
 const ALL_PROVIDERS: AuthProvider[] = ['google', 'apple'];
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }: any) {
   const { t } = useTranslation();
   const { preferredCurrency, preferredLanguage, setCurrency, setLanguage } = useSettingsStore();
   const user = useAuthStore((s) => s.user);
@@ -31,6 +35,23 @@ export default function SettingsScreen() {
   const unlinkedProviders = ALL_PROVIDERS.filter(
     (p) => !linkedSet.has(p) && !(p === 'apple' && !APPLE_LOGIN_ENABLED),
   );
+
+  // DIC-1409 Phase 4 — Pen `App / 07 我的` (frame siVsa) shell chrome + the
+  // real account card (node ZYJRw) and stats tiles (node vGwTI). Every value
+  // is live store state: collection count from the deck-store inventory,
+  // alert count from the price-alert store; the 收藏市值 tile in the Pen
+  // frame is intentionally NOT rendered — computing it needs a price join
+  // this surface does not have, and a placeholder number would be mock data.
+  const collection = useDeckStore((s) => s.collection);
+  const alerts = usePriceAlertStore((s) => s.alerts);
+  const collectionCount = useMemo(
+    () => Object.values(collection).reduce((sum, qty) => sum + (qty || 0), 0),
+    [collection],
+  );
+  const alertCount = Object.keys(alerts).length;
+  const shellTabs = useMemo(() => buildShellTabs({ navigation: navigation ?? { navigate: () => {} } }), [navigation]);
+  const displayNameForCard = user?.displayName || user?.primaryEmail || t('me_guest_name');
+  const avatarInitial = (displayNameForCard || 'H').trim().charAt(0).toUpperCase() || 'H';
 
   const handleGoogleLogin = async () => {
     try {
@@ -117,8 +138,55 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <ScrollView style={styles.container}>
+    <AppShell
+      appBar={{
+        showBrand: false,
+        title: SHELL_TAB_LABELS.me,
+        onLeadingPress: () => navigation?.openDrawer?.(),
+      }}
+      bottomTabBar={{ items: shellTabs, activeKey: 'me' }}
+      testID="me-shell"
+    >
+        {/* Pen Account card (node ZYJRw): gradient avatar + name + linked
+            provider badges, backed by the real auth store. */}
+        <View style={styles.accountCard} testID="me-account-card">
+          <View style={styles.avatar}>
+            <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+          </View>
+          <View style={styles.accountText}>
+            <Text style={styles.accountName} numberOfLines={1} testID="me-account-name">
+              {displayNameForCard}
+            </Text>
+            <View style={styles.accountBadges}>
+              {linkedProviders.map((p) => (
+                <View key={p.provider} style={styles.accountBadge}>
+                  <Text style={styles.accountBadgeText}>
+                    {t('me_provider_linked', { provider: PROVIDER_LABEL[p.provider] })}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* Pen Stats tiles (node vGwTI) — real store values only. */}
+        {(FEATURES.favorites || FEATURES.watchlist) && (
+          <View style={styles.statsRow} testID="me-stats">
+            {FEATURES.favorites && (
+              <View style={styles.statTile} testID="me-stat-collection">
+                <Text style={styles.statValue}>{collectionCount}</Text>
+                <Text style={styles.statLabel}>{t('me_stat_collection')}</Text>
+              </View>
+            )}
+            {FEATURES.watchlist && (
+              <View style={styles.statTile} testID="me-stat-alerts">
+                <Text style={styles.statValue}>{alertCount}</Text>
+                <Text style={styles.statLabel}>{t('me_stat_alerts')}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         <Text style={styles.title}>{APP_NAME}</Text>
         <Text style={styles.version}>{t('settings_app_version', { version: APP_VERSION })}</Text>
 
@@ -276,16 +344,90 @@ export default function SettingsScreen() {
         </View>
 
         <Text style={styles.footer}>{t('settings_footer')}</Text>
-      </ScrollView>
-    </SafeAreaView>
+    </AppShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  // Pen App/07 account card (node ZYJRw: $app-surface r16 p14, 44px gradient
+  // avatar, 15/700 name, badge chips)
+  accountCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: PALETTE.appSurface,
+    borderRadius: 16,
+    padding: 14,
+    gap: 12,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: GRADIENTS.brandPinkPurple.colors[0],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
+    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  accountText: {
     flex: 1,
-    backgroundColor: COLORS.background,
-    padding: 20,
+    minWidth: 0,
+    gap: 4,
+  },
+  accountName: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    color: SEMANTIC.onBg,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  accountBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  accountBadge: {
+    backgroundColor: '#FFFFFF0D',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  accountBadgeText: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    color: '#B9B9CE',
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  // Pen App/07 stats tiles (node vGwTI: $app-surface r13, 16/700 value,
+  // 10.5 muted label)
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 6,
+  },
+  statTile: {
+    flex: 1,
+    backgroundColor: PALETTE.appSurface,
+    borderRadius: 13,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 5,
+  },
+  statValue: {
+    fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
+    color: SEMANTIC.onBg,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  statLabel: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    color: SEMANTIC.onBgDim,
+    fontSize: 10.5,
   },
   title: {
     color: COLORS.primary,
@@ -299,17 +441,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 30,
   },
+  // DIC-1409 Phase 6 — Pen `App / 15 設定` (frame x44r8t): each section is a
+  // $app-surface r14 group card (nodes Qpkox/Vp4g7/phxwj) headed by an 11/700
+  // muted label (nodes U2n8Jp/sed7I/Ld7b7).
   section: {
-    marginBottom: 28,
+    marginBottom: 16,
+    backgroundColor: PALETTE.appSurface,
+    borderRadius: 14,
+    padding: 14,
   },
   sectionTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    color: SEMANTIC.onBgDim,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginBottom: 10,
   },
   optionRow: {
     flexDirection: 'row',
