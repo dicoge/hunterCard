@@ -183,8 +183,8 @@ for (const { width, height, label } of WIDTHS) {
     });
     await settle();
     await settle();
-    if (!container.querySelector('[data-testid="scan-mode-switch"]')) {
-      throw new Error('Scan route did not reach camera-ready (mode switch absent)');
+    if (!container.querySelector('[data-testid="scan-primary-controls"]')) {
+      throw new Error('Scan route did not reach camera-ready (primary controls row absent)');
     }
     writeFixture('scan-camera-ready', container.outerHTML);
     await act(async () => root.unmount());

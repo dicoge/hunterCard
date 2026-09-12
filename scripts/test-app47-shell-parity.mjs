@@ -91,41 +91,30 @@ async function renderOverlay(props = {}) {
     borderAnim: new rn.Animated.Value(0),
     isScanning: false,
     flash: false,
-    autoScanEnabled: true,
+    autoScanActive: false,
     isCameraReady: true,
     cameraError: null,
     onFlash: () => {},
     onScan: () => {},
-    onFlip: () => {},
     onGallery: () => {},
-    onManualSearch: () => {},
-    onToggleAutoScan: () => {},
     onRetry: () => {},
   };
   return render(React.createElement(ScanOverlay, { ...base, ...props }));
 }
 
-await test('ScanOverlay renders the three Pen tip chips and the segmented mode switch', async () => {
+await test('ScanOverlay renders the three Pen tip chips and the focused primary controls row', async () => {
   const { container, cleanup } = await renderOverlay();
   try {
     const tips = container.querySelector('[data-testid="scan-tips-row"]');
     assert.ok(tips, 'tips row (Pen node Cc84X)');
     assert.equal(tips.children.length, 3, 'three tip chips');
-    const auto = container.querySelector('[data-testid="scan-mode-auto"]');
-    const manual = container.querySelector('[data-testid="scan-mode-manual"]');
-    assert.ok(auto && manual, 'mode switch segments (Pen node Cys7V)');
-    assert.equal(auto.getAttribute('aria-selected'), 'true', '自動掃描 active');
-  } finally { await cleanup(); }
-});
-
-await test('ScanOverlay mode switch toggles only when the inactive segment is pressed', async () => {
-  let toggles = 0;
-  const { container, cleanup } = await renderOverlay({ onToggleAutoScan: () => { toggles += 1; } });
-  try {
-    await act(async () => container.querySelector('[data-testid="scan-mode-auto"]').click());
-    assert.equal(toggles, 0, 'active segment press is a no-op');
-    await act(async () => container.querySelector('[data-testid="scan-mode-manual"]').click());
-    assert.equal(toggles, 1, 'inactive segment dispatches onToggleAutoScan');
+    // DIC-1319: the segmented mode switch stays removed — the auto-scan loop
+    // is web-only, so the switch was inert on Android. The focused primary
+    // controls row (scan + gallery) replaces it under the viewfinder.
+    assert.equal(container.querySelector('[data-testid="scan-mode-switch"]'), null, 'mode switch stays removed (DIC-1319)');
+    assert.ok(container.querySelector('[data-testid="scan-primary-controls"]'), 'primary controls row mounts');
+    assert.ok(container.querySelector('[data-testid="scan-primary-action"]'), 'primary scan action mounts');
+    assert.ok(container.querySelector('[data-testid="scan-gallery-action"]'), 'gallery entry mounts (DIC-1336)');
   } finally { await cleanup(); }
 });
 

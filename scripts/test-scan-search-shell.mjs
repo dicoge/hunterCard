@@ -170,18 +170,20 @@ await test('ScanOverlay (live-camera chrome) mounts the top bar; flash dispatche
     borderAnim: new Animated.Value(0),
     isScanning: false,
     flash: false,
-    autoScanEnabled: true,
+    autoScanActive: false,
     isCameraReady: true,
     cameraError: null,
     onFlash: () => { flashCalls += 1; },
-    onScan() {}, onFlip() {}, onGallery() {}, onManualSearch() {},
-    onToggleAutoScan() {}, onRetry() {}, onClose() {},
+    onScan() {}, onGallery() {}, onRetry() {}, onClose() {},
   };
   const { container, cleanup } = await renderInto(React.createElement(ScanOverlay, props));
   try {
     assert.ok(byTestId(container, 'scan-top-bar'), 'top bar mounts over the camera');
     assert.ok(byTestId(container, 'scan-quota-pill'), 'quota pill mounts over the camera');
-    assert.ok(byTestId(container, 'scan-mode-switch'), 'Pen mode switch still mounts');
+    // DIC-1319: the auto-scan mode switch is gone (inert on Android); the
+    // focused primary controls row replaces it under the viewfinder.
+    assert.equal(byTestId(container, 'scan-mode-switch'), null, 'mode switch stays removed (DIC-1319)');
+    assert.ok(byTestId(container, 'scan-primary-controls'), 'focused primary controls row mounts');
     assert.ok(byTestId(container, 'scan-tips-row'), 'Pen tips row still mounts');
     const flash = byTestId(container, 'scan-top-bar-flash');
     await click(flash);
@@ -255,7 +257,7 @@ await test('SHIPPED Scan route reaches camera-ready through the real StackNaviga
     assert.ok(container.querySelector('video'), 'camera element mounts from the seam stream');
     assert.ok(byTestId(container, 'scan-top-bar'), 'camera-ready chrome: Pen top bar');
     assert.ok(byTestId(container, 'scan-tips-row'), 'camera-ready chrome: Pen tips row');
-    assert.ok(byTestId(container, 'scan-mode-switch'), 'camera-ready chrome: Pen mode switch');
+    assert.ok(byTestId(container, 'scan-primary-controls'), 'camera-ready chrome: focused primary controls row (DIC-1319)');
     assert.equal(navRef.getCurrentRoute()?.name, 'Scan', 'route stays on Scan at camera-ready');
   } finally { await cleanup(); }
 });
