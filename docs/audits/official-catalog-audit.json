@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T02:44:03.230Z",
+  "generatedAt": "2026-09-12T20:36:51.804Z",
   "officialToNormalized": [
     {
       "code": "hBP09",
@@ -8,7 +8,7 @@
       "ingestedCount": 125,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:31.350Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:12.752Z"
     },
     {
       "code": "hEB01",
@@ -17,7 +17,7 @@
       "ingestedCount": 214,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:37.951Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:20.652Z"
     },
     {
       "code": "hBP08",
@@ -26,7 +26,7 @@
       "ingestedCount": 251,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:45.388Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:28.182Z"
     },
     {
       "code": "hWF01",
@@ -35,7 +35,7 @@
       "ingestedCount": 34,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:46.691Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:29.488Z"
     },
     {
       "code": "hCO01",
@@ -44,7 +44,7 @@
       "ingestedCount": 8,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:47.065Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:29.811Z"
     },
     {
       "code": "hSD14",
@@ -53,7 +53,7 @@
       "ingestedCount": 17,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:47.860Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:30.502Z"
     },
     {
       "code": "hSD15",
@@ -62,7 +62,7 @@
       "ingestedCount": 17,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:48.630Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:31.372Z"
     },
     {
       "code": "hSD16",
@@ -71,7 +71,7 @@
       "ingestedCount": 17,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:49.403Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:32.058Z"
     },
     {
       "code": "hSD17",
@@ -80,7 +80,7 @@
       "ingestedCount": 17,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:50.196Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:32.894Z"
     },
     {
       "code": "hSD18",
@@ -89,7 +89,7 @@
       "ingestedCount": 16,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:50.971Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:33.592Z"
     },
     {
       "code": "hSD19",
@@ -98,7 +98,7 @@
       "ingestedCount": 17,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:51.759Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:34.411Z"
     },
     {
       "code": "hBP07",
@@ -107,7 +107,7 @@
       "ingestedCount": 249,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:42:59.400Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:41.986Z"
     },
     {
       "code": "hSD12",
@@ -116,7 +116,7 @@
       "ingestedCount": 26,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:00.521Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:42.878Z"
     },
     {
       "code": "hSD13",
@@ -125,7 +125,7 @@
       "ingestedCount": 25,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:01.357Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:43.755Z"
     },
     {
       "code": "hBP06",
@@ -134,7 +134,7 @@
       "ingestedCount": 243,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:08.674Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:51.582Z"
     },
     {
       "code": "hSD10",
@@ -143,7 +143,7 @@
       "ingestedCount": 19,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:09.475Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:52.758Z"
     },
     {
       "code": "hSD01",
@@ -152,7 +152,7 @@
       "ingestedCount": 23,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:10.170Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:53.644Z"
     },
     {
       "code": "hSD11",
@@ -161,7 +161,7 @@
       "ingestedCount": 19,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:10.847Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:54.575Z"
     },
     {
       "code": "hBP01",
@@ -170,7 +170,7 @@
       "ingestedCount": 153,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:15.591Z"
+      "lastSuccessfulSync": "2026-09-12T20:35:59.779Z"
     },
     {
       "code": "hYS01",
@@ -179,7 +179,7 @@
       "ingestedCount": 8,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:15.895Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:00.049Z"
     },
     {
       "code": "hPR",
@@ -188,7 +188,7 @@
       "ingestedCount": 422,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:28.557Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:14.410Z"
     },
     {
       "code": "hBP02",
@@ -197,7 +197,7 @@
       "ingestedCount": 219,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:35.112Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:21.598Z"
     },
     {
       "code": "hSD02",
@@ -206,7 +206,7 @@
       "ingestedCount": 20,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:35.998Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:22.704Z"
     },
     {
       "code": "hSD03",
@@ -215,7 +215,7 @@
       "ingestedCount": 20,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:36.822Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:23.572Z"
     },
     {
       "code": "hSD04",
@@ -224,7 +224,7 @@
       "ingestedCount": 20,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:37.654Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:24.429Z"
     },
     {
       "code": "hSD05",
@@ -233,7 +233,7 @@
       "ingestedCount": 20,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:38.462Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:25.411Z"
     },
     {
       "code": "hSD06",
@@ -242,7 +242,7 @@
       "ingestedCount": 20,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:39.331Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:26.283Z"
     },
     {
       "code": "hSD07",
@@ -251,7 +251,7 @@
       "ingestedCount": 20,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:40.186Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:27.306Z"
     },
     {
       "code": "hBP03",
@@ -260,7 +260,7 @@
       "ingestedCount": 244,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:47.524Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:35.014Z"
     },
     {
       "code": "hPC01",
@@ -269,7 +269,7 @@
       "ingestedCount": 5,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:47.802Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:35.416Z"
     },
     {
       "code": "hBP04",
@@ -278,7 +278,7 @@
       "ingestedCount": 225,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:54.293Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:42.295Z"
     },
     {
       "code": "hSD08",
@@ -287,7 +287,7 @@
       "ingestedCount": 17,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:55.132Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:43.243Z"
     },
     {
       "code": "hSD09",
@@ -296,7 +296,7 @@
       "ingestedCount": 17,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:56.041Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:44.185Z"
     },
     {
       "code": "hSD2025summer",
@@ -305,7 +305,7 @@
       "ingestedCount": 1,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:56.300Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:44.630Z"
     },
     {
       "code": "hCS01",
@@ -314,7 +314,7 @@
       "ingestedCount": 5,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:43:56.571Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:45.057Z"
     },
     {
       "code": "hBP05",
@@ -323,7 +323,7 @@
       "ingestedCount": 217,
       "missingCount": 0,
       "missing": [],
-      "lastSuccessfulSync": "2026-09-12T02:44:03.229Z"
+      "lastSuccessfulSync": "2026-09-12T20:36:51.802Z"
     }
   ],
   "summary": {

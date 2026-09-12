@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-12T02:44:04.350Z",
+  "lastUpdated": "2026-09-12T20:36:52.806Z",
   "totalCards": 3753,
   "source": "hunterCard unified database",
   "cards": {
@@ -380194,7 +380194,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "霸子·貝爾茲",
       "ytStats": {
         "subscriberCount": 1210000,
         "totalViewCount": 271331112,
@@ -380226,7 +380225,8 @@
         "viewCount_daily": 260473,
         "viewCount_weekly": 2430506,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "霸子·貝爾茲"
     },
     "hBP01-088_hBP09_C_hBP01-088_C_02": {
       "id": "hBP01-088_hBP09_C_hBP01-088_C_02",
@@ -380276,7 +380276,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -380308,7 +380307,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP02-024_hBP09_C_hBP02-024_C_02": {
       "id": "hBP02-024_hBP09_C_hBP02-024_C_02",
@@ -380358,7 +380358,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "涅莉莎·雷文克羅夫特",
       "ytStats": {
         "subscriberCount": 1020000,
         "totalViewCount": 138469047,
@@ -380390,7 +380389,8 @@
         "viewCount_daily": null,
         "viewCount_weekly": 592614,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "涅莉莎·雷文克羅夫特"
     },
     "hBP03-051_hBP09_C_hBP03-051_C_02": {
       "id": "hBP03-051_hBP09_C_hBP03-051_C_02",
@@ -380415,7 +380415,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -380447,7 +380446,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP04-039_hBP09_C_hBP04-039_C_02": {
       "id": "hBP04-039_hBP09_C_hBP04-039_C_02",
@@ -380497,7 +380497,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -380529,7 +380528,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP04-067_hBP09_C_hBP04-067_C_02": {
       "id": "hBP04-067_hBP09_C_hBP04-067_C_02",
@@ -380554,7 +380554,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -380586,7 +380585,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP04-079_hBP09_C_hBP04-079_C_02": {
       "id": "hBP04-079_hBP09_C_hBP04-079_C_02",
@@ -380611,7 +380611,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "夏色祭",
       "ytStats": {
         "subscriberCount": 1590000,
         "totalViewCount": 292376129,
@@ -380643,7 +380642,8 @@
         "viewCount_daily": 74731,
         "viewCount_weekly": 580464,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "夏色祭"
     },
     "hBP04-106_hBP09_U_hBP04-106_U": {
       "id": "hBP04-106_hBP09_U_hBP04-106_U",
@@ -380718,7 +380718,6 @@
       "bloomLevel": "",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -380750,7 +380749,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-002_hBP09_OSR_hBP09-002_OSR": {
       "id": "hBP09-002_hBP09_OSR_hBP09-002_OSR",
@@ -380800,7 +380800,6 @@
       "bloomLevel": "",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -380832,7 +380831,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-004_hBP09_OSR_hBP09-004_OSR": {
       "id": "hBP09-004_hBP09_OSR_hBP09-004_OSR",
@@ -380882,7 +380882,6 @@
       "bloomLevel": "",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -380914,7 +380913,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP09-006_hBP09_OSR_hBP09-006_OSR": {
       "id": "hBP09-006_hBP09_OSR_hBP09-006_OSR",
@@ -380964,7 +380964,6 @@
       "bloomLevel": "",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -380996,7 +380995,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-008_hBP09_C_hBP09-008_C": {
       "id": "hBP09-008_hBP09_C_hBP09-008_C",
@@ -381021,7 +381021,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -381053,7 +381052,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-009_hBP09_U_hBP09-009_U": {
       "id": "hBP09-009_hBP09_U_hBP09-009_U",
@@ -381078,7 +381078,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -381110,7 +381109,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-010_hBP09_C_hBP09-010_C": {
       "id": "hBP09-010_hBP09_C_hBP09-010_C",
@@ -381135,7 +381135,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -381167,7 +381166,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-011_hBP09_C_hBP09-011_C": {
       "id": "hBP09-011_hBP09_C_hBP09-011_C",
@@ -381192,7 +381192,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -381224,7 +381223,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-012_hBP09_R_hBP09-012_R": {
       "id": "hBP09-012_hBP09_R_hBP09-012_R",
@@ -381249,7 +381249,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -381281,7 +381280,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-013_hBP09_U_hBP09-013_U": {
       "id": "hBP09-013_hBP09_U_hBP09-013_U",
@@ -381306,7 +381306,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -381338,7 +381337,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-014_hBP09_RR_hBP09-014_RR": {
       "id": "hBP09-014_hBP09_RR_hBP09-014_RR",
@@ -381363,7 +381363,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -381395,7 +381394,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-015_hBP09_C_hBP09-015_C": {
       "id": "hBP09-015_hBP09_C_hBP09-015_C",
@@ -381595,7 +381595,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "角卷綿芽",
       "ytStats": {
         "subscriberCount": 1710000,
         "totalViewCount": 708051760,
@@ -381627,7 +381626,8 @@
         "viewCount_daily": 217249,
         "viewCount_weekly": 2085062,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "角卷綿芽"
     },
     "hBP09-023_hBP09_R_hBP09-023_R": {
       "id": "hBP09-023_hBP09_R_hBP09-023_R",
@@ -381702,7 +381702,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -381734,7 +381733,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-026_hBP09_U_hBP09-026_U": {
       "id": "hBP09-026_hBP09_U_hBP09-026_U",
@@ -381759,7 +381759,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -381791,7 +381790,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-027_hBP09_C_hBP09-027_C": {
       "id": "hBP09-027_hBP09_C_hBP09-027_C",
@@ -381816,7 +381816,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -381848,7 +381847,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-028_hBP09_C_hBP09-028_C": {
       "id": "hBP09-028_hBP09_C_hBP09-028_C",
@@ -381873,7 +381873,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -381905,7 +381904,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-029_hBP09_R_hBP09-029_R": {
       "id": "hBP09-029_hBP09_R_hBP09-029_R",
@@ -381930,7 +381930,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -381962,7 +381961,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-030_hBP09_U_hBP09-030_U": {
       "id": "hBP09-030_hBP09_U_hBP09-030_U",
@@ -381987,7 +381987,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -382019,7 +382018,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-031_hBP09_RR_hBP09-031_RR": {
       "id": "hBP09-031_hBP09_RR_hBP09-031_RR",
@@ -382044,7 +382044,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -382076,7 +382075,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-032_hBP09_C_hBP09-032_C": {
       "id": "hBP09-032_hBP09_C_hBP09-032_C",
@@ -382201,7 +382201,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "風真伊呂波",
       "ytStats": {
         "subscriberCount": 1150000,
         "totalViewCount": 308777441,
@@ -382233,7 +382232,8 @@
         "viewCount_daily": 140705,
         "viewCount_weekly": 599792,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "風真伊呂波"
     },
     "hBP09-037_hBP09_R_hBP09-037_R": {
       "id": "hBP09-037_hBP09_R_hBP09-037_R",
@@ -382458,7 +382458,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "赤井心",
       "ytStats": {
         "subscriberCount": 1590000,
         "totalViewCount": 284090183,
@@ -382490,7 +382489,8 @@
         "viewCount_daily": 65531,
         "viewCount_weekly": 581108,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "赤井心"
     },
     "hBP09-046_hBP09_U_hBP09-046_U": {
       "id": "hBP09-046_hBP09_U_hBP09-046_U",
@@ -382515,7 +382515,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "百鬼綾目",
       "ytStats": {
         "subscriberCount": 1720000,
         "totalViewCount": 197645435,
@@ -382547,7 +382546,8 @@
         "viewCount_daily": 49033,
         "viewCount_weekly": 281495,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "百鬼綾目"
     },
     "hBP09-047_hBP09_C_hBP09-047_C": {
       "id": "hBP09-047_hBP09_C_hBP09-047_C",
@@ -382572,7 +382572,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "霸子·貝爾茲",
       "ytStats": {
         "subscriberCount": 1210000,
         "totalViewCount": 271331112,
@@ -382604,7 +382603,8 @@
         "viewCount_daily": 260473,
         "viewCount_weekly": 2430506,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "霸子·貝爾茲"
     },
     "hBP09-048_hBP09_U_hBP09-048_U": {
       "id": "hBP09-048_hBP09_U_hBP09-048_U",
@@ -382629,7 +382629,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "霸子·貝爾茲",
       "ytStats": {
         "subscriberCount": 1210000,
         "totalViewCount": 271331112,
@@ -382661,7 +382660,8 @@
         "viewCount_daily": 260473,
         "viewCount_weekly": 2430506,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "霸子·貝爾茲"
     },
     "hBP09-049_hBP09_R_hBP09-049_R": {
       "id": "hBP09-049_hBP09_R_hBP09-049_R",
@@ -382686,7 +382686,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "霸子·貝爾茲",
       "ytStats": {
         "subscriberCount": 1210000,
         "totalViewCount": 271331112,
@@ -382718,7 +382717,8 @@
         "viewCount_daily": 260473,
         "viewCount_weekly": 2430506,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "霸子·貝爾茲"
     },
     "hBP09-050_hBP09_RR_hBP09-050_RR": {
       "id": "hBP09-050_hBP09_RR_hBP09-050_RR",
@@ -382743,7 +382743,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "霸子·貝爾茲",
       "ytStats": {
         "subscriberCount": 1210000,
         "totalViewCount": 271331112,
@@ -382775,7 +382774,8 @@
         "viewCount_daily": 260473,
         "viewCount_weekly": 2430506,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "霸子·貝爾茲"
     },
     "hBP09-051_hBP09_C_hBP09-051_C": {
       "id": "hBP09-051_hBP09_C_hBP09-051_C",
@@ -382800,7 +382800,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -382832,7 +382831,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP09-052_hBP09_U_hBP09-052_U": {
       "id": "hBP09-052_hBP09_U_hBP09-052_U",
@@ -382857,7 +382857,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -382889,7 +382888,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP09-053_hBP09_C_hBP09-053_C": {
       "id": "hBP09-053_hBP09_C_hBP09-053_C",
@@ -382914,7 +382914,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -382946,7 +382945,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP09-054_hBP09_C_hBP09-054_C": {
       "id": "hBP09-054_hBP09_C_hBP09-054_C",
@@ -382971,7 +382971,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -383003,7 +383002,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP09-055_hBP09_R_hBP09-055_R": {
       "id": "hBP09-055_hBP09_R_hBP09-055_R",
@@ -383028,7 +383028,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -383060,7 +383059,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP09-056_hBP09_U_hBP09-056_U": {
       "id": "hBP09-056_hBP09_U_hBP09-056_U",
@@ -383085,7 +383085,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -383117,7 +383116,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP09-057_hBP09_RR_hBP09-057_RR": {
       "id": "hBP09-057_hBP09_RR_hBP09-057_RR",
@@ -383142,7 +383142,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "常暗永遠",
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 514709614,
@@ -383174,7 +383173,8 @@
         "viewCount_daily": 337808,
         "viewCount_weekly": 1873112,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "常暗永遠"
     },
     "hBP09-058_hBP09_R_hBP09-058_R": {
       "id": "hBP09-058_hBP09_R_hBP09-058_R",
@@ -383324,7 +383324,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "奧羅·克洛尼",
       "ytStats": {
         "subscriberCount": 1160000,
         "totalViewCount": 127058675,
@@ -383356,7 +383355,8 @@
         "viewCount_daily": 251284,
         "viewCount_weekly": 737563,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "奧羅·克洛尼"
     },
     "hBP09-064_hBP09_C_hBP09-064_C": {
       "id": "hBP09-064_hBP09_C_hBP09-064_C",
@@ -383556,7 +383556,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "AZKi",
       "ytStats": {
         "subscriberCount": 1330000,
         "totalViewCount": 328281530,
@@ -383588,7 +383587,8 @@
         "viewCount_daily": 420123,
         "viewCount_weekly": 1382261,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "AZKi"
     },
     "hBP09-072_hBP09_R_hBP09-072_R": {
       "id": "hBP09-072_hBP09_R_hBP09-072_R",
@@ -383613,7 +383613,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "克蕾伊姬·歐莉",
       "ytStats": {
         "subscriberCount": 1410000,
         "totalViewCount": 99649309,
@@ -383645,7 +383644,8 @@
         "viewCount_daily": 10661,
         "viewCount_weekly": 120690,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "克蕾伊姬·歐莉"
     },
     "hBP09-073_hBP09_C_hBP09-073_C": {
       "id": "hBP09-073_hBP09_C_hBP09-073_C",
@@ -383670,7 +383670,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "涅莉莎·雷文克羅夫特",
       "ytStats": {
         "subscriberCount": 1020000,
         "totalViewCount": 138469047,
@@ -383702,7 +383701,8 @@
         "viewCount_daily": null,
         "viewCount_weekly": 592614,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "涅莉莎·雷文克羅夫特"
     },
     "hBP09-074_hBP09_U_hBP09-074_U": {
       "id": "hBP09-074_hBP09_U_hBP09-074_U",
@@ -383727,7 +383727,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "涅莉莎·雷文克羅夫特",
       "ytStats": {
         "subscriberCount": 1020000,
         "totalViewCount": 138469047,
@@ -383759,7 +383758,8 @@
         "viewCount_daily": null,
         "viewCount_weekly": 592614,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "涅莉莎·雷文克羅夫特"
     },
     "hBP09-075_hBP09_R_hBP09-075_R": {
       "id": "hBP09-075_hBP09_R_hBP09-075_R",
@@ -383784,7 +383784,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "涅莉莎·雷文克羅夫特",
       "ytStats": {
         "subscriberCount": 1020000,
         "totalViewCount": 138469047,
@@ -383816,7 +383815,8 @@
         "viewCount_daily": null,
         "viewCount_weekly": 592614,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "涅莉莎·雷文克羅夫特"
     },
     "hBP09-076_hBP09_RR_hBP09-076_RR": {
       "id": "hBP09-076_hBP09_RR_hBP09-076_RR",
@@ -383841,7 +383841,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "涅莉莎·雷文克羅夫特",
       "ytStats": {
         "subscriberCount": 1020000,
         "totalViewCount": 138469047,
@@ -383873,7 +383872,8 @@
         "viewCount_daily": null,
         "viewCount_weekly": 592614,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "涅莉莎·雷文克羅夫特"
     },
     "hBP09-077_hBP09_C_hBP09-077_C": {
       "id": "hBP09-077_hBP09_C_hBP09-077_C",
@@ -383898,7 +383898,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -383930,7 +383929,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-078_hBP09_U_hBP09-078_U": {
       "id": "hBP09-078_hBP09_U_hBP09-078_U",
@@ -383955,7 +383955,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -383987,7 +383986,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-079_hBP09_C_hBP09-079_C": {
       "id": "hBP09-079_hBP09_C_hBP09-079_C",
@@ -384012,7 +384012,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -384044,7 +384043,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-080_hBP09_C_hBP09-080_C": {
       "id": "hBP09-080_hBP09_C_hBP09-080_C",
@@ -384069,7 +384069,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -384101,7 +384100,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-081_hBP09_R_hBP09-081_R": {
       "id": "hBP09-081_hBP09_R_hBP09-081_R",
@@ -384126,7 +384126,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -384158,7 +384157,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-082_hBP09_U_hBP09-082_U": {
       "id": "hBP09-082_hBP09_U_hBP09-082_U",
@@ -384183,7 +384183,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -384215,7 +384214,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-083_hBP09_RR_hBP09-083_RR": {
       "id": "hBP09-083_hBP09_RR_hBP09-083_RR",
@@ -384240,7 +384240,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -384272,7 +384271,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-084_hBP09_C_hBP09-084_C": {
       "id": "hBP09-084_hBP09_C_hBP09-084_C",
@@ -384297,7 +384297,6 @@
       "bloomLevel": "Debut",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "夏色祭",
       "ytStats": {
         "subscriberCount": 1590000,
         "totalViewCount": 292376129,
@@ -384329,7 +384328,8 @@
         "viewCount_daily": 74731,
         "viewCount_weekly": 580464,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "夏色祭"
     },
     "hBP09-085_hBP09_U_hBP09-085_U": {
       "id": "hBP09-085_hBP09_U_hBP09-085_U",
@@ -384354,7 +384354,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "夏色祭",
       "ytStats": {
         "subscriberCount": 1590000,
         "totalViewCount": 292376129,
@@ -384386,7 +384385,8 @@
         "viewCount_daily": 74731,
         "viewCount_weekly": 580464,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "夏色祭"
     },
     "hBP09-086_hBP09_R_hBP09-086_R": {
       "id": "hBP09-086_hBP09_R_hBP09-086_R",
@@ -384411,7 +384411,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "夏色祭",
       "ytStats": {
         "subscriberCount": 1590000,
         "totalViewCount": 292376129,
@@ -384443,7 +384442,8 @@
         "viewCount_daily": 74731,
         "viewCount_weekly": 580464,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "夏色祭"
     },
     "hBP09-087_hBP09_RR_hBP09-087_RR": {
       "id": "hBP09-087_hBP09_RR_hBP09-087_RR",
@@ -384468,7 +384468,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "夏色祭",
       "ytStats": {
         "subscriberCount": 1590000,
         "totalViewCount": 292376129,
@@ -384500,7 +384499,8 @@
         "viewCount_daily": 74731,
         "viewCount_weekly": 580464,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "夏色祭"
     },
     "hBP09-088_hBP09_R_hBP09-088_R": {
       "id": "hBP09-088_hBP09_R_hBP09-088_R",
@@ -384525,7 +384525,6 @@
       "bloomLevel": "2nd",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "桃鈴音音",
       "ytStats": {
         "subscriberCount": 1330000,
         "totalViewCount": 246737102,
@@ -384557,7 +384556,8 @@
         "viewCount_daily": null,
         "viewCount_weekly": 591405,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "桃鈴音音"
     },
     "hBP09-089_hBP09_R_hBP09-089_R": {
       "id": "hBP09-089_hBP09_R_hBP09-089_R",
@@ -385207,7 +385207,6 @@
       "bloomLevel": "",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -385239,7 +385238,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-003_hPR_P_hBP09-003_P": {
       "id": "hBP09-003_hPR_P_hBP09-003_P",
@@ -385264,7 +385264,6 @@
       "bloomLevel": "",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "白銀諾艾爾",
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 456319264,
@@ -385296,7 +385295,8 @@
         "viewCount_daily": 235126,
         "viewCount_weekly": 1104652,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "白銀諾艾爾"
     },
     "hBP09-007_hPR_P_hBP09-007_P": {
       "id": "hBP09-007_hPR_P_hBP09-007_P",
@@ -385321,7 +385321,6 @@
       "bloomLevel": "",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -385353,7 +385352,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-010_hPR_P_hBP09-010_P": {
       "id": "hBP09-010_hPR_P_hBP09-010_P",
@@ -385378,7 +385378,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "大空昴",
       "ytStats": {
         "subscriberCount": 2020000,
         "totalViewCount": 686970298,
@@ -385410,7 +385409,8 @@
         "viewCount_daily": 332024,
         "viewCount_weekly": 3447777,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "大空昴"
     },
     "hBP09-081_hPR_P_hBP09-081_P": {
       "id": "hBP09-081_hPR_P_hBP09-081_P",
@@ -385435,7 +385435,6 @@
       "bloomLevel": "1st",
       "timestamp": "",
       "_rawPricesArchive": [],
-      "nameZh": "雪花菈米",
       "ytStats": {
         "subscriberCount": 592000,
         "totalViewCount": 57270669,
@@ -385467,7 +385466,8 @@
         "viewCount_daily": 20849,
         "viewCount_weekly": 109613,
         "viewCount_monthly": null
-      }
+      },
+      "nameZh": "雪花菈米"
     },
     "hBP09-105_hPR_P_hBP09-105_P": {
       "id": "hBP09-105_hPR_P_hBP09-105_P",
