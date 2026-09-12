@@ -8,6 +8,7 @@ import {
   applyPreservedMarketFields,
 } from './lib/preserve-market-fields.js';
 import { printingId, imageSuffix } from './lib/printing-identity.js';
+import { broadcastYtStats } from './lib/yt-stats-fanout.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(__dirname, '..');
@@ -143,6 +144,18 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
   const db = readJson(databasePath);
   if (!db.cards || typeof db.cards !== 'object') throw new Error('data/database.json missing cards map');
 
+  // DIC-1421: brand-new printings (new id, new sourceProduct) have no previous
+  // row for `applyPreservedMarketFields` to preserve ytStats from — a fresh
+  // hBP09/hPR reprint of an already-tracked holomen shipped without ytStats and
+  // the DIC-1153/1204 audit went red (expected 2136 rows to carry ytStats; got
+  // 2072 on the 2026-09-12 sync PR #191). Snapshot the pre-upsert cards and,
+  // after the upsert pass, run the canonical name-based broadcast
+  // (`lib/yt-stats-fanout.js`) which fans the member's owned, source-proven
+  // ytStats onto every newly added printing whose name/nameZh matches — exactly
+  // the deterministic fan-out `restore-market-fields-post-canonicalization.mjs`
+  // uses for the DIC-1153 pinned row count. Nothing untracked or malformed is
+  // ever broadcast, and preserved ytStats is never displaced (fill-only).
+  const previousCards = { ...db.cards };
   const zhNames = loadTranslationMap(nameZhMapPath);
   const canonicalProducts = canonicalProductsFromMeta(officialDirectory);
   const officialFiles = fs.readdirSync(officialDirectory)
@@ -202,6 +215,12 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
     }
   }
 
+  // DIC-1421: broadcast owned ytStats onto every newly added printing whose
+  // normalized character name maps to a tracked holomen (fill-only, seeds from
+  // current then pre-sync rows). Runs before pruning so a to-be-pruned row can
+  // still serve as the proven seed for its member's surviving printings.
+  const ytStatsBroadcast = broadcastYtStats(db.cards, previousCards);
+
   let pruned = 0;
   for (const [id, card] of Object.entries(db.cards)) {
     const sourceProduct = card?.sourceProduct || card?.series || '';
@@ -214,12 +233,12 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
   db.lastUpdated = new Date().toISOString();
   db.totalCards = Object.keys(db.cards).length;
   fs.writeFileSync(databasePath, `${JSON.stringify(db, null, 2)}\n`, 'utf8');
-  return { upserted, sellPreserved, pruned, totalCards: db.totalCards };
+  return { upserted, sellPreserved, pruned, ytStatsBroadcast, totalCards: db.totalCards };
 }
 
 function main() {
   const result = syncOfficialCatalogToDatabase();
-  console.log(`✓ synced ${result.upserted} official sourceProduct printings into data/database.json (totalCards=${result.totalCards}; preservedSell=${result.sellPreserved}; pruned=${result.pruned})`);
+  console.log(`✓ synced ${result.upserted} official sourceProduct printings into data/database.json (totalCards=${result.totalCards}; preservedSell=${result.sellPreserved}; pruned=${result.pruned}; ytStatsBroadcast=${result.ytStatsBroadcast})`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

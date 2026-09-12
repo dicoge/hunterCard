@@ -33,6 +33,7 @@ import {
   applyPreservedMarketFields,
   seedCanonicalHistoryFiles,
 } from './lib/preserve-market-fields.js';
+import { broadcastYtStats } from './lib/yt-stats-fanout.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -71,41 +72,6 @@ function reorderPricedRowsFirst(cards) {
   for (const [id, card] of priced) reordered[id] = card;
   for (const [id, card] of unpriced) reordered[id] = card;
   return reordered;
-}
-
-function broadcastYtStats(cards, prevCards = {}) {
-  // Two-pass, name-based fan-out. The daily rebuild's mergeYtStats() early-
-  // returned after the first cardNumber match, so a rebuild that renamed IDs
-  // left later variants of the same holomen without ytStats. Rehydrate the
-  // (name -> ytStats) map from whatever ytStats survives in current cards
-  // OR — as a fallback — the previous DB. Current wins over previous so a
-  // freshly stamped ytStats (post-scrape) is never displaced by a stale one.
-  // Only proven ytStats objects are copied; nothing is invented.
-  const byNameJp = new Map();
-  const byNameZh = new Map();
-  const seedFrom = (source) => {
-    for (const card of Object.values(source || {})) {
-      if (!card?.ytStats) continue;
-      const nameJp = String(card.name || '').trim();
-      const nameZh = String(card.nameZh || '').trim();
-      if (nameJp && !byNameJp.has(nameJp)) byNameJp.set(nameJp, card.ytStats);
-      if (nameZh && !byNameZh.has(nameZh)) byNameZh.set(nameZh, card.ytStats);
-    }
-  };
-  seedFrom(cards);
-  seedFrom(prevCards);
-  let broadcast = 0;
-  for (const card of Object.values(cards)) {
-    if (card?.ytStats) continue;
-    const nameJp = String(card?.name || '').trim();
-    const nameZh = String(card?.nameZh || '').trim();
-    const stats = (nameJp && byNameJp.get(nameJp)) || (nameZh && byNameZh.get(nameZh));
-    if (stats) {
-      card.ytStats = stats;
-      broadcast++;
-    }
-  }
-  return broadcast;
 }
 
 function main() {
