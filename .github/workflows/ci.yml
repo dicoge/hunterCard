@@ -124,6 +124,9 @@ jobs:
       - name: Verify official-catalog-sync workflow hands off through a PR (DIC-1291)
         run: npm run test:official-catalog-sync-workflow
 
+      - name: Verify official-catalog-sync ingestion, sell preservation, and Traditional-Chinese name enrichment (DIC-1167/DIC-1204/DIC-1415)
+        run: npm run test:official-catalog-sync
+
       - name: Verify canonical printing-ID rebuilds preserve market fields (DIC-1204)
         run: npm run test:market-field-preservation
 

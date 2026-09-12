@@ -13,9 +13,66 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(__dirname, '..');
 const officialDir = path.join(repo, 'data', 'official');
 const dbPath = path.join(repo, 'data', 'database.json');
+const translationPath = path.join(repo, 'data', 'character-names-zh.json');
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+// DIC-1415: the sync writer is the single place brand-new printings enter the
+// database, and it MUST enrich them with controlled Traditional-Chinese names
+// from data/character-names-zh.json — the same map add-zh-names.js uses for
+// build-database.js. Carrying only `previous.nameZh` forward works for rows
+// that already exist, but a newly discovered expansion (upstream hBP09
+// 「ボリュームヴォルテックス」) upserts only fresh rows, so every one shipped with
+// no nameZh and the scheduled sync died at the Validate gate. The map is the
+// only source of translations (never an unauthorized translation provider; the
+// DIC-1185 OpenRouter denylist stays in force). Rows whose names have no
+// controlled entry are left without nameZh so the existing Validate gate —
+// `database must fail closed instead of shipping empty Traditional-Chinese
+// names` — keeps tripping and no incomplete publication is ever staged.
+function loadTranslationMap(filepath) {
+  if (!fs.existsSync(filepath)) {
+    throw new Error(`${filepath} missing; cannot enrich new printings with Traditional-Chinese names`);
+  }
+  const raw = readJson(filepath);
+  // DIC-1417: a plain `{}` leaks Object.prototype through `translationMap[key]`
+  // lookups — an untranslated official name such as `__proto__` resolves to the
+  // inherited Object.prototype object (truthy, non-string) and sails past the
+  // `!card.nameZh` fail-closed gate as `nameZh: {}`. A null-prototype object
+  // keeps resolution own-property-only AND stores literal keys like `__proto__`
+  // or `constructor` as real own entries instead of aliasing the prototype.
+  const clean = Object.create(null);
+  for (const [jp, zh] of Object.entries(raw)) {
+    // Match add-zh-names.js: drop entries corrupted with U+FFFD replacement
+    // characters so poisoning cannot leak into the database.
+    if (jp.includes('\uFFFD') || zh.includes('\uFFFD')) continue;
+    clean[jp] = zh;
+  }
+  return clean;
+}
+
+function decodeNameZhCandidate(input = '') {
+  return String(input)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function resolveNameZh(name, previousNameZh, translationMap) {
+  // Own-property-only, non-empty-string resolution (DIC-1417): a preserved or
+  // translated nameZh must be a real string — never an inherited prototype
+  // object — so untranslated rows stay fail-closed (`''` trips `!nameZh`).
+  if (typeof previousNameZh === 'string' && previousNameZh.trim()) return previousNameZh;
+  const nameKey = String(name || '');
+  for (const candidate of [nameKey, decodeNameZhCandidate(nameKey)]) {
+    if (!Object.hasOwn(translationMap, candidate)) continue;
+    const zh = translationMap[candidate];
+    if (typeof zh === 'string' && zh.trim()) return zh;
+  }
+  return '';
 }
 
 function cardSignature(card) {
@@ -82,10 +139,11 @@ function canonicalProductsFromMeta(officialDirectory) {
   return products;
 }
 
-export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialDirectory = officialDir } = {}) {
+export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialDirectory = officialDir, translationPath: nameZhMapPath = translationPath } = {}) {
   const db = readJson(databasePath);
   if (!db.cards || typeof db.cards !== 'object') throw new Error('data/database.json missing cards map');
 
+  const zhNames = loadTranslationMap(nameZhMapPath);
   const canonicalProducts = canonicalProductsFromMeta(officialDirectory);
   const officialFiles = fs.readdirSync(officialDirectory)
     .filter((f) => f.endsWith('.json') && !f.startsWith('_') && !f.startsWith('all-') && !f.startsWith('cardList_'));
@@ -132,7 +190,10 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
         ...preview,
         skillsJp: previous.skillsJp,
         skillsZh: previous.skillsZh,
-        nameZh: previous.nameZh,
+        // DIC-1415: brand-new printings have no previous row to preserve nameZh
+        // from — resolve a controlled Traditional-Chinese name or stay
+        // fail-closed so the Validate gate still refuses incomplete names.
+        nameZh: resolveNameZh(card.name, previous.nameZh, zhNames),
       };
       for (const key of ['skillsJp', 'skillsZh', 'nameZh', 'ytStats']) {
         if (db.cards[id][key] == null) delete db.cards[id][key];
