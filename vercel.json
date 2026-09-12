@@ -1,6 +1,10 @@
 {
   "buildCommand": "npm run test:deployment-data && expo export --platform web && node scripts/fix-html.js && node scripts/copy-assets.js && node scripts/generate-assetlinks.mjs",
   "outputDirectory": "dist",
+  "regions": [
+    "hkg1"
+  ],
+  "fluid": false,
   "rewrites": [
     {
       "source": "/privacy",
