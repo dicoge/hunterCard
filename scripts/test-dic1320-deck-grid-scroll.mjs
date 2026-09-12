@@ -225,10 +225,28 @@ function ancestorsOf(el, container) {
   return chain;
 }
 
-// ── 1. The reproduction anchor: 155 cards, only 60 of them on the first page ─
-// This pins the exact number the tester reported, and shows WHY the frozen
-// gesture hid cards rather than merely feeling stiff.
-const OSHI_TOTAL = 155;
+// ── 1. The reproduction anchor: only 60 of the 推し cards on the first page ──
+// The v21 report counted 155 推し card numbers; official catalog syncs keep
+// growing that set, so the expected total is derived through the SAME pipeline
+// the screen renders (groupVariantsByCardNumber → filterCatalog on the oshi
+// category) instead of pinning a number that rots with every sync. What must
+// never drift is the shape of the defect: more cards than one 60-card page,
+// all of them beyond page one unreachable without a working scroll gesture.
+const { groupVariantsByCardNumber } = await import('../src/utils/deckVariants.ts');
+const { filterCatalog, EMPTY_CRITERIA } = await import('../src/utils/cardCatalog.ts');
+const OSHI_TOTAL = await (async () => {
+  const db = await loadCardDatabase();
+  return filterCatalog(
+    groupVariantsByCardNumber(db.cards, db.priceRecords),
+    db.facets,
+    { ...EMPTY_CRITERIA, categories: ['oshi'] },
+  ).length;
+})();
+const PAGE_SIZE = 60;
+assert.ok(
+  OSHI_TOTAL > PAGE_SIZE,
+  `the 推し zone must overflow one ${PAGE_SIZE}-card page for the v21 defect to reproduce, saw ${OSHI_TOTAL}`,
+);
 
 await test(`the 推し tab the editor opens on holds ${OSHI_TOTAL} card numbers, paged 60 at a time`, async () => {
   openEmptyDeck();
@@ -246,7 +264,7 @@ await test(`the 推し tab the editor opens on holds ${OSHI_TOTAL} card numbers,
 
     assert.equal(
       total, OSHI_TOTAL,
-      `the 推し zone must still be the ${OSHI_TOTAL}-card set the v21 report describes, saw ${total}`,
+      `the 推し zone must hold the full ${OSHI_TOTAL}-card catalog set, saw ${total}`,
     );
     assert.ok(
       visible < total,
@@ -319,10 +337,11 @@ await test(`scrolling to the end pages in every one of the ${OSHI_TOTAL} cards, 
       return m ? Number(m[1]) : OSHI_TOTAL;
     };
 
-    assert.equal(windowOf(), 60, 'the first page must be the 60 cards v21 was stuck on');
+    assert.equal(windowOf(), PAGE_SIZE, `the first page must be the ${PAGE_SIZE} cards v21 was stuck on`);
 
     const seen = [windowOf()];
-    for (let hop = 0; hop < 6 && seen[seen.length - 1] < OSHI_TOTAL; hop += 1) {
+    const maxHops = Math.ceil(OSHI_TOTAL / PAGE_SIZE) + 2;
+    for (let hop = 0; hop < maxHops && seen[seen.length - 1] < OSHI_TOTAL; hop += 1) {
       const onEndReached = onEndReachedOf(grid);
       assert.ok(onEndReached, 'the grid must keep an onEndReached for a real scroll to fire');
       await act(async () => {
@@ -331,9 +350,12 @@ await test(`scrolling to the end pages in every one of the ${OSHI_TOTAL} cards, 
       seen.push(windowOf());
     }
 
+    const expected = [];
+    for (let n = PAGE_SIZE; n < OSHI_TOTAL; n += PAGE_SIZE) expected.push(n);
+    expected.push(OSHI_TOTAL);
     assert.deepEqual(
-      seen, [60, 120, OSHI_TOTAL],
-      'reaching the end must page 60 → 120 → 155 and clamp at the last card',
+      seen, expected,
+      `reaching the end must page ${expected.join(' → ')} and clamp at the last card`,
     );
 
     // Idempotent at the boundary: hitting the end again must not run away.
