@@ -127,7 +127,27 @@ jobs:
             --platform "${{ inputs.platform }}" \
             --profile "${{ inputs.profile }}" \
             --non-interactive \
-            --no-wait
+            --json \
+            --no-wait > eas-build-raw.json
+
+      # The `production` profile (AAB / iOS archive) is the artifact used for
+      # store submission. It must ship with the same provenance evidence as the
+      # APK path so the release-parity contract can prove the mobile
+      # production source SHA: an immutable checkout commit (GITHUB_SHA) tied
+      # to the live EAS build id captured above.
+      - name: Record EAS build provenance (production AAB / iOS archive)
+        if: ${{ inputs.profile != 'production-apk' }}
+        run: bash scripts/ci/record-eas-build-provenance.sh eas-build-raw.json "${{ inputs.profile }}"
+
+      - name: Upload EAS build provenance
+        if: ${{ inputs.profile != 'production-apk' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: holohunter-eas-build-${{ inputs.profile }}
+          path: |
+            eas-build-raw.json
+            build-provenance.json
+          retention-days: 14
 
       # The production APK path waits for the artifact: the acceptance evidence
       # (signer certificate, SHA-256, versionCode) only exists once the build

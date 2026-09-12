@@ -354,6 +354,50 @@ jobs:
       - name: Verify Scan screen fails safe on native crashes (DIC-1286)
         run: npm run test:scan-screen-fail-safe
 
+      - name: Verify Vercel per-project branch guard fails closed (DIC-1401)
+        run: npm run test:vercel-branch-guard
+
+      - name: Verify release-parity SHA contract fails closed (DIC-1401)
+        run: npm run test:release-parity-check
+
+      - name: Verify release flag parity ledger matches eas.json (DIC-1401)
+        run: npm run test:release-flags-parity
+
+      - name: Verify EXPO_PUBLIC_STORE_MVP is explicit on every deploy profile (DIC-1401 correction)
+        run: npm run test:store-mvp-define-guard
+
+      # DIC-1401 CR round 2: Vercel's own preview checks keep failing against
+      # the Hobby 12-serverless-function cap, and those failures have no public
+      # log line. This static route-count guard runs in GitHub Validate so the
+      # exact failing condition is visible in CI before Vercel ever sees the
+      # deployment — a public diagnostic mirror, not a Vercel replacement.
+      - name: Verify serverless API function count stays under Vercel Hobby cap (DIC-1401)
+        run: npm run test:vercel-function-count-guard
+
+      # DIC-1401 CR round 6-13: the deploy-status mirror publishes public
+      # summaries for Production/failure Vercel deployments. Round 6-7 shipped
+      # a raw-string classifier that missed Vercel's real `Production – <project>`
+      # events; round 8 inlined the classifier; rounds 9-11 iterated on the
+      # trust boundary of the write-token path. Round 10 landed the safe
+      # posture (schedule-triggered consumer polling the Deployments API,
+      # loaded from the default branch, filtering by vercel[bot] creator);
+      # round 11 added the required `deployments: read` permission and
+      # runtime tests. Round 12 deleted the mirror entirely under a wrong
+      # interpretation of the trust-boundary CR; round 13 restores it.
+      #
+      # The residual class (a future PR adds its own on: deployment_status
+      # workflow with write scope) is external to this repo and belongs to
+      # DIC-1399 (disable Vercel's GitHub Deployments integration). See
+      # release-parity/deploy-status-mirror-blocked.md.
+      - name: Verify Vercel deploy-status environment classifier admits real Production strings + Deployments API scope (DIC-1401)
+        run: npm run test:deploy-status-classify
+
+      - name: Verify EAS production build provenance contract (DIC-1401)
+        run: npm run test:eas-build-provenance
+
+      - name: Verify preview-build reproduction guard fails closed (DIC-1401)
+        run: npm run test:vercel-preview-build
+
       - name: Check for console.log statements
         run: |
           CONSOLE_LOGS=$(grep -r "console.log" src/ --include="*.ts" --include="*.tsx" || true)
@@ -426,3 +470,36 @@ jobs:
           name: production-apk-release
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: warn
+
+  vercel-preview-build:
+    # DIC-1401 CR round 3: Vercel's own preview builds expose no public failure
+    # line — the check just goes red. This job reproduces the EXACT
+    # vercel.json buildCommand (branch guard, deployment-data gate, expo
+    # export, write-build-version, fix-html, copy-assets, generate-assetlinks)
+    # in a preview environment and asserts dist/version.json carries the commit
+    # under test. A configured-build regression now fails loudly and publicly
+    # here (GitHub checks) instead of only as an opaque Vercel deployment
+    # failure — and a credential-less reviewer sees the exact failing command.
+    # Runs in parallel with Validate; only the buildCommand changes between
+    # lanes (EXPECTED_VERCEL_BRANCH + EXPO_PUBLIC_STORE_MVP are read from the
+    # branch's own vercel.json).
+    name: Vercel preview build reproduction (DIC-1401)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reproduce the configured Vercel Preview build
+        env:
+          VERCEL_GIT_COMMIT_REF: ${{ github.head_ref || github.ref_name }}
+          VERCEL_GIT_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/ci/reproduce-vercel-build.mjs

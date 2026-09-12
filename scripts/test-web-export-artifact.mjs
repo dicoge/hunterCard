@@ -1,29 +1,33 @@
 #!/usr/bin/env node
 /**
  * test-web-export-artifact.mjs — end-to-end mutation-sensitive regression
- * for the CONFIGURED Vercel build sequence (DIC-1140 blocker #3).
+ * for the CONFIGURED Vercel build sequence (DIC-1140 blocker #3 + DIC-1401).
  *
- * The bug this catches: `vercel.json` chains
+ * The original bug: `vercel.json` chained
  *   expo export --platform web && fix-html.js && copy-assets.js && …
  * so `dist/data/database.json` is written by fix-html.js (sanitised) and then
- * — until this test landed — byte-copied over by copy-assets.js (raw). Tests
- * that stubbed the export or only exercised one script in isolation missed
- * the overwrite. This regression reads `vercel.json` for the ACTUAL build
- * command, plays back the fix-html + copy-assets pair against a tempdir dist,
- * and audits the final on-disk artifact.
+ * — until this test landed — byte-copied over by copy-assets.js (raw), leaking
+ * `_rawPricesArchive` and errata text. This regression plays back the actual
+ * configured post-export chain against a tempdir dist and audits the final
+ * on-disk artifact.
  *
- * Asserted invariants against the final `dist/data/database.json`:
- *   • `_rawPricesArchive` present on ZERO cards (internal-audit strip).
- *   • No user-facing surface (name / yuyuName / yuyuImage / prices[].name
- *     / prices[].imageUrl) carries `エラッタ前/後` text.
- *   • Store MVP mode strips `buyPrice` / `buyPriceHistory` / `priceHistory`
- *     / `ytStats` and `prices[].buyPrice*`; full mode preserves them.
- *   • Legacy semantic aliases the UI reads (`growth_1d`, `viewCount_daily`,
- *     etc.) do not carry synthetic 0s.
+ * DIC-1401 round-4 moved the literal buildCommand into the controlled
+ * entrypoint `scripts/ci/vercel-build.sh` so `vercel.json` stays under Vercel's
+ * 256-character schema limit. This test's contract therefore has four layers:
  *
- * Also mutation-tested: temporarily reinstate the deleted copy-assets.js copy,
- * re-run the sequence, and confirm the artifact now leaks `_rawPricesArchive`
- * — so the regression fails if the fix regresses.
+ *   1. CONFIG CONTRACT  — vercel.json's buildCommand must point at the
+ *      controlled entrypoint (`bash scripts/ci/vercel-build.sh`) and stay
+ *      <= 256 chars (Vercel rejects longer). Prevents a silent revert to the
+ *      oversized inline command.
+ *   2. ENTRYPOINT CONTRACT — vercel-build.sh must fail-closed (guard the
+ *      lane env vars) and chain every required step in order: branch guard,
+ *      deployment-data gate, expo export, write-build-version, fix-html,
+ *      copy-assets, assetlinks. Nothing may be dropped.
+ *   3. MUTATION CASES — statically remove each required step from a mutated
+ *      entrypoint and confirm the analyzer fails, so no future PR can drop a
+ *      step without a red CI.
+ *   4. ARTIFACT AUDIT — play back fix-html + copy-assets (read from the real
+ *      entrypoint, not hard-coded) and assert the shipped database.json.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -36,6 +40,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..');
 const CANONICAL_DB = path.join(repoRoot, 'data', 'database.json');
 const VERCEL_JSON = path.join(repoRoot, 'vercel.json');
+const BUILD_ENTRYPOINT = path.join(repoRoot, 'scripts', 'ci', 'vercel-build.sh');
+
+// Vercel schema hard cap — anything longer is rejected at config validation.
+const VERCEL_BUILD_COMMAND_MAX_CHARS = 256;
+// The controlled entrypoint vercel.json must point at.
+const EXPECTED_ENTRYPOINT_CMD = 'bash scripts/ci/vercel-build.sh';
 
 let failures = 0;
 function fail(msg) { failures += 1; console.error(`  ✗ ${msg}`); }
@@ -60,32 +70,143 @@ function restoreDist() {
 process.on('exit', restoreDist);
 process.on('uncaughtException', (err) => { restoreDist(); console.error(err); process.exit(1); });
 
+// ---------------------------------------------------------------------------
+// Layer 1: config contract — vercel.json points at the controlled entrypoint.
+// ---------------------------------------------------------------------------
+
+function readVercelConfig() {
+  return JSON.parse(fs.readFileSync(VERCEL_JSON, 'utf-8'));
+}
+
+function checkConfigContract() {
+  const cfg = readVercelConfig();
+  const cmd = String(cfg.buildCommand || '').trim();
+  eq(cmd, EXPECTED_ENTRYPOINT_CMD, `vercel.json buildCommand points at the controlled entrypoint (${EXPECTED_ENTRYPOINT_CMD})`);
+  eq(cmd.length <= VERCEL_BUILD_COMMAND_MAX_CHARS, true,
+    `vercel.json buildCommand is within Vercel's ${VERCEL_BUILD_COMMAND_MAX_CHARS}-char schema limit (actual ${cmd.length})`);
+  return cmd;
+}
+
+// ---------------------------------------------------------------------------
+// Layer 2: entrypoint contract — vercel-build.sh fail-closes + chains every
+// required step. This is the source of truth the artifact audit reads from.
+// ---------------------------------------------------------------------------
+
 /**
- * Extract the post-expo scripts from `vercel.json`'s buildCommand. We refuse
- * to hard-code the list here — the test's whole purpose is to catch a build
- * step that overwrites the sanitized asset, so it must read what actually
- * runs in production.
+ * Required steps, checked in order. Each entry has a unique marker regex that
+ * must appear in the entrypoint source and a human-readable description used
+ * in failure/mutation messages.
  */
-function readVercelPostExpoScripts() {
-  const cfg = JSON.parse(fs.readFileSync(VERCEL_JSON, 'utf-8'));
-  const cmd = String(cfg.buildCommand || '');
-  // Everything after `expo export` is the post-build chain. We're only
-  // interested in `node scripts/<name>.(js|mjs)` invocations — those touch
-  // dist/. Ignore generate-assetlinks.mjs (not a dist writer for database).
-  const scripts = [];
-  const re = /node\s+(scripts\/[\w./-]+)/g;
-  let m;
-  while ((m = re.exec(cmd)) !== null) {
-    scripts.push(m[1]);
+const REQUIRED_STEPS = [
+  { name: 'branch-guard',        marker: /\bvercel-branch-guard\.sh\b/,                                  desc: 'branch guard (main/staging lane isolation)' },
+  { name: 'deployment-data',     marker: /\btest:deployment-data\b|\bverify-deployment-data\.mjs\b/,     desc: 'deployment-data gate (refuses to publish a regressed catalog)' },
+  { name: 'expo-export',         marker: /\bexpo\s+export\b/,                                            desc: 'expo web export' },
+  { name: 'write-build-version', marker: /\bwrite-build-version\.mjs\b/,                                 desc: 'write-build-version (release-parity evidence)' },
+  { name: 'fix-html',            marker: /\bfix-html\.js\b/,                                             desc: 'fix-html (sanitises database.json)' },
+  { name: 'copy-assets',         marker: /\bcopy-assets\.js\b/,                                          desc: 'copy-assets (must run AFTER fix-html)' },
+  { name: 'assetlinks',          marker: /\bgenerate-assetlinks\.mjs\b/,                                 desc: 'assetlinks generator' },
+];
+
+// Fix-html MUST run before copy-assets, otherwise copy-assets overwrites the
+// sanitized database with the raw canonical bytes (the DIC-1140 regression).
+const FIX_HTML_STEP = 'fix-html';
+const COPY_ASSETS_STEP = 'copy-assets';
+
+function indexOfStep(lines, stepName) {
+  const step = REQUIRED_STEPS.find((s) => s.name === stepName);
+  return lines.findIndex((line) => step.marker.test(line));
+}
+
+/**
+ * Analyze the entrypoint source and return the ordered list of required step
+ * names actually present, plus whether the ordering invariant holds.
+ * Pure function so it can be run against mutations.
+ */
+export function analyzeEntrypoint(source) {
+  const lines = source.split('\n');
+  const present = REQUIRED_STEPS
+    .filter((s) => lines.some((line) => s.marker.test(line)))
+    .map((s) => s.name);
+
+  const fixIdx = indexOfStep(lines, FIX_HTML_STEP);
+  const copyIdx = indexOfStep(lines, COPY_ASSETS_STEP);
+  const ordered = fixIdx >= 0 && copyIdx > fixIdx;
+
+  // Fail-closed: the entrypoint must explicitly reject unset lane env vars
+  // (EXPECTED_VERCEL_BRANCH / EXPO_PUBLIC_STORE_MVP) before running the build.
+  const failClosedEnv = source.includes('-n "${EXPECTED_VERCEL_BRANCH:-}"')
+    && source.includes('-n "${EXPO_PUBLIC_STORE_MVP:-}"');
+
+  return { present, ordered, failClosedEnv };
+}
+
+function assertEntrypointContract(src, label) {
+  const { present } = analyzeEntrypoint(src);
+  for (const step of REQUIRED_STEPS) {
+    eq(present.includes(step.name), true, `${label}: chain includes ${step.name} (${step.desc})`);
   }
+  eq(indexOfStep(src.split('\n'), FIX_HTML_STEP) < indexOfStep(src.split('\n'), COPY_ASSETS_STEP), true,
+    `${label}: fix-html runs BEFORE copy-assets (sanitizer must not be overwritten)`);
+  eq(analyzeEntrypoint(src).failClosedEnv, true,
+    `${label}: entrypoint fail-closes when EXPECTED_VERCEL_BRANCH / EXPO_PUBLIC_STORE_MVP are unset`);
+}
+
+// ---------------------------------------------------------------------------
+// Layer 3: mutation cases — removing ANY required step must fail the contract.
+// ---------------------------------------------------------------------------
+
+function runMutationCase(stepToRemove) {
+  const original = fs.readFileSync(BUILD_ENTRYPOINT, 'utf-8');
+  // Remove the whole line(s) carrying this step's marker. This isolates the
+  // removed step so the analyzer must report it as missing.
+  const marker = REQUIRED_STEPS.find((s) => s.name === stepToRemove).marker;
+  const lines = original.split('\n').filter((line) => !marker.test(line));
+  const mutated = lines.join('\n');
+
+  const { present, ordered } = analyzeEntrypoint(mutated);
+  const removedCleared = !present.includes(stepToRemove);
+
+  // The contract MUST fail when a required step vanishes. Removing any REQUIRED
+  // step shrinks `present`, and removing either fix-html or copy-assets also
+  // breaks the ordering invariant the artifact audit relies on. Only if the
+  // removal left every required step present AND ordered intact would a
+  // mutation have slipped through — which must never happen for a member of
+  // REQUIRED_STEPS.
+  const missingAnyRequired = REQUIRED_STEPS.some((s) => !present.includes(s.name));
+  const contractBroken = missingAnyRequired || !ordered;
+  const mutationCaught = removedCleared && contractBroken;
+
+  if (mutationCaught) {
+    ok(`mutation: dropping ${stepToRemove} (${REQUIRED_STEPS.find((s) => s.name === stepToRemove).desc}) fails the entrypoint contract`);
+  } else {
+    fail(`mutation: dropping ${stepToRemove} did not fail the entrypoint contract ` +
+      `(removedCleared=${removedCleared} missingAnyRequired=${missingAnyRequired} ordered=${ordered})`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Layer 4: artifact audit — play back fix-html + copy-assets from the real
+// entrypoint (not hard-coded) and audit the shipped database.json.
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the ordered dist-touching scripts from vercel-build.sh (the actual
+ * entrypoint), so the playback stays anchored to the real pipeline. We only
+ * exercise the scripts that touch dist/data (fix-html + copy-assets);
+ * assetlinks / write-build-version don't touch the database artifact.
+ */
+function readChainScriptsFromEntrypoint() {
+  const src = fs.readFileSync(BUILD_ENTRYPOINT, 'utf-8');
+  const scripts = [];
+  const re = /(?:^|\n)\s*(?:node\s+)?(scripts\/[\w./-]+\.(?:js|mjs))/g;
+  let m;
+  while ((m = re.exec(src)) !== null) scripts.push(m[1]);
   return scripts;
 }
 
 /**
  * Set up a tempdir dist/ shaped like Expo's real web export would produce it,
- * so fix-html.js has something to read. We only need the minimum surface the
- * two scripts touch — an index.html with a manifest tag (so the "already
- * present" branch fires) is enough.
+ * so fix-html.js has something to read.
  */
 function prepareDist(distDir) {
   fs.mkdirSync(path.join(distDir, 'data'), { recursive: true });
@@ -94,24 +215,10 @@ function prepareDist(distDir) {
     '<!doctype html><html><head><link rel="manifest" href="/manifest.json"></head><body></body></html>',
     'utf-8',
   );
-  // fix-html.js writes dist/manifest.json from public/manifest.json — the
-  // real public/ already exists at repo root, so let it read from there.
 }
 
-/**
- * Run the configured Vercel post-expo sequence (excluding assetlinks — not
- * relevant to database artifact) against a redirected dist/. We invoke the
- * scripts as node processes so nothing is stubbed, matching the real build.
- *
- * The scripts resolve `distDir` relative to the repo root, so the tempdir
- * has to overlay the real repo. We take the simpler path: symlink or hard-
- * copy dist/ under the real repo, run, then read, then clean up. Even simpler:
- * point the scripts at the real dist/ but preserve/restore the file we're
- * about to test. We chose to accept temporary use of the real `dist/`.
- */
 function runConfiguredSequence({ storeMvp }) {
   const distDir = path.join(repoRoot, 'dist');
-  // Reset dist/ to a minimal known state so we don't inherit stale artifacts.
   fs.rmSync(distDir, { recursive: true, force: true });
   prepareDist(distDir);
 
@@ -123,16 +230,16 @@ function runConfiguredSequence({ storeMvp }) {
   // Store MVP artifact under the "full" label.
   env.EXPO_PUBLIC_STORE_MVP = storeMvp ? '1' : '0';
 
-  const scripts = readVercelPostExpoScripts();
-  // We only exercise scripts that touch dist/data. In today's config that's
-  // fix-html.js and copy-assets.js; generate-assetlinks.mjs is skipped.
+  const scripts = readChainScriptsFromEntrypoint();
   const RELEVANT = new Set(['scripts/fix-html.js', 'scripts/copy-assets.js']);
   const chain = scripts.filter((s) => RELEVANT.has(s));
-  // Fail-loud if the config drops one of the expected steps — the test needs
-  // to know if the build sequence changed shape (e.g. someone renames the
-  // asset-copy script) so the audit stays anchored to the real pipeline.
-  assert.ok(chain.includes('scripts/fix-html.js'), 'vercel.json must chain scripts/fix-html.js');
-  assert.ok(chain.includes('scripts/copy-assets.js'), 'vercel.json must chain scripts/copy-assets.js');
+
+  assert.ok(chain.includes('scripts/fix-html.js'), 'entrypoint must chain scripts/fix-html.js');
+  assert.ok(chain.includes('scripts/copy-assets.js'), 'entrypoint must chain scripts/copy-assets.js');
+
+  // Ordering invariant: sanitizer runs first, copier second.
+  assert.ok(chain.indexOf('scripts/fix-html.js') < chain.indexOf('scripts/copy-assets.js'),
+    'entrypoint must run scripts/fix-html.js BEFORE scripts/copy-assets.js');
 
   for (const s of chain) {
     execFileSync('node', [path.join(repoRoot, s)], { cwd: repoRoot, env, stdio: 'pipe' });
@@ -183,35 +290,36 @@ function auditArtifact(label, artifact, { storeMvp }) {
   }
 }
 
-console.log('── vercel.json build sequence audit ──');
-{
-  const scripts = readVercelPostExpoScripts();
-  eq(
-    scripts.includes('scripts/fix-html.js') && scripts.includes('scripts/copy-assets.js'),
-    true,
-    'vercel.json chains fix-html.js AND copy-assets.js post-expo',
-  );
+// ---------------------------------------------------------------------------
+// Run everything
+// ---------------------------------------------------------------------------
+
+console.log('── Layer 1: vercel.json config contract ──');
+checkConfigContract();
+
+console.log('\n── Layer 2: entrypoint (vercel-build.sh) contract ──');
+const entrypointSource = fs.readFileSync(BUILD_ENTRYPOINT, 'utf-8');
+assertEntrypointContract(entrypointSource, 'real entrypoint');
+
+console.log('\n── Layer 3: mutation cases (dropping each required step must fail) ──');
+for (const step of REQUIRED_STEPS) {
+  runMutationCase(step.name);
 }
 
-console.log('\n── Full mode: play back the exact Vercel sequence ──');
+console.log('\n── Layer 4: Full mode: play back the real post-export chain ──');
 {
   const artifact = runConfiguredSequence({ storeMvp: false });
   auditArtifact('full', artifact, { storeMvp: false });
 }
 
-console.log('\n── Store MVP mode: play back the exact Vercel sequence with EXPO_PUBLIC_STORE_MVP=1 ──');
+console.log('\n── Layer 4: Store MVP mode: play back with EXPO_PUBLIC_STORE_MVP=1 ──');
 {
   const artifact = runConfiguredSequence({ storeMvp: true });
   auditArtifact('store-mvp', artifact, { storeMvp: true });
 }
 
-console.log('\n── Mutation sensitivity: reinstating the deleted copy in copy-assets.js MUST break the audit ──');
+console.log('\n── Layer 4: mutation sensitivity: reinstating the deleted copy in copy-assets.js MUST break the audit ──');
 {
-  // Guard: if the fix regresses (i.e. copy-assets.js starts copying the raw
-  // canonical database over dist/data/database.json again), this test must
-  // FAIL. We temporarily patch a copy-assets shim into the chain that
-  // reproduces the deleted overwrite, run the sequence, and expect the audit
-  // to trip.
   const distDir = path.join(repoRoot, 'dist');
   fs.rmSync(distDir, { recursive: true, force: true });
   prepareDist(distDir);
@@ -221,7 +329,6 @@ console.log('\n── Mutation sensitivity: reinstating the deleted copy in copy
   // profile and the mutation harness would collapse to the wrong baseline.
   env.EXPO_PUBLIC_STORE_MVP = '0';
   execFileSync('node', [path.join(repoRoot, 'scripts/fix-html.js')], { cwd: repoRoot, env, stdio: 'pipe' });
-  // Simulate the regression: overwrite with raw canonical bytes.
   fs.copyFileSync(CANONICAL_DB, path.join(distDir, 'data', 'database.json'));
   const artifact = JSON.parse(fs.readFileSync(path.join(distDir, 'data', 'database.json'), 'utf-8'));
   let regressed = false;
@@ -231,8 +338,7 @@ console.log('\n── Mutation sensitivity: reinstating the deleted copy in copy
   eq(regressed, true, 'mutation: replaying the deleted overwrite reproduces _rawPricesArchive leak (audit is sensitive to it)');
 }
 
-// Clean up dist so the caller ends with a fresh sanitized artifact
-// (rebuild via the real sequence — full production mode).
+// Clean up dist so the caller ends with a fresh sanitized artifact.
 {
   const distDir = path.join(repoRoot, 'dist');
   fs.rmSync(distDir, { recursive: true, force: true });
