@@ -199,6 +199,12 @@ jobs:
       - name: Verify Pen eurld/wC1cO scan parity (DIC-1427)
         run: npm run test:scan-pen-parity
 
+      # DIC-1427 QA P0: Pen App/16 登入 must be REAL and REACHABLE — Landing
+      # 登入 entries push AuthLogin inside the unauthenticated stack; no fake
+      # email button, Apple stays behind the real gate.
+      - name: Verify Pen p28zL login reachability + parity (DIC-1427)
+        run: npm run test:login-pen-parity
+
       # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
       # screens rendering the shared shell with real data + navigation wiring.
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)

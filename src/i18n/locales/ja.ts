@@ -158,8 +158,8 @@ export const ja: Record<keyof typeof zh, string> = {
   settings_apple_login: 'Appleアカウントでログイン',
 
   // Login Screen
-  login_tagline: 'hololive TCG カード検索アプリ',
-  login_welcome: 'HoloHunterへようこそ',
+  login_tagline: 'hOCG 価格トラッキング・スキャン査定・デッキ整理',
+  login_welcome: 'カードハントの旅へ',
   login_description: 'ログインするとお気に入り保存、スキャン、価格推移チェックが可能です',
   // Store MVP: no favorites / alerts / price-trend promise (DIC-1256).
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync

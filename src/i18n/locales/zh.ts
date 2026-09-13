@@ -158,8 +158,8 @@ export const zh = {
   settings_apple_login: '使用 Apple 帳號登入',
 
   // Login Screen
-  login_tagline: 'hololive TCG 卡牌查詢 App',
-  login_welcome: '歡迎使用 HoloHunter',
+  login_tagline: '追蹤 hOCG 價格・掃描估值・整理牌組',
+  login_welcome: '開始獵卡之旅',
   login_description: '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢',
   // Store MVP: no 收藏 / 提醒 / 價格趨勢 promise (DIC-1256).
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync binding

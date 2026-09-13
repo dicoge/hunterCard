@@ -449,7 +449,7 @@ function DeckPanel({ desktop }: { desktop: boolean }) {
   );
 }
 
-export default function LandingScreen() {
+export default function LandingScreen({ navigation }: any = {}) {
   const { width, isWide } = useBreakpoint();
   const isDesktop = width >= 768;
   // Pen `z5AkG` lays the tilted trio on a fixed 640×560 canvas; scale it
@@ -513,6 +513,15 @@ export default function LandingScreen() {
                 </View>
               )}
               <View style={styles.navActions}>
+                {/* DIC-1427 Pen p28zL: real route to the Pen auth surface. */}
+                <TouchableOpacity
+                  style={styles.navGuestLink}
+                  onPress={() => navigation?.navigate?.('AuthLogin')}
+                  accessibilityRole="link"
+                  testID="landing-nav-login"
+                >
+                  <Text style={styles.navGuestLinkText}>登入</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.navGuestLink}
                   onPress={handleGuest}
@@ -557,6 +566,14 @@ export default function LandingScreen() {
                 <Text style={styles.mobileMenuItemText}>{link}</Text>
               </TouchableOpacity>
             ))}
+            {/* DIC-1427 Pen p28zL: real route to the Pen auth surface. */}
+            <TouchableOpacity
+              style={styles.mobileMenuItem}
+              onPress={() => navigation?.navigate?.('AuthLogin')}
+              testID="landing-menu-login"
+            >
+              <Text style={styles.mobileMenuItemText}>登入</Text>
+            </TouchableOpacity>
           </View>
         )}
 

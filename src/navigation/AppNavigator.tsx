@@ -330,21 +330,21 @@ export default function AppNavigator() {
     );
   }
 
-  // DIC-1380 W5b: unauthenticated visitors now land on the Pen artifact's
-  // accepted marketing Landing (LandingScreen) at `/`, not on the bare
-  // LoginScreen auth card that shipped before. LoginScreen is retained as
-  // an internal seam kept out of the visible surface (kept referenced so
-  // the bundler and the future settings-linked login flow keep it live).
-  const LoginScreenRef = LoginScreen;
-  void LoginScreenRef;
-
+  // DIC-1380 W5b: unauthenticated visitors land on the Pen artifact's
+  // accepted marketing Landing (LandingScreen) at `/`.
+  // DIC-1427 (Pen p28zL): the Pen auth surface is now a REAL reachable state
+  // — the Landing's 登入 entries push `AuthLogin` (LoginScreen) inside the
+  // same unauthenticated stack, so the auth gate itself is unchanged.
   return (
     <NavigationContainer>
       <AuthStack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated || isGuest ? (
           <AuthStack.Screen name="Main" component={StackNavigator} />
         ) : (
-          <AuthStack.Screen name="Login" component={LandingScreen} />
+          <>
+            <AuthStack.Screen name="Login" component={LandingScreen} />
+            <AuthStack.Screen name="AuthLogin" component={LoginScreen} />
+          </>
         )}
       </AuthStack.Navigator>
     </NavigationContainer>

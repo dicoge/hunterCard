@@ -54,6 +54,8 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Login: undefined;
+  /** DIC-1427 Pen p28zL: the Pen auth surface, pushed from the Landing. */
+  AuthLogin: undefined;
   Main: undefined;
 };
 
