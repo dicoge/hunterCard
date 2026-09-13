@@ -177,6 +177,16 @@ export const ja: Record<keyof typeof zh, string> = {
   me_stat_collection: '所持枚数',
   me_stat_alerts: '価格アラート',
   me_guest_name: 'ゲスト',
+  // DIC-1427: Pen App/07 マイページ collection hub (frame siVsa).
+  nav_me: 'マイページ',
+  me_account_manage: 'アカウントと設定',
+  me_guest_hint: 'ログインしてコレクションを同期',
+  me_stat_owned: '所持枚数',
+  me_stat_value: 'コレクション評価額',
+  me_seg_trends: 'トレンド',
+  me_empty_title: 'コレクションはまだありません',
+  me_empty_hint: 'スキャンまたは検索でカードを追加すると、ここで数量と評価額を管理できます',
+  me_view_all: 'コレクションをすべて見る',
   me_provider_linked: '{{provider}} 連携済み',
   common_cancel: 'キャンセル',
   common_remove: '削除',
@@ -210,6 +220,13 @@ export const ja: Record<keyof typeof zh, string> = {
   search_empty_hint: '日本語名、カード番号、シリーズコードで検索してみてください',
   search_results_for: '検索結果：{{query}}',
   search_found_count: '{{count}} 枚見つかりました',
+  // DIC-1427: Pen App/02 検索結果 — sort control (zkTTM) + filter sheet.
+  search_sort_relevance: '関連順',
+  search_sort_price_desc: '価格高→低',
+  search_sort_price_asc: '価格低→高',
+  search_filter_open: '絞り込み',
+  search_filter_sr_plus: 'SR 以上',
+  search_filter_done: '完了',
   // DIC-1141: shown when a Holomen card has no canonical Bloom Level yet.
   search_bloom_level_pending: 'Bloomレベル未取得',
 

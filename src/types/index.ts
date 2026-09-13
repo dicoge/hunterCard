@@ -68,6 +68,8 @@ export type MainDrawerParamList = {
   // CollectionScreen.
   Favorites: undefined;
   Collection: undefined;
+  // DIC-1427: Pen App/07 我的 collection hub (frame siVsa).
+  Me: undefined;
   DeckEditor: undefined;
   TournamentReport: undefined;
   Watchlist: undefined;

@@ -10,6 +10,7 @@ import {
   TYPE_SCALE,
   SHADOWS,
 } from '../../theme/tokensV2';
+import { HouseGlyph, SearchGlyph, LayersGlyph, UserGlyph, ScanLineGlyph } from './icons';
 
 export type BottomTabKey = 'home' | 'search' | 'scan' | 'deck' | 'me';
 
@@ -78,12 +79,22 @@ export function BottomTabBar({
           accessibilityLabel={scanItem.label}
           testID={scanItem.testID ?? `${testID}-scan-fab`}
         >
-          {scanItem.icon ?? <Text style={styles.fabGlyph}>{scanItem.glyph ?? '＋'}</Text>}
+          {scanItem.icon ?? <ScanLineGlyph color="#FFFFFF" size={28} />}
         </TouchableOpacity>
       ) : null}
     </View>
   );
 }
+
+// DIC-1427: default per-slot icons matching the Pen `C / Tab Bar` lucide set
+// (house / search / layers / user, 22×22). Callers can still override with
+// `item.icon`; the emoji `glyph` fallback only survives for unknown keys.
+const TAB_GLYPHS: Partial<Record<BottomTabKey, (color: string) => React.ReactNode>> = {
+  home: (color) => <HouseGlyph color={color} size={20} />,
+  search: (color) => <SearchGlyph color={color} size={19} />,
+  deck: (color) => <LayersGlyph color={color} size={20} />,
+  me: (color) => <UserGlyph color={color} size={20} />,
+};
 
 function renderTab(
   item: BottomTabItem,
@@ -91,6 +102,8 @@ function renderTab(
   onPress: (item: BottomTabItem) => void,
 ) {
   const ariaProps: Record<string, unknown> = { 'aria-selected': active };
+  const tint = active ? PALETTE.accent : '#5A5A75';
+  const defaultIcon = TAB_GLYPHS[item.key]?.(tint);
   return (
     <TouchableOpacity
       key={item.key}
@@ -107,7 +120,7 @@ function renderTab(
         style={[styles.iconWrap, active && styles.iconWrapActive]}
         testID={`shell-bottom-tab-${item.key}-icon`}
       >
-        {item.icon ?? (
+        {item.icon ?? defaultIcon ?? (
           <Text style={[styles.iconGlyph, active && styles.iconGlyphActive]}>
             {item.glyph ?? '•'}
           </Text>
@@ -196,11 +209,20 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: PALETTE.appBg,
   },
+  // Pen `Scan FAB` (i4fpf): linear gradient #FF4D9D → #8B5CF6. RN core has no
+  // gradient primitive and the app ships no gradient dependency, so web gets
+  // the exact CSS gradient and native keeps the accent base tone.
   fabPinkPurple: {
     backgroundColor: PALETTE.accent,
+    ...(Platform.OS === 'web'
+      ? ({ backgroundImage: `linear-gradient(150deg, ${PALETTE.accent} 0%, ${PALETTE.accent3} 100%)` } as object)
+      : null),
   },
   fabPinkCyan: {
     backgroundColor: PALETTE.accent,
+    ...(Platform.OS === 'web'
+      ? ({ backgroundImage: `linear-gradient(150deg, ${PALETTE.accent} 0%, ${PALETTE.accent2} 100%)` } as object)
+      : null),
   },
   fabGlyph: {
     fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
@@ -11,7 +11,15 @@ import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
 import { uniformGridItemStyle } from '../utils/gridLayout';
 import { AppShell, buildShellTabs } from '../components/shell';
-import { PALETTE, SEMANTIC, FONTS, TYPE_SCALE } from '../theme/tokensV2';
+import {
+  ArrowLeftGlyph,
+  SearchGlyph,
+  SlidersGlyph,
+  ChevronDownGlyph,
+  XGlyph,
+} from '../components/shell/icons';
+import { CardTile } from '../components/cards';
+import { PALETTE, SEMANTIC, FONTS, TYPE_SCALE, RADII, SPACING } from '../theme/tokensV2';
 import { Platform } from 'react-native';
 import {
   normalizeCardIdentity,
@@ -259,6 +267,62 @@ export function searchCards(database: DatabaseSchema, query: string, nameMap: Re
   });
 }
 
+// ── DIC-1427: Pen App/02 sort + filter model ──
+
+export type SearchSortMode = 'relevance' | 'price-desc' | 'price-asc';
+
+const SORT_CYCLE: SearchSortMode[] = ['relevance', 'price-desc', 'price-asc'];
+const SORT_LABEL_KEY: Record<SearchSortMode, string> = {
+  relevance: 'search_sort_relevance',
+  'price-desc': 'search_sort_price_desc',
+  'price-asc': 'search_sort_price_asc',
+};
+
+// "SR 以上" (Pen chip CT3mi): printings at or above SR in the hOCG rarity
+// ladder. Base ladder is C < U < R < RR < SR; everything above SR is a
+// premium/parallel tier (OSR / UR / OUR / SEC / SY / SP / P).
+const SR_PLUS_RARITIES = new Set(['SR', 'OSR', 'UR', 'OUR', 'SEC', 'SY', 'SP', 'P']);
+
+function cardPriceValue(card: CardResult): number | null {
+  const price = card.sellPrice ?? card.yuyuPrice ?? null;
+  return typeof price === 'number' && price > 0 ? price : null;
+}
+
+export function applySearchRefinements(
+  results: CardResult[],
+  opts: { colors: ReadonlySet<string>; series: ReadonlySet<string>; srPlus: boolean; sort: SearchSortMode },
+): CardResult[] {
+  let list = results;
+  if (opts.colors.size > 0) {
+    list = list.filter((c) => (c.colors || []).some((color) => opts.colors.has(color)));
+  }
+  if (opts.series.size > 0) {
+    list = list.filter((c) => (c.series || []).some((s) => opts.series.has(s)));
+  }
+  if (opts.srPlus) {
+    list = list.filter((c) => SR_PLUS_RARITIES.has((c.rarity || '').toUpperCase()));
+  }
+  if (opts.sort !== 'relevance') {
+    list = [...list].sort((a, b) => {
+      const pa = cardPriceValue(a);
+      const pb = cardPriceValue(b);
+      if (pa == null && pb == null) return 0;
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      return opts.sort === 'price-desc' ? pb - pa : pa - pb;
+    });
+  }
+  return list;
+}
+
+// Shared display-price formatter (same contract CardListItem always used).
+function formatCardPrice(price: number | null | undefined, preferredCurrency: string): string {
+  if (price == null) return '—';
+  if (preferredCurrency === 'JPY') return `¥${price.toLocaleString()}`;
+  const { value, symbol } = convertPrice(price, preferredCurrency as Parameters<typeof convertPrice>[1]);
+  return `${symbol}${value?.toLocaleString() || '—'}`;
+}
+
 // Extract effect text from searchKeywords (index 3+)
 function getEffectPreview(kw: string[] = []): string {
   const gameTerms = ['給予', '抽', '傷害', '牌組', '手札', '成員', '中央', '藝能', 'HP', '生命', '階段', '回合', '特殊', '公開'];
@@ -274,9 +338,16 @@ export default function SearchResultsScreen({ route, navigation }: any) {
   const [results, setResults] = useState<CardResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { isDesktop, isWide } = useBreakpoint();
-  const numColumns = isWide ? 3 : isDesktop ? 2 : 1;
+  // DIC-1427 QA P1: the Pen `App / 02 搜尋結果` Card Tile grid (frame Z6jlE)
+  // is the authoritative design system at EVERY width — 768/1440 previously
+  // fell back to the legacy horizontal list-cards. Columns scale with the
+  // content box while the tile keeps its Pen anatomy: 3 at mobile (exact
+  // 113px Pen tiles), 6 at tablet, 8 at desktop widths.
+  const numColumns = isWide ? WIDE_TILE_COLUMNS : isDesktop ? TABLET_TILE_COLUMNS : MOBILE_GRID_COLUMNS;
+  const useTileGrid = true;
+  const gridGap = MOBILE_GRID_GAP;
   // DIC-1150: measure the row's available width so each card lands on an exact
-  // pixel width (containerWidth - (n-1) * GRID_GAP) / n. Mixing the fixed 12px
+  // pixel width (containerWidth - (n-1) * gap) / n. Mixing the fixed 12px
   // `columnWrapper` gap with a guessed percentage gap was the root cause of the
   // horizontal scrollbar and the unaligned third column on desktop.
   const [rowWidth, setRowWidth] = useState(0);
@@ -286,20 +357,56 @@ export default function SearchResultsScreen({ route, navigation }: any) {
     setRowWidth((prev) => (prev === contentWidth ? prev : Math.max(0, contentWidth)));
   }, []);
   const gridItemStyle = useMemo(
-    () => uniformGridItemStyle({ columns: numColumns, containerWidth: rowWidth, gap: GRID_GAP }),
-    [numColumns, rowWidth]
+    () => uniformGridItemStyle({ columns: numColumns, containerWidth: rowWidth, gap: gridGap }),
+    [numColumns, rowWidth, gridGap]
   );
+  const tileWidth = typeof gridItemStyle.width === 'number' ? gridItemStyle.width : undefined;
 
-  // DIC-1409 Phase 3: every branch renders inside the shared Pen v2 shell —
-  // back arrow + query in the app bar (Pen `App / 02 搜尋結果` node CXGih),
-  // bottom tab bar with 搜尋 active. The FlatList stays the scroll container,
-  // so the DIC-1150 grid geometry contract is untouched.
+  // DIC-1427: live search field draft (Pen node hKr9H/j5Et8) — submitting
+  // re-runs the real SearchResults route with the edited query.
+  const [queryDraft, setQueryDraft] = useState<string>(query);
+  useEffect(() => { setQueryDraft(query); }, [query]);
+  const submitDraft = useCallback(() => {
+    const next = queryDraft.trim();
+    if (!next) return;
+    navigation.navigate('SearchResults', { query: next });
+  }, [queryDraft, navigation]);
+
+  // DIC-1427: refinement state — real filters/sort over the real result set.
+  const [sortMode, setSortMode] = useState<SearchSortMode>('relevance');
+  const [colorFilters, setColorFilters] = useState<ReadonlySet<string>>(new Set());
+  const [seriesFilters, setSeriesFilters] = useState<ReadonlySet<string>>(new Set());
+  const [srPlus, setSrPlus] = useState(false);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  useEffect(() => {
+    // A new query means a new result universe — stale refinements would
+    // silently hide fresh results.
+    setColorFilters(new Set());
+    setSeriesFilters(new Set());
+    setSrPlus(false);
+    setFilterPanelOpen(false);
+  }, [query]);
+
+  const toggleSetMember = (set: ReadonlySet<string>, value: string): ReadonlySet<string> => {
+    const next = new Set(set);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    return next;
+  };
+
+  // DIC-1409 Phase 3 + DIC-1427: every branch renders inside the shared Pen v2
+  // shell. App bar = back arrow (A2SWo) + real search field (hKr9H) + sliders
+  // filter affordance (w5jzG9); no mock status bar — the OS/browser already
+  // draws status chrome, and doubling it was the production regression the
+  // user captured. Bottom tab bar keeps 搜尋 active.
   const shellTabs = useMemo(() => buildShellTabs({ navigation }), [navigation]);
+  // DIC-1427 QA: the Pen status row is back on this route — AppStatusBar now
+  // renders web-only (real clock + drawn glyphs), and returns null on native
+  // where the OS bar exists, so the original duplicate-status P0 cannot recur.
   const wrapInShell = (children: React.ReactNode) => (
     <AppShell
       appBar={{
         showBrand: false,
-        title: query || t('nav_search_results' as Parameters<typeof t>[0]),
         leading: (
           <TouchableOpacity
             onPress={() => (navigation.goBack ? navigation.goBack() : navigation.navigate('Home'))}
@@ -308,9 +415,36 @@ export default function SearchResultsScreen({ route, navigation }: any) {
             style={shellStyles.backButton}
             testID="search-results-back"
           >
-            <Text style={shellStyles.backGlyph}>‹</Text>
+            <ArrowLeftGlyph color={SEMANTIC.onBgMuted} size={22} />
           </TouchableOpacity>
         ),
+        center: (
+          <View style={shellStyles.searchField} testID="search-results-search-field">
+            <SearchGlyph color={PALETTE.textMuted} size={16} />
+            <TextInput
+              value={queryDraft}
+              onChangeText={setQueryDraft}
+              onSubmitEditing={submitDraft}
+              placeholder={t('search_landing_placeholder' as Parameters<typeof t>[0])}
+              placeholderTextColor={PALETTE.textMuted}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={shellStyles.searchInput}
+              accessibilityLabel={t('search_title' as Parameters<typeof t>[0])}
+              testID="search-results-input"
+            />
+          </View>
+        ),
+        actions: [
+          {
+            key: 'filter',
+            label: t('search_filter_open' as Parameters<typeof t>[0]),
+            icon: <SlidersGlyph color={SEMANTIC.onBgMuted} size={21} />,
+            onPress: () => setFilterPanelOpen((open) => !open),
+            testID: 'search-results-filter-button',
+          },
+        ],
       }}
       bottomTabBar={{ items: shellTabs, activeKey: 'search' }}
       scrollable={false}
@@ -370,24 +504,209 @@ export default function SearchResultsScreen({ route, navigation }: any) {
     </View>
   );
 
-  const openUrl = (url: string) => Linking.openURL(url);
+  const visible = applySearchRefinements(results, {
+    colors: colorFilters,
+    series: seriesFilters,
+    srPlus,
+    sort: sortMode,
+  });
+
+  // Real filter options derived from the actual result universe.
+  const colorOptions = Array.from(new Set(results.flatMap((c) => c.colors || []))).filter((c) =>
+    KNOWN_COLOR_KEYS.has(c)
+  );
+  const seriesOptions = Array.from(new Set(results.flatMap((c) => c.series || [])));
+
+  const cycleSort = () => {
+    setSortMode((mode) => SORT_CYCLE[(SORT_CYCLE.indexOf(mode) + 1) % SORT_CYCLE.length]);
+  };
+
+  const hasActiveFilters = colorFilters.size > 0 || seriesFilters.size > 0 || srPlus;
+
+  // Pen `Active Filters` row (tTrL3): dismissible accent chips per active
+  // color/series filter, neutral chip for the SR 以上 threshold (CT3mi).
+  const chipRow = hasActiveFilters ? (
+    <View style={styles.chipRow} testID="search-results-chips">
+      {Array.from(colorFilters).map((color) => (
+        <TouchableOpacity
+          key={`color-${color}`}
+          style={styles.chipAccent}
+          onPress={() => setColorFilters((set) => toggleSetMember(set, color))}
+          accessibilityRole="button"
+          testID={`search-results-chip-color-${color}`}
+        >
+          <Text style={styles.chipAccentLabel}>
+            {KNOWN_COLOR_KEYS.has(color) ? t(`color_${color}` as Parameters<typeof t>[0]) : color}
+          </Text>
+          <View testID={`search-results-chip-color-${color}-remove`}>
+            <XGlyph color={CHIP_ACCENT_FG} size={11} />
+          </View>
+        </TouchableOpacity>
+      ))}
+      {Array.from(seriesFilters).map((code) => (
+        <TouchableOpacity
+          key={`series-${code}`}
+          style={styles.chipAccent}
+          onPress={() => setSeriesFilters((set) => toggleSetMember(set, code))}
+          accessibilityRole="button"
+          testID={`search-results-chip-series-${code}`}
+        >
+          <Text style={styles.chipAccentLabel}>{code}</Text>
+          <View testID={`search-results-chip-series-${code}-remove`}>
+            <XGlyph color={CHIP_ACCENT_FG} size={11} />
+          </View>
+        </TouchableOpacity>
+      ))}
+      {srPlus ? (
+        <TouchableOpacity
+          style={styles.chipNeutral}
+          onPress={() => setSrPlus(false)}
+          accessibilityRole="button"
+          testID="search-results-chip-srplus"
+        >
+          <Text style={styles.chipNeutralLabel}>{t('search_filter_sr_plus' as Parameters<typeof t>[0])}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  ) : null;
+
+  // Pen `Result Count` row (xKkbE): count left, sort control (zkTTM) right.
+  const listHeader = (
+    <View>
+      {chipRow}
+      <View style={styles.countRow}>
+        <Text style={styles.countText} testID="search-results-count">
+          {t('search_found_count', { count: visible.length })}
+        </Text>
+        <TouchableOpacity
+          style={styles.sortControl}
+          onPress={cycleSort}
+          accessibilityRole="button"
+          accessibilityLabel={t(SORT_LABEL_KEY[sortMode] as Parameters<typeof t>[0])}
+          testID="search-results-sort"
+        >
+          <Text style={styles.sortLabel} testID="search-results-sort-label">
+            {t(SORT_LABEL_KEY[sortMode] as Parameters<typeof t>[0])}
+          </Text>
+          <ChevronDownGlyph color={PALETTE.textMuted} size={14} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  // Functional filter sheet behind the sliders affordance (w5jzG9). Options
+  // come from the real dataset; toggles feed the chips row above.
+  const filterPanel = filterPanelOpen ? (
+    <View style={styles.filterPanel} testID="search-results-filter-panel">
+      <Text style={styles.filterSectionTitle}>{t('search_filter_color' as Parameters<typeof t>[0])}</Text>
+      <View style={styles.filterOptionRow}>
+        {colorOptions.map((color) => {
+          const active = colorFilters.has(color);
+          return (
+            <TouchableOpacity
+              key={color}
+              style={[styles.filterOption, active && styles.filterOptionActive]}
+              onPress={() => setColorFilters((set) => toggleSetMember(set, color))}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              testID={`search-results-filter-color-${color}`}
+            >
+              <Text style={[styles.filterOptionLabel, active && styles.filterOptionLabelActive]}>
+                {t(`color_${color}` as Parameters<typeof t>[0])}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={styles.filterSectionTitle}>{t('search_filter_rarity' as Parameters<typeof t>[0])}</Text>
+      <View style={styles.filterOptionRow}>
+        <TouchableOpacity
+          style={[styles.filterOption, srPlus && styles.filterOptionActive]}
+          onPress={() => setSrPlus((v) => !v)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: srPlus }}
+          testID="search-results-filter-srplus"
+        >
+          <Text style={[styles.filterOptionLabel, srPlus && styles.filterOptionLabelActive]}>
+            {t('search_filter_sr_plus' as Parameters<typeof t>[0])}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {seriesOptions.length > 1 ? (
+        <>
+          <Text style={styles.filterSectionTitle}>{t('search_filter_set' as Parameters<typeof t>[0])}</Text>
+          <View style={styles.filterOptionRow}>
+            {seriesOptions.map((code) => {
+              const active = seriesFilters.has(code);
+              return (
+                <TouchableOpacity
+                  key={code}
+                  style={[styles.filterOption, active && styles.filterOptionActive]}
+                  onPress={() => setSeriesFilters((set) => toggleSetMember(set, code))}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  testID={`search-results-filter-series-${code}`}
+                >
+                  <Text style={[styles.filterOptionLabel, active && styles.filterOptionLabelActive]}>{code}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
+      <View style={styles.filterPanelFooter}>
+        <TouchableOpacity
+          onPress={() => {
+            setColorFilters(new Set());
+            setSeriesFilters(new Set());
+            setSrPlus(false);
+          }}
+          accessibilityRole="button"
+          testID="search-results-filter-reset"
+        >
+          <Text style={styles.filterReset}>{t('search_reset' as Parameters<typeof t>[0])}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setFilterPanelOpen(false)}
+          style={styles.filterDoneButton}
+          accessibilityRole="button"
+          testID="search-results-filter-done"
+        >
+          <Text style={styles.filterDone}>{t('search_filter_done' as Parameters<typeof t>[0])}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  ) : null;
 
   return wrapInShell(
     <View style={styles.container}>
       <View style={[styles.centerWrap, isDesktop && styles.centerWrapDesktop]}>
-        <View style={styles.header}>
-          <Text style={{ ...styles.queryText, color: COLORS.text }}>{t('search_results_for', { query })}</Text>
-          <Text style={{ ...styles.resultCount, color: COLORS.textSecondary }}>{t('search_found_count', { count: results.length })}</Text>
-        </View>
+        {filterPanel}
         <FlatList
           key={`cols-${numColumns}`}
-          data={results}
+          data={visible}
           keyExtractor={(item) => item.id}
           numColumns={numColumns}
-          columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
+          // Pen Z6jlE row pitch: 14px between tile rows (spacer nodes
+          // SpR0/OFt50). CardListItem carries its own 12px marginBottom, so
+          // the extra row margin only applies to the mobile tile grid.
+          columnWrapperStyle={
+            numColumns > 1
+              ? { gap: gridGap, marginBottom: useTileGrid ? MOBILE_ROW_GAP : 0 }
+              : undefined
+          }
+          ListHeaderComponent={listHeader}
           renderItem={({ item }) => (
             <View style={gridItemStyle} testID="search-result-grid-item">
-              <CardListItem card={item} onPress={() => navigation.navigate('CardDetail', { card: item })} />
+              {useTileGrid ? (
+                <SearchResultTile
+                  card={item}
+                  width={tileWidth}
+                  onPress={() => navigation.navigate('CardDetail', { card: item })}
+                />
+              ) : (
+                <CardListItem card={item} onPress={() => navigation.navigate('CardDetail', { card: item })} />
+              )}
             </View>
           )}
           contentContainerStyle={styles.list}
@@ -395,6 +714,37 @@ export default function SearchResultsScreen({ route, navigation }: any) {
         />
       </View>
     </View>
+  );
+}
+
+/**
+ * Pen `C / Card Tile` instance as used by frame Z6jlE's grid rows: real card
+ * art, rarity chip in the art foot, real display name and real listed price
+ * (gated by the same Store-MVP flag the list layout used, DIC-1319).
+ */
+export function SearchResultTile({
+  card,
+  width,
+  onPress,
+}: {
+  card: CardResult;
+  width?: number;
+  onPress: () => void;
+}) {
+  const { preferredCurrency, preferredLanguage } = useSettingsStore();
+  const { primary } = resolveCardDisplayName(card, preferredLanguage);
+  const price = cardPriceValue(card);
+  const showPrice = FEATURES.sellPrice && price != null;
+  return (
+    <CardTile
+      name={primary || card.cardNumber || card.id}
+      rarity={card.rarity || undefined}
+      price={showPrice ? formatCardPrice(price, preferredCurrency) : undefined}
+      imageUrl={card.imageUrl || undefined}
+      onPress={onPress}
+      width={width}
+      testID="search-card-tile"
+    />
   );
 }
 
@@ -456,12 +806,7 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
   const effects = getEffectPreview(card.searchKeywords);
   const { preferredCurrency, preferredLanguage } = useSettingsStore();
 
-  const formatPrice = (price: number | null): string => {
-    if (price == null) return '—';
-    if (preferredCurrency === 'JPY') return `¥${price.toLocaleString()}`;
-    const { value, symbol } = convertPrice(price, preferredCurrency);
-    return `${symbol}${value?.toLocaleString() || '—'}`;
-  };
+  const formatPrice = (price: number | null): string => formatCardPrice(price, preferredCurrency);
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
@@ -542,15 +887,33 @@ export function CardListItem({ card, onPress }: { card: CardResult; onPress: () 
   );
 }
 
-// DIC-1150: single source of truth for the two numbers the row math depends on
+// DIC-1150: single source of truth for the numbers the row math depends on
 // — the list's horizontal padding and the gap between columns. Both are read by
 // the layout tests too so the contract stays honest across viewports.
+// DIC-1427: mobile (<768) renders the Pen Z6jlE 3-column Card Tile grid —
+// tiles land on the exact Pen width: floor((390-32 − 2·9)/3) = 113.
 const LIST_PADDING_X = 16;
 const GRID_GAP = 12;
+const MOBILE_GRID_COLUMNS = 3;
+const MOBILE_GRID_GAP = 9;
+const MOBILE_ROW_GAP = 14;
+// DIC-1427 QA P1: tile columns for the wider breakpoints (tile design system
+// everywhere; Pen defines the 390 frame, wider widths scale the same tile).
+const TABLET_TILE_COLUMNS = 6;
+const WIDE_TILE_COLUMNS = 8;
+// Pen chip label tint (nodes AFVm9/Fx6XO/lAz8y — #FF9AC8 on #FF4D9D24).
+const CHIP_ACCENT_FG = '#FF9AC8';
+const CHIP_ACCENT_BG = PALETTE.accent + '24';
+const CHIP_ACCENT_BORDER = PALETTE.accent + '59';
 
 export const SEARCH_RESULTS_LAYOUT = {
   listPaddingX: LIST_PADDING_X,
   gridGap: GRID_GAP,
+  mobileColumns: MOBILE_GRID_COLUMNS,
+  mobileGridGap: MOBILE_GRID_GAP,
+  mobileRowGap: MOBILE_ROW_GAP,
+  tabletTileColumns: TABLET_TILE_COLUMNS,
+  wideTileColumns: WIDE_TILE_COLUMNS,
   desktopMaxWidth: 1100,
 } as const;
 
@@ -571,7 +934,8 @@ export function __seedSearchResultsCacheForTest(
   seriesNamesFetchPromise = null;
 }
 
-// Pen `App / 02 搜尋結果` shell chrome (back arrow node A2SWo).
+// Pen `App / 02 搜尋結果` shell chrome — back arrow (A2SWo) + search field
+// (hKr9H: $app-elev fill, r12, 1px $border, h38, 12px padding, 8px gap).
 const shellStyles = StyleSheet.create({
   backButton: {
     width: 32,
@@ -580,11 +944,31 @@ const shellStyles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: -6,
   },
-  backGlyph: {
-    fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
-    fontSize: 26,
-    lineHeight: 28,
-    color: SEMANTIC.onBgMuted,
+  searchField: {
+    // No `flex: 1` here: inside the app bar's column-direction center slot,
+    // flex-basis 0% would override the fixed height and collapse the field
+    // to its 18px content (the regression the DIC-1427 geometry suite
+    // caught on the real route). Width comes from the slot's cross-axis
+    // stretch; height stays the Pen 38.
+    alignSelf: 'stretch',
+    height: 38,
+    borderRadius: RADII.md,
+    backgroundColor: PALETTE.appElev,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 13.5,
+    color: PALETTE.textPrimary,
+    paddingVertical: 0,
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null),
   },
 });
 
@@ -592,7 +976,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: PALETTE.appBg },
   centerWrap: { flex: 1, width: '100%' },
   centerWrapDesktop: { maxWidth: SEARCH_RESULTS_LAYOUT.desktopMaxWidth, alignSelf: 'center' },
-  columnWrapper: { gap: GRID_GAP },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, padding: 20 },
   loadingText: { color: COLORS.text, fontSize: 16, fontWeight: '600', marginTop: 16, textAlign: 'center' },
   loadingSubtext: { color: COLORS.textSecondary, fontSize: 13, marginTop: 6 },
@@ -601,11 +984,124 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 48, marginBottom: 12 },
   emptyText: { color: COLORS.text, fontSize: 18, fontWeight: '600', marginBottom: 6 },
   emptyHint: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center' },
-  // Pen node xKkbE (Result Count row): 15/700 title line + 13/600 count.
-  header: { padding: 16, paddingBottom: 8 },
-  queryText: { fontSize: 15, fontWeight: '700', marginBottom: 4, fontFamily: Platform.OS === 'web' ? FONTS.body : undefined },
-  resultCount: { fontSize: 13, fontWeight: '600', fontFamily: Platform.OS === 'web' ? FONTS.body : undefined },
   list: { padding: LIST_PADDING_X, paddingTop: 0 },
+  // Pen `Active Filters` row (tTrL3): pill chips, 6px below the app bar.
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, paddingTop: 6 },
+  chipAccent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADII.pill,
+    backgroundColor: CHIP_ACCENT_BG,
+    borderWidth: 1,
+    borderColor: CHIP_ACCENT_BORDER,
+  },
+  chipAccentLabel: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 12,
+    fontWeight: '700',
+    color: CHIP_ACCENT_FG,
+  },
+  chipNeutral: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADII.pill,
+    backgroundColor: PALETTE.appSurface,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
+  },
+  chipNeutralLabel: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 12,
+    fontWeight: '500',
+    color: PALETTE.textSecondary,
+  },
+  // Pen `Result Count` row (xKkbE): 13/600 count left, sort control right.
+  countRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
+  countText: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 13,
+    fontWeight: '600',
+    color: PALETTE.textSecondary,
+  },
+  sortControl: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  sortLabel: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 12,
+    color: PALETTE.textMuted,
+  },
+  // Filter sheet behind the sliders affordance (w5jzG9).
+  filterPanel: {
+    marginHorizontal: LIST_PADDING_X,
+    marginTop: SPACING.md,
+    padding: SPACING.lg,
+    borderRadius: RADII.md,
+    backgroundColor: PALETTE.appSurface,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
+    gap: SPACING.md,
+  },
+  filterSectionTitle: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 12,
+    fontWeight: '600',
+    color: PALETTE.textSecondary,
+    marginTop: SPACING.xs,
+  },
+  filterOptionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  filterOption: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADII.pill,
+    backgroundColor: PALETTE.appElev,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
+  },
+  filterOptionActive: {
+    backgroundColor: CHIP_ACCENT_BG,
+    borderColor: CHIP_ACCENT_BORDER,
+  },
+  filterOptionLabel: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 12,
+    fontWeight: '500',
+    color: PALETTE.textSecondary,
+  },
+  filterOptionLabelActive: { color: CHIP_ACCENT_FG, fontWeight: '700' },
+  filterPanelFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+  },
+  filterReset: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 12,
+    color: PALETTE.textMuted,
+  },
+  filterDoneButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: RADII.pill,
+    backgroundColor: PALETTE.accent,
+  },
+  filterDone: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   card: { flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 12, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, minHeight: 140 },
   cardImageContainer: { padding: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderRadius: 4, marginRight: 4 },
   rarityStrip: { width: 5, minWidth: 5 },

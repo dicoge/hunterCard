@@ -111,6 +111,8 @@
     "test:deck-store-delete": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-store-delete.mjs",
     "test:uniform-card-grid": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-uniform-card-grid.mjs",
     "test:search-results-layout": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-search-results-layout.mjs",
+    "test:search-pen-parity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-search-pen-parity.mjs",
+    "test:search-pen-geometry": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-search-pen-geometry.mjs",
     "test:deck-library-ui": "node --import ./scripts/register-web-render.mjs scripts/test-deck-library-ui.mjs",
     "test:deck-collection": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-collection.mjs",
     "test:dic1086-ui": "node scripts/test-dic1086-collection-ui.mjs",

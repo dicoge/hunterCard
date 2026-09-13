@@ -141,20 +141,22 @@ export default function SettingsScreen({ navigation }: any) {
     <AppShell
       appBar={{
         showBrand: false,
-        title: SHELL_TAB_LABELS.me,
+        // DIC-1427 QA P0: Settings is its own Pen frame (x44r8t 設定) —
+        // the 我的 identity moved to MeScreen (Pen siVsa collection hub).
+        title: t('nav_settings'),
         onLeadingPress: () => navigation?.openDrawer?.(),
       }}
       bottomTabBar={{ items: shellTabs, activeKey: 'me' }}
-      testID="me-shell"
+      testID="settings-shell"
     >
         {/* Pen Account card (node ZYJRw): gradient avatar + name + linked
             provider badges, backed by the real auth store. */}
-        <View style={styles.accountCard} testID="me-account-card">
+        <View style={styles.accountCard} testID="settings-account-card">
           <View style={styles.avatar}>
             <Text style={styles.avatarInitial}>{avatarInitial}</Text>
           </View>
           <View style={styles.accountText}>
-            <Text style={styles.accountName} numberOfLines={1} testID="me-account-name">
+            <Text style={styles.accountName} numberOfLines={1} testID="settings-account-name">
               {displayNameForCard}
             </Text>
             <View style={styles.accountBadges}>
@@ -171,15 +173,15 @@ export default function SettingsScreen({ navigation }: any) {
 
         {/* Pen Stats tiles (node vGwTI) — real store values only. */}
         {(FEATURES.favorites || FEATURES.watchlist) && (
-          <View style={styles.statsRow} testID="me-stats">
+          <View style={styles.statsRow} testID="settings-stats">
             {FEATURES.favorites && (
-              <View style={styles.statTile} testID="me-stat-collection">
+              <View style={styles.statTile} testID="settings-stat-collection">
                 <Text style={styles.statValue}>{collectionCount}</Text>
                 <Text style={styles.statLabel}>{t('me_stat_collection')}</Text>
               </View>
             )}
             {FEATURES.watchlist && (
-              <View style={styles.statTile} testID="me-stat-alerts">
+              <View style={styles.statTile} testID="settings-stat-alerts">
                 <Text style={styles.statValue}>{alertCount}</Text>
                 <Text style={styles.statLabel}>{t('me_stat_alerts')}</Text>
               </View>

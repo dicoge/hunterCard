@@ -165,6 +165,16 @@ jobs:
       - name: Verify real SearchResultsScreen grid geometry + colour render (DIC-1150 + DIC-1192)
         run: npm run test:search-results-layout
 
+      # DIC-1427: Pen App/02 搜尋結果 (frame Z6jlE) contract on the shipped
+      # route — jsdom parity (function/tokens/width math) plus real-browser
+      # measured geometry (vertical row pitch, no blank/crop inflation,
+      # search/filter/sort bounds, tab-bar + scan-FAB placement).
+      - name: Verify Pen Z6jlE search-results parity (DIC-1427)
+        run: npm run test:search-pen-parity
+
+      - name: Verify Pen Z6jlE search-results real-browser geometry (DIC-1427)
+        run: npm run test:search-pen-geometry
+
       # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
       # screens rendering the shared shell with real data + navigation wiring.
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)

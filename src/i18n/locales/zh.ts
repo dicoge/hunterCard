@@ -178,6 +178,16 @@ export const zh = {
   me_stat_collection: '收藏張數',
   me_stat_alerts: '到價提醒',
   me_guest_name: '訪客',
+  // DIC-1427: Pen App/07 我的 collection hub (frame siVsa).
+  nav_me: '我的',
+  me_account_manage: '帳號與設定',
+  me_guest_hint: '登入以跨裝置同步收藏',
+  me_stat_owned: '收藏張數',
+  me_stat_value: '收藏市值',
+  me_seg_trends: '趨勢追蹤',
+  me_empty_title: '還沒有收藏卡牌',
+  me_empty_hint: '掃描或搜尋卡牌後，即可在這裡管理數量與市值',
+  me_view_all: '查看全部收藏',
   me_provider_linked: '{{provider}} 已綁定',
   common_cancel: '取消',
   common_remove: '移除',
@@ -211,6 +221,13 @@ export const zh = {
   search_empty_hint: '試試看日文名稱、卡號、或系列代碼',
   search_results_for: '搜尋結果：{{query}}',
   search_found_count: '找到 {{count}} 張卡牌',
+  // DIC-1427: Pen App/02 搜尋結果 — sort control (zkTTM) + filter sheet.
+  search_sort_relevance: '綜合排序',
+  search_sort_price_desc: '價格高→低',
+  search_sort_price_asc: '價格低→高',
+  search_filter_open: '篩選',
+  search_filter_sr_plus: 'SR 以上',
+  search_filter_done: '完成',
   // DIC-1141: shown when a Holomen card has no canonical Bloom Level yet.
   // Never fall back to the category label "Holomen" — that's the exact
   // ambiguity this string exists to break.

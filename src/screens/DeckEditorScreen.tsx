@@ -143,6 +143,18 @@ export default function DeckEditorScreen() {
       .finally(() => setLoading(false));
   }, []);
 
+  // DIC-1427 QA P0 (Pen uXuqo): a first visit with zero decks used to land on
+  // a bare create form over a giant blank region. The Pen frame is the FULL
+  // functional editor, so seed one starter deck and open it directly — the
+  // player gets the zone tabs, real card-picker grid, warning banner and cost
+  // footer immediately. Gated on `db` so the persisted deck store has long
+  // finished rehydrating (the catalog load is orders of magnitude slower);
+  // players who already have decks keep the library flow untouched.
+  useEffect(() => {
+    if (!db) return;
+    if (decks.length === 0) createDeck('');
+  }, [db, decks.length, createDeck]);
+
   // Reset the rename editor whenever the active deck changes.
   useEffect(() => {
     setRenaming(false);

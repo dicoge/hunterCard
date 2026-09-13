@@ -142,7 +142,9 @@ await test('SHELL_TAB_ROUTE_MAP keeps deep-link contract with AppNavigator', () 
   assert.equal(map.search, 'Search');
   assert.equal(map.scan, 'Scan');
   assert.equal(map.deck, 'DeckEditor');
-  assert.equal(map.me, 'Settings');
+  // DIC-1427 QA P0 (Pen siVsa): 我的 lands on the Me collection hub;
+  // Settings stays reachable from the hub's gear action (Pen x44r8t route).
+  assert.equal(map.me, 'Me');
 });
 
 await test('SHELL_TAB_LABELS mirror Pen tab labels (首頁/搜尋/牌組/我的)', () => {
@@ -186,11 +188,11 @@ await test('buildShellTabs emits five ordered items and nested MainDrawer onPres
     navigation: { navigate: (route, params) => calls.push([route, params]) },
   });
   assert.deepEqual(items.map((it) => it.key), ['home', 'search', 'scan', 'deck', 'me']);
-  assert.deepEqual(items.map((it) => it.destinationRoute), ['Home', 'Search', 'Scan', 'DeckEditor', 'Settings']);
+  assert.deepEqual(items.map((it) => it.destinationRoute), ['Home', 'Search', 'Scan', 'DeckEditor', 'Me']);
   items.forEach((item) => item.onPress?.());
   assert.deepEqual(
     calls,
-    ['Home', 'Search', 'Scan', 'DeckEditor', 'Settings'].map((screen) => ['MainDrawer', { screen }]),
+    ['Home', 'Search', 'Scan', 'DeckEditor', 'Me'].map((screen) => ['MainDrawer', { screen }]),
   );
 });
 
@@ -242,7 +244,7 @@ await test('BottomTabBar dispatches onPress with the nested MainDrawer destinati
     const fab = container.querySelector('[data-testid="shell-bottom-tab-bar-scan-fab"]');
     assert.ok(fab, 'scan FAB exists');
     await act(async () => fab.click());
-    assert.deepEqual(fired, ['Home', 'Search', 'DeckEditor', 'Settings', 'Scan']);
+    assert.deepEqual(fired, ['Home', 'Search', 'DeckEditor', 'Me', 'Scan']);
   } finally {
     await cleanup();
   }

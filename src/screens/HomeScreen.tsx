@@ -123,6 +123,7 @@ export default function HomeScreen({ navigation }: any) {
             <SeriesCard
               code={item.label}
               title={item.name}
+              thumbUrl={item.thumbUrl}
               fluid
               onPress={() => navigation.navigate('SearchResults', { query: item.query })}
               testID={`${testIDPrefix}-${item.label}`}
