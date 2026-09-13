@@ -10,19 +10,29 @@ export interface StatusBarProps {
   testID?: string;
 }
 
+function liveClock(): string {
+  const now = new Date();
+  return `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
 /**
- * Pen `C / Status Bar` (id `lELzX`, 390×54). Renders the mocked status row
- * used above `AppBar` on the marketing / preview surfaces so the shipped web
- * build matches the Pen frames. On native this is layered above the real OS
- * status bar via a 54px band.
+ * Pen `C / Status Bar` (id `lELzX`, 390×54). DIC-1427 QA rework:
+ *  • Web renders the Pen status row with the REAL current time and properly
+ *    drawn signal / wifi / battery glyphs (the old bordered squares were the
+ *    "empty □□□" P1) — a browser tab/standalone PWA has no OS status row of
+ *    its own, so this is the single status treatment, not a duplicate.
+ *  • Native renders NOTHING here: the OS already draws its own status bar
+ *    over the safe-area inset, and doubling it was the user's original
+ *    duplicate-status-bar P0. AppShell's top inset keeps the spacing.
  */
 export function AppStatusBar({
-  time = '9:41',
+  time,
   showTime = true,
   showIndicators = true,
   tintColor = PALETTE.textPrimary,
   testID = 'shell-status-bar',
 }: StatusBarProps) {
+  if (Platform.OS !== 'web') return null;
   return (
     <View style={styles.root} testID={testID} accessibilityRole="header">
       <View style={styles.time}>
@@ -30,18 +40,18 @@ export function AppStatusBar({
           <Text
             style={[styles.timeText, { color: tintColor }]}
             testID={`${testID}-time`}
-            accessibilityLabel={`time ${time}`}
+            accessibilityLabel={`time ${time ?? liveClock()}`}
           >
-            {time}
+            {time ?? liveClock()}
           </Text>
         )}
       </View>
       <View style={styles.indicators} testID={`${testID}-indicators`}>
         {showIndicators && (
           <>
-            <Glyph tint={tintColor} label="signal" testID={`${testID}-signal`} />
-            <Glyph tint={tintColor} label="wifi" testID={`${testID}-wifi`} />
-            <Glyph tint={tintColor} label="battery" testID={`${testID}-battery`} />
+            <SignalGlyph tint={tintColor} testID={`${testID}-signal`} />
+            <WifiGlyph tint={tintColor} testID={`${testID}-wifi`} />
+            <BatteryGlyph tint={tintColor} testID={`${testID}-battery`} />
           </>
         )}
       </View>
@@ -49,13 +59,85 @@ export function AppStatusBar({
   );
 }
 
-function Glyph({ tint, label, testID }: { tint: string; label: string; testID: string }) {
+/** lucide `signal-high` — four ascending bars (Pen node BVQVL). */
+function SignalGlyph({ tint, testID }: { tint: string; testID: string }) {
   return (
+    <View style={styles.glyphBox} testID={testID} accessibilityLabel="signal">
+      {[5, 8, 11, 14].map((h, i) => (
+        <View
+          key={i}
+          style={{
+            width: 2.5,
+            height: h,
+            borderRadius: 1,
+            backgroundColor: tint,
+            opacity: i === 3 ? 0.35 : 0.9,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** lucide `wifi` — three nested arcs over a dot (Pen node L86PFW). */
+function WifiGlyph({ tint, testID }: { tint: string; testID: string }) {
+  const arc = (size: number, opacity: number) => (
     <View
-      style={[styles.glyph, { borderColor: tint }]}
-      testID={testID}
-      accessibilityLabel={label}
+      style={{
+        position: 'absolute',
+        bottom: 1,
+        alignSelf: 'center',
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 1.6,
+        borderColor: tint,
+        borderBottomColor: 'transparent',
+        borderLeftColor: 'transparent',
+        borderRightColor: 'transparent',
+        transform: [{ translateY: size / 2 }],
+        opacity,
+      }}
     />
+  );
+  return (
+    <View style={[styles.glyphBox, { justifyContent: 'center' }]} testID={testID} accessibilityLabel="wifi">
+      {arc(14, 0.5)}
+      {arc(9, 0.75)}
+      <View
+        style={{
+          position: 'absolute',
+          bottom: 2,
+          alignSelf: 'center',
+          width: 3,
+          height: 3,
+          borderRadius: 1.5,
+          backgroundColor: tint,
+        }}
+      />
+    </View>
+  );
+}
+
+/** lucide `battery-full` — outline shell, nub, filled level (Pen jfouI). */
+function BatteryGlyph({ tint, testID }: { tint: string; testID: string }) {
+  return (
+    <View style={[styles.glyphBox, { flexDirection: 'row', alignItems: 'center', gap: 1 }]} testID={testID} accessibilityLabel="battery">
+      <View
+        style={{
+          width: 14,
+          height: 9,
+          borderRadius: 2.5,
+          borderWidth: 1.2,
+          borderColor: tint,
+          padding: 1.2,
+          justifyContent: 'center',
+        }}
+      >
+        <View style={{ flex: 1, borderRadius: 1, backgroundColor: tint, opacity: 0.9 }} />
+      </View>
+      <View style={{ width: 1.6, height: 4, borderRadius: 1, backgroundColor: tint, opacity: 0.8 }} />
+    </View>
   );
 }
 
@@ -82,17 +164,19 @@ const styles = StyleSheet.create({
   },
   indicators: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    alignItems: 'flex-end',
+    gap: 7,
     minWidth: 60,
     justifyContent: 'flex-end',
   },
-  glyph: {
-    width: 16,
+  glyphBox: {
+    width: 17,
     height: 16,
-    borderRadius: 3,
-    borderWidth: 1.4,
-    opacity: 0.85,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 1.5,
+    overflow: 'visible',
   },
 });
 

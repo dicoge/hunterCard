@@ -338,12 +338,14 @@ export default function SearchResultsScreen({ route, navigation }: any) {
   const [results, setResults] = useState<CardResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { isDesktop, isWide } = useBreakpoint();
-  // DIC-1427: below the tablet breakpoint the route renders the Pen `App / 02
-  // 搜尋結果` 3-column Card Tile grid (frame Z6jlE rows QlzbB/n7Tha/u1fnG).
-  // Desktop keeps the wider CardListItem layout the DIC-1150 contract locked.
-  const numColumns = isWide ? 3 : isDesktop ? 2 : MOBILE_GRID_COLUMNS;
-  const useTileGrid = !isDesktop;
-  const gridGap = useTileGrid ? MOBILE_GRID_GAP : GRID_GAP;
+  // DIC-1427 QA P1: the Pen `App / 02 搜尋結果` Card Tile grid (frame Z6jlE)
+  // is the authoritative design system at EVERY width — 768/1440 previously
+  // fell back to the legacy horizontal list-cards. Columns scale with the
+  // content box while the tile keeps its Pen anatomy: 3 at mobile (exact
+  // 113px Pen tiles), 6 at tablet, 8 at desktop widths.
+  const numColumns = isWide ? WIDE_TILE_COLUMNS : isDesktop ? TABLET_TILE_COLUMNS : MOBILE_GRID_COLUMNS;
+  const useTileGrid = true;
+  const gridGap = MOBILE_GRID_GAP;
   // DIC-1150: measure the row's available width so each card lands on an exact
   // pixel width (containerWidth - (n-1) * gap) / n. Mixing the fixed 12px
   // `columnWrapper` gap with a guessed percentage gap was the root cause of the
@@ -398,9 +400,11 @@ export default function SearchResultsScreen({ route, navigation }: any) {
   // draws status chrome, and doubling it was the production regression the
   // user captured. Bottom tab bar keeps 搜尋 active.
   const shellTabs = useMemo(() => buildShellTabs({ navigation }), [navigation]);
+  // DIC-1427 QA: the Pen status row is back on this route — AppStatusBar now
+  // renders web-only (real clock + drawn glyphs), and returns null on native
+  // where the OS bar exists, so the original duplicate-status P0 cannot recur.
   const wrapInShell = (children: React.ReactNode) => (
     <AppShell
-      statusBar={false}
       appBar={{
         showBrand: false,
         leading: (
@@ -893,6 +897,10 @@ const GRID_GAP = 12;
 const MOBILE_GRID_COLUMNS = 3;
 const MOBILE_GRID_GAP = 9;
 const MOBILE_ROW_GAP = 14;
+// DIC-1427 QA P1: tile columns for the wider breakpoints (tile design system
+// everywhere; Pen defines the 390 frame, wider widths scale the same tile).
+const TABLET_TILE_COLUMNS = 6;
+const WIDE_TILE_COLUMNS = 8;
 // Pen chip label tint (nodes AFVm9/Fx6XO/lAz8y — #FF9AC8 on #FF4D9D24).
 const CHIP_ACCENT_FG = '#FF9AC8';
 const CHIP_ACCENT_BG = PALETTE.accent + '24';
@@ -904,6 +912,8 @@ export const SEARCH_RESULTS_LAYOUT = {
   mobileColumns: MOBILE_GRID_COLUMNS,
   mobileGridGap: MOBILE_GRID_GAP,
   mobileRowGap: MOBILE_ROW_GAP,
+  tabletTileColumns: TABLET_TILE_COLUMNS,
+  wideTileColumns: WIDE_TILE_COLUMNS,
   desktopMaxWidth: 1100,
 } as const;
 

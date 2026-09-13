@@ -158,8 +158,9 @@ await test('ScanSessionPanel carries Pen v2 tokens on the real session store', a
 
 // ── App / 06 牌組編輯器 (Pen frame uXuqo) — DeckEditorScreen ──────────────
 
-await test('DeckEditor renders inside the shared shell with 牌組 tab active (library state)', async () => {
+await test('DeckEditor renders inside the shared shell with 牌組 tab active (Pen uXuqo editor-first entry)', async () => {
   const { default: DeckEditorScreen } = await import('../src/screens/DeckEditorScreen.tsx');
+  const { useDeckStore } = await import('../src/store/deckStore.ts');
   const { container, cleanup } = await render(React.createElement(DeckEditorScreen));
   try {
     assert.ok(container.querySelector('[data-testid="deck-shell"]'), 'shared shell root');
@@ -167,24 +168,43 @@ await test('DeckEditor renders inside the shared shell with 牌組 tab active (l
     const deckTab = container.querySelector('[data-testid="shell-bottom-tab-deck"]');
     assert.ok(deckTab, '牌組 tab renders');
     assert.equal(deckTab.getAttribute('aria-selected'), 'true', '牌組 tab active');
+    // DIC-1427 QA P0 (Pen uXuqo): a fresh visit must land in the FULL
+    // functional editor (zone tabs + grid), never a bare create form over a
+    // blank region. The library (DIC-1088 grid) stays reachable via the
+    // 返回牌組庫 menu action once decks exist.
+    await act(async () => { await new Promise((r) => setTimeout(r, 250)); });
     assert.ok(
-      container.querySelector('[data-testid="deck-library-grid"]'),
-      'existing DIC-1088 library grid contract intact inside the shell',
+      container.querySelector('[data-testid="deck-zone-tabs"]')
+        || container.querySelector('[data-testid="deck-mobile-primary-tabs"]')
+        || container.querySelector('[data-testid="deck-library-grid"]'),
+      'fresh entry lands in the functional editor (desktop zone tabs or DIC-1380 mobile tabs; library only when decks already exist) — never a blank create form',
     );
-  } finally { await cleanup(); }
+  } finally {
+    // Drop the auto-created starter deck so later tests see a clean store.
+    const store = useDeckStore.getState();
+    for (const deck of [...store.decks]) store.deleteDeck(deck.id);
+    store.setActiveDeck(null);
+    await cleanup();
+  }
 });
 
-// ── App / 07 我的 (Pen frame siVsa) — SettingsScreen ──────────────────────
+// ── App / 07 我的 (Pen frame siVsa) — MeScreen collection hub (DIC-1427) ──
 
 async function renderSettings(navigate = () => {}) {
   const { default: SettingsScreen } = await import('../src/screens/SettingsScreen.tsx');
   return render(React.createElement(SettingsScreen, { navigation: { navigate } }));
 }
 
-await test('我的 renders the shell with account card, stats tiles, and 我的 tab active', async () => {
-  const { container, cleanup } = await renderSettings();
+async function renderMe(navigate = () => {}) {
+  const { default: MeScreen } = await import('../src/screens/MeScreen.tsx');
+  return render(React.createElement(MeScreen, { navigation: { navigate } }));
+}
+
+await test('我的 renders the Pen siVsa COLLECTION HUB — account card, live stat cells, hub segments, 我的 tab active', async () => {
+  const calls = [];
+  const { container, cleanup } = await renderMe((route) => calls.push(route));
   try {
-    assert.ok(container.querySelector('[data-testid="me-shell"]'), 'shell root');
+    assert.ok(container.querySelector('[data-testid="me-shell"]'), 'hub shell root');
     assert.equal(
       container.querySelector('[data-testid="shell-app-bar-title"]').textContent,
       '我的',
@@ -196,8 +216,36 @@ await test('我的 renders the shell with account card, stats tiles, and 我的 
     assert.ok(card, 'account card (Pen node ZYJRw)');
     const style = dom.window.getComputedStyle(card);
     assert.equal(style.backgroundColor, hexToRgb(PALETTE.appSurface), 'Pen $app-surface card');
-    assert.ok(container.querySelector('[data-testid="me-stat-collection"]'), 'collection stat tile (real deck store)');
-    assert.ok(container.querySelector('[data-testid="me-stat-alerts"]'), 'alert stat tile (real price-alert store)');
+    assert.ok(container.querySelector('[data-testid="me-stat-owned"]'), '收藏張數 stat cell (Pen QvuBt, live deck store)');
+    assert.ok(container.querySelector('[data-testid="me-stat-value"]'), '收藏市值 stat cell (Pen q9kyqp, exact-printing prices)');
+    assert.ok(container.querySelector('[data-testid="me-stat-alerts"]'), '到價提醒 stat cell (Pen hELzd, live watchlist store)');
+    // The hub must NOT be the settings surface (the old wrong-IA P0).
+    assert.equal(container.querySelector('[data-testid="settings-shell"]'), null, 'settings page must not impersonate 我的');
+    // Pen oaxgt segments route to the REAL hub destinations.
+    for (const [seg, route] of [['collection', 'Collection'], ['watchlist', 'Watchlist'], ['trends', 'Favorites']]) {
+      const node = container.querySelector(`[data-testid="me-segment-${seg}"]`);
+      assert.ok(node, `${seg} segment renders on the full profile`);
+      await act(async () => node.click());
+      assert.ok(calls.includes(route), `${seg} segment navigates to ${route}`);
+    }
+    // Gear action (Pen amD3P) opens the dedicated Settings route (Pen x44r8t).
+    const gear = container.querySelector('[data-testid="me-settings-action"]');
+    assert.ok(gear, 'settings gear action renders');
+    await act(async () => gear.click());
+    assert.ok(calls.includes('Settings'), 'gear opens the Settings route');
+  } finally { await cleanup(); }
+});
+
+await test('Settings keeps its own route identity (Pen x44r8t): 設定 title, settings-* surface', async () => {
+  const { container, cleanup } = await renderSettings();
+  try {
+    assert.ok(container.querySelector('[data-testid="settings-shell"]'), 'settings shell root');
+    assert.equal(
+      container.querySelector('[data-testid="shell-app-bar-title"]').textContent,
+      '設定',
+      'Settings app bar carries its own title, not 我的',
+    );
+    assert.ok(container.querySelector('[data-testid="settings-account-card"]'), 'account card stays on Settings');
   } finally { await cleanup(); }
 });
 

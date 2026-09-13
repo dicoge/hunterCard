@@ -19,6 +19,7 @@ import DeckEditorScreen from '../screens/DeckEditorScreen';
 import TournamentReportScreen from '../screens/TournamentReportScreen';
 import WatchlistScreen from '../screens/WatchlistScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import MeScreen from '../screens/MeScreen';
 import CardDetailScreen from '../screens/CardDetailScreen';
 import SearchResultsScreen from '../screens/SearchResultsScreen';
 import LoginScreen from '../screens/LoginScreen';
@@ -229,6 +230,19 @@ function MainDrawer() {
           headerShown: false,
           drawerIcon: ({ focused }) => (
             <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
+          ),
+        }}
+      />
+      {/* DIC-1427: Pen App/07 我的 collection hub (frame siVsa) — the 我的
+          bottom tab lands here; Settings stays its own route (Pen x44r8t). */}
+      <Drawer.Screen
+        name="Me"
+        component={MeScreen}
+        options={{
+          title: t('nav_me'),
+          headerShown: false,
+          drawerIcon: ({ focused }) => (
+            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>👤</Text>
           ),
         }}
       />

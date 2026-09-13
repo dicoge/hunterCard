@@ -58,14 +58,16 @@ const CARD_NUMBER_MIN_WIDTH = 72;
 let viewportWidth = 1366;
 let viewportHeight = 900;
 
+// DIC-1427 QA P1: the Pen tile design system applies at EVERY width — 8 tile
+// columns at wide, 6 at tablet, 3 at mobile, all with the Pen 9px gap.
 function columnsFor(viewport) {
-  if (viewport >= WIDE_BREAKPOINT) return 3;
-  if (viewport >= DESKTOP_BREAKPOINT) return 2;
+  if (viewport >= WIDE_BREAKPOINT) return SEARCH_RESULTS_LAYOUT.wideTileColumns;
+  if (viewport >= DESKTOP_BREAKPOINT) return SEARCH_RESULTS_LAYOUT.tabletTileColumns;
   return MOBILE_COLUMNS;
 }
 
-function gapFor(viewport) {
-  return viewport >= DESKTOP_BREAKPOINT ? GRID_GAP : MOBILE_GAP;
+function gapFor() {
+  return MOBILE_GAP;
 }
 
 function expectedLayoutForViewport(viewport) {
@@ -259,7 +261,7 @@ for (const viewport of [1080, 1100, 1366, 1440]) {
     try {
       const widths = items.map((item) => px(getComputedStyle(item).width));
       assert.ok(widths.every((width) => width === expected.perCard), `got widths ${widths.join(', ')}, expected ${expected.perCard}`);
-      const rowTotal = expected.columns * widths[0] + (expected.columns - 1) * GRID_GAP;
+      const rowTotal = expected.columns * widths[0] + (expected.columns - 1) * expected.gap;
       assert.equal(rowTotal, expected.rowTotal);
       assert.ok(rowTotal <= expected.content, `row ${rowTotal} exceeded content ${expected.content}`);
       assert.ok(expected.content - rowTotal <= expected.columns - 1);
@@ -276,24 +278,26 @@ for (const viewport of [1080, 1100, 1366, 1440]) {
   });
 }
 
-await test('1068px content, 3 columns, 12px gap gives fixed 348px cards via the rendered screen path', async () => {
+await test('1068px content, 8 tile columns, 9px gap gives fixed-width tiles via the rendered screen path', async () => {
   const { items, cleanup } = await renderScreenAt(1366, 5);
   try {
-    assert.equal(expectedLayoutForViewport(1366).content, 1068);
-    assert.ok(items.every((item) => px(getComputedStyle(item).width) === 348));
-    assert.equal(3 * 348 + 2 * GRID_GAP, 1068);
+    const expected = expectedLayoutForViewport(1366);
+    assert.equal(expected.content, 1068);
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.perCard));
+    assert.ok(expected.rowTotal <= expected.content);
     for (const item of items) {
       assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
     }
   } finally { await cleanup(); }
 });
 
-await test('736px content, 2 columns, 12px gap gives fixed 362px cards via the rendered screen path', async () => {
-  const { items, cleanup } = await renderScreenAt(768, 4);
+await test('736px content, 6 tile columns, 9px gap gives fixed-width tiles via the rendered screen path', async () => {
+  const { items, cleanup } = await renderScreenAt(768, 6);
   try {
-    assert.equal(expectedLayoutForViewport(768).content, 736);
-    assert.ok(items.every((item) => px(getComputedStyle(item).width) === 362));
-    assert.equal(2 * 362 + GRID_GAP, 736);
+    const expected = expectedLayoutForViewport(768);
+    assert.equal(expected.content, 736);
+    assert.ok(items.every((item) => px(getComputedStyle(item).width) === expected.perCard));
+    assert.ok(expected.rowTotal <= expected.content);
     for (const item of items) {
       assert.equal(computedFlexGrow(item), 0, 'grid item wrapper must not stretch (flex-grow must be 0)');
     }
@@ -350,14 +354,15 @@ for (const count of [1, 2, 4, 5]) {
     const { items, cleanup } = await renderScreenWithExactCount(1366, count);
     try {
       assert.equal(items.length, count, `seeded dataset must render exactly ${count} grid items`);
+      const expected = expectedLayoutForViewport(1366);
       const widths = items.map((item) => px(getComputedStyle(item).width));
       assert.ok(
-        widths.every((width) => width === 348),
-        `expected every card 348px, got ${widths.join(', ')}`
+        widths.every((width) => width === expected.perCard),
+        `expected every card ${expected.perCard}px, got ${widths.join(', ')}`
       );
       // The last card is the one that would stretch under `flexGrow: 1`.
       const last = items[items.length - 1];
-      assert.equal(px(getComputedStyle(last).width), 348, 'partial-row card must not stretch its width');
+      assert.equal(px(getComputedStyle(last).width), expected.perCard, 'partial-row card must not stretch its width');
       assert.equal(
         computedFlexGrow(last),
         0,
@@ -493,18 +498,12 @@ for (const viewport of [1440, 390]) {
       // which carries name + price only (no card-number / colour label rows),
       // so the label assertions only apply to the CardListItem layout ≥768.
       const text = container.textContent;
-      if (viewport >= 768) {
-        assert.ok(text.includes('hBP04-087'), 'crash-row card number must appear in the rendered DOM');
-        assert.ok(
-          text.includes('無色'),
-          'normalised colour label (color_colorless → 無色) must render for the diamond row',
-        );
-      } else {
-        assert.ok(
-          text.includes('エリザベス・ローズ・ブラッドフレイム') || text.includes('伊麗莎白'),
-          'crash-row card display name (ja source or zh resolved) must appear on its Pen tile at 390',
-        );
-      }
+      // DIC-1427 QA P1: the Pen tile grid is the layout at EVERY width now, so
+      // the tile's display name is the identity surface at all viewports.
+      assert.ok(
+        text.includes('エリザベス・ローズ・ブラッドフレイム') || text.includes('伊麗莎白'),
+        `crash-row card display name must appear on its Pen tile at ${viewport}px`,
+      );
       assert.ok(
         !text.includes('color_◇'),
         'raw i18n key must never leak into the DOM — that would mean t() ran on an unwhitelisted key',

@@ -267,14 +267,20 @@ async function runMeasurePhase(fixture) {
     }
   });
 
-  await test('Pen CXGih app bar: search field h≈38 centered in the 56px bar, filter affordance at the right edge', async () => {
+  await test('Pen lELzX + CXGih chrome: single status row band, search field h≈38 centered in the app bar below it', async () => {
+    const statusBars = await rectsOf('[data-testid="shell-status-bar"]');
+    assert.equal(statusBars.length, 1, 'exactly ONE status row (duplicate = original P0)');
+    assert.ok(statusBars[0].top <= 2 && Math.abs(statusBars[0].height - 54) <= 2,
+      `status row must be the Pen 54px band at the top, got top=${statusBars[0].top} h=${statusBars[0].height}`);
+    const APP_BAR_TOP = 54;
     const field = await rectOf('[data-testid="search-results-search-field"]');
     assert.ok(field.height >= 36 && field.height <= 40, `search field height ${field.height} outside 38±2`);
-    assert.ok(field.top >= 6 && field.top <= 13, `search field top ${field.top} not centered in the app bar`);
+    assert.ok(field.top >= APP_BAR_TOP + 6 && field.top <= APP_BAR_TOP + 13,
+      `search field top ${field.top} not centered in the app bar band`);
     assert.ok(field.left >= 38 && field.left <= 62, `search field must start after the back arrow, got ${field.left}`);
     const filter = await rectOf('[data-testid="search-results-filter-button"]');
     assert.ok(filter.right >= WIDTH - 36, `filter affordance must sit at the right edge, right=${filter.right}`);
-    assert.ok(filter.top + filter.height / 2 <= 56, 'filter affordance must sit inside the app bar band');
+    assert.ok(filter.top + filter.height / 2 <= APP_BAR_TOP + 56, 'filter affordance must sit inside the app bar band');
     assert.ok(field.right <= filter.left, 'search field must end before the filter affordance');
     const back = await rectOf('[data-testid="search-results-back"]');
     assert.ok(back.left <= 22 && back.right <= field.left, 'back arrow leads the app bar');
@@ -284,7 +290,7 @@ async function runMeasurePhase(fixture) {
     const count = await rectOf('[data-testid="search-results-count"]');
     const sort = await rectOf('[data-testid="search-results-sort"]');
     const firstRowTop = Math.min(...wrappers.map((r) => r.top));
-    assert.ok(count.top >= 56, 'count row sits below the app bar');
+    assert.ok(count.top >= 110, 'count row sits below the status + app bar bands');
     assert.ok(count.bottom <= firstRowTop, 'count row sits above the grid');
     assert.ok(firstRowTop - count.bottom <= 30, `grid must follow the count row closely, gap ${(firstRowTop - count.bottom).toFixed(1)}`);
     assert.ok(count.left >= 14 && count.left <= 18, 'count text starts at the 16px inset');

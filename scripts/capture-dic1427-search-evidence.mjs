@@ -137,6 +137,41 @@ try {
     await page.close();
   }
 
+  // DIC-1427 QA-repair frames at 390: Home (real series art + status chrome),
+  // Me collection hub (Pen siVsa), Deck editor-first entry (Pen uXuqo) —
+  // captured through the same real guest journey.
+  {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+    await page.goto(BASE, { waitUntil: 'networkidle0', timeout: 60000 });
+    await page.waitForSelector(
+      '[data-testid="landing-cta-guest"], [data-testid="shell-bottom-tab-search"]',
+      { timeout: 45000 },
+    );
+    await new Promise((r) => setTimeout(r, 1500));
+    await page.evaluate(() => {
+      document.querySelector('[data-testid="landing-cta-guest"]')?.click();
+    });
+    await page.waitForSelector('[data-testid="shell-bottom-tab-search"]', { timeout: 45000 });
+    await new Promise((r) => setTimeout(r, 2500));
+    await page.screenshot({ path: pathResolve(OUT_DIR, 'app01-home-mobile-390.png') });
+    console.log('captured app01-home-mobile-390.png');
+    captured += 1;
+    await page.evaluate(() => document.querySelector('[data-testid="shell-bottom-tab-me"]').click());
+    await page.waitForSelector('[data-testid="me-shell"]', { timeout: 30000 });
+    await new Promise((r) => setTimeout(r, 1500));
+    await page.screenshot({ path: pathResolve(OUT_DIR, 'app07-me-hub-mobile-390.png') });
+    console.log('captured app07-me-hub-mobile-390.png');
+    captured += 1;
+    await page.evaluate(() => document.querySelector('[data-testid="shell-bottom-tab-deck"]').click());
+    await page.waitForSelector('[data-testid="deck-mobile-primary-tabs"], [data-testid="deck-zone-tabs"]', { timeout: 45000 });
+    await new Promise((r) => setTimeout(r, 1500));
+    await page.screenshot({ path: pathResolve(OUT_DIR, 'app06-deck-editor-entry-mobile-390.png') });
+    console.log('captured app06-deck-editor-entry-mobile-390.png');
+    captured += 1;
+    await page.close();
+  }
+
   // Side-by-side + pixel diff vs the Pen frame at 390.
   const live390 = pathResolve(OUT_DIR, 'search-results-suisei-mobile-390.png');
   const penB64 = readFileSync(PEN_FRAME).toString('base64');
