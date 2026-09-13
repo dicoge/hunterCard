@@ -175,6 +175,19 @@ jobs:
       - name: Verify Pen Z6jlE search-results real-browser geometry (DIC-1427)
         run: npm run test:search-pen-geometry
 
+      # DIC-1427 QA P0: Pen App/03 卡牌詳情 (frame o7WO3r) IA on the shipped
+      # CardDetail — hero geometry, 技能/市場/成員 tab swapping, Pen price-card
+      # anatomy, 到價提醒 banner, and the 收藏/加入牌組 action bar with real
+      # favorites-store + DeckEditor navigation wiring.
+      - name: Verify Pen o7WO3r card-detail parity (DIC-1427)
+        run: npm run test:detail-pen-parity
+
+      # DIC-1427 QA P0: Pen App/12–14 tutorial IA + REAL progression — hero
+      # progress from useTutorialStore, chapter states, step navigator,
+      # 開始模擬 CTA, simulation turn bar / hint banner / action row.
+      - name: Verify Pen DAQIq/rV4Za/I6WwjY tutorial parity (DIC-1427)
+        run: npm run test:tutorial-pen-parity
+
       # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
       # screens rendering the shared shell with real data + navigation wiring.
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)

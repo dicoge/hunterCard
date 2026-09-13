@@ -16,6 +16,12 @@ interface SimulationStepCardProps {
   isFirstPhase: boolean;
   isLastPhase: boolean;
   isMobile?: boolean;
+  /** DIC-1427 Pen I6WwjY: the screen renders the explanation as the accent
+   *  hint banner (Pen Cpwfh) — suppress the in-card duplicate. */
+  hideExplanation?: boolean;
+  /** DIC-1427 Pen I6WwjY: the screen renders the Pen action row (Pen k0Q7h)
+   *  — suppress the in-card prev/next buttons. */
+  hideNav?: boolean;
 }
 
 export default function SimulationStepCard({
@@ -30,6 +36,8 @@ export default function SimulationStepCard({
   isFirstPhase,
   isLastPhase,
   isMobile = false,
+  hideExplanation = false,
+  hideNav = false,
 }: SimulationStepCardProps) {
   const { t } = useTranslation();
   return (
@@ -84,7 +92,7 @@ export default function SimulationStepCard({
         )}
 
         {/* Explanation */}
-        {step.explanation && (
+        {!hideExplanation && step.explanation && (
           <View style={[styles.explanationBox, isMobile && styles.explanationBoxMobile]}>
             <Text style={styles.explanationIcon}>💡</Text>
             <Text style={[styles.explanationText, isMobile && styles.explanationTextMobile]}>
@@ -94,7 +102,8 @@ export default function SimulationStepCard({
         )}
       </ScrollView>
 
-      {/* Navigation buttons — always visible at bottom */}
+      {/* Navigation buttons — hidden when the screen owns the Pen action row */}
+      {hideNav ? null : (
       <View style={[styles.navRow, isMobile && styles.navRowMobile]}>
         {!isFirst || !isFirstPhase ? (
           <TouchableOpacity
@@ -119,6 +128,7 @@ export default function SimulationStepCard({
           </Text>
         </TouchableOpacity>
       </View>
+      )}
     </View>
   );
 }

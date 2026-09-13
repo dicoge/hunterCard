@@ -283,6 +283,17 @@ export const zh = {
 
   // Tutorial landing
   tutorial_hero_subtitle: 'hOCG 完全攻略',
+  // DIC-1427 Pen DAQIq/rV4Za: 真實進度 hero 與章節導覽
+  tutorial_hero_headline: '完成規則教學，掌握 hOCG 對局',
+  tutorial_hero_progress: '{{done}} / {{total}} 章節完成',
+  tutorial_chapters_heading: '章節',
+  tutorial_practice_heading: '實戰演練',
+  tutorial_detail_chapter_progress: '第 {{current}} 節 · 共 {{total}} 節',
+  tutorial_detail_nav_heading: '章節導覽',
+  tutorial_detail_start_sim: '開始模擬',
+  tutorial_detail_full_text: '完整文字',
+  tutorial_detail_complete: '完成本章',
+  tutorial_detail_completed: '已完成 ✓',
   tutorial_intro_one: '這是一款以「共同創造、共同競爭」為概念的集換式卡牌遊戲。玩家們將化身粉絲，與主推以及其他 holo 成員一同打造屬於自己的舞台。',
   tutorial_intro_two: '一起為 holo 成員加油，並以「hololive 極限大賽」的頂點為目標！',
   tutorial_source: '📝 來源：',

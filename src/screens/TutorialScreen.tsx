@@ -1,116 +1,134 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
+import { PALETTE, SEMANTIC, FONTS } from '../theme/tokensV2';
 import { useTranslation } from '../i18n';
 import { getTutorialData } from '../data/tutorialData';
+import { useTutorialStore } from '../store/tutorialStore';
 import { RouteShell } from '../components/shell';
 
-const MOBILE_BREAKPOINT = 480;
+const DESKTOP_BREAKPOINT = 768;
 
+// DIC-1427 QA P0 — Pen `App / 12 規則教學` (frame DAQIq): gradient hero with a
+// REAL progress bar (useTutorialStore), 章節 list with numbered chips and
+// completed/active states, and the simulation entry tile. No fake locks and
+// no static «3 / 5» copy — every state below reads from the persisted store.
 export default function TutorialScreen({ navigation }: any) {
   const { t, language } = useTranslation();
   const { width: screenWidth } = useWindowDimensions();
-  const isMobile = screenWidth < MOBILE_BREAKPOINT;
+  const isDesktop = screenWidth >= DESKTOP_BREAKPOINT;
   const tutorialData = useMemo(() => getTutorialData(language), [language]);
+  const completedSections = useTutorialStore((s) => s.completedSections);
+  const visitedSections = useTutorialStore((s) => s.visitedSections);
+  const simulationCompleted = useTutorialStore((s) => s.simulationCompleted);
 
-  // DIC-1409 Phase 5 — Pen `App / 12 規則教學` (frame DAQIq) shared shell.
+  const completedCount = tutorialData.filter((s) => completedSections[s.id]).length;
+  const total = tutorialData.length;
+  const progressRatio = total > 0 ? completedCount / total : 0;
+
   return (
     <RouteShell navigation={navigation} routeName="Tutorial" title={t('tutorial_title')} testID="tutorial-shell">
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView 
+      <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.contentContainer, isMobile && styles.contentContainerMobile]}
+        contentContainerStyle={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero */}
-        <View style={[styles.hero, isMobile && styles.heroMobile]}>
-          <Text style={[styles.heroEmoji, isMobile && styles.heroEmojiMobile]}>📚</Text>
-          <Text style={[styles.heroTitle, isMobile && styles.heroTitleMobile]}>{t('tutorial_title')}</Text>
-          <Text style={[styles.heroSub, isMobile && styles.heroSubMobile]}>{t('tutorial_hero_subtitle')}</Text>
-        </View>
-
-        {/* Description */}
-        <View style={styles.introCard}>
-          <Text style={[styles.introText, isMobile && styles.introTextMobile]}>
-            {t('tutorial_intro_one')}
-          </Text>
-          <Text style={[styles.introText, isMobile && styles.introTextMobile]}>
-            {t('tutorial_intro_two')}
-          </Text>
-          <View style={styles.sourceRow}>
-            <Text style={styles.sourceLabel}>{t('tutorial_source')}</Text>
-            <Text style={styles.sourceValue}>巴哈姆特 — 桜雪</Text>
+        <View style={isDesktop ? styles.desktopColumn : undefined}>
+        {/* Hero (Pen DJCul): purple→pink gradient, eyebrow, title, progress) */}
+        <View
+          style={[
+            styles.hero,
+            Platform.OS === 'web'
+              ? ({ backgroundImage: `linear-gradient(120deg, ${PALETTE.accent3} 0%, ${PALETTE.accent} 100%)` } as object)
+              : { backgroundColor: PALETTE.accent3 },
+          ]}
+          testID="tutorial-hero"
+        >
+          <Text style={styles.heroEyebrow}>{t('tutorial_hero_subtitle')}</Text>
+          <Text style={styles.heroTitle}>{t('tutorial_hero_headline')}</Text>
+          <View style={styles.heroProgressTrack} testID="tutorial-hero-progress-bar">
+            <View style={[styles.heroProgressFill, { width: `${Math.round(progressRatio * 100)}%` }]} />
           </View>
+          <Text style={styles.heroProgressLabel} testID="tutorial-hero-progress-label">
+            {t('tutorial_hero_progress', { done: completedCount, total })}
+          </Text>
         </View>
 
-        {/* Category Grid */}
-        <View style={[styles.grid, isMobile && styles.gridMobile]}>
-          {tutorialData.map((section) => (
-            <TouchableOpacity
-              key={section.id}
-              style={[styles.categoryCard, isMobile && styles.categoryCardMobile]}
-              onPress={() => navigation.navigate('TutorialDetail', { sectionId: section.id })}
-              testID={`tutorial-section-${section.id}`}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.categoryIconWrap, isMobile && styles.categoryIconWrapMobile]}>
-                <Text style={[styles.categoryIcon, isMobile && styles.categoryIconMobile]}>
-                  {section.icon}
-                </Text>
-              </View>
-              <Text style={[styles.categoryTitle, isMobile && styles.categoryTitleMobile]}>
-                {t(`tutorial_section_${section.id}` as Parameters<typeof t>[0])}
-              </Text>
-              <Text 
-                style={[styles.categoryDesc, isMobile && styles.categoryDescMobile]} 
-                numberOfLines={2}
+        {/* 章節 (Pen ccVfh): numbered chapter rows with real states */}
+        <Text style={styles.sectionHeading}>{t('tutorial_chapters_heading')}</Text>
+        <View style={styles.chapterList}>
+          {tutorialData.map((section, index) => {
+            const completed = !!completedSections[section.id];
+            const active = !completed && !!visitedSections[section.id];
+            const sub = language === 'zh' && section.description
+              ? section.description
+              : section.phases
+                ? t('tutorial_chapters_count', { count: section.phases.length })
+                : section.items
+                  ? t('tutorial_areas_count', { count: section.items.length })
+                  : t('tutorial_view_details');
+            return (
+              <TouchableOpacity
+                key={section.id}
+                style={styles.chapterRow}
+                onPress={() => navigation.navigate('TutorialDetail', { sectionId: section.id })}
+                testID={`tutorial-section-${section.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={section.title}
+                activeOpacity={0.75}
               >
-                {language === 'zh' && section.description ? section.description : (
-                  section.phases ? t('tutorial_chapters_count', { count: section.phases.length }) :
-                  section.items ? t('tutorial_areas_count', { count: section.items.length }) :
-                  t('tutorial_view_details')
+                <View style={styles.chapterNum}>
+                  <Text style={styles.chapterNumText}>{String(index + 1).padStart(2, '0')}</Text>
+                </View>
+                <View style={styles.chapterMeta}>
+                  <Text style={styles.chapterTitle} numberOfLines={1}>{section.title}</Text>
+                  <Text style={styles.chapterSub} numberOfLines={1}>{sub}</Text>
+                </View>
+                {completed ? (
+                  <Text style={[styles.chapterState, { color: PALETTE.cGreen }]} testID={`tutorial-chapter-state-${section.id}-completed`}>✓</Text>
+                ) : active ? (
+                  <Text style={[styles.chapterState, { color: PALETTE.accent }]} testID={`tutorial-chapter-state-${section.id}-active`}>▶</Text>
+                ) : (
+                  <Text style={[styles.chapterState, { color: PALETTE.textMuted }]} testID={`tutorial-chapter-state-${section.id}-open`}>›</Text>
                 )}
-              </Text>
-              <View style={styles.arrowRow}>
-                <Text style={[styles.arrowText, isMobile && styles.arrowTextMobile]}>
-                  {t('tutorial_start_learning')}
-                </Text>
-                <Text style={[styles.arrow, isMobile && styles.arrowMobile]}>→</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* Simulation Entry Card */}
+        {/* 實戰演練 (Pen eA89D tiles row): the real simulation entry */}
+        <Text style={styles.sectionHeading}>{t('tutorial_practice_heading')}</Text>
         <TouchableOpacity
-          style={[styles.simulationCard, isMobile && styles.simulationCardMobile]}
+          style={styles.simulationCard}
           onPress={() => navigation.navigate('TutorialSimulation')}
-          activeOpacity={0.7}
+          activeOpacity={0.75}
           testID="tutorial-simulation-entry"
         >
-          <View style={[styles.simulationIconWrap, isMobile && styles.simulationIconWrapMobile]}>
-            <Text style={[styles.simulationEmoji, isMobile && styles.simulationEmojiMobile]}>🎮</Text>
+          <View style={styles.simulationIconWrap}>
+            <Text style={styles.simulationEmoji}>🎮</Text>
           </View>
           <View style={styles.simulationContent}>
-            <Text style={[styles.simulationTitle, isMobile && styles.simulationTitleMobile]}>
-              {t('tutorial_simulation')}
-            </Text>
-            <Text style={[styles.simulationDesc, isMobile && styles.simulationDescMobile]}>
-              {t('tutorial_simulation_hint')}
-            </Text>
+            <Text style={styles.simulationTitle}>{t('tutorial_simulation')}</Text>
+            <Text style={styles.simulationDesc} numberOfLines={2}>{t('tutorial_simulation_hint')}</Text>
           </View>
-          <Text style={[styles.simulationArrow, isMobile && styles.simulationArrowMobile]}>→</Text>
+          {simulationCompleted ? (
+            <Text style={[styles.chapterState, { color: PALETTE.cGreen }]} testID="tutorial-simulation-state-completed">✓</Text>
+          ) : (
+            <Text style={[styles.chapterState, { color: PALETTE.accent }]}>→</Text>
+          )}
         </TouchableOpacity>
 
-        {/* Footer */}
-        <View style={[styles.footer, isMobile && styles.footerMobile]}>
-          <Text style={[styles.footerTitle, isMobile && styles.footerTitleMobile]}>
-            hololive Card Game
-          </Text>
-          <Text style={[styles.footerSub, isMobile && styles.footerSubMobile]}>
-            {t('tutorial_unofficial')}
-          </Text>
+        {/* Source attribution + footer stay: real provenance, not decoration */}
+        <View style={styles.sourceRow}>
+          <Text style={styles.sourceLabel}>{t('tutorial_source')}</Text>
+          <Text style={styles.sourceValue}>巴哈姆特 — 桜雪</Text>
+        </View>
+        <View style={styles.footer}>
+          <Text style={styles.footerTitle}>hololive Card Game</Text>
+          <Text style={styles.footerSub}>{t('tutorial_unofficial')}</Text>
+        </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -119,278 +137,55 @@ export default function TutorialScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  container: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  contentContainerMobile: {
-    padding: 12,
-    paddingBottom: 32,
-  },
-  hero: {
-    alignItems: 'center',
-    paddingVertical: 28,
-    marginBottom: 8,
-  },
-  heroMobile: {
-    paddingVertical: 18,
-    marginBottom: 4,
-  },
-  heroEmoji: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-  heroEmojiMobile: {
-    fontSize: 36,
-    marginBottom: 8,
-  },
+  safeArea: { flex: 1, backgroundColor: PALETTE.appBg },
+  container: { flex: 1 },
+  contentContainer: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 40 },
+  contentContainerDesktop: { alignItems: 'center' },
+  desktopColumn: { width: '100%', maxWidth: 720 },
+
+  // Hero (Pen DJCul 358×119, r16, gradient, progress bar 8px)
+  hero: { borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16, marginBottom: 14 },
+  heroEyebrow: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' },
   heroTitle: {
-    color: COLORS.text,
-    fontSize: 28,
-    fontWeight: 'bold',
-    letterSpacing: 2,
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    color: '#FFFFFF', fontSize: 17, fontWeight: '700', marginTop: 8,
   },
-  heroTitleMobile: {
-    fontSize: 22,
-    letterSpacing: 1,
+  heroProgressTrack: { height: 8, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.35)', marginTop: 12, overflow: 'hidden' },
+  heroProgressFill: { height: 8, borderRadius: 8, backgroundColor: '#FFFFFF' },
+  heroProgressLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '600', marginTop: 8 },
+
+  sectionHeading: { color: SEMANTIC.onBg, fontSize: 15, fontWeight: '700', marginTop: 6, marginBottom: 10 },
+
+  // Chapter rows (Pen gVpk3…: $app-surface r14, 34px num chip, state icon)
+  chapterList: { gap: 10, marginBottom: 14 },
+  chapterRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: PALETTE.appSurface, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 12, minHeight: 63,
   },
-  heroSub: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: 3,
-    marginTop: 6,
-  },
-  heroSubMobile: {
-    fontSize: 12,
-    letterSpacing: 2,
-    marginTop: 4,
-  },
-  introCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
-  },
-  introText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    lineHeight: 22,
-    marginBottom: 8,
-  },
-  introTextMobile: {
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 6,
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  sourceLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  sourceValue: {
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  grid: {
-    gap: 14,
-  },
-  gridMobile: {
-    gap: 10,
-  },
-  categoryCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  categoryCardMobile: {
-    borderRadius: 12,
-    padding: 14,
-  },
-  categoryIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  categoryIconWrapMobile: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  categoryIcon: {
-    fontSize: 26,
-  },
-  categoryIconMobile: {
-    fontSize: 22,
-  },
-  categoryTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  categoryTitleMobile: {
-    fontSize: 15,
-    marginBottom: 4,
-  },
-  categoryDesc: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 12,
-  },
-  categoryDescMobile: {
-    fontSize: 12,
-    lineHeight: 17,
-    marginBottom: 8,
-  },
-  arrowRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  arrowText: {
-    color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: '600',
-    marginRight: 6,
-  },
-  arrowTextMobile: {
-    fontSize: 12,
-  },
-  arrow: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  arrowMobile: {
-    fontSize: 14,
-  },
-  footer: {
-    marginTop: 32,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    alignItems: 'center',
-  },
-  footerMobile: {
-    marginTop: 24,
-    paddingTop: 16,
-  },
-  footerTitle: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  footerTitleMobile: {
-    fontSize: 11,
-  },
-  footerSub: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
-    marginTop: 4,
-    opacity: 0.6,
-  },
-  footerSubMobile: {
-    fontSize: 10,
-  },
+  chapterNum: { width: 34, height: 34, borderRadius: 10, backgroundColor: PALETTE.appElev, alignItems: 'center', justifyContent: 'center' },
+  chapterNumText: { color: SEMANTIC.onBgMuted, fontSize: 13, fontWeight: '700' },
+  chapterMeta: { flex: 1, minWidth: 0, gap: 3 },
+  chapterTitle: { color: SEMANTIC.onBg, fontSize: 14, fontWeight: '700' },
+  chapterSub: { color: SEMANTIC.onBgDim, fontSize: 11 },
+  chapterState: { fontSize: 18, fontWeight: '700', width: 24, textAlign: 'center' },
+
+  // Simulation entry tile (real route, Pen tile language)
   simulationCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '40',
-    flexDirection: 'row',
-    alignItems: 'center',
-    position: 'relative',
-    overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: PALETTE.appSurface, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: PALETTE.accent + '40', marginBottom: 18, gap: 12,
   },
-  simulationCardMobile: {
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  simulationIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  simulationIconWrapMobile: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    marginRight: 10,
-  },
-  simulationEmoji: {
-    fontSize: 28,
-  },
-  simulationEmojiMobile: {
-    fontSize: 22,
-  },
-  simulationContent: {
-    flex: 1,
-  },
-  simulationTitle: {
-    color: COLORS.primary,
-    fontSize: 17,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  simulationTitleMobile: {
-    fontSize: 15,
-    marginBottom: 2,
-  },
-  simulationDesc: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  simulationDescMobile: {
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  simulationArrow: {
-    color: COLORS.primary,
-    fontSize: 20,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  simulationArrowMobile: {
-    fontSize: 16,
-  },
+  simulationIconWrap: { width: 44, height: 44, borderRadius: 12, backgroundColor: PALETTE.accent + '20', alignItems: 'center', justifyContent: 'center' },
+  simulationEmoji: { fontSize: 22 },
+  simulationContent: { flex: 1, minWidth: 0 },
+  simulationTitle: { color: PALETTE.accent, fontSize: 15, fontWeight: '700', marginBottom: 3 },
+  simulationDesc: { color: SEMANTIC.onBgMuted, fontSize: 12, lineHeight: 17 },
+
+  sourceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  sourceLabel: { color: SEMANTIC.onBgDim, fontSize: 12 },
+  sourceValue: { color: PALETTE.accent, fontSize: 12, fontWeight: '600' },
+  footer: { marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: COLORS.border, alignItems: 'center' },
+  footerTitle: { color: SEMANTIC.onBgMuted, fontSize: 13, fontWeight: '600', letterSpacing: 1 },
+  footerSub: { color: SEMANTIC.onBgMuted, fontSize: 11, marginTop: 4, opacity: 0.6 },
 });

@@ -280,6 +280,17 @@ export const ja: Record<keyof typeof zh, string> = {
 
   // Tutorial landing
   tutorial_hero_subtitle: 'hOCG 完全攻略',
+  // DIC-1427 Pen DAQIq/rV4Za: 実進捗ヒーローと章ナビ
+  tutorial_hero_headline: 'ルール教学を完了して hOCG をマスター',
+  tutorial_hero_progress: '{{done}} / {{total}} 章クリア',
+  tutorial_chapters_heading: '章',
+  tutorial_practice_heading: '実戦演習',
+  tutorial_detail_chapter_progress: '第 {{current}} 節 · 全 {{total}} 節',
+  tutorial_detail_nav_heading: '章ナビ',
+  tutorial_detail_start_sim: 'シミュレーション開始',
+  tutorial_detail_full_text: '全文表示',
+  tutorial_detail_complete: 'この章を完了',
+  tutorial_detail_completed: '完了 ✓',
   tutorial_intro_one: '「共に創り、共に競う」をコンセプトにしたトレーディングカードゲームです。プレイヤーはファンとなり、推しホロメンや仲間と自分だけのステージを作ります。',
   tutorial_intro_two: 'ホロメンを応援し、「hololive 極限大祭」の頂点を目指しましょう！',
   tutorial_source: '📝 出典：',
