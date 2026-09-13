@@ -59,7 +59,7 @@ function printingLabelOf(card: {
   return card.printingLabel?.trim() || card.printing;
 }
 
-export default function DeckEditorScreen() {
+export default function DeckEditorScreen({ route }: any = {}) {
   const { t } = useTranslation();
   // DIC-1380 W8 CR — the Pen `uXuqo` app bar carries a back button.
   // useNavigation() throws when the component is mounted outside a
@@ -154,6 +154,18 @@ export default function DeckEditorScreen() {
     if (!db) return;
     if (decks.length === 0) createDeck('');
   }, [db, decks.length, createDeck]);
+
+  // DIC-1427 Pen o7WO3r 加入牌組: CardDetail hands over its card number and
+  // the picker opens pre-filtered on that exact number (mode 'number'), so the
+  // player lands one tap away from the real add-to-zone flow — no shadow
+  // "quick add" path that would bypass deck/zone rules.
+  const addCardNumber = route?.params?.addCardNumber;
+  useEffect(() => {
+    if (typeof addCardNumber === 'string' && addCardNumber.trim() !== '') {
+      setCriteria({ ...EMPTY_CRITERIA, query: addCardNumber.trim(), mode: 'number' });
+      setMobilePanel('picker');
+    }
+  }, [addCardNumber]);
 
   // Reset the rename editor whenever the active deck changes.
   useEffect(() => {

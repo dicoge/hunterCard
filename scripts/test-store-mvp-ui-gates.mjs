@@ -156,12 +156,10 @@ check(
   );
 }
 check(
-  'CardDetailScreen: 到價提醒 top chip still wrapped in {FEATURES.watchlist && ...} (regression)',
-  /\{FEATURES\.watchlist\s*&&\s*\(\s*<View style=\{styles\.topActionRow\}/s.test(detail),
-);
-check(
-  'CardDetailScreen: 到價提醒 bottom button still wrapped in {FEATURES.watchlist && ...} (regression)',
-  /\{FEATURES\.watchlist\s*&&\s*\(\s*<View style=\{styles\.section\}>[\s\S]*?watchlistBtn/s.test(detail),
+  // DIC-1427 Pen o7WO3r: the top chip + bottom button became ONE 到價提醒
+  // banner (Pen node jB05M) — still wrapped in {FEATURES.watchlist && ...}.
+  'CardDetailScreen: 到價提醒 banner still wrapped in {FEATURES.watchlist && ...} (regression)',
+  /\{FEATURES\.watchlist\s*&&\s*\(\s*<TouchableOpacity\s[\s\S]*?styles\.alertBanner/s.test(detail),
 );
 
 // ── 3b. Scan surfaces (DIC-1258 CR → DIC-1256 → DIC-1319).
@@ -615,8 +613,10 @@ check(
 //        mutated text and PASS for the real text. Prevents "the regex is so
 //        loose the test can never fail" false confidence. ──
 {
+  // DIC-1427: CardDetail now invokes MarketDataPanel once per pane
+  // (market + member), so the mutation must strip EVERY gated call site.
   const mutated = detail.replace(
-    /\{FEATURES\.marketData\s*&&\s*<MarketDataPanel/,
+    /\{FEATURES\.marketData\s*&&\s*<MarketDataPanel/g,
     '<MarketDataPanel',
   );
   const mutationBroke = !/\{FEATURES\.marketData\s*&&\s*<MarketDataPanel/.test(mutated);
