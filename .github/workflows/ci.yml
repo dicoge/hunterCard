@@ -188,6 +188,11 @@ jobs:
       - name: Verify Pen DAQIq/rV4Za/I6WwjY tutorial parity (DIC-1427)
         run: npm run test:tutorial-pen-parity
 
+      # DIC-1427 QA P0: Pen App/10 賽事月報 — month navigator, 熱門卡 hero,
+      # color-distribution bars and podium bound to the real report pipeline.
+      - name: Verify Pen wRgD8 tournament parity (DIC-1427)
+        run: npm run test:tournament-pen-parity
+
       # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
       # screens rendering the shared shell with real data + navigation wiring.
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)
