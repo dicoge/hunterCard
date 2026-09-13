@@ -2,13 +2,14 @@
  * ScanSessionPanel — 掃描估值面板
  * 累計掃描的卡牌清單與總價值，支援展開/收起
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
   Platform,
 } from 'react-native';
 import { useScanSessionStore, SessionCard, getEffectivePrice } from '../stores/scanSessionStore';
@@ -22,15 +23,24 @@ interface ScanSessionPanelProps {
   onContinueScanning?: () => void;
   onViewCard?: (card: SessionCard) => void;
   preferredCurrency?: string;
+  /** DIC-1427 Pen AQf9b: bump to ask the panel to expand (估值清單 box). */
+  expandRequest?: number;
+  /** Test/evidence harness convenience: start expanded. */
+  initialExpanded?: boolean;
 }
 
 export default function ScanSessionPanel({
   onContinueScanning,
   onViewCard,
   preferredCurrency = 'TWD',
+  expandRequest = 0,
+  initialExpanded = false,
 }: ScanSessionPanelProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
+  useEffect(() => {
+    if (expandRequest > 0) setExpanded(true);
+  }, [expandRequest]);
   const { cards, totalValue, cardCount, removeCard, setCardVersion, clearSession } = useScanSessionStore();
   const { setCurrency } = useSettingsStore();
 
@@ -78,6 +88,18 @@ export default function ScanSessionPanel({
           )}
         </View>
       </TouchableOpacity>
+      {/* Pen wC1cO app-bar 清除 (node S7Pq3U): visible while expanded. */}
+      {expanded && cardCount > 0 ? (
+        <TouchableOpacity
+          style={styles.clearLink}
+          onPress={clearSession}
+          accessibilityRole="button"
+          accessibilityLabel={t('scan_clear')}
+          testID="scan-session-clear"
+        >
+          <Text style={styles.clearLinkText}>{t('scan_clear')}</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {/* Expanded List */}
       {expanded && (
@@ -114,15 +136,65 @@ export default function ScanSessionPanel({
             </View>
           ) : (
             <>
+              {/* Pen wC1cO summary card (node Ahd5w): 本次掃描總計 · N 張 +
+                  big total + 複製結果 + 版本待確認 warning. Store MVP hides
+                  the valuation pieces (DIC-1256), the count line stays. */}
+              <View style={styles.summaryCard} testID="scan-session-summary">
+                <View style={styles.summaryTopRow}>
+                  <View style={styles.summaryLeft}>
+                    <Text style={styles.summaryLabel}>{t('scan_session_summary', { count: cardCount })}</Text>
+                    {FEATURES.marketData && (
+                      <View testID="scan-session-total-row">
+                        <Text style={styles.summaryValue}>{formatPrice(totalValue)}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {FEATURES.marketData && (
+                    <TouchableOpacity
+                      style={styles.copyBtn}
+                      testID="scan-session-copy-results"
+                      accessibilityRole="button"
+                      onPress={() => {
+                        const summary = cards.map((c, i) => {
+                          if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — ${t('scan_export_pending')}`;
+                          const v = c.priceVersions?.[c.selectedVersion];
+                          const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
+                            ? ` [${v.name}]`
+                            : '';
+                          return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
+                        }).join('\n');
+                        const pendingNote = pendingCount > 0 ? `\n（${t('scan_pending_count', { count: pendingCount })}）` : '';
+                        const full = `${t('scan_export_title')}\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n${t('scan_export_total', { total: formatPrice(totalValue) })}${pendingNote}`;
+                        if (Platform.OS === 'web') {
+                          navigator.clipboard?.writeText(full);
+                          alert(t('scan_copied'));
+                        }
+                      }}
+                    >
+                      <Text style={styles.copyBtnText}>{t('scan_copy_results')}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {FEATURES.marketData && pendingCount > 0 && (
+                  <Text style={styles.pendingNote} testID="scan-session-pending-note">
+                    ⚠ {t('scan_pending_count', { count: pendingCount })}
+                  </Text>
+                )}
+              </View>
               <ScrollView style={styles.cardList} nestedScrollEnabled>
                 {cards.map((card, index) => {
                   const hasVersions = card.priceVersions && card.priceVersions.length > 1;
                   const selected = card.priceVersions?.[card.selectedVersion];
                   const pending = !card.versionConfident;
                   return (
-                  <View key={card.instanceId} style={styles.cardRow}>
+                  <View key={card.instanceId} style={styles.cardRow} testID={`scan-session-item-${index}`}>
                     <View style={styles.cardInfo}>
-                      <Text style={styles.cardIndex}>#{index + 1}</Text>
+                      {card.imageUrl ? (
+                        /* @ts-ignore */
+                        <Image source={{ uri: card.imageUrl }} style={styles.cardThumb} resizeMode="cover" />
+                      ) : (
+                        <Text style={styles.cardIndex}>#{index + 1}</Text>
+                      )}
                       <View style={styles.cardDetails}>
                         <TouchableOpacity onPress={() => onViewCard?.(card)} activeOpacity={0.7}>
                           <Text style={styles.cardName} numberOfLines={1}>
@@ -188,70 +260,23 @@ export default function ScanSessionPanel({
                 })}
               </ScrollView>
 
-              {/* Total + Actions */}
+              {/* Pen wC1cO action bar (node Y1xPi/G3y9k): full-width 繼續掃描. */}
               <View style={styles.footer}>
-                {/* Store MVP 隱藏總計、待計入提示、複製結果 CTA (DIC-1256)：
-                    這幾項全都圍繞著 session 估值；review build 不做估值。
-                    「繼續掃描」「清空」保留供 session 管理。 */}
-                {FEATURES.marketData && (
-                  <View style={styles.totalRow} testID="scan-session-total-row">
-                    <Text style={styles.totalLabel}>{t('scan_total')}</Text>
-                    <Text style={styles.totalValue}>
-                      {formatPrice(totalValue)}
-                    </Text>
-                  </View>
+                {onContinueScanning && cardCount > 0 && (
+                  <TouchableOpacity
+                    style={[
+                      styles.continueBar,
+                      Platform.OS === 'web'
+                        ? ({ backgroundImage: `linear-gradient(135deg, ${PALETTE.accent} 0%, ${PALETTE.accent3} 100%)` } as object)
+                        : null,
+                    ]}
+                    onPress={onContinueScanning}
+                    accessibilityRole="button"
+                    testID="scan-session-continue"
+                  >
+                    <Text style={styles.continueBarText}>{t('scan_continue')}</Text>
+                  </TouchableOpacity>
                 )}
-                {FEATURES.marketData && pendingCount > 0 && (
-                  <Text style={styles.pendingNote} testID="scan-session-pending-note">
-                    {t('scan_pending_count', { count: pendingCount })}
-                  </Text>
-                )}
-                <View style={styles.actionRow}>
-                  {cardCount > 0 && (
-                    <>
-                      {onContinueScanning && (
-                        <TouchableOpacity
-                          style={styles.actionBtn}
-                          onPress={onContinueScanning}
-                        >
-                          <Text style={styles.actionBtnText}>{t('scan_continue')}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {FEATURES.marketData && (
-                        <TouchableOpacity
-                          style={[styles.actionBtn, styles.shareBtn]}
-                          testID="scan-session-copy-results"
-                          onPress={() => {
-                            // Share/export — build text summary
-                            const summary = cards.map((c, i) => {
-                              if (!c.versionConfident) return `${i + 1}. ${c.name} (${c.id}) — ${t('scan_export_pending')}`;
-                              const v = c.priceVersions?.[c.selectedVersion];
-                              const versionLabel = c.priceVersions && c.priceVersions.length > 1 && v?.name
-                                ? ` [${v.name}]`
-                                : '';
-                              return `${i + 1}. ${c.name} (${c.id})${versionLabel} — ${formatPrice(getEffectivePrice(c))}`;
-                            }).join('\n');
-                            const pendingNote = pendingCount > 0 ? `\n（${t('scan_pending_count', { count: pendingCount })}）` : '';
-                            const full = `${t('scan_export_title')}\n━━━━━━━━━━━━\n${summary}\n━━━━━━━━━━━━\n${t('scan_export_total', { total: formatPrice(totalValue) })}${pendingNote}`;
-                            // Trigger native share
-                            if (Platform.OS === 'web') {
-                              navigator.clipboard?.writeText(full);
-                              alert(t('scan_copied'));
-                            }
-                          }}
-                        >
-                          <Text style={styles.shareBtnText}>{t('scan_copy_results')}</Text>
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.clearBtn]}
-                        onPress={clearSession}
-                      >
-                        <Text style={styles.clearBtnText}>{t('scan_clear')}</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
               </View>
             </>
           )}
@@ -312,7 +337,79 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   expandedBody: {
-    maxHeight: 350,
+    maxHeight: 420,
+  },
+  // Pen wC1cO 清除 (node S7Pq3U)
+  clearLink: {
+    position: 'absolute',
+    top: 12,
+    right: 48,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  clearLinkText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+  },
+  // Pen wC1cO summary card (node Ahd5w): gradient-tinted surface r16
+  summaryCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(139,92,246,0.10)',
+    gap: 10,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  summaryLeft: {
+    flexShrink: 1,
+    gap: 5,
+  },
+  summaryLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+  },
+  summaryValue: {
+    color: PALETTE.textPrimary,
+    fontSize: 30,
+    fontWeight: '700',
+  },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+  copyBtnText: {
+    color: PALETTE.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cardThumb: {
+    width: 36,
+    height: 50,
+    borderRadius: 6,
+    backgroundColor: PALETTE.appElev,
+  },
+  continueBar: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: PALETTE.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueBarText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   emptyState: {
     padding: 30,

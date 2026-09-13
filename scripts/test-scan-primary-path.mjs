@@ -172,12 +172,20 @@ function pressablesIn(node) {
       assert.equal(primaries.length, 1, `expected 1 primary scan action, got ${primaries.length}`);
     });
 
-    await test('viewfinder control row holds exactly two pressables (scan + gallery)', () => {
+    await test('viewfinder control row holds exactly three pressables (gallery + scan + 估值清單)', () => {
+      // DIC-1427 Pen BUFW2: the shutter row is 相簿 LEFT, shutter CENTER and
+      // the REAL 估值清單 session-count box RIGHT (Pen AQf9b). Still exactly
+      // ONE primary scan action; the session box is navigation, not a second
+      // capture control, and the flash still rides the top bar.
       const buttons = pressablesIn(row);
       assert.equal(
         buttons.length,
-        2,
-        `expected scan + gallery only (flash rides the top bar), got ${buttons.length}: ${buttons.map((b) => b.textContent).join(' | ')}`,
+        3,
+        `expected 相簿 + shutter + 估值清單 (flash rides the top bar), got ${buttons.length}: ${buttons.map((b) => b.textContent).join(' | ')}`,
+      );
+      assert.ok(
+        container.querySelector('[data-testid="scan-session-entry"]'),
+        'the third pressable is the Pen 估值清單 session box',
       );
     });
 
@@ -200,9 +208,12 @@ function pressablesIn(node) {
       assert.ok(!text.includes(zh.common_search), `viewfinder must not render "${zh.common_search}"`);
     });
 
-    await test('the primary action still carries its own label so it reads as the one action', () => {
+    await test('the primary action still carries its own accessible label so it reads as the one action', () => {
+      // DIC-1427 Pen TbHVE: the shutter is the bare 72px accent circle (no
+      // visible caption), so the label contract moves to aria-label.
       const primary = container.querySelector('[data-testid="scan-primary-action"]');
-      assert.ok(primary.textContent && primary.textContent.trim().length > 0);
+      const label = primary.getAttribute('aria-label');
+      assert.ok(label && label.trim().length > 0, 'shutter must carry an accessibility label');
     });
   } finally {
     await cleanup();
@@ -288,13 +299,26 @@ await test('ScanOverlay renders the gallery control unconditionally (no isWeb / 
 
 // ── 4. The overlay no longer accepts the removed callbacks ───────────────────
 const overlaySource = read('src/components/ScanOverlay.tsx');
-await test('ScanOverlayProps no longer declares onFlip / onManualSearch / onToggleAutoScan', () => {
-  for (const prop of ['onFlip', 'onManualSearch', 'onToggleAutoScan']) {
+await test('ScanOverlayProps no longer declares onFlip / onManualSearch', () => {
+  for (const prop of ['onFlip', 'onManualSearch']) {
     assert.ok(
       !overlaySource.includes(prop),
       `${prop} must be gone from ScanOverlay — a live prop is a control waiting to be re-rendered`,
     );
   }
+});
+
+await test('the Pen Cys7V mode pill is capability-gated, never an inert control (DIC-1427)', () => {
+  // DIC-1319 removed the toggle because it was inert on Android. The Pen
+  // eurld frame carries the pill, so DIC-1427 restored it — but ONLY behind
+  // the real capability flag: the render site must guard on
+  // `autoScanSupported && onToggleAutoScan`, so a platform without the
+  // frame-stability loop can never show a dead switch.
+  assert.match(
+    overlaySource,
+    /autoScanSupported\s*&&\s*onToggleAutoScan\s*\?/,
+    'mode pill must render only when autoScanSupported && onToggleAutoScan',
+  );
 });
 
 await test('ScanOverlay declares onGallery as part of its callback contract', () => {
@@ -343,16 +367,20 @@ await test('camera error retry is still wired from the overlay', () => {
   assert.match(scanScreenSource, /onRetry=\{\(\)\s*=>\s*\{[\s\S]*?setCameraError\(null\)/);
 });
 
-// ── 7. Auto-scan is platform-driven, not a user-facing dead toggle ───────────
-await test('auto-scan activity is derived from the platform, not from a mode switch', () => {
+// ── 7. Auto-scan stays platform-bounded; the pill only narrows it ─────────────
+await test('auto-scan activity is platform-bounded — the mode pill can only disable, never enable off-web', () => {
+  // DIC-1427: the Pen Cys7V pill made the toggle REAL on web
+  // (autoScanEnabled), but the capability itself must stay AND-ed with
+  // isWeb so Android never advertises an auto capture it cannot do.
   assert.match(
     scanScreenSource,
-    /const autoScanActive = isWeb;/,
-    'autoScanActive must be platform-derived so Android never advertises an auto capture it cannot do',
+    /const autoScanActive = isWeb && autoScanEnabled;/,
+    'autoScanActive must stay platform-bounded (isWeb && user toggle)',
   );
-  assert.ok(
-    !/setAutoScanEnabled/.test(scanScreenSource),
-    'the auto-scan mode setter must be gone with its toggle',
+  assert.match(
+    scanScreenSource,
+    /autoScanSupported=\{isWeb\}/,
+    'the pill capability flag handed to the overlay must be the platform truth',
   );
 });
 

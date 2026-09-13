@@ -178,7 +178,12 @@ export default function ScanScreen({ navigation }: any) {
   // runs is decided by the platform, not by a user-facing mode switch — the
   // toggle that used to sit under the viewfinder did nothing on Android
   // (DIC-1319).
-  const autoScanActive = isWeb;
+  // DIC-1427 Pen Cys7V: the mode pill is a REAL toggle on web (the only
+  // platform running the frame-stability loop). Native keeps no pill at all.
+  const [autoScanEnabled, setAutoScanEnabled] = useState(true);
+  const autoScanActive = isWeb && autoScanEnabled;
+  // DIC-1427 Pen AQf9b: the 估值清單 count box asks the session panel to open.
+  const [sessionOpenRequest, setSessionOpenRequest] = useState(0);
   const autoScanRef = useRef<number | null>(null);
   const lastScanTimeRef = useRef<number>(0);
 
@@ -1082,6 +1087,9 @@ export default function ScanScreen({ navigation }: any) {
             isScanning={isScanning}
             flash={flash}
             autoScanActive={autoScanActive}
+            autoScanSupported={isWeb}
+            onToggleAutoScan={setAutoScanEnabled}
+            onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
             onFlash={toggleFlash}
@@ -1112,6 +1120,8 @@ export default function ScanScreen({ navigation }: any) {
             isScanning={isScanning}
             flash={flash}
             autoScanActive={autoScanActive}
+            autoScanSupported={false}
+            onOpenSession={() => setSessionOpenRequest((n) => n + 1)}
             isCameraReady={isCameraReady}
             cameraError={cameraError}
             onFlash={toggleFlash}
@@ -1351,6 +1361,7 @@ export default function ScanScreen({ navigation }: any) {
       {/* 掃描估值面板 */}
       <ScanSessionPanel
         preferredCurrency={preferredCurrency}
+        expandRequest={sessionOpenRequest}
         onViewCard={(card) => navigation?.navigate('CardDetail', { card })}
         onContinueScanning={() => {
           setLastScannedCard(null);

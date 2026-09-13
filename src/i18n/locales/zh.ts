@@ -744,6 +744,13 @@ export const zh = {
   scan_total: '總計',
   scan_pending_count: '{{count}} 張版本待確認，未計入總計',
   scan_continue: '📸 繼續掃描',
+  // DIC-1427 Pen eurld/wC1cO: 模式切換 / 側控制標籤 / 估值清單摘要
+  scan_mode_auto: '自動掃描',
+  scan_mode_manual: '手動',
+  scan_gallery_label: '相簿',
+  scan_session_entry_label: '估值清單',
+  scan_session_entry_a11y: '開啟估值清單（{{count}} 張）',
+  scan_session_summary: '本次掃描總計 · {{count}} 張',
   scan_export_pending: '版本待確認，未計入',
   scan_export_title: '📋 掃描估值結果',
   scan_export_total: '總計：{{total}}',

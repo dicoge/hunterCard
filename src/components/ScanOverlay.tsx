@@ -42,6 +42,7 @@ import {
 import { COLORS } from '../constants';
 import { PALETTE } from '../theme/tokensV2';
 import { useTranslation } from '../i18n';
+import { useScanSessionStore } from '../stores/scanSessionStore';
 import ScanTopBar from './ScanTopBar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -81,6 +82,13 @@ export interface ScanOverlayProps {
   onScanAreaLayout?: (event: LayoutChangeEvent) => void;
   /** Pen `x7iIL` top-bar close — dismisses the scan flow (back to Home). */
   onClose?: () => void;
+  /** DIC-1427 Pen Cys7V: the 自動掃描/手動 pill renders ONLY where the
+   *  frame-stability loop is a real capability (web today). Never render an
+   *  inert switch on platforms without the loop. */
+  autoScanSupported?: boolean;
+  onToggleAutoScan?: (next: boolean) => void;
+  /** DIC-1427 Pen AQf9b: the 估值清單 count box opens the session list. */
+  onOpenSession?: () => void;
 }
 
 export default function ScanOverlay({
@@ -98,8 +106,14 @@ export default function ScanOverlay({
   onGallery,
   onScanAreaLayout,
   onClose,
+  autoScanSupported = false,
+  onToggleAutoScan,
+  onOpenSession,
 }: ScanOverlayProps) {
   const { t } = useTranslation();
+  // Real session size for the Pen AQf9b count box — read straight from the
+  // store so the badge can never drift from the actual session.
+  const sessionCount = useScanSessionStore((s) => s.cardCount);
   return (
     <>
       {/* Camera loading overlay */}
@@ -223,41 +237,81 @@ export default function ScanOverlay({
               and low-confidence recovery panels). The flash control rides the
               Pen `x7iIL` top bar, so this row is the scan action plus the
               gallery entry only. */}
-          <View style={styles.controls} testID="scan-primary-controls">
-            {/* The single scan action. */}
-            <TouchableOpacity
-              style={[styles.scanButton, isScanning && styles.scanButtonDisabled]}
-              onPress={onScan}
-              disabled={isScanning}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              testID="scan-primary-action"
-            >
-              <View style={styles.scanButtonInner}>
-                <Text style={styles.scanButtonIcon}>{isScanning ? '⏳' : '📷'}</Text>
-              </View>
-              <Text style={styles.scanButtonLabel}>
-                {isScanning ? t('scan_recognizing') : autoScanActive ? t('scan_manual') : t('scan_scan_action')}
-              </Text>
-            </TouchableOpacity>
+          {/* Mode pill (Pen Cys7V) — only where auto-scan really runs. */}
+          {autoScanSupported && onToggleAutoScan ? (
+            <View style={styles.modePill} testID="scan-mode-pill">
+              <TouchableOpacity
+                style={[styles.modeSeg, autoScanActive && styles.modeSegActive]}
+                onPress={() => onToggleAutoScan(true)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: autoScanActive }}
+                testID="scan-mode-auto"
+                {...({ 'aria-selected': autoScanActive } as object)}
+              >
+                <Text style={[styles.modeSegText, autoScanActive && styles.modeSegTextActive]}>{t('scan_mode_auto')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeSeg, !autoScanActive && styles.modeSegActive]}
+                onPress={() => onToggleAutoScan(false)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: !autoScanActive }}
+                testID="scan-mode-manual"
+                {...({ 'aria-selected': !autoScanActive } as object)}
+              >
+                <Text style={[styles.modeSegText, !autoScanActive && styles.modeSegTextActive]}>{t('scan_mode_manual')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
-            {/* Gallery — icon-only secondary control beside the shutter.
-                Rendered unconditionally so the Android APK
-                has a reachable gallery scan path (DIC-1336); the previous
-                `isWeb`-gated call sites left the shipped Android build with
-                no way to scan a photo the user already had. Any inability
-                to fulfil the picker (permissions, missing native module) is
-                the handler's problem, not the overlay's — the button stays
-                present so the flow starts. */}
+          {/* Shutter row (Pen BUFW2): 相簿 LEFT · shutter CENTER · 估值清單 RIGHT. */}
+          <View style={styles.controls} testID="scan-primary-controls">
+            {/* Gallery — labeled side box (Pen TOYLP). Rendered unconditionally
+                so the Android APK has a reachable gallery scan path
+                (DIC-1336); any inability to fulfil the picker is the
+                handler's problem, not the overlay's. */}
             <TouchableOpacity
-              style={styles.controlBtn}
+              style={styles.sideControl}
               onPress={onGallery}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel={t('scan_gallery_action')}
               testID="scan-gallery-action"
             >
-              <Text style={styles.controlIcon}>🖼️</Text>
+              <View style={styles.controlBtn}>
+                <Text style={styles.controlIcon}>🖼️</Text>
+              </View>
+              <Text style={styles.sideControlLabel}>{t('scan_gallery_label')}</Text>
+            </TouchableOpacity>
+
+            {/* The single scan action (Pen TbHVE 72px gradient shutter). */}
+            <TouchableOpacity
+              style={[styles.scanButton, isScanning && styles.scanButtonDisabled]}
+              onPress={onScan}
+              disabled={isScanning}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={isScanning ? t('scan_recognizing') : t('scan_scan_action')}
+              testID="scan-primary-action"
+            >
+              <View style={styles.scanButtonInner}>
+                {isScanning ? <Text style={styles.scanButtonIcon}>⏳</Text> : null}
+              </View>
+            </TouchableOpacity>
+
+            {/* 估值清單 count box (Pen AQf9b) — real session size. */}
+            <TouchableOpacity
+              style={styles.sideControl}
+              onPress={onOpenSession}
+              disabled={!onOpenSession}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('scan_session_entry_a11y', { count: sessionCount })}
+              testID="scan-session-entry"
+            >
+              <View style={styles.controlBtn}>
+                <Text style={styles.sessionCountText}>{sessionCount}</Text>
+              </View>
+              <Text style={styles.sideControlLabel}>{t('scan_session_entry_label')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -419,10 +473,51 @@ const styles = StyleSheet.create({
   },
   controls: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     width: '100%',
-    paddingHorizontal: 12,
+    paddingHorizontal: 44,
+    marginTop: 10,
+  },
+  // Mode pill (Pen Cys7V: #00000080 r999 with 3px inset segments)
+  modePill: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 999,
+    padding: 3,
+    gap: 2,
+  },
+  modeSeg: {
+    borderRadius: 999,
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+  },
+  modeSegActive: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  modeSegText: {
+    color: '#9A9AB8',
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
+  modeSegTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  sideControl: {
+    alignItems: 'center',
+    gap: 5,
+    width: 52,
+  },
+  sideControlLabel: {
+    color: '#9A9AB8',
+    fontSize: 10.5,
+  },
+  sessionCountText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
   },
   // Pen side controls (相簿 node TOYLP): #FFFFFF14 boxes, r14.
   controlBtn: {

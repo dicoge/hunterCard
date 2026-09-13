@@ -193,6 +193,12 @@ jobs:
       - name: Verify Pen wRgD8 tournament parity (DIC-1427)
         run: npm run test:tournament-pen-parity
 
+      # DIC-1427 QA P0: Pen App/04–05 scan — Pen shutter row with the REAL
+      # 估值清單 count box, capability-gated 自動掃描 pill, and the Pen
+      # session-list summary/items/繼續掃描 on the real session store.
+      - name: Verify Pen eurld/wC1cO scan parity (DIC-1427)
+        run: npm run test:scan-pen-parity
+
       # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
       # screens rendering the shared shell with real data + navigation wiring.
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)

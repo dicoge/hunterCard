@@ -739,6 +739,13 @@ export const ja: Record<keyof typeof zh, string> = {
   scan_version_pending_hint: '出典から版を特定できないため合計に含めていません。お持ちの版を選んでください。',
   scan_version_select_hint: '版を選択（この版で参考価格を計算）',
   scan_total: '合計',
+  // DIC-1427 Pen eurld/wC1cO: モード切替 / サイドコントロール / 査定リスト
+  scan_mode_auto: '自動スキャン',
+  scan_mode_manual: '手動',
+  scan_gallery_label: 'アルバム',
+  scan_session_entry_label: '査定リスト',
+  scan_session_entry_a11y: '査定リストを開く（{{count}} 枚）',
+  scan_session_summary: '今回のスキャン合計 · {{count}} 枚',
   scan_pending_count: '{{count}} 枚は版未確認のため合計に含みません',
   scan_continue: '📸 スキャンを続ける',
   scan_export_pending: '版未確認、合計に含まず',
