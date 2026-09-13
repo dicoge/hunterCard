@@ -76,6 +76,10 @@ export const zh = {
   favorites_count: '{{count}} 張收藏',
   favorites_remove_button: '移除',
   favorites_open_card: '查看卡牌',
+  // DIC-1427 Pen sSDxQ head sort control
+  favorites_sort_added: '最近加入',
+  favorites_sort_price: '價格 ↓',
+  favorites_sort_a11y: '切換排序方式',
   // Deck status banner + card category labels (Pen uXuqo — DIC-1380 W6)
   deck_status_legal: '牌組合法',
   deck_status_incomplete: '尚未完成',
@@ -138,6 +142,14 @@ export const zh = {
   // Settings
   settings_title: '設定',
   settings_app_version: '版本 {{version}}',
+  // DIC-1427 Pen x44r8t 設定 group/row IA
+  settings_group_account: '帳號',
+  settings_group_preferences: '偏好',
+  settings_group_app: '應用',
+  settings_row_language: '語言',
+  settings_row_currency: '貨幣',
+  settings_row_about: '關於 HoloHunter',
+  settings_guest_meta: '尚未登入',
   settings_language_section: '🌐 顯示語言',
   settings_language_zh: '中文',
   settings_language_ja: '日本語',
@@ -319,11 +331,17 @@ export const zh = {
   watchlist_remove_alert_confirm: '確定要移除「{{name}}（{{printing}}）」的期望入手價格提醒嗎？',
   watchlist_remove_pending_confirm: '「{{name}}」尚未選定版本，確定要移除嗎？',
   watchlist_exact_price_hint: '比對你選定版本的玩家「參考售價」；不採用店家收購價或跨版本價格。價格進入區間時通知一次。',
+  // DIC-1427 Pen VyzfW banner headline — real evaluated hit count
+  watchlist_banner_hits: '{{count}} 張命中提醒',
   watchlist_desired_interval: '期望入手 {{interval}}',
   watchlist_price_loading: '目前價格：載入中…',
   watchlist_price_unavailable: '目前價格：價格資料無法載入',
   watchlist_current_price: '目前 {{price}} · {{status}}',
   watchlist_current_unpriced: '目前參考售價：暫無資料 · {{status}}',
+  // DIC-1427 Pen VyzfW: the status moved into the tinted badge, so the row
+  // price line no longer carries the status suffix.
+  watchlist_current_price_short: '目前 {{price}}',
+  watchlist_current_unpriced_short: '目前參考售價：暫無資料',
   watchlist_edit_a11y: '編輯 {{name}} 的期望入手價格區間',
   watchlist_remove_a11y: '移除 {{name}} 的到價提醒',
   watchlist_resolve_a11y: '設定 {{name}} 的到價提醒版本與價格區間',
@@ -566,6 +584,11 @@ export const zh = {
   collection_loading: '載入收藏卡表…',
   collection_title: '收藏卡片',
   collection_total: '共 {{count}} 張',
+  // DIC-1427 Pen ej9RF stats hero
+  collection_hero_value_label: '總收藏價值（遊々亭參考價）',
+  collection_hero_cards: '卡牌數',
+  collection_hero_decks: '套牌數',
+  collection_hero_priced: '有報價版本',
   collection_search_placeholder: '搜尋卡名、卡號或版本',
   collection_search_a11y: '搜尋收藏卡片',
   collection_filter_all: '全部',

@@ -118,6 +118,7 @@
     "test:tournament-pen-parity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-tournament-pen-parity.mjs",
     "test:scan-pen-parity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-scan-pen-parity.mjs",
     "test:login-pen-parity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-login-pen-parity.mjs",
+    "test:hub-pen-parity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-hub-pen-parity.mjs",
     "test:deck-library-ui": "node --import ./scripts/register-web-render.mjs scripts/test-deck-library-ui.mjs",
     "test:deck-collection": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-collection.mjs",
     "test:dic1086-ui": "node scripts/test-dic1086-collection-ui.mjs",

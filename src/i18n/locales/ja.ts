@@ -78,6 +78,10 @@ export const ja: Record<keyof typeof zh, string> = {
   favorites_count: 'お気に入り {{count}} 枚',
   favorites_remove_button: '削除',
   favorites_open_card: 'カードを見る',
+  // DIC-1427 Pen sSDxQ head sort control
+  favorites_sort_added: '追加順',
+  favorites_sort_price: '価格 ↓',
+  favorites_sort_a11y: '並び替えを切り替え',
   deck_status_legal: 'デッキ有効',
   deck_status_incomplete: '未完成',
   deck_status_empty: 'カード未登録',
@@ -138,6 +142,14 @@ export const ja: Record<keyof typeof zh, string> = {
   // Settings
   settings_title: '設定',
   settings_app_version: 'バージョン {{version}}',
+  // DIC-1427 Pen x44r8t 設定 group/row IA
+  settings_group_account: 'アカウント',
+  settings_group_preferences: '環境設定',
+  settings_group_app: 'アプリ',
+  settings_row_language: '言語',
+  settings_row_currency: '通貨',
+  settings_row_about: 'HoloHunter について',
+  settings_guest_meta: '未ログイン',
   settings_language_section: '🌐 表示言語',
   settings_language_zh: '中文',
   settings_language_ja: '日本語',
@@ -316,11 +328,17 @@ export const ja: Record<keyof typeof zh, string> = {
   watchlist_remove_alert_confirm: '「{{name}}（{{printing}}）」の希望価格アラートを削除しますか？',
   watchlist_remove_pending_confirm: '「{{name}}」は版が未選択です。削除しますか？',
   watchlist_exact_price_hint: '選択した版の参考販売価格だけを比較し、店舗買取価格や別版の価格は使いません。価格帯に入ったとき1回通知します。',
+  // DIC-1427 Pen VyzfW banner headline — real evaluated hit count
+  watchlist_banner_hits: '{{count}} 件のアラート達成',
   watchlist_desired_interval: '希望価格 {{interval}}',
   watchlist_price_loading: '現在価格：読み込み中…',
   watchlist_price_unavailable: '現在価格：価格データを読み込めません',
   watchlist_current_price: '現在 {{price}} · {{status}}',
   watchlist_current_unpriced: '現在の参考販売価格：データなし · {{status}}',
+  // DIC-1427 Pen VyzfW: the status moved into the tinted badge, so the row
+  // price line no longer carries the status suffix.
+  watchlist_current_price_short: '現在 {{price}}',
+  watchlist_current_unpriced_short: '現在の参考販売価格：データなし',
   watchlist_edit_a11y: '{{name}} の希望価格帯を編集',
   watchlist_remove_a11y: '{{name}} の価格アラートを削除',
   watchlist_resolve_a11y: '{{name}} の版と希望価格帯を設定',
@@ -563,6 +581,11 @@ export const ja: Record<keyof typeof zh, string> = {
   collection_loading: 'コレクションのカード一覧を読み込み中…',
   collection_title: 'コレクション',
   collection_total: '合計 {{count}} 枚',
+  // DIC-1427 Pen ej9RF stats hero
+  collection_hero_value_label: 'コレクション評価額（遊々亭参考価格）',
+  collection_hero_cards: 'カード数',
+  collection_hero_decks: 'デッキ数',
+  collection_hero_priced: '価格あり版',
   collection_search_placeholder: 'カード名・カード番号・版を検索',
   collection_search_a11y: 'コレクションのカードを検索',
   collection_filter_all: 'すべて',

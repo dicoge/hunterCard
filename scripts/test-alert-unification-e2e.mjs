@@ -319,8 +319,9 @@ await test('editing the range overwrites the same alert in place', async () => {
     assert.equal(alert.upperPrice, 5000);
     assert.equal(Object.keys(alertState().alerts).length, 1, 'edited in place, not duplicated');
     assert.equal(container.querySelectorAll('[data-testid^="price-alert-row-"]').length, 1);
+    // DIC-1427 Pen VyzfW: the evaluated status renders on the tinted badge.
     assert.ok(
-      byTestId(`price-alert-status-${CARD_NUMBER}|${CHOSEN_PRINTING}`).textContent.includes('高於期望上限'),
+      byTestId(`price-alert-status-badge-${CARD_NUMBER}|${CHOSEN_PRINTING}`).textContent.includes('高於期望上限'),
       '¥9,980 is now above the ¥5,000 ceiling',
     );
     assertSingleAlertsFeature();
@@ -359,8 +360,9 @@ await test('the alert fires once when the exact version enters the interval', as
     await type('price-alert-lower', '8000');
     await type('price-alert-upper', '12000');
     await press('price-alert-save');
+    // DIC-1427 Pen VyzfW: the evaluated status renders on the tinted badge.
     assert.ok(
-      byTestId(`price-alert-status-${CARD_NUMBER}|${CHOSEN_PRINTING}`).textContent.includes('已進入期望區間'),
+      byTestId(`price-alert-status-badge-${CARD_NUMBER}|${CHOSEN_PRINTING}`).textContent.includes('已進入期望區間'),
       'the page says the alert is in range',
     );
   } finally {

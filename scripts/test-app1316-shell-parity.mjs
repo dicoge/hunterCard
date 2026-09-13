@@ -127,13 +127,19 @@ await test('Settings sections carry the Pen x44r8t group-card composition (sourc
   const src = readFileSync(new URL('../src/screens/SettingsScreen.tsx', import.meta.url), 'utf8');
   assert.match(
     src,
-    /section:\s*\{[^}]*backgroundColor:\s*PALETTE\.appSurface[^}]*borderRadius:\s*14/s,
-    'sections are $app-surface r14 group cards (Pen nodes Qpkox/Vp4g7/phxwj)',
+    /groupCard:\s*\{[^}]*backgroundColor:\s*PALETTE\.appSurface[^}]*borderRadius:\s*14/s,
+    'groups are $app-surface r14 cards (Pen nodes Qpkox/Vp4g7/phxwj)',
   );
   assert.match(
     src,
-    /sectionTitle:\s*\{[^}]*fontSize:\s*11[^}]*fontWeight:\s*'700'/s,
-    'section headings are the Pen 11/700 muted labels (nodes U2n8Jp/sed7I/Ld7b7)',
+    /groupHeading:\s*\{[^}]*fontSize:\s*11[^}]*fontWeight:\s*'700'/s,
+    'group headings are the Pen 11/700 muted labels OUTSIDE the cards (帳號/偏好/應用)',
+  );
+  // Pen x44r8t rows: 13 label + 12 muted value.
+  assert.match(
+    src,
+    /rowLabel:\s*\{[^}]*fontSize:\s*13/s,
+    'rows carry the Pen 13px label',
   );
   // No second shell layered on the App 07 composition.
   assert.equal((src.match(/<AppShell/g) || []).length, 1, 'exactly one AppShell in Settings');

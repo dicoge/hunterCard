@@ -249,12 +249,21 @@ await test('Settings keeps its own route identity (Pen x44r8t): 設定 title, se
   } finally { await cleanup(); }
 });
 
-await test('我的 keeps the full existing settings surface (language / currency / account auth)', async () => {
+await test('設定 keeps the functional settings surface on the Pen x44r8t group rows (language / currency / account auth)', async () => {
   const { container, cleanup } = await renderSettings();
   try {
-    const text = container.textContent;
-    assert.ok(text.includes('顯示語言') || text.includes('言語'), 'language section retained');
-    assert.ok(text.includes('顯示幣別') || text.includes('通貨'), 'currency section retained');
+    // Pen 偏好 group rows show the live store value and disclose the real
+    // selectors on press — the language options must actually render.
+    const langRow = container.querySelector('[data-testid="settings-row-language"]');
+    assert.ok(langRow, '語言 row renders (Pen s8nLRw)');
+    assert.ok(container.querySelector('[data-testid="settings-language-value"]'), '語言 row carries the live value');
+    await act(async () => langRow.click());
+    assert.ok(container.querySelector('[data-testid="settings-language-zh"]'), 'language selector discloses on press');
+    const currencyRow = container.querySelector('[data-testid="settings-row-currency"]');
+    assert.ok(currencyRow, '貨幣 row renders (Pen r5vO5)');
+    await act(async () => currencyRow.click());
+    assert.ok(container.querySelector('[data-testid="settings-currency-TWD"]'), 'currency selector discloses on press');
+    assert.ok(container.querySelector('[data-testid="settings-row-about"]'), '關於 row carries the real version (Pen f9oQT)');
     assert.ok(
       container.textContent.includes('Google'),
       'auth surface retained (guest login or linked providers)',

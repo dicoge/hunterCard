@@ -205,6 +205,13 @@ jobs:
       - name: Verify Pen p28zL login reachability + parity (DIC-1427)
         run: npm run test:login-pen-parity
 
+      # DIC-1427 QA re-audit: Pen App/08 收藏 stats hero on the REAL
+      # ownership store + exact-printing prices, App/09 我的最愛 rows with
+      # real identity/price/sort + CardDetail nav, App/11 到價提醒 banner
+      # hit-count + tinted status badges from the real evaluator.
+      - name: Verify Pen ej9RF/sSDxQ/VyzfW hub parity (DIC-1427)
+        run: npm run test:hub-pen-parity
+
       # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
       # screens rendering the shared shell with real data + navigation wiring.
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)
