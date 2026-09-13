@@ -93,6 +93,50 @@ try {
     }
   }
 
+  // Active-filter states through REAL route interactions at 390 — the state
+  // the Pen frame depicts (chips row + 價格高→低). Same guest journey, then:
+  // sliders → filter sheet (藍 + SR 以上) → 完成 → sort tap → 價格高→低.
+  {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+    await page.goto(BASE, { waitUntil: 'networkidle0', timeout: 60000 });
+    await page.waitForSelector(
+      '[data-testid="landing-cta-guest"], [data-testid="shell-bottom-tab-search"]',
+      { timeout: 45000 },
+    );
+    await new Promise((r) => setTimeout(r, 1500));
+    await page.evaluate(() => {
+      document.querySelector('[data-testid="landing-cta-guest"]')?.click();
+    });
+    await page.waitForSelector('[data-testid="shell-bottom-tab-search"]', { timeout: 45000 });
+    await new Promise((r) => setTimeout(r, 800));
+    await page.evaluate(() => document.querySelector('[data-testid="shell-bottom-tab-search"]').click());
+    await page.waitForSelector('[data-testid="search-input"]', { timeout: 30000 });
+    await page.click('[data-testid="search-input"]');
+    await page.type('[data-testid="search-input"]', 'すいせい');
+    await page.evaluate(() => document.querySelector('[data-testid="search-submit"]').click());
+    await page.waitForSelector('[data-testid="search-results-count"]', { timeout: 60000 });
+    await new Promise((r) => setTimeout(r, 2500));
+    await page.evaluate(() => document.querySelector('[data-testid="search-results-filter-button"]').click());
+    await page.waitForSelector('[data-testid="search-results-filter-panel"]', { timeout: 15000 });
+    await page.evaluate(() => document.querySelector('[data-testid="search-results-filter-color-blue"]').click());
+    await page.evaluate(() => document.querySelector('[data-testid="search-results-filter-srplus"]').click());
+    await new Promise((r) => setTimeout(r, 400));
+    const panelShot = pathResolve(OUT_DIR, 'search-results-suisei-filterpanel-mobile-390.png');
+    await page.screenshot({ path: panelShot, fullPage: false });
+    console.log(`captured ${panelShot}`);
+    captured += 1;
+    await page.evaluate(() => document.querySelector('[data-testid="search-results-filter-done"]').click());
+    await new Promise((r) => setTimeout(r, 400));
+    await page.evaluate(() => document.querySelector('[data-testid="search-results-sort"]').click());
+    await new Promise((r) => setTimeout(r, 1500));
+    const filteredShot = pathResolve(OUT_DIR, 'search-results-suisei-filtered-mobile-390.png');
+    await page.screenshot({ path: filteredShot, fullPage: false });
+    console.log(`captured ${filteredShot}`);
+    captured += 1;
+    await page.close();
+  }
+
   // Side-by-side + pixel diff vs the Pen frame at 390.
   const live390 = pathResolve(OUT_DIR, 'search-results-suisei-mobile-390.png');
   const penB64 = readFileSync(PEN_FRAME).toString('base64');

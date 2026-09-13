@@ -683,7 +683,14 @@ export default function SearchResultsScreen({ route, navigation }: any) {
           data={visible}
           keyExtractor={(item) => item.id}
           numColumns={numColumns}
-          columnWrapperStyle={numColumns > 1 ? { gap: gridGap } : undefined}
+          // Pen Z6jlE row pitch: 14px between tile rows (spacer nodes
+          // SpR0/OFt50). CardListItem carries its own 12px marginBottom, so
+          // the extra row margin only applies to the mobile tile grid.
+          columnWrapperStyle={
+            numColumns > 1
+              ? { gap: gridGap, marginBottom: useTileGrid ? MOBILE_ROW_GAP : 0 }
+              : undefined
+          }
           ListHeaderComponent={listHeader}
           renderItem={({ item }) => (
             <View style={gridItemStyle} testID="search-result-grid-item">
@@ -885,6 +892,7 @@ const LIST_PADDING_X = 16;
 const GRID_GAP = 12;
 const MOBILE_GRID_COLUMNS = 3;
 const MOBILE_GRID_GAP = 9;
+const MOBILE_ROW_GAP = 14;
 // Pen chip label tint (nodes AFVm9/Fx6XO/lAz8y — #FF9AC8 on #FF4D9D24).
 const CHIP_ACCENT_FG = '#FF9AC8';
 const CHIP_ACCENT_BG = PALETTE.accent + '24';
@@ -895,6 +903,7 @@ export const SEARCH_RESULTS_LAYOUT = {
   gridGap: GRID_GAP,
   mobileColumns: MOBILE_GRID_COLUMNS,
   mobileGridGap: MOBILE_GRID_GAP,
+  mobileRowGap: MOBILE_ROW_GAP,
   desktopMaxWidth: 1100,
 } as const;
 
@@ -926,7 +935,12 @@ const shellStyles = StyleSheet.create({
     marginLeft: -6,
   },
   searchField: {
-    flex: 1,
+    // No `flex: 1` here: inside the app bar's column-direction center slot,
+    // flex-basis 0% would override the fixed height and collapse the field
+    // to its 18px content (the regression the DIC-1427 geometry suite
+    // caught on the real route). Width comes from the slot's cross-axis
+    // stretch; height stays the Pen 38.
+    alignSelf: 'stretch',
     height: 38,
     borderRadius: RADII.md,
     backgroundColor: PALETTE.appElev,
