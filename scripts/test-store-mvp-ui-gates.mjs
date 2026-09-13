@@ -192,8 +192,8 @@ check(
   /\{FEATURES\.marketData\s*&&\s*\(\s*<View style=\{styles\.currencyRow\}/s.test(scanSession),
 );
 check(
-  'ScanSessionPanel: footer total row wrapped in {FEATURES.marketData && ...}',
-  /\{FEATURES\.marketData\s*&&\s*\(\s*<View style=\{styles\.totalRow\}/s.test(scanSession),
+  'ScanSessionPanel: summary-card total wrapped in {FEATURES.marketData && ...} (Pen wC1cO Ahd5w)',
+  /\{FEATURES\.marketData\s*&&\s*\(\s*<View testID="scan-session-total-row"/s.test(scanSession),
 );
 check(
   'ScanSessionPanel: 複製結果 button wrapped in {FEATURES.marketData && ...}',
