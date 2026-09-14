@@ -85,6 +85,22 @@ parityOk() {
   return 0
 }
 
+# removeStaleIsolatedWorktree <path>: prune/remove a previously-registered
+# throwaway worktree whose checkout directory or gitdir disappeared. A timed-out
+# supervised run can leave exactly this state; plain `rm -rf <path>` is not
+# enough because `git worktree add <path>` still fails while the stale registration
+# remains in .git/worktrees.
+removeStaleIsolatedWorktree() {
+  local dir="$1"
+  git worktree prune >> "$LOG_FILE" 2>&1 || true
+  if git worktree list --porcelain | awk 'BEGIN{RS=""} $0 ~ "worktree " path "(\\n|$)" {found=1} END{exit found?0:1}' path="$dir"; then
+    echo "[$(date)] ⚠️ removing stale isolated worktree registration at $dir" >> "$LOG_FILE"
+    git worktree remove --force "$dir" >> "$LOG_FILE" 2>&1 || true
+    git worktree prune >> "$LOG_FILE" 2>&1 || true
+  fi
+  rm -rf "$dir"
+}
+
 # priceCoverageOk <repo-dir>: count priced cardNumbers in the freshly built
 # data/database.json and compare against the previous build's priced count
 # (recorded by runPipeline into <dir>/data/database.json.prev-priced.txt).
@@ -198,6 +214,11 @@ runPipeline() {
 
     # 2i. Required pre-push gate — see original script for DIC-1167 / DIC-1249 context.
     echo "[$(date)] Running required pre-push data gate..." >> "$LOG_FILE"
+    if ! node scripts/verify-official-catalog-completeness.mjs >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ official catalog completeness gate FAILED, exiting before price/browser enrichment and commit/push" >> "$LOG_FILE"
+      return 1
+    fi
+
     if ! npm run test:market-fields >> "$LOG_FILE" 2>&1; then
       echo "[$(date)] ❌ test:market-fields FAILED, exiting before commit/push" >> "$LOG_FILE"
       return 1
@@ -275,13 +296,17 @@ if [ -n "$DIRTY_STATUS" ]; then
   echo "$DIRTY_STATUS" >> "$LOG_FILE"
 
   ISOLATED_DIR="${HUNTERCARD_ISOLATED_DIR:-/tmp/huntercard-scrape-worktree}"
-  rm -rf "$ISOLATED_DIR"
+  removeStaleIsolatedWorktree "$ISOLATED_DIR"
   # A throwaway worktree pinned to the current remote HEAD gives a clean,
   # committed baseline the scheduler is allowed to mutate. Never touches the
   # resident checkout.
   if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
-    echo "[$(date)] ❌ could not create isolated worktree; abandoning (cron fails)" >> "$LOG_FILE"
-    exit 1
+    echo "[$(date)] ⚠️ isolated worktree add failed once; pruning stale registrations and retrying" >> "$LOG_FILE"
+    removeStaleIsolatedWorktree "$ISOLATED_DIR"
+    if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ could not create isolated worktree; abandoning (cron fails)" >> "$LOG_FILE"
+      exit 1
+    fi
   fi
   # Ensure node_modules available in the isolated tree (scripts need deps).
   if [ ! -d "$ISOLATED_DIR/node_modules" ] && [ -d "$(pwd)/node_modules" ]; then

@@ -431,6 +431,41 @@ exit 0
   }
 }
 
+// ─── Case G: stale registered isolated worktree — DIC-1167 2026-09-14 ───────
+// A supervised timeout can leave /tmp/huntercard-scrape-worktree registered in
+// .git/worktrees while its checkout/gitdir is gone. The dirty-resident handoff
+// must prune/remove that stale registration before `git worktree add`, or the
+// scheduler fails before scraping/building/pushing.
+{
+  const sandbox = makeSandbox();
+  const staleIso = path.join(sandbox.dir, 'iso');
+  const residue = path.join(sandbox.repo, 'data', 'price-history', 'hSTALE-001_hFOO_C.json');
+  fs.mkdirSync(path.dirname(residue), { recursive: true });
+  fs.writeFileSync(residue, '{}');
+  execSync(`${REAL_GIT} worktree add --detach ${staleIso} HEAD >/dev/null`, { cwd: sandbox.repo });
+  fs.rmSync(staleIso, { recursive: true, force: true });
+  const redBeforeGreen = spawnSync(REAL_GIT, ['-C', sandbox.repo, 'worktree', 'add', '--detach', staleIso, 'HEAD'], {
+    encoding: 'utf-8',
+  });
+  assert.notEqual(redBeforeGreen.status, 0, 'sanity: stale registered missing worktree must make raw git worktree add fail');
+  assert.match(
+    `${redBeforeGreen.stdout}\n${redBeforeGreen.stderr}`,
+    /missing but already registered worktree/,
+    'sanity: raw failure must be the stale-registration defect this regression covers',
+  );
+
+  try {
+    const { status, lines, log } = runSandbox(sandbox, { HUNTERCARD_ISOLATED_DIR: staleIso });
+    assert.equal(status, 0, `stale registered isolated worktree must self-recover and complete; got ${status}\n${log}`);
+    assert.ok(someTraced(lines, 'git worktree prune'), 'scheduler must prune stale worktree registrations before retrying add');
+    assert.ok(someTraced(lines, 'git worktree add'), 'scheduler must still create a fresh isolated worktree after pruning');
+    assert.ok(someTraced(lines, 'HEAD:bot/scrape'), 'recovered isolated handoff must push the bot/scrape artifact branch');
+    assert.equal(someTraced(lines, 'HEAD:main'), false, 'recovered isolated path must never push HEAD:main');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
 // ─── Case G: clean worktree but DIVERGENT native asset — DIC-1334 gate ──────
 // (mutation-sensitive regression: this must fail before the CI-harness fix in
 // this PR — the parityOk() `node -e` invocation was silently swallowed by the

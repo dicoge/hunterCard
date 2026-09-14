@@ -263,6 +263,7 @@ exit 0
     'send-push-alerts.js',
     'merge-buy-prices.js',
     'generate-native-database.mjs',
+    'verify-official-catalog-completeness.mjs',
     'git add',
     'git -c user.name',
     'commit -m',
@@ -335,6 +336,7 @@ exit 0
   const merge = indexOfCall(lines, 'merge-buy-prices.js');
   const native = indexOfCall(lines, 'generate-native-database.mjs');
   const marketGate = indexOfCall(lines, 'npm run test:market-fields');
+  const officialCompletenessGate = indexOfCall(lines, 'verify-official-catalog-completeness.mjs');
   // DIC-1249: buy-price provenance drift (buyPriceTimestamp lagging the source
   // by a day while values match) was invisible to test:market-fields + native
   // --check. Both buy-price gates must run inside the pre-push window so the
@@ -349,6 +351,7 @@ exit 0
   for (const [name, idx] of [
     ['merge-buy-prices', merge],
     ['generate-native-database', native],
+    ['official catalog completeness gate', officialCompletenessGate],
     ['test:market-fields gate', marketGate],
     ['test:buy-price gate', buyPriceGate],
     ['test:buy-price-regen gate', buyPriceRegenGate],
@@ -365,6 +368,8 @@ exit 0
   );
   assert.ok(
     native < marketGate &&
+      native < officialCompletenessGate &&
+      officialCompletenessGate < marketGate &&
       marketGate < buyPriceGate &&
       buyPriceGate < buyPriceRegenGate &&
       buyPriceRegenGate < nativeCheck &&
@@ -402,6 +407,28 @@ exit 0
       indexOfCall(fail.lines, forbidden),
       -1,
       `a parity failure must never reach the commit path (found: ${forbidden})`,
+    );
+  }
+}
+
+// ── 2e. Fail-fast: official catalog completeness failure must abort before commit ──
+{
+  const { status, lines } = runPipeline({ failOn: 'verify-official-catalog-completeness.mjs' });
+
+  assert.notStrictEqual(
+    status,
+    0,
+    'pipeline must exit non-zero when all-product official catalog completeness fails before commit/push',
+  );
+  assert.ok(
+    indexOfCall(lines, 'verify-official-catalog-completeness.mjs') !== -1,
+    'sanity: pipeline must actually invoke the official catalog completeness gate',
+  );
+  for (const forbidden of ['npm run test:market-fields', 'npm run test:buy-price', 'git add', 'git -c user.name', 'commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(lines, forbidden),
+      -1,
+      `an official catalog completeness failure must never reach downstream gates/commit path (found: ${forbidden})`,
     );
   }
 }
