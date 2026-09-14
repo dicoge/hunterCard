@@ -1112,10 +1112,26 @@ exec ${REAL_GIT} "$@"
       0,
       `Scheduler: local-scrape-and-push.sh MUST exit non-zero when the poisoned durable file reaches the audit path. exit=${result.status}\ntrace:\n${traceLines.join('\n')}\nlog tail:\n${schedulerLog.slice(-3000)}`,
     );
+    // DIC-1439: the guard is now two-stage. build-database failure no longer
+    // exits directly: it first offers the failure to officialCatalogFallback,
+    // which recovers ONLY the DIC-1334 price-transform collapse. A DIC-1229
+    // audit throw is not that collapse, so all three links must be pinned —
+    // asserting only the final "exiting" line would let a future fallback
+    // widen its accept condition and silently swallow an audit failure.
     assert.match(
       schedulerLog,
-      /build-database FAILED, exiting before downstream mutation\/commit/,
+      /build-database FAILED/,
       `Scheduler: log must record the build-database failure guard firing. log tail:\n${schedulerLog.slice(-3000)}`,
+    );
+    assert.match(
+      schedulerLog,
+      /build-database failure was not the DIC-1334 price-transform collapse; refusing official-only fallback/,
+      `Scheduler: the official-only fallback MUST refuse a DIC-1229 audit failure — it may only recover the DIC-1334 price-transform collapse. log tail:\n${schedulerLog.slice(-3000)}`,
+    );
+    assert.match(
+      schedulerLog,
+      /could not be recovered by official-only fallback, exiting before downstream mutation\/commit/,
+      `Scheduler: log must record the fail-closed exit before any downstream mutation/commit. log tail:\n${schedulerLog.slice(-3000)}`,
     );
     assert.match(
       schedulerLog,

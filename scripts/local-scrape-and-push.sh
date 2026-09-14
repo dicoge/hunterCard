@@ -85,6 +85,22 @@ parityOk() {
   return 0
 }
 
+# removeStaleIsolatedWorktree <path>: prune/remove a previously-registered
+# throwaway worktree whose checkout directory or gitdir disappeared. A timed-out
+# supervised run can leave exactly this state; plain `rm -rf <path>` is not
+# enough because `git worktree add <path>` still fails while the stale registration
+# remains in .git/worktrees.
+removeStaleIsolatedWorktree() {
+  local dir="$1"
+  git worktree prune >> "$LOG_FILE" 2>&1 || true
+  if git worktree list --porcelain | awk 'BEGIN{RS=""} $0 ~ "worktree " path "(\\n|$)" {found=1} END{exit found?0:1}' path="$dir"; then
+    echo "[$(date)] ⚠️ removing stale isolated worktree registration at $dir" >> "$LOG_FILE"
+    git worktree remove --force "$dir" >> "$LOG_FILE" 2>&1 || true
+    git worktree prune >> "$LOG_FILE" 2>&1 || true
+  fi
+  rm -rf "$dir"
+}
+
 # priceCoverageOk <repo-dir>: count priced cardNumbers in the freshly built
 # data/database.json and compare against the previous build's priced count
 # (recorded by runPipeline into <dir>/data/database.json.prev-priced.txt).
@@ -126,6 +142,43 @@ priceCoverageOk() {
   return 0
 }
 
+# officialCatalogFallback <repo-dir>: when the full yuyu sell-price rebuild fails
+# specifically because the DIC-1334 exact-printing anti-collapse audit fired, still
+# publish the already-scraped official catalog by preserving known exact-version
+# market fields and leaving newly unknown prices null. Other build failures remain
+# fail-closed.
+officialCatalogFallback() {
+  local dir="$1"
+  if ! grep -q '\[DIC-1334\] final canonical artifact collapsed priced-cardNumber coverage' "$LOG_FILE"; then
+    echo "[$(date)] ❌ build-database failure was not the DIC-1334 price-transform collapse; refusing official-only fallback" >> "$LOG_FILE"
+    return 1
+  fi
+
+  echo "[$(date)] ⚠️ DIC-1334 price-transform collapse detected; publishing official catalog via exact-preservation/null-price fallback" >> "$LOG_FILE"
+  ( cd "$dir"
+    if ! node scripts/sync-official-catalog-to-database.mjs >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ official-only fallback sync FAILED" >> "$LOG_FILE"
+      return 1
+    fi
+    if ! node scripts/regen-buy-alignment.mjs >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ official-only fallback buy alignment FAILED" >> "$LOG_FILE"
+      return 1
+    fi
+    if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ official-only fallback native generation FAILED" >> "$LOG_FILE"
+      return 1
+    fi
+    if ! node scripts/test-official-catalog-sync.mjs >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ official-only fallback catalog sync invariant FAILED" >> "$LOG_FILE"
+      return 1
+    fi
+    if ! node scripts/verify-official-catalog-completeness.mjs >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ official-only fallback completeness gate FAILED" >> "$LOG_FILE"
+      return 1
+    fi
+  )
+}
+
 # runPipeline <workdir> [ <commit-message> ] [ <push-mode> ]: executes steps 1–3
 # (scrape → build → gates → commit → push) inside the given repository working
 # directory. Returns non-zero on any failure up to and including the coverage
@@ -165,54 +218,68 @@ runPipeline() {
     node scripts/scrape-news-sentiment.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)" >> "$LOG_FILE"
 
     echo "[$(date)] Running build-database..." >> "$LOG_FILE"
+    OFFICIAL_ONLY_FALLBACK=0
     if ! node scripts/build-database.js >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ build-database FAILED, exiting before downstream mutation/commit" >> "$LOG_FILE"
-      return 1
+      echo "[$(date)] ❌ build-database FAILED" >> "$LOG_FILE"
+      if ! officialCatalogFallback "$dir"; then
+        echo "[$(date)] ❌ build-database failure could not be recovered by official-only fallback, exiting before downstream mutation/commit" >> "$LOG_FILE"
+        return 1
+      fi
+      OFFICIAL_ONLY_FALLBACK=1
     fi
 
-    echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
-    node scripts/scrape-yt-subscribers.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT subscriber tracker failed (non-fatal)" >> "$LOG_FILE"
+    if [ "$OFFICIAL_ONLY_FALLBACK" != "1" ]; then
+      echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
+      node scripts/scrape-yt-subscribers.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT subscriber tracker failed (non-fatal)" >> "$LOG_FILE"
 
-    echo "[$(date)] Running trend analysis..." >> "$LOG_FILE"
-    node scripts/trend-analysis.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Trend analysis failed (non-fatal)" >> "$LOG_FILE"
+      echo "[$(date)] Running trend analysis..." >> "$LOG_FILE"
+      node scripts/trend-analysis.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Trend analysis failed (non-fatal)" >> "$LOG_FILE"
 
-    echo "[$(date)] 📣 Sending push alerts..." >> "$LOG_FILE"
-    node scripts/send-push-alerts.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Push alerts failed (non-fatal)" >> "$LOG_FILE"
+      echo "[$(date)] 📣 Sending push alerts..." >> "$LOG_FILE"
+      node scripts/send-push-alerts.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Push alerts failed (non-fatal)" >> "$LOG_FILE"
 
-    echo "[$(date)] 🎯 Evaluating desired-price alerts..." >> "$LOG_FILE"
-    npm run --silent send:price-alerts >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Price alerts failed (non-fatal)" >> "$LOG_FILE"
+      echo "[$(date)] 🎯 Evaluating desired-price alerts..." >> "$LOG_FILE"
+      npm run --silent send:price-alerts >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Price alerts failed (non-fatal)" >> "$LOG_FILE"
 
-    echo "[$(date)] Scraping buy prices into database.json (torecolo + fullahead + merge)..." >> "$LOG_FILE"
-    node scripts/scrape-torecolo-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Torecolo buy scrape failed (non-fatal)" >> "$LOG_FILE"
-    node scripts/scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fullahead buy scrape failed (non-fatal)" >> "$LOG_FILE"
-    if ! node scripts/merge-buy-prices.js >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ merge-buy-prices FAILED, exiting before native generation/commit" >> "$LOG_FILE"
-      return 1
-    fi
+      echo "[$(date)] Scraping buy prices into database.json (torecolo + fullahead + merge)..." >> "$LOG_FILE"
+      node scripts/scrape-torecolo-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Torecolo buy scrape failed (non-fatal)" >> "$LOG_FILE"
+      node scripts/scrape-fullahead-buy.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ Fullahead buy scrape failed (non-fatal)" >> "$LOG_FILE"
+      if ! node scripts/merge-buy-prices.js >> "$LOG_FILE" 2>&1; then
+        echo "[$(date)] ❌ merge-buy-prices FAILED, exiting before native generation/commit" >> "$LOG_FILE"
+        return 1
+      fi
 
-    echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
-    if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
-      return 1
-    fi
+      echo "[$(date)] Running native database generator..." >> "$LOG_FILE"
+      if ! node scripts/generate-native-database.mjs >> "$LOG_FILE" 2>&1; then
+        echo "[$(date)] ❌ generate-native-database FAILED, exiting" >> "$LOG_FILE"
+        return 1
+      fi
 
-    # 2i. Required pre-push gate — see original script for DIC-1167 / DIC-1249 context.
-    echo "[$(date)] Running required pre-push data gate..." >> "$LOG_FILE"
-    if ! npm run test:market-fields >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ test:market-fields FAILED, exiting before commit/push" >> "$LOG_FILE"
-      return 1
-    fi
-    if ! npm run test:buy-price >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ test:buy-price FAILED, exiting before commit/push" >> "$LOG_FILE"
-      return 1
-    fi
-    if ! npm run test:buy-price-regen >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ test:buy-price-regen FAILED, exiting before commit/push" >> "$LOG_FILE"
-      return 1
-    fi
-    if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
-      echo "[$(date)] ❌ native database --check FAILED, exiting before commit/push" >> "$LOG_FILE"
-      return 1
+      # 2i. Required pre-push gate — see original script for DIC-1167 / DIC-1249 context.
+      echo "[$(date)] Running required pre-push data gate..." >> "$LOG_FILE"
+      if ! node scripts/verify-official-catalog-completeness.mjs >> "$LOG_FILE" 2>&1; then
+        echo "[$(date)] ❌ official catalog completeness gate FAILED, exiting before price/browser enrichment and commit/push" >> "$LOG_FILE"
+        return 1
+      fi
+
+      if ! npm run test:market-fields >> "$LOG_FILE" 2>&1; then
+        echo "[$(date)] ❌ test:market-fields FAILED, exiting before commit/push" >> "$LOG_FILE"
+        return 1
+      fi
+      if ! npm run test:buy-price >> "$LOG_FILE" 2>&1; then
+        echo "[$(date)] ❌ test:buy-price FAILED, exiting before commit/push" >> "$LOG_FILE"
+        return 1
+      fi
+      if ! npm run test:buy-price-regen >> "$LOG_FILE" 2>&1; then
+        echo "[$(date)] ❌ test:buy-price-regen FAILED, exiting before commit/push" >> "$LOG_FILE"
+        return 1
+      fi
+      if ! node scripts/generate-native-database.mjs --check >> "$LOG_FILE" 2>&1; then
+        echo "[$(date)] ❌ native database --check FAILED, exiting before commit/push" >> "$LOG_FILE"
+        return 1
+      fi
+    else
+      echo "[$(date)] Official-only fallback complete; skipping yuyu/buy-price enrichment and preserving unknown exact-version prices as null" >> "$LOG_FILE"
     fi
 
     # DIC-1321 hard coverage / change-budget floors. Fail (do not push) if the
@@ -275,13 +342,17 @@ if [ -n "$DIRTY_STATUS" ]; then
   echo "$DIRTY_STATUS" >> "$LOG_FILE"
 
   ISOLATED_DIR="${HUNTERCARD_ISOLATED_DIR:-/tmp/huntercard-scrape-worktree}"
-  rm -rf "$ISOLATED_DIR"
+  removeStaleIsolatedWorktree "$ISOLATED_DIR"
   # A throwaway worktree pinned to the current remote HEAD gives a clean,
   # committed baseline the scheduler is allowed to mutate. Never touches the
   # resident checkout.
   if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
-    echo "[$(date)] ❌ could not create isolated worktree; abandoning (cron fails)" >> "$LOG_FILE"
-    exit 1
+    echo "[$(date)] ⚠️ isolated worktree add failed once; pruning stale registrations and retrying" >> "$LOG_FILE"
+    removeStaleIsolatedWorktree "$ISOLATED_DIR"
+    if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
+      echo "[$(date)] ❌ could not create isolated worktree; abandoning (cron fails)" >> "$LOG_FILE"
+      exit 1
+    fi
   fi
   # Ensure node_modules available in the isolated tree (scripts need deps).
   if [ ! -d "$ISOLATED_DIR/node_modules" ] && [ -d "$(pwd)/node_modules" ]; then
