@@ -15,6 +15,8 @@ const repo = path.resolve(__dirname, '..');
 const officialDir = path.join(repo, 'data', 'official');
 const dbPath = path.join(repo, 'data', 'database.json');
 const translationPath = path.join(repo, 'data', 'character-names-zh.json');
+const effectsJpPath = path.join(repo, 'data', 'effects-jp.json');
+const effectsZhPath = path.join(repo, 'data', 'effects-zh.json');
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -74,6 +76,51 @@ function resolveNameZh(name, previousNameZh, translationMap) {
     if (typeof zh === 'string' && zh.trim()) return zh;
   }
   return '';
+}
+
+// DIC-1439: skills have exactly the DIC-1415 defect nameZh had. Sync only
+// carried `previous.skillsJp` / `previous.skillsZh` forward, but skills are
+// keyed by cardNumber, not by printing id — so a brand-new PRINTING of an
+// already-scraped cardNumber (an hBP08/hPR reprint of an hBP01 card) found no
+// previous row and shipped with no skills at all, even though data/effects-*.json
+// held that cardNumber's text the whole time. Mirror build-database.js
+// `mergeSkills()`: prefer freshly scraped effects, fall back to the previous
+// row for either language independently, so a missing or partial effects file
+// can never wipe skills already in the database (the DIC-454 regression).
+function loadEffectsMap(filepath) {
+  // Missing effects file is tolerated exactly as mergeSkills tolerates ENOENT —
+  // resolution then falls back to the previous row and preserves what exists.
+  if (!fs.existsSync(filepath)) return Object.create(null);
+  // Null-prototype for the same DIC-1417 reason as the translation map: a plain
+  // `{}` would resolve cardNumber `constructor` to an inherited function and
+  // sail past the fail-closed completeness gate as a non-empty value.
+  const clean = Object.create(null);
+  for (const [cardNumber, skills] of Object.entries(readJson(filepath))) clean[cardNumber] = skills;
+  return clean;
+}
+
+function nonEmptySkills(value) {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (value && typeof value === 'object') return Object.keys(value).length > 0;
+  return false;
+}
+
+function resolveSkills(cardNumber, previous, effectsJp, effectsZh) {
+  const fresh = (map) => (cardNumber && Object.hasOwn(map, cardNumber) ? map[cardNumber] : undefined);
+  const pick = (scraped, preserved) => {
+    if (nonEmptySkills(scraped)) return scraped;
+    if (nonEmptySkills(preserved)) return preserved;
+    return undefined;
+  };
+  return {
+    skillsJp: pick(fresh(effectsJp), previous.skillsJp),
+    // No translation provider is ever consulted here: Traditional-Chinese skill
+    // text comes only from the controlled data/effects-zh.json artifact, and a
+    // cardNumber with no entry is left without skillsZh so the completeness gate
+    // keeps tripping rather than shipping fabricated or kana-leaking text
+    // (DIC-1185 OpenRouter denylist, DIC-465 kana cleanliness).
+    skillsZh: pick(fresh(effectsZh), previous.skillsZh),
+  };
 }
 
 function cardSignature(card) {
@@ -140,7 +187,13 @@ function canonicalProductsFromMeta(officialDirectory) {
   return products;
 }
 
-export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialDirectory = officialDir, translationPath: nameZhMapPath = translationPath } = {}) {
+export function syncOfficialCatalogToDatabase({
+  databasePath = dbPath,
+  officialDirectory = officialDir,
+  translationPath: nameZhMapPath = translationPath,
+  effectsJpPath: jpEffectsPath = effectsJpPath,
+  effectsZhPath: zhEffectsPath = effectsZhPath,
+} = {}) {
   const db = readJson(databasePath);
   if (!db.cards || typeof db.cards !== 'object') throw new Error('data/database.json missing cards map');
 
@@ -157,6 +210,8 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
   // ever broadcast, and preserved ytStats is never displaced (fill-only).
   const previousCards = { ...db.cards };
   const zhNames = loadTranslationMap(nameZhMapPath);
+  const effectsJp = loadEffectsMap(jpEffectsPath);
+  const effectsZh = loadEffectsMap(zhEffectsPath);
   const canonicalProducts = canonicalProductsFromMeta(officialDirectory);
   const officialFiles = fs.readdirSync(officialDirectory)
     .filter((f) => f.endsWith('.json') && !f.startsWith('_') && !f.startsWith('all-') && !f.startsWith('cardList_'));
@@ -199,10 +254,14 @@ export function syncOfficialCatalogToDatabase({ databasePath = dbPath, officialD
         preserveYuyuPayload: true,
       });
       if (summary.sellPrice || summary.prices || summary.priceHistory || summary.ytStats || summary.yuyu) sellPreserved++;
+      const skills = resolveSkills(card.cardNumber, previous, effectsJp, effectsZh);
       db.cards[id] = {
         ...preview,
-        skillsJp: previous.skillsJp,
-        skillsZh: previous.skillsZh,
+        // DIC-1439: join skills by cardNumber (effects-*.json) with fallback to
+        // the preserved row, so new printings of known cardNumbers are no longer
+        // published skill-less.
+        skillsJp: skills.skillsJp,
+        skillsZh: skills.skillsZh,
         // DIC-1415: brand-new printings have no previous row to preserve nameZh
         // from — resolve a controlled Traditional-Chinese name or stay
         // fail-closed so the Validate gate still refuses incomplete names.
