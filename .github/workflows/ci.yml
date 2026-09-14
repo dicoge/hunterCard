@@ -340,6 +340,15 @@ jobs:
       - name: Verify nav_favorites routes to FavoritesScreen (DIC-1380 W7 CR)
         run: npm run test:favorites-nav-route
 
+      - name: Verify Favorites hands CardDetail the full canonical payload (DIC-1430)
+        run: npm run test:favorites-canonical-payload
+
+      - name: Verify a tap during canonical loading never leaks a reduced payload (DIC-1430 CR2)
+        run: npm run test:favorites-canonical-loading-race
+
+      - name: Verify each exact printing resolves its own artwork + price (DIC-1430 CR2)
+        run: npm run test:exact-printing-artwork
+
       - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
         run: npm run test:tournament-discovery-acquisition
 

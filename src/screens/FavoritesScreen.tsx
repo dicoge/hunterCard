@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ListRenderItemInfo } from 'react-native';
 import { COLORS } from '../constants';
 import { PALETTE, SEMANTIC } from '../theme/tokensV2';
@@ -24,26 +24,36 @@ import { RouteShell } from '../components/shell';
  * real CardDetail. The bare card-number rows were the QA re-audit's
  * remaining material mismatch on this frame.
  */
-export default function FavoritesScreen({ navigation }: any) {
+export default function FavoritesScreen({
+  navigation,
+  // DIC-1430 CR round 2: injectable so a regression can hold the canonical index
+  // in its PENDING state and tap during that exact window. Defaults to the real
+  // loader, so no shipped caller changes.
+  loadCanonicalIndex = loadCanonicalCardIndex,
+}: any) {
   const { t } = useTranslation();
   const preferredLanguage = useSettingsStore((s) => s.preferredLanguage);
   const favorites = useFavoritesStore((s) => s.favorites);
   const removeFavorite = useFavoritesStore((s) => s.removeFavorite);
   const [db, setDb] = useState<CardDatabase | null>(null);
   // DIC-1430: the exact-printing index over the canonical catalog records, so a
-  // tap can hand CardDetail the full record synchronously.
-  const [canonical, setCanonical] = useState<CanonicalCardIndex | null>(null);
+  // tap can hand CardDetail the full record. Held in a ref rather than state
+  // because `openCard` must read whatever is CURRENT at tap time — and while the
+  // load is still in flight it awaits that same promise instead of resolving
+  // against a null index.
+  const canonicalRef = useRef<CanonicalCardIndex | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     loadCardDatabase()
       .then((data) => { if (!cancelled) setDb(data); })
       .catch(() => {});
-    loadCanonicalCardIndex()
-      .then((index) => { if (!cancelled) setCanonical(index); })
+    // Warm the index so the common tap resolves with no wait at all.
+    loadCanonicalIndex()
+      .then((index: CanonicalCardIndex) => { if (!cancelled) canonicalRef.current = index; })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [loadCanonicalIndex]);
 
   const catalogByKey = useMemo(() => {
     const map = new Map<string, DeckCard>();
@@ -71,21 +81,38 @@ export default function FavoritesScreen({ navigation }: any) {
     return [...favorites].sort((a, b) => priceOf(b) - priceOf(a));
   }, [favorites, sortMode, db]);
 
-  const openCard = useCallback((fav: FavoriteEntry, card: DeckCard | undefined) => {
+  const openCard = useCallback(async (fav: FavoriteEntry, card: DeckCard | undefined) => {
     // DIC-1430: hand CardDetail the SAME canonical record the search route
     // produces, resolved on this favorite's EXACT printing — so the market
     // price, skills, stats and history all survive the hop. The catalog row this
     // list renders from is the deck-editor shape and carries none of them, which
     // is what made a correctly priced favorite open an empty detail view.
-    const resolved = canonical?.resolve(fav.cardNumber, fav.printing);
+    //
+    // CR round 2: a tap that lands while the index is STILL LOADING must wait
+    // for it, never fall through to the reduced payload below. Treating "still
+    // loading" as "unresolvable" navigated with identity only — no price, skills
+    // or stats — for the whole load window, which is precisely when an impatient
+    // user taps. `loadCanonicalIndex` hands back the in-flight promise, so this
+    // awaits the same load the mount already started rather than starting a new one.
+    let index = canonicalRef.current;
+    if (!index) {
+      try {
+        index = await loadCanonicalIndex();
+        canonicalRef.current = index;
+      } catch {
+        index = null;
+      }
+    }
+    const resolved = index?.resolve(fav.cardNumber, fav.printing);
     if (resolved?.status === 'ok') {
       navigation?.navigate?.('CardDetail', { card: resolved.card });
       return;
     }
-    // A legacy bookmark the catalog no longer carries — or whose printing it no
-    // longer lists — still opens, so the route never dead-ends. It carries
-    // identity ONLY: no price is borrowed from another printing or from the
-    // card-number aggregate, so CardDetail renders its honest unavailable state.
+    // Reached ONLY once the index has settled: a legacy bookmark the catalog no
+    // longer carries, or a printing it no longer lists. It still opens, so the
+    // route never dead-ends. It carries identity ONLY: no price is borrowed from
+    // another printing or from the card-number aggregate, so CardDetail renders
+    // its honest unavailable state.
     navigation?.navigate?.('CardDetail', {
       card: {
         id: card?.id,
@@ -99,7 +126,7 @@ export default function FavoritesScreen({ navigation }: any) {
         imageUrl: card?.exactImageUrl || card?.imageUrl || '',
       },
     });
-  }, [navigation, canonical]);
+  }, [navigation, loadCanonicalIndex]);
 
   const renderItem = useCallback(({ item }: ListRenderItemInfo<FavoriteEntry>) => {
     const card = catalogByKey.get(ownershipKey(item.cardNumber, item.printing));
@@ -112,7 +139,7 @@ export default function FavoritesScreen({ navigation }: any) {
       <View style={styles.row} testID={`favorite-row-${item.cardNumber}-${item.printing}`}>
         <TouchableOpacity
           style={styles.rowMain}
-          onPress={() => openCard(item, card)}
+          onPress={() => { void openCard(item, card); }}
           accessibilityRole="button"
           accessibilityLabel={t('favorites_open_card')}
           testID={`favorite-open-${item.cardNumber}-${item.printing}`}

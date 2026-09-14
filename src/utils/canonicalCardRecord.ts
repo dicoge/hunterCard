@@ -25,7 +25,7 @@ import { stripDisabledCardFields, type ReleaseCardFlags } from './cardReleaseFil
 import { normalizeCardIdentity, resolveCardColorsWithNestedFallback } from './cardNormalization';
 import { loadDatabaseJson, loadSeriesNamesJson } from './staticData';
 import { adaptCardNumber, pickRepresentative, type RawCard } from './deckCardData';
-import { canonicalPrinting } from './printingIdentity';
+import { buildSourcePrintings, canonicalPrinting, type SourceListing } from './printingIdentity';
 
 export const COLOR_MAP: Record<string, string> = {
   white: '白色', blue: '藍色', green: '綠色', red: '紅色',
@@ -37,7 +37,13 @@ export interface CardRecord {
   id: string; name: string; series: string; type: string; rarity: string;
   color: string; localImage?: string; officialImage?: string;
   sellPrice?: number | null; buyPrice?: number | null; yuyuName?: string; yuyuImage?: string;
-  prices?: { name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null }[];
+  prices?: {
+    name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null;
+    /** Art published on THIS listing. Part of the listing's identity, so two
+     * listings that agree on label and price but not on art are two different
+     * pieces of evidence, not one (DIC-1430). */
+    imageUrl?: string;
+  }[];
   priceHistory?: Record<string, number>;
   ytStats?: any;
   effects?: string[]; hp?: string; life?: string; arts?: string;
@@ -53,7 +59,10 @@ export interface CardResult {
   yuyuUrl: string; carousellUrl: string; officialUrl: string;
   yuyuPrice?: number | null;
   sellPrice?: number | null; buyPrice?: number | null; ytStats?: any;
-  prices?: { name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null }[];
+  prices?: {
+    name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null;
+    imageUrl?: string;
+  }[];
   priceHistory?: Record<string, number>;
   searchKeywords?: string[];
   nameZh?: string;
@@ -173,6 +182,13 @@ export interface CanonicalCardIndex {
  * both kept: that disagreement is what `buildSourcePrintings` reads to mark the
  * printing ambiguous and leave it unpriced (fail closed). Deduping by label
  * alone would hide it and invent a price the source never stated.
+ *
+ * `imageUrl` is part of that identity for the same reason (DIC-1430). Two
+ * listings that agree on label and price but publish DIFFERENT art disagree
+ * about what the printing looks like; collapsing them on a label+price key
+ * would erase the disagreement and let the survivor's art be presented as
+ * proven. Keeping both lets `buildSourcePrintings` mark the printing's image
+ * ambiguous and show none.
  */
 function dedupeListings(
   listings: NonNullable<CardRecord['prices']>,
@@ -181,7 +197,8 @@ function dedupeListings(
   const out: NonNullable<CardRecord['prices']> = [];
   for (const listing of listings) {
     if (!listing) continue;
-    const key = `${listing.name ?? ''}|${listing.sellPrice ?? ''}|${listing.buyPrice ?? ''}`;
+    const key = `${listing.name ?? ''}|${listing.sellPrice ?? ''}|${listing.buyPrice ?? ''}`
+      + `|${listing.imageUrl ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(listing);
@@ -192,7 +209,14 @@ function dedupeListings(
 let cache: CanonicalCardIndex | null = null;
 let inflight: Promise<CanonicalCardIndex> | null = null;
 
-function buildIndex(
+/**
+ * Pure raw-records → exact-printing index. Kept separate from the fetch/cache
+ * wrapper — the same split `adaptDatabase` / `loadCardDatabase` already uses in
+ * deckCardData.ts — so the resolution rules can be regression-tested directly
+ * against constructed listing evidence, including the conflicting-art case the
+ * shipped catalog does not currently contain.
+ */
+export function buildCanonicalCardIndex(
   rawCards: (CardRecord & RawCard)[],
   nameMap: Record<string, string>,
 ): CanonicalCardIndex {
@@ -257,12 +281,34 @@ function buildIndex(
         const record = adapted.priceRecords.find((r) => canonicalPrinting(r.version) === want);
         const exactPrice = record ? record.price : null;
 
+        // The exact printing's OWN artwork. `base.imageUrl` is the elected
+        // representative row's card-level image, which is IDENTICAL for every
+        // printing of the number — so hBP01-024's ¥3,480 PARALLEL/HR opened
+        // showing the same picture as its ¥50 PARALLEL/hBP07 sibling. The source
+        // publishes art per LISTING, so the printing the user opened must carry
+        // the image that printing's own listing proved.
+        //
+        // Three cases, and only the first may show printing-specific art:
+        //   * one proven image → that image;
+        //   * listings disagree → fail closed to NO image rather than an
+        //     arbitrary pick (86 printings in the shipped catalog disagree);
+        //   * the printing published no listing image at all → the card-level
+        //     image stands. That is not a cross-printing borrow: it is the only
+        //     thing the source states, and it is what the 257 card numbers with
+        //     no listings at all (the synthetic UNLISTED base) rely on.
+        const sourcePrinting = buildSourcePrintings(
+          rows.flatMap((row) => row.prices ?? []) as SourceListing[],
+        ).find((p) => canonicalPrinting(p.printing) === want);
+        const exactImage = sourcePrinting?.imageUrl
+          ?? (sourcePrinting?.imageAmbiguous ? '' : base.imageUrl);
+
         return {
           status: 'ok',
           card: {
             ...base,
             printing: match.printing,
             printingLabel: match.printingLabel,
+            imageUrl: exactImage,
             yuyuPrice: exactPrice,
             sellPrice: exactPrice,
             yuyuPriceName: match.printingLabel || base.yuyuPriceName || '',
@@ -289,7 +335,7 @@ export async function loadCanonicalCardIndex(): Promise<CanonicalCardIndex> {
   inflight = (async () => {
     const [db, nameMap] = await Promise.all([loadDatabaseJson(), loadSeriesNamesJson()]);
     const rawCards = Object.values((db as DatabaseSchema).cards || {}) as (CardRecord & RawCard)[];
-    cache = buildIndex(rawCards, nameMap || {});
+    cache = buildCanonicalCardIndex(rawCards, nameMap || {});
     return cache;
   })();
 

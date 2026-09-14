@@ -44,6 +44,8 @@
     "test:tournament-discovery-acquisition": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-discovery-acquisition.mjs",
     "test:favorites-nav-route": "node scripts/test-favorites-nav-route.mjs",
     "test:favorites-canonical-payload": "node --import ./scripts/register-web-render.mjs scripts/test-dic1430-favorites-canonical-payload.mjs",
+    "test:favorites-canonical-loading-race": "node --import ./scripts/register-web-render.mjs scripts/test-dic1430-favorites-canonical-loading-race.mjs",
+    "test:exact-printing-artwork": "node --import ./scripts/register-web-render.mjs scripts/test-dic1430-exact-printing-artwork.mjs",
     "test:legal-copy-vs-behavior": "node scripts/test-legal-copy-vs-behavior.mjs",
     "test:apple-delete-truth-copy": "node scripts/test-apple-delete-truth-copy.mjs",
     "test:card-display-name": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-card-display-name.mjs",
