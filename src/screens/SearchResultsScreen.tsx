@@ -5,7 +5,6 @@ import { COLORS, convertPrice } from '../constants';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { FEATURES, releaseCardFlags } from '../config/releaseFlags';
-import { stripDisabledCardFields } from '../utils/cardReleaseFilter';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
 import { loadDatabaseJson, loadSeriesNamesJson } from '../utils/staticData';
 import { useTranslation } from '../i18n';
@@ -22,13 +21,20 @@ import { CardTile } from '../components/cards';
 import { PALETTE, SEMANTIC, FONTS, TYPE_SCALE, RADII, SPACING } from '../theme/tokensV2';
 import { Platform } from 'react-native';
 import {
-  normalizeCardIdentity,
   bloomLevelBadgeColor,
   categoryBadgeColor,
   PRINTING_RARITY_COLORS,
   KNOWN_COLOR_KEYS,
-  resolveCardColorsWithNestedFallback,
 } from '../utils/cardNormalization';
+// DIC-1430: the raw-record → CardDetail payload mapper (and the shapes it maps
+// between) live in one place, so a field the search route carries can never go
+// missing on the favorites route.
+import {
+  toCanonicalCardRecord,
+  type CardRecord,
+  type CardResult,
+  type DatabaseSchema,
+} from '../utils/canonicalCardRecord';
 
 // ── Server-side search constants ──
 
@@ -49,10 +55,6 @@ async function fetchSeriesNames(): Promise<Record<string, string>> {
 
   return seriesNamesFetchPromise;
 }
-const COLOR_MAP: Record<string, string> = {
-  white: '白色', blue: '藍色', green: '綠色', red: '紅色',
-  purple: '紫色', yellow: '黃色', colorless: '無色',
-};
 const GRADE_RARITY: Record<string, string> = { debut: 'C', '1st': 'U', '2nd': 'R', buzz: 'SR', spot: 'N' };
 
 const COLOR_TO_CN: Record<string, string[]> = {
@@ -75,40 +77,9 @@ const gradeLabels: Record<string, string> = {
 };
 
 // ── Types ──
-
-interface CardRecord {
-  id: string; name: string; series: string; type: string; rarity: string;
-  color: string; localImage?: string; officialImage?: string;
-  sellPrice?: number | null; buyPrice?: number | null; yuyuName?: string; yuyuImage?: string;
-  prices?: { name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null }[];
-  priceHistory?: Record<string, number>;
-  ytStats?: any;
-  effects?: string[]; hp?: string; life?: string; arts?: string;
-  nameZh?: string;
-  skillsJp?: any; skillsZh?: any;
-}
-
-interface CardResult {
-  id: string; name: string; type: string; grade: string; rarity: string; sourceRarity: string;
-  colors: string[]; colorNames: string[]; series: string[]; seriesNames: string[];
-  tags: string[]; cardNumber: string; imageUrl: string;
-  yuyuUrl: string; carousellUrl: string; officialUrl: string;
-  yuyuPrice?: number | null;
-  sellPrice?: number | null; buyPrice?: number | null; ytStats?: any;
-  prices?: { name: string; sellPrice: number | null; rarity: string; buyPrice?: number | null }[];
-  priceHistory?: Record<string, number>;
-  searchKeywords?: string[];
-  nameZh?: string;
-  skillsJp?: any;
-  skillsZh?: any;
-  normalized?: any;
-}
-
-interface DatabaseSchema {
-  cards: Record<string, CardRecord>;
-  totalCards: number;
-  lastUpdated: string;
-}
+//
+// CardRecord / CardResult / DatabaseSchema are owned by canonicalCardRecord.ts
+// and imported above: the mapper and the shapes it maps between stay together.
 
 // ── Module-level database cache (persists across re-renders and navigation) ──
 
@@ -204,67 +175,8 @@ export function searchCards(database: DatabaseSchema, query: string, nameMap: Re
   });
 
   const cardFlags = releaseCardFlags();
-  return deduped.map((c: CardRecord) => {
-    const id = c.id || '';
-    const name = c.name || '';
-    // DIC-1159 + DIC-1192 + CR #1: strict canonicalCardColors first (so raw
-    // `◇` / `blue_red` cannot reach `t(\`color_${color}\`)`), fall through to
-    // the permissive normaliser so DIC-1192's shipped `◇ → 無色` render still
-    // lands at 1440×900. When the top-level source produces no colors (the
-    // 2026-08-28 catalog sync now writes `"null"` at top level for the real
-    // hBP04-087/088/hBP06-084 winners), fall back to the authoritative
-    // ◇ token in `skillsJp.color` / `skillsZh.color` so those diamond
-    // winners still render as colorless instead of dropping the label.
-    const colors = resolveCardColorsWithNestedFallback(c);
-    const colorNames = colors.map((x: string) => COLOR_MAP[x] || x);
-    const series = c.series ? [c.series] : [];
-    const seriesNames = series.map((s: string) => nameMap[s] || s);
-    const cardNumber = (c as any).cardNumber || id;
-
-    const normalized = normalizeCardIdentity(c);
-    const rarity = (c.rarity || '').toUpperCase();
-
-    // Use official image (400×559) first for sharp display, local image (100×140) as fallback
-    const imageUrl = c.officialImage || c.localImage || '';
-
-    return stripDisabledCardFields({
-      id,
-      name,
-      cardNumber,
-      type: normalized.category || '',
-      grade: normalized.stage || '',
-      normalized,
-      rarity,
-      sourceRarity: c.rarity || '',
-      colors,
-      colorNames,
-      series,
-      seriesNames,
-      imageUrl,
-      yuyuPrice: c.sellPrice || null,
-      sellPrice: c.sellPrice ?? null,
-      buyPrice: c.buyPrice ?? null,
-      ytStats: c.ytStats ?? null,
-      yuyuPriceName: c.yuyuName || '',
-      prices: c.prices || [],
-      priceHistory: c.priceHistory || {},
-      yuyuImage: c.yuyuImage || '',
-      officialImage: c.officialImage || '',
-      localImage: c.localImage || '',
-      effects: c.effects || [],
-      hp: c.hp || '',
-      life: c.life || '',
-      arts: c.arts || '',
-      skillsJp: (c as any).skillsJp,
-      skillsZh: (c as any).skillsZh,
-      searchKeywords: [c.name || '', '', ''],
-      tags: [],
-      nameZh: c.nameZh || '',
-      yuyuUrl: `https://yuyu-tei.jp/sell/hocg/s/search?search_word=${encodeURIComponent(cardNumber)}`,
-      carousellUrl: '',
-      officialUrl: `https://hololive-official-cardgame.com/cardlist/?keyword=${encodeURIComponent(cardNumber)}&view=image`,
-    }, cardFlags);
-  });
+  // One mapper, shared with the favorites route (DIC-1430).
+  return deduped.map((c: CardRecord) => toCanonicalCardRecord(c, nameMap, cardFlags));
 }
 
 // ── DIC-1427: Pen App/02 sort + filter model ──

@@ -134,7 +134,18 @@ await test('sSDxQ favorite rows: real art + localized name + exact reference pri
     await act(async () => open.click());
     assert.equal(navs.length, 1, 'row navigates');
     assert.equal(navs[0][0], 'CardDetail', 'to the real CardDetail route');
-    assert.equal(navs[0][1]?.card?.cardNumber, pricedCard.cardNumber, 'carrying the real card');
+    const payload = navs[0][1]?.card;
+    assert.equal(payload?.cardNumber, pricedCard.cardNumber, 'carrying the real card');
+    // DIC-1430: the destination PAYLOAD is part of this parity contract. The
+    // number-only assertion above passed while CardDetail opened with no market
+    // data, because Favorites handed over the reduced deck-editor row.
+    assert.equal(payload?.printing, pricedCard.printing, 'carrying the exact printing identity');
+    assert.equal(payload?.yuyuPrice, exact.price, "carrying THIS printing's own price");
+    assert.ok(
+      Array.isArray(payload?.prices) && payload.prices.length > 0,
+      'carrying the source listings CardDetail builds its version list from',
+    );
+    assert.ok(payload?.normalized, 'carrying the canonical normalized identity');
   } finally { await cleanup(); }
 });
 

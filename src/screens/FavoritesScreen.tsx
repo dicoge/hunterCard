@@ -6,6 +6,7 @@ import { useTranslation } from '../i18n';
 import { useSettingsStore } from '../store/settingsStore';
 import { useFavoritesStore, type FavoriteEntry } from '../store/favoritesStore';
 import { loadCardDatabase, type CardDatabase } from '../utils/deckCardData';
+import { loadCanonicalCardIndex, type CanonicalCardIndex } from '../utils/canonicalCardRecord';
 import { ownershipKey, resolveExactPrice, type DeckCard } from '../utils/deckRules';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
 import { RouteShell } from '../components/shell';
@@ -29,11 +30,17 @@ export default function FavoritesScreen({ navigation }: any) {
   const favorites = useFavoritesStore((s) => s.favorites);
   const removeFavorite = useFavoritesStore((s) => s.removeFavorite);
   const [db, setDb] = useState<CardDatabase | null>(null);
+  // DIC-1430: the exact-printing index over the canonical catalog records, so a
+  // tap can hand CardDetail the full record synchronously.
+  const [canonical, setCanonical] = useState<CanonicalCardIndex | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     loadCardDatabase()
       .then((data) => { if (!cancelled) setDb(data); })
+      .catch(() => {});
+    loadCanonicalCardIndex()
+      .then((index) => { if (!cancelled) setCanonical(index); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
@@ -65,25 +72,34 @@ export default function FavoritesScreen({ navigation }: any) {
   }, [favorites, sortMode, db]);
 
   const openCard = useCallback((fav: FavoriteEntry, card: DeckCard | undefined) => {
-    // Hand CardDetail the real catalog identity when the catalog resolves it;
-    // a legacy bookmark the catalog no longer carries still opens with its
-    // number so the route never dead-ends.
+    // DIC-1430: hand CardDetail the SAME canonical record the search route
+    // produces, resolved on this favorite's EXACT printing — so the market
+    // price, skills, stats and history all survive the hop. The catalog row this
+    // list renders from is the deck-editor shape and carries none of them, which
+    // is what made a correctly priced favorite open an empty detail view.
+    const resolved = canonical?.resolve(fav.cardNumber, fav.printing);
+    if (resolved?.status === 'ok') {
+      navigation?.navigate?.('CardDetail', { card: resolved.card });
+      return;
+    }
+    // A legacy bookmark the catalog no longer carries — or whose printing it no
+    // longer lists — still opens, so the route never dead-ends. It carries
+    // identity ONLY: no price is borrowed from another printing or from the
+    // card-number aggregate, so CardDetail renders its honest unavailable state.
     navigation?.navigate?.('CardDetail', {
-      card: card
-        ? {
-            id: card.id,
-            cardNumber: card.cardNumber,
-            name: card.name,
-            nameZh: card.nameZh,
-            printing: card.printing,
-            printingLabel: card.printingLabel,
-            series: card.series,
-            type: card.type,
-            imageUrl: card.exactImageUrl || card.imageUrl || '',
-          }
-        : { cardNumber: fav.cardNumber, name: fav.cardNumber, printing: fav.printing },
+      card: {
+        id: card?.id,
+        cardNumber: fav.cardNumber,
+        name: card?.name || fav.cardNumber,
+        nameZh: card?.nameZh,
+        printing: fav.printing,
+        printingLabel: card?.printingLabel,
+        series: card?.series,
+        type: card?.type,
+        imageUrl: card?.exactImageUrl || card?.imageUrl || '',
+      },
     });
-  }, [navigation]);
+  }, [navigation, canonical]);
 
   const renderItem = useCallback(({ item }: ListRenderItemInfo<FavoriteEntry>) => {
     const card = catalogByKey.get(ownershipKey(item.cardNumber, item.printing));
