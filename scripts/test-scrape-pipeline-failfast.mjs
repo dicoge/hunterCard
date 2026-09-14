@@ -66,17 +66,26 @@ function runPipeline({ failOn = null, env = {} } = {}) {
     path.join(bin, 'node'),
     `#!/bin/bash
 echo "node $*" >> "$TRACE_FILE"
-if [ -n "$FAIL_ON" ] && [[ "$*" == *"$FAIL_ON"* ]]; then exit 1; fi
+if [ -n "$FAIL_ON" ] && [[ "$*" == *"$FAIL_ON"* ]]; then
+  if [[ "$*" == *"build-database.js"* ]] && [ -n "$BUILD_DIC1334_COLLAPSE" ]; then
+    echo "[DIC-1334] final canonical artifact collapsed priced-cardNumber coverage: scraped 1219 priced cardNumbers but final artifact only has 424 (< 50% floor 609). A transformation discarded yuyu price data; refusing to ship."
+  fi
+  exit 1
+fi
 if [[ "$*" == *"canonical_native_public"* ]] || [[ "$*" == *"MISMATCH"* ]]; then
   touch "$NATIVE_PARITY_MARKER"
   if [ -n "$FAIL_PARITY" ]; then exit 1; fi
   echo OK
   exit 0
 fi
-if [[ "$*" == *"build-database.js"* ]] && [ -z "$SKIP_DB_WRITE" ]; then
+if { [[ "$*" == *"build-database.js"* ]] || [[ "$*" == *"sync-official-catalog-to-database.mjs"* ]]; } && [ -z "$SKIP_DB_WRITE" ]; then
   cat > "$(pwd)/data/database.json" <<'EOF'
 {"lastUpdated":"t","totalCards":0,"cards":{}}
 EOF
+fi
+if [[ "$*" == *"generate-native-database.mjs"* ]]; then
+  mkdir -p "$(pwd)/public/data"
+  cp "$(pwd)/data/database.json" "$(pwd)/public/data/database.json"
 fi
 exit 0
 `,
@@ -122,6 +131,7 @@ exit 0
       // DIC-1321: allow the red-before-green missing-output gate test to tell
       // the build-database shim to emit NO output.
       SKIP_DB_WRITE: env.SKIP_DB_WRITE ?? '',
+      BUILD_DIC1334_COLLAPSE: env.BUILD_DIC1334_COLLAPSE ?? '',
       // Never touch the real cron lock at /tmp/huntercard-scrape.lock.
       HUNTERCARD_LOCK_FILE: path.join(dir, 'scrape.lock'),
     },
@@ -262,14 +272,41 @@ exit 0
     'trend-analysis.js',
     'send-push-alerts.js',
     'merge-buy-prices.js',
-    'generate-native-database.mjs',
-    'verify-official-catalog-completeness.mjs',
     'git add',
     'git -c user.name',
     'commit -m',
     'git push',
   ]) {
     assert.strictEqual(indexOfCall(lines, forbidden), -1, `a failed build must never reach downstream mutation/commit path (found: ${forbidden})`);
+  }
+  assert.ok(indexOfCall(lines, 'sync-official-catalog-to-database.mjs') === -1, 'a non-DIC-1334 build failure must not enter the official-only fallback');
+}
+
+// ── 0c. DIC-1167 recovery: a DIC-1334 sell-price transform collapse must not
+//        block official catalog publication ──
+{
+  const { status, lines } = runPipeline({
+    failOn: 'build-database.js',
+    env: { BUILD_DIC1334_COLLAPSE: '1' },
+  });
+
+  assert.strictEqual(
+    status,
+    0,
+    'pipeline must recover a DIC-1334 yuyu sell-price transformation collapse through the official-only catalog fallback',
+  );
+  for (const required of [
+    'build-database.js',
+    'sync-official-catalog-to-database.mjs',
+    'regen-buy-alignment.mjs',
+    'generate-native-database.mjs',
+    'test-official-catalog-sync.mjs',
+    'verify-official-catalog-completeness.mjs',
+    'git add',
+    'commit -m',
+    'git push',
+  ]) {
+    assert.ok(indexOfCall(lines, required) !== -1, `official-only fallback must reach ${required}`);
   }
 }
 
