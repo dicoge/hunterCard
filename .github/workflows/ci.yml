@@ -420,8 +420,24 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Android SDK (pinned; no legacy `tools` package, DIC-1443)
+        run: |
+          set -euo pipefail
+          ANDROID_HOME=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          # `android-actions/setup-android@v3` asked sdkmanager for the legacy
+          # `tools` package, which Google removed from the repository
+          # (`Warning: Failed to find package 'tools'`, DIC-1443). Pin the
+          # explicit packages the release build needs instead; gradle
+          # auto-provisions NDK/CMake under $ANDROID_HOME as before.
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: npm ci
