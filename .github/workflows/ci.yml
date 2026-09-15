@@ -349,6 +349,9 @@ jobs:
       - name: Verify each exact printing resolves its own artwork + price (DIC-1430 CR2)
         run: npm run test:exact-printing-artwork
 
+      - name: Verify one CardDetail uses one proven exact-print identity end to end (DIC-1430)
+        run: npm run test:exact-print-favorite-identity
+
       - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
         run: npm run test:tournament-discovery-acquisition
 

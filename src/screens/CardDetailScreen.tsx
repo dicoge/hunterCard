@@ -19,7 +19,7 @@ import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, bloomLevelBadgeColor, categoryBadgeColor, resolveCardColorsWithNestedFallback, PRINTING_RARITY_COLORS } from '../utils/cardNormalization';
 import { computeValidatedPriceTrend } from '../utils/priceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
+import { buildPriceVersions, resolveVersionForCard, resolveDisplayedPrintingIndex } from '../utils/versionAlignment';
 import { useTranslation } from '../i18n';
 import { ownershipKey } from '../utils/deckRules';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
@@ -107,13 +107,36 @@ export default function CardDetailScreen({ route, navigation }: any) {
   }
 
   const id = card.cardNumber || card.id || '';
+  // The art this screen actually puts in its hero (the DIC-1430 note beside
+  // `imageUrl` below explains why it is never rebuilt from the card number).
+  // Identity is derived from this SAME value, so the picture on screen and the
+  // 收藏/收藏數量 actions can never disagree about which printing is displayed.
+  const provenImageUrl = (card.images && card.images[0]) || card.imageUrl || '';
   const collectionVersions = buildPriceVersions(card);
   const collectionResolution = resolveVersionForCard(collectionVersions);
+  // DIC-1430: a card-number-level hit (the search route) carries no `printing`,
+  // so this screen used to resolve the hero art and the add-side identity
+  // INDEPENDENTLY — the hero rendered the elected row's official HR image while
+  // `pickDefaultPrintingIndex` elected BASE outright (plain beats premium), and
+  // the favorite persisted `hBP01-024|BASE` sitting next to HR artwork. The
+  // store and FavoritesScreen then round-tripped that wrong key faithfully.
+  //
+  // When the displayed official art names a variant that matches exactly ONE
+  // listing, that listing IS the printing on screen and it binds the action.
+  // Art that matches nothing (a promo `_P` image the source never listed) or
+  // several listings proves nothing, so it falls through to the existing price
+  // default rather than being guessed at from rarity — the guess DIC-1013
+  // removed. An exact payload keeps its own `printing` verbatim.
+  const displayedIndex = card.printing
+    ? -1
+    : resolveDisplayedPrintingIndex(collectionVersions, provenImageUrl);
   const collectionVersion = card.printing
     ? { printing: card.printing, name: card.printingLabel || card.printing }
-    : collectionResolution.confident
-      ? collectionVersions[collectionResolution.index]
-      : null;
+    : displayedIndex >= 0
+      ? collectionVersions[displayedIndex]
+      : collectionResolution.confident
+        ? collectionVersions[collectionResolution.index]
+        : null;
   const ownedQuantity = collectionVersion
     ? collection[ownershipKey(id, collectionVersion.printing)] || 0
     : 0;
@@ -170,7 +193,6 @@ export default function CardDetailScreen({ route, navigation }: any) {
   // art its own listing proved; with none, the hero renders its honest
   // unavailable state rather than a card-number guess.
   const cardSeries = (Array.isArray(card.series) ? card.series[0] : card.series) || (id?.split('-')[0] || '');
-  const provenImageUrl = (card.images && card.images[0]) || card.imageUrl || '';
   const imageUrl = provenImageUrl
     || (card.printing ? '' : buildImageUrl(id, cardSeries, versions, card.type || ''));
   const officialUrl = `https://hololive-official-cardgame.com/cardlist/?keyword=${encodeURIComponent(id)}&view=image`;
