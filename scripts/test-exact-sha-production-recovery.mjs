@@ -1,0 +1,486 @@
+#!/usr/bin/env node
+/**
+ * DIC-1430 CI/CD recovery — exact-main manual CI + exact-SHA Production deploy.
+ *
+ * The incident this guards against: PR #193 merged as `defa9592…` with a tree
+ * identical to the approved head `781db3fa…`, but GitHub emitted no PushEvent
+ * for that merge. No Actions run and no check suite fired, so no Vercel
+ * Production deployment was ever created and Production stayed on pre-merge
+ * code while `main` moved. The cause of the missing event is UNKNOWN — which
+ * is exactly why the recovery path has to be durable, manual, and fail-closed
+ * rather than a one-off hand-run of the API.
+ *
+ * Two workflow contracts are pinned here:
+ *
+ *   * `.github/workflows/ci.yml` — keeps its existing push(main) /
+ *     pull_request(main, staging) behaviour, and gains a
+ *     `workflow_dispatch.expected_sha` recovery entry point. A preflight job
+ *     that ALWAYS runs proves the dispatch is aimed at the exact current tip
+ *     of main (input shape, ref, `github.sha`, and a LIVE `git ls-remote`),
+ *     and both real jobs hang off it. Preflight must never carry a job-level
+ *     `if:` — a skipped `needs` dependency silently skips its dependants, so
+ *     an event-gated preflight would turn every normal push/PR run into a
+ *     green no-op. That trap is the single most dangerous way this recovery
+ *     could make CI worse than it already is, so it is asserted directly.
+ *
+ *   * `.github/workflows/holohunter-exact-sha-deploy.yml` — a dispatch-only
+ *     Production deploy that builds the EXACT commit it was handed. It must
+ *     resolve the Vercel project by name (the `VERCEL_PROJECT_ID` secret is
+ *     known-stale, see dic910-vercel-setup.yml), derive `repoId` at runtime,
+ *     and create a fresh deployment with an explicit github `gitSource`
+ *     carrying `expected_sha`.
+ *
+ * The deny-list below matters as much as the require-list. Every banned
+ * pattern is a way to produce a GREEN "deployed" run that shipped something
+ * other than the requested commit:
+ *
+ *   - `deploymentId` / `withLatestCommit` — redeploy-from-an-existing-build.
+ *     dic910-vercel-setup.yml does exactly this, and it rebuilds whatever
+ *     that old deployment pointed at, not the SHA you asked for.
+ *   - latest-production lookup (`/v6/deployments?…target=production`) — the
+ *     input SHA is never consulted; you redeploy the current Production.
+ *   - deploy hook — fires a build of the branch tip, which during a recovery
+ *     is precisely the thing whose state you cannot trust.
+ *   - env / domain / DNS mutations — outside the blast radius of a deploy,
+ *     and the incident scope explicitly forbids touching them.
+ *
+ * Deny-list checks run against EXECUTABLE lines only (comment lines stripped),
+ * so the workflows can name the banned patterns in prose to explain the ban
+ * without tripping their own guard.
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const WF_DIR = path.join(ROOT, '.github', 'workflows');
+const CI_PATH = path.join(WF_DIR, 'ci.yml');
+const DEPLOY_PATH = path.join(WF_DIR, 'holohunter-exact-sha-deploy.yml');
+
+const CANONICAL_HOST = 'holohunter.dicoge.com';
+const VERCEL_PROJECT_NAME = 'holocard-hunter';
+const NPM_SCRIPT = 'test:exact-sha-production-recovery';
+
+let passed = 0;
+function check(label, cond, detail) {
+  if (cond) {
+    passed += 1;
+    console.log(`  ✓ ${label}`);
+  } else {
+    console.error(`  ✗ ${label}${detail ? ` — ${detail}` : ''}`);
+    process.exitCode = 1;
+  }
+}
+
+function readWorkflow(abs) {
+  if (!fs.existsSync(abs)) return null;
+  const raw = fs.readFileSync(abs, 'utf8');
+  return { raw, parsed: parseYaml(raw), active: executableLines(raw) };
+}
+
+/** Strip whole-line `#` comments so deny-list checks only see runnable YAML. */
+function executableLines(raw) {
+  return raw
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('#'))
+    .join('\n');
+}
+
+/** `on:` is a YAML 1.1 boolean key; some parsers hand it back as `true`. */
+function triggers(parsed) {
+  return parsed?.on ?? parsed?.true ?? null;
+}
+
+function countMatches(text, re) {
+  return [...text.matchAll(re)].length;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Part 1 — ci.yml: existing behaviour preserved + exact-main manual recovery
+// ─────────────────────────────────────────────────────────────────────────
+const ci = readWorkflow(CI_PATH);
+check('ci.yml exists on disk', ci !== null);
+
+if (ci) {
+  const on = triggers(ci.parsed);
+  check('ci.yml declares triggers', !!on);
+
+  // ── Existing push/PR semantics must survive untouched ────────────────
+  check(
+    'ci.yml keeps push trigger on main (existing behaviour preserved)',
+    Array.isArray(on?.push?.branches) && on.push.branches.includes('main'),
+    `got ${JSON.stringify(on?.push)}`,
+  );
+  check(
+    'ci.yml keeps pull_request trigger on main + staging (DIC-1189 contract)',
+    Array.isArray(on?.pull_request?.branches)
+      && on.pull_request.branches.includes('main')
+      && on.pull_request.branches.includes('staging'),
+    `got ${JSON.stringify(on?.pull_request)}`,
+  );
+
+  // ── The new manual recovery entry point ──────────────────────────────
+  const dispatch = on?.workflow_dispatch;
+  check(
+    'ci.yml adds a workflow_dispatch trigger for manual recovery',
+    dispatch !== undefined && dispatch !== null,
+  );
+  const expectedShaInput = dispatch?.inputs?.expected_sha;
+  check(
+    'ci.yml workflow_dispatch declares an expected_sha input',
+    !!expectedShaInput,
+    `got ${JSON.stringify(dispatch?.inputs)}`,
+  );
+  check(
+    'ci.yml expected_sha input is a REQUIRED string',
+    expectedShaInput?.required === true && expectedShaInput?.type === 'string',
+    `got required=${expectedShaInput?.required} type=${expectedShaInput?.type}`,
+  );
+  check(
+    'ci.yml expected_sha input carries NO default (operator must state the SHA)',
+    expectedShaInput !== undefined
+      && !Object.prototype.hasOwnProperty.call(expectedShaInput ?? {}, 'default'),
+    'a default would let an empty dispatch deploy something nobody named',
+  );
+
+  // ── Preflight job: always runs, fails closed on dispatch ─────────────
+  const ciJobs = ci.parsed?.jobs ?? {};
+  const preflightName = Object.keys(ciJobs).find((n) => /preflight/i.test(n));
+  check(
+    'ci.yml defines a preflight job',
+    !!preflightName,
+    `jobs present: ${Object.keys(ciJobs).join(', ')}`,
+  );
+  const preflight = preflightName ? ciJobs[preflightName] : null;
+
+  // THE trap: a job-level `if:` that skips preflight on push/PR would skip
+  // every job that `needs:` it. Preflight must be unconditional at the job
+  // level and no-op INTERNALLY instead.
+  check(
+    'ci.yml preflight job has NO job-level `if:` (skipped-needs trap avoided)',
+    preflight !== null && !Object.prototype.hasOwnProperty.call(preflight ?? {}, 'if'),
+    'a skipped preflight silently skips validate + the APK guard, turning real CI green without running it',
+  );
+  const preflightRuns = (preflight?.steps ?? []).map((s) => s.run ?? '').join('\n');
+  // The job is serialized whole so `env:` bindings count as "wired in" — the
+  // run blocks deliberately read env vars rather than interpolating `${{ }}`
+  // inline, which is the injection-safe idiom.
+  const preflightJson = JSON.stringify(preflight ?? {});
+  check(
+    'ci.yml preflight explicitly no-ops and succeeds for non-dispatch events',
+    /github\.event_name/.test(preflightJson) && /exit 0/.test(preflightRuns),
+    'preflight must branch on the event and pass normal push/PR through with a success exit',
+  );
+
+  // ── Fail-closed conditions on the dispatch path ──────────────────────
+  check(
+    'ci.yml preflight validates expected_sha is a lowercase 40-hex SHA',
+    /\[0-9a-f\]\{40\}|\[0-9a-f\]\{40,40\}/.test(preflightRuns),
+    'a short or upper-case SHA must be rejected before anything runs',
+  );
+  check(
+    'ci.yml preflight pins the dispatch ref to refs/heads/main',
+    /refs\/heads\/main/.test(preflightRuns),
+  );
+  check(
+    'ci.yml preflight requires github.sha to equal expected_sha',
+    /github\.sha/.test(preflightJson)
+      && /EXPECTED_SHA/.test(preflightRuns)
+      && /!=/.test(preflightRuns),
+    'the dispatched commit must be wired in AND actually compared',
+  );
+  check(
+    'ci.yml preflight re-checks LIVE origin/main via git ls-remote',
+    /git\s+ls-remote[^\n]*origin[^\n]*refs\/heads\/main/.test(preflightRuns),
+    'the checked-out SHA alone can lag; the live remote tip is the authority',
+  );
+
+  // ── Both real jobs gate on preflight ─────────────────────────────────
+  const validate = ciJobs.validate;
+  const apkGuard = ciJobs['release-apk-postpackage-guard'];
+  check('ci.yml still defines the validate job', !!validate);
+  check('ci.yml still defines the release-apk-postpackage-guard job', !!apkGuard);
+
+  const needsOf = (job) => {
+    const n = job?.needs;
+    if (!n) return [];
+    return Array.isArray(n) ? n : [n];
+  };
+  check(
+    'ci.yml validate depends on the preflight job',
+    !!preflightName && needsOf(validate).includes(preflightName),
+    `validate needs: ${JSON.stringify(validate?.needs)}`,
+  );
+  check(
+    'ci.yml release-apk-postpackage-guard depends on the preflight job',
+    !!preflightName && needsOf(apkGuard).includes(preflightName),
+    `apk guard needs: ${JSON.stringify(apkGuard?.needs)}`,
+  );
+
+  // ── No existing CI step was weakened or dropped ──────────────────────
+  const validateRuns = (validate?.steps ?? []).map((s) => s.run ?? '').join('\n');
+  const PRESERVED_STEPS = [
+    'npx tsc --noEmit',
+    'npm run test:expo-native-compat',
+    'npm run test:release-apk-pipeline',
+    'npm run test:i18n',
+    'npm run test:exact-print-favorite-identity',
+    'npm run test:store-mvp-behavior',
+    'node scripts/generate-native-database.mjs --check',
+  ];
+  for (const cmd of PRESERVED_STEPS) {
+    check(`ci.yml validate still runs \`${cmd}\``, validateRuns.includes(cmd));
+  }
+  check(
+    'ci.yml validate keeps its full step count (no silent step removal)',
+    (validate?.steps ?? []).length >= 100,
+    `validate has ${(validate?.steps ?? []).length} steps`,
+  );
+  check(
+    'ci.yml release-apk-postpackage-guard still runs the real packaged-APK check',
+    ((apkGuard?.steps ?? []).map((s) => s.run ?? '').join('\n')).includes(
+      'npm run test:release-apk-postpackage',
+    ),
+  );
+
+  // ── This very suite is wired into Validate ───────────────────────────
+  check(
+    `ci.yml validate runs \`npm run ${NPM_SCRIPT}\``,
+    validateRuns.includes(`npm run ${NPM_SCRIPT}`),
+    'the recovery contract must be enforced by CI, not only by hand',
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Part 2 — holohunter-exact-sha-deploy.yml: exact-SHA Production recovery
+// ─────────────────────────────────────────────────────────────────────────
+const dep = readWorkflow(DEPLOY_PATH);
+check('.github/workflows/holohunter-exact-sha-deploy.yml exists on disk', dep !== null);
+
+if (dep) {
+  const on = triggers(dep.parsed);
+
+  // ── Dispatch-only, exact input shape ─────────────────────────────────
+  check(
+    'deploy workflow is workflow_dispatch ONLY (no push/PR/schedule auto-fire)',
+    !!on
+      && Object.prototype.hasOwnProperty.call(on, 'workflow_dispatch')
+      && Object.keys(on).length === 1,
+    `triggers: ${JSON.stringify(on && Object.keys(on))}`,
+  );
+  const input = on?.workflow_dispatch?.inputs?.expected_sha;
+  check('deploy workflow declares an expected_sha input', !!input);
+  check(
+    'deploy workflow expected_sha is a REQUIRED string',
+    input?.required === true && input?.type === 'string',
+    `got required=${input?.required} type=${input?.type}`,
+  );
+  check(
+    'deploy workflow expected_sha carries NO default',
+    input !== undefined && !Object.prototype.hasOwnProperty.call(input ?? {}, 'default'),
+  );
+
+  // ── Least privilege + bounded execution ──────────────────────────────
+  const perms = dep.parsed?.permissions;
+  check(
+    'deploy workflow requests least GitHub permission (contents: read only)',
+    perms && typeof perms === 'object' && !Array.isArray(perms)
+      && Object.keys(perms).length === 1 && perms.contents === 'read',
+    `got ${JSON.stringify(perms)}`,
+  );
+
+  const depJobs = dep.parsed?.jobs ?? {};
+  const depJobNames = Object.keys(depJobs);
+  check('deploy workflow defines at least one job', depJobNames.length >= 1);
+  const job = depJobs[depJobNames[0]];
+  check(
+    'deploy job declares a bounded timeout-minutes',
+    Number.isFinite(Number(job?.['timeout-minutes'])) && Number(job['timeout-minutes']) > 0,
+    `got ${JSON.stringify(job?.['timeout-minutes'])}`,
+  );
+
+  const conc = dep.parsed?.concurrency ?? job?.concurrency;
+  check(
+    'deploy workflow declares a concurrency group',
+    !!conc && (typeof conc === 'string' || typeof conc.group === 'string'),
+    `got ${JSON.stringify(conc)}`,
+  );
+  check(
+    'deploy concurrency does NOT cancel a deployment halfway (cancel-in-progress: false)',
+    typeof conc === 'object' && conc?.['cancel-in-progress'] === false,
+    'cancelling mid-deploy leaves Production in an unknown state',
+  );
+
+  // ── Exact-SHA proof before anything is created ───────────────────────
+  const depRuns = (job?.steps ?? []).map((s) => s.run ?? '').join('\n');
+  check(
+    'deploy workflow validates expected_sha is a lowercase 40-hex SHA',
+    /\[0-9a-f\]\{40\}/.test(depRuns),
+  );
+  check(
+    'deploy workflow requires expected_sha == github.sha',
+    /github\.sha/.test(dep.active),
+  );
+  check(
+    'deploy workflow requires expected_sha == checked-out HEAD',
+    /git\s+rev-parse\s+HEAD/.test(depRuns),
+  );
+  check(
+    'deploy workflow requires expected_sha == live refs/heads/main',
+    /git\s+ls-remote[^\n]*origin[^\n]*refs\/heads\/main/.test(depRuns),
+  );
+
+  // ── Secrets: only the two that already exist, never printed ──────────
+  const secretRefs = [...dep.raw.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]);
+  const ALLOWED_SECRETS = new Set(['VERCEL_TOKEN', 'VERCEL_ORG_ID']);
+  const disallowed = [...new Set(secretRefs)].filter((s) => !ALLOWED_SECRETS.has(s));
+  check(
+    'deploy workflow references ONLY VERCEL_TOKEN + VERCEL_ORG_ID',
+    disallowed.length === 0,
+    `disallowed secrets referenced: ${disallowed.join(', ')}`,
+  );
+  check(
+    'deploy workflow does not trust the known-stale VERCEL_PROJECT_ID secret',
+    !/secrets\.VERCEL_PROJECT_ID/.test(dep.raw),
+  );
+  check(
+    'deploy workflow passes the token via curl --oauth2-bearer (never echoed into a header string)',
+    /--oauth2-bearer/.test(depRuns),
+  );
+
+  // ── Project resolution by name + GitHub linkage + runtime repoId ─────
+  check(
+    `deploy workflow resolves the Vercel project by name "${VERCEL_PROJECT_NAME}"`,
+    dep.active.includes(VERCEL_PROJECT_NAME) && /\/v9\/projects\//.test(depRuns),
+  );
+  check(
+    'deploy workflow asserts the project is GitHub-linked',
+    /link[\s\S]{0,200}github/i.test(depRuns),
+  );
+  check(
+    'deploy workflow derives repoId at runtime (never hardcoded)',
+    /repoId/.test(depRuns) && !/repoId["'\s:=]+\d{5,}/.test(dep.active),
+  );
+
+  // ── Fresh exact-SHA Production deployment ────────────────────────────
+  check(
+    'deploy workflow POSTs /v13/deployments with forceNew=1 + teamId',
+    /\/v13\/deployments\?forceNew=1&teamId=/.test(depRuns),
+  );
+  check(
+    'deploy workflow requests target: production',
+    /"target"\s*:\s*"production"|target:\s*['"]production['"]/.test(depRuns),
+  );
+  check(
+    'deploy workflow supplies an explicit github gitSource',
+    /gitSource/.test(depRuns) && /"type"\s*:\s*"github"|type:\s*['"]github['"]/.test(depRuns),
+  );
+  check(
+    'deploy workflow pins gitSource.ref to main',
+    /"ref"\s*:\s*"main"|ref:\s*['"]main['"]/.test(depRuns),
+  );
+  check(
+    'deploy workflow pins gitSource.sha to the expected SHA',
+    /\bsha\s*:/.test(depRuns) && /EXPECTED_SHA/.test(depRuns),
+  );
+  check(
+    'deploy workflow creates exactly ONE POST (a single fresh deployment)',
+    countMatches(depRuns, /-X\s+POST/g) === 1,
+    `found ${countMatches(depRuns, /-X\s+POST/g)} POST calls`,
+  );
+
+  // ── Bounded poll with hard failure states ────────────────────────────
+  check(
+    'deploy workflow polls the deployment state',
+    /readyState|\bstate\b/.test(depRuns) && /\/v13\/deployments\//.test(depRuns),
+  );
+  check(
+    'deploy workflow treats READY as the only success state',
+    /READY/.test(depRuns),
+  );
+  check(
+    'deploy workflow hard-fails on ERROR and CANCELED',
+    /ERROR/.test(depRuns) && /CANCELED/.test(depRuns),
+  );
+  check(
+    'deploy workflow bounds the poll with a max attempt/deadline and fails on timeout',
+    /MAX_ATTEMPTS|max_attempts|DEADLINE|attempt\s*-?[lg]t|attempts?\s*[<>]/.test(depRuns)
+      && /timed out|timeout/i.test(depRuns),
+  );
+
+  // ── Post-deploy provenance verification ──────────────────────────────
+  check(
+    'deploy workflow re-fetches the deployment with withGitRepoInfo=true',
+    /withGitRepoInfo=true/.test(depRuns),
+  );
+  check(
+    'deploy workflow verifies the finished deployment target is production',
+    /target[\s\S]{0,120}production/.test(depRuns),
+  );
+  check(
+    'deploy workflow verifies the deployed source SHA against gitSource.sha AND git commit metadata',
+    /gitSource[\s\S]{0,200}sha/i.test(depRuns)
+      && /githubCommitSha|gitRepo|commit/i.test(depRuns),
+    'the v13 response shape varies; both the gitSource and the authoritative commit metadata must be consulted',
+  );
+  check(
+    'deploy workflow fails closed when NO source SHA field is present',
+    /(missing|unable to (?:read|determine)|could not (?:read|determine))[\s\S]{0,120}sha/i.test(depRuns)
+      || /sha[\s\S]{0,80}(missing|empty|not found)/i.test(depRuns),
+    'a response with no SHA must be an error, never a silent pass',
+  );
+
+  // ── Canonical alias + live Production HTTP ───────────────────────────
+  check(
+    `deploy workflow requires the canonical alias ${CANONICAL_HOST}`,
+    dep.active.includes(CANONICAL_HOST),
+  );
+  check(
+    'deploy workflow retries the canonical root until HTTP 200',
+    /200/.test(depRuns) && /http_code/.test(depRuns),
+  );
+
+  // ── Deny-list: every way to green-light the wrong commit ─────────────
+  const FORBIDDEN = [
+    { name: 'deploymentId (redeploy-from-existing-build)', re: /deploymentId/ },
+    { name: 'withLatestCommit (branch tip, not the exact SHA)', re: /withLatestCommit/ },
+    { name: 'latest-production deployment lookup', re: /\/v6\/deployments/ },
+    { name: 'target=production query lookup (latest-prod clone)', re: /target=production/ },
+    { name: 'Vercel deploy hook secret', re: /VERCEL_DEPLOY_HOOK/ },
+    { name: 'deploy-hook integration endpoint', re: /\/v1\/integrations\/deploy/ },
+    { name: 'project env mutation endpoint', re: /projects\/[^\s"']*\/env/ },
+    { name: 'project domain mutation endpoint', re: /\/domains/ },
+    { name: 'DNS record endpoint', re: /\/records/ },
+    { name: 'HTTP DELETE', re: /-X\s+DELETE/ },
+    { name: 'HTTP PATCH', re: /-X\s+PATCH/ },
+    { name: 'HTTP PUT', re: /-X\s+PUT/ },
+  ];
+  for (const { name, re } of FORBIDDEN) {
+    check(
+      `deploy workflow does NOT use ${name}`,
+      !re.test(dep.active),
+      `matched ${re} on an executable line`,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Part 3 — package.json wiring
+// ─────────────────────────────────────────────────────────────────────────
+{
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  check(
+    `package.json declares the ${NPM_SCRIPT} script`,
+    typeof pkg.scripts?.[NPM_SCRIPT] === 'string'
+      && pkg.scripts[NPM_SCRIPT].includes('test-exact-sha-production-recovery.mjs'),
+    `got ${JSON.stringify(pkg.scripts?.[NPM_SCRIPT])}`,
+  );
+}
+
+if ((process.exitCode ?? 0) === 0) {
+  console.log(`\n✅ DIC-1430 exact-SHA CI/CD recovery contract: ${passed} checks passed`);
+} else {
+  console.error(`\n❌ DIC-1430 exact-SHA CI/CD recovery contract FAILED`);
+}

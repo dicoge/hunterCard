@@ -1,0 +1,339 @@
+name: HoloHunter exact-SHA Production deploy
+
+# DIC-1430 CI/CD recovery.
+#
+# Why this workflow exists
+# ------------------------
+# PR #193 merged as `defa959271cc5944518ed164a3b4739c001f39f9` — a tree
+# byte-identical to the approved head `781db3fad75b1d33cbb2d4391617cf55f404fb58`
+# — but GitHub emitted no PushEvent for that merge. With no push event there
+# was no Actions run, no check suite, and no Vercel deployment. `main` moved
+# forward while Production kept serving pre-merge code. The cause of the
+# missing event is UNKNOWN, so the recovery path has to be an explicit,
+# repeatable, fail-closed workflow rather than a hand-run curl nobody can
+# audit afterwards.
+#
+# The contract
+# ------------
+# Build and promote to Production the EXACT commit the operator names, or
+# fail. Never the branch tip, never a rebuild of whatever is live now.
+#
+# Deliberately NOT used, because each of these can produce a green
+# "deployed" run that actually shipped a different commit:
+#
+#   * cloning an existing build by its id — it rebuilds whatever that older
+#     build pointed at. dic910-vercel-setup.yml does exactly this, which is
+#     fine for an env-var refresh and wrong for a commit-accurate recovery.
+#   * the "reuse the latest commit" flag — that resolves to the branch tip,
+#     which during an incident is precisely the state you cannot trust.
+#   * looking up the newest Production deployment and redeploying it — the
+#     requested SHA is never consulted at all.
+#   * a Vercel deploy hook — it builds the branch tip.
+#
+# Blast radius
+# ------------
+# Reads project metadata, creates one deployment, then reads that deployment
+# back. It touches no environment variable, no domain, and no DNS record,
+# and it holds only `contents: read` on the GitHub side. The two Vercel
+# secrets are passed to curl via --oauth2-bearer so neither value is ever
+# assembled into an echoed header string.
+#
+# The companion suite `npm run test:exact-sha-production-recovery` enforces
+# every one of the above statements mechanically, including the bans.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Full lowercase 40-hex commit SHA that MUST be the current tip of main"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two recovery runs must not race to create Production deployments, but a
+  # run that is already building must never be cancelled halfway — that
+  # leaves Production in a state nobody can describe.
+  group: holohunter-exact-sha-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy the exact SHA to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERCEL_PROJECT_NAME: holocard-hunter
+      CANONICAL_HOST: holohunter.dicoge.com
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Verify expected_sha is the exact current tip of main
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::expected_sha must be a full lowercase 40-hex commit SHA."
+            exit 1
+          fi
+
+          if [ "$EXPECTED_SHA" != "$DISPATCH_SHA" ]; then
+            echo "::error::expected_sha does not match the dispatched commit (${DISPATCH_SHA})."
+            exit 1
+          fi
+
+          head_sha=$(git rev-parse HEAD)
+          if [ "$EXPECTED_SHA" != "$head_sha" ]; then
+            echo "::error::expected_sha does not match the checked-out HEAD (${head_sha})."
+            exit 1
+          fi
+
+          # The checked-out copy can lag behind whatever main is right now.
+          # The live remote tip is the authority.
+          remote_sha=$(git ls-remote origin refs/heads/main | awk '{print $1}')
+          if [ "$EXPECTED_SHA" != "$remote_sha" ]; then
+            echo "::error::expected_sha is not the live tip of origin/main (live tip is ${remote_sha})."
+            exit 1
+          fi
+
+          echo "Verified: ${EXPECTED_SHA} is the exact current tip of main."
+
+      - name: Resolve the Vercel project and its GitHub linkage
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          # The VERCEL_PROJECT_ID repo secret is known-stale — its value
+          # matches no project under this account (documented in
+          # dic910-vercel-setup.yml). Resolve by the project's well-known
+          # name instead, and derive everything else from that response.
+          resp=$(curl -sS -w '\n%{http_code}' \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")
+          code=$(echo "$resp" | tail -n1)
+          echo "$resp" | sed '$d' > /tmp/project.json
+
+          if [ "$code" != "200" ]; then
+            echo "::error::Could not read Vercel project '${VERCEL_PROJECT_NAME}' (HTTP ${code}). Aborting before any write."
+            exit 1
+          fi
+
+          node -e '
+            const fs = require("fs");
+            const d = JSON.parse(fs.readFileSync("/tmp/project.json", "utf8"));
+            const link = d.link || {};
+            if (link.type !== "github") {
+              console.error(`::error::Project is not GitHub-linked (link.type=${JSON.stringify(link.type)}); cannot pin a commit.`);
+              process.exit(1);
+            }
+            if (link.org !== "dicoge" || link.repo !== "hunterCard") {
+              console.error(`::error::Project is linked to ${link.org}/${link.repo}, not dicoge/hunterCard.`);
+              process.exit(1);
+            }
+            if (!link.repoId) {
+              console.error("::error::Project link carries no repoId; cannot pin a gitSource.");
+              process.exit(1);
+            }
+            fs.appendFileSync(
+              process.env.GITHUB_ENV,
+              `PROJECT_ID=${d.id}\nREPO_ID=${link.repoId}\n`,
+            );
+            console.log(`Resolved project ${d.id} linked to ${link.org}/${link.repo}.`);
+          '
+
+      - name: Create a fresh Production deployment pinned to the exact SHA
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          body=$(node -e '
+            const [name, project, repoId, sha] = process.argv.slice(1);
+            console.log(JSON.stringify({
+              name,
+              project,
+              target: "production",
+              gitSource: {
+                type: "github",
+                repoId: Number(repoId),
+                ref: "main",
+                sha: sha,
+              },
+            }));
+          ' "$VERCEL_PROJECT_NAME" "$PROJECT_ID" "$REPO_ID" "$EXPECTED_SHA")
+
+          code=$(curl -sS -o /tmp/created.json -w '%{http_code}' -X POST \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-raw "$body" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_ORG_ID}")
+
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Failed to create the deployment (HTTP ${code})."
+            cat /tmp/created.json
+            exit 1
+          fi
+
+          node -e '
+            const fs = require("fs");
+            const d = JSON.parse(fs.readFileSync("/tmp/created.json", "utf8"));
+            if (!d.id) {
+              console.error("::error::Deployment response carried no id.");
+              process.exit(1);
+            }
+            fs.appendFileSync(process.env.GITHUB_ENV, `DEPLOYMENT_ID=${d.id}\n`);
+            console.log(`Created deployment ${d.id} (${d.url || "no url yet"}).`);
+          '
+
+      - name: Wait for the deployment to reach READY (bounded)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          MAX_ATTEMPTS=80
+          SLEEP_SECONDS=15
+          attempt=0
+
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+            curl -sS -o /tmp/poll.json \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}"
+            state=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/poll.json","utf8")).readyState || ""')
+            echo "attempt ${attempt}/${MAX_ATTEMPTS}: readyState=${state}"
+
+            case "$state" in
+              READY)
+                echo "Deployment reached READY."
+                exit 0
+                ;;
+              ERROR|CANCELED)
+                echo "::error::Deployment finished in terminal state ${state}."
+                exit 1
+                ;;
+            esac
+
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "::error::Timed out after ${MAX_ATTEMPTS} attempts; the deployment never reached READY."
+          exit 1
+
+      - name: Verify the finished deployment is Production and built the exact SHA
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          curl -sS -o /tmp/verify.json \
+            --oauth2-bearer "${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?withGitRepoInfo=true&teamId=${VERCEL_ORG_ID}"
+
+          node -e '
+            const fs = require("fs");
+            const d = JSON.parse(fs.readFileSync("/tmp/verify.json", "utf8"));
+            const expected = process.argv[1];
+
+            const target = d.target;
+            if (target !== "production") {
+              console.error(`::error::Deployment target is ${JSON.stringify(target)}, expected the production target.`);
+              process.exit(1);
+            }
+
+            // The v13 payload has carried the built commit in more than one
+            // place across API revisions, so consult every field that claims
+            // to be the source commit. At least one must be present, and all
+            // present ones must agree with the requested SHA.
+            const candidates = {
+              "gitSource.sha": d.gitSource && d.gitSource.sha,
+              "meta.githubCommitSha": d.meta && d.meta.githubCommitSha,
+              "gitRepo.sha": d.gitRepo && d.gitRepo.sha,
+            };
+            const present = Object.entries(candidates)
+              .filter(([, v]) => typeof v === "string" && v.length > 0);
+
+            if (present.length === 0) {
+              console.error("::error::Could not determine the built source sha from the deployment response; refusing to treat this as verified.");
+              process.exit(1);
+            }
+
+            const mismatched = present.filter(([, v]) => v.toLowerCase() !== expected);
+            if (mismatched.length > 0) {
+              for (const [field, value] of mismatched) {
+                console.error(`::error::${field}=${value} does not match the requested ${expected}.`);
+              }
+              process.exit(1);
+            }
+
+            for (const [field, value] of present) {
+              console.log(`verified ${field}=${value}`);
+            }
+          ' "$EXPECTED_SHA"
+
+      - name: Require the canonical alias and a live Production HTTP 200
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          MAX_ATTEMPTS=20
+          SLEEP_SECONDS=15
+
+          # A Production deployment that never takes the canonical alias has
+          # not actually replaced what users see, so this is a hard gate.
+          attempt=0
+          alias_ok=0
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+            curl -sS -o /tmp/alias.json \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?withGitRepoInfo=true&teamId=${VERCEL_ORG_ID}"
+            if node -e '
+                const d = JSON.parse(require("fs").readFileSync("/tmp/alias.json","utf8"));
+                const host = process.argv[1];
+                const list = Array.isArray(d.alias) ? d.alias : [];
+                process.exit(list.includes(host) ? 0 : 1);
+              ' "$CANONICAL_HOST"; then
+              alias_ok=1
+              echo "Deployment holds the canonical alias ${CANONICAL_HOST}."
+              break
+            fi
+            echo "attempt ${attempt}/${MAX_ATTEMPTS}: canonical alias not attached yet."
+            sleep "$SLEEP_SECONDS"
+          done
+
+          if [ "$alias_ok" != "1" ]; then
+            echo "::error::Deployment never took the canonical alias ${CANONICAL_HOST}."
+            exit 1
+          fi
+
+          attempt=0
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 30 "https://${CANONICAL_HOST}/" || echo "000")
+            echo "attempt ${attempt}/${MAX_ATTEMPTS}: https://${CANONICAL_HOST}/ -> ${code}"
+            if [ "$code" = "200" ]; then
+              echo "Canonical Production root is serving HTTP 200 for ${EXPECTED_SHA}."
+              exit 0
+            fi
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "::error::Canonical Production root never returned HTTP 200."
+          exit 1
