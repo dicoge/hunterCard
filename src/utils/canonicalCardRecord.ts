@@ -18,6 +18,13 @@
  * A printing the source prices ambiguously, or does not price at all, fails
  * closed to `null` so CardDetail renders its honest unavailable state instead of
  * a borrowed number.
+ *
+ * Artwork follows the SAME rule as price, for the same reason. yuyu-tei
+ * publishes art per listing, so the only thing that may depict a printing is
+ * that printing's own listing. The card-level image is shared by every printing
+ * of the number, so substituting it puts an unproven picture beside a proven
+ * price — the failure mode a player cannot detect. No proven listing art
+ * resolves to `''`, never the representative image and never a sibling's.
  */
 
 import { releaseCardFlags } from '../config/releaseFlags';
@@ -281,26 +288,30 @@ export function buildCanonicalCardIndex(
         const record = adapted.priceRecords.find((r) => canonicalPrinting(r.version) === want);
         const exactPrice = record ? record.price : null;
 
-        // The exact printing's OWN artwork. `base.imageUrl` is the elected
-        // representative row's card-level image, which is IDENTICAL for every
-        // printing of the number — so hBP01-024's ¥3,480 PARALLEL/HR opened
-        // showing the same picture as its ¥50 PARALLEL/hBP07 sibling. The source
-        // publishes art per LISTING, so the printing the user opened must carry
-        // the image that printing's own listing proved.
+        // The exact printing's OWN artwork, or NONE. `base.imageUrl` is the
+        // elected representative row's card-level image, which is IDENTICAL for
+        // every printing of the number — so hBP01-024's ¥3,480 PARALLEL/HR
+        // opened showing the same picture as its ¥50 PARALLEL/hBP07 sibling.
+        // The source publishes art per LISTING, so the ONLY thing that may
+        // depict a printing is that printing's own listing.
         //
-        // Three cases, and only the first may show printing-specific art:
-        //   * one proven image → that image;
-        //   * listings disagree → fail closed to NO image rather than an
-        //     arbitrary pick (86 printings in the shipped catalog disagree);
-        //   * the printing published no listing image at all → the card-level
-        //     image stands. That is not a cross-printing borrow: it is the only
-        //     thing the source states, and it is what the 257 card numbers with
-        //     no listings at all (the synthetic UNLISTED base) rely on.
+        // This fails closed uniformly. An earlier round let a printing with no
+        // listing art keep the card-level image, reasoning that it was "the only
+        // art the source states". That is still an unproven claim about THIS
+        // printing, and it is indistinguishable on screen from the sibling-art
+        // bug above: the picture is presented as this printing's, next to this
+        // printing's price, with nothing saying the art was never proven. A
+        // player deciding what to buy cannot tell the two apart, so neither is
+        // allowed. No proven listing image → no image, and the caller renders
+        // its honest unavailable state (see CardDetailScreen's hero fallback).
+        //
+        //   * exactly one proven image → that image;
+        //   * listings disagree (`imageAmbiguous`) → no image;
+        //   * listing published no art / no listing at all → no image.
         const sourcePrinting = buildSourcePrintings(
           rows.flatMap((row) => row.prices ?? []) as SourceListing[],
         ).find((p) => canonicalPrinting(p.printing) === want);
-        const exactImage = sourcePrinting?.imageUrl
-          ?? (sourcePrinting?.imageAmbiguous ? '' : base.imageUrl);
+        const exactImage = sourcePrinting?.imageUrl ?? '';
 
         return {
           status: 'ok',

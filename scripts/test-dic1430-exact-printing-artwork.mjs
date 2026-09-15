@@ -1,31 +1,44 @@
 #!/usr/bin/env node
-// DIC-1430 CR round 2 — an exact printing must resolve its OWN artwork, not the
-// card number's representative art.
+// DIC-1430 CR round 3 — an exact printing shows its OWN artwork or NO artwork.
 //
-// The regression this pins: the canonical resolver matched the exact printing
-// for the LABEL and the PRICE, then handed CardDetail `base.imageUrl` — the
-// elected representative row's card-level image. That image is identical for
-// every printing of a card number, so hBP01-024's ¥3,480 PARALLEL/HR opened
-// showing exactly the same picture as its ¥50 PARALLEL/hBP07 sibling. The
-// price was right and the picture was wrong, which is the worst combination
-// for a player deciding what they are about to buy.
+// The regression this pins, in two halves:
 //
-// yuyu-tei publishes art per LISTING, so the printing the user opened must
-// carry the image that printing's own listing proved:
-//   * one proven image → that image;
-//   * listings disagree → NO image, never an arbitrary pick;
-//   * no listing image at all → the card-level image, which is not a
-//     cross-printing borrow.
+// 1. EXACT ART PRESENT. The canonical resolver matched the exact printing for
+//    the LABEL and the PRICE, then handed CardDetail `base.imageUrl` — the
+//    elected representative row's card-level image. That image is identical for
+//    every printing of a card number, so hBP01-024's ¥3,480 PARALLEL/HR opened
+//    showing exactly the same picture as its ¥50 PARALLEL/hBP07 sibling.
+//
+// 2. EXACT ART UNAVAILABLE. Round 2 fixed (1) but kept a fallback: a printing
+//    whose own listing published no art still inherited the card-level image,
+//    on the reasoning that it was "the only art the source states". On screen
+//    that is indistinguishable from (1) — an unproven picture beside a proven
+//    price, with nothing saying the art was never proven — so it is now a
+//    fail-closed case too. CR round 2 rejected the fallback AND rejected this
+//    test for explicitly blessing it.
+//
+// The rule, uniformly: the ONLY thing that may depict a printing is that
+// printing's own listing.
+//   * exactly one proven listing image → that image;
+//   * listings disagree            → NO image;
+//   * listing published no art     → NO image;
+//   * no listing at all            → NO image.
 //
 // Why this test cannot go falsely green:
-//   * expectations are derived from data/database.json listings, not hardcoded;
-//   * every printing's expected image is asserted DISTINCT from its siblings'
-//     and from the representative art, so the pre-fix behaviour (all three
-//     identical) fails on the first printing;
-//   * the image is asserted on the REAL rendered <img src>, not just the payload;
+//   * expectations are derived from data/database.json, not hardcoded;
+//   * each printing's expected art is asserted DISTINCT from its siblings' and
+//     from the representative art, so the round-1 behaviour (all identical)
+//     fails on the first printing;
+//   * every unavailable case asserts the resolved image is not the
+//     representative / officialImage / localImage / sibling art — which is
+//     exactly what restoring `?? base.imageUrl` would produce, so the round-2
+//     behaviour fails too;
+//   * assertions run on the REAL rendered <img src>, and the render is checked
+//     for the reconstructed card-number URL (`buildImageUrl`) that would
+//     otherwise undo the fail-closed decision one layer below;
 //   * the conflict case asserts the dedupe kept BOTH disagreeing listings —
-//     with the pre-fix label+price key it collapses to one and the survivor's
-//     art would be presented as proven.
+//     with a label+price key it collapses to one and the survivor's art would
+//     be presented as proven.
 
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
@@ -77,6 +90,39 @@ async function render(element) {
     cleanup: async () => { await act(async () => root.unmount()); container.remove(); },
   };
 }
+const imgSrcs = (container) =>
+  [...container.querySelectorAll('img')].map((img) => img.getAttribute('src') || '');
+
+/** Render an exact-printing payload and assert nothing depicts it but its own
+ * proven art. `expectedImage` empty means the honest unavailable state. */
+async function assertRenderedArt(card, expectedImage, forbidden, label) {
+  const { container, cleanup } = await render(React.createElement(CardDetailScreen, {
+    route: { params: { card } },
+    navigation: { navigate() {}, goBack() {}, setOptions() {} },
+  }));
+  try {
+    const srcs = imgSrcs(container);
+    for (const bad of forbidden) {
+      if (!bad) continue;
+      assert.ok(!srcs.includes(bad), `${label}: must not render ${bad}`);
+    }
+    // `buildImageUrl` reconstructs art from the CARD NUMBER — the same picture
+    // for every printing. It must never run for an exact-printing payload.
+    assert.ok(
+      !srcs.some((src) => src.includes('hololive-official-cardgame.com')),
+      `${label}: must not reconstruct a card-number image URL (saw: ${srcs.join(', ') || 'none'})`,
+    );
+    if (expectedImage) {
+      assert.ok(srcs.includes(expectedImage), `${label}: renders its own proven art`);
+    } else {
+      assert.equal(srcs.length, 0, `${label}: renders NO artwork (saw: ${srcs.join(', ')})`);
+      assert.ok(
+        container.querySelector('[data-testid="card-detail-hero-art-unavailable"]'),
+        `${label}: renders the honest unavailable hero state`,
+      );
+    }
+  } finally { await cleanup(); }
+}
 
 let passed = 0;
 async function test(name, fn) {
@@ -117,19 +163,24 @@ assert.equal(
   'each printing publishes DIFFERENT art — the premise that makes this test sharp',
 );
 for (const [printing, e] of expected) {
+  assert.ok(e.imageUrl, `${printing} has proven listing art (the "present" half of the test)`);
   assert.notEqual(
     e.imageUrl, representativeArt,
-    `${printing}'s listing art differs from the representative art (pre-fix value)`,
+    `${printing}'s listing art differs from the representative art (round-1 value)`,
   );
 }
 
-console.log('── DIC-1430 CR2 · exact-printing artwork ──');
+console.log('── DIC-1430 CR3 · exact-printing artwork ──');
 for (const [printing, e] of expected) {
   console.log(`   ${CARD} [${printing}] ¥${e.sellPrice} → ${e.imageUrl.split('/').slice(-2).join('/')}`);
 }
-console.log(`   representative (pre-fix, shared by all): ${representativeArt.split('/').pop()}`);
+console.log(`   representative (round-1, shared by all): ${representativeArt.split('/').pop()}`);
 
 const index = await loadCanonicalCardIndex();
+
+// ════════════════════════════════════════════════════════════════════════════
+// PART 1 — exact listing artwork IS available
+// ════════════════════════════════════════════════════════════════════════════
 
 await test('every catalog printing resolves its OWN image and its OWN price', async () => {
   const seen = new Set();
@@ -153,12 +204,11 @@ await test('every catalog printing resolves its OWN image and its OWN price', as
   }
   assert.equal(
     seen.size, expected.size,
-    'the printings resolve to DISTINCT images — pre-fix they all shared one',
+    'the printings resolve to DISTINCT images — round-1 they all shared one',
   );
 });
 
 await test('no printing borrows a sibling printing\'s artwork', async () => {
-  // Cross-check every resolved image against every OTHER printing's expectation.
   for (const [printing, e] of expected) {
     const res = index.resolve(CARD, printing);
     for (const [other, otherExpected] of expected) {
@@ -175,21 +225,12 @@ await test('no printing borrows a sibling printing\'s artwork', async () => {
 await test('CardDetail RENDERS the exact-printing image for each printing', async () => {
   for (const [printing, e] of expected) {
     const res = index.resolve(CARD, printing);
-    const { container, cleanup } = await render(React.createElement(CardDetailScreen, {
-      route: { params: { card: res.card } },
-      navigation: { navigate() {}, goBack() {}, setOptions() {} },
-    }));
-    try {
-      const srcs = [...container.querySelectorAll('img')].map((img) => img.getAttribute('src'));
-      assert.ok(
-        srcs.includes(e.imageUrl),
-        `CardDetail renders ${printing}'s own art (saw: ${srcs.join(', ') || 'none'})`,
-      );
-      assert.ok(
-        !srcs.includes(representativeArt),
-        `CardDetail does not render the representative art for ${printing}`,
-      );
-    } finally { await cleanup(); }
+    const siblings = [...expected.entries()]
+      .filter(([other]) => other !== printing)
+      .map(([, otherExpected]) => otherExpected.imageUrl);
+    await assertRenderedArt(
+      res.card, e.imageUrl, [representativeArt, ...siblings], `${CARD} [${printing}]`,
+    );
   }
 });
 
@@ -216,13 +257,59 @@ await test('Favorites → CardDetail carries the exact-printing image end to end
   }
 });
 
-// ── Conflict / fail-closed ─────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// PART 2 — exact listing artwork is NOT available → fail closed
+//
+// Each case asserts the resolved image is neither the representative art nor
+// any sibling's, while the printing's IDENTITY and its same-printing PRICE
+// survive. Restoring `?? base.imageUrl` turns every one of them red.
+// ════════════════════════════════════════════════════════════════════════════
+
+await test('a listing that published NO art fails closed — even when a sibling printing has art', async () => {
+  // The sharpest form of the round-2 finding: the card number HAS proven art
+  // (on another printing) and HAS card-level art, and the printing the user
+  // opened still must show nothing. The shipped catalog publishes art on every
+  // listing, so this evidence is constructed — from a real row, so the record
+  // shape is genuine.
+  const base = JSON.parse(JSON.stringify(rows[0]));
+  base.cardNumber = 'hZZ02-002';
+  base.id = 'hZZ02-002_noart';
+  const siblingArt = 'https://card.yuyu-tei.jp/hocg/100_140/zz02/20002.jpg';
+  base.prices = [
+    { name: 'アートなし検証', sellPrice: 120, rarity: '' },
+    { name: 'アートなし検証(パラレル)', sellPrice: 4800, rarity: '', imageUrl: siblingArt },
+  ];
+  assert.ok(base.officialImage, 'precondition: the row still carries card-level art to borrow');
+
+  const built = buildCanonicalCardIndex([base], {});
+
+  const bare = built.resolve('hZZ02-002', 'BASE');
+  assert.equal(bare.status, 'ok', 'the printing still resolves — identifiable, just not depictable');
+  assert.equal(bare.card.printing, 'BASE', 'exact-printing identity survives the missing art');
+  assert.equal(bare.card.yuyuPrice, 120, 'and its own same-printing price survives');
+  assert.equal(bare.card.imageUrl, '', 'no listing art → NO image');
+  assert.notEqual(
+    bare.card.imageUrl, base.officialImage,
+    'must not substitute the card-level/representative art — the round-2 fallback',
+  );
+  assert.notEqual(bare.card.imageUrl, base.localImage || ' ', 'nor the local card-level art');
+  assert.notEqual(bare.card.imageUrl, siblingArt, 'nor the sibling printing\'s art');
+
+  // The sibling is unaffected: fail-closed must not blank proven art.
+  const parallel = built.resolve('hZZ02-002', 'PARALLEL');
+  assert.equal(parallel.card.imageUrl, siblingArt, 'the printing WITH proven art still shows it');
+  assert.equal(parallel.card.yuyuPrice, 4800, 'and keeps its own price');
+
+  await assertRenderedArt(
+    bare.card, '', [base.officialImage, base.localImage, siblingArt], 'hZZ02-002 [BASE] no listing art',
+  );
+});
+
 await test('listings identical but for their ART fail closed — dedupe cannot erase the disagreement', async () => {
-  // Clone a real row so the record shape is genuine, then give it two listings
-  // that agree on label AND price but publish DIFFERENT art. This is exactly
-  // the evidence the old `name|sellPrice|buyPrice` dedupe key collapsed: the
-  // survivor's picture would then look source-proven for a printing the source
-  // does not actually describe unambiguously.
+  // Two listings that agree on label AND price but publish DIFFERENT art. This
+  // is exactly the evidence a `name|sellPrice|buyPrice` dedupe key collapsed:
+  // the survivor's picture would then look source-proven for a printing the
+  // source does not actually describe unambiguously.
   const base = JSON.parse(JSON.stringify(rows[0]));
   base.cardNumber = 'hZZ01-001';
   base.id = 'hZZ01-001_conflict';
@@ -241,12 +328,11 @@ await test('listings identical but for their ART fail closed — dedupe cannot e
   // the disagreement is invisible downstream.
   assert.equal(
     res.card.prices.length, 2,
-    'both conflicting listings survive dedupe — the pre-fix key collapsed them to 1',
+    'both conflicting listings survive dedupe — a label+price key collapsed them to 1',
   );
   const carried = res.card.prices.map((p) => p.imageUrl).sort();
   assert.deepEqual(carried, [artA, artB].sort(), 'both images are preserved as evidence');
 
-  // …and the resolved artwork fails closed rather than picking a winner.
   assert.notEqual(res.card.imageUrl, artA, 'does not arbitrarily pick the first listing\'s art');
   assert.notEqual(res.card.imageUrl, artB, 'does not arbitrarily pick the second listing\'s art');
   assert.equal(res.card.imageUrl, '', 'conflicting art resolves to NO exact image (fail closed)');
@@ -257,6 +343,10 @@ await test('listings identical but for their ART fail closed — dedupe cannot e
 
   // The price was never in dispute, so it must still resolve.
   assert.equal(res.card.yuyuPrice, 500, 'an image conflict does not suppress an unambiguous price');
+
+  await assertRenderedArt(
+    res.card, '', [artA, artB, base.officialImage], 'hZZ01-001 [BASE] conflicting art',
+  );
 });
 
 await test('real catalog conflict (hBP02-017 PARALLEL) fails closed on BOTH art and price', async () => {
@@ -269,30 +359,74 @@ await test('real catalog conflict (hBP02-017 PARALLEL) fails closed on BOTH art 
     .filter((l) => printingFromLabel(l?.name ?? '') === 'PARALLEL');
   const images = new Set(parallelListings.map((l) => (l.imageUrl ?? '').trim()).filter(Boolean));
   assert.ok(images.size > 1, 'precondition: the source publishes conflicting art for this printing');
+  const conflictRepArt = conflictRows.map((r) => r.officialImage).find(Boolean);
 
   const res = index.resolve('hBP02-017', 'PARALLEL');
   assert.equal(res.status, 'ok', 'the printing is still selectable');
+  assert.equal(res.card.printing, 'PARALLEL', 'exact-printing identity survives');
   assert.equal(res.card.yuyuPrice, null, 'an ambiguously priced printing stays unpriced');
   for (const image of images) {
     assert.notEqual(res.card.imageUrl, image, 'no conflicting listing image is chosen');
   }
   assert.equal(res.card.imageUrl, '', 'conflicting art resolves to NO exact image (fail closed)');
+  assert.notEqual(
+    res.card.imageUrl, conflictRepArt,
+    'and does not substitute the representative art',
+  );
+
+  await assertRenderedArt(
+    res.card, '', [...images, conflictRepArt], 'hBP02-017 [PARALLEL] real conflict',
+  );
 });
 
-await test('a printing with NO listing image keeps the card-level art (not a cross-printing borrow)', async () => {
-  // 257 card numbers ship no listings at all; their synthetic UNLISTED base has
-  // no listing art to prove. Card-level art is the only thing the source states
-  // for them, so it must survive — blanking it would be a false "fail closed".
+await test('a printing with NO listing at all fails closed — card-level art is NOT proof of a printing', async () => {
+  // 257 card numbers ship no listings whatsoever; their synthetic UNLISTED base
+  // has no listing art to prove. Round 2 let the card-level image stand here.
+  // It is still an unproven claim about this printing, rendered beside this
+  // printing's (unavailable) price, so it fails closed like every other case.
   const unlisted = Object.values(rawDb.cards || {}).find(
     (c) => c?.cardNumber && c.officialImage && (c.prices ?? []).length === 0
       && Object.values(rawDb.cards).filter((x) => x?.cardNumber === c.cardNumber)
         .every((x) => (x.prices ?? []).length === 0),
   );
   assert.ok(unlisted, 'the catalog still carries a card number with no listings');
+
   const res = index.resolve(unlisted.cardNumber, 'BASE');
   assert.equal(res.status, 'ok', `${unlisted.cardNumber} resolves its unlisted base printing`);
-  assert.ok(res.card.imageUrl, 'card-level art still shows when the source proves no listing art');
+  assert.equal(res.card.printing, 'BASE', 'exact-printing identity survives');
   assert.equal(res.card.yuyuPrice, null, 'and it remains honestly unpriced');
+  assert.equal(res.card.imageUrl, '', 'no listing → NO image');
+  assert.notEqual(
+    res.card.imageUrl, unlisted.officialImage,
+    'card-level art must not stand in for an unproven printing — the round-2 fallback',
+  );
+
+  await assertRenderedArt(
+    res.card, '', [unlisted.officialImage, unlisted.localImage], `${unlisted.cardNumber} [BASE] unlisted`,
+  );
+
+  // …and end to end through Favorites, where the reduced-payload branch used to
+  // borrow the same card-level image.
+  useFavoritesStore.setState({
+    favorites: [{ cardNumber: unlisted.cardNumber, printing: 'BASE', addedAt: '2026-09-01T00:00:00Z' }],
+    removals: {},
+  });
+  const navs = [];
+  const { container, cleanup } = await render(React.createElement(FavoritesScreen, {
+    navigation: { navigate: (route, params) => navs.push([route, params]), goBack() {} },
+  }));
+  try {
+    const open = container.querySelector(
+      `[data-testid="favorite-open-${unlisted.cardNumber}-BASE"]`,
+    );
+    assert.ok(open, 'the unlisted favorite row renders');
+    await act(async () => open.click());
+    await flush(10);
+    assert.equal(navs.length, 1, 'tapping navigates once');
+    const payload = navs[0][1]?.card;
+    assert.equal(payload.imageUrl, '', 'Favorites hands CardDetail no borrowed artwork');
+    assert.notEqual(payload.imageUrl, unlisted.officialImage, 'not the card-level image');
+  } finally { await cleanup(); }
 });
 
-console.log(`\n✅ DIC-1430 CR2 exact-printing artwork: ${passed} tests passed`);
+console.log(`\n✅ DIC-1430 CR3 exact-printing artwork: ${passed} tests passed`);

@@ -158,9 +158,21 @@ export default function CardDetailScreen({ route, navigation }: any) {
   const tags = card.tags || [];
   const versions = card.versions || [];
 
-  // Use card.images[0] when available, otherwise use API-provided imageUrl, or build from pattern
+  // Use card.images[0] when available, otherwise the payload's own imageUrl, or
+  // build one from the card-number pattern.
+  //
+  // DIC-1430: `buildImageUrl` derives art from the CARD NUMBER, so it produces
+  // the same picture for every printing of that number. On an exact-printing
+  // payload (`card.printing` is set) that is precisely the representative-art
+  // substitution the canonical resolver now refuses to make — reconstructing it
+  // here would undo the fail-closed decision one layer down and put an unproven
+  // picture next to a proven price. An exact printing therefore shows only the
+  // art its own listing proved; with none, the hero renders its honest
+  // unavailable state rather than a card-number guess.
   const cardSeries = (Array.isArray(card.series) ? card.series[0] : card.series) || (id?.split('-')[0] || '');
-  const imageUrl = (card.images && card.images[0]) || card.imageUrl || buildImageUrl(id, cardSeries, versions, card.type || '');
+  const provenImageUrl = (card.images && card.images[0]) || card.imageUrl || '';
+  const imageUrl = provenImageUrl
+    || (card.printing ? '' : buildImageUrl(id, cardSeries, versions, card.type || ''));
   const officialUrl = `https://hololive-official-cardgame.com/cardlist/?keyword=${encodeURIComponent(id)}&view=image`;
   const yuyuUrl = `https://yuyu-tei.jp/sell/hocg/s/search?search_word=${encodeURIComponent(id)}`;
 
@@ -357,7 +369,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
             {/* ====== CARD HERO (Pen jzuT9: compact art + identity column) ====== */}
             <View style={styles.hero} testID="card-detail-hero">
               <View style={[styles.heroArt, { backgroundColor: rarityColors[rarityKey] ? rarityColors[rarityKey] + '14' : PALETTE.appElev }]} testID="card-detail-hero-art">
-                {!imageError ? (
+                {imageUrl && !imageError ? (
                   /* @ts-ignore */
                   <Image
                     source={{ uri: imageUrl }}
@@ -366,7 +378,17 @@ export default function CardDetailScreen({ route, navigation }: any) {
                     onError={() => setImageError(true)}
                   />
                 ) : (
-                  <TouchableOpacity style={styles.heroArtFallback} activeOpacity={0.8} onPress={() => openUrl(officialUrl)}>
+                  /* Reached on a broken image AND, since DIC-1430, whenever an
+                   * exact printing has no source-proven art. Same honest state:
+                   * the card number plus a link to the official image, never a
+                   * borrowed picture. */
+                  <TouchableOpacity
+                    style={styles.heroArtFallback}
+                    activeOpacity={0.8}
+                    onPress={() => openUrl(officialUrl)}
+                    accessibilityRole="button"
+                    testID="card-detail-hero-art-unavailable"
+                  >
                     <Text style={styles.heroArtFallbackId}>{id}</Text>
                     <Text style={styles.heroArtFallbackHint}>{t('card_detail_official_image')}</Text>
                   </TouchableOpacity>

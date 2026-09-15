@@ -123,7 +123,12 @@ export default function FavoritesScreen({
         printingLabel: card?.printingLabel,
         series: card?.series,
         type: card?.type,
-        imageUrl: card?.exactImageUrl || card?.imageUrl || '',
+        // This printing's own listing art or none. `card.imageUrl` is the row's
+        // card-number-level image, identical across every printing of the
+        // number, so borrowing it here would hand an exact-printing payload the
+        // representative art the resolver itself refuses to substitute
+        // (DIC-1430).
+        imageUrl: card?.exactImageUrl || '',
       },
     });
   }, [navigation, loadCanonicalIndex]);
@@ -133,7 +138,11 @@ export default function FavoritesScreen({
     const display = card
       ? resolveCardDisplayName({ name: card.name, nameZh: card.nameZh }, preferredLanguage)
       : null;
-    const art = card?.exactImageUrl || card?.imageUrl;
+    // A row IS an exact printing, so it may only show that printing's own
+    // listing art. The card-number image would put the same picture on a ¥3,480
+    // parallel and its ¥50 sibling (DIC-1430); with no proven art the row falls
+    // through to the set-code placeholder below.
+    const art = card?.exactImageUrl;
     const price = db ? resolveExactPrice(item.cardNumber, item.printing, db.priceRecords) : null;
     return (
       <View style={styles.row} testID={`favorite-row-${item.cardNumber}-${item.printing}`}>
