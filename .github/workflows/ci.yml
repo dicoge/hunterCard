@@ -478,6 +478,13 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Google removed the legacy `tools` package from the SDK repository, so
+          # the action's default `packages: tools platform-tools` makes it run
+          # `sdkmanager tools` → "Failed to find package 'tools'" → exit 1, which
+          # is runner/cache dependent (a rerun happened to pass on another image).
+          # Install only `platform-tools`, which is still published.
+          packages: platform-tools
 
       - name: Install dependencies
         run: npm ci
