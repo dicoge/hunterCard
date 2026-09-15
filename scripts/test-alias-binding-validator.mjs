@@ -22,9 +22,26 @@
  *     since a correct decision reported through the wrong exit code would let
  *     a fatal record retry, or a mismatch be read as success.
  *
- * There is no second copy of the validator here. The only re-implementation in
- * this file is `priorInlineValidator` — the OLD, buggy logic, preserved solely
- * to prove the regression is really gone and would be caught again.
+ * There is no second copy of the validator here. The only re-implementations in
+ * this file are `priorInlineValidator` and `priorInterpolatingDiagnostic` — the
+ * OLD, buggy decision and the OLD, leaky message construction, preserved solely
+ * to prove both regressions are really gone and would be caught again.
+ *
+ * The second dimension: diagnostics
+ * ---------------------------------
+ * Everything this module is handed is attacker-reachable. The alias response
+ * body is whatever the Vercel API — or anything able to answer for it — returns,
+ * and it is read inside a GitHub Actions job whose log honours ANSI control
+ * sequences and `::workflow command::` lines. An earlier revision interpolated
+ * the JSON parse exception, `error.code`, and both deployment ids into its
+ * messages, so a record carrying `"\u001b[2J::error::INJECTED"` printed a screen
+ * clear and a forged workflow command into the log verbatim.
+ *
+ * So the fixtures below are not only shape fixtures. They carry ANSI escapes,
+ * CR/LF, and command-like markers in every field the validator touches — plus
+ * malformed JSON whose parse error quotes the payload back — and they are run
+ * through BOTH paths. The assertions are that the decision is unchanged and
+ * that not one attacker byte reaches stdout or stderr.
  */
 
 import assert from 'node:assert/strict';
@@ -36,9 +53,12 @@ import { fileURLToPath } from 'node:url';
 
 import {
   ALIAS_BINDING_FATAL,
+  ALIAS_BINDING_MAX_DIAGNOSTIC,
+  ALIAS_BINDING_MESSAGES,
   ALIAS_BINDING_RETRY,
   ALIAS_BINDING_SUCCESS,
   evaluateAliasBinding,
+  sanitizeDiagnostic,
 } from './ci/verify-alias-binding.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -287,6 +307,256 @@ console.log('\nDiagnostics:');
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// ADVERSARIAL DIAGNOSTICS
+// ─────────────────────────────────────────────────────────────────────────
+// Every fixture below is a well-formed HTTP 200 body (or a deliberately
+// malformed one) carrying content designed to escape the log line it lands in.
+// The decision must be unaffected; the output must contain none of it.
+const ESC = '\u001b';
+const ANSI_CLEAR = `${ESC}[2J`;
+const ANSI_RED = `${ESC}[31m`;
+const CMD_WARN = '::warning::INJECTED';
+const CMD_ERROR = '::error::INJECTED';
+const CRLF = '\r\n';
+const BEL = '\u0007';
+const NUL = '\u0000';
+
+/** A bare marker is the shape whose V8 parse error quotes it back in full. */
+const PARSE_FRAGMENT = '::error::INJECTED_PARSE_FRAGMENT';
+
+const ATTACK_MARKERS = ['INJECTED', 'SHOULD_NEVER_BE_LOGGED'];
+/** Every control character except LF, the single legitimate line terminator. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-	\u000b-\u001f\u007f-\u009f]/;
+/** No diagnostic line may exceed this, prefix included. */
+const MAX_OUTPUT = 300;
+
+/** Everything a log line must never contain, named so failures are readable. */
+function attackerBytesIn(text) {
+  const hits = [];
+  for (const m of ATTACK_MARKERS) {
+    if (text.includes(m)) hits.push(`marker:${m}`);
+  }
+  if (CONTROL_CHARS.test(text)) hits.push('control-characters');
+  if (text.split('\n').filter((l) => l.length > 0).length > 1) hits.push('multi-line-output');
+  if (text.length > MAX_OUTPUT) hits.push(`unbounded-output:${text.length}`);
+  return hits;
+}
+
+const MALICIOUS_ID = `dpl_${ANSI_CLEAR}${CMD_ERROR}${CRLF}evil`;
+const MALICIOUS_OTHER_ID = `dpl_${ANSI_RED}${CMD_WARN}${BEL}other`;
+const MALICIOUS_HOST = `holohunter.dicoge.com${CRLF}${CMD_WARN}${ANSI_RED}`;
+
+const ATTACKS = [
+  {
+    name: 'ANSI escape sequences in error.code',
+    raw: JSON.stringify({ error: { code: `${ANSI_RED}${ANSI_CLEAR}forbidden` } }),
+    expect: 'fatal',
+  },
+  {
+    name: 'command-like markers and CRLF in error.code and error.message',
+    raw: JSON.stringify({
+      error: { code: `${CMD_ERROR}${CRLF}`, message: `${CMD_WARN}${CRLF}SHOULD_NEVER_BE_LOGGED` },
+    }),
+    expect: 'fatal',
+  },
+  {
+    name: 'malicious top-level deploymentId naming another deployment',
+    raw: JSON.stringify({ alias: HOST, deploymentId: MALICIOUS_OTHER_ID }),
+    expect: 'retry',
+  },
+  {
+    name: 'malicious top-level deploymentId that matches a malicious expected id',
+    raw: JSON.stringify({ alias: HOST, deploymentId: MALICIOUS_ID }),
+    expectedId: MALICIOUS_ID,
+    expect: 'success',
+  },
+  {
+    name: 'malicious nested deployment.id contradicting the top-level id',
+    raw: JSON.stringify({
+      alias: HOST,
+      deploymentId: THIS_RUN,
+      deployment: { id: MALICIOUS_OTHER_ID },
+    }),
+    expect: 'fatal',
+  },
+  {
+    name: 'malicious nested deployment.id of the wrong type',
+    raw: JSON.stringify({
+      alias: HOST,
+      deploymentId: THIS_RUN,
+      deployment: { id: { evil: `${CMD_ERROR}${CRLF}` } },
+    }),
+    expect: 'fatal',
+  },
+  {
+    name: 'malicious deployment field that is a string, not an object',
+    raw: JSON.stringify({ alias: HOST, deploymentId: THIS_RUN, deployment: MALICIOUS_ID }),
+    expect: 'fatal',
+  },
+  {
+    name: 'THE REGRESSION carrying an injection: no top-level id, malicious nested id',
+    raw: JSON.stringify({ alias: HOST, deployment: { id: MALICIOUS_ID } }),
+    expect: 'fatal',
+  },
+  {
+    name: 'malformed JSON whose parse error quotes the attacker fragment in full',
+    raw: PARSE_FRAGMENT,
+    expect: 'fatal',
+  },
+  {
+    name: 'malformed JSON leading with an ANSI escape',
+    raw: `${ANSI_CLEAR}${CMD_ERROR}{`,
+    expect: 'fatal',
+  },
+  {
+    name: 'truncated JSON with a marker inside the unterminated value',
+    raw: `{"alias": "${HOST}", "deploymentId": "${CMD_WARN}`,
+    expect: 'fatal',
+  },
+  {
+    name: 'malformed JSON carrying a NUL byte',
+    raw: `{${NUL}${CMD_ERROR}`,
+    expect: 'fatal',
+  },
+  {
+    name: 'a JSON array of malicious records',
+    raw: JSON.stringify([{ deploymentId: MALICIOUS_ID }]),
+    expect: 'fatal',
+  },
+  {
+    name: 'malicious caller host with a well-formed record naming another deployment',
+    raw: JSON.stringify({ alias: HOST, deploymentId: OTHER_RUN }),
+    host: MALICIOUS_HOST,
+    expect: 'retry',
+  },
+  {
+    name: 'malicious caller host on the success path',
+    raw: JSON.stringify({ alias: HOST, deploymentId: THIS_RUN }),
+    host: MALICIOUS_HOST,
+    expect: 'success',
+  },
+  {
+    name: 'everything at once: ANSI + CRLF + markers in every field the validator reads',
+    raw: JSON.stringify({
+      alias: `${ANSI_CLEAR}${CMD_WARN}`,
+      error: { code: `${CMD_ERROR}${CRLF}`, message: `${BEL}SHOULD_NEVER_BE_LOGGED` },
+      deploymentId: MALICIOUS_ID,
+      deployment: { id: MALICIOUS_OTHER_ID, url: `${ANSI_RED}${CMD_WARN}` },
+    }),
+    host: MALICIOUS_HOST,
+    expectedId: MALICIOUS_ID,
+    expect: 'fatal',
+  },
+];
+
+const FIXED_MESSAGES = new Set(Object.values(ALIAS_BINDING_MESSAGES));
+
+console.log('\nAdversarial fixtures — in-process decisions and messages:');
+for (const a of ATTACKS) {
+  const got = evaluateAliasBinding({
+    raw: a.raw,
+    host: a.host ?? HOST,
+    expectedDeploymentId: a.expectedId ?? THIS_RUN,
+  });
+  check(
+    `${a.name} → ${a.expect}`,
+    got.status === a.expect && got.code === CODE_FOR[a.expect],
+    `got status=${got.status} code=${got.code}`,
+  );
+  check(
+    `${a.name} → message is a fixed table entry, not built from the payload`,
+    FIXED_MESSAGES.has(got.message),
+    `message was ${JSON.stringify(got.message)}`,
+  );
+  const leaks = attackerBytesIn(got.message);
+  check(
+    `${a.name} → message carries no attacker bytes`,
+    leaks.length === 0,
+    `leaked: ${leaks.join(', ')}`,
+  );
+}
+
+console.log('\nAdversarial fixtures — subprocess stdout/stderr (what the log receives):');
+for (const a of ATTACKS) {
+  const r = runHelper(a.raw, a.expectedId ?? THIS_RUN, a.host ?? HOST);
+  check(
+    `${a.name} → exit ${CODE_FOR[a.expect]}`,
+    r.code === CODE_FOR[a.expect],
+    `got exit ${r.code}`,
+  );
+  const combined = r.stdout + r.stderr;
+  const leaks = attackerBytesIn(combined);
+  check(
+    `${a.name} → nothing attacker-controlled reaches stdout/stderr`,
+    leaks.length === 0,
+    `leaked: ${leaks.join(', ')} in ${JSON.stringify(combined.slice(0, 200))}`,
+  );
+  check(
+    `${a.name} → output is a single bounded line drawn from the fixed table`,
+    [...FIXED_MESSAGES].some((m) => combined.includes(m)),
+    `output was ${JSON.stringify(combined.slice(0, 200))}`,
+  );
+}
+
+console.log('\nAdversarial CLI arguments:');
+{
+  // A caller-supplied path is not response data, but it is still not ours to
+  // print: the old read-failure diagnostic echoed both the path and the OS
+  // error text.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alias-binding-evil-'));
+  const evilPath = path.join(dir, `${CMD_ERROR}-missing.json`);
+  const r = spawnSync(process.execPath, [HELPER, evilPath, MALICIOUS_HOST, MALICIOUS_ID], {
+    encoding: 'utf8',
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+  check(
+    'a malicious unreadable path is fatal',
+    r.status === ALIAS_BINDING_FATAL,
+    `got exit ${r.status}`,
+  );
+  const combined = (r.stdout ?? '') + (r.stderr ?? '');
+  check(
+    'the malicious path, host and expected id are never echoed',
+    attackerBytesIn(combined).length === 0 && !combined.includes('missing.json'),
+    `output was ${JSON.stringify(combined.slice(0, 200))}`,
+  );
+  check(
+    'the read failure reports the fixed unreadable-response message',
+    combined.includes(ALIAS_BINDING_MESSAGES.UNREADABLE_RESPONSE),
+    `output was ${JSON.stringify(combined.slice(0, 200))}`,
+  );
+}
+
+console.log('\nThe fixed message table and its final guard:');
+for (const [key, message] of Object.entries(ALIAS_BINDING_MESSAGES)) {
+  check(
+    `message ${key} is a bounded, control-character-free constant`,
+    attackerBytesIn(message).length === 0
+      && message.length <= ALIAS_BINDING_MAX_DIAGNOSTIC
+      && !message.includes('::'),
+    `message was ${JSON.stringify(message)}`,
+  );
+}
+check(
+  'the message table is frozen',
+  Object.isFrozen(ALIAS_BINDING_MESSAGES),
+);
+{
+  const hostile = `${ANSI_CLEAR}${CMD_ERROR}${CRLF}${BEL}${NUL}` + 'x'.repeat(5000);
+  const cleaned = sanitizeDiagnostic(hostile);
+  check(
+    'sanitizeDiagnostic strips control characters',
+    !CONTROL_CHARS.test(cleaned) && !cleaned.includes('\n'),
+  );
+  check(
+    'sanitizeDiagnostic bounds the length',
+    cleaned.length <= ALIAS_BINDING_MAX_DIAGNOSTIC,
+    `got ${cleaned.length}`,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // MUTATION / REGRESSION PROOF
 // ─────────────────────────────────────────────────────────────────────────
 // `priorInlineValidator` is the exact decision the workflow's inline
@@ -362,6 +632,101 @@ check(
 check(
   'the PRODUCTION validator treats an empty top-level id as fatal',
   decide(JSON.stringify({ alias: HOST, deploymentId: '' })).code === ALIAS_BINDING_FATAL,
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// MUTATION PROOF, SECOND DIMENSION: the diagnostics
+// ─────────────────────────────────────────────────────────────────────────
+// `priorInterpolatingDiagnostic` is the message construction this module used
+// before this remediation, transcribed from commit 346d1863. Like
+// `priorInlineValidator` it is the BUG, not an alternative implementation: it
+// is here so the adversarial fixtures above can be shown to bite. A fixture set
+// that the old, leaking diagnostics also satisfied would prove nothing.
+function priorInterpolatingDiagnostic(raw, host, expectedId) {
+  let record;
+  try {
+    record = JSON.parse(raw);
+  } catch (err) {
+    return `Alias record for ${host} was not valid JSON: ${err.message}`;
+  }
+  if (record === null || typeof record !== 'object' || Array.isArray(record)) {
+    return `Alias record for ${host} was not an object.`;
+  }
+  if (record.error !== undefined && record.error !== null) {
+    const code = record.error?.code;
+    return `Alias API returned an error for ${host}`
+      + `${typeof code === 'string' && code.length > 0 ? ` (code=${code})` : ''}.`;
+  }
+  const topLevel = record.deploymentId;
+  if (typeof topLevel !== 'string' || topLevel.length === 0) {
+    return `Alias record for ${host} has no usable top-level deploymentId.`;
+  }
+  const nested = record.deployment && record.deployment.id;
+  if (nested !== undefined && nested !== topLevel) {
+    return `Alias record for ${host} contradicts itself: deploymentId=${topLevel} `
+      + `but deployment.id=${JSON.stringify(nested)}.`;
+  }
+  if (topLevel !== expectedId) {
+    return `${host} is bound to ${topLevel}, not this run deployment ${expectedId}.`;
+  }
+  return `${host} is bound to exactly this run deployment ${expectedId}.`;
+}
+
+console.log('\nMutation proof — the prior diagnostics leaked what these fixtures carry:');
+const priorLeaking = ATTACKS.filter(
+  (a) =>
+    attackerBytesIn(
+      priorInterpolatingDiagnostic(a.raw, a.host ?? HOST, a.expectedId ?? THIS_RUN),
+    ).length > 0,
+);
+const currentLeaking = ATTACKS.filter(
+  (a) =>
+    attackerBytesIn(
+      evaluateAliasBinding({
+        raw: a.raw,
+        host: a.host ?? HOST,
+        expectedDeploymentId: a.expectedId ?? THIS_RUN,
+      }).message,
+    ).length > 0,
+);
+
+check(
+  'the PRIOR diagnostics leaked attacker bytes for most of these fixtures (the High finding, reproduced)',
+  priorLeaking.length >= 8,
+  `only ${priorLeaking.length} of ${ATTACKS.length} fixtures leaked, so the transcription of the old diagnostics has drifted`,
+);
+check(
+  'the PRODUCTION diagnostics leak for NONE of them',
+  currentLeaking.length === 0,
+  `leaking fixtures: ${currentLeaking.map((a) => a.name).join('; ')}`,
+);
+console.log(
+  `    (${priorLeaking.length} of ${ATTACKS.length} fixtures escaped the prior diagnostics)`,
+);
+
+// V8 quotes only the first ~10 characters of the offending input back inside
+// `err.message` ("Unexpected token ':', \"::error::I\"... is not valid JSON").
+// Ten characters is already enough to plant a forged `::error::` workflow
+// command in the log, which is exactly why the fragment must not be echoed at
+// all — a bound on how much leaks is not a defence.
+check(
+  'the PRIOR diagnostics reproduced an attacker fragment straight out of a JSON parse error',
+  priorInterpolatingDiagnostic(PARSE_FRAGMENT, HOST, THIS_RUN).includes('::error::'),
+  'V8 quotes the offending input back inside err.message; if it stopped, this proof is stale',
+);
+check(
+  'the PRODUCTION helper reports that same body as a fixed message through its exit code and log',
+  runHelper(PARSE_FRAGMENT).code === ALIAS_BINDING_FATAL
+    && attackerBytesIn(runHelper(PARSE_FRAGMENT).stdout + runHelper(PARSE_FRAGMENT).stderr)
+      .length === 0,
+);
+check(
+  'the PRIOR diagnostics echoed the caller-supplied host',
+  priorInterpolatingDiagnostic(
+    JSON.stringify({ alias: HOST, deploymentId: THIS_RUN }),
+    MALICIOUS_HOST,
+    THIS_RUN,
+  ).includes('INJECTED'),
 );
 
 // ─────────────────────────────────────────────────────────────────────────

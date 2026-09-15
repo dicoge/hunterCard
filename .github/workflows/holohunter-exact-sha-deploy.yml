@@ -39,6 +39,21 @@ name: HoloHunter exact-SHA Production deploy
 # passed to curl via --oauth2-bearer so neither value is ever assembled into
 # an echoed header string.
 #
+# Diagnostics
+# -----------
+# No step prints a response body, and no step interpolates a value that came
+# out of one: not a parse error (V8 quotes the offending input back), not an
+# API error code or message, not a deployment id, not a url, not a raw status
+# field. An Actions log honours ANSI control sequences and `::workflow
+# command::` lines, so echoing remote bytes into it is log forgery and
+# terminal manipulation performed on behalf of whatever answered the request.
+# What is printed instead: fixed labels, bounded attempt counters, workflow
+# constants, curl's own numeric status reduced to three digits, and
+# EXPECTED_SHA — the operator's input, already proven to be 40 lowercase hex
+# digits and the live tip of main. API ids additionally clear a strict
+# allowlist before reaching GITHUB_ENV, since a newline in one would inject
+# environment variables into every later step.
+#
 # The companion suite `npm run test:exact-sha-production-recovery` enforces
 # every one of the above statements mechanically, including the bans.
 
@@ -130,27 +145,46 @@ jobs:
             exit 1
           fi
 
+          # Every string below comes from a remote API response and ends up in
+          # a public Actions log, so none of them is interpolated into a
+          # message: the diagnostics are fixed and the values are only ever
+          # compared. Ids additionally have to clear a strict allowlist before
+          # they are written to GITHUB_ENV — an unvalidated value containing a
+          # newline would inject arbitrary environment variables into every
+          # later step.
           node -e '
             const fs = require("fs");
-            const d = JSON.parse(fs.readFileSync("/tmp/project.json", "utf8"));
-            const link = d.link || {};
+            let d;
+            try {
+              d = JSON.parse(fs.readFileSync("/tmp/project.json", "utf8"));
+            } catch {
+              console.error("::error::The Vercel project response was not valid JSON.");
+              process.exit(1);
+            }
+            const link = (d && d.link) || {};
             if (link.type !== "github") {
-              console.error(`::error::Project is not GitHub-linked (link.type=${JSON.stringify(link.type)}); cannot pin a commit.`);
+              console.error("::error::Project is not GitHub-linked; cannot pin a commit.");
               process.exit(1);
             }
             if (link.org !== "dicoge" || link.repo !== "hunterCard") {
-              console.error(`::error::Project is linked to ${link.org}/${link.repo}, not dicoge/hunterCard.`);
+              console.error("::error::Project is linked to a repository other than dicoge/hunterCard.");
               process.exit(1);
             }
-            if (!link.repoId) {
-              console.error("::error::Project link carries no repoId; cannot pin a gitSource.");
+            const projectId = d && d.id;
+            if (typeof projectId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(projectId)) {
+              console.error("::error::Project response carried no id of the expected shape.");
+              process.exit(1);
+            }
+            const repo = link.repoId;
+            if (!/^[0-9]{1,20}$/.test(String(repo == null ? "" : repo))) {
+              console.error("::error::Project link carries no usable repoId; cannot pin a gitSource.");
               process.exit(1);
             }
             fs.appendFileSync(
               process.env.GITHUB_ENV,
-              `PROJECT_ID=${d.id}\nREPO_ID=${link.repoId}\n`,
+              `PROJECT_ID=${projectId}\nREPO_ID=${repo}\n`,
             );
-            console.log(`Resolved project ${d.id} linked to ${link.org}/${link.repo}.`);
+            console.log("Resolved the GitHub-linked Vercel project for dicoge/hunterCard.");
           '
 
       - name: Create a fresh Production deployment pinned to the exact SHA
@@ -182,20 +216,32 @@ jobs:
             "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_ORG_ID}")
 
           if [ "$code" != "200" ] && [ "$code" != "201" ]; then
-            echo "::error::Failed to create the deployment (HTTP ${code})."
-            cat /tmp/created.json
+            # The status is curl's own `%{http_code}`, not response content, and
+            # it is reduced to three digits before it is printed. The response
+            # BODY is never printed: it is remote data, and a log line is a
+            # place where ANSI sequences and forged `::workflow commands::`
+            # would both be honoured.
+            status=$(printf '%s' "$code" | grep -Eo '^[0-9]{3}$' || echo "unreadable")
+            echo "::error::Failed to create the deployment (HTTP ${status})."
             exit 1
           fi
 
           node -e '
             const fs = require("fs");
-            const d = JSON.parse(fs.readFileSync("/tmp/created.json", "utf8"));
-            if (!d.id) {
-              console.error("::error::Deployment response carried no id.");
+            let d;
+            try {
+              d = JSON.parse(fs.readFileSync("/tmp/created.json", "utf8"));
+            } catch {
+              console.error("::error::The create-deployment response was not valid JSON.");
               process.exit(1);
             }
-            fs.appendFileSync(process.env.GITHUB_ENV, `DEPLOYMENT_ID=${d.id}\n`);
-            console.log(`Created deployment ${d.id} (${d.url || "no url yet"}).`);
+            const created = d && d.id;
+            if (typeof created !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(created)) {
+              console.error("::error::Deployment response carried no id of the expected shape.");
+              process.exit(1);
+            }
+            fs.appendFileSync(process.env.GITHUB_ENV, `DEPLOYMENT_ID=${created}\n`);
+            console.log("Created a fresh Production deployment for this run.");
           '
 
       - name: Wait for the deployment to reach READY (bounded)
@@ -214,7 +260,24 @@ jobs:
             curl -sS -o /tmp/poll.json \
               --oauth2-bearer "${VERCEL_TOKEN}" \
               "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}"
-            state=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/poll.json","utf8")).readyState || ""')
+            # readyState is remote data. Reduce it to an allowlisted token
+            # before it is ever echoed, and make a malformed body a fixed
+            # error rather than a thrown exception — V8 quotes a slice of the
+            # offending input back inside the parse error message.
+            state=$(node -e '
+              const fs = require("fs");
+              let d;
+              try {
+                d = JSON.parse(fs.readFileSync("/tmp/poll.json", "utf8"));
+              } catch {
+                console.error("::error::The deployment poll response was not valid JSON.");
+                process.exit(1);
+              }
+              const s = d && d.readyState;
+              process.stdout.write(
+                typeof s === "string" && /^[A-Z_]{1,32}$/.test(s) ? s : "UNRECOGNISED",
+              );
+            ')
             echo "attempt ${attempt}/${MAX_ATTEMPTS}: readyState=${state}"
 
             case "$state" in
@@ -245,14 +308,24 @@ jobs:
             --oauth2-bearer "${VERCEL_TOKEN}" \
             "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?withGitRepoInfo=true&teamId=${VERCEL_ORG_ID}"
 
+          # `expected` is the only value printed anywhere below: it is the
+          # operator-supplied SHA, already proven to be 40 lowercase hex digits
+          # and the live tip of main. Field NAMES are local constants. Field
+          # VALUES come from the API and are compared, never echoed.
           node -e '
             const fs = require("fs");
-            const d = JSON.parse(fs.readFileSync("/tmp/verify.json", "utf8"));
+            let d;
+            try {
+              d = JSON.parse(fs.readFileSync("/tmp/verify.json", "utf8"));
+            } catch {
+              console.error("::error::The deployment verification response was not valid JSON.");
+              process.exit(1);
+            }
             const expected = process.argv[1];
 
-            const target = d.target;
+            const target = d && d.target;
             if (target !== "production") {
-              console.error(`::error::Deployment target is ${JSON.stringify(target)}, expected the production target.`);
+              console.error("::error::Deployment target is not the production target.");
               process.exit(1);
             }
 
@@ -275,14 +348,14 @@ jobs:
 
             const mismatched = present.filter(([, v]) => v.toLowerCase() !== expected);
             if (mismatched.length > 0) {
-              for (const [field, value] of mismatched) {
-                console.error(`::error::${field}=${value} does not match the requested ${expected}.`);
+              for (const [field] of mismatched) {
+                console.error(`::error::${field} does not match the requested ${expected}.`);
               }
               process.exit(1);
             }
 
-            for (const [field, value] of present) {
-              console.log(`verified ${field}=${value}`);
+            for (const [field] of present) {
+              console.log(`verified ${field} matches ${expected}`);
             }
           ' "$EXPECTED_SHA"
 
@@ -305,10 +378,19 @@ jobs:
             curl -sS -o /tmp/alias.json \
               --oauth2-bearer "${VERCEL_TOKEN}" \
               "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?withGitRepoInfo=true&teamId=${VERCEL_ORG_ID}"
+            # A malformed body must fail this probe quietly (it is retried
+            # below), not throw — an uncaught parse error prints a quoted slice
+            # of the remote payload into the log.
             if node -e '
-                const d = JSON.parse(require("fs").readFileSync("/tmp/alias.json","utf8"));
+                const fs = require("fs");
+                let d;
+                try {
+                  d = JSON.parse(fs.readFileSync("/tmp/alias.json", "utf8"));
+                } catch {
+                  process.exit(1);
+                }
                 const host = process.argv[1];
-                const list = Array.isArray(d.alias) ? d.alias : [];
+                const list = d && Array.isArray(d.alias) ? d.alias : [];
                 process.exit(list.includes(host) ? 0 : 1);
               ' "$CANONICAL_HOST"; then
               alias_ok=1
@@ -392,6 +474,13 @@ jobs:
               --oauth2-bearer "${VERCEL_TOKEN}" \
               "https://api.vercel.com/v4/aliases/${CANONICAL_HOST}?teamId=${VERCEL_ORG_ID}" || true)
 
+            # The alias response BODY is never printed — not on success, not on
+            # retry, not on error. It is remote data, and an Actions log honours
+            # both ANSI control sequences and `::workflow command::` lines, so a
+            # dump of it is log forgery and terminal manipulation driven by
+            # whatever answers for the alias API. Only the decision matters
+            # here, and scripts/ci/verify-alias-binding.mjs reports that as a
+            # fixed string plus an exit code.
             case "$code" in
               200)
                 ;;
@@ -399,8 +488,11 @@ jobs:
                 # The documented explicit alias-API errors: invalid query,
                 # unauthorized, forbidden, gone. Waiting cannot fix any of
                 # them, so fail now rather than burn the whole window.
-                echo "::error::Alias API returned HTTP ${code} for ${CANONICAL_HOST}."
-                cat /tmp/alias-binding.json
+                #
+                # `$code` is curl's own `%{http_code}`, and inside this arm the
+                # pattern has already constrained it to one of four literals,
+                # so it is a safe thing to name in the log.
+                echo "::error::Alias API returned HTTP ${code} for the canonical host."
                 exit 1
                 ;;
               *)
@@ -408,7 +500,11 @@ jobs:
                 # unrecognised are treated as not-readable-yet. This does not
                 # soften the gate: the loop is bounded and ends in a hard
                 # failure below if the binding is never proven.
-                echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias record not readable yet (HTTP ${code})."
+                #
+                # This arm is the catch-all, so reduce the status to three
+                # digits before echoing it rather than trusting its shape.
+                status=$(printf '%s' "$code" | grep -Eo '^[0-9]{3}$' || echo "unreadable")
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias record not readable yet (HTTP ${status})."
                 sleep "$SLEEP_SECONDS"
                 continue
                 ;;
@@ -434,16 +530,20 @@ jobs:
             rc=$?
             set -e
 
+            # Deployment ids are API-derived, so they are not echoed either.
+            # EXPECTED_SHA is the operator's own input, already proven to be 40
+            # lowercase hex digits and the live tip of main, and it is the value
+            # a reader actually needs to identify the run.
             case "$rc" in
               0)
-                echo "Production linkage proven: ${CANONICAL_HOST} -> ${DEPLOYMENT_ID} (${EXPECTED_SHA})."
+                echo "Production linkage proven: the canonical host resolves to the deployment this run created (${EXPECTED_SHA})."
                 exit 0
                 ;;
               2)
-                echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias not bound to ${DEPLOYMENT_ID} yet."
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: the canonical alias is not bound to this run's deployment yet."
                 ;;
               1)
-                echo "::error::Alias record for ${CANONICAL_HOST} is unusable; aborting without retrying."
+                echo "::error::The canonical alias record is unusable; aborting without retrying."
                 exit 1
                 ;;
               *)
@@ -455,5 +555,5 @@ jobs:
             sleep "$SLEEP_SECONDS"
           done
 
-          echo "::error::${CANONICAL_HOST} never resolved to deployment ${DEPLOYMENT_ID}; refusing to report a Production deploy this run did not place."
+          echo "::error::The canonical alias never resolved to the deployment this run created; refusing to report a Production deploy this run did not place."
           exit 1

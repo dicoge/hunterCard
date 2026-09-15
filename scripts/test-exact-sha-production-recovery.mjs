@@ -578,7 +578,7 @@ if (dep) {
   check(
     'alias-binding check is bounded and hard-fails on timeout',
     /MAX_ATTEMPTS/.test(aliasStep)
-      && /never resolved to deployment/i.test(aliasStep)
+      && /never resolved to (?:the )?deployment/i.test(aliasStep)
       && /exit 1/.test(aliasStep),
     'propagation may lag, but an unbounded or soft-failing wait proves nothing',
   );
@@ -591,6 +591,249 @@ if (dep) {
     'alias-binding check hard-fails the documented explicit alias-API errors',
     /401/.test(aliasStep) && /403/.test(aliasStep) && /410/.test(aliasStep),
     'unauthorized/forbidden/gone cannot be fixed by waiting out the window',
+  );
+
+  // ── No API-controlled byte may reach the Actions log ─────────────────
+  //
+  // A GitHub Actions log honours ANSI control sequences and `::workflow
+  // command::` lines. Echoing a response body into it is therefore log
+  // forgery and terminal manipulation carried out on behalf of whatever
+  // answered the request — the Vercel alias API, or anything able to answer
+  // for it. The rule this section enforces is absolute: response bodies are
+  // parsed and compared, never printed, and no value lifted out of one is
+  // interpolated into a diagnostic either.
+  //
+  // This is not hypothetical. The step used to `cat /tmp/alias-binding.json`
+  // on an explicit 4xx, and the validator used to interpolate the JSON parse
+  // exception, `error.code`, and both deployment ids. A record carrying
+  // `"\u001b[2J::error::INJECTED"` survived into the log unchanged.
+  const RAW_BODY_PRINTS = [
+    { name: 'cat of the alias response file', re: /\bcat\b[^\n]*alias-binding\.json/ },
+    { name: 'cat of any /tmp response file', re: /\bcat\b[^\n]*\/tmp\/\S*\.json/ },
+    { name: 'echo of a response file via command substitution', re: /echo[^\n]*\$\(\s*cat\b/ },
+    { name: 'tee of a response file into the log', re: /\btee\b[^\n]*\/tmp\/\S*\.json/ },
+  ];
+  const rawBodyPrintOffenders = (text) =>
+    RAW_BODY_PRINTS.filter(({ re }) => re.test(text)).map(({ name }) => name);
+
+  check(
+    'the alias-binding step never prints the alias response body',
+    rawBodyPrintOffenders(aliasStep).length === 0,
+    `offending shapes: ${rawBodyPrintOffenders(aliasStep).join(', ')}`,
+  );
+  check(
+    'NO step of the deploy workflow prints any response body',
+    rawBodyPrintOffenders(depActiveRuns).length === 0,
+    `offending shapes: ${rawBodyPrintOffenders(depActiveRuns).join(', ')}`,
+  );
+  check(
+    'the deploy workflow never uploads a response file as an artifact',
+    !/upload-artifact/.test(dep.active),
+    'an artifact is just a slower way of publishing the same remote bytes',
+  );
+
+  // Shell diagnostics: every variable an `echo` puts in the log must be a
+  // workflow constant, a bounded counter, or a value proven safe upstream.
+  // `echo` lines that pipe or redirect are not log writes and are skipped.
+  // `CANONICAL_HOST` and `VERCEL_PROJECT_NAME` are only admissible here
+  // because they are literal constants in the job's own `env:` block — the
+  // check below proves that, so neither can quietly become an expression or a
+  // value lifted out of a response.
+  const JOB_ENV_CONSTANTS = ['CANONICAL_HOST', 'VERCEL_PROJECT_NAME'];
+  for (const name of JOB_ENV_CONSTANTS) {
+    const value = job?.env?.[name];
+    check(
+      `${name} is a literal constant in the deploy job's env block`,
+      typeof value === 'string' && value.length > 0 && !value.includes('${{'),
+      `got ${JSON.stringify(value)}`,
+    );
+  }
+
+  const ECHOED_VARS_ALLOWED = new Set([
+    'attempt',              // bounded loop counter
+    'MAX_ATTEMPTS',         // workflow constant
+    'EXPECTED_SHA',         // operator input, already proven 40-hex and the tip of main
+    'code',                 // curl's own %{http_code}, narrowed by the matched case arm
+    'status',               // that same status reduced to three digits
+    'rc',                   // the validator's exit code, an integer from $?
+    'state',                // readyState reduced to an allowlisted token
+    'DISPATCH_SHA',         // GitHub-supplied commit sha
+    'head_sha',             // git rev-parse output
+    'remote_sha',           // git ls-remote output
+    ...JOB_ENV_CONSTANTS,   // literal env constants, proven literal above
+  ]);
+  const echoedVars = (text) => {
+    const found = new Set();
+    for (const line of text.split('\n')) {
+      if (!/\becho\b/.test(line)) continue;
+      if (/[|>]/.test(line)) continue; // piped/redirected: not a log write
+      for (const m of line.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g)) found.add(m[1]);
+    }
+    return [...found];
+  };
+  const echoed = echoedVars(depActiveRuns);
+  const unexpectedEchoed = echoed.filter((v) => !ECHOED_VARS_ALLOWED.has(v));
+  check(
+    'every shell variable the deploy workflow echoes is a trusted, bounded value',
+    unexpectedEchoed.length === 0,
+    `unexpected echoed variables: ${unexpectedEchoed.join(', ')}`,
+  );
+  for (const apiDerived of ['DEPLOYMENT_ID', 'PROJECT_ID', 'REPO_ID']) {
+    check(
+      `the deploy workflow never echoes the API-derived ${apiDerived}`,
+      !echoed.includes(apiDerived),
+      'ids come out of a response body; the run is identified by EXPECTED_SHA instead',
+    );
+  }
+
+  // Node diagnostics inside the workflow: same rule, different syntax.
+  const ALLOWED_LOG_EXPRESSIONS = new Set([
+    'field',    // a key of a local constant object, not response data
+    'expected', // EXPECTED_SHA, already proven 40-hex
+  ]);
+  const consoleInterpolations = [
+    ...depActiveRuns.matchAll(/console\.(?:log|error)\(\s*`([^`]*)`/g),
+  ].flatMap((m) => [...m[1].matchAll(/\$\{([^}]*)\}/g)].map((x) => x[1].trim()));
+  const unexpectedLogged = consoleInterpolations.filter((e) => !ALLOWED_LOG_EXPRESSIONS.has(e));
+  check(
+    'every value interpolated into a workflow console diagnostic is a constant or the validated SHA',
+    unexpectedLogged.length === 0,
+    `unexpected interpolations: ${unexpectedLogged.join(', ')}`,
+  );
+
+  // A thrown parse error is an indirect body print: V8 quotes a slice of the
+  // offending input back inside `err.message`.
+  const parseSites = [...depActiveRuns.matchAll(/JSON\.parse\(/g)];
+  const unguardedParses = parseSites.filter(
+    (m) => !/try\s*\{[\s\S]{0,200}$/.test(depActiveRuns.slice(Math.max(0, m.index - 200), m.index)),
+  );
+  check(
+    'every JSON.parse in the deploy workflow is guarded so no parse error can quote the payload',
+    parseSites.length > 0 && unguardedParses.length === 0,
+    `${unguardedParses.length} of ${parseSites.length} JSON.parse call(s) are unguarded`,
+  );
+
+  // Remote values that ARE echoed must be reduced to a bounded token first.
+  const pollIdx = stepIndex(/readyState/);
+  const pollStep = pollIdx >= 0 ? stepRun(depSteps[pollIdx]) : '';
+  check(
+    'the poll step reduces the remote readyState to an allowlisted token before echoing it',
+    /\^\[A-Z_\]\{1,32\}\$/.test(pollStep) && /UNRECOGNISED/.test(pollStep),
+    'readyState is response data; only a matched token may be printed',
+  );
+  check(
+    'the alias-binding catch-all arm reduces the HTTP status to three digits before echoing it',
+    /grep\s+-Eo\s+'\^\[0-9\]\{3\}\$'/.test(aliasStep),
+    'the explicit 4xx arm is already narrowed by its pattern; the catch-all is not',
+  );
+
+  // API ids reaching GITHUB_ENV is a privileged sink, not just a log: an
+  // unvalidated value containing a newline injects environment variables into
+  // every later step.
+  check(
+    'every API-derived id clears a strict allowlist before it is written to GITHUB_ENV',
+    /GITHUB_ENV/.test(depActiveRuns)
+      && /\^\[A-Za-z0-9_-\]\{1,128\}\$/.test(depActiveRuns)
+      && /\^\[0-9\]\{1,20\}\$/.test(depActiveRuns),
+    'a newline in an unvalidated id would append arbitrary variables to the env file',
+  );
+
+  // ── The helper's own diagnostics must be fixed strings ───────────────
+  // Comment lines are stripped first for the usual reason: the module has to
+  // be able to EXPLAIN in prose that it no longer interpolates `err.message`
+  // without that explanation tripping the check.
+  const jsExecutableLines = (raw) =>
+    raw
+      .split('\n')
+      .filter((line) => {
+        const t = line.trim();
+        return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+      })
+      .join('\n');
+
+  const helperRaw = fs.readFileSync(ALIAS_HELPER_PATH, 'utf8');
+  const helperCode = jsExecutableLines(helperRaw);
+
+  const HELPER_FORBIDDEN = [
+    { name: 'the JSON parse / read exception', re: /\$\{[^}]*err[^}]*\}/i },
+    { name: 'the caller-supplied host', re: /\$\{[^}]*\bhost\b[^}]*\}/ },
+    { name: 'the response file path', re: /\$\{[^}]*jsonPath[^}]*\}/ },
+    { name: 'the raw response body', re: /\$\{[^}]*\braw\b[^}]*\}/ },
+    { name: 'any deployment id', re: /\$\{[^}]*(?:deploymentId|topLevel|nested)[^}]*\}/i },
+    { name: 'the parsed record or its error code', re: /\$\{[^}]*record[^}]*\}/ },
+    { name: 'a describe()-style value dump', re: /\$\{\s*describe\s*\(/ },
+  ];
+  for (const { name, re } of HELPER_FORBIDDEN) {
+    check(
+      `the alias validator never interpolates ${name} into a diagnostic`,
+      !re.test(helperCode),
+      `matched ${re} in executable helper source`,
+    );
+  }
+
+  const HELPER_ALLOWED_INTERPOLATION =
+    /^(?:line|sanitizeDiagnostic\(ALIAS_BINDING_MESSAGES\.[A-Z_]+\))$/;
+  const helperInterpolations = [...helperCode.matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1].trim());
+  const badHelperInterpolations = helperInterpolations.filter(
+    (e) => !HELPER_ALLOWED_INTERPOLATION.test(e),
+  );
+  check(
+    'every value the alias validator interpolates is a sanitized entry of its fixed message table',
+    badHelperInterpolations.length === 0,
+    `unexpected interpolations: ${badHelperInterpolations.join(', ')}`,
+  );
+  check(
+    'the alias validator keeps its message table frozen',
+    /Object\.freeze\(/.test(helperCode) && /ALIAS_BINDING_MESSAGES/.test(helperCode),
+    'a mutable table is a table a later edit can fill with response data',
+  );
+  check(
+    'the alias validator sanitizes every line it prints',
+    /function sanitizeDiagnostic/.test(helperCode)
+      && (helperCode.match(/sanitizeDiagnostic\(/g) ?? []).length >= 4,
+    'the final guard must sit on every emitting path, not just one',
+  );
+
+  // ── MUTATION PROOF for this section ──────────────────────────────────
+  // These detectors are only worth having if they fire. Each is re-run
+  // against the code shape it replaced, transcribed from commit 346d1863.
+  const PRIOR_ALIAS_STEP = [
+    'code=$(curl -sS -o /tmp/alias-binding.json -w \'%{http_code}\' \\',
+    '  "https://api.vercel.com/v4/aliases/${CANONICAL_HOST}?teamId=${VERCEL_ORG_ID}" || true)',
+    'echo "::error::Alias API returned HTTP ${code} for ${CANONICAL_HOST}."',
+    'cat /tmp/alias-binding.json',
+    'echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias not bound to ${DEPLOYMENT_ID} yet."',
+  ].join('\n');
+
+  check(
+    'MUTATION: the body-print detector catches the prior `cat /tmp/alias-binding.json`',
+    rawBodyPrintOffenders(PRIOR_ALIAS_STEP).length > 0,
+    'the detector cannot have caught the finding it was written for',
+  );
+  check(
+    'MUTATION: the echoed-variable detector catches the prior ${DEPLOYMENT_ID} diagnostic',
+    echoedVars(PRIOR_ALIAS_STEP).includes('DEPLOYMENT_ID'),
+    'an API-derived id in an echo must be visible to this check',
+  );
+
+  const PRIOR_HELPER = [
+    'return fatal(`Alias record for ${host} was not valid JSON: ${err.message}`);',
+    'return fatal(`Alias API returned an error for ${host} (code=${code}).`);',
+    'return retry(`${host} is bound to ${topLevel}, not this run deployment ${expectedDeploymentId}.`);',
+    'console.error(`::error::Could not read the alias response at ${jsonPath}: ${err.message}`);',
+  ].join('\n');
+
+  const priorHelperOffences = HELPER_FORBIDDEN.filter(({ re }) => re.test(PRIOR_HELPER));
+  check(
+    'MUTATION: the helper-source detectors catch the prior interpolating diagnostics',
+    priorHelperOffences.length >= 4,
+    `only ${priorHelperOffences.length} detector(s) fired on the prior helper source`,
+  );
+  check(
+    'MUTATION: the interpolation allowlist rejects the prior helper diagnostics',
+    [...PRIOR_HELPER.matchAll(/\$\{([^}]*)\}/g)]
+      .map((m) => m[1].trim())
+      .some((e) => !HELPER_ALLOWED_INTERPOLATION.test(e)),
   );
 
   // ── HTTP probes must yield exactly ONE status code ───────────────────
