@@ -557,6 +557,154 @@ check(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// THE FINAL GUARD: bare workflow command markers
+// ─────────────────────────────────────────────────────────────────────────
+// Stripping control bytes and bounding the length is not enough on its own.
+// A runner reads a line beginning `::name::value` as a COMMAND rather than as
+// text, so `::add-mask::x` or `::set-output::x` is an injection even though
+// every byte in it is printable and the line is short. The production call
+// sites all pass fixed table entries today, so nothing reachable leaks — but
+// this function is advertised as the final pass that holds even if a future
+// edit reintroduces interpolation, and a final pass that lets `::` through is
+// not one.
+//
+// The contract asserted below holds for ARBITRARY input, not just fixtures:
+//   * no `::` survives anywhere in the output;
+//   * no control byte and no newline survives;
+//   * the result is a single line bounded by ALIAS_BINDING_MAX_DIAGNOSTIC.
+
+/** Everything sanitizeDiagnostic must guarantee about its own return value. */
+function sanitizerViolations(out) {
+  const bad = [];
+  if (typeof out !== 'string') return ['not-a-string'];
+  if (out.includes('::')) bad.push('workflow-command-marker');
+  if (CONTROL_CHARS.test(out)) bad.push('control-characters');
+  if (out.includes('\n') || out.includes('\r')) bad.push('newline');
+  if (out.length > ALIAS_BINDING_MAX_DIAGNOSTIC) bad.push(`unbounded:${out.length}`);
+  return bad;
+}
+
+/** C1 controls, built without literal escapes so the bytes are unambiguous. */
+const C1_NEL = String.fromCharCode(0x85);
+const C1_APC = String.fromCharCode(0x9f);
+const DEL = String.fromCharCode(0x7f);
+
+const MARKER_FIXTURES = [
+  // ── bare markers: start, middle, end ──────────────────────────────────
+  { name: 'bare ::error:: marker alone at the start', raw: CMD_ERROR },
+  { name: 'bare ::warning:: marker alone at the start', raw: CMD_WARN },
+  { name: 'marker in the middle of ordinary prose', raw: `alias check failed ${CMD_ERROR} and continued` },
+  { name: 'marker at the very end of the line', raw: `alias check failed ${CMD_WARN}` },
+  { name: 'a trailing bare :: with nothing after it', raw: 'alias check failed::' },
+  { name: 'a leading bare :: with nothing before it', raw: '::alias check failed' },
+
+  // ── repeated / overlapping colon runs ─────────────────────────────────
+  { name: 'odd-length colon run (:::)', raw: 'a:::b' },
+  { name: 'even-length colon run (::::)', raw: 'a::::b' },
+  { name: 'long colon run (eight colons)', raw: `a${':'.repeat(8)}b` },
+  { name: 'two markers run together with no separator', raw: `${CMD_ERROR}${CMD_WARN}` },
+  { name: 'overlapping marker heads (::error::::warning::)', raw: '::error::::warning::INJECTED' },
+  { name: 'a colon run longer than the output bound', raw: ':'.repeat(5000) },
+  { name: 'markers repeated past the output bound', raw: CMD_ERROR.repeat(500) },
+
+  // ── mixed case command names ──────────────────────────────────────────
+  { name: 'mixed case ::ERROR::', raw: '::ERROR::INJECTED' },
+  { name: 'mixed case ::Warning::', raw: '::Warning::INJECTED' },
+  { name: 'mixed case ::sEt-OuTpUt::', raw: '::sEt-OuTpUt::name=INJECTED' },
+  { name: 'the ::add-mask:: command', raw: '::add-mask::sk_live_SHOULD_NEVER_BE_LOGGED' },
+  { name: 'the ::stop-commands:: token form', raw: '::stop-commands::INJECTED' },
+
+  // ── CR/LF combined with markers ───────────────────────────────────────
+  { name: 'CRLF followed by a marker', raw: `first line${CRLF}${CMD_ERROR}` },
+  { name: 'marker sandwiched between CRLF pairs', raw: `${CRLF}${CMD_WARN}${CRLF}tail` },
+  { name: 'bare LF followed by a marker', raw: `first line\n${CMD_ERROR}` },
+  { name: 'bare CR followed by a marker', raw: `first line\r${CMD_WARN}` },
+
+  // ── ESC combined with markers ─────────────────────────────────────────
+  { name: 'ANSI clear followed by a marker', raw: `${ANSI_CLEAR}${CMD_ERROR}` },
+  { name: 'ANSI colour wrapped around a marker', raw: `${ANSI_RED}${CMD_WARN}${ANSI_CLEAR}` },
+  { name: 'a bare ESC byte glued to a marker', raw: `${ESC}${CMD_ERROR}` },
+  { name: 'ESC between the two colons of a marker head', raw: `:${ESC}:error::INJECTED` },
+
+  // ── adjacency created ONLY by control stripping ───────────────────────
+  // These are the cases a "tidy up the regex" refactor breaks: if controls
+  // were deleted rather than spaced, or spaced after the colon pass, each of
+  // these would emerge as a live `::`.
+  { name: 'colons made adjacent only after a NUL is removed', raw: `:${NUL}:` },
+  { name: 'colons made adjacent only after an ESC is removed', raw: `:${ESC}:` },
+  { name: 'colons made adjacent only after a CRLF is removed', raw: `:${CRLF}:` },
+  { name: 'colons made adjacent only after a BEL is removed', raw: `:${BEL}:` },
+  { name: 'colons made adjacent only after a DEL is removed', raw: `:${DEL}:` },
+  { name: 'colons separated by C1 control bytes', raw: `:${C1_NEL}:${C1_APC}:` },
+  { name: 'a whole marker split by control bytes that removal would rejoin', raw: `:${NUL}:error:${BEL}:INJECTED` },
+
+  // ── everything at once ────────────────────────────────────────────────
+  { name: 'markers plus every control byte plus overlength padding', raw: `${ANSI_CLEAR}${CMD_ERROR}${CRLF}${BEL}${NUL}${'x'.repeat(5000)}` },
+
+  // ── non-string and degenerate inputs ──────────────────────────────────
+  { name: 'a non-string input carrying a marker', raw: { toString: () => CMD_ERROR } },
+  { name: 'the empty string', raw: '' },
+];
+
+console.log('\nThe final guard neutralizes bare workflow command markers:');
+for (const f of MARKER_FIXTURES) {
+  const out = sanitizeDiagnostic(f.raw);
+  const bad = sanitizerViolations(out);
+  check(
+    `sanitizeDiagnostic — ${f.name}`,
+    bad.length === 0,
+    `violations: ${bad.join(', ')} in ${JSON.stringify(String(out).slice(0, 120))}`,
+  );
+}
+
+// Transformations must not create work for a second pass: if sanitizing twice
+// differs from sanitizing once, some rewrite is producing a new marker or a
+// new control byte out of its own output.
+console.log('\nThe final guard is idempotent (it never creates what it removes):');
+for (const f of MARKER_FIXTURES) {
+  const once = sanitizeDiagnostic(f.raw);
+  check(
+    `sanitizeDiagnostic is a fixed point — ${f.name}`,
+    sanitizeDiagnostic(once) === once,
+    `second pass changed the result for ${JSON.stringify(String(once).slice(0, 120))}`,
+  );
+}
+
+// Neutralizing must not cost legibility: the strings production actually
+// prints have to survive byte-for-byte. A guard that stripped every colon
+// would silently mangle the usage line, which reads `usage: verify-...`.
+console.log('\nThe final guard leaves real production diagnostics untouched:');
+for (const [key, message] of Object.entries(ALIAS_BINDING_MESSAGES)) {
+  check(
+    `sanitizeDiagnostic passes ${key} through byte-for-byte`,
+    sanitizeDiagnostic(message) === message,
+    `became ${JSON.stringify(sanitizeDiagnostic(message))}`,
+  );
+}
+check(
+  'a single colon is still a single colon (the usage line stays readable)',
+  sanitizeDiagnostic('usage: verify-alias-binding.mjs <path>')
+    === 'usage: verify-alias-binding.mjs <path>',
+);
+
+// Finally, close the loop from the unit level to the real log line: the only
+// `::` a reader should ever see is the ONE `::error::` prefix main() adds
+// itself. `::error::` contributes exactly two `::` occurrences; a fatal line
+// must show those two and no more, and a success/retry line none at all.
+console.log('\nOnly the helper-authored ::error:: prefix reaches the log:');
+for (const a of ATTACKS) {
+  const r = runHelper(a.raw, a.expectedId ?? THIS_RUN, a.host ?? HOST);
+  const combined = r.stdout + r.stderr;
+  const markerCount = (combined.match(/::/g) ?? []).length;
+  const expected = CODE_FOR[a.expect] === ALIAS_BINDING_FATAL ? 2 : 0;
+  check(
+    `${a.name} → exactly ${expected} '::' occurrence(s) in the log`,
+    markerCount === expected,
+    `got ${markerCount} in ${JSON.stringify(combined.slice(0, 200))}`,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // MUTATION / REGRESSION PROOF
 // ─────────────────────────────────────────────────────────────────────────
 // `priorInlineValidator` is the exact decision the workflow's inline
@@ -727,6 +875,110 @@ check(
     MALICIOUS_HOST,
     THIS_RUN,
   ).includes('INJECTED'),
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Guard the contract itself: the module must expose the three codes.
+// ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// MUTATION PROOF, THIRD DIMENSION: the final guard
+// ─────────────────────────────────────────────────────────────────────────
+// `priorSanitizeDiagnostic` is the guard exactly as it stood at commit
+// e593fcf8: it removed control bytes and bounded the length but left `::`
+// alone, so `sanitizeDiagnostic('::error::INJECTED')` returned its argument
+// verbatim. Like the two mutations above it is the BUG, kept so the marker
+// fixtures can be shown to bite rather than merely to pass.
+//
+// The other two functions are not history — they are the plausible WRONG
+// fixes. They are here so the fixtures defend the two ordering decisions the
+// real implementation makes, not just the presence of some colon pass.
+function priorSanitizeDiagnostic(text) {
+  return String(text)
+    .replace(new RegExp('[\\u0000-\\u001f\\u007f-\\u009f]', 'g'), ' ')
+    .slice(0, ALIAS_BINDING_MAX_DIAGNOSTIC);
+}
+
+/** WRONG FIX 1: rewrite each `::` pair on its own — `:::` becomes `: ::`. */
+function pairwiseSanitizer(text) {
+  return String(text)
+    .replace(new RegExp('[\\u0000-\\u001f\\u007f-\\u009f]', 'g'), ' ')
+    .replace(/::/g, ': :')
+    .slice(0, ALIAS_BINDING_MAX_DIAGNOSTIC);
+}
+
+/** WRONG FIX 2: split runs first, then DELETE controls — `:NUL:` becomes `::`. */
+function splitBeforeStripSanitizer(text) {
+  return String(text)
+    .replace(/:{2,}/g, (run) => run.split('').join(' '))
+    .replace(new RegExp('[\\u0000-\\u001f\\u007f-\\u009f]', 'g'), '')
+    .slice(0, ALIAS_BINDING_MAX_DIAGNOSTIC);
+}
+
+console.log('\nMutation proof — the prior final guard fails the marker fixtures:');
+
+// The two cases named verbatim in the review finding.
+check(
+  'the PRIOR guard returned ::error::INJECTED unchanged (the Medium finding, reproduced)',
+  priorSanitizeDiagnostic(CMD_ERROR) === CMD_ERROR,
+  'if this stops reproducing, the transcription of the old guard has drifted',
+);
+check(
+  'the PRIOR guard returned ::warning::INJECTED unchanged (the Medium finding, reproduced)',
+  priorSanitizeDiagnostic(CMD_WARN) === CMD_WARN,
+);
+check(
+  'the CURRENT guard neutralizes both of those exact inputs',
+  !sanitizeDiagnostic(CMD_ERROR).includes('::')
+    && !sanitizeDiagnostic(CMD_WARN).includes('::'),
+  `got ${JSON.stringify(sanitizeDiagnostic(CMD_ERROR))} and `
+    + `${JSON.stringify(sanitizeDiagnostic(CMD_WARN))}`,
+);
+
+const priorGuardFailures = MARKER_FIXTURES.filter(
+  (f) => sanitizerViolations(priorSanitizeDiagnostic(f.raw)).length > 0,
+);
+const currentGuardFailures = MARKER_FIXTURES.filter(
+  (f) => sanitizerViolations(sanitizeDiagnostic(f.raw)).length > 0,
+);
+check(
+  'the PRIOR guard is defeated by a large majority of the marker fixtures',
+  priorGuardFailures.length >= 15,
+  `only ${priorGuardFailures.length} of ${MARKER_FIXTURES.length} fixtures defeated it, `
+    + 'so the fixtures are not discriminating',
+);
+check(
+  'the CURRENT guard is defeated by NONE of them',
+  currentGuardFailures.length === 0,
+  `failing fixtures: ${currentGuardFailures.map((f) => f.name).join('; ')}`,
+);
+console.log(
+  `    (${priorGuardFailures.length} of ${MARKER_FIXTURES.length} fixtures defeated the prior guard)`,
+);
+
+// Each wrong fix must be caught by at least one fixture, and the catching
+// fixture is printed so a later reader sees which decision it protects.
+const pairwiseFailures = MARKER_FIXTURES.filter(
+  (f) => sanitizerViolations(pairwiseSanitizer(f.raw)).length > 0,
+);
+check(
+  'MUTATION: pairwise `::` replacement is caught (odd-length colon runs defeat it)',
+  pairwiseFailures.length > 0,
+  'no fixture carries an odd-length colon run, so `:::` -> `: ::` would ship unnoticed',
+);
+console.log(
+  `    (pairwise replacement defeated by: ${pairwiseFailures.map((f) => f.name).join('; ')})`,
+);
+
+const reorderedFailures = MARKER_FIXTURES.filter(
+  (f) => sanitizerViolations(splitBeforeStripSanitizer(f.raw)).length > 0,
+);
+check(
+  'MUTATION: splitting colons before DELETING controls is caught (removal re-forms `::`)',
+  reorderedFailures.length > 0,
+  'no fixture separates two colons with a control byte, so the ordering is unprotected',
+);
+console.log(
+  `    (strip-after-split defeated by: ${reorderedFailures.map((f) => f.name).join('; ')})`,
 );
 
 // ─────────────────────────────────────────────────────────────────────────

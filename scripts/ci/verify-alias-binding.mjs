@@ -111,11 +111,31 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;
  * constants, so in a correct build this is a no-op — it exists so that a future
  * edit that reintroduces interpolation still cannot emit an escape sequence, a
  * forged `::workflow command::` line break, or an unbounded dump.
+ *
+ * Removing control bytes and bounding the length is not sufficient on its own.
+ * A runner reads a line beginning `::name::value` as a COMMAND rather than as
+ * text, so `::add-mask::x` is an injection even though every byte in it is
+ * printable and the line is short. The guard therefore also breaks up any
+ * colon run that could form such a marker.
+ *
+ * Two ordering details carry the correctness, and fixtures in
+ * scripts/test-alias-binding-validator.mjs pin both:
+ *
+ *   * control bytes are replaced by a SPACE, never deleted, and that happens
+ *     BEFORE the colon pass. Deleting them — or spacing them afterwards —
+ *     could pull two separated colons together and manufacture the very
+ *     marker this step exists to remove;
+ *   * a colon run is split as a WHOLE. Rewriting each `::` pair on its own
+ *     turns `:::` into `: ::` and leaves a live marker behind.
+ *
+ * Single colons are left alone, so the fixed diagnostics — the usage line in
+ * particular — still read normally.
  */
 export function sanitizeDiagnostic(text) {
   return String(text)
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    .replace(/:{2,}/g, (run) => run.split('').join(' '))
     .slice(0, ALIAS_BINDING_MAX_DIAGNOSTIC);
 }
 
