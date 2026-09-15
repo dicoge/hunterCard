@@ -19,6 +19,7 @@ import DeckEditorScreen from '../screens/DeckEditorScreen';
 import TournamentReportScreen from '../screens/TournamentReportScreen';
 import WatchlistScreen from '../screens/WatchlistScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import MeScreen from '../screens/MeScreen';
 import CardDetailScreen from '../screens/CardDetailScreen';
 import SearchResultsScreen from '../screens/SearchResultsScreen';
 import LoginScreen from '../screens/LoginScreen';
@@ -232,6 +233,19 @@ function MainDrawer() {
           ),
         }}
       />
+      {/* DIC-1427: Pen App/07 我的 collection hub (frame siVsa) — the 我的
+          bottom tab lands here; Settings stays its own route (Pen x44r8t). */}
+      <Drawer.Screen
+        name="Me"
+        component={MeScreen}
+        options={{
+          title: t('nav_me'),
+          headerShown: false,
+          drawerIcon: ({ focused }) => (
+            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>👤</Text>
+          ),
+        }}
+      />
       <Drawer.Screen 
         name="Settings" 
         component={SettingsScreen}
@@ -316,21 +330,21 @@ export default function AppNavigator() {
     );
   }
 
-  // DIC-1380 W5b: unauthenticated visitors now land on the Pen artifact's
-  // accepted marketing Landing (LandingScreen) at `/`, not on the bare
-  // LoginScreen auth card that shipped before. LoginScreen is retained as
-  // an internal seam kept out of the visible surface (kept referenced so
-  // the bundler and the future settings-linked login flow keep it live).
-  const LoginScreenRef = LoginScreen;
-  void LoginScreenRef;
-
+  // DIC-1380 W5b: unauthenticated visitors land on the Pen artifact's
+  // accepted marketing Landing (LandingScreen) at `/`.
+  // DIC-1427 (Pen p28zL): the Pen auth surface is now a REAL reachable state
+  // — the Landing's 登入 entries push `AuthLogin` (LoginScreen) inside the
+  // same unauthenticated stack, so the auth gate itself is unchanged.
   return (
     <NavigationContainer>
       <AuthStack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated || isGuest ? (
           <AuthStack.Screen name="Main" component={StackNavigator} />
         ) : (
-          <AuthStack.Screen name="Login" component={LandingScreen} />
+          <>
+            <AuthStack.Screen name="Login" component={LandingScreen} />
+            <AuthStack.Screen name="AuthLogin" component={LoginScreen} />
+          </>
         )}
       </AuthStack.Navigator>
     </NavigationContainer>

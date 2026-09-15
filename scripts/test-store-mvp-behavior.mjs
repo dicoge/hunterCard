@@ -106,8 +106,9 @@ const GATED_DETAIL_MARKERS = [
   ['查即時價 CTA (externalPriceLinks)', 'hasLivePriceCta'],
   ['遊々亭 external link (externalPriceLinks)', 'hasYuyuLink'],
   ['Carousell external link (externalPriceLinks)', 'hasCarousellLink'],
-  ['到價提醒 chip (watchlist)', 'hasWatchlistChip'],
-  ['到價提醒 bottom button (watchlist)', 'hasWatchlistBtn'],
+  // DIC-1427 Pen o7WO3r: single 到價提醒 banner (Pen jB05M) replaces the old
+  // chip + bottom-button pair; the banner keeps the chip testID.
+  ['到價提醒 banner (watchlist)', 'hasWatchlistChip'],
 ];
 
 // ── DIC-1319 sale-price markers: the surfaces the v21 closed test shipped

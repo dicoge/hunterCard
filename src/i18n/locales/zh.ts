@@ -76,6 +76,10 @@ export const zh = {
   favorites_count: '{{count}} 張收藏',
   favorites_remove_button: '移除',
   favorites_open_card: '查看卡牌',
+  // DIC-1427 Pen sSDxQ head sort control
+  favorites_sort_added: '最近加入',
+  favorites_sort_price: '價格 ↓',
+  favorites_sort_a11y: '切換排序方式',
   // Deck status banner + card category labels (Pen uXuqo — DIC-1380 W6)
   deck_status_legal: '牌組合法',
   deck_status_incomplete: '尚未完成',
@@ -138,6 +142,14 @@ export const zh = {
   // Settings
   settings_title: '設定',
   settings_app_version: '版本 {{version}}',
+  // DIC-1427 Pen x44r8t 設定 group/row IA
+  settings_group_account: '帳號',
+  settings_group_preferences: '偏好',
+  settings_group_app: '應用',
+  settings_row_language: '語言',
+  settings_row_currency: '貨幣',
+  settings_row_about: '關於 HoloHunter',
+  settings_guest_meta: '尚未登入',
   settings_language_section: '🌐 顯示語言',
   settings_language_zh: '中文',
   settings_language_ja: '日本語',
@@ -158,8 +170,8 @@ export const zh = {
   settings_apple_login: '使用 Apple 帳號登入',
 
   // Login Screen
-  login_tagline: 'hololive TCG 卡牌查詢 App',
-  login_welcome: '歡迎使用 HoloHunter',
+  login_tagline: '追蹤 hOCG 價格・掃描估值・整理牌組',
+  login_welcome: '開始獵卡之旅',
   login_description: '登入後可追蹤卡牌收藏、掃描卡牌、查看價格趨勢',
   // Store MVP: no 收藏 / 提醒 / 價格趨勢 promise (DIC-1256).
   // DIC-1381 W10 CR — Store MVP does NOT install the account-sync binding
@@ -178,6 +190,16 @@ export const zh = {
   me_stat_collection: '收藏張數',
   me_stat_alerts: '到價提醒',
   me_guest_name: '訪客',
+  // DIC-1427: Pen App/07 我的 collection hub (frame siVsa).
+  nav_me: '我的',
+  me_account_manage: '帳號與設定',
+  me_guest_hint: '登入以跨裝置同步收藏',
+  me_stat_owned: '收藏張數',
+  me_stat_value: '收藏市值',
+  me_seg_trends: '趨勢追蹤',
+  me_empty_title: '還沒有收藏卡牌',
+  me_empty_hint: '掃描或搜尋卡牌後，即可在這裡管理數量與市值',
+  me_view_all: '查看全部收藏',
   me_provider_linked: '{{provider}} 已綁定',
   common_cancel: '取消',
   common_remove: '移除',
@@ -211,6 +233,13 @@ export const zh = {
   search_empty_hint: '試試看日文名稱、卡號、或系列代碼',
   search_results_for: '搜尋結果：{{query}}',
   search_found_count: '找到 {{count}} 張卡牌',
+  // DIC-1427: Pen App/02 搜尋結果 — sort control (zkTTM) + filter sheet.
+  search_sort_relevance: '綜合排序',
+  search_sort_price_desc: '價格高→低',
+  search_sort_price_asc: '價格低→高',
+  search_filter_open: '篩選',
+  search_filter_sr_plus: 'SR 以上',
+  search_filter_done: '完成',
   // DIC-1141: shown when a Holomen card has no canonical Bloom Level yet.
   // Never fall back to the category label "Holomen" — that's the exact
   // ambiguity this string exists to break.
@@ -266,6 +295,17 @@ export const zh = {
 
   // Tutorial landing
   tutorial_hero_subtitle: 'hOCG 完全攻略',
+  // DIC-1427 Pen DAQIq/rV4Za: 真實進度 hero 與章節導覽
+  tutorial_hero_headline: '完成規則教學，掌握 hOCG 對局',
+  tutorial_hero_progress: '{{done}} / {{total}} 章節完成',
+  tutorial_chapters_heading: '章節',
+  tutorial_practice_heading: '實戰演練',
+  tutorial_detail_chapter_progress: '第 {{current}} 節 · 共 {{total}} 節',
+  tutorial_detail_nav_heading: '章節導覽',
+  tutorial_detail_start_sim: '開始模擬',
+  tutorial_detail_full_text: '完整文字',
+  tutorial_detail_complete: '完成本章',
+  tutorial_detail_completed: '已完成 ✓',
   tutorial_intro_one: '這是一款以「共同創造、共同競爭」為概念的集換式卡牌遊戲。玩家們將化身粉絲，與主推以及其他 holo 成員一同打造屬於自己的舞台。',
   tutorial_intro_two: '一起為 holo 成員加油，並以「hololive 極限大賽」的頂點為目標！',
   tutorial_source: '📝 來源：',
@@ -291,11 +331,17 @@ export const zh = {
   watchlist_remove_alert_confirm: '確定要移除「{{name}}（{{printing}}）」的期望入手價格提醒嗎？',
   watchlist_remove_pending_confirm: '「{{name}}」尚未選定版本，確定要移除嗎？',
   watchlist_exact_price_hint: '比對你選定版本的玩家「參考售價」；不採用店家收購價或跨版本價格。價格進入區間時通知一次。',
+  // DIC-1427 Pen VyzfW banner headline — real evaluated hit count
+  watchlist_banner_hits: '{{count}} 張命中提醒',
   watchlist_desired_interval: '期望入手 {{interval}}',
   watchlist_price_loading: '目前價格：載入中…',
   watchlist_price_unavailable: '目前價格：價格資料無法載入',
   watchlist_current_price: '目前 {{price}} · {{status}}',
   watchlist_current_unpriced: '目前參考售價：暫無資料 · {{status}}',
+  // DIC-1427 Pen VyzfW: the status moved into the tinted badge, so the row
+  // price line no longer carries the status suffix.
+  watchlist_current_price_short: '目前 {{price}}',
+  watchlist_current_unpriced_short: '目前參考售價：暫無資料',
   watchlist_edit_a11y: '編輯 {{name}} 的期望入手價格區間',
   watchlist_remove_a11y: '移除 {{name}} 的到價提醒',
   watchlist_resolve_a11y: '設定 {{name}} 的到價提醒版本與價格區間',
@@ -335,7 +381,19 @@ export const zh = {
   tournament_source_disclaimer_generic: '僅收錄來源已公開並可驗證的精選賽事與牌組，不代表完整參賽母體或整體 Meta。',
   tournament_coverage_note_generic: '僅統計來源已公開且可驗證的賽事與牌組。',
   tournament_ranked: '有名次',
-  tournament_distribution: '已公開樣本分布（{{scope}}）',
+  tournament_distribution: '觀察分佈（{{scope}}）',
+  // DIC-1427 Pen wRgD8: 月份導覽 / 熱門卡 hero / 顏色分佈 / 優勝牌組
+  tournament_dimension_share: '牌型／主推分佈（{{scope}}）',
+  tournament_month_report: '{{month}} 月報告',
+  tournament_prev_scope_a11y: '上一個月份範圍',
+  tournament_next_scope_a11y: '下一個月份範圍',
+  tournament_hero_label: '熱門卡',
+  tournament_hero_sample: '樣本 {{count}} 副賽事牌組',
+  tournament_hero_adoption: '採用率',
+  tournament_hero_decks: '採用牌組',
+  tournament_hero_copies: '合計張數',
+  tournament_color_bars_note: '※ 佔比以 {{count}} 副已驗證牌組為分母；點擊顏色可篩選賽事',
+  tournament_podium_heading: '優勝牌組',
   tournament_dimension_archetype: '牌型',
   tournament_dimension_oshi: '推し',
   tournament_empty_chart: '此範圍尚無已取得完整卡表的樣本，因此不繪製圖表。',
@@ -399,6 +457,20 @@ export const zh = {
   card_detail_alert_many: '🔔 已設定 {{count}} 個版本的到價提醒',
   card_detail_alert_set: '🔕 設定到價提醒',
   card_detail_alert_a11y: '設定到價提醒',
+  // DIC-1427 Pen o7WO3r: 技能/市場/成員 segmented tabs + Pen price card + action bar
+  card_detail_tab_skills: '技能與效果',
+  card_detail_tab_market: '市場價格',
+  card_detail_tab_member: '成員數據',
+  card_detail_reference_price: '遊々亭 參考售價',
+  card_detail_compare_line: '近 7 日均價 {{recent}} · 前 7 日 {{prior}}',
+  card_detail_alert_banner_active: '進入區間時通知',
+  card_detail_alert_banner_hint: '設定價格區間，進區間時通知',
+  card_detail_spread_cell_buy: '買入成本',
+  card_detail_spread_cell_shop: '店家收購',
+  card_detail_spread_cell_diff: '買賣差價',
+  card_detail_action_favorite: '加入收藏',
+  card_detail_action_favorited: '已收藏',
+  card_detail_action_add_deck: '加入牌組',
   card_detail_actual_price: '實際售價',
   card_detail_no_data: '暫無資料',
   card_detail_variant_hint_spread: '👇 於下方「市場數據」可選擇版本，買賣差價與漲跌會隨選擇更新',
@@ -512,6 +584,11 @@ export const zh = {
   collection_loading: '載入收藏卡表…',
   collection_title: '收藏卡片',
   collection_total: '共 {{count}} 張',
+  // DIC-1427 Pen ej9RF stats hero
+  collection_hero_value_label: '總收藏價值（遊々亭參考價）',
+  collection_hero_cards: '卡牌數',
+  collection_hero_decks: '套牌數',
+  collection_hero_priced: '有報價版本',
   collection_search_placeholder: '搜尋卡名、卡號或版本',
   collection_search_a11y: '搜尋收藏卡片',
   collection_filter_all: '全部',
@@ -690,6 +767,13 @@ export const zh = {
   scan_total: '總計',
   scan_pending_count: '{{count}} 張版本待確認，未計入總計',
   scan_continue: '📸 繼續掃描',
+  // DIC-1427 Pen eurld/wC1cO: 模式切換 / 側控制標籤 / 估值清單摘要
+  scan_mode_auto: '自動掃描',
+  scan_mode_manual: '手動',
+  scan_gallery_label: '相簿',
+  scan_session_entry_label: '估值清單',
+  scan_session_entry_a11y: '開啟估值清單（{{count}} 張）',
+  scan_session_summary: '本次掃描總計 · {{count}} 張',
   scan_export_pending: '版本待確認，未計入',
   scan_export_title: '📋 掃描估值結果',
   scan_export_total: '總計：{{total}}',

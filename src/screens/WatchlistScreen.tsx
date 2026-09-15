@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, FlatList, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants';
+import { PALETTE, SEMANTIC } from '../theme/tokensV2';
 import { showAlert } from '../utils/platformAlert';
 import { useWatchlistStore } from '../stores/watchlistStore';
 import { usePriceAlertStore, sortedAlerts, sortedPending } from '../stores/priceAlertStore';
@@ -96,6 +97,21 @@ export default function WatchlistScreen({ navigation }: any) {
     if (!option || option.sellPrice === null) return null;
     return { price: option.sellPrice, currency: option.currency };
   }
+
+  // Pen VyzfW banner headline (node b65BhE「3 張命中提醒」): the count is the
+  // REAL number of alerts whose exact-printing price currently evaluates
+  // IN_RANGE — only shown once the catalog is loaded, never a placeholder.
+  const hitCount = useMemo(() => {
+    if (dbState !== 'ready') return null;
+    return sortedAlerts(alerts).filter(
+      (alert) => evaluateAlertStatus(alert, (() => {
+        const option = printingIndex.get(alert.cardNumber)?.find((o) => o.printing === alert.printing);
+        return option && option.sellPrice !== null
+          ? { price: option.sellPrice, currency: option.currency }
+          : null;
+      })()) === 'IN_RANGE',
+    ).length;
+  }, [alerts, dbState, printingIndex]);
 
   const editAlert = (alert: PriceAlert) => {
     const price = priceOf(alert);
@@ -195,14 +211,23 @@ export default function WatchlistScreen({ navigation }: any) {
               : dbState === 'unavailable'
                 ? t('watchlist_price_unavailable')
                 : price
-                  ? t('watchlist_current_price', {
+                  ? t('watchlist_current_price_short', {
                       price: formatAlertAmount(price.price, price.currency),
-                      status: statusLabel(status),
                     })
-                  : t('watchlist_current_unpriced', {
-                      status: statusLabel(status),
-                    })}
+                  : t('watchlist_current_unpriced_short')}
           </Text>
+          {/* Pen VyzfW status badge: $c-green in range / muted out of range /
+              $c-red-ish for unpriced — fed by the REAL evaluated status. */}
+          {dbState === 'ready' ? (
+            <View
+              style={[styles.statusBadge, statusBadgeTint(status)]}
+              testID={`price-alert-status-badge-${alert.cardNumber}|${alert.printing}`}
+            >
+              <Text style={[styles.statusBadgeText, statusBadgeTextTint(status)]}>
+                {statusLabel(status)}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.actions}>
           <TouchableOpacity
@@ -308,8 +333,20 @@ export default function WatchlistScreen({ navigation }: any) {
         contentContainerStyle={[styles.list, isDesktop && styles.listDesktop]}
         ListHeaderComponent={
           <View testID="price-alert-section">
-            <Text style={styles.sectionTitle}>{t('watchlist_title')}</Text>
-            <Text style={styles.sectionHint}>{t('watchlist_exact_price_hint')}</Text>
+            {/* Pen VyzfW info banner (accent-2 tint): real hit-count headline
+                once the catalog is ready, over the comparison-rule disclosure
+                that used to render as a bare paragraph. */}
+            <View style={styles.infoBanner} testID="watchlist-info-banner">
+              <Text style={styles.infoBannerIcon}>ⓘ</Text>
+              <View style={styles.infoBannerBody}>
+                {hitCount !== null && (
+                  <Text style={styles.infoBannerHeadline} testID="watchlist-hit-count">
+                    {t('watchlist_banner_hits', { count: hitCount })}
+                  </Text>
+                )}
+                <Text style={styles.infoBannerText}>{t('watchlist_exact_price_hint')}</Text>
+              </View>
+            </View>
           </View>
         }
       />
@@ -317,7 +354,40 @@ export default function WatchlistScreen({ navigation }: any) {
   );
 }
 
+function statusBadgeTint(status: AlertStatus) {
+  if (status === 'IN_RANGE') return { backgroundColor: 'rgba(52,211,153,0.16)' };
+  if (status === 'UNPRICED' || status === 'CURRENCY_MISMATCH') return { backgroundColor: 'rgba(248,113,113,0.14)' };
+  return { backgroundColor: PALETTE.appElev };
+}
+function statusBadgeTextTint(status: AlertStatus) {
+  if (status === 'IN_RANGE') return { color: PALETTE.cGreen };
+  if (status === 'UNPRICED' || status === 'CURRENCY_MISMATCH') return { color: '#FF8A8A' };
+  return { color: SEMANTIC.onBgMuted };
+}
+
 const styles = StyleSheet.create({
+  // Pen VyzfW info banner
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(61,224,255,0.08)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  infoBannerIcon: { color: PALETTE.accent2, fontSize: 14, lineHeight: 18 },
+  infoBannerBody: { flex: 1, gap: 3 },
+  infoBannerHeadline: { color: SEMANTIC.onBg, fontSize: 13, fontWeight: '700' },
+  infoBannerText: { color: SEMANTIC.onBgMuted, fontSize: 11.5, lineHeight: 17 },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 4,
+  },
+  statusBadgeText: { fontSize: 10.5, fontWeight: '600' },
   container: { flex: 1, backgroundColor: COLORS.background },
   list: { padding: 16 },
   listDesktop: { maxWidth: 1100, width: '100%', alignSelf: 'center' },

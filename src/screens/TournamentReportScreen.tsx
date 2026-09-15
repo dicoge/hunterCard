@@ -7,10 +7,12 @@ import {
   SafeAreaView,
   ActivityIndicator,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { NavigationContext } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
 import { COLORS } from '../constants';
+import { PALETTE, SEMANTIC, CATEGORY_COLORS } from '../theme/tokensV2';
 import { openUrl } from '../utils/openUrl';
 import { useTranslation } from '../i18n';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -64,6 +66,16 @@ const DIMENSIONS: Array<{ key: DonutDimension; labelKey: string }> = [
   { key: 'archetype', labelKey: 'search_filter_category' },
   { key: 'oshi', labelKey: 'deck_zone_oshi' },
 ];
+
+// Pen XmHeK binds the 觀察分佈 bars to the $c-* color tokens.
+const COLOR_BAR_TOKENS: Record<string, string> = {
+  white: CATEGORY_COLORS.white,
+  blue: CATEGORY_COLORS.blue,
+  green: CATEGORY_COLORS.green,
+  red: CATEGORY_COLORS.red,
+  purple: CATEGORY_COLORS.purple,
+  yellow: CATEGORY_COLORS.yellow,
+};
 
 type TranslateFn = ReturnType<typeof useTranslation>['t'];
 
@@ -313,11 +325,31 @@ export default function TournamentReportScreen() {
     ? reports[0]?.source?.name ?? ''
     : t('tournament_source_disclaimer_generic');
 
+  // Pen HJici month navigator: prev/next cycle through the REAL scope options
+  // (全部 + every month the index actually carries) via the same reducer
+  // dispatch the old chip row used.
+  const scopeOptions = [ALL_SCOPE, ...windowMonths];
+  const scopeIdx = Math.max(0, scopeOptions.indexOf(scope));
+  const selectScopeAt = (idx: number) => {
+    const clamped = Math.min(Math.max(idx, 0), scopeOptions.length - 1);
+    dispatch({ type: 'select-scope', scope: scopeOptions[clamped] });
+    setSelectedKey(null);
+    setSelectedColor(null);
+  };
+  const scopeYear = scope !== ALL_SCOPE ? scope.slice(0, 4) : '';
+  const scopeMonthLabel = scope !== ALL_SCOPE
+    ? t('tournament_month_report', { month: String(parseInt(scope.slice(5), 10)) })
+    : t('tournament_scope_all');
+
+  // Pen RxPbs hero: the real top representative card of the scoped sample.
+  const heroCard = summary.representativeCards[0] ?? null;
+  // Pen SboNx podium: the real top-3 notable placements.
+  const podium = summary.notablePlacements.slice(0, 3);
+  const medalColors = ['#FBBF24', '#C0C7D1', '#C5865F'];
+
   return wrapInShell(
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.h1}>{t('tournament_title')}</Text>
-
         {imported ? (
           <View style={styles.importedBanner}>
             <Text style={styles.importedText}>
@@ -326,32 +358,32 @@ export default function TournamentReportScreen() {
           </View>
         ) : null}
 
-        {/* Scope selector */}
-        <View style={styles.monthRow}>
-          {[
-            { month: ALL_SCOPE, label: t('tournament_scope_all') },
-            ...windowMonths.map((m) => ({ month: m, label: m })),
-          ].map((opt) => {
-            const active = opt.month === scope;
-            return (
-              <TouchableOpacity
-                key={opt.month}
-                onPress={() => {
-                  dispatch({ type: 'select-scope', scope: opt.month });
-                  setSelectedKey(null);
-                  setSelectedColor(null);
-                }}
-                style={[styles.monthChip, active && styles.monthChipActive]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                testID={`scope-${opt.month}`}
-              >
-                <Text style={[styles.monthChipText, active && styles.monthChipTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        {/* Month navigator (Pen HJici) */}
+        <View style={styles.monthNav} testID="tournament-month-nav">
+          <TouchableOpacity
+            onPress={() => selectScopeAt(scopeIdx - 1)}
+            disabled={scopeIdx <= 0}
+            style={[styles.monthNavBtn, scopeIdx <= 0 && styles.monthNavBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel={t('tournament_prev_scope_a11y')}
+            testID="tournament-month-prev"
+          >
+            <Text style={styles.monthNavChevron}>‹</Text>
+          </TouchableOpacity>
+          <View style={styles.monthNavCenter} testID="tournament-month-label">
+            {scopeYear ? <Text style={styles.monthNavYear}>{scopeYear}</Text> : null}
+            <Text style={styles.monthNavTitle}>{scopeMonthLabel}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => selectScopeAt(scopeIdx + 1)}
+            disabled={scopeIdx >= scopeOptions.length - 1}
+            style={[styles.monthNavBtn, scopeIdx >= scopeOptions.length - 1 && styles.monthNavBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel={t('tournament_next_scope_a11y')}
+            testID="tournament-month-next"
+          >
+            <Text style={styles.monthNavChevron}>›</Text>
+          </TouchableOpacity>
         </View>
 
         {loading && <ActivityIndicator color={COLORS.primary} style={styles.inlineLoader} />}
@@ -369,6 +401,111 @@ export default function TournamentReportScreen() {
 
         {hasData && (
           <>
+            {/* ── 熱門卡 hero (Pen RxPbs): real top representative card ── */}
+            {heroCard ? (
+              <View
+                style={[
+                  styles.heroCard,
+                  Platform.OS === 'web'
+                    ? ({ backgroundImage: `linear-gradient(120deg, rgba(139,92,246,0.45) 0%, rgba(255,77,157,0.25) 100%)`, backgroundColor: '#2A1840' } as object)
+                    : { backgroundColor: '#2A1840' },
+                ]}
+                testID="tournament-hero"
+              >
+                <View style={styles.heroTopRow}>
+                  <Text style={styles.heroEyebrow}>{t('tournament_hero_label')}</Text>
+                  <Text style={styles.heroSample}>{t('tournament_hero_sample', { count: summary.verifiedDeckCount })}</Text>
+                </View>
+                <Text style={styles.heroName} numberOfLines={2}>
+                  {pickCardName(heroCard.cardNumber, language, catalog, t)} / {heroCard.cardNumber}
+                </Text>
+                <View style={styles.heroMetricsRow}>
+                  <View style={styles.heroMetricCell}>
+                    <Text style={styles.heroMetricLabel}>{t('tournament_hero_adoption')}</Text>
+                    <Text style={styles.heroMetricValue}>{Math.round(heroCard.adoptionRate * 100)}%</Text>
+                  </View>
+                  <View style={styles.heroMetricCell}>
+                    <Text style={styles.heroMetricLabel}>{t('tournament_hero_decks')}</Text>
+                    <Text style={styles.heroMetricValue}>{heroCard.deckCount}</Text>
+                  </View>
+                  <View style={styles.heroMetricCell}>
+                    <Text style={styles.heroMetricLabel}>{t('tournament_hero_copies')}</Text>
+                    <Text style={styles.heroMetricValue}>{heroCard.totalCopies}</Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            {/* ── 觀察分佈 color bars (Pen XmHeK): real color counts ── */}
+            {summary.topColors.length > 0 ? (
+              <>
+                <Text style={styles.h2}>{t('tournament_distribution', { scope: scopeLabel })}</Text>
+                <View style={styles.colorBarsCard} testID="tournament-color-bars">
+                  {summary.topColors.map((item) => {
+                    const label = t(`color_${item.color}` as Parameters<typeof t>[0]);
+                    const pct = summary.verifiedDeckCount > 0
+                      ? Math.round((item.count / summary.verifiedDeckCount) * 100)
+                      : 0;
+                    const active = selectedColor === item.color;
+                    const barColor = COLOR_BAR_TOKENS[item.color] ?? COLORS.primary;
+                    return (
+                      <TouchableOpacity
+                        key={item.color}
+                        style={styles.colorBarRow}
+                        onPress={() => {
+                          setSelectedKey(null);
+                          setSelectedColor(active ? null : item.color);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        testID={`summary-color-${item.color}`}
+                      >
+                        <Text style={[styles.colorBarLabel, active && styles.colorBarLabelActive]} numberOfLines={1}>
+                          {label}
+                        </Text>
+                        <View style={styles.colorBarTrack}>
+                          <View style={[styles.colorBarFill, { width: `${pct}%`, backgroundColor: barColor }]} />
+                        </View>
+                        <Text style={styles.colorBarValue}>{pct}%</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <Text style={styles.colorBarsNote}>
+                    {t('tournament_color_bars_note', { count: summary.verifiedDeckCount })}
+                  </Text>
+                </View>
+              </>
+            ) : null}
+
+            {/* ── 優勝牌組 podium (Pen SboNx): real top-3 placements ── */}
+            {podium.length > 0 ? (
+              <>
+                <Text style={styles.h2}>{t('tournament_podium_heading')}</Text>
+                <View style={styles.podium} testID="tournament-podium">
+                  {podium.map((p, i) => (
+                    <View key={p.deckId} style={styles.podiumRow} testID={`tournament-podium-row-${i}`}>
+                      <View style={[styles.podiumMedal, { backgroundColor: medalColors[i] + '22' }]}>
+                        <Text style={[styles.podiumMedalText, { color: medalColors[i] }]}>
+                          {p.rank ?? i + 1}
+                        </Text>
+                      </View>
+                      <View style={styles.podiumMeta}>
+                        <Text style={styles.podiumTitle} numberOfLines={1}>
+                          {(p.archetypeLabel || p.oshi || t('tournament_featured_deck'))}
+                          {p.playerName ? ` ・ ${p.playerName}` : ''}
+                        </Text>
+                        <Text style={styles.podiumSub} numberOfLines={1}>
+                          {(p.rankLabel || t('tournament_rank', { rank: p.rank ?? '—' }))}
+                          {' ・ '}
+                          {language === 'zh' ? (p.eventNameZh || p.eventName) : p.eventName}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+
             {/* ── Monthly Summary Block ── */}
             <View style={styles.summaryCard} testID="tournament-monthly-summary">
               <Text style={styles.summaryTitle}>{t('tournament_summary_title')}</Text>
@@ -449,46 +586,9 @@ export default function TournamentReportScreen() {
                 </View>
               )}
 
-              {summary.topColors.length > 0 && (
-                <View style={styles.summarySection}>
-                  <Text style={styles.summarySectionTitle}>{t('tournament_summary_top_colors')}</Text>
-                  <View style={styles.chipRow}>
-                    {summary.topColors.map((item) => {
-                      const active = selectedColor === item.color;
-                      const label = t(`color_${item.color}` as Parameters<typeof t>[0]);
-                      return (
-                        <TouchableOpacity
-                          key={item.color}
-                          style={[styles.summaryChip, active && styles.summaryChipActive]}
-                          onPress={() => {
-                            setSelectedKey(null);
-                            setSelectedColor(active ? null : item.color);
-                          }}
-                          testID={`summary-color-${item.color}`}
-                        >
-                          <Text style={[styles.summaryChipText, active && styles.summaryChipTextActive]}>
-                            {t('tournament_color_filter_label', { color: label })} ({item.count})
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              )}
-
-              {summary.notablePlacements.length > 0 && (
-                <View style={styles.summarySection}>
-                  <Text style={styles.summarySectionTitle}>{t('tournament_summary_notable_placements')}</Text>
-                  {summary.notablePlacements.map((p) => (
-                    <View key={p.deckId} style={styles.notableRow}>
-                      <Text style={styles.notableRank}>{p.rankLabel || t('tournament_rank', { rank: p.rank ?? '—' })}</Text>
-                      <Text style={styles.notableDetails} numberOfLines={2}>
-                        {p.archetypeLabel || p.oshi || t('tournament_featured_deck')} · {language === 'zh' ? (p.eventNameZh || p.eventName) : p.eventName} ({p.playerName || t('tournament_player')})
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
+              {/* 主要顏色 chips → Pen XmHeK color bars above; 重要名次 rows →
+                  Pen SboNx podium above. Both keep their filter/testID
+                  contracts on the new blocks. */}
 
               {/* Representative cards — deduped by cardNumber (DIC-1142) */}
               <View style={styles.summarySection}>
@@ -558,7 +658,7 @@ export default function TournamentReportScreen() {
             </View>
 
             {/* Observed-share chart: bar on mobile, donut on desktop (DIC-1142) */}
-            <Text style={styles.h2}>{t('tournament_distribution', { scope: scopeLabel })}</Text>
+            <Text style={styles.h2}>{t('tournament_dimension_share', { scope: scopeLabel })}</Text>
             <View style={styles.chartCard}>
               <View style={styles.dimensionRow}>
                 {DIMENSIONS.map((d) => {
@@ -904,19 +1004,54 @@ const styles = StyleSheet.create({
   emptyText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
   errorText: { color: COLORS.error, fontSize: 14, marginTop: 16 },
   partialNotice: { color: COLORS.accent, fontSize: 12, lineHeight: 18, marginTop: 12 },
-  monthRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   inlineLoader: { marginVertical: 24 },
-  monthChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+
+  // Month navigator (Pen HJici: $app-surface r12, chevrons + centered label)
+  monthNav: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: PALETTE.appSurface, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10, minHeight: 58,
   },
-  monthChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  monthChipText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
-  monthChipTextActive: { color: '#fff' },
+  monthNavBtn: { width: 36, height: 36, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  monthNavBtnDisabled: { opacity: 0.3 },
+  monthNavChevron: { color: SEMANTIC.onBgMuted, fontSize: 22, lineHeight: 24, fontWeight: '600' },
+  monthNavCenter: { alignItems: 'center', gap: 2, flexShrink: 1 },
+  monthNavYear: { color: SEMANTIC.onBgDim, fontSize: 11, fontWeight: '500' },
+  monthNavTitle: { color: SEMANTIC.onBg, fontSize: 15, fontWeight: '700' },
+
+  // 熱門卡 hero (Pen RxPbs: purple gradient r16, 3 metric cells)
+  heroCard: { borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16, marginTop: 14, gap: 10 },
+  heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heroEyebrow: { color: '#FFB4D9', fontSize: 12, fontWeight: '600' },
+  heroSample: { color: PALETTE.textSecondary, fontSize: 11 },
+  heroName: { color: SEMANTIC.onBg, fontSize: 18, fontWeight: '700' },
+  heroMetricsRow: { flexDirection: 'row', gap: 10 },
+  heroMetricCell: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, gap: 2 },
+  heroMetricLabel: { color: '#FFB4D9', fontSize: 10 },
+  heroMetricValue: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+
+  // 觀察分佈 color bars (Pen XmHeK: $app-surface r14, token-tinted fills)
+  colorBarsCard: { backgroundColor: PALETTE.appSurface, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  colorBarRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 24 },
+  colorBarLabel: { width: 34, color: SEMANTIC.onBgMuted, fontSize: 12, fontWeight: '600' },
+  colorBarLabelActive: { color: SEMANTIC.onBg },
+  colorBarTrack: { flex: 1, height: 10, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.3)', overflow: 'hidden' },
+  colorBarFill: { height: 10, borderRadius: 8 },
+  colorBarValue: { width: 40, textAlign: 'right', color: SEMANTIC.onBg, fontSize: 11, fontWeight: '700' },
+  colorBarsNote: { color: SEMANTIC.onBgDim, fontSize: 10.5, marginTop: 4 },
+
+  // 優勝牌組 podium (Pen SboNx: medal rows on $app-surface r12)
+  podium: { gap: 8 },
+  podiumRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: PALETTE.appSurface, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10, minHeight: 57,
+  },
+  podiumMedal: { width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  podiumMedalText: { fontSize: 12, fontWeight: '700' },
+  podiumMeta: { flex: 1, minWidth: 0, gap: 2 },
+  podiumTitle: { color: SEMANTIC.onBg, fontSize: 13, fontWeight: '700' },
+  podiumSub: { color: SEMANTIC.onBgDim, fontSize: 11 },
 
   // Summary Card Styles
   summaryCard: {

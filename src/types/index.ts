@@ -54,6 +54,8 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Login: undefined;
+  /** DIC-1427 Pen p28zL: the Pen auth surface, pushed from the Landing. */
+  AuthLogin: undefined;
   Main: undefined;
 };
 
@@ -68,6 +70,8 @@ export type MainDrawerParamList = {
   // CollectionScreen.
   Favorites: undefined;
   Collection: undefined;
+  // DIC-1427: Pen App/07 我的 collection hub (frame siVsa).
+  Me: undefined;
   DeckEditor: undefined;
   TournamentReport: undefined;
   Watchlist: undefined;

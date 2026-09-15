@@ -79,6 +79,42 @@ export function buildPriceVersions(card: CardLike): PriceVersion[] {
 }
 
 /**
+ * 從官方卡表圖檔名取出版本標記：
+ *   .../hBP01-024_HR.png    → 'HR'
+ *   .../hBP01-024_02_C.png  → '02_C'
+ *   .../hBP01-024.png       → ''（沒有標記）
+ */
+export function artVariantToken(imageUrl: string): string {
+  const match = /\/([^/]+)\.(?:png|jpe?g|webp)$/i.exec(imageUrl || '');
+  if (!match) return '';
+  const stem = match[1];
+  const underscore = stem.indexOf('_');
+  return underscore < 0 ? '' : stem.slice(underscore + 1).toUpperCase();
+}
+
+/**
+ * 卡號層級的 payload（搜尋結果）沒有 printing，但畫面上正在顯示的官方卡圖檔名
+ * 本身帶有版本標記。當那個標記「剛好唯一對應」到一筆掛牌的版本代碼時，那一筆就是
+ * 畫面正在展示的那一版 —— 這是來源自己說出口的證據，不是從 rarity 臆測。
+ *
+ * 刻意只認唯一對應：標記對不到任何掛牌（例如 hPR 促銷版的 `_P` 圖，來源根本沒掛
+ * 這一版）、或同時對到多筆時一律回 -1，交還給既有的預設版本邏輯，絕不在這裡猜。
+ * 這也是為什麼這個函式不併入 resolveVersionForCard —— 後者同時服務掃描流程與組牌
+ * 器對齊，語意是「價格預設版本」，與「畫面上展示的是哪一版」是兩件事。
+ */
+export function resolveDisplayedPrintingIndex(versions: PriceVersion[], imageUrl: string): number {
+  const token = artVariantToken(imageUrl);
+  if (!token || versions.length < 2) return -1;
+  let found = -1;
+  for (let i = 0; i < versions.length; i += 1) {
+    if (!versions[i].printing.split('/').includes(token)) continue;
+    if (found >= 0) return -1; // 多筆掛牌都符合 → 無法唯一辨識
+    found = i;
+  }
+  return found;
+}
+
+/**
  * 選出這張卡的預設版本。
  *
  * 這裡刻意先用 buildSourcePrintings 收斂成「一個版本代碼一筆」的檢視，再交給

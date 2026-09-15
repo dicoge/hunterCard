@@ -218,20 +218,24 @@ async function renderSearchResults(navigation) {
   }));
 }
 
-await test('SearchResults renders inside the shell with query in the app bar and 搜尋 tab active', async () => {
+await test('SearchResults renders inside the shell with query in the app bar search field and 搜尋 tab active', async () => {
   const { container, cleanup } = await renderSearchResults({ navigate() {}, goBack() {} });
   try {
     assert.ok(container.querySelector('[data-testid="search-results-shell"]'), 'shell root');
+    // DIC-1427: the query lives in the real search field now (Pen node
+    // hKr9H/j5Et8), not in a static app-bar title.
     assert.equal(
-      container.querySelector('[data-testid="shell-app-bar-title"]').textContent,
+      container.querySelector('[data-testid="search-results-input"]').value,
       'hBP01',
-      'app bar carries the live query (Pen node j5Et8)',
+      'app bar search field carries the live query (Pen node j5Et8)',
     );
     const searchTab = container.querySelector('[data-testid="shell-bottom-tab-search"]');
     assert.equal(searchTab.getAttribute('aria-selected'), 'true', '搜尋 tab selected');
     const items = container.querySelectorAll('[data-testid="search-result-grid-item"]');
     assert.equal(items.length, 2, 'both real cards render as grid items');
-    assert.ok(container.textContent.includes('hBP01-081'), 'card number renders');
+    // DIC-1427: at 390 the grid renders Pen Card Tiles (name + price), so the
+    // real card name — not the card number — is the tile's identity line.
+    assert.ok(container.textContent.includes('星街すいせい'), 'real card name renders on its Pen tile');
   } finally { await cleanup(); }
 });
 

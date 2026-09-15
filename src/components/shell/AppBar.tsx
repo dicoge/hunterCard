@@ -8,6 +8,7 @@ export interface AppBarAction {
   icon?: React.ReactNode;
   onPress?: () => void;
   disabled?: boolean;
+  testID?: string;
 }
 
 export interface AppBarProps {
@@ -17,6 +18,12 @@ export interface AppBarProps {
   actions?: AppBarAction[];
   onLeadingPress?: () => void;
   leading?: React.ReactNode;
+  /**
+   * DIC-1427: when set, replaces the title column with a custom node that
+   * fills the bar's center — the Pen `App / 02 搜尋結果` app bar (CXGih) puts
+   * a full-width search field between the back arrow and the filter action.
+   */
+  center?: React.ReactNode;
   testID?: string;
 }
 
@@ -32,6 +39,7 @@ export function AppBar({
   actions = [],
   onLeadingPress,
   leading,
+  center,
   testID = 'shell-app-bar',
 }: AppBarProps) {
   return (
@@ -49,16 +57,22 @@ export function AppBar({
               <View style={styles.markInner} />
             </TouchableOpacity>
           ) : null)}
-        <View style={styles.titleColumn}>
-          <Text style={styles.title} numberOfLines={1} testID={`${testID}-title`}>
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text style={styles.subtitle} numberOfLines={1} testID={`${testID}-subtitle`}>
-              {subtitle}
+        {center ? (
+          <View style={styles.centerSlot} testID={`${testID}-center`}>
+            {center}
+          </View>
+        ) : (
+          <View style={styles.titleColumn}>
+            <Text style={styles.title} numberOfLines={1} testID={`${testID}-title`}>
+              {title}
             </Text>
-          ) : null}
-        </View>
+            {subtitle ? (
+              <Text style={styles.subtitle} numberOfLines={1} testID={`${testID}-subtitle`}>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
+        )}
       </View>
       <View style={styles.actions} testID={`${testID}-actions`}>
         {actions.slice(0, 3).map((action) => (
@@ -69,7 +83,7 @@ export function AppBar({
             style={[styles.actionButton, action.disabled && styles.actionButtonDisabled]}
             accessibilityRole="button"
             accessibilityLabel={action.label}
-            testID={`${testID}-action-${action.key}`}
+            testID={action.testID ?? `${testID}-action-${action.key}`}
           >
             {action.icon ?? <Text style={styles.actionGlyph}>•</Text>}
           </TouchableOpacity>
@@ -117,6 +131,10 @@ const styles = StyleSheet.create({
   },
   titleColumn: {
     flexShrink: 1,
+    minWidth: 0,
+  },
+  centerSlot: {
+    flex: 1,
     minWidth: 0,
   },
   title: {

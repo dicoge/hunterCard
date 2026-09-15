@@ -15,7 +15,8 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useDeckStore } from '../store/deckStore';
 import { loadCardDatabase } from '../utils/deckCardData';
-import { eligibleZone, ownershipKey, type DeckCard, type DeckZone } from '../utils/deckRules';
+import { eligibleZone, ownershipKey, resolveExactPrice, type DeckCard, type DeckZone, type PriceRecord } from '../utils/deckRules';
+import { PALETTE, SEMANTIC } from '../theme/tokensV2';
 import { RouteShell } from '../components/shell';
 
 type CollectionFilter = 'all' | 'owned' | DeckZone;
@@ -50,16 +51,18 @@ export default function CollectionScreen({ navigation }: any) {
   const { width } = useBreakpoint();
   const { t } = useTranslation();
   const [cards, setCards] = useState<DeckCard[]>([]);
+  const [priceRecords, setPriceRecords] = useState<PriceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<CollectionFilter>('all');
   const collection = useDeckStore((state) => state.collection);
+  const decks = useDeckStore((state) => state.decks);
   const adjustOwned = useDeckStore((state) => state.adjustOwned);
   const setOwned = useDeckStore((state) => state.setOwned);
 
   useEffect(() => {
     loadCardDatabase()
-      .then((database) => setCards(database.cards))
+      .then((database) => { setCards(database.cards); setPriceRecords(database.priceRecords); })
       .catch(() => setCards([]))
       .finally(() => setLoading(false));
   }, []);
@@ -94,6 +97,28 @@ export default function CollectionScreen({ navigation }: any) {
     [collection],
   );
 
+  // Pen ej9RF stats hero — REAL numbers only: total value sums qty × the
+  // exact-printing reference price (fail-closed: an unpriced printing adds
+  // nothing and is counted separately). The Pen 交易紀錄 cell has no real
+  // transaction log behind it, so the third cell is the honest 有報價版本
+  // count instead of a fabricated number.
+  const heroStats = useMemo(() => {
+    let value = 0;
+    let pricedKeys = 0;
+    for (const [key, qty] of Object.entries(collection)) {
+      if (qty <= 0) continue;
+      const separator = key.indexOf('|');
+      const cardNumber = separator < 0 ? key : key.slice(0, separator);
+      const printing = separator < 0 ? '' : key.slice(separator + 1);
+      const price = resolveExactPrice(cardNumber, printing, priceRecords);
+      if (price.status === 'ok') {
+        value += price.price * qty;
+        pricedKeys += 1;
+      }
+    }
+    return { value, pricedKeys };
+  }, [collection, priceRecords]);
+
   // DIC-1409 Phase 5 — Pen `App / 08 收藏` (frame ej9RF) shared shell.
   const wrapInShell = (children: React.ReactNode) => (
     <RouteShell navigation={navigation} routeName="Collection" title={t('collection_title')} testID="collection-shell">
@@ -114,6 +139,28 @@ export default function CollectionScreen({ navigation }: any) {
 
   return wrapInShell(
     <SafeAreaView style={styles.container}>
+      {/* Pen ej9RF stats hero (node group at the top of the frame): real
+          collection value + metric cells from the live ownership store. */}
+      <View style={styles.statsHero} testID="collection-stats-hero">
+        <Text style={styles.statsHeroLabel}>{t('collection_hero_value_label')}</Text>
+        <Text style={styles.statsHeroValue}>
+          {heroStats.value > 0 ? `¥${heroStats.value.toLocaleString()}` : '—'}
+        </Text>
+        <View style={styles.statsHeroCells}>
+          <View style={styles.statsHeroCell}>
+            <Text style={styles.statsHeroCellLabel}>{t('collection_hero_cards')}</Text>
+            <Text style={styles.statsHeroCellValue}>{ownedTotal}</Text>
+          </View>
+          <View style={styles.statsHeroCell}>
+            <Text style={styles.statsHeroCellLabel}>{t('collection_hero_decks')}</Text>
+            <Text style={styles.statsHeroCellValue}>{decks.length}</Text>
+          </View>
+          <View style={styles.statsHeroCell}>
+            <Text style={styles.statsHeroCellLabel}>{t('collection_hero_priced')}</Text>
+            <Text style={styles.statsHeroCellValue}>{heroStats.pricedKeys}</Text>
+          </View>
+        </View>
+      </View>
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>{t('collection_title')}</Text>
@@ -227,6 +274,21 @@ export default function CollectionScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  // Pen ej9RF stats hero
+  statsHero: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: PALETTE.appSurface,
+    gap: 6,
+  },
+  statsHeroLabel: { color: SEMANTIC.onBgDim, fontSize: 12 },
+  statsHeroValue: { color: SEMANTIC.onBg, fontSize: 30, fontWeight: '700' },
+  statsHeroCells: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  statsHeroCell: { flex: 1, backgroundColor: PALETTE.appElev, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, gap: 2 },
+  statsHeroCellLabel: { color: SEMANTIC.onBgDim, fontSize: 10 },
+  statsHeroCellValue: { color: SEMANTIC.onBg, fontSize: 15, fontWeight: '700' },
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: { padding: 14, paddingBottom: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity, Image, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
 import { COLORS, convertPrice } from '../constants';
 import { AppShell } from '../components/shell';
-import { PALETTE, SEMANTIC, FONTS } from '../theme/tokensV2';
+import { PALETTE, SEMANTIC, FONTS, CATEGORY_COLORS } from '../theme/tokensV2';
 import { FEATURES } from '../config/releaseFlags';
 import { openUrl } from '../utils/openUrl';
 import { useSettingsStore } from '../store/settingsStore';
@@ -18,14 +18,11 @@ import PriceTrendBadge from '../components/PriceTrendBadge';
 import { useTrendStore, TrendPrediction } from '../store/trendStore';
 import { hasDisplayableSubscriberStats, isValidatedTrendPrediction, bloomLevelBadgeColor, categoryBadgeColor, resolveCardColorsWithNestedFallback, PRINTING_RARITY_COLORS } from '../utils/cardNormalization';
 import { computeValidatedPriceTrend } from '../utils/priceTrend';
-import { PriceTrend } from '../components/PriceTrend';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { buildPriceVersions, resolveVersionForCard } from '../utils/versionAlignment';
+import { buildPriceVersions, resolveVersionForCard, resolveDisplayedPrintingIndex } from '../utils/versionAlignment';
 import { useTranslation } from '../i18n';
 import { ownershipKey } from '../utils/deckRules';
 import { resolveCardDisplayName } from '../utils/cardDisplayName';
-
-const { width } = Dimensions.get('window');
 
 const gradeLabels: Record<string, string> = { debut: 'Debut', '1st': '1st', '2nd': '2nd', buzz: 'Buzz', spot: 'Spot' };
 // DIC-1141 CR: printing rarity palette imported from the shared source in
@@ -80,6 +77,9 @@ function buildImageUrl(cardNumber: string, seriesCode: string, versions: string[
   return `https://hololive-official-cardgame.com/wp-content/images/cardlist/${seriesCode}/${cardNumber}${version}`;
 }
 
+// Pen o7WO3r tabs (node EFhFr): 技能與效果 / 市場價格 / 成員數據.
+type DetailTab = 'skills' | 'market' | 'member';
+
 export default function CardDetailScreen({ route, navigation }: any) {
   const { card } = route.params || {};
   const [imageError, setImageError] = useState(false);
@@ -94,6 +94,9 @@ export default function CardDetailScreen({ route, navigation }: any) {
   // FavoritesScreen placeholder is not "favorites round-trip").
   const favorites = useFavoritesStore((state) => state.favorites);
   const toggleFavorite = useFavoritesStore((state) => state.toggleFavorite);
+  // Pen EFhFr: 市場價格 is the active segment in the reference frame; fall
+  // back to 技能與效果 on profiles where the price surface is gated off.
+  const [activeTab, setActiveTab] = useState<DetailTab>(FEATURES.sellPrice ? 'market' : 'skills');
 
   if (!card) {
     return (
@@ -104,12 +107,42 @@ export default function CardDetailScreen({ route, navigation }: any) {
   }
 
   const id = card.cardNumber || card.id || '';
+  // The art this screen actually puts in its hero (the DIC-1430 note beside
+  // `imageUrl` below explains why it is never rebuilt from the card number).
+  // Identity is derived from this SAME value, so the picture on screen and the
+  // 收藏/收藏數量 actions can never disagree about which printing is displayed.
+  const provenImageUrl = (card.images && card.images[0]) || card.imageUrl || '';
   const collectionVersions = buildPriceVersions(card);
-  const collectionResolution = resolveVersionForCard(collectionVersions);
+  // DIC-1430: a card-number-level hit (the search route) carries no `printing`,
+  // so this screen used to resolve the hero art and the add-side identity
+  // INDEPENDENTLY — the hero rendered the elected row's official HR image while
+  // `pickDefaultPrintingIndex` elected BASE outright (plain beats premium), and
+  // the favorite persisted `hBP01-024|BASE` sitting next to HR artwork. The
+  // store and FavoritesScreen then round-tripped that wrong key faithfully.
+  //
+  // When the displayed official art names a variant that matches exactly ONE
+  // listing, that listing IS the printing on screen and it binds the action.
+  //
+  // CR2: everything else withholds the actions. Art that matches nothing (a
+  // promo `_P` the source never listed, a suffix-less file, a URL a query
+  // string hid from the parser) or that matches several listings proves
+  // nothing, and the first round let those fall through to the price default —
+  // which on hBP01-024 is the ¥120 BASE listing, so the very key this ticket
+  // exists to prevent was still written, under artwork that is not BASE's.
+  // Falling back to the default is the same cross-printing guess as falling
+  // back to rarity (DIC-1013); the price default answers "which version do we
+  // quote", never "which version is on screen". With no proven identity there
+  // is nothing to favorite or count, so the actions are withheld rather than
+  // pointed at a sibling — matching the hero art and the exact-printing price,
+  // which already render their honest unavailable state instead of guessing.
+  // An exact payload keeps its own `printing` verbatim and is never re-derived.
+  const displayedIndex = card.printing
+    ? -1
+    : resolveDisplayedPrintingIndex(collectionVersions, provenImageUrl);
   const collectionVersion = card.printing
     ? { printing: card.printing, name: card.printingLabel || card.printing }
-    : collectionResolution.confident
-      ? collectionVersions[collectionResolution.index]
+    : displayedIndex >= 0
+      ? collectionVersions[displayedIndex]
       : null;
   const ownedQuantity = collectionVersion
     ? collection[ownershipKey(id, collectionVersion.printing)] || 0
@@ -150,14 +183,25 @@ export default function CardDetailScreen({ route, navigation }: any) {
   // so the detail row still says `無色` instead of dropping the label.
   const canonicalColorIds = resolveCardColorsWithNestedFallback(card);
   const colorNames = canonicalColorIds.map((c) => t(`color_${c}` as Parameters<typeof t>[0]));
-  
+
   const seriesNames = card.seriesNames || [];
   const tags = card.tags || [];
   const versions = card.versions || [];
 
-  // Use card.images[0] when available, otherwise use API-provided imageUrl, or build from pattern
+  // Use card.images[0] when available, otherwise the payload's own imageUrl, or
+  // build one from the card-number pattern.
+  //
+  // DIC-1430: `buildImageUrl` derives art from the CARD NUMBER, so it produces
+  // the same picture for every printing of that number. On an exact-printing
+  // payload (`card.printing` is set) that is precisely the representative-art
+  // substitution the canonical resolver now refuses to make — reconstructing it
+  // here would undo the fail-closed decision one layer down and put an unproven
+  // picture next to a proven price. An exact printing therefore shows only the
+  // art its own listing proved; with none, the hero renders its honest
+  // unavailable state rather than a card-number guess.
   const cardSeries = (Array.isArray(card.series) ? card.series[0] : card.series) || (id?.split('-')[0] || '');
-  const imageUrl = (card.images && card.images[0]) || card.imageUrl || buildImageUrl(id, cardSeries, versions, card.type || '');
+  const imageUrl = provenImageUrl
+    || (card.printing ? '' : buildImageUrl(id, cardSeries, versions, card.type || ''));
   const officialUrl = `https://hololive-official-cardgame.com/cardlist/?keyword=${encodeURIComponent(id)}&view=image`;
   const yuyuUrl = `https://yuyu-tei.jp/sell/hocg/s/search?search_word=${encodeURIComponent(id)}`;
 
@@ -179,6 +223,19 @@ export default function CardDetailScreen({ route, navigation }: any) {
         currency: 'JPY',
       })
     : null;
+
+  // Pen AKxk8 mini chart: one bar per validated history point. Only the
+  // exact-identity single-printing series that already passed
+  // computeValidatedPriceTrend feeds the bars — a multi-version card renders
+  // no chart rather than a mixed-printing curve (DIC-856 / DIC-1084).
+  const chartPoints = useMemo(() => {
+    if (!detailPriceTrend) return [] as { time: number; price: number }[];
+    return Object.entries(card.priceHistory || {})
+      .map(([timestamp, rawPrice]) => ({ time: Date.parse(timestamp), price: Number(rawPrice) }))
+      .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price) && point.price > 0)
+      .sort((a, b) => a.time - b.time)
+      .slice(-14);
+  }, [card.priceHistory, detailPriceTrend]);
 
   // ── Trend prediction ──
   const [trend, setTrend] = useState<TrendPrediction | null>(null);
@@ -248,10 +305,54 @@ export default function CardDetailScreen({ route, navigation }: any) {
       ? t('card_detail_alert_many', { count: cardAlerts.length })
       : t('card_detail_alert_set');
 
-  // DIC-1409 Phase 3: Pen `App / 03 卡牌詳情` (frame o7WO3r) shell — back
-  // arrow + card number in the app bar, no bottom tab bar on the detail route.
-  // The inner ScrollView stays the scroll container so the desktop two-column
-  // layout and every gated section keep their exact structure.
+  const cardIsFav = FEATURES.favorites && collectionVersion
+    ? favorites.some((f) => f.cardNumber === id && f.printing === collectionVersion.printing)
+    : false;
+  const onToggleFavorite = collectionVersion
+    ? () => toggleFavorite({ cardNumber: id, printing: collectionVersion.printing, cardId: card?.id })
+    : undefined;
+
+  // Pen j8ywIo 加入牌組: hand the card number to the real deck editor, whose
+  // picker opens pre-filtered on this exact number (route param, no new UI).
+  const onAddToDeck = () => navigation?.navigate?.('DeckEditor', { addCardNumber: id });
+
+  const bloomBadgeLabel = card.normalized?.category === 'holomen'
+    ? (card.normalized?.stageLabel || gradeLabels[card.grade] || null)
+    : null;
+  const setLine = card.sourceProductName || (seriesNames.length > 0 ? `${seriesNames.join(' / ')} ${cardSeries}` : cardSeries);
+  const statHp = card.hp != null && `${card.hp}`.trim() !== '' ? `${card.hp}` : null;
+  const statLife = card.life != null && `${card.life}`.trim() !== '' ? `${card.life}` : null;
+
+  const TAB_ITEMS: { key: DetailTab; label: string }[] = [
+    { key: 'skills', label: t('card_detail_tab_skills') },
+    { key: 'market', label: t('card_detail_tab_market') },
+    { key: 'member', label: t('card_detail_tab_member') },
+  ];
+
+  const deltaChip = FEATURES.trendPrediction && detailPriceTrend ? (() => {
+    const up = detailPriceTrend.direction === 'up';
+    const flat = detailPriceTrend.direction === 'flat';
+    const chipBg = flat ? PALETTE.appElev : up ? 'rgba(34,197,94,0.12)' : 'rgba(248,113,113,0.12)';
+    const chipFg = flat ? PALETTE.textSecondary : up ? '#4ADE80' : '#FF8A8A';
+    const arrow = up ? '↗' : flat ? '→' : '↘';
+    return (
+      <View style={[styles.priceDeltaChip, { backgroundColor: chipBg }]} testID="card-detail-price-delta">
+        <Text style={[styles.priceDeltaText, { color: chipFg }]}>
+          {arrow} {Math.abs(detailPriceTrend.percentage).toFixed(1)}%
+        </Text>
+      </View>
+    );
+  })() : null;
+
+  const chartMin = chartPoints.length > 0 ? Math.min(...chartPoints.map((p) => p.price)) : 0;
+  const chartMax = chartPoints.length > 0 ? Math.max(...chartPoints.map((p) => p.price)) : 0;
+  const chartSpan = Math.max(chartMax - chartMin, 1);
+
+  // DIC-1409 Phase 3 + DIC-1427 QA P0: Pen `App / 03 卡牌詳情` (frame o7WO3r).
+  // Back arrow + card number + heart/external actions in the app bar, compact
+  // Card Hero (jzuT9), 技能/市場/成員 segmented tabs (EFhFr), Pen price card
+  // (qJqlm) with the validated-history delta/compare/chart, 到價提醒 banner
+  // (jB05M), and the fixed 收藏/加入牌組 action bar (Mst3p). No bottom tab bar.
   return (
     <AppShell
       appBar={{
@@ -269,6 +370,14 @@ export default function CardDetailScreen({ route, navigation }: any) {
           </TouchableOpacity>
         ),
         actions: [
+          ...(FEATURES.favorites && collectionVersion ? [{
+            key: 'favorite',
+            label: cardIsFav
+              ? t('favorites_remove_a11y', { name: displayName })
+              : t('favorites_add_a11y', { name: displayName }),
+            icon: <Text style={[styles.shellActionGlyph, cardIsFav ? { color: PALETTE.accent } : null]}>{cardIsFav ? '♥' : '♡'}</Text>,
+            onPress: () => onToggleFavorite?.(),
+          }] : []),
           {
             key: 'official',
             label: t('card_detail_official_list'),
@@ -282,374 +391,460 @@ export default function CardDetailScreen({ route, navigation }: any) {
       testID="card-detail-shell"
     >
       <PriceAlertEditor target={alertTarget} onClose={() => setAlertTarget(null)} />
-      <ScrollView style={styles.container} contentContainerStyle={isDesktop ? styles.scrollDesktop : undefined}>
-      <View style={isDesktop ? styles.twoCol : styles.oneCol}>
-      <View style={isDesktop ? styles.leftCol : undefined}>
-      {/* ====== CARD IMAGE ====== */}
-      <View style={[styles.imageArea, { backgroundColor: rarityColors[rarityKey] + '0a' }]}>
-        {!imageError ? (
-          <View style={styles.imgContainer}>
-            {/* Image: official source is 400×559, cap at 400px wide for sharpness on desktop */}
-            {/* @ts-ignore */}
-            <Image
-              source={{ uri: imageUrl }}
-              style={{ width: Math.min(width * 0.7, 400), height: Math.min(width * 0.85, 559), borderRadius: 12, margin: 12 }}
-              resizeMode="contain"
-              onError={() => setImageError(true)}
-            />
-          </View>
-        ) : (
-          /* Fallback when image fails */
-          <TouchableOpacity style={styles.fallbackArea} activeOpacity={0.8} onPress={() => openUrl(officialUrl)}>
-            <Text style={styles.fallbackId}>{id}</Text>
-            <Text style={styles.fallbackName}>{displayName}</Text>
-            {displayNameSub && <Text style={styles.fallbackTw}>{displayNameSub}</Text>}
-            <Text style={styles.fallbackHint}>{t('card_detail_official_image')}</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      </View>
-      <View style={isDesktop ? styles.rightCol : undefined}>
+      <View style={styles.bodyWrap}>
+        <ScrollView style={styles.container} contentContainerStyle={[styles.scrollContent, isDesktop ? styles.scrollDesktop : null]}>
+          <View style={isDesktop ? styles.desktopColumn : undefined}>
 
-      {/* 收藏標記 (favorites toggle — DIC-1380 W6). Independent of the
-          ownership widget below: bookmarking is not owning. Under Store
-          MVP this row is hidden along with the rest of the favorites
-          surface. Writes go through `useFavoritesStore.toggleFavorite`
-          which stamps a removal tombstone on unfavorite so the sync
-          orchestrator's 409 merge can honor the delete. */}
-      {FEATURES.favorites && collectionVersion && (
-        (() => {
-          const cardIsFav = favorites.some(
-            (f) => f.cardNumber === id && f.printing === collectionVersion.printing,
-          );
-          return (
-            <View style={styles.favoriteRow} testID="card-detail-favorite">
-              <TouchableOpacity
-                style={[
-                  styles.favoriteChip,
-                  cardIsFav ? styles.favoriteChipActive : null,
-                ]}
-                onPress={() => toggleFavorite({
-                  cardNumber: id,
-                  printing: collectionVersion.printing,
-                  cardId: card?.id,
-                })}
-                accessibilityRole="button"
-                accessibilityState={{ selected: cardIsFav }}
-                accessibilityLabel={cardIsFav
-                  ? t('favorites_remove_a11y', { name: displayName })
-                  : t('favorites_add_a11y', { name: displayName })}
-                testID={cardIsFav ? 'card-detail-favorite-remove' : 'card-detail-favorite-add'}
-                activeOpacity={0.85}
-              >
-                <Text style={[
-                  styles.favoriteChipText,
-                  cardIsFav ? styles.favoriteChipTextActive : null,
-                ]}>
-                  {cardIsFav ? `❤️  ${t('favorites_saved')}` : `♡  ${t('favorites_save')}`}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          );
-        })()
-      )}
-
-      {/* 收藏 (per-card ownership +/- widget) — hidden in Store MVP (DIC-1256).
-          The deck editor keeps its own ownership editing; this card-detail
-          shortcut is a favorites/collection surface and disappears with the
-          drawer entry. */}
-      {FEATURES.favorites && collectionVersion && (
-        <View style={styles.collectionCard} testID="card-detail-collection">
-          <View style={styles.collectionCopy}>
-            <Text style={styles.collectionTitle}>{t('deck_collection_title')}</Text>
-            <Text style={styles.collectionVersion} numberOfLines={2}>{collectionVersion.name}</Text>
-          </View>
-          <View style={styles.collectionControls}>
-            <TouchableOpacity
-              style={styles.collectionButton}
-              onPress={() => adjustOwned(id, collectionVersion.printing, -1)}
-              disabled={ownedQuantity <= 0}
-              accessibilityRole="button"
-              accessibilityLabel={t('deck_collection_decrease_a11y', { name: displayName })}
-              testID="card-detail-collection-dec"
-            >
-              <Text style={[styles.collectionButtonText, ownedQuantity <= 0 && styles.collectionButtonDisabled]}>－</Text>
-            </TouchableOpacity>
-            <Text style={styles.collectionQuantity} testID="card-detail-collection-qty">{ownedQuantity}</Text>
-            <TouchableOpacity
-              style={styles.collectionButton}
-              onPress={() => adjustOwned(id, collectionVersion.printing, 1)}
-              accessibilityRole="button"
-              accessibilityLabel={t('deck_collection_increase_a11y', { name: displayName })}
-              testID="card-detail-collection-inc"
-            >
-              <Text style={styles.collectionButtonText}>＋</Text>
-            </TouchableOpacity>
-            {ownedQuantity > 0 && (
-              <TouchableOpacity
-                onPress={() => setOwned(id, collectionVersion.printing, 0)}
-                accessibilityRole="button"
-                accessibilityLabel={t('deck_collection_remove_a11y', { name: displayName })}
-                testID="card-detail-collection-remove"
-              >
-                <Text style={styles.collectionRemove}>{t('common_remove')}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* ====== TOP ACTION ROW (到價提醒 — reachable without scrolling) ====== */}
-      {FEATURES.watchlist && (
-        <View style={styles.topActionRow}>
-          <TouchableOpacity
-            style={[styles.watchlistChip, cardAlerts.length > 0 ? styles.watchlistChipActive : null]}
-            onPress={openAlertEditor}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel={t('card_detail_alert_a11y')}
-            testID="card-price-alert-chip"
-          >
-            <Text style={[styles.watchlistChipText, cardAlerts.length > 0 ? styles.watchlistChipTextActive : null]}>
-              {alertButtonLabel}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ====== PRICE SECTION ====== */}
-      {/* 售價 / 版本價格 pills — Store MVP 也顯示 (DIC-1319)：這是這張卡自己的
-          掛牌售價，屬於基本查價。漲跌走勢仍由 FEATURES.trendPrediction 擋著，
-          「查即時價」外連仍由 FEATURES.externalPriceLinks 擋著，買賣差價與
-          MarketDataPanel 仍由 FEATURES.marketData 擋著。 */}
-      {FEATURES.sellPrice && (
-        <View style={[styles.priceSection, { backgroundColor: COLORS.surface }]} testID="card-detail-price-section">
-          <View style={styles.priceHeader}>
-            <Text style={styles.priceSourceName}>🏪 遊々亭</Text>
-            <Text style={styles.priceBadge}>
-              {hasActualPrice ? t('card_detail_actual_price') : t('card_detail_no_data')}
-            </Text>
-          </View>
-          {hasActualPrice && hasMultipleVariants ? (
-            <View style={styles.variantList}>
-              {[...priceVariants].sort((a, b) => (a.sellPrice || 0) - (b.sellPrice || 0)).filter((p: any) => p.sellPrice != null && p.sellPrice > 0).map((v: any, i: number) => {
-                const converted = convertPrice(v.sellPrice, preferredCurrency);
-                return (
-                <View key={i} style={styles.variantRow}>
-                  <Text style={styles.variantName} numberOfLines={1}>{v.rarity ? `[${v.rarity}] ` : ''}{v.name}</Text>
-                  <Text style={styles.variantPrice}>{converted.symbol}{converted.value?.toLocaleString()}</Text>
+            {/* ====== CARD HERO (Pen jzuT9: compact art + identity column) ====== */}
+            <View style={styles.hero} testID="card-detail-hero">
+              <View style={[styles.heroArt, { backgroundColor: rarityColors[rarityKey] ? rarityColors[rarityKey] + '14' : PALETTE.appElev }]} testID="card-detail-hero-art">
+                {imageUrl && !imageError ? (
+                  /* @ts-ignore */
+                  <Image
+                    source={{ uri: imageUrl }}
+                    style={styles.heroArtImage}
+                    resizeMode="cover"
+                    onError={() => setImageError(true)}
+                  />
+                ) : (
+                  /* Reached on a broken image AND, since DIC-1430, whenever an
+                   * exact printing has no source-proven art. Same honest state:
+                   * the card number plus a link to the official image, never a
+                   * borrowed picture. */
+                  <TouchableOpacity
+                    style={styles.heroArtFallback}
+                    activeOpacity={0.8}
+                    onPress={() => openUrl(officialUrl)}
+                    accessibilityRole="button"
+                    testID="card-detail-hero-art-unavailable"
+                  >
+                    <Text style={styles.heroArtFallbackId}>{id}</Text>
+                    <Text style={styles.heroArtFallbackHint}>{t('card_detail_official_image')}</Text>
+                  </TouchableOpacity>
+                )}
+                <View style={styles.heroArtFoot}>
+                  <Text style={styles.heroArtFootText}>{rarityKey}</Text>
                 </View>
+              </View>
+              <View style={styles.heroInfo}>
+                <Text style={styles.heroName} numberOfLines={2}>{displayName}</Text>
+                {displayNameSub ? <Text style={styles.heroNameSub} numberOfLines={1}>{displayNameSub}</Text> : null}
+                <Text style={styles.heroSet} numberOfLines={2}>{setLine}</Text>
+                <View style={styles.heroBadges}>
+                  {canonicalColorIds.map((colorId, i) => (
+                    <View key={`c${colorId}`} style={styles.heroBadge} testID={`card-detail-badge-color-${colorId}`}>
+                      <View style={[styles.heroBadgeDot, { backgroundColor: (CATEGORY_COLORS as Record<string, string>)[colorId] || PALETTE.textMuted }]} />
+                      <Text style={styles.heroBadgeText}>{colorNames[i]}</Text>
+                    </View>
+                  ))}
+                  {typeLabel ? (
+                    <View style={styles.heroBadge} testID="card-detail-badge-category">
+                      <Text style={styles.heroBadgeText}>{typeLabel}</Text>
+                    </View>
+                  ) : null}
+                  {bloomBadgeLabel ? (
+                    <View style={styles.heroBadge} testID="card-detail-badge-bloom">
+                      <Text style={styles.heroBadgeText}>{`Bloom ${bloomBadgeLabel}`}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                {(statHp || statLife) ? (
+                  <View style={styles.heroStats}>
+                    {statHp ? (
+                      <View style={styles.heroStatCell} testID="card-detail-stat-hp">
+                        <Text style={styles.heroStatLabel}>HP</Text>
+                        <Text style={styles.heroStatValue}>{statHp}</Text>
+                      </View>
+                    ) : null}
+                    {statLife ? (
+                      <View style={styles.heroStatCell} testID="card-detail-stat-life">
+                        <Text style={styles.heroStatLabel}>LIFE</Text>
+                        <Text style={styles.heroStatValue}>{statLife}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            </View>
+
+            {/* ====== TABS (Pen EFhFr) ====== */}
+            <View style={styles.tabsRow} testID="card-detail-tabs">
+              {TAB_ITEMS.map((tab) => {
+                const active = activeTab === tab.key;
+                const ariaProps: Record<string, unknown> = { 'aria-selected': active };
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    style={[styles.tabSeg, active ? styles.tabSegActive : null]}
+                    onPress={() => setActiveTab(tab.key)}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: active }}
+                    testID={`card-detail-seg-${tab.key}`}
+                    activeOpacity={0.85}
+                    {...ariaProps}
+                  >
+                    <Text style={[styles.tabSegText, active ? styles.tabSegTextActive : null]}>{tab.label}</Text>
+                  </TouchableOpacity>
                 );
               })}
-              {/* Both non-store hints tell the user to pick a version down in
-                  「市場數據」, but MarketDataPanel is gated on FEATURES.marketData.
-                  Since DIC-1319 un-gated this list, the store build would render
-                  an instruction pointing at a section that is not there — so the
-                  hint that names a gated section is itself gated. */}
-              <Text style={styles.variantHint} testID="card-detail-variant-hint">
-                {!FEATURES.marketData
-                  ? t('card_detail_variant_hint_store')
-                  : FEATURES.priceSpread
-                    ? t('card_detail_variant_hint_spread')
-                    : t('card_detail_variant_hint')}
-              </Text>
             </View>
-          ) : hasActualPrice ? (
-            <><View style={styles.priceRow}>
-            <Text style={styles.priceValue}>¥{actualPrice.toLocaleString()}</Text>
+
+            {/* ====== 市場價格 PANE (Pen qJqlm price card + jB05M alert row) ======
+                All three panes stay mounted and toggle `display` so the
+                alignment override / scroll state survive tab switches and the
+                static store-profile probe still sees every gated marker. */}
+            <View style={activeTab === 'market' ? null : styles.paneHidden} testID="card-detail-market-panel">
+                {/* 售價 / 版本價格 — Store MVP 也顯示 (DIC-1319)：這是這張卡自己的
+                    掛牌售價，屬於基本查價。漲跌走勢仍由 FEATURES.trendPrediction 擋著，
+                    「查即時價」外連仍由 FEATURES.externalPriceLinks 擋著，買賣差價與
+                    MarketDataPanel 仍由 FEATURES.marketData 擋著。 */}
+                {FEATURES.sellPrice && (
+                  <View style={styles.priceSection} testID="card-detail-price-section">
+                    <View style={styles.priceHead}>
+                      <Text style={styles.priceSourceLabel}>{t('card_detail_reference_price')}</Text>
+                      {hasActualPrice && !hasMultipleVariants ? (
+                        <View style={styles.priceVersionChip}>
+                          <Text style={styles.priceVersionChipText}>{card.sourceRarity || rarityKey}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {hasActualPrice && hasMultipleVariants ? (
+                      <View style={styles.variantList}>
+                        {[...priceVariants].sort((a, b) => (a.sellPrice || 0) - (b.sellPrice || 0)).filter((p: any) => p.sellPrice != null && p.sellPrice > 0).map((v: any, i: number) => {
+                          const converted = convertPrice(v.sellPrice, preferredCurrency);
+                          return (
+                          <View key={i} style={styles.variantRow}>
+                            <Text style={styles.variantName} numberOfLines={1}>{v.rarity ? `[${v.rarity}] ` : ''}{v.name}</Text>
+                            <Text style={styles.variantPrice}>{converted.symbol}{converted.value?.toLocaleString()}</Text>
+                          </View>
+                          );
+                        })}
+                        {/* Both non-store hints tell the user to pick a version down in
+                            「市場數據」, but MarketDataPanel is gated on FEATURES.marketData.
+                            Since DIC-1319 un-gated this list, the store build would render
+                            an instruction pointing at a section that is not there — so the
+                            hint that names a gated section is itself gated. */}
+                        <Text style={styles.variantHint} testID="card-detail-variant-hint">
+                          {!FEATURES.marketData
+                            ? t('card_detail_variant_hint_store')
+                            : FEATURES.priceSpread
+                              ? t('card_detail_variant_hint_spread')
+                              : t('card_detail_variant_hint')}
+                        </Text>
+                      </View>
+                    ) : hasActualPrice ? (
+                      <>
+                        <View style={styles.priceValueRow}>
+                          <Text style={styles.priceValue}>¥{actualPrice.toLocaleString()}</Text>
+                          {deltaChip}
+                        </View>
+                        {FEATURES.trendPrediction && detailPriceTrend ? (
+                          <Text style={styles.priceCompare} testID="card-detail-price-compare">
+                            {t('card_detail_compare_line', {
+                              recent: `¥${Math.round(detailPriceTrend.recentAverage).toLocaleString()}`,
+                              prior: `¥${Math.round(detailPriceTrend.priorAverage).toLocaleString()}`,
+                            })}
+                          </Text>
+                        ) : null}
+                        {(() => {
+                          const converted = convertPrice(actualPrice, preferredCurrency);
+                          return (
+                            <Text style={styles.priceNote}>{t('card_detail_approx_price', { price: `${converted.symbol}${converted.value?.toLocaleString()}`, currency: preferredCurrency })}</Text>
+                          );
+                        })()}
+                        {priceName ? (
+                          <Text style={styles.priceNote}>📋 {priceName}</Text>
+                        ) : null}
+                        {FEATURES.trendPrediction && chartPoints.length >= 3 ? (
+                          <View style={styles.priceChart} testID="card-detail-price-chart">
+                            {chartPoints.map((point, i) => {
+                              const h = 24 + Math.round(((point.price - chartMin) / chartSpan) * 38);
+                              return (
+                                <View
+                                  key={`${point.time}-${i}`}
+                                  style={[
+                                    styles.priceChartBar,
+                                    { height: h },
+                                    Platform.OS === 'web'
+                                      ? ({ backgroundImage: `linear-gradient(180deg, ${PALETTE.accent} 0%, rgba(255,77,157,0.25) 100%)` } as object)
+                                      : { backgroundColor: PALETTE.accent },
+                                  ]}
+                                  testID={`card-detail-price-bar-${i}`}
+                                />
+                              );
+                            })}
+                          </View>
+                        ) : null}
+                      </>
+                    ) : (
+                      <Text style={styles.noPriceText}>{t('card_detail_no_data')}</Text>
+                    )}
+                    {/* 「查即時價」把使用者送到遊々亭 — 外部價格連結，維持 Store MVP 隱藏
+                        (DIC-1256)；DIC-1319 只放行卡片自己的售價數字，不放行外連。 */}
+                    {FEATURES.externalPriceLinks && (
+                      <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
+                        <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+
+                {/* ====== MARKET DATA (version alignment + Pen UhG5Z spread cells) ====== */}
+                {/* 市場數據區塊 — Store MVP 隱藏 (DIC-1256): 版本 pills、賣價、店家收購、
+                    買賣差價全部不展示。 */}
+                {FEATURES.marketData && <MarketDataPanel card={card} section="market" />}
+
+                {/* ====== 到價提醒 BANNER (Pen jB05M) ====== */}
+                {FEATURES.watchlist && (
+                  <TouchableOpacity
+                    style={styles.alertBanner}
+                    onPress={openAlertEditor}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('card_detail_alert_a11y')}
+                    testID="card-price-alert-chip"
+                  >
+                    <Text style={styles.alertBell}>🔔</Text>
+                    <View style={styles.alertCopy}>
+                      <Text style={styles.alertTitle}>{alertButtonLabel}</Text>
+                      <Text style={styles.alertSub} numberOfLines={1}>
+                        {cardAlerts.length > 0 ? t('card_detail_alert_banner_active') : t('card_detail_alert_banner_hint')}
+                      </Text>
+                    </View>
+                    <Text style={styles.alertEdit}>✎</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* ====== TREND PREDICTION ====== */}
+                {/* 趨勢預測基於卡號層級歷史（單一版本序列）。多版本卡無法歸屬到特定版本 → 隱藏，
+                    避免用別版走勢推薦本版（DIC-856：禁止跨版本推薦訊號）。
+                    漲跌預測 / trendScore / 信心度 / YT / 新聞情緒 → Store MVP 隱藏（DIC-908）。 */}
+                {FEATURES.trendPrediction && !hasMultipleVariants && trend && isValidatedTrendPrediction(trend, card) && (
+                  <View style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>{t('card_detail_prediction_title')}</Text>
+                    <PriceTrendBadge
+                      trend={trend.trend}
+                      score={trend.score}
+                      confidence={trend.confidence}
+                      compact={false}
+                    />
+                    {/* 各項因子貢獻 */}
+                    <View style={styles.componentSection}>
+                      <Text style={styles.componentTitle}>{t('card_detail_factors')}</Text>
+                      <View style={styles.componentRow}>
+                        <Text style={styles.componentLabel}>{t('card_detail_factor_price')}</Text>
+                        <View style={styles.componentBarBg}>
+                          <View style={[styles.componentBarFill, {
+                            width: `${Math.min(Math.abs(trend.components.priceTrend) * 100, 100)}%`,
+                            backgroundColor: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
+                          }]} />
+                        </View>
+                        <Text style={[styles.componentValue, {
+                          color: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
+                        }]}>
+                          {(trend.components.priceTrend * 100).toFixed(0)}%
+                        </Text>
+                      </View>
+                      <View style={styles.componentRow}>
+                        <Text style={styles.componentLabel}>{t('card_detail_factor_youtube')}</Text>
+                        <View style={styles.componentBarBg}>
+                          <View style={[styles.componentBarFill, {
+                            width: `${Math.min(Math.abs(trend.components.ytTrend) * 200, 100)}%`,
+                            backgroundColor: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
+                          }]} />
+                        </View>
+                        <Text style={[styles.componentValue, {
+                          color: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
+                        }]}>
+                          {(trend.components.ytTrend * 100).toFixed(0)}%
+                        </Text>
+                      </View>
+                      <View style={styles.componentRow}>
+                        <Text style={styles.componentLabel}>{t('card_detail_factor_news')}</Text>
+                        <View style={styles.componentBarBg}>
+                          <View style={[styles.componentBarFill, {
+                            width: `${Math.min(Math.abs(trend.components.newsSentiment) * 100, 100)}%`,
+                            backgroundColor: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
+                          }]} />
+                        </View>
+                        <Text style={[styles.componentValue, {
+                          color: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
+                        }]}>
+                          {(trend.components.newsSentiment * 100).toFixed(0)}%
+                        </Text>
+                      </View>
+                      <Text style={styles.dataPointsNote}>
+                        {t('card_detail_data_days', { count: trend.dataPoints })}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+            </View>
+
+            {/* ====== 技能與效果 PANE ====== */}
+            <View style={activeTab === 'skills' ? null : styles.paneHidden} testID="card-detail-skills-panel">
+                <SkillsPanel skills={displaySkills} fallbackNote={skillsFallbackNote} />
+                {(effects.length > 0 || card.type === 'Oshi') && (
+                  <View style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>{t('card_detail_effects')}</Text>
+                    {effects.length > 0 ? (
+                      effects.map((kw: string, i: number) => (
+                        <View key={i} style={styles.effectBlock}>
+                          <Text style={styles.effectText}>{kw}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.noEffectText}>{t('card_detail_oshi_no_effect')}</Text>
+                    )}
+                  </View>
+                )}
+            </View>
+
+            {/* ====== 成員數據 PANE ====== */}
+            <View style={activeTab === 'member' ? null : styles.paneHidden} testID="card-detail-member-panel">
+                {/* YT 成員數據 — Store MVP 隱藏（DIC-908/DIC-1256）。 */}
+                {FEATURES.marketData && <MarketDataPanel card={card} section="member" />}
+
+                {/* ====== CARD BASIC INFO ====== */}
+                <View style={styles.sectionCard}>
+                  <View style={styles.headerRow}>
+                    <Text style={styles.cardNumber}>{id}</Text>
+                    <DetailIdentityBadges normalized={card.normalized} rarity={rarityKey} t={t} />
+                  </View>
+                  {nameEN && nameEN !== nameJP && nameEN !== nameZH ? <Text style={styles.nameEN}>{nameEN}</Text> : null}
+                  {typeLabel ? (
+                    <InfoRow label={t('card_detail_type_label')} value={typeLabel} />
+                  ) : null}
+                  {/* DIC-1141: category and Bloom Level live on distinct rows — never
+                      collapse them into one field, and never impersonate Bloom Level
+                      with the category label. */}
+                  {card.normalized?.category === 'holomen' && (
+                    <InfoRow
+                      label={t('card_detail_bloom_level_label')}
+                      value={card.normalized?.stageLabel || t('search_bloom_level_pending')}
+                    />
+                  )}
+                  {colorNames.length > 0 && (
+                    <InfoRow label={t('card_detail_color_label')} value={colorNames.join(' / ')} />
+                  )}
+                  {seriesNames.length > 0 && (
+                    <InfoRow label={t('card_detail_series_label')} value={seriesNames.join(' / ')} />
+                  )}
+                  {tags.length > 0 && (
+                    <InfoRow label="Tag" value={tags.join(' / ')} />
+                  )}
+                </View>
+
+                {/* ====== SEARCH KEYWORDS ====== */}
+                <View style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>{t('card_detail_keywords')}</Text>
+                  <View style={styles.tagWrap}>
+                    {nameJP ? <Tag text={nameJP} /> : null}
+                    {nameZH ? <Tag text={nameZH} /> : null}
+                    {tags.map((t: string, i: number) => <Tag key={`t${i}`} text={t} />)}
+                  </View>
+                </View>
+
+                {/* ====== EXTERNAL LINKS ====== */}
+                {/* 官方卡表永遠保留；遊々亭 / Carousell 兩個價格查詢外連 Store MVP 隱藏
+                    (DIC-1256)。這區還會有官方卡表所以永遠 render。 */}
+                <View style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>{t('card_detail_external_links')}</Text>
+                  <LinkButton icon="🏛️" text={t('card_detail_official_list')} url={officialUrl} />
+                  {FEATURES.externalPriceLinks && (
+                    <>
+                      <LinkButton icon="🏪" text={t('card_detail_yuyu_link')} url={yuyuUrl} />
+                      <LinkButton icon="🔄" text={t('card_detail_carousell_link')} url={`https://www.carousell.com.tw/search/?q=${encodeURIComponent(id)}`} />
+                    </>
+                  )}
+                </View>
+            </View>
+
+            {/* 收藏 (per-card ownership +/- widget) — hidden in Store MVP (DIC-1256).
+                The deck editor keeps its own ownership editing; this card-detail
+                shortcut is a favorites/collection surface and disappears with the
+                drawer entry. Persistent under every tab pane. */}
+            {FEATURES.favorites && collectionVersion && (
+              <View style={styles.collectionCard} testID="card-detail-collection">
+                <View style={styles.collectionCopy}>
+                  <Text style={styles.collectionTitle}>{t('deck_collection_title')}</Text>
+                  <Text style={styles.collectionVersion} numberOfLines={2}>{collectionVersion.name}</Text>
+                </View>
+                <View style={styles.collectionControls}>
+                  <TouchableOpacity
+                    style={styles.collectionButton}
+                    onPress={() => adjustOwned(id, collectionVersion.printing, -1)}
+                    disabled={ownedQuantity <= 0}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('deck_collection_decrease_a11y', { name: displayName })}
+                    testID="card-detail-collection-dec"
+                  >
+                    <Text style={[styles.collectionButtonText, ownedQuantity <= 0 && styles.collectionButtonDisabled]}>－</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.collectionQuantity} testID="card-detail-collection-qty">{ownedQuantity}</Text>
+                  <TouchableOpacity
+                    style={styles.collectionButton}
+                    onPress={() => adjustOwned(id, collectionVersion.printing, 1)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('deck_collection_increase_a11y', { name: displayName })}
+                    testID="card-detail-collection-inc"
+                  >
+                    <Text style={styles.collectionButtonText}>＋</Text>
+                  </TouchableOpacity>
+                  {ownedQuantity > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setOwned(id, collectionVersion.printing, 0)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('deck_collection_remove_a11y', { name: displayName })}
+                      testID="card-detail-collection-remove"
+                    >
+                      <Text style={styles.collectionRemove}>{t('common_remove')}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+
+            <View style={{ height: 108 }} />
           </View>
-          {(() => {
-            const converted = convertPrice(actualPrice, preferredCurrency);
-            return (
-              <Text style={styles.priceNote}>{t('card_detail_approx_price', { price: `${converted.symbol}${converted.value?.toLocaleString()}`, currency: preferredCurrency })}</Text>
-            );
-          })()}
-          {priceName ? (
-            <Text style={styles.priceNote}>📋 {priceName}</Text>
-          ) : null}</>
-          ) : (
-            <Text style={styles.noPriceText}>{t('card_detail_no_data')}</Text>
-          )}
-          {FEATURES.trendPrediction ? <PriceTrend trend={detailPriceTrend} /> : null}
-          {/* 「查即時價」把使用者送到遊々亭 — 外部價格連結，維持 Store MVP 隱藏
-              (DIC-1256)；DIC-1319 只放行卡片自己的售價數字，不放行外連。 */}
-          {FEATURES.externalPriceLinks && (
-            <TouchableOpacity style={styles.checkPriceBtn} onPress={() => openUrl(yuyuUrl)}>
-              <Text style={styles.checkPriceBtnText}>{t('card_detail_live_price')}</Text>
+        </ScrollView>
+
+        {/* ====== ACTION BAR (Pen Mst3p: 加入收藏 c0EK58 + 加入牌組 j8ywIo) ====== */}
+        <View style={styles.actionBar} testID="card-detail-action-bar">
+          {FEATURES.favorites && collectionVersion ? (
+            <TouchableOpacity
+              style={[styles.actionBtnGhost, cardIsFav ? styles.actionBtnGhostActive : null]}
+              onPress={onToggleFavorite}
+              accessibilityRole="button"
+              accessibilityState={{ selected: cardIsFav }}
+              accessibilityLabel={cardIsFav
+                ? t('favorites_remove_a11y', { name: displayName })
+                : t('favorites_add_a11y', { name: displayName })}
+              testID="card-detail-action-favorite"
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.actionBtnGhostText, cardIsFav ? styles.actionBtnGhostTextActive : null]}>
+                {cardIsFav ? `♥ ${t('card_detail_action_favorited')}` : `♡ ${t('card_detail_action_favorite')}`}
+              </Text>
             </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* ====== TREND PREDICTION ====== */}
-      {/* 趨勢預測基於卡號層級歷史（單一版本序列）。多版本卡無法歸屬到特定版本 → 隱藏，
-          避免用別版走勢推薦本版（DIC-856：禁止跨版本推薦訊號）。
-          漲跌預測 / trendScore / 信心度 / YT / 新聞情緒 → Store MVP 隱藏（DIC-908）。 */}
-      {FEATURES.trendPrediction && !hasMultipleVariants && trend && isValidatedTrendPrediction(trend, card) && (
-        <View style={[styles.section, { backgroundColor: COLORS.surface }]}>
-          <Text style={styles.sectionTitle}>{t('card_detail_prediction_title')}</Text>
-          <PriceTrendBadge
-            trend={trend.trend}
-            score={trend.score}
-            confidence={trend.confidence}
-            compact={false}
-          />
-          {/* 各項因子貢獻 */}
-          <View style={styles.componentSection}>
-            <Text style={styles.componentTitle}>{t('card_detail_factors')}</Text>
-            <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>{t('card_detail_factor_price')}</Text>
-              <View style={styles.componentBarBg}>
-                <View style={[styles.componentBarFill, {
-                  width: `${Math.min(Math.abs(trend.components.priceTrend) * 100, 100)}%`,
-                  backgroundColor: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
-                }]} />
-              </View>
-              <Text style={[styles.componentValue, {
-                color: trend.components.priceTrend >= 0 ? '#10b981' : '#ef4444',
-              }]}>
-                {(trend.components.priceTrend * 100).toFixed(0)}%
-              </Text>
-            </View>
-            <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>{t('card_detail_factor_youtube')}</Text>
-              <View style={styles.componentBarBg}>
-                <View style={[styles.componentBarFill, {
-                  width: `${Math.min(Math.abs(trend.components.ytTrend) * 200, 100)}%`,
-                  backgroundColor: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
-                }]} />
-              </View>
-              <Text style={[styles.componentValue, {
-                color: trend.components.ytTrend >= 0 ? '#10b981' : '#ef4444',
-              }]}>
-                {(trend.components.ytTrend * 100).toFixed(0)}%
-              </Text>
-            </View>
-            <View style={styles.componentRow}>
-              <Text style={styles.componentLabel}>{t('card_detail_factor_news')}</Text>
-              <View style={styles.componentBarBg}>
-                <View style={[styles.componentBarFill, {
-                  width: `${Math.min(Math.abs(trend.components.newsSentiment) * 100, 100)}%`,
-                  backgroundColor: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
-                }]} />
-              </View>
-              <Text style={[styles.componentValue, {
-                color: trend.components.newsSentiment >= 0 ? '#10b981' : '#ef4444',
-              }]}>
-                {(trend.components.newsSentiment * 100).toFixed(0)}%
-              </Text>
-            </View>
-            <Text style={styles.dataPointsNote}>
-              {t('card_detail_data_days', { count: trend.dataPoints })}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* ====== CARD BASIC INFO ====== */}
-      <View style={styles.section}>
-        <View style={styles.headerRow}>
-          <Text style={styles.cardNumber}>{id}</Text>
-          <DetailIdentityBadges normalized={card.normalized} rarity={rarityKey} t={t} />
-        </View>
-
-        <Text style={styles.nameJP}>{displayName}</Text>
-        {displayNameSub ? <Text style={styles.nameTW}>{displayNameSub}</Text> : null}
-        {nameEN && nameEN !== nameJP && nameEN !== nameZH && <Text style={styles.nameEN}>{nameEN}</Text>}
-
-        {typeLabel && (
-          <InfoRow label={t('card_detail_type_label')} value={typeLabel} />
-        )}
-        {/* DIC-1141: category and Bloom Level live on distinct rows — never
-            collapse them into one field, and never impersonate Bloom Level
-            with the category label. */}
-        {card.normalized?.category === 'holomen' && (
-          <InfoRow
-            label={t('card_detail_bloom_level_label')}
-            value={card.normalized?.stageLabel || t('search_bloom_level_pending')}
-          />
-        )}
-        {colorNames.length > 0 && (
-          <InfoRow label={t('card_detail_color_label')} value={colorNames.join(' / ')} />
-        )}
-        {seriesNames.length > 0 && (
-          <InfoRow label={t('card_detail_series_label')} value={seriesNames.join(' / ')} />
-        )}
-        {tags.length > 0 && (
-          <InfoRow label="Tag" value={tags.join(' / ')} />
-        )}
-      </View>
-
-      {/* ====== SKILLS / EFFECTS ====== */}
-      <SkillsPanel skills={displaySkills} fallbackNote={skillsFallbackNote} />
-
-      {/* ====== MARKET DATA ====== */}
-      {/* 市場數據區塊 — Store MVP 隱藏 (DIC-1256): 版本 pills、賣價、店家收購、
-          買賣差價、YT 訂閱、漲跌預測全部不展示。 */}
-      {FEATURES.marketData && <MarketDataPanel card={card} />}
-
-      {/* ====== EFFECT TEXTS ====== */}
-      {(effects.length > 0 || card.type === 'Oshi') && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('card_detail_effects')}</Text>
-          {effects.length > 0 ? (
-            effects.map((kw: string, i: number) => (
-              <View key={i} style={styles.effectBlock}>
-                <Text style={styles.effectText}>{kw}</Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.noEffectText}>{t('card_detail_oshi_no_effect')}</Text>
-          )}
-        </View>
-      )}
-
-      {/* ====== SEARCH KEYWORDS ====== */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('card_detail_keywords')}</Text>
-        <View style={styles.tagWrap}>
-          {nameJP && <Tag text={nameJP} />}
-          {nameZH && <Tag text={nameZH} />}
-          {tags.map((t: string, i: number) => <Tag key={`t${i}`} text={t} />)}
-        </View>
-      </View>
-
-      {/* ====== EXTERNAL LINKS ====== */}
-      {/* 官方卡表永遠保留；遊々亭 / Carousell 兩個價格查詢外連 Store MVP 隱藏
-          (DIC-1256)。這區還會有官方卡表所以永遠 render。 */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('card_detail_external_links')}</Text>
-        <LinkButton icon="🏛️" text={t('card_detail_official_list')} url={officialUrl} />
-        {FEATURES.externalPriceLinks && (
-          <>
-            <LinkButton icon="🏪" text={t('card_detail_yuyu_link')} url={yuyuUrl} />
-            <LinkButton icon="🔄" text={t('card_detail_carousell_link')} url={`https://www.carousell.com.tw/search/?q=${encodeURIComponent(id)}`} />
-          </>
-        )}
-      </View>
-
-      {/* ====== 到價提醒 BUTTON ====== */}
-      {FEATURES.watchlist && (
-        <View style={styles.section}>
+          ) : null}
           <TouchableOpacity
-            style={[styles.watchlistBtn, cardAlerts.length > 0 ? styles.watchlistBtnActive : null]}
-            onPress={openAlertEditor}
-            activeOpacity={0.85}
+            style={[
+              styles.actionBtnPrimary,
+              Platform.OS === 'web'
+                ? ({ backgroundImage: `linear-gradient(135deg, ${PALETTE.accent} 0%, ${PALETTE.accent3} 100%)` } as object)
+                : { backgroundColor: PALETTE.accent },
+            ]}
+            onPress={onAddToDeck}
             accessibilityRole="button"
-            accessibilityLabel={t('card_detail_alert_a11y')}
-            testID="card-price-alert-button"
+            accessibilityLabel={t('card_detail_action_add_deck')}
+            testID="card-detail-action-add-deck"
+            activeOpacity={0.85}
           >
-            <Text style={[styles.watchlistBtnText, cardAlerts.length > 0 ? styles.watchlistBtnTextActive : null]}>
-              {alertButtonLabel}
-            </Text>
+            <Text style={styles.actionBtnPrimaryText}>＋ {t('card_detail_action_add_deck')}</Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      <View style={{ height: 20 }} />
       </View>
-      </View>
-    </ScrollView>
     </AppShell>
   );
 }
@@ -693,7 +888,7 @@ function SkillsPanel({ skills, fallbackNote }: { skills?: Skills; fallbackNote?:
   );
 
   return (
-    <View style={styles.section}>
+    <View style={styles.sectionCard}>
       <Text style={styles.sectionTitle}>{t('card_detail_skills_title')}</Text>
       {!hasAny ? (
         <Text style={styles.noSkillText}>{t('card_detail_no_skills')}</Text>
@@ -749,7 +944,12 @@ function formatCount(n: number | null | undefined, language: 'zh' | 'ja'): strin
   }).format(n);
 }
 
-function MarketDataPanel({ card }: { card: any }) {
+// `section="market"` renders the version-alignment pills and the Pen UhG5Z
+// 買入成本/店家收購/買賣差價 spread cells inside the 市場價格 pane;
+// `section="member"` renders the YouTube 成員數據 block inside the 成員數據
+// pane. One component so the DIC-856 alignment state and fail-closed rules
+// stay in a single place.
+function MarketDataPanel({ card, section = 'market' }: { card: any; section?: 'market' | 'member' }) {
   const { t, language } = useTranslation();
   // 同卡號不同掛牌（原印／重印／パラレル／サイン）的價格都在 card.prices 內；卡號層級的
   // sellPrice 是「所有版本最低價」，直接顯示會混版。改成對齊到來源掛牌的單一版本。
@@ -780,8 +980,9 @@ function MarketDataPanel({ card }: { card: any }) {
   // 已對齊、有賣價，但此版本沒有對到收購價 → fail closed 明示「暫無」，不借別版價。
   const buyMissing = aligned && typeof sellPrice === 'number' && sellPrice > 0 && buyPrice == null;
 
+  if (section === 'market') {
   return (
-    <View style={styles.section}>
+    <View style={styles.sectionCard}>
       <Text style={styles.sectionTitle}>{t('card_detail_market_data')}</Text>
 
       {/* 版本選擇 — 對齊 rarity/パラレル/サイン 版，避免混版價格 */}
@@ -818,24 +1019,27 @@ function MarketDataPanel({ card }: { card: any }) {
         </View>
       ) : null}
 
-      {/* 買賣差價 / 店家收購價 — Store MVP 隱藏（DIC-908）；正常售價仍於上方價格區顯示。 */}
+      {/* 買賣差價 / 店家收購價 — Store MVP 隱藏（DIC-908）；正常售價仍於上方價格區顯示。
+          Pen UhG5Z：買入成本 / 店家收購 / 買賣差價 三格。 */}
       {FEATURES.priceSpread && (hasSpread ? (
         <View style={styles.marketBlock}>
           <Text style={styles.marketBlockTitle}>{t('card_detail_spread_title', { version: versionLabel })}</Text>
-          <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>{t('card_detail_buy_cost')}</Text>
-            <Text style={styles.marketValue}>¥{sellPrice.toLocaleString()}</Text>
-          </View>
-          <View style={styles.marketRow}>
-            <Text style={styles.marketLabel}>{t('card_detail_sell_value')}</Text>
-            <Text style={styles.marketValue}>¥{buyPrice.toLocaleString()}</Text>
-          </View>
           {isPriceReliable ? (
-            <View style={styles.marketRow}>
-              <Text style={styles.marketLabel}>{t('card_detail_spread')}</Text>
-              <Text style={[styles.marketValueStrong, { color: spreadUp ? '#10b981' : '#ef4444' }]}>
-                {spreadUp ? '+' : ''}{spreadPct.toFixed(1)}%（¥{(buyPrice - sellPrice).toLocaleString()}）
-              </Text>
+            <View style={styles.spreadRow}>
+              <View style={styles.spreadCell} testID="card-detail-spread-buy-cost">
+                <Text style={styles.spreadCellLabel}>{t('card_detail_spread_cell_buy')}</Text>
+                <Text style={styles.spreadCellValue}>¥{sellPrice.toLocaleString()}</Text>
+              </View>
+              <View style={styles.spreadCell} testID="card-detail-spread-shop-buyback">
+                <Text style={styles.spreadCellLabel}>{t('card_detail_spread_cell_shop')}</Text>
+                <Text style={[styles.spreadCellValue, { color: SEMANTIC.onBgMuted }]}>¥{buyPrice.toLocaleString()}</Text>
+              </View>
+              <View style={styles.spreadCell} testID="card-detail-spread-spread">
+                <Text style={styles.spreadCellLabel}>{t('card_detail_spread_cell_diff')}</Text>
+                <Text style={[styles.spreadCellValue, { color: spreadUp ? '#4ADE80' : '#FF8A8A' }]}>
+                  {spreadUp ? '+' : ''}{(buyPrice - sellPrice).toLocaleString()}
+                </Text>
+              </View>
             </View>
           ) : (
             <Text style={[styles.marketValueStrong, { color: '#f59e0b' }]}>
@@ -858,9 +1062,14 @@ function MarketDataPanel({ card }: { card: any }) {
           <Text style={styles.marketNote}>{t('card_detail_buy_unavailable_note')}</Text>
         </View>
       ) : null)}
+    </View>
+    );
+  }
 
+  if (!(FEATURES.ytStats && hasDisplayableSubscriberStats(ytStats))) return null;
+  return (
+    <View style={styles.sectionCard}>
       {/* YouTube 成員數據 / 訂閱・觀看成長 — Store MVP 隱藏（DIC-908） */}
-      {FEATURES.ytStats && hasDisplayableSubscriberStats(ytStats) && (
       <View style={styles.marketBlock}>
         <Text style={styles.marketBlockTitle}>{t('card_detail_youtube_data')}</Text>
         <View style={styles.marketRow}>
@@ -894,10 +1103,9 @@ function MarketDataPanel({ card }: { card: any }) {
           </View>
         ) : null}
       </View>
-      )}
-
     </View>
   );
+
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -983,72 +1191,87 @@ function LinkButton({ icon, text, url }: { icon: string; text: string; url: stri
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: PALETTE.appBg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PALETTE.appBg, padding: 20 },
+  bodyWrap: { flex: 1 },
+  scrollContent: { paddingTop: 6 },
+  paneHidden: { display: 'none' },
 
-  // Pen App/03 shell chrome (back arrow t2SEv, external-link CE6L7)
+  // Pen App/03 shell chrome (back arrow t2SEv, heart WZtaq, external-link CE6L7)
   shellBackButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginLeft: -6 },
   shellBackGlyph: { fontFamily: Platform.OS === 'web' ? FONTS.display : undefined, fontSize: 26, lineHeight: 28, color: SEMANTIC.onBgMuted },
   shellActionGlyph: { fontSize: 18, lineHeight: 20, color: SEMANTIC.onBgMuted },
 
-  // Desktop two-column layout
+  // Desktop: Pen only specifies the 390 frame — desktop centers the same
+  // column instead of resurrecting the legacy two-column split.
   scrollDesktop: { alignItems: 'center' },
-  oneCol: { width: '100%' },
-  twoCol: { flexDirection: 'row', width: '100%', maxWidth: 1040, alignItems: 'flex-start' },
-  leftCol: { width: 420 },
-  rightCol: { flex: 1 },
+  desktopColumn: { width: '100%', maxWidth: 720 },
 
-  // Image area
-  imageArea: { width: '100%', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.border + '44', paddingHorizontal: 12, paddingVertical: 16 },
-  imgContainer: { width: '100%', alignItems: 'center' },
-  fallbackArea: { alignItems: 'center', padding: 32 },
-  fallbackId: { fontSize: 22, fontWeight: 'bold', color: COLORS.text + '99', marginBottom: 8 },
-  fallbackName: { fontSize: 20, fontWeight: 'bold', color: COLORS.text, marginBottom: 4 },
-  fallbackTw: { fontSize: 15, color: COLORS.primary, marginBottom: 12 },
-  fallbackHint: { fontSize: 13, color: COLORS.primary },
+  // ── Card Hero (Pen jzuT9) ──
+  hero: { flexDirection: 'row', gap: 16, paddingHorizontal: 16, paddingTop: 6 },
+  heroArt: { width: 130, height: 182, borderRadius: 11, overflow: 'hidden', justifyContent: 'flex-end' },
+  heroArtImage: { position: 'absolute', top: 0, left: 0, width: 130, height: 182 },
+  heroArtFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8 },
+  heroArtFallbackId: { fontSize: 13, fontWeight: '700', color: SEMANTIC.onBgMuted, marginBottom: 4 },
+  heroArtFallbackHint: { fontSize: 10, color: PALETTE.accent2, textAlign: 'center' },
+  heroArtFoot: { margin: 7, borderRadius: 5, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', paddingVertical: 2 },
+  heroArtFootText: { fontSize: 10, fontWeight: '700', color: '#FFFFFF' },
+  heroInfo: { flex: 1, minWidth: 0 },
+  heroName: { fontFamily: Platform.OS === 'web' ? FONTS.body : undefined, fontSize: 21, fontWeight: '800', color: SEMANTIC.onBg },
+  heroNameSub: { fontSize: 13, color: SEMANTIC.onBgMuted, marginTop: 2 },
+  heroSet: { fontSize: 11.5, color: SEMANTIC.onBgDim, marginTop: 9, lineHeight: 16 },
+  heroBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
+  heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: PALETTE.appElev, borderRadius: 7, paddingHorizontal: 9, paddingVertical: 4 },
+  heroBadgeDot: { width: 8, height: 8, borderRadius: 4 },
+  heroBadgeText: { fontSize: 11, fontWeight: '600', color: '#B9B9CE' },
+  heroStats: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  heroStatCell: { minWidth: 102, backgroundColor: PALETTE.appSurface, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8, gap: 3 },
+  heroStatLabel: { fontSize: 10, color: SEMANTIC.onBgDim },
+  heroStatValue: { fontSize: 13, fontWeight: '700', color: SEMANTIC.onBg },
 
-  // Price section
-  favoriteRow: { marginHorizontal: 20, marginTop: 14, flexDirection: 'row' },
-  favoriteChip: { minHeight: 44, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center' },
-  favoriteChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '22' },
-  favoriteChipText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  favoriteChipTextActive: { color: COLORS.primary },
-  collectionCard: { marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  collectionCopy: { flex: 1, minWidth: 0 },
-  collectionTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  collectionVersion: { color: COLORS.textSecondary, fontSize: 11, marginTop: 3 },
-  collectionControls: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  collectionButton: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border },
-  collectionButtonText: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
-  collectionButtonDisabled: { color: COLORS.border },
-  collectionQuantity: { minWidth: 24, color: COLORS.text, fontSize: 15, fontWeight: '800', textAlign: 'center' },
-  collectionRemove: { color: COLORS.error, fontSize: 12, fontWeight: '700' },
-  // Pen Price Card (node qJqlm): $app-surface, r16, 16px padding card — no
-  // full-bleed divider band any more.
-  priceSection: { marginHorizontal: 16, marginTop: 16, padding: 16, borderRadius: 16, backgroundColor: PALETTE.appSurface },
-  priceHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  priceSourceName: { fontSize: 17, fontWeight: '700', color: COLORS.text },
-  priceBadge: { marginLeft: 10, backgroundColor: COLORS.surfaceLight, color: COLORS.textSecondary, fontSize: 11, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
-  priceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
+  // ── Tabs (Pen EFhFr) ──
+  tabsRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 18, marginBottom: 16, backgroundColor: PALETTE.appSurface, borderRadius: 11, padding: 3, gap: 2 },
+  tabSeg: { flex: 1, borderRadius: 9, paddingVertical: 9, alignItems: 'center', justifyContent: 'center', minHeight: 36 },
+  tabSegActive: { backgroundColor: 'rgba(255,255,255,0.07)' },
+  tabSegText: { fontSize: 12.5, fontWeight: '500', color: SEMANTIC.onBgDim },
+  tabSegTextActive: { fontWeight: '700', color: SEMANTIC.onBg },
+
+  // ── Price card (Pen qJqlm) ──
+  priceSection: { marginHorizontal: 16, padding: 16, borderRadius: 16, backgroundColor: PALETTE.appSurface },
+  priceHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  priceSourceLabel: { fontSize: 12, color: SEMANTIC.onBgDim },
+  priceVersionChip: { backgroundColor: PALETTE.appElev, borderRadius: 7, paddingHorizontal: 9, paddingVertical: 5 },
+  priceVersionChipText: { fontSize: 11, fontWeight: '600', color: '#B9B9CE' },
+  priceValueRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 6 },
   // Pen Value Row (node x0c32A): 30/700 Outfit on $text-primary — the mint
   // green price was one of the flagged Pen→Preview regressions.
   priceValue: { fontFamily: Platform.OS === 'web' ? FONTS.display : undefined, fontSize: 30, fontWeight: '700', color: SEMANTIC.onBg },
-  priceRange: { fontSize: 13, color: COLORS.textSecondary, marginLeft: 6 },
-  priceNote: { fontSize: 11, color: COLORS.textSecondary + 'bb', marginBottom: 12 },
-  checkPriceBtn: { backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  priceDeltaChip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  priceDeltaText: { fontSize: 11.5, fontWeight: '700' },
+  priceCompare: { fontSize: 11.5, color: SEMANTIC.onBgDim, marginBottom: 6 },
+  priceNote: { fontSize: 11, color: COLORS.textSecondary + 'bb', marginBottom: 6 },
+  priceChart: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 62, marginTop: 8 },
+  priceChartBar: { flex: 1, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
+  checkPriceBtn: { backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 12 },
   checkPriceBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   noPriceText: { fontSize: 20, fontWeight: '600', color: COLORS.textSecondary + '99', paddingVertical: 8 },
-  variantList: { marginBottom: 12 },
-  variantRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, backgroundColor: COLORS.surfaceLight, borderRadius: 8, marginBottom: 6 },
+  variantList: { marginBottom: 4 },
+  variantRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: PALETTE.appElev, borderRadius: 8, marginBottom: 6 },
   variantName: { color: COLORS.text, fontSize: 13, fontWeight: '600', flex: 1, marginRight: 8 },
-  variantPrice: { color: COLORS.success, fontSize: 15, fontWeight: 'bold' },
+  variantPrice: { color: PALETTE.accent2, fontSize: 14, fontWeight: '700' },
   variantHint: { color: COLORS.textSecondary, fontSize: 11, marginTop: 2, paddingHorizontal: 4 },
 
-  // Info section
-  section: { paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, marginBottom: 12 },
+  // ── Alert banner (Pen jB05M) ──
+  alertBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 12, padding: 14, borderRadius: 14, backgroundColor: 'rgba(251,191,36,0.06)' },
+  alertBell: { fontSize: 17, lineHeight: 22 },
+  alertCopy: { flex: 1, minWidth: 0 },
+  alertTitle: { fontSize: 13, fontWeight: '700', color: SEMANTIC.onBg },
+  alertSub: { fontSize: 11, color: SEMANTIC.onBgDim, marginTop: 3 },
+  alertEdit: { fontSize: 14, color: SEMANTIC.onBgDim },
+
+  // ── Section card ──
+  sectionCard: { marginHorizontal: 16, marginTop: 12, padding: 16, borderRadius: 16, backgroundColor: PALETTE.appSurface },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text, marginBottom: 12 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   cardNumber: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '700' },
-  rarityBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6, minWidth: 48, alignItems: 'center' },
-  rarityText: { fontSize: 12, fontWeight: '800', color: COLORS.text },
   detailBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   detailBloomBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, minWidth: 50, alignItems: 'center' },
   detailBloomBadgeText: { fontSize: 12, fontWeight: '800', color: '#ffffff', letterSpacing: 0.3 },
@@ -1058,13 +1281,22 @@ const styles = StyleSheet.create({
   detailCategoryChipText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   detailRarityChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, borderWidth: 1, backgroundColor: 'transparent' },
   detailRarityChipText: { fontSize: 11, fontWeight: '800' },
-  // Pen Card Info name (node HMarO): 21/800 body face on $text-primary.
-  nameJP: { fontFamily: Platform.OS === 'web' ? FONTS.body : undefined, fontSize: 21, fontWeight: '800', color: SEMANTIC.onBg, marginBottom: 3 },
-  nameTW: { fontSize: 17, color: COLORS.primary, marginBottom: 3 },
   nameEN: { fontSize: 13, color: COLORS.text + '88', marginBottom: 12, fontStyle: 'italic' },
   infoRow: { flexDirection: 'row', marginBottom: 5 },
   infoLabel: { fontSize: 14, color: COLORS.textSecondary, marginRight: 6 },
   infoValue: { fontSize: 14, color: COLORS.text, flex: 1 },
+
+  // Collection ownership widget
+  collectionCard: { marginHorizontal: 16, marginTop: 12, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, backgroundColor: PALETTE.appSurface, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  collectionCopy: { flex: 1, minWidth: 0 },
+  collectionTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  collectionVersion: { color: COLORS.textSecondary, fontSize: 11, marginTop: 3 },
+  collectionControls: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  collectionButton: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: PALETTE.appElev, borderWidth: 1, borderColor: COLORS.border },
+  collectionButtonText: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  collectionButtonDisabled: { color: COLORS.border },
+  collectionQuantity: { minWidth: 24, color: COLORS.text, fontSize: 15, fontWeight: '800', textAlign: 'center' },
+  collectionRemove: { color: COLORS.error, fontSize: 12, fontWeight: '700' },
 
   // Effects
   effectBlock: { backgroundColor: COLORS.surfaceLight + 'cc', padding: 14, borderRadius: 10, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: COLORS.primary },
@@ -1090,16 +1322,19 @@ const styles = StyleSheet.create({
   linkButton: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.border + '88', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10, marginBottom: 8 },
   linkText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
 
-  // Watchlist button
-  watchlistBtn: { backgroundColor: COLORS.primary, paddingVertical: 15, borderRadius: 12, alignItems: 'center' },
-  watchlistBtnActive: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.primary },
-  topActionRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20, paddingTop: 12 },
-  watchlistChip: { backgroundColor: COLORS.primary, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20 },
-  watchlistChipActive: { backgroundColor: COLORS.surfaceLight, borderWidth: 1, borderColor: COLORS.primary },
-  watchlistChipText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  watchlistChipTextActive: { color: COLORS.primary },
-  watchlistBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
-  watchlistBtnTextActive: { color: COLORS.primary },
+  // ── Action bar (Pen Mst3p) ──
+  actionBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    flexDirection: 'row', gap: 10,
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20,
+    backgroundColor: 'rgba(10,10,19,0.95)',
+  },
+  actionBtnGhost: { flex: 1, minHeight: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  actionBtnGhostActive: { backgroundColor: 'rgba(255,77,157,0.14)' },
+  actionBtnGhostText: { fontSize: 14, fontWeight: '700', color: SEMANTIC.onBg },
+  actionBtnGhostTextActive: { color: PALETTE.accent },
+  actionBtnPrimary: { flex: 1, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  actionBtnPrimaryText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
 
   // Market data section
   marketBlock: { backgroundColor: COLORS.surfaceLight + '55', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: 12, marginBottom: 10 },
@@ -1109,6 +1344,11 @@ const styles = StyleSheet.create({
   marketValue: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   marketValueStrong: { fontSize: 15, fontWeight: 'bold' },
   marketNote: { fontSize: 11, color: COLORS.textSecondary + '99', marginTop: 6, lineHeight: 16 },
+  // Pen UhG5Z spread cells
+  spreadRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  spreadCell: { flex: 1, gap: 4 },
+  spreadCellLabel: { fontSize: 10.5, color: SEMANTIC.onBgDim },
+  spreadCellValue: { fontSize: 15, fontWeight: '700', color: SEMANTIC.onBg },
 
   // Version selector (market data)
   versionLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 8, fontWeight: '600' },

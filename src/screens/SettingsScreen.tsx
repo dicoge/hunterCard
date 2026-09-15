@@ -1,11 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import { COLORS, APP_NAME, APP_VERSION, CURRENCIES } from '../constants';
+import { COLORS, APP_VERSION, CURRENCIES } from '../constants';
 import { FEATURES } from '../config/releaseFlags';
 import { useSettingsStore, CurrencyCode, LanguageCode } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
-import { useDeckStore } from '../store/deckStore';
-import { usePriceAlertStore } from '../stores/priceAlertStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { friendlyAuthErrorMessage, isCancelAuthError } from '../services/authErrorMessages';
 import { showAlert } from '../utils/platformAlert';
@@ -36,22 +34,23 @@ export default function SettingsScreen({ navigation }: any) {
     (p) => !linkedSet.has(p) && !(p === 'apple' && !APPLE_LOGIN_ENABLED),
   );
 
-  // DIC-1409 Phase 4 — Pen `App / 07 我的` (frame siVsa) shell chrome + the
-  // real account card (node ZYJRw) and stats tiles (node vGwTI). Every value
-  // is live store state: collection count from the deck-store inventory,
-  // alert count from the price-alert store; the 收藏市值 tile in the Pen
-  // frame is intentionally NOT rendered — computing it needs a price join
-  // this surface does not have, and a placeholder number would be mock data.
-  const collection = useDeckStore((s) => s.collection);
-  const alerts = usePriceAlertStore((s) => s.alerts);
-  const collectionCount = useMemo(
-    () => Object.values(collection).reduce((sum, qty) => sum + (qty || 0), 0),
-    [collection],
-  );
-  const alertCount = Object.keys(alerts).length;
+  // DIC-1427 — Pen `App / 15 設定` (frame x44r8t): AccountCard (node mVopl)
+  // over the real auth store, then the Pen 偏好 / 帳號 / 應用 group cards.
+  // The App/07 stat tiles that used to render here belong to the MeScreen hub
+  // (Pen siVsa) and are no longer duplicated on Settings.
   const shellTabs = useMemo(() => buildShellTabs({ navigation: navigation ?? { navigate: () => {} } }), [navigation]);
   const displayNameForCard = user?.displayName || user?.primaryEmail || t('me_guest_name');
   const avatarInitial = (displayNameForCard || 'H').trim().charAt(0).toUpperCase() || 'H';
+  // Pen 偏好 rows disclose their real option chips in place: the row shows
+  // the live store value, tapping expands the existing selectors.
+  const [expandedRow, setExpandedRow] = useState<'language' | 'currency' | null>(null);
+  const toggleRow = (row: 'language' | 'currency') =>
+    setExpandedRow((current) => (current === row ? null : row));
+  const accountMeta = isAuthenticated && user
+    ? [user.primaryEmail, linkedProviders.map((p) => PROVIDER_LABEL[p.provider]).join(' / ')]
+        .filter(Boolean)
+        .join(' ・ ')
+    : t('settings_guest_meta');
 
   const handleGoogleLogin = async () => {
     try {
@@ -141,127 +140,37 @@ export default function SettingsScreen({ navigation }: any) {
     <AppShell
       appBar={{
         showBrand: false,
-        title: SHELL_TAB_LABELS.me,
+        // DIC-1427 QA P0: Settings is its own Pen frame (x44r8t 設定) —
+        // the 我的 identity moved to MeScreen (Pen siVsa collection hub).
+        title: t('nav_settings'),
         onLeadingPress: () => navigation?.openDrawer?.(),
       }}
       bottomTabBar={{ items: shellTabs, activeKey: 'me' }}
-      testID="me-shell"
+      testID="settings-shell"
     >
-        {/* Pen Account card (node ZYJRw): gradient avatar + name + linked
-            provider badges, backed by the real auth store. */}
-        <View style={styles.accountCard} testID="me-account-card">
+        {/* Pen x44r8t AccountCard (node mVopl): gradient avatar + name +
+            email ・ provider meta, backed by the real auth store. */}
+        <View style={styles.accountCard} testID="settings-account-card">
           <View style={styles.avatar}>
             <Text style={styles.avatarInitial}>{avatarInitial}</Text>
           </View>
           <View style={styles.accountText}>
-            <Text style={styles.accountName} numberOfLines={1} testID="me-account-name">
+            <Text style={styles.accountName} numberOfLines={1} testID="settings-account-name">
               {displayNameForCard}
             </Text>
-            <View style={styles.accountBadges}>
-              {linkedProviders.map((p) => (
-                <View key={p.provider} style={styles.accountBadge}>
-                  <Text style={styles.accountBadgeText}>
-                    {t('me_provider_linked', { provider: PROVIDER_LABEL[p.provider] })}
-                  </Text>
-                </View>
-              ))}
-            </View>
+            <Text style={styles.accountMeta} numberOfLines={1} testID="settings-account-meta">
+              {accountMeta}
+            </Text>
           </View>
         </View>
 
-        {/* Pen Stats tiles (node vGwTI) — real store values only. */}
-        {(FEATURES.favorites || FEATURES.watchlist) && (
-          <View style={styles.statsRow} testID="me-stats">
-            {FEATURES.favorites && (
-              <View style={styles.statTile} testID="me-stat-collection">
-                <Text style={styles.statValue}>{collectionCount}</Text>
-                <Text style={styles.statLabel}>{t('me_stat_collection')}</Text>
-              </View>
-            )}
-            {FEATURES.watchlist && (
-              <View style={styles.statTile} testID="me-stat-alerts">
-                <Text style={styles.statValue}>{alertCount}</Text>
-                <Text style={styles.statLabel}>{t('me_stat_alerts')}</Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        <Text style={styles.title}>{APP_NAME}</Text>
-        <Text style={styles.version}>{t('settings_app_version', { version: APP_VERSION })}</Text>
-
-        {/* ── 語言設定 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings_language_section')}</Text>
-          <View style={styles.optionRow}>
-            <TouchableOpacity
-              style={[styles.optionBtn, preferredLanguage === 'zh' && styles.optionBtnActive]}
-              onPress={() => setLanguage('zh')}
-            >
-              <Text style={[styles.optionText, preferredLanguage === 'zh' && styles.optionTextActive]}>
-                {t('settings_language_zh')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.optionBtn, preferredLanguage === 'ja' && styles.optionBtnActive]}
-              onPress={() => setLanguage('ja')}
-            >
-              <Text style={[styles.optionText, preferredLanguage === 'ja' && styles.optionTextActive]}>
-                {t('settings_language_ja')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.hint}>
-            {t('settings_language_hint')}
-          </Text>
-        </View>
-
-        {/* ── 幣別設定 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings_currency_section')}</Text>
-          <View style={styles.optionRow}>
-            {CURRENCIES.map((cur) => (
-              <TouchableOpacity
-                key={cur.code}
-                style={[styles.optionBtn, preferredCurrency === cur.code && styles.optionBtnActive]}
-                onPress={() => setCurrency(cur.code as CurrencyCode)}
-              >
-                <Text style={[styles.optionText, preferredCurrency === cur.code && styles.optionTextActive]}>
-                  {cur.symbol} {cur.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={styles.hint}>
-            {preferredCurrency === 'TWD' && t('settings_currency_hint_twd')}
-            {preferredCurrency === 'JPY' && t('settings_currency_hint_jpy')}
-            {preferredCurrency === 'USD' && t('settings_currency_hint_usd')}
-          </Text>
-        </View>
-
-        {/* ── 價格來源資訊 ── Store MVP: 隱藏整區 (DIC-1256)。此區只列
-            遊々亭 / Carousell / 匯率，Store MVP 一律不展示市場價格，區塊本身
-            也不再有意義。 */}
-        {FEATURES.marketData && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('settings_price_sources')}</Text>
-            <Text style={styles.item}>{t('settings_price_yuyu')}</Text>
-            <Text style={styles.item}>{t('settings_price_carousell')}</Text>
-            <Text style={styles.item}>{t('settings_exchange_rate')}</Text>
-          </View>
-        )}
-
-        {/* ── 帳號 ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings_account_section')}</Text>
+        {/* ── 帳號 (Pen group Qpkox) — the real linked-auth surface. The Pen
+            變更密碼 / 訂閱管理 rows have no real backing feature (OAuth-only
+            auth, subscription gated off) and are honestly omitted. ── */}
+        <Text style={styles.groupHeading}>{t('settings_group_account')}</Text>
+        <View style={styles.groupCard} testID="settings-group-account">
           {isAuthenticated && user ? (
             <>
-              {!!(user.displayName || user.primaryEmail) && (
-                <Text style={styles.item}>
-                  {user.displayName ?? user.primaryEmail}
-                </Text>
-              )}
-
               <Text style={styles.subheading}>{t('settings_account_linked_auth')}</Text>
               {linkedProviders.map((p) => (
                 <View key={p.provider} style={styles.providerRow}>
@@ -343,6 +252,108 @@ export default function SettingsScreen({ navigation }: any) {
           )}
         </View>
 
+        {/* ── 偏好 (Pen group Vp4g7): 語言 / 貨幣 rows showing the live store
+            value; tapping a row discloses the real selector in place. The Pen
+            深色模式 / 價格通知 / 賽事快訊 toggles have no real switchable
+            backing (single dark theme, no push channel) and are honestly
+            omitted rather than rendered as dead controls. ── */}
+        <Text style={styles.groupHeading}>{t('settings_group_preferences')}</Text>
+        <View style={styles.groupCard} testID="settings-group-preferences">
+          <TouchableOpacity
+            style={styles.rowItem}
+            onPress={() => toggleRow('language')}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: expandedRow === 'language' }}
+            testID="settings-row-language"
+          >
+            <Text style={styles.rowLabel}>{t('settings_row_language')}</Text>
+            <Text style={styles.rowValue} testID="settings-language-value">
+              {preferredLanguage === 'zh' ? t('settings_language_zh') : t('settings_language_ja')}
+            </Text>
+            <Text style={styles.rowChevron}>{expandedRow === 'language' ? '▾' : '›'}</Text>
+          </TouchableOpacity>
+          {expandedRow === 'language' && (
+            <View style={styles.rowExpand}>
+              <View style={styles.optionRow}>
+                {(['zh', 'ja'] as LanguageCode[]).map((code) => (
+                  <TouchableOpacity
+                    key={code}
+                    style={[styles.optionBtn, preferredLanguage === code && styles.optionBtnActive]}
+                    onPress={() => setLanguage(code)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: preferredLanguage === code }}
+                    testID={`settings-language-${code}`}
+                  >
+                    <Text style={[styles.optionText, preferredLanguage === code && styles.optionTextActive]}>
+                      {code === 'zh' ? t('settings_language_zh') : t('settings_language_ja')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.hint}>{t('settings_language_hint')}</Text>
+            </View>
+          )}
+          <View style={styles.rowDivider} />
+          <TouchableOpacity
+            style={styles.rowItem}
+            onPress={() => toggleRow('currency')}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: expandedRow === 'currency' }}
+            testID="settings-row-currency"
+          >
+            <Text style={styles.rowLabel}>{t('settings_row_currency')}</Text>
+            <Text style={styles.rowValue} testID="settings-currency-value">
+              {CURRENCIES.find((cur) => cur.code === preferredCurrency)?.symbol ?? preferredCurrency}
+            </Text>
+            <Text style={styles.rowChevron}>{expandedRow === 'currency' ? '▾' : '›'}</Text>
+          </TouchableOpacity>
+          {expandedRow === 'currency' && (
+            <View style={styles.rowExpand}>
+              <View style={styles.optionRow}>
+                {CURRENCIES.map((cur) => (
+                  <TouchableOpacity
+                    key={cur.code}
+                    style={[styles.optionBtn, preferredCurrency === cur.code && styles.optionBtnActive]}
+                    onPress={() => setCurrency(cur.code as CurrencyCode)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: preferredCurrency === cur.code }}
+                    testID={`settings-currency-${cur.code}`}
+                  >
+                    <Text style={[styles.optionText, preferredCurrency === cur.code && styles.optionTextActive]}>
+                      {cur.symbol} {cur.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.hint}>
+                {preferredCurrency === 'TWD' && t('settings_currency_hint_twd')}
+                {preferredCurrency === 'JPY' && t('settings_currency_hint_jpy')}
+                {preferredCurrency === 'USD' && t('settings_currency_hint_usd')}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── 應用 (Pen group phxwj): price-source disclosure (Store MVP hides
+            the whole block, DIC-1256) + the real version on the 關於 row. The
+            Pen 離線資料 row has no real sync-state source and is omitted. ── */}
+        <Text style={styles.groupHeading}>{t('settings_group_app')}</Text>
+        <View style={styles.groupCard} testID="settings-group-app">
+          {FEATURES.marketData && (
+            <>
+              <Text style={styles.subheading}>{t('settings_price_sources')}</Text>
+              <Text style={styles.item}>{t('settings_price_yuyu')}</Text>
+              <Text style={styles.item}>{t('settings_price_carousell')}</Text>
+              <Text style={styles.item}>{t('settings_exchange_rate')}</Text>
+              <View style={styles.rowDivider} />
+            </>
+          )}
+          <View style={styles.rowItem} testID="settings-row-about">
+            <Text style={styles.rowLabel}>{t('settings_row_about')}</Text>
+            <Text style={styles.rowValue}>{t('settings_app_version', { version: APP_VERSION })}</Text>
+          </View>
+        </View>
+
         <Text style={styles.footer}>{t('settings_footer')}</Text>
     </AppShell>
   );
@@ -386,76 +397,56 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  accountBadges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  accountBadge: {
-    backgroundColor: '#FFFFFF0D',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  accountBadgeText: {
-    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
-    color: '#B9B9CE',
-    fontSize: 10.5,
-    fontWeight: '600',
-  },
-  // Pen App/07 stats tiles (node vGwTI: $app-surface r13, 16/700 value,
-  // 10.5 muted label)
-  statsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 6,
-  },
-  statTile: {
-    flex: 1,
-    backgroundColor: PALETTE.appSurface,
-    borderRadius: 13,
-    paddingVertical: 12,
-    alignItems: 'center',
-    gap: 5,
-  },
-  statValue: {
-    fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
-    color: SEMANTIC.onBg,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  statLabel: {
+  accountMeta: {
     fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
     color: SEMANTIC.onBgDim,
-    fontSize: 10.5,
+    fontSize: 11,
   },
-  title: {
-    color: COLORS.primary,
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    marginTop: 20,
+  // Pen x44r8t group IA: an 11 muted heading OUTSIDE each $app-surface r14
+  // group card (headings 帳號/偏好/應用; cards Qpkox/Vp4g7/phxwj), rows as
+  // 13 label + 12 muted value + chevron.
+  groupHeading: {
+    color: SEMANTIC.onBgDim,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+    marginLeft: 4,
   },
-  version: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    marginBottom: 30,
-  },
-  // DIC-1409 Phase 6 — Pen `App / 15 設定` (frame x44r8t): each section is a
-  // $app-surface r14 group card (nodes Qpkox/Vp4g7/phxwj) headed by an 11/700
-  // muted label (nodes U2n8Jp/sed7I/Ld7b7).
-  section: {
+  groupCard: {
     marginBottom: 16,
     backgroundColor: PALETTE.appSurface,
     borderRadius: 14,
     padding: 14,
   },
-  sectionTitle: {
+  rowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
+  },
+  rowLabel: {
+    flex: 1,
+    minWidth: 0,
+    color: SEMANTIC.onBg,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  rowValue: {
     color: SEMANTIC.onBgDim,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    marginBottom: 10,
+    fontSize: 12,
+  },
+  rowChevron: {
+    color: SEMANTIC.onBgDim,
+    fontSize: 14,
+  },
+  rowExpand: {
+    paddingBottom: 10,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginVertical: 4,
   },
   optionRow: {
     flexDirection: 'row',

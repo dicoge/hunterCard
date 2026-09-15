@@ -59,7 +59,7 @@ function printingLabelOf(card: {
   return card.printingLabel?.trim() || card.printing;
 }
 
-export default function DeckEditorScreen() {
+export default function DeckEditorScreen({ route }: any = {}) {
   const { t } = useTranslation();
   // DIC-1380 W8 CR — the Pen `uXuqo` app bar carries a back button.
   // useNavigation() throws when the component is mounted outside a
@@ -142,6 +142,30 @@ export default function DeckEditorScreen() {
       .catch(() => setDb(null))
       .finally(() => setLoading(false));
   }, []);
+
+  // DIC-1427 QA P0 (Pen uXuqo): a first visit with zero decks used to land on
+  // a bare create form over a giant blank region. The Pen frame is the FULL
+  // functional editor, so seed one starter deck and open it directly — the
+  // player gets the zone tabs, real card-picker grid, warning banner and cost
+  // footer immediately. Gated on `db` so the persisted deck store has long
+  // finished rehydrating (the catalog load is orders of magnitude slower);
+  // players who already have decks keep the library flow untouched.
+  useEffect(() => {
+    if (!db) return;
+    if (decks.length === 0) createDeck('');
+  }, [db, decks.length, createDeck]);
+
+  // DIC-1427 Pen o7WO3r 加入牌組: CardDetail hands over its card number and
+  // the picker opens pre-filtered on that exact number (mode 'number'), so the
+  // player lands one tap away from the real add-to-zone flow — no shadow
+  // "quick add" path that would bypass deck/zone rules.
+  const addCardNumber = route?.params?.addCardNumber;
+  useEffect(() => {
+    if (typeof addCardNumber === 'string' && addCardNumber.trim() !== '') {
+      setCriteria({ ...EMPTY_CRITERIA, query: addCardNumber.trim(), mode: 'number' });
+      setMobilePanel('picker');
+    }
+  }, [addCardNumber]);
 
   // Reset the rename editor whenever the active deck changes.
   useEffect(() => {

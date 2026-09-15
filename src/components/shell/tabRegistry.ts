@@ -23,7 +23,7 @@ export const SHELL_TAB_ROUTE_MAP: Record<BottomTabKey, string> = {
   search: 'Search',
   scan: 'Scan',
   deck: 'DeckEditor',
-  me: 'Settings',
+  me: 'Me',
 };
 
 export const SHELL_TAB_LABELS: Record<BottomTabKey, string> = {
@@ -86,6 +86,7 @@ export function activeTabForRoute(routeName: string | undefined): BottomTabKey {
     Tutorial: 'home',
     TutorialDetail: 'home',
     TutorialSimulation: 'home',
+    Me: 'me',
     Settings: 'me',
     Favorites: 'me',
     Login: 'me',

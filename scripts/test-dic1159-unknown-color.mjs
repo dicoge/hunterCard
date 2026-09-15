@@ -402,6 +402,19 @@ async function renderSearchAt(viewport, query, row) {
   };
 }
 
+// DIC-1427: at 390 the shipped route renders the Pen Z6jlE Card Tile grid
+// (display name + price — no card-number / colour-label rows), so the colour
+// label's real 390 surface is the filter sheet behind the sliders affordance.
+// The crash + raw-token-leak guards stay identical at BOTH viewports; the
+// label assertions run against whichever surface the viewport actually ships.
+const clickInTest = async (el) => {
+  assert.ok(el, 'expected a clickable element');
+  await act(async () => {
+    el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+  });
+};
+
 for (const viewport of [1440, 390]) {
   await test(`SearchResultsScreen at ${viewport}px renders 無色 for the real hBP04-087 winner (top-level color:"null" + skillsJp/skillsZh ◇)`, async () => {
     const { container, items, capturedErrors, cleanup } = await renderSearchAt(viewport, 'hBP04', productionShapeDiamondRow());
@@ -410,12 +423,23 @@ for (const viewport of [1440, 390]) {
       const missingKey = capturedErrors.find((msg) => /Missing translation key/i.test(msg));
       assert.equal(missingKey, undefined,
         `render must not throw \`Missing translation key\` — saw: ${missingKey}`);
-      const text = container.textContent;
-      assert.ok(text.includes('hBP04-087'), 'the crash-row card number must appear in the rendered DOM');
-      assert.ok(text.includes('無色'),
-        `the nested ◇ MUST resolve to 無色 on the real screen at ${viewport}px — this is the DIC-1192 label DIC-1159 CR requires preserved`);
-      assert.ok(!text.includes('color_◇'), 'raw i18n key must never leak to the DOM');
-      assert.ok(!text.includes('◇'), 'raw ◇ marker must not appear as the color label');
+      // DIC-1427 QA P1: the Pen tile grid is the layout at EVERY width now.
+      // Tile carries the display name; the colour label's real surface is the
+      // filter sheet behind the shipped sliders affordance at all viewports.
+      assert.ok(
+        container.textContent.includes('伊麗莎白') || container.textContent.includes('エリザベス'),
+        `the crash-row display name must appear on its Pen tile at ${viewport}px`);
+      await clickInTest(container.querySelector('[data-testid="search-results-filter-button"]'));
+      assert.ok(container.querySelector('[data-testid="search-results-filter-panel"]'),
+        `the filter sheet must open from the shipped sliders affordance at ${viewport}px`);
+      const colorless = container.querySelector('[data-testid="search-results-filter-color-colorless"]');
+      assert.ok(colorless,
+        'the diamond row must surface a NORMALISED colorless filter option — a bypassed normaliser yields none');
+      assert.ok(colorless.textContent.includes('無色'),
+        `the nested ◇ MUST resolve to 無色 on the real filter-sheet surface — got: ${colorless.textContent}`);
+      const finalText = container.textContent;
+      assert.ok(!finalText.includes('color_◇'), 'raw i18n key must never leak to the DOM');
+      assert.ok(!finalText.includes('◇'), 'raw ◇ marker must not appear as the color label');
     } finally { await cleanup(); }
   });
 }
@@ -428,16 +452,21 @@ for (const viewport of [1440, 390]) {
       const missingKey = capturedErrors.find((msg) => /Missing translation key/i.test(msg));
       assert.equal(missingKey, undefined,
         `blue_red must not throw a missing-key error — saw: ${missingKey}`);
-      const text = container.textContent;
-      // zh translations are single-char (see src/i18n/locales/zh.ts): color_blue = 藍, color_red = 紅.
-      // CardListItem joins them with ' / ' — the rendered label is `藍 / 紅`, which is
-      // the exact string the JP scraper's `blue_red` composite must land as after both
-      // canonicalCardColors splits and t() lookup.
-      assert.ok(text.includes('hBP08-060'));
-      assert.ok(text.includes('藍 / 紅'),
-        `blue_red must render as the joined single-char label \`藍 / 紅\` at ${viewport}px — got: ${text}`);
-      assert.ok(!text.includes('color_blue_red'), 'raw composite key must not leak');
-      assert.ok(!text.includes('blue_red'), 'raw composite token must not appear in the DOM');
+      // DIC-1427 QA P1: Pen tile grid at every width — the composite must
+      // split into the two canonical colour options on the filter sheet.
+      assert.ok(
+        container.textContent.includes('芙娃莫娃') || container.textContent.includes('フワモコ'),
+        `the blue_red row display name must appear on its Pen tile at ${viewport}px`);
+      await clickInTest(container.querySelector('[data-testid="search-results-filter-button"]'));
+      const blueOption = container.querySelector('[data-testid="search-results-filter-color-blue"]');
+      const redOption = container.querySelector('[data-testid="search-results-filter-color-red"]');
+      assert.ok(blueOption && redOption,
+        `blue_red must split into canonical blue + red filter options at ${viewport}px — a bypassed split yields neither`);
+      assert.ok(blueOption.textContent.includes('藍'), `blue option must read 藍 — got: ${blueOption?.textContent}`);
+      assert.ok(redOption.textContent.includes('紅'), `red option must read 紅 — got: ${redOption?.textContent}`);
+      const finalText = container.textContent;
+      assert.ok(!finalText.includes('color_blue_red'), 'raw composite key must not leak');
+      assert.ok(!finalText.includes('blue_red'), 'raw composite token must not appear in the DOM');
     } finally { await cleanup(); }
   });
 }
@@ -450,7 +479,11 @@ await test('SearchResultsScreen at 1440px never crashes on a truly unknown color
     assert.equal(missingKey, undefined,
       `unknown token must not throw a missing-key error — saw: ${missingKey}`);
     const text = container.textContent;
-    assert.ok(text.includes('hBP09-999'), 'the unknown-color row must still be visible');
+    // DIC-1427: tiles carry the display name at every width now.
+    assert.ok(
+      text.includes('CR 負面測試') || text.includes('CR Negative Fixture'),
+      'the unknown-color row must still be visible on its Pen tile',
+    );
     assert.ok(!text.includes('mystery'), 'the raw unknown token must not be shown as a color label');
     assert.ok(!text.includes('color_mystery'), 'the raw i18n key must not leak');
   } finally { await cleanup(); }

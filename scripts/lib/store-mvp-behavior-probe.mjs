@@ -94,6 +94,14 @@ const sampleCard = {
   grade: '1st',
   yuyuPrice: 1200,
   yuyuPriceName: 'ノーマル',
+  // Single listing and no listing artwork, so nothing on screen proves which
+  // printing this is — and since DIC-1430 CR2 an unproven detail withholds the
+  // ownership widget instead of pointing it at the price default. These gate
+  // probes are about STORE_MVP hiding/showing that widget, so the card states
+  // its exact printing the way the real exact-payload routes do: BASE, the
+  // printing `printingFromLabel('ノーマル')` already resolves this listing to.
+  printing: 'BASE',
+  printingLabel: 'ノーマル',
   prices: [{ name: 'ノーマル', sellPrice: 1200, rarity: 'R' }],
   colors: ['red'],
   color: 'red',
@@ -449,8 +457,9 @@ const result = {
     hasLivePriceCta: detailText.includes(zh.card_detail_live_price),                     // FEATURES.externalPriceLinks
     hasYuyuLink: detailText.includes(zh.card_detail_yuyu_link),                          // FEATURES.externalPriceLinks
     hasCarousellLink: detailText.includes(zh.card_detail_carousell_link),                // FEATURES.externalPriceLinks
+    // DIC-1427 Pen o7WO3r folded the top chip + bottom button into ONE 到價提醒
+    // banner (Pen node jB05M) that keeps the card-price-alert-chip testID.
     hasWatchlistChip: detailHtml.includes('card-price-alert-chip'),                      // FEATURES.watchlist
-    hasWatchlistBtn: detailHtml.includes('card-price-alert-button'),                     // FEATURES.watchlist
     // Retained surfaces (must be present in BOTH modes — regression guard)
     hasPriceSection: detailHtml.includes('card-detail-price-section'),                   // FEATURES.sellPrice (DIC-1319)
     hasPriceLikeText: containsPriceLike(detailText),                                     // FEATURES.sellPrice (DIC-1319)

@@ -25,7 +25,7 @@ import { PALETTE, SEMANTIC, FONTS, GRADIENTS } from '../theme/tokensV2';
  * (node d7fA7X). All auth-store actions, the Store-MVP description swap, and
  * the APPLE_LOGIN_ENABLED gate are unchanged.
  */
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }: any = {}) {
   const { t } = useTranslation();
   const {
     loginWithGoogle,
@@ -52,10 +52,23 @@ export default function LoginScreen() {
     <SafeAreaView style={styles.container} testID="login-shell">
       <AppStatusBar />
       <View style={styles.glow} pointerEvents="none" />
+      {/* Pushed from the Landing (Pen p28zL is full-bleed, but a pushed auth
+          state needs a way back to the gate's landing surface). */}
+      {navigation?.goBack ? (
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel={t('common_back')}
+          testID="login-back"
+        >
+          <Text style={styles.backGlyph}>‹</Text>
+        </TouchableOpacity>
+      ) : null}
       <View style={styles.content}>
         <View style={styles.brand}>
           <View style={styles.logoTile} testID="login-logo-tile">
-            <View style={styles.logoInner} />
+            <Text style={styles.logoGlyph}>⌖</Text>
           </View>
           <Text style={styles.appName}>{APP_NAME}</Text>
           <Text style={styles.welcome}>{t('login_welcome')}</Text>
@@ -172,12 +185,27 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 10,
   },
-  logoInner: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    opacity: 0.92,
+  // Pen FTEuu carries the crosshair glyph, not a blank inner square.
+  logoGlyph: {
+    color: '#FFFFFF',
+    fontSize: 52,
+    lineHeight: 58,
+    fontWeight: '400',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 54,
+    left: 12,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  backGlyph: {
+    color: SEMANTIC.onBgMuted,
+    fontSize: 26,
+    lineHeight: 28,
   },
   // Pen brand label (node c9cMr): 14/700 on $accent-2.
   appName: {

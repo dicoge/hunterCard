@@ -165,6 +165,53 @@ jobs:
       - name: Verify real SearchResultsScreen grid geometry + colour render (DIC-1150 + DIC-1192)
         run: npm run test:search-results-layout
 
+      # DIC-1427: Pen App/02 搜尋結果 (frame Z6jlE) contract on the shipped
+      # route — jsdom parity (function/tokens/width math) plus real-browser
+      # measured geometry (vertical row pitch, no blank/crop inflation,
+      # search/filter/sort bounds, tab-bar + scan-FAB placement).
+      - name: Verify Pen Z6jlE search-results parity (DIC-1427)
+        run: npm run test:search-pen-parity
+
+      - name: Verify Pen Z6jlE search-results real-browser geometry (DIC-1427)
+        run: npm run test:search-pen-geometry
+
+      # DIC-1427 QA P0: Pen App/03 卡牌詳情 (frame o7WO3r) IA on the shipped
+      # CardDetail — hero geometry, 技能/市場/成員 tab swapping, Pen price-card
+      # anatomy, 到價提醒 banner, and the 收藏/加入牌組 action bar with real
+      # favorites-store + DeckEditor navigation wiring.
+      - name: Verify Pen o7WO3r card-detail parity (DIC-1427)
+        run: npm run test:detail-pen-parity
+
+      # DIC-1427 QA P0: Pen App/12–14 tutorial IA + REAL progression — hero
+      # progress from useTutorialStore, chapter states, step navigator,
+      # 開始模擬 CTA, simulation turn bar / hint banner / action row.
+      - name: Verify Pen DAQIq/rV4Za/I6WwjY tutorial parity (DIC-1427)
+        run: npm run test:tutorial-pen-parity
+
+      # DIC-1427 QA P0: Pen App/10 賽事月報 — month navigator, 熱門卡 hero,
+      # color-distribution bars and podium bound to the real report pipeline.
+      - name: Verify Pen wRgD8 tournament parity (DIC-1427)
+        run: npm run test:tournament-pen-parity
+
+      # DIC-1427 QA P0: Pen App/04–05 scan — Pen shutter row with the REAL
+      # 估值清單 count box, capability-gated 自動掃描 pill, and the Pen
+      # session-list summary/items/繼續掃描 on the real session store.
+      - name: Verify Pen eurld/wC1cO scan parity (DIC-1427)
+        run: npm run test:scan-pen-parity
+
+      # DIC-1427 QA P0: Pen App/16 登入 must be REAL and REACHABLE — Landing
+      # 登入 entries push AuthLogin inside the unauthenticated stack; no fake
+      # email button, Apple stays behind the real gate.
+      - name: Verify Pen p28zL login reachability + parity (DIC-1427)
+        run: npm run test:login-pen-parity
+
+      # DIC-1427 QA re-audit: Pen App/08 收藏 stats hero on the REAL
+      # ownership store + exact-printing prices, App/09 我的最愛 rows with
+      # real identity/price/sort + CardDetail nav, App/11 到價提醒 banner
+      # hit-count + tinted status badges from the real evaluator.
+      - name: Verify Pen ej9RF/sSDxQ/VyzfW hub parity (DIC-1427)
+        run: npm run test:hub-pen-parity
+
       # DIC-1409 Phase 2–6: Pen v2 tokens/shell parity and the App 01–16
       # screens rendering the shared shell with real data + navigation wiring.
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)
@@ -292,6 +339,18 @@ jobs:
 
       - name: Verify nav_favorites routes to FavoritesScreen (DIC-1380 W7 CR)
         run: npm run test:favorites-nav-route
+
+      - name: Verify Favorites hands CardDetail the full canonical payload (DIC-1430)
+        run: npm run test:favorites-canonical-payload
+
+      - name: Verify a tap during canonical loading never leaks a reduced payload (DIC-1430 CR2)
+        run: npm run test:favorites-canonical-loading-race
+
+      - name: Verify each exact printing resolves its own artwork + price (DIC-1430 CR2)
+        run: npm run test:exact-printing-artwork
+
+      - name: Verify one CardDetail uses one proven exact-print identity end to end (DIC-1430)
+        run: npm run test:exact-print-favorite-identity
 
       - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
         run: npm run test:tournament-discovery-acquisition

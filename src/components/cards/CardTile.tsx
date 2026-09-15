@@ -46,6 +46,10 @@ export function CardTile({
     SHADOWS.sm,
   ];
 
+  // Pen `C / Card Tile` (mJyjf) anatomy: the rarity chip floats at the TOP of
+  // the art (Art Foot cWMDV at y=6), while name (LsL66) and price (h0nqOz)
+  // stack BELOW the art — price in $accent-2. DIC-1427 realigned this from the
+  // earlier bottom-foot approximation to the exact Pen structure.
   const body = (
     <>
       <View style={[styles.art, { width, height: artHeight }]} testID={`${testID}-art`}>
@@ -62,24 +66,22 @@ export function CardTile({
             </Text>
           </View>
         )}
-        <View style={styles.artFoot} testID={`${testID}-foot`}>
-          {rarity ? (
+        {rarity ? (
+          <View style={styles.artFoot} testID={`${testID}-foot`}>
             <Text style={styles.rarity} testID={`${testID}-rarity`}>
               {rarity}
             </Text>
-          ) : (
-            <View />
-          )}
-          {price ? (
-            <Text style={styles.price} testID={`${testID}-price`} numberOfLines={1}>
-              {price}
-            </Text>
-          ) : null}
-        </View>
+          </View>
+        ) : null}
       </View>
       <Text style={styles.name} numberOfLines={1} testID={`${testID}-name`}>
         {name}
       </Text>
+      {price ? (
+        <Text style={styles.price} testID={`${testID}-price`} numberOfLines={1}>
+          {price}
+        </Text>
+      ) : null}
     </>
   );
 
@@ -107,18 +109,21 @@ export function CardTile({
 
 const styles = StyleSheet.create({
   root: {
-    borderRadius: RADII.md,
-    backgroundColor: PALETTE.appSurface,
-    overflow: 'hidden',
+    // Pen tiles have no surface plate behind name/price — the art card sits
+    // directly on $app-bg with the text stack below (frame Z6jlE grid rows).
+    backgroundColor: 'transparent',
   },
   disabled: {
     opacity: 0.5,
   },
   art: {
-    borderRadius: RADII.md,
+    // Pen Art (djwnQ): cornerRadius 9, $app-elev base, 1px $border hairline.
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
     backgroundColor: PALETTE.appElev,
     overflow: 'hidden',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
   },
   artImg: {
     width: '100%',
@@ -137,36 +142,44 @@ const styles = StyleSheet.create({
     color: SEMANTIC.onBgMuted,
     fontWeight: '600',
   },
+  // Pen Art Foot (cWMDV): 16px band floating 6px inside the art's top edge,
+  // #00000059 scrim, radius 4, rarity text centered (bSCmG, 9/700 white).
   artFoot: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: 6,
     height: 16,
+    borderRadius: 4,
     backgroundColor: '#00000059',
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.sm,
+    justifyContent: 'center',
   },
   rarity: {
     fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
-    fontSize: TYPE_SCALE.micro.size,
-    lineHeight: TYPE_SCALE.micro.lineHeight,
-    color: SEMANTIC.onBg,
-    fontWeight: '600',
+    fontSize: 9,
+    lineHeight: 11,
+    color: '#FFFFFF',
+    fontWeight: '700',
     letterSpacing: 0.6,
   },
+  // Pen Name (LsL66): 11.5/600 $text-primary, 7px below the art.
+  name: {
+    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: SEMANTIC.onBg,
+    fontWeight: '600',
+    marginTop: 7,
+  },
+  // Pen Price (h0nqOz): 11/600 $accent-2, 7px below the name.
   price: {
     fontFamily: Platform.OS === 'web' ? FONTS.display : undefined,
     fontSize: TYPE_SCALE.micro.size,
-    lineHeight: TYPE_SCALE.micro.lineHeight,
+    lineHeight: TYPE_SCALE.micro.lineHeight + 3,
     color: PALETTE.accent2,
     fontWeight: '600',
-  },
-  name: {
-    fontFamily: Platform.OS === 'web' ? FONTS.body : undefined,
-    fontSize: TYPE_SCALE.caption.size,
-    lineHeight: TYPE_SCALE.caption.lineHeight,
-    color: SEMANTIC.onBg,
-    marginTop: SPACING.md,
-    paddingHorizontal: SPACING.xs,
+    marginTop: 7,
   },
 });
 
