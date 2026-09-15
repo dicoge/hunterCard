@@ -510,6 +510,93 @@ for (const [why, card] of UNPROVEN_ART) {
   });
 }
 
+// CR4. The positive counterpart above drove ONE control — increment — while the
+// six negatives assert all three of inc/dec/remove are withheld. That asymmetry
+// left the refusal provable and the OPERATION unproven: a build whose decrement
+// was a no-op, whose remove never deleted, or whose decrement wrote the BASE
+// decoy key satisfied every assertion in this file. All three were confirmed
+// silent against the pre-CR4 suite. The sequence below drives each real control
+// from ONE mounted render and pins the state transition after persistence
+// settles, so "the collection acts on the proven identity" covers the whole
+// lifecycle — create, raise, lower, decrement-to-deleted, and remove.
+
+/** The node for `testID`, re-read from the live DOM. Rerenders REPLACE nodes,
+ *  so every click below re-queries instead of reusing a captured handle. */
+function node(container, testID) {
+  return container.querySelector(`[data-testid="${testID}"]`);
+}
+function isDisabled(el) {
+  return el.getAttribute('disabled') !== null || el.getAttribute('aria-disabled') === 'true';
+}
+/** Present AND enabled — unlike `assertWithheld`, an absent node cannot pass. */
+function assertActionable(container, testID, why) {
+  const el = node(container, testID);
+  assert.ok(el, `${testID} must be rendered ${why}`);
+  assert.ok(!isDisabled(el), `${testID} must be enabled ${why}`);
+  return el;
+}
+/** Rendered but refusing — an absent node cannot satisfy this either. */
+function assertPresentDisabled(container, testID, why) {
+  const el = node(container, testID);
+  assert.ok(el, `${testID} must still be rendered ${why}`);
+  assert.ok(isDisabled(el), `${testID} must be disabled ${why}`);
+}
+function assertAbsent(container, testID, why) {
+  assert.equal(node(container, testID), null, `${testID} must not be rendered ${why}`);
+}
+/** Re-query, click, and let the persist middleware settle before asserting. */
+async function clickControl(container, testID, why) {
+  const el = assertActionable(container, testID, why);
+  await act(async () => el.click());
+  await flush(10);
+}
+/** What `hunterCard-decks` REALLY holds, parsed — never a raw substring test.
+ *  After a deletion the exact key legitimately REMAINS in the raw bytes inside
+ *  `collectionChangedKeys` as the DIC-1380 sync tombstone, so ownership must be
+ *  read from `state.collection` or a correct product would fail here. */
+function readPersistedDecks() {
+  const raw = platformStorage.getItem(DECKS_STORAGE_KEY);
+  assert.ok(raw, 'the deck store persisted under hunterCard-decks');
+  const parsed = JSON.parse(raw);
+  return {
+    collection: parsed.state?.collection || {},
+    changedKeys: parsed.state?.changedKeys || parsed.state?.collectionChangedKeys || {},
+  };
+}
+/** The one settled assertion every step shares: the exact HR key owns `qty` in
+ *  memory AND in persistence, the on-screen counter agrees, and the unrelated
+ *  sentinel never moves. `qty === 0` means the key is DELETED, not zero-valued. */
+function assertSettledOwnership(container, qty, step) {
+  const memory = useDeckStore.getState().collection;
+  const persisted = readPersistedDecks().collection;
+  if (qty === 0) {
+    assert.ok(
+      !(EXPECTED_COLLECTION_KEY in memory),
+      `${step}: ${EXPECTED_KEY} is deleted from the in-memory collection, not left at zero`,
+    );
+    assert.ok(
+      !(EXPECTED_COLLECTION_KEY in persisted),
+      `${step}: ${EXPECTED_KEY} is deleted from persisted state.collection, not left at zero`,
+    );
+  } else {
+    assert.equal(memory[EXPECTED_COLLECTION_KEY], qty, `${step}: memory owns ${qty}× ${EXPECTED_KEY}`);
+    assert.equal(persisted[EXPECTED_COLLECTION_KEY], qty, `${step}: persistence owns ${qty}× ${EXPECTED_KEY}`);
+  }
+  assert.equal(
+    node(container, 'card-detail-collection-qty').textContent, String(qty),
+    `${step}: the on-screen counter reads ${qty}`,
+  );
+  // The decoy shapes a miswired control would write instead of the proven key.
+  for (const map of [memory, persisted]) {
+    assert.deepEqual(
+      Object.keys(map).filter((k) => k.startsWith(CARD_NUMBER) && k !== EXPECTED_COLLECTION_KEY), [],
+      `${step}: no BASE, sibling or bare ${CARD_NUMBER} ownership key is written`,
+    );
+  }
+  assert.equal(memory[SENTINEL_KEY], SENTINEL_QTY, `${step}: the unrelated sentinel is untouched in memory`);
+  assert.equal(persisted[SENTINEL_KEY], SENTINEL_QTY, `${step}: the unrelated sentinel is untouched in persistence`);
+}
+
 await test('the uniquely proven HR identity drives BOTH favorite surfaces and the collection', async () => {
   // The direct positive counterpart to every withheld assertion above: each
   // surface the six negatives prove ABSENT is proved here PRESENT, ENABLED,
@@ -551,19 +638,74 @@ await test('the uniquely proven HR identity drives BOTH favorite surfaces and th
       'and the app-bar action persisted PARALLEL/HR',
     );
 
-    const inc = container.querySelector('[data-testid="card-detail-collection-inc"]');
-    assert.ok(inc, 'the collection offers its increment control');
-    await act(async () => inc.click());
-    await flush(10);
-    const collectionAfter = useDeckStore.getState().collection;
-    assert.equal(collectionAfter[EXPECTED_COLLECTION_KEY], 1, `incrementing counts ${EXPECTED_KEY}`);
-    assert.equal(collectionAfter[SENTINEL_KEY], SENTINEL_QTY, 'the unrelated sentinel entry is untouched');
+    // ── the collection lifecycle, driven through the real controls ───────────
+    // Nothing is owned yet, so the screen already refuses the two controls that
+    // need stock — the starting state each step below is measured against.
+    assert.ok(!(EXPECTED_COLLECTION_KEY in useDeckStore.getState().collection), 'nothing is owned yet');
+    assertPresentDisabled(container, 'card-detail-collection-dec', 'while nothing is owned');
+    assertAbsent(container, 'card-detail-collection-remove', 'while nothing is owned');
+
+    // 1 · increment CREATES the exact HR entry.
+    await clickControl(container, 'card-detail-collection-inc', 'when the identity is proven');
+    assertSettledOwnership(container, 1, 'inc 0→1');
     assert.notDeepEqual(
-      collectionAfter, collectionBaseline,
+      useDeckStore.getState().collection, collectionBaseline,
       'the collection really does change when the identity IS proven',
     );
-    const decksRaw = platformStorage.getItem(DECKS_STORAGE_KEY);
-    assert.ok(decksRaw.includes(EXPECTED_COLLECTION_KEY), `and ${EXPECTED_KEY} reached raw deck persistence`);
+    assertActionable(container, 'card-detail-collection-dec', 'once one copy is owned');
+    assertActionable(container, 'card-detail-collection-remove', 'once one copy is owned');
+
+    // 2 · increment RAISES it.
+    await clickControl(container, 'card-detail-collection-inc', 'to raise the owned count');
+    assertSettledOwnership(container, 2, 'inc 1→2');
+
+    // 3 · decrement LOWERS it — a no-op decrement dies here.
+    await clickControl(container, 'card-detail-collection-dec', 'to lower the owned count');
+    assertSettledOwnership(container, 1, 'dec 2→1');
+
+    // 4 · decrement to zero DELETES the entry and re-closes both controls.
+    await clickControl(container, 'card-detail-collection-dec', 'to give up the last copy');
+    assertSettledOwnership(container, 0, 'dec 1→0');
+    assertPresentDisabled(container, 'card-detail-collection-dec', 'once nothing is owned again');
+    assertAbsent(container, 'card-detail-collection-remove', 'once nothing is owned again');
+
+    // 5 · restore a visible count so `remove` renders again.
+    await clickControl(container, 'card-detail-collection-inc', 'to restock after decrementing away');
+    assertSettledOwnership(container, 1, 'inc 0→1 (restock)');
+    await clickControl(container, 'card-detail-collection-inc', 'to restock a second copy');
+    assertSettledOwnership(container, 2, 'inc 1→2 (restock)');
+    assertActionable(container, 'card-detail-collection-remove', 'once stock exists again');
+
+    // 6 · remove CLEARS the whole entry from 2 in one action — an inert remove,
+    //     or one that merely decremented, dies here.
+    await clickControl(container, 'card-detail-collection-remove', 'to drop the card entirely');
+    assertSettledOwnership(container, 0, 'remove 2→0');
+    assertPresentDisabled(container, 'card-detail-collection-dec', 'after removal');
+    assertAbsent(container, 'card-detail-collection-remove', 'after removal');
+
+    // ── final sweep over settled persistence ────────────────────────────────
+    const { collection: finalCollection, changedKeys } = readPersistedDecks();
+    assert.deepEqual(
+      finalCollection, { [SENTINEL_KEY]: SENTINEL_QTY },
+      'persisted ownership ends holding exactly the unrelated sentinel',
+    );
+    // The exact key MAY remain as a deletion tombstone — that is the intended
+    // sync record. What may never appear is a tombstone under any OTHER
+    // hBP01-024 identity, which is what a decrement aimed at BASE would stamp.
+    assert.deepEqual(
+      Object.keys(changedKeys).filter((k) => k.startsWith(CARD_NUMBER)), [EXPECTED_COLLECTION_KEY],
+      `the only ${CARD_NUMBER} sync tombstone is the exact ${EXPECTED_KEY} identity`,
+    );
+    assert.ok(!(SENTINEL_KEY in changedKeys), 'the untouched sentinel was never stamped as changed');
+
+    // Favorites are unaffected by the whole collection lifecycle.
+    const favAfter = useFavoritesStore.getState().favorites;
+    assert.equal(favAfter.length, 1, 'the favorite survives the collection lifecycle');
+    assert.equal(favAfter[0].printing, EXPECTED_PRINTING, 'still bound to the HR printing');
+    assert.ok(
+      platformStorage.getItem(FAVORITES_STORAGE_KEY).includes(`"printing":"${EXPECTED_PRINTING}"`),
+      'and PARALLEL/HR is still what favorites persistence holds',
+    );
   } finally {
     await cleanup();
     await seedDeckState();
