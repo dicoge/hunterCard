@@ -73,6 +73,11 @@ const { default: CardDetailScreen } = await import('../src/screens/CardDetailScr
 // listings — only because the screen refused to act on unproven evidence.
 const { buildPriceVersions, resolveVersionForCard, resolveDisplayedPrintingIndex } =
   await import('../src/utils/versionAlignment.ts');
+// CR3: the 收藏數量 widget writes to a SECOND store behind a SECOND persistence
+// key. Imported read-only here — to seed unrelated state, and to build ownership
+// keys with the product's OWN normalizer rather than a hand-spelled string.
+const { useDeckStore } = await import('../src/store/deckStore.ts');
+const { ownershipKey } = await import('../src/utils/deckRules.ts');
 
 async function flush(ms = 0) {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
@@ -299,6 +304,61 @@ await test('an exact payload that already carries `printing` is stored VERBATIM'
 // a fallback WOULD have had something to write.
 
 const FAVORITES_STORAGE_KEY = 'hunterCard-favorites';
+const DECKS_STORAGE_KEY = 'hunterCard-decks';
+
+// CR3. Round 2 checked ONE button and ONE store, which left two independently
+// configured boundaries unpinned: the app bar builds its own favorite action in
+// its `actions` array (AppBar renders it as `shell-app-bar-action-favorite`),
+// and the 收藏數量 controls write to `useDeckStore.collection` behind
+// `hunterCard-decks`. A mutant that restored ONLY the app-bar action, or wired
+// ONLY the collection write, would have satisfied every earlier assertion.
+// Every surface this screen could act through is now named, asserted withheld,
+// ATTEMPTED anyway, and re-checked against a settled baseline.
+const ACTIONABLE_TEST_IDS = [
+  // Configured in the AppBar `actions` array — NOT the action bar's button.
+  'shell-app-bar-action-favorite',
+  'card-detail-action-favorite',
+  'card-detail-collection-inc',
+  'card-detail-collection-dec',
+  'card-detail-collection-remove',
+];
+
+// A sentinel inventory entry under a DIFFERENT card number, so it can never
+// collide with the `hBP01-024` no-write assertions: any hBP01-024 collection key
+// that appears is unambiguously a write THIS render made.
+const SENTINEL_CARD = 'hSD01-001';
+const SENTINEL_PRINTING = 'BASE';
+const SENTINEL_KEY = ownershipKey(SENTINEL_CARD, SENTINEL_PRINTING);
+const SENTINEL_QTY = 2;
+// Fixed rather than `new Date()`, so reseeding serializes to identical bytes and
+// the byte comparison below stays meaningful.
+const SENTINEL_DECK = Object.freeze({
+  id: 'deck_dic1430_sentinel',
+  name: 'DIC-1430 sentinel deck',
+  oshi: [],
+  main: [],
+  yell: [],
+  updatedAt: '2026-09-15T00:00:00.000Z',
+});
+// The collection key the PROVEN identity must produce, built by the product's
+// normalizer so a divergence in normalization fails loudly here.
+const EXPECTED_COLLECTION_KEY = ownershipKey(CARD_NUMBER, EXPECTED_PRINTING);
+
+assert.equal(SENTINEL_KEY, `${SENTINEL_CARD}|${SENTINEL_PRINTING}`, 'the sentinel key is a normalization fixed point');
+assert.ok(!SENTINEL_KEY.startsWith(CARD_NUMBER), 'the sentinel cannot collide with the card under test');
+assert.equal(EXPECTED_COLLECTION_KEY, EXPECTED_KEY, 'ownership and favorite keys agree on the HR identity');
+
+/** Seed valid, unrelated deck state and let the persist middleware settle. */
+async function seedDeckState() {
+  useDeckStore.setState({
+    decks: [{ ...SENTINEL_DECK }],
+    activeDeckId: SENTINEL_DECK.id,
+    collection: { [SENTINEL_KEY]: SENTINEL_QTY },
+    deletedDeckIds: {},
+    collectionChangedKeys: {},
+  });
+  await flush(10);
+}
 
 /** Absent, or present-but-disabled — either is a refusal to act. */
 function assertWithheld(container, testID, why) {
@@ -314,6 +374,21 @@ async function assertFailsClosed(card) {
   // written" below is about THIS render and not about a previous test's state.
   useFavoritesStore.setState({ favorites: [], removals: {} });
   platformStorage.removeItem(FAVORITES_STORAGE_KEY);
+
+  // Unrelated-but-valid deck state, settled, then baselined two ways: a deep
+  // clone of what the store HOLDS and the exact bytes it PERSISTED.
+  await seedDeckState();
+  const collectionBaseline = structuredClone(useDeckStore.getState().collection);
+  const decksRawBaseline = platformStorage.getItem(DECKS_STORAGE_KEY);
+  // Preconditions — the comparisons below are only meaningful because the
+  // persistence really happened and really carries the sentinel.
+  assert.ok(decksRawBaseline, 'precondition: the deck store persisted under hunterCard-decks');
+  assert.ok(decksRawBaseline.includes(SENTINEL_KEY), 'precondition: the sentinel reached RAW deck persistence');
+  assert.equal(collectionBaseline[SENTINEL_KEY], SENTINEL_QTY, 'precondition: the sentinel is held in memory');
+  assert.ok(
+    !decksRawBaseline.includes(CARD_NUMBER),
+    `precondition: deck persistence starts free of ${CARD_NUMBER}`,
+  );
 
   const versions = buildPriceVersions(card);
   assert.ok(versions.length >= 2, 'precondition: the card really has sibling listings to confuse');
@@ -337,8 +412,19 @@ async function assertFailsClosed(card) {
     navigation: { navigate() {}, goBack() {}, setOptions() {} },
   }));
   try {
-    assertWithheld(container, 'card-detail-action-favorite', 'while no printing is proven');
+    for (const testID of ACTIONABLE_TEST_IDS) {
+      assertWithheld(container, testID, 'while no printing is proven');
+    }
     assertWithheld(container, 'card-detail-collection', 'while no printing is proven');
+
+    // Attempt every action that still exists. None should — but a mutant that
+    // restores one must be caught ACTING, not merely caught rendering.
+    for (const testID of ACTIONABLE_TEST_IDS) {
+      const el = container.querySelector(`[data-testid="${testID}"]`);
+      if (!el) continue;
+      await act(async () => el.click());
+    }
+    await flush(10);
 
     const favorites = useFavoritesStore.getState().favorites;
     assert.equal(favorites.length, 0, 'the favorites store stays empty');
@@ -356,6 +442,32 @@ async function assertFailsClosed(card) {
       assert.ok(!raw.includes(`"printing":"${DECOY_PRINTING}"`), 'no BASE default entry');
       assert.ok(!raw.includes(`"cardNumber":"${CARD_NUMBER}"`), 'no card-number-level entry');
     }
+
+    // ── the collection store and ITS persistence, after settling ────────────
+    const collectionAfter = useDeckStore.getState().collection;
+    assert.deepEqual(collectionAfter, collectionBaseline, 'the in-memory collection is unchanged');
+    assert.deepEqual(
+      Object.keys(collectionAfter).filter((k) => k.startsWith(CARD_NUMBER)), [],
+      `no in-memory collection key for ${CARD_NUMBER} in any printing, default or bare form`,
+    );
+
+    const decksRawAfter = platformStorage.getItem(DECKS_STORAGE_KEY);
+    assert.ok(decksRawAfter, 'deck persistence still exists');
+    // Semantic equality first (it names the differing field), then the byte
+    // comparison — this serialization is deterministic, which the sentinel
+    // round-trip above proves.
+    assert.deepEqual(
+      JSON.parse(decksRawAfter), JSON.parse(decksRawBaseline),
+      'persisted deck state is semantically unchanged',
+    );
+    assert.equal(decksRawAfter, decksRawBaseline, 'raw hunterCard-decks bytes are unchanged');
+    // One assertion covering every shape a guess could take: printing-qualified
+    // (`hBP01-024|BASE`, `hBP01-024|PARALLEL/HR`), bare (`hBP01-024|`), and the
+    // collectionChangedKeys tombstone a no-op decrement would still stamp.
+    assert.ok(
+      !decksRawAfter.includes(CARD_NUMBER),
+      `no ${CARD_NUMBER} key of any form reached deck persistence`,
+    );
   } finally { await cleanup(); }
 }
 
@@ -397,6 +509,66 @@ for (const [why, card] of UNPROVEN_ART) {
     await assertFailsClosed(card);
   });
 }
+
+await test('the uniquely proven HR identity drives BOTH favorite surfaces and the collection', async () => {
+  // The direct positive counterpart to every withheld assertion above: each
+  // surface the six negatives prove ABSENT is proved here PRESENT, ENABLED,
+  // ACTING and PERSISTING the printing the art proves. A mutant that satisfied
+  // the negatives by disabling the feature outright dies here; and because the
+  // collection really does write when identity IS proven, "no hBP01-024
+  // collection key" above is a refusal, not an inert code path.
+  useFavoritesStore.setState({ favorites: [], removals: {} });
+  platformStorage.removeItem(FAVORITES_STORAGE_KEY);
+  await seedDeckState();
+  const collectionBaseline = structuredClone(useDeckStore.getState().collection);
+
+  const { container, cleanup } = await render(React.createElement(CardDetailScreen, {
+    route: { params: { card: searchHit } },
+    navigation: { navigate() {}, goBack() {}, setOptions() {} },
+  }));
+  try {
+    const appBarFav = container.querySelector('[data-testid="shell-app-bar-action-favorite"]');
+    assert.ok(appBarFav, 'the app bar renders its OWN favorite action');
+    assert.equal(appBarFav.getAttribute('disabled'), null, 'and it is not disabled');
+    assert.notEqual(appBarFav.getAttribute('aria-disabled'), 'true', 'and it is not aria-disabled');
+    assert.ok(
+      container.querySelector('[data-testid="card-detail-action-favorite"]'),
+      'the action bar renders its own favorite action',
+    );
+    assert.ok(container.querySelector('[data-testid="card-detail-collection"]'), 'the collection widget is offered');
+
+    // Act through the APP BAR specifically — the surface no other test drives.
+    await act(async () => appBarFav.click());
+    await flush(10);
+    const favorites = useFavoritesStore.getState().favorites;
+    assert.equal(favorites.length, 1, 'the app-bar action stored exactly one favorite');
+    assert.equal(favorites[0].cardNumber, CARD_NUMBER, 'under the real card number');
+    assert.equal(favorites[0].printing, EXPECTED_PRINTING, 'bound to the HR printing the art proves');
+    assert.notEqual(favorites[0].printing, DECOY_PRINTING, 'never the BASE price default');
+    const favRaw = platformStorage.getItem(FAVORITES_STORAGE_KEY);
+    assert.ok(
+      favRaw && favRaw.includes(`"printing":"${EXPECTED_PRINTING}"`),
+      'and the app-bar action persisted PARALLEL/HR',
+    );
+
+    const inc = container.querySelector('[data-testid="card-detail-collection-inc"]');
+    assert.ok(inc, 'the collection offers its increment control');
+    await act(async () => inc.click());
+    await flush(10);
+    const collectionAfter = useDeckStore.getState().collection;
+    assert.equal(collectionAfter[EXPECTED_COLLECTION_KEY], 1, `incrementing counts ${EXPECTED_KEY}`);
+    assert.equal(collectionAfter[SENTINEL_KEY], SENTINEL_QTY, 'the unrelated sentinel entry is untouched');
+    assert.notDeepEqual(
+      collectionAfter, collectionBaseline,
+      'the collection really does change when the identity IS proven',
+    );
+    const decksRaw = platformStorage.getItem(DECKS_STORAGE_KEY);
+    assert.ok(decksRaw.includes(EXPECTED_COLLECTION_KEY), `and ${EXPECTED_KEY} reached raw deck persistence`);
+  } finally {
+    await cleanup();
+    await seedDeckState();
+  }
+});
 
 await test('the proven-art control still acts after every fail-closed case', async () => {
   // Fail-closed must not become "closed": the one case that IS proven still
