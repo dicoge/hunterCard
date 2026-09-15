@@ -94,6 +94,14 @@ const sampleCard = {
   grade: '1st',
   yuyuPrice: 1200,
   yuyuPriceName: 'ノーマル',
+  // Single listing and no listing artwork, so nothing on screen proves which
+  // printing this is — and since DIC-1430 CR2 an unproven detail withholds the
+  // ownership widget instead of pointing it at the price default. These gate
+  // probes are about STORE_MVP hiding/showing that widget, so the card states
+  // its exact printing the way the real exact-payload routes do: BASE, the
+  // printing `printingFromLabel('ノーマル')` already resolves this listing to.
+  printing: 'BASE',
+  printingLabel: 'ノーマル',
   prices: [{ name: 'ノーマル', sellPrice: 1200, rarity: 'R' }],
   colors: ['red'],
   color: 'red',

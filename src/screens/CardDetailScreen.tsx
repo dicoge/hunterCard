@@ -113,7 +113,6 @@ export default function CardDetailScreen({ route, navigation }: any) {
   // 收藏/收藏數量 actions can never disagree about which printing is displayed.
   const provenImageUrl = (card.images && card.images[0]) || card.imageUrl || '';
   const collectionVersions = buildPriceVersions(card);
-  const collectionResolution = resolveVersionForCard(collectionVersions);
   // DIC-1430: a card-number-level hit (the search route) carries no `printing`,
   // so this screen used to resolve the hero art and the add-side identity
   // INDEPENDENTLY — the hero rendered the elected row's official HR image while
@@ -123,10 +122,20 @@ export default function CardDetailScreen({ route, navigation }: any) {
   //
   // When the displayed official art names a variant that matches exactly ONE
   // listing, that listing IS the printing on screen and it binds the action.
-  // Art that matches nothing (a promo `_P` image the source never listed) or
-  // several listings proves nothing, so it falls through to the existing price
-  // default rather than being guessed at from rarity — the guess DIC-1013
-  // removed. An exact payload keeps its own `printing` verbatim.
+  //
+  // CR2: everything else withholds the actions. Art that matches nothing (a
+  // promo `_P` the source never listed, a suffix-less file, a URL a query
+  // string hid from the parser) or that matches several listings proves
+  // nothing, and the first round let those fall through to the price default —
+  // which on hBP01-024 is the ¥120 BASE listing, so the very key this ticket
+  // exists to prevent was still written, under artwork that is not BASE's.
+  // Falling back to the default is the same cross-printing guess as falling
+  // back to rarity (DIC-1013); the price default answers "which version do we
+  // quote", never "which version is on screen". With no proven identity there
+  // is nothing to favorite or count, so the actions are withheld rather than
+  // pointed at a sibling — matching the hero art and the exact-printing price,
+  // which already render their honest unavailable state instead of guessing.
+  // An exact payload keeps its own `printing` verbatim and is never re-derived.
   const displayedIndex = card.printing
     ? -1
     : resolveDisplayedPrintingIndex(collectionVersions, provenImageUrl);
@@ -134,9 +143,7 @@ export default function CardDetailScreen({ route, navigation }: any) {
     ? { printing: card.printing, name: card.printingLabel || card.printing }
     : displayedIndex >= 0
       ? collectionVersions[displayedIndex]
-      : collectionResolution.confident
-        ? collectionVersions[collectionResolution.index]
-        : null;
+      : null;
   const ownedQuantity = collectionVersion
     ? collection[ownershipKey(id, collectionVersion.printing)] || 0
     : 0;

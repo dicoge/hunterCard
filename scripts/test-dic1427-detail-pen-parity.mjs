@@ -95,6 +95,17 @@ const DETAIL_CARD = {
   seriesNames: ['ブルーミングレディアンス'],
   tags: [],
   imageUrl: 'https://example.com/hBP01-081_UR.png',
+  // This card has exactly ONE listing, so its artwork cannot single out a
+  // printing the way a multi-listing card's can — and since DIC-1430 CR2 a
+  // detail whose displayed art proves no single printing withholds the 收藏
+  // actions rather than favoriting the price default. The Pen Mst3p assertion
+  // below is about the action BAR, not about identity inference, so this
+  // fixture states its printing the way the real exact-payload routes
+  // (Favorites, scan) do. BASE is the printing `printingFromLabel('UR')`
+  // already resolves this listing to, and the one the history is stamped with,
+  // so the price card, the trend and the favorite all name the same version.
+  printing: 'BASE',
+  printingLabel: 'UR',
   yuyuPrice: 3600,
   buyPrice: 2640,
   prices: [{ name: 'UR', sellPrice: 3600, buyPrice: 2640, rarity: 'UR', printing: 'UR' }],
