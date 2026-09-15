@@ -429,6 +429,14 @@ jobs:
       - name: Verify exact-SHA CI/CD recovery contracts (DIC-1430)
         run: npm run test:exact-sha-production-recovery
 
+      # The structural suite above describes the alias gate; this one EXECUTES
+      # it. The deploy workflow's alias validator is a committed module, and
+      # these fixtures run that exact module — a missing required top-level
+      # deploymentId once passed 89 green structural checks because none of
+      # them ran the code.
+      - name: Verify canonical alias binding validator behaviour (DIC-1430)
+        run: npm run test:alias-binding-validator
+
       - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
         run: npm run test:tournament-discovery-acquisition
 

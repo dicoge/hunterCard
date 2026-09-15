@@ -331,7 +331,13 @@ jobs:
           http_ok=0
           while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
             attempt=$((attempt + 1))
-            code=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 30 "https://${CANONICAL_HOST}/" || echo "000")
+            # `|| true`, never `|| echo "000"`: curl already emits 000 through
+            # -w when the connection itself fails, so a second echoed value
+            # would make $code the two-line string "000\n000", which matches
+            # neither arm below and turns a hard network failure into a silent
+            # spin. `|| true` keeps exactly one code on the line, and a failed
+            # probe can never surface as 200.
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 30 "https://${CANONICAL_HOST}/" || true)
             echo "attempt ${attempt}/${MAX_ATTEMPTS}: https://${CANONICAL_HOST}/ -> ${code}"
             if [ "$code" = "200" ]; then
               http_ok=1
@@ -408,47 +414,23 @@ jobs:
                 ;;
             esac
 
-            # exit 0 = bound to this run, 2 = not yet / bound elsewhere
-            # (retryable), 1 = malformed JSON or an explicit API error (fatal).
+            # The decision itself lives in a committed module, not an inline
+            # heredoc, because a heredoc cannot be executed by a test. An
+            # earlier inline version accepted a record with NO top-level
+            # deploymentId whenever the optional nested mirror matched, and the
+            # whole structural suite passed beside it without ever running it.
+            # scripts/test-alias-binding-validator.mjs now executes THIS file
+            # against a fixture for every branch below.
+            #
+            #   0 = the alias record names this run's deployment (success)
+            #   2 = well-formed but naming another deployment, or not yet
+            #       propagated (retryable — keep waiting, bounded)
+            #   1 = malformed JSON, explicit API error, missing/invalid
+            #       required top-level id, or a self-contradicting record
+            #       (fatal — waiting cannot repair any of these)
             set +e
-            node -e '
-              const fs = require("fs");
-              const [host, expectedId] = process.argv.slice(1);
-
-              let a;
-              try {
-                a = JSON.parse(fs.readFileSync("/tmp/alias-binding.json", "utf8"));
-              } catch (err) {
-                console.error(`::error::Alias record for ${host} was not valid JSON: ${err.message}`);
-                process.exit(1);
-              }
-
-              if (a && a.error) {
-                console.error(`::error::Alias API error for ${host}: ${JSON.stringify(a.error)}`);
-                process.exit(1);
-              }
-
-              // `.deploymentId` is required on a 200 and `.deployment.id`
-              // mirrors it. Consult both, and refuse a record that
-              // contradicts itself.
-              const ids = [a.deploymentId, a.deployment && a.deployment.id]
-                .filter((v) => typeof v === "string" && v.length > 0);
-
-              if (ids.length === 0) {
-                console.error(`Alias record for ${host} carries no deployment id yet.`);
-                process.exit(2);
-              }
-              if (ids.some((v) => v !== ids[0])) {
-                console.error(`::error::Alias record for ${host} contradicts itself: ${JSON.stringify(ids)}.`);
-                process.exit(1);
-              }
-              if (ids[0] !== expectedId) {
-                console.error(`${host} is bound to ${ids[0]}, not this run deployment ${expectedId}.`);
-                process.exit(2);
-              }
-
-              console.log(`${host} is bound to exactly this run deployment ${expectedId}.`);
-            ' "$CANONICAL_HOST" "$DEPLOYMENT_ID"
+            node scripts/ci/verify-alias-binding.mjs \
+              /tmp/alias-binding.json "$CANONICAL_HOST" "$DEPLOYMENT_ID"
             rc=$?
             set -e
 
@@ -460,7 +442,12 @@ jobs:
               2)
                 echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias not bound to ${DEPLOYMENT_ID} yet."
                 ;;
+              1)
+                echo "::error::Alias record for ${CANONICAL_HOST} is unusable; aborting without retrying."
+                exit 1
+                ;;
               *)
+                echo "::error::Alias binding validator returned unexpected status ${rc}; failing closed."
                 exit 1
                 ;;
             esac

@@ -36,10 +36,15 @@
  *
  *   - `deploymentId` / `withLatestCommit` — redeploy-from-an-existing-build.
  *     dic910-vercel-setup.yml does exactly this, and it rebuilds whatever
- *     that old deployment pointed at, not the SHA you asked for. The ban is
- *     on `deploymentId` as an INPUT; reading `.deploymentId` back off the
- *     read-only alias record is the proof, not the hazard, so property reads
- *     are stripped before the ban is applied.
+ *     that old deployment pointed at, not the SHA you asked for. This suite
+ *     used to strip every `.deploymentId` in the file before applying the
+ *     ban, so that the alias proof could read the field back — a blanket
+ *     exemption that would equally have hidden a property write or a
+ *     serialized request field. The alias proof now lives in
+ *     scripts/ci/verify-alias-binding.mjs, so the workflow has no honest
+ *     reason to name the field at all and the ban needs no exemption. The
+ *     Create Deployment body is inspected additionally and specifically, by
+ *     EXECUTING its builder and scanning the JSON it actually emits.
  *   - latest-production lookup (`/v6/deployments?…target=production`) — the
  *     input SHA is never consulted; you redeploy the current Production.
  *   - deploy hook — fires a build of the branch tip, which during a recovery
@@ -52,6 +57,7 @@
  * without tripping their own guard.
  */
 
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,10 +67,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WF_DIR = path.join(ROOT, '.github', 'workflows');
 const CI_PATH = path.join(WF_DIR, 'ci.yml');
 const DEPLOY_PATH = path.join(WF_DIR, 'holohunter-exact-sha-deploy.yml');
+const ALIAS_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'verify-alias-binding.mjs');
 
 const CANONICAL_HOST = 'holohunter.dicoge.com';
 const VERCEL_PROJECT_NAME = 'holocard-hunter';
 const NPM_SCRIPT = 'test:exact-sha-production-recovery';
+const ALIAS_NPM_SCRIPT = 'test:alias-binding-validator';
 
 let passed = 0;
 function check(label, cond, detail) {
@@ -253,6 +261,11 @@ if (ci) {
     `ci.yml validate runs \`npm run ${NPM_SCRIPT}\``,
     validateRuns.includes(`npm run ${NPM_SCRIPT}`),
     'the recovery contract must be enforced by CI, not only by hand',
+  );
+  check(
+    `ci.yml validate runs \`npm run ${ALIAS_NPM_SCRIPT}\``,
+    validateRuns.includes(`npm run ${ALIAS_NPM_SCRIPT}`),
+    'the alias validator BEHAVIOUR must be executed by CI, not just described by structural checks',
   );
 }
 
@@ -475,14 +488,80 @@ if (dep) {
       .test(depActiveRuns),
     'the alias must be resolved from the alias side, at the exact documented read endpoint',
   );
+  // ── The validator is a committed, EXECUTABLE module ──────────────────
+  // It used to be a `node -e '…'` heredoc, which no test could run. That is
+  // how a High-severity bug — a missing top-level `deploymentId` accepted
+  // whenever the optional nested mirror matched — sat behind 89 green string
+  // checks. Behaviour is now asserted by scripts/test-alias-binding-validator
+  // .mjs against that same module; what belongs HERE is only the wiring.
   check(
-    'alias-binding check compares the alias record to the runtime DEPLOYMENT_ID',
-    aliasBindIdx >= 0
-      && /DEPLOYMENT_ID/.test(aliasStep)
-      && /\.deploymentId\b/.test(aliasStep)
-      && /\.deployment\s*&&\s*\w+\.deployment\.id|\.deployment\.id\b/.test(aliasStep)
-      && /!==/.test(aliasStep),
-    'both the required deploymentId and its deployment.id mirror must be read AND actually compared',
+    'alias binding validator exists as a committed module',
+    fs.existsSync(ALIAS_HELPER_PATH),
+    `expected ${path.relative(ROOT, ALIAS_HELPER_PATH)} on disk`,
+  );
+  check(
+    'alias-binding step invokes the committed validator (not an inline heredoc)',
+    aliasBindIdx >= 0 && /node\s+scripts\/ci\/verify-alias-binding\.mjs/.test(aliasStep),
+    'an inline `node -e` validator cannot be executed by a test',
+  );
+  check(
+    'alias-binding step hands the validator the response, the host AND the runtime DEPLOYMENT_ID',
+    /\/tmp\/alias-binding\.json/.test(aliasStep)
+      && /"\$CANONICAL_HOST"/.test(aliasStep)
+      && /"\$DEPLOYMENT_ID"/.test(aliasStep),
+    'the validator must be told which deployment this run actually created',
+  );
+  check(
+    'alias-binding step keeps no inline node validator alongside it',
+    aliasBindIdx >= 0 && !/node\s+-e/.test(aliasStep),
+    'a second, untested copy of the decision would defeat the extraction',
+  );
+
+  // ── All three validator outcomes handled, and handled distinctly ─────
+  // The step contains TWO case statements — one over the alias API's HTTP
+  // `$code`, one over the validator's `$rc` — and their catch-all arms mean
+  // opposite things: an unreadable HTTP response retries, an unrecognised
+  // validator status must fail closed. So slice the `$rc` case first, then
+  // slice arms within it; a neighbouring arm's `exit` must not be able to
+  // satisfy or falsify the assertion about this one.
+  const rcCase = (/case\s+"\$rc"\s+in\n([\s\S]*?)\n\s*esac/.exec(aliasStep) ?? [])[1] ?? '';
+  check(
+    'alias-binding step branches on the validator status in its own case block',
+    rcCase.length > 0,
+    'could not isolate `case "$rc" in … esac`',
+  );
+  const rcArm = (label) => {
+    const m = new RegExp(`\\n?\\s*${label}\\)\\n([\\s\\S]*?);;`).exec(rcCase);
+    return m ? m[1] : null;
+  };
+  const armSuccess = rcArm('0');
+  const armRetry = rcArm('2');
+  const armFatal = rcArm('1');
+  const armUnknown = rcArm('\\*');
+
+  check(
+    'alias-binding step captures the validator exit code and branches on it',
+    /rc=\$\?/.test(aliasStep) && /case\s+"\$rc"/.test(aliasStep),
+  );
+  check(
+    'validator success (0) proves linkage and exits 0',
+    armSuccess !== null && /exit 0/.test(armSuccess),
+    `0) arm: ${JSON.stringify(armSuccess)}`,
+  );
+  check(
+    'validator retryable (2) does NOT exit — it falls through to the bounded loop',
+    armRetry !== null && !/\bexit\b/.test(armRetry),
+    `a retryable propagation state must keep waiting, not abort; 2) arm: ${JSON.stringify(armRetry)}`,
+  );
+  check(
+    'validator fatal (1) aborts immediately with exit 1',
+    armFatal !== null && /exit 1/.test(armFatal),
+    'a malformed or self-contradicting alias record cannot be repaired by waiting',
+  );
+  check(
+    'an unexpected validator status fails closed',
+    armUnknown !== null && /exit 1/.test(armUnknown),
+    `*) arm: ${JSON.stringify(armUnknown)}`,
   );
   check(
     'alias-binding check runs AFTER the HTTP 200 probe and is the LAST step',
@@ -504,22 +583,9 @@ if (dep) {
     'propagation may lag, but an unbounded or soft-failing wait proves nothing',
   );
   check(
-    'alias-binding check hard-fails malformed JSON and explicit API errors',
-    /valid JSON/i.test(aliasStep) && /\.error\b/.test(aliasStep),
-  );
-  check(
-    'alias-binding check refuses a missing or different deployment id',
-    /no deployment id/i.test(aliasStep)
-      && /is bound to \$\{ids\[0\]\}|ids\[0\] !== expectedId/.test(aliasStep),
-    'an absent id must never read as a pass',
-  );
-  check(
-    'alias-binding check retries transient AND non-matching states before failing',
-    /sleep/.test(aliasStep)
-      && /continue/.test(aliasStep)
-      && /\*\)/.test(aliasStep)
-      && /process\.exit\(2\)/.test(aliasStep),
-    'an unreadable alias record and an alias still bound elsewhere must both retry, not decide instantly',
+    'alias-binding check retries transient HTTP states before failing',
+    /sleep/.test(aliasStep) && /continue/.test(aliasStep) && /\*\)/.test(aliasStep),
+    'an alias record that is not readable yet must retry, not decide instantly',
   );
   check(
     'alias-binding check hard-fails the documented explicit alias-API errors',
@@ -527,20 +593,119 @@ if (dep) {
     'unauthorized/forbidden/gone cannot be fixed by waiting out the window',
   );
 
-  // ── Deny-list: every way to green-light the wrong commit ─────────────
-  // `deploymentId` is banned as an INPUT — it is the redeploy-from-an-
-  // existing-build field. Reading it back OFF the read-only alias record
-  // (`a.deploymentId`) is the opposite: it is how the run proves the alias
-  // points at this deployment. Strip property reads so the input shape stays
-  // forbidden while the proof stays possible.
-  const activeNoIdReads = dep.active.replace(/\.deploymentId\b/g, '');
+  // ── HTTP probes must yield exactly ONE status code ───────────────────
+  // `|| echo "000"` appends a SECOND line to a variable that already holds
+  // curl's own `000` on connection failure, producing "000\n000" — a value
+  // matching no arm of the comparison, so a hard network failure becomes a
+  // silent spin instead of a reported one.
+  check(
+    'no HTTP probe uses `|| echo "000"` (a two-line code matches nothing)',
+    !/\|\|\s*echo\s+["']?000/.test(depActiveRuns),
+    'curl already reports 000 through -w; `|| true` keeps $code a single value',
+  );
+  check(
+    'the canonical HTTP probe tolerates curl failure without fabricating a code',
+    httpProbeIdx >= 0 && /\|\|\s*true/.test(httpStep),
+  );
+  check(
+    'a failed canonical probe cannot surface as 200',
+    httpProbeIdx >= 0
+      && /\[\s*"\$code"\s*=\s*"200"\s*\]/.test(httpStep)
+      && !/\|\|\s*echo\s+["']?200/.test(httpStep),
+    'success must require an exact 200 reported by curl itself',
+  );
 
+  // ── The Create Deployment body, inspected where it is actually built ─
+  // Scope is the point. The old suite stripped every `.deploymentId` in the
+  // whole file before applying the ban — a blanket exemption that would have
+  // hidden a property write or a serialized request field just as readily as
+  // it permitted the alias proof. The ban is applied to the create step
+  // SPECIFICALLY, and to the body it really produces, by running the builder.
+  const createIdx = stepIndex(/-X\s+POST[\s\S]*\/v13\/deployments/);
+  check(
+    'deploy workflow has a locatable Create Deployment step',
+    createIdx >= 0,
+    'could not find the POST /v13/deployments step',
+  );
+  const createStep = createIdx >= 0 ? stepRun(depSteps[createIdx]) : '';
+  check(
+    'Create Deployment step never mentions deploymentId in ANY form',
+    createIdx >= 0 && !/deploymentId/i.test(createStep),
+    'an input, a property write, or a serialized field would each redeploy an existing build',
+  );
+
+  const builder = /body=\$\(node -e '([\s\S]*?)'\s*"\$VERCEL_PROJECT_NAME"/.exec(createStep);
+  check(
+    'Create Deployment body is built by an inspectable builder',
+    !!builder,
+    'could not extract the request-body builder from the create step',
+  );
+  if (builder) {
+    const SAMPLE_SHA = 'a'.repeat(40);
+    const built = spawnSync(
+      process.execPath,
+      ['-e', builder[1], VERCEL_PROJECT_NAME, 'prj_sample', '424242', SAMPLE_SHA],
+      { encoding: 'utf8' },
+    );
+    check(
+      'the request-body builder executes and emits output',
+      built.status === 0,
+      `exit ${built.status}: ${(built.stderr ?? '').trim().slice(0, 200)}`,
+    );
+    let payload = null;
+    try {
+      payload = JSON.parse(built.stdout);
+    } catch (err) {
+      check('the built request body parses as JSON', false, err.message);
+    }
+    if (payload) {
+      const keys = Object.keys(payload).sort();
+      check(
+        'the serialized request body carries ONLY name/project/target/gitSource',
+        JSON.stringify(keys) === JSON.stringify(['gitSource', 'name', 'project', 'target']),
+        `body keys: ${JSON.stringify(keys)}`,
+      );
+      const BANNED_BODY_KEY = /^(deploymentId|withLatestCommit)$/i;
+      const offending = [];
+      (function walk(node, trail) {
+        if (node === null || typeof node !== 'object') return;
+        for (const [k, v] of Object.entries(node)) {
+          if (BANNED_BODY_KEY.test(k)) offending.push([...trail, k].join('.'));
+          walk(v, [...trail, k]);
+        }
+      })(payload, []);
+      check(
+        'no deploymentId / withLatestCommit is serialized at ANY depth of the request body',
+        offending.length === 0,
+        `found: ${offending.join(', ')}`,
+      );
+      check(
+        'the built request body targets production',
+        payload.target === 'production',
+        `target=${JSON.stringify(payload.target)}`,
+      );
+      check(
+        'the built request body pins the exact SHA via an explicit github gitSource',
+        payload.gitSource?.type === 'github'
+          && payload.gitSource?.ref === 'main'
+          && payload.gitSource?.sha === SAMPLE_SHA,
+        `gitSource=${JSON.stringify(payload.gitSource)}`,
+      );
+      check(
+        'the built request body passes through the resolved project identity unchanged',
+        payload.name === VERCEL_PROJECT_NAME && payload.project === 'prj_sample',
+        `name=${JSON.stringify(payload.name)} project=${JSON.stringify(payload.project)}`,
+      );
+    }
+  }
+
+  // ── Deny-list: every way to green-light the wrong commit ─────────────
+  // Applied to the workflow's executable lines with NO stripping. The alias
+  // proof lives in scripts/ci/verify-alias-binding.mjs now, so the workflow
+  // has no legitimate reason to name `deploymentId` at all — the ban can be
+  // exact rather than carrying a blanket exemption.
   const FORBIDDEN = [
-    {
-      name: 'deploymentId as a request input (redeploy-from-existing-build)',
-      re: /deploymentId/,
-      text: activeNoIdReads,
-    },
+    { name: 'deploymentId as a request input (redeploy-from-existing-build)', re: /deploymentId/ },
     { name: 'alias assignment endpoint (POST /v2/deployments/{id}/aliases)', re: /deployments\/[^\s"']*\/aliases/ },
     { name: 'alias deletion endpoint (DELETE /v2/aliases/{aliasId})', re: /\/v2\/aliases\// },
     { name: 'withLatestCommit (branch tip, not the exact SHA)', re: /withLatestCommit/ },
@@ -574,6 +739,12 @@ if (dep) {
     typeof pkg.scripts?.[NPM_SCRIPT] === 'string'
       && pkg.scripts[NPM_SCRIPT].includes('test-exact-sha-production-recovery.mjs'),
     `got ${JSON.stringify(pkg.scripts?.[NPM_SCRIPT])}`,
+  );
+  check(
+    `package.json declares the ${ALIAS_NPM_SCRIPT} script`,
+    typeof pkg.scripts?.[ALIAS_NPM_SCRIPT] === 'string'
+      && pkg.scripts[ALIAS_NPM_SCRIPT].includes('test-alias-binding-validator.mjs'),
+    `got ${JSON.stringify(pkg.scripts?.[ALIAS_NPM_SCRIPT])}`,
   );
 }
 
