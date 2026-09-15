@@ -73,8 +73,10 @@ jobs:
       - name: Generate native database asset
         run: node scripts/generate-native-database.mjs
 
-      - name: Validate hEB01 ingestion
-        run: node scripts/test-official-catalog-sync.mjs
+      - name: Validate official catalog completeness
+        run: |
+          node scripts/test-official-catalog-sync.mjs
+          node scripts/verify-official-catalog-completeness.mjs
 
       - name: Check data changes
         id: check
