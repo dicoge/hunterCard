@@ -32,11 +32,12 @@ name: HoloHunter exact-SHA Production deploy
 #
 # Blast radius
 # ------------
-# Reads project metadata, creates one deployment, then reads that deployment
-# back. It touches no environment variable, no domain, and no DNS record,
-# and it holds only `contents: read` on the GitHub side. The two Vercel
-# secrets are passed to curl via --oauth2-bearer so neither value is ever
-# assembled into an echoed header string.
+# Reads project metadata, creates one deployment, reads that deployment
+# back, and finally reads the canonical alias record. It touches no
+# environment variable, no alias, no domain, and no DNS record, and it holds
+# only `contents: read` on the GitHub side. The two Vercel secrets are
+# passed to curl via --oauth2-bearer so neither value is ever assembled into
+# an echoed header string.
 #
 # The companion suite `npm run test:exact-sha-production-recovery` enforces
 # every one of the above statements mechanically, including the bans.
@@ -323,17 +324,149 @@ jobs:
             exit 1
           fi
 
+          # NOTE: a 200 here is necessary but NOT sufficient, and this step
+          # must not short-circuit the job with `exit 0` — the alias-binding
+          # step below is the authoritative Production linkage check.
           attempt=0
+          http_ok=0
           while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
             attempt=$((attempt + 1))
             code=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 30 "https://${CANONICAL_HOST}/" || echo "000")
             echo "attempt ${attempt}/${MAX_ATTEMPTS}: https://${CANONICAL_HOST}/ -> ${code}"
             if [ "$code" = "200" ]; then
-              echo "Canonical Production root is serving HTTP 200 for ${EXPECTED_SHA}."
-              exit 0
+              http_ok=1
+              echo "Canonical Production root is serving HTTP 200."
+              break
             fi
             sleep "$SLEEP_SECONDS"
           done
 
-          echo "::error::Canonical Production root never returned HTTP 200."
+          if [ "$http_ok" != "1" ]; then
+            echo "::error::Canonical Production root never returned HTTP 200."
+            exit 1
+          fi
+
+      - name: Require the canonical alias to be bound to THIS deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          set -euo pipefail
+
+          # Why this step is last and authoritative
+          # ---------------------------------------
+          # Everything above proves "a deployment built the right SHA" and
+          # "the canonical host answers 200". Neither ties the bytes users
+          # receive to THIS run. The deployment payload's `alias` array is a
+          # deployment-side claim, and a concurrent Vercel/Git deployment can
+          # move the alias between that read and the HTTP probe — the 200
+          # would look identical while serving somebody else's commit.
+          #
+          # So the last word belongs to the alias record itself, read from
+          # the alias side:
+          #
+          #   GET /v4/aliases/{idOrAlias}?teamId=...
+          #
+          # whose 200 response requires `deploymentId` and mirrors it in
+          # `deployment.id`. It is read-only by construction: the alias WRITE
+          # paths are POST /v2/deployments/{id}/aliases and
+          # DELETE /v2/aliases/{aliasId}, and this workflow calls neither.
+
+          MAX_ATTEMPTS=20
+          SLEEP_SECONDS=15
+          attempt=0
+
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+
+            # `|| true`, not `|| echo "000"`: curl already prints 000 through
+            # -w when the connection itself fails, so echoing a second value
+            # would produce a two-line code matching no arm below.
+            code=$(curl -sS -o /tmp/alias-binding.json -w '%{http_code}' \
+              --oauth2-bearer "${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v4/aliases/${CANONICAL_HOST}?teamId=${VERCEL_ORG_ID}" || true)
+
+            case "$code" in
+              200)
+                ;;
+              400|401|403|410)
+                # The documented explicit alias-API errors: invalid query,
+                # unauthorized, forbidden, gone. Waiting cannot fix any of
+                # them, so fail now rather than burn the whole window.
+                echo "::error::Alias API returned HTTP ${code} for ${CANONICAL_HOST}."
+                cat /tmp/alias-binding.json
+                exit 1
+                ;;
+              *)
+                # 404 (alias not visible yet), 429, 5xx, 000 and anything
+                # unrecognised are treated as not-readable-yet. This does not
+                # soften the gate: the loop is bounded and ends in a hard
+                # failure below if the binding is never proven.
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias record not readable yet (HTTP ${code})."
+                sleep "$SLEEP_SECONDS"
+                continue
+                ;;
+            esac
+
+            # exit 0 = bound to this run, 2 = not yet / bound elsewhere
+            # (retryable), 1 = malformed JSON or an explicit API error (fatal).
+            set +e
+            node -e '
+              const fs = require("fs");
+              const [host, expectedId] = process.argv.slice(1);
+
+              let a;
+              try {
+                a = JSON.parse(fs.readFileSync("/tmp/alias-binding.json", "utf8"));
+              } catch (err) {
+                console.error(`::error::Alias record for ${host} was not valid JSON: ${err.message}`);
+                process.exit(1);
+              }
+
+              if (a && a.error) {
+                console.error(`::error::Alias API error for ${host}: ${JSON.stringify(a.error)}`);
+                process.exit(1);
+              }
+
+              // `.deploymentId` is required on a 200 and `.deployment.id`
+              // mirrors it. Consult both, and refuse a record that
+              // contradicts itself.
+              const ids = [a.deploymentId, a.deployment && a.deployment.id]
+                .filter((v) => typeof v === "string" && v.length > 0);
+
+              if (ids.length === 0) {
+                console.error(`Alias record for ${host} carries no deployment id yet.`);
+                process.exit(2);
+              }
+              if (ids.some((v) => v !== ids[0])) {
+                console.error(`::error::Alias record for ${host} contradicts itself: ${JSON.stringify(ids)}.`);
+                process.exit(1);
+              }
+              if (ids[0] !== expectedId) {
+                console.error(`${host} is bound to ${ids[0]}, not this run deployment ${expectedId}.`);
+                process.exit(2);
+              }
+
+              console.log(`${host} is bound to exactly this run deployment ${expectedId}.`);
+            ' "$CANONICAL_HOST" "$DEPLOYMENT_ID"
+            rc=$?
+            set -e
+
+            case "$rc" in
+              0)
+                echo "Production linkage proven: ${CANONICAL_HOST} -> ${DEPLOYMENT_ID} (${EXPECTED_SHA})."
+                exit 0
+                ;;
+              2)
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: alias not bound to ${DEPLOYMENT_ID} yet."
+                ;;
+              *)
+                exit 1
+                ;;
+            esac
+
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "::error::${CANONICAL_HOST} never resolved to deployment ${DEPLOYMENT_ID}; refusing to report a Production deploy this run did not place."
           exit 1

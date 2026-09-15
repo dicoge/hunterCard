@@ -36,7 +36,10 @@
  *
  *   - `deploymentId` / `withLatestCommit` — redeploy-from-an-existing-build.
  *     dic910-vercel-setup.yml does exactly this, and it rebuilds whatever
- *     that old deployment pointed at, not the SHA you asked for.
+ *     that old deployment pointed at, not the SHA you asked for. The ban is
+ *     on `deploymentId` as an INPUT; reading `.deploymentId` back off the
+ *     read-only alias record is the proof, not the hazard, so property reads
+ *     are stripped before the ban is applied.
  *   - latest-production lookup (`/v6/deployments?…target=production`) — the
  *     input SHA is never consulted; you redeploy the current Production.
  *   - deploy hook — fires a build of the branch tip, which during a recovery
@@ -442,9 +445,104 @@ if (dep) {
     /200/.test(depRuns) && /http_code/.test(depRuns),
   );
 
+  // ── Alias BINDING: the final Production linkage authority ────────────
+  //
+  // HTTP 200 on the canonical host proves only that *something* answers.
+  // The deployment payload's `alias` array is a deployment-side claim, and a
+  // concurrent Vercel/Git deployment can move the alias between that read
+  // and the probe — the 200 is byte-identical either way. The run is only
+  // allowed to report success once the ALIAS side confirms it points at this
+  // run's DEPLOYMENT_ID, via the read-only
+  // `GET /v4/aliases/{idOrAlias}` endpoint (its 200 response requires
+  // `deploymentId` and mirrors it in `deployment.id`).
+  const depSteps = job?.steps ?? [];
+  // Comments are stripped per step for the same reason the deny-list strips
+  // them: a step must be able to EXPLAIN a rule in prose without that prose
+  // either satisfying the rule or tripping it. A `# ... exit 0 ...` comment
+  // warning against short-circuiting must not read as a short-circuit.
+  const stepRun = (s) => executableLines(s?.run ?? '');
+  const stepIndex = (re) => depSteps.findIndex((s) => re.test(stepRun(s)));
+
+  const httpProbeIdx = stepIndex(/http_code[\s\S]*CANONICAL_HOST/);
+  const aliasBindIdx = stepIndex(/\/v4\/aliases\//);
+  const aliasStep = aliasBindIdx >= 0 ? stepRun(depSteps[aliasBindIdx]) : '';
+  const httpStep = httpProbeIdx >= 0 ? stepRun(depSteps[httpProbeIdx]) : '';
+  const depActiveRuns = depSteps.map(stepRun).join('\n');
+
+  check(
+    'deploy workflow reads the canonical alias via GET /v4/aliases/{idOrAlias}?teamId=',
+    /https:\/\/api\.vercel\.com\/v4\/aliases\/\$\{CANONICAL_HOST\}\?teamId=\$\{VERCEL_ORG_ID\}/
+      .test(depActiveRuns),
+    'the alias must be resolved from the alias side, at the exact documented read endpoint',
+  );
+  check(
+    'alias-binding check compares the alias record to the runtime DEPLOYMENT_ID',
+    aliasBindIdx >= 0
+      && /DEPLOYMENT_ID/.test(aliasStep)
+      && /\.deploymentId\b/.test(aliasStep)
+      && /\.deployment\s*&&\s*\w+\.deployment\.id|\.deployment\.id\b/.test(aliasStep)
+      && /!==/.test(aliasStep),
+    'both the required deploymentId and its deployment.id mirror must be read AND actually compared',
+  );
+  check(
+    'alias-binding check runs AFTER the HTTP 200 probe and is the LAST step',
+    httpProbeIdx >= 0
+      && aliasBindIdx > httpProbeIdx
+      && aliasBindIdx === depSteps.length - 1,
+    `http probe at step ${httpProbeIdx}, alias binding at ${aliasBindIdx} of ${depSteps.length}`,
+  );
+  check(
+    'HTTP 200 probe does not `exit 0` early (that would skip the binding check)',
+    httpProbeIdx >= 0 && !/\bexit\s+0\b/.test(httpStep),
+    'a success exit in the probe step makes a reachable older deployment look like a completed deploy',
+  );
+  check(
+    'alias-binding check is bounded and hard-fails on timeout',
+    /MAX_ATTEMPTS/.test(aliasStep)
+      && /never resolved to deployment/i.test(aliasStep)
+      && /exit 1/.test(aliasStep),
+    'propagation may lag, but an unbounded or soft-failing wait proves nothing',
+  );
+  check(
+    'alias-binding check hard-fails malformed JSON and explicit API errors',
+    /valid JSON/i.test(aliasStep) && /\.error\b/.test(aliasStep),
+  );
+  check(
+    'alias-binding check refuses a missing or different deployment id',
+    /no deployment id/i.test(aliasStep)
+      && /is bound to \$\{ids\[0\]\}|ids\[0\] !== expectedId/.test(aliasStep),
+    'an absent id must never read as a pass',
+  );
+  check(
+    'alias-binding check retries transient AND non-matching states before failing',
+    /sleep/.test(aliasStep)
+      && /continue/.test(aliasStep)
+      && /\*\)/.test(aliasStep)
+      && /process\.exit\(2\)/.test(aliasStep),
+    'an unreadable alias record and an alias still bound elsewhere must both retry, not decide instantly',
+  );
+  check(
+    'alias-binding check hard-fails the documented explicit alias-API errors',
+    /401/.test(aliasStep) && /403/.test(aliasStep) && /410/.test(aliasStep),
+    'unauthorized/forbidden/gone cannot be fixed by waiting out the window',
+  );
+
   // ── Deny-list: every way to green-light the wrong commit ─────────────
+  // `deploymentId` is banned as an INPUT — it is the redeploy-from-an-
+  // existing-build field. Reading it back OFF the read-only alias record
+  // (`a.deploymentId`) is the opposite: it is how the run proves the alias
+  // points at this deployment. Strip property reads so the input shape stays
+  // forbidden while the proof stays possible.
+  const activeNoIdReads = dep.active.replace(/\.deploymentId\b/g, '');
+
   const FORBIDDEN = [
-    { name: 'deploymentId (redeploy-from-existing-build)', re: /deploymentId/ },
+    {
+      name: 'deploymentId as a request input (redeploy-from-existing-build)',
+      re: /deploymentId/,
+      text: activeNoIdReads,
+    },
+    { name: 'alias assignment endpoint (POST /v2/deployments/{id}/aliases)', re: /deployments\/[^\s"']*\/aliases/ },
+    { name: 'alias deletion endpoint (DELETE /v2/aliases/{aliasId})', re: /\/v2\/aliases\// },
     { name: 'withLatestCommit (branch tip, not the exact SHA)', re: /withLatestCommit/ },
     { name: 'latest-production deployment lookup', re: /\/v6\/deployments/ },
     { name: 'target=production query lookup (latest-prod clone)', re: /target=production/ },
@@ -457,10 +555,10 @@ if (dep) {
     { name: 'HTTP PATCH', re: /-X\s+PATCH/ },
     { name: 'HTTP PUT', re: /-X\s+PUT/ },
   ];
-  for (const { name, re } of FORBIDDEN) {
+  for (const { name, re, text } of FORBIDDEN) {
     check(
       `deploy workflow does NOT use ${name}`,
-      !re.test(dep.active),
+      !re.test(text ?? dep.active),
       `matched ${re} on an executable line`,
     );
   }
