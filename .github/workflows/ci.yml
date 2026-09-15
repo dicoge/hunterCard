@@ -9,11 +9,82 @@ on:
     # DIC-1189: `staging` added so PRs into the isolated staging branch get
     # the same Validate gate as PRs into main. Main-side contract unchanged.
     branches: [main, staging]
+  # DIC-1430 CI/CD recovery: a manual entry point for the case where a merge
+  # to main produced no PushEvent and therefore no CI run at all (PR #193
+  # merged as defa9592… and Actions never fired; cause still unknown). The
+  # operator must name the exact commit, so a recovery run can never be
+  # aimed at "whatever main happens to be right now".
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Full lowercase 40-hex commit SHA that MUST be the current tip of main"
+        type: string
+        required: true
 
 jobs:
+  # DIC-1430: gate for manual recovery dispatches.
+  #
+  # This job has NO job-level `if:` on purpose. A skipped job counts as
+  # "not successful" for everything that `needs:` it, so an event-gated
+  # preflight would silently skip Validate and the APK guard on every
+  # ordinary push and pull request — CI would report green without having
+  # run. Instead the job always runs and no-ops INTERNALLY for push/PR,
+  # which keeps the existing push/PR contract byte-for-byte intact while
+  # still letting both real jobs depend on it.
+  preflight:
+    name: Recovery preflight (exact-main dispatch gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Gate manual dispatches on the exact current tip of main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+
+          # Normal push / pull_request runs: explicit, successful no-op.
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "Event '${EVENT_NAME}' is an ordinary push/pull_request run — preflight is a deliberate no-op."
+            exit 0
+          fi
+
+          echo "Manual recovery dispatch — verifying the requested commit."
+
+          if ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::expected_sha must be a full lowercase 40-hex commit SHA (got a value of length ${#EXPECTED_SHA})."
+            exit 1
+          fi
+
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::Recovery dispatches are only valid against refs/heads/main (got ${DISPATCH_REF})."
+            exit 1
+          fi
+
+          if [ "$EXPECTED_SHA" != "$DISPATCH_SHA" ]; then
+            echo "::error::expected_sha does not match the dispatched commit (${DISPATCH_SHA})."
+            exit 1
+          fi
+
+          # The dispatched SHA can already be stale by the time the runner
+          # starts. The live remote tip is the only authority on what main is.
+          remote_sha=$(git ls-remote origin refs/heads/main | awk '{print $1}')
+          if [ "$EXPECTED_SHA" != "$remote_sha" ]; then
+            echo "::error::expected_sha is not the live tip of origin/main (live tip is ${remote_sha})."
+            exit 1
+          fi
+
+          echo "Verified: ${EXPECTED_SHA} is the exact current tip of main."
+
   validate:
     name: Validate
     runs-on: ubuntu-latest
+    needs: [preflight]
     
     steps:
       - name: Checkout code
@@ -352,6 +423,20 @@ jobs:
       - name: Verify one CardDetail uses one proven exact-print identity end to end (DIC-1430)
         run: npm run test:exact-print-favorite-identity
 
+      # DIC-1430 CI/CD recovery: pins the manual-CI preflight contract AND the
+      # exact-SHA Production deploy workflow, including the deny-list of every
+      # Vercel call shape that could green-light a commit nobody asked for.
+      - name: Verify exact-SHA CI/CD recovery contracts (DIC-1430)
+        run: npm run test:exact-sha-production-recovery
+
+      # The structural suite above describes the alias gate; this one EXECUTES
+      # it. The deploy workflow's alias validator is a committed module, and
+      # these fixtures run that exact module — a missing required top-level
+      # deploymentId once passed 89 green structural checks because none of
+      # them ran the code.
+      - name: Verify canonical alias binding validator behaviour (DIC-1430)
+        run: npm run test:alias-binding-validator
+
       - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
         run: npm run test:tournament-discovery-acquisition
 
@@ -463,6 +548,7 @@ jobs:
     # parallel with Validate.
     name: Release-APK post-package guard (DIC-1266 / DIC-1277)
     runs-on: ubuntu-latest
+    needs: [preflight]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
