@@ -57,12 +57,47 @@ name: HoloHunter exact-SHA Production deploy
 # The companion suite `npm run test:exact-sha-production-recovery` enforces
 # every one of the above statements mechanically, including the bans.
 
+# Reachability (DIC-1430 Actions registry recovery)
+# -------------------------------------------------
+# This file is present on the default branch at a reviewed blob and
+# actionlint 1.7.12 reports zero errors against it, but GitHub's Actions
+# workflow registry never listed it: the filename endpoint 404s and the
+# workflow cannot be dispatched at all. A later real push CI on current main
+# did not register it either. The cause is UNKNOWN — the same class of
+# unexplained Actions-side omission as the missing PushEvent above.
+#
+# `.github/workflows/ci.yml` IS registered and dispatches normally. So this
+# workflow additionally exposes `workflow_call`, and the registered ci.yml
+# invokes it as a LOCAL reusable workflow behind an explicit, default-off
+# deploy intent plus its three green gates. The deployment logic below is
+# invoked by that trampoline, never copied into it: a second transcript of
+# this shell living in ci.yml would be a Production deploy path that none of
+# the guarantees documented above apply to.
+#
+# Both invocation modes carry the IDENTICAL `expected_sha` contract, and every
+# other trigger stays forbidden — an auto-firing Production deploy is the
+# precise failure this workflow exists to prevent. `inputs.expected_sha`
+# resolves the same way under either mode, so the job body is unchanged.
 on:
   workflow_dispatch:
     inputs:
       expected_sha:
         description: "Full lowercase 40-hex commit SHA that MUST be the current tip of main"
         type: string
+        required: true
+  workflow_call:
+    inputs:
+      expected_sha:
+        description: "Full lowercase 40-hex commit SHA that MUST be the current tip of main"
+        type: string
+        required: true
+    # Exactly the two secrets the steps below actually reference, and both
+    # required: an optional secret would fail deep inside a Production deploy
+    # instead of at the call boundary.
+    secrets:
+      VERCEL_TOKEN:
+        required: true
+      VERCEL_ORG_ID:
         required: true
 
 permissions:
