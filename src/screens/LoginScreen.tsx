@@ -13,12 +13,12 @@ import { FEATURES, STORE_MVP } from '../config/releaseFlags';
 import { useAuthStore } from '../store/authStore';
 import { APPLE_LOGIN_ENABLED } from '../services/authService';
 import { useTranslation } from '../i18n';
-import { AppStatusBar } from '../components/shell';
 import { PALETTE, SEMANTIC, FONTS, GRADIENTS } from '../theme/tokensV2';
 
 /**
  * DIC-1409 Phase 6 — Pen `App / 16 登入` (frame p28zL). Full-bleed auth flow
- * on the v2 tokens: status bar only (no tab bar in the Pen frame), gradient
+ * on the v2 tokens: no in-app status chrome (DIC-1452 — the OS draws the only
+ * status bar) and no tab bar in the Pen frame, gradient
  * logo tile (node FTEuu, 104×104 r26), brand label on $accent-2 (node c9cMr),
  * white Google button (node ilZGG, r14), dark Apple button (node TU4oT),
  * divider (node y24cJ), guest link on $accent-2 (node qfrcy), terms footer
@@ -50,7 +50,6 @@ export default function LoginScreen({ navigation }: any = {}) {
 
   return (
     <SafeAreaView style={styles.container} testID="login-shell">
-      <AppStatusBar />
       <View style={styles.glow} pointerEvents="none" />
       {/* Pushed from the Landing (Pen p28zL is full-bleed, but a pushed auth
           state needs a way back to the gate's landing surface). */}

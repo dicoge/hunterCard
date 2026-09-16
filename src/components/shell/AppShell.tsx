@@ -2,14 +2,12 @@ import React from 'react';
 import { View, StyleSheet, ScrollView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PALETTE, LAYOUT, SPACING } from '../../theme/tokensV2';
-import { AppStatusBar, StatusBarProps } from './StatusBar';
 import { AppBar, AppBarProps } from './AppBar';
 import { BottomTabBar, BottomTabBarProps } from './BottomTabBar';
 
 export interface AppShellProps {
   children?: React.ReactNode;
   appBar?: AppBarProps | false;
-  statusBar?: StatusBarProps | false;
   bottomTabBar?: BottomTabBarProps | false;
   scrollable?: boolean;
   contentPadding?: boolean;
@@ -19,10 +17,13 @@ export interface AppShellProps {
 
 /**
  * Cross-platform shell used by every top-level screen in Phase 2/3. Layers:
- *   • Status bar strip (Pen `C / Status Bar`, 390×54)
  *   • App bar (Pen `App Bar`, 390×56)
  *   • Scrollable content region
  *   • Bottom tab bar (Pen `C / Tab Bar`, 390×96 with scan FAB)
+ *
+ * DIC-1452: no simulated device chrome — the OS status bar outside the app
+ * (or the browser's own UI) is the only status treatment on every platform;
+ * the top safe-area inset keeps the spacing where the OS draws over the app.
  *
  * Layout mirrors the Pen bounds exactly at 390 and stretches for wider
  * viewports without breaking the `content-desktop 1328` clamp.
@@ -30,7 +31,6 @@ export interface AppShellProps {
 export function AppShell({
   children,
   appBar,
-  statusBar,
   bottomTabBar,
   scrollable = true,
   contentPadding = true,
@@ -41,17 +41,24 @@ export function AppShell({
   const topInset = Math.max(insets.top, Platform.OS === 'web' ? 0 : LAYOUT.safeMobile);
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'web' ? 0 : LAYOUT.safeMobile);
 
-  const bar = statusBar === false ? null : <AppStatusBar {...(statusBar ?? {})} />;
   const top = appBar === false ? null : <AppBar {...(appBar ?? {})} />;
   const tabs = bottomTabBar === false || !bottomTabBar ? null : (
     <BottomTabBar {...bottomTabBar} />
   );
 
-  const contentPaddingBottom = tabs ? LAYOUT.bottomTab.height + SPACING['3xl'] : SPACING['3xl'];
+  // DIC-1452: the tab bar is a flex sibling BELOW the content region, so it
+  // already reserves its own height — re-padding the content by the bar's
+  // height on top of that was the ~110px dead void under the last row. With
+  // tabs, SPACING.md plus the content's own trailing rhythm (e.g. the Pen
+  // 14px grid row gap → 8+14 = 22px) keeps the last row 16–24px above the
+  // navigation frame. The REAL bottom safe-area inset is applied once, on
+  // the bottom stack; only a tabless shell (content reaching the screen
+  // edge) absorbs it into the content.
+  const contentPaddingBottom = tabs ? SPACING.md : SPACING['3xl'] + bottomInset;
   const contentStyle = [
     styles.contentInner,
     contentPadding && { paddingHorizontal: LAYOUT.safeMobile },
-    { paddingBottom: contentPaddingBottom + bottomInset },
+    { paddingBottom: contentPaddingBottom },
   ];
 
   const content = scrollable ? (
@@ -74,12 +81,14 @@ export function AppShell({
       <View style={[styles.topStack, { paddingTop: topInset }]}
         testID={`${testID}-top`}
       >
-        {bar}
         {top}
       </View>
       {content}
       {tabs ? (
-        <View style={styles.bottomStack} testID={`${testID}-bottom`}>
+        <View
+          style={[styles.bottomStack, { paddingBottom: insets.bottom }]}
+          testID={`${testID}-bottom`}
+        >
           {tabs}
         </View>
       ) : null}

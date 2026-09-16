@@ -267,12 +267,11 @@ async function runMeasurePhase(fixture) {
     }
   });
 
-  await test('Pen lELzX + CXGih chrome: single status row band, search field h≈38 centered in the app bar below it', async () => {
+  await test('DIC-1452 chrome: NO simulated status row on any platform — app bar band starts at the frame top', async () => {
     const statusBars = await rectsOf('[data-testid="shell-status-bar"]');
-    assert.equal(statusBars.length, 1, 'exactly ONE status row (duplicate = original P0)');
-    assert.ok(statusBars[0].top <= 2 && Math.abs(statusBars[0].height - 54) <= 2,
-      `status row must be the Pen 54px band at the top, got top=${statusBars[0].top} h=${statusBars[0].height}`);
-    const APP_BAR_TOP = 54;
+    assert.equal(statusBars.length, 0,
+      'simulated time/signal/wifi/battery chrome must never render — the OS status bar outside the app is the only status treatment');
+    const APP_BAR_TOP = 0;
     const field = await rectOf('[data-testid="search-results-search-field"]');
     assert.ok(field.height >= 36 && field.height <= 40, `search field height ${field.height} outside 38±2`);
     assert.ok(field.top >= APP_BAR_TOP + 6 && field.top <= APP_BAR_TOP + 13,
@@ -290,7 +289,7 @@ async function runMeasurePhase(fixture) {
     const count = await rectOf('[data-testid="search-results-count"]');
     const sort = await rectOf('[data-testid="search-results-sort"]');
     const firstRowTop = Math.min(...wrappers.map((r) => r.top));
-    assert.ok(count.top >= 110, 'count row sits below the status + app bar bands');
+    assert.ok(count.top >= 56, 'count row sits below the app bar band (no status row above it — DIC-1452)');
     assert.ok(count.bottom <= firstRowTop, 'count row sits above the grid');
     assert.ok(firstRowTop - count.bottom <= 30, `grid must follow the count row closely, gap ${(firstRowTop - count.bottom).toFixed(1)}`);
     assert.ok(count.left >= 14 && count.left <= 18, 'count text starts at the 16px inset');
@@ -311,6 +310,37 @@ async function runMeasurePhase(fixture) {
     assert.ok(bar.top - fab.top >= 8 && bar.top - fab.top <= 18, `FAB pop-above offset ${(bar.top - fab.top).toFixed(1)} outside Pen 12±6`);
     const lastRowBottom = Math.max(...wrappers.map((r) => r.bottom));
     assert.ok(lastRowBottom > 400, 'grid content must actually fill the viewport height — cropped/empty list regression');
+  });
+
+  await test('DIC-1452 bottom spacing: content region meets the tab bar — no dead void band under the grid', async () => {
+    const tabRoot = await rectOf('[data-testid="shell-bottom-tab-bar"]');
+    const content = await rectOf('[data-testid="shell-content"]');
+    // The tab bar is a flex sibling BELOW the content region; re-padding the
+    // content for the bar's height on top of that was the ~110px black void.
+    assert.ok(Math.abs(content.bottom - tabRoot.top) <= 1,
+      `content region must end where the tab bar begins, got content.bottom=${content.bottom} tab.top=${tabRoot.top}`);
+
+    // Scroll the result list to its end and measure the REAL gap between the
+    // final card row and the fixed bottom navigation (the Pen H8TW7 96px
+    // tab-bar frame, whose top 12px is the FAB pop zone). Contract: final
+    // row bottom sits 16–24px above the navigation frame — the 14px Pen row
+    // gap + the shell's 8px content padding = 22px. The old double
+    // compensation put ~110px+ of dead void here.
+    const scrolled = await page.evaluate(() => {
+      let el = document.querySelector('[data-testid="search-result-grid-item"]');
+      while (el && !(el.scrollHeight > el.clientHeight + 1)) el = el.parentElement;
+      if (!el) return false;
+      el.scrollTop = el.scrollHeight;
+      return true;
+    });
+    assert.ok(scrolled, 'the seeded 9-card grid must overflow the 844 frame so the scrolled-to-end gap is measurable');
+    const after = await rectsOf('[data-testid="search-result-grid-item"]');
+    const lastRowBottom = Math.max(...after.map((r) => r.bottom));
+    const gap = tabRoot.top - lastRowBottom;
+    assert.ok(gap >= 14 && gap <= 26,
+      `scrolled-to-end final row must sit 16–24px (±2 render slack) above the bottom navigation frame — got ${gap.toFixed(1)}px (large = void regression, negative = nav covers the row)`);
+    const bar = await rectOf('[data-testid="shell-bottom-tab-bar-bar"]');
+    assert.ok(lastRowBottom <= bar.top, 'the drawn tab bar must never cover the final card row');
   });
 
   await test('no horizontal overflow at 390 in the real engine', async () => {

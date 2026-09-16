@@ -209,7 +209,7 @@ await test('AppShell renders StatusBar/AppBar/content/BottomTabBar landmarks', a
     })
   );
   try {
-    assert.ok(container.querySelector('[data-testid="shell-status-bar"]'), 'status bar');
+    assert.equal(container.querySelector('[data-testid="shell-status-bar"]'), null, 'no simulated status chrome (DIC-1452)');
     assert.ok(container.querySelector('[data-testid="shell-app-bar"]'), 'app bar');
     assert.ok(container.querySelector('[data-testid="shell-app-bar-title"]'), 'app bar title');
     assert.ok(container.querySelector('[data-testid="shell-bottom-tab-bar"]'), 'tab bar');

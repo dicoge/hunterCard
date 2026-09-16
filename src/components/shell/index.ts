@@ -2,11 +2,9 @@ export { AppShell, default as default } from './AppShell';
 export { RouteShell } from './RouteShell';
 export type { RouteShellProps, RouteShellNavigation } from './RouteShell';
 export { AppBar } from './AppBar';
-export { AppStatusBar } from './StatusBar';
 export { BottomTabBar } from './BottomTabBar';
 export type { AppShellProps } from './AppShell';
 export type { AppBarAction, AppBarProps } from './AppBar';
-export type { StatusBarProps } from './StatusBar';
 export type { BottomTabBarProps, BottomTabItem, BottomTabKey } from './BottomTabBar';
 export {
   SHELL_TAB_ROUTE_MAP,
