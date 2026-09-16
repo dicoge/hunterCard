@@ -51,9 +51,10 @@ export function AppShell({
   // height on top of that was the ~110px dead void under the last row. With
   // tabs, SPACING.md plus the content's own trailing rhythm (e.g. the Pen
   // 14px grid row gap → 8+14 = 22px) keeps the last row 16–24px above the
-  // navigation frame. The REAL bottom safe-area inset is applied once, on
-  // the bottom stack; only a tabless shell (content reaching the screen
-  // edge) absorbs it into the content.
+  // navigation frame. The COMPUTED bottom inset (reported inset, floored at
+  // LAYOUT.safeMobile on native where a zero/unavailable report still needs
+  // clearance) is applied once, on the bottom stack; only a tabless shell
+  // (content reaching the screen edge) absorbs it into the content.
   const contentPaddingBottom = tabs ? SPACING.md : SPACING['3xl'] + bottomInset;
   const contentStyle = [
     styles.contentInner,
@@ -86,7 +87,7 @@ export function AppShell({
       {content}
       {tabs ? (
         <View
-          style={[styles.bottomStack, { paddingBottom: insets.bottom }]}
+          style={[styles.bottomStack, { paddingBottom: bottomInset }]}
           testID={`${testID}-bottom`}
         >
           {tabs}
