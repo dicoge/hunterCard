@@ -257,7 +257,7 @@ try {
 
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim();
 const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' })
-  .trim().split('\n').filter(Boolean).map((l) => l.slice(3));
+  .split('\n').filter((l) => l.trim().length > 0).map((l) => l.slice(3));
 const manifest = {
   task: 'DIC-1452',
   generatedAt: new Date().toISOString(),
