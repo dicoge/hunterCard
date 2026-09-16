@@ -298,11 +298,13 @@ jobs:
       - name: Verify Pen v2 shell tokens + App 01–16 shell parity (DIC-1409)
         run: npm run test:shell-tokens && npm run test:app-shell && npm run test:app47-shell && npm run test:app812-shell && npm run test:app1316-shell && npm run test:shell-tab-navigation && npm run test:scan-search-shell
 
-      # DIC-1430 Production P0: 我的 → 收藏 must arrive under the PRODUCTION
-      # release profile (Store MVP ON). The suites above all pin
-      # EXPO_PUBLIC_STORE_MVP=0, which is exactly why Preview QA passed while
-      # Production shipped two dead entry points.
-      - name: Verify 我的 → 收藏 navigation under the Production profile (DIC-1430)
+      # DIC-1430 Production P0: the 我的 Collection entry points and the
+      # Collection route must agree in BOTH release profiles — under Store MVP
+      # the route stays unregistered (DIC-1256) and none of the three controls
+      # render; with the profile off, all three render and actually arrive.
+      # The suites above all pin EXPO_PUBLIC_STORE_MVP=0, which is exactly why
+      # Preview QA passed while Production shipped dead entry points.
+      - name: Verify 我的 Collection controls match route registration in both profiles (DIC-1430)
         run: npm run test:collection-nav
 
       - name: Verify colour token normaliser + KNOWN_COLOR_KEYS ↔ i18n parity (DIC-1192)

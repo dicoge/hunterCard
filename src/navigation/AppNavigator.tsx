@@ -162,41 +162,35 @@ function MainDrawer() {
           }}
         />
       )}
-      {/* Card Collection ownership browser (browse-by-owned). Kept as its own
-          drawer entry so it can be exposed independently of the bookmarks
-          screen above.
+      {/* Card Collection ownership browser (browse-by-owned) — hidden in
+          Store MVP (DIC-1256). Kept as its own drawer entry so it can be
+          exposed independently of the bookmarks screen above.
 
-          DIC-1430 Production P0 — this route must stay REGISTERED in every
-          release profile. DIC-1256 gated it behind FEATURES.favorites, but
-          DIC-1427 then shipped 我的 as an UNGATED collection hub whose 卡牌收藏
-          segment, search field and 檢視全部 action all call
-          navigate('Collection') unconditionally. Web Production injects no
-          EXPO_PUBLIC_STORE_MVP define and so fail-closes to Store MVP ON,
-          which unregistered the route and turned those three live, visible
-          controls into silent no-ops: React Navigation drops a NAVIGATE to an
-          unknown route name, and its warning is stripped from production
-          builds — Production QA saw working clicks that went nowhere and threw
-          no error at all.
+          The gate UNREGISTERS the route rather than just hiding its menu row:
+          DIC-1256's acceptance criterion is "not only hidden menus", so under
+          Store MVP `navigate('Collection')` and a deep link must both be
+          unable to reach this screen. Do not relax this to a `drawerItemStyle`
+          hide — that re-opens both paths.
 
-          Store MVP now hides the drawer MENU ENTRY instead, which is what the
-          DIC-1256 intent (keep browse-by-collection out of the menu) actually
-          requires. This exposes no gated data: 我的 already ships the same
-          ownership surface ungated — 收藏張數, 收藏市值, per-printing prices and
-          real +/- quantity steppers — and CollectionScreen adds no field
-          beyond it. The 到價提醒 route below stays fully unregistered. */}
-      <Drawer.Screen
-        name="Collection"
-        component={CollectionScreen}
-        options={{
-          title: t('nav_collection'),
-          // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
-          headerShown: false,
-          drawerItemStyle: FEATURES.favorites ? undefined : styles.drawerItemHidden,
-          drawerIcon: ({ focused }) => (
-            <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
-          ),
-        }}
-      />
+          DIC-1430 (Production P0: 我的 shipped three live Collection controls
+          that silently no-op'd here) is fixed on the OTHER side of the
+          boundary: MeScreen renders its 卡牌收藏 segment, search field and
+          檢視全部 action only when FEATURES.favorites is on, so no control can
+          target a route that does not exist in this profile. */}
+      {FEATURES.favorites && (
+        <Drawer.Screen
+          name="Collection"
+          component={CollectionScreen}
+          options={{
+            title: t('nav_collection'),
+            // DIC-1409 Phase 5: route renders the shared Pen v2 shell.
+            headerShown: false,
+            drawerIcon: ({ focused }) => (
+              <Text style={[styles.drawerIcon, focused && styles.drawerIconFocused]}>📚</Text>
+            ),
+          }}
+        />
+      )}
       <Drawer.Screen
         name="DeckEditor"
         component={DeckEditorScreen}
@@ -402,11 +396,6 @@ const styles = StyleSheet.create({
   },
   drawerIconFocused: {
     opacity: 1,
-  },
-  // DIC-1430: keeps a route reachable by navigate()/deep link while removing
-  // its row from the drawer menu list.
-  drawerItemHidden: {
-    display: 'none',
   },
   iconContainer: {
     alignItems: 'center',

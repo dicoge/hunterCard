@@ -78,37 +78,23 @@ check(
   /premium:\s*!STORE_MVP/.test(flags),
 );
 
-// ── 2. Drawer routes under Store MVP.
-//        Watchlist stays UNREGISTERED: removing the Drawer.Screen unregisters
-//        the route so nav + deep link are both blocked, not merely hidden.
-//
-//        Collection is the deliberate exception (DIC-1430 Production P0).
-//        DIC-1256 originally unregistered it too, on the criterion "not only
-//        hidden menus". DIC-1427 then shipped 我的 as an UNGATED collection
-//        hub whose 卡牌收藏 segment, search field and 檢視全部 action all call
-//        navigate('Collection') in every profile — so unregistering the route
-//        did not block anything, it turned three live, visible controls into
-//        silent no-ops in Production (React Navigation drops a NAVIGATE to an
-//        unknown name, and the warning is stripped from production builds).
-//        The route is therefore registered in every profile and Store MVP
-//        hides the DRAWER MENU ENTRY instead, which is what the DIC-1256
-//        intent — keep the browse-by-collection surface out of the menu —
-//        actually requires. No gated data leaks: 我的 already exposes the same
-//        ownership surface ungated (收藏張數, 收藏市值, per-printing prices,
-//        real +/- quantity steppers), and CollectionScreen adds no field
-//        beyond it. ──
+// ── 2. Drawer routes fail-closed: Collection AND Watchlist unregistered
+//        under Store MVP. Removing the Drawer.Screen unregisters the route so
+//        `navigation.navigate('Collection')` and deep links both fail to
+//        arrive — the acceptance criterion says "not only hidden menus". ──
 const nav = read('src/navigation/AppNavigator.tsx');
-const collectionIdx = nav.indexOf('name="Collection"');
-assert.notEqual(collectionIdx, -1, 'AppNavigator must still declare the Collection route');
 check(
-  'AppNavigator: Collection Drawer.Screen stays REGISTERED in every profile (DIC-1430)',
-  !/\{FEATURES\.[a-zA-Z]+\s*&&\s*\(\s*<Drawer\.Screen[^>]*$/.test(
-    nav.slice(Math.max(0, collectionIdx - 200), collectionIdx),
-  ),
+  'AppNavigator: Collection Drawer.Screen wrapped in {FEATURES.favorites && ...}',
+  /\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav),
 );
+// DIC-1430 CR (run 037b339f): the rejected repair kept the route registered in
+// every profile and hid only its drawer MENU ROW via `drawerItemStyle`. That
+// leaves navigate() and deep links working, reversing the DIC-1256 fail-closed
+// route requirement without a superseding compliance decision. Pin the
+// difference so the downgrade cannot reappear as a "cosmetic" edit.
 check(
-  'AppNavigator: Collection drawer MENU ENTRY is hidden under Store MVP (DIC-1256 intent)',
-  /name="Collection"[\s\S]{0,400}?drawerItemStyle:\s*FEATURES\.favorites\s*\?\s*undefined\s*:/.test(nav),
+  'AppNavigator: Collection is NOT downgraded to a drawerItemStyle menu-row hide (DIC-1430 CR)',
+  !/name="Collection"[\s\S]{0,400}?drawerItemStyle:/.test(nav),
 );
 check(
   'AppNavigator: Watchlist Drawer.Screen still wrapped in {FEATURES.watchlist && ...} (regression)',
@@ -126,6 +112,66 @@ for (const name of ['Home', 'Scan', 'Search', 'DeckEditor', 'TournamentReport', 
   check(
     `AppNavigator: ${name} drawer entry is NOT gated under FEATURES.*`,
     !/\{FEATURES\.[a-zA-Z]+\s*&&\s*\(\s*<Drawer\.Screen[^>]*$/.test(preceding),
+  );
+}
+
+// ── 2b. MeScreen 我的 hub: every control that NAVIGATES to Collection must
+//        carry the same gate that registers the route (DIC-1430).
+//
+//        DIC-1427 shipped 我的 as a collection hub whose 卡牌收藏 segment,
+//        search field and 檢視全部 action all call navigate('Collection')
+//        unconditionally, while section 2 above keeps that route unregistered
+//        under Store MVP. Production therefore rendered three live, visible,
+//        clickable controls that silently went nowhere: React Navigation drops
+//        a NAVIGATE to an unknown route name and its warning is stripped from
+//        production builds, so QA saw working clicks, no arrival, no error.
+//        The gate belongs on the CONTROLS — dead controls are the defect, an
+//        unregistered route is the requirement. ──
+const me = read('src/screens/MeScreen.tsx');
+check(
+  'MeScreen: 卡牌收藏 segment entry is gated on FEATURES.favorites (DIC-1430)',
+  /key:\s*'collection'[^}]*enabled:\s*FEATURES\.favorites/.test(me),
+);
+check(
+  'MeScreen: no Collection-routed segment is hardcoded `enabled: true` (DIC-1430)',
+  !/route:\s*'Collection'[^}]*enabled:\s*true/.test(me),
+);
+check(
+  'MeScreen: me-search-field wrapped in {FEATURES.favorites && ...} (DIC-1430)',
+  /\{FEATURES\.favorites\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-search-field"/.test(me),
+);
+check(
+  'MeScreen: me-view-all wrapped in {FEATURES.favorites && ...} (DIC-1430)',
+  /\{FEATURES\.favorites\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-view-all"/.test(me),
+);
+// Mutation sensitivity: prove these predicates actually reject the shipped
+// defect rather than matching any source. Re-introduce the exact pre-fix
+// spellings in memory and assert each assertion flips.
+{
+  const ungatedSegment = me.replace(
+    /key:\s*'collection'([^}]*)enabled:\s*FEATURES\.favorites/,
+    "key: 'collection'$1enabled: true",
+  );
+  check(
+    'mutation: an ungated `enabled: true` Collection segment IS rejected (DIC-1430)',
+    !/key:\s*'collection'[^}]*enabled:\s*FEATURES\.favorites/.test(ungatedSegment)
+      && /route:\s*'Collection'[^}]*enabled:\s*true/.test(ungatedSegment),
+  );
+  const ungatedSearch = me.replace(
+    /\{FEATURES\.favorites\s*&&\s*\(\s*(<TouchableOpacity[\s\S]{0,400}?testID="me-search-field")/,
+    '$1',
+  );
+  check(
+    'mutation: an ungated me-search-field IS rejected (DIC-1430)',
+    !/\{FEATURES\.favorites\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-search-field"/.test(ungatedSearch),
+  );
+  const ungatedViewAll = me.replace(
+    /\{FEATURES\.favorites\s*&&\s*\(\s*(<TouchableOpacity[\s\S]{0,400}?testID="me-view-all")/,
+    '$1',
+  );
+  check(
+    'mutation: an ungated me-view-all IS rejected (DIC-1430)',
+    !/\{FEATURES\.favorites\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-view-all"/.test(ungatedViewAll),
   );
 }
 

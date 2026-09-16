@@ -38,6 +38,13 @@ function stepOwned(
  * field (WUovy → Collection), owned rows with real qty steppers (x8bEnt…).
  * All data comes from the live deckStore collection, watchlist and auth
  * stores; steppers call the real adjustOwned action.
+ *
+ * DIC-1430: every control that NAVIGATES is gated on the flag that registers
+ * its destination route, so the Store MVP profile renders none of the three
+ * Collection entry points (卡牌收藏 segment, search field, 檢視全部) instead of
+ * shipping them as live controls over an unregistered route. The account card,
+ * stat cells, owned rows and qty steppers stay ungated — they are in-place
+ * surfaces, not navigation.
  */
 export default function MeScreen({ navigation }: any) {
   const { t } = useTranslation();
@@ -102,11 +109,16 @@ export default function MeScreen({ navigation }: any) {
   const accountName = session?.user?.name || session?.user?.email || t('me_guest_name' as any);
   const accountHint = session ? t('me_account_manage' as any) : t('me_guest_hint' as any);
 
+  // Every segment's `enabled` must track the gate on the route it targets:
+  // an unregistered route makes navigate() a silent no-op, so a segment that
+  // outlives its route is a dead control, not a degraded one (DIC-1430).
+  // `Collection` is registered only under FEATURES.favorites (DIC-1256).
   const segments: Array<{ key: string; label: string; route: string; enabled: boolean }> = [
-    { key: 'collection', label: t('nav_collection' as any), route: 'Collection', enabled: true },
+    { key: 'collection', label: t('nav_collection' as any), route: 'Collection', enabled: FEATURES.favorites },
     { key: 'watchlist', label: t('nav_watchlist' as any), route: 'Watchlist', enabled: FEATURES.watchlist },
     { key: 'trends', label: t('me_seg_trends' as any), route: 'Favorites', enabled: FEATURES.favorites },
   ];
+  const enabledSegments = segments.filter((s) => s.enabled);
 
   return (
     <AppShell
@@ -161,31 +173,42 @@ export default function MeScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Pen oaxgt — segment row routing to the real hub destinations */}
-        <View style={styles.segmentRow} testID="me-segments">
-          {segments.filter((s) => s.enabled).map((seg) => (
-            <TouchableOpacity
-              key={seg.key}
-              style={styles.segment}
-              onPress={() => navigation.navigate(seg.route)}
-              accessibilityRole="button"
-              testID={`me-segment-${seg.key}`}
-            >
-              <Text style={styles.segmentLabel}>{seg.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Pen oaxgt — segment row routing to the real hub destinations.
+            Store MVP gates every segment off, so the row itself is dropped:
+            styles.segmentRow paints a bordered surface, and keeping it would
+            leave a visible empty bar where the controls used to be. */}
+        {enabledSegments.length > 0 && (
+          <View style={styles.segmentRow} testID="me-segments">
+            {enabledSegments.map((seg) => (
+              <TouchableOpacity
+                key={seg.key}
+                style={styles.segment}
+                onPress={() => navigation.navigate(seg.route)}
+                accessibilityRole="button"
+                testID={`me-segment-${seg.key}`}
+              >
+                <Text style={styles.segmentLabel}>{seg.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-        {/* Pen WUovy — search into the collection browser */}
-        <TouchableOpacity
-          style={styles.searchField}
-          onPress={() => navigation.navigate('Collection')}
-          accessibilityRole="button"
-          testID="me-search-field"
-        >
-          <SearchGlyph color={PALETTE.textMuted} size={16} />
-          <Text style={styles.searchPlaceholder}>{t('collection_search_placeholder' as any)}</Text>
-        </TouchableOpacity>
+        {/* Pen WUovy — search into the collection browser. Gated on
+            FEATURES.favorites for the same reason as the 卡牌收藏 segment: the
+            Collection route it opens is unregistered under Store MVP, so an
+            ungated field is a live, clickable control that goes nowhere
+            (DIC-1430). */}
+        {FEATURES.favorites && (
+          <TouchableOpacity
+            style={styles.searchField}
+            onPress={() => navigation.navigate('Collection')}
+            accessibilityRole="button"
+            testID="me-search-field"
+          >
+            <SearchGlyph color={PALETTE.textMuted} size={16} />
+            <Text style={styles.searchPlaceholder}>{t('collection_search_placeholder' as any)}</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Pen x8bEnt… — owned rows with REAL qty steppers */}
         {ownedEntries.length === 0 ? (
@@ -239,14 +262,20 @@ export default function MeScreen({ navigation }: any) {
                 </View>
               </View>
             ))}
-            <TouchableOpacity
-              style={styles.viewAll}
-              onPress={() => navigation.navigate('Collection')}
-              accessibilityRole="button"
-              testID="me-view-all"
-            >
-              <Text style={styles.viewAllLabel}>{t('me_view_all' as any)}</Text>
-            </TouchableOpacity>
+            {/* 檢視全部 — third entry point onto the same Collection route, so
+                it carries the same gate. The owned rows and their steppers
+                above stay ungated: they edit the collection in place and do
+                not navigate. */}
+            {FEATURES.favorites && (
+              <TouchableOpacity
+                style={styles.viewAll}
+                onPress={() => navigation.navigate('Collection')}
+                accessibilityRole="button"
+                testID="me-view-all"
+              >
+                <Text style={styles.viewAllLabel}>{t('me_view_all' as any)}</Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
       </View>

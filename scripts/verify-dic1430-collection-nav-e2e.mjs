@@ -1,13 +1,27 @@
 #!/usr/bin/env node
-// DIC-1430 — local browser verification of the Production Collection P0.
+// DIC-1430 — local browser verification of the Production Collection P0 repair.
 //
-// Mirrors the Mac-OpenClaw Production QA probe (run 16c25a62-af71-4571-99c8-
+// Re-runs the Mac-OpenClaw Production QA probe (run 16c25a62-af71-4571-99c8-
 // bc8e7a5878cd) against a LOCAL web export built with the Production release
-// profile (no EXPO_PUBLIC_STORE_MVP define → fail-closed Store MVP ON):
-// fresh guest → 我的, then each real Collection entry point must mount
-// `collection-shell`.
+// profile (no EXPO_PUBLIC_STORE_MVP define → fail-closed Store MVP ON). That
+// probe found three live, visible Collection controls on 我的 whose clicks
+// silently went nowhere, because AppNavigator leaves the route UNREGISTERED in
+// this profile (DIC-1256, "not only hidden menus").
+//
+// The repair removes the CONTROLS, it does not register the route — CR run
+// 037b339f rejected the inverse. So the passing state this probe now verifies
+// is the fail-closed one: fresh guest → 我的 renders NONE of
+// `me-segment-collection` / `me-search-field` / `me-view-all`, and
+// `collection-shell` never mounts. A rendered-but-dead control and a reachable
+// Store MVP Collection screen both fail.
 //
 //   node scripts/verify-dic1430-collection-nav-e2e.mjs
+//
+// Scope note: the app mounts no React Navigation `linking` config, so there is
+// no URL-addressable deep link to exercise here. The programmatic navigate()
+// and nested deep-link vectors are covered against the real navigator by
+// scripts/test-dic1430-me-collection-nav.mjs, which also runs the positive
+// non-Store-MVP profile this single-build probe cannot reach.
 //
 // Serves ./dist itself (SPA fallback) so nothing external is required.
 // Writes screenshots + probe-result.json into .hermes-artifacts/collection-nav-fix/.
@@ -71,6 +85,15 @@ const present = (page, testID) => page.evaluate(
 
 async function freshGuestOnMe(label) {
   const page = await browser.newPage();
+  // Seed one owned printing BEFORE the app boots so 檢視全部's own precondition
+  // (the guest owns at least one card) is satisfied. Without it, asserting that
+  // control's absence would pass for the wrong reason — the empty-state branch
+  // would be hiding it regardless of the release flag. Only `collection` is
+  // written: zustand/persist merges the persisted slice over the store
+  // defaults, so nothing else about the guest is fabricated.
+  await page.evaluateOnNewDocument((payload) => {
+    window.localStorage.setItem('hunterCard-decks', payload);
+  }, JSON.stringify({ state: { collection: { 'hBP01-024|PARALLEL/HR': 2 } }, version: 3 }));
   const consoleErrors = []; const pageErrors = []; const networkErrors = [];
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
   page.on('pageerror', (e) => pageErrors.push(String(e)));
@@ -98,49 +121,55 @@ async function freshGuestOnMe(label) {
   return { page, consoleErrors, pageErrors, networkErrors };
 }
 
-const results = {};
-let failed = false;
+const { page, consoleErrors, pageErrors, networkErrors } = await freshGuestOnMe('production');
 
-for (const [label, testID] of [['segment', 'me-segment-collection'], ['search', 'me-search-field']]) {
-  const { page, consoleErrors, pageErrors, networkErrors } = await freshGuestOnMe(label);
+// Confirm the PRODUCTION profile really is in effect: the flag-gated sibling
+// segments must be absent. Otherwise this build proves nothing about Production
+// — a non-Store-MVP export would render everything and "pass" nothing.
+const storeMvpFingerprint = {
+  watchlistSegment: await present(page, 'me-segment-watchlist'),
+  trendsSegment: await present(page, 'me-segment-trends'),
+};
+// Proof the ownership seed landed: with zero owned rows, 檢視全部 is hidden by
+// the empty state and its absence below would be meaningless.
+const ownedRows = await present(page, 'me-owned-row');
 
-  // Confirm the PRODUCTION profile really is in effect: the flag-gated
-  // sibling segments must be absent (the single-segment row the QA
-  // screenshot showed). Otherwise this build proves nothing about Production.
-  const storeMvpFingerprint = {
-    watchlistSegment: await present(page, 'me-segment-watchlist'),
-    trendsSegment: await present(page, 'me-segment-trends'),
-  };
+await page.screenshot({ path: path.join(OUT, '03-me-production-profile.png'), fullPage: true });
 
-  const before = await countVisible(page, testID);
-  await page.screenshot({ path: path.join(OUT, `03-${label}-before-click.png`) });
-
-  await (await page.$(`[data-testid="${testID}"]`)).click();
-  let reached = true;
-  try {
-    await page.waitForSelector('[data-testid="collection-shell"]', { timeout: 15_000 });
-  } catch { reached = false; }
-
-  const collectionShell = await countVisible(page, 'collection-shell');
-  await page.screenshot({ path: path.join(OUT, `04-${reached ? 'pass' : 'fail'}-after-${label}-click.png`) });
-
-  results[label] = {
-    testID, entryPoint: before, collectionReached: reached, collectionShell,
-    storeMvpFingerprint, consoleErrors, pageErrors, networkErrors,
-  };
-  console.log(`[${label}] collectionReached=${reached} shellCount=${collectionShell.count} ` +
-    `storeMvpGatedSiblings=${storeMvpFingerprint.watchlistSegment + storeMvpFingerprint.trendsSegment}`);
-  if (!reached) failed = true;
-  await page.close();
+const controls = {};
+for (const [label, testID] of [
+  ['segment', 'me-segment-collection'],
+  ['search', 'me-search-field'],
+  ['viewAll', 'me-view-all'],
+]) {
+  controls[label] = { testID, ...(await countVisible(page, testID)) };
 }
+const collectionShell = await countVisible(page, 'collection-shell');
+
+const failures = [];
+if (storeMvpFingerprint.watchlistSegment !== 0) failures.push('build is not the Store MVP profile (watchlist segment rendered)');
+if (ownedRows < 1) failures.push('ownership seed did not land — 檢視全部 absence would prove nothing');
+for (const [label, c] of Object.entries(controls)) {
+  if (c.count !== 0) failures.push(`${label} (${c.testID}) still renders under Store MVP — dead control`);
+}
+if (collectionShell.count !== 0) failures.push('collection-shell mounted under Store MVP — the route is reachable again');
+const failed = failures.length > 0;
+
+await page.screenshot({ path: path.join(OUT, `04-${failed ? 'fail' : 'pass'}-production-me.png`), fullPage: true });
+console.log(`[production] controls=${Object.values(controls).map((c) => c.count).join('/')} ` +
+  `collectionShell=${collectionShell.count} ownedRows=${ownedRows} ` +
+  `storeMvpGatedSiblings=${storeMvpFingerprint.watchlistSegment + storeMvpFingerprint.trendsSegment}`);
+await page.close();
 
 const report = {
   milestone: 'DIC-1430 Production Collection navigation P0 repair',
   origin: ORIGIN,
   source: 'local web export (dist/) built with no EXPO_PUBLIC_STORE_MVP define → Store MVP ON',
+  contract: 'fail-closed: none of the three 我的 Collection controls render, and collection-shell never mounts',
   viewport: { width: 390, height: 844 },
   capturedAt: new Date().toISOString(),
-  results,
+  results: { controls, collectionShell, ownedRows, storeMvpFingerprint, consoleErrors, pageErrors, networkErrors },
+  failures,
   verdict: failed ? 'FAIL' : 'PASS',
 };
 fs.writeFileSync(path.join(OUT, 'probe-result.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -148,13 +177,12 @@ fs.writeFileSync(path.join(OUT, 'probe-result.json'), `${JSON.stringify(report, 
 await browser.close();
 server.close();
 
-for (const [label, r] of Object.entries(results)) {
-  assert.equal(r.entryPoint.count, 1, `${label}: entry point must exist exactly once`);
-  assert.equal(r.entryPoint.visible, true, `${label}: entry point must be visible`);
-  assert.equal(r.storeMvpFingerprint.watchlistSegment, 0, `${label}: build is not the Store MVP profile`);
-  assert.equal(r.collectionReached, true, `${label}: must mount collection-shell`);
-  assert.ok(r.collectionShell.count >= 1, `${label}: collection-shell must be present`);
+assert.equal(report.results.storeMvpFingerprint.watchlistSegment, 0, 'build is not the Store MVP profile');
+assert.ok(report.results.ownedRows >= 1, 'ownership seed did not land — 檢視全部 absence would prove nothing');
+for (const [label, c] of Object.entries(report.results.controls)) {
+  assert.equal(c.count, 0, `${label}: must not render under Store MVP (dead control)`);
 }
+assert.equal(report.results.collectionShell.count, 0, 'collection-shell must never mount under Store MVP');
 
 console.log(`\n${failed ? '❌' : '✅'} DIC-1430 local browser verification at 390×844: ${report.verdict}`);
 process.exitCode = failed ? 1 : 0;
