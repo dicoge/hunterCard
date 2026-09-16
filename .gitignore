@@ -67,3 +67,6 @@ e2e-shots/
 e2e-shots-preview/
 e2e-shots-prod/
 e2e-shots-local/
+
+# local QA evidence captured for the Hermes control plane (not repo content)
+.hermes-artifacts/

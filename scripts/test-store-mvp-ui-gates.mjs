@@ -78,14 +78,37 @@ check(
   /premium:\s*!STORE_MVP/.test(flags),
 );
 
-// ── 2. Drawer routes fail-closed: Collection AND Watchlist unregistered
-//        under Store MVP. Removing the Drawer.Screen unregisters the route so
-//        `navigation.navigate('Collection')` and deep links both throw — the
-//        acceptance criterion says "not only hidden menus". ──
+// ── 2. Drawer routes under Store MVP.
+//        Watchlist stays UNREGISTERED: removing the Drawer.Screen unregisters
+//        the route so nav + deep link are both blocked, not merely hidden.
+//
+//        Collection is the deliberate exception (DIC-1430 Production P0).
+//        DIC-1256 originally unregistered it too, on the criterion "not only
+//        hidden menus". DIC-1427 then shipped 我的 as an UNGATED collection
+//        hub whose 卡牌收藏 segment, search field and 檢視全部 action all call
+//        navigate('Collection') in every profile — so unregistering the route
+//        did not block anything, it turned three live, visible controls into
+//        silent no-ops in Production (React Navigation drops a NAVIGATE to an
+//        unknown name, and the warning is stripped from production builds).
+//        The route is therefore registered in every profile and Store MVP
+//        hides the DRAWER MENU ENTRY instead, which is what the DIC-1256
+//        intent — keep the browse-by-collection surface out of the menu —
+//        actually requires. No gated data leaks: 我的 already exposes the same
+//        ownership surface ungated (收藏張數, 收藏市值, per-printing prices,
+//        real +/- quantity steppers), and CollectionScreen adds no field
+//        beyond it. ──
 const nav = read('src/navigation/AppNavigator.tsx');
+const collectionIdx = nav.indexOf('name="Collection"');
+assert.notEqual(collectionIdx, -1, 'AppNavigator must still declare the Collection route');
 check(
-  'AppNavigator: Collection Drawer.Screen wrapped in {FEATURES.favorites && ...}',
-  /\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav),
+  'AppNavigator: Collection Drawer.Screen stays REGISTERED in every profile (DIC-1430)',
+  !/\{FEATURES\.[a-zA-Z]+\s*&&\s*\(\s*<Drawer\.Screen[^>]*$/.test(
+    nav.slice(Math.max(0, collectionIdx - 200), collectionIdx),
+  ),
+);
+check(
+  'AppNavigator: Collection drawer MENU ENTRY is hidden under Store MVP (DIC-1256 intent)',
+  /name="Collection"[\s\S]{0,400}?drawerItemStyle:\s*FEATURES\.favorites\s*\?\s*undefined\s*:/.test(nav),
 );
 check(
   'AppNavigator: Watchlist Drawer.Screen still wrapped in {FEATURES.watchlist && ...} (regression)',
