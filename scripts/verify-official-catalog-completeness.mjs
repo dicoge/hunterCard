@@ -17,25 +17,40 @@ const REQUIRED_OFFICIAL_FIELDS = ['cardNumber', 'name', 'sourceProduct', 'source
 const REQUIRED_DB_FIELDS = ['id', 'cardNumber', 'name', 'sourceProduct', 'sourceProductName', 'officialImage', 'nameZh', 'skillsJp'];
 const OFFICIAL_IMAGE_PREFIX = 'https://hololive-official-cardgame.com/wp-content/images/cardlist/';
 
-// DIC-1439: `skillsZh` cannot be required unconditionally the way `skillsJp`
+// DIC-1451: `skillsZh` cannot be required unconditionally the way `skillsJp`
 // can. data/effects-zh.json is a TRANSLATION artifact, not an upstream official
-// source — scripts/translate-effects.js is hard-disabled under the DIC-1185
-// OpenRouter denylist ("No inference call may be made from this script") and no
-// compliant provider is wired — so Traditional-Chinese skill text simply does
-// not exist yet for cardNumbers first published after the last translation run.
-// The two dishonest ways out are both refused here: fabricating TC text would
-// violate the denylist, and emitting the raw Japanese fallback would ship kana
-// into a `zh` field, which DIC-465 forbids and translate-effects' own
-// `validate()` rejects. Instead the gap is PINNED to an explicit baseline file
-// and policed from three directions, so the check is tightened, not weakened:
+// source. The upstream cardlist publishes Japanese only (every non-JA locale
+// path under hololive-official-cardgame.com returns 404), and
+// scripts/translate-effects.js is hard-disabled under the DIC-1185 OpenRouter
+// denylist ("No inference call may be made from this script") with no compliant
+// provider wired — so Traditional-Chinese skill text simply does not exist yet
+// for cardNumbers first published after the last translation run.
+//
+// DIC-1167 tried to require skillsZh unconditionally. That is not a stronger
+// gate, it is an unsatisfiable one: it turned 371 rows red with no data path
+// that could ever turn them green, because the only two ways to satisfy it are
+// both refused here — fabricating TC text (machine-translated card rules shipped
+// as official data) violates the DIC-1185 denylist, and emitting the raw
+// Japanese fallback ships kana into a `zh` field, which DIC-465 forbids and
+// translate-effects' own `validate()` rejects.
+//
+// Instead the gap stays PINNED to an explicit baseline file and is policed from
+// FIVE directions, so the check is tightened, not weakened:
 //   1. a row whose cardNumber is NOT in the baseline must have skillsZh —
-//      this is the DIC-454 silent-skillsZh-drop regression, now fail-closed;
+//      this is the DIC-454 silent-skillsZh-drop regression, fail-closed;
 //   2. the baseline may never GROW to cover a new cardNumber silently — adding
 //      one is a reviewable diff to data/official-skills-zh-gap.json;
 //   3. a baseline entry whose cardNumber HAS a real effects-zh translation, or
 //      is no longer an official printing at all, is a hard failure — the
 //      baseline must shrink to nothing as translations land and can never rot
-//      into a blanket exemption.
+//      into a blanket exemption;
+//   4. DIC-1451 ratchet: the baseline declares `maxEntries` and may never hold
+//      more than it, so growth requires bumping a reviewed cap, not just
+//      appending a line;
+//   5. DIC-1451 dead-exemption sweep: an entry that exempts nothing — every
+//      official row for that cardNumber already carries skillsZh — is a hard
+//      failure, closing the hole where rule 3 only consulted effects-zh.json
+//      and missed skillsZh preserved onto a row from a previous database.
 const effectsZhPath = path.join(repo, 'data', 'effects-zh.json');
 const zhGapPath = path.join(repo, 'data', 'official-skills-zh-gap.json');
 
@@ -79,7 +94,7 @@ function productList(meta) {
   return (meta.series || meta.discoveredSeries || []).map((code) => ({ code, expectedCount: null }));
 }
 
-function verifyDatabase(label, db, officialBySignature, products, zhGap) {
+function verifyDatabase(label, db, officialBySignature, products, zhGap, exemptionsUsed) {
   assert.ok(db.cards && typeof db.cards === 'object', `${label} missing cards map`);
   const cards = Object.values(db.cards);
   const byProduct = new Map();
@@ -95,8 +110,15 @@ function verifyDatabase(label, db, officialBySignature, products, zhGap) {
     }
     // DIC-1439: Traditional-Chinese skill text is required unless this exact
     // cardNumber is on the pinned, reviewable translation-gap baseline.
-    if (!nonEmpty(card.skillsZh) && !zhGap.has(card.cardNumber)) {
-      failures.push(`${label}:${sourceProduct}:${card.id || card.cardNumber}: missing skillsZh (cardNumber ${card.cardNumber} is not on the pinned data/official-skills-zh-gap.json baseline)`);
+    if (!nonEmpty(card.skillsZh)) {
+      if (zhGap.has(card.cardNumber)) {
+        // DIC-1451: record that the exemption actually covered a real gap, so
+        // the dead-exemption sweep below can retire entries that stopped
+        // exempting anything.
+        exemptionsUsed.add(card.cardNumber);
+      } else {
+        failures.push(`${label}:${sourceProduct}:${card.id || card.cardNumber}: missing skillsZh (cardNumber ${card.cardNumber} is not on the pinned data/official-skills-zh-gap.json baseline)`);
+      }
     }
     if (card.sourceProduct !== sourceProduct) failures.push(`${label}:${card.id || card.cardNumber}: sourceProduct must be explicit`);
     if (typeof card.officialImage !== 'string' || !card.officialImage.startsWith(OFFICIAL_IMAGE_PREFIX)) {
@@ -143,12 +165,30 @@ for (const { code, expectedCount } of products) {
 failList('official product file completeness', officialFailures);
 if (Number.isInteger(meta.totalCards)) assert.equal(officialTotal, meta.totalCards, 'official _meta totalCards must equal dynamic product row total');
 
-// DIC-1439: load and police the pinned Traditional-Chinese gap baseline BEFORE
-// it is allowed to exempt anything, so it can only ever shrink (see the
+// DIC-1439/DIC-1451: load and police the pinned Traditional-Chinese gap baseline
+// BEFORE it is allowed to exempt anything, so it can only ever shrink (see the
 // contract comment above REQUIRED_DB_FIELDS).
 assert.ok(fs.existsSync(zhGapPath), 'missing data/official-skills-zh-gap.json pinned translation-gap baseline');
 const zhGapFile = readJson(zhGapPath);
 assert.ok(Array.isArray(zhGapFile.cardNumbers), 'data/official-skills-zh-gap.json must expose a cardNumbers array');
+
+// DIC-1451 ratchet: the baseline must declare the cap it is allowed to occupy,
+// and may never exceed it. Enlarging the gap therefore requires deliberately
+// raising a reviewed number, not quietly appending a cardNumber.
+assert.ok(
+  Number.isInteger(zhGapFile.maxEntries),
+  'data/official-skills-zh-gap.json must declare an integer maxEntries ratchet',
+);
+assert.ok(
+  zhGapFile.cardNumbers.length <= zhGapFile.maxEntries,
+  `pinned skillsZh gap baseline exceeded its ratchet: ${zhGapFile.cardNumbers.length} entries > maxEntries ${zhGapFile.maxEntries}`,
+);
+assert.equal(
+  new Set(zhGapFile.cardNumbers).size,
+  zhGapFile.cardNumbers.length,
+  'data/official-skills-zh-gap.json cardNumbers must be unique',
+);
+
 const zhGap = new Set(zhGapFile.cardNumbers);
 const effectsZh = fs.existsSync(effectsZhPath) ? readJson(effectsZhPath) : {};
 const baselineFailures = [];
@@ -162,8 +202,18 @@ for (const cardNumber of zhGap) {
 }
 failList('pinned skillsZh translation-gap baseline must shrink, never rot', baselineFailures);
 
-const dbByProduct = verifyDatabase('data/database.json', readJson(dbPath), officialBySignature, productCodes, zhGap);
-const publicByProduct = verifyDatabase('public/data/database.json', readJson(publicDbPath), officialBySignature, productCodes, zhGap);
+const exemptionsUsed = new Set();
+const dbByProduct = verifyDatabase('data/database.json', readJson(dbPath), officialBySignature, productCodes, zhGap, exemptionsUsed);
+const publicByProduct = verifyDatabase('public/data/database.json', readJson(publicDbPath), officialBySignature, productCodes, zhGap, exemptionsUsed);
+
+// DIC-1451 dead-exemption sweep: every pinned cardNumber must still be exempting
+// a real gap in at least one database. An entry whose rows all carry skillsZh
+// now is dead weight that would silently re-authorize a future drop, so it is a
+// hard failure and must be deleted from the baseline.
+const deadExemptions = [...zhGap]
+  .filter((cardNumber) => !exemptionsUsed.has(cardNumber))
+  .map((cardNumber) => `${cardNumber}: every official row now carries skillsZh — remove it from the pinned baseline`);
+failList('pinned skillsZh translation-gap baseline must not carry dead exemptions', deadExemptions);
 
 const countFailures = [];
 for (const { code, expectedCount } of products) {
@@ -175,4 +225,4 @@ for (const { code, expectedCount } of products) {
 }
 failList('database per-product official counts', countFailures);
 
-console.log(`✓ official catalog completeness gate passed: ${products.length} products, ${officialTotal} official rows, skillsJp/nameZh/image coverage complete in canonical and public databases; skillsZh complete except ${zhGap.size} cardNumber(s) pinned in data/official-skills-zh-gap.json`);
+console.log(`✓ official catalog completeness gate passed: ${products.length} products, ${officialTotal} official rows, skillsJp/nameZh/image coverage complete in canonical and public databases; skillsZh complete except ${zhGap.size}/${zhGapFile.maxEntries} cardNumber(s) pinned in data/official-skills-zh-gap.json`);
