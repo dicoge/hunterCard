@@ -270,6 +270,274 @@ if (ci) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Part 1b — the registered-CI trampoline (DIC-1430 Actions registry recovery)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// The second incident. `holohunter-exact-sha-deploy.yml` is present on the
+// default branch at a reviewed blob, actionlint 1.7.12 reports zero errors,
+// and yet GitHub's Actions workflow registry never listed it: its filename
+// endpoint returns 404 and it cannot be dispatched at all. A later real push
+// CI on current main did not register it either. `ci.yml` IS registered and
+// dispatches fine.
+//
+// So the registered workflow becomes the entry point and CALLS the reviewed
+// production workflow as a LOCAL reusable workflow. The point of the design
+// is that the production logic is invoked, never copied — a second transcript
+// of the deploy shell living in ci.yml would be an unreviewed deploy path
+// that none of Part 2's guarantees cover. That is asserted directly below.
+//
+// The gate is evaluated, not merely pattern-matched: the job's `if:` is
+// parsed and run against hostile contexts (push/PR with the deploy flag
+// forced true, each gate failed in turn), and then re-run against mutants of
+// itself to prove the evaluation can actually fail.
+const TRAMPOLINE_USES = './.github/workflows/holohunter-exact-sha-deploy.yml';
+const DEPLOY_INPUT = 'deploy_production';
+const GATES = ['preflight', 'validate', 'release-apk-postpackage-guard'];
+
+if (ci) {
+  const on = triggers(ci.parsed);
+  const ciJobs = ci.parsed?.jobs ?? {};
+  const dispatchInputs = on?.workflow_dispatch?.inputs ?? {};
+  const deployInput = dispatchInputs[DEPLOY_INPUT];
+
+  // ── Explicit deploy intent, off unless someone asks for it ───────────
+  check(
+    `ci.yml declares an explicit ${DEPLOY_INPUT} dispatch input`,
+    !!deployInput,
+    `dispatch inputs present: ${Object.keys(dispatchInputs).join(', ')}`,
+  );
+  check(
+    `ci.yml ${DEPLOY_INPUT} is a boolean input`,
+    deployInput?.type === 'boolean',
+    `got type=${JSON.stringify(deployInput?.type)}`,
+  );
+  check(
+    `ci.yml ${DEPLOY_INPUT} DEFAULTS TO FALSE`,
+    deployInput?.default === false,
+    'an omitted deploy intent must never be read as "deploy to Production"',
+  );
+  check(
+    `ci.yml ${DEPLOY_INPUT} is not required`,
+    deployInput?.required !== true,
+    'an ordinary manual CI run must stay usable without opting into a deployment',
+  );
+  check(
+    'ci.yml keeps expected_sha as the ONLY required dispatch input',
+    Object.entries(dispatchInputs)
+      .filter(([, v]) => v?.required === true)
+      .map(([k]) => k)
+      .join(',') === 'expected_sha',
+    `required inputs: ${Object.entries(dispatchInputs)
+      .filter(([, v]) => v?.required === true)
+      .map(([k]) => k)
+      .join(', ')}`,
+  );
+
+  // ── The trampoline job calls the reviewed workflow; it does not copy it ─
+  const trampolineName = Object.keys(ciJobs).find(
+    (n) => typeof ciJobs[n]?.uses === 'string'
+      && ciJobs[n].uses.includes('holohunter-exact-sha-deploy'),
+  );
+  check(
+    'ci.yml defines a job that INVOKES the production deploy workflow',
+    !!trampolineName,
+    `jobs present: ${Object.keys(ciJobs).join(', ')}`,
+  );
+  const tramp = trampolineName ? ciJobs[trampolineName] : null;
+
+  check(
+    'the trampoline calls the LOCAL reviewed workflow by repo-relative path',
+    tramp?.uses === TRAMPOLINE_USES,
+    `got uses=${JSON.stringify(tramp?.uses)}; a remote owner/repo@ref reference would run code this repo did not review`,
+  );
+  check(
+    'the trampoline forwards expected_sha EXACTLY, unmodified',
+    tramp?.with?.expected_sha === '${{ inputs.expected_sha }}',
+    `got with.expected_sha=${JSON.stringify(tramp?.with?.expected_sha)}`,
+  );
+  check(
+    'the trampoline passes expected_sha and nothing else',
+    JSON.stringify(Object.keys(tramp?.with ?? {}).sort()) === JSON.stringify(['expected_sha']),
+    `with keys: ${JSON.stringify(Object.keys(tramp?.with ?? {}))}`,
+  );
+  check(
+    'the trampoline declares NO steps of its own (a caller, not a second deploy path)',
+    tramp !== null && !Object.prototype.hasOwnProperty.call(tramp ?? {}, 'steps'),
+    'inline steps beside `uses:` would be an unreviewed deployment path',
+  );
+  check(
+    'the trampoline declares no runs-on (reusable-workflow callers do not need a runner)',
+    tramp !== null && !Object.prototype.hasOwnProperty.call(tramp ?? {}, 'runs-on'),
+  );
+
+  // Only the two secrets the callee actually declares, passed explicitly.
+  const trampSecrets = tramp?.secrets;
+  check(
+    'the trampoline passes secrets EXPLICITLY (not blanket `inherit`)',
+    trampSecrets !== 'inherit' && typeof trampSecrets === 'object' && trampSecrets !== null,
+    `got secrets=${JSON.stringify(trampSecrets)}; inherit hands the callee every secret in the repo`,
+  );
+  check(
+    'the trampoline passes ONLY VERCEL_TOKEN + VERCEL_ORG_ID',
+    JSON.stringify(Object.keys(trampSecrets ?? {}).sort())
+      === JSON.stringify(['VERCEL_ORG_ID', 'VERCEL_TOKEN']),
+    `secret keys: ${JSON.stringify(Object.keys(trampSecrets ?? {}))}`,
+  );
+  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID']) {
+    check(
+      `the trampoline maps ${name} from the repository secret of the same name`,
+      trampSecrets?.[name] === `\${{ secrets.${name} }}`,
+      `got ${JSON.stringify(trampSecrets?.[name])}`,
+    );
+  }
+
+  // ── The production logic must NOT have been transcribed into ci.yml ──
+  const ciJobRuns = Object.values(ciJobs)
+    .flatMap((j) => (j?.steps ?? []).map((s) => s?.run ?? ''))
+    .join('\n');
+  const NOT_IN_CI = [
+    { name: 'the Vercel API', re: /api\.vercel\.com/ },
+    { name: 'a deployment-creating POST', re: /-X\s+POST[\s\S]{0,200}deployments/ },
+    { name: 'the Vercel bearer token', re: /--oauth2-bearer/ },
+    { name: 'the canonical alias binding validator', re: /verify-alias-binding\.mjs/ },
+  ];
+  for (const { name, re } of NOT_IN_CI) {
+    check(
+      `ci.yml does NOT duplicate ${name} (the production workflow is invoked, not copied)`,
+      !re.test(executableLines(ciJobRuns)),
+      `matched ${re} in a ci.yml run block`,
+    );
+  }
+
+  // ── The gate: parsed and EVALUATED against hostile contexts ──────────
+  //
+  // Adding a job-level `if:` REMOVES the implicit `success()` that `needs:`
+  // would otherwise apply, so the three gate results have to be named
+  // explicitly. Both halves are checked here: the event/intent gate and the
+  // three result gates.
+  const gateExpr = tramp?.if;
+  check(
+    'the trampoline declares a job-level `if:` gate',
+    typeof gateExpr === 'string' && gateExpr.trim().length > 0,
+    `got if=${JSON.stringify(gateExpr)}`,
+  );
+
+  const unwrap = (expr) => String(expr ?? '')
+    .replace(/^\s*\$\{\{/, '')
+    .replace(/\}\}\s*$/, '')
+    .trim();
+  const terms = (expr) => unwrap(expr).split('&&').map((t) => t.trim()).filter(Boolean);
+
+  /**
+   * Evaluate the `&&`-joined gate subset actually used here against a context.
+   * An unsupported term shape resolves to `undefined` and therefore falsifies
+   * the gate — so a shape this evaluator cannot read shows up as the
+   * all-success case failing, never as a hostile case silently passing.
+   */
+  const evalGate = (expr, ctx) => {
+    const resolve = (ref) => {
+      const segs = ref
+        .trim()
+        .replace(/\['([^']+)'\]/g, '.$1')
+        .replace(/\["([^"]+)"\]/g, '.$1')
+        .split('.')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      let cur = ctx;
+      for (const key of segs) {
+        if (cur === null || typeof cur !== 'object' || !(key in cur)) return undefined;
+        cur = cur[key];
+      }
+      return cur;
+    };
+    const list = terms(expr);
+    if (list.length === 0) return false;
+    for (const raw of list) {
+      const term = raw.replace(/^\(+/, '').replace(/\)+$/, '').trim();
+      const cmp = /^(.+?)\s*==\s*'([^']*)'$/.exec(term);
+      if (cmp) {
+        if (resolve(cmp[1]) !== cmp[2]) return false;
+        continue;
+      }
+      if (resolve(term) !== true) return false;
+    }
+    return true;
+  };
+
+  // `deploy` is forced TRUE even in the push/PR contexts on purpose: that is
+  // the hostile case, and it proves the EVENT term carries the weight rather
+  // than the input merely happening to be absent outside a dispatch.
+  const ctxOf = ({ event = 'workflow_dispatch', deploy = true, results = {} } = {}) => ({
+    github: { event_name: event },
+    event_name: event,
+    inputs: { expected_sha: 'a'.repeat(40), [DEPLOY_INPUT]: deploy },
+    needs: Object.fromEntries(GATES.map((g) => [g, { result: results[g] ?? 'success' }])),
+  });
+
+  check(
+    'GATE: a manual dispatch with deploy intent and all three gates green DOES deploy',
+    evalGate(gateExpr, ctxOf()) === true,
+    'the gate must actually admit the one case it exists to allow',
+  );
+  for (const event of ['push', 'pull_request']) {
+    check(
+      `GATE: a ${event} event can NEVER deploy, even with the deploy flag forced true`,
+      evalGate(gateExpr, ctxOf({ event })) === false,
+      'ordinary push/PR behaviour must be unchanged',
+    );
+  }
+  check(
+    `GATE: a dispatch WITHOUT ${DEPLOY_INPUT} does not deploy`,
+    evalGate(gateExpr, ctxOf({ deploy: false })) === false,
+    'deploy intent must be explicit',
+  );
+  for (const gate of GATES) {
+    for (const bad of ['failure', 'skipped', 'cancelled', '']) {
+      check(
+        `GATE: deploy is blocked when ${gate} is "${bad || '(empty)'}"`,
+        evalGate(gateExpr, ctxOf({ results: { [gate]: bad } })) === false,
+        'a non-successful gate must never be treated as a pass',
+      );
+    }
+  }
+  check(
+    'the trampoline `needs:` all three gates',
+    JSON.stringify(
+      (Array.isArray(tramp?.needs) ? tramp.needs : [tramp?.needs].filter(Boolean)).sort(),
+    ) === JSON.stringify([...GATES].sort()),
+    `needs: ${JSON.stringify(tramp?.needs)}`,
+  );
+
+  // ── MUTATION PROOF: each removed term must break a distinct guarantee ──
+  // A gate assertion is only worth having if deleting the thing it guards
+  // makes it fail. Every mutant below drops exactly one term and must then
+  // admit a context the real gate rejects.
+  const dropTerm = (expr, re) => terms(expr).filter((t) => !re.test(t)).join(' && ');
+  const mutate = (label, re, ctx) => {
+    const mutant = dropTerm(gateExpr, re);
+    check(
+      `MUTATION: removing the ${label} term actually changes the gate`,
+      terms(mutant).length === terms(gateExpr).length - 1,
+      `expected one fewer term; got ${terms(mutant).length} vs ${terms(gateExpr).length}`,
+    );
+    check(
+      `MUTATION: without the ${label} term the gate wrongly admits the blocked case`,
+      evalGate(mutant, ctx) === true,
+      'the assertion above would pass even with this protection deleted',
+    );
+  };
+  mutate('event_name', /event_name/, ctxOf({ event: 'push' }));
+  mutate(DEPLOY_INPUT, new RegExp(DEPLOY_INPUT), ctxOf({ deploy: false }));
+  for (const gate of GATES) {
+    mutate(
+      `${gate} result`,
+      new RegExp(gate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      ctxOf({ results: { [gate]: 'failure' } }),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Part 2 — holohunter-exact-sha-deploy.yml: exact-SHA Production recovery
 // ─────────────────────────────────────────────────────────────────────────
 const dep = readWorkflow(DEPLOY_PATH);
@@ -278,14 +546,28 @@ check('.github/workflows/holohunter-exact-sha-deploy.yml exists on disk', dep !=
 if (dep) {
   const on = triggers(dep.parsed);
 
-  // ── Dispatch-only, exact input shape ─────────────────────────────────
+  // ── Manually dispatched OR called by name — nothing else ─────────────
+  //
+  // DIC-1430 registry recovery: GitHub never registered this file, so its own
+  // dispatch endpoint 404s. It therefore also has to be reachable as a
+  // reusable workflow called by the registered ci.yml. Both invocation modes
+  // are deliberate; every OTHER trigger stays forbidden, because an
+  // auto-firing Production deploy is exactly the failure this whole workflow
+  // was written to prevent.
+  const triggerNames = on ? Object.keys(on).sort() : [];
   check(
-    'deploy workflow is workflow_dispatch ONLY (no push/PR/schedule auto-fire)',
-    !!on
-      && Object.prototype.hasOwnProperty.call(on, 'workflow_dispatch')
-      && Object.keys(on).length === 1,
-    `triggers: ${JSON.stringify(on && Object.keys(on))}`,
+    'deploy workflow fires ONLY via workflow_dispatch + workflow_call (no push/PR/schedule auto-fire)',
+    JSON.stringify(triggerNames) === JSON.stringify(['workflow_call', 'workflow_dispatch']),
+    `triggers: ${JSON.stringify(triggerNames)}`,
   );
+  for (const banned of ['push', 'pull_request', 'schedule', 'repository_dispatch', 'workflow_run']) {
+    check(
+      `deploy workflow declares NO ${banned} trigger`,
+      !on || !Object.prototype.hasOwnProperty.call(on, banned),
+      'Production must never deploy itself off an event',
+    );
+  }
+
   const input = on?.workflow_dispatch?.inputs?.expected_sha;
   check('deploy workflow declares an expected_sha input', !!input);
   check(
@@ -297,6 +579,60 @@ if (dep) {
     'deploy workflow expected_sha carries NO default',
     input !== undefined && !Object.prototype.hasOwnProperty.call(input ?? {}, 'default'),
   );
+
+  // ── The reusable-invocation contract ─────────────────────────────────
+  // The caller can only satisfy a contract the callee actually declares, so
+  // the callee's declaration is pinned here and the caller's forwarding is
+  // pinned in Part 1b. Both halves have to agree or the call fails closed at
+  // the GitHub level.
+  const callOn = on?.workflow_call;
+  const callInput = callOn?.inputs?.expected_sha;
+  check(
+    'deploy workflow declares expected_sha for reusable invocation too',
+    !!callInput,
+    `workflow_call inputs: ${JSON.stringify(Object.keys(callOn?.inputs ?? {}))}`,
+  );
+  check(
+    'deploy workflow workflow_call expected_sha is a REQUIRED string',
+    callInput?.required === true && callInput?.type === 'string',
+    `got required=${callInput?.required} type=${callInput?.type}`,
+  );
+  check(
+    'deploy workflow workflow_call expected_sha carries NO default',
+    callInput !== undefined
+      && !Object.prototype.hasOwnProperty.call(callInput ?? {}, 'default'),
+    'a default would let a caller deploy a commit nobody named',
+  );
+  check(
+    'the dispatch and reusable expected_sha inputs are the same contract',
+    JSON.stringify(input) === JSON.stringify(callInput),
+    'the two invocation modes must not drift into different validation rules',
+  );
+
+  // Secrets are declared from what the job actually uses — the two the steps
+  // reference — never guessed, and never more than that.
+  const declaredCallSecrets = callOn?.secrets ?? {};
+  const usedSecrets = [...new Set(
+    [...dep.raw.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]),
+  )].sort();
+  check(
+    'deploy workflow declares exactly the secrets it actually uses for reusable invocation',
+    JSON.stringify(Object.keys(declaredCallSecrets).sort()) === JSON.stringify(usedSecrets),
+    `declared: ${JSON.stringify(Object.keys(declaredCallSecrets).sort())} vs used: ${JSON.stringify(usedSecrets)}`,
+  );
+  check(
+    'the declared reusable secrets are exactly VERCEL_TOKEN + VERCEL_ORG_ID',
+    JSON.stringify(Object.keys(declaredCallSecrets).sort())
+      === JSON.stringify(['VERCEL_ORG_ID', 'VERCEL_TOKEN']),
+    `got ${JSON.stringify(Object.keys(declaredCallSecrets))}`,
+  );
+  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID']) {
+    check(
+      `workflow_call declares ${name} as REQUIRED`,
+      declaredCallSecrets?.[name]?.required === true,
+      `got ${JSON.stringify(declaredCallSecrets?.[name])}; an optional secret would fail deep inside a Production deploy instead of at the call`,
+    );
+  }
 
   // ── Least privilege + bounded execution ──────────────────────────────
   const perms = dep.parsed?.permissions;

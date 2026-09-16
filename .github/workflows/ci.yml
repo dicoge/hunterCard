@@ -20,6 +20,16 @@ on:
         description: "Full lowercase 40-hex commit SHA that MUST be the current tip of main"
         type: string
         required: true
+      # DIC-1430 Actions registry recovery: explicit, separate deploy intent.
+      # It defaults to FALSE and is readable only on a workflow_dispatch, so
+      # an ordinary push or pull_request cannot set it and an operator who
+      # just wants a manual CI run never touches Production. Deploying is a
+      # second, deliberate decision — never a side effect of running CI.
+      deploy_production:
+        description: "Deploy the verified expected_sha to Production after all gates pass"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   # DIC-1430: gate for manual recovery dispatches.
@@ -616,3 +626,43 @@ jobs:
           name: production-apk-release
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: warn
+
+  # DIC-1430 Actions registry recovery — the registered-CI trampoline.
+  #
+  # `.github/workflows/holohunter-exact-sha-deploy.yml` exists on the default
+  # branch at a reviewed blob and actionlint reports it clean, but GitHub's
+  # Actions workflow registry never registered it: its filename endpoint 404s
+  # and it cannot be dispatched directly. This workflow IS registered, so it
+  # becomes the entry point and CALLS the reviewed production workflow.
+  #
+  # What this job is NOT: a copy of the deployment logic. It declares no steps
+  # and no runner. Every exact-main check, the fresh pinned Vercel deployment,
+  # the READY/target/source-SHA proof, the canonical-alias binding gate and
+  # all the log-injection defences stay in the reviewed file and are invoked
+  # from here unchanged.
+  #
+  # Why the `if:` names all three results explicitly: adding a job-level `if:`
+  # REMOVES the implicit `success()` that `needs:` would otherwise apply, so a
+  # bare `needs:` plus a condition would let this job run after a FAILED gate.
+  # The event and intent terms make it unreachable on push/pull_request, where
+  # `inputs` does not exist and nobody can set the flag.
+  deploy-production:
+    name: Deploy the exact SHA to Production (DIC-1430)
+    needs: [preflight, validate, release-apk-postpackage-guard]
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && inputs.deploy_production
+      && needs.preflight.result == 'success'
+      && needs.validate.result == 'success'
+      && needs['release-apk-postpackage-guard'].result == 'success'
+    uses: ./.github/workflows/holohunter-exact-sha-deploy.yml
+    with:
+      # Forwarded verbatim. The callee re-proves it is 40 lowercase hex, equal
+      # to github.sha, equal to the checked-out HEAD, and the live tip of
+      # origin/main before it creates anything.
+      expected_sha: ${{ inputs.expected_sha }}
+    # Explicit, not `inherit`: the callee declares exactly these two as
+    # required, and `inherit` would hand it every secret in the repository.
+    secrets:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
