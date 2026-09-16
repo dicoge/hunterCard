@@ -164,7 +164,19 @@ function MainDrawer() {
       )}
       {/* Card Collection ownership browser (browse-by-owned) — hidden in
           Store MVP (DIC-1256). Kept as its own drawer entry so it can be
-          exposed independently of the bookmarks screen above. */}
+          exposed independently of the bookmarks screen above.
+
+          The gate UNREGISTERS the route rather than just hiding its menu row:
+          DIC-1256's acceptance criterion is "not only hidden menus", so under
+          Store MVP `navigate('Collection')` and a deep link must both be
+          unable to reach this screen. Do not relax this to a `drawerItemStyle`
+          hide — that re-opens both paths.
+
+          DIC-1430 (Production P0: 我的 shipped three live Collection controls
+          that silently no-op'd here) is fixed on the OTHER side of the
+          boundary: MeScreen renders its 卡牌收藏 segment, search field and
+          檢視全部 action only when FEATURES.favorites is on, so no control can
+          target a route that does not exist in this profile. */}
       {FEATURES.favorites && (
         <Drawer.Screen
           name="Collection"
