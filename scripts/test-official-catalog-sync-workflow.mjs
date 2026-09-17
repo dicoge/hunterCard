@@ -219,6 +219,10 @@ const stepUses = steps.map((s) => s.uses ?? '').filter(Boolean);
 // The DIC-1167 pipeline stays in place as ordered, distinct steps.
 const REQUIRED_PIPELINE_COMMANDS = [
   'scripts/scrape-official-cards.js',
+  // DIC-1468: skill-text acquisition for newly discovered cardNumbers. Without
+  // this step the pipeline ingests new printings and then fails its own
+  // completeness gate on the rows it just added.
+  'scripts/enrich-official-effects.mjs',
   'scripts/sync-official-catalog-to-database.mjs',
   'scripts/regen-buy-alignment.mjs',
   'scripts/generate-native-database.mjs',
@@ -235,6 +239,12 @@ for (const cmd of REQUIRED_PIPELINE_COMMANDS) {
 // check uses AND the same set the extracted handoff freezes.
 const EXPECTED_SYNC_PATHS = [
   'data/official/',
+  // DIC-1468: the enrichment step's outputs — source-backed Japanese effects,
+  // derived Traditional-Chinese effects, and the ratcheted-down skillsZh gap
+  // baseline — must ship in the same PR as the rows they describe.
+  'data/effects-jp.json',
+  'data/effects-zh.json',
+  'data/official-skills-zh-gap.json',
   'data/database.json',
   'public/data/database.json',
   'docs/audits/official-catalog-audit.json',
@@ -374,7 +384,11 @@ const COMMIT_MSG = `${COMMIT_MSG_PREFIX} 2026-09-02`;
 await scenario('no-change run is a silent success', async () => {
   const { result, calls } = await drive({
     on: {
-      'git diff --stat -- data/official/ data/database.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json': () => ({ stdout: '' }),
+      // Derived from EXPECTED_SYNC_PATHS rather than re-listed: the handoff
+      // builds this command by joining SYNC_PATHS, so a hardcoded copy silently
+      // stops matching whenever the path set changes (DIC-1468) and the
+      // scenario then dies on "no handler" instead of testing anything.
+      [`git diff --stat -- ${EXPECTED_SYNC_PATHS.join(' ')}`]: () => ({ stdout: '' }),
     },
   });
   assert.deepStrictEqual(result, { outcome: 'no-op-no-changes' });
