@@ -391,7 +391,11 @@ if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-  if ! git push origin "HEAD:$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
+  # Fully-qualified dst ref: the worktree HEAD is detached, and git refuses
+  # to guess an unqualified destination for a commit-object <src> when the
+  # remote branch does not exist yet (proven by the DIC-1461 real-git
+  # forced-isolated dry-run).
+  if ! git push origin "HEAD:refs/heads/$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
     echo "[$(date)] ❌ forced-isolated artifact handoff push to $ISOLATED_BRANCH FAILED; cron fails (never success on failed handoff)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
@@ -506,7 +510,10 @@ if [ -n "$DIRTY_STATUS" ]; then
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
-  if ! git -C "$ISOLATED_DIR" push origin "HEAD:$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
+  # Fully-qualified dst ref — same detached-HEAD push rule as the
+  # forced-isolated handoff above (DIC-1461): an unqualified dst fails when
+  # bot/scrape/<date> does not exist on the remote yet.
+  if ! git -C "$ISOLATED_DIR" push origin "HEAD:refs/heads/$ISOLATED_BRANCH" >> "$LOG_FILE" 2>&1; then
     echo "[$(date)] ❌ isolated artifact handoff push to $ISOLATED_BRANCH FAILED; cron fails (never success on failed handoff)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1

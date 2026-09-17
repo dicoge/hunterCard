@@ -315,7 +315,7 @@ exit 0
   const fetch = indexOfCall(lines, 'git fetch origin main');
   const worktreeAdd = indexOfCall(lines, 'git worktree add --detach');
   const official = indexOfCall(lines, 'scrape-official-cards.js');
-  const handoffPush = lines.findIndex((l) => l.includes('git push origin HEAD:bot/scrape/'));
+  const handoffPush = lines.findIndex((l) => l.includes('git push origin HEAD:refs/heads/bot/scrape/'));
   assert.ok(fetch !== -1, 'stage 1 must refresh origin/main first');
   assert.ok(worktreeAdd !== -1, 'stage 1 must create the ephemeral worktree');
   assert.ok(official !== -1, 'stage 2 must run the pipeline (official scraper reached)');
