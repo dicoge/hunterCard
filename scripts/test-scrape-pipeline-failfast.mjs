@@ -48,7 +48,7 @@ function runPipeline({ failOn = null, env = {} } = {}) {
   fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
   // Mirror the optional data paths the pipeline probes before staging; under
   // `set -e` a missing one would abort the run before the commit branch.
-  for (const d of ['data', 'data/yt-subscribers', 'data/news-sentiment', 'data/trends']) {
+  for (const d of ['data', 'data/yt-subscribers', 'data/news-sentiment', 'data/trends', 'node_modules']) {
     fs.mkdirSync(path.join(repo, d), { recursive: true });
   }
   fs.writeFileSync(path.join(repo, 'data', 'yt-stats-history.json'), '{}\n');
@@ -107,13 +107,42 @@ exit 0
   );
 
   // git shim: trace the invocation. `diff --stat` must print something so the
-  // success path enters the commit branch.
+  // success path enters the commit branch (unless NO_CHANGES models a no-op
+  // scrape). DIC-1461 additions:
+  //   - `fetch` fails when FAIL_FETCH is set (pre-mutation fetch guard);
+  //   - `rev-parse` resolves to a deterministic SHA that CHANGES once a
+  //     commit has been traced, so the forced-isolated no-op detection
+  //     (start SHA == end SHA) can be exercised both ways;
+  //   - `worktree add` materialises the "worktree" by copying the sandbox
+  //     repo, so stage 1 can re-execute the copied script;
+  //   - `commit` drops a marker consumed by rev-parse.
   fs.writeFileSync(
     path.join(bin, 'git'),
     `#!/bin/bash
 echo "git $*" >> "$TRACE_FILE"
-if [ "$1" = "diff" ] && [[ "$*" == *"--stat"* ]]; then echo " data/database.json | 2 +-"; fi
-if [ "$1" = "diff" ]; then exit 0; fi
+args=("$@")
+while [ "\${args[0]}" = "-c" ] || [ "\${args[0]}" = "-C" ]; do args=("\${args[@]:2}"); done
+cmd="\${args[0]}"
+if [ "$cmd" = "fetch" ] && [ -n "$FAIL_FETCH" ]; then exit 1; fi
+if [ "$cmd" = "rev-parse" ]; then
+  if [ -f "$COMMIT_MARKER" ]; then echo "feedfeedfeedfeedfeedfeedfeedfeedfeedfeed"; else echo "0123456789abcdef0123456789abcdef01234567"; fi
+  exit 0
+fi
+if [ "$cmd" = "worktree" ]; then
+  if [ "\${args[1]}" = "add" ]; then
+    dest=""
+    for a in "\${args[@]:2}"; do
+      case "$a" in --*) ;; *) if [ -z "$dest" ]; then dest="$a"; else break; fi ;; esac
+    done
+    rm -rf "$dest"
+    cp -R "$SANDBOX_REPO" "$dest"
+  fi
+  if [ "\${args[1]}" = "remove" ]; then rm -rf "\${args[\${#args[@]}-1]}"; fi
+  exit 0
+fi
+if [ "$cmd" = "commit" ]; then touch "$COMMIT_MARKER"; exit 0; fi
+if [ "$cmd" = "diff" ] && [[ "$*" == *"--stat"* ]] && [ -z "$NO_CHANGES" ]; then echo " data/database.json | 2 +-"; fi
+if [ "$cmd" = "diff" ]; then exit 0; fi
 exit 0
 `,
     { mode: 0o755 },
@@ -132,6 +161,13 @@ exit 0
       // the build-database shim to emit NO output.
       SKIP_DB_WRITE: env.SKIP_DB_WRITE ?? '',
       BUILD_DIC1334_COLLAPSE: env.BUILD_DIC1334_COLLAPSE ?? '',
+      // DIC-1461: pre-mutation fetch guard + forced-isolated bootstrap knobs.
+      FAIL_FETCH: env.FAIL_FETCH ?? '',
+      NO_CHANGES: env.NO_CHANGES ?? '',
+      COMMIT_MARKER: path.join(dir, 'commit-marker'),
+      SANDBOX_REPO: repo,
+      HUNTERCARD_FORCE_ISOLATED: env.HUNTERCARD_FORCE_ISOLATED ?? '',
+      HUNTERCARD_ISOLATED_DIR: path.join(dir, 'forced-worktree'),
       // Never touch the real cron lock at /tmp/huntercard-scrape.lock.
       HUNTERCARD_LOCK_FILE: path.join(dir, 'scrape.lock'),
     },
@@ -240,18 +276,97 @@ exit 0
   return out;
 }
 
-// ── 0a. Ordering: stale checkout must pull before official mutation ──
+// ── 0a. Ordering: stale checkout must fetch + pull before official mutation ──
 {
   const { status, lines } = runPipeline();
   assert.strictEqual(status, 0, 'pipeline must succeed when every step succeeds');
+  const fetch = indexOfCall(lines, 'git fetch origin main');
   const pull = indexOfCall(lines, 'git pull --ff-only origin main');
   const official = indexOfCall(lines, 'scrape-official-cards.js');
+  assert.ok(fetch !== -1, 'pipeline must refresh origin/main before resolving the isolated-worktree baseline');
   assert.ok(pull !== -1, 'pipeline must ff-only pull from main before mutating tracked data');
   assert.ok(official !== -1, 'sanity: pipeline must still run official scraper');
   assert.ok(
-    pull < official,
-    'stale durable checkout convergence must happen before scrape-official-cards.js writes data/official artifacts',
+    fetch < official && pull < official,
+    'stale durable checkout convergence (fetch + pull) must happen before scrape-official-cards.js writes data/official artifacts',
   );
+  const revParse = indexOfCall(lines, 'git rev-parse --verify origin/main');
+  assert.ok(revParse !== -1 && fetch < revParse, 'remote head must be resolved AFTER the refresh fetch');
+}
+
+// ── 0aa. Fail-fast: a fetch failure must not fall through to a stale origin/main ──
+{
+  const { status, lines } = runPipeline({ env: { FAIL_FETCH: '1' } });
+  assert.notStrictEqual(status, 0, 'pipeline must exit non-zero when the pre-mutation origin/main refresh fails');
+  assert.ok(indexOfCall(lines, 'git fetch origin main') !== -1, 'sanity: pipeline must attempt the pre-mutation fetch');
+  for (const forbidden of ['scrape-official-cards.js', 'git worktree add', 'git add', 'commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(lines, forbidden),
+      -1,
+      `a failed pre-mutation fetch must never reach mutation (found: ${forbidden})`,
+    );
+  }
+}
+
+// ── 0f. DIC-1461 forced-isolated bootstrap: success path ──
+{
+  const { status, lines } = runPipeline({ env: { HUNTERCARD_FORCE_ISOLATED: '1' } });
+  assert.strictEqual(status, 0, `forced-isolated bootstrap must succeed when every step succeeds\ntrace:\n${lines.join('\n')}`);
+  const fetch = indexOfCall(lines, 'git fetch origin main');
+  const worktreeAdd = indexOfCall(lines, 'git worktree add --detach');
+  const official = indexOfCall(lines, 'scrape-official-cards.js');
+  const handoffPush = lines.findIndex((l) => l.includes('git push origin HEAD:refs/heads/bot/scrape/'));
+  assert.ok(fetch !== -1, 'stage 1 must refresh origin/main first');
+  assert.ok(worktreeAdd !== -1, 'stage 1 must create the ephemeral worktree');
+  assert.ok(official !== -1, 'stage 2 must run the pipeline (official scraper reached)');
+  assert.ok(handoffPush !== -1, 'stage 2 must push the artifact to the auditable bot/scrape/<date> handoff branch');
+  assert.ok(
+    fetch < worktreeAdd && worktreeAdd < official && official < handoffPush,
+    'forced-isolated ordering must be fetch → worktree → pipeline → handoff push',
+  );
+  // The cardinal rule: a forced-isolated run must NEVER push HEAD:main and
+  // must never ff-pull the resident checkout.
+  assert.strictEqual(indexOfCall(lines, 'push origin HEAD:main'), -1, 'forced-isolated must never push HEAD:main');
+  assert.strictEqual(indexOfCall(lines, 'git pull --ff-only origin main'), -1, 'forced-isolated must never pull the resident checkout');
+}
+
+// ── 0g. DIC-1461 forced-isolated: fetch failure fails closed before any worktree ──
+{
+  const { status, lines } = runPipeline({ env: { HUNTERCARD_FORCE_ISOLATED: '1', FAIL_FETCH: '1' } });
+  assert.notStrictEqual(status, 0, 'forced-isolated bootstrap must fail when the origin refresh fails');
+  for (const forbidden of ['git worktree add', 'scrape-official-cards.js', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(lines, forbidden),
+      -1,
+      `a failed forced-isolated fetch must never reach ${forbidden}`,
+    );
+  }
+}
+
+// ── 0h. DIC-1461 forced-isolated: a no-op pipeline must never push the baseline ──
+{
+  const { status, lines } = runPipeline({ env: { HUNTERCARD_FORCE_ISOLATED: '1', NO_CHANGES: '1' } });
+  assert.notStrictEqual(status, 0, 'forced-isolated no-op (no data changes → no commit) must fail, never hand off the unchanged baseline');
+  assert.ok(indexOfCall(lines, 'scrape-official-cards.js') !== -1, 'sanity: stage 2 pipeline ran');
+  assert.strictEqual(
+    lines.findIndex((l) => l.includes('git push')),
+    -1,
+    'a no-op forced-isolated run must never push anything',
+  );
+}
+
+// ── 0i. DIC-1461 forced-isolated: a failed stage-2 build fails the bootstrap, no push ──
+{
+  const { status, lines } = runPipeline({ env: { HUNTERCARD_FORCE_ISOLATED: '1' }, failOn: 'build-database.js' });
+  assert.notStrictEqual(status, 0, 'forced-isolated bootstrap must propagate a stage-2 build failure');
+  assert.ok(indexOfCall(lines, 'build-database.js') !== -1, 'sanity: stage 2 reached build-database');
+  for (const forbidden of ['commit -m', 'git push']) {
+    assert.strictEqual(
+      indexOfCall(lines, forbidden),
+      -1,
+      `a failed forced-isolated build must never reach ${forbidden}`,
+    );
+  }
 }
 
 // ── 0. Fail-fast: a failed canonical build must never be masked ──

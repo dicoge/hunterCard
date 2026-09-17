@@ -1036,11 +1036,17 @@ exit 0
     );
     // git: intercept only network / commit subcommands; everything else
     // passes to real git so `git status --porcelain` really classifies.
+    // DIC-1461: `fetch` is mocked (exit 0, or exit 1 under FAIL_FETCH) so the
+    // scheduler's fail-closed pre-mutation `git fetch origin main` guard is
+    // exercised hermetically — no network, no real remote required. The
+    // remote head it then resolves comes from a real refs/remotes/origin/main
+    // ref seeded below.
     fs.writeFileSync(
       path.join(bin, 'git'),
       `#!/bin/bash
 echo "[shim git] $*" >> "$TRACE_FILE"
 case "$1" in
+  fetch) if [ -n "$FAIL_FETCH" ]; then exit 1; fi; exit 0 ;;
   pull|push|commit) exit 0 ;;
 esac
 exec ${REAL_GIT} "$@"
@@ -1079,6 +1085,64 @@ exec ${REAL_GIT} "$@"
     execSync(`${REAL_GIT} add data/price-history/`, { cwd: repo });
     execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "seed poisoned durable"`, { cwd: repo });
 
+    // ── DIC-1461: seed the remote-tracking ref the fetch guard resolves ──
+    // The scheduler now runs a fail-closed `git fetch origin main` (mocked in
+    // the git shim above) and then resolves `origin/main`. Seed a real
+    // remote-tracking ref at HEAD so the resolution succeeds without any
+    // network or bare remote, keeping the sandbox hermetic.
+    execSync(`${REAL_GIT} update-ref refs/remotes/origin/main HEAD`, { cwd: repo });
+
+    // ── Scenario F (DIC-1461): the pre-mutation fetch guard fails closed ──
+    // A failed `git fetch origin main` must abort BEFORE the official
+    // scraper, the build, and any commit/push — never fall through to a
+    // stale cached origin/main. Isolated HOME/trace/lock so its log lines
+    // cannot contaminate Scenario S's assertions below.
+    {
+      const fetchFailHome = path.join(sandbox, 'fetchfail-home');
+      const fetchFailTrace = path.join(sandbox, 'fetchfail-trace.log');
+      fs.mkdirSync(fetchFailHome, { recursive: true });
+      fs.writeFileSync(fetchFailTrace, '');
+      const fetchFail = spawnSync('bash', [path.join(repo, 'scripts', 'local-scrape-and-push.sh')], {
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          HOME: fetchFailHome,
+          TRACE_FILE: fetchFailTrace,
+          FAIL_FETCH: '1',
+          HUNTERCARD_LOCK_FILE: path.join(sandbox, 'fetchfail.lock'),
+        },
+        encoding: 'utf-8',
+        timeout: 60000,
+      });
+      const fetchFailLines = fs.readFileSync(fetchFailTrace, 'utf-8').split('\n').filter(Boolean);
+      const fetchFailLogDir = path.join(fetchFailHome, '.hermes', 'logs');
+      const fetchFailLog = fs.readFileSync(
+        path.join(fetchFailLogDir, fs.readdirSync(fetchFailLogDir)[0]),
+        'utf-8',
+      );
+      assert.notEqual(
+        fetchFail.status,
+        0,
+        `Scheduler: a failed pre-mutation origin fetch must exit non-zero. exit=${fetchFail.status}\nlog:\n${fetchFailLog.slice(-2000)}`,
+      );
+      assert.match(
+        fetchFailLog,
+        /git fetch origin main failed before scheduler mutation/,
+        `Scheduler: fetch-failure guard message must be logged. log:\n${fetchFailLog.slice(-2000)}`,
+      );
+      assert.ok(
+        fetchFailLines.some((l) => l.includes('[shim git] fetch origin main')),
+        `Scheduler: the fetch must have been attempted. trace:\n${fetchFailLines.join('\n')}`,
+      );
+      for (const forbidden of ['scrape-official-cards.js', '[shim git] commit', '[shim git] push']) {
+        assert.equal(
+          fetchFailLines.some((l) => l.includes(forbidden)),
+          false,
+          `Scheduler: a failed fetch must never reach ${forbidden}. trace:\n${fetchFailLines.join('\n')}`,
+        );
+      }
+    }
+
     // ── Yuyu fixture for empty payload ──────────────────────────────────
     const fixtureFile = path.join(sandbox, 'yuyu-fixture.json');
     fs.writeFileSync(
@@ -1111,6 +1175,25 @@ exec ${REAL_GIT} "$@"
       result.status,
       0,
       `Scheduler: local-scrape-and-push.sh MUST exit non-zero when the poisoned durable file reaches the audit path. exit=${result.status}\ntrace:\n${traceLines.join('\n')}\nlog tail:\n${schedulerLog.slice(-3000)}`,
+    );
+    // DIC-1461: the pre-mutation origin refresh guard must have RUN and
+    // SUCCEEDED, and it must have run BEFORE the official scraper mutated
+    // anything — otherwise the non-zero exit above could be a masked fetch
+    // failure rather than the DIC-1229 audit this scenario exists to prove.
+    const fetchIdx = traceLines.findIndex((l) => l.includes('[shim git] fetch origin main'));
+    const officialIdx = traceLines.findIndex((l) => l.includes('scrape-official-cards.js'));
+    assert.ok(
+      fetchIdx !== -1,
+      `Scheduler: the pre-mutation origin main refresh must be exercised. trace:\n${traceLines.join('\n')}`,
+    );
+    assert.ok(
+      officialIdx !== -1 && fetchIdx < officialIdx,
+      `Scheduler: the origin refresh must precede official mutation (fetch@${fetchIdx}, official@${officialIdx}). trace:\n${traceLines.join('\n')}`,
+    );
+    assert.equal(
+      schedulerLog.includes('git fetch origin main failed before scheduler mutation'),
+      false,
+      `Scheduler: the origin fetch must SUCCEED here so the failure below is the DIC-1229 audit, not a masked fetch failure. log tail:\n${schedulerLog.slice(-3000)}`,
     );
     // DIC-1439: the guard is now two-stage. build-database failure no longer
     // exits directly: it first offers the failure to officialCatalogFallback,

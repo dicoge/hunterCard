@@ -35,6 +35,7 @@ import {
   yuyuImageProductPath,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
+import { collectPriceEvidence, writePriceEvidenceAtomic } from './lib/price-evidence.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -710,15 +711,37 @@ async function scrapeSeriesPage(browser, url) {
           if (namePart && namePart.length > 1) name = namePart;
         }
 
-        // Extract image URL
+        // Extract image URL (+ its alt, which carries the listing identity)
         let imageUrl = '';
+        let imageAlt = '';
         const imgs = el.querySelectorAll('img');
         imgs.forEach(img => {
           const src = img.getAttribute('src') || '';
           if (src.includes('card.yuyu-tei.jp')) {
             imageUrl = src;
+            imageAlt = img.getAttribute('alt') || '';
           }
         });
+
+        // DIC-1461: yuyu-tei's redesigned card-product renders the card
+        // number alone in its own <span> and the name in an <h4>, so the
+        // legacy single-line "hXXX-nnn RARITY name" text shape no longer
+        // exists and the line-based rarity extraction above yields '' for
+        // every listing (the 2026-09-17 1216→424 collapse: without a rarity
+        // token, only single-candidate printings can prove). The listing's
+        // own product image alt still carries the full immutable identity
+        // ("hBP01-001 OUR 天音かなた(パラレル)"), and the DIC-1349 HTTP
+        // fallback parser already sources card number + rarity from that
+        // same alt. Mirror it here, gated on the alt's own card number
+        // matching THIS listing's card number so a foreign alt can never
+        // vouch for the wrong card. No fallback beyond the listing itself.
+        if (!rarity && imageAlt) {
+          const altNumMatch = imageAlt.match(/(h[A-Z]{1,3}\d+-\d{2,3})/i);
+          if (altNumMatch && altNumMatch[1].toUpperCase() === cardNum.toUpperCase()) {
+            const altRarityMatch = imageAlt.match(/h[A-Z]{1,3}\d+-\d{2,3}\s+([A-Z]{1,4})\b/i);
+            if (altRarityMatch) rarity = altRarityMatch[1];
+          }
+        }
 
         // Extract version/cid for backup URL
         const versionInput = el.querySelector('.cart_ver');
@@ -1933,6 +1956,48 @@ async function buildDatabase() {
   // preserving any skills from the previous build the effects files no longer supply.
   mergeSkills(database.cards, prevSkillsByCardId);
 
+  // DIC-1461: opt-in diagnostic evidence dump. When (and only when)
+  // HUNTERCARD_PRICE_EVIDENCE_PATH is set, capture the structured matcher
+  // evidence for every scraped cardNumber — the exact in-memory listing rows,
+  // the predicates they failed, candidate counts, and the final decision —
+  // and write it atomically BEFORE the DIC-1334 coverage gate below, so a
+  // fail-closed collapse still leaves the diagnostic artifact on disk.
+  // Default builds (env unset) take no branch here and emit nothing. The
+  // collector re-applies the same predicate functions read-only; it cannot
+  // change canonical output.
+  if (process.env.HUNTERCARD_PRICE_EVIDENCE_PATH) {
+    const evidenceFinalPriced = new Set(
+      Object.values(database.cards)
+        .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+        .map((c) => c.cardNumber),
+    );
+    const evidenceFloor = Math.floor(scrapedCardNumbers.size / 2);
+    const evidence = collectPriceEvidence({
+      prices,
+      officialByCardNum,
+      officialKeyByRow,
+      officialPricedCardNums,
+      canonicalizeCardNumber,
+      matchesOfficial: yuyuEntryMatchesOfficial,
+      imageProductPath: yuyuImageProductPath,
+      normalizeRarity: normalizeRarityCode,
+      finalCards: database.cards,
+      prevPricedCardNumbers,
+      pricingUnavailable,
+      partialScrape,
+      gate: {
+        scrapedCoverage: scrapedCardNumbers.size,
+        finalCoverage: evidenceFinalPriced.size,
+        floor: evidenceFloor,
+        wouldFail: !pricingUnavailable
+          && scrapedCardNumbers.size > 0
+          && evidenceFinalPriced.size < evidenceFloor,
+      },
+    });
+    const written = writePriceEvidenceAtomic(process.env.HUNTERCARD_PRICE_EVIDENCE_PATH, evidence);
+    console.log(`  [DIC-1461] price-provenance evidence written: ${written} (${evidence.cardNumbers.length} scraped cardNumbers)`);
+  }
+
   // DIC-1334: post-transformation coverage audit. After every destructive
   // transformation (official matching, yuyu-only fallback, ambiguous-promo
   // nullification, detail-align reorder, skills merge), verify the FINAL
@@ -2314,4 +2379,4 @@ if (process.argv[1]?.includes('build-database')) {
     });
 }
 
-export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills };
+export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage };
