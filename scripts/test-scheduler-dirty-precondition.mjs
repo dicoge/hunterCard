@@ -267,7 +267,7 @@ const someTraced = (lines, needle) => lines.some((l) => l.includes(needle));
     // from dirty-tree isolation (Mac-Codex CR DIC-1326: exact refspec, not a
     // generic "some push occurred").
     assert.ok(someTraced(lines, 'git worktree'), 'dirty path must create an isolated worktree');
-    assert.ok(someTraced(lines, 'HEAD:bot/scrape'), 'isolated handoff must push the bot/scrape artifact branch');
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape'), 'isolated handoff must push the bot/scrape artifact branch');
     assert.equal(
       someTraced(lines, 'HEAD:main'),
       false,
@@ -347,7 +347,7 @@ exit 0
   fs.mkdirSync(path.dirname(residue), { recursive: true });
   fs.writeFileSync(residue, '{}');
   try {
-    const { status, lines } = runSandbox(sandbox, { FAIL_PUSH: 'HEAD:bot/scrape' });
+    const { status, lines } = runSandbox(sandbox, { FAIL_PUSH: 'HEAD:refs/heads/bot/scrape' });
     assert.equal(
       status,
       1,
@@ -359,7 +359,7 @@ exit 0
       'isolated path must never fall back to pushing HEAD:main even when the handoff fails',
     );
     assert.ok(
-      someTraced(lines, 'HEAD:bot/scrape'),
+      someTraced(lines, 'HEAD:refs/heads/bot/scrape'),
       'sanity: the isolated handoff push must actually be attempted so we can prove it fails closed',
     );
   } finally {
@@ -417,7 +417,7 @@ exit 0
     );
     // Must NEVER push to bot/scrape or HEAD:main when there is no artifact.
     assert.equal(
-      someTraced(lines, 'HEAD:bot/scrape'),
+      someTraced(lines, 'HEAD:refs/heads/bot/scrape'),
       false,
       'no-op pipeline must not push an unchanged baseline to bot/scrape',
     );
@@ -459,7 +459,7 @@ exit 0
     assert.equal(status, 0, `stale registered isolated worktree must self-recover and complete; got ${status}\n${log}`);
     assert.ok(someTraced(lines, 'git worktree prune'), 'scheduler must prune stale worktree registrations before retrying add');
     assert.ok(someTraced(lines, 'git worktree add'), 'scheduler must still create a fresh isolated worktree after pruning');
-    assert.ok(someTraced(lines, 'HEAD:bot/scrape'), 'recovered isolated handoff must push the bot/scrape artifact branch');
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape'), 'recovered isolated handoff must push the bot/scrape artifact branch');
     assert.equal(someTraced(lines, 'HEAD:main'), false, 'recovered isolated path must never push HEAD:main');
   } finally {
     cleanup(sandbox);
@@ -507,7 +507,7 @@ exit 0
       'divergent parity must record the parity-gate FAILED reason in the scheduler log',
     );
     assert.equal(someTraced(lines, 'HEAD:main'), false, 'divergent parity must never push HEAD:main');
-    assert.equal(someTraced(lines, 'HEAD:bot/scrape'), false, 'divergent parity must never push an isolated artifact branch either');
+    assert.equal(someTraced(lines, 'HEAD:refs/heads/bot/scrape'), false, 'divergent parity must never push an isolated artifact branch either');
   } finally {
     cleanup(sandbox);
   }
