@@ -35,6 +35,7 @@ import {
   yuyuImageProductPath,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
+import { collectPriceEvidence, writePriceEvidenceAtomic } from './lib/price-evidence.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1932,6 +1933,48 @@ async function buildDatabase() {
   // Step 4b: Merge scraped card skills (Japanese + Chinese) by cardNumber,
   // preserving any skills from the previous build the effects files no longer supply.
   mergeSkills(database.cards, prevSkillsByCardId);
+
+  // DIC-1461: opt-in diagnostic evidence dump. When (and only when)
+  // HUNTERCARD_PRICE_EVIDENCE_PATH is set, capture the structured matcher
+  // evidence for every scraped cardNumber — the exact in-memory listing rows,
+  // the predicates they failed, candidate counts, and the final decision —
+  // and write it atomically BEFORE the DIC-1334 coverage gate below, so a
+  // fail-closed collapse still leaves the diagnostic artifact on disk.
+  // Default builds (env unset) take no branch here and emit nothing. The
+  // collector re-applies the same predicate functions read-only; it cannot
+  // change canonical output.
+  if (process.env.HUNTERCARD_PRICE_EVIDENCE_PATH) {
+    const evidenceFinalPriced = new Set(
+      Object.values(database.cards)
+        .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+        .map((c) => c.cardNumber),
+    );
+    const evidenceFloor = Math.floor(scrapedCardNumbers.size / 2);
+    const evidence = collectPriceEvidence({
+      prices,
+      officialByCardNum,
+      officialKeyByRow,
+      officialPricedCardNums,
+      canonicalizeCardNumber,
+      matchesOfficial: yuyuEntryMatchesOfficial,
+      imageProductPath: yuyuImageProductPath,
+      normalizeRarity: normalizeRarityCode,
+      finalCards: database.cards,
+      prevPricedCardNumbers,
+      pricingUnavailable,
+      partialScrape,
+      gate: {
+        scrapedCoverage: scrapedCardNumbers.size,
+        finalCoverage: evidenceFinalPriced.size,
+        floor: evidenceFloor,
+        wouldFail: !pricingUnavailable
+          && scrapedCardNumbers.size > 0
+          && evidenceFinalPriced.size < evidenceFloor,
+      },
+    });
+    const written = writePriceEvidenceAtomic(process.env.HUNTERCARD_PRICE_EVIDENCE_PATH, evidence);
+    console.log(`  [DIC-1461] price-provenance evidence written: ${written} (${evidence.cardNumbers.length} scraped cardNumbers)`);
+  }
 
   // DIC-1334: post-transformation coverage audit. After every destructive
   // transformation (official matching, yuyu-only fallback, ambiguous-promo
