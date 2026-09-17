@@ -1079,6 +1079,19 @@ exec ${REAL_GIT} "$@"
     execSync(`${REAL_GIT} add data/price-history/`, { cwd: repo });
     execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "seed poisoned durable"`, { cwd: repo });
 
+    // ── Origin remote for the pre-mutation fetch guard ──────────────────
+    // PR #204 makes the scheduler refresh origin/main before ANY mutation
+    // and fail closed if that fetch fails. The hermetic sandbox must model
+    // a real checkout that HAS an origin — a bare local remote with a `main`
+    // branch — so the real `git fetch origin main` succeeds (local filesystem,
+    // no network) and control reaches build-database.js where the DIC-1229
+    // audit fires. Without it the fetch guard correctly aborts first and the
+    // build-database failure this scenario exists to prove is masked.
+    const originDir = path.join(sandbox, 'remote.git');
+    execSync(`${REAL_GIT} init -q --bare -b main ${originDir}`);
+    execSync(`${REAL_GIT} remote add origin ${originDir}`, { cwd: repo });
+    execSync(`${REAL_GIT} push -q origin main`, { cwd: repo });
+
     // ── Yuyu fixture for empty payload ──────────────────────────────────
     const fixtureFile = path.join(sandbox, 'yuyu-fixture.json');
     fs.writeFileSync(
@@ -1111,6 +1124,20 @@ exec ${REAL_GIT} "$@"
       result.status,
       0,
       `Scheduler: local-scrape-and-push.sh MUST exit non-zero when the poisoned durable file reaches the audit path. exit=${result.status}\ntrace:\n${traceLines.join('\n')}\nlog tail:\n${schedulerLog.slice(-3000)}`,
+    );
+    // DIC-1462: the pre-mutation origin refresh guard must have RUN and
+    // SUCCEEDED first. Otherwise the exit above could be a masked fetch
+    // failure (stale bootstrapped checkout with no origin) rather than the
+    // build-database audit firing — the two guards stay independently
+    // mutation-sensitive and fail closed.
+    assert.ok(
+      traceLines.some((l) => l.includes('[shim git] fetch origin main')),
+      `Scheduler: the pre-mutation origin main refresh must be exercised before build-database. trace:\n${traceLines.join('\n')}`,
+    );
+    assert.equal(
+      schedulerLog.includes('git fetch origin main failed before scheduler mutation'),
+      false,
+      `Scheduler: the origin fetch must SUCCEED so the failure below is the DIC-1229 audit, not a masked fetch failure. log tail:\n${schedulerLog.slice(-3000)}`,
     );
     // DIC-1439: the guard is now two-stage. build-database failure no longer
     // exits directly: it first offers the failure to officialCatalogFallback,
