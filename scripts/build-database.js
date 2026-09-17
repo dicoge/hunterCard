@@ -711,15 +711,37 @@ async function scrapeSeriesPage(browser, url) {
           if (namePart && namePart.length > 1) name = namePart;
         }
 
-        // Extract image URL
+        // Extract image URL (+ its alt, which carries the listing identity)
         let imageUrl = '';
+        let imageAlt = '';
         const imgs = el.querySelectorAll('img');
         imgs.forEach(img => {
           const src = img.getAttribute('src') || '';
           if (src.includes('card.yuyu-tei.jp')) {
             imageUrl = src;
+            imageAlt = img.getAttribute('alt') || '';
           }
         });
+
+        // DIC-1461: yuyu-tei's redesigned card-product renders the card
+        // number alone in its own <span> and the name in an <h4>, so the
+        // legacy single-line "hXXX-nnn RARITY name" text shape no longer
+        // exists and the line-based rarity extraction above yields '' for
+        // every listing (the 2026-09-17 1216→424 collapse: without a rarity
+        // token, only single-candidate printings can prove). The listing's
+        // own product image alt still carries the full immutable identity
+        // ("hBP01-001 OUR 天音かなた(パラレル)"), and the DIC-1349 HTTP
+        // fallback parser already sources card number + rarity from that
+        // same alt. Mirror it here, gated on the alt's own card number
+        // matching THIS listing's card number so a foreign alt can never
+        // vouch for the wrong card. No fallback beyond the listing itself.
+        if (!rarity && imageAlt) {
+          const altNumMatch = imageAlt.match(/(h[A-Z]{1,3}\d+-\d{2,3})/i);
+          if (altNumMatch && altNumMatch[1].toUpperCase() === cardNum.toUpperCase()) {
+            const altRarityMatch = imageAlt.match(/h[A-Z]{1,3}\d+-\d{2,3}\s+([A-Z]{1,4})\b/i);
+            if (altRarityMatch) rarity = altRarityMatch[1];
+          }
+        }
 
         // Extract version/cid for backup URL
         const versionInput = el.querySelector('.cart_ver');
@@ -2357,4 +2379,4 @@ if (process.argv[1]?.includes('build-database')) {
     });
 }
 
-export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills };
+export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage };
