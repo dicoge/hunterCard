@@ -328,8 +328,21 @@ runPipeline() {
 }
 
 # ─── Main dispatch ─────────────────────────────────────────────────────────
-# Verify we can reach origin before mutating anything.
+# Verify and refresh origin before mutating anything. The dirty-worktree route
+# creates its isolated worktree from REMOTE_HEAD, so relying on a stale local
+# origin/main cache can reproduce yesterday's catalog even when GitHub main has
+# already advanced.
+if ! git fetch origin main >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ git fetch origin main failed before scheduler mutation; abandoning (cron fails)" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+  exit 1
+fi
 REMOTE_HEAD=$(git rev-parse --verify "${HUNTERCARD_REMOTE_REF:-origin/main}" 2>/dev/null || true)
+if [ -z "$REMOTE_HEAD" ]; then
+  echo "[$(date)] ❌ could not resolve ${HUNTERCARD_REMOTE_REF:-origin/main} after fetch; abandoning (cron fails)" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+  exit 1
+fi
 
 # 0. Dirty-worktree check (in-place). When the resident checkout is dirty in a
 #    scraper-managed path we NO LONGER permanently deadlock: we route to an

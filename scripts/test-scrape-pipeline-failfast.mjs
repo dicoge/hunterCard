@@ -112,6 +112,8 @@ exit 0
     path.join(bin, 'git'),
     `#!/bin/bash
 echo "git $*" >> "$TRACE_FILE"
+if [ "$1" = "fetch" ] && [ -n "$FAIL_FETCH" ]; then exit 1; fi
+if [ "$1" = "rev-parse" ]; then echo "0123456789abcdef0123456789abcdef01234567"; exit 0; fi
 if [ "$1" = "diff" ] && [[ "$*" == *"--stat"* ]]; then echo " data/database.json | 2 +-"; fi
 if [ "$1" = "diff" ]; then exit 0; fi
 exit 0
@@ -132,6 +134,7 @@ exit 0
       // the build-database shim to emit NO output.
       SKIP_DB_WRITE: env.SKIP_DB_WRITE ?? '',
       BUILD_DIC1334_COLLAPSE: env.BUILD_DIC1334_COLLAPSE ?? '',
+      FAIL_FETCH: env.FAIL_FETCH ?? '',
       // Never touch the real cron lock at /tmp/huntercard-scrape.lock.
       HUNTERCARD_LOCK_FILE: path.join(dir, 'scrape.lock'),
     },
@@ -240,18 +243,28 @@ exit 0
   return out;
 }
 
-// ── 0a. Ordering: stale checkout must pull before official mutation ──
+// ── 0a. Ordering: stale checkout must fetch/pull before official mutation ──
 {
   const { status, lines } = runPipeline();
   assert.strictEqual(status, 0, 'pipeline must succeed when every step succeeds');
+  const fetch = indexOfCall(lines, 'git fetch origin main');
   const pull = indexOfCall(lines, 'git pull --ff-only origin main');
   const official = indexOfCall(lines, 'scrape-official-cards.js');
+  assert.ok(fetch !== -1, 'pipeline must refresh origin/main before resolving the isolated-worktree baseline');
   assert.ok(pull !== -1, 'pipeline must ff-only pull from main before mutating tracked data');
   assert.ok(official !== -1, 'sanity: pipeline must still run official scraper');
   assert.ok(
-    pull < official,
+    fetch < official && pull < official,
     'stale durable checkout convergence must happen before scrape-official-cards.js writes data/official artifacts',
   );
+}
+
+// ── 0aa. Fail-fast: a fetch failure must not fall through to stale origin/main ──
+{
+  const { status, lines } = runPipeline({ env: { FAIL_FETCH: '1' } });
+  assert.notStrictEqual(status, 0, 'pipeline must exit non-zero when the pre-mutation origin/main refresh fails');
+  assert.ok(indexOfCall(lines, 'git fetch origin main') !== -1, 'sanity: pipeline must attempt the pre-mutation fetch');
+  assert.strictEqual(indexOfCall(lines, 'scrape-official-cards.js'), -1, 'a failed pre-mutation fetch must never reach official mutation');
 }
 
 // ── 0. Fail-fast: a failed canonical build must never be masked ──
