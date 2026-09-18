@@ -21,6 +21,18 @@
  *  so the cron reports failure instead of pushing a 0-priced snapshot and
  *  printing Done.
  *
+ *  DIC-1472 (isolated dependency readiness): the repo TRACKS a tiny
+ *  node_modules shell (four expo-camera build files), so `git worktree add`
+ *  materialises a node_modules DIRECTORY in every throwaway worktree while
+ *  puppeteer/cheerio are absent. The scheduler must prove readiness via real
+ *  anchors, replace ONLY the disposable worktree's incomplete shell with an
+ *  absolute symlink to the resident install, verify the resulting target, and
+ *  fail closed BEFORE pipeline mutation when provisioning cannot be proven.
+ *  The sandbox mirrors the tracked shell, and the build-database shim refuses
+ *  to "build" unless the anchors resolve in its cwd — reverting the fix turns
+ *  every isolated-route case red with the same module-not-found shape as the
+ *  real 2026-09-18 failure.
+ *
  * Shell shims for `node`, `npm` and a few git subcommands trace their
  * invocations to a log so we can assert ordering + that the resident checkout
  * was not mutated.
@@ -42,6 +54,17 @@ const REAL_NODE = execSync('command -v node', { encoding: 'utf-8' }).trim();
 function writeShim(bin, name, body) {
   fs.writeFileSync(path.join(bin, name), body, { mode: 0o755 });
 }
+
+// DIC-1472: the four git-TRACKED expo-camera shell files (mirrors production's
+// `git ls-files node_modules`), and the real dependency anchors the scheduler
+// verifies before trusting a worktree's node_modules.
+const TRACKED_SHELL_FILES = [
+  'useWebQRScanner.d.ts',
+  'useWebQRScanner.d.ts.map',
+  'useWebQRScanner.js',
+  'useWebQRScanner.js.map',
+];
+const DEP_ANCHOR_PACKAGES = ['puppeteer', 'cheerio'];
 
 // A real-node helper (placed OUTSIDE the shimmed bin/ so node invocations from
 // the pipeline that must produce real output — the priced-cardNumber count for
@@ -80,6 +103,16 @@ function makeSandbox() {
   execSync(`${REAL_GIT} config user.email test@example.com`, { cwd: repo });
   execSync(`${REAL_GIT} config user.name test`, { cwd: repo });
   fs.writeFileSync(path.join(repo, '.gitkeep'), '');
+  // DIC-1472: mirror production's dependency layout exactly. node_modules/ is
+  // gitignored, but a tiny expo-camera shell (four build files) is force-added
+  // and TRACKED — so every fresh worktree checkout materialises a node_modules
+  // DIRECTORY that contains no real dependency.
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n');
+  const trackedShellDir = path.join(repo, 'node_modules', 'expo-camera', 'build', 'web');
+  fs.mkdirSync(trackedShellDir, { recursive: true });
+  for (const f of TRACKED_SHELL_FILES) {
+    fs.writeFileSync(path.join(trackedShellDir, f), '// tracked expo-camera stub\n');
+  }
   // A committed database.json baseline so the coverage gate has a previous
   // priced count to compare against.
   fs.mkdirSync(path.join(repo, 'data'), { recursive: true });
@@ -130,9 +163,18 @@ function makeSandbox() {
     fs.writeFileSync(abs, rel === 'public/data/database.json' ? `${JSON.stringify(baseline)}\n` : '{}');
   }
   execSync(`${REAL_GIT} add -A`, { cwd: repo });
+  execSync(`${REAL_GIT} add -f node_modules/expo-camera`, { cwd: repo });
   execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m baseline`, { cwd: repo });
   execSync(`${REAL_GIT} remote add origin ${remote}`, { cwd: repo });
   execSync(`${REAL_GIT} push -q origin main`, { cwd: repo });
+
+  // DIC-1472: the RESIDENT checkout has a real (untracked, gitignored) npm
+  // install; the readiness anchors the scheduler verifies live here.
+  for (const pkg of DEP_ANCHOR_PACKAGES) {
+    const pkgDir = path.join(repo, 'node_modules', pkg);
+    fs.mkdirSync(pkgDir, { recursive: true });
+    fs.writeFileSync(path.join(pkgDir, 'package.json'), `{"name":"${pkg}","version":"0.0.0-sandbox"}\n`);
+  }
 
   // Node shim: trace every invocation and exit 0. The coverage-gate / prev-
   // count invocations (market marker `console.log(s.size)`) are delegated to
@@ -144,7 +186,7 @@ function makeSandbox() {
   // shim swallows it, stdout is empty, and parityOk always fails closed even
   // when the committed public/data/database.json genuinely mirrors canonical.
   writeShim(bin, 'node', `#!/bin/bash
-echo "node $*" >> "$TRACE_FILE"
+echo "node $* [cwd=$(pwd)]" >> "$TRACE_FILE"
 if [[ " $* " == *"MISMATCH"* ]]; then
   exec ${REAL_NODE} "$@"
 fi
@@ -158,6 +200,13 @@ if [[ " $* " == *"console.log(s.size)"* ]]; then
   exit 0
 fi
 if [[ " $* " == *"build-database.js"* ]]; then
+  # DIC-1472 mutation sensor: the real build imports puppeteer + cheerio. A
+  # worktree whose node_modules is only the tracked expo-camera shell (no
+  # resident symlink) must fail here exactly like the real module-not-found.
+  if [ ! -f "$(pwd)/node_modules/puppeteer/package.json" ] || [ ! -f "$(pwd)/node_modules/cheerio/package.json" ]; then
+    echo "node build-database MODULE_NOT_FOUND (dependency anchors absent in $(pwd))" >> "$TRACE_FILE"
+    exit 1
+  fi
   cat > "$(pwd)/data/database.json" <<'EOF'
 {"lastUpdated":"2026-01-02T00:00:00.000Z","totalCards":3,"cards":{"hSMP-001_hSMP_C":{"id":"hSMP-001_hSMP_C","cardNumber":"hSMP-001","sourceProduct":"hSMP","rarity":"C","sellPrice":500},"hSMP-002_hSMP_C":{"id":"hSMP-002_hSMP_C","cardNumber":"hSMP-002","sourceProduct":"hSMP","rarity":"C","sellPrice":600},"hSMP-003_hSMP_C":{"id":"hSMP-003_hSMP_C","cardNumber":"hSMP-003","sourceProduct":"hSMP","rarity":"C","sellPrice":null}}}
 EOF
@@ -231,6 +280,71 @@ function cleanup(sandbox) {
 }
 
 const someTraced = (lines, needle) => lines.some((l) => l.includes(needle));
+
+// DIC-1472 helpers ───────────────────────────────────────────────────────────
+
+// Snapshot the resident checkout's mutable identity before a run so
+// assertResidentUntouched can prove immutability afterwards.
+function takeResidentSnapshot(sandbox) {
+  return {
+    head: execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(),
+    anchors: Object.fromEntries(DEP_ANCHOR_PACKAGES.map((pkg) => {
+      const p = path.join(sandbox.repo, 'node_modules', pkg, 'package.json');
+      return [pkg, fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null];
+    })),
+  };
+}
+
+function assertResidentUntouched(sandbox, snapshot) {
+  const headAfter = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+  assert.equal(headAfter, snapshot.head, 'resident HEAD must not move');
+  assert.ok(
+    !fs.lstatSync(path.join(sandbox.repo, 'node_modules')).isSymbolicLink(),
+    'resident node_modules must remain a real directory, never be replaced by a link',
+  );
+  for (const f of TRACKED_SHELL_FILES) {
+    assert.ok(
+      fs.existsSync(path.join(sandbox.repo, 'node_modules', 'expo-camera', 'build', 'web', f)),
+      `tracked shell file node_modules/expo-camera/build/web/${f} must remain in the resident checkout`,
+    );
+  }
+  for (const [pkg, bytes] of Object.entries(snapshot.anchors)) {
+    if (bytes === null) continue;
+    assert.equal(
+      fs.readFileSync(path.join(sandbox.repo, 'node_modules', pkg, 'package.json'), 'utf-8'),
+      bytes,
+      `resident anchor node_modules/${pkg}/package.json must stay byte-identical`,
+    );
+  }
+}
+
+// node_modules must NEVER be staged or committed: no traced `git add` may
+// mention it, and every isolated artifact commit (unreachable in the shared
+// object store after the throwaway worktree is removed — the handoff push is
+// shimmed) must carry only scraper-managed paths.
+function assertNoNodeModulesStagedOrCommitted(sandbox, lines) {
+  for (const l of lines.filter((x) => /^git (-C \S+ )?(-c \S+ )*add /.test(x))) {
+    assert.ok(!l.includes('node_modules'), `node_modules must never be staged; traced: ${l}`);
+  }
+  const unreachable = execSync(`${REAL_GIT} fsck --unreachable --no-reflogs`, { cwd: sandbox.repo, encoding: 'utf-8' })
+    .split('\n')
+    .filter((l) => l.startsWith('unreachable commit '))
+    .map((l) => l.trim().split(/\s+/)[2]);
+  assert.ok(
+    unreachable.length >= 1,
+    'expected the isolated artifact commit to exist in the object store (unreachable after worktree removal)',
+  );
+  for (const sha of unreachable) {
+    const files = execSync(`${REAL_GIT} show --name-only --format= ${sha}`, { cwd: sandbox.repo, encoding: 'utf-8' })
+      .split('\n')
+      .filter(Boolean);
+    assert.ok(
+      files.every((f) => !f.startsWith('node_modules')),
+      `artifact commit ${sha} must not contain node_modules paths; got:\n${files.join('\n')}`,
+    );
+    assert.ok(files.includes('data/database.json'), `artifact commit ${sha} must carry the managed db artifact`);
+  }
+}
 
 // ─── Case A: clean worktree — in-place pipeline reaches pull + the scraper ──
 {
@@ -513,4 +627,204 @@ exit 0
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334 scheduler dirty-precondition + coverage-gate + no-op + parity regression checks passed');
+// ─── Case H (DIC-1472): forced-isolated two-stage bootstrap must PROVISION
+// dependencies via the anchor contract. `git worktree add` materialises the
+// TRACKED node_modules shell, so directory existence is a lie; the scheduler
+// must replace only that disposable shell with an absolute symlink to the
+// resident install, run stage 2 inside the worktree pinned to the CURRENT
+// origin/main SHA, and hand off via the fully-qualified dated refspec.
+// Mutation sensor: the build shim exits 1 unless both anchors resolve in its
+// cwd, so reverting ensureIsolatedDeps() turns this red with the same
+// module-not-found shape as the real 2026-09-18 forced-isolated failure.
+{
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const remoteHead = execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+  const snapshot = takeResidentSnapshot(sandbox);
+  try {
+    const { status, lines, log } = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED: '1' });
+    assert.equal(status, 0, `forced-isolated bootstrap over the tracked shell must complete; got ${status}\n${log}`);
+    // Stage 1 pinned the ephemeral worktree to the freshly fetched origin SHA.
+    assert.ok(
+      someTraced(lines, `git worktree add --detach ${isoDir} ${remoteHead}`),
+      'stage 1 must create the ephemeral worktree at the CURRENT origin/main SHA',
+    );
+    // The incomplete tracked shell was replaced with the resident symlink and
+    // the resulting target re-verified.
+    assert.match(log, /replacing with absolute symlink to resident install/, 'deps helper must replace the tracked shell');
+    assert.match(log, /✅ deps: isolated node_modules -> /, 'deps helper must verify the final link target + anchors');
+    // Two-stage execution: the pipeline build ran INSIDE the ephemeral
+    // worktree (stage 2 = the worktree's own copy of the script), never in
+    // the resident checkout.
+    const buildLine = lines.find((l) => l.includes('build-database.js'));
+    assert.ok(
+      buildLine && buildLine.includes(`[cwd=${isoDir}`),
+      `stage 2 build must execute inside the ephemeral worktree; got: ${buildLine}`,
+    );
+    assert.match(log, /Done \(forced-isolated bootstrap\)/, 'stage 1 must only report Done after stage 2 succeeded');
+    // Fully-qualified dated handoff refspec; never HEAD:main.
+    const today = execSync('date +%Y-%m-%d', { encoding: 'utf-8' }).trim();
+    assert.ok(
+      someTraced(lines, `push origin HEAD:refs/heads/bot/scrape/${today}`),
+      'forced-isolated handoff must push the fully-qualified dated bot/scrape refspec',
+    );
+    assert.equal(someTraced(lines, 'HEAD:main'), false, 'forced-isolated path must never push HEAD:main');
+    assertNoNodeModulesStagedOrCommitted(sandbox, lines);
+    assertResidentUntouched(sandbox, snapshot);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case I (DIC-1472): dirty-isolated route — tracked-shell replacement.
+// Same contract as Case H on the dirty-resident handoff route: the worktree's
+// checked-out shell is replaced by the resident symlink, the build runs in
+// the worktree, resident files (tracked shell + untracked real install +
+// residue) stay byte-identical, and node_modules is never staged/committed.
+{
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const residue = path.join(sandbox.repo, 'data', 'price-history', 'hDIC1472-001_hFOO_C.json');
+  fs.mkdirSync(path.dirname(residue), { recursive: true });
+  fs.writeFileSync(residue, '{"cardId":"user-private"}');
+  const snapshot = takeResidentSnapshot(sandbox);
+  try {
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 0, `dirty-isolated handoff over the tracked shell must complete; got ${status}\n${log}`);
+    assert.match(log, /replacing with absolute symlink to resident install/, 'deps helper must replace the tracked shell');
+    assert.match(log, /✅ deps: isolated node_modules -> /, 'deps helper must verify the final link target + anchors');
+    const buildLine = lines.find((l) => l.includes('build-database.js'));
+    assert.ok(
+      buildLine && buildLine.includes(`[cwd=${isoDir}`),
+      `pipeline build must execute inside the isolated worktree; got: ${buildLine}`,
+    );
+    const today = execSync('date +%Y-%m-%d', { encoding: 'utf-8' }).trim();
+    assert.ok(
+      someTraced(lines, `push origin HEAD:refs/heads/bot/scrape/${today}`),
+      'dirty-isolated handoff must push the fully-qualified dated bot/scrape refspec',
+    );
+    assert.equal(someTraced(lines, 'HEAD:main'), false, 'dirty-isolated path must never push HEAD:main');
+    assertNoNodeModulesStagedOrCommitted(sandbox, lines);
+    assertResidentUntouched(sandbox, snapshot);
+    assert.equal(fs.readFileSync(residue, 'utf-8'), '{"cardId":"user-private"}', 'residue must stay byte-identical');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case J (DIC-1472): already-ready dependencies are kept untouched.
+// When the worktree checkout itself satisfies every anchor (here: the anchor
+// files are committed, so `git worktree add` materialises a complete tree),
+// the helper must take the ready branch — no shell removal, no symlink — and
+// the pipeline must still complete. A helper that blindly replaces ready
+// deps (or re-links over them) logs the replacement line and turns this red.
+{
+  const sandbox = makeSandbox();
+  execSync(
+    `${REAL_GIT} add -f ${DEP_ANCHOR_PACKAGES.map((p) => `node_modules/${p}/package.json`).join(' ')}`,
+    { cwd: sandbox.repo },
+  );
+  execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "tracked complete deps"`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+  const residue = path.join(sandbox.repo, 'data', 'price-history', 'hDIC1472-002_hFOO_C.json');
+  fs.mkdirSync(path.dirname(residue), { recursive: true });
+  fs.writeFileSync(residue, '{}');
+  try {
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 0, `already-ready worktree deps must pass straight through; got ${status}\n${log}`);
+    assert.match(log, /already satisfies required anchors/, 'deps helper must report the ready branch');
+    assert.doesNotMatch(
+      log,
+      /replacing with absolute symlink to resident install/,
+      'ready deps must NOT be removed or replaced',
+    );
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape'), 'ready-deps handoff must still push the artifact branch');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case K (DIC-1472): missing resident anchor must fail closed BEFORE any
+// pipeline mutation, on BOTH isolated routes. The worktree shell is
+// incomplete AND the resident install lacks puppeteer — there is nothing safe
+// to link, so the scheduler must exit 1 with the FAILED marker, without
+// running any scraper/build step and without pushing anything.
+for (const forced of [false, true]) {
+  const sandbox = makeSandbox();
+  fs.rmSync(path.join(sandbox.repo, 'node_modules', 'puppeteer'), { recursive: true, force: true });
+  if (!forced) {
+    const residue = path.join(sandbox.repo, 'data', 'price-history', 'hDIC1472-003_hFOO_C.json');
+    fs.mkdirSync(path.dirname(residue), { recursive: true });
+    fs.writeFileSync(residue, '{}');
+  }
+  try {
+    const { status, lines, log } = runSandbox(sandbox, forced ? { HUNTERCARD_FORCE_ISOLATED: '1' } : {});
+    const route = forced ? 'forced-isolated' : 'dirty-isolated';
+    assert.equal(status, 1, `${route}: missing resident anchor must fail the scheduler; got ${status}\n${log}`);
+    assert.match(log, /missing required anchor puppeteer\/package\.json/, `${route}: log must name the missing anchor`);
+    assert.match(log, /HUNTERCARD_SCRAPE_STATUS=FAILED/, `${route}: cron must observe the FAILED marker`);
+    assert.equal(someTraced(lines, 'scrape-official-cards.js'), false, `${route}: must fail BEFORE any scraper runs`);
+    assert.equal(someTraced(lines, 'build-database.js'), false, `${route}: must fail BEFORE the build runs`);
+    assert.equal(someTraced(lines, 'push origin'), false, `${route}: must not push anything`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case L (DIC-1472): symlink creation failure must fail closed. The shell
+// was removed but `ln -s` fails — the scheduler must exit 1 before any
+// pipeline mutation instead of running with a half-provisioned worktree.
+{
+  const sandbox = makeSandbox();
+  writeShim(sandbox.bin, 'ln', `#!/bin/bash
+echo "ln $*" >> "$TRACE_FILE"
+exit 1
+`);
+  const residue = path.join(sandbox.repo, 'data', 'price-history', 'hDIC1472-004_hFOO_C.json');
+  fs.mkdirSync(path.dirname(residue), { recursive: true });
+  fs.writeFileSync(residue, '{}');
+  try {
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 1, `failed symlink creation must fail the scheduler; got ${status}\n${log}`);
+    assert.ok(someTraced(lines, 'ln -s'), 'sanity: the symlink attempt must actually have been made');
+    assert.match(log, /could not create node_modules symlink/, 'log must carry the symlink-failure reason');
+    assert.match(log, /HUNTERCARD_SCRAPE_STATUS=FAILED/, 'cron must observe the FAILED marker');
+    assert.equal(someTraced(lines, 'build-database.js'), false, 'must fail BEFORE the build runs');
+    assert.equal(someTraced(lines, 'push origin'), false, 'must not push anything');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case M (DIC-1472): unsafe symlink target must fail closed. The link
+// lands somewhere OTHER than the resident install (here: a decoy that even
+// carries valid anchors, so only the resolved-target verification — not the
+// anchor check — can catch it). The scheduler must refuse to build on it.
+{
+  const sandbox = makeSandbox();
+  const decoy = path.join(sandbox.dir, 'decoy-node_modules');
+  for (const pkg of DEP_ANCHOR_PACKAGES) {
+    fs.mkdirSync(path.join(decoy, pkg), { recursive: true });
+    fs.writeFileSync(path.join(decoy, pkg, 'package.json'), `{"name":"${pkg}","version":"0.0.0-decoy"}\n`);
+  }
+  writeShim(sandbox.bin, 'ln', `#!/bin/bash
+echo "ln $*" >> "$TRACE_FILE"
+for a in "$@"; do link="$a"; done
+exec /bin/ln -s "$DECOY_DIR" "$link"
+`);
+  const residue = path.join(sandbox.repo, 'data', 'price-history', 'hDIC1472-005_hFOO_C.json');
+  fs.mkdirSync(path.dirname(residue), { recursive: true });
+  fs.writeFileSync(residue, '{}');
+  try {
+    const { status, lines, log } = runSandbox(sandbox, { DECOY_DIR: decoy });
+    assert.equal(status, 1, `unsafe symlink target must fail the scheduler; got ${status}\n${log}`);
+    assert.match(log, /unsafe target, failing closed/, 'log must carry the unsafe-target reason');
+    assert.match(log, /HUNTERCARD_SCRAPE_STATUS=FAILED/, 'cron must observe the FAILED marker');
+    assert.equal(someTraced(lines, 'build-database.js'), false, 'must never build on an unverified dependency target');
+    assert.equal(someTraced(lines, 'push origin'), false, 'must not push anything');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472 scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');

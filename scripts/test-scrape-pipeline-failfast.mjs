@@ -48,8 +48,17 @@ function runPipeline({ failOn = null, env = {} } = {}) {
   fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
   // Mirror the optional data paths the pipeline probes before staging; under
   // `set -e` a missing one would abort the run before the commit branch.
-  for (const d of ['data', 'data/yt-subscribers', 'data/news-sentiment', 'data/trends', 'node_modules']) {
+  for (const d of ['data', 'data/yt-subscribers', 'data/news-sentiment', 'data/trends']) {
     fs.mkdirSync(path.join(repo, d), { recursive: true });
+  }
+  // DIC-1472: the scheduler proves dependency readiness via real anchors
+  // (puppeteer/cheerio package.json), not `-d node_modules`. Seed the anchors
+  // so the forced-isolated cases pass the readiness contract: the `worktree
+  // add` shim below copies this repo wholesale, so the ephemeral copy is
+  // anchor-complete and takes the already-ready branch.
+  for (const pkg of ['puppeteer', 'cheerio']) {
+    fs.mkdirSync(path.join(repo, 'node_modules', pkg), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'node_modules', pkg, 'package.json'), `{"name":"${pkg}","version":"0.0.0-sandbox"}\n`);
   }
   fs.writeFileSync(path.join(repo, 'data', 'yt-stats-history.json'), '{}\n');
   fs.writeFileSync(trace, '');
