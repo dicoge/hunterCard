@@ -75,6 +75,7 @@
     "test:release-apk-postpackage": "node scripts/test-release-apk-postpackage.mjs",
     "test:release-apk-postpackage-mutations": "node scripts/test-release-apk-postpackage-mutations.mjs",
     "test:play-manifest": "node scripts/test-play-release-manifest.mjs",
+    "test:eas-submit-production-track": "node scripts/test-eas-submit-production-track.mjs",
     "test:play-store-assets": "node scripts/test-play-store-assets.mjs",
     "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",
     "test:native-scan-no-upload": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-native-scan-no-image-upload.mjs",
@@ -192,7 +193,7 @@
     "@vercel/kv": "^3.0.0",
     "axios": "^1.16.1",
     "cheerio": "^1.2.0",
-    "expo": "~54.0.36",
+    "expo": "~54.0.37",
     "expo-apple-authentication": "~8.0.8",
     "expo-auth-session": "~7.0.11",
     "expo-camera": "~17.0.10",
@@ -220,6 +221,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@types/node": "^25.9.7",
     "@types/node-fetch": "^2.6.12",
     "@types/react": "~19.1.0",
     "@vercel/node": "^5.7.11",
