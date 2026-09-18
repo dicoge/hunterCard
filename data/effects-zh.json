@@ -18501,6 +18501,12 @@
     "cardType": "應援",
     "color": "白"
   },
+  "hY01-015": {
+    "cardNumber": "hY01-015",
+    "name": "白色應援",
+    "cardType": "應援",
+    "color": "白"
+  },
   "hY02-001": {
     "cardNumber": "hY02-001",
     "name": "綠色應援",
@@ -18566,6 +18572,12 @@
   },
   "hY02-012": {
     "cardNumber": "hY02-012",
+    "name": "綠色應援",
+    "cardType": "應援",
+    "color": "緑"
+  },
+  "hY02-013": {
+    "cardNumber": "hY02-013",
     "name": "綠色應援",
     "cardType": "應援",
     "color": "緑"
@@ -18667,6 +18679,18 @@
     "cardType": "應援",
     "color": "赤"
   },
+  "hY03-017": {
+    "cardNumber": "hY03-017",
+    "name": "紅色應援",
+    "cardType": "應援",
+    "color": "赤"
+  },
+  "hY03-018": {
+    "cardNumber": "hY03-018",
+    "name": "紅色應援",
+    "cardType": "應援",
+    "color": "赤"
+  },
   "hY04-001": {
     "cardNumber": "hY04-001",
     "name": "藍色應援",
@@ -18743,6 +18767,18 @@
     "cardType": "應援",
     "color": "青"
   },
+  "hY04-014": {
+    "cardNumber": "hY04-014",
+    "name": "藍色應援",
+    "cardType": "應援",
+    "color": "青"
+  },
+  "hY04-015": {
+    "cardNumber": "hY04-015",
+    "name": "藍色應援",
+    "cardType": "應援",
+    "color": "青"
+  },
   "hY05-001": {
     "cardNumber": "hY05-001",
     "name": "紫色應援",
@@ -18805,6 +18841,12 @@
     "cardType": "應援",
     "color": "紫"
   },
+  "hY05-012": {
+    "cardNumber": "hY05-012",
+    "name": "紫色應援",
+    "cardType": "應援",
+    "color": "紫"
+  },
   "hY06-001": {
     "cardNumber": "hY06-001",
     "name": "黃色應援",
@@ -18863,6 +18905,12 @@
   },
   "hY06-011": {
     "cardNumber": "hY06-011",
+    "name": "黃色應援",
+    "cardType": "應援",
+    "color": "黄"
+  },
+  "hY06-012": {
+    "cardNumber": "hY06-012",
     "name": "黃色應援",
     "cardType": "應援",
     "color": "黄"

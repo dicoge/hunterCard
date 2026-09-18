@@ -24,8 +24,17 @@ env:
   # Everything the pipeline is allowed to stage. Kept in one place so both
   # the change check and the commit stage the exact same set — no path can
   # sneak in via `git add -A` and no path can silently be dropped.
+  # DIC-1468: the effects artifacts and the pinned skillsZh gap baseline are
+  # part of this set. The enrichment step below tops up data/effects-jp.json
+  # from the official source for brand-new cardNumbers and ratchets the
+  # baseline DOWN as derived translations land, so those writes must reach
+  # the sync PR — otherwise the completeness gate fails every run on cards
+  # the pipeline just ingested.
   SYNC_PATHS: >-
     data/official/
+    data/effects-jp.json
+    data/effects-zh.json
+    data/official-skills-zh-gap.json
     data/database.json
     public/data/database.json
     docs/audits/official-catalog-audit.json
@@ -64,6 +73,15 @@ jobs:
       - name: Sync official catalog
         run: node scripts/scrape-official-cards.js --check-production=https://holohunter.dicoge.com/data/database.json
 
+      # DIC-1468: acquire skill text for cardNumbers the step above just
+      # discovered. Without this the pipeline ingests brand-new printings and
+      # then fails its own completeness gate, because data/effects-jp.json only
+      # ever grew when a human ran scripts/scrape-effects.js by hand. Fetches
+      # from the official detail page, verifies the page declares the requested
+      # cardNumber, and exits non-zero rather than inventing any text.
+      - name: Enrich official catalog effects
+        run: node scripts/enrich-official-effects.mjs
+
       - name: Merge official catalog into database
         run: node scripts/sync-official-catalog-to-database.mjs
 
@@ -76,6 +94,7 @@ jobs:
       - name: Validate official catalog completeness
         run: |
           node scripts/test-official-catalog-sync.mjs
+          node scripts/test-dic1468-official-effects-enrichment.mjs
           node scripts/verify-official-catalog-completeness.mjs
 
       - name: Check data changes

@@ -211,6 +211,9 @@ jobs:
       - name: Verify official-catalog-sync ingestion, sell preservation, and Traditional-Chinese name enrichment (DIC-1167/DIC-1204/DIC-1415)
         run: npm run test:official-catalog-sync
 
+      - name: Verify new official printings get source-backed JP + controlled-map TC skill text (DIC-1468)
+        run: npm run test:dic1468-effects-enrichment
+
       - name: Verify canonical printing-ID rebuilds preserve market fields (DIC-1204)
         run: npm run test:market-field-preservation
 
