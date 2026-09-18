@@ -2,14 +2,14 @@
   "cardId": "hBP06-088",
   "name": "ドッキリうさぎ",
   "nameZh": "整人兔",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.33,
   "confidence": 0.9,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.5,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-08-30T12:26:54.344Z",
-  "dataPoints": 67
+  "lastUpdated": "2026-09-18T12:14:54.931Z",
+  "dataPoints": 68
 }

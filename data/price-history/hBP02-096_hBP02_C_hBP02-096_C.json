@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-096_hBP02_C_hBP02-096_C",
+  "cardNumber": "hBP02-096",
+  "name": "イヌ",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-096_hBP02_C_hBP02-096_C",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.088Z",
+  "nameZh": "狗"
+}

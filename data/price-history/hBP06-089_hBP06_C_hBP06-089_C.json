@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP06-089_hBP06_C_hBP06-089_C",
+  "cardNumber": "hBP06-089",
+  "name": "ドローイングストリーム",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-089_hBP06_C_hBP06-089_C",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.272Z",
+  "nameZh": "繪圖直播"
+}

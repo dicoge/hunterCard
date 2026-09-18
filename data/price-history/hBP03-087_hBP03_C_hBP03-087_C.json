@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-087_hBP03_C_hBP03-087_C",
+  "cardNumber": "hBP03-087",
+  "name": "コールアンドレスポンス",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-087_hBP03_C_hBP03-087_C",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.121Z",
+  "nameZh": "呼應"
+}

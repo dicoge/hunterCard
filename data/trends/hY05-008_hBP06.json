@@ -3,13 +3,13 @@
   "name": "紫エール",
   "nameZh": "紫色應援",
   "trend": "stable",
-  "score": 0.03,
+  "score": -0.07,
   "confidence": 0.6,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": -0.17,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-08-30T12:26:54.373Z",
+  "lastUpdated": "2026-09-18T12:14:55.056Z",
   "dataPoints": 51
 }

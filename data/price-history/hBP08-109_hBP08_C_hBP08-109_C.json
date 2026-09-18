@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP08-109_hBP08_C_hBP08-109_C",
+  "cardNumber": "hBP08-109",
+  "name": "ルイ友",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-109_hBP08_C_hBP08-109_C",
+      "sourceProduct": "hBP08"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.365Z",
+  "nameZh": "琉衣友"
+}

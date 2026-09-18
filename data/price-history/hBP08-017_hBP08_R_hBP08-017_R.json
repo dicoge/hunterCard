@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP08-017_hBP08_R_hBP08-017_R",
+  "cardNumber": "hBP08-017",
+  "name": "ときのそら",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-017_hBP08_R_hBP08-017_R",
+      "sourceProduct": "hBP08"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.314Z",
+  "nameZh": "時乃空"
+}

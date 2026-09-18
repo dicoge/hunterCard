@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-078_hBP02_U_hBP02-078_U",
+  "cardNumber": "hBP02-078",
+  "name": "かなた建設",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-078_hBP02_U_hBP02-078_U",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.079Z",
+  "nameZh": "彼方建設"
+}

@@ -2,14 +2,14 @@
   "cardId": "hBP01-051",
   "name": "風真いろは",
   "nameZh": "風真伊呂波",
-  "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.6,
+  "trend": "up",
+  "score": 0.63,
+  "confidence": 0.7,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 1,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-08-30T12:26:54.302Z",
-  "dataPoints": 67
+  "lastUpdated": "2026-09-18T12:14:54.779Z",
+  "dataPoints": 68
 }

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP07-096_hBP07_U_hBP07-096_U",
+  "cardNumber": "hBP07-096",
+  "name": "ちゃま旅",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-096_hBP07_U_hBP07-096_U",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.285Z",
+  "nameZh": "茶麻旅"
+}

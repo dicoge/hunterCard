@@ -2,14 +2,14 @@
   "cardId": "hBP03-057",
   "name": "ロボ子さん",
   "nameZh": "蘿蔔子",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.39,
   "confidence": 0.9,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.6,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-08-30T12:26:54.323Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-18T12:14:54.838Z",
+  "dataPoints": 69
 }

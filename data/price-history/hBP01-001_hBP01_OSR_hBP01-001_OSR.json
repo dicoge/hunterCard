@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+  "cardNumber": "hBP01-001",
+  "name": "天音かなた",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 780,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-001_hBP01_OSR_hBP01-001_OSR",
+      "sourceProduct": "hBP01"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.014Z",
+  "nameZh": "天音彼方"
+}

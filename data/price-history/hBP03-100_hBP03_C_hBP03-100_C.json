@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-100_hBP03_C_hBP03-100_C",
+  "cardNumber": "hBP03-100",
+  "name": "ペロ",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-100_hBP03_C_hBP03-100_C",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.126Z",
+  "nameZh": "佩羅"
+}

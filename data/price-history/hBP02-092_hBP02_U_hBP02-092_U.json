@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-092_hBP02_U_hBP02-092_U",
+  "cardNumber": "hBP02-092",
+  "name": "フブラ",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-092_hBP02_U_hBP02-092_U",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.087Z",
+  "nameZh": "吹布拉"
+}

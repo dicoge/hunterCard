@@ -2,14 +2,14 @@
   "cardId": "hSD06-005",
   "name": "風真いろは",
   "nameZh": "風真伊呂波",
-  "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.5,
+  "trend": "down",
+  "score": -0.46,
+  "confidence": 0.4,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": -0.81,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-08-30T12:26:54.364Z",
+  "lastUpdated": "2026-09-18T12:14:55.003Z",
   "dataPoints": 64
 }

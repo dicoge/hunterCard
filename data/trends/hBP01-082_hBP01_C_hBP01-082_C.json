@@ -2,14 +2,14 @@
   "cardId": "hBP01-082",
   "name": "こぼ・かなえる",
   "nameZh": "小焰·奏",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.33,
   "confidence": 0.9,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.5,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-08-30T12:26:54.307Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-18T12:14:54.788Z",
+  "dataPoints": 69
 }

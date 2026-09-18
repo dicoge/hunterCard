@@ -2,14 +2,14 @@
   "cardId": "hSD02-009",
   "name": "百鬼あやめ",
   "nameZh": "百鬼綾目",
-  "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.2,
+  "trend": "up",
+  "score": 0.52,
+  "confidence": 0.3,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.81,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-08-30T12:26:54.360Z",
-  "dataPoints": 1
+  "lastUpdated": "2026-09-18T12:14:54.992Z",
+  "dataPoints": 2
 }

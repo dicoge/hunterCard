@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-123_hBP01_C_hBP01-123_C_02",
+  "cardNumber": "hBP01-123",
+  "name": "野うさぎ同盟",
+  "records": [
+    {
+      "date": "2026-09-18",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-123_hBP01_C_hBP01-123_C_02",
+      "sourceProduct": "hBP01"
+    }
+  ],
+  "lastUpdated": "2026-09-18T12:14:43.039Z",
+  "nameZh": "野兔同盟"
+}
