@@ -101,6 +101,94 @@ removeStaleIsolatedWorktree() {
   rm -rf "$dir"
 }
 
+# ─── DIC-1472 isolated dependency readiness ────────────────────────────────
+# The repository TRACKS a small node_modules shell (four expo-camera build
+# files), so a fresh `git worktree add` materialises a node_modules DIRECTORY
+# in every throwaway worktree. `-d node_modules` is therefore NOT evidence the
+# pipeline's dependencies exist: the directory check passed while Puppeteer /
+# cheerio were absent, and the run died mid-pipeline with a misleading
+# module-not-found instead of failing closed up front. Readiness is defined by
+# REAL anchors the pipeline's fatal path imports (build-database.js requires
+# both puppeteer and cheerio); each anchor's package.json must resolve
+# (through symlinks) inside the worktree's node_modules.
+DEP_ANCHORS=('puppeteer/package.json' 'cheerio/package.json')
+
+# depAnchorsOk <node_modules-dir>: 0 iff every DEP_ANCHORS file exists there.
+depAnchorsOk() {
+  local nm="$1" anchor
+  for anchor in "${DEP_ANCHORS[@]}"; do
+    [ -f "$nm/$anchor" ] || return 1
+  done
+  return 0
+}
+
+# ensureIsolatedDeps <isolated-worktree-dir>: make the DISPOSABLE worktree's
+# node_modules genuinely satisfy DEP_ANCHORS before any pipeline mutation.
+#   - a worktree whose node_modules already satisfies every anchor is kept
+#     exactly as checked out (no removal, no symlink);
+#   - otherwise the resident $(pwd)/node_modules must satisfy every anchor,
+#     the worktree's incomplete shell (tracked stub / dangling link / partial
+#     install) is removed — ONLY the disposable worktree's own path, never
+#     the resident install — and replaced with an ABSOLUTE symlink to the
+#     resident node_modules, then the link target and the final anchors are
+#     re-verified.
+# Any failure returns non-zero so the caller fails closed BEFORE scraping,
+# building, committing or pushing anything. Resident files are never modified.
+ensureIsolatedDeps() {
+  local iso_dir="$1"
+  local resident_nm="$(pwd)/node_modules"
+  local iso_nm="$iso_dir/node_modules"
+  local anchor resident_phys resolved_phys
+
+  if depAnchorsOk "$iso_nm"; then
+    echo "[$(date)] deps: isolated node_modules already satisfies required anchors (${DEP_ANCHORS[*]})" >> "$LOG_FILE"
+    return 0
+  fi
+
+  for anchor in "${DEP_ANCHORS[@]}"; do
+    if [ ! -f "$resident_nm/$anchor" ]; then
+      echo "[$(date)] ❌ deps: resident node_modules ($resident_nm) is missing required anchor $anchor; cannot provision isolated worktree" >> "$LOG_FILE"
+      return 1
+    fi
+  done
+
+  resident_phys=$(cd "$resident_nm" 2>/dev/null && pwd -P)
+  if [ -z "$resident_phys" ]; then
+    echo "[$(date)] ❌ deps: could not resolve resident node_modules physical path" >> "$LOG_FILE"
+    return 1
+  fi
+  # Guard: only ever delete the disposable worktree's own node_modules. If the
+  # worktree path aliases the resident install, removing it would destroy
+  # resident files — refuse.
+  if [ -e "$iso_nm" ] && [ "$iso_nm" -ef "$resident_nm" ]; then
+    echo "[$(date)] ❌ deps: isolated node_modules aliases the resident install; refusing to remove it" >> "$LOG_FILE"
+    return 1
+  fi
+
+  echo "[$(date)] deps: isolated node_modules is an incomplete shell (tracked stub); replacing with absolute symlink to resident install" >> "$LOG_FILE"
+  # No trailing slash: if the shell is itself a symlink this removes the link
+  # object, never the link target's contents.
+  if ! rm -rf "$iso_nm" || [ -e "$iso_nm" ] || [ -L "$iso_nm" ]; then
+    echo "[$(date)] ❌ deps: could not remove incomplete node_modules shell at $iso_nm" >> "$LOG_FILE"
+    return 1
+  fi
+  if ! ln -s "$resident_phys" "$iso_nm"; then
+    echo "[$(date)] ❌ deps: could not create node_modules symlink in isolated worktree" >> "$LOG_FILE"
+    return 1
+  fi
+  resolved_phys=$(cd "$iso_nm" 2>/dev/null && pwd -P)
+  if [ "$resolved_phys" != "$resident_phys" ]; then
+    echo "[$(date)] ❌ deps: node_modules symlink resolves to '$resolved_phys' instead of resident install '$resident_phys'; unsafe target, failing closed" >> "$LOG_FILE"
+    return 1
+  fi
+  if ! depAnchorsOk "$iso_nm"; then
+    echo "[$(date)] ❌ deps: required anchors still absent after symlinking resident node_modules; failing closed" >> "$LOG_FILE"
+    return 1
+  fi
+  echo "[$(date)] ✅ deps: isolated node_modules -> $resident_phys (read-only reuse, all anchors verified)" >> "$LOG_FILE"
+  return 0
+}
+
 # priceCoverageOk <repo-dir>: count priced cardNumbers in the freshly built
 # data/database.json and compare against the previous build's priced count
 # (recorded by runPipeline into <dir>/data/database.json.prev-priced.txt).
@@ -374,6 +462,14 @@ if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
+  # DIC-1472: final dependency verification at the point of use — stage 1
+  # provisioned this worktree, but THIS (origin) process is the one that will
+  # import puppeteer/cheerio; absent anchors here must fail before mutation.
+  if ! depAnchorsOk "$(pwd)/node_modules"; then
+    echo "[$(date)] ❌ forced-isolated stage 2: node_modules anchors (${DEP_ANCHORS[*]}) absent in worktree; failing before pipeline mutation" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
   if ! runPipeline "$(pwd)" "chore: update database $(date +%Y-%m-%d) (forced-isolated)" isolated; then
     echo "[$(date)] ❌ forced-isolated pipeline failed — cron reports failure" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
@@ -419,14 +515,12 @@ if [ "${HUNTERCARD_FORCE_ISOLATED:-}" = "1" ]; then
     fi
   fi
   trap 'git worktree remove --force "$ISOLATED_DIR" >> "$LOG_FILE" 2>&1 || true; rm -rf "$LOCK_FILE"' EXIT
-  # Dependencies: the worktree needs node_modules; reuse the resident install
-  # read-only. Missing dependencies must fail closed, not surface later as a
-  # misleading mid-pipeline module-not-found.
-  if [ ! -d "$ISOLATED_DIR/node_modules" ] && [ -d "$(pwd)/node_modules" ]; then
-    ln -s "$(pwd)/node_modules" "$ISOLATED_DIR/node_modules" 2>/dev/null || true
-  fi
-  if [ ! -d "$ISOLATED_DIR/node_modules" ] && [ ! -L "$ISOLATED_DIR/node_modules" ]; then
-    echo "[$(date)] ❌ forced-isolated worktree has no node_modules and none could be linked; abandoning (cron fails)" >> "$LOG_FILE"
+  # DIC-1472: dependencies. The tracked node_modules shell makes a bare `-d`
+  # check pass while every real dependency is absent; provision via the
+  # anchor contract (verify → replace shell with absolute resident symlink →
+  # re-verify), failing closed BEFORE any pipeline mutation.
+  if ! ensureIsolatedDeps "$ISOLATED_DIR"; then
+    echo "[$(date)] ❌ forced-isolated worktree dependencies could not be provisioned; abandoning (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
@@ -476,11 +570,17 @@ if [ -n "$DIRTY_STATUS" ]; then
       exit 1
     fi
   fi
-  # Ensure node_modules available in the isolated tree (scripts need deps).
-  if [ ! -d "$ISOLATED_DIR/node_modules" ] && [ -d "$(pwd)/node_modules" ]; then
-    ln -s "$(pwd)/node_modules" "$ISOLATED_DIR/node_modules" 2>/dev/null || true
-  fi
   trap 'git worktree remove --force "$ISOLATED_DIR" >> "$LOG_FILE" 2>&1 || true; rm -rf "$LOCK_FILE"' EXIT
+  # DIC-1472: same dependency contract as the forced-isolated bootstrap — the
+  # tracked node_modules shell means directory existence is not readiness.
+  # Verify real anchors, replace only the disposable worktree's shell with an
+  # absolute symlink to the resident install, and fail closed BEFORE any
+  # pipeline mutation if provisioning cannot be proven.
+  if ! ensureIsolatedDeps "$ISOLATED_DIR"; then
+    echo "[$(date)] ❌ isolated worktree dependencies could not be provisioned; abandoning (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
 
   # DIC-1321 (Mac-Codex CR DIC-1328): record the starting SHA so we can detect
   # a no-op pipeline that created no new artifact commit. Pushing the unchanged
