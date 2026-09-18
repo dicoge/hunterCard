@@ -109,7 +109,7 @@ async function renderHome(navigate = () => {}, extra = {}) {
 await test('Home renders the shared shell landmarks with 首頁 tab active', async () => {
   const { container, cleanup } = await renderHome();
   try {
-    assert.ok(container.querySelector('[data-testid="shell-status-bar"]'), 'status bar');
+    assert.equal(container.querySelector('[data-testid="shell-status-bar"]'), null, 'no simulated status chrome (DIC-1452)');
     assert.ok(container.querySelector('[data-testid="shell-app-bar"]'), 'app bar');
     assert.equal(
       container.querySelector('[data-testid="shell-app-bar-title"]').textContent,

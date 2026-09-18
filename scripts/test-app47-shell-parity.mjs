@@ -164,7 +164,7 @@ await test('DeckEditor renders inside the shared shell with 牌組 tab active (P
   const { container, cleanup } = await render(React.createElement(DeckEditorScreen));
   try {
     assert.ok(container.querySelector('[data-testid="deck-shell"]'), 'shared shell root');
-    assert.ok(container.querySelector('[data-testid="shell-status-bar"]'), 'status bar');
+    assert.equal(container.querySelector('[data-testid="shell-status-bar"]'), null, 'no simulated status chrome (DIC-1452)');
     const deckTab = container.querySelector('[data-testid="shell-bottom-tab-deck"]');
     assert.ok(deckTab, '牌組 tab renders');
     assert.equal(deckTab.getAttribute('aria-selected'), 'true', '牌組 tab active');
