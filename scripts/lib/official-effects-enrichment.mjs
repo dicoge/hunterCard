@@ -35,7 +35,8 @@
  *   hY05-011, hY06-011) byte for byte, including their verbatim Japanese colour
  *   glyphs. Anything carrying rules text — including a yell with keywords and
  *   every `oshiSkill`/`spOshiSkill` holder such as hYS01-001..004 — returns
- *   null and stays pinned on the data/official-skills-zh-gap.json baseline.
+ *   null and stays fail-closed until a reviewed translation lands in
+ *   data/effects-zh.json (DIC-1167: there is no exemption baseline).
  */
 import { canonicalizeTerms } from '../translate-effects.js';
 
@@ -58,7 +59,7 @@ export const RULES_TEXT_FIELDS = Object.freeze([
  * Does this effects entry carry rules text? Deliberately biased toward `true`:
  * an unrecognized shape in a rules-text field counts as rules text, because the
  * only consequence of a false positive is that derivation refuses and the card
- * stays fail-closed on the pinned baseline.
+ * stays fail-closed until a reviewed translation lands.
  *
  * Shape validation of the entry itself is deriveStructuralZh()'s job — this
  * predicate answers the narrow rules-text question for a plain object.
@@ -117,7 +118,7 @@ export function missingEffectsCardNumbers(officialCards, effectsMap) {
  * Derive the Traditional-Chinese entry for a rules-text-free Japanese entry, or
  * null when anything at all is unresolved. Every `null` return leaves the card
  * fail-closed — the completeness gate then requires a reviewed
- * data/official-skills-zh-gap.json pin instead.
+ * data/effects-zh.json translation (DIC-1167: no exemption baseline exists).
  */
 export function deriveStructuralZh(jpEntry, nameZhMap) {
   if (!jpEntry || typeof jpEntry !== 'object') return null;

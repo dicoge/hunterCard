@@ -43,15 +43,15 @@ import process from 'node:process';
 // list rather than an env var so a future edit cannot silently start
 // committing e.g. build artefacts, secrets, or user-facing files by
 // injecting an extra path at runtime.
-// DIC-1468: data/effects-jp.json, data/effects-zh.json and the pinned
-// data/official-skills-zh-gap.json baseline are written by the enrichment
-// step (scripts/enrich-official-effects.mjs) and must ship in the same PR as
-// the official rows they describe.
+// DIC-1468: data/effects-jp.json and data/effects-zh.json are written by the
+// enrichment step (scripts/enrich-official-effects.mjs) and must ship in the
+// same PR as the official rows they describe. (DIC-1167: the pinned
+// data/official-skills-zh-gap.json baseline is retired and must never be
+// committed again — skillsZh is required per printing with no exemption.)
 export const SYNC_PATHS = Object.freeze([
   'data/official/',
   'data/effects-jp.json',
   'data/effects-zh.json',
-  'data/official-skills-zh-gap.json',
   'data/database.json',
   'public/data/database.json',
   'docs/audits/official-catalog-audit.json',
