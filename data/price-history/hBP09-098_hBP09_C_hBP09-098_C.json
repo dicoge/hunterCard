@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP09-098_hBP09_C_hBP09-098_C",
+  "cardNumber": "hBP09-098",
+  "name": "スイカバブル",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-098_hBP09_C_hBP09-098_C",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.743Z",
+  "nameZh": "西瓜泡泡"
+}

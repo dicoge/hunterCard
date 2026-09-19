@@ -2,14 +2,14 @@
   "cardId": "hBP04-043",
   "name": "雪花ラミィ",
   "nameZh": "雪花菈米",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.39,
   "confidence": 0.9,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.6,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.330Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-19T12:27:27.347Z",
+  "dataPoints": 69
 }

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-083_hBP02_U_hBP02-083_U",
+  "cardNumber": "hBP02-083",
+  "name": "魔法のタンス",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-083_hBP02_U_hBP02-083_U",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.449Z",
+  "nameZh": "魔法衣櫃"
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-089_hBP03_U_hBP03-089_U",
+  "cardNumber": "hBP03-089",
+  "name": "ファンミーティング",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-089_hBP03_U_hBP03-089_U",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.495Z",
+  "nameZh": "粉絲見面會"
+}

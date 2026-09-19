@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+  "cardNumber": "hBP06-101",
+  "name": "ムーナびと",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-101_hBP06_C_hBP06-101_C",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.601Z",
+  "nameZh": "姆娜人"
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-090_hBP04_U_hBP04-090_U",
+  "cardNumber": "hBP04-090",
+  "name": "作業用パソコン",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-090_hBP04_U_hBP04-090_U",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.534Z",
+  "nameZh": "作業用電腦"
+}

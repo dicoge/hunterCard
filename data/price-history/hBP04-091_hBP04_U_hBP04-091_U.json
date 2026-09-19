@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-091_hBP04_U_hBP04-091_U",
+  "cardNumber": "hBP04-091",
+  "name": "限界飯",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-091_hBP04_U_hBP04-091_U",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.534Z",
+  "nameZh": "極限飯"
+}

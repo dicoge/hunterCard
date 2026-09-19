@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-096_hBP03_U_hBP03-096_U",
+  "cardNumber": "hBP03-096",
+  "name": "ライフル",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-096_hBP03_U_hBP03-096_U",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.497Z",
+  "nameZh": "步槍"
+}

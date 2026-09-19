@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP08-103_hBP08_U_hBP08-103_U",
+  "cardNumber": "hBP08-103",
+  "name": "ホロマント",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-103_hBP08_U_hBP08-103_U",
+      "sourceProduct": "hBP08"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.689Z",
+  "nameZh": "Hololive斗篷"
+}

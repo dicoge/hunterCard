@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-076_hBP02_C_hBP02-076_C",
+  "cardNumber": "hBP02-076",
+  "name": "カスタムパソコン",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-076_hBP02_C_hBP02-076_C",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.447Z",
+  "nameZh": "客製電腦"
+}

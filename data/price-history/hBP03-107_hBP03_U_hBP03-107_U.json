@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-107_hBP03_U_hBP03-107_U",
+  "cardNumber": "hBP03-107",
+  "name": "35P",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-107_hBP03_U_hBP03-107_U",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.502Z",
+  "nameZh": "35P"
+}

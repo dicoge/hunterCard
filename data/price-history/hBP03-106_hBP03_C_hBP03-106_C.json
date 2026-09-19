@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-106_hBP03_C_hBP03-106_C",
+  "cardNumber": "hBP03-106",
+  "name": "SSRB",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-106_hBP03_C_hBP03-106_C",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.501Z",
+  "nameZh": "SSRB"
+}

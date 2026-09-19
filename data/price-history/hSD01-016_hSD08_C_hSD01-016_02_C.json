@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD01-016_hSD08_C_hSD01-016_02_C",
+  "cardNumber": "hSD01-016",
+  "name": "春先のどか",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-016_hSD08_C_hSD01-016_02_C",
+      "sourceProduct": "hSD08"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.421Z",
+  "nameZh": "春先暖和"
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-104_hBP04_C_hBP04-104_C",
+  "cardNumber": "hBP04-104",
+  "name": "スバルドダック",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-104_hBP04_C_hBP04-104_C",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.540Z",
+  "nameZh": "昴達鴨"
+}

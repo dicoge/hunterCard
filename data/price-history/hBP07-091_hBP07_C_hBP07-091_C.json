@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP07-091_hBP07_C_hBP07-091_C",
+  "cardNumber": "hBP07-091",
+  "name": "ライブスタッフ",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-091_hBP07_C_hBP07-091_C",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.604Z",
+  "nameZh": "演唱會工作人員"
+}

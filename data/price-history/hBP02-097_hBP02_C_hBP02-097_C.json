@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-097_hBP02_C_hBP02-097_C",
+  "cardNumber": "hBP02-097",
+  "name": "UDIN",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-097_hBP02_C_hBP02-097_C",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.455Z",
+  "nameZh": "UDIN"
+}

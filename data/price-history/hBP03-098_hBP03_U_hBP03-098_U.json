@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-098_hBP03_U_hBP03-098_U",
+  "cardNumber": "hBP03-098",
+  "name": "金時",
+  "records": [
+    {
+      "date": "2026-09-19",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-098_hBP03_U_hBP03-098_U",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-19T12:27:21.498Z",
+  "nameZh": "金時"
+}
