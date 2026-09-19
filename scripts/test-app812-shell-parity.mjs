@@ -64,7 +64,7 @@ async function test(name, fn) {
 
 function assertShell(container, shellId, tabKey, tabLabelNote) {
   assert.ok(container.querySelector(`[data-testid="${shellId}"]`), `${shellId} renders`);
-  assert.ok(container.querySelector('[data-testid="shell-status-bar"]'), 'status bar');
+  assert.equal(container.querySelector('[data-testid="shell-status-bar"]'), null, 'no simulated status chrome (DIC-1452)');
   assert.ok(container.querySelector('[data-testid="shell-bottom-tab-bar"]'), 'bottom tab bar');
   const tab = container.querySelector(`[data-testid="shell-bottom-tab-${tabKey}"]`);
   assert.ok(tab, `${tabKey} tab renders`);

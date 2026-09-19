@@ -75,6 +75,7 @@
     "test:release-apk-postpackage": "node scripts/test-release-apk-postpackage.mjs",
     "test:release-apk-postpackage-mutations": "node scripts/test-release-apk-postpackage-mutations.mjs",
     "test:play-manifest": "node scripts/test-play-release-manifest.mjs",
+    "test:eas-submit-production-track": "node scripts/test-eas-submit-production-track.mjs",
     "test:play-store-assets": "node scripts/test-play-store-assets.mjs",
     "test:privacy-disclosure": "node scripts/test-privacy-disclosure.mjs",
     "test:native-scan-no-upload": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-native-scan-no-image-upload.mjs",
@@ -119,6 +120,7 @@
     "test:deck-store-delete": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-store-delete.mjs",
     "test:uniform-card-grid": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-uniform-card-grid.mjs",
     "test:search-results-layout": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-search-results-layout.mjs",
+    "test:appshell-bottom-inset": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1452-appshell-bottom-inset.mjs",
     "test:search-pen-parity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-search-pen-parity.mjs",
     "test:search-pen-geometry": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-search-pen-geometry.mjs",
     "test:detail-pen-parity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-web-render.mjs scripts/test-dic1427-detail-pen-parity.mjs",
@@ -191,7 +193,7 @@
     "@vercel/kv": "^3.0.0",
     "axios": "^1.16.1",
     "cheerio": "^1.2.0",
-    "expo": "~54.0.36",
+    "expo": "~54.0.37",
     "expo-apple-authentication": "~8.0.8",
     "expo-auth-session": "~7.0.11",
     "expo-camera": "~17.0.10",
@@ -219,6 +221,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@types/node": "^25.9.7",
     "@types/node-fetch": "^2.6.12",
     "@types/react": "~19.1.0",
     "@vercel/node": "^5.7.11",

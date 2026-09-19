@@ -73,28 +73,49 @@ check(
   'releaseFlags: FEATURES.watchlist still gated on !STORE_MVP (regression)',
   /watchlist:\s*!STORE_MVP/.test(flags),
 );
+// DIC-1481: the Collection ownership-browser route is part of the corrected
+// new-interface release contract and must stay registered in EVERY release
+// profile. If this flag ever becomes STORE_MVP-derived again, production
+// re-ships the exact release blocker CR run edb401bf failed.
+check(
+  'releaseFlags: FEATURES.collection is unconditionally true (DIC-1481)',
+  /collection:\s*true\s*,/.test(flags),
+);
+check(
+  'releaseFlags: FEATURES.collection is NOT derived from STORE_MVP',
+  !/collection:\s*!?STORE_MVP/.test(flags),
+);
 check(
   'releaseFlags: FEATURES.premium still gated on !STORE_MVP (regression)',
   /premium:\s*!STORE_MVP/.test(flags),
 );
 
-// ── 2. Drawer routes fail-closed: Collection AND Watchlist unregistered
-//        under Store MVP. Removing the Drawer.Screen unregisters the route so
-//        `navigation.navigate('Collection')` and deep links both fail to
-//        arrive — the acceptance criterion says "not only hidden menus". ──
+// ── 2. Drawer routes: since DIC-1481 the Collection route is registered in
+//        EVERY profile behind the constant FEATURES.collection contract
+//        point, while Watchlist (and Favorites) stay unregistered under
+//        Store MVP — removing their Drawer.Screen unregisters the route so
+//        `navigate()` and deep links both fail to arrive ("not only hidden
+//        menus"). ──
 const nav = read('src/navigation/AppNavigator.tsx');
 check(
-  'AppNavigator: Collection Drawer.Screen wrapped in {FEATURES.favorites && ...}',
-  /\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav),
+  'AppNavigator: Collection Drawer.Screen wrapped in {FEATURES.collection && ...} (DIC-1481)',
+  /\{FEATURES\.collection\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav),
 );
-// DIC-1430 CR (run 037b339f): the rejected repair kept the route registered in
-// every profile and hid only its drawer MENU ROW via `drawerItemStyle`. That
-// leaves navigate() and deep links working, reversing the DIC-1256 fail-closed
-// route requirement without a superseding compliance decision. Pin the
-// difference so the downgrade cannot reappear as a "cosmetic" edit.
+// DIC-1481 supersedes DIC-1256's route-unregistration criterion for this ONE
+// route: re-gating it on FEATURES.favorites / STORE_MVP re-ships the release
+// blocker CR run edb401bf failed.
 check(
-  'AppNavigator: Collection is NOT downgraded to a drawerItemStyle menu-row hide (DIC-1430 CR)',
+  'AppNavigator: Collection is NOT gated on FEATURES.favorites or STORE_MVP (DIC-1481)',
+  !/\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav)
+    && !/\{!?STORE_MVP\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(nav),
+);
+check(
+  'AppNavigator: Collection keeps its visible drawer menu row (no drawerItemStyle hide)',
   !/name="Collection"[\s\S]{0,400}?drawerItemStyle:/.test(nav),
+);
+check(
+  'AppNavigator: Favorites Drawer.Screen still wrapped in {FEATURES.favorites && ...} (regression)',
+  /\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Favorites"/s.test(nav),
 );
 check(
   'AppNavigator: Watchlist Drawer.Screen still wrapped in {FEATURES.watchlist && ...} (regression)',
@@ -116,62 +137,71 @@ for (const name of ['Home', 'Scan', 'Search', 'DeckEditor', 'TournamentReport', 
 }
 
 // ── 2b. MeScreen 我的 hub: every control that NAVIGATES to Collection must
-//        carry the same gate that registers the route (DIC-1430).
-//
-//        DIC-1427 shipped 我的 as a collection hub whose 卡牌收藏 segment,
-//        search field and 檢視全部 action all call navigate('Collection')
-//        unconditionally, while section 2 above keeps that route unregistered
-//        under Store MVP. Production therefore rendered three live, visible,
-//        clickable controls that silently went nowhere: React Navigation drops
-//        a NAVIGATE to an unknown route name and its warning is stripped from
-//        production builds, so QA saw working clicks, no arrival, no error.
-//        The gate belongs on the CONTROLS — dead controls are the defect, an
-//        unregistered route is the requirement. ──
+//        carry the same gate that registers the route (DIC-1430's invariant:
+//        a control must never outlive its route — React Navigation drops a
+//        NAVIGATE to an unknown route name silently in production builds).
+//        Since DIC-1481 that shared gate is the constant FEATURES.collection,
+//        so the controls render in every profile AND stay pinned to the
+//        route's registration should the contract ever move again. ──
 const me = read('src/screens/MeScreen.tsx');
 check(
-  'MeScreen: 卡牌收藏 segment entry is gated on FEATURES.favorites (DIC-1430)',
-  /key:\s*'collection'[^}]*enabled:\s*FEATURES\.favorites/.test(me),
+  'MeScreen: 卡牌收藏 segment entry is gated on FEATURES.collection (DIC-1481)',
+  /key:\s*'collection'[^}]*enabled:\s*FEATURES\.collection/.test(me),
 );
 check(
   'MeScreen: no Collection-routed segment is hardcoded `enabled: true` (DIC-1430)',
   !/route:\s*'Collection'[^}]*enabled:\s*true/.test(me),
 );
 check(
-  'MeScreen: me-search-field wrapped in {FEATURES.favorites && ...} (DIC-1430)',
-  /\{FEATURES\.favorites\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-search-field"/.test(me),
+  'MeScreen: 卡牌收藏 segment is NOT still gated on FEATURES.favorites (DIC-1481)',
+  !/key:\s*'collection'[^}]*enabled:\s*FEATURES\.favorites/.test(me),
 );
 check(
-  'MeScreen: me-view-all wrapped in {FEATURES.favorites && ...} (DIC-1430)',
-  /\{FEATURES\.favorites\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-view-all"/.test(me),
+  'MeScreen: me-search-field wrapped in {FEATURES.collection && ...} (DIC-1481)',
+  /\{FEATURES\.collection\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-search-field"/.test(me),
+);
+check(
+  'MeScreen: me-view-all wrapped in {FEATURES.collection && ...} (DIC-1481)',
+  /\{FEATURES\.collection\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-view-all"/.test(me),
+);
+// Restricted segments keep their fail-closed gates: only the Collection
+// boundary moved in DIC-1481.
+check(
+  'MeScreen: 到價提醒 segment stays gated on FEATURES.watchlist (regression)',
+  /key:\s*'watchlist'[^}]*enabled:\s*FEATURES\.watchlist/.test(me),
+);
+check(
+  'MeScreen: 趨勢 segment stays gated on FEATURES.favorites (regression)',
+  /key:\s*'trends'[^}]*enabled:\s*FEATURES\.favorites/.test(me),
 );
 // Mutation sensitivity: prove these predicates actually reject the shipped
 // defect rather than matching any source. Re-introduce the exact pre-fix
 // spellings in memory and assert each assertion flips.
 {
   const ungatedSegment = me.replace(
-    /key:\s*'collection'([^}]*)enabled:\s*FEATURES\.favorites/,
+    /key:\s*'collection'([^}]*)enabled:\s*FEATURES\.collection/,
     "key: 'collection'$1enabled: true",
   );
   check(
     'mutation: an ungated `enabled: true` Collection segment IS rejected (DIC-1430)',
-    !/key:\s*'collection'[^}]*enabled:\s*FEATURES\.favorites/.test(ungatedSegment)
+    !/key:\s*'collection'[^}]*enabled:\s*FEATURES\.collection/.test(ungatedSegment)
       && /route:\s*'Collection'[^}]*enabled:\s*true/.test(ungatedSegment),
   );
   const ungatedSearch = me.replace(
-    /\{FEATURES\.favorites\s*&&\s*\(\s*(<TouchableOpacity[\s\S]{0,400}?testID="me-search-field")/,
+    /\{FEATURES\.collection\s*&&\s*\(\s*(<TouchableOpacity[\s\S]{0,400}?testID="me-search-field")/,
     '$1',
   );
   check(
     'mutation: an ungated me-search-field IS rejected (DIC-1430)',
-    !/\{FEATURES\.favorites\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-search-field"/.test(ungatedSearch),
+    !/\{FEATURES\.collection\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-search-field"/.test(ungatedSearch),
   );
   const ungatedViewAll = me.replace(
-    /\{FEATURES\.favorites\s*&&\s*\(\s*(<TouchableOpacity[\s\S]{0,400}?testID="me-view-all")/,
+    /\{FEATURES\.collection\s*&&\s*\(\s*(<TouchableOpacity[\s\S]{0,400}?testID="me-view-all")/,
     '$1',
   );
   check(
     'mutation: an ungated me-view-all IS rejected (DIC-1430)',
-    !/\{FEATURES\.favorites\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-view-all"/.test(ungatedViewAll),
+    !/\{FEATURES\.collection\s*&&\s*\(\s*<TouchableOpacity[\s\S]{0,400}?testID="me-view-all"/.test(ungatedViewAll),
   );
 }
 
@@ -714,6 +744,28 @@ check(
   check(
     'mutation: making FEATURES.sellPrice STORE_MVP-derived would flip both sellPrice assertions',
     !/sellPrice:\s*true\s*,/.test(regressed) && /sellPrice:\s*!?STORE_MVP/.test(regressed),
+  );
+}
+// DIC-1481 mutation: re-deriving the Collection route flag from STORE_MVP is
+// the exact edit that re-ships the release blocker (CR run edb401bf).
+{
+  const regressed = flags.replace(/collection:\s*true\s*,/, 'collection: !STORE_MVP,');
+  check(
+    'mutation: making FEATURES.collection STORE_MVP-derived would flip both collection assertions',
+    !/collection:\s*true\s*,/.test(regressed) && /collection:\s*!?STORE_MVP/.test(regressed),
+  );
+}
+// DIC-1481 mutation: re-gating the Collection Drawer.Screen on
+// FEATURES.favorites (the pre-DIC-1481 spelling) must flip section 2.
+{
+  const regressed = nav.replace(
+    /\{FEATURES\.collection\s*&&(\s*\(\s*<Drawer\.Screen[\s\S]{0,200}?name="Collection")/,
+    '{FEATURES.favorites &&$1',
+  );
+  check(
+    'mutation: re-gating the Collection route on FEATURES.favorites IS rejected (DIC-1481)',
+    !/\{FEATURES\.collection\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(regressed)
+      && /\{FEATURES\.favorites\s*&&[^}]*<Drawer\.Screen[^>]*name="Collection"/s.test(regressed),
   );
 }
 

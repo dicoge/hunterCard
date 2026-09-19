@@ -155,7 +155,7 @@ await test('Login renders the Pen v2 auth surface with no tab bar and full-profi
   const { container: c, cleanup } = await createRooter(React.createElement(LoginScreen), container);
   try {
     assert.ok(c.querySelector('[data-testid="login-shell"]'), 'login root');
-    assert.ok(c.querySelector('[data-testid="shell-status-bar"]'), 'status bar (Pen p28zL keeps it)');
+    assert.equal(c.querySelector('[data-testid="shell-status-bar"]'), null, 'no simulated status chrome (DIC-1452)');
     assert.equal(c.querySelector('[data-testid="shell-bottom-tab-bar"]'), null, 'no tab bar in the Pen auth frame');
     assert.ok(c.querySelector('[data-testid="login-logo-tile"]'), 'Pen logo tile (node FTEuu)');
     const google = c.querySelector('[data-testid="login-google"]');
