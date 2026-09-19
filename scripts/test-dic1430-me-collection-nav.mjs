@@ -1,44 +1,46 @@
 #!/usr/bin/env node
-// DIC-1430 — the 我的 Collection entry points must agree with the Collection
-// route's registration in BOTH release profiles.
+// DIC-1430 → DIC-1481 — the 我的 Collection entry points must agree with the
+// Collection route's registration in EVERY release profile, and since
+// DIC-1481 that registration is unconditional.
 //
-// Mac-OpenClaw Production QA run 16c25a62-af71-4571-99c8-bc8e7a5878cd found
-// that on https://holohunter.dicoge.com/ a fresh guest reaching 我的 could
-// press the real Collection entry points and go nowhere:
-//   * `me-segment-collection` — count=1, visible, click succeeds
-//   * `me-search-field`       — count=1, visible, click succeeds
-// …yet `collection-shell` stayed count=0, the page stayed 我的, and there was
-// NO console / page / network error. That silence is the fingerprint of React
-// Navigation dropping `navigate()` for an UNREGISTERED route name: a no-op,
-// not a throw, and its dev-only warning is stripped from production builds.
+// History, because this file used to assert the opposite:
+//   * DIC-1430 (Production P0): 我的 shipped three live controls onto a route
+//     AppNavigator only registered behind FEATURES.favorites (= !STORE_MVP,
+//     DIC-1256). React Navigation drops navigate() to an unknown route name
+//     silently in production builds, so QA saw working clicks, no arrival,
+//     no error. The repair then was gating the CONTROLS; CR run 037b339f
+//     rejected registering the route in every profile because no product
+//     decision superseded DIC-1256's "not only hidden menus" criterion.
+//   * DIC-1481 (Play Production release blocker): the corrected
+//     new-interface release contract IS that superseding decision — the
+//     Collection ownership browser must stay registered and reachable in
+//     every release profile, while store-disallowed favorites/watchlist/
+//     market surfaces still fail closed. CR run edb401bf failed the release
+//     because production set EXPO_PUBLIC_STORE_MVP=1, AppNavigator
+//     unregistered Collection, and this test asserted that wrong behavior.
 //
-// Root cause: DIC-1427 shipped 我的 with three UNCONDITIONAL controls onto
-// `Collection` (segment, search field, 檢視全部), while AppNavigator registers
-// that route only behind `FEATURES.favorites` (= !STORE_MVP, DIC-1256). Web
-// Production injects no EXPO_PUBLIC_STORE_MVP define, so the resolver
-// fail-closes to STORE_MVP=ON and the route is absent.
+// So the contract asserted here is now:
+//   EVERY profile — the three 我的 Collection controls render and each one
+//   really arrives at the Collection route; programmatic navigate() and the
+//   nested/deep-link form both arrive.
+//   Store-MVP profiles (production, preview) — Favorites and Watchlist
+//   routes stay UNREGISTERED and their 我的 segments stay hidden: the
+//   fail-closed boundary moved for exactly one route, not for the profile.
 //
-// THE FIX IS THE CONTROLS, NOT THE ROUTE. Store MVP's DIC-1256 requirement is
-// fail-closed on the route itself — "not only hidden menus" — so navigate()
-// and deep links must both be unable to reach Collection in that profile. CR
-// run 037b339f rejected the inverse repair (registering the route in every
-// profile and hiding only its drawer menu row) because it reverses that
-// recorded requirement without a superseding product/compliance decision.
-//
-// Two profiles, each in its OWN PROCESS because src/config/releaseFlags.ts
+// Three profiles, each in its OWN PROCESS because src/config/releaseFlags.ts
 // resolves STORE_MVP once at module load:
 //
-//   production (EXPO_PUBLIC_STORE_MVP=1) — fail-closed:
-//     none of the three controls render, and Collection is unreachable by
-//     programmatic navigate() AND by a nested/deep-link navigate().
-//   full (EXPO_PUBLIC_STORE_MVP=0) — full app:
-//     all three controls render and each one really arrives at the route.
+//   production (EXPO_PUBLIC_STORE_MVP=1) — Store MVP ON (eas.json production)
+//   preview    (EXPO_PUBLIC_STORE_MVP unset) — Store MVP ON via the
+//     fail-closed resolver default; also proves the unset-env path that Web
+//     Production actually ships keeps Collection reachable
+//   full       (EXPO_PUBLIC_STORE_MVP=0) — full app
 //
 // Run: npm run test:collection-nav
 
 import { fileURLToPath } from 'node:url';
 
-const PROFILE = process.env.DIC1430_PROFILE;
+const PROFILE = process.env.DIC1481_PROFILE;
 
 // ── Runner: fan out to one child per release profile ──
 if (!PROFILE) {
@@ -46,13 +48,16 @@ if (!PROFILE) {
   const self = fileURLToPath(import.meta.url);
   let failed = false;
 
-  for (const [profile, storeMvp] of [['production', '1'], ['full', '0']]) {
-    console.log(`\n── release profile: ${profile} (EXPO_PUBLIC_STORE_MVP=${storeMvp}) ──`);
+  for (const [profile, storeMvp] of [['production', '1'], ['preview', null], ['full', '0']]) {
+    console.log(`\n── release profile: ${profile} (EXPO_PUBLIC_STORE_MVP=${storeMvp ?? '<unset>'}) ──`);
     // Inherit execArgv so the child keeps the type-stripping + web-render
     // loader flags the npm script supplies; hardcoding them here would drift.
+    const env = { ...process.env, DIC1481_PROFILE: profile };
+    if (storeMvp === null) delete env.EXPO_PUBLIC_STORE_MVP;
+    else env.EXPO_PUBLIC_STORE_MVP = storeMvp;
     const res = spawnSync(process.execPath, [...process.execArgv, self], {
       stdio: 'inherit',
-      env: { ...process.env, DIC1430_PROFILE: profile, EXPO_PUBLIC_STORE_MVP: storeMvp },
+      env,
     });
     if (res.status !== 0) {
       failed = true;
@@ -61,18 +66,21 @@ if (!PROFILE) {
   }
 
   if (failed) {
-    console.error('\n❌ DIC-1430 我的 Collection controls vs route registration: FAILED');
+    console.error('\n❌ DIC-1481 Collection route registration across release profiles: FAILED');
     process.exit(1);
   }
-  console.log('\n✅ DIC-1430 我的 Collection controls match route registration in both profiles');
+  console.log('\n✅ DIC-1481 Collection route reachable in every profile; restricted surfaces stay fail-closed');
   process.exit(0);
 }
 
 // ── Child: one release profile ──
-const IS_PRODUCTION_PROFILE = PROFILE === 'production';
+const IS_STORE_MVP_PROFILE = PROFILE !== 'full';
 // Pin defensively so a stray local .env cannot silently swap the profile and
-// make this child pass for the wrong reason.
-process.env.EXPO_PUBLIC_STORE_MVP = IS_PRODUCTION_PROFILE ? '1' : '0';
+// make this child pass for the wrong reason. `preview` deliberately leaves
+// the variable UNSET to exercise the resolver's fail-closed default.
+if (PROFILE === 'production') process.env.EXPO_PUBLIC_STORE_MVP = '1';
+else if (PROFILE === 'preview') delete process.env.EXPO_PUBLIC_STORE_MVP;
+else process.env.EXPO_PUBLIC_STORE_MVP = '0';
 
 const assert = (await import('node:assert/strict')).default;
 const { JSDOM } = await import('jsdom');
@@ -144,9 +152,9 @@ async function test(label, fn) {
 }
 
 // Seed one owned printing BEFORE mount. 檢視全部 renders only once the guest
-// owns at least one card, so without this its absence under Store MVP would
-// pass for the wrong reason — the empty-state branch would be hiding it
-// regardless of the release flag. Seeding makes the flag the only variable.
+// owns at least one card, so without this its rendering in every profile
+// could hide an empty-state interaction rather than prove the release flag.
+// Seeding makes the flag the only variable.
 // (Canonical exact-print identity: cardNumber|printing, never BASE.)
 const SEEDED_KEY = 'hBP01-024|PARALLEL/HR';
 useDeckStore.setState({ collection: { [SEEDED_KEY]: 2 } });
@@ -170,13 +178,16 @@ await settle();
 // Walk back to 我的 through the real bottom tab deck the shell renders on
 // every route, so each entry point is exercised from a focused 我的.
 //
-// Arrival at Collection is proven by the FOCUSED route name plus the presence
-// of `collection-shell` — deliberately NOT by `me-shell` disappearing, since a
-// drawer navigator keeps already-visited screens mounted while unfocused.
+// Arrival at Collection is proven by the FOCUSED route name — deliberately
+// NOT by shell testIDs appearing/disappearing, since a drawer navigator
+// keeps already-visited screens mounted while unfocused, so once Collection
+// has been reached `collection-shell` stays in the DOM for the rest of the
+// process.
 async function gotoMe() {
   const meTab = byTestId('shell-bottom-tab-me');
   assert.ok(meTab, 'shell bottom tab deck renders the 我的 tab');
   await click(meTab);
+  assert.equal(navRef.getCurrentRoute()?.name, 'Me', '我的 becomes the focused route');
   assert.ok(byTestId('me-shell'), '我的 hub mounts');
 }
 
@@ -195,8 +206,10 @@ async function tryNavigate(...args) {
 }
 
 await test(`suite really runs the ${PROFILE} release profile`, async () => {
-  assert.equal(STORE_MVP, IS_PRODUCTION_PROFILE, `STORE_MVP must be ${IS_PRODUCTION_PROFILE}`);
-  assert.equal(FEATURES.favorites, !IS_PRODUCTION_PROFILE, `FEATURES.favorites must be ${!IS_PRODUCTION_PROFILE}`);
+  assert.equal(STORE_MVP, IS_STORE_MVP_PROFILE, `STORE_MVP must be ${IS_STORE_MVP_PROFILE}`);
+  assert.equal(FEATURES.favorites, !IS_STORE_MVP_PROFILE, `FEATURES.favorites must be ${!IS_STORE_MVP_PROFILE}`);
+  assert.equal(FEATURES.watchlist, !IS_STORE_MVP_PROFILE, `FEATURES.watchlist must be ${!IS_STORE_MVP_PROFILE}`);
+  assert.equal(FEATURES.collection, true, 'FEATURES.collection must be true in every profile (DIC-1481)');
 });
 
 await test('real nested navigator mounts for a web guest', async () => {
@@ -210,70 +223,90 @@ await test('我的 mounts with seeded ownership (檢視全部 precondition satis
   assert.equal(isPresent('me-owned-empty'), false, '我的 is NOT in the empty state');
 });
 
-if (IS_PRODUCTION_PROFILE) {
-  // ── Store MVP: fail-closed. No control may reference the absent route. ──
-  await test('NONE of the three Collection controls render under Store MVP', async () => {
-    await gotoMe();
-    assert.equal(isPresent('me-segment-collection'), false, '卡牌收藏 segment must not render');
-    assert.equal(isPresent('me-search-field'), false, 'search field must not render');
-    assert.equal(isPresent('me-view-all'), false, '檢視全部 must not render (ownership IS seeded)');
-  });
+// ── DIC-1481: Collection is registered and reachable in EVERY profile. ──
 
-  await test('no empty segment bar is left behind once every segment is gated off', async () => {
+await test('all three Collection controls render (DIC-1481: every profile)', async () => {
+  await gotoMe();
+  assert.equal(isPresent('me-segments'), true, 'the segment row renders');
+  assert.equal(isPresent('me-segment-collection'), true, 'Pen oaxgt 卡牌收藏 segment renders');
+  assert.equal(isPresent('me-search-field'), true, 'Pen WUovy search field renders');
+  assert.equal(isPresent('me-view-all'), true, 'Pen 檢視全部 action renders (ownership IS seeded)');
+});
+
+await test('Collection route is REACHABLE by programmatic navigate() (DIC-1481)', async () => {
+  await gotoMe();
+  const { route, threw } = await tryNavigate('Collection');
+  assert.equal(threw, null, `navigate("Collection") must not throw: ${threw}`);
+  assert.equal(route, 'Collection', 'navigate("Collection") must arrive');
+  assert.equal(isPresent('collection-shell'), true, 'CollectionScreen mounts');
+});
+
+await test('Collection route is REACHABLE by a nested/deep-link navigate() (DIC-1481)', async () => {
+  await gotoMe();
+  const { route, threw } = await tryNavigate('MainDrawer', { screen: 'Collection' });
+  assert.equal(threw, null, `deep link into MainDrawer/Collection must not throw: ${threw}`);
+  assert.equal(route, 'Collection', 'deep link into MainDrawer/Collection must arrive');
+});
+
+for (const [label, testID] of [
+  ['我的 segment 卡牌收藏', 'me-segment-collection'],
+  ['我的 search field', 'me-search-field'],
+  ['我的 檢視全部 action', 'me-view-all'],
+]) {
+  await test(`${label} navigates to the real Collection screen`, async () => {
     await gotoMe();
-    // styles.segmentRow paints a bordered surface; an empty one would read as
-    // a broken control strip rather than an absent feature.
-    assert.equal(isPresent('me-segments'), false, 'the segment row itself is dropped');
+    const el = byTestId(testID);
+    assert.ok(el, `${testID} renders on 我的`);
+    await click(el);
+    assert.equal(
+      navRef.getCurrentRoute()?.name,
+      'Collection',
+      `expected the Collection route, got ${navRef.getCurrentRoute()?.name}`,
+    );
+    assert.equal(isPresent('collection-shell'), true, 'CollectionScreen shell mounts (not still 我的)');
+  });
+}
+
+// ── The fail-closed boundary moved for ONE route only. Favorites, Watchlist
+//    and their 我的 segments keep the DIC-1256 / DIC-908 behavior. ──
+
+if (IS_STORE_MVP_PROFILE) {
+  await test('restricted 我的 segments stay hidden under Store MVP', async () => {
+    await gotoMe();
     assert.equal(isPresent('me-segment-watchlist'), false, '到價提醒 segment stays hidden (DIC-908)');
-    assert.equal(isPresent('me-segment-trends'), false, '趨勢 segment stays hidden');
+    assert.equal(isPresent('me-segment-trends'), false, '趨勢 segment stays hidden (DIC-1256)');
   });
 
-  await test('Collection route is UNREACHABLE by programmatic navigate() (DIC-1256)', async () => {
+  await test('Favorites route stays UNREACHABLE under Store MVP (DIC-1256)', async () => {
     await gotoMe();
-    const { route } = await tryNavigate('Collection');
-    assert.notEqual(route, 'Collection', 'navigate("Collection") must not arrive');
-    assert.equal(isPresent('collection-shell'), false, 'CollectionScreen must not mount');
+    const direct = await tryNavigate('Favorites');
+    assert.notEqual(direct.route, 'Favorites', 'navigate("Favorites") must not arrive');
+    const nested = await tryNavigate('MainDrawer', { screen: 'Favorites' });
+    assert.notEqual(nested.route, 'Favorites', 'deep link into MainDrawer/Favorites must not arrive');
   });
 
-  await test('Collection route is UNREACHABLE by a nested/deep-link navigate() (DIC-1256)', async () => {
+  await test('Watchlist route stays UNREACHABLE under Store MVP (DIC-908)', async () => {
     await gotoMe();
-    const { route } = await tryNavigate('MainDrawer', { screen: 'Collection' });
-    assert.notEqual(route, 'Collection', 'deep link into MainDrawer/Collection must not arrive');
-    assert.equal(isPresent('collection-shell'), false, 'CollectionScreen must not mount');
-  });
-
-  await test('Watchlist route stays unregistered too (DIC-908 regression)', async () => {
-    await gotoMe();
-    const { route } = await tryNavigate('MainDrawer', { screen: 'Watchlist' });
-    assert.notEqual(route, 'Watchlist', 'Watchlist route stays unregistered under Store MVP');
+    const direct = await tryNavigate('Watchlist');
+    assert.notEqual(direct.route, 'Watchlist', 'navigate("Watchlist") must not arrive');
+    const nested = await tryNavigate('MainDrawer', { screen: 'Watchlist' });
+    assert.notEqual(nested.route, 'Watchlist', 'deep link into MainDrawer/Watchlist must not arrive');
   });
 } else {
-  // ── Full app: every intended entry point renders AND arrives. ──
-  await test('all three Collection controls render when the profile is off', async () => {
+  await test('restricted 我的 segments render in the full profile', async () => {
     await gotoMe();
-    assert.equal(isPresent('me-segment-collection'), true, 'Pen oaxgt 卡牌收藏 segment renders');
-    assert.equal(isPresent('me-search-field'), true, 'Pen WUovy search field renders');
-    assert.equal(isPresent('me-view-all'), true, 'Pen 檢視全部 action renders');
+    assert.equal(isPresent('me-segment-watchlist'), true, '到價提醒 segment renders');
+    assert.equal(isPresent('me-segment-trends'), true, '趨勢 segment renders');
   });
 
-  for (const [label, testID] of [
-    ['我的 segment 卡牌收藏', 'me-segment-collection'],
-    ['我的 search field', 'me-search-field'],
-    ['我的 檢視全部 action', 'me-view-all'],
-  ]) {
-    await test(`${label} navigates to the real Collection screen`, async () => {
-      await gotoMe();
-      const el = byTestId(testID);
-      assert.ok(el, `${testID} renders on 我的`);
-      await click(el);
-      assert.equal(
-        navRef.getCurrentRoute()?.name,
-        'Collection',
-        `expected the Collection route, got ${navRef.getCurrentRoute()?.name}`,
-      );
-      assert.equal(isPresent('collection-shell'), true, 'CollectionScreen shell mounts (not still 我的)');
-    });
-  }
+  await test('Favorites and Watchlist routes are registered in the full profile', async () => {
+    await gotoMe();
+    const favorites = await tryNavigate('MainDrawer', { screen: 'Favorites' });
+    assert.equal(favorites.route, 'Favorites', 'deep link into MainDrawer/Favorites arrives');
+    await gotoMe();
+    const watchlist = await tryNavigate('MainDrawer', { screen: 'Watchlist' });
+    assert.equal(watchlist.route, 'Watchlist', 'deep link into MainDrawer/Watchlist arrives');
+  });
 }
 
 await act(async () => root.unmount());

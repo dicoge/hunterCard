@@ -41,10 +41,26 @@ export const STORE_MVP = resolveStoreMvp();
 // Feature allowlist. Everything here is derived from STORE_MVP so the profile is
 // the only switch. When STORE_MVP is on, all advanced surfaces are off.
 export const FEATURES = {
-  // 收藏 / Collection browser drawer entry AND per-card ownership widget on the
-  // card-detail screen (DIC-1256): the browse-by-collection surface disappears
-  // and the +/- ownership adjuster on card detail is hidden. The deck editor
-  // continues to expose its own ownership editing.
+  // 收藏庫 / Collection ownership-browser ROUTE (DIC-1481). The corrected
+  // new-interface release contract requires the Collection route to stay
+  // registered and reachable in EVERY release profile — full, preview,
+  // production and Store MVP — superseding DIC-1256's route-unregistration
+  // criterion for this one route (the criterion CR run 037b339f enforced
+  // before this product decision existed). The screen only browses/edits
+  // ownership counts and shows the exact-printing sale-price valuation that
+  // FEATURES.sellPrice surfaces already carry; bookmarks (favorites),
+  // watchlist and market data stay independently gated below and remain
+  // fail-closed under Store MVP. Constant `true` on purpose: the flag is the
+  // single named contract point that route registration and every control
+  // navigating to the route share, so a regression that re-derives it from
+  // STORE_MVP is caught by test:store-mvp-ui-gates instead of shipping.
+  collection: true,
+  // 收藏 / bookmarks (Favorites route, 趨勢 segment) AND per-card ownership
+  // widget on the card-detail screen (DIC-1256): the bookmark surfaces
+  // disappear and the +/- ownership adjuster on card detail is hidden. The
+  // deck editor continues to expose its own ownership editing. Since
+  // DIC-1481 this flag no longer gates the Collection route itself (see
+  // `collection` above).
   favorites: !STORE_MVP,
   // 售價 / plain sale price of the ONE printing the player is holding. ALWAYS
   // ON, Store MVP included (DIC-1319). Scanning a card and immediately seeing

@@ -112,9 +112,11 @@ export default function MeScreen({ navigation }: any) {
   // Every segment's `enabled` must track the gate on the route it targets:
   // an unregistered route makes navigate() a silent no-op, so a segment that
   // outlives its route is a dead control, not a degraded one (DIC-1430).
-  // `Collection` is registered only under FEATURES.favorites (DIC-1256).
+  // `Collection` is registered in every profile under FEATURES.collection
+  // (DIC-1481); Watchlist and the 趨勢 bookmarks surface keep their
+  // Store-MVP fail-closed gates.
   const segments: Array<{ key: string; label: string; route: string; enabled: boolean }> = [
-    { key: 'collection', label: t('nav_collection' as any), route: 'Collection', enabled: FEATURES.favorites },
+    { key: 'collection', label: t('nav_collection' as any), route: 'Collection', enabled: FEATURES.collection },
     { key: 'watchlist', label: t('nav_watchlist' as any), route: 'Watchlist', enabled: FEATURES.watchlist },
     { key: 'trends', label: t('me_seg_trends' as any), route: 'Favorites', enabled: FEATURES.favorites },
   ];
@@ -174,9 +176,11 @@ export default function MeScreen({ navigation }: any) {
         </View>
 
         {/* Pen oaxgt — segment row routing to the real hub destinations.
-            Store MVP gates every segment off, so the row itself is dropped:
-            styles.segmentRow paints a bordered surface, and keeping it would
-            leave a visible empty bar where the controls used to be. */}
+            Under Store MVP only 卡牌收藏 survives (DIC-1481) while 到價提醒
+            and 趨勢 stay gated off. The row still drops entirely if every
+            segment is ever gated off: styles.segmentRow paints a bordered
+            surface, and keeping it would leave a visible empty bar where the
+            controls used to be. */}
         {enabledSegments.length > 0 && (
           <View style={styles.segmentRow} testID="me-segments">
             {enabledSegments.map((seg) => (
@@ -193,12 +197,11 @@ export default function MeScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Pen WUovy — search into the collection browser. Gated on
-            FEATURES.favorites for the same reason as the 卡牌收藏 segment: the
-            Collection route it opens is unregistered under Store MVP, so an
-            ungated field is a live, clickable control that goes nowhere
-            (DIC-1430). */}
-        {FEATURES.favorites && (
+        {/* Pen WUovy — search into the collection browser. Carries the same
+            FEATURES.collection gate that registers the route (DIC-1430's
+            invariant: a control must never outlive its route), which since
+            DIC-1481 keeps it live in every release profile. */}
+        {FEATURES.collection && (
           <TouchableOpacity
             style={styles.searchField}
             onPress={() => navigation.navigate('Collection')}
@@ -263,10 +266,10 @@ export default function MeScreen({ navigation }: any) {
               </View>
             ))}
             {/* 檢視全部 — third entry point onto the same Collection route, so
-                it carries the same gate. The owned rows and their steppers
-                above stay ungated: they edit the collection in place and do
-                not navigate. */}
-            {FEATURES.favorites && (
+                it carries the same FEATURES.collection gate (DIC-1481). The
+                owned rows and their steppers above stay ungated: they edit
+                the collection in place and do not navigate. */}
+            {FEATURES.collection && (
               <TouchableOpacity
                 style={styles.viewAll}
                 onPress={() => navigation.navigate('Collection')}
