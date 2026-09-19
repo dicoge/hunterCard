@@ -1,0 +1,41 @@
+{
+  "ticket": "DIC-1167",
+  "date": "2026-09-18",
+  "incident": "498 Production official printings (hBP08=234, hBP09=229, hPR=35; 227 distinct cardNumbers) shipped with empty user-visible skillsZh; the completeness gate passed via the pinned data/official-skills-zh-gap.json cardNumber-level exemption baseline, which the daily-catalog duty contract forbids.",
+  "repair": {
+    "translationRoute": "Approved subscription OAuth route: Claude Code session on the operator Claude subscription (model claude-fable-5, Anthropic OAuth). No API key, no OpenRouter, no Mini-* model, no third-party inference endpoint. Strings were translated in-session and passed through the repository deterministic helpers (scripts/translate-effects.js: toTraditional + canonicalizeTerms) before validation.",
+    "forbiddenRoutesConfirmedUnused": [
+      "openrouter.ai (DIC-1185 hard denylist)",
+      "Mini-* models",
+      "raw Japanese copied into skillsZh (DIC-465)",
+      "cross-printing/sibling/rarity/product copying"
+    ],
+    "source": "data/effects-jp.json entries scraped from the official cardlist for the exact 227 cardNumbers (per-printing provenance preserved; skillsZh is derived per cardNumber exactly like the existing build merge, sourceProduct untouched).",
+    "stringsTranslated": 505,
+    "cardNumbersCovered": 227,
+    "printingsRepaired": 498,
+    "validation": "scripts/translate-effects.js validate(): no kana, no protection-token artifacts, no simplified characters, no English term leaks; embedded card names resolved via committed data/character-names-zh.json; hashtag terms follow committed cache conventions (#食べ物→#食物, #トリ→#鳥, #絵→#繪)."
+  },
+  "gate": {
+    "change": "verify-official-catalog-completeness.mjs now requires skillsZh (and nameZh/skillsJp) per official printing unconditionally; data/official-skills-zh-gap.json is deleted and its reappearance — even empty — is a hard gate failure. Regression suite scripts/test-dic1167-skillszh-gate.mjs drives the real gate over fixture repos proving the 2026-09-18 incident state cannot pass."
+  },
+  "artifacts": {
+    "data/_translation-cache.json": {
+      "sha256": "4ad57c957b2de76978aa4e8e906a311c23502e97b56ce5e222032d079a5c9761",
+      "note": "JP→zh-Hant string map, +505 entries (auditable acquisition artifact)"
+    },
+    "data/effects-zh.json": {
+      "sha256": "f5ad1689fa5b5de872234b9b564a58036e90bb89f6d82c4707cf1480387ffd55",
+      "note": "+227 cardNumber entries reconstructed via scripts/translate-effects.js reconstruct()"
+    },
+    "data/database.json": {
+      "sha256": "8d710799cf7ac9e27be9d1e5aae04f824866c8fe0212e39933e8fe235d937012",
+      "note": "498 official printings gained skillsZh; deep-compare vs origin/main 0b65a2e3c: zero non-skillsZh changes, key set/order/lastUpdated identical"
+    },
+    "public/data/database.json": {
+      "sha256": "8234bf43e8126e21ce7ed3b853abe7c73eda79c866f4fc1a955a14a049663912",
+      "note": "regenerated via scripts/generate-native-database.mjs (deterministic sanitize of canonical); --check clean"
+    }
+  },
+  "priceProvenance": "Untouched: unknown hBP09/yuyu prices remain null; no sibling/cross-rarity/product/version fallback introduced; buy-price regen determinism suite green (byte-identical fixpoint, snapshot 2026-08-30)."
+}

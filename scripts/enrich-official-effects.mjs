@@ -33,16 +33,12 @@
  *     See scripts/lib/official-effects-enrichment.mjs for why this is not
  *     fabrication and not a translation call: only a card whose Japanese entry
  *     carries NO rules text is eligible, and then every field comes from a
- *     committed controlled map. Cards with rules text stay fail-closed and keep
- *     relying on the reviewed data/official-skills-zh-gap.json pin.
- *
- * Because a derived entry makes a pinned baseline cardNumber "already
- * translated", the baseline is then ratcheted DOWN: entries that now have a
- * real data/effects-zh.json entry are removed and `maxEntries` is lowered to
- * match, exactly as that file's own note requires ("Remove entries here as real
- * translations land in data/effects-zh.json, and lower maxEntries to match").
- * The ratchet is shrink-only by assertion — this script can never add a
- * cardNumber to the baseline nor raise its cap.
+ *     committed controlled map. Cards with rules text stay fail-closed: they
+ *     MUST receive a reviewed data/effects-zh.json translation before the
+ *     completeness gate will pass (DIC-1167 — skillsZh is required per official
+ *     printing with no baseline exemption; the DIC-1439/DIC-1451 pinned
+ *     data/official-skills-zh-gap.json baseline is retired and its presence is
+ *     itself a gate failure).
  *
  * Usage:
  *   node scripts/enrich-official-effects.mjs                # acquire + derive
@@ -76,7 +72,6 @@ const OFFICIAL_DIR = path.join(repoRoot, 'data', 'official');
 const EFFECTS_JP_PATH = path.join(repoRoot, 'data', 'effects-jp.json');
 const EFFECTS_ZH_PATH = path.join(repoRoot, 'data', 'effects-zh.json');
 const NAME_ZH_PATH = path.join(repoRoot, 'data', 'character-names-zh.json');
-const ZH_GAP_PATH = path.join(repoRoot, 'data', 'official-skills-zh-gap.json');
 
 // The page's own card-number anchor, used to prove the fetched page really is
 // the card we asked for before we accept any skill text from it.
@@ -133,39 +128,6 @@ export function deriveMissingZh(effectsJp, effectsZh, nameZhMap) {
     else skipped.push(cardNumber);
   }
   return { additions, skipped };
-}
-
-/**
- * Ratchet the pinned skillsZh gap baseline DOWN: drop every cardNumber that now
- * has a real data/effects-zh.json entry and lower `maxEntries` to match.
- * Shrink-only by assertion — never adds an entry, never raises the cap.
- */
-export function shrinkZhGapBaseline(baseline, effectsZh) {
-  if (!baseline || typeof baseline !== 'object' || !Array.isArray(baseline.cardNumbers)) {
-    throw new Error('data/official-skills-zh-gap.json must be an object with a cardNumbers array');
-  }
-  if (!Number.isInteger(baseline.maxEntries)) {
-    throw new Error('data/official-skills-zh-gap.json must declare an integer maxEntries ratchet');
-  }
-  const kept = baseline.cardNumbers.filter((cardNumber) => !Object.hasOwn(effectsZh, cardNumber));
-  const removed = baseline.cardNumbers.filter((cardNumber) => Object.hasOwn(effectsZh, cardNumber));
-
-  // Shrink-only invariants. These are assertions, not policy knobs: a bug that
-  // tried to grow the fail-closed baseline must crash the pipeline instead.
-  if (kept.length > baseline.cardNumbers.length) {
-    throw new Error('refusing to grow the pinned skillsZh gap baseline');
-  }
-  const keptSet = new Set(kept);
-  for (const cardNumber of keptSet) {
-    if (!baseline.cardNumbers.includes(cardNumber)) {
-      throw new Error(`refusing to add ${cardNumber} to the pinned skillsZh gap baseline`);
-    }
-  }
-  const maxEntries = kept.length;
-  if (maxEntries > baseline.maxEntries) {
-    throw new Error('refusing to raise the pinned skillsZh gap baseline maxEntries ratchet');
-  }
-  return { baseline: { ...baseline, maxEntries, cardNumbers: kept }, removed };
 }
 
 // --- IO helpers -------------------------------------------------------
@@ -274,15 +236,12 @@ async function main() {
     console.log('[zh] no rules-text-free cardNumber needed derivation');
   }
   console.log(`[zh] ${skipped.length} cardNumber(s) stay fail-closed (rules text present or unresolved controlled term)`);
-
-  // --- Baseline ratchet: shrink only ----------------------------------
-  const baselineBefore = JSON.parse(fs.readFileSync(ZH_GAP_PATH, 'utf8'));
-  const { baseline: baselineAfter, removed } = shrinkZhGapBaseline(baselineBefore, effectsZh);
-  if (removed.length) {
-    fs.writeFileSync(ZH_GAP_PATH, `${JSON.stringify(baselineAfter, null, 2)}\n`, 'utf8');
-    console.log(`[baseline] ratcheted ${baselineBefore.cardNumbers.length} -> ${baselineAfter.cardNumbers.length} entries (maxEntries ${baselineBefore.maxEntries} -> ${baselineAfter.maxEntries}); removed ${removed.join(', ')}`);
-  } else {
-    console.log(`[baseline] unchanged at ${baselineBefore.cardNumbers.length}/${baselineBefore.maxEntries} pinned cardNumber(s)`);
+  if (skipped.length) {
+    // DIC-1167: there is no exemption baseline any more. A rules-text card
+    // without a reviewed data/effects-zh.json translation will fail
+    // verify-official-catalog-completeness.mjs, so say it here where the
+    // pipeline operator can see the acquisition duty explicitly.
+    console.log('[zh] fail-closed cardNumbers need a reviewed data/effects-zh.json translation before the completeness gate will pass (DIC-1167: no baseline exemption exists)');
   }
 
   if (failures.length) {
