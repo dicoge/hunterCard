@@ -385,8 +385,13 @@ check('found a single-printing control with a price', !!uniqueRow);
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   check('SEC Math.max rewrite has not crept back into the API',
     !/rarity\s*===\s*'SEC'[\s\S]{0,200}Math\.max/.test(code));
-  const sec = shippedDb.cards['hBP03-003_ent07'];
-  check('hBP03-003 still canonically JPY 1,280 with a JPY 128,000 sibling',
+  // DIC-1482: the exact-print recovery retired the hBP03-003_ent07 aggregate
+  // (SEC own-vs-sibling divergence) from the LIVE catalog; the row is frozen
+  // verbatim from main@cfcb0810 in the DIC-1325 fixture, which is what the
+  // scan printing-isolation regression now drives the API with.
+  const frozen = JSON.parse(read('scripts/fixtures/dic1325-scan-price-isolation.json'));
+  const sec = frozen.cards['hBP03-003_ent07'];
+  check('frozen hBP03-003 fixture still canonically JPY 1,280 with a JPY 128,000 sibling',
     sec?.sellPrice === 1280 && sec.prices.some((p) => p.sellPrice === 128000));
 }
 

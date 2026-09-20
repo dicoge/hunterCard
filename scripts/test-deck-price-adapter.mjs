@@ -309,8 +309,16 @@ const REAL = adaptDatabase(RAW_CARDS);
 
 // Real cards spanning plain-only, plain+parallel, plain+parallel+signed,
 // duplicated-label (fail closed) and explicit base-reprint cases.
+// DIC-1482 refresh of these pinned values: the exact-print recovery superseded
+// the stale 2026-08-24 ent07/aggregate rows with each printing's OWN
+// source-listed 2026-09-19 price (the aggregates' duplicate labels otherwise
+// fail the whole label closed). Signed variants (パラレル/サイン, 箔押し) now
+// fail closed per DIC-1013/1140 — a yuyu product path can never prove the
+// signed printing — so they move to the `unpriced` side. The invariant stays
+// exact per-tier pricing from each printing's own listing, never a particular
+// yen value and never a cross-tier borrow.
 const REAL_EXPECTATIONS = [
-  { cardNumber: 'hBP04-005', printings: { BASE: 980, PARALLEL: 9980, 'PARALLEL/SIGN': 69800 } },
+  { cardNumber: 'hBP04-005', printings: { BASE: 580, PARALLEL: 8980 }, unpriced: ['PARALLEL/SIGN'] },
   { cardNumber: 'hBP04-057', printings: { BASE: 120, PARALLEL: 980 } },
   { cardNumber: 'hBP04-041', printings: { BASE: 50, PARALLEL: 180 } },
   { cardNumber: 'hSD01-001', printings: { BASE: 180 } },
@@ -318,12 +326,13 @@ const REAL_EXPECTATIONS = [
   // exact source-listed price, no cross-tier collapse). Update the expectation
   // rather than pin to a stale snapshot — the invariant here is exact per-tier
   // pricing, not any particular yen value.
-  { cardNumber: 'hBP01-044', printings: { BASE: 180, 'PARALLEL/HR': 9980, 'PARALLEL/HBP07': 80 } },
+  { cardNumber: 'hBP01-044', printings: { BASE: 180, 'PARALLEL/HR': 7980, 'PARALLEL/HBP07': 80 } },
   { cardNumber: 'hBP02-017', printings: { BASE: 120 }, unpriced: ['PARALLEL'] },
   // Base reprints: original and hBP04 reprint must BOTH keep their exact price.
   {
     cardNumber: 'hBP02-084',
-    printings: { BASE: 120, HBP04: 180, PARALLEL: 1780, 'PARALLEL/HBP04': 5980, 'PARALLEL/FOIL': 99800 },
+    printings: { BASE: 80, HBP04: 180, PARALLEL: 1780, 'PARALLEL/HBP04': 5980 },
+    unpriced: ['PARALLEL/FOIL'],
   },
   {
     cardNumber: 'hSD01-017',

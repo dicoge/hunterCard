@@ -217,6 +217,9 @@ jobs:
       - name: Verify canonical printing-ID rebuilds preserve market fields (DIC-1204)
         run: npm run test:market-field-preservation
 
+      - name: Verify exact-print price-regression gate, last-known-good preservation, and canonical/public/native parity (DIC-1482)
+        run: npm run test:dic1482-price-gate
+
       - name: Audit normalized card labels, subscriber provenance, and exact-printing trends (DIC-1084)
         run: npm run test:card-data-audit
 

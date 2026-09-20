@@ -40,6 +40,7 @@ SCRAPER_MANAGED_PATHS=(
   'data/database.json' 'data/images/' 'data/official/' 'data/series-names.json'
   'data/price-history/' 'data/yt-subscribers/' 'data/yt-stats-history.json'
   'data/news-sentiment/' 'data/trends/' 'data/buy-prices/' 'public/data/database.json'
+  'data/price-rejections.json'
   'docs/audits/official-catalog-audit.json' 'docs/audits/official-production-lag-state.json'
 )
 
@@ -389,6 +390,9 @@ runPipeline() {
     if git diff --stat -- "${GIT_DIFF_FILES[@]}" | grep -q .; then
       echo "[$(date)] Data changed, committing and pushing..." >> "$LOG_FILE"
       EXISTING_DATA="data/database.json data/images/ data/official/ data/series-names.json data/price-history/*.json public/data/database.json docs/audits/official-catalog-audit.json docs/audits/official-production-lag-state.json"
+      # DIC-1482: the per-print rejection manifest ships with every snapshot so
+      # any allowed priced-payload decrease stays auditable in the artifact.
+      [ -f data/price-rejections.json ] && EXISTING_DATA="$EXISTING_DATA data/price-rejections.json"
       [ -f data/yt-stats-history.json ] && EXISTING_DATA="$EXISTING_DATA data/yt-stats-history.json"
       for dd in data/yt-subscribers data/news-sentiment data/trends; do
         [ -d "$dd" ] && EXISTING_DATA="$EXISTING_DATA $dd/*.json"

@@ -49,7 +49,20 @@ function check(label, cond, detail) {
 }
 
 const db = JSON.parse(read('data/database.json'));
-const cards = db.cards;
+const liveCards = db.cards;
+
+// DIC-1482: the exact-print recovery retired the discriminating shapes this
+// regression mines — multi-entry aggregate rows whose printings disagree on
+// price, and SEC rows whose own price differs from their max sibling — from
+// the LIVE catalog (each printing row now carries exactly its own listing).
+// The rows are frozen verbatim from main@cfcb0810 in the fixture below, so
+// the real rankCandidates → fmt path keeps being exercised against the exact
+// shapes that produced the DIC-1325 100x-wrong-price bug, independent of how
+// clean the current catalog is. Full-catalog ranking below runs against the
+// live catalog UNION the frozen rows — a strict superset of the old input.
+const fixture = JSON.parse(read('scripts/fixtures/dic1325-scan-price-isolation.json'));
+const cards = fixture.cards;
+const wholeCatalogCards = { ...liveCards, ...fixture.cards };
 
 function extractedFor(cardNumber, entry) {
   return {
@@ -81,14 +94,14 @@ function rankOnly(entry, storeMvp = true) {
 }
 
 function rankWholeCatalog(cardNumber, entry, storeMvp = true) {
-  return rankCandidates(cards, extractedFor(cardNumber, entry), storeMvp).candidates;
+  return rankCandidates(wholeCatalogCards, extractedFor(cardNumber, entry), storeMvp).candidates;
 }
 
 // ── 1. The named CR fixture ──────────────────────────────────────────────────
 const CR_ID = 'hBP03-003_ent07';
 const crEntry = cards[CR_ID];
 
-check(`catalog still contains the CR fixture ${CR_ID}`, !!crEntry);
+check(`frozen fixture still contains the CR row ${CR_ID}`, !!crEntry);
 check(
   `${CR_ID} is still the SEC/sibling divergence case the CR describes`,
   crEntry?.rarity === 'SEC'

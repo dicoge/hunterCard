@@ -77,6 +77,14 @@ console.log(
 //   fbe0a13821  2026-08-29   1,885 priced rows / 3,622 cards   1,171 priced cardNumbers
 //   f156bb7cf   2026-09-02   1,547 priced rows / 3,622 cards   1,124 priced cardNumbers  ← v21 shipped this
 //   HEAD        2026-09-03   1,547 priced rows / 3,622 cards   1,124 priced cardNumbers
+//   DIC-1482    2026-09-20   2,300 priced rows / 3,899 cards   1,254 priced cardNumbers  ← exact-print recovery
+//     (recovered 1,097 strictly source-proven printings from bot/scrape/2026-09-19
+//      @1a35e14b — including all 111 hBP09 cardNumbers — refreshed 1,131 stale
+//      payloads to their printings' own fresh listings, preserved the 29
+//      source-proven hBD24 promo printings the candidate had silently nulled,
+//      and superseded 344 unproven stale aggregate rows whose cardNumbers stay
+//      priced through proven printings; baselines deliberately RAISED per the
+//      instruction below)
 //
 // 55 cardNumbers that were priced on 08-26 are now entirely unpriced. Part of
 // that is deliberate (DIC-1227 gated price preservation on yuyu-provenance
@@ -92,8 +100,8 @@ console.log(
 //
 // The small tolerance absorbs genuine churn — a listing selling out legitimately
 // drops a row — without absorbing a purge.
-const PRICED_ROWS_BASELINE = 1547;
-const PRICED_CARDNUMBERS_BASELINE = 1124;
+const PRICED_ROWS_BASELINE = 2300;
+const PRICED_CARDNUMBERS_BASELINE = 1254;
 const EROSION_TOLERANCE = 0.02; // 2%
 const rowsFloor = Math.floor(PRICED_ROWS_BASELINE * (1 - EROSION_TOLERANCE));
 const numbersFloor = Math.floor(PRICED_CARDNUMBERS_BASELINE * (1 - EROSION_TOLERANCE));
