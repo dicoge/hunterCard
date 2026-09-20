@@ -16,7 +16,9 @@
 //                       byte for byte, and refuses everything else.
 //   4. fail-closed    — rules text, unmapped names, unknown card types,
 //                       prototype keys, and kana all return null.
-//   5. ratchet        — the pinned skillsZh gap baseline can only shrink.
+//   5. retirement     — the pinned skillsZh gap baseline stays deleted
+//                       (DIC-1167: skillsZh is required per printing, no
+//                       exemption file may return).
 //   6. mutation       — each guard is proven load-bearing: remove the reason a
 //                       card is refused and the SAME input starts deriving, so
 //                       a weakened guard cannot pass this suite silently.
@@ -34,7 +36,6 @@ import {
   cardNumberDeclaredOnPage,
   deriveMissingZh,
   readOfficialRows,
-  shrinkZhGapBaseline,
 } from './enrich-official-effects.mjs';
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -43,7 +44,6 @@ const readJson = (...parts) => JSON.parse(fs.readFileSync(path.join(repoRoot, ..
 const effectsJp = readJson('data', 'effects-jp.json');
 const effectsZh = readJson('data', 'effects-zh.json');
 const nameZhMap = readJson('data', 'character-names-zh.json');
-const zhGap = readJson('data', 'official-skills-zh-gap.json');
 
 // ── 1. Work list ─────────────────────────────────────────────────────
 // Only cardNumbers with no effects entry are fetched, rows without a detail
@@ -188,46 +188,30 @@ const yell = { cardNumber: 'hY01-015', name: '白エール', cardType: 'エー�
   );
 }
 
-// ── 6. Baseline ratchet is shrink-only ───────────────────────────────
+// ── 6. The exemption baseline stays retired (DIC-1167) ───────────────
+// skillsZh is required per official printing with no cardNumber-level
+// exemption. The DIC-1439/DIC-1451 pinned baseline file must never return —
+// the completeness gate hard-fails on its presence, and this suite pins the
+// same invariant at the artifact level.
 {
-  const before = { note: 'n', maxEntries: 3, cardNumbers: ['hA-1', 'hA-2', 'hA-3'] };
-  // Two of the pinned cardNumbers now have real translations.
-  const { baseline: after, removed } = shrinkZhGapBaseline(before, { 'hA-1': {}, 'hA-3': {} });
-  assert.deepEqual(removed, ['hA-1', 'hA-3'], 'entries that gained a translation are removed');
-  assert.deepEqual(after.cardNumbers, ['hA-2'], 'only still-untranslated cardNumbers stay pinned');
-  assert.equal(after.maxEntries, 1, 'maxEntries is lowered to match, per the baseline note');
-  assert.ok(after.maxEntries <= before.maxEntries, 'the ratchet may never be raised');
-  assert.equal(after.note, 'n', 'the documented contract note is preserved');
-  // Nothing to remove: the baseline is returned untouched (byte-identical write
-  // is skipped by the caller, keeping no-op runs diff-free).
-  const untouched = shrinkZhGapBaseline(before, {});
-  assert.deepEqual(untouched.removed, []);
-  assert.deepEqual(untouched.baseline.cardNumbers, before.cardNumbers);
-  assert.equal(untouched.baseline.maxEntries, before.maxEntries,
-    'a no-op ratchet must not alter maxEntries');
-  // An entry still lacking a translation may never be dropped.
-  const kept = shrinkZhGapBaseline(before, { 'hA-2': {} }).baseline.cardNumbers;
-  assert.ok(kept.includes('hA-1') && kept.includes('hA-3'),
-    'cardNumbers without a real effects-zh entry must stay pinned — the gate cannot be weakened');
-  // Malformed baselines are hard errors, never silently "fixed".
-  assert.throws(() => shrinkZhGapBaseline({ cardNumbers: ['x'] }, {}), /maxEntries/);
-  assert.throws(() => shrinkZhGapBaseline({ maxEntries: 1 }, {}), /cardNumbers/);
-  assert.throws(() => shrinkZhGapBaseline(null, {}), /cardNumbers/);
+  assert.ok(
+    !fs.existsSync(path.join(repoRoot, 'data', 'official-skills-zh-gap.json')),
+    'data/official-skills-zh-gap.json is retired (DIC-1167) and must not reappear',
+  );
 }
 
 // ── 7. Live-data consistency with the completeness gate ──────────────
-// verify-official-catalog-completeness.mjs treats ANY effects-zh entry as a
-// real translation and fails when a pinned baseline cardNumber has one. Derived
-// entries therefore have to keep the shipped baseline consistent.
 {
-  const stillPinnedWithTranslation = zhGap.cardNumbers.filter((num) => Object.hasOwn(effectsZh, num));
+  // Every official cardNumber must carry a real data/effects-zh.json entry —
+  // the completeness gate requires skillsZh per printing with no exemption, and
+  // the database build derives skillsZh from this artifact by cardNumber.
+  const untranslated = [...new Set(readOfficialRows().map((r) => r.cardNumber).filter(Boolean))]
+    .filter((num) => !Object.hasOwn(effectsZh, num));
   assert.deepEqual(
-    stillPinnedWithTranslation,
+    untranslated,
     [],
-    'no pinned baseline cardNumber may already carry a data/effects-zh.json entry',
+    `every official cardNumber must carry a data/effects-zh.json translation (DIC-1167): ${untranslated.slice(0, 10).join(', ')}`,
   );
-  assert.equal(zhGap.cardNumbers.length, zhGap.maxEntries,
-    'the shipped baseline must sit exactly on its ratchet, so the next translation lowers it');
   // Every rules-text-free JP entry must now be translated — that class has no
   // rules text to block derivation, so an untranslated one means the
   // enrichment pass was skipped or a controlled map regressed.
@@ -255,4 +239,4 @@ const yell = { cardNumber: 'hY01-015', name: '白エール', cardType: 'エー�
   );
 }
 
-console.log('✓ DIC-1468: new official printings acquire source-backed skillsJp with page-identity provenance, rules-text-free printings derive Traditional-Chinese text from controlled maps only (reproducing the committed artifact), every other card stays fail-closed, and the pinned skillsZh baseline can only shrink');
+console.log('✓ DIC-1468: new official printings acquire source-backed skillsJp with page-identity provenance, rules-text-free printings derive Traditional-Chinese text from controlled maps only (reproducing the committed artifact), every other card stays fail-closed, every official cardNumber carries a data/effects-zh.json translation, and the retired skillsZh exemption baseline stays deleted (DIC-1167)');

@@ -239,12 +239,12 @@ for (const cmd of REQUIRED_PIPELINE_COMMANDS) {
 // check uses AND the same set the extracted handoff freezes.
 const EXPECTED_SYNC_PATHS = [
   'data/official/',
-  // DIC-1468: the enrichment step's outputs — source-backed Japanese effects,
-  // derived Traditional-Chinese effects, and the ratcheted-down skillsZh gap
-  // baseline — must ship in the same PR as the rows they describe.
+  // DIC-1468: the enrichment step's outputs — source-backed Japanese effects
+  // and derived Traditional-Chinese effects — must ship in the same PR as the
+  // rows they describe. (DIC-1167: the retired skillsZh gap baseline is no
+  // longer a sync path.)
   'data/effects-jp.json',
   'data/effects-zh.json',
-  'data/official-skills-zh-gap.json',
   'data/database.json',
   'public/data/database.json',
   'docs/audits/official-catalog-audit.json',

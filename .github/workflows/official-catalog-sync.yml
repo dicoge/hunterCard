@@ -24,17 +24,16 @@ env:
   # Everything the pipeline is allowed to stage. Kept in one place so both
   # the change check and the commit stage the exact same set — no path can
   # sneak in via `git add -A` and no path can silently be dropped.
-  # DIC-1468: the effects artifacts and the pinned skillsZh gap baseline are
-  # part of this set. The enrichment step below tops up data/effects-jp.json
-  # from the official source for brand-new cardNumbers and ratchets the
-  # baseline DOWN as derived translations land, so those writes must reach
-  # the sync PR — otherwise the completeness gate fails every run on cards
-  # the pipeline just ingested.
+  # DIC-1468: the effects artifacts are part of this set. The enrichment step
+  # below tops up data/effects-jp.json from the official source for brand-new
+  # cardNumbers, so those writes must reach the sync PR — otherwise the
+  # completeness gate fails every run on cards the pipeline just ingested.
+  # (DIC-1167: the retired data/official-skills-zh-gap.json baseline is no
+  # longer part of this set and must never be committed again.)
   SYNC_PATHS: >-
     data/official/
     data/effects-jp.json
     data/effects-zh.json
-    data/official-skills-zh-gap.json
     data/database.json
     public/data/database.json
     docs/audits/official-catalog-audit.json
