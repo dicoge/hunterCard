@@ -1,21 +1,21 @@
 {
   "schema": "huntercard.price-rejections/v1",
   "label": "dic1482-recovery",
-  "generatedAt": "2026-09-21T08:05:19.049Z",
+  "generatedAt": "2026-09-21T08:06:15.077Z",
   "before": {
     "pricedRows": 1547,
     "pricedUniqueCardNumbers": 1124,
     "priceEntries": 2706
   },
   "after": {
-    "pricedRows": 2300,
+    "pricedRows": 2335,
     "pricedUniqueCardNumbers": 1254,
-    "priceEntries": 2300
+    "priceEntries": 2335
   },
   "deltas": {
-    "pricedRows": 753,
+    "pricedRows": 788,
     "pricedUniqueCardNumbers": 130,
-    "priceEntries": -406
+    "priceEntries": -371
   },
   "rejections": [
     {
@@ -99,38 +99,6 @@
       }
     },
     {
-      "id": "hBP03-003_hBP03_SEC_hBP03-003_SEC",
-      "cardNumber": "hBP03-003",
-      "sourceProduct": "hBP03",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 118000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10008.jpg",
-        "imageProduct": "hbp03",
-        "entryImageProducts": [
-          "hbp03"
-        ],
-        "timestamp": "2026-09-19T12:21:04.519Z"
-      }
-    },
-    {
-      "id": "hBP03-007_hBP03_SEC_hBP03-007_SEC",
-      "cardNumber": "hBP03-007",
-      "sourceProduct": "hBP03",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 59800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10018.jpg",
-        "imageProduct": "hbp03",
-        "entryImageProducts": [
-          "hbp03"
-        ],
-        "timestamp": "2026-09-19T12:21:04.519Z"
-      }
-    },
-    {
       "id": "hBP03-030_hCS01_SR_hBP03-030_02_SR",
       "cardNumber": "hBP03-030",
       "sourceProduct": "hCS01",
@@ -144,198 +112,6 @@
           "promo-hbp10"
         ],
         "timestamp": "2026-09-19T12:26:26.438Z"
-      }
-    },
-    {
-      "id": "hBP04-005_hBP04_SEC_hBP04-005_SEC",
-      "cardNumber": "hBP04-005",
-      "sourceProduct": "hBP04",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 69800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10013.jpg",
-        "imageProduct": "hbp04",
-        "entryImageProducts": [
-          "hbp04"
-        ],
-        "timestamp": "2026-09-19T12:21:19.395Z"
-      }
-    },
-    {
-      "id": "hBP05-002_hBP05_SEC_hBP05-002_SEC",
-      "cardNumber": "hBP05-002",
-      "sourceProduct": "hBP05",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 29800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10005.jpg",
-        "imageProduct": "hbp05",
-        "entryImageProducts": [
-          "hbp05"
-        ],
-        "timestamp": "2026-09-19T12:21:33.075Z"
-      }
-    },
-    {
-      "id": "hBP05-003_hBP05_SEC_hBP05-003_SEC",
-      "cardNumber": "hBP05-003",
-      "sourceProduct": "hBP05",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 99800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10008.jpg",
-        "imageProduct": "hbp05",
-        "entryImageProducts": [
-          "hbp05"
-        ],
-        "timestamp": "2026-09-19T12:21:33.075Z"
-      }
-    },
-    {
-      "id": "hBP05-005_hBP05_SEC_hBP05-005_SEC",
-      "cardNumber": "hBP05-005",
-      "sourceProduct": "hBP05",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 49800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10013.jpg",
-        "imageProduct": "hbp05",
-        "entryImageProducts": [
-          "hbp05"
-        ],
-        "timestamp": "2026-09-19T12:21:33.075Z"
-      }
-    },
-    {
-      "id": "hBP06-003_hBP06_SEC_hBP06-003_SEC",
-      "cardNumber": "hBP06-003",
-      "sourceProduct": "hBP06",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 118000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10008.jpg",
-        "imageProduct": "hbp06",
-        "entryImageProducts": [
-          "hbp06"
-        ],
-        "timestamp": "2026-09-19T12:21:47.096Z"
-      }
-    },
-    {
-      "id": "hBP06-008_hBP06_SEC_hBP06-008_SEC",
-      "cardNumber": "hBP06-008",
-      "sourceProduct": "hBP06",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 49800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10020.jpg",
-        "imageProduct": "hbp06",
-        "entryImageProducts": [
-          "hbp06"
-        ],
-        "timestamp": "2026-09-19T12:21:47.096Z"
-      }
-    },
-    {
-      "id": "hBP07-002_hBP07_SEC_hBP07-002_SEC",
-      "cardNumber": "hBP07-002",
-      "sourceProduct": "hBP07",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 34800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10005.jpg",
-        "imageProduct": "hbp07",
-        "entryImageProducts": [
-          "hbp07"
-        ],
-        "timestamp": "2026-09-19T12:22:00.708Z"
-      }
-    },
-    {
-      "id": "hBP07-003_hBP07_SEC_hBP07-003_SEC",
-      "cardNumber": "hBP07-003",
-      "sourceProduct": "hBP07",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 99800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10008.jpg",
-        "imageProduct": "hbp07",
-        "entryImageProducts": [
-          "hbp07"
-        ],
-        "timestamp": "2026-09-19T12:22:00.708Z"
-      }
-    },
-    {
-      "id": "hBP07-006_hBP07_SEC_hBP07-006_SEC",
-      "cardNumber": "hBP07-006",
-      "sourceProduct": "hBP07",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 118000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10015.jpg",
-        "imageProduct": "hbp07",
-        "entryImageProducts": [
-          "hbp07"
-        ],
-        "timestamp": "2026-09-19T12:22:00.708Z"
-      }
-    },
-    {
-      "id": "hBP07-007_hBP07_SEC_hBP07-007_SEC",
-      "cardNumber": "hBP07-007",
-      "sourceProduct": "hBP07",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 59800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10018.jpg",
-        "imageProduct": "hbp07",
-        "entryImageProducts": [
-          "hbp07"
-        ],
-        "timestamp": "2026-09-19T12:22:00.708Z"
-      }
-    },
-    {
-      "id": "hBP01-006_hBP01_SEC_hBP01-006_SEC",
-      "cardNumber": "hBP01-006",
-      "sourceProduct": "hBP01",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 24800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10013.jpg",
-        "imageProduct": "hbp01",
-        "entryImageProducts": [
-          "hbp01"
-        ],
-        "timestamp": "2026-09-19T12:20:35.373Z"
-      }
-    },
-    {
-      "id": "hBP01-007_hBP01_SEC_hBP01-007_SEC",
-      "cardNumber": "hBP01-007",
-      "sourceProduct": "hBP01",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 108000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10016.jpg",
-        "imageProduct": "hbp01",
-        "entryImageProducts": [
-          "hbp01"
-        ],
-        "timestamp": "2026-09-19T12:20:35.374Z"
       }
     },
     {
@@ -356,54 +132,6 @@
       }
     },
     {
-      "id": "hBP02-001_hBP02_SEC_hBP02-001_SEC",
-      "cardNumber": "hBP02-001",
-      "sourceProduct": "hBP02",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 148000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10003.jpg",
-        "imageProduct": "hbp02",
-        "entryImageProducts": [
-          "hbp02"
-        ],
-        "timestamp": "2026-09-19T12:20:48.960Z"
-      }
-    },
-    {
-      "id": "hBP02-003_hBP02_SEC_hBP02-003_SEC",
-      "cardNumber": "hBP02-003",
-      "sourceProduct": "hBP02",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 89800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg",
-        "imageProduct": "hbp02",
-        "entryImageProducts": [
-          "hbp02"
-        ],
-        "timestamp": "2026-09-19T12:20:48.960Z"
-      }
-    },
-    {
-      "id": "hBP02-004_hBP02_SEC_hBP02-004_SEC",
-      "cardNumber": "hBP02-004",
-      "sourceProduct": "hBP02",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 99800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10011.jpg",
-        "imageProduct": "hbp02",
-        "entryImageProducts": [
-          "hbp02"
-        ],
-        "timestamp": "2026-09-19T12:20:48.960Z"
-      }
-    },
-    {
       "id": "hBP02-013_hCS01_SR_hBP02-013_02_SR",
       "cardNumber": "hBP02-013",
       "sourceProduct": "hCS01",
@@ -417,102 +145,6 @@
           "promo-hbp10"
         ],
         "timestamp": "2026-09-19T12:26:26.438Z"
-      }
-    },
-    {
-      "id": "hBP02-084_hBP02_SEC_hBP02-084_SEC",
-      "cardNumber": "hBP02-084",
-      "sourceProduct": "hBP02",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 89800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10170.jpg",
-        "imageProduct": "hbp02",
-        "entryImageProducts": [
-          "hbp02"
-        ],
-        "timestamp": "2026-09-19T12:20:48.960Z"
-      }
-    },
-    {
-      "id": "hBP03-002_hBP03_SEC_hBP03-002_SEC",
-      "cardNumber": "hBP03-002",
-      "sourceProduct": "hBP03",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 59800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10005.jpg",
-        "imageProduct": "hbp03",
-        "entryImageProducts": [
-          "hbp03"
-        ],
-        "timestamp": "2026-09-19T12:21:04.519Z"
-      }
-    },
-    {
-      "id": "hBP03-005_hBP03_SEC_hBP03-005_SEC",
-      "cardNumber": "hBP03-005",
-      "sourceProduct": "hBP03",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 79800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10013.jpg",
-        "imageProduct": "hbp03",
-        "entryImageProducts": [
-          "hbp03"
-        ],
-        "timestamp": "2026-09-19T12:21:04.519Z"
-      }
-    },
-    {
-      "id": "hBP04-001_hBP04_SEC_hBP04-001_SEC",
-      "cardNumber": "hBP04-001",
-      "sourceProduct": "hBP04",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 99800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg",
-        "imageProduct": "hbp04",
-        "entryImageProducts": [
-          "hbp04"
-        ],
-        "timestamp": "2026-09-19T12:21:19.395Z"
-      }
-    },
-    {
-      "id": "hBP04-004_hBP04_SEC_hBP04-004_SEC",
-      "cardNumber": "hBP04-004",
-      "sourceProduct": "hBP04",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 79800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg",
-        "imageProduct": "hbp04",
-        "entryImageProducts": [
-          "hbp04"
-        ],
-        "timestamp": "2026-09-19T12:21:19.395Z"
-      }
-    },
-    {
-      "id": "hBP04-006_hBP04_SEC_hBP04-006_SEC",
-      "cardNumber": "hBP04-006",
-      "sourceProduct": "hBP04",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 89800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10016.jpg",
-        "imageProduct": "hbp04",
-        "entryImageProducts": [
-          "hbp04"
-        ],
-        "timestamp": "2026-09-19T12:21:19.395Z"
       }
     },
     {
@@ -532,208 +164,16 @@
       }
     },
     {
-      "id": "hBP05-016_hBP05_SEC_hBP05-016_SEC",
-      "cardNumber": "hBP05-016",
-      "sourceProduct": "hBP05",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 128000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10038.jpg",
-        "imageProduct": "hbp05",
-        "entryImageProducts": [
-          "hbp05"
-        ],
-        "timestamp": "2026-09-19T12:21:33.075Z"
-      }
-    },
-    {
-      "id": "hBP05-080_hBP05_SEC_hBP05-080_SEC",
-      "cardNumber": "hBP05-080",
-      "sourceProduct": "hBP05",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 158000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10177.jpg",
-        "imageProduct": "hbp05",
-        "entryImageProducts": [
-          "hbp05"
-        ],
-        "timestamp": "2026-09-19T12:21:33.075Z"
-      }
-    },
-    {
-      "id": "hBP06-001_hBP06_SEC_hBP06-001_SEC",
-      "cardNumber": "hBP06-001",
-      "sourceProduct": "hBP06",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 39800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10003.jpg",
-        "imageProduct": "hbp06",
-        "entryImageProducts": [
-          "hbp06"
-        ],
-        "timestamp": "2026-09-19T12:21:47.096Z"
-      }
-    },
-    {
-      "id": "hBP06-004_hBP06_SEC_hBP06-004_SEC",
-      "cardNumber": "hBP06-004",
-      "sourceProduct": "hBP06",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 158000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10011.jpg",
-        "imageProduct": "hbp06",
-        "entryImageProducts": [
-          "hbp06"
-        ],
-        "timestamp": "2026-09-19T12:21:47.096Z"
-      }
-    },
-    {
-      "id": "hBP08-003_hBP08_SEC_hBP08-003_SEC",
-      "cardNumber": "hBP08-003",
-      "sourceProduct": "hBP08",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 158000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10007.jpg",
-        "imageProduct": "hbp08",
-        "entryImageProducts": [
-          "hbp08"
-        ],
-        "timestamp": "2026-09-19T12:22:15.638Z"
-      }
-    },
-    {
-      "id": "hBP08-004_hBP08_SEC_hBP08-004_SEC",
-      "cardNumber": "hBP08-004",
-      "sourceProduct": "hBP08",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 138000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10010.jpg",
-        "imageProduct": "hbp08",
-        "entryImageProducts": [
-          "hbp08"
-        ],
-        "timestamp": "2026-09-19T12:22:15.638Z"
-      }
-    },
-    {
-      "id": "hBP08-005_hBP08_SEC_hBP08-005_SEC",
-      "cardNumber": "hBP08-005",
-      "sourceProduct": "hBP08",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 59800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10013.jpg",
-        "imageProduct": "hbp08",
-        "entryImageProducts": [
-          "hbp08"
-        ],
-        "timestamp": "2026-09-19T12:22:15.638Z"
-      }
-    },
-    {
-      "id": "hBP08-006_hBP08_SEC_hBP08-006_SEC",
-      "cardNumber": "hBP08-006",
-      "sourceProduct": "hBP08",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 128000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10016.jpg",
-        "imageProduct": "hbp08",
-        "entryImageProducts": [
-          "hbp08"
-        ],
-        "timestamp": "2026-09-19T12:22:15.638Z"
-      }
-    },
-    {
-      "id": "hBP08-007_hBP08_SEC_hBP08-007_SEC",
-      "cardNumber": "hBP08-007",
-      "sourceProduct": "hBP08",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 69800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10019.jpg",
-        "imageProduct": "hbp08",
-        "entryImageProducts": [
-          "hbp08"
-        ],
-        "timestamp": "2026-09-19T12:22:15.638Z"
-      }
-    },
-    {
-      "id": "hBP09-002_hBP09_SEC_hBP09-002_SEC",
-      "cardNumber": "hBP09-002",
-      "sourceProduct": "hBP09",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 49800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10005.jpg",
-        "imageProduct": "hbp09",
-        "entryImageProducts": [
-          "hbp09"
-        ],
-        "timestamp": "2026-09-19T12:22:28.373Z"
-      }
-    },
-    {
-      "id": "hBP09-003_hBP09_SEC_hBP09-003_SEC",
-      "cardNumber": "hBP09-003",
-      "sourceProduct": "hBP09",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 108000,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10008.jpg",
-        "imageProduct": "hbp09",
-        "entryImageProducts": [
-          "hbp09"
-        ],
-        "timestamp": "2026-09-19T12:22:28.373Z"
-      }
-    },
-    {
       "id": "hBP09-004_hBP09_SEC_hBP09-004_SEC",
       "cardNumber": "hBP09-004",
       "sourceProduct": "hBP09",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "no-yuyu-image-provenance",
       "evidence": {
         "sellPrice": 49800,
         "yuyuImage": "https://card.yuyu-tei.jp/noimage_100_140.jpg",
         "imageProduct": "",
         "entryImageProducts": [],
-        "timestamp": "2026-09-19T12:22:28.373Z"
-      }
-    },
-    {
-      "id": "hBP09-006_hBP09_SEC_hBP09-006_SEC",
-      "cardNumber": "hBP09-006",
-      "sourceProduct": "hBP09",
-      "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
-      "evidence": {
-        "sellPrice": 89800,
-        "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10016.jpg",
-        "imageProduct": "hbp09",
-        "entryImageProducts": [
-          "hbp09"
-        ],
         "timestamp": "2026-09-19T12:22:28.373Z"
       }
     },
@@ -2974,7 +2414,7 @@
       "cardNumber": "hBP03-003",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 1280,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10006.jpg",
@@ -2992,7 +2432,7 @@
       "cardNumber": "hBP03-007",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 580,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10016.jpg",
@@ -3311,7 +2751,7 @@
       "cardNumber": "hBP04-005",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 980,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10011.jpg",
@@ -3693,7 +3133,7 @@
       "cardNumber": "hBP05-002",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 320,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10003.jpg",
@@ -3711,7 +3151,7 @@
       "cardNumber": "hBP05-003",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 320,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10006.jpg",
@@ -3746,7 +3186,7 @@
       "cardNumber": "hBP05-005",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 280,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10011.jpg",
@@ -4492,7 +3932,7 @@
       "cardNumber": "hBP06-003",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 780,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10006.jpg",
@@ -4527,7 +3967,7 @@
       "cardNumber": "hBP06-008",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 280,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10018.jpg",
@@ -4903,7 +4343,7 @@
       "cardNumber": "hBP07-002",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 220,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10003.jpg",
@@ -4921,7 +4361,7 @@
       "cardNumber": "hBP07-003",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 980,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10006.jpg",
@@ -4973,7 +4413,7 @@
       "cardNumber": "hBP07-006",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 1280,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10013.jpg",
@@ -4991,7 +4431,7 @@
       "cardNumber": "hBP07-007",
       "sourceProduct": "ent07",
       "rarity": "SEC",
-      "reason": "signed-printing-fail-closed",
+      "reason": "cross-product-image",
       "evidence": {
         "sellPrice": 220,
         "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10016.jpg",

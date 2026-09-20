@@ -9,7 +9,7 @@
  * the 29 source-proven hBD24 printings the candidate silently nulled, six
  * candidate-proven hBP09 recoveries, and the three strict-gate rejection
  * exemplars (ent07 aggregation row, hCS01 row with an /heb01/ image, and an
- * hBP09 SEC signed printing).
+ * hBP09 row whose only listing image is the noimage placeholder).
  *
  * Covered contracts:
  *   1. classifyExactPrintPayload — strict per-printing provenance verdicts.
@@ -87,7 +87,38 @@ check('rejection exemplars classify with exact machine-readable reasons', () => 
   assert.equal(classifyExactPrintPayload(fixture.candidateCards['hBP01-081_hCS01_SR_hBP01-081_02_SR']).reason,
     'cross-product-image', 'hCS01 row with /heb01/ image');
   assert.equal(classifyExactPrintPayload(fixture.candidateCards['hBP09-004_hBP09_SEC_hBP09-004_SEC']).reason,
-    'signed-printing-fail-closed', 'SEC signed printing');
+    'no-yuyu-image-provenance', 'hBP09 row whose only listing image is the noimage placeholder');
+});
+
+// DIC-1482 CR (PR #214): the classifier must NEVER infer printing identity from
+// the row-level rarity. It briefly rejected every SEC row outright, which did
+// two wrong things at once — nulled 12 live PLAIN ent07 prices under a "signed"
+// reason, and refused signed rows carrying an exact product-path image, which
+// collapsed hBP04-005's パラレル/サイン variant out of the picker (DIC-1067).
+// Evidence decides; rarity never does (src/utils/printingIdentity.ts, DIC-1013).
+check('a SEC row with exact product-path evidence is proven, not rarity-rejected', () => {
+  const listing = 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10013.jpg';
+  const signedWithEvidence = {
+    id: 'hBP04-005_hBP04_SEC', cardNumber: 'hBP04-005', rarity: 'SEC', sourceProduct: 'hBP04',
+    sellPrice: 69800, yuyuName: 'ラプラス・ダークネス(パラレル/サイン)', yuyuImage: listing,
+    prices: [{ name: 'ラプラス・ダークネス(パラレル/サイン)', sellPrice: 69800, rarity: '', imageUrl: listing }],
+  };
+  assert.equal(classifyExactPrintPayload(signedWithEvidence).proven, true,
+    'a signed printing that proves its own exact product path must not be refused for being SEC');
+  // …and a SEC row WITHOUT that evidence still fails closed — on its own
+  // evidence, under the reason that evidence derives.
+  const placeholder = 'https://card.yuyu-tei.jp/noimage_100_140.jpg';
+  assert.equal(classifyExactPrintPayload({
+    ...signedWithEvidence,
+    yuyuImage: placeholder,
+    prices: [{ name: 'ラプラス・ダークネス(パラレル/サイン)', sellPrice: 69800, rarity: '', imageUrl: placeholder }],
+  }).reason, 'no-yuyu-image-provenance', 'no provenance still fails closed');
+  // A plain printing on a SEC-rarity row is likewise judged on its own image.
+  assert.equal(classifyExactPrintPayload({
+    ...signedWithEvidence, yuyuName: 'ラプラス・ダークネス', sellPrice: 980,
+    yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/9.jpg',
+    prices: [{ name: 'ラプラス・ダークネス', sellPrice: 980, rarity: '', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/9.jpg' }],
+  }).reason, 'cross-product-image', 'a foreign image is cross-product, not "signed"');
 });
 
 check('synthetic edge reasons: noimage placeholder and missing sourceProduct', () => {
@@ -279,7 +310,7 @@ check('recovery adopts proven hBP09 payloads, refuses the three exemplars, keeps
   const rejectedById = new Map(result.rejected.map((r) => [r.id, r.reason]));
   assert.equal(rejectedById.get('hBD24-064_ent07'), 'cross-product-image');
   assert.equal(rejectedById.get('hBP01-081_hCS01_SR_hBP01-081_02_SR'), 'cross-product-image');
-  assert.equal(rejectedById.get('hBP09-004_hBP09_SEC_hBP09-004_SEC'), 'signed-printing-fail-closed');
+  assert.equal(rejectedById.get('hBP09-004_hBP09_SEC_hBP09-004_SEC'), 'no-yuyu-image-provenance');
   for (const id of fixture.lostHBD24Ids) {
     assert.deepEqual(current[id], fixture.baselineCards[id], `${id} must be untouched by recovery`);
   }

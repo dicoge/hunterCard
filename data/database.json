@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-21T08:05:18.980Z",
+  "lastUpdated": "2026-09-21T08:06:15.030Z",
   "totalCards": 3899,
   "source": "hunterCard unified database",
   "cards": {
@@ -61463,18 +61463,32 @@
       "sourceProduct": "hBP03",
       "sourceProductName": "ブースターパック「エリートスパーク」",
       "sourceProductText": "ブースターパック「エリートスパーク」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 118000,
+      "yuyuName": "さくらみこ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10008.jpg",
+      "prices": [
+        {
+          "name": "さくらみこ(パラレル/サイン)",
+          "sellPrice": 118000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10008.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-003_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP03-003.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:04.519Z",
+      "_rawPricesArchive": [
+        {
+          "name": "さくらみこ(パラレル/サイン)",
+          "sellPrice": 118000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10008.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 2450000,
         "totalViewCount": 1058639132,
@@ -62046,18 +62060,32 @@
       "sourceProduct": "hBP03",
       "sourceProductName": "ブースターパック「エリートスパーク」",
       "sourceProductText": "ブースターパック「エリートスパーク」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 59800,
+      "yuyuName": "角巻わため(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10018.jpg",
+      "prices": [
+        {
+          "name": "角巻わため(パラレル/サイン)",
+          "sellPrice": 59800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10018.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-007_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP03-007.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:04.519Z",
+      "_rawPricesArchive": [
+        {
+          "name": "角巻わため(パラレル/サイン)",
+          "sellPrice": 59800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10018.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1720000,
         "totalViewCount": 720491318,
@@ -73277,6 +73305,113 @@
       },
       "nameZh": "拉普拉斯·達克尼斯"
     },
+    "hBP04-005_hBP04_SEC_hBP04-005_SEC": {
+      "id": "hBP04-005_hBP04_SEC_hBP04-005_SEC",
+      "cardNumber": "hBP04-005",
+      "name": "ラプラス・ダークネス",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "SEC",
+      "series": "hBP04",
+      "sourceProduct": "hBP04",
+      "sourceProductName": "ブースターパック「キュリアスユニバース」",
+      "sourceProductText": "ブースターパック「キュリアスユニバース」",
+      "sellPrice": 69800,
+      "yuyuName": "ラプラス・ダークネス(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10013.jpg",
+      "prices": [
+        {
+          "name": "ラプラス・ダークネス(パラレル/サイン)",
+          "sellPrice": 69800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10013.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-005_SEC.png",
+      "localImage": "/images/hBP04-005.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-09-19T12:21:19.395Z",
+      "_rawPricesArchive": [
+        {
+          "name": "ラプラス・ダークネス(パラレル/サイン)",
+          "sellPrice": 69800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10013.jpg"
+        }
+      ],
+      "ytStats": {
+        "subscriberCount": 1580000,
+        "totalViewCount": 484106329,
+        "date": "2026-09-18",
+        "channelId": "UCENwRMx5Yh42zWpzURebzTw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-18T08:24:01.707Z",
+        "subscriberDate": "2026-09-18",
+        "viewChannelId": "UCENwRMx5Yh42zWpzURebzTw",
+        "viewSource": "youtube_about_ssr",
+        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
+        "viewFetchedAt": "2026-09-18T08:24:01.707Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": 90492,
+        "viewCount_7d": null,
+        "viewCount_15d": 3694019,
+        "viewCount_30d": 5325112,
+        "newsCount": 4,
+        "newsPositive": 0,
+        "newsNegative": 0,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": null,
+        "growth_30d": null,
+        "viewCount_daily": 90492,
+        "viewCount_weekly": null,
+        "viewCount_monthly": 5325112
+      },
+      "skillsJp": {
+        "cardNumber": "hBP04-005",
+        "name": "ラプラス・ダークネス",
+        "cardType": "推しホロメン",
+        "color": "紫",
+        "oshiSkill": {
+          "name": "総帥のお仕事",
+          "cost": "-2",
+          "effect": "[ターンに1回]このターンの間、自分のホロメンの能力でサイコロを1度に3回振る時、そのサイコロの目の数すべてを5として扱う。"
+        },
+        "spOshiSkill": {
+          "name": "我ら秘密結社holoX！",
+          "cost": "-3",
+          "effect": "[ゲームに1回]自分の#秘密結社holoXを持つホロメン1人を選ぶ。このターンの間、選んだホロメンのアーツは、エールを必要とせずに使える。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBP04-005",
+        "name": "拉普拉斯·達克尼斯",
+        "cardType": "主推成員",
+        "color": "紫",
+        "oshiSkill": {
+          "name": "總帥的工作",
+          "cost": "-2",
+          "effect": "[每回合1次]這個回合中，自己的成員的能力一次擲3次骰子時，那些骰子點數全部視為5。"
+        },
+        "spOshiSkill": {
+          "name": "我等秘密結社holoX！",
+          "cost": "-3",
+          "effect": "[每場遊戲1次]選擇自己的1張持有#秘密結社holoX的成員。這個回合中，選擇的成員的招式可以不需應援使用。"
+        }
+      },
+      "nameZh": "拉普拉斯·達克尼斯",
+      "buyPrice": 38000,
+      "buyPriceHistory": {
+        "2026-08-30": 38000
+      }
+    },
     "hBP04-005_hBP04_OUR_hBP04-005_OUR": {
       "id": "hBP04-005_hBP04_OUR_hBP04-005_OUR",
       "cardNumber": "hBP04-005",
@@ -73382,99 +73517,6 @@
       "buyPrice": 5000,
       "buyPriceHistory": {
         "2026-08-30": 5000
-      }
-    },
-    "hBP04-005_hBP04_SEC_hBP04-005_SEC": {
-      "id": "hBP04-005_hBP04_SEC_hBP04-005_SEC",
-      "cardNumber": "hBP04-005",
-      "name": "ラプラス・ダークネス",
-      "type": "OshiHolomen",
-      "color": "colorless",
-      "rarity": "SEC",
-      "series": "hBP04",
-      "sourceProduct": "hBP04",
-      "sourceProductName": "ブースターパック「キュリアスユニバース」",
-      "sourceProductText": "ブースターパック「キュリアスユニバース」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-005_SEC.png",
-      "localImage": "",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "ytStats": {
-        "subscriberCount": 1580000,
-        "totalViewCount": 484106329,
-        "date": "2026-09-18",
-        "channelId": "UCENwRMx5Yh42zWpzURebzTw",
-        "source": "youtube_about_ssr",
-        "parser": "ytInitialData.aboutChannelViewModel/v1",
-        "fetchedAt": "2026-09-18T08:24:01.707Z",
-        "subscriberDate": "2026-09-18",
-        "viewChannelId": "UCENwRMx5Yh42zWpzURebzTw",
-        "viewSource": "youtube_about_ssr",
-        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
-        "viewFetchedAt": "2026-09-18T08:24:01.707Z",
-        "subscriberGrowth_1d": null,
-        "subscriberGrowth_7d": null,
-        "subscriberGrowth_15d": null,
-        "subscriberGrowth_30d": null,
-        "viewCount_1d": 90492,
-        "viewCount_7d": null,
-        "viewCount_15d": 3694019,
-        "viewCount_30d": 5325112,
-        "newsCount": 4,
-        "newsPositive": 0,
-        "newsNegative": 0,
-        "growth_1d": null,
-        "growth_7d": null,
-        "growth_15d": null,
-        "growth_30d": null,
-        "viewCount_daily": 90492,
-        "viewCount_weekly": null,
-        "viewCount_monthly": 5325112
-      },
-      "skillsJp": {
-        "cardNumber": "hBP04-005",
-        "name": "ラプラス・ダークネス",
-        "cardType": "推しホロメン",
-        "color": "紫",
-        "oshiSkill": {
-          "name": "総帥のお仕事",
-          "cost": "-2",
-          "effect": "[ターンに1回]このターンの間、自分のホロメンの能力でサイコロを1度に3回振る時、そのサイコロの目の数すべてを5として扱う。"
-        },
-        "spOshiSkill": {
-          "name": "我ら秘密結社holoX！",
-          "cost": "-3",
-          "effect": "[ゲームに1回]自分の#秘密結社holoXを持つホロメン1人を選ぶ。このターンの間、選んだホロメンのアーツは、エールを必要とせずに使える。"
-        }
-      },
-      "skillsZh": {
-        "cardNumber": "hBP04-005",
-        "name": "拉普拉斯·達克尼斯",
-        "cardType": "主推成員",
-        "color": "紫",
-        "oshiSkill": {
-          "name": "總帥的工作",
-          "cost": "-2",
-          "effect": "[每回合1次]這個回合中，自己的成員的能力一次擲3次骰子時，那些骰子點數全部視為5。"
-        },
-        "spOshiSkill": {
-          "name": "我等秘密結社holoX！",
-          "cost": "-3",
-          "effect": "[每場遊戲1次]選擇自己的1張持有#秘密結社holoX的成員。這個回合中，選擇的成員的招式可以不需應援使用。"
-        }
-      },
-      "nameZh": "拉普拉斯·達克尼斯",
-      "buyPrice": 38000,
-      "buyPriceHistory": {
-        "2026-08-30": 38000
       }
     },
     "hBP04-005_ent07": {
@@ -86039,18 +86081,32 @@
       "sourceProduct": "hBP05",
       "sourceProductName": "ブースターパック「エンチャントレガリア」",
       "sourceProductText": "ブースターパック「エンチャントレガリア」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 29800,
+      "yuyuName": "アイラニ・イオフィフティーン(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10005.jpg",
+      "prices": [
+        {
+          "name": "アイラニ・イオフィフティーン(パラレル/サイン)",
+          "sellPrice": 29800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10005.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-002_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP05-002.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:33.075Z",
+      "_rawPricesArchive": [
+        {
+          "name": "アイラニ・イオフィフティーン(パラレル/サイン)",
+          "sellPrice": 29800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10005.jpg"
+        }
+      ],
       "skillsJp": {
         "cardNumber": "hBP05-002",
         "name": "アイラニ・イオフィフティーン",
@@ -86430,18 +86486,32 @@
       "sourceProduct": "hBP05",
       "sourceProductName": "ブースターパック「エンチャントレガリア」",
       "sourceProductText": "ブースターパック「エンチャントレガリア」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 99800,
+      "yuyuName": "尾丸ポルカ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10008.jpg",
+      "prices": [
+        {
+          "name": "尾丸ポルカ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10008.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-003_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP05-003.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:33.075Z",
+      "_rawPricesArchive": [
+        {
+          "name": "尾丸ポルカ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10008.jpg"
+        }
+      ],
       "skillsJp": {
         "cardNumber": "hBP05-003",
         "name": "尾丸ポルカ",
@@ -87221,18 +87291,32 @@
       "sourceProduct": "hBP05",
       "sourceProductName": "ブースターパック「エンチャントレガリア」",
       "sourceProductText": "ブースターパック「エンチャントレガリア」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 49800,
+      "yuyuName": "癒月ちょこ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10013.jpg",
+      "prices": [
+        {
+          "name": "癒月ちょこ(パラレル/サイン)",
+          "sellPrice": 49800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10013.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-005_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP05-005.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:33.075Z",
+      "_rawPricesArchive": [
+        {
+          "name": "癒月ちょこ(パラレル/サイン)",
+          "sellPrice": 49800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10013.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1120000,
         "totalViewCount": 108854229,
@@ -110052,18 +110136,32 @@
       "sourceProduct": "hBP06",
       "sourceProductName": "ブースターパック「アヤカシヴァーミリオン」",
       "sourceProductText": "ブースターパック「アヤカシヴァーミリオン」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 118000,
+      "yuyuName": "風真いろは(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10008.jpg",
+      "prices": [
+        {
+          "name": "風真いろは(パラレル/サイン)",
+          "sellPrice": 118000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10008.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-003_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP06-003.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:47.096Z",
+      "_rawPricesArchive": [
+        {
+          "name": "風真いろは(パラレル/サイン)",
+          "sellPrice": 118000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10008.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1150000,
         "totalViewCount": 312359578,
@@ -111099,18 +111197,32 @@
       "sourceProduct": "hBP06",
       "sourceProductName": "ブースターパック「アヤカシヴァーミリオン」",
       "sourceProductText": "ブースターパック「アヤカシヴァーミリオン」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 49800,
+      "yuyuName": "夏色まつり(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10020.jpg",
+      "prices": [
+        {
+          "name": "夏色まつり(パラレル/サイン)",
+          "sellPrice": 49800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10020.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-008_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP06-008.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:47.096Z",
+      "_rawPricesArchive": [
+        {
+          "name": "夏色まつり(パラレル/サイン)",
+          "sellPrice": 49800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10020.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1600000,
         "totalViewCount": 296643068,
@@ -122860,18 +122972,32 @@
       "sourceProduct": "hBP07",
       "sourceProductName": "ブースターパック「ディーヴァフィーバー」",
       "sourceProductText": "ブースターパック「ディーヴァフィーバー」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 34800,
+      "yuyuName": "ベスティア・ゼータ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10005.jpg",
+      "prices": [
+        {
+          "name": "ベスティア・ゼータ(パラレル/サイン)",
+          "sellPrice": 34800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10005.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hBP07-002_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP07-002.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:00.708Z",
+      "_rawPricesArchive": [
+        {
+          "name": "ベスティア・ゼータ(パラレル/サイン)",
+          "sellPrice": 34800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10005.jpg"
+        }
+      ],
       "skillsJp": {
         "cardNumber": "hBP07-002",
         "name": "ベスティア・ゼータ",
@@ -123251,18 +123377,32 @@
       "sourceProduct": "hBP07",
       "sourceProductName": "ブースターパック「ディーヴァフィーバー」",
       "sourceProductText": "ブースターパック「ディーヴァフィーバー」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 99800,
+      "yuyuName": "大神ミオ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10008.jpg",
+      "prices": [
+        {
+          "name": "大神ミオ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10008.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hBP07-003_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP07-003.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:00.708Z",
+      "_rawPricesArchive": [
+        {
+          "name": "大神ミオ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10008.jpg"
+        }
+      ],
       "skillsJp": {
         "cardNumber": "hBP07-003",
         "name": "大神ミオ",
@@ -124574,18 +124714,32 @@
       "sourceProduct": "hBP07",
       "sourceProductName": "ブースターパック「ディーヴァフィーバー」",
       "sourceProductText": "ブースターパック「ディーヴァフィーバー」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 118000,
+      "yuyuName": "AZKi(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10015.jpg",
+      "prices": [
+        {
+          "name": "AZKi(パラレル/サイン)",
+          "sellPrice": 118000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10015.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hBP07-006_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP07-006.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:00.708Z",
+      "_rawPricesArchive": [
+        {
+          "name": "AZKi(パラレル/サイン)",
+          "sellPrice": 118000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10015.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1340000,
         "totalViewCount": 335428745,
@@ -125117,18 +125271,32 @@
       "sourceProduct": "hBP07",
       "sourceProductName": "ブースターパック「ディーヴァフィーバー」",
       "sourceProductText": "ブースターパック「ディーヴァフィーバー」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 59800,
+      "yuyuName": "桃鈴ねね(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10018.jpg",
+      "prices": [
+        {
+          "name": "桃鈴ねね(パラレル/サイン)",
+          "sellPrice": 59800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10018.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hBP07-007_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP07-007.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:00.708Z",
+      "_rawPricesArchive": [
+        {
+          "name": "桃鈴ねね(パラレル/サイン)",
+          "sellPrice": 59800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp07/10018.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1330000,
         "totalViewCount": 249218944,
@@ -174649,18 +174817,32 @@
       "sourceProduct": "hBP01",
       "sourceProductName": "ブースターパック「ブルーミングレディアンス」",
       "sourceProductText": "ブースターパック「ブルーミングレディアンス」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 24800,
+      "yuyuName": "小鳥遊キアラ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10013.jpg",
+      "prices": [
+        {
+          "name": "小鳥遊キアラ(パラレル/サイン)",
+          "sellPrice": 24800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10013.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-006_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP01-006.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:20:35.373Z",
+      "_rawPricesArchive": [
+        {
+          "name": "小鳥遊キアラ(パラレル/サイン)",
+          "sellPrice": 24800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10013.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1650000,
         "totalViewCount": 339042030,
@@ -174952,18 +175134,32 @@
       "sourceProduct": "hBP01",
       "sourceProductName": "ブースターパック「ブルーミングレディアンス」",
       "sourceProductText": "ブースターパック「ブルーミングレディアンス」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 108000,
+      "yuyuName": "星街すいせい(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10016.jpg",
+      "prices": [
+        {
+          "name": "星街すいせい(パラレル/サイン)",
+          "sellPrice": 108000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10016.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP01/hBP01-007_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP01-007.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:20:35.374Z",
+      "_rawPricesArchive": [
+        {
+          "name": "星街すいせい(パラレル/サイン)",
+          "sellPrice": 108000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp01/10016.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 2920000,
         "totalViewCount": 1788936567,
@@ -200511,18 +200707,32 @@
       "sourceProduct": "hBP02",
       "sourceProductName": "ブースターパック「クインテットスペクトラム」",
       "sourceProductText": "ブースターパック「クインテットスペクトラム」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 148000,
+      "yuyuName": "白上フブキ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10003.jpg",
+      "prices": [
+        {
+          "name": "白上フブキ(パラレル/サイン)",
+          "sellPrice": 148000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10003.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-001_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP02-001.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:20:48.960Z",
+      "_rawPricesArchive": [
+        {
+          "name": "白上フブキ(パラレル/サイン)",
+          "sellPrice": 148000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10003.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 2680000,
         "totalViewCount": 806839729,
@@ -201103,18 +201313,38 @@
       "sourceProduct": "hBP02",
       "sourceProductName": "ブースターパック「クインテットスペクトラム」",
       "sourceProductText": "ブースターパック「クインテットスペクトラム」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 89800,
+      "yuyuName": "宝鐘マリン(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg",
+      "prices": [
+        {
+          "name": "宝鐘マリン(パラレル/サイン)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-003_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP02-003.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:20:48.960Z",
+      "_rawPricesArchive": [
+        {
+          "name": "宝鐘マリン(パラレル/サイン)(エラッタ前)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10008.jpg"
+        },
+        {
+          "name": "宝鐘マリン(パラレル/サイン)(エラッタ後)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10212.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 4420000,
         "totalViewCount": 2453586889,
@@ -201406,18 +201636,32 @@
       "sourceProduct": "hBP02",
       "sourceProductName": "ブースターパック「クインテットスペクトラム」",
       "sourceProductText": "ブースターパック「クインテットスペクトラム」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 99800,
+      "yuyuName": "沙花叉クロヱ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10011.jpg",
+      "prices": [
+        {
+          "name": "沙花叉クロヱ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10011.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-004_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP02-004.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:20:48.960Z",
+      "_rawPricesArchive": [
+        {
+          "name": "沙花叉クロヱ(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10011.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1310000,
         "totalViewCount": 220188182,
@@ -223947,6 +224191,63 @@
         "2026-08-30": 600
       }
     },
+    "hBP02-084_hBP02_SEC_hBP02-084_SEC": {
+      "id": "hBP02-084_hBP02_SEC_hBP02-084_SEC",
+      "cardNumber": "hBP02-084",
+      "name": "みっころね24",
+      "type": "サポート・イベント・LIMITED",
+      "color": "colorless",
+      "rarity": "SEC",
+      "series": "hBP02",
+      "sourceProduct": "hBP02",
+      "sourceProductName": "ブースターパック「クインテットスペクトラム」",
+      "sourceProductText": "ブースターパック「クインテットスペクトラム」",
+      "sellPrice": 89800,
+      "yuyuName": "みっころね24(パラレル/箔押し)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10170.jpg",
+      "prices": [
+        {
+          "name": "みっころね24(パラレル/箔押し)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10170.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-084_SEC.png",
+      "localImage": "/images/hBP02-084.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-09-19T12:20:48.960Z",
+      "_rawPricesArchive": [
+        {
+          "name": "みっころね24(パラレル/箔押し)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp02/10170.jpg"
+        }
+      ],
+      "skillsJp": {
+        "cardNumber": "hBP02-084",
+        "name": "みっころね24",
+        "cardType": "サポート・イベント・LIMITED",
+        "color": "",
+        "abilityText": "自分のデッキを2枚引き、サイコロを1回振る:3か5か6の時、自分のデッキから、Debutホロメン1枚を公開し、手札に加える。そしてデッキをシャッフルする。2か4の時、自分のデッキを1枚引く。\n\nLIMITED:ターンに1枚しか使えない。"
+      },
+      "skillsZh": {
+        "cardNumber": "hBP02-084",
+        "name": "三咕嚦24",
+        "cardType": "支援·事件·LIMITED",
+        "color": "",
+        "abilityText": "從自己的牌組抽2張，擲1次骰子：結果為3、5或6時，從自己的牌組中，公開1張Debut成員，加入手牌。然後洗牌組。結果為2或4時，從自己的牌組抽1張。\n\nLIMITED:每回合只能使用1張。"
+      },
+      "nameZh": "三咕嚦24",
+      "buyPrice": 53000,
+      "buyPriceHistory": {
+        "2026-08-30": 53000
+      }
+    },
     "hBP02-084_hBP04_SR_hBP02-084_02_SR": {
       "id": "hBP02-084_hBP04_SR_hBP02-084_02_SR",
       "cardNumber": "hBP02-084",
@@ -224052,49 +224353,6 @@
         "abilityText": "從自己的牌組抽2張，擲1次骰子：結果為3、5或6時，從自己的牌組中，公開1張Debut成員，加入手牌。然後洗牌組。結果為2或4時，從自己的牌組抽1張。\n\nLIMITED:每回合只能使用1張。"
       },
       "nameZh": "三咕嚦24"
-    },
-    "hBP02-084_hBP02_SEC_hBP02-084_SEC": {
-      "id": "hBP02-084_hBP02_SEC_hBP02-084_SEC",
-      "cardNumber": "hBP02-084",
-      "name": "みっころね24",
-      "type": "サポート・イベント・LIMITED",
-      "color": "colorless",
-      "rarity": "SEC",
-      "series": "hBP02",
-      "sourceProduct": "hBP02",
-      "sourceProductName": "ブースターパック「クインテットスペクトラム」",
-      "sourceProductText": "ブースターパック「クインテットスペクトラム」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP02/hBP02-084_SEC.png",
-      "localImage": "",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "skillsJp": {
-        "cardNumber": "hBP02-084",
-        "name": "みっころね24",
-        "cardType": "サポート・イベント・LIMITED",
-        "color": "",
-        "abilityText": "自分のデッキを2枚引き、サイコロを1回振る:3か5か6の時、自分のデッキから、Debutホロメン1枚を公開し、手札に加える。そしてデッキをシャッフルする。2か4の時、自分のデッキを1枚引く。\n\nLIMITED:ターンに1枚しか使えない。"
-      },
-      "skillsZh": {
-        "cardNumber": "hBP02-084",
-        "name": "三咕嚦24",
-        "cardType": "支援·事件·LIMITED",
-        "color": "",
-        "abilityText": "從自己的牌組抽2張，擲1次骰子：結果為3、5或6時，從自己的牌組中，公開1張Debut成員，加入手牌。然後洗牌組。結果為2或4時，從自己的牌組抽1張。\n\nLIMITED:每回合只能使用1張。"
-      },
-      "nameZh": "三咕嚦24",
-      "buyPrice": 53000,
-      "buyPriceHistory": {
-        "2026-08-30": 53000
-      }
     },
     "hBP02-084_hSD08_U_hBP02-084_U": {
       "id": "hBP02-084_hSD08_U_hBP02-084_U",
@@ -228865,18 +229123,32 @@
       "sourceProduct": "hBP03",
       "sourceProductName": "ブースターパック「エリートスパーク」",
       "sourceProductText": "ブースターパック「エリートスパーク」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 59800,
+      "yuyuName": "獅白ぼたん(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10005.jpg",
+      "prices": [
+        {
+          "name": "獅白ぼたん(パラレル/サイン)",
+          "sellPrice": 59800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10005.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-002_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP03-002.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:04.519Z",
+      "_rawPricesArchive": [
+        {
+          "name": "獅白ぼたん(パラレル/サイン)",
+          "sellPrice": 59800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10005.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1590000,
         "totalViewCount": 334795225,
@@ -229383,18 +229655,32 @@
       "sourceProduct": "hBP03",
       "sourceProductName": "ブースターパック「エリートスパーク」",
       "sourceProductText": "ブースターパック「エリートスパーク」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 79800,
+      "yuyuName": "常闇トワ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10013.jpg",
+      "prices": [
+        {
+          "name": "常闇トワ(パラレル/サイン)",
+          "sellPrice": 79800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10013.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP03/hBP03-005_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP03-005.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:04.519Z",
+      "_rawPricesArchive": [
+        {
+          "name": "常闇トワ(パラレル/サイン)",
+          "sellPrice": 79800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp03/10013.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1580000,
         "totalViewCount": 522496978,
@@ -255329,6 +255615,113 @@
       },
       "nameZh": "博衣可佑理"
     },
+    "hBP04-001_hBP04_SEC_hBP04-001_SEC": {
+      "id": "hBP04-001_hBP04_SEC_hBP04-001_SEC",
+      "cardNumber": "hBP04-001",
+      "name": "博衣こより",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "SEC",
+      "series": "hBP04",
+      "sourceProduct": "hBP04",
+      "sourceProductName": "ブースターパック「キュリアスユニバース」",
+      "sourceProductText": "ブースターパック「キュリアスユニバース」",
+      "sellPrice": 99800,
+      "yuyuName": "博衣こより(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg",
+      "prices": [
+        {
+          "name": "博衣こより(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-001_SEC.png",
+      "localImage": "/images/hBP04-001.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-09-19T12:21:19.395Z",
+      "_rawPricesArchive": [
+        {
+          "name": "博衣こより(パラレル/サイン)",
+          "sellPrice": 99800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10003.jpg"
+        }
+      ],
+      "ytStats": {
+        "subscriberCount": 1370000,
+        "totalViewCount": 759682109,
+        "date": "2026-09-18",
+        "channelId": "UC6eWCld0KwmyHFbAqK3V-Rw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-18T08:24:06.525Z",
+        "subscriberDate": "2026-09-18",
+        "viewChannelId": "UC6eWCld0KwmyHFbAqK3V-Rw",
+        "viewSource": "youtube_about_ssr",
+        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
+        "viewFetchedAt": "2026-09-18T08:24:06.525Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": 568173,
+        "viewCount_7d": null,
+        "viewCount_15d": 11859812,
+        "viewCount_30d": 15716624,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": null,
+        "growth_30d": null,
+        "viewCount_daily": 568173,
+        "viewCount_weekly": null,
+        "viewCount_monthly": 15716624
+      },
+      "skillsJp": {
+        "cardNumber": "hBP04-001",
+        "name": "博衣こより",
+        "cardType": "推しホロメン",
+        "color": "白",
+        "oshiSkill": {
+          "name": "こより実験中",
+          "cost": "-2",
+          "effect": "[ターンに1回]このターンの間、自分の#こよラボを持つサポートカードが付いている〈博衣こより〉1人のアーツ+30。"
+        },
+        "spOshiSkill": {
+          "name": "助手くん、んーまっ！",
+          "cost": "-2",
+          "effect": "[ゲームに1回]相手のターンで、自分の〈こよりの助手くん〉が付いている〈博衣こより〉が相手からダメージを受ける時に使える:そのホロメン1人が受けるダメージ-100。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBP04-001",
+        "name": "博衣可佑理",
+        "cardType": "主推成員",
+        "color": "白",
+        "oshiSkill": {
+          "name": "可佑理實驗中",
+          "cost": "-2",
+          "effect": "[每回合1次]這個回合期間，附有自己擁有#可佑實驗室的支援卡的〈博衣可佑理〉1人的招式+30。"
+        },
+        "spOshiSkill": {
+          "name": "助手君，嗯～好吃！",
+          "cost": "-2",
+          "effect": "[每場遊戲1次]在對手的回合，當附有自己〈可佑理的助手君〉的〈博衣可佑理〉從對手受到傷害時可以使用：該成員1人受到的傷害-100。"
+        }
+      },
+      "nameZh": "博衣可佑理",
+      "buyPrice": 50000,
+      "buyPriceHistory": {
+        "2026-08-30": 50000
+      }
+    },
     "hBP04-001_hBP04_OUR_hBP04-001_OUR": {
       "id": "hBP04-001_hBP04_OUR_hBP04-001_OUR",
       "cardNumber": "hBP04-001",
@@ -255434,99 +255827,6 @@
       "buyPrice": 6200,
       "buyPriceHistory": {
         "2026-08-30": 6200
-      }
-    },
-    "hBP04-001_hBP04_SEC_hBP04-001_SEC": {
-      "id": "hBP04-001_hBP04_SEC_hBP04-001_SEC",
-      "cardNumber": "hBP04-001",
-      "name": "博衣こより",
-      "type": "OshiHolomen",
-      "color": "colorless",
-      "rarity": "SEC",
-      "series": "hBP04",
-      "sourceProduct": "hBP04",
-      "sourceProductName": "ブースターパック「キュリアスユニバース」",
-      "sourceProductText": "ブースターパック「キュリアスユニバース」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-001_SEC.png",
-      "localImage": "",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "ytStats": {
-        "subscriberCount": 1370000,
-        "totalViewCount": 759682109,
-        "date": "2026-09-18",
-        "channelId": "UC6eWCld0KwmyHFbAqK3V-Rw",
-        "source": "youtube_about_ssr",
-        "parser": "ytInitialData.aboutChannelViewModel/v1",
-        "fetchedAt": "2026-09-18T08:24:06.525Z",
-        "subscriberDate": "2026-09-18",
-        "viewChannelId": "UC6eWCld0KwmyHFbAqK3V-Rw",
-        "viewSource": "youtube_about_ssr",
-        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
-        "viewFetchedAt": "2026-09-18T08:24:06.525Z",
-        "subscriberGrowth_1d": null,
-        "subscriberGrowth_7d": null,
-        "subscriberGrowth_15d": null,
-        "subscriberGrowth_30d": null,
-        "viewCount_1d": 568173,
-        "viewCount_7d": null,
-        "viewCount_15d": 11859812,
-        "viewCount_30d": 15716624,
-        "newsCount": 1,
-        "newsPositive": 0,
-        "newsNegative": 0,
-        "growth_1d": null,
-        "growth_7d": null,
-        "growth_15d": null,
-        "growth_30d": null,
-        "viewCount_daily": 568173,
-        "viewCount_weekly": null,
-        "viewCount_monthly": 15716624
-      },
-      "skillsJp": {
-        "cardNumber": "hBP04-001",
-        "name": "博衣こより",
-        "cardType": "推しホロメン",
-        "color": "白",
-        "oshiSkill": {
-          "name": "こより実験中",
-          "cost": "-2",
-          "effect": "[ターンに1回]このターンの間、自分の#こよラボを持つサポートカードが付いている〈博衣こより〉1人のアーツ+30。"
-        },
-        "spOshiSkill": {
-          "name": "助手くん、んーまっ！",
-          "cost": "-2",
-          "effect": "[ゲームに1回]相手のターンで、自分の〈こよりの助手くん〉が付いている〈博衣こより〉が相手からダメージを受ける時に使える:そのホロメン1人が受けるダメージ-100。"
-        }
-      },
-      "skillsZh": {
-        "cardNumber": "hBP04-001",
-        "name": "博衣可佑理",
-        "cardType": "主推成員",
-        "color": "白",
-        "oshiSkill": {
-          "name": "可佑理實驗中",
-          "cost": "-2",
-          "effect": "[每回合1次]這個回合期間，附有自己擁有#可佑實驗室的支援卡的〈博衣可佑理〉1人的招式+30。"
-        },
-        "spOshiSkill": {
-          "name": "助手君，嗯～好吃！",
-          "cost": "-2",
-          "effect": "[每場遊戲1次]在對手的回合，當附有自己〈可佑理的助手君〉的〈博衣可佑理〉從對手受到傷害時可以使用：該成員1人受到的傷害-100。"
-        }
-      },
-      "nameZh": "博衣可佑理",
-      "buyPrice": 50000,
-      "buyPriceHistory": {
-        "2026-08-30": 50000
       }
     },
     "hBP04-002_hBP04_OSR_hBP04-002_OSR": {
@@ -256270,6 +256570,113 @@
       },
       "nameZh": "雪花菈米"
     },
+    "hBP04-004_hBP04_SEC_hBP04-004_SEC": {
+      "id": "hBP04-004_hBP04_SEC_hBP04-004_SEC",
+      "cardNumber": "hBP04-004",
+      "name": "雪花ラミィ",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "SEC",
+      "series": "hBP04",
+      "sourceProduct": "hBP04",
+      "sourceProductName": "ブースターパック「キュリアスユニバース」",
+      "sourceProductText": "ブースターパック「キュリアスユニバース」",
+      "sellPrice": 79800,
+      "yuyuName": "雪花ラミィ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg",
+      "prices": [
+        {
+          "name": "雪花ラミィ(パラレル/サイン)",
+          "sellPrice": 79800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_SEC.png",
+      "localImage": "/images/hBP04-004.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-09-19T12:21:19.395Z",
+      "_rawPricesArchive": [
+        {
+          "name": "雪花ラミィ(パラレル/サイン)",
+          "sellPrice": 79800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10010.jpg"
+        }
+      ],
+      "ytStats": {
+        "subscriberCount": 601000,
+        "totalViewCount": 57800494,
+        "date": "2026-09-18",
+        "channelId": "UCfrWoRGlawPQDQxxeIDRP0Q",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-18T08:23:26.460Z",
+        "subscriberDate": "2026-09-18",
+        "viewChannelId": "UCfrWoRGlawPQDQxxeIDRP0Q",
+        "viewSource": "youtube_about_ssr",
+        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
+        "viewFetchedAt": "2026-09-18T08:23:26.460Z",
+        "subscriberGrowth_1d": 1000,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": 8000,
+        "subscriberGrowth_30d": 9000,
+        "viewCount_1d": 15815,
+        "viewCount_7d": null,
+        "viewCount_15d": 432432,
+        "viewCount_30d": 639438,
+        "newsCount": 6,
+        "newsPositive": 5,
+        "newsNegative": 0,
+        "growth_1d": 1000,
+        "growth_7d": null,
+        "growth_15d": 8000,
+        "growth_30d": 9000,
+        "viewCount_daily": 15815,
+        "viewCount_weekly": null,
+        "viewCount_monthly": 639438
+      },
+      "skillsJp": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花ラミィ",
+        "cardType": "推しホロメン",
+        "color": "青",
+        "oshiSkill": {
+          "name": "愛してる",
+          "cost": "-1",
+          "effect": "[ターンに1回]相手のターンで、自分のホロメンがダウンした時に使える:そのホロメンに付いているファン1枚を手札に戻す。"
+        },
+        "spOshiSkill": {
+          "name": "ぶーん、バリバリバリバリ",
+          "cost": "-3",
+          "effect": "[ゲームに1回]自分の〈雪花ラミィ〉1人を選ぶ。このターンの間、選んだホロメンが、相手のホロメン1人に与える特殊ダメージ+100し、選んだホロメンが相手のホロメンをダウンさせた時、自分のデッキを2枚引く。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBP04-004",
+        "name": "雪花菈米",
+        "cardType": "主推成員",
+        "color": "青",
+        "oshiSkill": {
+          "name": "我愛你",
+          "cost": "-1",
+          "effect": "[每回合1次]對手的回合中，自己的成員倒下時可以使用：將那張成員上附著的1張粉絲卡返回手牌。"
+        },
+        "spOshiSkill": {
+          "name": "嗡嗡、啪哩啪哩啪哩啪哩",
+          "cost": "-3",
+          "effect": "[每場遊戲1次]選擇自己的1張〈雪花拉米〉。這個回合中，選擇的成員給予對手的1張成員的特殊傷害+100，並且選擇的成員讓對手的成員倒下時，自己抽2張牌組。"
+        }
+      },
+      "nameZh": "雪花菈米",
+      "buyPrice": 55000,
+      "buyPriceHistory": {
+        "2026-08-30": 55000
+      }
+    },
     "hBP04-004_hBP04_OUR_hBP04-004_OUR": {
       "id": "hBP04-004_hBP04_OUR_hBP04-004_OUR",
       "cardNumber": "hBP04-004",
@@ -256377,99 +256784,6 @@
         "2026-08-30": 6200
       }
     },
-    "hBP04-004_hBP04_SEC_hBP04-004_SEC": {
-      "id": "hBP04-004_hBP04_SEC_hBP04-004_SEC",
-      "cardNumber": "hBP04-004",
-      "name": "雪花ラミィ",
-      "type": "OshiHolomen",
-      "color": "colorless",
-      "rarity": "SEC",
-      "series": "hBP04",
-      "sourceProduct": "hBP04",
-      "sourceProductName": "ブースターパック「キュリアスユニバース」",
-      "sourceProductText": "ブースターパック「キュリアスユニバース」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-004_SEC.png",
-      "localImage": "",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "ytStats": {
-        "subscriberCount": 601000,
-        "totalViewCount": 57800494,
-        "date": "2026-09-18",
-        "channelId": "UCfrWoRGlawPQDQxxeIDRP0Q",
-        "source": "youtube_about_ssr",
-        "parser": "ytInitialData.aboutChannelViewModel/v1",
-        "fetchedAt": "2026-09-18T08:23:26.460Z",
-        "subscriberDate": "2026-09-18",
-        "viewChannelId": "UCfrWoRGlawPQDQxxeIDRP0Q",
-        "viewSource": "youtube_about_ssr",
-        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
-        "viewFetchedAt": "2026-09-18T08:23:26.460Z",
-        "subscriberGrowth_1d": 1000,
-        "subscriberGrowth_7d": null,
-        "subscriberGrowth_15d": 8000,
-        "subscriberGrowth_30d": 9000,
-        "viewCount_1d": 15815,
-        "viewCount_7d": null,
-        "viewCount_15d": 432432,
-        "viewCount_30d": 639438,
-        "newsCount": 6,
-        "newsPositive": 5,
-        "newsNegative": 0,
-        "growth_1d": 1000,
-        "growth_7d": null,
-        "growth_15d": 8000,
-        "growth_30d": 9000,
-        "viewCount_daily": 15815,
-        "viewCount_weekly": null,
-        "viewCount_monthly": 639438
-      },
-      "skillsJp": {
-        "cardNumber": "hBP04-004",
-        "name": "雪花ラミィ",
-        "cardType": "推しホロメン",
-        "color": "青",
-        "oshiSkill": {
-          "name": "愛してる",
-          "cost": "-1",
-          "effect": "[ターンに1回]相手のターンで、自分のホロメンがダウンした時に使える:そのホロメンに付いているファン1枚を手札に戻す。"
-        },
-        "spOshiSkill": {
-          "name": "ぶーん、バリバリバリバリ",
-          "cost": "-3",
-          "effect": "[ゲームに1回]自分の〈雪花ラミィ〉1人を選ぶ。このターンの間、選んだホロメンが、相手のホロメン1人に与える特殊ダメージ+100し、選んだホロメンが相手のホロメンをダウンさせた時、自分のデッキを2枚引く。"
-        }
-      },
-      "skillsZh": {
-        "cardNumber": "hBP04-004",
-        "name": "雪花菈米",
-        "cardType": "主推成員",
-        "color": "青",
-        "oshiSkill": {
-          "name": "我愛你",
-          "cost": "-1",
-          "effect": "[每回合1次]對手的回合中，自己的成員倒下時可以使用：將那張成員上附著的1張粉絲卡返回手牌。"
-        },
-        "spOshiSkill": {
-          "name": "嗡嗡、啪哩啪哩啪哩啪哩",
-          "cost": "-3",
-          "effect": "[每場遊戲1次]選擇自己的1張〈雪花拉米〉。這個回合中，選擇的成員給予對手的1張成員的特殊傷害+100，並且選擇的成員讓對手的成員倒下時，自己抽2張牌組。"
-        }
-      },
-      "nameZh": "雪花菈米",
-      "buyPrice": 55000,
-      "buyPriceHistory": {
-        "2026-08-30": 55000
-      }
-    },
     "hBP04-006_hBP04_OSR_hBP04-006_OSR": {
       "id": "hBP04-006_hBP04_OSR_hBP04-006_OSR",
       "cardNumber": "hBP04-006",
@@ -256572,6 +256886,113 @@
         }
       },
       "nameZh": "大空昴"
+    },
+    "hBP04-006_hBP04_SEC_hBP04-006_SEC": {
+      "id": "hBP04-006_hBP04_SEC_hBP04-006_SEC",
+      "cardNumber": "hBP04-006",
+      "name": "大空スバル",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "SEC",
+      "series": "hBP04",
+      "sourceProduct": "hBP04",
+      "sourceProductName": "ブースターパック「キュリアスユニバース」",
+      "sourceProductText": "ブースターパック「キュリアスユニバース」",
+      "sellPrice": 89800,
+      "yuyuName": "大空スバル(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10016.jpg",
+      "prices": [
+        {
+          "name": "大空スバル(パラレル/サイン)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10016.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-006_SEC.png",
+      "localImage": "/images/hBP04-006.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-09-19T12:21:19.395Z",
+      "_rawPricesArchive": [
+        {
+          "name": "大空スバル(パラレル/サイン)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp04/10016.jpg"
+        }
+      ],
+      "ytStats": {
+        "subscriberCount": 2030000,
+        "totalViewCount": 705747146,
+        "date": "2026-09-18",
+        "channelId": "UCvzGlP9oQwU--Y0r9id_jnA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-18T08:22:57.622Z",
+        "subscriberDate": "2026-09-18",
+        "viewChannelId": "UCvzGlP9oQwU--Y0r9id_jnA",
+        "viewSource": "youtube_about_ssr",
+        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
+        "viewFetchedAt": "2026-09-18T08:22:57.622Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": 10000,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": 974839,
+        "viewCount_7d": null,
+        "viewCount_15d": 15192016,
+        "viewCount_30d": 22224625,
+        "newsCount": 7,
+        "newsPositive": 0,
+        "newsNegative": 0,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": 10000,
+        "growth_30d": 10000,
+        "viewCount_daily": 974839,
+        "viewCount_weekly": null,
+        "viewCount_monthly": 22224625
+      },
+      "skillsJp": {
+        "cardNumber": "hBP04-006",
+        "name": "大空スバル",
+        "cardType": "推しホロメン",
+        "color": "黄",
+        "oshiSkill": {
+          "name": "メンタル！ フィジカル！ パッション！",
+          "cost": "-2",
+          "effect": "[ターンに1回]相手のターンで、自分の〈大空スバル〉が相手からダメージを受ける時に使える:自分の〈大空スバル〉全員が受けるダメージ-30。"
+        },
+        "spOshiSkill": {
+          "name": "リアクション芸",
+          "cost": "-2",
+          "effect": "[ゲームに1回]自分のライフが3以下の時に使える:このターンの間、自分のセンターホロメンの〈大空スバル〉のアーツ+100。"
+        }
+      },
+      "skillsZh": {
+        "cardNumber": "hBP04-006",
+        "name": "大空昴",
+        "cardType": "主推成員",
+        "color": "黄",
+        "oshiSkill": {
+          "name": "心理！體能！熱情！",
+          "cost": "-2",
+          "effect": "[每回合1次]對手的回合中，自己的〈大空昴〉受到對手傷害時可以使用：自己的所有〈大空昴〉受到的傷害-30。"
+        },
+        "spOshiSkill": {
+          "name": "反應錶演",
+          "cost": "-2",
+          "effect": "[每場遊戲1次]自己的生命值為3以下時可以使用：這個回合中，自己的中央成員的〈大空昴〉的招式+100。"
+        }
+      },
+      "nameZh": "大空昴",
+      "buyPrice": 50000,
+      "buyPriceHistory": {
+        "2026-08-30": 50000
+      }
     },
     "hBP04-006_hBP04_OUR_hBP04-006_OUR": {
       "id": "hBP04-006_hBP04_OUR_hBP04-006_OUR",
@@ -256678,99 +257099,6 @@
       "buyPrice": 6500,
       "buyPriceHistory": {
         "2026-08-30": 6500
-      }
-    },
-    "hBP04-006_hBP04_SEC_hBP04-006_SEC": {
-      "id": "hBP04-006_hBP04_SEC_hBP04-006_SEC",
-      "cardNumber": "hBP04-006",
-      "name": "大空スバル",
-      "type": "OshiHolomen",
-      "color": "colorless",
-      "rarity": "SEC",
-      "series": "hBP04",
-      "sourceProduct": "hBP04",
-      "sourceProductName": "ブースターパック「キュリアスユニバース」",
-      "sourceProductText": "ブースターパック「キュリアスユニバース」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP04/hBP04-006_SEC.png",
-      "localImage": "",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "ytStats": {
-        "subscriberCount": 2030000,
-        "totalViewCount": 705747146,
-        "date": "2026-09-18",
-        "channelId": "UCvzGlP9oQwU--Y0r9id_jnA",
-        "source": "youtube_about_ssr",
-        "parser": "ytInitialData.aboutChannelViewModel/v1",
-        "fetchedAt": "2026-09-18T08:22:57.622Z",
-        "subscriberDate": "2026-09-18",
-        "viewChannelId": "UCvzGlP9oQwU--Y0r9id_jnA",
-        "viewSource": "youtube_about_ssr",
-        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
-        "viewFetchedAt": "2026-09-18T08:22:57.622Z",
-        "subscriberGrowth_1d": null,
-        "subscriberGrowth_7d": null,
-        "subscriberGrowth_15d": 10000,
-        "subscriberGrowth_30d": 10000,
-        "viewCount_1d": 974839,
-        "viewCount_7d": null,
-        "viewCount_15d": 15192016,
-        "viewCount_30d": 22224625,
-        "newsCount": 7,
-        "newsPositive": 0,
-        "newsNegative": 0,
-        "growth_1d": null,
-        "growth_7d": null,
-        "growth_15d": 10000,
-        "growth_30d": 10000,
-        "viewCount_daily": 974839,
-        "viewCount_weekly": null,
-        "viewCount_monthly": 22224625
-      },
-      "skillsJp": {
-        "cardNumber": "hBP04-006",
-        "name": "大空スバル",
-        "cardType": "推しホロメン",
-        "color": "黄",
-        "oshiSkill": {
-          "name": "メンタル！ フィジカル！ パッション！",
-          "cost": "-2",
-          "effect": "[ターンに1回]相手のターンで、自分の〈大空スバル〉が相手からダメージを受ける時に使える:自分の〈大空スバル〉全員が受けるダメージ-30。"
-        },
-        "spOshiSkill": {
-          "name": "リアクション芸",
-          "cost": "-2",
-          "effect": "[ゲームに1回]自分のライフが3以下の時に使える:このターンの間、自分のセンターホロメンの〈大空スバル〉のアーツ+100。"
-        }
-      },
-      "skillsZh": {
-        "cardNumber": "hBP04-006",
-        "name": "大空昴",
-        "cardType": "主推成員",
-        "color": "黄",
-        "oshiSkill": {
-          "name": "心理！體能！熱情！",
-          "cost": "-2",
-          "effect": "[每回合1次]對手的回合中，自己的〈大空昴〉受到對手傷害時可以使用：自己的所有〈大空昴〉受到的傷害-30。"
-        },
-        "spOshiSkill": {
-          "name": "反應錶演",
-          "cost": "-2",
-          "effect": "[每場遊戲1次]自己的生命值為3以下時可以使用：這個回合中，自己的中央成員的〈大空昴〉的招式+100。"
-        }
-      },
-      "nameZh": "大空昴",
-      "buyPrice": 50000,
-      "buyPriceHistory": {
-        "2026-08-30": 50000
       }
     },
     "hBP04-007_hBP04_OSR_hBP04-007_OSR": {
@@ -281689,18 +282017,32 @@
       "sourceProduct": "hBP05",
       "sourceProductName": "ブースターパック「エンチャントレガリア」",
       "sourceProductText": "ブースターパック「エンチャントレガリア」\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 128000,
+      "yuyuName": "兎田ぺこら(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10038.jpg",
+      "prices": [
+        {
+          "name": "兎田ぺこら(パラレル/サイン)",
+          "sellPrice": 128000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10038.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-016_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP05-016.jpg",
       "hp": "210",
       "life": "",
       "arts": "アーツ ◇◇◇◇ウーサペコラを崇めるぺこ　120+ 赤+50 \nこのホロメンに重なっているホロメン1枚につき、サイコロを1回振れる:出た目の合計数1につき、このアーツ+10。",
       "bloomLevel": "2nd",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:33.075Z",
+      "_rawPricesArchive": [
+        {
+          "name": "兎田ぺこら(パラレル/サイン)",
+          "sellPrice": 128000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10038.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 2790000,
         "totalViewCount": 1189246691,
@@ -289573,18 +289915,32 @@
       "sourceProduct": "hBP05",
       "sourceProductName": "ブースターパック「エンチャントレガリア」",
       "sourceProductText": "ブースターパック「エンチャントレガリア」\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 158000,
+      "yuyuName": "SorAZセレブレーション(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10177.jpg",
+      "prices": [
+        {
+          "name": "SorAZセレブレーション(パラレル/サイン)",
+          "sellPrice": 158000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10177.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP05-080_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP05-080.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:33.075Z",
+      "_rawPricesArchive": [
+        {
+          "name": "SorAZセレブレーション(パラレル/サイン)",
+          "sellPrice": 158000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp05/10177.jpg"
+        }
+      ],
       "skillsJp": {
         "cardNumber": "hBP05-080",
         "name": "SorAZセレブレーション",
@@ -291356,18 +291712,32 @@
       "sourceProduct": "hBP06",
       "sourceProductName": "ブースターパック「アヤカシヴァーミリオン」",
       "sourceProductText": "ブースターパック「アヤカシヴァーミリオン」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 39800,
+      "yuyuName": "ラオーラ・パンテーラ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10003.jpg",
+      "prices": [
+        {
+          "name": "ラオーラ・パンテーラ(パラレル/サイン)",
+          "sellPrice": 39800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10003.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-001_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP06-001.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:47.096Z",
+      "_rawPricesArchive": [
+        {
+          "name": "ラオーラ・パンテーラ(パラレル/サイン)",
+          "sellPrice": 39800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10003.jpg"
+        }
+      ],
       "skillsJp": {
         "cardNumber": "hBP06-001",
         "name": "ラオーラ・パンテーラ",
@@ -291842,18 +292212,32 @@
       "sourceProduct": "hBP06",
       "sourceProductName": "ブースターパック「アヤカシヴァーミリオン」",
       "sourceProductText": "ブースターパック「アヤカシヴァーミリオン」",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 158000,
+      "yuyuName": "百鬼あやめ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10011.jpg",
+      "prices": [
+        {
+          "name": "百鬼あやめ(パラレル/サイン)",
+          "sellPrice": 158000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10011.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP06-004_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP06-004.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:21:47.096Z",
+      "_rawPricesArchive": [
+        {
+          "name": "百鬼あやめ(パラレル/サイン)",
+          "sellPrice": 158000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp06/10011.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1720000,
         "totalViewCount": 199987102,
@@ -317588,18 +317972,32 @@
       "sourceProduct": "hBP08",
       "sourceProductName": "ブースターパック バウンサーバウンド",
       "sourceProductText": "ブースターパック バウンサーバウンド\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 158000,
+      "yuyuName": "FUWAMOCO(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10007.jpg",
+      "prices": [
+        {
+          "name": "FUWAMOCO(パラレル/サイン)",
+          "sellPrice": 158000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10007.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-003_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP08-003.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:15.638Z",
+      "_rawPricesArchive": [
+        {
+          "name": "FUWAMOCO(パラレル/サイン)",
+          "sellPrice": 158000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10007.jpg"
+        }
+      ],
       "skillsJp": {
         "cardNumber": "hBP08-003",
         "name": "FUWAMOCO",
@@ -317849,18 +318247,32 @@
       "sourceProduct": "hBP08",
       "sourceProductName": "ブースターパック バウンサーバウンド",
       "sourceProductText": "ブースターパック バウンサーバウンド\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 138000,
+      "yuyuName": "水宮枢(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10010.jpg",
+      "prices": [
+        {
+          "name": "水宮枢(パラレル/サイン)",
+          "sellPrice": 138000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10010.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-004_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP08-004.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:15.638Z",
+      "_rawPricesArchive": [
+        {
+          "name": "水宮枢(パラレル/サイン)",
+          "sellPrice": 138000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10010.jpg"
+        }
+      ],
       "skillsJp": {
         "cardNumber": "hBP08-004",
         "name": "水宮枢",
@@ -318164,18 +318576,32 @@
       "sourceProduct": "hBP08",
       "sourceProductName": "ブースターパック バウンサーバウンド",
       "sourceProductText": "ブースターパック バウンサーバウンド\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 59800,
+      "yuyuName": "鷹嶺ルイ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10013.jpg",
+      "prices": [
+        {
+          "name": "鷹嶺ルイ(パラレル/サイン)",
+          "sellPrice": 59800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10013.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-005_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP08-005.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:15.638Z",
+      "_rawPricesArchive": [
+        {
+          "name": "鷹嶺ルイ(パラレル/サイン)",
+          "sellPrice": 59800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10013.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1120000,
         "totalViewCount": 478189731,
@@ -318580,18 +319006,32 @@
       "sourceProduct": "hBP08",
       "sourceProductName": "ブースターパック バウンサーバウンド",
       "sourceProductText": "ブースターパック バウンサーバウンド\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 128000,
+      "yuyuName": "一伊那尓栖(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10016.jpg",
+      "prices": [
+        {
+          "name": "一伊那尓栖(パラレル/サイン)",
+          "sellPrice": 128000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10016.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-006_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP08-006.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:15.638Z",
+      "_rawPricesArchive": [
+        {
+          "name": "一伊那尓栖(パラレル/サイン)",
+          "sellPrice": 128000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10016.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 1670000,
         "totalViewCount": 203684076,
@@ -318937,18 +319377,32 @@
       "sourceProduct": "hBP08",
       "sourceProductName": "ブースターパック バウンサーバウンド",
       "sourceProductText": "ブースターパック バウンサーバウンド\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
+      "sellPrice": 69800,
+      "yuyuName": "音乃瀬奏(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10019.jpg",
+      "prices": [
+        {
+          "name": "音乃瀬奏(パラレル/サイン)",
+          "sellPrice": 69800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10019.jpg"
+        }
+      ],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP08/hBP08-007_SEC.png",
-      "localImage": "",
+      "localImage": "/images/hBP08-007.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:15.638Z",
+      "_rawPricesArchive": [
+        {
+          "name": "音乃瀬奏(パラレル/サイン)",
+          "sellPrice": 69800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp08/10019.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 854000,
         "totalViewCount": 240640245,
@@ -382542,6 +382996,67 @@
         }
       }
     },
+    "hBP09-002_hBP09_SEC_hBP09-002_SEC": {
+      "id": "hBP09-002_hBP09_SEC_hBP09-002_SEC",
+      "cardNumber": "hBP09-002",
+      "name": "轟はじめ",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "SEC",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sourceProductName": "ブースターパック「ボリュームヴォルテックス」",
+      "sourceProductText": "ブースターパック「ボリュームヴォルテックス」\n【使用可能カード】セレクションカップ",
+      "sellPrice": 49800,
+      "yuyuName": "轟はじめ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10005.jpg",
+      "prices": [
+        {
+          "name": "轟はじめ(パラレル/サイン)",
+          "sellPrice": 49800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10005.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-002_SEC.png",
+      "localImage": "/images/hBP09-002.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "_rawPricesArchive": [
+        {
+          "name": "轟はじめ(パラレル/サイン)",
+          "sellPrice": 49800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10005.jpg"
+        }
+      ],
+      "skillsJp": {
+        "cardNumber": "hBP09-002",
+        "name": "轟はじめ",
+        "cardType": "推しホロメン",
+        "color": "白",
+        "oshiSkill": {
+          "name": "ウケたらなお好し、スベるも好し",
+          "cost": "",
+          "effect": "[ターンに1回]自分のセンターの〈轟はじめ〉を選ぶ。このターンの間、この能力でアーカイブしたホロパワー1枚につき、選んだホロメンのアーツ+10。さらに、7枚以上なら、このターンの間、自分のステージの〈轟はじめ〉全員のアーツ+100。"
+        }
+      },
+      "nameZh": "轟一",
+      "skillsZh": {
+        "cardNumber": "hBP09-002",
+        "name": "轟一",
+        "cardType": "主推成員",
+        "color": "白",
+        "oshiSkill": {
+          "name": "能逗笑最好，冷場也不錯",
+          "cost": "",
+          "effect": "[每回合1次]選擇自己中央的〈轟一〉。這個回合內，透過此能力每歸檔1張能量，所選成員的招式+10。此外，若歸檔了7張以上，則這個回合內，自己舞台上的〈轟一〉全員的招式+100。"
+        }
+      }
+    },
     "hBP09-002_hBP09_OUR_hBP09-002_OUR": {
       "id": "hBP09-002_hBP09_OUR_hBP09-002_OUR",
       "cardNumber": "hBP09-002",
@@ -382579,53 +383094,6 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10004.jpg"
         }
       ],
-      "skillsJp": {
-        "cardNumber": "hBP09-002",
-        "name": "轟はじめ",
-        "cardType": "推しホロメン",
-        "color": "白",
-        "oshiSkill": {
-          "name": "ウケたらなお好し、スベるも好し",
-          "cost": "",
-          "effect": "[ターンに1回]自分のセンターの〈轟はじめ〉を選ぶ。このターンの間、この能力でアーカイブしたホロパワー1枚につき、選んだホロメンのアーツ+10。さらに、7枚以上なら、このターンの間、自分のステージの〈轟はじめ〉全員のアーツ+100。"
-        }
-      },
-      "nameZh": "轟一",
-      "skillsZh": {
-        "cardNumber": "hBP09-002",
-        "name": "轟一",
-        "cardType": "主推成員",
-        "color": "白",
-        "oshiSkill": {
-          "name": "能逗笑最好，冷場也不錯",
-          "cost": "",
-          "effect": "[每回合1次]選擇自己中央的〈轟一〉。這個回合內，透過此能力每歸檔1張能量，所選成員的招式+10。此外，若歸檔了7張以上，則這個回合內，自己舞台上的〈轟一〉全員的招式+100。"
-        }
-      }
-    },
-    "hBP09-002_hBP09_SEC_hBP09-002_SEC": {
-      "id": "hBP09-002_hBP09_SEC_hBP09-002_SEC",
-      "cardNumber": "hBP09-002",
-      "name": "轟はじめ",
-      "type": "OshiHolomen",
-      "color": "colorless",
-      "rarity": "SEC",
-      "series": "hBP09",
-      "sourceProduct": "hBP09",
-      "sourceProductName": "ブースターパック「ボリュームヴォルテックス」",
-      "sourceProductText": "ブースターパック「ボリュームヴォルテックス」\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-002_SEC.png",
-      "localImage": "",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
       "skillsJp": {
         "cardNumber": "hBP09-002",
         "name": "轟はじめ",
@@ -382743,29 +383211,29 @@
         }
       }
     },
-    "hBP09-003_hBP09_OUR_hBP09-003_OUR": {
-      "id": "hBP09-003_hBP09_OUR_hBP09-003_OUR",
+    "hBP09-003_hBP09_SEC_hBP09-003_SEC": {
+      "id": "hBP09-003_hBP09_SEC_hBP09-003_SEC",
       "cardNumber": "hBP09-003",
       "name": "白銀ノエル",
       "type": "OshiHolomen",
       "color": "colorless",
-      "rarity": "OUR",
+      "rarity": "SEC",
       "series": "hBP09",
       "sourceProduct": "hBP09",
       "sourceProductName": "ブースターパック「ボリュームヴォルテックス」",
       "sourceProductText": "ブースターパック「ボリュームヴォルテックス」\n【使用可能カード】セレクションカップ",
-      "sellPrice": 19800,
-      "yuyuName": "白銀ノエル(パラレル)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg",
+      "sellPrice": 108000,
+      "yuyuName": "白銀ノエル(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10008.jpg",
       "prices": [
         {
-          "name": "白銀ノエル(パラレル)",
-          "sellPrice": 19800,
-          "rarity": "OUR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg"
+          "name": "白銀ノエル(パラレル/サイン)",
+          "sellPrice": 108000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10008.jpg"
         }
       ],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-003_OUR.png",
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-003_SEC.png",
       "localImage": "/images/hBP09-003.jpg",
       "hp": "",
       "life": "",
@@ -382774,10 +383242,10 @@
       "timestamp": "2026-09-19T12:22:28.373Z",
       "_rawPricesArchive": [
         {
-          "name": "白銀ノエル(パラレル)",
-          "sellPrice": 19800,
-          "rarity": "OUR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg"
+          "name": "白銀ノエル(パラレル/サイン)",
+          "sellPrice": 108000,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10008.jpg"
         }
       ],
       "ytStats": {
@@ -382836,29 +383304,43 @@
         }
       }
     },
-    "hBP09-003_hBP09_SEC_hBP09-003_SEC": {
-      "id": "hBP09-003_hBP09_SEC_hBP09-003_SEC",
+    "hBP09-003_hBP09_OUR_hBP09-003_OUR": {
+      "id": "hBP09-003_hBP09_OUR_hBP09-003_OUR",
       "cardNumber": "hBP09-003",
       "name": "白銀ノエル",
       "type": "OshiHolomen",
       "color": "colorless",
-      "rarity": "SEC",
+      "rarity": "OUR",
       "series": "hBP09",
       "sourceProduct": "hBP09",
       "sourceProductName": "ブースターパック「ボリュームヴォルテックス」",
       "sourceProductText": "ブースターパック「ボリュームヴォルテックス」\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-003_SEC.png",
-      "localImage": "",
+      "sellPrice": 19800,
+      "yuyuName": "白銀ノエル(パラレル)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg",
+      "prices": [
+        {
+          "name": "白銀ノエル(パラレル)",
+          "sellPrice": 19800,
+          "rarity": "OUR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-003_OUR.png",
+      "localImage": "/images/hBP09-003.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "_rawPricesArchive": [
+        {
+          "name": "白銀ノエル(パラレル)",
+          "sellPrice": 19800,
+          "rarity": "OUR",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10007.jpg"
+        }
+      ],
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 462780355,
@@ -383420,6 +383902,77 @@
         }
       }
     },
+    "hBP09-006_hBP09_SEC_hBP09-006_SEC": {
+      "id": "hBP09-006_hBP09_SEC_hBP09-006_SEC",
+      "cardNumber": "hBP09-006",
+      "name": "綺々羅々ヴィヴィ",
+      "type": "OshiHolomen",
+      "color": "colorless",
+      "rarity": "SEC",
+      "series": "hBP09",
+      "sourceProduct": "hBP09",
+      "sourceProductName": "ブースターパック「ボリュームヴォルテックス」",
+      "sourceProductText": "ブースターパック「ボリュームヴォルテックス」\n【使用可能カード】セレクションカップ",
+      "sellPrice": 89800,
+      "yuyuName": "綺々羅々ヴィヴィ(パラレル/サイン)",
+      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10016.jpg",
+      "prices": [
+        {
+          "name": "綺々羅々ヴィヴィ(パラレル/サイン)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10016.jpg"
+        }
+      ],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-006_SEC.png",
+      "localImage": "/images/hBP09-006.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "",
+      "timestamp": "2026-09-19T12:22:28.373Z",
+      "_rawPricesArchive": [
+        {
+          "name": "綺々羅々ヴィヴィ(パラレル/サイン)",
+          "sellPrice": 89800,
+          "rarity": "SEC",
+          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10016.jpg"
+        }
+      ],
+      "skillsJp": {
+        "cardNumber": "hBP09-006",
+        "name": "綺々羅々ヴィヴィ",
+        "cardType": "推しホロメン",
+        "color": "紫",
+        "oshiSkill": {
+          "name": "伝説の美（ヴィ）",
+          "cost": "-2",
+          "effect": "[ターンに1回]自分のデッキを3枚引き、相手は、自身のデッキを2枚引く。"
+        },
+        "spOshiSkill": {
+          "name": "ナイヴィヴィ！イケヴィヴィ！カッコヴィヴィ！",
+          "cost": "-3",
+          "effect": "[ゲームに1回]自分のセンターが2nd〈綺々羅々ヴィヴィ〉なら、お互いの[手札すべてとアーカイブのホロメンとサポートすべて]をデッキに戻してシャッフルする。そしてそれぞれのデッキを7枚引く。"
+        }
+      },
+      "nameZh": "綺綺羅羅薇薇",
+      "skillsZh": {
+        "cardNumber": "hBP09-006",
+        "name": "綺綺羅羅薇薇",
+        "cardType": "主推成員",
+        "color": "紫",
+        "oshiSkill": {
+          "name": "傳說的美（薇）",
+          "cost": "-2",
+          "effect": "[每回合1次]從自己的牌組抽3張牌，對手從自身的牌組抽2張牌。"
+        },
+        "spOshiSkill": {
+          "name": "好薇薇！帥薇薇！酷薇薇！",
+          "cost": "-3",
+          "effect": "[每場遊戲1次]若自己的中央是2nd〈綺綺羅羅薇薇〉，則將雙方的[全部手牌與檔案區的全部成員和支援]放回牌組並洗牌。然後各自從牌組抽7張牌。"
+        }
+      }
+    },
     "hBP09-006_hBP09_OUR_hBP09-006_OUR": {
       "id": "hBP09-006_hBP09_OUR_hBP09-006_OUR",
       "cardNumber": "hBP09-006",
@@ -383457,63 +384010,6 @@
           "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/hbp09/10015.jpg"
         }
       ],
-      "skillsJp": {
-        "cardNumber": "hBP09-006",
-        "name": "綺々羅々ヴィヴィ",
-        "cardType": "推しホロメン",
-        "color": "紫",
-        "oshiSkill": {
-          "name": "伝説の美（ヴィ）",
-          "cost": "-2",
-          "effect": "[ターンに1回]自分のデッキを3枚引き、相手は、自身のデッキを2枚引く。"
-        },
-        "spOshiSkill": {
-          "name": "ナイヴィヴィ！イケヴィヴィ！カッコヴィヴィ！",
-          "cost": "-3",
-          "effect": "[ゲームに1回]自分のセンターが2nd〈綺々羅々ヴィヴィ〉なら、お互いの[手札すべてとアーカイブのホロメンとサポートすべて]をデッキに戻してシャッフルする。そしてそれぞれのデッキを7枚引く。"
-        }
-      },
-      "nameZh": "綺綺羅羅薇薇",
-      "skillsZh": {
-        "cardNumber": "hBP09-006",
-        "name": "綺綺羅羅薇薇",
-        "cardType": "主推成員",
-        "color": "紫",
-        "oshiSkill": {
-          "name": "傳說的美（薇）",
-          "cost": "-2",
-          "effect": "[每回合1次]從自己的牌組抽3張牌，對手從自身的牌組抽2張牌。"
-        },
-        "spOshiSkill": {
-          "name": "好薇薇！帥薇薇！酷薇薇！",
-          "cost": "-3",
-          "effect": "[每場遊戲1次]若自己的中央是2nd〈綺綺羅羅薇薇〉，則將雙方的[全部手牌與檔案區的全部成員和支援]放回牌組並洗牌。然後各自從牌組抽7張牌。"
-        }
-      }
-    },
-    "hBP09-006_hBP09_SEC_hBP09-006_SEC": {
-      "id": "hBP09-006_hBP09_SEC_hBP09-006_SEC",
-      "cardNumber": "hBP09-006",
-      "name": "綺々羅々ヴィヴィ",
-      "type": "OshiHolomen",
-      "color": "colorless",
-      "rarity": "SEC",
-      "series": "hBP09",
-      "sourceProduct": "hBP09",
-      "sourceProductName": "ブースターパック「ボリュームヴォルテックス」",
-      "sourceProductText": "ブースターパック「ボリュームヴォルテックス」\n【使用可能カード】セレクションカップ",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-006_SEC.png",
-      "localImage": "",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "",
-      "timestamp": "",
-      "_rawPricesArchive": [],
       "skillsJp": {
         "cardNumber": "hBP09-006",
         "name": "綺々羅々ヴィヴィ",

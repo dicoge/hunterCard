@@ -213,7 +213,22 @@ console.log('\n── Regression: hBP02-003 Marine ──');
   else {
     eq(signed.rarity, 'SEC', 'hBP02-003 signed row exists as a canonical official printing');
     eq(signed.buyPrice, 45000, 'signed official printing row carries exact SEC-token buy price');
-    eq(Array.isArray(signed.prices) && signed.prices.length, 0, 'signed official printing row does not retain cross-printing yuyu variant rows');
+    // DIC-1482: this row may now carry its OWN source-proven signed listing
+    // (宝鐘マリン(パラレル/サイン), imaged on the hBP02 product path). What it must
+    // never retain is a listing belonging to a DIFFERENT printing — the base /
+    // parallel leak this regression was written for. So assert that invariant
+    // directly rather than "no listings at all", which only held while the
+    // signed tier happened to be unpriced. Identity comes from the label, never
+    // from the row's rarity (DIC-1013).
+    const listings = Array.isArray(signed.prices) ? signed.prices : [];
+    const foreign = listings.filter((p) => !/サイン/.test(String(p?.name || '')));
+    eq(foreign.length, 0,
+      `signed official printing row does not retain cross-printing yuyu variant rows (leaked: ${foreign.map((p) => p?.name).join(' | ')})`);
+    // Each retained listing must prove itself on this row's own product path.
+    for (const p of listings) {
+      eq(/\/hbp02\//.test(String(p?.imageUrl || '')), true,
+        `retained signed listing ${JSON.stringify(p?.name)} is imaged on the row's own hBP02 product path`);
+    }
   }
   if (!parallel) fail('hBP02-003 OUR parallel printing missing from database');
   else eq(parallel.buyPrice !== signed?.buyPrice, true, 'parallel row does NOT inherit signed buy price');

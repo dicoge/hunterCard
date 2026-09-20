@@ -24,9 +24,11 @@
  *     yuyu evidence (top-level yuyuImage or at least one prices[] entry)
  *     resolves to a lawful card.yuyu-tei.jp URL whose product path matches
  *     the row's exact sourceProduct (with only the shipped promo-*→hPR
- *     carve-out). No cross-printing, no cardNumber fallback, no
- *     aggregation-label (ent07) vouching, and signed printings (SEC) always
- *     fail closed — a product path can never distinguish the signed variant.
+ *     carve-out). No cross-printing, no cardNumber fallback, and no
+ *     aggregation-label (ent07) vouching. Printing identity is never
+ *     inferred from the row-level `rarity` (DIC-1013) — a rarity describes
+ *     the card number as a whole, so it cannot decide which printing a
+ *     price belongs to; only the row's own listing evidence can.
  *   - `evaluatePriceRegressionGate` — the hard decrease gate. ANY decrease in
  *     priced printing rows, priced unique cardNumbers, or price entries
  *     between the previous and next cards map must be covered by a
@@ -63,7 +65,6 @@ export const PRICE_REJECTION_MANIFEST_SCHEMA = 'huntercard.price-rejections/v1';
 export const PROVENANCE_REJECTION_REASONS = Object.freeze([
   'cross-product-image',
   'no-yuyu-image-provenance',
-  'signed-printing-fail-closed',
   'missing-source-product',
 ]);
 export const CONTEXT_REJECTION_REASONS = Object.freeze([
@@ -72,8 +73,6 @@ export const CONTEXT_REJECTION_REASONS = Object.freeze([
   'printing-removed-from-catalog',
 ]);
 const ALL_REASONS = new Set([...PROVENANCE_REJECTION_REASONS, ...CONTEXT_REJECTION_REASONS]);
-
-const SIGNED_ONLY_RARITIES = new Set(['SEC']);
 
 export function isPricedRow(card) {
   return Boolean(card) && Number.isFinite(card.sellPrice) && card.sellPrice > 0;
@@ -118,10 +117,18 @@ export function priceMetrics(cards) {
  *     strict matcher — no reprint origin-prefix carve-out, no ent07
  *     aggregation pass).
  *
+ * The row-level `rarity` is NEVER consulted. It describes the card number as
+ * a whole — hBP04-005 is SEC on the very row that carries its plain ¥980
+ * listing — so refusing a payload because its row is SEC does two wrong
+ * things at once: it nulls genuinely-proven PLAIN printings, and it refuses
+ * signed rows whose own listing image resolves to the exact product path.
+ * Identity comes from the listing label, provenance from that listing's own
+ * image (src/utils/printingIdentity.ts, DIC-1013). A signed printing that
+ * cannot prove itself still fails closed — just under the reason its own
+ * evidence derives, not under an assumption made from its rarity.
+ *
  * Everything else fails closed with a machine-readable reason:
  *   - 'unpriced'                     — nothing to prove (not a rejection).
- *   - 'signed-printing-fail-closed'  — SEC signed printings: a yuyu product
- *     path cannot distinguish the signed variant (DIC-1013/1140).
  *   - 'missing-source-product'       — no sourceProduct to prove against.
  *   - 'cross-product-image'          — evidence parses to a lawful yuyu-tei
  *     URL, but for a DIFFERENT product than this exact printing.
@@ -130,9 +137,6 @@ export function priceMetrics(cards) {
  */
 export function classifyExactPrintPayload(card) {
   if (!isPricedRow(card)) return { proven: false, reason: 'unpriced' };
-  if (SIGNED_ONLY_RARITIES.has(String(card.rarity || '').trim().toUpperCase())) {
-    return { proven: false, reason: 'signed-printing-fail-closed' };
-  }
   const sourceProduct = String(card.sourceProduct || card.series || '').trim();
   if (!sourceProduct) return { proven: false, reason: 'missing-source-product' };
   if (yuyuPayloadMatchesSource(card, sourceProduct)) return { proven: true, reason: null };
