@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP08-097_hBP08_C_hBP08-097_C",
+  "cardNumber": "hBP08-097",
+  "name": "りっちしょこらのハンバーグ",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-097_hBP08_C_hBP08-097_C",
+      "sourceProduct": "hBP08"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.798Z",
+  "nameZh": "富裕巧克的漢堡排"
+}

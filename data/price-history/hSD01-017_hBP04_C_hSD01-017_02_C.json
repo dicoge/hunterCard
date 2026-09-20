@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD01-017_hBP04_C_hSD01-017_02_C",
+  "cardNumber": "hSD01-017",
+  "name": "マネちゃん",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD01-017_hBP04_C_hSD01-017_02_C",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.746Z",
+  "nameZh": "小經"
+}

@@ -2,14 +2,14 @@
   "cardId": "hBP04-085",
   "name": "桃鈴ねね",
   "nameZh": "桃鈴音音",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.63,
   "confidence": 0.7,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 1,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.333Z",
-  "dataPoints": 65
+  "lastUpdated": "2026-09-20T12:28:17.115Z",
+  "dataPoints": 66
 }

@@ -660,6 +660,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1180000,
+        "totalViewCount": 181817617,
+        "channelId": "UCDqI2jOz0weumE8s7paEk6g",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:21.524Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 5808046,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -1318,6 +1338,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 2450000,
+        "totalViewCount": 1060699868,
+        "channelId": "UC-hM6YJuNYVAmUWxeIr9FeA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:24.022Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 20146700,
+        "newsCount": 1,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -1972,6 +2012,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 2910000,
+        "totalViewCount": 1792650245,
+        "channelId": "UC5CwaMl1eIgY8h02uZw7u8A",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:26.477Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 33084615,
+        "newsCount": 4,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -2640,6 +2700,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1600000,
+        "totalViewCount": 297221528,
+        "channelId": "UCQ0UDLQCjY0rmuxCDE38FGg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:33.945Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 5346601,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -3304,6 +3384,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1040000,
+        "totalViewCount": 173990641,
+        "channelId": "UCFTLzh12_nrtzqBPsTCqenA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:36.580Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 6706491,
+        "newsCount": 5,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -3937,6 +4037,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 2180000,
+        "totalViewCount": 636904940,
+        "channelId": "UC1opHUrw8rvnsadT-iGp7Cg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:41.385Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 5076928,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -4601,6 +4721,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1300000,
+        "totalViewCount": 257475715,
+        "channelId": "UCXTpFs_3PqI41qX2d9tL2Rw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:43.718Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 789478,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -5265,6 +5405,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1120000,
+        "totalViewCount": 109132776,
+        "channelId": "UC1suqwovbL1kzsoaZgFZLKg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:48.716Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 3961783,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -5929,6 +6089,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 2030000,
+        "totalViewCount": 708380179,
+        "channelId": "UCvzGlP9oQwU--Y0r9id_jnA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:51.153Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 24280870,
+        "newsCount": 16,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -6593,6 +6773,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 2790000,
+        "totalViewCount": 1190548048,
+        "channelId": "UC1DCedRgGHBdm81E1llLhOQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:53.546Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 24759160,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -7260,6 +7460,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 2050000,
+        "totalViewCount": 463663426,
+        "channelId": "UCdyqAaZDKHXg4Ahi7VENThQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:58.913Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 8354147,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -7916,6 +8136,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 4410000,
+        "totalViewCount": 2457594380,
+        "channelId": "UCCzUftO8KOVkV4wQG1vkUvg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:01.501Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 50970840,
+        "newsCount": 3,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -8580,6 +8820,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 248000,
+        "totalViewCount": 53193940,
+        "channelId": "UCKeAhJvy8zgXWbh9duVjIaQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:06.477Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": -1000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 148174,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -9234,6 +9494,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 264000,
+        "totalViewCount": 38559631,
+        "channelId": "UC9mf_ZVpouoILRY9NUIaK-w",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:08.911Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 462605,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -9867,6 +10147,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1690000,
+        "totalViewCount": 632843508,
+        "channelId": "UCZlDXzGoo7d44bwdNObFacg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:11.521Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": -10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 9038729,
+        "newsCount": 3,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -10528,6 +10828,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1720000,
+        "totalViewCount": 722164400,
+        "channelId": "UCqm3BQLlJfvkTsX_hvm0UmA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:14.247Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 15901447,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -11176,6 +11496,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1580000,
+        "totalViewCount": 523842862,
+        "channelId": "UC1uv2Oq6kNxgATlCiez59hw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:16.712Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 11006360,
+        "newsCount": 3,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -11840,6 +12180,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1160000,
+        "totalViewCount": 202489301,
+        "channelId": "UCa9Y57gfeY0Zro_noHRVrnw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:19.075Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 4749809,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -12511,6 +12871,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 600000,
+        "totalViewCount": 57850750,
+        "channelId": "UCfrWoRGlawPQDQxxeIDRP0Q",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:21.748Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 8000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 673034,
+        "newsCount": 5,
+        "newsPositive": 4,
+        "newsNegative": 0
       }
     ]
   },
@@ -13179,6 +13559,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1330000,
+        "totalViewCount": 249470233,
+        "channelId": "UCAWSyEs_Io8MtpY3m-zqILA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:24.421Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 2904598,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -13843,6 +14243,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1590000,
+        "totalViewCount": 335560363,
+        "channelId": "UCUKD-uaobj9jiqB-VXt71mA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:26.789Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 6307974,
+        "newsCount": 3,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -14501,6 +14921,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 2640000,
+        "totalViewCount": 939270990,
+        "channelId": "UCL_qhgtOy0dy1Agp8vkySQg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:29.251Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 25279710,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -15169,6 +15609,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1650000,
+        "totalViewCount": 339547715,
+        "channelId": "UCHsx4Hqa-1ORjQTh9TYDhww",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:31.760Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 4231624,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -15849,6 +16309,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 4600000,
+        "totalViewCount": 472141185,
+        "channelId": "UCoSrY_IQQVpmIRZ9Xf-y93g",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:36.537Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": -10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 1277165,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -16516,6 +16996,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1140000,
+        "totalViewCount": 171348990,
+        "channelId": "UC8rcEBzJSleTkf_-agPM20g",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:39.040Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 2809491,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -17196,6 +17696,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 985000,
+        "totalViewCount": 160376916,
+        "channelId": "UCO_aKKYxn4tvrqPjcTzZ6EQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:41.471Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": -1000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 504357,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -17860,6 +18380,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1160000,
+        "totalViewCount": 129879636,
+        "channelId": "UCmbs8T6MWqUHP1tIQvSgKrg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:43.805Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 3419509,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -18517,6 +19057,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1350000,
+        "totalViewCount": 308890197,
+        "channelId": "UCp6993wxpyDPHUpavwDFqgg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:18.987Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 8647372,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -19175,6 +19735,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1330000,
+        "totalViewCount": 335941685,
+        "channelId": "UC0TXe_LYZ4scaW2XMyi5_kw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:29.003Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 8703008,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -19839,6 +20419,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 2670000,
+        "totalViewCount": 807945309,
+        "channelId": "UCdn5BQ06XqgXoAxIhbqw5Rg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:31.527Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 15985490,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -20503,6 +21103,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1590000,
+        "totalViewCount": 287571430,
+        "channelId": "UC1CfXB_kRs3C-zaeTG3oGyg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:38.884Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 3940663,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -21167,6 +21787,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1720000,
+        "totalViewCount": 200087539,
+        "channelId": "UC7fk0CB07ly8oSl0aqKkqFg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:46.046Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 2673367,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -21824,6 +22464,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1160000,
+        "totalViewCount": 245520361,
+        "channelId": "UCvInZx9h3jC2JzsIzoOebWg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:16:56.519Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 3909164,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -22499,6 +23159,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 144000,
+        "totalViewCount": 14967992,
+        "channelId": "UCGNI4MENvnsymYjKiZwv9eg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:03.844Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 52682,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -23152,6 +23832,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1670000,
+        "totalViewCount": 204208618,
+        "channelId": "UCMwGHR0BTZuLsmjY_NT5Pwg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:34.267Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 3213478,
+        "newsCount": 2,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -23816,6 +24516,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1150000,
+        "totalViewCount": 123368881,
+        "channelId": "UC3n5uGu18FoCy23ggWWp8tA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:46.131Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": -10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 579367,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -24493,6 +25213,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1220000,
+        "totalViewCount": 277207414,
+        "channelId": "UCgmPnx-EEeOrZSg5Tiw7ZRQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:48.649Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 8066596,
+        "newsCount": 5,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -25168,6 +25908,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1410000,
+        "totalViewCount": 100555084,
+        "channelId": "UCYz_5n-uDuChHtLo7My1HnQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:51.132Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 1019090,
+        "newsCount": 8,
+        "newsPositive": 2,
+        "newsNegative": 0
       }
     ]
   },
@@ -25848,6 +26608,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 798000,
+        "totalViewCount": 51715447,
+        "channelId": "UC727SQYUvx5pDDGQpTICNWg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:53.506Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 4000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 1325535,
+        "newsCount": 3,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -26512,6 +27292,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 855000,
+        "totalViewCount": 89982067,
+        "channelId": "UChgTyjG-pdNvxxhdsXfHQ5Q",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:56.047Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 2000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 1534373,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -27176,6 +27976,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1580000,
+        "totalViewCount": 484338896,
+        "channelId": "UCENwRMx5Yh42zWpzURebzTw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:17:58.351Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 5388494,
+        "newsCount": 4,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -27835,6 +28655,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1120000,
+        "totalViewCount": 479022623,
+        "channelId": "UCs9_O1tRPMQTHQ-N_L6FU2g",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:01.003Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 6603424,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -28494,6 +29334,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1370000,
+        "totalViewCount": 761031024,
+        "channelId": "UC6eWCld0KwmyHFbAqK3V-Rw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:03.618Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 16748707,
+        "newsCount": 43,
+        "newsPositive": 2,
+        "newsNegative": 0
       }
     ]
   },
@@ -29158,6 +30018,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1310000,
+        "totalViewCount": 220262515,
+        "channelId": "UCIBY1ollUsauvVi4hW4cumw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:05.966Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 1066893,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -29822,6 +30702,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1150000,
+        "totalViewCount": 312583525,
+        "channelId": "UC_vMYWcDjmfdpH6r4TTn1MQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:08.450Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 4348271,
+        "newsCount": 3,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -30512,6 +31412,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 738000,
+        "totalViewCount": 93360404,
+        "channelId": "UCgnfPPb9JI3e9A4cXHnWbyg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:10.878Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 4000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 2416009,
+        "newsCount": 5,
+        "newsPositive": 1,
+        "newsNegative": 0
       }
     ]
   },
@@ -31204,6 +32124,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 993000,
+        "totalViewCount": 140294567,
+        "channelId": "UC9p_lqQ0FEDz327Vgf5JwqA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:13.503Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 14000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 4698708,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -31870,6 +32810,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1030000,
+        "totalViewCount": 142139826,
+        "channelId": "UC_sFNM0z0MWm9A6WlKPuMMg",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:15.825Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 4055901,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -32549,6 +33509,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 1370000,
+        "totalViewCount": 171500812,
+        "channelId": "UCt9H_RpQzhxzlyBxFqrdHqA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:18.152Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 10000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 7214253,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -33229,6 +34209,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 721000,
+        "totalViewCount": 118946728,
+        "channelId": "UCMGfV7TVTmHhEErVJg1oHBQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:20.390Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": -1000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 566364,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -33921,6 +34921,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 849000,
+        "totalViewCount": 242150055,
+        "channelId": "UCWQtYtq9EOB4-I5P-3fh8lA",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:22.861Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 9000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 12107953,
+        "newsCount": 11,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -34611,6 +35631,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 749000,
+        "totalViewCount": 135754561,
+        "channelId": "UCtyWhCj3AqKh2dXctLkDtng",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:25.356Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 3000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 7474147,
+        "newsCount": 2,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   },
@@ -35285,6 +36325,26 @@
         "newsCount": null,
         "newsPositive": null,
         "newsNegative": null
+      },
+      {
+        "date": "2026-09-20",
+        "subscriberCount": 205000,
+        "totalViewCount": 21684443,
+        "channelId": "UC7gxU6NXjKF1LrgOddPzgTw",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-20T12:18:27.790Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": 1000,
+        "viewCount_1d": null,
+        "viewCount_7d": null,
+        "viewCount_15d": null,
+        "viewCount_30d": 396488,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0
       }
     ]
   }

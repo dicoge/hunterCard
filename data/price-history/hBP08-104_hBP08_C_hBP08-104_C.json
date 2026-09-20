@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP08-104_hBP08_C_hBP08-104_C",
+  "cardNumber": "hBP08-104",
+  "name": "けはい",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-104_hBP08_C_hBP08-104_C",
+      "sourceProduct": "hBP08"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.799Z",
+  "nameZh": "氣息"
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-085_hBP03_U_hBP03-085_U",
+  "cardNumber": "hBP03-085",
+  "name": "スーパーパソコン",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-085_hBP03_U_hBP03-085_U",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.720Z",
+  "nameZh": "超級電腦"
+}

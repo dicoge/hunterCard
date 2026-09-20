@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-086_hBP02_C_hBP02-086_C",
+  "cardNumber": "hBP02-086",
+  "name": "ホロスパークリング",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-086_hBP02_C_hBP02-086_C",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.699Z",
+  "nameZh": "Hololive閃耀"
+}

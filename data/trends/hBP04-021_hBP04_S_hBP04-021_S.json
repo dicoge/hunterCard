@@ -2,14 +2,14 @@
   "cardId": "hBP04-021",
   "name": "儒烏風亭らでん",
   "nameZh": "儒烏風亭螺鈿",
-  "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.9,
+  "trend": "up",
+  "score": 0.63,
+  "confidence": 0.8,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 1,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.328Z",
-  "dataPoints": 67
+  "lastUpdated": "2026-09-20T12:28:17.110Z",
+  "dataPoints": 68
 }

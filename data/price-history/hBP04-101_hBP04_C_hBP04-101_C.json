@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-101_hBP04_C_hBP04-101_C",
+  "cardNumber": "hBP04-101",
+  "name": "だいふく",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-101_hBP04_C_hBP04-101_C",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.745Z",
+  "nameZh": "大福"
+}

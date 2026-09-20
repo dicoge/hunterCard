@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP07-108_hBP07_C_hBP07-108_C",
+  "cardNumber": "hBP07-108",
+  "name": "Zecretary",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-108_hBP07_C_hBP07-108_C",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.777Z",
+  "nameZh": "Zecretary"
+}

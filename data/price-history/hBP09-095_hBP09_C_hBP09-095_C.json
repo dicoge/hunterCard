@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP09-095_hBP09_C_hBP09-095_C",
+  "cardNumber": "hBP09-095",
+  "name": "君に乾杯",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-095_hBP09_C_hBP09-095_C",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.818Z",
+  "nameZh": "向你乾杯"
+}

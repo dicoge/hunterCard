@@ -3,13 +3,13 @@
   "name": "ラムダック",
   "nameZh": "蓮達",
   "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.7,
+  "score": -0.08,
+  "confidence": 0.5,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": -0.18,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.344Z",
+  "lastUpdated": "2026-09-20T12:28:17.126Z",
   "dataPoints": 67
 }

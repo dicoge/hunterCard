@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP07-109_hBP07_C_hBP07-109_C",
+  "cardNumber": "hBP07-109",
+  "name": "Kronies",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-109_hBP07_C_hBP07-109_C",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.777Z",
+  "nameZh": "Kronies"
+}

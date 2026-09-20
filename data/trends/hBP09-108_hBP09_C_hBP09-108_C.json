@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP09-108",
+  "name": "常闇トワのブレイクマイク",
+  "nameZh": "常暗永遠的Break Mic",
+  "trend": "stable",
+  "score": 0.03,
+  "confidence": 0.3,
+  "components": {
+    "priceTrend": 0,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-09-20T12:28:17.142Z",
+  "dataPoints": 1
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP06-102_hBP06_C_hBP06-102_C",
+  "cardNumber": "hBP06-102",
+  "name": "えびふらいおん",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-102_hBP06_C_hBP06-102_C",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.773Z",
+  "nameZh": "炸蝦獅"
+}

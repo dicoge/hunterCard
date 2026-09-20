@@ -3,13 +3,13 @@
   "name": "白エール(IRyS)",
   "nameZh": "",
   "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.3,
+  "score": -0.14,
+  "confidence": 0.2,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": -0.28,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.373Z",
+  "lastUpdated": "2026-09-20T12:28:17.157Z",
   "dataPoints": 4
 }

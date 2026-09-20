@@ -2,14 +2,14 @@
   "cardId": "hBP01-072",
   "name": "ハコス・ベールズ",
   "nameZh": "霸子·貝爾茲",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.39,
   "confidence": 0.9,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.6,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.304Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-20T12:28:17.089Z",
+  "dataPoints": 69
 }

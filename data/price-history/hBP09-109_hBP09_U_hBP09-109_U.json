@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP09-109_hBP09_U_hBP09-109_U",
+  "cardNumber": "hBP09-109",
+  "name": "メイクアップ",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-109_hBP09_U_hBP09-109_U",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.821Z",
+  "nameZh": "化妝"
+}

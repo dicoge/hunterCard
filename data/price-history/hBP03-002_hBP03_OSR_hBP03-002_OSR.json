@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-002_hBP03_OSR_hBP03-002_OSR",
+  "cardNumber": "hBP03-002",
+  "name": "獅白ぼたん",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-002_hBP03_OSR_hBP03-002_OSR",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.703Z",
+  "nameZh": "獅白牡丹"
+}

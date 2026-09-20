@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP05-086_hBP05_C_hBP05-086_C",
+  "cardNumber": "hBP05-086",
+  "name": "Cilus",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-086_hBP05_C_hBP05-086_C",
+      "sourceProduct": "hBP05"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.755Z",
+  "nameZh": "Cilus"
+}

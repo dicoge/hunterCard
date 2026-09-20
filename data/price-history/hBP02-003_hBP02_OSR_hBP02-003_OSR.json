@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-003_hBP02_OSR_hBP02-003_OSR",
+  "cardNumber": "hBP02-003",
+  "name": "宝鐘マリン",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 420,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-003_hBP02_OSR_hBP02-003_OSR",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.680Z",
+  "nameZh": "寶鍾瑪琳"
+}

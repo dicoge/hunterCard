@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-057_hBP06_C_hBP03-057_02_C",
+  "cardNumber": "hBP03-057",
+  "name": "ロボ子さん",
+  "records": [
+    {
+      "date": "2026-09-20",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-057_hBP06_C_hBP03-057_02_C",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-09-20T12:28:08.715Z",
+  "nameZh": "蘿蔔子"
+}
