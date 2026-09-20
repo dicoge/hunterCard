@@ -308,13 +308,11 @@ export default function SearchResultsScreen({ route, navigation }: any) {
 
   // DIC-1409 Phase 3 + DIC-1427: every branch renders inside the shared Pen v2
   // shell. App bar = back arrow (A2SWo) + real search field (hKr9H) + sliders
-  // filter affordance (w5jzG9); no mock status bar — the OS/browser already
-  // draws status chrome, and doubling it was the production regression the
-  // user captured. Bottom tab bar keeps 搜尋 active.
+  // filter affordance (w5jzG9). Bottom tab bar keeps 搜尋 active.
+  // DIC-1452: no simulated status chrome on ANY platform — the real OS status
+  // bar outside the app is the only status treatment (Pen Z6jlE updated: the
+  // Status Bar instance was removed and the app bar band starts at the top).
   const shellTabs = useMemo(() => buildShellTabs({ navigation }), [navigation]);
-  // DIC-1427 QA: the Pen status row is back on this route — AppStatusBar now
-  // renders web-only (real clock + drawn glyphs), and returns null on native
-  // where the OS bar exists, so the original duplicate-status P0 cannot recur.
   const wrapInShell = (children: React.ReactNode) => (
     <AppShell
       appBar={{
@@ -896,7 +894,11 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 48, marginBottom: 12 },
   emptyText: { color: COLORS.text, fontSize: 18, fontWeight: '600', marginBottom: 6 },
   emptyHint: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center' },
-  list: { padding: LIST_PADDING_X, paddingTop: 0 },
+  // DIC-1452: no bottom padding — the shell's content region already ends
+  // 8px above the tab-bar stack (whose drawn bar sits another 12px in), so
+  // the scrolled-to-end final row lands ~20px above the bar. Padding here on
+  // top of that pushed the last row deeper into the old void.
+  list: { paddingHorizontal: LIST_PADDING_X, paddingTop: 0 },
   // Pen `Active Filters` row (tTrL3): pill chips, 6px below the app bar.
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, paddingTop: 6 },
   chipAccent: {

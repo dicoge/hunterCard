@@ -258,21 +258,15 @@ await test('Pen mJyjf tile anatomy: art keeps the 112:156 aspect, name below art
   } finally { await cleanup(); }
 });
 
-await test('status treatment (QA rework): Pen status row renders on web with a REAL clock and drawn glyphs — single, not duplicated', async () => {
+await test('status treatment (DIC-1452): NO simulated device chrome renders — the real OS status bar outside the app is the only status treatment', async () => {
   const { container, cleanup } = await renderScreen();
   try {
     const bars = allByTestId(container, 'shell-status-bar');
-    assert.equal(bars.length, 1, 'exactly ONE status row must render on the web route (duplicate = the original P0)');
-    const time = byTestId(container, 'shell-status-bar-time');
-    assert.ok(time, 'status row carries the clock (Pen node fSKdn)');
-    assert.match(
-      time.textContent,
-      /^\d{1,2}:\d{2}$/,
-      'the clock is the REAL current time, not a hardcoded mock string',
-    );
-    assert.ok(byTestId(container, 'shell-status-bar-signal'), 'drawn signal glyph renders (Pen BVQVL)');
-    assert.ok(byTestId(container, 'shell-status-bar-wifi'), 'drawn wifi glyph renders (Pen L86PFW)');
-    assert.ok(byTestId(container, 'shell-status-bar-battery'), 'drawn battery glyph renders (Pen jfouI)');
+    assert.equal(bars.length, 0, 'no in-app status row may render on ANY platform (fake chrome duplicated the OS bar)');
+    assert.ok(!byTestId(container, 'shell-status-bar-time'), 'no simulated clock');
+    assert.ok(!byTestId(container, 'shell-status-bar-signal'), 'no simulated signal glyph');
+    assert.ok(!byTestId(container, 'shell-status-bar-wifi'), 'no simulated wifi glyph');
+    assert.ok(!byTestId(container, 'shell-status-bar-battery'), 'no simulated battery glyph');
   } finally { await cleanup(); }
 });
 

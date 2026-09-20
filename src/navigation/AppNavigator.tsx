@@ -162,22 +162,24 @@ function MainDrawer() {
           }}
         />
       )}
-      {/* Card Collection ownership browser (browse-by-owned) — hidden in
-          Store MVP (DIC-1256). Kept as its own drawer entry so it can be
-          exposed independently of the bookmarks screen above.
+      {/* Card Collection ownership browser (browse-by-owned) — registered in
+          EVERY release profile (DIC-1481). The corrected new-interface release
+          contract keeps this route reachable under preview / production /
+          Store MVP, superseding DIC-1256's route-unregistration criterion for
+          this one route: `navigate('Collection')`, the nested deep link and
+          the 我的 hub controls must all arrive in every profile.
 
-          The gate UNREGISTERS the route rather than just hiding its menu row:
-          DIC-1256's acceptance criterion is "not only hidden menus", so under
-          Store MVP `navigate('Collection')` and a deep link must both be
-          unable to reach this screen. Do not relax this to a `drawerItemStyle`
-          hide — that re-opens both paths.
+          FEATURES.collection is constant `true` — it is the shared contract
+          point between this registration and the MeScreen controls that
+          navigate here, pinned by test:store-mvp-ui-gates so it cannot be
+          silently re-derived from STORE_MVP.
 
-          DIC-1430 (Production P0: 我的 shipped three live Collection controls
-          that silently no-op'd here) is fixed on the OTHER side of the
-          boundary: MeScreen renders its 卡牌收藏 segment, search field and
-          檢視全部 action only when FEATURES.favorites is on, so no control can
-          target a route that does not exist in this profile. */}
-      {FEATURES.favorites && (
+          The fail-closed boundary did NOT move for anything else: Favorites
+          (bookmarks) above and Watchlist below stay unregistered under Store
+          MVP, and CollectionScreen itself carries no market-data / watchlist
+          / external-price surface (its valuation is the always-on
+          FEATURES.sellPrice exact-printing sale price). */}
+      {FEATURES.collection && (
         <Drawer.Screen
           name="Collection"
           component={CollectionScreen}

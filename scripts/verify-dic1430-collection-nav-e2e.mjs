@@ -1,19 +1,20 @@
 #!/usr/bin/env node
-// DIC-1430 — local browser verification of the Production Collection P0 repair.
+// DIC-1430 → DIC-1481 — local browser verification of the Production
+// Collection route contract.
 //
 // Re-runs the Mac-OpenClaw Production QA probe (run 16c25a62-af71-4571-99c8-
 // bc8e7a5878cd) against a LOCAL web export built with the Production release
-// profile (no EXPO_PUBLIC_STORE_MVP define → fail-closed Store MVP ON). That
-// probe found three live, visible Collection controls on 我的 whose clicks
-// silently went nowhere, because AppNavigator leaves the route UNREGISTERED in
-// this profile (DIC-1256, "not only hidden menus").
+// profile (no EXPO_PUBLIC_STORE_MVP define → fail-closed Store MVP ON).
 //
-// The repair removes the CONTROLS, it does not register the route — CR run
-// 037b339f rejected the inverse. So the passing state this probe now verifies
-// is the fail-closed one: fresh guest → 我的 renders NONE of
-// `me-segment-collection` / `me-search-field` / `me-view-all`, and
-// `collection-shell` never mounts. A rendered-but-dead control and a reachable
-// Store MVP Collection screen both fail.
+// DIC-1481 superseded the DIC-1430-era fail-closed expectation this script
+// used to assert (controls absent, route unregistered — the state CR run
+// 037b339f enforced): the corrected new-interface release contract keeps the
+// Collection route registered and reachable in EVERY release profile. So the
+// passing state is now: fresh guest → 我的 renders ALL THREE of
+// `me-segment-collection` / `me-search-field` / `me-view-all`, clicking the
+// segment really arrives at `collection-shell`, and the still-restricted
+// surfaces (watchlist / trends segments) stay absent. A dead control, an
+// unreachable Collection route, and a resurfaced restricted segment all fail.
 //
 //   node scripts/verify-dic1430-collection-nav-e2e.mjs
 //
@@ -144,15 +145,25 @@ for (const [label, testID] of [
 ]) {
   controls[label] = { testID, ...(await countVisible(page, testID)) };
 }
-const collectionShell = await countVisible(page, 'collection-shell');
+
+// DIC-1481: the segment must ARRIVE. Click it and require collection-shell.
+let collectionShell = { count: 0, visible: false, box: null };
+if (controls.segment.count === 1) {
+  await (await page.$('[data-testid="me-segment-collection"]')).click();
+  try {
+    await page.waitForSelector('[data-testid="collection-shell"]', { timeout: TIMEOUT });
+  } catch { /* absence is asserted below */ }
+  collectionShell = await countVisible(page, 'collection-shell');
+}
 
 const failures = [];
 if (storeMvpFingerprint.watchlistSegment !== 0) failures.push('build is not the Store MVP profile (watchlist segment rendered)');
-if (ownedRows < 1) failures.push('ownership seed did not land — 檢視全部 absence would prove nothing');
+if (storeMvpFingerprint.trendsSegment !== 0) failures.push('restricted 趨勢 segment resurfaced under Store MVP');
+if (ownedRows < 1) failures.push('ownership seed did not land — 檢視全部 presence would prove nothing');
 for (const [label, c] of Object.entries(controls)) {
-  if (c.count !== 0) failures.push(`${label} (${c.testID}) still renders under Store MVP — dead control`);
+  if (c.count !== 1 || !c.visible) failures.push(`${label} (${c.testID}) must render visibly in every profile (DIC-1481)`);
 }
-if (collectionShell.count !== 0) failures.push('collection-shell mounted under Store MVP — the route is reachable again');
+if (collectionShell.count !== 1) failures.push('collection-shell did not mount — the Collection route is unreachable (DIC-1481 release blocker)');
 const failed = failures.length > 0;
 
 await page.screenshot({ path: path.join(OUT, `04-${failed ? 'fail' : 'pass'}-production-me.png`), fullPage: true });
@@ -162,10 +173,10 @@ console.log(`[production] controls=${Object.values(controls).map((c) => c.count)
 await page.close();
 
 const report = {
-  milestone: 'DIC-1430 Production Collection navigation P0 repair',
+  milestone: 'DIC-1481 Production Collection route registration contract',
   origin: ORIGIN,
   source: 'local web export (dist/) built with no EXPO_PUBLIC_STORE_MVP define → Store MVP ON',
-  contract: 'fail-closed: none of the three 我的 Collection controls render, and collection-shell never mounts',
+  contract: 'all three 我的 Collection controls render and arrive at collection-shell; watchlist/trends segments stay fail-closed',
   viewport: { width: 390, height: 844 },
   capturedAt: new Date().toISOString(),
   results: { controls, collectionShell, ownedRows, storeMvpFingerprint, consoleErrors, pageErrors, networkErrors },
@@ -178,11 +189,12 @@ await browser.close();
 server.close();
 
 assert.equal(report.results.storeMvpFingerprint.watchlistSegment, 0, 'build is not the Store MVP profile');
-assert.ok(report.results.ownedRows >= 1, 'ownership seed did not land — 檢視全部 absence would prove nothing');
+assert.equal(report.results.storeMvpFingerprint.trendsSegment, 0, 'restricted 趨勢 segment must stay hidden under Store MVP');
+assert.ok(report.results.ownedRows >= 1, 'ownership seed did not land — 檢視全部 presence would prove nothing');
 for (const [label, c] of Object.entries(report.results.controls)) {
-  assert.equal(c.count, 0, `${label}: must not render under Store MVP (dead control)`);
+  assert.equal(c.count, 1, `${label}: must render in every profile (DIC-1481)`);
 }
-assert.equal(report.results.collectionShell.count, 0, 'collection-shell must never mount under Store MVP');
+assert.equal(report.results.collectionShell.count, 1, 'collection-shell must mount — Collection route reachable under Store MVP (DIC-1481)');
 
-console.log(`\n${failed ? '❌' : '✅'} DIC-1430 local browser verification at 390×844: ${report.verdict}`);
+console.log(`\n${failed ? '❌' : '✅'} DIC-1481 local browser verification at 390×844: ${report.verdict}`);
 process.exitCode = failed ? 1 : 0;
