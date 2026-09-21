@@ -197,7 +197,7 @@ export interface CanonicalCardIndex {
  * proven. Keeping both lets `buildSourcePrintings` mark the printing's image
  * ambiguous and show none.
  */
-function dedupeListings(
+export function dedupeListings(
   listings: NonNullable<CardRecord['prices']>,
 ): NonNullable<CardRecord['prices']> {
   const seen = new Set<string>();

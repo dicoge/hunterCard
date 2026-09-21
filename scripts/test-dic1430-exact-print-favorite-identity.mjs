@@ -20,10 +20,28 @@
 // then faithfully round-tripped that wrong add-side key — they are not the bug
 // and must not paper over it with a migration.
 //
+// Which ROUTE reaches that payload (DIC-1482). `searchCards` represents a card
+// number by the FIRST matching row, preferring one whose `series` matches the
+// query. QA originally arrived by searching the number `hBP01-024`, which then
+// elected `hBP01-024_ent07` — the aggregate row carrying both the official HR
+// art and every sibling listing. DIC-1482 strips those aggregates (they are the
+// rows that shipped 0-priced duplicates), so the number-level query now elects
+// `hBP01-024_hBP01_C_…` and renders `_C` base art, which proves no printing and
+// is correctly withheld. The scenario itself is untouched: searching the SERIES
+// `hBP07` elects the HR row, whose official art is still `hBP01-024_HR.png` and
+// whose merged listings still carry the ¥3,480 HR and ¥120 BASE siblings. That
+// is the route this suite takes. WHICH row represents a number is DIC-1167's
+// contract, pinned by `verify-version-alignment`; what this suite pins is that
+// identity follows the art the user is actually shown.
+//
 // Why this test cannot go falsely green:
 //   * the payload is produced by the REAL `searchCards` product path over the
 //     REAL shipped catalog — not a hand-built fixture — so the fixture
 //     preconditions below fail loudly if the catalog stops reproducing it;
+//   * those preconditions name every printing the merged payload must carry, so
+//     losing DIC-1482's cross-row listing merge — which is what brings the BASE
+//     and パラレル/hBP07 siblings to the single-listing HR row — fails here
+//     instead of silently reducing this file to a one-version no-op;
 //   * every identity assertion names the HR value AND rejects the BASE decoy
 //     (¥120 / hbp01/10036.jpg), so a change that renders "everything" cannot
 //     satisfy it;
@@ -71,8 +89,11 @@ const { default: CardDetailScreen } = await import('../src/screens/CardDetailScr
 // Read-only here: used to state each fail-closed case's PRECONDITION, so a case
 // can never pass because the art accidentally matched or the card lost its
 // listings — only because the screen refused to act on unproven evidence.
-const { buildPriceVersions, resolveVersionForCard, resolveDisplayedPrintingIndex } =
+const { buildPriceVersions, resolveVersionForCard, resolveDisplayedPrintingIndex, artVariantToken } =
   await import('../src/utils/versionAlignment.ts');
+// The product's OWN label→printing derivation, so the fixture precondition below
+// states the merged listing set in the same terms the screen resolves it in.
+const { printingFromLabel } = await import('../src/utils/printingIdentity.ts');
 // CR3: the 收藏數量 widget writes to a SECOND store behind a SECOND persistence
 // key. Imported read-only here — to seed unrelated state, and to build ownership
 // keys with the product's OWN normalizer rather than a hand-spelled string.
@@ -117,11 +138,15 @@ const DECOY_PRINTING = 'BASE';
 const DECOY_ART = 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10036.jpg';
 const DECOY_PRICE = 120;
 
+// The series the premium printing belongs to. Searching it is what elects the HR
+// row for this number — see the route note in the header.
+const SEARCH_QUERY = 'hBP07';
+
 const database = await loadDatabaseJson();
 const nameMap = await loadSeriesNamesJson();
 
 /** The payload the REAL search route hands CardDetail for this card number. */
-const searchHit = searchCards(database, CARD_NUMBER, nameMap)
+const searchHit = searchCards(database, SEARCH_QUERY, nameMap)
   .find((c) => c.cardNumber === CARD_NUMBER);
 
 console.log('── DIC-1430 · one CardDetail, one proven exact-print identity ──');
@@ -136,6 +161,26 @@ await test('fixture: the real search route still reproduces the QA payload', asy
   assert.ok(labels.includes(EXPECTED_LABEL), `the HR listing is present (saw: ${labels.join(' / ')})`);
   const hr = (searchHit.prices || []).find((p) => (p?.name || '') === EXPECTED_LABEL);
   assert.equal(hr.sellPrice, EXPECTED_PRICE, 'the HR listing still costs ¥3,480');
+  // DIC-1482: the elected HR row publishes ONE listing of its own. The BASE and
+  // パラレル/hBP07 siblings reach this payload only through the cross-row listing
+  // merge in `searchCards`. Without it `buildPriceVersions` sees a single version
+  // and nothing below can be exercised — neither the proven identity nor the
+  // fail-closed cases, whose precondition is ≥2 sibling listings.
+  const printings = (searchHit.prices || []).map((p) => printingFromLabel(p?.name || ''));
+  for (const required of ['BASE', EXPECTED_PRINTING, 'PARALLEL/HBP07']) {
+    assert.ok(
+      printings.includes(required),
+      `the merged payload still carries the ${required} listing (saw: ${printings.join(' / ')})`,
+    );
+  }
+  // …and the hero art names exactly ONE of them — what makes the identity below
+  // PROVEN rather than guessed.
+  const token = artVariantToken(searchHit.imageUrl);
+  assert.equal(token, 'HR', 'the hero art still carries the HR variant token');
+  assert.equal(
+    printings.filter((p) => p.split('/').includes(token)).length, 1,
+    `exactly one listing printing carries the ${token} token`,
+  );
   // The gap that makes every price assertion below mutation-sensitive.
   assert.notEqual(EXPECTED_PRICE, DECOY_PRICE, 'HR and BASE are priced differently');
 });
