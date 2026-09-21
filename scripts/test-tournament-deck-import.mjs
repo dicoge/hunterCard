@@ -177,34 +177,37 @@ await test('a source grade never selects a printing; the slot is defaulted inste
     'the printing is the planner’s declared default, not something the source stated',
   );
   assert.notEqual(oshi.card.unresolvedPrinting, true);
-  // The decisive assertion: the default is the ¥1,280 ordinary printing — never
-  // the ¥29,800 parallel and never the ¥148,000 signed parallel. Those three
-  // figures are the FROZEN listings (DIC-1127); pinning them against the live
-  // scrape is what made this gate fail on an unrelated day.
+  // The decisive assertion, in two halves.
+  //
+  // First the yen figure, read from the FROZEN listings (DIC-1127): ¥1,280 is
+  // the hbp07 PLAIN listing (.../hbp07/10013.jpg) at freeze time — the very
+  // listing the 2026-09-19 scrape moved to ¥980, which is what failed this gate
+  // on a day this repo changed nothing. The ent07 aggregate that DIC-1482
+  // supersedes as cross-product-image mirrored that same plain listing at
+  // ¥1,280 (that mirroring is precisely what identified it as contamination);
+  // it is absent from the fixture entirely, and its live rows carry no
+  // sellPrice, so neither half below can ever be priced from the aggregate.
   assert.equal(oshi.card.printing, 'BASE');
   assert.equal(
     resolveExactPrice(oshi.card.cardNumber, oshi.card.printing, frozenDb.priceRecords).price, 1280,
   );
 
-  // …and the live dataset is still held to what that literal actually meant, at
-  // whatever price today's scrape publishes: the defaulted printing must really
-  // be priced, and every premium printing of the SAME card number must be dearer
-  // than it. A scrape may move all three numbers without failing here, but a
-  // resolver that started preferring the parallel or the signed parallel — or a
-  // dataset that stopped pricing the ordinary printing — fails immediately.
-  const livePrice = resolveExactPrice(oshi.card.cardNumber, oshi.card.printing, db.priceRecords);
-  assert.equal(livePrice.status, 'ok', 'the live dataset still prices the defaulted printing');
-  let livePremiums = 0;
-  for (const premium of ['PARALLEL', 'PARALLEL/SIGN']) {
-    const resolved = resolveExactPrice(oshi.card.cardNumber, premium, db.priceRecords);
-    if (resolved.status !== 'ok') continue;
-    livePremiums += 1;
-    assert.ok(
-      livePrice.price < resolved.price,
-      `the defaulted printing must undercut ${premium} (${livePrice.price} vs ${resolved.price})`,
-    );
-  }
-  assert.ok(livePremiums > 0, 'precondition: the live data still carries a premium printing here');
+  // Second, the live dataset is still held to what that literal actually stood
+  // for, at whatever price today's scrape publishes: the defaulted printing must
+  // carry an exact price and must undercut BOTH premium siblings. A scrape may
+  // move all three numbers without failing here, but a resolver that started
+  // preferring the parallel or the signed parallel — or a dataset that stopped
+  // pricing the ordinary printing or either decoy — fails immediately.
+  const base = resolveExactPrice(oshi.card.cardNumber, 'BASE', db.priceRecords);
+  const parallel = resolveExactPrice(oshi.card.cardNumber, 'PARALLEL', db.priceRecords);
+  const signed = resolveExactPrice(oshi.card.cardNumber, 'PARALLEL/SIGN', db.priceRecords);
+  assert.equal(base.status, 'ok', 'the ordinary printing must carry an exact price');
+  assert.equal(parallel.status, 'ok', 'precondition: the parallel decoy is really priced');
+  assert.equal(signed.status, 'ok', 'precondition: the signed decoy is really priced');
+  assert.ok(
+    base.price < parallel.price && base.price < signed.price,
+    'the defaulted slot must never price at a premium tier',
+  );
 });
 
 await test('the unresolved sentinel itself can never carry a price', () => {
