@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP07-026_hBP07_C_hBP07-026_C",
+  "cardNumber": "hBP07-026",
+  "name": "大神ミオ",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-026_hBP07_C_hBP07-026_C",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.250Z",
+  "nameZh": "大神澪"
+}

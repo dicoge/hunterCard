@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP07-106_hBP07_U_hBP07-106_U",
+  "cardNumber": "hBP07-106",
+  "name": "ハトタウロス",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP07-106_hBP07_U_hBP07-106_U",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.404Z",
+  "nameZh": "鴿人牛"
+}

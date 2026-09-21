@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP06-103_hBP06_C_hBP06-103_C",
+  "cardNumber": "hBP06-103",
+  "name": "まつりす",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-103_hBP06_C_hBP06-103_C",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.400Z",
+  "nameZh": "祭絲"
+}

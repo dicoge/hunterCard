@@ -2,14 +2,14 @@
   "cardId": "hBP08-058",
   "name": "フワワ・アビスガード",
   "nameZh": "雙葉·深淵護衛",
-  "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.8,
+  "trend": "up",
+  "score": 0.39,
+  "confidence": 0.7,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.6,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.354Z",
+  "lastUpdated": "2026-09-21T12:16:46.330Z",
   "dataPoints": 60
 }

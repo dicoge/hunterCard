@@ -2,14 +2,14 @@
   "cardId": "hSD10-002",
   "name": "輪堂千速",
   "nameZh": "輪堂千速",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.33,
   "confidence": 0.9,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.5,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.366Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-21T12:16:46.343Z",
+  "dataPoints": 69
 }

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-007_hBP01_OUR_hBP01-007_OUR",
+  "cardNumber": "hBP01-007",
+  "name": "星街すいせい",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 24800,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-007_hBP01_OUR_hBP01-007_OUR",
+      "sourceProduct": "hBP01"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.274Z",
+  "nameZh": "星街彗星"
+}

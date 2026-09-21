@@ -2,14 +2,14 @@
   "cardId": "hBP06-095",
   "name": "IDENTIFY -AREA 15-",
   "nameZh": "IDENTIFY -AREA 15-",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.39,
   "confidence": 0.9,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.6,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.345Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-21T12:16:46.319Z",
+  "dataPoints": 69
 }

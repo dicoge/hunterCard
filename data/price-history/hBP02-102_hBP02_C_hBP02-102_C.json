@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-102_hBP02_C_hBP02-102_C",
+  "cardNumber": "hBP02-102",
+  "name": "塩っ子",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-102_hBP02_C_hBP02-102_C",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.322Z",
+  "nameZh": "鹽子"
+}

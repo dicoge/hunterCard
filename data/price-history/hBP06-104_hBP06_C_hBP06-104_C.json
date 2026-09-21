@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP06-104_hBP06_C_hBP06-104_C",
+  "cardNumber": "hBP06-104",
+  "name": "スバ友",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-104_hBP06_C_hBP06-104_C",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.400Z",
+  "nameZh": "昴友"
+}

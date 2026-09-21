@@ -2,14 +2,14 @@
   "cardId": "hBP01-095",
   "name": "オーロ・クロニー",
   "nameZh": "奧羅·克洛尼",
-  "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.6,
+  "trend": "up",
+  "score": 0.16,
+  "confidence": 0.5,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.22,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.308Z",
+  "lastUpdated": "2026-09-21T12:16:46.282Z",
   "dataPoints": 64
 }

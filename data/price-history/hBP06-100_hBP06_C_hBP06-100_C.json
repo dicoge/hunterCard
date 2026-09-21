@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP06-100_hBP06_C_hBP06-100_C",
+  "cardNumber": "hBP06-100",
+  "name": "Chattino",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-100_hBP06_C_hBP06-100_C",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.399Z",
+  "nameZh": "Chattino"
+}

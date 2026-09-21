@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-008_hBP05_C_hBP02-008_02_C",
+  "cardNumber": "hBP02-008",
+  "name": "白上フブキ",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-008_hBP05_C_hBP02-008_02_C",
+      "sourceProduct": "hBP05"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.298Z",
+  "nameZh": "白上吹雪"
+}

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP09-099_hBP09_S_hBP09-099_S",
+  "cardNumber": "hBP09-099",
+  "name": "スピード違反",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 1280,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-099_hBP09_S_hBP09-099_S",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.451Z",
+  "nameZh": "超速違規"
+}

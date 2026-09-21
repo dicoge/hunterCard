@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP05-078_hBP05_U_hBP05-078_U",
+  "cardNumber": "hBP05-078",
+  "name": "晩酌配信",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-078_hBP05_U_hBP05-078_U",
+      "sourceProduct": "hBP05"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.378Z",
+  "nameZh": "晚酌直播"
+}

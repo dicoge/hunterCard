@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-050_hSD12_C_hBP04-050_02_C",
+  "cardNumber": "hBP04-050",
+  "name": "シオリ・ノヴェラ",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-050_hSD12_C_hBP04-050_02_C",
+      "sourceProduct": "hSD12"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.159Z",
+  "nameZh": "詩織·諾維拉"
+}

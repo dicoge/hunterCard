@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-103_hBP03_C_hBP03-103_C",
+  "cardNumber": "hBP03-103",
+  "name": "ホソイヌ",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-103_hBP03_C_hBP03-103_C",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.346Z",
+  "nameZh": "瘦狗"
+}

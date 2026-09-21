@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-093_hBP02_C_hBP02-093_C",
+  "cardNumber": "hBP02-093",
+  "name": "ミテイル",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-093_hBP02_C_hBP02-093_C",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.319Z",
+  "nameZh": "看尾巴"
+}

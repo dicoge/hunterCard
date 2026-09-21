@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-098_hBP04_U_hBP04-098_U",
+  "cardNumber": "hBP04-098",
+  "name": "鍛冶ハンマー",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-098_hBP04_U_hBP04-098_U",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.368Z",
+  "nameZh": "鍛造槌"
+}

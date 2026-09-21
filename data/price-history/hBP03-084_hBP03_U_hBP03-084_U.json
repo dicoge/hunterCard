@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP03-084_hBP03_U_hBP03-084_U",
+  "cardNumber": "hBP03-084",
+  "name": "ゴージャスパソコン",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-084_hBP03_U_hBP03-084_U",
+      "sourceProduct": "hBP03"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.342Z",
+  "nameZh": "豪華電腦"
+}

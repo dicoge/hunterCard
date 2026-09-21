@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP06-083_hBP06_R_hBP06-083_R",
+  "cardNumber": "hBP06-083",
+  "name": "ラムダック",
+  "records": [
+    {
+      "date": "2026-09-21",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-083_hBP06_R_hBP06-083_R",
+      "sourceProduct": "hBP06"
+    }
+  ],
+  "lastUpdated": "2026-09-21T12:16:37.239Z",
+  "nameZh": "蓮達"
+}
