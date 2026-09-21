@@ -1675,6 +1675,15 @@ async function buildDatabase() {
   // exact series+rarity combination.
   const officialPricedCardNums = new Set();
 
+  // DIC-1482 / DIC-1484 CR blocker 2: freshness for the price-regression gate
+  // is tracked per EXACT PRINTING, never per cardNumber. A row lands here only
+  // when THIS scrape produced a listing that tied to that exact official
+  // printing (`yuyuEntryMatchesOfficial` — explicit sourceSeries/rarity tie, no
+  // cardNumber fallback). Sibling printings of one cardNumber come from
+  // different products, so a cardNumber-wide notion of "freshly scraped" let a
+  // scrape of one printing waive entry loss on an unscraped sibling.
+  const freshlyScrapedPrintingIds = new Set();
+
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
@@ -1725,6 +1734,9 @@ async function buildDatabase() {
       timestamp: yuyu ? yuyu.firstTimestamp : '',
       _rawPricesArchive: archive,
     };
+    // This exact printing was matched by the current scrape (see the
+    // freshlyScrapedPrintingIds declaration above).
+    if (yuyu) freshlyScrapedPrintingIds.add(key);
     // DIC-1334: record that this cardNumber received a sellPrice from
     // official+yuyu matching so the yuyu-only fallback below does not
     // discard the yuyu price data for OTHER unmatched printings of this
@@ -1848,6 +1860,7 @@ async function buildDatabase() {
       bound.timestamp = firstTimestamp;
       bound._rawPricesArchive = archive;
       if (!bound.name) bound.name = lowestName || '';
+      freshlyScrapedPrintingIds.add(boundPrintingKey);
       console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${lowestPrice})`);
       continue;
     }
@@ -1877,6 +1890,7 @@ async function buildDatabase() {
       timestamp: firstTimestamp,
       _rawPricesArchive: archive,
     };
+    freshlyScrapedPrintingIds.add(outCardNum);
   }
 
   // DIC-1204: preserve proven market payload onto every current row that maps
@@ -2113,13 +2127,34 @@ async function buildDatabase() {
   // still priced. The manifest is written atomically even when empty, so
   // data/price-rejections.json always reflects the latest refresh.
   {
+    // DIC-1484 CR blocker 1: independently derived removal evidence. A
+    // previously priced printing may be reported as removed ONLY when the
+    // sources this refresh actually read no longer carry it — the official
+    // catalog no longer lists that printing identity AND the scrape no longer
+    // lists its cardNumber. Absence from the rebuilt map is the very fact the
+    // label asserts, so it cannot authorize itself: if either live source
+    // still carries the printing, its disappearance is a rebuild defect and
+    // stays an uncovered violation that fails the build.
+    const officialPrintingKeys = new Set(Object.keys(officialCards));
+    const catalogRemovedIds = new Set();
+    for (const [prevId, prevCard] of Object.entries(prevCards)) {
+      if (database.cards[prevId]) continue;
+      if (officialPrintingKeys.has(prevId)) continue;
+      if (prevCard?.cardNumber && scrapedCardNumbers.has(prevCard.cardNumber)) continue;
+      catalogRemovedIds.add(prevId);
+    }
+
     const dic1482Rejections = [];
     for (const [prevId, prevCard] of Object.entries(prevCards)) {
       if (!isPricedRow(prevCard)) continue;
       const nextCard = database.cards[prevId];
       if (nextCard && isPricedRow(nextCard)) continue;
       if (!nextCard) {
-        dic1482Rejections.push(makeRejection(prevId, prevCard, 'printing-removed-from-catalog'));
+        // No rejection is emitted without evidence — the gate then reports the
+        // loss as an uncovered `priced-row-removed` violation.
+        if (catalogRemovedIds.has(prevId)) {
+          dic1482Rejections.push(makeRejection(prevId, prevCard, 'printing-removed-from-catalog'));
+        }
         continue;
       }
       if (ambiguityNulledIds.has(prevId)) {
@@ -2137,11 +2172,12 @@ async function buildDatabase() {
       previousCards: prevCards,
       nextCards: database.cards,
       rejections: dic1482Rejections,
-      // A cardNumber the scrape freshly returned carries the source's own
+      // An exact printing the scrape freshly matched carries the source's own
       // current listing — fewer prices[] entries there is the source's claim,
-      // not a silent drop.
-      freshlyScrapedCardNumbers: scrapedCardNumbers,
+      // not a silent drop. Per printing, never per cardNumber.
+      freshlyScrapedPrintingIds,
       ambiguousIds: ambiguityNulledIds,
+      removedIds: catalogRemovedIds,
     });
     const manifest = buildPriceRejectionManifest({
       label: 'build-database',

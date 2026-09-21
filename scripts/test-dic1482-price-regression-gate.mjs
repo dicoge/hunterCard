@@ -139,10 +139,10 @@ check('production sequence: the candidate artifact is refused (29 uncovered loss
     previousCards: fixture.baselineCards,
     nextCards: fixture.candidateCards,
     rejections: [],
-    // The candidate WAS a fresh scrape of everything it kept — but the lost
-    // hBD24 cardNumbers still count as silent priced-row losses.
-    freshlyScrapedCardNumbers: new Set(
-      Object.values(fixture.candidateCards).filter(isPricedRow).map((c) => c.cardNumber),
+    // The candidate WAS a fresh scrape of every printing it kept — but the
+    // lost hBD24 printings still count as silent priced-row losses.
+    freshlyScrapedPrintingIds: new Set(
+      Object.entries(fixture.candidateCards).filter(([, c]) => isPricedRow(c)).map(([id]) => id),
     ),
   });
   assert.equal(gate.ok, false);
@@ -204,10 +204,25 @@ check('ambiguity and removal reasons verify against context, not claims', () => 
   assert.equal(verified.ok, true);
   const removedUncovered = evaluatePriceRegressionGate({ previousCards, nextCards: {}, rejections: [] });
   assert.equal(removedUncovered.ok, false);
-  const removedCovered = evaluatePriceRegressionGate({
+  const removedWithoutEvidence = evaluatePriceRegressionGate({
     previousCards, nextCards: {}, rejections: [{ id: 'p', reason: 'printing-removed-from-catalog' }],
   });
+  assert.equal(removedWithoutEvidence.ok, false,
+    'a removal label with no independently derived removal set must not verify');
+  const removedCovered = evaluatePriceRegressionGate({
+    previousCards, nextCards: {}, rejections: [{ id: 'p', reason: 'printing-removed-from-catalog' }],
+    removedIds: new Set(['p']),
+  });
   assert.equal(removedCovered.ok, true);
+  const prunedWithoutSet = evaluatePriceRegressionGate({
+    previousCards, nextCards: {}, rejections: [{ id: 'p', reason: 'pruned-not-in-official-catalog' }],
+  });
+  assert.equal(prunedWithoutSet.ok, false, 'a prune label with no pruned set must not verify');
+  const prunedCovered = evaluatePriceRegressionGate({
+    previousCards, nextCards: {}, rejections: [{ id: 'p', reason: 'pruned-not-in-official-catalog' }],
+    prunedIds: new Set(['p']),
+  });
+  assert.equal(prunedCovered.ok, true);
   const fakeRemoval = evaluatePriceRegressionGate({
     previousCards, nextCards: nulled, rejections: [{ id: 'p', reason: 'printing-removed-from-catalog' }],
   });
@@ -225,11 +240,111 @@ check('entry decreases: fresh scrape or per-entry cross-product proof, never sil
   // (b) the PROVEN entry dropped — no proof, no fresh scrape → violation.
   const silent = { e: { ...prev, prices: [foreignEntry] } };
   assert.equal(evaluatePriceRegressionGate({ previousCards, nextCards: silent, rejections: [] }).ok, false);
-  // (c) same drop under a fresh scrape of that cardNumber → the source's claim.
+  // (c) same drop under a fresh scrape of that exact printing → the source's claim.
   assert.equal(evaluatePriceRegressionGate({
     previousCards, nextCards: silent, rejections: [],
-    freshlyScrapedCardNumbers: new Set(['hBP09-010']),
+    freshlyScrapedPrintingIds: new Set(['e']),
   }).ok, true);
+  // (d) freshness is keyed by printing id, so the row's cardNumber is not a key.
+  assert.equal(evaluatePriceRegressionGate({
+    previousCards, nextCards: silent, rejections: [],
+    freshlyScrapedPrintingIds: new Set(['hBP09-010']),
+  }).ok, false, 'a cardNumber must never act as a freshness key');
+});
+
+// ─── 2b. DIC-1484 CR blockers: the two gate bypasses ─────────────────────
+// Both were reproduced directly against the shipped gate on PR #214 head
+// 842c4167a. They are regression-pinned here per the CR's request.
+check('CR blocker 1: a removal label cannot self-authorize deleting a proven priced row', () => {
+  const listing = 'https://card.yuyu-tei.jp/hocg/100_140/hbp09/10001.jpg';
+  const proven = {
+    id: 'hBP09-001_hBP09_OSR', cardNumber: 'hBP09-001', rarity: 'OSR', sourceProduct: 'hBP09',
+    sellPrice: 480, yuyuName: 'x', yuyuImage: listing,
+    prices: [{ name: 'x', sellPrice: 480, rarity: '', imageUrl: listing }],
+  };
+  assert.equal(classifyExactPrintPayload(proven).proven, true, 'precondition: the row is exact-print proven');
+  const previousCards = { [proven.id]: proven };
+  const rejections = [makeRejection(proven.id, proven, 'printing-removed-from-catalog')];
+  // The exact CR reproduction: a rebuild drops the proven row, then labels its
+  // own casualty "removed". Absence from the rebuilt map is the same fact the
+  // label asserts, so it must not verify it.
+  const selfAuthorized = evaluatePriceRegressionGate({ previousCards, nextCards: {}, rejections });
+  assert.equal(selfAuthorized.ok, false,
+    'a caller-generated removal label must not authorize deleting a proven priced row');
+  assert.ok(selfAuthorized.violations.every((v) => v.kind === 'rejection-not-verifiable'));
+  assert.equal(selfAuthorized.before.pricedRows, 1);
+  assert.equal(selfAuthorized.after.pricedRows, 0);
+  // Evidence derived for a DIFFERENT printing does not cover this one.
+  assert.equal(evaluatePriceRegressionGate({
+    previousCards, nextCards: {}, rejections, removedIds: new Set(['hBP09-002_hBP09_OSR']),
+  }).ok, false, 'removal evidence for another printing must not cover this one');
+  // Independently derived evidence for THIS printing does.
+  assert.equal(evaluatePriceRegressionGate({
+    previousCards, nextCards: {}, rejections, removedIds: new Set([proven.id]),
+  }).ok, true);
+});
+
+check('CR blocker 2: cardNumber-wide freshness cannot hide a sibling printing\'s entry loss', () => {
+  // One cardNumber, two printings from different products — the shape the
+  // cardNumber-wide waiver could not tell apart.
+  const plainListing = 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/1.jpg';
+  const reprintA = { name: 'b', sellPrice: 200, rarity: 'C', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp08/2.jpg' };
+  const reprintB = { name: 'c', sellPrice: 300, rarity: 'C', imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp08/3.jpg' };
+  const plain = {
+    id: 'hBP01-001_hBP01_C', cardNumber: 'hBP01-001', rarity: 'C', sourceProduct: 'hBP01',
+    sellPrice: 100, yuyuImage: plainListing,
+    prices: [{ name: 'a', sellPrice: 100, rarity: 'C', imageUrl: plainListing }],
+  };
+  const reprint = {
+    id: 'hBP01-001_hBP08_C', cardNumber: 'hBP01-001', rarity: 'C', sourceProduct: 'hBP08',
+    sellPrice: 200, yuyuImage: reprintA.imageUrl, prices: [reprintA, reprintB],
+  };
+  const previousCards = { [plain.id]: plain, [reprint.id]: reprint };
+  // The hBP08 printing silently loses a source-proven entry; only the hBP01
+  // printing was freshly scraped.
+  const nextCards = { [plain.id]: { ...plain }, [reprint.id]: { ...reprint, prices: [reprintA] } };
+  const hidden = evaluatePriceRegressionGate({
+    previousCards, nextCards, rejections: [], freshlyScrapedPrintingIds: new Set([plain.id]),
+  });
+  assert.equal(hidden.ok, false,
+    'a fresh scrape of the hBP01 printing must not waive entry loss on the hBP08 printing');
+  assert.equal(hidden.violations[0].kind, 'price-entries-decreased');
+  assert.equal(hidden.before.priceEntries, 3);
+  assert.equal(hidden.after.priceEntries, 2);
+  // The waiver applies only to the printing the source actually re-listed.
+  assert.equal(evaluatePriceRegressionGate({
+    previousCards, nextCards, rejections: [], freshlyScrapedPrintingIds: new Set([reprint.id]),
+  }).ok, true, 'freshness on the losing printing itself is the source\'s own claim');
+});
+
+check('CR blocker 3: the price recovery rewrites price fields only — no localImage drift', () => {
+  const listing = 'https://card.yuyu-tei.jp/hocg/100_140/hbp09/10050.jpg';
+  const current = {
+    x: {
+      id: 'x', cardNumber: 'hBP09-050', rarity: 'OSR', sourceProduct: 'hBP09',
+      sellPrice: null, yuyuName: '', yuyuImage: '', timestamp: '', prices: [], localImage: '',
+    },
+  };
+  const candidate = {
+    x: {
+      id: 'x', cardNumber: 'hBP09-050', rarity: 'OSR', sourceProduct: 'hBP09',
+      sellPrice: 620, yuyuName: 'y', yuyuImage: listing, timestamp: '2026-09-19T00:00:00.000Z',
+      prices: [{ name: 'y', sellPrice: 620, rarity: '', imageUrl: listing }],
+      localImage: '/images/hBP09-050.jpg',
+    },
+  };
+  const result = recoverExactPrintPrices(current, clone(candidate));
+  assert.equal(result.accepted.length, 1, 'the proven price must still be recovered');
+  assert.ok(isPricedRow(current.x), 'the row must be priced after recovery');
+  assert.equal(current.x.localImage, '',
+    'localImage is build-database Step 2 territory; the price recovery must not backfill it');
+  // …and the same invariant over the real production-sequence fixture.
+  const real = clone(fixture.baselineCards);
+  const before = Object.fromEntries(Object.entries(real).map(([id, c]) => [id, c.localImage ?? null]));
+  recoverExactPrintPrices(real, clone(fixture.candidateCards));
+  for (const [id, card] of Object.entries(real)) {
+    assert.equal(card.localImage ?? null, before[id], `${id} localImage must be untouched by the recovery`);
+  }
 });
 
 // ─── 3. last-known-good preservation over the real sequence ──────────────

@@ -220,21 +220,33 @@ function droppedEntriesAllProvenForeign(prev, next) {
  *     must equal the claimed reason (a proven row can never be "rejected").
  *   - 'ambiguous-promo-identity': id must be in `options.ambiguousIds`.
  *   - 'pruned-not-in-official-catalog' / 'printing-removed-from-catalog':
- *     the id must actually be absent from `nextCards` (plus membership in
- *     `options.prunedIds` for the prune reason when the caller supplies it).
+ *     the id must be absent from `nextCards` AND be a member of the caller's
+ *     INDEPENDENTLY DERIVED evidence set (`options.prunedIds` /
+ *     `options.removedIds`). Absence from the rebuilt map alone can never
+ *     verify a removal label: it is the very fact the label asserts, so a
+ *     rebuild bug that silently drops proven priced rows would otherwise
+ *     emit the label for its own casualties and self-authorize the collapse
+ *     (DIC-1484 CR blocker 1). A caller that supplies no evidence set gets
+ *     the label refused, so the default is fail-closed.
  *
  * Price-entry decreases on a still-priced row are additionally allowed when
- * the row's cardNumber is in `freshlyScrapedCardNumbers` — a fresh scrape of
- * that cardNumber IS the current source listing, so fewer entries is the
- * source's own claim, not a silent drop.
+ * the row's EXACT PRINTING id is in `freshlyScrapedPrintingIds` — that
+ * printing's own fresh listing IS the current source claim, so fewer entries
+ * there is the source speaking, not a silent drop. Freshness is deliberately
+ * NOT tracked by cardNumber: sibling printings of one cardNumber come from
+ * different products (hBP01-001 as hBP01 and as hBP08), so a cardNumber-wide
+ * waiver let a fresh scrape of ONE printing hide entry loss on a DIFFERENT,
+ * unscraped printing — the cross-printing fallback the acceptance criteria
+ * forbid (DIC-1484 CR blocker 2).
  */
 export function evaluatePriceRegressionGate({
   previousCards = {},
   nextCards = {},
   rejections = [],
-  freshlyScrapedCardNumbers = new Set(),
+  freshlyScrapedPrintingIds = new Set(),
   ambiguousIds = new Set(),
   prunedIds = null,
+  removedIds = null,
 } = {}) {
   const violations = [];
   const rejectionById = new Map();
@@ -260,12 +272,22 @@ export function evaluatePriceRegressionGate({
     if (reason === 'ambiguous-promo-identity') {
       return ambiguousIds?.has?.(id) ? null : 'rejection claims promo ambiguity but the id is not in the ambiguous set';
     }
-    // prune/removal reasons: the row must actually be gone.
+    // Prune/removal reasons: the row must actually be gone AND the caller
+    // must hand over independently derived evidence that THIS printing was
+    // lawfully removed. `rowRemoved` is the label's own claim restated, so it
+    // is necessary but never sufficient — see the header note on blocker 1.
     if (!rowRemoved) {
       return `rejection claims '${reason}' but the printing still exists in the next artifact`;
     }
-    if (reason === 'pruned-not-in-official-catalog' && prunedIds && !prunedIds.has(id)) {
-      return 'rejection claims prune but the id is not in the pruned set';
+    if (reason === 'pruned-not-in-official-catalog') {
+      if (!prunedIds) return 'rejection claims prune but no independently derived pruned set was supplied';
+      if (!prunedIds.has?.(id)) return 'rejection claims prune but the id is not in the pruned set';
+      return null;
+    }
+    if (reason === 'printing-removed-from-catalog') {
+      if (!removedIds) return 'rejection claims catalog removal but no independently derived removal set was supplied';
+      if (!removedIds.has?.(id)) return 'rejection claims catalog removal but the id is not in the catalog-removal set';
+      return null;
     }
     return null;
   };
@@ -298,14 +320,14 @@ export function evaluatePriceRegressionGate({
     // proves it never belonged to this printing — the preservation filters'
     // legitimate cross-product cleanup.
     if (!rowRemoved && entryCount(next) < entryCount(prev)) {
-      if (freshlyScrapedCardNumbers?.has?.(prev.cardNumber)) continue;
+      if (freshlyScrapedPrintingIds?.has?.(id)) continue;
       if (droppedEntriesAllProvenForeign(prev, next)) continue;
       const rejection = rejectionById.get(id);
       if (!rejection) {
         violations.push({
           id,
           kind: 'price-entries-decreased',
-          detail: `prices[] shrank ${entryCount(prev)}→${entryCount(next)} on ${id} without a fresh scrape of ${prev.cardNumber}, a rejection, or per-entry cross-product proof`,
+          detail: `prices[] shrank ${entryCount(prev)}→${entryCount(next)} on ${id} without a fresh scrape of that exact printing, a rejection, or per-entry cross-product proof`,
         });
       } else {
         const problem = verifyRejection(id, prev, rejection, false);

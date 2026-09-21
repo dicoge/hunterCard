@@ -313,11 +313,14 @@ export function syncOfficialCatalogToDatabase({
     const nextCard = db.cards[prevId];
     if (nextCard && isPricedRow(nextCard)) continue;
     if (!nextCard) {
-      dic1482Rejections.push(makeRejection(
-        prevId,
-        prevCard,
-        prunedIds.has(prevId) ? 'pruned-not-in-official-catalog' : 'printing-removed-from-catalog',
-      ));
+      // DIC-1484 CR blocker 1: the prune pass above is the ONLY lawful way a
+      // row leaves this artifact, and `prunedIds` is its independently derived
+      // record. A row that vanished without being pruned gets no rejection
+      // label — the gate reports it as an uncovered removal and the sync
+      // throws before any byte reaches disk.
+      if (prunedIds.has(prevId)) {
+        dic1482Rejections.push(makeRejection(prevId, prevCard, 'pruned-not-in-official-catalog'));
+      }
       continue;
     }
     const verdict = classifyExactPrintPayload(prevCard);

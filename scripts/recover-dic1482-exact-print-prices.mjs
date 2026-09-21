@@ -20,6 +20,11 @@
  *     the shipped promo-*→hPR carve-out). SEC signed printings and
  *     aggregation-label (ent07) cross-product rows are rejected with
  *     machine-readable reasons.
+ *   - PRICE FIELDS ONLY: the adoption rewrites the priced payload and nothing
+ *     else. It deliberately does NOT touch `localImage` — image acquisition is
+ *     governed by build-database.js Step 2 + its own file-existence rule, and
+ *     backfilling it here produced 2,230 rows of unrelated generated-data
+ *     drift in the first PR #214 revision (DIC-1484 CR blocker 3).
  *   - BUY-SIDE ISOLATION: copied prices[]/_rawPricesArchive entries are
  *     stripped of buyPrice* fields — buy prices are governed exclusively by
  *     data/buy-prices/*.json via merge-buy-prices/regen-buy-alignment, which
@@ -84,7 +89,7 @@ function cardNumberPrefix(cardNumber) {
  *     preserve when the current payload is source-proven, otherwise the
  *     printing is nulled and lands in `rejected` (fail-closed).
  */
-export function recoverExactPrintPrices(currentCards, candidateCards, { imageExists = () => false } = {}) {
+export function recoverExactPrintPrices(currentCards, candidateCards) {
   const accepted = [];
   const refreshed = [];
   const rejected = [];
@@ -97,9 +102,6 @@ export function recoverExactPrintPrices(currentCards, candidateCards, { imageExi
     current.timestamp = candidate.timestamp || '';
     current._rawPricesArchive = (Array.isArray(candidate._rawPricesArchive) ? candidate._rawPricesArchive : [])
       .map(stripBuyFields);
-    if (!current.localImage && candidate.localImage && imageExists(candidate.localImage)) {
-      current.localImage = candidate.localImage;
-    }
     // Internal consistency: the row-level sellPrice must equal one of the
     // row's OWN entries (the native-artifact invariant — no synthesized
     // scalar). The 2026-09-19 candidate carries one row (hBP02-078_hBP02_S)
@@ -264,20 +266,18 @@ function main() {
   const candidate = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
   const previousCards = JSON.parse(JSON.stringify(db.cards));
 
-  const imageExists = (localImage) => {
-    const rel = String(localImage || '').replace(/^\//, '');
-    return rel.startsWith('images/') && fs.existsSync(path.join(repoRoot, 'data', rel));
-  };
-  const result = recoverExactPrintPrices(db.cards, candidate.cards, { imageExists });
+  const result = recoverExactPrintPrices(db.cards, candidate.cards);
 
   const gate = evaluatePriceRegressionGate({
     previousCards,
     nextCards: db.cards,
     rejections: result.rejected,
-    // Refreshed rows adopted the candidate's OWN fresh listing for that
-    // cardNumber — an entry-count decrease there is the source's current
-    // claim (identical to a fresh scrape), not a silent drop.
-    freshlyScrapedCardNumbers: new Set(result.refreshed.map((r) => r.cardNumber)),
+    // Refreshed rows adopted the candidate's OWN fresh listing for that EXACT
+    // PRINTING — an entry-count decrease there is the source's current claim,
+    // not a silent drop. Keyed by printing id, never by cardNumber: a sibling
+    // printing that was not refreshed must not inherit the waiver
+    // (DIC-1484 CR blocker 2).
+    freshlyScrapedPrintingIds: new Set(result.refreshed.map((r) => r.id)),
   });
   const report = {
     schema: 'huntercard.dic1482-recovery-report/v1',
