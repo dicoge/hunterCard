@@ -36,6 +36,15 @@ import {
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 import { collectPriceEvidence, writePriceEvidenceAtomic } from './lib/price-evidence.js';
+import {
+  classifyExactPrintPayload,
+  evaluatePriceRegressionGate,
+  buildPriceRejectionManifest,
+  formatGateViolations,
+  writeJsonAtomic,
+  makeRejection,
+  isPricedRow,
+} from './lib/price-regression-gate.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1666,6 +1675,15 @@ async function buildDatabase() {
   // exact series+rarity combination.
   const officialPricedCardNums = new Set();
 
+  // DIC-1482 / DIC-1484 CR blocker 2: freshness for the price-regression gate
+  // is tracked per EXACT PRINTING, never per cardNumber. A row lands here only
+  // when THIS scrape produced a listing that tied to that exact official
+  // printing (`yuyuEntryMatchesOfficial` — explicit sourceSeries/rarity tie, no
+  // cardNumber fallback). Sibling printings of one cardNumber come from
+  // different products, so a cardNumber-wide notion of "freshly scraped" let a
+  // scrape of one printing waive entry loss on an unscraped sibling.
+  const freshlyScrapedPrintingIds = new Set();
+
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
     const baseCardNum = official.cardNumber || '';
@@ -1716,6 +1734,9 @@ async function buildDatabase() {
       timestamp: yuyu ? yuyu.firstTimestamp : '',
       _rawPricesArchive: archive,
     };
+    // This exact printing was matched by the current scrape (see the
+    // freshlyScrapedPrintingIds declaration above).
+    if (yuyu) freshlyScrapedPrintingIds.add(key);
     // DIC-1334: record that this cardNumber received a sellPrice from
     // official+yuyu matching so the yuyu-only fallback below does not
     // discard the yuyu price data for OTHER unmatched printings of this
@@ -1839,6 +1860,7 @@ async function buildDatabase() {
       bound.timestamp = firstTimestamp;
       bound._rawPricesArchive = archive;
       if (!bound.name) bound.name = lowestName || '';
+      freshlyScrapedPrintingIds.add(boundPrintingKey);
       console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${lowestPrice})`);
       continue;
     }
@@ -1868,6 +1890,7 @@ async function buildDatabase() {
       timestamp: firstTimestamp,
       _rawPricesArchive: archive,
     };
+    freshlyScrapedPrintingIds.add(outCardNum);
   }
 
   // DIC-1204: preserve proven market payload onto every current row that maps
@@ -1880,6 +1903,17 @@ async function buildDatabase() {
     (Number.isFinite(card?.sellPrice) && card.sellPrice > 0)
     || (Array.isArray(card?.prices) && card.prices.length > 0)
     || Boolean(card?.yuyuName || card?.yuyuImage || card?.timestamp)
+  );
+  // DIC-1482: snapshot which rows THIS RUN's fresh scrape actually priced,
+  // BEFORE preservation can top rows up from the previous database. The
+  // DIC-1334 coverage audit below must measure freshly-proven coverage —
+  // otherwise last-known-good preservation would let a systemically broken
+  // scrape (parser/matcher proving ~nothing, the DIC-1461 shape) coast
+  // silently on stale preserved prices instead of failing loudly.
+  const freshlyPricedRowIds = new Set(
+    Object.entries(database.cards)
+      .filter(([, card]) => Number.isFinite(card?.sellPrice) && card.sellPrice > 0)
+      .map(([id]) => id),
   );
   if (preservationIndex.byId.size > 0) {
     let restoredSell = 0;
@@ -1899,7 +1933,20 @@ async function buildDatabase() {
         // enforces `yuyuPayloadMatchesSource`, so a partial restore never
         // crosses printings / products — only provably-matched rows keep their
         // price.
-        preserveYuyuPayload: pricingUnavailable || partialScrape || hasCurrentYuyuPayload(card),
+        //
+        // DIC-1482: a HEALTHY scrape must also keep the last SOURCE-PROVEN
+        // exact-print payload when yuyu-tei rotates a listing out of its
+        // index. The 2026-09-19 candidate nulled all 29 hBD24 /promo-hbd20/
+        // rows exactly because a healthy scrape only preserved rows that
+        // still had current payload. `classifyExactPrintPayload` extends
+        // preservation strictly: only a previous payload whose OWN evidence
+        // proves this exact printing (top-level or strict entry-level product
+        // match, never SEC / ent07-aggregation / cross-product) qualifies —
+        // the DIC-1167 "no current proof → no stale sell payload" rule stays
+        // in force for everything unproven, which then lands in the
+        // data/price-rejections.json manifest instead of vanishing silently.
+        preserveYuyuPayload: pricingUnavailable || partialScrape || hasCurrentYuyuPayload(card)
+          || classifyExactPrintPayload(match.card).proven,
       });
       if (summary.sellPrice) restoredSell++;
       if (summary.prices) restoredPrices++;
@@ -1918,8 +1965,13 @@ async function buildDatabase() {
   // every one of them so the daily build path cannot recreate the pairs
   // Mac-Codex CR flagged (hSD03-002 P/P_2, hBP01-108 P/P_01, hBP02-028 P/P_2).
   // Runs BEFORE detail-align so the ranker sees the corrected prices[].
+  // DIC-1482: the nulled ids are captured for the price-regression gate —
+  // an ambiguity-null is a deliberate per-print rejection, and the manifest
+  // must carry it so the resulting priced-payload decrease stays covered.
+  let ambiguityNulledIds = new Set();
   {
     const ambiguous = findAmbiguousPromoRowIds(database.cards);
+    ambiguityNulledIds = ambiguous;
     if (ambiguous.size > 0) {
       for (const id of ambiguous) {
         const card = database.cards[id];
@@ -1966,10 +2018,13 @@ async function buildDatabase() {
   // collector re-applies the same predicate functions read-only; it cannot
   // change canonical output.
   if (process.env.HUNTERCARD_PRICE_EVIDENCE_PATH) {
+    // DIC-1482: mirror the coverage audit below — the gate diagnostic counts
+    // FRESHLY-proven coverage (rows this run's scrape priced that are still
+    // priced), not preservation-inflated final coverage.
     const evidenceFinalPriced = new Set(
-      Object.values(database.cards)
-        .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
-        .map((c) => c.cardNumber),
+      Object.entries(database.cards)
+        .filter(([id, c]) => freshlyPricedRowIds.has(id) && Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+        .map(([, c]) => c.cardNumber),
     );
     const evidenceFloor = Math.floor(scrapedCardNumbers.size / 2);
     const evidence = collectPriceEvidence({
@@ -2013,31 +2068,134 @@ async function buildDatabase() {
         .filter((c) => Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
         .map((c) => c.cardNumber),
     );
+    // DIC-1482: the coverage the audit measures is FRESHLY-PROVEN coverage —
+    // cardNumbers whose surviving price was filled by THIS RUN's scrape (the
+    // row was priced before the preservation pass and is still priced now).
+    // Last-known-good preservation deliberately keeps previously proven
+    // payloads alive when yuyu rotates listings out, so counting the final
+    // artifact would let a scrape that proves ~nothing (broken parser /
+    // matcher — the DIC-1461 redesign shape) coast on stale preserved prices
+    // forever. Measuring fresh fills keeps this audit as loud as before.
+    const freshFinalPricedCardNums = new Set(
+      Object.entries(database.cards)
+        .filter(([id, c]) => freshlyPricedRowIds.has(id) && Number.isFinite(c?.sellPrice) && c.sellPrice > 0)
+        .map(([, c]) => c.cardNumber),
+    );
     // DIC-1334: with the wrong alreadyExists gate a scrape of N priced
     // cardNumbers can collapse to a small fraction of N. Enforce a hard
-    // floor: the final priced-cardNumber coverage must exceed 50% of the
-    // freshly scraped yuyu coverage. A healthy run matches nearly all of
+    // floor: the freshly-proven priced-cardNumber coverage must exceed 50% of
+    // the freshly scraped yuyu coverage. A healthy run matches nearly all of
     // them (yuyu only lists pricing for cards that exist in the catalog),
     // so 50% is a deliberately generous fail-closed floor that still
     // catches a 1214→424 collapse (35%).
-    const finalCoverage = finalPricedCardNums.size;
+    const finalCoverage = freshFinalPricedCardNums.size;
     const scrapedCoverage = scrapedCardNumbers.size;
     const gapFloor = Math.floor(scrapedCoverage / 2);
-    if (scrapedCoverage > 0 && finalCoverage < gapFloor) {
+    // DIC-1482: the floor applies to FULL-SCALE scrapes only. Before
+    // last-known-good preservation this audit compared the whole final
+    // artifact against the scrape, so a small/partial scrape could never
+    // trip it (the global artifact dwarfed the floor); measuring fresh fills
+    // must keep that scoping, otherwise every deliberately-rejecting small
+    // fixture (and every WAF-throttled partial scrape, which DIC-1321
+    // already handles by preservation + scheduler coverage floors) would
+    // fail here. A full-scale scrape whose proven fills collapse below 50%
+    // is the systemic parser/matcher breakage this audit exists to catch.
+    if (scrapedCoverage > 0 && !partialScrape && finalCoverage < gapFloor) {
       throw new Error(
         `[DIC-1334] final canonical artifact collapsed priced-cardNumber coverage: ` +
-        `scraped ${scrapedCoverage} priced cardNumbers but final artifact only has ${finalCoverage} ` +
-        `(< 50% floor ${gapFloor}). A transformation discarded yuyu price data; refusing to ship.`,
+        `scraped ${scrapedCoverage} priced cardNumbers but final artifact only has ${finalCoverage} freshly proven ` +
+        `(< 50% floor ${gapFloor}; ${finalPricedCardNums.size} priced including preservation). ` +
+        `A transformation discarded yuyu price data; refusing to ship.`,
       );
     }
     const lostCardNums = [...scrapedCardNumbers].filter((n) => !finalPricedCardNums.has(n));
     if (lostCardNums.length > 0) {
-      console.log(`  [DIC-1334] final artifact keeps ${finalCoverage}/${scrapedCoverage} priced cardNumbers; ${lostCardNums.length} not priced in final artifact (examined sample: ${lostCardNums.slice(0, 5).join(', ')})`);
+      console.log(`  [DIC-1334] final artifact keeps ${finalCoverage}/${scrapedCoverage} freshly-proven priced cardNumbers (${finalPricedCardNums.size} total incl. preservation); ${lostCardNums.length} not priced in final artifact (examined sample: ${lostCardNums.slice(0, 5).join(', ')})`);
     }
   }
 
   // Fix totalCards to reflect actual unique cards
   database.totalCards = Object.keys(database.cards).length;
+
+  // DIC-1482: hard priced-payload decrease gate + machine-readable rejection
+  // manifest. Every previously priced printing that is unpriced (or gone) in
+  // the final artifact must carry a per-print, independently re-verifiable
+  // rejection reason — otherwise the build fails closed BEFORE the canonical
+  // write, so a silent decrease can never reach a committed snapshot
+  // (the 48→20 hBD24 drop the 2026-09-19 candidate shipped). Rows preserved
+  // by the DIC-1482 last-known-good pass above never land here: they are
+  // still priced. The manifest is written atomically even when empty, so
+  // data/price-rejections.json always reflects the latest refresh.
+  {
+    // DIC-1484 CR blocker 1: independently derived removal evidence. A
+    // previously priced printing may be reported as removed ONLY when the
+    // sources this refresh actually read no longer carry it — the official
+    // catalog no longer lists that printing identity AND the scrape no longer
+    // lists its cardNumber. Absence from the rebuilt map is the very fact the
+    // label asserts, so it cannot authorize itself: if either live source
+    // still carries the printing, its disappearance is a rebuild defect and
+    // stays an uncovered violation that fails the build.
+    const officialPrintingKeys = new Set(Object.keys(officialCards));
+    const catalogRemovedIds = new Set();
+    for (const [prevId, prevCard] of Object.entries(prevCards)) {
+      if (database.cards[prevId]) continue;
+      if (officialPrintingKeys.has(prevId)) continue;
+      if (prevCard?.cardNumber && scrapedCardNumbers.has(prevCard.cardNumber)) continue;
+      catalogRemovedIds.add(prevId);
+    }
+
+    const dic1482Rejections = [];
+    for (const [prevId, prevCard] of Object.entries(prevCards)) {
+      if (!isPricedRow(prevCard)) continue;
+      const nextCard = database.cards[prevId];
+      if (nextCard && isPricedRow(nextCard)) continue;
+      if (!nextCard) {
+        // No rejection is emitted without evidence — the gate then reports the
+        // loss as an uncovered `priced-row-removed` violation.
+        if (catalogRemovedIds.has(prevId)) {
+          dic1482Rejections.push(makeRejection(prevId, prevCard, 'printing-removed-from-catalog'));
+        }
+        continue;
+      }
+      if (ambiguityNulledIds.has(prevId)) {
+        dic1482Rejections.push(makeRejection(prevId, prevCard, 'ambiguous-promo-identity'));
+        continue;
+      }
+      const verdict = classifyExactPrintPayload(prevCard);
+      // A proven previous payload with no rejection reason cannot be covered
+      // — the gate below will refuse to ship, which is exactly the contract.
+      if (!verdict.proven && verdict.reason !== 'unpriced') {
+        dic1482Rejections.push(makeRejection(prevId, prevCard, verdict.reason));
+      }
+    }
+    const gate = evaluatePriceRegressionGate({
+      previousCards: prevCards,
+      nextCards: database.cards,
+      rejections: dic1482Rejections,
+      // An exact printing the scrape freshly matched carries the source's own
+      // current listing — fewer prices[] entries there is the source's claim,
+      // not a silent drop. Per printing, never per cardNumber.
+      freshlyScrapedPrintingIds,
+      ambiguousIds: ambiguityNulledIds,
+      removedIds: catalogRemovedIds,
+    });
+    const manifest = buildPriceRejectionManifest({
+      label: 'build-database',
+      previousCards: prevCards,
+      nextCards: database.cards,
+      rejections: dic1482Rejections,
+    });
+    writeJsonAtomic(path.join(DATA_DIR, 'price-rejections.json'), manifest);
+    console.log(
+      `  [DIC-1482] priced metrics rows ${gate.before.pricedRows}→${gate.after.pricedRows}, `
+      + `uniqueCardNumbers ${gate.before.pricedUniqueCardNumbers}→${gate.after.pricedUniqueCardNumbers}, `
+      + `entries ${gate.before.priceEntries}→${gate.after.priceEntries}; `
+      + `rejections=${dic1482Rejections.length}`
+    );
+    if (!gate.ok) {
+      throw new Error(formatGateViolations('build-database refused to ship', gate.violations));
+    }
+  }
 
   // Write database.json
   fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(database, null, 2)}\n`, 'utf-8');

@@ -33,6 +33,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { classifyExactPrintPayload } from './lib/price-regression-gate.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(__dirname, '..');
@@ -113,6 +114,11 @@ for (const f of fs.readdirSync(historyDir)) {
   if (fs.statSync(p).isFile()) preRunBytes.set(p, fs.readFileSync(p));
 }
 if (fs.existsSync(scrapeLogPath)) preRunBytes.set(scrapeLogPath, fs.readFileSync(scrapeLogPath));
+// DIC-1482: every build run also (re)writes the price-rejection manifest —
+// snapshot it so the fixture builds cannot leave the committed manifest
+// describing a fixture run instead of the real refresh that produced it.
+const rejectionManifestPath = path.join(repo, 'data/price-rejections.json');
+if (fs.existsSync(rejectionManifestPath)) preRunBytes.set(rejectionManifestPath, fs.readFileSync(rejectionManifestPath));
 
 try {
   const baseline = JSON.parse(originalDb);
@@ -191,13 +197,26 @@ try {
     // null/empty unless its rarity equals the origin rarity.
     // The important invariant: no cross-fill via cardNumber fallback. If the HR
     // row got priced, it must be because its rarity exactly matched the emitted
-    // listing, not because it borrowed the C listing.
+    // listing — or (DIC-1482) because the build preserved the row's OWN
+    // last source-proven exact-print payload from the previous database. A
+    // preserved payload carries the previous row's value and timestamp and its
+    // provenance proves this exact printing; it never borrows the C listing.
     if (hrPrice != null) {
-      assert.equal(
-        hrRow.rarity,
-        cRow.rarity,
-        'HR row must only be priced when its rarity exactly matches the source listing (no cross-fill)',
-      );
+      const prevHr = Object.values(JSON.parse(originalDb).cards)
+        .find((c) => c.id === hrRow.id);
+      const preservedLastKnownGood = Boolean(prevHr)
+        && classifyExactPrintPayload(prevHr).proven
+        && hrRow.sellPrice === prevHr.sellPrice
+        && hrRow.timestamp === prevHr.timestamp;
+      if (!preservedLastKnownGood) {
+        assert.equal(
+          hrRow.rarity,
+          cRow.rarity,
+          'HR row must only be priced when its rarity exactly matches the source listing (no cross-fill)',
+        );
+      } else {
+        console.log(`  ✓ HR row kept its own last source-proven exact-print payload (DIC-1482 preservation, ¥${hrRow.sellPrice})`);
+      }
     }
     // The C (origin) row must be priced — it received the emitted listing.
     assert.ok(cPrice != null && cPrice > 0, 'origin C row must receive the exact C listing');

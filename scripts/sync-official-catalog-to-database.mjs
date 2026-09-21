@@ -9,6 +9,15 @@ import {
 } from './lib/preserve-market-fields.js';
 import { printingId, imageSuffix } from './lib/printing-identity.js';
 import { broadcastYtStats } from './lib/yt-stats-fanout.js';
+import {
+  classifyExactPrintPayload,
+  evaluatePriceRegressionGate,
+  buildPriceRejectionManifest,
+  formatGateViolations,
+  writeJsonAtomic,
+  makeRejection,
+  isPricedRow,
+} from './lib/price-regression-gate.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(__dirname, '..');
@@ -281,18 +290,72 @@ export function syncOfficialCatalogToDatabase({
   const ytStatsBroadcast = broadcastYtStats(db.cards, previousCards);
 
   let pruned = 0;
+  const prunedIds = new Set();
   for (const [id, card] of Object.entries(db.cards)) {
     const sourceProduct = card?.sourceProduct || card?.series || '';
     if (!canonicalProducts.has(sourceProduct)) continue;
     if (canonicalSignatures.has(dbCardSignature(id, card))) continue;
     delete db.cards[id];
+    prunedIds.add(id);
     pruned++;
+  }
+
+  // DIC-1482: the official catalog refresh must ATOMICALLY preserve the last
+  // source-proven exact-print payload — any priced printing that comes out of
+  // the upsert+prune passes unpriced (or deleted) needs a per-print,
+  // re-verifiable rejection, otherwise the sync throws BEFORE any byte
+  // reaches disk. Combined with the temp-file+rename write below, a refresh
+  // can only ever move the snapshot from one complete, gate-clean state to
+  // another — the 0↔N priced-snapshot oscillation has no path left.
+  const dic1482Rejections = [];
+  for (const [prevId, prevCard] of Object.entries(previousCards)) {
+    if (!isPricedRow(prevCard)) continue;
+    const nextCard = db.cards[prevId];
+    if (nextCard && isPricedRow(nextCard)) continue;
+    if (!nextCard) {
+      // DIC-1484 CR blocker 1: the prune pass above is the ONLY lawful way a
+      // row leaves this artifact, and `prunedIds` is its independently derived
+      // record. A row that vanished without being pruned gets no rejection
+      // label — the gate reports it as an uncovered removal and the sync
+      // throws before any byte reaches disk.
+      if (prunedIds.has(prevId)) {
+        dic1482Rejections.push(makeRejection(prevId, prevCard, 'pruned-not-in-official-catalog'));
+      }
+      continue;
+    }
+    const verdict = classifyExactPrintPayload(prevCard);
+    if (!verdict.proven && verdict.reason !== 'unpriced') {
+      dic1482Rejections.push(makeRejection(prevId, prevCard, verdict.reason));
+    }
+  }
+  const gate = evaluatePriceRegressionGate({
+    previousCards,
+    nextCards: db.cards,
+    rejections: dic1482Rejections,
+    prunedIds,
+  });
+  if (!gate.ok) {
+    throw new Error(formatGateViolations('official catalog sync refused to write', gate.violations));
   }
 
   db.lastUpdated = new Date().toISOString();
   db.totalCards = Object.keys(db.cards).length;
-  fs.writeFileSync(databasePath, `${JSON.stringify(db, null, 2)}\n`, 'utf8');
-  return { upserted, sellPreserved, pruned, ytStatsBroadcast, totalCards: db.totalCards };
+  writeJsonAtomic(databasePath, db);
+  const manifest = buildPriceRejectionManifest({
+    label: 'sync-official-catalog',
+    previousCards,
+    nextCards: db.cards,
+    rejections: dic1482Rejections,
+  });
+  writeJsonAtomic(path.join(path.dirname(databasePath), 'price-rejections.json'), manifest);
+  return {
+    upserted,
+    sellPreserved,
+    pruned,
+    ytStatsBroadcast,
+    totalCards: db.totalCards,
+    priceGate: { before: gate.before, after: gate.after, rejections: dic1482Rejections.length },
+  };
 }
 
 function main() {

@@ -45,7 +45,26 @@ class NoopResizeObserver {
 globalThis.ResizeObserver = NoopResizeObserver;
 dom.window.ResizeObserver = NoopResizeObserver;
 
-const rawDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
+const liveDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
+
+// DIC-1127 / DIC-1482: the yen literals this suite pins (CHOSEN_PRICE ¥9,980)
+// are BEHAVIOUR — "the alert fires when the exact version enters the interval" —
+// not a live-market reading. hBP04-005's PARALLEL listing was ¥9,980 in the
+// 2026-08-24 scrape this assertion was written against and ¥8,980 in the
+// 2026-09-19 one, so reading the nightly catalog makes a market move look like
+// an alert-pipeline break. `frozenDatabase` pins only the fixture's own card
+// numbers (hBP04-005 is one) and leaves the rest of the catalog live.
+//
+// DIC-1287: in Node — as on native — `src/utils/staticData` resolves the BASE
+// variant, which returns the INLINED `public/data/database.json` module instead
+// of fetching it, so the fetch stub below never runs on the render path and
+// re-pointing it alone would change nothing. The frozen dataset therefore
+// re-points that shared JSON module before the first render, exactly as
+// scripts/test-deck-editor-copy.mjs does.
+const { frozenDatabase } = await import('./lib/frozen-price-fixture.mjs');
+const rawDb = frozenDatabase(liveDb);
+const bundledDb = (await import('../public/data/database.json')).default;
+bundledDb.cards = rawDb.cards;
 
 // The screen loads its catalog over fetch(). Serve the shipped file so the render
 // path is unchanged — and so any OTHER request the page makes is a failure.

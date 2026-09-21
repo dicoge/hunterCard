@@ -452,7 +452,7 @@ test('every real default is playable, and plain whenever the source lists one', 
   assert.ok(plainDefaults > 500, `too few plain defaults to be meaningful (${plainDefaults})`);
 });
 
-test('hBP04-005 really defaults to the ¥980 plain printing in the shipped data', () => {
+test('hBP04-005 really defaults to the ¥580 plain printing in the shipped data', () => {
   const chosen = REAL_INDEX.get('hBP04-005');
   assert.equal(chosen.id, 'hBP04-005#BASE');
   assert.equal(chosen.printingLabel, 'ラプラス・ダークネス');
@@ -461,15 +461,23 @@ test('hBP04-005 really defaults to the ¥980 plain printing in the shipped data'
     {},
     REAL.priceRecords,
   );
-  assert.equal(gap.total, 980, 'not ¥69,800 (signed) and not ¥150 (store buy price)');
+  // ¥580 is the hBP04 row's OWN 2026-09-19 listing. The ¥980 this pinned before
+  // came from the ent07 aggregate row, whose listing image resolves to a foreign
+  // product path, so DIC-1482 fails it closed as cross-product-image. Pinning a
+  // yen value is not the invariant — defaulting to the plain tier is, and ¥580
+  // is still neither the signed printing nor a store buy price.
+  assert.equal(gap.total, 580, 'not ¥69,800 (signed) and not ¥150 (store buy price)');
   assert.equal(REAL_INDEX.get('hBP04-057').id, 'hBP04-057#BASE');
 });
 
 test('an explicit base reprint is a separate, separately priced deck choice', () => {
-  // hBP02-084 ships both みっころね24 ¥120 and みっころね24(hBP04) ¥180; hSD01-017
+  // hBP02-084 ships both みっころね24 ¥80 and みっころね24(hBP04) ¥180; hSD01-017
   // ships マネちゃん ¥80 and マネちゃん(hBP04) ¥120. Both printings must be
   // offered, both must be priced, and the cheaper original must win the default.
-  for (const [cardNumber, base, reprint] of [['hBP02-084', 120, 180], ['hSD01-017', 80, 120]]) {
+  // hBP02-084's original tracked ¥120 until the 2026-09-19 scrape settled it at
+  // ¥80 — the invariant is that both printings stay separately priced from their
+  // own listings, not any particular yen value.
+  for (const [cardNumber, base, reprint] of [['hBP02-084', 80, 180], ['hSD01-017', 80, 120]]) {
     const group = REAL_GROUPS.find((g) => g.cardNumber === cardNumber);
     const ids = group.variants.map((v) => v.id);
     assert.ok(ids.includes(`${cardNumber}#BASE`), `${cardNumber} must offer the original printing`);

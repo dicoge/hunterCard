@@ -52,6 +52,10 @@ for (const f of fs.readdirSync(historyDir)) {
   if (fs.statSync(p).isFile()) preRunBytes.set(p, fs.readFileSync(p));
 }
 if (fs.existsSync(scrapeLogPath)) preRunBytes.set(scrapeLogPath, fs.readFileSync(scrapeLogPath));
+// DIC-1482: every build run rewrites the price-rejection manifest — snapshot
+// it so the fixture builds cannot leave it describing a fixture run.
+const rejectionManifestPath = path.join(repo, 'data/price-rejections.json');
+if (fs.existsSync(rejectionManifestPath)) preRunBytes.set(rejectionManifestPath, fs.readFileSync(rejectionManifestPath));
 
 const IMG = (product, cid) => `https://card.yuyu-tei.jp/hocg/100_140/${product}/${cid}.jpg`;
 const NOW = new Date().toISOString();
@@ -124,6 +128,30 @@ try {
     seriesWithPrices: 1,
     pricingUnavailable: false,
   };
+  // DIC-1482: the committed catalog now legitimately prices several probe
+  // cardNumbers (the exact-print recovery landed the same yuyu values these
+  // fixtures replay), and the build's last-known-good preservation would
+  // carry those previous payloads onto the rebuilt rows — masking what THIS
+  // test measures: whether the FIXTURE listings alone can attach. Null the
+  // probe cardNumbers' payloads in the pre-build database so the only
+  // possible price source is the fixture; the original bytes are restored
+  // in the finally block.
+  {
+    const PROBE_NUMBERS = new Set(['hBP01-001', 'hBP01-002', 'hBP01-006', 'hBP01-009', 'hBP01-010']);
+    const stub = JSON.parse(originalDb);
+    for (const card of Object.values(stub.cards)) {
+      if (!PROBE_NUMBERS.has(card.cardNumber)) continue;
+      card.sellPrice = null;
+      card.prices = [];
+      card.yuyuName = '';
+      card.yuyuImage = '';
+      card.timestamp = '';
+      if (card.priceHistory) card.priceHistory = {};
+      if (card.priceHistoryMeta) delete card.priceHistoryMeta;
+      if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
+    }
+    fs.writeFileSync(dbPath, `${JSON.stringify(stub, null, 2)}\n`);
+  }
   const build = runBuild(fixture, tmp, 'contract');
   assert.equal(build.status, 0, `fixture build must complete\n${build.stdout}\n${build.stderr}`);
   const cards = cardsOf();

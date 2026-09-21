@@ -34,6 +34,7 @@ import {
   type CardRecord,
   type CardResult,
   type DatabaseSchema,
+  dedupeListings,
 } from '../utils/canonicalCardRecord';
 
 // ── Server-side search constants ──
@@ -174,9 +175,45 @@ export function searchCards(database: DatabaseSchema, query: string, nameMap: Re
     return aSuffix - bSuffix;
   });
 
+  // DIC-1482: a card number is stored as one row per set it was printed in, and
+  // only SOME of those rows carry listings. The dedupe above elects ONE row to
+  // represent the number, so the hit used to carry just that row's listings —
+  // hBP01-024's elected row lists the ¥120 BASE alone while the number really
+  // ships BASE / PARALLEL/HR / PARALLEL/hBP07. `buildPriceVersions` reads
+  // `prices`, so a hit missing its siblings builds a version list that cannot
+  // contain the printing the user is looking at, and `resolveDisplayedPrintingIndex`
+  // (which needs >= 2 versions and a unique art-token match) can no longer prove
+  // an identity at all — CardDetail then withholds the favorite and 收藏數量
+  // actions on a card that is perfectly resolvable.
+  //
+  // `canonicalCardRecord.resolve()` already merges listings across every row for
+  // exactly this reason; this is the same merge with the same dedupe, kept in
+  // lock-step with it, and fed THROUGH the mapper so release filters still strip
+  // per-listing buy fields. Card-level `sellPrice` is untouched: it stays the
+  // documented card-number minimum.
+  const rowsByNumber = new Map<string, CardRecord[]>();
+  for (const c of Object.values(cards) as CardRecord[]) {
+    const key = ((c as any).cardNumber || c.id || '').toLowerCase();
+    if (!key) continue;
+    const list = rowsByNumber.get(key);
+    if (list) list.push(c);
+    else rowsByNumber.set(key, [c]);
+  }
+
   const cardFlags = releaseCardFlags();
   // One mapper, shared with the favorites route (DIC-1430).
-  return deduped.map((c: CardRecord) => toCanonicalCardRecord(c, nameMap, cardFlags));
+  return deduped.map((row: CardRecord) => {
+    const siblings = rowsByNumber.get(((row as any).cardNumber || row.id || '').toLowerCase());
+    const c: CardRecord = siblings && siblings.length > 1
+      ? {
+          ...row,
+          prices: dedupeListings(
+            siblings.flatMap((sibling) => sibling.prices ?? []) as NonNullable<CardRecord['prices']>,
+          ),
+        }
+      : row;
+    return toCanonicalCardRecord(c, nameMap, cardFlags);
+  });
 }
 
 // ── DIC-1427: Pen App/02 sort + filter model ──

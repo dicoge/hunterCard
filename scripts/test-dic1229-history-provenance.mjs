@@ -564,6 +564,9 @@ assert.equal(
   const originalDb = fs.readFileSync(dbPath, 'utf8');
   const originalNative = fs.readFileSync(nativePath, 'utf8');
   const originalScrapeLog = fs.existsSync(scrapeLogPath) ? fs.readFileSync(scrapeLogPath, 'utf8') : null;
+  // DIC-1482: every build run rewrites the price-rejection manifest too.
+  const manifestPath = path.join(path.dirname(dbPath), 'price-rejections.json');
+  const originalManifest = fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, 'utf8') : null;
   const historySnapshot = new Map();
   for (const file of fs.readdirSync(historyDir)) {
     if (!file.endsWith('.json')) continue;
@@ -578,6 +581,11 @@ assert.equal(
       if (fs.existsSync(scrapeLogPath)) fs.unlinkSync(scrapeLogPath);
     } else {
       fs.writeFileSync(scrapeLogPath, originalScrapeLog);
+    }
+    if (originalManifest === null) {
+      if (fs.existsSync(manifestPath)) fs.unlinkSync(manifestPath);
+    } else {
+      fs.writeFileSync(manifestPath, originalManifest);
     }
     const currentFiles = new Set(fs.readdirSync(historyDir).filter((f) => f.endsWith('.json')));
     for (const file of currentFiles) {

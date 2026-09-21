@@ -309,8 +309,23 @@ const REAL = adaptDatabase(RAW_CARDS);
 
 // Real cards spanning plain-only, plain+parallel, plain+parallel+signed,
 // duplicated-label (fail closed) and explicit base-reprint cases.
+// DIC-1482 refresh of these pinned values: the exact-print recovery superseded
+// the stale 2026-08-24 ent07/aggregate rows with each printing's OWN
+// source-listed 2026-09-19 price (the aggregates' duplicate labels otherwise
+// fail the whole label closed).
+//
+// A premium printing is priced exactly when its OWN listing proves it.
+// hBP04-005's (パラレル/サイン) and hBP02-084's (パラレル/箔押し) each carry a
+// listing image on their row's own product path, so each is priced from that
+// listing. Refusing them because the ROW's rarity reads SEC would contradict
+// DIC-1013: rarity describes the card number as a whole and never states which
+// printing a price belongs to. A printing still fails closed when its own
+// evidence is missing or ambiguous — hBP02-017's duplicate-label (パラレル)
+// below is the case that must stay unpriced. The invariant stays exact per-tier
+// pricing from each printing's own listing, never a particular yen value and
+// never a cross-tier borrow.
 const REAL_EXPECTATIONS = [
-  { cardNumber: 'hBP04-005', printings: { BASE: 980, PARALLEL: 9980, 'PARALLEL/SIGN': 69800 } },
+  { cardNumber: 'hBP04-005', printings: { BASE: 580, PARALLEL: 8980, 'PARALLEL/SIGN': 69800 } },
   { cardNumber: 'hBP04-057', printings: { BASE: 120, PARALLEL: 980 } },
   { cardNumber: 'hBP04-041', printings: { BASE: 50, PARALLEL: 180 } },
   { cardNumber: 'hSD01-001', printings: { BASE: 180 } },
@@ -318,12 +333,14 @@ const REAL_EXPECTATIONS = [
   // exact source-listed price, no cross-tier collapse). Update the expectation
   // rather than pin to a stale snapshot — the invariant here is exact per-tier
   // pricing, not any particular yen value.
-  { cardNumber: 'hBP01-044', printings: { BASE: 180, 'PARALLEL/HR': 9980, 'PARALLEL/HBP07': 80 } },
+  { cardNumber: 'hBP01-044', printings: { BASE: 180, 'PARALLEL/HR': 7980, 'PARALLEL/HBP07': 80 } },
   { cardNumber: 'hBP02-017', printings: { BASE: 120 }, unpriced: ['PARALLEL'] },
   // Base reprints: original and hBP04 reprint must BOTH keep their exact price.
   {
     cardNumber: 'hBP02-084',
-    printings: { BASE: 120, HBP04: 180, PARALLEL: 1780, 'PARALLEL/HBP04': 5980, 'PARALLEL/FOIL': 99800 },
+    printings: {
+      BASE: 80, HBP04: 180, PARALLEL: 1780, 'PARALLEL/HBP04': 5980, 'PARALLEL/FOIL': 89800,
+    },
   },
   {
     cardNumber: 'hSD01-017',

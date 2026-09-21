@@ -9,6 +9,18 @@
  * only where a case cannot exist in the shipped data — malformed slots and the
  * exact-version decoys.
  *
+ * The ONE exception is the exact yen figure in §7. yuyu-tei prices are market
+ * data: the nightly scrape rewrites `public/data/database.json`, so a hard-coded
+ * ¥1,280 asserted against the LIVE artefact failed on a day this repo changed
+ * nothing — the 2026-09-19 scrape moved that very listing to ¥980. That literal
+ * is therefore asserted against the FROZEN listings
+ * (scripts/fixtures/frozen-card-prices.json), exactly as the sibling suite
+ * test-tournament-printing-default already does (DIC-1127). Only the INPUT to
+ * that one number is frozen; every other assertion in this file — including the
+ * printing the planner defaults to — still runs on the live database, and §7
+ * additionally guards the live data with the price-independent invariant the
+ * literal was really standing for.
+ *
  * Covers the issue's §9 matrix:
  *   1.  exact 1 / 50 / 20 mapping and per-slot quantities
  *   2.  both real fixture decks import
@@ -40,6 +52,7 @@ import {
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { useDeckStore } from '../src/store/deckStore.ts';
 import platformStorage from '../src/stores/storage.ts';
+import { frozenRawCards } from './lib/frozen-price-fixture.mjs';
 
 const STORE_KEY = 'hunterCard-decks';
 const IMPORTED_AT = '2026-08-17T00:00:00.000Z';
@@ -60,8 +73,16 @@ function resetStore() {
 const august = JSON.parse(fs.readFileSync('data/tournaments/2026-08.json', 'utf8'));
 const july = JSON.parse(fs.readFileSync('data/tournaments/2026-07.json', 'utf8'));
 const rawDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
-const db = adaptDatabase(Object.values(rawDb.cards || {}));
+const liveRows = Object.values(rawDb.cards || {});
+const db = adaptDatabase(liveRows);
 const catalog = buildCatalogIndex(db.cards);
+
+// The same shipped rows with only the fixture-covered card numbers' listings
+// pinned to the frozen snapshot (§7's yen literal). `frozenRawCards` returns
+// ONLY the covered rows, so this is deliberately a narrow, price-only database
+// used for that single assertion — never as the catalog the rest of this file
+// imports decks against, which must stay the full live one.
+const frozenDb = adaptDatabase(frozenRawCards(liveRows));
 
 const augustEvent = august.events[0];
 const deckByCode = (code) => augustEvent.decks.find((d) => d.decklogCode === code);
@@ -156,11 +177,36 @@ await test('a source grade never selects a printing; the slot is defaulted inste
     'the printing is the planner’s declared default, not something the source stated',
   );
   assert.notEqual(oshi.card.unresolvedPrinting, true);
-  // The decisive assertion: the default is the ¥1,280 ordinary printing — never
-  // the ¥29,800 parallel and never the ¥148,000 signed parallel.
+  // The decisive assertion, in two halves.
+  //
+  // First the yen figure, read from the FROZEN listings (DIC-1127): ¥1,280 is
+  // the hbp07 PLAIN listing (.../hbp07/10013.jpg) at freeze time — the very
+  // listing the 2026-09-19 scrape moved to ¥980, which is what failed this gate
+  // on a day this repo changed nothing. The ent07 aggregate that DIC-1482
+  // supersedes as cross-product-image mirrored that same plain listing at
+  // ¥1,280 (that mirroring is precisely what identified it as contamination);
+  // it is absent from the fixture entirely, and its live rows carry no
+  // sellPrice, so neither half below can ever be priced from the aggregate.
   assert.equal(oshi.card.printing, 'BASE');
   assert.equal(
-    resolveExactPrice(oshi.card.cardNumber, oshi.card.printing, db.priceRecords).price, 1280,
+    resolveExactPrice(oshi.card.cardNumber, oshi.card.printing, frozenDb.priceRecords).price, 1280,
+  );
+
+  // Second, the live dataset is still held to what that literal actually stood
+  // for, at whatever price today's scrape publishes: the defaulted printing must
+  // carry an exact price and must undercut BOTH premium siblings. A scrape may
+  // move all three numbers without failing here, but a resolver that started
+  // preferring the parallel or the signed parallel — or a dataset that stopped
+  // pricing the ordinary printing or either decoy — fails immediately.
+  const base = resolveExactPrice(oshi.card.cardNumber, 'BASE', db.priceRecords);
+  const parallel = resolveExactPrice(oshi.card.cardNumber, 'PARALLEL', db.priceRecords);
+  const signed = resolveExactPrice(oshi.card.cardNumber, 'PARALLEL/SIGN', db.priceRecords);
+  assert.equal(base.status, 'ok', 'the ordinary printing must carry an exact price');
+  assert.equal(parallel.status, 'ok', 'precondition: the parallel decoy is really priced');
+  assert.equal(signed.status, 'ok', 'precondition: the signed decoy is really priced');
+  assert.ok(
+    base.price < parallel.price && base.price < signed.price,
+    'the defaulted slot must never price at a premium tier',
   );
 });
 

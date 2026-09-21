@@ -35,6 +35,7 @@ env:
     data/effects-jp.json
     data/effects-zh.json
     data/database.json
+    data/price-rejections.json
     public/data/database.json
     docs/audits/official-catalog-audit.json
     docs/audits/official-production-lag-state.json

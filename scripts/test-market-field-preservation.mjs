@@ -629,6 +629,9 @@ function freshCurrentCard(overrides = {}) {
   const originalDb = fsMod.readFileSync(dbPath, 'utf8');
   const originalNative = fsMod.readFileSync(nativePath, 'utf8');
   const originalScrapeLog = fsMod.existsSync(scrapeLogPath) ? fsMod.readFileSync(scrapeLogPath, 'utf8') : null;
+  // DIC-1482: every build run rewrites the price-rejection manifest too.
+  const manifestPath = pathMod.join(pathMod.dirname(dbPath), 'price-rejections.json');
+  const originalManifest = fsMod.existsSync(manifestPath) ? fsMod.readFileSync(manifestPath, 'utf8') : null;
   const historySnapshot = new Map();
   for (const file of fsMod.readdirSync(historyDir)) {
     if (!file.endsWith('.json')) continue;
@@ -731,6 +734,11 @@ function freshCurrentCard(overrides = {}) {
       if (fsMod.existsSync(scrapeLogPath)) fsMod.unlinkSync(scrapeLogPath);
     } else {
       fsMod.writeFileSync(scrapeLogPath, originalScrapeLog);
+    }
+    if (originalManifest === null) {
+      if (fsMod.existsSync(manifestPath)) fsMod.unlinkSync(manifestPath);
+    } else {
+      fsMod.writeFileSync(manifestPath, originalManifest);
     }
     // Restore the full price-history snapshot. Delete files that the
     // subprocess created and did not exist before; rewrite the rest to
