@@ -9,6 +9,18 @@
  * only where a case cannot exist in the shipped data — malformed slots and the
  * exact-version decoys.
  *
+ * The ONE exception is the exact yen figure in §7. yuyu-tei prices are market
+ * data: the nightly scrape rewrites `public/data/database.json`, so a hard-coded
+ * ¥1,280 asserted against the LIVE artefact failed on a day this repo changed
+ * nothing — the 2026-09-19 scrape moved that very listing to ¥980. That literal
+ * is therefore asserted against the FROZEN listings
+ * (scripts/fixtures/frozen-card-prices.json), exactly as the sibling suite
+ * test-tournament-printing-default already does (DIC-1127). Only the INPUT to
+ * that one number is frozen; every other assertion in this file — including the
+ * printing the planner defaults to — still runs on the live database, and §7
+ * additionally guards the live data with the price-independent invariant the
+ * literal was really standing for.
+ *
  * Covers the issue's §9 matrix:
  *   1.  exact 1 / 50 / 20 mapping and per-slot quantities
  *   2.  both real fixture decks import
@@ -40,6 +52,7 @@ import {
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { useDeckStore } from '../src/store/deckStore.ts';
 import platformStorage from '../src/stores/storage.ts';
+import { frozenRawCards } from './lib/frozen-price-fixture.mjs';
 
 const STORE_KEY = 'hunterCard-decks';
 const IMPORTED_AT = '2026-08-17T00:00:00.000Z';
@@ -60,8 +73,16 @@ function resetStore() {
 const august = JSON.parse(fs.readFileSync('data/tournaments/2026-08.json', 'utf8'));
 const july = JSON.parse(fs.readFileSync('data/tournaments/2026-07.json', 'utf8'));
 const rawDb = JSON.parse(fs.readFileSync('public/data/database.json', 'utf8'));
-const db = adaptDatabase(Object.values(rawDb.cards || {}));
+const liveRows = Object.values(rawDb.cards || {});
+const db = adaptDatabase(liveRows);
 const catalog = buildCatalogIndex(db.cards);
+
+// The same shipped rows with only the fixture-covered card numbers' listings
+// pinned to the frozen snapshot (§7's yen literal). `frozenRawCards` returns
+// ONLY the covered rows, so this is deliberately a narrow, price-only database
+// used for that single assertion — never as the catalog the rest of this file
+// imports decks against, which must stay the full live one.
+const frozenDb = adaptDatabase(frozenRawCards(liveRows));
 
 const augustEvent = august.events[0];
 const deckByCode = (code) => augustEvent.decks.find((d) => d.decklogCode === code);
@@ -157,11 +178,33 @@ await test('a source grade never selects a printing; the slot is defaulted inste
   );
   assert.notEqual(oshi.card.unresolvedPrinting, true);
   // The decisive assertion: the default is the ¥1,280 ordinary printing — never
-  // the ¥29,800 parallel and never the ¥148,000 signed parallel.
+  // the ¥29,800 parallel and never the ¥148,000 signed parallel. Those three
+  // figures are the FROZEN listings (DIC-1127); pinning them against the live
+  // scrape is what made this gate fail on an unrelated day.
   assert.equal(oshi.card.printing, 'BASE');
   assert.equal(
-    resolveExactPrice(oshi.card.cardNumber, oshi.card.printing, db.priceRecords).price, 1280,
+    resolveExactPrice(oshi.card.cardNumber, oshi.card.printing, frozenDb.priceRecords).price, 1280,
   );
+
+  // …and the live dataset is still held to what that literal actually meant, at
+  // whatever price today's scrape publishes: the defaulted printing must really
+  // be priced, and every premium printing of the SAME card number must be dearer
+  // than it. A scrape may move all three numbers without failing here, but a
+  // resolver that started preferring the parallel or the signed parallel — or a
+  // dataset that stopped pricing the ordinary printing — fails immediately.
+  const livePrice = resolveExactPrice(oshi.card.cardNumber, oshi.card.printing, db.priceRecords);
+  assert.equal(livePrice.status, 'ok', 'the live dataset still prices the defaulted printing');
+  let livePremiums = 0;
+  for (const premium of ['PARALLEL', 'PARALLEL/SIGN']) {
+    const resolved = resolveExactPrice(oshi.card.cardNumber, premium, db.priceRecords);
+    if (resolved.status !== 'ok') continue;
+    livePremiums += 1;
+    assert.ok(
+      livePrice.price < resolved.price,
+      `the defaulted printing must undercut ${premium} (${livePrice.price} vs ${resolved.price})`,
+    );
+  }
+  assert.ok(livePremiums > 0, 'precondition: the live data still carries a premium printing here');
 });
 
 await test('the unresolved sentinel itself can never carry a price', () => {
