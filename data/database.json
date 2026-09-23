@@ -4261,32 +4261,18 @@
       "sourceProduct": "ent07",
       "sourceProductName": "",
       "sourceProductText": "",
-      "sellPrice": 8980,
-      "yuyuName": "大神ミオ",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10064.jpg",
-      "prices": [
-        {
-          "name": "大神ミオ",
-          "sellPrice": 8980,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10064.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBD24-064_P.png",
       "localImage": "/images/hBD24-064.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "2026-09-23T12:13:50.813Z",
-      "_rawPricesArchive": [
-        {
-          "name": "大神ミオ",
-          "sellPrice": 8980,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10064.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "skillsJp": {
         "cardNumber": "hBD24-064",
         "name": "大神ミオ",
@@ -6819,32 +6805,18 @@
       "sourceProduct": "ent07",
       "sourceProductName": "",
       "sourceProductText": "",
-      "sellPrice": 980,
-      "yuyuName": "風真いろは(パラレル/ベーシックPRパック vol.1)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg",
-      "prices": [
-        {
-          "name": "風真いろは(パラレル/ベーシックPRパック vol.1)",
-          "sellPrice": 980,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-048_P.png",
       "localImage": "/images/hBP01-048.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "Debut",
-      "timestamp": "2026-09-23T12:13:50.813Z",
-      "_rawPricesArchive": [
-        {
-          "name": "風真いろは(パラレル/ベーシックPRパック vol.1)",
-          "sellPrice": 980,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "ytStats": {
         "subscriberCount": 1150000,
         "totalViewCount": 313187002,
@@ -14957,32 +14929,18 @@
       "sourceProduct": "ent07",
       "sourceProductName": "",
       "sourceProductText": "",
-      "sellPrice": 420,
-      "yuyuName": "白銀ノエル(パラレル/エントリーPRパック vol.3)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10053.jpg",
-      "prices": [
-        {
-          "name": "白銀ノエル(パラレル/エントリーPRパック vol.3)",
-          "sellPrice": 420,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10053.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP02-014_P.png",
       "localImage": "/images/hBP02-014.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "Debut",
-      "timestamp": "2026-09-23T12:13:50.813Z",
-      "_rawPricesArchive": [
-        {
-          "name": "白銀ノエル(パラレル/エントリーPRパック vol.3)",
-          "sellPrice": 420,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10053.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "ytStats": {
         "subscriberCount": 2050000,
         "totalViewCount": 464835783,
@@ -15961,32 +15919,18 @@
       "sourceProduct": "ent07",
       "sourceProductName": "",
       "sourceProductText": "",
-      "sellPrice": 3480,
-      "yuyuName": "大神ミオ(パラレル/2ndアルバム初回生産版)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10107.jpg",
-      "prices": [
-        {
-          "name": "大神ミオ(パラレル/2ndアルバム初回生産版)",
-          "sellPrice": 3480,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10107.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP02-024_P.png",
       "localImage": "/images/hBP02-024.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "Debut",
-      "timestamp": "2026-09-23T12:13:50.813Z",
-      "_rawPricesArchive": [
-        {
-          "name": "大神ミオ(パラレル/2ndアルバム初回生産版)",
-          "sellPrice": 3480,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10107.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "skillsJp": {
         "cardNumber": "hBP02-024",
         "name": "大神ミオ",
@@ -27558,32 +27502,18 @@
       "sourceProduct": "ent07",
       "sourceProductName": "",
       "sourceProductText": "",
-      "sellPrice": 7980,
-      "yuyuName": "猫又おかゆ(パラレル/2ndアルバム数量限定版)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg",
-      "prices": [
-        {
-          "name": "猫又おかゆ(パラレル/2ndアルバム数量限定版)",
-          "sellPrice": 7980,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hSD03-002_P_2.png",
       "localImage": "/images/hSD03-002.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "Debut",
-      "timestamp": "2026-09-23T12:13:50.813Z",
-      "_rawPricesArchive": [
-        {
-          "name": "猫又おかゆ(パラレル/2ndアルバム数量限定版)",
-          "sellPrice": 7980,
-          "rarity": "P",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "skillsJp": {
         "cardNumber": "hSD03-002",
         "name": "猫又おかゆ",
@@ -69042,32 +68972,18 @@
       "sourceProduct": "hCS01",
       "sourceProductName": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
       "sourceProductText": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
-      "sellPrice": 1480,
-      "yuyuName": "さくらみこ(パラレル/1st Anniversary Celebration Set)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10127.jpg",
-      "prices": [
-        {
-          "name": "さくらみこ(パラレル/1st Anniversary Celebration Set)",
-          "sellPrice": 1480,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10127.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP03-030_02_SR.png",
       "localImage": "/images/hBP03-030.jpg",
       "hp": "200",
       "life": "",
       "arts": "アーツ 赤◇◇エリート巫女　120+ 緑+50 \nこのホロメンに付いている〈35P〉1枚につき、このアーツ+20。",
       "bloomLevel": "2nd",
-      "timestamp": "2026-09-23T12:14:01.910Z",
-      "_rawPricesArchive": [
-        {
-          "name": "さくらみこ(パラレル/1st Anniversary Celebration Set)",
-          "sellPrice": 1480,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10127.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "ytStats": {
         "subscriberCount": 2450000,
         "totalViewCount": 1062900151,
@@ -196270,48 +196186,18 @@
       "sourceProduct": "hCS01",
       "sourceProductName": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
       "sourceProductText": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set\n【使用可能カード】セレクションカップ",
-      "sellPrice": 220,
-      "yuyuName": "星街すいせい(パラレル/hEB01)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/heb01/10098.jpg",
-      "prices": [
-        {
-          "name": "星街すいせい(パラレル/hEB01)",
-          "sellPrice": 220,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/heb01/10098.jpg",
-          "buyPrice": 3600,
-          "buyPriceVersion": "HEB01",
-          "buyPriceSource": "fullahead",
-          "buyPriceTimestamp": "2026-09-23T12:16:20.832Z"
-        },
-        {
-          "name": "星街すいせい(パラレル/1st Anniversary Celebration Set)",
-          "sellPrice": 2480,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10125.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP01-081_02_SR.png",
       "localImage": "/images/hBP01-081.jpg",
       "hp": "210",
       "life": "",
       "arts": "アーツ 青青青◇輝く彗星　60+ 赤+50 \nこのホロメンの青エール2枚をアーカイブできる:このホロメンに重なっているホロメン1枚につき、このアーツ+60（このアーツは相手のバックホロメンも対象にできる）。",
       "bloomLevel": "2nd",
-      "timestamp": "2026-09-23T12:14:01.910Z",
-      "_rawPricesArchive": [
-        {
-          "name": "星街すいせい(パラレル/hEB01)",
-          "sellPrice": 220,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/heb01/10098.jpg"
-        },
-        {
-          "name": "星街すいせい(パラレル/1st Anniversary Celebration Set)",
-          "sellPrice": 2480,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10125.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "ytStats": {
         "subscriberCount": 2920000,
         "totalViewCount": 1794798230,
@@ -211570,32 +211456,18 @@
       "sourceProduct": "hCS01",
       "sourceProductName": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
       "sourceProductText": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
-      "sellPrice": 1780,
-      "yuyuName": "白上フブキ(パラレル/1st Anniversary Celebration Set)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10126.jpg",
-      "prices": [
-        {
-          "name": "白上フブキ(パラレル/1st Anniversary Celebration Set)",
-          "sellPrice": 1780,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10126.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP02-013_02_SR.png",
       "localImage": "/images/hBP02-013.jpg",
       "hp": "180",
       "life": "",
       "arts": "アーツ 白白◇マスコットたちの饗宴　80+ 紫+50 \n自分のステージのマスコット1枚につき、このアーツ+20。",
       "bloomLevel": "2nd",
-      "timestamp": "2026-09-23T12:14:01.910Z",
-      "_rawPricesArchive": [
-        {
-          "name": "白上フブキ(パラレル/1st Anniversary Celebration Set)",
-          "sellPrice": 1780,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10126.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "ytStats": {
         "subscriberCount": 2680000,
         "totalViewCount": 809832813,
@@ -269071,32 +268943,18 @@
       "sourceProduct": "hCS01",
       "sourceProductName": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
       "sourceProductText": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
-      "sellPrice": 1480,
-      "yuyuName": "博衣こより(パラレル/1st Anniversary Celebration Set)",
-      "yuyuImage": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10128.jpg",
-      "prices": [
-        {
-          "name": "博衣こより(パラレル/1st Anniversary Celebration Set)",
-          "sellPrice": 1480,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10128.jpg"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP04-013_02_SR.png",
       "localImage": "/images/hBP04-013.jpg",
       "hp": "200",
       "life": "",
       "arts": "アーツ 白◇◇かくせいのこより　160 緑+50 \nこのホロメンに#こよラボを持つサポートカードが付いている時、自分のデッキから、#こよラボを持つサポートカード1枚を公開し、手札に加える。そしてデッキをシャッフルする。",
       "bloomLevel": "2nd",
-      "timestamp": "2026-09-23T12:14:01.910Z",
-      "_rawPricesArchive": [
-        {
-          "name": "博衣こより(パラレル/1st Anniversary Celebration Set)",
-          "sellPrice": 1480,
-          "rarity": "SR",
-          "imageUrl": "https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10128.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "ytStats": {
         "subscriberCount": 1370000,
         "totalViewCount": 762522163,
@@ -360385,36 +360243,18 @@
       "sourceProduct": "hBP09",
       "sourceProductName": "ブースターパック「ボリュームヴォルテックス」",
       "sourceProductText": "ブースターパック「ボリュームヴォルテックス」\n【使用可能カード】セレクションカップ",
-      "sellPrice": 39800,
-      "yuyuName": "カエラ・コヴァルスキア(パラレル/サイン)",
-      "yuyuImage": "https://card.yuyu-tei.jp/noimage_100_140.jpg",
-      "prices": [
-        {
-          "name": "カエラ・コヴァルスキア(パラレル/サイン)",
-          "sellPrice": 39800,
-          "rarity": "SEC",
-          "imageUrl": "https://card.yuyu-tei.jp/noimage_100_140.jpg",
-          "buyPrice": 22000,
-          "buyPriceVersion": "SEC",
-          "buyPriceSource": "fullahead",
-          "buyPriceTimestamp": "2026-09-23T12:16:20.832Z"
-        }
-      ],
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP09/hBP09-004_SEC.png",
       "localImage": "/images/hBP09-004.jpg",
       "hp": "",
       "life": "",
       "arts": "",
       "bloomLevel": "",
-      "timestamp": "2026-09-23T12:10:10.175Z",
-      "_rawPricesArchive": [
-        {
-          "name": "カエラ・コヴァルスキア(パラレル/サイン)",
-          "sellPrice": 39800,
-          "rarity": "SEC",
-          "imageUrl": "https://card.yuyu-tei.jp/noimage_100_140.jpg"
-        }
-      ],
+      "timestamp": "",
+      "_rawPricesArchive": [],
       "skillsJp": {
         "cardNumber": "hBP09-004",
         "name": "カエラ・コヴァルスキア",
