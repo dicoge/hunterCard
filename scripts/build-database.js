@@ -2144,6 +2144,44 @@ async function buildDatabase() {
       catalogRemovedIds.add(prevId);
     }
 
+    // DIC-1167 (2026-09-23): increase-side provenance gate. The decrease gate
+    // below only sees payloads that VANISH, so a row the previous artifact
+    // shipped fail-closed (unpriced) that this refresh freshly re-prices used
+    // to bypass provenance entirely — the 2026-09-23 scrape re-shipped ten
+    // DIC-1482-rejected cross-product / no-provenance payloads through exactly
+    // this blind spot. A newly-priced row now ships only when its OWN current
+    // payload is exact-print proven under `classifyExactPrintPayload` — the
+    // same classifier the decrease gate re-verifies rejections with. An
+    // unproven fresh price is stripped back to the fail-closed shape and
+    // recorded in the manifest under its derived reason, so every refused
+    // increase is auditable per printing. Truly yuyu-only rows (no official
+    // printing identity to prove against) keep the DIC-1334 fallback
+    // behaviour. priceHistory is deliberately NOT touched: the Step 6
+    // DIC-1229 gate owns history provenance.
+    const increaseRejections = [];
+    for (const [id, card] of Object.entries(database.cards)) {
+      if (!isPricedRow(card)) continue;
+      const prevCard = prevCards[id];
+      if (prevCard && isPricedRow(prevCard)) continue;
+      const verdict = classifyExactPrintPayload(card);
+      if (verdict.proven) continue;
+      if (verdict.reason === 'missing-source-product' && !officialPrintingKeys.has(id)) continue;
+      increaseRejections.push(makeRejection(id, card, verdict.reason));
+      card.sellPrice = null;
+      card.prices = [];
+      card.yuyuName = '';
+      card.yuyuImage = '';
+      card.timestamp = '';
+      if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
+    }
+    if (increaseRejections.length > 0) {
+      const sample = increaseRejections.slice(0, 5).map((r) => `${r.id} [${r.reason}]`).join(', ');
+      console.log(
+        `  [DIC-1167] fail-closed ${increaseRejections.length} newly-priced row(s) without exact-print provenance: `
+        + `${sample}${increaseRejections.length > 5 ? ` +${increaseRejections.length - 5} more` : ''}`
+      );
+    }
+
     const dic1482Rejections = [];
     for (const [prevId, prevCard] of Object.entries(prevCards)) {
       if (!isPricedRow(prevCard)) continue;
@@ -2168,10 +2206,14 @@ async function buildDatabase() {
         dic1482Rejections.push(makeRejection(prevId, prevCard, verdict.reason));
       }
     }
+    // The manifest carries BOTH rejection families: decreases the gate
+    // re-verifies below, and DIC-1167 refused increases (prev-unpriced rows,
+    // so the decrease gate never consults them — they are audit trail).
+    const allRejections = [...dic1482Rejections, ...increaseRejections];
     const gate = evaluatePriceRegressionGate({
       previousCards: prevCards,
       nextCards: database.cards,
-      rejections: dic1482Rejections,
+      rejections: allRejections,
       // An exact printing the scrape freshly matched carries the source's own
       // current listing — fewer prices[] entries there is the source's claim,
       // not a silent drop. Per printing, never per cardNumber.
@@ -2183,14 +2225,14 @@ async function buildDatabase() {
       label: 'build-database',
       previousCards: prevCards,
       nextCards: database.cards,
-      rejections: dic1482Rejections,
+      rejections: allRejections,
     });
     writeJsonAtomic(path.join(DATA_DIR, 'price-rejections.json'), manifest);
     console.log(
       `  [DIC-1482] priced metrics rows ${gate.before.pricedRows}→${gate.after.pricedRows}, `
       + `uniqueCardNumbers ${gate.before.pricedUniqueCardNumbers}→${gate.after.pricedUniqueCardNumbers}, `
       + `entries ${gate.before.priceEntries}→${gate.after.priceEntries}; `
-      + `rejections=${dic1482Rejections.length}`
+      + `rejections=${allRejections.length} (decrease=${dic1482Rejections.length}, refused-increase=${increaseRejections.length})`
     );
     if (!gate.ok) {
       throw new Error(formatGateViolations('build-database refused to ship', gate.violations));

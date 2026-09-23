@@ -212,7 +212,11 @@ console.log('\n── Regression: hBP02-003 Marine ──');
   if (!signed) fail('hBP02-003 SEC signed printing missing from database');
   else {
     eq(signed.rarity, 'SEC', 'hBP02-003 signed row exists as a canonical official printing');
-    eq(signed.buyPrice, 45000, 'signed official printing row carries exact SEC-token buy price');
+    // 2026-09-23 buy scrape: torecolo re-quoted its exact hBP02-003-SEC token
+    // 45000→55000 (data/buy-prices/torecolo-prices.json) — same source, same
+    // SEC rarity token, no cross-printing borrow. The invariant is the exact
+    // SEC-token quote, not any particular yen value.
+    eq(signed.buyPrice, 55000, 'signed official printing row carries exact SEC-token buy price');
     // DIC-1482: this row may now carry its OWN source-proven signed listing
     // (宝鐘マリン(パラレル/サイン), imaged on the hBP02 product path). What it must
     // never retain is a listing belonging to a DIFFERENT printing — the base /
