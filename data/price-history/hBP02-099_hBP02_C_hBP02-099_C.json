@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-099_hBP02_C_hBP02-099_C",
+  "cardNumber": "hBP02-099",
+  "name": "すこん部",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-099_hBP02_C_hBP02-099_C",
+      "sourceProduct": "hBP02"
+    }
+  ],
+  "lastUpdated": "2026-09-23T12:15:56.850Z",
+  "nameZh": "詩音部"
+}

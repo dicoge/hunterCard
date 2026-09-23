@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP09-105_hBP09_SR_hBP09-105_SR",
+  "cardNumber": "hBP09-105",
+  "name": "BIG3",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 2480,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-105_hBP09_SR_hBP09-105_SR",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-09-23T12:15:56.976Z",
+  "nameZh": "BIG3"
+}
