@@ -2,14 +2,14 @@
   "cardId": "hBP06-049",
   "name": "ムーナ・ホシノヴァ",
   "nameZh": "姆娜·霍希諾瓦",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.39,
   "confidence": 0.9,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.6,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.342Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-23T12:16:10.184Z",
+  "dataPoints": 69
 }

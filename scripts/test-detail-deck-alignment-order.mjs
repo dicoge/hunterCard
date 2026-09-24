@@ -150,4 +150,133 @@ assert.equal(multiIds[0], 'hBP02-018_hBP02_C', 'hBP02 origin row must come first
 assert.equal(multiIds[1], 'hBP02-018_hBP08_HR', 'hBP02 reprint follows origin');
 assert.equal(multiIds[2], 'hBP03-001_hBP03_C', 'hBP03 group preserves its cross-group position');
 
+// ---- same-rank ties keep the previous committed order (DIC-1430 / PR #215) --
+// The 2026-09-23 daily rebuild re-read hBP07 in official-site listing order,
+// which put the `02_C` reprint row before the `HR` reprint row. Both rows rank
+// identically (non-base prices, same richness, non-origin source), so the old
+// input-order tie-break inverted 724 sibling pairs and flipped the DIC-1430
+// exact-print search election for hBP01-024 from HR to 02_C. With
+// `previousCards` the previous relative order must win the tie; a row absent
+// from the previous database still falls back to input order.
+const tieRepro = {
+  cards: {
+    'hBP01-024_hBP01_C_hBP01-024_C': {
+      id: 'hBP01-024_hBP01_C_hBP01-024_C',
+      cardNumber: 'hBP01-024',
+      sourceProduct: 'hBP01',
+      rarity: 'C',
+      prices: [{ name: 'ベスティア・ゼータ', sellPrice: 30 }],
+    },
+    // rebuild input order: 02_C listed before HR (official-site order)
+    'hBP01-024_hBP07_C_hBP01-024_02_C': {
+      id: 'hBP01-024_hBP07_C_hBP01-024_02_C',
+      cardNumber: 'hBP01-024',
+      sourceProduct: 'hBP07',
+      rarity: 'C',
+      prices: [{ name: 'ベスティア・ゼータ(パラレル/hBP07)', sellPrice: 50 }],
+    },
+    'hBP01-024_hBP07_HR_hBP01-024_HR': {
+      id: 'hBP01-024_hBP07_HR_hBP01-024_HR',
+      cardNumber: 'hBP01-024',
+      sourceProduct: 'hBP07',
+      rarity: 'HR',
+      prices: [{ name: 'ベスティア・ゼータ(パラレル/HR)', sellPrice: 3480 }],
+    },
+  },
+};
+const previousCommitted = {
+  'hBP01-024_hBP01_C_hBP01-024_C': {},
+  'hBP01-024_hBP07_HR_hBP01-024_HR': {},
+  'hBP01-024_hBP07_C_hBP01-024_02_C': {},
+};
+const { cards: tieOrdered } = orderCardsForDetailAlignment(tieRepro.cards, previousCommitted);
+const tieIds = Object.keys(tieOrdered);
+assert.deepEqual(
+  tieIds,
+  [
+    'hBP01-024_hBP01_C_hBP01-024_C',
+    'hBP01-024_hBP07_HR_hBP01-024_HR',
+    'hBP01-024_hBP07_C_hBP01-024_02_C',
+  ],
+  'same-rank reprint siblings must keep the previous committed order (HR before 02_C)',
+);
+
+// Without previousCards the tie must still fall back to input order — the
+// tie-break is additive, never a behavior change for callers that omit it.
+const { cards: tieNoPrev } = orderCardsForDetailAlignment(tieRepro.cards);
+assert.deepEqual(
+  Object.keys(tieNoPrev),
+  [
+    'hBP01-024_hBP01_C_hBP01-024_C',
+    'hBP01-024_hBP07_C_hBP01-024_02_C',
+    'hBP01-024_hBP07_HR_hBP01-024_HR',
+  ],
+  'omitting previousCards must preserve the input-order tie-break',
+);
+
+// A brand-new row (absent from previousCards) keeps the input-order fallback
+// and stays behind the previously-known same-rank sibling it followed.
+const freshRepro = {
+  cards: {
+    ...tieRepro.cards,
+    'hBP01-024_hBP09_C_hBP01-024_03_C': {
+      id: 'hBP01-024_hBP09_C_hBP01-024_03_C',
+      cardNumber: 'hBP01-024',
+      sourceProduct: 'hBP09',
+      rarity: 'C',
+      prices: [{ name: 'ベスティア・ゼータ(パラレル/hBP09)', sellPrice: 50 }],
+    },
+  },
+};
+const { cards: freshOrdered } = orderCardsForDetailAlignment(freshRepro.cards, previousCommitted);
+assert.equal(
+  Object.keys(freshOrdered)[1],
+  'hBP01-024_hBP07_HR_hBP01-024_HR',
+  'previous-order tie-break must still elect HR first among known siblings when a fresh row joins the group',
+);
+assert.equal(
+  Object.keys(freshOrdered)[3],
+  'hBP01-024_hBP09_C_hBP01-024_03_C',
+  'a row absent from previousCards must keep its input-order (appended) position',
+);
+
+// ---- interleaved new row must not mask the previous-order restoration ------
+// Regression for the non-transitive comparator (DIC-1167 remediation): with a
+// NEW row sitting BETWEEN two known same-rank siblings whose previous order is
+// inverted relative to the rebuild input — current [A, new, B], previous
+// [B, A] — the old comparator compared A/new and new/B by input position and
+// never got to apply the B-before-A previous order, shipping [A, new, B].
+// The known-row subsequence must be restored to previous order (B before A)
+// while the new row keeps its input-order slot (the middle).
+const interleaveRepro = {
+  cards: {
+    'hBP01-024_hBP07_C_hBP01-024_02_C': tieRepro.cards['hBP01-024_hBP07_C_hBP01-024_02_C'],
+    'hBP01-024_hBP09_C_hBP01-024_03_C': {
+      id: 'hBP01-024_hBP09_C_hBP01-024_03_C',
+      cardNumber: 'hBP01-024',
+      sourceProduct: 'hBP09',
+      rarity: 'C',
+      prices: [{ name: 'ベスティア・ゼータ(パラレル/hBP09)', sellPrice: 50 }],
+    },
+    'hBP01-024_hBP07_HR_hBP01-024_HR': tieRepro.cards['hBP01-024_hBP07_HR_hBP01-024_HR'],
+  },
+};
+const interleavePrevious = {
+  'hBP01-024_hBP07_HR_hBP01-024_HR': {},
+  'hBP01-024_hBP07_C_hBP01-024_02_C': {},
+};
+const { cards: interleaveOrdered } = orderCardsForDetailAlignment(
+  interleaveRepro.cards,
+  interleavePrevious,
+);
+assert.deepEqual(
+  Object.keys(interleaveOrdered),
+  [
+    'hBP01-024_hBP07_HR_hBP01-024_HR',
+    'hBP01-024_hBP09_C_hBP01-024_03_C',
+    'hBP01-024_hBP07_C_hBP01-024_02_C',
+  ],
+  'known siblings must restore previous order (HR before 02_C) across an interleaved new row, which keeps its middle slot',
+);
+
 console.log('DIC-1167 detail↔deck row alignment ordering checks passed');

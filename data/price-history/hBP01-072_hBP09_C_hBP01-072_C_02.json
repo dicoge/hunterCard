@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP01-072_hBP09_C_hBP01-072_C_02",
+  "cardNumber": "hBP01-072",
+  "name": "ハコス・ベールズ",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-072_hBP09_C_hBP01-072_C_02",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-09-23T12:15:56.678Z",
+  "nameZh": "霸子·貝爾茲"
+}

@@ -867,16 +867,26 @@ assert.equal(
       const preDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
       const ambig = new Set();
       let targetId = null;
+      let fallbackId = null;
       for (const [id, card] of Object.entries(preDb.cards || {})) {
         if (!card?.priceHistory || Object.keys(card.priceHistory).length === 0) continue;
+        if (!fallbackId) fallbackId = id;
         if (!hasCurrentPriceProvenance(card, gate({ ambiguousIds: ambig, now: Date.now() }))) {
           targetId = id;
           break;
         }
       }
+      // A fully fresh scrape (every priced-with-history row proven same-day,
+      // e.g. the 2026-09-23 snapshot) legitimately ships ZERO naturally
+      // strict-unproven rows with priceHistory — that is the DIC-1167/1482
+      // contract working, not a missing precondition. The scenario only needs
+      // SOME row with priceHistory: the 8-day timestamp backdate below forces
+      // strict-unprovenness deterministically (freshness is criterion (b) of
+      // the predicate), which is also how the naturally-unproven rows failed.
+      if (!targetId) targetId = fallbackId;
       assert.ok(
         targetId,
-        'Scenario E precondition: shipped DB must carry at least one strict-unproven row with priceHistory to test the preservation-forward path',
+        'Scenario E precondition: shipped DB must carry at least one row with priceHistory to test the preservation-forward path',
       );
       const preRow = preDb.cards[targetId];
       const preHistoryDays = Object.keys(preRow.priceHistory).length;
@@ -889,6 +899,11 @@ assert.equal(
       // this the shipped timestamp could drift into the 7-day window over
       // time and mask the regression.
       preRow.timestamp = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+      assert.equal(
+        hasCurrentPriceProvenance(preRow, gate({ ambiguousIds: ambig, now: Date.now() })),
+        false,
+        `Scenario E precondition: backdated target ${targetId} must be strict-unproven going into the build`,
+      );
       fs.writeFileSync(dbPath, JSON.stringify(preDb, null, 2) + '\n');
       // Remove every durable file so Step 6 has nothing to merge — the
       // only priceHistory a row can carry is what preservation copied

@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP08-052_hBP08_U_hBP08-052_U",
+  "cardNumber": "hBP08-052",
+  "name": "水宮枢",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP08-052_hBP08_U_hBP08-052_U",
+      "sourceProduct": "hBP08"
+    }
+  ],
+  "lastUpdated": "2026-09-23T12:15:56.942Z",
+  "nameZh": "水宮樞"
+}

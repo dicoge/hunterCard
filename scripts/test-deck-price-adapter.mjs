@@ -336,10 +336,14 @@ const REAL_EXPECTATIONS = [
   { cardNumber: 'hBP01-044', printings: { BASE: 180, 'PARALLEL/HR': 7980, 'PARALLEL/HBP07': 80 } },
   { cardNumber: 'hBP02-017', printings: { BASE: 120 }, unpriced: ['PARALLEL'] },
   // Base reprints: original and hBP04 reprint must BOTH keep their exact price.
+  // 2026-09-23 scrape: PARALLEL settled 1780→1280 (own /hbp02/10169.jpg
+  // listing) and PARALLEL/HBP04 4980 (own /hbp04/10217.jpg listing) — exact
+  // source-listed moves on each printing's own product path, no cross-tier
+  // collapse. Update the expectation rather than pin a stale snapshot.
   {
     cardNumber: 'hBP02-084',
     printings: {
-      BASE: 80, HBP04: 180, PARALLEL: 1780, 'PARALLEL/HBP04': 5980, 'PARALLEL/FOIL': 89800,
+      BASE: 80, HBP04: 180, PARALLEL: 1280, 'PARALLEL/HBP04': 4980, 'PARALLEL/FOIL': 89800,
     },
   },
   {

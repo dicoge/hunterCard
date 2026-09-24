@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP09-017_hBP09_C_hBP09-017_C",
+  "cardNumber": "hBP09-017",
+  "name": "轟はじめ",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-017_hBP09_C_hBP09-017_C",
+      "sourceProduct": "hBP09"
+    }
+  ],
+  "lastUpdated": "2026-09-23T12:15:56.958Z",
+  "nameZh": "轟一"
+}
