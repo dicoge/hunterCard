@@ -507,6 +507,12 @@ jobs:
       - name: Verify an illegible photo is refused instead of matched (DIC-1021)
         run: npm run test:recognition-image-quality
 
+      - name: Verify the Production recognition availability probe against the real handler (DIC-P0 hBP09)
+        run: npm run test:recognition-availability-validator
+
+      - name: Verify the hBP09 recognition regression corpus against the committed catalog (DIC-P0 hBP09)
+        run: npm run test:hbp09-recognition-corpus
+
       - name: Verify commercialization static HTML No-JS and copy-assets manifest (DIC-1157)
         run: npm run test:dist-nojs
 

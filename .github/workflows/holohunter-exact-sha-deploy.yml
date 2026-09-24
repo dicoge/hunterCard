@@ -592,3 +592,91 @@ jobs:
 
           echo "::error::The canonical alias never resolved to the deployment this run created; refusing to report a Production deploy this run did not place."
           exit 1
+
+      - name: Require Production recognition to be provisioned (DIC-P0 hBP09)
+        run: |
+          set -euo pipefail
+
+          # Why this step exists, and why it runs AFTER the alias proof
+          # -----------------------------------------------------------
+          # On 2026-09-24 canonical Production answered every hBP09 scan with
+          # 503 RECOGNITION_UNAVAILABLE: the deployment had no GEMINI_API_KEY,
+          # while the catalog itself carried all 244 hBP09 rows. DIC-1185 made
+          # recognition fail closed to Google direct — correctly — but no gate
+          # made a Production deploy PROVE the provider is provisioned, so this
+          # workflow kept reporting green for a Production whose scanner could
+          # not recognise anything. This step probes what users now actually
+          # receive, so it must run after the alias binding is proven; probing
+          # earlier would grade the PREVIOUS deployment.
+          #
+          # It can only turn a success into a failure, never the reverse: the
+          # alias-binding step above remains the sole Production linkage
+          # authority, and this step holds no secret and creates nothing.
+          #
+          # The probe is free by construction. api/recognize-card.ts checks the
+          # provider BEFORE the legibility floor, so a valid PNG below 320px is
+          # answered 404 (photo-level) without a vision call when provisioned,
+          # and 503 RECOGNITION_UNAVAILABLE when not. The decision procedure
+          # lives in a committed module for the same reason the alias one does:
+          # a heredoc cannot be executed by a test. Exit codes:
+          #
+          #   0 = provisioned (the handler answered about the probe photo)
+          #   2 = not decidable yet (network blip, platform 5xx, cold start —
+          #       keep waiting, bounded)
+          #   1 = the deployment declared RECOGNITION_UNAVAILABLE, or the probe
+          #       contract itself broke (fatal — waiting cannot provision a
+          #       secret)
+          #
+          # The response body is never printed; the module prints fixed strings
+          # only. Provisioning itself is an operator action documented in
+          # docs/recognition-provisioning.md.
+          MAX_ATTEMPTS=10
+          SLEEP_SECONDS=15
+          attempt=0
+
+          node scripts/ci/verify-recognition-availability.mjs --emit-probe-body \
+            > /tmp/recognition-probe-request.json
+
+          while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
+            attempt=$((attempt + 1))
+
+            # `|| true`, never `|| echo "000"`: curl already emits 000 through
+            # -w when the connection itself fails; a second echoed value would
+            # turn $code into a two-line string matching no arm below.
+            code=$(curl -sS -o /tmp/recognition-probe.json -w '%{http_code}' \
+              -H "Content-Type: application/json" \
+              --data-binary @/tmp/recognition-probe-request.json \
+              "https://${CANONICAL_HOST}/api/recognize-card" || true)
+
+            set +e
+            node scripts/ci/verify-recognition-availability.mjs \
+              "$code" /tmp/recognition-probe.json
+            rc=$?
+            set -e
+
+            case "$rc" in
+              0)
+                echo "Production recognition is provisioned on the deployment this run placed (${EXPECTED_SHA})."
+                exit 0
+                ;;
+              2)
+                # The catch-all lane; reduce the status to three digits before
+                # echoing it rather than trusting its shape.
+                status=$(printf '%s' "$code" | grep -Eo '^[0-9]{3}$' || echo "unreadable")
+                echo "attempt ${attempt}/${MAX_ATTEMPTS}: recognition probe not decidable yet (HTTP ${status})."
+                ;;
+              1)
+                echo "::error::Production recognition is unavailable on the deployment this run placed. Provision GEMINI_API_KEY in the Vercel Production environment (docs/recognition-provisioning.md) and redeploy; refusing to report this as a completed Production deploy."
+                exit 1
+                ;;
+              *)
+                echo "::error::Recognition availability validator returned unexpected status ${rc}; failing closed."
+                exit 1
+                ;;
+            esac
+
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "::error::Production recognition availability was never proven within the window; refusing to report a Production deploy whose scanner state is unknown."
+          exit 1

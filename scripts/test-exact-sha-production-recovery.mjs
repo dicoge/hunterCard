@@ -68,6 +68,7 @@ const WF_DIR = path.join(ROOT, '.github', 'workflows');
 const CI_PATH = path.join(WF_DIR, 'ci.yml');
 const DEPLOY_PATH = path.join(WF_DIR, 'holohunter-exact-sha-deploy.yml');
 const ALIAS_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'verify-alias-binding.mjs');
+const RECOG_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'verify-recognition-availability.mjs');
 
 const CANONICAL_HOST = 'holohunter.dicoge.com';
 const VERCEL_PROJECT_NAME = 'holocard-hunter';
@@ -899,12 +900,21 @@ if (dep) {
     armUnknown !== null && /exit 1/.test(armUnknown),
     `*) arm: ${JSON.stringify(armUnknown)}`,
   );
+  // The recognition smoke (DIC-P0 hBP09) is the ONLY step allowed after the
+  // alias proof, because it grades what users now actually receive — running
+  // it earlier would grade the PREVIOUS deployment. It can only turn a
+  // success into a failure, never the reverse: the alias-binding step stays
+  // the sole Production linkage authority, and the smoke holds no secret and
+  // creates nothing. Its own wiring is asserted in the section below.
+  const recogSmokeIdx = stepIndex(/verify-recognition-availability\.mjs/);
   check(
-    'alias-binding check runs AFTER the HTTP 200 probe and is the LAST step',
+    'alias-binding check runs AFTER the HTTP 200 probe; only the recognition smoke follows it',
     httpProbeIdx >= 0
       && aliasBindIdx > httpProbeIdx
-      && aliasBindIdx === depSteps.length - 1,
-    `http probe at step ${httpProbeIdx}, alias binding at ${aliasBindIdx} of ${depSteps.length}`,
+      && aliasBindIdx === depSteps.length - 2
+      && recogSmokeIdx === depSteps.length - 1,
+    `http probe at step ${httpProbeIdx}, alias binding at ${aliasBindIdx}, `
+      + `recognition smoke at ${recogSmokeIdx} of ${depSteps.length}`,
   );
   check(
     'HTTP 200 probe does not `exit 0` early (that would skip the binding check)',
@@ -927,6 +937,123 @@ if (dep) {
     'alias-binding check hard-fails the documented explicit alias-API errors',
     /401/.test(aliasStep) && /403/.test(aliasStep) && /410/.test(aliasStep),
     'unauthorized/forbidden/gone cannot be fixed by waiting out the window',
+  );
+
+  // ── Recognition smoke: Production must be able to recognise (DIC-P0) ─
+  //
+  // On 2026-09-24 canonical Production answered every hBP09 scan with 503
+  // RECOGNITION_UNAVAILABLE — no GEMINI_API_KEY in the deployment, catalog
+  // fully present. DIC-1185 correctly made recognition fail closed to Google
+  // direct, but no deploy gate proved the provider is provisioned, so this
+  // workflow reported green runs for a Production whose scanner could not
+  // recognise anything. The final step closes that gap with a free probe
+  // (a valid PNG below the 320px legibility floor: 404 photo-answer =
+  // provisioned, zero vision tokens; 503 with the stable code = fatal).
+  // Behaviour of the decision module is asserted by
+  // scripts/test-recognition-availability-validator.mjs against the REAL
+  // handler; what belongs HERE is only the wiring.
+  const recogStep = recogSmokeIdx >= 0 ? stepRun(depSteps[recogSmokeIdx]) : '';
+  check(
+    'recognition availability validator exists as a committed module',
+    fs.existsSync(RECOG_HELPER_PATH),
+    `expected ${path.relative(ROOT, RECOG_HELPER_PATH)} on disk`,
+  );
+  check(
+    'recognition smoke invokes the committed validator (not an inline heredoc)',
+    recogSmokeIdx >= 0 && /node\s+scripts\/ci\/verify-recognition-availability\.mjs/.test(recogStep),
+    'an inline `node -e` validator cannot be executed by a test',
+  );
+  check(
+    'recognition smoke keeps no inline node validator alongside it',
+    recogSmokeIdx >= 0 && !/node\s+-e/.test(recogStep),
+    'a second, untested copy of the decision would defeat the extraction',
+  );
+  check(
+    'recognition smoke takes its probe body from the module (--emit-probe-body), never an inline copy',
+    /--emit-probe-body/.test(recogStep) && !/base64,/.test(recogStep),
+    'an inline image constant would drift from the one the tests pin below the 320px floor',
+  );
+  check(
+    'recognition smoke probes exactly the canonical recognize-card endpoint',
+    /https:\/\/\$\{CANONICAL_HOST\}\/api\/recognize-card/.test(recogStep),
+    'the probe must grade what users receive at the canonical host',
+  );
+  check(
+    'recognition smoke holds no Vercel credential and calls no Vercel API',
+    recogSmokeIdx >= 0
+      && !/VERCEL_TOKEN|VERCEL_ORG_ID|api\.vercel\.com/.test(recogStep)
+      && !JSON.stringify(depSteps[recogSmokeIdx]?.env ?? {}).includes('secrets.'),
+    'a read-only public probe must not widen the credential surface',
+  );
+  check(
+    'recognition smoke tolerates curl failure without fabricating a code',
+    recogSmokeIdx >= 0 && /\|\|\s*true/.test(recogStep),
+    'curl already reports 000 through -w; `|| true` keeps $code a single value',
+  );
+
+  // All three validator outcomes handled, and handled distinctly — the same
+  // arm-slicing discipline as the alias step above.
+  const recogRcCase = (/case\s+"\$rc"\s+in\n([\s\S]*?)\n\s*esac/.exec(recogStep) ?? [])[1] ?? '';
+  check(
+    'recognition smoke branches on the validator status in its own case block',
+    /rc=\$\?/.test(recogStep) && recogRcCase.length > 0,
+    'could not isolate `case "$rc" in … esac`',
+  );
+  const recogArm = (label) => {
+    const m = new RegExp(`\\n?\\s*${label}\\)\\n([\\s\\S]*?);;`).exec(recogRcCase);
+    return m ? m[1] : null;
+  };
+  const recogArmSuccess = recogArm('0');
+  const recogArmRetry = recogArm('2');
+  const recogArmFatal = recogArm('1');
+  const recogArmUnknown = recogArm('\\*');
+  check(
+    'recognition validator success (0) proves availability and exits 0',
+    recogArmSuccess !== null && /exit 0/.test(recogArmSuccess),
+    `0) arm: ${JSON.stringify(recogArmSuccess)}`,
+  );
+  check(
+    'recognition validator retryable (2) does NOT exit — it falls through to the bounded loop',
+    recogArmRetry !== null && !/\bexit\b/.test(recogArmRetry),
+    `2) arm: ${JSON.stringify(recogArmRetry)}`,
+  );
+  check(
+    'recognition validator fatal (1) aborts immediately with exit 1 (an unprovisioned key cannot be waited out)',
+    recogArmFatal !== null && /exit 1/.test(recogArmFatal),
+    `1) arm: ${JSON.stringify(recogArmFatal)}`,
+  );
+  check(
+    'an unexpected recognition validator status fails closed',
+    recogArmUnknown !== null && /exit 1/.test(recogArmUnknown),
+    `*) arm: ${JSON.stringify(recogArmUnknown)}`,
+  );
+  check(
+    'recognition smoke fatal arm names the missing credential and the provisioning doc',
+    /GEMINI_API_KEY/.test(recogStep) && /docs\/recognition-provisioning\.md/.test(recogStep),
+    'the operator remediation must be stated where the failure is reported',
+  );
+  check(
+    'recognition smoke is bounded and hard-fails on timeout',
+    /MAX_ATTEMPTS/.test(recogStep)
+      && /never proven|was never proven/i.test(recogStep)
+      && /exit 1/.test(recogStep),
+    'an unbounded or soft-failing wait proves nothing',
+  );
+  check(
+    'recognition smoke reduces the HTTP status to three digits before echoing it',
+    /grep\s+-Eo\s+'\^\[0-9\]\{3\}\$'/.test(recogStep),
+    'the probe status is response-adjacent data; only a bounded token may be printed',
+  );
+
+  // The single-POST guarantee above is about DEPLOYMENT CREATION: exactly one
+  // `-X POST` against /v13/deployments. The probe sends its body with
+  // `--data-binary`, and this check pins that no OTHER request in the
+  // workflow carries a body toward the Vercel API.
+  check(
+    'the recognition probe is the only non-Vercel request that carries a body',
+    countMatches(depActiveRuns, /--data-binary/g) === 1
+      && /--data-binary\s+@\/tmp\/recognition-probe-request\.json/.test(recogStep),
+    'a second body-carrying request would be an unreviewed write path',
   );
 
   // ── No API-controlled byte may reach the Actions log ─────────────────
