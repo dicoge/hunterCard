@@ -27,8 +27,14 @@
  *   2. Rows with non-empty prices[] beat empty-prices reprints (secondary),
  *      preserving PR #154's original ordering intent within each origin-vs-
  *      reprint bucket.
- *   3. Within each rank stable-sort keeps the caller's input order — new rows
- *      appended by the daily official-catalog scrape stay behind older ones.
+ *   3. Within each rank, rows that both existed in the previous committed
+ *      database keep their PREVIOUS relative order (DIC-1167 / PR #215): the
+ *      daily scrape rebuilds `cards` in official-site listing order, which can
+ *      invert same-rank reprint siblings (hBP01-024 `02_C` listed before `HR`
+ *      flipped 724 pairs on the 2026-09-23 rebuild and broke the DIC-1430
+ *      exact-print search election). Rows absent from the previous database
+ *      fall back to the caller's input order — new rows appended by the daily
+ *      official-catalog scrape stay behind older ones.
  * Cross-cardNumber insertion order is preserved (first appearance of each
  * cardNumber pins its position), so the top-of-DB well-known first cardNumber
  * still ships first.
@@ -94,9 +100,18 @@ export function detailAlignmentRowRank(card) {
  * origin-product base row comes first. Cross-cardNumber insertion order is
  * preserved via the first-seen entry per cardNumber. Callers get back a fresh
  * object; the input is not mutated.
+ *
+ * `previousCards` (optional) is the cards map of the previous committed
+ * database. When two rows tie on rank AND both ids exist in `previousCards`,
+ * their previous relative order wins over the rebuild's input order; any row
+ * missing from `previousCards` keeps the input-order tie-break.
  */
-export function orderCardsForDetailAlignment(cards) {
+export function orderCardsForDetailAlignment(cards, previousCards) {
   if (!cards || typeof cards !== 'object') return cards;
+  const prevIndex = new Map();
+  if (previousCards && typeof previousCards === 'object') {
+    Object.keys(previousCards).forEach((id, idx) => prevIndex.set(id, idx));
+  }
   const ids = Object.keys(cards);
   const cardNumberOrder = [];
   const seen = new Set();
@@ -113,7 +128,13 @@ export function orderCardsForDetailAlignment(cards) {
     const groupIds = idsByCardNumber.get(num) || [];
     const rankedIds = groupIds
       .map((id, position) => ({ id, position, rank: detailAlignmentRowRank(cards[id]) }))
-      .sort((a, b) => (a.rank - b.rank) || (a.position - b.position));
+      .sort((a, b) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        const pa = prevIndex.get(a.id);
+        const pb = prevIndex.get(b.id);
+        if (pa !== undefined && pb !== undefined && pa !== pb) return pa - pb;
+        return a.position - b.position;
+      });
     if (rankedIds.some(({ id }, idx) => id !== groupIds[idx])) reordered++;
     for (const { id } of rankedIds) out[id] = cards[id];
   }

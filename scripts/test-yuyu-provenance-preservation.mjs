@@ -642,8 +642,8 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
   //    the detail-align reorder so the ranker sees the nulled prices[].
   const preserveMatch = src.match(/applyPreservedMarketFields\s*\(/);
   assert.ok(preserveMatch, 'scripts/build-database.js must still call applyPreservedMarketFields');
-  const alignMatch = src.match(/orderCardsForDetailAlignment\s*\(\s*database\.cards\s*\)/);
-  assert.ok(alignMatch, 'scripts/build-database.js must still call orderCardsForDetailAlignment(database.cards)');
+  const alignMatch = src.match(/orderCardsForDetailAlignment\s*\(\s*database\.cards\s*,\s*prevCards\s*\)/);
+  assert.ok(alignMatch, 'scripts/build-database.js must still call orderCardsForDetailAlignment(database.cards, prevCards) — the prevCards tie-break keeps same-rank reprint siblings in their previous committed order (DIC-1430 / PR #215)');
   assert.ok(
     preserveMatch.index < callIdx,
     `findAmbiguousPromoRowIds must run AFTER applyPreservedMarketFields (preserve idx ${preserveMatch.index}, ambiguity idx ${callIdx})`,

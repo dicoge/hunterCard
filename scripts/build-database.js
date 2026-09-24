@@ -1665,6 +1665,24 @@ async function buildDatabase() {
     };
   }
 
+  // DIC-1167 (2026-09-23): the top-level sellPrice must be read off the
+  // CANONICAL prices[] — never the raw pre-canonicalisation listings. DIC-1139
+  // keeps only the corrected (エラッタ後) row in prices[], so deriving the
+  // top-level from raw let a retired, cheaper pre-errata listing ship as
+  // card.sellPrice while prices[] carried only the corrected value
+  // (hBP03-027_S_2 ¥500 vs ¥680 and hBP02-078_S ¥180 vs ¥280 on the
+  // 2026-09-23 scrape). Mirrors DIC-1140, which pinned the top-level image to
+  // a canonical row for the same reason. Returns null when no canonical row
+  // is priced — a price carried only by a retired listing must not ship.
+  function lowestCanonicalPriceEntry(canonical) {
+    let best = null;
+    for (const entry of Array.isArray(canonical) ? canonical : []) {
+      const p = entry?.sellPrice;
+      if (typeof p === 'number' && p > 0 && (best === null || p < best.sellPrice)) best = entry;
+    }
+    return best;
+  }
+
   // DIC-1334: track which cardNumbers received a sellPrice from official+yuyu
   // matching. The yuyu-only fallback below must only create a yuyu-only entry
   // when NO official entry for that cardNumber got priced — otherwise the
@@ -1700,7 +1718,8 @@ async function buildDatabase() {
     // keep only the corrected row; raw rows survive internally on
     // `_rawPricesArchive` for audit but are not rendered.
     const { canonical, archive } = canonicalizePrices(rawEntries);
-    const cleanYuyuName = canonicalYuyuName(yuyu ? yuyu.lowestName : '');
+    const lowestCanonical = lowestCanonicalPriceEntry(canonical);
+    const cleanYuyuName = canonicalYuyuName(lowestCanonical ? lowestCanonical.name : (yuyu ? yuyu.lowestName : ''));
     // DIC-1140 blocker #1: the top-level image must come from a CANONICAL row
     // — never from the raw first-seen listing which is often the pre-errata
     // signed image on a card the top-level name calls "base" (hBP02-003 was
@@ -1718,7 +1737,7 @@ async function buildDatabase() {
       sourceProduct: official.sourceProduct || official.series || '',
       sourceProductName: official.sourceProductName || '',
       sourceProductText: official.sourceProductText || '',
-      sellPrice: yuyu ? yuyu.lowestPrice : null,
+      sellPrice: lowestCanonical ? lowestCanonical.sellPrice : null,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
       prices: canonical,
@@ -1741,7 +1760,7 @@ async function buildDatabase() {
     // official+yuyu matching so the yuyu-only fallback below does not
     // discard the yuyu price data for OTHER unmatched printings of this
     // cardNumber.
-    if (yuyu && yuyu.lowestPrice != null && yuyu.lowestPrice > 0) {
+    if (lowestCanonical && lowestCanonical.sellPrice > 0) {
       officialPricedCardNums.add(baseCardNum);
     }
   }
@@ -1842,7 +1861,11 @@ async function buildDatabase() {
     // yuyu-only fallback must also hide errata history and archive the raw
     // rows for internal audit.
     const { canonical, archive } = canonicalizePrices(rawEntries);
-    const cleanYuyuName = canonicalYuyuName(lowestName);
+    // Same DIC-1167 canonical-derivation contract as the official branch:
+    // the top-level price/name follow the canonical (post-errata) rows only.
+    const lowestCanonical = lowestCanonicalPriceEntry(canonical);
+    const canonicalLowestPrice = lowestCanonical ? lowestCanonical.sellPrice : null;
+    const cleanYuyuName = canonicalYuyuName(lowestCanonical ? lowestCanonical.name : lowestName);
     const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, firstImage);
 
     // DIC-1343/CR rev.2: when the listing set proved to exactly one official
@@ -1853,7 +1876,7 @@ async function buildDatabase() {
     // official row and a rogue priced row for the same card.
     if (boundPrintingKey) {
       const bound = database.cards[boundPrintingKey];
-      bound.sellPrice = lowestPrice;
+      bound.sellPrice = canonicalLowestPrice;
       bound.yuyuName = cleanYuyuName;
       bound.yuyuImage = cleanYuyuImage;
       bound.prices = canonical;
@@ -1861,7 +1884,7 @@ async function buildDatabase() {
       bound._rawPricesArchive = archive;
       if (!bound.name) bound.name = lowestName || '';
       freshlyScrapedPrintingIds.add(boundPrintingKey);
-      console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${lowestPrice})`);
+      console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${canonicalLowestPrice})`);
       continue;
     }
 
@@ -1878,7 +1901,7 @@ async function buildDatabase() {
       color: '',
       rarity: '',
       series: '',
-      sellPrice: lowestPrice,
+      sellPrice: canonicalLowestPrice,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
       prices: canonical,
@@ -1996,8 +2019,11 @@ async function buildDatabase() {
   // CardDetail to PARALLEL while deck aggregation still resolves to BASE. This
   // reorders every cardNumber group so the origin-product row is first
   // (verify-version-alignment.js is the shipped contract behind this).
+  // `prevCards` breaks same-rank ties by the previous committed order so a
+  // rebuild in official-site listing order cannot invert reprint siblings
+  // (DIC-1430 hBP01-024 HR vs 02_C, PR #215).
   {
-    const { cards: ordered, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards);
+    const { cards: ordered, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards, prevCards);
     database.cards = ordered;
     if (reorderedCardNumbers > 0) {
       console.log(`  [detail-align] reordered rows within ${reorderedCardNumbers} cardNumber groups`);

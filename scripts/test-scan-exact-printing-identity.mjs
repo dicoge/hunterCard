@@ -112,10 +112,18 @@ function assertAmbiguous(label, result) {
     `got ${result?.candidates?.length}, expected ${rows.length}`);
   check(`${label}: is flagged low-confidence so the UI asks rather than asserts`, result?.confidence === undefined || result?.lowConfidence === true);
   // Each candidate is a real printing carrying ITS OWN price — that is the
-  // resolution step, not a guess.
+  // resolution step, not a guess. Yen values drift with daily refreshes
+  // (¥120 → ¥180 on the 2026-09-23 scrape broke the old literal pin), so
+  // assert identity + own-price against the shipped catalog rows instead:
+  // every priced printing of the number must surface as a candidate carrying
+  // exactly its own sellPrice, and the divergence must still be visible.
   const candidatePrices = (result?.candidates ?? []).map((c) => c.card.sellPrice);
+  const pricedRows = rows.filter((r) => typeof r.sellPrice === 'number' && r.sellPrice > 0);
+  const candidatePriceById = new Map((result?.candidates ?? []).map((c) => [c.card.id, c.card.sellPrice]));
   check(`${label}: candidates keep their own individual prices`,
-    candidatePrices.some((p) => p === 50) && candidatePrices.some((p) => p === 120),
+    pricedRows.length >= 2
+      && new Set(pricedRows.map((r) => r.sellPrice)).size > 1
+      && pricedRows.every((r) => candidatePriceById.get(r.id) === r.sellPrice),
     `got ${JSON.stringify(candidatePrices)}`);
 }
 
@@ -187,10 +195,17 @@ function assertAmbiguous(label, result) {
   // Parallel/ordinary control: the two differently-priced printings both appear
   // with their own numbers.
   const cands = (await recognizeCardFromOcr(AMBIGUOUS)).candidates ?? [];
-  const c50 = cands.find((c) => c.card.sellPrice === 50);
-  const c120 = cands.find((c) => c.card.sellPrice === 120);
+  // Derive the divergent pair from the shipped catalog (no literal yen pins —
+  // prices drift with daily refreshes): two priced printings with different
+  // own prices must each be offered as their own candidate.
+  const divergentRows = rows.filter((r) => typeof r.sellPrice === 'number' && r.sellPrice > 0);
+  const rowA = divergentRows[0];
+  const rowB = divergentRows.find((r) => r.sellPrice !== rowA?.sellPrice);
+  const candA = cands.find((c) => c.card.id === rowA?.id);
+  const candB = cands.find((c) => c.card.id === rowB?.id);
   check('ordinary/parallel controls: both divergent printings are offered separately',
-    !!c50 && !!c120 && c50.card.id !== c120.card.id);
+    !!candA && !!candB && candA.card.id !== candB.card.id
+      && candA.card.sellPrice === rowA.sellPrice && candB.card.sellPrice === rowB.sellPrice);
 }
 
 // ── 6. The catalog-wide invariant, not just one fixture ─────────────────────
