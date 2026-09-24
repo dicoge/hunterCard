@@ -240,4 +240,43 @@ assert.equal(
   'a row absent from previousCards must keep its input-order (appended) position',
 );
 
+// ---- interleaved new row must not mask the previous-order restoration ------
+// Regression for the non-transitive comparator (DIC-1167 remediation): with a
+// NEW row sitting BETWEEN two known same-rank siblings whose previous order is
+// inverted relative to the rebuild input — current [A, new, B], previous
+// [B, A] — the old comparator compared A/new and new/B by input position and
+// never got to apply the B-before-A previous order, shipping [A, new, B].
+// The known-row subsequence must be restored to previous order (B before A)
+// while the new row keeps its input-order slot (the middle).
+const interleaveRepro = {
+  cards: {
+    'hBP01-024_hBP07_C_hBP01-024_02_C': tieRepro.cards['hBP01-024_hBP07_C_hBP01-024_02_C'],
+    'hBP01-024_hBP09_C_hBP01-024_03_C': {
+      id: 'hBP01-024_hBP09_C_hBP01-024_03_C',
+      cardNumber: 'hBP01-024',
+      sourceProduct: 'hBP09',
+      rarity: 'C',
+      prices: [{ name: 'ベスティア・ゼータ(パラレル/hBP09)', sellPrice: 50 }],
+    },
+    'hBP01-024_hBP07_HR_hBP01-024_HR': tieRepro.cards['hBP01-024_hBP07_HR_hBP01-024_HR'],
+  },
+};
+const interleavePrevious = {
+  'hBP01-024_hBP07_HR_hBP01-024_HR': {},
+  'hBP01-024_hBP07_C_hBP01-024_02_C': {},
+};
+const { cards: interleaveOrdered } = orderCardsForDetailAlignment(
+  interleaveRepro.cards,
+  interleavePrevious,
+);
+assert.deepEqual(
+  Object.keys(interleaveOrdered),
+  [
+    'hBP01-024_hBP07_HR_hBP01-024_HR',
+    'hBP01-024_hBP09_C_hBP01-024_03_C',
+    'hBP01-024_hBP07_C_hBP01-024_02_C',
+  ],
+  'known siblings must restore previous order (HR before 02_C) across an interleaved new row, which keeps its middle slot',
+);
+
 console.log('DIC-1167 detail↔deck row alignment ordering checks passed');

@@ -32,9 +32,12 @@
  *      daily scrape rebuilds `cards` in official-site listing order, which can
  *      invert same-rank reprint siblings (hBP01-024 `02_C` listed before `HR`
  *      flipped 724 pairs on the 2026-09-23 rebuild and broke the DIC-1430
- *      exact-print search election). Rows absent from the previous database
- *      fall back to the caller's input order — new rows appended by the daily
- *      official-catalog scrape stay behind older ones.
+ *      exact-print search election). The restoration reorders the known-row
+ *      subsequence of each equal-rank run independently; rows absent from the
+ *      previous database keep their input-order slots — new rows appended by
+ *      the daily official-catalog scrape stay behind older ones, and a new
+ *      row interleaved between known siblings cannot suppress the
+ *      previous-order restoration.
  * Cross-cardNumber insertion order is preserved (first appearance of each
  * cardNumber pins its position), so the top-of-DB well-known first cardNumber
  * still ships first.
@@ -102,9 +105,9 @@ export function detailAlignmentRowRank(card) {
  * object; the input is not mutated.
  *
  * `previousCards` (optional) is the cards map of the previous committed
- * database. When two rows tie on rank AND both ids exist in `previousCards`,
- * their previous relative order wins over the rebuild's input order; any row
- * missing from `previousCards` keeps the input-order tie-break.
+ * database. Within each equal-rank run, rows whose ids exist in
+ * `previousCards` are reordered as a subsequence to their previous relative
+ * order; any row missing from `previousCards` keeps its input-order slot.
  */
 export function orderCardsForDetailAlignment(cards, previousCards) {
   if (!cards || typeof cards !== 'object') return cards;
@@ -128,13 +131,31 @@ export function orderCardsForDetailAlignment(cards, previousCards) {
     const groupIds = idsByCardNumber.get(num) || [];
     const rankedIds = groupIds
       .map((id, position) => ({ id, position, rank: detailAlignmentRowRank(cards[id]) }))
-      .sort((a, b) => {
-        if (a.rank !== b.rank) return a.rank - b.rank;
-        const pa = prevIndex.get(a.id);
-        const pb = prevIndex.get(b.id);
-        if (pa !== undefined && pb !== undefined && pa !== pb) return pa - pb;
-        return a.position - b.position;
-      });
+      .sort((a, b) => (a.rank !== b.rank ? a.rank - b.rank : a.position - b.position));
+    // Previous-order restoration must be a post-pass, not a comparator clause:
+    // mixing prev-order (known/known pairs) with input-order (any pair with a
+    // new row) inside one comparator is non-transitive, so a new row
+    // interleaved between known siblings (current [A, new, B], previous
+    // [B, A]) silently left the known rows in rebuild order. Within each
+    // equal-rank run, reorder the KNOWN-row subsequence by previous committed
+    // order while rows absent from previousCards keep their input-order slots.
+    if (prevIndex.size > 0) {
+      let runStart = 0;
+      for (let i = 1; i <= rankedIds.length; i += 1) {
+        if (i < rankedIds.length && rankedIds[i].rank === rankedIds[runStart].rank) continue;
+        const knownSlots = [];
+        for (let j = runStart; j < i; j += 1) {
+          if (prevIndex.has(rankedIds[j].id)) knownSlots.push(j);
+        }
+        if (knownSlots.length > 1) {
+          const knownByPrev = knownSlots
+            .map((j) => rankedIds[j])
+            .sort((a, b) => prevIndex.get(a.id) - prevIndex.get(b.id));
+          knownSlots.forEach((j, k) => { rankedIds[j] = knownByPrev[k]; });
+        }
+        runStart = i;
+      }
+    }
     if (rankedIds.some(({ id }, idx) => id !== groupIds[idx])) reordered++;
     for (const { id } of rankedIds) out[id] = cards[id];
   }
