@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-054_hBP07_C_hBP04-054_02_C",
+  "cardNumber": "hBP04-054",
+  "name": "ラプラス・ダークネス",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-054_hBP07_C_hBP04-054_02_C",
+      "sourceProduct": "hBP07"
+    }
+  ],
+  "lastUpdated": "2026-09-23T12:15:56.687Z",
+  "nameZh": "拉普拉斯·達克尼斯"
+}

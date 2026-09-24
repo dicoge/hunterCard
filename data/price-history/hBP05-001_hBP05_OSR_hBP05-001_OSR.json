@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP05-001_hBP05_OSR_hBP05-001_OSR",
+  "cardNumber": "hBP05-001",
+  "name": "白銀ノエル",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 220,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-001_hBP05_OSR_hBP05-001_OSR",
+      "sourceProduct": "hBP05"
+    }
+  ],
+  "lastUpdated": "2026-09-23T12:15:56.721Z",
+  "nameZh": "白銀諾艾爾"
+}

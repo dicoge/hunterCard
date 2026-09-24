@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP04-100_hBP04_C_hBP04-100_C",
+  "cardNumber": "hBP04-100",
+  "name": "ココロ",
+  "records": [
+    {
+      "date": "2026-09-23",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-100_hBP04_C_hBP04-100_C",
+      "sourceProduct": "hBP04"
+    }
+  ],
+  "lastUpdated": "2026-09-23T12:15:56.896Z",
+  "nameZh": "心"
+}

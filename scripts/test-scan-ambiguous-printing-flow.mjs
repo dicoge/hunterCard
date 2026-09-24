@@ -132,8 +132,15 @@ check('found a single-printing control with a price', !!uniqueRow);
   check('native: candidates keep distinct compound printing ids',
     new Set(cands.map((c) => c.card.id)).size === cands.length,
     `ids=${JSON.stringify(cands.map((c) => c.card.id))}`);
+  // No literal yen pins — prices drift with daily refreshes (¥120 → ¥180 on
+  // the 2026-09-23 scrape). Every priced catalog printing must surface as a
+  // candidate with exactly its own price, and the divergence must survive.
+  const pricedRows = rows.filter((r) => typeof r.sellPrice === 'number' && r.sellPrice > 0);
+  const candPriceById = new Map(cands.map((c) => [c.card.id, c.card.sellPrice]));
   check('native: candidates carry their own individual prices',
-    cands.some((c) => c.card.sellPrice === 50) && cands.some((c) => c.card.sellPrice === 120),
+    pricedRows.length >= 2
+      && new Set(pricedRows.map((r) => r.sellPrice)).size > 1
+      && pricedRows.every((r) => candPriceById.get(r.id) === r.sellPrice),
     `prices=${JSON.stringify(cands.map((c) => c.card.sellPrice))}`);
   check('native: stops the busy spinner so the picker is usable',
     ui.calls.some((c) => c.name === 'setBusy' && c.args[0] === false));
@@ -219,9 +226,16 @@ check('found a single-printing control with a price', !!uniqueRow);
     new Set(galleryResult.candidates.map((c) => c.card.id)).size === galleryResult.candidates.length
       && galleryResult.candidates.every((c) => c.card.id !== AMBIGUOUS),
     `ids=${JSON.stringify(galleryResult.candidates?.map((c) => c.card.id))} — if any id collapses to the bare cardNumber the apiCardMapper regressed`);
+  // Same provenance-pinned check as the native flow: no literal yen values,
+  // each priced printing that made it into the (possibly capped) candidate
+  // list must carry exactly its own catalog price, and at least two distinct
+  // positive prices must be visible (the sibling-price protection).
+  const galleryPriceById = new Map(galleryResult.candidates.map((c) => [c.card.id, c.card.sellPrice]));
+  const galleryPricedRows = rows.filter((r) => typeof r.sellPrice === 'number' && r.sellPrice > 0 && galleryPriceById.has(r.id));
   check('client: candidates carry their own individual prices (the sibling-price protection)',
-    galleryResult.candidates.some((c) => c.card.sellPrice === 50)
-      && galleryResult.candidates.some((c) => c.card.sellPrice === 120),
+    galleryPricedRows.length >= 2
+      && new Set(galleryPricedRows.map((r) => r.sellPrice)).size > 1
+      && galleryPricedRows.every((r) => galleryPriceById.get(r.id) === r.sellPrice),
     `prices=${JSON.stringify(galleryResult.candidates?.map((c) => c.card.sellPrice))}`);
 
   // 3. Gallery DECISION. Route through the SAME classifier ScanScreen calls

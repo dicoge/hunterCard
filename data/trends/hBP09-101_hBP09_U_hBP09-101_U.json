@@ -1,0 +1,15 @@
+{
+  "cardId": "hBP09-101",
+  "name": "バカ！変態！うるさーい！もう知らなーい！",
+  "nameZh": "笨蛋！變態！吵死了！我不認識你！",
+  "trend": "stable",
+  "score": 0.03,
+  "confidence": 0.3,
+  "components": {
+    "priceTrend": 0,
+    "ytTrend": 0,
+    "newsSentiment": 0.15
+  },
+  "lastUpdated": "2026-09-23T12:16:10.201Z",
+  "dataPoints": 1
+}

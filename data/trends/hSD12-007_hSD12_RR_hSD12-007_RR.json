@@ -3,13 +3,13 @@
   "name": "シオリ・ノヴェラ",
   "nameZh": "詩織·諾維拉",
   "trend": "stable",
-  "score": 0.03,
-  "confidence": 0.7,
+  "score": -0.08,
+  "confidence": 0.8,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": -0.18,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-08-30T12:26:54.368Z",
-  "dataPoints": 64
+  "lastUpdated": "2026-09-23T12:16:10.212Z",
+  "dataPoints": 65
 }

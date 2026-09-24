@@ -1665,6 +1665,24 @@ async function buildDatabase() {
     };
   }
 
+  // DIC-1167 (2026-09-23): the top-level sellPrice must be read off the
+  // CANONICAL prices[] — never the raw pre-canonicalisation listings. DIC-1139
+  // keeps only the corrected (エラッタ後) row in prices[], so deriving the
+  // top-level from raw let a retired, cheaper pre-errata listing ship as
+  // card.sellPrice while prices[] carried only the corrected value
+  // (hBP03-027_S_2 ¥500 vs ¥680 and hBP02-078_S ¥180 vs ¥280 on the
+  // 2026-09-23 scrape). Mirrors DIC-1140, which pinned the top-level image to
+  // a canonical row for the same reason. Returns null when no canonical row
+  // is priced — a price carried only by a retired listing must not ship.
+  function lowestCanonicalPriceEntry(canonical) {
+    let best = null;
+    for (const entry of Array.isArray(canonical) ? canonical : []) {
+      const p = entry?.sellPrice;
+      if (typeof p === 'number' && p > 0 && (best === null || p < best.sellPrice)) best = entry;
+    }
+    return best;
+  }
+
   // DIC-1334: track which cardNumbers received a sellPrice from official+yuyu
   // matching. The yuyu-only fallback below must only create a yuyu-only entry
   // when NO official entry for that cardNumber got priced — otherwise the
@@ -1700,7 +1718,8 @@ async function buildDatabase() {
     // keep only the corrected row; raw rows survive internally on
     // `_rawPricesArchive` for audit but are not rendered.
     const { canonical, archive } = canonicalizePrices(rawEntries);
-    const cleanYuyuName = canonicalYuyuName(yuyu ? yuyu.lowestName : '');
+    const lowestCanonical = lowestCanonicalPriceEntry(canonical);
+    const cleanYuyuName = canonicalYuyuName(lowestCanonical ? lowestCanonical.name : (yuyu ? yuyu.lowestName : ''));
     // DIC-1140 blocker #1: the top-level image must come from a CANONICAL row
     // — never from the raw first-seen listing which is often the pre-errata
     // signed image on a card the top-level name calls "base" (hBP02-003 was
@@ -1718,7 +1737,7 @@ async function buildDatabase() {
       sourceProduct: official.sourceProduct || official.series || '',
       sourceProductName: official.sourceProductName || '',
       sourceProductText: official.sourceProductText || '',
-      sellPrice: yuyu ? yuyu.lowestPrice : null,
+      sellPrice: lowestCanonical ? lowestCanonical.sellPrice : null,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
       prices: canonical,
@@ -1741,7 +1760,7 @@ async function buildDatabase() {
     // official+yuyu matching so the yuyu-only fallback below does not
     // discard the yuyu price data for OTHER unmatched printings of this
     // cardNumber.
-    if (yuyu && yuyu.lowestPrice != null && yuyu.lowestPrice > 0) {
+    if (lowestCanonical && lowestCanonical.sellPrice > 0) {
       officialPricedCardNums.add(baseCardNum);
     }
   }
@@ -1842,7 +1861,11 @@ async function buildDatabase() {
     // yuyu-only fallback must also hide errata history and archive the raw
     // rows for internal audit.
     const { canonical, archive } = canonicalizePrices(rawEntries);
-    const cleanYuyuName = canonicalYuyuName(lowestName);
+    // Same DIC-1167 canonical-derivation contract as the official branch:
+    // the top-level price/name follow the canonical (post-errata) rows only.
+    const lowestCanonical = lowestCanonicalPriceEntry(canonical);
+    const canonicalLowestPrice = lowestCanonical ? lowestCanonical.sellPrice : null;
+    const cleanYuyuName = canonicalYuyuName(lowestCanonical ? lowestCanonical.name : lowestName);
     const cleanYuyuImage = canonicalYuyuImage(canonical, cleanYuyuName, firstImage);
 
     // DIC-1343/CR rev.2: when the listing set proved to exactly one official
@@ -1853,7 +1876,7 @@ async function buildDatabase() {
     // official row and a rogue priced row for the same card.
     if (boundPrintingKey) {
       const bound = database.cards[boundPrintingKey];
-      bound.sellPrice = lowestPrice;
+      bound.sellPrice = canonicalLowestPrice;
       bound.yuyuName = cleanYuyuName;
       bound.yuyuImage = cleanYuyuImage;
       bound.prices = canonical;
@@ -1861,7 +1884,7 @@ async function buildDatabase() {
       bound._rawPricesArchive = archive;
       if (!bound.name) bound.name = lowestName || '';
       freshlyScrapedPrintingIds.add(boundPrintingKey);
-      console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${lowestPrice})`);
+      console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${canonicalLowestPrice})`);
       continue;
     }
 
@@ -1878,7 +1901,7 @@ async function buildDatabase() {
       color: '',
       rarity: '',
       series: '',
-      sellPrice: lowestPrice,
+      sellPrice: canonicalLowestPrice,
       yuyuName: cleanYuyuName,
       yuyuImage: cleanYuyuImage,
       prices: canonical,
@@ -1996,8 +2019,11 @@ async function buildDatabase() {
   // CardDetail to PARALLEL while deck aggregation still resolves to BASE. This
   // reorders every cardNumber group so the origin-product row is first
   // (verify-version-alignment.js is the shipped contract behind this).
+  // `prevCards` breaks same-rank ties by the previous committed order so a
+  // rebuild in official-site listing order cannot invert reprint siblings
+  // (DIC-1430 hBP01-024 HR vs 02_C, PR #215).
   {
-    const { cards: ordered, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards);
+    const { cards: ordered, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards, prevCards);
     database.cards = ordered;
     if (reorderedCardNumbers > 0) {
       console.log(`  [detail-align] reordered rows within ${reorderedCardNumbers} cardNumber groups`);
@@ -2144,6 +2170,44 @@ async function buildDatabase() {
       catalogRemovedIds.add(prevId);
     }
 
+    // DIC-1167 (2026-09-23): increase-side provenance gate. The decrease gate
+    // below only sees payloads that VANISH, so a row the previous artifact
+    // shipped fail-closed (unpriced) that this refresh freshly re-prices used
+    // to bypass provenance entirely — the 2026-09-23 scrape re-shipped ten
+    // DIC-1482-rejected cross-product / no-provenance payloads through exactly
+    // this blind spot. A newly-priced row now ships only when its OWN current
+    // payload is exact-print proven under `classifyExactPrintPayload` — the
+    // same classifier the decrease gate re-verifies rejections with. An
+    // unproven fresh price is stripped back to the fail-closed shape and
+    // recorded in the manifest under its derived reason, so every refused
+    // increase is auditable per printing. Truly yuyu-only rows (no official
+    // printing identity to prove against) keep the DIC-1334 fallback
+    // behaviour. priceHistory is deliberately NOT touched: the Step 6
+    // DIC-1229 gate owns history provenance.
+    const increaseRejections = [];
+    for (const [id, card] of Object.entries(database.cards)) {
+      if (!isPricedRow(card)) continue;
+      const prevCard = prevCards[id];
+      if (prevCard && isPricedRow(prevCard)) continue;
+      const verdict = classifyExactPrintPayload(card);
+      if (verdict.proven) continue;
+      if (verdict.reason === 'missing-source-product' && !officialPrintingKeys.has(id)) continue;
+      increaseRejections.push(makeRejection(id, card, verdict.reason));
+      card.sellPrice = null;
+      card.prices = [];
+      card.yuyuName = '';
+      card.yuyuImage = '';
+      card.timestamp = '';
+      if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
+    }
+    if (increaseRejections.length > 0) {
+      const sample = increaseRejections.slice(0, 5).map((r) => `${r.id} [${r.reason}]`).join(', ');
+      console.log(
+        `  [DIC-1167] fail-closed ${increaseRejections.length} newly-priced row(s) without exact-print provenance: `
+        + `${sample}${increaseRejections.length > 5 ? ` +${increaseRejections.length - 5} more` : ''}`
+      );
+    }
+
     const dic1482Rejections = [];
     for (const [prevId, prevCard] of Object.entries(prevCards)) {
       if (!isPricedRow(prevCard)) continue;
@@ -2168,10 +2232,14 @@ async function buildDatabase() {
         dic1482Rejections.push(makeRejection(prevId, prevCard, verdict.reason));
       }
     }
+    // The manifest carries BOTH rejection families: decreases the gate
+    // re-verifies below, and DIC-1167 refused increases (prev-unpriced rows,
+    // so the decrease gate never consults them — they are audit trail).
+    const allRejections = [...dic1482Rejections, ...increaseRejections];
     const gate = evaluatePriceRegressionGate({
       previousCards: prevCards,
       nextCards: database.cards,
-      rejections: dic1482Rejections,
+      rejections: allRejections,
       // An exact printing the scrape freshly matched carries the source's own
       // current listing — fewer prices[] entries there is the source's claim,
       // not a silent drop. Per printing, never per cardNumber.
@@ -2183,14 +2251,14 @@ async function buildDatabase() {
       label: 'build-database',
       previousCards: prevCards,
       nextCards: database.cards,
-      rejections: dic1482Rejections,
+      rejections: allRejections,
     });
     writeJsonAtomic(path.join(DATA_DIR, 'price-rejections.json'), manifest);
     console.log(
       `  [DIC-1482] priced metrics rows ${gate.before.pricedRows}→${gate.after.pricedRows}, `
       + `uniqueCardNumbers ${gate.before.pricedUniqueCardNumbers}→${gate.after.pricedUniqueCardNumbers}, `
       + `entries ${gate.before.priceEntries}→${gate.after.priceEntries}; `
-      + `rejections=${dic1482Rejections.length}`
+      + `rejections=${allRejections.length} (decrease=${dic1482Rejections.length}, refused-increase=${increaseRejections.length})`
     );
     if (!gate.ok) {
       throw new Error(formatGateViolations('build-database refused to ship', gate.violations));
