@@ -19,21 +19,40 @@ fail closed to Google direct only — correct as a FinOps repair — but no
 deploy-time gate required the Google key to actually be provisioned, so
 Production shipped with a scanner that could not recognise anything.
 
-## Operator requirement
+## The only human action
 
-`GEMINI_API_KEY` MUST be set as a Vercel **Production** environment variable
-on project `holocard-hunter` before a Production deploy can complete.
+**Add (or rotate) the GitHub Actions repository secret `GEMINI_API_KEY`.**
+That is the entire operator surface. The exact-SHA Production deploy workflow
+does the rest on every run:
 
-- The handler reads it at request time (`api/recognize-card.ts`,
+1. it fails closed BEFORE touching Vercel if the GitHub secret is missing or
+   empty;
+2. it synchronizes the secret into Vercel as a **sensitive**,
+   **Production-only** environment variable on project `holocard-hunter`
+   (committed module `scripts/ci/provision-gemini-key.mjs`, a bounded
+   `POST /v10/projects/{id}/env?teamId=…&upsert=true`);
+3. only then does it create the Production deployment, and after the alias
+   proof it re-verifies availability against the real
+   `/api/recognize-card` endpoint (the readback proof below).
+
+Nobody sets the variable in the Vercel dashboard any more; the workflow is
+the single write path, and it is executed by
+`npm run test:gemini-provisioning` plus the structural suite.
+
+- The handler reads the variable at request time (`api/recognize-card.ts`,
   `resolveAdapters()`); an empty or missing value makes every recognition
   request answer 503 `RECOGNITION_UNAVAILABLE`.
 - The key travels in the `x-goog-api-key` header, never in a URL (DIC-1019),
-  and must never be committed, logged, or written into shared knowledge.
+  and must never be committed, logged, or written into shared knowledge. The
+  provisioning step never prints, interpolates, or persists the value, and
+  the Vercel var is `sensitive`, so Vercel itself refuses to read it back.
 - OpenRouter remains a hard denylist (DIC-1185). Do not "fix" an
   unprovisioned deployment by adding any other provider.
 
-## The deploy-time gate
+## The deploy-time readback gate
 
+Provisioning (above) happens BEFORE the deployment exists; this gate proves,
+AFTER the canonical alias is bound, that it actually worked.
 `.github/workflows/holohunter-exact-sha-deploy.yml` ends with
 **Require Production recognition to be provisioned (DIC-P0 hBP09)**:
 

@@ -462,6 +462,14 @@ jobs:
       - name: Verify canonical alias binding validator behaviour (DIC-1430)
         run: npm run test:alias-binding-validator
 
+      # Same lesson, applied to the DIC-P0 hBP09 provisioning module: the
+      # structural suite pins the workflow wiring, and this suite EXECUTES
+      # scripts/ci/provision-gemini-key.mjs against a mock transport — the
+      # exact endpoint/target contract, fail-closed ordering, and the
+      # no-secret-in-logs/argv/URL property are all proven by running it.
+      - name: Verify GEMINI_API_KEY Production provisioning behaviour (DIC-P0 hBP09)
+        run: npm run test:gemini-provisioning
+
       - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
         run: npm run test:tournament-discovery-acquisition
 
@@ -682,8 +690,11 @@ jobs:
       # to github.sha, equal to the checked-out HEAD, and the live tip of
       # origin/main before it creates anything.
       expected_sha: ${{ inputs.expected_sha }}
-    # Explicit, not `inherit`: the callee declares exactly these two as
+    # Explicit, not `inherit`: the callee declares exactly these three as
     # required, and `inherit` would hand it every secret in the repository.
+    # GEMINI_API_KEY is the DIC-P0 hBP09 recognition credential the callee
+    # provisions into Vercel Production before it creates any deployment.
     secrets:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

@@ -69,11 +69,13 @@ const CI_PATH = path.join(WF_DIR, 'ci.yml');
 const DEPLOY_PATH = path.join(WF_DIR, 'holohunter-exact-sha-deploy.yml');
 const ALIAS_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'verify-alias-binding.mjs');
 const RECOG_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'verify-recognition-availability.mjs');
+const PROVISION_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'provision-gemini-key.mjs');
 
 const CANONICAL_HOST = 'holohunter.dicoge.com';
 const VERCEL_PROJECT_NAME = 'holocard-hunter';
 const NPM_SCRIPT = 'test:exact-sha-production-recovery';
 const ALIAS_NPM_SCRIPT = 'test:alias-binding-validator';
+const PROVISION_NPM_SCRIPT = 'test:gemini-provisioning';
 
 let passed = 0;
 function check(label, cond, detail) {
@@ -268,6 +270,11 @@ if (ci) {
     validateRuns.includes(`npm run ${ALIAS_NPM_SCRIPT}`),
     'the alias validator BEHAVIOUR must be executed by CI, not just described by structural checks',
   );
+  check(
+    `ci.yml validate runs \`npm run ${PROVISION_NPM_SCRIPT}\``,
+    validateRuns.includes(`npm run ${PROVISION_NPM_SCRIPT}`),
+    'the provisioning module BEHAVIOUR must be executed by CI, not just described by structural checks',
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -379,12 +386,12 @@ if (ci) {
     `got secrets=${JSON.stringify(trampSecrets)}; inherit hands the callee every secret in the repo`,
   );
   check(
-    'the trampoline passes ONLY VERCEL_TOKEN + VERCEL_ORG_ID',
+    'the trampoline passes ONLY VERCEL_TOKEN + VERCEL_ORG_ID + GEMINI_API_KEY',
     JSON.stringify(Object.keys(trampSecrets ?? {}).sort())
-      === JSON.stringify(['VERCEL_ORG_ID', 'VERCEL_TOKEN']),
+      === JSON.stringify(['GEMINI_API_KEY', 'VERCEL_ORG_ID', 'VERCEL_TOKEN']),
     `secret keys: ${JSON.stringify(Object.keys(trampSecrets ?? {}))}`,
   );
-  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID']) {
+  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'GEMINI_API_KEY']) {
     check(
       `the trampoline maps ${name} from the repository secret of the same name`,
       trampSecrets?.[name] === `\${{ secrets.${name} }}`,
@@ -622,12 +629,12 @@ if (dep) {
     `declared: ${JSON.stringify(Object.keys(declaredCallSecrets).sort())} vs used: ${JSON.stringify(usedSecrets)}`,
   );
   check(
-    'the declared reusable secrets are exactly VERCEL_TOKEN + VERCEL_ORG_ID',
+    'the declared reusable secrets are exactly VERCEL_TOKEN + VERCEL_ORG_ID + GEMINI_API_KEY',
     JSON.stringify(Object.keys(declaredCallSecrets).sort())
-      === JSON.stringify(['VERCEL_ORG_ID', 'VERCEL_TOKEN']),
+      === JSON.stringify(['GEMINI_API_KEY', 'VERCEL_ORG_ID', 'VERCEL_TOKEN']),
     `got ${JSON.stringify(Object.keys(declaredCallSecrets))}`,
   );
-  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID']) {
+  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'GEMINI_API_KEY']) {
     check(
       `workflow_call declares ${name} as REQUIRED`,
       declaredCallSecrets?.[name]?.required === true,
@@ -685,12 +692,15 @@ if (dep) {
     /git\s+ls-remote[^\n]*origin[^\n]*refs\/heads\/main/.test(depRuns),
   );
 
-  // ── Secrets: only the two that already exist, never printed ──────────
+  // ── Secrets: only the three the contract names, never printed ────────
+  // GEMINI_API_KEY joined the set for DIC-P0 hBP09: the workflow provisions
+  // it into Vercel Production before any deployment exists. It is still a
+  // closed set — any OTHER secret reference stays a failure.
   const secretRefs = [...dep.raw.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]);
-  const ALLOWED_SECRETS = new Set(['VERCEL_TOKEN', 'VERCEL_ORG_ID']);
+  const ALLOWED_SECRETS = new Set(['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'GEMINI_API_KEY']);
   const disallowed = [...new Set(secretRefs)].filter((s) => !ALLOWED_SECRETS.has(s));
   check(
-    'deploy workflow references ONLY VERCEL_TOKEN + VERCEL_ORG_ID',
+    'deploy workflow references ONLY VERCEL_TOKEN + VERCEL_ORG_ID + GEMINI_API_KEY',
     disallowed.length === 0,
     `disallowed secrets referenced: ${disallowed.join(', ')}`,
   );
@@ -1299,6 +1309,127 @@ if (dep) {
       .some((e) => !HELPER_ALLOWED_INTERPOLATION.test(e)),
   );
 
+  // ── GEMINI_API_KEY provisioning: the DIC-P0 hBP09 write path ─────────
+  //
+  // The first repair only DETECTED a missing key after deploying (the
+  // recognition smoke above); CR 565f798a correctly failed it because
+  // nothing in the pipeline ever PLACED the key. The contract now: the
+  // GitHub Actions secret GEMINI_API_KEY is required before any write, is
+  // upserted as a SENSITIVE, PRODUCTION-ONLY Vercel env var through the
+  // committed module scripts/ci/provision-gemini-key.mjs, and only then may
+  // the deployment be created. The module's BEHAVIOUR (exact endpoint,
+  // Production-only target, fail-closed on API error, no secret in
+  // logs/argv/URL) is executed by scripts/test-gemini-provisioning.mjs;
+  // what belongs HERE is the workflow wiring.
+  const presenceIdx = stepIndex(/-z\s+"\$\{GEMINI_API_KEY\}"/);
+  const provisionIdx = stepIndex(/provision-gemini-key\.mjs/);
+  const resolveIdx = stepIndex(/\/v9\/projects\//);
+  const createDeployIdx = stepIndex(/-X\s+POST[\s\S]*\/v13\/deployments/);
+  const presenceStep = presenceIdx >= 0 ? stepRun(depSteps[presenceIdx]) : '';
+  const provisionStep = provisionIdx >= 0 ? stepRun(depSteps[provisionIdx]) : '';
+
+  check(
+    'provisioning module exists as a committed file',
+    fs.existsSync(PROVISION_HELPER_PATH),
+    `expected ${path.relative(ROOT, PROVISION_HELPER_PATH)} on disk`,
+  );
+  check(
+    'a presence gate proves the GEMINI_API_KEY secret is non-empty and fails closed',
+    presenceIdx >= 0 && /exit 1/.test(presenceStep),
+    'a missing or empty repository secret must stop the run, not deploy an unrecognising Production',
+  );
+  check(
+    'the presence gate runs BEFORE the run reads or writes anything at Vercel',
+    presenceIdx >= 0 && resolveIdx >= 0 && presenceIdx < resolveIdx,
+    `presence gate at step ${presenceIdx}, project resolution at ${resolveIdx}`,
+  );
+  check(
+    'the presence gate names the operator remediation doc in its fixed failure line',
+    /docs\/recognition-provisioning\.md/.test(presenceStep),
+    'the only human action left must be stated where the failure is reported',
+  );
+  check(
+    'a provisioning step invokes the committed module (not inline curl)',
+    provisionIdx >= 0 && /node\s+scripts\/ci\/provision-gemini-key\.mjs/.test(provisionStep),
+    'an inline env write would be an unreviewed, untestable second write path',
+  );
+  check(
+    'the provisioning step passes the module NO arguments (secrets travel via env only)',
+    provisionIdx >= 0 && /node\s+scripts\/ci\/provision-gemini-key\.mjs\s*$/m.test(provisionStep),
+    'an argv secret surfaces in process listings and run transcripts',
+  );
+  check(
+    'the provisioning step wires exactly the three secrets through its env block',
+    provisionIdx >= 0
+      && depSteps[provisionIdx]?.env?.GEMINI_API_KEY === '${{ secrets.GEMINI_API_KEY }}'
+      && depSteps[provisionIdx]?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}'
+      && depSteps[provisionIdx]?.env?.VERCEL_ORG_ID === '${{ secrets.VERCEL_ORG_ID }}',
+    `provisioning step env: ${JSON.stringify(depSteps[provisionIdx]?.env ?? null)}`,
+  );
+  check(
+    'provisioning runs AFTER project resolution (it needs the runtime PROJECT_ID)',
+    provisionIdx >= 0 && resolveIdx >= 0 && provisionIdx > resolveIdx,
+    `project resolution at step ${resolveIdx}, provisioning at ${provisionIdx}`,
+  );
+  check(
+    'provisioning PRECEDES deployment creation (a deployment may only exist for a provisioned Production)',
+    provisionIdx >= 0 && createDeployIdx >= 0 && provisionIdx < createDeployIdx,
+    `provisioning at step ${provisionIdx}, Create Deployment at ${createDeployIdx}`,
+  );
+  const geminiLeakLines = depActiveRuns
+    .split('\n')
+    .filter((line) => /GEMINI_API_KEY/.test(line) && /\becho\b|\bcurl\b|\bprintf\b/.test(line)
+      && !/-z\s+"\$\{GEMINI_API_KEY\}"/.test(line)
+      // Fixed diagnostic strings may NAME the secret; interpolating its VALUE
+      // is what the second filter below catches.
+      && /\$\{?GEMINI_API_KEY\}?/.test(line));
+  check(
+    'no echo/printf/curl line ever interpolates the GEMINI_API_KEY value',
+    geminiLeakLines.length === 0,
+    `offending lines: ${geminiLeakLines.length}`,
+  );
+
+  // The module's source discipline, held to the alias-validator standard.
+  const provisionRaw = fs.readFileSync(PROVISION_HELPER_PATH, 'utf8');
+  const provisionCode = jsExecutableLines(provisionRaw);
+  check(
+    'the provisioning module contains NO template interpolation at all',
+    !/\$\{/.test(provisionCode),
+    'concatenation of table constants only — no path for a secret or response byte into a log line',
+  );
+  check(
+    'the provisioning module targets the bounded v10 env upsert endpoint',
+    /api\.vercel\.com\/v10\/projects\//.test(provisionCode)
+      && /upsert=true/.test(provisionCode)
+      && /teamId=/.test(provisionCode),
+  );
+  check(
+    'the provisioning module writes GEMINI_API_KEY as a SENSITIVE var',
+    /key:\s*'GEMINI_API_KEY'/.test(provisionCode) && /type:\s*'sensitive'/.test(provisionCode),
+  );
+  check(
+    'the provisioning module targets Production ONLY',
+    /target:\s*\['production'\]/.test(provisionCode)
+      && !/'preview'|'development'/.test(provisionCode),
+    'a preview/development target would leak the key outside the incident scope',
+  );
+  check(
+    'the provisioning module never reads a response body',
+    !/\.text\(|\.json\(|\.arrayBuffer\(|\.body\b/.test(provisionCode),
+    'only the numeric status may be consulted; a body is remote bytes headed for a log',
+  );
+  check(
+    'the provisioning module never consumes argv for inputs',
+    !/argv\.slice\(2\)/.test(provisionCode) && /process\.env/.test(provisionCode),
+    'secrets must arrive via the environment, never the command line',
+  );
+  check(
+    'the provisioning module keeps a frozen message table and sanitizes every line',
+    /Object\.freeze\(/.test(provisionCode)
+      && /GEMINI_PROVISIONING_MESSAGES/.test(provisionCode)
+      && /function sanitizeDiagnostic/.test(provisionCode),
+  );
+
   // ── HTTP probes must yield exactly ONE status code ───────────────────
   // `|| echo "000"` appends a SECOND line to a variable that already holds
   // curl's own `000` on connection failure, producing "000\n000" — a value
@@ -1419,7 +1550,14 @@ if (dep) {
     { name: 'target=production query lookup (latest-prod clone)', re: /target=production/ },
     { name: 'Vercel deploy hook secret', re: /VERCEL_DEPLOY_HOOK/ },
     { name: 'deploy-hook integration endpoint', re: /\/v1\/integrations\/deploy/ },
-    { name: 'project env mutation endpoint', re: /projects\/[^\s"']*\/env/ },
+    // The DIC-P0 hBP09 provisioning contract allows exactly ONE env write:
+    // the sensitive Production-only GEMINI_API_KEY upsert, and it lives in
+    // the committed module scripts/ci/provision-gemini-key.mjs where the
+    // behaviour suite executes it. The WORKFLOW file itself must still never
+    // name the env endpoint inline — an inline mutation would be an
+    // unreviewed, untestable second write path, which is what this ban is
+    // really about.
+    { name: 'an INLINE project env mutation endpoint (the committed provisioning module is the only env write path)', re: /projects\/[^\s"']*\/env/ },
     { name: 'project domain mutation endpoint', re: /\/domains/ },
     { name: 'DNS record endpoint', re: /\/records/ },
     { name: 'HTTP DELETE', re: /-X\s+DELETE/ },
@@ -1451,6 +1589,12 @@ if (dep) {
     typeof pkg.scripts?.[ALIAS_NPM_SCRIPT] === 'string'
       && pkg.scripts[ALIAS_NPM_SCRIPT].includes('test-alias-binding-validator.mjs'),
     `got ${JSON.stringify(pkg.scripts?.[ALIAS_NPM_SCRIPT])}`,
+  );
+  check(
+    `package.json declares the ${PROVISION_NPM_SCRIPT} script`,
+    typeof pkg.scripts?.[PROVISION_NPM_SCRIPT] === 'string'
+      && pkg.scripts[PROVISION_NPM_SCRIPT].includes('test-gemini-provisioning.mjs'),
+    `got ${JSON.stringify(pkg.scripts?.[PROVISION_NPM_SCRIPT])}`,
   );
 }
 

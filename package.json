@@ -185,7 +185,8 @@
     "test:scan-ambiguous-printing-flow": "node --import ./scripts/register-web-render.mjs scripts/test-scan-ambiguous-printing-flow.mjs",
     "test:printing-identity-isolation": "node scripts/test-printing-identity-isolation.mjs",
     "test:exact-sha-production-recovery": "node scripts/test-exact-sha-production-recovery.mjs",
-    "test:alias-binding-validator": "node scripts/test-alias-binding-validator.mjs"
+    "test:alias-binding-validator": "node scripts/test-alias-binding-validator.mjs",
+    "test:gemini-provisioning": "node scripts/test-gemini-provisioning.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
