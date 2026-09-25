@@ -4,12 +4,12 @@
   "nameZh": "時乃空",
   "trend": "up",
   "score": 0.53,
-  "confidence": 0.9,
+  "confidence": 0.8,
   "components": {
     "priceTrend": 0.83,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.136Z",
-  "dataPoints": 67
+  "lastUpdated": "2026-09-25T12:13:52.478Z",
+  "dataPoints": 68
 }

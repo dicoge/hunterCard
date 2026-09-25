@@ -3,13 +3,13 @@
   "name": "ラオーラ・パンテーラ",
   "nameZh": "勞菈·潘德菈",
   "trend": "down",
-  "score": -0.34,
+  "score": -0.35,
   "confidence": 0.4,
   "components": {
     "priceTrend": -0.62,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.169Z",
+  "lastUpdated": "2026-09-25T12:13:52.506Z",
   "dataPoints": 66
 }

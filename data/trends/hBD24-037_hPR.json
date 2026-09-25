@@ -3,13 +3,13 @@
   "name": "森カリオペ",
   "nameZh": "森美聲",
   "trend": "up",
-  "score": 0.29,
+  "score": 0.28,
   "confidence": 0.5,
   "components": {
     "priceTrend": 0.43,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.133Z",
+  "lastUpdated": "2026-09-25T12:13:52.476Z",
   "dataPoints": 56
 }

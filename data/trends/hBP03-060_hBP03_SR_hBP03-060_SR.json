@@ -3,13 +3,13 @@
   "name": "ロボ子さん",
   "nameZh": "蘿蔔子",
   "trend": "down",
-  "score": -0.19,
+  "score": -0.2,
   "confidence": 0.5,
   "components": {
     "priceTrend": -0.37,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.165Z",
+  "lastUpdated": "2026-09-25T12:13:52.501Z",
   "dataPoints": 67
 }

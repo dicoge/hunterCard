@@ -3,13 +3,13 @@
   "name": "不知火フレア",
   "nameZh": "不知火芙蕾雅",
   "trend": "down",
-  "score": -0.34,
+  "score": -0.35,
   "confidence": 0.7,
   "components": {
     "priceTrend": -0.62,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.210Z",
-  "dataPoints": 67
+  "lastUpdated": "2026-09-25T12:13:52.547Z",
+  "dataPoints": 68
 }

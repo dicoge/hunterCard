@@ -10,8 +10,16 @@
       "currency": "JPY",
       "cardId": "hBP01-013_hBP01_R_hBP01-013_R_02",
       "sourceProduct": "hBP01"
+    },
+    {
+      "date": "2026-09-25",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-013_hBP01_R_hBP01-013_R_02",
+      "sourceProduct": "hBP01"
     }
   ],
-  "lastUpdated": "2026-09-23T12:15:56.811Z",
+  "lastUpdated": "2026-09-25T12:13:43.594Z",
   "nameZh": "天音彼方"
 }

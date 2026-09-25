@@ -2,7 +2,7 @@
   "cardId": "hY04-007",
   "name": "青エール",
   "nameZh": "藍色應援",
-  "trend": "up",
+  "trend": "stable",
   "score": 0.15,
   "confidence": 0.6,
   "components": {
@@ -10,6 +10,6 @@
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.217Z",
+  "lastUpdated": "2026-09-25T12:13:52.554Z",
   "dataPoints": 57
 }

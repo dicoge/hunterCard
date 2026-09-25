@@ -3,13 +3,13 @@
   "name": "水宮枢",
   "nameZh": "水宮樞",
   "trend": "down",
-  "score": -0.2,
+  "score": -0.21,
   "confidence": 0.8,
   "components": {
     "priceTrend": -0.39,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.212Z",
-  "dataPoints": 65
+  "lastUpdated": "2026-09-25T12:13:52.549Z",
+  "dataPoints": 66
 }
