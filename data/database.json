@@ -7253,103 +7253,6 @@
       },
       "nameZh": "風真伊呂波"
     },
-    "hBP01-048_ent07_P_hBP01-048_P": {
-      "id": "hBP01-048_ent07_P_hBP01-048_P",
-      "cardNumber": "hBP01-048",
-      "name": "風真いろは",
-      "type": "Holomen",
-      "color": "green",
-      "rarity": "P",
-      "series": "ent07",
-      "sourceProduct": "ent07",
-      "sourceProductName": "",
-      "sourceProductText": "",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-048_P.png",
-      "localImage": "/images/hBP01-048.jpg",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "Debut",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "ytStats": {
-        "subscriberCount": 1150000,
-        "totalViewCount": 313639775,
-        "date": "2026-09-26",
-        "channelId": "UC_vMYWcDjmfdpH6r4TTn1MQ",
-        "source": "youtube_about_ssr",
-        "parser": "ytInitialData.aboutChannelViewModel/v1",
-        "fetchedAt": "2026-09-26T12:06:57.036Z",
-        "subscriberDate": "2026-09-26",
-        "viewChannelId": "UC_vMYWcDjmfdpH6r4TTn1MQ",
-        "viewSource": "youtube_about_ssr",
-        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
-        "viewFetchedAt": "2026-09-26T12:06:57.036Z",
-        "subscriberGrowth_1d": null,
-        "subscriberGrowth_7d": null,
-        "subscriberGrowth_15d": null,
-        "subscriberGrowth_30d": null,
-        "viewCount_1d": null,
-        "viewCount_7d": 1280197,
-        "viewCount_15d": null,
-        "viewCount_30d": 4862334,
-        "newsCount": 1,
-        "newsPositive": 0,
-        "newsNegative": 0,
-        "growth_1d": null,
-        "growth_7d": null,
-        "growth_15d": null,
-        "growth_30d": null,
-        "viewCount_daily": null,
-        "viewCount_weekly": 1280197,
-        "viewCount_monthly": 4862334
-      },
-      "skillsJp": {
-        "cardNumber": "hBP01-048",
-        "name": "風真いろは",
-        "cardType": "ホロメン",
-        "color": "緑",
-        "arts": [
-          {
-            "name": "皆殿、風真いろはでござる～",
-            "cost": "◇",
-            "damage": "20",
-            "effect": ""
-          }
-        ],
-        "keywords": [
-          {
-            "label": "エクストラ",
-            "effect": "このホロメンはデッキに何枚でも入れられる"
-          }
-        ]
-      },
-      "skillsZh": {
-        "cardNumber": "hBP01-048",
-        "name": "風真伊呂波",
-        "cardType": "成員",
-        "color": "緑",
-        "arts": [
-          {
-            "name": "各位，我是風真伊呂波～",
-            "cost": "◇",
-            "damage": "20",
-            "effect": ""
-          }
-        ],
-        "keywords": [
-          {
-            "label": "額外",
-            "effect": "這個成員可以在牌組中放入任意張數"
-          }
-        ]
-      },
-      "nameZh": "風真伊呂波"
-    },
     "hBP01-048_ent07": {
       "id": "hBP01-048_ent07",
       "cardNumber": "hBP01-048",
@@ -7661,6 +7564,103 @@
       "yuyuImage": "",
       "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP06/hBP01-048_03_C.png",
+      "localImage": "/images/hBP01-048.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "ytStats": {
+        "subscriberCount": 1150000,
+        "totalViewCount": 313639775,
+        "date": "2026-09-26",
+        "channelId": "UC_vMYWcDjmfdpH6r4TTn1MQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-26T12:06:57.036Z",
+        "subscriberDate": "2026-09-26",
+        "viewChannelId": "UC_vMYWcDjmfdpH6r4TTn1MQ",
+        "viewSource": "youtube_about_ssr",
+        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
+        "viewFetchedAt": "2026-09-26T12:06:57.036Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": 1280197,
+        "viewCount_15d": null,
+        "viewCount_30d": 4862334,
+        "newsCount": 1,
+        "newsPositive": 0,
+        "newsNegative": 0,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": null,
+        "growth_30d": null,
+        "viewCount_daily": null,
+        "viewCount_weekly": 1280197,
+        "viewCount_monthly": 4862334
+      },
+      "skillsJp": {
+        "cardNumber": "hBP01-048",
+        "name": "風真いろは",
+        "cardType": "ホロメン",
+        "color": "緑",
+        "arts": [
+          {
+            "name": "皆殿、風真いろはでござる～",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "エクストラ",
+            "effect": "このホロメンはデッキに何枚でも入れられる"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hBP01-048",
+        "name": "風真伊呂波",
+        "cardType": "成員",
+        "color": "緑",
+        "arts": [
+          {
+            "name": "各位，我是風真伊呂波～",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "額外",
+            "effect": "這個成員可以在牌組中放入任意張數"
+          }
+        ]
+      },
+      "nameZh": "風真伊呂波"
+    },
+    "hBP01-048_ent07_P_hBP01-048_P": {
+      "id": "hBP01-048_ent07_P_hBP01-048_P",
+      "cardNumber": "hBP01-048",
+      "name": "風真いろは",
+      "type": "Holomen",
+      "color": "green",
+      "rarity": "P",
+      "series": "ent07",
+      "sourceProduct": "ent07",
+      "sourceProductName": "",
+      "sourceProductText": "",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP01-048_P.png",
       "localImage": "/images/hBP01-048.jpg",
       "hp": "",
       "life": "",
@@ -15292,103 +15292,6 @@
       },
       "nameZh": "白銀諾艾爾"
     },
-    "hBP02-014_ent07_P_hBP02-014_P": {
-      "id": "hBP02-014_ent07_P_hBP02-014_P",
-      "cardNumber": "hBP02-014",
-      "name": "白銀ノエル",
-      "type": "Holomen",
-      "color": "white",
-      "rarity": "P",
-      "series": "ent07",
-      "sourceProduct": "ent07",
-      "sourceProductName": "",
-      "sourceProductText": "",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP02-014_P.png",
-      "localImage": "/images/hBP02-014.jpg",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "Debut",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "ytStats": {
-        "subscriberCount": 2050000,
-        "totalViewCount": 465645489,
-        "date": "2026-09-26",
-        "channelId": "UCdyqAaZDKHXg4Ahi7VENThQ",
-        "source": "youtube_about_ssr",
-        "parser": "ytInitialData.aboutChannelViewModel/v1",
-        "fetchedAt": "2026-09-26T12:05:46.891Z",
-        "subscriberDate": "2026-09-26",
-        "viewChannelId": "UCdyqAaZDKHXg4Ahi7VENThQ",
-        "viewSource": "youtube_about_ssr",
-        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
-        "viewFetchedAt": "2026-09-26T12:05:46.891Z",
-        "subscriberGrowth_1d": null,
-        "subscriberGrowth_7d": null,
-        "subscriberGrowth_15d": null,
-        "subscriberGrowth_30d": null,
-        "viewCount_1d": null,
-        "viewCount_7d": 2865134,
-        "viewCount_15d": null,
-        "viewCount_30d": 9326225,
-        "newsCount": 0,
-        "newsPositive": 0,
-        "newsNegative": 0,
-        "growth_1d": null,
-        "growth_7d": null,
-        "growth_15d": null,
-        "growth_30d": null,
-        "viewCount_daily": null,
-        "viewCount_weekly": 2865134,
-        "viewCount_monthly": 9326225
-      },
-      "skillsJp": {
-        "cardNumber": "hBP02-014",
-        "name": "白銀ノエル",
-        "cardType": "ホロメン",
-        "color": "白",
-        "arts": [
-          {
-            "name": "こんまっする～！",
-            "cost": "◇",
-            "damage": "20",
-            "effect": ""
-          }
-        ],
-        "keywords": [
-          {
-            "label": "エクストラ",
-            "effect": "このホロメンはデッキに何枚でも入れられる"
-          }
-        ]
-      },
-      "skillsZh": {
-        "cardNumber": "hBP02-014",
-        "name": "白銀諾艾爾",
-        "cardType": "成員",
-        "color": "白",
-        "arts": [
-          {
-            "name": "康～肌肉～！",
-            "cost": "◇",
-            "damage": "20",
-            "effect": ""
-          }
-        ],
-        "keywords": [
-          {
-            "label": "額外",
-            "effect": "這個成員可以在牌組中放入任意張數"
-          }
-        ]
-      },
-      "nameZh": "白銀諾艾爾"
-    },
     "hBP02-014_ent07": {
       "id": "hBP02-014_ent07",
       "cardNumber": "hBP02-014",
@@ -15700,6 +15603,103 @@
       "yuyuImage": "",
       "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hBP02-014_02_C.png",
+      "localImage": "/images/hBP02-014.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "ytStats": {
+        "subscriberCount": 2050000,
+        "totalViewCount": 465645489,
+        "date": "2026-09-26",
+        "channelId": "UCdyqAaZDKHXg4Ahi7VENThQ",
+        "source": "youtube_about_ssr",
+        "parser": "ytInitialData.aboutChannelViewModel/v1",
+        "fetchedAt": "2026-09-26T12:05:46.891Z",
+        "subscriberDate": "2026-09-26",
+        "viewChannelId": "UCdyqAaZDKHXg4Ahi7VENThQ",
+        "viewSource": "youtube_about_ssr",
+        "viewParser": "ytInitialData.aboutChannelViewModel/v1",
+        "viewFetchedAt": "2026-09-26T12:05:46.891Z",
+        "subscriberGrowth_1d": null,
+        "subscriberGrowth_7d": null,
+        "subscriberGrowth_15d": null,
+        "subscriberGrowth_30d": null,
+        "viewCount_1d": null,
+        "viewCount_7d": 2865134,
+        "viewCount_15d": null,
+        "viewCount_30d": 9326225,
+        "newsCount": 0,
+        "newsPositive": 0,
+        "newsNegative": 0,
+        "growth_1d": null,
+        "growth_7d": null,
+        "growth_15d": null,
+        "growth_30d": null,
+        "viewCount_daily": null,
+        "viewCount_weekly": 2865134,
+        "viewCount_monthly": 9326225
+      },
+      "skillsJp": {
+        "cardNumber": "hBP02-014",
+        "name": "白銀ノエル",
+        "cardType": "ホロメン",
+        "color": "白",
+        "arts": [
+          {
+            "name": "こんまっする～！",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "エクストラ",
+            "effect": "このホロメンはデッキに何枚でも入れられる"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hBP02-014",
+        "name": "白銀諾艾爾",
+        "cardType": "成員",
+        "color": "白",
+        "arts": [
+          {
+            "name": "康～肌肉～！",
+            "cost": "◇",
+            "damage": "20",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "額外",
+            "effect": "這個成員可以在牌組中放入任意張數"
+          }
+        ]
+      },
+      "nameZh": "白銀諾艾爾"
+    },
+    "hBP02-014_ent07_P_hBP02-014_P": {
+      "id": "hBP02-014_ent07_P_hBP02-014_P",
+      "cardNumber": "hBP02-014",
+      "name": "白銀ノエル",
+      "type": "Holomen",
+      "color": "white",
+      "rarity": "P",
+      "series": "ent07",
+      "sourceProduct": "ent07",
+      "sourceProductName": "",
+      "sourceProductText": "",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP02-014_P.png",
       "localImage": "/images/hBP02-014.jpg",
       "hp": "",
       "life": "",
@@ -16268,71 +16268,6 @@
         "2026-09-26": 2600
       }
     },
-    "hBP02-024_ent07_P_hBP02-024_P": {
-      "id": "hBP02-024_ent07_P_hBP02-024_P",
-      "cardNumber": "hBP02-024",
-      "name": "大神ミオ",
-      "type": "Holomen",
-      "color": "green",
-      "rarity": "P",
-      "series": "ent07",
-      "sourceProduct": "ent07",
-      "sourceProductName": "",
-      "sourceProductText": "",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP02-024_P.png",
-      "localImage": "/images/hBP02-024.jpg",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "Debut",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "skillsJp": {
-        "cardNumber": "hBP02-024",
-        "name": "大神ミオ",
-        "cardType": "ホロメン",
-        "color": "緑",
-        "arts": [
-          {
-            "name": "うちうち、うちだよ～大神ミオだよ～",
-            "cost": "◇",
-            "damage": "10",
-            "effect": "自分のステージのエール1枚を、自分の#JPを持つホロメンに付け替えられる。"
-          }
-        ],
-        "keywords": [
-          {
-            "label": "エクストラ",
-            "effect": "このホロメンはデッキに何枚でも入れられる"
-          }
-        ]
-      },
-      "skillsZh": {
-        "cardNumber": "hBP02-024",
-        "name": "大神澪",
-        "cardType": "成員",
-        "color": "緑",
-        "arts": [
-          {
-            "name": "在家在家、就是在家～是大神澪喔～",
-            "cost": "◇",
-            "damage": "10",
-            "effect": "可將自己場上的1張應援，換裝到自己持有#JP的成員上。"
-          }
-        ],
-        "keywords": [
-          {
-            "label": "額外",
-            "effect": "這個成員可以在牌組中放入任意張數"
-          }
-        ]
-      },
-      "nameZh": "大神澪"
-    },
     "hBP02-024_ent07_C_hBP02-024_C": {
       "id": "hBP02-024_ent07_C_hBP02-024_C",
       "cardNumber": "hBP02-024",
@@ -16414,6 +16349,71 @@
       "yuyuImage": "",
       "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP07/hBP02-024_02_C.png",
+      "localImage": "/images/hBP02-024.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hBP02-024",
+        "name": "大神ミオ",
+        "cardType": "ホロメン",
+        "color": "緑",
+        "arts": [
+          {
+            "name": "うちうち、うちだよ～大神ミオだよ～",
+            "cost": "◇",
+            "damage": "10",
+            "effect": "自分のステージのエール1枚を、自分の#JPを持つホロメンに付け替えられる。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "エクストラ",
+            "effect": "このホロメンはデッキに何枚でも入れられる"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hBP02-024",
+        "name": "大神澪",
+        "cardType": "成員",
+        "color": "緑",
+        "arts": [
+          {
+            "name": "在家在家、就是在家～是大神澪喔～",
+            "cost": "◇",
+            "damage": "10",
+            "effect": "可將自己場上的1張應援，換裝到自己持有#JP的成員上。"
+          }
+        ],
+        "keywords": [
+          {
+            "label": "額外",
+            "effect": "這個成員可以在牌組中放入任意張數"
+          }
+        ]
+      },
+      "nameZh": "大神澪"
+    },
+    "hBP02-024_ent07_P_hBP02-024_P": {
+      "id": "hBP02-024_ent07_P_hBP02-024_P",
+      "cardNumber": "hBP02-024",
+      "name": "大神ミオ",
+      "type": "Holomen",
+      "color": "green",
+      "rarity": "P",
+      "series": "ent07",
+      "sourceProduct": "ent07",
+      "sourceProductName": "",
+      "sourceProductText": "",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP02-024_P.png",
       "localImage": "/images/hBP02-024.jpg",
       "hp": "",
       "life": "",
@@ -27716,71 +27716,6 @@
       },
       "nameZh": "貓又小粥"
     },
-    "hSD03-002_ent07_P_2_hSD03-002_P_2": {
-      "id": "hSD03-002_ent07_P_2_hSD03-002_P_2",
-      "cardNumber": "hSD03-002",
-      "name": "猫又おかゆ",
-      "type": "Holomen",
-      "color": "blue",
-      "rarity": "P_2",
-      "series": "ent07",
-      "sourceProduct": "ent07",
-      "sourceProductName": "",
-      "sourceProductText": "",
-      "sellPrice": null,
-      "yuyuName": "",
-      "yuyuImage": "",
-      "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hSD03-002_P_2.png",
-      "localImage": "/images/hSD03-002.jpg",
-      "hp": "",
-      "life": "",
-      "arts": "",
-      "bloomLevel": "Debut",
-      "timestamp": "",
-      "_rawPricesArchive": [],
-      "skillsJp": {
-        "cardNumber": "hSD03-002",
-        "name": "猫又おかゆ",
-        "cardType": "ホロメン",
-        "color": "青",
-        "arts": [
-          {
-            "name": "もぐもぐ～おかゆ～",
-            "cost": "◇",
-            "damage": "30",
-            "effect": ""
-          }
-        ],
-        "keywords": [
-          {
-            "label": "エクストラ",
-            "effect": "このホロメンはデッキに何枚でも入れられる"
-          }
-        ]
-      },
-      "skillsZh": {
-        "cardNumber": "hSD03-002",
-        "name": "貓又小粥",
-        "cardType": "成員",
-        "color": "青",
-        "arts": [
-          {
-            "name": "大口吃～小粥～",
-            "cost": "◇",
-            "damage": "30",
-            "effect": ""
-          }
-        ],
-        "keywords": [
-          {
-            "label": "額外",
-            "effect": "這個成員可以在牌組中放入任意張數"
-          }
-        ]
-      },
-      "nameZh": "貓又小粥"
-    },
     "hSD03-002_hPR_P_hSD03-002_P_2": {
       "id": "hSD03-002_hPR_P_hSD03-002_P_2",
       "cardNumber": "hSD03-002",
@@ -27992,6 +27927,71 @@
       "yuyuImage": "",
       "prices": [],
       "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hBP05/hSD03-002_02_C.png",
+      "localImage": "/images/hSD03-002.jpg",
+      "hp": "",
+      "life": "",
+      "arts": "",
+      "bloomLevel": "Debut",
+      "timestamp": "",
+      "_rawPricesArchive": [],
+      "skillsJp": {
+        "cardNumber": "hSD03-002",
+        "name": "猫又おかゆ",
+        "cardType": "ホロメン",
+        "color": "青",
+        "arts": [
+          {
+            "name": "もぐもぐ～おかゆ～",
+            "cost": "◇",
+            "damage": "30",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "エクストラ",
+            "effect": "このホロメンはデッキに何枚でも入れられる"
+          }
+        ]
+      },
+      "skillsZh": {
+        "cardNumber": "hSD03-002",
+        "name": "貓又小粥",
+        "cardType": "成員",
+        "color": "青",
+        "arts": [
+          {
+            "name": "大口吃～小粥～",
+            "cost": "◇",
+            "damage": "30",
+            "effect": ""
+          }
+        ],
+        "keywords": [
+          {
+            "label": "額外",
+            "effect": "這個成員可以在牌組中放入任意張數"
+          }
+        ]
+      },
+      "nameZh": "貓又小粥"
+    },
+    "hSD03-002_ent07_P_2_hSD03-002_P_2": {
+      "id": "hSD03-002_ent07_P_2_hSD03-002_P_2",
+      "cardNumber": "hSD03-002",
+      "name": "猫又おかゆ",
+      "type": "Holomen",
+      "color": "blue",
+      "rarity": "P_2",
+      "series": "ent07",
+      "sourceProduct": "ent07",
+      "sourceProductName": "",
+      "sourceProductText": "",
+      "sellPrice": null,
+      "yuyuName": "",
+      "yuyuImage": "",
+      "prices": [],
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hSD03-002_P_2.png",
       "localImage": "/images/hSD03-002.jpg",
       "hp": "",
       "life": "",
@@ -269828,22 +269828,22 @@
       },
       "nameZh": "博衣可佑理"
     },
-    "hBP04-013_hCS01_SR_hBP04-013_02_SR": {
-      "id": "hBP04-013_hCS01_SR_hBP04-013_02_SR",
+    "hBP04-013_hPR_P_hBP04-013_P": {
+      "id": "hBP04-013_hPR_P_hBP04-013_P",
       "cardNumber": "hBP04-013",
       "name": "博衣こより",
       "type": "Holomen",
       "color": "white",
-      "rarity": "SR",
-      "series": "hCS01",
-      "sourceProduct": "hCS01",
-      "sourceProductName": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
-      "sourceProductText": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
+      "rarity": "P",
+      "series": "hPR",
+      "sourceProduct": "hPR",
+      "sourceProductName": "PRカード",
+      "sourceProductText": "PRカード",
       "sellPrice": null,
       "yuyuName": "",
       "yuyuImage": "",
       "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP04-013_02_SR.png",
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP04-013_P.png",
       "localImage": "/images/hBP04-013.jpg",
       "hp": "200",
       "life": "",
@@ -269925,22 +269925,22 @@
       },
       "nameZh": "博衣可佑理"
     },
-    "hBP04-013_hPR_P_hBP04-013_P": {
-      "id": "hBP04-013_hPR_P_hBP04-013_P",
+    "hBP04-013_hCS01_SR_hBP04-013_02_SR": {
+      "id": "hBP04-013_hCS01_SR_hBP04-013_02_SR",
       "cardNumber": "hBP04-013",
       "name": "博衣こより",
       "type": "Holomen",
       "color": "white",
-      "rarity": "P",
-      "series": "hPR",
-      "sourceProduct": "hPR",
-      "sourceProductName": "PRカード",
-      "sourceProductText": "PRカード",
+      "rarity": "SR",
+      "series": "hCS01",
+      "sourceProduct": "hCS01",
+      "sourceProductName": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
+      "sourceProductText": "【hololive production OFFICIAL SHOP限定】hololive OFFICIAL CARD GAME 1st Anniversary Celebration Set",
       "sellPrice": null,
       "yuyuName": "",
       "yuyuImage": "",
       "prices": [],
-      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hPR/hBP04-013_P.png",
+      "officialImage": "https://hololive-official-cardgame.com/wp-content/images/cardlist/hCS01/hBP04-013_02_SR.png",
       "localImage": "/images/hBP04-013.jpg",
       "hp": "200",
       "life": "",
