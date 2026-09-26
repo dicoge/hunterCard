@@ -3,13 +3,13 @@
   "name": "一伊那尓栖",
   "nameZh": "一伊那爾棲",
   "trend": "down",
-  "score": -0.19,
+  "score": -0.2,
   "confidence": 0.5,
   "components": {
     "priceTrend": -0.37,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.157Z",
+  "lastUpdated": "2026-09-26T12:16:50.265Z",
   "dataPoints": 64
 }

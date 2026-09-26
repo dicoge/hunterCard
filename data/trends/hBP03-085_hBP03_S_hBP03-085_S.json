@@ -4,12 +4,12 @@
   "nameZh": "超級電腦",
   "trend": "up",
   "score": 0.63,
-  "confidence": 0.8,
+  "confidence": 0.7,
   "components": {
     "priceTrend": 1,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.166Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-26T12:16:50.275Z",
+  "dataPoints": 69
 }

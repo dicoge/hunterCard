@@ -671,4 +671,48 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
   }
 }
 
+// ---- Fixture J: refused increase payloads never decide row order ----------
+// DIC-1167 2026-09-25: detail-align ranks rows by prices[] (base entry +
+// richness) BEFORE the increase-side provenance gate strips refused payloads,
+// so the scrape shipped 5 cardNumber groups (hBP01-048, hBP02-014, hBP02-024,
+// hSD03-002, hBP04-013) reordered purely by payloads the gate refused. The
+// builder must re-align on the fail-closed shape after the strip and before
+// the decrease gate / canonical write.
+{
+  const src = fs.readFileSync(path.join(REPO_ROOT, 'scripts/build-database.js'), 'utf8');
+  const stripIdx = src.indexOf('increaseRejections.push(makeRejection(');
+  const decreaseIdx = src.indexOf('const dic1482Rejections = [];');
+  assert.ok(stripIdx > 0 && decreaseIdx > stripIdx,
+    'build-database.js must keep the DIC-1167 increase strip before the DIC-1482 decrease gate');
+  const realign = /orderCardsForDetailAlignment\s*\(\s*database\.cards\s*,\s*prevCards\s*\)/g;
+  const afterStrip = [...src.matchAll(realign)].filter((m) => m.index > stripIdx && m.index < decreaseIdx);
+  assert.equal(afterStrip.length, 1,
+    'build-database.js must re-run orderCardsForDetailAlignment(database.cards, prevCards) after stripping refused increase payloads');
+  assert.match(src.slice(afterStrip[0].index - 400, afterStrip[0].index), /database\.cards\s*=|const\s*{\s*cards:/,
+    'the post-strip re-align result must replace database.cards');
+
+  // Behaviour on the exact 2026-09-25 hBP01-048 shape: the ent07 promo row
+  // arrives freshly priced from a cross-product listing, is ranked ahead of
+  // the ent07 aggregate on that payload, then refused.
+  const { orderCardsForDetailAlignment } = await import('./lib/order-cards-for-detail-alignment.js');
+  const row = (id, sourceProduct, prices = []) => ({ id, cardNumber: 'hBP01-048', sourceProduct, prices });
+  const prev = {
+    'hBP01-048_hBP01_C_hBP01-048_C': row('hBP01-048_hBP01_C_hBP01-048_C', 'hBP01', [{ name: 'Base', sellPrice: 30 }]),
+    'hBP01-048_ent07': row('hBP01-048_ent07', 'ent07'),
+    'hBP01-048_ent07_C_hBP01-048_C': row('hBP01-048_ent07_C_hBP01-048_C', 'ent07'),
+    'hBP01-048_ent07_P_hBP01-048_P': row('hBP01-048_ent07_P_hBP01-048_P', 'ent07'),
+  };
+  const fresh = structuredClone(prev);
+  fresh['hBP01-048_ent07_P_hBP01-048_P'].prices = [{
+    name: 'Base', sellPrice: 980, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10001.jpg',
+  }];
+  const promoted = orderCardsForDetailAlignment(fresh, prev).cards;
+  assert.notDeepEqual(Object.keys(promoted), Object.keys(prev),
+    'fixture precondition: the refused payload must promote its row before the strip');
+  promoted['hBP01-048_ent07_P_hBP01-048_P'].prices = [];
+  const realigned = orderCardsForDetailAlignment(promoted, prev).cards;
+  assert.deepEqual(Object.keys(realigned), Object.keys(prev),
+    're-aligning after the strip must restore the previous committed order');
+}
+
 console.log('DIC-1227 yuyu-provenance preservation regression checks passed');

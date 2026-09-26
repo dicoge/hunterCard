@@ -3,13 +3,13 @@
   "name": "ハコス・ベールズ",
   "nameZh": "霸子·貝爾茲",
   "trend": "stable",
-  "score": 0.12,
+  "score": 0.11,
   "confidence": 0.7,
   "components": {
     "priceTrend": 0.14,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.182Z",
+  "lastUpdated": "2026-09-26T12:16:50.290Z",
   "dataPoints": 66
 }

@@ -10,8 +10,16 @@
       "currency": "JPY",
       "cardId": "hBP09-094_hBP09_U_hBP09-094_U",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-094_hBP09_U_hBP09-094_U",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-09-23T12:15:56.974Z",
+  "lastUpdated": "2026-09-26T12:16:41.916Z",
   "nameZh": "大空警察"
 }
