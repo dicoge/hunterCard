@@ -165,6 +165,8 @@
     "test:recognition-unavailable": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-unavailable.mjs",
     "test:recognition-provider": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-provider-fallback.mjs",
     "test:recognition-image-quality": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-image-quality.mjs",
+    "test:recognition-availability-validator": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-recognition-availability-validator.mjs",
+    "test:hbp09-recognition-corpus": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-hbp09-recognition-corpus.mjs",
     "test:store-mvp-strip": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-store-mvp-field-strip.mjs",
     "test:store-mvp-native-export": "node scripts/test-store-mvp-native-export.mjs",
     "test:store-mvp-ui-gates": "node scripts/test-store-mvp-ui-gates.mjs",
@@ -183,7 +185,9 @@
     "test:scan-ambiguous-printing-flow": "node --import ./scripts/register-web-render.mjs scripts/test-scan-ambiguous-printing-flow.mjs",
     "test:printing-identity-isolation": "node scripts/test-printing-identity-isolation.mjs",
     "test:exact-sha-production-recovery": "node scripts/test-exact-sha-production-recovery.mjs",
-    "test:alias-binding-validator": "node scripts/test-alias-binding-validator.mjs"
+    "test:alias-binding-validator": "node scripts/test-alias-binding-validator.mjs",
+    "test:gemini-provisioning": "node scripts/test-gemini-provisioning.mjs",
+    "test:vercel-curl": "node scripts/test-vercel-curl.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

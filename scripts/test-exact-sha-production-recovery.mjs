@@ -68,11 +68,14 @@ const WF_DIR = path.join(ROOT, '.github', 'workflows');
 const CI_PATH = path.join(WF_DIR, 'ci.yml');
 const DEPLOY_PATH = path.join(WF_DIR, 'holohunter-exact-sha-deploy.yml');
 const ALIAS_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'verify-alias-binding.mjs');
+const RECOG_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'verify-recognition-availability.mjs');
+const PROVISION_HELPER_PATH = path.join(ROOT, 'scripts', 'ci', 'provision-gemini-key.mjs');
 
 const CANONICAL_HOST = 'holohunter.dicoge.com';
 const VERCEL_PROJECT_NAME = 'holocard-hunter';
 const NPM_SCRIPT = 'test:exact-sha-production-recovery';
 const ALIAS_NPM_SCRIPT = 'test:alias-binding-validator';
+const PROVISION_NPM_SCRIPT = 'test:gemini-provisioning';
 
 let passed = 0;
 function check(label, cond, detail) {
@@ -267,6 +270,11 @@ if (ci) {
     validateRuns.includes(`npm run ${ALIAS_NPM_SCRIPT}`),
     'the alias validator BEHAVIOUR must be executed by CI, not just described by structural checks',
   );
+  check(
+    `ci.yml validate runs \`npm run ${PROVISION_NPM_SCRIPT}\``,
+    validateRuns.includes(`npm run ${PROVISION_NPM_SCRIPT}`),
+    'the provisioning module BEHAVIOUR must be executed by CI, not just described by structural checks',
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -378,12 +386,12 @@ if (ci) {
     `got secrets=${JSON.stringify(trampSecrets)}; inherit hands the callee every secret in the repo`,
   );
   check(
-    'the trampoline passes ONLY VERCEL_TOKEN + VERCEL_ORG_ID',
+    'the trampoline passes ONLY VERCEL_TOKEN + VERCEL_ORG_ID + GEMINI_API_KEY',
     JSON.stringify(Object.keys(trampSecrets ?? {}).sort())
-      === JSON.stringify(['VERCEL_ORG_ID', 'VERCEL_TOKEN']),
+      === JSON.stringify(['GEMINI_API_KEY', 'VERCEL_ORG_ID', 'VERCEL_TOKEN']),
     `secret keys: ${JSON.stringify(Object.keys(trampSecrets ?? {}))}`,
   );
-  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID']) {
+  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'GEMINI_API_KEY']) {
     check(
       `the trampoline maps ${name} from the repository secret of the same name`,
       trampSecrets?.[name] === `\${{ secrets.${name} }}`,
@@ -621,12 +629,12 @@ if (dep) {
     `declared: ${JSON.stringify(Object.keys(declaredCallSecrets).sort())} vs used: ${JSON.stringify(usedSecrets)}`,
   );
   check(
-    'the declared reusable secrets are exactly VERCEL_TOKEN + VERCEL_ORG_ID',
+    'the declared reusable secrets are exactly VERCEL_TOKEN + VERCEL_ORG_ID + GEMINI_API_KEY',
     JSON.stringify(Object.keys(declaredCallSecrets).sort())
-      === JSON.stringify(['VERCEL_ORG_ID', 'VERCEL_TOKEN']),
+      === JSON.stringify(['GEMINI_API_KEY', 'VERCEL_ORG_ID', 'VERCEL_TOKEN']),
     `got ${JSON.stringify(Object.keys(declaredCallSecrets))}`,
   );
-  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID']) {
+  for (const name of ['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'GEMINI_API_KEY']) {
     check(
       `workflow_call declares ${name} as REQUIRED`,
       declaredCallSecrets?.[name]?.required === true,
@@ -684,12 +692,15 @@ if (dep) {
     /git\s+ls-remote[^\n]*origin[^\n]*refs\/heads\/main/.test(depRuns),
   );
 
-  // ── Secrets: only the two that already exist, never printed ──────────
+  // ── Secrets: only the three the contract names, never printed ────────
+  // GEMINI_API_KEY joined the set for DIC-P0 hBP09: the workflow provisions
+  // it into Vercel Production before any deployment exists. It is still a
+  // closed set — any OTHER secret reference stays a failure.
   const secretRefs = [...dep.raw.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]);
-  const ALLOWED_SECRETS = new Set(['VERCEL_TOKEN', 'VERCEL_ORG_ID']);
+  const ALLOWED_SECRETS = new Set(['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'GEMINI_API_KEY']);
   const disallowed = [...new Set(secretRefs)].filter((s) => !ALLOWED_SECRETS.has(s));
   check(
-    'deploy workflow references ONLY VERCEL_TOKEN + VERCEL_ORG_ID',
+    'deploy workflow references ONLY VERCEL_TOKEN + VERCEL_ORG_ID + GEMINI_API_KEY',
     disallowed.length === 0,
     `disallowed secrets referenced: ${disallowed.join(', ')}`,
   );
@@ -697,9 +708,77 @@ if (dep) {
     'deploy workflow does not trust the known-stale VERCEL_PROJECT_ID secret',
     !/secrets\.VERCEL_PROJECT_ID/.test(dep.raw),
   );
+  // ── VERCEL_TOKEN never reaches a process argv (PR #216 CR d90a82ad) ──
+  // `curl --oauth2-bearer "${VERCEL_TOKEN}"` expanded the credential into
+  // curl's argv. Every Vercel API call must now go through the committed
+  // wrapper, which feeds the header on stdin; scripts/test-vercel-curl.mjs
+  // EXECUTES that wrapper and proves the argv/env/log property.
+  const activeRuns = executableLines(depRuns);
   check(
-    'deploy workflow passes the token via curl --oauth2-bearer (never echoed into a header string)',
-    /--oauth2-bearer/.test(depRuns),
+    'deploy workflow never passes a credential via curl --oauth2-bearer (argv exposure)',
+    !/--oauth2-bearer/.test(activeRuns),
+  );
+  const tokenArgvLines = activeRuns
+    .split('\n')
+    .filter((line) => /VERCEL_TOKEN/.test(line));
+  check(
+    'no run line interpolates VERCEL_TOKEN at all (so it cannot land in any argv)',
+    tokenArgvLines.length === 0,
+    `offending lines: ${tokenArgvLines.map((l) => l.trim()).join(' | ')}`,
+  );
+  check(
+    'deploy workflow never builds an Authorization/Bearer header on a command line',
+    !/Authorization|Bearer|-u\s+\S*:|--user\b/i.test(activeRuns),
+  );
+  check(
+    'deploy workflow never enables shell xtrace (set -x would trace expanded values)',
+    !/set\s+-[a-wyz]*x|set\s+-o\s+xtrace|bash\s+-x/.test(activeRuns),
+  );
+  const vercelCalls = activeRuns.split('\n').filter((line) => /\bcurl\b|vercel-curl\.sh/.test(line));
+  check(
+    'every Vercel API call goes through scripts/ci/vercel-curl.sh (six calls)',
+    countMatches(activeRuns, /bash scripts\/ci\/vercel-curl\.sh /g) === 6
+      && countMatches(activeRuns, /api\.vercel\.com/g) === 6,
+    `wrapper=${countMatches(activeRuns, /bash scripts\/ci\/vercel-curl\.sh /g)} `
+      + `api=${countMatches(activeRuns, /api\.vercel\.com/g)}`,
+  );
+  const bareCurls = vercelCalls.filter((line) => /\bcurl\b/.test(line) && !/vercel-curl\.sh/.test(line));
+  check(
+    'the only bare curl calls are unauthenticated canonical-host probes',
+    bareCurls.every((line) => /CANONICAL_HOST/.test(line) || /^\s*-/.test(line) || !/https?:/.test(line))
+      && !bareCurls.some((line) => /api\.vercel\.com/.test(line)),
+    `bare curl lines: ${bareCurls.map((l) => l.trim()).join(' | ')}`,
+  );
+  const wrapperSteps = (job?.steps ?? []).filter((s) => /vercel-curl\.sh/.test(s?.run ?? ''));
+  check(
+    'every step that calls the wrapper receives VERCEL_TOKEN via step env only',
+    wrapperSteps.length === 6
+      && wrapperSteps.every((s) => s?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}'),
+    `got ${wrapperSteps.length} steps`,
+  );
+  // MUTATION PROOF: the argv detectors above must fire on the exact shape
+  // the CR flagged (transcribed from c18407ae8, project resolution step).
+  const PRIOR_TOKEN_ARGV = [
+    'resp=$(curl -sS -w \'\\n%{http_code}\' \\',
+    '  --oauth2-bearer "${VERCEL_TOKEN}" \\',
+    '  "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")',
+  ].join('\n');
+  check(
+    'MUTATION: the argv detectors catch the prior `--oauth2-bearer "${VERCEL_TOKEN}"` call',
+    /--oauth2-bearer/.test(PRIOR_TOKEN_ARGV)
+      && PRIOR_TOKEN_ARGV.split('\n').some((line) => /VERCEL_TOKEN/.test(line)),
+  );
+  check(
+    'MUTATION: an inline -H "Authorization: Bearer ${VERCEL_TOKEN}" is caught too',
+    /Authorization|Bearer/i.test('curl -H "Authorization: Bearer ${VERCEL_TOKEN}" https://api.vercel.com/'),
+  );
+  check(
+    'ci.yml validate EXECUTES the vercel-curl wrapper suite',
+    /npm run test:vercel-curl\b/.test(ci?.raw ?? ''),
+  );
+  check(
+    'scripts/ci/vercel-curl.sh is committed next to the other CI helpers',
+    fs.existsSync(path.join(ROOT, 'scripts', 'ci', 'vercel-curl.sh')),
   );
 
   // ── Project resolution by name + GitHub linkage + runtime repoId ─────
@@ -899,12 +978,21 @@ if (dep) {
     armUnknown !== null && /exit 1/.test(armUnknown),
     `*) arm: ${JSON.stringify(armUnknown)}`,
   );
+  // The recognition smoke (DIC-P0 hBP09) is the ONLY step allowed after the
+  // alias proof, because it grades what users now actually receive — running
+  // it earlier would grade the PREVIOUS deployment. It can only turn a
+  // success into a failure, never the reverse: the alias-binding step stays
+  // the sole Production linkage authority, and the smoke holds no secret and
+  // creates nothing. Its own wiring is asserted in the section below.
+  const recogSmokeIdx = stepIndex(/verify-recognition-availability\.mjs/);
   check(
-    'alias-binding check runs AFTER the HTTP 200 probe and is the LAST step',
+    'alias-binding check runs AFTER the HTTP 200 probe; only the recognition smoke follows it',
     httpProbeIdx >= 0
       && aliasBindIdx > httpProbeIdx
-      && aliasBindIdx === depSteps.length - 1,
-    `http probe at step ${httpProbeIdx}, alias binding at ${aliasBindIdx} of ${depSteps.length}`,
+      && aliasBindIdx === depSteps.length - 2
+      && recogSmokeIdx === depSteps.length - 1,
+    `http probe at step ${httpProbeIdx}, alias binding at ${aliasBindIdx}, `
+      + `recognition smoke at ${recogSmokeIdx} of ${depSteps.length}`,
   );
   check(
     'HTTP 200 probe does not `exit 0` early (that would skip the binding check)',
@@ -927,6 +1015,123 @@ if (dep) {
     'alias-binding check hard-fails the documented explicit alias-API errors',
     /401/.test(aliasStep) && /403/.test(aliasStep) && /410/.test(aliasStep),
     'unauthorized/forbidden/gone cannot be fixed by waiting out the window',
+  );
+
+  // ── Recognition smoke: Production must be able to recognise (DIC-P0) ─
+  //
+  // On 2026-09-24 canonical Production answered every hBP09 scan with 503
+  // RECOGNITION_UNAVAILABLE — no GEMINI_API_KEY in the deployment, catalog
+  // fully present. DIC-1185 correctly made recognition fail closed to Google
+  // direct, but no deploy gate proved the provider is provisioned, so this
+  // workflow reported green runs for a Production whose scanner could not
+  // recognise anything. The final step closes that gap with a free probe
+  // (a valid PNG below the 320px legibility floor: 404 photo-answer =
+  // provisioned, zero vision tokens; 503 with the stable code = fatal).
+  // Behaviour of the decision module is asserted by
+  // scripts/test-recognition-availability-validator.mjs against the REAL
+  // handler; what belongs HERE is only the wiring.
+  const recogStep = recogSmokeIdx >= 0 ? stepRun(depSteps[recogSmokeIdx]) : '';
+  check(
+    'recognition availability validator exists as a committed module',
+    fs.existsSync(RECOG_HELPER_PATH),
+    `expected ${path.relative(ROOT, RECOG_HELPER_PATH)} on disk`,
+  );
+  check(
+    'recognition smoke invokes the committed validator (not an inline heredoc)',
+    recogSmokeIdx >= 0 && /node\s+scripts\/ci\/verify-recognition-availability\.mjs/.test(recogStep),
+    'an inline `node -e` validator cannot be executed by a test',
+  );
+  check(
+    'recognition smoke keeps no inline node validator alongside it',
+    recogSmokeIdx >= 0 && !/node\s+-e/.test(recogStep),
+    'a second, untested copy of the decision would defeat the extraction',
+  );
+  check(
+    'recognition smoke takes its probe body from the module (--emit-probe-body), never an inline copy',
+    /--emit-probe-body/.test(recogStep) && !/base64,/.test(recogStep),
+    'an inline image constant would drift from the one the tests pin below the 320px floor',
+  );
+  check(
+    'recognition smoke probes exactly the canonical recognize-card endpoint',
+    /https:\/\/\$\{CANONICAL_HOST\}\/api\/recognize-card/.test(recogStep),
+    'the probe must grade what users receive at the canonical host',
+  );
+  check(
+    'recognition smoke holds no Vercel credential and calls no Vercel API',
+    recogSmokeIdx >= 0
+      && !/VERCEL_TOKEN|VERCEL_ORG_ID|api\.vercel\.com/.test(recogStep)
+      && !JSON.stringify(depSteps[recogSmokeIdx]?.env ?? {}).includes('secrets.'),
+    'a read-only public probe must not widen the credential surface',
+  );
+  check(
+    'recognition smoke tolerates curl failure without fabricating a code',
+    recogSmokeIdx >= 0 && /\|\|\s*true/.test(recogStep),
+    'curl already reports 000 through -w; `|| true` keeps $code a single value',
+  );
+
+  // All three validator outcomes handled, and handled distinctly — the same
+  // arm-slicing discipline as the alias step above.
+  const recogRcCase = (/case\s+"\$rc"\s+in\n([\s\S]*?)\n\s*esac/.exec(recogStep) ?? [])[1] ?? '';
+  check(
+    'recognition smoke branches on the validator status in its own case block',
+    /rc=\$\?/.test(recogStep) && recogRcCase.length > 0,
+    'could not isolate `case "$rc" in … esac`',
+  );
+  const recogArm = (label) => {
+    const m = new RegExp(`\\n?\\s*${label}\\)\\n([\\s\\S]*?);;`).exec(recogRcCase);
+    return m ? m[1] : null;
+  };
+  const recogArmSuccess = recogArm('0');
+  const recogArmRetry = recogArm('2');
+  const recogArmFatal = recogArm('1');
+  const recogArmUnknown = recogArm('\\*');
+  check(
+    'recognition validator success (0) proves availability and exits 0',
+    recogArmSuccess !== null && /exit 0/.test(recogArmSuccess),
+    `0) arm: ${JSON.stringify(recogArmSuccess)}`,
+  );
+  check(
+    'recognition validator retryable (2) does NOT exit — it falls through to the bounded loop',
+    recogArmRetry !== null && !/\bexit\b/.test(recogArmRetry),
+    `2) arm: ${JSON.stringify(recogArmRetry)}`,
+  );
+  check(
+    'recognition validator fatal (1) aborts immediately with exit 1 (an unprovisioned key cannot be waited out)',
+    recogArmFatal !== null && /exit 1/.test(recogArmFatal),
+    `1) arm: ${JSON.stringify(recogArmFatal)}`,
+  );
+  check(
+    'an unexpected recognition validator status fails closed',
+    recogArmUnknown !== null && /exit 1/.test(recogArmUnknown),
+    `*) arm: ${JSON.stringify(recogArmUnknown)}`,
+  );
+  check(
+    'recognition smoke fatal arm names the missing credential and the provisioning doc',
+    /GEMINI_API_KEY/.test(recogStep) && /docs\/recognition-provisioning\.md/.test(recogStep),
+    'the operator remediation must be stated where the failure is reported',
+  );
+  check(
+    'recognition smoke is bounded and hard-fails on timeout',
+    /MAX_ATTEMPTS/.test(recogStep)
+      && /never proven|was never proven/i.test(recogStep)
+      && /exit 1/.test(recogStep),
+    'an unbounded or soft-failing wait proves nothing',
+  );
+  check(
+    'recognition smoke reduces the HTTP status to three digits before echoing it',
+    /grep\s+-Eo\s+'\^\[0-9\]\{3\}\$'/.test(recogStep),
+    'the probe status is response-adjacent data; only a bounded token may be printed',
+  );
+
+  // The single-POST guarantee above is about DEPLOYMENT CREATION: exactly one
+  // `-X POST` against /v13/deployments. The probe sends its body with
+  // `--data-binary`, and this check pins that no OTHER request in the
+  // workflow carries a body toward the Vercel API.
+  check(
+    'the recognition probe is the only non-Vercel request that carries a body',
+    countMatches(depActiveRuns, /--data-binary/g) === 1
+      && /--data-binary\s+@\/tmp\/recognition-probe-request\.json/.test(recogStep),
+    'a second body-carrying request would be an unreviewed write path',
   );
 
   // ── No API-controlled byte may reach the Actions log ─────────────────
@@ -1172,6 +1377,161 @@ if (dep) {
       .some((e) => !HELPER_ALLOWED_INTERPOLATION.test(e)),
   );
 
+  // ── GEMINI_API_KEY provisioning: the DIC-P0 hBP09 write path ─────────
+  //
+  // The first repair only DETECTED a missing key after deploying (the
+  // recognition smoke above); CR 565f798a correctly failed it because
+  // nothing in the pipeline ever PLACED the key. The contract now: the
+  // GitHub Actions secret GEMINI_API_KEY is required before any write, is
+  // established (and read back) as a SENSITIVE, PRODUCTION-ONLY Vercel env var through the
+  // committed module scripts/ci/provision-gemini-key.mjs, and only then may
+  // the deployment be created. The module's BEHAVIOUR (exact endpoint,
+  // Production-only target, fail-closed on API error, no secret in
+  // logs/argv/URL) is executed by scripts/test-gemini-provisioning.mjs;
+  // what belongs HERE is the workflow wiring.
+  const presenceIdx = stepIndex(/-z\s+"\$\{GEMINI_API_KEY\}"/);
+  const provisionIdx = stepIndex(/provision-gemini-key\.mjs/);
+  const resolveIdx = stepIndex(/\/v9\/projects\//);
+  const createDeployIdx = stepIndex(/-X\s+POST[\s\S]*\/v13\/deployments/);
+  const presenceStep = presenceIdx >= 0 ? stepRun(depSteps[presenceIdx]) : '';
+  const provisionStep = provisionIdx >= 0 ? stepRun(depSteps[provisionIdx]) : '';
+
+  check(
+    'provisioning module exists as a committed file',
+    fs.existsSync(PROVISION_HELPER_PATH),
+    `expected ${path.relative(ROOT, PROVISION_HELPER_PATH)} on disk`,
+  );
+  check(
+    'a presence gate proves the GEMINI_API_KEY secret is non-empty and fails closed',
+    presenceIdx >= 0 && /exit 1/.test(presenceStep),
+    'a missing or empty repository secret must stop the run, not deploy an unrecognising Production',
+  );
+  check(
+    'the presence gate runs BEFORE the run reads or writes anything at Vercel',
+    presenceIdx >= 0 && resolveIdx >= 0 && presenceIdx < resolveIdx,
+    `presence gate at step ${presenceIdx}, project resolution at ${resolveIdx}`,
+  );
+  check(
+    'the presence gate names the operator remediation doc in its fixed failure line',
+    /docs\/recognition-provisioning\.md/.test(presenceStep),
+    'the only human action left must be stated where the failure is reported',
+  );
+  check(
+    'a provisioning step invokes the committed module (not inline curl)',
+    provisionIdx >= 0 && /node\s+scripts\/ci\/provision-gemini-key\.mjs/.test(provisionStep),
+    'an inline env write would be an unreviewed, untestable second write path',
+  );
+  check(
+    'the provisioning step passes the module NO arguments (secrets travel via env only)',
+    provisionIdx >= 0 && /node\s+scripts\/ci\/provision-gemini-key\.mjs\s*$/m.test(provisionStep),
+    'an argv secret surfaces in process listings and run transcripts',
+  );
+  check(
+    'the provisioning step wires exactly the three secrets through its env block',
+    provisionIdx >= 0
+      && depSteps[provisionIdx]?.env?.GEMINI_API_KEY === '${{ secrets.GEMINI_API_KEY }}'
+      && depSteps[provisionIdx]?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}'
+      && depSteps[provisionIdx]?.env?.VERCEL_ORG_ID === '${{ secrets.VERCEL_ORG_ID }}',
+    `provisioning step env: ${JSON.stringify(depSteps[provisionIdx]?.env ?? null)}`,
+  );
+  check(
+    'provisioning runs AFTER project resolution (it needs the runtime PROJECT_ID)',
+    provisionIdx >= 0 && resolveIdx >= 0 && provisionIdx > resolveIdx,
+    `project resolution at step ${resolveIdx}, provisioning at ${provisionIdx}`,
+  );
+  check(
+    'provisioning PRECEDES deployment creation (a deployment may only exist for a provisioned Production)',
+    provisionIdx >= 0 && createDeployIdx >= 0 && provisionIdx < createDeployIdx,
+    `provisioning at step ${provisionIdx}, Create Deployment at ${createDeployIdx}`,
+  );
+  const geminiLeakLines = depActiveRuns
+    .split('\n')
+    .filter((line) => /GEMINI_API_KEY/.test(line) && /\becho\b|\bcurl\b|\bprintf\b/.test(line)
+      && !/-z\s+"\$\{GEMINI_API_KEY\}"/.test(line)
+      // Fixed diagnostic strings may NAME the secret; interpolating its VALUE
+      // is what the second filter below catches.
+      && /\$\{?GEMINI_API_KEY\}?/.test(line));
+  check(
+    'no echo/printf/curl line ever interpolates the GEMINI_API_KEY value',
+    geminiLeakLines.length === 0,
+    `offending lines: ${geminiLeakLines.length}`,
+  );
+
+  // The module's source discipline, held to the alias-validator standard.
+  const provisionRaw = fs.readFileSync(PROVISION_HELPER_PATH, 'utf8');
+  const provisionCode = jsExecutableLines(provisionRaw);
+  check(
+    'the provisioning module contains NO template interpolation at all',
+    !/\$\{/.test(provisionCode),
+    'concatenation of table constants only — no path for a secret or response byte into a log line',
+  );
+  check(
+    'the provisioning module targets the bounded v10 env endpoint WITHOUT upsert',
+    /'https:\/\/api\.vercel\.com'/.test(provisionCode)
+      && /'\/v10\/projects\/'/.test(provisionCode)
+      && /teamId=/.test(provisionCode)
+      && !/upsert=/.test(provisionCode),
+    'CR 2a9a285d: Vercel documents upsert as a value-only update — it can never make an existing var sensitive or Production-only',
+  );
+  check(
+    'the provisioning module removes existing Production-only entries via the documented v9 DELETE',
+    /'\/v9\/projects\/'/.test(provisionCode) && /method:\s*'DELETE'/.test(provisionCode),
+    'Vercel: an existing variable becomes sensitive only by being removed and re-added',
+  );
+  check(
+    'the provisioning module writes GEMINI_API_KEY as a SENSITIVE var',
+    /key:\s*'GEMINI_API_KEY'/.test(provisionCode) && /type:\s*'sensitive'/.test(provisionCode),
+  );
+  check(
+    'the provisioning module targets Production ONLY',
+    /target:\s*\['production'\]/.test(provisionCode)
+      && !/'preview'|'development'/.test(provisionCode),
+    'a preview/development target would leak the key outside the incident scope',
+  );
+  // CR 2a9a285d: a 201 carrying a non-empty `failed` array is a failed
+  // write, so the body MUST be read now. It is read in exactly one bounded
+  // place, parsed without inspecting the parse error, and a 2xx with failed
+  // entries is a hard failure; the readback list is required too.
+  check(
+    'the provisioning module reads response bodies ONLY through one bounded text() read',
+    (provisionCode.match(/\.text\(/g) ?? []).length === 1
+      && !/\.json\(|\.arrayBuffer\(|response\??\.body\b|getReader\(/.test(provisionCode)
+      && /function readBoundedJson/.test(provisionCode)
+      && /PROVISIONING_MAX_RESPONSE_CHARS/.test(provisionCode),
+    'a body is remote bytes headed for a log; only a size-capped, single read site is allowed',
+  );
+  check(
+    'the provisioning module never inspects a caught exception (catch without a binding)',
+    !/catch\s*\(/.test(provisionCode),
+    'V8 quotes input back in JSON.parse errors; transport errors can quote the request',
+  );
+  check(
+    'the provisioning module treats a 2xx with a non-empty `failed` array as a hard failure',
+    /body\.failed\.length\s*>\s*0\)\s*return\s*\{\s*ok:\s*false/.test(provisionCode),
+    'Vercel documents `failed` as REQUIRED in the 201 answer; HTTP status alone proves nothing',
+  );
+  check(
+    'the provisioning module reads the state back and refuses anything but one sensitive Production-only entry',
+    /reaching\.length\s*!==\s*1/.test(provisionCode)
+      && /'VERIFY_FAILED'/.test(provisionCode)
+      && /'SHARED_TARGET_CONFLICT'/.test(provisionCode),
+  );
+  check(
+    'the provisioning module writes nothing to disk (no secret or response byte can become an artifact)',
+    !/node:fs|from 'fs'|writeFile|appendFile|createWriteStream|GITHUB_OUTPUT|GITHUB_ENV/.test(provisionCode),
+  );
+  check(
+    'the provisioning module never consumes argv for inputs',
+    !/argv\.slice\(2\)/.test(provisionCode) && /process\.env/.test(provisionCode),
+    'secrets must arrive via the environment, never the command line',
+  );
+  check(
+    'the provisioning module keeps a frozen message table and sanitizes every line',
+    /Object\.freeze\(/.test(provisionCode)
+      && /GEMINI_PROVISIONING_MESSAGES/.test(provisionCode)
+      && /function sanitizeDiagnostic/.test(provisionCode),
+  );
+
   // ── HTTP probes must yield exactly ONE status code ───────────────────
   // `|| echo "000"` appends a SECOND line to a variable that already holds
   // curl's own `000` on connection failure, producing "000\n000" — a value
@@ -1292,7 +1652,14 @@ if (dep) {
     { name: 'target=production query lookup (latest-prod clone)', re: /target=production/ },
     { name: 'Vercel deploy hook secret', re: /VERCEL_DEPLOY_HOOK/ },
     { name: 'deploy-hook integration endpoint', re: /\/v1\/integrations\/deploy/ },
-    { name: 'project env mutation endpoint', re: /projects\/[^\s"']*\/env/ },
+    // The DIC-P0 hBP09 provisioning contract allows exactly ONE env write:
+    // the sensitive Production-only GEMINI_API_KEY provisioning, and it lives in
+    // the committed module scripts/ci/provision-gemini-key.mjs where the
+    // behaviour suite executes it. The WORKFLOW file itself must still never
+    // name the env endpoint inline — an inline mutation would be an
+    // unreviewed, untestable second write path, which is what this ban is
+    // really about.
+    { name: 'an INLINE project env mutation endpoint (the committed provisioning module is the only env write path)', re: /projects\/[^\s"']*\/env/ },
     { name: 'project domain mutation endpoint', re: /\/domains/ },
     { name: 'DNS record endpoint', re: /\/records/ },
     { name: 'HTTP DELETE', re: /-X\s+DELETE/ },
@@ -1324,6 +1691,17 @@ if (dep) {
     typeof pkg.scripts?.[ALIAS_NPM_SCRIPT] === 'string'
       && pkg.scripts[ALIAS_NPM_SCRIPT].includes('test-alias-binding-validator.mjs'),
     `got ${JSON.stringify(pkg.scripts?.[ALIAS_NPM_SCRIPT])}`,
+  );
+  check(
+    'package.json declares the test:vercel-curl script',
+    typeof pkg.scripts?.['test:vercel-curl'] === 'string'
+      && pkg.scripts['test:vercel-curl'].includes('test-vercel-curl.mjs'),
+  );
+  check(
+    `package.json declares the ${PROVISION_NPM_SCRIPT} script`,
+    typeof pkg.scripts?.[PROVISION_NPM_SCRIPT] === 'string'
+      && pkg.scripts[PROVISION_NPM_SCRIPT].includes('test-gemini-provisioning.mjs'),
+    `got ${JSON.stringify(pkg.scripts?.[PROVISION_NPM_SCRIPT])}`,
   );
 }
 
