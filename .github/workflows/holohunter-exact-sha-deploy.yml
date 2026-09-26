@@ -40,8 +40,12 @@ name: HoloHunter exact-SHA Production deploy
 # deployment, reads that deployment back, and finally reads the canonical
 # alias record. It touches no other environment variable, no alias, no
 # domain, and no DNS record, and it holds only `contents: read` on the
-# GitHub side. The two Vercel secrets are passed to curl via --oauth2-bearer
-# so neither value is ever assembled into an echoed header string;
+# GitHub side. Every Vercel API call goes through scripts/ci/vercel-curl.sh,
+# which fails closed on an absent or malformed VERCEL_TOKEN and hands curl the
+# Authorization header on stdin (`--config -`, written by bash's builtin
+# printf), so the token is never in any process argv, never in curl's
+# environment, and never assembled into an echoed header string (PR #216
+# security CR d90a82ad: `--oauth2-bearer "${VERCEL_TOKEN}"` put it in argv);
 # GEMINI_API_KEY reaches only the provisioning module's process environment
 # and is never echoed, interpolated, placed in argv, or persisted.
 #
@@ -200,8 +204,7 @@ jobs:
           # matches no project under this account (documented in
           # dic910-vercel-setup.yml). Resolve by the project's well-known
           # name instead, and derive everything else from that response.
-          resp=$(curl -sS -w '\n%{http_code}' \
-            --oauth2-bearer "${VERCEL_TOKEN}" \
+          resp=$(bash scripts/ci/vercel-curl.sh -sS -w '\n%{http_code}' \
             "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")
           code=$(echo "$resp" | tail -n1)
           echo "$resp" | sed '$d' > /tmp/project.json
@@ -314,8 +317,7 @@ jobs:
             }));
           ' "$VERCEL_PROJECT_NAME" "$PROJECT_ID" "$REPO_ID" "$EXPECTED_SHA")
 
-          code=$(curl -sS -o /tmp/created.json -w '%{http_code}' -X POST \
-            --oauth2-bearer "${VERCEL_TOKEN}" \
+          code=$(bash scripts/ci/vercel-curl.sh -sS -o /tmp/created.json -w '%{http_code}' -X POST \
             -H "Content-Type: application/json" \
             --data-raw "$body" \
             "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_ORG_ID}")
@@ -362,8 +364,7 @@ jobs:
 
           while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
             attempt=$((attempt + 1))
-            curl -sS -o /tmp/poll.json \
-              --oauth2-bearer "${VERCEL_TOKEN}" \
+            bash scripts/ci/vercel-curl.sh -sS -o /tmp/poll.json \
               "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}"
             # readyState is remote data. Reduce it to an allowlisted token
             # before it is ever echoed, and make a malformed body a fixed
@@ -409,8 +410,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          curl -sS -o /tmp/verify.json \
-            --oauth2-bearer "${VERCEL_TOKEN}" \
+          bash scripts/ci/vercel-curl.sh -sS -o /tmp/verify.json \
             "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?withGitRepoInfo=true&teamId=${VERCEL_ORG_ID}"
 
           # `expected` is the only value printed anywhere below: it is the
@@ -480,8 +480,7 @@ jobs:
           alias_ok=0
           while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
             attempt=$((attempt + 1))
-            curl -sS -o /tmp/alias.json \
-              --oauth2-bearer "${VERCEL_TOKEN}" \
+            bash scripts/ci/vercel-curl.sh -sS -o /tmp/alias.json \
               "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?withGitRepoInfo=true&teamId=${VERCEL_ORG_ID}"
             # A malformed body must fail this probe quietly (it is retried
             # below), not throw — an uncaught parse error prints a quoted slice
@@ -575,8 +574,7 @@ jobs:
             # `|| true`, not `|| echo "000"`: curl already prints 000 through
             # -w when the connection itself fails, so echoing a second value
             # would produce a two-line code matching no arm below.
-            code=$(curl -sS -o /tmp/alias-binding.json -w '%{http_code}' \
-              --oauth2-bearer "${VERCEL_TOKEN}" \
+            code=$(bash scripts/ci/vercel-curl.sh -sS -o /tmp/alias-binding.json -w '%{http_code}' \
               "https://api.vercel.com/v4/aliases/${CANONICAL_HOST}?teamId=${VERCEL_ORG_ID}" || true)
 
             # The alias response BODY is never printed — not on success, not on

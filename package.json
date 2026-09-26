@@ -186,7 +186,8 @@
     "test:printing-identity-isolation": "node scripts/test-printing-identity-isolation.mjs",
     "test:exact-sha-production-recovery": "node scripts/test-exact-sha-production-recovery.mjs",
     "test:alias-binding-validator": "node scripts/test-alias-binding-validator.mjs",
-    "test:gemini-provisioning": "node scripts/test-gemini-provisioning.mjs"
+    "test:gemini-provisioning": "node scripts/test-gemini-provisioning.mjs",
+    "test:vercel-curl": "node scripts/test-vercel-curl.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

@@ -708,9 +708,77 @@ if (dep) {
     'deploy workflow does not trust the known-stale VERCEL_PROJECT_ID secret',
     !/secrets\.VERCEL_PROJECT_ID/.test(dep.raw),
   );
+  // ── VERCEL_TOKEN never reaches a process argv (PR #216 CR d90a82ad) ──
+  // `curl --oauth2-bearer "${VERCEL_TOKEN}"` expanded the credential into
+  // curl's argv. Every Vercel API call must now go through the committed
+  // wrapper, which feeds the header on stdin; scripts/test-vercel-curl.mjs
+  // EXECUTES that wrapper and proves the argv/env/log property.
+  const activeRuns = executableLines(depRuns);
   check(
-    'deploy workflow passes the token via curl --oauth2-bearer (never echoed into a header string)',
-    /--oauth2-bearer/.test(depRuns),
+    'deploy workflow never passes a credential via curl --oauth2-bearer (argv exposure)',
+    !/--oauth2-bearer/.test(activeRuns),
+  );
+  const tokenArgvLines = activeRuns
+    .split('\n')
+    .filter((line) => /VERCEL_TOKEN/.test(line));
+  check(
+    'no run line interpolates VERCEL_TOKEN at all (so it cannot land in any argv)',
+    tokenArgvLines.length === 0,
+    `offending lines: ${tokenArgvLines.map((l) => l.trim()).join(' | ')}`,
+  );
+  check(
+    'deploy workflow never builds an Authorization/Bearer header on a command line',
+    !/Authorization|Bearer|-u\s+\S*:|--user\b/i.test(activeRuns),
+  );
+  check(
+    'deploy workflow never enables shell xtrace (set -x would trace expanded values)',
+    !/set\s+-[a-wyz]*x|set\s+-o\s+xtrace|bash\s+-x/.test(activeRuns),
+  );
+  const vercelCalls = activeRuns.split('\n').filter((line) => /\bcurl\b|vercel-curl\.sh/.test(line));
+  check(
+    'every Vercel API call goes through scripts/ci/vercel-curl.sh (six calls)',
+    countMatches(activeRuns, /bash scripts\/ci\/vercel-curl\.sh /g) === 6
+      && countMatches(activeRuns, /api\.vercel\.com/g) === 6,
+    `wrapper=${countMatches(activeRuns, /bash scripts\/ci\/vercel-curl\.sh /g)} `
+      + `api=${countMatches(activeRuns, /api\.vercel\.com/g)}`,
+  );
+  const bareCurls = vercelCalls.filter((line) => /\bcurl\b/.test(line) && !/vercel-curl\.sh/.test(line));
+  check(
+    'the only bare curl calls are unauthenticated canonical-host probes',
+    bareCurls.every((line) => /CANONICAL_HOST/.test(line) || /^\s*-/.test(line) || !/https?:/.test(line))
+      && !bareCurls.some((line) => /api\.vercel\.com/.test(line)),
+    `bare curl lines: ${bareCurls.map((l) => l.trim()).join(' | ')}`,
+  );
+  const wrapperSteps = (job?.steps ?? []).filter((s) => /vercel-curl\.sh/.test(s?.run ?? ''));
+  check(
+    'every step that calls the wrapper receives VERCEL_TOKEN via step env only',
+    wrapperSteps.length === 6
+      && wrapperSteps.every((s) => s?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}'),
+    `got ${wrapperSteps.length} steps`,
+  );
+  // MUTATION PROOF: the argv detectors above must fire on the exact shape
+  // the CR flagged (transcribed from c18407ae8, project resolution step).
+  const PRIOR_TOKEN_ARGV = [
+    'resp=$(curl -sS -w \'\\n%{http_code}\' \\',
+    '  --oauth2-bearer "${VERCEL_TOKEN}" \\',
+    '  "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_ORG_ID}")',
+  ].join('\n');
+  check(
+    'MUTATION: the argv detectors catch the prior `--oauth2-bearer "${VERCEL_TOKEN}"` call',
+    /--oauth2-bearer/.test(PRIOR_TOKEN_ARGV)
+      && PRIOR_TOKEN_ARGV.split('\n').some((line) => /VERCEL_TOKEN/.test(line)),
+  );
+  check(
+    'MUTATION: an inline -H "Authorization: Bearer ${VERCEL_TOKEN}" is caught too',
+    /Authorization|Bearer/i.test('curl -H "Authorization: Bearer ${VERCEL_TOKEN}" https://api.vercel.com/'),
+  );
+  check(
+    'ci.yml validate EXECUTES the vercel-curl wrapper suite',
+    /npm run test:vercel-curl\b/.test(ci?.raw ?? ''),
+  );
+  check(
+    'scripts/ci/vercel-curl.sh is committed next to the other CI helpers',
+    fs.existsSync(path.join(ROOT, 'scripts', 'ci', 'vercel-curl.sh')),
   );
 
   // ── Project resolution by name + GitHub linkage + runtime repoId ─────
@@ -1623,6 +1691,11 @@ if (dep) {
     typeof pkg.scripts?.[ALIAS_NPM_SCRIPT] === 'string'
       && pkg.scripts[ALIAS_NPM_SCRIPT].includes('test-alias-binding-validator.mjs'),
     `got ${JSON.stringify(pkg.scripts?.[ALIAS_NPM_SCRIPT])}`,
+  );
+  check(
+    'package.json declares the test:vercel-curl script',
+    typeof pkg.scripts?.['test:vercel-curl'] === 'string'
+      && pkg.scripts['test:vercel-curl'].includes('test-vercel-curl.mjs'),
   );
   check(
     `package.json declares the ${PROVISION_NPM_SCRIPT} script`,

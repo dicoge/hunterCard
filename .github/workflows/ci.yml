@@ -470,6 +470,13 @@ jobs:
       - name: Verify GEMINI_API_KEY Production provisioning behaviour (DIC-P0 hBP09)
         run: npm run test:gemini-provisioning
 
+      # PR #216 security CR d90a82ad: the deploy workflow's Vercel calls go
+      # through scripts/ci/vercel-curl.sh so VERCEL_TOKEN is never in any
+      # process argv. This suite EXECUTES the wrapper (recording fake curl +
+      # real curl against a local server) rather than grepping it.
+      - name: Verify VERCEL_TOKEN never reaches a process argv (PR #216 CR)
+        run: npm run test:vercel-curl
+
       - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
         run: npm run test:tournament-discovery-acquisition
 
