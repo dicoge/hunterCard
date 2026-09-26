@@ -37,6 +37,7 @@ import {
   RECOGNITION_PROBE_BODY,
   RECOGNITION_PROBE_IMAGE,
   RECOGNITION_PROBE_MESSAGES,
+  RECOGNITION_PHOTO_404_ERRORS,
   RECOGNITION_UNAVAILABLE_CODE as MODULE_CODE,
   evaluateRecognitionAvailability,
 } from './ci/verify-recognition-availability.mjs';
@@ -88,6 +89,22 @@ const decide = (statusText, raw) => evaluateRecognitionAvailability({ statusText
 console.log('\nThe stable code is shared by module, server and client:');
 check('module and server agree on RECOGNITION_UNAVAILABLE', MODULE_CODE === SERVER_CODE);
 check('module and client agree on RECOGNITION_UNAVAILABLE', MODULE_CODE === CLIENT_CODE);
+
+// The 404 photo answers are matched by exact error string, so each one must
+// still be a 404 arm of the real handler source, byte-for-byte.
+{
+  const handlerSource = fs.readFileSync(path.join(ROOT, 'api', 'recognize-card.ts'), 'utf8');
+  for (const error of RECOGNITION_PHOTO_404_ERRORS) {
+    const at = handlerSource.indexOf(`error: '${error}'`);
+    const arm = at >= 0 ? handlerSource.slice(at, handlerSource.indexOf('404)', at) + 4) : '';
+    check(
+      `the handler still answers the photo-level 404 "${error}"`,
+      at >= 0 && arm.endsWith('404)') && arm.length < 200,
+    );
+  }
+  check('the module knows exactly the two handler 404 photo arms', RECOGNITION_PHOTO_404_ERRORS.length === 2);
+  check('the 404 error table is frozen', Object.isFrozen(RECOGNITION_PHOTO_404_ERRORS));
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // The probe body: valid, parseable, and BELOW the legibility floor as judged
@@ -193,6 +210,11 @@ process.env.GEMINI_API_KEY = 'test-key';
   check('the real provisioned handler answers the probe with the photo-level 404', res.status === 404);
   check('…a photo answer, not a service code', body.success === false && body.code === undefined);
   check(
+    '…the exact resolution-floor answer the module matches on',
+    body.error === RECOGNITION_PHOTO_404_ERRORS[0]
+      && Array.isArray(body.candidates) && body.candidates.length === 0,
+  );
+  check(
     'ZERO vision calls left the process (the probe is free when provisioned)',
     geminiCalls === 0,
     `gemini was called ${geminiCalls} time(s)`,
@@ -253,15 +275,94 @@ const FIXTURES = [
     expect: 'retry',
   },
   {
-    name: 'handler 200 (vision ran, e.g. an unmeasurable frame failed open)',
+    name: 'CR 2195bb74: a JSON 404 {success:false,error:NOT_FOUND} is not a handler photo answer',
+    status: '404',
+    raw: JSON.stringify({ success: false, error: 'NOT_FOUND' }),
+    expect: 'retry',
+  },
+  {
+    name: 'a success:false 404 with candidates but an unknown error is not a handler photo answer',
+    status: '404',
+    raw: JSON.stringify({ success: false, error: 'NOT_FOUND', candidates: [] }),
+    expect: 'retry',
+  },
+  {
+    name: 'the handler error string without a candidates array is not the handler shape',
+    status: '404',
+    raw: JSON.stringify({ success: false, error: '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝' }),
+    expect: 'retry',
+  },
+  {
+    name: 'the handler error string with non-empty candidates is not the handler shape',
+    status: '404',
+    raw: JSON.stringify({ success: false, error: '無法辨識此卡牌', candidates: [{ cardNumber: 'hBP09-001' }] }),
+    expect: 'retry',
+  },
+  {
+    name: 'the handler error string with success:true is not the handler shape',
+    status: '404',
+    raw: JSON.stringify({ success: true, error: '無法辨識此卡牌', candidates: [] }),
+    expect: 'retry',
+  },
+  {
+    name: 'handler 200 low-confidence answer (vision ran, e.g. an unmeasurable frame failed open)',
     status: '200',
-    raw: JSON.stringify({ success: false, lowConfidence: true, candidates: [] }),
+    raw: JSON.stringify({
+      success: false, lowConfidence: true, error: '辨識信心不足，請從候選卡中選擇',
+      candidates: [{ cardNumber: 'hBP09-001', confidence: 0.4 }], confidence: 0.4,
+    }),
+    expect: 'success',
+  },
+  {
+    name: 'handler 200 accepted answer (vision ran and matched)',
+    status: '200',
+    raw: JSON.stringify({
+      success: true, card: { cardNumber: 'hBP09-001' },
+      candidates: [{ cardNumber: 'hBP09-001', confidence: 0.9 }], confidence: 0.9,
+    }),
     expect: 'success',
   },
   {
     name: 'a 200 that is not JSON proves nothing',
     status: '200',
     raw: 'OK',
+    expect: 'retry',
+  },
+  {
+    name: 'CR 2195bb74: a JSON 200 {error:STALE_CACHE} is not a handler vision answer',
+    status: '200',
+    raw: JSON.stringify({ error: 'STALE_CACHE' }),
+    expect: 'retry',
+  },
+  {
+    name: 'a JSON 200 health page {status:ok} is not a handler vision answer',
+    status: '200',
+    raw: JSON.stringify({ status: 'ok' }),
+    expect: 'retry',
+  },
+  { name: 'an empty JSON 200 object is not a handler vision answer', status: '200', raw: '{}', expect: 'retry' },
+  {
+    name: 'a 200 success:true without a card object is not the handler shape',
+    status: '200',
+    raw: JSON.stringify({ success: true, card: null, candidates: [{ cardNumber: 'hBP09-001' }] }),
+    expect: 'retry',
+  },
+  {
+    name: 'a 200 success:true with zero candidates is not the handler shape',
+    status: '200',
+    raw: JSON.stringify({ success: true, card: { cardNumber: 'hBP09-001' }, candidates: [] }),
+    expect: 'retry',
+  },
+  {
+    name: 'a 200 success:false without lowConfidence:true is not the handler shape',
+    status: '200',
+    raw: JSON.stringify({ success: false, candidates: [{ cardNumber: 'hBP09-001' }] }),
+    expect: 'retry',
+  },
+  {
+    name: 'a 200 low-confidence answer with zero candidates is not the handler shape',
+    status: '200',
+    raw: JSON.stringify({ success: false, lowConfidence: true, candidates: [] }),
     expect: 'retry',
   },
   {
@@ -391,7 +492,12 @@ const ATTACKS = [
   {
     name: 'markers inside a success-shaped 404 body',
     status: '404',
-    raw: JSON.stringify({ success: false, error: '::warning::INJECTED', candidates: [] }),
+    raw: JSON.stringify({
+      success: false,
+      error: '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝',
+      candidates: [],
+      debug: '::warning::INJECTED',
+    }),
     expect: 'success',
   },
   {
@@ -467,6 +573,19 @@ check(
 check(
   'MUTATION: a status-first rule is caught (stable code on a 200 stays fatal)',
   decide('200', JSON.stringify({ success: false, code: MODULE_CODE })).code === RECOGNITION_FATAL,
+);
+// WRONG FIX 4 (the CR 2195bb74 false PASS): "any JSON 404 with success:false
+// is a photo answer" — any layer's JSON NOT_FOUND would then read as a
+// provisioned scanner.
+check(
+  'MUTATION: a success:false-only 404 rule is caught (JSON NOT_FOUND decides retry, not success)',
+  decide('404', JSON.stringify({ success: false, error: 'NOT_FOUND' })).code === RECOGNITION_RETRY,
+);
+// WRONG FIX 5 (the CR 2195bb74 false PASS): "any JSON 200 means the vision
+// path ran" — a stale cached body would then read as a provisioned scanner.
+check(
+  'MUTATION: an any-JSON-200 rule is caught (STALE_CACHE decides retry, not success)',
+  decide('200', JSON.stringify({ error: 'STALE_CACHE' })).code === RECOGNITION_RETRY,
 );
 
 assert.equal(typeof evaluateRecognitionAvailability, 'function');

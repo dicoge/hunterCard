@@ -34,9 +34,14 @@
  *
  * Contract
  * --------
- *   success (0)  the live handler answered ABOUT THE PROBE PHOTO (JSON 404
- *                with success:false), or ran the vision path (JSON 200) —
- *                either one is only reachable with an adapter resolved.
+ *   success (0)  the body is one of the handler's OWN adapter-gated answers,
+ *                matched by exact shape, not by status: a JSON 404 photo
+ *                answer (success:false, an exact handler error string, an
+ *                empty candidates array, no code), or a JSON 200 vision
+ *                answer (success:true with a card object, or success:false
+ *                with lowConfidence:true — both with a non-empty candidates
+ *                array). Any other 404/200 — a platform `NOT_FOUND`, a cached
+ *                or proxied JSON body — proves nothing and retries.
  *   fatal (1)    the body carries the stable RECOGNITION_UNAVAILABLE code on
  *                any status (the deployment's own declaration that it cannot
  *                recognise anything), or the probe itself was rejected as a
@@ -115,6 +120,37 @@ export const RECOGNITION_PROBE_MESSAGES = Object.freeze({
 const isThreeDigits = (v) => typeof v === 'string' && /^[0-9]{3}$/.test(v);
 
 /**
+ * The error strings of the handler's two adapter-gated 404 arms. Must stay
+ * byte-identical to api/recognize-card.ts; the behavioural suite pins both
+ * against the handler source and the real handler's probe answer.
+ */
+export const RECOGNITION_PHOTO_404_ERRORS = Object.freeze([
+  '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝',
+  '無法辨識此卡牌',
+]);
+
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** A handler 404 photo answer: resolution floor or no-match after a vision run. */
+const isHandlerPhoto404 = (record) =>
+  record.success === false
+  && record.code === undefined
+  && RECOGNITION_PHOTO_404_ERRORS.includes(record.error)
+  && Array.isArray(record.candidates)
+  && record.candidates.length === 0;
+
+/**
+ * A handler 200 vision answer. Both arms are only reached with at least one
+ * ranked candidate (zero candidates is the 404 no-match arm).
+ */
+const isHandlerVision200 = (record) =>
+  record.code === undefined
+  && Array.isArray(record.candidates)
+  && record.candidates.length > 0
+  && ((record.success === true && isPlainObject(record.card))
+    || (record.success === false && record.lowConfidence === true));
+
+/**
  * Decide one probe response.
  *
  * @param {object} args
@@ -157,18 +193,23 @@ export function evaluateRecognitionAvailability({ statusText, raw }) {
   }
 
   if (statusText === '404') {
-    // The handler's two 404 arms are both photo-level answers, both carry
-    // success:false, and both are only reachable once resolveAdapters() found
-    // a provider. A non-JSON 404 (platform router, missing function) proves
-    // nothing and stays in the bounded retry lane.
-    if (record !== null && record.success === false) {
+    // The handler's two 404 arms are both photo-level answers and both are
+    // only reachable once resolveAdapters() found a provider. Anything that is
+    // not exactly one of them — a platform router 404, a JSON
+    // {"success":false,"error":"NOT_FOUND"} from any layer — proves nothing
+    // and stays in the bounded retry lane.
+    if (record !== null && isHandlerPhoto404(record)) {
       return success('AVAILABLE_PHOTO_ANSWER');
     }
     return retry('NOT_DECIDABLE_RETRY');
   }
 
   if (statusText === '200') {
-    if (record !== null) return success('AVAILABLE_VISION_ANSWER');
+    // Only the handler's own vision-path shapes count. Any other JSON 200 (a
+    // stale cache, a health page, a proxy's own answer) proves nothing.
+    if (record !== null && isHandlerVision200(record)) {
+      return success('AVAILABLE_VISION_ANSWER');
+    }
     return retry('NOT_DECIDABLE_RETRY');
   }
 

@@ -81,7 +81,12 @@ AFTER the canonical alias is bound, that it actually worked.
    above. The probe is free either way.
 3. The same committed module decides the outcome (exit 0 provisioned /
    2 retry / 1 fatal), and the workflow fails closed: an unprovisioned
-   Production is a FAILED deploy, not a green one.
+   Production is a FAILED deploy, not a green one. "Provisioned" requires
+   the handler's exact adapter-gated body shape (the 404 photo answer with
+   its exact error string and empty `candidates`, or a 200 vision answer
+   with non-empty `candidates`); any other 404/200 — e.g. a JSON
+   `NOT_FOUND` or a stale cached body — stays in the bounded retry lane and
+   times out as a failure.
 
 Boundary: the gate proves a vision adapter RESOLVES (the 503 class of this
 incident is impossible). It deliberately does not spend a metered vision call
