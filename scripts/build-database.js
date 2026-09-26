@@ -2206,6 +2206,17 @@ async function buildDatabase() {
         `  [DIC-1167] fail-closed ${increaseRejections.length} newly-priced row(s) without exact-print provenance: `
         + `${sample}${increaseRejections.length > 5 ? ` +${increaseRejections.length - 5} more` : ''}`
       );
+      // The detail-align pass above ranked these rows while they still
+      // carried the refused payload (prices[] richness / base-entry rank),
+      // so a rejected listing could still decide row order — and at worst the
+      // CardDetail default printing. Re-align on the fail-closed shape: the
+      // 2026-09-25 scrape shipped 5 cardNumber groups (hBP01-048, hBP02-014,
+      // hBP02-024, hSD03-002, hBP04-013) reordered by refused payloads alone.
+      const { cards: realigned, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards, prevCards);
+      database.cards = realigned;
+      if (reorderedCardNumbers > 0) {
+        console.log(`  [DIC-1167] re-aligned ${reorderedCardNumbers} cardNumber group(s) after stripping refused payloads`);
+      }
     }
 
     const dic1482Rejections = [];
