@@ -140,6 +140,7 @@ function generateSeriesPages() {
   const hbpSeries = [];
   const hsdSeries = [];
   const hysSeries = [];
+  const hebSeries = [];
   const specialSeries = [];
 
   for (const series of seriesCodes) {
@@ -161,6 +162,13 @@ function generateSeriesPages() {
       hsdSeries.push({ name: series, url: `/sell/hocg/s/search?search_word=&vers[]=${series.toLowerCase()}` });
     } else if (series.startsWith('hYS')) {
       hysSeries.push({ name: series, url: `/sell/hocg/s/${series.toLowerCase()}` });
+    } else if (series.startsWith('hEB')) {
+      // DIC-1167 (2026-09-26): extra boosters have their own yuyu product page
+      // (listing images under /hocg/…/heb01/). Without this branch the whole
+      // hEB01 product (214 official rows, 34 cardNumbers) was never scraped
+      // and every row shipped null — the listings the builder did see came
+      // only from other products' pages and correctly failed exact-print proof.
+      hebSeries.push({ name: series, url: `/sell/hocg/s/search?search_word=&vers[]=${series.toLowerCase()}` });
     } else {
       console.warn(`[warn] 系列 "${series}" — 無對應 yuyu-tei URL，跳過`);
     }
@@ -170,9 +178,10 @@ function generateSeriesPages() {
   hbpSeries.sort(sortByName);
   hsdSeries.sort(sortByName);
   hysSeries.sort(sortByName);
+  hebSeries.sort(sortByName);
   specialSeries.sort(sortByName);
 
-  return [...hbpSeries, ...hsdSeries, ...hysSeries, ...specialSeries];
+  return [...hbpSeries, ...hsdSeries, ...hysSeries, ...hebSeries, ...specialSeries];
 }
 
 const SERIES_PAGES = generateSeriesPages();
@@ -2616,4 +2625,4 @@ if (process.argv[1]?.includes('build-database')) {
     });
 }
 
-export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage };
+export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage, generateSeriesPages, NO_PAGE_SERIES };
