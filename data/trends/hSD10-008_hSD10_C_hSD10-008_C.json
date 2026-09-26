@@ -2,14 +2,14 @@
   "cardId": "hSD10-008",
   "name": "綺々羅々ヴィヴィ",
   "nameZh": "綺綺羅羅薇薇",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.63,
   "confidence": 0.8,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 1,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.211Z",
-  "dataPoints": 67
+  "lastUpdated": "2026-09-26T12:16:50.321Z",
+  "dataPoints": 68
 }
