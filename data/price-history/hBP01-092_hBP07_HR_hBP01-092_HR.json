@@ -18,8 +18,16 @@
       "currency": "JPY",
       "cardId": "hBP01-092_hBP07_HR_hBP01-092_HR",
       "sourceProduct": "hBP07"
+    },
+    {
+      "date": "2026-09-25",
+      "price": 4980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP01-092_hBP07_HR_hBP01-092_HR",
+      "sourceProduct": "hBP07"
     }
   ],
-  "lastUpdated": "2026-09-23T12:15:56.680Z",
+  "lastUpdated": "2026-09-25T12:13:43.450Z",
   "nameZh": "奧羅·克洛尼"
 }

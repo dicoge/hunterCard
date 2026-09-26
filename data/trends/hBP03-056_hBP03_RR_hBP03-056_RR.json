@@ -2,14 +2,14 @@
   "cardId": "hBP03-056",
   "name": "常闇トワ",
   "nameZh": "常暗永遠",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "up",
+  "score": 0.57,
   "confidence": 0.3,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": 0.91,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.164Z",
-  "dataPoints": 1
+  "lastUpdated": "2026-09-25T12:13:52.501Z",
+  "dataPoints": 2
 }

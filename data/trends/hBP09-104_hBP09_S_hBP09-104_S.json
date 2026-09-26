@@ -2,14 +2,14 @@
   "cardId": "hBP09-104",
   "name": "ホロライブ体力王決定戦",
   "nameZh": "HoloLive體力王決定戰",
-  "trend": "stable",
-  "score": 0.03,
+  "trend": "down",
+  "score": -0.24,
   "confidence": 0.3,
   "components": {
-    "priceTrend": 0,
+    "priceTrend": -0.45,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.201Z",
-  "dataPoints": 1
+  "lastUpdated": "2026-09-25T12:13:52.539Z",
+  "dataPoints": 2
 }

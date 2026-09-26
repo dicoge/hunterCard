@@ -4,12 +4,12 @@
   "nameZh": "一伊那爾棲",
   "trend": "up",
   "score": 0.43,
-  "confidence": 0.9,
+  "confidence": 1,
   "components": {
     "priceTrend": 0.67,
     "ytTrend": 0,
     "newsSentiment": 0.15
   },
-  "lastUpdated": "2026-09-23T12:16:10.198Z",
-  "dataPoints": 63
+  "lastUpdated": "2026-09-25T12:13:52.535Z",
+  "dataPoints": 64
 }
