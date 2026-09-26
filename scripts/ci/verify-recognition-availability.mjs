@@ -34,14 +34,18 @@
  *
  * Contract
  * --------
- *   success (0)  the body is one of the handler's OWN adapter-gated answers,
- *                matched by exact shape, not by status: a JSON 404 photo
- *                answer (success:false, an exact handler error string, an
- *                empty candidates array, no code), or a JSON 200 vision
- *                answer (success:true with a card object, or success:false
- *                with lowConfidence:true — both with a non-empty candidates
- *                array). Any other 404/200 — a platform `NOT_FOUND`, a cached
- *                or proxied JSON body — proves nothing and retries.
+ *   success (0)  a 404 whose JSON body is EXACTLY the handler's
+ *                resolution-floor answer to this probe — the keys
+ *                {success, error, candidates} and nothing else, success:false,
+ *                the handler's exact floor error string, an empty candidates
+ *                array. That is the ONLY answer the handler can give the
+ *                fixed sub-320px probe once an adapter resolved: the floor
+ *                arm returns before callVision, so no vision-path answer (a
+ *                200, or the 404 no-match that follows a vision run) is
+ *                reachable for it. Any other 404/200 — a platform
+ *                `NOT_FOUND`, a cached or proxied JSON body, a vision-shaped
+ *                200 (CR 065f9384) — is not this handler answering this
+ *                probe, proves nothing, and retries.
  *   fatal (1)    the body carries the stable RECOGNITION_UNAVAILABLE code on
  *                any status (the deployment's own declaration that it cannot
  *                recognise anything), or the probe itself was rejected as a
@@ -112,43 +116,31 @@ export const RECOGNITION_PROBE_MESSAGES = Object.freeze({
   AVAILABLE_PHOTO_ANSWER:
     'Recognition is provisioned: the live handler answered about the probe '
     + 'photo, which it only does once a vision adapter resolved.',
-  AVAILABLE_VISION_ANSWER:
-    'Recognition is provisioned: the live handler ran its vision path for the '
-    + 'probe.',
 });
 
 const isThreeDigits = (v) => typeof v === 'string' && /^[0-9]{3}$/.test(v);
 
 /**
- * The error strings of the handler's two adapter-gated 404 arms. Must stay
- * byte-identical to api/recognize-card.ts; the behavioural suite pins both
- * against the handler source and the real handler's probe answer.
+ * The error string of the handler's resolution-floor 404 arm — the one arm
+ * the fixed probe can reach. Must stay byte-identical to
+ * api/recognize-card.ts; the behavioural suite pins it against the handler
+ * source and the real handler's probe answer.
  */
-export const RECOGNITION_PHOTO_404_ERRORS = Object.freeze([
-  '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝',
-  '無法辨識此卡牌',
-]);
+export const RECOGNITION_PROBE_404_ERROR = '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝';
 
-const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** The complete key set of that answer, sorted. Pinned against the real handler. */
+export const RECOGNITION_PROBE_404_KEYS = Object.freeze(['candidates', 'error', 'success']);
 
-/** A handler 404 photo answer: resolution floor or no-match after a vision run. */
-const isHandlerPhoto404 = (record) =>
-  record.success === false
-  && record.code === undefined
-  && RECOGNITION_PHOTO_404_ERRORS.includes(record.error)
-  && Array.isArray(record.candidates)
-  && record.candidates.length === 0;
-
-/**
- * A handler 200 vision answer. Both arms are only reached with at least one
- * ranked candidate (zero candidates is the 404 no-match arm).
- */
-const isHandlerVision200 = (record) =>
-  record.code === undefined
-  && Array.isArray(record.candidates)
-  && record.candidates.length > 0
-  && ((record.success === true && isPlainObject(record.card))
-    || (record.success === false && record.lowConfidence === true));
+/** Exactly the handler's resolution-floor answer: no extra, missing, or altered key. */
+const isHandlerProbeAnswer = (record) => {
+  const keys = Object.keys(record).sort();
+  return keys.length === RECOGNITION_PROBE_404_KEYS.length
+    && keys.every((k, i) => k === RECOGNITION_PROBE_404_KEYS[i])
+    && record.success === false
+    && record.error === RECOGNITION_PROBE_404_ERROR
+    && Array.isArray(record.candidates)
+    && record.candidates.length === 0;
+};
 
 /**
  * Decide one probe response.
@@ -193,25 +185,23 @@ export function evaluateRecognitionAvailability({ statusText, raw }) {
   }
 
   if (statusText === '404') {
-    // The handler's two 404 arms are both photo-level answers and both are
-    // only reachable once resolveAdapters() found a provider. Anything that is
-    // not exactly one of them — a platform router 404, a JSON
-    // {"success":false,"error":"NOT_FOUND"} from any layer — proves nothing
-    // and stays in the bounded retry lane.
-    if (record !== null && isHandlerPhoto404(record)) {
+    // The resolution-floor arm is only reachable once resolveAdapters() found
+    // a provider. Anything that is not exactly that answer — a platform router
+    // 404, a JSON {"success":false,"error":"NOT_FOUND"} from any layer, the
+    // no-match 404 that only follows a vision run this probe never reaches —
+    // proves nothing and stays in the bounded retry lane.
+    if (record !== null && isHandlerProbeAnswer(record)) {
       return success('AVAILABLE_PHOTO_ANSWER');
     }
     return retry('NOT_DECIDABLE_RETRY');
   }
 
-  if (statusText === '200') {
-    // Only the handler's own vision-path shapes count. Any other JSON 200 (a
-    // stale cache, a health page, a proxy's own answer) proves nothing.
-    if (record !== null && isHandlerVision200(record)) {
-      return success('AVAILABLE_VISION_ANSWER');
-    }
-    return retry('NOT_DECIDABLE_RETRY');
-  }
+  // No 200 is ever success (CR 065f9384). The floor arm answers the fixed
+  // sub-320px probe before callVision, so the handler cannot produce a 200
+  // for it; whatever did — a stale cache, a health page, a proxy, a
+  // vision-shaped body like {"success":true,"card":{},"candidates":[null]} —
+  // is not proof. It falls through to the bounded retry lane below, whose
+  // timeout arm fails closed.
 
   if (statusText === '400' || statusText === '405') {
     return fatal('PROBE_REJECTED');

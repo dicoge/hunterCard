@@ -37,7 +37,8 @@ import {
   RECOGNITION_PROBE_BODY,
   RECOGNITION_PROBE_IMAGE,
   RECOGNITION_PROBE_MESSAGES,
-  RECOGNITION_PHOTO_404_ERRORS,
+  RECOGNITION_PROBE_404_ERROR,
+  RECOGNITION_PROBE_404_KEYS,
   RECOGNITION_UNAVAILABLE_CODE as MODULE_CODE,
   evaluateRecognitionAvailability,
 } from './ci/verify-recognition-availability.mjs';
@@ -90,20 +91,29 @@ console.log('\nThe stable code is shared by module, server and client:');
 check('module and server agree on RECOGNITION_UNAVAILABLE', MODULE_CODE === SERVER_CODE);
 check('module and client agree on RECOGNITION_UNAVAILABLE', MODULE_CODE === CLIENT_CODE);
 
-// The 404 photo answers are matched by exact error string, so each one must
-// still be a 404 arm of the real handler source, byte-for-byte.
+// The probe answer is matched by exact error string, so it must still be the
+// resolution-floor 404 arm of the real handler source, byte-for-byte, and that
+// arm must still return BEFORE the vision call — otherwise the probe could
+// reach a vision-path answer and the "no 200 is proof" rule would be wrong.
 {
   const handlerSource = fs.readFileSync(path.join(ROOT, 'api', 'recognize-card.ts'), 'utf8');
-  for (const error of RECOGNITION_PHOTO_404_ERRORS) {
-    const at = handlerSource.indexOf(`error: '${error}'`);
-    const arm = at >= 0 ? handlerSource.slice(at, handlerSource.indexOf('404)', at) + 4) : '';
-    check(
-      `the handler still answers the photo-level 404 "${error}"`,
-      at >= 0 && arm.endsWith('404)') && arm.length < 200,
-    );
-  }
-  check('the module knows exactly the two handler 404 photo arms', RECOGNITION_PHOTO_404_ERRORS.length === 2);
-  check('the 404 error table is frozen', Object.isFrozen(RECOGNITION_PHOTO_404_ERRORS));
+  const at = handlerSource.indexOf(`error: '${RECOGNITION_PROBE_404_ERROR}'`);
+  const arm = at >= 0 ? handlerSource.slice(at, handlerSource.indexOf('404)', at) + 4) : '';
+  check(
+    `the handler still answers the resolution-floor 404 "${RECOGNITION_PROBE_404_ERROR}"`,
+    at >= 0 && arm.endsWith('404)') && arm.length < 200,
+  );
+  const visionAt = handlerSource.indexOf('callVision(images)');
+  check(
+    'the resolution-floor arm returns before the handler calls vision',
+    at >= 0 && visionAt > at,
+  );
+  check('the probe answer key set is frozen', Object.isFrozen(RECOGNITION_PROBE_404_KEYS));
+  check(
+    'the only success message is the probe photo answer (CR 065f9384: no 200 can certify the probe)',
+    JSON.stringify(Object.keys(RECOGNITION_PROBE_MESSAGES).filter((k) => k.startsWith('AVAILABLE_')))
+      === JSON.stringify(['AVAILABLE_PHOTO_ANSWER']),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -211,8 +221,13 @@ process.env.GEMINI_API_KEY = 'test-key';
   check('…a photo answer, not a service code', body.success === false && body.code === undefined);
   check(
     '…the exact resolution-floor answer the module matches on',
-    body.error === RECOGNITION_PHOTO_404_ERRORS[0]
+    body.error === RECOGNITION_PROBE_404_ERROR
       && Array.isArray(body.candidates) && body.candidates.length === 0,
+  );
+  check(
+    '…carrying exactly the key set the module matches on',
+    JSON.stringify(Object.keys(body).sort()) === JSON.stringify(RECOGNITION_PROBE_404_KEYS),
+    `keys=${JSON.stringify(Object.keys(body).sort())}`,
   );
   check(
     'ZERO vision calls left the process (the probe is free when provisioned)',
@@ -251,10 +266,26 @@ const FIXTURES = [
     expect: 'success',
   },
   {
-    name: 'handler 404 no-match answer',
+    name: 'CR 065f9384: the handler no-match 404 only follows a vision run the probe never reaches',
     status: '404',
     raw: JSON.stringify({ success: false, error: '無法辨識此卡牌', candidates: [] }),
-    expect: 'success',
+    expect: 'retry',
+  },
+  {
+    name: 'the floor answer with an extra key is not the exact handler answer',
+    status: '404',
+    raw: JSON.stringify({
+      success: false, error: '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝', candidates: [], cached: true,
+    }),
+    expect: 'retry',
+  },
+  {
+    name: 'the floor answer carrying a code is not the exact handler answer',
+    status: '404',
+    raw: JSON.stringify({
+      success: false, code: 'X', error: '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝', candidates: [],
+    }),
+    expect: 'retry',
   },
   {
     name: 'platform 404 (HTML, function missing) proves nothing',
@@ -305,22 +336,40 @@ const FIXTURES = [
     expect: 'retry',
   },
   {
-    name: 'handler 200 low-confidence answer (vision ran, e.g. an unmeasurable frame failed open)',
+    name: 'CR 065f9384: a 200 {success:true,card:{},candidates:[null]} is impossible for the probe',
+    status: '200',
+    raw: JSON.stringify({ success: true, card: {}, candidates: [null] }),
+    expect: 'retry',
+  },
+  {
+    name: 'CR 065f9384: a 200 {success:false,lowConfidence:true,candidates:[null]} is impossible for the probe',
+    status: '200',
+    raw: JSON.stringify({ success: false, lowConfidence: true, candidates: [null] }),
+    expect: 'retry',
+  },
+  {
+    name: 'a fully vision-shaped 200 low-confidence answer is still not proof for the probe',
     status: '200',
     raw: JSON.stringify({
       success: false, lowConfidence: true, error: '辨識信心不足，請從候選卡中選擇',
       candidates: [{ cardNumber: 'hBP09-001', confidence: 0.4 }], confidence: 0.4,
     }),
-    expect: 'success',
+    expect: 'retry',
   },
   {
-    name: 'handler 200 accepted answer (vision ran and matched)',
+    name: 'a fully vision-shaped 200 accepted answer is still not proof for the probe',
     status: '200',
     raw: JSON.stringify({
       success: true, card: { cardNumber: 'hBP09-001' },
       candidates: [{ cardNumber: 'hBP09-001', confidence: 0.9 }], confidence: 0.9,
     }),
-    expect: 'success',
+    expect: 'retry',
+  },
+  {
+    name: 'a 200 carrying the exact floor answer body is still not proof (wrong status)',
+    status: '200',
+    raw: JSON.stringify({ success: false, error: '照片解析度太低，無法讀取卡號，請靠近卡片重新拍攝', candidates: [] }),
+    expect: 'retry',
   },
   {
     name: 'a 200 that is not JSON proves nothing',
@@ -490,7 +539,7 @@ const ATTACKS = [
     expect: 'fatal',
   },
   {
-    name: 'markers inside a success-shaped 404 body',
+    name: 'markers inside an extra key of an otherwise success-shaped 404 body',
     status: '404',
     raw: JSON.stringify({
       success: false,
@@ -498,7 +547,15 @@ const ATTACKS = [
       candidates: [],
       debug: '::warning::INJECTED',
     }),
-    expect: 'success',
+    expect: 'retry',
+  },
+  {
+    name: 'markers inside a vision-shaped 200 body',
+    status: '200',
+    raw: JSON.stringify({
+      success: true, card: { name: `${ESC}[31m::error::INJECTED` }, candidates: [{ note: 'INJECTED' }],
+    }),
+    expect: 'retry',
   },
   {
     name: 'malformed JSON whose parse error quotes the fragment',
@@ -586,6 +643,33 @@ check(
 check(
   'MUTATION: an any-JSON-200 rule is caught (STALE_CACHE decides retry, not success)',
   decide('200', JSON.stringify({ error: 'STALE_CACHE' })).code === RECOGNITION_RETRY,
+);
+// WRONG FIX 6 (the CR 065f9384 false PASS): "a vision-shaped 200 means the
+// vision path ran" — the handler cannot answer the fixed sub-floor probe with
+// a 200 at all, so any 200 that looks like one came from somewhere else.
+check(
+  'MUTATION: a vision-shaped-200 rule is caught (success:true,card:{},candidates:[null] decides retry)',
+  decide('200', JSON.stringify({ success: true, card: {}, candidates: [null] })).code === RECOGNITION_RETRY,
+);
+check(
+  'MUTATION: a low-confidence-200 rule is caught (lowConfidence,candidates:[null] decides retry)',
+  decide('200', JSON.stringify({ success: false, lowConfidence: true, candidates: [null] })).code
+    === RECOGNITION_RETRY,
+);
+// WRONG FIX 7: "the no-match 404 is also a photo answer" — it only follows a
+// vision run the probe never reaches, so for the probe it is not this handler.
+check(
+  'MUTATION: a no-match-404 rule is caught (無法辨識此卡牌 decides retry)',
+  decide('404', JSON.stringify({ success: false, error: '無法辨識此卡牌', candidates: [] })).code
+    === RECOGNITION_RETRY,
+);
+// WRONG FIX 8: "right fields, ignore extras" — any layer wrapping the floor
+// answer would then certify Production.
+check(
+  'MUTATION: an extra-keys-tolerated rule is caught (floor answer + extra key decides retry)',
+  decide('404', JSON.stringify({
+    success: false, error: RECOGNITION_PROBE_404_ERROR, candidates: [], raw: 'x',
+  })).code === RECOGNITION_RETRY,
 );
 
 assert.equal(typeof evaluateRecognitionAvailability, 'function');
