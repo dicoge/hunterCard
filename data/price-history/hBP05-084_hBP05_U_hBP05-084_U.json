@@ -10,8 +10,16 @@
       "currency": "JPY",
       "cardId": "hBP05-084_hBP05_U_hBP05-084_U",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-084_hBP05_U_hBP05-084_U",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-09-23T12:15:56.907Z",
+  "lastUpdated": "2026-09-26T12:16:41.840Z",
   "nameZh": "角卷綿芽的豎琴"
 }

@@ -492,6 +492,9 @@ jobs:
       - name: Verify yuyu-provenance gate blocks cross-product preservation (DIC-1227)
         run: npm run test:yuyu-provenance-preservation
 
+      - name: Verify every committed series has a yuyu scrape page (DIC-1167 hEB01)
+        run: npm run test:yuyu-series-pages
+
       - name: Verify unproven printings cannot ship priceHistory (DIC-1229)
         run: npm run test:dic1229-history-provenance
 

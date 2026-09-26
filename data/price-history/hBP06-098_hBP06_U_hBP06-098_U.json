@@ -10,8 +10,16 @@
       "currency": "JPY",
       "cardId": "hBP06-098_hBP06_U_hBP06-098_U",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-098_hBP06_U_hBP06-098_U",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-09-23T12:15:56.924Z",
+  "lastUpdated": "2026-09-26T12:16:41.857Z",
   "nameZh": "鬼神刀「阿修羅」"
 }
