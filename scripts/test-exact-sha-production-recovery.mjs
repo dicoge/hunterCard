@@ -1315,7 +1315,7 @@ if (dep) {
   // recognition smoke above); CR 565f798a correctly failed it because
   // nothing in the pipeline ever PLACED the key. The contract now: the
   // GitHub Actions secret GEMINI_API_KEY is required before any write, is
-  // upserted as a SENSITIVE, PRODUCTION-ONLY Vercel env var through the
+  // established (and read back) as a SENSITIVE, PRODUCTION-ONLY Vercel env var through the
   // committed module scripts/ci/provision-gemini-key.mjs, and only then may
   // the deployment be created. The module's BEHAVIOUR (exact endpoint,
   // Production-only target, fail-closed on API error, no secret in
@@ -1398,10 +1398,17 @@ if (dep) {
     'concatenation of table constants only — no path for a secret or response byte into a log line',
   );
   check(
-    'the provisioning module targets the bounded v10 env upsert endpoint',
-    /api\.vercel\.com\/v10\/projects\//.test(provisionCode)
-      && /upsert=true/.test(provisionCode)
-      && /teamId=/.test(provisionCode),
+    'the provisioning module targets the bounded v10 env endpoint WITHOUT upsert',
+    /'https:\/\/api\.vercel\.com'/.test(provisionCode)
+      && /'\/v10\/projects\/'/.test(provisionCode)
+      && /teamId=/.test(provisionCode)
+      && !/upsert=/.test(provisionCode),
+    'CR 2a9a285d: Vercel documents upsert as a value-only update — it can never make an existing var sensitive or Production-only',
+  );
+  check(
+    'the provisioning module removes existing Production-only entries via the documented v9 DELETE',
+    /'\/v9\/projects\/'/.test(provisionCode) && /method:\s*'DELETE'/.test(provisionCode),
+    'Vercel: an existing variable becomes sensitive only by being removed and re-added',
   );
   check(
     'the provisioning module writes GEMINI_API_KEY as a SENSITIVE var',
@@ -1413,10 +1420,37 @@ if (dep) {
       && !/'preview'|'development'/.test(provisionCode),
     'a preview/development target would leak the key outside the incident scope',
   );
+  // CR 2a9a285d: a 201 carrying a non-empty `failed` array is a failed
+  // write, so the body MUST be read now. It is read in exactly one bounded
+  // place, parsed without inspecting the parse error, and a 2xx with failed
+  // entries is a hard failure; the readback list is required too.
   check(
-    'the provisioning module never reads a response body',
-    !/\.text\(|\.json\(|\.arrayBuffer\(|\.body\b/.test(provisionCode),
-    'only the numeric status may be consulted; a body is remote bytes headed for a log',
+    'the provisioning module reads response bodies ONLY through one bounded text() read',
+    (provisionCode.match(/\.text\(/g) ?? []).length === 1
+      && !/\.json\(|\.arrayBuffer\(|response\??\.body\b|getReader\(/.test(provisionCode)
+      && /function readBoundedJson/.test(provisionCode)
+      && /PROVISIONING_MAX_RESPONSE_CHARS/.test(provisionCode),
+    'a body is remote bytes headed for a log; only a size-capped, single read site is allowed',
+  );
+  check(
+    'the provisioning module never inspects a caught exception (catch without a binding)',
+    !/catch\s*\(/.test(provisionCode),
+    'V8 quotes input back in JSON.parse errors; transport errors can quote the request',
+  );
+  check(
+    'the provisioning module treats a 2xx with a non-empty `failed` array as a hard failure',
+    /body\.failed\.length\s*>\s*0\)\s*return\s*\{\s*ok:\s*false/.test(provisionCode),
+    'Vercel documents `failed` as REQUIRED in the 201 answer; HTTP status alone proves nothing',
+  );
+  check(
+    'the provisioning module reads the state back and refuses anything but one sensitive Production-only entry',
+    /reaching\.length\s*!==\s*1/.test(provisionCode)
+      && /'VERIFY_FAILED'/.test(provisionCode)
+      && /'SHARED_TARGET_CONFLICT'/.test(provisionCode),
+  );
+  check(
+    'the provisioning module writes nothing to disk (no secret or response byte can become an artifact)',
+    !/node:fs|from 'fs'|writeFile|appendFile|createWriteStream|GITHUB_OUTPUT|GITHUB_ENV/.test(provisionCode),
   );
   check(
     'the provisioning module never consumes argv for inputs',
@@ -1551,7 +1585,7 @@ if (dep) {
     { name: 'Vercel deploy hook secret', re: /VERCEL_DEPLOY_HOOK/ },
     { name: 'deploy-hook integration endpoint', re: /\/v1\/integrations\/deploy/ },
     // The DIC-P0 hBP09 provisioning contract allows exactly ONE env write:
-    // the sensitive Production-only GEMINI_API_KEY upsert, and it lives in
+    // the sensitive Production-only GEMINI_API_KEY provisioning, and it lives in
     // the committed module scripts/ci/provision-gemini-key.mjs where the
     // behaviour suite executes it. The WORKFLOW file itself must still never
     // name the env endpoint inline — an inline mutation would be an

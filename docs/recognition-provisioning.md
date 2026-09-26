@@ -29,13 +29,26 @@ does the rest on every run:
    empty;
 2. it synchronizes the secret into Vercel as a **sensitive**,
    **Production-only** environment variable on project `holocard-hunter`
-   (committed module `scripts/ci/provision-gemini-key.mjs`, a bounded
-   `POST /v10/projects/{id}/env?teamId=…&upsert=true`);
+   (committed module `scripts/ci/provision-gemini-key.mjs`): it lists the
+   project env, removes any Production-only `GEMINI_API_KEY` entry, creates
+   the sensitive Production-only variable with
+   `POST /v10/projects/{id}/env?teamId=…` (no `upsert` — Vercel's upsert only
+   rewrites an existing value and cannot make it sensitive or narrow its
+   scope), rejects a create answer whose `failed` array is non-empty, and
+   reads the env list back to prove exactly one sensitive, Production-only
+   entry exists — all before any deployment is created;
 3. only then does it create the Production deployment, and after the alias
    proof it re-verifies availability against the real
    `/api/recognize-card` endpoint (the readback proof below).
 
-Nobody sets the variable in the Vercel dashboard any more; the workflow is
+If an existing `GEMINI_API_KEY` entry targets Production **and** another
+environment (preview, development, a git branch, a custom environment), the
+workflow fails without changing anything: making it Production-only would
+silently remove the key from that other environment. Split that entry in the
+Vercel project settings (keep the non-Production scopes, drop Production) and
+re-run; the workflow then owns the Production entry.
+
+Nobody sets the Production variable in the Vercel dashboard any more; the workflow is
 the single write path, and it is executed by
 `npm run test:gemini-provisioning` plus the structural suite.
 

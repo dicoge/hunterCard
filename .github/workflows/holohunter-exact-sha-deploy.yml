@@ -33,8 +33,10 @@ name: HoloHunter exact-SHA Production deploy
 # Blast radius
 # ------------
 # Reads project metadata, performs ONE bounded environment write — the
-# sensitive, Production-only GEMINI_API_KEY upsert through the committed
-# module scripts/ci/provision-gemini-key.mjs (DIC-P0 hBP09) — creates one
+# sensitive, Production-only GEMINI_API_KEY provisioning (remove any
+# Production-only GEMINI_API_KEY entry, re-add it sensitive, read it back)
+# through the committed module scripts/ci/provision-gemini-key.mjs
+# (DIC-P0 hBP09) — creates one
 # deployment, reads that deployment back, and finally reads the canonical
 # alias record. It touches no other environment variable, no alias, no
 # domain, and no DNS record, and it holds only `contents: read` on the
@@ -261,24 +263,33 @@ jobs:
 
           # DIC-P0 hBP09: the ONE deliberate environment write this workflow
           # performs, and the reason the blast-radius statement above names an
-          # env upsert. The committed module upserts the GitHub repository
+          # env write. The committed module establishes the GitHub repository
           # secret GEMINI_API_KEY as a SENSITIVE, PRODUCTION-ONLY environment
-          # variable on the project resolved above, and fails closed on any
-          # non-2xx answer — so a deployment is only ever created for a
-          # Production that can actually recognise cards.
+          # variable on the project resolved above and PROVES it by readback:
+          # it lists the project env, refuses (without writing) any existing
+          # GEMINI_API_KEY entry that shares Production with another
+          # environment, removes Production-only entries (Vercel's documented
+          # path to "sensitive" — upsert only rewrites a value), creates the
+          # sensitive Production-only var, requires the create answer to carry
+          # an EMPTY `failed` array and the confirmed record, then lists again
+          # and requires exactly that one entry. Any other outcome fails the
+          # run, so a deployment is only ever created for a Production that
+          # can actually recognise cards (CR 2a9a285d).
           #
           # Why a committed module and not inline curl: a heredoc cannot be
           # executed by a test (the verify-alias-binding.mjs lesson), and the
           # request here carries a secret in its body, so the transport, the
-          # exact endpoint shape, the Production-only target, and the
-          # no-logging discipline are all pinned by
-          # scripts/test-gemini-provisioning.mjs against this same file.
+          # exact endpoint shapes, the Production-only target, the
+          # failed-array and readback rules, and the no-logging discipline are
+          # all pinned by scripts/test-gemini-provisioning.mjs against this
+          # same file.
           #
           # Secrets reach the module via its process environment ONLY — no
-          # argv, no URL, no echoed header string. The module never reads the
-          # response body at all; it prints fixed strings plus a bounded
-          # three-digit status, and provisioning must succeed BEFORE the
-          # Create Deployment step below runs.
+          # argv, no URL, no echoed header string. Response bodies are read
+          # through one size-capped parser and reduced to structural facts;
+          # the module prints fixed strings plus a bounded three-digit status
+          # only, writes nothing to disk, and provisioning must succeed BEFORE
+          # the Create Deployment step below runs.
           node scripts/ci/provision-gemini-key.mjs
 
       - name: Create a fresh Production deployment pinned to the exact SHA
@@ -688,7 +699,7 @@ jobs:
           #
           # The response body is never printed; the module prints fixed strings
           # only. Provisioning happens earlier in THIS run (the pre-deploy
-          # GEMINI_API_KEY upsert step); this probe is the READBACK PROOF that
+          # GEMINI_API_KEY provisioning step); this probe is the READBACK PROOF that
           # what users now receive actually resolved a provider, per
           # docs/recognition-provisioning.md.
           MAX_ATTEMPTS=10
