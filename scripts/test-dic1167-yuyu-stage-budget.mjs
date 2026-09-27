@@ -15,6 +15,9 @@
 //       has no per-request abort) instead of reintroducing the stall;
 //   (d) a failed browser relaunch abandons the remaining series with the
 //       partial prices already collected — never an unbounded wait;
+//   (f) a NON-crash per-series error (navigation TimeoutError) that skips a
+//       series also marks the scrape truncated, and so does a failed series
+//       in the HTTP fetch fallback (CR 6797d0aa);
 //   (e) end-to-end: a real `node scripts/build-database.js` run with a
 //       fault-injected forever-hanging yuyu stage still exits 0 within budget,
 //       publishes the full official catalog, and preserves previously
@@ -26,7 +29,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { scrapeYuyuPrices, LAUNCH_OPTS } from './build-database.js';
+import { scrapeYuyuPrices, scrapeAllWithFetch, LAUNCH_OPTS } from './build-database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -207,6 +210,106 @@ const fetchStub = () => async () => ({ prices: {}, fetchedCards: 0, seriesFetche
   assert.equal(result.totalCards, 60);
   assert.equal(Object.keys(result.prices).length, 60, 'partial prices collected before the crash survive');
   console.log('✅ (d2) crash + failed relaunch marks the scrape truncated with partial prices');
+}
+
+// ─── (f) non-crash series error marks the scrape truncated ──────────────────
+// CR 6797d0aa: a puppeteer navigation TimeoutError is neither a wall-clock
+// budget expiry nor a browser crash, so it fell into the plain "log and
+// continue" branch — after ≥50 prices the skipped series returned
+// truncated:false and its rows bypassed partial-scrape preservation.
+{
+  let launches = 0;
+  const attempted = [];
+  const sixty = Array.from({ length: 60 }, (_, i) => cardsFor(`hBP01-${String(i + 1).padStart(3, '0')}`)[0]);
+  const result = await scrapeYuyuPrices({
+    launchBrowserFn: async () => { launches++; return fakeBrowser(); },
+    scrapeSeriesPageFn: async (browser, url) => {
+      attempted.push(url.slice(url.lastIndexOf('/')));
+      if (url.endsWith('/timeout')) {
+        const e = new Error('Navigation timeout of 45000 ms exceeded');
+        e.name = 'TimeoutError';
+        throw e;
+      }
+      if (url.endsWith('/ok2')) return cardsFor('hSD10-001');
+      return sixty;
+    },
+    seriesPages: [
+      { name: 'ok1', url: '/ok1' },
+      { name: 'timeoutSeries', url: '/timeout' },
+      { name: 'ok2', url: '/ok2' },
+    ],
+    sleepFn: async () => {},
+    fetchAllFn: async () => { throw new Error('fetch fallback must not run with ≥50 cards'); },
+    seriesBudgetMs: 500,
+    stageBudgetMs: 10_000,
+    launchBudgetMs: 200,
+  });
+  assert.deepEqual(attempted, ['/ok1', '/timeout', '/ok2'],
+    'a non-crash series error skips only that series; the loop continues');
+  assert.equal(launches, 1, 'a non-crash error leaves the live browser in place (no relaunch)');
+  assert.equal(result.truncated, true,
+    'a series skipped on a non-crash error must mark the scrape truncated (partial preservation downstream)');
+  assert.equal(result.totalCards, 61);
+  assert.equal(result.prices['hSD10-001']?.length, 1, 'series after the failed one still contribute');
+  console.log('✅ (f) non-crash series error (navigation timeout) marks the scrape truncated');
+}
+
+// ─── (f2) fetch-fallback series failure marks the scrape truncated ──────────
+{
+  const fetched = [];
+  const sixtyFetch = Array.from({ length: 60 }, (_, i) => cardsFor(`hBP02-${String(i + 1).padStart(3, '0')}`)[0]);
+  const fetchResult = await scrapeAllWithFetch({
+    seriesPages: [
+      { name: 'ok1', url: '/ok1' },
+      { name: 'waf', url: '/waf' },
+    ],
+    sleepFn: async () => {},
+    scrapeSeriesPageWithFetchFn: async (url) => {
+      fetched.push(url.slice(url.lastIndexOf('/')));
+      if (url.endsWith('/waf')) throw new Error(`HTTP 403 for ${url}`);
+      return sixtyFetch;
+    },
+  });
+  assert.deepEqual(fetched, ['/ok1', '/waf']);
+  assert.equal(fetchResult.truncated, true, 'a failed fetch series marks the fetch result truncated');
+  assert.equal(fetchResult.fetchedCards, 60);
+
+  const clean = await scrapeAllWithFetch({
+    seriesPages: [{ name: 'ok1', url: '/ok1' }],
+    sleepFn: async () => {},
+    scrapeSeriesPageWithFetchFn: async () => sixtyFetch,
+  });
+  assert.equal(clean.truncated, false, 'a fully successful fetch is not truncated');
+
+  // The flag must propagate through scrapeYuyuPrices when the puppeteer
+  // path yields < 50 cards and the fetch fallback runs.
+  const result = await scrapeYuyuPrices({
+    launchBrowserFn: async () => fakeBrowser(),
+    scrapeSeriesPageFn: async () => [],
+    seriesPages: [{ name: 'empty', url: '/empty' }],
+    sleepFn: async () => {},
+    fetchAllFn: async () => fetchResult,
+    seriesBudgetMs: 500,
+    stageBudgetMs: 10_000,
+    launchBudgetMs: 200,
+  });
+  assert.equal(result.totalCards, 60);
+  assert.equal(result.truncated, true,
+    'a truncated fetch fallback must mark the whole yuyu scrape truncated');
+
+  const cleanResult = await scrapeYuyuPrices({
+    launchBrowserFn: async () => fakeBrowser(),
+    scrapeSeriesPageFn: async () => [],
+    seriesPages: [{ name: 'empty', url: '/empty' }],
+    sleepFn: async () => {},
+    fetchAllFn: async () => clean,
+    seriesBudgetMs: 500,
+    stageBudgetMs: 10_000,
+    launchBudgetMs: 200,
+  });
+  assert.equal(cleanResult.truncated, false,
+    'an empty-but-successful puppeteer series plus a complete fetch fallback is not truncated');
+  console.log('✅ (f2) fetch-fallback series failure marks the scrape truncated');
 }
 
 // ─── (e) E2E: real build with a hung price stage exits 0 within budget ──────
