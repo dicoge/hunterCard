@@ -91,6 +91,8 @@
     "test:web-export-artifact": "node scripts/test-web-export-artifact.mjs",
     "test:buy-price-regen": "node scripts/test-buy-price-regen-deterministic.mjs",
     "test:scrape-pipeline": "node scripts/test-scrape-pipeline-failfast.mjs",
+    "test:dic1167-yuyu-stage-budget": "node scripts/test-dic1167-yuyu-stage-budget.mjs",
+    "test:yuyu-crash-recovery": "node scripts/test-yuyu-crash-recovery.mjs",
     "test:dic1334-final-artifact-collapse": "node scripts/test-dic1334-final-artifact-collapse.mjs",
     "test:dic1349-fallback-provenance": "node scripts/test-dic1349-fallback-provenance.mjs",
     "test:dic1461-price-evidence": "node scripts/test-dic1461-price-evidence.mjs",

@@ -786,11 +786,118 @@ async function scrapeSeriesPage(browser, url) {
   }
 }
 
+// ─── DIC-1167: yuyu-stage wall-clock budgets ────────────────────────────────
+// 2026-09-24 P0: the inline yuyu Puppeteer loop hung inside an unbounded
+// operation (page.evaluate scroll/extraction after the hSD09 renderer-crash
+// relaunch) — setDefaultNavigationTimeout/setDefaultTimeout do not cover
+// page.evaluate or puppeteer.launch, so the build sat until the external
+// 600s supervisor killed it (exit 124) and a fully-scraped official catalog
+// was silently discarded. Pricing must NEVER block official-catalog
+// publication: every yuyu operation gets a wall-clock budget, and budget
+// expiry RESOLVES the stage with the partial prices collected so far. The
+// downstream DIC-1321 partial-scrape preservation then keeps previously
+// proven exact-print prices and leaves truly-unknown printings null — no
+// sibling/cardNumber/cross-rarity/cross-product/cross-version fallback.
+function positiveIntEnv(name, fallback) {
+  const raw = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+const YUYU_STAGE_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_STAGE_BUDGET_MS', 480_000);
+const YUYU_SERIES_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_SERIES_BUDGET_MS', 90_000);
+const YUYU_LAUNCH_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_LAUNCH_BUDGET_MS', 45_000);
+
+// `timeout` bounds puppeteer.launch's wait for the browser process to start;
+// `protocolTimeout` bounds EVERY CDP call — including the page.evaluate
+// scroll/extraction ops that the per-page navigation/default timeouts do not
+// cover (the exact op class that hung on 2026-09-24). The per-series
+// withWallClock race is the primary bound; protocolTimeout is the CDP-level
+// backstop when the transport itself wedges.
+const LAUNCH_OPTS = {
+  headless: 'new',
+  timeout: YUYU_LAUNCH_BUDGET_MS,
+  protocolTimeout: 120_000,
+  args: [
+    '--no-sandbox',
+    '--disable-blink-features=AutomationControlled',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+  ],
+};
+
+class YuyuBudgetExceededError extends Error {
+  constructor(label, budgetMs) {
+    super(`[DIC-1167] ${label} exceeded its ${budgetMs}ms wall-clock budget`);
+    this.name = 'YuyuBudgetExceededError';
+    this.budgetExceeded = true;
+  }
+}
+
+// Promise.race with two hard guarantees: (1) the caller ALWAYS settles within
+// budgetMs; (2) the losing promise is detached with a no-op catch so its
+// eventual rejection (e.g. after the hung browser is SIGKILLed) cannot become
+// an unhandled-rejection crash after the race has already settled.
+function withWallClock(promise, budgetMs, label) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      Promise.resolve(promise).catch(() => {});
+      reject(new YuyuBudgetExceededError(label, budgetMs));
+    }, budgetMs);
+    Promise.resolve(promise).then(
+      (value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } },
+      (err) => { if (!settled) { settled = true; clearTimeout(timer); reject(err); } },
+    );
+  });
+}
+
+function isBrowserCrashError(err) {
+  if (!err) return false;
+  if (err.name === 'TargetCloseError' || err.name === 'ConnectionClosedError') return true;
+  // A ProtocolError (incl. protocolTimeout expiry) means the CDP transport is
+  // unresponsive — same remedy as a crash: relaunch a fresh browser.
+  if (err.name === 'ProtocolError') return true;
+  return /Protocol error|Connection closed|Target closed|Session closed|Page crashed/i.test(err.message || '');
+}
+
+// Bounded teardown: a browser whose CDP transport is wedged can hang
+// browser.close() forever; escalate to SIGKILL of the child process so the
+// event loop can drain and the build can exit (never exit 124).
+async function disposeBrowser(browser) {
+  if (!browser) return;
+  try {
+    await withWallClock(browser.close(), 10_000, 'browser.close');
+  } catch (_) {
+    try {
+      const proc = typeof browser.process === 'function' ? browser.process() : null;
+      if (proc) proc.kill('SIGKILL');
+    } catch (_) { /* already gone */ }
+  }
+}
+
 /**
  * 從 yuyu-tei 爬價格和圖片
  * 先試 Puppeteer，若失敗或結果不足則降級到 HTTP fetch
+ *
+ * DIC-1167: every phase of this function is wall-clock bounded and it ALWAYS
+ * resolves. `truncated: true` in the result marks any run where series were
+ * skipped (hang, crash retries exhausted, stage budget exhausted, relaunch
+ * failure) so the caller routes it through the DIC-1321 partial-scrape
+ * preservation instead of treating unvisited rows as delistings. The
+ * `options` seams (launchBrowserFn / scrapeSeriesPageFn / sleepFn / …)
+ * mirror scrape-yuyu-prices.js so the crash/hang paths are unit-testable.
  */
-async function scrapeYuyuPrices() {
+async function scrapeYuyuPrices(options = {}) {
+  const {
+    seriesPages = SERIES_PAGES,
+    sleepFn = sleep,
+    fetchAllFn = scrapeAllWithFetch,
+    nowFn = Date.now,
+    stageBudgetMs = YUYU_STAGE_BUDGET_MS,
+    seriesBudgetMs = YUYU_SERIES_BUDGET_MS,
+    launchBudgetMs = YUYU_LAUNCH_BUDGET_MS,
+  } = options;
+
   if (process.env.HUNTERCARD_YUYU_FIXTURE_PATH) {
     const fixturePath = process.env.HUNTERCARD_YUYU_FIXTURE_PATH;
     console.log(`[database] Loading yuyu fixture: ${fixturePath}`);
@@ -802,38 +909,45 @@ async function scrapeYuyuPrices() {
     return { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
   }
 
-  let usePuppeteer = true;
-  let puppeteer;
+  let scrapeSeriesPageFn = options.scrapeSeriesPageFn || scrapeSeriesPage;
+  let launchBrowserFn = options.launchBrowserFn || null;
 
-  // Try to load puppeteer-extra; if unavailable, skip to fetch
-  try {
-    puppeteer = (await import('puppeteer-extra')).default;
-    const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
-    puppeteer.use(StealthPlugin());
-  } catch (e) {
-    console.log(`[database] Puppeteer-extra not available (${e.message}), will use HTTP fetch fallback`);
-    usePuppeteer = false;
+  // DIC-1167 test-only fault injection (same convention as the
+  // HUNTERCARD_DIC1229_DISABLE_* hooks): make every series hang forever so
+  // the E2E suite can prove a hung price stage still publishes the official
+  // catalog within budget. Logs loudly so a leak into a real run is visible.
+  if (process.env.HUNTERCARD_DIC1167_FAULT_HANG_YUYU === '1') {
+    console.log('  [DIC-1167] ⚠️ HUNTERCARD_DIC1167_FAULT_HANG_YUYU=1 — yuyu series scrape will HANG (test-only fault injection)');
+    launchBrowserFn = async () => ({ close: async () => {}, process: () => null });
+    scrapeSeriesPageFn = () => new Promise(() => {});
+  }
+
+  let usePuppeteer = true;
+
+  if (!launchBrowserFn) {
+    // Try to load puppeteer-extra; if unavailable, skip to fetch
+    try {
+      const puppeteer = (await import('puppeteer-extra')).default;
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      puppeteer.use(StealthPlugin());
+      launchBrowserFn = () => puppeteer.launch(LAUNCH_OPTS);
+    } catch (e) {
+      console.log(`[database] Puppeteer-extra not available (${e.message}), will use HTTP fetch fallback`);
+      usePuppeteer = false;
+    }
   }
 
   const allPrices = {};
   let totalCards = 0;
   let seriesWithPrices = 0;
-
-  const LAUNCH_OPTS = {
-    headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-    ],
-  };
+  let truncated = false;
+  const stageDeadline = nowFn() + stageBudgetMs;
 
   if (usePuppeteer) {
     console.log('[database] Starting yuyu-tei scrape (Puppeteer)...');
-    let browser;
+    let browser = null;
     try {
-      browser = await puppeteer.launch(LAUNCH_OPTS);
+      browser = await withWallClock(launchBrowserFn(), launchBudgetMs, 'puppeteer launch');
     } catch (e) {
       console.log(`[database] Puppeteer launch failed: ${e.message}. Falling back to HTTP fetch.`);
       usePuppeteer = false;
@@ -868,39 +982,94 @@ async function scrapeYuyuPrices() {
         return count;
       };
 
+      // Replace a (possibly hung/dead) browser with a fresh one, bounded.
+      // Returns false when the relaunch itself fails/times out — the
+      // remaining series are then abandoned with the partial prices already
+      // collected rather than risking an unbounded stall (DIC-1167).
+      const relaunchBrowser = async (reason) => {
+        await disposeBrowser(browser);
+        browser = null;
+        try {
+          browser = await withWallClock(launchBrowserFn(), launchBudgetMs, `puppeteer relaunch (${reason})`);
+          return true;
+        } catch (e) {
+          console.error(`  → [DIC-1167] Relaunch failed (${reason}): ${e.message} — abandoning remaining series with partial prices`);
+          return false;
+        }
+      };
+
       try {
-        for (const seriesInfo of SERIES_PAGES) {
+        for (const seriesInfo of seriesPages) {
+          const remainingMs = stageDeadline - nowFn();
+          if (remainingMs <= 0) {
+            truncated = true;
+            console.warn(`[DIC-1167] yuyu stage wall-clock budget (${stageBudgetMs}ms) exhausted before ${seriesInfo.name} — continuing build with partial prices`);
+            break;
+          }
+
           console.log(`[database] Scraping ${seriesInfo.name}: ${seriesInfo.url}`);
 
           const url = BASE_URL + seriesInfo.url;
 
           try {
             // Random delay between series requests (3-5s)
-            await sleep(3000 + Math.random() * 2000);
+            await sleepFn(3000 + Math.random() * 2000);
 
-            const cards = await scrapeSeriesPage(browser, url);
+            const cards = await withWallClock(
+              scrapeSeriesPageFn(browser, url),
+              Math.min(seriesBudgetMs, remainingMs),
+              `series ${seriesInfo.name}`,
+            );
             const count = accumulateCards(cards, seriesInfo.name);
             console.log(`  → Found ${count} cards with prices`);
             if (count > 0) seriesWithPrices++;
             totalCards += count;
 
           } catch (err) {
-            // A browser-level crash kills every subsequent series if we keep
-            // using the same dead browser object. Detect it, relaunch a fresh
-            // browser, and retry the current series once (DIC-442).
-            const isCrash = /Protocol error|Connection closed|Target closed|Session closed/i.test(err.message || '');
-            if (isCrash) {
+            if (err && err.budgetExceeded) {
+              // A hung series is NOT retried: it already consumed a full
+              // budget slice and a rerun would likely hang again, starving
+              // the series behind it. Skip it (previously proven prices are
+              // preserved via the partial-scrape path; unknown printings
+              // stay null) and relaunch so the next series gets a live
+              // browser instead of the wedged one.
+              truncated = true;
+              console.error(`  → ${err.message} — skipping ${seriesInfo.name} and relaunching browser`);
+              if (!(await relaunchBrowser(`hang on ${seriesInfo.name}`))) break;
+            } else if (isBrowserCrashError(err)) {
+              // A browser-level crash kills every subsequent series if we
+              // keep using the same dead browser object. Detect it, relaunch
+              // a fresh browser, and retry the current series once
+              // (DIC-442), bounded like the first attempt (DIC-1167).
               console.log(`  → Browser crashed on ${seriesInfo.name}, relaunching...`);
-              try { await browser.close(); } catch (_) { /* already dead */ }
+              if (!(await relaunchBrowser(`crash on ${seriesInfo.name}`))) break;
+              const retryRemainingMs = stageDeadline - nowFn();
+              if (retryRemainingMs <= 0) {
+                truncated = true;
+                console.warn(`[DIC-1167] yuyu stage wall-clock budget (${stageBudgetMs}ms) exhausted before retrying ${seriesInfo.name} — continuing build with partial prices`);
+                break;
+              }
               try {
-                browser = await puppeteer.launch(LAUNCH_OPTS);
-                const cards = await scrapeSeriesPage(browser, url);
+                const cards = await withWallClock(
+                  scrapeSeriesPageFn(browser, url),
+                  Math.min(seriesBudgetMs, retryRemainingMs),
+                  `series ${seriesInfo.name} (retry)`,
+                );
                 const count = accumulateCards(cards, seriesInfo.name);
                 console.log(`  → Retry OK: found ${count} cards with prices`);
                 if (count > 0) seriesWithPrices++;
                 totalCards += count;
               } catch (retryErr) {
-                console.error(`  → Retry failed: ${retryErr.message}`);
+                // Second failure on the same series: stop retrying it — a
+                // dead series must never stall the ones behind it (DIC-1167:
+                // hSD09 must not block hSD10+). Mark the scrape truncated so
+                // previously proven prices for this series are preserved,
+                // and give the next series a live browser.
+                truncated = true;
+                console.error(`  → Retry failed: ${retryErr.message} — giving up on ${seriesInfo.name}, continuing with next series`);
+                if ((retryErr && retryErr.budgetExceeded) || isBrowserCrashError(retryErr)) {
+                  if (!(await relaunchBrowser(`retry failure on ${seriesInfo.name}`))) break;
+                }
               }
             } else {
               console.error(`  → Error: ${err.message}`);
@@ -908,26 +1077,44 @@ async function scrapeYuyuPrices() {
           }
         }
       } finally {
-        if (browser) {
-          try { await browser.close(); } catch (_) { /* already closed */ }
+        await disposeBrowser(browser);
+      }
+    }
+  }
+
+  // If puppeteer got too few cards, fall back to HTTP fetch — but only inside
+  // the remaining stage budget: the fetch path has no per-request abort and
+  // must not reintroduce the unbounded stall this budget exists to prevent
+  // (DIC-1167).
+  if (totalCards < 50) {
+    const remainingMs = stageDeadline - nowFn();
+    if (remainingMs <= 0) {
+      truncated = true;
+      console.warn('[DIC-1167] Skipping HTTP fetch fallback: yuyu stage wall-clock budget exhausted — continuing build with partial prices');
+    } else {
+      // Reset and try with fetch
+      console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
+      try {
+        const fetchResult = await withWallClock(fetchAllFn(), remainingMs, 'HTTP fetch fallback');
+        for (const [key, entries] of Object.entries(fetchResult.prices)) {
+          if (!allPrices[key]) allPrices[key] = [];
+          allPrices[key].push(...entries);
+        }
+        totalCards += fetchResult.fetchedCards;
+      } catch (err) {
+        if (err && err.budgetExceeded) {
+          truncated = true;
+          console.warn(`  → ${err.message} — continuing build with partial prices`);
+        } else {
+          // Existing contract: a fetch-fallback failure propagates to the
+          // build-level catch, which continues with pricingUnavailable.
+          throw err;
         }
       }
     }
   }
 
-  // If puppeteer got too few cards, fall back to HTTP fetch
-  if (totalCards < 50) {
-    // Reset and try with fetch
-    console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
-    const fetchResult = await scrapeAllWithFetch();
-    for (const [key, entries] of Object.entries(fetchResult.prices)) {
-      if (!allPrices[key]) allPrices[key] = [];
-      allPrices[key].push(...entries);
-    }
-    totalCards += fetchResult.fetchedCards;
-  }
-
-  return { prices: allPrices, totalCards, seriesWithPrices };
+  return { prices: allPrices, totalCards, seriesWithPrices, truncated };
 }
 
 /**
@@ -1524,6 +1711,13 @@ async function buildDatabase() {
 
   const { prices, totalCards, seriesWithPrices } = yuyuResult;
   const pricingUnavailable = Boolean(yuyuResult.pricingUnavailable || totalCards < 50);
+  // DIC-1167: a truncated scrape (hung series skipped, crash retries
+  // exhausted, stage wall-clock budget expired) is partial EVIDENCE, not
+  // evidence of delisting — route it through the DIC-1321 partial-scrape
+  // preservation below even when its coverage happens to stay above the 90%
+  // floor, so rows the truncated run never visited keep their previously
+  // proven exact-print prices instead of being nulled.
+  const scrapeTruncated = Boolean(yuyuResult.truncated);
   // DIC-1321: a "partial scrape" is a scrape that returned far fewer priced
   // cardNumbers than the previous build — the WAF-throttle shape. The old
   // binary (fully-available OR fully-unavailable) treated a partial scrape as
@@ -1545,11 +1739,18 @@ async function buildDatabase() {
   const coverageFloorRatio = 0.9;
   const previousCoverage = prevPricedCardNumbers.size;
   const currentCoverage = scrapedCardNumbers.size;
-  const partialScrape = !pricingUnavailable
+  // `coveragePartialScrape` is the WAF-throttle shape (coverage well below the
+  // previous build). It alone scopes the DIC-1334 fresh-fill collapse audit:
+  // a truncated-but-otherwise-full-scale scrape keeps that audit armed — the
+  // audit compares fresh fills against THIS run's scraped set, which shrinks
+  // with the truncation, so a healthy matcher still clears it while a broken
+  // parser/matcher cannot hide behind a single hung series (DIC-1167).
+  const coveragePartialScrape = !pricingUnavailable
     && previousCoverage > 0
     && currentCoverage < previousCoverage * coverageFloorRatio;
+  const partialScrape = coveragePartialScrape || (!pricingUnavailable && scrapeTruncated);
   console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
-  console.log(`  [DIC-1321] scrape coverage: ${currentCoverage} priced cardNumbers vs previous ${previousCoverage}; partial=${partialScrape}`);
+  console.log(`  [DIC-1321] scrape coverage: ${currentCoverage} priced cardNumbers vs previous ${previousCoverage}; partial=${partialScrape}; truncated=${scrapeTruncated} (DIC-1167)`);
   if (pricingUnavailable) {
     console.warn(`[database] yuyu pricing unavailable or incomplete (totalCards=${totalCards}); preserving previous exact-card sell prices and leaving new/unknown printings null`);
   } else if (partialScrape) {
@@ -2135,7 +2336,7 @@ async function buildDatabase() {
     // already handles by preservation + scheduler coverage floors) would
     // fail here. A full-scale scrape whose proven fills collapse below 50%
     // is the systemic parser/matcher breakage this audit exists to catch.
-    if (scrapedCoverage > 0 && !partialScrape && finalCoverage < gapFloor) {
+    if (scrapedCoverage > 0 && !coveragePartialScrape && finalCoverage < gapFloor) {
       throw new Error(
         `[DIC-1334] final canonical artifact collapsed priced-cardNumber coverage: ` +
         `scraped ${scrapedCoverage} priced cardNumbers but final artifact only has ${finalCoverage} freshly proven ` +
@@ -2625,4 +2826,4 @@ if (process.argv[1]?.includes('build-database')) {
     });
 }
 
-export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage, generateSeriesPages, NO_PAGE_SERIES };
+export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage, generateSeriesPages, NO_PAGE_SERIES, scrapeYuyuPrices, LAUNCH_OPTS };
