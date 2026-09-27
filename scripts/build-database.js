@@ -881,9 +881,10 @@ async function disposeBrowser(browser) {
  *
  * DIC-1167: every phase of this function is wall-clock bounded and it ALWAYS
  * resolves. `truncated: true` in the result marks any run where series were
- * skipped (hang, crash retries exhausted, stage budget exhausted, relaunch
- * failure) so the caller routes it through the DIC-1321 partial-scrape
- * preservation instead of treating unvisited rows as delistings. The
+ * skipped (hang, crash retries exhausted, any other per-series error such
+ * as a navigation timeout, stage budget exhausted, relaunch failure, or a
+ * failed series in the HTTP fetch fallback) so the caller routes it
+ * through the DIC-1321 partial-scrape preservation instead of treating unvisited rows as delistings. The
  * `options` seams (launchBrowserFn / scrapeSeriesPageFn / sleepFn / …)
  * mirror scrape-yuyu-prices.js so the crash/hang paths are unit-testable.
  */
@@ -1077,7 +1078,14 @@ async function scrapeYuyuPrices(options = {}) {
                 }
               }
             } else {
-              console.error(`  → Error: ${err.message}`);
+              // Any other failure (e.g. a puppeteer navigation TimeoutError,
+              // an HTTP/WAF error page) also skips this series, so its rows
+              // were never visited: mark the scrape truncated so previously
+              // proven prices are preserved instead of nulled as delistings
+              // (DIC-1167 CR 6797d0aa). The browser is still alive — no
+              // relaunch, the next series continues on it.
+              truncated = true;
+              console.error(`  → Error: ${err.message} — skipping ${seriesInfo.name} (scrape marked truncated)`);
             }
           }
         }
@@ -1106,6 +1114,7 @@ async function scrapeYuyuPrices(options = {}) {
           allPrices[key].push(...entries);
         }
         totalCards += fetchResult.fetchedCards;
+        if (fetchResult.truncated) truncated = true;
       } catch (err) {
         if (err && err.budgetExceeded) {
           truncated = true;
@@ -1125,21 +1134,29 @@ async function scrapeYuyuPrices(options = {}) {
 /**
  * 使用 HTTP fetch + HTML regex 爬取所有系列價格
  */
-async function scrapeAllWithFetch() {
+async function scrapeAllWithFetch({
+  seriesPages = SERIES_PAGES,
+  sleepFn = sleep,
+  scrapeSeriesPageWithFetchFn = scrapeSeriesPageWithFetch,
+} = {}) {
   console.log('[fetch] Starting HTTP fetch-based scrape...');
   const allPrices = {};
   let fetchedCards = 0;
   let seriesFetched = 0;
+  // DIC-1167 CR 6797d0aa: a series whose fetch fails was never visited, so
+  // the caller must treat the result as truncated (partial preservation),
+  // same as a skipped series on the Puppeteer path.
+  const failedSeries = [];
 
-  for (const seriesInfo of SERIES_PAGES) {
+  for (const seriesInfo of seriesPages) {
     console.log(`[fetch] Fetching ${seriesInfo.name}: ${seriesInfo.url}`);
 
     const url = BASE_URL + seriesInfo.url;
 
     try {
-      await sleep(3000 + Math.random() * 2000);
+      await sleepFn(3000 + Math.random() * 2000);
 
-      const cards = await scrapeSeriesPageWithFetch(url);
+      const cards = await scrapeSeriesPageWithFetchFn(url);
 
       for (const card of cards) {
         const key = card.cardNum;
@@ -1164,12 +1181,16 @@ async function scrapeAllWithFetch() {
       fetchedCards = Object.keys(allPrices).length;
 
     } catch (err) {
-      console.error(`  → Error: ${err.message}`);
+      failedSeries.push(seriesInfo.name);
+      console.error(`  → Error: ${err.message} — skipping ${seriesInfo.name} (scrape marked truncated)`);
     }
   }
 
   console.log(`\n[fetch] Done. Total: ${fetchedCards} cards from ${seriesFetched} series`);
-  return { prices: allPrices, fetchedCards };
+  if (failedSeries.length > 0) {
+    console.warn(`[DIC-1167] HTTP fetch skipped ${failedSeries.length} series (${failedSeries.join(', ')}) — scrape truncated`);
+  }
+  return { prices: allPrices, fetchedCards, truncated: failedSeries.length > 0 };
 }
 
 /**
@@ -2831,4 +2852,4 @@ if (process.argv[1]?.includes('build-database')) {
     });
 }
 
-export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage, generateSeriesPages, NO_PAGE_SERIES, scrapeYuyuPrices, LAUNCH_OPTS };
+export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage, generateSeriesPages, NO_PAGE_SERIES, scrapeYuyuPrices, scrapeAllWithFetch, LAUNCH_OPTS };
