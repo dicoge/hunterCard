@@ -1,0 +1,17 @@
+{
+  "cardId": "hEB01-031_hEB01_C_hEB01-031_C",
+  "cardNumber": "hEB01-031",
+  "name": "水遊び",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-031_hEB01_C_hEB01-031_C",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-09-27T12:14:25.986Z",
+  "nameZh": "玩水"
+}

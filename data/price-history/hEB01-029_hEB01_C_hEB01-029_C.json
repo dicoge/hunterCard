@@ -1,0 +1,17 @@
+{
+  "cardId": "hEB01-029_hEB01_C_hEB01-029_C",
+  "cardNumber": "hEB01-029",
+  "name": "スプラッシュシュート",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-029_hEB01_C_hEB01-029_C",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-09-27T12:14:25.986Z",
+  "nameZh": "水花射擊"
+}

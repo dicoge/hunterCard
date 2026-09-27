@@ -1,0 +1,17 @@
+{
+  "cardId": "hSD02-006_hEB01_SR_hSD02-006_SR_02",
+  "cardNumber": "hSD02-006",
+  "name": "百鬼あやめ",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hSD02-006_hEB01_SR_hSD02-006_SR_02",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-09-27T12:14:25.987Z",
+  "nameZh": "百鬼綾目"
+}
