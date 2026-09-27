@@ -18,8 +18,16 @@
       "currency": "JPY",
       "cardId": "hBP06-086_hBP06_C_hBP06-086_C",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-086_hBP06_C_hBP06-086_C",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-09-26T12:16:41.855Z",
+  "lastUpdated": "2026-09-27T12:14:25.935Z",
   "nameZh": "充滿愛心請享用♪"
 }

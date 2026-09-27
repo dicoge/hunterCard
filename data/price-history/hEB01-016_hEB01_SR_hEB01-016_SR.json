@@ -1,0 +1,17 @@
+{
+  "cardId": "hEB01-016_hEB01_SR_hEB01-016_SR",
+  "cardNumber": "hEB01-016",
+  "name": "宝鐘マリン",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 180,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-016_hEB01_SR_hEB01-016_SR",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-09-27T12:14:25.983Z",
+  "nameZh": "寶鍾瑪琳"
+}

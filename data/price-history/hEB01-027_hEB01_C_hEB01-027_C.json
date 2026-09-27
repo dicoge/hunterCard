@@ -1,0 +1,17 @@
+{
+  "cardId": "hEB01-027_hEB01_C_hEB01-027_C",
+  "cardNumber": "hEB01-027",
+  "name": "サマーライブ",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-027_hEB01_C_hEB01-027_C",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-09-27T12:14:25.986Z",
+  "nameZh": "夏日演唱會"
+}

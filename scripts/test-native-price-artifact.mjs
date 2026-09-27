@@ -85,6 +85,10 @@ console.log(
 //      and superseded 344 unproven stale aggregate rows whose cardNumbers stay
 //      priced through proven printings; baselines deliberately RAISED per the
 //      instruction below)
+//   DIC-1167    2026-09-27   2,529 priced rows / 3,899 cards   1,288 priced cardNumbers  ← hEB01 scraped
+//     (first daily scrape with the hEB01 yuyu page wired in by PR #218: +193
+//      hEB01 rows, each proven by its own heb01/ listing image; no existing row
+//      lost or repriced; baselines RAISED per the instruction below)
 //
 // 55 cardNumbers that were priced on 08-26 are now entirely unpriced. Part of
 // that is deliberate (DIC-1227 gated price preservation on yuyu-provenance
@@ -100,8 +104,8 @@ console.log(
 //
 // The small tolerance absorbs genuine churn — a listing selling out legitimately
 // drops a row — without absorbing a purge.
-const PRICED_ROWS_BASELINE = 2300;
-const PRICED_CARDNUMBERS_BASELINE = 1254;
+const PRICED_ROWS_BASELINE = 2529;
+const PRICED_CARDNUMBERS_BASELINE = 1288;
 const EROSION_TOLERANCE = 0.02; // 2%
 const rowsFloor = Math.floor(PRICED_ROWS_BASELINE * (1 - EROSION_TOLERANCE));
 const numbersFloor = Math.floor(PRICED_CARDNUMBERS_BASELINE * (1 - EROSION_TOLERANCE));
