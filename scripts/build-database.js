@@ -985,7 +985,11 @@ async function scrapeYuyuPrices(options = {}) {
       // Replace a (possibly hung/dead) browser with a fresh one, bounded.
       // Returns false when the relaunch itself fails/times out — the
       // remaining series are then abandoned with the partial prices already
-      // collected rather than risking an unbounded stall (DIC-1167).
+      // collected rather than risking an unbounded stall (DIC-1167). Every
+      // caller breaks out of the loop on false, so the failure itself marks
+      // the scrape truncated — otherwise a crash (not hang) followed by a
+      // failed relaunch would report a complete scrape and skip the
+      // partial-scrape preservation path for the unvisited series.
       const relaunchBrowser = async (reason) => {
         await disposeBrowser(browser);
         browser = null;
@@ -993,6 +997,7 @@ async function scrapeYuyuPrices(options = {}) {
           browser = await withWallClock(launchBrowserFn(), launchBudgetMs, `puppeteer relaunch (${reason})`);
           return true;
         } catch (e) {
+          truncated = true;
           console.error(`  → [DIC-1167] Relaunch failed (${reason}): ${e.message} — abandoning remaining series with partial prices`);
           return false;
         }

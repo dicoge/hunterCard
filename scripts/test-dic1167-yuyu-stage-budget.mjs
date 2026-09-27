@@ -168,6 +168,47 @@ const fetchStub = () => async () => ({ prices: {}, fetchedCards: 0, seriesFetche
   console.log('✅ (d) failed relaunch abandons remaining series with partial prices');
 }
 
+// ─── (d2) crash + failed relaunch also marks the scrape truncated ───────────
+// CR 355dac61: the hang path set truncated before relaunching, but the crash
+// path did not — after ≥50 prices a crash whose relaunch failed returned
+// truncated:false, so the unvisited series skipped partial-scrape
+// preservation downstream.
+{
+  let launches = 0;
+  const attempted = [];
+  const sixty = Array.from({ length: 60 }, (_, i) => cardsFor(`hBP01-${String(i + 1).padStart(3, '0')}`)[0]);
+  const result = await scrapeYuyuPrices({
+    launchBrowserFn: async () => {
+      launches++;
+      if (launches > 1) throw new Error('spawn chrome ENOENT');
+      return fakeBrowser();
+    },
+    scrapeSeriesPageFn: async (browser, url) => {
+      attempted.push(url.slice(url.lastIndexOf('/')));
+      if (url.endsWith('/crash')) throw new Error('Protocol error (Runtime.callFunctionOn): Target closed');
+      return sixty;
+    },
+    seriesPages: [
+      { name: 'ok1', url: '/ok1' },
+      { name: 'crash', url: '/crash' },
+      { name: 'never', url: '/never' },
+    ],
+    sleepFn: async () => {},
+    fetchAllFn: async () => { throw new Error('fetch fallback must not run with ≥50 cards'); },
+    seriesBudgetMs: 500,
+    stageBudgetMs: 10_000,
+    launchBudgetMs: 200,
+  });
+  assert.equal(launches, 2, 'initial launch + one failed crash relaunch');
+  assert.deepEqual(attempted, ['/ok1', '/crash'],
+    'after a failed crash relaunch the crashed series is not retried and remaining series are abandoned');
+  assert.equal(result.truncated, true,
+    'a crash whose relaunch fails must mark the scrape truncated (partial preservation downstream)');
+  assert.equal(result.totalCards, 60);
+  assert.equal(Object.keys(result.prices).length, 60, 'partial prices collected before the crash survive');
+  console.log('✅ (d2) crash + failed relaunch marks the scrape truncated with partial prices');
+}
+
 // ─── (e) E2E: real build with a hung price stage exits 0 within budget ──────
 // Sandbox layout mirrors the DIC-1229 scheduler-entrypoint suite: scripts/
 // COPIED (import.meta.url resolves symlinks, which would point DATA_DIR at
