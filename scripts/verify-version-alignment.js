@@ -22,6 +22,7 @@ import { buildPriceVersions, resolveVersionForCard } from '../src/utils/versionA
 import { printingFromLabel, isPlainPrinting } from '../src/utils/printingIdentity.ts';
 import { adaptDatabase } from '../src/utils/deckCardData.ts';
 import { groupVariantsByCardNumber, buildLowCostIndex } from '../src/utils/deckVariants.ts';
+import { dedupeListings } from '../src/utils/canonicalCardRecord.ts';
 import { frozenRawCards } from './lib/frozen-price-fixture.mjs';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -182,8 +183,20 @@ console.log('\n=== 跨消費端一致性（卡片頁／掃描 vs 組牌搜尋／
   const deckPick = new Map(
     groupVariantsByCardNumber(db.cards, db.priceRecords).map((g) => [g.cardNumber, g.card.printing]),
   );
+  // 卡片頁吃的不是單一列：同卡號每個印次各佔一列、且各列只帶自己的掛牌（DIC-1482），
+  // 所以搜尋結果與 canonicalCardRecord.resolve() 都先把所有兄弟列的掛牌以 dedupeListings
+  // 併進代表列，再交給 buildPriceVersions。這裡必須餵同一份輸入 —— 只讀第一列時，
+  // 較便宜的重印（例：hBP01-050 的 (hEB01) ¥50）在另一列上，檢查看到的就不是使用者看到的。
+  const rowsByNumber = new Map();
+  for (const c of Object.values(liveCards)) {
+    const list = rowsByNumber.get(c.cardNumber);
+    if (list) list.push(c);
+    else rowsByNumber.set(c.cardNumber, [c]);
+  }
   const rowFor = new Map();
-  for (const c of Object.values(liveCards)) if (!rowFor.has(c.cardNumber)) rowFor.set(c.cardNumber, c);
+  for (const [num, rows] of rowsByNumber) {
+    rowFor.set(num, { ...rows[0], prices: dedupeListings(rows.flatMap((r) => r.prices ?? [])) });
+  }
 
   const detailPick = (row) => {
     const versions = buildPriceVersions(row);
