@@ -18,6 +18,9 @@
 //   (f) a NON-crash per-series error (navigation TimeoutError) that skips a
 //       series also marks the scrape truncated, and so does a failed series
 //       in the HTTP fetch fallback (CR 6797d0aa);
+//   (f3) a series that loads but yields ZERO cards (challenge page, changed
+//       markup) marks the scrape truncated on both the fetch fallback and
+//       the puppeteer path (CR cbad0ba6);
 //   (e) end-to-end: a real `node scripts/build-database.js` run with a
 //       fault-injected forever-hanging yuyu stage still exits 0 within budget,
 //       publishes the full official catalog, and preserves previously
@@ -310,6 +313,61 @@ const fetchStub = () => async () => ({ prices: {}, fetchedCards: 0, seriesFetche
   assert.equal(cleanResult.truncated, false,
     'an empty-but-successful puppeteer series plus a complete fetch fallback is not truncated');
   console.log('✅ (f2) fetch-fallback series failure marks the scrape truncated');
+}
+
+// ─── (f3) zero-card series marks the scrape truncated ───────────────────────
+// CR cbad0ba6: scrapeSeriesPageWithFetch returns [] (it only logs) for an
+// HTTP 200 page with no parseable cards, so the catch never ran — 60 cards
+// from the first series plus [] from the second returned truncated:false and
+// the second series' rows were nulled as delistings.
+{
+  const sixtyFetch = Array.from({ length: 60 }, (_, i) => cardsFor(`hBP03-${String(i + 1).padStart(3, '0')}`)[0]);
+  const fetchResult = await scrapeAllWithFetch({
+    seriesPages: [
+      { name: 'ok1', url: '/ok1' },
+      { name: 'challenge', url: '/challenge' },
+    ],
+    sleepFn: async () => {},
+    scrapeSeriesPageWithFetchFn: async (url) => (url.endsWith('/challenge') ? [] : sixtyFetch),
+  });
+  assert.equal(fetchResult.fetchedCards, 60);
+  assert.equal(fetchResult.truncated, true,
+    'a fetch series that parses zero cards must mark the fetch result truncated');
+
+  // Puppeteer path: ≥50 cards so no fallback, one series empty.
+  const sixty = Array.from({ length: 60 }, (_, i) => cardsFor(`hBP04-${String(i + 1).padStart(3, '0')}`)[0]);
+  const result = await scrapeYuyuPrices({
+    launchBrowserFn: async () => fakeBrowser(),
+    scrapeSeriesPageFn: async (browser, url) => (url.endsWith('/challenge') ? [] : sixty),
+    seriesPages: [
+      { name: 'ok1', url: '/ok1' },
+      { name: 'challenge', url: '/challenge' },
+    ],
+    sleepFn: async () => {},
+    fetchAllFn: async () => { throw new Error('fetch fallback must not run with ≥50 cards'); },
+    seriesBudgetMs: 500,
+    stageBudgetMs: 10_000,
+    launchBudgetMs: 200,
+  });
+  assert.equal(result.totalCards, 60);
+  assert.equal(result.truncated, true,
+    'a puppeteer series that yields zero cards must mark the scrape truncated');
+
+  const clean = await scrapeYuyuPrices({
+    launchBrowserFn: async () => fakeBrowser(),
+    scrapeSeriesPageFn: async (browser, url) => (url.endsWith('/ok2') ? cardsFor('hSD10-001') : sixty),
+    seriesPages: [
+      { name: 'ok1', url: '/ok1' },
+      { name: 'ok2', url: '/ok2' },
+    ],
+    sleepFn: async () => {},
+    fetchAllFn: async () => { throw new Error('fetch fallback must not run with ≥50 cards'); },
+    seriesBudgetMs: 500,
+    stageBudgetMs: 10_000,
+    launchBudgetMs: 200,
+  });
+  assert.equal(clean.truncated, false, 'every series non-empty → not truncated');
+  console.log('✅ (f3) zero-card series marks the scrape truncated (fetch + puppeteer)');
 }
 
 // ─── (e) E2E: real build with a hung price stage exits 0 within budget ──────

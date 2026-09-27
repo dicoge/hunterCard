@@ -882,8 +882,9 @@ async function disposeBrowser(browser) {
  * DIC-1167: every phase of this function is wall-clock bounded and it ALWAYS
  * resolves. `truncated: true` in the result marks any run where series were
  * skipped (hang, crash retries exhausted, any other per-series error such
- * as a navigation timeout, stage budget exhausted, relaunch failure, or a
- * failed series in the HTTP fetch fallback) so the caller routes it
+ * as a navigation timeout, stage budget exhausted, relaunch failure, a
+ * series that yielded zero priced cards, or a failed/empty series in the
+ * HTTP fetch fallback) so the caller routes it
  * through the DIC-1321 partial-scrape preservation instead of treating unvisited rows as delistings. The
  * `options` seams (launchBrowserFn / scrapeSeriesPageFn / sleepFn / …)
  * mirror scrape-yuyu-prices.js so the crash/hang paths are unit-testable.
@@ -942,6 +943,12 @@ async function scrapeYuyuPrices(options = {}) {
   let totalCards = 0;
   let seriesWithPrices = 0;
   let truncated = false;
+  // DIC-1167 CR cbad0ba6: a series page that loads but yields zero priced
+  // cards (WAF/challenge page, markup the parser no longer matches) was not
+  // actually scraped. Every configured series has live listings, so an empty
+  // one is missing evidence, not a delisting. Tracked separately because the
+  // HTTP fetch fallback re-visits every series and reports its own gaps.
+  const emptySeries = [];
   const stageDeadline = nowFn() + stageBudgetMs;
 
   if (usePuppeteer) {
@@ -1029,6 +1036,7 @@ async function scrapeYuyuPrices(options = {}) {
             const count = accumulateCards(cards, seriesInfo.name);
             console.log(`  → Found ${count} cards with prices`);
             if (count > 0) seriesWithPrices++;
+            else emptySeries.push(seriesInfo.name);
             totalCards += count;
 
           } catch (err) {
@@ -1064,6 +1072,7 @@ async function scrapeYuyuPrices(options = {}) {
                 const count = accumulateCards(cards, seriesInfo.name);
                 console.log(`  → Retry OK: found ${count} cards with prices`);
                 if (count > 0) seriesWithPrices++;
+                else emptySeries.push(seriesInfo.name);
                 totalCards += count;
               } catch (retryErr) {
                 // Second failure on the same series: stop retrying it — a
@@ -1093,6 +1102,12 @@ async function scrapeYuyuPrices(options = {}) {
         await disposeBrowser(browser);
       }
     }
+  }
+
+  // Without a fetch fallback nothing re-visits an empty puppeteer series.
+  if (totalCards >= 50 && emptySeries.length > 0) {
+    truncated = true;
+    console.warn(`[DIC-1167] ${emptySeries.length} series returned zero priced cards (${emptySeries.join(', ')}) — scrape truncated`);
   }
 
   // If puppeteer got too few cards, fall back to HTTP fetch — but only inside
@@ -1177,8 +1192,16 @@ async function scrapeAllWithFetch({
 
       const count = Object.keys(allPrices).length;
       console.log(`  → Found ${count} total unique cards (${cards.length} total listings)`);
-      if (count > 0) seriesFetched++;
-      fetchedCards = Object.keys(allPrices).length;
+      fetchedCards = count;
+      if (cards.length === 0) {
+        // DIC-1167 CR cbad0ba6: an HTTP 200 page with no parseable cards
+        // (challenge page, changed markup) is a skipped series, not an
+        // empty one — the cumulative count above would otherwise hide it.
+        failedSeries.push(seriesInfo.name);
+        console.error(`  → No cards parsed for ${seriesInfo.name} (scrape marked truncated)`);
+      } else {
+        seriesFetched++;
+      }
 
     } catch (err) {
       failedSeries.push(seriesInfo.name);
