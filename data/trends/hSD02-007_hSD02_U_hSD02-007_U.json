@@ -3,13 +3,13 @@
   "name": "百鬼あやめ",
   "nameZh": "百鬼綾目",
   "trend": "down",
-  "score": -0.51,
+  "score": -0.52,
   "confidence": 0.7,
   "components": {
     "priceTrend": -0.91,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-26T12:16:50.314Z",
-  "dataPoints": 69
+  "lastUpdated": "2026-09-27T12:14:34.775Z",
+  "dataPoints": 70
 }

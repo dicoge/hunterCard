@@ -8,8 +8,8 @@
   "components": {
     "priceTrend": 0,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-26T12:16:50.283Z",
+  "lastUpdated": "2026-09-27T12:14:34.742Z",
   "dataPoints": 64
 }

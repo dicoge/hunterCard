@@ -1,0 +1,17 @@
+{
+  "cardId": "hBP02-059_hEB01_RR_hBP02-059_RR_02",
+  "cardNumber": "hBP02-059",
+  "name": "森カリオペ",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP02-059_hEB01_RR_hBP02-059_RR_02",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-09-27T12:14:25.868Z",
+  "nameZh": "森美聲"
+}

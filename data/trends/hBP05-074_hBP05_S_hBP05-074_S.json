@@ -3,13 +3,13 @@
   "name": "フレンドリーパソコン",
   "nameZh": "友善電腦",
   "trend": "down",
-  "score": -0.35,
+  "score": -0.36,
   "confidence": 0.5,
   "components": {
     "priceTrend": -0.64,
     "ytTrend": 0,
-    "newsSentiment": 0.15
+    "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-26T12:16:50.289Z",
+  "lastUpdated": "2026-09-27T12:14:34.748Z",
   "dataPoints": 67
 }
