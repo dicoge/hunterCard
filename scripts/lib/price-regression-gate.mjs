@@ -356,8 +356,10 @@ export function formatGateViolations(label, violations, limit = 8) {
  * DIC-1167 (2026-09-28): callers that ran a scrape may also attach
  * `listingRefusals` (per-cardNumber listing sets the yuyu-only fallback
  * refused — never per printing, so kept out of `rejections[]`, which the
- * gate verifies per printing id) and `coverage` (the scraped-vs-shipped
- * reconciliation). Both are omitted when not supplied, so other refresh
+ * gate verifies per printing id), `printingListingRefusals` (printings a
+ * positive listing matched that received no fresh price — audit trail for
+ * the reconciliation, not decrease rejections) and `coverage` (the
+ * scraped-vs-shipped reconciliation). All are omitted when not supplied, so other refresh
  * paths keep their existing manifest shape.
  */
 export function buildPriceRejectionManifest({
@@ -366,12 +368,14 @@ export function buildPriceRejectionManifest({
   nextCards = {},
   rejections = [],
   listingRefusals,
+  printingListingRefusals,
   coverage,
 } = {}) {
   const before = priceMetrics(previousCards);
   const after = priceMetrics(nextCards);
   const extra = {};
   if (listingRefusals !== undefined) extra.listingRefusals = listingRefusals;
+  if (printingListingRefusals !== undefined) extra.printingListingRefusals = printingListingRefusals;
   if (coverage !== undefined) extra.coverage = coverage;
   return {
     schema: PRICE_REJECTION_MANIFEST_SCHEMA,

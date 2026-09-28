@@ -1965,6 +1965,31 @@ async function buildDatabase() {
   // different products, so a cardNumber-wide notion of "freshly scraped" let a
   // scrape of one printing waive entry loss on an unscraped sibling.
   const freshlyScrapedPrintingIds = new Set();
+  // DIC-1167 CR 81802b00: the narrower subset of those matches whose listing
+  // set carried a POSITIVE sellPrice. `freshlyScrapedPrintingIds` must keep its
+  // broad "matched any listing" meaning for the DIC-1482 gate; the coverage
+  // reconciliation needs to know which printings a positive price reached, so
+  // one that then received no fresh price can never hide behind a priced
+  // sibling. `printingListingRefusals` holds the per-printing disposition for
+  // each such printing that lawfully stays unpriced.
+  const positiveListingPrintingIds = new Set();
+  const printingListingRefusals = new Map();
+  const hasPositiveSellPrice = (entries) => (entries || []).some((e) => Number.isFinite(e?.sellPrice) && e.sellPrice > 0);
+  // Record the matched-listing outcome of one exact printing: every positive
+  // listing either yields a positive canonical price or a durable refusal.
+  const recordPositiveListingOutcome = (rowId, cardNum, matchedEntries, canonical, lowestCanonical) => {
+    printingListingRefusals.delete(rowId);
+    if (!hasPositiveSellPrice(matchedEntries)) return;
+    positiveListingPrintingIds.add(rowId);
+    if (lowestCanonical && lowestCanonical.sellPrice > 0) return;
+    printingListingRefusals.set(rowId, {
+      id: rowId,
+      cardNumber: cardNum,
+      reason: 'no-positive-canonical-price',
+      listingSellPrices: matchedEntries.map((e) => (Number.isFinite(e?.sellPrice) ? e.sellPrice : null)),
+      canonicalSellPrices: (canonical || []).map((e) => (Number.isFinite(e?.sellPrice) ? e.sellPrice : null)),
+    });
+  };
 
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
@@ -2020,6 +2045,7 @@ async function buildDatabase() {
     // This exact printing was matched by the current scrape (see the
     // freshlyScrapedPrintingIds declaration above).
     if (yuyu) freshlyScrapedPrintingIds.add(key);
+    if (yuyu) recordPositiveListingOutcome(key, baseCardNum, yuyu.priceEntries, canonical, lowestCanonical);
     // DIC-1334: record that this cardNumber received a sellPrice from
     // official+yuyu matching so the yuyu-only fallback below does not
     // discard the yuyu price data for OTHER unmatched printings of this
@@ -2119,6 +2145,14 @@ async function buildDatabase() {
         continue;
       }
       const [[printKey, proven]] = provenPrintings;
+      // CR 81802b00: a non-positive listing proving to one printing does not
+      // dispose of a positive listing that proved to none — without this
+      // record the positive price vanished with no trace.
+      const unprovenPositive = allEntries.filter((e) => !proven.includes(e) && hasPositiveSellPrice([e]));
+      if (!hasPositiveSellPrice(proven) && unprovenPositive.length > 0) {
+        recordListingRefusal(cardNum, 'positive-listings-unproven', priceData, officialRows, [printKey]);
+        console.log(`  [DIC-1167] ${cardNum}: ${unprovenPositive.length} positive listing(s) proved to no official printing; only a non-positive listing proved to ${printKey} — refusal recorded`);
+      }
       // The proven printing must be an official row that already exists in the
       // artifact — binding is the only lawful outcome here. If it somehow does
       // not, fail closed rather than publish an identity-less duplicate.
@@ -2178,6 +2212,7 @@ async function buildDatabase() {
       bound._rawPricesArchive = archive;
       if (!bound.name) bound.name = lowestName || '';
       freshlyScrapedPrintingIds.add(boundPrintingKey);
+      recordPositiveListingOutcome(boundPrintingKey, cardNum, priceEntries, canonical, lowestCanonical);
       console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${canonicalLowestPrice})`);
       continue;
     }
@@ -2208,6 +2243,7 @@ async function buildDatabase() {
       _rawPricesArchive: archive,
     };
     freshlyScrapedPrintingIds.add(outCardNum);
+    recordPositiveListingOutcome(outCardNum, outCardNum, priceEntries, canonical, lowestCanonical);
   }
 
   // DIC-1204: preserve proven market payload onto every current row that maps
@@ -2509,7 +2545,8 @@ async function buildDatabase() {
       canonicalizeCardNumber,
       cards: database.cards,
       freshlyPricedRowIds,
-      listingMatchedRowIds: freshlyScrapedPrintingIds,
+      positiveListingRowIds: positiveListingPrintingIds,
+      printingListingRefusals,
       listingRefusals,
       increaseRejections,
       ambiguityNulledIds,
@@ -2523,13 +2560,15 @@ async function buildDatabase() {
       + `+ ${rc.ambiguityNulled} ambiguity-nulled + ${rc.noSellListing} no-sell-listing + ${rc.unaccounted} unaccounted; `
       + `${listingRefusals.size} listing refusal(s) recorded`
     );
-    // CR 1924ef80: the cardNumber buckets above let one priced sibling mask a
-    // lost printing; this ledger accounts for every freshly-priced printing by
-    // its compound-key row id.
+    // CR 1924ef80 / 81802b00: the cardNumber buckets above let one priced
+    // sibling mask a lost printing; this ledger accounts, by compound-key row
+    // id, for every freshly-priced printing and every printing a positive
+    // listing matched.
     console.log(
-      `  [DIC-1167] exact-printing ledger: ${pl.freshlyPriced} freshly-priced printings = `
+      `  [DIC-1167] exact-printing ledger: ${pl.freshlyPriced} freshly-priced `
+      + `+ ${pl.positiveListingUnpriced} positive-listing-unpriced printings = `
       + `${pl.shippedPriced} shipped priced + ${pl.refusedIncrease} refused-increase `
-      + `+ ${pl.ambiguityNulled} ambiguity-nulled + ${pl.unaccounted} unaccounted`
+      + `+ ${pl.ambiguityNulled} ambiguity-nulled + ${pl.refusedListing} refused-listing + ${pl.unaccounted} unaccounted`
     );
     if (!coverageReconciliation.ok) {
       throw new Error(formatReconciliationFailure(coverageReconciliation));
@@ -2610,6 +2649,7 @@ async function buildDatabase() {
       nextCards: database.cards,
       rejections: allRejections,
       listingRefusals: [...listingRefusals.values()].sort((a, b) => a.cardNumber.localeCompare(b.cardNumber)),
+      printingListingRefusals: [...printingListingRefusals.values()].sort((a, b) => a.id.localeCompare(b.id)),
       coverage: reconciliationManifestBlock(coverageReconciliation),
     });
     writeJsonAtomic(path.join(DATA_DIR, 'price-rejections.json'), manifest);

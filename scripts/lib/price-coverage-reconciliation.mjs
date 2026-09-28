@@ -44,6 +44,19 @@
  * lose; binding a sibling's listing onto it would be the forbidden
  * cardNumber-wide fallback.
  *
+ * "Freshly priced" alone still misses the matched-but-unpriced loss (CR
+ * 81802b00): a listing with a positive sellPrice ties to an exact printing,
+ * yet the printing never received a fresh price, and a priced sibling kept the
+ * cardNumber in `fresh` / `preserved`. So the ledger also covers every printing
+ * a POSITIVE listing matched (`positiveListingRowIds`). Such a printing that
+ * was not freshly priced must carry a per-printing disposition in
+ * `printingListingRefusals` (e.g. its only positive price was a retired
+ * pre-errata listing that canonicalisation drops) — otherwise it is an
+ * `unaccountedPrinting`. A printing matched only by non-positive listings had
+ * no price to lose and stays lawful. The cardNumber-level preserved guard is
+ * likewise scoped to positive-listing matches: a non-positive match never
+ * stands in for an unhandled positive listing.
+ *
  * Pure module: no I/O, no mutation of its inputs.
  */
 
@@ -51,6 +64,19 @@ export const LISTING_REFUSAL_REASONS = Object.freeze([
   'no-exact-printing-proven',
   'ambiguous-official-printings',
   'proven-printing-missing-row',
+  // A non-positive listing proved to one printing while every positive
+  // listing of the cardNumber proved to none: the positive price was not
+  // bound anywhere, so the refusal must be recorded like the others.
+  'positive-listings-unproven',
+]);
+
+// Per-printing dispositions for a printing a positive listing matched but that
+// received no fresh price.
+export const PRINTING_LISTING_REFUSAL_REASONS = Object.freeze([
+  // Every positive sellPrice among the matched listings sat on a retired
+  // (pre-errata) row that DIC-1139 canonicalisation drops; the corrected row
+  // is unpriced, so the DIC-1167 canonical top-level contract ships null.
+  'no-positive-canonical-price',
 ]);
 
 function isPositivePrice(value) {
@@ -68,9 +94,12 @@ function listingHasSellPrice(priceData) {
  * @param {(n: string) => string} args.canonicalizeCardNumber
  * @param {object} args.cards             the final (post-strip) cards map
  * @param {Set<string>} args.freshlyPricedRowIds  row ids priced before preservation
- * @param {Set<string>} [args.listingMatchedRowIds]  row ids a scraped listing
- *        matched to an exact printing (priced or not). Omitted = none matched,
- *        so a preserved-only cardNumber with a positive listing fails closed.
+ * @param {Set<string>} [args.positiveListingRowIds]  row ids a scraped listing
+ *        with a positive sellPrice matched to an exact printing (priced or
+ *        not). Omitted = none, so a preserved-only cardNumber with a positive
+ *        listing fails closed.
+ * @param {Map<string, object>} [args.printingListingRefusals]  row id → per-printing
+ *        disposition for a positive-listing match that received no fresh price
  * @param {Map<string, object>} args.listingRefusals  canonical cardNumber → refusal record
  * @param {Array<{cardNumber: string}>} args.increaseRejections
  * @param {Set<string>} args.ambiguityNulledIds
@@ -80,7 +109,8 @@ export function reconcileScrapedCoverage({
   canonicalizeCardNumber = (n) => n,
   cards = {},
   freshlyPricedRowIds = new Set(),
-  listingMatchedRowIds = new Set(),
+  positiveListingRowIds = new Set(),
+  printingListingRefusals = new Map(),
   listingRefusals = new Map(),
   increaseRejections = [],
   ambiguityNulledIds = new Set(),
@@ -95,12 +125,12 @@ export function reconcileScrapedCoverage({
 
   const freshPriced = new Set();
   const anyPriced = new Set();
-  const matchedCardNums = new Set();
+  const positiveMatchedCardNums = new Set();
   const ambiguityCardNums = new Set();
   for (const [id, card] of Object.entries(cards || {})) {
     const cardNum = card?.cardNumber;
     if (!cardNum) continue;
-    if (listingMatchedRowIds?.has?.(id)) matchedCardNums.add(cardNum);
+    if (positiveListingRowIds?.has?.(id)) positiveMatchedCardNums.add(cardNum);
     if (ambiguityNulledIds?.has?.(id)) ambiguityCardNums.add(cardNum);
     if (!isPositivePrice(card?.sellPrice)) continue;
     anyPriced.add(cardNum);
@@ -111,21 +141,36 @@ export function reconcileScrapedCoverage({
   );
   const increaseIds = new Set((increaseRejections || []).map((r) => r?.id).filter(Boolean));
 
-  // Exact-printing ledger: every row THIS scrape priced ends in exactly one
-  // state on the shipped artifact, keyed by its compound-key row id.
+  // Exact-printing ledger: every row THIS scrape priced, and every row a
+  // positive listing matched, ends in exactly one state on the shipped
+  // artifact, keyed by its compound-key row id.
   const printingLedger = {
     freshlyPriced: 0,
+    positiveListingUnpriced: 0,
     shippedPriced: 0,
     refusedIncrease: 0,
     ambiguityNulled: 0,
+    refusedListing: 0,
     unaccounted: 0,
   };
   const unaccountedPrintings = [];
+  const ledgerIds = new Set(freshlyPricedRowIds || []);
   for (const id of freshlyPricedRowIds || []) {
     printingLedger.freshlyPriced++;
     const card = cards?.[id];
     if (isPositivePrice(card?.sellPrice)) printingLedger.shippedPriced++;
     else if (increaseIds.has(id)) printingLedger.refusedIncrease++;
+    else if (ambiguityNulledIds?.has?.(id)) printingLedger.ambiguityNulled++;
+    else unaccountedPrintings.push(id);
+  }
+  for (const id of positiveListingRowIds || []) {
+    if (ledgerIds.has(id)) continue;
+    ledgerIds.add(id);
+    printingLedger.positiveListingUnpriced++;
+    // A positive listing matched this printing but no fresh price resulted.
+    // A preserved last-known-good price does not explain that; only a
+    // per-printing record does. Records for a sibling never cover it.
+    if (printingListingRefusals?.has?.(id)) printingLedger.refusedListing++;
     else if (ambiguityNulledIds?.has?.(id)) printingLedger.ambiguityNulled++;
     else unaccountedPrintings.push(id);
   }
@@ -151,9 +196,11 @@ export function reconcileScrapedCoverage({
       categories.fresh.push(cardNum);
     } else if (anyPriced.has(cardNum)) {
       // A preserved sibling is not evidence that this run's positive listing
-      // was handled: it must have matched an exact printing or been refused.
+      // was handled: a positive listing must have matched an exact printing
+      // (then accounted per printing in the ledger above) or been refused. A
+      // non-positive match proves nothing about the positive listing.
       const refused = listingRefusals?.has?.(cardNum);
-      if (hasSellListing && !refused && !matchedCardNums.has(cardNum)) {
+      if (hasSellListing && !refused && !positiveMatchedCardNums.has(cardNum)) {
         categories.unaccounted.push(cardNum);
         continue;
       }
@@ -223,8 +270,8 @@ export function formatReconciliationFailure(reconciliation, limit = 10) {
       + `or a recorded refusal/rejection: ${sample(lost)}`);
   }
   if (lostPrintings.length > 0) {
-    parts.push(`${lostPrintings.length} exact printing(s) priced by this scrape shipped unpriced `
-      + `with no recorded rejection: ${sample(lostPrintings)}`);
+    parts.push(`${lostPrintings.length} exact printing(s) priced by, or matched to a positive listing of, `
+      + `this scrape shipped without a fresh price and with no recorded rejection: ${sample(lostPrintings)}`);
   }
   return `[DIC-1167] scraped-vs-shipped price coverage does not reconcile: ${parts.join('; ')}. `
     + 'Refusing to ship a silent price loss.';
