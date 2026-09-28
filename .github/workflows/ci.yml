@@ -226,6 +226,9 @@ jobs:
       - name: Verify exact-print price-regression gate, last-known-good preservation, and canonical/public/native parity (DIC-1482)
         run: npm run test:dic1482-price-gate
 
+      - name: Verify every scraped cardNumber reconciles against the shipped artifact and fallback refusals are recorded (DIC-1167)
+        run: npm run test:dic1167-price-coverage-reconciliation
+
       - name: Audit normalized card labels, subscriber provenance, and exact-printing trends (DIC-1084)
         run: npm run test:card-data-audit
 

@@ -102,6 +102,7 @@
     "test:deployment-data": "node scripts/verify-deployment-data.mjs",
     "test:market-field-preservation": "node scripts/test-market-field-preservation.mjs",
     "test:dic1482-price-gate": "node scripts/test-dic1482-price-regression-gate.mjs",
+    "test:dic1167-price-coverage-reconciliation": "node scripts/test-dic1167-price-coverage-reconciliation.mjs",
     "test:deck-rules": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/test-deck-rules.mjs",
     "test:tournament-report": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs scripts/test-tournament-report.mjs",
     "test:tournament-collector": "node scripts/test-tournament-collector.mjs",
