@@ -2076,8 +2076,9 @@ async function buildDatabase() {
   const listingRefusals = new Map();
   // `refusedIds` are the `scrapedListingId`s this refusal disposes of; the
   // reconciliation covers a positive listing only when its id is named here.
-  // At most one refusal is recorded per raw key; two raw keys canonicalizing to
-  // one cardNumber (hY01-14 / hY01-014) merge into one record.
+  // The fallback processes all raw keys of one canonical cardNumber (hY01-14 /
+  // hY01-014) as one listing set, so each cardNumber records at most one
+  // refusal; the merge below is defensive and never drops a refused id.
   const recordListingRefusal = (cardNum, reason, priceData, officialRows, provenKeys, refusedIds) => {
     const entries = Array.isArray(priceData) ? priceData : [priceData];
     const record = {
@@ -2105,11 +2106,35 @@ async function buildDatabase() {
     listingRefusals.set(cardNum, record);
   };
 
-  // Also add yuyu-only cards (prices without matching official entry)
-  for (const [rawCardNum, priceData] of Object.entries(prices)) {
-    // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
-    // schema requires 3 digits (hY01-014).  DIC-1084.
+  // Also add yuyu-only cards (prices without matching official entry).
+  // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
+  // schema requires 3 digits (hY01-014).  DIC-1084.
+  // CR 4132f98e: raw alias keys of one canonical cardNumber (hZZ01-14 and
+  // hZZ01-014) are ONE listing set. Processing them per raw key wrote the same
+  // row twice — the later alias overwrote the earlier one's price while both
+  // listings stayed `matched`, so the reconciliation passed on a lost price.
+  // Each listing keeps its own raw-key `scrapedListingId`.
+  const fallbackListingSets = new Map(); // canonical cardNumber → { entries, ids }
+  for (const [rawCardNum, rawPriceData] of Object.entries(prices)) {
     const cardNum = canonicalizeCardNumber(rawCardNum);
+    if (!fallbackListingSets.has(cardNum)) fallbackListingSets.set(cardNum, { entries: [], ids: new Map() });
+    const set = fallbackListingSets.get(cardNum);
+    (Array.isArray(rawPriceData) ? rawPriceData : [rawPriceData]).forEach((entry, index) => {
+      set.entries.push(entry);
+      set.ids.set(entry, scrapedListingId(rawCardNum, index));
+    });
+  }
+  // Every row the fallback publishes or binds, once. A second write to one row
+  // would displace positive listings the ledger already counts as matched.
+  const fallbackWrittenRowIds = new Set();
+  const claimFallbackRow = (rowId, cardNum) => {
+    if (fallbackWrittenRowIds.has(rowId)) {
+      throw new Error(`[DIC-1167] yuyu-only fallback would overwrite row ${rowId} (cardNumber ${cardNum}) already written this run — a positive listing would be displaced while counted as matched; refusing to build`);
+    }
+    fallbackWrittenRowIds.add(rowId);
+  };
+  for (const [cardNum, listingSet] of fallbackListingSets) {
+    const priceData = listingSet.entries;
     // DIC-1334: replace the old `alreadyExists` gate (which dropped yuyu price
     // data whenever ANY official entry existed, even when every official entry
     // had sellPrice:null — the 1,214→424 collapse). Now we only block the
@@ -2118,8 +2143,8 @@ async function buildDatabase() {
     // exist but ALL are unpriced, we ADD the yuyu listing as yuyu-only instead
     // of silently discarding it.
     const officialRows = officialByCardNum[cardNum] || [];
-    const allEntries = Array.isArray(priceData) ? priceData : [priceData];
-    const idOf = (entry) => scrapedListingId(rawCardNum, allEntries.indexOf(entry));
+    const allEntries = priceData;
+    const idOf = (entry) => listingSet.ids.get(entry);
     const officialAlreadyPriced = officialPricedCardNums.has(cardNum);
     if (officialAlreadyPriced) {
       // CR e0a089af: an exactly-priced sibling printing (U ¥100) says nothing
@@ -2251,6 +2276,7 @@ async function buildDatabase() {
     // have proven stayed unpriced — the artifact then carried both a null
     // official row and a rogue priced row for the same card.
     if (boundPrintingKey) {
+      claimFallbackRow(boundPrintingKey, cardNum);
       const bound = database.cards[boundPrintingKey];
       bound.sellPrice = canonicalLowestPrice;
       bound.yuyuName = cleanYuyuName;
@@ -2270,6 +2296,7 @@ async function buildDatabase() {
       : cardNum.replace(/-(\d{1,2})$/, (_, n) => `-${n.padStart(3, '0')}`);
     const outCardNum = isCanonicalCardNumber(canonicalCardNum) ? canonicalCardNum : cardNum;
 
+    claimFallbackRow(outCardNum, cardNum);
     database.cards[outCardNum] = {
       id: outCardNum,
       cardNumber: outCardNum,
