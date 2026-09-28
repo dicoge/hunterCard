@@ -33,6 +33,8 @@ import {
   findUnprovenPriceHistoryViolations,
   pricesEntryExactPrintMatchesSource,
   yuyuImageProductPath,
+  isKnownPromoPath,
+  promoPathMatchesCardNumber,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 import { collectPriceEvidence, writePriceEvidenceAtomic } from './lib/price-evidence.js';
@@ -1887,6 +1889,7 @@ async function buildDatabase() {
       return pricesEntryExactPrintMatchesSource(
         { sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage },
         official.sourceProduct || official.series || '',
+        official.cardNumber,
       );
     }
 
@@ -1923,8 +1926,40 @@ async function buildDatabase() {
   // fallback applied to it before (DIC-1334/CR rev.2). A listing that matches
   // several printings (ent07 C vs 02_C) stays unmatched here, so the fallback
   // still refuses it by listing id instead of pricing every sibling.
+  // CR 5349b420: an explicit sourceSeries/rarity label never consults the
+  // listing's image, so an alias listing labelled hbp06/SY but carrying an
+  // hbp05 image matched the hbp06 printing and could set its lowest price —
+  // the later provenance gate then passed the row on a SEPARATE valid entry.
+  // An alias listing must also prove the printing by its OWN image product.
+  // CR 064672e4: the same hole existed for CANONICAL-key listings — a
+  // listing filed under the exact cardNumber (hY02-008) labelled hbp06/SY but
+  // carrying an hbp05 image matched, lowered the lowest price, and the gate
+  // passed on the separate valid entry. Every listing, whatever its raw key,
+  // proves a printing only by its own image product. `ent07` is yuyu's
+  // entry-promo aggregation page, not an image product: its printings carry
+  // promo pack images (/promo-hbp10/, /promo-hsd10/, /promo-hbd20/), so an
+  // ent07 row accepts a known promo pack image and nothing else — a /yell01/
+  // or /hbp05/ image on that page still proves nothing.
+  // CR 6c62db8b: nor does ANOTHER family's promo pack — a cheaper hBD24-008
+  // ent07/P listing with a /promo-hsd10/ image lowered the already-priced
+  // /promo-hbd20/ hBD24-008_ent07 row. The pack must host the row's own
+  // card-number family.
+  // CR bdd2c367: hPR rows had the same hole — `pricesEntryExactPrintMatchesSource`
+  // accepts ANY known promo pack for hpr, and it ran before the family guard,
+  // so a cheaper hBD24-006 hpr/P listing with a /promo-hsd10/ image lowered the
+  // already-priced /promo-hbd20/ hBD24-006_hPR row. A promo pack image now
+  // proves an hPR or ent07 printing only through the family guard.
+  const listingImageProvesPrinting = (entry, row) => {
+    const source = String(row.sourceProduct || row.series || '').toLowerCase();
+    const urlProd = yuyuImageProductPath(entry.yuyuImage);
+    if (isKnownPromoPath(urlProd)) {
+      return (source === 'hpr' || source === 'ent07') && promoPathMatchesCardNumber(urlProd, row.cardNumber);
+    }
+    return pricesEntryExactPrintMatchesSource({ sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage }, source, row.cardNumber);
+  };
   const aliasListingProvesUniquePrinting = (entry, cardNum) => (officialByCardNum[cardNum] || [])
-    .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row)))
+    .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row))
+      && listingImageProvesPrinting(entry, row))
     .length === 1;
 
   function getYuyuForCard(cardNum, official) {
@@ -1932,6 +1967,7 @@ async function buildDatabase() {
     if (!listings || listings.length === 0) return null;
     const candidateCount = sameSourceCandidateCount(cardNum, official);
     const matched = listings.filter(({ entry, rawKey }) => yuyuEntryMatchesOfficial(entry, official, candidateCount)
+      && listingImageProvesPrinting(entry, official)
       && (rawKey === cardNum || aliasListingProvesUniquePrinting(entry, cardNum)));
     if (matched.length === 0) return null;
     const rawEntries = matched.map(({ entry }) => entry);
@@ -2219,6 +2255,12 @@ async function buildDatabase() {
             .filter((c) => String(c.sourceProduct || c.series || '').toLowerCase() === String(official.sourceProduct || official.series || '').toLowerCase())
             .length;
           if (!yuyuEntryMatchesOfficial(entry, official, candidateCount)) continue;
+          // CR 5349b420 / 064672e4: same rule as the official pass — a
+          // listing (alias OR canonical key) proves a printing only by its OWN
+          // image product. The increase gate never re-checks a previously-
+          // priced row, so a foreign-image listing bound here would silently
+          // lower its last-known-good price.
+          if (!listingImageProvesPrinting(entry, official)) continue;
           const printKey = officialKeyByRow.get(official);
           if (!printKey) continue;
           if (!provenPrintings.has(printKey)) provenPrintings.set(printKey, []);

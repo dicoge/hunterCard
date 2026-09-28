@@ -69,6 +69,7 @@ const VALID_HBP02_URL = 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/10002.jpg';
 const VALID_HBP04_URL = 'https://card.yuyu-tei.jp/hocg/100_140/hbp04/10004.jpg';
 const VALID_HEB01_URL = 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10001.jpg';
 const VALID_PROMO_HBP10_URL = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10013.jpg';
+const VALID_PROMO_HSD10_URL = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg';
 const EVIL_HOST_URL = 'https://evil-yuyu-tei.jp/hocg/100_140/hbp01/10001.jpg';
 const OPAQUE_URL = 'javascript:alert(1)';
 const NON_DEFAULT_PORT_URL = 'https://card.yuyu-tei.jp:8443/hocg/100_140/hbp01/10001.jpg';
@@ -216,6 +217,16 @@ assert.equal(
   'cross-printing top-level URL (/heb01/ on hBP01 row) fails closed',
 );
 
+// CR dd802df1: another family's promo pack is not provenance for the row.
+assert.equal(
+  hasCurrentPriceProvenance({
+    sourceProduct: 'hPR', sellPrice: 500, yuyuImage: VALID_PROMO_HSD10_URL,
+    prices: [], timestamp: FRESH_TS, cardNumber: 'hBD24-006',
+  }, gate()),
+  false,
+  'hBD24-006_hPR + /promo-hsd10/ = foreign-family promo pack fails closed',
+);
+
 // promo carve-out — hPR row with /promo-hbp10/ image is proven
 assert.equal(
   hasCurrentPriceProvenance({
@@ -317,7 +328,10 @@ assert.equal(
 // assertion, not just an integration one.
 assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_HBP04_URL }, 'hBP04'), true);
 assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_HBP02_URL }, 'hBP04'), false, 'origin-prefix carve-out NOT applied here');
-assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_PROMO_HBP10_URL }, 'hPR'), true, 'known promo carve-out preserved for hPR');
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_PROMO_HBP10_URL }, 'hPR', 'hBP01-048'), true, 'known promo carve-out preserved for hPR');
+// CR dd802df1: the promo carve-out holds only for the pack's own card family.
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_PROMO_HBP10_URL }, 'hPR', 'hBD24-006'), false, 'foreign-family promo pack fails closed');
+assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_PROMO_HBP10_URL }, 'hPR'), false, 'promo pack without cardNumber fails closed');
 assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: VALID_HBP01_URL }, 'ent07'), false, 'ent07 aggregation carve-out NOT applied here');
 assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: EVIL_HOST_URL }, 'hBP01'), false, 'evil host fails at URL parse');
 assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: '' }, 'hBP01'), false, 'empty URL fails');
@@ -343,7 +357,9 @@ for (const badPrice of [0, -100, null, undefined, NaN, '180']) {
     id: 'hSD03-002_hPR_P_hSD03-002_P',
     cardNumber: 'hSD03-002',
     sourceProduct: 'hPR', sellPrice: 980,
-    yuyuImage: VALID_PROMO_HBP10_URL,
+    // CR dd802df1: the hSD family's own promo pack — a /promo-hbp10/ image
+    // would no longer prove an hSD03-002 printing at all.
+    yuyuImage: VALID_PROMO_HSD10_URL,
     prices: [], timestamp: FRESH_TS,
   };
   assert.equal(hasCurrentPriceProvenance(card, gate()), true, 'ambiguity-less baseline passes');

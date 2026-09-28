@@ -194,8 +194,43 @@ const KNOWN_PROMO_PATHS = new Set([
   'promo-hbd20',
 ]);
 
-function isKnownPromoPath(urlProd) {
+export function isKnownPromoPath(urlProd) {
   return KNOWN_PROMO_PATHS.has(urlProd);
+}
+
+/**
+ * CR 6c62db8b: the card-number family each known promo pack hosts. yuyu's
+ * ent07 entry-promo aggregation page lists printings from all three packs, so
+ * "some known promo pack" is not provenance for one exact printing — a
+ * cheaper hBD24-008 listing carrying a /promo-hsd10/ image lowered the
+ * /promo-hbd20/ hBD24-008_ent07 row. Every promo listing in the shipped data
+ * and the 2026-09-26 scrape holds this mapping (hBD→hbd20, hBP→hbp10,
+ * hSD→hsd10). A pack hosting another family must be added here explicitly;
+ * until then it fails closed.
+ */
+const PROMO_PATH_CARD_FAMILY = new Map([
+  ['promo-hbp10', 'hbp'],
+  ['promo-hsd10', 'hsd'],
+  ['promo-hbd20', 'hbd'],
+]);
+
+export function promoPathMatchesCardNumber(urlProd, cardNumber) {
+  const family = PROMO_PATH_CARD_FAMILY.get(urlProd);
+  const match = /^(h[a-z]+)\d/i.exec(String(cardNumber || ''));
+  return Boolean(family && match && match[1].toLowerCase() === family);
+}
+
+/**
+ * CR dd802df1: the hPR promo carve-out shared by every provenance matcher
+ * below. A known promo pack image proves an hPR printing only when the pack
+ * hosts the row's own card-number family — the same rule fresh listing
+ * matching applies since CR bdd2c367. Without it a previous
+ * hBD24-006_hPR row carrying a ¥500 /promo-hsd10/ listing classified as
+ * proven and preservation copied that foreign price onto the unpriced
+ * current row. A missing cardNumber fails closed.
+ */
+function promoPathProvesHprPrinting(urlProd, src, cardNumber) {
+  return src === 'hpr' && isKnownPromoPath(urlProd) && promoPathMatchesCardNumber(urlProd, cardNumber);
 }
 
 /**
@@ -218,13 +253,12 @@ function isKnownPromoPath(urlProd) {
  *   - A missing / unparseable yuyuImage fails the gate: unverified
  *     provenance can never carry forward yuyu payload.
  */
-export function yuyuPayloadMatchesSource(previous, currentSourceProduct) {
+export function yuyuPayloadMatchesSource(previous, currentSourceProduct, currentCardNumber = previous?.cardNumber) {
   const urlProd = yuyuImageProductPath(previous?.yuyuImage);
   const src = String(currentSourceProduct || '').toLowerCase();
   if (!urlProd || !src) return false;
   if (urlProd === src) return true;
-  if (isKnownPromoPath(urlProd) && src === 'hpr') return true;
-  return false;
+  return promoPathProvesHprPrinting(urlProd, src, currentCardNumber);
 }
 
 /**
@@ -264,7 +298,7 @@ function cardNumberOriginPrefixLower(cardNumber) {
   return m ? m[1].toLowerCase() : '';
 }
 
-export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCardNumber = null) {
+export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCardNumber = null, { allowOriginPrefix = true } = {}) {
   const src = String(currentSourceProduct || '').toLowerCase();
   if (!src) return false;
   // DIC-1227 CR follow-up rev.4: even non-official sourceProduct rows
@@ -278,7 +312,7 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
   if (!urlProd) return false;
   if (NON_OFFICIAL_SOURCE_PRODUCTS.has(src)) return true;
   if (urlProd === src) return true;
-  if (isKnownPromoPath(urlProd) && src === 'hpr') return true;
+  if (promoPathProvesHprPrinting(urlProd, src, currentCardNumber)) return true;
   // Reprint carve-out (non-promo sourceProduct only): allow the entry whose
   // URL matches the cardNumber's origin-product prefix. This keeps a
   // /hbp02/ BASE entry on a `hBP02-084_hBP04_SR` reprint row so deck
@@ -286,7 +320,7 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
   // products (hPR) stay strict — they never inherit the base printing's
   // listing, which is what makes hBP01-090_hPR_P fully null when no
   // /hpr/ or /promo-*/ entry exists.
-  if (currentCardNumber && !PROMO_STYLE_SOURCE_PRODUCTS.has(src)) {
+  if (allowOriginPrefix && currentCardNumber && !PROMO_STYLE_SOURCE_PRODUCTS.has(src)) {
     const originPrefix = cardNumberOriginPrefixLower(currentCardNumber);
     if (originPrefix && urlProd === originPrefix) return true;
   }
@@ -310,18 +344,18 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
  *   (ii) URL product path is a KNOWN promo pack AND `sourceProduct` is
  *        `'hpr'` (the promo carve-out that hBP01-048's /promo-hbp10/
  *        ¥980 entry needs and that hSD03-002_hPR ambiguity handling
- *        further gates).
+ *        further gates) AND the pack hosts `currentCardNumber`'s family
+ *        (CR dd802df1).
  * Anything else — cross-printing, ent07-aggregation, evil-host, wrong
  * port, no-image, missing URL — fails closed.
  */
-export function pricesEntryExactPrintMatchesSource(entry, currentSourceProduct) {
+export function pricesEntryExactPrintMatchesSource(entry, currentSourceProduct, currentCardNumber = null) {
   const src = String(currentSourceProduct || '').toLowerCase();
   if (!src) return false;
   const urlProd = yuyuImageProductPath(entry?.imageUrl);
   if (!urlProd) return false;
   if (urlProd === src) return true;
-  if (isKnownPromoPath(urlProd) && src === 'hpr') return true;
-  return false;
+  return promoPathProvesHprPrinting(urlProd, src, currentCardNumber);
 }
 
 /**
@@ -492,7 +526,7 @@ export function hasCurrentPriceProvenance(card, options = {}) {
     entry
     && Number.isFinite(entry.sellPrice)
     && entry.sellPrice > 0
-    && pricesEntryExactPrintMatchesSource(entry, sourceProduct)
+    && pricesEntryExactPrintMatchesSource(entry, sourceProduct, card.cardNumber)
   ));
 }
 
@@ -504,9 +538,9 @@ export function hasCurrentPriceProvenance(card, options = {}) {
  * can therefore keep its provable per-entry provenance instead of losing
  * the whole payload.
  */
-export function filterProvenanceMatchedPriceEntries(entries, currentSourceProduct, currentCardNumber = null) {
+export function filterProvenanceMatchedPriceEntries(entries, currentSourceProduct, currentCardNumber = null, options = {}) {
   if (!Array.isArray(entries)) return [];
-  return entries.filter((entry) => pricesEntryMatchesSource(entry, currentSourceProduct, currentCardNumber));
+  return entries.filter((entry) => pricesEntryMatchesSource(entry, currentSourceProduct, currentCardNumber, options));
 }
 
 /**
@@ -887,7 +921,12 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
   //     reflects its own printing, not the base's.
   const filteredPrices = filterProvenanceMatchedPriceEntries(payload.prices, currentSourceProduct, currentCard?.cardNumber);
   const filteredArchive = filterProvenanceMatchedPriceEntries(payload._rawPricesArchive, currentSourceProduct, currentCard?.cardNumber);
-  const strictSurvivors = filterProvenanceMatchedPriceEntries(payload.prices, currentSourceProduct);
+  // CR dd802df1: the strict filter still needs the cardNumber — an hPR promo
+  // pack image proves the printing only for its own card family — so the
+  // reprint carve-out is disabled by option instead of by omitting it.
+  const strictSurvivors = filterProvenanceMatchedPriceEntries(
+    payload.prices, currentSourceProduct, currentCard?.cardNumber, { allowOriginPrefix: false },
+  );
   const anyStrictSurvivor = strictSurvivors.length > 0;
   const anyProvenSurvivor = filteredPrices.length > 0;
   // Signed printings (DIC-1013/1140) fail-closed strip prices[] on
@@ -897,7 +936,8 @@ export function applyPreservedMarketFields(currentCard, previous, { matchKind = 
   // it points to this row's sourceProduct.
   const preservePrintingArrays = preserveYuyuPayload && anyProvenSurvivor && (matchKind === 'exact-id' || !isSignedPrinting(currentCard));
   const useDerived = preservePrintingArrays;
-  const topLevelPayloadMatches = preserveYuyuPayload && yuyuPayloadMatchesSource(previous, currentSourceProduct);
+  const topLevelPayloadMatches = preserveYuyuPayload
+    && yuyuPayloadMatchesSource(previous, currentSourceProduct, currentCard?.cardNumber);
   const derived = useDerived
     ? deriveTopLevelFromEntries(strictSurvivors, payload.timestamp)
     : topLevelPayloadMatches

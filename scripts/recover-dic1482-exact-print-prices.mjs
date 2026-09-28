@@ -112,7 +112,7 @@ export function recoverExactPrintPrices(currentCards, candidateCards) {
         && !current.prices.some((entry) => entry?.sellPrice === current.sellPrice)) {
       const strictEntries = current.prices.filter(
         (entry) => Number.isFinite(entry?.sellPrice) && entry.sellPrice > 0
-          && pricesEntryExactPrintMatchesSource(entry, current.sourceProduct || current.series || ''),
+          && pricesEntryExactPrintMatchesSource(entry, current.sourceProduct || current.series || '', current.cardNumber),
       );
       const derived = deriveTopLevelFromEntries(strictEntries, current.timestamp);
       if (derived.sellPrice != null) {
