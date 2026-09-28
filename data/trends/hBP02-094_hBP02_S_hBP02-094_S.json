@@ -3,13 +3,13 @@
   "name": "Tatang",
   "nameZh": "Tatang",
   "trend": "up",
-  "score": 0.5,
+  "score": 0.49,
   "confidence": 0.8,
   "components": {
     "priceTrend": 0.78,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.725Z",
-  "dataPoints": 68
+  "lastUpdated": "2026-09-28T12:14:43.067Z",
+  "dataPoints": 69
 }

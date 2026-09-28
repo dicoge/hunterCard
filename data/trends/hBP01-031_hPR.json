@@ -3,13 +3,13 @@
   "name": "IRyS",
   "nameZh": "IRyS",
   "trend": "down",
-  "score": -0.4,
+  "score": -0.41,
   "confidence": 0.4,
   "components": {
     "priceTrend": -0.72,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.706Z",
+  "lastUpdated": "2026-09-28T12:14:43.048Z",
   "dataPoints": 64
 }

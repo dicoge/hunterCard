@@ -2,14 +2,14 @@
   "cardId": "hSD12-015",
   "name": "脱獄を果たした共犯者たち",
   "nameZh": "越獄成功的共犯們",
-  "trend": "stable",
-  "score": -0.14,
+  "trend": "down",
+  "score": -0.21,
   "confidence": 0.8,
   "components": {
-    "priceTrend": -0.28,
+    "priceTrend": -0.4,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.784Z",
-  "dataPoints": 69
+  "lastUpdated": "2026-09-28T12:14:43.124Z",
+  "dataPoints": 70
 }

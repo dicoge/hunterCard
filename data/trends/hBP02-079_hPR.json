@@ -3,13 +3,13 @@
   "name": "爆発の魔法",
   "nameZh": "爆炸魔法",
   "trend": "down",
-  "score": -0.3,
+  "score": -0.31,
   "confidence": 0.4,
   "components": {
     "priceTrend": -0.56,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.724Z",
+  "lastUpdated": "2026-09-28T12:14:43.065Z",
   "dataPoints": 64
 }

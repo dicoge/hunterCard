@@ -4,12 +4,12 @@
   "nameZh": "最愛電腦",
   "trend": "down",
   "score": -0.17,
-  "confidence": 0.4,
+  "confidence": 0.5,
   "components": {
     "priceTrend": -0.33,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.755Z",
-  "dataPoints": 3
+  "lastUpdated": "2026-09-28T12:14:43.095Z",
+  "dataPoints": 4
 }

@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP05-078_hBP05_U_hBP05-078_U",
       "sourceProduct": "hBP05"
+    },
+    {
+      "date": "2026-09-28",
+      "price": 30,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP05-078_hBP05_U_hBP05-078_U",
+      "sourceProduct": "hBP05"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.923Z",
+  "lastUpdated": "2026-09-28T12:14:33.914Z",
   "nameZh": "晚酌直播"
 }

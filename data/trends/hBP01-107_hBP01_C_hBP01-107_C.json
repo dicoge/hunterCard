@@ -3,13 +3,13 @@
   "name": "アンコール",
   "nameZh": "安可",
   "trend": "down",
-  "score": -0.3,
+  "score": -0.31,
   "confidence": 0.8,
   "components": {
     "priceTrend": -0.56,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.716Z",
-  "dataPoints": 71
+  "lastUpdated": "2026-09-28T12:14:43.057Z",
+  "dataPoints": 72
 }

@@ -1,11 +1,11 @@
 {
   "schema": "huntercard.price-rejections/v1",
   "label": "build-database",
-  "generatedAt": "2026-09-27T12:14:25.130Z",
+  "generatedAt": "2026-09-28T12:14:33.073Z",
   "before": {
-    "pricedRows": 2336,
-    "pricedUniqueCardNumbers": 1254,
-    "priceEntries": 2336
+    "pricedRows": 2529,
+    "pricedUniqueCardNumbers": 1288,
+    "priceEntries": 2529
   },
   "after": {
     "pricedRows": 2529,
@@ -13,9 +13,9 @@
     "priceEntries": 2529
   },
   "deltas": {
-    "pricedRows": 193,
-    "pricedUniqueCardNumbers": 34,
-    "priceEntries": 193
+    "pricedRows": 0,
+    "pricedUniqueCardNumbers": 0,
+    "priceEntries": 0
   },
   "rejections": [
     {
@@ -31,7 +31,7 @@
         "entryImageProducts": [
           "promo-hbd20"
         ],
-        "timestamp": "2026-09-27T12:13:33.896Z"
+        "timestamp": "2026-09-28T12:13:42.875Z"
       }
     },
     {
@@ -47,7 +47,7 @@
         "entryImageProducts": [
           "promo-hbp10"
         ],
-        "timestamp": "2026-09-27T12:13:33.896Z"
+        "timestamp": "2026-09-28T12:13:42.875Z"
       }
     },
     {
@@ -63,7 +63,7 @@
         "entryImageProducts": [
           "promo-hbp10"
         ],
-        "timestamp": "2026-09-27T12:13:33.896Z"
+        "timestamp": "2026-09-28T12:13:42.875Z"
       }
     },
     {
@@ -79,7 +79,7 @@
         "entryImageProducts": [
           "promo-hbp10"
         ],
-        "timestamp": "2026-09-27T12:13:33.896Z"
+        "timestamp": "2026-09-28T12:13:42.875Z"
       }
     },
     {
@@ -95,7 +95,7 @@
         "entryImageProducts": [
           "promo-hsd10"
         ],
-        "timestamp": "2026-09-27T12:13:33.896Z"
+        "timestamp": "2026-09-28T12:13:42.875Z"
       }
     },
     {
@@ -111,7 +111,7 @@
         "entryImageProducts": [
           "promo-hbp10"
         ],
-        "timestamp": "2026-09-27T12:13:45.226Z"
+        "timestamp": "2026-09-28T12:13:55.269Z"
       }
     },
     {
@@ -127,7 +127,7 @@
         "entryImageProducts": [
           "promo-hbp10"
         ],
-        "timestamp": "2026-09-27T12:13:45.226Z"
+        "timestamp": "2026-09-28T12:13:55.269Z"
       }
     },
     {
@@ -143,7 +143,7 @@
         "entryImageProducts": [
           "promo-hbp10"
         ],
-        "timestamp": "2026-09-27T12:13:45.226Z"
+        "timestamp": "2026-09-28T12:13:55.270Z"
       }
     }
   ]

@@ -4,12 +4,12 @@
   "nameZh": "大空昴",
   "trend": "up",
   "score": 0.18,
-  "confidence": 0.5,
+  "confidence": 0.6,
   "components": {
     "priceTrend": 0.26,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.770Z",
-  "dataPoints": 3
+  "lastUpdated": "2026-09-28T12:14:43.110Z",
+  "dataPoints": 4
 }

@@ -3,13 +3,13 @@
   "name": "猫又おかゆ",
   "nameZh": "貓又小粥",
   "trend": "up",
-  "score": 0.5,
-  "confidence": 0.4,
+  "score": 0.49,
+  "confidence": 0.5,
   "components": {
     "priceTrend": 0.78,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.776Z",
-  "dataPoints": 4
+  "lastUpdated": "2026-09-28T12:14:43.117Z",
+  "dataPoints": 5
 }

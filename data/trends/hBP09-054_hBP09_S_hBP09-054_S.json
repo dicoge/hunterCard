@@ -3,13 +3,13 @@
   "name": "常闇トワ",
   "nameZh": "常暗永遠",
   "trend": "up",
-  "score": 0.29,
-  "confidence": 0.5,
+  "score": 0.56,
+  "confidence": 0.4,
   "components": {
-    "priceTrend": 0.44,
+    "priceTrend": 0.88,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.770Z",
-  "dataPoints": 3
+  "lastUpdated": "2026-09-28T12:14:43.111Z",
+  "dataPoints": 4
 }

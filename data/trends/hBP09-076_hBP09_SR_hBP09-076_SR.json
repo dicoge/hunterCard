@@ -3,13 +3,13 @@
   "name": "ネリッサ・レイヴンクロフト",
   "nameZh": "涅莉莎·雷文克羅夫特",
   "trend": "up",
-  "score": 0.22,
-  "confidence": 0.5,
+  "score": 0.52,
+  "confidence": 0.4,
   "components": {
-    "priceTrend": 0.31,
+    "priceTrend": 0.81,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.771Z",
-  "dataPoints": 3
+  "lastUpdated": "2026-09-28T12:14:43.111Z",
+  "dataPoints": 4
 }
