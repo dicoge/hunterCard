@@ -442,6 +442,57 @@ check('hPR row with another family promo pack is cross-product and not preserved
     'the own-family promo payload is still preserved');
 });
 
+// CR f285105e: provenance is per listing. A previous hbp06 row whose ¥100
+// sellPrice came from an /hbp05/ listing, beside a proven ¥200 /hbp06/ one,
+// classified as proven because ANY proven entry — or a proven top-level
+// yuyuImage, which follows the canonical name rather than the priced
+// listing — vouched for the whole payload. Every priced entry must now prove
+// the printing itself.
+check('one proven listing cannot vouch for a cheaper foreign listing', () => {
+  const foreign = 'https://card.yuyu-tei.jp/hocg/100_140/hbp05/10001.jpg';
+  const own = 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/10001.jpg';
+  const row = (prices, yuyuImage) => ({
+    id: 'hBP06-001_hBP06_RR_hBP06-001_RR', cardNumber: 'hBP06-001', rarity: 'RR', sourceProduct: 'hBP06',
+    sellPrice: Math.min(...prices.map((e) => e.sellPrice)), yuyuImage, yuyuName: 'x', prices,
+  });
+  const mixed = [
+    { name: 'x', sellPrice: 100, rarity: 'RR', imageUrl: foreign },
+    { name: 'x', sellPrice: 200, rarity: 'RR', imageUrl: own },
+  ];
+  const prev = row(mixed, foreign);
+  const verdict = classifyExactPrintPayload(prev);
+  assert.deepEqual(verdict, { proven: false, reason: 'cross-product-image' });
+  assert.deepEqual(classifyExactPrintPayload(row(mixed, own)), { proven: false, reason: 'cross-product-image' },
+    'a proven top-level image does not vouch for a foreign priced entry');
+  assert.deepEqual(classifyExactPrintPayload(row([
+    { name: 'x', sellPrice: 100, rarity: 'RR', imageUrl: 'https://card.yuyu-tei.jp/noimage_100_140.jpg' },
+    { name: 'x', sellPrice: 200, rarity: 'RR', imageUrl: own },
+  ], own)), { proven: false, reason: 'no-yuyu-image-provenance' },
+  'an image-less priced entry fails closed under its own reason');
+  const replayed = replayHealthyScrapePreservation({ [prev.id]: prev })[prev.id];
+  assert.equal(replayed.sellPrice, null, 'the foreign ¥100 is not preserved');
+  assert.deepEqual(replayed.prices, [], 'the mixed prices[] are not preserved');
+  const gate = evaluatePriceRegressionGate({
+    previousCards: { [prev.id]: prev }, nextCards: { [prev.id]: replayed },
+    rejections: [makeRejection(prev.id, prev, verdict.reason)],
+  });
+  assert.equal(gate.ok, true, 'the refused mixed payload is a covered rejection');
+
+  // Positive: every priced entry proves the printing (a zero-price entry is
+  // not a listing to prove), or there is no priced entry and the top-level
+  // image proves it.
+  const ownPrev = row([
+    { name: 'x', sellPrice: 150, rarity: 'RR', imageUrl: own },
+    { name: 'x', sellPrice: 200, rarity: 'RR', imageUrl: own },
+  ], own);
+  ownPrev.prices.push({ name: 'x', sellPrice: null, rarity: 'RR', imageUrl: foreign });
+  assert.deepEqual(classifyExactPrintPayload(ownPrev), { proven: true, reason: null });
+  assert.equal(replayHealthyScrapePreservation({ [ownPrev.id]: ownPrev })[ownPrev.id].sellPrice, 150,
+    'an all-proven payload is still preserved');
+  assert.deepEqual(classifyExactPrintPayload({ ...ownPrev, sellPrice: 150, prices: [] }), { proven: true, reason: null },
+    'with no priced entry the top-level image still proves the printing');
+});
+
 // ─── 4. recovery over the real sequence ──────────────────────────────────
 check('recovery adopts proven hBP09 payloads, refuses the three exemplars, keeps hBD24 intact', () => {
   const current = clone(fixture.baselineCards);
