@@ -143,7 +143,7 @@ export function classifyExactPrintPayload(card) {
   const entries = Array.isArray(card.prices) ? card.prices : [];
   for (const entry of entries) {
     if (!entry || !Number.isFinite(entry.sellPrice) || entry.sellPrice <= 0) continue;
-    if (pricesEntryExactPrintMatchesSource(entry, sourceProduct)) {
+    if (pricesEntryExactPrintMatchesSource(entry, sourceProduct, card.cardNumber)) {
       return { proven: true, reason: null };
     }
   }

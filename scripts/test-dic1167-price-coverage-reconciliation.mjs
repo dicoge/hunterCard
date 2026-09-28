@@ -518,6 +518,15 @@ try {
   assert.equal(row(foreignHprRow)?.sellPrice, 39800, `baseline: ${foreignHprRow} priced ¥39,800 (last-known-good)`);
   assert.equal(row(foreignHprRow)?.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10006.jpg',
     `baseline: ${foreignHprRow} carries its own promo-hbd20 image`);
+  // CR dd802df1: an already-priced, sole hPR printing that the scrape does not
+  // list. The previous build is rewritten below so its payload carries another
+  // family's promo pack (/promo-hsd10/) — preservation must not carry it.
+  const foreignPrevNum = 'hBD24-009';
+  const foreignPrevRow = 'hBD24-009_hPR_P_hBD24-009_P';
+  const foreignPrevImage = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10009.jpg';
+  assert.deepEqual(Object.keys(prevCards).filter((k) => prevCards[k].cardNumber === foreignPrevNum), [foreignPrevRow],
+    `baseline: ${foreignPrevNum} has exactly one official printing`);
+  assert.equal(row(foreignPrevRow)?.sellPrice, 17800, `baseline: ${foreignPrevRow} priced ¥17,800`);
 
   const promo = (cid, sellPrice, name) => ({
     sellPrice, rarity: 'P', name,
@@ -690,6 +699,18 @@ try {
   };
   const fixturePath = path.join(tmp, 'yuyu-dic1167-reconcile.json');
   fs.writeFileSync(fixturePath, JSON.stringify(fixture, null, 2));
+  assert.ok(!Object.keys(fixture.prices).some((k) => canonicalizeCardNumber(k) === foreignPrevNum),
+    `fixture precondition: ${foreignPrevNum} is not scraped, so only preservation can price it`);
+  // CR dd802df1: the previous build's hBD24-009_hPR payload carries a ¥500
+  // /promo-hsd10/ listing. The `finally` block restores the committed bytes.
+  {
+    const prevDoc = JSON.parse(originalDb);
+    const foreignEntry = { ...prevDoc.cards[foreignPrevRow].prices[0], sellPrice: 500, imageUrl: foreignPrevImage };
+    Object.assign(prevDoc.cards[foreignPrevRow], {
+      sellPrice: 500, yuyuImage: foreignPrevImage, prices: [foreignEntry], _rawPricesArchive: [foreignEntry],
+    });
+    fs.writeFileSync(dbPath, `${JSON.stringify(prevDoc, null, 2)}\n`);
+  }
   const build = spawnSync(process.execPath, ['scripts/build-database.js'], {
     cwd: repo,
     env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: fixturePath, HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1' },
@@ -962,6 +983,22 @@ try {
   assert.ok(manifest.coverage.preservedAfterFallbackRefusal.includes(foreignHprNum));
   assert.ok(!(manifest.rejections || []).some((r) => r.id === foreignHprRow));
   console.log('  ✓ CR bdd2c367: a foreign promo pack image never prices an hPR printing — refused by listing id, last-known-good kept');
+
+  // 15. CR dd802df1 on the real build: preservation and the DIC-1482 gate
+  //     apply the same family guard. The previous ¥500 /promo-hsd10/ payload
+  //     on hBD24-009_hPR is not exact-print proven, so it is not carried
+  //     forward onto the unscraped row, and the resulting decrease is covered
+  //     by a cross-product-image rejection instead of shipping the foreign price.
+  const foreignPrevShipped = cards[foreignPrevRow];
+  assert.equal(foreignPrevShipped.sellPrice ?? null, null, 'the foreign promo pack ¥500 is not preserved');
+  assert.deepEqual(foreignPrevShipped.prices || [], [], 'no foreign promo prices[] entry is preserved');
+  assert.ok(!foreignPrevShipped.yuyuImage, 'the foreign /promo-hsd10/ image is not preserved');
+  assert.deepEqual(foreignPrevShipped._rawPricesArchive || [], [], 'no foreign promo archive entry is preserved');
+  const foreignPrevRejection = (manifest.rejections || []).find((r) => r.id === foreignPrevRow);
+  assert.equal(foreignPrevRejection?.reason, 'cross-product-image', 'the refused payload is a durable cross-product rejection');
+  assert.deepEqual(foreignPrevRejection.evidence.entryImageProducts, ['promo-hsd10']);
+  assert.equal(foreignPrevRejection.evidence.sellPrice, 500);
+  console.log('  ✓ CR dd802df1: a previous foreign promo pack payload is not preserved onto an hPR row — recorded as cross-product-image');
 
   console.log('✓ DIC-1167 price coverage reconciliation regression passed');
   passed = true;

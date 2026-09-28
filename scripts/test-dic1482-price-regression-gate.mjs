@@ -412,6 +412,36 @@ check('unproven payloads are NOT preserved and land as verifiable rejections', (
   assert.equal(gate.ok, true);
 });
 
+// CR dd802df1: a previous hBD24-006_hPR row carrying a ¥500 /promo-hsd10/
+// listing (the hSD family's pack) classified as proven, so the healthy-scrape
+// wiring preserved that foreign price onto the unpriced current row. The gate
+// must refuse it under 'cross-product-image' and record it as a rejection.
+check('hPR row with another family promo pack is cross-product and not preserved', () => {
+  const foreign = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10006.jpg';
+  const own = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10006.jpg';
+  const row = (imageUrl) => ({
+    id: 'hBD24-006_hPR_P_hBD24-006_P', cardNumber: 'hBD24-006', rarity: 'P', sourceProduct: 'hPR',
+    sellPrice: 500, yuyuImage: imageUrl, yuyuName: 'x',
+    prices: [{ name: 'x', sellPrice: 500, rarity: 'P', imageUrl }],
+  });
+  const prev = row(foreign);
+  const verdict = classifyExactPrintPayload(prev);
+  assert.deepEqual(verdict, { proven: false, reason: 'cross-product-image' });
+  const replayed = replayHealthyScrapePreservation({ [prev.id]: prev })[prev.id];
+  assert.equal(replayed.sellPrice, null, 'the foreign promo price is not preserved');
+  assert.deepEqual(replayed.prices, [], 'the foreign promo prices[] are not preserved');
+  const gate = evaluatePriceRegressionGate({
+    previousCards: { [prev.id]: prev }, nextCards: { [prev.id]: replayed },
+    rejections: [makeRejection(prev.id, prev, verdict.reason)],
+  });
+  assert.equal(gate.ok, true, 'the refused foreign payload is a covered rejection');
+
+  const ownPrev = row(own);
+  assert.deepEqual(classifyExactPrintPayload(ownPrev), { proven: true, reason: null });
+  assert.equal(replayHealthyScrapePreservation({ [ownPrev.id]: ownPrev })[ownPrev.id].sellPrice, 500,
+    'the own-family promo payload is still preserved');
+});
+
 // ─── 4. recovery over the real sequence ──────────────────────────────────
 check('recovery adopts proven hBP09 payloads, refuses the three exemplars, keeps hBD24 intact', () => {
   const current = clone(fixture.baselineCards);

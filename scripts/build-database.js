@@ -1889,6 +1889,7 @@ async function buildDatabase() {
       return pricesEntryExactPrintMatchesSource(
         { sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage },
         official.sourceProduct || official.series || '',
+        official.cardNumber,
       );
     }
 
@@ -1954,7 +1955,7 @@ async function buildDatabase() {
     if (isKnownPromoPath(urlProd)) {
       return (source === 'hpr' || source === 'ent07') && promoPathMatchesCardNumber(urlProd, row.cardNumber);
     }
-    return pricesEntryExactPrintMatchesSource({ sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage }, source);
+    return pricesEntryExactPrintMatchesSource({ sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage }, source, row.cardNumber);
   };
   const aliasListingProvesUniquePrinting = (entry, cardNum) => (officialByCardNum[cardNum] || [])
     .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row))
