@@ -20,6 +20,10 @@
  *   4. The scraped-vs-shipped reconciliation accounts for every scraped
  *      cardNumber, and a scraped positive-price cardNumber that ships
  *      unpriced with no recorded reason fails closed.
+ *   5. CR 1924ef80: accounting is per exact printing (compound-key row id).
+ *      A priced sibling — fresh or preserved — never masks a printing this
+ *      scrape priced and then lost, nor a positive listing that was neither
+ *      matched to a printing nor refused.
  *
  * Fixture listings for hY01-001 / hBD24-001 / hBD24-018 / hBD24-064 are the
  * real yuyu-tei rows captured by the 2026-09-26 scrape.
@@ -71,6 +75,9 @@ const repo = path.resolve(__dirname, '..');
     canonicalizeCardNumber,
     cards,
     freshlyPricedRowIds: new Set(['a1', 'a4']),
+    // a2's listing matched its exact printing (no positive canonical price),
+    // so its preserved price is not standing in for an unhandled listing.
+    listingMatchedRowIds: new Set(['a1', 'a2', 'a4']),
     listingRefusals: new Map([['hA01-003', {}], ['hA01-008', {}]]),
     increaseRejections: [{ id: 'a4', cardNumber: 'hA01-004' }],
     ambiguityNulledIds: new Set(['a5']),
@@ -103,7 +110,85 @@ const repo = path.resolve(__dirname, '..');
   assert.equal(block.counts.unaccounted, 0);
   assert.equal(block.fresh, undefined, 'the manifest block does not enumerate fresh cardNumbers');
   assert.equal(reconciliationManifestBlock(null), null);
+  assert.deepEqual(clean.printingLedger, {
+    freshlyPriced: 2, shippedPriced: 1, refusedIncrease: 1, ambiguityNulled: 0, unaccounted: 0,
+  });
+  assert.deepEqual(block.unaccountedPrintings, []);
   console.log('  ✓ unit: reconciliation partitions the scraped set and fails closed on a silent loss');
+}
+
+// ── Unit: exact-printing accounting (CR 1924ef80) ─────────────────────────
+// A priced sibling must never mask a lost exact printing. The accounting key is
+// the compound-key row id (the official printing identity), not cardNumber.
+{
+  const listing = (sellPrice) => [{ sellPrice, rarity: 'P', yuyuImage: '' }];
+  const P = 'hA01-009_hPR_P_hA01-009_P';
+  const P02 = 'hA01-009_hPR_P_hA01-009_P_02';
+  const scenario = ({ siblingFresh, lostFresh = true, matched, refusals = new Map(), increase = [], ambiguity = new Set() }) => {
+    const fresh = new Set();
+    if (siblingFresh) fresh.add(P);
+    if (lostFresh) fresh.add(P02);
+    return reconcileScrapedCoverage({
+      prices: { 'hA01-009': listing(100) },
+      canonicalizeCardNumber,
+      cards: {
+        [P]: { cardNumber: 'hA01-009', sellPrice: 90 },
+        [P02]: { cardNumber: 'hA01-009', sellPrice: null },
+      },
+      freshlyPricedRowIds: fresh,
+      listingMatchedRowIds: matched ?? fresh,
+      listingRefusals: refusals,
+      increaseRejections: increase,
+      ambiguityNulledIds: ambiguity,
+    });
+  };
+
+  // 1. Freshly-priced sibling: P02 was priced by this scrape, then lost.
+  const freshMask = scenario({ siblingFresh: true });
+  assert.deepEqual(freshMask.categories.fresh, ['hA01-009'], 'the cardNumber bucket alone looks healthy');
+  assert.deepEqual(freshMask.unaccountedPrintings, [P02], 'the lost exact printing is named by its row id');
+  assert.equal(freshMask.ok, false, 'a fresh sibling must not mask a lost exact printing');
+  assert.match(formatReconciliationFailure(freshMask), /1 exact printing\(s\) priced by this scrape shipped unpriced.*hA01-009_hPR_P_hA01-009_P_02/);
+  assert.equal(freshMask.pricedCardNumbers + freshMask.unpricedCardNumbers, freshMask.scrapedCardNumbers);
+  const pl = freshMask.printingLedger;
+  assert.equal(pl.freshlyPriced, pl.shippedPriced + pl.refusedIncrease + pl.ambiguityNulled + pl.unaccounted,
+    'the exact-printing ledger partitions every freshly-priced printing');
+
+  // 2. Preserved sibling: same loss, the sibling priced only via preservation.
+  const preservedMask = scenario({ siblingFresh: false });
+  assert.deepEqual(preservedMask.categories.preserved, ['hA01-009']);
+  assert.deepEqual(preservedMask.unaccountedPrintings, [P02]);
+  assert.equal(preservedMask.ok, false, 'a preserved sibling must not mask a lost exact printing');
+
+  // 3. Preserved sibling, positive listing that neither matched a printing nor
+  //    was refused: the preserved price is not evidence the listing was handled.
+  const unhandled = scenario({ siblingFresh: false, lostFresh: false, matched: new Set() });
+  assert.deepEqual(unhandled.categories.unaccounted, ['hA01-009']);
+  assert.deepEqual(unhandled.categories.preserved, []);
+  assert.equal(unhandled.ok, false);
+  assert.match(formatReconciliationFailure(unhandled), /1 scraped cardNumber\(s\).*hA01-009/);
+  // …but once the fallback refusal is recorded it is the lawful hBD24-001 shape.
+  const refusedPreserved = scenario({ siblingFresh: false, lostFresh: false, matched: new Set(), refusals: new Map([['hA01-009', {}]]) });
+  assert.equal(refusedPreserved.ok, true);
+  assert.deepEqual(refusedPreserved.preservedAfterFallbackRefusal, ['hA01-009']);
+
+  // 4. The same exact-printing drop is lawful only under a per-printing record.
+  const stripped = scenario({ siblingFresh: true, increase: [{ id: P02, cardNumber: 'hA01-009' }] });
+  assert.equal(stripped.ok, true);
+  assert.equal(stripped.printingLedger.refusedIncrease, 1);
+  const nulled = scenario({ siblingFresh: true, ambiguity: new Set([P02]) });
+  assert.equal(nulled.ok, true);
+  assert.equal(nulled.printingLedger.ambiguityNulled, 1);
+  // A record for a DIFFERENT printing of the same cardNumber does not cover it.
+  const wrongId = scenario({ siblingFresh: true, increase: [{ id: P, cardNumber: 'hA01-009' }] });
+  assert.deepEqual(wrongId.unaccountedPrintings, [P02], 'rejection records are matched per printing, not per cardNumber');
+
+  // 5. No false positive on unlisted siblings: a printing no listing proved to
+  //    had no scraped price to lose (binding a sibling's listing is forbidden).
+  const unlisted = scenario({ siblingFresh: true, lostFresh: false });
+  assert.equal(unlisted.ok, true);
+  assert.deepEqual(unlisted.unaccountedPrintings, []);
+  console.log('  ✓ unit: exact-printing ledger — a priced sibling (fresh or preserved) never masks a lost printing');
 }
 
 // ── Integration: real build-database.js run on real-shape listings ────────
@@ -243,6 +328,21 @@ try {
   assert.match(builderSrc, /throw new Error\(formatReconciliationFailure\(coverageReconciliation\)\)/,
     'build-database.js must fail closed on an unreconciled scraped cardNumber');
   console.log('  ✓ scraped-vs-shipped reconciliation: 6 = 1 fresh + 1 preserved + 2 refused-fallback + 1 refused-increase + 1 no-sell-listing');
+
+  // 5. Exact-printing ledger on the real build: hBP03-025 ships its fresh
+  //    price, hBD24-064_ent07 is stripped by the increase gate — by row id.
+  const pl = manifest.coverage.printingLedger;
+  assert.equal(pl.unaccounted, 0);
+  assert.deepEqual(manifest.coverage.unaccountedPrintings, []);
+  assert.deepEqual(pl, {
+    freshlyPriced: 2, // hBP03-025 + hBD24-064_ent07
+    shippedPriced: 1, // hBP03-025
+    refusedIncrease: 1, // hBD24-064_ent07
+    ambiguityNulled: 0,
+    unaccounted: 0,
+  });
+  assert.match(out, new RegExp(`\\[DIC-1167\\] exact-printing ledger: ${pl.freshlyPriced} freshly-priced printings = ${pl.shippedPriced} shipped priced \\+ 1 refused-increase \\+ 0 ambiguity-nulled \\+ 0 unaccounted`));
+  console.log(`  ✓ exact-printing ledger: ${pl.freshlyPriced} freshly-priced = ${pl.shippedPriced} shipped + 1 refused-increase + 0 unaccounted`);
 
   console.log('✓ DIC-1167 price coverage reconciliation regression passed');
   passed = true;

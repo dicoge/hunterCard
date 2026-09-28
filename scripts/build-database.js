@@ -2509,17 +2509,27 @@ async function buildDatabase() {
       canonicalizeCardNumber,
       cards: database.cards,
       freshlyPricedRowIds,
+      listingMatchedRowIds: freshlyScrapedPrintingIds,
       listingRefusals,
       increaseRejections,
       ambiguityNulledIds,
     });
     const rc = coverageReconciliation.counts;
+    const pl = coverageReconciliation.printingLedger;
     console.log(
       `  [DIC-1167] price coverage reconciled: ${coverageReconciliation.scrapedCardNumbers} scraped cardNumbers = `
       + `${rc.fresh} fresh + ${rc.preserved} preserved (${rc.preservedAfterFallbackRefusal} after fallback refusal) `
       + `+ ${rc.refusedFallback} refused-fallback + ${rc.refusedIncrease} refused-increase `
       + `+ ${rc.ambiguityNulled} ambiguity-nulled + ${rc.noSellListing} no-sell-listing + ${rc.unaccounted} unaccounted; `
       + `${listingRefusals.size} listing refusal(s) recorded`
+    );
+    // CR 1924ef80: the cardNumber buckets above let one priced sibling mask a
+    // lost printing; this ledger accounts for every freshly-priced printing by
+    // its compound-key row id.
+    console.log(
+      `  [DIC-1167] exact-printing ledger: ${pl.freshlyPriced} freshly-priced printings = `
+      + `${pl.shippedPriced} shipped priced + ${pl.refusedIncrease} refused-increase `
+      + `+ ${pl.ambiguityNulled} ambiguity-nulled + ${pl.unaccounted} unaccounted`
     );
     if (!coverageReconciliation.ok) {
       throw new Error(formatReconciliationFailure(coverageReconciliation));
