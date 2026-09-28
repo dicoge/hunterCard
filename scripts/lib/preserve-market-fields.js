@@ -199,6 +199,28 @@ export function isKnownPromoPath(urlProd) {
 }
 
 /**
+ * CR 6c62db8b: the card-number family each known promo pack hosts. yuyu's
+ * ent07 entry-promo aggregation page lists printings from all three packs, so
+ * "some known promo pack" is not provenance for one exact printing — a
+ * cheaper hBD24-008 listing carrying a /promo-hsd10/ image lowered the
+ * /promo-hbd20/ hBD24-008_ent07 row. Every promo listing in the shipped data
+ * and the 2026-09-26 scrape holds this mapping (hBD→hbd20, hBP→hbp10,
+ * hSD→hsd10). A pack hosting another family must be added here explicitly;
+ * until then it fails closed.
+ */
+const PROMO_PATH_CARD_FAMILY = new Map([
+  ['promo-hbp10', 'hbp'],
+  ['promo-hsd10', 'hsd'],
+  ['promo-hbd20', 'hbd'],
+]);
+
+export function promoPathMatchesCardNumber(urlProd, cardNumber) {
+  const family = PROMO_PATH_CARD_FAMILY.get(urlProd);
+  const match = /^(h[a-z]+)\d/i.exec(String(cardNumber || ''));
+  return Boolean(family && match && match[1].toLowerCase() === family);
+}
+
+/**
  * DIC-1227 provenance gate for the yuyu-derived preservation payload
  * (`sellPrice`, `prices`, `yuyuName`, `yuyuImage`, `timestamp`, `priceHistory`,
  * `priceHistoryMeta`, `_rawPricesArchive`). The previous row's `yuyuImage`

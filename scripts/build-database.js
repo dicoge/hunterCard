@@ -34,6 +34,7 @@ import {
   pricesEntryExactPrintMatchesSource,
   yuyuImageProductPath,
   isKnownPromoPath,
+  promoPathMatchesCardNumber,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 import { collectPriceEvidence, writePriceEvidenceAtomic } from './lib/price-evidence.js';
@@ -1938,10 +1939,16 @@ async function buildDatabase() {
   // promo pack images (/promo-hbp10/, /promo-hsd10/, /promo-hbd20/), so an
   // ent07 row accepts a known promo pack image and nothing else — a /yell01/
   // or /hbp05/ image on that page still proves nothing.
+  // CR 6c62db8b: nor does ANOTHER family's promo pack — a cheaper hBD24-008
+  // ent07/P listing with a /promo-hsd10/ image lowered the already-priced
+  // /promo-hbd20/ hBD24-008_ent07 row. The pack must host the row's own
+  // card-number family.
   const listingImageProvesPrinting = (entry, row) => {
     const source = row.sourceProduct || row.series || '';
     if (pricesEntryExactPrintMatchesSource({ sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage }, source)) return true;
-    return String(source).toLowerCase() === 'ent07' && isKnownPromoPath(yuyuImageProductPath(entry.yuyuImage));
+    const urlProd = yuyuImageProductPath(entry.yuyuImage);
+    return String(source).toLowerCase() === 'ent07' && isKnownPromoPath(urlProd)
+      && promoPathMatchesCardNumber(urlProd, row.cardNumber);
   };
   const aliasListingProvesUniquePrinting = (entry, cardNum) => (officialByCardNum[cardNum] || [])
     .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row))

@@ -70,6 +70,13 @@
  *      fallback applies the same rule: a canonical-key foreign-image listing
  *      alone (hBP01-018 hbp01/C, hbp02 image) cannot lower the last-known-good
  *      price. ent07 rows still match their promo pack images (hBD24-064).
+ *  13. CR 6c62db8b: the ent07 carve-out accepted ANY known promo pack image,
+ *      so a cheaper canonical-key hBD24-008 ent07/P listing (¥500) carrying
+ *      another pack's image (/promo-hsd10/) matched the already-priced
+ *      hBD24-008_ent07 (¥9,980, /promo-hbd20/10008.jpg) and lowered it — the
+ *      increase gate never re-checks a previously-priced row. An ent07 row
+ *      accepts only the promo pack of its own card family; the foreign
+ *      listing is refused by listing id and the last-known-good price ships.
  *
  * Fixture listings for hY01-001 / hBD24-001 / hBD24-018 / hBD24-064 are the
  * real yuyu-tei rows captured by the 2026-09-26 scrape.
@@ -488,6 +495,15 @@ try {
   assert.deepEqual(Object.keys(prevCards).filter((k) => prevCards[k].cardNumber === foreignCanonOnlyNum), [foreignCanonOnlyRow],
     `baseline: ${foreignCanonOnlyNum} has exactly one official printing`);
   assert.ok(row(foreignCanonOnlyRow)?.sellPrice > 10, `baseline: ${foreignCanonOnlyRow} priced above the foreign ¥10 (last-known-good)`);
+  // CR 6c62db8b: an already-priced ent07 printing with its own promo pack image.
+  const foreignPromoNum = 'hBD24-008';
+  const foreignPromoRow = 'hBD24-008_ent07';
+  const foreignPromoSibling = 'hBD24-008_hPR_P_hBD24-008_P';
+  assert.deepEqual(Object.keys(prevCards).filter((k) => prevCards[k].cardNumber === foreignPromoNum).sort(),
+    [foreignPromoRow, foreignPromoSibling].sort(), `baseline: ${foreignPromoNum} has the ent07 and hPR printings`);
+  assert.equal(row(foreignPromoRow)?.sellPrice, 9980, `baseline: ${foreignPromoRow} priced ¥9,980 (last-known-good)`);
+  assert.equal(row(foreignPromoRow)?.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10008.jpg',
+    `baseline: ${foreignPromoRow} carries its own promo-hbd20 image`);
 
   const promo = (cid, sellPrice, name) => ({
     sellPrice, rarity: 'P', name,
@@ -634,6 +650,13 @@ try {
         yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp02/dic1167q.jpg',
         imageVersion: 'hbp02', imageCid: 'dic1167q', sourceSeries: 'hbp01', timestamp: '2026-09-28T00:00:00.000Z',
       }],
+      // CR 6c62db8b: a cheaper canonical-key ent07/P listing whose image is
+      // another promo pack's (hSD10 PR pack), not hBD24-008's /promo-hbd20/.
+      [foreignPromoNum]: [{
+        sellPrice: 500, rarity: 'P', name: 'ベスティア・ゼータ',
+        yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10018.jpg',
+        imageVersion: 'promo-hsd10', imageCid: '10018', sourceSeries: 'ent07', timestamp: '2026-09-28T00:00:00.000Z',
+      }],
       // Short-suffix key, a listing with no positive sell price.
       'hY01-14': [{
         sellPrice: 0, rarity: 'SY', name: '白エール',
@@ -700,22 +723,22 @@ try {
   // 4. Full reconciliation of the scraped set.
   assert.deepEqual(manifest.coverage.counts, {
     fresh: 7, // hBP03-025, hZZ01-014 (scraped as hZZ01-14 + hZZ01-014), hY03-013 (hY03-13 + hY03-013), hY04-010 (hY04-10 only), hY01-010, hY02-008, hY05-008
-    preserved: 5, // hBD24-001, hBP01-025, hBP01-045, hBP01-017, hBP01-018
+    preserved: 6, // hBD24-001, hBP01-025, hBP01-045, hBP01-017, hBP01-018, hBD24-008
     refusedFallback: 2, // hBD24-018, hY01-001
     refusedIncrease: 1, // hBD24-064
     ambiguityNulled: 0,
     noSellListing: 1, // hY01-014 (scraped as hY01-14)
     unaccounted: 0,
-    preservedAfterFallbackRefusal: 4, // hBD24-001, hBP01-045, hBP01-017, hBP01-018
+    preservedAfterFallbackRefusal: 5, // hBD24-001, hBP01-045, hBP01-017, hBP01-018, hBD24-008
   });
-  assert.equal(manifest.coverage.scrapedCardNumbers, 16, 'each alias pair counts once');
+  assert.equal(manifest.coverage.scrapedCardNumbers, 17, 'each alias pair counts once');
   assert.deepEqual(manifest.coverage.noSellListing, [noSellNum], 'short-suffix key reconciles under its canonical cardNumber');
   assert.equal(cards[noSellRows[0]].sellPrice ?? null, null, 'a zero-price listing publishes no price');
-  assert.match(out, /\[DIC-1167\] price coverage reconciled: 16 scraped cardNumbers = 7 fresh \+ 5 preserved \(4 after fallback refusal\) \+ 2 refused-fallback \+ 1 refused-increase \+ 0 ambiguity-nulled \+ 1 no-sell-listing \+ 0 unaccounted; 10 listing refusal\(s\) recorded/);
+  assert.match(out, /\[DIC-1167\] price coverage reconciled: 17 scraped cardNumbers = 7 fresh \+ 6 preserved \(5 after fallback refusal\) \+ 2 refused-fallback \+ 1 refused-increase \+ 0 ambiguity-nulled \+ 1 no-sell-listing \+ 0 unaccounted; 11 listing refusal\(s\) recorded/);
   const builderSrc = fs.readFileSync(path.join(repo, 'scripts/build-database.js'), 'utf8');
   assert.match(builderSrc, /throw new Error\(formatReconciliationFailure\(coverageReconciliation\)\)/,
     'build-database.js must fail closed on an unreconciled scraped cardNumber');
-  console.log('  ✓ scraped-vs-shipped reconciliation: 16 = 7 fresh + 5 preserved + 2 refused-fallback + 1 refused-increase + 1 no-sell-listing');
+  console.log('  ✓ scraped-vs-shipped reconciliation: 17 = 7 fresh + 6 preserved + 2 refused-fallback + 1 refused-increase + 1 no-sell-listing');
 
   // 5. Exact-printing ledger on the real build: hBP03-025 ships its fresh
   //    price, hBD24-064_ent07 is stripped by the increase gate — by row id.
@@ -777,12 +800,12 @@ try {
     // hBD24-064 + hBP03-025 C + hBP01-025 + both hZZ01 + both hY03-013
     // aliases + hY04-10 + hY01-010 SY + hY02-008 + hY05-008 ¥200 matched;
     // hBD24-001, hBD24-018, hY01-001, hBP03-025 SR, hBP01-045 SR, hY01-10 SR,
-    // and the foreign images hY02-08, hBP01-17, hY05-008 ¥100 and hBP01-018
-    // refused.
-    positiveListings: 21, matched: 11, refused: 10, unaccounted: 0,
+    // and the foreign images hY02-08, hBP01-17, hY05-008 ¥100, hBP01-018 and
+    // hBD24-008 (foreign promo pack) refused.
+    positiveListings: 22, matched: 11, refused: 11, unaccounted: 0,
   });
   assert.deepEqual(manifest.coverage.unaccountedListings, []);
-  assert.match(out, /\[DIC-1167\] listing ledger: 21 positive listings = 11 matched to an exact printing \+ 10 refused by listing id \+ 0 unaccounted/);
+  assert.match(out, /\[DIC-1167\] listing ledger: 22 positive listings = 11 matched to an exact printing \+ 11 refused by listing id \+ 0 unaccounted/);
   for (const r of manifest.listingRefusals) {
     assert.ok(Array.isArray(r.refusedListingIds) && r.refusedListingIds.length > 0, `${r.cardNumber} refusal names its listings`);
   }
@@ -879,6 +902,26 @@ try {
   // still matches the ent07 printing (the increase gate then decides, §3).
   assert.ok(!refusals.has('hBD24-064'), 'an ent07 promo pack listing still matches its ent07 printing');
   console.log('  ✓ CR 064672e4: a canonical-key foreign-image listing never prices the exact printing — refused by listing id (official pass and fallback)');
+
+  // 13. CR 6c62db8b on the real build: a foreign promo pack image proves no
+  //     ent07 printing, so the cheaper listing never lowers the already-priced
+  //     row — official pass and fallback alike.
+  const foreignPromoShipped = cards[foreignPromoRow];
+  assert.equal(foreignPromoShipped.sellPrice, 9980, 'a foreign promo pack ¥500 never lowers the last-known-good ¥9,980');
+  assert.equal(foreignPromoShipped.yuyuImage, row(foreignPromoRow).yuyuImage, 'the row keeps its own promo-hbd20 image');
+  assert.deepEqual(foreignPromoShipped.prices.map((p) => p.sellPrice), [9980]);
+  assert.equal(cards[foreignPromoSibling].sellPrice, row(foreignPromoSibling).sellPrice, 'the hPR sibling keeps its own price');
+  assert.ok(Object.values(cards).filter((c) => c.cardNumber === foreignPromoNum)
+    .every((c) => c.sellPrice !== 500 && !String(c.yuyuImage || '').includes('/promo-hsd10/')),
+    'the foreign promo pack price and image are bound to no printing');
+  const foreignPromo = refusals.get(foreignPromoNum);
+  assert.equal(foreignPromo?.reason, 'no-exact-printing-proven');
+  assert.deepEqual(foreignPromo.refusedListingIds, [`${foreignPromoNum}#0`]);
+  assert.deepEqual(foreignPromo.listingImageProducts, ['promo-hsd10']);
+  assert.deepEqual(foreignPromo.listingSellPrices, [500]);
+  assert.ok(manifest.coverage.preservedAfterFallbackRefusal.includes(foreignPromoNum));
+  assert.ok(!(manifest.rejections || []).some((r) => r.id === foreignPromoRow));
+  console.log('  ✓ CR 6c62db8b: a foreign promo pack image never prices an ent07 printing — refused by listing id, last-known-good kept');
 
   console.log('✓ DIC-1167 price coverage reconciliation regression passed');
   passed = true;
