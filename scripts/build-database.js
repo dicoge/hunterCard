@@ -1943,12 +1943,18 @@ async function buildDatabase() {
   // ent07/P listing with a /promo-hsd10/ image lowered the already-priced
   // /promo-hbd20/ hBD24-008_ent07 row. The pack must host the row's own
   // card-number family.
+  // CR bdd2c367: hPR rows had the same hole — `pricesEntryExactPrintMatchesSource`
+  // accepts ANY known promo pack for hpr, and it ran before the family guard,
+  // so a cheaper hBD24-006 hpr/P listing with a /promo-hsd10/ image lowered the
+  // already-priced /promo-hbd20/ hBD24-006_hPR row. A promo pack image now
+  // proves an hPR or ent07 printing only through the family guard.
   const listingImageProvesPrinting = (entry, row) => {
-    const source = row.sourceProduct || row.series || '';
-    if (pricesEntryExactPrintMatchesSource({ sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage }, source)) return true;
+    const source = String(row.sourceProduct || row.series || '').toLowerCase();
     const urlProd = yuyuImageProductPath(entry.yuyuImage);
-    return String(source).toLowerCase() === 'ent07' && isKnownPromoPath(urlProd)
-      && promoPathMatchesCardNumber(urlProd, row.cardNumber);
+    if (isKnownPromoPath(urlProd)) {
+      return (source === 'hpr' || source === 'ent07') && promoPathMatchesCardNumber(urlProd, row.cardNumber);
+    }
+    return pricesEntryExactPrintMatchesSource({ sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage }, source);
   };
   const aliasListingProvesUniquePrinting = (entry, cardNum) => (officialByCardNum[cardNum] || [])
     .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row))
