@@ -310,7 +310,18 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
   // malformed/no-image entries never enter prices[] or _rawPricesArchive.
   const urlProd = yuyuImageProductPath(entry?.imageUrl);
   if (!urlProd) return false;
-  if (NON_OFFICIAL_SOURCE_PRODUCTS.has(src)) return true;
+  // CR 59661b2b: the ent07 pass-any-URL carve-out must not vouch for a
+  // foreign promo pack. Fresh listing matching accepts an ent07 promo image
+  // only from the row's own card family (CR 6c62db8b), but preservation still
+  // passed every URL here, so a previous hBD24-008_ent07 row carrying a ¥500
+  // /promo-hsd10/ listing was copied onto the unpriced current row — and the
+  // increase gate skips rows already priced in the previous artifact. A
+  // promo-* image on an ent07 row now needs a known pack hosting the row's
+  // family; an unknown pack or a missing cardNumber fails closed.
+  if (NON_OFFICIAL_SOURCE_PRODUCTS.has(src)) {
+    if (urlProd.startsWith('promo-')) return promoPathMatchesCardNumber(urlProd, currentCardNumber);
+    return true;
+  }
   if (urlProd === src) return true;
   if (promoPathProvesHprPrinting(urlProd, src, currentCardNumber)) return true;
   // Reprint carve-out (non-promo sourceProduct only): allow the entry whose

@@ -83,6 +83,15 @@
  *      hBD24-006_hPR_P_hBD24-006_P (¥39,800, /promo-hbd20/10006.jpg) and
  *      lowered it. An hPR row, like an ent07 row, accepts only the promo pack
  *      of its own card family; the foreign listing is refused by listing id.
+ *  15. CR dd802df1: preservation and the DIC-1482 gate accepted ANY known
+ *      promo pack for hPR, so a previous foreign /promo-hsd10/ payload on an
+ *      unscraped hBD24-009_hPR was carried forward. They apply the family
+ *      guard too; the refused payload is a cross-product-image rejection.
+ *  16. CR 59661b2b: preservation's ent07 carve-out still passed every URL, so
+ *      a previous ¥500 /promo-hsd10/ payload on the unscraped hBD24-012_ent07
+ *      was copied onto the current row — the increase gate skips rows already
+ *      priced in the previous artifact. A promo pack image on an ent07 row is
+ *      preserved only from the row's own family's pack.
  *
  * Fixture listings for hY01-001 / hBD24-001 / hBD24-018 / hBD24-064 are the
  * real yuyu-tei rows captured by the 2026-09-26 scrape.
@@ -527,6 +536,15 @@ try {
   assert.deepEqual(Object.keys(prevCards).filter((k) => prevCards[k].cardNumber === foreignPrevNum), [foreignPrevRow],
     `baseline: ${foreignPrevNum} has exactly one official printing`);
   assert.equal(row(foreignPrevRow)?.sellPrice, 17800, `baseline: ${foreignPrevRow} priced ¥17,800`);
+  // CR 59661b2b: an already-priced ent07 printing that the scrape does not
+  // list. The previous build is rewritten below so its payload carries another
+  // family's promo pack (/promo-hsd10/) — preservation must not carry it.
+  const foreignPrevEnt07Num = 'hBD24-012';
+  const foreignPrevEnt07Row = 'hBD24-012_ent07';
+  const foreignPrevEnt07Image = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10012.jpg';
+  assert.equal(row(foreignPrevEnt07Row)?.sellPrice, 4980, `baseline: ${foreignPrevEnt07Row} priced ¥4,980`);
+  assert.equal(row(foreignPrevEnt07Row)?.yuyuImage, 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10012.jpg',
+    `baseline: ${foreignPrevEnt07Row} carries its own promo-hbd20 image`);
 
   const promo = (cid, sellPrice, name) => ({
     sellPrice, rarity: 'P', name,
@@ -701,6 +719,8 @@ try {
   fs.writeFileSync(fixturePath, JSON.stringify(fixture, null, 2));
   assert.ok(!Object.keys(fixture.prices).some((k) => canonicalizeCardNumber(k) === foreignPrevNum),
     `fixture precondition: ${foreignPrevNum} is not scraped, so only preservation can price it`);
+  assert.ok(!Object.keys(fixture.prices).some((k) => canonicalizeCardNumber(k) === foreignPrevEnt07Num),
+    `fixture precondition: ${foreignPrevEnt07Num} is not scraped, so only preservation can price it`);
   // CR dd802df1: the previous build's hBD24-009_hPR payload carries a ¥500
   // /promo-hsd10/ listing. The `finally` block restores the committed bytes.
   {
@@ -708,6 +728,11 @@ try {
     const foreignEntry = { ...prevDoc.cards[foreignPrevRow].prices[0], sellPrice: 500, imageUrl: foreignPrevImage };
     Object.assign(prevDoc.cards[foreignPrevRow], {
       sellPrice: 500, yuyuImage: foreignPrevImage, prices: [foreignEntry], _rawPricesArchive: [foreignEntry],
+    });
+    // CR 59661b2b: the same foreign payload on the unscraped hBD24-012_ent07.
+    const foreignEnt07Entry = { ...prevDoc.cards[foreignPrevEnt07Row].prices[0], sellPrice: 500, imageUrl: foreignPrevEnt07Image };
+    Object.assign(prevDoc.cards[foreignPrevEnt07Row], {
+      sellPrice: 500, yuyuImage: foreignPrevEnt07Image, prices: [foreignEnt07Entry], _rawPricesArchive: [foreignEnt07Entry],
     });
     fs.writeFileSync(dbPath, `${JSON.stringify(prevDoc, null, 2)}\n`);
   }
@@ -999,6 +1024,24 @@ try {
   assert.deepEqual(foreignPrevRejection.evidence.entryImageProducts, ['promo-hsd10']);
   assert.equal(foreignPrevRejection.evidence.sellPrice, 500);
   console.log('  ✓ CR dd802df1: a previous foreign promo pack payload is not preserved onto an hPR row — recorded as cross-product-image');
+
+  // 16. CR 59661b2b on the real build: preservation's ent07 carve-out applies
+  //     the family guard too. The previous ¥500 /promo-hsd10/ payload on the
+  //     unscraped hBD24-012_ent07 is not carried forward, and the decrease is
+  //     covered by a cross-product-image rejection.
+  const foreignPrevEnt07Shipped = cards[foreignPrevEnt07Row];
+  assert.equal(foreignPrevEnt07Shipped.sellPrice ?? null, null, 'the foreign promo pack ¥500 is not preserved onto the ent07 row');
+  assert.deepEqual(foreignPrevEnt07Shipped.prices || [], [], 'no foreign promo prices[] entry is preserved');
+  assert.ok(!foreignPrevEnt07Shipped.yuyuImage, 'the foreign /promo-hsd10/ image is not preserved');
+  assert.deepEqual(foreignPrevEnt07Shipped._rawPricesArchive || [], [], 'no foreign promo archive entry is preserved');
+  const foreignPrevEnt07Rejection = (manifest.rejections || []).find((r) => r.id === foreignPrevEnt07Row);
+  assert.equal(foreignPrevEnt07Rejection?.reason, 'cross-product-image', 'the refused payload is a durable cross-product rejection');
+  assert.deepEqual(foreignPrevEnt07Rejection.evidence.entryImageProducts, ['promo-hsd10']);
+  assert.equal(foreignPrevEnt07Rejection.evidence.sellPrice, 500);
+  // Own-family ent07 payloads on unscraped rows still carry forward.
+  assert.equal(cards['hBD24-014_ent07'].sellPrice, row('hBD24-014_ent07').sellPrice,
+    'an unscraped ent07 row with its own promo pack payload keeps its last-known-good price');
+  console.log('  ✓ CR 59661b2b: a previous foreign promo pack payload is not preserved onto an ent07 row — recorded as cross-product-image');
 
   console.log('✓ DIC-1167 price coverage reconciliation regression passed');
   passed = true;
