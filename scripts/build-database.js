@@ -1923,8 +1923,17 @@ async function buildDatabase() {
   // fallback applied to it before (DIC-1334/CR rev.2). A listing that matches
   // several printings (ent07 C vs 02_C) stays unmatched here, so the fallback
   // still refuses it by listing id instead of pricing every sibling.
+  // CR 5349b420: an explicit sourceSeries/rarity label never consults the
+  // listing's image, so an alias listing labelled hbp06/SY but carrying an
+  // hbp05 image matched the hbp06 printing and could set its lowest price —
+  // the later provenance gate then passed the row on a SEPARATE valid entry.
+  // An alias listing must also prove the printing by its OWN image product.
   const aliasListingProvesUniquePrinting = (entry, cardNum) => (officialByCardNum[cardNum] || [])
-    .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row)))
+    .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row))
+      && pricesEntryExactPrintMatchesSource(
+        { sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage },
+        row.sourceProduct || row.series || '',
+      ))
     .length === 1;
 
   function getYuyuForCard(cardNum, official) {
@@ -2141,11 +2150,12 @@ async function buildDatabase() {
   // listings stayed `matched`, so the reconciliation passed on a lost price.
   // Each listing keeps its own raw-key `scrapedListingId` (the same alias
   // grouping the official pass reads — see `rawListingsByCanonical`).
-  const fallbackListingSets = new Map(); // canonical cardNumber → { entries, ids }
+  const fallbackListingSets = new Map(); // canonical cardNumber → { entries, ids, aliasEntries }
   for (const [cardNum, listings] of rawListingsByCanonical) {
     fallbackListingSets.set(cardNum, {
       entries: listings.map(({ entry }) => entry),
       ids: new Map(listings.map(({ entry, id }) => [entry, id])),
+      aliasEntries: new Set(listings.filter(({ rawKey }) => rawKey !== cardNum).map(({ entry }) => entry)),
     });
   }
   // Every row the fallback publishes or binds, once. A second write to one row
@@ -2219,6 +2229,14 @@ async function buildDatabase() {
             .filter((c) => String(c.sourceProduct || c.series || '').toLowerCase() === String(official.sourceProduct || official.series || '').toLowerCase())
             .length;
           if (!yuyuEntryMatchesOfficial(entry, official, candidateCount)) continue;
+          // CR 5349b420: same rule as the official pass — an alias-key listing
+          // proves a printing only by its OWN image product. The increase gate
+          // never re-checks a previously-priced row, so a foreign-image alias
+          // bound here would silently lower its last-known-good price.
+          if (listingSet.aliasEntries.has(entry) && !pricesEntryExactPrintMatchesSource(
+            { sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage },
+            official.sourceProduct || official.series || '',
+          )) continue;
           const printKey = officialKeyByRow.get(official);
           if (!printKey) continue;
           if (!provenPrintings.has(printKey)) provenPrintings.set(printKey, []);
