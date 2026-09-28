@@ -194,7 +194,7 @@ const KNOWN_PROMO_PATHS = new Set([
   'promo-hbd20',
 ]);
 
-function isKnownPromoPath(urlProd) {
+export function isKnownPromoPath(urlProd) {
   return KNOWN_PROMO_PATHS.has(urlProd);
 }
 
