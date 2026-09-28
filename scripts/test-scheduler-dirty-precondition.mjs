@@ -1085,4 +1085,178 @@ exit 0
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+// ─── DIC-1167 (CR 028f6a19) clean-path / origin-freshness fail-closed ──────
+// The in-place clean route builds from, commits on and pushes HEAD:main from
+// the RESIDENT HEAD. Cases Q–V drive the real script against the real sandbox
+// remote (fetch / pull are real git; only push + commit are shimmed) to prove:
+// a failed fast-forward, a resident HEAD that is not the fetched origin/main,
+// a rejected in-place push and a failed pre-mutation fetch all exit 1 with the
+// FAILED marker before (or instead of) publication, and that both routes use
+// the freshly fetched origin/main rather than a stale local cache.
+
+// Advance the sandbox remote from an independent clone, leaving the resident's
+// cached origin/main stale. Returns the new remote main SHA.
+function advanceRemote(sandbox, label) {
+  const other = path.join(sandbox.dir, `other-${label}`);
+  execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+  execSync(`${REAL_GIT} config user.email other@example.com`, { cwd: other });
+  execSync(`${REAL_GIT} config user.name other`, { cwd: other });
+  fs.writeFileSync(path.join(other, `remote-${label}.txt`), `${label}\n`);
+  execSync(`${REAL_GIT} add remote-${label}.txt`, { cwd: other });
+  execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "remote ${label}"`, { cwd: other });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: other });
+  return execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
+}
+
+// Commit a non-managed file on the resident WITHOUT pushing (keeps the
+// scraper-managed paths clean, so dispatch takes the in-place route).
+function commitLocalOnly(sandbox, label) {
+  fs.writeFileSync(path.join(sandbox.repo, `local-${label}.txt`), `${label}\n`);
+  execSync(`${REAL_GIT} add local-${label}.txt`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "local ${label}"`, { cwd: sandbox.repo });
+  return execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+}
+
+function assertCleanPathFailedClosed(route, result, reasonRe) {
+  assertFailedClosedNoMutation(route, result, reasonRe);
+  assert.doesNotMatch(result.log, /✅ Pushed|✅ Done/, `${route}: must never report Pushed/Done`);
+  assert.doesNotMatch(result.log, /non-fatal\); continuing with current HEAD/, `${route}: ff failure must not be downgraded to non-fatal`);
+}
+
+// ─── Case Q: clean resident DIVERGED from origin/main — ff-only fails ───────
+{
+  const sandbox = makeSandbox();
+  try {
+    const localSha = commitLocalOnly(sandbox, 'q');
+    advanceRemote(sandbox, 'q');
+    const result = runSandbox(sandbox);
+    assertCleanPathFailedClosed(
+      'Q diverged clean resident',
+      result,
+      /git pull --ff-only origin main failed on the clean resident checkout; refusing to build\/push/,
+    );
+    const headAfter = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    assert.equal(headAfter, localSha, 'Q: resident HEAD must stay at its own commit (no merge, no reset)');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case R: clean resident AHEAD of origin/main (unpushed local commit).
+// --ff-only succeeds ("Already up to date"), but building + pushing HEAD:main
+// would publish an unreviewed local commit — must fail closed.
+{
+  const sandbox = makeSandbox();
+  try {
+    commitLocalOnly(sandbox, 'r');
+    const result = runSandbox(sandbox);
+    assert.ok(someTraced(result.lines, 'git pull --ff-only origin main'), 'R: sanity — the fast-forward was attempted');
+    assertCleanPathFailedClosed(
+      'R ahead clean resident',
+      result,
+      /resident HEAD \([0-9a-f]{40}\) is not the fetched origin\/main \([0-9a-f]{40}\) after fast-forward/,
+    );
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case S: clean resident with a STALE origin/main cache (remote advanced).
+// The real fetch + ff-only must move the resident to the NEW remote head
+// before the build, and the run then publishes normally.
+{
+  const sandbox = makeSandbox();
+  try {
+    const staleCached = execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    const newRemote = advanceRemote(sandbox, 's');
+    assert.notEqual(newRemote, staleCached, 'S: sanity — remote advanced past the resident cache');
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 0, `S: fast-forwardable stale resident must complete; got ${status}\n${log}`);
+    // The artifact commit (`git -c … commit` reaches real git) must sit
+    // directly on the freshly fetched remote head, not the stale cache.
+    const artifactParent = execSync(`${REAL_GIT} rev-parse HEAD^`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    assert.equal(artifactParent, newRemote, 'S: artifact must be built on the fast-forwarded origin/main, not the stale cache');
+    const pull = lines.findIndex((l) => l.includes('git pull --ff-only origin main'));
+    const build = lines.findIndex((l) => l.includes('build-database.js'));
+    assert.ok(pull !== -1 && build !== -1 && pull < build, 'S: fast-forward must precede the build');
+    assert.ok(someTraced(lines, 'push origin HEAD:main'), 'S: in-place route publishes HEAD:main');
+    assert.match(log, /✅ Done/, 'S: healthy run reports Done');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case T: in-place HEAD:main push REJECTED — must fail, never "Pushed". ──
+// Previously `push HEAD:main || push HEAD` then unconditionally "✅ Pushed" +
+// "✅ Done": a rejected publication was reported as success.
+{
+  const sandbox = makeSandbox();
+  try {
+    const { status, lines, log } = runSandbox(sandbox, { FAIL_PUSH: 'HEAD:main' });
+    assert.equal(status, 1, `T: rejected in-place push must fail the scheduler; got ${status}\n${log}`);
+    assert.match(log, /git push origin HEAD:main FAILED; artifact not published/, 'T: exact push-failure reason');
+    assert.match(log, /HUNTERCARD_SCRAPE_STATUS=FAILED/, 'T: cron must observe the FAILED marker');
+    assert.doesNotMatch(log, /✅ Pushed|✅ Done/, 'T: must never report Pushed/Done after a rejected push');
+    assert.equal(
+      lines.some((l) => /push origin HEAD$/.test(l)),
+      false,
+      'T: must not fall back to pushing an unqualified HEAD ref',
+    );
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case U: dirty route with a STALE origin/main cache — the isolated
+// worktree must be pinned to the freshly FETCHED remote head, not the cache. ─
+{
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  const residue = path.join(sandbox.repo, 'data', 'price-history', 'hSTALE-001_hFOO_C.json');
+  fs.mkdirSync(path.dirname(residue), { recursive: true });
+  fs.writeFileSync(residue, '{}');
+  try {
+    const staleCached = execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    const newRemote = advanceRemote(sandbox, 'u');
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 0, `U: dirty isolated handoff must complete; got ${status}\n${log}`);
+    const fetch = lines.findIndex((l) => l.includes('git fetch origin main'));
+    const add = lines.findIndex((l) => l.includes(`git worktree add --detach ${isoDir} `));
+    assert.ok(fetch !== -1 && add !== -1 && fetch < add, 'U: fetch must precede the isolated worktree creation');
+    assert.ok(
+      someTraced(lines, `git worktree add --detach ${isoDir} ${newRemote}`),
+      'U: isolated worktree must be created at the freshly fetched origin/main',
+    );
+    assert.equal(
+      someTraced(lines, `git worktree add --detach ${isoDir} ${staleCached}`),
+      false,
+      'U: isolated worktree must NEVER be created at the stale cached origin/main',
+    );
+    assert.equal(someTraced(lines, 'git pull'), false, 'U: dirty resident must not be pulled');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case V: pre-mutation fetch failure (remote unreachable) fails closed on
+// BOTH the clean and the dirty route — no stale-cache fallthrough. ──────────
+for (const dirty of [false, true]) {
+  const sandbox = makeSandbox();
+  const route = dirty ? 'V dirty route' : 'V clean route';
+  if (dirty) {
+    const residue = path.join(sandbox.repo, 'data', 'price-history', 'hNOFETCH-001_hFOO_C.json');
+    fs.mkdirSync(path.dirname(residue), { recursive: true });
+    fs.writeFileSync(residue, '{}');
+  }
+  execSync(`${REAL_GIT} remote set-url origin ${path.join(sandbox.dir, 'missing-remote.git')}`, { cwd: sandbox.repo });
+  try {
+    const result = runSandbox(sandbox);
+    assertCleanPathFailedClosed(route, result, /git fetch origin main failed before scheduler mutation/);
+    assert.equal(someTraced(result.lines, 'git worktree add'), false, `${route}: no worktree from a stale cache`);
+    assert.equal(someTraced(result.lines, 'git pull'), false, `${route}: no pull after a failed fetch`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');

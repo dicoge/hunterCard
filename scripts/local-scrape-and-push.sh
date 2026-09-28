@@ -410,7 +410,14 @@ runPipeline() {
       if [ "$push_mode" = "isolated" ]; then
         echo "[$(date)] (isolated) artifact committed in worktree; push deferred to explicit $ISOLATED_BRANCH_PREFIX/<date> handoff (never HEAD:main)" >> "$LOG_FILE"
       else
-        git push origin HEAD:main >> "$LOG_FILE" 2>&1 || git push origin HEAD >> "$LOG_FILE" 2>&1
+        # DIC-1167 (CR 028f6a19): the in-place push is the ONLY publication of
+        # this run's artifact, so a rejected push (non-fast-forward, auth,
+        # network) must fail the run — never fall back to pushing some other
+        # ref and never report "Pushed"/"Done" for an artifact main never got.
+        if ! git push origin HEAD:main >> "$LOG_FILE" 2>&1; then
+          echo "[$(date)] ❌ git push origin HEAD:main FAILED; artifact not published, cron must fail" >> "$LOG_FILE"
+          return 1
+        fi
         echo "[$(date)] ✅ Pushed to GitHub" >> "$LOG_FILE"
       fi
     else
@@ -571,6 +578,7 @@ if [ -n "$DIRTY_STATUS" ]; then
     removeStaleIsolatedWorktree "$ISOLATED_DIR"
     if ! git worktree add --detach "$ISOLATED_DIR" "$REMOTE_HEAD" >> "$LOG_FILE" 2>&1; then
       echo "[$(date)] ❌ could not create isolated worktree; abandoning (cron fails)" >> "$LOG_FILE"
+      echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
       exit 1
     fi
   fi
@@ -628,7 +636,26 @@ if [ -n "$DIRTY_STATUS" ]; then
 fi
 
 # In-place clean path.
-git pull --ff-only origin main >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ git pull failed (non-fatal); continuing with current HEAD" >> "$LOG_FILE"
+# DIC-1167 (CR 028f6a19): the in-place run builds from, commits on and pushes
+# HEAD:main from the resident HEAD, so that HEAD must BE the freshly fetched
+# origin/main. A failed --ff-only (diverged history, remote unreachable) used
+# to be logged as "non-fatal" and the stale/diverged HEAD was scraped, built,
+# pushed and reported "Done". Both a failed fast-forward and a resident HEAD
+# that still differs from origin/main afterwards (e.g. unpushed local commits,
+# which --ff-only reports as "Already up to date") must fail closed BEFORE any
+# official mutation.
+if ! git pull --ff-only origin main >> "$LOG_FILE" 2>&1; then
+  echo "[$(date)] ❌ git pull --ff-only origin main failed on the clean resident checkout; refusing to build/push from a stale or diverged HEAD (cron fails)" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+  exit 1
+fi
+INPLACE_HEAD=$(git rev-parse --verify HEAD 2>/dev/null || true)
+INPLACE_ORIGIN=$(git rev-parse --verify origin/main 2>/dev/null || true)
+if [ -z "$INPLACE_HEAD" ] || [ -z "$INPLACE_ORIGIN" ] || [ "$INPLACE_HEAD" != "$INPLACE_ORIGIN" ]; then
+  echo "[$(date)] ❌ resident HEAD (${INPLACE_HEAD:-unresolved}) is not the fetched origin/main (${INPLACE_ORIGIN:-unresolved}) after fast-forward; refusing in-place build/push (cron fails)" >> "$LOG_FILE"
+  echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+  exit 1
+fi
 if ! runPipeline "$(pwd)" "chore: update database $(date +%Y-%m-%d)"; then
   echo "[$(date)] ❌ pipeline failed — cron reports failure" >> "$LOG_FILE"
   echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
