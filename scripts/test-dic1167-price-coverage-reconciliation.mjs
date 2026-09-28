@@ -30,6 +30,11 @@
  *      (`printingListingRefusals`, e.g. a retired pre-errata price the
  *      canonical rows drop). A non-positive match never stands in for a
  *      positive listing, and never false-positives on its own.
+ *   7. CR e0a089af: every positive LISTING is accounted for individually. A
+ *      proven positive listing that priced one printing (U ¥100) never masks a
+ *      sibling positive listing that proved to no printing (SR ¥2,480): it
+ *      must be named (`refusedListingIds`) by a durable `listingRefusals`
+ *      record, or the cardNumber is unaccounted and the build fails.
  *
  * Fixture listings for hY01-001 / hBD24-001 / hBD24-018 / hBD24-064 are the
  * real yuyu-tei rows captured by the 2026-09-26 scrape.
@@ -46,6 +51,7 @@ import {
   reconcileScrapedCoverage,
   reconciliationManifestBlock,
   formatReconciliationFailure,
+  scrapedListingId,
 } from './lib/price-coverage-reconciliation.mjs';
 import { canonicalizeCardNumber } from './lib/card-number.js';
 
@@ -86,7 +92,13 @@ const repo = path.resolve(__dirname, '..');
     // preserved price is not standing in for an unhandled listing.
     positiveListingRowIds: new Set(['a1', 'a2', 'a4']),
     printingListingRefusals: new Map([['a2', { reason: 'no-positive-canonical-price' }]]),
-    listingRefusals: new Map([['hA01-003', {}], ['hA01-008', {}]]),
+    // Every positive listing that reached an exact printing (hA01-005's was
+    // matched, then ambiguity-nulled); hA01-007's reached nothing.
+    matchedListingIds: new Set(['hA01-001#0', 'hA01-002#0', 'hA01-004#0', 'hA01-005#0']),
+    listingRefusals: new Map([
+      ['hA01-003', { refusedListingIds: ['hA01-003#0'] }],
+      ['hA01-008', { refusedListingIds: ['hA01-008#0'] }],
+    ]),
     increaseRejections: [{ id: 'a4', cardNumber: 'hA01-004' }],
     ambiguityNulledIds: new Set(['a5']),
   };
@@ -105,7 +117,7 @@ const repo = path.resolve(__dirname, '..');
   assert.equal(r.pricedCardNumbers + r.unpricedCardNumbers, r.scrapedCardNumbers, 'categories partition the scraped set');
 
   // Removing the refusal record turns a lawful refusal into a silent loss.
-  const withoutRefusal = reconcileScrapedCoverage({ ...base, listingRefusals: new Map([['hA01-008', {}]]) });
+  const withoutRefusal = reconcileScrapedCoverage({ ...base, listingRefusals: new Map([['hA01-008', { refusedListingIds: ['hA01-008#0'] }]]) });
   assert.ok(withoutRefusal.categories.unaccounted.includes('hA01-003'));
 
   // Once the loss is accounted for, the reconciliation passes.
@@ -147,13 +159,17 @@ const repo = path.resolve(__dirname, '..');
   const listing = (sellPrice) => [{ sellPrice, rarity: 'P', yuyuImage: '' }];
   const P = 'hA01-009_hPR_P_hA01-009_P';
   const P02 = 'hA01-009_hPR_P_hA01-009_P_02';
+  const refused = { refusedListingIds: ['hA01-009#0'] };
   const scenario = ({
     siblingFresh, lostFresh = true, positive, printingRefusals = new Map(),
-    refusals = new Map(), increase = [], ambiguity = new Set(), sellPrice = 100,
+    refusals = new Map(), increase = [], ambiguity = new Set(), sellPrice = 100, matched,
   }) => {
     const fresh = new Set();
     if (siblingFresh) fresh.add(P);
     if (lostFresh) fresh.add(P02);
+    // The single listing reached an exact printing iff some printing was
+    // freshly priced by, or positively matched to, it.
+    const listingMatched = matched ?? (positive ?? fresh).size > 0;
     return reconcileScrapedCoverage({
       prices: { 'hA01-009': listing(sellPrice) },
       canonicalizeCardNumber,
@@ -163,6 +179,7 @@ const repo = path.resolve(__dirname, '..');
       },
       freshlyPricedRowIds: fresh,
       positiveListingRowIds: positive ?? fresh,
+      matchedListingIds: new Set(listingMatched ? ['hA01-009#0'] : []),
       printingListingRefusals: printingRefusals,
       listingRefusals: refusals,
       increaseRejections: increase,
@@ -196,7 +213,7 @@ const repo = path.resolve(__dirname, '..');
   assert.equal(unhandled.ok, false);
   assert.match(formatReconciliationFailure(unhandled), /1 scraped cardNumber\(s\).*hA01-009/);
   // …but once the fallback refusal is recorded it is the lawful hBD24-001 shape.
-  const refusedPreserved = scenario({ siblingFresh: false, lostFresh: false, positive: new Set(), refusals: new Map([['hA01-009', {}]]) });
+  const refusedPreserved = scenario({ siblingFresh: false, lostFresh: false, positive: new Set(), refusals: new Map([['hA01-009', refused]]) });
   assert.equal(refusedPreserved.ok, true);
   assert.deepEqual(refusedPreserved.preservedAfterFallbackRefusal, ['hA01-009']);
 
@@ -245,7 +262,7 @@ const repo = path.resolve(__dirname, '..');
   });
   assert.deepEqual(siblingRecord.unaccountedPrintings, [P02], 'a sibling printing record never covers another printing');
   const cardNumberRecord = scenario({
-    siblingFresh: false, lostFresh: false, positive: new Set([P02]), refusals: new Map([['hA01-009', {}]]),
+    siblingFresh: false, lostFresh: false, positive: new Set([P02]), refusals: new Map([['hA01-009', refused]]),
   });
   assert.deepEqual(cardNumberRecord.unaccountedPrintings, [P02], 'a cardNumber refusal never covers a matched printing');
   const nulledMatch = scenario({ siblingFresh: true, lostFresh: false, positive: new Set([P, P02]), ambiguity: new Set([P02]) });
@@ -265,6 +282,63 @@ const repo = path.resolve(__dirname, '..');
   assert.equal(zeroPreserved.ok, true);
   assert.deepEqual(zeroPreserved.categories.preserved, ['hA01-009']);
   console.log('  ✓ unit: CR 81802b00 — a matched positive listing that yields no fresh price needs a per-printing disposition');
+}
+
+// ── Unit: per-listing accounting (CR e0a089af) ────────────────────────────
+// The CR reproduction: the U listing (¥100) priced its exact printing; the SR
+// listing (¥2,480) proved to no printing. Printing-level accounting sees only
+// the U printing, so without a listing ledger this reconciled `ok: true`.
+{
+  const U = 'hBP01-045_hBP01_U_hBP01-045_U';
+  const mixed = (extra = {}) => reconcileScrapedCoverage({
+    prices: { 'hBP01-045': [{ sellPrice: 100, rarity: 'U' }, { sellPrice: 2480, rarity: 'SR' }] },
+    canonicalizeCardNumber,
+    cards: { [U]: { cardNumber: 'hBP01-045', sellPrice: 100 } },
+    freshlyPricedRowIds: new Set([U]),
+    positiveListingRowIds: new Set([U]),
+    matchedListingIds: new Set(['hBP01-045#0']),
+    ...extra,
+  });
+  assert.equal(scrapedListingId('hBP01-045', 1), 'hBP01-045#1');
+
+  // 1. Unproven sibling positive listing with no refusal: fails closed, and the
+  //    cardNumber is NOT a clean `fresh` despite its freshly-priced U printing.
+  const silent = mixed();
+  assert.equal(silent.ok, false, 'a proven positive sibling must not mask an unproven positive listing');
+  assert.deepEqual(silent.unaccountedListings, ['hBP01-045#1']);
+  assert.deepEqual(silent.categories.fresh, []);
+  assert.deepEqual(silent.categories.unaccounted, ['hBP01-045']);
+  assert.deepEqual(silent.unaccountedPrintings, [], 'the printing ledger alone cannot see it');
+  assert.deepEqual(silent.listingLedger, { positiveListings: 2, matched: 1, refused: 0, unaccounted: 1 });
+  assert.match(formatReconciliationFailure(silent), /1 scraped positive listing\(s\) neither matched an exact printing nor were named by a recorded refusal: hBP01-045#1/);
+  assert.deepEqual(reconciliationManifestBlock(silent).unaccountedListings, ['hBP01-045#1']);
+
+  // 2. A cardNumber refusal that does not NAME the listing does not cover it.
+  const unnamed = mixed({ listingRefusals: new Map([['hBP01-045', { reason: 'positive-listings-unbound-priced-sibling' }]]) });
+  assert.equal(unnamed.ok, false);
+  assert.deepEqual(unnamed.unaccountedListings, ['hBP01-045#1']);
+  const wrongListing = mixed({
+    matchedListingIds: new Set(),
+    listingRefusals: new Map([['hBP01-045', { refusedListingIds: ['hBP01-045#1'] }]]),
+  });
+  assert.deepEqual(wrongListing.unaccountedListings, ['hBP01-045#0'], 'a refusal names listings, never the whole cardNumber');
+
+  // 3. Named by a durable refusal: lawful, and the U price stays fresh.
+  const disposed = mixed({ listingRefusals: new Map([['hBP01-045', { refusedListingIds: ['hBP01-045#1'] }]]) });
+  assert.equal(disposed.ok, true);
+  assert.deepEqual(disposed.categories.fresh, ['hBP01-045']);
+  assert.deepEqual(disposed.listingLedger, { positiveListings: 2, matched: 1, refused: 1, unaccounted: 0 });
+
+  // 4. Fail-closed default: a caller that reports no matched listings gets
+  //    every positive listing flagged, never a silent pass.
+  const noLedger = mixed({ matchedListingIds: undefined });
+  assert.deepEqual(noLedger.unaccountedListings, ['hBP01-045#0', 'hBP01-045#1']);
+  assert.equal(noLedger.ok, false);
+  // Non-positive listings are never ledgered.
+  const zeroSibling = mixed({ prices: { 'hBP01-045': [{ sellPrice: 100, rarity: 'U' }, { sellPrice: 0, rarity: 'SR' }] } });
+  assert.equal(zeroSibling.ok, true);
+  assert.equal(zeroSibling.listingLedger.positiveListings, 1);
+  console.log('  ✓ unit: CR e0a089af — every positive listing is matched or named by a refusal; a priced sibling never masks it');
 }
 
 // ── Integration: real build-database.js run on real-shape listings ────────
@@ -316,6 +390,13 @@ try {
     assert.equal(row(lost)?.sellPrice ?? null, null, `baseline: ${lost} unpriced`);
   }
 
+  // CR e0a089af mixed proven/unproven sibling listings.
+  const mixedNum = 'hBP03-025';
+  const mixedPriced = 'hBP03-025_hBP03_C_hBP03-025_C';
+  const mixedRows = Object.keys(prevCards).filter((id) => prevCards[id].cardNumber === mixedNum);
+  assert.ok(mixedRows.includes(mixedPriced), `baseline: ${mixedPriced} exists`);
+  assert.ok(mixedRows.every((id) => prevCards[id].rarity !== 'SR'), `baseline: ${mixedNum} has no SR printing`);
+
   const promo = (cid, sellPrice, name) => ({
     sellPrice, rarity: 'P', name,
     yuyuImage: `https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/${cid}.jpg`,
@@ -331,11 +412,21 @@ try {
         yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/yell01/10065.jpg',
         imageVersion: 'yell01', imageCid: '10065', sourceSeries: 'hPC01', timestamp: '2026-09-26T12:26:33.037Z',
       }],
-      'hBP03-025': [{
-        sellPrice: 500, rarity: 'C', name: 'hBP03-025',
-        yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp03/dic1167.jpg',
-        imageVersion: 'hbp03', imageCid: 'dic1167', sourceSeries: 'hbp03', timestamp: '2026-09-28T00:00:00.000Z',
-      }],
+      // CR e0a089af: the C listing prices its exact hBP03 printing; the SR
+      // listing (no official SR printing exists) proves to none. The priced
+      // sibling skips the fallback, which must still refuse the SR listing.
+      [mixedNum]: [
+        {
+          sellPrice: 500, rarity: 'C', name: 'hBP03-025',
+          yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp03/dic1167.jpg',
+          imageVersion: 'hbp03', imageCid: 'dic1167', sourceSeries: 'hbp03', timestamp: '2026-09-28T00:00:00.000Z',
+        },
+        {
+          sellPrice: 2480, rarity: 'SR', name: 'hBP03-025',
+          yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp03/dic1167sr.jpg',
+          imageVersion: 'hbp03', imageCid: 'dic1167sr', sourceSeries: 'hbp03', timestamp: '2026-09-28T00:00:00.000Z',
+        },
+      ],
       // CR 81802b00 (a): a positive listing matches the ent07 printing, but
       // its only positive price sits on the retired pre-errata row; the
       // corrected row is unpriced, so the printing lawfully ships null — and
@@ -444,7 +535,7 @@ try {
   assert.equal(manifest.coverage.scrapedCardNumbers, 8);
   assert.deepEqual(manifest.coverage.noSellListing, [noSellNum], 'short-suffix key reconciles under its canonical cardNumber');
   assert.equal(cards[noSellRows[0]].sellPrice ?? null, null, 'a zero-price listing publishes no price');
-  assert.match(out, /\[DIC-1167\] price coverage reconciled: 8 scraped cardNumbers = 1 fresh \+ 3 preserved \(2 after fallback refusal\) \+ 2 refused-fallback \+ 1 refused-increase \+ 0 ambiguity-nulled \+ 1 no-sell-listing \+ 0 unaccounted; 4 listing refusal\(s\) recorded/);
+  assert.match(out, /\[DIC-1167\] price coverage reconciled: 8 scraped cardNumbers = 1 fresh \+ 3 preserved \(2 after fallback refusal\) \+ 2 refused-fallback \+ 1 refused-increase \+ 0 ambiguity-nulled \+ 1 no-sell-listing \+ 0 unaccounted; 5 listing refusal\(s\) recorded/);
   const builderSrc = fs.readFileSync(path.join(repo, 'scripts/build-database.js'), 'utf8');
   assert.match(builderSrc, /throw new Error\(formatReconciliationFailure\(coverageReconciliation\)\)/,
     'build-database.js must fail closed on an unreconciled scraped cardNumber');
@@ -488,10 +579,35 @@ try {
   assert.equal(unproven?.reason, 'positive-listings-unproven');
   assert.deepEqual(unproven.provenPrintings, [unprovenZero]);
   assert.deepEqual(unproven.listingSellPrices, [0, 2480]);
+  assert.deepEqual(unproven.refusedListingIds, [`${unprovenNum}#1`], 'the refusal names the positive listing, not the bound zero-price one');
   assert.equal(cards[unprovenZero].sellPrice, null);
   assert.equal(cards[unprovenSibling].sellPrice, row(unprovenSibling).sellPrice);
   assert.ok(manifest.coverage.preservedAfterFallbackRefusal.includes(unprovenNum));
   console.log('  ✓ CR 81802b00: matched-but-unpriced printing carries a per-printing disposition; a zero-price match never disposes of a positive listing');
+
+  // 7. CR e0a089af on the real build: the C listing ships its fresh price on
+  //    its exact printing; the unproven SR listing is refused by listing id —
+  //    no SR price is published anywhere.
+  assert.equal(cards[mixedPriced].sellPrice, 500, 'the proven C listing prices its exact printing');
+  assert.ok(Object.values(cards).filter((c) => c.cardNumber === mixedNum).every((c) => c.sellPrice !== 2480),
+    'the unproven SR price is bound to no printing');
+  const mixed = refusals.get(mixedNum);
+  assert.equal(mixed?.reason, 'positive-listings-unbound-priced-sibling');
+  assert.deepEqual(mixed.refusedListingIds, [`${mixedNum}#1`]);
+  assert.deepEqual(mixed.provenPrintings, [mixedPriced]);
+  assert.deepEqual(mixed.listingSellPrices, [500, 2480]);
+  assert.ok(!manifest.coverage.preservedAfterFallbackRefusal.includes(mixedNum));
+  assert.deepEqual(manifest.coverage.listingLedger, {
+    // hBD24-064 + hBP03-025 C + hBP01-025 matched; hBD24-001, hBD24-018,
+    // hY01-001, hBP03-025 SR, hBP01-045 SR refused.
+    positiveListings: 8, matched: 3, refused: 5, unaccounted: 0,
+  });
+  assert.deepEqual(manifest.coverage.unaccountedListings, []);
+  assert.match(out, /\[DIC-1167\] listing ledger: 8 positive listings = 3 matched to an exact printing \+ 5 refused by listing id \+ 0 unaccounted/);
+  for (const r of manifest.listingRefusals) {
+    assert.ok(Array.isArray(r.refusedListingIds) && r.refusedListingIds.length > 0, `${r.cardNumber} refusal names its listings`);
+  }
+  console.log('  ✓ CR e0a089af: a priced sibling listing never masks an unproven positive listing — refused by listing id');
 
   console.log('✓ DIC-1167 price coverage reconciliation regression passed');
   passed = true;

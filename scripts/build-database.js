@@ -49,6 +49,7 @@ import {
   reconcileScrapedCoverage,
   reconciliationManifestBlock,
   formatReconciliationFailure,
+  scrapedListingId,
 } from './lib/price-coverage-reconciliation.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1905,8 +1906,10 @@ async function buildDatabase() {
         return candidateSource && candidateSource === officialSource;
       })
       .length;
-    const rawEntries = (Array.isArray(priceData) ? priceData : [priceData]).filter((entry) => yuyuEntryMatchesOfficial(entry, official, candidateCount));
+    const allEntries = Array.isArray(priceData) ? priceData : [priceData];
+    const rawEntries = allEntries.filter((entry) => yuyuEntryMatchesOfficial(entry, official, candidateCount));
     if (rawEntries.length === 0) return null;
+    const listingIds = rawEntries.map((entry) => scrapedListingId(cardNum, allEntries.indexOf(entry)));
     const priceEntries = deduplicatePrices(rawEntries);
     let lowestPrice = null;
     let lowestName = '';
@@ -1926,6 +1929,7 @@ async function buildDatabase() {
       firstImage,
       firstTimestamp,
       priceEntries,
+      listingIds,
     };
   }
 
@@ -1974,6 +1978,11 @@ async function buildDatabase() {
   // each such printing that lawfully stays unpriced.
   const positiveListingPrintingIds = new Set();
   const printingListingRefusals = new Map();
+  // CR e0a089af: per-listing identity (`scrapedListingId`) of every scraped
+  // listing that reached an exact printing (or a truly yuyu-only row). A
+  // positive listing outside this set must be named by a `listingRefusals`
+  // record — a priced sibling printing never disposes of it.
+  const matchedListingIds = new Set();
   const hasPositiveSellPrice = (entries) => (entries || []).some((e) => Number.isFinite(e?.sellPrice) && e.sellPrice > 0);
   // Record the matched-listing outcome of one exact printing: every positive
   // listing either yields a positive canonical price or a durable refusal.
@@ -2045,6 +2054,7 @@ async function buildDatabase() {
     // This exact printing was matched by the current scrape (see the
     // freshlyScrapedPrintingIds declaration above).
     if (yuyu) freshlyScrapedPrintingIds.add(key);
+    if (yuyu) for (const id of yuyu.listingIds) matchedListingIds.add(id);
     if (yuyu) recordPositiveListingOutcome(key, baseCardNum, yuyu.priceEntries, canonical, lowestCanonical);
     // DIC-1334: record that this cardNumber received a sellPrice from
     // official+yuyu matching so the yuyu-only fallback below does not
@@ -2064,9 +2074,13 @@ async function buildDatabase() {
   // printing id: a refused listing never identified a printing, and the
   // DIC-1482 `rejections[]` array is strictly per printing.
   const listingRefusals = new Map();
-  const recordListingRefusal = (cardNum, reason, priceData, officialRows, provenKeys) => {
+  // `refusedIds` are the `scrapedListingId`s this refusal disposes of; the
+  // reconciliation covers a positive listing only when its id is named here.
+  // At most one refusal is recorded per raw key; two raw keys canonicalizing to
+  // one cardNumber (hY01-14 / hY01-014) merge into one record.
+  const recordListingRefusal = (cardNum, reason, priceData, officialRows, provenKeys, refusedIds) => {
     const entries = Array.isArray(priceData) ? priceData : [priceData];
-    listingRefusals.set(cardNum, {
+    const record = {
       cardNumber: cardNum,
       reason,
       listings: entries.length,
@@ -2074,7 +2088,21 @@ async function buildDatabase() {
       listingSellPrices: entries.map((e) => (Number.isFinite(e?.sellPrice) ? e.sellPrice : null)),
       candidatePrintings: officialRows.map((row) => officialKeyByRow.get(row)).filter(Boolean),
       provenPrintings: provenKeys,
-    });
+      refusedListingIds: [...refusedIds].sort(),
+    };
+    const prior = listingRefusals.get(cardNum);
+    if (prior) {
+      const union = (a, b) => [...new Set([...a, ...b])].sort();
+      record.reason = prior.reason;
+      record.additionalReasons = union(prior.additionalReasons || [], prior.reason === reason ? [] : [reason]);
+      record.listings += prior.listings;
+      record.listingImageProducts = union(prior.listingImageProducts, record.listingImageProducts);
+      record.listingSellPrices = [...prior.listingSellPrices, ...record.listingSellPrices];
+      record.candidatePrintings = union(prior.candidatePrintings, record.candidatePrintings);
+      record.provenPrintings = union(prior.provenPrintings, record.provenPrintings);
+      record.refusedListingIds = union(prior.refusedListingIds, record.refusedListingIds);
+    }
+    listingRefusals.set(cardNum, record);
   };
 
   // Also add yuyu-only cards (prices without matching official entry)
@@ -2090,8 +2118,24 @@ async function buildDatabase() {
     // exist but ALL are unpriced, we ADD the yuyu listing as yuyu-only instead
     // of silently discarding it.
     const officialRows = officialByCardNum[cardNum] || [];
+    const allEntries = Array.isArray(priceData) ? priceData : [priceData];
+    const idOf = (entry) => scrapedListingId(rawCardNum, allEntries.indexOf(entry));
     const officialAlreadyPriced = officialPricedCardNums.has(cardNum);
-    if (officialAlreadyPriced) continue;
+    if (officialAlreadyPriced) {
+      // CR e0a089af: an exactly-priced sibling printing (U ¥100) says nothing
+      // about a positive listing that matched no printing (SR ¥2,480). Skipping
+      // the fallback must not drop it silently: refuse it by listing id.
+      const unbound = allEntries.filter((e) => hasPositiveSellPrice([e]) && !matchedListingIds.has(idOf(e)));
+      if (unbound.length > 0) {
+        const pricedKeys = officialRows
+          .map((row) => officialKeyByRow.get(row))
+          .filter((k) => k && hasPositiveSellPrice([database.cards[k]]))
+          .sort();
+        recordListingRefusal(cardNum, 'positive-listings-unbound-priced-sibling', priceData, officialRows, pricedKeys, unbound.map(idOf));
+        console.log(`  [DIC-1167] ${cardNum}: ${unbound.length} positive listing(s) matched no official printing while sibling printing(s) ${pricedKeys.join(', ')} priced by exact match — refusal recorded`);
+      }
+      continue;
+    }
     // DIC-1334 + DIC-1343/CR: strict exact-printing provenance for the
     // yuyu-only fallback. When official rows exist for this cardNumber, we
     // must resolve EACH accepted listing to exactly one distinct official
@@ -2119,7 +2163,6 @@ async function buildDatabase() {
       // the very ambiguity this gate exists to catch. Zero proven printings
       // (unprovable / rarity-guess) and more than one distinct proven printing
       // (ambiguous sibling / reprint / C-vs-02_C) both fail closed.
-      const allEntries = Array.isArray(priceData) ? priceData : [priceData];
       const provenPrintings = new Map(); // official compound key → proven entries
       for (const entry of allEntries) {
         for (const official of officialRows) {
@@ -2140,31 +2183,36 @@ async function buildDatabase() {
           priceData,
           officialRows,
           [...provenPrintings.keys()],
+          allEntries.map(idOf),
         );
         console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber ${cardNum}: ${provenPrintings.size === 0 ? 'no listing proves to an exact official printing' : `${provenPrintings.size} distinct official printings proven (ambiguous sibling/reprint)`} — fail-closed, no cardNumber-wide fallback`);
         continue;
       }
       const [[printKey, proven]] = provenPrintings;
-      // CR 81802b00: a non-positive listing proving to one printing does not
-      // dispose of a positive listing that proved to none — without this
-      // record the positive price vanished with no trace.
-      const unprovenPositive = allEntries.filter((e) => !proven.includes(e) && hasPositiveSellPrice([e]));
-      if (!hasPositiveSellPrice(proven) && unprovenPositive.length > 0) {
-        recordListingRefusal(cardNum, 'positive-listings-unproven', priceData, officialRows, [printKey]);
-        console.log(`  [DIC-1167] ${cardNum}: ${unprovenPositive.length} positive listing(s) proved to no official printing; only a non-positive listing proved to ${printKey} — refusal recorded`);
-      }
       // The proven printing must be an official row that already exists in the
       // artifact — binding is the only lawful outcome here. If it somehow does
       // not, fail closed rather than publish an identity-less duplicate.
       if (!database.cards[printKey]) {
-        recordListingRefusal(cardNum, 'proven-printing-missing-row', priceData, officialRows, [printKey]);
+        recordListingRefusal(cardNum, 'proven-printing-missing-row', priceData, officialRows, [printKey], allEntries.map(idOf));
         console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for ${cardNum}: proven printing ${printKey} has no official row to bind (fail-closed)`);
         continue;
       }
+      // CR 81802b00 / e0a089af: binding the listing(s) proved to one printing
+      // does not dispose of a positive listing that proved to none — whether
+      // the proven listing is priced or not. Without this record the positive
+      // price vanished with no trace.
+      const unprovenPositive = allEntries.filter((e) => !proven.includes(e) && hasPositiveSellPrice([e]) && !matchedListingIds.has(idOf(e)));
+      if (unprovenPositive.length > 0) {
+        recordListingRefusal(cardNum, 'positive-listings-unproven', priceData, officialRows, [printKey], unprovenPositive.map(idOf));
+        console.log(`  [DIC-1167] ${cardNum}: ${unprovenPositive.length} positive listing(s) proved to no official printing; the listing(s) proved to ${printKey} are bound — refusal recorded`);
+      }
+      for (const e of proven) matchedListingIds.add(idOf(e));
       boundPrintingKey = printKey;
       priceEntries = deduplicatePrices(proven);
     } else {
-      priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
+      // Truly yuyu-only cardNumber: every listing is published on its row.
+      priceEntries = deduplicatePrices(allEntries);
+      for (const e of allEntries) matchedListingIds.add(idOf(e));
     }
     let lowestPrice = null;
     let lowestName = '';
@@ -2546,6 +2594,7 @@ async function buildDatabase() {
       cards: database.cards,
       freshlyPricedRowIds,
       positiveListingRowIds: positiveListingPrintingIds,
+      matchedListingIds,
       printingListingRefusals,
       listingRefusals,
       increaseRejections,
@@ -2569,6 +2618,11 @@ async function buildDatabase() {
       + `+ ${pl.positiveListingUnpriced} positive-listing-unpriced printings = `
       + `${pl.shippedPriced} shipped priced + ${pl.refusedIncrease} refused-increase `
       + `+ ${pl.ambiguityNulled} ambiguity-nulled + ${pl.refusedListing} refused-listing + ${pl.unaccounted} unaccounted`
+    );
+    const ll = coverageReconciliation.listingLedger;
+    console.log(
+      `  [DIC-1167] listing ledger: ${ll.positiveListings} positive listings = ${ll.matched} matched to an exact printing `
+      + `+ ${ll.refused} refused by listing id + ${ll.unaccounted} unaccounted`
     );
     if (!coverageReconciliation.ok) {
       throw new Error(formatReconciliationFailure(coverageReconciliation));
