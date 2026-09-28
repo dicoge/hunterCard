@@ -39,6 +39,19 @@
  *      hZZ01-014) are one listing set. Both positive listings land on the one
  *      canonical row — the later alias never overwrites the earlier price
  *      while both are counted as matched.
+ *   9. CR 73021e28: the same alias pair on an OFFICIALLY known printing
+ *      (hY03-013 / hY03-13, one hBP06 SY printing). Official matching read
+ *      only the canonical key, so the canonical ¥200 listing priced the row
+ *      and the lower short-key ¥100 listing was then refused as an "unbound
+ *      priced sibling" — its price for the SAME exact printing omitted under a
+ *      lawful-looking refusal. Both alias listings must match the printing.
+ *      (An alias listing that matches several printings — ent07 C vs 02_C —
+ *      still fails closed; test-dic1334-final-artifact-collapse.mjs §5b.)
+ *  10. CR fac85cde (same finding, acceptance rows): a printing scraped ONLY
+ *      under its short key (hY04-10) is priced by official matching, and an
+ *      alias-key listing that proves to no printing (hY01-10 SR, beside a
+ *      canonical-key SY listing that prices hY01-010) is still refused as an
+ *      unbound priced sibling by its raw alias listing id.
  *
  * Fixture listings for hY01-001 / hBD24-001 / hBD24-018 / hBD24-064 are the
  * real yuyu-tei rows captured by the 2026-09-26 scrape.
@@ -408,6 +421,29 @@ try {
   assert.ok(!Object.values(prevCards).some((c) => c.cardNumber === aliasNum) && !prevCards[aliasNum],
     `baseline: ${aliasNum} has no official or previous row`);
 
+  // CR 73021e28 alias pair: a cardNumber with exactly one official printing.
+  const officialAliasNum = 'hY03-013';
+  const officialAliasShort = 'hY03-13';
+  const officialAliasRow = 'hY03-013_hBP06_SY_hY03-013_SY';
+  assert.equal(canonicalizeCardNumber(officialAliasShort), officialAliasNum);
+  assert.deepEqual(Object.keys(prevCards).filter((id) => prevCards[id].cardNumber === officialAliasNum), [officialAliasRow],
+    `baseline: ${officialAliasNum} has exactly one official printing`);
+  assert.equal(row(officialAliasRow)?.sellPrice ?? null, null, `baseline: ${officialAliasRow} unpriced`);
+
+  // CR fac85cde: a short-key-only printing, and an unproven alias-key sibling.
+  const shortOnlyNum = 'hY04-010';
+  const shortOnlyKey = 'hY04-10';
+  const shortOnlyRow = 'hY04-010_hBP06_SY_hY04-010_SY';
+  const aliasSiblingNum = 'hY01-010';
+  const aliasSiblingKey = 'hY01-10';
+  const aliasSiblingRow = 'hY01-010_hBP06_SY_hY01-010_SY';
+  for (const [num, key, id] of [[shortOnlyNum, shortOnlyKey, shortOnlyRow], [aliasSiblingNum, aliasSiblingKey, aliasSiblingRow]]) {
+    assert.equal(canonicalizeCardNumber(key), num);
+    assert.deepEqual(Object.keys(prevCards).filter((k) => prevCards[k].cardNumber === num), [id],
+      `baseline: ${num} has exactly one official printing (no SR)`);
+    assert.equal(row(id)?.sellPrice ?? null, null, `baseline: ${id} unpriced`);
+  }
+
   const promo = (cid, sellPrice, name) => ({
     sellPrice, rarity: 'P', name,
     yuyuImage: `https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/${cid}.jpg`,
@@ -483,6 +519,38 @@ try {
         yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hzz01/dic1167f.jpg',
         imageVersion: 'hzz01', imageCid: 'dic1167f', sourceSeries: 'hzz01', timestamp: '2026-09-28T00:00:00.000Z',
       }],
+      // CR 73021e28: both raw keys of one OFFICIAL printing, canonical key
+      // first. The canonical ¥200 listing priced the row; the lower
+      // short-key ¥100 listing was never read by official matching.
+      [officialAliasNum]: [{
+        sellPrice: 200, rarity: 'SY', name: '推しホロライブスカイ',
+        yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/dic1167g.jpg',
+        imageVersion: 'hbp06', imageCid: 'dic1167g', sourceSeries: 'hbp06', timestamp: '2026-09-28T00:00:00.000Z',
+      }],
+      [officialAliasShort]: [{
+        sellPrice: 100, rarity: 'SY', name: '推しホロライブスカイ',
+        yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/dic1167h.jpg',
+        imageVersion: 'hbp06', imageCid: 'dic1167h', sourceSeries: 'hbp06', timestamp: '2026-09-28T00:00:00.000Z',
+      }],
+      // CR fac85cde: the printing is scraped ONLY under its short key.
+      [shortOnlyKey]: [{
+        sellPrice: 150, rarity: 'SY', name: '青エール',
+        yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/dic1167i.jpg',
+        imageVersion: 'hbp06', imageCid: 'dic1167i', sourceSeries: 'hbp06', timestamp: '2026-09-28T00:00:00.000Z',
+      }],
+      // CR fac85cde: the canonical-key SY listing prices hY01-010; the
+      // alias-key SR listing proves to no printing (none is SR) and must be
+      // refused by its raw alias listing id, not bound to the SY row.
+      [aliasSiblingNum]: [{
+        sellPrice: 300, rarity: 'SY', name: '白エール',
+        yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/dic1167j.jpg',
+        imageVersion: 'hbp06', imageCid: 'dic1167j', sourceSeries: 'hbp06', timestamp: '2026-09-28T00:00:00.000Z',
+      }],
+      [aliasSiblingKey]: [{
+        sellPrice: 900, rarity: 'SR', name: '白エール',
+        yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hbp06/dic1167k.jpg',
+        imageVersion: 'hbp06', imageCid: 'dic1167k', sourceSeries: 'hbp06', timestamp: '2026-09-28T00:00:00.000Z',
+      }],
       // Short-suffix key, a listing with no positive sell price.
       'hY01-14': [{
         sellPrice: 0, rarity: 'SY', name: '白エール',
@@ -548,7 +616,7 @@ try {
 
   // 4. Full reconciliation of the scraped set.
   assert.deepEqual(manifest.coverage.counts, {
-    fresh: 2, // hBP03-025, hZZ01-014 (scraped as hZZ01-14 + hZZ01-014)
+    fresh: 5, // hBP03-025, hZZ01-014 (scraped as hZZ01-14 + hZZ01-014), hY03-013 (hY03-13 + hY03-013), hY04-010 (hY04-10 only), hY01-010
     preserved: 3, // hBD24-001, hBP01-025, hBP01-045
     refusedFallback: 2, // hBD24-018, hY01-001
     refusedIncrease: 1, // hBD24-064
@@ -557,14 +625,14 @@ try {
     unaccounted: 0,
     preservedAfterFallbackRefusal: 2, // hBD24-001, hBP01-045
   });
-  assert.equal(manifest.coverage.scrapedCardNumbers, 9, 'the hZZ01 alias pair counts once');
+  assert.equal(manifest.coverage.scrapedCardNumbers, 12, 'each alias pair counts once');
   assert.deepEqual(manifest.coverage.noSellListing, [noSellNum], 'short-suffix key reconciles under its canonical cardNumber');
   assert.equal(cards[noSellRows[0]].sellPrice ?? null, null, 'a zero-price listing publishes no price');
-  assert.match(out, /\[DIC-1167\] price coverage reconciled: 9 scraped cardNumbers = 2 fresh \+ 3 preserved \(2 after fallback refusal\) \+ 2 refused-fallback \+ 1 refused-increase \+ 0 ambiguity-nulled \+ 1 no-sell-listing \+ 0 unaccounted; 5 listing refusal\(s\) recorded/);
+  assert.match(out, /\[DIC-1167\] price coverage reconciled: 12 scraped cardNumbers = 5 fresh \+ 3 preserved \(2 after fallback refusal\) \+ 2 refused-fallback \+ 1 refused-increase \+ 0 ambiguity-nulled \+ 1 no-sell-listing \+ 0 unaccounted; 6 listing refusal\(s\) recorded/);
   const builderSrc = fs.readFileSync(path.join(repo, 'scripts/build-database.js'), 'utf8');
   assert.match(builderSrc, /throw new Error\(formatReconciliationFailure\(coverageReconciliation\)\)/,
     'build-database.js must fail closed on an unreconciled scraped cardNumber');
-  console.log('  ✓ scraped-vs-shipped reconciliation: 9 = 2 fresh + 3 preserved + 2 refused-fallback + 1 refused-increase + 1 no-sell-listing');
+  console.log('  ✓ scraped-vs-shipped reconciliation: 12 = 5 fresh + 3 preserved + 2 refused-fallback + 1 refused-increase + 1 no-sell-listing');
 
   // 5. Exact-printing ledger on the real build: hBP03-025 ships its fresh
   //    price, hBD24-064_ent07 is stripped by the increase gate — by row id.
@@ -572,9 +640,9 @@ try {
   assert.equal(pl.unaccounted, 0);
   assert.deepEqual(manifest.coverage.unaccountedPrintings, []);
   assert.deepEqual(pl, {
-    freshlyPriced: 3, // hBP03-025 + hZZ01-014 + hBD24-064_ent07
+    freshlyPriced: 6, // hBP03-025 + hZZ01-014 + hY03-013 + hY04-010 + hY01-010 + hBD24-064_ent07
     positiveListingUnpriced: 1, // hBP01-025_ent07
-    shippedPriced: 2, // hBP03-025 + hZZ01-014
+    shippedPriced: 5, // hBP03-025 + hZZ01-014 + hY03-013 + hY04-010 + hY01-010
     refusedIncrease: 1, // hBD24-064_ent07
     ambiguityNulled: 0,
     refusedListing: 1, // hBP01-025_ent07
@@ -623,12 +691,13 @@ try {
   assert.deepEqual(mixed.listingSellPrices, [500, 2480]);
   assert.ok(!manifest.coverage.preservedAfterFallbackRefusal.includes(mixedNum));
   assert.deepEqual(manifest.coverage.listingLedger, {
-    // hBD24-064 + hBP03-025 C + hBP01-025 + both hZZ01 aliases matched;
-    // hBD24-001, hBD24-018, hY01-001, hBP03-025 SR, hBP01-045 SR refused.
-    positiveListings: 10, matched: 5, refused: 5, unaccounted: 0,
+    // hBD24-064 + hBP03-025 C + hBP01-025 + both hZZ01 + both hY03-013
+    // aliases + hY04-10 + hY01-010 SY matched; hBD24-001, hBD24-018,
+    // hY01-001, hBP03-025 SR, hBP01-045 SR, hY01-10 SR refused.
+    positiveListings: 15, matched: 9, refused: 6, unaccounted: 0,
   });
   assert.deepEqual(manifest.coverage.unaccountedListings, []);
-  assert.match(out, /\[DIC-1167\] listing ledger: 10 positive listings = 5 matched to an exact printing \+ 5 refused by listing id \+ 0 unaccounted/);
+  assert.match(out, /\[DIC-1167\] listing ledger: 15 positive listings = 9 matched to an exact printing \+ 6 refused by listing id \+ 0 unaccounted/);
   for (const r of manifest.listingRefusals) {
     assert.ok(Array.isArray(r.refusedListingIds) && r.refusedListingIds.length > 0, `${r.cardNumber} refusal names its listings`);
   }
@@ -648,6 +717,36 @@ try {
   assert.match(builderSrcAlias, /yuyu-only fallback would overwrite row/,
     'the fallback must refuse to write any row twice in one run');
   console.log('  ✓ CR 4132f98e: positive alias listings (hZZ01-14 / hZZ01-014) merge onto one row — none overwritten');
+
+  // 9. CR 73021e28 on the real build: official matching reads every raw alias
+  //    key, so the lower short-key listing prices the SAME exact printing and
+  //    is never refused as an unbound sibling.
+  const officialAliasShipped = cards[officialAliasRow];
+  assert.equal(officialAliasShipped.sellPrice, 100, 'the lower short-key ¥100 listing prices the exact printing');
+  assert.deepEqual(officialAliasShipped.prices.map((p) => p.sellPrice).sort((a, b) => a - b), [100, 200],
+    'both alias listings are on the exact printing');
+  assert.deepEqual(Object.keys(cards).filter((id) => cards[id].cardNumber === officialAliasNum), [officialAliasRow],
+    'no yuyu-only duplicate row is published for the official alias pair');
+  assert.ok(!refusals.has(officialAliasNum), 'a same-printing alias listing is never refused as an unbound sibling');
+  assert.ok(!manifest.coverage.refusedFallback.includes(officialAliasNum));
+  console.log('  ✓ CR 73021e28: official alias listings (hY03-013 / hY03-13) both match the exact printing — lower price ships, nothing refused');
+
+  // 10. CR fac85cde on the real build. (a) A short-key-only listing prices
+  //     its exact printing through official matching.
+  assert.equal(cards[shortOnlyRow].sellPrice, 150, 'the short-key-only listing prices its exact printing');
+  assert.deepEqual(Object.keys(cards).filter((id) => cards[id].cardNumber === shortOnlyNum), [shortOnlyRow],
+    'no yuyu-only duplicate row for a short-key-only official printing');
+  assert.ok(!refusals.has(shortOnlyNum));
+  // (b) Alias grouping never binds an unproven alias-key listing: the SR
+  //     listing is refused by its raw alias id beside the priced SY row.
+  assert.equal(cards[aliasSiblingRow].sellPrice, 300, 'the canonical-key SY listing prices its exact printing');
+  assert.ok(Object.values(cards).filter((c) => c.cardNumber === aliasSiblingNum).every((c) => c.sellPrice !== 900),
+    'the unproven alias-key SR price is bound to no printing');
+  const aliasSibling = refusals.get(aliasSiblingNum);
+  assert.equal(aliasSibling?.reason, 'positive-listings-unbound-priced-sibling');
+  assert.deepEqual(aliasSibling.refusedListingIds, [`${aliasSiblingKey}#0`], 'the refusal names the raw alias listing id');
+  assert.deepEqual(aliasSibling.provenPrintings, [aliasSiblingRow]);
+  console.log('  ✓ CR fac85cde: short-key-only listing prices its printing; an unproven alias-key sibling is refused by raw alias id');
 
   console.log('✓ DIC-1167 price coverage reconciliation regression passed');
   passed = true;

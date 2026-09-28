@@ -1896,20 +1896,46 @@ async function buildDatabase() {
   // Helper: resolve yuyu price data for one exact official printing.  Healthy
   // scrapes may contain same-card-number rows from multiple official printings;
   // require an explicit sourceSeries/name-tag tie instead of card-number fallback.
+  // CR 73021e28: yuyu emits one printing under raw alias keys (hY01-14 and
+  // hY01-014). Reading only `prices[cardNum]` left the short-key listing
+  // unmatched, so the fallback then refused it as an unbound sibling while its
+  // (possibly lower) price for the SAME exact printing was omitted. Every raw
+  // key of the canonical cardNumber is read here; each listing keeps its own
+  // raw-key `scrapedListingId`.
+  const rawListingsByCanonical = new Map(); // canonical cardNumber → [{ entry, id, rawKey }]
+  for (const [rawCardNum, rawPriceData] of Object.entries(prices || {})) {
+    const canonicalNum = canonicalizeCardNumber(rawCardNum);
+    if (!rawListingsByCanonical.has(canonicalNum)) rawListingsByCanonical.set(canonicalNum, []);
+    (Array.isArray(rawPriceData) ? rawPriceData : [rawPriceData]).forEach((entry, index) => {
+      rawListingsByCanonical.get(canonicalNum).push({ entry, id: scrapedListingId(rawCardNum, index), rawKey: rawCardNum });
+    });
+  }
+
+  const sameSourceCandidateCount = (cardNum, official) => (officialByCardNum[cardNum] || [])
+    .filter((candidate) => {
+      const candidateSource = String(candidate.sourceProduct || candidate.series || '').toLowerCase();
+      const officialSource = String(official.sourceProduct || official.series || '').toLowerCase();
+      return candidateSource && candidateSource === officialSource;
+    })
+    .length;
+  // An alias-key listing reaches official matching only when it proves to
+  // exactly ONE official printing of the cardNumber — the rule the yuyu-only
+  // fallback applied to it before (DIC-1334/CR rev.2). A listing that matches
+  // several printings (ent07 C vs 02_C) stays unmatched here, so the fallback
+  // still refuses it by listing id instead of pricing every sibling.
+  const aliasListingProvesUniquePrinting = (entry, cardNum) => (officialByCardNum[cardNum] || [])
+    .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row)))
+    .length === 1;
+
   function getYuyuForCard(cardNum, official) {
-    const priceData = prices[cardNum];
-    if (!priceData) return null;
-    const candidateCount = (officialByCardNum[cardNum] || [])
-      .filter((candidate) => {
-        const candidateSource = String(candidate.sourceProduct || candidate.series || '').toLowerCase();
-        const officialSource = String(official.sourceProduct || official.series || '').toLowerCase();
-        return candidateSource && candidateSource === officialSource;
-      })
-      .length;
-    const allEntries = Array.isArray(priceData) ? priceData : [priceData];
-    const rawEntries = allEntries.filter((entry) => yuyuEntryMatchesOfficial(entry, official, candidateCount));
-    if (rawEntries.length === 0) return null;
-    const listingIds = rawEntries.map((entry) => scrapedListingId(cardNum, allEntries.indexOf(entry)));
+    const listings = rawListingsByCanonical.get(canonicalizeCardNumber(cardNum));
+    if (!listings || listings.length === 0) return null;
+    const candidateCount = sameSourceCandidateCount(cardNum, official);
+    const matched = listings.filter(({ entry, rawKey }) => yuyuEntryMatchesOfficial(entry, official, candidateCount)
+      && (rawKey === cardNum || aliasListingProvesUniquePrinting(entry, cardNum)));
+    if (matched.length === 0) return null;
+    const rawEntries = matched.map(({ entry }) => entry);
+    const listingIds = matched.map(({ id }) => id);
     const priceEntries = deduplicatePrices(rawEntries);
     let lowestPrice = null;
     let lowestName = '';
@@ -2113,15 +2139,13 @@ async function buildDatabase() {
   // hZZ01-014) are ONE listing set. Processing them per raw key wrote the same
   // row twice — the later alias overwrote the earlier one's price while both
   // listings stayed `matched`, so the reconciliation passed on a lost price.
-  // Each listing keeps its own raw-key `scrapedListingId`.
+  // Each listing keeps its own raw-key `scrapedListingId` (the same alias
+  // grouping the official pass reads — see `rawListingsByCanonical`).
   const fallbackListingSets = new Map(); // canonical cardNumber → { entries, ids }
-  for (const [rawCardNum, rawPriceData] of Object.entries(prices)) {
-    const cardNum = canonicalizeCardNumber(rawCardNum);
-    if (!fallbackListingSets.has(cardNum)) fallbackListingSets.set(cardNum, { entries: [], ids: new Map() });
-    const set = fallbackListingSets.get(cardNum);
-    (Array.isArray(rawPriceData) ? rawPriceData : [rawPriceData]).forEach((entry, index) => {
-      set.entries.push(entry);
-      set.ids.set(entry, scrapedListingId(rawCardNum, index));
+  for (const [cardNum, listings] of rawListingsByCanonical) {
+    fallbackListingSets.set(cardNum, {
+      entries: listings.map(({ entry }) => entry),
+      ids: new Map(listings.map(({ entry, id }) => [entry, id])),
     });
   }
   // Every row the fallback publishes or binds, once. A second write to one row
