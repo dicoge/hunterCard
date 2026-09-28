@@ -45,6 +45,11 @@ import {
   makeRejection,
   isPricedRow,
 } from './lib/price-regression-gate.mjs';
+import {
+  reconcileScrapedCoverage,
+  reconciliationManifestBlock,
+  formatReconciliationFailure,
+} from './lib/price-coverage-reconciliation.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2024,6 +2029,28 @@ async function buildDatabase() {
     }
   }
 
+  // DIC-1167 (2026-09-28): every listing set the yuyu-only fallback refuses is
+  // recorded per canonical cardNumber, with the official printing candidates
+  // it failed to resolve against. These refusals used to exist only as a
+  // console line (71 on 2026-09-28, none of them in any artifact), so the
+  // scraped-vs-shipped reconciliation below could not tell a lawful
+  // fail-closed refusal from a silent price loss. Keyed by cardNumber, not
+  // printing id: a refused listing never identified a printing, and the
+  // DIC-1482 `rejections[]` array is strictly per printing.
+  const listingRefusals = new Map();
+  const recordListingRefusal = (cardNum, reason, priceData, officialRows, provenKeys) => {
+    const entries = Array.isArray(priceData) ? priceData : [priceData];
+    listingRefusals.set(cardNum, {
+      cardNumber: cardNum,
+      reason,
+      listings: entries.length,
+      listingImageProducts: [...new Set(entries.map((e) => yuyuImageProductPath(e?.yuyuImage) || '').filter(Boolean))].sort(),
+      listingSellPrices: entries.map((e) => (Number.isFinite(e?.sellPrice) ? e.sellPrice : null)),
+      candidatePrintings: officialRows.map((row) => officialKeyByRow.get(row)).filter(Boolean),
+      provenPrintings: provenKeys,
+    });
+  };
+
   // Also add yuyu-only cards (prices without matching official entry)
   for (const [rawCardNum, priceData] of Object.entries(prices)) {
     // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
@@ -2081,6 +2108,13 @@ async function buildDatabase() {
         }
       }
       if (provenPrintings.size !== 1) {
+        recordListingRefusal(
+          cardNum,
+          provenPrintings.size === 0 ? 'no-exact-printing-proven' : 'ambiguous-official-printings',
+          priceData,
+          officialRows,
+          [...provenPrintings.keys()],
+        );
         console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber ${cardNum}: ${provenPrintings.size === 0 ? 'no listing proves to an exact official printing' : `${provenPrintings.size} distinct official printings proven (ambiguous sibling/reprint)`} — fail-closed, no cardNumber-wide fallback`);
         continue;
       }
@@ -2089,6 +2123,7 @@ async function buildDatabase() {
       // artifact — binding is the only lawful outcome here. If it somehow does
       // not, fail closed rather than publish an identity-less duplicate.
       if (!database.cards[printKey]) {
+        recordListingRefusal(cardNum, 'proven-printing-missing-row', priceData, officialRows, [printKey]);
         console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for ${cardNum}: proven printing ${printKey} has no official row to bind (fail-closed)`);
         continue;
       }
@@ -2293,6 +2328,66 @@ async function buildDatabase() {
   // preserving any skills from the previous build the effects files no longer supply.
   mergeSkills(database.cards, prevSkillsByCardId);
 
+  const officialPrintingKeys = new Set(Object.keys(officialCards));
+  const increaseRejections = [];
+  {
+    // DIC-1167 (2026-09-23): increase-side provenance gate. The decrease gate
+    // below only sees payloads that VANISH, so a row the previous artifact
+    // shipped fail-closed (unpriced) that this refresh freshly re-prices used
+    // to bypass provenance entirely — the 2026-09-23 scrape re-shipped ten
+    // DIC-1482-rejected cross-product / no-provenance payloads through exactly
+    // this blind spot. A newly-priced row now ships only when its OWN current
+    // payload is exact-print proven under `classifyExactPrintPayload` — the
+    // same classifier the decrease gate re-verifies rejections with. An
+    // unproven fresh price is stripped back to the fail-closed shape and
+    // recorded in the manifest under its derived reason, so every refused
+    // increase is auditable per printing. Truly yuyu-only rows (no official
+    // printing identity to prove against) keep the DIC-1334 fallback
+    // behaviour. priceHistory is deliberately NOT touched: the Step 6
+    // DIC-1229 gate owns history provenance.
+    //
+    // DIC-1167 (2026-09-28): this strip runs BEFORE the price-evidence dump,
+    // the DIC-1334 coverage audit and the scraped-vs-shipped reconciliation, so
+    // every coverage number they report is the one that ships. It used to run
+    // after them: the 2026-09-28 build reported 1289/1260 priced cardNumbers
+    // while shipping 1288/1259 (hBD24-064's only priced row, hBD24-064_ent07,
+    // was stripped as cross-product-image afterwards). Nothing between the old
+    // and new position mutates cards, so the shipped artifact is unchanged.
+    for (const [id, card] of Object.entries(database.cards)) {
+      if (!isPricedRow(card)) continue;
+      const prevCard = prevCards[id];
+      if (prevCard && isPricedRow(prevCard)) continue;
+      const verdict = classifyExactPrintPayload(card);
+      if (verdict.proven) continue;
+      if (verdict.reason === 'missing-source-product' && !officialPrintingKeys.has(id)) continue;
+      increaseRejections.push(makeRejection(id, card, verdict.reason));
+      card.sellPrice = null;
+      card.prices = [];
+      card.yuyuName = '';
+      card.yuyuImage = '';
+      card.timestamp = '';
+      if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
+    }
+    if (increaseRejections.length > 0) {
+      const sample = increaseRejections.slice(0, 5).map((r) => `${r.id} [${r.reason}]`).join(', ');
+      console.log(
+        `  [DIC-1167] fail-closed ${increaseRejections.length} newly-priced row(s) without exact-print provenance: `
+        + `${sample}${increaseRejections.length > 5 ? ` +${increaseRejections.length - 5} more` : ''}`
+      );
+      // The detail-align pass above ranked these rows while they still
+      // carried the refused payload (prices[] richness / base-entry rank),
+      // so a rejected listing could still decide row order — and at worst the
+      // CardDetail default printing. Re-align on the fail-closed shape: the
+      // 2026-09-25 scrape shipped 5 cardNumber groups (hBP01-048, hBP02-014,
+      // hBP02-024, hSD03-002, hBP04-013) reordered by refused payloads alone.
+      const { cards: realigned, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards, prevCards);
+      database.cards = realigned;
+      if (reorderedCardNumbers > 0) {
+        console.log(`  [DIC-1167] re-aligned ${reorderedCardNumbers} cardNumber group(s) after stripping refused payloads`);
+      }
+    }
+  }
+
   // DIC-1461: opt-in diagnostic evidence dump. When (and only when)
   // HUNTERCARD_PRICE_EVIDENCE_PATH is set, capture the structured matcher
   // evidence for every scraped cardNumber — the exact in-memory listing rows,
@@ -2399,6 +2494,38 @@ async function buildDatabase() {
     }
   }
 
+  // DIC-1167 (2026-09-28): scraped-vs-shipped reconciliation. The DIC-1334
+  // floor above only catches a wholesale collapse; a partial loss well inside
+  // the 50% floor (and invisible to the DIC-1482 decrease gate whenever the
+  // lost cardNumbers were never priced before) still exited 0. Every scraped
+  // cardNumber must now be accounted for on the shipped artifact — fresh,
+  // preserved, or unpriced under a recorded refusal/rejection — and a scraped
+  // cardNumber with a positive sell listing that ships unpriced for no
+  // recorded reason fails the build before the canonical write.
+  let coverageReconciliation = null;
+  if (!pricingUnavailable) {
+    coverageReconciliation = reconcileScrapedCoverage({
+      prices,
+      canonicalizeCardNumber,
+      cards: database.cards,
+      freshlyPricedRowIds,
+      listingRefusals,
+      increaseRejections,
+      ambiguityNulledIds,
+    });
+    const rc = coverageReconciliation.counts;
+    console.log(
+      `  [DIC-1167] price coverage reconciled: ${coverageReconciliation.scrapedCardNumbers} scraped cardNumbers = `
+      + `${rc.fresh} fresh + ${rc.preserved} preserved (${rc.preservedAfterFallbackRefusal} after fallback refusal) `
+      + `+ ${rc.refusedFallback} refused-fallback + ${rc.refusedIncrease} refused-increase `
+      + `+ ${rc.ambiguityNulled} ambiguity-nulled + ${rc.noSellListing} no-sell-listing + ${rc.unaccounted} unaccounted; `
+      + `${listingRefusals.size} listing refusal(s) recorded`
+    );
+    if (!coverageReconciliation.ok) {
+      throw new Error(formatReconciliationFailure(coverageReconciliation));
+    }
+  }
+
   // Fix totalCards to reflect actual unique cards
   database.totalCards = Object.keys(database.cards).length;
 
@@ -2420,62 +2547,12 @@ async function buildDatabase() {
     // label asserts, so it cannot authorize itself: if either live source
     // still carries the printing, its disappearance is a rebuild defect and
     // stays an uncovered violation that fails the build.
-    const officialPrintingKeys = new Set(Object.keys(officialCards));
     const catalogRemovedIds = new Set();
     for (const [prevId, prevCard] of Object.entries(prevCards)) {
       if (database.cards[prevId]) continue;
       if (officialPrintingKeys.has(prevId)) continue;
       if (prevCard?.cardNumber && scrapedCardNumbers.has(prevCard.cardNumber)) continue;
       catalogRemovedIds.add(prevId);
-    }
-
-    // DIC-1167 (2026-09-23): increase-side provenance gate. The decrease gate
-    // below only sees payloads that VANISH, so a row the previous artifact
-    // shipped fail-closed (unpriced) that this refresh freshly re-prices used
-    // to bypass provenance entirely — the 2026-09-23 scrape re-shipped ten
-    // DIC-1482-rejected cross-product / no-provenance payloads through exactly
-    // this blind spot. A newly-priced row now ships only when its OWN current
-    // payload is exact-print proven under `classifyExactPrintPayload` — the
-    // same classifier the decrease gate re-verifies rejections with. An
-    // unproven fresh price is stripped back to the fail-closed shape and
-    // recorded in the manifest under its derived reason, so every refused
-    // increase is auditable per printing. Truly yuyu-only rows (no official
-    // printing identity to prove against) keep the DIC-1334 fallback
-    // behaviour. priceHistory is deliberately NOT touched: the Step 6
-    // DIC-1229 gate owns history provenance.
-    const increaseRejections = [];
-    for (const [id, card] of Object.entries(database.cards)) {
-      if (!isPricedRow(card)) continue;
-      const prevCard = prevCards[id];
-      if (prevCard && isPricedRow(prevCard)) continue;
-      const verdict = classifyExactPrintPayload(card);
-      if (verdict.proven) continue;
-      if (verdict.reason === 'missing-source-product' && !officialPrintingKeys.has(id)) continue;
-      increaseRejections.push(makeRejection(id, card, verdict.reason));
-      card.sellPrice = null;
-      card.prices = [];
-      card.yuyuName = '';
-      card.yuyuImage = '';
-      card.timestamp = '';
-      if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
-    }
-    if (increaseRejections.length > 0) {
-      const sample = increaseRejections.slice(0, 5).map((r) => `${r.id} [${r.reason}]`).join(', ');
-      console.log(
-        `  [DIC-1167] fail-closed ${increaseRejections.length} newly-priced row(s) without exact-print provenance: `
-        + `${sample}${increaseRejections.length > 5 ? ` +${increaseRejections.length - 5} more` : ''}`
-      );
-      // The detail-align pass above ranked these rows while they still
-      // carried the refused payload (prices[] richness / base-entry rank),
-      // so a rejected listing could still decide row order — and at worst the
-      // CardDetail default printing. Re-align on the fail-closed shape: the
-      // 2026-09-25 scrape shipped 5 cardNumber groups (hBP01-048, hBP02-014,
-      // hBP02-024, hSD03-002, hBP04-013) reordered by refused payloads alone.
-      const { cards: realigned, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards, prevCards);
-      database.cards = realigned;
-      if (reorderedCardNumbers > 0) {
-        console.log(`  [DIC-1167] re-aligned ${reorderedCardNumbers} cardNumber group(s) after stripping refused payloads`);
-      }
     }
 
     const dic1482Rejections = [];
@@ -2522,13 +2599,16 @@ async function buildDatabase() {
       previousCards: prevCards,
       nextCards: database.cards,
       rejections: allRejections,
+      listingRefusals: [...listingRefusals.values()].sort((a, b) => a.cardNumber.localeCompare(b.cardNumber)),
+      coverage: reconciliationManifestBlock(coverageReconciliation),
     });
     writeJsonAtomic(path.join(DATA_DIR, 'price-rejections.json'), manifest);
     console.log(
       `  [DIC-1482] priced metrics rows ${gate.before.pricedRows}→${gate.after.pricedRows}, `
       + `uniqueCardNumbers ${gate.before.pricedUniqueCardNumbers}→${gate.after.pricedUniqueCardNumbers}, `
       + `entries ${gate.before.priceEntries}→${gate.after.priceEntries}; `
-      + `rejections=${allRejections.length} (decrease=${dic1482Rejections.length}, refused-increase=${increaseRejections.length})`
+      + `rejections=${allRejections.length} (decrease=${dic1482Rejections.length}, refused-increase=${increaseRejections.length}), `
+      + `listing refusals=${listingRefusals.size}`
     );
     if (!gate.ok) {
       throw new Error(formatGateViolations('build-database refused to ship', gate.violations));

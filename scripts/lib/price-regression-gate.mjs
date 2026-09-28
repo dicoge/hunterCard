@@ -352,10 +352,27 @@ export function formatGateViolations(label, violations, limit = 8) {
  * Machine-readable rejection manifest for the refresh that just ran.
  * Committed as data/price-rejections.json so every allowed decrease ships
  * with its per-printing evidence.
+ *
+ * DIC-1167 (2026-09-28): callers that ran a scrape may also attach
+ * `listingRefusals` (per-cardNumber listing sets the yuyu-only fallback
+ * refused — never per printing, so kept out of `rejections[]`, which the
+ * gate verifies per printing id) and `coverage` (the scraped-vs-shipped
+ * reconciliation). Both are omitted when not supplied, so other refresh
+ * paths keep their existing manifest shape.
  */
-export function buildPriceRejectionManifest({ label, previousCards = {}, nextCards = {}, rejections = [] } = {}) {
+export function buildPriceRejectionManifest({
+  label,
+  previousCards = {},
+  nextCards = {},
+  rejections = [],
+  listingRefusals,
+  coverage,
+} = {}) {
   const before = priceMetrics(previousCards);
   const after = priceMetrics(nextCards);
+  const extra = {};
+  if (listingRefusals !== undefined) extra.listingRefusals = listingRefusals;
+  if (coverage !== undefined) extra.coverage = coverage;
   return {
     schema: PRICE_REJECTION_MANIFEST_SCHEMA,
     label: String(label || 'refresh'),
@@ -368,6 +385,7 @@ export function buildPriceRejectionManifest({ label, previousCards = {}, nextCar
       priceEntries: after.priceEntries - before.priceEntries,
     },
     rejections,
+    ...extra,
   };
 }
 
