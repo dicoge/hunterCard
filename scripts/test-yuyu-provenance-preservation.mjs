@@ -782,4 +782,59 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
   assert.deepEqual(mixedCurrent.prices.map((entry) => entry.imageUrl), [OWN]);
 }
 
+// CR 59661b2b: preservation's ent07 carve-out passed every parseable URL, so a
+// previous hBD24-008_ent07 row carrying a ¥500 /promo-hsd10/ listing was copied
+// onto the unpriced current row even though fresh listing matching refuses it
+// (CR 6c62db8b). A promo pack image on an ent07 row needs the row's own family.
+{
+  const FOREIGN = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10008.jpg';
+  const OWN = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10008.jpg';
+  const id = 'hBD24-008_ent07';
+  const prevRow = (imageUrl) => ({
+    id, cardNumber: 'hBD24-008', sourceProduct: 'ent07',
+    sellPrice: 500, yuyuName: 'hBD24-008 P', yuyuImage: imageUrl, timestamp: '2026-09-28T00:00:00Z',
+    prices: [{ name: 'hBD24-008 P', sellPrice: 500, rarity: 'P', imageUrl }],
+    _rawPricesArchive: [{ name: 'hBD24-008 P', sellPrice: 500, rarity: 'P', imageUrl }],
+  });
+  const unpriced = () => ({ id, cardNumber: 'hBD24-008', sourceProduct: 'ent07', sellPrice: null, prices: [] });
+
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'ent07', 'hBD24-008'), false,
+    'CR 59661b2b: a foreign promo pack entry does not match an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'ent07', 'hBD24-008', { allowOriginPrefix: false }), false,
+    'CR 59661b2b: the strict filter rejects a foreign promo pack on an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: OWN }, 'ent07', 'hBD24-008'), true,
+    'CR 59661b2b: the own-family promo pack entry matches an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: OWN }, 'ent07'), false,
+    'CR 59661b2b: an ent07 promo pack entry with no cardNumber fails closed');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hxx99/10008.jpg' }, 'ent07', 'hBD24-008'), false,
+    'CR 59661b2b: an unknown promo pack fails closed on an ent07 row');
+
+  const foreignCurrent = unpriced();
+  const foreignSummary = applyPreservedMarketFields(foreignCurrent, prevRow(FOREIGN), { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(foreignCurrent.sellPrice, null, 'CR 59661b2b: the foreign ¥500 is not copied onto the unpriced ent07 row');
+  assert.deepEqual(foreignCurrent.prices, [], 'CR 59661b2b: foreign promo prices[] are not copied');
+  assert.ok(!foreignCurrent.yuyuImage, 'CR 59661b2b: the foreign /promo-hsd10/ yuyuImage is not copied');
+  assert.ok(!foreignCurrent._rawPricesArchive || foreignCurrent._rawPricesArchive.length === 0,
+    'CR 59661b2b: foreign promo _rawPricesArchive is not copied');
+  assert.equal(foreignSummary.sellPrice, false);
+  assert.equal(foreignSummary.prices, false);
+
+  const ownCurrent = unpriced();
+  applyPreservedMarketFields(ownCurrent, prevRow(OWN), { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(ownCurrent.sellPrice, 500, 'CR 59661b2b: the own-family promo price still carries forward');
+  assert.equal(ownCurrent.yuyuImage, OWN);
+  assert.equal(ownCurrent.prices.length, 1);
+
+  const mixed = prevRow(FOREIGN);
+  mixed.prices = [
+    { name: 'hBD24-008 P', sellPrice: 500, rarity: 'P', imageUrl: FOREIGN },
+    { name: 'hBD24-008 P', sellPrice: 9980, rarity: 'P', imageUrl: OWN },
+  ];
+  const mixedCurrent = unpriced();
+  applyPreservedMarketFields(mixedCurrent, mixed, { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(mixedCurrent.sellPrice, 9980, 'CR 59661b2b: the ent07 top level derives from the own-family entry only');
+  assert.equal(mixedCurrent.yuyuImage, OWN);
+  assert.deepEqual(mixedCurrent.prices.map((entry) => entry.imageUrl), [OWN]);
+}
+
 console.log('DIC-1227 yuyu-provenance preservation regression checks passed');
