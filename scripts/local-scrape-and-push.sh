@@ -354,11 +354,27 @@ joinSignals() {
   cat "$log" >> "$LOG_FILE" 2>/dev/null || true
   rm -f "$log"
   if [ "$killed" = "1" ]; then
-    echo "[$(date)] ⚠️ YT stats / news sentiment exceeded the run budget; killed, all writers exited, restored their outputs (non-fatal)" >> "$LOG_FILE"
+    echo "[$(date)] ⚠️ YT stats / news sentiment exceeded the run budget; killed, all writers exited, restoring their outputs" >> "$LOG_FILE"
     # Separate pathspecs: one unmatched path would abort the whole checkout.
-    git checkout -- data/yt-stats-history.json >> "$LOG_FILE" 2>&1 || true
-    git checkout -- data/news-sentiment >> "$LOG_FILE" 2>&1 || true
-    git clean -fq -- data/news-sentiment >> "$LOG_FILE" 2>&1 || true
+    # A failing step is only logged here: the postcondition below is the
+    # contract, so a path simply absent from HEAD stays harmless while any
+    # restore that did not take fails closed (CR 367fad3a).
+    git checkout -- data/yt-stats-history.json >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ restore: git checkout -- data/yt-stats-history.json failed" >> "$LOG_FILE"
+    git checkout -- data/news-sentiment >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ restore: git checkout -- data/news-sentiment failed" >> "$LOG_FILE"
+    git clean -fq -- data/yt-stats-history.json data/news-sentiment >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ restore: git clean -- data/yt-stats-history.json data/news-sentiment failed" >> "$LOG_FILE"
+    # The killed job's outputs are staged by the commit step (git add), so they
+    # must match HEAD exactly — no modification, no untracked leftover.
+    local residue
+    if ! residue=$(git status --porcelain --untracked-files=all -- data/yt-stats-history.json data/news-sentiment 2>>"$LOG_FILE"); then
+      echo "[$(date)] ❌ could not verify the killed signals outputs were restored (git status failed). Not pushing; cron must fail." >> "$LOG_FILE"
+      return 1
+    fi
+    if [ -n "$residue" ]; then
+      echo "[$(date)] ❌ killed signals outputs still differ from HEAD after restore; refusing to commit a possibly torn file. Not pushing; cron must fail:" >> "$LOG_FILE"
+      echo "$residue" >> "$LOG_FILE"
+      return 1
+    fi
+    echo "[$(date)] ⚠️ YT stats / news sentiment outputs restored to HEAD (non-fatal)" >> "$LOG_FILE"
   fi
 }
 
