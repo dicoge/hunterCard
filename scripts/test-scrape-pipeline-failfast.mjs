@@ -165,6 +165,15 @@ if [ "$cmd" = "worktree" ]; then
   exit 0
 fi
 if [ "$cmd" = "commit" ]; then touch "$COMMIT_MARKER"; exit 0; fi
+# CR 367fad3a: model a signals restore that does not take. "dirty" = checkout
+# fails and the output still differs from HEAD; "status" = the postcondition
+# cannot be read; "unmatched" = checkout fails (path absent from HEAD) yet
+# nothing is left to commit.
+if [ -n "$RESTORE_FAIL" ] && [[ "$*" == *"data/yt-stats-history.json"* || "$*" == *"data/news-sentiment"* ]]; then
+  if [ "$cmd" = "checkout" ]; then echo "error: pathspec did not match" >&2; exit 1; fi
+  if [ "$cmd" = "status" ] && [ "$RESTORE_FAIL" = "dirty" ]; then echo " M data/yt-stats-history.json"; exit 0; fi
+  if [ "$cmd" = "status" ] && [ "$RESTORE_FAIL" = "status" ]; then echo "fatal: index file corrupt" >&2; exit 128; fi
+fi
 if [ "$cmd" = "diff" ] && [[ "$*" == *"--stat"* ]] && [ -z "$NO_CHANGES" ]; then echo " data/database.json | 2 +-"; fi
 if [ "$cmd" = "diff" ]; then exit 0; fi
 exit 0
@@ -204,6 +213,7 @@ exit 0
       HUNTERCARD_YUYU_ROTATION_SEED: '',
       BUILD_SLEEP: env.BUILD_SLEEP ?? '',
       SIGNALS_HANG: env.SIGNALS_HANG ?? '',
+      RESTORE_FAIL: env.RESTORE_FAIL ?? '',
       HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS: env.HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS ?? '',
     },
     encoding: 'utf-8',
@@ -736,8 +746,9 @@ for (const gate of ['test:buy-price', 'test:buy-price-regen']) {
   assert.strictEqual(status, 0, `a killed signals job is non-fatal: ${log.slice(-800)}`);
   assert.ok(elapsed < 20000, `hung signals must be bounded by the run budget, took ${elapsed}ms`);
   assert.match(lines.find((l) => l.startsWith('BUILD_ENV ')) ?? '', /stage=1000 launch=1000 /, 'exhausted run budget floors the yuyu stage and clamps launch to it');
-  assert.match(log, /exceeded the run budget; killed, all writers exited, restored/, 'overrun must be logged');
-  for (const restored of ['git checkout -- data/yt-stats-history.json', 'git checkout -- data/news-sentiment', 'git clean -fq -- data/news-sentiment']) {
+  assert.match(log, /exceeded the run budget; killed, all writers exited, restoring/, 'overrun must be logged');
+  assert.match(log, /outputs restored to HEAD \(non-fatal\)/, 'a verified restore is non-fatal');
+  for (const restored of ['git checkout -- data/yt-stats-history.json', 'git checkout -- data/news-sentiment', 'git clean -fq -- data/yt-stats-history.json data/news-sentiment', 'git status --porcelain --untracked-files=all -- data/yt-stats-history.json data/news-sentiment']) {
     assert.ok(indexOfCall(lines, restored) !== -1, `overrun outputs must be restored (${restored})`);
   }
   for (const required of ['refresh-yt-stats.mjs', 'generate-native-database.mjs --check', 'npm run test:market-fields', 'commit -m']) {
@@ -772,8 +783,34 @@ for (const gate of ['test:buy-price', 'test:buy-price-regen']) {
   const elapsed = Date.now() - t0;
   assert.strictEqual(status, 0, `a KILLed signals job is non-fatal: ${log.slice(-800)}`);
   assert.ok(elapsed < 20000, `a TERM-ignoring writer must be KILLed after the grace, took ${elapsed}ms`);
-  assert.match(log, /killed, all writers exited, restored/, 'restore only after the whole group is gone');
+  assert.match(log, /killed, all writers exited, restoring/, 'restore only after the whole group is gone');
   assert.ok(indexOfCall(lines, 'git checkout -- data/yt-stats-history.json') !== -1, 'outputs restored after KILL');
+}
+{
+  // CR 367fad3a: a restore that does not take (checkout error swallowed, file
+  // still torn) or cannot be verified must fail closed before any downstream
+  // mutation, staging, commit or push.
+  for (const mode of ['dirty', 'status']) {
+    const { status, lines, log } = runPipeline({
+      env: { SIGNALS_HANG: '1', RESTORE_FAIL: mode, HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000) },
+    });
+    assert.notStrictEqual(status, 0, `unverified signals restore (${mode}) must fail the run: ${log.slice(-800)}`);
+    assert.match(log, mode === 'dirty' ? /still differ from HEAD after restore/ : /could not verify the killed signals outputs/, `fail-closed reason logged (${mode})`);
+    assert.match(log, /signals join failed closed/, `runPipeline stops at the join (${mode})`);
+    for (const forbidden of ['refresh-yt-stats.mjs', 'merge-buy-prices.js', 'generate-native-database.mjs', 'git add', 'commit -m', 'push']) {
+      assert.strictEqual(indexOfCall(lines, forbidden), -1, `${forbidden} must not run after an unverified restore (${mode}): ${lines.join(' | ')}`);
+    }
+  }
+}
+{
+  // CR 367fad3a: a checkout error for a path absent from HEAD is harmless when
+  // the postcondition proves nothing is left to commit.
+  const { status, lines, log } = runPipeline({
+    env: { SIGNALS_HANG: '1', RESTORE_FAIL: 'unmatched', HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000) },
+  });
+  assert.strictEqual(status, 0, `a verified-clean restore stays non-fatal: ${log.slice(-800)}`);
+  assert.match(log, /restore: git checkout -- data\/yt-stats-history.json failed/, 'the checkout error is logged, not hidden');
+  assert.ok(indexOfCall(lines, 'commit -m') !== -1, 'run still commits once the restore is verified');
 }
 {
   // A leaked start from another day is not this run's clock.
