@@ -474,6 +474,9 @@ jobs:
       - name: Verify tournament collector discovery is fail-closed + writes a stub (DIC-1380 W7 CR)
         run: npm run test:tournament-discovery-acquisition
 
+      - name: Verify a no-results official column never demands events + Deck Log printing merge (DIC-1494)
+        run: npm run test:dic1494-official-post-classification
+
       - name: Verify legal-page claims match actual STORE_MVP behavior (DIC-1380 W7 CR)
         run: npm run test:legal-copy-vs-behavior
 
