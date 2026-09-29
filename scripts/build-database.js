@@ -814,6 +814,27 @@ const YUYU_STAGE_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_STAGE_BUDGET_MS', 4
 const YUYU_SERIES_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_SERIES_BUDGET_MS', 90_000);
 const YUYU_LAUNCH_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_LAUNCH_BUDGET_MS', 45_000);
 
+// DIC-1167 (2026-09-29 P0): the scheduler sizes the stage budget from its own
+// run deadline, so on a tight day the stage ends before the tail of the series
+// list. Visiting series in a fixed order would starve the SAME tail every day
+// (hEB01/hPR/specials sit last) — their prices would never refresh and newly
+// listed printings would stay null forever. A non-negative rotation seed
+// (the scheduler passes the epoch day) rotates the VISIT order so every series
+// leads within a few days. Prices are still merged in canonical series order,
+// so the rotation never changes which entry wins downstream. Unset = the
+// historical fixed order.
+function rotationSeedEnv() {
+  const raw = process.env.HUNTERCARD_YUYU_ROTATION_SEED;
+  if (raw == null || !/^\d+$/.test(raw.trim())) return null;
+  return Number.parseInt(raw.trim(), 10);
+}
+
+function rotateSeriesVisitOrder(seriesPages, rotationSeed) {
+  if (!Number.isInteger(rotationSeed) || rotationSeed < 0 || seriesPages.length < 2) return [...seriesPages];
+  const offset = rotationSeed % seriesPages.length;
+  return [...seriesPages.slice(offset), ...seriesPages.slice(0, offset)];
+}
+
 // `timeout` bounds puppeteer.launch's wait for the browser process to start;
 // `protocolTimeout` bounds EVERY CDP call — including the page.evaluate
 // scroll/extraction ops that the per-page navigation/default timeouts do not
@@ -906,6 +927,7 @@ async function scrapeYuyuPrices(options = {}) {
     stageBudgetMs = YUYU_STAGE_BUDGET_MS,
     seriesBudgetMs = YUYU_SERIES_BUDGET_MS,
     launchBudgetMs = YUYU_LAUNCH_BUDGET_MS,
+    rotationSeed = rotationSeedEnv(),
   } = options;
 
   if (process.env.HUNTERCARD_YUYU_FIXTURE_PATH) {
@@ -970,8 +992,11 @@ async function scrapeYuyuPrices(options = {}) {
     }
 
     if (browser) {
-      // Turn a series' scraped cards into allPrices entries. Returns the unique
-      // card count for that series.
+      // Per-series results, merged into allPrices in CANONICAL series order
+      // after the loop so a rotated visit order cannot change entry order.
+      const pricesBySeries = new Map();
+      // Turn a series' scraped cards into per-series price entries. Returns the
+      // unique card count for that series.
       const accumulateCards = (cards, sourceSeries) => {
         const seriesPrices = {};
         for (const card of cards) {
@@ -991,10 +1016,7 @@ async function scrapeYuyuPrices(options = {}) {
           });
         }
         const count = Object.keys(seriesPrices).length;
-        for (const [key, entries] of Object.entries(seriesPrices)) {
-          if (!allPrices[key]) allPrices[key] = [];
-          allPrices[key].push(...entries);
-        }
+        pricesBySeries.set(sourceSeries, seriesPrices);
         return count;
       };
 
@@ -1009,8 +1031,17 @@ async function scrapeYuyuPrices(options = {}) {
       const relaunchBrowser = async (reason) => {
         await disposeBrowser(browser);
         browser = null;
+        // DIC-1167 (2026-09-29): a relaunch may not outlive the stage deadline
+        // the scheduler derived from its run budget — a full launch budget
+        // after expiry would push the build past the external supervisor.
+        const relaunchBudgetMs = Math.min(launchBudgetMs, stageDeadline - nowFn());
+        if (relaunchBudgetMs <= 0) {
+          truncated = true;
+          console.warn(`  → [DIC-1167] yuyu stage wall-clock budget (${stageBudgetMs}ms) exhausted; not relaunching (${reason}) — abandoning remaining series with partial prices`);
+          return false;
+        }
         try {
-          browser = await withWallClock(launchBrowserFn(), launchBudgetMs, `puppeteer relaunch (${reason})`);
+          browser = await withWallClock(launchBrowserFn(), relaunchBudgetMs, `puppeteer relaunch (${reason})`);
           return true;
         } catch (e) {
           truncated = true;
@@ -1019,8 +1050,13 @@ async function scrapeYuyuPrices(options = {}) {
         }
       };
 
+      const visitOrder = rotateSeriesVisitOrder(seriesPages, rotationSeed);
+      if (visitOrder.length > 0 && visitOrder[0] !== seriesPages[0]) {
+        console.log(`[database] DIC-1167 series visit order rotated (seed ${rotationSeed}) — starting at ${visitOrder[0].name}`);
+      }
+
       try {
-        for (const seriesInfo of seriesPages) {
+        for (const seriesInfo of visitOrder) {
           const remainingMs = stageDeadline - nowFn();
           if (remainingMs <= 0) {
             truncated = true;
@@ -1108,6 +1144,15 @@ async function scrapeYuyuPrices(options = {}) {
         }
       } finally {
         await disposeBrowser(browser);
+      }
+
+      for (const seriesInfo of seriesPages) {
+        const seriesPrices = pricesBySeries.get(seriesInfo.name);
+        if (!seriesPrices) continue;
+        for (const [key, entries] of Object.entries(seriesPrices)) {
+          if (!allPrices[key]) allPrices[key] = [];
+          allPrices[key].push(...entries);
+        }
       }
     }
   }
@@ -3152,4 +3197,4 @@ if (process.argv[1]?.includes('build-database')) {
     });
 }
 
-export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage, generateSeriesPages, NO_PAGE_SERIES, scrapeYuyuPrices, scrapeAllWithFetch, LAUNCH_OPTS };
+export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage, generateSeriesPages, NO_PAGE_SERIES, scrapeYuyuPrices, scrapeAllWithFetch, rotateSeriesVisitOrder, LAUNCH_OPTS };

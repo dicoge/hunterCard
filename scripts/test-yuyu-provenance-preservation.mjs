@@ -591,12 +591,12 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
     false,
     'ent07 must still reject a no-image / malformed yuyu URL',
   );
-  // ent07 with a valid /hocg/…/heb01/…jpg URL still passes (its whole point
-  // is the yuyu-scraper aggregation).
+  // CR ab8e4545: a well-formed non-promo /heb01/ URL no longer passes on an
+  // ent07 row — fresh listing matching accepts only the row's own promo pack.
   assert.equal(
     pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10077.jpg' }, 'ent07', 'hBP01-051'),
-    true,
-    'ent07 with a well-formed yuyu URL passes (regardless of product path)',
+    false,
+    'CR ab8e4545: ent07 rejects a well-formed non-promo yuyu URL',
   );
   // hBP04 reprint carve-out: origin-prefix /hbp02/ passes for hBP02-084's hBP04 row.
   assert.equal(
@@ -834,6 +834,54 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
   applyPreservedMarketFields(mixedCurrent, mixed, { matchKind: 'exact-id', preserveYuyuPayload: true });
   assert.equal(mixedCurrent.sellPrice, 9980, 'CR 59661b2b: the ent07 top level derives from the own-family entry only');
   assert.equal(mixedCurrent.yuyuImage, OWN);
+  assert.deepEqual(mixedCurrent.prices.map((entry) => entry.imageUrl), [OWN]);
+}
+
+// CR ab8e4545: the ent07 carve-out still passed every NON-promo image, so a
+// previous hBD24-012_ent07 row carrying a ¥500 /hbp01/ listing was copied onto
+// the unpriced current row although fresh listing matching refuses it. An
+// ent07 row now matches only its own-family known promo pack in both filters.
+{
+  const FOREIGN = 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10012.jpg';
+  const OWN = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10012.jpg';
+  const id = 'hBD24-012_ent07';
+  const prevRow = (imageUrl) => ({
+    id, cardNumber: 'hBD24-012', sourceProduct: 'ent07',
+    sellPrice: 500, yuyuName: 'hBD24-012 P', yuyuImage: imageUrl, timestamp: '2026-09-28T00:00:00Z',
+    prices: [{ name: 'hBD24-012 P', sellPrice: 500, rarity: 'P', imageUrl }],
+    _rawPricesArchive: [{ name: 'hBD24-012 P', sellPrice: 500, rarity: 'P', imageUrl }],
+  });
+  const unpriced = () => ({ id, cardNumber: 'hBD24-012', sourceProduct: 'ent07', sellPrice: null, prices: [] });
+
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'ent07', 'hBD24-012'), false,
+    'CR ab8e4545: a non-promo /hbp01/ entry does not match an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'ent07', 'hBD24-012', { allowOriginPrefix: false }), false,
+    'CR ab8e4545: the strict filter rejects a non-promo entry on an ent07 row');
+  // The reprint origin-prefix carve-out never applies to ent07 either: fresh
+  // matching refuses /hbp01/ on hBP01-051_ent07 too.
+  assert.equal(pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10051.jpg' }, 'ent07', 'hBP01-051'), false,
+    'CR ab8e4545: the cardNumber origin-prefix product does not match an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: OWN }, 'ent07', 'hBD24-012'), true,
+    'CR ab8e4545: the own-family promo pack entry still matches an ent07 row');
+
+  const foreignCurrent = unpriced();
+  const foreignSummary = applyPreservedMarketFields(foreignCurrent, prevRow(FOREIGN), { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(foreignCurrent.sellPrice, null, 'CR ab8e4545: the non-promo ¥500 is not copied onto the unpriced ent07 row');
+  assert.deepEqual(foreignCurrent.prices, [], 'CR ab8e4545: non-promo prices[] are not copied');
+  assert.ok(!foreignCurrent.yuyuImage, 'CR ab8e4545: the /hbp01/ yuyuImage is not copied');
+  assert.ok(!foreignCurrent._rawPricesArchive || foreignCurrent._rawPricesArchive.length === 0,
+    'CR ab8e4545: non-promo _rawPricesArchive is not copied');
+  assert.equal(foreignSummary.sellPrice, false);
+  assert.equal(foreignSummary.prices, false);
+
+  const mixed = prevRow(FOREIGN);
+  mixed.prices = [
+    { name: 'hBD24-012 P', sellPrice: 500, rarity: 'P', imageUrl: FOREIGN },
+    { name: 'hBD24-012 P', sellPrice: 9980, rarity: 'P', imageUrl: OWN },
+  ];
+  const mixedCurrent = unpriced();
+  applyPreservedMarketFields(mixedCurrent, mixed, { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(mixedCurrent.sellPrice, 9980, 'CR ab8e4545: the ent07 top level derives from the own-family entry only');
   assert.deepEqual(mixedCurrent.prices.map((entry) => entry.imageUrl), [OWN]);
 }
 
