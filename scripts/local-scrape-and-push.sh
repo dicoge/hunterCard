@@ -34,6 +34,39 @@ trap 'rm -rf "$LOCK_FILE"' EXIT
 
 echo "[$(date)] Starting hunterCard local scrape..." >> "$LOG_FILE"
 
+# DIC-1167 (2026-09-29 P0): the daily cron invokes this script through an
+# agent terminal whose foreground cap is 600s. The 09-29 run was killed (exit
+# 124) inside the yuyu price build with a complete official catalog on disk:
+# ~417s went to the official scrape plus the YT stats / news steps before any
+# price work, leaving ~180s for a ~410s price build, and a kill emits no
+# signature the official-only fallback can act on. The run now carries its
+# own wall-clock budget, measured from the FIRST stage (stage 1 exports the
+# start so the re-executed stage 2 keeps the same clock), and sizes the yuyu
+# stage budget from what is left, so the price stage ends on its own with
+# partial prices (DIC-1321 exact-print preservation, unknown prices null)
+# instead of the whole run being killed. Raise HUNTERCARD_RUN_BUDGET_SECONDS
+# when invoking without that cap (e.g. a background terminal).
+nonNegIntOr() { if echo "$1" | grep -qE '^[0-9]+$'; then echo "$1"; else echo "$2"; fi; }
+NOW_EPOCH=$(date +%s)
+HUNTERCARD_RUN_STARTED_AT=$(nonNegIntOr "${HUNTERCARD_RUN_STARTED_AT:-}" "$NOW_EPOCH")
+# A start in the future or more than a day old is a leaked env, not this run.
+if [ "$HUNTERCARD_RUN_STARTED_AT" -gt "$NOW_EPOCH" ] || [ $((NOW_EPOCH - HUNTERCARD_RUN_STARTED_AT)) -gt 86400 ]; then
+  HUNTERCARD_RUN_STARTED_AT="$NOW_EPOCH"
+fi
+export HUNTERCARD_RUN_STARTED_AT
+RUN_BUDGET_SECONDS=$(nonNegIntOr "${HUNTERCARD_RUN_BUDGET_SECONDS:-}" 540)
+# Headroom kept after the price stage for the rest of build-database, the
+# signals join, buy-price merge, native generation, gates, commit and push
+# (the 09-28 run spent ~55s there).
+POST_PRICE_RESERVE_SECONDS=$(nonNegIntOr "${HUNTERCARD_POST_PRICE_RESERVE_SECONDS:-}" 90)
+# The YT stats / news signals may run until this many seconds remain.
+POST_SIGNALS_RESERVE_SECONDS=$(nonNegIntOr "${HUNTERCARD_POST_SIGNALS_RESERVE_SECONDS:-}" 60)
+
+# secondsLeftInRun: seconds until the run budget expires (may be negative).
+secondsLeftInRun() {
+  echo $(( RUN_BUDGET_SECONDS - ($(date +%s) - HUNTERCARD_RUN_STARTED_AT) ))
+}
+
 # Every path this run will mutate (kept in one place so the dirty check, the
 # change check and the staging glob all agree).
 SCRAPER_MANAGED_PATHS=(
@@ -268,6 +301,34 @@ officialCatalogFallback() {
   )
 }
 
+# joinSignals <signals-pid> <signals-log>: wait for the background YT stats /
+# news job started beside build-database, but never past the run budget minus
+# POST_SIGNALS_RESERVE_SECONDS. Both steps are non-fatal: an overrun is killed
+# and its possibly half-written outputs restored to HEAD so a torn file can
+# never be committed. Run from inside the pipeline directory.
+joinSignals() {
+  local pid="$1" log="$2" killed=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$(secondsLeftInRun)" -le "$POST_SIGNALS_RESERVE_SECONDS" ]; then
+      pkill -TERM -P "$pid" 2>/dev/null || true
+      kill -TERM "$pid" 2>/dev/null || true
+      killed=1
+      break
+    fi
+    sleep 1
+  done
+  wait "$pid" 2>/dev/null || true
+  cat "$log" >> "$LOG_FILE" 2>/dev/null || true
+  rm -f "$log"
+  if [ "$killed" = "1" ]; then
+    echo "[$(date)] ⚠️ YT stats / news sentiment exceeded the run budget; killed and restored their outputs (non-fatal)" >> "$LOG_FILE"
+    # Separate pathspecs: one unmatched path would abort the whole checkout.
+    git checkout -- data/yt-stats-history.json >> "$LOG_FILE" 2>&1 || true
+    git checkout -- data/news-sentiment >> "$LOG_FILE" 2>&1 || true
+    git clean -fq -- data/news-sentiment >> "$LOG_FILE" 2>&1 || true
+  fi
+}
+
 # runPipeline <workdir> [ <commit-message> ] [ <push-mode> ]: executes steps 1–3
 # (scrape → build → gates → commit → push) inside the given repository working
 # directory. Returns non-zero on any failure up to and including the coverage
@@ -300,15 +361,42 @@ runPipeline() {
     echo "[$(date)] Running official site scraper..." >> "$LOG_FILE"
     node scripts/scrape-official-cards.js >> "$LOG_FILE" 2>&1
 
-    echo "[$(date)] Running YT stats snapshot..." >> "$LOG_FILE"
-    node scripts/scrape-yt-stats.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT stats snapshot failed (non-fatal)" >> "$LOG_FILE"
+    # DIC-1167 (2026-09-29): YT stats + news (~300s of network waits) no longer
+    # sit in front of the price build. They run in the background, in their
+    # original order (both write data/yt-stats-history.json), beside
+    # build-database; joinSignals bounds them, and refresh-yt-stats.mjs then
+    # re-merges ytStats from the final history (build-database's own merge may
+    # have read the history before today's snapshot landed).
+    SIGNALS_LOG=$(mktemp "${TMPDIR:-/tmp}/huntercard-signals.XXXXXX")
+    (
+      echo "[$(date)] Running YT stats snapshot (concurrent with build-database)..."
+      node scripts/scrape-yt-stats.js 2>&1 || echo "[$(date)] ⚠️ YT stats snapshot failed (non-fatal)"
+      echo "[$(date)] Running news sentiment analysis (concurrent with build-database)..."
+      node scripts/scrape-news-sentiment.js 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)"
+    ) > "$SIGNALS_LOG" 2>&1 &
+    SIGNALS_PID=$!
 
-    echo "[$(date)] Running news sentiment analysis..." >> "$LOG_FILE"
-    node scripts/scrape-news-sentiment.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)" >> "$LOG_FILE"
-
-    echo "[$(date)] Running build-database..." >> "$LOG_FILE"
+    RUN_LEFT=$(secondsLeftInRun)
+    YUYU_STAGE_MS=$(( (RUN_LEFT - POST_PRICE_RESERVE_SECONDS) * 1000 ))
+    if [ "$YUYU_STAGE_MS" -lt 1000 ]; then YUYU_STAGE_MS=1000; fi
+    YUYU_STAGE_CAP_MS=$(nonNegIntOr "${HUNTERCARD_YUYU_STAGE_BUDGET_MS:-}" 480000)
+    if [ "$YUYU_STAGE_CAP_MS" -gt 0 ] && [ "$YUYU_STAGE_CAP_MS" -lt "$YUYU_STAGE_MS" ]; then YUYU_STAGE_MS="$YUYU_STAGE_CAP_MS"; fi
+    YUYU_LAUNCH_MS=$(nonNegIntOr "${HUNTERCARD_YUYU_LAUNCH_BUDGET_MS:-}" 45000)
+    if [ "$YUYU_LAUNCH_MS" -eq 0 ] || [ "$YUYU_LAUNCH_MS" -gt "$YUYU_STAGE_MS" ]; then YUYU_LAUNCH_MS="$YUYU_STAGE_MS"; fi
+    YUYU_ROTATION_SEED=$(nonNegIntOr "${HUNTERCARD_YUYU_ROTATION_SEED:-}" $(( $(date +%s) / 86400 )))
+    echo "[$(date)] Running build-database... (DIC-1167 run budget: ${RUN_LEFT}s of ${RUN_BUDGET_SECONDS}s left; yuyu stage ${YUYU_STAGE_MS}ms, launch ${YUYU_LAUNCH_MS}ms, reserve ${POST_PRICE_RESERVE_SECONDS}s, rotation seed ${YUYU_ROTATION_SEED})" >> "$LOG_FILE"
     OFFICIAL_ONLY_FALLBACK=0
-    if ! node scripts/build-database.js >> "$LOG_FILE" 2>&1; then
+    BUILD_OK=1
+    if ! HUNTERCARD_YUYU_STAGE_BUDGET_MS="$YUYU_STAGE_MS" \
+         HUNTERCARD_YUYU_LAUNCH_BUDGET_MS="$YUYU_LAUNCH_MS" \
+         HUNTERCARD_YUYU_ROTATION_SEED="$YUYU_ROTATION_SEED" \
+         node scripts/build-database.js >> "$LOG_FILE" 2>&1; then
+      BUILD_OK=0
+    fi
+
+    joinSignals "$SIGNALS_PID" "$SIGNALS_LOG"
+
+    if [ "$BUILD_OK" != "1" ]; then
       echo "[$(date)] ❌ build-database FAILED" >> "$LOG_FILE"
       if ! officialCatalogFallback "$dir"; then
         echo "[$(date)] ❌ build-database failure could not be recovered by official-only fallback, exiting before downstream mutation/commit" >> "$LOG_FILE"
@@ -318,6 +406,9 @@ runPipeline() {
     fi
 
     if [ "$OFFICIAL_ONLY_FALLBACK" != "1" ]; then
+      echo "[$(date)] Re-merging ytStats from the final yt-stats-history.json..." >> "$LOG_FILE"
+      node scripts/refresh-yt-stats.mjs >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ ytStats refresh failed (non-fatal)" >> "$LOG_FILE"
+
       echo "[$(date)] Running YT subscriber tracker..." >> "$LOG_FILE"
       node scripts/scrape-yt-subscribers.js >> "$LOG_FILE" 2>&1 || echo "[$(date)] ⚠️ YT subscriber tracker failed (non-fatal)" >> "$LOG_FILE"
 
