@@ -272,13 +272,12 @@ export function yuyuPayloadMatchesSource(previous, currentSourceProduct, current
  */
 // DIC-1227 CR follow-up carve-out: yuyu-tei classifies some cards under
 // yuyu-scraper aliases (`ent07` = Entry Pack Vol. 7, etc.) that are NOT
-// official product codes. Their yuyuImage URLs point to whatever product
-// path yuyu-tei has for the card (often /hbp04/, /hbp01/, …). We can't
-// prove cross-product on those rows because the sourceProduct itself is
-// the yuyu-scraper's aggregation label. Filter passes any URL for them —
-// the filter still fails-closed on rows whose sourceProduct IS an
-// official product (hBP01…hSD19, hEB01, hPR, hCO01, hWF01, hCS01,
-// hPC01, hSD2025summer, hYS01).
+// official product codes, so their listings rarely carry an /ent07/ image
+// product path. Their printings carry promo pack images
+// (/promo-hbp10/, /promo-hsd10/, /promo-hbd20/); an ent07 row matches only
+// a known promo pack hosting its own card family (CR 59661b2b), and any
+// other product path (/hbp01/, /heb01/, …) fails closed (CR ab8e4545) —
+// the same rule fresh listing matching applies.
 const NON_OFFICIAL_SOURCE_PRODUCTS = new Set(['ent07']);
 
 // DIC-1227 CR follow-up: hPR is a PROMO product — its rows represent standalone
@@ -318,11 +317,16 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
   // increase gate skips rows already priced in the previous artifact. A
   // promo-* image on an ent07 row now needs a known pack hosting the row's
   // family; an unknown pack or a missing cardNumber fails closed.
-  if (NON_OFFICIAL_SOURCE_PRODUCTS.has(src)) {
-    if (urlProd.startsWith('promo-')) return promoPathMatchesCardNumber(urlProd, currentCardNumber);
-    return true;
-  }
+  // CR ab8e4545: a non-promo image still passed here, so a previous
+  // hBD24-012_ent07 row carrying a ¥500 /hbp01/ listing was copied onto the
+  // unpriced current row although fresh matching (`listingImageProvesPrinting`)
+  // refuses it. A non-promo image proves no ent07 printing — not even through
+  // the reprint origin-prefix carve-out, which fresh matching never applies.
+  // Only an exact /ent07/ product path still matches, as it does fresh.
   if (urlProd === src) return true;
+  if (NON_OFFICIAL_SOURCE_PRODUCTS.has(src)) {
+    return isKnownPromoPath(urlProd) && promoPathMatchesCardNumber(urlProd, currentCardNumber);
+  }
   if (promoPathProvesHprPrinting(urlProd, src, currentCardNumber)) return true;
   // Reprint carve-out (non-promo sourceProduct only): allow the entry whose
   // URL matches the cardNumber's origin-product prefix. This keeps a
@@ -347,9 +351,9 @@ export function pricesEntryMatchesSource(entry, currentSourceProduct, currentCar
  *     ≠ sourceProduct) — the reason a fresh hBP04 reprint currently
  *     ships priceHistory when its only evidence is an hBP02-origin
  *     entry, i.e. the exact FAIL Mac-Codex flagged;
- *   - the `NON_OFFICIAL_SOURCE_PRODUCTS` (ent07) pass-any-URL carve-out,
- *     which lets a scraper-aggregation label vouch for any URL product
- *     path even though the row's own printing is not identified.
+ *   - the `NON_OFFICIAL_SOURCE_PRODUCTS` (ent07) own-family promo pack
+ *     carve-out, which lets a scraper-aggregation label vouch for a promo
+ *     pack image even though the row's own printing is not identified.
  * Only two shapes qualify here:
  *   (i) URL product path equals `sourceProduct` (exact-print match), or
  *   (ii) URL product path is a KNOWN promo pack AND `sourceProduct` is
