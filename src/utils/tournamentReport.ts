@@ -463,6 +463,10 @@ export interface DecklogApiCard {
   num?: number;
   type?: number;
   rare?: string | null;
+  // Printing image path, e.g. "hBP01/hBP01-021_C.png" vs the hEB01 reprint
+  // "hEB01/hBP01-021_C_02.png". Read only to prove two rows of one card number
+  // are different printings (DIC-1494); never stored.
+  img?: string | null;
 }
 
 export interface DecklogApiDeck {
@@ -499,11 +503,21 @@ export function zoneFromDecklogList(
 /** Map a Deck Log view-API response into normalized, zoned deck cards. Throws on
  * the first unreadable slot (missing card number, unreadable copy count, or a
  * list/type mismatch) so a half-parsed deck can never silently become a
- * "verified" one. */
+ * "verified" one.
+ *
+ * DIC-1494: Deck Log lists each PRINTING of a card number as its own row — deck
+ * 108R5W runs hBP01-021 as a P promo, the hBP01 C and the hEB01 C reprint. A
+ * slot's identity is (zone, cardNumber) (DIC-1036), so rows that the source
+ * itself proves are different printings — every row carries a distinct `img` —
+ * are one slot with their copies summed. Its version keeps the grade only when
+ * all rows agree; mixed grades have no single source grade, so it is null.
+ * Rows that repeat an `img`, or lack one, are NOT merged: they stay separate
+ * slots and the duplicate-slot gate still rejects the deck. */
 export function cardsFromDecklog(deck: DecklogApiDeck | null | undefined): DeckCardRef[] {
   if (!deck) throw new Error('empty Deck Log response');
   const out: DeckCardRef[] = [];
   for (const { key, zone, type } of ZONE_BY_DECKLOG_LIST) {
+    const rows: Array<{ ref: DeckCardRef; img: string }> = [];
     for (const raw of (deck[key] as DecklogApiCard[] | null) ?? []) {
       const cardNumber = String(raw.card_number ?? '').trim();
       if (!cardNumber) {
@@ -522,13 +536,42 @@ export function cardsFromDecklog(deck: DecklogApiDeck | null | undefined): DeckC
           `Deck Log ${String(key)} slot ${cardNumber} has no readable copy count (num=${JSON.stringify(raw.num)})`,
         );
       }
-      out.push({
-        zone,
-        cardNumber,
-        version: (raw.rare ?? '').trim() || null,
-        count: raw.num,
+      rows.push({
+        ref: {
+          zone,
+          cardNumber,
+          version: (raw.rare ?? '').trim() || null,
+          count: raw.num,
+        },
+        img: typeof raw.img === 'string' ? raw.img.trim() : '',
       });
     }
+    out.push(...mergeDistinctPrintings(rows));
+  }
+  return out;
+}
+
+function mergeDistinctPrintings(rows: Array<{ ref: DeckCardRef; img: string }>): DeckCardRef[] {
+  const byNumber = new Map<string, Array<{ ref: DeckCardRef; img: string }>>();
+  for (const row of rows) {
+    const group = byNumber.get(row.ref.cardNumber) ?? [];
+    group.push(row);
+    byNumber.set(row.ref.cardNumber, group);
+  }
+  const out: DeckCardRef[] = [];
+  for (const group of byNumber.values()) {
+    const imgs = group.map((r) => r.img);
+    const provenDistinct = imgs.every(Boolean) && new Set(imgs).size === imgs.length;
+    if (group.length === 1 || !provenDistinct) {
+      out.push(...group.map((r) => r.ref));
+      continue;
+    }
+    const versions = new Set(group.map((r) => r.ref.version));
+    out.push({
+      ...group[0].ref,
+      version: versions.size === 1 ? group[0].ref.version : null,
+      count: group.reduce((n, r) => n + r.ref.count, 0),
+    });
   }
   return out;
 }
@@ -637,4 +680,96 @@ export function classifyFreshness(
   if (!k) return 'newer';
   if (d[1] === k[1]) return 'same';
   return d[1] > k[1] ? 'newer' : 'older';
+}
+
+/**
+ * DIC-1494: what a newly discovered official post actually contains. The
+ * official news category the collector polls (16 = イチ推し！デッキ紹介) mixes
+ * two kinds of column plus the occasional non-column post:
+ *   • event pick-ups ("注目デッキピックアップ", vol.10 / vol.12) that name
+ *     players and their placements — real tournament results to curate;
+ *   • set-release sample recipes from the dev team ("サンプルレシピ", vol.9 /
+ *     vol.11 / vol.13) and posts like the producer letter — no event, no
+ *     player, no placement.
+ * Only the first kind may demand `events[]` curation; demanding it for the
+ * second would require inventing event data. Classification is fail-closed:
+ * a post is exempted ONLY on positive evidence that it carries no results,
+ * placement markers win over every exemption, and anything unreadable or
+ * unrecognised stays 'unknown' — which the collector treats exactly like
+ * 'tournament-results' (stub + non-zero exit), never as "nothing to do".
+ */
+export type OfficialPostKind = 'tournament-results' | 'no-tournament-results' | 'unknown';
+
+export interface OfficialPostClassification {
+  kind: OfficialPostKind;
+  reason: string;
+}
+
+// Placement tokens the official columns print next to a player credit:
+// 「予選8位 まっさん3297選手」, 「AJI選手 （個人戦Bブロック入賞）」,
+// 「おかぱふマン(ぱねぱね)選手 （トリオバトルBブロック優勝）」.
+const PLACEMENT = String.raw`(?:準?優勝|入賞|\d+\s*位|ベスト\s*\d+|TOP\s*\d+)`;
+const PLAYER_PLACEMENT_RE = new RegExp(
+  String.raw`選手.{0,40}?${PLACEMENT}|${PLACEMENT}.{0,40}?選手`,
+  'i',
+);
+const SAMPLE_RECIPE_RE = /サンプルレシピ/;
+const DECK_COLUMN_TITLE_RE = /デッキ紹介/;
+// Below this, the "article" is an error page / empty shell, not a column we
+// can prove anything about.
+const MIN_ARTICLE_TEXT_LENGTH = 200;
+
+/** Visible text of an official news page, whitespace-collapsed. Narrowed to
+ * the article body (between the NEWS heading and the back-to-list link) when
+ * both markers are present; otherwise the whole page, which only makes the
+ * placement check stricter. */
+export function officialArticleText(html: string): string {
+  const text = String(html ?? '')
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+  const start = text.indexOf('ーニュースー');
+  const end = text.indexOf('一覧にもどる');
+  return start >= 0 && end > start ? text.slice(start, end).trim() : text;
+}
+
+export function classifyOfficialPost(
+  title: string | null | undefined,
+  articleText: string | null | undefined,
+): OfficialPostClassification {
+  const text = String(articleText ?? '');
+  const heading = String(title ?? '');
+  const placement = PLAYER_PLACEMENT_RE.exec(text);
+  if (placement) {
+    return {
+      kind: 'tournament-results',
+      reason: `player placement published: 「${placement[0].trim()}」`,
+    };
+  }
+  if (text.length < MIN_ARTICLE_TEXT_LENGTH) {
+    return { kind: 'unknown', reason: 'article body unavailable or too short to classify' };
+  }
+  if (SAMPLE_RECIPE_RE.test(text)) {
+    return {
+      kind: 'no-tournament-results',
+      reason: 'sample-recipe column (サンプルレシピ) with no player placement',
+    };
+  }
+  if (heading && !DECK_COLUMN_TITLE_RE.test(heading)) {
+    return {
+      kind: 'no-tournament-results',
+      reason: 'not a deck-showcase column and no player placement',
+    };
+  }
+  return {
+    kind: 'unknown',
+    reason: 'deck-showcase column with neither a player placement nor a sample-recipe marker',
+  };
 }
