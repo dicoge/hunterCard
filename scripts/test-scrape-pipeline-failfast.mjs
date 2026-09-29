@@ -82,6 +82,13 @@ if [[ "$*" == *"build-database.js"* ]]; then
   if [ -n "$BUILD_SLEEP" ]; then sleep "$BUILD_SLEEP"; fi
   echo "BUILD_FINISHED" >> "$TRACE_FILE"
 fi
+# CR 9e78edfc: "trap" models a writer still flushing its output after TERM,
+# "ignore" one that ignores TERM entirely (only KILL stops it).
+if [[ "$*" == *"scrape-news-sentiment.js"* ]] && [ "$SIGNALS_HANG" = "trap" ]; then
+  trap 'sleep 1; echo "{\"torn\":1}" > data/yt-stats-history.json; echo WRITER_EXIT >> "$TRACE_FILE"; exit 0' TERM
+  while :; do sleep 0.1; done
+fi
+if [[ "$*" == *"scrape-news-sentiment.js"* ]] && [ "$SIGNALS_HANG" = "ignore" ]; then trap '' TERM; exec sleep 30; fi
 if [[ "$*" == *"scrape-news-sentiment.js"* ]] && [ -n "$SIGNALS_HANG" ]; then exec sleep 30; fi
 if [ -n "$FAIL_ON" ] && [[ "$*" == *"$FAIL_ON"* ]]; then
   if [[ "$*" == *"build-database.js"* ]] && [ -n "$BUILD_DIC1334_COLLAPSE" ]; then
@@ -197,6 +204,7 @@ exit 0
       HUNTERCARD_YUYU_ROTATION_SEED: '',
       BUILD_SLEEP: env.BUILD_SLEEP ?? '',
       SIGNALS_HANG: env.SIGNALS_HANG ?? '',
+      HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS: env.HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS ?? '',
     },
     encoding: 'utf-8',
   });
@@ -728,13 +736,44 @@ for (const gate of ['test:buy-price', 'test:buy-price-regen']) {
   assert.strictEqual(status, 0, `a killed signals job is non-fatal: ${log.slice(-800)}`);
   assert.ok(elapsed < 20000, `hung signals must be bounded by the run budget, took ${elapsed}ms`);
   assert.match(lines.find((l) => l.startsWith('BUILD_ENV ')) ?? '', /stage=1000 launch=1000 /, 'exhausted run budget floors the yuyu stage and clamps launch to it');
-  assert.match(log, /exceeded the run budget; killed and restored/, 'overrun must be logged');
+  assert.match(log, /exceeded the run budget; killed, all writers exited, restored/, 'overrun must be logged');
   for (const restored of ['git checkout -- data/yt-stats-history.json', 'git checkout -- data/news-sentiment', 'git clean -fq -- data/news-sentiment']) {
     assert.ok(indexOfCall(lines, restored) !== -1, `overrun outputs must be restored (${restored})`);
   }
   for (const required of ['refresh-yt-stats.mjs', 'generate-native-database.mjs --check', 'npm run test:market-fields', 'commit -m']) {
     assert.ok(indexOfCall(lines, required) !== -1, `run must still reach ${required}`);
   }
+}
+{
+  // CR 9e78edfc: a writer that is still flushing yt-stats-history.json when
+  // TERM lands must have exited before its outputs are restored — otherwise
+  // its late write survives the restore and reaches the commit.
+  const { status, lines, log } = runPipeline({
+    env: { SIGNALS_HANG: 'trap', HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000) },
+  });
+  assert.strictEqual(status, 0, `a killed signals job is non-fatal: ${log.slice(-800)}`);
+  const writerExit = lines.indexOf('WRITER_EXIT');
+  const restore = indexOfCall(lines, 'git checkout -- data/yt-stats-history.json');
+  assert.ok(writerExit !== -1, `the TERM-handling writer must be signalled: ${lines.join(' | ')}`);
+  assert.ok(restore > writerExit, `outputs must be restored only after the writer exited: ${lines.join(' | ')}`);
+  assert.ok(indexOfCall(lines, 'commit -m') > restore, 'commit follows the restore');
+}
+{
+  // CR 9e78edfc: a writer that ignores TERM is KILLed after the grace period
+  // and awaited before the restore; the run stays bounded and non-fatal.
+  const t0 = Date.now();
+  const { status, lines, log } = runPipeline({
+    env: {
+      SIGNALS_HANG: 'ignore',
+      HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS: '1',
+      HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000),
+    },
+  });
+  const elapsed = Date.now() - t0;
+  assert.strictEqual(status, 0, `a KILLed signals job is non-fatal: ${log.slice(-800)}`);
+  assert.ok(elapsed < 20000, `a TERM-ignoring writer must be KILLed after the grace, took ${elapsed}ms`);
+  assert.match(log, /killed, all writers exited, restored/, 'restore only after the whole group is gone');
+  assert.ok(indexOfCall(lines, 'git checkout -- data/yt-stats-history.json') !== -1, 'outputs restored after KILL');
 }
 {
   // A leaked start from another day is not this run's clock.

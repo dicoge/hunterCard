@@ -61,6 +61,8 @@ RUN_BUDGET_SECONDS=$(nonNegIntOr "${HUNTERCARD_RUN_BUDGET_SECONDS:-}" 540)
 POST_PRICE_RESERVE_SECONDS=$(nonNegIntOr "${HUNTERCARD_POST_PRICE_RESERVE_SECONDS:-}" 90)
 # The YT stats / news signals may run until this many seconds remain.
 POST_SIGNALS_RESERVE_SECONDS=$(nonNegIntOr "${HUNTERCARD_POST_SIGNALS_RESERVE_SECONDS:-}" 60)
+# After TERM, the signals writers get this long to exit before KILL.
+SIGNALS_KILL_GRACE_SECONDS=$(nonNegIntOr "${HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS:-}" 5)
 
 # secondsLeftInRun: seconds until the run budget expires (may be negative).
 secondsLeftInRun() {
@@ -306,22 +308,53 @@ officialCatalogFallback() {
 # POST_SIGNALS_RESERVE_SECONDS. Both steps are non-fatal: an overrun is killed
 # and its possibly half-written outputs restored to HEAD so a torn file can
 # never be committed. Run from inside the pipeline directory.
+#
+# The job runs in its own process group (pgid = <signals-pid>), so the kill
+# reaches the subshell AND whichever writer it is running (or forking) in one
+# signal, and the outputs are restored only once no member of the group is left
+# alive — a writer still flushing yt-stats-history.json / news-sentiment after
+# the restore would otherwise leave a torn file for the commit (CR 9e78edfc).
+# Returns non-zero (fail closed) if the writers cannot be proven stopped.
 joinSignals() {
-  local pid="$1" log="$2" killed=0
+  local pid="$1" log="$2" killed=0 ticks=0
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$(secondsLeftInRun)" -le "$POST_SIGNALS_RESERVE_SECONDS" ]; then
-      pkill -TERM -P "$pid" 2>/dev/null || true
-      kill -TERM "$pid" 2>/dev/null || true
-      killed=1
+      if kill -TERM -- "-$pid" 2>/dev/null; then
+        killed=1
+      elif kill -0 "$pid" 2>/dev/null; then
+        # The job is alive but has no process group of its own: its writers
+        # cannot be signalled or awaited as a unit, so their outputs cannot
+        # be restored safely.
+        echo "[$(date)] ❌ YT stats / news sentiment job has no own process group; cannot prove its writers stopped. Not pushing; cron must fail." >> "$LOG_FILE"
+        kill -TERM "$pid" 2>/dev/null || true
+        cat "$log" >> "$LOG_FILE" 2>/dev/null || true
+        rm -f "$log"
+        return 1
+      fi
       break
     fi
     sleep 1
   done
+  if [ "$killed" = "1" ]; then
+    # 5 ticks per second: TERM grace, then KILL, then the same again for the
+    # KILLed processes (plus 2s) to be gone before giving up.
+    while kill -0 -- "-$pid" 2>/dev/null; do
+      if [ "$ticks" -ge $(( SIGNALS_KILL_GRACE_SECONDS * 10 + 10 )) ]; then
+        echo "[$(date)] ❌ YT stats / news sentiment writers still alive after TERM+KILL; cannot restore their outputs safely. Not pushing; cron must fail." >> "$LOG_FILE"
+        return 1
+      fi
+      if [ "$ticks" -ge $(( SIGNALS_KILL_GRACE_SECONDS * 5 )) ]; then
+        kill -KILL -- "-$pid" 2>/dev/null || true
+      fi
+      sleep 0.2
+      ticks=$((ticks + 1))
+    done
+  fi
   wait "$pid" 2>/dev/null || true
   cat "$log" >> "$LOG_FILE" 2>/dev/null || true
   rm -f "$log"
   if [ "$killed" = "1" ]; then
-    echo "[$(date)] ⚠️ YT stats / news sentiment exceeded the run budget; killed and restored their outputs (non-fatal)" >> "$LOG_FILE"
+    echo "[$(date)] ⚠️ YT stats / news sentiment exceeded the run budget; killed, all writers exited, restored their outputs (non-fatal)" >> "$LOG_FILE"
     # Separate pathspecs: one unmatched path would abort the whole checkout.
     git checkout -- data/yt-stats-history.json >> "$LOG_FILE" 2>&1 || true
     git checkout -- data/news-sentiment >> "$LOG_FILE" 2>&1 || true
@@ -368,13 +401,17 @@ runPipeline() {
     # re-merges ytStats from the final history (build-database's own merge may
     # have read the history before today's snapshot landed).
     SIGNALS_LOG=$(mktemp "${TMPDIR:-/tmp}/huntercard-signals.XXXXXX")
+    # Job control only for this spawn: the job gets its own process group so
+    # joinSignals can kill and await every writer in it (CR 9e78edfc).
+    set -m
     (
       echo "[$(date)] Running YT stats snapshot (concurrent with build-database)..."
       node scripts/scrape-yt-stats.js 2>&1 || echo "[$(date)] ⚠️ YT stats snapshot failed (non-fatal)"
       echo "[$(date)] Running news sentiment analysis (concurrent with build-database)..."
       node scripts/scrape-news-sentiment.js 2>&1 || echo "[$(date)] ⚠️ News sentiment analysis failed (non-fatal)"
-    ) > "$SIGNALS_LOG" 2>&1 &
+    ) > "$SIGNALS_LOG" 2>&1 < /dev/null &
     SIGNALS_PID=$!
+    set +m
 
     RUN_LEFT=$(secondsLeftInRun)
     YUYU_STAGE_MS=$(( (RUN_LEFT - POST_PRICE_RESERVE_SECONDS) * 1000 ))
@@ -394,7 +431,10 @@ runPipeline() {
       BUILD_OK=0
     fi
 
-    joinSignals "$SIGNALS_PID" "$SIGNALS_LOG"
+    if ! joinSignals "$SIGNALS_PID" "$SIGNALS_LOG"; then
+      echo "[$(date)] ❌ signals join failed closed, exiting before downstream mutation/commit" >> "$LOG_FILE"
+      return 1
+    fi
 
     if [ "$BUILD_OK" != "1" ]; then
       echo "[$(date)] ❌ build-database FAILED" >> "$LOG_FILE"
