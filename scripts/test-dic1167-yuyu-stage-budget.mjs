@@ -21,6 +21,10 @@
 //   (f3) a series that loads but yields ZERO cards (challenge page, changed
 //       markup) marks the scrape truncated on both the fetch fallback and
 //       the puppeteer path (CR cbad0ba6);
+//   (g) 2026-09-29: a relaunch after the stage deadline is NOT attempted (a
+//       full launch budget would outlive the scheduler's run budget), and a
+//       rotation seed rotates the VISIT order while prices still merge in
+//       canonical series order (tight-budget days cannot starve one tail);
 //   (e) end-to-end: a real `node scripts/build-database.js` run with a
 //       fault-injected forever-hanging yuyu stage still exits 0 within budget,
 //       publishes the full official catalog, and preserves previously
@@ -32,7 +36,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { scrapeYuyuPrices, scrapeAllWithFetch, LAUNCH_OPTS } from './build-database.js';
+import { scrapeYuyuPrices, scrapeAllWithFetch, rotateSeriesVisitOrder, LAUNCH_OPTS } from './build-database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -368,6 +372,75 @@ const fetchStub = () => async () => ({ prices: {}, fetchedCards: 0, seriesFetche
   });
   assert.equal(clean.truncated, false, 'every series non-empty → not truncated');
   console.log('✅ (f3) zero-card series marks the scrape truncated (fetch + puppeteer)');
+}
+
+// ─── (g) relaunch respects the stage deadline; rotation keeps canonical merge ─
+{
+  // (g1) the hang consumes the whole remaining stage budget, so the relaunch
+  // that would follow must be skipped rather than granted a fresh launch budget.
+  let launches = 0;
+  const t0 = Date.now();
+  const result = await scrapeYuyuPrices({
+    launchBrowserFn: async () => {
+      launches++;
+      if (launches > 1) return new Promise(() => {});
+      return fakeBrowser();
+    },
+    scrapeSeriesPageFn: (browser, url) =>
+      url.endsWith('/hang') ? new Promise(() => {}) : Promise.resolve(cardsFor('hBP01-001')),
+    seriesPages: [
+      { name: 'ok1', url: '/ok1' },
+      { name: 'hang', url: '/hang' },
+      { name: 'never', url: '/never' },
+    ],
+    sleepFn: async () => {},
+    fetchAllFn: fetchStub(),
+    seriesBudgetMs: 60_000,
+    stageBudgetMs: 300,
+    launchBudgetMs: 60_000,
+  });
+  const elapsed = Date.now() - t0;
+  assert.equal(launches, 1, 'no relaunch may start once the stage deadline has passed');
+  assert.ok(elapsed < 3_000, `stage must end at its deadline, not after a fresh launch budget (took ${elapsed}ms)`);
+  assert.equal(result.truncated, true);
+  assert.deepEqual(Object.keys(result.prices), ['hBP01-001']);
+
+  // (g2) rotation helper
+  const pages = ['a', 'b', 'c', 'd'].map((name) => ({ name, url: `/${name}` }));
+  assert.deepEqual(rotateSeriesVisitOrder(pages, null).map((p) => p.name), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(rotateSeriesVisitOrder(pages, 6).map((p) => p.name), ['c', 'd', 'a', 'b']);
+
+  // (g3) rotated visit order, canonical merge order for a cardNumber listed by
+  // two series; the stage ends after two visits so the rotated head is priced
+  // and the canonical head is not.
+  const visited = [];
+  let clock = 0;
+  const rotated = await scrapeYuyuPrices({
+    launchBrowserFn: async () => fakeBrowser(),
+    scrapeSeriesPageFn: async (browser, url) => {
+      const name = url.slice(url.lastIndexOf('/') + 1);
+      visited.push(name);
+      clock += 100;
+      return [{ ...cardsFor('hPR-001')[0], sellPrice: name.length * 100, rarity: name }];
+    },
+    seriesPages: [
+      { name: 'hBP01', url: '/hBP01' },
+      { name: 'hEB01', url: '/hEB01' },
+      { name: 'hPR', url: '/hPR' },
+    ],
+    sleepFn: async () => {},
+    nowFn: () => clock,
+    fetchAllFn: async () => { throw new Error('fetch fallback must not run'); },
+    seriesBudgetMs: 1_000,
+    stageBudgetMs: 200,
+    launchBudgetMs: 1_000,
+    rotationSeed: 1,
+  });
+  assert.deepEqual(visited, ['hEB01', 'hPR'], 'seed 1 starts the visit at the second series');
+  assert.deepEqual(rotated.prices['hPR-001'].map((e) => e.sourceSeries), ['hEB01', 'hPR'],
+    'entries merge in canonical series order regardless of visit order');
+  assert.equal(rotated.truncated, true, 'the unvisited canonical head marks the scrape truncated');
+  console.log('✅ (g) relaunch bounded by stage deadline; rotation visits tail first, merges canonically');
 }
 
 // ─── (e) E2E: real build with a hung price stage exits 0 within budget ──────
