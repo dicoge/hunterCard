@@ -75,6 +75,21 @@ function runPipeline({ failOn = null, env = {} } = {}) {
     path.join(bin, 'node'),
     `#!/bin/bash
 echo "node $*" >> "$TRACE_FILE"
+# DIC-1167 (2026-09-29): record the run-budget env handed to build-database and
+# model a slow build / hung news step so signal concurrency is observable.
+if [[ "$*" == *"build-database.js"* ]]; then
+  echo "BUILD_ENV stage=$HUNTERCARD_YUYU_STAGE_BUDGET_MS launch=$HUNTERCARD_YUYU_LAUNCH_BUDGET_MS seed=$HUNTERCARD_YUYU_ROTATION_SEED" >> "$TRACE_FILE"
+  if [ -n "$BUILD_SLEEP" ]; then sleep "$BUILD_SLEEP"; fi
+  echo "BUILD_FINISHED" >> "$TRACE_FILE"
+fi
+# CR 9e78edfc: "trap" models a writer still flushing its output after TERM,
+# "ignore" one that ignores TERM entirely (only KILL stops it).
+if [[ "$*" == *"scrape-news-sentiment.js"* ]] && [ "$SIGNALS_HANG" = "trap" ]; then
+  trap 'sleep 1; echo "{\"torn\":1}" > data/yt-stats-history.json; echo WRITER_EXIT >> "$TRACE_FILE"; exit 0' TERM
+  while :; do sleep 0.1; done
+fi
+if [[ "$*" == *"scrape-news-sentiment.js"* ]] && [ "$SIGNALS_HANG" = "ignore" ]; then trap '' TERM; exec sleep 30; fi
+if [[ "$*" == *"scrape-news-sentiment.js"* ]] && [ -n "$SIGNALS_HANG" ]; then exec sleep 30; fi
 if [ -n "$FAIL_ON" ] && [[ "$*" == *"$FAIL_ON"* ]]; then
   if [[ "$*" == *"build-database.js"* ]] && [ -n "$BUILD_DIC1334_COLLAPSE" ]; then
     echo "[DIC-1334] final canonical artifact collapsed priced-cardNumber coverage: scraped 1219 priced cardNumbers but final artifact only has 424 (< 50% floor 609). A transformation discarded yuyu price data; refusing to ship."
@@ -150,6 +165,15 @@ if [ "$cmd" = "worktree" ]; then
   exit 0
 fi
 if [ "$cmd" = "commit" ]; then touch "$COMMIT_MARKER"; exit 0; fi
+# CR 367fad3a: model a signals restore that does not take. "dirty" = checkout
+# fails and the output still differs from HEAD; "status" = the postcondition
+# cannot be read; "unmatched" = checkout fails (path absent from HEAD) yet
+# nothing is left to commit.
+if [ -n "$RESTORE_FAIL" ] && [[ "$*" == *"data/yt-stats-history.json"* || "$*" == *"data/news-sentiment"* ]]; then
+  if [ "$cmd" = "checkout" ]; then echo "error: pathspec did not match" >&2; exit 1; fi
+  if [ "$cmd" = "status" ] && [ "$RESTORE_FAIL" = "dirty" ]; then echo " M data/yt-stats-history.json"; exit 0; fi
+  if [ "$cmd" = "status" ] && [ "$RESTORE_FAIL" = "status" ]; then echo "fatal: index file corrupt" >&2; exit 128; fi
+fi
 if [ "$cmd" = "diff" ] && [[ "$*" == *"--stat"* ]] && [ -z "$NO_CHANGES" ]; then echo " data/database.json | 2 +-"; fi
 if [ "$cmd" = "diff" ]; then exit 0; fi
 exit 0
@@ -179,13 +203,27 @@ exit 0
       HUNTERCARD_ISOLATED_DIR: path.join(dir, 'forced-worktree'),
       // Never touch the real cron lock at /tmp/huntercard-scrape.lock.
       HUNTERCARD_LOCK_FILE: path.join(dir, 'scrape.lock'),
+      // DIC-1167 (2026-09-29): run-budget knobs (never inherited from the caller).
+      HUNTERCARD_RUN_STARTED_AT: env.HUNTERCARD_RUN_STARTED_AT ?? '',
+      HUNTERCARD_RUN_BUDGET_SECONDS: env.HUNTERCARD_RUN_BUDGET_SECONDS ?? '',
+      HUNTERCARD_POST_PRICE_RESERVE_SECONDS: env.HUNTERCARD_POST_PRICE_RESERVE_SECONDS ?? '',
+      HUNTERCARD_POST_SIGNALS_RESERVE_SECONDS: env.HUNTERCARD_POST_SIGNALS_RESERVE_SECONDS ?? '',
+      HUNTERCARD_YUYU_STAGE_BUDGET_MS: '',
+      HUNTERCARD_YUYU_LAUNCH_BUDGET_MS: '',
+      HUNTERCARD_YUYU_ROTATION_SEED: '',
+      BUILD_SLEEP: env.BUILD_SLEEP ?? '',
+      SIGNALS_HANG: env.SIGNALS_HANG ?? '',
+      RESTORE_FAIL: env.RESTORE_FAIL ?? '',
+      HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS: env.HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS ?? '',
     },
     encoding: 'utf-8',
   });
 
   const lines = fs.readFileSync(trace, 'utf-8').split('\n').filter(Boolean);
+  const logDir = path.join(dir, '.hermes', 'logs');
+  const log = fs.existsSync(logDir) ? fs.readdirSync(logDir).map((f) => fs.readFileSync(path.join(logDir, f), 'utf-8')).join('') : '';
   fs.rmSync(dir, { recursive: true, force: true });
-  return { status: result.status, lines };
+  return { status: result.status, lines, log };
 }
 
 const indexOfCall = (lines, needle) => lines.findIndex((l) => l.includes(needle));
@@ -669,6 +707,117 @@ for (const gate of ['test:buy-price', 'test:buy-price-regen']) {
     MALFORMED_DB,
     'a failed merge must leave data/database.json untouched rather than half-written',
   );
+}
+
+// ── 5. DIC-1167 (2026-09-29): run budget sizes the yuyu stage; signals run beside the build ──
+{
+  const startedAt = Date.now();
+  const { status, lines } = runPipeline({
+    env: { BUILD_SLEEP: '2', HUNTERCARD_RUN_BUDGET_SECONDS: '300', HUNTERCARD_POST_PRICE_RESERVE_SECONDS: '100' },
+  });
+  assert.strictEqual(status, 0, 'pipeline must succeed with the run budget in place');
+  const envLine = lines.find((l) => l.startsWith('BUILD_ENV '));
+  assert.ok(envLine, 'build-database must receive the run-budget env');
+  const [, stage, launch, seed] = envLine.match(/stage=(\d+) launch=(\d+) seed=(\d+)/) ?? [];
+  assert.ok(Number(stage) <= 200000 && Number(stage) >= 180000, `yuyu stage budget must be (300s budget - elapsed - 100s reserve), got ${envLine}`);
+  assert.strictEqual(Number(launch), 45000, 'launch budget keeps its default when below the stage budget');
+  assert.strictEqual(Number(seed), Math.floor(startedAt / 86400000), 'rotation seed is the UTC day number');
+
+  const yt = indexOfCall(lines, 'scrape-yt-stats.js');
+  const news = indexOfCall(lines, 'scrape-news-sentiment.js');
+  const buildDone = lines.indexOf('BUILD_FINISHED');
+  const refresh = indexOfCall(lines, 'refresh-yt-stats.mjs');
+  const native = indexOfCall(lines, 'generate-native-database.mjs');
+  assert.ok(yt !== -1 && news !== -1 && buildDone !== -1 && refresh !== -1, `signals/build/refresh must all run: ${lines.join(' | ')}`);
+  assert.ok(yt < news, 'YT stats must still run before news sentiment (both write yt-stats-history.json)');
+  assert.ok(news < buildDone, 'YT stats and news must run concurrently with build-database, not before/after it');
+  assert.ok(buildDone < refresh && refresh < native, 'ytStats must be re-merged after the build and before native generation');
+  assert.ok(refresh < indexOfCall(lines, 'scrape-yt-subscribers.js'), 'ytStats re-merge precedes downstream steps');
+}
+{
+  // Budget already spent (e.g. slow official scrape) and a hung news step: the
+  // yuyu stage gets the 1s floor, the hung signal is killed, and the run still
+  // completes through every fail-closed gate instead of being killed from outside.
+  const t0 = Date.now();
+  const { status, lines, log } = runPipeline({
+    env: { SIGNALS_HANG: '1', HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000) },
+  });
+  const elapsed = Date.now() - t0;
+  assert.strictEqual(status, 0, `a killed signals job is non-fatal: ${log.slice(-800)}`);
+  assert.ok(elapsed < 20000, `hung signals must be bounded by the run budget, took ${elapsed}ms`);
+  assert.match(lines.find((l) => l.startsWith('BUILD_ENV ')) ?? '', /stage=1000 launch=1000 /, 'exhausted run budget floors the yuyu stage and clamps launch to it');
+  assert.match(log, /exceeded the run budget; killed, all writers exited, restoring/, 'overrun must be logged');
+  assert.match(log, /outputs restored to HEAD \(non-fatal\)/, 'a verified restore is non-fatal');
+  for (const restored of ['git checkout -- data/yt-stats-history.json', 'git checkout -- data/news-sentiment', 'git clean -fq -- data/yt-stats-history.json data/news-sentiment', 'git status --porcelain --untracked-files=all -- data/yt-stats-history.json data/news-sentiment']) {
+    assert.ok(indexOfCall(lines, restored) !== -1, `overrun outputs must be restored (${restored})`);
+  }
+  for (const required of ['refresh-yt-stats.mjs', 'generate-native-database.mjs --check', 'npm run test:market-fields', 'commit -m']) {
+    assert.ok(indexOfCall(lines, required) !== -1, `run must still reach ${required}`);
+  }
+}
+{
+  // CR 9e78edfc: a writer that is still flushing yt-stats-history.json when
+  // TERM lands must have exited before its outputs are restored — otherwise
+  // its late write survives the restore and reaches the commit.
+  const { status, lines, log } = runPipeline({
+    env: { SIGNALS_HANG: 'trap', HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000) },
+  });
+  assert.strictEqual(status, 0, `a killed signals job is non-fatal: ${log.slice(-800)}`);
+  const writerExit = lines.indexOf('WRITER_EXIT');
+  const restore = indexOfCall(lines, 'git checkout -- data/yt-stats-history.json');
+  assert.ok(writerExit !== -1, `the TERM-handling writer must be signalled: ${lines.join(' | ')}`);
+  assert.ok(restore > writerExit, `outputs must be restored only after the writer exited: ${lines.join(' | ')}`);
+  assert.ok(indexOfCall(lines, 'commit -m') > restore, 'commit follows the restore');
+}
+{
+  // CR 9e78edfc: a writer that ignores TERM is KILLed after the grace period
+  // and awaited before the restore; the run stays bounded and non-fatal.
+  const t0 = Date.now();
+  const { status, lines, log } = runPipeline({
+    env: {
+      SIGNALS_HANG: 'ignore',
+      HUNTERCARD_SIGNALS_KILL_GRACE_SECONDS: '1',
+      HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000),
+    },
+  });
+  const elapsed = Date.now() - t0;
+  assert.strictEqual(status, 0, `a KILLed signals job is non-fatal: ${log.slice(-800)}`);
+  assert.ok(elapsed < 20000, `a TERM-ignoring writer must be KILLed after the grace, took ${elapsed}ms`);
+  assert.match(log, /killed, all writers exited, restoring/, 'restore only after the whole group is gone');
+  assert.ok(indexOfCall(lines, 'git checkout -- data/yt-stats-history.json') !== -1, 'outputs restored after KILL');
+}
+{
+  // CR 367fad3a: a restore that does not take (checkout error swallowed, file
+  // still torn) or cannot be verified must fail closed before any downstream
+  // mutation, staging, commit or push.
+  for (const mode of ['dirty', 'status']) {
+    const { status, lines, log } = runPipeline({
+      env: { SIGNALS_HANG: '1', RESTORE_FAIL: mode, HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000) },
+    });
+    assert.notStrictEqual(status, 0, `unverified signals restore (${mode}) must fail the run: ${log.slice(-800)}`);
+    assert.match(log, mode === 'dirty' ? /still differ from HEAD after restore/ : /could not verify the killed signals outputs/, `fail-closed reason logged (${mode})`);
+    assert.match(log, /signals join failed closed/, `runPipeline stops at the join (${mode})`);
+    for (const forbidden of ['refresh-yt-stats.mjs', 'merge-buy-prices.js', 'generate-native-database.mjs', 'git add', 'commit -m', 'push']) {
+      assert.strictEqual(indexOfCall(lines, forbidden), -1, `${forbidden} must not run after an unverified restore (${mode}): ${lines.join(' | ')}`);
+    }
+  }
+}
+{
+  // CR 367fad3a: a checkout error for a path absent from HEAD is harmless when
+  // the postcondition proves nothing is left to commit.
+  const { status, lines, log } = runPipeline({
+    env: { SIGNALS_HANG: '1', RESTORE_FAIL: 'unmatched', HUNTERCARD_RUN_STARTED_AT: String(Math.floor(Date.now() / 1000) - 1000) },
+  });
+  assert.strictEqual(status, 0, `a verified-clean restore stays non-fatal: ${log.slice(-800)}`);
+  assert.match(log, /restore: git checkout -- data\/yt-stats-history.json failed/, 'the checkout error is logged, not hidden');
+  assert.ok(indexOfCall(lines, 'commit -m') !== -1, 'run still commits once the restore is verified');
+}
+{
+  // A leaked start from another day is not this run's clock.
+  const { status, lines } = runPipeline({ env: { HUNTERCARD_RUN_STARTED_AT: '1' } });
+  assert.strictEqual(status, 0);
+  const [, stage] = (lines.find((l) => l.startsWith('BUILD_ENV ')) ?? '').match(/stage=(\d+)/) ?? [];
+  assert.ok(Number(stage) >= 445000 && Number(stage) <= 450000, `stale start ignored: 540s default budget - 90s reserve, got ${stage}`);
 }
 
 console.log(

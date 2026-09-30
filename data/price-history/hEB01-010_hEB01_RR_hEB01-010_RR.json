@@ -1,0 +1,17 @@
+{
+  "cardId": "hEB01-010_hEB01_RR_hEB01-010_RR",
+  "cardNumber": "hEB01-010",
+  "name": "ときのそら",
+  "records": [
+    {
+      "date": "2026-09-27",
+      "price": 80,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hEB01-010_hEB01_RR_hEB01-010_RR",
+      "sourceProduct": "hEB01"
+    }
+  ],
+  "lastUpdated": "2026-09-27T12:14:25.981Z",
+  "nameZh": "時乃空"
+}

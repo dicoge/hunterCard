@@ -33,6 +33,8 @@ import {
   findUnprovenPriceHistoryViolations,
   pricesEntryExactPrintMatchesSource,
   yuyuImageProductPath,
+  isKnownPromoPath,
+  promoPathMatchesCardNumber,
 } from './lib/preserve-market-fields.js';
 import { orderCardsForDetailAlignment } from './lib/order-cards-for-detail-alignment.js';
 import { collectPriceEvidence, writePriceEvidenceAtomic } from './lib/price-evidence.js';
@@ -45,6 +47,12 @@ import {
   makeRejection,
   isPricedRow,
 } from './lib/price-regression-gate.mjs';
+import {
+  reconcileScrapedCoverage,
+  reconciliationManifestBlock,
+  formatReconciliationFailure,
+  scrapedListingId,
+} from './lib/price-coverage-reconciliation.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,6 +148,7 @@ function generateSeriesPages() {
   const hbpSeries = [];
   const hsdSeries = [];
   const hysSeries = [];
+  const hebSeries = [];
   const specialSeries = [];
 
   for (const series of seriesCodes) {
@@ -161,6 +170,13 @@ function generateSeriesPages() {
       hsdSeries.push({ name: series, url: `/sell/hocg/s/search?search_word=&vers[]=${series.toLowerCase()}` });
     } else if (series.startsWith('hYS')) {
       hysSeries.push({ name: series, url: `/sell/hocg/s/${series.toLowerCase()}` });
+    } else if (series.startsWith('hEB')) {
+      // DIC-1167 (2026-09-26): extra boosters have their own yuyu product page
+      // (listing images under /hocg/…/heb01/). Without this branch the whole
+      // hEB01 product (214 official rows, 34 cardNumbers) was never scraped
+      // and every row shipped null — the listings the builder did see came
+      // only from other products' pages and correctly failed exact-print proof.
+      hebSeries.push({ name: series, url: `/sell/hocg/s/search?search_word=&vers[]=${series.toLowerCase()}` });
     } else {
       console.warn(`[warn] 系列 "${series}" — 無對應 yuyu-tei URL，跳過`);
     }
@@ -170,9 +186,10 @@ function generateSeriesPages() {
   hbpSeries.sort(sortByName);
   hsdSeries.sort(sortByName);
   hysSeries.sort(sortByName);
+  hebSeries.sort(sortByName);
   specialSeries.sort(sortByName);
 
-  return [...hbpSeries, ...hsdSeries, ...hysSeries, ...specialSeries];
+  return [...hbpSeries, ...hsdSeries, ...hysSeries, ...hebSeries, ...specialSeries];
 }
 
 const SERIES_PAGES = generateSeriesPages();
@@ -777,11 +794,142 @@ async function scrapeSeriesPage(browser, url) {
   }
 }
 
+// ─── DIC-1167: yuyu-stage wall-clock budgets ────────────────────────────────
+// 2026-09-24 P0: the inline yuyu Puppeteer loop hung inside an unbounded
+// operation (page.evaluate scroll/extraction after the hSD09 renderer-crash
+// relaunch) — setDefaultNavigationTimeout/setDefaultTimeout do not cover
+// page.evaluate or puppeteer.launch, so the build sat until the external
+// 600s supervisor killed it (exit 124) and a fully-scraped official catalog
+// was silently discarded. Pricing must NEVER block official-catalog
+// publication: every yuyu operation gets a wall-clock budget, and budget
+// expiry RESOLVES the stage with the partial prices collected so far. The
+// downstream DIC-1321 partial-scrape preservation then keeps previously
+// proven exact-print prices and leaves truly-unknown printings null — no
+// sibling/cardNumber/cross-rarity/cross-product/cross-version fallback.
+function positiveIntEnv(name, fallback) {
+  const raw = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+const YUYU_STAGE_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_STAGE_BUDGET_MS', 480_000);
+const YUYU_SERIES_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_SERIES_BUDGET_MS', 90_000);
+const YUYU_LAUNCH_BUDGET_MS = positiveIntEnv('HUNTERCARD_YUYU_LAUNCH_BUDGET_MS', 45_000);
+
+// DIC-1167 (2026-09-29 P0): the scheduler sizes the stage budget from its own
+// run deadline, so on a tight day the stage ends before the tail of the series
+// list. Visiting series in a fixed order would starve the SAME tail every day
+// (hEB01/hPR/specials sit last) — their prices would never refresh and newly
+// listed printings would stay null forever. A non-negative rotation seed
+// (the scheduler passes the epoch day) rotates the VISIT order so every series
+// leads within a few days. Prices are still merged in canonical series order,
+// so the rotation never changes which entry wins downstream. Unset = the
+// historical fixed order.
+function rotationSeedEnv() {
+  const raw = process.env.HUNTERCARD_YUYU_ROTATION_SEED;
+  if (raw == null || !/^\d+$/.test(raw.trim())) return null;
+  return Number.parseInt(raw.trim(), 10);
+}
+
+function rotateSeriesVisitOrder(seriesPages, rotationSeed) {
+  if (!Number.isInteger(rotationSeed) || rotationSeed < 0 || seriesPages.length < 2) return [...seriesPages];
+  const offset = rotationSeed % seriesPages.length;
+  return [...seriesPages.slice(offset), ...seriesPages.slice(0, offset)];
+}
+
+// `timeout` bounds puppeteer.launch's wait for the browser process to start;
+// `protocolTimeout` bounds EVERY CDP call — including the page.evaluate
+// scroll/extraction ops that the per-page navigation/default timeouts do not
+// cover (the exact op class that hung on 2026-09-24). The per-series
+// withWallClock race is the primary bound; protocolTimeout is the CDP-level
+// backstop when the transport itself wedges.
+const LAUNCH_OPTS = {
+  headless: 'new',
+  timeout: YUYU_LAUNCH_BUDGET_MS,
+  protocolTimeout: 120_000,
+  args: [
+    '--no-sandbox',
+    '--disable-blink-features=AutomationControlled',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+  ],
+};
+
+class YuyuBudgetExceededError extends Error {
+  constructor(label, budgetMs) {
+    super(`[DIC-1167] ${label} exceeded its ${budgetMs}ms wall-clock budget`);
+    this.name = 'YuyuBudgetExceededError';
+    this.budgetExceeded = true;
+  }
+}
+
+// Promise.race with two hard guarantees: (1) the caller ALWAYS settles within
+// budgetMs; (2) the losing promise is detached with a no-op catch so its
+// eventual rejection (e.g. after the hung browser is SIGKILLed) cannot become
+// an unhandled-rejection crash after the race has already settled.
+function withWallClock(promise, budgetMs, label) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      Promise.resolve(promise).catch(() => {});
+      reject(new YuyuBudgetExceededError(label, budgetMs));
+    }, budgetMs);
+    Promise.resolve(promise).then(
+      (value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } },
+      (err) => { if (!settled) { settled = true; clearTimeout(timer); reject(err); } },
+    );
+  });
+}
+
+function isBrowserCrashError(err) {
+  if (!err) return false;
+  if (err.name === 'TargetCloseError' || err.name === 'ConnectionClosedError') return true;
+  // A ProtocolError (incl. protocolTimeout expiry) means the CDP transport is
+  // unresponsive — same remedy as a crash: relaunch a fresh browser.
+  if (err.name === 'ProtocolError') return true;
+  return /Protocol error|Connection closed|Target closed|Session closed|Page crashed/i.test(err.message || '');
+}
+
+// Bounded teardown: a browser whose CDP transport is wedged can hang
+// browser.close() forever; escalate to SIGKILL of the child process so the
+// event loop can drain and the build can exit (never exit 124).
+async function disposeBrowser(browser) {
+  if (!browser) return;
+  try {
+    await withWallClock(browser.close(), 10_000, 'browser.close');
+  } catch (_) {
+    try {
+      const proc = typeof browser.process === 'function' ? browser.process() : null;
+      if (proc) proc.kill('SIGKILL');
+    } catch (_) { /* already gone */ }
+  }
+}
+
 /**
  * 從 yuyu-tei 爬價格和圖片
  * 先試 Puppeteer，若失敗或結果不足則降級到 HTTP fetch
+ *
+ * DIC-1167: every phase of this function is wall-clock bounded and it ALWAYS
+ * resolves. `truncated: true` in the result marks any run where series were
+ * skipped (hang, crash retries exhausted, any other per-series error such
+ * as a navigation timeout, stage budget exhausted, relaunch failure, a
+ * series that yielded zero priced cards, or a failed/empty series in the
+ * HTTP fetch fallback) so the caller routes it
+ * through the DIC-1321 partial-scrape preservation instead of treating unvisited rows as delistings. The
+ * `options` seams (launchBrowserFn / scrapeSeriesPageFn / sleepFn / …)
+ * mirror scrape-yuyu-prices.js so the crash/hang paths are unit-testable.
  */
-async function scrapeYuyuPrices() {
+async function scrapeYuyuPrices(options = {}) {
+  const {
+    seriesPages = SERIES_PAGES,
+    sleepFn = sleep,
+    fetchAllFn = scrapeAllWithFetch,
+    nowFn = Date.now,
+    stageBudgetMs = YUYU_STAGE_BUDGET_MS,
+    seriesBudgetMs = YUYU_SERIES_BUDGET_MS,
+    launchBudgetMs = YUYU_LAUNCH_BUDGET_MS,
+    rotationSeed = rotationSeedEnv(),
+  } = options;
+
   if (process.env.HUNTERCARD_YUYU_FIXTURE_PATH) {
     const fixturePath = process.env.HUNTERCARD_YUYU_FIXTURE_PATH;
     console.log(`[database] Loading yuyu fixture: ${fixturePath}`);
@@ -793,46 +941,62 @@ async function scrapeYuyuPrices() {
     return { prices: {}, totalCards: 0, seriesWithPrices: 0, pricingUnavailable: true };
   }
 
-  let usePuppeteer = true;
-  let puppeteer;
+  let scrapeSeriesPageFn = options.scrapeSeriesPageFn || scrapeSeriesPage;
+  let launchBrowserFn = options.launchBrowserFn || null;
 
-  // Try to load puppeteer-extra; if unavailable, skip to fetch
-  try {
-    puppeteer = (await import('puppeteer-extra')).default;
-    const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
-    puppeteer.use(StealthPlugin());
-  } catch (e) {
-    console.log(`[database] Puppeteer-extra not available (${e.message}), will use HTTP fetch fallback`);
-    usePuppeteer = false;
+  // DIC-1167 test-only fault injection (same convention as the
+  // HUNTERCARD_DIC1229_DISABLE_* hooks): make every series hang forever so
+  // the E2E suite can prove a hung price stage still publishes the official
+  // catalog within budget. Logs loudly so a leak into a real run is visible.
+  if (process.env.HUNTERCARD_DIC1167_FAULT_HANG_YUYU === '1') {
+    console.log('  [DIC-1167] ⚠️ HUNTERCARD_DIC1167_FAULT_HANG_YUYU=1 — yuyu series scrape will HANG (test-only fault injection)');
+    launchBrowserFn = async () => ({ close: async () => {}, process: () => null });
+    scrapeSeriesPageFn = () => new Promise(() => {});
+  }
+
+  let usePuppeteer = true;
+
+  if (!launchBrowserFn) {
+    // Try to load puppeteer-extra; if unavailable, skip to fetch
+    try {
+      const puppeteer = (await import('puppeteer-extra')).default;
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      puppeteer.use(StealthPlugin());
+      launchBrowserFn = () => puppeteer.launch(LAUNCH_OPTS);
+    } catch (e) {
+      console.log(`[database] Puppeteer-extra not available (${e.message}), will use HTTP fetch fallback`);
+      usePuppeteer = false;
+    }
   }
 
   const allPrices = {};
   let totalCards = 0;
   let seriesWithPrices = 0;
-
-  const LAUNCH_OPTS = {
-    headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-    ],
-  };
+  let truncated = false;
+  // DIC-1167 CR cbad0ba6: a series page that loads but yields zero priced
+  // cards (WAF/challenge page, markup the parser no longer matches) was not
+  // actually scraped. Every configured series has live listings, so an empty
+  // one is missing evidence, not a delisting. Tracked separately because the
+  // HTTP fetch fallback re-visits every series and reports its own gaps.
+  const emptySeries = [];
+  const stageDeadline = nowFn() + stageBudgetMs;
 
   if (usePuppeteer) {
     console.log('[database] Starting yuyu-tei scrape (Puppeteer)...');
-    let browser;
+    let browser = null;
     try {
-      browser = await puppeteer.launch(LAUNCH_OPTS);
+      browser = await withWallClock(launchBrowserFn(), launchBudgetMs, 'puppeteer launch');
     } catch (e) {
       console.log(`[database] Puppeteer launch failed: ${e.message}. Falling back to HTTP fetch.`);
       usePuppeteer = false;
     }
 
     if (browser) {
-      // Turn a series' scraped cards into allPrices entries. Returns the unique
-      // card count for that series.
+      // Per-series results, merged into allPrices in CANONICAL series order
+      // after the loop so a rotated visit order cannot change entry order.
+      const pricesBySeries = new Map();
+      // Turn a series' scraped cards into per-series price entries. Returns the
+      // unique card count for that series.
       const accumulateCards = (cards, sourceSeries) => {
         const seriesPrices = {};
         for (const card of cards) {
@@ -852,93 +1016,215 @@ async function scrapeYuyuPrices() {
           });
         }
         const count = Object.keys(seriesPrices).length;
-        for (const [key, entries] of Object.entries(seriesPrices)) {
-          if (!allPrices[key]) allPrices[key] = [];
-          allPrices[key].push(...entries);
-        }
+        pricesBySeries.set(sourceSeries, seriesPrices);
         return count;
       };
 
+      // Replace a (possibly hung/dead) browser with a fresh one, bounded.
+      // Returns false when the relaunch itself fails/times out — the
+      // remaining series are then abandoned with the partial prices already
+      // collected rather than risking an unbounded stall (DIC-1167). Every
+      // caller breaks out of the loop on false, so the failure itself marks
+      // the scrape truncated — otherwise a crash (not hang) followed by a
+      // failed relaunch would report a complete scrape and skip the
+      // partial-scrape preservation path for the unvisited series.
+      const relaunchBrowser = async (reason) => {
+        await disposeBrowser(browser);
+        browser = null;
+        // DIC-1167 (2026-09-29): a relaunch may not outlive the stage deadline
+        // the scheduler derived from its run budget — a full launch budget
+        // after expiry would push the build past the external supervisor.
+        const relaunchBudgetMs = Math.min(launchBudgetMs, stageDeadline - nowFn());
+        if (relaunchBudgetMs <= 0) {
+          truncated = true;
+          console.warn(`  → [DIC-1167] yuyu stage wall-clock budget (${stageBudgetMs}ms) exhausted; not relaunching (${reason}) — abandoning remaining series with partial prices`);
+          return false;
+        }
+        try {
+          browser = await withWallClock(launchBrowserFn(), relaunchBudgetMs, `puppeteer relaunch (${reason})`);
+          return true;
+        } catch (e) {
+          truncated = true;
+          console.error(`  → [DIC-1167] Relaunch failed (${reason}): ${e.message} — abandoning remaining series with partial prices`);
+          return false;
+        }
+      };
+
+      const visitOrder = rotateSeriesVisitOrder(seriesPages, rotationSeed);
+      if (visitOrder.length > 0 && visitOrder[0] !== seriesPages[0]) {
+        console.log(`[database] DIC-1167 series visit order rotated (seed ${rotationSeed}) — starting at ${visitOrder[0].name}`);
+      }
+
       try {
-        for (const seriesInfo of SERIES_PAGES) {
+        for (const seriesInfo of visitOrder) {
+          const remainingMs = stageDeadline - nowFn();
+          if (remainingMs <= 0) {
+            truncated = true;
+            console.warn(`[DIC-1167] yuyu stage wall-clock budget (${stageBudgetMs}ms) exhausted before ${seriesInfo.name} — continuing build with partial prices`);
+            break;
+          }
+
           console.log(`[database] Scraping ${seriesInfo.name}: ${seriesInfo.url}`);
 
           const url = BASE_URL + seriesInfo.url;
 
           try {
             // Random delay between series requests (3-5s)
-            await sleep(3000 + Math.random() * 2000);
+            await sleepFn(3000 + Math.random() * 2000);
 
-            const cards = await scrapeSeriesPage(browser, url);
+            const cards = await withWallClock(
+              scrapeSeriesPageFn(browser, url),
+              Math.min(seriesBudgetMs, remainingMs),
+              `series ${seriesInfo.name}`,
+            );
             const count = accumulateCards(cards, seriesInfo.name);
             console.log(`  → Found ${count} cards with prices`);
             if (count > 0) seriesWithPrices++;
+            else emptySeries.push(seriesInfo.name);
             totalCards += count;
 
           } catch (err) {
-            // A browser-level crash kills every subsequent series if we keep
-            // using the same dead browser object. Detect it, relaunch a fresh
-            // browser, and retry the current series once (DIC-442).
-            const isCrash = /Protocol error|Connection closed|Target closed|Session closed/i.test(err.message || '');
-            if (isCrash) {
+            if (err && err.budgetExceeded) {
+              // A hung series is NOT retried: it already consumed a full
+              // budget slice and a rerun would likely hang again, starving
+              // the series behind it. Skip it (previously proven prices are
+              // preserved via the partial-scrape path; unknown printings
+              // stay null) and relaunch so the next series gets a live
+              // browser instead of the wedged one.
+              truncated = true;
+              console.error(`  → ${err.message} — skipping ${seriesInfo.name} and relaunching browser`);
+              if (!(await relaunchBrowser(`hang on ${seriesInfo.name}`))) break;
+            } else if (isBrowserCrashError(err)) {
+              // A browser-level crash kills every subsequent series if we
+              // keep using the same dead browser object. Detect it, relaunch
+              // a fresh browser, and retry the current series once
+              // (DIC-442), bounded like the first attempt (DIC-1167).
               console.log(`  → Browser crashed on ${seriesInfo.name}, relaunching...`);
-              try { await browser.close(); } catch (_) { /* already dead */ }
+              if (!(await relaunchBrowser(`crash on ${seriesInfo.name}`))) break;
+              const retryRemainingMs = stageDeadline - nowFn();
+              if (retryRemainingMs <= 0) {
+                truncated = true;
+                console.warn(`[DIC-1167] yuyu stage wall-clock budget (${stageBudgetMs}ms) exhausted before retrying ${seriesInfo.name} — continuing build with partial prices`);
+                break;
+              }
               try {
-                browser = await puppeteer.launch(LAUNCH_OPTS);
-                const cards = await scrapeSeriesPage(browser, url);
+                const cards = await withWallClock(
+                  scrapeSeriesPageFn(browser, url),
+                  Math.min(seriesBudgetMs, retryRemainingMs),
+                  `series ${seriesInfo.name} (retry)`,
+                );
                 const count = accumulateCards(cards, seriesInfo.name);
                 console.log(`  → Retry OK: found ${count} cards with prices`);
                 if (count > 0) seriesWithPrices++;
+                else emptySeries.push(seriesInfo.name);
                 totalCards += count;
               } catch (retryErr) {
-                console.error(`  → Retry failed: ${retryErr.message}`);
+                // Second failure on the same series: stop retrying it — a
+                // dead series must never stall the ones behind it (DIC-1167:
+                // hSD09 must not block hSD10+). Mark the scrape truncated so
+                // previously proven prices for this series are preserved,
+                // and give the next series a live browser.
+                truncated = true;
+                console.error(`  → Retry failed: ${retryErr.message} — giving up on ${seriesInfo.name}, continuing with next series`);
+                if ((retryErr && retryErr.budgetExceeded) || isBrowserCrashError(retryErr)) {
+                  if (!(await relaunchBrowser(`retry failure on ${seriesInfo.name}`))) break;
+                }
               }
             } else {
-              console.error(`  → Error: ${err.message}`);
+              // Any other failure (e.g. a puppeteer navigation TimeoutError,
+              // an HTTP/WAF error page) also skips this series, so its rows
+              // were never visited: mark the scrape truncated so previously
+              // proven prices are preserved instead of nulled as delistings
+              // (DIC-1167 CR 6797d0aa). The browser is still alive — no
+              // relaunch, the next series continues on it.
+              truncated = true;
+              console.error(`  → Error: ${err.message} — skipping ${seriesInfo.name} (scrape marked truncated)`);
             }
           }
         }
       } finally {
-        if (browser) {
-          try { await browser.close(); } catch (_) { /* already closed */ }
+        await disposeBrowser(browser);
+      }
+
+      for (const seriesInfo of seriesPages) {
+        const seriesPrices = pricesBySeries.get(seriesInfo.name);
+        if (!seriesPrices) continue;
+        for (const [key, entries] of Object.entries(seriesPrices)) {
+          if (!allPrices[key]) allPrices[key] = [];
+          allPrices[key].push(...entries);
         }
       }
     }
   }
 
-  // If puppeteer got too few cards, fall back to HTTP fetch
-  if (totalCards < 50) {
-    // Reset and try with fetch
-    console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
-    const fetchResult = await scrapeAllWithFetch();
-    for (const [key, entries] of Object.entries(fetchResult.prices)) {
-      if (!allPrices[key]) allPrices[key] = [];
-      allPrices[key].push(...entries);
-    }
-    totalCards += fetchResult.fetchedCards;
+  // Without a fetch fallback nothing re-visits an empty puppeteer series.
+  if (totalCards >= 50 && emptySeries.length > 0) {
+    truncated = true;
+    console.warn(`[DIC-1167] ${emptySeries.length} series returned zero priced cards (${emptySeries.join(', ')}) — scrape truncated`);
   }
 
-  return { prices: allPrices, totalCards, seriesWithPrices };
+  // If puppeteer got too few cards, fall back to HTTP fetch — but only inside
+  // the remaining stage budget: the fetch path has no per-request abort and
+  // must not reintroduce the unbounded stall this budget exists to prevent
+  // (DIC-1167).
+  if (totalCards < 50) {
+    const remainingMs = stageDeadline - nowFn();
+    if (remainingMs <= 0) {
+      truncated = true;
+      console.warn('[DIC-1167] Skipping HTTP fetch fallback: yuyu stage wall-clock budget exhausted — continuing build with partial prices');
+    } else {
+      // Reset and try with fetch
+      console.log(`\n[database] Puppeteer scrape only got ${totalCards} cards (< 50). Switching to HTTP fetch...`);
+      try {
+        const fetchResult = await withWallClock(fetchAllFn(), remainingMs, 'HTTP fetch fallback');
+        for (const [key, entries] of Object.entries(fetchResult.prices)) {
+          if (!allPrices[key]) allPrices[key] = [];
+          allPrices[key].push(...entries);
+        }
+        totalCards += fetchResult.fetchedCards;
+        if (fetchResult.truncated) truncated = true;
+      } catch (err) {
+        if (err && err.budgetExceeded) {
+          truncated = true;
+          console.warn(`  → ${err.message} — continuing build with partial prices`);
+        } else {
+          // Existing contract: a fetch-fallback failure propagates to the
+          // build-level catch, which continues with pricingUnavailable.
+          throw err;
+        }
+      }
+    }
+  }
+
+  return { prices: allPrices, totalCards, seriesWithPrices, truncated };
 }
 
 /**
  * 使用 HTTP fetch + HTML regex 爬取所有系列價格
  */
-async function scrapeAllWithFetch() {
+async function scrapeAllWithFetch({
+  seriesPages = SERIES_PAGES,
+  sleepFn = sleep,
+  scrapeSeriesPageWithFetchFn = scrapeSeriesPageWithFetch,
+} = {}) {
   console.log('[fetch] Starting HTTP fetch-based scrape...');
   const allPrices = {};
   let fetchedCards = 0;
   let seriesFetched = 0;
+  // DIC-1167 CR 6797d0aa: a series whose fetch fails was never visited, so
+  // the caller must treat the result as truncated (partial preservation),
+  // same as a skipped series on the Puppeteer path.
+  const failedSeries = [];
 
-  for (const seriesInfo of SERIES_PAGES) {
+  for (const seriesInfo of seriesPages) {
     console.log(`[fetch] Fetching ${seriesInfo.name}: ${seriesInfo.url}`);
 
     const url = BASE_URL + seriesInfo.url;
 
     try {
-      await sleep(3000 + Math.random() * 2000);
+      await sleepFn(3000 + Math.random() * 2000);
 
-      const cards = await scrapeSeriesPageWithFetch(url);
+      const cards = await scrapeSeriesPageWithFetchFn(url);
 
       for (const card of cards) {
         const key = card.cardNum;
@@ -959,16 +1245,28 @@ async function scrapeAllWithFetch() {
 
       const count = Object.keys(allPrices).length;
       console.log(`  → Found ${count} total unique cards (${cards.length} total listings)`);
-      if (count > 0) seriesFetched++;
-      fetchedCards = Object.keys(allPrices).length;
+      fetchedCards = count;
+      if (cards.length === 0) {
+        // DIC-1167 CR cbad0ba6: an HTTP 200 page with no parseable cards
+        // (challenge page, changed markup) is a skipped series, not an
+        // empty one — the cumulative count above would otherwise hide it.
+        failedSeries.push(seriesInfo.name);
+        console.error(`  → No cards parsed for ${seriesInfo.name} (scrape marked truncated)`);
+      } else {
+        seriesFetched++;
+      }
 
     } catch (err) {
-      console.error(`  → Error: ${err.message}`);
+      failedSeries.push(seriesInfo.name);
+      console.error(`  → Error: ${err.message} — skipping ${seriesInfo.name} (scrape marked truncated)`);
     }
   }
 
   console.log(`\n[fetch] Done. Total: ${fetchedCards} cards from ${seriesFetched} series`);
-  return { prices: allPrices, fetchedCards };
+  if (failedSeries.length > 0) {
+    console.warn(`[DIC-1167] HTTP fetch skipped ${failedSeries.length} series (${failedSeries.join(', ')}) — scrape truncated`);
+  }
+  return { prices: allPrices, fetchedCards, truncated: failedSeries.length > 0 };
 }
 
 /**
@@ -1515,6 +1813,13 @@ async function buildDatabase() {
 
   const { prices, totalCards, seriesWithPrices } = yuyuResult;
   const pricingUnavailable = Boolean(yuyuResult.pricingUnavailable || totalCards < 50);
+  // DIC-1167: a truncated scrape (hung series skipped, crash retries
+  // exhausted, stage wall-clock budget expired) is partial EVIDENCE, not
+  // evidence of delisting — route it through the DIC-1321 partial-scrape
+  // preservation below even when its coverage happens to stay above the 90%
+  // floor, so rows the truncated run never visited keep their previously
+  // proven exact-print prices instead of being nulled.
+  const scrapeTruncated = Boolean(yuyuResult.truncated);
   // DIC-1321: a "partial scrape" is a scrape that returned far fewer priced
   // cardNumbers than the previous build — the WAF-throttle shape. The old
   // binary (fully-available OR fully-unavailable) treated a partial scrape as
@@ -1536,11 +1841,18 @@ async function buildDatabase() {
   const coverageFloorRatio = 0.9;
   const previousCoverage = prevPricedCardNumbers.size;
   const currentCoverage = scrapedCardNumbers.size;
-  const partialScrape = !pricingUnavailable
+  // `coveragePartialScrape` is the WAF-throttle shape (coverage well below the
+  // previous build). It alone scopes the DIC-1334 fresh-fill collapse audit:
+  // a truncated-but-otherwise-full-scale scrape keeps that audit armed — the
+  // audit compares fresh fills against THIS run's scraped set, which shrinks
+  // with the truncation, so a healthy matcher still clears it while a broken
+  // parser/matcher cannot hide behind a single hung series (DIC-1167).
+  const coveragePartialScrape = !pricingUnavailable
     && previousCoverage > 0
     && currentCoverage < previousCoverage * coverageFloorRatio;
+  const partialScrape = coveragePartialScrape || (!pricingUnavailable && scrapeTruncated);
   console.log(`\n  Total cards from yuyu-tei: ${totalCards}`);
-  console.log(`  [DIC-1321] scrape coverage: ${currentCoverage} priced cardNumbers vs previous ${previousCoverage}; partial=${partialScrape}`);
+  console.log(`  [DIC-1321] scrape coverage: ${currentCoverage} priced cardNumbers vs previous ${previousCoverage}; partial=${partialScrape}; truncated=${scrapeTruncated} (DIC-1167)`);
   if (pricingUnavailable) {
     console.warn(`[database] yuyu pricing unavailable or incomplete (totalCards=${totalCards}); preserving previous exact-card sell prices and leaving new/unknown printings null`);
   } else if (partialScrape) {
@@ -1622,6 +1934,7 @@ async function buildDatabase() {
       return pricesEntryExactPrintMatchesSource(
         { sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage },
         official.sourceProduct || official.series || '',
+        official.cardNumber,
       );
     }
 
@@ -1631,18 +1944,79 @@ async function buildDatabase() {
   // Helper: resolve yuyu price data for one exact official printing.  Healthy
   // scrapes may contain same-card-number rows from multiple official printings;
   // require an explicit sourceSeries/name-tag tie instead of card-number fallback.
+  // CR 73021e28: yuyu emits one printing under raw alias keys (hY01-14 and
+  // hY01-014). Reading only `prices[cardNum]` left the short-key listing
+  // unmatched, so the fallback then refused it as an unbound sibling while its
+  // (possibly lower) price for the SAME exact printing was omitted. Every raw
+  // key of the canonical cardNumber is read here; each listing keeps its own
+  // raw-key `scrapedListingId`.
+  const rawListingsByCanonical = new Map(); // canonical cardNumber → [{ entry, id, rawKey }]
+  for (const [rawCardNum, rawPriceData] of Object.entries(prices || {})) {
+    const canonicalNum = canonicalizeCardNumber(rawCardNum);
+    if (!rawListingsByCanonical.has(canonicalNum)) rawListingsByCanonical.set(canonicalNum, []);
+    (Array.isArray(rawPriceData) ? rawPriceData : [rawPriceData]).forEach((entry, index) => {
+      rawListingsByCanonical.get(canonicalNum).push({ entry, id: scrapedListingId(rawCardNum, index), rawKey: rawCardNum });
+    });
+  }
+
+  const sameSourceCandidateCount = (cardNum, official) => (officialByCardNum[cardNum] || [])
+    .filter((candidate) => {
+      const candidateSource = String(candidate.sourceProduct || candidate.series || '').toLowerCase();
+      const officialSource = String(official.sourceProduct || official.series || '').toLowerCase();
+      return candidateSource && candidateSource === officialSource;
+    })
+    .length;
+  // An alias-key listing reaches official matching only when it proves to
+  // exactly ONE official printing of the cardNumber — the rule the yuyu-only
+  // fallback applied to it before (DIC-1334/CR rev.2). A listing that matches
+  // several printings (ent07 C vs 02_C) stays unmatched here, so the fallback
+  // still refuses it by listing id instead of pricing every sibling.
+  // CR 5349b420: an explicit sourceSeries/rarity label never consults the
+  // listing's image, so an alias listing labelled hbp06/SY but carrying an
+  // hbp05 image matched the hbp06 printing and could set its lowest price —
+  // the later provenance gate then passed the row on a SEPARATE valid entry.
+  // An alias listing must also prove the printing by its OWN image product.
+  // CR 064672e4: the same hole existed for CANONICAL-key listings — a
+  // listing filed under the exact cardNumber (hY02-008) labelled hbp06/SY but
+  // carrying an hbp05 image matched, lowered the lowest price, and the gate
+  // passed on the separate valid entry. Every listing, whatever its raw key,
+  // proves a printing only by its own image product. `ent07` is yuyu's
+  // entry-promo aggregation page, not an image product: its printings carry
+  // promo pack images (/promo-hbp10/, /promo-hsd10/, /promo-hbd20/), so an
+  // ent07 row accepts a known promo pack image and nothing else — a /yell01/
+  // or /hbp05/ image on that page still proves nothing.
+  // CR 6c62db8b: nor does ANOTHER family's promo pack — a cheaper hBD24-008
+  // ent07/P listing with a /promo-hsd10/ image lowered the already-priced
+  // /promo-hbd20/ hBD24-008_ent07 row. The pack must host the row's own
+  // card-number family.
+  // CR bdd2c367: hPR rows had the same hole — `pricesEntryExactPrintMatchesSource`
+  // accepts ANY known promo pack for hpr, and it ran before the family guard,
+  // so a cheaper hBD24-006 hpr/P listing with a /promo-hsd10/ image lowered the
+  // already-priced /promo-hbd20/ hBD24-006_hPR row. A promo pack image now
+  // proves an hPR or ent07 printing only through the family guard.
+  const listingImageProvesPrinting = (entry, row) => {
+    const source = String(row.sourceProduct || row.series || '').toLowerCase();
+    const urlProd = yuyuImageProductPath(entry.yuyuImage);
+    if (isKnownPromoPath(urlProd)) {
+      return (source === 'hpr' || source === 'ent07') && promoPathMatchesCardNumber(urlProd, row.cardNumber);
+    }
+    return pricesEntryExactPrintMatchesSource({ sellPrice: entry.sellPrice, imageUrl: entry.yuyuImage }, source, row.cardNumber);
+  };
+  const aliasListingProvesUniquePrinting = (entry, cardNum) => (officialByCardNum[cardNum] || [])
+    .filter((row) => yuyuEntryMatchesOfficial(entry, row, sameSourceCandidateCount(cardNum, row))
+      && listingImageProvesPrinting(entry, row))
+    .length === 1;
+
   function getYuyuForCard(cardNum, official) {
-    const priceData = prices[cardNum];
-    if (!priceData) return null;
-    const candidateCount = (officialByCardNum[cardNum] || [])
-      .filter((candidate) => {
-        const candidateSource = String(candidate.sourceProduct || candidate.series || '').toLowerCase();
-        const officialSource = String(official.sourceProduct || official.series || '').toLowerCase();
-        return candidateSource && candidateSource === officialSource;
-      })
-      .length;
-    const rawEntries = (Array.isArray(priceData) ? priceData : [priceData]).filter((entry) => yuyuEntryMatchesOfficial(entry, official, candidateCount));
-    if (rawEntries.length === 0) return null;
+    const listings = rawListingsByCanonical.get(canonicalizeCardNumber(cardNum));
+    if (!listings || listings.length === 0) return null;
+    const candidateCount = sameSourceCandidateCount(cardNum, official);
+    const matched = listings.filter(({ entry, rawKey }) => yuyuEntryMatchesOfficial(entry, official, candidateCount)
+      && listingImageProvesPrinting(entry, official)
+      && (rawKey === cardNum || aliasListingProvesUniquePrinting(entry, cardNum)));
+    if (matched.length === 0) return null;
+    const rawEntries = matched.map(({ entry }) => entry);
+    const listingIds = matched.map(({ id }) => id);
     const priceEntries = deduplicatePrices(rawEntries);
     let lowestPrice = null;
     let lowestName = '';
@@ -1662,6 +2036,7 @@ async function buildDatabase() {
       firstImage,
       firstTimestamp,
       priceEntries,
+      listingIds,
     };
   }
 
@@ -1701,6 +2076,36 @@ async function buildDatabase() {
   // different products, so a cardNumber-wide notion of "freshly scraped" let a
   // scrape of one printing waive entry loss on an unscraped sibling.
   const freshlyScrapedPrintingIds = new Set();
+  // DIC-1167 CR 81802b00: the narrower subset of those matches whose listing
+  // set carried a POSITIVE sellPrice. `freshlyScrapedPrintingIds` must keep its
+  // broad "matched any listing" meaning for the DIC-1482 gate; the coverage
+  // reconciliation needs to know which printings a positive price reached, so
+  // one that then received no fresh price can never hide behind a priced
+  // sibling. `printingListingRefusals` holds the per-printing disposition for
+  // each such printing that lawfully stays unpriced.
+  const positiveListingPrintingIds = new Set();
+  const printingListingRefusals = new Map();
+  // CR e0a089af: per-listing identity (`scrapedListingId`) of every scraped
+  // listing that reached an exact printing (or a truly yuyu-only row). A
+  // positive listing outside this set must be named by a `listingRefusals`
+  // record — a priced sibling printing never disposes of it.
+  const matchedListingIds = new Set();
+  const hasPositiveSellPrice = (entries) => (entries || []).some((e) => Number.isFinite(e?.sellPrice) && e.sellPrice > 0);
+  // Record the matched-listing outcome of one exact printing: every positive
+  // listing either yields a positive canonical price or a durable refusal.
+  const recordPositiveListingOutcome = (rowId, cardNum, matchedEntries, canonical, lowestCanonical) => {
+    printingListingRefusals.delete(rowId);
+    if (!hasPositiveSellPrice(matchedEntries)) return;
+    positiveListingPrintingIds.add(rowId);
+    if (lowestCanonical && lowestCanonical.sellPrice > 0) return;
+    printingListingRefusals.set(rowId, {
+      id: rowId,
+      cardNumber: cardNum,
+      reason: 'no-positive-canonical-price',
+      listingSellPrices: matchedEntries.map((e) => (Number.isFinite(e?.sellPrice) ? e.sellPrice : null)),
+      canonicalSellPrices: (canonical || []).map((e) => (Number.isFinite(e?.sellPrice) ? e.sellPrice : null)),
+    });
+  };
 
   // Process ALL official entries (compound keys preserve reprints across series)
   for (const [key, official] of Object.entries(officialCards)) {
@@ -1756,6 +2161,8 @@ async function buildDatabase() {
     // This exact printing was matched by the current scrape (see the
     // freshlyScrapedPrintingIds declaration above).
     if (yuyu) freshlyScrapedPrintingIds.add(key);
+    if (yuyu) for (const id of yuyu.listingIds) matchedListingIds.add(id);
+    if (yuyu) recordPositiveListingOutcome(key, baseCardNum, yuyu.priceEntries, canonical, lowestCanonical);
     // DIC-1334: record that this cardNumber received a sellPrice from
     // official+yuyu matching so the yuyu-only fallback below does not
     // discard the yuyu price data for OTHER unmatched printings of this
@@ -1765,11 +2172,74 @@ async function buildDatabase() {
     }
   }
 
-  // Also add yuyu-only cards (prices without matching official entry)
-  for (const [rawCardNum, priceData] of Object.entries(prices)) {
-    // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
-    // schema requires 3 digits (hY01-014).  DIC-1084.
-    const cardNum = canonicalizeCardNumber(rawCardNum);
+  // DIC-1167 (2026-09-28): every listing set the yuyu-only fallback refuses is
+  // recorded per canonical cardNumber, with the official printing candidates
+  // it failed to resolve against. These refusals used to exist only as a
+  // console line (71 on 2026-09-28, none of them in any artifact), so the
+  // scraped-vs-shipped reconciliation below could not tell a lawful
+  // fail-closed refusal from a silent price loss. Keyed by cardNumber, not
+  // printing id: a refused listing never identified a printing, and the
+  // DIC-1482 `rejections[]` array is strictly per printing.
+  const listingRefusals = new Map();
+  // `refusedIds` are the `scrapedListingId`s this refusal disposes of; the
+  // reconciliation covers a positive listing only when its id is named here.
+  // The fallback processes all raw keys of one canonical cardNumber (hY01-14 /
+  // hY01-014) as one listing set, so each cardNumber records at most one
+  // refusal; the merge below is defensive and never drops a refused id.
+  const recordListingRefusal = (cardNum, reason, priceData, officialRows, provenKeys, refusedIds) => {
+    const entries = Array.isArray(priceData) ? priceData : [priceData];
+    const record = {
+      cardNumber: cardNum,
+      reason,
+      listings: entries.length,
+      listingImageProducts: [...new Set(entries.map((e) => yuyuImageProductPath(e?.yuyuImage) || '').filter(Boolean))].sort(),
+      listingSellPrices: entries.map((e) => (Number.isFinite(e?.sellPrice) ? e.sellPrice : null)),
+      candidatePrintings: officialRows.map((row) => officialKeyByRow.get(row)).filter(Boolean),
+      provenPrintings: provenKeys,
+      refusedListingIds: [...refusedIds].sort(),
+    };
+    const prior = listingRefusals.get(cardNum);
+    if (prior) {
+      const union = (a, b) => [...new Set([...a, ...b])].sort();
+      record.reason = prior.reason;
+      record.additionalReasons = union(prior.additionalReasons || [], prior.reason === reason ? [] : [reason]);
+      record.listings += prior.listings;
+      record.listingImageProducts = union(prior.listingImageProducts, record.listingImageProducts);
+      record.listingSellPrices = [...prior.listingSellPrices, ...record.listingSellPrices];
+      record.candidatePrintings = union(prior.candidatePrintings, record.candidatePrintings);
+      record.provenPrintings = union(prior.provenPrintings, record.provenPrintings);
+      record.refusedListingIds = union(prior.refusedListingIds, record.refusedListingIds);
+    }
+    listingRefusals.set(cardNum, record);
+  };
+
+  // Also add yuyu-only cards (prices without matching official entry).
+  // Canonicalize: yuyu-tei emits short suffixes (hY01-14) but the canonical
+  // schema requires 3 digits (hY01-014).  DIC-1084.
+  // CR 4132f98e: raw alias keys of one canonical cardNumber (hZZ01-14 and
+  // hZZ01-014) are ONE listing set. Processing them per raw key wrote the same
+  // row twice — the later alias overwrote the earlier one's price while both
+  // listings stayed `matched`, so the reconciliation passed on a lost price.
+  // Each listing keeps its own raw-key `scrapedListingId` (the same alias
+  // grouping the official pass reads — see `rawListingsByCanonical`).
+  const fallbackListingSets = new Map(); // canonical cardNumber → { entries, ids }
+  for (const [cardNum, listings] of rawListingsByCanonical) {
+    fallbackListingSets.set(cardNum, {
+      entries: listings.map(({ entry }) => entry),
+      ids: new Map(listings.map(({ entry, id }) => [entry, id])),
+    });
+  }
+  // Every row the fallback publishes or binds, once. A second write to one row
+  // would displace positive listings the ledger already counts as matched.
+  const fallbackWrittenRowIds = new Set();
+  const claimFallbackRow = (rowId, cardNum) => {
+    if (fallbackWrittenRowIds.has(rowId)) {
+      throw new Error(`[DIC-1167] yuyu-only fallback would overwrite row ${rowId} (cardNumber ${cardNum}) already written this run — a positive listing would be displaced while counted as matched; refusing to build`);
+    }
+    fallbackWrittenRowIds.add(rowId);
+  };
+  for (const [cardNum, listingSet] of fallbackListingSets) {
+    const priceData = listingSet.entries;
     // DIC-1334: replace the old `alreadyExists` gate (which dropped yuyu price
     // data whenever ANY official entry existed, even when every official entry
     // had sellPrice:null — the 1,214→424 collapse). Now we only block the
@@ -1778,8 +2248,24 @@ async function buildDatabase() {
     // exist but ALL are unpriced, we ADD the yuyu listing as yuyu-only instead
     // of silently discarding it.
     const officialRows = officialByCardNum[cardNum] || [];
+    const allEntries = priceData;
+    const idOf = (entry) => listingSet.ids.get(entry);
     const officialAlreadyPriced = officialPricedCardNums.has(cardNum);
-    if (officialAlreadyPriced) continue;
+    if (officialAlreadyPriced) {
+      // CR e0a089af: an exactly-priced sibling printing (U ¥100) says nothing
+      // about a positive listing that matched no printing (SR ¥2,480). Skipping
+      // the fallback must not drop it silently: refuse it by listing id.
+      const unbound = allEntries.filter((e) => hasPositiveSellPrice([e]) && !matchedListingIds.has(idOf(e)));
+      if (unbound.length > 0) {
+        const pricedKeys = officialRows
+          .map((row) => officialKeyByRow.get(row))
+          .filter((k) => k && hasPositiveSellPrice([database.cards[k]]))
+          .sort();
+        recordListingRefusal(cardNum, 'positive-listings-unbound-priced-sibling', priceData, officialRows, pricedKeys, unbound.map(idOf));
+        console.log(`  [DIC-1167] ${cardNum}: ${unbound.length} positive listing(s) matched no official printing while sibling printing(s) ${pricedKeys.join(', ')} priced by exact match — refusal recorded`);
+      }
+      continue;
+    }
     // DIC-1334 + DIC-1343/CR: strict exact-printing provenance for the
     // yuyu-only fallback. When official rows exist for this cardNumber, we
     // must resolve EACH accepted listing to exactly one distinct official
@@ -1807,7 +2293,6 @@ async function buildDatabase() {
       // the very ambiguity this gate exists to catch. Zero proven printings
       // (unprovable / rarity-guess) and more than one distinct proven printing
       // (ambiguous sibling / reprint / C-vs-02_C) both fail closed.
-      const allEntries = Array.isArray(priceData) ? priceData : [priceData];
       const provenPrintings = new Map(); // official compound key → proven entries
       for (const entry of allEntries) {
         for (const official of officialRows) {
@@ -1815,6 +2300,12 @@ async function buildDatabase() {
             .filter((c) => String(c.sourceProduct || c.series || '').toLowerCase() === String(official.sourceProduct || official.series || '').toLowerCase())
             .length;
           if (!yuyuEntryMatchesOfficial(entry, official, candidateCount)) continue;
+          // CR 5349b420 / 064672e4: same rule as the official pass — a
+          // listing (alias OR canonical key) proves a printing only by its OWN
+          // image product. The increase gate never re-checks a previously-
+          // priced row, so a foreign-image listing bound here would silently
+          // lower its last-known-good price.
+          if (!listingImageProvesPrinting(entry, official)) continue;
           const printKey = officialKeyByRow.get(official);
           if (!printKey) continue;
           if (!provenPrintings.has(printKey)) provenPrintings.set(printKey, []);
@@ -1822,6 +2313,14 @@ async function buildDatabase() {
         }
       }
       if (provenPrintings.size !== 1) {
+        recordListingRefusal(
+          cardNum,
+          provenPrintings.size === 0 ? 'no-exact-printing-proven' : 'ambiguous-official-printings',
+          priceData,
+          officialRows,
+          [...provenPrintings.keys()],
+          allEntries.map(idOf),
+        );
         console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for officially-known cardNumber ${cardNum}: ${provenPrintings.size === 0 ? 'no listing proves to an exact official printing' : `${provenPrintings.size} distinct official printings proven (ambiguous sibling/reprint)`} — fail-closed, no cardNumber-wide fallback`);
         continue;
       }
@@ -1830,13 +2329,26 @@ async function buildDatabase() {
       // artifact — binding is the only lawful outcome here. If it somehow does
       // not, fail closed rather than publish an identity-less duplicate.
       if (!database.cards[printKey]) {
+        recordListingRefusal(cardNum, 'proven-printing-missing-row', priceData, officialRows, [printKey], allEntries.map(idOf));
         console.log(`  [DIC-1334/CR] yuyu-only fallback skipped for ${cardNum}: proven printing ${printKey} has no official row to bind (fail-closed)`);
         continue;
       }
+      // CR 81802b00 / e0a089af: binding the listing(s) proved to one printing
+      // does not dispose of a positive listing that proved to none — whether
+      // the proven listing is priced or not. Without this record the positive
+      // price vanished with no trace.
+      const unprovenPositive = allEntries.filter((e) => !proven.includes(e) && hasPositiveSellPrice([e]) && !matchedListingIds.has(idOf(e)));
+      if (unprovenPositive.length > 0) {
+        recordListingRefusal(cardNum, 'positive-listings-unproven', priceData, officialRows, [printKey], unprovenPositive.map(idOf));
+        console.log(`  [DIC-1167] ${cardNum}: ${unprovenPositive.length} positive listing(s) proved to no official printing; the listing(s) proved to ${printKey} are bound — refusal recorded`);
+      }
+      for (const e of proven) matchedListingIds.add(idOf(e));
       boundPrintingKey = printKey;
       priceEntries = deduplicatePrices(proven);
     } else {
-      priceEntries = deduplicatePrices(Array.isArray(priceData) ? priceData : [priceData]);
+      // Truly yuyu-only cardNumber: every listing is published on its row.
+      priceEntries = deduplicatePrices(allEntries);
+      for (const e of allEntries) matchedListingIds.add(idOf(e));
     }
     let lowestPrice = null;
     let lowestName = '';
@@ -1875,6 +2387,7 @@ async function buildDatabase() {
     // have proven stayed unpriced — the artifact then carried both a null
     // official row and a rogue priced row for the same card.
     if (boundPrintingKey) {
+      claimFallbackRow(boundPrintingKey, cardNum);
       const bound = database.cards[boundPrintingKey];
       bound.sellPrice = canonicalLowestPrice;
       bound.yuyuName = cleanYuyuName;
@@ -1884,6 +2397,7 @@ async function buildDatabase() {
       bound._rawPricesArchive = archive;
       if (!bound.name) bound.name = lowestName || '';
       freshlyScrapedPrintingIds.add(boundPrintingKey);
+      recordPositiveListingOutcome(boundPrintingKey, cardNum, priceEntries, canonical, lowestCanonical);
       console.log(`  [DIC-1334/CR] yuyu-only fallback bound ${cardNum} to official printing ${boundPrintingKey} (sellPrice=${canonicalLowestPrice})`);
       continue;
     }
@@ -1893,6 +2407,7 @@ async function buildDatabase() {
       : cardNum.replace(/-(\d{1,2})$/, (_, n) => `-${n.padStart(3, '0')}`);
     const outCardNum = isCanonicalCardNumber(canonicalCardNum) ? canonicalCardNum : cardNum;
 
+    claimFallbackRow(outCardNum, cardNum);
     database.cards[outCardNum] = {
       id: outCardNum,
       cardNumber: outCardNum,
@@ -1914,6 +2429,7 @@ async function buildDatabase() {
       _rawPricesArchive: archive,
     };
     freshlyScrapedPrintingIds.add(outCardNum);
+    recordPositiveListingOutcome(outCardNum, outCardNum, priceEntries, canonical, lowestCanonical);
   }
 
   // DIC-1204: preserve proven market payload onto every current row that maps
@@ -2034,6 +2550,66 @@ async function buildDatabase() {
   // preserving any skills from the previous build the effects files no longer supply.
   mergeSkills(database.cards, prevSkillsByCardId);
 
+  const officialPrintingKeys = new Set(Object.keys(officialCards));
+  const increaseRejections = [];
+  {
+    // DIC-1167 (2026-09-23): increase-side provenance gate. The decrease gate
+    // below only sees payloads that VANISH, so a row the previous artifact
+    // shipped fail-closed (unpriced) that this refresh freshly re-prices used
+    // to bypass provenance entirely — the 2026-09-23 scrape re-shipped ten
+    // DIC-1482-rejected cross-product / no-provenance payloads through exactly
+    // this blind spot. A newly-priced row now ships only when its OWN current
+    // payload is exact-print proven under `classifyExactPrintPayload` — the
+    // same classifier the decrease gate re-verifies rejections with. An
+    // unproven fresh price is stripped back to the fail-closed shape and
+    // recorded in the manifest under its derived reason, so every refused
+    // increase is auditable per printing. Truly yuyu-only rows (no official
+    // printing identity to prove against) keep the DIC-1334 fallback
+    // behaviour. priceHistory is deliberately NOT touched: the Step 6
+    // DIC-1229 gate owns history provenance.
+    //
+    // DIC-1167 (2026-09-28): this strip runs BEFORE the price-evidence dump,
+    // the DIC-1334 coverage audit and the scraped-vs-shipped reconciliation, so
+    // every coverage number they report is the one that ships. It used to run
+    // after them: the 2026-09-28 build reported 1289/1260 priced cardNumbers
+    // while shipping 1288/1259 (hBD24-064's only priced row, hBD24-064_ent07,
+    // was stripped as cross-product-image afterwards). Nothing between the old
+    // and new position mutates cards, so the shipped artifact is unchanged.
+    for (const [id, card] of Object.entries(database.cards)) {
+      if (!isPricedRow(card)) continue;
+      const prevCard = prevCards[id];
+      if (prevCard && isPricedRow(prevCard)) continue;
+      const verdict = classifyExactPrintPayload(card);
+      if (verdict.proven) continue;
+      if (verdict.reason === 'missing-source-product' && !officialPrintingKeys.has(id)) continue;
+      increaseRejections.push(makeRejection(id, card, verdict.reason));
+      card.sellPrice = null;
+      card.prices = [];
+      card.yuyuName = '';
+      card.yuyuImage = '';
+      card.timestamp = '';
+      if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
+    }
+    if (increaseRejections.length > 0) {
+      const sample = increaseRejections.slice(0, 5).map((r) => `${r.id} [${r.reason}]`).join(', ');
+      console.log(
+        `  [DIC-1167] fail-closed ${increaseRejections.length} newly-priced row(s) without exact-print provenance: `
+        + `${sample}${increaseRejections.length > 5 ? ` +${increaseRejections.length - 5} more` : ''}`
+      );
+      // The detail-align pass above ranked these rows while they still
+      // carried the refused payload (prices[] richness / base-entry rank),
+      // so a rejected listing could still decide row order — and at worst the
+      // CardDetail default printing. Re-align on the fail-closed shape: the
+      // 2026-09-25 scrape shipped 5 cardNumber groups (hBP01-048, hBP02-014,
+      // hBP02-024, hSD03-002, hBP04-013) reordered by refused payloads alone.
+      const { cards: realigned, reorderedCardNumbers } = orderCardsForDetailAlignment(database.cards, prevCards);
+      database.cards = realigned;
+      if (reorderedCardNumbers > 0) {
+        console.log(`  [DIC-1167] re-aligned ${reorderedCardNumbers} cardNumber group(s) after stripping refused payloads`);
+      }
+    }
+  }
+
   // DIC-1461: opt-in diagnostic evidence dump. When (and only when)
   // HUNTERCARD_PRICE_EVIDENCE_PATH is set, capture the structured matcher
   // evidence for every scraped cardNumber — the exact in-memory listing rows,
@@ -2126,7 +2702,7 @@ async function buildDatabase() {
     // already handles by preservation + scheduler coverage floors) would
     // fail here. A full-scale scrape whose proven fills collapse below 50%
     // is the systemic parser/matcher breakage this audit exists to catch.
-    if (scrapedCoverage > 0 && !partialScrape && finalCoverage < gapFloor) {
+    if (scrapedCoverage > 0 && !coveragePartialScrape && finalCoverage < gapFloor) {
       throw new Error(
         `[DIC-1334] final canonical artifact collapsed priced-cardNumber coverage: ` +
         `scraped ${scrapedCoverage} priced cardNumbers but final artifact only has ${finalCoverage} freshly proven ` +
@@ -2137,6 +2713,57 @@ async function buildDatabase() {
     const lostCardNums = [...scrapedCardNumbers].filter((n) => !finalPricedCardNums.has(n));
     if (lostCardNums.length > 0) {
       console.log(`  [DIC-1334] final artifact keeps ${finalCoverage}/${scrapedCoverage} freshly-proven priced cardNumbers (${finalPricedCardNums.size} total incl. preservation); ${lostCardNums.length} not priced in final artifact (examined sample: ${lostCardNums.slice(0, 5).join(', ')})`);
+    }
+  }
+
+  // DIC-1167 (2026-09-28): scraped-vs-shipped reconciliation. The DIC-1334
+  // floor above only catches a wholesale collapse; a partial loss well inside
+  // the 50% floor (and invisible to the DIC-1482 decrease gate whenever the
+  // lost cardNumbers were never priced before) still exited 0. Every scraped
+  // cardNumber must now be accounted for on the shipped artifact — fresh,
+  // preserved, or unpriced under a recorded refusal/rejection — and a scraped
+  // cardNumber with a positive sell listing that ships unpriced for no
+  // recorded reason fails the build before the canonical write.
+  let coverageReconciliation = null;
+  if (!pricingUnavailable) {
+    coverageReconciliation = reconcileScrapedCoverage({
+      prices,
+      canonicalizeCardNumber,
+      cards: database.cards,
+      freshlyPricedRowIds,
+      positiveListingRowIds: positiveListingPrintingIds,
+      matchedListingIds,
+      printingListingRefusals,
+      listingRefusals,
+      increaseRejections,
+      ambiguityNulledIds,
+    });
+    const rc = coverageReconciliation.counts;
+    const pl = coverageReconciliation.printingLedger;
+    console.log(
+      `  [DIC-1167] price coverage reconciled: ${coverageReconciliation.scrapedCardNumbers} scraped cardNumbers = `
+      + `${rc.fresh} fresh + ${rc.preserved} preserved (${rc.preservedAfterFallbackRefusal} after fallback refusal) `
+      + `+ ${rc.refusedFallback} refused-fallback + ${rc.refusedIncrease} refused-increase `
+      + `+ ${rc.ambiguityNulled} ambiguity-nulled + ${rc.noSellListing} no-sell-listing + ${rc.unaccounted} unaccounted; `
+      + `${listingRefusals.size} listing refusal(s) recorded`
+    );
+    // CR 1924ef80 / 81802b00: the cardNumber buckets above let one priced
+    // sibling mask a lost printing; this ledger accounts, by compound-key row
+    // id, for every freshly-priced printing and every printing a positive
+    // listing matched.
+    console.log(
+      `  [DIC-1167] exact-printing ledger: ${pl.freshlyPriced} freshly-priced `
+      + `+ ${pl.positiveListingUnpriced} positive-listing-unpriced printings = `
+      + `${pl.shippedPriced} shipped priced + ${pl.refusedIncrease} refused-increase `
+      + `+ ${pl.ambiguityNulled} ambiguity-nulled + ${pl.refusedListing} refused-listing + ${pl.unaccounted} unaccounted`
+    );
+    const ll = coverageReconciliation.listingLedger;
+    console.log(
+      `  [DIC-1167] listing ledger: ${ll.positiveListings} positive listings = ${ll.matched} matched to an exact printing `
+      + `+ ${ll.refused} refused by listing id + ${ll.unaccounted} unaccounted`
+    );
+    if (!coverageReconciliation.ok) {
+      throw new Error(formatReconciliationFailure(coverageReconciliation));
     }
   }
 
@@ -2161,51 +2788,12 @@ async function buildDatabase() {
     // label asserts, so it cannot authorize itself: if either live source
     // still carries the printing, its disappearance is a rebuild defect and
     // stays an uncovered violation that fails the build.
-    const officialPrintingKeys = new Set(Object.keys(officialCards));
     const catalogRemovedIds = new Set();
     for (const [prevId, prevCard] of Object.entries(prevCards)) {
       if (database.cards[prevId]) continue;
       if (officialPrintingKeys.has(prevId)) continue;
       if (prevCard?.cardNumber && scrapedCardNumbers.has(prevCard.cardNumber)) continue;
       catalogRemovedIds.add(prevId);
-    }
-
-    // DIC-1167 (2026-09-23): increase-side provenance gate. The decrease gate
-    // below only sees payloads that VANISH, so a row the previous artifact
-    // shipped fail-closed (unpriced) that this refresh freshly re-prices used
-    // to bypass provenance entirely — the 2026-09-23 scrape re-shipped ten
-    // DIC-1482-rejected cross-product / no-provenance payloads through exactly
-    // this blind spot. A newly-priced row now ships only when its OWN current
-    // payload is exact-print proven under `classifyExactPrintPayload` — the
-    // same classifier the decrease gate re-verifies rejections with. An
-    // unproven fresh price is stripped back to the fail-closed shape and
-    // recorded in the manifest under its derived reason, so every refused
-    // increase is auditable per printing. Truly yuyu-only rows (no official
-    // printing identity to prove against) keep the DIC-1334 fallback
-    // behaviour. priceHistory is deliberately NOT touched: the Step 6
-    // DIC-1229 gate owns history provenance.
-    const increaseRejections = [];
-    for (const [id, card] of Object.entries(database.cards)) {
-      if (!isPricedRow(card)) continue;
-      const prevCard = prevCards[id];
-      if (prevCard && isPricedRow(prevCard)) continue;
-      const verdict = classifyExactPrintPayload(card);
-      if (verdict.proven) continue;
-      if (verdict.reason === 'missing-source-product' && !officialPrintingKeys.has(id)) continue;
-      increaseRejections.push(makeRejection(id, card, verdict.reason));
-      card.sellPrice = null;
-      card.prices = [];
-      card.yuyuName = '';
-      card.yuyuImage = '';
-      card.timestamp = '';
-      if (Array.isArray(card._rawPricesArchive)) card._rawPricesArchive = [];
-    }
-    if (increaseRejections.length > 0) {
-      const sample = increaseRejections.slice(0, 5).map((r) => `${r.id} [${r.reason}]`).join(', ');
-      console.log(
-        `  [DIC-1167] fail-closed ${increaseRejections.length} newly-priced row(s) without exact-print provenance: `
-        + `${sample}${increaseRejections.length > 5 ? ` +${increaseRejections.length - 5} more` : ''}`
-      );
     }
 
     const dic1482Rejections = [];
@@ -2252,13 +2840,17 @@ async function buildDatabase() {
       previousCards: prevCards,
       nextCards: database.cards,
       rejections: allRejections,
+      listingRefusals: [...listingRefusals.values()].sort((a, b) => a.cardNumber.localeCompare(b.cardNumber)),
+      printingListingRefusals: [...printingListingRefusals.values()].sort((a, b) => a.id.localeCompare(b.id)),
+      coverage: reconciliationManifestBlock(coverageReconciliation),
     });
     writeJsonAtomic(path.join(DATA_DIR, 'price-rejections.json'), manifest);
     console.log(
       `  [DIC-1482] priced metrics rows ${gate.before.pricedRows}→${gate.after.pricedRows}, `
       + `uniqueCardNumbers ${gate.before.pricedUniqueCardNumbers}→${gate.after.pricedUniqueCardNumbers}, `
       + `entries ${gate.before.priceEntries}→${gate.after.priceEntries}; `
-      + `rejections=${allRejections.length} (decrease=${dic1482Rejections.length}, refused-increase=${increaseRejections.length})`
+      + `rejections=${allRejections.length} (decrease=${dic1482Rejections.length}, refused-increase=${increaseRejections.length}), `
+      + `listing refusals=${listingRefusals.size}`
     );
     if (!gate.ok) {
       throw new Error(formatGateViolations('build-database refused to ship', gate.violations));
@@ -2605,4 +3197,4 @@ if (process.argv[1]?.includes('build-database')) {
     });
 }
 
-export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage };
+export { buildDatabase, mergeYtStats, computeYtGrowth, mergeSkills, scrapeSeriesPage, generateSeriesPages, NO_PAGE_SERIES, scrapeYuyuPrices, scrapeAllWithFetch, rotateSeriesVisitOrder, LAUNCH_OPTS };

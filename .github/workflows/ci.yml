@@ -196,6 +196,12 @@ jobs:
       - name: Verify HTTP fallback carries trustworthy exact-print provenance (DIC-1349)
         run: npm run test:dic1349-fallback-provenance
 
+      - name: Verify hung/crashed yuyu price stage never blocks official catalog publication (DIC-1167)
+        run: npm run test:dic1167-yuyu-stage-budget
+
+      - name: Verify standalone yuyu scraper crash recovery + group restarts (DIC-442/DIC-1167)
+        run: npm run test:yuyu-crash-recovery
+
       - name: Verify scan/search market data fields (DIC-361)
         run: npm run test:market-fields
 
@@ -219,6 +225,9 @@ jobs:
 
       - name: Verify exact-print price-regression gate, last-known-good preservation, and canonical/public/native parity (DIC-1482)
         run: npm run test:dic1482-price-gate
+
+      - name: Verify every scraped cardNumber reconciles against the shipped artifact and fallback refusals are recorded (DIC-1167)
+        run: npm run test:dic1167-price-coverage-reconciliation
 
       - name: Audit normalized card labels, subscriber provenance, and exact-printing trends (DIC-1084)
         run: npm run test:card-data-audit
@@ -506,6 +515,9 @@ jobs:
 
       - name: Verify yuyu-provenance gate blocks cross-product preservation (DIC-1227)
         run: npm run test:yuyu-provenance-preservation
+
+      - name: Verify every committed series has a yuyu scrape page (DIC-1167 hEB01)
+        run: npm run test:yuyu-series-pages
 
       - name: Verify unproven printings cannot ship priceHistory (DIC-1229)
         run: npm run test:dic1229-history-provenance

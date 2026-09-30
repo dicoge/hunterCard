@@ -34,6 +34,7 @@ import {
   canonicalYuyuImageIdentity,
   yuyuPayloadMatchesSource,
   pricesEntryMatchesSource,
+  pricesEntryExactPrintMatchesSource,
   applyPreservedMarketFields,
   findAmbiguousPromoRowIds,
 } from './lib/preserve-market-fields.js';
@@ -108,14 +109,14 @@ assert.equal(canonicalYuyuImageIdentity('http://card.yuyu-tei.jp:80/hocg/100_140
 // ---- unit: provenance match --------------------------------------------------
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/hpr/10200.jpg' }, 'hPR'), true);
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10100.jpg' }, 'hPR'), false, 'hEB01 -> hPR must NOT match');
-assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hPR'), true, 'known promo-hbp10 carve-out for hPR');
-assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg' }, 'hPR'), true, 'known promo-hsd10 carve-out for hPR');
+assert.equal(yuyuPayloadMatchesSource({ cardNumber: 'hBP01-051', yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hPR'), true, 'known promo-hbp10 carve-out for hPR');
+assert.equal(yuyuPayloadMatchesSource({ cardNumber: 'hSD03-002', yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10020.jpg' }, 'hPR'), true, 'known promo-hsd10 carve-out for hPR');
 // DIC-1227 CR follow-up rev.4: promo-hbd20 is the real repository promo
 // path that hosts hBD24–hBD30 hPR listings. Mac-Codex CR flagged 48 unique
 // official hPR rows (incl. hBD24-008_hPR_P_hBD24-008_P) losing their
 // /promo-hbd20/ listing when it was missing from the allow-list.
-assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10008.jpg' }, 'hPR'), true, 'known promo-hbd20 carve-out for hPR (hBD24-008 shape)');
-assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hBP08'), false, 'promo-* does not carve out non-hPR products');
+assert.equal(yuyuPayloadMatchesSource({ cardNumber: 'hBD24-008', yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10008.jpg' }, 'hPR'), true, 'known promo-hbd20 carve-out for hPR (hBD24-008 shape)');
+assert.equal(yuyuPayloadMatchesSource({ cardNumber: 'hBP08-051', yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10051.jpg' }, 'hBP08'), false, 'promo-* does not carve out non-hPR products');
 // DIC-1227 CR follow-up rev.3: arbitrary promo-* paths must fail closed.
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-fake/10051.jpg' }, 'hPR'), false, 'unknown promo-fake fails closed even for hPR');
 assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://card.yuyu-tei.jp/hocg/100_140/promo-random/10051.jpg' }, 'hPR'), false, 'unknown promo-random fails closed');
@@ -590,12 +591,12 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
     false,
     'ent07 must still reject a no-image / malformed yuyu URL',
   );
-  // ent07 with a valid /hocg/…/heb01/…jpg URL still passes (its whole point
-  // is the yuyu-scraper aggregation).
+  // CR ab8e4545: a well-formed non-promo /heb01/ URL no longer passes on an
+  // ent07 row — fresh listing matching accepts only the row's own promo pack.
   assert.equal(
     pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/heb01/10077.jpg' }, 'ent07', 'hBP01-051'),
-    true,
-    'ent07 with a well-formed yuyu URL passes (regardless of product path)',
+    false,
+    'CR ab8e4545: ent07 rejects a well-formed non-promo yuyu URL',
   );
   // hBP04 reprint carve-out: origin-prefix /hbp02/ passes for hBP02-084's hBP04 row.
   assert.equal(
@@ -669,6 +670,219 @@ assert.equal(yuyuPayloadMatchesSource({ yuyuImage: 'https://evil-yuyu-tei.jp/hoc
   ]) {
     assert.match(nullBlock, field, `ambiguity-pass null-out must reset ${field}`);
   }
+}
+
+// ---- Fixture J: refused increase payloads never decide row order ----------
+// DIC-1167 2026-09-25: detail-align ranks rows by prices[] (base entry +
+// richness) BEFORE the increase-side provenance gate strips refused payloads,
+// so the scrape shipped 5 cardNumber groups (hBP01-048, hBP02-014, hBP02-024,
+// hSD03-002, hBP04-013) reordered purely by payloads the gate refused. The
+// builder must re-align on the fail-closed shape after the strip and before
+// the decrease gate / canonical write.
+{
+  const src = fs.readFileSync(path.join(REPO_ROOT, 'scripts/build-database.js'), 'utf8');
+  const stripIdx = src.indexOf('increaseRejections.push(makeRejection(');
+  const decreaseIdx = src.indexOf('const dic1482Rejections = [];');
+  assert.ok(stripIdx > 0 && decreaseIdx > stripIdx,
+    'build-database.js must keep the DIC-1167 increase strip before the DIC-1482 decrease gate');
+  const realign = /orderCardsForDetailAlignment\s*\(\s*database\.cards\s*,\s*prevCards\s*\)/g;
+  const afterStrip = [...src.matchAll(realign)].filter((m) => m.index > stripIdx && m.index < decreaseIdx);
+  assert.equal(afterStrip.length, 1,
+    'build-database.js must re-run orderCardsForDetailAlignment(database.cards, prevCards) after stripping refused increase payloads');
+  assert.match(src.slice(afterStrip[0].index - 400, afterStrip[0].index), /database\.cards\s*=|const\s*{\s*cards:/,
+    'the post-strip re-align result must replace database.cards');
+
+  // Behaviour on the exact 2026-09-25 hBP01-048 shape: the ent07 promo row
+  // arrives freshly priced from a cross-product listing, is ranked ahead of
+  // the ent07 aggregate on that payload, then refused.
+  const { orderCardsForDetailAlignment } = await import('./lib/order-cards-for-detail-alignment.js');
+  const row = (id, sourceProduct, prices = []) => ({ id, cardNumber: 'hBP01-048', sourceProduct, prices });
+  const prev = {
+    'hBP01-048_hBP01_C_hBP01-048_C': row('hBP01-048_hBP01_C_hBP01-048_C', 'hBP01', [{ name: 'Base', sellPrice: 30 }]),
+    'hBP01-048_ent07': row('hBP01-048_ent07', 'ent07'),
+    'hBP01-048_ent07_C_hBP01-048_C': row('hBP01-048_ent07_C_hBP01-048_C', 'ent07'),
+    'hBP01-048_ent07_P_hBP01-048_P': row('hBP01-048_ent07_P_hBP01-048_P', 'ent07'),
+  };
+  const fresh = structuredClone(prev);
+  fresh['hBP01-048_ent07_P_hBP01-048_P'].prices = [{
+    name: 'Base', sellPrice: 980, imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbp10/10001.jpg',
+  }];
+  const promoted = orderCardsForDetailAlignment(fresh, prev).cards;
+  assert.notDeepEqual(Object.keys(promoted), Object.keys(prev),
+    'fixture precondition: the refused payload must promote its row before the strip');
+  promoted['hBP01-048_ent07_P_hBP01-048_P'].prices = [];
+  const realigned = orderCardsForDetailAlignment(promoted, prev).cards;
+  assert.deepEqual(Object.keys(realigned), Object.keys(prev),
+    're-aligning after the strip must restore the previous committed order');
+}
+
+// CR dd802df1: preservation and the regression gate accepted ANY known promo
+// pack for an hPR row, so a previous hBD24-006_hPR row carrying a ¥500
+// /promo-hsd10/ listing (the hSD family's pack) classified as proven and was
+// copied onto the unpriced current row. A promo pack image proves an hPR
+// printing only when the pack hosts the row's own card-number family — the
+// rule fresh listing matching has applied since CR bdd2c367.
+{
+  const FOREIGN = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10006.jpg';
+  const OWN = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10006.jpg';
+  const id = 'hBD24-006_hPR_P_hBD24-006_P';
+  const prevRow = (imageUrl) => ({
+    id, cardNumber: 'hBD24-006', sourceProduct: 'hPR', rarity: 'P',
+    sellPrice: 500, yuyuName: 'hBD24-006 P', yuyuImage: imageUrl, timestamp: '2026-09-26T00:00:00Z',
+    prices: [{ name: 'hBD24-006 P', sellPrice: 500, rarity: 'P', imageUrl }],
+    _rawPricesArchive: [{ name: 'hBD24-006 P', sellPrice: 500, rarity: 'P', imageUrl }],
+  });
+  const unpriced = () => ({ id, cardNumber: 'hBD24-006', sourceProduct: 'hPR', rarity: 'P', sellPrice: null, prices: [] });
+
+  assert.equal(yuyuPayloadMatchesSource(prevRow(FOREIGN), 'hPR'), false,
+    'CR dd802df1: a foreign /promo-hsd10/ top-level image cannot vouch for hBD24-006_hPR');
+  assert.equal(yuyuPayloadMatchesSource(prevRow(OWN), 'hPR'), true,
+    'CR dd802df1: the own-family /promo-hbd20/ image still vouches for hBD24-006_hPR');
+  assert.equal(yuyuPayloadMatchesSource({ yuyuImage: OWN }, 'hPR'), false,
+    'CR dd802df1: a promo pack image with no cardNumber fails closed');
+  assert.equal(yuyuPayloadMatchesSource({ cardNumber: 'hSD03-002', yuyuImage: OWN }, 'hPR', 'hBD24-006'), true,
+    'CR dd802df1: an explicit current cardNumber decides the family, not the previous row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'hPR', 'hBD24-006'), false,
+    'CR dd802df1: a foreign promo pack entry does not match an hPR row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: OWN }, 'hPR', 'hBD24-006'), true,
+    'CR dd802df1: the own-family promo pack entry matches an hPR row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: OWN }, 'hPR'), false,
+    'CR dd802df1: a promo pack entry with no cardNumber fails closed');
+  assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: FOREIGN }, 'hPR', 'hBD24-006'), false,
+    'CR dd802df1: the exact-print matcher rejects a foreign promo pack');
+  assert.equal(pricesEntryExactPrintMatchesSource({ imageUrl: OWN }, 'hPR', 'hBD24-006'), true,
+    'CR dd802df1: the exact-print matcher keeps the own-family promo pack');
+
+  const foreignCurrent = unpriced();
+  const foreignSummary = applyPreservedMarketFields(foreignCurrent, prevRow(FOREIGN));
+  assert.equal(foreignCurrent.sellPrice, null, 'CR dd802df1: the foreign ¥500 is not copied onto the unpriced row');
+  assert.deepEqual(foreignCurrent.prices, [], 'CR dd802df1: foreign promo prices[] are not copied');
+  assert.ok(!foreignCurrent.yuyuImage, 'CR dd802df1: the foreign /promo-hsd10/ yuyuImage is not copied');
+  assert.ok(!foreignCurrent._rawPricesArchive || foreignCurrent._rawPricesArchive.length === 0,
+    'CR dd802df1: foreign promo _rawPricesArchive is not copied');
+  assert.equal(foreignSummary.sellPrice, false);
+  assert.equal(foreignSummary.prices, false);
+
+  const ownCurrent = unpriced();
+  applyPreservedMarketFields(ownCurrent, prevRow(OWN));
+  assert.equal(ownCurrent.sellPrice, 500, 'CR dd802df1: the own-family promo price still carries forward');
+  assert.equal(ownCurrent.yuyuImage, OWN);
+  assert.equal(ownCurrent.prices.length, 1);
+
+  // A mixed payload keeps only the own-family entry and derives its top level from it.
+  const mixed = prevRow(FOREIGN);
+  mixed.prices = [
+    { name: 'hBD24-006 P', sellPrice: 500, rarity: 'P', imageUrl: FOREIGN },
+    { name: 'hBD24-006 P', sellPrice: 39800, rarity: 'P', imageUrl: OWN },
+  ];
+  const mixedCurrent = unpriced();
+  applyPreservedMarketFields(mixedCurrent, mixed);
+  assert.equal(mixedCurrent.sellPrice, 39800, 'CR dd802df1: the top level derives from the own-family entry only');
+  assert.equal(mixedCurrent.yuyuImage, OWN);
+  assert.deepEqual(mixedCurrent.prices.map((entry) => entry.imageUrl), [OWN]);
+}
+
+// CR 59661b2b: preservation's ent07 carve-out passed every parseable URL, so a
+// previous hBD24-008_ent07 row carrying a ¥500 /promo-hsd10/ listing was copied
+// onto the unpriced current row even though fresh listing matching refuses it
+// (CR 6c62db8b). A promo pack image on an ent07 row needs the row's own family.
+{
+  const FOREIGN = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hsd10/10008.jpg';
+  const OWN = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10008.jpg';
+  const id = 'hBD24-008_ent07';
+  const prevRow = (imageUrl) => ({
+    id, cardNumber: 'hBD24-008', sourceProduct: 'ent07',
+    sellPrice: 500, yuyuName: 'hBD24-008 P', yuyuImage: imageUrl, timestamp: '2026-09-28T00:00:00Z',
+    prices: [{ name: 'hBD24-008 P', sellPrice: 500, rarity: 'P', imageUrl }],
+    _rawPricesArchive: [{ name: 'hBD24-008 P', sellPrice: 500, rarity: 'P', imageUrl }],
+  });
+  const unpriced = () => ({ id, cardNumber: 'hBD24-008', sourceProduct: 'ent07', sellPrice: null, prices: [] });
+
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'ent07', 'hBD24-008'), false,
+    'CR 59661b2b: a foreign promo pack entry does not match an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'ent07', 'hBD24-008', { allowOriginPrefix: false }), false,
+    'CR 59661b2b: the strict filter rejects a foreign promo pack on an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: OWN }, 'ent07', 'hBD24-008'), true,
+    'CR 59661b2b: the own-family promo pack entry matches an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: OWN }, 'ent07'), false,
+    'CR 59661b2b: an ent07 promo pack entry with no cardNumber fails closed');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/promo-hxx99/10008.jpg' }, 'ent07', 'hBD24-008'), false,
+    'CR 59661b2b: an unknown promo pack fails closed on an ent07 row');
+
+  const foreignCurrent = unpriced();
+  const foreignSummary = applyPreservedMarketFields(foreignCurrent, prevRow(FOREIGN), { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(foreignCurrent.sellPrice, null, 'CR 59661b2b: the foreign ¥500 is not copied onto the unpriced ent07 row');
+  assert.deepEqual(foreignCurrent.prices, [], 'CR 59661b2b: foreign promo prices[] are not copied');
+  assert.ok(!foreignCurrent.yuyuImage, 'CR 59661b2b: the foreign /promo-hsd10/ yuyuImage is not copied');
+  assert.ok(!foreignCurrent._rawPricesArchive || foreignCurrent._rawPricesArchive.length === 0,
+    'CR 59661b2b: foreign promo _rawPricesArchive is not copied');
+  assert.equal(foreignSummary.sellPrice, false);
+  assert.equal(foreignSummary.prices, false);
+
+  const ownCurrent = unpriced();
+  applyPreservedMarketFields(ownCurrent, prevRow(OWN), { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(ownCurrent.sellPrice, 500, 'CR 59661b2b: the own-family promo price still carries forward');
+  assert.equal(ownCurrent.yuyuImage, OWN);
+  assert.equal(ownCurrent.prices.length, 1);
+
+  const mixed = prevRow(FOREIGN);
+  mixed.prices = [
+    { name: 'hBD24-008 P', sellPrice: 500, rarity: 'P', imageUrl: FOREIGN },
+    { name: 'hBD24-008 P', sellPrice: 9980, rarity: 'P', imageUrl: OWN },
+  ];
+  const mixedCurrent = unpriced();
+  applyPreservedMarketFields(mixedCurrent, mixed, { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(mixedCurrent.sellPrice, 9980, 'CR 59661b2b: the ent07 top level derives from the own-family entry only');
+  assert.equal(mixedCurrent.yuyuImage, OWN);
+  assert.deepEqual(mixedCurrent.prices.map((entry) => entry.imageUrl), [OWN]);
+}
+
+// CR ab8e4545: the ent07 carve-out still passed every NON-promo image, so a
+// previous hBD24-012_ent07 row carrying a ¥500 /hbp01/ listing was copied onto
+// the unpriced current row although fresh listing matching refuses it. An
+// ent07 row now matches only its own-family known promo pack in both filters.
+{
+  const FOREIGN = 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10012.jpg';
+  const OWN = 'https://card.yuyu-tei.jp/hocg/100_140/promo-hbd20/10012.jpg';
+  const id = 'hBD24-012_ent07';
+  const prevRow = (imageUrl) => ({
+    id, cardNumber: 'hBD24-012', sourceProduct: 'ent07',
+    sellPrice: 500, yuyuName: 'hBD24-012 P', yuyuImage: imageUrl, timestamp: '2026-09-28T00:00:00Z',
+    prices: [{ name: 'hBD24-012 P', sellPrice: 500, rarity: 'P', imageUrl }],
+    _rawPricesArchive: [{ name: 'hBD24-012 P', sellPrice: 500, rarity: 'P', imageUrl }],
+  });
+  const unpriced = () => ({ id, cardNumber: 'hBD24-012', sourceProduct: 'ent07', sellPrice: null, prices: [] });
+
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'ent07', 'hBD24-012'), false,
+    'CR ab8e4545: a non-promo /hbp01/ entry does not match an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: FOREIGN }, 'ent07', 'hBD24-012', { allowOriginPrefix: false }), false,
+    'CR ab8e4545: the strict filter rejects a non-promo entry on an ent07 row');
+  // The reprint origin-prefix carve-out never applies to ent07 either: fresh
+  // matching refuses /hbp01/ on hBP01-051_ent07 too.
+  assert.equal(pricesEntryMatchesSource({ imageUrl: 'https://card.yuyu-tei.jp/hocg/100_140/hbp01/10051.jpg' }, 'ent07', 'hBP01-051'), false,
+    'CR ab8e4545: the cardNumber origin-prefix product does not match an ent07 row');
+  assert.equal(pricesEntryMatchesSource({ imageUrl: OWN }, 'ent07', 'hBD24-012'), true,
+    'CR ab8e4545: the own-family promo pack entry still matches an ent07 row');
+
+  const foreignCurrent = unpriced();
+  const foreignSummary = applyPreservedMarketFields(foreignCurrent, prevRow(FOREIGN), { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(foreignCurrent.sellPrice, null, 'CR ab8e4545: the non-promo ¥500 is not copied onto the unpriced ent07 row');
+  assert.deepEqual(foreignCurrent.prices, [], 'CR ab8e4545: non-promo prices[] are not copied');
+  assert.ok(!foreignCurrent.yuyuImage, 'CR ab8e4545: the /hbp01/ yuyuImage is not copied');
+  assert.ok(!foreignCurrent._rawPricesArchive || foreignCurrent._rawPricesArchive.length === 0,
+    'CR ab8e4545: non-promo _rawPricesArchive is not copied');
+  assert.equal(foreignSummary.sellPrice, false);
+  assert.equal(foreignSummary.prices, false);
+
+  const mixed = prevRow(FOREIGN);
+  mixed.prices = [
+    { name: 'hBD24-012 P', sellPrice: 500, rarity: 'P', imageUrl: FOREIGN },
+    { name: 'hBD24-012 P', sellPrice: 9980, rarity: 'P', imageUrl: OWN },
+  ];
+  const mixedCurrent = unpriced();
+  applyPreservedMarketFields(mixedCurrent, mixed, { matchKind: 'exact-id', preserveYuyuPayload: true });
+  assert.equal(mixedCurrent.sellPrice, 9980, 'CR ab8e4545: the ent07 top level derives from the own-family entry only');
+  assert.deepEqual(mixedCurrent.prices.map((entry) => entry.imageUrl), [OWN]);
 }
 
 console.log('DIC-1227 yuyu-provenance preservation regression checks passed');

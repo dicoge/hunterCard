@@ -10,8 +10,24 @@
       "currency": "JPY",
       "cardId": "hBP09-004_hBP09_OSR_hBP09-004_OSR",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-004_hBP09_OSR_hBP09-004_OSR",
+      "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 580,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-004_hBP09_OSR_hBP09-004_OSR",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-09-23T12:15:56.956Z",
+  "lastUpdated": "2026-09-27T12:14:25.965Z",
   "nameZh": "凱拉·科瓦爾斯基亞"
 }

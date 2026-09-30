@@ -340,6 +340,27 @@ try {
       'build-database.js must carry the DIC-1334 post-transformation coverage audit (fail-closed)',
     );
     console.log('  ✓ coverage-collapse fail-closed: unprovable full scrape refuses to ship (DIC-1334 audit fires)');
+
+    // ── 4d. DIC-1167: a TRUNCATED scrape keeps the collapse audit armed ──
+    // A hung/abandoned yuyu series marks the scrape `truncated` so untouched
+    // rows keep their previously proven prices — but truncation must not
+    // double as an exemption from the fresh-fill collapse audit, otherwise a
+    // broken parser/matcher could hide behind a single hung series and coast
+    // on preserved prices.
+    const truncatedCollapsePath = path.join(tmp, 'yuyu-dic1167-truncated-collapse.json');
+    fs.writeFileSync(truncatedCollapsePath, JSON.stringify({ ...collapseFixture, truncated: true }, null, 2));
+    const truncatedCollapseBuild = spawnSync(process.execPath, ['scripts/build-database.js'], {
+      cwd: repo,
+      env: { ...process.env, HUNTERCARD_YUYU_FIXTURE_PATH: truncatedCollapsePath, HUNTERCARD_SKIP_IMAGE_DOWNLOADS: '1' },
+      encoding: 'utf8',
+    });
+    const truncatedOut = `${truncatedCollapseBuild.stdout}\n${truncatedCollapseBuild.stderr}`;
+    assert.match(truncatedOut, /partial=true; truncated=true/,
+      'a truncated scrape must route through DIC-1321 partial preservation');
+    assert.notEqual(truncatedCollapseBuild.status, 0,
+      'a truncated full-scale scrape whose fresh fills collapse must still FAIL the build (DIC-1334 audit stays armed)');
+    assert.match(truncatedOut, /\[DIC-1334\] final canonical artifact collapsed priced-cardNumber coverage/);
+    console.log('  ✓ truncated scrape keeps the DIC-1334 collapse audit armed (DIC-1167)');
   }
 
   // ── Case 5 (DIC-1343/CR rev.2): compound printing identity ──

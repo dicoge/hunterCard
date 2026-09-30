@@ -309,10 +309,6 @@ const REAL = adaptDatabase(RAW_CARDS);
 
 // Real cards spanning plain-only, plain+parallel, plain+parallel+signed,
 // duplicated-label (fail closed) and explicit base-reprint cases.
-// DIC-1482 refresh of these pinned values: the exact-print recovery superseded
-// the stale 2026-08-24 ent07/aggregate rows with each printing's OWN
-// source-listed 2026-09-19 price (the aggregates' duplicate labels otherwise
-// fail the whole label closed).
 //
 // A premium printing is priced exactly when its OWN listing proves it.
 // hBP04-005's (パラレル/サイン) and hBP02-084's (パラレル/箔押し) each carry a
@@ -321,43 +317,75 @@ const REAL = adaptDatabase(RAW_CARDS);
 // DIC-1013: rarity describes the card number as a whole and never states which
 // printing a price belongs to. A printing still fails closed when its own
 // evidence is missing or ambiguous — hBP02-017's duplicate-label (パラレル)
-// below is the case that must stay unpriced. The invariant stays exact per-tier
-// pricing from each printing's own listing, never a particular yen value and
-// never a cross-tier borrow.
+// below is the case that must stay unpriced.
+//
+// Each printing is pinned to its OWN source listing (the yuyu-tei image path
+// that identifies it), never to a yen literal: the expected price is read from
+// that listing in the committed catalog. Yen pins went stale on every scrape
+// that moved a price (DIC-1482 2026-09-19, DIC-1167 2026-09-23 hBP02-084
+// 1780→1280, 2026-09-25 hBP04-041 50→120 / 180→680 — each an exact move on the
+// printing's own listing), while a cross-tier borrow or a wrong-listing
+// election still fails here because the resolved price must equal THIS
+// listing's price.
 const REAL_EXPECTATIONS = [
-  { cardNumber: 'hBP04-005', printings: { BASE: 580, PARALLEL: 8980, 'PARALLEL/SIGN': 69800 } },
-  { cardNumber: 'hBP04-057', printings: { BASE: 120, PARALLEL: 980 } },
-  { cardNumber: 'hBP04-041', printings: { BASE: 50, PARALLEL: 180 } },
-  { cardNumber: 'hSD01-001', printings: { BASE: 180 } },
-  // Base tracked ¥220 for weeks; 2026-08-23 scrape settled at ¥180 (still the
-  // exact source-listed price, no cross-tier collapse). Update the expectation
-  // rather than pin to a stale snapshot — the invariant here is exact per-tier
-  // pricing, not any particular yen value.
-  { cardNumber: 'hBP01-044', printings: { BASE: 180, 'PARALLEL/HR': 7980, 'PARALLEL/HBP07': 80 } },
-  { cardNumber: 'hBP02-017', printings: { BASE: 120 }, unpriced: ['PARALLEL'] },
+  {
+    cardNumber: 'hBP04-005',
+    printings: { BASE: 'hbp04/10011.jpg', PARALLEL: 'hbp04/10012.jpg', 'PARALLEL/SIGN': 'hbp04/10013.jpg' },
+  },
+  { cardNumber: 'hBP04-057', printings: { BASE: 'hbp04/10115.jpg', PARALLEL: 'hbp04/10116.jpg' } },
+  { cardNumber: 'hBP04-041', printings: { BASE: 'hbp04/10082.jpg', PARALLEL: 'hbp04/10083.jpg' } },
+  { cardNumber: 'hSD01-001', printings: { BASE: 'hsd01/10001.jpg' } },
+  {
+    cardNumber: 'hBP01-044',
+    printings: { BASE: 'hbp01/10058.jpg', 'PARALLEL/HR': 'hbp07/10235.jpg', 'PARALLEL/HBP07': 'hbp07/10224.jpg' },
+  },
+  { cardNumber: 'hBP02-017', printings: { BASE: 'hbp02/10034.jpg' }, unpriced: ['PARALLEL'] },
   // Base reprints: original and hBP04 reprint must BOTH keep their exact price.
-  // 2026-09-23 scrape: PARALLEL settled 1780→1280 (own /hbp02/10169.jpg
-  // listing) and PARALLEL/HBP04 4980 (own /hbp04/10217.jpg listing) — exact
-  // source-listed moves on each printing's own product path, no cross-tier
-  // collapse. Update the expectation rather than pin a stale snapshot.
   {
     cardNumber: 'hBP02-084',
     printings: {
-      BASE: 80, HBP04: 180, PARALLEL: 1280, 'PARALLEL/HBP04': 4980, 'PARALLEL/FOIL': 89800,
+      BASE: 'hbp02/10168.jpg',
+      HBP04: 'hbp04/10216.jpg',
+      PARALLEL: 'hbp02/10169.jpg',
+      'PARALLEL/HBP04': 'hbp04/10217.jpg',
+      'PARALLEL/FOIL': 'hbp02/10170.jpg',
     },
   },
   {
     cardNumber: 'hSD01-017',
-    printings: { BASE: 80, HBP04: 120, 'PARALLEL/HBP04': 1980, 'PARALLEL/ベーシックPRパック VOL.3': 980 },
+    printings: {
+      BASE: 'hsd01/10017.jpg',
+      HBP04: 'hbp04/10218.jpg',
+      'PARALLEL/HBP04': 'hbp04/10219.jpg',
+      'PARALLEL/ベーシックPRパック VOL.3': 'promo-hsd10/10008.jpg',
+    },
   },
 ];
 
+// The sell price the committed catalog lists for one exact source listing of a
+// card number. Every row carrying that listing must agree — a listing that
+// reads two prices is itself ambiguous and must not become an expectation.
+function ownListingPrice(cardNumber, listingPath) {
+  const seen = new Set();
+  for (const card of RAW_CARDS) {
+    if (card?.cardNumber !== cardNumber) continue;
+    for (const entry of Array.isArray(card.prices) ? card.prices : []) {
+      if (!String(entry?.imageUrl || '').endsWith(`/${listingPath}`)) continue;
+      if (Number.isFinite(entry.sellPrice) && entry.sellPrice > 0) seen.add(entry.sellPrice);
+    }
+  }
+  assert.equal(seen.size, 1,
+    `${cardNumber} listing ${listingPath} must carry exactly one sell price (got ${[...seen].join(',') || 'none'})`);
+  return [...seen][0];
+}
+
 test('five+ real cards resolve each printing to its own listed sell price', () => {
   for (const { cardNumber, printings, unpriced = [] } of REAL_EXPECTATIONS) {
-    for (const [printing, price] of Object.entries(printings)) {
+    for (const [printing, listingPath] of Object.entries(printings)) {
       const res = resolveExactPrice(cardNumber, printing, REAL.priceRecords);
       assert.equal(res.status, 'ok', `${cardNumber} ${printing} should be priced`);
-      assert.equal(res.price, price, `${cardNumber} ${printing}`);
+      assert.equal(res.price, ownListingPrice(cardNumber, listingPath),
+        `${cardNumber} ${printing} must be priced from its own listing ${listingPath}`);
     }
     for (const printing of unpriced) {
       assert.equal(resolveExactPrice(cardNumber, printing, REAL.priceRecords).status,

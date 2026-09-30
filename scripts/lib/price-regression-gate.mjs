@@ -110,12 +110,18 @@ export function priceMetrics(cards) {
  *
  * Returns `{ proven: true, reason: null }` only when the row's own yuyu
  * evidence proves this exact printing:
- *   - top-level: positive sellPrice AND yuyuImage product path equals the
- *     row's sourceProduct (promo-*→hPR carve-out only), OR
- *   - entry-level: at least one prices[] entry with positive sellPrice whose
- *     imageUrl passes `pricesEntryExactPrintMatchesSource` (the DIC-1229
- *     strict matcher — no reprint origin-prefix carve-out, no ent07
- *     aggregation pass).
+ *   - entry-level: when prices[] carries any positive-sellPrice entry, EVERY
+ *     such entry's imageUrl passes `pricesEntryExactPrintMatchesSource` (the
+ *     DIC-1229 strict matcher — no reprint origin-prefix carve-out, no ent07
+ *     aggregation pass). Proof is per listing: the top-level sellPrice is the
+ *     lowest of these entries, so one proven sibling cannot vouch for a
+ *     cheaper foreign listing (CR f285105e — a ¥100 /hbp05/ listing beside a
+ *     proven ¥200 /hbp06/ one used to classify an hbp06 row as proven), and
+ *     neither can a proven top-level yuyuImage, which follows the canonical
+ *     name rather than the priced listing;
+ *   - top-level: only when prices[] has no positive entry, positive sellPrice
+ *     AND yuyuImage product path equals the row's sourceProduct (own-family
+ *     promo-*→hPR carve-out only).
  *
  * The row-level `rarity` is NEVER consulted. It describes the card number as
  * a whole — hBP04-005 is SEC on the very row that carries its plain ¥980
@@ -139,14 +145,22 @@ export function classifyExactPrintPayload(card) {
   if (!isPricedRow(card)) return { proven: false, reason: 'unpriced' };
   const sourceProduct = String(card.sourceProduct || card.series || '').trim();
   if (!sourceProduct) return { proven: false, reason: 'missing-source-product' };
-  if (yuyuPayloadMatchesSource(card, sourceProduct)) return { proven: true, reason: null };
   const entries = Array.isArray(card.prices) ? card.prices : [];
-  for (const entry of entries) {
-    if (!entry || !Number.isFinite(entry.sellPrice) || entry.sellPrice <= 0) continue;
-    if (pricesEntryExactPrintMatchesSource(entry, sourceProduct)) {
-      return { proven: true, reason: null };
-    }
+  const pricedEntries = entries.filter((entry) => entry && Number.isFinite(entry.sellPrice) && entry.sellPrice > 0);
+  if (pricedEntries.length > 0) {
+    const unproven = pricedEntries.filter(
+      (entry) => !pricesEntryExactPrintMatchesSource(entry, sourceProduct, card.cardNumber),
+    );
+    if (unproven.length === 0) return { proven: true, reason: null };
+    // The reason derives from the refused listings' own evidence.
+    return {
+      proven: false,
+      reason: unproven.some((entry) => Boolean(yuyuImageProductPath(entry.imageUrl)))
+        ? 'cross-product-image'
+        : 'no-yuyu-image-provenance',
+    };
   }
+  if (yuyuPayloadMatchesSource(card, sourceProduct)) return { proven: true, reason: null };
   const anyParseable = Boolean(yuyuImageProductPath(card.yuyuImage))
     || entries.some((entry) => Boolean(yuyuImageProductPath(entry?.imageUrl)));
   return {
@@ -352,10 +366,31 @@ export function formatGateViolations(label, violations, limit = 8) {
  * Machine-readable rejection manifest for the refresh that just ran.
  * Committed as data/price-rejections.json so every allowed decrease ships
  * with its per-printing evidence.
+ *
+ * DIC-1167 (2026-09-28): callers that ran a scrape may also attach
+ * `listingRefusals` (per-cardNumber listing sets the yuyu-only fallback
+ * refused — never per printing, so kept out of `rejections[]`, which the
+ * gate verifies per printing id), `printingListingRefusals` (printings a
+ * positive listing matched that received no fresh price — audit trail for
+ * the reconciliation, not decrease rejections) and `coverage` (the
+ * scraped-vs-shipped reconciliation). All are omitted when not supplied, so other refresh
+ * paths keep their existing manifest shape.
  */
-export function buildPriceRejectionManifest({ label, previousCards = {}, nextCards = {}, rejections = [] } = {}) {
+export function buildPriceRejectionManifest({
+  label,
+  previousCards = {},
+  nextCards = {},
+  rejections = [],
+  listingRefusals,
+  printingListingRefusals,
+  coverage,
+} = {}) {
   const before = priceMetrics(previousCards);
   const after = priceMetrics(nextCards);
+  const extra = {};
+  if (listingRefusals !== undefined) extra.listingRefusals = listingRefusals;
+  if (printingListingRefusals !== undefined) extra.printingListingRefusals = printingListingRefusals;
+  if (coverage !== undefined) extra.coverage = coverage;
   return {
     schema: PRICE_REJECTION_MANIFEST_SCHEMA,
     label: String(label || 'refresh'),
@@ -368,6 +403,7 @@ export function buildPriceRejectionManifest({ label, previousCards = {}, nextCar
       priceEntries: after.priceEntries - before.priceEntries,
     },
     rejections,
+    ...extra,
   };
 }
 

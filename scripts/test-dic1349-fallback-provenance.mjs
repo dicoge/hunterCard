@@ -160,7 +160,7 @@ function wrapPage(blocks) {
     'case 1: hBP04-004 OUR must pass pricesEntryExactPrintMatchesSource for sourceProduct hBP04',
   );
   assert.ok(
-    pricesEntryExactPrintMatchesSource({ sellPrice: cards[2].sellPrice, imageUrl: cards[2].yuyuImage }, 'hPR'),
+    pricesEntryExactPrintMatchesSource({ sellPrice: cards[2].sellPrice, imageUrl: cards[2].yuyuImage }, 'hPR', 'hSD10-001'),
     'case 1: hSD10-001 promo-hsd10 must pass pricesEntryExactPrintMatchesSource for sourceProduct hPR (known promo carve-out)',
   );
 }

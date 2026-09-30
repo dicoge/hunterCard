@@ -10,8 +10,24 @@
       "currency": "JPY",
       "cardId": "hBP06-081_hBP06_SR_hBP06-081_SR",
       "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-26",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-081_hBP06_SR_hBP06-081_SR",
+      "sourceProduct": "hBP06"
+    },
+    {
+      "date": "2026-09-27",
+      "price": 500,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP06-081_hBP06_SR_hBP06-081_SR",
+      "sourceProduct": "hBP06"
     }
   ],
-  "lastUpdated": "2026-09-23T12:15:56.921Z",
+  "lastUpdated": "2026-09-27T12:14:25.935Z",
   "nameZh": "大空昴"
 }
