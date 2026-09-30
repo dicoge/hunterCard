@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP03-043_hBP03_RR_hBP03-043_RR",
       "sourceProduct": "hBP03"
+    },
+    {
+      "date": "2026-09-30",
+      "price": 320,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP03-043_hBP03_RR_hBP03-043_RR",
+      "sourceProduct": "hBP03"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.884Z",
+  "lastUpdated": "2026-09-30T12:14:36.682Z",
   "nameZh": "雙葉·深淵護衛"
 }

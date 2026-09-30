@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP09-100_hBP09_S_hBP09-100_S",
       "sourceProduct": "hBP09"
+    },
+    {
+      "date": "2026-09-30",
+      "price": 980,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP09-100_hBP09_S_hBP09-100_S",
+      "sourceProduct": "hBP09"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.976Z",
+  "lastUpdated": "2026-09-30T12:14:36.772Z",
   "nameZh": "諾艾爾的特盛牛丼"
 }

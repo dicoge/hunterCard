@@ -2,14 +2,14 @@
   "cardId": "hBP07-101",
   "name": "ASMRマイク",
   "nameZh": "ASMR麥克風",
-  "trend": "up",
-  "score": 0.63,
+  "trend": "stable",
+  "score": 0.03,
   "confidence": 0.7,
   "components": {
-    "priceTrend": 1,
+    "priceTrend": 0,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.763Z",
-  "dataPoints": 70
+  "lastUpdated": "2026-09-30T12:14:48.947Z",
+  "dataPoints": 71
 }

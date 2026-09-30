@@ -3,13 +3,13 @@
   "name": "パヴォリア・レイネ",
   "nameZh": "帕沃莉亞·蕾內",
   "trend": "down",
-  "score": -0.3,
+  "score": -0.31,
   "confidence": 0.5,
   "components": {
     "priceTrend": -0.56,
     "ytTrend": 0,
     "newsSentiment": 0.14
   },
-  "lastUpdated": "2026-09-27T12:14:34.719Z",
+  "lastUpdated": "2026-09-30T12:14:48.884Z",
   "dataPoints": 65
 }

@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP04-057_hBP04_U_hBP04-057_U",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-09-30",
+      "price": 120,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-057_hBP04_U_hBP04-057_U",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.781Z",
+  "lastUpdated": "2026-09-30T12:14:36.577Z",
   "nameZh": "拉普拉斯·達克尼斯"
 }

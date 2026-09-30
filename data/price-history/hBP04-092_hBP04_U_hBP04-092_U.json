@@ -26,8 +26,16 @@
       "currency": "JPY",
       "cardId": "hBP04-092_hBP04_U_hBP04-092_U",
       "sourceProduct": "hBP04"
+    },
+    {
+      "date": "2026-09-30",
+      "price": 50,
+      "source": "yuyu-tei",
+      "currency": "JPY",
+      "cardId": "hBP04-092_hBP04_U_hBP04-092_U",
+      "sourceProduct": "hBP04"
     }
   ],
-  "lastUpdated": "2026-09-27T12:14:25.913Z",
+  "lastUpdated": "2026-09-30T12:14:36.708Z",
   "nameZh": "寢彭拉伯"
 }
