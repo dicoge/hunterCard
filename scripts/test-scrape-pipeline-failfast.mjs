@@ -28,11 +28,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PIPELINE = path.join(__dirname, 'local-scrape-and-push.sh');
+// DIC-1167 (2026-09-30): the scheduler proves it runs the committed script by
+// comparing `git hash-object` of itself with `git rev-parse <rev>:<script>`.
+// The shimmed git has no object store, so both resolve to this git blob id of
+// the sandboxed (= committed) script.
+const pipelineBytes = fs.readFileSync(PIPELINE);
+const SCRIPT_BLOB = createHash('sha1')
+  .update(`blob ${pipelineBytes.length}\0`)
+  .update(pipelineBytes)
+  .digest('hex');
 
 /**
  * Materialize a sandbox containing the real pipeline script plus `node`/`git`
@@ -148,6 +158,8 @@ args=("$@")
 while [ "\${args[0]}" = "-c" ] || [ "\${args[0]}" = "-C" ]; do args=("\${args[@]:2}"); done
 cmd="\${args[0]}"
 if [ "$cmd" = "fetch" ] && [ -n "$FAIL_FETCH" ]; then exit 1; fi
+if [ "$cmd" = "hash-object" ]; then echo "$SCRIPT_BLOB"; exit 0; fi
+if [ "$cmd" = "rev-parse" ] && [[ "$*" == *":scripts/local-scrape-and-push.sh"* ]]; then echo "$SCRIPT_BLOB"; exit 0; fi
 if [ "$cmd" = "rev-parse" ]; then
   if [ -f "$COMMIT_MARKER" ]; then echo "feedfeedfeedfeedfeedfeedfeedfeedfeedfeed"; else echo "0123456789abcdef0123456789abcdef01234567"; fi
   exit 0
@@ -198,6 +210,7 @@ exit 0
       FAIL_FETCH: env.FAIL_FETCH ?? '',
       NO_CHANGES: env.NO_CHANGES ?? '',
       COMMIT_MARKER: path.join(dir, 'commit-marker'),
+      SCRIPT_BLOB,
       SANDBOX_REPO: repo,
       HUNTERCARD_FORCE_ISOLATED: env.HUNTERCARD_FORCE_ISOLATED ?? '',
       HUNTERCARD_ISOLATED_DIR: path.join(dir, 'forced-worktree'),
@@ -797,7 +810,7 @@ for (const gate of ['test:buy-price', 'test:buy-price-regen']) {
     assert.notStrictEqual(status, 0, `unverified signals restore (${mode}) must fail the run: ${log.slice(-800)}`);
     assert.match(log, mode === 'dirty' ? /still differ from HEAD after restore/ : /could not verify the killed signals outputs/, `fail-closed reason logged (${mode})`);
     assert.match(log, /signals join failed closed/, `runPipeline stops at the join (${mode})`);
-    for (const forbidden of ['refresh-yt-stats.mjs', 'merge-buy-prices.js', 'generate-native-database.mjs', 'git add', 'commit -m', 'push']) {
+    for (const forbidden of ['refresh-yt-stats.mjs', 'merge-buy-prices.js', 'generate-native-database.mjs', 'git add', 'commit -m', ' push ']) {
       assert.strictEqual(indexOfCall(lines, forbidden), -1, `${forbidden} must not run after an unverified restore (${mode}): ${lines.join(' | ')}`);
     }
   }

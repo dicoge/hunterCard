@@ -1259,4 +1259,159 @@ for (const dirty of [false, true]) {
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+// ─── DIC-1167 (2026-09-30) stale resident orchestration ─────────────────────
+// The cron invokes the RESIDENT script, and bash keeps the function
+// definitions it parsed from that file for the whole run. On 09-30 a
+// 225-commit-stale resident built origin/main's data through its OWN
+// runPipeline (no run budget, no fail-closed push). These cases mark each
+// copy of the script's runPipeline with a trace so the harness can see WHOSE
+// orchestration actually ran.
+
+const RUN_PIPELINE_ANCHOR = 'runPipeline() {\n  local dir="$1"\n';
+
+// markedScript(label): the real script whose runPipeline traces
+// `RUNPIPELINE_FROM <label>` first thing.
+function markedScript(label) {
+  const src = fs.readFileSync(REAL_PIPELINE, 'utf-8');
+  assert.ok(src.includes(RUN_PIPELINE_ANCHOR), 'harness: runPipeline anchor must exist in the real script');
+  return src.replace(
+    RUN_PIPELINE_ANCHOR,
+    `runPipeline() {\n  echo "RUNPIPELINE_FROM ${label}" >> "$TRACE_FILE"\n  local dir="$1"\n`,
+  );
+}
+
+const residentScriptPath = (sandbox) => path.join(sandbox.repo, 'scripts', 'local-scrape-and-push.sh');
+
+// Commit + push a script variant from the resident (resident HEAD == origin).
+function commitScriptOnResident(sandbox, label) {
+  fs.writeFileSync(residentScriptPath(sandbox), markedScript(label));
+  execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "script ${label}"`, { cwd: sandbox.repo });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: sandbox.repo });
+}
+
+// Advance origin with a script variant from an independent clone, leaving the
+// resident (and its running copy) one commit behind.
+function advanceRemoteScript(sandbox, label) {
+  const other = path.join(sandbox.dir, `other-script-${label}`);
+  execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+  execSync(`${REAL_GIT} config user.email other@example.com`, { cwd: other });
+  execSync(`${REAL_GIT} config user.name other`, { cwd: other });
+  fs.writeFileSync(path.join(other, 'scripts', 'local-scrape-and-push.sh'), markedScript(label));
+  execSync(`${REAL_GIT} add scripts/local-scrape-and-push.sh`, { cwd: other });
+  execSync(`${REAL_GIT} -c commit.gpgsign=false commit -q -m "remote script ${label}"`, { cwd: other });
+  execSync(`${REAL_GIT} push -q origin main`, { cwd: other });
+  return execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
+}
+
+const pipelineOwners = (lines) =>
+  lines.filter((l) => l.startsWith('RUNPIPELINE_FROM ')).map((l) => l.slice('RUNPIPELINE_FROM '.length));
+
+// ─── Case W: dirty route with a STALE/MODIFIED resident script — the
+// pipeline must run origin's committed orchestration from the isolated
+// worktree, never the resident's function definitions. ────────────────────
+{
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  try {
+    commitScriptOnResident(sandbox, 'ORIGIN');
+    fs.writeFileSync(residentScriptPath(sandbox), markedScript('RESIDENT'));
+    const residue = path.join(sandbox.repo, 'data', 'price-history', 'hW-001_hFOO_C.json');
+    fs.writeFileSync(residue, '{}');
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 0, `W: dirty isolated handoff must complete; got ${status}\n${log}`);
+    assert.deepEqual(pipelineOwners(lines), ['ORIGIN'], `W: exactly origin's runPipeline must run, never the resident's\n${lines.join('\n')}`);
+    assert.match(log, /resident script .* differs from origin\/main .*the pipeline runs origin's copy/, 'W: the stale resident must be reported');
+    assert.ok(
+      lines.some((l) => l.includes('build-database.js') && l.includes(`[cwd=${isoDir}]`)),
+      'W: the build must run inside the isolated worktree',
+    );
+    assert.ok(someTraced(lines, 'HEAD:refs/heads/bot/scrape/'), 'W: handoff goes to bot/scrape/<date>');
+    assert.equal(someTraced(lines, 'HEAD:main'), false, 'W: dirty route must never push HEAD:main');
+    assert.match(log, /✅ Done \(isolated handoff\)/, 'W: stage 2 reports the isolated handoff');
+    assert.match(log, /✅ Done \(isolated bootstrap\)/, 'W: stage 1 reports Done only after stage 2');
+    assert.equal(fs.readFileSync(residue, 'utf-8'), '{}', 'W: resident residue must stay untouched');
+    assert.equal(fs.readFileSync(residentScriptPath(sandbox), 'utf-8'), markedScript('RESIDENT'), 'W: resident script must stay untouched');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case X: clean in-place route where the fast-forward UPDATES the script —
+// the run must re-execute origin's copy instead of the definitions it parsed
+// before the pull, and publish exactly once. ───────────────────────────────
+{
+  const sandbox = makeSandbox();
+  try {
+    commitScriptOnResident(sandbox, 'OLD');
+    const newRemote = advanceRemoteScript(sandbox, 'NEW');
+    const { status, lines, log } = runSandbox(sandbox);
+    assert.equal(status, 0, `X: fast-forwarded in-place run must complete via the updated script; got ${status}\n${log}`);
+    assert.deepEqual(pipelineOwners(lines), ['NEW'], `X: only the pulled script's runPipeline may run\n${lines.join('\n')}`);
+    assert.match(log, /fast-forward updated scripts\/local-scrape-and-push\.sh .*re-executing origin\/main's copy/, 'X: the re-exec must be logged');
+    assert.equal(lines.filter((l) => l.includes('push origin HEAD:main')).length, 1, 'X: the artifact is published exactly once');
+    const artifactParent = execSync(`${REAL_GIT} rev-parse HEAD^`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    assert.equal(artifactParent, newRemote, 'X: artifact sits on the fetched origin/main');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case Y: clean in-place route with a LOCALLY MODIFIED resident script —
+// neither the running copy nor the on-disk one is origin's, so the run must
+// fail closed before any scrape/build/commit/push. ──────────────────────────
+{
+  const sandbox = makeSandbox();
+  try {
+    fs.writeFileSync(residentScriptPath(sandbox), markedScript('LOCAL'));
+    const result = runSandbox(sandbox);
+    assertCleanPathFailedClosed(
+      'Y locally modified resident script',
+      result,
+      /is not origin\/main's committed scripts\/local-scrape-and-push\.sh .*refusing in-place build\/push with stale or locally modified orchestration/,
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], 'Y: no runPipeline may run');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case Z: a re-executed run that STILL is not origin's script (or a
+// leaked HUNTERCARD_SELF_REEXEC) must fail closed, never re-exec again. ────
+{
+  const sandbox = makeSandbox();
+  try {
+    commitScriptOnResident(sandbox, 'OLD');
+    advanceRemoteScript(sandbox, 'NEW');
+    const result = runSandbox(sandbox, { HUNTERCARD_SELF_REEXEC: '1' });
+    assertCleanPathFailedClosed(
+      'Z re-exec guard',
+      result,
+      /refusing in-place build\/push with stale or locally modified orchestration/,
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], 'Z: no runPipeline may run');
+    assert.doesNotMatch(result.log, /re-executing origin\/main's copy/, 'Z: must not re-execute a second time');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+// ─── Case AA: HUNTERCARD_FORCE_ISOLATED_STAGE2 leaked into a resident run whose
+// script is not its HEAD's committed copy — stage 2 must refuse. ────────────
+{
+  const sandbox = makeSandbox();
+  try {
+    fs.writeFileSync(residentScriptPath(sandbox), markedScript('LEAKED'));
+    const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED_STAGE2: '1' });
+    assertFailedClosedNoMutation(
+      'AA leaked stage-2 flag',
+      result,
+      /forced-isolated stage 2: running script .* is not the committed scripts\/local-scrape-and-push\.sh at worktree HEAD [0-9a-f]{40}; refusing stale orchestration/,
+    );
+    assert.deepEqual(pipelineOwners(result.lines), [], 'AA: no runPipeline may run');
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
