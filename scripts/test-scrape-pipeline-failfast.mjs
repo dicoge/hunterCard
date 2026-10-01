@@ -160,6 +160,18 @@ cmd="\${args[0]}"
 if [ "$cmd" = "fetch" ] && [ -n "$FAIL_FETCH" ]; then exit 1; fi
 if [ "$cmd" = "hash-object" ]; then echo "$SCRIPT_BLOB"; exit 0; fi
 if [ "$cmd" = "rev-parse" ] && [[ "$*" == *":scripts/local-scrape-and-push.sh"* ]]; then echo "$SCRIPT_BLOB"; exit 0; fi
+# DIC-1167 (CR bced44d5): stage 2 proves it runs in stage 1's attested linked
+# worktree. The copied "worktree" gets its own private git dir under the
+# shared common dir and a detached HEAD; the resident is the main tree.
+inWorktree=""
+[ "$(pwd -P)" = "$(cd "$HUNTERCARD_ISOLATED_DIR" 2>/dev/null && pwd -P)" ] && inWorktree=1
+if [ "$cmd" = "rev-parse" ] && [ "\${args[1]}" = "--show-toplevel" ]; then pwd -P; exit 0; fi
+if [ "$cmd" = "rev-parse" ] && [ "\${args[1]}" = "--git-common-dir" ]; then mkdir -p "$FAKE_GIT_DIR"; echo "$FAKE_GIT_DIR"; exit 0; fi
+if [ "$cmd" = "rev-parse" ] && [ "\${args[1]}" = "--absolute-git-dir" ]; then
+  gd="$FAKE_GIT_DIR"; [ -n "$inWorktree" ] && gd="$FAKE_GIT_DIR/worktrees/forced"
+  mkdir -p "$gd"; echo "$gd"; exit 0
+fi
+if [ "$cmd" = "symbolic-ref" ]; then [ -n "$inWorktree" ] && exit 1; echo refs/heads/main; exit 0; fi
 if [ "$cmd" = "rev-parse" ]; then
   if [ -f "$COMMIT_MARKER" ]; then echo "feedfeedfeedfeedfeedfeedfeedfeedfeedfeed"; else echo "0123456789abcdef0123456789abcdef01234567"; fi
   exit 0
@@ -212,6 +224,7 @@ exit 0
       COMMIT_MARKER: path.join(dir, 'commit-marker'),
       SCRIPT_BLOB,
       SANDBOX_REPO: repo,
+      FAKE_GIT_DIR: path.join(dir, 'fake-git'),
       HUNTERCARD_FORCE_ISOLATED: env.HUNTERCARD_FORCE_ISOLATED ?? '',
       HUNTERCARD_ISOLATED_DIR: path.join(dir, 'forced-worktree'),
       // Never touch the real cron lock at /tmp/huntercard-scrape.lock.

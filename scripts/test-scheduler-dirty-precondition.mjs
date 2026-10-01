@@ -244,6 +244,14 @@ exit 0
   // genuinely materialised.
   writeShim(bin, 'git', `#!/bin/bash
 echo "git $*" >> "$TRACE_FILE"
+# DIC-1167 (CR bced44d5): ADVANCE_ON_FETCH_N=<n> runs ADVANCE_HOOK (a real,
+# untraced push from another clone) just before the n-th fetch, so origin
+# can advance between the stage-1 and stage-2 fetches.
+if [ "$1" = "fetch" ] && [ -n "$ADVANCE_ON_FETCH_N" ]; then
+  n=$(( $(cat "$FETCH_COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > "$FETCH_COUNT_FILE"
+  [ "$n" = "$ADVANCE_ON_FETCH_N" ] && bash "$ADVANCE_HOOK"
+fi
 if [[ "$*" == *" push "* ]] || [[ "$*" == "push "* ]]; then
   [ -n "$FAIL_PUSH" ] && [[ "$*" == *"$FAIL_PUSH"* ]] && exit 1
   exit 0
@@ -267,9 +275,9 @@ function schedulerLogPath(sandbox) {
   return path.join(sandbox.dir, '.hermes', 'logs', `huntercard-scrape-${ymd}.log`);
 }
 
-function runSandbox(sandbox, extraEnv = {}) {
+function runSandbox(sandbox, extraEnv = {}, scriptPath = null) {
   const { bin, repo, trace, dir } = sandbox;
-  const result = spawnSync('bash', [path.join(repo, 'scripts', 'local-scrape-and-push.sh')], {
+  const result = spawnSync('bash', [scriptPath ?? path.join(repo, 'scripts', 'local-scrape-and-push.sh')], {
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
@@ -1414,4 +1422,152 @@ const pipelineOwners = (lines) =>
   }
 }
 
-console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');
+// ─── DIC-1167 (CR bced44d5): a stage-2 process whose script DOES match its
+// own HEAD must still prove it is stage 1's ephemeral worktree at the freshly
+// fetched origin/main. A clean (even current) resident, a linked worktree on
+// a branch, or a detached linked worktree without stage 1's one-time
+// attestation must all refuse before any scrape/build/commit/push. ─────────
+
+function assertStage2Refused(route, sandbox, snapshot, result, reasonRe) {
+  assertFailedClosedNoMutation(route, result, reasonRe);
+  assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+  assert.equal(someTraced(result.lines, 'git worktree add'), false, `${route}: stage 2 never bootstraps`);
+  assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+  assertResidentUntouched(sandbox, snapshot);
+  assert.equal(
+    execSync(`${REAL_GIT} status --porcelain`, { cwd: sandbox.repo, encoding: 'utf-8' }),
+    '',
+    `${route}: the clean resident must stay clean`,
+  );
+}
+
+// ─── Case BB: clean resident (script == HEAD's == origin's) with leaked
+// stage-2 env — bare flag, then forged worktree/expected-head/nonce. ────────
+{
+  const variants = [
+    ['BB(a) bare leaked flag', () => ({}), /forced-isolated stage 2: checkout \S+ is not the stage-1 ephemeral worktree \(unset\)/],
+    [
+      'BB(b) forged stage-2 env on the main working tree',
+      (sandbox, head) => ({ HUNTERCARD_STAGE2_WORKTREE: sandbox.repo, HUNTERCARD_STAGE2_EXPECTED_HEAD: head, HUNTERCARD_STAGE2_NONCE: 'f'.repeat(32) }),
+      /forced-isolated stage 2: checkout \S+ is a main working tree, not a linked ephemeral worktree/,
+    ],
+  ];
+  for (const [route, env, reasonRe] of variants) {
+    const sandbox = makeSandbox();
+    try {
+      commitScriptOnResident(sandbox, 'RESIDENT');
+      const head = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+      assert.equal(head, execSync(`${REAL_GIT} rev-parse origin/main`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim(), `${route}: sanity — resident is current`);
+      const snapshot = takeResidentSnapshot(sandbox);
+      const result = runSandbox(sandbox, { HUNTERCARD_FORCE_ISOLATED_STAGE2: '1', ...env(sandbox, head) });
+      assert.doesNotMatch(result.log, /is not the committed scripts\/local-scrape-and-push\.sh/, `${route}: sanity — the script check passes`);
+      assertStage2Refused(route, sandbox, snapshot, result, reasonRe);
+      assert.equal(someTraced(result.lines, 'git pull'), false, `${route}: the resident must not be pulled`);
+    } finally {
+      cleanup(sandbox);
+    }
+  }
+}
+
+// ─── Case BB (linked worktrees): a checkout that IS a linked worktree at
+// origin/main but was not created+attested by THIS stage 1 — on a branch, or
+// detached with a missing or foreign attestation — must refuse. ────────────
+{
+  const variants = [
+    ['BB(c) linked worktree on a branch', 'branch', null, /HEAD attached to a branch, not stage 1's detached origin snapshot/],
+    ['BB(d) detached linked worktree without attestation', 'detached', null, /no matching stage-1 attestation in \S+ \(leaked flag, replayed nonce/],
+    ['BB(e) detached linked worktree with a foreign attestation', 'detached', 'a'.repeat(32), /no matching stage-1 attestation in \S+ \(leaked flag, replayed nonce/],
+  ];
+  for (const [route, mode, foreignNonce, reasonRe] of variants) {
+    const sandbox = makeSandbox();
+    const leakDir = path.join(sandbox.dir, 'leaked-wt');
+    try {
+      commitScriptOnResident(sandbox, 'RESIDENT');
+      const head = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+      execSync(
+        mode === 'branch'
+          ? `${REAL_GIT} worktree add -q -b leaked ${leakDir} ${head}`
+          : `${REAL_GIT} worktree add -q --detach ${leakDir} ${head}`,
+        { cwd: sandbox.repo },
+      );
+      const leakGitDir = execSync(`${REAL_GIT} rev-parse --absolute-git-dir`, { cwd: leakDir, encoding: 'utf-8' }).trim();
+      if (foreignNonce) fs.writeFileSync(path.join(leakGitDir, 'huntercard-stage2-attestation'), `${foreignNonce}\n`);
+      const snapshot = takeResidentSnapshot(sandbox);
+      const result = runSandbox(
+        sandbox,
+        {
+          HUNTERCARD_FORCE_ISOLATED_STAGE2: '1',
+          HUNTERCARD_STAGE2_WORKTREE: leakDir,
+          HUNTERCARD_STAGE2_EXPECTED_HEAD: head,
+          HUNTERCARD_STAGE2_NONCE: 'b'.repeat(32),
+        },
+        path.join(leakDir, 'scripts', 'local-scrape-and-push.sh'),
+      );
+      assertStage2Refused(route, sandbox, snapshot, result, reasonRe);
+      assert.equal(
+        execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: leakDir, encoding: 'utf-8' }).trim(),
+        head,
+        `${route}: the leaked worktree must not gain a commit`,
+      );
+      if (foreignNonce) {
+        assert.equal(
+          fs.readFileSync(path.join(leakGitDir, 'huntercard-stage2-attestation'), 'utf-8'),
+          `${foreignNonce}\n`,
+          `${route}: a non-matching attestation must not be consumed`,
+        );
+      }
+    } finally {
+      cleanup(sandbox);
+    }
+  }
+}
+
+// ─── Case CC: origin/main ADVANCES between the stage-1 fetch (worktree
+// pinned) and the stage-2 fetch — stage 2 must refuse the stale snapshot,
+// never build or hand it off, and stage 1 must report failure. ────────────
+for (const [route, extraEnv, residue] of [
+  ['CC forced route', { HUNTERCARD_FORCE_ISOLATED: '1' }, false],
+  ['CC dirty route', {}, true],
+]) {
+  const sandbox = makeSandbox();
+  const isoDir = path.join(sandbox.dir, 'iso');
+  try {
+    if (residue) {
+      fs.writeFileSync(path.join(sandbox.repo, 'data', 'price-history', 'hCC-001_hFOO_C.json'), '{}');
+    }
+    const pinned = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: sandbox.repo, encoding: 'utf-8' }).trim();
+    const other = path.join(sandbox.dir, 'other-cc');
+    execSync(`${REAL_GIT} clone -q ${sandbox.remote} ${other}`);
+    fs.writeFileSync(path.join(other, 'remote-cc.txt'), 'cc\n');
+    execSync(`${REAL_GIT} add remote-cc.txt`, { cwd: other });
+    execSync(`${REAL_GIT} -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit -q -m "remote cc"`, { cwd: other });
+    const advanced = execSync(`${REAL_GIT} rev-parse HEAD`, { cwd: other, encoding: 'utf-8' }).trim();
+    const hook = path.join(sandbox.dir, 'advance-hook.sh');
+    fs.writeFileSync(hook, `${REAL_GIT} -C ${other} push -q origin main\n`);
+    const snapshot = takeResidentSnapshot(sandbox);
+    const result = runSandbox(sandbox, {
+      ...extraEnv,
+      ADVANCE_ON_FETCH_N: '2',
+      ADVANCE_HOOK: hook,
+      FETCH_COUNT_FILE: path.join(sandbox.dir, 'fetch-count'),
+    });
+    const label = residue ? 'isolated' : 'forced-isolated';
+    assertFailedClosedNoMutation(
+      route,
+      result,
+      new RegExp(`${label} stage 2: worktree HEAD ${pinned} is not the freshly fetched origin/main ${advanced} \\(stage 1 pinned ${pinned}\\); refusing stale orchestration`),
+    );
+    assert.ok(someTraced(result.lines, `git worktree add --detach ${isoDir} ${pinned}`), `${route}: stage 1 pinned the pre-advance head`);
+    assert.equal(result.lines.filter((l) => l.startsWith('git fetch origin main')).length, 2, `${route}: both stages fetched`);
+    assert.deepEqual(pipelineOwners(result.lines), [], `${route}: no runPipeline may run`);
+    assert.equal(someTraced(result.lines, 'bot/scrape/'), false, `${route}: no bot/scrape handoff`);
+    assert.match(result.log, new RegExp(`${label} stage 2 failed — cron reports failure`), `${route}: stage 1 propagates the refusal`);
+    assert.doesNotMatch(result.log, /✅ Done/, `${route}: must never report Done`);
+    assertResidentUntouched(sandbox, snapshot);
+    assert.equal(fs.existsSync(isoDir), false, `${route}: stage 1 removes the ephemeral worktree`);
+  } finally {
+    cleanup(sandbox);
+  }
+}
+
+console.log('DIC-1219/DIC-1321/DIC-1334/DIC-1472(+CR-P1 alias/removal/post-link + resident fingerprint)/DIC-1167(CR 028f6a19 clean-path ff/ahead/push + fetch freshness; 09-30 origin-only orchestration W–AA; CR bced44d5 stage-2 attestation + freshness BB–CC) scheduler dirty-precondition + coverage-gate + no-op + parity + isolated-deps regression checks passed');

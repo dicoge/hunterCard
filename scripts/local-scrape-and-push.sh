@@ -143,6 +143,25 @@ selfScriptIsCommittedAt() {
   [ -n "$SELF_SCRIPT_BLOB" ] && [ -n "$committed" ] && [ "$SELF_SCRIPT_BLOB" = "$committed" ]
 }
 
+# DIC-1167 (CR bced44d5): matching its own HEAD's committed script does not
+# prove a stage-2 process is the ephemeral worktree stage 1 just created — a
+# clean but stale resident with a leaked HUNTERCARD_FORCE_ISOLATED_STAGE2=1
+# passes that check and would scrape/commit/push from the resident. Stage 1
+# therefore attests the worktree it created: a one-time nonce written into
+# THAT worktree's private git dir (removed with the worktree), handed to the
+# child via HUNTERCARD_STAGE2_NONCE. Stage 2 consumes it before any mutation.
+STAGE2_ATTESTATION_NAME='huntercard-stage2-attestation'
+
+# newStage2Nonce: 32 hex chars from /dev/urandom (empty on failure).
+newStage2Nonce() {
+  od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n'
+}
+
+# physDir <dir>: physical (symlink-resolved) path of <dir>, empty if absent.
+physDir() {
+  [ -n "$1" ] && (cd "$1" 2>/dev/null && pwd -P) || true
+}
+
 # removeStaleIsolatedWorktree <path>: prune/remove a previously-registered
 # throwaway worktree whose checkout directory or gitdir disappeared. A timed-out
 # supervised run can leave exactly this state; plain `rm -rf <path>` is not
@@ -625,11 +644,12 @@ fi
 #   worktree's copy of this script — the current origin version, not resident
 #   function definitions — as a child process with
 #   HUNTERCARD_FORCE_ISOLATED_STAGE2=1.
-#   Stage 2 (origin code): prove it is the worktree's committed script, run
-#   the pipeline in the worktree in ISOLATED push mode — it never pushes
-#   HEAD:main and never stages/touches resident files — then perform the
-#   explicit auditable bot/scrape/<date> handoff push, failing closed on
-#   no-op or push failure.
+#   Stage 2 (origin code): prove it is the worktree's committed script,
+#   running in stage 1's attested ephemeral worktree at the freshly fetched
+#   origin/main (CR bced44d5), run the pipeline in the worktree in ISOLATED
+#   push mode — it never pushes HEAD:main and never stages/touches resident
+#   files — then perform the explicit auditable bot/scrape/<date> handoff
+#   push, failing closed on no-op or push failure.
 # Two triggers take this path:
 #   - HUNTERCARD_FORCE_ISOLATED=1 (DIC-1461, route "forced");
 #   - residue in scraper-managed paths of the resident checkout (DIC-1321,
@@ -661,6 +681,42 @@ if [ "${HUNTERCARD_FORCE_ISOLATED_STAGE2:-}" = "1" ]; then
   # flag leaked into a resident invocation) must not run the pipeline.
   if ! selfScriptIsCommittedAt HEAD; then
     echo "[$(date)] ❌ $ROUTE_LABEL stage 2: running script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) is not the committed $SELF_SCRIPT_REL at worktree HEAD $STAGE2_START_SHA; refusing stale orchestration (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  # DIC-1167 (CR bced44d5): prove this checkout IS stage 1's ephemeral
+  # worktree — the attested path, a linked (never a main) working tree, a
+  # detached HEAD, and the one-time stage-1 nonce in its private git dir —
+  # before anything here can scrape, commit or push.
+  STAGE2_TOP=$(physDir "$(git rev-parse --show-toplevel 2>/dev/null || true)")
+  STAGE2_EXPECTED_TOP=$(physDir "${HUNTERCARD_STAGE2_WORKTREE:-}")
+  STAGE2_GIT_DIR=$(physDir "$(git rev-parse --absolute-git-dir 2>/dev/null || true)")
+  STAGE2_COMMON_DIR=$(physDir "$(git rev-parse --git-common-dir 2>/dev/null || true)")
+  STAGE2_PROOF_FAIL=""
+  if [ -z "$STAGE2_TOP" ] || [ -z "$STAGE2_EXPECTED_TOP" ] || [ "$STAGE2_TOP" != "$STAGE2_EXPECTED_TOP" ]; then
+    STAGE2_PROOF_FAIL="checkout ${STAGE2_TOP:-unresolved} is not the stage-1 ephemeral worktree (${HUNTERCARD_STAGE2_WORKTREE:-unset})"
+  elif [ -z "$STAGE2_GIT_DIR" ] || [ -z "$STAGE2_COMMON_DIR" ] || [ "$STAGE2_GIT_DIR" = "$STAGE2_COMMON_DIR" ]; then
+    STAGE2_PROOF_FAIL="checkout $STAGE2_TOP is a main working tree, not a linked ephemeral worktree"
+  elif git symbolic-ref -q HEAD >/dev/null 2>&1; then
+    STAGE2_PROOF_FAIL="checkout $STAGE2_TOP has HEAD attached to a branch, not stage 1's detached origin snapshot"
+  elif [ -z "${HUNTERCARD_STAGE2_NONCE:-}" ] || [ ! -f "$STAGE2_GIT_DIR/$STAGE2_ATTESTATION_NAME" ] \
+    || [ "$(cat "$STAGE2_GIT_DIR/$STAGE2_ATTESTATION_NAME" 2>/dev/null || true)" != "$HUNTERCARD_STAGE2_NONCE" ]; then
+    STAGE2_PROOF_FAIL="no matching stage-1 attestation in $STAGE2_GIT_DIR (leaked flag, replayed nonce, or a resident bootstrap that predates attestation — refresh the resident)"
+  elif ! rm -f "$STAGE2_GIT_DIR/$STAGE2_ATTESTATION_NAME" || [ -e "$STAGE2_GIT_DIR/$STAGE2_ATTESTATION_NAME" ]; then
+    STAGE2_PROOF_FAIL="could not consume the one-time stage-1 attestation in $STAGE2_GIT_DIR"
+  fi
+  if [ -n "$STAGE2_PROOF_FAIL" ]; then
+    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: $STAGE2_PROOF_FAIL; refusing to run the pipeline outside stage 1's isolated worktree (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
+  # DIC-1167 (CR bced44d5): the worktree must still be the origin/main this
+  # process just fetched (REMOTE_HEAD, above) AND the SHA stage 1 pinned. If
+  # origin advanced between the stage-1 and stage-2 fetches, this snapshot's
+  # orchestration/data are already stale — fail closed; the next run builds
+  # the new head.
+  if [ "$STAGE2_START_SHA" != "$REMOTE_HEAD" ] || [ "$STAGE2_START_SHA" != "${HUNTERCARD_STAGE2_EXPECTED_HEAD:-}" ]; then
+    echo "[$(date)] ❌ $ROUTE_LABEL stage 2: worktree HEAD $STAGE2_START_SHA is not the freshly fetched origin/main $REMOTE_HEAD (stage 1 pinned ${HUNTERCARD_STAGE2_EXPECTED_HEAD:-unset}); refusing stale orchestration (cron fails)" >> "$LOG_FILE"
     echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
     exit 1
   fi
@@ -757,11 +813,23 @@ if [ -n "$ISOLATION_ROUTE" ]; then
   if ! selfScriptIsCommittedAt "$REMOTE_HEAD"; then
     echo "[$(date)] ⚠️ resident script ${SELF_SCRIPT} (blob ${SELF_SCRIPT_BLOB:-unresolved}) differs from origin/main ($REMOTE_HEAD); only this bootstrap runs from it — the pipeline runs origin's copy" >> "$LOG_FILE"
   fi
+  # DIC-1167 (CR bced44d5): attest the worktree just created — a one-time
+  # nonce in ITS private git dir — so stage 2 can prove where it runs.
+  ISOLATED_GIT_DIR=$(cd "$ISOLATED_DIR" && git rev-parse --absolute-git-dir 2>/dev/null || true)
+  STAGE2_NONCE=$(newStage2Nonce || true)
+  if [ -z "$ISOLATED_GIT_DIR" ] || [ "${#STAGE2_NONCE}" -ne 32 ] \
+    || ! (umask 077 && printf '%s\n' "$STAGE2_NONCE" > "$ISOLATED_GIT_DIR/$STAGE2_ATTESTATION_NAME") 2>/dev/null; then
+    echo "[$(date)] ❌ could not attest the $STAGE1_LABEL worktree for stage 2 (git dir ${ISOLATED_GIT_DIR:-unresolved}); abandoning (cron fails)" >> "$LOG_FILE"
+    echo "HUNTERCARD_SCRAPE_STATUS=FAILED" >> "$LOG_FILE"
+    exit 1
+  fi
   # Re-execute the ORIGIN version of this script inside the clean worktree.
   # A distinct stage-2 lock: this stage-1 process still holds the primary
   # cron lock, so the child must not collide with it (a same-lock collision
   # would exit 0 as "already running" and silently mask a skipped run).
   if HUNTERCARD_FORCE_ISOLATED_STAGE2=1 HUNTERCARD_ISOLATION_ROUTE="$ISOLATION_ROUTE" \
+    HUNTERCARD_STAGE2_WORKTREE="$ISOLATED_DIR" HUNTERCARD_STAGE2_EXPECTED_HEAD="$REMOTE_HEAD" \
+    HUNTERCARD_STAGE2_NONCE="$STAGE2_NONCE" \
     HUNTERCARD_LOCK_FILE="${LOCK_FILE}.stage2" \
     bash "$ISOLATED_DIR/scripts/local-scrape-and-push.sh"; then
     echo "[$(date)] ✅ Done ($STAGE1_LABEL bootstrap)" >> "$LOG_FILE"
